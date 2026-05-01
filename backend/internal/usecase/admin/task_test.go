@@ -1,0 +1,162 @@
+package admin_test
+
+import (
+	"errors"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
+
+	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
+	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
+	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/admin"
+	usecasemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/mocks"
+)
+
+func TestTaskUsecase_CreateTask(t *testing.T) {
+	t.Parallel()
+
+	tasks := usecasemocks.NewMockTaskRepo(t)
+	in := validTaskInput()
+	created := taskFromInput(uuid.New(), in)
+	tasks.EXPECT().Create(mock.Anything, in).Return(created, nil)
+
+	got, err := admin.NewTaskUsecase(tasks).CreateTask(t.Context(), in)
+	require.NoError(t, err)
+	require.Same(t, created, got)
+}
+
+func TestTaskUsecase_CreateTask_Validation(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		mutate func(*admin.TaskInput)
+	}{
+		{"empty title", func(in *admin.TaskInput) { in.Title = "" }},
+		{"too long title", func(in *admin.TaskInput) { in.Title = strings.Repeat("a", 256) }},
+		{"invalid category", func(in *admin.TaskInput) { in.Category = domain.Category("network") }},
+		{"invalid difficulty", func(in *admin.TaskInput) { in.Difficulty = domain.Difficulty("insane") }},
+		{"zero time limit", func(in *admin.TaskInput) { in.TimeLimit = 0 }},
+		{"empty flag", func(in *admin.TaskInput) { in.Flag = "" }},
+		{"missing hints", func(in *admin.TaskInput) { in.Hints = nil }},
+		{"too few hints", func(in *admin.TaskInput) { in.Hints = []string{"one", "two"} }},
+		{"too many hints", func(in *admin.TaskInput) { in.Hints = []string{"one", "two", "three", "four"} }},
+		{"empty hint", func(in *admin.TaskInput) { in.Hints[1] = " " }},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			in := validTaskInput()
+			tt.mutate(&in)
+			_, err := admin.NewTaskUsecase(usecasemocks.NewMockTaskRepo(t)).CreateTask(t.Context(), in)
+			require.ErrorIs(t, err, apperr.ErrTaskValidation)
+		})
+	}
+}
+
+func TestTaskUsecase_GetListUpdate(t *testing.T) {
+	t.Parallel()
+
+	tasks := usecasemocks.NewMockTaskRepo(t)
+	uc := admin.NewTaskUsecase(tasks)
+	id := uuid.New()
+	in := validTaskInput()
+	task := taskFromInput(id, in)
+
+	tasks.EXPECT().GetByID(mock.Anything, id).Return(task, nil)
+	got, err := uc.GetTask(t.Context(), id)
+	require.NoError(t, err)
+	require.Same(t, task, got)
+
+	tasks.EXPECT().List(mock.Anything).Return([]*domain.Task{task}, nil)
+	list, err := uc.ListTasks(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, []*domain.Task{task}, list)
+
+	updatedInput := validTaskInput()
+	updatedInput.Title = "updated"
+	updated := taskFromInput(id, updatedInput)
+	tasks.EXPECT().Update(mock.Anything, id, updatedInput).Return(updated, nil)
+	got, err = uc.UpdateTask(t.Context(), id, updatedInput)
+	require.NoError(t, err)
+	require.Same(t, updated, got)
+}
+
+func TestTaskUsecase_UpdateTask_Validation(t *testing.T) {
+	t.Parallel()
+
+	in := validTaskInput()
+	in.Difficulty = domain.Difficulty("bad")
+
+	_, err := admin.NewTaskUsecase(usecasemocks.NewMockTaskRepo(t)).UpdateTask(t.Context(), uuid.New(), in)
+	require.ErrorIs(t, err, apperr.ErrTaskValidation)
+}
+
+func TestTaskUsecase_DeleteTask_UnusedDeletes(t *testing.T) {
+	t.Parallel()
+
+	tasks := usecasemocks.NewMockTaskRepo(t)
+	id := uuid.New()
+	tasks.EXPECT().IsUsedInActiveDuel(mock.Anything, id).Return(false, nil)
+	tasks.EXPECT().Delete(mock.Anything, id).Return(nil)
+
+	require.NoError(t, admin.NewTaskUsecase(tasks).DeleteTask(t.Context(), id))
+}
+
+func TestTaskUsecase_DeleteTask_ActiveDuelReturnsTaskInUse(t *testing.T) {
+	t.Parallel()
+
+	tasks := usecasemocks.NewMockTaskRepo(t)
+	id := uuid.New()
+	tasks.EXPECT().IsUsedInActiveDuel(mock.Anything, id).Return(true, nil)
+
+	err := admin.NewTaskUsecase(tasks).DeleteTask(t.Context(), id)
+	require.ErrorIs(t, err, apperr.ErrTaskInUse)
+}
+
+func TestTaskUsecase_DeleteTask_RepoErrorIsWrapped(t *testing.T) {
+	t.Parallel()
+
+	tasks := usecasemocks.NewMockTaskRepo(t)
+	id := uuid.New()
+	lowLevelErr := errors.New("db down")
+	tasks.EXPECT().IsUsedInActiveDuel(mock.Anything, id).Return(false, nil)
+	tasks.EXPECT().Delete(mock.Anything, id).Return(lowLevelErr)
+
+	err := admin.NewTaskUsecase(tasks).DeleteTask(t.Context(), id)
+	require.ErrorIs(t, err, lowLevelErr)
+}
+
+func validTaskInput() admin.TaskInput {
+	return admin.TaskInput{
+		Title:       "task",
+		Description: "description",
+		Category:    domain.CategoryWeb,
+		Difficulty:  domain.DifficultyEasy,
+		TimeLimit:   60,
+		Flag:        "FLAG{task}",
+		Hints:       []string{"first hint", "second hint", "third hint"},
+	}
+}
+
+func taskFromInput(id uuid.UUID, in admin.TaskInput) *domain.Task {
+	return &domain.Task{
+		ID:            id,
+		Title:         in.Title,
+		Description:   in.Description,
+		Category:      in.Category,
+		Difficulty:    in.Difficulty,
+		TimeLimit:     in.TimeLimit,
+		Flag:          in.Flag,
+		Hints:         append([]string(nil), in.Hints...),
+		TaskURL:       in.TaskURL,
+		SourceFileURL: in.SourceFileURL,
+		CreatedAt:     time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC),
+	}
+}

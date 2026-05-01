@@ -1,0 +1,126 @@
+TaskCategory:
+  type: string
+  enum: [web, crypto, forensics, reverse, pwn, misc]
+
+TaskDifficulty:
+  type: string
+  enum: [easy, medium, hard]
+
+TaskResponse:
+  type: object
+  description: Admin view of a task. The `flag` field is only ever returned to admins, never to players.
+  required: [id, title, description, category, difficulty, time_limit, flag, hints, created_at]
+  properties:
+    id:
+      type: string
+      format: uuid
+    title:
+      type: string
+      maxLength: 255
+    description:
+      type: string
+    category:
+      $ref: '#/TaskCategory'
+    difficulty:
+      $ref: '#/TaskDifficulty'
+    time_limit:
+      type: integer
+      format: int32
+      minimum: 1
+      description: Per-task time limit in seconds.
+    flag:
+      type: string
+      maxLength: 255
+    hints:
+      type: array
+      minItems: 3
+      maxItems: 3
+      items:
+        type: string
+        minLength: 1
+    task_url:
+      type: string
+      format: uri
+      nullable: true
+    source_file_url:
+      type: string
+      format: uri
+      nullable: true
+    created_at:
+      type: string
+      format: date-time
+
+CreateTaskRequest:
+  type: object
+  required: [title, description, category, difficulty, time_limit, flag, hints]
+  properties:
+    title:
+      type: string
+      minLength: 1
+      maxLength: 255
+    description:
+      type: string
+    category:
+      $ref: '#/TaskCategory'
+    difficulty:
+      $ref: '#/TaskDifficulty'
+    time_limit:
+      type: integer
+      format: int32
+      minimum: 1
+    flag:
+      type: string
+      minLength: 1
+      maxLength: 255
+    hints:
+      type: array
+      minItems: 3
+      maxItems: 3
+      items:
+        type: string
+        minLength: 1
+    task_url:
+      type: string
+      format: uri
+      nullable: true
+
+UpdateTaskRequest:
+  type: object
+  properties:
+    title:
+      type: string
+      minLength: 1
+      maxLength: 255
+    description:
+      type: string
+    category:
+      $ref: '#/TaskCategory'
+    difficulty:
+      $ref: '#/TaskDifficulty'
+    time_limit:
+      type: integer
+      format: int32
+      minimum: 1
+    flag:
+      type: string
+      minLength: 1
+      maxLength: 255
+    hints:
+      type: array
+      minItems: 3
+      maxItems: 3
+      items:
+        type: string
+        minLength: 1
+    task_url:
+      type: string
+      format: uri
+      nullable: true
+
+UploadSourceResponse:
+  type: object
+  required: [source_file_url]
+  properties:
+    source_file_url:
+      type: string
+      format: uri

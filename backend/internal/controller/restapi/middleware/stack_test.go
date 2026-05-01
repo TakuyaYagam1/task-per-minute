@@ -1,0 +1,142 @@
+package middleware_test
+
+import (
+	"bytes"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+	logkit "github.com/wahrwelt-kit/go-logkit"
+
+	"github.com/TakuyaYagam1/task-per-minute/internal/controller/restapi/middleware"
+)
+
+func TestBuild_SuccessAddsRequestIDSecurityHeadersAndLog(t *testing.T) {
+	t.Parallel()
+
+	var logs bytes.Buffer
+	log := newTestLogger(t, &logs)
+	const requestID = "req-123"
+
+	handler := middleware.Build(log)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, requestID, middleware.GetRequestIDFromCtx(r.Context()))
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/leaderboard", nil)
+	req.Header.Set("X-Request-ID", requestID)
+	req.RemoteAddr = "203.0.113.42:4567"
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	require.Equal(t, requestID, rr.Header().Get("X-Request-ID"))
+	require.Equal(t, "nosniff", rr.Header().Get("X-Content-Type-Options"))
+	require.Equal(t, "DENY", rr.Header().Get("X-Frame-Options"))
+	require.Equal(t, "strict-origin-when-cross-origin", rr.Header().Get("Referrer-Policy"))
+	require.Equal(t, "default-src 'self'", rr.Header().Get("Content-Security-Policy"))
+
+	entry := requireLogEntry(t, logs.String(), "http request")
+	require.Equal(t, "info", entry["level"])
+	require.Equal(t, requestID, entry["request_id"])
+	require.Equal(t, http.MethodGet, entry["method"])
+	require.Equal(t, "/api/v1/leaderboard", entry["path"])
+	require.Equal(t, float64(http.StatusOK), entry["status"])
+	require.NotEmpty(t, entry["duration"])
+	require.Contains(t, entry, "duration_ms")
+}
+
+func TestBuild_RecovererReturnsInternalJSONAndLogsError(t *testing.T) {
+	t.Parallel()
+
+	var logs bytes.Buffer
+	log := newTestLogger(t, &logs)
+	const requestID = "panic-req-123"
+
+	handler := middleware.Build(log)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		panic("boom")
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/duels/current", nil)
+	req.Header.Set("X-Request-ID", requestID)
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusInternalServerError, rr.Code)
+	require.Equal(t, "application/json", rr.Header().Get("Content-Type"))
+	require.JSONEq(t, `{"error":"internal"}`, rr.Body.String())
+	require.NotContains(t, rr.Body.String(), "boom")
+	require.NotContains(t, strings.ToLower(rr.Body.String()), "stack")
+
+	entries := parseLogEntries(t, logs.String())
+	require.NotEmpty(t, entries)
+	require.True(t, hasLogEntry(entries, func(entry map[string]any) bool {
+		return entry["level"] == "error" &&
+			entry["message"] == "panic recovered" &&
+			entry["request_id"] == requestID &&
+			entry["panic"] == "boom" &&
+			strings.Contains(entry["stack"].(string), "goroutine")
+	}), "expected panic log entry with request_id")
+	require.True(t, hasLogEntry(entries, func(entry map[string]any) bool {
+		return entry["level"] == "error" &&
+			entry["message"] == "http request failed" &&
+			entry["request_id"] == requestID &&
+			entry["status"] == float64(http.StatusInternalServerError)
+	}), "expected request log entry with 500 status")
+}
+
+func newTestLogger(t *testing.T, buf *bytes.Buffer) logkit.Logger {
+	t.Helper()
+
+	log, err := logkit.New(
+		logkit.WithLevel(logkit.DebugLevel),
+		logkit.WithSyncWriter(buf),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, log.Close())
+	})
+	return log
+}
+
+func requireLogEntry(t *testing.T, raw, message string) map[string]any {
+	t.Helper()
+
+	for _, entry := range parseLogEntries(t, raw) {
+		if entry["message"] == message {
+			return entry
+		}
+	}
+	t.Fatalf("log entry with message %q not found in %s", message, raw)
+	return nil
+}
+
+func parseLogEntries(t *testing.T, raw string) []map[string]any {
+	t.Helper()
+
+	raw = strings.TrimSpace(raw)
+	require.NotEmpty(t, raw)
+
+	lines := strings.Split(raw, "\n")
+	entries := make([]map[string]any, 0, len(lines))
+	for _, line := range lines {
+		var entry map[string]any
+		require.NoError(t, json.Unmarshal([]byte(line), &entry))
+		entries = append(entries, entry)
+	}
+	return entries
+}
+
+func hasLogEntry(entries []map[string]any, match func(map[string]any) bool) bool {
+	for _, entry := range entries {
+		if match(entry) {
+			return true
+		}
+	}
+	return false
+}

@@ -1,0 +1,31 @@
+AdminLoginRequest:
+  type: object
+  required: [password]
+  properties:
+    password:
+      type: string
+      minLength: 1
+      writeOnly: true
+
+AdminRefreshRequest:
+  type: object
+  required: [refresh_token]
+  properties:
+    refresh_token:
+      type: string
+
+AdminTokenResponse:
+  type: object
+  required: [access_token, refresh_token, token_type, expires_in]
+  properties:
+    access_token:
+      type: string
+    refresh_token:
+      type: string
+    token_type:
+      type: string
+      enum: [Bearer]
+    expires_in:
+      type: integer
+      format: int32
+      description: Seconds until access_token expires.

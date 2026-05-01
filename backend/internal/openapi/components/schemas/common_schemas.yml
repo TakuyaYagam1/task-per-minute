@@ -1,0 +1,48 @@
+ProblemDetails:
+  type: object
+  description: RFC 7807 error envelope used by every 4xx/5xx response.
+  required: [type, title, status]
+  properties:
+    type:
+      type: string
+      format: uri
+      example: "about:blank"
+    title:
+      type: string
+      example: "Validation Failed"
+    status:
+      type: integer
+      format: int32
+      minimum: 400
+      maximum: 599
+      example: 400
+    detail:
+      type: string
+      example: "username must be 2..50 characters"
+    instance:
+      type: string
+      example: "/api/v1/players/join"
+    request_id:
+      type: string
+      example: "01HXC2K9F4ZG6YV1AAB7TBQ7AP"
+
+HealthResponse:
+  type: object
+  required: [status, db, redis, seaweedfs, schema_version]
+  properties:
+    status:
+      type: string
+      enum: [ok, degraded]
+    db:
+      type: string
+      enum: [ok, error]
+    redis:
+      type: string
+      enum: [ok, error]
+    seaweedfs:
+      type: string
+      enum: [ok, error]
+    schema_version:
+      type: integer
+      format: int64
+      minimum: 0

@@ -1,0 +1,11 @@
+BearerAuth:
+  type: http
+  scheme: bearer
+  bearerFormat: JWT
+  description: Admin access token (HS256). Issued by POST /api/v1/admin/login.
+
+SessionTokenAuth:
+  type: apiKey
+  in: header
+  name: X-Session-Token
+  description: Opaque UUID issued by POST /api/v1/players/join.

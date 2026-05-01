@@ -1,0 +1,110 @@
+name: task-per-minute-local
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-tpm}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tpm}
+      POSTGRES_DB: ${POSTGRES_DB:-task_per_minute}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tpm} -d ${POSTGRES_DB:-task_per_minute}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  redis:
+    image: redis:8-alpine
+    restart: unless-stopped
+    env_file:
+      - path: ../../.env
+        required: false
+    command:
+      - "sh"
+      - "-c"
+      - |
+        if [ -n "$${REDIS_PASSWORD:-}" ]; then
+          exec redis-server --save 60 1 --loglevel warning --requirepass "$${REDIS_PASSWORD}"
+        fi
+        exec redis-server --save 60 1 --loglevel warning
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "if [ -n \"$${REDIS_PASSWORD:-}\" ]; then REDISCLI_AUTH=\"$${REDIS_PASSWORD}\" redis-cli ping; else redis-cli ping; fi"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 3s
+
+  seaweedfs:
+    image: chrislusf/seaweedfs:3.71
+    restart: unless-stopped
+    command:
+      - "server"
+      - "-dir=/data"
+      - "-master.port=9333"
+      - "-volume.port=8090"
+      - "-filer"
+      - "-filer.port=8888"
+      - "-s3"
+      - "-s3.port=8333"
+    ports:
+      - "9333:9333"
+      - "8333:8333"
+    volumes:
+      - seaweedfs_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9333/cluster/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  migrate:
+    build:
+      context: ../../backend
+    profiles: ["migrate"]
+    restart: "no"
+    entrypoint: ["/app/migrate"]
+    env_file:
+      - path: ../../.env
+        required: false
+    environment:
+      DB_DSN: "postgres://${POSTGRES_USER:-tpm}:${POSTGRES_PASSWORD:-tpm}@postgres:5432/${POSTGRES_DB:-task_per_minute}?sslmode=disable"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  backend:
+    build:
+      context: ../../backend
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    env_file:
+      - path: ../../.env
+        required: false
+    environment:
+      DB_DSN: "postgres://${POSTGRES_USER:-tpm}:${POSTGRES_PASSWORD:-tpm}@postgres:5432/${POSTGRES_DB:-task_per_minute}?sslmode=disable"
+      REDIS_ADDR: "redis:6379"
+      SEAWEEDFS_ENDPOINT: "seaweedfs:8333"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      seaweedfs:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:
+  seaweedfs_data:

@@ -1,0 +1,68 @@
+PlayerStatus:
+  type: string
+  enum: [idle, queued, in_duel]
+
+PlayerResponse:
+  type: object
+  required: [id, username, status, created_at]
+  properties:
+    id:
+      type: string
+      format: uuid
+    username:
+      type: string
+      minLength: 2
+      maxLength: 50
+    status:
+      $ref: '#/PlayerStatus'
+    created_at:
+      type: string
+      format: date-time
+
+ActiveDuelInfo:
+  type: object
+  required: [id, status, started_at, deadline]
+  properties:
+    id:
+      type: string
+      format: uuid
+    status:
+      type: string
+      enum: [active]
+    started_at:
+      type: string
+      format: date-time
+    deadline:
+      type: string
+      format: date-time
+
+JoinRequest:
+  type: object
+  required: [username]
+  properties:
+    username:
+      type: string
+      minLength: 2
+      maxLength: 50
+      pattern: '^[a-zA-Z0-9_-]+$'
+      example: "takuya"
+
+JoinResponse:
+  type: object
+  required: [player_id, session_token]
+  properties:
+    player_id:
+      type: string
+      format: uuid
+    session_token:
+      type: string
+      format: uuid
+
+PlayerMeResponse:
+  type: object
+  required: [player]
+  properties:
+    player:
+      $ref: '#/PlayerResponse'
+    active_duel:
+      $ref: '#/ActiveDuelInfo'

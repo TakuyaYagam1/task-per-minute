@@ -1,0 +1,250 @@
+name: backend deploy
+
+on:
+  workflow_run:
+    workflows:
+      - backend ci
+    branches:
+      - main
+    types:
+      - completed
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Commit SHA to deploy. Defaults to the workflow ref SHA.
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: backend-deploy-production
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: task-per-minute-backend
+
+jobs:
+  resolve:
+    name: resolve target
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    outputs:
+      target_sha: ${{ steps.resolve.outputs.target_sha }}
+      image_repo: ${{ steps.resolve.outputs.image_repo }}
+      image_ref: ${{ steps.resolve.outputs.image_ref }}
+      latest_ref: ${{ steps.resolve.outputs.latest_ref }}
+      health_url: ${{ steps.resolve.outputs.health_url }}
+    steps:
+      - name: resolve deploy metadata
+        id: resolve
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          WORKFLOW_RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          DISPATCH_SHA: ${{ inputs.sha }}
+          REF_SHA: ${{ github.sha }}
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+          REGISTRY: ${{ env.REGISTRY }}
+          IMAGE_NAME: ${{ env.IMAGE_NAME }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_HEALTH_URL: ${{ secrets.DEPLOY_HEALTH_URL }}
+        run: |
+          set -Eeuo pipefail
+
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
+            target_sha="$WORKFLOW_RUN_SHA"
+          elif [ -n "$DISPATCH_SHA" ]; then
+            target_sha="$DISPATCH_SHA"
+          else
+            target_sha="$REF_SHA"
+          fi
+
+          owner="$(printf '%s' "$REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
+          image_repo="$REGISTRY/$owner/$IMAGE_NAME"
+
+          if [ -n "$DEPLOY_HEALTH_URL" ]; then
+            health_url="$DEPLOY_HEALTH_URL"
+          else
+            health_url="http://$DEPLOY_HOST/health"
+          fi
+
+          {
+            echo "target_sha=$target_sha"
+            echo "image_repo=$image_repo"
+            echo "image_ref=$image_repo:$target_sha"
+            echo "latest_ref=$image_repo:latest"
+            echo "health_url=$health_url"
+          } >> "$GITHUB_OUTPUT"
+
+  build:
+    name: build and push image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs:
+      - resolve
+    steps:
+      - name: checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.resolve.outputs.target_sha }}
+
+      - name: login to ghcr
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: setup buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: build and push backend image
+        uses: docker/build-push-action@v7
+        with:
+          context: backend
+          file: backend/Dockerfile
+          push: true
+          tags: |
+            ${{ needs.resolve.outputs.image_ref }}
+            ${{ needs.resolve.outputs.latest_ref }}
+
+  deploy:
+    name: deploy production
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs:
+      - resolve
+      - build
+    environment: production
+    steps:
+      - name: deploy over ssh
+        id: deploy
+        uses: appleboy/ssh-action@v1.2.5
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          fingerprint: ${{ secrets.DEPLOY_HOST_FINGERPRINT }}
+          command_timeout: 10m
+          script: |
+            set -Eeuo pipefail
+
+            deploy_path='${{ secrets.DEPLOY_PATH }}'
+            target_sha='${{ needs.resolve.outputs.target_sha }}'
+            image_ref='${{ needs.resolve.outputs.image_ref }}'
+
+            cd "$deploy_path"
+            git fetch --prune origin
+            git reset --hard "$target_sha"
+
+            echo '${{ github.token }}' | docker login ghcr.io -u '${{ github.actor }}' --password-stdin
+
+            cd deployment/docker
+            BACKEND_IMAGE="$image_ref" docker compose --env-file ../../.env pull backend migrate
+            BACKEND_IMAGE="$image_ref" docker compose --env-file ../../.env run --rm migrate
+            BACKEND_IMAGE="$image_ref" docker compose --env-file ../../.env up -d --remove-orphans backend
+
+      - name: verify health
+        id: verify
+        env:
+          HEALTH_URL: ${{ needs.resolve.outputs.health_url }}
+        run: |
+          set -Eeuo pipefail
+
+          for attempt in $(seq 1 12); do
+            body="$(curl -fsS --max-time 5 "$HEALTH_URL" || true)"
+            if printf '%s' "$body" | jq -e '.status == "ok" and .db == "ok" and .redis == "ok" and .seaweedfs == "ok" and (.schema_version | type == "number" and . > 0)' >/dev/null 2>&1; then
+              echo "health check passed on attempt $attempt"
+              exit 0
+            fi
+            echo "health check attempt $attempt failed"
+            sleep 5
+          done
+
+          echo "health check failed after 12 attempts"
+          exit 1
+
+      - name: persist deployed sha
+        uses: appleboy/ssh-action@v1.2.5
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          fingerprint: ${{ secrets.DEPLOY_HOST_FINGERPRINT }}
+          command_timeout: 2m
+          script: |
+            set -Eeuo pipefail
+
+            deploy_path='${{ secrets.DEPLOY_PATH }}'
+            target_sha='${{ needs.resolve.outputs.target_sha }}'
+
+            cd "$deploy_path"
+            printf '%s\n' "$target_sha" > .last-deployed-sha
+
+      - name: rollback
+        id: rollback
+        if: ${{ failure() && steps.deploy.outcome == 'success' }}
+        uses: appleboy/ssh-action@v1.2.5
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          fingerprint: ${{ secrets.DEPLOY_HOST_FINGERPRINT }}
+          command_timeout: 10m
+          script: |
+            set -Eeuo pipefail
+
+            deploy_path='${{ secrets.DEPLOY_PATH }}'
+            image_repo='${{ needs.resolve.outputs.image_repo }}'
+
+            cd "$deploy_path"
+            if [ ! -s .last-deployed-sha ]; then
+              echo "no previous deployed sha found; rollback skipped"
+              exit 0
+            fi
+
+            previous_sha="$(tr -d '[:space:]' < .last-deployed-sha)"
+            previous_image="$image_repo:$previous_sha"
+
+            git fetch --prune origin
+            git reset --hard "$previous_sha"
+
+            echo '${{ github.token }}' | docker login ghcr.io -u '${{ github.actor }}' --password-stdin
+
+            cd deployment/docker
+            BACKEND_IMAGE="$previous_image" docker compose --env-file ../../.env pull backend
+            BACKEND_IMAGE="$previous_image" docker compose --env-file ../../.env up -d --remove-orphans backend
+
+      - name: notify
+        if: ${{ always() }}
+        env:
+          WEBHOOK_URL: ${{ secrets.TG_DEPLOY_WEBHOOK || secrets.SLACK_DEPLOY_WEBHOOK }}
+          TARGET_SHA: ${{ needs.resolve.outputs.target_sha }}
+          IMAGE_REF: ${{ needs.resolve.outputs.image_ref }}
+          JOB_STATUS: ${{ job.status }}
+          ROLLBACK_OUTCOME: ${{ steps.rollback.outcome }}
+        run: |
+          set -Eeuo pipefail
+
+          if [ -z "$WEBHOOK_URL" ]; then
+            echo "deploy webhook is not configured; notification skipped"
+            exit 0
+          fi
+
+          text="task-per-minute backend deploy: $JOB_STATUS
+          sha: $TARGET_SHA
+          image: $IMAGE_REF
+          rollback: ${ROLLBACK_OUTCOME:-skipped}"
+
+          jq -n --arg text "$text" '{text: $text}' > /tmp/deploy-notification.json
+          curl -fsS -X POST \
+            -H 'Content-Type: application/json' \
+            --data @/tmp/deploy-notification.json \
+            "$WEBHOOK_URL"

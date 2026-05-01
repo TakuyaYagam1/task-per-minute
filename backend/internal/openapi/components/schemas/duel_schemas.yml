@@ -1,0 +1,90 @@
+DuelStatus:
+  type: string
+  enum: [active, finished]
+
+DuelResponse:
+  type: object
+  required: [id, player1_id, player2_id, status, deadline, started_at]
+  properties:
+    id:
+      type: string
+      format: uuid
+    player1_id:
+      type: string
+      format: uuid
+    player2_id:
+      type: string
+      format: uuid
+    status:
+      $ref: '#/DuelStatus'
+    winner_id:
+      type: string
+      format: uuid
+      nullable: true
+    deadline:
+      type: string
+      format: date-time
+    started_at:
+      type: string
+      format: date-time
+    finished_at:
+      type: string
+      format: date-time
+      nullable: true
+
+DuelPlayerTaskResponse:
+  type: object
+  required: [player_id, task_id, solved]
+  properties:
+    player_id:
+      type: string
+      format: uuid
+    task_id:
+      type: string
+      format: uuid
+    solved:
+      type: boolean
+    solved_at:
+      type: string
+      format: date-time
+      nullable: true
+
+DuelDetailResponse:
+  type: object
+  required: [duel, player_tasks]
+  properties:
+    duel:
+      $ref: '#/DuelResponse'
+    player_tasks:
+      type: array
+      items:
+        $ref: '#/DuelPlayerTaskResponse'
+
+LeaderboardEntry:
+  type: object
+  required: [rank, username, tasks_solved, total_solve_time_ms]
+  properties:
+    rank:
+      type: integer
+      format: int32
+      minimum: 1
+    username:
+      type: string
+    tasks_solved:
+      type: integer
+      format: int32
+      minimum: 0
+    total_solve_time_ms:
+      type: integer
+      format: int64
+      minimum: 0
+
+LeaderboardResponse:
+  type: object
+  required: [entries]
+  properties:
+    entries:
+      type: array
+      maxItems: 50
+      items:
+        $ref: '#/LeaderboardEntry'

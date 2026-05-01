@@ -1,0 +1,25 @@
+all: false
+formatter: goimports
+template: testify
+
+filename: "{{.InterfaceName | snakecase}}_mock.go"
+dir: "{{.InterfaceDir}}/mocks"
+pkgname: "mocks"
+
+packages:
+  github.com/TakuyaYagam1/task-per-minute/pkg/clock:
+    interfaces:
+      Clock:
+
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase:
+    interfaces:
+      DuelRepo:
+      HistoryRepo:
+      LeaderboardRepo:
+      LeaderboardStore:
+      MatchmakingQueue:
+      PlayerRepo:
+      RevocationStore:
+      SourceFileStorage:
+      TaskRepo:
+      TxManager:

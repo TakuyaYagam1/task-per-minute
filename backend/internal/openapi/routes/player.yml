@@ -1,0 +1,56 @@
+/api/v1/players/join:
+  post:
+    operationId: joinPlayer
+    tags: [player]
+    summary: Register or refresh a player session
+    description: >
+      Upserts a player by username and issues a new session_token (UUID).
+      Existing sessions for the same username are invalidated. Returns 409 if
+      the player is currently in an active duel.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../components/schemas.yml#/JoinRequest'
+    responses:
+      '200':
+        description: Player session created or refreshed.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/JoinResponse'
+      '400':
+        description: Validation error.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '409':
+        description: Player is currently in_duel; cannot rejoin.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+
+/api/v1/players/me:
+  get:
+    operationId: getMe
+    tags: [player]
+    summary: Resolve the current player session
+    description: Returns the player and any active duel they are participating in.
+    security:
+      - SessionTokenAuth: []
+    responses:
+      '200':
+        description: Resolved player.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/PlayerMeResponse'
+      '401':
+        description: Missing or invalid session token.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'

@@ -1,0 +1,1 @@
+export { gameModel } from './model';

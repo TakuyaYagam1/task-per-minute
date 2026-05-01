@@ -1,0 +1,55 @@
+openapi: 3.0.3
+
+info:
+  title: task-per-minute Backend API
+  description: |
+    REST surface for the CTF MeetUp activity. WebSocket protocol (`GET /ws`)
+    is documented in PRD §3.5 and is intentionally outside this OpenAPI spec.
+
+    Authentication:
+      - Players send `X-Session-Token: <uuid>` (issued by POST /players/join).
+      - Admins send `Authorization: Bearer <jwt>` (issued by POST /admin/login).
+  version: "1.0.0"
+
+servers:
+  - url: http://localhost:8080
+    description: Local development
+  - url: https://api.task-per-minute.example
+    description: Production
+
+tags:
+  - name: player
+  - name: game
+  - name: admin
+  - name: system
+
+paths:
+  /api/v1/players/join:
+    $ref: 'routes/player.yml#/~1api~1v1~1players~1join'
+  /api/v1/players/me:
+    $ref: 'routes/player.yml#/~1api~1v1~1players~1me'
+
+  /api/v1/leaderboard:
+    $ref: 'routes/game.yml#/~1api~1v1~1leaderboard'
+  /api/v1/duels/{id}:
+    $ref: 'routes/game.yml#/~1api~1v1~1duels~1{id}'
+  /health:
+    $ref: 'routes/game.yml#/~1health'
+
+  /api/v1/admin/login:
+    $ref: 'routes/admin.yml#/~1api~1v1~1admin~1login'
+  /api/v1/admin/refresh:
+    $ref: 'routes/admin.yml#/~1api~1v1~1admin~1refresh'
+  /api/v1/admin/tasks:
+    $ref: 'routes/admin.yml#/~1api~1v1~1admin~1tasks'
+  /api/v1/admin/tasks/{id}:
+    $ref: 'routes/admin.yml#/~1api~1v1~1admin~1tasks~1{id}'
+  /api/v1/admin/tasks/{id}/source:
+    $ref: 'routes/admin.yml#/~1api~1v1~1admin~1tasks~1{id}~1source'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      $ref: 'components/security.yml#/BearerAuth'
+    SessionTokenAuth:
+      $ref: 'components/security.yml#/SessionTokenAuth'

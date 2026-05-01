@@ -1,0 +1,259 @@
+/api/v1/admin/login:
+  post:
+    operationId: adminLogin
+    tags: [admin]
+    summary: Exchange the shared admin password for a token pair
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../components/schemas.yml#/AdminLoginRequest'
+    responses:
+      '200':
+        description: Login OK.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/AdminTokenResponse'
+      '401':
+        description: Invalid password.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+
+/api/v1/admin/refresh:
+  post:
+    operationId: adminRefresh
+    tags: [admin]
+    summary: Rotate the access/refresh token pair
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../components/schemas.yml#/AdminRefreshRequest'
+    responses:
+      '200':
+        description: New token pair.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/AdminTokenResponse'
+      '401':
+        description: Refresh token invalid, expired, or revoked.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+
+/api/v1/admin/tasks:
+  get:
+    operationId: listTasks
+    tags: [admin]
+    summary: List all tasks (admin view, includes flag)
+    security:
+      - BearerAuth: []
+    responses:
+      '200':
+        description: All tasks.
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '../components/schemas.yml#/TaskResponse'
+      '401':
+        description: Missing or invalid bearer token.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+  post:
+    operationId: createTask
+    tags: [admin]
+    summary: Create a task
+    security:
+      - BearerAuth: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../components/schemas.yml#/CreateTaskRequest'
+    responses:
+      '201':
+        description: Created.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/TaskResponse'
+      '400':
+        description: Validation error.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '401':
+        description: Missing or invalid bearer token.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+
+/api/v1/admin/tasks/{id}:
+  parameters:
+    - in: path
+      name: id
+      required: true
+      schema:
+        type: string
+        format: uuid
+  get:
+    operationId: getTask
+    tags: [admin]
+    summary: Read a task by id
+    security:
+      - BearerAuth: []
+    responses:
+      '200':
+        description: Task.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/TaskResponse'
+      '401':
+        description: Missing or invalid bearer token.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '404':
+        description: Task not found.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+  put:
+    operationId: updateTask
+    tags: [admin]
+    summary: Update a task (partial update is allowed via PATCH semantics)
+    security:
+      - BearerAuth: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../components/schemas.yml#/UpdateTaskRequest'
+    responses:
+      '200':
+        description: Updated task.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/TaskResponse'
+      '400':
+        description: Validation error.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '401':
+        description: Missing or invalid bearer token.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '404':
+        description: Task not found.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+  delete:
+    operationId: deleteTask
+    tags: [admin]
+    summary: Delete a task
+    description: Returns 409 if the task is referenced by an active duel.
+    security:
+      - BearerAuth: []
+    responses:
+      '204':
+        description: Deleted.
+      '401':
+        description: Missing or invalid bearer token.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '404':
+        description: Task not found.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '409':
+        description: Task is in use by an active duel.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+
+/api/v1/admin/tasks/{id}/source:
+  parameters:
+    - in: path
+      name: id
+      required: true
+      schema:
+        type: string
+        format: uuid
+  post:
+    operationId: uploadTaskSource
+    tags: [admin]
+    summary: Upload a source-file ZIP (≤ 100 MB) and store it in SeaweedFS
+    security:
+      - BearerAuth: []
+    requestBody:
+      required: true
+      content:
+        multipart/form-data:
+          schema:
+            type: object
+            required: [file]
+            properties:
+              file:
+                type: string
+                format: binary
+    responses:
+      '200':
+        description: Stored. Returns the URL to be embedded in task_assigned WS event.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/UploadSourceResponse'
+      '400':
+        description: Not a ZIP, missing field, or other validation error.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '401':
+        description: Missing or invalid bearer token.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '404':
+        description: Task not found.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '413':
+        description: File exceeds the 100 MB limit.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'

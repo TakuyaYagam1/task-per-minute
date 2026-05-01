@@ -1,0 +1,1 @@
+export { playerModel } from './model';

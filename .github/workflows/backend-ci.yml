@@ -1,0 +1,176 @@
+name: backend ci
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'backend/**'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'backend/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GO_VERSION_FILE: backend/go.mod
+  GO_SUM_FILE: backend/go.sum
+  GO_WORKDIR: backend
+
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: checkout
+        uses: actions/checkout@v6
+
+      - name: setup go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: ${{ env.GO_VERSION_FILE }}
+          cache: false
+
+      - name: resolve go cache directories
+        id: go-cache
+        working-directory: ${{ env.GO_WORKDIR }}
+        run: |
+          echo "gomodcache=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
+          echo "gocache=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+
+      - name: restore go cache
+        uses: actions/cache@v5
+        with:
+          path: |
+            ${{ steps.go-cache.outputs.gomodcache }}
+            ${{ steps.go-cache.outputs.gocache }}
+          key: ${{ runner.os }}-go-lint-${{ hashFiles('backend/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-lint-
+            ${{ runner.os }}-go-
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.11.4
+          working-directory: ${{ env.GO_WORKDIR }}
+          args: ./...
+
+  unit-test:
+    name: unit test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: checkout
+        uses: actions/checkout@v6
+
+      - name: setup go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: ${{ env.GO_VERSION_FILE }}
+          cache: false
+
+      - name: resolve go cache directories
+        id: go-cache
+        working-directory: ${{ env.GO_WORKDIR }}
+        run: |
+          echo "gomodcache=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
+          echo "gocache=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+
+      - name: restore go cache
+        uses: actions/cache@v5
+        with:
+          path: |
+            ${{ steps.go-cache.outputs.gomodcache }}
+            ${{ steps.go-cache.outputs.gocache }}
+          key: ${{ runner.os }}-go-unit-test-${{ hashFiles('backend/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-unit-test-
+            ${{ runner.os }}-go-
+
+      - name: go test
+        working-directory: ${{ env.GO_WORKDIR }}
+        run: go test -race -count=1 ./...
+
+  integration-test:
+    name: integration test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: checkout
+        uses: actions/checkout@v6
+
+      - name: setup go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: ${{ env.GO_VERSION_FILE }}
+          cache: false
+
+      - name: resolve go cache directories
+        id: go-cache
+        working-directory: ${{ env.GO_WORKDIR }}
+        run: |
+          echo "gomodcache=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
+          echo "gocache=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+
+      - name: restore go cache
+        uses: actions/cache@v5
+        with:
+          path: |
+            ${{ steps.go-cache.outputs.gomodcache }}
+            ${{ steps.go-cache.outputs.gocache }}
+          key: ${{ runner.os }}-go-integration-test-${{ hashFiles('backend/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-integration-test-
+            ${{ runner.os }}-go-
+
+      - name: check docker
+        run: docker version
+
+      - name: go test integration
+        working-directory: ${{ env.GO_WORKDIR }}
+        run: go test -race -count=1 -tags=integration ./integration_test/...
+
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: checkout
+        uses: actions/checkout@v6
+
+      - name: setup go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: ${{ env.GO_VERSION_FILE }}
+          cache: false
+
+      - name: resolve go cache directories
+        id: go-cache
+        working-directory: ${{ env.GO_WORKDIR }}
+        run: |
+          echo "gomodcache=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
+          echo "gocache=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+
+      - name: restore go cache
+        uses: actions/cache@v5
+        with:
+          path: |
+            ${{ steps.go-cache.outputs.gomodcache }}
+            ${{ steps.go-cache.outputs.gocache }}
+          key: ${{ runner.os }}-go-build-${{ hashFiles('backend/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-build-
+            ${{ runner.os }}-go-
+
+      - name: go build
+        working-directory: ${{ env.GO_WORKDIR }}
+        run: go build ./cmd/app
