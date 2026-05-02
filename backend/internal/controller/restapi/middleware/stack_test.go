@@ -90,6 +90,28 @@ func TestBuild_RecovererReturnsInternalJSONAndLogsError(t *testing.T) {
 	}), "expected request log entry with 500 status")
 }
 
+func TestBuild_TrustedProxyCIDRsResolveForwardedClientIP(t *testing.T) {
+	t.Parallel()
+
+	var got string
+	handler := middleware.Build(
+		logkit.Noop(),
+		middleware.WithTrustedProxyCIDRs([]string{"127.0.0.0/8"}),
+	)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		got = middleware.ClientIPFromRequest(r)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/leaderboard", nil)
+	req.RemoteAddr = "127.0.0.1:4567"
+	req.Header.Set("X-Forwarded-For", "198.51.100.42")
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	require.Equal(t, "198.51.100.42", got)
+}
+
 func newTestLogger(t *testing.T, buf *bytes.Buffer) logkit.Logger {
 	t.Helper()
 

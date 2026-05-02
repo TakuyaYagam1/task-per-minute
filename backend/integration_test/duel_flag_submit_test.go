@@ -4,6 +4,7 @@ package integration_test
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -90,6 +91,83 @@ func TestDuelFlagSubmit_DeadlinePassed(t *testing.T) {
 	dpt, err := f.duels.GetDuelPlayerTask(ctx, duel.ID, alice.ID)
 	require.NoError(t, err)
 	require.False(t, dpt.Solved)
+}
+
+func TestDuelFlagSubmit_ConcurrentCorrectFlags_OneWinnerSingleLeaderboardBump(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC)
+	f := newFlagSubmitFixture(t, now)
+	ctx := context.Background()
+
+	alice := f.makePlayer(t, uniq("alice"))
+	bob := f.makePlayer(t, uniq("bob"))
+	aliceTask := f.makeTaskWithLimit(t, uniq("easy"), domain.DifficultyEasy, 90)
+	bobTask := f.makeTaskWithLimit(t, uniq("easy"), domain.DifficultyEasy, 90)
+	duel := f.makeActiveDuel(t, alice.ID, bob.ID, now.Add(time.Minute))
+	require.NoError(t, f.duels.CreateDuelPlayerTask(ctx, duel.ID, alice.ID, aliceTask.ID))
+	require.NoError(t, f.duels.CreateDuelPlayerTask(ctx, duel.ID, bob.ID, bobTask.ID))
+
+	type submitOutcome struct {
+		result duelusecase.Result
+		err    error
+	}
+	results := make([]submitOutcome, 2)
+
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		<-start
+		r, err := f.uc.SubmitFlag(ctx, duel.ID, alice.ID, aliceTask.Flag)
+		results[0] = submitOutcome{result: r, err: err}
+	}()
+	go func() {
+		defer wg.Done()
+		<-start
+		r, err := f.uc.SubmitFlag(ctx, duel.ID, bob.ID, bobTask.Flag)
+		results[1] = submitOutcome{result: r, err: err}
+	}()
+	close(start)
+	wg.Wait()
+
+	for _, out := range results {
+		require.NoError(t, out.err, "concurrent loser must NOT receive an error")
+	}
+
+	correctCount := 0
+	alreadyFinishedCount := 0
+	var winnerID string
+	for _, out := range results {
+		if out.result.Correct {
+			correctCount++
+			require.NotNil(t, out.result.Winner)
+			require.NotNil(t, out.result.FinishedDuel)
+			require.Equal(t, domain.DuelStatusFinished, out.result.FinishedDuel.Status)
+			winnerID = out.result.Winner.ID.String()
+		} else {
+			if out.result.AlreadyFinished {
+				alreadyFinishedCount++
+			}
+			require.Nil(t, out.result.Winner, "loser must not carry a Winner pointer")
+			require.Nil(t, out.result.FinishedDuel, "loser must not carry a finished duel pointer")
+		}
+	}
+	require.Equal(t, 1, correctCount, "exactly one player must win")
+	require.Equal(t, 1, alreadyFinishedCount, "concurrent loser should be reported as already finished")
+
+	gotDuel, err := f.duels.GetByID(ctx, duel.ID)
+	require.NoError(t, err)
+	require.Equal(t, domain.DuelStatusFinished, gotDuel.Status)
+	require.NotNil(t, gotDuel.WinnerID)
+	require.Equal(t, winnerID, gotDuel.WinnerID.String())
+	require.NotNil(t, gotDuel.FinishedAt)
+
+	scores, err := f.store.WinScores(ctx)
+	require.NoError(t, err)
+	require.Len(t, scores, 1, "exactly one leaderboard bump is expected")
+	require.Equal(t, 1, scores[0].TasksSolved, "winner must have score=1")
 }
 
 func TestDuelFlagSubmit_IncorrectFlagLeavesDuelActive(t *testing.T) {

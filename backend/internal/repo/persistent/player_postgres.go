@@ -34,6 +34,20 @@ func (r *PlayerPostgres) Create(ctx context.Context, username string) (*domain.P
 	return playerToDomain(row), nil
 }
 
+func (r *PlayerPostgres) JoinByUsername(ctx context.Context, username string, sessionToken uuid.UUID) (*domain.Player, error) {
+	row, err := r.tx.Querier(ctx).UpsertPlayerSessionByUsername(ctx, sqlc.UpsertPlayerSessionByUsernameParams{
+		Username:     username,
+		SessionToken: uuid.NullUUID{UUID: sessionToken, Valid: true},
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, apperr.ErrPlayerInDuel
+		}
+		return nil, fmt.Errorf("PlayerPostgres - JoinByUsername - Querier.UpsertPlayerSessionByUsername: %w", err)
+	}
+	return playerToDomain(row), nil
+}
+
 func (r *PlayerPostgres) GetByID(ctx context.Context, id uuid.UUID) (*domain.Player, error) {
 	row, err := r.tx.Querier(ctx).GetPlayerByID(ctx, id)
 	if err != nil {
@@ -96,4 +110,35 @@ func (r *PlayerPostgres) UpdateStatus(ctx context.Context, id uuid.UUID, status 
 		return nil, fmt.Errorf("PlayerPostgres - UpdateStatus - Querier.UpdatePlayerStatus: %w", err)
 	}
 	return playerToDomain(row), nil
+}
+
+func (r *PlayerPostgres) UpdateStatusIfCurrent(
+	ctx context.Context,
+	id uuid.UUID,
+	from domain.PlayerStatus,
+	to domain.PlayerStatus,
+) (*domain.Player, bool, error) {
+	if !from.IsValid() || !to.IsValid() {
+		return nil, false, apperr.ErrValidation
+	}
+	row, err := r.tx.Querier(ctx).UpdatePlayerStatusIfCurrent(ctx, sqlc.UpdatePlayerStatusIfCurrentParams{
+		ID:       id,
+		Status:   string(from),
+		Status_2: string(to),
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, false, nil
+		}
+		return nil, false, fmt.Errorf("PlayerPostgres - UpdateStatusIfCurrent - Querier.UpdatePlayerStatusIfCurrent: %w", err)
+	}
+	return playerToDomain(row), true, nil
+}
+
+func (r *PlayerPostgres) ResetQueuedToIdle(ctx context.Context) (int64, error) {
+	rows, err := r.tx.Querier(ctx).ResetQueuedPlayers(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("PlayerPostgres - ResetQueuedToIdle - Querier.ResetQueuedPlayers: %w", err)
+	}
+	return rows, nil
 }

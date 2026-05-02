@@ -19,6 +19,7 @@ const (
 	EventHintUnlocked         = "hint_unlocked"
 	EventDuelExpired          = "duel_expired"
 	EventDuelFinished         = "duel_finished"
+	EventOpponentSolved       = "opponent_solved"
 	EventOpponentDisconnected = "opponent_disconnected"
 	EventOpponentReconnected  = "opponent_reconnected"
 	EventDuelResume           = "duel_resume"
@@ -28,6 +29,7 @@ const (
 	EventJoinQueue  = "join_queue"
 	EventLeaveQueue = "leave_queue"
 	EventFlagSubmit = "flag_submit"
+	EventSurrender  = "surrender"
 	EventPing       = "ping"
 )
 
@@ -37,6 +39,7 @@ const (
 	ErrorInvalidPayload = "invalid_payload"
 	ErrorServerShutdown = "server_shutdown"
 	ErrorInternal       = "internal"
+	ErrorDuelPaused     = "duel.paused"
 )
 
 type IncomingEvent struct {
@@ -69,27 +72,40 @@ type TaskPayload struct {
 	Category      string              `json:"category"`
 	Difficulty    string              `json:"difficulty"`
 	TimeLimit     int                 `json:"time_limit"`
+	TimeLimitSec  int                 `json:"time_limit_seconds"`
 	TaskURL       *string             `json:"task_url,omitempty"`
+	SourceURL     *string             `json:"source_url,omitempty"`
 	SourceFileURL *string             `json:"source_file_url,omitempty"`
 	HintSchedule  []HintScheduleEntry `json:"hint_schedule,omitempty"`
 	UnlockedHints []UnlockedHint      `json:"unlocked_hints,omitempty"`
 }
 
 type MatchFoundPayload struct {
-	Duel DuelPayload `json:"duel"`
+	DuelID           uuid.UUID   `json:"duel_id"`
+	OpponentUsername string      `json:"opponent_username"`
+	Duel             DuelPayload `json:"duel"`
 }
 
 type TaskAssignedPayload struct {
-	DuelID uuid.UUID   `json:"duel_id"`
-	Task   TaskPayload `json:"task"`
+	DuelID           uuid.UUID   `json:"duel_id"`
+	Deadline         time.Time   `json:"deadline"`
+	TimeLimitSeconds int         `json:"time_limit_seconds"`
+	Task             TaskPayload `json:"task"`
 }
 
 type FlagResultPayload struct {
-	Correct bool `json:"correct"`
+	DuelID  uuid.UUID `json:"duel_id"`
+	Correct bool      `json:"correct"`
+	Message string    `json:"message,omitempty"`
 }
 
 type DuelFinishedPayload struct {
-	Duel DuelPayload `json:"duel"`
+	DuelID         uuid.UUID   `json:"duel_id"`
+	WinnerID       *uuid.UUID  `json:"winner_id,omitempty"`
+	WinnerUsername *string     `json:"winner_username,omitempty"`
+	YourSolved     bool        `json:"your_solved"`
+	OpponentSolved bool        `json:"opponent_solved"`
+	Duel           DuelPayload `json:"duel"`
 }
 
 type DuelExpiredPayload struct {
@@ -115,20 +131,29 @@ type HintUnlockedPayload struct {
 	UnlockedAt time.Time `json:"unlocked_at"`
 }
 
+type OpponentSolvedPayload struct {
+	DuelID   uuid.UUID `json:"duel_id"`
+	PlayerID uuid.UUID `json:"player_id"`
+}
+
 type OpponentDisconnectedPayload struct {
+	DuelID            uuid.UUID `json:"duel_id"`
 	PlayerID          uuid.UUID `json:"player_id"`
 	ReconnectDeadline time.Time `json:"reconnect_deadline"`
 }
 
 type OpponentReconnectedPayload struct {
+	DuelID   uuid.UUID `json:"duel_id"`
 	PlayerID uuid.UUID `json:"player_id"`
 	Deadline time.Time `json:"deadline"`
 }
 
 type DuelResumePayload struct {
-	DuelID   uuid.UUID    `json:"duel_id"`
-	Deadline time.Time    `json:"deadline"`
-	Task     *TaskPayload `json:"task,omitempty"`
+	DuelID                    uuid.UUID    `json:"duel_id"`
+	Deadline                  time.Time    `json:"deadline"`
+	OpponentDisconnected      bool         `json:"opponent_disconnected,omitempty"`
+	OpponentReconnectDeadline *time.Time   `json:"opponent_reconnect_deadline,omitempty"`
+	Task                      *TaskPayload `json:"task,omitempty"`
 }
 
 func marshalEvent(typ string, payload any) ([]byte, error) {
@@ -160,10 +185,45 @@ func taskPayload(task *domain.Task, hints duelusecase.HintSnapshot) TaskPayload 
 		Category:      task.Category.String(),
 		Difficulty:    task.Difficulty.String(),
 		TimeLimit:     task.TimeLimit,
+		TimeLimitSec:  task.TimeLimit,
 		TaskURL:       task.TaskURL,
+		SourceURL:     task.SourceFileURL,
 		SourceFileURL: task.SourceFileURL,
 		HintSchedule:  hintSchedulePayload(hints.Schedule),
 		UnlockedHints: unlockedHintsPayload(hints.Unlocked),
+	}
+}
+
+func duelFinishedPayload(
+	duel *domain.Duel,
+	recipientID uuid.UUID,
+	solvedPlayerID *uuid.UUID,
+	winnerUsername *string,
+) DuelFinishedPayload {
+	opponent, _ := duelOpponentID(duel, recipientID)
+	yourSolved := solvedPlayerID != nil && *solvedPlayerID == recipientID
+	opponentSolved := solvedPlayerID != nil && *solvedPlayerID == opponent
+	return DuelFinishedPayload{
+		DuelID:         duel.ID,
+		WinnerID:       duel.WinnerID,
+		WinnerUsername: winnerUsername,
+		YourSolved:     yourSolved,
+		OpponentSolved: opponentSolved,
+		Duel:           duelPayload(duel),
+	}
+}
+
+func duelOpponentID(duel *domain.Duel, playerID uuid.UUID) (uuid.UUID, bool) {
+	if duel == nil {
+		return uuid.Nil, false
+	}
+	switch playerID {
+	case duel.Player1ID:
+		return duel.Player2ID, true
+	case duel.Player2ID:
+		return duel.Player1ID, true
+	default:
+		return uuid.Nil, false
 	}
 }
 

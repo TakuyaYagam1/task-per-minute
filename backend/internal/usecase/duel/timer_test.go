@@ -217,10 +217,14 @@ func (r *timerDuelRepo) MarkSolved(context.Context, uuid.UUID, uuid.UUID, time.T
 type timerPlayerRepo struct {
 	mu       sync.Mutex
 	statuses map[uuid.UUID]domain.PlayerStatus
+	players  map[uuid.UUID]*domain.Player
 }
 
 func newTimerPlayerRepo() *timerPlayerRepo {
-	return &timerPlayerRepo{statuses: make(map[uuid.UUID]domain.PlayerStatus)}
+	return &timerPlayerRepo{
+		statuses: make(map[uuid.UUID]domain.PlayerStatus),
+		players:  make(map[uuid.UUID]*domain.Player),
+	}
 }
 
 func (r *timerPlayerRepo) status(playerID uuid.UUID) domain.PlayerStatus {
@@ -229,12 +233,30 @@ func (r *timerPlayerRepo) status(playerID uuid.UUID) domain.PlayerStatus {
 	return r.statuses[playerID]
 }
 
+func (r *timerPlayerRepo) register(player *domain.Player) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	snapshot := *player
+	r.players[player.ID] = &snapshot
+}
+
 func (r *timerPlayerRepo) Create(context.Context, string) (*domain.Player, error) {
 	panic("unused")
 }
 
-func (r *timerPlayerRepo) GetByID(context.Context, uuid.UUID) (*domain.Player, error) {
+func (r *timerPlayerRepo) JoinByUsername(context.Context, string, uuid.UUID) (*domain.Player, error) {
 	panic("unused")
+}
+
+func (r *timerPlayerRepo) GetByID(_ context.Context, id uuid.UUID) (*domain.Player, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	player, ok := r.players[id]
+	if !ok {
+		panic("timerPlayerRepo: GetByID for unregistered player " + id.String())
+	}
+	snapshot := *player
+	return &snapshot, nil
 }
 
 func (r *timerPlayerRepo) GetByUsername(context.Context, string) (*domain.Player, error) {
@@ -254,4 +276,19 @@ func (r *timerPlayerRepo) UpdateStatus(_ context.Context, id uuid.UUID, status d
 	defer r.mu.Unlock()
 	r.statuses[id] = status
 	return &domain.Player{ID: id, Status: status}, nil
+}
+
+func (r *timerPlayerRepo) UpdateStatusIfCurrent(
+	_ context.Context,
+	id uuid.UUID,
+	from domain.PlayerStatus,
+	to domain.PlayerStatus,
+) (*domain.Player, bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.statuses[id] != from {
+		return nil, false, nil
+	}
+	r.statuses[id] = to
+	return &domain.Player{ID: id, Status: to}, true, nil
 }

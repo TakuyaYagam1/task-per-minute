@@ -21,6 +21,8 @@ func TestTaskUsecase_CreateTask(t *testing.T) {
 
 	tasks := usecasemocks.NewMockTaskRepo(t)
 	in := validTaskInput()
+	taskURL := "pwn.example.com:31337"
+	in.TaskURL = &taskURL
 	created := taskFromInput(uuid.New(), in)
 	tasks.EXPECT().Create(mock.Anything, in).Return(created, nil)
 
@@ -38,10 +40,14 @@ func TestTaskUsecase_CreateTask_Validation(t *testing.T) {
 	}{
 		{"empty title", func(in *admin.TaskInput) { in.Title = "" }},
 		{"too long title", func(in *admin.TaskInput) { in.Title = strings.Repeat("a", 256) }},
+		{"empty description", func(in *admin.TaskInput) { in.Description = " " }},
 		{"invalid category", func(in *admin.TaskInput) { in.Category = domain.Category("network") }},
 		{"invalid difficulty", func(in *admin.TaskInput) { in.Difficulty = domain.Difficulty("insane") }},
 		{"zero time limit", func(in *admin.TaskInput) { in.TimeLimit = 0 }},
 		{"empty flag", func(in *admin.TaskInput) { in.Flag = "" }},
+		{"too long flag", func(in *admin.TaskInput) { in.Flag = strings.Repeat("ф", 256) }},
+		{"relative task url", func(in *admin.TaskInput) { url := "/tasks/1"; in.TaskURL = &url }},
+		{"unsupported task url scheme", func(in *admin.TaskInput) { url := "ftp://example.com/task"; in.TaskURL = &url }},
 		{"missing hints", func(in *admin.TaskInput) { in.Hints = nil }},
 		{"too few hints", func(in *admin.TaskInput) { in.Hints = []string{"one", "two"} }},
 		{"too many hints", func(in *admin.TaskInput) { in.Hints = []string{"one", "two", "three", "four"} }},
@@ -103,6 +109,8 @@ func TestTaskUsecase_DeleteTask_UnusedDeletes(t *testing.T) {
 
 	tasks := usecasemocks.NewMockTaskRepo(t)
 	id := uuid.New()
+	task := taskFromInput(id, validTaskInput())
+	tasks.EXPECT().GetByID(mock.Anything, id).Return(task, nil)
 	tasks.EXPECT().IsUsedInActiveDuel(mock.Anything, id).Return(false, nil)
 	tasks.EXPECT().Delete(mock.Anything, id).Return(nil)
 
@@ -114,10 +122,23 @@ func TestTaskUsecase_DeleteTask_ActiveDuelReturnsTaskInUse(t *testing.T) {
 
 	tasks := usecasemocks.NewMockTaskRepo(t)
 	id := uuid.New()
+	task := taskFromInput(id, validTaskInput())
+	tasks.EXPECT().GetByID(mock.Anything, id).Return(task, nil)
 	tasks.EXPECT().IsUsedInActiveDuel(mock.Anything, id).Return(true, nil)
 
 	err := admin.NewTaskUsecase(tasks).DeleteTask(t.Context(), id)
 	require.ErrorIs(t, err, apperr.ErrTaskInUse)
+}
+
+func TestTaskUsecase_DeleteTask_MissingReturnsTaskNotFound(t *testing.T) {
+	t.Parallel()
+
+	tasks := usecasemocks.NewMockTaskRepo(t)
+	id := uuid.New()
+	tasks.EXPECT().GetByID(mock.Anything, id).Return(nil, apperr.ErrTaskNotFound)
+
+	err := admin.NewTaskUsecase(tasks).DeleteTask(t.Context(), id)
+	require.ErrorIs(t, err, apperr.ErrTaskNotFound)
 }
 
 func TestTaskUsecase_DeleteTask_RepoErrorIsWrapped(t *testing.T) {
@@ -126,11 +147,27 @@ func TestTaskUsecase_DeleteTask_RepoErrorIsWrapped(t *testing.T) {
 	tasks := usecasemocks.NewMockTaskRepo(t)
 	id := uuid.New()
 	lowLevelErr := errors.New("db down")
+	task := taskFromInput(id, validTaskInput())
+	tasks.EXPECT().GetByID(mock.Anything, id).Return(task, nil)
 	tasks.EXPECT().IsUsedInActiveDuel(mock.Anything, id).Return(false, nil)
 	tasks.EXPECT().Delete(mock.Anything, id).Return(lowLevelErr)
 
 	err := admin.NewTaskUsecase(tasks).DeleteTask(t.Context(), id)
 	require.ErrorIs(t, err, lowLevelErr)
+}
+
+func TestTaskUsecase_DeleteTask_RepoTaskInUseIsPreserved(t *testing.T) {
+	t.Parallel()
+
+	tasks := usecasemocks.NewMockTaskRepo(t)
+	id := uuid.New()
+	task := taskFromInput(id, validTaskInput())
+	tasks.EXPECT().GetByID(mock.Anything, id).Return(task, nil)
+	tasks.EXPECT().IsUsedInActiveDuel(mock.Anything, id).Return(false, nil)
+	tasks.EXPECT().Delete(mock.Anything, id).Return(apperr.ErrTaskInUse)
+
+	err := admin.NewTaskUsecase(tasks).DeleteTask(t.Context(), id)
+	require.ErrorIs(t, err, apperr.ErrTaskInUse)
 }
 
 func validTaskInput() admin.TaskInput {

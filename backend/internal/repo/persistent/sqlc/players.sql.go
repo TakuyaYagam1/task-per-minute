@@ -103,6 +103,20 @@ func (q *Queries) GetPlayerByUsername(ctx context.Context, username string) (Pla
 	return i, err
 }
 
+const resetQueuedPlayers = `-- name: ResetQueuedPlayers :execrows
+UPDATE players
+SET status = 'idle'
+WHERE status = 'queued'
+`
+
+func (q *Queries) ResetQueuedPlayers(ctx context.Context) (int64, error) {
+	result, err := q.db.Exec(ctx, resetQueuedPlayers)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const updatePlayerSessionToken = `-- name: UpdatePlayerSessionToken :one
 UPDATE players
 SET session_token = $2
@@ -150,6 +164,69 @@ type UpdatePlayerStatusParams struct {
 
 func (q *Queries) UpdatePlayerStatus(ctx context.Context, arg UpdatePlayerStatusParams) (Player, error) {
 	row := q.db.QueryRow(ctx, updatePlayerStatus, arg.ID, arg.Status)
+	var i Player
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.SessionToken,
+		&i.Status,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const updatePlayerStatusIfCurrent = `-- name: UpdatePlayerStatusIfCurrent :one
+UPDATE players
+SET status = $3
+WHERE id = $1
+    AND status = $2
+RETURNING id,
+    username,
+    session_token,
+    status,
+    created_at
+`
+
+type UpdatePlayerStatusIfCurrentParams struct {
+	ID       uuid.UUID
+	Status   string
+	Status_2 string
+}
+
+func (q *Queries) UpdatePlayerStatusIfCurrent(ctx context.Context, arg UpdatePlayerStatusIfCurrentParams) (Player, error) {
+	row := q.db.QueryRow(ctx, updatePlayerStatusIfCurrent, arg.ID, arg.Status, arg.Status_2)
+	var i Player
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.SessionToken,
+		&i.Status,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const upsertPlayerSessionByUsername = `-- name: UpsertPlayerSessionByUsername :one
+INSERT INTO players (username, session_token)
+VALUES ($1, $2) ON CONFLICT (username) DO
+UPDATE
+SET session_token = EXCLUDED.session_token,
+    status = 'idle'
+WHERE players.status <> 'in_duel'
+RETURNING id,
+    username,
+    session_token,
+    status,
+    created_at
+`
+
+type UpsertPlayerSessionByUsernameParams struct {
+	Username     string
+	SessionToken uuid.NullUUID
+}
+
+func (q *Queries) UpsertPlayerSessionByUsername(ctx context.Context, arg UpsertPlayerSessionByUsernameParams) (Player, error) {
+	row := q.db.QueryRow(ctx, upsertPlayerSessionByUsername, arg.Username, arg.SessionToken)
 	var i Player
 	err := row.Scan(
 		&i.ID,

@@ -2,6 +2,7 @@ package duel_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -100,11 +101,106 @@ func TestFlagSubmitUsecase_SubmitFlag_FinishedDuel(t *testing.T) {
 	f.tx.EXPECT().Do(mock.Anything, mock.Anything).RunAndReturn(runTx)
 	f.duels.EXPECT().GetByID(mock.Anything, duel.ID).Return(duel, nil)
 
-	_, err := duelusecase.NewFlagSubmitUsecase(
+	got, err := duelusecase.NewFlagSubmitUsecase(
 		f.tx, f.duels, f.players, f.history, f.board, fixedClock{now: now},
 	).SubmitFlag(t.Context(), duel.ID, duel.Player1ID, "FLAG{ok}")
 
-	require.ErrorIs(t, err, apperr.ErrDuelFinished)
+	require.NoError(t, err)
+	require.True(t, got.AlreadyFinished)
+	require.False(t, got.Correct)
+	require.Nil(t, got.Winner)
+	require.Nil(t, got.FinishedDuel)
+}
+
+func TestFlagSubmitUsecase_SubmitFlag_FinishRaceReturnsAlreadyFinished(t *testing.T) {
+	t.Parallel()
+
+	f := newFlagFixture(t)
+	now := time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC)
+	duel := activeDuel(now.Add(time.Minute))
+	playerID := duel.Player1ID
+	task := &domain.Task{ID: uuid.New(), Flag: "FLAG{ok}"}
+	winner := &domain.Player{ID: playerID, Username: "alice", Status: domain.PlayerStatusInDuel}
+	timers := &timerStopperSpy{}
+
+	f.tx.EXPECT().Do(mock.Anything, mock.Anything).RunAndReturn(runTx)
+	f.duels.EXPECT().GetByID(mock.Anything, duel.ID).Return(duel, nil)
+	f.duels.EXPECT().GetPlayerTask(mock.Anything, duel.ID, playerID).Return(task, nil)
+	f.players.EXPECT().GetByID(mock.Anything, playerID).Return(winner, nil)
+	f.duels.EXPECT().Finish(mock.Anything, duel.ID, &playerID, now, domain.DuelStatusFinished).
+		Return(nil, apperr.ErrDuelFinished)
+
+	got, err := duelusecase.NewFlagSubmitUsecase(
+		f.tx, f.duels, f.players, f.history, f.board, fixedClock{now: now}, timers,
+	).SubmitFlag(t.Context(), duel.ID, playerID, "FLAG{ok}")
+
+	require.NoError(t, err)
+	require.True(t, got.AlreadyFinished)
+	require.False(t, got.Correct)
+	require.Nil(t, got.Winner)
+	require.Nil(t, got.FinishedDuel)
+	require.Empty(t, timers.stopped)
+}
+
+func TestFlagSubmitUsecase_SubmitFlag_TimerNotStoppedOnTxRollback(t *testing.T) {
+	t.Parallel()
+
+	f := newFlagFixture(t)
+	now := time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC)
+	duel := activeDuel(now.Add(time.Minute))
+	playerID := duel.Player1ID
+	task := &domain.Task{ID: uuid.New(), Flag: "FLAG{ok}"}
+	winner := &domain.Player{ID: playerID, Username: "alice", Status: domain.PlayerStatusInDuel}
+	finishErr := errors.New("simulated db failure")
+	timers := &timerStopperSpy{}
+
+	f.tx.EXPECT().Do(mock.Anything, mock.Anything).RunAndReturn(runTx)
+	f.duels.EXPECT().GetByID(mock.Anything, duel.ID).Return(duel, nil)
+	f.duels.EXPECT().GetPlayerTask(mock.Anything, duel.ID, playerID).Return(task, nil)
+	f.players.EXPECT().GetByID(mock.Anything, playerID).Return(winner, nil)
+	f.duels.EXPECT().Finish(mock.Anything, duel.ID, &playerID, now, domain.DuelStatusFinished).Return(nil, finishErr)
+
+	_, err := duelusecase.NewFlagSubmitUsecase(
+		f.tx, f.duels, f.players, f.history, f.board, fixedClock{now: now}, timers,
+	).SubmitFlag(t.Context(), duel.ID, playerID, "FLAG{ok}")
+
+	require.ErrorIs(t, err, finishErr)
+	require.Empty(t, timers.stopped, "timer must remain armed when the duel-finish tx rolls back")
+}
+
+func TestFlagSubmitUsecase_SubmitFlag_LeaderboardFailureDoesNotFailRequest(t *testing.T) {
+	t.Parallel()
+
+	f := newFlagFixture(t)
+	now := time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC)
+	duel := activeDuel(now.Add(time.Minute))
+	playerID := duel.Player1ID
+	task := &domain.Task{ID: uuid.New(), Flag: "FLAG{ok}"}
+	winner := &domain.Player{ID: playerID, Username: "alice", Status: domain.PlayerStatusInDuel}
+	timers := &timerStopperSpy{}
+	finished := *duel
+	finished.Status = domain.DuelStatusFinished
+	finished.WinnerID = &playerID
+	finished.FinishedAt = &now
+
+	f.tx.EXPECT().Do(mock.Anything, mock.Anything).RunAndReturn(runTx)
+	f.duels.EXPECT().GetByID(mock.Anything, duel.ID).Return(duel, nil)
+	f.duels.EXPECT().GetPlayerTask(mock.Anything, duel.ID, playerID).Return(task, nil)
+	f.players.EXPECT().GetByID(mock.Anything, playerID).Return(winner, nil)
+	f.duels.EXPECT().Finish(mock.Anything, duel.ID, &playerID, now, domain.DuelStatusFinished).Return(&finished, nil)
+	f.duels.EXPECT().MarkSolved(mock.Anything, duel.ID, playerID, now).Return(nil)
+	f.history.EXPECT().AddSolved(mock.Anything, playerID, task.ID, now).Return(nil)
+	f.players.EXPECT().UpdateStatus(mock.Anything, duel.Player1ID, domain.PlayerStatusIdle).Return(withStatus(winner, domain.PlayerStatusIdle), nil)
+	f.players.EXPECT().UpdateStatus(mock.Anything, duel.Player2ID, domain.PlayerStatusIdle).Return(&domain.Player{ID: duel.Player2ID, Username: "bob", Status: domain.PlayerStatusIdle}, nil)
+	f.board.EXPECT().IncrementWin(mock.Anything, winner.Username).Return(errors.New("redis is down"))
+
+	got, err := duelusecase.NewFlagSubmitUsecase(
+		f.tx, f.duels, f.players, f.history, f.board, fixedClock{now: now}, timers,
+	).SubmitFlag(t.Context(), duel.ID, playerID, "FLAG{ok}")
+
+	require.NoError(t, err)
+	require.True(t, got.Correct)
+	require.Equal(t, []uuid.UUID{duel.ID}, timers.stopped)
 }
 
 type flagFixture struct {

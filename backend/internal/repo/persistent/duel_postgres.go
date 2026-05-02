@@ -80,10 +80,10 @@ func (r *DuelPostgres) UpdateDeadline(ctx context.Context, id uuid.UUID, deadlin
 }
 
 // Finish closes the duel with the supplied winner (nil for a draw) and finished_at.
-// status MUST be domain.DuelStatusFinished — the schema CHECK enforces
+// status MUST be domain.DuelStatusFinished - the schema CHECK enforces
 // (status='finished') = (finished_at IS NOT NULL).
 func (r *DuelPostgres) Finish(ctx context.Context, id uuid.UUID, winnerID *uuid.UUID, finishedAt time.Time, status domain.DuelStatus) (*domain.Duel, error) {
-	if !status.IsValid() {
+	if status != domain.DuelStatusFinished {
 		return nil, apperr.ErrValidation
 	}
 	row, err := r.tx.Querier(ctx).FinishDuel(ctx, sqlc.FinishDuelParams{

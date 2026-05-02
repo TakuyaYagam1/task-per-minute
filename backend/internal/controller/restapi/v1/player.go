@@ -14,9 +14,16 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/openapi"
 )
 
+// (POST /api/v1/players/join).
 func (s *Server) JoinPlayer(w http.ResponseWriter, r *http.Request) {
 	if s.players == nil {
 		errmap.HandleError(w, r, apperr.ErrInternal)
+		return
+	}
+
+	if !s.joinLimiter.Allow(middleware.ClientIPFromRequest(r)) {
+		w.Header().Set("Retry-After", s.joinLimiter.RetryAfter())
+		errmap.HandleError(w, r, apperr.ErrRateLimited)
 		return
 	}
 
@@ -42,6 +49,7 @@ func (s *Server) JoinPlayer(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// (GET /api/v1/players/me).
 func (s *Server) GetMe(w http.ResponseWriter, r *http.Request) {
 	if s.players == nil {
 		errmap.HandleError(w, r, apperr.ErrInternal)

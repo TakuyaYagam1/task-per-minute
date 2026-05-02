@@ -13,19 +13,24 @@ import (
 
 var ErrNilClient = errors.New("seaweedfs: nil client")
 
+const defaultPresignRegion = "us-east-1"
+
 // Config is the narrow value-type this adapter consumes. Wiring (internal/app)
 // projects the global config; the package itself never imports config/.
 type Config struct {
-	Endpoint  string
-	AccessKey string
-	SecretKey string
-	Bucket    string
-	Secure    bool
+	Endpoint       string
+	PublicEndpoint string
+	AccessKey      string
+	SecretKey      string
+	Bucket         string
+	Secure         bool
+	PublicSecure   bool
 }
 
 type SeaweedStorage struct {
-	client *minio.Client
-	bucket string
+	client        *minio.Client
+	presignClient *minio.Client
+	bucket        string
 }
 
 func New(cfg Config) (*SeaweedStorage, error) {
@@ -36,11 +41,26 @@ func New(cfg Config) (*SeaweedStorage, error) {
 	if err != nil {
 		return nil, fmt.Errorf("SeaweedStorage - New - minio.New: %w", err)
 	}
-	return &SeaweedStorage{client: client, bucket: cfg.Bucket}, nil
+
+	presignEndpoint := cfg.PublicEndpoint
+	presignSecure := cfg.PublicSecure
+	if presignEndpoint == "" {
+		presignEndpoint = cfg.Endpoint
+		presignSecure = cfg.Secure
+	}
+	presignClient, err := minio.New(presignEndpoint, &minio.Options{
+		Creds:  credentials.NewStaticV4(cfg.AccessKey, cfg.SecretKey, ""),
+		Secure: presignSecure,
+		Region: defaultPresignRegion,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("SeaweedStorage - New - public minio.New: %w", err)
+	}
+	return &SeaweedStorage{client: client, presignClient: presignClient, bucket: cfg.Bucket}, nil
 }
 
 // EnsureBucket creates the configured bucket if it does not yet exist.
-// Idempotent — call from the application bootstrap path.
+// Idempotent - call from the application bootstrap path.
 func (s *SeaweedStorage) EnsureBucket(ctx context.Context) error {
 	if s == nil || s.client == nil {
 		return ErrNilClient
@@ -74,10 +94,10 @@ func (s *SeaweedStorage) Upload(ctx context.Context, key string, r io.Reader, si
 }
 
 func (s *SeaweedStorage) PresignedGetURL(ctx context.Context, key string, ttl time.Duration) (string, error) {
-	if s == nil || s.client == nil {
+	if s == nil || s.presignClient == nil {
 		return "", ErrNilClient
 	}
-	u, err := s.client.PresignedGetObject(ctx, s.bucket, key, ttl, nil)
+	u, err := s.presignClient.PresignedGetObject(ctx, s.bucket, key, ttl, nil)
 	if err != nil {
 		return "", fmt.Errorf("SeaweedStorage - PresignedGetURL - Client.PresignedGetObject: %w", err)
 	}

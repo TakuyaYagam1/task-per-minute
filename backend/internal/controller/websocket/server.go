@@ -31,7 +31,10 @@ type ReconnectManager interface {
 	StartDuelTimer(duel *domain.Duel)
 	HandleDisconnect(ctx context.Context, duelID, playerID uuid.UUID)
 	ConsumeReconnect(ctx context.Context, playerID uuid.UUID) (*duelusecase.ReconnectDecision, error)
+	ActiveDuel(ctx context.Context, playerID uuid.UUID) (*duelusecase.ReconnectDecision, error)
+	DuelPaused(duelID uuid.UUID) bool
 	FinalizeOpponentForfeit(ctx context.Context, duelID, winnerID uuid.UUID)
+	FinalizePlayerForfeit(ctx context.Context, duelID, loserID uuid.UUID) (*domain.Duel, error)
 	CloseDuel(duelID uuid.UUID)
 }
 
@@ -105,7 +108,7 @@ func NewServer(
 	for _, opt := range options {
 		opt(s)
 	}
-	s.broadcaster = newBroadcaster(s.hubs, s.clientByPlayer, s.closeDelay)
+	s.broadcaster = newBroadcaster(s.ctx, s.hubs, s.clientByPlayer, s.closeDelay)
 	if s.hints != nil {
 		s.hints.SetSender(s.sendHintUnlocked)
 	}
@@ -124,6 +127,10 @@ func (s *Server) Shutdown(ctx context.Context) {
 	if s == nil {
 		return
 	}
+	if ctx == nil {
+		//nolint:contextcheck // Shutdown is a lifecycle boundary; nil input falls back to a root context.
+		ctx = context.Background()
+	}
 	s.clients.Range(func(_, raw any) bool {
 		c := raw.(*client)
 		_ = c.sendError(ErrorServerShutdown, "server is shutting down")
@@ -141,6 +148,10 @@ func (s *Server) Shutdown(ctx context.Context) {
 
 	s.clients.Range(func(key, raw any) bool {
 		c := raw.(*client)
+		if c.isQueued() && s.matchmaking != nil {
+			_ = s.matchmaking.LeaveQueue(ctx, c.player.ID)
+			c.setQueued(false)
+		}
 		if duelID, ok := c.currentDuel(); ok {
 			s.hubs.Unregister(duelID, c)
 			if s.hints != nil {
@@ -178,8 +189,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	c := newClient(player, conn)
+	var oldClient *client
 	if old, loaded := s.clients.Swap(player.ID, c); loaded {
-		old.(*client).Close()
+		oldClient = old.(*client)
 	}
 
 	connCtx, cancel := context.WithCancel(context.WithoutCancel(r.Context()))
@@ -189,52 +201,156 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer stopOnServerShutdown()
 	go c.writePump(connCtx)
 
-	s.handleReconnect(connCtx, c)
+	handled := false
+	if oldClient != nil {
+		handled = s.handleConnectionReplacement(connCtx, c, oldClient)
+	}
+	if !handled {
+		handled = s.handleReconnect(connCtx, c)
+	}
+	if !handled {
+		s.handleActiveDuelRestore(connCtx, c)
+	}
 	s.readPump(connCtx, c)
 	s.cleanupClient(connCtx, c)
 }
 
-func (s *Server) handleReconnect(ctx context.Context, c *client) {
+func (s *Server) handleConnectionReplacement(ctx context.Context, c, old *client) bool {
+	queued, duelID, inDuel := old.stateSnapshot()
+	if s.reconnect != nil {
+		decision, err := s.reconnect.ActiveDuel(ctx, c.player.ID)
+		if err != nil {
+			go old.Close()
+			s.sendAppError(c, err)
+			return true
+		}
+		if decision != nil {
+			if inDuel {
+				s.hubs.Unregister(duelID, old)
+			}
+			go old.Close()
+			if !s.attachToDuelHub(ctx, c, decision.Duel.ID) {
+				return true
+			}
+			s.sendDuelResume(c, decision, false)
+			return true
+		}
+	}
+
+	if inDuel {
+		s.hubs.Unregister(duelID, old)
+		go old.Close()
+		if s.reconnect == nil {
+			return s.attachToDuelHub(ctx, c, duelID)
+		}
+		decision, err := s.reconnect.ActiveDuel(ctx, c.player.ID)
+		if err != nil {
+			s.sendAppError(c, err)
+			return true
+		}
+		if decision == nil {
+			return true
+		}
+		if !s.attachToDuelHub(ctx, c, decision.Duel.ID) {
+			return true
+		}
+		s.sendDuelResume(c, decision, false)
+		return true
+	}
+
+	if queued {
+		c.setQueued(true)
+		go old.Close()
+		return false
+	}
+
+	go old.Close()
+	return false
+}
+
+func (s *Server) handleReconnect(ctx context.Context, c *client) bool {
 	if s.reconnect == nil {
-		return
+		return false
 	}
 
 	decision, err := s.reconnect.ConsumeReconnect(ctx, c.player.ID)
 	if err != nil {
 		s.sendAppError(c, err)
-		return
+		return true
 	}
 	if decision == nil {
-		return
+		return false
 	}
 	if decision.WindowExpired {
 		_ = c.sendError(ErrorInvalidPayload, "reconnect window expired")
-		return
+		return true
 	}
 
 	if !s.attachToDuelHub(ctx, c, decision.Duel.ID) {
-		return
+		return true
 	}
 
 	if decision.OpponentExpired {
 		s.reconnect.FinalizeOpponentForfeit(ctx, decision.Duel.ID, c.player.ID)
-		return
+		return true
 	}
 
 	if decision.Resume {
-		payload := DuelResumePayload{
-			DuelID:   decision.Duel.ID,
-			Deadline: decision.NewDeadline,
+		s.sendDuelResume(c, decision, true)
+		return true
+	}
+
+	if decision.OpponentDisconnected {
+		s.sendDuelResume(c, decision, false)
+		deadline := decision.OpponentReconnectDeadline
+		_ = c.sendEvent(EventOpponentDisconnected, OpponentDisconnectedPayload{
+			DuelID:            decision.Duel.ID,
+			PlayerID:          decision.OpponentID,
+			ReconnectDeadline: deadline,
+		})
+	}
+	return true
+}
+
+func (s *Server) handleActiveDuelRestore(ctx context.Context, c *client) bool {
+	if s.reconnect == nil {
+		return false
+	}
+	decision, err := s.reconnect.ActiveDuel(ctx, c.player.ID)
+	if err != nil {
+		s.sendAppError(c, err)
+		return true
+	}
+	if decision == nil {
+		return false
+	}
+	if !s.attachToDuelHub(ctx, c, decision.Duel.ID) {
+		return true
+	}
+	s.sendDuelResume(c, decision, false)
+	return true
+}
+
+func (s *Server) sendDuelResume(c *client, decision *duelusecase.ReconnectDecision, notifyOpponent bool) {
+	payload := DuelResumePayload{
+		DuelID:   decision.Duel.ID,
+		Deadline: decision.NewDeadline,
+	}
+	if decision.OpponentDisconnected {
+		payload.OpponentDisconnected = true
+		payload.OpponentReconnectDeadline = &decision.OpponentReconnectDeadline
+	}
+	if s.hints != nil {
+		if snapshot, ok := s.hints.PlayerSnapshot(decision.Duel.ID, c.player.ID); ok && snapshot.Task != nil {
+			task := taskPayload(snapshot.Task, snapshot)
+			payload.Task = &task
 		}
-		if s.hints != nil {
-			if snapshot, ok := s.hints.PlayerSnapshot(decision.Duel.ID, c.player.ID); ok && snapshot.Task != nil {
-				task := taskPayload(snapshot.Task, snapshot)
-				payload.Task = &task
-			}
-		}
-		_ = c.sendEvent(EventDuelResume, payload)
+	}
+	_ = c.sendEvent(EventDuelResume, payload)
+	if notifyOpponent {
 		if opponent, ok := s.clientByPlayer(decision.OpponentID); ok {
 			_ = opponent.sendEvent(EventOpponentReconnected, OpponentReconnectedPayload{
+				DuelID:   decision.Duel.ID,
 				PlayerID: c.player.ID,
 				Deadline: decision.NewDeadline,
 			})

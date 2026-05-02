@@ -51,6 +51,8 @@ func classify(err error) (int, *apperr.Error) {
 		return http.StatusUnprocessableEntity, appError(err, apperr.ErrInternal)
 	case isAny(err, apperr.ErrValidation, apperr.ErrUsernameInvalid, apperr.ErrTaskValidation):
 		return http.StatusBadRequest, appError(err, apperr.ErrInternal)
+	case errors.Is(err, apperr.ErrRateLimited):
+		return http.StatusTooManyRequests, appError(err, apperr.ErrInternal)
 	case errors.Is(err, apperr.ErrInternal):
 		return http.StatusInternalServerError, apperr.ErrInternal
 	default:

@@ -158,6 +158,18 @@ func TestDuelRepo_Finish_NotFound(t *testing.T) {
 	require.ErrorIs(t, err, apperr.ErrDuelNotFound)
 }
 
+func TestDuelRepo_Finish_RejectsNonFinishedStatus(t *testing.T) {
+	t.Parallel()
+	f := newDuelFixture()
+	p1 := f.makePlayer(t, uniq("alice"))
+	p2 := f.makePlayer(t, uniq("bob"))
+	d, err := f.duels.Create(context.Background(), p1.ID, p2.ID, time.Now().Add(time.Minute))
+	require.NoError(t, err)
+
+	_, err = f.duels.Finish(context.Background(), d.ID, nil, time.Now(), domain.DuelStatusActive)
+	require.ErrorIs(t, err, apperr.ErrValidation)
+}
+
 func TestDuelRepo_Finish_ConcurrentSecondReturnsFinished(t *testing.T) {
 	t.Parallel()
 	f := newDuelFixture()

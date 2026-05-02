@@ -2,7 +2,7 @@
 
 [English](README.en.md)
 
-Task Per Minute — соревновательная CTF-платформа для коротких дуэлей один на
+Task Per Minute - соревновательная CTF-платформа для коротких дуэлей один на
 один. Игроки подключаются, получают web-задание, решают его на скорость и
 побеждают, если первыми отправляют правильный флаг.
 
@@ -29,9 +29,13 @@ cp .env.example .env
 DB_DSN=postgres://admin:password@postgres:5432/task_per_minute?sslmode=disable
 REDIS_ADDR=redis:6379
 SEAWEEDFS_ENDPOINT=seaweedfs:8333
+SEAWEEDFS_PUBLIC_ENDPOINT=localhost:8333
+SEAWEEDFS_PUBLIC_SECURE=false
 ```
 
-Для запуска backend прямо с хоста используйте `localhost`.
+`SEAWEEDFS_ENDPOINT` нужен backend-контейнеру для внутренних S3-запросов, а
+`SEAWEEDFS_PUBLIC_ENDPOINT` попадает в presigned URL для браузера. Для запуска
+backend прямо с хоста используйте `localhost` в обоих адресах.
 
 - Запустите локальный compose:
 
@@ -65,7 +69,7 @@ go run ./cmd/app
 
 ## Сервер
 
-[scripts/server-bootstrap.sh](scripts/server-bootstrap.sh) — это скрипт
+[scripts/server-bootstrap.sh](scripts/server-bootstrap.sh) - это скрипт
 первичной подготовки Ubuntu/Debian сервера. Он ставит Docker, Docker Compose и
 git, создает runtime-пользователя, каталог приложения, `.env` и базовые firewall
 rules.
@@ -89,9 +93,9 @@ docker compose --env-file ../../.env up -d --remove-orphans
 
 ## Команда разработки
 
-- [CaXaRo4iK](https://github.com/CaXaRo4iK) — DevOps, деплой, инфраструктура и таски
-- [FANATBEBRbl](https://github.com/FANATBEBRbl) — Frontend
-- [skr1ms](https://github.com/skr1ms) — Backend
+- [CaXaRo4iK](https://github.com/CaXaRo4iK) - DevOps, деплой, инфраструктура и таски
+- [FANATBEBRbl](https://github.com/FANATBEBRbl) - Frontend
+- [skr1ms](https://github.com/skr1ms) - Backend
 
 ## Социальные ссылки
 

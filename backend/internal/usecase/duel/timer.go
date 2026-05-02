@@ -13,11 +13,22 @@ import (
 )
 
 type TimerRegistry struct {
+	ctx     context.Context
 	tx      usecase.TxManager
 	duels   usecase.DuelRepo
 	players usecase.PlayerRepo
 	clock   clock.Clock
 	timers  sync.Map // map[uuid.UUID]*timerEntry
+}
+
+type TimerRegistryOption func(*TimerRegistry)
+
+func WithTimerRegistryContext(ctx context.Context) TimerRegistryOption {
+	return func(r *TimerRegistry) {
+		if ctx != nil {
+			r.ctx = ctx
+		}
+	}
 }
 
 type timerEntry struct {
@@ -35,16 +46,24 @@ func NewTimerRegistry(
 	duels usecase.DuelRepo,
 	players usecase.PlayerRepo,
 	clk clock.Clock,
+	options ...TimerRegistryOption,
 ) *TimerRegistry {
 	if clk == nil {
 		clk = clock.Real{}
 	}
-	return &TimerRegistry{
+	r := &TimerRegistry{
+		ctx:     context.Background(),
 		tx:      tx,
 		duels:   duels,
 		players: players,
 		clock:   clk,
 	}
+	for _, opt := range options {
+		if opt != nil {
+			opt(r)
+		}
+	}
+	return r
 }
 
 func (r *TimerRegistry) Start(duelID uuid.UUID, deadline time.Time, onExpire func()) {
@@ -138,12 +157,12 @@ func (r *TimerRegistry) Resume(duelID uuid.UUID, resumedAt time.Time) (time.Time
 }
 
 func (r *TimerRegistry) expire(duelID uuid.UUID, entry *timerEntry) {
-	if !entry.markDone() {
+	if !entry.markExpired() {
 		return
 	}
 	r.timers.CompareAndDelete(duelID, entry)
 
-	finished, err := r.finishExpired(context.Background(), duelID)
+	finished, err := r.finishExpired(r.detachedCtx(), duelID)
 	if err != nil || finished == nil {
 		return
 	}
@@ -152,14 +171,31 @@ func (r *TimerRegistry) expire(duelID uuid.UUID, entry *timerEntry) {
 	}
 }
 
+func (r *TimerRegistry) detachedCtx() context.Context {
+	if r == nil || r.ctx == nil {
+		return context.Background()
+	}
+	return context.WithoutCancel(r.ctx)
+}
+
 func (r *TimerRegistry) finishExpired(ctx context.Context, duelID uuid.UUID) (*domain.Duel, error) {
-	return finalizeDuel(ctx, r.tx, r.duels, r.players, r.clock.Now(), duelID, nil)
+	return finalizeDuel(ctx, r.tx, r.duels, r.players, r.clock.Now(), duelID, nil, nil, nil)
 }
 
 func (e *timerEntry) markDone() bool {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.done {
+		return false
+	}
+	e.done = true
+	return true
+}
+
+func (e *timerEntry) markExpired() bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.done || e.paused {
 		return false
 	}
 	e.done = true

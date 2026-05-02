@@ -10,6 +10,7 @@ GitHub Actions workflow собирает SHA-tagged backend image, пушит е
 ```bash
 cd /opt/task-per-minute/deployment/docker
 export BACKEND_IMAGE=<sha-image>
+docker network inspect proxy_tpm >/dev/null 2>&1 || docker network create proxy_tpm
 docker compose --env-file ../../.env pull backend migrate
 docker compose --env-file ../../.env run --rm migrate
 docker compose --env-file ../../.env up -d --remove-orphans backend
@@ -118,3 +119,19 @@ docker compose --env-file ../../.env run --rm migrate down
 
 Повторяйте `migrate down` только после отдельной проверки каждого шага. После
 отката схемы задеплойте совместимый backend image и проверьте `/health`.
+
+## Механика подсказок
+
+В каждой дуэли таск содержит ровно 3 подсказки. Бэкенд автоматически
+отправляет их обоим игрокам через WebSocket-событие `hint_unlocked` на
+25 %, 50 % и 75 % от `time_limit` таска (см. `domain.BuildHintSchedule`).
+
+- Подсказки **не влияют на очки** и не «покупаются» вручную: разблокировка
+  происходит по таймеру, выровненному относительно `started_at`.
+- При паузе таймера (`opponent_disconnected`) расписание подсказок
+  замораживается вместе с дедлайном дуэли и продолжается после `duel_resume`.
+- При повторном подключении игрока бэкенд высылает уже разблокированные
+  подсказки в составе `duel_resume`, поэтому ни одна подсказка не теряется.
+- E2E покрытие: `TestE2EHintFlow_AutoUnlocksAt25_50_75` в
+  `backend/integration_test/e2e_test.go` поднимает реальный backend и
+  проверяет порядок и текст всех трёх событий.

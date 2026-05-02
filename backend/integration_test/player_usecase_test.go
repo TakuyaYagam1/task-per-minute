@@ -4,6 +4,7 @@ package integration_test
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -53,6 +54,77 @@ func TestPlayerUsecase_Join_CreateAndRepeatUpdatesSessionToken(t *testing.T) {
 	byNewToken, err := f.players.GetBySessionToken(ctx, *second.SessionToken)
 	require.NoError(t, err)
 	require.Equal(t, first.ID, byNewToken.ID)
+}
+
+func TestPlayerUsecase_Join_RejoinWhileQueuedRotatesTokenAndResetsIdle(t *testing.T) {
+	t.Parallel()
+
+	f := newPlayerUsecaseFixture()
+	ctx := context.Background()
+	username := uniq("alice")
+
+	first, err := f.uc.Join(ctx, username)
+	require.NoError(t, err)
+	require.NotNil(t, first.SessionToken)
+	firstToken := *first.SessionToken
+
+	_, err = f.players.UpdateStatus(ctx, first.ID, domain.PlayerStatusQueued)
+	require.NoError(t, err)
+
+	second, err := f.uc.Join(ctx, username)
+	require.NoError(t, err)
+	require.Equal(t, first.ID, second.ID)
+	require.NotNil(t, second.SessionToken)
+	require.NotEqual(t, firstToken, *second.SessionToken)
+	require.Equal(t, domain.PlayerStatusIdle, second.Status,
+		"rejoining while queued must make the old queue entry stale")
+
+	_, err = f.players.GetBySessionToken(ctx, firstToken)
+	require.ErrorIs(t, err, apperr.ErrPlayerNotFound)
+}
+
+func TestPlayerUsecase_Join_ConcurrentSameUsernameUsesSingleCurrentSessionToken(t *testing.T) {
+	t.Parallel()
+
+	f := newPlayerUsecaseFixture()
+	ctx := context.Background()
+	username := uniq("alice")
+
+	const joins = 2
+	results := make([]*domain.Player, joins)
+	errs := make([]error, joins)
+	var wg sync.WaitGroup
+	wg.Add(joins)
+	for i := range joins {
+		go func(i int) {
+			defer wg.Done()
+			results[i], errs[i] = f.uc.Join(context.Background(), username)
+		}(i)
+	}
+	wg.Wait()
+	for _, err := range errs {
+		require.NoError(t, err)
+	}
+	for _, result := range results {
+		require.NotNil(t, result)
+		require.NotNil(t, result.SessionToken)
+		require.Equal(t, results[0].ID, result.ID)
+		require.Equal(t, username, result.Username)
+	}
+
+	current, err := f.players.GetByUsername(ctx, username)
+	require.NoError(t, err)
+	require.NotNil(t, current.SessionToken)
+	for _, result := range results {
+		token := *result.SessionToken
+		byToken, err := f.players.GetBySessionToken(ctx, token)
+		if token == *current.SessionToken {
+			require.NoError(t, err)
+			require.Equal(t, current.ID, byToken.ID)
+			continue
+		}
+		require.ErrorIs(t, err, apperr.ErrPlayerNotFound)
+	}
 }
 
 func TestPlayerUsecase_Join_PlayerInDuelRejected(t *testing.T) {

@@ -58,6 +58,27 @@ func TestTaskRepo_Create_HappyPath(t *testing.T) {
 	require.Nil(t, got.SourceFileURL)
 }
 
+func TestTaskRepo_Create_AllowsHostPortTaskURL(t *testing.T) {
+	t.Parallel()
+	repo := newTaskRepo()
+	ctx := context.Background()
+	taskURL := "pwn.example.com:31337"
+
+	got, err := repo.Create(ctx, persistent.TaskInput{
+		Title:       uniq("Pwn"),
+		Description: "connect with nc",
+		Category:    domain.CategoryPwn,
+		Difficulty:  domain.DifficultyEasy,
+		TimeLimit:   60,
+		Flag:        "FLAG{" + uuid.NewString() + "}",
+		Hints:       defaultTaskHints("pwn"),
+		TaskURL:     &taskURL,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, got.TaskURL)
+	require.Equal(t, taskURL, *got.TaskURL)
+}
+
 func TestTaskRepo_Create_RejectsInvalidEnums(t *testing.T) {
 	t.Parallel()
 	repo := newTaskRepo()
@@ -75,9 +96,13 @@ func TestTaskRepo_Create_RejectsInvalidEnums(t *testing.T) {
 		name  string
 		patch func(*persistent.TaskInput)
 	}{
+		{"empty_title", func(in *persistent.TaskInput) { in.Title = "" }},
+		{"empty_description", func(in *persistent.TaskInput) { in.Description = " " }},
 		{"invalid_category", func(in *persistent.TaskInput) { in.Category = domain.Category("nope") }},
 		{"invalid_difficulty", func(in *persistent.TaskInput) { in.Difficulty = domain.Difficulty("insane") }},
 		{"non-positive_time_limit", func(in *persistent.TaskInput) { in.TimeLimit = 0 }},
+		{"too_long_flag", func(in *persistent.TaskInput) { in.Flag = strings.Repeat("x", 256) }},
+		{"relative_task_url", func(in *persistent.TaskInput) { raw := "/relative"; in.TaskURL = &raw }},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -298,7 +323,7 @@ func TestTaskRepo_IsUsedInActiveDuel(t *testing.T) {
 	require.False(t, isUsed, "finished duel must not count as active usage")
 }
 
-func TestTaskRepo_Delete_ReferencedTaskReturnsFKError(t *testing.T) {
+func TestTaskRepo_Delete_ReferencedTaskReturnsTaskInUse(t *testing.T) {
 	t.Parallel()
 	repo := newTaskRepo()
 	f := newDuelFixture()
@@ -311,7 +336,20 @@ func TestTaskRepo_Delete_ReferencedTaskReturnsFKError(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, f.duels.CreateDuelPlayerTask(ctx, d.ID, p1.ID, task.ID))
 
-	require.Error(t, repo.Delete(ctx, task.ID))
+	require.ErrorIs(t, repo.Delete(ctx, task.ID), apperr.ErrTaskInUse)
+}
+
+func TestTaskRepo_Delete_HistoryReferencedTaskReturnsTaskInUse(t *testing.T) {
+	t.Parallel()
+	repo := newTaskRepo()
+	f := newDuelFixture()
+	ctx := context.Background()
+
+	player := f.makePlayer(t, uniq("alice"))
+	task := mustCreateTask(t, repo, uniq("solved"), domain.DifficultyEasy)
+	require.NoError(t, f.history.AddSolved(ctx, player.ID, task.ID, time.Now().UTC()))
+
+	require.ErrorIs(t, repo.Delete(ctx, task.ID), apperr.ErrTaskInUse)
 }
 
 func TestTaskRepo_CountSolvedByDifficulty(t *testing.T) {
@@ -338,7 +376,7 @@ func TestTaskRepo_CountSolvedByDifficulty(t *testing.T) {
 
 	aliceEasy, err := repo.CountSolvedByDifficulty(ctx, alice.ID, domain.DifficultyEasy)
 	require.NoError(t, err)
-	require.Equal(t, int64(2), aliceEasy, "scoped to alice → 2 easy")
+	require.Equal(t, int64(2), aliceEasy, "scoped to alice -> 2 easy")
 
 	aliceHard, err := repo.CountSolvedByDifficulty(ctx, alice.ID, domain.DifficultyHard)
 	require.NoError(t, err)
@@ -346,7 +384,7 @@ func TestTaskRepo_CountSolvedByDifficulty(t *testing.T) {
 
 	bobEasy, err := repo.CountSolvedByDifficulty(ctx, bob.ID, domain.DifficultyEasy)
 	require.NoError(t, err)
-	require.Equal(t, int64(1), bobEasy, "scoped to bob → 1 easy")
+	require.Equal(t, int64(1), bobEasy, "scoped to bob -> 1 easy")
 
 	aliceMedium, err := repo.CountSolvedByDifficulty(ctx, alice.ID, domain.DifficultyMedium)
 	require.NoError(t, err)

@@ -60,6 +60,9 @@ func (u *TaskUsecase) UpdateTask(ctx context.Context, id uuid.UUID, in TaskInput
 }
 
 func (u *TaskUsecase) DeleteTask(ctx context.Context, id uuid.UUID) error {
+	if _, err := u.tasks.GetByID(ctx, id); err != nil {
+		return fmt.Errorf("TaskUsecase - DeleteTask - TaskRepo.GetByID: %w", err)
+	}
 	used, err := u.tasks.IsUsedInActiveDuel(ctx, id)
 	if err != nil {
 		return fmt.Errorf("TaskUsecase - DeleteTask - TaskRepo.IsUsedInActiveDuel: %w", err)
@@ -77,6 +80,9 @@ func validateTaskInput(in TaskInput) error {
 	if !domain.IsValidTaskTitle(in.Title) {
 		return apperr.ErrTaskValidation
 	}
+	if !domain.IsValidTaskDescription(in.Description) {
+		return apperr.ErrTaskValidation
+	}
 	if !in.Category.IsValid() || !in.Difficulty.IsValid() {
 		return apperr.ErrTaskValidation
 	}
@@ -84,6 +90,9 @@ func validateTaskInput(in TaskInput) error {
 		return apperr.ErrTaskValidation
 	}
 	if !domain.IsValidTaskFlag(in.Flag) {
+		return apperr.ErrTaskValidation
+	}
+	if !domain.IsValidOptionalTaskURL(in.TaskURL) {
 		return apperr.ErrTaskValidation
 	}
 	if !domain.IsValidTaskHints(in.Hints) {

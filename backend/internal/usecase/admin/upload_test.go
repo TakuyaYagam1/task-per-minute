@@ -59,7 +59,54 @@ func TestUploadUsecase_UploadSourceFile_HappyPath(t *testing.T) {
 	require.Equal(t, []string{"upload", "presigned"}, storage.calls)
 }
 
-func TestUploadUsecase_UploadSourceFile_ReuploadDeletesOldFile(t *testing.T) {
+func TestUploadUsecase_UploadSourceFile_AcceptsCommonZIPContentTypes(t *testing.T) {
+	t.Parallel()
+
+	contentTypes := []struct {
+		name        string
+		contentType string
+	}{
+		{"zip with params", "application/zip; charset=binary"},
+		{"x zip compressed", "application/x-zip-compressed"},
+		{"octet stream", "application/octet-stream"},
+		{"empty", ""},
+	}
+
+	for _, tt := range contentTypes {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			taskID := uuid.New()
+			payload := zipPayload("x")
+			storedURL := "http://seaweed/tpm/" + admin.SourceFileKey(taskID)
+			task := uploadTask(taskID, nil)
+
+			tasks := usecasemocks.NewMockTaskRepo(t)
+			tasks.EXPECT().GetByID(mock.Anything, taskID).Return(task, nil)
+			tasks.EXPECT().
+				Update(mock.Anything, taskID, taskInputWithSourceFileURL(storedURL)).
+				Return(taskWithSource(task, storedURL), nil)
+
+			storage := &sourceFileStorageMock{
+				uploadFunc: func(_ context.Context, _ string, _ io.Reader, _ int64) (string, error) {
+					return storedURL, nil
+				},
+				presignedGetURLFunc: func(_ context.Context, _ string, _ time.Duration) (string, error) {
+					return storedURL + "?X-Amz-Signature=test", nil
+				},
+			}
+
+			got, err := admin.NewUploadUsecase(tasks, storage).UploadSourceFile(
+				t.Context(), taskID, bytes.NewReader(payload), int64(len(payload)), tt.contentType,
+			)
+
+			require.NoError(t, err)
+			require.NotEmpty(t, got)
+		})
+	}
+}
+
+func TestUploadUsecase_UploadSourceFile_ReuploadOverwritesStableKey(t *testing.T) {
 	t.Parallel()
 
 	taskID := uuid.New()
@@ -93,7 +140,38 @@ func TestUploadUsecase_UploadSourceFile_ReuploadDeletesOldFile(t *testing.T) {
 	)
 
 	require.NoError(t, err)
-	require.Equal(t, []string{"delete", "upload", "presigned"}, storage.calls)
+	require.Equal(t, []string{"upload", "presigned"}, storage.calls)
+}
+
+func TestUploadUsecase_UploadSourceFile_ReuploadUploadErrorDoesNotDeleteOldFile(t *testing.T) {
+	t.Parallel()
+
+	taskID := uuid.New()
+	oldURL := "http://seaweed/tpm/" + admin.SourceFileKey(taskID)
+	payload := zipPayload("new")
+	task := uploadTask(taskID, &oldURL)
+	lowLevelErr := errors.New("storage down")
+
+	tasks := usecasemocks.NewMockTaskRepo(t)
+	tasks.EXPECT().GetByID(mock.Anything, taskID).Return(task, nil)
+
+	storage := &sourceFileStorageMock{
+		deleteFunc: func(context.Context, string) error {
+			t.Fatal("Delete must not be called before a replacement upload")
+			return nil
+		},
+		uploadFunc: func(_ context.Context, key string, _ io.Reader, _ int64) (string, error) {
+			require.Equal(t, admin.SourceFileKey(taskID), key)
+			return "", lowLevelErr
+		},
+	}
+
+	_, err := admin.NewUploadUsecase(tasks, storage).UploadSourceFile(
+		t.Context(), taskID, bytes.NewReader(payload), int64(len(payload)), "application/zip",
+	)
+
+	require.ErrorIs(t, err, lowLevelErr)
+	require.Equal(t, []string{"upload"}, storage.calls)
 }
 
 func TestUploadUsecase_UploadSourceFile_Validation(t *testing.T) {

@@ -93,6 +93,28 @@ func TestMatchmakingRedis_Remove_TakesPlayerOutOfQueue(t *testing.T) {
 	require.False(t, ok, "after removing one of two enqueued players the pair pop must miss")
 }
 
+func TestMatchmakingRedis_Clear_RemovesQueueAndIsIdempotent(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	key := "matchmaking:" + uniq("clear")
+	redis := sharedRedis(t).client
+	q := redisrepo.NewMatchmakingRedis(redis, key)
+
+	require.NoError(t, q.Enqueue(ctx, uuid.New()))
+	require.NoError(t, q.Enqueue(ctx, uuid.New()))
+	require.NoError(t, q.Clear(ctx))
+
+	size, err := redis.LLen(ctx, key).Result()
+	require.NoError(t, err)
+	require.Zero(t, size)
+
+	require.NoError(t, q.Clear(ctx), "clearing an absent queue should be a no-op")
+	size, err = redis.LLen(ctx, key).Result()
+	require.NoError(t, err)
+	require.Zero(t, size)
+}
+
 func TestMatchmakingRedis_PopPair_ConcurrentAtomicity(t *testing.T) {
 	t.Parallel()
 	q := newMatchmakingRedis(t)
@@ -145,4 +167,5 @@ func TestMatchmakingRedis_NilClient_ReturnsError(t *testing.T) {
 	_, _, _, err := q.PopPair(context.Background())
 	require.ErrorIs(t, err, redisrepo.ErrNilClient)
 	require.ErrorIs(t, q.Remove(context.Background(), uuid.New()), redisrepo.ErrNilClient)
+	require.ErrorIs(t, q.Clear(context.Background()), redisrepo.ErrNilClient)
 }

@@ -17,24 +17,27 @@ import (
 )
 
 const (
-	defaultShutdownTimeout = 30 * time.Second
-	migrationsDir          = "migrations"
+	defaultShutdownTimeout    = 30 * time.Second
+	migrationsDir             = "migrations"
+	revocationJanitorInterval = 5 * time.Minute
 )
 
-func Run(cfg *config.Config, log logkit.Logger) {
+func Run(cfg *config.Config, log logkit.Logger) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	application, cleanup, err := Initialize(ctx, cfg, log)
 	if err != nil {
 		logAppError(log, err)
-		return
+		return err
 	}
 	defer cleanup()
 
 	if err := application.Run(ctx); err != nil {
 		logAppError(log, err)
+		return err
 	}
+	return nil
 }
 
 func Migrate(ctx context.Context, cfg *config.Config, log logkit.Logger) error {
@@ -48,6 +51,16 @@ func RunMigrations(ctx context.Context, cfg *config.Config, log logkit.Logger, c
 	if cfg == nil {
 		return errors.New("app migrate: nil config")
 	}
+	return RunMigrationsDSN(ctx, cfg.DB.DSN, log, command)
+}
+
+func RunMigrationsDSN(ctx context.Context, dsn string, log logkit.Logger, command string) error {
+	if ctx == nil {
+		return errors.New("app migrate: nil context")
+	}
+	if dsn == "" {
+		return errors.New("app migrate: empty DB_DSN")
+	}
 	if command == "" {
 		command = "up"
 	}
@@ -55,7 +68,7 @@ func RunMigrations(ctx context.Context, cfg *config.Config, log logkit.Logger, c
 	if log != nil {
 		log.Info("database migrations starting", logkit.Fields{"command": command})
 	}
-	migrator := NewMigrator(cfg.DB.DSN, ResolveMigrationsDir(migrationsDir))
+	migrator := NewMigrator(dsn, ResolveMigrationsDir(migrationsDir))
 
 	var err error
 	switch command {
@@ -98,6 +111,8 @@ func Initialize(ctx context.Context, cfg *config.Config, log logkit.Logger) (*Ap
 		wired.Tx,
 		wired.Duels,
 		wired.Players,
+		wired.Queued,
+		wired.Queue,
 		wired.Broadcaster,
 		wired.Clock,
 		log,
@@ -112,6 +127,7 @@ func Initialize(ctx context.Context, cfg *config.Config, log logkit.Logger) (*Ap
 		recovery,
 		wired.Server,
 		wired.WebSocket,
+		wired.Revocation,
 	)
 
 	return application, func() {
@@ -166,15 +182,23 @@ type WebSocketShutdowner interface {
 	Shutdown(ctx context.Context)
 }
 
+// RevocationJanitor is implemented by stores that need periodic eviction of
+// expired entries (in-memory) and is a no-op for stores with native TTL
+// (Redis). The App runs Cleanup on a ticker bound to the runtime context.
+type RevocationJanitor interface {
+	Cleanup()
+}
+
 type App struct {
-	cfg       *config.Config
-	log       logkit.Logger
-	runtime   *RuntimeContext
-	storage   BucketEnsurer
-	migrator  *Migrator
-	recovery  *StartupRecoverer
-	server    *http.Server
-	websocket WebSocketShutdowner
+	cfg        *config.Config
+	log        logkit.Logger
+	runtime    *RuntimeContext
+	storage    BucketEnsurer
+	migrator   *Migrator
+	recovery   *StartupRecoverer
+	server     *http.Server
+	websocket  WebSocketShutdowner
+	revocation RevocationJanitor
 }
 
 func New(
@@ -186,16 +210,18 @@ func New(
 	recovery *StartupRecoverer,
 	server *http.Server,
 	websocket WebSocketShutdowner,
+	revocation RevocationJanitor,
 ) *App {
 	return &App{
-		cfg:       cfg,
-		log:       log,
-		runtime:   runtime,
-		storage:   storage,
-		migrator:  migrator,
-		recovery:  recovery,
-		server:    server,
-		websocket: websocket,
+		cfg:        cfg,
+		log:        log,
+		runtime:    runtime,
+		storage:    storage,
+		migrator:   migrator,
+		recovery:   recovery,
+		server:     server,
+		websocket:  websocket,
+		revocation: revocation,
 	}
 }
 
@@ -210,6 +236,8 @@ func (a *App) Run(ctx context.Context) error {
 	if err := a.bootstrap(ctx); err != nil {
 		return err
 	}
+
+	a.startRevocationJanitor(ctx)
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -275,6 +303,32 @@ func (a *App) Shutdown(ctx context.Context) error {
 		a.log.Info("http server stopped")
 	}
 	return nil
+}
+
+// startRevocationJanitor launches a background goroutine that evicts
+// expired entries from the JWT revocation store on a fixed interval. The
+// goroutine exits cleanly when the supplied context is cancelled (the
+// caller passes the runtime context so Shutdown stops it). Without this,
+// an in-memory revocation store grows unbounded over time.
+func (a *App) startRevocationJanitor(ctx context.Context) {
+	if a == nil || a.revocation == nil || ctx == nil {
+		return
+	}
+	go func(cleaner RevocationJanitor, log logkit.Logger) {
+		ticker := time.NewTicker(revocationJanitorInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				if log != nil {
+					log.Info("revocation janitor stopped")
+				}
+				return
+			case <-ticker.C:
+				cleaner.Cleanup()
+			}
+		}
+	}(a.revocation, a.log)
 }
 
 func (a *App) bootstrap(ctx context.Context) error {

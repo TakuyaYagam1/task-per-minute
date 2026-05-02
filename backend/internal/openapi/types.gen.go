@@ -94,6 +94,12 @@ type AdminLoginRequest struct {
 	Password *string `json:"password,omitempty"`
 }
 
+// AdminLogoutRequest defines model for AdminLogoutRequest.
+type AdminLogoutRequest struct {
+	// RefreshToken Refresh token to revoke. Access token is taken from the Authorization header.
+	RefreshToken string `json:"refresh_token"`
+}
+
 // AdminRefreshRequest defines model for AdminRefreshRequest.
 type AdminRefreshRequest struct {
 	RefreshToken string `json:"refresh_token"`
@@ -119,9 +125,11 @@ type CreateTaskRequest struct {
 	Difficulty  TaskDifficulty `json:"difficulty"`
 	Flag        string         `json:"flag"`
 	Hints       []string       `json:"hints"`
-	TaskUrl     *string        `json:"task_url"`
-	TimeLimit   int32          `json:"time_limit"`
-	Title       string         `json:"title"`
+
+	// TaskUrl Task endpoint. Accepts http(s) URLs or host:port targets for pwn/nc tasks.
+	TaskUrl   *string `json:"task_url"`
+	TimeLimit int32   `json:"time_limit"`
+	Title     string  `json:"title"`
 }
 
 // DuelDetailResponse defines model for DuelDetailResponse.
@@ -241,7 +249,9 @@ type TaskResponse struct {
 	Hints         []string           `json:"hints"`
 	Id            openapi_types.UUID `json:"id"`
 	SourceFileUrl *string            `json:"source_file_url"`
-	TaskUrl       *string            `json:"task_url"`
+
+	// TaskUrl Task endpoint. Accepts http(s) URLs or host:port targets for pwn/nc tasks.
+	TaskUrl *string `json:"task_url"`
 
 	// TimeLimit Per-task time limit in seconds.
 	TimeLimit int32  `json:"time_limit"`
@@ -255,9 +265,11 @@ type UpdateTaskRequest struct {
 	Difficulty  *TaskDifficulty `json:"difficulty,omitempty"`
 	Flag        *string         `json:"flag,omitempty"`
 	Hints       *[]string       `json:"hints,omitempty"`
-	TaskUrl     *string         `json:"task_url"`
-	TimeLimit   *int32          `json:"time_limit,omitempty"`
-	Title       *string         `json:"title,omitempty"`
+
+	// TaskUrl Task endpoint. Accepts http(s) URLs or host:port targets for pwn/nc tasks.
+	TaskUrl   *string `json:"task_url"`
+	TimeLimit *int32  `json:"time_limit,omitempty"`
+	Title     *string `json:"title,omitempty"`
 }
 
 // UploadSourceResponse defines model for UploadSourceResponse.
@@ -272,6 +284,9 @@ type UploadTaskSourceMultipartBody struct {
 
 // AdminLoginJSONRequestBody defines body for AdminLogin for application/json ContentType.
 type AdminLoginJSONRequestBody = AdminLoginRequest
+
+// AdminLogoutJSONRequestBody defines body for AdminLogout for application/json ContentType.
+type AdminLogoutJSONRequestBody = AdminLogoutRequest
 
 // AdminRefreshJSONRequestBody defines body for AdminRefresh for application/json ContentType.
 type AdminRefreshJSONRequestBody = AdminRefreshRequest

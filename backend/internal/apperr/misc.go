@@ -5,9 +5,10 @@ import "errors"
 type Code string
 
 const (
-	CodeInternal   Code = "internal"
-	CodeValidation Code = "validation"
-	CodeConflict   Code = "conflict"
+	CodeInternal    Code = "internal"
+	CodeValidation  Code = "validation"
+	CodeConflict    Code = "conflict"
+	CodeRateLimited Code = "rate_limited"
 
 	CodePlayerNotFound  Code = "player.not_found"
 	CodeUsernameTaken   Code = "player.username_taken"
@@ -72,7 +73,8 @@ func Wrap(err error, app *Error) *Error {
 }
 
 var (
-	ErrInternal   = &Error{Code: CodeInternal, Message: "internal error"}
-	ErrValidation = &Error{Code: CodeValidation, Message: "validation failed"}
-	ErrConflict   = &Error{Code: CodeConflict, Message: "conflict"}
+	ErrInternal    = &Error{Code: CodeInternal, Message: "internal error"}
+	ErrValidation  = &Error{Code: CodeValidation, Message: "validation failed"}
+	ErrConflict    = &Error{Code: CodeConflict, Message: "conflict"}
+	ErrRateLimited = &Error{Code: CodeRateLimited, Message: "too many requests"}
 )

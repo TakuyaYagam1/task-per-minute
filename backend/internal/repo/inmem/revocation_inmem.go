@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/pkg/clock"
 )
 
@@ -12,7 +13,7 @@ import (
 // internal/usecase/admin.Revocation port. It keeps revoked JTIs in
 // process memory, lazily evicting entries whose ExpiresAt has passed.
 //
-// Suitable for a single-instance backend (PRD §1.4 admin auth scope);
+// Suitable for a single-instance backend;
 // a Redis-backed implementation can drop in via the same port for
 // horizontal scaling without touching usecase code.
 type Revocation struct {
@@ -21,12 +22,29 @@ type Revocation struct {
 }
 
 func NewRevocation(c clock.Clock) *Revocation {
+	if c == nil {
+		c = clock.Real{}
+	}
 	return &Revocation{clock: c}
 }
 
 func (s *Revocation) Revoke(_ context.Context, jti string, expiresAt time.Time) error {
-	s.entries.Store(jti, expiresAt)
-	return nil
+	now := s.clock.Now()
+	if !expiresAt.After(now) {
+		return nil
+	}
+
+	for {
+		existing, loaded := s.entries.LoadOrStore(jti, expiresAt)
+		if !loaded {
+			return nil
+		}
+		if exp, ok := existing.(time.Time); ok && !now.Before(exp) {
+			s.entries.CompareAndDelete(jti, existing)
+			continue
+		}
+		return apperr.ErrTokenRevoked
+	}
 }
 
 func (s *Revocation) IsRevoked(_ context.Context, jti string) (bool, error) {
@@ -35,8 +53,8 @@ func (s *Revocation) IsRevoked(_ context.Context, jti string) (bool, error) {
 		return false, nil
 	}
 	exp, _ := v.(time.Time)
-	if s.clock.Now().After(exp) {
-		s.entries.Delete(jti)
+	if !s.clock.Now().Before(exp) {
+		s.entries.CompareAndDelete(jti, v)
 		return false, nil
 	}
 	return true, nil
@@ -48,8 +66,8 @@ func (s *Revocation) Cleanup() {
 	now := s.clock.Now()
 	s.entries.Range(func(k, v any) bool {
 		exp, _ := v.(time.Time)
-		if now.After(exp) {
-			s.entries.Delete(k)
+		if !now.Before(exp) {
+			s.entries.CompareAndDelete(k, v)
 		}
 		return true
 	})

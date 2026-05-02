@@ -2,6 +2,7 @@ package duel_test
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
+	"github.com/TakuyaYagam1/task-per-minute/internal/usecase"
 	duelusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel"
 )
 
@@ -121,8 +123,9 @@ func (t *fakeTimer) wasFrozen(duelID uuid.UUID) bool {
 // reconnDuelRepo extends the timer test fake with UpdateDeadline + active-by-player support.
 type reconnDuelRepo struct {
 	*timerDuelRepo
-	mu       sync.Mutex
-	byPlayer map[uuid.UUID]uuid.UUID
+	mu                sync.Mutex
+	byPlayer          map[uuid.UUID]uuid.UUID
+	updateDeadlineErr error
 }
 
 func newReconnDuelRepo() *reconnDuelRepo {
@@ -151,6 +154,13 @@ func (r *reconnDuelRepo) GetActiveByPlayerID(ctx context.Context, playerID uuid.
 }
 
 func (r *reconnDuelRepo) UpdateDeadline(_ context.Context, id uuid.UUID, deadline time.Time) (*domain.Duel, error) {
+	r.mu.Lock()
+	updateErr := r.updateDeadlineErr
+	r.mu.Unlock()
+	if updateErr != nil {
+		return nil, updateErr
+	}
+
 	r.timerDuelRepo.mu.Lock()
 	defer r.timerDuelRepo.mu.Unlock()
 	duel, ok := r.duels[id]
@@ -198,7 +208,7 @@ func TestReconnectManager_HandleDisconnect_FreezesTimerAndBroadcasts(t *testing.
 func TestReconnectManager_HandleDisconnect_ExceedsLimit_FinalizesForOpponent(t *testing.T) {
 	t.Parallel()
 
-	// limit = 1 → second disconnect by the same player ends the duel.
+	// limit = 1 -> second disconnect by the same player ends the duel.
 	mgr, duels, players, broadcaster, _ := newReconnectFixture(t, duelusecase.WithReconnectDisconnectLimit(1))
 	duel := activeDuel(time.Now().Add(time.Hour))
 	duels.putWithPlayers(duel)
@@ -240,6 +250,70 @@ func TestReconnectManager_ConsumeReconnect_ResumesAndUpdatesDeadline(t *testing.
 	require.Equal(t, decision.NewDeadline, updated.Deadline, "DB deadline must match resumed deadline")
 }
 
+func TestReconnectManager_ConsumeReconnect_UpdateDeadlineErrorKeepsDuelPaused(t *testing.T) {
+	t.Parallel()
+
+	mgr, duels, _, _, _ := newReconnectFixture(t)
+	duel := activeDuel(time.Now().Add(time.Hour))
+	originalDeadline := duel.Deadline
+	duels.putWithPlayers(duel)
+
+	mgr.HandleDisconnect(context.Background(), duel.ID, duel.Player1ID)
+
+	updateErr := errors.New("update deadline failed")
+	duels.mu.Lock()
+	duels.updateDeadlineErr = updateErr
+	duels.mu.Unlock()
+
+	decision, err := mgr.ConsumeReconnect(context.Background(), duel.Player1ID)
+	require.ErrorIs(t, err, updateErr)
+	require.Nil(t, decision)
+	require.True(t, mgr.DuelPaused(duel.ID), "failed deadline persistence must keep the duel paused")
+
+	got, err := duels.GetByID(context.Background(), duel.ID)
+	require.NoError(t, err)
+	require.Equal(t, originalDeadline, got.Deadline, "failed update must not mutate persisted deadline")
+
+	duels.mu.Lock()
+	duels.updateDeadlineErr = nil
+	duels.mu.Unlock()
+
+	decision, err = mgr.ConsumeReconnect(context.Background(), duel.Player1ID)
+	require.NoError(t, err)
+	require.NotNil(t, decision)
+	require.True(t, decision.Resume)
+	require.False(t, mgr.DuelPaused(duel.ID))
+
+	got, err = duels.GetByID(context.Background(), duel.ID)
+	require.NoError(t, err)
+	require.Equal(t, decision.NewDeadline, got.Deadline)
+}
+
+func TestReconnectManager_DuelPausedLifecycle(t *testing.T) {
+	t.Parallel()
+
+	mgr, duels, _, _, _ := newReconnectFixture(t)
+	duel := activeDuel(time.Now().Add(time.Hour))
+	duels.putWithPlayers(duel)
+
+	require.False(t, mgr.DuelPaused(duel.ID))
+
+	mgr.HandleDisconnect(context.Background(), duel.ID, duel.Player1ID)
+	require.True(t, mgr.DuelPaused(duel.ID))
+
+	_, err := mgr.ConsumeReconnect(context.Background(), duel.Player1ID)
+	require.NoError(t, err)
+	require.False(t, mgr.DuelPaused(duel.ID))
+
+	mgr.HandleDisconnect(context.Background(), duel.ID, duel.Player1ID)
+	require.True(t, mgr.DuelPaused(duel.ID))
+
+	finished, err := mgr.FinalizePlayerForfeit(context.Background(), duel.ID, duel.Player1ID)
+	require.NoError(t, err)
+	require.NotNil(t, finished)
+	require.False(t, mgr.DuelPaused(duel.ID))
+}
+
 func TestReconnectManager_ConsumeReconnect_NoActiveDuelReturnsNil(t *testing.T) {
 	t.Parallel()
 
@@ -267,6 +341,132 @@ func TestReconnectManager_FinalizeOpponentForfeit_FinishesDuelAndBroadcasts(t *t
 	require.Equal(t, duel.Player1ID, *got.WinnerID)
 	require.Equal(t, domain.PlayerStatusIdle, players.status(duel.Player1ID))
 	require.Equal(t, domain.PlayerStatusIdle, players.status(duel.Player2ID))
+}
+
+func TestReconnectManager_FinalizePlayerForfeit_OpponentWinsAndIsIdempotent(t *testing.T) {
+	t.Parallel()
+
+	board := newRecordingLeaderboardStore()
+	mgr, duels, players, broadcaster, _ := newReconnectFixture(t, duelusecase.WithLeaderboardStore(board))
+	duel := activeDuel(time.Now().Add(time.Hour))
+	duels.putWithPlayers(duel)
+	players.register(&domain.Player{ID: duel.Player1ID, Username: "alice", Status: domain.PlayerStatusInDuel})
+	players.register(&domain.Player{ID: duel.Player2ID, Username: "bob", Status: domain.PlayerStatusInDuel})
+
+	finished, err := mgr.FinalizePlayerForfeit(context.Background(), duel.ID, duel.Player1ID)
+	require.NoError(t, err)
+	require.NotNil(t, finished)
+	require.NotNil(t, finished.WinnerID)
+	require.Equal(t, duel.Player2ID, *finished.WinnerID)
+	require.Equal(t, 1, broadcaster.finishedCount())
+	require.Equal(t, []string{"bob"}, board.snapshot(),
+		"surrender loser must credit exactly the opponent")
+
+	finished, err = mgr.FinalizePlayerForfeit(context.Background(), duel.ID, duel.Player1ID)
+	require.NoError(t, err)
+	require.Nil(t, finished)
+	require.Equal(t, 1, broadcaster.finishedCount())
+	require.Equal(t, []string{"bob"}, board.snapshot(),
+		"replayed surrender after finish must not bump leaderboard again")
+}
+
+func TestReconnectManager_FinalizeOpponentForfeit_BumpsLeaderboard(t *testing.T) {
+	t.Parallel()
+
+	board := newRecordingLeaderboardStore()
+	mgr, duels, players, _, _ := newReconnectFixture(t, duelusecase.WithLeaderboardStore(board))
+	duel := activeDuel(time.Now().Add(time.Hour))
+	duels.putWithPlayers(duel)
+	players.register(&domain.Player{ID: duel.Player1ID, Username: "alice", Status: domain.PlayerStatusInDuel})
+	players.register(&domain.Player{ID: duel.Player2ID, Username: "bob", Status: domain.PlayerStatusInDuel})
+
+	mgr.FinalizeOpponentForfeit(context.Background(), duel.ID, duel.Player1ID)
+
+	require.Equal(t, []string{"alice"}, board.snapshot(),
+		"forfeit winner must receive exactly one leaderboard increment")
+}
+
+// Disconnect-overflow is the most common forfeit path (player drops 3 times
+// in one duel). Opponent must get a leaderboard +1.
+func TestReconnectManager_HandleDisconnect_DisconnectOverflow_BumpsLeaderboard(t *testing.T) {
+	t.Parallel()
+
+	board := newRecordingLeaderboardStore()
+	mgr, duels, players, _, _ := newReconnectFixture(t,
+		duelusecase.WithReconnectDisconnectLimit(1),
+		duelusecase.WithLeaderboardStore(board),
+	)
+	duel := activeDuel(time.Now().Add(time.Hour))
+	duels.putWithPlayers(duel)
+	players.register(&domain.Player{ID: duel.Player1ID, Username: "alice", Status: domain.PlayerStatusInDuel})
+	players.register(&domain.Player{ID: duel.Player2ID, Username: "bob", Status: domain.PlayerStatusInDuel})
+
+	mgr.HandleDisconnect(context.Background(), duel.ID, duel.Player1ID)
+	require.NoError(t, simulateReconnect(mgr, duel.Player1ID))
+	mgr.HandleDisconnect(context.Background(), duel.ID, duel.Player1ID)
+
+	require.Equal(t, []string{"bob"}, board.snapshot(),
+		"opponent of the disconnect-overflow loser must receive a leaderboard +1")
+}
+
+// Leaderboard write must NOT happen for draws (timer expiry produces no
+// winner). This protects against a regression where finalizeDuel could
+// accidentally increment for the zero UUID or a stale username.
+func TestReconnectManager_TimerExpiry_DrawDoesNotBumpLeaderboard(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
+	duels := newReconnDuelRepo()
+	players := newTimerPlayerRepo()
+	timers := duelusecase.NewTimerRegistry(timerTx{}, duels, players, fixedClock{now: now})
+	board := newRecordingLeaderboardStore()
+	broadcaster := &recordingBroadcaster{}
+	mgr := duelusecase.NewReconnectManager(
+		timerTx{}, duels, players, timers, broadcaster, fixedClock{now: now},
+		duelusecase.WithLeaderboardStore(board),
+	)
+
+	duel := activeDuel(now.Add(10 * time.Millisecond))
+	duels.putWithPlayers(duel)
+	mgr.StartDuelTimer(duel)
+
+	require.Eventually(t, func() bool {
+		return broadcaster.finishedCount() == 1
+	}, time.Second, 10*time.Millisecond, "duel must finalize on deadline")
+	require.Empty(t, board.snapshot(),
+		"draw (timer expiry, winner_id=NULL) must not touch the leaderboard")
+}
+
+// recordingLeaderboardStore is a usecase.LeaderboardStore fake that records
+// every IncrementWin call so reconnect tests can assert which usernames got
+// credited (or that none did, for draws).
+type recordingLeaderboardStore struct {
+	mu      sync.Mutex
+	bumps   []string
+	failure error
+}
+
+func newRecordingLeaderboardStore() *recordingLeaderboardStore {
+	return &recordingLeaderboardStore{}
+}
+
+func (s *recordingLeaderboardStore) IncrementWin(_ context.Context, username string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.bumps = append(s.bumps, username)
+	return s.failure
+}
+
+func (s *recordingLeaderboardStore) WinScores(context.Context) ([]usecase.LeaderboardScore, error) {
+	return nil, nil
+}
+
+func (s *recordingLeaderboardStore) snapshot() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]string, len(s.bumps))
+	copy(out, s.bumps)
+	return out
 }
 
 func TestReconnectManager_StartDuelTimer_ExpiryBroadcastsExpiredAndFinished(t *testing.T) {

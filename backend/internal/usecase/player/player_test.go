@@ -29,13 +29,11 @@ func TestUsecase_Join_CreatesNewPlayerWithSessionToken(t *testing.T) {
 		Status:    domain.PlayerStatusIdle,
 		CreatedAt: time.Now().UTC(),
 	}
-	players.EXPECT().GetByUsername(mock.Anything, "alice").Return(nil, apperr.ErrPlayerNotFound)
-	players.EXPECT().Create(mock.Anything, "alice").Return(created, nil)
 	players.EXPECT().
-		UpdateSessionToken(mock.Anything, created.ID, mock.MatchedBy(nonNilUUIDPtr)).
-		RunAndReturn(func(_ context.Context, _ uuid.UUID, token *uuid.UUID) (*domain.Player, error) {
+		JoinByUsername(mock.Anything, "alice", mock.MatchedBy(nonNilUUID)).
+		RunAndReturn(func(_ context.Context, _ string, token uuid.UUID) (*domain.Player, error) {
 			updated := *created
-			updated.SessionToken = token
+			updated.SessionToken = &token
 			return &updated, nil
 		})
 
@@ -60,12 +58,11 @@ func TestUsecase_Join_UpdatesExistingIdlePlayerSessionToken(t *testing.T) {
 		Status:       domain.PlayerStatusIdle,
 		CreatedAt:    time.Now().UTC(),
 	}
-	players.EXPECT().GetByUsername(mock.Anything, "alice").Return(existing, nil)
 	players.EXPECT().
-		UpdateSessionToken(mock.Anything, existing.ID, mock.MatchedBy(nonNilUUIDPtr)).
-		RunAndReturn(func(_ context.Context, _ uuid.UUID, token *uuid.UUID) (*domain.Player, error) {
+		JoinByUsername(mock.Anything, "alice", mock.MatchedBy(nonNilUUID)).
+		RunAndReturn(func(_ context.Context, _ string, token uuid.UUID) (*domain.Player, error) {
 			updated := *existing
-			updated.SessionToken = token
+			updated.SessionToken = &token
 			return &updated, nil
 		})
 
@@ -81,13 +78,9 @@ func TestUsecase_Join_RejectsPlayerInDuel(t *testing.T) {
 	tx, players, duels := newFixture(t)
 	runTxInline(tx)
 
-	existing := &domain.Player{
-		ID:        uuid.New(),
-		Username:  "alice",
-		Status:    domain.PlayerStatusInDuel,
-		CreatedAt: time.Now().UTC(),
-	}
-	players.EXPECT().GetByUsername(mock.Anything, "alice").Return(existing, nil)
+	players.EXPECT().
+		JoinByUsername(mock.Anything, "alice", mock.MatchedBy(nonNilUUID)).
+		Return(nil, apperr.ErrPlayerInDuel)
 
 	_, err := playerusecase.NewPlayerUsecase(tx, players, duels).Join(t.Context(), "alice")
 	require.ErrorIs(t, err, apperr.ErrPlayerInDuel)
@@ -183,6 +176,6 @@ func runTxInline(tx *usecasemocks.MockTxManager) {
 		})
 }
 
-func nonNilUUIDPtr(token *uuid.UUID) bool {
-	return token != nil && *token != uuid.Nil
+func nonNilUUID(token uuid.UUID) bool {
+	return token != uuid.Nil
 }

@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/repo/inmem"
 )
 
@@ -44,6 +45,17 @@ func TestRevocation_RoundTrip(t *testing.T) {
 	revoked, err = store.IsRevoked(context.Background(), jti)
 	require.NoError(t, err)
 	require.True(t, revoked)
+}
+
+func TestRevocation_RevokeExistingLiveJTI_ReturnsErrTokenRevoked(t *testing.T) {
+	t.Parallel()
+	clk := &mutableClock{now: time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC)}
+	store := inmem.NewRevocation(clk)
+	jti := uuid.NewString()
+	expiresAt := clk.Now().Add(time.Hour)
+
+	require.NoError(t, store.Revoke(context.Background(), jti, expiresAt))
+	require.ErrorIs(t, store.Revoke(context.Background(), jti, expiresAt), apperr.ErrTokenRevoked)
 }
 
 func TestRevocation_ExpiredEntryAutoEvicts(t *testing.T) {

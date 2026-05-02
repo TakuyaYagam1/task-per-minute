@@ -38,24 +38,12 @@ func (u *PlayerUsecase) Join(ctx context.Context, username string) (*domain.Play
 	var joined *domain.Player
 
 	if err := u.tx.Do(ctx, func(txCtx context.Context) error {
-		player, err := u.players.GetByUsername(txCtx, username)
+		updated, err := u.players.JoinByUsername(txCtx, username, sessionToken)
 		if err != nil {
-			if !errors.Is(err, apperr.ErrPlayerNotFound) {
-				return fmt.Errorf("PlayerUsecase - Join - PlayerRepo.GetByUsername: %w", err)
-			}
-			player, err = u.players.Create(txCtx, username)
-			if err != nil {
-				return fmt.Errorf("PlayerUsecase - Join - PlayerRepo.Create: %w", err)
-			}
+			return fmt.Errorf("PlayerUsecase - Join - PlayerRepo.JoinByUsername: %w", err)
 		}
-
-		if player.Status == domain.PlayerStatusInDuel {
+		if updated.Status == domain.PlayerStatusInDuel {
 			return apperr.ErrPlayerInDuel
-		}
-
-		updated, err := u.players.UpdateSessionToken(txCtx, player.ID, &sessionToken)
-		if err != nil {
-			return fmt.Errorf("PlayerUsecase - Join - PlayerRepo.UpdateSessionToken: %w", err)
 		}
 		joined = updated
 		return nil

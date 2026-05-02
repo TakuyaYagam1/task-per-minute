@@ -6,7 +6,7 @@ Split OpenAPI schemas for the task-per-minute backend, plus the security scheme 
 
 `schemas.yml` is **auto-generated** by `scripts/merge-schemas.py` during code generation
 and **deleted** at the end of every codegen run. The source of truth is the
-`schemas/` subdirectory — that is where you add or change types.
+`schemas/` subdirectory - that is where you add or change types.
 
 The file may briefly appear during `make gen-openapi` (it is needed by `routes/*.yml`
 which `$ref` it before redocly inlines everything) but it is gitignored and removed by
@@ -18,10 +18,10 @@ the build pipeline once oapi-codegen is done.
 # Full pipeline: openapi + sqlc + wire + mockery (and cleanup of schemas.yml).
 make generate     # alias of `make gen`
 
-# OpenAPI only — same cleanup.
+# OpenAPI only - same cleanup.
 make openapi      # alias of `make gen-openapi`
 
-# Just merge schemas/*.yml → schemas.yml without running oapi-codegen.
+# Just merge schemas/*.yml -> schemas.yml without running oapi-codegen.
 # Useful when debugging schema-merge issues; you'll need to delete the file
 # yourself afterwards or re-run `make openapi`.
 make merge-schemas
@@ -31,7 +31,7 @@ make merge-schemas
 
 1. `scripts/merge-schemas.py` reads every YAML under `components/schemas/` and writes a
    single `components/schemas.yml`. Schema names are taken verbatim from the file
-   contents — collisions cause the script to fail loudly.
+   contents - collisions cause the script to fail loudly.
 2. `scripts/openapi-generate.sh` invokes `@redocly/cli bundle` to inline every `$ref`
    (including the freshly merged `schemas.yml`) into a single bundled spec in a
    tempdir.
@@ -44,7 +44,7 @@ make merge-schemas
 
 ```text
 components/
-├── schemas/               # source of truth — edit these
+├── schemas/               # source of truth - edit these
 │   ├── admin_schemas.yml
 │   ├── common_schemas.yml
 │   ├── duel_schemas.yml
@@ -67,6 +67,6 @@ components/
 
 `routes/*.yml` keep referencing `../components/schemas.yml#/<TypeName>`. That works
 because `schemas.yml` exists during `make openapi` for the duration of bundling and
-then disappears. Do not switch the references to per-file paths — the merged file
+then disappears. Do not switch the references to per-file paths - the merged file
 intentionally hides the per-domain split from oapi-codegen so route fragments stay
 adapter-agnostic.

@@ -10,12 +10,16 @@ import (
 	"testing"
 	"time"
 
+	coderws "github.com/coder/websocket"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	logkit "github.com/wahrwelt-kit/go-logkit"
 
 	"github.com/TakuyaYagam1/task-per-minute/config"
 	"github.com/TakuyaYagam1/task-per-minute/internal/app"
+	wscontroller "github.com/TakuyaYagam1/task-per-minute/internal/controller/websocket"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
+	redisrepo "github.com/TakuyaYagam1/task-per-minute/internal/repo/redis"
 )
 
 func TestAppLifecycle_StartsHealthAndStopsOnCancel(t *testing.T) {
@@ -97,6 +101,124 @@ func TestAppLifecycle_StartupRecoveryFinishesActiveDuel(t *testing.T) {
 	}
 }
 
+func TestAppLifecycle_StartupRecoveryClearsQueuedPlayersAndRedisQueue(t *testing.T) {
+	clearE2ERedis(t)
+	t.Cleanup(func() { clearE2ERedis(t) })
+
+	f := newDuelFixture()
+	ctx := context.Background()
+	queue := redisrepo.NewMatchmakingRedis(sharedRedis(t).client, redisrepo.DefaultMatchmakingQueueKey)
+
+	idle := f.makePlayer(t, uniq("idle"))
+	queued := f.makePlayer(t, uniq("queued"))
+	active := f.makePlayer(t, uniq("active"))
+	_, err := f.players.UpdateStatus(ctx, queued.ID, domain.PlayerStatusQueued)
+	require.NoError(t, err)
+	_, err = f.players.UpdateStatus(ctx, active.ID, domain.PlayerStatusInDuel)
+	require.NoError(t, err)
+	require.NoError(t, queue.Enqueue(ctx, queued.ID))
+
+	port := reservePort(t)
+	setAppEnv(t, port)
+
+	appCtx, cancel := context.WithCancel(context.Background())
+	cfg, err := config.Load()
+	require.NoError(t, err)
+	application, cleanup, err := app.Initialize(appCtx, cfg, logkit.Noop())
+	require.NoError(t, err)
+	defer cleanup()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- application.Run(appCtx)
+	}()
+
+	waitForHealth(t, port, errCh)
+
+	gotIdle, err := f.players.GetByID(ctx, idle.ID)
+	require.NoError(t, err)
+	require.Equal(t, domain.PlayerStatusIdle, gotIdle.Status)
+	gotQueued, err := f.players.GetByID(ctx, queued.ID)
+	require.NoError(t, err)
+	require.Equal(t, domain.PlayerStatusIdle, gotQueued.Status)
+	gotActive, err := f.players.GetByID(ctx, active.ID)
+	require.NoError(t, err)
+	require.Equal(t, domain.PlayerStatusInDuel, gotActive.Status)
+
+	size, err := sharedRedis(t).client.LLen(ctx, redisrepo.DefaultMatchmakingQueueKey).Result()
+	require.NoError(t, err)
+	require.Zero(t, size)
+
+	cancel()
+	select {
+	case err := <-errCh:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("app did not stop within shutdown timeout")
+	}
+}
+
+func TestAppLifecycle_ShutdownLeavesQueuedWebSocketIdle(t *testing.T) {
+	clearE2ERedis(t)
+	t.Cleanup(func() { clearE2ERedis(t) })
+
+	f := newDuelFixture()
+	ctx := context.Background()
+	player, err := f.players.JoinByUsername(ctx, uniq("alice"), uuid.New())
+	require.NoError(t, err)
+	require.NotNil(t, player.SessionToken)
+
+	port := reservePort(t)
+	setAppEnv(t, port)
+
+	appCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cfg, err := config.Load()
+	require.NoError(t, err)
+	application, cleanup, err := app.Initialize(appCtx, cfg, logkit.Noop())
+	require.NoError(t, err)
+	defer cleanup()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- application.Run(appCtx)
+	}()
+
+	waitForHealth(t, port, errCh)
+
+	dialCtx, dialCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	conn, resp, err := coderws.Dial(
+		dialCtx,
+		wsURL(fmt.Sprintf("http://127.0.0.1:%d", port), *player.SessionToken),
+		nil,
+	)
+	dialCancel()
+	require.NoError(t, err)
+	if resp != nil && resp.Body != nil {
+		defer resp.Body.Close()
+	}
+	defer closeWSSilent(conn)
+
+	writeWSEvent(t, conn, wscontroller.EventJoinQueue, nil)
+	require.Equal(t, wscontroller.EventQueueJoined, readWSEventType(t, conn, wscontroller.EventQueueJoined).Type)
+
+	require.NoError(t, application.Shutdown(context.Background()))
+	select {
+	case err := <-errCh:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("app did not stop within shutdown timeout")
+	}
+
+	got, err := f.players.GetByID(ctx, player.ID)
+	require.NoError(t, err)
+	require.Equal(t, domain.PlayerStatusIdle, got.Status)
+
+	size, err := sharedRedis(t).client.LLen(ctx, redisrepo.DefaultMatchmakingQueueKey).Result()
+	require.NoError(t, err)
+	require.Zero(t, size)
+}
+
 func setAppEnv(t *testing.T, port int) {
 	t.Helper()
 	redis := sharedRedis(t)
@@ -113,10 +235,12 @@ func setAppEnv(t *testing.T, port int) {
 	t.Setenv("REDIS_PASSWORD", "")
 	t.Setenv("REDIS_DB", "0")
 	t.Setenv("SEAWEEDFS_ENDPOINT", seaweed.endpoint)
+	t.Setenv("SEAWEEDFS_PUBLIC_ENDPOINT", seaweed.endpoint)
 	t.Setenv("SEAWEEDFS_ACCESS_KEY", "tpm")
 	t.Setenv("SEAWEEDFS_SECRET_KEY", "tpm-secret")
 	t.Setenv("SEAWEEDFS_BUCKET", seaweed.bucket)
 	t.Setenv("SEAWEEDFS_SECURE", "false")
+	t.Setenv("SEAWEEDFS_PUBLIC_SECURE", "false")
 	t.Setenv("JWT_SECRET", "01234567890123456789012345678901")
 	t.Setenv("JWT_ACCESS_TTL", "15m")
 	t.Setenv("JWT_REFRESH_TTL", "168h")

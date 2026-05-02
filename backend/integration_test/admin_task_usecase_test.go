@@ -102,6 +102,43 @@ func TestAdminTaskUsecase_DeleteTask_ActiveDuelReturnsTaskInUse(t *testing.T) {
 	require.ErrorIs(t, err, apperr.ErrTaskInUse)
 }
 
+func TestAdminTaskUsecase_DeleteTask_FinishedDuelReferenceReturnsTaskInUse(t *testing.T) {
+	t.Parallel()
+
+	uc, f := newAdminTaskUsecaseFixture()
+	ctx := context.Background()
+
+	task, err := uc.CreateTask(ctx, admin.TaskInput{
+		Title:       uniq("task"),
+		Description: "description",
+		Category:    domain.CategoryWeb,
+		Difficulty:  domain.DifficultyEasy,
+		TimeLimit:   60,
+		Flag:        "FLAG{task}",
+		Hints:       defaultTaskHints("task"),
+	})
+	require.NoError(t, err)
+
+	p1 := f.makePlayer(t, uniq("alice"))
+	p2 := f.makePlayer(t, uniq("bob"))
+	duel, err := f.duels.Create(ctx, p1.ID, p2.ID, time.Now().Add(time.Minute))
+	require.NoError(t, err)
+	require.NoError(t, f.duels.CreateDuelPlayerTask(ctx, duel.ID, p1.ID, task.ID))
+	_, err = f.duels.Finish(ctx, duel.ID, nil, time.Now().UTC(), domain.DuelStatusFinished)
+	require.NoError(t, err)
+
+	err = uc.DeleteTask(ctx, task.ID)
+	require.ErrorIs(t, err, apperr.ErrTaskInUse)
+}
+
+func TestAdminTaskUsecase_DeleteTask_MissingReturnsTaskNotFound(t *testing.T) {
+	t.Parallel()
+
+	uc, _ := newAdminTaskUsecaseFixture()
+	err := uc.DeleteTask(context.Background(), uuid.New())
+	require.ErrorIs(t, err, apperr.ErrTaskNotFound)
+}
+
 func newAdminTaskUsecaseFixture() (*admin.TaskUsecase, *duelFixture) {
 	f := newDuelFixture()
 	return admin.NewTaskUsecase(f.tasks), f

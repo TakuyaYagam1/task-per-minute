@@ -37,7 +37,7 @@ func TestHistoryRepo_AddSolved_ListRoundTrip(t *testing.T) {
 
 	ids, err := f.history.ListSolvedTaskIDs(ctx, p.ID)
 	require.NoError(t, err)
-	require.Len(t, ids, 2, "scoped to fresh player → exactly 2")
+	require.Len(t, ids, 2, "scoped to fresh player -> exactly 2")
 	require.True(t, hasUUID(ids, t1.ID))
 	require.True(t, hasUUID(ids, t2.ID))
 }
@@ -54,7 +54,7 @@ func TestHistoryRepo_ListSolvedTaskIDs_Empty(t *testing.T) {
 
 // SelectUnsolvedTaskByDifficulty must NOT return tasks already in the player's
 // history. With other concurrent tests inserting easy tasks, we cannot assert
-// "only easy3 is returned" — but we can assert "the returned id is none of the
+// "only easy3 is returned" - but we can assert "the returned id is none of the
 // solved ids", which is the actual semantic of the query.
 func TestHistoryRepo_SelectUnsolvedTaskByDifficulty_SkipsHistory(t *testing.T) {
 	t.Parallel()
@@ -88,7 +88,7 @@ func TestHistoryRepo_SelectAnyTaskByDifficulty_IgnoresHistory(t *testing.T) {
 	got, err := f.history.SelectAnyTaskByDifficulty(ctx, domain.DifficultyEasy)
 	require.NoError(t, err, "fallback always returns a task when the bucket is non-empty")
 	require.Equal(t, domain.DifficultyEasy, got.Difficulty,
-		"the result must come from the requested bucket — id may belong to any concurrent test")
+		"the result must come from the requested bucket - id may belong to any concurrent test")
 }
 
 func TestHistoryRepo_SelectTaskByDifficulty_SkipsTasksWithoutHints(t *testing.T) {

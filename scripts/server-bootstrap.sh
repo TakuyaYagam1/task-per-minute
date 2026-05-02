@@ -5,8 +5,14 @@ set -Eeuo pipefail
 APP_USER="${APP_USER:-ctf}"
 APP_GROUP="${APP_GROUP:-$APP_USER}"
 APP_DIR="${APP_DIR:-/opt/task-per-minute}"
+DEPLOY_USER="${DEPLOY_USER:-${SUDO_USER:-}}"
 ENV_FILE="${ENV_FILE:-$APP_DIR/.env}"
 CONFIGURE_UFW="${CONFIGURE_UFW:-1}"
+PROXY_NETWORK="${PROXY_NETWORK:-proxy_tpm}"
+
+if [[ "$DEPLOY_USER" == "root" ]]; then
+	DEPLOY_USER=""
+fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -29,6 +35,18 @@ require_root() {
 
 command_exists() {
 	command -v "$1" >/dev/null 2>&1
+}
+
+deploy_user_enabled() {
+	[[ -n "$DEPLOY_USER" && "$DEPLOY_USER" != "$APP_USER" ]]
+}
+
+compose_user() {
+	if deploy_user_enabled; then
+		printf '%s' "$DEPLOY_USER"
+		return
+	fi
+	printf '%s' "$APP_USER"
 }
 
 apt_install() {
@@ -109,29 +127,65 @@ ensure_app_user() {
 	fi
 }
 
+ensure_deploy_user() {
+	if ! deploy_user_enabled; then
+		return
+	fi
+	if ! id "$DEPLOY_USER" >/dev/null 2>&1; then
+		die "DEPLOY_USER $DEPLOY_USER does not exist; create it first or run with DEPLOY_USER="
+	fi
+
+	log "granting $DEPLOY_USER access to group $APP_GROUP"
+	usermod -aG "$APP_GROUP" "$DEPLOY_USER"
+	if getent group docker >/dev/null; then
+		usermod -aG docker "$DEPLOY_USER"
+	fi
+}
+
 ensure_app_dir() {
 	log "ensuring $APP_DIR"
+	if deploy_user_enabled; then
+		install -d -m 2770 -o "$DEPLOY_USER" -g "$APP_GROUP" "$APP_DIR"
+		return
+	fi
 	install -d -m 0750 -o "$APP_USER" -g "$APP_GROUP" "$APP_DIR"
 }
 
 ensure_env_file() {
+	local owner="$APP_USER"
+	local mode="0600"
+	if deploy_user_enabled; then
+		owner="$DEPLOY_USER"
+		mode="0640"
+	fi
+
 	if [[ -e "$ENV_FILE" ]]; then
 		log "$ENV_FILE already exists; preserving contents"
 	else
 		if [[ -f "$ENV_TEMPLATE" ]]; then
 			log "creating $ENV_FILE from $ENV_TEMPLATE"
-			install -m 0600 -o "$APP_USER" -g "$APP_GROUP" "$ENV_TEMPLATE" "$ENV_FILE"
+			install -m "$mode" -o "$owner" -g "$APP_GROUP" "$ENV_TEMPLATE" "$ENV_FILE"
 		elif [[ -f "$REPO_ROOT/.env.example" ]]; then
 			log "creating $ENV_FILE from local .env.example"
-			install -m 0600 -o "$APP_USER" -g "$APP_GROUP" "$REPO_ROOT/.env.example" "$ENV_FILE"
+			install -m "$mode" -o "$owner" -g "$APP_GROUP" "$REPO_ROOT/.env.example" "$ENV_FILE"
 		else
 			log "creating empty $ENV_FILE"
-			install -m 0600 -o "$APP_USER" -g "$APP_GROUP" /dev/null "$ENV_FILE"
+			install -m "$mode" -o "$owner" -g "$APP_GROUP" /dev/null "$ENV_FILE"
 		fi
 	fi
 
-	chown "$APP_USER:$APP_GROUP" "$ENV_FILE"
-	chmod 0600 "$ENV_FILE"
+	chown "$owner:$APP_GROUP" "$ENV_FILE"
+	chmod "$mode" "$ENV_FILE"
+}
+
+ensure_proxy_network() {
+	if docker network inspect "$PROXY_NETWORK" >/dev/null 2>&1; then
+		log "docker network $PROXY_NETWORK already exists"
+		return
+	fi
+
+	log "creating docker network $PROXY_NETWORK"
+	docker network create "$PROXY_NETWORK" >/dev/null
 }
 
 configure_ufw() {
@@ -163,15 +217,20 @@ main() {
 	install_docker
 	ensure_git
 	ensure_app_user
+	ensure_deploy_user
 	ensure_app_dir
 	ensure_env_file
+	ensure_proxy_network
 	configure_ufw
 
 	log "done"
+	if deploy_user_enabled; then
+		log "DEPLOY_USER=$DEPLOY_USER was added to docker/$APP_GROUP; re-login may be required for new groups"
+	fi
 	log "fill $ENV_FILE, then run:"
 	log "cd $APP_DIR/deployment/docker"
-	log "docker compose --env-file ../../.env run --rm migrate"
-	log "docker compose --env-file ../../.env up -d --remove-orphans"
+	log "sudo -u $(compose_user) docker compose --env-file ../../.env run --rm migrate"
+	log "sudo -u $(compose_user) docker compose --env-file ../../.env up -d --remove-orphans"
 }
 
 main "$@"

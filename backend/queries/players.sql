@@ -6,6 +6,18 @@ RETURNING id,
     session_token,
     status,
     created_at;
+-- name: UpsertPlayerSessionByUsername :one
+INSERT INTO players (username, session_token)
+VALUES ($1, $2) ON CONFLICT (username) DO
+UPDATE
+SET session_token = EXCLUDED.session_token,
+    status = 'idle'
+WHERE players.status <> 'in_duel'
+RETURNING id,
+    username,
+    session_token,
+    status,
+    created_at;
 -- name: GetPlayerByID :one
 SELECT id,
     username,
@@ -48,3 +60,18 @@ RETURNING id,
     session_token,
     status,
     created_at;
+-- name: UpdatePlayerStatusIfCurrent :one
+UPDATE players
+SET status = $3
+WHERE id = $1
+    AND status = $2
+RETURNING id,
+    username,
+    session_token,
+    status,
+    created_at;
+
+-- name: ResetQueuedPlayers :execrows
+UPDATE players
+SET status = 'idle'
+WHERE status = 'queued';

@@ -11,6 +11,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/controller/restapi/v1/response"
 )
 
+// (GET /api/v1/leaderboard).
 func (s *Server) GetLeaderboard(w http.ResponseWriter, r *http.Request) {
 	if s.leaderboard == nil {
 		errmap.HandleError(w, r, apperr.ErrInternal)
@@ -26,6 +27,7 @@ func (s *Server) GetLeaderboard(w http.ResponseWriter, r *http.Request) {
 	response.WriteJSON(w, http.StatusOK, response.Leaderboard(entries))
 }
 
+// (GET /api/v1/duels/{id}).
 func (s *Server) GetDuel(w http.ResponseWriter, r *http.Request, id openapi_types.UUID) {
 	if s.duels == nil {
 		errmap.HandleError(w, r, apperr.ErrInternal)

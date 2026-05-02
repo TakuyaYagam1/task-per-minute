@@ -19,6 +19,7 @@ TaskResponse:
       maxLength: 255
     description:
       type: string
+      minLength: 1
     category:
       $ref: '#/TaskCategory'
     difficulty:
@@ -40,7 +41,7 @@ TaskResponse:
         minLength: 1
     task_url:
       type: string
-      format: uri
+      description: Task endpoint. Accepts http(s) URLs or host:port targets for pwn/nc tasks.
       nullable: true
     source_file_url:
       type: string
@@ -60,6 +61,7 @@ CreateTaskRequest:
       maxLength: 255
     description:
       type: string
+      minLength: 1
     category:
       $ref: '#/TaskCategory'
     difficulty:
@@ -81,7 +83,7 @@ CreateTaskRequest:
         minLength: 1
     task_url:
       type: string
-      format: uri
+      description: Task endpoint. Accepts http(s) URLs or host:port targets for pwn/nc tasks.
       nullable: true
 
 UpdateTaskRequest:
@@ -93,6 +95,7 @@ UpdateTaskRequest:
       maxLength: 255
     description:
       type: string
+      minLength: 1
     category:
       $ref: '#/TaskCategory'
     difficulty:
@@ -114,7 +117,7 @@ UpdateTaskRequest:
         minLength: 1
     task_url:
       type: string
-      format: uri
+      description: Task endpoint. Accepts http(s) URLs or host:port targets for pwn/nc tasks.
       nullable: true
 
 UploadSourceResponse:

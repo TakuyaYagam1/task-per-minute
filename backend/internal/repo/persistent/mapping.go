@@ -12,7 +12,11 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/repo/persistent/sqlc"
 )
 
-const pgUniqueViolation = "23505"
+const (
+	pgUniqueViolation     = "23505"
+	pgForeignKeyViolation = "23503"
+	pgRestrictViolation   = "23001"
+)
 
 func playerToDomain(p sqlc.Player) *domain.Player {
 	out := &domain.Player{
@@ -110,4 +114,12 @@ func isUniqueViolation(err error, constraint string) bool {
 		return false
 	}
 	return pgErr.Code == pgUniqueViolation && pgErr.ConstraintName == constraint
+}
+
+func isForeignKeyViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) {
+		return false
+	}
+	return pgErr.Code == pgForeignKeyViolation || pgErr.Code == pgRestrictViolation
 }

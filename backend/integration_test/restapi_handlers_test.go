@@ -138,6 +138,96 @@ func TestRESTHandlers_OpenAPIResponseShapes(t *testing.T) {
 	f.validateResponse(t, deleteReq, deleteResp)
 }
 
+func TestRESTHandlers_DeleteMissingTaskReturns404(t *testing.T) {
+	f := newRESTFixture(t)
+	adminToken := f.adminAccessToken(t)
+	taskID := uuid.New()
+
+	req, resp := f.doJSON(t, http.MethodDelete, "/api/v1/admin/tasks/"+taskID.String(), "", bearer(adminToken))
+	require.Equal(t, http.StatusNotFound, resp.Code)
+	f.validateResponse(t, req, resp)
+}
+
+func TestRESTHandlers_DeleteReferencedTaskReturns409(t *testing.T) {
+	f := newRESTFixture(t)
+	adminToken := f.adminAccessToken(t)
+	ctx := context.Background()
+
+	task := f.makeTask(t, uniq("referenced"), domain.DifficultyEasy)
+	alice := f.joinPlayerViaUsecase(t, uniq("alice"))
+	bob := f.joinPlayerViaUsecase(t, uniq("bob"))
+	duel, err := f.duels.Create(ctx, alice.ID, bob.ID, time.Now().Add(time.Minute))
+	require.NoError(t, err)
+	require.NoError(t, f.duels.CreateDuelPlayerTask(ctx, duel.ID, alice.ID, task.ID))
+	_, err = f.duels.Finish(ctx, duel.ID, nil, time.Now().UTC(), domain.DuelStatusFinished)
+	require.NoError(t, err)
+
+	req, resp := f.doJSON(t, http.MethodDelete, "/api/v1/admin/tasks/"+task.ID.String(), "", bearer(adminToken))
+	require.Equal(t, http.StatusConflict, resp.Code)
+	f.validateResponse(t, req, resp)
+}
+
+func TestRESTHandlers_UpdateTaskURLPreserveSetAndClear(t *testing.T) {
+	f := newRESTFixture(t)
+	adminToken := f.adminAccessToken(t)
+	initialURL := "https://tasks.example.com/" + uniq("task")
+
+	createReq, createResp := f.doJSON(t, http.MethodPost, "/api/v1/admin/tasks", fmt.Sprintf(`{
+		"title":%q,
+		"description":"task url update semantics",
+		"category":"web",
+		"difficulty":"easy",
+		"time_limit":60,
+		"flag":"FLAG{task_url}",
+		"hints":["first hint","second hint","third hint"],
+		"task_url":%q
+	}`, uniq("task_url"), initialURL), bearer(adminToken))
+	require.Equal(t, http.StatusCreated, createResp.Code)
+	f.validateResponse(t, createReq, createResp)
+	created := decodeJSON[openapi.TaskResponse](t, createResp)
+	require.NotNil(t, created.TaskUrl)
+	require.Equal(t, initialURL, *created.TaskUrl)
+
+	preserveReq, preserveResp := f.doJSON(
+		t,
+		http.MethodPut,
+		"/api/v1/admin/tasks/"+created.Id.String(),
+		`{"title":"preserve task url"}`,
+		bearer(adminToken),
+	)
+	require.Equal(t, http.StatusOK, preserveResp.Code)
+	f.validateResponse(t, preserveReq, preserveResp)
+	preserved := decodeJSON[openapi.TaskResponse](t, preserveResp)
+	require.NotNil(t, preserved.TaskUrl)
+	require.Equal(t, initialURL, *preserved.TaskUrl)
+
+	clearReq, clearResp := f.doJSON(
+		t,
+		http.MethodPut,
+		"/api/v1/admin/tasks/"+created.Id.String(),
+		`{"task_url":null}`,
+		bearer(adminToken),
+	)
+	require.Equal(t, http.StatusOK, clearResp.Code)
+	f.validateResponse(t, clearReq, clearResp)
+	cleared := decodeJSON[openapi.TaskResponse](t, clearResp)
+	require.Nil(t, cleared.TaskUrl)
+
+	nextURL := "pwn.example.com:31337"
+	setReq, setResp := f.doJSON(
+		t,
+		http.MethodPut,
+		"/api/v1/admin/tasks/"+created.Id.String(),
+		fmt.Sprintf(`{"task_url":%q}`, nextURL),
+		bearer(adminToken),
+	)
+	require.Equal(t, http.StatusOK, setResp.Code)
+	f.validateResponse(t, setReq, setResp)
+	updated := decodeJSON[openapi.TaskResponse](t, setResp)
+	require.NotNil(t, updated.TaskUrl)
+	require.Equal(t, nextURL, *updated.TaskUrl)
+}
+
 func TestRESTHandlers_GetDuelWithForeignSessionReturns403(t *testing.T) {
 	f := newRESTFixture(t)
 
@@ -150,6 +240,24 @@ func TestRESTHandlers_GetDuelWithForeignSessionReturns403(t *testing.T) {
 
 	require.Equal(t, http.StatusForbidden, resp.Code)
 	f.validateResponse(t, req, resp)
+}
+
+func TestRESTHandlers_CORSPreflightAllowedOrigin(t *testing.T) {
+	f := newRESTFixture(t)
+	handler := middleware.CORS([]string{"http://localhost:3000"})(f.handler)
+
+	req := httptest.NewRequest(http.MethodOptions, "/api/v1/players/join", nil)
+	req.Header.Set("Origin", "http://localhost:3000")
+	req.Header.Set("Access-Control-Request-Method", http.MethodPost)
+	req.Header.Set("Access-Control-Request-Headers", "Content-Type")
+	resp := httptest.NewRecorder()
+
+	handler.ServeHTTP(resp, req)
+
+	require.Equal(t, http.StatusNoContent, resp.Code)
+	require.Equal(t, "http://localhost:3000", resp.Header().Get("Access-Control-Allow-Origin"))
+	require.Contains(t, resp.Header().Get("Access-Control-Allow-Methods"), http.MethodPost)
+	require.Contains(t, resp.Header().Get("Access-Control-Allow-Headers"), "Content-Type")
 }
 
 func TestRESTHandlers_UploadSourceOverLimitReturns413Or400(t *testing.T) {
@@ -395,6 +503,50 @@ func TestRESTHandlers_HealthDegradedShape(t *testing.T) {
 	handler.ServeHTTP(resp, req)
 
 	require.Equal(t, http.StatusServiceUnavailable, resp.Code)
+	route, pathParams, err := validator.FindRoute(req)
+	require.NoError(t, err)
+	input := &openapi3filter.ResponseValidationInput{
+		RequestValidationInput: &openapi3filter.RequestValidationInput{
+			Request:    req,
+			PathParams: pathParams,
+			Route:      route,
+		},
+		Status: resp.Code,
+		Header: resp.Result().Header,
+	}
+	input.SetBodyBytes(resp.Body.Bytes())
+	require.NoError(t, openapi3filter.ValidateResponse(context.Background(), input))
+}
+
+func TestRESTHandlers_HealthSchemaVersionZeroIsDegraded(t *testing.T) {
+	server := restv1.New(restv1.Dependencies{
+		Health: restv1.HealthChecks{
+			DB: usecase.HealthCheckerFunc(func(context.Context) error {
+				return nil
+			}),
+			Redis: usecase.HealthCheckerFunc(func(context.Context) error {
+				return nil
+			}),
+			SeaweedFS: usecase.HealthCheckerFunc(func(context.Context) error {
+				return nil
+			}),
+			SchemaVersion: usecase.SchemaVersionReaderFunc(func(context.Context) (int64, error) {
+				return 0, nil
+			}),
+		},
+	})
+	handler := restv1.NewHandler(server, restv1.HandlerOptions{})
+	validator := newOpenAPIResponseValidator(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	resp := httptest.NewRecorder()
+	handler.ServeHTTP(resp, req)
+
+	require.Equal(t, http.StatusServiceUnavailable, resp.Code)
+	got := decodeJSON[openapi.HealthResponse](t, resp)
+	require.Equal(t, openapi.HealthResponseStatusDegraded, got.Status)
+	require.Equal(t, int64(0), got.SchemaVersion)
+
 	route, pathParams, err := validator.FindRoute(req)
 	require.NoError(t, err)
 	input := &openapi3filter.ResponseValidationInput{

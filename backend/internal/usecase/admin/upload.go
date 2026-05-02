@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"mime"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -16,11 +17,16 @@ import (
 )
 
 const (
-	MaxSourceFileSize  int64 = 100 * 1024 * 1024
-	sourceFileMimeType       = "application/zip"
+	MaxSourceFileSize int64 = 100 * 1024 * 1024
 )
 
 var zipLocalFileHeader = []byte{'P', 'K', 0x03, 0x04}
+
+var allowedSourceFileMediaTypes = map[string]struct{}{
+	"application/zip":              {},
+	"application/x-zip-compressed": {},
+	"application/octet-stream":     {},
+}
 
 type UploadUsecase struct {
 	tasks   usecase.TaskRepo
@@ -56,12 +62,6 @@ func (u *UploadUsecase) UploadSourceFile(
 	}
 
 	key := SourceFileKey(taskID)
-	if task.SourceFileURL != nil {
-		if err := u.storage.Delete(ctx, key); err != nil {
-			return "", fmt.Errorf("UploadUsecase - UploadSourceFile - SourceFileStorage.Delete: %w", err)
-		}
-	}
-
 	storedURL, err := u.storage.Upload(ctx, key, io.MultiReader(bytes.NewReader(header), reader), size)
 	if err != nil {
 		return "", fmt.Errorf("UploadUsecase - UploadSourceFile - SourceFileStorage.Upload: %w", err)
@@ -79,7 +79,7 @@ func (u *UploadUsecase) UploadSourceFile(
 }
 
 func SourceFileKey(taskID uuid.UUID) string {
-	return fmt.Sprintf("tasks/%s/source.zip", taskID)
+	return domain.TaskSourceFileKey(taskID)
 }
 
 func validateSourceFileMeta(size int64, contentType string) error {
@@ -87,8 +87,14 @@ func validateSourceFileMeta(size int64, contentType string) error {
 		return apperr.ErrTaskValidation
 	}
 
+	if strings.TrimSpace(contentType) == "" {
+		return nil
+	}
 	mediaType, _, err := mime.ParseMediaType(contentType)
-	if err != nil || mediaType != sourceFileMimeType {
+	if err != nil {
+		return apperr.ErrTaskValidation
+	}
+	if _, ok := allowedSourceFileMediaTypes[mediaType]; !ok {
 		return apperr.ErrTaskValidation
 	}
 	return nil

@@ -21,6 +21,9 @@ type ServerInterface interface {
 	// Exchange the shared admin password for a token pair
 	// (POST /api/v1/admin/login)
 	AdminLogin(w http.ResponseWriter, r *http.Request)
+	// Revoke the supplied refresh token
+	// (POST /api/v1/admin/logout)
+	AdminLogout(w http.ResponseWriter, r *http.Request)
 	// Rotate the access/refresh token pair
 	// (POST /api/v1/admin/refresh)
 	AdminRefresh(w http.ResponseWriter, r *http.Request)
@@ -66,6 +69,12 @@ type Unimplemented struct{}
 // Exchange the shared admin password for a token pair
 // (POST /api/v1/admin/login)
 func (_ Unimplemented) AdminLogin(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Revoke the supplied refresh token
+// (POST /api/v1/admin/logout)
+func (_ Unimplemented) AdminLogout(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -155,6 +164,26 @@ func (siw *ServerInterfaceWrapper) AdminLogin(w http.ResponseWriter, r *http.Req
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.AdminLogin(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AdminLogout operation middleware
+func (siw *ServerInterfaceWrapper) AdminLogout(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminLogout(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -552,6 +581,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Post(options.BaseURL+"/api/v1/admin/login", wrapper.AdminLogin)
 	})
 	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/admin/logout", wrapper.AdminLogout)
+	})
+	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/admin/refresh", wrapper.AdminRefresh)
 	})
 	r.Group(func(r chi.Router) {
@@ -611,6 +643,31 @@ func (response AdminLogin200JSONResponse) VisitAdminLoginResponse(w http.Respons
 type AdminLogin401ApplicationProblemPlusJSONResponse ProblemDetails
 
 func (response AdminLogin401ApplicationProblemPlusJSONResponse) VisitAdminLoginResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type AdminLogoutRequestObject struct {
+	Body *AdminLogoutJSONRequestBody
+}
+
+type AdminLogoutResponseObject interface {
+	VisitAdminLogoutResponse(w http.ResponseWriter) error
+}
+
+type AdminLogout204Response struct {
+}
+
+func (response AdminLogout204Response) VisitAdminLogoutResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type AdminLogout401ApplicationProblemPlusJSONResponse ProblemDetails
+
+func (response AdminLogout401ApplicationProblemPlusJSONResponse) VisitAdminLogoutResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(401)
 
@@ -1030,6 +1087,9 @@ type StrictServerInterface interface {
 	// Exchange the shared admin password for a token pair
 	// (POST /api/v1/admin/login)
 	AdminLogin(ctx context.Context, request AdminLoginRequestObject) (AdminLoginResponseObject, error)
+	// Revoke the supplied refresh token
+	// (POST /api/v1/admin/logout)
+	AdminLogout(ctx context.Context, request AdminLogoutRequestObject) (AdminLogoutResponseObject, error)
 	// Rotate the access/refresh token pair
 	// (POST /api/v1/admin/refresh)
 	AdminRefresh(ctx context.Context, request AdminRefreshRequestObject) (AdminRefreshResponseObject, error)
@@ -1121,6 +1181,37 @@ func (sh *strictHandler) AdminLogin(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(AdminLoginResponseObject); ok {
 		if err := validResponse.VisitAdminLoginResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AdminLogout operation middleware
+func (sh *strictHandler) AdminLogout(w http.ResponseWriter, r *http.Request) {
+	var request AdminLogoutRequestObject
+
+	var body AdminLogoutJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AdminLogout(ctx, request.(AdminLogoutRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AdminLogout")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AdminLogoutResponseObject); ok {
+		if err := validResponse.VisitAdminLogoutResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

@@ -48,6 +48,33 @@
             schema:
               $ref: '../components/schemas.yml#/ProblemDetails'
 
+/api/v1/admin/logout:
+  post:
+    operationId: adminLogout
+    tags: [admin]
+    summary: Revoke the supplied refresh token
+    description: |
+      Revokes the supplied refresh token so it can no longer be exchanged
+      for a new pair. The access token is unaffected (it expires naturally
+      via its short TTL). Requires a valid bearer access token.
+    security:
+      - BearerAuth: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../components/schemas.yml#/AdminLogoutRequest'
+    responses:
+      '204':
+        description: Refresh token revoked.
+      '401':
+        description: Missing/invalid bearer token or refresh token invalid.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+
 /api/v1/admin/tasks:
   get:
     operationId: listTasks
@@ -176,7 +203,7 @@
     operationId: deleteTask
     tags: [admin]
     summary: Delete a task
-    description: Returns 409 if the task is referenced by an active duel.
+    description: Returns 409 if the task is referenced by an existing duel or solved history.
     security:
       - BearerAuth: []
     responses:
@@ -195,7 +222,7 @@
             schema:
               $ref: '../components/schemas.yml#/ProblemDetails'
       '409':
-        description: Task is in use by an active duel.
+        description: Task is referenced by an existing duel or solved history.
         content:
           application/problem+json:
             schema:

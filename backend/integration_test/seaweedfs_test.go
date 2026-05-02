@@ -109,5 +109,5 @@ func TestSeaweedStorage_Delete_MissingKey_NoError(t *testing.T) {
 	t.Parallel()
 	st := newSeaweedStorage(t)
 	require.NoError(t, st.Delete(context.Background(), "does/not/exist/"+uuid.NewString()),
-		"S3 RemoveObject is idempotent — missing keys must not surface as errors")
+		"S3 RemoveObject is idempotent - missing keys must not surface as errors")
 }

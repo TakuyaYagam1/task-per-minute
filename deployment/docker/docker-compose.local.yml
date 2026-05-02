@@ -1,19 +1,27 @@
 name: task-per-minute-local
 
+# Same least-privilege model as docker-compose.yml: no env_file:, every value
+# explicitly listed in environment: with `${VAR:?...}` (required) or
+# `${VAR:-default}` (optional). Run with:
+#   docker compose --env-file ../../.env -f docker-compose.local.yml up -d
+#
+# IMPORTANT: bcrypt hashes and any value containing a literal `$` MUST be
+# escaped to `$$` inside .env (compose interpolates variables in .env values).
+
 services:
   postgres:
     image: postgres:18-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-tpm}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tpm}
-      POSTGRES_DB: ${POSTGRES_DB:-task_per_minute}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required (set in .env)}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required (set in .env)}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required (set in .env)}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tpm} -d ${POSTGRES_DB:-task_per_minute}"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -22,9 +30,8 @@ services:
   redis:
     image: redis:8-alpine
     restart: unless-stopped
-    env_file:
-      - path: ../../.env
-        required: false
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
     command:
       - "sh"
       - "-c"
@@ -47,15 +54,39 @@ services:
   seaweedfs:
     image: chrislusf/seaweedfs:3.71
     restart: unless-stopped
+    environment:
+      SEAWEEDFS_ACCESS_KEY: ${SEAWEEDFS_ACCESS_KEY:?SEAWEEDFS_ACCESS_KEY is required (set in .env)}
+      SEAWEEDFS_SECRET_KEY: ${SEAWEEDFS_SECRET_KEY:?SEAWEEDFS_SECRET_KEY is required (set in .env)}
+    entrypoint:
+      - "/bin/sh"
+      - "-c"
     command:
-      - "server"
-      - "-dir=/data"
-      - "-master.port=9333"
-      - "-volume.port=8090"
-      - "-filer"
-      - "-filer.port=8888"
-      - "-s3"
-      - "-s3.port=8333"
+      - |
+        cat > /tmp/seaweedfs-s3.json <<EOF
+        {
+          "identities": [
+            {
+              "name": "tpm",
+              "credentials": [
+                {
+                  "accessKey": "$${SEAWEEDFS_ACCESS_KEY}",
+                  "secretKey": "$${SEAWEEDFS_SECRET_KEY}"
+                }
+              ],
+              "actions": ["Admin"]
+            }
+          ]
+        }
+        EOF
+        exec weed server \
+          -dir=/data \
+          -master.port=9333 \
+          -volume.port=8090 \
+          -filer \
+          -filer.port=8888 \
+          -s3 \
+          -s3.port=8333 \
+          -s3.config=/tmp/seaweedfs-s3.json
     ports:
       - "9333:9333"
       - "8333:8333"
@@ -74,11 +105,8 @@ services:
     profiles: ["migrate"]
     restart: "no"
     entrypoint: ["/app/migrate"]
-    env_file:
-      - path: ../../.env
-        required: false
     environment:
-      DB_DSN: "postgres://${POSTGRES_USER:-tpm}:${POSTGRES_PASSWORD:-tpm}@postgres:5432/${POSTGRES_DB:-task_per_minute}?sslmode=disable"
+      DB_DSN: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable"
     depends_on:
       postgres:
         condition: service_healthy
@@ -89,13 +117,52 @@ services:
     restart: unless-stopped
     ports:
       - "8080:8080"
-    env_file:
-      - path: ../../.env
-        required: false
     environment:
-      DB_DSN: "postgres://${POSTGRES_USER:-tpm}:${POSTGRES_PASSWORD:-tpm}@postgres:5432/${POSTGRES_DB:-task_per_minute}?sslmode=disable"
-      REDIS_ADDR: "redis:6379"
-      SEAWEEDFS_ENDPOINT: "seaweedfs:8333"
+      # HTTP
+      HTTP_HOST: ${HTTP_HOST:-0.0.0.0}
+      HTTP_PORT: ${HTTP_PORT:-8080}
+      HTTP_READ_TIMEOUT: ${HTTP_READ_TIMEOUT:-15s}
+      HTTP_WRITE_TIMEOUT: ${HTTP_WRITE_TIMEOUT:-15s}
+      HTTP_SHUTDOWN_TIMEOUT: ${HTTP_SHUTDOWN_TIMEOUT:-30s}
+      HTTP_ALLOWED_ORIGINS: ${HTTP_ALLOWED_ORIGINS:-}
+      HTTP_TRUSTED_PROXY_CIDRS: ${HTTP_TRUSTED_PROXY_CIDRS:-}
+
+      # Database
+      DB_DSN: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable"
+      DB_MAX_CONNS: ${DB_MAX_CONNS:-20}
+
+      # Redis
+      REDIS_ADDR: redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      REDIS_DB: ${REDIS_DB:-0}
+
+      # SeaweedFS
+      SEAWEEDFS_ENDPOINT: seaweedfs:8333
+      SEAWEEDFS_PUBLIC_ENDPOINT: ${SEAWEEDFS_PUBLIC_ENDPOINT:-localhost:8333}
+      SEAWEEDFS_ACCESS_KEY: ${SEAWEEDFS_ACCESS_KEY:?SEAWEEDFS_ACCESS_KEY is required (set in .env)}
+      SEAWEEDFS_SECRET_KEY: ${SEAWEEDFS_SECRET_KEY:?SEAWEEDFS_SECRET_KEY is required (set in .env)}
+      SEAWEEDFS_BUCKET: ${SEAWEEDFS_BUCKET:-task-per-minute}
+      SEAWEEDFS_SECURE: ${SEAWEEDFS_SECURE:-false}
+      SEAWEEDFS_PUBLIC_SECURE: ${SEAWEEDFS_PUBLIC_SECURE:-false}
+
+      # JWT
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required (set in .env)}
+      JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-15m}
+      JWT_REFRESH_TTL: ${JWT_REFRESH_TTL:-168h}
+
+      # Admin
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD is required (set in .env)}
+      ADMIN_LOGIN_RATE_ATTEMPTS: ${ADMIN_LOGIN_RATE_ATTEMPTS:-5}
+      ADMIN_LOGIN_RATE_WINDOW: ${ADMIN_LOGIN_RATE_WINDOW:-15m}
+      ADMIN_LOGIN_RATE_BUCKET_TTL: ${ADMIN_LOGIN_RATE_BUCKET_TTL:-1h}
+
+      # Player
+      PLAYER_JOIN_RATE_ATTEMPTS: ${PLAYER_JOIN_RATE_ATTEMPTS:-20}
+      PLAYER_JOIN_RATE_WINDOW: ${PLAYER_JOIN_RATE_WINDOW:-5m}
+      PLAYER_JOIN_RATE_BUCKET_TTL: ${PLAYER_JOIN_RATE_BUCKET_TTL:-1h}
+
+      # WebSocket
+      WS_ALLOWED_ORIGINS: ${WS_ALLOWED_ORIGINS:-}
     depends_on:
       postgres:
         condition: service_healthy

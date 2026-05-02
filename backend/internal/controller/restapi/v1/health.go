@@ -11,6 +11,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/openapi"
 )
 
+// (GET /health).
 func (s *Server) HealthCheck(w http.ResponseWriter, r *http.Request) {
 	db := checkDB(r.Context(), s.health.DB)
 	redis := checkRedis(r.Context(), s.health.Redis)
@@ -22,7 +23,8 @@ func (s *Server) HealthCheck(w http.ResponseWriter, r *http.Request) {
 	if db != openapi.HealthResponseDbOk ||
 		redis != openapi.HealthResponseRedisOk ||
 		seaweedfs != openapi.HealthResponseSeaweedfsOk ||
-		!schemaVersionOK {
+		!schemaVersionOK ||
+		schemaVersion <= 0 {
 		status = openapi.HealthResponseStatusDegraded
 		httpStatus = http.StatusServiceUnavailable
 	}

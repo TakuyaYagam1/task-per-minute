@@ -8,6 +8,7 @@ import (
 	"time"
 
 	cachekit "github.com/wahrwelt-kit/go-cachekit"
+	"golang.org/x/sync/singleflight"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase"
 	"github.com/TakuyaYagam1/task-per-minute/pkg/clock"
@@ -31,6 +32,8 @@ type LeaderboardUsecase struct {
 
 	mu    sync.Mutex
 	cache *cachekit.LRFUCache[string, cachedTop]
+
+	sf singleflight.Group
 }
 
 type cachedTop struct {
@@ -54,6 +57,7 @@ func (u *LeaderboardUsecase) IncrementWin(ctx context.Context, username string) 
 	if err := u.store.IncrementWin(ctx, username); err != nil {
 		return fmt.Errorf("LeaderboardUsecase - IncrementWin - LeaderboardStore.IncrementWin: %w", err)
 	}
+	u.invalidate()
 	return nil
 }
 
@@ -63,19 +67,34 @@ func (u *LeaderboardUsecase) Top50(ctx context.Context) ([]Entry, error) {
 		return entries, nil
 	}
 
-	entries, err := u.loadTop(ctx)
+	v, err, _ := u.sf.Do(cacheKey, func() (any, error) {
+		refreshNow := u.clock.Now()
+		if cached, ok := u.cached(refreshNow); ok {
+			return cached, nil
+		}
+
+		entries, err := u.loadTop(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		u.mu.Lock()
+		u.cache.Set(cacheKey, cachedTop{
+			entries:   cloneEntries(entries),
+			expiresAt: refreshNow.Add(cacheTTL),
+		})
+		u.mu.Unlock()
+
+		return entries, nil
+	})
 	if err != nil {
 		return nil, err
 	}
-
-	u.mu.Lock()
-	u.cache.Set(cacheKey, cachedTop{
-		entries:   cloneEntries(entries),
-		expiresAt: now.Add(cacheTTL),
-	})
-	u.mu.Unlock()
-
-	return entries, nil
+	entries, ok := v.([]Entry)
+	if !ok {
+		return nil, fmt.Errorf("LeaderboardUsecase - Top50 - unexpected singleflight result type %T", v)
+	}
+	return cloneEntries(entries), nil
 }
 
 func (u *LeaderboardUsecase) cached(now time.Time) ([]Entry, bool) {
@@ -87,6 +106,12 @@ func (u *LeaderboardUsecase) cached(now time.Time) ([]Entry, bool) {
 		return nil, false
 	}
 	return cloneEntries(cached.entries), true
+}
+
+func (u *LeaderboardUsecase) invalidate() {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	u.cache = cachekit.NewLRFUCache[string, cachedTop](cacheMaxLen)
 }
 
 func (u *LeaderboardUsecase) loadTop(ctx context.Context) ([]Entry, error) {

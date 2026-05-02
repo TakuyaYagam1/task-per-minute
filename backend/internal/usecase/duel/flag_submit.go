@@ -2,10 +2,12 @@ package duel
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/google/uuid"
+	logkit "github.com/wahrwelt-kit/go-logkit"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
@@ -22,8 +24,9 @@ type FlagSubmitUsecase struct {
 	duels   usecase.DuelRepo
 	players usecase.PlayerRepo
 	history usecase.HistoryRepo
-	board   usecase.LeaderboardStore
+	board   usecase.LeaderboardBumper
 	timers  TimerStopper
+	log     logkit.Logger
 	clock   clock.Clock
 }
 
@@ -31,12 +34,20 @@ type TimerStopper interface {
 	Stop(duelID uuid.UUID) bool
 }
 
+type FlagSubmitOption func(*FlagSubmitUsecase)
+
+func WithFlagSubmitLogger(log logkit.Logger) FlagSubmitOption {
+	return func(u *FlagSubmitUsecase) {
+		u.log = log
+	}
+}
+
 func NewFlagSubmitUsecase(
 	tx usecase.TxManager,
 	duels usecase.DuelRepo,
 	players usecase.PlayerRepo,
 	history usecase.HistoryRepo,
-	board usecase.LeaderboardStore,
+	board usecase.LeaderboardBumper,
 	clk clock.Clock,
 	timers ...TimerStopper,
 ) *FlagSubmitUsecase {
@@ -58,6 +69,15 @@ func NewFlagSubmitUsecase(
 	}
 }
 
+func (u *FlagSubmitUsecase) Configure(options ...FlagSubmitOption) *FlagSubmitUsecase {
+	for _, opt := range options {
+		if opt != nil {
+			opt(u)
+		}
+	}
+	return u
+}
+
 func (u *FlagSubmitUsecase) SubmitFlag(ctx context.Context, duelID, playerID uuid.UUID, flag string) (Result, error) {
 	now := u.clock.Now()
 	var result Result
@@ -65,6 +85,10 @@ func (u *FlagSubmitUsecase) SubmitFlag(ctx context.Context, duelID, playerID uui
 	if err := u.tx.Do(ctx, func(txCtx context.Context) error {
 		duel, task, err := u.validateSubmission(txCtx, duelID, playerID, flag, now)
 		if err != nil {
+			if errors.Is(err, apperr.ErrDuelFinished) {
+				result = Result{AlreadyFinished: true}
+				return nil
+			}
 			return err
 		}
 
@@ -76,6 +100,14 @@ func (u *FlagSubmitUsecase) SubmitFlag(ctx context.Context, duelID, playerID uui
 		return nil
 	}); err != nil {
 		return Result{}, err
+	}
+
+	if u.timers != nil && result.Correct {
+		u.timers.Stop(duelID)
+	}
+
+	if result.Winner != nil {
+		bumpLeaderboard(ctx, u.board, u.log, duelID, result.Winner.Username)
 	}
 
 	return result, nil
@@ -116,10 +148,6 @@ func (u *FlagSubmitUsecase) finishCorrectFlag(
 	playerID uuid.UUID,
 	now time.Time,
 ) (Result, error) {
-	if u.timers != nil {
-		u.timers.Stop(duel.ID)
-	}
-
 	winner, err := u.players.GetByID(ctx, playerID)
 	if err != nil {
 		return Result{}, fmt.Errorf("FlagSubmitUsecase - finishCorrectFlag - PlayerRepo.GetByID: %w", err)
@@ -127,6 +155,9 @@ func (u *FlagSubmitUsecase) finishCorrectFlag(
 
 	finished, err := u.duels.Finish(ctx, duel.ID, &playerID, now, domain.DuelStatusFinished)
 	if err != nil {
+		if errors.Is(err, apperr.ErrDuelFinished) {
+			return Result{AlreadyFinished: true}, nil
+		}
 		return Result{}, fmt.Errorf("FlagSubmitUsecase - finishCorrectFlag - DuelRepo.Finish: %w", err)
 	}
 	if err := u.duels.MarkSolved(ctx, duel.ID, playerID, now); err != nil {
@@ -140,9 +171,6 @@ func (u *FlagSubmitUsecase) finishCorrectFlag(
 	}
 	if _, err := u.players.UpdateStatus(ctx, duel.Player2ID, domain.PlayerStatusIdle); err != nil {
 		return Result{}, fmt.Errorf("FlagSubmitUsecase - finishCorrectFlag - PlayerRepo.UpdateStatus player2: %w", err)
-	}
-	if err := u.board.IncrementWin(ctx, winner.Username); err != nil {
-		return Result{}, fmt.Errorf("FlagSubmitUsecase - finishCorrectFlag - LeaderboardStore.IncrementWin: %w", err)
 	}
 
 	return Result{

@@ -33,19 +33,22 @@ type Querier interface {
 	ListTasks(ctx context.Context) ([]Task, error)
 	ListTasksByDifficulty(ctx context.Context, difficulty string) ([]Task, error)
 	MarkDuelPlayerTaskSolved(ctx context.Context, arg MarkDuelPlayerTaskSolvedParams) error
+	ResetQueuedPlayers(ctx context.Context) (int64, error)
 	SelectAnyTaskByDifficulty(ctx context.Context, difficulty string) (Task, error)
 	SelectUnsolvedTaskByDifficulty(ctx context.Context, arg SelectUnsolvedTaskByDifficultyParams) (Task, error)
 	TaskInActiveDuel(ctx context.Context, taskID uuid.UUID) (bool, error)
 	// Batch variant used by the leaderboard usecase for Redis usernames.
 	TotalSolveTimeForPlayers(ctx context.Context, dollar_1 []string) ([]TotalSolveTimeForPlayersRow, error)
 	// Aggregates total solve time (ms) across all duels each player has won.
-	// Ordered ASC: faster total time → higher rank. Used as a Redis-leaderboard
+	// Ordered ASC: faster total time -> higher rank. Used as a Redis-leaderboard
 	// tiebreaker when two players share the same win count.
 	TotalSolveTimePerPlayer(ctx context.Context) ([]TotalSolveTimePerPlayerRow, error)
 	UpdateDuelDeadline(ctx context.Context, arg UpdateDuelDeadlineParams) (Duel, error)
 	UpdatePlayerSessionToken(ctx context.Context, arg UpdatePlayerSessionTokenParams) (Player, error)
 	UpdatePlayerStatus(ctx context.Context, arg UpdatePlayerStatusParams) (Player, error)
+	UpdatePlayerStatusIfCurrent(ctx context.Context, arg UpdatePlayerStatusIfCurrentParams) (Player, error)
 	UpdateTask(ctx context.Context, arg UpdateTaskParams) (Task, error)
+	UpsertPlayerSessionByUsername(ctx context.Context, arg UpsertPlayerSessionByUsernameParams) (Player, error)
 }
 
 var _ Querier = (*Queries)(nil)

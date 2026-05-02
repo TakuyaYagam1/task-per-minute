@@ -26,9 +26,9 @@ func run() int {
 		log.Fatalf("Usage: migrate [up|down|status]")
 	}
 
-	cfg, err := config.Load()
+	cfg, err := config.LoadMigration()
 	if err != nil {
-		log.Fatalf("Config initialization failed: %v", err)
+		log.Fatalf("Migration config initialization failed: %v", err)
 	}
 
 	l, err := logkit.New(
@@ -45,7 +45,7 @@ func run() int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	if err := app.RunMigrations(ctx, cfg, l, command); err != nil {
+	if err := app.RunMigrationsDSN(ctx, cfg.DB.DSN, l, command); err != nil {
 		l.WithError(err).Error("migration failed")
 		return 1
 	}

@@ -98,7 +98,7 @@ type TotalSolveTimePerPlayerRow struct {
 }
 
 // Aggregates total solve time (ms) across all duels each player has won.
-// Ordered ASC: faster total time → higher rank. Used as a Redis-leaderboard
+// Ordered ASC: faster total time -> higher rank. Used as a Redis-leaderboard
 // tiebreaker when two players share the same win count.
 func (q *Queries) TotalSolveTimePerPlayer(ctx context.Context) ([]TotalSolveTimePerPlayerRow, error) {
 	rows, err := q.db.Query(ctx, totalSolveTimePerPlayer)

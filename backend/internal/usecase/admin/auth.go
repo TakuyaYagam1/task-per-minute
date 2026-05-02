@@ -1,7 +1,9 @@
 package admin
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"crypto/subtle"
 	"errors"
 	"fmt"
@@ -9,16 +11,13 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase"
 	"github.com/TakuyaYagam1/task-per-minute/pkg/clock"
 )
 
-// Aliases to canonical declarations in internal/usecase/contracts.go so
-// admin.TokenPair / admin.Claims and usecase.TokenPair / usecase.Claims refer
-// to the same types — a prerequisite for *AuthUsecase to satisfy
-// usecase.AdminAuth.
 type (
 	TokenKind = usecase.TokenKind
 	Claims    = usecase.Claims
@@ -26,15 +25,14 @@ type (
 )
 
 const (
-	TokenKindAccess  = usecase.TokenKindAccess
-	TokenKindRefresh = usecase.TokenKindRefresh
-
-	adminSubject = "admin"
+	TokenKindAccess    = usecase.TokenKindAccess
+	TokenKindRefresh   = usecase.TokenKindRefresh
+	adminSubject       = "admin"
+	jwtClockSkewLeeway = 10 * time.Second
+	jwtIssuer          = "task-per-minute-backend"
+	jwtAudience        = "task-per-minute-admin"
 )
 
-// AuthConfig is the narrow value type the usecase needs. It is the usecase's
-// own contract — wiring (cmd/main, wire) projects the global *config.Config
-// onto this struct so the usecase stays decoupled from env-binding shape.
 type AuthConfig struct {
 	Secret        []byte
 	AccessTTL     time.Duration
@@ -53,7 +51,7 @@ func NewAuthUsecase(cfg AuthConfig, clk clock.Clock, rev usecase.RevocationStore
 }
 
 func (u *AuthUsecase) Login(ctx context.Context, password string) (*TokenPair, error) {
-	if subtle.ConstantTimeCompare([]byte(password), u.cfg.AdminPassword) != 1 {
+	if !verifyAdminPassword(u.cfg.AdminPassword, password) {
 		return nil, apperr.ErrInvalidCredentials
 	}
 	pair, err := u.issuePair(adminSubject)
@@ -62,6 +60,21 @@ func (u *AuthUsecase) Login(ctx context.Context, password string) (*TokenPair, e
 	}
 	_ = ctx
 	return pair, nil
+}
+
+func verifyAdminPassword(stored []byte, supplied string) bool {
+	if isBcryptHash(stored) {
+		return bcrypt.CompareHashAndPassword(stored, []byte(supplied)) == nil
+	}
+	storedSum := sha256.Sum256(stored)
+	suppliedSum := sha256.Sum256([]byte(supplied))
+	return subtle.ConstantTimeCompare(storedSum[:], suppliedSum[:]) == 1
+}
+
+func isBcryptHash(stored []byte) bool {
+	return bytes.HasPrefix(stored, []byte("$2a$")) ||
+		bytes.HasPrefix(stored, []byte("$2b$")) ||
+		bytes.HasPrefix(stored, []byte("$2y$"))
 }
 
 func (u *AuthUsecase) Refresh(ctx context.Context, refreshToken string) (*TokenPair, error) {
@@ -73,15 +86,10 @@ func (u *AuthUsecase) Refresh(ctx context.Context, refreshToken string) (*TokenP
 		return nil, apperr.ErrInvalidCredentials
 	}
 
-	revoked, err := u.revocations.IsRevoked(ctx, claims.JTI)
-	if err != nil {
-		return nil, fmt.Errorf("AuthUsecase - Refresh - RevocationStore.IsRevoked: %w", err)
-	}
-	if revoked {
-		return nil, apperr.ErrTokenRevoked
-	}
-
-	if err := u.revocations.Revoke(ctx, claims.JTI, claims.ExpiresAt); err != nil {
+	if err := u.revocations.Revoke(ctx, claims.JTI, revocationExpiresAt(claims)); err != nil {
+		if errors.Is(err, apperr.ErrTokenRevoked) {
+			return nil, apperr.ErrTokenRevoked
+		}
 		return nil, fmt.Errorf("AuthUsecase - Refresh - RevocationStore.Revoke: %w", err)
 	}
 
@@ -101,6 +109,30 @@ func (u *AuthUsecase) VerifyAccess(_ context.Context, token string) (*Claims, er
 		return nil, apperr.ErrInvalidCredentials
 	}
 	return claims, nil
+}
+
+func (u *AuthUsecase) Logout(ctx context.Context, refreshToken string) error {
+	claims, err := u.parse(refreshToken)
+	if err != nil {
+		return err
+	}
+	if claims.Kind != TokenKindRefresh {
+		return apperr.ErrInvalidCredentials
+	}
+	if err := u.revocations.Revoke(ctx, claims.JTI, revocationExpiresAt(claims)); err != nil {
+		if errors.Is(err, apperr.ErrTokenRevoked) {
+			return apperr.ErrTokenRevoked
+		}
+		return fmt.Errorf("AuthUsecase - Logout - RevocationStore.Revoke: %w", err)
+	}
+	return nil
+}
+
+func revocationExpiresAt(claims *Claims) time.Time {
+	if claims == nil {
+		return time.Time{}
+	}
+	return claims.ExpiresAt.Add(jwtClockSkewLeeway)
 }
 
 func (u *AuthUsecase) issuePair(sub string) (*TokenPair, error) {
@@ -126,6 +158,8 @@ func (u *AuthUsecase) issuePair(sub string) (*TokenPair, error) {
 
 func (u *AuthUsecase) sign(sub string, kind TokenKind, iat, exp time.Time) (string, error) {
 	claims := jwt.MapClaims{
+		"iss":  jwtIssuer,
+		"aud":  jwtAudience,
 		"sub":  sub,
 		"kind": string(kind),
 		"iat":  iat.Unix(),
@@ -150,6 +184,9 @@ func (u *AuthUsecase) parse(tokenStr string) (*Claims, error) {
 		},
 		jwt.WithTimeFunc(u.clock.Now),
 		jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}),
+		jwt.WithIssuer(jwtIssuer),
+		jwt.WithAudience(jwtAudience),
+		jwt.WithLeeway(jwtClockSkewLeeway),
 	)
 	if err != nil {
 		if errors.Is(err, jwt.ErrTokenExpired) {
@@ -173,6 +210,12 @@ func (u *AuthUsecase) parse(tokenStr string) (*Claims, error) {
 	exp, _ := mc["exp"].(float64)
 
 	if jti == "" || sub == "" || kindStr == "" {
+		return nil, apperr.ErrInvalidCredentials
+	}
+	if sub != adminSubject {
+		return nil, apperr.ErrInvalidCredentials
+	}
+	if kindStr != string(TokenKindAccess) && kindStr != string(TokenKindRefresh) {
 		return nil, apperr.ErrInvalidCredentials
 	}
 

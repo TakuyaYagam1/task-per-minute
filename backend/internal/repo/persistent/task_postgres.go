@@ -88,10 +88,22 @@ func (r *TaskPostgres) Update(ctx context.Context, id uuid.UUID, in TaskInput) (
 }
 
 func validateTaskInput(in TaskInput) error {
+	if !domain.IsValidTaskTitle(in.Title) {
+		return apperr.ErrTaskValidation
+	}
+	if !domain.IsValidTaskDescription(in.Description) {
+		return apperr.ErrTaskValidation
+	}
 	if !in.Category.IsValid() || !in.Difficulty.IsValid() {
 		return apperr.ErrTaskValidation
 	}
 	if !domain.IsValidTaskTimeLimit(in.TimeLimit) {
+		return apperr.ErrTaskValidation
+	}
+	if !domain.IsValidTaskFlag(in.Flag) {
+		return apperr.ErrTaskValidation
+	}
+	if !domain.IsValidOptionalTaskURL(in.TaskURL) {
 		return apperr.ErrTaskValidation
 	}
 	if !domain.IsValidTaskHints(in.Hints) {
@@ -142,6 +154,9 @@ func taskHintPointers(hints []string) (*string, *string, *string) {
 
 func (r *TaskPostgres) Delete(ctx context.Context, id uuid.UUID) error {
 	if err := r.tx.Querier(ctx).DeleteTask(ctx, id); err != nil {
+		if isForeignKeyViolation(err) {
+			return apperr.Wrap(err, apperr.ErrTaskInUse)
+		}
 		return fmt.Errorf("TaskPostgres - Delete - Querier.DeleteTask: %w", err)
 	}
 	return nil

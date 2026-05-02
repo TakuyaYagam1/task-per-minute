@@ -1,7 +1,7 @@
 SHELL := /usr/bin/env bash
 .DEFAULT_GOAL := help
 
-# Pinned tool versions — keep in sync with codegen configs.
+# Pinned tool versions - keep in sync with codegen configs.
 GOOSE_VERSION   ?= v3.27.0
 SQLC_VERSION    ?= v1.31.0
 OAPI_VERSION    ?= v2.5.1
@@ -51,12 +51,12 @@ clean: ## Remove build artefacts and generated mocks
 gen generate: gen-openapi gen-sqlc gen-wire mocks ## Run all code generators
 
 .PHONY: merge-schemas
-merge-schemas: ## Only merge components/schemas/*.yml → schemas.yml (no codegen)
+merge-schemas: ## Only merge components/schemas/*.yml -> schemas.yml (no codegen)
 	python3 scripts/merge-schemas.py
 
 .PHONY: gen-openapi openapi
 gen-openapi openapi: ## Merge OpenAPI components, run oapi-codegen, cleanup intermediate files
-	bash scripts/openapi-generate.sh
+	OAPI_VERSION=$(OAPI_VERSION) bash scripts/openapi-generate.sh
 	@rm -f internal/openapi/components/schemas.yml
 
 .PHONY: gen-sqlc
@@ -72,7 +72,7 @@ mocks: ## Generate testify mocks for hand-written usecase ports (skipped while n
 	@if grep -qE '^[[:space:]]+github\.com/' codegen/.mockery.yml; then \
 		$(MOCKERY) --config codegen/.mockery.yml; \
 	else \
-		echo "mockery: no active targets in codegen/.mockery.yml — skipping"; \
+		echo "mockery: no active targets in codegen/.mockery.yml - skipping"; \
 	fi
 
 ##@ Lint, format, test
@@ -91,25 +91,30 @@ fmt: ## golangci-lint fmt
 
 .PHONY: test
 test: ## Unit tests with race detector (skips integration_test/)
-	go test -race -count=1 $$(go list ./... | grep -v /integration_test)
+	go test -race -count=1 -parallel=5 $$(go list ./... | grep -v /integration_test)
 
 .PHONY: test-int
-test-int: ## Integration tests (testcontainers — requires Docker)
-	go test -race -count=1 -tags=integration ./integration_test/...
+test-int: ## Integration tests (testcontainers - requires Docker)
+	go test -race -count=1 -parallel=5 -tags=integration ./integration_test/...
+
+.PHONY: test-race
+test-race: ## Unit + integration tests with race detector (full suite, requires Docker)
+	$(MAKE) test
+	$(MAKE) test-int
 
 .PHONY: cover
 cover: ## Unit-test coverage report (HTML)
-	go test -race -count=1 -coverprofile=coverage.out $$(go list ./... | grep -v /integration_test)
+	go test -race -count=1 -parallel=5 -coverprofile=coverage.out $$(go list ./... | grep -v /integration_test)
 	go tool cover -html=coverage.out -o coverage.html
 
 ##@ Database migrations
 
 .PHONY: migrate-up
-migrate-up: ## goose up — apply all pending migrations
+migrate-up: ## goose up - apply all pending migrations
 	$(GOOSE) -dir $(MIGRATIONS_DIR) postgres "$(DB_DSN)" up
 
 .PHONY: migrate-down
-migrate-down: ## goose down — roll back the last migration
+migrate-down: ## goose down - roll back the last migration
 	$(GOOSE) -dir $(MIGRATIONS_DIR) postgres "$(DB_DSN)" down
 
 .PHONY: migrate-status

@@ -4,7 +4,6 @@ import (
 	"github.com/google/wire"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/controller/websocket"
-	"github.com/TakuyaYagam1/task-per-minute/internal/repo/inmem"
 	"github.com/TakuyaYagam1/task-per-minute/internal/repo/persistent"
 	redisrepo "github.com/TakuyaYagam1/task-per-minute/internal/repo/redis"
 	"github.com/TakuyaYagam1/task-per-minute/internal/repo/storage"
@@ -43,6 +42,7 @@ var ReposSet = wire.NewSet(
 	persistent.NewPlayerPostgres,
 	wire.Bind(new(usecase.PlayerRepo), new(*persistent.PlayerPostgres)),
 	wire.Bind(new(usecase.PlayerStatusRepo), new(*persistent.PlayerPostgres)),
+	wire.Bind(new(usecase.QueuedPlayerResetter), new(*persistent.PlayerPostgres)),
 	persistent.NewDuelPostgres,
 	wire.Bind(new(usecase.DuelRepo), new(*persistent.DuelPostgres)),
 	wire.Bind(new(usecase.ActiveDuelRepo), new(*persistent.DuelPostgres)),
@@ -56,12 +56,14 @@ var ReposSet = wire.NewSet(
 	wire.Bind(new(usecase.LeaderboardStore), new(*redisrepo.LeaderboardRedis)),
 	provideMatchmakingRedis,
 	wire.Bind(new(usecase.MatchmakingQueue), new(*redisrepo.MatchmakingRedis)),
+	wire.Bind(new(usecase.MatchmakingQueueCleaner), new(*redisrepo.MatchmakingRedis)),
 )
 
 var UsecasesSet = wire.NewSet(
 	provideClock,
-	inmem.NewRevocation,
-	wire.Bind(new(usecase.RevocationStore), new(*inmem.Revocation)),
+	provideRevocationRedis,
+	wire.Bind(new(usecase.RevocationStore), new(*redisrepo.RevocationRedis)),
+	wire.Bind(new(RevocationJanitor), new(*redisrepo.RevocationRedis)),
 	adminusecase.NewAuthUsecase,
 	wire.Bind(new(usecase.AdminAuth), new(*adminusecase.AuthUsecase)),
 	adminusecase.NewTaskUsecase,
@@ -72,7 +74,7 @@ var UsecasesSet = wire.NewSet(
 	wire.Bind(new(usecase.Player), new(*playerusecase.PlayerUsecase)),
 	duelusecase.NewMatchmakingUsecase,
 	wire.Bind(new(websocket.Matchmaking), new(*duelusecase.MatchmakingUsecase)),
-	duelusecase.NewTimerRegistry,
+	provideTimerRegistry,
 	provideHintScheduler,
 	provideDuelTimers,
 	provideFlagSubmitUsecase,
@@ -81,6 +83,7 @@ var UsecasesSet = wire.NewSet(
 	wire.Bind(new(usecase.Duel), new(*duelusecase.ReadUsecase)),
 	leaderboardusecase.NewLeaderboardUsecase,
 	wire.Bind(new(usecase.Leaderboard), new(*leaderboardusecase.LeaderboardUsecase)),
+	wire.Bind(new(usecase.LeaderboardBumper), new(*leaderboardusecase.LeaderboardUsecase)),
 )
 
 var MiddlewareSet = wire.NewSet(
@@ -97,6 +100,8 @@ var WebSocketSet = wire.NewSet(
 
 var HTTPSet = wire.NewSet(
 	provideHealthChecks,
+	provideLoginRateLimiter,
+	provideJoinRateLimiter,
 	provideRESTServer,
 	provideHTTPHandler,
 	provideHTTPServer,

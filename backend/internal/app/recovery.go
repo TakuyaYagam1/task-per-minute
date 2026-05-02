@@ -15,6 +15,8 @@ type StartupRecoverer struct {
 	tx          usecase.TxManager
 	duels       usecase.ActiveDuelRepo
 	players     usecase.PlayerStatusRepo
+	queued      usecase.QueuedPlayerResetter
+	queue       usecase.MatchmakingQueueCleaner
 	broadcaster usecase.DuelBroadcaster
 	clock       clock.Clock
 	log         logkit.Logger
@@ -24,6 +26,8 @@ func NewStartupRecoverer(
 	tx usecase.TxManager,
 	duels usecase.ActiveDuelRepo,
 	players usecase.PlayerStatusRepo,
+	queued usecase.QueuedPlayerResetter,
+	queue usecase.MatchmakingQueueCleaner,
 	broadcaster usecase.DuelBroadcaster,
 	clk clock.Clock,
 	log logkit.Logger,
@@ -35,6 +39,8 @@ func NewStartupRecoverer(
 		tx:          tx,
 		duels:       duels,
 		players:     players,
+		queued:      queued,
+		queue:       queue,
 		broadcaster: broadcaster,
 		clock:       clk,
 		log:         log,
@@ -44,6 +50,11 @@ func NewStartupRecoverer(
 func (r *StartupRecoverer) Recover(ctx context.Context) error {
 	if r == nil {
 		return nil
+	}
+
+	queuedReset, err := r.recoverQueue(ctx)
+	if err != nil {
+		return err
 	}
 
 	active, err := r.duels.ListActive(ctx)
@@ -67,9 +78,28 @@ func (r *StartupRecoverer) Recover(ctx context.Context) error {
 	}
 
 	if r.log != nil {
-		r.log.Info("startup recovery completed", logkit.Fields{"active_duels_recovered": recovered})
+		r.log.Info("startup recovery completed", logkit.Fields{
+			"active_duels_recovered": recovered,
+			"queued_players_reset":   queuedReset,
+		})
 	}
 	return nil
+}
+
+func (r *StartupRecoverer) recoverQueue(ctx context.Context) (int64, error) {
+	if r.queue != nil {
+		if err := r.queue.Clear(ctx); err != nil {
+			return 0, fmt.Errorf("StartupRecoverer - recoverQueue - MatchmakingQueueCleaner.Clear: %w", err)
+		}
+	}
+	if r.queued == nil {
+		return 0, nil
+	}
+	reset, err := r.queued.ResetQueuedToIdle(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("StartupRecoverer - recoverQueue - QueuedPlayerResetter.ResetQueuedToIdle: %w", err)
+	}
+	return reset, nil
 }
 
 func (r *StartupRecoverer) recoverDuel(ctx context.Context, duel *domain.Duel) (*domain.Duel, error) {

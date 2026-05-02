@@ -8,7 +8,10 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
-OAPI_VERSION="${OAPI_VERSION:-v2.5.0}"
+if [ -z "${OAPI_VERSION:-}" ]; then
+  OAPI_VERSION="$(awk -F '\\?=' '/^OAPI_VERSION[[:space:]]*\\?=/ {gsub(/[[:space:]]/, "", $2); print $2; exit}' Makefile)"
+fi
+OAPI_VERSION="${OAPI_VERSION:-v2.5.1}"
 OAPI="go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@${OAPI_VERSION}"
 
 PYTHON_BIN="${PYTHON_BIN:-python3}"
@@ -31,7 +34,7 @@ trap 'rm -rf "$BUNDLE_DIR"' EXIT
 BUNDLE="$BUNDLE_DIR/openapi.bundle.yml"
 
 REDOCLY_VERSION="${REDOCLY_VERSION:-1.34.0}"
-echo "openapi-generate.sh: bundling $SPEC → $BUNDLE"
+echo "openapi-generate.sh: bundling $SPEC -> $BUNDLE"
 npx -y "@redocly/cli@${REDOCLY_VERSION}" bundle "$SPEC" -o "$BUNDLE" --ext yml >/dev/null
 
 for cfg in "${configs[@]}"; do
@@ -39,7 +42,7 @@ for cfg in "${configs[@]}"; do
   $OAPI -config "$cfg" "$BUNDLE"
 done
 
-# Drop the merged schemas.yml — it is a build artefact reconstructed by
+# Drop the merged schemas.yml - it is a build artefact reconstructed by
 # merge-schemas.py on every run. The bundled openapi.bundle.yml in $BUNDLE_DIR
 # is auto-removed by the trap above.
 rm -f internal/openapi/components/schemas.yml

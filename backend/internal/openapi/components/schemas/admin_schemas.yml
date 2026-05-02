@@ -5,6 +5,7 @@ AdminLoginRequest:
     password:
       type: string
       minLength: 1
+      maxLength: 256
       writeOnly: true
 
 AdminRefreshRequest:
@@ -13,6 +14,14 @@ AdminRefreshRequest:
   properties:
     refresh_token:
       type: string
+
+AdminLogoutRequest:
+  type: object
+  required: [refresh_token]
+  properties:
+    refresh_token:
+      type: string
+      description: Refresh token to revoke. Access token is taken from the Authorization header.
 
 AdminTokenResponse:
   type: object

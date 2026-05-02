@@ -139,6 +139,7 @@ func newDuelScenarioFixture(t *testing.T) *duelScenarioFixture {
 		base.tasks,
 		base.history,
 		base.duels,
+		nil,
 		fixedIntegrationClock{now: now},
 	)
 	f.flags = duelusecase.NewFlagSubmitUsecase(
@@ -415,6 +416,32 @@ func TestDuel_ReconnectFinalizeOpponentForfeit(t *testing.T) {
 	require.Equal(t, domain.DuelStatusFinished, got.Status)
 	require.NotNil(t, got.WinnerID)
 	require.Equal(t, alice.ID, *got.WinnerID)
+}
+
+func TestDuel_ReconnectFinalizeOpponentForfeit_BumpsLeaderboard(t *testing.T) {
+	f := newDuelScenarioFixture(t)
+	ctx := context.Background()
+
+	alice := f.makePlayer(t, uniq("alice"))
+	bob := f.makePlayer(t, uniq("bob"))
+	duel := f.makeActiveDuel(t, alice.ID, bob.ID, f.now.Add(time.Minute))
+	mgr := duelusecase.NewReconnectManager(
+		f.mgr,
+		f.duels,
+		f.players,
+		&duelScenarioTimer{},
+		&duelScenarioBroadcaster{},
+		fixedIntegrationClock{now: f.now},
+		duelusecase.WithLeaderboardStore(f.boardStore),
+	)
+
+	mgr.FinalizeOpponentForfeit(ctx, duel.ID, alice.ID)
+
+	scores, err := f.boardStore.WinScores(ctx)
+	require.NoError(t, err)
+	require.Len(t, scores, 1, "forfeit must add exactly one entry to the leaderboard ZSET")
+	require.Equal(t, alice.Username, scores[0].Username)
+	require.Equal(t, 1, scores[0].TasksSolved)
 }
 
 func TestDuel_ReconnectDuelTimerExpiryBroadcastsFinished(t *testing.T) {

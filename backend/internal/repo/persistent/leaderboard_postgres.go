@@ -19,7 +19,7 @@ func NewLeaderboardPostgres(tx *TxManager) *LeaderboardPostgres {
 
 // TotalSolveTimePerPlayer returns the cumulative solve time (ms) of every
 // player who has won at least one finished duel, ordered ASC. Used as a
-// tiebreaker for the Redis leaderboard (faster total time → higher rank).
+// tiebreaker for the Redis leaderboard (faster total time -> higher rank).
 func (r *LeaderboardPostgres) TotalSolveTimePerPlayer(ctx context.Context) ([]LeaderboardRow, error) {
 	rows, err := r.tx.Querier(ctx).TotalSolveTimePerPlayer(ctx)
 	if err != nil {

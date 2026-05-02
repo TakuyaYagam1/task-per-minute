@@ -29,9 +29,14 @@ that are consumed inside containers:
 DB_DSN=postgres://admin:password@postgres:5432/task_per_minute?sslmode=disable
 REDIS_ADDR=redis:6379
 SEAWEEDFS_ENDPOINT=seaweedfs:8333
+SEAWEEDFS_PUBLIC_ENDPOINT=localhost:8333
+SEAWEEDFS_PUBLIC_SECURE=false
 ```
 
-When running the backend directly from the host, use `localhost`.
+`SEAWEEDFS_ENDPOINT` is used by the backend container for internal S3 calls,
+while `SEAWEEDFS_PUBLIC_ENDPOINT` is embedded into browser-facing presigned
+URLs. When running the backend directly from the host, use `localhost` in both
+addresses.
 
 - Start the local compose stack:
 
@@ -87,10 +92,10 @@ docker compose --env-file ../../.env up -d --remove-orphans
 
 ## Development Team
 
-- [CaXaRo4iK](https://github.com/CaXaRo4iK) — DevOps, deployment,
+- [CaXaRo4iK](https://github.com/CaXaRo4iK) - DevOps, deployment,
   infrastructure, and tasks
-- [FANATBEBRbl](https://github.com/FANATBEBRbl) — Frontend
-- [skr1ms](https://github.com/skr1ms) — Backend
+- [FANATBEBRbl](https://github.com/FANATBEBRbl) - Frontend
+- [skr1ms](https://github.com/skr1ms) - Backend
 
 ## Social Links
 

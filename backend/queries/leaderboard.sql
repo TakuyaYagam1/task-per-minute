@@ -1,6 +1,6 @@
 -- name: TotalSolveTimePerPlayer :many
 -- Aggregates total solve time (ms) across all duels each player has won.
--- Ordered ASC: faster total time → higher rank. Used as a Redis-leaderboard
+-- Ordered ASC: faster total time -> higher rank. Used as a Redis-leaderboard
 -- tiebreaker when two players share the same win count.
 SELECT p.id AS player_id,
     p.username AS username,

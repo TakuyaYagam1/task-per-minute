@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 
+	coderws "github.com/coder/websocket"
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	goredis "github.com/redis/go-redis/v9"
@@ -67,11 +68,13 @@ func provideRedis(ctx context.Context, cfg redisclient.Config) (*goredis.Client,
 
 func provideSeaweedConfig(cfg *config.Config) storage.Config {
 	return storage.Config{
-		Endpoint:  cfg.SeaweedFS.Endpoint,
-		AccessKey: cfg.SeaweedFS.AccessKey,
-		SecretKey: cfg.SeaweedFS.SecretKey,
-		Bucket:    cfg.SeaweedFS.Bucket,
-		Secure:    cfg.SeaweedFS.Secure,
+		Endpoint:       cfg.SeaweedFS.Endpoint,
+		PublicEndpoint: cfg.SeaweedFS.PublicEndpoint,
+		AccessKey:      cfg.SeaweedFS.AccessKey,
+		SecretKey:      cfg.SeaweedFS.SecretKey,
+		Bucket:         cfg.SeaweedFS.Bucket,
+		Secure:         cfg.SeaweedFS.Secure,
+		PublicSecure:   cfg.SeaweedFS.PublicSecure,
 	}
 }
 
@@ -85,6 +88,10 @@ func provideLeaderboardRedis(client *goredis.Client) *redisrepo.LeaderboardRedis
 
 func provideMatchmakingRedis(client *goredis.Client) *redisrepo.MatchmakingRedis {
 	return redisrepo.NewMatchmakingRedis(client, redisrepo.DefaultMatchmakingQueueKey)
+}
+
+func provideRevocationRedis(client *goredis.Client) *redisrepo.RevocationRedis {
+	return redisrepo.NewRevocationRedis(client, redisrepo.DefaultRevocationKeyPrefix)
 }
 
 func provideAuthConfig(cfg *config.Config) adminusecase.AuthConfig {
@@ -121,11 +128,25 @@ func provideFlagSubmitUsecase(
 	duels usecase.DuelRepo,
 	players usecase.PlayerRepo,
 	history usecase.HistoryRepo,
-	board usecase.LeaderboardStore,
+	board usecase.LeaderboardBumper,
 	clk clock.Clock,
 	timers *duelusecase.TimerRegistry,
+	log logkit.Logger,
 ) *duelusecase.FlagSubmitUsecase {
-	return duelusecase.NewFlagSubmitUsecase(tx, duels, players, history, board, clk, timers)
+	return duelusecase.NewFlagSubmitUsecase(tx, duels, players, history, board, clk, timers).
+		Configure(duelusecase.WithFlagSubmitLogger(log))
+}
+
+func provideTimerRegistry(
+	ctx context.Context,
+	tx usecase.TxManager,
+	duels usecase.DuelRepo,
+	players usecase.PlayerRepo,
+	clk clock.Clock,
+) *duelusecase.TimerRegistry {
+	return duelusecase.NewTimerRegistry(tx, duels, players, clk,
+		duelusecase.WithTimerRegistryContext(ctx),
+	)
 }
 
 func provideRESTServer(
@@ -136,21 +157,47 @@ func provideRESTServer(
 	leaderboard usecase.Leaderboard,
 	duels usecase.Duel,
 	health restv1.HealthChecks,
+	loginLimiter *middleware.LoginRateLimiter,
+	joinLimiter *middleware.JoinRateLimiter,
 ) *restv1.Server {
 	return restv1.New(restv1.Dependencies{
-		Players:     players,
-		AdminAuth:   auth,
-		Tasks:       tasks,
-		Upload:      upload,
-		Leaderboard: leaderboard,
-		Duels:       duels,
-		Health:      health,
+		Players:      players,
+		AdminAuth:    auth,
+		Tasks:        tasks,
+		Upload:       upload,
+		Leaderboard:  leaderboard,
+		Duels:        duels,
+		Health:       health,
+		LoginLimiter: loginLimiter,
+		JoinLimiter:  joinLimiter,
 	})
+}
+
+func provideLoginRateLimiter(ctx context.Context, cfg *config.Config) *middleware.LoginRateLimiter {
+	return middleware.NewLoginRateLimiter(
+		ctx,
+		cfg.Admin.LoginRateAttempts,
+		cfg.Admin.LoginRateWindow,
+		cfg.Admin.LoginRateBucketTTL,
+	)
+}
+
+func provideJoinRateLimiter(ctx context.Context, cfg *config.Config) *middleware.JoinRateLimiter {
+	return middleware.NewJoinRateLimiter(
+		ctx,
+		cfg.Player.JoinRateAttempts,
+		cfg.Player.JoinRateWindow,
+		cfg.Player.JoinRateBucketTTL,
+	)
 }
 
 func provideRESTMiddlewares(log logkit.Logger, cfg *config.Config) []openapi.MiddlewareFunc {
 	return []openapi.MiddlewareFunc{
-		middleware.Build(log, middleware.WithTimeout(cfg.HTTP.WriteTimeout)),
+		middleware.Build(
+			log,
+			middleware.WithTimeout(cfg.HTTP.WriteTimeout),
+			middleware.WithTrustedProxyCIDRs(cfg.HTTP.TrustedProxyCIDRs),
+		),
 	}
 }
 
@@ -171,22 +218,44 @@ func provideDuelTimers(
 
 func provideRawWebSocketServer(
 	ctx context.Context,
+	cfg *config.Config,
 	players usecase.PlayerRepo,
 	matchmaking websocket.Matchmaking,
 	flags websocket.FlagSubmitter,
 	hubs *websocket.HubRegistry,
 	hints *duelusecase.HintScheduler,
 ) rawWebSocketServer {
-	return rawWebSocketServer{
-		Server: websocket.NewServer(
-			players,
-			matchmaking,
-			flags,
-			hubs,
-			websocket.WithContext(ctx),
-			websocket.WithHintScheduler(hints),
-		),
+	options := []websocket.Option{
+		websocket.WithContext(ctx),
+		websocket.WithHintScheduler(hints),
 	}
+	if accept := provideWSAcceptOptions(cfg); accept != nil {
+		options = append(options, websocket.WithAcceptOptions(accept))
+	}
+	return rawWebSocketServer{
+		Server: websocket.NewServer(players, matchmaking, flags, hubs, options...),
+	}
+}
+
+// provideWSAcceptOptions returns nil when no allowed origins are configured -
+// coder/websocket then applies its same-origin default, which is the right
+// behaviour for a single-domain deploy. When WS_ALLOWED_ORIGINS is supplied
+// (e.g. the frontend lives on a different host) it becomes the explicit
+// allowlist passed to coderws.Accept.
+func provideWSAcceptOptions(cfg *config.Config) *coderws.AcceptOptions {
+	if cfg == nil || len(cfg.WS.AllowedOrigins) == 0 {
+		return nil
+	}
+	patterns := make([]string, 0, len(cfg.WS.AllowedOrigins))
+	for _, raw := range cfg.WS.AllowedOrigins {
+		if raw != "" {
+			patterns = append(patterns, raw)
+		}
+	}
+	if len(patterns) == 0 {
+		return nil
+	}
+	return &coderws.AcceptOptions{OriginPatterns: patterns}
 }
 
 func provideDuelBroadcaster(server rawWebSocketServer) usecase.DuelBroadcaster {
@@ -194,14 +263,21 @@ func provideDuelBroadcaster(server rawWebSocketServer) usecase.DuelBroadcaster {
 }
 
 func provideReconnectManager(
+	ctx context.Context,
 	tx usecase.TxManager,
 	duels usecase.DuelRepo,
 	players usecase.PlayerRepo,
 	timers duelusecase.DuelTimer,
 	broadcaster usecase.DuelBroadcaster,
 	clk clock.Clock,
+	board usecase.LeaderboardBumper,
+	log logkit.Logger,
 ) *duelusecase.ReconnectManager {
-	return duelusecase.NewReconnectManager(tx, duels, players, timers, broadcaster, clk)
+	return duelusecase.NewReconnectManager(tx, duels, players, timers, broadcaster, clk,
+		duelusecase.WithLeaderboardStore(board),
+		duelusecase.WithReconnectContext(ctx),
+		duelusecase.WithReconnectLogger(log),
+	)
 }
 
 func provideWebSocketServer(
@@ -213,6 +289,7 @@ func provideWebSocketServer(
 }
 
 func provideHTTPHandler(
+	cfg *config.Config,
 	rest *restv1.Server,
 	ws *websocket.Server,
 	auth *adminusecase.AuthUsecase,
@@ -221,12 +298,13 @@ func provideHTTPHandler(
 ) http.Handler {
 	router := chi.NewRouter()
 	router.Handle("/ws", ws)
-	return restv1.NewHandler(rest, restv1.HandlerOptions{
+	handler := restv1.NewHandler(rest, restv1.HandlerOptions{
 		Router:      router,
 		AdminAuth:   auth,
 		PlayerRepo:  players,
 		Middlewares: middlewares,
 	})
+	return middleware.CORS(cfg.HTTP.AllowedOrigins)(handler)
 }
 
 func provideHTTPServer(cfg *config.Config, handler http.Handler) *http.Server {
@@ -243,10 +321,13 @@ func provideApp(
 	tx usecase.TxManager,
 	duels usecase.ActiveDuelRepo,
 	players usecase.PlayerStatusRepo,
+	queued usecase.QueuedPlayerResetter,
+	queue usecase.MatchmakingQueueCleaner,
 	broadcaster usecase.DuelBroadcaster,
 	clk clock.Clock,
 	server *http.Server,
 	ws *websocket.Server,
+	revocation RevocationJanitor,
 ) *App {
 	return &App{
 		Storage:     seaweed,
@@ -255,7 +336,10 @@ func provideApp(
 		Tx:          tx,
 		Duels:       duels,
 		Players:     players,
+		Queued:      queued,
+		Queue:       queue,
 		Broadcaster: broadcaster,
 		Clock:       clk,
+		Revocation:  revocation,
 	}
 }

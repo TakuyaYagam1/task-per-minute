@@ -16,6 +16,13 @@ type WebSocketShutdowner interface {
 	Shutdown(ctx context.Context)
 }
 
+// RevocationJanitor evicts expired entries from the JWT revocation store.
+// Redis-backed implementations can no-op it because Redis evicts via TTL
+// natively.
+type RevocationJanitor interface {
+	Cleanup()
+}
+
 type App struct {
 	Storage     BucketEnsurer
 	Server      *http.Server
@@ -23,6 +30,9 @@ type App struct {
 	Tx          usecase.TxManager
 	Duels       usecase.ActiveDuelRepo
 	Players     usecase.PlayerStatusRepo
+	Queued      usecase.QueuedPlayerResetter
+	Queue       usecase.MatchmakingQueueCleaner
 	Broadcaster usecase.DuelBroadcaster
 	Clock       clock.Clock
+	Revocation  RevocationJanitor
 }

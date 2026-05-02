@@ -11,6 +11,7 @@ runs:
 ```bash
 cd /opt/task-per-minute/deployment/docker
 export BACKEND_IMAGE=<sha-image>
+docker network inspect proxy_tpm >/dev/null 2>&1 || docker network create proxy_tpm
 docker compose --env-file ../../.env pull backend migrate
 docker compose --env-file ../../.env run --rm migrate
 docker compose --env-file ../../.env up -d --remove-orphans backend
@@ -120,3 +121,19 @@ docker compose --env-file ../../.env run --rm migrate down
 
 Repeat `migrate down` only when each step has been reviewed. After schema
 rollback, redeploy the compatible backend image and verify `/health`.
+
+## Hint Mechanics
+
+Every duel task carries exactly three hints. The backend pushes them to both
+players over the WebSocket `hint_unlocked` event at 25 %, 50 %, and 75 % of
+the task's `time_limit` (see `domain.BuildHintSchedule`).
+
+- Hints **do not affect scoring** and cannot be unlocked manually; they are
+  released on a timer aligned to `started_at`.
+- When the duel timer pauses (`opponent_disconnected`), the hint schedule
+  freezes together with the duel deadline and resumes after `duel_resume`.
+- On player reconnect, the backend replays already-unlocked hints inside
+  `duel_resume`, so no hint is ever dropped.
+- End-to-end coverage: `TestE2EHintFlow_AutoUnlocksAt25_50_75` in
+  `backend/integration_test/e2e_test.go` boots the real backend and asserts
+  ordering and text of all three events.

@@ -84,3 +84,13 @@ func (q *MatchmakingRedis) Remove(ctx context.Context, playerID uuid.UUID) error
 	}
 	return nil
 }
+
+func (q *MatchmakingRedis) Clear(ctx context.Context) error {
+	if q == nil || q.client == nil {
+		return ErrNilClient
+	}
+	if err := q.client.Del(ctx, q.queueKey).Err(); err != nil {
+		return fmt.Errorf("MatchmakingRedis - Clear - Client.Del: %w", err)
+	}
+	return nil
+}

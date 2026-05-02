@@ -17,7 +17,8 @@ import (
 
 type matchmakingFixture struct {
 	*duelFixture
-	uc *duelusecase.MatchmakingUsecase
+	uc    *duelusecase.MatchmakingUsecase
+	queue *redisrepo.MatchmakingRedis
 }
 
 func newMatchmakingFixture(t *testing.T) *matchmakingFixture {
@@ -33,9 +34,10 @@ func newMatchmakingFixture(t *testing.T) *matchmakingFixture {
 		f.tasks,
 		f.history,
 		f.duels,
+		nil,
 		fixedIntegrationClock{now: time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC)},
 	)
-	return &matchmakingFixture{duelFixture: f, uc: uc}
+	return &matchmakingFixture{duelFixture: f, uc: uc, queue: queue}
 }
 
 func TestDuelMatchmaking_TwoPlayersParallelCreatesOneDuel(t *testing.T) {
@@ -137,4 +139,39 @@ func TestDuelMatchmaking_LeaveQueueRemovesPlayerAndSetsIdle(t *testing.T) {
 	result, err = f.uc.JoinQueue(ctx, next.ID)
 	require.NoError(t, err)
 	require.Nil(t, result, "leaving the queue must remove the previous player from Redis")
+}
+
+func TestDuelMatchmaking_StaleInDuelQueueEntryDoesNotResetActivePlayer(t *testing.T) {
+	f := newMatchmakingFixture(t)
+	ctx := context.Background()
+
+	f.makeTaskWithLimit(t, uniq("easy"), domain.DifficultyEasy, 60)
+	active := f.makePlayer(t, uniq("active"))
+	waiting := f.makePlayer(t, uniq("waiting"))
+	next := f.makePlayer(t, uniq("next"))
+
+	_, err := f.players.UpdateStatus(ctx, active.ID, domain.PlayerStatusInDuel)
+	require.NoError(t, err)
+	require.NoError(t, f.queue.Enqueue(ctx, active.ID), "simulate stale Redis queue entry from a previous process")
+
+	result, err := f.uc.JoinQueue(ctx, waiting.ID)
+	require.NoError(t, err)
+	require.Nil(t, result, "stale in_duel entry must be skipped instead of creating a new duel")
+
+	gotActive, err := f.players.GetByID(ctx, active.ID)
+	require.NoError(t, err)
+	require.Equal(t, domain.PlayerStatusInDuel, gotActive.Status, "foreign stale pair must not reset active player to idle")
+	gotWaiting, err := f.players.GetByID(ctx, waiting.ID)
+	require.NoError(t, err)
+	require.Equal(t, domain.PlayerStatusQueued, gotWaiting.Status, "valid queued player should be requeued")
+
+	result, err = f.uc.JoinQueue(ctx, next.ID)
+	require.NoError(t, err)
+	require.NotNil(t, result, "requeued valid player should still be matchable")
+	require.Contains(t, []uuid.UUID{result.Duel.Player1ID, result.Duel.Player2ID}, waiting.ID)
+	require.Contains(t, []uuid.UUID{result.Duel.Player1ID, result.Duel.Player2ID}, next.ID)
+
+	gotActive, err = f.players.GetByID(ctx, active.ID)
+	require.NoError(t, err)
+	require.Equal(t, domain.PlayerStatusInDuel, gotActive.Status)
 }

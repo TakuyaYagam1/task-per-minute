@@ -21,10 +21,11 @@ const (
 )
 
 type client struct {
-	player *domain.Player
-	conn   *coderws.Conn
-	send   chan []byte
-	done   chan struct{}
+	player       *domain.Player
+	sessionToken uuid.UUID
+	conn         *coderws.Conn
+	send         chan []byte
+	done         chan struct{}
 
 	closeOnce sync.Once
 	closed    atomic.Bool
@@ -38,11 +39,16 @@ var _ wskit.Subscriber = (*client)(nil)
 
 func newClient(player *domain.Player, conn *coderws.Conn) *client {
 	conn.SetReadLimit(defaultReadLimit)
+	var sessionToken uuid.UUID
+	if player != nil && player.SessionToken != nil {
+		sessionToken = *player.SessionToken
+	}
 	return &client{
-		player: player,
-		conn:   conn,
-		send:   make(chan []byte, defaultSendBufferSize),
-		done:   make(chan struct{}),
+		player:       player,
+		sessionToken: sessionToken,
+		conn:         conn,
+		send:         make(chan []byte, defaultSendBufferSize),
+		done:         make(chan struct{}),
 	}
 }
 
@@ -53,7 +59,10 @@ func (c *client) Send(data []byte) bool {
 	select {
 	case c.send <- data:
 		return true
+	case <-c.done:
+		return false
 	default:
+		c.Close()
 		return false
 	}
 }
@@ -62,7 +71,9 @@ func (c *client) Close() {
 	c.closeOnce.Do(func() {
 		c.closed.Store(true)
 		close(c.done)
-		_ = c.conn.Close(coderws.StatusNormalClosure, "")
+		go func() {
+			_ = c.conn.Close(coderws.StatusNormalClosure, "")
+		}()
 	})
 }
 
@@ -146,4 +157,14 @@ func (c *client) currentDuel() (uuid.UUID, bool) {
 		return uuid.Nil, false
 	}
 	return *c.duelID, true
+}
+
+func (c *client) stateSnapshot() (queued bool, duelID uuid.UUID, inDuel bool) {
+	c.stateMu.RLock()
+	defer c.stateMu.RUnlock()
+	queued = c.queued
+	if c.duelID == nil {
+		return queued, uuid.Nil, false
+	}
+	return queued, *c.duelID, true
 }

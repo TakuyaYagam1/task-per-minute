@@ -83,6 +83,19 @@ func TestUsecase_Top50_LimitsToFifty(t *testing.T) {
 	require.Equal(t, 50, got[49].Rank)
 }
 
+func TestUsecase_Top50_EmptyScoresSkipsRepo(t *testing.T) {
+	t.Parallel()
+
+	store := usecasemocks.NewMockLeaderboardStore(t)
+	repo := usecasemocks.NewMockLeaderboardRepo(t)
+	store.EXPECT().WinScores(mock.Anything).Return([]usecase.LeaderboardScore{}, nil)
+
+	got, err := leaderboardusecase.NewLeaderboardUsecase(store, repo, fixedClock{}).Top50(t.Context())
+
+	require.NoError(t, err)
+	require.Empty(t, got)
+}
+
 func TestUsecase_Top50_CachesFastCalls(t *testing.T) {
 	t.Parallel()
 
@@ -104,6 +117,72 @@ func TestUsecase_Top50_CachesFastCalls(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, "alice", got[0].Username)
 	}
+}
+
+func TestUsecase_IncrementWin_InvalidatesTop50Cache(t *testing.T) {
+	t.Parallel()
+
+	store := usecasemocks.NewMockLeaderboardStore(t)
+	repo := usecasemocks.NewMockLeaderboardRepo(t)
+	store.EXPECT().WinScores(mock.Anything).Return([]usecase.LeaderboardScore{
+		{Username: "alice", TasksSolved: 1},
+	}, nil).Once()
+	repo.EXPECT().TotalSolveTimeForPlayers(mock.Anything, []string{"alice"}).Return([]usecase.LeaderboardPlayerTime{
+		playerTime("alice", 1_000),
+	}, nil).Once()
+	store.EXPECT().IncrementWin(mock.Anything, "bob").Return(nil).Once()
+	store.EXPECT().WinScores(mock.Anything).Return([]usecase.LeaderboardScore{
+		{Username: "alice", TasksSolved: 1},
+		{Username: "bob", TasksSolved: 1},
+	}, nil).Once()
+	repo.EXPECT().TotalSolveTimeForPlayers(mock.Anything, []string{"alice", "bob"}).Return([]usecase.LeaderboardPlayerTime{
+		playerTime("alice", 1_000),
+		playerTime("bob", 500),
+	}, nil).Once()
+
+	uc := leaderboardusecase.NewLeaderboardUsecase(store, repo, fixedClock{
+		now: time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC),
+	})
+
+	got, err := uc.Top50(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, []leaderboardusecase.Entry{
+		{Rank: 1, Username: "alice", TasksSolved: 1, TotalSolveTimeMs: 1_000},
+	}, got)
+
+	require.NoError(t, uc.IncrementWin(t.Context(), "bob"))
+
+	got, err = uc.Top50(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, []leaderboardusecase.Entry{
+		{Rank: 1, Username: "bob", TasksSolved: 1, TotalSolveTimeMs: 500},
+		{Rank: 2, Username: "alice", TasksSolved: 1, TotalSolveTimeMs: 1_000},
+	}, got)
+}
+
+func TestUsecase_Top50_CacheReturnsClones(t *testing.T) {
+	t.Parallel()
+
+	store := usecasemocks.NewMockLeaderboardStore(t)
+	repo := usecasemocks.NewMockLeaderboardRepo(t)
+	store.EXPECT().WinScores(mock.Anything).Return([]usecase.LeaderboardScore{
+		{Username: "alice", TasksSolved: 1},
+	}, nil).Once()
+	repo.EXPECT().TotalSolveTimeForPlayers(mock.Anything, []string{"alice"}).Return([]usecase.LeaderboardPlayerTime{
+		playerTime("alice", 1_000),
+	}, nil).Once()
+
+	uc := leaderboardusecase.NewLeaderboardUsecase(store, repo, fixedClock{
+		now: time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC),
+	})
+
+	got, err := uc.Top50(t.Context())
+	require.NoError(t, err)
+	got[0].Username = "mutated"
+
+	got, err = uc.Top50(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, "alice", got[0].Username)
 }
 
 func TestUsecase_Top50_ReloadsAfterCacheTTL(t *testing.T) {
@@ -135,6 +214,22 @@ func TestUsecase_Top50_StoreErrorIsWrapped(t *testing.T) {
 	store := usecasemocks.NewMockLeaderboardStore(t)
 	repo := usecasemocks.NewMockLeaderboardRepo(t)
 	store.EXPECT().WinScores(mock.Anything).Return(nil, lowLevelErr)
+
+	_, err := leaderboardusecase.NewLeaderboardUsecase(store, repo, fixedClock{}).Top50(t.Context())
+
+	require.ErrorIs(t, err, lowLevelErr)
+}
+
+func TestUsecase_Top50_RepoErrorIsWrapped(t *testing.T) {
+	t.Parallel()
+
+	lowLevelErr := errors.New("postgres down")
+	store := usecasemocks.NewMockLeaderboardStore(t)
+	repo := usecasemocks.NewMockLeaderboardRepo(t)
+	store.EXPECT().WinScores(mock.Anything).Return([]usecase.LeaderboardScore{
+		{Username: "alice", TasksSolved: 1},
+	}, nil)
+	repo.EXPECT().TotalSolveTimeForPlayers(mock.Anything, []string{"alice"}).Return(nil, lowLevelErr)
 
 	_, err := leaderboardusecase.NewLeaderboardUsecase(store, repo, fixedClock{}).Top50(t.Context())
 

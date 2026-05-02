@@ -21,24 +21,33 @@ sudo bash scripts/server-bootstrap.sh
 
 The script is idempotent. It installs Docker Engine, ensures the `ctf` runtime
 user, installs `git`, creates `/opt/task-per-minute`, prepares UFW rules for
-`22/tcp`, `80/tcp`, `443/tcp`, and protects `.env` as `0600 ctf`.
+`22/tcp`, `80/tcp`, `443/tcp`, ensures the `proxy_tpm` Docker network exists,
+and protects `.env`.
+
+By default `DEPLOY_USER` is taken from `SUDO_USER`: that user gets Docker
+access, membership in the `ctf` group, and access to `DEPLOY_PATH` and `.env`.
+The `ctf` runtime user stays no-shell and should not be used as the GitHub
+Actions SSH user.
 
 Useful overrides:
 
 ```bash
-sudo APP_USER=ctf APP_DIR=/opt/task-per-minute bash scripts/server-bootstrap.sh
+sudo DEPLOY_USER="$USER" APP_USER=ctf APP_DIR=/opt/task-per-minute bash scripts/server-bootstrap.sh
 sudo CONFIGURE_UFW=0 bash scripts/server-bootstrap.sh
 ```
+
+After the user is added to the `docker`/`ctf` groups, log in again so the new
+groups are visible in your shell session.
 
 ## 3. Fill Environment
 
 The runtime `.env` file lives at repository root:
 
 ```bash
-sudo install -m 0600 -o ctf -g ctf .env.example .env
+sudo install -m 0640 -o "$USER" -g ctf .env.example .env
 sudo editor .env
-sudo chown ctf:ctf .env
-sudo chmod 0600 .env
+sudo chown "$USER:ctf" .env
+sudo chmod 0640 .env
 ```
 
 Secrets must not stay empty:
@@ -57,14 +66,39 @@ Inside Docker Compose, use service names in runtime addresses:
 DB_DSN=postgres://<user>:<password>@postgres:5432/<db>?sslmode=disable
 REDIS_ADDR=redis:6379
 SEAWEEDFS_ENDPOINT=seaweedfs:8333
+SEAWEEDFS_PUBLIC_ENDPOINT=files.example.com
+SEAWEEDFS_PUBLIC_SECURE=true
+```
+
+`SEAWEEDFS_ENDPOINT` is used only inside the Docker network for upload/delete
+and health checks. `SEAWEEDFS_PUBLIC_ENDPOINT` is host-only, without a scheme,
+and must be reachable by the browser through a reverse proxy to the SeaweedFS
+S3 endpoint; this host is embedded into presigned ZIP URLs.
+
+By default the backend assumes same-origin access through a reverse proxy, so
+`HTTP_ALLOWED_ORIGINS` and `WS_ALLOWED_ORIGINS` can stay empty. If the frontend
+calls the backend directly from another origin, configure an exact allowlist
+for both REST and WebSocket traffic:
+
+```env
+HTTP_ALLOWED_ORIGINS=https://app.example.com,http://localhost:3000
+WS_ALLOWED_ORIGINS=https://app.example.com,http://localhost:3000
+```
+
+If the backend is behind a reverse proxy and should use the real client IP for
+rate limits and logs, add the proxy address ranges:
+
+```env
+HTTP_TRUSTED_PROXY_CIDRS=172.18.0.0/16,127.0.0.0/8
 ```
 
 ## 4. First Start
 
 ```bash
 cd /opt/task-per-minute/deployment/docker
-sudo -u ctf docker compose --env-file ../../.env run --rm migrate
-sudo -u ctf docker compose --env-file ../../.env up -d --remove-orphans
+docker network inspect proxy_tpm >/dev/null 2>&1 || sudo docker network create proxy_tpm
+docker compose --env-file ../../.env run --rm migrate
+docker compose --env-file ../../.env up -d --remove-orphans
 ```
 
 Docker will restart the containers after host reboot once the stack has been
@@ -74,8 +108,8 @@ created because the compose services use `restart: unless-stopped`.
 
 ```bash
 cd /opt/task-per-minute/deployment/docker
-sudo -u ctf docker compose --env-file ../../.env ps
-sudo -u ctf docker compose --env-file ../../.env logs -f backend
+docker compose --env-file ../../.env ps
+docker compose --env-file ../../.env logs -f backend
 curl -fsS http://127.0.0.1:8080/health
 ```
 
@@ -112,8 +146,9 @@ SLACK_DEPLOY_WEBHOOK
 ```
 
 `DEPLOY_USER` should be an SSH user with shell, git access, docker access, and
-read/write access to `DEPLOY_PATH`. Do not use the no-shell `ctf` runtime user
-unless you intentionally change its shell.
+read/write access to `DEPLOY_PATH`/`.env`. Bootstrap configures this for the
+user from `SUDO_USER` or the explicit `DEPLOY_USER`. Do not use the no-shell
+`ctf` runtime user unless you intentionally change its shell.
 
 The workflow builds and pushes a SHA-tagged backend image, SSHes to the server,
 resets the repository to the deployed SHA, and runs:

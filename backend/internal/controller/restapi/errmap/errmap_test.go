@@ -43,6 +43,7 @@ func TestHandleError_MapsAllSentinels(t *testing.T) {
 		{"validation", apperr.ErrValidation, http.StatusBadRequest, apperr.ErrValidation.Message},
 		{"username_invalid", apperr.ErrUsernameInvalid, http.StatusBadRequest, apperr.ErrUsernameInvalid.Message},
 		{"task_validation", apperr.ErrTaskValidation, http.StatusBadRequest, apperr.ErrTaskValidation.Message},
+		{"rate_limited", apperr.ErrRateLimited, http.StatusTooManyRequests, apperr.ErrRateLimited.Message},
 		{"internal", apperr.ErrInternal, http.StatusInternalServerError, apperr.ErrInternal.Message},
 	}
 

@@ -16,11 +16,13 @@ type TxManager interface {
 
 type PlayerRepo interface {
 	Create(ctx context.Context, username string) (*domain.Player, error)
+	JoinByUsername(ctx context.Context, username string, sessionToken uuid.UUID) (*domain.Player, error)
 	GetByID(ctx context.Context, id uuid.UUID) (*domain.Player, error)
 	GetByUsername(ctx context.Context, username string) (*domain.Player, error)
 	GetBySessionToken(ctx context.Context, token uuid.UUID) (*domain.Player, error)
 	UpdateSessionToken(ctx context.Context, id uuid.UUID, token *uuid.UUID) (*domain.Player, error)
 	UpdateStatus(ctx context.Context, id uuid.UUID, status domain.PlayerStatus) (*domain.Player, error)
+	UpdateStatusIfCurrent(ctx context.Context, id uuid.UUID, from, to domain.PlayerStatus) (*domain.Player, bool, error)
 }
 
 type DuelRepo interface {
@@ -42,6 +44,10 @@ type ActiveDuelRepo interface {
 
 type PlayerStatusRepo interface {
 	UpdateStatus(ctx context.Context, id uuid.UUID, status domain.PlayerStatus) (*domain.Player, error)
+}
+
+type QueuedPlayerResetter interface {
+	ResetQueuedToIdle(ctx context.Context) (int64, error)
 }
 
 type TaskInput struct {
@@ -88,8 +94,12 @@ type LeaderboardScore struct {
 	TasksSolved int
 }
 
-type LeaderboardStore interface {
+type LeaderboardBumper interface {
 	IncrementWin(ctx context.Context, username string) error
+}
+
+type LeaderboardStore interface {
+	LeaderboardBumper
 	WinScores(ctx context.Context) ([]LeaderboardScore, error)
 }
 
@@ -97,6 +107,10 @@ type MatchmakingQueue interface {
 	Enqueue(ctx context.Context, playerID uuid.UUID) error
 	PopPair(ctx context.Context) (uuid.UUID, uuid.UUID, bool, error)
 	Remove(ctx context.Context, playerID uuid.UUID) error
+}
+
+type MatchmakingQueueCleaner interface {
+	Clear(ctx context.Context) error
 }
 
 type RevocationStore interface {
@@ -151,9 +165,10 @@ type MatchResult struct {
 }
 
 type FlagSubmitResult struct {
-	Correct      bool
-	FinishedDuel *domain.Duel
-	Winner       *domain.Player
+	Correct         bool
+	AlreadyFinished bool
+	FinishedDuel    *domain.Duel
+	Winner          *domain.Player
 }
 
 type DuelDetail struct {
@@ -202,6 +217,7 @@ type TokenPair struct {
 type AdminAuth interface {
 	Login(ctx context.Context, password string) (*TokenPair, error)
 	Refresh(ctx context.Context, refreshToken string) (*TokenPair, error)
+	Logout(ctx context.Context, refreshToken string) error
 }
 
 type LeaderboardEntry struct {

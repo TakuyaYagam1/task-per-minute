@@ -49,6 +49,60 @@ func TestPlayerRepo_Create_DuplicateUsername_ReturnsErrUsernameTaken(t *testing.
 		"second Create with same username must map unique violation to apperr.ErrUsernameTaken")
 }
 
+func TestPlayerRepo_JoinByUsername_QueuedPlayerResetsIdle(t *testing.T) {
+	t.Parallel()
+	repo, _ := newPlayerRepo()
+	ctx := context.Background()
+	name := uniq("alice")
+
+	created, err := repo.JoinByUsername(ctx, name, uuid.New())
+	require.NoError(t, err)
+
+	_, err = repo.UpdateStatus(ctx, created.ID, domain.PlayerStatusQueued)
+	require.NoError(t, err)
+
+	token := uuid.New()
+	joined, err := repo.JoinByUsername(ctx, name, token)
+	require.NoError(t, err)
+	require.Equal(t, created.ID, joined.ID)
+	require.NotNil(t, joined.SessionToken)
+	require.Equal(t, token, *joined.SessionToken)
+	require.Equal(t, domain.PlayerStatusIdle, joined.Status,
+		"session rotation must stale old queue entries by resetting queued players to idle")
+}
+
+func TestPlayerRepo_ResetQueuedToIdle_OnlyQueuedPlayers(t *testing.T) {
+	pool, _ := SetupTestDB(t)
+	mgr := persistent.NewTxManager(pool)
+	repo := persistent.NewPlayerPostgres(mgr)
+	ctx := context.Background()
+
+	idle, err := repo.Create(ctx, uniq("idle"))
+	require.NoError(t, err)
+	queued, err := repo.Create(ctx, uniq("queued"))
+	require.NoError(t, err)
+	active, err := repo.Create(ctx, uniq("active"))
+	require.NoError(t, err)
+	_, err = repo.UpdateStatus(ctx, queued.ID, domain.PlayerStatusQueued)
+	require.NoError(t, err)
+	_, err = repo.UpdateStatus(ctx, active.ID, domain.PlayerStatusInDuel)
+	require.NoError(t, err)
+
+	reset, err := repo.ResetQueuedToIdle(ctx)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, reset)
+
+	gotIdle, err := repo.GetByID(ctx, idle.ID)
+	require.NoError(t, err)
+	require.Equal(t, domain.PlayerStatusIdle, gotIdle.Status)
+	gotQueued, err := repo.GetByID(ctx, queued.ID)
+	require.NoError(t, err)
+	require.Equal(t, domain.PlayerStatusIdle, gotQueued.Status)
+	gotActive, err := repo.GetByID(ctx, active.ID)
+	require.NoError(t, err)
+	require.Equal(t, domain.PlayerStatusInDuel, gotActive.Status)
+}
+
 func TestPlayerRepo_GetByID(t *testing.T) {
 	t.Parallel()
 	repo, _ := newPlayerRepo()

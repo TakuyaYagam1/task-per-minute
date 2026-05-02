@@ -2,6 +2,10 @@ package domain
 
 import (
 	"math"
+	"net"
+	"net/url"
+	"strconv"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -51,11 +55,18 @@ func (c Category) String() string {
 	return string(c)
 }
 
-const TaskTitleMaxRunes = 255
+const (
+	TaskTitleMaxRunes = 255
+	TaskFlagMaxRunes  = 255
+)
 
 func IsValidTaskTitle(title string) bool {
 	n := utf8.RuneCountInString(title)
 	return n > 0 && n <= TaskTitleMaxRunes
+}
+
+func IsValidTaskDescription(description string) bool {
+	return strings.TrimSpace(description) != ""
 }
 
 func IsValidTaskTimeLimit(seconds int) bool {
@@ -63,7 +74,38 @@ func IsValidTaskTimeLimit(seconds int) bool {
 }
 
 func IsValidTaskFlag(flag string) bool {
-	return flag != ""
+	n := utf8.RuneCountInString(flag)
+	return n > 0 && n <= TaskFlagMaxRunes
+}
+
+func IsValidOptionalTaskURL(raw *string) bool {
+	if raw == nil {
+		return true
+	}
+	value := strings.TrimSpace(*raw)
+	if value == "" {
+		return false
+	}
+	if isValidHostPortTaskURL(value) {
+		return true
+	}
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Host == "" {
+		return false
+	}
+	return parsed.Scheme == "http" || parsed.Scheme == "https"
+}
+
+func isValidHostPortTaskURL(value string) bool {
+	if strings.Contains(value, "://") {
+		return false
+	}
+	host, port, err := net.SplitHostPort(value)
+	if err != nil || strings.TrimSpace(host) == "" {
+		return false
+	}
+	portNumber, err := strconv.Atoi(port)
+	return err == nil && portNumber > 0 && portNumber <= 65535
 }
 
 type Task struct {
