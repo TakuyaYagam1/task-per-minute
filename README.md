@@ -95,7 +95,7 @@ docker compose --env-file ../../.env up -d --remove-orphans
 
 - [CaXaRo4iK](https://github.com/CaXaRo4iK) - DevOps, деплой, инфраструктура и таски
 - [FANATBEBRbl](https://github.com/FANATBEBRbl) - Frontend
-- [skr1ms](https://github.com/skr1ms) - Backend
+- [TakuyaYagam1](https://github.com/TakuyaYagam1) - Backend
 
 ## Социальные ссылки
 
