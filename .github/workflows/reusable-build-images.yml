@@ -1,0 +1,164 @@
+name: reusable build images
+
+on:
+  workflow_call:
+    inputs:
+      target_sha:
+        required: true
+        type: string
+      backend_image_ref:
+        required: true
+        type: string
+      frontend_image_ref:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  NODE_VERSION: 24.15.0
+  PYTHON_VERSION: '3.13'
+  FRONTEND_WORKDIR: frontend
+
+jobs:
+  build-images:
+    name: build and push images
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ inputs.target_sha }}
+
+      - name: login to ghcr
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: setup node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: setup python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: install openapi generator dependency
+        run: python -m pip install --disable-pip-version-check PyYAML==6.0.2
+
+      - name: install frontend dependencies
+        working-directory: ${{ env.FRONTEND_WORKDIR }}
+        run: npm ci
+
+      - name: generate api types
+        working-directory: ${{ env.FRONTEND_WORKDIR }}
+        run: npm run openapi:generate
+
+      - name: validate public frontend urls
+        env:
+          NEXT_PUBLIC_API_URL: ${{ vars.NEXT_PUBLIC_API_URL }}
+          NEXT_PUBLIC_ADMIN_API_URL: ${{ vars.NEXT_PUBLIC_ADMIN_API_URL }}
+          NEXT_PUBLIC_WS_URL: ${{ vars.NEXT_PUBLIC_WS_URL }}
+          HTTP_ALLOWED_ORIGINS: ${{ vars.HTTP_ALLOWED_ORIGINS }}
+          WS_ALLOWED_ORIGINS: ${{ vars.WS_ALLOWED_ORIGINS }}
+        run: |
+          python - <<'PY'
+          import os
+          import sys
+          from urllib.parse import urlparse
+
+          api_url = os.environ.get("NEXT_PUBLIC_API_URL", "").strip()
+          admin_api_url = os.environ.get("NEXT_PUBLIC_ADMIN_API_URL", "").strip()
+          ws_url = os.environ.get("NEXT_PUBLIC_WS_URL", "").strip()
+          http_allowed = os.environ.get("HTTP_ALLOWED_ORIGINS", "").strip()
+          ws_allowed = os.environ.get("WS_ALLOWED_ORIGINS", "").strip()
+
+          def fail(message: str) -> None:
+              print(f"::error::{message}")
+              sys.exit(1)
+
+          def parse_url(name: str, value: str, schemes: set[str]):
+              parsed = urlparse(value)
+              if parsed.scheme not in schemes or not parsed.netloc:
+                  fail(f"{name} must be an absolute URL with one of: {', '.join(sorted(schemes))}")
+              if parsed.params or parsed.query or parsed.fragment:
+                  fail(f"{name} must not include params, query, or fragment")
+              return parsed
+
+          def origin(parsed) -> str:
+              return f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
+
+          def split_origins(value: str) -> set[str]:
+              return {
+                  item.strip().rstrip("/")
+                  for item in value.replace("\n", ",").split(",")
+                  if item.strip()
+              }
+
+          if not api_url and not admin_api_url and not ws_url:
+              print("Using same-origin frontend mode: NEXT_PUBLIC_* URLs are empty.")
+              sys.exit(0)
+
+          if not api_url or not admin_api_url or not ws_url:
+              fail("Direct frontend mode requires NEXT_PUBLIC_API_URL, NEXT_PUBLIC_ADMIN_API_URL, and NEXT_PUBLIC_WS_URL. Leave all empty for same-origin mode.")
+
+          api = parse_url("NEXT_PUBLIC_API_URL", api_url, {"https"})
+          admin_api = parse_url("NEXT_PUBLIC_ADMIN_API_URL", admin_api_url, {"https"})
+          ws = parse_url("NEXT_PUBLIC_WS_URL", ws_url, {"wss"})
+
+          if ws.path.rstrip("/") != "/ws":
+              fail("NEXT_PUBLIC_WS_URL must point to the backend /ws endpoint")
+
+          ws_http_origin = f"https://{ws.netloc}".rstrip("/")
+          if origin(api) != origin(admin_api) or origin(api) != ws_http_origin:
+              fail("NEXT_PUBLIC_API_URL, NEXT_PUBLIC_ADMIN_API_URL, and NEXT_PUBLIC_WS_URL must use the same backend origin")
+
+          http_origins = split_origins(http_allowed)
+          ws_origins = split_origins(ws_allowed)
+          if not http_origins or not ws_origins:
+              fail("Direct frontend mode requires HTTP_ALLOWED_ORIGINS and WS_ALLOWED_ORIGINS GitHub vars. Leave NEXT_PUBLIC_* empty for same-origin mode.")
+          if "*" in http_origins or "*" in ws_origins:
+              fail("Direct frontend mode must not use wildcard REST/WS origin allowlists")
+          if not ws_origins.issubset(http_origins):
+              fail("WS_ALLOWED_ORIGINS must be a subset of HTTP_ALLOWED_ORIGINS for direct browser mode")
+
+          print("Validated direct frontend public URL mode.")
+          PY
+
+      - name: setup buildx
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+
+      - name: build and push backend image
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
+        with:
+          context: backend
+          file: backend/Dockerfile
+          push: true
+          tags: |
+            ${{ inputs.backend_image_ref }}
+
+      - name: build and push frontend image
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
+        with:
+          context: frontend
+          file: frontend/Dockerfile
+          push: true
+          build-args: |
+            BACKEND_PORT=${{ vars.BACKEND_PORT || 8080 }}
+            BACKEND_URL=${{ vars.FRONTEND_BACKEND_URL || format('http://backend:{0}', vars.BACKEND_PORT || 8080) }}
+            FRONTEND_PORT=${{ vars.FRONTEND_PORT || 3000 }}
+            NEXT_PUBLIC_API_URL=${{ vars.NEXT_PUBLIC_API_URL }}
+            NEXT_PUBLIC_ADMIN_API_URL=${{ vars.NEXT_PUBLIC_ADMIN_API_URL }}
+            NEXT_PUBLIC_WS_URL=${{ vars.NEXT_PUBLIC_WS_URL }}
+          tags: |
+            ${{ inputs.frontend_image_ref }}

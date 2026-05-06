@@ -1,29 +1,14 @@
-name: frontend ci
+name: reusable frontend verify
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'frontend/**'
-      - 'backend/internal/openapi/**'
-      - 'backend/scripts/merge-schemas.py'
-      - '.github/workflows/frontend-ci.yml'
-  pull_request:
-    branches:
-      - main
-    paths:
-      - 'frontend/**'
-      - 'backend/internal/openapi/**'
-      - 'backend/scripts/merge-schemas.py'
-      - '.github/workflows/frontend-ci.yml'
+  workflow_call:
+    inputs:
+      target_sha:
+        required: true
+        type: string
 
 permissions:
   contents: read
-
-concurrency:
-  group: frontend-ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
 
 env:
   NODE_VERSION: 24.15.0
@@ -34,10 +19,12 @@ jobs:
   verify:
     name: verify
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 40
     steps:
       - name: checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ inputs.target_sha }}
 
       - name: setup node
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
@@ -81,5 +68,5 @@ jobs:
       - name: e2e
         working-directory: ${{ env.FRONTEND_WORKDIR }}
         env:
-          E2E_WORKERS: 2
+          E2E_WORKERS: 1
         run: npm run test:e2e -- --reporter=line

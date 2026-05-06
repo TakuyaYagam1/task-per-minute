@@ -214,10 +214,12 @@ Renewal идет тем же certbot sidecar через webroot challenge каж
 
 ## 6. Деплой через GitHub Actions
 
-Workflow деплоя backend находится в `.github/workflows/backend-deploy.yml`,
-frontend - в `.github/workflows/frontend-deploy.yml`. В настройках репозитория
-создайте GitHub Environment `production` и включите required reviewers, если
-нужен ручной approve перед продом.
+Единый workflow находится в `.github/workflows/pipeline.yml`. Он только
+оркестрирует reusable workflow-файлы рядом: backend checks, frontend verify,
+сборку images и production deploy. Один push в `main` запускает один GitHub
+Actions run со всеми jobs. В настройках репозитория создайте GitHub Environment
+`production` и включите required reviewers, если нужен ручной approve перед
+продом.
 
 Workflow использует GitHub-hosted runner и подключается к серверу по SSH.
 Self-hosted runner на продакшн-сервере для этого сценария не нужен.
@@ -282,34 +284,27 @@ WS_ALLOWED_ORIGINS      # WS browser origins; subset HTTP_ALLOWED_ORIGINS
 из `SUDO_USER` или явно переданного `DEPLOY_USER`. Не используйте no-shell
 пользователя `ctf`, если специально не меняли ему shell.
 
-Backend workflow собирает immutable SHA-tagged backend image, пушит его в GHCR,
-заходит на сервер по SSH, сбрасывает репозиторий на нужный SHA и выполняет:
+Workflow собирает immutable SHA-tagged backend и frontend images, пушит их в
+GHCR, заходит на сервер по SSH, сбрасывает репозиторий на нужный SHA и
+выполняет:
 
 ```bash
 export BACKEND_IMAGE=<sha-image>
-docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml pull backend
-docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml up -d --remove-orphans backend
+export FRONTEND_IMAGE=<sha-image>
+docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml pull backend frontend
+docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml up -d --remove-orphans backend frontend
 ```
 
 Backend запускает Goose-миграции при старте. Если миграция падает, новый
 backend-контейнер завершается или остается unhealthy, health gate не проходит,
-а workflow откатывает backend на предыдущий image. После успешного health gate
-workflow закрепляет `BACKEND_IMAGE` в серверном `.env` на SHA image деплоя.
-
-Frontend workflow собирает immutable SHA-tagged frontend image, пушит его в
-GHCR и обновляет только frontend service. Перед Docker build он заново
-генерирует frontend OpenAPI types из backend spec в том же target SHA:
-
-```bash
-export FRONTEND_IMAGE=<sha-image>
-docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml pull frontend
-docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml up -d --remove-orphans frontend
-```
+а workflow откатывает backend/frontend на предыдущие images. Перед Docker build
+frontend job заново генерирует OpenAPI types из backend spec в том же target
+SHA.
 
 После deploy workflow проверяет и frontend page, и same-origin rewrite
 `/api/v1/leaderboard`, поэтому сломанный baked `BACKEND_URL` валит frontend
 rollout, а не проходит только за счет статического ответа страницы. После
-успешного health gate workflow закрепляет `FRONTEND_IMAGE` в серверном `.env`
-на SHA image деплоя.
+успешного health gate workflow закрепляет `BACKEND_IMAGE` и `FRONTEND_IMAGE` в
+серверном `.env` на SHA images деплоя.
 
 Ручной откат описан в [runbook.md](runbook.md).

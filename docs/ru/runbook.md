@@ -4,32 +4,24 @@
 
 ## Обычный деплой
 
-GitHub Actions workflow собирает immutable SHA-tagged backend image, пушит его в
-GHCR, заходит на сервер по SSH, сбрасывает репозиторий на целевой SHA и
-выполняет:
+GitHub Actions workflow собирает immutable SHA-tagged backend/frontend images,
+пушит их в GHCR, заходит на сервер по SSH, сбрасывает репозиторий на целевой
+SHA и выполняет:
 
 ```bash
 cd /opt/task-per-minute/deployment/docker
 export BACKEND_IMAGE=<sha-image>
-docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml pull backend
-docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml up -d --remove-orphans backend
+export FRONTEND_IMAGE=<sha-image>
+docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml pull backend frontend
+docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml up -d --remove-orphans backend frontend
 ```
 
 Backend запускает Goose-миграции при старте. Если миграция падает, новый
 backend-контейнер завершается или остается unhealthy, health gate не проходит,
-а workflow откатывает backend на предыдущий image и проверяет его health.
-Успешные deploy и rollback шаги также обновляют `BACKEND_IMAGE` в серверном
-`.env`, чтобы последующие ручные compose-операции использовали pinned image.
-
-Frontend workflow аналогично собирает immutable SHA-tagged frontend image и
-обновляет только frontend service:
-
-```bash
-cd /opt/task-per-minute/deployment/docker
-export FRONTEND_IMAGE=<sha-image>
-docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml pull frontend
-docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml up -d --remove-orphans frontend
-```
+а workflow откатывает backend/frontend на предыдущие images и проверяет health.
+Успешные deploy и rollback шаги также обновляют `BACKEND_IMAGE` и
+`FRONTEND_IMAGE` в серверном `.env`, чтобы последующие ручные
+compose-операции использовали pinned images.
 
 ## Health gate
 
@@ -92,7 +84,7 @@ docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.
 ## Откат frontend image
 
 Используйте это, если новый frontend image развернулся, но frontend health gate
-не прошел. Frontend workflow делает такой откат через
+не прошел. Workflow делает такой откат через
 `.last-deployed-frontend-sha` и после rollback проверяет frontend page плюс
 same-origin API rewrite. Если `.last-deployed-frontend-sha` отсутствует,
 автоматический rollback недоступен и deploy требует ручного recovery. Успешные

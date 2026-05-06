@@ -216,10 +216,11 @@ reloads without exposing the Docker socket.
 
 ## 6. GitHub Actions Deploy
 
-The backend deploy workflow is `.github/workflows/backend-deploy.yml`; the
-frontend deploy workflow is `.github/workflows/frontend-deploy.yml`. Configure
-the GitHub Environment named `production` with required reviewers in repository
-settings.
+The single workflow is `.github/workflows/pipeline.yml`. It only orchestrates
+the nearby reusable workflow files: backend checks, frontend verify, image
+builds, and production deploy. One push to `main` creates one GitHub Actions run
+with all jobs. Configure the GitHub Environment named `production` with required
+reviewers in repository settings.
 
 The workflow uses GitHub-hosted runners and deploys to the server over SSH. A
 self-hosted runner on the production server is not required.
@@ -283,35 +284,26 @@ read/write access to `DEPLOY_PATH`/`.env`. Bootstrap configures this for the
 user from `SUDO_USER` or the explicit `DEPLOY_USER`. Do not use the no-shell
 `ctf` runtime user unless you intentionally change its shell.
 
-The backend workflow builds and pushes an immutable SHA-tagged backend image,
+The workflow builds and pushes immutable SHA-tagged backend and frontend images,
 SSHes to the server, resets the repository to the deployed SHA, and runs:
 
 ```bash
 export BACKEND_IMAGE=<sha-image>
-docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml pull backend
-docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml up -d --remove-orphans backend
+export FRONTEND_IMAGE=<sha-image>
+docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml pull backend frontend
+docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml up -d --remove-orphans backend frontend
 ```
 
 The backend runs Goose migrations during startup. If migration fails, the new
 backend container exits or stays unhealthy, the health gate fails, and the
-workflow rollback path restores the previous backend image. After a successful
-health gate, the workflow pins `BACKEND_IMAGE` in the server `.env` to the
-deployed SHA image.
-
-The frontend workflow builds and pushes an immutable SHA-tagged frontend image
-and updates only the frontend service. Before Docker build, it regenerates the
-frontend OpenAPI types from the backend spec in the same target SHA:
-
-```bash
-export FRONTEND_IMAGE=<sha-image>
-docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml pull frontend
-docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml up -d --remove-orphans frontend
-```
+workflow rollback path restores the previous backend/frontend images. Before
+Docker build, the frontend job regenerates OpenAPI types from the backend spec
+in the same target SHA.
 
 After deployment it verifies both the frontend page and the same-origin
 `/api/v1/leaderboard` rewrite, so a broken baked `BACKEND_URL` fails the
 frontend rollout instead of passing on a static page response. After a
-successful health gate, the workflow pins `FRONTEND_IMAGE` in the server `.env`
-to the deployed SHA image.
+successful health gate, the workflow pins `BACKEND_IMAGE` and `FRONTEND_IMAGE`
+in the server `.env` to the deployed SHA images.
 
 Manual rollback commands are in [runbook.md](runbook.md).

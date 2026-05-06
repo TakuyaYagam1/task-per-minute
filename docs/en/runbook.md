@@ -4,32 +4,24 @@ Operational notes for production deploys and manual rollback.
 
 ## Normal Deploy
 
-The GitHub Actions deploy workflow builds an immutable SHA-tagged backend image,
-pushes it to GHCR, SSHes to the server, resets the repository to the target SHA,
-then runs:
+The GitHub Actions deploy workflow builds immutable SHA-tagged backend/frontend
+images, pushes them to GHCR, SSHes to the server, resets the repository to the
+target SHA, then runs:
 
 ```bash
 cd /opt/task-per-minute/deployment/docker
 export BACKEND_IMAGE=<sha-image>
-docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml pull backend
-docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml up -d --remove-orphans backend
+export FRONTEND_IMAGE=<sha-image>
+docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml pull backend frontend
+docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml up -d --remove-orphans backend frontend
 ```
 
 The backend runs Goose migrations during startup. If a migration fails, the new
 backend container exits or stays unhealthy, the health gate fails, and the
-workflow rollback path restores the previous backend image and verifies its
-health. Successful deploy and rollback steps also update `BACKEND_IMAGE` in the
-server `.env`, so later manual compose operations keep using the pinned image.
-
-The frontend workflow similarly builds an immutable SHA-tagged frontend image
-and updates only the frontend service:
-
-```bash
-cd /opt/task-per-minute/deployment/docker
-export FRONTEND_IMAGE=<sha-image>
-docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml pull frontend
-docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml up -d --remove-orphans frontend
-```
+workflow rollback path restores the previous backend/frontend images and
+verifies health. Successful deploy and rollback steps also update
+`BACKEND_IMAGE` and `FRONTEND_IMAGE` in the server `.env`, so later manual
+compose operations keep using the pinned images.
 
 ## Health Gate
 
@@ -93,7 +85,7 @@ docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.
 ## Roll Back Frontend Image
 
 Use this when the new frontend image deploys but frontend health verification
-fails. The frontend workflow performs this automatically from
+fails. The workflow performs this automatically from
 `.last-deployed-frontend-sha` and verifies the frontend page plus same-origin
 API rewrite after rollback. If `.last-deployed-frontend-sha` is missing,
 automatic rollback is not available and the deploy requires manual recovery.

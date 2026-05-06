@@ -1,0 +1,135 @@
+name: pipeline
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - 'deployment/**'
+      - 'scripts/**'
+      - '.env.example'
+      - 'package*.json'
+      - '.github/workflows/**'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - 'deployment/**'
+      - 'scripts/**'
+      - '.env.example'
+      - 'package*.json'
+      - '.github/workflows/**'
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Commit SHA to build and deploy. Defaults to the workflow ref SHA.
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: pipeline-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  BACKEND_IMAGE_NAME: task-per-minute-backend
+  FRONTEND_IMAGE_NAME: task-per-minute-frontend
+
+jobs:
+  resolve:
+    name: resolve target
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      target_sha: ${{ steps.resolve.outputs.target_sha }}
+      backend_image_repo: ${{ steps.resolve.outputs.backend_image_repo }}
+      backend_image_ref: ${{ steps.resolve.outputs.backend_image_ref }}
+      frontend_image_repo: ${{ steps.resolve.outputs.frontend_image_repo }}
+      frontend_image_ref: ${{ steps.resolve.outputs.frontend_image_ref }}
+    steps:
+      - name: resolve pipeline metadata
+        id: resolve
+        env:
+          DISPATCH_SHA: ${{ inputs.sha }}
+          REF_SHA: ${{ github.sha }}
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+          REGISTRY: ${{ env.REGISTRY }}
+          BACKEND_IMAGE_NAME: ${{ env.BACKEND_IMAGE_NAME }}
+          FRONTEND_IMAGE_NAME: ${{ env.FRONTEND_IMAGE_NAME }}
+        run: |
+          set -Eeuo pipefail
+
+          target_sha="$REF_SHA"
+          if [ -n "${DISPATCH_SHA:-}" ]; then
+            target_sha="$DISPATCH_SHA"
+          fi
+
+          owner="$(printf '%s' "$REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
+          backend_image_repo="$REGISTRY/$owner/$BACKEND_IMAGE_NAME"
+          frontend_image_repo="$REGISTRY/$owner/$FRONTEND_IMAGE_NAME"
+
+          {
+            echo "target_sha=$target_sha"
+            echo "backend_image_repo=$backend_image_repo"
+            echo "backend_image_ref=$backend_image_repo:$target_sha"
+            echo "frontend_image_repo=$frontend_image_repo"
+            echo "frontend_image_ref=$frontend_image_repo:$target_sha"
+          } >> "$GITHUB_OUTPUT"
+
+  backend-checks:
+    name: backend checks
+    needs:
+      - resolve
+    uses: ./.github/workflows/reusable-backend-checks.yml
+    with:
+      target_sha: ${{ needs.resolve.outputs.target_sha }}
+
+  frontend-verify:
+    name: frontend verify
+    needs:
+      - resolve
+    uses: ./.github/workflows/reusable-frontend-verify.yml
+    with:
+      target_sha: ${{ needs.resolve.outputs.target_sha }}
+
+  build-images:
+    name: build images
+    needs:
+      - resolve
+      - backend-checks
+      - frontend-verify
+    if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch' }}
+    uses: ./.github/workflows/reusable-build-images.yml
+    permissions:
+      contents: read
+      packages: write
+    with:
+      target_sha: ${{ needs.resolve.outputs.target_sha }}
+      backend_image_ref: ${{ needs.resolve.outputs.backend_image_ref }}
+      frontend_image_ref: ${{ needs.resolve.outputs.frontend_image_ref }}
+
+  deploy-production:
+    name: deploy production
+    needs:
+      - resolve
+      - build-images
+    if: ${{ needs.build-images.result == 'success' }}
+    uses: ./.github/workflows/reusable-deploy-production.yml
+    permissions:
+      contents: read
+      packages: read
+    secrets: inherit
+    with:
+      target_sha: ${{ needs.resolve.outputs.target_sha }}
+      backend_image_repo: ${{ needs.resolve.outputs.backend_image_repo }}
+      backend_image_ref: ${{ needs.resolve.outputs.backend_image_ref }}
+      frontend_image_repo: ${{ needs.resolve.outputs.frontend_image_repo }}
+      frontend_image_ref: ${{ needs.resolve.outputs.frontend_image_ref }}
