@@ -21,8 +21,8 @@ import (
 
 const (
 	SubprotocolBearerPrefix = "tpm.bearer." //nolint:gosec // protocol prefix marker, not a credential.
-	defaultHubCloseDelay   = 100 * time.Millisecond
-	defaultDisconnectGrace = time.Second
+	defaultHubCloseDelay    = 100 * time.Millisecond
+	defaultDisconnectGrace  = time.Second
 )
 
 type Matchmaking interface {
