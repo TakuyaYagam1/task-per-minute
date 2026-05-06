@@ -66,6 +66,8 @@ openssl rand -base64 32 # ADMIN_PASSWORD
 `redis:6379` и `seaweedfs:8333` задаются compose как service-to-service адреса:
 
 ```env
+# Нужны только для CI/CD image deploy через docker-compose.ci.yml.
+# Ручной production compose собирает backend/frontend из исходников.
 BACKEND_IMAGE=ghcr.io/<owner>/task-per-minute-backend:<tag>
 FRONTEND_IMAGE=ghcr.io/<owner>/task-per-minute-frontend:<tag>
 NGINX_IMAGE=nginx:1.30.0-alpine3.23
@@ -157,9 +159,14 @@ sidecar выпускает сертификат webroot-режимом, став
 
 ```bash
 cd /opt/task-per-minute/deployment/docker
-docker compose --env-file ../../.env up -d --remove-orphans
+docker compose --env-file ../../.env up -d --build --remove-orphans
 docker compose --env-file ../../.env logs -f nginx certbot
 ```
+
+Это ручной source-build режим: backend/frontend собираются на сервере из
+текущего checkout. CI/CD deploy использует тот же стек с override-файлом
+`docker-compose.ci.yml`, где backend/frontend запускаются из заранее собранных
+SHA-tagged images.
 
 Для проверки DNS/firewall без риска rate-limit можно сначала поставить
 `USE_LE_STAGING=true`. После staging-проверки удалите staging lineage и
@@ -280,8 +287,8 @@ Backend workflow собирает immutable SHA-tagged backend image, пушит
 
 ```bash
 export BACKEND_IMAGE=<sha-image>
-docker compose --env-file ../../.env pull backend
-docker compose --env-file ../../.env up -d --remove-orphans backend
+docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml pull backend
+docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml up -d --remove-orphans backend
 ```
 
 Backend запускает Goose-миграции при старте. Если миграция падает, новый
@@ -295,8 +302,8 @@ GHCR и обновляет только frontend service. Перед Docker buil
 
 ```bash
 export FRONTEND_IMAGE=<sha-image>
-docker compose --env-file ../../.env pull frontend
-docker compose --env-file ../../.env up -d --remove-orphans frontend
+docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml pull frontend
+docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml up -d --remove-orphans frontend
 ```
 
 После deploy workflow проверяет и frontend page, и same-origin rewrite

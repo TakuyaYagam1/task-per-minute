@@ -65,6 +65,8 @@ container runs, the DSN must point to the internal `postgres:5432` host;
 addresses:
 
 ```env
+# Required only for CI/CD image deploys through docker-compose.ci.yml.
+# Manual production compose builds backend/frontend from source.
 BACKEND_IMAGE=ghcr.io/<owner>/task-per-minute-backend:<tag>
 FRONTEND_IMAGE=ghcr.io/<owner>/task-per-minute-frontend:<tag>
 NGINX_IMAGE=nginx:1.30.0-alpine3.23
@@ -159,9 +161,14 @@ certbot writes a reload marker and NGINX reloads the full HTTPS config.
 
 ```bash
 cd /opt/task-per-minute/deployment/docker
-docker compose --env-file ../../.env up -d --remove-orphans
+docker compose --env-file ../../.env up -d --build --remove-orphans
 docker compose --env-file ../../.env logs -f nginx certbot
 ```
+
+This is the manual source-build mode: backend/frontend are built on the server
+from the current checkout. CI/CD deploy uses the same stack with the
+`docker-compose.ci.yml` override, where backend/frontend run from prebuilt
+SHA-tagged images.
 
 For DNS/firewall testing without Let's Encrypt production rate-limit risk, set
 `USE_LE_STAGING=true` first. After staging verification, delete the staging
@@ -281,8 +288,8 @@ SSHes to the server, resets the repository to the deployed SHA, and runs:
 
 ```bash
 export BACKEND_IMAGE=<sha-image>
-docker compose --env-file ../../.env pull backend
-docker compose --env-file ../../.env up -d --remove-orphans backend
+docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml pull backend
+docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml up -d --remove-orphans backend
 ```
 
 The backend runs Goose migrations during startup. If migration fails, the new
@@ -297,8 +304,8 @@ frontend OpenAPI types from the backend spec in the same target SHA:
 
 ```bash
 export FRONTEND_IMAGE=<sha-image>
-docker compose --env-file ../../.env pull frontend
-docker compose --env-file ../../.env up -d --remove-orphans frontend
+docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml pull frontend
+docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml up -d --remove-orphans frontend
 ```
 
 After deployment it verifies both the frontend page and the same-origin

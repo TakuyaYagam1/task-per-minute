@@ -90,8 +90,13 @@ Minimal first start after filling `.env`:
 ```bash
 sudo bash scripts/server-bootstrap.sh
 cd /opt/task-per-minute/deployment/docker
-docker compose --env-file ../../.env up -d --remove-orphans
+docker compose --env-file ../../.env up -d --build --remove-orphans
 ```
+
+The main production compose builds backend/frontend from source on the server.
+CI/CD deploy uses the same stack with the
+`deployment/docker/docker-compose.ci.yml` override, where backend/frontend run
+from prebuilt image tags.
 
 ## Documentation
 

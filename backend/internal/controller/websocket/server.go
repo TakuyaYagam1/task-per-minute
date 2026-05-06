@@ -19,13 +19,8 @@ import (
 	duelusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel"
 )
 
-// SubprotocolBearerPrefix is the Sec-WebSocket-Protocol prefix used to carry a
-// session token through the handshake. Pairing the UUID with this prefix lets
-// the server distinguish auth tokens from any other future subprotocol the
-// client might offer (e.g. content negotiation).
-const SubprotocolBearerPrefix = "tpm.bearer."
-
 const (
+	SubprotocolBearerPrefix = "tpm.bearer." //nolint:gosec // protocol prefix marker, not a credential.
 	defaultHubCloseDelay   = 100 * time.Millisecond
 	defaultDisconnectGrace = time.Second
 )
@@ -50,18 +45,11 @@ type ReconnectManager interface {
 	CloseDuel(duelID uuid.UUID)
 }
 
-// HandshakeRateLimiter caps the rate of /ws handshake attempts per source IP
-// to keep token brute-force / connection-exhaustion attacks bounded. The
-// implementation must be safe for concurrent use by HTTP handlers.
 type HandshakeRateLimiter interface {
 	Allow(ip string) bool
 	RetryAfter() string
 }
 
-// ClientIPResolver returns the trusted client IP for a given request — the
-// WS server does not know the proxy CIDR list itself, so the caller is
-// responsible for using whatever forwarded-header policy the rest of the
-// application uses.
 type ClientIPResolver func(r *http.Request) string
 
 type Server struct {
@@ -133,16 +121,12 @@ func WithDisconnectGrace(delay time.Duration) Option {
 	}
 }
 
-// WithHandshakeRateLimiter injects a per-IP rate limiter that gates /ws
-// handshakes. A nil limiter (or omitting this option) disables the gate.
 func WithHandshakeRateLimiter(rl HandshakeRateLimiter) Option {
 	return func(s *Server) {
 		s.handshakeLimiter = rl
 	}
 }
 
-// WithClientIPResolver overrides the default RemoteAddr-based IP resolution
-// with a function that respects the application's forwarded-header policy.
 func WithClientIPResolver(resolver ClientIPResolver) Option {
 	return func(s *Server) {
 		if resolver != nil {
@@ -173,7 +157,7 @@ func NewServer(
 	for _, opt := range options {
 		opt(s)
 	}
-	s.ctx, s.cancel = context.WithCancel(s.ctx)
+	s.ctx, s.cancel = context.WithCancel(s.ctx) //nolint:gosec // cancel is stored on Server and called by Shutdown.
 	s.broadcaster = newBroadcaster(s.ctx, s.hubs, s.clientByPlayer, s.closeDelay)
 	if s.hints != nil {
 		s.hints.SetSender(s.sendHintUnlocked)
@@ -275,10 +259,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// If the client carried the token via Sec-WebSocket-Protocol we MUST echo
-	// the same subprotocol back during Accept, otherwise browsers tear the
-	// connection down with a protocol-mismatch error. The cloned options keep
-	// the existing OriginPatterns / CompressionMode untouched.
 	acceptOpts := s.acceptOptions
 	if chosenSubprotocol != "" {
 		var optsCopy coderws.AcceptOptions
@@ -543,16 +523,6 @@ func (s *Server) attachToDuelHub(ctx context.Context, c *client, duelID uuid.UUI
 	return true
 }
 
-// authenticate resolves the session token from the WebSocket handshake. The
-// preferred path is the Sec-WebSocket-Protocol header (subprotocol bearer):
-// query strings are logged by browsers, proxies, and access logs, leaking
-// long-lived session tokens. The legacy ?token= query is still accepted to
-// avoid breaking clients during the rollout but is treated as a deprecation
-// path — once all clients have migrated it should be removed.
-//
-// Returns the authenticated player, the subprotocol that must be echoed back
-// in Accept (empty string when authentication came via query string), and a
-// success flag. On failure the http.ResponseWriter has already been written.
 func (s *Server) authenticate(w http.ResponseWriter, r *http.Request) (*domain.Player, string, bool) {
 	token, chosenProtocol, ok := tokenFromSubprotocols(r.Header.Values("Sec-WebSocket-Protocol"))
 	if !ok {
@@ -576,10 +546,6 @@ func (s *Server) authenticate(w http.ResponseWriter, r *http.Request) (*domain.P
 	return player, chosenProtocol, true
 }
 
-// resolveClientIP returns the trusted client IP for the request, falling back
-// to RemoteAddr when no explicit resolver was wired up. We deliberately do NOT
-// trust X-Forwarded-For by default since the server cannot validate it
-// without the proxy CIDR policy.
 func (s *Server) resolveClientIP(r *http.Request) string {
 	if s.clientIP != nil {
 		if ip := s.clientIP(r); ip != "" {
@@ -593,11 +559,6 @@ func (s *Server) resolveClientIP(r *http.Request) string {
 	return host
 }
 
-// tokenFromSubprotocols inspects every comma-separated Sec-WebSocket-Protocol
-// value the client offered and returns the first one that matches the bearer
-// prefix and parses as a UUID. The returned protocol string is the original
-// (case- and prefix-preserved) value the client sent so it can be echoed
-// back to satisfy the protocol negotiation in Accept.
 func tokenFromSubprotocols(headerValues []string) (uuid.UUID, string, bool) {
 	for _, header := range headerValues {
 		for _, raw := range strings.Split(header, ",") {

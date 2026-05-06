@@ -111,7 +111,8 @@ if [[ "${E2E_COMPOSE_CLEAN:-1}" == "1" ]]; then
   "${compose[@]}" down --volumes --remove-orphans
 fi
 
-"${compose[@]}" up --build -d
+"${compose[@]}" up --build -d --remove-orphans
+"${compose[@]}" up -d --no-deps --force-recreate frontend
 
 wait_for_url "backend" "http://127.0.0.1:${BACKEND_PORT}/health"
 wait_for_url "frontend" "http://127.0.0.1:${FRONTEND_PORT}/"

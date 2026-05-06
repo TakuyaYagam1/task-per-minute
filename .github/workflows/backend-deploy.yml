@@ -142,10 +142,14 @@ jobs:
             echo '${{ github.token }}' | docker login ghcr.io -u '${{ github.actor }}' --password-stdin
 
             cd deployment/docker
-            BACKEND_IMAGE="$image_ref" docker compose --env-file ../../.env pull backend
-            BACKEND_IMAGE="$image_ref" docker compose --env-file ../../.env up -d --remove-orphans backend
-            BACKEND_IMAGE="$image_ref" docker compose --env-file ../../.env up -d --remove-orphans nginx certbot
-            docker compose --env-file ../../.env exec -T nginx sh -c 'touch /var/run/certbot/reload-nginx'
+            compose() {
+              docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml "$@"
+            }
+
+            BACKEND_IMAGE="$image_ref" compose pull backend
+            BACKEND_IMAGE="$image_ref" compose up -d --remove-orphans backend
+            BACKEND_IMAGE="$image_ref" compose up -d --remove-orphans nginx certbot
+            compose exec -T nginx sh -c 'touch /var/run/certbot/reload-nginx'
 
       - name: verify health
         id: verify
@@ -249,10 +253,14 @@ jobs:
             echo '${{ github.token }}' | docker login ghcr.io -u '${{ github.actor }}' --password-stdin
 
             cd deployment/docker
-            BACKEND_IMAGE="$previous_image" docker compose --env-file ../../.env pull backend
-            BACKEND_IMAGE="$previous_image" docker compose --env-file ../../.env up -d --remove-orphans backend
-            BACKEND_IMAGE="$previous_image" docker compose --env-file ../../.env up -d --remove-orphans nginx certbot
-            docker compose --env-file ../../.env exec -T nginx sh -c 'touch /var/run/certbot/reload-nginx'
+            compose() {
+              docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml "$@"
+            }
+
+            BACKEND_IMAGE="$previous_image" compose pull backend
+            BACKEND_IMAGE="$previous_image" compose up -d --remove-orphans backend
+            BACKEND_IMAGE="$previous_image" compose up -d --remove-orphans nginx certbot
+            compose exec -T nginx sh -c 'touch /var/run/certbot/reload-nginx'
             cd ../..
 
             set_env_var() {

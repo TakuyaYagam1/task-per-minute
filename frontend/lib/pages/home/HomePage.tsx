@@ -161,6 +161,15 @@ export default function HomePage() {
     transitionDuelIDRef.current = null;
   };
 
+  const clearPlayerSessionForNextEntrant = () => {
+    playerModel.clearCurrentPlayer();
+    currentPlayerRef.current = null;
+    setCurrentPlayer(null);
+    setPlayerID(null);
+    setNickname("");
+    sessionPromiseRef.current = null;
+  };
+
   const expectedTerminalDuelID = (): string | null => {
     if (currentHomeFlow.current === "queue") {
       return pendingMatch.current?.duel_id || null;
@@ -327,6 +336,8 @@ export default function HomePage() {
           saveTransitionTerminalResult(message, activePlayer);
           clearTransitionDuel();
           clearHomeFlow();
+          closeWebSocket();
+          clearPlayerSessionForNextEntrant();
           setIsWaiting(false);
           const winnerID = message.payload.winner_id;
           if (!winnerID) {
@@ -466,6 +477,7 @@ export default function HomePage() {
         let activeDuelRestored = false;
         let flowCompleted = false;
         let restoreFailureNotified = false;
+        let socketOpened = false;
         const notifyRestoreFailure = () => {
           if (shouldJoinQueue || activeDuelRestored || restoreFailureNotified) {
             return;
@@ -524,8 +536,20 @@ export default function HomePage() {
           handleWebSocketMessage(message);
         };
 
+        websocket.onopen = () => {
+          socketOpened = true;
+        };
+
         websocket.onclose = (event) => {
           if (isCurrentAttempt() && !flowCompleted) {
+            if (event.code !== NORMAL_CLOSURE_CODE && !socketOpened) {
+              setIsWaiting(false);
+              clearHomeFlow();
+              showNotification(
+                "Ошибка WebSocket соединения. Проверьте адрес страницы и обновите.",
+              );
+              return;
+            }
             if (event.code !== NORMAL_CLOSURE_CODE) {
               return;
             }

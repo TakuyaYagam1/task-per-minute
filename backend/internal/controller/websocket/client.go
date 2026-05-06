@@ -14,11 +14,11 @@ import (
 )
 
 const (
-	defaultWriteWait      = 10 * time.Second
-	defaultPingInterval   = 20 * time.Second
+	defaultWriteWait       = 10 * time.Second
+	defaultPingInterval    = 20 * time.Second
 	defaultReadIdleTimeout = 75 * time.Second
-	defaultSendBufferSize = 32
-	defaultReadLimit      = 16 * 1024
+	defaultSendBufferSize  = 32
+	defaultReadLimit       = 16 * 1024
 )
 
 type client struct {

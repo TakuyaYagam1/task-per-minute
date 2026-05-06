@@ -1,0 +1,10 @@
+name: task-per-minute
+
+services:
+  backend:
+    build: !reset null
+    image: ${BACKEND_IMAGE:?BACKEND_IMAGE is required for CI/CD image deploys}
+
+  frontend:
+    build: !reset null
+    image: ${FRONTEND_IMAGE:?FRONTEND_IMAGE is required for CI/CD image deploys}

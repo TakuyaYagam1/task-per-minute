@@ -234,7 +234,7 @@ const isValidPayload = (type: ServerMessageType, payload: unknown): boolean => {
       return (
         isRecord(payload) &&
         isUUID(payload.duel_id) &&
-        isUUID(payload.opponent_id) &&
+        (payload.opponent_id === undefined || isUUID(payload.opponent_id)) &&
         isDateString(payload.deadline) &&
         (payload.opponent_disconnected === undefined ||
           isBoolean(payload.opponent_disconnected)) &&

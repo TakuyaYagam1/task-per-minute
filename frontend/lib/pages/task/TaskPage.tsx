@@ -284,6 +284,10 @@ export const TaskPage: React.FC = () => {
     [clearFlagStatusTimer, updateGameData],
   );
 
+  const clearStoredPlayerSessionForNextEntrant = useCallback(() => {
+    playerModel.clearCurrentPlayer();
+  }, []);
+
   const handleExpiredSession = useCallback(() => {
     hasFinished.current = true;
     terminalSource.current = "none";
@@ -362,8 +366,9 @@ export const TaskPage: React.FC = () => {
         winner_id: winnerID,
         winner_username: message.payload.winner_username || null,
       });
+      clearStoredPlayerSessionForNextEntrant();
     },
-    [clearActiveDuelState],
+    [clearActiveDuelState, clearStoredPlayerSessionForNextEntrant],
   );
 
   const handleWebSocketMessage = useCallback(
@@ -515,6 +520,7 @@ export const TaskPage: React.FC = () => {
               source: "server",
               duel_id: message.payload.duel_id,
             });
+            clearStoredPlayerSessionForNextEntrant();
           }
           break;
 
@@ -559,6 +565,7 @@ export const TaskPage: React.FC = () => {
     },
     [
       clearActiveDuelState,
+      clearStoredPlayerSessionForNextEntrant,
       finishDuel,
       handleExpiredSession,
       isCurrentDuelID,
@@ -581,7 +588,7 @@ export const TaskPage: React.FC = () => {
     const storedGame = gameModel.getGameData();
     const storedResult = gameModel.getGameResult();
 
-    if (!storedGame || !currentPlayer) {
+    if (!storedGame) {
       router.replace("/");
       return;
     }
@@ -593,6 +600,14 @@ export const TaskPage: React.FC = () => {
       setIsPaused(Boolean(storedGame.opponent_disconnected));
       setOpponentReconnectDeadline(storedGame.opponent_reconnect_deadline);
       setTimeLeft(gameModel.calculateRemainingTime(storedGame.deadline));
+    };
+    let storedGameHydrated = false;
+    const ensureStoredGameHydrated = () => {
+      if (storedGameHydrated) {
+        return;
+      }
+      storedGameHydrated = true;
+      hydrateStoredGame();
     };
 
     const hasMatchingTerminalResult =
@@ -609,11 +624,14 @@ export const TaskPage: React.FC = () => {
       return;
     }
 
+    if (!currentPlayer) {
+      router.replace("/");
+      return;
+    }
+
     if (storedResult) {
       gameModel.clearGameResult();
     }
-
-    hydrateStoredGame();
 
     const setupWebSocketListeners = (websocket: WebSocket) => {
       websocket.onmessage = (event) => {
@@ -748,6 +766,7 @@ export const TaskPage: React.FC = () => {
             log.warn(
               `players/me retry returned ${retry.kind}; keeping local task restore`,
             );
+            ensureStoredGameHydrated();
             openActiveDuelWebSocket();
             return;
           }
@@ -767,6 +786,7 @@ export const TaskPage: React.FC = () => {
           `players/me preflight returned ${result.kind}; keeping local task restore`,
         );
       }
+      ensureStoredGameHydrated();
       openActiveDuelWebSocket();
     })();
 
@@ -806,6 +826,7 @@ export const TaskPage: React.FC = () => {
           source: "local_timer",
           duel_id: gameData.duel_id,
         });
+        clearStoredPlayerSessionForNextEntrant();
       }
     };
 
@@ -814,6 +835,7 @@ export const TaskPage: React.FC = () => {
     return () => clearInterval(interval);
   }, [
     clearActiveDuelState,
+    clearStoredPlayerSessionForNextEntrant,
     gameData?.deadline,
     gameData?.duel_id,
     gameState,
@@ -844,6 +866,7 @@ export const TaskPage: React.FC = () => {
       clearActiveDuelState(false);
       setGameState("timeup");
       gameModel.clearGameData();
+      clearStoredPlayerSessionForNextEntrant();
       const message = "Соперник не вернулся вовремя. Дуэль закрыта.";
       redirectNotificationStorage.set(message);
       setNotification(message);
@@ -853,6 +876,7 @@ export const TaskPage: React.FC = () => {
     return () => clearTimeout(timer);
   }, [
     clearActiveDuelState,
+    clearStoredPlayerSessionForNextEntrant,
     closeWebSocket,
     gameState,
     isPaused,
@@ -905,6 +929,7 @@ export const TaskPage: React.FC = () => {
 
   const handleReturnHome = () => {
     gameModel.clearGameData();
+    clearStoredPlayerSessionForNextEntrant();
     closeWebSocket();
     router.push("/");
   };

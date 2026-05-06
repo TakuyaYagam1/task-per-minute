@@ -105,6 +105,25 @@ func (s *HintScheduler) StartDuel(duel *domain.Duel, assignments map[uuid.UUID]*
 	s.mu.Unlock()
 }
 
+func (s *HintScheduler) StopAll() {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for duelID, state := range s.states {
+		for _, player := range state.players {
+			player.stopped = true
+			for _, timer := range player.timers {
+				if timer != nil {
+					timer.Stop()
+				}
+			}
+		}
+		delete(s.states, duelID)
+	}
+}
+
 func (s *HintScheduler) StopDuel(duelID uuid.UUID) bool {
 	if s == nil {
 		return false

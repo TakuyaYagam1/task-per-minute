@@ -2,11 +2,12 @@ import os from 'node:os';
 
 import { defineConfig, devices } from '@playwright/test';
 
-const port = process.env.E2E_FRONTEND_PORT || '3000';
+const port = process.env.E2E_FRONTEND_PORT || '3101';
 const baseURL = process.env.E2E_FRONTEND_URL || `http://127.0.0.1:${port}`;
 const backendURL = process.env.E2E_BACKEND_URL || 'http://127.0.0.1:8080';
 const defaultWorkerCount = Math.max(1, Math.min(4, os.availableParallelism?.() ?? os.cpus().length));
 const workerCount = Number(process.env.E2E_WORKERS || defaultWorkerCount);
+const reuseExistingServer = process.env.E2E_REUSE_EXISTING_SERVER === '1';
 
 export default defineConfig({
   testDir: './e2e',
@@ -27,7 +28,7 @@ export default defineConfig({
     : {
         command: `npm run dev -- --hostname 127.0.0.1 --port ${port}`,
         url: baseURL,
-        reuseExistingServer: !process.env.CI,
+        reuseExistingServer,
         timeout: 120_000,
         env: {
           ...process.env,

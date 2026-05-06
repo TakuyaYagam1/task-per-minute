@@ -11,8 +11,8 @@ then runs:
 ```bash
 cd /opt/task-per-minute/deployment/docker
 export BACKEND_IMAGE=<sha-image>
-docker compose --env-file ../../.env pull backend
-docker compose --env-file ../../.env up -d --remove-orphans backend
+docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml pull backend
+docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml up -d --remove-orphans backend
 ```
 
 The backend runs Goose migrations during startup. If a migration fails, the new
@@ -27,8 +27,8 @@ and updates only the frontend service:
 ```bash
 cd /opt/task-per-minute/deployment/docker
 export FRONTEND_IMAGE=<sha-image>
-docker compose --env-file ../../.env pull frontend
-docker compose --env-file ../../.env up -d --remove-orphans frontend
+docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml pull frontend
+docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml up -d --remove-orphans frontend
 ```
 
 ## Health Gate
@@ -85,9 +85,9 @@ git reset --hard "$PREVIOUS_SHA"
 
 cd deployment/docker
 export BACKEND_IMAGE="$PREVIOUS_IMAGE"
-docker compose --env-file ../../.env pull backend
-docker compose --env-file ../../.env up -d --remove-orphans backend
-docker compose --env-file ../../.env exec -T backend wget -qO- http://127.0.0.1:8080/health | jq .
+docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml pull backend
+docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml up -d --remove-orphans backend
+docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml exec -T backend wget -qO- http://127.0.0.1:8080/health | jq .
 ```
 
 ## Roll Back Frontend Image
@@ -112,9 +112,9 @@ git reset --hard "$PREVIOUS_SHA"
 
 cd deployment/docker
 export FRONTEND_IMAGE="$PREVIOUS_IMAGE"
-docker compose --env-file ../../.env pull frontend
-docker compose --env-file ../../.env up -d --remove-orphans frontend
-docker compose --env-file ../../.env exec -T frontend sh -c 'wget -qO- "http://127.0.0.1:${PORT:-3000}/" >/dev/null'
+docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml pull frontend
+docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml up -d --remove-orphans frontend
+docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml exec -T frontend sh -c 'wget -qO- "http://127.0.0.1:${PORT:-3000}/" >/dev/null'
 ```
 
 ## Restart Stack
@@ -126,10 +126,16 @@ cd /opt/task-per-minute/deployment/docker
 docker compose --env-file ../../.env restart backend frontend
 ```
 
-To recreate the backend/frontend containers on the current images:
+To recreate backend/frontend from the current checkout:
 
 ```bash
-docker compose --env-file ../../.env up -d --remove-orphans backend frontend
+docker compose --env-file ../../.env up -d --build --remove-orphans backend frontend
+```
+
+If the stack was deployed through CI/CD images, use the image override:
+
+```bash
+docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml up -d --remove-orphans backend frontend
 ```
 
 ## Full Stack Removal
@@ -162,14 +168,14 @@ Check status:
 ```bash
 cd /opt/task-per-minute/deployment/docker
 export BACKEND_IMAGE="$PREVIOUS_IMAGE"
-docker compose --env-file ../../.env run --rm --entrypoint /app/migrate backend status
+docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml run --rm --entrypoint /app/migrate backend status
 ```
 
 Roll back one migration:
 
 ```bash
 export BACKEND_IMAGE="$PREVIOUS_IMAGE"
-docker compose --env-file ../../.env run --rm --entrypoint /app/migrate backend down
+docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml run --rm --entrypoint /app/migrate backend down
 ```
 
 Repeat `/app/migrate down` only when each step has been reviewed. After schema

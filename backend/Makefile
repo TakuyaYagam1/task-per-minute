@@ -94,11 +94,8 @@ test: ## Unit tests with race detector (skips integration_test/)
 	go test -race -count=1 -parallel=5 $$(go list ./... | grep -v /integration_test)
 
 .PHONY: test-int
-test-int: ## Integration tests (testcontainers - requires Docker)
-	# parallel=2: shared Postgres/Redis testcontainers pool starts dropping
-	# server-side internal errors past 4-5 concurrent matchmaking transactions
-	# (pool exhaustion / row contention). 2 is the stable sweet spot.
-	go test -race -count=1 -parallel=2 -tags=integration ./integration_test/...
+test-int: ## Integration tests (testcontainers - requires Docker, fully sequential)
+	go test -race -count=1 -p=1 -parallel=1 -tags=integration ./integration_test/...
 
 .PHONY: test-race
 test-race: ## Unit + integration tests with race detector (full suite, requires Docker)

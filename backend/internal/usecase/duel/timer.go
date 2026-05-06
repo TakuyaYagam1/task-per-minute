@@ -86,6 +86,16 @@ func (r *TimerRegistry) Start(duelID uuid.UUID, deadline time.Time, onExpire fun
 	entry.mu.Unlock()
 }
 
+func (r *TimerRegistry) StopAll() {
+	if r == nil {
+		return
+	}
+	r.timers.Range(func(key, _ any) bool {
+		r.Stop(key.(uuid.UUID))
+		return true
+	})
+}
+
 func (r *TimerRegistry) Stop(duelID uuid.UUID) bool {
 	if r == nil {
 		return false

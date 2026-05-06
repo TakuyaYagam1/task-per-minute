@@ -117,6 +117,23 @@ func NewReconnectManager(
 	return m
 }
 
+// StopAll stops every reconnect-window timer across all tracked duels. Use
+// during graceful shutdown or test cleanup to drain leaked time.AfterFunc
+// goroutines that would otherwise outlive the request context.
+func (m *ReconnectManager) StopAll() {
+	if m == nil {
+		return
+	}
+	m.states.Range(func(_, value any) bool {
+		state := value.(*reconnectDuelState)
+		state.mu.Lock()
+		state.stopReconnectTimersLocked()
+		state.closed = true
+		state.mu.Unlock()
+		return true
+	})
+}
+
 func (m *ReconnectManager) StartDuelTimer(duel *domain.Duel) {
 	if m == nil || m.timers == nil || duel == nil {
 		return

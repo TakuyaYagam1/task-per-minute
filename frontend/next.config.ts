@@ -76,7 +76,7 @@ const securityHeaders = [
   },
   { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
   {
-    key: "Content-Security-Policy",
+    key: isProduction ? "Content-Security-Policy" : "Content-Security-Policy-Report-Only",
     value: buildCSP(isProduction),
   },
 ];

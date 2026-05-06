@@ -217,7 +217,7 @@ main() {
 	fi
 	log "fill $ENV_FILE, then run:"
 	log "cd $APP_DIR/deployment/docker"
-	log "sudo -u $(compose_user) docker compose --env-file ../../.env up -d --remove-orphans"
+	log "sudo -u $(compose_user) docker compose --env-file ../../.env up -d --build --remove-orphans"
 }
 
 main "$@"

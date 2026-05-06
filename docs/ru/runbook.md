@@ -11,8 +11,8 @@ GHCR, заходит на сервер по SSH, сбрасывает репоз
 ```bash
 cd /opt/task-per-minute/deployment/docker
 export BACKEND_IMAGE=<sha-image>
-docker compose --env-file ../../.env pull backend
-docker compose --env-file ../../.env up -d --remove-orphans backend
+docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml pull backend
+docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml up -d --remove-orphans backend
 ```
 
 Backend запускает Goose-миграции при старте. Если миграция падает, новый
@@ -27,8 +27,8 @@ Frontend workflow аналогично собирает immutable SHA-tagged fro
 ```bash
 cd /opt/task-per-minute/deployment/docker
 export FRONTEND_IMAGE=<sha-image>
-docker compose --env-file ../../.env pull frontend
-docker compose --env-file ../../.env up -d --remove-orphans frontend
+docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml pull frontend
+docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml up -d --remove-orphans frontend
 ```
 
 ## Health gate
@@ -84,9 +84,9 @@ git reset --hard "$PREVIOUS_SHA"
 
 cd deployment/docker
 export BACKEND_IMAGE="$PREVIOUS_IMAGE"
-docker compose --env-file ../../.env pull backend
-docker compose --env-file ../../.env up -d --remove-orphans backend
-docker compose --env-file ../../.env exec -T backend wget -qO- http://127.0.0.1:8080/health | jq .
+docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml pull backend
+docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml up -d --remove-orphans backend
+docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml exec -T backend wget -qO- http://127.0.0.1:8080/health | jq .
 ```
 
 ## Откат frontend image
@@ -111,9 +111,9 @@ git reset --hard "$PREVIOUS_SHA"
 
 cd deployment/docker
 export FRONTEND_IMAGE="$PREVIOUS_IMAGE"
-docker compose --env-file ../../.env pull frontend
-docker compose --env-file ../../.env up -d --remove-orphans frontend
-docker compose --env-file ../../.env exec -T frontend sh -c 'wget -qO- "http://127.0.0.1:${PORT:-3000}/" >/dev/null'
+docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml pull frontend
+docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml up -d --remove-orphans frontend
+docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml exec -T frontend sh -c 'wget -qO- "http://127.0.0.1:${PORT:-3000}/" >/dev/null'
 ```
 
 ## Рестарт стека
@@ -125,10 +125,16 @@ cd /opt/task-per-minute/deployment/docker
 docker compose --env-file ../../.env restart backend frontend
 ```
 
-Для пересоздания backend/frontend-контейнеров на текущих image:
+Для пересоздания backend/frontend-контейнеров из текущего checkout:
 
 ```bash
-docker compose --env-file ../../.env up -d --remove-orphans backend frontend
+docker compose --env-file ../../.env up -d --build --remove-orphans backend frontend
+```
+
+Если стек был развернут через CI/CD images, используйте image override:
+
+```bash
+docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml up -d --remove-orphans backend frontend
 ```
 
 ## Полное удаление стека
@@ -160,14 +166,14 @@ docker compose --env-file ../../.env down -v --remove-orphans
 ```bash
 cd /opt/task-per-minute/deployment/docker
 export BACKEND_IMAGE="$PREVIOUS_IMAGE"
-docker compose --env-file ../../.env run --rm --entrypoint /app/migrate backend status
+docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml run --rm --entrypoint /app/migrate backend status
 ```
 
 Откатить одну миграцию:
 
 ```bash
 export BACKEND_IMAGE="$PREVIOUS_IMAGE"
-docker compose --env-file ../../.env run --rm --entrypoint /app/migrate backend down
+docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml run --rm --entrypoint /app/migrate backend down
 ```
 
 Повторяйте `/app/migrate down` только после отдельной проверки каждого шага. После

@@ -81,5 +81,5 @@ jobs:
       - name: e2e
         working-directory: ${{ env.FRONTEND_WORKDIR }}
         env:
-          E2E_WORKERS: 4
+          E2E_WORKERS: 2
         run: npm run test:e2e -- --reporter=line

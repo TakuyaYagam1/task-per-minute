@@ -103,6 +103,18 @@ func newWebSocketFixtureFromDuelFixture(
 	wscontroller.WithReconnectManager(reconnect)(server)
 	httpServer := httptest.NewServer(server)
 	t.Cleanup(httpServer.Close)
+	// Drain leaked time.AfterFunc goroutines from this server before the next
+	// test starts. Without StopAll these goroutines outlive the test, fire
+	// against sharedPool, and race with the next test's matchmaking flow,
+	// surfacing as "internal error" on JOIN_QUEUE.
+	t.Cleanup(func() {
+		timers.StopAll()
+		hints.StopAll()
+		reconnect.StopAll()
+		if err := truncateTables(context.Background(), sharedPool); err != nil {
+			t.Logf("websocket fixture cleanup truncate failed: %v", err)
+		}
+	})
 
 	return &websocketFixture{
 		duelFixture: f,

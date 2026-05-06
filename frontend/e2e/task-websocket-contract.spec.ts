@@ -1,9 +1,65 @@
-import { expect, test, type WebSocketRoute } from '@playwright/test';
+import { expect, test, type Page, type WebSocketRoute } from '@playwright/test';
 import { inSecondsISO, jsonHeaders, nowISO } from './support/common';
 import {
   installWebSocketErrorProbe,
   type WebSocketErrorProbeWindow,
 } from './support/browser';
+
+const routePlayerMeFromBrowserStorage = async (page: Page) => {
+  await page.route('**/api/v1/players/me', async (route) => {
+    const state = await page.evaluate(() => {
+      const rawGame = window.localStorage.getItem('currentGame');
+      const game = rawGame
+        ? JSON.parse(rawGame) as { duel_id?: string; deadline?: string }
+        : null;
+      return {
+        playerID: window.localStorage.getItem('player_id'),
+        username: window.localStorage.getItem('username') || 'alice',
+        game,
+      };
+    });
+
+    if (!state.playerID) {
+      await route.fulfill({
+        status: 401,
+        headers: jsonHeaders,
+        body: JSON.stringify({
+          type: 'about:blank',
+          title: 'unauthorized',
+          status: 401,
+        }),
+      });
+      return;
+    }
+
+    await route.fulfill({
+      status: 200,
+      headers: jsonHeaders,
+      body: JSON.stringify({
+        player: {
+          id: state.playerID,
+          username: state.username,
+          status: state.game ? 'in_duel' : 'idle',
+          created_at: nowISO(),
+        },
+        ...(state.game?.duel_id && state.game.deadline
+          ? {
+              active_duel: {
+                id: state.game.duel_id,
+                status: 'active',
+                deadline: state.game.deadline,
+                started_at: nowISO(),
+              },
+            }
+          : {}),
+      }),
+    });
+  });
+};
+
+test.beforeEach(async ({ page }) => {
+  await routePlayerMeFromBrowserStorage(page);
+});
 
 test('task_assigned accepts non-core task category from websocket guard', async ({ page }) => {
   const playerID = '12121212-1212-1212-1212-121212121212';

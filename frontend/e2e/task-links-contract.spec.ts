@@ -1,6 +1,35 @@
-import { expect, test, type WebSocketRoute } from '@playwright/test';
-import { nowISO } from './support/common';
+import { expect, test, type Page, type WebSocketRoute } from '@playwright/test';
+import { jsonHeaders, nowISO } from './support/common';
 import type { WindowOpenCall } from './support/browser';
+
+const mockCurrentPlayerMe = async (
+  page: Page,
+  playerID: string,
+  sessionToken: string,
+  activeDuelID: string,
+): Promise<void> => {
+  await page.route('**/api/v1/players/me', async (route) => {
+    expect(route.request().headers()['x-session-token']).toBe(sessionToken);
+    await route.fulfill({
+      status: 200,
+      headers: jsonHeaders,
+      body: JSON.stringify({
+        player: {
+          id: playerID,
+          username: 'alice',
+          status: 'in_duel',
+          created_at: nowISO(),
+        },
+        active_duel: {
+          id: activeDuelID,
+          status: 'active',
+          deadline: new Date(Date.now() + 120_000).toISOString(),
+          started_at: nowISO(),
+        },
+      }),
+    });
+  });
+};
 
 test('task external links open with noopener and noreferrer', async ({ page }) => {
   const playerID = '17171717-1717-1717-1717-171717171717';
@@ -44,6 +73,7 @@ test('task external links open with noopener and noreferrer', async ({ page }) =
     }));
   }, { playerID, sessionToken, duelID, task });
 
+  await mockCurrentPlayerMe(page, playerID, sessionToken, duelID);
   await page.routeWebSocket((url) => url.pathname === '/ws', () => {});
 
   await page.goto('/task');
@@ -131,6 +161,7 @@ test('task host-port endpoint is copied instead of opened', async ({ page }) => 
     }));
   }, { playerID, sessionToken, duelID, task });
 
+  await mockCurrentPlayerMe(page, playerID, sessionToken, duelID);
   await page.routeWebSocket((url) => url.pathname === '/ws', (ws) => {
     activeSocket = ws;
   });
@@ -215,6 +246,7 @@ test('unsafe mixed-content task url without clipboard is not marked as opened', 
     }));
   }, { playerID, sessionToken, duelID, task });
 
+  await mockCurrentPlayerMe(page, playerID, sessionToken, duelID);
   await page.routeWebSocket((url) => url.pathname === '/ws', () => {});
 
   await page.goto('/task');
@@ -289,27 +321,7 @@ test('unsafe mixed-content task url copied to clipboard is not marked as opened'
     }));
   }, { playerID, sessionToken, duelID, task });
 
-  await page.route('**/api/v1/players/me', async (route) => {
-    expect(route.request().headers()['x-session-token']).toBe(sessionToken);
-    await route.fulfill({
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        player: {
-          id: playerID,
-          username: 'alice',
-          status: 'idle',
-          created_at: nowISO(),
-        },
-        active_duel: {
-          id: duelID,
-          status: 'active',
-          deadline: new Date(Date.now() + 120_000).toISOString(),
-          started_at: nowISO(),
-        },
-      }),
-    });
-  });
+  await mockCurrentPlayerMe(page, playerID, sessionToken, duelID);
   await page.routeWebSocket((url) => url.pathname === '/ws', () => {});
 
   await page.goto('/task');
@@ -378,6 +390,7 @@ test('task page ignores malformed and unknown websocket events', async ({ page }
     }));
   }, { playerID, sessionToken, duelID, task });
 
+  await mockCurrentPlayerMe(page, playerID, sessionToken, duelID);
   await page.route('**/submit-flag**', async (route) => {
     await route.abort();
   });
@@ -499,6 +512,7 @@ test('task page clears submitting state when websocket closes after flag submit'
     }));
   }, { playerID, sessionToken, duelID, task });
 
+  await mockCurrentPlayerMe(page, playerID, sessionToken, duelID);
   await page.routeWebSocket((url) => url.pathname === '/ws', (ws) => {
     ws.onMessage(async (raw) => {
       const message = JSON.parse(String(raw)) as { type: string };

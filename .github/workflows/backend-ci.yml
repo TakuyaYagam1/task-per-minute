@@ -59,6 +59,10 @@ jobs:
             ${{ runner.os }}-go-lint-
             ${{ runner.os }}-go-
 
+      - name: generate mocks
+        working-directory: ${{ env.GO_WORKDIR }}
+        run: make mocks
+
       - name: golangci-lint
         uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9.2.0
         with:
@@ -97,6 +101,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-unit-test-
             ${{ runner.os }}-go-
+
+      - name: generate mocks
+        working-directory: ${{ env.GO_WORKDIR }}
+        run: make mocks
 
       - name: make test
         working-directory: ${{ env.GO_WORKDIR }}

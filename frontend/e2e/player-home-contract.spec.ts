@@ -1,5 +1,10 @@
 import { expect, test, type Page, type WebSocketRoute } from '@playwright/test';
-import { inSecondsISO, jsonHeaders, nowISO } from './support/common';
+import {
+  expectWebSocketURLDoesNotLeakSession,
+  inSecondsISO,
+  jsonHeaders,
+  nowISO,
+} from './support/common';
 import {
   installWebSocketErrorProbe,
   type WebSocketErrorProbeWindow,
@@ -547,7 +552,7 @@ test('invalid task_assigned payload does not create game state or navigate', asy
   });
 
   await page.routeWebSocket((url) => url.pathname === '/ws', (ws) => {
-    expect(new URL(ws.url()).searchParams.get('token')).toBe(sessionToken);
+    expectWebSocketURLDoesNotLeakSession(ws.url());
     ws.onMessage((raw) => {
       const message = JSON.parse(String(raw)) as { type: string; payload?: unknown };
       messages.push(message);
@@ -812,7 +817,7 @@ test('home ignores mismatched duel task assignment until matching task arrives',
   });
 
   await page.routeWebSocket((url) => url.pathname === '/ws', (ws) => {
-    expect(new URL(ws.url()).searchParams.get('token')).toBe(sessionToken);
+    expectWebSocketURLDoesNotLeakSession(ws.url());
     activeSocket = ws;
     ws.onMessage((raw) => {
       const message = JSON.parse(String(raw)) as { type: string; payload?: unknown };
@@ -1195,9 +1200,7 @@ test('player flow uses session-token WS envelope and flag_submit payload', async
   await page.getByRole('button', { name: /Отправить/ }).click();
   await expect(page.getByText('ПОБЕДА!')).toBeVisible();
 
-  expect(new URL(websocketURL).searchParams.get('token')).toBe(sessionToken);
-  expect(new URL(websocketURL).searchParams.has('player_id')).toBe(false);
-  expect(new URL(websocketURL).searchParams.has('session_id')).toBe(false);
+  expectWebSocketURLDoesNotLeakSession(websocketURL);
   expect(submitFlagRESTCalls).toBe(0);
   expect(messages.filter((message) => message.type === 'join_queue')).toHaveLength(1);
   expect(messages.every((message) => !('data' in message))).toBe(true);
@@ -1481,9 +1484,7 @@ test('player queue flow renders pwn host-port task target as copy endpoint', asy
     };
   });
 
-  expect(new URL(websocketURL).searchParams.get('token')).toBe(sessionToken);
-  expect(new URL(websocketURL).searchParams.has('player_id')).toBe(false);
-  expect(new URL(websocketURL).searchParams.has('session_id')).toBe(false);
+  expectWebSocketURLDoesNotLeakSession(websocketURL);
   expect(messages.filter((message) => message.type === 'join_queue')).toHaveLength(1);
   expect(browserState).toEqual({
     opened: [],
@@ -1519,7 +1520,7 @@ test('home queue websocket invalid session clears player state and waiting overl
   });
 
   await page.routeWebSocket((url) => url.pathname === '/ws', (ws) => {
-    expect(new URL(ws.url()).searchParams.get('token')).toBe(sessionToken);
+    expectWebSocketURLDoesNotLeakSession(ws.url());
     ws.onMessage((raw) => {
       const message = JSON.parse(String(raw)) as { type: string; payload?: unknown };
       messages.push(message);
@@ -1690,7 +1691,7 @@ test('queue websocket reconnect resends join_queue for current search', async ({
   await page.routeWebSocket((url) => url.pathname === '/ws', (ws) => {
     const socketIndex = socketCount;
     socketCount += 1;
-    expect(new URL(ws.url()).searchParams.get('token')).toBe(sessionToken);
+    expectWebSocketURLDoesNotLeakSession(ws.url());
     ws.onMessage((raw) => {
       const message = JSON.parse(String(raw)) as { type: string; payload?: unknown };
       messages.push({ socket: socketIndex, ...message });
@@ -2006,8 +2007,88 @@ test('rapid websocket reconnect failures eventually give up', async ({ page }) =
   expect(clientState.openedUrls).toHaveLength(11);
   expect(giveUpVisible).toBe(true);
   for (const url of clientState.openedUrls) {
-    expect(new URL(url).searchParams.get('token')).toBe(sessionToken);
+    expectWebSocketURLDoesNotLeakSession(url);
   }
+});
+
+test('home queue websocket handshake failure clears waiting state', async ({ page }) => {
+  await page.addInitScript(() => {
+    class RejectedWebSocket extends EventTarget {
+      static CONNECTING = 0;
+      static OPEN = 1;
+      static CLOSING = 2;
+      static CLOSED = 3;
+
+      readonly url: string;
+      readonly protocol = '';
+      readonly extensions = '';
+      binaryType: BinaryType = 'blob';
+      bufferedAmount = 0;
+      readyState = RejectedWebSocket.CONNECTING;
+      onopen: ((event: Event) => void) | null = null;
+      onmessage: ((event: MessageEvent) => void) | null = null;
+      onerror: ((event: Event) => void) | null = null;
+      onclose: ((event: CloseEvent) => void) | null = null;
+
+      constructor(url: string | URL) {
+        super();
+        this.url = String(url);
+        setTimeout(() => {
+          this.readyState = RejectedWebSocket.CLOSED;
+          this.dispatchEvent(new Event('error'));
+          this.dispatchEvent(new CloseEvent('close', { code: 1006 }));
+        }, 0);
+      }
+
+      dispatchEvent(event: Event): boolean {
+        const result = super.dispatchEvent(event);
+        const handler = this[`on${event.type}` as keyof this];
+        if (typeof handler === 'function') {
+          (handler as (value: Event) => void).call(this, event);
+        }
+        return result;
+      }
+
+      send(): void {}
+      close(): void {
+        this.readyState = RejectedWebSocket.CLOSED;
+      }
+    }
+
+    window.WebSocket = RejectedWebSocket as unknown as typeof WebSocket;
+  });
+
+  const playerID = '91919191-9191-9191-9191-919191919191';
+  const sessionToken = '10000000-0000-0000-0000-000000000191';
+
+  await page.addInitScript(({ playerID, sessionToken }) => {
+    window.localStorage.setItem('player_id', playerID);
+    window.localStorage.setItem('session_token', sessionToken);
+    window.localStorage.setItem('username', 'alice');
+  }, { playerID, sessionToken });
+
+  await page.route('**/api/v1/players/me', async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: jsonHeaders,
+      body: JSON.stringify({
+        player: {
+          id: playerID,
+          username: 'alice',
+          status: 'idle',
+          created_at: nowISO(),
+        },
+      }),
+    });
+  });
+
+  await page.goto('/');
+  await expect(page.getByText('Игрок готов')).toBeVisible();
+  await page.getByRole('button', { name: /ИГРАТЬ/ }).click();
+
+  await expect(page.getByText('Ошибка WebSocket соединения. Проверьте адрес страницы и обновите.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Отменить поиск' })).toBeHidden();
+  await expect(page.getByText('Игрок готов')).toBeVisible();
 });
 
 test('existing active duel restores through WS without sending join_queue', async ({ page }) => {
@@ -2055,7 +2136,7 @@ test('existing active duel restores through WS without sending join_queue', asyn
   });
 
   await page.routeWebSocket((url) => url.pathname === '/ws', (ws) => {
-    expect(new URL(ws.url()).searchParams.get('token')).toBe(sessionToken);
+    expectWebSocketURLDoesNotLeakSession(ws.url());
     activeSocket = ws;
     ws.onMessage((raw) => {
       messages.push(JSON.parse(String(raw)) as { type: string; payload?: unknown });
@@ -2233,7 +2314,7 @@ test('active duel restore failure shows a user-facing error', async ({ page }) =
   });
 
   await page.routeWebSocket((url) => url.pathname === '/ws', (ws) => {
-    expect(new URL(ws.url()).searchParams.get('token')).toBe(sessionToken);
+    expectWebSocketURLDoesNotLeakSession(ws.url());
     activeSocket = ws;
     ws.onMessage((raw) => {
       messages.push(JSON.parse(String(raw)) as { type: string; payload?: unknown });
@@ -2295,7 +2376,7 @@ test('active duel restore without task shows failure instead of hanging', async 
   });
 
   await page.routeWebSocket((url) => url.pathname === '/ws', (ws) => {
-    expect(new URL(ws.url()).searchParams.get('token')).toBe(sessionToken);
+    expectWebSocketURLDoesNotLeakSession(ws.url());
     activeSocket = ws;
     ws.onMessage((raw) => {
       messages.push(JSON.parse(String(raw)) as { type: string; payload?: unknown });
@@ -2440,7 +2521,7 @@ test('active duel restore ignores mismatched duel_resume until matching resume a
   });
 
   await page.routeWebSocket((url) => url.pathname === '/ws', (ws) => {
-    expect(new URL(ws.url()).searchParams.get('token')).toBe(sessionToken);
+    expectWebSocketURLDoesNotLeakSession(ws.url());
     activeSocket = ws;
     ws.onMessage((raw) => {
       messages.push(JSON.parse(String(raw)) as { type: string; payload?: unknown });
@@ -2924,7 +3005,7 @@ test('home ignores wrong-duel terminal event and handles matching queue terminal
   });
 
   await page.routeWebSocket((url) => url.pathname === '/ws', (ws) => {
-    expect(new URL(ws.url()).searchParams.get('token')).toBe(sessionToken);
+    expectWebSocketURLDoesNotLeakSession(ws.url());
     activeSocket = ws;
     ws.onMessage((raw) => {
       const message = JSON.parse(String(raw)) as { type: string; payload?: unknown };
@@ -3002,7 +3083,7 @@ test('home terminal event uses refreshed player id for winner notification', asy
   });
 
   await page.routeWebSocket((url) => url.pathname === '/ws', (ws) => {
-    expect(new URL(ws.url()).searchParams.get('token')).toBe(sessionToken);
+    expectWebSocketURLDoesNotLeakSession(ws.url());
     ws.onMessage((raw) => {
       const message = JSON.parse(String(raw)) as { type: string; payload?: unknown };
       messages.push(message);
@@ -3054,8 +3135,11 @@ test('home terminal event uses refreshed player id for winner notification', asy
 
   await expect(page.getByText('Поздравляем! Вы выиграли!')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Отменить поиск' })).toBeHidden();
-  expect(await page.evaluate(() => window.localStorage.getItem('player_id'))).toBe(refreshedPlayerID);
-  expect(await page.evaluate(() => window.localStorage.getItem('currentGame'))).toBeNull();
+  await expect(page.getByPlaceholder('Введите никнейм...')).toBeVisible();
+  await expect(page.getByText('Игрок готов')).toBeHidden();
+  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('player_id'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('session_token'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('currentGame'))).toBeNull();
 });
 
 test('home terminal event does not treat stale stored player id as winner', async ({ page }) => {
@@ -3088,7 +3172,7 @@ test('home terminal event does not treat stale stored player id as winner', asyn
   });
 
   await page.routeWebSocket((url) => url.pathname === '/ws', (ws) => {
-    expect(new URL(ws.url()).searchParams.get('token')).toBe(sessionToken);
+    expectWebSocketURLDoesNotLeakSession(ws.url());
     ws.onMessage((raw) => {
       const message = JSON.parse(String(raw)) as { type: string; payload?: unknown };
       messages.push(message);
@@ -3140,8 +3224,11 @@ test('home terminal event does not treat stale stored player id as winner', asyn
 
   await expect(page.getByText('Вы проиграли. Попробуйте снова!')).toBeVisible();
   await expect(page.getByText('Поздравляем! Вы выиграли!')).toBeHidden();
-  expect(await page.evaluate(() => window.localStorage.getItem('player_id'))).toBe(refreshedPlayerID);
-  expect(await page.evaluate(() => window.localStorage.getItem('currentGame'))).toBeNull();
+  await expect(page.getByPlaceholder('Введите никнейм...')).toBeVisible();
+  await expect(page.getByText('Игрок готов')).toBeHidden();
+  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('player_id'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('session_token'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('currentGame'))).toBeNull();
 });
 
 test('home queue terminal event ignores late websocket error', async ({ page }) => {

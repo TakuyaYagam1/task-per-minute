@@ -149,6 +149,7 @@ export default function AdminPanel() {
   const authSessionVersionRef = useRef(0);
   const tasksRequestIDRef = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const passwordInputRef = useRef<HTMLInputElement>(null);
   const { notification, showNotification: showTimedNotification } =
     useTimedNotification<Notification>();
 
@@ -157,6 +158,10 @@ export default function AdminPanel() {
     const loadedTokens = adminSession.load();
     tokensRef.current = loadedTokens;
     setTokens(loadedTokens);
+    const pendingPassword = passwordInputRef.current?.value;
+    if (pendingPassword) {
+      setPassword(pendingPassword);
+    }
 
     return () => {
       isMountedRef.current = false;
@@ -622,12 +627,12 @@ export default function AdminPanel() {
             <div className={styles.inputGroup}>
               <label>Пароль администратора</label>
               <input
+                ref={passwordInputRef}
                 type="password"
                 required
                 value={password}
                 onChange={e => setPassword(e.target.value)}
                 placeholder="Введите пароль..."
-                autoFocus
               />
             </div>
             <button

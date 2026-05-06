@@ -70,8 +70,8 @@ typecheck: ## TypeScript typecheck without emit
 	$(NPX) tsc --noEmit --pretty false
 
 .PHONY: test
-test: ## Playwright mock contract tests
-	$(NPX) playwright test
+test: ## Playwright mock contract tests (1 worker, fully sequential)
+	E2E_WORKERS=1 $(NPX) playwright test --workers=1
 
 .PHONY: test-live
 test-live: ## Gated live backend smoke tests; requires E2E_ADMIN_PASSWORD

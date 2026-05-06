@@ -940,6 +940,7 @@ test('mismatched stored task result is cleared and active duel reconnects', asyn
     }));
   }, { playerID, sessionToken, duelID, staleDuelID, task });
 
+  await mockCurrentPlayerMe(page, playerID, sessionToken, duelID);
   await page.routeWebSocket((url) => url.pathname === '/ws', (ws) => {
     activeSocket = ws;
   });
@@ -1092,6 +1093,7 @@ test('backend duel_finished win overrides local timer timeup', async ({ page }) 
     }));
   }, { playerID, sessionToken, duelID, deadline, task });
 
+  await mockCurrentPlayerMe(page, playerID, sessionToken, duelID);
   await page.routeWebSocket((url) => url.pathname === '/ws', (ws) => {
     activeSocket = ws;
   });
@@ -1182,6 +1184,7 @@ test('backend duel_finished loss overrides local timer timeup', async ({ page })
     }));
   }, { playerID, sessionToken, duelID, deadline, task });
 
+  await mockCurrentPlayerMe(page, playerID, sessionToken, duelID);
   await page.routeWebSocket((url) => url.pathname === '/ws', (ws) => {
     activeSocket = ws;
   });
@@ -1269,6 +1272,7 @@ test('stored local timer result does not block backend terminal restore', async 
     }));
   }, { playerID, sessionToken, duelID, deadline, task });
 
+  await mockCurrentPlayerMe(page, playerID, sessionToken, duelID);
   await page.routeWebSocket((url) => url.pathname === '/ws', (ws) => {
     activeSocket = ws;
   });
@@ -1402,6 +1406,7 @@ test('task page keeps first server terminal result after duel_expired', async ({
     }));
   }, { playerID, sessionToken, duelID, deadline, task });
 
+  await mockCurrentPlayerMe(page, playerID, sessionToken, duelID);
   await page.routeWebSocket((url) => url.pathname === '/ws', (ws) => {
     activeSocket = ws;
   });

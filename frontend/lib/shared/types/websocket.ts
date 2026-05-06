@@ -117,7 +117,7 @@ export interface OpponentReconnectedPayload {
 
 export interface DuelResumePayload {
   duel_id: string;
-  opponent_id: string;
+  opponent_id?: string;
   deadline: string;
   opponent_disconnected?: boolean;
   opponent_reconnect_deadline?: string;

@@ -47,7 +47,7 @@ func (s *Server) readOnce(ctx context.Context, c *client) error {
 	var event IncomingEvent
 	if err := json.NewDecoder(reader).Decode(&event); err != nil {
 		_ = c.sendError(ErrorInvalidJSON, "invalid json")
-		return nil
+		return nil //nolint:nilerr // invalid client JSON is reported over WS; keep the connection open for later events.
 	}
 	s.routeEvent(ctx, c, event)
 	return nil
@@ -55,6 +55,10 @@ func (s *Server) readOnce(ctx context.Context, c *client) error {
 
 func (s *Server) routeEvent(ctx context.Context, c *client, event IncomingEvent) {
 	if c.isDisplaced() || c.closed.Load() {
+		return
+	}
+	if !s.validateSession(ctx, c) {
+		_ = c.sendError(string(apperr.CodeInvalidSession), "invalid session token")
 		return
 	}
 	switch event.Type {
@@ -71,6 +75,24 @@ func (s *Server) routeEvent(ctx context.Context, c *client, event IncomingEvent)
 	default:
 		_ = c.sendError(ErrorUnknownEvent, "unknown event type")
 	}
+}
+
+// validateSession compares the WS connection's session token captured at
+// handshake time against the player's current token in storage. If the player
+// rotated their token (e.g. via /api/v1/players/join with the same username
+// from another device), the old WS becomes stale and must be rejected.
+func (s *Server) validateSession(ctx context.Context, c *client) bool {
+	if s.players == nil || c == nil || c.player == nil {
+		return true
+	}
+	if c.player.SessionToken == nil {
+		return false
+	}
+	current, err := s.players.GetByID(ctx, c.player.ID)
+	if err != nil || current == nil || current.SessionToken == nil {
+		return false
+	}
+	return *current.SessionToken == *c.player.SessionToken
 }
 
 func (s *Server) handleJoinQueue(ctx context.Context, c *client) {

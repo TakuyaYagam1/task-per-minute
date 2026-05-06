@@ -225,7 +225,12 @@ func startPostgres() (*pgxpool.Pool, func(), error) {
 		return nil, nil, errors.Join(err, pgC.Terminate(ctx))
 	}
 
-	pool, err := pgxpool.New(ctx, dsn)
+	poolCfg, err := pgxpool.ParseConfig(dsn)
+	if err != nil {
+		return nil, nil, errors.Join(err, pgC.Terminate(ctx))
+	}
+	poolCfg.MaxConns = 50
+	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
 	if err != nil {
 		return nil, nil, errors.Join(err, pgC.Terminate(ctx))
 	}
