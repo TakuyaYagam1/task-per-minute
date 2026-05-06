@@ -1,5 +1,6 @@
 'use client';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import Link from 'next/link';
 import styles from './leaderboard.module.css';
 import { ApiError, leaderboardApi } from '../../lib/shared/api';
 
@@ -187,6 +188,10 @@ export default function Leaderboard() {
 
   return (
     <main className={styles.container}>
+      <Link href="/" className={styles.homeLink}>
+        <span aria-hidden="true">←</span>
+        На главную
+      </Link>
       <div className={styles.header}>
         <div className={styles.headerTop}>
           <span className={styles.crown}>👑</span>

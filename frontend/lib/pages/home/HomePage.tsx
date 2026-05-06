@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useRef, FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import Link from "next/link";
 
 import { GameState, MatchFoundPayload, Player, WebSocketMessage } from "../../shared/types";
 import {
@@ -632,13 +633,22 @@ export default function HomePage() {
                 alt="Task Per Minute"
                 width={900}
                 height={600}
-                className="w-full h-48 sm:h-64 lg:h-full object-cover animate-slideInLeft will-change-transform"
+                className="w-full h-72 sm:h-64 lg:h-full object-cover animate-slideInLeft will-change-transform"
                 priority
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent lg:bg-gradient-to-r lg:from-transparent lg:via-transparent lg:to-black/60"></div>
               
               <div className="absolute top-4 right-4 w-12 h-12 bg-white/10 rounded-full animate-bounce hidden lg:block"></div>
               <div className="absolute bottom-6 left-6 w-8 h-8 bg-white/20 rounded-full animate-pulse hidden lg:block"></div>
+              <div className="absolute inset-x-0 bottom-6 z-10 flex justify-center px-4">
+                <Link
+                  href="/leaderboard"
+                  className="btn btn-secondary !w-auto !min-w-[92px] sm:!min-w-[140px] lg:!min-w-[180px] border-white/35 bg-white/15 !px-3 sm:!px-4 lg:!px-5 !py-1.5 sm:!py-2 lg:!py-3 !text-[10px] sm:!text-xs lg:!text-base font-bold uppercase leading-none text-white shadow-lg backdrop-blur-md hover:bg-white/25 active:scale-95 !gap-1 sm:!gap-2"
+                >
+                  <span aria-hidden="true">🏆</span>
+                  Лидерборд
+                </Link>
+              </div>
             </div>
             
             <div className="lg:w-1/3 p-6 lg:p-8 flex flex-col justify-center animate-slideInRight">
