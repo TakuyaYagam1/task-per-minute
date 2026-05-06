@@ -1,6 +1,7 @@
 package v1
 
 import (
+	"context"
 	"errors"
 	"net/http"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/controller/restapi/middleware"
 	"github.com/TakuyaYagam1/task-per-minute/internal/controller/restapi/v1/request"
 	"github.com/TakuyaYagam1/task-per-minute/internal/controller/restapi/v1/response"
+	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/openapi"
 )
 
@@ -167,13 +169,27 @@ func (s *Server) UpdateTask(w http.ResponseWriter, r *http.Request, id openapi_t
 		return
 	}
 
-	var body updateTaskRequest
+	var body openapi.UpdateTaskRequest
 	if err := request.DecodeJSON(r, &body); err != nil {
 		errmap.HandleError(w, r, apperr.ErrTaskValidation)
 		return
 	}
+	if !isValidUpdateTaskRequest(body) {
+		errmap.HandleError(w, r, apperr.ErrTaskValidation)
+		return
+	}
 
-	updated, err := s.tasks.UpdateTask(r.Context(), id, updateTaskInput(existing, body))
+	input := updateTaskInput(existing, body)
+	var updated *domain.Task
+	if body.SourceFileUrl.IsSet() {
+		if s.upload == nil {
+			errmap.HandleError(w, r, apperr.ErrInternal)
+			return
+		}
+		updated, err = s.upload.ClearSourceFile(r.Context(), id, input)
+	} else {
+		updated, err = s.tasks.UpdateTask(r.Context(), id, input)
+	}
 	if err != nil {
 		errmap.HandleError(w, r, err)
 		return
@@ -192,9 +208,22 @@ func (s *Server) DeleteTask(w http.ResponseWriter, r *http.Request, id openapi_t
 		return
 	}
 
+	existing, err := s.tasks.GetTask(r.Context(), id)
+	if err != nil {
+		errmap.HandleError(w, r, err)
+		return
+	}
+	if existing.SourceFileURL != nil && s.upload == nil {
+		errmap.HandleError(w, r, apperr.ErrInternal)
+		return
+	}
+
 	if err := s.tasks.DeleteTask(r.Context(), id); err != nil {
 		errmap.HandleError(w, r, err)
 		return
+	}
+	if existing.SourceFileURL != nil {
+		_ = s.upload.DeleteSourceFile(context.WithoutCancel(r.Context()), id, existing.SourceFileURL)
 	}
 
 	response.WriteJSON(w, http.StatusNoContent, nil)

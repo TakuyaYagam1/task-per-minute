@@ -71,9 +71,14 @@ func TestCategory_IsValid(t *testing.T) {
 		{"forensics", domain.CategoryForensics, true},
 		{"reverse", domain.CategoryReverse, true},
 		{"pwn", domain.CategoryPwn, true},
+		{"steganography", domain.CategoryStego, true},
+		{"ppc", domain.CategoryPPC, true},
+		{"osint", domain.CategoryOSINT, true},
+		{"mobile", domain.CategoryMobile, true},
+		{"hardware", domain.CategoryHardware, true},
 		{"misc", domain.CategoryMisc, true},
 		{"empty", domain.Category(""), false},
-		{"unknown", domain.Category("steganography"), false},
+		{"unknown", domain.Category("network"), false},
 		{"case mismatch", domain.Category("Web"), false},
 	}
 

@@ -4,20 +4,32 @@
 
 ## Обычный деплой
 
-GitHub Actions workflow собирает SHA-tagged backend image, пушит его в GHCR,
-заходит на сервер по SSH, сбрасывает репозиторий на целевой SHA и выполняет:
+GitHub Actions workflow собирает immutable SHA-tagged backend image, пушит его в
+GHCR, заходит на сервер по SSH, сбрасывает репозиторий на целевой SHA и
+выполняет:
 
 ```bash
 cd /opt/task-per-minute/deployment/docker
 export BACKEND_IMAGE=<sha-image>
-docker network inspect proxy_tpm >/dev/null 2>&1 || docker network create proxy_tpm
-docker compose --env-file ../../.env pull backend migrate
-docker compose --env-file ../../.env run --rm migrate
+docker compose --env-file ../../.env pull backend
 docker compose --env-file ../../.env up -d --remove-orphans backend
 ```
 
-Миграции выполняются до замены backend-контейнера. Если миграция падает,
-workflow останавливается, а старая версия backend продолжает работать.
+Backend запускает Goose-миграции при старте. Если миграция падает, новый
+backend-контейнер завершается или остается unhealthy, health gate не проходит,
+а workflow откатывает backend на предыдущий image и проверяет его health.
+Успешные deploy и rollback шаги также обновляют `BACKEND_IMAGE` в серверном
+`.env`, чтобы последующие ручные compose-операции использовали pinned image.
+
+Frontend workflow аналогично собирает immutable SHA-tagged frontend image и
+обновляет только frontend service:
+
+```bash
+cd /opt/task-per-minute/deployment/docker
+export FRONTEND_IMAGE=<sha-image>
+docker compose --env-file ../../.env pull frontend
+docker compose --env-file ../../.env up -d --remove-orphans frontend
+```
 
 ## Health gate
 
@@ -25,7 +37,8 @@ workflow останавливается, а старая версия backend п
 состоянии `ok` и положительную версию схемы:
 
 ```bash
-curl -fsS http://127.0.0.1:8080/health | jq .
+cd /opt/task-per-minute/deployment/docker
+docker compose --env-file ../../.env exec -T backend wget -qO- http://127.0.0.1:8080/health | jq .
 ```
 
 Ожидаемые поля:
@@ -40,11 +53,24 @@ curl -fsS http://127.0.0.1:8080/health | jq .
 }
 ```
 
+Frontend health gate проверяет, что frontend URL отвечает успешным HTTP
+статусом, а same-origin API rewrite возвращает ожидаемую форму leaderboard:
+
+```bash
+cd /opt/task-per-minute/deployment/docker
+docker compose --env-file ../../.env exec -T frontend sh -c 'wget -qO- "http://127.0.0.1:${PORT:-3000}/" >/dev/null'
+docker compose --env-file ../../.env exec -T frontend sh -c 'wget -qO- "http://127.0.0.1:${PORT:-3000}/api/v1/leaderboard"' | jq -e '.entries | type == "array"'
+docker compose --env-file ../../.env exec -T nginx nginx -t -c /tmp/nginx.conf
+docker compose --env-file ../../.env exec -T nginx wget -qO- http://127.0.0.1/nginx-health
+docker compose --env-file ../../.env logs --tail=100 certbot
+```
+
 ## Откат backend image
 
 Используйте это, если новый контейнер стартовал, но health-check не прошел.
 Workflow делает такой откат автоматически через `.last-deployed-sha`; ниже
-ручные команды.
+ручные команды. Если `.last-deployed-sha` отсутствует, автоматический rollback
+недоступен и deploy требует ручного recovery.
 
 ```bash
 cd /opt/task-per-minute
@@ -60,7 +86,34 @@ cd deployment/docker
 export BACKEND_IMAGE="$PREVIOUS_IMAGE"
 docker compose --env-file ../../.env pull backend
 docker compose --env-file ../../.env up -d --remove-orphans backend
-curl -fsS http://127.0.0.1:8080/health | jq .
+docker compose --env-file ../../.env exec -T backend wget -qO- http://127.0.0.1:8080/health | jq .
+```
+
+## Откат frontend image
+
+Используйте это, если новый frontend image развернулся, но frontend health gate
+не прошел. Frontend workflow делает такой откат через
+`.last-deployed-frontend-sha` и после rollback проверяет frontend page плюс
+same-origin API rewrite. Если `.last-deployed-frontend-sha` отсутствует,
+автоматический rollback недоступен и deploy требует ручного recovery. Успешные
+deploy и rollback шаги также обновляют `FRONTEND_IMAGE` в серверном `.env`,
+чтобы последующие ручные compose-операции использовали pinned image.
+
+```bash
+cd /opt/task-per-minute
+
+IMAGE_REPO=ghcr.io/<owner>/task-per-minute-frontend
+PREVIOUS_SHA="$(tr -d '[:space:]' < .last-deployed-frontend-sha)"
+PREVIOUS_IMAGE="$IMAGE_REPO:$PREVIOUS_SHA"
+
+git fetch --prune origin
+git reset --hard "$PREVIOUS_SHA"
+
+cd deployment/docker
+export FRONTEND_IMAGE="$PREVIOUS_IMAGE"
+docker compose --env-file ../../.env pull frontend
+docker compose --env-file ../../.env up -d --remove-orphans frontend
+docker compose --env-file ../../.env exec -T frontend sh -c 'wget -qO- "http://127.0.0.1:${PORT:-3000}/" >/dev/null'
 ```
 
 ## Рестарт стека
@@ -69,13 +122,13 @@ curl -fsS http://127.0.0.1:8080/health | jq .
 
 ```bash
 cd /opt/task-per-minute/deployment/docker
-docker compose --env-file ../../.env restart backend
+docker compose --env-file ../../.env restart backend frontend
 ```
 
-Для пересоздания backend-контейнера на текущем image:
+Для пересоздания backend/frontend-контейнеров на текущих image:
 
 ```bash
-docker compose --env-file ../../.env up -d --remove-orphans backend
+docker compose --env-file ../../.env up -d --remove-orphans backend frontend
 ```
 
 ## Полное удаление стека
@@ -107,17 +160,17 @@ docker compose --env-file ../../.env down -v --remove-orphans
 ```bash
 cd /opt/task-per-minute/deployment/docker
 export BACKEND_IMAGE="$PREVIOUS_IMAGE"
-docker compose --env-file ../../.env run --rm migrate status
+docker compose --env-file ../../.env run --rm --entrypoint /app/migrate backend status
 ```
 
 Откатить одну миграцию:
 
 ```bash
 export BACKEND_IMAGE="$PREVIOUS_IMAGE"
-docker compose --env-file ../../.env run --rm migrate down
+docker compose --env-file ../../.env run --rm --entrypoint /app/migrate backend down
 ```
 
-Повторяйте `migrate down` только после отдельной проверки каждого шага. После
+Повторяйте `/app/migrate down` только после отдельной проверки каждого шага. После
 отката схемы задеплойте совместимый backend image и проверьте `/health`.
 
 ## Механика подсказок

@@ -3,7 +3,10 @@ package websocket
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -16,7 +19,16 @@ import (
 	duelusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel"
 )
 
-const defaultHubCloseDelay = 100 * time.Millisecond
+// SubprotocolBearerPrefix is the Sec-WebSocket-Protocol prefix used to carry a
+// session token through the handshake. Pairing the UUID with this prefix lets
+// the server distinguish auth tokens from any other future subprotocol the
+// client might offer (e.g. content negotiation).
+const SubprotocolBearerPrefix = "tpm.bearer."
+
+const (
+	defaultHubCloseDelay   = 100 * time.Millisecond
+	defaultDisconnectGrace = time.Second
+)
 
 type Matchmaking interface {
 	JoinQueue(ctx context.Context, playerID uuid.UUID) (*duelusecase.MatchResult, error)
@@ -38,18 +50,39 @@ type ReconnectManager interface {
 	CloseDuel(duelID uuid.UUID)
 }
 
-type Server struct {
-	ctx           context.Context
-	players       usecase.PlayerRepo
-	matchmaking   Matchmaking
-	flags         FlagSubmitter
-	hubs          *HubRegistry
-	broadcaster   *Broadcaster
-	hints         *duelusecase.HintScheduler
-	acceptOptions *coderws.AcceptOptions
-	reconnect     ReconnectManager
-	closeDelay    time.Duration
+// HandshakeRateLimiter caps the rate of /ws handshake attempts per source IP
+// to keep token brute-force / connection-exhaustion attacks bounded. The
+// implementation must be safe for concurrent use by HTTP handlers.
+type HandshakeRateLimiter interface {
+	Allow(ip string) bool
+	RetryAfter() string
+}
 
+// ClientIPResolver returns the trusted client IP for a given request — the
+// WS server does not know the proxy CIDR list itself, so the caller is
+// responsible for using whatever forwarded-header policy the rest of the
+// application uses.
+type ClientIPResolver func(r *http.Request) string
+
+type Server struct {
+	ctx              context.Context
+	cancel           context.CancelFunc
+	players          usecase.PlayerRepo
+	matchmaking      Matchmaking
+	flags            FlagSubmitter
+	hubs             *HubRegistry
+	broadcaster      *Broadcaster
+	hints            *duelusecase.HintScheduler
+	duels            usecase.DuelRepo
+	storage          usecase.SourceFileStorage
+	acceptOptions    *coderws.AcceptOptions
+	reconnect        ReconnectManager
+	closeDelay       time.Duration
+	disconnectGrace  time.Duration
+	handshakeLimiter HandshakeRateLimiter
+	clientIP         ClientIPResolver
+
+	wg      sync.WaitGroup
 	clients sync.Map
 }
 
@@ -81,9 +114,40 @@ func WithHintScheduler(hints *duelusecase.HintScheduler) Option {
 	}
 }
 
+func WithTaskResolver(duels usecase.DuelRepo, storage usecase.SourceFileStorage) Option {
+	return func(s *Server) {
+		s.duels = duels
+		s.storage = storage
+	}
+}
+
 func WithHubCloseDelay(delay time.Duration) Option {
 	return func(s *Server) {
 		s.closeDelay = delay
+	}
+}
+
+func WithDisconnectGrace(delay time.Duration) Option {
+	return func(s *Server) {
+		s.disconnectGrace = delay
+	}
+}
+
+// WithHandshakeRateLimiter injects a per-IP rate limiter that gates /ws
+// handshakes. A nil limiter (or omitting this option) disables the gate.
+func WithHandshakeRateLimiter(rl HandshakeRateLimiter) Option {
+	return func(s *Server) {
+		s.handshakeLimiter = rl
+	}
+}
+
+// WithClientIPResolver overrides the default RemoteAddr-based IP resolution
+// with a function that respects the application's forwarded-header policy.
+func WithClientIPResolver(resolver ClientIPResolver) Option {
+	return func(s *Server) {
+		if resolver != nil {
+			s.clientIP = resolver
+		}
 	}
 }
 
@@ -98,16 +162,18 @@ func NewServer(
 		hubs = NewHubRegistry()
 	}
 	s := &Server{
-		ctx:         context.Background(),
-		players:     players,
-		matchmaking: matchmaking,
-		flags:       flags,
-		hubs:        hubs,
-		closeDelay:  defaultHubCloseDelay,
+		ctx:             context.Background(),
+		players:         players,
+		matchmaking:     matchmaking,
+		flags:           flags,
+		hubs:            hubs,
+		closeDelay:      defaultHubCloseDelay,
+		disconnectGrace: defaultDisconnectGrace,
 	}
 	for _, opt := range options {
 		opt(s)
 	}
+	s.ctx, s.cancel = context.WithCancel(s.ctx)
 	s.broadcaster = newBroadcaster(s.ctx, s.hubs, s.clientByPlayer, s.closeDelay)
 	if s.hints != nil {
 		s.hints.SetSender(s.sendHintUnlocked)
@@ -165,6 +231,21 @@ func (s *Server) Shutdown(ctx context.Context) {
 		c.Close()
 		return true
 	})
+
+	if s.cancel != nil {
+		s.cancel()
+	}
+
+	waitDone := make(chan struct{})
+	go func() {
+		s.wg.Wait()
+		close(waitDone)
+	}()
+	select {
+	case <-waitDone:
+	case <-ctx.Done():
+	}
+
 	s.hubs.CloseAll()
 }
 
@@ -178,12 +259,38 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	player, ok := s.authenticate(w, r)
+	if s.handshakeLimiter != nil {
+		ip := s.resolveClientIP(r)
+		if !s.handshakeLimiter.Allow(ip) {
+			if retry := s.handshakeLimiter.RetryAfter(); retry != "" {
+				w.Header().Set("Retry-After", retry)
+			}
+			http.Error(w, "too many handshake attempts", http.StatusTooManyRequests)
+			return
+		}
+	}
+
+	player, chosenSubprotocol, ok := s.authenticate(w, r)
 	if !ok {
 		return
 	}
 
-	conn, err := coderws.Accept(w, r, s.acceptOptions)
+	// If the client carried the token via Sec-WebSocket-Protocol we MUST echo
+	// the same subprotocol back during Accept, otherwise browsers tear the
+	// connection down with a protocol-mismatch error. The cloned options keep
+	// the existing OriginPatterns / CompressionMode untouched.
+	acceptOpts := s.acceptOptions
+	if chosenSubprotocol != "" {
+		var optsCopy coderws.AcceptOptions
+		if s.acceptOptions != nil {
+			optsCopy = *s.acceptOptions
+		}
+		optsCopy.Subprotocols = append([]string(nil), optsCopy.Subprotocols...)
+		optsCopy.Subprotocols = append(optsCopy.Subprotocols, chosenSubprotocol)
+		acceptOpts = &optsCopy
+	}
+
+	conn, err := coderws.Accept(w, r, acceptOpts)
 	if err != nil {
 		return
 	}
@@ -192,6 +299,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var oldClient *client
 	if old, loaded := s.clients.Swap(player.ID, c); loaded {
 		oldClient = old.(*client)
+		oldClient.markDisplaced()
 	}
 
 	connCtx, cancel := context.WithCancel(context.WithoutCancel(r.Context()))
@@ -199,7 +307,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	stopOnServerShutdown := context.AfterFunc(s.ctx, cancel)
 	defer cancel()
 	defer stopOnServerShutdown()
-	go c.writePump(connCtx)
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		c.writePump(connCtx)
+	}()
 
 	handled := false
 	if oldClient != nil {
@@ -232,7 +344,7 @@ func (s *Server) handleConnectionReplacement(ctx context.Context, c, old *client
 			if !s.attachToDuelHub(ctx, c, decision.Duel.ID) {
 				return true
 			}
-			s.sendDuelResume(c, decision, false)
+			s.sendDuelResume(ctx, c, decision, false)
 			return true
 		}
 	}
@@ -254,7 +366,7 @@ func (s *Server) handleConnectionReplacement(ctx context.Context, c, old *client
 		if !s.attachToDuelHub(ctx, c, decision.Duel.ID) {
 			return true
 		}
-		s.sendDuelResume(c, decision, false)
+		s.sendDuelResume(ctx, c, decision, false)
 		return true
 	}
 
@@ -296,12 +408,12 @@ func (s *Server) handleReconnect(ctx context.Context, c *client) bool {
 	}
 
 	if decision.Resume {
-		s.sendDuelResume(c, decision, true)
+		s.sendDuelResume(ctx, c, decision, true)
 		return true
 	}
 
 	if decision.OpponentDisconnected {
-		s.sendDuelResume(c, decision, false)
+		s.sendDuelResume(ctx, c, decision, false)
 		deadline := decision.OpponentReconnectDeadline
 		_ = c.sendEvent(EventOpponentDisconnected, OpponentDisconnectedPayload{
 			DuelID:            decision.Duel.ID,
@@ -327,24 +439,27 @@ func (s *Server) handleActiveDuelRestore(ctx context.Context, c *client) bool {
 	if !s.attachToDuelHub(ctx, c, decision.Duel.ID) {
 		return true
 	}
-	s.sendDuelResume(c, decision, false)
+	s.sendDuelResume(ctx, c, decision, false)
 	return true
 }
 
-func (s *Server) sendDuelResume(c *client, decision *duelusecase.ReconnectDecision, notifyOpponent bool) {
+func (s *Server) sendDuelResume(ctx context.Context, c *client, decision *duelusecase.ReconnectDecision, notifyOpponent bool) {
 	payload := DuelResumePayload{
-		DuelID:   decision.Duel.ID,
-		Deadline: decision.NewDeadline,
+		DuelID:     decision.Duel.ID,
+		OpponentID: decision.OpponentID,
+		Deadline:   decision.NewDeadline,
 	}
 	if decision.OpponentDisconnected {
 		payload.OpponentDisconnected = true
 		payload.OpponentReconnectDeadline = &decision.OpponentReconnectDeadline
 	}
-	if s.hints != nil {
-		if snapshot, ok := s.hints.PlayerSnapshot(decision.Duel.ID, c.player.ID); ok && snapshot.Task != nil {
-			task := taskPayload(snapshot.Task, snapshot)
-			payload.Task = &task
-		}
+	task, err := s.taskPayloadForPlayer(ctx, decision.Duel, c.player.ID)
+	if err != nil {
+		s.sendAppError(c, err)
+		return
+	}
+	if task != nil {
+		payload.Task = task
 	}
 	_ = c.sendEvent(EventDuelResume, payload)
 	if notifyOpponent {
@@ -356,6 +471,62 @@ func (s *Server) sendDuelResume(c *client, decision *duelusecase.ReconnectDecisi
 			})
 		}
 	}
+}
+
+func (s *Server) taskPayloadForPlayer(ctx context.Context, duel *domain.Duel, playerID uuid.UUID) (*TaskPayload, error) {
+	if duel == nil {
+		return nil, nil
+	}
+
+	var snapshot duelusecase.HintSnapshot
+	var ok bool
+	if s.hints != nil {
+		snapshot, ok = s.hints.PlayerSnapshot(duel.ID, playerID)
+	}
+
+	task := snapshot.Task
+	if s.duels != nil {
+		persisted, err := s.duels.GetPlayerTask(ctx, duel.ID, playerID)
+		if err != nil {
+			return nil, fmt.Errorf("DuelRepo.GetPlayerTask: %w", err)
+		}
+		task = persisted
+	}
+	if task == nil {
+		return nil, nil
+	}
+
+	task, err := s.prepareOutboundTask(ctx, task)
+	if err != nil {
+		return nil, err
+	}
+	if !ok || len(snapshot.Schedule) == 0 {
+		snapshot.Schedule = domain.BuildHintSchedule(duel.StartedAt, task.TimeLimit)
+	}
+	snapshot.Task = task
+
+	payload := taskPayload(task, snapshot)
+	return &payload, nil
+}
+
+func (s *Server) prepareOutboundTask(ctx context.Context, task *domain.Task) (*domain.Task, error) {
+	if task == nil || task.SourceFileURL == nil {
+		return task, nil
+	}
+	if s.storage == nil {
+		return nil, errors.New("source file storage is not configured")
+	}
+	url, err := s.storage.PresignedGetURL(
+		ctx,
+		domain.TaskSourceFileKeyFromURL(task.ID, *task.SourceFileURL),
+		time.Duration(task.TimeLimit)*time.Second,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("SourceFileStorage.PresignedGetURL: %w", err)
+	}
+	clone := *task
+	clone.SourceFileURL = &url
+	return &clone, nil
 }
 
 func (s *Server) attachToDuelHub(ctx context.Context, c *client, duelID uuid.UUID) bool {
@@ -372,23 +543,77 @@ func (s *Server) attachToDuelHub(ctx context.Context, c *client, duelID uuid.UUI
 	return true
 }
 
-func (s *Server) authenticate(w http.ResponseWriter, r *http.Request) (*domain.Player, bool) {
-	raw := r.URL.Query().Get("token")
-	if raw == "" {
-		http.Error(w, "missing session token", http.StatusUnauthorized)
-		return nil, false
-	}
-	token, err := uuid.Parse(raw)
-	if err != nil {
-		http.Error(w, "invalid session token", http.StatusUnauthorized)
-		return nil, false
+// authenticate resolves the session token from the WebSocket handshake. The
+// preferred path is the Sec-WebSocket-Protocol header (subprotocol bearer):
+// query strings are logged by browsers, proxies, and access logs, leaking
+// long-lived session tokens. The legacy ?token= query is still accepted to
+// avoid breaking clients during the rollout but is treated as a deprecation
+// path — once all clients have migrated it should be removed.
+//
+// Returns the authenticated player, the subprotocol that must be echoed back
+// in Accept (empty string when authentication came via query string), and a
+// success flag. On failure the http.ResponseWriter has already been written.
+func (s *Server) authenticate(w http.ResponseWriter, r *http.Request) (*domain.Player, string, bool) {
+	token, chosenProtocol, ok := tokenFromSubprotocols(r.Header.Values("Sec-WebSocket-Protocol"))
+	if !ok {
+		raw := r.URL.Query().Get("token")
+		if raw == "" {
+			http.Error(w, "missing session token", http.StatusUnauthorized)
+			return nil, "", false
+		}
+		parsed, err := uuid.Parse(raw)
+		if err != nil {
+			http.Error(w, "invalid session token", http.StatusUnauthorized)
+			return nil, "", false
+		}
+		token = parsed
 	}
 	player, err := s.players.GetBySessionToken(r.Context(), token)
 	if err != nil || player == nil {
 		http.Error(w, "invalid session token", http.StatusUnauthorized)
-		return nil, false
+		return nil, "", false
 	}
-	return player, true
+	return player, chosenProtocol, true
+}
+
+// resolveClientIP returns the trusted client IP for the request, falling back
+// to RemoteAddr when no explicit resolver was wired up. We deliberately do NOT
+// trust X-Forwarded-For by default since the server cannot validate it
+// without the proxy CIDR policy.
+func (s *Server) resolveClientIP(r *http.Request) string {
+	if s.clientIP != nil {
+		if ip := s.clientIP(r); ip != "" {
+			return ip
+		}
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
+}
+
+// tokenFromSubprotocols inspects every comma-separated Sec-WebSocket-Protocol
+// value the client offered and returns the first one that matches the bearer
+// prefix and parses as a UUID. The returned protocol string is the original
+// (case- and prefix-preserved) value the client sent so it can be echoed
+// back to satisfy the protocol negotiation in Accept.
+func tokenFromSubprotocols(headerValues []string) (uuid.UUID, string, bool) {
+	for _, header := range headerValues {
+		for _, raw := range strings.Split(header, ",") {
+			candidate := strings.TrimSpace(raw)
+			if !strings.HasPrefix(candidate, SubprotocolBearerPrefix) {
+				continue
+			}
+			rawToken := strings.TrimPrefix(candidate, SubprotocolBearerPrefix)
+			parsed, err := uuid.Parse(rawToken)
+			if err != nil {
+				continue
+			}
+			return parsed, candidate, true
+		}
+	}
+	return uuid.Nil, "", false
 }
 
 func (s *Server) cleanupClient(ctx context.Context, c *client) {
@@ -402,11 +627,39 @@ func (s *Server) cleanupClient(ctx context.Context, c *client) {
 	}
 	if duelID, ok := c.currentDuel(); ok {
 		s.hubs.Unregister(duelID, c)
-		if s.reconnect != nil {
-			s.reconnect.HandleDisconnect(cleanupCtx, duelID, c.player.ID)
-		}
+		s.handleDisconnectAfterGrace(cleanupCtx, c, duelID)
 	}
 	c.Close()
+}
+
+func (s *Server) handleDisconnectAfterGrace(ctx context.Context, c *client, duelID uuid.UUID) {
+	if s.reconnect == nil {
+		return
+	}
+	if s.disconnectGrace <= 0 {
+		s.reconnect.HandleDisconnect(ctx, duelID, c.player.ID)
+		return
+	}
+
+	timer := time.NewTimer(s.disconnectGrace)
+	defer timer.Stop()
+
+	serverCtx := s.ctx
+	if serverCtx == nil {
+		serverCtx = context.Background()
+	}
+	select {
+	case <-timer.C:
+	case <-serverCtx.Done():
+		return
+	}
+
+	if replacement, ok := s.clientByPlayer(c.player.ID); ok && replacement != c {
+		if replacementDuelID, inDuel := replacement.currentDuel(); inDuel && replacementDuelID == duelID {
+			return
+		}
+	}
+	s.reconnect.HandleDisconnect(ctx, duelID, c.player.ID)
 }
 
 func (s *Server) clientByPlayer(playerID uuid.UUID) (*client, bool) {

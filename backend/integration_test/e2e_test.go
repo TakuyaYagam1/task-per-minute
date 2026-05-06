@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -151,6 +152,61 @@ func TestE2ESourceFileFlow_TaskAssignedUsesPresignedURL(t *testing.T) {
 	require.Equal(t, sharedSeaweed(t).endpoint, assignedURL.Host)
 
 	resp := httpGetWithTimeout(t, *assigned.Task.SourceFileURL)
+	defer resp.Body.Close()
+	require.Equal(t, 200, resp.StatusCode)
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.Equal(t, payload, body)
+}
+
+// WS duel_resume + source ZIP: reconnect emits a freshly presigned source URL instead of reusing an expired assignment URL.
+func TestE2ESourceFileFlow_DuelResumeRefreshesPresignedURL(t *testing.T) {
+	app := startE2EApp(t)
+	token := app.adminLogin(t)
+	payload := []byte{'P', 'K', 0x03, 0x04, 'r', 'e', 's', 'u', 'm', 'e'}
+	created := app.createTask(t, token, openapi.CreateTaskRequest{
+		Title:       uniq("e2e_resume_source"),
+		Description: "download the archive after reconnect",
+		Category:    openapi.Forensics,
+		Difficulty:  openapi.Easy,
+		TimeLimit:   3,
+		Flag:        "FLAG{" + uniq("resume_source") + "}",
+		Hints:       defaultTaskHints("e2e resume source"),
+	})
+	upload := app.uploadTaskSource(t, token, created.Id, payload)
+	require.Contains(t, upload.SourceFileUrl, "X-Amz-Signature")
+
+	alice := app.joinPlayer(t, uniq("alice"))
+	bob := app.joinPlayer(t, uniq("bob"))
+
+	aliceConn := app.connectWS(t, alice.SessionToken)
+	writeWSEvent(t, aliceConn, wscontroller.EventJoinQueue, nil)
+	require.Equal(t, wscontroller.EventQueueJoined, readWSEventType(t, aliceConn, wscontroller.EventQueueJoined).Type)
+
+	bobConn := app.connectWS(t, bob.SessionToken)
+	defer closeWSSilent(bobConn)
+	writeWSEvent(t, bobConn, wscontroller.EventJoinQueue, nil)
+
+	require.Equal(t, wscontroller.EventMatchFound, readWSEventType(t, aliceConn, wscontroller.EventMatchFound).Type)
+	assigned := decodeTaskAssigned(t, readWSEventType(t, aliceConn, wscontroller.EventTaskAssigned))
+	require.NotNil(t, assigned.Task.SourceFileURL)
+
+	disconnectWS(t, aliceConn)
+	require.Equal(t, alice.PlayerID, decodeOpponentDisconnected(t,
+		readWSEventType(t, bobConn, wscontroller.EventOpponentDisconnected)).PlayerID)
+
+	time.Sleep(4 * time.Second)
+
+	aliceReconnect := app.connectWS(t, alice.SessionToken)
+	defer closeWSSilent(aliceReconnect)
+
+	resume := decodeDuelResume(t, readWSEventType(t, aliceReconnect, wscontroller.EventDuelResume))
+	require.NotNil(t, resume.Task)
+	require.NotNil(t, resume.Task.SourceFileURL)
+	require.Contains(t, *resume.Task.SourceFileURL, "X-Amz-Signature")
+	require.NotEqual(t, *assigned.Task.SourceFileURL, *resume.Task.SourceFileURL)
+
+	resp := httpGetWithTimeout(t, *resume.Task.SourceFileURL)
 	defer resp.Body.Close()
 	require.Equal(t, 200, resp.StatusCode)
 	body, err := io.ReadAll(resp.Body)

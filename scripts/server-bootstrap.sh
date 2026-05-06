@@ -8,7 +8,6 @@ APP_DIR="${APP_DIR:-/opt/task-per-minute}"
 DEPLOY_USER="${DEPLOY_USER:-${SUDO_USER:-}}"
 ENV_FILE="${ENV_FILE:-$APP_DIR/.env}"
 CONFIGURE_UFW="${CONFIGURE_UFW:-1}"
-PROXY_NETWORK="${PROXY_NETWORK:-proxy_tpm}"
 
 if [[ "$DEPLOY_USER" == "root" ]]; then
 	DEPLOY_USER=""
@@ -178,16 +177,6 @@ ensure_env_file() {
 	chmod "$mode" "$ENV_FILE"
 }
 
-ensure_proxy_network() {
-	if docker network inspect "$PROXY_NETWORK" >/dev/null 2>&1; then
-		log "docker network $PROXY_NETWORK already exists"
-		return
-	fi
-
-	log "creating docker network $PROXY_NETWORK"
-	docker network create "$PROXY_NETWORK" >/dev/null
-}
-
 configure_ufw() {
 	if [[ "$CONFIGURE_UFW" != "1" ]]; then
 		log "ufw configuration skipped"
@@ -220,7 +209,6 @@ main() {
 	ensure_deploy_user
 	ensure_app_dir
 	ensure_env_file
-	ensure_proxy_network
 	configure_ufw
 
 	log "done"
@@ -229,7 +217,6 @@ main() {
 	fi
 	log "fill $ENV_FILE, then run:"
 	log "cd $APP_DIR/deployment/docker"
-	log "sudo -u $(compose_user) docker compose --env-file ../../.env run --rm migrate"
 	log "sudo -u $(compose_user) docker compose --env-file ../../.env up -d --remove-orphans"
 }
 

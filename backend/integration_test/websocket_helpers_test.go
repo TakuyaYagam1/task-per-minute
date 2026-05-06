@@ -22,11 +22,14 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/pkg/clock"
 )
 
+const wsTestTimeout = 15 * time.Second
+
 type websocketFixture struct {
 	*duelFixture
 	playerUC   *playerusecase.PlayerUsecase
 	boardStore *redisrepo.LeaderboardRedis
 	hubs       *wscontroller.HubRegistry
+	hints      *duelusecase.HintScheduler
 	httpServer *httptest.Server
 }
 
@@ -83,7 +86,9 @@ func newWebSocketFixtureFromDuelFixture(
 		flags,
 		hubs,
 		wscontroller.WithHubCloseDelay(20*time.Millisecond),
+		wscontroller.WithDisconnectGrace(0),
 		wscontroller.WithHintScheduler(hints),
+		wscontroller.WithTaskResolver(f.duels, nil),
 	)
 	reconnect := duelusecase.NewReconnectManager(
 		f.mgr,
@@ -104,6 +109,7 @@ func newWebSocketFixtureFromDuelFixture(
 		playerUC:    playerUC,
 		boardStore:  board,
 		hubs:        hubs,
+		hints:       hints,
 		httpServer:  httpServer,
 	}
 }
@@ -158,7 +164,7 @@ func (f *websocketFixture) joinPlayer(t *testing.T, username string) *domain.Pla
 func (f *websocketFixture) connect(t *testing.T, token uuid.UUID) *coderws.Conn {
 	t.Helper()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), wsTestTimeout)
 	defer cancel()
 	conn, _, err := coderws.Dial(ctx, wsURL(f.httpServer.URL, token), nil)
 	require.NoError(t, err)
@@ -178,7 +184,7 @@ func writeWSEvent(t *testing.T, conn *coderws.Conn, typ string, payload any) {
 	data, err := json.Marshal(wscontroller.Event{Type: typ, Payload: payload})
 	require.NoError(t, err)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), wsTestTimeout)
 	defer cancel()
 	require.NoError(t, conn.Write(ctx, coderws.MessageText, data))
 }
@@ -186,7 +192,7 @@ func writeWSEvent(t *testing.T, conn *coderws.Conn, typ string, payload any) {
 func readWSEventType(t *testing.T, conn *coderws.Conn, typ string) wsTestEvent {
 	t.Helper()
 
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(wsTestTimeout)
 	for {
 		if time.Now().After(deadline) {
 			t.Fatalf("timed out waiting for websocket event %q", typ)

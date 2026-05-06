@@ -1,37 +1,215 @@
 name: task-per-minute
 
-# All variables come from the project root .env via `--env-file ../../.env`.
-# `${VAR:?...}` declares the variable as required (compose fails fast if it's
-# missing); `${VAR:-default}` declares it optional with a sane fallback. No
-# env_file: directive is used so each container only sees the variables it
-# actually needs (least privilege - postgres can't read ADMIN_PASSWORD, etc.).
-#
-# IMPORTANT: bcrypt hashes and any value containing a literal `$` MUST be
-# escaped to `$$` inside .env (otherwise compose treats `$2a$12$...` as the
-# variables `$2`, `$12`, `$...` and silently truncates the value).
-
 services:
-  postgres:
-    image: postgres:18-alpine
+  nginx:
+    image: ${NGINX_IMAGE:-nginx:1.30.0-alpine3.23}
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 128M
+        reservations:
+          cpus: "0.1"
+          memory: 32M
+    ports:
+      - "${NGINX_HTTP_PORT:-80}:80"
+      - "${NGINX_HTTPS_PORT:-443}:443"
+    environment:
+      NGINX_APP_HOST: ${APP_DOMAIN:-localhost}
+      NGINX_ADMIN_HOST: ${ADMIN_DOMAIN:-admin.localhost}
+      NGINX_API_HOST: ${API_DOMAIN:-api.localhost}
+      NGINX_FILES_HOST: ${FILES_DOMAIN:-files.localhost}
+      NGINX_FRONTEND_UPSTREAM: frontend:${FRONTEND_PORT:-3000}
+      NGINX_BACKEND_UPSTREAM: backend:${BACKEND_PORT:-8080}
+      NGINX_FILES_UPSTREAM: seaweedfs:8333
+      NGINX_TLS_CERTIFICATE: /etc/letsencrypt/live/${CERTBOT_CERT_NAME:-task-per-minute}/fullchain.pem
+      NGINX_TLS_CERTIFICATE_KEY: /etc/letsencrypt/live/${CERTBOT_CERT_NAME:-task-per-minute}/privkey.pem
+    volumes:
+      - ../nginx:/etc/task-per-minute/nginx:ro
+      - nginx_cache:/var/cache/nginx
+      - certbot_data:/etc/letsencrypt:ro
+      - certbot_webroot:/var/www/certbot:ro
+      - certbot_runtime:/var/run/certbot
+    entrypoint:
+      - "/bin/sh"
+      - "-c"
+    command:
+      - |
+        set -eu
+        rendered=/tmp/nginx.conf
+        nginx_envs='$${NGINX_APP_HOST} $${NGINX_ADMIN_HOST} $${NGINX_API_HOST} $${NGINX_FILES_HOST} $${NGINX_FRONTEND_UPSTREAM} $${NGINX_BACKEND_UPSTREAM} $${NGINX_FILES_UPSTREAM} $${NGINX_TLS_CERTIFICATE} $${NGINX_TLS_CERTIFICATE_KEY}'
+
+        render_nginx() {
+          source=/etc/task-per-minute/nginx/nginx.bootstrap.conf
+          if [ -s "$$NGINX_TLS_CERTIFICATE" ] && [ -s "$$NGINX_TLS_CERTIFICATE_KEY" ]; then
+            source=/etc/task-per-minute/nginx/nginx.conf
+          fi
+          envsubst "$$nginx_envs" < "$$source" > "$$rendered"
+          nginx -t -c "$$rendered"
+        }
+
+        render_nginx
+        (
+          while :; do
+            if [ -f /var/run/certbot/reload-nginx ]; then
+              rm -f /var/run/certbot/reload-nginx
+              if render_nginx; then
+                nginx -c "$$rendered" -s reload
+              fi
+            fi
+            sleep 30
+          done
+        ) &
+        exec nginx -c "$$rendered" -g "daemon off;"
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+      seaweedfs:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/nginx-health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - internal
+
+  certbot:
+    image: ${CERTBOT_IMAGE:-certbot/certbot:v5.5.0}
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128M
+        reservations:
+          cpus: "0.05"
+          memory: 32M
+    environment:
+      CERTBOT_CERT_NAME: ${CERTBOT_CERT_NAME:-task-per-minute}
+      APP_DOMAIN: ${APP_DOMAIN:?APP_DOMAIN is required for Let's Encrypt certificates}
+      ADMIN_DOMAIN: ${ADMIN_DOMAIN:?ADMIN_DOMAIN is required for Let's Encrypt certificates}
+      API_DOMAIN: ${API_DOMAIN:?API_DOMAIN is required for Let's Encrypt certificates}
+      FILES_DOMAIN: ${FILES_DOMAIN:?FILES_DOMAIN is required for Let's Encrypt certificates}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+      USE_LE_STAGING: ${USE_LE_STAGING:-false}
+      CERTBOT_RENEW_INTERVAL_SECONDS: ${CERTBOT_RENEW_INTERVAL_SECONDS:-43200}
+    volumes:
+      - certbot_data:/etc/letsencrypt
+      - certbot_webroot:/var/www/certbot
+      - certbot_runtime:/var/run/certbot
+    entrypoint:
+      - "/bin/sh"
+      - "-c"
+    command:
+      - |
+        set -eu
+        cert_dir="/etc/letsencrypt/live/$$CERTBOT_CERT_NAME"
+        cert_file="$$cert_dir/fullchain.pem"
+        key_file="$$cert_dir/privkey.pem"
+        domain_args=""
+        seen_domains=""
+
+        for domain in "$$APP_DOMAIN" "$$ADMIN_DOMAIN" "$$API_DOMAIN" "$$FILES_DOMAIN"; do
+          [ -n "$$domain" ] || continue
+          case " $$seen_domains " in
+            *" $$domain "*) continue ;;
+          esac
+          domain_args="$$domain_args -d $$domain"
+          seen_domains="$$seen_domains $$domain"
+        done
+
+        staging_flag=""
+        if [ "$$USE_LE_STAGING" = "true" ]; then
+          staging_flag="--staging"
+          echo "[certbot] STAGING mode - cert will not be trusted by browsers"
+        fi
+
+        email_args="--register-unsafely-without-email"
+        if [ -n "$$ACME_EMAIL" ]; then
+          email_args="--email $$ACME_EMAIL"
+        fi
+
+        if [ ! -s "$$cert_file" ] || [ ! -s "$$key_file" ]; then
+          issued=0
+          for attempt in 1 2 3; do
+            if certbot certonly --webroot -w /var/www/certbot --preferred-challenges http --cert-name "$$CERTBOT_CERT_NAME" $$staging_flag $$domain_args $$email_args --agree-tos --non-interactive --keep-until-expiring; then
+              issued=1
+              break
+            fi
+            if [ "$$attempt" -lt 3 ]; then
+              echo "[certbot] attempt $$attempt failed; retrying in 60s"
+              sleep 60
+            fi
+          done
+          if [ "$$issued" = "0" ]; then
+            echo "[certbot] all 3 issuance attempts failed"
+            echo "[certbot] fix DNS/firewall, then run: docker compose --env-file ../../.env restart certbot"
+            while :; do sleep 86400; done
+          fi
+        fi
+
+        touch /var/run/certbot/reload-nginx
+        trap exit TERM INT
+        while :; do
+          sleep "$$CERTBOT_RENEW_INTERVAL_SECONDS" & wait $$!
+          certbot renew --webroot -w /var/www/certbot --deploy-hook "touch /var/run/certbot/reload-nginx" || echo "[certbot] renew failed; will retry on next interval"
+        done
+    depends_on:
+      nginx:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "test -s \"/etc/letsencrypt/live/$${CERTBOT_CERT_NAME:-task-per-minute}/fullchain.pem\" && test -s \"/etc/letsencrypt/live/$${CERTBOT_CERT_NAME:-task-per-minute}/privkey.pem\""]
+      interval: 1m
+      timeout: 5s
+      retries: 3
+      start_period: 5m
+    networks:
+      - internal
+
+  postgres:
+    image: postgres:18.3-alpine3.23
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          cpus: "0.25"
+          memory: 256M
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required (set in .env)}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required (set in .env)}
       POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required (set in .env)}
+    expose:
+      - "5432"
     volumes:
       - postgres_data:/var/lib/postgresql
     networks:
       - internal
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 3s
       retries: 10
       start_period: 5s
 
   redis:
-    image: redis:8-alpine
+    image: redis:8.6.2-alpine3.23
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+        reservations:
+          cpus: "0.1"
+          memory: 64M
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
     command:
@@ -42,6 +220,8 @@ services:
           exec redis-server --save 60 1 --loglevel warning --requirepass "$${REDIS_PASSWORD}"
         fi
         exec redis-server --save 60 1 --loglevel warning
+    expose:
+      - "6379"
     volumes:
       - redis_data:/data
     networks:
@@ -54,8 +234,16 @@ services:
       start_period: 3s
 
   seaweedfs:
-    image: chrislusf/seaweedfs:3.71
+    image: chrislusf/seaweedfs:4.20
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          cpus: "0.25"
+          memory: 128M
     environment:
       SEAWEEDFS_ACCESS_KEY: ${SEAWEEDFS_ACCESS_KEY:?SEAWEEDFS_ACCESS_KEY is required (set in .env)}
       SEAWEEDFS_SECRET_KEY: ${SEAWEEDFS_SECRET_KEY:?SEAWEEDFS_SECRET_KEY is required (set in .env)}
@@ -89,55 +277,56 @@ services:
           -s3 \
           -s3.port=8333 \
           -s3.config=/tmp/seaweedfs-s3.json
+    expose:
+      - "9333"
+      - "8090"
+      - "8888"
+      - "8333"
     volumes:
       - seaweedfs_data:/data
     networks:
       - internal
-      - proxy_tpm
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9333/cluster/healthz || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9333/cluster/healthz >/dev/null && nc -z 127.0.0.1 8333"]
       interval: 10s
       timeout: 5s
       retries: 10
       start_period: 15s
 
-  migrate:
-    image: ${BACKEND_IMAGE:?BACKEND_IMAGE is required (set in .env)}
-    profiles: ["migrate"]
-    restart: "no"
-    entrypoint: ["/app/migrate"]
-    environment:
-      DB_DSN: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    networks:
-      - internal
-
   backend:
     image: ${BACKEND_IMAGE:?BACKEND_IMAGE is required (set in .env)}
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1.5"
+          memory: 512M
+        reservations:
+          cpus: "0.5"
+          memory: 128M
+    expose:
+      - "${BACKEND_PORT:-8080}"
     environment:
       # HTTP
       HTTP_HOST: ${HTTP_HOST:-0.0.0.0}
-      HTTP_PORT: ${HTTP_PORT:-8080}
-      HTTP_READ_TIMEOUT: ${HTTP_READ_TIMEOUT:-15s}
-      HTTP_WRITE_TIMEOUT: ${HTTP_WRITE_TIMEOUT:-15s}
+      HTTP_PORT: ${BACKEND_PORT:-8080}
+      HTTP_READ_TIMEOUT: ${HTTP_READ_TIMEOUT:-5m}
+      HTTP_WRITE_TIMEOUT: ${HTTP_WRITE_TIMEOUT:-5m}
       HTTP_SHUTDOWN_TIMEOUT: ${HTTP_SHUTDOWN_TIMEOUT:-30s}
       HTTP_ALLOWED_ORIGINS: ${HTTP_ALLOWED_ORIGINS:-}
       HTTP_TRUSTED_PROXY_CIDRS: ${HTTP_TRUSTED_PROXY_CIDRS:-}
 
       # Database
-      DB_DSN: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable"
+      DB_DSN: ${DB_DSN:?DB_DSN is required (set in .env; use postgres:5432 inside compose)}
       DB_MAX_CONNS: ${DB_MAX_CONNS:-20}
 
       # Redis
-      REDIS_ADDR: redis:6379
+      REDIS_ADDR: ${REDIS_ADDR:-redis:6379}
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       REDIS_DB: ${REDIS_DB:-0}
 
       # SeaweedFS
-      SEAWEEDFS_ENDPOINT: seaweedfs:8333
+      SEAWEEDFS_ENDPOINT: ${SEAWEEDFS_ENDPOINT:-seaweedfs:8333}
       SEAWEEDFS_PUBLIC_ENDPOINT: ${SEAWEEDFS_PUBLIC_ENDPOINT:?SEAWEEDFS_PUBLIC_ENDPOINT is required for browser source downloads}
       SEAWEEDFS_ACCESS_KEY: ${SEAWEEDFS_ACCESS_KEY:?SEAWEEDFS_ACCESS_KEY is required (set in .env)}
       SEAWEEDFS_SECRET_KEY: ${SEAWEEDFS_SECRET_KEY:?SEAWEEDFS_SECRET_KEY is required (set in .env)}
@@ -152,9 +341,9 @@ services:
 
       # Admin
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD is required (set in .env)}
-      ADMIN_LOGIN_RATE_ATTEMPTS: ${ADMIN_LOGIN_RATE_ATTEMPTS:-5}
-      ADMIN_LOGIN_RATE_WINDOW: ${ADMIN_LOGIN_RATE_WINDOW:-15m}
-      ADMIN_LOGIN_RATE_BUCKET_TTL: ${ADMIN_LOGIN_RATE_BUCKET_TTL:-1h}
+      ADMIN_LOGIN_RATE_ATTEMPTS: ${ADMIN_LOGIN_RATE_ATTEMPTS:-3}
+      ADMIN_LOGIN_RATE_WINDOW: ${ADMIN_LOGIN_RATE_WINDOW:-3m}
+      ADMIN_LOGIN_RATE_BUCKET_TTL: ${ADMIN_LOGIN_RATE_BUCKET_TTL:-15m}
 
       # Player
       PLAYER_JOIN_RATE_ATTEMPTS: ${PLAYER_JOIN_RATE_ATTEMPTS:-20}
@@ -170,17 +359,56 @@ services:
         condition: service_healthy
       seaweedfs:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null \"http://127.0.0.1:$${HTTP_PORT:-8080}/health\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     networks:
       - internal
-      - proxy_tpm
+
+  frontend:
+    image: ${FRONTEND_IMAGE:?FRONTEND_IMAGE is required (set in .env)}
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+        reservations:
+          cpus: "0.25"
+          memory: 64M
+    expose:
+      - "${FRONTEND_PORT:-3000}"
+    environment:
+      PORT: ${FRONTEND_PORT:-3000}
+      HOSTNAME: 0.0.0.0
+      BACKEND_URL: "http://backend:${BACKEND_PORT:-8080}"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null \"http://127.0.0.1:$${PORT:-3000}/health\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - internal
 
 networks:
   internal:
     driver: bridge
-  proxy_tpm:
-    external: true
+    ipam:
+      config:
+        - subnet: ${DOCKER_INTERNAL_SUBNET:-172.30.0.0/24}
 
 volumes:
+  certbot_data:
+  certbot_runtime:
+  certbot_webroot:
+  nginx_cache:
   postgres_data:
   redis_data:
   seaweedfs_data:

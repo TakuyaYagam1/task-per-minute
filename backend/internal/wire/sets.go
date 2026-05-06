@@ -68,7 +68,7 @@ var UsecasesSet = wire.NewSet(
 	wire.Bind(new(usecase.AdminAuth), new(*adminusecase.AuthUsecase)),
 	adminusecase.NewTaskUsecase,
 	wire.Bind(new(usecase.AdminTask), new(*adminusecase.TaskUsecase)),
-	adminusecase.NewUploadUsecase,
+	provideUploadUsecase,
 	wire.Bind(new(usecase.Upload), new(*adminusecase.UploadUsecase)),
 	playerusecase.NewPlayerUsecase,
 	wire.Bind(new(usecase.Player), new(*playerusecase.PlayerUsecase)),

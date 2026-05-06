@@ -22,37 +22,46 @@ cp .env.example .env
 
 - Fill the secrets in `.env`.
 
-When running through Docker Compose, use container service names for variables
-that are consumed inside containers:
+In Docker Compose, the backend receives `DB_DSN` from `.env` directly, so the
+container DSN must point to the internal `postgres:5432` host. `REDIS_ADDR` and
+`SEAWEEDFS_ENDPOINT` are set by compose to `redis:6379` and `seaweedfs:8333`;
+host variants are only for running the backend directly from the host:
 
 ```env
 DB_DSN=postgres://admin:password@postgres:5432/task_per_minute?sslmode=disable
-REDIS_ADDR=redis:6379
-SEAWEEDFS_ENDPOINT=seaweedfs:8333
+REDIS_ADDR=localhost:6379
+SEAWEEDFS_ENDPOINT=localhost:8333
 SEAWEEDFS_PUBLIC_ENDPOINT=localhost:8333
 SEAWEEDFS_PUBLIC_SECURE=false
 ```
 
-`SEAWEEDFS_ENDPOINT` is used by the backend container for internal S3 calls,
-while `SEAWEEDFS_PUBLIC_ENDPOINT` is embedded into browser-facing presigned
-URLs. When running the backend directly from the host, use `localhost` in both
-addresses.
+For a non-container backend, temporarily use the host variant
+`postgres://admin:password@localhost:5432/task_per_minute?sslmode=disable`.
+
+`POSTGRES_PORT`, `REDIS_PORT`, and `SEAWEEDFS_*_PORT` are published on the host
+for local debugging; inside the Docker network, containers keep their default
+ports.
+`SEAWEEDFS_PUBLIC_ENDPOINT` is embedded into browser-facing presigned URLs.
 
 - Start the local compose stack:
 
 ```bash
 cd deployment/docker
-docker compose --env-file ../../.env -f docker-compose.local.yml run --rm migrate
-docker compose --env-file ../../.env -f docker-compose.local.yml up -d --build
+docker compose --env-file ../../.env.local -f docker-compose.local.yml up -d --build
 ```
 
-Backend health check:
+The local compose stack starts the backend and the production frontend build.
+By default the backend listens on `BACKEND_PORT=8080` and the frontend listens
+on `FRONTEND_PORT=3000`.
+
+Health check:
 
 ```bash
 curl -fsS http://127.0.0.1:8080/health
+curl -fsS http://127.0.0.1:3000/
 ```
 
-Frontend development:
+Frontend development without Docker:
 
 ```bash
 cd frontend
@@ -81,7 +90,6 @@ Minimal first start after filling `.env`:
 ```bash
 sudo bash scripts/server-bootstrap.sh
 cd /opt/task-per-minute/deployment/docker
-docker compose --env-file ../../.env run --rm migrate
 docker compose --env-file ../../.env up -d --remove-orphans
 ```
 

@@ -1,0 +1,315 @@
+import { expect, test, type APIRequestContext, type Browser, type Page } from '@playwright/test';
+
+const frontendURL = (process.env.E2E_FRONTEND_URL || 'http://127.0.0.1:3000').replace(/\/+$/, '');
+const backendURL = (process.env.E2E_BACKEND_URL || 'http://127.0.0.1:8080').replace(/\/+$/, '');
+const adminPassword = process.env.E2E_ADMIN_PASSWORD || '';
+
+type AdminTokens = {
+  access_token: string;
+  refresh_token: string;
+};
+
+type AdminTask = {
+  id: string;
+  title: string;
+};
+
+type UploadSourceResponse = {
+  source_file_url: string;
+};
+
+type LeaderboardResponse = {
+  entries: Array<{
+    username: string;
+    tasks_solved: number;
+  }>;
+};
+
+type FullStackTaskInput = {
+  title: string;
+  description: string;
+  category: 'web' | 'forensics';
+  difficulty: 'easy';
+  time_limit: number;
+  flag: string;
+  hints: [string, string, string];
+  task_url?: string | null;
+};
+
+const uniqueName = (prefix: string) =>
+  `${prefix}-${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 8)}`;
+
+const ensureFullStackEnabled = async (request: APIRequestContext): Promise<void> => {
+  test.skip(process.env.E2E_FULL_STACK !== '1', 'set E2E_FULL_STACK=1 to run local compose e2e');
+  test.skip(!adminPassword, 'E2E_ADMIN_PASSWORD is required for local compose e2e');
+
+  const backendHealth = await request.get(`${backendURL}/health`, { timeout: 10_000 });
+  expect(backendHealth.ok(), `backend /health failed at ${backendURL}`).toBeTruthy();
+
+  const frontendHealth = await request.get(`${frontendURL}/`, { timeout: 10_000 });
+  expect(frontendHealth.ok(), `frontend / failed at ${frontendURL}`).toBeTruthy();
+};
+
+const adminLogin = async (request: APIRequestContext): Promise<AdminTokens> => {
+  const response = await request.post(`${backendURL}/api/v1/admin/login`, {
+    data: { password: adminPassword },
+  });
+  expect(response.ok(), `admin login failed with ${response.status()}`).toBeTruthy();
+  return (await response.json()) as AdminTokens;
+};
+
+const cleanupTaskByTitle = async (
+  request: APIRequestContext,
+  accessToken: string,
+  title: string,
+): Promise<void> => {
+  const listResponse = await request.get(`${backendURL}/api/v1/admin/tasks`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!listResponse.ok()) {
+    return;
+  }
+
+  const tasks = (await listResponse.json()) as AdminTask[];
+  for (const task of tasks.filter((candidate) => candidate.title === title)) {
+    await request.delete(`${backendURL}/api/v1/admin/tasks/${task.id}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+  }
+};
+
+const loginThroughAdminUI = async (page: Page): Promise<string> => {
+  await page.goto('/admin');
+  await page.getByPlaceholder('Введите пароль...').fill(adminPassword);
+  await page.getByRole('button', { name: 'Войти' }).click();
+  await expect(page.getByText('Список задач')).toBeVisible({ timeout: 15_000 });
+
+  const accessToken = await page.evaluate(() => window.sessionStorage.getItem('admin_access_token'));
+  expect(accessToken, 'admin UI did not persist access token').toBeTruthy();
+  return accessToken as string;
+};
+
+const fillAdminTaskForm = async (page: Page, input: FullStackTaskInput): Promise<void> => {
+  await page.getByPlaceholder('Введите название...').fill(input.title);
+  await page.getByPlaceholder('Опишите задачу...').fill(input.description);
+  await page.locator('select').first().selectOption(input.category);
+  await page.locator('select').nth(1).selectOption(input.difficulty);
+  await page.getByPlaceholder('60').fill(String(input.time_limit));
+  await page.getByPlaceholder('ctf{...}').fill(input.flag);
+  await page.getByPlaceholder('https://example.com/task').fill(input.task_url ?? '');
+  await page.getByPlaceholder('Подсказка 1').fill(input.hints[0]);
+  await page.getByPlaceholder('Подсказка 2').fill(input.hints[1]);
+  await page.getByPlaceholder('Подсказка 3').fill(input.hints[2]);
+};
+
+const createTaskViaApi = async (
+  request: APIRequestContext,
+  accessToken: string,
+  input: FullStackTaskInput,
+): Promise<AdminTask> => {
+  const response = await request.post(`${backendURL}/api/v1/admin/tasks`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    data: input,
+  });
+  expect(response.ok(), `task create failed with ${response.status()}`).toBeTruthy();
+  return (await response.json()) as AdminTask;
+};
+
+const uploadSourceViaApi = async (
+  request: APIRequestContext,
+  accessToken: string,
+  taskID: string,
+  payload: Buffer,
+): Promise<UploadSourceResponse> => {
+  const response = await request.post(`${backendURL}/api/v1/admin/tasks/${taskID}/source`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    multipart: {
+      file: {
+        name: 'source.zip',
+        mimeType: 'application/zip',
+        buffer: payload,
+      },
+    },
+  });
+  expect(response.ok(), `source upload failed with ${response.status()}`).toBeTruthy();
+  return (await response.json()) as UploadSourceResponse;
+};
+
+const joinAsPlayer = async (page: Page, username: string): Promise<void> => {
+  await page.goto('/');
+  await page.getByPlaceholder('Введите никнейм...').fill(username);
+  await page.getByRole('button', { name: /ПОДКЛЮЧИТЬСЯ/ }).click();
+  await expect(page.getByText('Игрок готов')).toBeVisible({ timeout: 15_000 });
+};
+
+const expectLeaderboardContains = async (
+  request: APIRequestContext,
+  username: string,
+): Promise<void> => {
+  await expect.poll(async () => {
+    const response = await request.get(`${backendURL}/api/v1/leaderboard`);
+    if (!response.ok()) {
+      return [];
+    }
+    const body = (await response.json()) as LeaderboardResponse;
+    return body.entries.map((entry) => entry.username);
+  }, { timeout: 20_000 }).toContain(username);
+};
+
+test.describe('local compose full stack e2e', () => {
+  test.describe.configure({ mode: 'serial' });
+
+  test.beforeEach(async ({ request }) => {
+    await ensureFullStackEnabled(request);
+  });
+
+  test('admin UI creates and deletes a task through the real backend', async ({ page, request }) => {
+    test.setTimeout(90_000);
+
+    const title = uniqueName('fullstack-admin');
+    const taskInput: FullStackTaskInput = {
+      title,
+      description: 'Full stack admin task created through the real UI.',
+      category: 'web',
+      difficulty: 'easy',
+      time_limit: 90,
+      flag: `ctf{${title.replaceAll('-', '_')}}`,
+      hints: ['first hint', 'second hint', 'third hint'],
+      task_url: 'https://example.com/full-stack-admin',
+    };
+    let accessToken: string | null = null;
+
+    try {
+      accessToken = await loginThroughAdminUI(page);
+      await fillAdminTaskForm(page, taskInput);
+      await page.getByRole('button', { name: /Создать задачу/ }).click();
+      await expect(page.getByText(title)).toBeVisible({ timeout: 15_000 });
+
+      const listResponse = await request.get(`${backendURL}/api/v1/admin/tasks`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      expect(listResponse.ok(), `admin task list failed with ${listResponse.status()}`).toBeTruthy();
+      const tasks = (await listResponse.json()) as AdminTask[];
+      expect(tasks.some((task) => task.title === title)).toBe(true);
+
+      page.once('dialog', async (dialog) => dialog.accept());
+      await page
+        .locator('[class*="taskItem"]')
+        .filter({ hasText: title })
+        .locator('[title="Удалить задачу"]')
+        .click();
+      await expect(page.getByText(title)).toBeHidden({ timeout: 15_000 });
+
+      await page.goto('/leaderboard');
+      await expect(page.getByRole('heading', { name: 'Leaderboard' })).toBeVisible();
+    } finally {
+      if (accessToken) {
+        await cleanupTaskByTitle(request, accessToken, title);
+      }
+    }
+  });
+
+  test('source upload returns a host-reachable presigned URL', async ({ request }) => {
+    test.setTimeout(90_000);
+
+    const tokens = await adminLogin(request);
+    const title = uniqueName('fullstack-source');
+    const payload = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x66, 0x73]);
+    let created: AdminTask | null = null;
+
+    try {
+      created = await createTaskViaApi(request, tokens.access_token, {
+        title,
+        description: 'Full stack source archive task.',
+        category: 'forensics',
+        difficulty: 'easy',
+        time_limit: 90,
+        flag: `ctf{${title.replaceAll('-', '_')}}`,
+        hints: ['first hint', 'second hint', 'third hint'],
+        task_url: null,
+      });
+
+      const upload = await uploadSourceViaApi(request, tokens.access_token, created.id, payload);
+      expect(upload.source_file_url).toContain('X-Amz-Signature');
+      const sourceURL = new URL(upload.source_file_url);
+      if (process.env.SEAWEEDFS_PUBLIC_ENDPOINT) {
+        expect(sourceURL.host).toBe(process.env.SEAWEEDFS_PUBLIC_ENDPOINT);
+      }
+
+      const download = await request.get(upload.source_file_url, { timeout: 10_000 });
+      expect(download.ok(), `source download failed with ${download.status()}`).toBeTruthy();
+      expect((await download.body()).equals(payload)).toBe(true);
+    } finally {
+      if (created) {
+        await cleanupTaskByTitle(request, tokens.access_token, title);
+      }
+    }
+  });
+
+  test('two real browser players complete a duel over REST and WebSocket', async ({ browser, request }) => {
+    test.setTimeout(120_000);
+    test.skip(
+      process.env.E2E_FULL_STACK_ISOLATED !== '1',
+      'set E2E_FULL_STACK_ISOLATED=1 only for a disposable compose project with a clean DB',
+    );
+
+    const tokens = await adminLogin(request);
+    const title = uniqueName('fullstack-duel');
+    const flag = `ctf{${title.replaceAll('-', '_')}}`;
+    await createTaskViaApi(request, tokens.access_token, {
+      title,
+      description: 'Full stack duel task selected from an isolated local compose database.',
+      category: 'web',
+      difficulty: 'easy',
+      time_limit: 120,
+      flag,
+      hints: ['first hint', 'second hint', 'third hint'],
+      task_url: 'https://example.com/full-stack-duel',
+    });
+
+    const contextA = await browser.newContext({ baseURL: frontendURL });
+    const contextB = await browser.newContext({ baseURL: frontendURL });
+    const playerA = await contextA.newPage();
+    const playerB = await contextB.newPage();
+    const playerAName = uniqueName('alice');
+    const playerBName = uniqueName('bob');
+
+    try {
+      await Promise.all([
+        joinAsPlayer(playerA, playerAName),
+        joinAsPlayer(playerB, playerBName),
+      ]);
+
+      await Promise.all([
+        playerA.getByRole('button', { name: /ИГРАТЬ/ }).click(),
+        playerB.getByRole('button', { name: /ИГРАТЬ/ }).click(),
+      ]);
+
+      await expect(playerA).toHaveURL(/\/task$/, { timeout: 25_000 });
+      await expect(playerB).toHaveURL(/\/task$/, { timeout: 25_000 });
+      await expect(playerA.getByRole('heading', { name: title })).toBeVisible({ timeout: 15_000 });
+      await expect(playerB.getByRole('heading', { name: title })).toBeVisible({ timeout: 15_000 });
+
+      await playerA.reload();
+      await expect(playerA).toHaveURL(/\/task$/, { timeout: 25_000 });
+      await expect(playerA.getByRole('heading', { name: title })).toBeVisible({ timeout: 15_000 });
+
+      await playerA.getByPlaceholder('ctf{...}').fill('ctf{wrong}');
+      await playerA.getByRole('button', { name: /Отправить/ }).click();
+      await expect(playerA.getByText('Неверный флаг')).toBeVisible({ timeout: 10_000 });
+
+      await playerA.getByPlaceholder('ctf{...}').fill(flag);
+      await playerA.getByRole('button', { name: /Отправить/ }).click();
+      await expect(playerA.getByText('Флаг верный!')).toBeVisible({ timeout: 10_000 });
+      await expect(playerA.getByText('ПОБЕДА!')).toBeVisible({ timeout: 20_000 });
+      await expect(playerB.getByText('ПОРАЖЕНИЕ')).toBeVisible({ timeout: 20_000 });
+
+      await expectLeaderboardContains(request, playerAName);
+      await playerA.goto('/leaderboard');
+      await expect(playerA.getByText(playerAName)).toBeVisible({ timeout: 20_000 });
+    } finally {
+      await contextA.close();
+      await contextB.close();
+    }
+  });
+});

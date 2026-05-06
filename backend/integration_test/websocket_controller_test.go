@@ -127,6 +127,28 @@ func TestWebSocketController_ReconnectFreezesHints(t *testing.T) {
 	require.Equal(t, resume.Task.ID, firstHint.TaskID)
 }
 
+func TestWebSocketController_ReconnectRestoresTaskWithoutHintSnapshot(t *testing.T) {
+	f := newIsolatedWebSocketFixtureWithReconnectWindow(t, 2*time.Second)
+	match := f.matchPlayers(t, 90)
+	defer closeWSSilent(match.bobConn)
+
+	require.True(t, f.hints.StopDuel(match.duelID), "test setup should drop in-memory hint snapshot")
+
+	disconnectWS(t, match.aliceConn)
+	require.Equal(t, match.alice.ID, decodeOpponentDisconnected(t,
+		readWSEventType(t, match.bobConn, wscontroller.EventOpponentDisconnected)).PlayerID)
+
+	aliceReconnect := f.connect(t, *match.alice.SessionToken)
+	defer closeWSSilent(aliceReconnect)
+
+	resume := decodeDuelResume(t, readWSEventType(t, aliceReconnect, wscontroller.EventDuelResume))
+	require.Equal(t, match.duelID, resume.DuelID)
+	require.NotNil(t, resume.Task)
+	require.NotEqual(t, uuid.Nil, resume.Task.ID)
+	require.Len(t, resume.Task.HintSchedule, 3)
+	require.Empty(t, resume.Task.UnlockedHints)
+}
+
 func TestWebSocketController_UnknownEventAndInvalidToken(t *testing.T) {
 	f := newWebSocketFixture(t)
 	player := f.joinPlayer(t, uniq("alice"))

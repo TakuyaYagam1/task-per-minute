@@ -9,8 +9,6 @@ interface ButtonProps {
   className?: string;
   style?: React.CSSProperties;
 }
-
-// Универсальный компонент кнопки с различными вариантами стилей
 export const Button: React.FC<ButtonProps> = ({
   children,
   onClick,

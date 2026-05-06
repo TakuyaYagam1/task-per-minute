@@ -17,6 +17,11 @@ CREATE TABLE tasks (
             'forensics',
             'reverse',
             'pwn',
+            'steganography',
+            'ppc',
+            'osint',
+            'mobile',
+            'hardware',
             'misc'
         )
     ),

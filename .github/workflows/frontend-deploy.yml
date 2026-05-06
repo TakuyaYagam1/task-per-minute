@@ -1,0 +1,470 @@
+name: frontend deploy
+
+on:
+  workflow_run:
+    workflows:
+      - frontend ci
+    branches:
+      - main
+    types:
+      - completed
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Commit SHA to deploy. Defaults to the workflow ref SHA.
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: frontend-deploy-production
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: task-per-minute-frontend
+  NODE_VERSION: 24.15.0
+  PYTHON_VERSION: '3.13'
+  FRONTEND_WORKDIR: frontend
+
+jobs:
+  resolve:
+    name: resolve target
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: ${{ github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success' }}
+    outputs:
+      target_sha: ${{ steps.resolve.outputs.target_sha }}
+      image_repo: ${{ steps.resolve.outputs.image_repo }}
+      image_ref: ${{ steps.resolve.outputs.image_ref }}
+    steps:
+      - name: resolve deploy metadata
+        id: resolve
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          WORKFLOW_RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          DISPATCH_SHA: ${{ inputs.sha }}
+          REF_SHA: ${{ github.sha }}
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+          REGISTRY: ${{ env.REGISTRY }}
+          IMAGE_NAME: ${{ env.IMAGE_NAME }}
+        run: |
+          set -Eeuo pipefail
+
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
+            target_sha="$WORKFLOW_RUN_SHA"
+          elif [ -n "$DISPATCH_SHA" ]; then
+            target_sha="$DISPATCH_SHA"
+          else
+            target_sha="$REF_SHA"
+          fi
+
+          owner="$(printf '%s' "$REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
+          image_repo="$REGISTRY/$owner/$IMAGE_NAME"
+
+          {
+            echo "target_sha=$target_sha"
+            echo "image_repo=$image_repo"
+            echo "image_ref=$image_repo:$target_sha"
+          } >> "$GITHUB_OUTPUT"
+
+  build:
+    name: build and push image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs:
+      - resolve
+    steps:
+      - name: checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ needs.resolve.outputs.target_sha }}
+
+      - name: login to ghcr
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: setup node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: setup python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: install openapi generator dependency
+        run: python -m pip install --disable-pip-version-check PyYAML==6.0.2
+
+      - name: install frontend dependencies
+        working-directory: ${{ env.FRONTEND_WORKDIR }}
+        run: npm ci
+
+      - name: generate api types
+        working-directory: ${{ env.FRONTEND_WORKDIR }}
+        run: npm run openapi:generate
+
+      - name: validate public frontend urls
+        env:
+          NEXT_PUBLIC_API_URL: ${{ vars.NEXT_PUBLIC_API_URL }}
+          NEXT_PUBLIC_ADMIN_API_URL: ${{ vars.NEXT_PUBLIC_ADMIN_API_URL }}
+          NEXT_PUBLIC_WS_URL: ${{ vars.NEXT_PUBLIC_WS_URL }}
+          HTTP_ALLOWED_ORIGINS: ${{ vars.HTTP_ALLOWED_ORIGINS }}
+          WS_ALLOWED_ORIGINS: ${{ vars.WS_ALLOWED_ORIGINS }}
+        run: |
+          python - <<'PY'
+          import os
+          import sys
+          from urllib.parse import urlparse
+
+          api_url = os.environ.get("NEXT_PUBLIC_API_URL", "").strip()
+          admin_api_url = os.environ.get("NEXT_PUBLIC_ADMIN_API_URL", "").strip()
+          ws_url = os.environ.get("NEXT_PUBLIC_WS_URL", "").strip()
+          http_allowed = os.environ.get("HTTP_ALLOWED_ORIGINS", "").strip()
+          ws_allowed = os.environ.get("WS_ALLOWED_ORIGINS", "").strip()
+
+          def fail(message: str) -> None:
+              print(f"::error::{message}")
+              sys.exit(1)
+
+          def parse_url(name: str, value: str, schemes: set[str]):
+              parsed = urlparse(value)
+              if parsed.scheme not in schemes or not parsed.netloc:
+                  fail(f"{name} must be an absolute URL with one of: {', '.join(sorted(schemes))}")
+              if parsed.params or parsed.query or parsed.fragment:
+                  fail(f"{name} must not include params, query, or fragment")
+              return parsed
+
+          def origin(parsed) -> str:
+              return f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
+
+          def split_origins(value: str) -> set[str]:
+              return {
+                  item.strip().rstrip("/")
+                  for item in value.replace("\n", ",").split(",")
+                  if item.strip()
+              }
+
+          if not api_url and not admin_api_url and not ws_url:
+              print("Using same-origin frontend mode: NEXT_PUBLIC_* URLs are empty.")
+              sys.exit(0)
+
+          if not api_url or not admin_api_url or not ws_url:
+              fail("Direct frontend mode requires NEXT_PUBLIC_API_URL, NEXT_PUBLIC_ADMIN_API_URL, and NEXT_PUBLIC_WS_URL. Leave all empty for same-origin mode.")
+
+          api = parse_url("NEXT_PUBLIC_API_URL", api_url, {"https"})
+          admin_api = parse_url("NEXT_PUBLIC_ADMIN_API_URL", admin_api_url, {"https"})
+          ws = parse_url("NEXT_PUBLIC_WS_URL", ws_url, {"wss"})
+
+          if ws.path.rstrip("/") != "/ws":
+              fail("NEXT_PUBLIC_WS_URL must point to the backend /ws endpoint")
+
+          ws_http_origin = f"https://{ws.netloc}".rstrip("/")
+          if origin(api) != origin(admin_api) or origin(api) != ws_http_origin:
+              fail("NEXT_PUBLIC_API_URL, NEXT_PUBLIC_ADMIN_API_URL, and NEXT_PUBLIC_WS_URL must use the same backend origin")
+
+          http_origins = split_origins(http_allowed)
+          ws_origins = split_origins(ws_allowed)
+          if not http_origins or not ws_origins:
+              fail("Direct frontend mode requires HTTP_ALLOWED_ORIGINS and WS_ALLOWED_ORIGINS GitHub vars. Leave NEXT_PUBLIC_* empty for same-origin mode.")
+          if "*" in http_origins or "*" in ws_origins:
+              fail("Direct frontend mode must not use wildcard REST/WS origin allowlists")
+          if not ws_origins.issubset(http_origins):
+              fail("WS_ALLOWED_ORIGINS must be a subset of HTTP_ALLOWED_ORIGINS for direct browser mode")
+
+          print("Validated direct frontend public URL mode.")
+          PY
+
+      - name: setup buildx
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+
+      - name: build and push frontend image
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
+        with:
+          context: frontend
+          file: frontend/Dockerfile
+          push: true
+          build-args: |
+            BACKEND_PORT=${{ vars.BACKEND_PORT || 8080 }}
+            BACKEND_URL=${{ vars.FRONTEND_BACKEND_URL || format('http://backend:{0}', vars.BACKEND_PORT || 8080) }}
+            FRONTEND_PORT=${{ vars.FRONTEND_PORT || 3000 }}
+            NEXT_PUBLIC_API_URL=${{ vars.NEXT_PUBLIC_API_URL }}
+            NEXT_PUBLIC_ADMIN_API_URL=${{ vars.NEXT_PUBLIC_ADMIN_API_URL }}
+            NEXT_PUBLIC_WS_URL=${{ vars.NEXT_PUBLIC_WS_URL }}
+          tags: |
+            ${{ needs.resolve.outputs.image_ref }}
+
+  deploy:
+    name: deploy production
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs:
+      - resolve
+      - build
+    environment: production
+    steps:
+      - name: validate ssh fingerprint configured
+        env:
+          DEPLOY_HOST_FINGERPRINT: ${{ vars.DEPLOY_HOST_FINGERPRINT }}
+        run: |
+          if [ -z "${DEPLOY_HOST_FINGERPRINT}" ]; then
+            echo "::error::DEPLOY_HOST_FINGERPRINT is required for production deploys (set repo/environment variable from 'ssh-keyscan -H \$DEPLOY_HOST | ssh-keygen -lf -')"
+            exit 1
+          fi
+
+      - name: deploy over ssh
+        id: deploy
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ vars.DEPLOY_PORT || 22 }}
+          fingerprint: ${{ vars.DEPLOY_HOST_FINGERPRINT }}
+          command_timeout: 10m
+          script: |
+            set -Eeuo pipefail
+
+            deploy_path='${{ secrets.DEPLOY_PATH }}'
+            target_sha='${{ needs.resolve.outputs.target_sha }}'
+            image_ref='${{ needs.resolve.outputs.image_ref }}'
+
+            cd "$deploy_path"
+            git fetch --prune origin
+            git reset --hard "$target_sha"
+
+            echo '${{ github.token }}' | docker login ghcr.io -u '${{ github.actor }}' --password-stdin
+
+            cd deployment/docker
+            FRONTEND_IMAGE="$image_ref" docker compose --env-file ../../.env pull frontend
+            FRONTEND_IMAGE="$image_ref" docker compose --env-file ../../.env up -d --remove-orphans frontend
+            FRONTEND_IMAGE="$image_ref" docker compose --env-file ../../.env up -d --remove-orphans nginx certbot
+            docker compose --env-file ../../.env exec -T nginx sh -c 'touch /var/run/certbot/reload-nginx'
+
+      - name: verify health
+        id: verify
+        env:
+          DEPLOY_FRONTEND_HEALTH_URL: ${{ vars.DEPLOY_FRONTEND_HEALTH_URL }}
+        run: |
+          set -Eeuo pipefail
+
+          sleep 3
+          if [ -z "${DEPLOY_FRONTEND_HEALTH_URL:-}" ]; then
+            echo "::error::DEPLOY_FRONTEND_HEALTH_URL is required for production deploy health checks"
+            exit 1
+          fi
+          health_url="$DEPLOY_FRONTEND_HEALTH_URL"
+          api_url="$(python3 - "$health_url" <<'PY'
+          import sys
+          from urllib.parse import urlsplit, urlunsplit
+
+          parsed = urlsplit(sys.argv[1])
+          print(urlunsplit((parsed.scheme, parsed.netloc, "/api/v1/leaderboard", "", "")))
+          PY
+          )"
+
+          for attempt in $(seq 1 12); do
+            if curl -fsS --max-time 5 "$health_url" >/dev/null; then
+              api_body="$(curl -fsS --max-time 5 "$api_url" || true)"
+              if printf '%s' "$api_body" | jq -e '.entries | type == "array"' >/dev/null 2>&1; then
+                echo "frontend health and same-origin api rewrite checks passed on attempt $attempt"
+                exit 0
+              fi
+              echo "frontend page is healthy but same-origin api rewrite check failed"
+            else
+              echo "frontend health check attempt $attempt failed"
+            fi
+            if [ "$attempt" -lt 12 ]; then
+              sleep 5
+            fi
+          done
+
+          echo "frontend health or same-origin api rewrite check failed after 12 attempts"
+          exit 1
+
+      - name: persist deployed sha
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ vars.DEPLOY_PORT || 22 }}
+          fingerprint: ${{ vars.DEPLOY_HOST_FINGERPRINT }}
+          command_timeout: 2m
+          script: |
+            set -Eeuo pipefail
+
+            deploy_path='${{ secrets.DEPLOY_PATH }}'
+            target_sha='${{ needs.resolve.outputs.target_sha }}'
+            image_ref='${{ needs.resolve.outputs.image_ref }}'
+
+            set_env_var() {
+              key="$1"
+              value="$2"
+              file="$3"
+              tmp="$(mktemp)"
+              awk -v key="$key" -v value="$value" '
+                BEGIN { done = 0 }
+                $0 ~ "^" key "=" {
+                  print key "=" value
+                  done = 1
+                  next
+                }
+                { print }
+                END {
+                  if (done == 0) {
+                    print key "=" value
+                  }
+                }
+              ' "$file" > "$tmp"
+              cat "$tmp" > "$file"
+              rm -f "$tmp"
+            }
+
+            cd "$deploy_path"
+            set_env_var FRONTEND_IMAGE "$image_ref" .env
+            printf '%s\n' "$target_sha" > .last-deployed-frontend-sha
+
+      - name: rollback
+        id: rollback
+        if: ${{ failure() && steps.deploy.outcome == 'success' }}
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ vars.DEPLOY_PORT || 22 }}
+          fingerprint: ${{ vars.DEPLOY_HOST_FINGERPRINT }}
+          command_timeout: 10m
+          script: |
+            set -Eeuo pipefail
+
+            deploy_path='${{ secrets.DEPLOY_PATH }}'
+            image_repo='${{ needs.resolve.outputs.image_repo }}'
+
+            cd "$deploy_path"
+            if [ ! -s .last-deployed-frontend-sha ]; then
+              echo "no previous deployed frontend sha found; rollback unavailable"
+              exit 1
+            fi
+
+            previous_sha="$(tr -d '[:space:]' < .last-deployed-frontend-sha)"
+            previous_image="$image_repo:$previous_sha"
+
+            git fetch --prune origin
+            git reset --hard "$previous_sha"
+
+            echo '${{ github.token }}' | docker login ghcr.io -u '${{ github.actor }}' --password-stdin
+
+            cd deployment/docker
+            FRONTEND_IMAGE="$previous_image" docker compose --env-file ../../.env pull frontend
+            FRONTEND_IMAGE="$previous_image" docker compose --env-file ../../.env up -d --remove-orphans frontend
+            FRONTEND_IMAGE="$previous_image" docker compose --env-file ../../.env up -d --remove-orphans nginx certbot
+            docker compose --env-file ../../.env exec -T nginx sh -c 'touch /var/run/certbot/reload-nginx'
+            cd ../..
+
+            set_env_var() {
+              key="$1"
+              value="$2"
+              file="$3"
+              tmp="$(mktemp)"
+              awk -v key="$key" -v value="$value" '
+                BEGIN { done = 0 }
+                $0 ~ "^" key "=" {
+                  print key "=" value
+                  done = 1
+                  next
+                }
+                { print }
+                END {
+                  if (done == 0) {
+                    print key "=" value
+                  }
+                }
+              ' "$file" > "$tmp"
+              cat "$tmp" > "$file"
+              rm -f "$tmp"
+            }
+
+            set_env_var FRONTEND_IMAGE "$previous_image" .env
+
+      - name: verify rollback health
+        id: rollback_verify
+        if: ${{ failure() && steps.rollback.outcome == 'success' }}
+        env:
+          DEPLOY_FRONTEND_HEALTH_URL: ${{ vars.DEPLOY_FRONTEND_HEALTH_URL }}
+        run: |
+          set -Eeuo pipefail
+
+          sleep 3
+          if [ -z "${DEPLOY_FRONTEND_HEALTH_URL:-}" ]; then
+            echo "::error::DEPLOY_FRONTEND_HEALTH_URL is required for production rollback health checks"
+            exit 1
+          fi
+          health_url="$DEPLOY_FRONTEND_HEALTH_URL"
+          api_url="$(python3 - "$health_url" <<'PY'
+          import sys
+          from urllib.parse import urlsplit, urlunsplit
+
+          parsed = urlsplit(sys.argv[1])
+          print(urlunsplit((parsed.scheme, parsed.netloc, "/api/v1/leaderboard", "", "")))
+          PY
+          )"
+
+          for attempt in $(seq 1 12); do
+            if curl -fsS --max-time 5 "$health_url" >/dev/null; then
+              api_body="$(curl -fsS --max-time 5 "$api_url" || true)"
+              if printf '%s' "$api_body" | jq -e '.entries | type == "array"' >/dev/null 2>&1; then
+                echo "frontend rollback health and same-origin api rewrite checks passed on attempt $attempt"
+                exit 0
+              fi
+              echo "frontend rollback page is healthy but same-origin api rewrite check failed"
+            else
+              echo "frontend rollback health check attempt $attempt failed"
+            fi
+            if [ "$attempt" -lt 12 ]; then
+              sleep 5
+            fi
+          done
+
+          echo "frontend rollback health or same-origin api rewrite check failed after 12 attempts"
+          exit 1
+
+      - name: notify
+        if: ${{ always() }}
+        env:
+          WEBHOOK_URL: ${{ secrets.TG_DEPLOY_WEBHOOK || secrets.SLACK_DEPLOY_WEBHOOK }}
+          TARGET_SHA: ${{ needs.resolve.outputs.target_sha }}
+          IMAGE_REF: ${{ needs.resolve.outputs.image_ref }}
+          JOB_STATUS: ${{ job.status }}
+          ROLLBACK_OUTCOME: ${{ steps.rollback.outcome }}
+          ROLLBACK_VERIFY_OUTCOME: ${{ steps.rollback_verify.outcome }}
+        run: |
+          set -Eeuo pipefail
+
+          if [ -z "$WEBHOOK_URL" ]; then
+            echo "::notice::deploy webhook is not configured; notification skipped"
+            exit 0
+          fi
+
+          text="task-per-minute frontend deploy: $JOB_STATUS
+          sha: $TARGET_SHA
+          image: $IMAGE_REF
+          rollback: ${ROLLBACK_OUTCOME:-skipped}
+          rollback health: ${ROLLBACK_VERIFY_OUTCOME:-skipped}"
+
+          jq -n --arg text "$text" '{text: $text}' > /tmp/deploy-notification.json
+          curl -fsS -X POST \
+            -H 'Content-Type: application/json' \
+            --data @/tmp/deploy-notification.json \
+            "$WEBHOOK_URL"

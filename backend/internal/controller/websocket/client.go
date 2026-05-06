@@ -15,7 +15,8 @@ import (
 
 const (
 	defaultWriteWait      = 10 * time.Second
-	defaultPingInterval   = 30 * time.Second
+	defaultPingInterval   = 20 * time.Second
+	defaultReadIdleTimeout = 75 * time.Second
 	defaultSendBufferSize = 32
 	defaultReadLimit      = 16 * 1024
 )
@@ -29,6 +30,7 @@ type client struct {
 
 	closeOnce sync.Once
 	closed    atomic.Bool
+	displaced atomic.Bool
 
 	stateMu sync.RWMutex
 	queued  bool
@@ -71,10 +73,21 @@ func (c *client) Close() {
 	c.closeOnce.Do(func() {
 		c.closed.Store(true)
 		close(c.done)
+		if c.conn == nil {
+			return
+		}
 		go func() {
 			_ = c.conn.Close(coderws.StatusNormalClosure, "")
 		}()
 	})
+}
+
+func (c *client) markDisplaced() {
+	c.displaced.Store(true)
+}
+
+func (c *client) isDisplaced() bool {
+	return c.displaced.Load()
 }
 
 func (c *client) writePump(ctx context.Context) {

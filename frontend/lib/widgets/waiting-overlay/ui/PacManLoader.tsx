@@ -1,8 +1,6 @@
 "use client";
 
 import React from "react";
-
-// Анимированный загрузчик в стиле Pac-Man
 export const PacManLoader: React.FC = () => {
   const pacmanSize = 50;
   const primaryColor = "#fed75a";

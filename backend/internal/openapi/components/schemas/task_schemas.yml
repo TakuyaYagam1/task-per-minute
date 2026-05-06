@@ -1,6 +1,6 @@
 TaskCategory:
   type: string
-  enum: [web, crypto, forensics, reverse, pwn, misc]
+  enum: [web, crypto, forensics, reverse, pwn, steganography, ppc, osint, mobile, hardware, misc]
 
 TaskDifficulty:
   type: string
@@ -119,6 +119,19 @@ UpdateTaskRequest:
       type: string
       description: Task endpoint. Accepts http(s) URLs or host:port targets for pwn/nc tasks.
       nullable: true
+      x-go-type: NullableString
+      x-go-type-skip-optional-pointer: true
+      x-oapi-codegen-extra-tags:
+        json: task_url,omitempty
+    source_file_url:
+      type: string
+      format: uri
+      description: Set to null to clear an uploaded source file. Non-null values are managed by the source upload endpoint.
+      nullable: true
+      x-go-type: NullableString
+      x-go-type-skip-optional-pointer: true
+      x-oapi-codegen-extra-tags:
+        json: source_file_url,omitempty
 
 UploadSourceResponse:
   type: object

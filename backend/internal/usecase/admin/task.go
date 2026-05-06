@@ -92,7 +92,7 @@ func validateTaskInput(in TaskInput) error {
 	if !domain.IsValidTaskFlag(in.Flag) {
 		return apperr.ErrTaskValidation
 	}
-	if !domain.IsValidOptionalTaskURL(in.TaskURL) {
+	if !domain.IsValidTaskURLShape(in.Category, in.TaskURL, in.SourceFileURL) {
 		return apperr.ErrTaskValidation
 	}
 	if !domain.IsValidTaskHints(in.Hints) {

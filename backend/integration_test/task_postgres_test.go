@@ -103,6 +103,7 @@ func TestTaskRepo_Create_RejectsInvalidEnums(t *testing.T) {
 		{"non-positive_time_limit", func(in *persistent.TaskInput) { in.TimeLimit = 0 }},
 		{"too_long_flag", func(in *persistent.TaskInput) { in.Flag = strings.Repeat("x", 256) }},
 		{"relative_task_url", func(in *persistent.TaskInput) { raw := "/relative"; in.TaskURL = &raw }},
+		{"invalid_source_file_url", func(in *persistent.TaskInput) { raw := "not-a-url"; in.SourceFileURL = &raw }},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -178,7 +179,7 @@ func TestTaskRepo_Update(t *testing.T) {
 	updated, err := repo.Update(ctx, created.ID, persistent.TaskInput{
 		Title:         created.Title + "_updated",
 		Description:   "new desc",
-		Category:      domain.CategoryCrypto,
+		Category:      domain.CategoryForensics,
 		Difficulty:    domain.DifficultyHard,
 		TimeLimit:     120,
 		Flag:          "FLAG{updated}",
@@ -187,6 +188,7 @@ func TestTaskRepo_Update(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, created.ID, updated.ID)
+	require.Equal(t, domain.CategoryForensics, updated.Category)
 	require.Equal(t, domain.DifficultyHard, updated.Difficulty)
 	require.Equal(t, 120, updated.TimeLimit)
 	require.NotNil(t, updated.SourceFileURL)
@@ -218,6 +220,39 @@ func TestTaskRepo_Update_RejectsInvalidInput(t *testing.T) {
 		TimeLimit:   60,
 		Flag:        "x",
 		Hints:       defaultTaskHints("x"),
+	})
+	require.ErrorIs(t, err, apperr.ErrTaskValidation)
+}
+
+func TestTaskRepo_Update_RejectsInvalidTaskAssetURLs(t *testing.T) {
+	t.Parallel()
+	repo := newTaskRepo()
+	ctx := context.Background()
+	created := mustCreateTask(t, repo, uniq("t"), domain.DifficultyEasy)
+
+	taskURL := "/relative/" + uniq("task")
+	_, err := repo.Update(ctx, created.ID, persistent.TaskInput{
+		Title:       "x",
+		Description: "x",
+		Category:    domain.CategoryWeb,
+		Difficulty:  domain.DifficultyEasy,
+		TimeLimit:   60,
+		Flag:        "x",
+		Hints:       defaultTaskHints("x"),
+		TaskURL:     &taskURL,
+	})
+	require.ErrorIs(t, err, apperr.ErrTaskValidation)
+
+	sourceURL := "ftp://files.example/" + uniq("source") + ".zip"
+	_, err = repo.Update(ctx, created.ID, persistent.TaskInput{
+		Title:         "x",
+		Description:   "x",
+		Category:      domain.CategoryWeb,
+		Difficulty:    domain.DifficultyEasy,
+		TimeLimit:     60,
+		Flag:          "x",
+		Hints:         defaultTaskHints("x"),
+		SourceFileURL: &sourceURL,
 	})
 	require.ErrorIs(t, err, apperr.ErrTaskValidation)
 }

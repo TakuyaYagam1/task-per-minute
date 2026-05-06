@@ -48,6 +48,8 @@ func TestTaskUsecase_CreateTask_Validation(t *testing.T) {
 		{"too long flag", func(in *admin.TaskInput) { in.Flag = strings.Repeat("ф", 256) }},
 		{"relative task url", func(in *admin.TaskInput) { url := "/tasks/1"; in.TaskURL = &url }},
 		{"unsupported task url scheme", func(in *admin.TaskInput) { url := "ftp://example.com/task"; in.TaskURL = &url }},
+		{"invalid source file url", func(in *admin.TaskInput) { url := "not-a-url"; in.SourceFileURL = &url }},
+		{"unsupported source file url scheme", func(in *admin.TaskInput) { url := "ftp://example.com/source.zip"; in.SourceFileURL = &url }},
 		{"missing hints", func(in *admin.TaskInput) { in.Hints = nil }},
 		{"too few hints", func(in *admin.TaskInput) { in.Hints = []string{"one", "two"} }},
 		{"too many hints", func(in *admin.TaskInput) { in.Hints = []string{"one", "two", "three", "four"} }},

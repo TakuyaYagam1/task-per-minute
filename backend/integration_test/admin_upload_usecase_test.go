@@ -29,12 +29,12 @@ func TestAdminUploadUsecase_UploadSourceFile_HappyPath(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.Contains(t, presignedURL, "X-Amz-Signature")
-	require.Contains(t, presignedURL, admin.SourceFileKey(task.ID))
+	require.Contains(t, presignedURL, "tasks/"+task.ID.String()+"/sources/")
 
 	got, err := f.tasks.GetByID(ctx, task.ID)
 	require.NoError(t, err)
 	require.NotNil(t, got.SourceFileURL)
-	require.Contains(t, *got.SourceFileURL, admin.SourceFileKey(task.ID))
+	require.Contains(t, *got.SourceFileURL, "tasks/"+task.ID.String()+"/sources/")
 	require.NotContains(t, *got.SourceFileURL, "X-Amz-Signature")
 
 	resp := httpGetWithTimeout(t, presignedURL)
