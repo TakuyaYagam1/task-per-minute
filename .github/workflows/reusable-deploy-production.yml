@@ -30,48 +30,85 @@ jobs:
     timeout-minutes: 25
     environment: production
     steps:
-      - name: validate ssh fingerprint configured
+      - name: prepare ssh
         env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          DEPLOY_PORT: ${{ vars.DEPLOY_PORT || 22 }}
           DEPLOY_HOST_FINGERPRINT: ${{ vars.DEPLOY_HOST_FINGERPRINT }}
         run: |
-          if [ -z "${DEPLOY_HOST_FINGERPRINT}" ]; then
-            echo "::error::DEPLOY_HOST_FINGERPRINT is required for production deploys (set repo/environment variable from 'ssh-keyscan -H \$DEPLOY_HOST | ssh-keygen -lf -')"
+          set -Eeuo pipefail
+
+          for var in DEPLOY_HOST DEPLOY_USER DEPLOY_SSH_KEY DEPLOY_PATH DEPLOY_HOST_FINGERPRINT; do
+            if [ -z "${!var:-}" ]; then
+              echo "::error::$var is required for production deploys"
+              exit 1
+            fi
+          done
+
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_SSH_KEY" > "$HOME/.ssh/deploy_key"
+          chmod 600 "$HOME/.ssh/deploy_key"
+
+          scan_file="$(mktemp)"
+          ssh-keyscan -p "$DEPLOY_PORT" -t ed25519 "$DEPLOY_HOST" > "$scan_file" 2>/dev/null
+          actual_fingerprint="$(ssh-keygen -lf "$scan_file" -E sha256 | awk 'NR == 1 { print $2 }')"
+          if [ "$actual_fingerprint" != "$DEPLOY_HOST_FINGERPRINT" ]; then
+            echo "::error::DEPLOY_HOST_FINGERPRINT mismatch: expected $DEPLOY_HOST_FINGERPRINT, got $actual_fingerprint"
             exit 1
           fi
 
+          cat "$scan_file" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+          rm -f "$scan_file"
+
       - name: deploy over ssh
         id: deploy
-        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          port: ${{ vars.DEPLOY_PORT || 22 }}
-          fingerprint: ${{ vars.DEPLOY_HOST_FINGERPRINT }}
-          command_timeout: 10m
-          script: |
-            set -Eeuo pipefail
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          DEPLOY_PORT: ${{ vars.DEPLOY_PORT || 22 }}
+          TARGET_SHA: ${{ inputs.target_sha }}
+          BACKEND_IMAGE_REF: ${{ inputs.backend_image_ref }}
+          FRONTEND_IMAGE_REF: ${{ inputs.frontend_image_ref }}
+          GHCR_ACTOR: ${{ github.actor }}
+          GHCR_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
 
-            deploy_path='${{ secrets.DEPLOY_PATH }}'
-            target_sha='${{ inputs.target_sha }}'
-            backend_image_ref='${{ inputs.backend_image_ref }}'
-            frontend_image_ref='${{ inputs.frontend_image_ref }}'
+          remote_env="$(
+            printf 'DEPLOY_PATH=%q TARGET_SHA=%q BACKEND_IMAGE_REF=%q FRONTEND_IMAGE_REF=%q GHCR_ACTOR=%q GHCR_TOKEN=%q' \
+              "$DEPLOY_PATH" "$TARGET_SHA" "$BACKEND_IMAGE_REF" "$FRONTEND_IMAGE_REF" "$GHCR_ACTOR" "$GHCR_TOKEN"
+          )"
 
-            cd "$deploy_path"
-            git fetch --prune origin
-            git reset --hard "$target_sha"
+          ssh -i "$HOME/.ssh/deploy_key" \
+            -p "$DEPLOY_PORT" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            "$remote_env bash -se" <<'REMOTE'
+          set -Eeuo pipefail
 
-            echo '${{ github.token }}' | docker login ghcr.io -u '${{ github.actor }}' --password-stdin
+          cd "$DEPLOY_PATH"
+          git fetch --prune origin
+          git reset --hard "$TARGET_SHA"
 
-            cd deployment/docker
-            compose() {
-              docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml "$@"
-            }
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_ACTOR" --password-stdin
 
-            BACKEND_IMAGE="$backend_image_ref" FRONTEND_IMAGE="$frontend_image_ref" compose pull backend frontend
-            BACKEND_IMAGE="$backend_image_ref" FRONTEND_IMAGE="$frontend_image_ref" compose up -d --remove-orphans backend frontend
-            BACKEND_IMAGE="$backend_image_ref" FRONTEND_IMAGE="$frontend_image_ref" compose up -d --remove-orphans nginx certbot
-            BACKEND_IMAGE="$backend_image_ref" FRONTEND_IMAGE="$frontend_image_ref" compose exec -T nginx sh -c 'touch /var/run/certbot/reload-nginx'
+          cd deployment/docker
+          compose() {
+            docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml "$@"
+          }
+
+          BACKEND_IMAGE="$BACKEND_IMAGE_REF" FRONTEND_IMAGE="$FRONTEND_IMAGE_REF" compose pull backend frontend
+          BACKEND_IMAGE="$BACKEND_IMAGE_REF" FRONTEND_IMAGE="$FRONTEND_IMAGE_REF" compose up -d --remove-orphans backend frontend
+          BACKEND_IMAGE="$BACKEND_IMAGE_REF" FRONTEND_IMAGE="$FRONTEND_IMAGE_REF" compose up -d --remove-orphans nginx certbot
+          BACKEND_IMAGE="$BACKEND_IMAGE_REF" FRONTEND_IMAGE="$FRONTEND_IMAGE_REF" compose exec -T nginx sh -c 'touch /var/run/certbot/reload-nginx'
+          REMOTE
 
       - name: verify backend health
         id: verify_backend
@@ -140,121 +177,143 @@ jobs:
           exit 1
 
       - name: persist deployed sha
-        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          port: ${{ vars.DEPLOY_PORT || 22 }}
-          fingerprint: ${{ vars.DEPLOY_HOST_FINGERPRINT }}
-          command_timeout: 2m
-          script: |
-            set -Eeuo pipefail
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          DEPLOY_PORT: ${{ vars.DEPLOY_PORT || 22 }}
+          TARGET_SHA: ${{ inputs.target_sha }}
+          BACKEND_IMAGE_REF: ${{ inputs.backend_image_ref }}
+          FRONTEND_IMAGE_REF: ${{ inputs.frontend_image_ref }}
+        run: |
+          set -Eeuo pipefail
 
-            deploy_path='${{ secrets.DEPLOY_PATH }}'
-            target_sha='${{ inputs.target_sha }}'
-            backend_image_ref='${{ inputs.backend_image_ref }}'
-            frontend_image_ref='${{ inputs.frontend_image_ref }}'
+          remote_env="$(
+            printf 'DEPLOY_PATH=%q TARGET_SHA=%q BACKEND_IMAGE_REF=%q FRONTEND_IMAGE_REF=%q' \
+              "$DEPLOY_PATH" "$TARGET_SHA" "$BACKEND_IMAGE_REF" "$FRONTEND_IMAGE_REF"
+          )"
 
-            set_env_var() {
-              key="$1"
-              value="$2"
-              file="$3"
-              tmp="$(mktemp)"
-              awk -v key="$key" -v value="$value" '
-                BEGIN { done = 0 }
-                $0 ~ "^" key "=" {
+          ssh -i "$HOME/.ssh/deploy_key" \
+            -p "$DEPLOY_PORT" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            "$remote_env bash -se" <<'REMOTE'
+          set -Eeuo pipefail
+
+          set_env_var() {
+            key="$1"
+            value="$2"
+            file="$3"
+            tmp="$(mktemp)"
+            awk -v key="$key" -v value="$value" '
+              BEGIN { done = 0 }
+              $0 ~ "^" key "=" {
+                print key "=" value
+                done = 1
+                next
+              }
+              { print }
+              END {
+                if (done == 0) {
                   print key "=" value
-                  done = 1
-                  next
                 }
-                { print }
-                END {
-                  if (done == 0) {
-                    print key "=" value
-                  }
-                }
-              ' "$file" > "$tmp"
-              cat "$tmp" > "$file"
-              rm -f "$tmp"
-            }
+              }
+            ' "$file" > "$tmp"
+            cat "$tmp" > "$file"
+            rm -f "$tmp"
+          }
 
-            cd "$deploy_path"
-            set_env_var BACKEND_IMAGE "$backend_image_ref" .env
-            set_env_var FRONTEND_IMAGE "$frontend_image_ref" .env
-            printf '%s\n' "$target_sha" > .last-deployed-sha
-            printf '%s\n' "$target_sha" > .last-deployed-frontend-sha
+          cd "$DEPLOY_PATH"
+          set_env_var BACKEND_IMAGE "$BACKEND_IMAGE_REF" .env
+          set_env_var FRONTEND_IMAGE "$FRONTEND_IMAGE_REF" .env
+          printf '%s\n' "$TARGET_SHA" > .last-deployed-sha
+          printf '%s\n' "$TARGET_SHA" > .last-deployed-frontend-sha
+          REMOTE
 
       - name: rollback
         id: rollback
         if: ${{ failure() && steps.deploy.outcome == 'success' }}
-        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          port: ${{ vars.DEPLOY_PORT || 22 }}
-          fingerprint: ${{ vars.DEPLOY_HOST_FINGERPRINT }}
-          command_timeout: 10m
-          script: |
-            set -Eeuo pipefail
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          DEPLOY_PORT: ${{ vars.DEPLOY_PORT || 22 }}
+          BACKEND_IMAGE_REPO: ${{ inputs.backend_image_repo }}
+          FRONTEND_IMAGE_REPO: ${{ inputs.frontend_image_repo }}
+          GHCR_ACTOR: ${{ github.actor }}
+          GHCR_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
 
-            deploy_path='${{ secrets.DEPLOY_PATH }}'
-            backend_image_repo='${{ inputs.backend_image_repo }}'
-            frontend_image_repo='${{ inputs.frontend_image_repo }}'
+          remote_env="$(
+            printf 'DEPLOY_PATH=%q BACKEND_IMAGE_REPO=%q FRONTEND_IMAGE_REPO=%q GHCR_ACTOR=%q GHCR_TOKEN=%q' \
+              "$DEPLOY_PATH" "$BACKEND_IMAGE_REPO" "$FRONTEND_IMAGE_REPO" "$GHCR_ACTOR" "$GHCR_TOKEN"
+          )"
 
-            cd "$deploy_path"
-            if [ ! -s .last-deployed-sha ] || [ ! -s .last-deployed-frontend-sha ]; then
-              echo "previous deployed shas are missing; rollback unavailable"
-              exit 1
-            fi
+          ssh -i "$HOME/.ssh/deploy_key" \
+            -p "$DEPLOY_PORT" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            "$remote_env bash -se" <<'REMOTE'
+          set -Eeuo pipefail
 
-            previous_backend_sha="$(tr -d '[:space:]' < .last-deployed-sha)"
-            previous_frontend_sha="$(tr -d '[:space:]' < .last-deployed-frontend-sha)"
-            previous_backend_image="$backend_image_repo:$previous_backend_sha"
-            previous_frontend_image="$frontend_image_repo:$previous_frontend_sha"
+          cd "$DEPLOY_PATH"
+          if [ ! -s .last-deployed-sha ] || [ ! -s .last-deployed-frontend-sha ]; then
+            echo "previous deployed shas are missing; rollback unavailable"
+            exit 1
+          fi
 
-            git fetch --prune origin
-            git reset --hard "$previous_backend_sha"
+          previous_backend_sha="$(tr -d '[:space:]' < .last-deployed-sha)"
+          previous_frontend_sha="$(tr -d '[:space:]' < .last-deployed-frontend-sha)"
+          previous_backend_image="$BACKEND_IMAGE_REPO:$previous_backend_sha"
+          previous_frontend_image="$FRONTEND_IMAGE_REPO:$previous_frontend_sha"
 
-            echo '${{ github.token }}' | docker login ghcr.io -u '${{ github.actor }}' --password-stdin
+          git fetch --prune origin
+          git reset --hard "$previous_backend_sha"
 
-            cd deployment/docker
-            compose() {
-              docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml "$@"
-            }
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_ACTOR" --password-stdin
 
-            BACKEND_IMAGE="$previous_backend_image" FRONTEND_IMAGE="$previous_frontend_image" compose pull backend frontend
-            BACKEND_IMAGE="$previous_backend_image" FRONTEND_IMAGE="$previous_frontend_image" compose up -d --remove-orphans backend frontend
-            BACKEND_IMAGE="$previous_backend_image" FRONTEND_IMAGE="$previous_frontend_image" compose up -d --remove-orphans nginx certbot
-            BACKEND_IMAGE="$previous_backend_image" FRONTEND_IMAGE="$previous_frontend_image" compose exec -T nginx sh -c 'touch /var/run/certbot/reload-nginx'
-            cd ../..
+          cd deployment/docker
+          compose() {
+            docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml "$@"
+          }
 
-            set_env_var() {
-              key="$1"
-              value="$2"
-              file="$3"
-              tmp="$(mktemp)"
-              awk -v key="$key" -v value="$value" '
-                BEGIN { done = 0 }
-                $0 ~ "^" key "=" {
+          BACKEND_IMAGE="$previous_backend_image" FRONTEND_IMAGE="$previous_frontend_image" compose pull backend frontend
+          BACKEND_IMAGE="$previous_backend_image" FRONTEND_IMAGE="$previous_frontend_image" compose up -d --remove-orphans backend frontend
+          BACKEND_IMAGE="$previous_backend_image" FRONTEND_IMAGE="$previous_frontend_image" compose up -d --remove-orphans nginx certbot
+          BACKEND_IMAGE="$previous_backend_image" FRONTEND_IMAGE="$previous_frontend_image" compose exec -T nginx sh -c 'touch /var/run/certbot/reload-nginx'
+          cd ../..
+
+          set_env_var() {
+            key="$1"
+            value="$2"
+            file="$3"
+            tmp="$(mktemp)"
+            awk -v key="$key" -v value="$value" '
+              BEGIN { done = 0 }
+              $0 ~ "^" key "=" {
+                print key "=" value
+                done = 1
+                next
+              }
+              { print }
+              END {
+                if (done == 0) {
                   print key "=" value
-                  done = 1
-                  next
                 }
-                { print }
-                END {
-                  if (done == 0) {
-                    print key "=" value
-                  }
-                }
-              ' "$file" > "$tmp"
-              cat "$tmp" > "$file"
-              rm -f "$tmp"
-            }
+              }
+            ' "$file" > "$tmp"
+            cat "$tmp" > "$file"
+            rm -f "$tmp"
+          }
 
-            set_env_var BACKEND_IMAGE "$previous_backend_image" .env
-            set_env_var FRONTEND_IMAGE "$previous_frontend_image" .env
+          set_env_var BACKEND_IMAGE "$previous_backend_image" .env
+          set_env_var FRONTEND_IMAGE "$previous_frontend_image" .env
+          REMOTE
 
       - name: verify rollback backend health
         id: rollback_verify_backend
