@@ -122,9 +122,26 @@ jobs:
             echo "::error::DEPLOY_HEALTH_URL is required for production deploy health checks"
             exit 1
           fi
+          health_url="$(python3 - <<'PY'
+          import os
+          import sys
+          from urllib.parse import urlsplit, urlunsplit
+
+          raw = os.environ["DEPLOY_HEALTH_URL"].strip()
+          parsed = urlsplit(raw)
+          if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+              print(f"invalid DEPLOY_HEALTH_URL: {raw!r}", file=sys.stderr)
+              sys.exit(1)
+
+          host = parsed.hostname.encode("idna").decode("ascii")
+          netloc = host if parsed.port is None else f"{host}:{parsed.port}"
+          path = parsed.path or "/"
+          print(urlunsplit((parsed.scheme, netloc, path, parsed.query, "")))
+          PY
+          )"
 
           for attempt in $(seq 1 12); do
-            body="$(curl -fsS --max-time 5 "$DEPLOY_HEALTH_URL" || true)"
+            body="$(curl -fsS --max-time 5 "$health_url" || true)"
             if printf '%s' "$body" | jq -e '.status == "ok" and .db == "ok" and .redis == "ok" and .seaweedfs == "ok" and (.schema_version | type == "number" and . > 0)' >/dev/null 2>&1; then
               echo "backend health check passed on attempt $attempt"
               exit 0
@@ -147,7 +164,23 @@ jobs:
             echo "::error::DEPLOY_FRONTEND_HEALTH_URL is required for production deploy health checks"
             exit 1
           fi
-          health_url="$DEPLOY_FRONTEND_HEALTH_URL"
+          health_url="$(python3 - <<'PY'
+          import os
+          import sys
+          from urllib.parse import urlsplit, urlunsplit
+
+          raw = os.environ["DEPLOY_FRONTEND_HEALTH_URL"].strip()
+          parsed = urlsplit(raw)
+          if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+              print(f"invalid DEPLOY_FRONTEND_HEALTH_URL: {raw!r}", file=sys.stderr)
+              sys.exit(1)
+
+          host = parsed.hostname.encode("idna").decode("ascii")
+          netloc = host if parsed.port is None else f"{host}:{parsed.port}"
+          path = parsed.path or "/"
+          print(urlunsplit((parsed.scheme, netloc, path, parsed.query, "")))
+          PY
+          )"
           api_url="$(python3 - "$health_url" <<'PY'
           import sys
           from urllib.parse import urlsplit, urlunsplit
@@ -328,9 +361,26 @@ jobs:
             echo "::error::DEPLOY_HEALTH_URL is required for production rollback health checks"
             exit 1
           fi
+          health_url="$(python3 - <<'PY'
+          import os
+          import sys
+          from urllib.parse import urlsplit, urlunsplit
+
+          raw = os.environ["DEPLOY_HEALTH_URL"].strip()
+          parsed = urlsplit(raw)
+          if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+              print(f"invalid DEPLOY_HEALTH_URL: {raw!r}", file=sys.stderr)
+              sys.exit(1)
+
+          host = parsed.hostname.encode("idna").decode("ascii")
+          netloc = host if parsed.port is None else f"{host}:{parsed.port}"
+          path = parsed.path or "/"
+          print(urlunsplit((parsed.scheme, netloc, path, parsed.query, "")))
+          PY
+          )"
 
           for attempt in $(seq 1 12); do
-            body="$(curl -fsS --max-time 5 "$DEPLOY_HEALTH_URL" || true)"
+            body="$(curl -fsS --max-time 5 "$health_url" || true)"
             if printf '%s' "$body" | jq -e '.status == "ok" and .db == "ok" and .redis == "ok" and .seaweedfs == "ok" and (.schema_version | type == "number" and . > 0)' >/dev/null 2>&1; then
               echo "backend rollback health check passed on attempt $attempt"
               exit 0
@@ -354,7 +404,23 @@ jobs:
             echo "::error::DEPLOY_FRONTEND_HEALTH_URL is required for production rollback health checks"
             exit 1
           fi
-          health_url="$DEPLOY_FRONTEND_HEALTH_URL"
+          health_url="$(python3 - <<'PY'
+          import os
+          import sys
+          from urllib.parse import urlsplit, urlunsplit
+
+          raw = os.environ["DEPLOY_FRONTEND_HEALTH_URL"].strip()
+          parsed = urlsplit(raw)
+          if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+              print(f"invalid DEPLOY_FRONTEND_HEALTH_URL: {raw!r}", file=sys.stderr)
+              sys.exit(1)
+
+          host = parsed.hostname.encode("idna").decode("ascii")
+          netloc = host if parsed.port is None else f"{host}:{parsed.port}"
+          path = parsed.path or "/"
+          print(urlunsplit((parsed.scheme, netloc, path, parsed.query, "")))
+          PY
+          )"
           api_url="$(python3 - "$health_url" <<'PY'
           import sys
           from urllib.parse import urlsplit, urlunsplit
