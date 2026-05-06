@@ -38,8 +38,6 @@ const STYLES = {
     boxShadow: "0 8px 32px rgba(0, 0, 0, 0.6)",
   },
 };
-
-// Оверлей с анимацией ожидания поиска соперника
 export const WaitingOverlay: React.FC<WaitingOverlayProps> = ({
   onCancel,
   queueSize,

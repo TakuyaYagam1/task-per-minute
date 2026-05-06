@@ -137,6 +137,15 @@ func provideFlagSubmitUsecase(
 		Configure(duelusecase.WithFlagSubmitLogger(log))
 }
 
+func provideUploadUsecase(
+	tasks usecase.TaskRepo,
+	storage usecase.SourceFileStorage,
+	log logkit.Logger,
+) *adminusecase.UploadUsecase {
+	return adminusecase.NewUploadUsecase(tasks, storage).
+		Configure(adminusecase.WithUploadLogger(log))
+}
+
 func provideTimerRegistry(
 	ctx context.Context,
 	tx usecase.TxManager,
@@ -216,6 +225,28 @@ func provideDuelTimers(
 	return websocket.NewPauseableDuelTimers(timers, hints)
 }
 
+// wsHandshakeRateLimiter is what provideRawWebSocketServer accepts; using a
+// concrete type (a thin wrapper around middleware.LoginRateLimiter) keeps the
+// wire graph free of nil-interface ambiguity. The wrapper field is exported
+// so wire can build it via a struct literal in wire_gen.go without a setter.
+type wsHandshakeRateLimiter struct {
+	Inner *middleware.LoginRateLimiter
+}
+
+func (l *wsHandshakeRateLimiter) Allow(ip string) bool {
+	if l == nil || l.Inner == nil {
+		return true
+	}
+	return l.Inner.Allow(ip)
+}
+
+func (l *wsHandshakeRateLimiter) RetryAfter() string {
+	if l == nil || l.Inner == nil {
+		return ""
+	}
+	return l.Inner.RetryAfter()
+}
+
 func provideRawWebSocketServer(
 	ctx context.Context,
 	cfg *config.Config,
@@ -224,17 +255,44 @@ func provideRawWebSocketServer(
 	flags websocket.FlagSubmitter,
 	hubs *websocket.HubRegistry,
 	hints *duelusecase.HintScheduler,
+	duels usecase.DuelRepo,
+	storage usecase.SourceFileStorage,
+	handshakeLimiter *wsHandshakeRateLimiter,
 ) rawWebSocketServer {
 	options := []websocket.Option{
 		websocket.WithContext(ctx),
 		websocket.WithHintScheduler(hints),
+		websocket.WithTaskResolver(duels, storage),
+		websocket.WithClientIPResolver(middleware.ClientIPFromRequest),
 	}
 	if accept := provideWSAcceptOptions(cfg); accept != nil {
 		options = append(options, websocket.WithAcceptOptions(accept))
 	}
+	if handshakeLimiter != nil && handshakeLimiter.Inner != nil {
+		options = append(options, websocket.WithHandshakeRateLimiter(handshakeLimiter))
+	}
 	return rawWebSocketServer{
 		Server: websocket.NewServer(players, matchmaking, flags, hubs, options...),
 	}
+}
+
+// provideHandshakeRateLimiter creates a per-IP gate for /ws handshakes.
+// The reuse of LoginRateLimiter is intentional — it already provides token
+// bucket semantics with the right TTL and IP-keyed eviction.
+func provideHandshakeRateLimiter(
+	ctx context.Context,
+	cfg *config.Config,
+) *wsHandshakeRateLimiter {
+	if cfg == nil {
+		return &wsHandshakeRateLimiter{}
+	}
+	inner := middleware.NewLoginRateLimiter(
+		ctx,
+		cfg.WS.HandshakeRateAttempts,
+		cfg.WS.HandshakeRateWindow,
+		cfg.WS.HandshakeRateBucketTTL,
+	)
+	return &wsHandshakeRateLimiter{Inner: inner}
 }
 
 // provideWSAcceptOptions returns nil when no allowed origins are configured -

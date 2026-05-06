@@ -16,40 +16,47 @@ import (
 )
 
 type flagSubmitPayload struct {
-	DuelID *uuid.UUID `json:"duel_id,omitempty"`
-	Flag   string     `json:"flag"`
-}
-
-type surrenderPayload struct {
-	DuelID *uuid.UUID `json:"duel_id,omitempty"`
+	Flag string `json:"flag"`
 }
 
 func (s *Server) readPump(ctx context.Context, c *client) {
 	for {
-		msgType, reader, err := c.conn.Reader(ctx)
+		// Per-iteration idle deadline: half-open clients (no FIN, no error)
+		// would otherwise pin a goroutine on conn.Reader indefinitely. The
+		// cancel must run AFTER the reader is fully consumed because the
+		// coderws Reader returns a streaming reader bound to readCtx.
+		readCtx, cancel := context.WithTimeout(ctx, defaultReadIdleTimeout)
+		err := s.readOnce(readCtx, c)
+		cancel()
 		if err != nil {
 			return
 		}
-		if msgType != coderws.MessageText {
-			_, _ = io.Copy(io.Discard, reader)
-			_ = c.sendError(ErrorInvalidPayload, "message must be text")
-			continue
-		}
-
-		var event IncomingEvent
-		if err := json.NewDecoder(reader).Decode(&event); err != nil {
-			_ = c.sendError(ErrorInvalidJSON, "invalid json")
-			continue
-		}
-		s.routeEvent(ctx, c, event)
 	}
 }
 
+func (s *Server) readOnce(ctx context.Context, c *client) error {
+	msgType, reader, err := c.conn.Reader(ctx)
+	if err != nil {
+		return err
+	}
+	if msgType != coderws.MessageText {
+		_, _ = io.Copy(io.Discard, reader)
+		_ = c.sendError(ErrorInvalidPayload, "message must be text")
+		return nil
+	}
+	var event IncomingEvent
+	if err := json.NewDecoder(reader).Decode(&event); err != nil {
+		_ = c.sendError(ErrorInvalidJSON, "invalid json")
+		return nil
+	}
+	s.routeEvent(ctx, c, event)
+	return nil
+}
+
 func (s *Server) routeEvent(ctx context.Context, c *client, event IncomingEvent) {
-	if !s.ensureSessionFresh(ctx, c) {
+	if c.isDisplaced() || c.closed.Load() {
 		return
 	}
-
 	switch event.Type {
 	case EventJoinQueue:
 		s.handleJoinQueue(ctx, c)
@@ -64,21 +71,6 @@ func (s *Server) routeEvent(ctx context.Context, c *client, event IncomingEvent)
 	default:
 		_ = c.sendError(ErrorUnknownEvent, "unknown event type")
 	}
-}
-
-func (s *Server) ensureSessionFresh(ctx context.Context, c *client) bool {
-	if c.sessionToken == uuid.Nil {
-		_ = c.sendError(string(apperr.CodeInvalidSession), apperr.ErrInvalidSession.Message)
-		time.AfterFunc(10*time.Millisecond, c.Close)
-		return false
-	}
-	player, err := s.players.GetBySessionToken(ctx, c.sessionToken)
-	if err != nil || player == nil || player.ID != c.player.ID {
-		_ = c.sendError(string(apperr.CodeInvalidSession), apperr.ErrInvalidSession.Message)
-		time.AfterFunc(10*time.Millisecond, c.Close)
-		return false
-	}
-	return true
 }
 
 func (s *Server) handleJoinQueue(ctx context.Context, c *client) {
@@ -129,11 +121,8 @@ func (s *Server) handleFlagSubmit(ctx context.Context, c *client, raw json.RawMe
 		}
 	}
 	duelID, ok := c.currentDuel()
-	if payload.DuelID != nil {
-		duelID, ok = *payload.DuelID, true
-	}
 	if !ok || payload.Flag == "" {
-		_ = c.sendError(ErrorInvalidPayload, "duel_id and flag are required")
+		_ = c.sendError(ErrorInvalidPayload, "active duel and flag are required")
 		return
 	}
 	if s.reconnect != nil && s.reconnect.DuelPaused(duelID) {
@@ -175,25 +164,15 @@ func (s *Server) handleFlagSubmit(ctx context.Context, c *client, raw json.RawMe
 	s.publishDuelFinished(ctx, result.FinishedDuel, &c.player.ID)
 }
 
-func (s *Server) handleSurrender(ctx context.Context, c *client, raw json.RawMessage) {
+func (s *Server) handleSurrender(ctx context.Context, c *client, _ json.RawMessage) {
 	if s.reconnect == nil {
 		_ = c.sendError(ErrorInternal, "surrender is not configured")
 		return
 	}
 
-	var payload surrenderPayload
-	if len(raw) > 0 {
-		if err := json.Unmarshal(raw, &payload); err != nil {
-			_ = c.sendError(ErrorInvalidPayload, "invalid surrender payload")
-			return
-		}
-	}
 	duelID, ok := c.currentDuel()
-	if payload.DuelID != nil {
-		duelID, ok = *payload.DuelID, true
-	}
 	if !ok {
-		_ = c.sendError(ErrorInvalidPayload, "duel_id is required")
+		_ = c.sendError(ErrorInvalidPayload, "no active duel for this connection")
 		return
 	}
 

@@ -17,7 +17,8 @@
       {
         "name": "next"
       }
-    ],    "paths": {
+    ],
+    "paths": {
       "@/*": ["./lib/*"],
       "@/shared/*": ["./lib/shared/*"],
       "@/entities/*": ["./lib/entities/*"],
@@ -28,6 +29,16 @@
     },
     "baseUrl": "."
   },
-  "include": ["next-env.d.ts", "lib/**/*.ts", "lib/**/*.tsx", "app/**/*.ts", "app/**/*.tsx", ".next/types/**/*.ts"],
+  "include": [
+    "next-env.d.ts",
+    "next.config.ts",
+    "playwright.config.ts",
+    "app/**/*.ts",
+    "app/**/*.tsx",
+    "lib/**/*.ts",
+    "lib/**/*.tsx",
+    "e2e/**/*.ts",
+    ".next/types/**/*.ts"
+  ],
   "exclude": ["node_modules"]
 }

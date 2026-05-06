@@ -63,12 +63,17 @@ const (
 
 // Defines values for TaskCategory.
 const (
-	Crypto    TaskCategory = "crypto"
-	Forensics TaskCategory = "forensics"
-	Misc      TaskCategory = "misc"
-	Pwn       TaskCategory = "pwn"
-	Reverse   TaskCategory = "reverse"
-	Web       TaskCategory = "web"
+	Crypto        TaskCategory = "crypto"
+	Forensics     TaskCategory = "forensics"
+	Hardware      TaskCategory = "hardware"
+	Misc          TaskCategory = "misc"
+	Mobile        TaskCategory = "mobile"
+	Osint         TaskCategory = "osint"
+	Ppc           TaskCategory = "ppc"
+	Pwn           TaskCategory = "pwn"
+	Reverse       TaskCategory = "reverse"
+	Steganography TaskCategory = "steganography"
+	Web           TaskCategory = "web"
 )
 
 // Defines values for TaskDifficulty.
@@ -266,10 +271,13 @@ type UpdateTaskRequest struct {
 	Flag        *string         `json:"flag,omitempty"`
 	Hints       *[]string       `json:"hints,omitempty"`
 
+	// SourceFileUrl Set to null to clear an uploaded source file. Non-null values are managed by the source upload endpoint.
+	SourceFileUrl NullableString `json:"source_file_url,omitempty"`
+
 	// TaskUrl Task endpoint. Accepts http(s) URLs or host:port targets for pwn/nc tasks.
-	TaskUrl   *string `json:"task_url"`
-	TimeLimit *int32  `json:"time_limit,omitempty"`
-	Title     *string `json:"title,omitempty"`
+	TaskUrl   NullableString `json:"task_url,omitempty"`
+	TimeLimit *int32         `json:"time_limit,omitempty"`
+	Title     *string        `json:"title,omitempty"`
 }
 
 // UploadSourceResponse defines model for UploadSourceResponse.

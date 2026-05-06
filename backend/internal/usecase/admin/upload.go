@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	logkit "github.com/wahrwelt-kit/go-logkit"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
@@ -31,6 +32,7 @@ var allowedSourceFileMediaTypes = map[string]struct{}{
 type UploadUsecase struct {
 	tasks   usecase.TaskRepo
 	storage usecase.SourceFileStorage
+	log     logkit.Logger
 }
 
 func NewUploadUsecase(tasks usecase.TaskRepo, storage usecase.SourceFileStorage) *UploadUsecase {
@@ -38,6 +40,21 @@ func NewUploadUsecase(tasks usecase.TaskRepo, storage usecase.SourceFileStorage)
 		tasks:   tasks,
 		storage: storage,
 	}
+}
+
+type UploadOption func(*UploadUsecase)
+
+func WithUploadLogger(log logkit.Logger) UploadOption {
+	return func(u *UploadUsecase) {
+		u.log = log
+	}
+}
+
+func (u *UploadUsecase) Configure(options ...UploadOption) *UploadUsecase {
+	for _, option := range options {
+		option(u)
+	}
+	return u
 }
 
 func (u *UploadUsecase) UploadSourceFile(
@@ -61,21 +78,80 @@ func (u *UploadUsecase) UploadSourceFile(
 		return "", fmt.Errorf("UploadUsecase - UploadSourceFile - TaskRepo.GetByID: %w", err)
 	}
 
-	key := SourceFileKey(taskID)
+	key := domain.TaskSourceFileUploadKey(taskID, uuid.New())
 	storedURL, err := u.storage.Upload(ctx, key, io.MultiReader(bytes.NewReader(header), reader), size)
 	if err != nil {
 		return "", fmt.Errorf("UploadUsecase - UploadSourceFile - SourceFileStorage.Upload: %w", err)
 	}
 
-	if _, err := u.tasks.Update(ctx, taskID, taskInputWithSourceFileURL(task, storedURL)); err != nil {
-		return "", fmt.Errorf("UploadUsecase - UploadSourceFile - TaskRepo.Update: %w", err)
-	}
-
 	presignedURL, err := u.storage.PresignedGetURL(ctx, key, time.Duration(task.TimeLimit)*time.Second)
 	if err != nil {
+		u.deleteSourceFileKey(context.WithoutCancel(ctx), "upload_presign_failed", taskID, key)
 		return "", fmt.Errorf("UploadUsecase - UploadSourceFile - SourceFileStorage.PresignedGetURL: %w", err)
 	}
+
+	if _, err := u.tasks.Update(ctx, taskID, taskInputWithSourceFileURL(task, storedURL)); err != nil {
+		u.deleteSourceFileKey(context.WithoutCancel(ctx), "upload_update_failed", taskID, key)
+		return "", fmt.Errorf("UploadUsecase - UploadSourceFile - TaskRepo.Update: %w", err)
+	}
+	if task.SourceFileURL != nil {
+		oldKey := domain.TaskSourceFileKeyFromURL(taskID, *task.SourceFileURL)
+		if oldKey != key {
+			u.deleteSourceFileKey(context.WithoutCancel(ctx), "upload_replace_old", taskID, oldKey)
+		}
+	}
+
 	return presignedURL, nil
+}
+
+func (u *UploadUsecase) ClearSourceFile(ctx context.Context, taskID uuid.UUID, in TaskInput) (*domain.Task, error) {
+	if err := validateTaskInput(in); err != nil {
+		return nil, err
+	}
+	existing, err := u.tasks.GetByID(ctx, taskID)
+	if err != nil {
+		return nil, fmt.Errorf("UploadUsecase - ClearSourceFile - TaskRepo.GetByID: %w", err)
+	}
+
+	in.SourceFileURL = nil
+	updated, err := u.tasks.Update(ctx, taskID, in)
+	if err != nil {
+		return nil, fmt.Errorf("UploadUsecase - ClearSourceFile - TaskRepo.Update: %w", err)
+	}
+	if existing.SourceFileURL != nil {
+		_ = u.DeleteSourceFile(context.WithoutCancel(ctx), taskID, existing.SourceFileURL)
+	}
+	return updated, nil
+}
+
+func (u *UploadUsecase) DeleteSourceFile(ctx context.Context, taskID uuid.UUID, sourceFileURL *string) error {
+	key := SourceFileKey(taskID)
+	if sourceFileURL != nil {
+		key = domain.TaskSourceFileKeyFromURL(taskID, *sourceFileURL)
+	}
+	if err := u.storage.Delete(ctx, key); err != nil {
+		u.logSourceCleanupError("delete_source_file", taskID, key, err)
+		return fmt.Errorf("UploadUsecase - DeleteSourceFile - SourceFileStorage.Delete: %w", err)
+	}
+	return nil
+}
+
+func (u *UploadUsecase) deleteSourceFileKey(ctx context.Context, operation string, taskID uuid.UUID, key string) {
+	if err := u.storage.Delete(ctx, key); err != nil {
+		u.logSourceCleanupError(operation, taskID, key, err)
+	}
+}
+
+func (u *UploadUsecase) logSourceCleanupError(operation string, taskID uuid.UUID, key string, err error) {
+	if u.log == nil || err == nil {
+		return
+	}
+	u.log.Error("source file cleanup failed", logkit.Fields{
+		"operation": operation,
+		"task_id":   taskID.String(),
+		"key":       key,
+		"error":     err.Error(),
+	})
 }
 
 func SourceFileKey(taskID uuid.UUID) string {

@@ -4,21 +4,32 @@ Operational notes for production deploys and manual rollback.
 
 ## Normal Deploy
 
-The GitHub Actions deploy workflow builds a SHA-tagged backend image, pushes it
-to GHCR, SSHes to the server, resets the repository to the target SHA, then
-runs:
+The GitHub Actions deploy workflow builds an immutable SHA-tagged backend image,
+pushes it to GHCR, SSHes to the server, resets the repository to the target SHA,
+then runs:
 
 ```bash
 cd /opt/task-per-minute/deployment/docker
 export BACKEND_IMAGE=<sha-image>
-docker network inspect proxy_tpm >/dev/null 2>&1 || docker network create proxy_tpm
-docker compose --env-file ../../.env pull backend migrate
-docker compose --env-file ../../.env run --rm migrate
+docker compose --env-file ../../.env pull backend
 docker compose --env-file ../../.env up -d --remove-orphans backend
 ```
 
-The migration step happens before the backend container is replaced. If a
-migration fails, the workflow stops and the old backend keeps running.
+The backend runs Goose migrations during startup. If a migration fails, the new
+backend container exits or stays unhealthy, the health gate fails, and the
+workflow rollback path restores the previous backend image and verifies its
+health. Successful deploy and rollback steps also update `BACKEND_IMAGE` in the
+server `.env`, so later manual compose operations keep using the pinned image.
+
+The frontend workflow similarly builds an immutable SHA-tagged frontend image
+and updates only the frontend service:
+
+```bash
+cd /opt/task-per-minute/deployment/docker
+export FRONTEND_IMAGE=<sha-image>
+docker compose --env-file ../../.env pull frontend
+docker compose --env-file ../../.env up -d --remove-orphans frontend
+```
 
 ## Health Gate
 
@@ -26,7 +37,8 @@ Deploy is considered healthy only when `/health` returns all dependencies as
 `ok` and a positive schema version:
 
 ```bash
-curl -fsS http://127.0.0.1:8080/health | jq .
+cd /opt/task-per-minute/deployment/docker
+docker compose --env-file ../../.env exec -T backend wget -qO- http://127.0.0.1:8080/health | jq .
 ```
 
 Expected fields:
@@ -41,11 +53,25 @@ Expected fields:
 }
 ```
 
+The frontend health gate checks that the frontend URL returns a successful HTTP
+status and that the same-origin API rewrite returns the leaderboard response
+shape:
+
+```bash
+cd /opt/task-per-minute/deployment/docker
+docker compose --env-file ../../.env exec -T frontend sh -c 'wget -qO- "http://127.0.0.1:${PORT:-3000}/" >/dev/null'
+docker compose --env-file ../../.env exec -T frontend sh -c 'wget -qO- "http://127.0.0.1:${PORT:-3000}/api/v1/leaderboard"' | jq -e '.entries | type == "array"'
+docker compose --env-file ../../.env exec -T nginx nginx -t -c /tmp/nginx.conf
+docker compose --env-file ../../.env exec -T nginx wget -qO- http://127.0.0.1/nginx-health
+docker compose --env-file ../../.env logs --tail=100 certbot
+```
+
 ## Roll Back Backend Image
 
 Use this when the new container starts but health verification fails. The
 workflow performs this automatically from `.last-deployed-sha`; these are the
-manual commands.
+manual commands. If `.last-deployed-sha` is missing, automatic rollback is not
+available and the deploy requires manual recovery.
 
 ```bash
 cd /opt/task-per-minute
@@ -61,7 +87,34 @@ cd deployment/docker
 export BACKEND_IMAGE="$PREVIOUS_IMAGE"
 docker compose --env-file ../../.env pull backend
 docker compose --env-file ../../.env up -d --remove-orphans backend
-curl -fsS http://127.0.0.1:8080/health | jq .
+docker compose --env-file ../../.env exec -T backend wget -qO- http://127.0.0.1:8080/health | jq .
+```
+
+## Roll Back Frontend Image
+
+Use this when the new frontend image deploys but frontend health verification
+fails. The frontend workflow performs this automatically from
+`.last-deployed-frontend-sha` and verifies the frontend page plus same-origin
+API rewrite after rollback. If `.last-deployed-frontend-sha` is missing,
+automatic rollback is not available and the deploy requires manual recovery.
+Successful deploy and rollback steps also update `FRONTEND_IMAGE` in the server
+`.env`, so later manual compose operations keep using the pinned image.
+
+```bash
+cd /opt/task-per-minute
+
+IMAGE_REPO=ghcr.io/<owner>/task-per-minute-frontend
+PREVIOUS_SHA="$(tr -d '[:space:]' < .last-deployed-frontend-sha)"
+PREVIOUS_IMAGE="$IMAGE_REPO:$PREVIOUS_SHA"
+
+git fetch --prune origin
+git reset --hard "$PREVIOUS_SHA"
+
+cd deployment/docker
+export FRONTEND_IMAGE="$PREVIOUS_IMAGE"
+docker compose --env-file ../../.env pull frontend
+docker compose --env-file ../../.env up -d --remove-orphans frontend
+docker compose --env-file ../../.env exec -T frontend sh -c 'wget -qO- "http://127.0.0.1:${PORT:-3000}/" >/dev/null'
 ```
 
 ## Restart Stack
@@ -70,13 +123,13 @@ For a normal restart without deleting data:
 
 ```bash
 cd /opt/task-per-minute/deployment/docker
-docker compose --env-file ../../.env restart backend
+docker compose --env-file ../../.env restart backend frontend
 ```
 
-To recreate the backend container on the current image:
+To recreate the backend/frontend containers on the current images:
 
 ```bash
-docker compose --env-file ../../.env up -d --remove-orphans backend
+docker compose --env-file ../../.env up -d --remove-orphans backend frontend
 ```
 
 ## Full Stack Removal
@@ -109,17 +162,17 @@ Check status:
 ```bash
 cd /opt/task-per-minute/deployment/docker
 export BACKEND_IMAGE="$PREVIOUS_IMAGE"
-docker compose --env-file ../../.env run --rm migrate status
+docker compose --env-file ../../.env run --rm --entrypoint /app/migrate backend status
 ```
 
 Roll back one migration:
 
 ```bash
 export BACKEND_IMAGE="$PREVIOUS_IMAGE"
-docker compose --env-file ../../.env run --rm migrate down
+docker compose --env-file ../../.env run --rm --entrypoint /app/migrate backend down
 ```
 
-Repeat `migrate down` only when each step has been reviewed. After schema
+Repeat `/app/migrate down` only when each step has been reviewed. After schema
 rollback, redeploy the compatible backend image and verify `/health`.
 
 ## Hint Mechanics

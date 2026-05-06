@@ -190,6 +190,8 @@ type AdminTask interface {
 
 type Upload interface {
 	UploadSourceFile(ctx context.Context, taskID uuid.UUID, reader io.Reader, size int64, contentType string) (string, error)
+	ClearSourceFile(ctx context.Context, taskID uuid.UUID, in TaskInput) (*domain.Task, error)
+	DeleteSourceFile(ctx context.Context, taskID uuid.UUID, sourceFileURL *string) error
 }
 
 type TokenKind string

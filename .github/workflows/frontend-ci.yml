@@ -1,0 +1,85 @@
+name: frontend ci
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'frontend/**'
+      - 'backend/internal/openapi/**'
+      - 'backend/scripts/merge-schemas.py'
+      - '.github/workflows/frontend-ci.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'frontend/**'
+      - 'backend/internal/openapi/**'
+      - 'backend/scripts/merge-schemas.py'
+      - '.github/workflows/frontend-ci.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: frontend-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: 24.15.0
+  PYTHON_VERSION: '3.13'
+  FRONTEND_WORKDIR: frontend
+
+jobs:
+  verify:
+    name: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: setup node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: setup python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: install openapi generator dependency
+        run: python -m pip install --disable-pip-version-check PyYAML==6.0.2
+
+      - name: install frontend dependencies
+        working-directory: ${{ env.FRONTEND_WORKDIR }}
+        run: npm ci
+
+      - name: install playwright browser
+        working-directory: ${{ env.FRONTEND_WORKDIR }}
+        run: npx playwright install --with-deps chromium
+
+      - name: generate api types
+        working-directory: ${{ env.FRONTEND_WORKDIR }}
+        run: npm run openapi:generate
+
+      - name: typecheck
+        working-directory: ${{ env.FRONTEND_WORKDIR }}
+        run: npm run typecheck
+
+      - name: lint
+        working-directory: ${{ env.FRONTEND_WORKDIR }}
+        run: npm run lint
+
+      - name: build
+        working-directory: ${{ env.FRONTEND_WORKDIR }}
+        run: npm run build
+
+      - name: e2e
+        working-directory: ${{ env.FRONTEND_WORKDIR }}
+        env:
+          E2E_WORKERS: 4
+        run: npm run test:e2e -- --reporter=line

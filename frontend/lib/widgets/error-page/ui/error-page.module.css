@@ -1,0 +1,76 @@
+.root {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background: linear-gradient(135deg, var(--primary-blue) 0%, #2a5a6b 100%);
+}
+
+.shell {
+  width: 100%;
+  max-width: 32rem;
+  padding: 2.5rem 2rem;
+  text-align: center;
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: var(--border-radius-lg);
+  box-shadow: var(--shadow-lg);
+  animation: fadeIn 0.5s ease-out;
+}
+
+.code {
+  font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+  font-size: clamp(4rem, 14vw, 7rem);
+  font-weight: 800;
+  line-height: 1;
+  margin: 0 0 1rem 0;
+  color: var(--light-blue);
+  text-shadow: 0 0 20px rgba(114, 209, 235, 0.5);
+  letter-spacing: 0.05em;
+}
+
+.title {
+  margin: 0 0 0.75rem 0;
+  font-size: clamp(1.25rem, 4vw, 1.75rem);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-white);
+}
+
+.description {
+  margin: 0 0 1.75rem 0;
+  font-size: 1rem;
+  color: var(--text-gray);
+  line-height: 1.6;
+}
+
+.retry {
+  margin: 0 0 1.5rem 0;
+  font-size: 0.95rem;
+  color: var(--warning-yellow);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.75rem;
+}
+
+.actions :global(.btn) {
+  min-width: 10rem;
+}
+
+@media (max-width: 479px) {
+  .shell {
+    padding: 2rem 1.25rem;
+  }
+
+  .actions :global(.btn) {
+    width: 100%;
+    min-width: unset;
+  }
+}

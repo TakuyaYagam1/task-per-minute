@@ -71,7 +71,7 @@ func TestRESTHandlers_OpenAPIResponseShapes(t *testing.T) {
 	createReq, createResp := f.doJSON(t, http.MethodPost, "/api/v1/admin/tasks", `{
 		"title":"`+uniq("rest_task")+`",
 		"description":"created through REST",
-		"category":"web",
+		"category":"forensics",
 		"difficulty":"easy",
 		"time_limit":60,
 		"flag":"FLAG{rest}",
@@ -228,6 +228,239 @@ func TestRESTHandlers_UpdateTaskURLPreserveSetAndClear(t *testing.T) {
 	require.Equal(t, nextURL, *updated.TaskUrl)
 }
 
+func TestRESTHandlers_TaskURLAllowedForForensics(t *testing.T) {
+	f := newRESTFixture(t)
+	adminToken := f.adminAccessToken(t)
+	initialURL := "https://tasks.example.com/" + uniq("task")
+
+	createReq, createResp := f.doJSON(t, http.MethodPost, "/api/v1/admin/tasks", fmt.Sprintf(`{
+		"title":%q,
+		"description":"forensics can keep task url",
+		"category":"forensics",
+		"difficulty":"easy",
+		"time_limit":60,
+		"flag":"FLAG{forensics_url}",
+		"hints":["first hint","second hint","third hint"],
+		"task_url":%q
+	}`, uniq("forensics_url"), initialURL), bearer(adminToken))
+	require.Equal(t, http.StatusCreated, createResp.Code)
+	f.validateResponse(t, createReq, createResp)
+	forensics := decodeJSON[openapi.TaskResponse](t, createResp)
+	require.Equal(t, openapi.Forensics, forensics.Category)
+	require.NotNil(t, forensics.TaskUrl)
+	require.Equal(t, initialURL, *forensics.TaskUrl)
+
+	webCreateReq, webCreateResp := f.doJSON(t, http.MethodPost, "/api/v1/admin/tasks", fmt.Sprintf(`{
+		"title":%q,
+		"description":"web task with url",
+		"category":"web",
+		"difficulty":"easy",
+		"time_limit":60,
+		"flag":"FLAG{web_url}",
+		"hints":["first hint","second hint","third hint"],
+		"task_url":%q
+	}`, uniq("web_url"), initialURL), bearer(adminToken))
+	require.Equal(t, http.StatusCreated, webCreateResp.Code)
+	f.validateResponse(t, webCreateReq, webCreateResp)
+	created := decodeJSON[openapi.TaskResponse](t, webCreateResp)
+	require.NotNil(t, created.TaskUrl)
+
+	updateReq, updateResp := f.doJSON(
+		t,
+		http.MethodPut,
+		"/api/v1/admin/tasks/"+created.Id.String(),
+		`{"category":"forensics"}`,
+		bearer(adminToken),
+	)
+	require.Equal(t, http.StatusOK, updateResp.Code)
+	f.validateResponse(t, updateReq, updateResp)
+	updated := decodeJSON[openapi.TaskResponse](t, updateResp)
+	require.Equal(t, openapi.Forensics, updated.Category)
+	require.NotNil(t, updated.TaskUrl)
+	require.Equal(t, initialURL, *updated.TaskUrl)
+}
+
+func TestRESTHandlers_UpdateTaskSourceFileURLClear(t *testing.T) {
+	f := newRESTFixture(t)
+	adminToken := f.adminAccessToken(t)
+
+	createReq, createResp := f.doJSON(t, http.MethodPost, "/api/v1/admin/tasks", fmt.Sprintf(`{
+		"title":%q,
+		"description":"source url clear semantics",
+		"category":"forensics",
+		"difficulty":"easy",
+		"time_limit":60,
+		"flag":"FLAG{source_url}",
+		"hints":["first hint","second hint","third hint"]
+	}`, uniq("source_url")), bearer(adminToken))
+	require.Equal(t, http.StatusCreated, createResp.Code)
+	f.validateResponse(t, createReq, createResp)
+	created := decodeJSON[openapi.TaskResponse](t, createResp)
+
+	zipBody, contentType := multipartBody(t, []byte{'P', 'K', 0x03, 0x04, 'z', 'i', 'p'})
+	uploadReq, uploadResp := f.do(
+		t,
+		http.MethodPost,
+		"/api/v1/admin/tasks/"+created.Id.String()+"/source",
+		zipBody,
+		contentType,
+		bearer(adminToken),
+	)
+	require.Equal(t, http.StatusOK, uploadResp.Code)
+	f.validateResponse(t, uploadReq, uploadResp)
+	uploaded := decodeJSON[openapi.UploadSourceResponse](t, uploadResp)
+	beforeClear := httpGetWithTimeout(t, uploaded.SourceFileUrl)
+	defer beforeClear.Body.Close()
+	require.Equal(t, http.StatusOK, beforeClear.StatusCode)
+
+	preserveReq, preserveResp := f.doJSON(
+		t,
+		http.MethodPut,
+		"/api/v1/admin/tasks/"+created.Id.String(),
+		`{"title":"preserve source url"}`,
+		bearer(adminToken),
+	)
+	require.Equal(t, http.StatusOK, preserveResp.Code)
+	f.validateResponse(t, preserveReq, preserveResp)
+	preserved := decodeJSON[openapi.TaskResponse](t, preserveResp)
+	require.NotNil(t, preserved.SourceFileUrl)
+
+	clearReq, clearResp := f.doJSON(
+		t,
+		http.MethodPut,
+		"/api/v1/admin/tasks/"+created.Id.String(),
+		`{"source_file_url":null}`,
+		bearer(adminToken),
+	)
+	require.Equal(t, http.StatusOK, clearResp.Code)
+	f.validateResponse(t, clearReq, clearResp)
+	cleared := decodeJSON[openapi.TaskResponse](t, clearResp)
+	require.Nil(t, cleared.SourceFileUrl)
+
+	afterClear := httpGetWithTimeout(t, uploaded.SourceFileUrl)
+	defer afterClear.Body.Close()
+	require.Equal(t, http.StatusNotFound, afterClear.StatusCode)
+}
+
+func TestRESTHandlers_UpdateForensicsTaskToWebPreservesSource(t *testing.T) {
+	f := newRESTFixture(t)
+	adminToken := f.adminAccessToken(t)
+
+	createReq, createResp := f.doJSON(t, http.MethodPost, "/api/v1/admin/tasks", fmt.Sprintf(`{
+		"title":%q,
+		"description":"source category clear semantics",
+		"category":"forensics",
+		"difficulty":"easy",
+		"time_limit":60,
+		"flag":"FLAG{source_category}",
+		"hints":["first hint","second hint","third hint"]
+	}`, uniq("source_category")), bearer(adminToken))
+	require.Equal(t, http.StatusCreated, createResp.Code)
+	f.validateResponse(t, createReq, createResp)
+	created := decodeJSON[openapi.TaskResponse](t, createResp)
+
+	zipBody, contentType := multipartBody(t, []byte{'P', 'K', 0x03, 0x04, 'c', 'a', 't'})
+	uploadReq, uploadResp := f.do(
+		t,
+		http.MethodPost,
+		"/api/v1/admin/tasks/"+created.Id.String()+"/source",
+		zipBody,
+		contentType,
+		bearer(adminToken),
+	)
+	require.Equal(t, http.StatusOK, uploadResp.Code)
+	f.validateResponse(t, uploadReq, uploadResp)
+	uploaded := decodeJSON[openapi.UploadSourceResponse](t, uploadResp)
+
+	updateReq, updateResp := f.doJSON(
+		t,
+		http.MethodPut,
+		"/api/v1/admin/tasks/"+created.Id.String(),
+		`{"category":"web","task_url":"https://tasks.example/web"}`,
+		bearer(adminToken),
+	)
+	require.Equal(t, http.StatusOK, updateResp.Code)
+	f.validateResponse(t, updateReq, updateResp)
+	updated := decodeJSON[openapi.TaskResponse](t, updateResp)
+	require.Equal(t, openapi.Web, updated.Category)
+	require.NotNil(t, updated.TaskUrl)
+	require.NotNil(t, updated.SourceFileUrl)
+
+	afterUpdate := httpGetWithTimeout(t, uploaded.SourceFileUrl)
+	defer afterUpdate.Body.Close()
+	require.Equal(t, http.StatusOK, afterUpdate.StatusCode)
+}
+
+func TestRESTHandlers_UpdateTaskSourceFileURLRejectsInvalidString(t *testing.T) {
+	f := newRESTFixture(t)
+	adminToken := f.adminAccessToken(t)
+	task := f.makeTask(t, uniq("source_url_invalid"), domain.DifficultyEasy)
+
+	for _, body := range []string{
+		`{"source_file_url":"not-a-url"}`,
+		`{"source_file_url":"https://files.example/source.zip"}`,
+	} {
+		req, resp := f.doJSON(
+			t,
+			http.MethodPut,
+			"/api/v1/admin/tasks/"+task.ID.String(),
+			body,
+			bearer(adminToken),
+		)
+
+		require.Equal(t, http.StatusBadRequest, resp.Code)
+		f.validateResponse(t, req, resp)
+	}
+}
+
+func TestRESTHandlers_DeleteTaskWithSourceDeletesStoredObject(t *testing.T) {
+	f := newRESTFixture(t)
+	adminToken := f.adminAccessToken(t)
+
+	createReq, createResp := f.doJSON(t, http.MethodPost, "/api/v1/admin/tasks", fmt.Sprintf(`{
+		"title":%q,
+		"description":"source cleanup on delete",
+		"category":"forensics",
+		"difficulty":"easy",
+		"time_limit":60,
+		"flag":"FLAG{source_delete}",
+		"hints":["first hint","second hint","third hint"]
+	}`, uniq("source_delete")), bearer(adminToken))
+	require.Equal(t, http.StatusCreated, createResp.Code)
+	f.validateResponse(t, createReq, createResp)
+	created := decodeJSON[openapi.TaskResponse](t, createResp)
+
+	zipBody, contentType := multipartBody(t, []byte{'P', 'K', 0x03, 0x04, 'd', 'e', 'l'})
+	uploadReq, uploadResp := f.do(
+		t,
+		http.MethodPost,
+		"/api/v1/admin/tasks/"+created.Id.String()+"/source",
+		zipBody,
+		contentType,
+		bearer(adminToken),
+	)
+	require.Equal(t, http.StatusOK, uploadResp.Code)
+	f.validateResponse(t, uploadReq, uploadResp)
+	uploaded := decodeJSON[openapi.UploadSourceResponse](t, uploadResp)
+	beforeDelete := httpGetWithTimeout(t, uploaded.SourceFileUrl)
+	defer beforeDelete.Body.Close()
+	require.Equal(t, http.StatusOK, beforeDelete.StatusCode)
+
+	deleteReq, deleteResp := f.doJSON(
+		t,
+		http.MethodDelete,
+		"/api/v1/admin/tasks/"+created.Id.String(),
+		"",
+		bearer(adminToken),
+	)
+	require.Equal(t, http.StatusNoContent, deleteResp.Code)
+	f.validateResponse(t, deleteReq, deleteResp)
+
+	afterDelete := httpGetWithTimeout(t, uploaded.SourceFileUrl)
+	defer afterDelete.Body.Close()
+	require.Equal(t, http.StatusNotFound, afterDelete.StatusCode)
+}
+
 func TestRESTHandlers_GetDuelWithForeignSessionReturns403(t *testing.T) {
 	f := newRESTFixture(t)
 
@@ -249,7 +482,7 @@ func TestRESTHandlers_CORSPreflightAllowedOrigin(t *testing.T) {
 	req := httptest.NewRequest(http.MethodOptions, "/api/v1/players/join", nil)
 	req.Header.Set("Origin", "http://localhost:3000")
 	req.Header.Set("Access-Control-Request-Method", http.MethodPost)
-	req.Header.Set("Access-Control-Request-Headers", "Content-Type")
+	req.Header.Set("Access-Control-Request-Headers", "Content-Type, Authorization, X-Session-Token")
 	resp := httptest.NewRecorder()
 
 	handler.ServeHTTP(resp, req)
@@ -258,6 +491,8 @@ func TestRESTHandlers_CORSPreflightAllowedOrigin(t *testing.T) {
 	require.Equal(t, "http://localhost:3000", resp.Header().Get("Access-Control-Allow-Origin"))
 	require.Contains(t, resp.Header().Get("Access-Control-Allow-Methods"), http.MethodPost)
 	require.Contains(t, resp.Header().Get("Access-Control-Allow-Headers"), "Content-Type")
+	require.Contains(t, resp.Header().Get("Access-Control-Allow-Headers"), "Authorization")
+	require.Contains(t, resp.Header().Get("Access-Control-Allow-Headers"), "X-Session-Token")
 }
 
 func TestRESTHandlers_UploadSourceOverLimitReturns413Or400(t *testing.T) {
@@ -276,6 +511,27 @@ func TestRESTHandlers_UploadSourceOverLimitReturns413Or400(t *testing.T) {
 
 	require.Contains(t, []int{http.StatusRequestEntityTooLarge, http.StatusBadRequest}, resp.Code)
 	f.validateResponse(t, req, resp)
+}
+
+func TestRESTHandlers_UploadSourceForWebReturns200(t *testing.T) {
+	f := newRESTFixture(t)
+	adminToken := f.adminAccessToken(t)
+	task := f.makeTask(t, uniq("web_source"), domain.DifficultyEasy)
+	zipBody, contentType := multipartBody(t, []byte{'P', 'K', 0x03, 0x04, 'w', 'e', 'b'})
+
+	req, resp := f.do(
+		t,
+		http.MethodPost,
+		"/api/v1/admin/tasks/"+task.ID.String()+"/source",
+		zipBody,
+		contentType,
+		bearer(adminToken),
+	)
+
+	require.Equal(t, http.StatusOK, resp.Code)
+	f.validateResponse(t, req, resp)
+	uploaded := decodeJSON[openapi.UploadSourceResponse](t, resp)
+	require.Contains(t, uploaded.SourceFileUrl, "X-Amz-Signature")
 }
 
 func newRESTFixture(t *testing.T) *restFixture {

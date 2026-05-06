@@ -6,8 +6,6 @@ interface PlayButtonProps {
   onClick: () => void;
   disabled?: boolean;
 }
-
-// Кнопка для начала поиска игры с анимациями и состояниями
 export const PlayButton: React.FC<PlayButtonProps> = ({
   onClick,
   disabled = false,

@@ -1,35 +1,28 @@
-import { CONFIG } from '../config';
+import { publicClient, unwrapApi } from "./client";
+import { assertApiResponse, isJoinResponse, isPlayerMeResponse } from "./guards";
+import type { components } from "./schema";
+
+export type JoinResponse = components["schemas"]["JoinResponse"];
+export type PlayerMeResponse = components["schemas"]["PlayerMeResponse"];
 
 export const playerApi = {
-  async join(username: string) {
-    const response = await fetch(`${CONFIG.apiUrl}/api/v1/join`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username }),
-    });
-
-    if (!response.ok) {
-      throw new Error("Failed to join game");
-    }
-
-    return response.json();
+  async join(username: string, signal?: AbortSignal): Promise<JoinResponse> {
+    const data = await unwrapApi(
+      await publicClient.POST("/api/v1/players/join", {
+        body: { username },
+        signal,
+      }),
+    );
+    return assertApiResponse(data, isJoinResponse, "players/join");
   },
 
-  async submitFlag(sessionId: number, playerId: number, flag: string) {
-    const response = await fetch(`${CONFIG.apiUrl}/api/v1/submit-flag`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        session_id: sessionId,
-        player_id: playerId,
-        flag: flag.trim(),
+  async me(sessionToken: string, signal?: AbortSignal): Promise<PlayerMeResponse> {
+    const data = await unwrapApi(
+      await publicClient.GET("/api/v1/players/me", {
+        headers: { "X-Session-Token": sessionToken },
+        signal,
       }),
-    });
-
-    if (!response.ok) {
-      throw new Error("Failed to submit flag");
-    }
-
-    return response.json();
+    );
+    return assertApiResponse(data, isPlayerMeResponse, "players/me");
   },
 };

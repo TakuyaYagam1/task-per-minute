@@ -1,225 +1,595 @@
 "use client";
 
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 
-import { WebSocketMessage } from "../../shared/types";
-import { showNotification } from "../../shared/lib";
-import { playerModel } from "../../entities/player";
+import { GameState, MatchFoundPayload, Player, WebSocketMessage } from "../../shared/types";
+import {
+  isInvalidSessionWebSocketMessage,
+  isValidUsername,
+  log,
+  parseWebSocketMessage,
+  redirectNotificationStorage,
+  useTimedNotification,
+} from "../../shared/lib";
+import { playerModel, type RefreshPlayerResult } from "../../entities/player";
 import { gameModel } from "../../entities/game";
 import { PlayButton, useWebSocket } from "../../features/game-queue";
 import { WaitingOverlay } from "../../widgets/waiting-overlay";
 
-// Главная страница приложения с формой входа в игру
+type HomeFlow = "queue" | "restore";
+
+const NORMAL_CLOSURE_CODE = 1000;
+
+const buildRateLimitMessage = (retryAfter?: string | null): string => {
+  const value = retryAfter?.trim();
+  if (!value) {
+    return "Слишком много попыток. Повторите чуть позже.";
+  }
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds > 0) {
+    return `Слишком много попыток. Повторите через ${Math.ceil(seconds)} секунд.`;
+  }
+  return "Слишком много попыток. Повторите позже.";
+};
+
+const opponentIDFromMatch = (
+  match: MatchFoundPayload,
+  playerID: string,
+): string | undefined => {
+  if (match.duel.player1_id === playerID) {
+    return match.duel.player2_id;
+  }
+  if (match.duel.player2_id === playerID) {
+    return match.duel.player1_id;
+  }
+  return undefined;
+};
+
 export default function HomePage() {
   const router = useRouter();
-  const [playerID, setPlayerID] = useState<number | null>(null);
+  const [nickname, setNickname] = useState("");
+  const [playerID, setPlayerID] = useState<string | null>(null);
+  const [currentPlayer, setCurrentPlayer] = useState<Player | null>(null);
   const [isWaiting, setIsWaiting] = useState(false);
   const [queueSize, setQueueSize] = useState<number | undefined>(undefined);
-  const [notification, setNotification] = useState<string | null>(null);
+  const [isInitializing, setIsInitializing] = useState(false);
+  const currentPlayerRef = useRef<Player | null>(null);
+  const pendingMatch = useRef<MatchFoundPayload | null>(null);
+  const expectedRestoreDuelID = useRef<string | null>(null);
+  const transitionDuelIDRef = useRef<string | null>(null);
+  const currentHomeFlow = useRef<HomeFlow | null>(null);
+  const queueAttemptRef = useRef(0);
+  const sessionPromiseRef = useRef<Promise<RefreshPlayerResult> | null>(null);
+  const { notification, showNotification } = useTimedNotification<string>();
 
-  const { websocketRef, connectWebSocket, sendMessage } = useWebSocket();
+  const { websocketRef, connectWebSocket, sendMessage, closeWebSocket } = useWebSocket();
 
   useEffect(() => {
-    const initializePlayer = async () => {
-      const player = await playerModel.initializePlayer();
-      if (player) {
-        setPlayerID(player.id);
-        console.log("Player initialized:", player.id);
-      } else {
-        showNotification("Ошибка подключения к серверу", setNotification);
+    const redirectNotification = redirectNotificationStorage.consume();
+    if (redirectNotification) {
+      showNotification(redirectNotification);
+    }
+  }, [showNotification]);
+
+  useEffect(() => {
+    const player = playerModel.getCurrentPlayer();
+    if (!player) {
+      return;
+    }
+    currentPlayerRef.current = player;
+    setCurrentPlayer(player);
+    setPlayerID(player.id);
+    setNickname(player.username);
+
+    const controller = new AbortController();
+    let cancelled = false;
+    const promise = playerModel.refreshCurrentPlayer(player, controller.signal);
+    sessionPromiseRef.current = promise;
+    void (async () => {
+      const result = await promise;
+      if (sessionPromiseRef.current === promise) {
+        sessionPromiseRef.current = null;
       }
-    };
+      if (cancelled) {
+        return;
+      }
+      if (result.kind === "expired") {
+        currentPlayerRef.current = null;
+        setCurrentPlayer(null);
+        setPlayerID(null);
+        setNickname("");
+        showNotification("Сессия истекла. Введите никнейм заново.");
+        return;
+      }
+      if (result.kind === "contract") {
+        log.warn("players/me returned malformed payload; keeping session, surface as soft error");
+        showNotification("Не удалось проверить сессию. Попробуйте ещё раз.");
+        return;
+      }
+      if (result.kind === "error") {
+        log.warn("players/me failed transiently on mount; keeping session");
+      }
+    })();
 
-    initializePlayer();
-  }, []);
-
-  useEffect(() => {
     return () => {
-      if (
-        websocketRef.current &&
-        websocketRef.current.readyState !== WebSocket.CLOSED
-      ) {
-        console.log("Closing WebSocket connection on main page unmount");
-        websocketRef.current.close();
-        websocketRef.current = null;
-        window.gameWebSocket = undefined;
+      cancelled = true;
+      controller.abort();
+      if (sessionPromiseRef.current === promise) {
+        sessionPromiseRef.current = null;
       }
     };
-  }, [websocketRef]);
+  }, [showNotification]);
+  const handleJoin = async (e: FormEvent) => {
+    e.preventDefault();
+    const trimmed = nickname.trim();
+    if (!isValidUsername(trimmed)) {
+      showNotification("Никнейм: 2-50 символов, латиница, цифры, _ или -");
+      return;
+    }
+
+    setIsInitializing(true);
+    const result = await playerModel.initializePlayer(trimmed);
+    setIsInitializing(false);
+
+    if (result.kind === "ok") {
+      currentPlayerRef.current = result.player;
+      setPlayerID(result.player.id);
+      setCurrentPlayer(result.player);
+    } else if (result.kind === "in_duel") {
+      showNotification("Игрок уже в активной дуэли. Откройте текущую сессию или дождитесь завершения.");
+    } else if (result.kind === "rate_limited") {
+      showNotification(buildRateLimitMessage(result.retryAfter));
+    } else if (result.kind === "error") {
+      showNotification("Ошибка подключения к серверу");
+    }
+  };
+
+  useEffect(() => {
+    return closeWebSocket;
+  }, [closeWebSocket]);
+
+  const clearHomeFlow = () => {
+    pendingMatch.current = null;
+    expectedRestoreDuelID.current = null;
+    currentHomeFlow.current = null;
+    setQueueSize(undefined);
+  };
+
+  const clearTransitionDuel = () => {
+    transitionDuelIDRef.current = null;
+  };
+
+  const expectedTerminalDuelID = (): string | null => {
+    if (currentHomeFlow.current === "queue") {
+      return pendingMatch.current?.duel_id || null;
+    }
+    if (currentHomeFlow.current === "restore") {
+      return expectedRestoreDuelID.current;
+    }
+    return transitionDuelIDRef.current || gameModel.getGameData()?.duel_id || null;
+  };
+
+  const saveTransitionTerminalResult = (
+    message: Extract<WebSocketMessage, { type: "duel_finished" }>,
+    activePlayer: Player,
+  ) => {
+    if (!message.payload || gameModel.getGameData()?.duel_id !== message.payload.duel_id) {
+      return;
+    }
+    const winnerID = message.payload.winner_id || null;
+    const state: GameState =
+      winnerID === null ? "timeup" : winnerID === activePlayer.id ? "won" : "lost";
+    gameModel.saveGameResult({
+      state,
+      source: "server",
+      duel_id: message.payload.duel_id,
+      winner_id: winnerID,
+      winner_username: message.payload.winner_username || null,
+    });
+  };
+
+  const handleExpiredSession = () => {
+    playerModel.clearCurrentPlayer();
+    gameModel.clearGameData();
+    currentPlayerRef.current = null;
+    setCurrentPlayer(null);
+    setPlayerID(null);
+    setNickname("");
+    clearHomeFlow();
+    clearTransitionDuel();
+    setIsWaiting(false);
+    closeWebSocket();
+    showNotification("Сессия истекла. Введите никнейм заново.");
+  };
 
   const handleWebSocketMessage = (message: WebSocketMessage) => {
     switch (message.type) {
-      case "ping":
-        console.log("Received ping from server, sending pong");
-        sendMessage("pong", message.data);
-        break;
-
       case "pong":
-        console.log("Received pong from server");
         break;
 
-      case "join_queue":
-        if (message.data?.queue_size !== undefined) {
-          setQueueSize(message.data.queue_size);
+      case "queue_joined":
+        if (currentHomeFlow.current !== "queue") {
+          log.error("Ignored queue_joined outside queue flow");
+          break;
         }
-        showNotification("Вы добавлены в очередь", setNotification);
+        showNotification("Вы добавлены в очередь");
+        break;
+
+      case "queue_left":
+        if (currentHomeFlow.current !== "queue") {
+          log.error("Ignored queue_left outside queue flow");
+          break;
+        }
+        clearHomeFlow();
+        setIsWaiting(false);
         break;
 
       case "match_found":
-        console.log("Match found!");
-        showNotification(
-          "Соперник найден! Игра начинается...",
-          setNotification
-        );
+        if (currentHomeFlow.current !== "queue") {
+          log.error("Ignored match_found outside queue flow");
+          break;
+        }
+        if (message.payload) {
+          pendingMatch.current = message.payload;
+          showNotification(
+            "Соперник найден! Игра начинается..."
+          );
+        }
         break;
 
-      case "game_start":
-        console.log("Game starting:", message.data);
-        if (message.data) {
-          gameModel.clearGameData();
-          gameModel.saveGameData(message.data);
+      case "task_assigned":
+        if (currentHomeFlow.current !== "queue") {
+          log.error("Ignored task_assigned outside queue flow");
+          break;
         }
+        if (message.payload) {
+          if (pendingMatch.current?.duel_id !== message.payload.duel_id) {
+            log.error("Ignored task_assigned for unexpected duel");
+            break;
+          }
+          const activePlayer = currentPlayerRef.current;
+          const opponentID =
+            activePlayer && pendingMatch.current
+              ? opponentIDFromMatch(pendingMatch.current, activePlayer.id)
+              : undefined;
+          if (!opponentID) {
+            log.error("Ignored task_assigned without matching opponent");
+            break;
+          }
+          gameModel.clearGameData();
+          gameModel.saveGameData({
+            duel_id: message.payload.duel_id,
+            deadline: message.payload.deadline,
+            time_limit_seconds: message.payload.time_limit_seconds,
+            task: message.payload.task,
+            opponent_username: pendingMatch.current?.opponent_username,
+            opponent_id: opponentID,
+          });
+          transitionDuelIDRef.current = message.payload.duel_id;
+        }
+        clearHomeFlow();
         setIsWaiting(false);
         router.push("/task");
         break;
 
-      case "game_won":
-        console.log("Game won on main page:", message.data);
-        if (window.location.pathname === "/") {
-          const winnerIdFromMessage = message.data?.winner_id;
-          const currentPlayerId = parseInt(playerID?.toString() || "0");
-
-          if (
-            winnerIdFromMessage &&
-            parseInt(winnerIdFromMessage.toString()) === currentPlayerId
-          ) {
-            console.log(
-              "Показываем победу на главной для игрока",
-              currentPlayerId
-            );
-            showNotification("Поздравляем! Вы выиграли!", setNotification);
-          }
+      case "duel_resume":
+        if (currentHomeFlow.current !== "restore") {
+          log.error("Ignored duel_resume outside restore flow");
+          break;
         }
+        if (!message.payload) {
+          break;
+        }
+        if (expectedRestoreDuelID.current !== message.payload.duel_id) {
+          log.error("Ignored duel_resume for unexpected duel");
+          break;
+        }
+        if (!message.payload.task) {
+          showNotification(
+            "Не удалось восстановить активную дуэль. Обновите страницу.",
+          );
+          clearHomeFlow();
+          setIsWaiting(false);
+          closeWebSocket();
+          break;
+        }
+        const resumePlayer = currentPlayerRef.current;
+        if (message.payload.opponent_id && message.payload.opponent_id === resumePlayer?.id) {
+          log.error("Ignored duel_resume with current player as opponent");
+          break;
+        }
+        gameModel.clearGameData();
+        gameModel.saveGameData({
+          duel_id: message.payload.duel_id,
+          deadline: message.payload.deadline,
+          time_limit_seconds: message.payload.task.time_limit_seconds,
+          task: message.payload.task,
+          opponent_id: message.payload.opponent_id,
+          opponent_disconnected: message.payload.opponent_disconnected,
+          opponent_reconnect_deadline: message.payload.opponent_reconnect_deadline,
+        });
+        transitionDuelIDRef.current = message.payload.duel_id;
+        clearHomeFlow();
+        setIsWaiting(false);
+        router.push("/task");
         break;
 
-      case "game_lost":
-        console.log("Game lost on main page:", message.data);
-        if (window.location.pathname === "/") {
-          const loserIdFromMessage = message.data?.loser_id;
-          const currentPlayerId = parseInt(playerID?.toString() || "0");
-
-          if (
-            loserIdFromMessage &&
-            parseInt(loserIdFromMessage.toString()) === currentPlayerId
-          ) {
-            console.log(
-              "Показываем поражение на главной для игрока",
-              currentPlayerId
-            );
-            showNotification(
-              "Вы проиграли. Попробуйте снова!",
-              setNotification
-            );
+      case "duel_finished":
+        const activePlayer = currentPlayerRef.current;
+        if (message.payload && activePlayer) {
+          const expectedDuelID = expectedTerminalDuelID();
+          if (expectedDuelID !== message.payload.duel_id) {
+            log.error("Ignored duel_finished for unexpected duel");
+            break;
           }
-        }
-        break;
-
-      case "game_end":
-        console.log("Game ended:", message.data);
-        if (message.data?.reason === "draw") {
-          gameModel.saveGameResult({
-            state: "timeup",
-            reason: "Игра закончилась вничью",
-          });
-          showNotification("Игра закончилась вничью", setNotification);
-        } else if (message.data?.reason === "timeout") {
-          gameModel.saveGameResult({
-            state: "timeup",
-            reason: "Время вышло!",
-          });
-          showNotification("Время вышло!", setNotification);
+          saveTransitionTerminalResult(message, activePlayer);
+          clearTransitionDuel();
+          clearHomeFlow();
+          setIsWaiting(false);
+          const winnerID = message.payload.winner_id;
+          if (!winnerID) {
+            showNotification("Игра закончилась вничью");
+          } else if (winnerID === activePlayer.id) {
+            showNotification("Поздравляем! Вы выиграли!");
+          } else {
+            showNotification("Вы проиграли. Попробуйте снова!");
+          }
         }
         break;
 
       case "error":
-        console.error("Server error:", message.data);
+        log.warn("ws server error", { code: message.code, message: message.message });
+        if (isInvalidSessionWebSocketMessage(message)) {
+          handleExpiredSession();
+          break;
+        }
         showNotification(
-          message.data?.error || "Произошла ошибка",
-          setNotification
+          message.message || message.code || "Произошла ошибка"
         );
+        clearHomeFlow();
         setIsWaiting(false);
         break;
 
       default:
-        console.log("Unhandled message type:", message.type);
+        break;
     }
   };
 
-  // Отменяет поиск матча и покидает очередь
   const cancelSearch = () => {
+    const shouldLeaveQueue = currentHomeFlow.current === "queue";
+    queueAttemptRef.current += 1;
+    clearHomeFlow();
+    clearTransitionDuel();
     setIsWaiting(false);
-    setQueueSize(undefined);
 
-    if (playerID && websocketRef.current) {
+    if (shouldLeaveQueue && playerID && websocketRef.current?.readyState === WebSocket.OPEN) {
       sendMessage("leave_queue");
     }
+    closeWebSocket();
   };
 
-  // Начинает поиск матча и подключение к WebSocket
   const handleReady = async () => {
-    if (!playerID) {
-      showNotification("Инициализация игрока...", setNotification);
+    if (isWaiting) {
+      return;
+    }
+    if (!currentPlayer) {
+      showNotification("Инициализация игрока...");
       return;
     }
 
     setIsWaiting(true);
+    clearTransitionDuel();
+    clearHomeFlow();
+    const attemptID = queueAttemptRef.current + 1;
+    queueAttemptRef.current = attemptID;
+    const isCurrentAttempt = () => queueAttemptRef.current === attemptID;
 
     try {
-      const ws = connectWebSocket(playerID);
+      const cachedPromise = sessionPromiseRef.current;
+      const refreshResult = cachedPromise
+        ? await cachedPromise
+        : await playerModel.refreshCurrentPlayer(currentPlayer);
+      if (sessionPromiseRef.current === cachedPromise) {
+        sessionPromiseRef.current = null;
+      }
+      if (!isCurrentAttempt()) {
+        return;
+      }
+      if (refreshResult.kind === "aborted") {
+        clearHomeFlow();
+        setIsWaiting(false);
+        return;
+      }
+      if (refreshResult.kind === "expired") {
+        handleExpiredSession();
+        return;
+      }
+      if (refreshResult.kind === "contract" || refreshResult.kind === "error") {
+        log.warn(`refreshCurrentPlayer returned ${refreshResult.kind} during handleReady`);
+        clearHomeFlow();
+        setIsWaiting(false);
+        closeWebSocket();
+        showNotification(
+          refreshResult.kind === "contract"
+            ? "Не удалось проверить сессию. Попробуйте ещё раз."
+            : "Ошибка подключения к серверу",
+        );
+        return;
+      }
+
+      const sessionState = refreshResult.state;
+      currentPlayerRef.current = sessionState.player;
+      setCurrentPlayer(sessionState.player);
+      setPlayerID(sessionState.player.id);
+      setNickname(sessionState.player.username);
+
+      const shouldJoinQueue = !sessionState.activeDuel;
+      expectedRestoreDuelID.current = sessionState.activeDuel?.id || null;
+      currentHomeFlow.current = shouldJoinQueue ? "queue" : "restore";
+      if (!shouldJoinQueue) {
+        showNotification("Восстанавливаем активную дуэль...");
+      }
+
+      const sendJoinQueueForCurrentSocket = (websocket: WebSocket) => {
+        if (!isCurrentAttempt()) {
+          websocket.close();
+          return;
+        }
+        if (
+          !shouldJoinQueue ||
+          currentHomeFlow.current !== "queue" ||
+          websocketRef.current !== websocket
+        ) {
+          return;
+        }
+        sendMessage("join_queue");
+      };
+
+      const sendJoinQueueOnOpen = (websocket: WebSocket) => {
+        if (!shouldJoinQueue) {
+          return;
+        }
+        if (websocket.readyState === WebSocket.OPEN) {
+          sendJoinQueueForCurrentSocket(websocket);
+          return;
+        }
+        websocket.addEventListener(
+          "open",
+          () => sendJoinQueueForCurrentSocket(websocket),
+          { once: true },
+        );
+      };
 
       const setupWebSocketListeners = (websocket: WebSocket) => {
+        let activeDuelRestored = false;
+        let flowCompleted = false;
+        let restoreFailureNotified = false;
+        const notifyRestoreFailure = () => {
+          if (shouldJoinQueue || activeDuelRestored || restoreFailureNotified) {
+            return;
+          }
+          restoreFailureNotified = true;
+          showNotification(
+            "Не удалось восстановить активную дуэль. Обновите страницу.",
+          );
+        };
+
         websocket.onmessage = (event) => {
-          try {
-            const message: WebSocketMessage = JSON.parse(event.data);
-            console.log("Received message:", message);
-            handleWebSocketMessage(message);
-          } catch (error) {
-            console.error("Error parsing message:", error);
+          if (typeof event.data !== "string") {
+            log.error("Ignored non-text WebSocket message");
+            return;
+          }
+          const message = parseWebSocketMessage(event.data);
+          if (!message) {
+            log.error("Ignored invalid WebSocket message");
+            return;
+          }
+          if (
+            isInvalidSessionWebSocketMessage(message) ||
+            (message.type === "duel_resume" &&
+              currentHomeFlow.current === "restore" &&
+              message.payload &&
+              expectedRestoreDuelID.current === message.payload.duel_id &&
+              !message.payload.task)
+          ) {
+            flowCompleted = true;
+          }
+          if (
+            message.type === "task_assigned" &&
+            currentHomeFlow.current === "queue" &&
+            message.payload &&
+            pendingMatch.current?.duel_id === message.payload.duel_id
+          ) {
+            flowCompleted = true;
+          }
+          if (
+            message.type === "duel_resume" &&
+            currentHomeFlow.current === "restore" &&
+            message.payload?.task &&
+            expectedRestoreDuelID.current === message.payload.duel_id
+          ) {
+            activeDuelRestored = true;
+            flowCompleted = true;
+          }
+          if (
+            message.type === "duel_finished" &&
+            message.payload &&
+            expectedTerminalDuelID() === message.payload.duel_id
+          ) {
+            activeDuelRestored = true;
+            flowCompleted = true;
+          }
+          handleWebSocketMessage(message);
+        };
+
+        websocket.onclose = (event) => {
+          if (isCurrentAttempt() && !flowCompleted) {
+            if (event.code !== NORMAL_CLOSURE_CODE) {
+              return;
+            }
+            setIsWaiting(false);
+            notifyRestoreFailure();
+            clearHomeFlow();
           }
         };
 
-        websocket.onopen = () => {
-          console.log("WebSocket connected on main page");
-          sendMessage("join_queue", { player_id: playerID });
-        };
-
-        websocket.onclose = () => {
-          console.log("WebSocket disconnected on main page");
-          setIsWaiting(false);
-        };
-
         websocket.onerror = (error) => {
-          console.error("WebSocket error on main page:", error);
-          setIsWaiting(false);
+          log.error("WebSocket error:", error);
         };
       };
 
-      if (ws.readyState === WebSocket.OPEN) {
-        setupWebSocketListeners(ws);
-      } else {
-        ws.addEventListener("open", () => setupWebSocketListeners(ws));
+      const ws = connectWebSocket(sessionState.player.session_token, {
+        onReconnect: (newWs) => {
+          setupWebSocketListeners(newWs);
+          sendJoinQueueOnOpen(newWs);
+        },
+        onBeforeReconnect: async () => {
+          const player = currentPlayerRef.current;
+          if (!player) {
+            return "auth";
+          }
+          const refreshResult = await playerModel.refreshCurrentPlayer(player);
+          if (refreshResult.kind === "expired") {
+            return "auth";
+          }
+          if (refreshResult.kind === "ok") {
+            currentPlayerRef.current = refreshResult.state.player;
+            setCurrentPlayer(refreshResult.state.player);
+            setPlayerID(refreshResult.state.player.id);
+            setNickname(refreshResult.state.player.username);
+          }
+          return null;
+        },
+        onReconnectGiveUp: (reason) => {
+          if (!isCurrentAttempt()) {
+            return;
+          }
+          if (reason === "auth" || reason === "forbidden") {
+            handleExpiredSession();
+            return;
+          }
+          showNotification("Соединение потеряно. Обновите страницу.");
+          clearHomeFlow();
+          setIsWaiting(false);
+        },
+      });
+
+      setupWebSocketListeners(ws);
+      sendJoinQueueOnOpen(ws);
+    } catch {
+      if (isCurrentAttempt()) {
+        showNotification("Ошибка подключения");
+        clearHomeFlow();
+        setIsWaiting(false);
       }
-    } catch (error) {
-      console.error("Error starting game:", error);
-      showNotification("Ошибка подключения", setNotification);
-      setIsWaiting(false);
     }
   };
 
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center p-3 lg:p-6 relative animate-fadeIn gpu-optimized">      {isWaiting && (
+    <main className="min-h-screen flex flex-col items-center justify-center p-3 lg:p-6 relative animate-fadeIn gpu-optimized">
+      {isWaiting && (
         <WaitingOverlay onCancel={cancelSearch} queueSize={queueSize} />
       )}
 
@@ -248,35 +618,68 @@ export default function HomePage() {
             </div>
             
             <div className="lg:w-1/3 p-6 lg:p-8 flex flex-col justify-center animate-slideInRight">
-              <h1 className="text-2xl lg:text-3xl xl:text-4xl font-bold mb-4 lg:mb-6 animate-glow">
-                🚀 Task Per Minute
+              <h1 className="text-2xl lg:text-3xl xl:text-4xl font-bold mb-4 lg:mb-6">
+                Стань первым!  
               </h1>
               
               <h2 className="text-lg lg:text-xl font-semibold mb-4 text-blue-200">
-                Сразься в дуэли CTF!
+                Сразись в CTF дуэли!
               </h2>
               
               <p className="text-sm lg:text-base text-gray-300 mb-6 lg:mb-8 leading-relaxed">
                 Испытай наш новый формат CTF соревнований на скорость! 
                 Каждая секунда решает исход битвы.
               </p>
-                <div className="animate-on-hover will-change-transform">
-                <PlayButton 
-                  onClick={handleReady} 
-                  disabled={!playerID}
-                />
-              </div>
+
+              {!playerID ? (
+                <form onSubmit={handleJoin} className="mb-4">
+                  <div className="flex flex-col gap-3">
+                    <input
+                      type="text"
+                      value={nickname}
+                      onChange={(e) => setNickname(e.target.value)}
+                      placeholder="Введите никнейм..."
+                      maxLength={50}
+                      className="w-full px-4 py-2.5 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-all text-sm"
+                      disabled={isInitializing}
+                    />
+                    <button
+                      type="submit"
+                      disabled={isInitializing || !nickname.trim()}
+                      className="btn btn-primary w-full text-lg font-bold py-4 px-8 transition-all duration-300 ease-out transform disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105 hover:shadow-lg animate-glow active:scale-95"
+                    >
+                      <span className="flex items-center justify-center gap-2">
+                        {isInitializing ? (
+                          <>
+                            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                            ПОДКЛЮЧЕНИЕ...
+                          </>
+                        ) : (
+                          <>ПОДКЛЮЧИТЬСЯ</>
+                        )}
+                      </span>
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <div className="animate-on-hover will-change-transform mb-4">
+                  <PlayButton 
+                    onClick={handleReady} 
+                    disabled={!playerID || isWaiting}
+                  />
+                </div>
+              )}
               
-              <div className="mt-4 lg:mt-6 text-xs text-gray-400">
+              <div className="text-xs text-gray-400">
                 {playerID ? (
                   <div className="flex items-center gap-2">
                     <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-                    Игрок готов (ID: {playerID})
+                    Игрок готов
                   </div>
                 ) : (
                   <div className="flex items-center gap-2">
                     <div className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse"></div>
-                    Инициализация...
+                    {isInitializing ? "Подключение..." : "Введите никнейм"}
                   </div>
                 )}
               </div>
@@ -315,6 +718,11 @@ export default function HomePage() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-8 text-sm lg:text-base text-gray-300">
             <div>
               <p className="mb-3">
+                <strong className="text-white">CTF (Capture The Flag)</strong> — это формат 
+                соревнований по информационной безопасности, где участники ищут уязвимости 
+                и собирают «флаги» — секретные строки, подтверждающие выполнение задания.
+              </p>
+              <p className="mb-3">
                 В испытании принимают участие 2 человека. Даётся случайный таск 
                 категории Web на ограниченное количество времени.
               </p>
@@ -324,7 +732,7 @@ export default function HomePage() {
             </div>
             <div>
               <p className="mb-3">
-                Побеждает тот, кто первый выполнит задание в заданное время.
+                Побеждает тот, кто первый выполнит задание и отправит флаг в заданное время.
               </p>
               <p>
                 Если оба участника не смогут выполнить таск — оба являются 

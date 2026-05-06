@@ -213,7 +213,7 @@ func e2ePostJSON[T any](
 
 func (a *e2eApp) connectWS(t *testing.T, token uuid.UUID) *coderws.Conn {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), wsTestTimeout)
 	defer cancel()
 	conn, _, err := coderws.Dial(ctx, wsURL(a.baseURL, token), nil)
 	require.NoError(t, err)

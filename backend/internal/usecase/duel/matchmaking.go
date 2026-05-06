@@ -293,7 +293,7 @@ func (u *MatchmakingUsecase) prepareAssignedTask(ctx context.Context, task *doma
 
 	url, err := u.storage.PresignedGetURL(
 		ctx,
-		domain.TaskSourceFileKey(task.ID),
+		domain.TaskSourceFileKeyFromURL(task.ID, *task.SourceFileURL),
 		time.Duration(task.TimeLimit)*time.Second,
 	)
 	if err != nil {

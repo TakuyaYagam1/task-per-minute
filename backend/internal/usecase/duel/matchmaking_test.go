@@ -96,10 +96,12 @@ func TestMatchmakingUsecase_JoinQueue_PresignsSourceFileURL(t *testing.T) {
 	now := time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC)
 	player1 := &domain.Player{ID: uuid.New(), Username: "alice", Status: domain.PlayerStatusIdle}
 	player2 := &domain.Player{ID: uuid.New(), Username: "bob", Status: domain.PlayerStatusIdle}
-	internalURL := "http://seaweed/internal/tasks/source.zip"
-	presignedURL := "http://seaweed/public/tasks/source.zip?X-Amz-Signature=test"
+	task1ID := uuid.New()
+	sourceKey := domain.TaskSourceFileUploadKey(task1ID, uuid.New())
+	internalURL := "http://seaweed/internal/bucket/" + sourceKey
+	presignedURL := "http://seaweed/public/bucket/" + sourceKey + "?X-Amz-Signature=test"
 	task1 := &domain.Task{
-		ID:            uuid.New(),
+		ID:            task1ID,
 		Title:         "forensics",
 		Category:      domain.CategoryForensics,
 		Difficulty:    domain.DifficultyEasy,
@@ -145,7 +147,7 @@ func TestMatchmakingUsecase_JoinQueue_PresignsSourceFileURL(t *testing.T) {
 	f.tasks.EXPECT().CountSolvedByDifficulty(mock.Anything, mock.Anything, domain.DifficultyEasy).Return(int64(0), nil).Twice()
 	f.history.EXPECT().SelectUnsolvedTaskByDifficulty(mock.Anything, player1.ID, domain.DifficultyEasy).Return(task1, nil)
 	f.history.EXPECT().SelectUnsolvedTaskByDifficulty(mock.Anything, player2.ID, domain.DifficultyEasy).Return(task2, nil)
-	f.storage.EXPECT().PresignedGetURL(mock.Anything, domain.TaskSourceFileKey(task1.ID), time.Minute).Return(presignedURL, nil)
+	f.storage.EXPECT().PresignedGetURL(mock.Anything, sourceKey, time.Minute).Return(presignedURL, nil)
 	f.duels.EXPECT().Create(mock.Anything, player1.ID, player2.ID, now.Add(time.Minute)).Return(created, nil)
 	f.duels.EXPECT().CreateDuelPlayerTask(mock.Anything, created.ID, player1.ID, task1.ID).Return(nil)
 	f.duels.EXPECT().CreateDuelPlayerTask(mock.Anything, created.ID, player2.ID, task2.ID).Return(nil)

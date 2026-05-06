@@ -90,7 +90,10 @@ type Player struct {
 }
 
 type WebSocket struct {
-	AllowedOrigins []string `env:"ALLOWED_ORIGINS" env-separator:","`
+	AllowedOrigins         []string      `env:"ALLOWED_ORIGINS"           env-separator:","`
+	HandshakeRateAttempts  int           `env:"HANDSHAKE_RATE_ATTEMPTS"   env-default:"60"`
+	HandshakeRateWindow    time.Duration `env:"HANDSHAKE_RATE_WINDOW"     env-default:"1m"`
+	HandshakeRateBucketTTL time.Duration `env:"HANDSHAKE_RATE_BUCKET_TTL" env-default:"15m"`
 }
 
 func Load() (*Config, error) {

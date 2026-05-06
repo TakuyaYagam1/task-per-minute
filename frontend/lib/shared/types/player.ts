@@ -1,5 +1,5 @@
 export interface Player {
-  id: number;
+  id: string;
   username: string;
-  session_id?: string;
+  session_token: string;
 }

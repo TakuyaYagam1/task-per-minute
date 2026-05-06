@@ -40,12 +40,27 @@ const (
 	CategoryForensics Category = "forensics"
 	CategoryReverse   Category = "reverse"
 	CategoryPwn       Category = "pwn"
+	CategoryStego     Category = "steganography"
+	CategoryPPC       Category = "ppc"
+	CategoryOSINT     Category = "osint"
+	CategoryMobile    Category = "mobile"
+	CategoryHardware  Category = "hardware"
 	CategoryMisc      Category = "misc"
 )
 
 func (c Category) IsValid() bool {
 	switch c {
-	case CategoryWeb, CategoryCrypto, CategoryForensics, CategoryReverse, CategoryPwn, CategoryMisc:
+	case CategoryWeb,
+		CategoryCrypto,
+		CategoryForensics,
+		CategoryReverse,
+		CategoryPwn,
+		CategoryStego,
+		CategoryPPC,
+		CategoryOSINT,
+		CategoryMobile,
+		CategoryHardware,
+		CategoryMisc:
 		return true
 	}
 	return false
@@ -94,6 +109,27 @@ func IsValidOptionalTaskURL(raw *string) bool {
 		return false
 	}
 	return parsed.Scheme == "http" || parsed.Scheme == "https"
+}
+
+func IsValidOptionalSourceFileURL(raw *string) bool {
+	if raw == nil {
+		return true
+	}
+	value := strings.TrimSpace(*raw)
+	if value == "" {
+		return false
+	}
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Host == "" {
+		return false
+	}
+	return parsed.Scheme == "http" || parsed.Scheme == "https"
+}
+
+func IsValidTaskURLShape(category Category, taskURL, sourceFileURL *string) bool {
+	return category.IsValid() &&
+		IsValidOptionalTaskURL(taskURL) &&
+		IsValidOptionalSourceFileURL(sourceFileURL)
 }
 
 func isValidHostPortTaskURL(value string) bool {

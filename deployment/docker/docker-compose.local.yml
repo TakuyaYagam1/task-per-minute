@@ -1,37 +1,29 @@
 name: task-per-minute-local
 
-# Same least-privilege model as docker-compose.yml: no env_file:, every value
-# explicitly listed in environment: with `${VAR:?...}` (required) or
-# `${VAR:-default}` (optional). Run with:
-#   docker compose --env-file ../../.env -f docker-compose.local.yml up -d
-#
-# IMPORTANT: bcrypt hashes and any value containing a literal `$` MUST be
-# escaped to `$$` inside .env (compose interpolates variables in .env values).
-
 services:
   postgres:
-    image: postgres:18-alpine
+    image: postgres:18.3-alpine3.23
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required (set in .env)}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required (set in .env)}
-      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required (set in .env)}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required (set in .env.local)}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required (set in .env.local)}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required (set in .env.local)}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 3s
       retries: 10
       start_period: 5s
 
   redis:
-    image: redis:8-alpine
+    image: redis:8.6.2-alpine3.23
     restart: unless-stopped
     environment:
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required (set in .env.local)}
     command:
       - "sh"
       - "-c"
@@ -41,7 +33,7 @@ services:
         fi
         exec redis-server --save 60 1 --loglevel warning
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -52,11 +44,11 @@ services:
       start_period: 3s
 
   seaweedfs:
-    image: chrislusf/seaweedfs:3.71
+    image: chrislusf/seaweedfs:4.20
     restart: unless-stopped
     environment:
-      SEAWEEDFS_ACCESS_KEY: ${SEAWEEDFS_ACCESS_KEY:?SEAWEEDFS_ACCESS_KEY is required (set in .env)}
-      SEAWEEDFS_SECRET_KEY: ${SEAWEEDFS_SECRET_KEY:?SEAWEEDFS_SECRET_KEY is required (set in .env)}
+      SEAWEEDFS_ACCESS_KEY: ${SEAWEEDFS_ACCESS_KEY:?SEAWEEDFS_ACCESS_KEY is required (set in .env.local)}
+      SEAWEEDFS_SECRET_KEY: ${SEAWEEDFS_SECRET_KEY:?SEAWEEDFS_SECRET_KEY is required (set in .env.local)}
     entrypoint:
       - "/bin/sh"
       - "-c"
@@ -88,73 +80,63 @@ services:
           -s3.port=8333 \
           -s3.config=/tmp/seaweedfs-s3.json
     ports:
-      - "9333:9333"
-      - "8333:8333"
+      - "${SEAWEEDFS_MASTER_PORT:-9333}:9333"
+      - "${SEAWEEDFS_S3_PORT:-8333}:8333"
     volumes:
       - seaweedfs_data:/data
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9333/cluster/healthz || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9333/cluster/healthz >/dev/null && nc -z 127.0.0.1 8333"]
       interval: 10s
       timeout: 5s
       retries: 10
       start_period: 15s
 
-  migrate:
-    build:
-      context: ../../backend
-    profiles: ["migrate"]
-    restart: "no"
-    entrypoint: ["/app/migrate"]
-    environment:
-      DB_DSN: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable"
-    depends_on:
-      postgres:
-        condition: service_healthy
-
   backend:
     build:
       context: ../../backend
+      args:
+        BACKEND_PORT: ${BACKEND_PORT:-8080}
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      - "${BACKEND_PORT:-8080}:${BACKEND_PORT:-8080}"
     environment:
       # HTTP
       HTTP_HOST: ${HTTP_HOST:-0.0.0.0}
-      HTTP_PORT: ${HTTP_PORT:-8080}
-      HTTP_READ_TIMEOUT: ${HTTP_READ_TIMEOUT:-15s}
-      HTTP_WRITE_TIMEOUT: ${HTTP_WRITE_TIMEOUT:-15s}
+      HTTP_PORT: ${BACKEND_PORT:-8080}
+      HTTP_READ_TIMEOUT: ${HTTP_READ_TIMEOUT:-5m}
+      HTTP_WRITE_TIMEOUT: ${HTTP_WRITE_TIMEOUT:-5m}
       HTTP_SHUTDOWN_TIMEOUT: ${HTTP_SHUTDOWN_TIMEOUT:-30s}
       HTTP_ALLOWED_ORIGINS: ${HTTP_ALLOWED_ORIGINS:-}
       HTTP_TRUSTED_PROXY_CIDRS: ${HTTP_TRUSTED_PROXY_CIDRS:-}
 
       # Database
-      DB_DSN: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable"
+      DB_DSN: ${DB_DSN:?DB_DSN is required (set in .env.local; use postgres:5432 inside compose)}
       DB_MAX_CONNS: ${DB_MAX_CONNS:-20}
 
       # Redis
-      REDIS_ADDR: redis:6379
+      REDIS_ADDR: ${REDIS_ADDR:-redis:6379}
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       REDIS_DB: ${REDIS_DB:-0}
 
       # SeaweedFS
-      SEAWEEDFS_ENDPOINT: seaweedfs:8333
+      SEAWEEDFS_ENDPOINT: ${SEAWEEDFS_ENDPOINT:-seaweedfs:8333}
       SEAWEEDFS_PUBLIC_ENDPOINT: ${SEAWEEDFS_PUBLIC_ENDPOINT:-localhost:8333}
-      SEAWEEDFS_ACCESS_KEY: ${SEAWEEDFS_ACCESS_KEY:?SEAWEEDFS_ACCESS_KEY is required (set in .env)}
-      SEAWEEDFS_SECRET_KEY: ${SEAWEEDFS_SECRET_KEY:?SEAWEEDFS_SECRET_KEY is required (set in .env)}
+      SEAWEEDFS_ACCESS_KEY: ${SEAWEEDFS_ACCESS_KEY:?SEAWEEDFS_ACCESS_KEY is required (set in .env.local)}
+      SEAWEEDFS_SECRET_KEY: ${SEAWEEDFS_SECRET_KEY:?SEAWEEDFS_SECRET_KEY is required (set in .env.local)}
       SEAWEEDFS_BUCKET: ${SEAWEEDFS_BUCKET:-task-per-minute}
       SEAWEEDFS_SECURE: ${SEAWEEDFS_SECURE:-false}
       SEAWEEDFS_PUBLIC_SECURE: ${SEAWEEDFS_PUBLIC_SECURE:-false}
 
       # JWT
-      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required (set in .env)}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required (set in .env.local)}
       JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-15m}
       JWT_REFRESH_TTL: ${JWT_REFRESH_TTL:-168h}
 
       # Admin
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD is required (set in .env)}
-      ADMIN_LOGIN_RATE_ATTEMPTS: ${ADMIN_LOGIN_RATE_ATTEMPTS:-5}
-      ADMIN_LOGIN_RATE_WINDOW: ${ADMIN_LOGIN_RATE_WINDOW:-15m}
-      ADMIN_LOGIN_RATE_BUCKET_TTL: ${ADMIN_LOGIN_RATE_BUCKET_TTL:-1h}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD is required (set in .env.local)}
+      ADMIN_LOGIN_RATE_ATTEMPTS: ${ADMIN_LOGIN_RATE_ATTEMPTS:-3}
+      ADMIN_LOGIN_RATE_WINDOW: ${ADMIN_LOGIN_RATE_WINDOW:-3m}
+      ADMIN_LOGIN_RATE_BUCKET_TTL: ${ADMIN_LOGIN_RATE_BUCKET_TTL:-15m}
 
       # Player
       PLAYER_JOIN_RATE_ATTEMPTS: ${PLAYER_JOIN_RATE_ATTEMPTS:-20}
@@ -170,6 +152,46 @@ services:
         condition: service_healthy
       seaweedfs:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null \"http://127.0.0.1:$${HTTP_PORT:-8080}/health\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  frontend:
+    build:
+      context: ../../frontend
+      args:
+        BACKEND_PORT: ${BACKEND_PORT:-8080}
+        BACKEND_URL: "http://backend:${BACKEND_PORT:-8080}"
+        FRONTEND_PORT: ${FRONTEND_PORT:-3000}
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-}
+        NEXT_PUBLIC_ADMIN_API_URL: ${NEXT_PUBLIC_ADMIN_API_URL:-}
+        NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-}
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-3000}:${FRONTEND_PORT:-3000}"
+    environment:
+      PORT: ${FRONTEND_PORT:-3000}
+      HOSTNAME: 0.0.0.0
+      BACKEND_URL: "http://backend:${BACKEND_PORT:-8080}"
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-}
+      NEXT_PUBLIC_ADMIN_API_URL: ${NEXT_PUBLIC_ADMIN_API_URL:-}
+      NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-}
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget --quiet --spider --tries=1 \"http://127.0.0.1:$${PORT:-3000}/\"",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
 volumes:
   postgres_data:
