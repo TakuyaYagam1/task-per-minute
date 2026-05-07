@@ -61,6 +61,46 @@ test.beforeEach(async ({ page }) => {
   await routePlayerMeFromBrowserStorage(page);
 });
 
+test('task description wraps long unbroken text inside card', async ({ page }) => {
+  const playerID = '10101010-1010-1010-1010-101010101010';
+  const sessionToken = '10000000-0000-0000-0000-000000000100';
+  const duelID = '11111111-1111-1111-1111-111111111111';
+  const deadline = inSecondsISO(300);
+  const description =
+    'VmpJd2VFNUhSa2RpTTNCcUIwWktjbFpxVG01a01WSIhZVVZPYWsxWVFsaFVNV1F3VkdzeGNrNVVTbGhoTVVwSVdrWmFkbVZyTVVWTlJEQTk'.repeat(2);
+
+  await page.addInitScript(({ playerID, sessionToken, duelID, deadline, description }) => {
+    window.localStorage.setItem('player_id', playerID);
+    window.localStorage.setItem('session_token', sessionToken);
+    window.localStorage.setItem('username', 'alice');
+    window.localStorage.setItem('currentGame', JSON.stringify({
+      duel_id: duelID,
+      deadline,
+      time_limit_seconds: 300,
+      task: {
+        id: '12121212-1212-1212-1212-121212121212',
+        title: 'Long Crypto Contract',
+        description,
+        category: 'crypto',
+        difficulty: 'easy',
+        time_limit: 300,
+        time_limit_seconds: 300,
+        task_url: 'https://example.com/task',
+        hint_schedule: [],
+      },
+      opponent_username: 'bob',
+    }));
+  }, { playerID, sessionToken, duelID, deadline, description });
+
+  await page.routeWebSocket((url) => url.pathname === '/ws', () => {});
+
+  await page.goto('/task');
+  await expect(page.getByRole('heading', { name: 'Long Crypto Contract' })).toBeVisible();
+  const descriptionNode = page.getByText(description);
+  await expect(descriptionNode).toBeVisible();
+  await expect.poll(async () => descriptionNode.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
+});
+
 test('task_assigned accepts non-core task category from websocket guard', async ({ page }) => {
   const playerID = '12121212-1212-1212-1212-121212121212';
   const sessionToken = '10000000-0000-0000-0000-000000000101';

@@ -53,6 +53,7 @@
 .content {
   width: 100%;
   max-width: 900px;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
@@ -93,12 +94,16 @@
   font-size: 2.8rem;
   font-weight: 900;
   margin: 0;
+  max-width: 100%;
   background: linear-gradient(135deg, #72d1eb 0%, #a0e7e5 50%, #e4fff6 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
   letter-spacing: -1px;
   text-shadow: 0 8px 30px rgba(114, 209, 235, 0.35);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  text-align: center;
 }
 
 .subtitle {
@@ -112,6 +117,7 @@
 
 .card {
   width: 100%;
+  min-width: 0;
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 1.25rem;
@@ -157,6 +163,9 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .cardTitle::after {
@@ -277,7 +286,10 @@
   line-height: 1.7;
   color: rgba(255, 255, 255, 0.8);
   margin: 0 0 1.25rem 0;
+  max-width: 100%;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 
@@ -497,6 +509,9 @@
   color: rgba(255, 255, 255, 0.7);
   line-height: 1.5;
   flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .hintRevealBtn {
@@ -666,6 +681,8 @@
   font-size: 0.9rem;
   font-weight: 600;
   animation: fadeInUp 0.3s ease-out;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .flagStatusCorrect {
@@ -745,6 +762,8 @@
   color: rgba(255, 255, 255, 0.7);
   margin: 0 0 2rem 0;
   line-height: 1.5;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .modalBtn {
