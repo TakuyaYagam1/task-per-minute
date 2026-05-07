@@ -300,7 +300,7 @@ func TestDuel_AntiRepeatSelectsAnotherTaskWhenAvailable(t *testing.T) {
 	require.Equal(t, unsolved.ID, taskForPlayer(t, result, bob.ID).ID)
 }
 
-func TestDuel_SamePoolAssignsDistinctTasksWhenAvailable(t *testing.T) {
+func TestDuel_SamePoolAssignsSameSharedUnsolvedTaskWhenAvailable(t *testing.T) {
 	f := newDuelScenarioFixture(t)
 
 	first := f.makeTaskWithLimit(t, uniq("easy"), domain.DifficultyEasy, 60)
@@ -312,7 +312,7 @@ func TestDuel_SamePoolAssignsDistinctTasksWhenAvailable(t *testing.T) {
 
 	aliceTask := taskForPlayer(t, result, alice.ID)
 	bobTask := taskForPlayer(t, result, bob.ID)
-	require.NotEqual(t, aliceTask.ID, bobTask.ID)
+	require.Equal(t, aliceTask.ID, bobTask.ID)
 	require.Contains(t, []uuid.UUID{first.ID, second.ID}, aliceTask.ID)
 	require.Contains(t, []uuid.UUID{first.ID, second.ID}, bobTask.ID)
 }

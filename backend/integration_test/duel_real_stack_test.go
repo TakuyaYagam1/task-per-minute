@@ -75,12 +75,9 @@ func TestDuel_RealStack_FlagSubmitDrivesAntiRepeat(t *testing.T) {
 		"newbie must get the same unsolved task; never the one takuya already solved")
 }
 
-// TestDuel_RealStack_FourTasksOneSolved locks down the random-shuffle
-// branch (selectPairTasksInDifficulty lines 411-414): when there are
-// ≥2 tasks unsolved by both players, each player must get a different
-// task and neither task may be one that the other player has previously
-// solved. Today the rule says "different tasks" — if the spec changes
-// to "same task even when many are available," update the assertion.
+// TestDuel_RealStack_FourTasksOneSolved locks down the same-pool branch:
+// when there are >=2 tasks unsolved by both players, both players must get
+// the same shared-unsolved task and never a task already solved by either.
 func TestDuel_RealStack_FourTasksOneSolved(t *testing.T) {
 	f := newDuelScenarioFixture(t)
 
@@ -105,8 +102,8 @@ func TestDuel_RealStack_FourTasksOneSolved(t *testing.T) {
 	takuyaTask := taskForPlayer(t, result, takuya.ID)
 	newbieTask := taskForPlayer(t, result, newbie.ID)
 
-	require.NotEqual(t, takuyaTask.ID, newbieTask.ID,
-		"with ≥2 shared-unsolved tasks, players must get different tasks")
+	require.Equal(t, takuyaTask.ID, newbieTask.ID,
+		"with >=2 shared-unsolved tasks, players must get the same task")
 	require.Contains(t, unsolvedIDs, takuyaTask.ID,
 		"takuya's task must be from the unsolved-by-both set, never the solved one")
 	require.Contains(t, unsolvedIDs, newbieTask.ID,

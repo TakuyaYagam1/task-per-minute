@@ -1,6 +1,7 @@
 package duel_test
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -143,31 +144,102 @@ func TestMatchmakingUsecase_JoinQueue_PresignsSourceFileURL(t *testing.T) {
 	f.players.EXPECT().
 		UpdateStatusIfCurrent(mock.Anything, player2.ID, domain.PlayerStatusQueued, domain.PlayerStatusInDuel).
 		Return(withStatus(player2, domain.PlayerStatusInDuel), true, nil).Once()
-	f.tasks.EXPECT().CountByDifficulty(mock.Anything, domain.DifficultyEasy).Return(int64(1), nil).Twice()
-	f.tasks.EXPECT().CountSolvedByDifficulty(mock.Anything, mock.Anything, domain.DifficultyEasy).Return(int64(0), nil).Twice()
+	f.tasks.EXPECT().CountByDifficulty(mock.Anything, domain.DifficultyEasy).Return(int64(2), nil).Twice()
+	f.tasks.EXPECT().CountSolvedByDifficulty(mock.Anything, player1.ID, domain.DifficultyEasy).Return(int64(1), nil).Once()
+	f.tasks.EXPECT().CountSolvedByDifficulty(mock.Anything, player2.ID, domain.DifficultyEasy).Return(int64(0), nil).Once()
 	f.tasks.EXPECT().ListByDifficulty(mock.Anything, domain.DifficultyEasy).Return([]*domain.Task{task1, task2}, nil).Times(3)
-	f.history.EXPECT().ListSolvedTaskIDs(mock.Anything, player1.ID).Return(nil, nil)
+	f.history.EXPECT().ListSolvedTaskIDs(mock.Anything, player1.ID).Return([]uuid.UUID{task2.ID}, nil)
 	f.history.EXPECT().ListSolvedTaskIDs(mock.Anything, player2.ID).Return(nil, nil)
 	f.storage.EXPECT().PresignedGetURL(mock.Anything, sourceKey, time.Minute).Return(presignedURL, nil)
 	f.duels.EXPECT().Create(mock.Anything, player1.ID, player2.ID, now.Add(time.Minute)).Return(created, nil)
-	taskIDMatcher := mock.MatchedBy(func(id uuid.UUID) bool {
-		return id == task1.ID || id == task2.ID
-	})
-	f.duels.EXPECT().CreateDuelPlayerTask(mock.Anything, created.ID, player1.ID, taskIDMatcher).Return(nil)
-	f.duels.EXPECT().CreateDuelPlayerTask(mock.Anything, created.ID, player2.ID, taskIDMatcher).Return(nil)
+	f.duels.EXPECT().CreateDuelPlayerTask(mock.Anything, created.ID, player1.ID, task1.ID).Return(nil)
+	f.duels.EXPECT().CreateDuelPlayerTask(mock.Anything, created.ID, player2.ID, task1.ID).Return(nil)
 
 	result, err := f.uc.JoinQueue(t.Context(), player1.ID)
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	assigned := map[uuid.UUID]*domain.Task{
-		result.Player1Task.ID: result.Player1Task,
-		result.Player2Task.ID: result.Player2Task,
-	}
-	require.NotNil(t, assigned[task1.ID].SourceFileURL)
-	require.Equal(t, presignedURL, *assigned[task1.ID].SourceFileURL)
-	require.Nil(t, assigned[task2.ID].SourceFileURL)
+	require.Equal(t, task1.ID, result.Player1Task.ID)
+	require.Equal(t, task1.ID, result.Player2Task.ID)
+	require.NotNil(t, result.Player1Task.SourceFileURL)
+	require.Equal(t, presignedURL, *result.Player1Task.SourceFileURL)
+	require.NotNil(t, result.Player2Task.SourceFileURL)
+	require.Equal(t, presignedURL, *result.Player2Task.SourceFileURL)
 	require.Equal(t, internalURL, *task1.SourceFileURL)
+}
+
+func TestMatchmakingUsecase_JoinQueue_AssignsSameSharedUnsolvedTaskWhenManyAvailable(t *testing.T) {
+	t.Parallel()
+
+	f := newFixture(t)
+	now := time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC)
+	player1 := &domain.Player{ID: uuid.New(), Username: "alice", Status: domain.PlayerStatusIdle}
+	player2 := &domain.Player{ID: uuid.New(), Username: "bob", Status: domain.PlayerStatusIdle}
+	short := &domain.Task{
+		ID:         uuid.New(),
+		Title:      "Привет поздравляю",
+		Category:   domain.CategoryMisc,
+		Difficulty: domain.DifficultyEasy,
+		TimeLimit:  300,
+		Flag:       "FLAG{short}",
+		Hints:      []string{"one", "two", "three"},
+	}
+	long := &domain.Task{
+		ID:         uuid.New(),
+		Title:      "Помоги туристу",
+		Category:   domain.CategoryOSINT,
+		Difficulty: domain.DifficultyEasy,
+		TimeLimit:  600,
+		Flag:       "FLAG{long}",
+		Hints:      []string{"one", "two", "three"},
+	}
+	var createdDeadline time.Time
+
+	f.players.EXPECT().GetByID(mock.Anything, player1.ID).Return(player1, nil).Once()
+	f.players.EXPECT().
+		UpdateStatusIfCurrent(mock.Anything, player1.ID, domain.PlayerStatusIdle, domain.PlayerStatusQueued).
+		Return(withStatus(player1, domain.PlayerStatusQueued), true, nil).Once()
+	f.queue.EXPECT().Enqueue(mock.Anything, player1.ID).Return(nil)
+	f.queue.EXPECT().PopPair(mock.Anything).Return(player1.ID, player2.ID, true, nil)
+	f.tx.EXPECT().Do(mock.Anything, mock.Anything).RunAndReturn(runTx)
+	f.players.EXPECT().GetByID(mock.Anything, player1.ID).Return(withStatus(player1, domain.PlayerStatusQueued), nil).Once()
+	f.players.EXPECT().GetByID(mock.Anything, player2.ID).Return(withStatus(player2, domain.PlayerStatusQueued), nil).Once()
+	f.players.EXPECT().
+		UpdateStatusIfCurrent(mock.Anything, player1.ID, domain.PlayerStatusQueued, domain.PlayerStatusInDuel).
+		Return(withStatus(player1, domain.PlayerStatusInDuel), true, nil).Once()
+	f.players.EXPECT().
+		UpdateStatusIfCurrent(mock.Anything, player2.ID, domain.PlayerStatusQueued, domain.PlayerStatusInDuel).
+		Return(withStatus(player2, domain.PlayerStatusInDuel), true, nil).Once()
+	f.tasks.EXPECT().CountByDifficulty(mock.Anything, domain.DifficultyEasy).Return(int64(2), nil).Twice()
+	f.tasks.EXPECT().CountSolvedByDifficulty(mock.Anything, mock.Anything, domain.DifficultyEasy).Return(int64(0), nil).Twice()
+	f.tasks.EXPECT().ListByDifficulty(mock.Anything, domain.DifficultyEasy).Return([]*domain.Task{short, long}, nil).Times(3)
+	f.history.EXPECT().ListSolvedTaskIDs(mock.Anything, player1.ID).Return(nil, nil).Once()
+	f.history.EXPECT().ListSolvedTaskIDs(mock.Anything, player2.ID).Return(nil, nil).Once()
+	f.duels.EXPECT().
+		Create(mock.Anything, player1.ID, player2.ID, mock.AnythingOfType("time.Time")).
+		RunAndReturn(func(_ context.Context, _, _ uuid.UUID, deadline time.Time) (*domain.Duel, error) {
+			createdDeadline = deadline
+			return &domain.Duel{
+				ID:        uuid.New(),
+				Player1ID: player1.ID,
+				Player2ID: player2.ID,
+				Status:    domain.DuelStatusActive,
+				StartedAt: now,
+				Deadline:  deadline,
+			}, nil
+		})
+	taskIDMatcher := mock.MatchedBy(func(id uuid.UUID) bool {
+		return id == short.ID || id == long.ID
+	})
+	f.duels.EXPECT().CreateDuelPlayerTask(mock.Anything, mock.Anything, player1.ID, taskIDMatcher).Return(nil)
+	f.duels.EXPECT().CreateDuelPlayerTask(mock.Anything, mock.Anything, player2.ID, taskIDMatcher).Return(nil)
+
+	result, err := f.uc.JoinQueue(t.Context(), player1.ID)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, result.Player1Task.ID, result.Player2Task.ID)
+	require.Equal(t, now.Add(time.Duration(result.Player1Task.TimeLimit)*time.Second), createdDeadline)
 }
 
 func TestMatchmakingUsecase_JoinQueue_AssignsOnlyCommonUnsolvedTaskToBothPlayers(t *testing.T) {

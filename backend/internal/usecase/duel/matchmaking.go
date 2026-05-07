@@ -457,12 +457,12 @@ func (u *MatchmakingUsecase) selectPairTasksInDifficulty(
 		return unsolvedByBoth[0], unsolvedByBoth[0], nil
 	}
 	if len(unsolvedByBoth) >= 2 {
-		shuffled := shuffledTasks(unsolvedByBoth)
+		task := randomTask(unsolvedByBoth)
 		decision.Branch = "same_pool_shared_many"
-		decision.Player1Task = shuffled[0]
-		decision.Player2Task = shuffled[1]
+		decision.Player1Task = task
+		decision.Player2Task = task
 		u.logDecision(decision)
-		return shuffled[0], shuffled[1], nil
+		return task, task, nil
 	}
 
 	player1Unsolved := filterTasks(tasks, func(task *domain.Task) bool {
