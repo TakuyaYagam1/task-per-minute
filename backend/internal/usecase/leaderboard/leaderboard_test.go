@@ -29,20 +29,15 @@ func TestUsecase_IncrementWin(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestUsecase_Top50_SortsByWinsThenSolveTime(t *testing.T) {
+func TestUsecase_Top50_SortsByWinsThenAverageSolveTime(t *testing.T) {
 	t.Parallel()
 
 	store := usecasemocks.NewMockLeaderboardStore(t)
 	repo := usecasemocks.NewMockLeaderboardRepo(t)
-	store.EXPECT().WinScores(mock.Anything).Return([]usecase.LeaderboardScore{
-		{Username: "bob", TasksSolved: 2},
-		{Username: "alice", TasksSolved: 2},
-		{Username: "charlie", TasksSolved: 1},
-	}, nil)
-	repo.EXPECT().TotalSolveTimeForPlayers(mock.Anything, []string{"bob", "alice", "charlie"}).Return([]usecase.LeaderboardPlayerTime{
-		playerTime("alice", 1_000),
-		playerTime("bob", 2_000),
-		playerTime("charlie", 500),
+	repo.EXPECT().TopStats(mock.Anything, int32(50)).Return([]usecase.LeaderboardPlayerStats{
+		playerStats("bob", 2, 2_000),
+		playerStats("alice", 2, 1_000),
+		playerStats("charlie", 1, 500),
 	}, nil)
 
 	got, err := leaderboardusecase.NewLeaderboardUsecase(store, repo, fixedClock{
@@ -51,27 +46,24 @@ func TestUsecase_Top50_SortsByWinsThenSolveTime(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, []leaderboardusecase.Entry{
-		{Rank: 1, Username: "alice", TasksSolved: 2, TotalSolveTimeMs: 1_000},
-		{Rank: 2, Username: "bob", TasksSolved: 2, TotalSolveTimeMs: 2_000},
-		{Rank: 3, Username: "charlie", TasksSolved: 1, TotalSolveTimeMs: 500},
+		{Rank: 1, Username: "alice", Wins: 2, AverageSolveTimeMs: 1_000},
+		{Rank: 2, Username: "bob", Wins: 2, AverageSolveTimeMs: 2_000},
+		{Rank: 3, Username: "charlie", Wins: 1, AverageSolveTimeMs: 500},
 	}, got)
 }
 
 func TestUsecase_Top50_LimitsToFifty(t *testing.T) {
 	t.Parallel()
 
-	scores := make([]usecase.LeaderboardScore, 0, 55)
-	times := make([]usecase.LeaderboardPlayerTime, 0, 55)
+	stats := make([]usecase.LeaderboardPlayerStats, 0, 55)
 	for i := 0; i < 55; i++ {
 		username := fmt.Sprintf("player_%02d", i)
-		scores = append(scores, usecase.LeaderboardScore{Username: username, TasksSolved: 1})
-		times = append(times, playerTime(username, int64(i)))
+		stats = append(stats, playerStats(username, 1, int64(i)))
 	}
 
 	store := usecasemocks.NewMockLeaderboardStore(t)
 	repo := usecasemocks.NewMockLeaderboardRepo(t)
-	store.EXPECT().WinScores(mock.Anything).Return(scores, nil)
-	repo.EXPECT().TotalSolveTimeForPlayers(mock.Anything, mock.Anything).Return(times, nil)
+	repo.EXPECT().TopStats(mock.Anything, int32(50)).Return(stats, nil)
 
 	got, err := leaderboardusecase.NewLeaderboardUsecase(store, repo, fixedClock{
 		now: time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC),
@@ -83,12 +75,12 @@ func TestUsecase_Top50_LimitsToFifty(t *testing.T) {
 	require.Equal(t, 50, got[49].Rank)
 }
 
-func TestUsecase_Top50_EmptyScoresSkipsRepo(t *testing.T) {
+func TestUsecase_Top50_EmptyStats(t *testing.T) {
 	t.Parallel()
 
 	store := usecasemocks.NewMockLeaderboardStore(t)
 	repo := usecasemocks.NewMockLeaderboardRepo(t)
-	store.EXPECT().WinScores(mock.Anything).Return([]usecase.LeaderboardScore{}, nil)
+	repo.EXPECT().TopStats(mock.Anything, int32(50)).Return([]usecase.LeaderboardPlayerStats{}, nil)
 
 	got, err := leaderboardusecase.NewLeaderboardUsecase(store, repo, fixedClock{}).Top50(t.Context())
 
@@ -101,11 +93,8 @@ func TestUsecase_Top50_CachesFastCalls(t *testing.T) {
 
 	store := usecasemocks.NewMockLeaderboardStore(t)
 	repo := usecasemocks.NewMockLeaderboardRepo(t)
-	store.EXPECT().WinScores(mock.Anything).Return([]usecase.LeaderboardScore{
-		{Username: "alice", TasksSolved: 1},
-	}, nil).Once()
-	repo.EXPECT().TotalSolveTimeForPlayers(mock.Anything, []string{"alice"}).Return([]usecase.LeaderboardPlayerTime{
-		playerTime("alice", 1_000),
+	repo.EXPECT().TopStats(mock.Anything, int32(50)).Return([]usecase.LeaderboardPlayerStats{
+		playerStats("alice", 1, 1_000),
 	}, nil).Once()
 
 	uc := leaderboardusecase.NewLeaderboardUsecase(store, repo, fixedClock{
@@ -124,20 +113,13 @@ func TestUsecase_IncrementWin_InvalidatesTop50Cache(t *testing.T) {
 
 	store := usecasemocks.NewMockLeaderboardStore(t)
 	repo := usecasemocks.NewMockLeaderboardRepo(t)
-	store.EXPECT().WinScores(mock.Anything).Return([]usecase.LeaderboardScore{
-		{Username: "alice", TasksSolved: 1},
-	}, nil).Once()
-	repo.EXPECT().TotalSolveTimeForPlayers(mock.Anything, []string{"alice"}).Return([]usecase.LeaderboardPlayerTime{
-		playerTime("alice", 1_000),
+	repo.EXPECT().TopStats(mock.Anything, int32(50)).Return([]usecase.LeaderboardPlayerStats{
+		playerStats("alice", 1, 1_000),
 	}, nil).Once()
 	store.EXPECT().IncrementWin(mock.Anything, "bob").Return(nil).Once()
-	store.EXPECT().WinScores(mock.Anything).Return([]usecase.LeaderboardScore{
-		{Username: "alice", TasksSolved: 1},
-		{Username: "bob", TasksSolved: 1},
-	}, nil).Once()
-	repo.EXPECT().TotalSolveTimeForPlayers(mock.Anything, []string{"alice", "bob"}).Return([]usecase.LeaderboardPlayerTime{
-		playerTime("alice", 1_000),
-		playerTime("bob", 500),
+	repo.EXPECT().TopStats(mock.Anything, int32(50)).Return([]usecase.LeaderboardPlayerStats{
+		playerStats("alice", 1, 1_000),
+		playerStats("bob", 1, 500),
 	}, nil).Once()
 
 	uc := leaderboardusecase.NewLeaderboardUsecase(store, repo, fixedClock{
@@ -147,7 +129,7 @@ func TestUsecase_IncrementWin_InvalidatesTop50Cache(t *testing.T) {
 	got, err := uc.Top50(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, []leaderboardusecase.Entry{
-		{Rank: 1, Username: "alice", TasksSolved: 1, TotalSolveTimeMs: 1_000},
+		{Rank: 1, Username: "alice", Wins: 1, AverageSolveTimeMs: 1_000},
 	}, got)
 
 	require.NoError(t, uc.IncrementWin(t.Context(), "bob"))
@@ -155,9 +137,37 @@ func TestUsecase_IncrementWin_InvalidatesTop50Cache(t *testing.T) {
 	got, err = uc.Top50(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, []leaderboardusecase.Entry{
-		{Rank: 1, Username: "bob", TasksSolved: 1, TotalSolveTimeMs: 500},
-		{Rank: 2, Username: "alice", TasksSolved: 1, TotalSolveTimeMs: 1_000},
+		{Rank: 1, Username: "bob", Wins: 1, AverageSolveTimeMs: 500},
+		{Rank: 2, Username: "alice", Wins: 1, AverageSolveTimeMs: 1_000},
 	}, got)
+}
+
+func TestUsecase_IncrementWin_InvalidatesTop50CacheOnRedisError(t *testing.T) {
+	t.Parallel()
+
+	redisErr := errors.New("redis down")
+	store := usecasemocks.NewMockLeaderboardStore(t)
+	repo := usecasemocks.NewMockLeaderboardRepo(t)
+	repo.EXPECT().TopStats(mock.Anything, int32(50)).Return([]usecase.LeaderboardPlayerStats{
+		playerStats("alice", 1, 1_000),
+	}, nil).Once()
+	store.EXPECT().IncrementWin(mock.Anything, "bob").Return(redisErr).Once()
+	repo.EXPECT().TopStats(mock.Anything, int32(50)).Return([]usecase.LeaderboardPlayerStats{
+		playerStats("alice", 1, 1_000),
+		playerStats("bob", 1, 500),
+	}, nil).Once()
+
+	uc := leaderboardusecase.NewLeaderboardUsecase(store, repo, fixedClock{
+		now: time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC),
+	})
+
+	_, err := uc.Top50(t.Context())
+	require.NoError(t, err)
+	require.ErrorIs(t, uc.IncrementWin(t.Context(), "bob"), redisErr)
+
+	got, err := uc.Top50(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, "bob", got[0].Username)
 }
 
 func TestUsecase_Top50_CacheReturnsClones(t *testing.T) {
@@ -165,11 +175,8 @@ func TestUsecase_Top50_CacheReturnsClones(t *testing.T) {
 
 	store := usecasemocks.NewMockLeaderboardStore(t)
 	repo := usecasemocks.NewMockLeaderboardRepo(t)
-	store.EXPECT().WinScores(mock.Anything).Return([]usecase.LeaderboardScore{
-		{Username: "alice", TasksSolved: 1},
-	}, nil).Once()
-	repo.EXPECT().TotalSolveTimeForPlayers(mock.Anything, []string{"alice"}).Return([]usecase.LeaderboardPlayerTime{
-		playerTime("alice", 1_000),
+	repo.EXPECT().TopStats(mock.Anything, int32(50)).Return([]usecase.LeaderboardPlayerStats{
+		playerStats("alice", 1, 1_000),
 	}, nil).Once()
 
 	uc := leaderboardusecase.NewLeaderboardUsecase(store, repo, fixedClock{
@@ -191,11 +198,8 @@ func TestUsecase_Top50_ReloadsAfterCacheTTL(t *testing.T) {
 	clk := &mutableClock{now: time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC)}
 	store := usecasemocks.NewMockLeaderboardStore(t)
 	repo := usecasemocks.NewMockLeaderboardRepo(t)
-	store.EXPECT().WinScores(mock.Anything).Return([]usecase.LeaderboardScore{
-		{Username: "alice", TasksSolved: 1},
-	}, nil).Twice()
-	repo.EXPECT().TotalSolveTimeForPlayers(mock.Anything, []string{"alice"}).Return([]usecase.LeaderboardPlayerTime{
-		playerTime("alice", 1_000),
+	repo.EXPECT().TopStats(mock.Anything, int32(50)).Return([]usecase.LeaderboardPlayerStats{
+		playerStats("alice", 1, 1_000),
 	}, nil).Twice()
 
 	uc := leaderboardusecase.NewLeaderboardUsecase(store, repo, clk)
@@ -207,40 +211,25 @@ func TestUsecase_Top50_ReloadsAfterCacheTTL(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestUsecase_Top50_StoreErrorIsWrapped(t *testing.T) {
-	t.Parallel()
-
-	lowLevelErr := errors.New("redis down")
-	store := usecasemocks.NewMockLeaderboardStore(t)
-	repo := usecasemocks.NewMockLeaderboardRepo(t)
-	store.EXPECT().WinScores(mock.Anything).Return(nil, lowLevelErr)
-
-	_, err := leaderboardusecase.NewLeaderboardUsecase(store, repo, fixedClock{}).Top50(t.Context())
-
-	require.ErrorIs(t, err, lowLevelErr)
-}
-
 func TestUsecase_Top50_RepoErrorIsWrapped(t *testing.T) {
 	t.Parallel()
 
 	lowLevelErr := errors.New("postgres down")
 	store := usecasemocks.NewMockLeaderboardStore(t)
 	repo := usecasemocks.NewMockLeaderboardRepo(t)
-	store.EXPECT().WinScores(mock.Anything).Return([]usecase.LeaderboardScore{
-		{Username: "alice", TasksSolved: 1},
-	}, nil)
-	repo.EXPECT().TotalSolveTimeForPlayers(mock.Anything, []string{"alice"}).Return(nil, lowLevelErr)
+	repo.EXPECT().TopStats(mock.Anything, int32(50)).Return(nil, lowLevelErr)
 
 	_, err := leaderboardusecase.NewLeaderboardUsecase(store, repo, fixedClock{}).Top50(t.Context())
 
 	require.ErrorIs(t, err, lowLevelErr)
 }
 
-func playerTime(username string, total int64) usecase.LeaderboardPlayerTime {
-	return usecase.LeaderboardPlayerTime{
-		PlayerID:         uuid.New(),
-		Username:         username,
-		TotalSolveTimeMs: total,
+func playerStats(username string, wins int, average int64) usecase.LeaderboardPlayerStats {
+	return usecase.LeaderboardPlayerStats{
+		PlayerID:           uuid.New(),
+		Username:           username,
+		Wins:               wins,
+		AverageSolveTimeMs: average,
 	}
 }
 

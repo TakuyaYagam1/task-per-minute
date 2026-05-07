@@ -3,6 +3,9 @@ import { log } from "../lib/logger";
 import { adminClient, ApiError, type ProblemDetails, unwrapApi, unwrapApiVoid } from "./client";
 import {
   assertApiResponse,
+  isAdminPlayer,
+  isAdminPlayerArray,
+  isAdminPlayerAuditEventArray,
   isAdminTask,
   isAdminTaskArray,
   isAdminTokenResponse,
@@ -11,8 +14,11 @@ import {
 import type { components } from "./schema";
 
 export type AdminTokenResponse = components["schemas"]["AdminTokenResponse"];
+export type AdminPlayer = components["schemas"]["AdminPlayerResponse"];
+export type AdminPlayerAuditEvent = components["schemas"]["AdminPlayerAuditEventResponse"];
 export type AdminTask = components["schemas"]["TaskResponse"];
 export type CreateTaskRequest = components["schemas"]["CreateTaskRequest"];
+export type UpdateAdminPlayerRequest = components["schemas"]["UpdateAdminPlayerRequest"];
 export type UpdateTaskRequest = components["schemas"]["UpdateTaskRequest"];
 export type UploadSourceResponse = components["schemas"]["UploadSourceResponse"];
 
@@ -188,6 +194,64 @@ export const adminApi = {
   async deleteTask(accessToken: string, id: string, signal?: AbortSignal): Promise<void> {
     await unwrapApiVoid(
       await adminClient.DELETE("/api/v1/admin/tasks/{id}", {
+        params: { path: { id } },
+        headers: adminHeaders(accessToken),
+        signal,
+      }),
+    );
+  },
+
+  async listPlayers(
+    accessToken: string,
+    includeDeleted = false,
+    signal?: AbortSignal,
+  ): Promise<AdminPlayer[]> {
+    const data = await unwrapApi(
+      await adminClient.GET("/api/v1/admin/players", {
+        params: includeDeleted ? { query: { include_deleted: true } } : undefined,
+        headers: adminHeaders(accessToken),
+        signal,
+      }),
+    );
+    return assertApiResponse(data, isAdminPlayerArray, "admin/players list");
+  },
+
+  async listPlayerAudit(
+    accessToken: string,
+    id: string,
+    limit = 50,
+    signal?: AbortSignal,
+  ): Promise<AdminPlayerAuditEvent[]> {
+    const data = await unwrapApi(
+      await adminClient.GET("/api/v1/admin/players/{id}/audit", {
+        params: { path: { id }, query: { limit } },
+        headers: adminHeaders(accessToken),
+        signal,
+      }),
+    );
+    return assertApiResponse(data, isAdminPlayerAuditEventArray, "admin/players audit");
+  },
+
+  async updatePlayer(
+    accessToken: string,
+    id: string,
+    body: UpdateAdminPlayerRequest,
+    signal?: AbortSignal,
+  ): Promise<AdminPlayer> {
+    const data = await unwrapApi(
+      await adminClient.PUT("/api/v1/admin/players/{id}", {
+        params: { path: { id } },
+        headers: adminHeaders(accessToken),
+        body,
+        signal,
+      }),
+    );
+    return assertApiResponse(data, isAdminPlayer, "admin/players update");
+  },
+
+  async deletePlayer(accessToken: string, id: string, signal?: AbortSignal): Promise<void> {
+    await unwrapApiVoid(
+      await adminClient.DELETE("/api/v1/admin/players/{id}", {
         params: { path: { id } },
         headers: adminHeaders(accessToken),
         signal,

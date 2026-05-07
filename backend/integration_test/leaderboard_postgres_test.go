@@ -65,7 +65,7 @@ func containsPlayer(rows []persistent.LeaderboardRow, id uuid.UUID) bool {
 	return false
 }
 
-func TestLeaderboardRepo_TotalSolveTimePerPlayer_AggregatesScoped(t *testing.T) {
+func TestLeaderboardRepo_TopStats_AggregatesSolvedWins(t *testing.T) {
 	t.Parallel()
 	f := newDuelFixture()
 	ctx := context.Background()
@@ -88,22 +88,24 @@ func TestLeaderboardRepo_TotalSolveTimePerPlayer_AggregatesScoped(t *testing.T) 
 	d3 := fixedFinishedDuel(t, bob.ID, charlie.ID, bob.ID, now.Add(2*time.Minute), now.Add(2*time.Minute+10*time.Second))
 	markSolvedRaw(t, d3, bob.ID, t3.ID, now.Add(2*time.Minute+10*time.Second))
 
-	all, err := f.board.TotalSolveTimePerPlayer(ctx)
+	all, err := f.board.TopStats(ctx, 50)
 	require.NoError(t, err)
 
 	mine := filterRows(all, alice.ID, bob.ID, charlie.ID)
 	require.Len(t, mine, 2, "only alice and bob have wins among our trio")
 
-	by := make(map[uuid.UUID]int64, 2)
+	by := make(map[uuid.UUID]persistent.LeaderboardRow, 2)
 	for _, r := range mine {
-		by[r.PlayerID] = r.TotalSolveTimeMs
+		by[r.PlayerID] = r
 	}
-	require.Equal(t, int64(5000), by[alice.ID], "alice = 2000ms + 3000ms")
-	require.Equal(t, int64(10000), by[bob.ID])
+	require.Equal(t, 2, by[alice.ID].Wins)
+	require.Equal(t, int64(2500), by[alice.ID].AverageSolveTimeMs, "alice = avg(2000ms, 3000ms)")
+	require.Equal(t, 1, by[bob.ID].Wins)
+	require.Equal(t, int64(10000), by[bob.ID].AverageSolveTimeMs)
 	require.False(t, containsPlayer(mine, charlie.ID), "charlie has no wins")
 }
 
-func TestLeaderboardRepo_TotalSolveTimeForPlayers_AggregatesRequestedUsers(t *testing.T) {
+func TestLeaderboardRepo_TopStats_ExcludesUnsolvedWinnerRows(t *testing.T) {
 	t.Parallel()
 	f := newDuelFixture()
 	ctx := context.Background()
@@ -112,30 +114,27 @@ func TestLeaderboardRepo_TotalSolveTimeForPlayers_AggregatesRequestedUsers(t *te
 	bob := f.makePlayer(t, uniq("bob"))
 	charlie := f.makePlayer(t, uniq("charlie"))
 	task1 := f.makeTask(t, uniq("t"), domain.DifficultyEasy)
-	task2 := f.makeTask(t, uniq("t"), domain.DifficultyEasy)
 
 	now := time.Now().UTC().Add(-time.Hour)
 	d1 := fixedFinishedDuel(t, alice.ID, bob.ID, alice.ID, now, now.Add(1500*time.Millisecond))
 	markSolvedRaw(t, d1, alice.ID, task1.ID, now.Add(1500*time.Millisecond))
 
-	d2 := fixedFinishedDuel(t, bob.ID, charlie.ID, bob.ID, now.Add(time.Minute), now.Add(time.Minute+4*time.Second))
-	markSolvedRaw(t, d2, bob.ID, task2.ID, now.Add(time.Minute+4*time.Second))
+	fixedFinishedDuel(t, bob.ID, charlie.ID, bob.ID, now.Add(time.Minute), now.Add(time.Minute+4*time.Second))
 
-	rows, err := f.board.TotalSolveTimeForPlayers(ctx, []string{alice.Username, charlie.Username})
+	rows, err := f.board.TopStats(ctx, 50)
 	require.NoError(t, err)
-	require.Len(t, rows, 2)
 
 	byUsername := make(map[string]persistent.LeaderboardRow, 2)
 	for _, row := range rows {
 		byUsername[row.Username] = row
 	}
-	require.Equal(t, int64(1500), byUsername[alice.Username].TotalSolveTimeMs)
-	require.Equal(t, int64(0), byUsername[charlie.Username].TotalSolveTimeMs,
-		"requested users with no wins must be present with zero time")
-	require.NotContains(t, byUsername, bob.Username, "non-requested winner must stay out of scoped query")
+	require.Contains(t, byUsername, alice.Username)
+	require.Equal(t, int64(1500), byUsername[alice.Username].AverageSolveTimeMs)
+	require.NotContains(t, byUsername, bob.Username, "winner without solved player task must not be counted")
+	require.NotContains(t, byUsername, charlie.Username, "players with no wins must not be counted")
 }
 
-func TestLeaderboardRepo_TotalSolveTimePerPlayer_IgnoresActiveDuels(t *testing.T) {
+func TestLeaderboardRepo_TopStats_IgnoresActiveDuels(t *testing.T) {
 	t.Parallel()
 	f := newDuelFixture()
 	ctx := context.Background()
@@ -146,7 +145,7 @@ func TestLeaderboardRepo_TotalSolveTimePerPlayer_IgnoresActiveDuels(t *testing.T
 	_, err := f.duels.Create(ctx, alice.ID, bob.ID, time.Now().Add(time.Minute))
 	require.NoError(t, err)
 
-	rows, err := f.board.TotalSolveTimePerPlayer(ctx)
+	rows, err := f.board.TopStats(ctx, 50)
 	require.NoError(t, err)
 	require.False(t, containsPlayer(rows, alice.ID), "alice with only active duel must not be in leaderboard")
 	require.False(t, containsPlayer(rows, bob.ID), "bob with only active duel must not be in leaderboard")

@@ -11,14 +11,14 @@ test('leaderboard renders backend payload and user-facing fetch errors', async (
           {
             rank: 1,
             username: 'alice',
-            tasks_solved: 3,
-            total_solve_time_ms: 42100,
+            wins: 3,
+            average_solve_time_ms: 42100,
           },
           {
             rank: 2,
             username: 'bob',
-            tasks_solved: 2,
-            total_solve_time_ms: 65000,
+            wins: 2,
+            average_solve_time_ms: 65000,
           },
         ],
       }),
@@ -29,6 +29,10 @@ test('leaderboard renders backend payload and user-facing fetch errors', async (
   await expect(page.getByText('alice')).toBeVisible();
   await expect(page.getByText('bob')).toBeVisible();
   await expect(page.getByText('Всего игроков')).toBeVisible();
+  await expect(page.getByText('Всего побед')).toBeVisible();
+  await expect(page.getByText('Победы').first()).toBeVisible();
+  await expect(page.getByText('Задач', { exact: true })).toBeHidden();
+  await expect(page.getByText('Задачи', { exact: true })).toBeHidden();
 
   const errorPage = await page.context().newPage();
   await errorPage.route('**/api/v1/leaderboard', async (route) => {
@@ -58,8 +62,8 @@ test('malformed leaderboard response shows fallback instead of rendering invalid
           {
             rank: 1.5,
             username: 'alice',
-            tasks_solved: 3.25,
-            total_solve_time_ms: -1,
+            wins: 3.25,
+            average_solve_time_ms: -1,
           },
         ],
       }),
@@ -95,8 +99,8 @@ test('leaderboard ignores delayed stale polling response after newer data', asyn
             {
               rank: 1,
               username: 'stale-player',
-              tasks_solved: 1,
-              total_solve_time_ms: 90000,
+              wins: 1,
+              average_solve_time_ms: 90000,
             },
           ],
         }),
@@ -112,8 +116,8 @@ test('leaderboard ignores delayed stale polling response after newer data', asyn
           {
             rank: 1,
             username: 'fresh-player',
-            tasks_solved: 5,
-            total_solve_time_ms: 30000,
+            wins: 5,
+            average_solve_time_ms: 30000,
           },
         ],
       }),
@@ -149,8 +153,8 @@ test('leaderboard keeps last valid entries after background fetch error', async 
             {
               rank: 1,
               username: 'stable-player',
-              tasks_solved: 4,
-              total_solve_time_ms: 41000,
+              wins: 4,
+              average_solve_time_ms: 41000,
             },
           ],
         }),
@@ -196,8 +200,8 @@ test('leaderboard keeps last valid entries after background malformed response',
             {
               rank: 1,
               username: 'valid-player',
-              tasks_solved: 7,
-              total_solve_time_ms: 12000,
+              wins: 7,
+              average_solve_time_ms: 12000,
             },
           ],
         }),
@@ -213,8 +217,8 @@ test('leaderboard keeps last valid entries after background malformed response',
           {
             rank: 2.5,
             username: 'malformed-player',
-            tasks_solved: -1,
-            total_solve_time_ms: Number.NaN,
+            wins: -1,
+            average_solve_time_ms: Number.NaN,
           },
         ],
       }),

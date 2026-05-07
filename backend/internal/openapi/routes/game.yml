@@ -4,7 +4,7 @@
     tags: [game]
     summary: Top-50 leaderboard
     description: >
-      Sorted by tasks_solved DESC, total_solve_time_ms ASC.
+      Sorted by wins DESC, average_solve_time_ms ASC.
       Cached for 10 seconds via go-cachekit LRFUCache.
     responses:
       '200':

@@ -53,7 +53,7 @@ export interface paths {
         };
         /**
          * Top-50 leaderboard
-         * @description Sorted by tasks_solved DESC, total_solve_time_ms ASC. Cached for 10 seconds via go-cachekit LRFUCache.
+         * @description Sorted by wins DESC, average_solve_time_ms ASC. Cached for 10 seconds via go-cachekit LRFUCache.
          */
         get: operations["getLeaderboard"];
         put?: never;
@@ -152,6 +152,70 @@ export interface paths {
          */
         post: operations["adminLogout"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/players": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List players with effective leaderboard stats */
+        get: operations["listAdminPlayers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/players/{id}/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** List player audit events */
+        get: operations["listAdminPlayerAudit"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/players/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Rename a player and override their leaderboard stats
+         * @description Writes an explicit admin leaderboard override for wins and average solve time.
+         *     Set wins=0 and average_solve_time_ms=0 to remove the player from the public leaderboard.
+         */
+        put: operations["updateAdminPlayer"];
+        post?: never;
+        /**
+         * Soft-delete an idle player
+         * @description Soft-deletes the player, clears their session token, and hides them from admin/player leaderboard lists.
+         *     Returns 409 if the player is currently queued or in a duel.
+         */
+        delete: operations["deleteAdminPlayer"];
         options?: never;
         head?: never;
         patch?: never;
@@ -278,13 +342,13 @@ export interface components {
             player: components["schemas"]["PlayerResponse"];
         };
         LeaderboardEntry: {
+            /** Format: int64 */
+            average_solve_time_ms: number;
             /** Format: int32 */
             rank: number;
-            /** Format: int32 */
-            tasks_solved: number;
-            /** Format: int64 */
-            total_solve_time_ms: number;
             username: string;
+            /** Format: int32 */
+            wins: number;
         };
         LeaderboardResponse: {
             entries: components["schemas"]["LeaderboardEntry"][];
@@ -353,6 +417,53 @@ export interface components {
         AdminLogoutRequest: {
             /** @description Refresh token to revoke. Access token is taken from the Authorization header. */
             refresh_token: string;
+        };
+        AdminPlayerResponse: {
+            /** Format: int64 */
+            average_solve_time_ms: number;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            deleted_at?: string | null;
+            /** Format: uuid */
+            id: string;
+            stats_overridden: boolean;
+            status: components["schemas"]["PlayerStatus"];
+            username: string;
+            /** Format: int32 */
+            wins: number;
+        };
+        /** @enum {string} */
+        AdminPlayerAuditAction: "update" | "delete";
+        AdminPlayerAuditState: {
+            /** Format: int64 */
+            average_solve_time_ms: number;
+            deleted: boolean;
+            stats_overridden: boolean;
+            status: components["schemas"]["PlayerStatus"];
+            username: string;
+            /** Format: int32 */
+            wins: number;
+        };
+        AdminPlayerAuditEventResponse: {
+            action: components["schemas"]["AdminPlayerAuditAction"];
+            actor_jti: string;
+            actor_subject: string;
+            after_state: components["schemas"]["AdminPlayerAuditState"];
+            before_state: components["schemas"]["AdminPlayerAuditState"];
+            /** Format: date-time */
+            created_at: string;
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            player_id: string;
+        };
+        UpdateAdminPlayerRequest: {
+            /** Format: int64 */
+            average_solve_time_ms: number;
+            username: string;
+            /** Format: int32 */
+            wins: number;
         };
         /** @enum {string} */
         TaskCategory: "web" | "crypto" | "forensics" | "reverse" | "pwn" | "steganography" | "ppc" | "osint" | "mobile" | "hardware" | "misc";
@@ -679,6 +790,197 @@ export interface operations {
             };
             /** @description Missing/invalid bearer token or refresh token invalid. */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    listAdminPlayers: {
+        parameters: {
+            query?: {
+                include_deleted?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description All non-deleted players. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPlayerResponse"][];
+                };
+            };
+            /** @description Missing or invalid bearer token. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    listAdminPlayerAudit: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Newest-first audit events for the player. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPlayerAuditEventResponse"][];
+                };
+            };
+            /** @description Invalid query parameter. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Missing or invalid bearer token. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Player not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    updateAdminPlayer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateAdminPlayerRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated player. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPlayerResponse"];
+                };
+            };
+            /** @description Validation error. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Missing or invalid bearer token. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Player not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Username is already taken. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    deleteAdminPlayer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or invalid bearer token. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Player not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Player is queued or in a duel. */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

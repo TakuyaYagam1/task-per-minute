@@ -25,6 +25,7 @@ type Dependencies struct {
 	Players      usecase.Player
 	AdminAuth    usecase.AdminAuth
 	Tasks        usecase.AdminTask
+	AdminPlayers usecase.AdminPlayer
 	Upload       usecase.Upload
 	Leaderboard  usecase.Leaderboard
 	Duels        usecase.Duel
@@ -38,6 +39,7 @@ type Server struct {
 	players      usecase.Player
 	adminAuth    usecase.AdminAuth
 	tasks        usecase.AdminTask
+	adminPlayers usecase.AdminPlayer
 	upload       usecase.Upload
 	leaderboard  usecase.Leaderboard
 	duels        usecase.Duel
@@ -56,6 +58,7 @@ func New(deps Dependencies) *Server {
 		players:      deps.Players,
 		adminAuth:    deps.AdminAuth,
 		tasks:        deps.Tasks,
+		adminPlayers: deps.AdminPlayers,
 		upload:       deps.Upload,
 		leaderboard:  deps.Leaderboard,
 		duels:        deps.Duels,

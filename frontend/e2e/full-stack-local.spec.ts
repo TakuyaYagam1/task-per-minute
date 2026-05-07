@@ -21,7 +21,7 @@ type UploadSourceResponse = {
 type LeaderboardResponse = {
   entries: Array<{
     username: string;
-    tasks_solved: number;
+    wins: number;
   }>;
 };
 

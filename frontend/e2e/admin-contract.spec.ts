@@ -261,6 +261,305 @@ test('admin task lifecycle uses bearer auth, refresh retry, and source upload', 
   expect(bearerTokens).toContain(`Bearer ${adminAccessNew}`);
 });
 
+test('admin players section updates and deletes player stats', async ({ page }) => {
+  const playerID = '77777777-7777-7777-7777-777777777777';
+  type MockAdminPlayer = {
+    id: string;
+    username: string;
+    status: 'idle' | 'queued' | 'in_duel';
+    created_at: string;
+    deleted_at?: string | null;
+    wins: number;
+    average_solve_time_ms: number;
+    stats_overridden: boolean;
+  };
+  type MockAdminPlayerAuditEvent = {
+    id: string;
+    actor_subject: string;
+    actor_jti: string;
+    action: 'update' | 'delete';
+    player_id: string;
+    before_state: {
+      username: string;
+      status: 'idle' | 'queued' | 'in_duel';
+      wins: number;
+      average_solve_time_ms: number;
+      stats_overridden: boolean;
+      deleted: boolean;
+    };
+    after_state: {
+      username: string;
+      status: 'idle' | 'queued' | 'in_duel';
+      wins: number;
+      average_solve_time_ms: number;
+      stats_overridden: boolean;
+      deleted: boolean;
+    };
+    created_at: string;
+  };
+  let player: MockAdminPlayer | null = {
+    id: playerID,
+    username: 'bad_name',
+    status: 'idle',
+    created_at: nowISO(),
+    deleted_at: null,
+    wins: 1,
+    average_solve_time_ms: 90000,
+    stats_overridden: false,
+  };
+  let auditEvents: MockAdminPlayerAuditEvent[] = [];
+
+  await page.route('**/api/v1/admin/login', async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: jsonHeaders,
+      body: JSON.stringify({
+        access_token: adminAccessOld,
+        refresh_token: adminRefreshOld,
+        token_type: 'Bearer',
+        expires_in: 900,
+      }),
+    });
+  });
+
+  await page.route('**/api/v1/admin/tasks**', async (route) => {
+    if (new URL(route.request().url()).pathname === '/api/v1/admin/tasks') {
+      await route.fulfill({ status: 200, headers: jsonHeaders, body: '[]' });
+      return;
+    }
+    await route.fulfill({ status: 404, headers: jsonHeaders, body: '{}' });
+  });
+
+  await page.route('**/api/v1/admin/players**', async (route) => {
+    const request = route.request();
+    const method = request.method();
+    const path = new URL(request.url()).pathname;
+    expect(request.headers().authorization).toBe(`Bearer ${adminAccessOld}`);
+
+    if (path === '/api/v1/admin/players' && method === 'GET') {
+      const includeDeleted = new URL(request.url()).searchParams.get('include_deleted') === 'true';
+      const visiblePlayer = player && (!player.deleted_at || includeDeleted) ? player : null;
+      await route.fulfill({
+        status: 200,
+        headers: jsonHeaders,
+        body: JSON.stringify(visiblePlayer ? [visiblePlayer] : []),
+      });
+      return;
+    }
+
+    if (path === `/api/v1/admin/players/${playerID}/audit` && method === 'GET') {
+      await route.fulfill({
+        status: 200,
+        headers: jsonHeaders,
+        body: JSON.stringify(auditEvents),
+      });
+      return;
+    }
+
+    if (path === `/api/v1/admin/players/${playerID}` && method === 'PUT') {
+      expect(player).not.toBeNull();
+      expect(request.postDataJSON()).toEqual({
+        username: 'clean_name',
+        wins: 2,
+        average_solve_time_ms: 120000,
+      });
+      auditEvents = [{
+        id: '11111111-1111-1111-1111-111111111111',
+        actor_subject: 'admin',
+        actor_jti: 'update-jti-1234567890',
+        action: 'update',
+        player_id: playerID,
+        before_state: {
+          username: 'bad_name',
+          status: 'idle',
+          wins: 1,
+          average_solve_time_ms: 90000,
+          stats_overridden: false,
+          deleted: false,
+        },
+        after_state: {
+          username: 'clean_name',
+          status: 'idle',
+          wins: 2,
+          average_solve_time_ms: 120000,
+          stats_overridden: true,
+          deleted: false,
+        },
+        created_at: nowISO(),
+      }];
+      player = {
+        ...player!,
+        username: 'clean_name',
+        wins: 2,
+        average_solve_time_ms: 120000,
+        stats_overridden: true,
+      };
+      await route.fulfill({ status: 200, headers: jsonHeaders, body: JSON.stringify(player) });
+      return;
+    }
+
+    if (path === `/api/v1/admin/players/${playerID}` && method === 'DELETE') {
+      auditEvents = [{
+        id: '22222222-2222-2222-2222-222222222222',
+        actor_subject: 'admin',
+        actor_jti: 'delete-jti-1234567890',
+        action: 'delete',
+        player_id: playerID,
+        before_state: {
+          username: 'clean_name',
+          status: 'idle',
+          wins: 2,
+          average_solve_time_ms: 120000,
+          stats_overridden: true,
+          deleted: false,
+        },
+        after_state: {
+          username: 'deleted_777',
+          status: 'idle',
+          wins: 2,
+          average_solve_time_ms: 120000,
+          stats_overridden: true,
+          deleted: true,
+        },
+        created_at: nowISO(),
+      }, ...auditEvents];
+      player = {
+        ...player!,
+        username: 'deleted_777',
+        status: 'idle',
+        deleted_at: nowISO(),
+      };
+      await route.fulfill({ status: 204 });
+      return;
+    }
+
+    await route.fulfill({ status: 404, headers: jsonHeaders, body: '{}' });
+  });
+
+  await page.goto('/admin');
+  await page.getByPlaceholder('Введите пароль...').fill('correct-password');
+  await page.getByRole('button', { name: 'Войти' }).click();
+  await expect(page.getByText('Пока нет созданных задач')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Игроки' }).click();
+  await expect(page.getByText('bad_name')).toBeVisible();
+  await page.getByRole('button', { name: /Редактировать игрока bad_name/ }).click();
+  await page.getByLabel('Имя игрока').fill('clean_name');
+  await page.getByLabel('Победы игрока').fill('2');
+  await page.getByLabel('Среднее время игрока').fill('120000');
+  await page.getByRole('button', { name: /Сохранить игрока/ }).click();
+
+  await expect(page.getByText('Игрок обновлён')).toBeVisible();
+  await expect(page.getByText('clean_name')).toBeVisible();
+  await expect(page.getByText('ручная правка')).toBeVisible();
+
+  page.on('dialog', dialog => dialog.accept());
+  await page.getByRole('button', { name: /Удалить игрока clean_name/ }).click();
+  await expect(page.getByText('Игрок удалён')).toBeVisible();
+  await expect(page.getByText('clean_name')).toBeHidden();
+
+  await page.getByLabel('Показывать удаленных').check();
+  await expect(page.getByText('deleted_777')).toBeVisible();
+  await expect(page.getByText(/удален:/)).toBeVisible();
+  await expect(page.getByRole('button', { name: /Редактировать игрока deleted_777/ })).toBeDisabled();
+  await expect(page.getByRole('button', { name: /Удалить игрока deleted_777/ })).toBeDisabled();
+
+  await page.getByRole('button', { name: /История игрока deleted_777/ }).click();
+  const auditDialog = page.getByRole('dialog', { name: 'История игрока' });
+  await expect(auditDialog).toBeVisible();
+  await expect(auditDialog.getByText('Удаление').first()).toBeVisible();
+  await expect(auditDialog.getByText('Обновление')).toBeVisible();
+  await expect(auditDialog.getByText('clean_name').first()).toBeVisible();
+  await expect(auditDialog.getByText('bad_name')).toBeVisible();
+  await expect(auditDialog.getByText('jti: delete-j')).toBeVisible();
+});
+
+test('admin malformed player audit response does not break players section', async ({ page }) => {
+  const playerID = '67676767-6767-6767-6767-676767676767';
+
+  await page.route('**/api/v1/admin/login', async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: jsonHeaders,
+      body: JSON.stringify({
+        access_token: adminAccessOld,
+        refresh_token: adminRefreshOld,
+        token_type: 'Bearer',
+        expires_in: 900,
+      }),
+    });
+  });
+
+  await page.route('**/api/v1/admin/tasks**', async (route) => {
+    if (new URL(route.request().url()).pathname === '/api/v1/admin/tasks') {
+      await route.fulfill({ status: 200, headers: jsonHeaders, body: '[]' });
+      return;
+    }
+    await route.fulfill({ status: 404, headers: jsonHeaders, body: '{}' });
+  });
+
+  await page.route('**/api/v1/admin/players**', async (route) => {
+    const request = route.request();
+    const method = request.method();
+    const path = new URL(request.url()).pathname;
+
+    if (path === '/api/v1/admin/players' && method === 'GET') {
+      await route.fulfill({
+        status: 200,
+        headers: jsonHeaders,
+        body: JSON.stringify([{
+          id: playerID,
+          username: 'audit_bad_shape',
+          status: 'idle',
+          created_at: nowISO(),
+          deleted_at: null,
+          wins: 0,
+          average_solve_time_ms: 0,
+          stats_overridden: false,
+        }]),
+      });
+      return;
+    }
+
+    if (path === `/api/v1/admin/players/${playerID}/audit` && method === 'GET') {
+      await route.fulfill({
+        status: 200,
+        headers: jsonHeaders,
+        body: JSON.stringify([{
+          id: '33333333-3333-3333-3333-333333333333',
+          actor_subject: 'admin',
+          actor_jti: 'bad-shape-jti',
+          action: 'update',
+          player_id: playerID,
+          before_state: {
+            username: 'audit_bad_shape',
+            status: 'idle',
+            wins: 0,
+            average_solve_time_ms: 0,
+            stats_overridden: false,
+            deleted: false,
+          },
+        }]),
+      });
+      return;
+    }
+
+    await route.fulfill({ status: 404, headers: jsonHeaders, body: '{}' });
+  });
+
+  await page.goto('/admin');
+  await page.getByPlaceholder('Введите пароль...').fill('correct-password');
+  await page.getByRole('button', { name: 'Войти' }).click();
+  await expect(page.getByText('Пока нет созданных задач')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Игроки' }).click();
+  await expect(page.getByText('audit_bad_shape')).toBeVisible();
+  await page.getByRole('button', { name: /История игрока audit_bad_shape/ }).click();
+
+  await expect(page.getByRole('dialog', { name: 'История игрока' }).getByText('Не удалось загрузить историю игрока')).toBeVisible();
+  await expect(page.locator('div').filter({ hasText: /^audit_bad_shape$/ })).toBeVisible();
+});
+
 test('admin preserves source_file_url when editing source task to another category', async ({ page }) => {
   const taskID = '57575757-5757-5757-5757-575757575757';
   const title = 'Forensics Source Cleanup';

@@ -534,6 +534,135 @@ func TestRESTHandlers_UploadSourceForWebReturns200(t *testing.T) {
 	require.Contains(t, uploaded.SourceFileUrl, "X-Amz-Signature")
 }
 
+func TestRESTHandlers_AdminPlayersListUpdateDelete(t *testing.T) {
+	f := newRESTFixture(t)
+	adminToken := f.adminAccessToken(t)
+	ctx := context.Background()
+	adminClaims, err := f.auth.VerifyAccess(ctx, adminToken)
+	require.NoError(t, err)
+
+	alice := f.joinPlayerViaUsecase(t, uniq("alice"))
+	bob := f.makePlayer(t, uniq("bob"))
+	task := f.makeTask(t, uniq("task"), domain.DifficultyEasy)
+	f.createSolvedWin(t, alice.ID, bob.ID, alice.ID, task.ID, time.Now().Add(-time.Minute), 1500*time.Millisecond)
+
+	unauthorizedReq, unauthorizedResp := f.doJSON(t, http.MethodGet, "/api/v1/admin/players", "", "")
+	require.Equal(t, http.StatusUnauthorized, unauthorizedResp.Code)
+	f.validateResponse(t, unauthorizedReq, unauthorizedResp)
+
+	listReq, listResp := f.doJSON(t, http.MethodGet, "/api/v1/admin/players", "", bearer(adminToken))
+	require.Equal(t, http.StatusOK, listResp.Code)
+	f.validateResponse(t, listReq, listResp)
+	players := decodeJSON[[]openapi.AdminPlayerResponse](t, listResp)
+	require.Contains(t, adminPlayerIDs(players), alice.ID)
+	require.Nil(t, adminPlayerByID(players, alice.ID).DeletedAt)
+
+	updateReq, updateResp := f.doJSON(
+		t,
+		http.MethodPut,
+		"/api/v1/admin/players/"+alice.ID.String(),
+		`{"username":"renamed_admin_player","wins":3,"average_solve_time_ms":90000}`,
+		bearer(adminToken),
+	)
+	require.Equal(t, http.StatusOK, updateResp.Code)
+	f.validateResponse(t, updateReq, updateResp)
+	updated := decodeJSON[openapi.AdminPlayerResponse](t, updateResp)
+	require.Equal(t, "renamed_admin_player", updated.Username)
+	require.Equal(t, int32(3), updated.Wins)
+	require.Equal(t, int64(90000), updated.AverageSolveTimeMs)
+	require.True(t, updated.StatsOverridden)
+	require.Nil(t, updated.DeletedAt)
+
+	auditReq, auditResp := f.doJSON(t, http.MethodGet, "/api/v1/admin/players/"+alice.ID.String()+"/audit", "", bearer(adminToken))
+	require.Equal(t, http.StatusOK, auditResp.Code)
+	f.validateResponse(t, auditReq, auditResp)
+	auditEvents := decodeJSON[[]openapi.AdminPlayerAuditEventResponse](t, auditResp)
+	require.Len(t, auditEvents, 1)
+	require.Equal(t, openapi.Update, auditEvents[0].Action)
+	require.Equal(t, "admin", auditEvents[0].ActorSubject)
+	require.Equal(t, adminClaims.JTI, auditEvents[0].ActorJti)
+	require.Equal(t, alice.Username, auditEvents[0].BeforeState.Username)
+	require.Equal(t, int32(1), auditEvents[0].BeforeState.Wins)
+	require.Equal(t, int64(1500), auditEvents[0].BeforeState.AverageSolveTimeMs)
+	require.False(t, auditEvents[0].BeforeState.StatsOverridden)
+	require.False(t, auditEvents[0].BeforeState.Deleted)
+	require.Equal(t, "renamed_admin_player", auditEvents[0].AfterState.Username)
+	require.Equal(t, int32(3), auditEvents[0].AfterState.Wins)
+	require.Equal(t, int64(90000), auditEvents[0].AfterState.AverageSolveTimeMs)
+	require.True(t, auditEvents[0].AfterState.StatsOverridden)
+	require.False(t, auditEvents[0].AfterState.Deleted)
+
+	board, err := f.board.TopStats(ctx, 50)
+	require.NoError(t, err)
+	require.Contains(t, leaderboardUsernames(board), "renamed_admin_player")
+
+	badUpdateReq, badUpdateResp := f.doJSON(
+		t,
+		http.MethodPut,
+		"/api/v1/admin/players/"+bob.ID.String(),
+		`{"username":"bad_stats_player","wins":1,"average_solve_time_ms":0}`,
+		bearer(adminToken),
+	)
+	require.Equal(t, http.StatusBadRequest, badUpdateResp.Code)
+	f.validateResponse(t, badUpdateReq, badUpdateResp)
+	bobAuditReq, bobAuditResp := f.doJSON(t, http.MethodGet, "/api/v1/admin/players/"+bob.ID.String()+"/audit", "", bearer(adminToken))
+	require.Equal(t, http.StatusOK, bobAuditResp.Code)
+	f.validateResponse(t, bobAuditReq, bobAuditResp)
+	bobAuditEvents := decodeJSON[[]openapi.AdminPlayerAuditEventResponse](t, bobAuditResp)
+	require.Empty(t, bobAuditEvents)
+
+	deleteReq, deleteResp := f.doJSON(t, http.MethodDelete, "/api/v1/admin/players/"+alice.ID.String(), "", bearer(adminToken))
+	require.Equal(t, http.StatusNoContent, deleteResp.Code)
+	f.validateResponse(t, deleteReq, deleteResp)
+
+	auditAfterDeleteReq, auditAfterDeleteResp := f.doJSON(t, http.MethodGet, "/api/v1/admin/players/"+alice.ID.String()+"/audit", "", bearer(adminToken))
+	require.Equal(t, http.StatusOK, auditAfterDeleteResp.Code)
+	f.validateResponse(t, auditAfterDeleteReq, auditAfterDeleteResp)
+	auditEvents = decodeJSON[[]openapi.AdminPlayerAuditEventResponse](t, auditAfterDeleteResp)
+	require.Len(t, auditEvents, 2)
+	require.Equal(t, openapi.Delete, auditEvents[0].Action)
+	require.Equal(t, "renamed_admin_player", auditEvents[0].BeforeState.Username)
+	require.False(t, auditEvents[0].BeforeState.Deleted)
+	require.True(t, auditEvents[0].AfterState.Deleted)
+	require.NotEqual(t, auditEvents[0].BeforeState.Username, auditEvents[0].AfterState.Username)
+
+	limitedAuditReq, limitedAuditResp := f.doJSON(t, http.MethodGet, "/api/v1/admin/players/"+alice.ID.String()+"/audit?limit=1", "", bearer(adminToken))
+	require.Equal(t, http.StatusOK, limitedAuditResp.Code)
+	f.validateResponse(t, limitedAuditReq, limitedAuditResp)
+	limitedAudit := decodeJSON[[]openapi.AdminPlayerAuditEventResponse](t, limitedAuditResp)
+	require.Len(t, limitedAudit, 1)
+	require.Equal(t, openapi.Delete, limitedAudit[0].Action)
+
+	afterDeleteReq, afterDeleteResp := f.doJSON(t, http.MethodGet, "/api/v1/admin/players", "", bearer(adminToken))
+	require.Equal(t, http.StatusOK, afterDeleteResp.Code)
+	f.validateResponse(t, afterDeleteReq, afterDeleteResp)
+	require.NotContains(t, adminPlayerIDs(decodeJSON[[]openapi.AdminPlayerResponse](t, afterDeleteResp)), alice.ID)
+	withDeletedReq, withDeletedResp := f.doJSON(t, http.MethodGet, "/api/v1/admin/players?include_deleted=true", "", bearer(adminToken))
+	require.Equal(t, http.StatusOK, withDeletedResp.Code)
+	f.validateResponse(t, withDeletedReq, withDeletedResp)
+	withDeletedPlayers := decodeJSON[[]openapi.AdminPlayerResponse](t, withDeletedResp)
+	deletedPlayer := adminPlayerByID(withDeletedPlayers, alice.ID)
+	require.NotNil(t, deletedPlayer.DeletedAt)
+
+	unknownAuditReq, unknownAuditResp := f.doJSON(t, http.MethodGet, "/api/v1/admin/players/"+uuid.NewString()+"/audit", "", bearer(adminToken))
+	require.Equal(t, http.StatusNotFound, unknownAuditResp.Code)
+	f.validateResponse(t, unknownAuditReq, unknownAuditResp)
+	unauthorizedAuditReq, unauthorizedAuditResp := f.doJSON(t, http.MethodGet, "/api/v1/admin/players/"+alice.ID.String()+"/audit", "", "")
+	require.Equal(t, http.StatusUnauthorized, unauthorizedAuditResp.Code)
+	f.validateResponse(t, unauthorizedAuditReq, unauthorizedAuditResp)
+	badLimitReq, badLimitResp := f.doJSON(t, http.MethodGet, "/api/v1/admin/players/"+alice.ID.String()+"/audit?limit=0", "", bearer(adminToken))
+	require.Equal(t, http.StatusBadRequest, badLimitResp.Code)
+	f.validateResponse(t, badLimitReq, badLimitResp)
+
+	boardAfterDelete, err := f.board.TopStats(ctx, 50)
+	require.NoError(t, err)
+	require.NotContains(t, leaderboardUsernames(boardAfterDelete), "renamed_admin_player")
+
+	meReq, meResp := f.doJSON(t, http.MethodGet, "/api/v1/players/me", "", session(*alice.SessionToken))
+	require.Equal(t, http.StatusUnauthorized, meResp.Code)
+	f.validateResponse(t, meReq, meResp)
+}
+
 func newRESTFixture(t *testing.T) *restFixture {
 	t.Helper()
 
@@ -548,13 +677,15 @@ func newRESTFixture(t *testing.T) *restFixture {
 	}, clock.Real{}, inmem.NewRevocation(clock.Real{}))
 
 	board := redisrepo.NewLeaderboardRedis(redisClient, "leaderboard:rest:"+uniq("z"))
+	leaderboardUC := leaderboardusecase.NewLeaderboardUsecase(board, f.board, clock.Real{})
 	server := restv1.New(restv1.Dependencies{
-		Players:     playerusecase.NewPlayerUsecase(f.mgr, f.players, f.duels),
-		AdminAuth:   auth,
-		Tasks:       adminusecase.NewTaskUsecase(f.tasks),
-		Upload:      adminusecase.NewUploadUsecase(f.tasks, st),
-		Leaderboard: leaderboardusecase.NewLeaderboardUsecase(board, f.board, clock.Real{}),
-		Duels:       duelusecase.NewReadUsecase(f.duels),
+		Players:      playerusecase.NewPlayerUsecase(f.mgr, f.players, f.duels),
+		AdminAuth:    auth,
+		Tasks:        adminusecase.NewTaskUsecase(f.tasks),
+		AdminPlayers: adminusecase.NewPlayerUsecase(f.mgr, f.players, leaderboardUC, clock.Real{}),
+		Upload:       adminusecase.NewUploadUsecase(f.tasks, st),
+		Leaderboard:  leaderboardUC,
+		Duels:        duelusecase.NewReadUsecase(f.duels),
 		Health: restv1.HealthChecks{
 			DB: usecase.HealthCheckerFunc(func(ctx context.Context) error {
 				return pgclient.HealthCheck(ctx, sharedPool)
@@ -677,6 +808,31 @@ func (f *restFixture) createRESTDuel(t *testing.T, player1ID, player2ID uuid.UUI
 	_, err = f.players.UpdateStatus(ctx, player2ID, domain.PlayerStatusInDuel)
 	require.NoError(t, err)
 	return duel.ID
+}
+
+func adminPlayerIDs(players []openapi.AdminPlayerResponse) []uuid.UUID {
+	out := make([]uuid.UUID, 0, len(players))
+	for _, player := range players {
+		out = append(out, player.Id)
+	}
+	return out
+}
+
+func adminPlayerByID(players []openapi.AdminPlayerResponse, id uuid.UUID) openapi.AdminPlayerResponse {
+	for _, player := range players {
+		if player.Id == id {
+			return player
+		}
+	}
+	return openapi.AdminPlayerResponse{}
+}
+
+func leaderboardUsernames(rows []persistent.LeaderboardRow) []string {
+	out := make([]string, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, row.Username)
+	}
+	return out
 }
 
 func decodeJSON[T any](t *testing.T, resp *httptest.ResponseRecorder) T {

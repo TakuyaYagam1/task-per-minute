@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand"
 	"time"
 
 	"github.com/google/uuid"
@@ -215,13 +216,9 @@ func (u *MatchmakingUsecase) selectPreparedTasks(
 	player1ID uuid.UUID,
 	player2ID uuid.UUID,
 ) (*domain.Task, *domain.Task, error) {
-	player1Task, err := u.selectTaskForPlayer(ctx, player1ID)
+	player1Task, player2Task, err := u.selectTasksForPair(ctx, player1ID, player2ID)
 	if err != nil {
-		return nil, nil, fmt.Errorf("MatchmakingUsecase - selectPreparedTasks - select player1 task: %w", err)
-	}
-	player2Task, err := u.selectTaskForPlayer(ctx, player2ID)
-	if err != nil {
-		return nil, nil, fmt.Errorf("MatchmakingUsecase - selectPreparedTasks - select player2 task: %w", err)
+		return nil, nil, fmt.Errorf("MatchmakingUsecase - selectPreparedTasks - select pair tasks: %w", err)
 	}
 	player1Task, err = u.prepareAssignedTask(ctx, player1Task)
 	if err != nil {
@@ -306,31 +303,187 @@ func (u *MatchmakingUsecase) prepareAssignedTask(ctx context.Context, task *doma
 	return &out, nil
 }
 
-func (u *MatchmakingUsecase) selectTaskForPlayer(ctx context.Context, playerID uuid.UUID) (*domain.Task, error) {
+func (u *MatchmakingUsecase) selectDifficultyForPlayer(ctx context.Context, playerID uuid.UUID) (domain.Difficulty, error) {
 	difficulties, err := u.unlockedDifficulties(ctx, playerID)
+	if err != nil {
+		return "", err
+	}
+	for i := len(difficulties) - 1; i >= 0; i-- {
+		difficulty := difficulties[i]
+		tasks, err := u.tasks.ListByDifficulty(ctx, difficulty)
+		if err != nil {
+			return "", fmt.Errorf("TaskRepo.ListByDifficulty(%s): %w", difficulty, err)
+		}
+		if len(tasks) > 0 {
+			return difficulty, nil
+		}
+	}
+	return "", apperr.ErrTaskNotFound
+}
+
+func (u *MatchmakingUsecase) selectTasksForPair(
+	ctx context.Context,
+	player1ID uuid.UUID,
+	player2ID uuid.UUID,
+) (*domain.Task, *domain.Task, error) {
+	player1Difficulty, err := u.selectDifficultyForPlayer(ctx, player1ID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("select player1 difficulty: %w", err)
+	}
+	player2Difficulty, err := u.selectDifficultyForPlayer(ctx, player2ID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("select player2 difficulty: %w", err)
+	}
+
+	if player1Difficulty != player2Difficulty {
+		player1Task, err := u.selectTaskForPlayerInDifficulty(ctx, player1ID, player1Difficulty)
+		if err != nil {
+			return nil, nil, fmt.Errorf("select player1 task: %w", err)
+		}
+		player2Task, err := u.selectTaskForPlayerInDifficulty(ctx, player2ID, player2Difficulty)
+		if err != nil {
+			return nil, nil, fmt.Errorf("select player2 task: %w", err)
+		}
+		return player1Task, player2Task, nil
+	}
+
+	return u.selectPairTasksInDifficulty(ctx, player1ID, player2ID, player1Difficulty)
+}
+
+func (u *MatchmakingUsecase) selectTaskForPlayerInDifficulty(
+	ctx context.Context,
+	playerID uuid.UUID,
+	difficulty domain.Difficulty,
+) (*domain.Task, error) {
+	tasks, err := u.tasks.ListByDifficulty(ctx, difficulty)
+	if err != nil {
+		return nil, fmt.Errorf("TaskRepo.ListByDifficulty(%s): %w", difficulty, err)
+	}
+	if len(tasks) == 0 {
+		return nil, apperr.ErrTaskNotFound
+	}
+
+	solved, err := u.solvedTaskSet(ctx, playerID)
 	if err != nil {
 		return nil, err
 	}
+	unsolved := filterTasks(tasks, func(task *domain.Task) bool {
+		_, ok := solved[task.ID]
+		return !ok
+	})
+	if len(unsolved) > 0 {
+		return randomTask(unsolved), nil
+	}
+	return randomTask(tasks), nil
+}
 
-	for i := len(difficulties) - 1; i >= 0; i-- {
-		difficulty := difficulties[i]
-		task, err := u.history.SelectUnsolvedTaskByDifficulty(ctx, playerID, difficulty)
-		if err == nil {
-			return task, nil
-		}
-		if !errors.Is(err, apperr.ErrTaskNotFound) {
-			return nil, fmt.Errorf("HistoryRepo.SelectUnsolvedTaskByDifficulty(%s): %w", difficulty, err)
-		}
+func (u *MatchmakingUsecase) selectPairTasksInDifficulty(
+	ctx context.Context,
+	player1ID uuid.UUID,
+	player2ID uuid.UUID,
+	difficulty domain.Difficulty,
+) (*domain.Task, *domain.Task, error) {
+	tasks, err := u.tasks.ListByDifficulty(ctx, difficulty)
+	if err != nil {
+		return nil, nil, fmt.Errorf("TaskRepo.ListByDifficulty(%s): %w", difficulty, err)
+	}
+	if len(tasks) == 0 {
+		return nil, nil, apperr.ErrTaskNotFound
+	}
 
-		task, err = u.history.SelectAnyTaskByDifficulty(ctx, difficulty)
-		if err == nil {
-			return task, nil
-		}
-		if !errors.Is(err, apperr.ErrTaskNotFound) {
-			return nil, fmt.Errorf("HistoryRepo.SelectAnyTaskByDifficulty(%s): %w", difficulty, err)
+	player1Solved, err := u.solvedTaskSet(ctx, player1ID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("player1 solved tasks: %w", err)
+	}
+	player2Solved, err := u.solvedTaskSet(ctx, player2ID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("player2 solved tasks: %w", err)
+	}
+
+	unsolvedByBoth := filterTasks(tasks, func(task *domain.Task) bool {
+		_, solvedByPlayer1 := player1Solved[task.ID]
+		_, solvedByPlayer2 := player2Solved[task.ID]
+		return !solvedByPlayer1 && !solvedByPlayer2
+	})
+	if len(unsolvedByBoth) >= 2 {
+		shuffled := shuffledTasks(unsolvedByBoth)
+		return shuffled[0], shuffled[1], nil
+	}
+
+	player1Unsolved := filterTasks(tasks, func(task *domain.Task) bool {
+		_, ok := player1Solved[task.ID]
+		return !ok
+	})
+	player2Unsolved := filterTasks(tasks, func(task *domain.Task) bool {
+		_, ok := player2Solved[task.ID]
+		return !ok
+	})
+	if player1Task, player2Task, ok := selectDistinctTasks(player1Unsolved, player2Unsolved, false); ok {
+		return player1Task, player2Task, nil
+	}
+	if player1Task, player2Task, ok := selectDistinctTasks(tasks, tasks, len(tasks) == 1); ok {
+		return player1Task, player2Task, nil
+	}
+	return nil, nil, apperr.ErrTaskNotFound
+}
+
+func (u *MatchmakingUsecase) solvedTaskSet(ctx context.Context, playerID uuid.UUID) (map[uuid.UUID]struct{}, error) {
+	ids, err := u.history.ListSolvedTaskIDs(ctx, playerID)
+	if err != nil {
+		return nil, fmt.Errorf("HistoryRepo.ListSolvedTaskIDs: %w", err)
+	}
+	out := make(map[uuid.UUID]struct{}, len(ids))
+	for _, id := range ids {
+		out[id] = struct{}{}
+	}
+	return out, nil
+}
+
+func filterTasks(tasks []*domain.Task, keep func(*domain.Task) bool) []*domain.Task {
+	out := make([]*domain.Task, 0, len(tasks))
+	for _, task := range tasks {
+		if task != nil && keep(task) {
+			out = append(out, task)
 		}
 	}
-	return nil, apperr.ErrTaskNotFound
+	return out
+}
+
+func randomTask(tasks []*domain.Task) *domain.Task {
+	if len(tasks) == 0 {
+		return nil
+	}
+	shuffled := shuffledTasks(tasks)
+	return shuffled[0]
+}
+
+func selectDistinctTasks(
+	first []*domain.Task,
+	second []*domain.Task,
+	allowDuplicate bool,
+) (*domain.Task, *domain.Task, bool) {
+	firstShuffled := shuffledTasks(first)
+	secondShuffled := shuffledTasks(second)
+	for _, firstTask := range firstShuffled {
+		for _, secondTask := range secondShuffled {
+			if firstTask.ID != secondTask.ID {
+				return firstTask, secondTask, true
+			}
+		}
+	}
+	if allowDuplicate && len(firstShuffled) > 0 && len(secondShuffled) > 0 {
+		return firstShuffled[0], secondShuffled[0], true
+	}
+	return nil, nil, false
+}
+
+func shuffledTasks(tasks []*domain.Task) []*domain.Task {
+	out := append([]*domain.Task(nil), tasks...)
+
+	rand.Shuffle(len(out), func(i, j int) {
+		out[i], out[j] = out[j], out[i]
+	})
+	return out
 }
 
 func (u *MatchmakingUsecase) unlockedDifficulties(ctx context.Context, playerID uuid.UUID) ([]domain.Difficulty, error) {

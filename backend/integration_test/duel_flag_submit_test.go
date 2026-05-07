@@ -65,7 +65,7 @@ func TestDuelFlagSubmit_SuccessFinishesDuelAndUpdatesHistoryAndLeaderboard(t *te
 	require.NoError(t, err)
 	require.Len(t, scores, 1)
 	require.Equal(t, alice.Username, scores[0].Username)
-	require.Equal(t, 1, scores[0].TasksSolved)
+	require.Equal(t, 1, scores[0].Wins)
 }
 
 func TestDuelFlagSubmit_DeadlinePassed(t *testing.T) {
@@ -167,7 +167,7 @@ func TestDuelFlagSubmit_ConcurrentCorrectFlags_OneWinnerSingleLeaderboardBump(t 
 	scores, err := f.store.WinScores(ctx)
 	require.NoError(t, err)
 	require.Len(t, scores, 1, "exactly one leaderboard bump is expected")
-	require.Equal(t, 1, scores[0].TasksSolved, "winner must have score=1")
+	require.Equal(t, 1, scores[0].Wins, "winner must have score=1")
 }
 
 func TestDuelFlagSubmit_IncorrectFlagLeavesDuelActive(t *testing.T) {

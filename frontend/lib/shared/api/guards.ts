@@ -2,6 +2,9 @@ import type { components } from "./schema";
 import { isUUID } from "../lib/validation";
 
 type ActiveDuelInfo = components["schemas"]["ActiveDuelInfo"];
+type AdminPlayer = components["schemas"]["AdminPlayerResponse"];
+type AdminPlayerAuditEvent = components["schemas"]["AdminPlayerAuditEventResponse"];
+type AdminPlayerAuditState = components["schemas"]["AdminPlayerAuditState"];
 type AdminTask = components["schemas"]["TaskResponse"];
 type AdminTokenResponse = components["schemas"]["AdminTokenResponse"];
 type JoinResponse = components["schemas"]["JoinResponse"];
@@ -46,6 +49,9 @@ const isString = (value: unknown): value is string => typeof value === "string";
 
 const isDateString = (value: unknown): value is string =>
   isString(value) && Number.isFinite(Date.parse(value));
+
+const isOptionalDateStringOrNull = (value: unknown): value is string | null | undefined =>
+  value === undefined || value === null || isDateString(value);
 
 const isNumber = (value: unknown): value is number =>
   typeof value === "number" && Number.isFinite(value);
@@ -126,8 +132,8 @@ const isLeaderboardEntry = (value: unknown): value is LeaderboardEntry =>
   isRecord(value) &&
   isPositiveInteger(value.rank) &&
   isString(value.username) &&
-  isNonNegativeInteger(value.tasks_solved) &&
-  isNonNegativeInteger(value.total_solve_time_ms);
+  isNonNegativeInteger(value.wins) &&
+  isNonNegativeInteger(value.average_solve_time_ms);
 
 export const isLeaderboardResponse = (value: unknown): value is LeaderboardResponse =>
   isRecord(value) && Array.isArray(value.entries) && value.entries.every(isLeaderboardEntry);
@@ -157,6 +163,45 @@ export const isAdminTask = (value: unknown): value is AdminTask =>
 
 export const isAdminTaskArray = (value: unknown): value is AdminTask[] =>
   Array.isArray(value) && value.every(isAdminTask);
+
+export const isAdminPlayer = (value: unknown): value is AdminPlayer =>
+  isRecord(value) &&
+  isUUID(value.id) &&
+  isString(value.username) &&
+  isString(value.status) &&
+  PLAYER_STATUSES.has(value.status as AdminPlayer["status"]) &&
+  isDateString(value.created_at) &&
+  isOptionalDateStringOrNull(value.deleted_at) &&
+  isNonNegativeInteger(value.wins) &&
+  isNonNegativeInteger(value.average_solve_time_ms) &&
+  typeof value.stats_overridden === "boolean";
+
+export const isAdminPlayerArray = (value: unknown): value is AdminPlayer[] =>
+  Array.isArray(value) && value.every(isAdminPlayer);
+
+const isAdminPlayerAuditState = (value: unknown): value is AdminPlayerAuditState =>
+  isRecord(value) &&
+  isString(value.username) &&
+  isString(value.status) &&
+  PLAYER_STATUSES.has(value.status as AdminPlayerAuditState["status"]) &&
+  isNonNegativeInteger(value.wins) &&
+  isNonNegativeInteger(value.average_solve_time_ms) &&
+  typeof value.stats_overridden === "boolean" &&
+  typeof value.deleted === "boolean";
+
+const isAdminPlayerAuditEvent = (value: unknown): value is AdminPlayerAuditEvent =>
+  isRecord(value) &&
+  isUUID(value.id) &&
+  isString(value.actor_subject) &&
+  isString(value.actor_jti) &&
+  (value.action === "update" || value.action === "delete") &&
+  isUUID(value.player_id) &&
+  isAdminPlayerAuditState(value.before_state) &&
+  isAdminPlayerAuditState(value.after_state) &&
+  isDateString(value.created_at);
+
+export const isAdminPlayerAuditEventArray = (value: unknown): value is AdminPlayerAuditEvent[] =>
+  Array.isArray(value) && value.every(isAdminPlayerAuditEvent);
 
 export const isUploadSourceResponse = (value: unknown): value is UploadSourceResponse =>
   isRecord(value) && isHttpURL(value.source_file_url);

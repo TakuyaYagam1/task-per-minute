@@ -54,10 +54,11 @@ func NewLeaderboardUsecase(store usecase.LeaderboardStore, repo usecase.Leaderbo
 }
 
 func (u *LeaderboardUsecase) IncrementWin(ctx context.Context, username string) error {
-	if err := u.store.IncrementWin(ctx, username); err != nil {
+	err := u.store.IncrementWin(ctx, username)
+	u.Invalidate()
+	if err != nil {
 		return fmt.Errorf("LeaderboardUsecase - IncrementWin - LeaderboardStore.IncrementWin: %w", err)
 	}
-	u.invalidate()
 	return nil
 }
 
@@ -108,50 +109,36 @@ func (u *LeaderboardUsecase) cached(now time.Time) ([]Entry, bool) {
 	return cloneEntries(cached.entries), true
 }
 
-func (u *LeaderboardUsecase) invalidate() {
+func (u *LeaderboardUsecase) Invalidate() {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	u.cache = cachekit.NewLRFUCache[string, cachedTop](cacheMaxLen)
 }
 
 func (u *LeaderboardUsecase) loadTop(ctx context.Context) ([]Entry, error) {
-	scores, err := u.store.WinScores(ctx)
+	stats, err := u.repo.TopStats(ctx, topLimit)
 	if err != nil {
-		return nil, fmt.Errorf("LeaderboardUsecase - Top50 - LeaderboardStore.WinScores: %w", err)
+		return nil, fmt.Errorf("LeaderboardUsecase - Top50 - LeaderboardRepo.TopStats: %w", err)
 	}
-	if len(scores) == 0 {
+	if len(stats) == 0 {
 		return []Entry{}, nil
 	}
 
-	usernames := make([]string, 0, len(scores))
-	for _, score := range scores {
-		usernames = append(usernames, score.Username)
-	}
-	times, err := u.repo.TotalSolveTimeForPlayers(ctx, usernames)
-	if err != nil {
-		return nil, fmt.Errorf("LeaderboardUsecase - Top50 - LeaderboardRepo.TotalSolveTimeForPlayers: %w", err)
-	}
-
-	totalByUsername := make(map[string]int64, len(times))
-	for _, row := range times {
-		totalByUsername[row.Username] = row.TotalSolveTimeMs
-	}
-
-	entries := make([]Entry, 0, len(scores))
-	for _, score := range scores {
+	entries := make([]Entry, 0, len(stats))
+	for _, row := range stats {
 		entries = append(entries, Entry{
-			Username:         score.Username,
-			TasksSolved:      score.TasksSolved,
-			TotalSolveTimeMs: totalByUsername[score.Username],
+			Username:           row.Username,
+			Wins:               row.Wins,
+			AverageSolveTimeMs: row.AverageSolveTimeMs,
 		})
 	}
 
 	sort.SliceStable(entries, func(i, j int) bool {
-		if entries[i].TasksSolved != entries[j].TasksSolved {
-			return entries[i].TasksSolved > entries[j].TasksSolved
+		if entries[i].Wins != entries[j].Wins {
+			return entries[i].Wins > entries[j].Wins
 		}
-		if entries[i].TotalSolveTimeMs != entries[j].TotalSolveTimeMs {
-			return entries[i].TotalSolveTimeMs < entries[j].TotalSolveTimeMs
+		if entries[i].AverageSolveTimeMs != entries[j].AverageSolveTimeMs {
+			return entries[i].AverageSolveTimeMs < entries[j].AverageSolveTimeMs
 		}
 		return entries[i].Username < entries[j].Username
 	})

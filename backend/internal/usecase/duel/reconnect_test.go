@@ -205,7 +205,7 @@ func TestReconnectManager_HandleDisconnect_FreezesTimerAndBroadcasts(t *testing.
 	require.False(t, events[0].reconnectDeadline.IsZero())
 }
 
-func TestReconnectManager_HandleDisconnect_ExceedsLimit_FinalizesForOpponent(t *testing.T) {
+func TestReconnectManager_HandleDisconnect_ExceedsLimit_FinalizesDraw(t *testing.T) {
 	t.Parallel()
 
 	// limit = 1 -> second disconnect by the same player ends the duel.
@@ -221,8 +221,7 @@ func TestReconnectManager_HandleDisconnect_ExceedsLimit_FinalizesForOpponent(t *
 	got, err := duels.GetByID(context.Background(), duel.ID)
 	require.NoError(t, err)
 	require.Equal(t, domain.DuelStatusFinished, got.Status)
-	require.NotNil(t, got.WinnerID)
-	require.Equal(t, duel.Player2ID, *got.WinnerID, "opponent must be the winner")
+	require.Nil(t, got.WinnerID, "disconnect overflow must be a draw")
 	require.Equal(t, domain.PlayerStatusIdle, players.status(duel.Player1ID))
 	require.Equal(t, domain.PlayerStatusIdle, players.status(duel.Player2ID))
 }
@@ -324,21 +323,22 @@ func TestReconnectManager_ConsumeReconnect_NoActiveDuelReturnsNil(t *testing.T) 
 	require.Nil(t, decision, "player without active duel produces no decision")
 }
 
-func TestReconnectManager_FinalizeOpponentForfeit_FinishesDuelAndBroadcasts(t *testing.T) {
+func TestReconnectManager_FinalizeDraw_FinishesDuelAndBroadcasts(t *testing.T) {
 	t.Parallel()
 
 	mgr, duels, players, broadcaster, _ := newReconnectFixture(t)
 	duel := activeDuel(time.Now().Add(time.Hour))
 	duels.putWithPlayers(duel)
 
-	mgr.FinalizeOpponentForfeit(context.Background(), duel.ID, duel.Player1ID)
+	finished, err := mgr.FinalizeDraw(context.Background(), duel.ID)
+	require.NoError(t, err)
+	require.NotNil(t, finished)
 
 	require.Equal(t, 1, broadcaster.finishedCount())
 	got, err := duels.GetByID(context.Background(), duel.ID)
 	require.NoError(t, err)
 	require.Equal(t, domain.DuelStatusFinished, got.Status)
-	require.NotNil(t, got.WinnerID)
-	require.Equal(t, duel.Player1ID, *got.WinnerID)
+	require.Nil(t, got.WinnerID)
 	require.Equal(t, domain.PlayerStatusIdle, players.status(duel.Player1ID))
 	require.Equal(t, domain.PlayerStatusIdle, players.status(duel.Player2ID))
 }
@@ -359,18 +359,18 @@ func TestReconnectManager_FinalizePlayerForfeit_OpponentWinsAndIsIdempotent(t *t
 	require.NotNil(t, finished.WinnerID)
 	require.Equal(t, duel.Player2ID, *finished.WinnerID)
 	require.Equal(t, 1, broadcaster.finishedCount())
-	require.Equal(t, []string{"bob"}, board.snapshot(),
-		"surrender loser must credit exactly the opponent")
+	require.Empty(t, board.snapshot(),
+		"surrender must not affect leaderboard because no flag was solved")
 
 	finished, err = mgr.FinalizePlayerForfeit(context.Background(), duel.ID, duel.Player1ID)
 	require.NoError(t, err)
 	require.Nil(t, finished)
 	require.Equal(t, 1, broadcaster.finishedCount())
-	require.Equal(t, []string{"bob"}, board.snapshot(),
-		"replayed surrender after finish must not bump leaderboard again")
+	require.Empty(t, board.snapshot(),
+		"replayed surrender after finish must not bump leaderboard")
 }
 
-func TestReconnectManager_FinalizeOpponentForfeit_BumpsLeaderboard(t *testing.T) {
+func TestReconnectManager_FinalizeDraw_DoesNotBumpLeaderboard(t *testing.T) {
 	t.Parallel()
 
 	board := newRecordingLeaderboardStore()
@@ -380,15 +380,14 @@ func TestReconnectManager_FinalizeOpponentForfeit_BumpsLeaderboard(t *testing.T)
 	players.register(&domain.Player{ID: duel.Player1ID, Username: "alice", Status: domain.PlayerStatusInDuel})
 	players.register(&domain.Player{ID: duel.Player2ID, Username: "bob", Status: domain.PlayerStatusInDuel})
 
-	mgr.FinalizeOpponentForfeit(context.Background(), duel.ID, duel.Player1ID)
+	_, err := mgr.FinalizeDraw(context.Background(), duel.ID)
+	require.NoError(t, err)
 
-	require.Equal(t, []string{"alice"}, board.snapshot(),
-		"forfeit winner must receive exactly one leaderboard increment")
+	require.Empty(t, board.snapshot(),
+		"draw must not receive a leaderboard increment")
 }
 
-// Disconnect-overflow is the most common forfeit path (player drops 3 times
-// in one duel). Opponent must get a leaderboard +1.
-func TestReconnectManager_HandleDisconnect_DisconnectOverflow_BumpsLeaderboard(t *testing.T) {
+func TestReconnectManager_HandleDisconnect_DisconnectOverflow_DoesNotBumpLeaderboard(t *testing.T) {
 	t.Parallel()
 
 	board := newRecordingLeaderboardStore()
@@ -405,8 +404,8 @@ func TestReconnectManager_HandleDisconnect_DisconnectOverflow_BumpsLeaderboard(t
 	require.NoError(t, simulateReconnect(mgr, duel.Player1ID))
 	mgr.HandleDisconnect(context.Background(), duel.ID, duel.Player1ID)
 
-	require.Equal(t, []string{"bob"}, board.snapshot(),
-		"opponent of the disconnect-overflow loser must receive a leaderboard +1")
+	require.Empty(t, board.snapshot(),
+		"disconnect overflow must end as a draw without leaderboard credit")
 }
 
 // Leaderboard write must NOT happen for draws (timer expiry produces no

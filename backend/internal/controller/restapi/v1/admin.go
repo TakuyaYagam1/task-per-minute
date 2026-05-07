@@ -14,6 +14,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/controller/restapi/v1/response"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/openapi"
+	"github.com/TakuyaYagam1/task-per-minute/internal/usecase"
 )
 
 // (POST /api/v1/admin/login).
@@ -88,6 +89,121 @@ func (s *Server) AdminRefresh(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response.WriteJSON(w, http.StatusOK, response.TokenPair(pair, s.now()))
+}
+
+// (GET /api/v1/admin/players).
+func (s *Server) ListAdminPlayers(w http.ResponseWriter, r *http.Request, params openapi.ListAdminPlayersParams) {
+	if !requireAdmin(w, r) {
+		return
+	}
+	if s.adminPlayers == nil {
+		errmap.HandleError(w, r, apperr.ErrInternal)
+		return
+	}
+
+	includeDeleted := false
+	if params.IncludeDeleted != nil {
+		includeDeleted = *params.IncludeDeleted
+	}
+	players, err := s.adminPlayers.ListPlayers(r.Context(), includeDeleted)
+	if err != nil {
+		errmap.HandleError(w, r, err)
+		return
+	}
+
+	response.WriteJSON(w, http.StatusOK, response.AdminPlayers(players))
+}
+
+// (GET /api/v1/admin/players/{id}/audit).
+func (s *Server) ListAdminPlayerAudit(
+	w http.ResponseWriter,
+	r *http.Request,
+	id openapi_types.UUID,
+	params openapi.ListAdminPlayerAuditParams,
+) {
+	if !requireAdmin(w, r) {
+		return
+	}
+	if s.adminPlayers == nil {
+		errmap.HandleError(w, r, apperr.ErrInternal)
+		return
+	}
+
+	limit := int32(50)
+	if params.Limit != nil {
+		if *params.Limit <= 0 {
+			errmap.HandleError(w, r, apperr.ErrValidation)
+			return
+		}
+		limit = *params.Limit
+	}
+	if limit > 200 {
+		limit = 200
+	}
+	events, err := s.adminPlayers.ListPlayerAudit(r.Context(), id, limit)
+	if err != nil {
+		errmap.HandleError(w, r, err)
+		return
+	}
+
+	response.WriteJSON(w, http.StatusOK, response.AdminPlayerAuditEvents(events))
+}
+
+// (PUT /api/v1/admin/players/{id}).
+func (s *Server) UpdateAdminPlayer(w http.ResponseWriter, r *http.Request, id openapi_types.UUID) {
+	if !requireAdmin(w, r) {
+		return
+	}
+	actor, ok := adminActorFromRequest(r)
+	if !ok {
+		errmap.HandleError(w, r, apperr.ErrInvalidCredentials)
+		return
+	}
+	if s.adminPlayers == nil {
+		errmap.HandleError(w, r, apperr.ErrInternal)
+		return
+	}
+
+	var body openapi.UpdateAdminPlayerRequest
+	if err := request.DecodeJSON(r, &body); err != nil {
+		errmap.HandleError(w, r, apperr.ErrValidation)
+		return
+	}
+
+	player, err := s.adminPlayers.UpdatePlayer(r.Context(), id, usecase.AdminPlayerInput{
+		Username:           body.Username,
+		Wins:               int(body.Wins),
+		AverageSolveTimeMs: body.AverageSolveTimeMs,
+	}, actor)
+	if err != nil {
+		errmap.HandleError(w, r, err)
+		return
+	}
+
+	response.WriteJSON(w, http.StatusOK, response.AdminPlayer(*player))
+}
+
+// (DELETE /api/v1/admin/players/{id}).
+func (s *Server) DeleteAdminPlayer(w http.ResponseWriter, r *http.Request, id openapi_types.UUID) {
+	if !requireAdmin(w, r) {
+		return
+	}
+	actor, ok := adminActorFromRequest(r)
+	if !ok {
+		errmap.HandleError(w, r, apperr.ErrInvalidCredentials)
+		return
+	}
+	if s.adminPlayers == nil {
+		errmap.HandleError(w, r, apperr.ErrInternal)
+		return
+	}
+
+	if err := s.adminPlayers.DeletePlayer(r.Context(), id, actor); err != nil {
+		errmap.HandleError(w, r, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // (GET /api/v1/admin/tasks).
@@ -278,4 +394,15 @@ func requireAdmin(w http.ResponseWriter, r *http.Request) bool {
 	}
 	errmap.HandleError(w, r, apperr.ErrInvalidCredentials)
 	return false
+}
+
+func adminActorFromRequest(r *http.Request) (usecase.AdminActor, bool) {
+	claims, ok := middleware.GetAdminClaimsFromCtx(r.Context())
+	if !ok || claims == nil || claims.Subject == "" || claims.JTI == "" {
+		return usecase.AdminActor{}, false
+	}
+	return usecase.AdminActor{
+		Subject: claims.Subject,
+		JTI:     claims.JTI,
+	}, true
 }

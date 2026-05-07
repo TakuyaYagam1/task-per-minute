@@ -27,9 +27,9 @@ func TestLeaderboardUsecase_TwoWinsRanksPlayerFirst(t *testing.T) {
 	task3 := f.makeTask(t, uniq("t"), domain.DifficultyEasy)
 
 	now := time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC)
-	createSolvedWin(t, alice.ID, bob.ID, alice.ID, task1.ID, now, 2*time.Second)
-	createSolvedWin(t, alice.ID, charlie.ID, alice.ID, task2.ID, now.Add(time.Minute), 3*time.Second)
-	createSolvedWin(t, bob.ID, charlie.ID, bob.ID, task3.ID, now.Add(2*time.Minute), 1*time.Second)
+	f.createSolvedWin(t, alice.ID, bob.ID, alice.ID, task1.ID, now, 2*time.Second)
+	f.createSolvedWin(t, alice.ID, charlie.ID, alice.ID, task2.ID, now.Add(time.Minute), 3*time.Second)
+	f.createSolvedWin(t, bob.ID, charlie.ID, bob.ID, task3.ID, now.Add(2*time.Minute), 1*time.Second)
 
 	require.NoError(t, uc.IncrementWin(ctx, alice.Username))
 	require.NoError(t, uc.IncrementWin(ctx, alice.Username))
@@ -39,13 +39,13 @@ func TestLeaderboardUsecase_TwoWinsRanksPlayerFirst(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, entries, 2)
 	require.Equal(t, alice.Username, entries[0].Username)
-	require.Equal(t, 2, entries[0].TasksSolved)
-	require.Equal(t, int64(5_000), entries[0].TotalSolveTimeMs)
+	require.Equal(t, 2, entries[0].Wins)
+	require.Equal(t, int64(2_500), entries[0].AverageSolveTimeMs)
 	require.Equal(t, bob.Username, entries[1].Username)
-	require.Equal(t, 1, entries[1].TasksSolved)
+	require.Equal(t, 1, entries[1].Wins)
 }
 
-func TestLeaderboardUsecase_TiebreakUsesTotalSolveTime(t *testing.T) {
+func TestLeaderboardUsecase_TiebreakUsesAverageSolveTime(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -56,8 +56,8 @@ func TestLeaderboardUsecase_TiebreakUsesTotalSolveTime(t *testing.T) {
 	task2 := f.makeTask(t, uniq("t"), domain.DifficultyEasy)
 
 	now := time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC)
-	createSolvedWin(t, alice.ID, bob.ID, alice.ID, task1.ID, now, 5*time.Second)
-	createSolvedWin(t, bob.ID, alice.ID, bob.ID, task2.ID, now.Add(time.Minute), 2*time.Second)
+	f.createSolvedWin(t, alice.ID, bob.ID, alice.ID, task1.ID, now, 5*time.Second)
+	f.createSolvedWin(t, bob.ID, alice.ID, bob.ID, task2.ID, now.Add(time.Minute), 2*time.Second)
 
 	require.NoError(t, uc.IncrementWin(ctx, alice.Username))
 	require.NoError(t, uc.IncrementWin(ctx, bob.Username))
@@ -66,14 +66,28 @@ func TestLeaderboardUsecase_TiebreakUsesTotalSolveTime(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, entries, 2)
 	require.Equal(t, bob.Username, entries[0].Username)
-	require.Equal(t, int64(2_000), entries[0].TotalSolveTimeMs)
+	require.Equal(t, int64(2_000), entries[0].AverageSolveTimeMs)
 	require.Equal(t, alice.Username, entries[1].Username)
-	require.Equal(t, int64(5_000), entries[1].TotalSolveTimeMs)
+	require.Equal(t, int64(5_000), entries[1].AverageSolveTimeMs)
+}
+
+func TestLeaderboardUsecase_IgnoresRedisOnlyWinPollution(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	uc, f := newLeaderboardUsecaseFixture(t)
+	alice := f.makePlayer(t, uniq("alice"))
+
+	require.NoError(t, uc.IncrementWin(ctx, alice.Username))
+
+	entries, err := uc.Top50(ctx)
+	require.NoError(t, err)
+	require.Empty(t, entries, "Redis-only counters without a solved flag win must stay out of leaderboard")
 }
 
 func newLeaderboardUsecaseFixture(t *testing.T) (*leaderboardusecase.LeaderboardUsecase, *duelFixture) {
 	t.Helper()
-	f := newDuelFixture()
+	f := newIsolatedDuelFixture(t)
 	store := redisrepo.NewLeaderboardRedis(sharedRedis(t).client, "leaderboard:"+uniq("z"))
 	uc := leaderboardusecase.NewLeaderboardUsecase(store, f.board, fixedIntegrationClock{
 		now: time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC),

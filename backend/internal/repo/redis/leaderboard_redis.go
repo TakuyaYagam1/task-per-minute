@@ -55,8 +55,8 @@ func (r *LeaderboardRedis) WinScores(ctx context.Context) ([]usecase.Leaderboard
 			return nil, fmt.Errorf("LeaderboardRedis - WinScores - unexpected member type %T", row.Member)
 		}
 		out = append(out, usecase.LeaderboardScore{
-			Username:    username,
-			TasksSolved: int(row.Score),
+			Username: username,
+			Wins:     int(row.Score),
 		})
 	}
 	return out, nil

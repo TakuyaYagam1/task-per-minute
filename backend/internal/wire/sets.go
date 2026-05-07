@@ -41,6 +41,7 @@ var ReposSet = wire.NewSet(
 	wire.Bind(new(usecase.SchemaVersionReader), new(*persistent.SchemaVersionPostgres)),
 	persistent.NewPlayerPostgres,
 	wire.Bind(new(usecase.PlayerRepo), new(*persistent.PlayerPostgres)),
+	wire.Bind(new(usecase.AdminPlayerRepo), new(*persistent.PlayerPostgres)),
 	wire.Bind(new(usecase.PlayerStatusRepo), new(*persistent.PlayerPostgres)),
 	wire.Bind(new(usecase.QueuedPlayerResetter), new(*persistent.PlayerPostgres)),
 	persistent.NewDuelPostgres,
@@ -68,6 +69,8 @@ var UsecasesSet = wire.NewSet(
 	wire.Bind(new(usecase.AdminAuth), new(*adminusecase.AuthUsecase)),
 	adminusecase.NewTaskUsecase,
 	wire.Bind(new(usecase.AdminTask), new(*adminusecase.TaskUsecase)),
+	adminusecase.NewPlayerUsecase,
+	wire.Bind(new(usecase.AdminPlayer), new(*adminusecase.PlayerUsecase)),
 	provideUploadUsecase,
 	wire.Bind(new(usecase.Upload), new(*adminusecase.UploadUsecase)),
 	playerusecase.NewPlayerUsecase,
@@ -84,6 +87,7 @@ var UsecasesSet = wire.NewSet(
 	leaderboardusecase.NewLeaderboardUsecase,
 	wire.Bind(new(usecase.Leaderboard), new(*leaderboardusecase.LeaderboardUsecase)),
 	wire.Bind(new(usecase.LeaderboardBumper), new(*leaderboardusecase.LeaderboardUsecase)),
+	wire.Bind(new(usecase.LeaderboardInvalidator), new(*leaderboardusecase.LeaderboardUsecase)),
 )
 
 var MiddlewareSet = wire.NewSet(
@@ -92,6 +96,7 @@ var MiddlewareSet = wire.NewSet(
 
 var WebSocketSet = wire.NewSet(
 	provideHubRegistry,
+	provideHandshakeRateLimiter,
 	provideRawWebSocketServer,
 	provideDuelBroadcaster,
 	provideReconnectManager,

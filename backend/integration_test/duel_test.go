@@ -222,7 +222,37 @@ func TestDuel_IndividualPoolsCanAssignDifferentDifficulties(t *testing.T) {
 	require.Equal(t, easy.ID, taskForPlayer(t, result, bob.ID).ID)
 }
 
-func TestDuel_LeaderboardTiebreakerUsesTotalSolveTime(t *testing.T) {
+func TestDuel_IndividualPoolsCoverMixedDifficultyPairs(t *testing.T) {
+	f := newDuelScenarioFixture(t)
+
+	easy := f.makeTaskWithLimit(t, uniq("easy"), domain.DifficultyEasy, 60)
+	medium := f.makeTaskWithLimit(t, uniq("medium"), domain.DifficultyMedium, 90)
+	hard := f.makeTaskWithLimit(t, uniq("hard"), domain.DifficultyHard, 120)
+
+	mediumPlayer := f.makePlayer(t, uniq("medium"))
+	easyPlayer := f.makePlayer(t, uniq("easy"))
+	f.markSolved(t, mediumPlayer.ID, easy)
+	easyMedium := f.matchPlayers(t, mediumPlayer.ID, easyPlayer.ID)
+	require.Equal(t, medium.ID, taskForPlayer(t, easyMedium, mediumPlayer.ID).ID)
+	require.Equal(t, easy.ID, taskForPlayer(t, easyMedium, easyPlayer.ID).ID)
+
+	hardPlayer := f.makePlayer(t, uniq("hard"))
+	newPlayer := f.makePlayer(t, uniq("new"))
+	f.markSolved(t, hardPlayer.ID, easy, medium)
+	easyHard := f.matchPlayers(t, hardPlayer.ID, newPlayer.ID)
+	require.Equal(t, hard.ID, taskForPlayer(t, easyHard, hardPlayer.ID).ID)
+	require.Equal(t, easy.ID, taskForPlayer(t, easyHard, newPlayer.ID).ID)
+
+	anotherHardPlayer := f.makePlayer(t, uniq("hard"))
+	anotherMediumPlayer := f.makePlayer(t, uniq("medium"))
+	f.markSolved(t, anotherHardPlayer.ID, easy, medium)
+	f.markSolved(t, anotherMediumPlayer.ID, easy)
+	mediumHard := f.matchPlayers(t, anotherHardPlayer.ID, anotherMediumPlayer.ID)
+	require.Equal(t, hard.ID, taskForPlayer(t, mediumHard, anotherHardPlayer.ID).ID)
+	require.Equal(t, medium.ID, taskForPlayer(t, mediumHard, anotherMediumPlayer.ID).ID)
+}
+
+func TestDuel_LeaderboardTiebreakerUsesAverageSolveTime(t *testing.T) {
 	f := newDuelScenarioFixture(t)
 	ctx := context.Background()
 
@@ -248,11 +278,11 @@ func TestDuel_LeaderboardTiebreakerUsesTotalSolveTime(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, entries, 2)
 	require.Equal(t, bob.Username, entries[0].Username)
-	require.Equal(t, 3, entries[0].TasksSolved)
-	require.Equal(t, int64(6_000), entries[0].TotalSolveTimeMs)
+	require.Equal(t, 3, entries[0].Wins)
+	require.Equal(t, int64(2_000), entries[0].AverageSolveTimeMs)
 	require.Equal(t, alice.Username, entries[1].Username)
-	require.Equal(t, 3, entries[1].TasksSolved)
-	require.Equal(t, int64(18_000), entries[1].TotalSolveTimeMs)
+	require.Equal(t, 3, entries[1].Wins)
+	require.Equal(t, int64(6_000), entries[1].AverageSolveTimeMs)
 }
 
 func TestDuel_AntiRepeatSelectsAnotherTaskWhenAvailable(t *testing.T) {
@@ -267,6 +297,39 @@ func TestDuel_AntiRepeatSelectsAnotherTaskWhenAvailable(t *testing.T) {
 	result := f.matchPlayers(t, alice.ID, bob.ID)
 
 	require.Equal(t, unsolved.ID, taskForPlayer(t, result, alice.ID).ID)
+}
+
+func TestDuel_SamePoolAssignsDistinctTasksWhenAvailable(t *testing.T) {
+	f := newDuelScenarioFixture(t)
+
+	first := f.makeTaskWithLimit(t, uniq("easy"), domain.DifficultyEasy, 60)
+	second := f.makeTaskWithLimit(t, uniq("easy"), domain.DifficultyEasy, 60)
+	alice := f.makePlayer(t, uniq("alice"))
+	bob := f.makePlayer(t, uniq("bob"))
+
+	result := f.matchPlayers(t, alice.ID, bob.ID)
+
+	aliceTask := taskForPlayer(t, result, alice.ID)
+	bobTask := taskForPlayer(t, result, bob.ID)
+	require.NotEqual(t, aliceTask.ID, bobTask.ID)
+	require.Contains(t, []uuid.UUID{first.ID, second.ID}, aliceTask.ID)
+	require.Contains(t, []uuid.UUID{first.ID, second.ID}, bobTask.ID)
+}
+
+func TestDuel_SamePoolSwapsPlayerSolvedTasks(t *testing.T) {
+	f := newDuelScenarioFixture(t)
+
+	sun := f.makeTaskWithLimit(t, uniq("sun"), domain.DifficultyEasy, 60)
+	moon := f.makeTaskWithLimit(t, uniq("moon"), domain.DifficultyEasy, 60)
+	alice := f.makePlayer(t, uniq("alice"))
+	bob := f.makePlayer(t, uniq("bob"))
+
+	f.markSolved(t, alice.ID, sun)
+	f.markSolved(t, bob.ID, moon)
+	result := f.matchPlayers(t, alice.ID, bob.ID)
+
+	require.Equal(t, moon.ID, taskForPlayer(t, result, alice.ID).ID)
+	require.Equal(t, sun.ID, taskForPlayer(t, result, bob.ID).ID)
 }
 
 func TestDuel_FallbackReusesSolvedTaskWhenPoolIsExhausted(t *testing.T) {
@@ -337,7 +400,7 @@ func TestDuel_ReconnectResumeUpdatesDeadline(t *testing.T) {
 	require.WithinDuration(t, timer.resumeDeadline, updated.Deadline, time.Second)
 }
 
-func TestDuel_ReconnectDisconnectLimitAwardsOpponent(t *testing.T) {
+func TestDuel_ReconnectDisconnectLimitFinalizesDraw(t *testing.T) {
 	f := newDuelScenarioFixture(t)
 	ctx := context.Background()
 
@@ -360,12 +423,11 @@ func TestDuel_ReconnectDisconnectLimitAwardsOpponent(t *testing.T) {
 	got, err := f.duels.GetByID(ctx, duel.ID)
 	require.NoError(t, err)
 	require.Equal(t, domain.DuelStatusFinished, got.Status)
-	require.NotNil(t, got.WinnerID)
-	require.Equal(t, bob.ID, *got.WinnerID)
+	require.Nil(t, got.WinnerID)
 	require.Equal(t, 1, broadcaster.finishedCount())
 }
 
-func TestDuel_ReconnectWindowExpiryAwardsOpponent(t *testing.T) {
+func TestDuel_ReconnectWindowExpiryFinalizesDraw(t *testing.T) {
 	f := newDuelScenarioFixture(t)
 	ctx := context.Background()
 
@@ -388,12 +450,11 @@ func TestDuel_ReconnectWindowExpiryAwardsOpponent(t *testing.T) {
 		got, err := f.duels.GetByID(ctx, duel.ID)
 		return err == nil &&
 			got.Status == domain.DuelStatusFinished &&
-			got.WinnerID != nil &&
-			*got.WinnerID == bob.ID
+			got.WinnerID == nil
 	}, time.Second, 10*time.Millisecond)
 }
 
-func TestDuel_ReconnectFinalizeOpponentForfeit(t *testing.T) {
+func TestDuel_ReconnectFinalizeDraw(t *testing.T) {
 	f := newDuelScenarioFixture(t)
 	ctx := context.Background()
 
@@ -409,16 +470,17 @@ func TestDuel_ReconnectFinalizeOpponentForfeit(t *testing.T) {
 		fixedIntegrationClock{now: f.now},
 	)
 
-	mgr.FinalizeOpponentForfeit(ctx, duel.ID, alice.ID)
+	finished, err := mgr.FinalizeDraw(ctx, duel.ID)
+	require.NoError(t, err)
+	require.NotNil(t, finished)
 
 	got, err := f.duels.GetByID(ctx, duel.ID)
 	require.NoError(t, err)
 	require.Equal(t, domain.DuelStatusFinished, got.Status)
-	require.NotNil(t, got.WinnerID)
-	require.Equal(t, alice.ID, *got.WinnerID)
+	require.Nil(t, got.WinnerID)
 }
 
-func TestDuel_ReconnectFinalizeOpponentForfeit_BumpsLeaderboard(t *testing.T) {
+func TestDuel_ReconnectFinalizeDraw_DoesNotBumpLeaderboard(t *testing.T) {
 	f := newDuelScenarioFixture(t)
 	ctx := context.Background()
 
@@ -435,13 +497,12 @@ func TestDuel_ReconnectFinalizeOpponentForfeit_BumpsLeaderboard(t *testing.T) {
 		duelusecase.WithLeaderboardStore(f.boardStore),
 	)
 
-	mgr.FinalizeOpponentForfeit(ctx, duel.ID, alice.ID)
+	_, err := mgr.FinalizeDraw(ctx, duel.ID)
+	require.NoError(t, err)
 
 	scores, err := f.boardStore.WinScores(ctx)
 	require.NoError(t, err)
-	require.Len(t, scores, 1, "forfeit must add exactly one entry to the leaderboard ZSET")
-	require.Equal(t, alice.Username, scores[0].Username)
-	require.Equal(t, 1, scores[0].TasksSolved)
+	require.Empty(t, scores, "draw must not add any entry to the leaderboard ZSET")
 }
 
 func TestDuel_ReconnectDuelTimerExpiryBroadcastsFinished(t *testing.T) {

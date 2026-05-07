@@ -38,3 +38,102 @@ AdminTokenResponse:
       type: integer
       format: int32
       description: Seconds until access_token expires.
+
+AdminPlayerAuditAction:
+  type: string
+  enum: [update, delete]
+
+AdminPlayerAuditState:
+  type: object
+  required: [username, status, wins, average_solve_time_ms, stats_overridden, deleted]
+  properties:
+    username:
+      type: string
+    status:
+      $ref: '#/PlayerStatus'
+    wins:
+      type: integer
+      format: int32
+      minimum: 0
+    average_solve_time_ms:
+      type: integer
+      format: int64
+      minimum: 0
+    stats_overridden:
+      type: boolean
+    deleted:
+      type: boolean
+
+AdminPlayerAuditEventResponse:
+  type: object
+  required: [id, actor_subject, actor_jti, action, player_id, before_state, after_state, created_at]
+  properties:
+    id:
+      type: string
+      format: uuid
+    actor_subject:
+      type: string
+    actor_jti:
+      type: string
+    action:
+      $ref: '#/AdminPlayerAuditAction'
+    player_id:
+      type: string
+      format: uuid
+    before_state:
+      $ref: '#/AdminPlayerAuditState'
+    after_state:
+      $ref: '#/AdminPlayerAuditState'
+    created_at:
+      type: string
+      format: date-time
+
+AdminPlayerResponse:
+  type: object
+  required: [id, username, status, created_at, wins, average_solve_time_ms, stats_overridden]
+  properties:
+    id:
+      type: string
+      format: uuid
+    username:
+      type: string
+      minLength: 2
+      maxLength: 50
+      pattern: '^[a-zA-Z0-9_-]+$'
+    status:
+      $ref: '#/PlayerStatus'
+    created_at:
+      type: string
+      format: date-time
+    deleted_at:
+      type: string
+      format: date-time
+      nullable: true
+    wins:
+      type: integer
+      format: int32
+      minimum: 0
+    average_solve_time_ms:
+      type: integer
+      format: int64
+      minimum: 0
+    stats_overridden:
+      type: boolean
+
+UpdateAdminPlayerRequest:
+  type: object
+  required: [username, wins, average_solve_time_ms]
+  properties:
+    username:
+      type: string
+      minLength: 2
+      maxLength: 50
+      pattern: '^[a-zA-Z0-9_-]+$'
+    wins:
+      type: integer
+      format: int32
+      minimum: 0
+    average_solve_time_ms:
+      type: integer
+      format: int64
+      minimum: 0

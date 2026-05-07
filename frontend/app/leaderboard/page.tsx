@@ -7,8 +7,8 @@ import { ApiError, leaderboardApi } from '../../lib/shared/api';
 interface LeaderboardEntry {
   rank: number;
   username: string;
-  tasks_solved: number;
-  total_solve_time_ms: number;
+  wins: number;
+  average_solve_time_ms: number;
 }
 
 const getMedalEmoji = (rank: number): string | null => {
@@ -52,9 +52,9 @@ const formatTime = (ms: number): string => {
   return `${seconds}с`;
 };
 
-const getMaxTasks = (entries: LeaderboardEntry[]): number => {
+const getMaxWins = (entries: LeaderboardEntry[]): number => {
   if (entries.length === 0) return 0;
-  return Math.max(...entries.map(e => e.tasks_solved));
+  return Math.max(...entries.map(e => e.wins));
 };
 
 export default function Leaderboard() {
@@ -176,14 +176,14 @@ export default function Leaderboard() {
     };
   }, []);
 
-  const maxTasks = useMemo(() => getMaxTasks(entries), [entries]);
+  const maxWins = useMemo(() => getMaxWins(entries), [entries]);
 
   const topThree = entries.slice(0, 3);
   const restEntries = entries.slice(3);
   const totalPlayers = entries.length;
-  const totalTasksSolved = entries.reduce((sum, e) => sum + e.tasks_solved, 0);
+  const totalWins = entries.reduce((sum, e) => sum + e.wins, 0);
   const avgTime = totalPlayers > 0
-    ? entries.reduce((sum, e) => sum + e.total_solve_time_ms, 0) / totalPlayers
+    ? entries.reduce((sum, e) => sum + e.average_solve_time_ms, 0) / totalPlayers
     : 0;
 
   return (
@@ -212,8 +212,8 @@ export default function Leaderboard() {
           </div>
         </div>
         <div className={styles.statCard}>
-          <div className={styles.statLabel}>Решено задач</div>
-          <div className={styles.statValue}>{totalTasksSolved}</div>
+          <div className={styles.statLabel}>Всего побед</div>
+          <div className={styles.statValue}>{totalWins}</div>
         </div>
         <div className={styles.statCard}>
           <div className={styles.statLabel}>Среднее время</div>
@@ -257,15 +257,15 @@ export default function Leaderboard() {
                       </div>
                       <div className={styles.podiumStats}>
                         <div className={styles.podiumStat}>
-                          <span className={styles.podiumStatLabel}>Задач</span>
+                          <span className={styles.podiumStatLabel}>Победы</span>
                           <span className={styles.podiumStatValue}>
-                            {entry.tasks_solved}
+                            {entry.wins}
                           </span>
                         </div>
                         <div className={styles.podiumStat}>
                           <span className={styles.podiumStatLabel}>Время</span>
                           <span className={styles.podiumStatValue}>
-                            {formatTime(entry.total_solve_time_ms)}
+                            {formatTime(entry.average_solve_time_ms)}
                           </span>
                         </div>
                       </div>
@@ -280,7 +280,7 @@ export default function Leaderboard() {
                   <div className={styles.colRank}>#</div>
                   <div className={styles.colAvatar}></div>
                   <div className={styles.colPlayer}>Игрок</div>
-                  <div className={styles.colTasks}>Задачи</div>
+                  <div className={styles.colTasks}>Победы</div>
                   <div className={styles.colTime}>Время</div>
                 </div>
                 {restEntries.map((entry) => (
@@ -299,21 +299,21 @@ export default function Leaderboard() {
                       <span className={styles.playerName}>{entry.username}</span>
                     </div>
                     <div className={styles.tasksCell}>
-                      <span className={styles.tasksValue}>{entry.tasks_solved}</span>
-                      {maxTasks > 0 && (
+                      <span className={styles.tasksValue}>{entry.wins}</span>
+                      {maxWins > 0 && (
                         <div className={styles.tasksBar}>
                           <div
                             className={styles.tasksBarFill}
                             style={{
-                              width: `${(entry.tasks_solved / maxTasks) * 100}%`,
+                              width: `${(entry.wins / maxWins) * 100}%`,
                             }}
                           />
                         </div>
                       )}
                     </div>
                     <div className={styles.timeCell}>
-                      {formatTime(entry.total_solve_time_ms)}
-                      <span className={styles.timeLabel}>всего</span>
+                      {formatTime(entry.average_solve_time_ms)}
+                      <span className={styles.timeLabel}>среднее</span>
                     </div>
                   </div>
                 ))}

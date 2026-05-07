@@ -42,6 +42,12 @@ paths:
     $ref: 'routes/admin.yml#/~1api~1v1~1admin~1refresh'
   /api/v1/admin/logout:
     $ref: 'routes/admin.yml#/~1api~1v1~1admin~1logout'
+  /api/v1/admin/players:
+    $ref: 'routes/admin.yml#/~1api~1v1~1admin~1players'
+  /api/v1/admin/players/{id}/audit:
+    $ref: 'routes/admin.yml#/~1api~1v1~1admin~1players~1{id}~1audit'
+  /api/v1/admin/players/{id}:
+    $ref: 'routes/admin.yml#/~1api~1v1~1admin~1players~1{id}'
   /api/v1/admin/tasks:
     $ref: 'routes/admin.yml#/~1api~1v1~1admin~1tasks'
   /api/v1/admin/tasks/{id}:

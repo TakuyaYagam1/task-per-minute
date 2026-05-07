@@ -75,6 +75,173 @@
             schema:
               $ref: '../components/schemas.yml#/ProblemDetails'
 
+/api/v1/admin/players:
+  get:
+    operationId: listAdminPlayers
+    tags: [admin]
+    summary: List players with effective leaderboard stats
+    security:
+      - BearerAuth: []
+    parameters:
+      - in: query
+        name: include_deleted
+        required: false
+        schema:
+          type: boolean
+          default: false
+    responses:
+      '200':
+        description: All non-deleted players.
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '../components/schemas.yml#/AdminPlayerResponse'
+      '401':
+        description: Missing or invalid bearer token.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+
+/api/v1/admin/players/{id}/audit:
+  parameters:
+    - in: path
+      name: id
+      required: true
+      schema:
+        type: string
+        format: uuid
+  get:
+    operationId: listAdminPlayerAudit
+    tags: [admin]
+    summary: List player audit events
+    security:
+      - BearerAuth: []
+    parameters:
+      - in: query
+        name: limit
+        required: false
+        schema:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 200
+          default: 50
+    responses:
+      '200':
+        description: Newest-first audit events for the player.
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '../components/schemas.yml#/AdminPlayerAuditEventResponse'
+      '400':
+        description: Invalid query parameter.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '401':
+        description: Missing or invalid bearer token.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '404':
+        description: Player not found.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+
+/api/v1/admin/players/{id}:
+  parameters:
+    - in: path
+      name: id
+      required: true
+      schema:
+        type: string
+        format: uuid
+  put:
+    operationId: updateAdminPlayer
+    tags: [admin]
+    summary: Rename a player and override their leaderboard stats
+    description: |
+      Writes an explicit admin leaderboard override for wins and average solve time.
+      Set wins=0 and average_solve_time_ms=0 to remove the player from the public leaderboard.
+    security:
+      - BearerAuth: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../components/schemas.yml#/UpdateAdminPlayerRequest'
+    responses:
+      '200':
+        description: Updated player.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/AdminPlayerResponse'
+      '400':
+        description: Validation error.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '401':
+        description: Missing or invalid bearer token.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '404':
+        description: Player not found.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '409':
+        description: Username is already taken.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+  delete:
+    operationId: deleteAdminPlayer
+    tags: [admin]
+    summary: Soft-delete an idle player
+    description: |
+      Soft-deletes the player, clears their session token, and hides them from admin/player leaderboard lists.
+      Returns 409 if the player is currently queued or in a duel.
+    security:
+      - BearerAuth: []
+    responses:
+      '204':
+        description: Deleted.
+      '401':
+        description: Missing or invalid bearer token.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '404':
+        description: Player not found.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '409':
+        description: Player is queued or in a duel.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+
 /api/v1/admin/tasks:
   get:
     operationId: listTasks

@@ -19,16 +19,15 @@ import (
 // is already finished it returns (nil, nil) so callers can safely retry.
 //
 // Used by both TimerRegistry (deadline expiry - always a draw) and
-// ReconnectManager (disconnect-overflow / opponent forfeit - winner is set)
-// as the single owner of the duel-finish transaction.
+// ReconnectManager as the single owner of the duel-finish transaction.
 //
 // The optional `boards` variadic lets callers wire a leaderboard store. When
 // supplied AND winnerID is non-nil, the winner's username is captured inside
 // the tx (so the read is consistent with the duel finish) and IncrementWin
 // fires AFTER the tx commits - Redis is not transactional with Postgres, so
 // running it inside would risk a leaderboard bump for a duel whose commit
-// later failed. The error is intentionally swallowed: the duel is already
-// finalized in PG and can be reconciled from duels.winner_id offline.
+// later failed. Correct flag submission is the normal leaderboard path; other
+// callers should pass nil unless they intentionally want a compatibility bump.
 func finalizeDuel(
 	ctx context.Context,
 	tx usecase.TxManager,

@@ -84,7 +84,7 @@ func TestE2EPlayerFlow_HTTPJoinWSMatchSubmitAndLeaderboard(t *testing.T) {
 	board := app.getLeaderboard(t)
 	require.NotEmpty(t, board.Entries)
 	require.Equal(t, alice.Username, board.Entries[0].Username)
-	require.Equal(t, int32(1), board.Entries[0].TasksSolved)
+	require.Equal(t, int32(1), board.Entries[0].Wins)
 }
 
 // POST /api/v1/admin/login + admin task CRUD + source upload: admin creates, uploads, lists, and deletes a task.
@@ -359,7 +359,7 @@ func TestE2EConcurrentFlagSubmit_SingleWinnerAndSingleLeaderboardBump(t *testing
 
 	board := app.getLeaderboard(t)
 	require.Len(t, board.Entries, 1, "exactly one leaderboard entry is expected after a single duel")
-	require.Equal(t, int32(1), board.Entries[0].TasksSolved,
+	require.Equal(t, int32(1), board.Entries[0].Wins,
 		"leaderboard must be bumped exactly once even though two correct flags raced")
 
 	winnerUsername := alice.Username

@@ -99,6 +99,50 @@
   letter-spacing: 0.3px;
 }
 
+.logoutButton {
+  position: absolute;
+  top: 0.15rem;
+  right: 0;
+  padding: 0.55rem 0.95rem;
+  font-size: 0.82rem;
+  width: auto;
+}
+
+.sectionTabs {
+  display: inline-flex;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  padding: 0.3rem;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0.8rem;
+}
+
+.sectionTab {
+  min-width: 7rem;
+  padding: 0.65rem 1rem;
+  border: none;
+  border-radius: 0.55rem;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.65);
+  font-family: inherit;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.sectionTab:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.sectionTabActive {
+  color: #fff;
+  background: linear-gradient(135deg, rgba(114, 209, 235, 0.35), rgba(93, 179, 211, 0.3));
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+}
+
 
 .card {
   width: 100%;
@@ -513,6 +557,62 @@
   color: #ef4444;
 }
 
+.taskBadgeOverride {
+  background: rgba(167, 139, 250, 0.14);
+  border: 1px solid rgba(167, 139, 250, 0.28);
+  color: #c4b5fd;
+}
+
+.taskBadgeDeleted {
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  color: #fca5a5;
+}
+
+.playerListHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.playerListHeader .taskListTitle {
+  margin-bottom: 0;
+}
+
+.toggleRow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: rgba(255, 255, 255, 0.68);
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.toggleRow input {
+  accent-color: #72d1eb;
+}
+
+.playerItemActive {
+  border-color: rgba(114, 209, 235, 0.45);
+  background: rgba(114, 209, 235, 0.1);
+}
+
+.playerItemDeleted {
+  opacity: 0.78;
+}
+
+.playerFormHint {
+  display: flex;
+  align-items: flex-end;
+  min-height: 100%;
+  padding: 0.7rem 1rem;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 0.88rem;
+}
+
 .taskItemActions {
   display: flex;
   gap: 0.5rem;
@@ -537,12 +637,161 @@
   transform: translateY(-1px);
 }
 
+.taskItemBtn:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+  transform: none;
+}
+
+.taskItemBtn:disabled:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.6);
+}
+
 .taskItemBtnDanger {
   color: #ef4444;
 }
 
 .taskItemBtnDanger:hover {
   background: rgba(239, 68, 68, 0.2);
+}
+
+.modalBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem;
+  background: rgba(7, 31, 42, 0.62);
+  backdrop-filter: blur(8px);
+}
+
+.auditModal {
+  width: min(760px, 100%);
+  max-height: min(720px, 88vh);
+  overflow: auto;
+  padding: 1.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 1rem;
+  background: rgba(48, 91, 108, 0.96);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.28);
+}
+
+.modalHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.modalTitle {
+  margin: 0;
+  color: #fff;
+  font-size: 1.25rem;
+  font-weight: 800;
+}
+
+.modalSubtitle {
+  margin: 0.2rem 0 0;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 0.88rem;
+}
+
+.modalClose {
+  width: 2rem;
+  height: 2rem;
+  border: none;
+  border-radius: 0.45rem;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.modalClose:hover {
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+}
+
+.auditTimeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.auditEvent {
+  padding: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0.75rem;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.auditEventHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.35rem;
+}
+
+.auditAction {
+  color: #fff;
+  font-size: 0.95rem;
+  font-weight: 800;
+}
+
+.auditMeta {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.78rem;
+}
+
+.auditDiffs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin-top: 0.8rem;
+}
+
+.auditDiff {
+  display: grid;
+  grid-template-columns: minmax(7rem, 0.45fr) 1fr;
+  gap: 0.75rem;
+  align-items: center;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 0.84rem;
+}
+
+.auditField {
+  color: rgba(255, 255, 255, 0.52);
+  font-weight: 700;
+}
+
+.auditValues {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.auditValue {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.auditArrow {
+  color: #72d1eb;
+  flex-shrink: 0;
+}
+
+.auditEmpty {
+  padding: 2rem 1rem;
+  color: rgba(255, 255, 255, 0.52);
+  text-align: center;
+  font-size: 0.9rem;
 }
 
 
@@ -684,6 +933,21 @@
     font-size: 0.85rem;
   }
 
+  .logoutButton {
+    position: static;
+    align-self: flex-end;
+    margin-bottom: -0.25rem;
+  }
+
+  .sectionTabs {
+    width: 100%;
+  }
+
+  .sectionTab {
+    flex: 1;
+    min-width: 0;
+  }
+
   .card {
     padding: 1.25rem;
   }
@@ -706,6 +970,15 @@
     width: 100%;
     justify-content: flex-end;
   }
+
+  .playerListHeader {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .auditDiff {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 480px) {
@@ -724,5 +997,9 @@
 
   .btn {
     width: 100%;
+  }
+
+  .logoutButton {
+    width: auto;
   }
 }

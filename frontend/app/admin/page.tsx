@@ -5,16 +5,22 @@ import {
   adminApi,
   adminSession,
   ApiError,
+  type AdminPlayer,
+  type AdminPlayerAuditEvent,
   type AdminTask,
   type AdminTokenResponse,
   type CreateTaskRequest,
+  type UpdateAdminPlayerRequest,
   type UpdateTaskRequest,
 } from '../../lib/shared/api';
 import { log, useTimedNotification } from '../../lib/shared/lib';
 
 type Task = AdminTask;
+type Player = AdminPlayer;
+type PlayerAuditEvent = AdminPlayerAuditEvent;
 type TaskCategory = Task['category'];
 type TaskDifficulty = Task['difficulty'];
+type AdminSection = 'tasks' | 'players';
 
 interface Notification {
   type: 'success' | 'error' | 'warning';
@@ -44,6 +50,7 @@ const DIFFICULTY_CONFIG: Record<TaskDifficulty, { label: string; badgeClass: str
 const MAX_INT32 = 2147483647;
 const MAX_TASK_TITLE_LENGTH = 255;
 const MAX_TASK_FLAG_LENGTH = 255;
+const USERNAME_RE = /^[a-zA-Z0-9_-]{2,50}$/;
 
 const countChars = (value: string): number => Array.from(value).length;
 
@@ -54,6 +61,24 @@ const parsePositiveInt32 = (value: string): number | null => {
   }
   const parsed = Number(trimmed);
   return Number.isSafeInteger(parsed) && parsed <= MAX_INT32 ? parsed : null;
+};
+
+const parseNonNegativeInt32 = (value: string): number | null => {
+  const trimmed = value.trim();
+  if (!/^\d+$/.test(trimmed)) {
+    return null;
+  }
+  const parsed = Number(trimmed);
+  return Number.isSafeInteger(parsed) && parsed <= MAX_INT32 ? parsed : null;
+};
+
+const parseNonNegativeInt64 = (value: string): number | null => {
+  const trimmed = value.trim();
+  if (!/^\d+$/.test(trimmed)) {
+    return null;
+  }
+  const parsed = Number(trimmed);
+  return Number.isSafeInteger(parsed) ? parsed : null;
 };
 
 const parsePortNumber = (value: string): number | null => {
@@ -108,6 +133,75 @@ const formatRetryAfter = (value: string | null | undefined): string => {
   return 'несколько минут';
 };
 
+const formatMilliseconds = (ms: number): string => {
+  if (ms <= 0) return '0.0с';
+  const totalSeconds = ms / 1000;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = (totalSeconds % 60).toFixed(1);
+  if (minutes > 0) {
+    return `${minutes}м ${seconds}с`;
+  }
+  return `${seconds}с`;
+};
+
+const formatDateTime = (value: string | null | undefined): string => {
+  if (!value) return '—';
+  const parsed = Date.parse(value);
+  if (Number.isNaN(parsed)) return value;
+  return new Intl.DateTimeFormat('ru-RU', {
+    dateStyle: 'short',
+    timeStyle: 'medium',
+  }).format(parsed);
+};
+
+const shortJTI = (value: string): string =>
+  value.length > 12 ? `${value.slice(0, 8)}…${value.slice(-4)}` : value;
+
+const auditActionLabel = (action: PlayerAuditEvent['action']): string =>
+  action === 'delete' ? 'Удаление' : 'Обновление';
+
+const auditFieldLabels = {
+  username: 'Имя',
+  status: 'Статус',
+  wins: 'Победы',
+  average_solve_time_ms: 'Среднее время',
+  stats_overridden: 'Ручная правка',
+  deleted: 'Удаление',
+} as const;
+
+type AuditField = keyof typeof auditFieldLabels;
+
+const auditFields: AuditField[] = [
+  'username',
+  'status',
+  'wins',
+  'average_solve_time_ms',
+  'stats_overridden',
+  'deleted',
+];
+
+const auditStateValue = (
+  state: PlayerAuditEvent['before_state'],
+  field: AuditField,
+): string => {
+  if (field === 'average_solve_time_ms') {
+    return formatMilliseconds(state[field]);
+  }
+  if (field === 'stats_overridden' || field === 'deleted') {
+    return state[field] ? 'да' : 'нет';
+  }
+  return String(state[field]);
+};
+
+const auditDiffs = (event: PlayerAuditEvent): Array<{ field: AuditField; before: string; after: string }> =>
+  auditFields
+    .filter(field => event.before_state[field] !== event.after_state[field])
+    .map(field => ({
+      field,
+      before: auditStateValue(event.before_state, field),
+      after: auditStateValue(event.after_state, field),
+    }));
+
 const apiErrorMessage = (error: unknown, fallback: string): string => {
   if (!(error instanceof ApiError)) {
     return fallback;
@@ -126,6 +220,7 @@ const apiErrorMessage = (error: unknown, fallback: string): string => {
 
 export default function AdminPanel() {
   const [tokens, setTokens] = useState<AdminTokenResponse | null>(null);
+  const [activeSection, setActiveSection] = useState<AdminSection>('tasks');
   const [password, setPassword] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
   const [title, setTitle] = useState('');
@@ -143,11 +238,25 @@ export default function AdminPanel() {
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [tasksLoading, setTasksLoading] = useState(false);
+  const [players, setPlayers] = useState<Player[]>([]);
+  const [playersLoading, setPlayersLoading] = useState(false);
+  const [editingPlayerId, setEditingPlayerId] = useState<string | null>(null);
+  const [playerUsername, setPlayerUsername] = useState('');
+  const [playerWins, setPlayerWins] = useState('0');
+  const [playerAverageMs, setPlayerAverageMs] = useState('0');
+  const [playerSubmitting, setPlayerSubmitting] = useState(false);
+  const [showDeletedPlayers, setShowDeletedPlayers] = useState(false);
+  const [auditPlayer, setAuditPlayer] = useState<Player | null>(null);
+  const [playerAuditEvents, setPlayerAuditEvents] = useState<PlayerAuditEvent[]>([]);
+  const [playerAuditLoading, setPlayerAuditLoading] = useState(false);
+  const [playerAuditError, setPlayerAuditError] = useState<string | null>(null);
   const tokensRef = useRef<AdminTokenResponse | null>(null);
   const refreshPromiseRef = useRef<Promise<AdminTokenResponse> | null>(null);
   const isMountedRef = useRef(false);
   const authSessionVersionRef = useRef(0);
   const tasksRequestIDRef = useRef(0);
+  const playersRequestIDRef = useRef(0);
+  const playerAuditRequestIDRef = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const passwordInputRef = useRef<HTMLInputElement>(null);
   const { notification, showNotification: showTimedNotification } =
@@ -189,13 +298,25 @@ export default function AdminPanel() {
   const clearTokens = useCallback(() => {
     authSessionVersionRef.current += 1;
     tasksRequestIDRef.current += 1;
+    playersRequestIDRef.current += 1;
+    playerAuditRequestIDRef.current += 1;
     refreshPromiseRef.current = null;
     adminSession.clear();
     tokensRef.current = null;
     setTokens(null);
+    setActiveSection('tasks');
     setTasks([]);
+    setPlayers([]);
     setTasksLoading(false);
+    setPlayersLoading(false);
     setSubmitting(false);
+    setPlayerSubmitting(false);
+    setEditingPlayerId(null);
+    setShowDeletedPlayers(false);
+    setAuditPlayer(null);
+    setPlayerAuditEvents([]);
+    setPlayerAuditLoading(false);
+    setPlayerAuditError(null);
   }, []);
 
   const refreshTokens = useCallback(async (): Promise<AdminTokenResponse> => {
@@ -347,9 +468,39 @@ export default function AdminPanel() {
     }
   }, [isCurrentAuthSession, runAdminRequest, showNotification, tokens]);
 
+  const fetchPlayers = useCallback(async () => {
+    if (!tokens) return;
+    const sessionVersion = authSessionVersionRef.current;
+    const requestID = playersRequestIDRef.current + 1;
+    playersRequestIDRef.current = requestID;
+    const canApplyPlayersRequest = () =>
+      isCurrentAuthSession(sessionVersion) && playersRequestIDRef.current === requestID;
+    setPlayersLoading(true);
+    try {
+      const data = await runAdminRequest(accessToken => adminApi.listPlayers(accessToken, showDeletedPlayers));
+      if (canApplyPlayersRequest()) {
+        setPlayers(data);
+      }
+    } catch (error) {
+      if (!canApplyPlayersRequest() || (error instanceof Error && error.message === 'Unauthorized')) {
+        return;
+      }
+      showNotification('error', apiErrorMessage(error, 'Не удалось загрузить игроков'));
+    } finally {
+      if (canApplyPlayersRequest()) {
+        setPlayersLoading(false);
+      }
+    }
+  }, [isCurrentAuthSession, runAdminRequest, showDeletedPlayers, showNotification, tokens]);
+
   useEffect(() => {
-    if (tokens) fetchTasks();
-  }, [tokens, fetchTasks]);
+    if (!tokens) return;
+    if (activeSection === 'tasks') {
+      fetchTasks();
+    } else {
+      fetchPlayers();
+    }
+  }, [activeSection, tokens, fetchPlayers, fetchTasks]);
 
   const resetForm = useCallback(() => {
     setEditingTaskId(null);
@@ -497,6 +648,149 @@ export default function AdminPanel() {
     }
   };
 
+  const resetPlayerForm = useCallback(() => {
+    setEditingPlayerId(null);
+    setPlayerUsername('');
+    setPlayerWins('0');
+    setPlayerAverageMs('0');
+  }, []);
+
+  const startEditingPlayer = (player: Player) => {
+    setEditingPlayerId(player.id);
+    setPlayerUsername(player.username);
+    setPlayerWins(String(player.wins));
+    setPlayerAverageMs(String(player.average_solve_time_ms));
+  };
+
+  const handlePlayerSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingPlayerId) {
+      showNotification('warning', 'Сначала выберите игрока');
+      return;
+    }
+    const username = playerUsername.trim();
+    if (!USERNAME_RE.test(username)) {
+      showNotification('error', 'Имя игрока должно быть 2-50 символов: латиница, цифры, _ или -');
+      return;
+    }
+    const wins = parseNonNegativeInt32(playerWins);
+    if (wins === null) {
+      showNotification('error', 'Победы должны быть целым числом от 0 до 2147483647');
+      return;
+    }
+    const averageSolveTimeMs = parseNonNegativeInt64(playerAverageMs);
+    if (averageSolveTimeMs === null) {
+      showNotification('error', 'Среднее время должно быть целым числом в миллисекундах');
+      return;
+    }
+    if (wins === 0 && averageSolveTimeMs !== 0) {
+      showNotification('error', 'При 0 побед среднее время должно быть 0');
+      return;
+    }
+    if (wins > 0 && averageSolveTimeMs === 0) {
+      showNotification('error', 'При победах среднее время должно быть больше 0');
+      return;
+    }
+
+    setPlayerSubmitting(true);
+    const sessionVersion = authSessionVersionRef.current;
+    try {
+      const body: UpdateAdminPlayerRequest = {
+        username,
+        wins,
+        average_solve_time_ms: averageSolveTimeMs,
+      };
+      const updated = await runAdminRequest(accessToken =>
+        adminApi.updatePlayer(accessToken, editingPlayerId, body),
+      );
+      if (!isCurrentAuthSession(sessionVersion)) {
+        return;
+      }
+      setPlayers(current => current.map(player => player.id === updated.id ? updated : player));
+      resetPlayerForm();
+      showNotification('success', 'Игрок обновлён');
+    } catch (error) {
+      if (!isCurrentAuthSession(sessionVersion) || (error instanceof Error && error.message === 'Unauthorized')) {
+        return;
+      }
+      if (error instanceof ApiError && error.status === 409) {
+        showNotification('error', 'Такое имя уже занято');
+      } else {
+        showNotification('error', apiErrorMessage(error, 'Ошибка при обновлении игрока'));
+      }
+    } finally {
+      if (isCurrentAuthSession(sessionVersion)) {
+        setPlayerSubmitting(false);
+      }
+    }
+  };
+
+  const handleDeletePlayer = async (player: Player) => {
+    if (!confirm(`Удалить игрока ${player.username}?`)) return;
+    const sessionVersion = authSessionVersionRef.current;
+    try {
+      await runAdminRequest(accessToken => adminApi.deletePlayer(accessToken, player.id));
+      if (!isCurrentAuthSession(sessionVersion)) {
+        return;
+      }
+      if (showDeletedPlayers) {
+        fetchPlayers();
+      } else {
+        setPlayers(current => current.filter(item => item.id !== player.id));
+      }
+      if (editingPlayerId === player.id) {
+        resetPlayerForm();
+      }
+      showNotification('success', 'Игрок удалён');
+    } catch (error) {
+      if (!isCurrentAuthSession(sessionVersion) || (error instanceof Error && error.message === 'Unauthorized')) {
+        return;
+      }
+      if (error instanceof ApiError && error.status === 409) {
+        showNotification('error', 'Игрок сейчас в очереди или дуэли');
+      } else {
+        showNotification('error', apiErrorMessage(error, 'Ошибка при удалении игрока'));
+      }
+    }
+  };
+
+  const closePlayerAudit = () => {
+    playerAuditRequestIDRef.current += 1;
+    setAuditPlayer(null);
+    setPlayerAuditEvents([]);
+    setPlayerAuditLoading(false);
+    setPlayerAuditError(null);
+  };
+
+  const openPlayerAudit = async (player: Player) => {
+    setAuditPlayer(player);
+    setPlayerAuditEvents([]);
+    setPlayerAuditError(null);
+    setPlayerAuditLoading(true);
+    const sessionVersion = authSessionVersionRef.current;
+    const requestID = playerAuditRequestIDRef.current + 1;
+    playerAuditRequestIDRef.current = requestID;
+    const canApplyAuditRequest = () =>
+      isCurrentAuthSession(sessionVersion) && playerAuditRequestIDRef.current === requestID;
+    try {
+      const events = await runAdminRequest(accessToken => adminApi.listPlayerAudit(accessToken, player.id));
+      if (canApplyAuditRequest()) {
+        setPlayerAuditEvents(events);
+      }
+    } catch (error) {
+      if (!canApplyAuditRequest() || (error instanceof Error && error.message === 'Unauthorized')) {
+        return;
+      }
+      const message = apiErrorMessage(error, 'Не удалось загрузить историю игрока');
+      setPlayerAuditError(message);
+      showNotification('error', message);
+    } finally {
+      if (canApplyAuditRequest()) {
+        setPlayerAuditLoading(false);
+      }
+    }
+  };
+
   const updateHint = (index: number, value: string) => {
     const newHints = [...hints];
     newHints[index] = value;
@@ -611,6 +905,240 @@ export default function AdminPanel() {
       </>
     );
   };
+
+  const renderPlayersSection = () => (
+    <>
+      <div className={styles.card}>
+        <h2 className={styles.cardTitle}>👥 Игроки</h2>
+        <form onSubmit={handlePlayerSubmit} className={styles.form}>
+          <div className={styles.formRow}>
+            <div className={styles.inputGroup}>
+              <label>Имя игрока</label>
+              <input
+                type="text"
+                aria-label="Имя игрока"
+                value={playerUsername}
+                onChange={e => setPlayerUsername(e.target.value)}
+                placeholder="username"
+                maxLength={50}
+                disabled={!editingPlayerId}
+              />
+            </div>
+            <div className={styles.inputGroup}>
+              <label>Победы</label>
+              <input
+                type="number"
+                aria-label="Победы игрока"
+                min="0"
+                value={playerWins}
+                onChange={e => setPlayerWins(e.target.value)}
+                placeholder="0"
+                disabled={!editingPlayerId}
+              />
+            </div>
+          </div>
+          <div className={styles.formRow}>
+            <div className={styles.inputGroup}>
+              <label>Среднее время (мс)</label>
+              <input
+                type="number"
+                aria-label="Среднее время игрока"
+                min="0"
+                value={playerAverageMs}
+                onChange={e => setPlayerAverageMs(e.target.value)}
+                placeholder="0"
+                disabled={!editingPlayerId}
+              />
+            </div>
+            <div className={styles.playerFormHint}>
+              {editingPlayerId
+                ? `На табло: ${formatMilliseconds(Number(playerAverageMs) || 0)}`
+                : 'Выберите игрока из списка ниже'}
+            </div>
+          </div>
+          <div className={styles.btnGroup}>
+            <button
+              type="submit"
+              className={`${styles.btn} ${styles.btnPrimary}`}
+              disabled={!editingPlayerId || playerSubmitting}
+            >
+              {playerSubmitting ? (
+                <>
+                  <div className={styles.spinner} style={{ width: 18, height: 18 }}></div>
+                  Сохранение...
+                </>
+              ) : (
+                '💾 Сохранить игрока'
+              )}
+            </button>
+            <button
+              type="button"
+              className={`${styles.btn} ${styles.btnSecondary}`}
+              onClick={resetPlayerForm}
+              disabled={!editingPlayerId || playerSubmitting}
+            >
+              Отменить
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <div className={styles.taskList}>
+        <div className={styles.playerListHeader}>
+          <h2 className={styles.taskListTitle}>👥 Список игроков</h2>
+          <label className={styles.toggleRow}>
+            <input
+              type="checkbox"
+              checked={showDeletedPlayers}
+              onChange={e => setShowDeletedPlayers(e.target.checked)}
+            />
+            Показывать удаленных
+          </label>
+        </div>
+
+        {playersLoading ? (
+          <div className={styles.loading}>
+            <div className={styles.spinner}></div>
+            <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.9rem' }}>Загрузка игроков...</p>
+          </div>
+        ) : players.length === 0 ? (
+          <div className={styles.empty}>
+            <div className={styles.emptyIcon}>👤</div>
+            <p className={styles.emptyText}>Пока нет игроков</p>
+          </div>
+        ) : (
+          players.map(player => {
+            const isDeleted = Boolean(player.deleted_at);
+            return (
+              <div key={player.id} className={`${styles.taskItem} ${editingPlayerId === player.id ? styles.playerItemActive : ''} ${isDeleted ? styles.playerItemDeleted : ''}`}>
+                <div className={styles.taskItemInfo}>
+                  <div className={styles.taskItemTitle}>{player.username}</div>
+                  <div className={styles.taskItemMeta}>
+                    <span className={styles.taskBadge}>{player.status}</span>
+                    <span className={styles.taskBadge}>Победы: {player.wins}</span>
+                    <span className={styles.taskBadge}>Среднее: {formatMilliseconds(player.average_solve_time_ms)}</span>
+                    {player.stats_overridden && (
+                      <span className={`${styles.taskBadge} ${styles.taskBadgeOverride}`}>ручная правка</span>
+                    )}
+                    {isDeleted && (
+                      <span className={`${styles.taskBadge} ${styles.taskBadgeDeleted}`}>
+                        удален: {formatDateTime(player.deleted_at)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className={styles.taskItemActions}>
+                  <button
+                    className={styles.taskItemBtn}
+                    onClick={() => openPlayerAudit(player)}
+                    aria-label={`История игрока ${player.username}`}
+                    title="История изменений"
+                  >
+                    🕘
+                  </button>
+                  <button
+                    className={styles.taskItemBtn}
+                    onClick={() => startEditingPlayer(player)}
+                    aria-label={`Редактировать игрока ${player.username}`}
+                    title={isDeleted ? 'Удаленного игрока нельзя редактировать' : 'Редактировать игрока'}
+                    disabled={isDeleted}
+                  >
+                    ✏️
+                  </button>
+                  <button
+                    className={`${styles.taskItemBtn} ${styles.taskItemBtnDanger}`}
+                    onClick={() => handleDeletePlayer(player)}
+                    aria-label={`Удалить игрока ${player.username}`}
+                    title={isDeleted ? 'Игрок уже удален' : 'Удалить игрока'}
+                    disabled={isDeleted}
+                  >
+                    🗑️
+                  </button>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </>
+  );
+
+  const renderPlayerAuditModal = () => {
+    if (!auditPlayer) return null;
+    return (
+      <div className={styles.modalBackdrop} onMouseDown={closePlayerAudit}>
+        <div
+          className={styles.auditModal}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="player-audit-title"
+          onMouseDown={event => event.stopPropagation()}
+        >
+          <div className={styles.modalHeader}>
+            <div>
+              <h2 id="player-audit-title" className={styles.modalTitle}>
+                История игрока
+              </h2>
+              <p className={styles.modalSubtitle}>{auditPlayer.username}</p>
+            </div>
+            <button
+              type="button"
+              className={styles.modalClose}
+              onClick={closePlayerAudit}
+              aria-label="Закрыть историю"
+            >
+              ×
+            </button>
+          </div>
+
+          {playerAuditLoading ? (
+            <div className={styles.loading}>
+              <div className={styles.spinner}></div>
+              <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.9rem' }}>Загрузка истории...</p>
+            </div>
+          ) : playerAuditError ? (
+            <div className={styles.auditEmpty}>{playerAuditError}</div>
+          ) : playerAuditEvents.length === 0 ? (
+            <div className={styles.auditEmpty}>История изменений пуста</div>
+          ) : (
+            <div className={styles.auditTimeline}>
+              {playerAuditEvents.map(event => {
+                const diffs = auditDiffs(event);
+                return (
+                  <article key={event.id} className={styles.auditEvent}>
+                    <div className={styles.auditEventHeader}>
+                      <span className={styles.auditAction}>{auditActionLabel(event.action)}</span>
+                      <span className={styles.auditMeta}>{formatDateTime(event.created_at)}</span>
+                    </div>
+                    <div className={styles.auditMeta}>
+                      actor: {event.actor_subject} · jti: {shortJTI(event.actor_jti)}
+                    </div>
+                    <div className={styles.auditDiffs}>
+                      {diffs.length === 0 ? (
+                        <div className={styles.auditDiff}>Изменений в полях нет</div>
+                      ) : (
+                        diffs.map(diff => (
+                          <div key={diff.field} className={styles.auditDiff}>
+                            <span className={styles.auditField}>{auditFieldLabels[diff.field]}</span>
+                            <span className={styles.auditValues}>
+                              <span className={styles.auditValue}>{diff.before}</span>
+                              <span className={styles.auditArrow}>→</span>
+                              <span className={styles.auditValue}>{diff.after}</span>
+                            </span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   if (!tokens) {
     return (
       <main className={styles.container}>
@@ -676,21 +1204,41 @@ export default function AdminPanel() {
         </div>
       )}
       <div className={styles.header}>
-        <div className={styles.headerTop}>
-          <h1 className={styles.title}>Admin</h1>
-        </div>
-        <p className={styles.subtitle}>Панель управления задачами</p>
         <button
           type="button"
-          className={`${styles.btn} ${styles.btnSecondary}`}
+          className={`${styles.btn} ${styles.btnSecondary} ${styles.logoutButton}`}
           onClick={handleLogout}
         >
           Выйти
         </button>
+        <div className={styles.headerTop}>
+          <h1 className={styles.title}>Admin</h1>
+        </div>
+        <p className={styles.subtitle}>
+          {activeSection === 'tasks' ? 'Панель управления задачами' : 'Панель управления игроками'}
+        </p>
+        <div className={styles.sectionTabs}>
+          <button
+            type="button"
+            className={`${styles.sectionTab} ${activeSection === 'tasks' ? styles.sectionTabActive : ''}`}
+            onClick={() => setActiveSection('tasks')}
+          >
+            Задания
+          </button>
+          <button
+            type="button"
+            className={`${styles.sectionTab} ${activeSection === 'players' ? styles.sectionTabActive : ''}`}
+            onClick={() => setActiveSection('players')}
+          >
+            Игроки
+          </button>
+        </div>
       </div>
-      <div className={styles.card}>
-        <h2 className={styles.cardTitle}>{editingTaskId ? '✏️ Редактировать задачу' : '➕ Создать задачу'}</h2>
-        <form onSubmit={handleSubmit} className={styles.form}>
+      {activeSection === 'tasks' ? (
+        <>
+          <div className={styles.card}>
+            <h2 className={styles.cardTitle}>{editingTaskId ? '✏️ Редактировать задачу' : '➕ Создать задачу'}</h2>
+            <form onSubmit={handleSubmit} className={styles.form}>
           <div className={styles.inputGroup}>
             <label>Название задачи</label>
             <input
@@ -815,10 +1363,10 @@ export default function AdminPanel() {
               {editingTaskId ? 'Отменить' : 'Очистить'}
             </button>
           </div>
-        </form>
-      </div>
-      <div className={styles.taskList}>
-        <h2 className={styles.taskListTitle}>📋 Список задач</h2>
+            </form>
+          </div>
+          <div className={styles.taskList}>
+            <h2 className={styles.taskListTitle}>📋 Список задач</h2>
 
         {tasksLoading ? (
           <div className={styles.loading}>
@@ -870,7 +1418,12 @@ export default function AdminPanel() {
             </div>
           ))
         )}
-      </div>
+          </div>
+        </>
+      ) : (
+        renderPlayersSection()
+      )}
+      {renderPlayerAuditModal()}
     </main>
   );
 }

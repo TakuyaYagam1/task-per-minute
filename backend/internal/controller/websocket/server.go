@@ -40,7 +40,7 @@ type ReconnectManager interface {
 	ConsumeReconnect(ctx context.Context, playerID uuid.UUID) (*duelusecase.ReconnectDecision, error)
 	ActiveDuel(ctx context.Context, playerID uuid.UUID) (*duelusecase.ReconnectDecision, error)
 	DuelPaused(duelID uuid.UUID) bool
-	FinalizeOpponentForfeit(ctx context.Context, duelID, winnerID uuid.UUID)
+	FinalizeDraw(ctx context.Context, duelID uuid.UUID) (*domain.Duel, error)
 	FinalizePlayerForfeit(ctx context.Context, duelID, loserID uuid.UUID) (*domain.Duel, error)
 	CloseDuel(duelID uuid.UUID)
 }
@@ -383,7 +383,9 @@ func (s *Server) handleReconnect(ctx context.Context, c *client) bool {
 	}
 
 	if decision.OpponentExpired {
-		s.reconnect.FinalizeOpponentForfeit(ctx, decision.Duel.ID, c.player.ID)
+		if _, err := s.reconnect.FinalizeDraw(ctx, decision.Duel.ID); err != nil {
+			s.sendAppError(c, err)
+		}
 		return true
 	}
 

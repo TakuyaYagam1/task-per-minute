@@ -9,10 +9,10 @@ func Leaderboard(entries []leaderboardusecase.Entry) openapi.LeaderboardResponse
 	out := make([]openapi.LeaderboardEntry, 0, len(entries))
 	for _, entry := range entries {
 		out = append(out, openapi.LeaderboardEntry{
-			Rank:             IntToInt32(entry.Rank),
-			Username:         entry.Username,
-			TasksSolved:      IntToInt32(entry.TasksSolved),
-			TotalSolveTimeMs: entry.TotalSolveTimeMs,
+			Rank:               IntToInt32(entry.Rank),
+			Username:           entry.Username,
+			Wins:               IntToInt32(entry.Wins),
+			AverageSolveTimeMs: entry.AverageSolveTimeMs,
 		})
 	}
 	return openapi.LeaderboardResponse{Entries: out}

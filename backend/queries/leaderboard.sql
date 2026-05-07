@@ -1,53 +1,43 @@
--- name: TotalSolveTimePerPlayer :many
--- Aggregates total solve time (ms) across all duels each player has won.
--- Ordered ASC: faster total time -> higher rank. Used as a Redis-leaderboard
--- tiebreaker when two players share the same win count.
-SELECT p.id AS player_id,
-    p.username AS username,
-    COALESCE(
-        SUM(
-            (
-                EXTRACT(
-                    EPOCH
-                    FROM dpt.solved_at - d.started_at
-                ) * 1000
-            )::BIGINT
-        ),
-        0
-    )::BIGINT AS total_solve_time_ms
-FROM players p
-    JOIN duels d ON d.winner_id = p.id
-    AND d.status = 'finished'
+-- name: TopLeaderboardStats :many
+WITH base_stats AS (
+  SELECT d.winner_id AS player_id,
+    COUNT(*)::INT AS wins,
+    FLOOR(
+      AVG(
+        (
+          EXTRACT(
+            EPOCH
+            FROM dpt.solved_at - d.started_at
+          ) * 1000
+        )::BIGINT
+      )
+    )::BIGINT AS average_solve_time_ms
+  FROM duels d
     JOIN duel_player_tasks dpt ON dpt.duel_id = d.id
-    AND dpt.player_id = p.id
-    AND dpt.solved = TRUE
-GROUP BY p.id,
-    p.username
-ORDER BY total_solve_time_ms ASC,
-    p.username ASC;
--- name: TotalSolveTimeForPlayers :many
--- Batch variant used by the leaderboard usecase for Redis usernames.
-SELECT p.id AS player_id,
-    p.username AS username,
-    COALESCE(
-        SUM(
-            (
-                EXTRACT(
-                    EPOCH
-                    FROM dpt.solved_at - d.started_at
-                ) * 1000
-            )::BIGINT
-        ),
-        0
-    )::BIGINT AS total_solve_time_ms
-FROM players p
-    LEFT JOIN duels d ON d.winner_id = p.id
-    AND d.status = 'finished'
-    LEFT JOIN duel_player_tasks dpt ON dpt.duel_id = d.id
-    AND dpt.player_id = p.id
-    AND dpt.solved = TRUE
-WHERE p.username = ANY($1::text [])
-GROUP BY p.id,
-    p.username
-ORDER BY total_solve_time_ms ASC,
-    p.username ASC;
+      AND dpt.player_id = d.winner_id
+      AND dpt.solved = TRUE
+      AND dpt.solved_at IS NOT NULL
+  WHERE d.status = 'finished'
+    AND d.winner_id IS NOT NULL
+  GROUP BY d.winner_id
+),
+effective_stats AS (
+  SELECT p.id AS player_id,
+    p.username,
+    COALESCE(o.wins, b.wins, 0)::INT AS wins,
+    COALESCE(o.average_solve_time_ms, b.average_solve_time_ms, 0)::BIGINT AS average_solve_time_ms
+  FROM players p
+    LEFT JOIN base_stats b ON b.player_id = p.id
+    LEFT JOIN player_leaderboard_overrides o ON o.player_id = p.id
+  WHERE p.deleted_at IS NULL
+)
+SELECT player_id,
+  username,
+  wins,
+  average_solve_time_ms
+FROM effective_stats
+WHERE wins > 0
+ORDER BY wins DESC,
+  average_solve_time_ms ASC,
+  username ASC
+LIMIT $1;

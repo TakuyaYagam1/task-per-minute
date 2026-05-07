@@ -152,7 +152,7 @@ func (m *ReconnectManager) HandleDisconnect(ctx context.Context, duelID, playerI
 	if err != nil || duel == nil || duel.Status != domain.DuelStatusActive {
 		return
 	}
-	opponentID, ok := opponentID(duel, playerID)
+	_, ok := opponentID(duel, playerID)
 	if !ok {
 		return
 	}
@@ -161,7 +161,7 @@ func (m *ReconnectManager) HandleDisconnect(ctx context.Context, duelID, playerI
 	state := m.stateFor(duel)
 	var reconnectDeadline time.Time
 	shouldBroadcastDisconnect := false
-	var immediateWinner *uuid.UUID
+	immediateDraw := false
 
 	state.mu.Lock()
 	if state.closed {
@@ -175,8 +175,7 @@ func (m *ReconnectManager) HandleDisconnect(ctx context.Context, duelID, playerI
 
 	state.counts[playerID]++
 	if state.counts[playerID] > m.disconnectLimit {
-		winner := opponentID
-		immediateWinner = &winner
+		immediateDraw = true
 		state.closed = true
 		state.stopReconnectTimersLocked()
 	} else {
@@ -197,8 +196,8 @@ func (m *ReconnectManager) HandleDisconnect(ctx context.Context, duelID, playerI
 	}
 	state.mu.Unlock()
 
-	if immediateWinner != nil {
-		m.finalize(ctx, duelID, immediateWinner)
+	if immediateDraw {
+		m.finalize(ctx, duelID, nil)
 		return
 	}
 	if shouldBroadcastDisconnect && m.broadcaster != nil {
@@ -341,9 +340,8 @@ func (m *ReconnectManager) DuelPaused(duelID uuid.UUID) bool {
 	return state.paused()
 }
 
-func (m *ReconnectManager) FinalizeOpponentForfeit(ctx context.Context, duelID, winnerID uuid.UUID) {
-	winner := winnerID
-	m.finalize(ctx, duelID, &winner)
+func (m *ReconnectManager) FinalizeDraw(ctx context.Context, duelID uuid.UUID) (*domain.Duel, error) {
+	return m.finalizeAndBroadcast(ctx, duelID, nil)
 }
 
 func (m *ReconnectManager) FinalizePlayerForfeit(
@@ -413,9 +411,6 @@ func (m *ReconnectManager) expireReconnect(duelID, playerID uuid.UUID) {
 		return
 	}
 
-	var winnerID *uuid.UUID
-	draw := false
-
 	state.mu.Lock()
 	if state.closed {
 		state.mu.Unlock()
@@ -438,22 +433,12 @@ func (m *ReconnectManager) expireReconnect(duelID, playerID uuid.UUID) {
 		state.mu.Unlock()
 		return
 	}
-	if opponentDisconnected && opponentEntry.expired {
-		draw = true
-	} else {
-		winner := other
-		winnerID = &winner
-	}
 	state.closed = true
 	state.stopReconnectTimersLocked()
 	state.mu.Unlock()
 
 	finalizeCtx := m.detachedCtx()
-	if draw {
-		m.finalize(finalizeCtx, duelID, nil)
-		return
-	}
-	m.finalize(finalizeCtx, duelID, winnerID)
+	m.finalize(finalizeCtx, duelID, nil)
 }
 
 // detachedCtx returns a context derived from the server lifecycle but
@@ -480,7 +465,7 @@ func (m *ReconnectManager) finalizeAndBroadcast(
 		return nil, nil
 	}
 
-	finished, err := finalizeDuel(ctx, m.tx, m.duels, m.players, m.clock.Now(), duelID, winnerID, m.board, m.log)
+	finished, err := finalizeDuel(ctx, m.tx, m.duels, m.players, m.clock.Now(), duelID, winnerID, nil, m.log)
 	if err != nil || finished == nil {
 		return finished, err
 	}

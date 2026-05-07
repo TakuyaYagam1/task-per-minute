@@ -145,20 +145,28 @@ func TestMatchmakingUsecase_JoinQueue_PresignsSourceFileURL(t *testing.T) {
 		Return(withStatus(player2, domain.PlayerStatusInDuel), true, nil).Once()
 	f.tasks.EXPECT().CountByDifficulty(mock.Anything, domain.DifficultyEasy).Return(int64(1), nil).Twice()
 	f.tasks.EXPECT().CountSolvedByDifficulty(mock.Anything, mock.Anything, domain.DifficultyEasy).Return(int64(0), nil).Twice()
-	f.history.EXPECT().SelectUnsolvedTaskByDifficulty(mock.Anything, player1.ID, domain.DifficultyEasy).Return(task1, nil)
-	f.history.EXPECT().SelectUnsolvedTaskByDifficulty(mock.Anything, player2.ID, domain.DifficultyEasy).Return(task2, nil)
+	f.tasks.EXPECT().ListByDifficulty(mock.Anything, domain.DifficultyEasy).Return([]*domain.Task{task1, task2}, nil).Times(3)
+	f.history.EXPECT().ListSolvedTaskIDs(mock.Anything, player1.ID).Return(nil, nil)
+	f.history.EXPECT().ListSolvedTaskIDs(mock.Anything, player2.ID).Return(nil, nil)
 	f.storage.EXPECT().PresignedGetURL(mock.Anything, sourceKey, time.Minute).Return(presignedURL, nil)
 	f.duels.EXPECT().Create(mock.Anything, player1.ID, player2.ID, now.Add(time.Minute)).Return(created, nil)
-	f.duels.EXPECT().CreateDuelPlayerTask(mock.Anything, created.ID, player1.ID, task1.ID).Return(nil)
-	f.duels.EXPECT().CreateDuelPlayerTask(mock.Anything, created.ID, player2.ID, task2.ID).Return(nil)
+	taskIDMatcher := mock.MatchedBy(func(id uuid.UUID) bool {
+		return id == task1.ID || id == task2.ID
+	})
+	f.duels.EXPECT().CreateDuelPlayerTask(mock.Anything, created.ID, player1.ID, taskIDMatcher).Return(nil)
+	f.duels.EXPECT().CreateDuelPlayerTask(mock.Anything, created.ID, player2.ID, taskIDMatcher).Return(nil)
 
 	result, err := f.uc.JoinQueue(t.Context(), player1.ID)
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	require.NotNil(t, result.Player1Task.SourceFileURL)
-	require.Equal(t, presignedURL, *result.Player1Task.SourceFileURL)
-	require.Nil(t, result.Player2Task.SourceFileURL)
+	assigned := map[uuid.UUID]*domain.Task{
+		result.Player1Task.ID: result.Player1Task,
+		result.Player2Task.ID: result.Player2Task,
+	}
+	require.NotNil(t, assigned[task1.ID].SourceFileURL)
+	require.Equal(t, presignedURL, *assigned[task1.ID].SourceFileURL)
+	require.Nil(t, assigned[task2.ID].SourceFileURL)
 	require.Equal(t, internalURL, *task1.SourceFileURL)
 }
 

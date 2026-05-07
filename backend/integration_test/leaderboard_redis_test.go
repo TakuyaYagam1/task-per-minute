@@ -28,7 +28,7 @@ func TestLeaderboardRedis_IncrementWin_PersistsScore(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, scores, 1)
 	require.Equal(t, alice, scores[0].Username)
-	require.Equal(t, 1, scores[0].TasksSolved)
+	require.Equal(t, 1, scores[0].Wins)
 }
 
 func TestLeaderboardRedis_IncrementWin_AccumulatesPerUser(t *testing.T) {
@@ -48,7 +48,7 @@ func TestLeaderboardRedis_IncrementWin_AccumulatesPerUser(t *testing.T) {
 	require.NoError(t, err)
 	got := make(map[string]int, 2)
 	for _, s := range scores {
-		got[s.Username] = s.TasksSolved
+		got[s.Username] = s.Wins
 	}
 	require.Equal(t, 3, got[alice])
 	require.Equal(t, 1, got[bob])
@@ -74,11 +74,11 @@ func TestLeaderboardRedis_WinScores_OrderedByScoreDesc(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, scores, 3)
 	require.Equal(t, a, scores[0].Username)
-	require.Equal(t, 5, scores[0].TasksSolved)
+	require.Equal(t, 5, scores[0].Wins)
 	require.Equal(t, b, scores[1].Username)
-	require.Equal(t, 2, scores[1].TasksSolved)
+	require.Equal(t, 2, scores[1].Wins)
 	require.Equal(t, c, scores[2].Username)
-	require.Equal(t, 1, scores[2].TasksSolved)
+	require.Equal(t, 1, scores[2].Wins)
 }
 
 func TestLeaderboardRedis_WinScores_EmptyKey(t *testing.T) {

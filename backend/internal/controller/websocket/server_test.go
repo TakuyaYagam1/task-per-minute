@@ -307,7 +307,9 @@ func (m *noopReconnectManager) ActiveDuel(
 
 func (m *noopReconnectManager) DuelPaused(uuid.UUID) bool { return false }
 
-func (m *noopReconnectManager) FinalizeOpponentForfeit(context.Context, uuid.UUID, uuid.UUID) {}
+func (m *noopReconnectManager) FinalizeDraw(context.Context, uuid.UUID) (*domain.Duel, error) {
+	return nil, nil
+}
 
 func (m *noopReconnectManager) FinalizePlayerForfeit(
 	context.Context,

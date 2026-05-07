@@ -7,7 +7,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase"
 )
 
-type LeaderboardRow = usecase.LeaderboardPlayerTime
+type LeaderboardRow = usecase.LeaderboardPlayerStats
 
 type LeaderboardPostgres struct {
 	tx *TxManager
@@ -17,36 +17,21 @@ func NewLeaderboardPostgres(tx *TxManager) *LeaderboardPostgres {
 	return &LeaderboardPostgres{tx: tx}
 }
 
-// TotalSolveTimePerPlayer returns the cumulative solve time (ms) of every
-// player who has won at least one finished duel, ordered ASC. Used as a
-// tiebreaker for the Redis leaderboard (faster total time -> higher rank).
-func (r *LeaderboardPostgres) TotalSolveTimePerPlayer(ctx context.Context) ([]LeaderboardRow, error) {
-	rows, err := r.tx.Querier(ctx).TotalSolveTimePerPlayer(ctx)
+// TopStats returns players with at least one flag-solved duel win. Forfeits,
+// disconnect draws, and any polluted Redis-only counters are intentionally not
+// represented here.
+func (r *LeaderboardPostgres) TopStats(ctx context.Context, limit int32) ([]LeaderboardRow, error) {
+	rows, err := r.tx.Querier(ctx).TopLeaderboardStats(ctx, limit)
 	if err != nil {
-		return nil, fmt.Errorf("LeaderboardPostgres - TotalSolveTimePerPlayer - Querier.TotalSolveTimePerPlayer: %w", err)
+		return nil, fmt.Errorf("LeaderboardPostgres - TopStats - Querier.TopLeaderboardStats: %w", err)
 	}
 	out := make([]LeaderboardRow, 0, len(rows))
 	for _, row := range rows {
 		out = append(out, LeaderboardRow{
-			PlayerID:         row.PlayerID,
-			Username:         row.Username,
-			TotalSolveTimeMs: row.TotalSolveTimeMs,
-		})
-	}
-	return out, nil
-}
-
-func (r *LeaderboardPostgres) TotalSolveTimeForPlayers(ctx context.Context, usernames []string) ([]LeaderboardRow, error) {
-	rows, err := r.tx.Querier(ctx).TotalSolveTimeForPlayers(ctx, usernames)
-	if err != nil {
-		return nil, fmt.Errorf("LeaderboardPostgres - TotalSolveTimeForPlayers - Querier.TotalSolveTimeForPlayers: %w", err)
-	}
-	out := make([]LeaderboardRow, 0, len(rows))
-	for _, row := range rows {
-		out = append(out, LeaderboardRow{
-			PlayerID:         row.PlayerID,
-			Username:         row.Username,
-			TotalSolveTimeMs: row.TotalSolveTimeMs,
+			PlayerID:           row.PlayerID,
+			Username:           row.Username,
+			Wins:               int(row.Wins),
+			AverageSolveTimeMs: row.AverageSolveTimeMs,
 		})
 	}
 	return out, nil

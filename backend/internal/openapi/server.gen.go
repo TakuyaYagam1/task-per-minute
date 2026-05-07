@@ -24,6 +24,18 @@ type ServerInterface interface {
 	// Revoke the supplied refresh token
 	// (POST /api/v1/admin/logout)
 	AdminLogout(w http.ResponseWriter, r *http.Request)
+	// List players with effective leaderboard stats
+	// (GET /api/v1/admin/players)
+	ListAdminPlayers(w http.ResponseWriter, r *http.Request, params ListAdminPlayersParams)
+	// Soft-delete an idle player
+	// (DELETE /api/v1/admin/players/{id})
+	DeleteAdminPlayer(w http.ResponseWriter, r *http.Request, id openapi_types.UUID)
+	// Rename a player and override their leaderboard stats
+	// (PUT /api/v1/admin/players/{id})
+	UpdateAdminPlayer(w http.ResponseWriter, r *http.Request, id openapi_types.UUID)
+	// List player audit events
+	// (GET /api/v1/admin/players/{id}/audit)
+	ListAdminPlayerAudit(w http.ResponseWriter, r *http.Request, id openapi_types.UUID, params ListAdminPlayerAuditParams)
 	// Rotate the access/refresh token pair
 	// (POST /api/v1/admin/refresh)
 	AdminRefresh(w http.ResponseWriter, r *http.Request)
@@ -75,6 +87,30 @@ func (_ Unimplemented) AdminLogin(w http.ResponseWriter, r *http.Request) {
 // Revoke the supplied refresh token
 // (POST /api/v1/admin/logout)
 func (_ Unimplemented) AdminLogout(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List players with effective leaderboard stats
+// (GET /api/v1/admin/players)
+func (_ Unimplemented) ListAdminPlayers(w http.ResponseWriter, r *http.Request, params ListAdminPlayersParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Soft-delete an idle player
+// (DELETE /api/v1/admin/players/{id})
+func (_ Unimplemented) DeleteAdminPlayer(w http.ResponseWriter, r *http.Request, id openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Rename a player and override their leaderboard stats
+// (PUT /api/v1/admin/players/{id})
+func (_ Unimplemented) UpdateAdminPlayer(w http.ResponseWriter, r *http.Request, id openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List player audit events
+// (GET /api/v1/admin/players/{id}/audit)
+func (_ Unimplemented) ListAdminPlayerAudit(w http.ResponseWriter, r *http.Request, id openapi_types.UUID, params ListAdminPlayerAuditParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -184,6 +220,143 @@ func (siw *ServerInterfaceWrapper) AdminLogout(w http.ResponseWriter, r *http.Re
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.AdminLogout(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListAdminPlayers operation middleware
+func (siw *ServerInterfaceWrapper) ListAdminPlayers(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListAdminPlayersParams
+
+	// ------------- Optional query parameter "include_deleted" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "include_deleted", r.URL.Query(), &params.IncludeDeleted)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "include_deleted", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListAdminPlayers(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteAdminPlayer operation middleware
+func (siw *ServerInterfaceWrapper) DeleteAdminPlayer(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteAdminPlayer(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateAdminPlayer operation middleware
+func (siw *ServerInterfaceWrapper) UpdateAdminPlayer(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateAdminPlayer(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListAdminPlayerAudit operation middleware
+func (siw *ServerInterfaceWrapper) ListAdminPlayerAudit(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListAdminPlayerAuditParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "limit", r.URL.Query(), &params.Limit)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListAdminPlayerAudit(w, r, id, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -584,6 +757,18 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Post(options.BaseURL+"/api/v1/admin/logout", wrapper.AdminLogout)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/admin/players", wrapper.ListAdminPlayers)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/api/v1/admin/players/{id}", wrapper.DeleteAdminPlayer)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/api/v1/admin/players/{id}", wrapper.UpdateAdminPlayer)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/admin/players/{id}/audit", wrapper.ListAdminPlayerAudit)
+	})
+	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/admin/refresh", wrapper.AdminRefresh)
 	})
 	r.Group(func(r chi.Router) {
@@ -670,6 +855,174 @@ type AdminLogout401ApplicationProblemPlusJSONResponse ProblemDetails
 func (response AdminLogout401ApplicationProblemPlusJSONResponse) VisitAdminLogoutResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ListAdminPlayersRequestObject struct {
+	Params ListAdminPlayersParams
+}
+
+type ListAdminPlayersResponseObject interface {
+	VisitListAdminPlayersResponse(w http.ResponseWriter) error
+}
+
+type ListAdminPlayers200JSONResponse []AdminPlayerResponse
+
+func (response ListAdminPlayers200JSONResponse) VisitListAdminPlayersResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ListAdminPlayers401ApplicationProblemPlusJSONResponse ProblemDetails
+
+func (response ListAdminPlayers401ApplicationProblemPlusJSONResponse) VisitListAdminPlayersResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type DeleteAdminPlayerRequestObject struct {
+	Id openapi_types.UUID `json:"id"`
+}
+
+type DeleteAdminPlayerResponseObject interface {
+	VisitDeleteAdminPlayerResponse(w http.ResponseWriter) error
+}
+
+type DeleteAdminPlayer204Response struct {
+}
+
+func (response DeleteAdminPlayer204Response) VisitDeleteAdminPlayerResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteAdminPlayer401ApplicationProblemPlusJSONResponse ProblemDetails
+
+func (response DeleteAdminPlayer401ApplicationProblemPlusJSONResponse) VisitDeleteAdminPlayerResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type DeleteAdminPlayer404ApplicationProblemPlusJSONResponse ProblemDetails
+
+func (response DeleteAdminPlayer404ApplicationProblemPlusJSONResponse) VisitDeleteAdminPlayerResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type DeleteAdminPlayer409ApplicationProblemPlusJSONResponse ProblemDetails
+
+func (response DeleteAdminPlayer409ApplicationProblemPlusJSONResponse) VisitDeleteAdminPlayerResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type UpdateAdminPlayerRequestObject struct {
+	Id   openapi_types.UUID `json:"id"`
+	Body *UpdateAdminPlayerJSONRequestBody
+}
+
+type UpdateAdminPlayerResponseObject interface {
+	VisitUpdateAdminPlayerResponse(w http.ResponseWriter) error
+}
+
+type UpdateAdminPlayer200JSONResponse AdminPlayerResponse
+
+func (response UpdateAdminPlayer200JSONResponse) VisitUpdateAdminPlayerResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type UpdateAdminPlayer400ApplicationProblemPlusJSONResponse ProblemDetails
+
+func (response UpdateAdminPlayer400ApplicationProblemPlusJSONResponse) VisitUpdateAdminPlayerResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type UpdateAdminPlayer401ApplicationProblemPlusJSONResponse ProblemDetails
+
+func (response UpdateAdminPlayer401ApplicationProblemPlusJSONResponse) VisitUpdateAdminPlayerResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type UpdateAdminPlayer404ApplicationProblemPlusJSONResponse ProblemDetails
+
+func (response UpdateAdminPlayer404ApplicationProblemPlusJSONResponse) VisitUpdateAdminPlayerResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type UpdateAdminPlayer409ApplicationProblemPlusJSONResponse ProblemDetails
+
+func (response UpdateAdminPlayer409ApplicationProblemPlusJSONResponse) VisitUpdateAdminPlayerResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ListAdminPlayerAuditRequestObject struct {
+	Id     openapi_types.UUID `json:"id"`
+	Params ListAdminPlayerAuditParams
+}
+
+type ListAdminPlayerAuditResponseObject interface {
+	VisitListAdminPlayerAuditResponse(w http.ResponseWriter) error
+}
+
+type ListAdminPlayerAudit200JSONResponse []AdminPlayerAuditEventResponse
+
+func (response ListAdminPlayerAudit200JSONResponse) VisitListAdminPlayerAuditResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ListAdminPlayerAudit400ApplicationProblemPlusJSONResponse ProblemDetails
+
+func (response ListAdminPlayerAudit400ApplicationProblemPlusJSONResponse) VisitListAdminPlayerAuditResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ListAdminPlayerAudit401ApplicationProblemPlusJSONResponse ProblemDetails
+
+func (response ListAdminPlayerAudit401ApplicationProblemPlusJSONResponse) VisitListAdminPlayerAuditResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ListAdminPlayerAudit404ApplicationProblemPlusJSONResponse ProblemDetails
+
+func (response ListAdminPlayerAudit404ApplicationProblemPlusJSONResponse) VisitListAdminPlayerAuditResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -1090,6 +1443,18 @@ type StrictServerInterface interface {
 	// Revoke the supplied refresh token
 	// (POST /api/v1/admin/logout)
 	AdminLogout(ctx context.Context, request AdminLogoutRequestObject) (AdminLogoutResponseObject, error)
+	// List players with effective leaderboard stats
+	// (GET /api/v1/admin/players)
+	ListAdminPlayers(ctx context.Context, request ListAdminPlayersRequestObject) (ListAdminPlayersResponseObject, error)
+	// Soft-delete an idle player
+	// (DELETE /api/v1/admin/players/{id})
+	DeleteAdminPlayer(ctx context.Context, request DeleteAdminPlayerRequestObject) (DeleteAdminPlayerResponseObject, error)
+	// Rename a player and override their leaderboard stats
+	// (PUT /api/v1/admin/players/{id})
+	UpdateAdminPlayer(ctx context.Context, request UpdateAdminPlayerRequestObject) (UpdateAdminPlayerResponseObject, error)
+	// List player audit events
+	// (GET /api/v1/admin/players/{id}/audit)
+	ListAdminPlayerAudit(ctx context.Context, request ListAdminPlayerAuditRequestObject) (ListAdminPlayerAuditResponseObject, error)
 	// Rotate the access/refresh token pair
 	// (POST /api/v1/admin/refresh)
 	AdminRefresh(ctx context.Context, request AdminRefreshRequestObject) (AdminRefreshResponseObject, error)
@@ -1212,6 +1577,118 @@ func (sh *strictHandler) AdminLogout(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(AdminLogoutResponseObject); ok {
 		if err := validResponse.VisitAdminLogoutResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListAdminPlayers operation middleware
+func (sh *strictHandler) ListAdminPlayers(w http.ResponseWriter, r *http.Request, params ListAdminPlayersParams) {
+	var request ListAdminPlayersRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListAdminPlayers(ctx, request.(ListAdminPlayersRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListAdminPlayers")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListAdminPlayersResponseObject); ok {
+		if err := validResponse.VisitListAdminPlayersResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteAdminPlayer operation middleware
+func (sh *strictHandler) DeleteAdminPlayer(w http.ResponseWriter, r *http.Request, id openapi_types.UUID) {
+	var request DeleteAdminPlayerRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteAdminPlayer(ctx, request.(DeleteAdminPlayerRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteAdminPlayer")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteAdminPlayerResponseObject); ok {
+		if err := validResponse.VisitDeleteAdminPlayerResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateAdminPlayer operation middleware
+func (sh *strictHandler) UpdateAdminPlayer(w http.ResponseWriter, r *http.Request, id openapi_types.UUID) {
+	var request UpdateAdminPlayerRequestObject
+
+	request.Id = id
+
+	var body UpdateAdminPlayerJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateAdminPlayer(ctx, request.(UpdateAdminPlayerRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateAdminPlayer")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateAdminPlayerResponseObject); ok {
+		if err := validResponse.VisitUpdateAdminPlayerResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListAdminPlayerAudit operation middleware
+func (sh *strictHandler) ListAdminPlayerAudit(w http.ResponseWriter, r *http.Request, id openapi_types.UUID, params ListAdminPlayerAuditParams) {
+	var request ListAdminPlayerAuditRequestObject
+
+	request.Id = id
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListAdminPlayerAudit(ctx, request.(ListAdminPlayerAuditRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListAdminPlayerAudit")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListAdminPlayerAuditResponseObject); ok {
+		if err := validResponse.VisitListAdminPlayerAuditResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

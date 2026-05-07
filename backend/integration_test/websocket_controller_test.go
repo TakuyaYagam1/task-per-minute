@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	coderws "github.com/coder/websocket"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
@@ -69,6 +70,25 @@ func TestWebSocketController_MatchAndFlagSubmit(t *testing.T) {
 		_, ok := f.hubs.Get(duelID)
 		return !ok
 	}, time.Second, 10*time.Millisecond)
+}
+
+func TestWebSocketController_DeletedPlayerSessionCannotConnect(t *testing.T) {
+	f := newWebSocketFixture(t)
+	ctx := context.Background()
+
+	player := f.joinPlayer(t, uniq("deleted_ws"))
+	sessionToken := *player.SessionToken
+	require.NoError(t, f.players.SoftDeleteAdminPlayer(ctx, player.ID, "deleted_"+uuid.NewString()[:8], time.Now().UTC()))
+
+	dialCtx, cancel := context.WithTimeout(ctx, wsTestTimeout)
+	defer cancel()
+	conn, resp, err := coderws.Dial(dialCtx, wsURL(f.httpServer.URL, sessionToken), nil)
+	if conn != nil {
+		closeWSSilent(conn)
+	}
+	require.Error(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 }
 
 func TestWebSocketController_HintUnlocksInOrder(t *testing.T) {
@@ -331,7 +351,7 @@ func TestWebSocketController_QueuedSessionRotationPreventsStaleMatch(t *testing.
 	require.Equal(t, string(apperr.CodeInvalidSession), stale.Code)
 }
 
-func TestWebSocketController_ReconnectTimeoutGivesOpponentWin(t *testing.T) {
+func TestWebSocketController_ReconnectTimeoutDrawsDuel(t *testing.T) {
 	f := newWebSocketFixtureWithReconnectWindow(t, 80*time.Millisecond)
 	match := f.matchPlayers(t, 3)
 	defer closeWSSilent(match.bobConn)
@@ -341,16 +361,15 @@ func TestWebSocketController_ReconnectTimeoutGivesOpponentWin(t *testing.T) {
 	require.Equal(t, match.alice.ID, decodeOpponentDisconnected(t, disconnected).PlayerID)
 
 	finished := readWSEventType(t, match.bobConn, wscontroller.EventDuelFinished)
-	require.Equal(t, match.bob.ID, decodeWinnerID(t, finished))
+	require.Equal(t, uuid.Nil, decodeWinnerID(t, finished))
 	got, err := f.duels.GetByID(context.Background(), match.duelID)
 	require.NoError(t, err)
 	require.Equal(t, domain.DuelStatusFinished, got.Status)
-	require.Equal(t, match.bob.ID, *got.WinnerID)
+	require.Nil(t, got.WinnerID)
 
 	scores, err := f.boardStore.WinScores(context.Background())
 	require.NoError(t, err)
-	require.Equal(t, []string{match.bob.Username}, scoreUsernames(scores))
-	require.Equal(t, 1, scores[0].TasksSolved)
+	require.Empty(t, scores)
 }
 
 func TestWebSocketController_FlagSubmitPausedDuringReconnect(t *testing.T) {
@@ -397,7 +416,7 @@ func TestWebSocketController_FlagSubmitPausedDuringReconnect(t *testing.T) {
 	require.Equal(t, match.bob.ID, decodeWinnerID(t, readWSEventType(t, aliceReconnect, wscontroller.EventDuelFinished)))
 }
 
-func TestWebSocketController_SurrenderFinishesDuelForOpponentAndLeaderboard(t *testing.T) {
+func TestWebSocketController_SurrenderFinishesDuelForOpponentWithoutLeaderboard(t *testing.T) {
 	f := newWebSocketFixture(t)
 	ctx := context.Background()
 	match := f.matchPlayers(t, 30)
@@ -423,8 +442,7 @@ func TestWebSocketController_SurrenderFinishesDuelForOpponentAndLeaderboard(t *t
 
 	scores, err := f.boardStore.WinScores(ctx)
 	require.NoError(t, err)
-	require.Equal(t, []string{match.bob.Username}, scoreUsernames(scores))
-	require.Equal(t, 1, scores[0].TasksSolved)
+	require.Empty(t, scores)
 
 	aliceHistory, err := f.history.ListSolvedTaskIDs(ctx, match.alice.ID)
 	require.NoError(t, err)
@@ -446,12 +464,10 @@ func TestWebSocketController_SurrenderFinishesDuelForOpponentAndLeaderboard(t *t
 	time.Sleep(50 * time.Millisecond)
 	scores, err = f.boardStore.WinScores(ctx)
 	require.NoError(t, err)
-	require.Len(t, scores, 1)
-	require.Equal(t, 1, scores[0].TasksSolved,
-		"replayed surrender after finish must not create a second leaderboard bump")
+	require.Empty(t, scores, "replayed surrender after finish must not create a leaderboard bump")
 }
 
-func TestWebSocketController_ThirdDisconnectLosesImmediately(t *testing.T) {
+func TestWebSocketController_ThirdDisconnectDrawsImmediately(t *testing.T) {
 	f := newWebSocketFixtureWithReconnectWindow(t, 500*time.Millisecond)
 	match := f.matchPlayers(t, 5)
 	defer closeWSSilent(match.bobConn)
@@ -471,7 +487,7 @@ func TestWebSocketController_ThirdDisconnectLosesImmediately(t *testing.T) {
 
 	disconnectWS(t, aliceConn)
 	finished := readWSEventType(t, match.bobConn, wscontroller.EventDuelFinished)
-	require.Equal(t, match.bob.ID, decodeWinnerID(t, finished))
+	require.Equal(t, uuid.Nil, decodeWinnerID(t, finished))
 }
 
 func TestWebSocketController_DoubleDisconnectDraw(t *testing.T) {

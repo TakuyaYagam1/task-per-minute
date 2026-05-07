@@ -66,6 +66,7 @@ type TaskRepo interface {
 	Create(ctx context.Context, in TaskInput) (*domain.Task, error)
 	GetByID(ctx context.Context, id uuid.UUID) (*domain.Task, error)
 	List(ctx context.Context) ([]*domain.Task, error)
+	ListByDifficulty(ctx context.Context, difficulty domain.Difficulty) ([]*domain.Task, error)
 	Update(ctx context.Context, id uuid.UUID, in TaskInput) (*domain.Task, error)
 	Delete(ctx context.Context, id uuid.UUID) error
 	IsUsedInActiveDuel(ctx context.Context, id uuid.UUID) (bool, error)
@@ -75,27 +76,106 @@ type TaskRepo interface {
 
 type HistoryRepo interface {
 	AddSolved(ctx context.Context, playerID, taskID uuid.UUID, solvedAt time.Time) error
+	ListSolvedTaskIDs(ctx context.Context, playerID uuid.UUID) ([]uuid.UUID, error)
 	SelectUnsolvedTaskByDifficulty(ctx context.Context, playerID uuid.UUID, difficulty domain.Difficulty) (*domain.Task, error)
 	SelectAnyTaskByDifficulty(ctx context.Context, difficulty domain.Difficulty) (*domain.Task, error)
 }
 
-type LeaderboardPlayerTime struct {
-	PlayerID         uuid.UUID
-	Username         string
-	TotalSolveTimeMs int64
+type LeaderboardPlayerStats struct {
+	PlayerID           uuid.UUID
+	Username           string
+	Wins               int
+	AverageSolveTimeMs int64
+}
+
+type AdminPlayerStatsInput struct {
+	Wins               int
+	AverageSolveTimeMs int64
+}
+
+type AdminPlayerInput struct {
+	Username           string
+	Wins               int
+	AverageSolveTimeMs int64
+}
+
+type AdminPlayerRecord struct {
+	PlayerID           uuid.UUID
+	Username           string
+	Status             domain.PlayerStatus
+	CreatedAt          time.Time
+	DeletedAt          *time.Time
+	Wins               int
+	AverageSolveTimeMs int64
+	StatsOverridden    bool
+}
+
+type AdminActor struct {
+	Subject string
+	JTI     string
+}
+
+type AdminPlayerAuditAction string
+
+const (
+	AdminPlayerAuditActionUpdate AdminPlayerAuditAction = "update"
+	AdminPlayerAuditActionDelete AdminPlayerAuditAction = "delete"
+)
+
+type AdminPlayerAuditState struct {
+	Username           string `json:"username"`
+	Status             string `json:"status"`
+	Wins               int    `json:"wins"`
+	AverageSolveTimeMs int64  `json:"average_solve_time_ms"`
+	StatsOverridden    bool   `json:"stats_overridden"`
+	Deleted            bool   `json:"deleted"`
+}
+
+type AdminPlayerAuditInput struct {
+	Actor       AdminActor
+	Action      AdminPlayerAuditAction
+	PlayerID    uuid.UUID
+	BeforeState AdminPlayerAuditState
+	AfterState  AdminPlayerAuditState
+	CreatedAt   time.Time
+}
+
+type AdminPlayerAuditEvent struct {
+	ID          uuid.UUID
+	Actor       AdminActor
+	Action      AdminPlayerAuditAction
+	PlayerID    uuid.UUID
+	BeforeState AdminPlayerAuditState
+	AfterState  AdminPlayerAuditState
+	CreatedAt   time.Time
 }
 
 type LeaderboardRepo interface {
-	TotalSolveTimeForPlayers(ctx context.Context, usernames []string) ([]LeaderboardPlayerTime, error)
+	TopStats(ctx context.Context, limit int32) ([]LeaderboardPlayerStats, error)
+}
+
+type AdminPlayerRepo interface {
+	ListAdminPlayers(ctx context.Context, includeDeleted bool) ([]AdminPlayerRecord, error)
+	GetAdminPlayer(ctx context.Context, id uuid.UUID) (*AdminPlayerRecord, error)
+	GetAdminPlayerIncludingDeleted(ctx context.Context, id uuid.UUID) (*AdminPlayerRecord, error)
+	UpdateAdminPlayerUsername(ctx context.Context, id uuid.UUID, username string) error
+	UpsertAdminPlayerStats(ctx context.Context, id uuid.UUID, in AdminPlayerStatsInput, updatedAt time.Time) error
+	SoftDeleteAdminPlayer(ctx context.Context, id uuid.UUID, deletedUsername string, deletedAt time.Time) error
+	CreateAdminPlayerAudit(ctx context.Context, in AdminPlayerAuditInput) error
+	ListAdminPlayerAudit(ctx context.Context, playerID uuid.UUID, limit int32) ([]AdminPlayerAuditEvent, error)
 }
 
 type LeaderboardScore struct {
-	Username    string
-	TasksSolved int
+	Username string
+	Wins     int
 }
 
 type LeaderboardBumper interface {
 	IncrementWin(ctx context.Context, username string) error
+}
+
+type LeaderboardInvalidator interface {
+	Invalidate()
 }
 
 type LeaderboardStore interface {
@@ -188,6 +268,13 @@ type AdminTask interface {
 	DeleteTask(ctx context.Context, id uuid.UUID) error
 }
 
+type AdminPlayer interface {
+	ListPlayers(ctx context.Context, includeDeleted bool) ([]AdminPlayerRecord, error)
+	ListPlayerAudit(ctx context.Context, id uuid.UUID, limit int32) ([]AdminPlayerAuditEvent, error)
+	UpdatePlayer(ctx context.Context, id uuid.UUID, in AdminPlayerInput, actor AdminActor) (*AdminPlayerRecord, error)
+	DeletePlayer(ctx context.Context, id uuid.UUID, actor AdminActor) error
+}
+
 type Upload interface {
 	UploadSourceFile(ctx context.Context, taskID uuid.UUID, reader io.Reader, size int64, contentType string) (string, error)
 	ClearSourceFile(ctx context.Context, taskID uuid.UUID, in TaskInput) (*domain.Task, error)
@@ -223,10 +310,10 @@ type AdminAuth interface {
 }
 
 type LeaderboardEntry struct {
-	Rank             int
-	Username         string
-	TasksSolved      int
-	TotalSolveTimeMs int64
+	Rank               int
+	Username           string
+	Wins               int
+	AverageSolveTimeMs int64
 }
 
 type Leaderboard interface {

@@ -39,7 +39,7 @@ func newWebSocketFixture(t *testing.T) *websocketFixture {
 
 func newWebSocketFixtureWithReconnectWindow(t *testing.T, reconnectWindow time.Duration) *websocketFixture {
 	t.Helper()
-	return newWebSocketFixtureFromDuelFixture(t, newDuelFixture(), reconnectWindow)
+	return newWebSocketFixtureFromDuelFixture(t, newIsolatedDuelFixture(t), reconnectWindow)
 }
 
 func newIsolatedWebSocketFixtureWithReconnectWindow(t *testing.T, reconnectWindow time.Duration) *websocketFixture {
@@ -104,16 +104,12 @@ func newWebSocketFixtureFromDuelFixture(
 	httpServer := httptest.NewServer(server)
 	t.Cleanup(httpServer.Close)
 	// Drain leaked time.AfterFunc goroutines from this server before the next
-	// test starts. Without StopAll these goroutines outlive the test, fire
-	// against sharedPool, and race with the next test's matchmaking flow,
-	// surfacing as "internal error" on JOIN_QUEUE.
+	// test starts. Without StopAll these goroutines can outlive the test and
+	// race with the next matchmaking flow.
 	t.Cleanup(func() {
 		timers.StopAll()
 		hints.StopAll()
 		reconnect.StopAll()
-		if err := truncateTables(context.Background(), sharedPool); err != nil {
-			t.Logf("websocket fixture cleanup truncate failed: %v", err)
-		}
 	})
 
 	return &websocketFixture{
@@ -285,7 +281,9 @@ func decodeWinnerID(t *testing.T, event wsTestEvent) uuid.UUID {
 	t.Helper()
 	var payload wscontroller.DuelFinishedPayload
 	require.NoError(t, json.Unmarshal(event.Payload, &payload))
-	require.NotNil(t, payload.Duel.WinnerID)
+	if payload.Duel.WinnerID == nil {
+		return uuid.Nil
+	}
 	return *payload.Duel.WinnerID
 }
 

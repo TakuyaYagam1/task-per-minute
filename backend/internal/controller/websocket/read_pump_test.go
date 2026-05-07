@@ -158,7 +158,7 @@ func (m *recordingReconnectManager) DuelPaused(uuid.UUID) bool {
 	return false
 }
 
-func (m *recordingReconnectManager) FinalizeOpponentForfeit(context.Context, uuid.UUID, uuid.UUID) {
+func (m *recordingReconnectManager) FinalizeDraw(context.Context, uuid.UUID) (*domain.Duel, error) {
 	panic("unused")
 }
 

@@ -19,6 +19,12 @@ const (
 	ActiveDuelInfoStatusActive ActiveDuelInfoStatus = "active"
 )
 
+// Defines values for AdminPlayerAuditAction.
+const (
+	Delete AdminPlayerAuditAction = "delete"
+	Update AdminPlayerAuditAction = "update"
+)
+
 // Defines values for AdminTokenResponseTokenType.
 const (
 	Bearer AdminTokenResponseTokenType = "Bearer"
@@ -103,6 +109,43 @@ type AdminLoginRequest struct {
 type AdminLogoutRequest struct {
 	// RefreshToken Refresh token to revoke. Access token is taken from the Authorization header.
 	RefreshToken string `json:"refresh_token"`
+}
+
+// AdminPlayerAuditAction defines model for AdminPlayerAuditAction.
+type AdminPlayerAuditAction string
+
+// AdminPlayerAuditEventResponse defines model for AdminPlayerAuditEventResponse.
+type AdminPlayerAuditEventResponse struct {
+	Action       AdminPlayerAuditAction `json:"action"`
+	ActorJti     string                 `json:"actor_jti"`
+	ActorSubject string                 `json:"actor_subject"`
+	AfterState   AdminPlayerAuditState  `json:"after_state"`
+	BeforeState  AdminPlayerAuditState  `json:"before_state"`
+	CreatedAt    time.Time              `json:"created_at"`
+	Id           openapi_types.UUID     `json:"id"`
+	PlayerId     openapi_types.UUID     `json:"player_id"`
+}
+
+// AdminPlayerAuditState defines model for AdminPlayerAuditState.
+type AdminPlayerAuditState struct {
+	AverageSolveTimeMs int64        `json:"average_solve_time_ms"`
+	Deleted            bool         `json:"deleted"`
+	StatsOverridden    bool         `json:"stats_overridden"`
+	Status             PlayerStatus `json:"status"`
+	Username           string       `json:"username"`
+	Wins               int32        `json:"wins"`
+}
+
+// AdminPlayerResponse defines model for AdminPlayerResponse.
+type AdminPlayerResponse struct {
+	AverageSolveTimeMs int64              `json:"average_solve_time_ms"`
+	CreatedAt          time.Time          `json:"created_at"`
+	DeletedAt          *time.Time         `json:"deleted_at"`
+	Id                 openapi_types.UUID `json:"id"`
+	StatsOverridden    bool               `json:"stats_overridden"`
+	Status             PlayerStatus       `json:"status"`
+	Username           string             `json:"username"`
+	Wins               int32              `json:"wins"`
 }
 
 // AdminRefreshRequest defines model for AdminRefreshRequest.
@@ -200,10 +243,10 @@ type JoinResponse struct {
 
 // LeaderboardEntry defines model for LeaderboardEntry.
 type LeaderboardEntry struct {
-	Rank             int32  `json:"rank"`
-	TasksSolved      int32  `json:"tasks_solved"`
-	TotalSolveTimeMs int64  `json:"total_solve_time_ms"`
-	Username         string `json:"username"`
+	AverageSolveTimeMs int64  `json:"average_solve_time_ms"`
+	Rank               int32  `json:"rank"`
+	Username           string `json:"username"`
+	Wins               int32  `json:"wins"`
 }
 
 // LeaderboardResponse defines model for LeaderboardResponse.
@@ -263,6 +306,13 @@ type TaskResponse struct {
 	Title     string `json:"title"`
 }
 
+// UpdateAdminPlayerRequest defines model for UpdateAdminPlayerRequest.
+type UpdateAdminPlayerRequest struct {
+	AverageSolveTimeMs int64  `json:"average_solve_time_ms"`
+	Username           string `json:"username"`
+	Wins               int32  `json:"wins"`
+}
+
 // UpdateTaskRequest defines model for UpdateTaskRequest.
 type UpdateTaskRequest struct {
 	Category    *TaskCategory   `json:"category,omitempty"`
@@ -285,6 +335,16 @@ type UploadSourceResponse struct {
 	SourceFileUrl string `json:"source_file_url"`
 }
 
+// ListAdminPlayersParams defines parameters for ListAdminPlayers.
+type ListAdminPlayersParams struct {
+	IncludeDeleted *bool `form:"include_deleted,omitempty" json:"include_deleted,omitempty"`
+}
+
+// ListAdminPlayerAuditParams defines parameters for ListAdminPlayerAudit.
+type ListAdminPlayerAuditParams struct {
+	Limit *int32 `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
 // UploadTaskSourceMultipartBody defines parameters for UploadTaskSource.
 type UploadTaskSourceMultipartBody struct {
 	File openapi_types.File `json:"file"`
@@ -295,6 +355,9 @@ type AdminLoginJSONRequestBody = AdminLoginRequest
 
 // AdminLogoutJSONRequestBody defines body for AdminLogout for application/json ContentType.
 type AdminLogoutJSONRequestBody = AdminLogoutRequest
+
+// UpdateAdminPlayerJSONRequestBody defines body for UpdateAdminPlayer for application/json ContentType.
+type UpdateAdminPlayerJSONRequestBody = UpdateAdminPlayerRequest
 
 // AdminRefreshJSONRequestBody defines body for AdminRefresh for application/json ContentType.
 type AdminRefreshJSONRequestBody = AdminRefreshRequest
