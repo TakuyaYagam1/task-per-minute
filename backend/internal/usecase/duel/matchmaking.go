@@ -405,6 +405,9 @@ func (u *MatchmakingUsecase) selectPairTasksInDifficulty(
 		_, solvedByPlayer2 := player2Solved[task.ID]
 		return !solvedByPlayer1 && !solvedByPlayer2
 	})
+	if len(unsolvedByBoth) == 1 {
+		return unsolvedByBoth[0], unsolvedByBoth[0], nil
+	}
 	if len(unsolvedByBoth) >= 2 {
 		shuffled := shuffledTasks(unsolvedByBoth)
 		return shuffled[0], shuffled[1], nil

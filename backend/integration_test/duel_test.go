@@ -297,6 +297,7 @@ func TestDuel_AntiRepeatSelectsAnotherTaskWhenAvailable(t *testing.T) {
 	result := f.matchPlayers(t, alice.ID, bob.ID)
 
 	require.Equal(t, unsolved.ID, taskForPlayer(t, result, alice.ID).ID)
+	require.Equal(t, unsolved.ID, taskForPlayer(t, result, bob.ID).ID)
 }
 
 func TestDuel_SamePoolAssignsDistinctTasksWhenAvailable(t *testing.T) {
