@@ -229,6 +229,10 @@ export const gameStorage = {
     removeItem(browserStorage(), localStorageFallback, GAME_RESULT_KEY);
   },
 
+  clearCurrentGame: (): void => {
+    removeItem(browserStorage(), localStorageFallback, CURRENT_GAME_KEY);
+  },
+
   clearGameData: (): void => {
     const storage = browserStorage();
     removeItem(storage, localStorageFallback, GAME_RESULT_KEY);

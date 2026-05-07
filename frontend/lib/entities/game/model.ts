@@ -43,4 +43,8 @@ export const gameModel = {
   clearGameData(): void {
     gameStorage.clearGameData();
   },
+
+  clearCurrentGame(): void {
+    gameStorage.clearCurrentGame();
+  },
 };

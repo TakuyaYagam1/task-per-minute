@@ -172,6 +172,30 @@ func (r *reconnDuelRepo) UpdateDeadline(_ context.Context, id uuid.UUID, deadlin
 	return &snapshot, nil
 }
 
+type contextCheckingReconnDuelRepo struct {
+	*reconnDuelRepo
+}
+
+func (r *contextCheckingReconnDuelRepo) GetByID(ctx context.Context, id uuid.UUID) (*domain.Duel, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return r.reconnDuelRepo.GetByID(ctx, id)
+}
+
+func (r *contextCheckingReconnDuelRepo) Finish(
+	ctx context.Context,
+	id uuid.UUID,
+	winnerID *uuid.UUID,
+	finishedAt time.Time,
+	status domain.DuelStatus,
+) (*domain.Duel, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return r.reconnDuelRepo.Finish(ctx, id, winnerID, finishedAt, status)
+}
+
 func newReconnectFixture(t *testing.T, options ...duelusecase.ReconnectOption) (
 	*duelusecase.ReconnectManager,
 	*reconnDuelRepo,
@@ -311,6 +335,31 @@ func TestReconnectManager_DuelPausedLifecycle(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, finished)
 	require.False(t, mgr.DuelPaused(duel.ID))
+}
+
+func TestReconnectManager_FinalizePlayerForfeit_DetachesFromCanceledContext(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
+	duels := &contextCheckingReconnDuelRepo{reconnDuelRepo: newReconnDuelRepo()}
+	players := newTimerPlayerRepo()
+	timer := newFakeTimer()
+	broadcaster := &recordingBroadcaster{}
+	mgr := duelusecase.NewReconnectManager(timerTx{}, duels, players, timer, broadcaster, fixedClock{now: now})
+	duel := activeDuel(now.Add(time.Hour))
+	duels.putWithPlayers(duel)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	finished, err := mgr.FinalizePlayerForfeit(ctx, duel.ID, duel.Player1ID)
+	require.NoError(t, err)
+	require.NotNil(t, finished)
+	require.NotNil(t, finished.WinnerID)
+	require.Equal(t, duel.Player2ID, *finished.WinnerID)
+	require.Equal(t, 1, broadcaster.finishedCount())
+	require.Equal(t, domain.PlayerStatusIdle, players.status(duel.Player1ID))
+	require.Equal(t, domain.PlayerStatusIdle, players.status(duel.Player2ID))
 }
 
 func TestReconnectManager_ConsumeReconnect_NoActiveDuelReturnsNil(t *testing.T) {

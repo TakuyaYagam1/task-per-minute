@@ -440,6 +440,20 @@ func TestWebSocketController_SurrenderFinishesDuelForOpponentWithoutLeaderboard(
 	require.NotNil(t, got.WinnerID)
 	require.Equal(t, match.bob.ID, *got.WinnerID)
 
+	aliceActive, err := f.duels.GetActiveByPlayerID(ctx, match.alice.ID)
+	require.NoError(t, err)
+	require.Nil(t, aliceActive, "surrendering player must not restore the finished duel")
+	bobActive, err := f.duels.GetActiveByPlayerID(ctx, match.bob.ID)
+	require.NoError(t, err)
+	require.Nil(t, bobActive, "opponent must not restore the finished duel")
+
+	alice, err := f.players.GetByID(ctx, match.alice.ID)
+	require.NoError(t, err)
+	require.Equal(t, domain.PlayerStatusIdle, alice.Status)
+	bob, err := f.players.GetByID(ctx, match.bob.ID)
+	require.NoError(t, err)
+	require.Equal(t, domain.PlayerStatusIdle, bob.Status)
+
 	scores, err := f.boardStore.WinScores(ctx)
 	require.NoError(t, err)
 	require.Empty(t, scores)

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	logkit "github.com/wahrwelt-kit/go-logkit"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
@@ -24,6 +25,19 @@ type MatchmakingUsecase struct {
 	duels   usecase.DuelRepo
 	storage usecase.SourceFileStorage
 	clock   clock.Clock
+	log     logkit.Logger
+}
+
+// MatchmakingOption configures optional behavior on a MatchmakingUsecase.
+type MatchmakingOption func(*MatchmakingUsecase)
+
+// WithMatchmakingLogger attaches a structured logger so each matched pair
+// emits a decision record (which branch was taken, which tasks were chosen)
+// for production debugging.
+func WithMatchmakingLogger(log logkit.Logger) MatchmakingOption {
+	return func(u *MatchmakingUsecase) {
+		u.log = log
+	}
 }
 
 // MatchResult aliases the canonical declaration in
@@ -50,6 +64,15 @@ func NewMatchmakingUsecase(
 		storage: storage,
 		clock:   clk,
 	}
+}
+
+func (u *MatchmakingUsecase) Configure(options ...MatchmakingOption) *MatchmakingUsecase {
+	for _, opt := range options {
+		if opt != nil {
+			opt(u)
+		}
+	}
+	return u
 }
 
 func (u *MatchmakingUsecase) JoinQueue(ctx context.Context, playerID uuid.UUID) (*MatchResult, error) {
@@ -344,6 +367,15 @@ func (u *MatchmakingUsecase) selectTasksForPair(
 		if err != nil {
 			return nil, nil, fmt.Errorf("select player2 task: %w", err)
 		}
+		u.logDecision(matchmakingDecisionFields{
+			Branch:            "cross_pool",
+			Player1ID:         player1ID,
+			Player2ID:         player2ID,
+			Player1Difficulty: player1Difficulty,
+			Player2Difficulty: player2Difficulty,
+			Player1Task:       player1Task,
+			Player2Task:       player2Task,
+		})
 		return player1Task, player2Task, nil
 	}
 
@@ -405,11 +437,31 @@ func (u *MatchmakingUsecase) selectPairTasksInDifficulty(
 		_, solvedByPlayer2 := player2Solved[task.ID]
 		return !solvedByPlayer1 && !solvedByPlayer2
 	})
+
+	decision := matchmakingDecisionFields{
+		Player1ID:           player1ID,
+		Player2ID:           player2ID,
+		Player1Difficulty:   difficulty,
+		Player2Difficulty:   difficulty,
+		PoolSize:            len(tasks),
+		Player1SolvedCount:  len(player1Solved),
+		Player2SolvedCount:  len(player2Solved),
+		UnsolvedByBothCount: len(unsolvedByBoth),
+	}
+
 	if len(unsolvedByBoth) == 1 {
+		decision.Branch = "same_pool_shared_one"
+		decision.Player1Task = unsolvedByBoth[0]
+		decision.Player2Task = unsolvedByBoth[0]
+		u.logDecision(decision)
 		return unsolvedByBoth[0], unsolvedByBoth[0], nil
 	}
 	if len(unsolvedByBoth) >= 2 {
 		shuffled := shuffledTasks(unsolvedByBoth)
+		decision.Branch = "same_pool_shared_many"
+		decision.Player1Task = shuffled[0]
+		decision.Player2Task = shuffled[1]
+		u.logDecision(decision)
 		return shuffled[0], shuffled[1], nil
 	}
 
@@ -422,12 +474,65 @@ func (u *MatchmakingUsecase) selectPairTasksInDifficulty(
 		return !ok
 	})
 	if player1Task, player2Task, ok := selectDistinctTasks(player1Unsolved, player2Unsolved, false); ok {
+		decision.Branch = "same_pool_swap"
+		decision.Player1Task = player1Task
+		decision.Player2Task = player2Task
+		u.logDecision(decision)
 		return player1Task, player2Task, nil
 	}
 	if player1Task, player2Task, ok := selectDistinctTasks(tasks, tasks, len(tasks) == 1); ok {
+		decision.Branch = "same_pool_fallback"
+		decision.Player1Task = player1Task
+		decision.Player2Task = player2Task
+		u.logDecision(decision)
 		return player1Task, player2Task, nil
 	}
 	return nil, nil, apperr.ErrTaskNotFound
+}
+
+// matchmakingDecisionFields captures the inputs and outputs of a single
+// matchmaking task assignment. Used to emit one structured log line per
+// matched pair so prod issues can be diagnosed without re-running the flow.
+type matchmakingDecisionFields struct {
+	Branch              string
+	Player1ID           uuid.UUID
+	Player2ID           uuid.UUID
+	Player1Difficulty   domain.Difficulty
+	Player2Difficulty   domain.Difficulty
+	PoolSize            int
+	Player1SolvedCount  int
+	Player2SolvedCount  int
+	UnsolvedByBothCount int
+	Player1Task         *domain.Task
+	Player2Task         *domain.Task
+}
+
+func (u *MatchmakingUsecase) logDecision(d matchmakingDecisionFields) {
+	if u.log == nil {
+		return
+	}
+	fields := logkit.Fields{
+		"branch_taken":           d.Branch,
+		"player1_id":             d.Player1ID.String(),
+		"player2_id":             d.Player2ID.String(),
+		"player1_difficulty":     string(d.Player1Difficulty),
+		"player2_difficulty":     string(d.Player2Difficulty),
+		"pool_size":              d.PoolSize,
+		"player1_solved_count":   d.Player1SolvedCount,
+		"player2_solved_count":   d.Player2SolvedCount,
+		"unsolved_by_both_count": d.UnsolvedByBothCount,
+	}
+	if d.Player1Task != nil {
+		fields["player1_task_id"] = d.Player1Task.ID.String()
+		fields["player1_task_title"] = d.Player1Task.Title
+		fields["player1_task_difficulty"] = string(d.Player1Task.Difficulty)
+	}
+	if d.Player2Task != nil {
+		fields["player2_task_id"] = d.Player2Task.ID.String()
+		fields["player2_task_title"] = d.Player2Task.Title
+		fields["player2_task_difficulty"] = string(d.Player2Task.Difficulty)
+	}
+	u.log.Info("matchmaking task selection", fields)
 }
 
 func (u *MatchmakingUsecase) solvedTaskSet(ctx context.Context, playerID uuid.UUID) (map[uuid.UUID]struct{}, error) {

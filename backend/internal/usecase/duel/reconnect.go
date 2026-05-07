@@ -352,7 +352,8 @@ func (m *ReconnectManager) FinalizePlayerForfeit(
 	if m == nil || m.duels == nil {
 		return nil, nil
 	}
-	duel, err := m.duels.GetByID(ctx, duelID)
+	finalizeCtx := withoutCancel(ctx)
+	duel, err := m.duels.GetByID(finalizeCtx, duelID)
 	if err != nil {
 		return nil, err
 	}
@@ -364,7 +365,7 @@ func (m *ReconnectManager) FinalizePlayerForfeit(
 		return nil, apperr.ErrNotDuelParticipant
 	}
 	winner := winnerID
-	return m.finalizeAndBroadcast(ctx, duelID, &winner)
+	return m.finalizeAndBroadcast(finalizeCtx, duelID, &winner)
 }
 
 func (m *ReconnectManager) CloseDuel(duelID uuid.UUID) {
@@ -450,6 +451,13 @@ func (m *ReconnectManager) detachedCtx() context.Context {
 		return context.Background()
 	}
 	return context.WithoutCancel(m.ctx)
+}
+
+func withoutCancel(ctx context.Context) context.Context {
+	if ctx == nil {
+		return context.Background()
+	}
+	return context.WithoutCancel(ctx)
 }
 
 func (m *ReconnectManager) finalize(ctx context.Context, duelID uuid.UUID, winnerID *uuid.UUID) {

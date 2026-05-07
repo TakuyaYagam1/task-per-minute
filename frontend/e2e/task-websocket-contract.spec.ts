@@ -487,6 +487,11 @@ test('task page sends surrender payload and waits for duel_finished result', asy
   await page.getByRole('button', { name: 'Сдаться' }).click();
 
   await expect(page.getByText('ПОРАЖЕНИЕ')).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('player_id'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('session_token'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('username'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('currentGame'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('game_result'))).toContain(duelID);
   expect(messages).toContainEqual({
     type: 'surrender',
     payload: {

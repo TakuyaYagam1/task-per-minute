@@ -137,6 +137,21 @@ func provideFlagSubmitUsecase(
 		Configure(duelusecase.WithFlagSubmitLogger(log))
 }
 
+func provideMatchmakingUsecase(
+	tx usecase.TxManager,
+	queue usecase.MatchmakingQueue,
+	players usecase.PlayerRepo,
+	tasks usecase.TaskRepo,
+	history usecase.HistoryRepo,
+	duels usecase.DuelRepo,
+	storage usecase.SourceFileStorage,
+	clk clock.Clock,
+	log logkit.Logger,
+) *duelusecase.MatchmakingUsecase {
+	return duelusecase.NewMatchmakingUsecase(tx, queue, players, tasks, history, duels, storage, clk).
+		Configure(duelusecase.WithMatchmakingLogger(log))
+}
+
 func provideUploadUsecase(
 	tasks usecase.TaskRepo,
 	storage usecase.SourceFileStorage,

@@ -349,7 +349,7 @@ export const TaskPage: React.FC = () => {
       }
       terminalSource.current = "server";
       hasFinished.current = true;
-      clearActiveDuelState();
+      clearActiveDuelState(false);
 
       const winnerID = message.payload.winner_id || null;
       const state: GameState =
@@ -366,6 +366,7 @@ export const TaskPage: React.FC = () => {
         winner_id: winnerID,
         winner_username: message.payload.winner_username || null,
       });
+      gameModel.clearCurrentGame();
       clearStoredPlayerSessionForNextEntrant();
     },
     [clearActiveDuelState, clearStoredPlayerSessionForNextEntrant],
@@ -513,13 +514,14 @@ export const TaskPage: React.FC = () => {
           if (terminalSource.current !== "server") {
             terminalSource.current = "server";
             hasFinished.current = true;
-            clearActiveDuelState();
+            clearActiveDuelState(false);
             setGameState("timeup");
             gameModel.saveGameResult({
               state: "timeup",
               source: "server",
               duel_id: message.payload.duel_id,
             });
+            gameModel.clearCurrentGame();
             clearStoredPlayerSessionForNextEntrant();
           }
           break;

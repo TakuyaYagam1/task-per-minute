@@ -43,7 +43,7 @@ func InitializeApp(ctx context.Context, cfg *config.Config, log logkit.Logger) (
 	taskPostgres := persistent.NewTaskPostgres(txManager)
 	historyPostgres := persistent.NewHistoryPostgres(txManager)
 	clock := provideClock()
-	matchmakingUsecase := duel.NewMatchmakingUsecase(txManager, matchmakingRedis, playerPostgres, taskPostgres, historyPostgres, duelPostgres, seaweedStorage, clock)
+	matchmakingUsecase := provideMatchmakingUsecase(txManager, matchmakingRedis, playerPostgres, taskPostgres, historyPostgres, duelPostgres, seaweedStorage, clock, log)
 	leaderboardRedis := provideLeaderboardRedis(client)
 	leaderboardPostgres := persistent.NewLeaderboardPostgres(txManager)
 	leaderboardUsecase := leaderboard.NewLeaderboardUsecase(leaderboardRedis, leaderboardPostgres, clock)

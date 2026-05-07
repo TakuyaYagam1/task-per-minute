@@ -75,7 +75,7 @@ var UsecasesSet = wire.NewSet(
 	wire.Bind(new(usecase.Upload), new(*adminusecase.UploadUsecase)),
 	playerusecase.NewPlayerUsecase,
 	wire.Bind(new(usecase.Player), new(*playerusecase.PlayerUsecase)),
-	duelusecase.NewMatchmakingUsecase,
+	provideMatchmakingUsecase,
 	wire.Bind(new(websocket.Matchmaking), new(*duelusecase.MatchmakingUsecase)),
 	provideTimerRegistry,
 	provideHintScheduler,
