@@ -23,6 +23,8 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
+
+	"github.com/TakuyaYagam1/task-per-minute/internal/repo/storage"
 )
 
 const containerStartupTimeout = 90 * time.Second
@@ -187,16 +189,47 @@ func startSeaweedFS() (*seaweedFx, func(), error) {
 	if err != nil {
 		return nil, nil, errors.Join(err, c.Terminate(ctx))
 	}
+	fx := &seaweedFx{
+		endpoint: fmt.Sprintf("%s:%s", host, port.Port()),
+		bucket:   "tpm-test",
+	}
+	if err := waitForSeaweedS3(ctx, fx); err != nil {
+		return nil, nil, errors.Join(err, c.Terminate(ctx))
+	}
 
 	teardown := func() {
 		termCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		_ = c.Terminate(termCtx)
 	}
-	return &seaweedFx{
-		endpoint: fmt.Sprintf("%s:%s", host, port.Port()),
-		bucket:   "tpm-test",
-	}, teardown, nil
+	return fx, teardown, nil
+}
+
+func waitForSeaweedS3(ctx context.Context, fx *seaweedFx) error {
+	st, err := storage.New(storage.Config{
+		Endpoint:  fx.endpoint,
+		AccessKey: "tpm",
+		SecretKey: "tpm-secret",
+		Bucket:    fx.bucket,
+		Secure:    false,
+	})
+	if err != nil {
+		return fmt.Errorf("create seaweed storage readiness client: %w", err)
+	}
+
+	deadline := time.Now().Add(containerStartupTimeout)
+	var lastErr error
+	for time.Now().Before(deadline) {
+		attemptCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		err := st.EnsureBucket(attemptCtx)
+		cancel()
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+		time.Sleep(250 * time.Millisecond)
+	}
+	return fmt.Errorf("seaweedfs s3 readiness: %w", lastErr)
 }
 
 func startPostgres() (*pgxpool.Pool, func(), error) {
