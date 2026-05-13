@@ -2,6 +2,8 @@ package websocket
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -72,6 +74,175 @@ func TestServerPublishMatchMarksMissingParticipantDisconnected(t *testing.T) {
 	require.Equal(t, []recordedDisconnect{{duelID: duel.ID, playerID: player2.ID}}, reconnect.disconnects)
 }
 
+func TestDecodeIncomingEventRejectsUnknownTopLevelField(t *testing.T) {
+	t.Parallel()
+
+	_, err := decodeIncomingEvent(strings.NewReader(`{"type":"ping","data":{}}`))
+
+	require.Error(t, err)
+}
+
+func TestDecodeIncomingEventRejectsTrailingJSON(t *testing.T) {
+	t.Parallel()
+
+	_, err := decodeIncomingEvent(strings.NewReader(`{"type":"ping"} {"type":"ping"}`))
+
+	require.Error(t, err)
+}
+
+func TestServerFlagSubmitRejectsMismatchedDuelID(t *testing.T) {
+	t.Parallel()
+
+	activeDuelID := uuid.New()
+	wireDuelID := uuid.New()
+	playerID := uuid.New()
+	flags := &countingFlagSubmitter{}
+	server := NewServer(nil, nil, flags, NewHubRegistry(), WithHubCloseDelay(0))
+	c := &client{
+		player: &domain.Player{ID: playerID},
+		send:   make(chan []byte, 1),
+		done:   make(chan struct{}),
+	}
+	c.setDuel(activeDuelID)
+	rawPayload, err := json.Marshal(map[string]any{
+		"duel_id": wireDuelID,
+		"flag":    "ctf{wrong-duel}",
+	})
+	require.NoError(t, err)
+
+	server.routeEvent(context.Background(), c, IncomingEvent{Type: EventFlagSubmit, Payload: rawPayload})
+
+	event := readBufferedClientEvent(t, c)
+	require.Equal(t, EventError, event.Type)
+	require.Equal(t, ErrorInvalidPayload, event.Code)
+	require.Zero(t, flags.submitCalls)
+}
+
+func TestServerNoPayloadEventRejectsPayload(t *testing.T) {
+	t.Parallel()
+
+	server := NewServer(nil, nil, nil, NewHubRegistry(), WithHubCloseDelay(0))
+	c := &client{
+		player: &domain.Player{ID: uuid.New()},
+		send:   make(chan []byte, 1),
+		done:   make(chan struct{}),
+	}
+	rawPayload, err := json.Marshal(map[string]any{"unexpected": true})
+	require.NoError(t, err)
+
+	server.routeEvent(context.Background(), c, IncomingEvent{Type: EventPing, Payload: rawPayload})
+
+	event := readBufferedClientEvent(t, c)
+	require.Equal(t, EventError, event.Type)
+	require.Equal(t, ErrorInvalidPayload, event.Code)
+}
+
+func TestServerNoPayloadEventAllowsNullPayload(t *testing.T) {
+	t.Parallel()
+
+	server := NewServer(nil, nil, nil, NewHubRegistry(), WithHubCloseDelay(0))
+	c := &client{
+		player: &domain.Player{ID: uuid.New()},
+		send:   make(chan []byte, 1),
+		done:   make(chan struct{}),
+	}
+
+	server.routeEvent(context.Background(), c, IncomingEvent{Type: EventPing, Payload: json.RawMessage("null")})
+
+	event := readBufferedClientEvent(t, c)
+	require.Equal(t, EventPong, event.Type)
+}
+
+func TestServerFlagSubmitAcceptsMatchingDuelID(t *testing.T) {
+	t.Parallel()
+
+	duelID := uuid.New()
+	playerID := uuid.New()
+	flags := &countingFlagSubmitter{}
+	server := NewServer(nil, nil, flags, NewHubRegistry(), WithHubCloseDelay(0))
+	c := &client{
+		player: &domain.Player{ID: playerID},
+		send:   make(chan []byte, 1),
+		done:   make(chan struct{}),
+	}
+	c.setDuel(duelID)
+	rawPayload, err := json.Marshal(map[string]any{
+		"duel_id": duelID,
+		"flag":    " ctf{candidate} ",
+	})
+	require.NoError(t, err)
+
+	server.routeEvent(context.Background(), c, IncomingEvent{Type: EventFlagSubmit, Payload: rawPayload})
+
+	require.Equal(t, 1, flags.submitCalls)
+}
+
+func TestServerFlagSubmitRejectsUnknownPayloadField(t *testing.T) {
+	t.Parallel()
+
+	duelID := uuid.New()
+	playerID := uuid.New()
+	flags := &countingFlagSubmitter{}
+	server := NewServer(nil, nil, flags, NewHubRegistry(), WithHubCloseDelay(0))
+	c := &client{
+		player: &domain.Player{ID: playerID},
+		send:   make(chan []byte, 1),
+		done:   make(chan struct{}),
+	}
+	c.setDuel(duelID)
+	rawPayload, err := json.Marshal(map[string]any{
+		"duel_id": duelID,
+		"flag":    "ctf{candidate}",
+		"extra":   true,
+	})
+	require.NoError(t, err)
+
+	server.routeEvent(context.Background(), c, IncomingEvent{Type: EventFlagSubmit, Payload: rawPayload})
+
+	event := readBufferedClientEvent(t, c)
+	require.Equal(t, EventError, event.Type)
+	require.Equal(t, ErrorInvalidPayload, event.Code)
+	require.Zero(t, flags.submitCalls)
+}
+
+func TestServerSurrenderRejectsMismatchedDuelID(t *testing.T) {
+	t.Parallel()
+
+	activeDuelID := uuid.New()
+	wireDuelID := uuid.New()
+	playerID := uuid.New()
+	reconnect := &noopReconnectManager{}
+	server := NewServer(nil, nil, nil, NewHubRegistry(), WithReconnectManager(reconnect), WithHubCloseDelay(0))
+	c := &client{
+		player: &domain.Player{ID: playerID},
+		send:   make(chan []byte, 1),
+		done:   make(chan struct{}),
+	}
+	c.setDuel(activeDuelID)
+	rawPayload, err := json.Marshal(map[string]any{"duel_id": wireDuelID})
+	require.NoError(t, err)
+
+	server.routeEvent(context.Background(), c, IncomingEvent{Type: EventSurrender, Payload: rawPayload})
+
+	event := readBufferedClientEvent(t, c)
+	require.Equal(t, EventError, event.Type)
+	require.Equal(t, ErrorInvalidPayload, event.Code)
+	require.Zero(t, reconnect.forfeitCalls)
+}
+
+func readBufferedClientEvent(t *testing.T, c *client) Event {
+	t.Helper()
+	select {
+	case data := <-c.send:
+		var event Event
+		require.NoError(t, json.Unmarshal(data, &event))
+		return event
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for client event")
+		return Event{}
+	}
+}
+
 type publishMatchPlayerRepo struct {
 	players map[uuid.UUID]*domain.Player
 }
@@ -123,6 +294,7 @@ func (r *publishMatchPlayerRepo) UpdateStatusIfCurrent(
 type recordingReconnectManager struct {
 	started     []*domain.Duel
 	disconnects []recordedDisconnect
+	stopAll     int
 }
 
 type recordedDisconnect struct {
@@ -171,3 +343,7 @@ func (m *recordingReconnectManager) FinalizePlayerForfeit(
 }
 
 func (m *recordingReconnectManager) CloseDuel(uuid.UUID) {}
+
+func (m *recordingReconnectManager) StopAll() {
+	m.stopAll++
+}

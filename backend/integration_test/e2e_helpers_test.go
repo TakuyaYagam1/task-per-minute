@@ -19,6 +19,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/config"
 	"github.com/TakuyaYagam1/task-per-minute/internal/app"
+	"github.com/TakuyaYagam1/task-per-minute/internal/controller/restapi/middleware"
 	"github.com/TakuyaYagam1/task-per-minute/internal/openapi"
 	redisrepo "github.com/TakuyaYagam1/task-per-minute/internal/repo/redis"
 )
@@ -87,18 +88,25 @@ func clearE2ERedis(t *testing.T) {
 }
 
 type e2eJoin struct {
-	PlayerID     uuid.UUID
-	SessionToken uuid.UUID
-	Username     string
+	PlayerID      uuid.UUID
+	SessionCookie string
+	Username      string
 }
 
 func (a *e2eApp) joinPlayer(t *testing.T, username string) e2eJoin {
 	t.Helper()
-	got := e2ePostJSON(t, a, "/api/v1/players/join", openapi.JoinRequest{Username: username}, "", http.StatusOK, openapi.JoinResponse{})
+	var buf bytes.Buffer
+	require.NoError(t, json.NewEncoder(&buf).Encode(openapi.JoinRequest{Username: username}))
+	req := a.newRequest(t, http.MethodPost, "/api/v1/players/join", &buf)
+	req.Header.Set("Content-Type", "application/json")
+	resp := a.do(t, req)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	got := e2eDecodeJSON[openapi.JoinResponse](t, resp.Body)
 	return e2eJoin{
-		PlayerID:     got.PlayerId,
-		SessionToken: got.SessionToken,
-		Username:     username,
+		PlayerID:      got.PlayerId,
+		SessionCookie: e2ePlayerSessionCookieValue(t, resp),
+		Username:      username,
 	}
 }
 
@@ -211,11 +219,13 @@ func e2ePostJSON[T any](
 	return e2eDecodeJSON[T](t, resp.Body)
 }
 
-func (a *e2eApp) connectWS(t *testing.T, token uuid.UUID) *coderws.Conn {
+func (a *e2eApp) connectWS(t *testing.T, sessionCookie string) *coderws.Conn {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), wsTestTimeout)
 	defer cancel()
-	conn, _, err := coderws.Dial(ctx, wsURL(a.baseURL, token), nil)
+	headers := http.Header{}
+	headers.Set("Cookie", (&http.Cookie{Name: middleware.PlayerSessionCookieName, Value: sessionCookie}).String())
+	conn, _, err := coderws.Dial(ctx, wsEndpoint(a.baseURL), &coderws.DialOptions{HTTPHeader: headers})
 	require.NoError(t, err)
 	return conn
 }
@@ -241,6 +251,17 @@ func e2eDecodeJSON[T any](t *testing.T, body io.Reader) T {
 	require.NoError(t, err)
 	require.NoError(t, json.Unmarshal(data, &out), "body: %s", data)
 	return out
+}
+
+func e2ePlayerSessionCookieValue(t *testing.T, resp *http.Response) string {
+	t.Helper()
+	for _, cookie := range resp.Cookies() {
+		if cookie.Name == middleware.PlayerSessionCookieName {
+			return cookie.Value
+		}
+	}
+	t.Fatalf("missing %s cookie", middleware.PlayerSessionCookieName)
+	return ""
 }
 
 func containsTaskID(tasks []openapi.TaskResponse, id uuid.UUID) bool {

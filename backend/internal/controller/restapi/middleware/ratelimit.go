@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/wahrwelt-kit/go-httpkit/httputil"
 	httpkitmw "github.com/wahrwelt-kit/go-httpkit/httputil/middleware"
 	"golang.org/x/time/rate"
 )
@@ -118,6 +119,22 @@ func (l *JoinRateLimiter) RetryAfter() string {
 		return ""
 	}
 	return l.inner.RetryAfter()
+}
+
+func NewClientIPResolver(trustedProxyCIDRs []string) (func(*http.Request) string, error) {
+	trustedNets, err := httputil.ParseTrustedProxyCIDRs(trustedProxyCIDRs)
+	if err != nil {
+		return nil, err
+	}
+	return func(r *http.Request) string {
+		if r == nil {
+			return ""
+		}
+		if ip := httpkitmw.GetClientIPFromContext(r.Context()); ip != "" {
+			return ip
+		}
+		return httputil.GetClientIPWithNets(r, trustedNets)
+	}, nil
 }
 
 func ClientIPFromRequest(r *http.Request) string {

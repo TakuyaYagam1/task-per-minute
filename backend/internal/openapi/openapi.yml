@@ -7,8 +7,11 @@ info:
     is documented in and is intentionally outside this OpenAPI spec.
 
     Authentication:
-      - Players send `X-Session-Token: <uuid>` (issued by POST /players/join).
-      - Admins send `Authorization: Bearer <jwt>` (issued by POST /admin/login).
+      - Players use the HttpOnly `tpm_player_session` cookie issued by POST /players/join.
+      - Admins receive HttpOnly `tpm_admin_access` and `tpm_admin_refresh` cookies from
+        POST /admin/login and POST /admin/refresh. `Authorization: Bearer <jwt>`
+        remains supported only for requests without browser Origin/Referer headers.
+        Unsafe cookie-authenticated admin requests must send `X-CSRF-Token`.
   version: "1.0.0"
 
 servers:
@@ -28,6 +31,8 @@ paths:
     $ref: 'routes/player.yml#/~1api~1v1~1players~1join'
   /api/v1/players/me:
     $ref: 'routes/player.yml#/~1api~1v1~1players~1me'
+  /api/v1/players/logout:
+    $ref: 'routes/player.yml#/~1api~1v1~1players~1logout'
 
   /api/v1/leaderboard:
     $ref: 'routes/game.yml#/~1api~1v1~1leaderboard'

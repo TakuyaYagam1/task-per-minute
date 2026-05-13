@@ -57,6 +57,40 @@ docker compose --env-file ../../.env exec -T nginx wget -qO- http://127.0.0.1/ng
 docker compose --env-file ../../.env logs --tail=100 certbot
 ```
 
+## Быстрый troubleshooting Auth/WS
+
+Если WebSocket не подключается:
+
+- Проверьте browser DevTools: URL должен быть `/ws` или `wss://<api>/ws` без
+  `?token=...`.
+- Проверьте `WS_ALLOWED_ORIGINS`: origin player frontend должен совпадать
+  точной строкой, включая punycode для IDN.
+- Если включен `WS_REQUIRE_ORIGIN=true`, убедитесь, что клиент действительно
+  отправляет browser `Origin`; CLI/скриптовые клиенты без Origin будут получать
+  `403`.
+- Проверьте, что player join/me выдают cookie `tpm_player_session`, а браузер
+  отправляет ее на `/ws`.
+- Backend должен вернуть `401/403/429` как `application/problem+json` до
+  upgrade, если сессии нет, origin запрещен или handshake rate-limit исчерпан.
+
+Если unsafe REST запросы получают `403 csrf token invalid`:
+
+- Для player cookie-auth проверьте `tpm_player_csrf` и header `X-CSRF-Token`.
+- Для admin mutations проверьте access CSRF token в `X-CSRF-Token`.
+- Для admin refresh/logout проверьте refresh CSRF token из
+  `X-Admin-Refresh-CSRF-Token`; access CSRF token для этих endpoints не
+  подходит.
+- После logout frontend должен очистить marker сессии и CSRF tokens; повторный
+  login должен получить новые CSRF headers.
+
+Если все пользователи получают `429` за NGINX:
+
+- Проверьте `HTTP_TRUSTED_PROXY_CIDRS` против реальной compose-сети:
+  `docker network inspect task-per-minute_internal`.
+- Сравните backend `client_ip` в security logs с NGINX access log.
+- Убедитесь, что NGINX передает `X-Forwarded-For`, а backend доверяет только
+  CIDR самого proxy, не всему интернету.
+
 ## Откат backend image
 
 Используйте это, если новый контейнер стартовал, но health-check не прошел.

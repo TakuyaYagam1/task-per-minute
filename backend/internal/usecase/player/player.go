@@ -70,3 +70,22 @@ func (u *PlayerUsecase) GetMe(ctx context.Context, sessionToken uuid.UUID) (*Pla
 
 	return &PlayerWithActiveDuel{Player: player, ActiveDuel: activeDuel}, nil
 }
+
+func (u *PlayerUsecase) Logout(ctx context.Context, sessionToken uuid.UUID) error {
+	return u.tx.Do(ctx, func(txCtx context.Context) error {
+		player, err := u.players.GetBySessionToken(txCtx, sessionToken)
+		if err != nil {
+			if errors.Is(err, apperr.ErrPlayerNotFound) {
+				return nil
+			}
+			return fmt.Errorf("PlayerUsecase - Logout - PlayerRepo.GetBySessionToken: %w", err)
+		}
+		if player == nil {
+			return nil
+		}
+		if _, err := u.players.UpdateSessionToken(txCtx, player.ID, nil); err != nil {
+			return fmt.Errorf("PlayerUsecase - Logout - PlayerRepo.UpdateSessionToken: %w", err)
+		}
+		return nil
+	})
+}

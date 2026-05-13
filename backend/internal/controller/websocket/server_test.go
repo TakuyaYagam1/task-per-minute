@@ -1,17 +1,23 @@
 package websocket
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	coderws "github.com/coder/websocket"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+	logkit "github.com/wahrwelt-kit/go-logkit"
 
+	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
+	restmw "github.com/TakuyaYagam1/task-per-minute/internal/controller/restapi/middleware"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	duelusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel"
 )
@@ -37,7 +43,7 @@ func TestServerShutdownLeavesQueuedClient(t *testing.T) {
 	httpServer := httptest.NewServer(server)
 	defer httpServer.Close()
 
-	conn, resp, err := coderws.Dial(t.Context(), "ws"+strings.TrimPrefix(httpServer.URL, "http")+"/ws?token="+token.String(), nil)
+	conn, resp, err := dialTestWS(t, httpServer.URL, token)
 	require.NoError(t, err)
 	if resp != nil && resp.Body != nil {
 		defer resp.Body.Close()
@@ -101,11 +107,7 @@ func TestServerSendDuelResumeIncludesOpponentID(t *testing.T) {
 	}
 }
 
-// TestSubprotocolBearerAuth verifies the C4 hardening: sessions can be
-// authenticated via Sec-WebSocket-Protocol so the token never appears in
-// the URL query string. The legacy ?token= path remains as a fallback
-// during rollout — that one is exercised by every other test in this file.
-func TestSubprotocolBearerAuth(t *testing.T) {
+func TestSubprotocolBearerAuthRejected(t *testing.T) {
 	t.Parallel()
 
 	token := uuid.New()
@@ -125,27 +127,335 @@ func TestSubprotocolBearerAuth(t *testing.T) {
 	httpServer := httptest.NewServer(server)
 	defer httpServer.Close()
 
-	bearer := SubprotocolBearerPrefix + token.String()
 	conn, resp, err := coderws.Dial(t.Context(), "ws"+strings.TrimPrefix(httpServer.URL, "http")+"/ws", &coderws.DialOptions{
-		Subprotocols: []string{bearer},
+		Subprotocols: []string{"tpm.bearer." + token.String()},
 	})
-	require.NoError(t, err, "subprotocol-only handshake must succeed without ?token=")
+	if conn != nil {
+		_ = conn.Close(coderws.StatusNormalClosure, "")
+	}
+	require.Error(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+	require.Equal(t, wsProblemContentType, resp.Header.Get("Content-Type"))
+	if resp.Body != nil {
+		require.NoError(t, resp.Body.Close())
+	}
+}
+
+func TestQueryTokenAuthRejected(t *testing.T) {
+	t.Parallel()
+
+	var logs bytes.Buffer
+	token := uuid.New()
+	player := &domain.Player{
+		ID:           uuid.New(),
+		Username:     "alice",
+		SessionToken: &token,
+		Status:       domain.PlayerStatusIdle,
+	}
+	server := NewServer(
+		&shutdownPlayerRepo{player: player},
+		&shutdownMatchmaking{left: make(chan uuid.UUID, 1)},
+		nil,
+		NewHubRegistry(),
+		WithHubCloseDelay(0),
+		WithLogger(newWebSocketTestLogger(t, &logs)),
+	)
+	httpServer := httptest.NewServer(server)
+	defer httpServer.Close()
+
+	conn, resp, err := coderws.Dial(t.Context(), wsTestEndpoint(httpServer.URL)+"?token="+token.String(), nil)
+	if conn != nil {
+		_ = conn.Close(coderws.StatusNormalClosure, "")
+	}
+	require.Error(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, 401, resp.StatusCode)
+	require.Equal(t, wsProblemContentType, resp.Header.Get("Content-Type"))
+	if resp.Body != nil {
+		require.NoError(t, resp.Body.Close())
+	}
+
+	rawLogs := logs.String()
+	require.NotContains(t, rawLogs, token.String())
+	entry := requireWebSocketSecurityLogEntry(t, rawLogs, "ws.auth")
+	require.Equal(t, wsSecurityOutcomeFailure, entry["outcome"])
+	require.Equal(t, string(apperr.CodeInvalidSession), entry["error_code"])
+	require.Equal(t, "query_token_rejected", entry["reason"])
+}
+
+func TestCookieAuth(t *testing.T) {
+	t.Parallel()
+
+	var logs bytes.Buffer
+	token := uuid.New()
+	player := &domain.Player{
+		ID:           uuid.New(),
+		Username:     "alice",
+		SessionToken: &token,
+		Status:       domain.PlayerStatusIdle,
+	}
+	server := NewServer(
+		&shutdownPlayerRepo{player: player},
+		&shutdownMatchmaking{left: make(chan uuid.UUID, 1)},
+		nil,
+		NewHubRegistry(),
+		WithHubCloseDelay(0),
+		WithLogger(newWebSocketTestLogger(t, &logs)),
+	)
+	httpServer := httptest.NewServer(server)
+	defer httpServer.Close()
+
+	headers := http.Header{}
+	headers.Add("Cookie", (&http.Cookie{Name: restmw.PlayerSessionCookieName, Value: token.String()}).String())
+	conn, resp, err := coderws.Dial(t.Context(), wsTestEndpoint(httpServer.URL), &coderws.DialOptions{
+		HTTPHeader: headers,
+	})
+	require.NoError(t, err)
 	if resp != nil && resp.Body != nil {
 		defer resp.Body.Close()
 	}
 	defer func() { _ = conn.Close(coderws.StatusNormalClosure, "") }()
 
-	// The chosen subprotocol must round-trip so the browser does not abort
-	// the connection.
-	require.Equal(t, bearer, conn.Subprotocol())
+	writeTestEvent(t, conn, EventPing, nil)
+	require.Equal(t, EventPong, readTestEvent(t, conn).Type)
+
+	rawLogs := logs.String()
+	require.NotContains(t, rawLogs, token.String())
+	entry := requireWebSocketSecurityLogEntry(t, rawLogs, "ws.auth")
+	require.Equal(t, wsSecurityOutcomeSuccess, entry["outcome"])
+	require.Equal(t, player.ID.String(), entry["player_id"])
+}
+
+func TestCrossOriginCookieAuthRejectedBeforeSessionLookup(t *testing.T) {
+	t.Parallel()
+
+	var logs bytes.Buffer
+	token := uuid.New()
+	players := &countingSessionPlayerRepo{}
+	server := NewServer(
+		players,
+		&shutdownMatchmaking{left: make(chan uuid.UUID, 1)},
+		nil,
+		NewHubRegistry(),
+		WithHubCloseDelay(0),
+		WithLogger(newWebSocketTestLogger(t, &logs)),
+	)
+	httpServer := httptest.NewServer(server)
+	defer httpServer.Close()
+
+	headers := http.Header{}
+	headers.Set("Origin", "https://evil.example.com")
+	headers.Add("Cookie", (&http.Cookie{Name: restmw.PlayerSessionCookieName, Value: token.String()}).String())
+	conn, resp, err := coderws.Dial(t.Context(), wsTestEndpoint(httpServer.URL), &coderws.DialOptions{
+		HTTPHeader: headers,
+	})
+	if conn != nil {
+		_ = conn.Close(coderws.StatusNormalClosure, "")
+	}
+	require.Error(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, http.StatusForbidden, resp.StatusCode)
+	require.Equal(t, wsProblemContentType, resp.Header.Get("Content-Type"))
+	if resp.Body != nil {
+		require.NoError(t, resp.Body.Close())
+	}
+	require.Zero(t, players.sessionLookups)
+
+	entry := requireWebSocketSecurityLogEntry(t, logs.String(), "ws.handshake")
+	require.Equal(t, wsSecurityOutcomeFailure, entry["outcome"])
+	require.Equal(t, "origin_not_allowed", entry["error_code"])
+	require.Equal(t, "origin_not_allowed", entry["reason"])
+}
+
+func TestAllowedCrossOriginCookieAuth(t *testing.T) {
+	t.Parallel()
+
+	token := uuid.New()
+	player := &domain.Player{
+		ID:           uuid.New(),
+		Username:     "alice",
+		SessionToken: &token,
+		Status:       domain.PlayerStatusIdle,
+	}
+	server := NewServer(
+		&shutdownPlayerRepo{player: player},
+		&shutdownMatchmaking{left: make(chan uuid.UUID, 1)},
+		nil,
+		NewHubRegistry(),
+		WithHubCloseDelay(0),
+		WithAcceptOptions(&coderws.AcceptOptions{OriginPatterns: []string{"https://app.example.com"}}),
+	)
+	httpServer := httptest.NewServer(server)
+	defer httpServer.Close()
+
+	headers := http.Header{}
+	headers.Set("Origin", "https://app.example.com")
+	headers.Add("Cookie", (&http.Cookie{Name: restmw.PlayerSessionCookieName, Value: token.String()}).String())
+	conn, resp, err := coderws.Dial(t.Context(), wsTestEndpoint(httpServer.URL), &coderws.DialOptions{
+		HTTPHeader: headers,
+	})
+	require.NoError(t, err)
+	if resp != nil && resp.Body != nil {
+		defer resp.Body.Close()
+	}
+	defer func() { _ = conn.Close(coderws.StatusNormalClosure, "") }()
 
 	writeTestEvent(t, conn, EventPing, nil)
 	require.Equal(t, EventPong, readTestEvent(t, conn).Type)
 }
 
-// TestSubprotocolBearerAuthRejectsBadToken proves that random or malformed
-// subprotocol values are not silently accepted.
-func TestSubprotocolBearerAuthRejectsBadToken(t *testing.T) {
+func TestRequireOriginRejectsMissingOriginBeforeSessionLookup(t *testing.T) {
+	t.Parallel()
+
+	token := uuid.New()
+	players := &countingSessionPlayerRepo{}
+	server := NewServer(
+		players,
+		&shutdownMatchmaking{left: make(chan uuid.UUID, 1)},
+		nil,
+		NewHubRegistry(),
+		WithHubCloseDelay(0),
+		WithRequireOrigin(true),
+	)
+	httpServer := httptest.NewServer(server)
+	defer httpServer.Close()
+
+	headers := http.Header{}
+	headers.Add("Cookie", (&http.Cookie{Name: restmw.PlayerSessionCookieName, Value: token.String()}).String())
+	conn, resp, err := coderws.Dial(t.Context(), wsTestEndpoint(httpServer.URL), &coderws.DialOptions{
+		HTTPHeader: headers,
+	})
+	if conn != nil {
+		_ = conn.Close(coderws.StatusNormalClosure, "")
+	}
+	require.Error(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, http.StatusForbidden, resp.StatusCode)
+	if resp.Body != nil {
+		require.NoError(t, resp.Body.Close())
+	}
+	require.Zero(t, players.sessionLookups)
+}
+
+func TestStaleSessionSecurityLogRedactsTokens(t *testing.T) {
+	t.Parallel()
+
+	var logs bytes.Buffer
+	oldToken := uuid.New()
+	newToken := uuid.New()
+	player := &domain.Player{
+		ID:           uuid.New(),
+		Username:     "alice",
+		SessionToken: &oldToken,
+		Status:       domain.PlayerStatusIdle,
+	}
+	players := newRotatingSessionPlayerRepo(player)
+	server := NewServer(
+		players,
+		&shutdownMatchmaking{left: make(chan uuid.UUID, 1)},
+		nil,
+		NewHubRegistry(),
+		WithHubCloseDelay(0),
+		WithLogger(newWebSocketTestLogger(t, &logs)),
+	)
+	httpServer := httptest.NewServer(server)
+	defer httpServer.Close()
+
+	conn, resp, err := dialTestWS(t, httpServer.URL, oldToken)
+	require.NoError(t, err)
+	if resp != nil && resp.Body != nil {
+		defer resp.Body.Close()
+	}
+	defer func() { _ = conn.Close(coderws.StatusNormalClosure, "") }()
+
+	players.setSessionToken(newToken)
+	writeTestEvent(t, conn, EventPing, nil)
+
+	event := readTestEvent(t, conn)
+	require.Equal(t, EventError, event.Type)
+	require.Equal(t, string(apperr.CodeInvalidSession), event.Code)
+
+	rawLogs := logs.String()
+	require.NotContains(t, rawLogs, oldToken.String())
+	require.NotContains(t, rawLogs, newToken.String())
+	entry := requireWebSocketSecurityLogEntry(t, rawLogs, "ws.session")
+	require.Equal(t, wsSecurityOutcomeFailure, entry["outcome"])
+	require.Equal(t, string(apperr.CodeInvalidSession), entry["error_code"])
+	require.Equal(t, "stale_session", entry["reason"])
+	require.Equal(t, player.ID.String(), entry["player_id"])
+}
+
+func TestHandshakeRateLimitSecurityLogUsesResolvedClientIP(t *testing.T) {
+	t.Parallel()
+
+	var logs bytes.Buffer
+	server := NewServer(
+		nil,
+		nil,
+		nil,
+		NewHubRegistry(),
+		WithHandshakeRateLimiter(rejectingHandshakeLimiter{}),
+		WithClientIPResolver(func(*http.Request) string { return "203.0.113.42" }),
+		WithLogger(newWebSocketTestLogger(t, &logs)),
+	)
+	httpServer := httptest.NewServer(server)
+	defer httpServer.Close()
+
+	conn, resp, err := coderws.Dial(t.Context(), wsTestEndpoint(httpServer.URL), nil)
+	if conn != nil {
+		_ = conn.Close(coderws.StatusNormalClosure, "")
+	}
+	require.Error(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, http.StatusTooManyRequests, resp.StatusCode)
+	require.Equal(t, wsProblemContentType, resp.Header.Get("Content-Type"))
+	if resp.Body != nil {
+		require.NoError(t, resp.Body.Close())
+	}
+
+	entry := requireWebSocketSecurityLogEntry(t, logs.String(), "ws.handshake")
+	require.Equal(t, wsSecurityOutcomeRateLimited, entry["outcome"])
+	require.Equal(t, "rate_limited", entry["error_code"])
+	require.Equal(t, "handshake_rate_limit", entry["reason"])
+	require.Equal(t, "203.0.113.42", entry["client_ip"])
+}
+
+func TestServerShutdownStopsBackgroundTimers(t *testing.T) {
+	t.Parallel()
+
+	reconnect := &noopReconnectManager{}
+	timers := &recordingTimerStopper{}
+	server := NewServer(
+		nil,
+		nil,
+		nil,
+		NewHubRegistry(),
+		WithReconnectManager(reconnect),
+		WithTimerStopper(timers),
+		WithHubCloseDelay(0),
+	)
+
+	server.Shutdown(context.Background())
+
+	require.Equal(t, 1, reconnect.stopAllCalls)
+	require.Equal(t, 1, timers.stopAllCalls)
+}
+
+func dialTestWS(t *testing.T, baseURL string, token uuid.UUID) (*coderws.Conn, *http.Response, error) {
+	t.Helper()
+	headers := http.Header{}
+	headers.Add("Cookie", (&http.Cookie{Name: restmw.PlayerSessionCookieName, Value: token.String()}).String())
+	return coderws.Dial(t.Context(), wsTestEndpoint(baseURL), &coderws.DialOptions{
+		HTTPHeader: headers,
+	})
+}
+
+func wsTestEndpoint(baseURL string) string {
+	return "ws" + strings.TrimPrefix(baseURL, "http") + "/ws"
+}
+
+func TestSubprotocolWithoutCookieRejected(t *testing.T) {
 	t.Parallel()
 
 	token := uuid.New()
@@ -166,25 +476,36 @@ func TestSubprotocolBearerAuthRejectsBadToken(t *testing.T) {
 	defer httpServer.Close()
 
 	_, resp, err := coderws.Dial(t.Context(), "ws"+strings.TrimPrefix(httpServer.URL, "http")+"/ws", &coderws.DialOptions{
-		Subprotocols: []string{SubprotocolBearerPrefix + "not-a-uuid"},
+		Subprotocols: []string{"tpm.bearer.not-a-uuid"},
 	})
 	require.Error(t, err)
 	if resp != nil {
 		require.Equal(t, 401, resp.StatusCode)
+		require.Equal(t, wsProblemContentType, resp.Header.Get("Content-Type"))
 		if resp.Body != nil {
 			resp.Body.Close()
 		}
 	}
 }
 
-// TestServerFlagSubmitIgnoresClientSuppliedDuelID verifies the C2 fix: a
-// client cannot drive flag_submit at an arbitrary duel via the wire payload.
-// We connect a player that has NO active duel bound to the connection
-// (c.currentDuel() returns false) and submit a payload that includes a duel
-// id plus a flag. The server must drop the wire duel_id, fall back to the
-// per-connection state, and reject with invalid_payload — never reach the
-// usecase layer.
-func TestServerFlagSubmitIgnoresClientSuppliedDuelID(t *testing.T) {
+func TestHandshakeMethodErrorUsesProblemJSON(t *testing.T) {
+	t.Parallel()
+
+	server := NewServer(nil, nil, nil, NewHubRegistry())
+	req := httptest.NewRequest(http.MethodPost, "/ws", nil)
+	rr := httptest.NewRecorder()
+
+	server.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusMethodNotAllowed, rr.Code)
+	require.Equal(t, http.MethodGet, rr.Header().Get("Allow"))
+	require.Equal(t, wsProblemContentType, rr.Header().Get("Content-Type"))
+}
+
+// TestServerFlagSubmitRequiresConnectionDuel verifies the C2 fix: a client
+// cannot drive flag_submit at an arbitrary duel via the wire payload. A
+// connection with no bound duel must reject before the usecase layer.
+func TestServerFlagSubmitRequiresConnectionDuel(t *testing.T) {
 	t.Parallel()
 
 	token := uuid.New()
@@ -205,7 +526,7 @@ func TestServerFlagSubmitIgnoresClientSuppliedDuelID(t *testing.T) {
 	httpServer := httptest.NewServer(server)
 	defer httpServer.Close()
 
-	conn, resp, err := coderws.Dial(t.Context(), "ws"+strings.TrimPrefix(httpServer.URL, "http")+"/ws?token="+token.String(), nil)
+	conn, resp, err := dialTestWS(t, httpServer.URL, token)
 	require.NoError(t, err)
 	if resp != nil && resp.Body != nil {
 		defer resp.Body.Close()
@@ -224,10 +545,10 @@ func TestServerFlagSubmitIgnoresClientSuppliedDuelID(t *testing.T) {
 	require.Zero(t, flags.submitCalls, "usecase must NOT receive a submission for a duel the client merely named")
 }
 
-// TestServerSurrenderIgnoresClientSuppliedDuelID is the surrender-side mirror
-// of the C2 hardening test above. A connection with no bound duel must not
-// be able to surrender a foreign duel via the wire payload.
-func TestServerSurrenderIgnoresClientSuppliedDuelID(t *testing.T) {
+// TestServerSurrenderRequiresConnectionDuel is the surrender-side mirror of
+// the C2 hardening test above. A connection with no bound duel must not be
+// able to surrender a foreign duel via the wire payload.
+func TestServerSurrenderRequiresConnectionDuel(t *testing.T) {
 	t.Parallel()
 
 	token := uuid.New()
@@ -249,7 +570,7 @@ func TestServerSurrenderIgnoresClientSuppliedDuelID(t *testing.T) {
 	httpServer := httptest.NewServer(server)
 	defer httpServer.Close()
 
-	conn, resp, err := coderws.Dial(t.Context(), "ws"+strings.TrimPrefix(httpServer.URL, "http")+"/ws?token="+token.String(), nil)
+	conn, resp, err := dialTestWS(t, httpServer.URL, token)
 	require.NoError(t, err)
 	if resp != nil && resp.Body != nil {
 		defer resp.Body.Close()
@@ -283,6 +604,7 @@ func (f *countingFlagSubmitter) SubmitFlag(_ context.Context, _ uuid.UUID, _ uui
 // or were not invoked.
 type noopReconnectManager struct {
 	forfeitCalls int
+	stopAllCalls int
 }
 
 var _ ReconnectManager = (*noopReconnectManager)(nil)
@@ -321,6 +643,24 @@ func (m *noopReconnectManager) FinalizePlayerForfeit(
 }
 
 func (m *noopReconnectManager) CloseDuel(uuid.UUID) {}
+
+func (m *noopReconnectManager) StopAll() {
+	m.stopAllCalls++
+}
+
+type recordingTimerStopper struct {
+	stopAllCalls int
+}
+
+func (s *recordingTimerStopper) StopAll() {
+	s.stopAllCalls++
+}
+
+type rejectingHandshakeLimiter struct{}
+
+func (rejectingHandshakeLimiter) Allow(string) bool { return false }
+
+func (rejectingHandshakeLimiter) RetryAfter() string { return "1" }
 
 func TestServerCleanupClientSkipsDisconnectForFastReplacement(t *testing.T) {
 	t.Parallel()
@@ -397,6 +737,74 @@ func newCleanupTestClient(playerID, duelID uuid.UUID) *client {
 	return c
 }
 
+type rotatingSessionPlayerRepo struct {
+	mu     sync.RWMutex
+	player domain.Player
+}
+
+func newRotatingSessionPlayerRepo(player *domain.Player) *rotatingSessionPlayerRepo {
+	repo := &rotatingSessionPlayerRepo{}
+	if player != nil {
+		repo.player = *player
+	}
+	return repo
+}
+
+func (r *rotatingSessionPlayerRepo) setSessionToken(token uuid.UUID) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.player.SessionToken = &token
+}
+
+func (r *rotatingSessionPlayerRepo) Create(context.Context, string) (*domain.Player, error) {
+	panic("unused")
+}
+
+func (r *rotatingSessionPlayerRepo) JoinByUsername(context.Context, string, uuid.UUID) (*domain.Player, error) {
+	panic("unused")
+}
+
+func (r *rotatingSessionPlayerRepo) GetByID(_ context.Context, id uuid.UUID) (*domain.Player, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if r.player.ID != id {
+		return nil, nil
+	}
+	out := r.player
+	return &out, nil
+}
+
+func (r *rotatingSessionPlayerRepo) GetByUsername(context.Context, string) (*domain.Player, error) {
+	panic("unused")
+}
+
+func (r *rotatingSessionPlayerRepo) GetBySessionToken(_ context.Context, token uuid.UUID) (*domain.Player, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if r.player.SessionToken == nil || *r.player.SessionToken != token {
+		return nil, nil
+	}
+	out := r.player
+	return &out, nil
+}
+
+func (r *rotatingSessionPlayerRepo) UpdateSessionToken(context.Context, uuid.UUID, *uuid.UUID) (*domain.Player, error) {
+	panic("unused")
+}
+
+func (r *rotatingSessionPlayerRepo) UpdateStatus(context.Context, uuid.UUID, domain.PlayerStatus) (*domain.Player, error) {
+	panic("unused")
+}
+
+func (r *rotatingSessionPlayerRepo) UpdateStatusIfCurrent(
+	context.Context,
+	uuid.UUID,
+	domain.PlayerStatus,
+	domain.PlayerStatus,
+) (*domain.Player, bool, error) {
+	panic("unused")
+}
+
 type shutdownPlayerRepo struct {
 	player *domain.Player
 }
@@ -446,6 +854,48 @@ func (r *shutdownPlayerRepo) UpdateStatusIfCurrent(
 	panic("unused")
 }
 
+type countingSessionPlayerRepo struct {
+	sessionLookups int
+}
+
+func (r *countingSessionPlayerRepo) Create(context.Context, string) (*domain.Player, error) {
+	panic("unused")
+}
+
+func (r *countingSessionPlayerRepo) JoinByUsername(context.Context, string, uuid.UUID) (*domain.Player, error) {
+	panic("unused")
+}
+
+func (r *countingSessionPlayerRepo) GetByID(context.Context, uuid.UUID) (*domain.Player, error) {
+	panic("unused")
+}
+
+func (r *countingSessionPlayerRepo) GetByUsername(context.Context, string) (*domain.Player, error) {
+	panic("unused")
+}
+
+func (r *countingSessionPlayerRepo) GetBySessionToken(context.Context, uuid.UUID) (*domain.Player, error) {
+	r.sessionLookups++
+	return nil, nil
+}
+
+func (r *countingSessionPlayerRepo) UpdateSessionToken(context.Context, uuid.UUID, *uuid.UUID) (*domain.Player, error) {
+	panic("unused")
+}
+
+func (r *countingSessionPlayerRepo) UpdateStatus(context.Context, uuid.UUID, domain.PlayerStatus) (*domain.Player, error) {
+	panic("unused")
+}
+
+func (r *countingSessionPlayerRepo) UpdateStatusIfCurrent(
+	context.Context,
+	uuid.UUID,
+	domain.PlayerStatus,
+	domain.PlayerStatus,
+) (*domain.Player, bool, error) {
+	panic("unused")
+}
+
 type shutdownMatchmaking struct {
 	left chan uuid.UUID
 }
@@ -456,6 +906,36 @@ func (m *shutdownMatchmaking) JoinQueue(context.Context, uuid.UUID) (*duelusecas
 
 func (m *shutdownMatchmaking) LeaveQueue(_ context.Context, playerID uuid.UUID) error {
 	m.left <- playerID
+	return nil
+}
+
+func newWebSocketTestLogger(t *testing.T, logs *bytes.Buffer) logkit.Logger {
+	t.Helper()
+
+	log, err := logkit.New(
+		logkit.WithLevel(logkit.DebugLevel),
+		logkit.WithSyncWriter(logs),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, log.Close())
+	})
+	return log
+}
+
+func requireWebSocketSecurityLogEntry(t *testing.T, raw, event string) map[string]any {
+	t.Helper()
+
+	raw = strings.TrimSpace(raw)
+	require.NotEmpty(t, raw)
+	for _, line := range strings.Split(raw, "\n") {
+		var entry map[string]any
+		require.NoError(t, json.Unmarshal([]byte(line), &entry))
+		if entry["message"] == "security event" && entry["event"] == event {
+			return entry
+		}
+	}
+	t.Fatalf("security event %q not found in logs: %s", event, raw)
 	return nil
 }
 

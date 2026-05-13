@@ -88,3 +88,29 @@ func TestClientIPFromRequest_PrefersResolvedContextIP(t *testing.T) {
 
 	require.Equal(t, "198.51.100.42", got)
 }
+
+func TestNewClientIPResolver_UsesTrustedProxyHeaders(t *testing.T) {
+	t.Parallel()
+
+	resolver, err := middleware.NewClientIPResolver([]string{"127.0.0.0/8"})
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "127.0.0.1:1234"
+	req.Header.Set("X-Forwarded-For", "198.51.100.42")
+
+	require.Equal(t, "198.51.100.42", resolver(req))
+}
+
+func TestNewClientIPResolver_RejectsUntrustedForwardedHeaders(t *testing.T) {
+	t.Parallel()
+
+	resolver, err := middleware.NewClientIPResolver([]string{"127.0.0.0/8"})
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "203.0.113.10:1234"
+	req.Header.Set("X-Forwarded-For", "198.51.100.42")
+
+	require.Equal(t, "203.0.113.10", resolver(req))
+}

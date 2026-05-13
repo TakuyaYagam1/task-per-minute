@@ -18,10 +18,10 @@ import (
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
-	// Exchange the shared admin password for a token pair
+	// Exchange the shared admin password for an admin session
 	// (POST /api/v1/admin/login)
 	AdminLogin(w http.ResponseWriter, r *http.Request)
-	// Revoke the supplied refresh token
+	// Revoke the supplied admin refresh token
 	// (POST /api/v1/admin/logout)
 	AdminLogout(w http.ResponseWriter, r *http.Request)
 	// List players with effective leaderboard stats
@@ -36,7 +36,7 @@ type ServerInterface interface {
 	// List player audit events
 	// (GET /api/v1/admin/players/{id}/audit)
 	ListAdminPlayerAudit(w http.ResponseWriter, r *http.Request, id openapi_types.UUID, params ListAdminPlayerAuditParams)
-	// Rotate the access/refresh token pair
+	// Rotate the admin session
 	// (POST /api/v1/admin/refresh)
 	AdminRefresh(w http.ResponseWriter, r *http.Request)
 	// List all tasks (admin view, includes flag)
@@ -66,6 +66,9 @@ type ServerInterface interface {
 	// Register or refresh a player session
 	// (POST /api/v1/players/join)
 	JoinPlayer(w http.ResponseWriter, r *http.Request)
+	// Clear the current player session cookie
+	// (POST /api/v1/players/logout)
+	LogoutPlayer(w http.ResponseWriter, r *http.Request)
 	// Resolve the current player session
 	// (GET /api/v1/players/me)
 	GetMe(w http.ResponseWriter, r *http.Request)
@@ -78,13 +81,13 @@ type ServerInterface interface {
 
 type Unimplemented struct{}
 
-// Exchange the shared admin password for a token pair
+// Exchange the shared admin password for an admin session
 // (POST /api/v1/admin/login)
 func (_ Unimplemented) AdminLogin(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// Revoke the supplied refresh token
+// Revoke the supplied admin refresh token
 // (POST /api/v1/admin/logout)
 func (_ Unimplemented) AdminLogout(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
@@ -114,7 +117,7 @@ func (_ Unimplemented) ListAdminPlayerAudit(w http.ResponseWriter, r *http.Reque
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// Rotate the access/refresh token pair
+// Rotate the admin session
 // (POST /api/v1/admin/refresh)
 func (_ Unimplemented) AdminRefresh(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
@@ -174,6 +177,12 @@ func (_ Unimplemented) JoinPlayer(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// Clear the current player session cookie
+// (POST /api/v1/players/logout)
+func (_ Unimplemented) LogoutPlayer(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // Resolve the current player session
 // (GET /api/v1/players/me)
 func (_ Unimplemented) GetMe(w http.ResponseWriter, r *http.Request) {
@@ -211,12 +220,6 @@ func (siw *ServerInterfaceWrapper) AdminLogin(w http.ResponseWriter, r *http.Req
 
 // AdminLogout operation middleware
 func (siw *ServerInterfaceWrapper) AdminLogout(w http.ResponseWriter, r *http.Request) {
-
-	ctx := r.Context()
-
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
-
-	r = r.WithContext(ctx)
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.AdminLogout(w, r)
@@ -603,6 +606,20 @@ func (siw *ServerInterfaceWrapper) JoinPlayer(w http.ResponseWriter, r *http.Req
 	handler.ServeHTTP(w, r)
 }
 
+// LogoutPlayer operation middleware
+func (siw *ServerInterfaceWrapper) LogoutPlayer(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.LogoutPlayer(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetMe operation middleware
 func (siw *ServerInterfaceWrapper) GetMe(w http.ResponseWriter, r *http.Request) {
 
@@ -799,6 +816,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Post(options.BaseURL+"/api/v1/players/join", wrapper.JoinPlayer)
 	})
 	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/players/logout", wrapper.LogoutPlayer)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/players/me", wrapper.GetMe)
 	})
 	r.Group(func(r chi.Router) {
@@ -816,13 +836,23 @@ type AdminLoginResponseObject interface {
 	VisitAdminLoginResponse(w http.ResponseWriter) error
 }
 
-type AdminLogin200JSONResponse AdminTokenResponse
+type AdminLogin200ResponseHeaders struct {
+	XAdminRefreshCSRFToken string
+	XCSRFToken             string
+}
+
+type AdminLogin200JSONResponse struct {
+	Body    AdminTokenResponse
+	Headers AdminLogin200ResponseHeaders
+}
 
 func (response AdminLogin200JSONResponse) VisitAdminLoginResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Admin-Refresh-CSRF-Token", fmt.Sprint(response.Headers.XAdminRefreshCSRFToken))
+	w.Header().Set("X-CSRF-Token", fmt.Sprint(response.Headers.XCSRFToken))
 	w.WriteHeader(200)
 
-	return json.NewEncoder(w).Encode(response)
+	return json.NewEncoder(w).Encode(response.Body)
 }
 
 type AdminLogin401ApplicationProblemPlusJSONResponse ProblemDetails
@@ -830,6 +860,24 @@ type AdminLogin401ApplicationProblemPlusJSONResponse ProblemDetails
 func (response AdminLogin401ApplicationProblemPlusJSONResponse) VisitAdminLoginResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type AdminLogin413ApplicationProblemPlusJSONResponse ProblemDetails
+
+func (response AdminLogin413ApplicationProblemPlusJSONResponse) VisitAdminLoginResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(413)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type AdminLogin415ApplicationProblemPlusJSONResponse ProblemDetails
+
+func (response AdminLogin415ApplicationProblemPlusJSONResponse) VisitAdminLoginResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(415)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -855,6 +903,24 @@ type AdminLogout401ApplicationProblemPlusJSONResponse ProblemDetails
 func (response AdminLogout401ApplicationProblemPlusJSONResponse) VisitAdminLogoutResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type AdminLogout413ApplicationProblemPlusJSONResponse ProblemDetails
+
+func (response AdminLogout413ApplicationProblemPlusJSONResponse) VisitAdminLogoutResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(413)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type AdminLogout415ApplicationProblemPlusJSONResponse ProblemDetails
+
+func (response AdminLogout415ApplicationProblemPlusJSONResponse) VisitAdminLogoutResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(415)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -928,6 +994,24 @@ func (response DeleteAdminPlayer409ApplicationProblemPlusJSONResponse) VisitDele
 	return json.NewEncoder(w).Encode(response)
 }
 
+type DeleteAdminPlayer413ApplicationProblemPlusJSONResponse ProblemDetails
+
+func (response DeleteAdminPlayer413ApplicationProblemPlusJSONResponse) VisitDeleteAdminPlayerResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(413)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type DeleteAdminPlayer415ApplicationProblemPlusJSONResponse ProblemDetails
+
+func (response DeleteAdminPlayer415ApplicationProblemPlusJSONResponse) VisitDeleteAdminPlayerResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(415)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
 type UpdateAdminPlayerRequestObject struct {
 	Id   openapi_types.UUID `json:"id"`
 	Body *UpdateAdminPlayerJSONRequestBody
@@ -978,6 +1062,24 @@ type UpdateAdminPlayer409ApplicationProblemPlusJSONResponse ProblemDetails
 func (response UpdateAdminPlayer409ApplicationProblemPlusJSONResponse) VisitUpdateAdminPlayerResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(409)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type UpdateAdminPlayer413ApplicationProblemPlusJSONResponse ProblemDetails
+
+func (response UpdateAdminPlayer413ApplicationProblemPlusJSONResponse) VisitUpdateAdminPlayerResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(413)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type UpdateAdminPlayer415ApplicationProblemPlusJSONResponse ProblemDetails
+
+func (response UpdateAdminPlayer415ApplicationProblemPlusJSONResponse) VisitUpdateAdminPlayerResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(415)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -1035,13 +1137,23 @@ type AdminRefreshResponseObject interface {
 	VisitAdminRefreshResponse(w http.ResponseWriter) error
 }
 
-type AdminRefresh200JSONResponse AdminTokenResponse
+type AdminRefresh200ResponseHeaders struct {
+	XAdminRefreshCSRFToken string
+	XCSRFToken             string
+}
+
+type AdminRefresh200JSONResponse struct {
+	Body    AdminTokenResponse
+	Headers AdminRefresh200ResponseHeaders
+}
 
 func (response AdminRefresh200JSONResponse) VisitAdminRefreshResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Admin-Refresh-CSRF-Token", fmt.Sprint(response.Headers.XAdminRefreshCSRFToken))
+	w.Header().Set("X-CSRF-Token", fmt.Sprint(response.Headers.XCSRFToken))
 	w.WriteHeader(200)
 
-	return json.NewEncoder(w).Encode(response)
+	return json.NewEncoder(w).Encode(response.Body)
 }
 
 type AdminRefresh401ApplicationProblemPlusJSONResponse ProblemDetails
@@ -1049,6 +1161,24 @@ type AdminRefresh401ApplicationProblemPlusJSONResponse ProblemDetails
 func (response AdminRefresh401ApplicationProblemPlusJSONResponse) VisitAdminRefreshResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type AdminRefresh413ApplicationProblemPlusJSONResponse ProblemDetails
+
+func (response AdminRefresh413ApplicationProblemPlusJSONResponse) VisitAdminRefreshResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(413)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type AdminRefresh415ApplicationProblemPlusJSONResponse ProblemDetails
+
+func (response AdminRefresh415ApplicationProblemPlusJSONResponse) VisitAdminRefreshResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(415)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -1187,6 +1317,24 @@ type GetTask404ApplicationProblemPlusJSONResponse ProblemDetails
 func (response GetTask404ApplicationProblemPlusJSONResponse) VisitGetTaskResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetTask413ApplicationProblemPlusJSONResponse ProblemDetails
+
+func (response GetTask413ApplicationProblemPlusJSONResponse) VisitGetTaskResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(413)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetTask415ApplicationProblemPlusJSONResponse ProblemDetails
+
+func (response GetTask415ApplicationProblemPlusJSONResponse) VisitGetTaskResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(415)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -1385,6 +1533,48 @@ func (response JoinPlayer409ApplicationProblemPlusJSONResponse) VisitJoinPlayerR
 	return json.NewEncoder(w).Encode(response)
 }
 
+type JoinPlayer413ApplicationProblemPlusJSONResponse ProblemDetails
+
+func (response JoinPlayer413ApplicationProblemPlusJSONResponse) VisitJoinPlayerResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(413)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type JoinPlayer415ApplicationProblemPlusJSONResponse ProblemDetails
+
+func (response JoinPlayer415ApplicationProblemPlusJSONResponse) VisitJoinPlayerResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(415)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type LogoutPlayerRequestObject struct {
+}
+
+type LogoutPlayerResponseObject interface {
+	VisitLogoutPlayerResponse(w http.ResponseWriter) error
+}
+
+type LogoutPlayer204Response struct {
+}
+
+func (response LogoutPlayer204Response) VisitLogoutPlayerResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type LogoutPlayer403ApplicationProblemPlusJSONResponse ProblemDetails
+
+func (response LogoutPlayer403ApplicationProblemPlusJSONResponse) VisitLogoutPlayerResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
 type GetMeRequestObject struct {
 }
 
@@ -1437,10 +1627,10 @@ func (response HealthCheck503JSONResponse) VisitHealthCheckResponse(w http.Respo
 
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
-	// Exchange the shared admin password for a token pair
+	// Exchange the shared admin password for an admin session
 	// (POST /api/v1/admin/login)
 	AdminLogin(ctx context.Context, request AdminLoginRequestObject) (AdminLoginResponseObject, error)
-	// Revoke the supplied refresh token
+	// Revoke the supplied admin refresh token
 	// (POST /api/v1/admin/logout)
 	AdminLogout(ctx context.Context, request AdminLogoutRequestObject) (AdminLogoutResponseObject, error)
 	// List players with effective leaderboard stats
@@ -1455,7 +1645,7 @@ type StrictServerInterface interface {
 	// List player audit events
 	// (GET /api/v1/admin/players/{id}/audit)
 	ListAdminPlayerAudit(ctx context.Context, request ListAdminPlayerAuditRequestObject) (ListAdminPlayerAuditResponseObject, error)
-	// Rotate the access/refresh token pair
+	// Rotate the admin session
 	// (POST /api/v1/admin/refresh)
 	AdminRefresh(ctx context.Context, request AdminRefreshRequestObject) (AdminRefreshResponseObject, error)
 	// List all tasks (admin view, includes flag)
@@ -1485,6 +1675,9 @@ type StrictServerInterface interface {
 	// Register or refresh a player session
 	// (POST /api/v1/players/join)
 	JoinPlayer(ctx context.Context, request JoinPlayerRequestObject) (JoinPlayerResponseObject, error)
+	// Clear the current player session cookie
+	// (POST /api/v1/players/logout)
+	LogoutPlayer(ctx context.Context, request LogoutPlayerRequestObject) (LogoutPlayerResponseObject, error)
 	// Resolve the current player session
 	// (GET /api/v1/players/me)
 	GetMe(ctx context.Context, request GetMeRequestObject) (GetMeResponseObject, error)
@@ -1974,6 +2167,30 @@ func (sh *strictHandler) JoinPlayer(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(JoinPlayerResponseObject); ok {
 		if err := validResponse.VisitJoinPlayerResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// LogoutPlayer operation middleware
+func (sh *strictHandler) LogoutPlayer(w http.ResponseWriter, r *http.Request) {
+	var request LogoutPlayerRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.LogoutPlayer(ctx, request.(LogoutPlayerRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "LogoutPlayer")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(LogoutPlayerResponseObject); ok {
+		if err := validResponse.VisitLogoutPlayerResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

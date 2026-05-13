@@ -106,6 +106,7 @@ var WebSocketSet = wire.NewSet(
 var HTTPSet = wire.NewSet(
 	provideHealthChecks,
 	provideLoginRateLimiter,
+	provideRefreshRateLimiter,
 	provideJoinRateLimiter,
 	provideRESTServer,
 	provideHTTPHandler,

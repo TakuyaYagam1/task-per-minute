@@ -236,6 +236,7 @@ type PlayerWithActiveDuel struct {
 type Player interface {
 	Join(ctx context.Context, username string) (*domain.Player, error)
 	GetMe(ctx context.Context, sessionToken uuid.UUID) (*PlayerWithActiveDuel, error)
+	Logout(ctx context.Context, sessionToken uuid.UUID) error
 }
 
 type MatchResult struct {
@@ -306,7 +307,7 @@ type TokenPair struct {
 type AdminAuth interface {
 	Login(ctx context.Context, password string) (*TokenPair, error)
 	Refresh(ctx context.Context, refreshToken string) (*TokenPair, error)
-	Logout(ctx context.Context, refreshToken string) error
+	Logout(ctx context.Context, refreshToken string, accessTokens ...string) error
 }
 
 type LeaderboardEntry struct {

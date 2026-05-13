@@ -25,6 +25,57 @@ func TestDecodeJSON_Success(t *testing.T) {
 	require.Equal(t, decodeDTO{Name: "alice"}, got)
 }
 
+func TestDecodeJSON_AcceptsJSONContentTypeWithParameters(t *testing.T) {
+	t.Parallel()
+
+	var got decodeDTO
+	req := newJSONRequest(`{"name":"alice"}`)
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+
+	require.NoError(t, request.DecodeJSON(req, &got))
+	require.Equal(t, decodeDTO{Name: "alice"}, got)
+}
+
+func TestDecodeJSON_AcceptsStructuredJSONContentType(t *testing.T) {
+	t.Parallel()
+
+	var got decodeDTO
+	req := newJSONRequest(`{"name":"alice"}`)
+	req.Header.Set("Content-Type", "application/problem+json")
+
+	require.NoError(t, request.DecodeJSON(req, &got))
+	require.Equal(t, decodeDTO{Name: "alice"}, got)
+}
+
+func TestDecodeJSON_RejectsMissingContentType(t *testing.T) {
+	t.Parallel()
+
+	var got decodeDTO
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/test", strings.NewReader(`{"name":"alice"}`))
+
+	require.ErrorIs(t, request.DecodeJSON(req, &got), request.ErrUnsupportedMediaType)
+}
+
+func TestDecodeJSON_RejectsUnsupportedContentType(t *testing.T) {
+	t.Parallel()
+
+	var got decodeDTO
+	req := newJSONRequest(`{"name":"alice"}`)
+	req.Header.Set("Content-Type", "text/plain")
+
+	require.ErrorIs(t, request.DecodeJSON(req, &got), request.ErrUnsupportedMediaType)
+}
+
+func TestDecodeJSON_RejectsMalformedContentType(t *testing.T) {
+	t.Parallel()
+
+	var got decodeDTO
+	req := newJSONRequest(`{"name":"alice"}`)
+	req.Header.Set("Content-Type", "application/json; charset")
+
+	require.ErrorIs(t, request.DecodeJSON(req, &got), request.ErrUnsupportedMediaType)
+}
+
 func TestDecodeJSON_RejectsUnknownFields(t *testing.T) {
 	t.Parallel()
 

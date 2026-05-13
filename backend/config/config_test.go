@@ -17,8 +17,9 @@ var configEnvVars = []string{
 	"SEAWEEDFS_BUCKET", "SEAWEEDFS_SECURE", "SEAWEEDFS_PUBLIC_SECURE",
 	"JWT_SECRET", "JWT_ACCESS_TTL", "JWT_REFRESH_TTL",
 	"ADMIN_PASSWORD", "ADMIN_LOGIN_RATE_ATTEMPTS", "ADMIN_LOGIN_RATE_WINDOW", "ADMIN_LOGIN_RATE_BUCKET_TTL",
+	"ADMIN_REFRESH_RATE_ATTEMPTS", "ADMIN_REFRESH_RATE_WINDOW", "ADMIN_REFRESH_RATE_BUCKET_TTL",
 	"PLAYER_JOIN_RATE_ATTEMPTS", "PLAYER_JOIN_RATE_WINDOW", "PLAYER_JOIN_RATE_BUCKET_TTL",
-	"WS_ALLOWED_ORIGINS",
+	"WS_ALLOWED_ORIGINS", "WS_REQUIRE_ORIGIN", "WS_HANDSHAKE_RATE_ATTEMPTS", "WS_HANDSHAKE_RATE_WINDOW", "WS_HANDSHAKE_RATE_BUCKET_TTL",
 }
 
 func clearConfigEnv(t *testing.T) {
@@ -97,6 +98,15 @@ func TestLoad_AppliesDefaults(t *testing.T) {
 	if cfg.Admin.LoginRateBucketTTL != time.Hour {
 		t.Errorf("Admin.LoginRateBucketTTL = %s, want 1h", cfg.Admin.LoginRateBucketTTL)
 	}
+	if cfg.Admin.RefreshRateAttempts != cfg.Admin.LoginRateAttempts {
+		t.Errorf("Admin.RefreshRateAttempts = %d, want login fallback %d", cfg.Admin.RefreshRateAttempts, cfg.Admin.LoginRateAttempts)
+	}
+	if cfg.Admin.RefreshRateWindow != cfg.Admin.LoginRateWindow {
+		t.Errorf("Admin.RefreshRateWindow = %s, want login fallback %s", cfg.Admin.RefreshRateWindow, cfg.Admin.LoginRateWindow)
+	}
+	if cfg.Admin.RefreshRateBucketTTL != cfg.Admin.LoginRateBucketTTL {
+		t.Errorf("Admin.RefreshRateBucketTTL = %s, want login fallback %s", cfg.Admin.RefreshRateBucketTTL, cfg.Admin.LoginRateBucketTTL)
+	}
 	if cfg.Player.JoinRateAttempts != 20 {
 		t.Errorf("Player.JoinRateAttempts = %d, want 20", cfg.Player.JoinRateAttempts)
 	}
@@ -108,6 +118,18 @@ func TestLoad_AppliesDefaults(t *testing.T) {
 	}
 	if len(cfg.WS.AllowedOrigins) != 0 {
 		t.Errorf("WS.AllowedOrigins = %v, want empty", cfg.WS.AllowedOrigins)
+	}
+	if cfg.WS.RequireOrigin {
+		t.Error("WS.RequireOrigin = true, want false default")
+	}
+	if cfg.WS.HandshakeRateAttempts != 60 {
+		t.Errorf("WS.HandshakeRateAttempts = %d, want 60", cfg.WS.HandshakeRateAttempts)
+	}
+	if cfg.WS.HandshakeRateWindow != time.Minute {
+		t.Errorf("WS.HandshakeRateWindow = %s, want 1m", cfg.WS.HandshakeRateWindow)
+	}
+	if cfg.WS.HandshakeRateBucketTTL != 15*time.Minute {
+		t.Errorf("WS.HandshakeRateBucketTTL = %s, want 15m", cfg.WS.HandshakeRateBucketTTL)
 	}
 }
 
@@ -125,10 +147,17 @@ func TestLoad_OverridesAreApplied(t *testing.T) {
 	t.Setenv("ADMIN_LOGIN_RATE_ATTEMPTS", "7")
 	t.Setenv("ADMIN_LOGIN_RATE_WINDOW", "10m")
 	t.Setenv("ADMIN_LOGIN_RATE_BUCKET_TTL", "2h")
+	t.Setenv("ADMIN_REFRESH_RATE_ATTEMPTS", "13")
+	t.Setenv("ADMIN_REFRESH_RATE_WINDOW", "20m")
+	t.Setenv("ADMIN_REFRESH_RATE_BUCKET_TTL", "4h")
 	t.Setenv("PLAYER_JOIN_RATE_ATTEMPTS", "11")
 	t.Setenv("PLAYER_JOIN_RATE_WINDOW", "30s")
 	t.Setenv("PLAYER_JOIN_RATE_BUCKET_TTL", "3h")
 	t.Setenv("WS_ALLOWED_ORIGINS", "https://example.com,https://api.example.com")
+	t.Setenv("WS_REQUIRE_ORIGIN", "true")
+	t.Setenv("WS_HANDSHAKE_RATE_ATTEMPTS", "17")
+	t.Setenv("WS_HANDSHAKE_RATE_WINDOW", "45s")
+	t.Setenv("WS_HANDSHAKE_RATE_BUCKET_TTL", "30m")
 
 	cfg, err := Load()
 	if err != nil {
@@ -167,6 +196,15 @@ func TestLoad_OverridesAreApplied(t *testing.T) {
 	if cfg.Admin.LoginRateBucketTTL != 2*time.Hour {
 		t.Errorf("Admin.LoginRateBucketTTL = %s, want 2h", cfg.Admin.LoginRateBucketTTL)
 	}
+	if cfg.Admin.RefreshRateAttempts != 13 {
+		t.Errorf("Admin.RefreshRateAttempts = %d, want 13", cfg.Admin.RefreshRateAttempts)
+	}
+	if cfg.Admin.RefreshRateWindow != 20*time.Minute {
+		t.Errorf("Admin.RefreshRateWindow = %s, want 20m", cfg.Admin.RefreshRateWindow)
+	}
+	if cfg.Admin.RefreshRateBucketTTL != 4*time.Hour {
+		t.Errorf("Admin.RefreshRateBucketTTL = %s, want 4h", cfg.Admin.RefreshRateBucketTTL)
+	}
 	if cfg.Player.JoinRateAttempts != 11 {
 		t.Errorf("Player.JoinRateAttempts = %d, want 11", cfg.Player.JoinRateAttempts)
 	}
@@ -178,6 +216,18 @@ func TestLoad_OverridesAreApplied(t *testing.T) {
 	}
 	if got := cfg.WS.AllowedOrigins; len(got) != 2 || got[0] != "https://example.com" || got[1] != "https://api.example.com" {
 		t.Errorf("WS.AllowedOrigins = %v, want configured origins", got)
+	}
+	if !cfg.WS.RequireOrigin {
+		t.Error("WS.RequireOrigin = false, want true")
+	}
+	if cfg.WS.HandshakeRateAttempts != 17 {
+		t.Errorf("WS.HandshakeRateAttempts = %d, want 17", cfg.WS.HandshakeRateAttempts)
+	}
+	if cfg.WS.HandshakeRateWindow != 45*time.Second {
+		t.Errorf("WS.HandshakeRateWindow = %s, want 45s", cfg.WS.HandshakeRateWindow)
+	}
+	if cfg.WS.HandshakeRateBucketTTL != 30*time.Minute {
+		t.Errorf("WS.HandshakeRateBucketTTL = %s, want 30m", cfg.WS.HandshakeRateBucketTTL)
 	}
 }
 
@@ -254,7 +304,12 @@ func TestLoad_ValidationFailures(t *testing.T) {
 		{"bad access ttl", "JWT_ACCESS_TTL", "0s", "JWT_ACCESS_TTL"},
 		{"placeholder admin password", "ADMIN_PASSWORD", "your-password-here", "ADMIN_PASSWORD"},
 		{"bad admin rate attempts", "ADMIN_LOGIN_RATE_ATTEMPTS", "0", "ADMIN_LOGIN_RATE_ATTEMPTS"},
+		{"bad admin refresh rate attempts", "ADMIN_REFRESH_RATE_ATTEMPTS", "-1", "ADMIN_REFRESH_RATE_ATTEMPTS"},
+		{"bad admin refresh rate window", "ADMIN_REFRESH_RATE_WINDOW", "-1s", "ADMIN_REFRESH_RATE_WINDOW"},
 		{"bad player rate window", "PLAYER_JOIN_RATE_WINDOW", "-1s", "PLAYER_JOIN_RATE_WINDOW"},
+		{"bad ws handshake rate attempts", "WS_HANDSHAKE_RATE_ATTEMPTS", "0", "WS_HANDSHAKE_RATE_ATTEMPTS"},
+		{"bad ws handshake rate window", "WS_HANDSHAKE_RATE_WINDOW", "0s", "WS_HANDSHAKE_RATE_WINDOW"},
+		{"bad ws handshake rate bucket ttl", "WS_HANDSHAKE_RATE_BUCKET_TTL", "-1s", "WS_HANDSHAKE_RATE_BUCKET_TTL"},
 		{"placeholder seaweed secret", "SEAWEEDFS_SECRET_KEY", "your-secret-key", "SEAWEEDFS_SECRET_KEY"},
 		{"seaweed public endpoint with scheme", "SEAWEEDFS_PUBLIC_ENDPOINT", "https://files.example.com", "SEAWEEDFS_PUBLIC_ENDPOINT"},
 		{"seaweed public endpoint with path", "SEAWEEDFS_PUBLIC_ENDPOINT", "files.example.com/s3", "SEAWEEDFS_PUBLIC_ENDPOINT"},

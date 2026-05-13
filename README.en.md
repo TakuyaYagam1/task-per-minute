@@ -17,15 +17,18 @@ Created for **RedShift**.
 - Prepare the environment:
 
 ```bash
+cp .env.example .env.local
 cp .env.example .env
 ```
 
-- Fill the secrets in `.env`.
+- Fill the secrets in `.env.local` for local compose and in `.env` for
+  production/server compose.
 
-In Docker Compose, the backend receives `DB_DSN` from `.env` directly, so the
-container DSN must point to the internal `postgres:5432` host. `REDIS_ADDR` and
-`SEAWEEDFS_ENDPOINT` are set by compose to `redis:6379` and `seaweedfs:8333`;
-host variants are only for running the backend directly from the host:
+In Docker Compose, the backend receives `DB_DSN` from the selected env file, so
+the container DSN must point to the internal `postgres:5432` host. `REDIS_ADDR`
+and `SEAWEEDFS_ENDPOINT` are set by compose to `redis:6379` and
+`seaweedfs:8333`; host variants are only for running the backend directly from
+the host:
 
 ```env
 DB_DSN=postgres://admin:password@postgres:5432/task_per_minute?sslmode=disable
@@ -65,7 +68,8 @@ Frontend development without Docker:
 
 ```bash
 cd frontend
-npm install.
+npm install
+npm run dev
 ```
 
 Backend development:

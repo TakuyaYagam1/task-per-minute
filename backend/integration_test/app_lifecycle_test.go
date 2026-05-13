@@ -189,8 +189,8 @@ func TestAppLifecycle_ShutdownLeavesQueuedWebSocketIdle(t *testing.T) {
 	dialCtx, dialCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	conn, resp, err := coderws.Dial(
 		dialCtx,
-		wsURL(fmt.Sprintf("http://127.0.0.1:%d", port), *player.SessionToken),
-		nil,
+		wsEndpoint(fmt.Sprintf("http://127.0.0.1:%d", port)),
+		wsDialOptions(*player.SessionToken),
 	)
 	dialCancel()
 	require.NoError(t, err)

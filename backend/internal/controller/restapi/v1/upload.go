@@ -14,6 +14,7 @@ var errUploadTooLarge = errors.New("upload too large")
 
 func parseSourceFile(w http.ResponseWriter, r *http.Request) (multipart.File, *multipart.FileHeader, error) {
 	r.Body = http.MaxBytesReader(w, r.Body, adminusecase.MaxSourceFileSize+(1<<20))
+	//nolint:gosec // G120: MaxBytesReader above bounds the multipart parser before form parsing.
 	if err := r.ParseMultipartForm(multipartMemory); err != nil {
 		var maxBytesErr *http.MaxBytesError
 		if errors.As(err, &maxBytesErr) {

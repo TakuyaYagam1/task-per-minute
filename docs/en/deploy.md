@@ -59,7 +59,7 @@ openssl rand -base64 48 # SEAWEEDFS_SECRET_KEY
 openssl rand -base64 32 # ADMIN_PASSWORD
 ```
 
-In Docker Compose, the backend receives `DB_DSN` from `.env` directly. For
+In Docker Compose, the backend receives `DB_DSN` from the selected env file. For
 container runs, the DSN must point to the internal `postgres:5432` host;
 `redis:6379` and `seaweedfs:8333` are set by compose as service-to-service
 addresses:
@@ -109,6 +109,7 @@ API_DOMAIN=api.xn--90aeebbpdxndkcm5abncn1ej9mqa.xn--p1ai
 FILES_DOMAIN=files.xn--90aeebbpdxndkcm5abncn1ej9mqa.xn--p1ai
 HTTP_ALLOWED_ORIGINS=https://admin.xn--90aeebbpdxndkcm5abncn1ej9mqa.xn--p1ai,https://xn--90aeebbpdxndkcm5abncn1ej9mqa.xn--p1ai
 WS_ALLOWED_ORIGINS=https://xn--90aeebbpdxndkcm5abncn1ej9mqa.xn--p1ai
+WS_REQUIRE_ORIGIN=true
 NEXT_PUBLIC_API_URL=https://api.xn--90aeebbpdxndkcm5abncn1ej9mqa.xn--p1ai
 NEXT_PUBLIC_ADMIN_API_URL=https://api.xn--90aeebbpdxndkcm5abncn1ej9mqa.xn--p1ai
 NEXT_PUBLIC_WS_URL=wss://api.xn--90aeebbpdxndkcm5abncn1ej9mqa.xn--p1ai/ws
@@ -117,6 +118,12 @@ SEAWEEDFS_PUBLIC_SECURE=true
 ADMIN_LOGIN_RATE_ATTEMPTS=3
 ADMIN_LOGIN_RATE_WINDOW=3m
 ADMIN_LOGIN_RATE_BUCKET_TTL=15m
+ADMIN_REFRESH_RATE_ATTEMPTS=10
+ADMIN_REFRESH_RATE_WINDOW=3m
+ADMIN_REFRESH_RATE_BUCKET_TTL=15m
+WS_HANDSHAKE_RATE_ATTEMPTS=60
+WS_HANDSHAKE_RATE_WINDOW=1m
+WS_HANDSHAKE_RATE_BUCKET_TTL=15m
 ```
 
 If `NEXT_PUBLIC_*` stays empty, the frontend reaches the backend through
@@ -129,7 +136,16 @@ are empty, or all three `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_ADMIN_API_URL`, and
 `HTTP_ALLOWED_ORIGINS` and `WS_ALLOWED_ORIGINS` without wildcards; WS origins
 must be a subset of REST origins. These values are baked into the frontend image
 at build time, so changing the server `.env` after the build does not change
-the browser bundle.
+the browser bundle. For browser-only production mode, `WS_REQUIRE_ORIGIN=true`
+is recommended; integration CLI clients without `Origin` will receive `403`.
+
+Browser authentication uses HttpOnly cookies. Player/Admin session tokens must
+not be stored in `localStorage` or `sessionStorage`; the frontend keeps only an
+admin-session marker and readable CSRF tokens. Unsafe REST requests with
+cookie-auth must send `X-CSRF-Token`; admin refresh/logout use the refresh CSRF
+token from `X-Admin-Refresh-CSRF-Token`. WebSocket connects only to `/ws` with
+the player session cookie: query token `/ws?token=...`, `X-Session-Token`, and
+bearer subprotocol are no longer supported browser contracts.
 
 NGINX/compose defaults are sized for backend uploads up to 100MB: API-capable
 server blocks use `client_max_body_size 125m`, API proxy timeout `300s`, and
@@ -149,6 +165,11 @@ talks to the backend:
 DOCKER_INTERNAL_SUBNET=172.30.0.0/24
 HTTP_TRUSTED_PROXY_CIDRS=172.30.0.0/24
 ```
+
+If every user behind NGINX receives `429` on login/refresh/join or `/ws`, check
+that `HTTP_TRUSTED_PROXY_CIDRS` matches the Docker subnet and that NGINX sends
+`X-Forwarded-For`. The backend reads forwarded headers only from trusted
+proxies; with an empty or wrong CIDR, limits collapse to the proxy address.
 
 ## 4. First Start
 
@@ -273,6 +294,13 @@ NEXT_PUBLIC_ADMIN_API_URL # public admin API URL
 NEXT_PUBLIC_WS_URL      # public WS URL
 HTTP_ALLOWED_ORIGINS    # REST browser origins; required for direct mode
 WS_ALLOWED_ORIGINS      # WS browser origins; subset of HTTP_ALLOWED_ORIGINS
+WS_REQUIRE_ORIGIN       # require browser Origin on /ws, recommended true in prod
+ADMIN_REFRESH_RATE_ATTEMPTS  # POST /api/v1/admin/refresh limit, default 10
+ADMIN_REFRESH_RATE_WINDOW    # refresh rate-limit window, default 3m
+ADMIN_REFRESH_RATE_BUCKET_TTL # refresh limiter idle bucket TTL, default 15m
+WS_HANDSHAKE_RATE_ATTEMPTS   # /ws handshakes per-IP limit, default 60
+WS_HANDSHAKE_RATE_WINDOW     # WS handshake limiter window, default 1m
+WS_HANDSHAKE_RATE_BUCKET_TTL # WS limiter idle bucket TTL, default 15m
 ```
 
 If you keep these values as `secrets.*` instead of `vars.*`, GitHub Actions will

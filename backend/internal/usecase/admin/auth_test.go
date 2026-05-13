@@ -189,6 +189,8 @@ func TestAuthUsecase_VerifyAccess_AfterLogin(t *testing.T) {
 	pair, err := uc.Login(context.Background(), testPass)
 	require.NoError(t, err)
 
+	rev.EXPECT().IsRevoked(mock.Anything, mock.Anything).Return(false, nil).Once()
+
 	claims, err := uc.VerifyAccess(context.Background(), pair.AccessToken)
 	require.NoError(t, err)
 	require.Equal(t, admin.TokenKindAccess, claims.Kind)
@@ -352,6 +354,22 @@ func TestAuthUsecase_Logout_ReusingRefreshTokenReturnsErrTokenRevoked(t *testing
 	require.ErrorIs(t, uc.Logout(context.Background(), pair.RefreshToken), apperr.ErrTokenRevoked)
 }
 
+func TestAuthUsecase_Logout_RevokesAccessToken(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC)
+	clk := &mutableClock{now: now}
+	rev := inmem.NewRevocation(clk)
+	uc := admin.NewAuthUsecase(newAuthCfg(), clk, rev)
+
+	pair, err := uc.Login(context.Background(), testPass)
+	require.NoError(t, err)
+
+	require.NoError(t, uc.Logout(context.Background(), pair.RefreshToken, pair.AccessToken))
+	_, err = uc.VerifyAccess(context.Background(), pair.AccessToken)
+	require.ErrorIs(t, err, apperr.ErrTokenRevoked)
+}
+
 func TestAuthUsecase_Logout_ReusingRefreshTokenInsideClockSkewLeewayReturnsErrTokenRevoked(t *testing.T) {
 	t.Parallel()
 
@@ -413,9 +431,47 @@ func TestAuthUsecase_VerifyAccess_ClockSkewWithinLeeway_Accepted(t *testing.T) {
 
 	clk.Set(issuedAt.Add(accessTTL + 5*time.Second))
 
+	rev.EXPECT().IsRevoked(mock.Anything, mock.Anything).Return(false, nil).Once()
+
 	claims, err := uc.VerifyAccess(context.Background(), pair.AccessToken)
 	require.NoError(t, err)
 	require.Equal(t, admin.TokenKindAccess, claims.Kind)
+}
+
+func TestAuthUsecase_VerifyAccess_RevokedToken_ReturnsErrTokenRevoked(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC)
+	clk := newStubClock(t, now)
+	rev := usecasemocks.NewMockRevocationStore(t)
+	uc := admin.NewAuthUsecase(newAuthCfg(), clk, rev)
+
+	pair, err := uc.Login(context.Background(), testPass)
+	require.NoError(t, err)
+
+	rev.EXPECT().IsRevoked(mock.Anything, mock.Anything).Return(true, nil).Once()
+
+	_, err = uc.VerifyAccess(context.Background(), pair.AccessToken)
+	require.ErrorIs(t, err, apperr.ErrTokenRevoked)
+}
+
+func TestAuthUsecase_VerifyAccess_RevocationStoreFailure_PropagatesError(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC)
+	clk := newStubClock(t, now)
+	rev := usecasemocks.NewMockRevocationStore(t)
+	uc := admin.NewAuthUsecase(newAuthCfg(), clk, rev)
+
+	pair, err := uc.Login(context.Background(), testPass)
+	require.NoError(t, err)
+
+	storeErr := errors.New("redis: connection refused")
+	rev.EXPECT().IsRevoked(mock.Anything, mock.Anything).Return(false, storeErr).Once()
+
+	_, err = uc.VerifyAccess(context.Background(), pair.AccessToken)
+	require.ErrorIs(t, err, storeErr)
+	require.Contains(t, err.Error(), "AuthUsecase - VerifyAccess - RevocationStore.IsRevoked")
 }
 
 func TestAuthUsecase_VerifyAccess_UnknownKind_ReturnsErrInvalidCredentials(t *testing.T) {

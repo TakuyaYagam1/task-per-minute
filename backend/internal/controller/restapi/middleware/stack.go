@@ -3,7 +3,6 @@ package middleware
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"net/http"
 	"runtime/debug"
 	"sync"
@@ -23,6 +22,7 @@ type StackOption func(*stackConfig)
 
 type stackConfig struct {
 	trustedProxyCIDRs []string
+	allowedOrigins    []string
 	timeout           time.Duration
 }
 
@@ -30,6 +30,13 @@ type stackConfig struct {
 func WithTrustedProxyCIDRs(cidrs []string) StackOption {
 	return func(cfg *stackConfig) {
 		cfg.trustedProxyCIDRs = append([]string(nil), cidrs...)
+	}
+}
+
+// WithAllowedOrigins configures exact origins accepted by CSRF Origin checks.
+func WithAllowedOrigins(origins []string) StackOption {
+	return func(cfg *stackConfig) {
+		cfg.allowedOrigins = append([]string(nil), origins...)
 	}
 }
 
@@ -62,10 +69,14 @@ func Build(log logkit.Logger, opts ...StackOption) func(http.Handler) http.Handl
 	return chain(
 		httpkitmw.RequestID(),
 		clientIP,
+		ForwardedProto(cfg.trustedProxyCIDRs, log),
 		Logger(log),
 		Recoverer(log),
 		httpkitmw.SecurityHeaders(false, httpkitmw.WithCSP(stackCSP)),
-		Timeout(cfg.timeout),
+		NoStoreSensitiveResponses(),
+		OriginGuard(cfg.allowedOrigins),
+		CSRFGuard(),
+		Timeout(cfg.timeout, log),
 	)
 }
 
@@ -135,17 +146,9 @@ func Recoverer(log logkit.Logger) func(http.Handler) http.Handler {
 					return
 				}
 
-				if log != nil {
-					log.Error("panic recovered", logkit.Fields{
-						"request_id": requestID,
-						"method":     method,
-						"path":       path,
-						"panic":      panicValue,
-						"stack":      string(debug.Stack()),
-					})
-				}
+				logRecoveredPanic(log, requestID, method, path, panicValue, nil)
 
-				writeInternalError(w)
+				writeProblem(w, r, http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError), "internal")
 			}()
 
 			next.ServeHTTP(w, r)
@@ -153,20 +156,38 @@ func Recoverer(log logkit.Logger) func(http.Handler) http.Handler {
 	}
 }
 
-type internalErrorResponse struct {
-	Error string `json:"error"`
-}
-
-func writeInternalError(w http.ResponseWriter) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusInternalServerError)
-	_ = json.NewEncoder(w).Encode(internalErrorResponse{Error: "internal"})
+func logRecoveredPanic(
+	log logkit.Logger,
+	requestID string,
+	method string,
+	path string,
+	panicValue any,
+	extra logkit.Fields,
+) {
+	if log == nil {
+		return
+	}
+	fields := logkit.Fields{
+		"request_id": requestID,
+		"method":     method,
+		"path":       path,
+		"panic":      panicValue,
+		"stack":      string(debug.Stack()),
+	}
+	for key, value := range extra {
+		fields[key] = value
+	}
+	log.Error("panic recovered", fields)
 }
 
 // Timeout runs a handler with a request context deadline and returns 503 on expiry.
-func Timeout(timeout time.Duration) func(http.Handler) http.Handler {
+func Timeout(timeout time.Duration, logs ...logkit.Logger) func(http.Handler) http.Handler {
 	if timeout <= 0 {
 		timeout = defaultStackTimeout
+	}
+	var log logkit.Logger
+	if len(logs) > 0 {
+		log = logs[0]
 	}
 
 	return func(next http.Handler) http.Handler {
@@ -174,20 +195,34 @@ func Timeout(timeout time.Duration) func(http.Handler) http.Handler {
 			ctx, cancel := context.WithTimeout(r.Context(), timeout)
 			defer cancel()
 
-			writer := newTimeoutWriter(w)
-			done := make(chan any, 1)
+			writer := newTimeoutWriter(w, r)
+			done := make(chan timeoutResult, 1)
+			requestID := httpkitmw.GetRequestID(r.Context())
+			method := r.Method
+			path := r.URL.Path
 
 			go func() {
 				defer func() {
-					done <- recover()
+					panicValue := recover()
+					timedOut := ctx.Err() != nil
+					if panicValue != nil && timedOut {
+						logRecoveredPanic(log, requestID, method, path, panicValue, logkit.Fields{
+							"after_timeout": true,
+						})
+					}
+					done <- timeoutResult{panicValue: panicValue, timedOut: timedOut}
 				}()
 				next.ServeHTTP(writer, r.WithContext(ctx))
 			}()
 
 			select {
-			case panicValue := <-done:
-				if panicValue != nil {
-					panic(panicValue)
+			case result := <-done:
+				if result.timedOut {
+					writer.writeTimeout()
+					return
+				}
+				if result.panicValue != nil {
+					panic(result.panicValue)
 				}
 				writer.flush()
 			case <-ctx.Done():
@@ -197,12 +232,14 @@ func Timeout(timeout time.Duration) func(http.Handler) http.Handler {
 	}
 }
 
-type timeoutResponse struct {
-	Error string `json:"error"`
+type timeoutResult struct {
+	panicValue any
+	timedOut   bool
 }
 
 type timeoutWriter struct {
 	dst    http.ResponseWriter
+	req    *http.Request
 	header http.Header
 
 	mu       sync.Mutex
@@ -212,9 +249,10 @@ type timeoutWriter struct {
 	timedOut bool
 }
 
-func newTimeoutWriter(dst http.ResponseWriter) *timeoutWriter {
+func newTimeoutWriter(dst http.ResponseWriter, req *http.Request) *timeoutWriter {
 	return &timeoutWriter{
 		dst:    dst,
+		req:    req,
 		header: make(http.Header),
 	}
 }
@@ -275,9 +313,7 @@ func (w *timeoutWriter) writeTimeout() {
 	}
 	w.timedOut = true
 
-	w.dst.Header().Set("Content-Type", "application/json")
-	w.dst.WriteHeader(http.StatusServiceUnavailable)
-	_ = json.NewEncoder(w.dst).Encode(timeoutResponse{Error: "timeout"})
+	writeProblem(w.dst, w.req, http.StatusServiceUnavailable, http.StatusText(http.StatusServiceUnavailable), "timeout")
 }
 
 func copyHeader(dst, src http.Header) {

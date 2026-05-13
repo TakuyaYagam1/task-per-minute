@@ -1,14 +1,17 @@
 package websocket
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"io"
+	"strings"
 	"time"
 
 	coderws "github.com/coder/websocket"
 	"github.com/google/uuid"
+	logkit "github.com/wahrwelt-kit/go-logkit"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
@@ -16,8 +19,18 @@ import (
 )
 
 type flagSubmitPayload struct {
-	Flag string `json:"flag"`
+	DuelID *uuid.UUID `json:"duel_id,omitempty"`
+	Flag   string     `json:"flag"`
 }
+
+type surrenderPayload struct {
+	DuelID *uuid.UUID `json:"duel_id,omitempty"`
+}
+
+var (
+	errTrailingJSON     = errors.New("websocket message must contain a single json value")
+	errMissingEventType = errors.New("websocket message type is required")
+)
 
 func (s *Server) readPump(ctx context.Context, c *client) {
 	for {
@@ -44,8 +57,8 @@ func (s *Server) readOnce(ctx context.Context, c *client) error {
 		_ = c.sendError(ErrorInvalidPayload, "message must be text")
 		return nil
 	}
-	var event IncomingEvent
-	if err := json.NewDecoder(reader).Decode(&event); err != nil {
+	event, err := decodeIncomingEvent(reader)
+	if err != nil {
 		_ = c.sendError(ErrorInvalidJSON, "invalid json")
 		return nil //nolint:nilerr // invalid client JSON is reported over WS; keep the connection open for later events.
 	}
@@ -58,23 +71,84 @@ func (s *Server) routeEvent(ctx context.Context, c *client, event IncomingEvent)
 		return
 	}
 	if !s.validateSession(ctx, c) {
+		s.logClientSecurityEvent(c, "ws.session", wsSecurityOutcomeFailure, logkit.Fields{
+			"error_code": string(apperr.CodeInvalidSession),
+			"reason":     "stale_session",
+		})
 		_ = c.sendError(string(apperr.CodeInvalidSession), "invalid session token")
+		s.closeAfterError(c)
 		return
 	}
 	switch event.Type {
 	case EventJoinQueue:
+		if rejectUnexpectedPayload(c, event.Payload) {
+			return
+		}
 		s.handleJoinQueue(ctx, c)
 	case EventLeaveQueue:
+		if rejectUnexpectedPayload(c, event.Payload) {
+			return
+		}
 		s.handleLeaveQueue(ctx, c)
 	case EventFlagSubmit:
 		s.handleFlagSubmit(ctx, c, event.Payload)
 	case EventSurrender:
 		s.handleSurrender(ctx, c, event.Payload)
 	case EventPing:
+		if rejectUnexpectedPayload(c, event.Payload) {
+			return
+		}
 		_ = c.sendEvent(EventPong, nil)
 	default:
 		_ = c.sendError(ErrorUnknownEvent, "unknown event type")
 	}
+}
+
+func rejectUnexpectedPayload(c *client, raw json.RawMessage) bool {
+	if !hasPayload(raw) {
+		return false
+	}
+	_ = c.sendError(ErrorInvalidPayload, "payload is not allowed for this event")
+	return true
+}
+
+func decodeIncomingEvent(reader io.Reader) (IncomingEvent, error) {
+	var event IncomingEvent
+	decoder := json.NewDecoder(reader)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&event); err != nil {
+		return event, err
+	}
+	if err := requireSingleJSONValue(decoder); err != nil {
+		return event, err
+	}
+	if strings.TrimSpace(event.Type) == "" {
+		return event, errMissingEventType
+	}
+	return event, nil
+}
+
+func requireSingleJSONValue(decoder *json.Decoder) error {
+	var extra struct{}
+	switch err := decoder.Decode(&extra); {
+	case errors.Is(err, io.EOF):
+		return nil
+	case err == nil:
+		return errTrailingJSON
+	default:
+		return err
+	}
+}
+
+func (s *Server) closeAfterError(c *client) {
+	if c == nil {
+		return
+	}
+	delay := s.closeDelay
+	if delay <= 0 {
+		delay = 10 * time.Millisecond
+	}
+	runAfterOrDone(s.ctx, delay, c.Close)
 }
 
 // validateSession compares the WS connection's session token captured at
@@ -85,14 +159,14 @@ func (s *Server) validateSession(ctx context.Context, c *client) bool {
 	if s.players == nil || c == nil || c.player == nil {
 		return true
 	}
-	if c.player.SessionToken == nil {
+	if c.sessionToken == uuid.Nil {
 		return false
 	}
 	current, err := s.players.GetByID(ctx, c.player.ID)
 	if err != nil || current == nil || current.SessionToken == nil {
 		return false
 	}
-	return *current.SessionToken == *c.player.SessionToken
+	return *current.SessionToken == c.sessionToken
 }
 
 func (s *Server) handleJoinQueue(ctx context.Context, c *client) {
@@ -136,15 +210,18 @@ func (s *Server) handleFlagSubmit(ctx context.Context, c *client, raw json.RawMe
 	}
 
 	var payload flagSubmitPayload
-	if len(raw) > 0 {
-		if err := json.Unmarshal(raw, &payload); err != nil {
-			_ = c.sendError(ErrorInvalidPayload, "invalid flag_submit payload")
-			return
-		}
+	if err := decodeEventPayload(raw, &payload); err != nil {
+		_ = c.sendError(ErrorInvalidPayload, "invalid flag_submit payload")
+		return
 	}
+	payload.Flag = strings.TrimSpace(payload.Flag)
 	duelID, ok := c.currentDuel()
 	if !ok || payload.Flag == "" {
 		_ = c.sendError(ErrorInvalidPayload, "active duel and flag are required")
+		return
+	}
+	if payload.DuelID != nil && *payload.DuelID != duelID {
+		_ = c.sendError(ErrorInvalidPayload, "duel_id does not match active duel")
 		return
 	}
 	if s.reconnect != nil && s.reconnect.DuelPaused(duelID) {
@@ -186,15 +263,45 @@ func (s *Server) handleFlagSubmit(ctx context.Context, c *client, raw json.RawMe
 	s.publishDuelFinished(ctx, result.FinishedDuel, &c.player.ID)
 }
 
-func (s *Server) handleSurrender(ctx context.Context, c *client, _ json.RawMessage) {
+func decodeEventPayload(raw json.RawMessage, dst any) error {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(dst); err != nil {
+		return err
+	}
+	return requireSingleJSONValue(decoder)
+}
+
+func decodeOptionalEventPayload(raw json.RawMessage, dst any) error {
+	if !hasPayload(raw) {
+		return nil
+	}
+	return decodeEventPayload(raw, dst)
+}
+
+func hasPayload(raw json.RawMessage) bool {
+	trimmed := bytes.TrimSpace(raw)
+	return len(trimmed) > 0 && !bytes.Equal(trimmed, []byte("null"))
+}
+
+func (s *Server) handleSurrender(ctx context.Context, c *client, raw json.RawMessage) {
 	if s.reconnect == nil {
 		_ = c.sendError(ErrorInternal, "surrender is not configured")
 		return
 	}
 
+	var payload surrenderPayload
+	if err := decodeOptionalEventPayload(raw, &payload); err != nil {
+		_ = c.sendError(ErrorInvalidPayload, "invalid surrender payload")
+		return
+	}
 	duelID, ok := c.currentDuel()
 	if !ok {
 		_ = c.sendError(ErrorInvalidPayload, "no active duel for this connection")
+		return
+	}
+	if payload.DuelID != nil && *payload.DuelID != duelID {
+		_ = c.sendError(ErrorInvalidPayload, "duel_id does not match active duel")
 		return
 	}
 
@@ -317,12 +424,8 @@ func (s *Server) publishDuelFinished(ctx context.Context, duel *domain.Duel, sol
 		s.hubs.Close(duel.ID)
 		return
 	}
-	timer := time.AfterFunc(delay, func() {
+	runAfterOrDone(s.ctx, delay, func() {
 		s.hubs.Close(duel.ID)
-	})
-	//nolint:contextcheck // server lifecycle ctx by design.
-	context.AfterFunc(s.ctx, func() {
-		timer.Stop()
 	})
 }
 

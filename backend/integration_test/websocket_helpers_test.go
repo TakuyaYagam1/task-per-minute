@@ -5,6 +5,7 @@ package integration_test
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -14,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	restmw "github.com/TakuyaYagam1/task-per-minute/internal/controller/restapi/middleware"
 	wscontroller "github.com/TakuyaYagam1/task-per-minute/internal/controller/websocket"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	redisrepo "github.com/TakuyaYagam1/task-per-minute/internal/repo/redis"
@@ -88,6 +90,7 @@ func newWebSocketFixtureFromDuelFixture(
 		wscontroller.WithHubCloseDelay(20*time.Millisecond),
 		wscontroller.WithDisconnectGrace(0),
 		wscontroller.WithHintScheduler(hints),
+		wscontroller.WithTimerStopper(timers),
 		wscontroller.WithTaskResolver(f.duels, nil),
 	)
 	reconnect := duelusecase.NewReconnectManager(
@@ -174,7 +177,7 @@ func (f *websocketFixture) connect(t *testing.T, token uuid.UUID) *coderws.Conn 
 
 	ctx, cancel := context.WithTimeout(context.Background(), wsTestTimeout)
 	defer cancel()
-	conn, _, err := coderws.Dial(ctx, wsURL(f.httpServer.URL, token), nil)
+	conn, _, err := coderws.Dial(ctx, wsEndpoint(f.httpServer.URL), wsDialOptions(token))
 	require.NoError(t, err)
 	return conn
 }
@@ -308,8 +311,16 @@ func decodeDuelResume(t *testing.T, event wsTestEvent) wscontroller.DuelResumePa
 	return payload
 }
 
-func wsURL(base string, token uuid.UUID) string {
-	return "ws" + strings.TrimPrefix(base, "http") + "/ws?token=" + token.String()
+func wsEndpoint(base string) string {
+	return "ws" + strings.TrimPrefix(base, "http") + "/ws"
+}
+
+func wsDialOptions(token uuid.UUID) *coderws.DialOptions {
+	headers := http.Header{}
+	headers.Add("Cookie", (&http.Cookie{Name: restmw.PlayerSessionCookieName, Value: token.String()}).String())
+	return &coderws.DialOptions{
+		HTTPHeader: headers,
+	}
 }
 
 func disconnectWS(t *testing.T, conn *coderws.Conn) {

@@ -20,7 +20,7 @@ func TestCORS_AllowedPreflight(t *testing.T) {
 	req := httptest.NewRequest(http.MethodOptions, "/api/v1/players/join", nil)
 	req.Header.Set("Origin", "http://localhost:3000")
 	req.Header.Set("Access-Control-Request-Method", http.MethodPost)
-	req.Header.Set("Access-Control-Request-Headers", "Content-Type, X-Session-Token")
+	req.Header.Set("Access-Control-Request-Headers", "Content-Type")
 	rr := httptest.NewRecorder()
 
 	handler.ServeHTTP(rr, req)
@@ -28,9 +28,10 @@ func TestCORS_AllowedPreflight(t *testing.T) {
 	require.False(t, called)
 	require.Equal(t, http.StatusNoContent, rr.Code)
 	require.Equal(t, "http://localhost:3000", rr.Header().Get("Access-Control-Allow-Origin"))
+	require.Equal(t, "true", rr.Header().Get("Access-Control-Allow-Credentials"))
 	require.Equal(t, "GET, POST, PUT, DELETE, OPTIONS", rr.Header().Get("Access-Control-Allow-Methods"))
-	require.Equal(t, "Content-Type, Authorization, X-Session-Token", rr.Header().Get("Access-Control-Allow-Headers"))
-	require.Equal(t, "Retry-After", rr.Header().Get("Access-Control-Expose-Headers"))
+	require.Equal(t, "Content-Type, Authorization, X-CSRF-Token", rr.Header().Get("Access-Control-Allow-Headers"))
+	require.Equal(t, "Retry-After, X-CSRF-Token, X-Admin-Refresh-CSRF-Token", rr.Header().Get("Access-Control-Expose-Headers"))
 	require.Contains(t, rr.Header().Values("Vary"), "Origin")
 	require.Contains(t, rr.Header().Values("Vary"), "Access-Control-Request-Method")
 	require.Contains(t, rr.Header().Values("Vary"), "Access-Control-Request-Headers")
@@ -70,7 +71,8 @@ func TestCORS_AllowedNormalRequest(t *testing.T) {
 
 	require.Equal(t, http.StatusTooManyRequests, rr.Code)
 	require.Equal(t, "https://app.example.com", rr.Header().Get("Access-Control-Allow-Origin"))
-	require.Equal(t, "Retry-After", rr.Header().Get("Access-Control-Expose-Headers"))
+	require.Equal(t, "true", rr.Header().Get("Access-Control-Allow-Credentials"))
+	require.Equal(t, "Retry-After, X-CSRF-Token, X-Admin-Refresh-CSRF-Token", rr.Header().Get("Access-Control-Expose-Headers"))
 	require.Equal(t, "10", rr.Header().Get("Retry-After"))
 }
 

@@ -4,13 +4,13 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"time"
 
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/controller/restapi/errmap"
 	"github.com/TakuyaYagam1/task-per-minute/internal/controller/restapi/middleware"
-	"github.com/TakuyaYagam1/task-per-minute/internal/controller/restapi/v1/request"
 	"github.com/TakuyaYagam1/task-per-minute/internal/controller/restapi/v1/response"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/openapi"
@@ -26,46 +26,74 @@ func (s *Server) AdminLogin(w http.ResponseWriter, r *http.Request) {
 
 	if !s.loginLimiter.Allow(middleware.ClientIPFromRequest(r)) {
 		w.Header().Set("Retry-After", s.loginLimiter.RetryAfter())
+		s.logSecurityEvent(r, "admin.login", securityOutcomeRateLimited, nil)
 		errmap.HandleError(w, r, apperr.ErrRateLimited)
 		return
 	}
 
 	var body openapi.AdminLoginRequest
-	if err := request.DecodeJSON(r, &body); err != nil || body.Password == nil {
+	if !decodeJSONBody(w, r, &body, apperr.ErrInvalidCredentials) {
+		s.logSecurityEvent(r, "admin.login", securityOutcomeFailure, logkitFields("error_code", apperr.CodeInvalidCredentials))
+		return
+	}
+	if body.Password == nil {
+		s.logSecurityEvent(r, "admin.login", securityOutcomeFailure, logkitFields("error_code", apperr.CodeInvalidCredentials))
 		errmap.HandleError(w, r, apperr.ErrInvalidCredentials)
 		return
 	}
 
 	pair, err := s.adminAuth.Login(r.Context(), *body.Password)
 	if err != nil {
+		s.logSecurityEvent(r, "admin.login", securityOutcomeFailure, logkitFields("error_code", securityErrorCode(err)))
 		errmap.HandleError(w, r, err)
 		return
 	}
 
-	response.WriteJSON(w, http.StatusOK, response.TokenPair(pair, s.now()))
+	s.logSecurityEvent(r, "admin.login", securityOutcomeSuccess, nil)
+	if err := middleware.SetAdminSessionCookies(w, r, pair); err != nil {
+		errmap.HandleError(w, r, apperr.ErrInternal)
+		return
+	}
+	response.WriteJSON(w, http.StatusOK, adminTokenResponse(r, pair, middleware.IsBrowserSourcedRequest(r), s.now()))
 }
 
 // (POST /api/v1/admin/logout).
 func (s *Server) AdminLogout(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
-		return
-	}
+	actor, _ := adminActorFromRequest(r)
 	if s.adminAuth == nil {
 		errmap.HandleError(w, r, apperr.ErrInternal)
 		return
 	}
 
 	var body openapi.AdminLogoutRequest
-	if err := request.DecodeJSON(r, &body); err != nil || body.RefreshToken == "" {
+	if !decodeJSONBody(w, r, &body, apperr.ErrInvalidCredentials) {
+		s.logSecurityEvent(r, "admin.logout", securityOutcomeFailure, adminSecurityFields(actor, apperr.CodeInvalidCredentials))
+		return
+	}
+	refreshToken := body.RefreshToken
+	if refreshToken == "" {
+		if cookieToken, ok := middleware.AdminRefreshTokenFromRequest(r); ok {
+			refreshToken = cookieToken
+		}
+	}
+	if refreshToken == "" {
+		s.logSecurityEvent(r, "admin.logout", securityOutcomeFailure, adminSecurityFields(actor, apperr.CodeInvalidCredentials))
 		errmap.HandleError(w, r, apperr.ErrInvalidCredentials)
 		return
 	}
 
-	if err := s.adminAuth.Logout(r.Context(), body.RefreshToken); err != nil {
+	accessTokens := make([]string, 0, 1)
+	if accessToken, ok := middleware.AdminAccessTokenFromRequest(r); ok {
+		accessTokens = append(accessTokens, accessToken)
+	}
+	if err := s.adminAuth.Logout(r.Context(), refreshToken, accessTokens...); err != nil {
+		s.logSecurityEvent(r, "admin.logout", securityOutcomeFailure, adminSecurityFields(actor, securityErrorCode(err)))
 		errmap.HandleError(w, r, err)
 		return
 	}
 
+	s.logSecurityEvent(r, "admin.logout", securityOutcomeSuccess, adminSecurityFields(actor, ""))
+	middleware.ClearAdminSessionCookies(w, r)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -76,19 +104,52 @@ func (s *Server) AdminRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !s.refreshLimiter.Allow(middleware.ClientIPFromRequest(r)) {
+		w.Header().Set("Retry-After", s.refreshLimiter.RetryAfter())
+		s.logSecurityEvent(r, "admin.refresh", securityOutcomeRateLimited, nil)
+		errmap.HandleError(w, r, apperr.ErrRateLimited)
+		return
+	}
+
 	var body openapi.AdminRefreshRequest
-	if err := request.DecodeJSON(r, &body); err != nil || body.RefreshToken == "" {
+	if !decodeJSONBody(w, r, &body, apperr.ErrInvalidCredentials) {
+		s.logSecurityEvent(r, "admin.refresh", securityOutcomeFailure, logkitFields("error_code", apperr.CodeInvalidCredentials))
+		return
+	}
+	refreshToken := body.RefreshToken
+	cookieRefresh := false
+	if refreshToken == "" {
+		if cookieToken, ok := middleware.AdminRefreshTokenFromRequest(r); ok {
+			refreshToken = cookieToken
+			cookieRefresh = true
+		}
+	}
+	if refreshToken == "" {
+		s.logSecurityEvent(r, "admin.refresh", securityOutcomeFailure, logkitFields("error_code", apperr.CodeInvalidCredentials))
 		errmap.HandleError(w, r, apperr.ErrInvalidCredentials)
 		return
 	}
 
-	pair, err := s.adminAuth.Refresh(r.Context(), body.RefreshToken)
+	pair, err := s.adminAuth.Refresh(r.Context(), refreshToken)
 	if err != nil {
+		s.logSecurityEvent(r, "admin.refresh", securityOutcomeFailure, logkitFields("error_code", securityErrorCode(err)))
 		errmap.HandleError(w, r, err)
 		return
 	}
 
-	response.WriteJSON(w, http.StatusOK, response.TokenPair(pair, s.now()))
+	s.logSecurityEvent(r, "admin.refresh", securityOutcomeSuccess, nil)
+	if err := middleware.SetAdminSessionCookies(w, r, pair); err != nil {
+		errmap.HandleError(w, r, apperr.ErrInternal)
+		return
+	}
+	response.WriteJSON(w, http.StatusOK, adminTokenResponse(r, pair, cookieRefresh, s.now()))
+}
+
+func adminTokenResponse(r *http.Request, pair *usecase.TokenPair, cookieSession bool, now time.Time) openapi.AdminTokenResponse {
+	if cookieSession || middleware.IsBrowserSourcedRequest(r) {
+		return response.CookieSessionTokenPair(pair, now)
+	}
+	return response.TokenPair(pair, now)
 }
 
 // (GET /api/v1/admin/players).
@@ -165,8 +226,7 @@ func (s *Server) UpdateAdminPlayer(w http.ResponseWriter, r *http.Request, id op
 	}
 
 	var body openapi.UpdateAdminPlayerRequest
-	if err := request.DecodeJSON(r, &body); err != nil {
-		errmap.HandleError(w, r, apperr.ErrValidation)
+	if !decodeJSONBody(w, r, &body, apperr.ErrValidation) {
 		return
 	}
 
@@ -236,8 +296,7 @@ func (s *Server) CreateTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body openapi.CreateTaskRequest
-	if err := request.DecodeJSON(r, &body); err != nil {
-		errmap.HandleError(w, r, apperr.ErrTaskValidation)
+	if !decodeJSONBody(w, r, &body, apperr.ErrTaskValidation) {
 		return
 	}
 
@@ -286,8 +345,7 @@ func (s *Server) UpdateTask(w http.ResponseWriter, r *http.Request, id openapi_t
 	}
 
 	var body openapi.UpdateTaskRequest
-	if err := request.DecodeJSON(r, &body); err != nil {
-		errmap.HandleError(w, r, apperr.ErrTaskValidation)
+	if !decodeJSONBody(w, r, &body, apperr.ErrTaskValidation) {
 		return
 	}
 	if !isValidUpdateTaskRequest(body) {

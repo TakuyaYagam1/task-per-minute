@@ -183,19 +183,23 @@ func provideRESTServer(
 	duels usecase.Duel,
 	health restv1.HealthChecks,
 	loginLimiter *middleware.LoginRateLimiter,
+	refreshLimiter adminRefreshRateLimiter,
 	joinLimiter *middleware.JoinRateLimiter,
+	log logkit.Logger,
 ) *restv1.Server {
 	return restv1.New(restv1.Dependencies{
-		Players:      players,
-		AdminAuth:    auth,
-		Tasks:        tasks,
-		AdminPlayers: adminPlayers,
-		Upload:       upload,
-		Leaderboard:  leaderboard,
-		Duels:        duels,
-		Health:       health,
-		LoginLimiter: loginLimiter,
-		JoinLimiter:  joinLimiter,
+		Players:        players,
+		AdminAuth:      auth,
+		Tasks:          tasks,
+		AdminPlayers:   adminPlayers,
+		Upload:         upload,
+		Leaderboard:    leaderboard,
+		Duels:          duels,
+		Health:         health,
+		LoginLimiter:   loginLimiter,
+		RefreshLimiter: refreshLimiter.Inner,
+		JoinLimiter:    joinLimiter,
+		Log:            log,
 	})
 }
 
@@ -206,6 +210,21 @@ func provideLoginRateLimiter(ctx context.Context, cfg *config.Config) *middlewar
 		cfg.Admin.LoginRateWindow,
 		cfg.Admin.LoginRateBucketTTL,
 	)
+}
+
+type adminRefreshRateLimiter struct {
+	Inner *middleware.LoginRateLimiter
+}
+
+func provideRefreshRateLimiter(ctx context.Context, cfg *config.Config) adminRefreshRateLimiter {
+	return adminRefreshRateLimiter{
+		Inner: middleware.NewLoginRateLimiter(
+			ctx,
+			cfg.Admin.RefreshRateAttempts,
+			cfg.Admin.RefreshRateWindow,
+			cfg.Admin.RefreshRateBucketTTL,
+		),
+	}
 }
 
 func provideJoinRateLimiter(ctx context.Context, cfg *config.Config) *middleware.JoinRateLimiter {
@@ -223,6 +242,7 @@ func provideRESTMiddlewares(log logkit.Logger, cfg *config.Config) []openapi.Mid
 			log,
 			middleware.WithTimeout(cfg.HTTP.WriteTimeout),
 			middleware.WithTrustedProxyCIDRs(cfg.HTTP.TrustedProxyCIDRs),
+			middleware.WithAllowedOrigins(cfg.HTTP.AllowedOrigins),
 		),
 	}
 }
@@ -267,20 +287,32 @@ func (l *wsHandshakeRateLimiter) RetryAfter() string {
 func provideRawWebSocketServer(
 	ctx context.Context,
 	cfg *config.Config,
+	log logkit.Logger,
 	players usecase.PlayerRepo,
 	matchmaking websocket.Matchmaking,
 	flags websocket.FlagSubmitter,
 	hubs *websocket.HubRegistry,
 	hints *duelusecase.HintScheduler,
+	timers *duelusecase.TimerRegistry,
 	duels usecase.DuelRepo,
 	storage usecase.SourceFileStorage,
 	handshakeLimiter *wsHandshakeRateLimiter,
 ) rawWebSocketServer {
+	clientIPResolver, err := middleware.NewClientIPResolver(cfg.HTTP.TrustedProxyCIDRs)
+	if err != nil {
+		if log != nil {
+			log.Warn("invalid trusted proxy CIDRs for websocket, using RemoteAddr only", logkit.Fields{"error": err.Error()})
+		}
+		clientIPResolver = middleware.ClientIPFromRequest
+	}
 	options := []websocket.Option{
 		websocket.WithContext(ctx),
 		websocket.WithHintScheduler(hints),
+		websocket.WithTimerStopper(timers),
 		websocket.WithTaskResolver(duels, storage),
-		websocket.WithClientIPResolver(middleware.ClientIPFromRequest),
+		websocket.WithClientIPResolver(clientIPResolver),
+		websocket.WithRequireOrigin(cfg.WS.RequireOrigin),
+		websocket.WithLogger(log),
 	}
 	if accept := provideWSAcceptOptions(cfg); accept != nil {
 		options = append(options, websocket.WithAcceptOptions(accept))

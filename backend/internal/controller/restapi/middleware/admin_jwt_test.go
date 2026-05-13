@@ -67,6 +67,97 @@ func TestAdminJWT_ValidAccessTokenInjectsClaims(t *testing.T) {
 	require.Equal(t, http.StatusNoContent, rr.Code)
 }
 
+func TestAdminJWT_BrowserOriginBearerFallbackReturnsUnauthorized(t *testing.T) {
+	t.Parallel()
+
+	auth := newAuthUsecase(t)
+	pair, err := auth.Login(t.Context(), "admin-password")
+	require.NoError(t, err)
+
+	handler := middleware.AdminJWT(auth)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Fatal("next handler should not be called")
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/tasks", nil)
+	req.Header.Set("Origin", "https://app.example.com")
+	req.Header.Set("Authorization", "Bearer "+pair.AccessToken)
+
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	requireUnauthorized(t, rr)
+}
+
+func TestAdminJWT_FetchMetadataBearerFallbackReturnsUnauthorized(t *testing.T) {
+	t.Parallel()
+
+	auth := newAuthUsecase(t)
+	pair, err := auth.Login(t.Context(), "admin-password")
+	require.NoError(t, err)
+
+	handler := middleware.AdminJWT(auth)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Fatal("next handler should not be called")
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/tasks", nil)
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	req.Header.Set("Authorization", "Bearer "+pair.AccessToken)
+
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	requireUnauthorized(t, rr)
+}
+
+func TestAdminJWT_ValidAccessCookieInjectsClaims(t *testing.T) {
+	t.Parallel()
+
+	auth := newAuthUsecase(t)
+	pair, err := auth.Login(t.Context(), "admin-password")
+	require.NoError(t, err)
+
+	handler := middleware.AdminJWT(auth)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		claims, ok := middleware.GetAdminClaimsFromCtx(r.Context())
+		require.True(t, ok)
+		require.Equal(t, "admin", claims.Subject)
+		require.Equal(t, admin.TokenKindAccess, claims.Kind)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/tasks", nil)
+	req.AddCookie(&http.Cookie{Name: middleware.AdminAccessCookieName, Value: pair.AccessToken})
+
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusNoContent, rr.Code)
+}
+
+func TestAdminJWT_AccessCookieWinsOverBrowserBearer(t *testing.T) {
+	t.Parallel()
+
+	auth := newAuthUsecase(t)
+	pair, err := auth.Login(t.Context(), "admin-password")
+	require.NoError(t, err)
+
+	handler := middleware.AdminJWT(auth)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		claims, ok := middleware.GetAdminClaimsFromCtx(r.Context())
+		require.True(t, ok)
+		require.Equal(t, admin.TokenKindAccess, claims.Kind)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/tasks", nil)
+	req.Header.Set("Origin", "https://app.example.com")
+	req.Header.Set("Authorization", "Bearer not-a-jwt")
+	req.AddCookie(&http.Cookie{Name: middleware.AdminAccessCookieName, Value: pair.AccessToken})
+
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusNoContent, rr.Code)
+}
+
 func newAuthUsecase(t *testing.T) *admin.AuthUsecase {
 	t.Helper()
 

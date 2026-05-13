@@ -7,8 +7,8 @@ import (
 
 const (
 	corsAllowedMethods = "GET, POST, PUT, DELETE, OPTIONS"
-	corsAllowedHeaders = "Content-Type, Authorization, X-Session-Token"
-	corsExposedHeaders = "Retry-After"
+	corsAllowedHeaders = "Content-Type, Authorization, X-CSRF-Token"
+	corsExposedHeaders = "Retry-After, X-CSRF-Token, X-Admin-Refresh-CSRF-Token"
 )
 
 // CORS allows REST requests from a configured exact-origin allowlist.
@@ -60,6 +60,7 @@ func isCORSPreflight(r *http.Request) bool {
 
 func writeCORSHeaders(header http.Header, origin string) {
 	header.Set("Access-Control-Allow-Origin", origin)
+	header.Set("Access-Control-Allow-Credentials", "true")
 	header.Set("Access-Control-Allow-Methods", corsAllowedMethods)
 	header.Set("Access-Control-Allow-Headers", corsAllowedHeaders)
 	header.Set("Access-Control-Expose-Headers", corsExposedHeaders)

@@ -77,10 +77,13 @@ type JWT struct {
 }
 
 type Admin struct {
-	Password           string        `env:"PASSWORD"             env-required:"true"`
-	LoginRateAttempts  int           `env:"LOGIN_RATE_ATTEMPTS"  env-default:"5"`
-	LoginRateWindow    time.Duration `env:"LOGIN_RATE_WINDOW"    env-default:"15m"`
-	LoginRateBucketTTL time.Duration `env:"LOGIN_RATE_BUCKET_TTL" env-default:"1h"`
+	Password             string        `env:"PASSWORD"              env-required:"true"`
+	LoginRateAttempts    int           `env:"LOGIN_RATE_ATTEMPTS"   env-default:"5"`
+	LoginRateWindow      time.Duration `env:"LOGIN_RATE_WINDOW"     env-default:"15m"`
+	LoginRateBucketTTL   time.Duration `env:"LOGIN_RATE_BUCKET_TTL" env-default:"1h"`
+	RefreshRateAttempts  int           `env:"REFRESH_RATE_ATTEMPTS"`
+	RefreshRateWindow    time.Duration `env:"REFRESH_RATE_WINDOW"`
+	RefreshRateBucketTTL time.Duration `env:"REFRESH_RATE_BUCKET_TTL"`
 }
 
 type Player struct {
@@ -91,6 +94,7 @@ type Player struct {
 
 type WebSocket struct {
 	AllowedOrigins         []string      `env:"ALLOWED_ORIGINS"           env-separator:","`
+	RequireOrigin          bool          `env:"REQUIRE_ORIGIN"            env-default:"false"`
 	HandshakeRateAttempts  int           `env:"HANDSHAKE_RATE_ATTEMPTS"   env-default:"60"`
 	HandshakeRateWindow    time.Duration `env:"HANDSHAKE_RATE_WINDOW"     env-default:"1m"`
 	HandshakeRateBucketTTL time.Duration `env:"HANDSHAKE_RATE_BUCKET_TTL" env-default:"15m"`
@@ -137,7 +141,7 @@ func (c *Config) Validate() error {
 	if err := validateJWT(c.JWT); err != nil {
 		return err
 	}
-	if err := validateAdmin(c.Admin); err != nil {
+	if err := validateAdmin(&c.Admin); err != nil {
 		return err
 	}
 	if err := validatePlayer(c.Player); err != nil {
@@ -266,7 +270,10 @@ func validateJWT(cfg JWT) error {
 	return positiveDuration("JWT_REFRESH_TTL", cfg.RefreshTTL)
 }
 
-func validateAdmin(cfg Admin) error {
+func validateAdmin(cfg *Admin) error {
+	if cfg == nil {
+		return fmt.Errorf("Admin config must not be nil")
+	}
 	if invalidSecret(cfg.Password) {
 		return fmt.Errorf("ADMIN_PASSWORD must not be empty or placeholder")
 	}
@@ -276,7 +283,25 @@ func validateAdmin(cfg Admin) error {
 	if err := positiveDuration("ADMIN_LOGIN_RATE_WINDOW", cfg.LoginRateWindow); err != nil {
 		return err
 	}
-	return positiveDuration("ADMIN_LOGIN_RATE_BUCKET_TTL", cfg.LoginRateBucketTTL)
+	if err := positiveDuration("ADMIN_LOGIN_RATE_BUCKET_TTL", cfg.LoginRateBucketTTL); err != nil {
+		return err
+	}
+	if cfg.RefreshRateAttempts == 0 {
+		cfg.RefreshRateAttempts = cfg.LoginRateAttempts
+	}
+	if cfg.RefreshRateWindow == 0 {
+		cfg.RefreshRateWindow = cfg.LoginRateWindow
+	}
+	if cfg.RefreshRateBucketTTL == 0 {
+		cfg.RefreshRateBucketTTL = cfg.LoginRateBucketTTL
+	}
+	if cfg.RefreshRateAttempts < 0 {
+		return fmt.Errorf("ADMIN_REFRESH_RATE_ATTEMPTS must be positive")
+	}
+	if err := positiveDuration("ADMIN_REFRESH_RATE_WINDOW", cfg.RefreshRateWindow); err != nil {
+		return err
+	}
+	return positiveDuration("ADMIN_REFRESH_RATE_BUCKET_TTL", cfg.RefreshRateBucketTTL)
 }
 
 func validatePlayer(cfg Player) error {
@@ -292,6 +317,15 @@ func validatePlayer(cfg Player) error {
 func validateWS(cfg *WebSocket) error {
 	if cfg == nil {
 		return fmt.Errorf("WS config must not be nil")
+	}
+	if cfg.HandshakeRateAttempts <= 0 {
+		return fmt.Errorf("WS_HANDSHAKE_RATE_ATTEMPTS must be positive")
+	}
+	if err := positiveDuration("WS_HANDSHAKE_RATE_WINDOW", cfg.HandshakeRateWindow); err != nil {
+		return err
+	}
+	if err := positiveDuration("WS_HANDSHAKE_RATE_BUCKET_TTL", cfg.HandshakeRateBucketTTL); err != nil {
+		return err
 	}
 	origins, err := normalizeAllowedOrigins("WS_ALLOWED_ORIGINS", cfg.AllowedOrigins)
 	if err != nil {

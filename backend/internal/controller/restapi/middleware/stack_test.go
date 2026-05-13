@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	logkit "github.com/wahrwelt-kit/go-logkit"
@@ -39,6 +40,7 @@ func TestBuild_SuccessAddsRequestIDSecurityHeadersAndLog(t *testing.T) {
 	require.Equal(t, "DENY", rr.Header().Get("X-Frame-Options"))
 	require.Equal(t, "strict-origin-when-cross-origin", rr.Header().Get("Referrer-Policy"))
 	require.Equal(t, "default-src 'self'", rr.Header().Get("Content-Security-Policy"))
+	require.Empty(t, rr.Header().Get("Cache-Control"))
 
 	entry := requireLogEntry(t, logs.String(), "http request")
 	require.Equal(t, "info", entry["level"])
@@ -48,6 +50,23 @@ func TestBuild_SuccessAddsRequestIDSecurityHeadersAndLog(t *testing.T) {
 	require.Equal(t, float64(http.StatusOK), entry["status"])
 	require.NotEmpty(t, entry["duration"])
 	require.Contains(t, entry, "duration_ms")
+}
+
+func TestBuild_AddsNoStoreHeadersForSensitiveResponses(t *testing.T) {
+	t.Parallel()
+
+	handler := middleware.Build(logkit.Noop())(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/login", nil)
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	require.Equal(t, "no-store", rr.Header().Get("Cache-Control"))
+	require.Equal(t, "no-cache", rr.Header().Get("Pragma"))
+	require.Equal(t, "0", rr.Header().Get("Expires"))
 }
 
 func TestBuild_RecovererReturnsInternalJSONAndLogsError(t *testing.T) {
@@ -68,8 +87,14 @@ func TestBuild_RecovererReturnsInternalJSONAndLogsError(t *testing.T) {
 	handler.ServeHTTP(rr, req)
 
 	require.Equal(t, http.StatusInternalServerError, rr.Code)
-	require.Equal(t, "application/json", rr.Header().Get("Content-Type"))
-	require.JSONEq(t, `{"error":"internal"}`, rr.Body.String())
+	require.Equal(t, "application/problem+json", rr.Header().Get("Content-Type"))
+	require.JSONEq(t, `{
+		"type":"about:blank",
+		"title":"Internal Server Error",
+		"status":500,
+		"detail":"internal",
+		"instance":"/api/v1/duels/current"
+	}`, rr.Body.String())
 	require.NotContains(t, rr.Body.String(), "boom")
 	require.NotContains(t, strings.ToLower(rr.Body.String()), "stack")
 
@@ -88,6 +113,60 @@ func TestBuild_RecovererReturnsInternalJSONAndLogsError(t *testing.T) {
 			entry["request_id"] == requestID &&
 			entry["status"] == float64(http.StatusInternalServerError)
 	}), "expected request log entry with 500 status")
+}
+
+func TestTimeoutReturnsProblemJSON(t *testing.T) {
+	t.Parallel()
+
+	handler := middleware.Timeout(time.Millisecond)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/slow", nil)
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusServiceUnavailable, rr.Code)
+	require.Equal(t, "application/problem+json", rr.Header().Get("Content-Type"))
+	require.JSONEq(t, `{
+		"type":"about:blank",
+		"title":"Service Unavailable",
+		"status":503,
+		"detail":"timeout",
+		"instance":"/api/v1/slow"
+	}`, rr.Body.String())
+}
+
+func TestTimeoutLogsPanicAfterDeadline(t *testing.T) {
+	t.Parallel()
+
+	var logs bytes.Buffer
+	log := newTestLogger(t, &logs)
+	const requestID = "late-panic-req"
+
+	handler := middleware.Build(log, middleware.WithTimeout(time.Millisecond))(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+		panic("late boom")
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/slow", nil)
+	req.Header.Set("X-Request-ID", requestID)
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusServiceUnavailable, rr.Code)
+	require.Eventually(t, func() bool {
+		if strings.TrimSpace(logs.String()) == "" {
+			return false
+		}
+		return hasLogEntry(parseLogEntries(t, logs.String()), func(entry map[string]any) bool {
+			return entry["level"] == "error" &&
+				entry["message"] == "panic recovered" &&
+				entry["request_id"] == requestID &&
+				entry["panic"] == "late boom" &&
+				entry["after_timeout"] == true
+		})
+	}, 250*time.Millisecond, 10*time.Millisecond)
 }
 
 func TestBuild_TrustedProxyCIDRsResolveForwardedClientIP(t *testing.T) {

@@ -49,12 +49,9 @@ JoinRequest:
 
 JoinResponse:
   type: object
-  required: [player_id, session_token]
+  required: [player_id]
   properties:
     player_id:
-      type: string
-      format: uuid
-    session_token:
       type: string
       format: uuid
 

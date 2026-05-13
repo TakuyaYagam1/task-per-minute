@@ -2,10 +2,21 @@ BearerAuth:
   type: http
   scheme: bearer
   bearerFormat: JWT
-  description: Admin access token (HS256). Issued by POST /api/v1/admin/login.
+  description: >
+    Admin access token (HS256). Browser clients should use the HttpOnly
+    tpm_admin_access cookie issued by POST /api/v1/admin/login or
+    POST /api/v1/admin/refresh. Unsafe cookie-authenticated admin requests
+    must also send X-CSRF-Token. Authorization: Bearer remains accepted only
+    for requests without browser Origin/Referer headers, so non-browser and
+    backwards-compatible clients can keep using it.
 
 SessionTokenAuth:
   type: apiKey
-  in: header
-  name: X-Session-Token
-  description: Opaque UUID issued by POST /api/v1/players/join.
+  in: cookie
+  name: tpm_player_session
+  description: >
+    HttpOnly opaque UUID session cookie issued by POST /api/v1/players/join.
+    Unsafe authenticated player REST requests must also send X-CSRF-Token
+    matching the readable tpm_player_csrf cookie. The CSRF token is signed and
+    bound to the HttpOnly player session cookie. The same token is exposed in
+    X-CSRF-Token response headers for split-domain browser apps.

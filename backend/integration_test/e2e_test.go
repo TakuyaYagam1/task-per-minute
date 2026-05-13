@@ -25,12 +25,12 @@ func TestE2EPlayerFlow_HTTPJoinWSMatchSubmitAndLeaderboard(t *testing.T) {
 	alice := app.joinPlayer(t, uniq("alice"))
 	bob := app.joinPlayer(t, uniq("bob"))
 
-	aliceConn := app.connectWS(t, alice.SessionToken)
+	aliceConn := app.connectWS(t, alice.SessionCookie)
 	defer closeWSSilent(aliceConn)
 	writeWSEvent(t, aliceConn, wscontroller.EventJoinQueue, nil)
 	require.Equal(t, wscontroller.EventQueueJoined, readWSEventType(t, aliceConn, wscontroller.EventQueueJoined).Type)
 
-	bobConn := app.connectWS(t, bob.SessionToken)
+	bobConn := app.connectWS(t, bob.SessionCookie)
 	defer closeWSSilent(bobConn)
 	writeWSEvent(t, bobConn, wscontroller.EventJoinQueue, nil)
 	require.Equal(t, wscontroller.EventQueueJoined, readWSEventType(t, bobConn, wscontroller.EventQueueJoined).Type)
@@ -134,12 +134,12 @@ func TestE2ESourceFileFlow_TaskAssignedUsesPresignedURL(t *testing.T) {
 	alice := app.joinPlayer(t, uniq("alice"))
 	bob := app.joinPlayer(t, uniq("bob"))
 
-	aliceConn := app.connectWS(t, alice.SessionToken)
+	aliceConn := app.connectWS(t, alice.SessionCookie)
 	defer closeWSSilent(aliceConn)
 	writeWSEvent(t, aliceConn, wscontroller.EventJoinQueue, nil)
 	require.Equal(t, wscontroller.EventQueueJoined, readWSEventType(t, aliceConn, wscontroller.EventQueueJoined).Type)
 
-	bobConn := app.connectWS(t, bob.SessionToken)
+	bobConn := app.connectWS(t, bob.SessionCookie)
 	defer closeWSSilent(bobConn)
 	writeWSEvent(t, bobConn, wscontroller.EventJoinQueue, nil)
 
@@ -179,11 +179,11 @@ func TestE2ESourceFileFlow_DuelResumeRefreshesPresignedURL(t *testing.T) {
 	alice := app.joinPlayer(t, uniq("alice"))
 	bob := app.joinPlayer(t, uniq("bob"))
 
-	aliceConn := app.connectWS(t, alice.SessionToken)
+	aliceConn := app.connectWS(t, alice.SessionCookie)
 	writeWSEvent(t, aliceConn, wscontroller.EventJoinQueue, nil)
 	require.Equal(t, wscontroller.EventQueueJoined, readWSEventType(t, aliceConn, wscontroller.EventQueueJoined).Type)
 
-	bobConn := app.connectWS(t, bob.SessionToken)
+	bobConn := app.connectWS(t, bob.SessionCookie)
 	defer closeWSSilent(bobConn)
 	writeWSEvent(t, bobConn, wscontroller.EventJoinQueue, nil)
 
@@ -197,7 +197,7 @@ func TestE2ESourceFileFlow_DuelResumeRefreshesPresignedURL(t *testing.T) {
 
 	time.Sleep(4 * time.Second)
 
-	aliceReconnect := app.connectWS(t, alice.SessionToken)
+	aliceReconnect := app.connectWS(t, alice.SessionCookie)
 	defer closeWSSilent(aliceReconnect)
 
 	resume := decodeDuelResume(t, readWSEventType(t, aliceReconnect, wscontroller.EventDuelResume))
@@ -222,11 +222,11 @@ func TestE2EReconnectFlow_DisconnectAndResume(t *testing.T) {
 	alice := app.joinPlayer(t, uniq("alice"))
 	bob := app.joinPlayer(t, uniq("bob"))
 
-	aliceConn := app.connectWS(t, alice.SessionToken)
+	aliceConn := app.connectWS(t, alice.SessionCookie)
 	writeWSEvent(t, aliceConn, wscontroller.EventJoinQueue, nil)
 	require.Equal(t, wscontroller.EventQueueJoined, readWSEventType(t, aliceConn, wscontroller.EventQueueJoined).Type)
 
-	bobConn := app.connectWS(t, bob.SessionToken)
+	bobConn := app.connectWS(t, bob.SessionCookie)
 	defer closeWSSilent(bobConn)
 	writeWSEvent(t, bobConn, wscontroller.EventJoinQueue, nil)
 
@@ -241,7 +241,7 @@ func TestE2EReconnectFlow_DisconnectAndResume(t *testing.T) {
 	disconnected := readWSEventType(t, bobConn, wscontroller.EventOpponentDisconnected)
 	require.Equal(t, alice.PlayerID, decodeOpponentDisconnected(t, disconnected).PlayerID)
 
-	aliceReconnect := app.connectWS(t, alice.SessionToken)
+	aliceReconnect := app.connectWS(t, alice.SessionCookie)
 	defer closeWSSilent(aliceReconnect)
 
 	resume := readWSEventType(t, aliceReconnect, wscontroller.EventDuelResume)
@@ -272,12 +272,12 @@ func TestE2EHintFlow_AutoUnlocksAt25_50_75(t *testing.T) {
 	alice := app.joinPlayer(t, uniq("alice"))
 	bob := app.joinPlayer(t, uniq("bob"))
 
-	aliceConn := app.connectWS(t, alice.SessionToken)
+	aliceConn := app.connectWS(t, alice.SessionCookie)
 	defer closeWSSilent(aliceConn)
 	writeWSEvent(t, aliceConn, wscontroller.EventJoinQueue, nil)
 	require.Equal(t, wscontroller.EventQueueJoined, readWSEventType(t, aliceConn, wscontroller.EventQueueJoined).Type)
 
-	bobConn := app.connectWS(t, bob.SessionToken)
+	bobConn := app.connectWS(t, bob.SessionCookie)
 	defer closeWSSilent(bobConn)
 	writeWSEvent(t, bobConn, wscontroller.EventJoinQueue, nil)
 
@@ -310,12 +310,12 @@ func TestE2EConcurrentFlagSubmit_SingleWinnerAndSingleLeaderboardBump(t *testing
 	alice := app.joinPlayer(t, uniq("alice"))
 	bob := app.joinPlayer(t, uniq("bob"))
 
-	aliceConn := app.connectWS(t, alice.SessionToken)
+	aliceConn := app.connectWS(t, alice.SessionCookie)
 	defer closeWSSilent(aliceConn)
 	writeWSEvent(t, aliceConn, wscontroller.EventJoinQueue, nil)
 	require.Equal(t, wscontroller.EventQueueJoined, readWSEventType(t, aliceConn, wscontroller.EventQueueJoined).Type)
 
-	bobConn := app.connectWS(t, bob.SessionToken)
+	bobConn := app.connectWS(t, bob.SessionCookie)
 	defer closeWSSilent(bobConn)
 	writeWSEvent(t, bobConn, wscontroller.EventJoinQueue, nil)
 

@@ -84,12 +84,8 @@ func (b *Broadcaster) BroadcastDuelFinished(_ context.Context, duel *domain.Duel
 		b.hubs.Close(duel.ID)
 		return
 	}
-	timer := time.AfterFunc(delay, func() {
+	runAfterOrDone(b.ctx, delay, func() {
 		b.hubs.Close(duel.ID)
-	})
-	//nolint:contextcheck // server lifecycle ctx by design.
-	context.AfterFunc(b.ctx, func() {
-		timer.Stop()
 	})
 }
 

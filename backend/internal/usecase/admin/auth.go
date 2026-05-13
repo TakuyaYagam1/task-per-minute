@@ -50,7 +50,7 @@ func NewAuthUsecase(cfg AuthConfig, clk clock.Clock, rev usecase.RevocationStore
 	return &AuthUsecase{cfg: cfg, clock: clk, revocations: rev}
 }
 
-func (u *AuthUsecase) Login(ctx context.Context, password string) (*TokenPair, error) {
+func (u *AuthUsecase) Login(_ context.Context, password string) (*TokenPair, error) {
 	if !verifyAdminPassword(u.cfg.AdminPassword, password) {
 		return nil, apperr.ErrInvalidCredentials
 	}
@@ -58,7 +58,6 @@ func (u *AuthUsecase) Login(ctx context.Context, password string) (*TokenPair, e
 	if err != nil {
 		return nil, fmt.Errorf("AuthUsecase - Login - issuePair: %w", err)
 	}
-	_ = ctx
 	return pair, nil
 }
 
@@ -100,7 +99,7 @@ func (u *AuthUsecase) Refresh(ctx context.Context, refreshToken string) (*TokenP
 	return pair, nil
 }
 
-func (u *AuthUsecase) VerifyAccess(_ context.Context, token string) (*Claims, error) {
+func (u *AuthUsecase) VerifyAccess(ctx context.Context, token string) (*Claims, error) {
 	claims, err := u.parse(token)
 	if err != nil {
 		return nil, err
@@ -108,10 +107,13 @@ func (u *AuthUsecase) VerifyAccess(_ context.Context, token string) (*Claims, er
 	if claims.Kind != TokenKindAccess {
 		return nil, apperr.ErrInvalidCredentials
 	}
+	if err := u.ensureNotRevoked(ctx, claims); err != nil {
+		return nil, err
+	}
 	return claims, nil
 }
 
-func (u *AuthUsecase) Logout(ctx context.Context, refreshToken string) error {
+func (u *AuthUsecase) Logout(ctx context.Context, refreshToken string, accessTokens ...string) error {
 	claims, err := u.parse(refreshToken)
 	if err != nil {
 		return err
@@ -124,6 +126,42 @@ func (u *AuthUsecase) Logout(ctx context.Context, refreshToken string) error {
 			return apperr.ErrTokenRevoked
 		}
 		return fmt.Errorf("AuthUsecase - Logout - RevocationStore.Revoke: %w", err)
+	}
+	for _, token := range accessTokens {
+		if err := u.revokeAccessToken(ctx, token); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (u *AuthUsecase) ensureNotRevoked(ctx context.Context, claims *Claims) error {
+	revoked, err := u.revocations.IsRevoked(ctx, claims.JTI)
+	if err != nil {
+		return fmt.Errorf("AuthUsecase - VerifyAccess - RevocationStore.IsRevoked: %w", err)
+	}
+	if revoked {
+		return apperr.ErrTokenRevoked
+	}
+	return nil
+}
+
+func (u *AuthUsecase) revokeAccessToken(ctx context.Context, token string) error {
+	claims, err := u.parse(token)
+	if err != nil {
+		if errors.Is(err, apperr.ErrInvalidCredentials) || errors.Is(err, apperr.ErrTokenExpired) {
+			return nil
+		}
+		return err
+	}
+	if claims.Kind != TokenKindAccess {
+		return nil
+	}
+	if err := u.revocations.Revoke(ctx, claims.JTI, revocationExpiresAt(claims)); err != nil {
+		if errors.Is(err, apperr.ErrTokenRevoked) {
+			return nil
+		}
+		return fmt.Errorf("AuthUsecase - Logout - RevocationStore.Revoke access: %w", err)
 	}
 	return nil
 }

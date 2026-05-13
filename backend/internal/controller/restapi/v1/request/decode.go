@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"strconv"
 	"strings"
@@ -14,9 +15,10 @@ import (
 const maxBodyBytes = 1 << 20
 
 var (
-	ErrBodyTooLarge = errors.New("request body is too large")
-	ErrEmptyBody    = errors.New("request body is empty")
-	ErrTrailingData = errors.New("request body must contain a single json value")
+	ErrBodyTooLarge         = errors.New("request body is too large")
+	ErrEmptyBody            = errors.New("request body is empty")
+	ErrTrailingData         = errors.New("request body must contain a single json value")
+	ErrUnsupportedMediaType = errors.New("content type must be application/json or application/*+json")
 )
 
 // UnknownFieldsErr reports a JSON field that is not present in the target DTO.
@@ -31,10 +33,13 @@ func (e *UnknownFieldsErr) Error() string {
 	return fmt.Sprintf("request body contains unknown field %q", e.Field)
 }
 
-// DecodeJSON decodes a JSON request body into v with a strict 1 MB limit.
+// DecodeJSON decodes a JSON request body into v with a strict 1 MB limit and content-type check.
 func DecodeJSON(r *http.Request, v any) error {
 	if r.Body == nil {
 		return ErrEmptyBody
+	}
+	if err := requireJSONContentType(r); err != nil {
+		return err
 	}
 
 	body, err := io.ReadAll(io.LimitReader(r.Body, maxBodyBytes+1))
@@ -58,6 +63,26 @@ func DecodeJSON(r *http.Request, v any) error {
 		return ErrTrailingData
 	}
 	return nil
+}
+
+func requireJSONContentType(r *http.Request) error {
+	contentType := strings.TrimSpace(r.Header.Get("Content-Type"))
+	if contentType == "" {
+		return ErrUnsupportedMediaType
+	}
+
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		return ErrUnsupportedMediaType
+	}
+	mediaType = strings.ToLower(mediaType)
+	if mediaType == "application/json" {
+		return nil
+	}
+	if strings.HasPrefix(mediaType, "application/") && strings.HasSuffix(mediaType, "+json") {
+		return nil
+	}
+	return ErrUnsupportedMediaType
 }
 
 func normalizeDecodeError(err error) error {

@@ -2,7 +2,14 @@
   post:
     operationId: adminLogin
     tags: [admin]
-    summary: Exchange the shared admin password for a token pair
+    summary: Exchange the shared admin password for an admin session
+    description: >
+      Returns the token pair for backwards-compatible non-browser clients and
+      also sets HttpOnly tpm_admin_access and tpm_admin_refresh cookies for
+      browser clients. Browser-sourced requests receive cookie-session marker
+      values in the JSON token fields and must use X-CSRF-Token with the
+      access CSRF token for unsafe admin mutations, and X-CSRF-Token with the
+      refresh CSRF token for refresh/logout.
     requestBody:
       required: true
       content:
@@ -12,6 +19,15 @@
     responses:
       '200':
         description: Login OK.
+        headers:
+          X-CSRF-Token:
+            description: CSRF token bound to the HttpOnly tpm_admin_access cookie.
+            schema:
+              type: string
+          X-Admin-Refresh-CSRF-Token:
+            description: CSRF token bound to the HttpOnly tpm_admin_refresh cookie.
+            schema:
+              type: string
         content:
           application/json:
             schema:
@@ -22,12 +38,32 @@
           application/problem+json:
             schema:
               $ref: '../components/schemas.yml#/ProblemDetails'
+      '413':
+        description: Request body exceeds the JSON size limit.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '415':
+        description: Request content type must be application/json.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
 
 /api/v1/admin/refresh:
   post:
     operationId: adminRefresh
     tags: [admin]
-    summary: Rotate the access/refresh token pair
+    summary: Rotate the admin session
+    description: >
+      Accepts refresh_token from the JSON body or the HttpOnly
+      tpm_admin_refresh cookie. Returns the new token pair for
+      backwards-compatible non-browser clients and refreshes the HttpOnly admin
+      cookies. Cookie-authenticated browser refresh requests receive
+      cookie-session marker values in the JSON token fields and must send
+      X-CSRF-Token with the refresh CSRF token from
+      X-Admin-Refresh-CSRF-Token.
     requestBody:
       required: true
       content:
@@ -37,6 +73,15 @@
     responses:
       '200':
         description: New token pair.
+        headers:
+          X-CSRF-Token:
+            description: CSRF token bound to the refreshed HttpOnly tpm_admin_access cookie.
+            schema:
+              type: string
+          X-Admin-Refresh-CSRF-Token:
+            description: CSRF token bound to the refreshed HttpOnly tpm_admin_refresh cookie.
+            schema:
+              type: string
         content:
           application/json:
             schema:
@@ -47,18 +92,33 @@
           application/problem+json:
             schema:
               $ref: '../components/schemas.yml#/ProblemDetails'
+      '413':
+        description: Request body exceeds the JSON size limit.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '415':
+        description: Request content type must be application/json.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
 
 /api/v1/admin/logout:
   post:
     operationId: adminLogout
     tags: [admin]
-    summary: Revoke the supplied refresh token
+    summary: Revoke the supplied admin refresh token
     description: |
       Revokes the supplied refresh token so it can no longer be exchanged
-      for a new pair. The access token is unaffected (it expires naturally
-      via its short TTL). Requires a valid bearer access token.
-    security:
-      - BearerAuth: []
+      for a new pair. The refresh token can be supplied in the JSON body or
+      by the HttpOnly tpm_admin_refresh cookie. The access token is unaffected
+      (it expires naturally via its short TTL). Logout does not require a
+      currently valid access token, so an expired browser session can still
+      revoke the refresh token and clear auth cookies.
+      Cookie-authenticated browser requests must send X-CSRF-Token with the
+      refresh CSRF token from X-Admin-Refresh-CSRF-Token.
     requestBody:
       required: true
       content:
@@ -69,7 +129,19 @@
       '204':
         description: Refresh token revoked.
       '401':
-        description: Missing/invalid bearer token or refresh token invalid.
+        description: Missing, invalid, expired, or revoked refresh token.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '413':
+        description: Request body exceeds the JSON size limit.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '415':
+        description: Request content type must be application/json.
         content:
           application/problem+json:
             schema:
@@ -99,7 +171,7 @@
               items:
                 $ref: '../components/schemas.yml#/AdminPlayerResponse'
       '401':
-        description: Missing or invalid bearer token.
+        description: Missing or invalid admin session.
         content:
           application/problem+json:
             schema:
@@ -145,7 +217,7 @@
             schema:
               $ref: '../components/schemas.yml#/ProblemDetails'
       '401':
-        description: Missing or invalid bearer token.
+        description: Missing or invalid admin session.
         content:
           application/problem+json:
             schema:
@@ -194,7 +266,7 @@
             schema:
               $ref: '../components/schemas.yml#/ProblemDetails'
       '401':
-        description: Missing or invalid bearer token.
+        description: Missing or invalid admin session.
         content:
           application/problem+json:
             schema:
@@ -207,6 +279,18 @@
               $ref: '../components/schemas.yml#/ProblemDetails'
       '409':
         description: Username is already taken.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '413':
+        description: Request body exceeds the JSON size limit.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '415':
+        description: Request content type must be application/json.
         content:
           application/problem+json:
             schema:
@@ -224,7 +308,19 @@
       '204':
         description: Deleted.
       '401':
-        description: Missing or invalid bearer token.
+        description: Missing or invalid admin session.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '413':
+        description: Request body exceeds the JSON size limit.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '415':
+        description: Request content type must be application/json.
         content:
           application/problem+json:
             schema:
@@ -259,7 +355,7 @@
               items:
                 $ref: '../components/schemas.yml#/TaskResponse'
       '401':
-        description: Missing or invalid bearer token.
+        description: Missing or invalid admin session.
         content:
           application/problem+json:
             schema:
@@ -290,7 +386,7 @@
             schema:
               $ref: '../components/schemas.yml#/ProblemDetails'
       '401':
-        description: Missing or invalid bearer token.
+        description: Missing or invalid admin session.
         content:
           application/problem+json:
             schema:
@@ -318,13 +414,25 @@
             schema:
               $ref: '../components/schemas.yml#/TaskResponse'
       '401':
-        description: Missing or invalid bearer token.
+        description: Missing or invalid admin session.
         content:
           application/problem+json:
             schema:
               $ref: '../components/schemas.yml#/ProblemDetails'
       '404':
         description: Task not found.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '413':
+        description: Request body exceeds the JSON size limit.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '415':
+        description: Request content type must be application/json.
         content:
           application/problem+json:
             schema:
@@ -355,7 +463,7 @@
             schema:
               $ref: '../components/schemas.yml#/ProblemDetails'
       '401':
-        description: Missing or invalid bearer token.
+        description: Missing or invalid admin session.
         content:
           application/problem+json:
             schema:
@@ -377,7 +485,7 @@
       '204':
         description: Deleted.
       '401':
-        description: Missing or invalid bearer token.
+        description: Missing or invalid admin session.
         content:
           application/problem+json:
             schema:
@@ -434,7 +542,7 @@
             schema:
               $ref: '../components/schemas.yml#/ProblemDetails'
       '401':
-        description: Missing or invalid bearer token.
+        description: Missing or invalid admin session.
         content:
           application/problem+json:
             schema:

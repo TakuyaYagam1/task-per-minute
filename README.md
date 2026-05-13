@@ -17,12 +17,14 @@ Task Per Minute - соревновательная CTF-платформа для
 - Подготовьте окружение:
 
 ```bash
+cp .env.example .env.local
 cp .env.example .env
 ```
 
-- Заполните секреты в `.env`.
+- Заполните секреты в `.env.local` для локального compose и в `.env` для
+  production/server compose.
 
-В Docker Compose backend получает `DB_DSN` из `.env` напрямую, поэтому для
+В Docker Compose backend получает `DB_DSN` из выбранного env-файла, поэтому для
 контейнерного запуска DSN должен указывать на внутренний host `postgres:5432`.
 `REDIS_ADDR` и `SEAWEEDFS_ENDPOINT` внутри compose задаются как
 `redis:6379` и `seaweedfs:8333`; host-варианты нужны только для запуска backend

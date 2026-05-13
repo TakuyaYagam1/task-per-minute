@@ -10,9 +10,9 @@ import (
 func AdminJWT(auth *admin.AuthUsecase) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			token, ok := bearerToken(r.Header.Get("Authorization"))
+			token, ok := AdminAccessTokenFromRequest(r)
 			if !ok {
-				writeUnauthorized(w, r, "missing or invalid authorization header")
+				writeUnauthorized(w, r, "missing admin session")
 				return
 			}
 

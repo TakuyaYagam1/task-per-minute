@@ -4,9 +4,11 @@
     tags: [player]
     summary: Register or refresh a player session
     description: >
-      Upserts a player by username and issues a new session_token (UUID).
-      Existing sessions for the same username are invalidated. Returns 409 if
-      the player is currently in an active duel.
+      Upserts a player by username and issues an HttpOnly player session cookie.
+      A readable session-bound tpm_player_csrf cookie and X-CSRF-Token response
+      header are issued alongside it for unsafe player REST requests. Existing
+      sessions for the same username are invalidated. Returns 409 if the player
+      is currently in an active duel.
     requestBody:
       required: true
       content:
@@ -26,8 +28,20 @@
           application/problem+json:
             schema:
               $ref: '../components/schemas.yml#/ProblemDetails'
+      '415':
+        description: Request content type must be application/json.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
       '409':
         description: Player is currently in_duel; cannot rejoin.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '413':
+        description: Request body exceeds the JSON size limit.
         content:
           application/problem+json:
             schema:
@@ -38,7 +52,12 @@
     operationId: getMe
     tags: [player]
     summary: Resolve the current player session
-    description: Returns the player and any active duel they are participating in.
+    description: >
+      Returns the player and any active duel they are participating in. If the
+      readable tpm_player_csrf cookie is missing, the response refreshes it.
+      The current session-bound CSRF token is also returned in X-CSRF-Token for
+      split-domain browser deployments where JavaScript cannot read the API host
+      cookie.
     security:
       - SessionTokenAuth: []
     responses:
@@ -50,6 +69,26 @@
               $ref: '../components/schemas.yml#/PlayerMeResponse'
       '401':
         description: Missing or invalid session token.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+
+/api/v1/players/logout:
+  post:
+    operationId: logoutPlayer
+    tags: [player]
+    summary: Clear the current player session cookie
+    description: >
+      Clears the HttpOnly player session cookie and invalidates the current
+      server-side player session when a valid cookie is present. Requests that
+      carry a player session cookie must send X-CSRF-Token matching the readable
+      tpm_player_csrf cookie.
+    responses:
+      '204':
+        description: Player session cleared.
+      '403':
+        description: CSRF token missing or invalid for an existing player session.
         content:
           application/problem+json:
             schema:

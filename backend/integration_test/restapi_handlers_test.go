@@ -107,6 +107,7 @@ func TestRESTHandlers_OpenAPIResponseShapes(t *testing.T) {
 	require.Equal(t, http.StatusOK, aliceResp.Code)
 	f.validateResponse(t, aliceReq, aliceResp)
 	aliceJoin := decodeJSON[openapi.JoinResponse](t, aliceResp)
+	aliceSession := playerSessionCookieValue(t, aliceResp)
 
 	bobReq, bobResp := f.doJSON(t, http.MethodPost, "/api/v1/players/join", `{"username":"`+uniq("bob")+`"}`, "")
 	require.Equal(t, http.StatusOK, bobResp.Code)
@@ -116,11 +117,11 @@ func TestRESTHandlers_OpenAPIResponseShapes(t *testing.T) {
 	duelID := f.createRESTDuel(t, aliceJoin.PlayerId, bobJoin.PlayerId)
 	require.NoError(t, redisrepo.NewLeaderboardRedis(f.redis, "leaderboard:rest:"+uniq("z")).IncrementWin(ctx, "alice_rest"))
 
-	meReq, meResp := f.doJSON(t, http.MethodGet, "/api/v1/players/me", "", session(aliceJoin.SessionToken))
+	meReq, meResp := f.doJSON(t, http.MethodGet, "/api/v1/players/me", "", cookieSession(aliceSession))
 	require.Equal(t, http.StatusOK, meResp.Code)
 	f.validateResponse(t, meReq, meResp)
 
-	duelReq, duelResp := f.doJSON(t, http.MethodGet, "/api/v1/duels/"+duelID.String(), "", session(aliceJoin.SessionToken))
+	duelReq, duelResp := f.doJSON(t, http.MethodGet, "/api/v1/duels/"+duelID.String(), "", cookieSession(aliceSession))
 	require.Equal(t, http.StatusOK, duelResp.Code)
 	f.validateResponse(t, duelReq, duelResp)
 
@@ -482,7 +483,7 @@ func TestRESTHandlers_CORSPreflightAllowedOrigin(t *testing.T) {
 	req := httptest.NewRequest(http.MethodOptions, "/api/v1/players/join", nil)
 	req.Header.Set("Origin", "http://localhost:3000")
 	req.Header.Set("Access-Control-Request-Method", http.MethodPost)
-	req.Header.Set("Access-Control-Request-Headers", "Content-Type, Authorization, X-Session-Token")
+	req.Header.Set("Access-Control-Request-Headers", "Content-Type, Authorization")
 	resp := httptest.NewRecorder()
 
 	handler.ServeHTTP(resp, req)
@@ -492,7 +493,6 @@ func TestRESTHandlers_CORSPreflightAllowedOrigin(t *testing.T) {
 	require.Contains(t, resp.Header().Get("Access-Control-Allow-Methods"), http.MethodPost)
 	require.Contains(t, resp.Header().Get("Access-Control-Allow-Headers"), "Content-Type")
 	require.Contains(t, resp.Header().Get("Access-Control-Allow-Headers"), "Authorization")
-	require.Contains(t, resp.Header().Get("Access-Control-Allow-Headers"), "X-Session-Token")
 }
 
 func TestRESTHandlers_UploadSourceOverLimitReturns413Or400(t *testing.T) {
@@ -748,8 +748,8 @@ func (f *restFixture) do(t *testing.T, method, path string, body io.Reader, cont
 	if authHeader != "" {
 		if strings.HasPrefix(authHeader, "Bearer ") {
 			req.Header.Set("Authorization", authHeader)
-		} else {
-			req.Header.Set("X-Session-Token", authHeader)
+		} else if strings.HasPrefix(authHeader, "Cookie ") {
+			req.Header.Set("Cookie", strings.TrimPrefix(authHeader, "Cookie "))
 		}
 	}
 	resp := httptest.NewRecorder()
@@ -847,7 +847,22 @@ func bearer(token string) string {
 }
 
 func session(token uuid.UUID) string {
-	return token.String()
+	return cookieSession(token.String())
+}
+
+func cookieSession(token string) string {
+	return "Cookie " + (&http.Cookie{Name: middleware.PlayerSessionCookieName, Value: token}).String()
+}
+
+func playerSessionCookieValue(t *testing.T, resp *httptest.ResponseRecorder) string {
+	t.Helper()
+	for _, cookie := range resp.Result().Cookies() {
+		if cookie.Name == middleware.PlayerSessionCookieName {
+			return cookie.Value
+		}
+	}
+	t.Fatalf("missing %s cookie", middleware.PlayerSessionCookieName)
+	return ""
 }
 
 func multipartBody(t *testing.T, payload []byte) (*bytes.Buffer, string) {

@@ -21,7 +21,10 @@ AdminLogoutRequest:
   properties:
     refresh_token:
       type: string
-      description: Refresh token to revoke. Access token is taken from the Authorization header.
+      description: >
+        Refresh token to revoke. Browser clients may rely on the HttpOnly
+        tpm_admin_refresh cookie; non-browser clients can still provide the
+        refresh token in the JSON body.
 
 AdminTokenResponse:
   type: object
@@ -29,8 +32,16 @@ AdminTokenResponse:
   properties:
     access_token:
       type: string
+      description: >
+        Bearer access token for backwards-compatible non-browser clients.
+        Browser cookie-session responses use the opaque
+        __cookie_admin_session__ marker instead of a usable JWT.
     refresh_token:
       type: string
+      description: >
+        Bearer refresh token for backwards-compatible non-browser clients.
+        Browser cookie-session responses use the opaque
+        __cookie_admin_session__ marker instead of a usable JWT.
     token_type:
       type: string
       enum: [Bearer]

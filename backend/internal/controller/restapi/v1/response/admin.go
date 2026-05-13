@@ -9,8 +9,18 @@ import (
 	adminusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/admin"
 )
 
+const CookieAdminSessionToken = "__cookie_admin_session__"
+
 func TokenPair(pair *adminusecase.TokenPair, now time.Time) openapi.AdminTokenResponse {
-	expiresIn := pair.AccessExpiresAt.Sub(now) / time.Second
+	return tokenPair(pair.AccessToken, pair.RefreshToken, pair.AccessExpiresAt, now)
+}
+
+func CookieSessionTokenPair(pair *adminusecase.TokenPair, now time.Time) openapi.AdminTokenResponse {
+	return tokenPair(CookieAdminSessionToken, CookieAdminSessionToken, pair.AccessExpiresAt, now)
+}
+
+func tokenPair(accessToken, refreshToken string, accessExpiresAt time.Time, now time.Time) openapi.AdminTokenResponse {
+	expiresIn := accessExpiresAt.Sub(now) / time.Second
 	if expiresIn < 0 {
 		expiresIn = 0
 	}
@@ -19,8 +29,8 @@ func TokenPair(pair *adminusecase.TokenPair, now time.Time) openapi.AdminTokenRe
 	}
 
 	return openapi.AdminTokenResponse{
-		AccessToken:  pair.AccessToken,
-		RefreshToken: pair.RefreshToken,
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
 		TokenType:    openapi.Bearer,
 		ExpiresIn:    Int64ToInt32(int64(expiresIn)),
 	}

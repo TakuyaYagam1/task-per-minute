@@ -6,23 +6,26 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
+	"path"
 	"strings"
 	"sync"
 	"time"
 
 	coderws "github.com/coder/websocket"
 	"github.com/google/uuid"
+	logkit "github.com/wahrwelt-kit/go-logkit"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
+	restmw "github.com/TakuyaYagam1/task-per-minute/internal/controller/restapi/middleware"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase"
 	duelusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel"
 )
 
 const (
-	SubprotocolBearerPrefix = "tpm.bearer." //nolint:gosec // protocol prefix marker, not a credential.
-	defaultHubCloseDelay    = 100 * time.Millisecond
-	defaultDisconnectGrace  = time.Second
+	defaultHubCloseDelay   = 100 * time.Millisecond
+	defaultDisconnectGrace = time.Second
 )
 
 type Matchmaking interface {
@@ -43,6 +46,7 @@ type ReconnectManager interface {
 	FinalizeDraw(ctx context.Context, duelID uuid.UUID) (*domain.Duel, error)
 	FinalizePlayerForfeit(ctx context.Context, duelID, loserID uuid.UUID) (*domain.Duel, error)
 	CloseDuel(duelID uuid.UUID)
+	StopAll()
 }
 
 type HandshakeRateLimiter interface {
@@ -51,6 +55,10 @@ type HandshakeRateLimiter interface {
 }
 
 type ClientIPResolver func(r *http.Request) string
+
+type TimerStopper interface {
+	StopAll()
+}
 
 type Server struct {
 	ctx              context.Context
@@ -63,12 +71,15 @@ type Server struct {
 	hints            *duelusecase.HintScheduler
 	duels            usecase.DuelRepo
 	storage          usecase.SourceFileStorage
+	timers           TimerStopper
 	acceptOptions    *coderws.AcceptOptions
 	reconnect        ReconnectManager
 	closeDelay       time.Duration
 	disconnectGrace  time.Duration
 	handshakeLimiter HandshakeRateLimiter
 	clientIP         ClientIPResolver
+	requireOrigin    bool
+	log              logkit.Logger
 
 	wg      sync.WaitGroup
 	clients sync.Map
@@ -109,6 +120,12 @@ func WithTaskResolver(duels usecase.DuelRepo, storage usecase.SourceFileStorage)
 	}
 }
 
+func WithTimerStopper(timers TimerStopper) Option {
+	return func(s *Server) {
+		s.timers = timers
+	}
+}
+
 func WithHubCloseDelay(delay time.Duration) Option {
 	return func(s *Server) {
 		s.closeDelay = delay
@@ -135,6 +152,18 @@ func WithClientIPResolver(resolver ClientIPResolver) Option {
 	}
 }
 
+func WithRequireOrigin(require bool) Option {
+	return func(s *Server) {
+		s.requireOrigin = require
+	}
+}
+
+func WithLogger(log logkit.Logger) Option {
+	return func(s *Server) {
+		s.log = log
+	}
+}
+
 func NewServer(
 	players usecase.PlayerRepo,
 	matchmaking Matchmaking,
@@ -157,7 +186,7 @@ func NewServer(
 	for _, opt := range options {
 		opt(s)
 	}
-	s.ctx, s.cancel = context.WithCancel(s.ctx) //nolint:gosec // cancel is stored on Server and called by Shutdown.
+	s.ctx, s.cancel = context.WithCancel(s.ctx)
 	s.broadcaster = newBroadcaster(s.ctx, s.hubs, s.clientByPlayer, s.closeDelay)
 	if s.hints != nil {
 		s.hints.SetSender(s.sendHintUnlocked)
@@ -196,6 +225,8 @@ func (s *Server) Shutdown(ctx context.Context) {
 	case <-drain.C:
 	}
 
+	s.stopBackgroundTimers()
+
 	s.clients.Range(func(key, raw any) bool {
 		c := raw.(*client)
 		if c.isQueued() && s.matchmaking != nil {
@@ -233,13 +264,26 @@ func (s *Server) Shutdown(ctx context.Context) {
 	s.hubs.CloseAll()
 }
 
+func (s *Server) stopBackgroundTimers() {
+	if s.reconnect != nil {
+		s.reconnect.StopAll()
+	}
+	if s.timers != nil {
+		s.timers.StopAll()
+	}
+	if s.hints != nil {
+		s.hints.StopAll()
+	}
+}
+
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		w.WriteHeader(http.StatusMethodNotAllowed)
+		w.Header().Set("Allow", http.MethodGet)
+		writeHandshakeProblem(w, r, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 	if r.URL.Path != "/ws" {
-		http.NotFound(w, r)
+		writeHandshakeProblem(w, r, http.StatusNotFound, "websocket endpoint not found")
 		return
 	}
 
@@ -249,31 +293,41 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if retry := s.handshakeLimiter.RetryAfter(); retry != "" {
 				w.Header().Set("Retry-After", retry)
 			}
-			http.Error(w, "too many handshake attempts", http.StatusTooManyRequests)
+			s.logRequestSecurityEvent(r, "ws.handshake", wsSecurityOutcomeRateLimited, logkit.Fields{
+				"error_code": "rate_limited",
+				"reason":     "handshake_rate_limit",
+			})
+			writeHandshakeProblem(w, r, http.StatusTooManyRequests, "too many handshake attempts")
 			return
 		}
 	}
 
-	player, chosenSubprotocol, ok := s.authenticate(w, r)
+	if !s.acceptsOrigin(r) {
+		s.logRequestSecurityEvent(r, "ws.handshake", wsSecurityOutcomeFailure, logkit.Fields{
+			"error_code": "origin_not_allowed",
+			"reason":     "origin_not_allowed",
+		})
+		writeHandshakeProblem(w, r, http.StatusForbidden, "origin not allowed")
+		return
+	}
+
+	player, ok := s.authenticate(w, r)
 	if !ok {
 		return
 	}
 
 	acceptOpts := s.acceptOptions
-	if chosenSubprotocol != "" {
-		var optsCopy coderws.AcceptOptions
-		if s.acceptOptions != nil {
-			optsCopy = *s.acceptOptions
-		}
-		optsCopy.Subprotocols = append([]string(nil), optsCopy.Subprotocols...)
-		optsCopy.Subprotocols = append(optsCopy.Subprotocols, chosenSubprotocol)
-		acceptOpts = &optsCopy
-	}
-
 	conn, err := coderws.Accept(w, r, acceptOpts)
 	if err != nil {
+		s.logRequestSecurityEvent(r, "ws.handshake", wsSecurityOutcomeFailure, logkit.Fields{
+			"error_code": "accept_failed",
+			"reason":     "upgrade_failed",
+		})
 		return
 	}
+	s.logRequestSecurityEvent(r, "ws.auth", wsSecurityOutcomeSuccess, logkit.Fields{
+		"player_id": player.ID.String(),
+	})
 
 	c := newClient(player, conn)
 	var oldClient *client
@@ -525,27 +579,62 @@ func (s *Server) attachToDuelHub(ctx context.Context, c *client, duelID uuid.UUI
 	return true
 }
 
-func (s *Server) authenticate(w http.ResponseWriter, r *http.Request) (*domain.Player, string, bool) {
-	token, chosenProtocol, ok := tokenFromSubprotocols(r.Header.Values("Sec-WebSocket-Protocol"))
+func (s *Server) authenticate(w http.ResponseWriter, r *http.Request) (*domain.Player, bool) {
+	token, ok := restmw.PlayerSessionTokenFromRequest(r)
 	if !ok {
-		raw := r.URL.Query().Get("token")
-		if raw == "" {
-			http.Error(w, "missing session token", http.StatusUnauthorized)
-			return nil, "", false
-		}
-		parsed, err := uuid.Parse(raw)
-		if err != nil {
-			http.Error(w, "invalid session token", http.StatusUnauthorized)
-			return nil, "", false
-		}
-		token = parsed
+		s.logRequestSecurityEvent(r, "ws.auth", wsSecurityOutcomeFailure, wsAuthFailureFields(r))
+		writeHandshakeProblem(w, r, http.StatusUnauthorized, "missing session token")
+		return nil, false
 	}
 	player, err := s.players.GetBySessionToken(r.Context(), token)
 	if err != nil || player == nil {
-		http.Error(w, "invalid session token", http.StatusUnauthorized)
-		return nil, "", false
+		s.logRequestSecurityEvent(r, "ws.auth", wsSecurityOutcomeFailure, logkit.Fields{
+			"error_code": string(apperr.CodeInvalidSession),
+			"reason":     "invalid_session",
+		})
+		writeHandshakeProblem(w, r, http.StatusUnauthorized, "invalid session token")
+		return nil, false
 	}
-	return player, chosenProtocol, true
+	return player, true
+}
+
+func (s *Server) acceptsOrigin(r *http.Request) bool {
+	if s.acceptOptions != nil && s.acceptOptions.InsecureSkipVerify {
+		return true
+	}
+	var patterns []string
+	if s.acceptOptions != nil {
+		patterns = s.acceptOptions.OriginPatterns
+	}
+	return websocketOriginAllowed(r, patterns, s.requireOrigin)
+}
+
+func websocketOriginAllowed(r *http.Request, originPatterns []string, requireOrigin bool) bool {
+	if r == nil {
+		return false
+	}
+	origin := strings.TrimSpace(r.Header.Get("Origin"))
+	if origin == "" {
+		return !requireOrigin
+	}
+	parsed, err := url.Parse(origin)
+	if err != nil || parsed.Host == "" {
+		return false
+	}
+	if strings.EqualFold(r.Host, parsed.Host) {
+		return true
+	}
+	for _, pattern := range originPatterns {
+		target := parsed.Host
+		if strings.Contains(pattern, "://") {
+			target = parsed.Scheme + "://" + parsed.Host
+		}
+		matched, err := path.Match(strings.ToLower(pattern), strings.ToLower(target))
+		if err == nil && matched {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) resolveClientIP(r *http.Request) string {
@@ -559,24 +648,6 @@ func (s *Server) resolveClientIP(r *http.Request) string {
 		return r.RemoteAddr
 	}
 	return host
-}
-
-func tokenFromSubprotocols(headerValues []string) (uuid.UUID, string, bool) {
-	for _, header := range headerValues {
-		for _, raw := range strings.Split(header, ",") {
-			candidate := strings.TrimSpace(raw)
-			if !strings.HasPrefix(candidate, SubprotocolBearerPrefix) {
-				continue
-			}
-			rawToken := strings.TrimPrefix(candidate, SubprotocolBearerPrefix)
-			parsed, err := uuid.Parse(rawToken)
-			if err != nil {
-				continue
-			}
-			return parsed, candidate, true
-		}
-	}
-	return uuid.Nil, "", false
 }
 
 func (s *Server) cleanupClient(ctx context.Context, c *client) {

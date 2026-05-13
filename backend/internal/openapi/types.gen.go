@@ -107,7 +107,7 @@ type AdminLoginRequest struct {
 
 // AdminLogoutRequest defines model for AdminLogoutRequest.
 type AdminLogoutRequest struct {
-	// RefreshToken Refresh token to revoke. Access token is taken from the Authorization header.
+	// RefreshToken Refresh token to revoke. Browser clients may rely on the HttpOnly tpm_admin_refresh cookie; non-browser clients can still provide the refresh token in the JSON body.
 	RefreshToken string `json:"refresh_token"`
 }
 
@@ -155,10 +155,13 @@ type AdminRefreshRequest struct {
 
 // AdminTokenResponse defines model for AdminTokenResponse.
 type AdminTokenResponse struct {
+	// AccessToken Bearer access token for backwards-compatible non-browser clients. Browser cookie-session responses use the opaque __cookie_admin_session__ marker instead of a usable JWT.
 	AccessToken string `json:"access_token"`
 
 	// ExpiresIn Seconds until access_token expires.
-	ExpiresIn    int32                       `json:"expires_in"`
+	ExpiresIn int32 `json:"expires_in"`
+
+	// RefreshToken Bearer refresh token for backwards-compatible non-browser clients. Browser cookie-session responses use the opaque __cookie_admin_session__ marker instead of a usable JWT.
 	RefreshToken string                      `json:"refresh_token"`
 	TokenType    AdminTokenResponseTokenType `json:"token_type"`
 }
@@ -237,8 +240,7 @@ type JoinRequest struct {
 
 // JoinResponse defines model for JoinResponse.
 type JoinResponse struct {
-	PlayerId     openapi_types.UUID `json:"player_id"`
-	SessionToken openapi_types.UUID `json:"session_token"`
+	PlayerId openapi_types.UUID `json:"player_id"`
 }
 
 // LeaderboardEntry defines model for LeaderboardEntry.

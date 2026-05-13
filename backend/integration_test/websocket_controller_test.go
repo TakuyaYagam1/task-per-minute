@@ -82,7 +82,7 @@ func TestWebSocketController_DeletedPlayerSessionCannotConnect(t *testing.T) {
 
 	dialCtx, cancel := context.WithTimeout(ctx, wsTestTimeout)
 	defer cancel()
-	conn, resp, err := coderws.Dial(dialCtx, wsURL(f.httpServer.URL, sessionToken), nil)
+	conn, resp, err := coderws.Dial(dialCtx, wsEndpoint(f.httpServer.URL), wsDialOptions(sessionToken))
 	if conn != nil {
 		closeWSSilent(conn)
 	}

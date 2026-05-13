@@ -163,6 +163,48 @@ func TestUsecase_GetMe_RepoErrorIsWrapped(t *testing.T) {
 	require.ErrorIs(t, err, lowLevelErr)
 }
 
+func TestUsecase_Logout_ClearsSessionToken(t *testing.T) {
+	t.Parallel()
+
+	tx, players, duels := newFixture(t)
+	runTxInline(tx)
+	sessionToken := uuid.New()
+	player := &domain.Player{ID: uuid.New(), Username: "alice", Status: domain.PlayerStatusIdle}
+
+	players.EXPECT().GetBySessionToken(mock.Anything, sessionToken).Return(player, nil)
+	players.EXPECT().UpdateSessionToken(mock.Anything, player.ID, (*uuid.UUID)(nil)).Return(player, nil)
+
+	err := playerusecase.NewPlayerUsecase(tx, players, duels).Logout(t.Context(), sessionToken)
+	require.NoError(t, err)
+}
+
+func TestUsecase_Logout_IgnoresMissingSession(t *testing.T) {
+	t.Parallel()
+
+	tx, players, duels := newFixture(t)
+	runTxInline(tx)
+	sessionToken := uuid.New()
+
+	players.EXPECT().GetBySessionToken(mock.Anything, sessionToken).Return(nil, apperr.ErrPlayerNotFound)
+
+	err := playerusecase.NewPlayerUsecase(tx, players, duels).Logout(t.Context(), sessionToken)
+	require.NoError(t, err)
+}
+
+func TestUsecase_Logout_RepoErrorIsWrapped(t *testing.T) {
+	t.Parallel()
+
+	tx, players, duels := newFixture(t)
+	runTxInline(tx)
+	sessionToken := uuid.New()
+	lowLevelErr := errors.New("db down")
+
+	players.EXPECT().GetBySessionToken(mock.Anything, sessionToken).Return(nil, lowLevelErr)
+
+	err := playerusecase.NewPlayerUsecase(tx, players, duels).Logout(t.Context(), sessionToken)
+	require.ErrorIs(t, err, lowLevelErr)
+}
+
 func newFixture(t *testing.T) (*usecasemocks.MockTxManager, *usecasemocks.MockPlayerRepo, *usecasemocks.MockDuelRepo) {
 	t.Helper()
 	return usecasemocks.NewMockTxManager(t), usecasemocks.NewMockPlayerRepo(t), usecasemocks.NewMockDuelRepo(t)
