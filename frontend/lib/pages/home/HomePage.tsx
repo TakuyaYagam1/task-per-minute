@@ -56,6 +56,7 @@ export default function HomePage() {
   const [isWaiting, setIsWaiting] = useState(false);
   const [queueSize, setQueueSize] = useState<number | undefined>(undefined);
   const [isInitializing, setIsInitializing] = useState(false);
+  const [isClearingPlayer, setIsClearingPlayer] = useState(false);
   const currentPlayerRef = useRef<Player | null>(null);
   const pendingMatch = useRef<MatchFoundPayload | null>(null);
   const expectedRestoreDuelID = useRef<string | null>(null);
@@ -96,6 +97,9 @@ export default function HomePage() {
       if (cancelled) {
         return;
       }
+      if (result.kind === "aborted") {
+        return;
+      }
       if (result.kind === "expired") {
         currentPlayerRef.current = null;
         setCurrentPlayer(null);
@@ -111,6 +115,7 @@ export default function HomePage() {
       }
       if (result.kind === "error") {
         log.warn("players/me failed transiently on mount; keeping session");
+        return;
       }
     })();
 
@@ -163,7 +168,7 @@ export default function HomePage() {
   };
 
   const clearPlayerSessionForNextEntrant = () => {
-    playerModel.clearCurrentPlayer();
+    void playerModel.clearCurrentPlayer();
     currentPlayerRef.current = null;
     setCurrentPlayer(null);
     setPlayerID(null);
@@ -201,7 +206,7 @@ export default function HomePage() {
   };
 
   const handleExpiredSession = () => {
-    playerModel.clearCurrentPlayer();
+    void playerModel.clearCurrentPlayer();
     gameModel.clearGameData();
     currentPlayerRef.current = null;
     setCurrentPlayer(null);
@@ -357,6 +362,7 @@ export default function HomePage() {
           handleExpiredSession();
           break;
         }
+        const wasQueueFlow = currentHomeFlow.current === "queue";
         showNotification(
           message.message || message.code || "Произошла ошибка"
         );
@@ -380,6 +386,34 @@ export default function HomePage() {
       sendMessage("leave_queue");
     }
     closeWebSocket();
+  };
+
+  const canChangePlayer = Boolean(currentPlayer && playerID) && !isClearingPlayer;
+
+  const handleChangePlayer = async () => {
+    if (!canChangePlayer) {
+      return;
+    }
+
+    setIsClearingPlayer(true);
+    const shouldLeaveQueue = currentHomeFlow.current === "queue";
+    queueAttemptRef.current += 1;
+    if (shouldLeaveQueue && playerID && websocketRef.current?.readyState === WebSocket.OPEN) {
+      sendMessage("leave_queue");
+    }
+    clearHomeFlow();
+    clearTransitionDuel();
+    setIsWaiting(false);
+    closeWebSocket();
+    gameModel.clearGameData();
+    await playerModel.clearCurrentPlayer();
+    currentPlayerRef.current = null;
+    setCurrentPlayer(null);
+    setPlayerID(null);
+    setNickname("");
+    sessionPromiseRef.current = null;
+    setIsClearingPlayer(false);
+    showNotification("Сессия отменена.");
   };
 
   const handleReady = async () => {
@@ -565,7 +599,7 @@ export default function HomePage() {
         };
       };
 
-      const ws = connectWebSocket(sessionState.player.session_token, {
+      const ws = connectWebSocket({
         onReconnect: (newWs) => {
           setupWebSocketListeners(newWs);
           sendJoinQueueOnOpen(newWs);
@@ -613,21 +647,29 @@ export default function HomePage() {
   };
 
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center p-3 lg:p-6 relative animate-fadeIn gpu-optimized">
-      {isWaiting && (
-        <WaitingOverlay onCancel={cancelSearch} queueSize={queueSize} />
-      )}
-
+    <>
       {notification && (
-        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 bg-black/80 text-white px-4 py-2 rounded-lg z-50 animate-slideInFromTop">
-          {notification}
+        <div className="fixed inset-x-0 top-4 z-50 flex justify-center px-4 pointer-events-none">
+          <div className="pointer-events-auto bg-black/80 text-white px-4 py-2 rounded-lg animate-fadeIn">
+            {notification}
+          </div>
         </div>
       )}
 
-      <div className="container max-w-6xl">
-        <div className="card overflow-hidden animate-scaleIn will-change-transform">
-          <div className="flex flex-col lg:flex-row">
-            <div className="lg:w-2/3 relative overflow-hidden">
+      <main className="min-h-screen flex flex-col items-center justify-center p-3 lg:p-6 relative animate-fadeIn gpu-optimized">
+        {isWaiting && (
+          <WaitingOverlay
+            onCancel={cancelSearch}
+            onChangePlayer={canChangePlayer ? handleChangePlayer : undefined}
+            changePlayerDisabled={isClearingPlayer}
+            queueSize={queueSize}
+          />
+        )}
+
+        <div className="container max-w-6xl">
+          <div className="card overflow-hidden animate-scaleIn will-change-transform">
+            <div className="flex flex-col lg:flex-row">
+              <div className="lg:w-2/3 relative overflow-hidden">
               <Image
                 src="/task.png"
                 alt="Task Per Minute"
@@ -637,7 +679,7 @@ export default function HomePage() {
                 priority
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent lg:bg-gradient-to-r lg:from-transparent lg:via-transparent lg:to-black/60"></div>
-              
+
               <div className="absolute top-4 right-4 w-12 h-12 bg-white/10 rounded-full animate-bounce hidden lg:block"></div>
               <div className="absolute bottom-6 left-6 w-8 h-8 bg-white/20 rounded-full animate-pulse hidden lg:block"></div>
               <div className="absolute inset-x-0 bottom-6 z-10 flex justify-center px-4">
@@ -650,18 +692,18 @@ export default function HomePage() {
                 </Link>
               </div>
             </div>
-            
+
             <div className="lg:w-1/3 p-6 lg:p-8 flex flex-col justify-center animate-slideInRight">
               <h1 className="text-2xl lg:text-3xl xl:text-4xl font-bold mb-4 lg:mb-6">
-                Стань первым!  
+                Стань первым!
               </h1>
-              
+
               <h2 className="text-lg lg:text-xl font-semibold mb-4 text-blue-200">
                 Сразись в CTF дуэли!
               </h2>
-              
+
               <p className="text-sm lg:text-base text-gray-300 mb-6 lg:mb-8 leading-relaxed">
-                Испытай наш новый формат CTF соревнований на скорость! 
+                Испытай наш новый формат CTF соревнований на скорость!
                 Каждая секунда решает исход битвы.
               </p>
 
@@ -696,14 +738,26 @@ export default function HomePage() {
                   </div>
                 </form>
               ) : (
-                <div className="animate-on-hover will-change-transform mb-4">
-                  <PlayButton 
-                    onClick={handleReady} 
-                    disabled={!playerID || isWaiting}
-                  />
+                <div className="mb-4 flex flex-col gap-3">
+                  <div className="animate-on-hover will-change-transform">
+                    <PlayButton
+                      onClick={handleReady}
+                      disabled={!playerID || isWaiting || isClearingPlayer}
+                    />
+                  </div>
+                  {!isWaiting && (
+                    <button
+                      type="button"
+                      onClick={handleChangePlayer}
+                      disabled={isClearingPlayer}
+                      className="btn btn-secondary w-full text-sm font-bold py-3 px-5 transition-all duration-300 ease-out transform disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105 hover:shadow-lg active:scale-95"
+                    >
+                      {isClearingPlayer ? "Смена игрока..." : "Сменить игрока"}
+                    </button>
+                  )}
                 </div>
               )}
-              
+
               <div className="text-xs text-gray-400">
                 {playerID ? (
                   <div className="flex items-center gap-2">
@@ -729,7 +783,7 @@ export default function HomePage() {
               2 игрока, 1 задание, ограниченное время
             </p>
           </div>
-          
+
           <div className="card p-4 lg:p-6 animate-on-hover will-change-transform">
             <div className="text-3xl lg:text-4xl mb-3 text-center">🏆</div>
             <h3 className="font-bold text-lg mb-2 text-center">Победитель</h3>
@@ -737,7 +791,7 @@ export default function HomePage() {
               Первый решивший задание побеждает
             </p>
           </div>
-          
+
           <div className="card p-4 lg:p-6 animate-on-hover will-change-transform md:col-span-2 lg:col-span-1">
             <div className="text-3xl lg:text-4xl mb-3 text-center">🧩</div>
             <h3 className="font-bold text-lg mb-2 text-center">Web задания</h3>
@@ -752,12 +806,12 @@ export default function HomePage() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-8 text-sm lg:text-base text-gray-300">
             <div>
               <p className="mb-3">
-                <strong className="text-white">CTF (Capture The Flag)</strong> — это формат 
-                соревнований по информационной безопасности, где участники ищут уязвимости 
+                <strong className="text-white">CTF (Capture The Flag)</strong> — это формат
+                соревнований по информационной безопасности, где участники ищут уязвимости
                 и собирают «флаги» — секретные строки, подтверждающие выполнение задания.
               </p>
               <p className="mb-3">
-                В испытании принимают участие 2 человека. Даётся случайный таск 
+                В испытании принимают участие 2 человека. Даётся случайный таск
                 категории Web на ограниченное количество времени.
               </p>
               <p>
@@ -769,13 +823,14 @@ export default function HomePage() {
                 Побеждает тот, кто первый выполнит задание и отправит флаг в заданное время.
               </p>
               <p>
-                Если оба участника не смогут выполнить таск — оба являются 
+                Если оба участника не смогут выполнить таск — оба являются
                 проигравшими и игра завершается.
               </p>
             </div>
           </div>
         </div>
       </div>
-    </main>
+      </main>
+    </>
   );
 }

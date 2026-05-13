@@ -6,6 +6,8 @@ import { Button } from "../../../shared/ui";
 
 interface WaitingOverlayProps {
   onCancel: () => void;
+  onChangePlayer?: () => void;
+  changePlayerDisabled?: boolean;
   queueSize?: number;
 }
 
@@ -40,6 +42,8 @@ const STYLES = {
 };
 export const WaitingOverlay: React.FC<WaitingOverlayProps> = ({
   onCancel,
+  onChangePlayer,
+  changePlayerDisabled = false,
   queueSize,
 }) => {
   return (
@@ -82,13 +86,26 @@ export const WaitingOverlay: React.FC<WaitingOverlayProps> = ({
           </p>
         )}
 
-        <Button
-          onClick={onCancel}
-          variant="secondary"
-          style={{ marginTop: "2rem" }}
-        >
-          Отменить поиск
-        </Button>
+        <div style={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: "0.75rem",
+          justifyContent: "center",
+          marginTop: "2rem",
+        }}>
+          <Button onClick={onCancel} variant="secondary">
+            Отменить поиск
+          </Button>
+          {onChangePlayer && (
+            <Button
+              onClick={onChangePlayer}
+              disabled={changePlayerDisabled}
+              variant="secondary"
+            >
+              {changePlayerDisabled ? "Смена игрока..." : "Сменить игрока"}
+            </Button>
+          )}
+        </div>
       </div>
     </div>
   );

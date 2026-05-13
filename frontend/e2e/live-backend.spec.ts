@@ -5,6 +5,8 @@ const backendURL = (process.env.E2E_BACKEND_URL || 'http://127.0.0.1:8080').repl
 type AdminTokens = {
   access_token: string;
   refresh_token: string;
+  access_csrf_token: string;
+  refresh_csrf_token: string;
 };
 
 type AdminTask = {
@@ -29,16 +31,24 @@ const adminLogin = async (request: APIRequestContext, password: string): Promise
     data: { password },
   });
   expect(response.ok(), `admin login failed with ${response.status()}`).toBeTruthy();
-  return (await response.json()) as AdminTokens;
+  const accessCSRFToken = response.headers()['x-csrf-token'];
+  const refreshCSRFToken = response.headers()['x-admin-refresh-csrf-token'];
+  expect(accessCSRFToken, 'admin login did not return access CSRF token').toBeTruthy();
+  expect(refreshCSRFToken, 'admin login did not return refresh CSRF token').toBeTruthy();
+  return {
+    ...((await response.json()) as Omit<AdminTokens, 'access_csrf_token' | 'refresh_csrf_token'>),
+    access_csrf_token: accessCSRFToken,
+    refresh_csrf_token: refreshCSRFToken,
+  };
 };
 
 const cleanupTaskByTitle = async (
   request: APIRequestContext,
-  accessToken: string,
+  tokens: AdminTokens,
   title: string,
 ) => {
   const listResponse = await request.get(`${backendURL}/api/v1/admin/tasks`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
+    headers: { Authorization: `Bearer ${tokens.access_token}` },
   });
   if (!listResponse.ok()) {
     return;
@@ -49,7 +59,10 @@ const cleanupTaskByTitle = async (
     tasks
       .filter((task) => task.title === title)
       .map((task) => request.delete(`${backendURL}/api/v1/admin/tasks/${task.id}`, {
-        headers: { Authorization: `Bearer ${accessToken}` },
+        headers: {
+          Authorization: `Bearer ${tokens.access_token}`,
+          'X-CSRF-Token': tokens.access_csrf_token,
+        },
       })),
   );
 };
@@ -67,7 +80,7 @@ test.describe('live backend smoke', () => {
     await skipUnlessHealthy(request);
 
     const title = uniqueName('live-admin-contract');
-    let accessToken: string | null = null;
+    let cleanupTokens: AdminTokens | null = null;
 
     try {
       await page.goto('/admin');
@@ -75,8 +88,15 @@ test.describe('live backend smoke', () => {
       await page.getByRole('button', { name: 'Войти' }).click();
       await expect(page.getByText('Список задач')).toBeVisible({ timeout: 10000 });
 
-      accessToken = await page.evaluate(() => window.sessionStorage.getItem('admin_access_token'));
-      expect(accessToken).toBeTruthy();
+      const sessionState = await page.evaluate(() => ({
+        marker: window.sessionStorage.getItem('admin_session_active'),
+        accessToken: window.sessionStorage.getItem('admin_access_token'),
+        refreshToken: window.sessionStorage.getItem('admin_refresh_token'),
+      }));
+      expect(sessionState.marker).toBe('1');
+      expect(sessionState.accessToken).toBeNull();
+      expect(sessionState.refreshToken).toBeNull();
+      cleanupTokens = await adminLogin(request, adminPassword);
 
       await page.getByPlaceholder('Введите название...').fill(title);
       await page.getByPlaceholder('Опишите задачу...').fill('Live backend contract smoke task');
@@ -103,8 +123,8 @@ test.describe('live backend smoke', () => {
       const leaderboard = await request.get(`${backendURL}/api/v1/leaderboard`);
       expect(leaderboard.ok(), `leaderboard failed with ${leaderboard.status()}`).toBeTruthy();
     } finally {
-      if (accessToken) {
-        await cleanupTaskByTitle(request, accessToken, title);
+      if (cleanupTokens) {
+        await cleanupTaskByTitle(request, cleanupTokens, title);
       }
     }
   });
@@ -128,7 +148,10 @@ test.describe('live backend smoke', () => {
 
     try {
       const createResponse = await request.post(`${backendURL}/api/v1/admin/tasks`, {
-        headers: { Authorization: `Bearer ${tokens.access_token}` },
+        headers: {
+          Authorization: `Bearer ${tokens.access_token}`,
+          'X-CSRF-Token': tokens.access_csrf_token,
+        },
         data: {
           title,
           description: 'Live player flow smoke task',
@@ -184,7 +207,10 @@ test.describe('live backend smoke', () => {
     } finally {
       if (taskID) {
         await request.delete(`${backendURL}/api/v1/admin/tasks/${taskID}`, {
-          headers: { Authorization: `Bearer ${tokens.access_token}` },
+          headers: {
+            Authorization: `Bearer ${tokens.access_token}`,
+            'X-CSRF-Token': tokens.access_csrf_token,
+          },
         });
       }
     }

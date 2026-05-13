@@ -7,6 +7,8 @@ const adminPassword = process.env.E2E_ADMIN_PASSWORD || '';
 type AdminTokens = {
   access_token: string;
   refresh_token: string;
+  access_csrf_token: string;
+  refresh_csrf_token: string;
 };
 
 type AdminTask = {
@@ -55,16 +57,24 @@ const adminLogin = async (request: APIRequestContext): Promise<AdminTokens> => {
     data: { password: adminPassword },
   });
   expect(response.ok(), `admin login failed with ${response.status()}`).toBeTruthy();
-  return (await response.json()) as AdminTokens;
+  const accessCSRFToken = response.headers()['x-csrf-token'];
+  const refreshCSRFToken = response.headers()['x-admin-refresh-csrf-token'];
+  expect(accessCSRFToken, 'admin login did not return access CSRF token').toBeTruthy();
+  expect(refreshCSRFToken, 'admin login did not return refresh CSRF token').toBeTruthy();
+  return {
+    ...((await response.json()) as Omit<AdminTokens, 'access_csrf_token' | 'refresh_csrf_token'>),
+    access_csrf_token: accessCSRFToken,
+    refresh_csrf_token: refreshCSRFToken,
+  };
 };
 
 const cleanupTaskByTitle = async (
   request: APIRequestContext,
-  accessToken: string,
+  tokens: AdminTokens,
   title: string,
 ): Promise<void> => {
   const listResponse = await request.get(`${backendURL}/api/v1/admin/tasks`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
+    headers: { Authorization: `Bearer ${tokens.access_token}` },
   });
   if (!listResponse.ok()) {
     return;
@@ -73,20 +83,28 @@ const cleanupTaskByTitle = async (
   const tasks = (await listResponse.json()) as AdminTask[];
   for (const task of tasks.filter((candidate) => candidate.title === title)) {
     await request.delete(`${backendURL}/api/v1/admin/tasks/${task.id}`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
+      headers: {
+        Authorization: `Bearer ${tokens.access_token}`,
+        'X-CSRF-Token': tokens.access_csrf_token,
+      },
     });
   }
 };
 
-const loginThroughAdminUI = async (page: Page): Promise<string> => {
+const loginThroughAdminUI = async (page: Page): Promise<void> => {
   await page.goto('/admin');
   await page.getByPlaceholder('Введите пароль...').fill(adminPassword);
   await page.getByRole('button', { name: 'Войти' }).click();
   await expect(page.getByText('Список задач')).toBeVisible({ timeout: 15_000 });
 
-  const accessToken = await page.evaluate(() => window.sessionStorage.getItem('admin_access_token'));
-  expect(accessToken, 'admin UI did not persist access token').toBeTruthy();
-  return accessToken as string;
+  const sessionState = await page.evaluate(() => ({
+    marker: window.sessionStorage.getItem('admin_session_active'),
+    accessToken: window.sessionStorage.getItem('admin_access_token'),
+    refreshToken: window.sessionStorage.getItem('admin_refresh_token'),
+  }));
+  expect(sessionState.marker, 'admin UI did not persist session marker').toBe('1');
+  expect(sessionState.accessToken, 'admin access token must stay out of sessionStorage').toBeNull();
+  expect(sessionState.refreshToken, 'admin refresh token must stay out of sessionStorage').toBeNull();
 };
 
 const fillAdminTaskForm = async (page: Page, input: FullStackTaskInput): Promise<void> => {
@@ -104,11 +122,14 @@ const fillAdminTaskForm = async (page: Page, input: FullStackTaskInput): Promise
 
 const createTaskViaApi = async (
   request: APIRequestContext,
-  accessToken: string,
+  tokens: AdminTokens,
   input: FullStackTaskInput,
 ): Promise<AdminTask> => {
   const response = await request.post(`${backendURL}/api/v1/admin/tasks`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
+    headers: {
+      Authorization: `Bearer ${tokens.access_token}`,
+      'X-CSRF-Token': tokens.access_csrf_token,
+    },
     data: input,
   });
   expect(response.ok(), `task create failed with ${response.status()}`).toBeTruthy();
@@ -117,12 +138,15 @@ const createTaskViaApi = async (
 
 const uploadSourceViaApi = async (
   request: APIRequestContext,
-  accessToken: string,
+  tokens: AdminTokens,
   taskID: string,
   payload: Buffer,
 ): Promise<UploadSourceResponse> => {
   const response = await request.post(`${backendURL}/api/v1/admin/tasks/${taskID}/source`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
+    headers: {
+      Authorization: `Bearer ${tokens.access_token}`,
+      'X-CSRF-Token': tokens.access_csrf_token,
+    },
     multipart: {
       file: {
         name: 'source.zip',
@@ -177,16 +201,17 @@ test.describe('local compose full stack e2e', () => {
       hints: ['first hint', 'second hint', 'third hint'],
       task_url: 'https://example.com/full-stack-admin',
     };
-    let accessToken: string | null = null;
+    let cleanupTokens: AdminTokens | null = null;
 
     try {
-      accessToken = await loginThroughAdminUI(page);
+      await loginThroughAdminUI(page);
+      cleanupTokens = await adminLogin(request);
       await fillAdminTaskForm(page, taskInput);
       await page.getByRole('button', { name: /Создать задачу/ }).click();
       await expect(page.getByText(title)).toBeVisible({ timeout: 15_000 });
 
       const listResponse = await request.get(`${backendURL}/api/v1/admin/tasks`, {
-        headers: { Authorization: `Bearer ${accessToken}` },
+        headers: { Authorization: `Bearer ${cleanupTokens.access_token}` },
       });
       expect(listResponse.ok(), `admin task list failed with ${listResponse.status()}`).toBeTruthy();
       const tasks = (await listResponse.json()) as AdminTask[];
@@ -203,8 +228,8 @@ test.describe('local compose full stack e2e', () => {
       await page.goto('/leaderboard');
       await expect(page.getByRole('heading', { name: 'Leaderboard' })).toBeVisible();
     } finally {
-      if (accessToken) {
-        await cleanupTaskByTitle(request, accessToken, title);
+      if (cleanupTokens) {
+        await cleanupTaskByTitle(request, cleanupTokens, title);
       }
     }
   });
@@ -218,7 +243,7 @@ test.describe('local compose full stack e2e', () => {
     let created: AdminTask | null = null;
 
     try {
-      created = await createTaskViaApi(request, tokens.access_token, {
+      created = await createTaskViaApi(request, tokens, {
         title,
         description: 'Full stack source archive task.',
         category: 'forensics',
@@ -229,7 +254,7 @@ test.describe('local compose full stack e2e', () => {
         task_url: null,
       });
 
-      const upload = await uploadSourceViaApi(request, tokens.access_token, created.id, payload);
+      const upload = await uploadSourceViaApi(request, tokens, created.id, payload);
       expect(upload.source_file_url).toContain('X-Amz-Signature');
       const sourceURL = new URL(upload.source_file_url);
       if (process.env.SEAWEEDFS_PUBLIC_ENDPOINT) {
@@ -241,7 +266,7 @@ test.describe('local compose full stack e2e', () => {
       expect((await download.body()).equals(payload)).toBe(true);
     } finally {
       if (created) {
-        await cleanupTaskByTitle(request, tokens.access_token, title);
+        await cleanupTaskByTitle(request, tokens, title);
       }
     }
   });
@@ -256,7 +281,7 @@ test.describe('local compose full stack e2e', () => {
     const tokens = await adminLogin(request);
     const title = uniqueName('fullstack-duel');
     const flag = `ctf{${title.replaceAll('-', '_')}}`;
-    await createTaskViaApi(request, tokens.access_token, {
+    await createTaskViaApi(request, tokens, {
       title,
       description: 'Full stack duel task selected from an isolated local compose database.',
       category: 'web',

@@ -1,4 +1,4 @@
-import { expect } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 
 export const jsonHeaders = {
   'Content-Type': 'application/json',
@@ -13,4 +13,10 @@ export const expectWebSocketURLDoesNotLeakSession = (websocketURL: string): void
   expect(params.has('token')).toBe(false);
   expect(params.has('player_id')).toBe(false);
   expect(params.has('session_id')).toBe(false);
+};
+
+export const mockPlayerLogout = async (page: Page): Promise<void> => {
+  await page.route('**/api/v1/players/logout', async (route) => {
+    await route.fulfill({ status: 204, body: '' });
+  });
 };

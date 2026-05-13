@@ -28,6 +28,15 @@ type ApiResult<T> = {
   response: Response;
 };
 
+const CSRF_COOKIE_NAME = "tpm_player_csrf";
+const ADMIN_ACCESS_CSRF_COOKIE_NAME = "tpm_admin_access_csrf";
+const ADMIN_REFRESH_CSRF_COOKIE_NAME = "tpm_admin_refresh_csrf";
+const CSRF_HEADER_NAME = "X-CSRF-Token";
+const ADMIN_REFRESH_CSRF_HEADER_NAME = "X-Admin-Refresh-CSRF-Token";
+const CSRF_STORAGE_KEY = "player_csrf_token";
+const ADMIN_ACCESS_CSRF_STORAGE_KEY = "admin_access_csrf_token";
+const ADMIN_REFRESH_CSRF_STORAGE_KEY = "admin_refresh_csrf_token";
+
 const problemFromUnknown = (value: unknown): ProblemDetails | undefined => {
   if (!value || typeof value !== "object") {
     return undefined;
@@ -39,12 +48,142 @@ const problemFromUnknown = (value: unknown): ProblemDetails | undefined => {
   return undefined;
 };
 
+const isUnsafeMethod = (method: string): boolean => {
+  const normalized = method.toUpperCase();
+  return normalized !== "GET" && normalized !== "HEAD" && normalized !== "OPTIONS" && normalized !== "TRACE";
+};
+
+const readCookie = (name: string): string | null => {
+  if (typeof document === "undefined") {
+    return null;
+  }
+  const prefix = `${encodeURIComponent(name)}=`;
+  const parts = document.cookie ? document.cookie.split(";") : [];
+  for (const part of parts) {
+    const trimmed = part.trim();
+    if (trimmed.startsWith(prefix)) {
+      return decodeURIComponent(trimmed.slice(prefix.length));
+    }
+  }
+  return null;
+};
+
+const readStoredToken = (key: string): string | null => {
+  try {
+    return window.sessionStorage.getItem(key);
+  } catch {
+    return null;
+  }
+};
+
+const saveStoredToken = (key: string, token: string): void => {
+  try {
+    window.sessionStorage.setItem(key, token);
+  } catch {
+    // sessionStorage can be unavailable in restricted browser contexts.
+  }
+};
+
+const clearStoredToken = (key: string): void => {
+  try {
+    window.sessionStorage.removeItem(key);
+  } catch {
+    // sessionStorage can be unavailable in restricted browser contexts.
+  }
+};
+
+export const clearAdminCSRFTokens = (): void => {
+  clearStoredToken(ADMIN_ACCESS_CSRF_STORAGE_KEY);
+  clearStoredToken(ADMIN_REFRESH_CSRF_STORAGE_KEY);
+};
+
+const readPlayerCSRFToken = (): string | null =>
+  readCookie(CSRF_COOKIE_NAME) || readStoredToken(CSRF_STORAGE_KEY);
+
+const readAdminAccessCSRFToken = (): string | null =>
+  readCookie(ADMIN_ACCESS_CSRF_COOKIE_NAME) || readStoredToken(ADMIN_ACCESS_CSRF_STORAGE_KEY);
+
+const readAdminRefreshCSRFToken = (): string | null =>
+  readCookie(ADMIN_REFRESH_CSRF_COOKIE_NAME) || readStoredToken(ADMIN_REFRESH_CSRF_STORAGE_KEY);
+
+const csrfTokenForRequest = (request: Request): string | null => {
+  const pathname = new URL(request.url).pathname;
+  if (pathname === "/api/v1/admin/refresh" || pathname === "/api/v1/admin/logout") {
+    return readAdminRefreshCSRFToken();
+  }
+  if (pathname.startsWith("/api/v1/admin/") && pathname !== "/api/v1/admin/login") {
+    return readAdminAccessCSRFToken();
+  }
+  if (pathname.startsWith("/api/v1/players/")) {
+    return readPlayerCSRFToken();
+  }
+  return null;
+};
+
+const syncCSRFTokenFromResponse = (request: Request, response: Response): void => {
+  const pathname = new URL(request.url).pathname;
+  if (pathname === "/api/v1/admin/login" || pathname === "/api/v1/admin/refresh") {
+    const adminAccessToken = response.headers.get(CSRF_HEADER_NAME);
+    if (adminAccessToken) {
+      saveStoredToken(ADMIN_ACCESS_CSRF_STORAGE_KEY, adminAccessToken);
+    }
+    const adminRefreshToken = response.headers.get(ADMIN_REFRESH_CSRF_HEADER_NAME);
+    if (adminRefreshToken) {
+      saveStoredToken(ADMIN_REFRESH_CSRF_STORAGE_KEY, adminRefreshToken);
+    }
+    return;
+  }
+  if (response.ok && pathname === "/api/v1/admin/logout") {
+    clearAdminCSRFTokens();
+    return;
+  }
+  const token = response.headers.get(CSRF_HEADER_NAME);
+  if (token) {
+    saveStoredToken(CSRF_STORAGE_KEY, token);
+    return;
+  }
+  if (response.ok && pathname === "/api/v1/players/logout") {
+    clearStoredToken(CSRF_STORAGE_KEY);
+  }
+};
+
+const requestBaseURL = (): string => {
+  if (typeof window !== "undefined" && window.location?.origin) {
+    return window.location.origin;
+  }
+  return "http://localhost";
+};
+
+const requestFromInput = (input: RequestInfo | URL, init?: RequestInit): Request => {
+  if (typeof input === "string" && input.startsWith("/")) {
+    return new Request(new URL(input, requestBaseURL()), init);
+  }
+  return new Request(input, init);
+};
+
+export const credentialedFetch: typeof fetch = async (input, init) => {
+  const request = requestFromInput(input, init);
+  const headers = new Headers(request.headers);
+  if (isUnsafeMethod(request.method) && !headers.has(CSRF_HEADER_NAME)) {
+    const csrfToken = csrfTokenForRequest(request);
+    if (csrfToken) {
+      headers.set(CSRF_HEADER_NAME, csrfToken);
+    }
+  }
+  const credentialedRequest = new Request(request, { credentials: "include", headers });
+  const response = await fetch(credentialedRequest);
+  syncCSRFTokenFromResponse(credentialedRequest, response);
+  return response;
+};
+
 export const publicClient = createClient<paths>({
   baseUrl: CONFIG.apiUrl,
+  fetch: credentialedFetch,
 });
 
 export const adminClient = createClient<paths>({
   baseUrl: CONFIG.adminApiUrl,
+  fetch: credentialedFetch,
 });
 
 const isAbortLikeError = (value: unknown): boolean =>

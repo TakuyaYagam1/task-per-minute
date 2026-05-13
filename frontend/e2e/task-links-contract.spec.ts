@@ -1,5 +1,5 @@
 import { expect, test, type Page, type WebSocketRoute } from '@playwright/test';
-import { jsonHeaders, nowISO } from './support/common';
+import { jsonHeaders, mockPlayerLogout, nowISO } from './support/common';
 import type { WindowOpenCall } from './support/browser';
 
 const mockCurrentPlayerMe = async (
@@ -9,7 +9,7 @@ const mockCurrentPlayerMe = async (
   activeDuelID: string,
 ): Promise<void> => {
   await page.route('**/api/v1/players/me', async (route) => {
-    expect(route.request().headers()['x-session-token']).toBe(sessionToken);
+    expect(route.request().headers()['x-session-token']).toBeUndefined();
     await route.fulfill({
       status: 200,
       headers: jsonHeaders,
@@ -30,6 +30,10 @@ const mockCurrentPlayerMe = async (
     });
   });
 };
+
+test.beforeEach(async ({ page }) => {
+  await mockPlayerLogout(page);
+});
 
 test('task external links open with noopener and noreferrer', async ({ page }) => {
   const playerID = '17171717-1717-1717-1717-171717171717';
@@ -62,10 +66,9 @@ test('task external links open with noopener and noreferrer', async ({ page }) =
   });
 
   await page.addInitScript(({ playerID, sessionToken, duelID, task }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
-    window.localStorage.setItem('currentGame', JSON.stringify({
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('currentGame', JSON.stringify({
       duel_id: duelID,
       deadline: new Date(Date.now() + 120_000).toISOString(),
       time_limit_seconds: 120,
@@ -150,10 +153,9 @@ test('task host-port endpoint is copied instead of opened', async ({ page }) => 
   });
 
   await page.addInitScript(({ playerID, sessionToken, duelID, task }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
-    window.localStorage.setItem('currentGame', JSON.stringify({
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('currentGame', JSON.stringify({
       duel_id: duelID,
       deadline: new Date(Date.now() + 120_000).toISOString(),
       time_limit_seconds: 120,
@@ -235,10 +237,9 @@ test('unsafe mixed-content task url without clipboard is not marked as opened', 
   });
 
   await page.addInitScript(({ playerID, sessionToken, duelID, task }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
-    window.localStorage.setItem('currentGame', JSON.stringify({
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('currentGame', JSON.stringify({
       duel_id: duelID,
       deadline: new Date(Date.now() + 120_000).toISOString(),
       time_limit_seconds: 120,
@@ -310,10 +311,9 @@ test('unsafe mixed-content task url copied to clipboard is not marked as opened'
   });
 
   await page.addInitScript(({ playerID, sessionToken, duelID, task }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
-    window.localStorage.setItem('currentGame', JSON.stringify({
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('currentGame', JSON.stringify({
       duel_id: duelID,
       deadline: new Date(Date.now() + 120_000).toISOString(),
       time_limit_seconds: 120,
@@ -379,10 +379,9 @@ test('task page ignores malformed and unknown websocket events', async ({ page }
   });
 
   await page.addInitScript(({ playerID, sessionToken, duelID, task }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
-    window.localStorage.setItem('currentGame', JSON.stringify({
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('currentGame', JSON.stringify({
       duel_id: duelID,
       deadline: new Date(Date.now() + 120_000).toISOString(),
       time_limit_seconds: 120,
@@ -501,10 +500,9 @@ test('task page clears submitting state when websocket closes after flag submit'
   };
 
   await page.addInitScript(({ playerID, sessionToken, duelID, task }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
-    window.localStorage.setItem('currentGame', JSON.stringify({
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('currentGame', JSON.stringify({
       duel_id: duelID,
       deadline: new Date(Date.now() + 120_000).toISOString(),
       time_limit_seconds: 120,

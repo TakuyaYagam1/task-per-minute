@@ -3,6 +3,7 @@ import {
   expectWebSocketURLDoesNotLeakSession,
   inSecondsISO,
   jsonHeaders,
+  mockPlayerLogout,
   nowISO,
 } from './support/common';
 import {
@@ -28,20 +29,36 @@ const activeDuelAfterTaskNavigation = (
   ? activeDuelPayload(duelID, deadline)
   : {});
 
-test('legacy session_id storage does not restore player session', async ({ page }) => {
+test.beforeEach(async ({ page }) => {
+  await mockPlayerLogout(page);
+});
+
+test('legacy session_id storage is ignored during cookie-backed restore', async ({ page }) => {
   const playerID = '77777777-7777-7777-7777-777777777777';
   let meCalls = 0;
   let websocketOpened = false;
 
   await page.addInitScript(({ playerID }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_id', 'legacy-session-id');
-    window.localStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('session_id', 'legacy-session-id');
+    window.sessionStorage.setItem('username', 'alice');
   }, { playerID });
 
   await page.route('**/api/v1/players/me', async (route) => {
     meCalls += 1;
-    await route.abort();
+    expect(route.request().headers()['x-session-token']).toBeUndefined();
+    await route.fulfill({
+      status: 200,
+      headers: jsonHeaders,
+      body: JSON.stringify({
+        player: {
+          id: playerID,
+          username: 'alice',
+          status: 'idle',
+          created_at: nowISO(),
+        },
+      }),
+    });
   });
 
   await page.routeWebSocket((url) => url.pathname === '/ws', () => {
@@ -50,10 +67,8 @@ test('legacy session_id storage does not restore player session', async ({ page 
 
   await page.goto('/');
 
-  await expect(page.getByPlaceholder('Введите никнейм...')).toBeVisible();
-  await expect(page.getByText('Введите никнейм')).toBeVisible();
-  await expect(page.getByText('Игрок готов')).toBeHidden();
-  await expect.poll(() => meCalls).toBe(0);
+  await expect(page.getByText('Игрок готов')).toBeVisible();
+  await expect.poll(() => meCalls).toBe(1);
   await expect.poll(() => websocketOpened).toBe(false);
 });
 
@@ -116,7 +131,6 @@ test('blocked browser storage still preserves task transition in memory', async 
       headers: jsonHeaders,
       body: JSON.stringify({
         player_id: playerID,
-        session_token: sessionToken,
       }),
     });
   });
@@ -167,7 +181,7 @@ test('blocked browser storage still preserves task transition in memory', async 
           task: {
             id: taskID,
             title: 'Blocked Storage Transition',
-            description: 'Task handoff survives a restricted localStorage context.',
+            description: 'Task handoff survives a restricted sessionStorage context.',
             category: 'web',
             difficulty: 'easy',
             time_limit: 180,
@@ -192,15 +206,15 @@ test('blocked browser storage still preserves task transition in memory', async 
 });
 
 test('malformed join response does not persist player session', async ({ page }) => {
-  const playerID = '79797979-7979-7979-7979-797979797979';
-
   await page.route('**/api/v1/players/join', async (route) => {
     expect(route.request().method()).toBe('POST');
     await route.fulfill({
       status: 200,
       headers: jsonHeaders,
       body: JSON.stringify({
-        player_id: playerID,
+        player: {
+          id: '79797979-7979-7979-7979-797979797979',
+        },
       }),
     });
   });
@@ -211,9 +225,9 @@ test('malformed join response does not persist player session', async ({ page })
 
   await expect(page.getByText('Ошибка подключения к серверу')).toBeVisible();
   await expect(page.getByText('Игрок готов')).toBeHidden();
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('player_id'))).toBeNull();
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('session_token'))).toBeNull();
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('username'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('player_id'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('session_token'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('username'))).toBeNull();
 });
 
 test('join conflict without stored session shows conflict instead of restore promise', async ({ page }) => {
@@ -242,9 +256,9 @@ test('join conflict without stored session shows conflict instead of restore pro
   await expect(page.getByText('Вы уже в активной дуэли. Восстанавливаем...')).toBeHidden();
   await expect(page.getByText('Игрок готов')).toBeHidden();
   expect(joinCalls).toBe(1);
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('player_id'))).toBeNull();
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('session_token'))).toBeNull();
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('username'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('player_id'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('session_token'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('username'))).toBeNull();
 });
 
 test('join rate limit shows retry message without persisting session', async ({ page }) => {
@@ -275,9 +289,9 @@ test('join rate limit shows retry message without persisting session', async ({ 
   await expect(page.getByText('Слишком много попыток. Повторите через 7 секунд.')).toBeVisible();
   await expect(page.getByText('Игрок готов')).toBeHidden();
   expect(joinCalls).toBe(1);
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('player_id'))).toBeNull();
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('session_token'))).toBeNull();
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('username'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('player_id'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('session_token'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('username'))).toBeNull();
 });
 
 test('join form blocks invalid usernames before backend request', async ({ page }) => {
@@ -303,7 +317,6 @@ test('join form blocks invalid usernames before backend request', async ({ page 
 
 test('valid username and uuid join response persist player session', async ({ page }) => {
   const playerID = '7a7a7a7a-7a7a-7a7a-7a7a-7a7a7a7a7a7a';
-  const sessionToken = '7b7b7b7b-7b7b-7b7b-7b7b-7b7b7b7b7b7b';
   let joinCalls = 0;
 
   await page.route('**/api/v1/players/join', async (route) => {
@@ -314,7 +327,6 @@ test('valid username and uuid join response persist player session', async ({ pa
       headers: jsonHeaders,
       body: JSON.stringify({
         player_id: playerID,
-        session_token: sessionToken,
       }),
     });
   });
@@ -325,9 +337,114 @@ test('valid username and uuid join response persist player session', async ({ pa
 
   await expect(page.getByText('Игрок готов')).toBeVisible();
   expect(joinCalls).toBe(1);
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('player_id'))).toBe(playerID);
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('session_token'))).toBe(sessionToken);
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('username'))).toBe('alice_01');
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('player_id'))).toBe(playerID);
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('session_token'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('username'))).toBe('alice_01');
+});
+
+test('idle player can switch player explicitly', async ({ page }) => {
+  const playerID = '7b7b7b7b-7b7b-7b7b-7b7b-7b7b7b7b7b7b';
+  let logoutCalls = 0;
+
+  page.on('request', (request) => {
+    if (request.url().includes('/api/v1/players/logout')) {
+      logoutCalls += 1;
+    }
+  });
+
+  await page.route('**/api/v1/players/join', async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: jsonHeaders,
+      body: JSON.stringify({
+        player_id: playerID,
+      }),
+    });
+  });
+
+  await page.goto('/');
+  await page.getByPlaceholder('Введите никнейм...').fill('alice_01');
+  await page.getByRole('button', { name: /ПОДКЛЮЧИТЬСЯ/ }).click();
+
+  await expect(page.getByText('Игрок готов')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Сменить игрока' })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Сменить игрока' }).click();
+
+  await expect(page.getByPlaceholder('Введите никнейм...')).toBeVisible();
+  await expect(page.getByText('Игрок готов')).toBeHidden();
+  await expect.poll(() => logoutCalls).toBe(1);
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('player_id'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('username'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('currentGame'))).toBeNull();
+});
+
+test('reload during active duel keeps session storage until explicit player switch', async ({ page }) => {
+  const playerID = '7c7c7c7c-7c7c-7c7c-7c7c-7c7c7c7c7c7c';
+  const duelID = '7d7d7d7d-7d7d-7d7d-7d7d-7d7d7d7d7d7d';
+  const deadline = inSecondsISO(180);
+  const activeTask = {
+    id: '7e7e7e7e-7e7e-7e7e-7e7e-7e7e7e7e7e7e',
+    title: 'Active Task',
+    description: 'This task must survive reload.',
+    category: 'web',
+    difficulty: 'easy',
+    time_limit: 180,
+    time_limit_seconds: 180,
+    task_url: 'https://example.com/active-task',
+    hint_schedule: [],
+  };
+
+  await page.addInitScript(({ playerID, duelID, deadline, activeTask }) => {
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('currentGame', JSON.stringify({
+      duel_id: duelID,
+      deadline,
+      time_limit_seconds: 180,
+      task: activeTask,
+    }));
+  }, { playerID, duelID, deadline, activeTask });
+
+  await page.route('**/api/v1/players/me', async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: jsonHeaders,
+      body: JSON.stringify({
+        player: {
+          id: playerID,
+          username: 'alice',
+          status: 'in_duel',
+          created_at: nowISO(),
+        },
+        active_duel: {
+          id: duelID,
+          status: 'active',
+          deadline,
+          started_at: nowISO(),
+        },
+      }),
+    });
+  });
+
+  await page.goto('/');
+  await expect(page.getByText('Игрок готов')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Сменить игрока' })).toBeVisible();
+
+  await page.reload();
+
+  await expect(page.getByText('Игрок готов')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Сменить игрока' })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('player_id'))).toBe(playerID);
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('username'))).toBe('alice');
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('currentGame'))).toContain(duelID);
+
+  await page.getByRole('button', { name: 'Сменить игрока' }).click();
+
+  await expect(page.getByPlaceholder('Введите никнейм...')).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('player_id'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('username'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('currentGame'))).toBeNull();
 });
 
 test('join response with non-uuid ids does not persist player session', async ({ page }) => {
@@ -337,7 +454,6 @@ test('join response with non-uuid ids does not persist player session', async ({
       headers: jsonHeaders,
       body: JSON.stringify({
         player_id: 'not-a-uuid',
-        session_token: 'also-not-a-uuid',
       }),
     });
   });
@@ -348,14 +464,13 @@ test('join response with non-uuid ids does not persist player session', async ({
 
   await expect(page.getByText('Ошибка подключения к серверу')).toBeVisible();
   await expect(page.getByText('Игрок готов')).toBeHidden();
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('player_id'))).toBeNull();
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('session_token'))).toBeNull();
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('username'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('player_id'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('session_token'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('username'))).toBeNull();
 });
 
-test('successful join clears stale duel storage before saving rotated session', async ({ page }) => {
+test('successful join clears stale duel storage before saving new player session', async ({ page }) => {
   const newPlayerID = '80808080-8080-8080-8080-808080808080';
-  const newSessionToken = '10000000-0000-0000-0000-000000000001';
   const staleDuelID = '81818181-8181-8181-8181-818181818181';
   const staleTask = {
     id: '82828282-8282-8282-8282-828282828282',
@@ -378,12 +493,11 @@ test('successful join clears stale duel storage before saving rotated session', 
       headers: jsonHeaders,
       body: JSON.stringify({
         player_id: newPlayerID,
-        session_token: newSessionToken,
       }),
     });
   });
   await page.route('**/api/v1/players/me', async (route) => {
-    expect(route.request().headers()['x-session-token']).toBe(newSessionToken);
+    expect(route.request().headers()['x-session-token']).toBeUndefined();
     await route.fulfill({
       status: 200,
       headers: jsonHeaders,
@@ -405,13 +519,13 @@ test('successful join clears stale duel storage before saving rotated session', 
 
   await page.goto('/');
   await page.evaluate(({ staleDuelID, staleTask }) => {
-    window.localStorage.setItem('currentGame', JSON.stringify({
+    window.sessionStorage.setItem('currentGame', JSON.stringify({
       duel_id: staleDuelID,
       deadline: new Date(Date.now() + 120_000).toISOString(),
       time_limit_seconds: 120,
       task: staleTask,
     }));
-    window.localStorage.setItem('game_result', JSON.stringify({
+    window.sessionStorage.setItem('game_result', JSON.stringify({
       state: 'won',
       duel_id: staleDuelID,
       winner_id: 'old-player-id',
@@ -423,11 +537,11 @@ test('successful join clears stale duel storage before saving rotated session', 
   await page.getByRole('button', { name: /ПОДКЛЮЧИТЬСЯ/ }).click();
 
   await expect(page.getByText('Игрок готов')).toBeVisible();
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('player_id'))).toBe(newPlayerID);
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('session_token'))).toBe(newSessionToken);
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('username'))).toBe('alice');
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('currentGame'))).toBeNull();
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('game_result'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('player_id'))).toBe(newPlayerID);
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('session_token'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('username'))).toBe('alice');
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('currentGame'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('game_result'))).toBeNull();
 
   await page.goto('/task');
   await expect(page).toHaveURL(/\/$/);
@@ -435,7 +549,6 @@ test('successful join clears stale duel storage before saving rotated session', 
 });
 
 test('malformed join response preserves existing duel storage', async ({ page }) => {
-  const playerID = '83838383-8383-8383-8383-838383838383';
   const staleDuelID = '84848484-8484-8484-8484-848484848484';
   const staleTask = {
     id: '85858585-8585-8585-8585-858585858585',
@@ -455,20 +568,20 @@ test('malformed join response preserves existing duel storage', async ({ page })
       status: 200,
       headers: jsonHeaders,
       body: JSON.stringify({
-        player_id: playerID,
+        player_id: 'not-a-uuid',
       }),
     });
   });
 
   await page.goto('/');
   await page.evaluate(({ staleDuelID, staleTask }) => {
-    window.localStorage.setItem('currentGame', JSON.stringify({
+    window.sessionStorage.setItem('currentGame', JSON.stringify({
       duel_id: staleDuelID,
       deadline: new Date(Date.now() + 120_000).toISOString(),
       time_limit_seconds: 120,
       task: staleTask,
     }));
-    window.localStorage.setItem('game_result', JSON.stringify({
+    window.sessionStorage.setItem('game_result', JSON.stringify({
       state: 'won',
       duel_id: staleDuelID,
       winner_id: 'preserved-player-id',
@@ -481,11 +594,11 @@ test('malformed join response preserves existing duel storage', async ({ page })
 
   await expect(page.getByText('Ошибка подключения к серверу')).toBeVisible();
   await expect(page.getByText('Игрок готов')).toBeHidden();
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('player_id'))).toBeNull();
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('session_token'))).toBeNull();
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('username'))).toBeNull();
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('currentGame'))).toContain(staleDuelID);
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('game_result'))).toContain(staleDuelID);
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('player_id'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('session_token'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('username'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('currentGame'))).toContain(staleDuelID);
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('game_result'))).toContain(staleDuelID);
 });
 
 test('invalid task_assigned payload does not create game state or navigate', async ({ page }) => {
@@ -531,7 +644,6 @@ test('invalid task_assigned payload does not create game state or navigate', asy
       headers: jsonHeaders,
       body: JSON.stringify({
         player_id: playerID,
-        session_token: sessionToken,
       }),
     });
   });
@@ -753,7 +865,7 @@ test('invalid task_assigned payload does not create game state or navigate', asy
 
   await expect(page).toHaveURL(/\/$/);
   await expect(page.getByRole('button', { name: 'Отменить поиск' })).toBeVisible();
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('currentGame'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('currentGame'))).toBeNull();
   const opened = await page.evaluate(() => {
     const testWindow = window as unknown as Window & { __openedUrls?: WindowOpenCall[] };
     return testWindow.__openedUrls || [];
@@ -795,7 +907,6 @@ test('home ignores mismatched duel task assignment until matching task arrives',
       headers: jsonHeaders,
       body: JSON.stringify({
         player_id: playerID,
-        session_token: sessionToken,
       }),
     });
   });
@@ -891,7 +1002,7 @@ test('home ignores mismatched duel task assignment until matching task arrives',
 
   expect(page.url()).toMatch(/\/$/);
   await expect(page.getByRole('button', { name: 'Отменить поиск' })).toBeVisible();
-  expect(await page.evaluate(() => window.localStorage.getItem('currentGame'))).toBeNull();
+  expect(await page.evaluate(() => window.sessionStorage.getItem('currentGame'))).toBeNull();
 
   sendServerEvent({
     type: 'task_assigned',
@@ -907,7 +1018,7 @@ test('home ignores mismatched duel task assignment until matching task arrives',
   await expect(page.getByRole('heading', { name: 'Matching Duel Task' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Wrong Duel Task' })).toBeHidden();
   const storedGame = await page.evaluate(() => {
-    const raw = window.localStorage.getItem('currentGame');
+    const raw = window.sessionStorage.getItem('currentGame');
     return raw ? JSON.parse(raw) as {
       duel_id?: string;
       opponent_id?: string;
@@ -957,7 +1068,6 @@ test('home queue flow ignores restore resume before matching task assignment', a
       headers: jsonHeaders,
       body: JSON.stringify({
         player_id: playerID,
-        session_token: sessionToken,
       }),
     });
   });
@@ -1027,7 +1137,7 @@ test('home queue flow ignores restore resume before matching task assignment', a
   expect(page.url()).toMatch(/\/$/);
   await expect(page.getByRole('button', { name: 'Отменить поиск' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Unexpected Restore Task' })).toBeHidden();
-  expect(await page.evaluate(() => window.localStorage.getItem('currentGame'))).toBeNull();
+  expect(await page.evaluate(() => window.sessionStorage.getItem('currentGame'))).toBeNull();
 
   sendServerEvent({
     type: 'task_assigned',
@@ -1043,16 +1153,15 @@ test('home queue flow ignores restore resume before matching task assignment', a
   await expect(page.getByRole('heading', { name: 'Queue Flow Task' })).toBeVisible();
   expect(messages.filter((message) => message.type === 'join_queue')).toHaveLength(1);
   const storedGame = await page.evaluate(() => {
-    const raw = window.localStorage.getItem('currentGame');
+    const raw = window.sessionStorage.getItem('currentGame');
     return raw ? JSON.parse(raw) as { duel_id?: string; task?: { title?: string } } : null;
   });
   expect(storedGame?.duel_id).toBe(duelID);
   expect(storedGame?.task?.title).toBe('Queue Flow Task');
 });
 
-test('player flow uses session-token WS envelope and flag_submit payload', async ({ page }) => {
+test('player flow uses cookie-backed WS connection and flag_submit payload', async ({ page }) => {
   const playerID = '11111111-1111-1111-1111-111111111111';
-  const sessionToken = '22222222-2222-2222-2222-222222222222';
   const duelID = '33333333-3333-3333-3333-333333333333';
   const opponentID = '44444444-4444-4444-4444-444444444444';
   const taskID = '55555555-5555-5555-5555-555555555555';
@@ -1069,14 +1178,13 @@ test('player flow uses session-token WS envelope and flag_submit payload', async
       headers: jsonHeaders,
       body: JSON.stringify({
         player_id: playerID,
-        session_token: sessionToken,
       }),
     });
   });
 
   await page.route('**/api/v1/players/me', async (route) => {
     expect(route.request().method()).toBe('GET');
-    expect(route.request().headers()['x-session-token']).toBe(sessionToken);
+    expect(route.request().headers()['x-session-token']).toBeUndefined();
     await route.fulfill({
       status: 200,
       headers: jsonHeaders,
@@ -1236,7 +1344,6 @@ test('home preserves immediate terminal result during task transition', async ({
       headers: jsonHeaders,
       body: JSON.stringify({
         player_id: playerID,
-        session_token: sessionToken,
       }),
     });
   });
@@ -1331,7 +1438,7 @@ test('home preserves immediate terminal result during task transition', async ({
   await expect(page.getByRole('heading', { name: 'ПОРАЖЕНИЕ' })).toBeVisible();
 
   const storedResult = await page.evaluate(() => {
-    const raw = window.localStorage.getItem('game_result');
+    const raw = window.sessionStorage.getItem('game_result');
     return raw
       ? JSON.parse(raw) as { state?: string; source?: string; duel_id?: string; winner_id?: string }
       : null;
@@ -1388,14 +1495,13 @@ test('player queue flow renders pwn host-port task target as copy endpoint', asy
       headers: jsonHeaders,
       body: JSON.stringify({
         player_id: playerID,
-        session_token: sessionToken,
       }),
     });
   });
 
   await page.route('**/api/v1/players/me', async (route) => {
     expect(route.request().method()).toBe('GET');
-    expect(route.request().headers()['x-session-token']).toBe(sessionToken);
+    expect(route.request().headers()['x-session-token']).toBeUndefined();
     await route.fulfill({
       status: 200,
       headers: jsonHeaders,
@@ -1498,13 +1604,12 @@ test('home queue websocket invalid session clears player state and waiting overl
   const messages: Array<{ type: string; payload?: unknown }> = [];
 
   await page.addInitScript(({ playerID, sessionToken }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
   }, { playerID, sessionToken });
 
   await page.route('**/api/v1/players/me', async (route) => {
-    expect(route.request().headers()['x-session-token']).toBe(sessionToken);
+    expect(route.request().headers()['x-session-token']).toBeUndefined();
     await route.fulfill({
       status: 200,
       headers: jsonHeaders,
@@ -1545,10 +1650,10 @@ test('home queue websocket invalid session clears player state and waiting overl
   await expect(page.getByText('Игрок готов')).toBeHidden();
   await expect(page.getByRole('button', { name: 'Отменить поиск' })).toBeHidden();
   expect(messages.filter((message) => message.type === 'join_queue')).toHaveLength(1);
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('player_id'))).toBeNull();
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('session_token'))).toBeNull();
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('username'))).toBeNull();
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('currentGame'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('player_id'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('session_token'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('username'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('currentGame'))).toBeNull();
 });
 
 test('queue cancel sends leave_queue for an active queue flow', async ({ page }) => {
@@ -1557,9 +1662,8 @@ test('queue cancel sends leave_queue for an active queue flow', async ({ page })
   const messages: Array<{ type: string; payload?: unknown }> = [];
 
   await page.addInitScript(({ playerID, sessionToken }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
   }, { playerID, sessionToken });
 
   await page.route('**/api/v1/players/me', async (route) => {
@@ -1594,6 +1698,51 @@ test('queue cancel sends leave_queue for an active queue flow', async ({ page })
   expect(messages.filter((message) => message.type === 'join_queue')).toHaveLength(1);
 });
 
+test('queue player switch sends leave_queue and clears player state', async ({ page }) => {
+  const playerID = '43434343-4343-4343-4343-434343434343';
+  const sessionToken = '10000000-0000-0000-0000-000000000043';
+  const messages: Array<{ type: string; payload?: unknown }> = [];
+
+  await page.addInitScript(({ playerID, sessionToken }) => {
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
+  }, { playerID, sessionToken });
+
+  await page.route('**/api/v1/players/me', async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: jsonHeaders,
+      body: JSON.stringify({
+        player: {
+          id: playerID,
+          username: 'alice',
+          status: 'idle',
+          created_at: nowISO(),
+        },
+      }),
+    });
+  });
+
+  await page.routeWebSocket((url) => url.pathname === '/ws', (ws) => {
+    ws.onMessage((raw) => {
+      messages.push(JSON.parse(String(raw)) as { type: string; payload?: unknown });
+    });
+  });
+
+  await page.goto('/');
+  await expect(page.getByText('Игрок готов')).toBeVisible();
+  await page.getByRole('button', { name: /ИГРАТЬ/ }).click();
+  await expect.poll(() => messages.some((message) => message.type === 'join_queue')).toBe(true);
+
+  await page.getByRole('button', { name: 'Сменить игрока' }).click();
+
+  await expect(page.getByPlaceholder('Введите никнейм...')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Отменить поиск' })).toBeHidden();
+  await expect.poll(() => messages.filter((message) => message.type === 'leave_queue').length).toBe(1);
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('player_id'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('username'))).toBeNull();
+});
+
 test('cancelled queue attempt does not send delayed join_queue', async ({ page }) => {
   const playerID = '88888888-8888-8888-8888-888888888888';
   const sessionToken = '10000000-0000-0000-0000-000000000006';
@@ -1607,14 +1756,13 @@ test('cancelled queue attempt does not send delayed join_queue', async ({ page }
   });
 
   await page.addInitScript(({ playerID, sessionToken }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
   }, { playerID, sessionToken });
 
   await page.route('**/api/v1/players/me', async (route) => {
     meCalls += 1;
-    expect(route.request().headers()['x-session-token']).toBe(sessionToken);
+    expect(route.request().headers()['x-session-token']).toBeUndefined();
     await playerMeGate;
     await route.fulfill({
       status: 200,
@@ -1668,9 +1816,8 @@ test('queue websocket reconnect resends join_queue for current search', async ({
   let socketCount = 0;
 
   await page.addInitScript(({ playerID, sessionToken }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
   }, { playerID, sessionToken });
 
   await page.route('**/api/v1/players/me', async (route) => {
@@ -1729,9 +1876,8 @@ test('cancelled search does not send join_queue on delayed reconnect', async ({ 
   let socketCount = 0;
 
   await page.addInitScript(({ playerID, sessionToken }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
   }, { playerID, sessionToken });
 
   await page.route('**/api/v1/players/me', async (route) => {
@@ -1791,9 +1937,8 @@ test('restore websocket reconnect never sends join_queue', async ({ page }) => {
   let socketCount = 0;
 
   await page.addInitScript(({ playerID, sessionToken }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
   }, { playerID, sessionToken });
 
   await page.route('**/api/v1/players/me', async (route) => {
@@ -1945,9 +2090,8 @@ test('rapid websocket reconnect failures eventually give up', async ({ page }) =
   const sessionToken = '10000000-0000-0000-0000-000000000093';
 
   await page.addInitScript(({ playerID, sessionToken }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
   }, { playerID, sessionToken });
 
   await page.route('**/api/v1/players/me', async (route) => {
@@ -2062,9 +2206,8 @@ test('home queue websocket handshake failure clears waiting state', async ({ pag
   const sessionToken = '10000000-0000-0000-0000-000000000191';
 
   await page.addInitScript(({ playerID, sessionToken }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
   }, { playerID, sessionToken });
 
   await page.route('**/api/v1/players/me', async (route) => {
@@ -2108,13 +2251,12 @@ test('existing active duel restores through WS without sending join_queue', asyn
   };
 
   await page.addInitScript(({ playerID, sessionToken }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
   }, { playerID, sessionToken });
 
   await page.route('**/api/v1/players/me', async (route) => {
-    expect(route.request().headers()['x-session-token']).toBe(sessionToken);
+    expect(route.request().headers()['x-session-token']).toBeUndefined();
     await route.fulfill({
       status: 200,
       headers: jsonHeaders,
@@ -2171,7 +2313,7 @@ test('existing active duel restores through WS without sending join_queue', asyn
   await expect(page).toHaveURL(/\/task$/);
   await expect(page.getByRole('heading', { name: 'Restored Active Duel' })).toBeVisible();
   const storedGame = await page.evaluate(() => {
-    const raw = window.localStorage.getItem('currentGame');
+    const raw = window.sessionStorage.getItem('currentGame');
     return raw ? JSON.parse(raw) as { opponent_id?: string } : null;
   });
   expect(storedGame?.opponent_id).toBe(opponentID);
@@ -2197,9 +2339,8 @@ test('play action refreshes session after mount preflight resolved idle', async 
   };
 
   await page.addInitScript(({ playerID, sessionToken }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
   }, { playerID, sessionToken });
 
   await page.route('**/api/v1/players/me', async (route) => {
@@ -2286,13 +2427,12 @@ test('active duel restore failure shows a user-facing error', async ({ page }) =
   };
 
   await page.addInitScript(({ playerID, sessionToken }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
   }, { playerID, sessionToken });
 
   await page.route('**/api/v1/players/me', async (route) => {
-    expect(route.request().headers()['x-session-token']).toBe(sessionToken);
+    expect(route.request().headers()['x-session-token']).toBeUndefined();
     await route.fulfill({
       status: 200,
       headers: jsonHeaders,
@@ -2348,13 +2488,12 @@ test('active duel restore without task shows failure instead of hanging', async 
   };
 
   await page.addInitScript(({ playerID, sessionToken }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
   }, { playerID, sessionToken });
 
   await page.route('**/api/v1/players/me', async (route) => {
-    expect(route.request().headers()['x-session-token']).toBe(sessionToken);
+    expect(route.request().headers()['x-session-token']).toBeUndefined();
     await route.fulfill({
       status: 200,
       headers: jsonHeaders,
@@ -2402,7 +2541,7 @@ test('active duel restore without task shows failure instead of hanging', async 
   await expect(page).toHaveURL(/\/$/);
   expect(messages.filter((message) => message.type === 'join_queue')).toHaveLength(0);
   expect(messages.filter((message) => message.type === 'leave_queue')).toHaveLength(0);
-  expect(await page.evaluate(() => window.localStorage.getItem('currentGame'))).toBeNull();
+  expect(await page.evaluate(() => window.sessionStorage.getItem('currentGame'))).toBeNull();
 });
 
 test('restore cancel does not send leave_queue', async ({ page }) => {
@@ -2414,9 +2553,8 @@ test('restore cancel does not send leave_queue', async ({ page }) => {
   let activeSocket: WebSocketRoute | null = null;
 
   await page.addInitScript(({ playerID, sessionToken }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
   }, { playerID, sessionToken });
 
   await page.route('**/api/v1/players/me', async (route) => {
@@ -2494,9 +2632,8 @@ test('active duel restore ignores mismatched duel_resume until matching resume a
   };
 
   await page.addInitScript(({ playerID, sessionToken }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
   }, { playerID, sessionToken });
 
   await page.route('**/api/v1/players/me', async (route) => {
@@ -2547,7 +2684,7 @@ test('active duel restore ignores mismatched duel_resume until matching resume a
   expect(page.url()).toMatch(/\/$/);
   await expect(page.getByRole('button', { name: 'Отменить поиск' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Wrong Restore Task' })).toBeHidden();
-  expect(await page.evaluate(() => window.localStorage.getItem('currentGame'))).toBeNull();
+  expect(await page.evaluate(() => window.sessionStorage.getItem('currentGame'))).toBeNull();
 
   sendServerEvent({
     type: 'duel_resume',
@@ -2563,7 +2700,7 @@ test('active duel restore ignores mismatched duel_resume until matching resume a
   await expect(page.getByRole('heading', { name: 'Matching Restore Task' })).toBeVisible();
   expect(messages.filter((message) => message.type === 'join_queue')).toHaveLength(0);
   const storedGame = await page.evaluate(() => {
-    const raw = window.localStorage.getItem('currentGame');
+    const raw = window.sessionStorage.getItem('currentGame');
     return raw ? JSON.parse(raw) as { duel_id?: string; task?: { title?: string } } : null;
   });
   expect(storedGame?.duel_id).toBe(duelID);
@@ -2601,9 +2738,8 @@ test('active duel restore ignores self-opponent duel_resume until valid resume a
   };
 
   await page.addInitScript(({ playerID, sessionToken }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
   }, { playerID, sessionToken });
 
   await page.route('**/api/v1/players/me', async (route) => {
@@ -2651,7 +2787,7 @@ test('active duel restore ignores self-opponent duel_resume until valid resume a
   expect(page.url()).toMatch(/\/$/);
   await expect(page.getByRole('button', { name: 'Отменить поиск' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Self Opponent Restore Task' })).toBeHidden();
-  expect(await page.evaluate(() => window.localStorage.getItem('currentGame'))).toBeNull();
+  expect(await page.evaluate(() => window.sessionStorage.getItem('currentGame'))).toBeNull();
 
   sendServerEvent({
     type: 'duel_resume',
@@ -2667,7 +2803,7 @@ test('active duel restore ignores self-opponent duel_resume until valid resume a
   await expect(page).toHaveURL(/\/task$/);
   await expect(page.getByRole('heading', { name: 'Valid Opponent Restore Task' })).toBeVisible();
   const storedGame = await page.evaluate(() => {
-    const raw = window.localStorage.getItem('currentGame');
+    const raw = window.sessionStorage.getItem('currentGame');
     return raw ? JSON.parse(raw) as { opponent_id?: string; task?: { title?: string } } : null;
   });
   expect(storedGame?.opponent_id).toBe(opponentID);
@@ -2707,9 +2843,8 @@ test('active duel restore ignores queue events until matching resume arrives', a
   };
 
   await page.addInitScript(({ playerID, sessionToken }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
   }, { playerID, sessionToken });
 
   await page.route('**/api/v1/players/me', async (route) => {
@@ -2775,7 +2910,7 @@ test('active duel restore ignores queue events until matching resume arrives', a
   expect(page.url()).toMatch(/\/$/);
   await expect(page.getByRole('button', { name: 'Отменить поиск' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Queue Event Task' })).toBeHidden();
-  expect(await page.evaluate(() => window.localStorage.getItem('currentGame'))).toBeNull();
+  expect(await page.evaluate(() => window.sessionStorage.getItem('currentGame'))).toBeNull();
 
   sendServerEvent({
     type: 'duel_resume',
@@ -2812,9 +2947,8 @@ test('active duel restore ignores queue_left and still reports restore failure o
   };
 
   await page.addInitScript(({ playerID, sessionToken }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
   }, { playerID, sessionToken });
 
   await page.route('**/api/v1/players/me', async (route) => {
@@ -2856,7 +2990,7 @@ test('active duel restore ignores queue_left and still reports restore failure o
 
   await expect(page.getByText('Не удалось восстановить активную дуэль. Обновите страницу.')).toBeVisible();
   await expect(page).toHaveURL(/\/$/);
-  expect(await page.evaluate(() => window.localStorage.getItem('currentGame'))).toBeNull();
+  expect(await page.evaluate(() => window.sessionStorage.getItem('currentGame'))).toBeNull();
 });
 
 test('active duel restore failure still fires after wrong-duel resume then close', async ({ page }) => {
@@ -2880,9 +3014,8 @@ test('active duel restore failure still fires after wrong-duel resume then close
   };
 
   await page.addInitScript(({ playerID, sessionToken }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
   }, { playerID, sessionToken });
 
   await page.route('**/api/v1/players/me', async (route) => {
@@ -2939,7 +3072,7 @@ test('active duel restore failure still fires after wrong-duel resume then close
   await expect(page.getByText('Не удалось восстановить активную дуэль. Обновите страницу.')).toBeVisible();
   await expect(page).toHaveURL(/\/$/);
   await expect(page.getByRole('heading', { name: 'Wrong Close Restore Task' })).toBeHidden();
-  expect(await page.evaluate(() => window.localStorage.getItem('currentGame'))).toBeNull();
+  expect(await page.evaluate(() => window.sessionStorage.getItem('currentGame'))).toBeNull();
 });
 
 test('home ignores wrong-duel terminal event and handles matching queue terminal event', async ({ page }) => {
@@ -2984,7 +3117,6 @@ test('home ignores wrong-duel terminal event and handles matching queue terminal
       headers: jsonHeaders,
       body: JSON.stringify({
         player_id: playerID,
-        session_token: sessionToken,
       }),
     });
   });
@@ -3041,14 +3173,14 @@ test('home ignores wrong-duel terminal event and handles matching queue terminal
 
   await expect(page.getByRole('button', { name: 'Отменить поиск' })).toBeVisible();
   await expect(page.getByText('Поздравляем! Вы выиграли!')).toBeHidden();
-  expect(await page.evaluate(() => window.localStorage.getItem('currentGame'))).toBeNull();
+  expect(await page.evaluate(() => window.sessionStorage.getItem('currentGame'))).toBeNull();
 
   sendServerEvent(duelFinishedEvent(duelID, playerID));
 
   await expect(page.getByText('Поздравляем! Вы выиграли!')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Отменить поиск' })).toBeHidden();
   await expect(page).toHaveURL(/\/$/);
-  expect(await page.evaluate(() => window.localStorage.getItem('currentGame'))).toBeNull();
+  expect(await page.evaluate(() => window.sessionStorage.getItem('currentGame'))).toBeNull();
   expect(messages.filter((message) => message.type === 'join_queue')).toHaveLength(1);
 });
 
@@ -3062,9 +3194,8 @@ test('home terminal event uses refreshed player id for winner notification', asy
   const messages: Array<{ type: string; payload?: unknown }> = [];
 
   await page.addInitScript(({ stalePlayerID, sessionToken }) => {
-    window.localStorage.setItem('player_id', stalePlayerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice-old');
+    window.sessionStorage.setItem('player_id', stalePlayerID);
+    window.sessionStorage.setItem('username', 'alice-old');
   }, { stalePlayerID, sessionToken });
 
   await page.route('**/api/v1/players/me', async (route) => {
@@ -3137,9 +3268,9 @@ test('home terminal event uses refreshed player id for winner notification', asy
   await expect(page.getByRole('button', { name: 'Отменить поиск' })).toBeHidden();
   await expect(page.getByPlaceholder('Введите никнейм...')).toBeVisible();
   await expect(page.getByText('Игрок готов')).toBeHidden();
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('player_id'))).toBeNull();
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('session_token'))).toBeNull();
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('currentGame'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('player_id'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('session_token'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('currentGame'))).toBeNull();
 });
 
 test('home terminal event does not treat stale stored player id as winner', async ({ page }) => {
@@ -3151,9 +3282,8 @@ test('home terminal event does not treat stale stored player id as winner', asyn
   const messages: Array<{ type: string; payload?: unknown }> = [];
 
   await page.addInitScript(({ stalePlayerID, sessionToken }) => {
-    window.localStorage.setItem('player_id', stalePlayerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice-old');
+    window.sessionStorage.setItem('player_id', stalePlayerID);
+    window.sessionStorage.setItem('username', 'alice-old');
   }, { stalePlayerID, sessionToken });
 
   await page.route('**/api/v1/players/me', async (route) => {
@@ -3226,9 +3356,9 @@ test('home terminal event does not treat stale stored player id as winner', asyn
   await expect(page.getByText('Поздравляем! Вы выиграли!')).toBeHidden();
   await expect(page.getByPlaceholder('Введите никнейм...')).toBeVisible();
   await expect(page.getByText('Игрок готов')).toBeHidden();
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('player_id'))).toBeNull();
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('session_token'))).toBeNull();
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('currentGame'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('player_id'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('session_token'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('currentGame'))).toBeNull();
 });
 
 test('home queue terminal event ignores late websocket error', async ({ page }) => {
@@ -3274,7 +3404,6 @@ test('home queue terminal event ignores late websocket error', async ({ page }) 
       headers: jsonHeaders,
       body: JSON.stringify({
         player_id: playerID,
-        session_token: sessionToken,
       }),
     });
   });
@@ -3341,7 +3470,7 @@ test('home queue terminal event ignores late websocket error', async ({ page }) 
   await page.waitForTimeout(150);
   await expect(page.getByText('Поздравляем! Вы выиграли!')).toBeVisible();
   await expect(page.getByText('Ошибка WebSocket соединения')).toBeHidden();
-  expect(await page.evaluate(() => window.localStorage.getItem('currentGame'))).toBeNull();
+  expect(await page.evaluate(() => window.sessionStorage.getItem('currentGame'))).toBeNull();
 });
 
 test('home terminal restore event prevents false restore failure on websocket close', async ({ page }) => {
@@ -3386,9 +3515,8 @@ test('home terminal restore event prevents false restore failure on websocket cl
   });
 
   await page.addInitScript(({ playerID, sessionToken }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
   }, { playerID, sessionToken });
 
   await page.route('**/api/v1/players/me', async (route) => {
@@ -3433,7 +3561,7 @@ test('home terminal restore event prevents false restore failure on websocket cl
   await expect(page.getByText('Не удалось восстановить активную дуэль. Обновите страницу.')).toBeHidden();
   await expect(page.getByRole('button', { name: 'Отменить поиск' })).toBeHidden();
   await expect(page).toHaveURL(/\/$/);
-  expect(await page.evaluate(() => window.localStorage.getItem('currentGame'))).toBeNull();
+  expect(await page.evaluate(() => window.sessionStorage.getItem('currentGame'))).toBeNull();
 });
 
 test('home restore task transition ignores late websocket error', async ({ page }) => {
@@ -3464,9 +3592,8 @@ test('home restore task transition ignores late websocket error', async ({ page 
   };
 
   await page.addInitScript(({ playerID, sessionToken }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
   }, { playerID, sessionToken });
 
   await page.route('**/api/v1/players/me', async (route) => {
@@ -3509,7 +3636,7 @@ test('home restore task transition ignores late websocket error', async ({ page 
     },
   });
 
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('currentGame'))).toContain(duelID);
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('currentGame'))).toContain(duelID);
   const dispatched = await page.evaluate(() => {
     const testWindow = window as unknown as WebSocketErrorProbeWindow;
     return testWindow.__dispatchWebSocketErrorAt(0);
@@ -3528,9 +3655,8 @@ test('stale player session is cleared before opening websocket', async ({ page }
   let websocketOpened = false;
 
   await page.addInitScript(({ playerID, sessionToken }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
   }, { playerID, sessionToken });
 
   await page.route('**/api/v1/players/me', async (route) => {
@@ -3555,19 +3681,17 @@ test('stale player session is cleared before opening websocket', async ({ page }
   await expect(page.getByText('Сессия истекла. Введите никнейм заново.')).toBeVisible();
   await expect(page.getByPlaceholder('Введите никнейм...')).toBeVisible();
   await expect.poll(() => websocketOpened).toBe(false);
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('session_token'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('session_token'))).toBeNull();
 });
 
 test('malformed player me response surfaces contract error without clearing session', async ({ page }) => {
   const playerID = 'acacacac-acac-acac-acac-acacacacacac';
-  const sessionToken = '10000000-0000-0000-0000-000000000018';
   let websocketOpened = false;
 
-  await page.addInitScript(({ playerID, sessionToken }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
-  }, { playerID, sessionToken });
+  await page.addInitScript(({ playerID }) => {
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
+  }, { playerID });
 
   await page.route('**/api/v1/players/me', async (route) => {
     await route.fulfill({
@@ -3590,21 +3714,19 @@ test('malformed player me response surfaces contract error without clearing sess
 
   await expect(page.getByText('Не удалось проверить сессию. Попробуйте ещё раз.')).toBeVisible();
   await expect.poll(() => websocketOpened).toBe(false);
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('player_id'))).toBe(playerID);
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('session_token'))).toBe(sessionToken);
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('username'))).toBe('alice');
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('player_id'))).toBe(playerID);
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('session_token'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('username'))).toBe('alice');
 });
 
 test('player me response with non-uuid player id surfaces contract error without clearing session', async ({ page }) => {
   const playerID = 'adadadad-adad-adad-adad-adadadadadad';
-  const sessionToken = 'adadadad-0000-0000-0000-000000000001';
   let websocketOpened = false;
 
-  await page.addInitScript(({ playerID, sessionToken }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
-  }, { playerID, sessionToken });
+  await page.addInitScript(({ playerID }) => {
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
+  }, { playerID });
 
   await page.route('**/api/v1/players/me', async (route) => {
     await route.fulfill({
@@ -3629,21 +3751,19 @@ test('player me response with non-uuid player id surfaces contract error without
 
   await expect(page.getByText('Не удалось проверить сессию. Попробуйте ещё раз.')).toBeVisible();
   await expect.poll(() => websocketOpened).toBe(false);
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('player_id'))).toBe(playerID);
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('session_token'))).toBe(sessionToken);
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('username'))).toBe('alice');
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('player_id'))).toBe(playerID);
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('session_token'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('username'))).toBe('alice');
 });
 
 test('malformed active_duel in player me surfaces contract error without clearing session', async ({ page }) => {
   const playerID = 'bcbcbcbc-bcbc-bcbc-bcbc-bcbcbcbcbcbc';
-  const sessionToken = '10000000-0000-0000-0000-000000000019';
   let websocketOpened = false;
 
-  await page.addInitScript(({ playerID, sessionToken }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
-  }, { playerID, sessionToken });
+  await page.addInitScript(({ playerID }) => {
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
+  }, { playerID });
 
   await page.route('**/api/v1/players/me', async (route) => {
     await route.fulfill({
@@ -3674,21 +3794,19 @@ test('malformed active_duel in player me surfaces contract error without clearin
 
   await expect(page.getByText('Не удалось проверить сессию. Попробуйте ещё раз.')).toBeVisible();
   await expect.poll(() => websocketOpened).toBe(false);
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('player_id'))).toBe(playerID);
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('session_token'))).toBe(sessionToken);
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('username'))).toBe('alice');
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('player_id'))).toBe(playerID);
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('session_token'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('username'))).toBe('alice');
 });
 
 test('player me response with non-uuid active duel surfaces contract error without clearing session', async ({ page }) => {
   const playerID = 'bebebebe-bebe-bebe-bebe-bebebebebebe';
-  const sessionToken = 'bebebebe-0000-0000-0000-000000000001';
   let websocketOpened = false;
 
-  await page.addInitScript(({ playerID, sessionToken }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
-  }, { playerID, sessionToken });
+  await page.addInitScript(({ playerID }) => {
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
+  }, { playerID });
 
   await page.route('**/api/v1/players/me', async (route) => {
     await route.fulfill({
@@ -3719,7 +3837,7 @@ test('player me response with non-uuid active duel surfaces contract error witho
 
   await expect(page.getByText('Не удалось проверить сессию. Попробуйте ещё раз.')).toBeVisible();
   await expect.poll(() => websocketOpened).toBe(false);
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('player_id'))).toBe(playerID);
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('session_token'))).toBe(sessionToken);
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('username'))).toBe('alice');
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('player_id'))).toBe(playerID);
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('session_token'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('username'))).toBe('alice');
 });

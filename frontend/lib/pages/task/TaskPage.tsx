@@ -285,13 +285,13 @@ export const TaskPage: React.FC = () => {
   );
 
   const clearStoredPlayerSessionForNextEntrant = useCallback(() => {
-    playerModel.clearCurrentPlayer();
+    void playerModel.clearCurrentPlayer();
   }, []);
 
   const handleExpiredSession = useCallback(() => {
     hasFinished.current = true;
     terminalSource.current = "none";
-    playerModel.clearCurrentPlayer();
+    void playerModel.clearCurrentPlayer();
     gameModel.clearGameData();
     gameDataRef.current = null;
     clearFlagStatusTimer();
@@ -681,7 +681,7 @@ export const TaskPage: React.FC = () => {
       if (!activePlayer || cancelled) {
         return;
       }
-      const ws = connectWebSocket(activePlayer.session_token, {
+      const ws = connectWebSocket({
         onReconnect: (newWs) => {
           setupWebSocketListeners(newWs);
         },
@@ -929,9 +929,9 @@ export const TaskPage: React.FC = () => {
     }
   };
 
-  const handleReturnHome = () => {
+  const handleReturnHome = async () => {
     gameModel.clearGameData();
-    clearStoredPlayerSessionForNextEntrant();
+    await playerModel.clearCurrentPlayer();
     closeWebSocket();
     router.push("/");
   };

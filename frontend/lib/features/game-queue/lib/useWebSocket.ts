@@ -68,12 +68,6 @@ const computeReconnectDelay = (attemptIndex: number): number => {
   return exponential + Math.random() * RECONNECT_JITTER_MS;
 };
 
-const SUBPROTOCOL_BEARER_PREFIX = "tpm.bearer.";
-
-const buildSubprotocols = (sessionToken: string): string[] => [
-  `${SUBPROTOCOL_BEARER_PREFIX}${sessionToken}`,
-];
-
 export const useWebSocket = () => {
   const websocketRef = useRef<WebSocket | null>(null);
   const attemptsRef = useRef(0);
@@ -83,7 +77,6 @@ export const useWebSocket = () => {
   const pongDeadlineTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
-  const lastTokenRef = useRef<string | null>(null);
   const lastOptionsRef = useRef<ConnectOptions | null>(null);
   const manualCloseRef = useRef(false);
   const generationRef = useRef(0);
@@ -124,7 +117,6 @@ export const useWebSocket = () => {
     cancelHeartbeatTimer();
     cancelPongDeadline();
     attemptsRef.current = 0;
-    lastTokenRef.current = null;
     lastOptionsRef.current = null;
     if (
       websocketRef.current &&
@@ -141,12 +133,9 @@ export const useWebSocket = () => {
   ]);
 
   const openSocket = useCallback(
-    (sessionToken: string, options: ConnectOptions): WebSocket => {
+    (options: ConnectOptions): WebSocket => {
       const generation = generationRef.current;
-      const ws = new WebSocket(
-        CONFIG.websocketUrl,
-        buildSubprotocols(sessionToken),
-      );
+      const ws = new WebSocket(CONFIG.websocketUrl);
       websocketRef.current = ws;
 
       const isCurrentGeneration = (): boolean =>
@@ -244,15 +233,11 @@ export const useWebSocket = () => {
             `ws: non-recoverable close code ${event.code} (${nonRecoverableReason}); aborting reconnect`,
           );
           attemptsRef.current = 0;
-          lastTokenRef.current = null;
           lastOptionsRef.current = null;
           giveUp?.(nonRecoverableReason);
           return;
         }
-        if (
-          lastTokenRef.current === null ||
-          lastOptionsRef.current?.onReconnect === undefined
-        ) {
+        if (lastOptionsRef.current?.onReconnect === undefined) {
           return;
         }
 
@@ -260,10 +245,7 @@ export const useWebSocket = () => {
           if (!isCurrentGeneration() || manualCloseRef.current) {
             return;
           }
-          if (
-            lastTokenRef.current === null ||
-            lastOptionsRef.current?.onReconnect === undefined
-          ) {
+          if (lastOptionsRef.current?.onReconnect === undefined) {
             return;
           }
           if (attemptsRef.current >= MAX_RECONNECT_ATTEMPTS) {
@@ -271,7 +253,6 @@ export const useWebSocket = () => {
               `ws: gave up after ${attemptsRef.current} reconnect attempts`,
             );
             attemptsRef.current = 0;
-            lastTokenRef.current = null;
             lastOptionsRef.current = null;
             giveUp?.("max_attempts");
             return;
@@ -285,12 +266,11 @@ export const useWebSocket = () => {
           );
           reconnectTimerRef.current = setTimeout(() => {
             reconnectTimerRef.current = null;
-            const token = lastTokenRef.current;
             const opts = lastOptionsRef.current;
-            if (manualCloseRef.current || token === null || opts === null) {
+            if (manualCloseRef.current || opts === null) {
               return;
             }
-            const newWs = openSocket(token, opts);
+            const newWs = openSocket(opts);
             opts.onReconnect?.(newWs, attempt);
           }, delay);
         };
@@ -308,7 +288,6 @@ export const useWebSocket = () => {
                 return;
               }
               attemptsRef.current = 0;
-              lastTokenRef.current = null;
               lastOptionsRef.current = null;
               giveUp?.(reason);
             })
@@ -327,7 +306,7 @@ export const useWebSocket = () => {
   );
 
   const connectWebSocket = useCallback(
-    (sessionToken: string, options: ConnectOptions = {}): WebSocket => {
+    (options: ConnectOptions = {}): WebSocket => {
       generationRef.current += 1;
       cancelPendingReconnect();
       cancelStableOpenTimer();
@@ -335,7 +314,6 @@ export const useWebSocket = () => {
       cancelPongDeadline();
       manualCloseRef.current = false;
       attemptsRef.current = 0;
-      lastTokenRef.current = sessionToken;
       lastOptionsRef.current = options;
 
       if (
@@ -347,7 +325,7 @@ export const useWebSocket = () => {
         stale.close(NORMAL_CLOSURE_CODE);
       }
 
-      return openSocket(sessionToken, options);
+      return openSocket(options);
     },
     [
       cancelHeartbeatTimer,

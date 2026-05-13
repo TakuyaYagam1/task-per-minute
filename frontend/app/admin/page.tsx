@@ -51,6 +51,7 @@ const MAX_INT32 = 2147483647;
 const MAX_TASK_TITLE_LENGTH = 255;
 const MAX_TASK_FLAG_LENGTH = 255;
 const USERNAME_RE = /^[a-zA-Z0-9_-]{2,50}$/;
+const LOGOUT_TIMEOUT_MS = 8_000;
 
 const countChars = (value: string): number => Array.from(value).length;
 
@@ -223,6 +224,7 @@ export default function AdminPanel() {
   const [activeSection, setActiveSection] = useState<AdminSection>('tasks');
   const [password, setPassword] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
+  const [logoutPending, setLogoutPending] = useState(false);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState<TaskCategory>('web');
@@ -252,6 +254,7 @@ export default function AdminPanel() {
   const [playerAuditError, setPlayerAuditError] = useState<string | null>(null);
   const tokensRef = useRef<AdminTokenResponse | null>(null);
   const refreshPromiseRef = useRef<Promise<AdminTokenResponse> | null>(null);
+  const logoutAbortRef = useRef<AbortController | null>(null);
   const isMountedRef = useRef(false);
   const authSessionVersionRef = useRef(0);
   const tasksRequestIDRef = useRef(0);
@@ -275,6 +278,7 @@ export default function AdminPanel() {
     return () => {
       isMountedRef.current = false;
       authSessionVersionRef.current += 1;
+      logoutAbortRef.current?.abort();
     };
   }, []);
 
@@ -295,13 +299,14 @@ export default function AdminPanel() {
     setTokens(nextTokens);
   }, [isCurrentAuthSession]);
 
-  const clearTokens = useCallback(() => {
-    authSessionVersionRef.current += 1;
+  const clearTokens = useCallback((options: { preserveAdminCSRF?: boolean } = {}) => {
+    const nextSessionVersion = authSessionVersionRef.current + 1;
+    authSessionVersionRef.current = nextSessionVersion;
     tasksRequestIDRef.current += 1;
     playersRequestIDRef.current += 1;
     playerAuditRequestIDRef.current += 1;
     refreshPromiseRef.current = null;
-    adminSession.clear();
+    adminSession.clear({ preserveCSRF: options.preserveAdminCSRF });
     tokensRef.current = null;
     setTokens(null);
     setActiveSection('tasks');
@@ -317,6 +322,7 @@ export default function AdminPanel() {
     setPlayerAuditEvents([]);
     setPlayerAuditLoading(false);
     setPlayerAuditError(null);
+    return nextSessionVersion;
   }, []);
 
   const refreshTokens = useCallback(async (): Promise<AdminTokenResponse> => {
@@ -400,7 +406,7 @@ export default function AdminPanel() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!password.trim()) return;
+    if (logoutPending || !password.trim()) return;
     setAuthLoading(true);
     const sessionVersion = authSessionVersionRef.current + 1;
     refreshPromiseRef.current = null;
@@ -433,13 +439,34 @@ export default function AdminPanel() {
 
   const handleLogout = async () => {
     const currentTokens = tokens;
-    clearTokens();
-    if (!currentTokens) return;
+    const logoutSessionVersion = clearTokens({ preserveAdminCSRF: true });
+    if (!currentTokens) {
+      adminSession.clear();
+      return;
+    }
+    logoutAbortRef.current?.abort();
+    const logoutController = new AbortController();
+    logoutAbortRef.current = logoutController;
+    const logoutTimeout = window.setTimeout(() => {
+      logoutController.abort(new DOMException('Admin logout timed out', 'TimeoutError'));
+    }, LOGOUT_TIMEOUT_MS);
+    setLogoutPending(true);
     try {
-      await adminApi.logout(currentTokens.access_token, currentTokens.refresh_token);
+      await adminApi.logout(currentTokens.access_token, currentTokens.refresh_token, logoutController.signal);
     } catch (logoutError) {
       // Local logout wins; access tokens are short-lived if refresh revocation fails offline.
       log.warn('admin logout request failed', logoutError);
+    } finally {
+      window.clearTimeout(logoutTimeout);
+      if (logoutAbortRef.current === logoutController) {
+        logoutAbortRef.current = null;
+      }
+      if (authSessionVersionRef.current === logoutSessionVersion) {
+        adminSession.clear();
+      }
+      if (isMountedRef.current) {
+        setLogoutPending(false);
+      }
     }
   };
 
@@ -1166,12 +1193,12 @@ export default function AdminPanel() {
             <button
               type="submit"
               className={`${styles.btn} ${styles.btnPrimary}`}
-              disabled={authLoading || !password.trim()}
+              disabled={authLoading || logoutPending || !password.trim()}
             >
-              {authLoading ? (
+              {authLoading || logoutPending ? (
                 <>
                   <div className={styles.spinner} style={{ width: 18, height: 18 }}></div>
-                  Вход...
+                  {logoutPending ? 'Выход...' : 'Вход...'}
                 </>
               ) : (
                 'Войти'
@@ -1327,8 +1354,7 @@ export default function AdminPanel() {
             <label>Подсказки (3 шт)</label>
             <div className={styles.hintsGrid}>
               {hints.map((hint, i) => (
-                <div key={i} className={styles.hintInput}>
-                  <span className={styles.hintNumber}>#{i + 1}</span>
+                <div key={i}>
                   <input
                     type="text"
                     required

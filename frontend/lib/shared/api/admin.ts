@@ -1,6 +1,14 @@
 import { CONFIG } from "../config";
 import { log } from "../lib/logger";
-import { adminClient, ApiError, type ProblemDetails, unwrapApi, unwrapApiVoid } from "./client";
+import {
+  adminClient,
+  ApiError,
+  clearAdminCSRFTokens,
+  credentialedFetch,
+  type ProblemDetails,
+  unwrapApi,
+  unwrapApiVoid,
+} from "./client";
 import {
   assertApiResponse,
   isAdminPlayer,
@@ -22,14 +30,12 @@ export type UpdateAdminPlayerRequest = components["schemas"]["UpdateAdminPlayerR
 export type UpdateTaskRequest = components["schemas"]["UpdateTaskRequest"];
 export type UploadSourceResponse = components["schemas"]["UploadSourceResponse"];
 
-const ACCESS_TOKEN_KEY = "admin_access_token";
-const REFRESH_TOKEN_KEY = "admin_refresh_token";
+const SESSION_MARKER_KEY = "admin_session_active";
+const LEGACY_ACCESS_TOKEN_KEY = "admin_access_token";
+const LEGACY_REFRESH_TOKEN_KEY = "admin_refresh_token";
+const COOKIE_SESSION_TOKEN = "__cookie_admin_session__";
 
 const UPLOAD_SOURCE_TIMEOUT_MS = 5 * 60 * 1000;
-
-const adminHeaders = (accessToken: string): Record<string, string> => ({
-  Authorization: `Bearer ${accessToken}`,
-});
 
 const adminURL = (path: string): string => `${CONFIG.adminApiUrl}${path}`;
 
@@ -49,23 +55,38 @@ const parseProblem = async (response: Response): Promise<ProblemDetails | undefi
   return undefined;
 };
 
-const linkSignals = (signals: Array<AbortSignal | undefined>): AbortSignal => {
+type LinkedAbortSignal = {
+  signal: AbortSignal;
+  cleanup: () => void;
+};
+
+const linkSignals = (signals: Array<AbortSignal | undefined>): LinkedAbortSignal => {
   const controller = new AbortController();
+  const cleanups: Array<() => void> = [];
+  const cleanup = (): void => {
+    for (const remove of cleanups.splice(0)) {
+      remove();
+    }
+  };
+
   for (const signal of signals) {
     if (!signal) {
       continue;
     }
     if (signal.aborted) {
       controller.abort(signal.reason);
-      return controller.signal;
+      cleanup();
+      return { signal: controller.signal, cleanup };
     }
+    const onAbort = () => controller.abort(signal.reason);
     signal.addEventListener(
       "abort",
-      () => controller.abort(signal.reason),
+      onAbort,
       { once: true },
     );
+    cleanups.push(() => signal.removeEventListener("abort", onAbort));
   }
-  return controller.signal;
+  return { signal: controller.signal, cleanup };
 };
 
 const synthesizeProblem = (status: number, title: string, detail: string): ProblemDetails => ({
@@ -79,39 +100,52 @@ const isAbortLikeError = (error: unknown): boolean =>
   error instanceof DOMException &&
   (error.name === "AbortError" || error.name === "TimeoutError");
 
+const cookieSessionTokens = (expiresIn = 0): AdminTokenResponse => ({
+  access_token: COOKIE_SESSION_TOKEN,
+  refresh_token: COOKIE_SESSION_TOKEN,
+  token_type: "Bearer",
+  expires_in: expiresIn,
+});
+
+const clearLegacyAdminTokens = (): void => {
+  sessionStorage.removeItem(LEGACY_ACCESS_TOKEN_KEY);
+  sessionStorage.removeItem(LEGACY_REFRESH_TOKEN_KEY);
+};
+
+type ClearAdminSessionOptions = {
+  preserveCSRF?: boolean;
+};
+
 export const adminSession = {
   load(): AdminTokenResponse | null {
     try {
-      const access_token = sessionStorage.getItem(ACCESS_TOKEN_KEY);
-      const refresh_token = sessionStorage.getItem(REFRESH_TOKEN_KEY);
-      if (!access_token || !refresh_token) {
+      clearLegacyAdminTokens();
+      if (sessionStorage.getItem(SESSION_MARKER_KEY) !== "1") {
         return null;
       }
-      return {
-        access_token,
-        refresh_token,
-        token_type: "Bearer",
-        expires_in: 0,
-      };
+      return cookieSessionTokens();
     } catch (error) {
       log.warn("adminSession.load: sessionStorage unavailable", error);
       return null;
     }
   },
 
-  save(tokens: AdminTokenResponse): void {
+  save(_tokens: AdminTokenResponse): void {
     try {
-      sessionStorage.setItem(ACCESS_TOKEN_KEY, tokens.access_token);
-      sessionStorage.setItem(REFRESH_TOKEN_KEY, tokens.refresh_token);
+      clearLegacyAdminTokens();
+      sessionStorage.setItem(SESSION_MARKER_KEY, "1");
     } catch (error) {
       log.warn("adminSession.save: sessionStorage write failed", error);
     }
   },
 
-  clear(): void {
+  clear(options: ClearAdminSessionOptions = {}): void {
     try {
-      sessionStorage.removeItem(ACCESS_TOKEN_KEY);
-      sessionStorage.removeItem(REFRESH_TOKEN_KEY);
+      sessionStorage.removeItem(SESSION_MARKER_KEY);
+      clearLegacyAdminTokens();
+      if (!options.preserveCSRF) {
+        clearAdminCSRFTokens();
+      }
     } catch (error) {
       log.warn("adminSession.clear: sessionStorage remove failed", error);
     }
@@ -126,33 +160,33 @@ export const adminApi = {
         signal,
       }),
     );
-    return assertApiResponse(data, isAdminTokenResponse, "admin/login");
+    const tokens = assertApiResponse(data, isAdminTokenResponse, "admin/login");
+    return cookieSessionTokens(tokens.expires_in);
   },
 
-  async refresh(refreshToken: string, signal?: AbortSignal): Promise<AdminTokenResponse> {
+  async refresh(_refreshToken: string, signal?: AbortSignal): Promise<AdminTokenResponse> {
     const data = await unwrapApi(
       await adminClient.POST("/api/v1/admin/refresh", {
-        body: { refresh_token: refreshToken },
+        body: { refresh_token: "" },
         signal,
       }),
     );
-    return assertApiResponse(data, isAdminTokenResponse, "admin/refresh");
+    const tokens = assertApiResponse(data, isAdminTokenResponse, "admin/refresh");
+    return cookieSessionTokens(tokens.expires_in);
   },
 
-  async logout(accessToken: string, refreshToken: string, signal?: AbortSignal): Promise<void> {
+  async logout(_accessToken: string, _refreshToken: string, signal?: AbortSignal): Promise<void> {
     await unwrapApiVoid(
       await adminClient.POST("/api/v1/admin/logout", {
-        headers: adminHeaders(accessToken),
-        body: { refresh_token: refreshToken },
+        body: { refresh_token: "" },
         signal,
       }),
     );
   },
 
-  async listTasks(accessToken: string, signal?: AbortSignal): Promise<AdminTask[]> {
+  async listTasks(_accessToken: string, signal?: AbortSignal): Promise<AdminTask[]> {
     const data = await unwrapApi(
       await adminClient.GET("/api/v1/admin/tasks", {
-        headers: adminHeaders(accessToken),
         signal,
       }),
     );
@@ -160,13 +194,12 @@ export const adminApi = {
   },
 
   async createTask(
-    accessToken: string,
+    _accessToken: string,
     body: CreateTaskRequest,
     signal?: AbortSignal,
   ): Promise<AdminTask> {
     const data = await unwrapApi(
       await adminClient.POST("/api/v1/admin/tasks", {
-        headers: adminHeaders(accessToken),
         body,
         signal,
       }),
@@ -175,7 +208,7 @@ export const adminApi = {
   },
 
   async updateTask(
-    accessToken: string,
+    _accessToken: string,
     id: string,
     body: UpdateTaskRequest,
     signal?: AbortSignal,
@@ -183,7 +216,6 @@ export const adminApi = {
     const data = await unwrapApi(
       await adminClient.PUT("/api/v1/admin/tasks/{id}", {
         params: { path: { id } },
-        headers: adminHeaders(accessToken),
         body,
         signal,
       }),
@@ -191,25 +223,23 @@ export const adminApi = {
     return assertApiResponse(data, isAdminTask, "admin/tasks update");
   },
 
-  async deleteTask(accessToken: string, id: string, signal?: AbortSignal): Promise<void> {
+  async deleteTask(_accessToken: string, id: string, signal?: AbortSignal): Promise<void> {
     await unwrapApiVoid(
       await adminClient.DELETE("/api/v1/admin/tasks/{id}", {
         params: { path: { id } },
-        headers: adminHeaders(accessToken),
         signal,
       }),
     );
   },
 
   async listPlayers(
-    accessToken: string,
+    _accessToken: string,
     includeDeleted = false,
     signal?: AbortSignal,
   ): Promise<AdminPlayer[]> {
     const data = await unwrapApi(
       await adminClient.GET("/api/v1/admin/players", {
         params: includeDeleted ? { query: { include_deleted: true } } : undefined,
-        headers: adminHeaders(accessToken),
         signal,
       }),
     );
@@ -217,7 +247,7 @@ export const adminApi = {
   },
 
   async listPlayerAudit(
-    accessToken: string,
+    _accessToken: string,
     id: string,
     limit = 50,
     signal?: AbortSignal,
@@ -225,7 +255,6 @@ export const adminApi = {
     const data = await unwrapApi(
       await adminClient.GET("/api/v1/admin/players/{id}/audit", {
         params: { path: { id }, query: { limit } },
-        headers: adminHeaders(accessToken),
         signal,
       }),
     );
@@ -233,7 +262,7 @@ export const adminApi = {
   },
 
   async updatePlayer(
-    accessToken: string,
+    _accessToken: string,
     id: string,
     body: UpdateAdminPlayerRequest,
     signal?: AbortSignal,
@@ -241,7 +270,6 @@ export const adminApi = {
     const data = await unwrapApi(
       await adminClient.PUT("/api/v1/admin/players/{id}", {
         params: { path: { id } },
-        headers: adminHeaders(accessToken),
         body,
         signal,
       }),
@@ -249,18 +277,17 @@ export const adminApi = {
     return assertApiResponse(data, isAdminPlayer, "admin/players update");
   },
 
-  async deletePlayer(accessToken: string, id: string, signal?: AbortSignal): Promise<void> {
+  async deletePlayer(_accessToken: string, id: string, signal?: AbortSignal): Promise<void> {
     await unwrapApiVoid(
       await adminClient.DELETE("/api/v1/admin/players/{id}", {
         params: { path: { id } },
-        headers: adminHeaders(accessToken),
         signal,
       }),
     );
   },
 
   async uploadSource(
-    accessToken: string,
+    _accessToken: string,
     id: string,
     file: File,
     options: { signal?: AbortSignal; timeoutMs?: number } = {},
@@ -273,13 +300,14 @@ export const adminApi = {
     const timeoutHandle = setTimeout(() => {
       timeoutController.abort(new DOMException("Upload timed out", "TimeoutError"));
     }, timeoutMs);
+    const linkedSignal = linkSignals([options.signal, timeoutController.signal]);
 
     try {
-      const response = await fetch(adminURL(`/api/v1/admin/tasks/${id}/source`), {
+      const response = await credentialedFetch(adminURL(`/api/v1/admin/tasks/${id}/source`), {
         method: "POST",
-        headers: adminHeaders(accessToken),
+        credentials: "include",
         body: formData,
-        signal: linkSignals([options.signal, timeoutController.signal]),
+        signal: linkedSignal.signal,
       });
 
       if (!response.ok) {
@@ -306,6 +334,7 @@ export const adminApi = {
       }
       throw error;
     } finally {
+      linkedSignal.cleanup();
       clearTimeout(timeoutHandle);
     }
   },

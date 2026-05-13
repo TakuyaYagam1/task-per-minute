@@ -106,7 +106,7 @@ export const assertApiResponse = <T>(
 };
 
 export const isJoinResponse = (value: unknown): value is JoinResponse =>
-  isRecord(value) && isUUID(value.player_id) && isUUID(value.session_token);
+  isRecord(value) && isUUID(value.player_id);
 
 const isActiveDuelInfo = (value: unknown): value is ActiveDuelInfo =>
   isRecord(value) &&

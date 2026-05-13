@@ -1,5 +1,5 @@
 import { expect, test, type Page, type WebSocketRoute } from '@playwright/test';
-import { inSecondsISO, jsonHeaders, nowISO } from './support/common';
+import { inSecondsISO, jsonHeaders, mockPlayerLogout, nowISO } from './support/common';
 import {
   installWebSocketErrorProbe,
   type WebSocketErrorProbeWindow,
@@ -8,13 +8,13 @@ import {
 const routePlayerMeFromBrowserStorage = async (page: Page) => {
   await page.route('**/api/v1/players/me', async (route) => {
     const state = await page.evaluate(() => {
-      const rawGame = window.localStorage.getItem('currentGame');
+      const rawGame = window.sessionStorage.getItem('currentGame');
       const game = rawGame
         ? JSON.parse(rawGame) as { duel_id?: string; deadline?: string }
         : null;
       return {
-        playerID: window.localStorage.getItem('player_id'),
-        username: window.localStorage.getItem('username') || 'alice',
+        playerID: window.sessionStorage.getItem('player_id'),
+        username: window.sessionStorage.getItem('username') || 'alice',
         game,
       };
     });
@@ -58,6 +58,7 @@ const routePlayerMeFromBrowserStorage = async (page: Page) => {
 };
 
 test.beforeEach(async ({ page }) => {
+  await mockPlayerLogout(page);
   await routePlayerMeFromBrowserStorage(page);
 });
 
@@ -70,10 +71,9 @@ test('task description wraps long unbroken text inside card', async ({ page }) =
     'VmpJd2VFNUhSa2RpTTNCcUIwWktjbFpxVG01a01WSIhZVVZPYWsxWVFsaFVNV1F3VkdzeGNrNVVTbGhoTVVwSVdrWmFkbVZyTVVWTlJEQTk'.repeat(2);
 
   await page.addInitScript(({ playerID, sessionToken, duelID, deadline, description }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
-    window.localStorage.setItem('currentGame', JSON.stringify({
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('currentGame', JSON.stringify({
       duel_id: duelID,
       deadline,
       time_limit_seconds: 300,
@@ -115,7 +115,6 @@ test('task_assigned accepts non-core task category from websocket guard', async 
       headers: jsonHeaders,
       body: JSON.stringify({
         player_id: playerID,
-        session_token: sessionToken,
       }),
     });
   });
@@ -197,7 +196,7 @@ test('task_assigned accepts non-core task category from websocket guard', async 
   await expect(page).toHaveURL(/\/task$/);
   await expect(page.getByRole('heading', { name: 'OSINT Task Assigned Contract' })).toBeVisible();
   const storedGame = await page.evaluate(() => {
-    const raw = window.localStorage.getItem('currentGame');
+    const raw = window.sessionStorage.getItem('currentGame');
     return raw ? JSON.parse(raw) as { task?: { category?: string } } : null;
   });
   expect(storedGame?.task?.category).toBe('osint');
@@ -238,10 +237,9 @@ test('duel_resume accepts non-core task category from websocket guard', async ({
   };
 
   await page.addInitScript(({ playerID, sessionToken, duelID, deadline, task }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
-    window.localStorage.setItem('currentGame', JSON.stringify({
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('currentGame', JSON.stringify({
       duel_id: duelID,
       deadline,
       time_limit_seconds: 120,
@@ -270,7 +268,7 @@ test('duel_resume accepts non-core task category from websocket guard', async ({
 
   await expect(page.getByRole('heading', { name: 'Hardware Resume Contract' })).toBeVisible();
   const storedGame = await page.evaluate(() => {
-    const raw = window.localStorage.getItem('currentGame');
+    const raw = window.sessionStorage.getItem('currentGame');
     return raw ? JSON.parse(raw) as {
       deadline?: string;
       time_limit_seconds?: number;
@@ -311,10 +309,9 @@ test('reconnect pause disables flag submit until duel_resume updates deadline', 
   };
 
   await page.addInitScript(({ playerID, sessionToken, duelID, deadline, task }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
-    window.localStorage.setItem('currentGame', JSON.stringify({
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('currentGame', JSON.stringify({
       duel_id: duelID,
       deadline,
       time_limit_seconds: 120,
@@ -403,10 +400,9 @@ test('task reconnect fallback redirects home with stored notification', async ({
   let activeSocket: WebSocketRoute | null = null;
 
   await page.addInitScript(({ playerID, sessionToken, duelID, opponentID, deadline, reconnectDeadline, task }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
-    window.localStorage.setItem('currentGame', JSON.stringify({
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('currentGame', JSON.stringify({
       duel_id: duelID,
       deadline,
       time_limit_seconds: 120,
@@ -452,7 +448,7 @@ test('task reconnect fallback redirects home with stored notification', async ({
 
   await expect(page).toHaveURL(/\/$/);
   await expect(page.getByText('Соперник не вернулся вовремя. Дуэль закрыта.')).toBeVisible();
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('currentGame'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('currentGame'))).toBeNull();
 });
 
 test('task page sends surrender payload and waits for duel_finished result', async ({ page }) => {
@@ -475,10 +471,9 @@ test('task page sends surrender payload and waits for duel_finished result', asy
   const messages: Array<{ type: string; payload?: unknown }> = [];
 
   await page.addInitScript(({ playerID, sessionToken, duelID, deadline, task }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
-    window.localStorage.setItem('currentGame', JSON.stringify({
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('currentGame', JSON.stringify({
       duel_id: duelID,
       deadline,
       time_limit_seconds: 120,
@@ -527,11 +522,11 @@ test('task page sends surrender payload and waits for duel_finished result', asy
   await page.getByRole('button', { name: 'Сдаться' }).click();
 
   await expect(page.getByText('ПОРАЖЕНИЕ')).toBeVisible();
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('player_id'))).toBeNull();
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('session_token'))).toBeNull();
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('username'))).toBeNull();
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('currentGame'))).toBeNull();
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('game_result'))).toContain(duelID);
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('player_id'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('session_token'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('username'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('currentGame'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('game_result'))).toContain(duelID);
   expect(messages).toContainEqual({
     type: 'surrender',
     payload: {
@@ -567,10 +562,9 @@ test('task page allows surrender while duel is paused', async ({ page }) => {
   };
 
   await page.addInitScript(({ playerID, sessionToken, duelID, deadline, task }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
-    window.localStorage.setItem('currentGame', JSON.stringify({
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('currentGame', JSON.stringify({
       duel_id: duelID,
       deadline,
       time_limit_seconds: 120,
@@ -669,10 +663,9 @@ test('task page ignores late websocket error after duel_finished', async ({ page
   };
 
   await page.addInitScript(({ playerID, sessionToken, duelID, deadline, task }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
-    window.localStorage.setItem('currentGame', JSON.stringify({
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('currentGame', JSON.stringify({
       duel_id: duelID,
       deadline,
       time_limit_seconds: 120,
@@ -749,10 +742,9 @@ test('task page ignores late websocket error after duel_expired', async ({ page 
   };
 
   await page.addInitScript(({ playerID, sessionToken, duelID, deadline, task }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
-    window.localStorage.setItem('currentGame', JSON.stringify({
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('currentGame', JSON.stringify({
       duel_id: duelID,
       deadline,
       time_limit_seconds: 120,
@@ -814,10 +806,9 @@ test('server duel_resume recovers task page from local timer timeup', async ({ p
   };
 
   await page.addInitScript(({ playerID, sessionToken, duelID, pastDeadline, task }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
-    window.localStorage.setItem('currentGame', JSON.stringify({
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('currentGame', JSON.stringify({
       duel_id: duelID,
       deadline: pastDeadline,
       time_limit_seconds: 120,
@@ -847,9 +838,9 @@ test('server duel_resume recovers task page from local timer timeup', async ({ p
 
   await expect(page.getByText('ВРЕМЯ ВЫШЛО!')).toBeHidden();
   await expect(page.getByPlaceholder('ctf{...}')).toBeEnabled();
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('game_result'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('game_result'))).toBeNull();
   const storedGame = await page.evaluate(() => {
-    const raw = window.localStorage.getItem('currentGame');
+    const raw = window.sessionStorage.getItem('currentGame');
     return raw ? JSON.parse(raw) as { deadline?: string } : null;
   });
   expect(storedGame?.deadline).toBe(futureDeadline);
@@ -882,10 +873,9 @@ test('server opponent_reconnected recovers task page from local timer timeup', a
   };
 
   await page.addInitScript(({ playerID, sessionToken, duelID, pastDeadline, task }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
-    window.localStorage.setItem('currentGame', JSON.stringify({
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('currentGame', JSON.stringify({
       duel_id: duelID,
       deadline: pastDeadline,
       time_limit_seconds: 120,
@@ -915,7 +905,7 @@ test('server opponent_reconnected recovers task page from local timer timeup', a
   await expect(page.getByText('ВРЕМЯ ВЫШЛО!')).toBeHidden();
   await expect(page.getByText('Соперник вернулся. Дуэль продолжается.')).toBeVisible();
   await expect(page.getByPlaceholder('ctf{...}')).toBeEnabled();
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('game_result'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('game_result'))).toBeNull();
 });
 
 test('server opponent_disconnected replaces local timer timeup with pause UI', async ({ page }) => {
@@ -945,10 +935,9 @@ test('server opponent_disconnected replaces local timer timeup with pause UI', a
   };
 
   await page.addInitScript(({ playerID, sessionToken, duelID, pastDeadline, task }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
-    window.localStorage.setItem('currentGame', JSON.stringify({
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('currentGame', JSON.stringify({
       duel_id: duelID,
       deadline: pastDeadline,
       time_limit_seconds: 120,
@@ -978,9 +967,9 @@ test('server opponent_disconnected replaces local timer timeup with pause UI', a
   await expect(page.getByText('ВРЕМЯ ВЫШЛО!')).toBeHidden();
   await expect(page.getByRole('heading', { name: 'СОПЕРНИК ОТКЛЮЧИЛСЯ' })).toBeVisible();
   await expect(page.getByPlaceholder('ctf{...}')).toBeDisabled();
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('game_result'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('game_result'))).toBeNull();
   const storedGame = await page.evaluate(() => {
-    const raw = window.localStorage.getItem('currentGame');
+    const raw = window.sessionStorage.getItem('currentGame');
     return raw
       ? JSON.parse(raw) as {
           opponent_disconnected?: boolean;
@@ -1017,10 +1006,9 @@ test('task page ignores same-duel hint_unlocked for another task', async ({ page
   });
 
   await page.addInitScript(({ playerID, sessionToken, duelID, deadline, task }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
-    window.localStorage.setItem('currentGame', JSON.stringify({
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('currentGame', JSON.stringify({
       duel_id: duelID,
       deadline,
       time_limit_seconds: 120,
@@ -1053,9 +1041,9 @@ test('task page ignores same-duel hint_unlocked for another task', async ({ page
   await expect(page.getByPlaceholder('ctf{...}')).toBeEnabled();
   await expect(page.getByRole('heading', { name: 'ВРЕМЯ ВЫШЛО!' })).toBeHidden();
   await expect(page.getByRole('heading', { name: 'СОПЕРНИК ОТКЛЮЧИЛСЯ' })).toBeHidden();
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('game_result'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('game_result'))).toBeNull();
   const storedGame = await page.evaluate(() => {
-    const raw = window.localStorage.getItem('currentGame');
+    const raw = window.sessionStorage.getItem('currentGame');
     return raw ? JSON.parse(raw) as { deadline?: string; task?: { id?: string } } : null;
   });
   expect(storedGame?.deadline).toBe(deadline);
@@ -1086,10 +1074,9 @@ test('wrong-task hint_unlocked does not recover task page from local timer timeu
   let activeSocket: WebSocketRoute | null = null;
 
   await page.addInitScript(({ playerID, sessionToken, duelID, deadline, task }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
-    window.localStorage.setItem('currentGame', JSON.stringify({
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('currentGame', JSON.stringify({
       duel_id: duelID,
       deadline,
       time_limit_seconds: 120,
@@ -1123,7 +1110,7 @@ test('wrong-task hint_unlocked does not recover task page from local timer timeu
   await expect(page.getByText('ВРЕМЯ ВЫШЛО!')).toBeVisible();
   await expect(page.getByText('Wrong task hint after timeup')).toBeHidden();
   const storedResult = await page.evaluate(() => {
-    const raw = window.localStorage.getItem('game_result');
+    const raw = window.sessionStorage.getItem('game_result');
     return raw ? JSON.parse(raw) as { state?: string; source?: string; duel_id?: string } : null;
   });
   expect(storedResult).toMatchObject({
@@ -1152,10 +1139,9 @@ test('same-task hint_unlocked still reveals current task hint while playing', as
   let activeSocket: WebSocketRoute | null = null;
 
   await page.addInitScript(({ playerID, sessionToken, duelID, deadline, task }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
-    window.localStorage.setItem('currentGame', JSON.stringify({
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('currentGame', JSON.stringify({
       duel_id: duelID,
       deadline,
       time_limit_seconds: 120,
@@ -1186,7 +1172,7 @@ test('same-task hint_unlocked still reveals current task hint while playing', as
   await expect(page.getByText('Same task hint while playing')).toBeVisible();
   await expect(page.getByText('ВРЕМЯ ВЫШЛО!')).toBeHidden();
   await expect(page.getByPlaceholder('ctf{...}')).toBeEnabled();
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('game_result'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('game_result'))).toBeNull();
 });
 
 test('task page ignores self opponent_solved but accepts opponent solved event', async ({ page }) => {
@@ -1209,10 +1195,9 @@ test('task page ignores self opponent_solved but accepts opponent solved event',
   let activeSocket: WebSocketRoute | null = null;
 
   await page.addInitScript(({ playerID, sessionToken, duelID, deadline, task }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
-    window.localStorage.setItem('currentGame', JSON.stringify({
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('currentGame', JSON.stringify({
       duel_id: duelID,
       deadline,
       time_limit_seconds: 120,
@@ -1240,7 +1225,7 @@ test('task page ignores self opponent_solved but accepts opponent solved event',
   await page.waitForTimeout(150);
   await expect(page.getByText('Соперник уже решил задание. Ждем завершение дуэли...')).toBeHidden();
   await expect(page.getByPlaceholder('ctf{...}')).toBeEnabled();
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('game_result'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('game_result'))).toBeNull();
 
   activeSocket!.send(JSON.stringify({
     type: 'opponent_solved',
@@ -1273,10 +1258,9 @@ test('task page ignores self opponent disconnect and reconnect while playing', a
   let activeSocket: WebSocketRoute | null = null;
 
   await page.addInitScript(({ playerID, sessionToken, duelID, deadline, task }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
-    window.localStorage.setItem('currentGame', JSON.stringify({
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('currentGame', JSON.stringify({
       duel_id: duelID,
       deadline,
       time_limit_seconds: 120,
@@ -1317,7 +1301,7 @@ test('task page ignores self opponent disconnect and reconnect while playing', a
   await expect(page.getByPlaceholder('ctf{...}')).toBeEnabled();
 
   const storedGame = await page.evaluate(() => {
-    const raw = window.localStorage.getItem('currentGame');
+    const raw = window.sessionStorage.getItem('currentGame');
     return raw
       ? JSON.parse(raw) as {
           deadline?: string;
@@ -1354,10 +1338,9 @@ test('self opponent events do not recover task page from local timer timeup', as
   let activeSocket: WebSocketRoute | null = null;
 
   await page.addInitScript(({ playerID, sessionToken, duelID, deadline, task }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
-    window.localStorage.setItem('currentGame', JSON.stringify({
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('currentGame', JSON.stringify({
       duel_id: duelID,
       deadline,
       time_limit_seconds: 120,
@@ -1407,7 +1390,7 @@ test('self opponent events do not recover task page from local timer timeup', as
   await expect(page.getByRole('heading', { name: 'СОПЕРНИК ОТКЛЮЧИЛСЯ' })).toBeHidden();
 
   const storedResult = await page.evaluate(() => {
-    const raw = window.localStorage.getItem('game_result');
+    const raw = window.sessionStorage.getItem('game_result');
     return raw ? JSON.parse(raw) as { state?: string; source?: string; duel_id?: string } : null;
   });
   expect(storedResult).toMatchObject({
@@ -1417,7 +1400,7 @@ test('self opponent events do not recover task page from local timer timeup', as
   });
 
   const storedGame = await page.evaluate(() => {
-    const raw = window.localStorage.getItem('currentGame');
+    const raw = window.sessionStorage.getItem('currentGame');
     return raw
       ? JSON.parse(raw) as {
           deadline?: string;
@@ -1453,10 +1436,9 @@ test('task page ignores third-party opponent events when opponent id is known', 
   let activeSocket: WebSocketRoute | null = null;
 
   await page.addInitScript(({ playerID, sessionToken, duelID, opponentID, deadline, task }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
-    window.localStorage.setItem('currentGame', JSON.stringify({
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('currentGame', JSON.stringify({
       duel_id: duelID,
       deadline,
       time_limit_seconds: 120,
@@ -1505,7 +1487,7 @@ test('task page ignores third-party opponent events when opponent id is known', 
   await expect(page.getByPlaceholder('ctf{...}')).toBeEnabled();
 
   const storedAfterThirdParty = await page.evaluate(() => {
-    const raw = window.localStorage.getItem('currentGame');
+    const raw = window.sessionStorage.getItem('currentGame');
     return raw
       ? JSON.parse(raw) as {
           deadline?: string;
@@ -1541,7 +1523,7 @@ test('task page ignores third-party opponent events when opponent id is known', 
   await expect(page.getByRole('heading', { name: 'СОПЕРНИК ОТКЛЮЧИЛСЯ' })).toBeHidden();
   await expect(page.getByText('Соперник вернулся. Дуэль продолжается.')).toBeVisible();
   await expect.poll(async () => {
-    const raw = await page.evaluate(() => window.localStorage.getItem('currentGame'));
+    const raw = await page.evaluate(() => window.sessionStorage.getItem('currentGame'));
     return raw ? (JSON.parse(raw) as { deadline?: string }).deadline : null;
   }).toBe(laterDeadline);
 });
@@ -1571,10 +1553,9 @@ test('third-party opponent events do not recover task page from local timer time
   let activeSocket: WebSocketRoute | null = null;
 
   await page.addInitScript(({ playerID, sessionToken, duelID, opponentID, deadline, task }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
-    window.localStorage.setItem('currentGame', JSON.stringify({
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('currentGame', JSON.stringify({
       duel_id: duelID,
       deadline,
       time_limit_seconds: 120,
@@ -1625,7 +1606,7 @@ test('third-party opponent events do not recover task page from local timer time
   await expect(page.getByRole('heading', { name: 'СОПЕРНИК ОТКЛЮЧИЛСЯ' })).toBeHidden();
 
   const storedResult = await page.evaluate(() => {
-    const raw = window.localStorage.getItem('game_result');
+    const raw = window.sessionStorage.getItem('game_result');
     return raw ? JSON.parse(raw) as { state?: string; source?: string; duel_id?: string } : null;
   });
   expect(storedResult).toMatchObject({
@@ -1635,7 +1616,7 @@ test('third-party opponent events do not recover task page from local timer time
   });
 
   const storedGame = await page.evaluate(() => {
-    const raw = window.localStorage.getItem('currentGame');
+    const raw = window.sessionStorage.getItem('currentGame');
     return raw
       ? JSON.parse(raw) as {
           deadline?: string;
@@ -1676,10 +1657,9 @@ test('task page ignores duel_resume with unexpected known opponent id', async ({
   let activeSocket: WebSocketRoute | null = null;
 
   await page.addInitScript(({ playerID, sessionToken, duelID, opponentID, deadline, task }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
-    window.localStorage.setItem('currentGame', JSON.stringify({
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('currentGame', JSON.stringify({
       duel_id: duelID,
       deadline,
       time_limit_seconds: 120,
@@ -1712,7 +1692,7 @@ test('task page ignores duel_resume with unexpected known opponent id', async ({
   await expect(page.getByRole('heading', { name: 'Known Opponent Resume Guard' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Mismatched Opponent Resume Task' })).toBeHidden();
   const storedAfterMismatch = await page.evaluate(() => {
-    const raw = window.localStorage.getItem('currentGame');
+    const raw = window.sessionStorage.getItem('currentGame');
     return raw
       ? JSON.parse(raw) as { deadline?: string; opponent_id?: string; task?: { title?: string } }
       : null;
@@ -1733,7 +1713,7 @@ test('task page ignores duel_resume with unexpected known opponent id', async ({
   }));
 
   await expect.poll(async () => {
-    const raw = await page.evaluate(() => window.localStorage.getItem('currentGame'));
+    const raw = await page.evaluate(() => window.sessionStorage.getItem('currentGame'));
     return raw ? (JSON.parse(raw) as { deadline?: string }).deadline : null;
   }).toBe(laterDeadline);
 });
@@ -1763,10 +1743,9 @@ test('self and mismatched duel_resume do not recover task page from local timer 
   let activeSocket: WebSocketRoute | null = null;
 
   await page.addInitScript(({ playerID, sessionToken, duelID, opponentID, deadline, task }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
-    window.localStorage.setItem('currentGame', JSON.stringify({
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('currentGame', JSON.stringify({
       duel_id: duelID,
       deadline,
       time_limit_seconds: 120,
@@ -1803,7 +1782,7 @@ test('self and mismatched duel_resume do not recover task page from local timer 
   await expect(page.getByText('ВРЕМЯ ВЫШЛО!')).toBeVisible();
   await expect(page.getByPlaceholder('ctf{...}')).toBeDisabled();
   const storedResult = await page.evaluate(() => {
-    const raw = window.localStorage.getItem('game_result');
+    const raw = window.sessionStorage.getItem('game_result');
     return raw ? JSON.parse(raw) as { state?: string; source?: string; duel_id?: string } : null;
   });
   expect(storedResult).toMatchObject({
@@ -1813,7 +1792,7 @@ test('self and mismatched duel_resume do not recover task page from local timer 
   });
 
   const storedGame = await page.evaluate(() => {
-    const raw = window.localStorage.getItem('currentGame');
+    const raw = window.sessionStorage.getItem('currentGame');
     return raw
       ? JSON.parse(raw) as { deadline?: string; opponent_id?: string }
       : null;
@@ -1843,10 +1822,9 @@ test('legacy task page stores valid non-self opponent id from duel_resume', asyn
   let activeSocket: WebSocketRoute | null = null;
 
   await page.addInitScript(({ playerID, sessionToken, duelID, deadline, task }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
-    window.localStorage.setItem('currentGame', JSON.stringify({
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('currentGame', JSON.stringify({
       duel_id: duelID,
       deadline,
       time_limit_seconds: 120,
@@ -1875,11 +1853,11 @@ test('legacy task page stores valid non-self opponent id from duel_resume', asyn
   }));
 
   await expect.poll(async () => {
-    const raw = await page.evaluate(() => window.localStorage.getItem('currentGame'));
+    const raw = await page.evaluate(() => window.sessionStorage.getItem('currentGame'));
     return raw ? (JSON.parse(raw) as { opponent_id?: string }).opponent_id : null;
   }).toBe(opponentID);
   await expect.poll(async () => {
-    const raw = await page.evaluate(() => window.localStorage.getItem('currentGame'));
+    const raw = await page.evaluate(() => window.sessionStorage.getItem('currentGame'));
     return raw ? (JSON.parse(raw) as { deadline?: string }).deadline : null;
   }).toBe(laterDeadline);
 });
@@ -1916,10 +1894,9 @@ test('accepted server terminal ignores later active websocket events', async ({ 
   };
 
   await page.addInitScript(({ playerID, sessionToken, duelID, deadline, task }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
-    window.localStorage.setItem('currentGame', JSON.stringify({
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('currentGame', JSON.stringify({
       duel_id: duelID,
       deadline,
       time_limit_seconds: 120,
@@ -1993,7 +1970,7 @@ test('accepted server terminal ignores later active websocket events', async ({ 
   await expect(page.getByText('Late hint must not render')).toBeHidden();
   await expect(page.getByText('Соперник вернулся. Дуэль продолжается.')).toBeHidden();
   const storedResult = await page.evaluate(() => {
-    const raw = window.localStorage.getItem('game_result');
+    const raw = window.sessionStorage.getItem('game_result');
     return raw ? JSON.parse(raw) as { state?: string; source?: string; duel_id?: string } : null;
   });
   expect(storedResult).toMatchObject({
@@ -2021,10 +1998,9 @@ test('duel.paused error after flag submit pauses UI without incorrect flag state
   const messages: Array<{ type: string; payload?: unknown }> = [];
 
   await page.addInitScript(({ playerID, sessionToken, duelID, task }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
-    window.localStorage.setItem('currentGame', JSON.stringify({
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('currentGame', JSON.stringify({
       duel_id: duelID,
       deadline: new Date(Date.now() + 120_000).toISOString(),
       time_limit_seconds: 120,
@@ -2084,10 +2060,9 @@ test('stale wrong flag timeout does not clear a later correct result', async ({ 
   };
 
   await page.addInitScript(({ playerID, sessionToken, duelID, task }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
-    window.localStorage.setItem('currentGame', JSON.stringify({
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('currentGame', JSON.stringify({
       duel_id: duelID,
       deadline: new Date(Date.now() + 120_000).toISOString(),
       time_limit_seconds: 120,
@@ -2157,7 +2132,7 @@ test('invalid resume and reconnect payloads do not mutate task deadline', async 
   };
   const currentStoredGame = () =>
     page.evaluate(() => {
-      const raw = window.localStorage.getItem('currentGame');
+      const raw = window.sessionStorage.getItem('currentGame');
       if (!raw) {
         return null;
       }
@@ -2173,10 +2148,9 @@ test('invalid resume and reconnect payloads do not mutate task deadline', async 
   });
 
   await page.addInitScript(({ playerID, sessionToken, duelID, deadline, task }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
-    window.localStorage.setItem('currentGame', JSON.stringify({
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('currentGame', JSON.stringify({
       duel_id: duelID,
       deadline,
       time_limit_seconds: 120,
@@ -2272,7 +2246,7 @@ test('task page ignores websocket events for other duels', async ({ page }) => {
   };
   const currentStoredGame = () =>
     page.evaluate(() => {
-      const raw = window.localStorage.getItem('currentGame');
+      const raw = window.sessionStorage.getItem('currentGame');
       if (!raw) {
         return null;
       }
@@ -2291,10 +2265,9 @@ test('task page ignores websocket events for other duels', async ({ page }) => {
   });
 
   await page.addInitScript(({ playerID, sessionToken, duelID, deadline, task }) => {
-    window.localStorage.setItem('player_id', playerID);
-    window.localStorage.setItem('session_token', sessionToken);
-    window.localStorage.setItem('username', 'alice');
-    window.localStorage.setItem('currentGame', JSON.stringify({
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('currentGame', JSON.stringify({
       duel_id: duelID,
       deadline,
       time_limit_seconds: 120,
@@ -2427,6 +2400,6 @@ test('task page ignores websocket events for other duels', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'ВРЕМЯ ВЫШЛО!' })).toBeHidden();
   await expect(page.getByRole('heading', { name: 'ПОБЕДА!' })).toBeHidden();
   await expect(page.getByRole('heading', { name: 'ПОРАЖЕНИЕ' })).toBeHidden();
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('game_result'))).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('game_result'))).toBeNull();
   expect(pageErrors).toEqual([]);
 });

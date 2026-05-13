@@ -15,7 +15,7 @@ export interface paths {
         put?: never;
         /**
          * Register or refresh a player session
-         * @description Upserts a player by username and issues a new session_token (UUID). Existing sessions for the same username are invalidated. Returns 409 if the player is currently in an active duel.
+         * @description Upserts a player by username and issues an HttpOnly player session cookie. A readable session-bound tpm_player_csrf cookie and X-CSRF-Token response header are issued alongside it for unsafe player REST requests. Existing sessions for the same username are invalidated. Returns 409 if the player is currently in an active duel.
          */
         post: operations["joinPlayer"];
         delete?: never;
@@ -33,11 +33,31 @@ export interface paths {
         };
         /**
          * Resolve the current player session
-         * @description Returns the player and any active duel they are participating in.
+         * @description Returns the player and any active duel they are participating in. If the readable tpm_player_csrf cookie is missing, the response refreshes it. The current session-bound CSRF token is also returned in X-CSRF-Token for split-domain browser deployments where JavaScript cannot read the API host cookie.
          */
         get: operations["getMe"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/players/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Clear the current player session cookie
+         * @description Clears the HttpOnly player session cookie and invalidates the current server-side player session when a valid cookie is present. Requests that carry a player session cookie must send X-CSRF-Token matching the readable tpm_player_csrf cookie.
+         */
+        post: operations["logoutPlayer"];
         delete?: never;
         options?: never;
         head?: never;
@@ -110,7 +130,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Exchange the shared admin password for a token pair */
+        /**
+         * Exchange the shared admin password for an admin session
+         * @description Returns the token pair for backwards-compatible non-browser clients and also sets HttpOnly tpm_admin_access and tpm_admin_refresh cookies for browser clients. Browser-sourced requests receive cookie-session marker values in the JSON token fields and must use X-CSRF-Token with the access CSRF token for unsafe admin mutations, and X-CSRF-Token with the refresh CSRF token for refresh/logout.
+         */
         post: operations["adminLogin"];
         delete?: never;
         options?: never;
@@ -127,7 +150,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Rotate the access/refresh token pair */
+        /**
+         * Rotate the admin session
+         * @description Accepts refresh_token from the JSON body or the HttpOnly tpm_admin_refresh cookie. Returns the new token pair for backwards-compatible non-browser clients and refreshes the HttpOnly admin cookies. Cookie-authenticated browser refresh requests receive cookie-session marker values in the JSON token fields and must send X-CSRF-Token with the refresh CSRF token from X-Admin-Refresh-CSRF-Token.
+         */
         post: operations["adminRefresh"];
         delete?: never;
         options?: never;
@@ -145,10 +171,15 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Revoke the supplied refresh token
+         * Revoke the supplied admin refresh token
          * @description Revokes the supplied refresh token so it can no longer be exchanged
-         *     for a new pair. The access token is unaffected (it expires naturally
-         *     via its short TTL). Requires a valid bearer access token.
+         *     for a new pair. The refresh token can be supplied in the JSON body or
+         *     by the HttpOnly tpm_admin_refresh cookie. The access token is unaffected
+         *     (it expires naturally via its short TTL). Logout does not require a
+         *     currently valid access token, so an expired browser session can still
+         *     revoke the refresh token and clear auth cookies.
+         *     Cookie-authenticated browser requests must send X-CSRF-Token with the
+         *     refresh CSRF token from X-Admin-Refresh-CSRF-Token.
          */
         post: operations["adminLogout"];
         delete?: never;
@@ -293,8 +324,6 @@ export interface components {
         JoinResponse: {
             /** Format: uuid */
             player_id: string;
-            /** Format: uuid */
-            session_token: string;
         };
         /** @description RFC 7807 error envelope used by every 4xx/5xx response. */
         ProblemDetails: {
@@ -401,12 +430,14 @@ export interface components {
             password: string;
         };
         AdminTokenResponse: {
+            /** @description Bearer access token for backwards-compatible non-browser clients. Browser cookie-session responses use the opaque __cookie_admin_session__ marker instead of a usable JWT. */
             access_token: string;
             /**
              * Format: int32
              * @description Seconds until access_token expires.
              */
             expires_in: number;
+            /** @description Bearer refresh token for backwards-compatible non-browser clients. Browser cookie-session responses use the opaque __cookie_admin_session__ marker instead of a usable JWT. */
             refresh_token: string;
             /** @enum {string} */
             token_type: "Bearer";
@@ -415,7 +446,7 @@ export interface components {
             refresh_token: string;
         };
         AdminLogoutRequest: {
-            /** @description Refresh token to revoke. Access token is taken from the Authorization header. */
+            /** @description Refresh token to revoke. Browser clients may rely on the HttpOnly tpm_admin_refresh cookie; non-browser clients can still provide the refresh token in the JSON body. */
             refresh_token: string;
         };
         AdminPlayerResponse: {
@@ -573,6 +604,24 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
+            /** @description Request body exceeds the JSON size limit. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Request content type must be application/json. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
         };
     };
     getMe: {
@@ -595,6 +644,33 @@ export interface operations {
             };
             /** @description Missing or invalid session token. */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    logoutPlayer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Player session cleared. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description CSRF token missing or invalid for an existing player session. */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -718,6 +794,10 @@ export interface operations {
             /** @description Login OK. */
             200: {
                 headers: {
+                    /** @description CSRF token bound to the HttpOnly tpm_admin_access cookie. */
+                    "X-CSRF-Token"?: string;
+                    /** @description CSRF token bound to the HttpOnly tpm_admin_refresh cookie. */
+                    "X-Admin-Refresh-CSRF-Token"?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -726,6 +806,24 @@ export interface operations {
             };
             /** @description Invalid password. */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Request body exceeds the JSON size limit. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Request content type must be application/json. */
+            415: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -751,6 +849,10 @@ export interface operations {
             /** @description New token pair. */
             200: {
                 headers: {
+                    /** @description CSRF token bound to the refreshed HttpOnly tpm_admin_access cookie. */
+                    "X-CSRF-Token"?: string;
+                    /** @description CSRF token bound to the refreshed HttpOnly tpm_admin_refresh cookie. */
+                    "X-Admin-Refresh-CSRF-Token"?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -759,6 +861,24 @@ export interface operations {
             };
             /** @description Refresh token invalid, expired, or revoked. */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Request body exceeds the JSON size limit. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Request content type must be application/json. */
+            415: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -788,8 +908,26 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Missing/invalid bearer token or refresh token invalid. */
+            /** @description Missing, invalid, expired, or revoked refresh token. */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Request body exceeds the JSON size limit. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Request content type must be application/json. */
+            415: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -819,7 +957,7 @@ export interface operations {
                     "application/json": components["schemas"]["AdminPlayerResponse"][];
                 };
             };
-            /** @description Missing or invalid bearer token. */
+            /** @description Missing or invalid admin session. */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -861,7 +999,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Missing or invalid bearer token. */
+            /** @description Missing or invalid admin session. */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -914,7 +1052,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Missing or invalid bearer token. */
+            /** @description Missing or invalid admin session. */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -934,6 +1072,24 @@ export interface operations {
             };
             /** @description Username is already taken. */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Request body exceeds the JSON size limit. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Request content type must be application/json. */
+            415: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -961,7 +1117,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Missing or invalid bearer token. */
+            /** @description Missing or invalid admin session. */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -981,6 +1137,24 @@ export interface operations {
             };
             /** @description Player is queued or in a duel. */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Request body exceeds the JSON size limit. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Request content type must be application/json. */
+            415: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1008,7 +1182,7 @@ export interface operations {
                     "application/json": components["schemas"]["TaskResponse"][];
                 };
             };
-            /** @description Missing or invalid bearer token. */
+            /** @description Missing or invalid admin session. */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -1050,7 +1224,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Missing or invalid bearer token. */
+            /** @description Missing or invalid admin session. */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -1081,7 +1255,7 @@ export interface operations {
                     "application/json": components["schemas"]["TaskResponse"];
                 };
             };
-            /** @description Missing or invalid bearer token. */
+            /** @description Missing or invalid admin session. */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -1092,6 +1266,24 @@ export interface operations {
             };
             /** @description Task not found. */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Request body exceeds the JSON size limit. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Request content type must be application/json. */
+            415: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1134,7 +1326,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Missing or invalid bearer token. */
+            /** @description Missing or invalid admin session. */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -1172,7 +1364,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Missing or invalid bearer token. */
+            /** @description Missing or invalid admin session. */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -1237,7 +1429,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Missing or invalid bearer token. */
+            /** @description Missing or invalid admin session. */
             401: {
                 headers: {
                     [name: string]: unknown;

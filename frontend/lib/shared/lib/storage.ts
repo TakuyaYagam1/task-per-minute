@@ -17,7 +17,7 @@ const REDIRECT_NOTIFICATION_KEY = "redirect_notification";
 const localStorageFallback = new Map<string, string>();
 const sessionStorageFallback = new Map<string, string>();
 
-const browserStorage = (): Storage | null => {
+const browserLocalStorage = (): Storage | null => {
   if (typeof window === "undefined") {
     return null;
   }
@@ -38,6 +38,8 @@ const browserSessionStorage = (): Storage | null => {
     return null;
   }
 };
+
+const browserGameStorage = (): Storage | null => browserSessionStorage();
 
 const readItem = (
   storage: Storage | null,
@@ -84,6 +86,34 @@ const removeItem = (
   } catch {
     // Best-effort cleanup only.
   }
+};
+
+const readGameItem = (key: string): string | null => {
+  const storage = browserGameStorage();
+  const value = readItem(storage, sessionStorageFallback, key);
+  if (value) {
+    return value;
+  }
+
+  const legacyStorage = browserLocalStorage();
+  const legacyValue = readItem(legacyStorage, localStorageFallback, key);
+  if (!legacyValue) {
+    return null;
+  }
+
+  writeItem(storage, sessionStorageFallback, key, legacyValue);
+  removeItem(legacyStorage, localStorageFallback, key);
+  return legacyValue;
+};
+
+const writeGameItem = (key: string, value: string): void => {
+  writeItem(browserGameStorage(), sessionStorageFallback, key, value);
+  removeItem(browserLocalStorage(), localStorageFallback, key);
+};
+
+const removeGameItem = (key: string): void => {
+  removeItem(browserGameStorage(), sessionStorageFallback, key);
+  removeItem(browserLocalStorage(), localStorageFallback, key);
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -140,15 +170,14 @@ const isGameResult = (value: unknown): value is GameResult =>
     isString(value.winner_username));
 
 const getUUIDItem = (key: string): string | null => {
-  const storage = browserStorage();
-  const value = readItem(storage, localStorageFallback, key);
+  const value = readGameItem(key);
   if (!value) {
     return null;
   }
   if (isUUID(value)) {
     return value;
   }
-  removeItem(storage, localStorageFallback, key);
+  removeGameItem(key);
   return null;
 };
 
@@ -156,8 +185,7 @@ const parseStoredJSON = <T>(
   key: string,
   guard: (value: unknown) => value is T,
 ): T | null => {
-  const storage = browserStorage();
-  const raw = readItem(storage, localStorageFallback, key);
+  const raw = readGameItem(key);
   if (!raw) {
     return null;
   }
@@ -167,76 +195,58 @@ const parseStoredJSON = <T>(
       return value;
     }
   } catch {
-    removeItem(storage, localStorageFallback, key);
+    removeGameItem(key);
     return null;
   }
-  removeItem(storage, localStorageFallback, key);
+  removeGameItem(key);
   return null;
 };
 
 export const gameStorage = {
   setPlayerId: (id: string): void => {
-    writeItem(browserStorage(), localStorageFallback, PLAYER_ID_KEY, id);
+    writeGameItem(PLAYER_ID_KEY, id);
   },
 
   getPlayerId: (): string | null => getUUIDItem(PLAYER_ID_KEY),
 
-  setSessionToken: (token: string): void => {
-    writeItem(browserStorage(), localStorageFallback, SESSION_TOKEN_KEY, token);
-  },
-
-  getSessionToken: (): string | null => getUUIDItem(SESSION_TOKEN_KEY),
-
   setUsername: (username: string): void => {
-    writeItem(browserStorage(), localStorageFallback, USERNAME_KEY, username);
+    writeGameItem(USERNAME_KEY, username);
   },
 
   getUsername: (): string | null =>
-    readItem(browserStorage(), localStorageFallback, USERNAME_KEY),
+    readGameItem(USERNAME_KEY),
 
   clearPlayerSession: (): void => {
-    const storage = browserStorage();
-    removeItem(storage, localStorageFallback, PLAYER_ID_KEY);
-    removeItem(storage, localStorageFallback, SESSION_TOKEN_KEY);
-    removeItem(storage, localStorageFallback, USERNAME_KEY);
+    removeGameItem(PLAYER_ID_KEY);
+    removeGameItem(SESSION_TOKEN_KEY);
+    removeGameItem(USERNAME_KEY);
   },
 
   setGameData: (data: GameData): void => {
-    writeItem(
-      browserStorage(),
-      localStorageFallback,
-      CURRENT_GAME_KEY,
-      JSON.stringify(data),
-    );
+    writeGameItem(CURRENT_GAME_KEY, JSON.stringify(data));
   },
 
   getGameData: (): GameData | null =>
     parseStoredJSON(CURRENT_GAME_KEY, isGameData),
 
   setGameResult: (result: GameResult): void => {
-    writeItem(
-      browserStorage(),
-      localStorageFallback,
-      GAME_RESULT_KEY,
-      JSON.stringify(result),
-    );
+    writeGameItem(GAME_RESULT_KEY, JSON.stringify(result));
   },
 
   getGameResult: (): GameResult | null =>
     parseStoredJSON(GAME_RESULT_KEY, isGameResult),
 
   clearGameResult: (): void => {
-    removeItem(browserStorage(), localStorageFallback, GAME_RESULT_KEY);
+    removeGameItem(GAME_RESULT_KEY);
   },
 
   clearCurrentGame: (): void => {
-    removeItem(browserStorage(), localStorageFallback, CURRENT_GAME_KEY);
+    removeGameItem(CURRENT_GAME_KEY);
   },
 
   clearGameData: (): void => {
-    const storage = browserStorage();
-    removeItem(storage, localStorageFallback, GAME_RESULT_KEY);
-    removeItem(storage, localStorageFallback, CURRENT_GAME_KEY);
+    removeGameItem(GAME_RESULT_KEY);
+    removeGameItem(CURRENT_GAME_KEY);
   },
 };
 

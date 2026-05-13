@@ -37,12 +37,11 @@ export const playerModel = {
       const player: Player = {
         id: data.player_id,
         username: username,
-        session_token: data.session_token,
       };
 
+      gameStorage.clearPlayerSession();
       gameStorage.clearGameData();
       gameStorage.setPlayerId(player.id);
-      gameStorage.setSessionToken(player.session_token);
       gameStorage.setUsername(player.username);
 
       return { kind: "ok", player };
@@ -65,15 +64,14 @@ export const playerModel = {
     signal?: AbortSignal,
   ): Promise<RefreshPlayerResult> {
     try {
-      const data = await playerApi.me(player.session_token, signal);
+      const data = await playerApi.me(signal);
       const nextPlayer: Player = {
         id: data.player.id,
         username: data.player.username,
-        session_token: player.session_token,
       };
 
+      gameStorage.clearPlayerSession();
       gameStorage.setPlayerId(nextPlayer.id);
-      gameStorage.setSessionToken(nextPlayer.session_token);
       gameStorage.setUsername(nextPlayer.username);
 
       return {
@@ -99,21 +97,24 @@ export const playerModel = {
     }
   },
 
-  clearCurrentPlayer(): void {
+  async clearCurrentPlayer(): Promise<void> {
     gameStorage.clearPlayerSession();
+    try {
+      await playerApi.logout();
+    } catch {
+      // Local state is already cleared; logout is best-effort when offline.
+    }
   },
 
   getCurrentPlayer(): Player | null {
     const id = gameStorage.getPlayerId();
     const username = gameStorage.getUsername();
-    const sessionToken = gameStorage.getSessionToken();
 
-    if (!id || !username || !sessionToken) return null;
+    if (!id || !username) return null;
 
     return {
       id,
       username,
-      session_token: sessionToken,
     };
   },
 };

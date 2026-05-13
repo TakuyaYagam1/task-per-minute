@@ -1,4 +1,4 @@
-import { publicClient, unwrapApi } from "./client";
+import { publicClient, unwrapApi, unwrapApiVoid } from "./client";
 import { assertApiResponse, isJoinResponse, isPlayerMeResponse } from "./guards";
 import type { components } from "./schema";
 
@@ -16,13 +16,20 @@ export const playerApi = {
     return assertApiResponse(data, isJoinResponse, "players/join");
   },
 
-  async me(sessionToken: string, signal?: AbortSignal): Promise<PlayerMeResponse> {
+  async me(signal?: AbortSignal): Promise<PlayerMeResponse> {
     const data = await unwrapApi(
       await publicClient.GET("/api/v1/players/me", {
-        headers: { "X-Session-Token": sessionToken },
         signal,
       }),
     );
     return assertApiResponse(data, isPlayerMeResponse, "players/me");
+  },
+
+  async logout(signal?: AbortSignal): Promise<void> {
+    await unwrapApiVoid(
+      await publicClient.POST("/api/v1/players/logout", {
+        signal,
+      }),
+    );
   },
 };
