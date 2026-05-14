@@ -1065,7 +1065,7 @@ export const TaskPage: React.FC = () => {
         : styles.timerNormal;
 
   return (
-    <main className={styles.container}>
+    <main className={`${styles.container} motion-page gpu-optimized`}>
       {notification && (
         <div className={`${styles.notification} ${styles.notificationError}`}>
           {notification}
@@ -1073,8 +1073,8 @@ export const TaskPage: React.FC = () => {
       )}
 
       {isPaused && gameState === "playing" && (
-        <div className={styles.overlay}>
-          <div className={styles.modal}>
+        <div className={`${styles.overlay} motion-modal-backdrop`}>
+          <div className={`${styles.modal} motion-modal`}>
             <span className={styles.modalEmoji}>⏸</span>
             <h2 className={styles.modalTitle} style={{ color: "#fbbf24" }}>
               СОПЕРНИК ОТКЛЮЧИЛСЯ
@@ -1091,7 +1091,7 @@ export const TaskPage: React.FC = () => {
               </p>
             )}
             <button
-              className={`${styles.modalBtn} ${styles.modalBtnDanger}`}
+              className={`${styles.modalBtn} ${styles.modalBtnDanger} motion-button`}
               onClick={handleSurrender}
               disabled={isSurrendering || gameState !== "playing"}
             >
@@ -1148,7 +1148,7 @@ export const TaskPage: React.FC = () => {
 
           {taskTarget && isExternalTaskURL && (
             <button
-              className={`${styles.taskLinkBtn} ${taskOpened ? styles.taskLinkBtnOpened : ""}`}
+              className={`${styles.taskLinkBtn} ${taskOpened ? styles.taskLinkBtnOpened : ""} motion-button`}
               onClick={openTask}
             >
               {taskOpened
@@ -1169,7 +1169,7 @@ export const TaskPage: React.FC = () => {
                 </code>
               </div>
               <button
-                className={styles.connectionTargetBtn}
+                className={`${styles.connectionTargetBtn} motion-button`}
                 onClick={copyTaskTarget}
               >
                 {taskOpened ? "✓ Скопировано" : "Копировать"}
@@ -1186,7 +1186,10 @@ export const TaskPage: React.FC = () => {
                   Файл задания для скачивания
                 </div>
               </div>
-              <button className={styles.fileDownloadBtn} onClick={downloadFile}>
+              <button
+                className={`${styles.fileDownloadBtn} motion-button`}
+                onClick={downloadFile}
+              >
                 ⬇ Скачать
               </button>
             </div>
@@ -1207,7 +1210,10 @@ export const TaskPage: React.FC = () => {
                     {hint.hint || `Подсказка #${hint.index} пока закрыта`}
                   </span>
                   {!hint.hint && (
-                    <button className={styles.hintRevealBtn} disabled>
+                    <button
+                      className={`${styles.hintRevealBtn} motion-button`}
+                      disabled
+                    >
                       Ждите
                     </button>
                   )}
@@ -1240,7 +1246,7 @@ export const TaskPage: React.FC = () => {
                 disabled={gameState !== "playing" || isPaused}
               />
               <button
-                className={styles.flagSubmitBtn}
+                className={`${styles.flagSubmitBtn} motion-button`}
                 onClick={handleFlagSubmit}
                 disabled={
                   isSubmitting ||
@@ -1269,7 +1275,7 @@ export const TaskPage: React.FC = () => {
 
             <button
               type="button"
-              className={styles.surrenderBtn}
+              className={`${styles.surrenderBtn} motion-button`}
               onClick={handleSurrender}
               disabled={isSurrendering || gameState !== "playing"}
             >
@@ -1307,8 +1313,8 @@ export const TaskPage: React.FC = () => {
       </div>
 
       {gameState !== "playing" && (
-        <div className={styles.overlay}>
-          <div className={styles.modal}>
+        <div className={`${styles.overlay} motion-modal-backdrop`}>
+          <div className={`${styles.modal} motion-modal`}>
             <span className={styles.modalEmoji}>{getResultConfig().emoji}</span>
             <h2
               className={styles.modalTitle}
@@ -1317,7 +1323,10 @@ export const TaskPage: React.FC = () => {
               {getResultConfig().title}
             </h2>
             <p className={styles.modalMessage}>{getResultConfig().message}</p>
-            <button className={styles.modalBtn} onClick={handleReturnHome}>
+            <button
+              className={`${styles.modalBtn} motion-button`}
+              onClick={handleReturnHome}
+            >
               🏠 Вернуться на главную
             </button>
           </div>

@@ -1170,7 +1170,7 @@ export default function AdminPanel() {
 
   const renderPlayersSection = () => (
     <>
-      <div className={styles.card}>
+      <div className={`${styles.card} motion-panel`}>
         <h2 className={styles.cardTitle}>👥 Игроки</h2>
         <form onSubmit={handlePlayerSubmit} className={styles.form}>
           <div className={styles.formRow}>
@@ -1221,7 +1221,7 @@ export default function AdminPanel() {
           <div className={styles.btnGroup}>
             <button
               type="submit"
-              className={`${styles.btn} ${styles.btnPrimary}`}
+              className={`${styles.btn} ${styles.btnPrimary} motion-button`}
               disabled={!editingPlayerId || playerSubmitting}
             >
               {playerSubmitting ? (
@@ -1238,7 +1238,7 @@ export default function AdminPanel() {
             </button>
             <button
               type="button"
-              className={`${styles.btn} ${styles.btnSecondary}`}
+              className={`${styles.btn} ${styles.btnSecondary} motion-button`}
               onClick={resetPlayerForm}
               disabled={!editingPlayerId || playerSubmitting}
             >
@@ -1279,7 +1279,7 @@ export default function AdminPanel() {
             return (
               <div
                 key={player.id}
-                className={`${styles.taskItem} ${editingPlayerId === player.id ? styles.playerItemActive : ""} ${isDeleted ? styles.playerItemDeleted : ""}`}
+                className={`${styles.taskItem} ${editingPlayerId === player.id ? styles.playerItemActive : ""} ${isDeleted ? styles.playerItemDeleted : ""} motion-list-item`}
               >
                 <div className={styles.taskItemInfo}>
                   <div className={styles.taskItemTitle}>{player.username}</div>
@@ -1310,7 +1310,7 @@ export default function AdminPanel() {
                 </div>
                 <div className={styles.taskItemActions}>
                   <button
-                    className={styles.taskItemBtn}
+                    className={`${styles.taskItemBtn} motion-button`}
                     onClick={() => openPlayerAudit(player)}
                     aria-label={`История игрока ${player.username}`}
                     title="История изменений"
@@ -1318,7 +1318,7 @@ export default function AdminPanel() {
                     🕘
                   </button>
                   <button
-                    className={styles.taskItemBtn}
+                    className={`${styles.taskItemBtn} motion-button`}
                     onClick={() => startEditingPlayer(player)}
                     aria-label={`Редактировать игрока ${player.username}`}
                     title={
@@ -1331,7 +1331,7 @@ export default function AdminPanel() {
                     ✏️
                   </button>
                   <button
-                    className={`${styles.taskItemBtn} ${styles.taskItemBtnDanger}`}
+                    className={`${styles.taskItemBtn} ${styles.taskItemBtnDanger} motion-button`}
                     onClick={() => handleDeletePlayer(player)}
                     aria-label={`Удалить игрока ${player.username}`}
                     title={isDeleted ? "Игрок уже удален" : "Удалить игрока"}
@@ -1351,9 +1351,12 @@ export default function AdminPanel() {
   const renderPlayerAuditModal = () => {
     if (!auditPlayer) return null;
     return (
-      <div className={styles.modalBackdrop} onMouseDown={closePlayerAudit}>
+      <div
+        className={`${styles.modalBackdrop} motion-modal-backdrop`}
+        onMouseDown={closePlayerAudit}
+      >
         <div
-          className={styles.auditModal}
+          className={`${styles.auditModal} motion-modal`}
           role="dialog"
           aria-modal="true"
           aria-labelledby="player-audit-title"
@@ -1368,7 +1371,7 @@ export default function AdminPanel() {
             </div>
             <button
               type="button"
-              className={styles.modalClose}
+              className={`${styles.modalClose} motion-button`}
               onClick={closePlayerAudit}
               aria-label="Закрыть историю"
             >
@@ -1392,7 +1395,10 @@ export default function AdminPanel() {
               {playerAuditEvents.map((event) => {
                 const diffs = auditDiffs(event);
                 return (
-                  <article key={event.id} className={styles.auditEvent}>
+                  <article
+                    key={event.id}
+                    className={`${styles.auditEvent} motion-list-item`}
+                  >
                     <div className={styles.auditEventHeader}>
                       <span className={styles.auditAction}>
                         {auditActionLabel(event.action)}
@@ -1441,15 +1447,15 @@ export default function AdminPanel() {
 
   if (!tokens) {
     return (
-      <main className={styles.container}>
-        <div className={styles.header}>
+      <main className={`${styles.container} motion-page gpu-optimized`}>
+        <div className={`${styles.header} motion-panel`}>
           <div className={styles.headerTop}>
             <h1 className={styles.title}>Admin</h1>
           </div>
           <p className={styles.subtitle}>Панель управления задачами</p>
         </div>
 
-        <div className={`${styles.card} ${styles.loginCard}`}>
+        <div className={`${styles.card} ${styles.loginCard} motion-panel`}>
           <h2 className={styles.cardTitle}>Авторизация</h2>
           <form onSubmit={handleLogin} className={styles.form}>
             <div className={styles.inputGroup}>
@@ -1465,7 +1471,7 @@ export default function AdminPanel() {
             </div>
             <button
               type="submit"
-              className={`${styles.btn} ${styles.btnPrimary}`}
+              className={`${styles.btn} ${styles.btnPrimary} motion-button`}
               disabled={authLoading || logoutPending || !password.trim()}
             >
               {authLoading || logoutPending ? (
@@ -1500,7 +1506,7 @@ export default function AdminPanel() {
     );
   }
   return (
-    <main className={styles.container}>
+    <main className={`${styles.container} motion-page gpu-optimized`}>
       {notification && (
         <div
           className={`${styles.notification} ${
@@ -1514,10 +1520,10 @@ export default function AdminPanel() {
           {notification.message}
         </div>
       )}
-      <div className={styles.header}>
+      <div className={`${styles.header} motion-panel`}>
         <button
           type="button"
-          className={`${styles.btn} ${styles.btnSecondary} ${styles.logoutButton}`}
+          className={`${styles.btn} ${styles.btnSecondary} ${styles.logoutButton} motion-button`}
           onClick={handleLogout}
         >
           Выйти
@@ -1533,234 +1539,248 @@ export default function AdminPanel() {
         <div className={styles.sectionTabs}>
           <button
             type="button"
-            className={`${styles.sectionTab} ${activeSection === "tasks" ? styles.sectionTabActive : ""}`}
+            className={`${styles.sectionTab} ${activeSection === "tasks" ? styles.sectionTabActive : ""} motion-button`}
             onClick={() => setActiveSection("tasks")}
           >
             Задания
           </button>
           <button
             type="button"
-            className={`${styles.sectionTab} ${activeSection === "players" ? styles.sectionTabActive : ""}`}
+            className={`${styles.sectionTab} ${activeSection === "players" ? styles.sectionTabActive : ""} motion-button`}
             onClick={() => setActiveSection("players")}
           >
             Игроки
           </button>
         </div>
       </div>
-      {activeSection === "tasks" ? (
-        <>
-          <div className={styles.card}>
-            <h2 className={styles.cardTitle}>
-              {editingTaskId ? "✏️ Редактировать задачу" : "➕ Создать задачу"}
-            </h2>
-            <form onSubmit={handleSubmit} className={styles.form}>
-              <div className={styles.inputGroup}>
-                <label>Название задачи</label>
-                <input
-                  type="text"
-                  required
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="Введите название..."
-                  maxLength={255}
-                />
-              </div>
-              <div className={styles.inputGroup}>
-                <label>Описание</label>
-                <textarea
-                  required
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Опишите задачу..."
-                  rows={3}
-                />
-              </div>
-              <div className={styles.formRow}>
+      <div
+        key={activeSection}
+        className={`${styles.sectionPanel} ${styles.sectionPanelEnter}`}
+      >
+        {activeSection === "tasks" ? (
+          <>
+            <div className={`${styles.card} motion-panel`}>
+              <h2 className={styles.cardTitle}>
+                {editingTaskId
+                  ? "✏️ Редактировать задачу"
+                  : "➕ Создать задачу"}
+              </h2>
+              <form onSubmit={handleSubmit} className={styles.form}>
                 <div className={styles.inputGroup}>
-                  <label>Категория</label>
-                  <select
-                    value={category}
-                    onChange={(e) => {
-                      const nextCategory = e.target.value as TaskCategory;
-                      setCategory(nextCategory);
-                    }}
-                    className={styles.select}
-                  >
-                    <option value="web">🌐 Web</option>
-                    <option value="crypto">🔐 Crypto</option>
-                    <option value="forensics">🔍 Forensics</option>
-                    <option value="reverse">⚙️ Reverse</option>
-                    <option value="pwn">💥 Pwn</option>
-                    <option value="steganography">🖼️ Steganography</option>
-                    <option value="ppc">🧮 PPC</option>
-                    <option value="osint">🛰️ OSINT</option>
-                    <option value="mobile">📱 Mobile</option>
-                    <option value="hardware">🔧 Hardware</option>
-                    <option value="misc">🧩 Misc</option>
-                  </select>
-                </div>
-
-                <div className={styles.inputGroup}>
-                  <label>Сложность</label>
-                  <select
-                    value={difficulty}
-                    onChange={(e) =>
-                      setDifficulty(e.target.value as TaskDifficulty)
-                    }
-                    className={styles.select}
-                  >
-                    <option value="easy">🟢 Лёгкая</option>
-                    <option value="medium">🟡 Средняя</option>
-                    <option value="hard">🔴 Сложная</option>
-                  </select>
-                </div>
-              </div>
-              <div className={styles.formRow}>
-                <div className={styles.inputGroup}>
-                  <label>Лимит времени (сек)</label>
-                  <input
-                    type="number"
-                    required
-                    min="1"
-                    value={timeLimit}
-                    onChange={(e) => setTimeLimit(e.target.value)}
-                    placeholder="60"
-                  />
-                </div>
-
-                <div className={styles.inputGroup}>
-                  <label>Флаг</label>
+                  <label>Название задачи</label>
                   <input
                     type="text"
                     required
-                    value={flag}
-                    onChange={(e) => setFlag(e.target.value)}
-                    placeholder="ctf{...}"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    placeholder="Введите название..."
+                    maxLength={255}
                   />
                 </div>
-              </div>
-              {renderCategoryFields()}
-              <div className={styles.inputGroup}>
-                <label>Подсказки (3 шт)</label>
-                <div className={styles.hintsGrid}>
-                  {hints.map((hint, i) => (
-                    <div key={i}>
-                      <input
-                        type="text"
-                        required
-                        value={hint}
-                        onChange={(e) => updateHint(i, e.target.value)}
-                        placeholder={`Подсказка ${i + 1}`}
-                      />
-                    </div>
-                  ))}
+                <div className={styles.inputGroup}>
+                  <label>Описание</label>
+                  <textarea
+                    required
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    placeholder="Опишите задачу..."
+                    rows={3}
+                  />
                 </div>
-              </div>
-              <div className={styles.btnGroup}>
-                <button
-                  type="submit"
-                  className={`${styles.btn} ${styles.btnPrimary}`}
-                  disabled={submitting}
-                >
-                  {submitting ? (
-                    <>
-                      <div
-                        className={styles.spinner}
-                        style={{ width: 18, height: 18 }}
-                      ></div>
-                      {editingTaskId ? "Сохранение..." : "Создание..."}
-                    </>
-                  ) : editingTaskId ? (
-                    "💾 Сохранить задачу"
-                  ) : (
-                    "🚀 Создать задачу"
-                  )}
-                </button>
-                <button
-                  type="button"
-                  className={`${styles.btn} ${styles.btnSecondary}`}
-                  onClick={resetForm}
-                >
-                  {editingTaskId ? "Отменить" : "Очистить"}
-                </button>
-              </div>
-            </form>
-          </div>
-          <div className={styles.taskList}>
-            <h2 className={styles.taskListTitle}>📋 Список задач</h2>
+                <div className={styles.formRow}>
+                  <div className={styles.inputGroup}>
+                    <label>Категория</label>
+                    <select
+                      value={category}
+                      onChange={(e) => {
+                        const nextCategory = e.target.value as TaskCategory;
+                        setCategory(nextCategory);
+                      }}
+                      className={styles.select}
+                    >
+                      <option value="web">🌐 Web</option>
+                      <option value="crypto">🔐 Crypto</option>
+                      <option value="forensics">🔍 Forensics</option>
+                      <option value="reverse">⚙️ Reverse</option>
+                      <option value="pwn">💥 Pwn</option>
+                      <option value="steganography">🖼️ Steganography</option>
+                      <option value="ppc">🧮 PPC</option>
+                      <option value="osint">🛰️ OSINT</option>
+                      <option value="mobile">📱 Mobile</option>
+                      <option value="hardware">🔧 Hardware</option>
+                      <option value="misc">🧩 Misc</option>
+                    </select>
+                  </div>
 
-            {tasksLoading ? (
-              <div className={styles.loading}>
-                <div className={styles.spinner}></div>
-                <p
-                  style={{ color: "rgba(255,255,255,0.5)", fontSize: "0.9rem" }}
-                >
-                  Загрузка задач...
-                </p>
-              </div>
-            ) : tasks.length === 0 ? (
-              <div className={styles.empty}>
-                <div className={styles.emptyIcon}>📭</div>
-                <p className={styles.emptyText}>Пока нет созданных задач</p>
-              </div>
-            ) : (
-              tasks.map((task) => (
-                <div key={task.id} className={styles.taskItem}>
-                  <div className={styles.taskItemInfo}>
-                    <div className={styles.taskItemTitle}>{task.title}</div>
-                    <div className={styles.taskItemMeta}>
-                      <span
-                        className={`${styles.taskBadge} ${
-                          task.category === "web"
-                            ? styles.taskBadgeWeb
-                            : task.category === "crypto"
-                              ? styles.taskBadgeCrypto
-                              : styles.taskBadgeFile
-                        }`}
-                      >
-                        {CATEGORY_CONFIG[task.category]?.icon || "📦"}{" "}
-                        {CATEGORY_CONFIG[task.category]?.label || task.category}
-                      </span>
-                      <span
-                        className={`${styles.taskBadge} ${DIFFICULTY_CONFIG[task.difficulty]?.badgeClass || ""}`}
-                      >
-                        {DIFFICULTY_CONFIG[task.difficulty]?.label ||
-                          task.difficulty}
-                      </span>
-                      <span
-                        style={{
-                          fontSize: "0.65rem",
-                          color: "rgba(255,255,255,0.3)",
-                        }}
-                      >
-                        ⏱ {task.time_limit}с
-                      </span>
-                    </div>
-                  </div>
-                  <div className={styles.taskItemActions}>
-                    <button
-                      className={styles.taskItemBtn}
-                      onClick={() => startEditing(task)}
-                      title="Редактировать задачу"
+                  <div className={styles.inputGroup}>
+                    <label>Сложность</label>
+                    <select
+                      value={difficulty}
+                      onChange={(e) =>
+                        setDifficulty(e.target.value as TaskDifficulty)
+                      }
+                      className={styles.select}
                     >
-                      ✏️
-                    </button>
-                    <button
-                      className={`${styles.taskItemBtn} ${styles.taskItemBtnDanger}`}
-                      onClick={() => handleDeleteTask(task.id)}
-                      title="Удалить задачу"
-                    >
-                      🗑️
-                    </button>
+                      <option value="easy">🟢 Лёгкая</option>
+                      <option value="medium">🟡 Средняя</option>
+                      <option value="hard">🔴 Сложная</option>
+                    </select>
                   </div>
                 </div>
-              ))
-            )}
-          </div>
-        </>
-      ) : (
-        renderPlayersSection()
-      )}
+                <div className={styles.formRow}>
+                  <div className={styles.inputGroup}>
+                    <label>Лимит времени (сек)</label>
+                    <input
+                      type="number"
+                      required
+                      min="1"
+                      value={timeLimit}
+                      onChange={(e) => setTimeLimit(e.target.value)}
+                      placeholder="60"
+                    />
+                  </div>
+
+                  <div className={styles.inputGroup}>
+                    <label>Флаг</label>
+                    <input
+                      type="text"
+                      required
+                      value={flag}
+                      onChange={(e) => setFlag(e.target.value)}
+                      placeholder="ctf{...}"
+                    />
+                  </div>
+                </div>
+                {renderCategoryFields()}
+                <div className={styles.inputGroup}>
+                  <label>Подсказки (3 шт)</label>
+                  <div className={styles.hintsGrid}>
+                    {hints.map((hint, i) => (
+                      <div key={i}>
+                        <input
+                          type="text"
+                          required
+                          value={hint}
+                          onChange={(e) => updateHint(i, e.target.value)}
+                          placeholder={`Подсказка ${i + 1}`}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className={styles.btnGroup}>
+                  <button
+                    type="submit"
+                    className={`${styles.btn} ${styles.btnPrimary} motion-button`}
+                    disabled={submitting}
+                  >
+                    {submitting ? (
+                      <>
+                        <div
+                          className={styles.spinner}
+                          style={{ width: 18, height: 18 }}
+                        ></div>
+                        {editingTaskId ? "Сохранение..." : "Создание..."}
+                      </>
+                    ) : editingTaskId ? (
+                      "💾 Сохранить задачу"
+                    ) : (
+                      "🚀 Создать задачу"
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    className={`${styles.btn} ${styles.btnSecondary} motion-button`}
+                    onClick={resetForm}
+                  >
+                    {editingTaskId ? "Отменить" : "Очистить"}
+                  </button>
+                </div>
+              </form>
+            </div>
+            <div className={styles.taskList}>
+              <h2 className={styles.taskListTitle}>📋 Список задач</h2>
+
+              {tasksLoading ? (
+                <div className={styles.loading}>
+                  <div className={styles.spinner}></div>
+                  <p
+                    style={{
+                      color: "rgba(255,255,255,0.5)",
+                      fontSize: "0.9rem",
+                    }}
+                  >
+                    Загрузка задач...
+                  </p>
+                </div>
+              ) : tasks.length === 0 ? (
+                <div className={styles.empty}>
+                  <div className={styles.emptyIcon}>📭</div>
+                  <p className={styles.emptyText}>Пока нет созданных задач</p>
+                </div>
+              ) : (
+                tasks.map((task) => (
+                  <div
+                    key={task.id}
+                    className={`${styles.taskItem} motion-list-item`}
+                  >
+                    <div className={styles.taskItemInfo}>
+                      <div className={styles.taskItemTitle}>{task.title}</div>
+                      <div className={styles.taskItemMeta}>
+                        <span
+                          className={`${styles.taskBadge} ${
+                            task.category === "web"
+                              ? styles.taskBadgeWeb
+                              : task.category === "crypto"
+                                ? styles.taskBadgeCrypto
+                                : styles.taskBadgeFile
+                          }`}
+                        >
+                          {CATEGORY_CONFIG[task.category]?.icon || "📦"}{" "}
+                          {CATEGORY_CONFIG[task.category]?.label ||
+                            task.category}
+                        </span>
+                        <span
+                          className={`${styles.taskBadge} ${DIFFICULTY_CONFIG[task.difficulty]?.badgeClass || ""}`}
+                        >
+                          {DIFFICULTY_CONFIG[task.difficulty]?.label ||
+                            task.difficulty}
+                        </span>
+                        <span
+                          style={{
+                            fontSize: "0.65rem",
+                            color: "rgba(255,255,255,0.3)",
+                          }}
+                        >
+                          ⏱ {task.time_limit}с
+                        </span>
+                      </div>
+                    </div>
+                    <div className={styles.taskItemActions}>
+                      <button
+                        className={`${styles.taskItemBtn} motion-button`}
+                        onClick={() => startEditing(task)}
+                        title="Редактировать задачу"
+                      >
+                        ✏️
+                      </button>
+                      <button
+                        className={`${styles.taskItemBtn} ${styles.taskItemBtnDanger} motion-button`}
+                        onClick={() => handleDeleteTask(task.id)}
+                        title="Удалить задачу"
+                      >
+                        🗑️
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </>
+        ) : (
+          renderPlayersSection()
+        )}
+      </div>
       {renderPlayerAuditModal()}
     </main>
   );

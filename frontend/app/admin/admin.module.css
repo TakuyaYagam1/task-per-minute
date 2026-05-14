@@ -1,20 +1,16 @@
-
-
-
 .container {
   min-height: 100vh;
   padding: 2.5rem 1.5rem 4rem;
   display: flex;
   flex-direction: column;
   align-items: center;
-  background: linear-gradient(135deg, #3E7284 0%, #2a5a6b 100%);
+  background: linear-gradient(135deg, #3e7284 0%, #2a5a6b 100%);
   position: relative;
   overflow: hidden;
 }
 
-
 .container::before {
-  content: '';
+  content: "";
   position: fixed;
   inset: 0;
   background-image:
@@ -36,19 +32,29 @@
   z-index: 0;
 }
 
-
 .container::after {
-  content: '';
+  content: "";
   position: fixed;
   inset: 0;
   background:
-    radial-gradient(ellipse at 15% 20%, rgba(114, 209, 235, 0.15) 0%, transparent 50%),
-    radial-gradient(ellipse at 85% 80%, rgba(74, 222, 128, 0.08) 0%, transparent 50%),
-    radial-gradient(ellipse at 50% 50%, rgba(114, 209, 235, 0.05) 0%, transparent 60%);
+    radial-gradient(
+      ellipse at 15% 20%,
+      rgba(114, 209, 235, 0.15) 0%,
+      transparent 50%
+    ),
+    radial-gradient(
+      ellipse at 85% 80%,
+      rgba(74, 222, 128, 0.08) 0%,
+      transparent 50%
+    ),
+    radial-gradient(
+      ellipse at 50% 50%,
+      rgba(114, 209, 235, 0.05) 0%,
+      transparent 60%
+    );
   pointer-events: none;
   z-index: 0;
 }
-
 
 .header {
   width: 100%;
@@ -75,8 +81,13 @@
 }
 
 @keyframes iconFloat {
-  0%, 100% { transform: translateY(0) rotate(-5deg); }
-  50% { transform: translateY(-6px) rotate(5deg); }
+  0%,
+  100% {
+    transform: translateY(0) rotate(-5deg);
+  }
+  50% {
+    transform: translateY(-6px) rotate(5deg);
+  }
 }
 
 .title {
@@ -116,6 +127,10 @@
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 0.8rem;
+  transition:
+    transform var(--motion-normal) var(--motion-ease),
+    border-color var(--motion-normal) var(--motion-ease),
+    background-color var(--motion-normal) var(--motion-ease);
 }
 
 .sectionTab {
@@ -129,20 +144,60 @@
   font-size: 0.9rem;
   font-weight: 700;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition:
+    transform var(--motion-fast) var(--motion-ease),
+    color var(--motion-normal) var(--motion-ease),
+    background-color var(--motion-normal) var(--motion-ease),
+    box-shadow var(--motion-normal) var(--motion-ease);
 }
 
 .sectionTab:hover {
   color: #fff;
   background: rgba(255, 255, 255, 0.08);
+  transform: translateY(-2px);
 }
 
 .sectionTabActive {
   color: #fff;
-  background: linear-gradient(135deg, rgba(114, 209, 235, 0.35), rgba(93, 179, 211, 0.3));
+  background: linear-gradient(
+    135deg,
+    rgba(114, 209, 235, 0.35),
+    rgba(93, 179, 211, 0.3)
+  );
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+  animation: tabActivate 220ms var(--motion-ease);
 }
 
+@keyframes tabActivate {
+  from {
+    transform: translateY(2px) scale(0.98);
+  }
+  to {
+    transform: translateY(0) scale(1);
+  }
+}
+
+.sectionPanel {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.sectionPanelEnter {
+  animation: sectionPanelEnter 340ms var(--motion-ease) both;
+}
+
+@keyframes sectionPanelEnter {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
 
 .card {
   width: 100%;
@@ -156,6 +211,18 @@
   position: relative;
   z-index: 1;
   animation: fadeInUp 0.6s ease-out 0.1s both;
+  transition:
+    transform var(--motion-normal) var(--motion-ease),
+    box-shadow var(--motion-normal) var(--motion-ease),
+    border-color var(--motion-normal) var(--motion-ease),
+    background-color var(--motion-normal) var(--motion-ease);
+}
+
+.card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(114, 209, 235, 0.26);
+  background: rgba(255, 255, 255, 0.095);
+  box-shadow: 0 18px 38px rgba(0, 0, 0, 0.16);
 }
 
 @keyframes fadeInUp {
@@ -191,13 +258,12 @@
 }
 
 .cardTitle::after {
-  content: '';
+  content: "";
   flex: 1;
   height: 1px;
   background: linear-gradient(90deg, rgba(114, 209, 235, 0.3), transparent);
   margin-left: 0.5rem;
 }
-
 
 .form {
   display: flex;
@@ -272,7 +338,6 @@
   color: #fff;
 }
 
-
 .categoryField {
   background: rgba(114, 209, 235, 0.06);
   border: 1px solid rgba(114, 209, 235, 0.15);
@@ -292,7 +357,6 @@
   align-items: center;
   gap: 0.4rem;
 }
-
 
 .hintsGrid {
   display: grid;
@@ -318,13 +382,18 @@
 }
 
 .btn::before {
-  content: '';
+  content: "";
   position: absolute;
   top: 0;
   left: -100%;
   width: 100%;
   height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.15), transparent);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.15),
+    transparent
+  );
   transition: left 0.3s ease;
 }
 
@@ -376,7 +445,6 @@
   margin-top: 0.5rem;
 }
 
-
 .notification {
   position: fixed;
   top: 1.5rem;
@@ -424,7 +492,6 @@
   }
 }
 
-
 .taskList {
   margin-top: 2rem;
   width: 100%;
@@ -445,7 +512,7 @@
 }
 
 .taskListTitle::after {
-  content: '';
+  content: "";
   flex: 1;
   height: 1px;
   background: linear-gradient(90deg, rgba(114, 209, 235, 0.3), transparent);
@@ -458,16 +525,33 @@
   border-radius: 0.75rem;
   padding: 1rem 1.25rem;
   margin-bottom: 0.75rem;
-  transition: all 0.2s ease;
+  transition:
+    transform var(--motion-normal) var(--motion-ease),
+    border-color var(--motion-normal) var(--motion-ease),
+    background-color var(--motion-normal) var(--motion-ease),
+    box-shadow var(--motion-normal) var(--motion-ease);
   display: flex;
   align-items: center;
   gap: 1rem;
+  animation: taskItemEnter var(--motion-normal) var(--motion-ease) both;
 }
 
 .taskItem:hover {
   background: rgba(255, 255, 255, 0.1);
   border-color: rgba(114, 209, 235, 0.2);
-  transform: translateX(4px);
+  transform: translateY(-3px);
+  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.13);
+}
+
+@keyframes taskItemEnter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .taskItemInfo {
@@ -608,7 +692,10 @@
   font-size: 0.75rem;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition:
+    transform var(--motion-fast) var(--motion-ease),
+    color var(--motion-normal) var(--motion-ease),
+    background-color var(--motion-normal) var(--motion-ease);
   background: rgba(255, 255, 255, 0.08);
   color: rgba(255, 255, 255, 0.6);
 }
@@ -616,7 +703,7 @@
 .taskItemBtn:hover {
   background: rgba(255, 255, 255, 0.15);
   color: #fff;
-  transform: translateY(-1px);
+  transform: translateY(-2px);
 }
 
 .taskItemBtn:disabled {
@@ -648,6 +735,7 @@
   padding: 1.25rem;
   background: rgba(7, 31, 42, 0.62);
   backdrop-filter: blur(8px);
+  animation: modalBackdropEnter var(--motion-normal) ease-out both;
 }
 
 .auditModal {
@@ -659,6 +747,27 @@
   border-radius: 1rem;
   background: rgba(48, 91, 108, 0.96);
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.28);
+  animation: modalPanelEnter 340ms var(--motion-ease-emphasis) both;
+}
+
+@keyframes modalBackdropEnter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes modalPanelEnter {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .modalHeader {
@@ -692,11 +801,16 @@
   font-size: 1.4rem;
   line-height: 1;
   cursor: pointer;
+  transition:
+    transform var(--motion-fast) var(--motion-ease),
+    background-color var(--motion-normal) var(--motion-ease),
+    color var(--motion-normal) var(--motion-ease);
 }
 
 .modalClose:hover {
   background: rgba(255, 255, 255, 0.16);
   color: #fff;
+  transform: translateY(-2px);
 }
 
 .auditTimeline {
@@ -710,6 +824,16 @@
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 0.75rem;
   background: rgba(255, 255, 255, 0.06);
+  transition:
+    transform var(--motion-normal) var(--motion-ease),
+    border-color var(--motion-normal) var(--motion-ease),
+    background-color var(--motion-normal) var(--motion-ease);
+}
+
+.auditEvent:hover {
+  transform: translateY(-2px);
+  border-color: rgba(114, 209, 235, 0.22);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .auditEventHeader {
@@ -776,7 +900,6 @@
   font-size: 0.9rem;
 }
 
-
 .fileUpload {
   display: flex;
   flex-direction: column;
@@ -789,13 +912,17 @@
   padding: 1.5rem;
   text-align: center;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition:
+    transform var(--motion-normal) var(--motion-ease),
+    border-color var(--motion-normal) var(--motion-ease),
+    background-color var(--motion-normal) var(--motion-ease);
   background: rgba(114, 209, 235, 0.03);
 }
 
 .fileUploadZone:hover {
   border-color: rgba(114, 209, 235, 0.5);
   background: rgba(114, 209, 235, 0.06);
+  transform: translateY(-2px);
 }
 
 .fileUploadIcon {
@@ -843,7 +970,6 @@
   transform: scale(1.2);
 }
 
-
 .loginCard {
   max-width: 400px;
 }
@@ -853,7 +979,6 @@
   text-align: center;
   margin-bottom: 1rem;
 }
-
 
 .empty {
   display: flex;
@@ -878,7 +1003,6 @@
   margin: 0;
 }
 
-
 .loading {
   display: flex;
   flex-direction: column;
@@ -898,9 +1022,10 @@
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
-
 
 @media (max-width: 768px) {
   .container {
@@ -961,6 +1086,15 @@
   .auditDiff {
     grid-template-columns: 1fr;
   }
+
+  .card:hover,
+  .taskItem:hover,
+  .auditEvent:hover,
+  .fileUploadZone:hover,
+  .sectionTab:hover,
+  .modalClose:hover {
+    transform: none;
+  }
 }
 
 @media (max-width: 480px) {
@@ -983,5 +1117,34 @@
 
   .logoutButton {
     width: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .header,
+  .headerIcon,
+  .card,
+  .categoryField,
+  .notification,
+  .taskList,
+  .taskItem,
+  .sectionPanelEnter,
+  .sectionTabActive,
+  .modalBackdrop,
+  .auditModal,
+  .auditEvent,
+  .spinner {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  .card:hover,
+  .taskItem:hover,
+  .sectionTab:hover,
+  .taskItemBtn:hover,
+  .modalClose:hover,
+  .auditEvent:hover,
+  .fileUploadZone:hover {
+    transform: none !important;
   }
 }

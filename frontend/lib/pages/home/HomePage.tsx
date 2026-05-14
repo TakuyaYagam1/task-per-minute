@@ -62,6 +62,7 @@ export default function HomePage() {
   const [queueSize, setQueueSize] = useState<number | undefined>(undefined);
   const [isInitializing, setIsInitializing] = useState(false);
   const [isClearingPlayer, setIsClearingPlayer] = useState(false);
+  const [isTransitioningToTask, setIsTransitioningToTask] = useState(false);
   const currentPlayerRef = useRef<Player | null>(null);
   const pendingMatch = useRef<MatchFoundPayload | null>(null);
   const expectedRestoreDuelID = useRef<string | null>(null);
@@ -177,6 +178,11 @@ export default function HomePage() {
     transitionDuelIDRef.current = null;
   };
 
+  const navigateToTask = () => {
+    setIsTransitioningToTask(true);
+    router.push("/task");
+  };
+
   const clearPlayerSessionForNextEntrant = () => {
     void playerModel.clearCurrentPlayer();
     currentPlayerRef.current = null;
@@ -233,6 +239,7 @@ export default function HomePage() {
     setNickname("");
     clearHomeFlow();
     clearTransitionDuel();
+    setIsTransitioningToTask(false);
     setIsWaiting(false);
     closeWebSocket();
     showNotification("Сессия истекла. Введите никнейм заново.");
@@ -303,7 +310,7 @@ export default function HomePage() {
         }
         clearHomeFlow();
         setIsWaiting(false);
-        router.push("/task");
+        navigateToTask();
         break;
 
       case "duel_resume":
@@ -349,7 +356,7 @@ export default function HomePage() {
         transitionDuelIDRef.current = message.payload.duel_id;
         clearHomeFlow();
         setIsWaiting(false);
-        router.push("/task");
+        navigateToTask();
         break;
 
       case "duel_finished":
@@ -402,6 +409,7 @@ export default function HomePage() {
     queueAttemptRef.current += 1;
     clearHomeFlow();
     clearTransitionDuel();
+    setIsTransitioningToTask(false);
     setIsWaiting(false);
 
     if (
@@ -434,6 +442,7 @@ export default function HomePage() {
     }
     clearHomeFlow();
     clearTransitionDuel();
+    setIsTransitioningToTask(false);
     setIsWaiting(false);
     closeWebSocket();
     gameModel.clearGameData();
@@ -685,6 +694,18 @@ export default function HomePage() {
         <div className="fixed inset-x-0 top-4 z-50 flex justify-center px-4 pointer-events-none">
           <div className="pointer-events-auto bg-black/80 text-white px-4 py-2 rounded-lg animate-fadeIn">
             {notification}
+          </div>
+        </div>
+      )}
+
+      {isTransitioningToTask && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 px-4 backdrop-blur-md motion-modal-backdrop">
+          <div className="motion-modal rounded-xl border border-white/15 bg-white/10 px-6 py-5 text-center text-white shadow-2xl backdrop-blur-lg">
+            <div className="mx-auto mb-3 h-8 w-8 rounded-full border-2 border-white/30 border-t-white animate-spin"></div>
+            <div className="text-base font-bold">Загрузка дуэли...</div>
+            <div className="mt-1 text-sm text-gray-300">
+              Подготавливаем задание и переходим в бой
+            </div>
           </div>
         </div>
       )}
