@@ -22,6 +22,20 @@ type PlayerAuditEvent = AdminPlayerAuditEvent;
 type TaskCategory = Task["category"];
 type TaskDifficulty = Task["difficulty"];
 type AdminSection = "tasks" | "players";
+type TaskFormErrorField =
+  | "title"
+  | "description"
+  | "timeLimit"
+  | "flag"
+  | "taskUrl"
+  | "sourceFile"
+  | "hint0"
+  | "hint1"
+  | "hint2"
+  | "form";
+type PlayerFormErrorField = "username" | "wins" | "averageMs" | "form";
+type TaskFormErrors = Partial<Record<TaskFormErrorField, string>>;
+type PlayerFormErrors = Partial<Record<PlayerFormErrorField, string>>;
 
 interface Notification {
   type: "success" | "error" | "warning";
@@ -235,6 +249,7 @@ export default function AdminPanel() {
   const [tokens, setTokens] = useState<AdminTokenResponse | null>(null);
   const [activeSection, setActiveSection] = useState<AdminSection>("tasks");
   const [password, setPassword] = useState("");
+  const [loginFormError, setLoginFormError] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
   const [logoutPending, setLogoutPending] = useState(false);
   const [title, setTitle] = useState("");
@@ -251,6 +266,7 @@ export default function AdminPanel() {
   >(null);
   const [sourceFileCleared, setSourceFileCleared] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [taskFormErrors, setTaskFormErrors] = useState<TaskFormErrors>({});
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [tasksLoading, setTasksLoading] = useState(false);
@@ -261,6 +277,9 @@ export default function AdminPanel() {
   const [playerWins, setPlayerWins] = useState("0");
   const [playerAverageMs, setPlayerAverageMs] = useState("0");
   const [playerSubmitting, setPlayerSubmitting] = useState(false);
+  const [playerFormErrors, setPlayerFormErrors] = useState<PlayerFormErrors>(
+    {},
+  );
   const [showDeletedPlayers, setShowDeletedPlayers] = useState(false);
   const [auditPlayer, setAuditPlayer] = useState<Player | null>(null);
   const [playerAuditEvents, setPlayerAuditEvents] = useState<
@@ -312,6 +331,24 @@ export default function AdminPanel() {
     },
     [showTimedNotification],
   );
+
+  const clearTaskFormError = useCallback((field: TaskFormErrorField) => {
+    setTaskFormErrors((current) => {
+      if (!current[field]) return current;
+      const next = { ...current };
+      delete next[field];
+      return next;
+    });
+  }, []);
+
+  const clearPlayerFormError = useCallback((field: PlayerFormErrorField) => {
+    setPlayerFormErrors((current) => {
+      if (!current[field]) return current;
+      const next = { ...current };
+      delete next[field];
+      return next;
+    });
+  }, []);
 
   const isCurrentAuthSession = useCallback(
     (sessionVersion: number): boolean =>
@@ -454,7 +491,12 @@ export default function AdminPanel() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (logoutPending || !password.trim()) return;
+    if (logoutPending) return;
+    if (!password.trim()) {
+      setLoginFormError("Введите пароль администратора");
+      return;
+    }
+    setLoginFormError(null);
     setAuthLoading(true);
     const sessionVersion = authSessionVersionRef.current + 1;
     refreshPromiseRef.current = null;
@@ -466,21 +508,20 @@ export default function AdminPanel() {
       authSessionVersionRef.current = sessionVersion;
       saveTokens(nextTokens, sessionVersion);
       setPassword("");
+      setLoginFormError(null);
       showNotification("success", "Успешный вход в админ-панель");
     } catch (error) {
       if (!isMountedRef.current) {
         return;
       }
       if (error instanceof ApiError && error.status === 429) {
-        showNotification(
-          "error",
+        setLoginFormError(
           `Слишком много попыток. Повторите через ${formatRetryAfter(error.retryAfter)}.`,
         );
       } else if (error instanceof ApiError && error.status === 401) {
-        showNotification("error", "Неверный пароль");
+        setLoginFormError("Неверный пароль");
       } else {
-        showNotification(
-          "error",
+        setLoginFormError(
           apiErrorMessage(error, "Ошибка подключения к серверу"),
         );
       }
@@ -680,6 +721,7 @@ export default function AdminPanel() {
     setSourceFile(null);
     setExistingSourceFileURL(null);
     setSourceFileCleared(false);
+    setTaskFormErrors({});
     if (fileInputRef.current) fileInputRef.current.value = "";
   }, []);
 
@@ -696,6 +738,7 @@ export default function AdminPanel() {
     setSourceFile(null);
     setExistingSourceFileURL(task.source_file_url ?? null);
     setSourceFileCleared(false);
+    setTaskFormErrors({});
     if (fileInputRef.current) fileInputRef.current.value = "";
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -703,42 +746,55 @@ export default function AdminPanel() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const trimmedTitle = title.trim();
-    if (!trimmedTitle || countChars(trimmedTitle) > MAX_TASK_TITLE_LENGTH) {
-      showNotification("error", "Название должно быть от 1 до 255 символов");
-      return;
-    }
     const trimmedDescription = description.trim();
-    if (!trimmedDescription) {
-      showNotification("error", "Описание не должно быть пустым");
-      return;
-    }
     const trimmedFlag = flag.trim();
-    if (!trimmedFlag || countChars(trimmedFlag) > MAX_TASK_FLAG_LENGTH) {
-      showNotification("error", "Флаг должен быть от 1 до 255 символов");
-      return;
-    }
-    const validHints = hints.map((h) => h.trim()).filter(Boolean);
-    if (validHints.length !== 3) {
-      showNotification("error", "Необходимо заполнить все 3 подсказки");
-      return;
-    }
+    const validHints = hints.map((h) => h.trim());
     const parsedTimeLimit = parsePositiveInt32(timeLimit);
-    if (parsedTimeLimit === null) {
-      showNotification(
-        "error",
-        "Лимит времени должен быть целым числом от 1 до 2147483647",
-      );
-      return;
-    }
     const taskUrlValue = taskUrl.trim() || null;
+    const nextErrors: TaskFormErrors = {};
+
+    if (!trimmedTitle) {
+      nextErrors.title = "Введите название задачи";
+    } else if (countChars(trimmedTitle) > MAX_TASK_TITLE_LENGTH) {
+      nextErrors.title = "Название должно быть не длиннее 255 символов";
+    }
+
+    if (!trimmedDescription) {
+      nextErrors.description = "Описание не должно быть пустым";
+    }
+
+    if (parsedTimeLimit === null) {
+      nextErrors.timeLimit =
+        "Лимит времени должен быть целым числом от 1 до 2147483647";
+    }
+
+    if (!trimmedFlag) {
+      nextErrors.flag = "Введите флаг";
+    } else if (countChars(trimmedFlag) > MAX_TASK_FLAG_LENGTH) {
+      nextErrors.flag = "Флаг должен быть не длиннее 255 символов";
+    }
+
+    validHints.forEach((hint, index) => {
+      if (!hint) {
+        nextErrors[`hint${index}` as TaskFormErrorField] =
+          `Заполните подсказку ${index + 1}`;
+      }
+    });
+
     if (taskUrlValue && !isValidTaskUrl(taskUrlValue)) {
-      showNotification(
-        "error",
-        "URL задания должен быть http(s) ссылкой или host:port",
-      );
+      nextErrors.taskUrl = "Укажите http(s) ссылку или host:port";
+    }
+
+    if (Object.keys(nextErrors).length > 0) {
+      setTaskFormErrors(nextErrors);
       return;
     }
 
+    if (parsedTimeLimit === null) {
+      return;
+    }
+
+    setTaskFormErrors({});
     setSubmitting(true);
     const sessionVersion = authSessionVersionRef.current;
     try {
@@ -810,15 +866,14 @@ export default function AdminPanel() {
         (err instanceof Error && err.message === "Unauthorized")
       )
         return;
-      showNotification(
-        "error",
-        apiErrorMessage(
+      setTaskFormErrors({
+        form: apiErrorMessage(
           err,
           editingTaskId
             ? "Ошибка при обновлении задачи"
             : "Ошибка при создании задачи",
         ),
-      );
+      });
     } finally {
       if (isCurrentAuthSession(sessionVersion)) {
         setSubmitting(false);
@@ -864,6 +919,7 @@ export default function AdminPanel() {
     setPlayerUsername("");
     setPlayerWins("0");
     setPlayerAverageMs("0");
+    setPlayerFormErrors({});
   }, []);
 
   const startEditingPlayer = (player: Player) => {
@@ -871,50 +927,47 @@ export default function AdminPanel() {
     setPlayerUsername(player.username);
     setPlayerWins(String(player.wins));
     setPlayerAverageMs(String(player.average_solve_time_ms));
+    setPlayerFormErrors({});
   };
 
   const handlePlayerSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const nextErrors: PlayerFormErrors = {};
     if (!editingPlayerId) {
-      showNotification("warning", "Сначала выберите игрока");
+      setPlayerFormErrors({ form: "Сначала выберите игрока из списка ниже" });
       return;
     }
     const username = playerUsername.trim();
     if (!USERNAME_RE.test(username)) {
-      showNotification(
-        "error",
-        "Имя игрока должно быть 2-50 символов: латиница, цифры, _ или -",
-      );
-      return;
+      nextErrors.username =
+        "Имя игрока: 2-50 символов, латиница, цифры, _ или -";
     }
     const wins = parseNonNegativeInt32(playerWins);
     if (wins === null) {
-      showNotification(
-        "error",
-        "Победы должны быть целым числом от 0 до 2147483647",
-      );
-      return;
+      nextErrors.wins = "Победы должны быть целым числом от 0 до 2147483647";
     }
     const averageSolveTimeMs = parseNonNegativeInt64(playerAverageMs);
     if (averageSolveTimeMs === null) {
-      showNotification(
-        "error",
-        "Среднее время должно быть целым числом в миллисекундах",
-      );
+      nextErrors.averageMs =
+        "Среднее время должно быть целым числом в миллисекундах";
+    }
+    if (wins !== null && averageSolveTimeMs !== null) {
+      if (wins === 0 && averageSolveTimeMs !== 0) {
+        nextErrors.averageMs = "При 0 побед среднее время должно быть 0";
+      }
+      if (wins > 0 && averageSolveTimeMs === 0) {
+        nextErrors.averageMs = "При победах среднее время должно быть больше 0";
+      }
+    }
+    if (Object.keys(nextErrors).length > 0) {
+      setPlayerFormErrors(nextErrors);
       return;
     }
-    if (wins === 0 && averageSolveTimeMs !== 0) {
-      showNotification("error", "При 0 побед среднее время должно быть 0");
-      return;
-    }
-    if (wins > 0 && averageSolveTimeMs === 0) {
-      showNotification(
-        "error",
-        "При победах среднее время должно быть больше 0",
-      );
+    if (wins === null || averageSolveTimeMs === null) {
       return;
     }
 
+    setPlayerFormErrors({});
     setPlayerSubmitting(true);
     const sessionVersion = authSessionVersionRef.current;
     try {
@@ -942,12 +995,11 @@ export default function AdminPanel() {
         return;
       }
       if (error instanceof ApiError && error.status === 409) {
-        showNotification("error", "Такое имя уже занято");
+        setPlayerFormErrors({ username: "Такое имя уже занято" });
       } else {
-        showNotification(
-          "error",
-          apiErrorMessage(error, "Ошибка при обновлении игрока"),
-        );
+        setPlayerFormErrors({
+          form: apiErrorMessage(error, "Ошибка при обновлении игрока"),
+        });
       }
     } finally {
       if (isCurrentAuthSession(sessionVersion)) {
@@ -1045,6 +1097,7 @@ export default function AdminPanel() {
     const newHints = [...hints];
     newHints[index] = value;
     setHints(newHints);
+    clearTaskFormError(`hint${index}` as TaskFormErrorField);
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1052,16 +1105,23 @@ export default function AdminPanel() {
     if (file && !file.name.toLowerCase().endsWith(".zip")) {
       setSourceFile(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
-      showNotification("error", "Можно загружать только ZIP-архивы");
+      setTaskFormErrors((current) => ({
+        ...current,
+        sourceFile: "Можно загружать только ZIP-архивы",
+      }));
       return;
     }
     if (file && file.size > 100 * 1024 * 1024) {
       setSourceFile(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
-      showNotification("error", "Файл превышает 100 MB");
+      setTaskFormErrors((current) => ({
+        ...current,
+        sourceFile: "Файл превышает 100 MB",
+      }));
       return;
     }
     setSourceFile(file);
+    clearTaskFormError("sourceFile");
     if (file) {
       setSourceFileCleared(false);
     }
@@ -1069,17 +1129,20 @@ export default function AdminPanel() {
 
   const removeFile = () => {
     setSourceFile(null);
+    clearTaskFormError("sourceFile");
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const removeExistingSourceFile = () => {
     setSourceFile(null);
     setSourceFileCleared(true);
+    clearTaskFormError("sourceFile");
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const restoreExistingSourceFile = () => {
     setSourceFileCleared(false);
+    clearTaskFormError("sourceFile");
   };
 
   const renderCategoryFields = () => {
@@ -1097,9 +1160,23 @@ export default function AdminPanel() {
             <input
               type="text"
               value={taskUrl}
-              onChange={(e) => setTaskUrl(e.target.value)}
+              onChange={(e) => {
+                setTaskUrl(e.target.value);
+                clearTaskFormError("taskUrl");
+                clearTaskFormError("form");
+              }}
               placeholder={taskURLPlaceholder}
+              className={taskFormErrors.taskUrl ? styles.inputError : undefined}
+              aria-invalid={Boolean(taskFormErrors.taskUrl)}
+              aria-describedby={
+                taskFormErrors.taskUrl ? "admin-task-url-error" : undefined
+              }
             />
+            {taskFormErrors.taskUrl && (
+              <p id="admin-task-url-error" className={styles.fieldError}>
+                {taskFormErrors.taskUrl}
+              </p>
+            )}
           </div>
         </div>
 
@@ -1109,7 +1186,7 @@ export default function AdminPanel() {
           </div>
           <div className={styles.fileUpload}>
             <div
-              className={styles.fileUploadZone}
+              className={`${styles.fileUploadZone} ${taskFormErrors.sourceFile ? styles.fileUploadZoneError : ""}`}
               onClick={() => fileInputRef.current?.click()}
             >
               <div className={styles.fileUploadIcon}>📁</div>
@@ -1162,6 +1239,9 @@ export default function AdminPanel() {
                 </span>
               </div>
             )}
+            {taskFormErrors.sourceFile && (
+              <p className={styles.fieldError}>{taskFormErrors.sourceFile}</p>
+            )}
           </div>
         </div>
       </>
@@ -1172,7 +1252,7 @@ export default function AdminPanel() {
     <>
       <div className={`${styles.card} motion-panel`}>
         <h2 className={styles.cardTitle}>👥 Игроки</h2>
-        <form onSubmit={handlePlayerSubmit} className={styles.form}>
+        <form onSubmit={handlePlayerSubmit} className={styles.form} noValidate>
           <div className={styles.formRow}>
             <div className={styles.inputGroup}>
               <label>Имя игрока</label>
@@ -1180,11 +1260,32 @@ export default function AdminPanel() {
                 type="text"
                 aria-label="Имя игрока"
                 value={playerUsername}
-                onChange={(e) => setPlayerUsername(e.target.value)}
+                onChange={(e) => {
+                  setPlayerUsername(e.target.value);
+                  clearPlayerFormError("username");
+                  clearPlayerFormError("form");
+                }}
                 placeholder="username"
                 maxLength={50}
                 disabled={!editingPlayerId}
+                className={
+                  playerFormErrors.username ? styles.inputError : undefined
+                }
+                aria-invalid={Boolean(playerFormErrors.username)}
+                aria-describedby={
+                  playerFormErrors.username
+                    ? "admin-player-username-error"
+                    : undefined
+                }
               />
+              {playerFormErrors.username && (
+                <p
+                  id="admin-player-username-error"
+                  className={styles.fieldError}
+                >
+                  {playerFormErrors.username}
+                </p>
+              )}
             </div>
             <div className={styles.inputGroup}>
               <label>Победы</label>
@@ -1193,10 +1294,27 @@ export default function AdminPanel() {
                 aria-label="Победы игрока"
                 min="0"
                 value={playerWins}
-                onChange={(e) => setPlayerWins(e.target.value)}
+                onChange={(e) => {
+                  setPlayerWins(e.target.value);
+                  clearPlayerFormError("wins");
+                  clearPlayerFormError("averageMs");
+                  clearPlayerFormError("form");
+                }}
                 placeholder="0"
                 disabled={!editingPlayerId}
+                className={
+                  playerFormErrors.wins ? styles.inputError : undefined
+                }
+                aria-invalid={Boolean(playerFormErrors.wins)}
+                aria-describedby={
+                  playerFormErrors.wins ? "admin-player-wins-error" : undefined
+                }
               />
+              {playerFormErrors.wins && (
+                <p id="admin-player-wins-error" className={styles.fieldError}>
+                  {playerFormErrors.wins}
+                </p>
+              )}
             </div>
           </div>
           <div className={styles.formRow}>
@@ -1207,15 +1325,41 @@ export default function AdminPanel() {
                 aria-label="Среднее время игрока"
                 min="0"
                 value={playerAverageMs}
-                onChange={(e) => setPlayerAverageMs(e.target.value)}
+                onChange={(e) => {
+                  setPlayerAverageMs(e.target.value);
+                  clearPlayerFormError("averageMs");
+                  clearPlayerFormError("form");
+                }}
                 placeholder="0"
                 disabled={!editingPlayerId}
+                className={
+                  playerFormErrors.averageMs ? styles.inputError : undefined
+                }
+                aria-invalid={Boolean(playerFormErrors.averageMs)}
+                aria-describedby={
+                  playerFormErrors.averageMs
+                    ? "admin-player-average-error"
+                    : undefined
+                }
               />
+              {playerFormErrors.averageMs && (
+                <p
+                  id="admin-player-average-error"
+                  className={styles.fieldError}
+                >
+                  {playerFormErrors.averageMs}
+                </p>
+              )}
             </div>
             <div className={styles.playerFormHint}>
               {editingPlayerId
                 ? `На табло: ${formatMilliseconds(Number(playerAverageMs) || 0)}`
                 : "Выберите игрока из списка ниже"}
+              {playerFormErrors.form && (
+                <p className={`${styles.fieldError} ${styles.formLevelError}`}>
+                  {playerFormErrors.form}
+                </p>
+              )}
             </div>
           </div>
           <div className={styles.btnGroup}>
@@ -1457,7 +1601,7 @@ export default function AdminPanel() {
 
         <div className={`${styles.card} ${styles.loginCard} motion-panel`}>
           <h2 className={styles.cardTitle}>Авторизация</h2>
-          <form onSubmit={handleLogin} className={styles.form}>
+          <form onSubmit={handleLogin} className={styles.form} noValidate>
             <div className={styles.inputGroup}>
               <label>Пароль администратора</label>
               <input
@@ -1465,9 +1609,22 @@ export default function AdminPanel() {
                 type="password"
                 required
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  setLoginFormError(null);
+                }}
                 placeholder="Введите пароль..."
+                className={loginFormError ? styles.inputError : undefined}
+                aria-invalid={Boolean(loginFormError)}
+                aria-describedby={
+                  loginFormError ? "admin-password-error" : undefined
+                }
               />
+              {loginFormError && (
+                <p id="admin-password-error" className={styles.fieldError}>
+                  {loginFormError}
+                </p>
+              )}
             </div>
             <button
               type="submit"
@@ -1565,27 +1722,69 @@ export default function AdminPanel() {
                   ? "✏️ Редактировать задачу"
                   : "➕ Создать задачу"}
               </h2>
-              <form onSubmit={handleSubmit} className={styles.form}>
+              <form onSubmit={handleSubmit} className={styles.form} noValidate>
                 <div className={styles.inputGroup}>
                   <label>Название задачи</label>
                   <input
                     type="text"
                     required
                     value={title}
-                    onChange={(e) => setTitle(e.target.value)}
+                    onChange={(e) => {
+                      setTitle(e.target.value);
+                      clearTaskFormError("title");
+                      clearTaskFormError("form");
+                    }}
                     placeholder="Введите название..."
                     maxLength={255}
+                    className={
+                      taskFormErrors.title ? styles.inputError : undefined
+                    }
+                    aria-invalid={Boolean(taskFormErrors.title)}
+                    aria-describedby={
+                      taskFormErrors.title
+                        ? "admin-task-title-error"
+                        : undefined
+                    }
                   />
+                  {taskFormErrors.title && (
+                    <p
+                      id="admin-task-title-error"
+                      className={styles.fieldError}
+                    >
+                      {taskFormErrors.title}
+                    </p>
+                  )}
                 </div>
                 <div className={styles.inputGroup}>
                   <label>Описание</label>
                   <textarea
                     required
                     value={description}
-                    onChange={(e) => setDescription(e.target.value)}
+                    onChange={(e) => {
+                      setDescription(e.target.value);
+                      clearTaskFormError("description");
+                      clearTaskFormError("form");
+                    }}
                     placeholder="Опишите задачу..."
                     rows={3}
+                    className={
+                      taskFormErrors.description ? styles.inputError : undefined
+                    }
+                    aria-invalid={Boolean(taskFormErrors.description)}
+                    aria-describedby={
+                      taskFormErrors.description
+                        ? "admin-task-description-error"
+                        : undefined
+                    }
                   />
+                  {taskFormErrors.description && (
+                    <p
+                      id="admin-task-description-error"
+                      className={styles.fieldError}
+                    >
+                      {taskFormErrors.description}
+                    </p>
+                  )}
                 </div>
                 <div className={styles.formRow}>
                   <div className={styles.inputGroup}>
@@ -1635,9 +1834,30 @@ export default function AdminPanel() {
                       required
                       min="1"
                       value={timeLimit}
-                      onChange={(e) => setTimeLimit(e.target.value)}
+                      onChange={(e) => {
+                        setTimeLimit(e.target.value);
+                        clearTaskFormError("timeLimit");
+                        clearTaskFormError("form");
+                      }}
                       placeholder="60"
+                      className={
+                        taskFormErrors.timeLimit ? styles.inputError : undefined
+                      }
+                      aria-invalid={Boolean(taskFormErrors.timeLimit)}
+                      aria-describedby={
+                        taskFormErrors.timeLimit
+                          ? "admin-task-time-limit-error"
+                          : undefined
+                      }
                     />
+                    {taskFormErrors.timeLimit && (
+                      <p
+                        id="admin-task-time-limit-error"
+                        className={styles.fieldError}
+                      >
+                        {taskFormErrors.timeLimit}
+                      </p>
+                    )}
                   </div>
 
                   <div className={styles.inputGroup}>
@@ -1646,9 +1866,30 @@ export default function AdminPanel() {
                       type="text"
                       required
                       value={flag}
-                      onChange={(e) => setFlag(e.target.value)}
+                      onChange={(e) => {
+                        setFlag(e.target.value);
+                        clearTaskFormError("flag");
+                        clearTaskFormError("form");
+                      }}
                       placeholder="ctf{...}"
+                      className={
+                        taskFormErrors.flag ? styles.inputError : undefined
+                      }
+                      aria-invalid={Boolean(taskFormErrors.flag)}
+                      aria-describedby={
+                        taskFormErrors.flag
+                          ? "admin-task-flag-error"
+                          : undefined
+                      }
                     />
+                    {taskFormErrors.flag && (
+                      <p
+                        id="admin-task-flag-error"
+                        className={styles.fieldError}
+                      >
+                        {taskFormErrors.flag}
+                      </p>
+                    )}
                   </div>
                 </div>
                 {renderCategoryFields()}
@@ -1663,7 +1904,28 @@ export default function AdminPanel() {
                           value={hint}
                           onChange={(e) => updateHint(i, e.target.value)}
                           placeholder={`Подсказка ${i + 1}`}
+                          className={
+                            taskFormErrors[`hint${i}` as TaskFormErrorField]
+                              ? styles.inputError
+                              : undefined
+                          }
+                          aria-invalid={Boolean(
+                            taskFormErrors[`hint${i}` as TaskFormErrorField],
+                          )}
+                          aria-describedby={
+                            taskFormErrors[`hint${i}` as TaskFormErrorField]
+                              ? `admin-task-hint-${i}-error`
+                              : undefined
+                          }
                         />
+                        {taskFormErrors[`hint${i}` as TaskFormErrorField] && (
+                          <p
+                            id={`admin-task-hint-${i}-error`}
+                            className={styles.fieldError}
+                          >
+                            {taskFormErrors[`hint${i}` as TaskFormErrorField]}
+                          </p>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -1696,6 +1958,13 @@ export default function AdminPanel() {
                     {editingTaskId ? "Отменить" : "Очистить"}
                   </button>
                 </div>
+                {taskFormErrors.form && (
+                  <p
+                    className={`${styles.fieldError} ${styles.formLevelError}`}
+                  >
+                    {taskFormErrors.form}
+                  </p>
+                )}
               </form>
             </div>
             <div className={styles.taskList}>

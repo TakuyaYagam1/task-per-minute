@@ -314,6 +314,46 @@
   box-shadow: 0 0 0 3px rgba(114, 209, 235, 0.15);
 }
 
+.inputGroup input.inputError,
+.inputGroup textarea.inputError,
+.select.inputError {
+  border-color: rgba(248, 113, 113, 0.75);
+  background: rgba(239, 68, 68, 0.08);
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.12);
+}
+
+.inputGroup input.inputError:focus,
+.inputGroup textarea.inputError:focus,
+.select.inputError:focus {
+  border-color: #fca5a5;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.18);
+}
+
+.fieldError {
+  margin: 0.1rem 0 0;
+  color: #fecaca;
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.35;
+  text-shadow: 0 1px 8px rgba(127, 29, 29, 0.22);
+  animation: fieldErrorEnter var(--motion-fast) var(--motion-ease) both;
+}
+
+.formLevelError {
+  margin-top: 0.25rem;
+}
+
+@keyframes fieldErrorEnter {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .inputGroup input::placeholder,
 .inputGroup textarea::placeholder {
   color: rgba(255, 255, 255, 0.35);
@@ -925,6 +965,12 @@
   transform: translateY(-2px);
 }
 
+.fileUploadZoneError {
+  border-color: rgba(248, 113, 113, 0.75);
+  background: rgba(239, 68, 68, 0.08);
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
+}
+
 .fileUploadIcon {
   font-size: 2rem;
   margin-bottom: 0.5rem;
@@ -1130,6 +1176,7 @@
   .taskItem,
   .sectionPanelEnter,
   .sectionTabActive,
+  .fieldError,
   .modalBackdrop,
   .auditModal,
   .auditEvent,
