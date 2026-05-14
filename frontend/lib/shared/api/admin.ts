@@ -36,6 +36,7 @@ const LEGACY_REFRESH_TOKEN_KEY = "admin_refresh_token";
 const COOKIE_SESSION_TOKEN = "__cookie_admin_session__";
 
 const UPLOAD_SOURCE_TIMEOUT_MS = 5 * 60 * 1000;
+export const ADMIN_PLAYERS_CHANGED_EVENT = "players_changed";
 
 const adminURL = (path: string): string => `${CONFIG.adminApiUrl}${path}`;
 
@@ -284,6 +285,12 @@ export const adminApi = {
         signal,
       }),
     );
+  },
+
+  openPlayerEvents(): EventSource {
+    return new EventSource(adminURL("/api/v1/admin/players/events"), {
+      withCredentials: true,
+    });
   },
 
   async uploadSource(

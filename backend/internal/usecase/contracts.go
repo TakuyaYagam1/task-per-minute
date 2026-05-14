@@ -165,6 +165,10 @@ type AdminPlayerRepo interface {
 	ListAdminPlayerAudit(ctx context.Context, playerID uuid.UUID, limit int32) ([]AdminPlayerAuditEvent, error)
 }
 
+type AdminPlayerEvents interface {
+	SubscribeAdminPlayerChanges(ctx context.Context) (<-chan struct{}, func(), error)
+}
+
 type LeaderboardScore struct {
 	Username string
 	Wins     int

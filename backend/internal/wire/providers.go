@@ -193,6 +193,7 @@ func provideRESTServer(
 	auth usecase.AdminAuth,
 	tasks usecase.AdminTask,
 	adminPlayers usecase.AdminPlayer,
+	adminPlayerEvents usecase.AdminPlayerEvents,
 	upload usecase.Upload,
 	leaderboard usecase.Leaderboard,
 	duels usecase.Duel,
@@ -203,18 +204,19 @@ func provideRESTServer(
 	log logkit.Logger,
 ) *restv1.Server {
 	return restv1.New(restv1.Dependencies{
-		Players:        players,
-		AdminAuth:      auth,
-		Tasks:          tasks,
-		AdminPlayers:   adminPlayers,
-		Upload:         upload,
-		Leaderboard:    leaderboard,
-		Duels:          duels,
-		Health:         health,
-		LoginLimiter:   loginLimiter,
-		RefreshLimiter: refreshLimiter.Inner,
-		JoinLimiter:    joinLimiter,
-		Log:            log,
+		Players:           players,
+		AdminAuth:         auth,
+		Tasks:             tasks,
+		AdminPlayers:      adminPlayers,
+		AdminPlayerEvents: adminPlayerEvents,
+		Upload:            upload,
+		Leaderboard:       leaderboard,
+		Duels:             duels,
+		Health:            health,
+		LoginLimiter:      loginLimiter,
+		RefreshLimiter:    refreshLimiter.Inner,
+		JoinLimiter:       joinLimiter,
+		Log:               log,
 	})
 }
 
@@ -418,15 +420,28 @@ func provideHTTPHandler(
 	players usecase.PlayerRepo,
 	middlewares []openapi.MiddlewareFunc,
 ) http.Handler {
-	router := chi.NewRouter()
-	router.Handle("/ws", ws)
+	generatedRouter := chi.NewRouter()
+	generatedRouter.Handle("/ws", ws)
 	handler := restv1.NewHandler(rest, restv1.HandlerOptions{
-		Router:      router,
+		Router:      generatedRouter,
 		AdminAuth:   auth,
 		PlayerRepo:  players,
 		Middlewares: middlewares,
 	})
-	return middleware.CORS(cfg.HTTP.AllowedOrigins)(handler)
+
+	router := chi.NewRouter()
+	router.Method(http.MethodGet, "/api/v1/admin/players/events", adminPlayerEventsHandler(rest, auth))
+	router.Mount("/", handler)
+
+	return middleware.CORS(cfg.HTTP.AllowedOrigins)(router)
+}
+
+func adminPlayerEventsHandler(rest *restv1.Server, auth *adminusecase.AuthUsecase) http.Handler {
+	var handler http.Handler = http.HandlerFunc(rest.StreamAdminPlayerEvents)
+	if auth != nil {
+		handler = middleware.AdminJWT(auth)(handler)
+	}
+	return middleware.NoStoreSensitiveResponses()(handler)
 }
 
 func provideHTTPServer(cfg *config.Config, handler http.Handler) *http.Server {

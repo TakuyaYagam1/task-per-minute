@@ -1,6 +1,7 @@
 "use client";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
+  ADMIN_PLAYERS_CHANGED_EVENT,
   adminApi,
   adminSession,
   ApiError,
@@ -274,6 +275,8 @@ export default function AdminPanel() {
   const authSessionVersionRef = useRef(0);
   const tasksRequestIDRef = useRef(0);
   const playersRequestIDRef = useRef(0);
+  const playersEventsRef = useRef<EventSource | null>(null);
+  const playersRealtimeRefreshTimerRef = useRef<number | null>(null);
   const playerAuditRequestIDRef = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const passwordInputRef = useRef<HTMLInputElement>(null);
@@ -294,6 +297,12 @@ export default function AdminPanel() {
       isMountedRef.current = false;
       authSessionVersionRef.current += 1;
       logoutAbortRef.current?.abort();
+      playersEventsRef.current?.close();
+      playersEventsRef.current = null;
+      if (playersRealtimeRefreshTimerRef.current !== null) {
+        window.clearTimeout(playersRealtimeRefreshTimerRef.current);
+        playersRealtimeRefreshTimerRef.current = null;
+      }
     };
   }, []);
 
@@ -333,6 +342,12 @@ export default function AdminPanel() {
       playersRequestIDRef.current += 1;
       playerAuditRequestIDRef.current += 1;
       refreshPromiseRef.current = null;
+      playersEventsRef.current?.close();
+      playersEventsRef.current = null;
+      if (playersRealtimeRefreshTimerRef.current !== null) {
+        window.clearTimeout(playersRealtimeRefreshTimerRef.current);
+        playersRealtimeRefreshTimerRef.current = null;
+      }
       adminSession.clear({ preserveCSRF: options.preserveAdminCSRF });
       tokensRef.current = null;
       setTokens(null);
@@ -549,45 +564,67 @@ export default function AdminPanel() {
     }
   }, [isCurrentAuthSession, runAdminRequest, showNotification, tokens]);
 
-  const fetchPlayers = useCallback(async () => {
-    if (!tokens) return;
-    const sessionVersion = authSessionVersionRef.current;
-    const requestID = playersRequestIDRef.current + 1;
-    playersRequestIDRef.current = requestID;
-    const canApplyPlayersRequest = () =>
-      isCurrentAuthSession(sessionVersion) &&
-      playersRequestIDRef.current === requestID;
-    setPlayersLoading(true);
-    try {
-      const data = await runAdminRequest((accessToken) =>
-        adminApi.listPlayers(accessToken, showDeletedPlayers),
-      );
-      if (canApplyPlayersRequest()) {
-        setPlayers(data);
+  const fetchPlayers = useCallback(
+    async (options: { silent?: boolean } = {}) => {
+      if (!tokens) return;
+      const sessionVersion = authSessionVersionRef.current;
+      const requestID = playersRequestIDRef.current + 1;
+      playersRequestIDRef.current = requestID;
+      const canApplyPlayersRequest = () =>
+        isCurrentAuthSession(sessionVersion) &&
+        playersRequestIDRef.current === requestID;
+      if (!options.silent) {
+        setPlayersLoading(true);
       }
-    } catch (error) {
-      if (
-        !canApplyPlayersRequest() ||
-        (error instanceof Error && error.message === "Unauthorized")
-      ) {
-        return;
+      try {
+        const data = await runAdminRequest((accessToken) =>
+          adminApi.listPlayers(accessToken, showDeletedPlayers),
+        );
+        if (canApplyPlayersRequest()) {
+          setPlayers(data);
+        }
+      } catch (error) {
+        if (
+          !canApplyPlayersRequest() ||
+          (error instanceof Error && error.message === "Unauthorized")
+        ) {
+          return;
+        }
+        if (options.silent) {
+          log.warn("admin players realtime refresh failed", error);
+          return;
+        }
+        showNotification(
+          "error",
+          apiErrorMessage(error, "Не удалось загрузить игроков"),
+        );
+      } finally {
+        if (canApplyPlayersRequest()) {
+          setPlayersLoading(false);
+        }
       }
-      showNotification(
-        "error",
-        apiErrorMessage(error, "Не удалось загрузить игроков"),
-      );
-    } finally {
-      if (canApplyPlayersRequest()) {
-        setPlayersLoading(false);
-      }
+    },
+    [
+      isCurrentAuthSession,
+      runAdminRequest,
+      showDeletedPlayers,
+      showNotification,
+      tokens,
+    ],
+  );
+
+  const schedulePlayersRealtimeRefresh = useCallback(() => {
+    if (!tokensRef.current || activeSection !== "players") {
+      return;
     }
-  }, [
-    isCurrentAuthSession,
-    runAdminRequest,
-    showDeletedPlayers,
-    showNotification,
-    tokens,
-  ]);
+    if (playersRealtimeRefreshTimerRef.current !== null) {
+      window.clearTimeout(playersRealtimeRefreshTimerRef.current);
+    }
+    playersRealtimeRefreshTimerRef.current = window.setTimeout(() => {
+      playersRealtimeRefreshTimerRef.current = null;
+      fetchPlayers({ silent: true });
+    }, 150);
+  }, [activeSection, fetchPlayers]);
 
   useEffect(() => {
     if (!tokens) return;
@@ -597,6 +634,38 @@ export default function AdminPanel() {
       fetchPlayers();
     }
   }, [activeSection, tokens, fetchPlayers, fetchTasks]);
+
+  useEffect(() => {
+    if (!tokens || activeSection !== "players") {
+      return undefined;
+    }
+
+    const source = adminApi.openPlayerEvents();
+    playersEventsRef.current = source;
+
+    const handlePlayersChanged: EventListener = () => {
+      schedulePlayersRealtimeRefresh();
+    };
+    source.addEventListener(ADMIN_PLAYERS_CHANGED_EVENT, handlePlayersChanged);
+    source.onerror = (event) => {
+      log.warn("admin players realtime stream error", event);
+    };
+
+    return () => {
+      source.removeEventListener(
+        ADMIN_PLAYERS_CHANGED_EVENT,
+        handlePlayersChanged,
+      );
+      if (playersEventsRef.current === source) {
+        playersEventsRef.current = null;
+      }
+      source.close();
+      if (playersRealtimeRefreshTimerRef.current !== null) {
+        window.clearTimeout(playersRealtimeRefreshTimerRef.current);
+        playersRealtimeRefreshTimerRef.current = null;
+      }
+    };
+  }, [activeSection, schedulePlayersRealtimeRefresh, tokens]);
 
   const resetForm = useCallback(() => {
     setEditingTaskId(null);

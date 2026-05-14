@@ -39,6 +39,8 @@ var ReposSet = wire.NewSet(
 	wire.Bind(new(usecase.TxManager), new(*persistent.TxManager)),
 	persistent.NewSchemaVersionPostgres,
 	wire.Bind(new(usecase.SchemaVersionReader), new(*persistent.SchemaVersionPostgres)),
+	persistent.NewAdminPlayerEventsPostgres,
+	wire.Bind(new(usecase.AdminPlayerEvents), new(*persistent.AdminPlayerEventsPostgres)),
 	persistent.NewPlayerPostgres,
 	wire.Bind(new(usecase.PlayerRepo), new(*persistent.PlayerPostgres)),
 	wire.Bind(new(usecase.AdminPlayerRepo), new(*persistent.PlayerPostgres)),
