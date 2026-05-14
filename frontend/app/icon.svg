@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <defs>
+    <linearGradient id="mark-bg" x1="4" y1="2" x2="28" y2="30" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4ab9d4" />
+      <stop offset="1" stop-color="#90e0b6" />
+    </linearGradient>
+    <linearGradient id="mark-shade" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#122033" />
+      <stop offset="1" stop-color="#07111d" />
+    </linearGradient>
+  </defs>
+
+  <rect width="32" height="32" rx="7" fill="url(#mark-shade)" />
+  <path d="M4 8.2C4 5.9 5.9 4 8.2 4h15.6C26.1 4 28 5.9 28 8.2v15.6c0 2.3-1.9 4.2-4.2 4.2H8.2C5.9 28 4 26.1 4 23.8V8.2Z" fill="url(#mark-bg)" opacity=".18" />
+  <path d="M6 9.5 26 5.2v4.4L6 13.9V9.5Z" fill="url(#mark-bg)" />
+  <path d="M10 15.2h12v3.9h-3.9V26h-4.2v-6.9H10v-3.9Z" fill="#fff" />
+  <path d="M22.9 20.2h3.4v3.4h-3.4z" fill="#90e0b6" />
+</svg>
