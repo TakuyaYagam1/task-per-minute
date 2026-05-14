@@ -14,6 +14,32 @@ test('csp report endpoint accepts report-only browser reports', async ({ request
   expect(await response.text()).toBe('');
 });
 
+test('csp report endpoint accepts reports up to 64 KiB', async ({ request }) => {
+  const payload = 'a'.repeat(64 * 1024);
+
+  const response = await request.post('/csp-report', {
+    data: payload,
+    headers: {
+      'content-type': 'application/csp-report',
+    },
+  });
+
+  expect(response.status()).toBe(204);
+});
+
+test('csp report endpoint rejects oversized reports', async ({ request }) => {
+  const payload = 'a'.repeat(64 * 1024 + 1);
+
+  const response = await request.post('/csp-report', {
+    data: payload,
+    headers: {
+      'content-type': 'application/csp-report',
+    },
+  });
+
+  expect(response.status()).toBe(413);
+});
+
 test('csp report-only header keeps same-origin api and ws reports enabled', async ({ request }) => {
   const response = await request.get('/');
   const csp = response.headers()['content-security-policy-report-only'];

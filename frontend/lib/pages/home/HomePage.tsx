@@ -820,7 +820,7 @@ export default function HomePage() {
                 Скоростные дуэли
               </h3>
               <p className="text-sm text-gray-300 text-center">
-                2 игрока, 1 задание, ограниченное время
+                2 игрока, общий дедлайн, быстрый матч
               </p>
             </div>
 
@@ -828,17 +828,17 @@ export default function HomePage() {
               <div className="text-3xl lg:text-4xl mb-3 text-center">🏆</div>
               <h3 className="font-bold text-lg mb-2 text-center">Победитель</h3>
               <p className="text-sm text-gray-300 text-center">
-                Первый решивший задание побеждает
+                Первый корректный флаг завершает дуэль
               </p>
             </div>
 
             <div className="card p-4 lg:p-6 animate-on-hover will-change-transform md:col-span-2 lg:col-span-1">
               <div className="text-3xl lg:text-4xl mb-3 text-center">🧩</div>
               <h3 className="font-bold text-lg mb-2 text-center">
-                Web задания
+                Разные категории
               </h3>
               <p className="text-sm text-gray-300 text-center">
-                Реальные уязвимости и хакерские вызовы
+                Категория любая, сложность по прогрессу
               </p>
             </div>
           </div>
@@ -847,31 +847,69 @@ export default function HomePage() {
             className="card p-6 lg:p-8 mt-6 lg:mt-8 animate-fadeIn"
             style={{ animationDelay: "0.6s" }}
           >
-            <h3 className="text-xl lg:text-2xl font-bold mb-4 text-center">
+            <h3 className="text-xl lg:text-2xl font-bold mb-2 text-center">
               Правила игры
             </h3>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-8 text-sm lg:text-base text-gray-300">
-              <div>
-                <p className="mb-3">
-                  <strong className="text-white">CTF (Capture The Flag)</strong>{" "}
-                  - это формат соревнований по информационной безопасности, где
-                  участники ищут уязвимости и собирают «флаги» - секретные
-                  строки, подтверждающие выполнение задания.
+            <p className="text-sm lg:text-base text-gray-300 text-center max-w-3xl mx-auto mb-6 lg:mb-8">
+              <strong className="text-white">CTF (Capture The Flag)</strong> -
+              формат соревнований по информационной безопасности: участники ищут
+              уязвимости и собирают «флаги» - секретные строки, подтверждающие
+              выполнение задания.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-5">
+              <div className="rule-step-card relative rounded-xl border border-white/10 bg-white/5 p-4 lg:p-5 backdrop-blur-sm hover:border-white/20 hover:bg-white/10">
+                <div className="absolute -top-3 -left-3 flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-blue-400 to-cyan-500 text-sm font-bold text-white shadow-lg">
+                  1
+                </div>
+                <div className="mb-2 text-2xl lg:text-3xl">👥</div>
+                <h4 className="mb-1 text-base lg:text-lg font-semibold text-white">
+                  Двое в очереди
+                </h4>
+                <p className="text-xs lg:text-sm text-gray-300 leading-relaxed">
+                  Нажимаешь Play, попадаешь в очередь, а сервер подбирает
+                  второго игрока и стартует дуэль.
                 </p>
-                <p className="mb-3">
-                  В испытании принимают участие 2 человека. Даётся случайный
-                  таск категории Web на ограниченное количество времени.
-                </p>
-                <p>Время меняется в зависимости от сложности задания.</p>
               </div>
-              <div>
-                <p className="mb-3">
-                  Побеждает тот, кто первый выполнит задание и отправит флаг в
-                  заданное время.
+
+              <div className="rule-step-card relative rounded-xl border border-white/10 bg-white/5 p-4 lg:p-5 backdrop-blur-sm hover:border-white/20 hover:bg-white/10">
+                <div className="absolute -top-3 -left-3 flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-blue-400 to-cyan-500 text-sm font-bold text-white shadow-lg">
+                  2
+                </div>
+                <div className="mb-2 text-2xl lg:text-3xl">🎲</div>
+                <h4 className="mb-1 text-base lg:text-lg font-semibold text-white">
+                  Случайный таск
+                </h4>
+                <p className="text-xs lg:text-sm text-gray-300 leading-relaxed">
+                  Сложность берётся из открытого для игрока пула. Если общего
+                  нерешённого таска нет, задания могут отличаться.
                 </p>
-                <p>
-                  Если оба участника не смогут выполнить таск - оба являются
-                  проигравшими и игра завершается.
+              </div>
+
+              <div className="rule-step-card relative rounded-xl border border-white/10 bg-white/5 p-4 lg:p-5 backdrop-blur-sm hover:border-white/20 hover:bg-white/10">
+                <div className="absolute -top-3 -left-3 flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-blue-400 to-cyan-500 text-sm font-bold text-white shadow-lg">
+                  3
+                </div>
+                <div className="mb-2 text-2xl lg:text-3xl">⏱️</div>
+                <h4 className="mb-1 text-base lg:text-lg font-semibold text-white">
+                  Время на решение
+                </h4>
+                <p className="text-xs lg:text-sm text-gray-300 leading-relaxed">
+                  Дедлайн общий и считается по самому длинному лимиту выданных
+                  заданий. Подсказки открываются по таймеру.
+                </p>
+              </div>
+
+              <div className="rule-step-card relative rounded-xl border border-white/10 bg-white/5 p-4 lg:p-5 backdrop-blur-sm hover:border-white/20 hover:bg-white/10">
+                <div className="absolute -top-3 -left-3 flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-blue-400 to-cyan-500 text-sm font-bold text-white shadow-lg">
+                  4
+                </div>
+                <div className="mb-2 text-2xl lg:text-3xl">🏁</div>
+                <h4 className="mb-1 text-base lg:text-lg font-semibold text-white">
+                  Победа за флаг
+                </h4>
+                <p className="text-xs lg:text-sm text-gray-300 leading-relaxed">
+                  Первый корректный флаг даёт победу. Если время вышло без
+                  решения, дуэль завершается без победителя.
                 </p>
               </div>
             </div>
