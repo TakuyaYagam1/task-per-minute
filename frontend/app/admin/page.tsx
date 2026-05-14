@@ -754,9 +754,9 @@ export default function AdminPanel() {
     const nextErrors: TaskFormErrors = {};
 
     if (!trimmedTitle) {
-      nextErrors.title = "Введите название задачи";
+      nextErrors.title = "Название должно быть от 1 до 255 символов";
     } else if (countChars(trimmedTitle) > MAX_TASK_TITLE_LENGTH) {
-      nextErrors.title = "Название должно быть не длиннее 255 символов";
+      nextErrors.title = "Название должно быть от 1 до 255 символов";
     }
 
     if (!trimmedDescription) {
@@ -769,9 +769,9 @@ export default function AdminPanel() {
     }
 
     if (!trimmedFlag) {
-      nextErrors.flag = "Введите флаг";
+      nextErrors.flag = "Флаг должен быть от 1 до 255 символов";
     } else if (countChars(trimmedFlag) > MAX_TASK_FLAG_LENGTH) {
-      nextErrors.flag = "Флаг должен быть не длиннее 255 символов";
+      nextErrors.flag = "Флаг должен быть от 1 до 255 символов";
     }
 
     validHints.forEach((hint, index) => {
@@ -782,7 +782,8 @@ export default function AdminPanel() {
     });
 
     if (taskUrlValue && !isValidTaskUrl(taskUrlValue)) {
-      nextErrors.taskUrl = "Укажите http(s) ссылку или host:port";
+      nextErrors.taskUrl =
+        "URL задания должен быть http(s) ссылкой или host:port";
     }
 
     if (Object.keys(nextErrors).length > 0) {
