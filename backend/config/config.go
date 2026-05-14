@@ -90,6 +90,7 @@ type Player struct {
 	JoinRateAttempts  int           `env:"JOIN_RATE_ATTEMPTS"   env-default:"20"`
 	JoinRateWindow    time.Duration `env:"JOIN_RATE_WINDOW"     env-default:"5m"`
 	JoinRateBucketTTL time.Duration `env:"JOIN_RATE_BUCKET_TTL" env-default:"1h"`
+	SessionTTL        time.Duration `env:"SESSION_TTL"          env-default:"24h"`
 }
 
 type WebSocket struct {
@@ -311,7 +312,10 @@ func validatePlayer(cfg Player) error {
 	if err := positiveDuration("PLAYER_JOIN_RATE_WINDOW", cfg.JoinRateWindow); err != nil {
 		return err
 	}
-	return positiveDuration("PLAYER_JOIN_RATE_BUCKET_TTL", cfg.JoinRateBucketTTL)
+	if err := positiveDuration("PLAYER_JOIN_RATE_BUCKET_TTL", cfg.JoinRateBucketTTL); err != nil {
+		return err
+	}
+	return positiveDuration("PLAYER_SESSION_TTL", cfg.SessionTTL)
 }
 
 func validateWS(cfg *WebSocket) error {

@@ -149,6 +149,30 @@ func TestRESTHandlers_DeleteMissingTaskReturns404(t *testing.T) {
 	f.validateResponse(t, req, resp)
 }
 
+func TestRESTHandlers_ExpiredPlayerSessionReturns401(t *testing.T) {
+	f := newRESTFixture(t)
+	ctx := context.Background()
+
+	joinReq, joinResp := f.doJSON(t, http.MethodPost, "/api/v1/players/join", `{"username":"`+uniq("alice")+`"}`, "")
+	require.Equal(t, http.StatusOK, joinResp.Code)
+	f.validateResponse(t, joinReq, joinResp)
+	joined := decodeJSON[openapi.JoinResponse](t, joinResp)
+	sessionToken := uuid.MustParse(playerSessionCookieValue(t, joinResp))
+
+	expiresAt := time.Now().Add(-time.Minute).UTC()
+	_, err := f.players.UpdateSessionToken(ctx, joined.PlayerId, &sessionToken, &expiresAt)
+	require.NoError(t, err)
+
+	meReq, meResp := f.doJSON(t, http.MethodGet, "/api/v1/players/me", "", session(sessionToken))
+	require.Equal(t, http.StatusUnauthorized, meResp.Code)
+	f.validateResponse(t, meReq, meResp)
+
+	cleared, err := f.players.GetByID(ctx, joined.PlayerId)
+	require.NoError(t, err)
+	require.Nil(t, cleared.SessionToken)
+	require.Nil(t, cleared.SessionExpiresAt)
+}
+
 func TestRESTHandlers_DeleteReferencedTaskReturns409(t *testing.T) {
 	f := newRESTFixture(t)
 	adminToken := f.adminAccessToken(t)

@@ -20,7 +20,8 @@ RETURNING id,
     session_token,
     status,
     created_at,
-    deleted_at
+    deleted_at,
+    session_expires_at
 `
 
 func (q *Queries) CreatePlayer(ctx context.Context, username string) (Player, error) {
@@ -33,6 +34,7 @@ func (q *Queries) CreatePlayer(ctx context.Context, username string) (Player, er
 		&i.Status,
 		&i.CreatedAt,
 		&i.DeletedAt,
+		&i.SessionExpiresAt,
 	)
 	return i, err
 }
@@ -66,6 +68,7 @@ SELECT p.id,
     p.status,
     p.created_at,
     p.deleted_at,
+    p.session_expires_at,
     COALESCE(o.wins, b.wins, 0)::INT AS wins,
     COALESCE(o.average_solve_time_ms, b.average_solve_time_ms, 0)::BIGINT AS average_solve_time_ms,
     (o.player_id IS NOT NULL)::BOOLEAN AS stats_overridden
@@ -83,6 +86,7 @@ type GetAdminPlayerRow struct {
 	Status             string
 	CreatedAt          pgtype.Timestamptz
 	DeletedAt          pgtype.Timestamptz
+	SessionExpiresAt   pgtype.Timestamptz
 	Wins               int32
 	AverageSolveTimeMs int64
 	StatsOverridden    bool
@@ -98,6 +102,7 @@ func (q *Queries) GetAdminPlayer(ctx context.Context, id uuid.UUID) (GetAdminPla
 		&i.Status,
 		&i.CreatedAt,
 		&i.DeletedAt,
+		&i.SessionExpiresAt,
 		&i.Wins,
 		&i.AverageSolveTimeMs,
 		&i.StatsOverridden,
@@ -134,6 +139,7 @@ SELECT p.id,
     p.status,
     p.created_at,
     p.deleted_at,
+    p.session_expires_at,
     COALESCE(o.wins, b.wins, 0)::INT AS wins,
     COALESCE(o.average_solve_time_ms, b.average_solve_time_ms, 0)::BIGINT AS average_solve_time_ms,
     (o.player_id IS NOT NULL)::BOOLEAN AS stats_overridden
@@ -150,6 +156,7 @@ type GetAdminPlayerIncludingDeletedRow struct {
 	Status             string
 	CreatedAt          pgtype.Timestamptz
 	DeletedAt          pgtype.Timestamptz
+	SessionExpiresAt   pgtype.Timestamptz
 	Wins               int32
 	AverageSolveTimeMs int64
 	StatsOverridden    bool
@@ -165,6 +172,7 @@ func (q *Queries) GetAdminPlayerIncludingDeleted(ctx context.Context, id uuid.UU
 		&i.Status,
 		&i.CreatedAt,
 		&i.DeletedAt,
+		&i.SessionExpiresAt,
 		&i.Wins,
 		&i.AverageSolveTimeMs,
 		&i.StatsOverridden,
@@ -178,7 +186,8 @@ SELECT id,
     session_token,
     status,
     created_at,
-    deleted_at
+    deleted_at,
+    session_expires_at
 FROM players
 WHERE id = $1
 `
@@ -193,6 +202,7 @@ func (q *Queries) GetPlayerByID(ctx context.Context, id uuid.UUID) (Player, erro
 		&i.Status,
 		&i.CreatedAt,
 		&i.DeletedAt,
+		&i.SessionExpiresAt,
 	)
 	return i, err
 }
@@ -203,7 +213,8 @@ SELECT id,
     session_token,
     status,
     created_at,
-    deleted_at
+    deleted_at,
+    session_expires_at
 FROM players
 WHERE session_token = $1
     AND deleted_at IS NULL
@@ -219,6 +230,7 @@ func (q *Queries) GetPlayerBySessionToken(ctx context.Context, sessionToken uuid
 		&i.Status,
 		&i.CreatedAt,
 		&i.DeletedAt,
+		&i.SessionExpiresAt,
 	)
 	return i, err
 }
@@ -229,7 +241,8 @@ SELECT id,
     session_token,
     status,
     created_at,
-    deleted_at
+    deleted_at,
+    session_expires_at
 FROM players
 WHERE username = $1
     AND deleted_at IS NULL
@@ -245,6 +258,7 @@ func (q *Queries) GetPlayerByUsername(ctx context.Context, username string) (Pla
 		&i.Status,
 		&i.CreatedAt,
 		&i.DeletedAt,
+		&i.SessionExpiresAt,
 	)
 	return i, err
 }
@@ -278,6 +292,7 @@ SELECT p.id,
     p.status,
     p.created_at,
     p.deleted_at,
+    p.session_expires_at,
     COALESCE(o.wins, b.wins, 0)::INT AS wins,
     COALESCE(o.average_solve_time_ms, b.average_solve_time_ms, 0)::BIGINT AS average_solve_time_ms,
     (o.player_id IS NOT NULL)::BOOLEAN AS stats_overridden
@@ -296,6 +311,7 @@ type ListAdminPlayersRow struct {
 	Status             string
 	CreatedAt          pgtype.Timestamptz
 	DeletedAt          pgtype.Timestamptz
+	SessionExpiresAt   pgtype.Timestamptz
 	Wins               int32
 	AverageSolveTimeMs int64
 	StatsOverridden    bool
@@ -317,6 +333,7 @@ func (q *Queries) ListAdminPlayers(ctx context.Context, dollar_1 bool) ([]ListAd
 			&i.Status,
 			&i.CreatedAt,
 			&i.DeletedAt,
+			&i.SessionExpiresAt,
 			&i.Wins,
 			&i.AverageSolveTimeMs,
 			&i.StatsOverridden,
@@ -350,6 +367,7 @@ const softDeleteIdlePlayer = `-- name: SoftDeleteIdlePlayer :one
 UPDATE players
 SET username = $2,
     session_token = NULL,
+    session_expires_at = NULL,
     status = 'idle',
     deleted_at = $3
 WHERE id = $1
@@ -360,7 +378,8 @@ RETURNING id,
     session_token,
     status,
     created_at,
-    deleted_at
+    deleted_at,
+    session_expires_at
 `
 
 type SoftDeleteIdlePlayerParams struct {
@@ -379,13 +398,15 @@ func (q *Queries) SoftDeleteIdlePlayer(ctx context.Context, arg SoftDeleteIdlePl
 		&i.Status,
 		&i.CreatedAt,
 		&i.DeletedAt,
+		&i.SessionExpiresAt,
 	)
 	return i, err
 }
 
 const updatePlayerSessionToken = `-- name: UpdatePlayerSessionToken :one
 UPDATE players
-SET session_token = $2
+SET session_token = $2,
+    session_expires_at = $3
 WHERE id = $1
     AND deleted_at IS NULL
 RETURNING id,
@@ -393,16 +414,18 @@ RETURNING id,
     session_token,
     status,
     created_at,
-    deleted_at
+    deleted_at,
+    session_expires_at
 `
 
 type UpdatePlayerSessionTokenParams struct {
-	ID           uuid.UUID
-	SessionToken uuid.NullUUID
+	ID               uuid.UUID
+	SessionToken     uuid.NullUUID
+	SessionExpiresAt pgtype.Timestamptz
 }
 
 func (q *Queries) UpdatePlayerSessionToken(ctx context.Context, arg UpdatePlayerSessionTokenParams) (Player, error) {
-	row := q.db.QueryRow(ctx, updatePlayerSessionToken, arg.ID, arg.SessionToken)
+	row := q.db.QueryRow(ctx, updatePlayerSessionToken, arg.ID, arg.SessionToken, arg.SessionExpiresAt)
 	var i Player
 	err := row.Scan(
 		&i.ID,
@@ -411,6 +434,7 @@ func (q *Queries) UpdatePlayerSessionToken(ctx context.Context, arg UpdatePlayer
 		&i.Status,
 		&i.CreatedAt,
 		&i.DeletedAt,
+		&i.SessionExpiresAt,
 	)
 	return i, err
 }
@@ -425,7 +449,8 @@ RETURNING id,
     session_token,
     status,
     created_at,
-    deleted_at
+    deleted_at,
+    session_expires_at
 `
 
 type UpdatePlayerStatusParams struct {
@@ -443,6 +468,7 @@ func (q *Queries) UpdatePlayerStatus(ctx context.Context, arg UpdatePlayerStatus
 		&i.Status,
 		&i.CreatedAt,
 		&i.DeletedAt,
+		&i.SessionExpiresAt,
 	)
 	return i, err
 }
@@ -458,7 +484,8 @@ RETURNING id,
     session_token,
     status,
     created_at,
-    deleted_at
+    deleted_at,
+    session_expires_at
 `
 
 type UpdatePlayerStatusIfCurrentParams struct {
@@ -477,6 +504,7 @@ func (q *Queries) UpdatePlayerStatusIfCurrent(ctx context.Context, arg UpdatePla
 		&i.Status,
 		&i.CreatedAt,
 		&i.DeletedAt,
+		&i.SessionExpiresAt,
 	)
 	return i, err
 }
@@ -491,7 +519,8 @@ RETURNING id,
     session_token,
     status,
     created_at,
-    deleted_at
+    deleted_at,
+    session_expires_at
 `
 
 type UpdatePlayerUsernameParams struct {
@@ -509,6 +538,7 @@ func (q *Queries) UpdatePlayerUsername(ctx context.Context, arg UpdatePlayerUser
 		&i.Status,
 		&i.CreatedAt,
 		&i.DeletedAt,
+		&i.SessionExpiresAt,
 	)
 	return i, err
 }
@@ -556,10 +586,11 @@ func (q *Queries) UpsertPlayerLeaderboardOverride(ctx context.Context, arg Upser
 }
 
 const upsertPlayerSessionByUsername = `-- name: UpsertPlayerSessionByUsername :one
-INSERT INTO players (username, session_token)
-VALUES ($1, $2) ON CONFLICT (username) DO
+INSERT INTO players (username, session_token, session_expires_at)
+VALUES ($1, $2, $3) ON CONFLICT (username) DO
 UPDATE
 SET session_token = EXCLUDED.session_token,
+    session_expires_at = EXCLUDED.session_expires_at,
     status = 'idle'
 WHERE players.status <> 'in_duel'
     AND players.deleted_at IS NULL
@@ -568,16 +599,18 @@ RETURNING id,
     session_token,
     status,
     created_at,
-    deleted_at
+    deleted_at,
+    session_expires_at
 `
 
 type UpsertPlayerSessionByUsernameParams struct {
-	Username     string
-	SessionToken uuid.NullUUID
+	Username         string
+	SessionToken     uuid.NullUUID
+	SessionExpiresAt pgtype.Timestamptz
 }
 
 func (q *Queries) UpsertPlayerSessionByUsername(ctx context.Context, arg UpsertPlayerSessionByUsernameParams) (Player, error) {
-	row := q.db.QueryRow(ctx, upsertPlayerSessionByUsername, arg.Username, arg.SessionToken)
+	row := q.db.QueryRow(ctx, upsertPlayerSessionByUsername, arg.Username, arg.SessionToken, arg.SessionExpiresAt)
 	var i Player
 	err := row.Scan(
 		&i.ID,
@@ -586,6 +619,7 @@ func (q *Queries) UpsertPlayerSessionByUsername(ctx context.Context, arg UpsertP
 		&i.Status,
 		&i.CreatedAt,
 		&i.DeletedAt,
+		&i.SessionExpiresAt,
 	)
 	return i, err
 }

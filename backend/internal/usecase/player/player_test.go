@@ -30,10 +30,11 @@ func TestUsecase_Join_CreatesNewPlayerWithSessionToken(t *testing.T) {
 		CreatedAt: time.Now().UTC(),
 	}
 	players.EXPECT().
-		JoinByUsername(mock.Anything, "alice", mock.MatchedBy(nonNilUUID)).
-		RunAndReturn(func(_ context.Context, _ string, token uuid.UUID) (*domain.Player, error) {
+		JoinByUsername(mock.Anything, "alice", mock.MatchedBy(nonNilUUID), mock.MatchedBy(futureTime)).
+		RunAndReturn(func(_ context.Context, _ string, token uuid.UUID, expiresAt time.Time) (*domain.Player, error) {
 			updated := *created
 			updated.SessionToken = &token
+			updated.SessionExpiresAt = &expiresAt
 			return &updated, nil
 		})
 
@@ -59,10 +60,11 @@ func TestUsecase_Join_UpdatesExistingIdlePlayerSessionToken(t *testing.T) {
 		CreatedAt:    time.Now().UTC(),
 	}
 	players.EXPECT().
-		JoinByUsername(mock.Anything, "alice", mock.MatchedBy(nonNilUUID)).
-		RunAndReturn(func(_ context.Context, _ string, token uuid.UUID) (*domain.Player, error) {
+		JoinByUsername(mock.Anything, "alice", mock.MatchedBy(nonNilUUID), mock.MatchedBy(futureTime)).
+		RunAndReturn(func(_ context.Context, _ string, token uuid.UUID, expiresAt time.Time) (*domain.Player, error) {
 			updated := *existing
 			updated.SessionToken = &token
+			updated.SessionExpiresAt = &expiresAt
 			return &updated, nil
 		})
 
@@ -79,7 +81,7 @@ func TestUsecase_Join_RejectsPlayerInDuel(t *testing.T) {
 	runTxInline(tx)
 
 	players.EXPECT().
-		JoinByUsername(mock.Anything, "alice", mock.MatchedBy(nonNilUUID)).
+		JoinByUsername(mock.Anything, "alice", mock.MatchedBy(nonNilUUID), mock.MatchedBy(futureTime)).
 		Return(nil, apperr.ErrPlayerInDuel)
 
 	_, err := playerusecase.NewPlayerUsecase(tx, players, duels).Join(t.Context(), "alice")
@@ -172,7 +174,7 @@ func TestUsecase_Logout_ClearsSessionToken(t *testing.T) {
 	player := &domain.Player{ID: uuid.New(), Username: "alice", Status: domain.PlayerStatusIdle}
 
 	players.EXPECT().GetBySessionToken(mock.Anything, sessionToken).Return(player, nil)
-	players.EXPECT().UpdateSessionToken(mock.Anything, player.ID, (*uuid.UUID)(nil)).Return(player, nil)
+	players.EXPECT().UpdateSessionToken(mock.Anything, player.ID, (*uuid.UUID)(nil), (*time.Time)(nil)).Return(player, nil)
 
 	err := playerusecase.NewPlayerUsecase(tx, players, duels).Logout(t.Context(), sessionToken)
 	require.NoError(t, err)
@@ -220,4 +222,8 @@ func runTxInline(tx *usecasemocks.MockTxManager) {
 
 func nonNilUUID(token uuid.UUID) bool {
 	return token != uuid.Nil
+}
+
+func futureTime(t time.Time) bool {
+	return t.After(time.Now().UTC())
 }

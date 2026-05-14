@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	restmw "github.com/TakuyaYagam1/task-per-minute/internal/controller/restapi/middleware"
 	"github.com/TakuyaYagam1/task-per-minute/internal/openapi"
 )
 
@@ -20,6 +21,11 @@ func writeHandshakeProblem(w http.ResponseWriter, r *http.Request, status int, d
 		Status:   problemStatus(status),
 		Detail:   &detail,
 		Instance: &instance,
+	}
+	if r != nil {
+		if requestID := restmw.GetRequestIDFromCtx(r.Context()); requestID != "" {
+			problem.RequestId = &requestID
+		}
 	}
 
 	w.Header().Set("Content-Type", wsProblemContentType)

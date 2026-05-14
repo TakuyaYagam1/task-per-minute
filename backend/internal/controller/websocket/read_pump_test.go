@@ -74,6 +74,84 @@ func TestServerPublishMatchMarksMissingParticipantDisconnected(t *testing.T) {
 	require.Equal(t, []recordedDisconnect{{duelID: duel.ID, playerID: player2.ID}}, reconnect.disconnects)
 }
 
+func TestServerPublishMatchSkipsInitialPayloadWhenHubRegisterFails(t *testing.T) {
+	t.Parallel()
+
+	player1 := &domain.Player{ID: uuid.New(), Username: "alice"}
+	player2 := &domain.Player{ID: uuid.New(), Username: "bob"}
+	duel := &domain.Duel{
+		ID:        uuid.New(),
+		Player1ID: player1.ID,
+		Player2ID: player2.ID,
+		Status:    domain.DuelStatusActive,
+		StartedAt: time.Now().UTC(),
+		Deadline:  time.Now().Add(time.Minute).UTC(),
+	}
+	reconnect := &recordingReconnectManager{}
+	hubs := NewHubRegistry()
+	hubs.registerTimeout = time.Millisecond
+	closedHubCtx, cancel := context.WithCancel(context.Background())
+	hubs.Create(closedHubCtx, duel.ID)
+	cancel()
+	time.Sleep(5 * time.Millisecond)
+	server := NewServer(
+		&publishMatchPlayerRepo{players: map[uuid.UUID]*domain.Player{
+			player1.ID: player1,
+			player2.ID: player2,
+		}},
+		nil,
+		nil,
+		hubs,
+		WithReconnectManager(reconnect),
+		WithHubCloseDelay(0),
+	)
+	first := &client{
+		player: player1,
+		send:   make(chan []byte, 4),
+		done:   make(chan struct{}),
+	}
+	second := &client{
+		player: player2,
+		send:   make(chan []byte, 4),
+		done:   make(chan struct{}),
+	}
+	server.clients.Store(player1.ID, first)
+	server.clients.Store(player2.ID, second)
+
+	server.publishMatch(context.Background(), &duelusecase.MatchResult{
+		Duel: duel,
+		Player1Task: &domain.Task{
+			ID:         uuid.New(),
+			Title:      "web",
+			Category:   domain.CategoryWeb,
+			Difficulty: domain.DifficultyEasy,
+			TimeLimit:  60,
+			Hints:      []string{"one", "two", "three"},
+		},
+		Player2Task: &domain.Task{
+			ID:         uuid.New(),
+			Title:      "pwn",
+			Category:   domain.CategoryPwn,
+			Difficulty: domain.DifficultyEasy,
+			TimeLimit:  60,
+			Hints:      []string{"one", "two", "three"},
+		},
+	})
+
+	_, firstInDuel := first.currentDuel()
+	_, secondInDuel := second.currentDuel()
+	require.False(t, firstInDuel)
+	require.False(t, secondInDuel)
+	require.ElementsMatch(t, []recordedDisconnect{
+		{duelID: duel.ID, playerID: player1.ID},
+		{duelID: duel.ID, playerID: player2.ID},
+	}, reconnect.disconnects)
+	for _, event := range append(drainBufferedClientEvents(t, first), drainBufferedClientEvents(t, second)...) {
+		require.NotEqual(t, EventMatchFound, event.Type)
+		require.NotEqual(t, EventTaskAssigned, event.Type)
+	}
+}
+
 func TestDecodeIncomingEventRejectsUnknownTopLevelField(t *testing.T) {
 	t.Parallel()
 
@@ -243,6 +321,21 @@ func readBufferedClientEvent(t *testing.T, c *client) Event {
 	}
 }
 
+func drainBufferedClientEvents(t *testing.T, c *client) []Event {
+	t.Helper()
+	var events []Event
+	for {
+		select {
+		case data := <-c.send:
+			var event Event
+			require.NoError(t, json.Unmarshal(data, &event))
+			events = append(events, event)
+		default:
+			return events
+		}
+	}
+}
+
 type publishMatchPlayerRepo struct {
 	players map[uuid.UUID]*domain.Player
 }
@@ -253,7 +346,7 @@ func (r *publishMatchPlayerRepo) Create(context.Context, string) (*domain.Player
 	panic("unused")
 }
 
-func (r *publishMatchPlayerRepo) JoinByUsername(context.Context, string, uuid.UUID) (*domain.Player, error) {
+func (r *publishMatchPlayerRepo) JoinByUsername(context.Context, string, uuid.UUID, time.Time) (*domain.Player, error) {
 	panic("unused")
 }
 
@@ -274,7 +367,7 @@ func (r *publishMatchPlayerRepo) GetBySessionToken(context.Context, uuid.UUID) (
 	panic("unused")
 }
 
-func (r *publishMatchPlayerRepo) UpdateSessionToken(context.Context, uuid.UUID, *uuid.UUID) (*domain.Player, error) {
+func (r *publishMatchPlayerRepo) UpdateSessionToken(context.Context, uuid.UUID, *uuid.UUID, *time.Time) (*domain.Player, error) {
 	panic("unused")
 }
 

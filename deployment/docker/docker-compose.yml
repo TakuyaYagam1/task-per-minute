@@ -211,15 +211,12 @@ services:
           cpus: "0.1"
           memory: 64M
     environment:
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required (set in .env)}
     command:
       - "sh"
       - "-c"
       - |
-        if [ -n "$${REDIS_PASSWORD:-}" ]; then
-          exec redis-server --save 60 1 --loglevel warning --requirepass "$${REDIS_PASSWORD}"
-        fi
-        exec redis-server --save 60 1 --loglevel warning
+        exec redis-server --save 60 1 --loglevel warning --requirepass "$${REDIS_PASSWORD}"
     expose:
       - "6379"
     volumes:
@@ -227,7 +224,7 @@ services:
     networks:
       - internal
     healthcheck:
-      test: ["CMD-SHELL", "if [ -n \"$${REDIS_PASSWORD:-}\" ]; then REDISCLI_AUTH=\"$${REDIS_PASSWORD}\" redis-cli ping; else redis-cli ping; fi"]
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$${REDIS_PASSWORD}\" redis-cli ping"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -325,7 +322,7 @@ services:
 
       # Redis
       REDIS_ADDR: ${REDIS_ADDR:-redis:6379}
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required (set in .env)}
       REDIS_DB: ${REDIS_DB:-0}
 
       # SeaweedFS
@@ -355,6 +352,7 @@ services:
       PLAYER_JOIN_RATE_ATTEMPTS: ${PLAYER_JOIN_RATE_ATTEMPTS:-20}
       PLAYER_JOIN_RATE_WINDOW: ${PLAYER_JOIN_RATE_WINDOW:-5m}
       PLAYER_JOIN_RATE_BUCKET_TTL: ${PLAYER_JOIN_RATE_BUCKET_TTL:-1h}
+      PLAYER_SESSION_TTL: ${PLAYER_SESSION_TTL:-24h}
 
       # WebSocket
       WS_ALLOWED_ORIGINS: ${WS_ALLOWED_ORIGINS:-}

@@ -18,7 +18,7 @@ var configEnvVars = []string{
 	"JWT_SECRET", "JWT_ACCESS_TTL", "JWT_REFRESH_TTL",
 	"ADMIN_PASSWORD", "ADMIN_LOGIN_RATE_ATTEMPTS", "ADMIN_LOGIN_RATE_WINDOW", "ADMIN_LOGIN_RATE_BUCKET_TTL",
 	"ADMIN_REFRESH_RATE_ATTEMPTS", "ADMIN_REFRESH_RATE_WINDOW", "ADMIN_REFRESH_RATE_BUCKET_TTL",
-	"PLAYER_JOIN_RATE_ATTEMPTS", "PLAYER_JOIN_RATE_WINDOW", "PLAYER_JOIN_RATE_BUCKET_TTL",
+	"PLAYER_JOIN_RATE_ATTEMPTS", "PLAYER_JOIN_RATE_WINDOW", "PLAYER_JOIN_RATE_BUCKET_TTL", "PLAYER_SESSION_TTL",
 	"WS_ALLOWED_ORIGINS", "WS_REQUIRE_ORIGIN", "WS_HANDSHAKE_RATE_ATTEMPTS", "WS_HANDSHAKE_RATE_WINDOW", "WS_HANDSHAKE_RATE_BUCKET_TTL",
 }
 
@@ -116,6 +116,9 @@ func TestLoad_AppliesDefaults(t *testing.T) {
 	if cfg.Player.JoinRateBucketTTL != time.Hour {
 		t.Errorf("Player.JoinRateBucketTTL = %s, want 1h", cfg.Player.JoinRateBucketTTL)
 	}
+	if cfg.Player.SessionTTL != 24*time.Hour {
+		t.Errorf("Player.SessionTTL = %s, want 24h", cfg.Player.SessionTTL)
+	}
 	if len(cfg.WS.AllowedOrigins) != 0 {
 		t.Errorf("WS.AllowedOrigins = %v, want empty", cfg.WS.AllowedOrigins)
 	}
@@ -153,6 +156,7 @@ func TestLoad_OverridesAreApplied(t *testing.T) {
 	t.Setenv("PLAYER_JOIN_RATE_ATTEMPTS", "11")
 	t.Setenv("PLAYER_JOIN_RATE_WINDOW", "30s")
 	t.Setenv("PLAYER_JOIN_RATE_BUCKET_TTL", "3h")
+	t.Setenv("PLAYER_SESSION_TTL", "12h")
 	t.Setenv("WS_ALLOWED_ORIGINS", "https://example.com,https://api.example.com")
 	t.Setenv("WS_REQUIRE_ORIGIN", "true")
 	t.Setenv("WS_HANDSHAKE_RATE_ATTEMPTS", "17")
@@ -213,6 +217,9 @@ func TestLoad_OverridesAreApplied(t *testing.T) {
 	}
 	if cfg.Player.JoinRateBucketTTL != 3*time.Hour {
 		t.Errorf("Player.JoinRateBucketTTL = %s, want 3h", cfg.Player.JoinRateBucketTTL)
+	}
+	if cfg.Player.SessionTTL != 12*time.Hour {
+		t.Errorf("Player.SessionTTL = %s, want 12h", cfg.Player.SessionTTL)
 	}
 	if got := cfg.WS.AllowedOrigins; len(got) != 2 || got[0] != "https://example.com" || got[1] != "https://api.example.com" {
 		t.Errorf("WS.AllowedOrigins = %v, want configured origins", got)
@@ -307,6 +314,7 @@ func TestLoad_ValidationFailures(t *testing.T) {
 		{"bad admin refresh rate attempts", "ADMIN_REFRESH_RATE_ATTEMPTS", "-1", "ADMIN_REFRESH_RATE_ATTEMPTS"},
 		{"bad admin refresh rate window", "ADMIN_REFRESH_RATE_WINDOW", "-1s", "ADMIN_REFRESH_RATE_WINDOW"},
 		{"bad player rate window", "PLAYER_JOIN_RATE_WINDOW", "-1s", "PLAYER_JOIN_RATE_WINDOW"},
+		{"bad player session ttl", "PLAYER_SESSION_TTL", "0s", "PLAYER_SESSION_TTL"},
 		{"bad ws handshake rate attempts", "WS_HANDSHAKE_RATE_ATTEMPTS", "0", "WS_HANDSHAKE_RATE_ATTEMPTS"},
 		{"bad ws handshake rate window", "WS_HANDSHAKE_RATE_WINDOW", "0s", "WS_HANDSHAKE_RATE_WINDOW"},
 		{"bad ws handshake rate bucket ttl", "WS_HANDSHAKE_RATE_BUCKET_TTL", "-1s", "WS_HANDSHAKE_RATE_BUCKET_TTL"},

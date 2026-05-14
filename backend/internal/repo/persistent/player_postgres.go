@@ -38,10 +38,16 @@ func (r *PlayerPostgres) Create(ctx context.Context, username string) (*domain.P
 	return playerToDomain(row), nil
 }
 
-func (r *PlayerPostgres) JoinByUsername(ctx context.Context, username string, sessionToken uuid.UUID) (*domain.Player, error) {
+func (r *PlayerPostgres) JoinByUsername(
+	ctx context.Context,
+	username string,
+	sessionToken uuid.UUID,
+	sessionExpiresAt time.Time,
+) (*domain.Player, error) {
 	row, err := r.tx.Querier(ctx).UpsertPlayerSessionByUsername(ctx, sqlc.UpsertPlayerSessionByUsernameParams{
-		Username:     username,
-		SessionToken: uuid.NullUUID{UUID: sessionToken, Valid: true},
+		Username:         username,
+		SessionToken:     uuid.NullUUID{UUID: sessionToken, Valid: true},
+		SessionExpiresAt: tstz(sessionExpiresAt),
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -82,13 +88,25 @@ func (r *PlayerPostgres) GetBySessionToken(ctx context.Context, token uuid.UUID)
 		}
 		return nil, fmt.Errorf("PlayerPostgres - GetBySessionToken - Querier.GetPlayerBySessionToken: %w", err)
 	}
-	return playerToDomain(row), nil
+	player := playerToDomain(row)
+	if sessionExpired(player.SessionExpiresAt, time.Now().UTC()) {
+		cleanupCtx := context.WithoutCancel(ctx)
+		_, _ = r.UpdateSessionToken(cleanupCtx, player.ID, nil, nil)
+		return nil, apperr.ErrPlayerNotFound
+	}
+	return player, nil
 }
 
-func (r *PlayerPostgres) UpdateSessionToken(ctx context.Context, id uuid.UUID, token *uuid.UUID) (*domain.Player, error) {
+func (r *PlayerPostgres) UpdateSessionToken(
+	ctx context.Context,
+	id uuid.UUID,
+	token *uuid.UUID,
+	sessionExpiresAt *time.Time,
+) (*domain.Player, error) {
 	row, err := r.tx.Querier(ctx).UpdatePlayerSessionToken(ctx, sqlc.UpdatePlayerSessionTokenParams{
-		ID:           id,
-		SessionToken: nullableUUID(token),
+		ID:               id,
+		SessionToken:     nullableUUID(token),
+		SessionExpiresAt: nullableTSTZ(sessionExpiresAt),
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -97,6 +115,10 @@ func (r *PlayerPostgres) UpdateSessionToken(ctx context.Context, id uuid.UUID, t
 		return nil, fmt.Errorf("PlayerPostgres - UpdateSessionToken - Querier.UpdatePlayerSessionToken: %w", err)
 	}
 	return playerToDomain(row), nil
+}
+
+func sessionExpired(expiresAt *time.Time, now time.Time) bool {
+	return expiresAt == nil || !expiresAt.After(now)
 }
 
 func (r *PlayerPostgres) UpdateStatus(ctx context.Context, id uuid.UUID, status domain.PlayerStatus) (*domain.Player, error) {

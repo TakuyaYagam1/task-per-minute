@@ -64,21 +64,31 @@ func (c *client) Send(data []byte) bool {
 	case <-c.done:
 		return false
 	default:
-		c.Close()
+		c.CloseNow()
 		return false
 	}
 }
 
 func (c *client) Close() {
+	c.closeWith(func(conn *coderws.Conn) error {
+		return conn.Close(coderws.StatusNormalClosure, "")
+	})
+}
+
+func (c *client) CloseNow() {
+	c.closeWith(func(conn *coderws.Conn) error {
+		return conn.CloseNow()
+	})
+}
+
+func (c *client) closeWith(closeConn func(*coderws.Conn) error) {
 	c.closeOnce.Do(func() {
 		c.closed.Store(true)
 		close(c.done)
 		if c.conn == nil {
 			return
 		}
-		go func() {
-			_ = c.conn.Close(coderws.StatusNormalClosure, "")
-		}()
+		_ = closeConn(c.conn)
 	})
 }
 
@@ -94,7 +104,7 @@ func (c *client) writePump(ctx context.Context) {
 	ticker := time.NewTicker(defaultPingInterval)
 	defer func() {
 		ticker.Stop()
-		c.Close()
+		c.CloseNow()
 	}()
 
 	for {

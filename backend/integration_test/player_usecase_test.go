@@ -40,12 +40,15 @@ func TestPlayerUsecase_Join_CreateAndRepeatUpdatesSessionToken(t *testing.T) {
 	require.Equal(t, username, first.Username)
 	require.Equal(t, domain.PlayerStatusIdle, first.Status)
 	require.NotNil(t, first.SessionToken)
+	require.NotNil(t, first.SessionExpiresAt)
+	require.True(t, first.SessionExpiresAt.After(time.Now().UTC()))
 	firstToken := *first.SessionToken
 
 	second, err := f.uc.Join(ctx, username)
 	require.NoError(t, err)
 	require.Equal(t, first.ID, second.ID)
 	require.NotNil(t, second.SessionToken)
+	require.NotNil(t, second.SessionExpiresAt)
 	require.NotEqual(t, firstToken, *second.SessionToken)
 
 	_, err = f.players.GetBySessionToken(ctx, firstToken)

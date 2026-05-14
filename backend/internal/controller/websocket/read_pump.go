@@ -166,7 +166,10 @@ func (s *Server) validateSession(ctx context.Context, c *client) bool {
 	if err != nil || current == nil || current.SessionToken == nil {
 		return false
 	}
-	return *current.SessionToken == c.sessionToken
+	if *current.SessionToken != c.sessionToken {
+		return false
+	}
+	return current.SessionExpiresAt != nil && current.SessionExpiresAt.After(time.Now().UTC())
 }
 
 func (s *Server) handleJoinQueue(ctx context.Context, c *client) {
@@ -341,6 +344,9 @@ func (s *Server) publishMatch(ctx context.Context, result *duelusecase.MatchResu
 	}
 
 	for playerID, assignment := range assignments {
+		if _, ok := present[playerID]; !ok {
+			continue
+		}
 		participant, ok := s.clientByPlayer(playerID)
 		if !ok {
 			continue

@@ -22,6 +22,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase"
 	adminusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/admin"
 	duelusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel"
+	playerusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/player"
 	"github.com/TakuyaYagam1/task-per-minute/pkg/clock"
 	pgclient "github.com/TakuyaYagam1/task-per-minute/pkg/postgres"
 	redisclient "github.com/TakuyaYagam1/task-per-minute/pkg/redis"
@@ -135,6 +136,20 @@ func provideFlagSubmitUsecase(
 ) *duelusecase.FlagSubmitUsecase {
 	return duelusecase.NewFlagSubmitUsecase(tx, duels, players, history, board, clk, timers).
 		Configure(duelusecase.WithFlagSubmitLogger(log))
+}
+
+func providePlayerUsecase(
+	cfg *config.Config,
+	tx usecase.TxManager,
+	players usecase.PlayerRepo,
+	duels usecase.DuelRepo,
+) *playerusecase.PlayerUsecase {
+	return playerusecase.NewPlayerUsecase(
+		tx,
+		players,
+		duels,
+		playerusecase.WithSessionTTL(cfg.Player.SessionTTL),
+	)
 }
 
 func provideMatchmakingUsecase(

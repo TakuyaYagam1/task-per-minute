@@ -27,9 +27,10 @@ func (s PlayerStatus) String() string {
 }
 
 type Player struct {
-	ID           uuid.UUID
-	Username     string
-	SessionToken *uuid.UUID
-	Status       PlayerStatus
-	CreatedAt    time.Time
+	ID               uuid.UUID
+	Username         string
+	SessionToken     *uuid.UUID
+	SessionExpiresAt *time.Time
+	Status           PlayerStatus
+	CreatedAt        time.Time
 }

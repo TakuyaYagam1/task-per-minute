@@ -40,12 +40,13 @@ type DuelPlayerTask struct {
 }
 
 type Player struct {
-	ID           uuid.UUID
-	Username     string
-	SessionToken uuid.NullUUID
-	Status       string
-	CreatedAt    pgtype.Timestamptz
-	DeletedAt    pgtype.Timestamptz
+	ID               uuid.UUID
+	Username         string
+	SessionToken     uuid.NullUUID
+	Status           string
+	CreatedAt        pgtype.Timestamptz
+	DeletedAt        pgtype.Timestamptz
+	SessionExpiresAt pgtype.Timestamptz
 }
 
 type PlayerLeaderboardOverride struct {

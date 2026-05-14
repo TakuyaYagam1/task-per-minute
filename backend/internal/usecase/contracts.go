@@ -16,11 +16,11 @@ type TxManager interface {
 
 type PlayerRepo interface {
 	Create(ctx context.Context, username string) (*domain.Player, error)
-	JoinByUsername(ctx context.Context, username string, sessionToken uuid.UUID) (*domain.Player, error)
+	JoinByUsername(ctx context.Context, username string, sessionToken uuid.UUID, sessionExpiresAt time.Time) (*domain.Player, error)
 	GetByID(ctx context.Context, id uuid.UUID) (*domain.Player, error)
 	GetByUsername(ctx context.Context, username string) (*domain.Player, error)
 	GetBySessionToken(ctx context.Context, token uuid.UUID) (*domain.Player, error)
-	UpdateSessionToken(ctx context.Context, id uuid.UUID, token *uuid.UUID) (*domain.Player, error)
+	UpdateSessionToken(ctx context.Context, id uuid.UUID, token *uuid.UUID, sessionExpiresAt *time.Time) (*domain.Player, error)
 	UpdateStatus(ctx context.Context, id uuid.UUID, status domain.PlayerStatus) (*domain.Player, error)
 	UpdateStatusIfCurrent(ctx context.Context, id uuid.UUID, from, to domain.PlayerStatus) (*domain.Player, bool, error)
 }

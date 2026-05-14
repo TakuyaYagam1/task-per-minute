@@ -94,7 +94,8 @@ func TestBuild_RecovererReturnsInternalJSONAndLogsError(t *testing.T) {
 		"title":"Internal Server Error",
 		"status":500,
 		"detail":"internal",
-		"instance":"/api/v1/duels/current"
+		"instance":"/api/v1/duels/current",
+		"request_id":"panic-req-123"
 	}`, rr.Body.String())
 	require.NotContains(t, rr.Body.String(), "boom")
 	require.NotContains(t, strings.ToLower(rr.Body.String()), "stack")

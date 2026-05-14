@@ -188,7 +188,7 @@ func NewServer(
 	}
 
 	s.ctx, s.cancel = context.WithCancel(s.ctx) //nolint:gosec,nolintlint // G118 in older gosec: cancel is stored on Server and invoked by Shutdown.
-	s.broadcaster = newBroadcaster(s.ctx, s.hubs, s.clientByPlayer, s.closeDelay)
+	s.broadcaster = newBroadcaster(s.ctx, s.hubs, s.players, s.clientByPlayer, s.closeDelay)
 	if s.hints != nil {
 		s.hints.SetSender(s.sendHintUnlocked)
 	}
@@ -244,7 +244,7 @@ func (s *Server) Shutdown(ctx context.Context) {
 			}
 		}
 		s.clients.Delete(key)
-		c.Close()
+		c.CloseNow()
 		return true
 	})
 
@@ -367,7 +367,7 @@ func (s *Server) handleConnectionReplacement(ctx context.Context, c, old *client
 	if s.reconnect != nil {
 		decision, err := s.reconnect.ActiveDuel(ctx, c.player.ID)
 		if err != nil {
-			go old.Close()
+			old.CloseNow()
 			s.sendAppError(c, err)
 			return true
 		}
@@ -375,7 +375,7 @@ func (s *Server) handleConnectionReplacement(ctx context.Context, c, old *client
 			if inDuel {
 				s.hubs.Unregister(duelID, old)
 			}
-			go old.Close()
+			old.CloseNow()
 			if !s.attachToDuelHub(ctx, c, decision.Duel.ID) {
 				return true
 			}
@@ -386,7 +386,7 @@ func (s *Server) handleConnectionReplacement(ctx context.Context, c, old *client
 
 	if inDuel {
 		s.hubs.Unregister(duelID, old)
-		go old.Close()
+		old.CloseNow()
 		if s.reconnect == nil {
 			return s.attachToDuelHub(ctx, c, duelID)
 		}
@@ -407,11 +407,11 @@ func (s *Server) handleConnectionReplacement(ctx context.Context, c, old *client
 
 	if queued {
 		c.setQueued(true)
-		go old.Close()
+		old.CloseNow()
 		return false
 	}
 
-	go old.Close()
+	old.CloseNow()
 	return false
 }
 
@@ -653,7 +653,7 @@ func (s *Server) resolveClientIP(r *http.Request) string {
 
 func (s *Server) cleanupClient(ctx context.Context, c *client) {
 	if !s.clients.CompareAndDelete(c.player.ID, c) {
-		c.Close()
+		c.CloseNow()
 		return
 	}
 	cleanupCtx := context.WithoutCancel(ctx)
@@ -664,7 +664,7 @@ func (s *Server) cleanupClient(ctx context.Context, c *client) {
 		s.hubs.Unregister(duelID, c)
 		s.handleDisconnectAfterGrace(cleanupCtx, c, duelID)
 	}
-	c.Close()
+	c.CloseNow()
 }
 
 func (s *Server) handleDisconnectAfterGrace(ctx context.Context, c *client, duelID uuid.UUID) {

@@ -227,6 +227,41 @@ func TestCookieAuth(t *testing.T) {
 	require.Equal(t, player.ID.String(), entry["player_id"])
 }
 
+func TestExpiredCookieAuthRejected(t *testing.T) {
+	t.Parallel()
+
+	token := uuid.New()
+	expiresAt := time.Now().Add(-time.Minute).UTC()
+	player := &domain.Player{
+		ID:               uuid.New(),
+		Username:         "alice",
+		SessionToken:     &token,
+		SessionExpiresAt: &expiresAt,
+		Status:           domain.PlayerStatusIdle,
+	}
+	server := NewServer(
+		&shutdownPlayerRepo{player: player},
+		&shutdownMatchmaking{left: make(chan uuid.UUID, 1)},
+		nil,
+		NewHubRegistry(),
+		WithHubCloseDelay(0),
+	)
+	httpServer := httptest.NewServer(server)
+	defer httpServer.Close()
+
+	conn, resp, err := dialTestWS(t, httpServer.URL, token)
+	if conn != nil {
+		_ = conn.Close(coderws.StatusNormalClosure, "")
+	}
+	require.Error(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+	require.Equal(t, wsProblemContentType, resp.Header.Get("Content-Type"))
+	if resp.Body != nil {
+		require.NoError(t, resp.Body.Close())
+	}
+}
+
 func TestCrossOriginCookieAuthRejectedBeforeSessionLookup(t *testing.T) {
 	t.Parallel()
 
@@ -760,7 +795,7 @@ func (r *rotatingSessionPlayerRepo) Create(context.Context, string) (*domain.Pla
 	panic("unused")
 }
 
-func (r *rotatingSessionPlayerRepo) JoinByUsername(context.Context, string, uuid.UUID) (*domain.Player, error) {
+func (r *rotatingSessionPlayerRepo) JoinByUsername(context.Context, string, uuid.UUID, time.Time) (*domain.Player, error) {
 	panic("unused")
 }
 
@@ -771,7 +806,7 @@ func (r *rotatingSessionPlayerRepo) GetByID(_ context.Context, id uuid.UUID) (*d
 		return nil, nil
 	}
 	out := r.player
-	return &out, nil
+	return validSessionTestPlayer(&out), nil
 }
 
 func (r *rotatingSessionPlayerRepo) GetByUsername(context.Context, string) (*domain.Player, error) {
@@ -785,10 +820,14 @@ func (r *rotatingSessionPlayerRepo) GetBySessionToken(_ context.Context, token u
 		return nil, nil
 	}
 	out := r.player
-	return &out, nil
+	snapshot := validSessionTestPlayer(&out)
+	if testSessionExpired(snapshot) {
+		return nil, nil
+	}
+	return snapshot, nil
 }
 
-func (r *rotatingSessionPlayerRepo) UpdateSessionToken(context.Context, uuid.UUID, *uuid.UUID) (*domain.Player, error) {
+func (r *rotatingSessionPlayerRepo) UpdateSessionToken(context.Context, uuid.UUID, *uuid.UUID, *time.Time) (*domain.Player, error) {
 	panic("unused")
 }
 
@@ -813,7 +852,7 @@ func (r *shutdownPlayerRepo) Create(context.Context, string) (*domain.Player, er
 	panic("unused")
 }
 
-func (r *shutdownPlayerRepo) JoinByUsername(context.Context, string, uuid.UUID) (*domain.Player, error) {
+func (r *shutdownPlayerRepo) JoinByUsername(context.Context, string, uuid.UUID, time.Time) (*domain.Player, error) {
 	panic("unused")
 }
 
@@ -822,7 +861,7 @@ func (r *shutdownPlayerRepo) GetByID(_ context.Context, id uuid.UUID) (*domain.P
 		return nil, nil
 	}
 	out := *r.player
-	return &out, nil
+	return validSessionTestPlayer(&out), nil
 }
 
 func (r *shutdownPlayerRepo) GetByUsername(context.Context, string) (*domain.Player, error) {
@@ -834,10 +873,14 @@ func (r *shutdownPlayerRepo) GetBySessionToken(_ context.Context, token uuid.UUI
 		return nil, nil
 	}
 	out := *r.player
-	return &out, nil
+	snapshot := validSessionTestPlayer(&out)
+	if testSessionExpired(snapshot) {
+		return nil, nil
+	}
+	return snapshot, nil
 }
 
-func (r *shutdownPlayerRepo) UpdateSessionToken(context.Context, uuid.UUID, *uuid.UUID) (*domain.Player, error) {
+func (r *shutdownPlayerRepo) UpdateSessionToken(context.Context, uuid.UUID, *uuid.UUID, *time.Time) (*domain.Player, error) {
 	panic("unused")
 }
 
@@ -862,7 +905,7 @@ func (r *countingSessionPlayerRepo) Create(context.Context, string) (*domain.Pla
 	panic("unused")
 }
 
-func (r *countingSessionPlayerRepo) JoinByUsername(context.Context, string, uuid.UUID) (*domain.Player, error) {
+func (r *countingSessionPlayerRepo) JoinByUsername(context.Context, string, uuid.UUID, time.Time) (*domain.Player, error) {
 	panic("unused")
 }
 
@@ -879,8 +922,22 @@ func (r *countingSessionPlayerRepo) GetBySessionToken(context.Context, uuid.UUID
 	return nil, nil
 }
 
-func (r *countingSessionPlayerRepo) UpdateSessionToken(context.Context, uuid.UUID, *uuid.UUID) (*domain.Player, error) {
+func (r *countingSessionPlayerRepo) UpdateSessionToken(context.Context, uuid.UUID, *uuid.UUID, *time.Time) (*domain.Player, error) {
 	panic("unused")
+}
+
+func validSessionTestPlayer(player *domain.Player) *domain.Player {
+	if player == nil || player.SessionToken == nil || player.SessionExpiresAt != nil {
+		return player
+	}
+	expiresAt := time.Now().Add(time.Hour).UTC()
+	out := *player
+	out.SessionExpiresAt = &expiresAt
+	return &out
+}
+
+func testSessionExpired(player *domain.Player) bool {
+	return player == nil || player.SessionExpiresAt == nil || !player.SessionExpiresAt.After(time.Now().UTC())
 }
 
 func (r *countingSessionPlayerRepo) UpdateStatus(context.Context, uuid.UUID, domain.PlayerStatus) (*domain.Player, error) {

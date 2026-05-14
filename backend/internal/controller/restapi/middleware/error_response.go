@@ -22,6 +22,9 @@ func writeProblem(w http.ResponseWriter, r *http.Request, status int, title, det
 		Detail:   &detail,
 		Instance: &instance,
 	}
+	if requestID := GetRequestIDFromCtx(r.Context()); requestID != "" {
+		problem.RequestId = &requestID
+	}
 
 	w.Header().Set("Content-Type", problemContentType)
 	w.WriteHeader(status)

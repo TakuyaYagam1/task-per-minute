@@ -29,6 +29,10 @@ func playerToDomain(p sqlc.Player) *domain.Player {
 		token := p.SessionToken.UUID
 		out.SessionToken = &token
 	}
+	if p.SessionExpiresAt.Valid {
+		expiresAt := p.SessionExpiresAt.Time
+		out.SessionExpiresAt = &expiresAt
+	}
 	return out
 }
 
@@ -106,6 +110,13 @@ func duelPlayerTaskToDomain(dpt sqlc.DuelPlayerTask) *domain.DuelPlayerTask {
 
 func tstz(t time.Time) pgtype.Timestamptz {
 	return pgtype.Timestamptz{Time: t, Valid: true}
+}
+
+func nullableTSTZ(t *time.Time) pgtype.Timestamptz {
+	if t == nil {
+		return pgtype.Timestamptz{}
+	}
+	return pgtype.Timestamptz{Time: *t, Valid: true}
 }
 
 func nullableTime(t pgtype.Timestamptz) *time.Time {

@@ -5,6 +5,7 @@ package integration_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -55,18 +56,20 @@ func TestPlayerRepo_JoinByUsername_QueuedPlayerResetsIdle(t *testing.T) {
 	ctx := context.Background()
 	name := uniq("alice")
 
-	created, err := repo.JoinByUsername(ctx, name, uuid.New())
+	created, err := repo.JoinByUsername(ctx, name, uuid.New(), time.Now().Add(time.Hour).UTC())
 	require.NoError(t, err)
 
 	_, err = repo.UpdateStatus(ctx, created.ID, domain.PlayerStatusQueued)
 	require.NoError(t, err)
 
 	token := uuid.New()
-	joined, err := repo.JoinByUsername(ctx, name, token)
+	joined, err := repo.JoinByUsername(ctx, name, token, time.Now().Add(time.Hour).UTC())
 	require.NoError(t, err)
 	require.Equal(t, created.ID, joined.ID)
 	require.NotNil(t, joined.SessionToken)
 	require.Equal(t, token, *joined.SessionToken)
+	require.NotNil(t, joined.SessionExpiresAt)
+	require.True(t, joined.SessionExpiresAt.After(time.Now().UTC()))
 	require.Equal(t, domain.PlayerStatusIdle, joined.Status,
 		"session rotation must stale old queue entries by resetting queued players to idle")
 }
@@ -154,29 +157,72 @@ func TestPlayerRepo_UpdateSessionToken_SetThenClear(t *testing.T) {
 	require.NoError(t, err)
 
 	token := uuid.New()
-	updated, err := repo.UpdateSessionToken(ctx, p.ID, &token)
+	expiresAt := time.Now().Add(time.Hour).UTC()
+	updated, err := repo.UpdateSessionToken(ctx, p.ID, &token, &expiresAt)
 	require.NoError(t, err)
 	require.NotNil(t, updated.SessionToken)
 	require.Equal(t, token, *updated.SessionToken)
+	require.NotNil(t, updated.SessionExpiresAt)
+	require.WithinDuration(t, expiresAt, *updated.SessionExpiresAt, time.Millisecond)
 
 	bySession, err := repo.GetBySessionToken(ctx, token)
 	require.NoError(t, err)
 	require.Equal(t, p.ID, bySession.ID)
 
-	cleared, err := repo.UpdateSessionToken(ctx, p.ID, nil)
+	cleared, err := repo.UpdateSessionToken(ctx, p.ID, nil, nil)
 	require.NoError(t, err)
 	require.Nil(t, cleared.SessionToken)
+	require.Nil(t, cleared.SessionExpiresAt)
 
 	_, err = repo.GetBySessionToken(ctx, token)
 	require.ErrorIs(t, err, apperr.ErrPlayerNotFound,
 		"after clearing the token nobody should match it")
 }
 
+func TestPlayerRepo_GetBySessionToken_ExpiredSessionClearsToken(t *testing.T) {
+	t.Parallel()
+	repo, _ := newPlayerRepo()
+	ctx := context.Background()
+
+	p, err := repo.Create(ctx, uniq("alice"))
+	require.NoError(t, err)
+
+	token := uuid.New()
+	expiresAt := time.Now().Add(-time.Minute).UTC()
+	_, err = repo.UpdateSessionToken(ctx, p.ID, &token, &expiresAt)
+	require.NoError(t, err)
+
+	_, err = repo.GetBySessionToken(ctx, token)
+	require.ErrorIs(t, err, apperr.ErrPlayerNotFound)
+
+	cleared, err := repo.GetByID(ctx, p.ID)
+	require.NoError(t, err)
+	require.Nil(t, cleared.SessionToken)
+	require.Nil(t, cleared.SessionExpiresAt)
+}
+
+func TestPlayerRepo_GetBySessionToken_NullExpiryIsExpired(t *testing.T) {
+	t.Parallel()
+	repo, _ := newPlayerRepo()
+	ctx := context.Background()
+
+	p, err := repo.Create(ctx, uniq("alice"))
+	require.NoError(t, err)
+
+	token := uuid.New()
+	_, err = repo.UpdateSessionToken(ctx, p.ID, &token, nil)
+	require.NoError(t, err)
+
+	_, err = repo.GetBySessionToken(ctx, token)
+	require.ErrorIs(t, err, apperr.ErrPlayerNotFound)
+}
+
 func TestPlayerRepo_UpdateSessionToken_NotFound(t *testing.T) {
 	t.Parallel()
 	repo, _ := newPlayerRepo()
 	token := uuid.New()
-	_, err := repo.UpdateSessionToken(context.Background(), uuid.New(), &token)
+	expiresAt := time.Now().Add(time.Hour).UTC()
+	_, err := repo.UpdateSessionToken(context.Background(), uuid.New(), &token, &expiresAt)
 	require.ErrorIs(t, err, apperr.ErrPlayerNotFound)
 }
 

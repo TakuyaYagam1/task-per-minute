@@ -13,7 +13,6 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/admin"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/leaderboard"
-	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/player"
 	"github.com/wahrwelt-kit/go-logkit"
 )
 
@@ -54,7 +53,7 @@ func InitializeApp(ctx context.Context, cfg *config.Config, log logkit.Logger) (
 	wireWsHandshakeRateLimiter := provideHandshakeRateLimiter(ctx, cfg)
 	wireRawWebSocketServer := provideRawWebSocketServer(ctx, cfg, log, playerPostgres, matchmakingUsecase, flagSubmitUsecase, hubRegistry, hintScheduler, timerRegistry, duelPostgres, seaweedStorage, wireWsHandshakeRateLimiter)
 	duelBroadcaster := provideDuelBroadcaster(wireRawWebSocketServer)
-	playerUsecase := player.NewPlayerUsecase(txManager, playerPostgres, duelPostgres)
+	playerUsecase := providePlayerUsecase(cfg, txManager, playerPostgres, duelPostgres)
 	authConfig := provideAuthConfig(cfg)
 	revocationRedis := provideRevocationRedis(client)
 	authUsecase := admin.NewAuthUsecase(authConfig, clock, revocationRedis)

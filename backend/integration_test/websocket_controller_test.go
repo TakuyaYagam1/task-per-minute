@@ -91,6 +91,32 @@ func TestWebSocketController_DeletedPlayerSessionCannotConnect(t *testing.T) {
 	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 }
 
+func TestWebSocketController_ExpiredPlayerSessionCannotConnect(t *testing.T) {
+	f := newWebSocketFixture(t)
+	ctx := context.Background()
+
+	player := f.joinPlayer(t, uniq("expired_ws"))
+	sessionToken := *player.SessionToken
+	expiresAt := time.Now().Add(-time.Minute).UTC()
+	_, err := f.players.UpdateSessionToken(ctx, player.ID, &sessionToken, &expiresAt)
+	require.NoError(t, err)
+
+	dialCtx, cancel := context.WithTimeout(ctx, wsTestTimeout)
+	defer cancel()
+	conn, resp, err := coderws.Dial(dialCtx, wsEndpoint(f.httpServer.URL), wsDialOptions(sessionToken))
+	if conn != nil {
+		closeWSSilent(conn)
+	}
+	require.Error(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+
+	cleared, err := f.players.GetByID(ctx, player.ID)
+	require.NoError(t, err)
+	require.Nil(t, cleared.SessionToken)
+	require.Nil(t, cleared.SessionExpiresAt)
+}
+
 func TestWebSocketController_HintUnlocksInOrder(t *testing.T) {
 	f := newIsolatedWebSocketFixtureWithReconnectWindow(t, duelusecase.DefaultReconnectWindow)
 

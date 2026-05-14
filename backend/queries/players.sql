@@ -6,12 +6,14 @@ RETURNING id,
     session_token,
     status,
     created_at,
-    deleted_at;
+    deleted_at,
+    session_expires_at;
 -- name: UpsertPlayerSessionByUsername :one
-INSERT INTO players (username, session_token)
-VALUES ($1, $2) ON CONFLICT (username) DO
+INSERT INTO players (username, session_token, session_expires_at)
+VALUES ($1, $2, $3) ON CONFLICT (username) DO
 UPDATE
 SET session_token = EXCLUDED.session_token,
+    session_expires_at = EXCLUDED.session_expires_at,
     status = 'idle'
 WHERE players.status <> 'in_duel'
     AND players.deleted_at IS NULL
@@ -20,14 +22,16 @@ RETURNING id,
     session_token,
     status,
     created_at,
-    deleted_at;
+    deleted_at,
+    session_expires_at;
 -- name: GetPlayerByID :one
 SELECT id,
     username,
     session_token,
     status,
     created_at,
-    deleted_at
+    deleted_at,
+    session_expires_at
 FROM players
 WHERE id = $1;
 -- name: GetPlayerByUsername :one
@@ -36,7 +40,8 @@ SELECT id,
     session_token,
     status,
     created_at,
-    deleted_at
+    deleted_at,
+    session_expires_at
 FROM players
 WHERE username = $1
     AND deleted_at IS NULL;
@@ -46,13 +51,15 @@ SELECT id,
     session_token,
     status,
     created_at,
-    deleted_at
+    deleted_at,
+    session_expires_at
 FROM players
 WHERE session_token = $1
     AND deleted_at IS NULL;
 -- name: UpdatePlayerSessionToken :one
 UPDATE players
-SET session_token = $2
+SET session_token = $2,
+    session_expires_at = $3
 WHERE id = $1
     AND deleted_at IS NULL
 RETURNING id,
@@ -60,7 +67,8 @@ RETURNING id,
     session_token,
     status,
     created_at,
-    deleted_at;
+    deleted_at,
+    session_expires_at;
 -- name: UpdatePlayerStatus :one
 UPDATE players
 SET status = $2
@@ -71,7 +79,8 @@ RETURNING id,
     session_token,
     status,
     created_at,
-    deleted_at;
+    deleted_at,
+    session_expires_at;
 -- name: UpdatePlayerStatusIfCurrent :one
 UPDATE players
 SET status = $3
@@ -83,7 +92,8 @@ RETURNING id,
     session_token,
     status,
     created_at,
-    deleted_at;
+    deleted_at,
+    session_expires_at;
 
 -- name: ResetQueuedPlayers :execrows
 UPDATE players
@@ -101,12 +111,14 @@ RETURNING id,
     session_token,
     status,
     created_at,
-    deleted_at;
+    deleted_at,
+    session_expires_at;
 
 -- name: SoftDeleteIdlePlayer :one
 UPDATE players
 SET username = $2,
     session_token = NULL,
+    session_expires_at = NULL,
     status = 'idle',
     deleted_at = $3
 WHERE id = $1
@@ -117,7 +129,8 @@ RETURNING id,
     session_token,
     status,
     created_at,
-    deleted_at;
+    deleted_at,
+    session_expires_at;
 
 -- name: UpsertPlayerLeaderboardOverride :one
 INSERT INTO player_leaderboard_overrides (
@@ -165,6 +178,7 @@ SELECT p.id,
     p.status,
     p.created_at,
     p.deleted_at,
+    p.session_expires_at,
     COALESCE(o.wins, b.wins, 0)::INT AS wins,
     COALESCE(o.average_solve_time_ms, b.average_solve_time_ms, 0)::BIGINT AS average_solve_time_ms,
     (o.player_id IS NOT NULL)::BOOLEAN AS stats_overridden
@@ -203,6 +217,7 @@ SELECT p.id,
     p.status,
     p.created_at,
     p.deleted_at,
+    p.session_expires_at,
     COALESCE(o.wins, b.wins, 0)::INT AS wins,
     COALESCE(o.average_solve_time_ms, b.average_solve_time_ms, 0)::BIGINT AS average_solve_time_ms,
     (o.player_id IS NOT NULL)::BOOLEAN AS stats_overridden
@@ -240,6 +255,7 @@ SELECT p.id,
     p.status,
     p.created_at,
     p.deleted_at,
+    p.session_expires_at,
     COALESCE(o.wins, b.wins, 0)::INT AS wins,
     COALESCE(o.average_solve_time_ms, b.average_solve_time_ms, 0)::BIGINT AS average_solve_time_ms,
     (o.player_id IS NOT NULL)::BOOLEAN AS stats_overridden

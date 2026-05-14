@@ -244,7 +244,7 @@ func (r *timerPlayerRepo) Create(context.Context, string) (*domain.Player, error
 	panic("unused")
 }
 
-func (r *timerPlayerRepo) JoinByUsername(context.Context, string, uuid.UUID) (*domain.Player, error) {
+func (r *timerPlayerRepo) JoinByUsername(context.Context, string, uuid.UUID, time.Time) (*domain.Player, error) {
 	panic("unused")
 }
 
@@ -267,7 +267,7 @@ func (r *timerPlayerRepo) GetBySessionToken(context.Context, uuid.UUID) (*domain
 	panic("unused")
 }
 
-func (r *timerPlayerRepo) UpdateSessionToken(context.Context, uuid.UUID, *uuid.UUID) (*domain.Player, error) {
+func (r *timerPlayerRepo) UpdateSessionToken(context.Context, uuid.UUID, *uuid.UUID, *time.Time) (*domain.Player, error) {
 	panic("unused")
 }
 

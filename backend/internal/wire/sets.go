@@ -73,7 +73,7 @@ var UsecasesSet = wire.NewSet(
 	wire.Bind(new(usecase.AdminPlayer), new(*adminusecase.PlayerUsecase)),
 	provideUploadUsecase,
 	wire.Bind(new(usecase.Upload), new(*adminusecase.UploadUsecase)),
-	playerusecase.NewPlayerUsecase,
+	providePlayerUsecase,
 	wire.Bind(new(usecase.Player), new(*playerusecase.PlayerUsecase)),
 	provideMatchmakingUsecase,
 	wire.Bind(new(websocket.Matchmaking), new(*duelusecase.MatchmakingUsecase)),

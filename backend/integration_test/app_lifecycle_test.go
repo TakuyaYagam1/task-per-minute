@@ -164,7 +164,7 @@ func TestAppLifecycle_ShutdownLeavesQueuedWebSocketIdle(t *testing.T) {
 
 	f := newDuelFixture()
 	ctx := context.Background()
-	player, err := f.players.JoinByUsername(ctx, uniq("alice"), uuid.New())
+	player, err := f.players.JoinByUsername(ctx, uniq("alice"), uuid.New(), time.Now().Add(time.Hour).UTC())
 	require.NoError(t, err)
 	require.NotNil(t, player.SessionToken)
 
@@ -229,6 +229,7 @@ func setAppEnv(t *testing.T, port int) {
 	t.Setenv("HTTP_READ_TIMEOUT", "5s")
 	t.Setenv("HTTP_WRITE_TIMEOUT", "5s")
 	t.Setenv("HTTP_SHUTDOWN_TIMEOUT", "2s")
+	t.Setenv("HTTP_ALLOWED_ORIGINS", "")
 	t.Setenv("DB_DSN", sharedPool.Config().ConnString())
 	t.Setenv("DB_MAX_CONNS", "5")
 	t.Setenv("REDIS_ADDR", redis.client.Options().Addr)
@@ -245,6 +246,8 @@ func setAppEnv(t *testing.T, port int) {
 	t.Setenv("JWT_ACCESS_TTL", "15m")
 	t.Setenv("JWT_REFRESH_TTL", "168h")
 	t.Setenv("ADMIN_PASSWORD", "admin-password")
+	t.Setenv("WS_ALLOWED_ORIGINS", "")
+	t.Setenv("WS_REQUIRE_ORIGIN", "false")
 }
 
 func reservePort(t *testing.T) int {
