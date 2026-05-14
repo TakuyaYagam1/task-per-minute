@@ -1,11 +1,13 @@
 "use client";
 
-import React, { useEffect, useState, useRef, FormEvent } from "react";
-import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { FormEvent, useEffect, useRef, useState } from "react";
 
-import { GameState, MatchFoundPayload, Player, WebSocketMessage } from "../../shared/types";
+import { gameModel } from "../../entities/game";
+import { playerModel, type RefreshPlayerResult } from "../../entities/player";
+import { PlayButton, useWebSocket } from "../../features/game-queue";
 import {
   isInvalidSessionWebSocketMessage,
   isValidUsername,
@@ -14,9 +16,12 @@ import {
   redirectNotificationStorage,
   useTimedNotification,
 } from "../../shared/lib";
-import { playerModel, type RefreshPlayerResult } from "../../entities/player";
-import { gameModel } from "../../entities/game";
-import { PlayButton, useWebSocket } from "../../features/game-queue";
+import {
+  GameState,
+  MatchFoundPayload,
+  Player,
+  WebSocketMessage,
+} from "../../shared/types";
 import { WaitingOverlay } from "../../widgets/waiting-overlay";
 
 type HomeFlow = "queue" | "restore";
@@ -66,7 +71,8 @@ export default function HomePage() {
   const sessionPromiseRef = useRef<Promise<RefreshPlayerResult> | null>(null);
   const { notification, showNotification } = useTimedNotification<string>();
 
-  const { websocketRef, connectWebSocket, sendMessage, closeWebSocket } = useWebSocket();
+  const { websocketRef, connectWebSocket, sendMessage, closeWebSocket } =
+    useWebSocket();
 
   useEffect(() => {
     const redirectNotification = redirectNotificationStorage.consume();
@@ -109,7 +115,9 @@ export default function HomePage() {
         return;
       }
       if (result.kind === "contract") {
-        log.warn("players/me returned malformed payload; keeping session, surface as soft error");
+        log.warn(
+          "players/me returned malformed payload; keeping session, surface as soft error",
+        );
         showNotification("Не удалось проверить сессию. Попробуйте ещё раз.");
         return;
       }
@@ -144,7 +152,9 @@ export default function HomePage() {
       setPlayerID(result.player.id);
       setCurrentPlayer(result.player);
     } else if (result.kind === "in_duel") {
-      showNotification("Игрок уже в активной дуэли. Откройте текущую сессию или дождитесь завершения.");
+      showNotification(
+        "Игрок уже в активной дуэли. Откройте текущую сессию или дождитесь завершения.",
+      );
     } else if (result.kind === "rate_limited") {
       showNotification(buildRateLimitMessage(result.retryAfter));
     } else if (result.kind === "error") {
@@ -183,19 +193,28 @@ export default function HomePage() {
     if (currentHomeFlow.current === "restore") {
       return expectedRestoreDuelID.current;
     }
-    return transitionDuelIDRef.current || gameModel.getGameData()?.duel_id || null;
+    return (
+      transitionDuelIDRef.current || gameModel.getGameData()?.duel_id || null
+    );
   };
 
   const saveTransitionTerminalResult = (
     message: Extract<WebSocketMessage, { type: "duel_finished" }>,
     activePlayer: Player,
   ) => {
-    if (!message.payload || gameModel.getGameData()?.duel_id !== message.payload.duel_id) {
+    if (
+      !message.payload ||
+      gameModel.getGameData()?.duel_id !== message.payload.duel_id
+    ) {
       return;
     }
     const winnerID = message.payload.winner_id || null;
     const state: GameState =
-      winnerID === null ? "timeup" : winnerID === activePlayer.id ? "won" : "lost";
+      winnerID === null
+        ? "timeup"
+        : winnerID === activePlayer.id
+          ? "won"
+          : "lost";
     gameModel.saveGameResult({
       state,
       source: "server",
@@ -248,9 +267,7 @@ export default function HomePage() {
         }
         if (message.payload) {
           pendingMatch.current = message.payload;
-          showNotification(
-            "Соперник найден! Игра начинается..."
-          );
+          showNotification("Соперник найден! Игра начинается...");
         }
         break;
 
@@ -311,7 +328,10 @@ export default function HomePage() {
           break;
         }
         const resumePlayer = currentPlayerRef.current;
-        if (message.payload.opponent_id && message.payload.opponent_id === resumePlayer?.id) {
+        if (
+          message.payload.opponent_id &&
+          message.payload.opponent_id === resumePlayer?.id
+        ) {
           log.error("Ignored duel_resume with current player as opponent");
           break;
         }
@@ -323,7 +343,8 @@ export default function HomePage() {
           task: message.payload.task,
           opponent_id: message.payload.opponent_id,
           opponent_disconnected: message.payload.opponent_disconnected,
-          opponent_reconnect_deadline: message.payload.opponent_reconnect_deadline,
+          opponent_reconnect_deadline:
+            message.payload.opponent_reconnect_deadline,
         });
         transitionDuelIDRef.current = message.payload.duel_id;
         clearHomeFlow();
@@ -357,15 +378,16 @@ export default function HomePage() {
         break;
 
       case "error":
-        log.warn("ws server error", { code: message.code, message: message.message });
+        log.warn("ws server error", {
+          code: message.code,
+          message: message.message,
+        });
         if (isInvalidSessionWebSocketMessage(message)) {
           handleExpiredSession();
           break;
         }
         const wasQueueFlow = currentHomeFlow.current === "queue";
-        showNotification(
-          message.message || message.code || "Произошла ошибка"
-        );
+        showNotification(message.message || message.code || "Произошла ошибка");
         clearHomeFlow();
         setIsWaiting(false);
         break;
@@ -382,13 +404,18 @@ export default function HomePage() {
     clearTransitionDuel();
     setIsWaiting(false);
 
-    if (shouldLeaveQueue && playerID && websocketRef.current?.readyState === WebSocket.OPEN) {
+    if (
+      shouldLeaveQueue &&
+      playerID &&
+      websocketRef.current?.readyState === WebSocket.OPEN
+    ) {
       sendMessage("leave_queue");
     }
     closeWebSocket();
   };
 
-  const canChangePlayer = Boolean(currentPlayer && playerID) && !isClearingPlayer;
+  const canChangePlayer =
+    Boolean(currentPlayer && playerID) && !isClearingPlayer;
 
   const handleChangePlayer = async () => {
     if (!canChangePlayer) {
@@ -398,7 +425,11 @@ export default function HomePage() {
     setIsClearingPlayer(true);
     const shouldLeaveQueue = currentHomeFlow.current === "queue";
     queueAttemptRef.current += 1;
-    if (shouldLeaveQueue && playerID && websocketRef.current?.readyState === WebSocket.OPEN) {
+    if (
+      shouldLeaveQueue &&
+      playerID &&
+      websocketRef.current?.readyState === WebSocket.OPEN
+    ) {
       sendMessage("leave_queue");
     }
     clearHomeFlow();
@@ -453,7 +484,9 @@ export default function HomePage() {
         return;
       }
       if (refreshResult.kind === "contract" || refreshResult.kind === "error") {
-        log.warn(`refreshCurrentPlayer returned ${refreshResult.kind} during handleReady`);
+        log.warn(
+          `refreshCurrentPlayer returned ${refreshResult.kind} during handleReady`,
+        );
         clearHomeFlow();
         setIsWaiting(false);
         closeWebSocket();
@@ -670,166 +703,180 @@ export default function HomePage() {
           <div className="card overflow-hidden animate-scaleIn will-change-transform">
             <div className="flex flex-col lg:flex-row">
               <div className="lg:w-2/3 relative overflow-hidden">
-              <Image
-                src="/task.png"
-                alt="Task Per Minute"
-                width={900}
-                height={600}
-                className="w-full h-72 sm:h-64 lg:h-full object-cover animate-slideInLeft will-change-transform"
-                priority
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent lg:bg-gradient-to-r lg:from-transparent lg:via-transparent lg:to-black/60"></div>
+                <Image
+                  src="/task.png"
+                  alt="Task Per Minute"
+                  width={900}
+                  height={600}
+                  className="w-full h-72 sm:h-64 lg:h-full object-cover animate-slideInLeft will-change-transform"
+                  priority
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent lg:bg-gradient-to-r lg:from-transparent lg:via-transparent lg:to-black/60"></div>
 
-              <div className="absolute top-4 right-4 w-12 h-12 bg-white/10 rounded-full animate-bounce hidden lg:block"></div>
-              <div className="absolute bottom-6 left-6 w-8 h-8 bg-white/20 rounded-full animate-pulse hidden lg:block"></div>
-              <div className="absolute inset-x-0 bottom-6 z-10 flex justify-center px-4">
-                <Link
-                  href="/leaderboard"
-                  className="btn btn-secondary !w-auto !min-w-[92px] sm:!min-w-[140px] lg:!min-w-[180px] border-white/35 bg-white/15 !px-3 sm:!px-4 lg:!px-5 !py-1.5 sm:!py-2 lg:!py-3 !text-[10px] sm:!text-xs lg:!text-base font-bold uppercase leading-none text-white shadow-lg backdrop-blur-md hover:bg-white/25 active:scale-95 !gap-1 sm:!gap-2"
-                >
-                  <span aria-hidden="true">🏆</span>
-                  Лидерборд
-                </Link>
-              </div>
-            </div>
-
-            <div className="lg:w-1/3 p-6 lg:p-8 flex flex-col justify-center animate-slideInRight">
-              <h1 className="text-2xl lg:text-3xl xl:text-4xl font-bold mb-4 lg:mb-6">
-                Стань первым!
-              </h1>
-
-              <h2 className="text-lg lg:text-xl font-semibold mb-4 text-blue-200">
-                Сразись в CTF дуэли!
-              </h2>
-
-              <p className="text-sm lg:text-base text-gray-300 mb-6 lg:mb-8 leading-relaxed">
-                Испытай наш новый формат CTF соревнований на скорость!
-                Каждая секунда решает исход битвы.
-              </p>
-
-              {!playerID ? (
-                <form onSubmit={handleJoin} className="mb-4">
-                  <div className="flex flex-col gap-3">
-                    <input
-                      type="text"
-                      value={nickname}
-                      onChange={(e) => setNickname(e.target.value)}
-                      placeholder="Введите никнейм..."
-                      maxLength={50}
-                      className="w-full px-4 py-2.5 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-all text-sm"
-                      disabled={isInitializing}
-                    />
-                    <button
-                      type="submit"
-                      disabled={isInitializing || !nickname.trim()}
-                      className="btn btn-primary w-full text-lg font-bold py-4 px-8 transition-all duration-300 ease-out transform disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105 hover:shadow-lg animate-glow active:scale-95"
-                    >
-                      <span className="flex items-center justify-center gap-2">
-                        {isInitializing ? (
-                          <>
-                            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                            ПОДКЛЮЧЕНИЕ...
-                          </>
-                        ) : (
-                          <>ПОДКЛЮЧИТЬСЯ</>
-                        )}
-                      </span>
-                    </button>
-                  </div>
-                </form>
-              ) : (
-                <div className="mb-4 flex flex-col gap-3">
-                  <div className="animate-on-hover will-change-transform">
-                    <PlayButton
-                      onClick={handleReady}
-                      disabled={!playerID || isWaiting || isClearingPlayer}
-                    />
-                  </div>
-                  {!isWaiting && (
-                    <button
-                      type="button"
-                      onClick={handleChangePlayer}
-                      disabled={isClearingPlayer}
-                      className="btn btn-secondary w-full text-sm font-bold py-3 px-5 transition-all duration-300 ease-out transform disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105 hover:shadow-lg active:scale-95"
-                    >
-                      {isClearingPlayer ? "Смена игрока..." : "Сменить игрока"}
-                    </button>
-                  )}
+                <div className="absolute top-4 right-4 w-12 h-12 bg-white/10 rounded-full animate-bounce hidden lg:block"></div>
+                <div className="absolute bottom-6 left-6 w-8 h-8 bg-white/20 rounded-full animate-pulse hidden lg:block"></div>
+                <div className="absolute inset-x-0 bottom-6 z-10 flex justify-center px-4">
+                  <Link
+                    href="/leaderboard"
+                    className="btn btn-secondary !w-auto !min-w-[92px] sm:!min-w-[140px] lg:!min-w-[180px] border-white/35 bg-white/15 !px-3 sm:!px-4 lg:!px-5 !py-1.5 sm:!py-2 lg:!py-3 !text-[10px] sm:!text-xs lg:!text-base font-bold uppercase leading-none text-white shadow-lg backdrop-blur-md hover:bg-white/25 active:scale-95 !gap-1 sm:!gap-2"
+                  >
+                    <span aria-hidden="true">🏆</span>
+                    Лидерборд
+                  </Link>
                 </div>
-              )}
+              </div>
 
-              <div className="text-xs text-gray-400">
-                {playerID ? (
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-                    Игрок готов
-                  </div>
+              <div className="lg:w-1/3 p-6 lg:p-8 flex flex-col justify-center animate-slideInRight">
+                <h1 className="text-2xl lg:text-3xl xl:text-4xl font-bold mb-4 lg:mb-6">
+                  Стань первым!
+                </h1>
+
+                <h2 className="text-lg lg:text-xl font-semibold mb-4 text-blue-200">
+                  Сразись в CTF дуэли!
+                </h2>
+
+                <p className="text-sm lg:text-base text-gray-300 mb-6 lg:mb-8 leading-relaxed">
+                  Испытай наш новый формат CTF соревнований на скорость! Каждая
+                  секунда решает исход битвы.
+                </p>
+
+                {!playerID ? (
+                  <form onSubmit={handleJoin} className="mb-4">
+                    <div className="flex flex-col gap-3">
+                      <input
+                        type="text"
+                        value={nickname}
+                        onChange={(e) => setNickname(e.target.value)}
+                        placeholder="Введите никнейм..."
+                        maxLength={50}
+                        className="w-full px-4 py-2.5 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-all text-sm"
+                        disabled={isInitializing}
+                      />
+                      <button
+                        type="submit"
+                        disabled={isInitializing || !nickname.trim()}
+                        className="btn btn-primary w-full text-lg font-bold py-4 px-8 transition-all duration-300 ease-out transform disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105 hover:shadow-lg animate-glow active:scale-95"
+                      >
+                        <span className="flex items-center justify-center gap-2">
+                          {isInitializing ? (
+                            <>
+                              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                              ПОДКЛЮЧЕНИЕ...
+                            </>
+                          ) : (
+                            <>ПОДКЛЮЧИТЬСЯ</>
+                          )}
+                        </span>
+                      </button>
+                    </div>
+                  </form>
                 ) : (
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse"></div>
-                    {isInitializing ? "Подключение..." : "Введите никнейм"}
+                  <div className="mb-4 flex flex-col gap-3">
+                    <div className="animate-on-hover will-change-transform">
+                      <PlayButton
+                        onClick={handleReady}
+                        disabled={!playerID || isWaiting || isClearingPlayer}
+                      />
+                    </div>
+                    {!isWaiting && (
+                      <button
+                        type="button"
+                        onClick={handleChangePlayer}
+                        disabled={isClearingPlayer}
+                        className="btn btn-secondary w-full text-sm font-bold py-3 px-5 transition-all duration-300 ease-out transform disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105 hover:shadow-lg active:scale-95"
+                      >
+                        {isClearingPlayer
+                          ? "Смена игрока..."
+                          : "Сменить игрока"}
+                      </button>
+                    )}
                   </div>
                 )}
+
+                <div className="text-xs text-gray-400">
+                  {playerID ? (
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                      Игрок готов
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse"></div>
+                      {isInitializing ? "Подключение..." : "Введите никнейм"}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div
+            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6 mt-6 lg:mt-8 animate-fadeIn"
+            style={{ animationDelay: "0.3s" }}
+          >
+            <div className="card p-4 lg:p-6 animate-on-hover will-change-transform">
+              <div className="text-3xl lg:text-4xl mb-3 text-center">⚡</div>
+              <h3 className="font-bold text-lg mb-2 text-center">
+                Скоростные дуэли
+              </h3>
+              <p className="text-sm text-gray-300 text-center">
+                2 игрока, 1 задание, ограниченное время
+              </p>
+            </div>
+
+            <div className="card p-4 lg:p-6 animate-on-hover will-change-transform">
+              <div className="text-3xl lg:text-4xl mb-3 text-center">🏆</div>
+              <h3 className="font-bold text-lg mb-2 text-center">Победитель</h3>
+              <p className="text-sm text-gray-300 text-center">
+                Первый решивший задание побеждает
+              </p>
+            </div>
+
+            <div className="card p-4 lg:p-6 animate-on-hover will-change-transform md:col-span-2 lg:col-span-1">
+              <div className="text-3xl lg:text-4xl mb-3 text-center">🧩</div>
+              <h3 className="font-bold text-lg mb-2 text-center">
+                Web задания
+              </h3>
+              <p className="text-sm text-gray-300 text-center">
+                Реальные уязвимости и хакерские вызовы
+              </p>
+            </div>
+          </div>
+
+          <div
+            className="card p-6 lg:p-8 mt-6 lg:mt-8 animate-fadeIn"
+            style={{ animationDelay: "0.6s" }}
+          >
+            <h3 className="text-xl lg:text-2xl font-bold mb-4 text-center">
+              Правила игры
+            </h3>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-8 text-sm lg:text-base text-gray-300">
+              <div>
+                <p className="mb-3">
+                  <strong className="text-white">CTF (Capture The Flag)</strong>{" "}
+                  - это формат соревнований по информационной безопасности, где
+                  участники ищут уязвимости и собирают «флаги» - секретные
+                  строки, подтверждающие выполнение задания.
+                </p>
+                <p className="mb-3">
+                  В испытании принимают участие 2 человека. Даётся случайный
+                  таск категории Web на ограниченное количество времени.
+                </p>
+                <p>Время меняется в зависимости от сложности задания.</p>
+              </div>
+              <div>
+                <p className="mb-3">
+                  Побеждает тот, кто первый выполнит задание и отправит флаг в
+                  заданное время.
+                </p>
+                <p>
+                  Если оба участника не смогут выполнить таск - оба являются
+                  проигравшими и игра завершается.
+                </p>
               </div>
             </div>
           </div>
         </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6 mt-6 lg:mt-8 animate-fadeIn" style={{animationDelay: '0.3s'}}>
-          <div className="card p-4 lg:p-6 animate-on-hover will-change-transform">
-            <div className="text-3xl lg:text-4xl mb-3 text-center">⚡</div>
-            <h3 className="font-bold text-lg mb-2 text-center">Скоростные дуэли</h3>
-            <p className="text-sm text-gray-300 text-center">
-              2 игрока, 1 задание, ограниченное время
-            </p>
-          </div>
-
-          <div className="card p-4 lg:p-6 animate-on-hover will-change-transform">
-            <div className="text-3xl lg:text-4xl mb-3 text-center">🏆</div>
-            <h3 className="font-bold text-lg mb-2 text-center">Победитель</h3>
-            <p className="text-sm text-gray-300 text-center">
-              Первый решивший задание побеждает
-            </p>
-          </div>
-
-          <div className="card p-4 lg:p-6 animate-on-hover will-change-transform md:col-span-2 lg:col-span-1">
-            <div className="text-3xl lg:text-4xl mb-3 text-center">🧩</div>
-            <h3 className="font-bold text-lg mb-2 text-center">Web задания</h3>
-            <p className="text-sm text-gray-300 text-center">
-              Реальные уязвимости и хакерские вызовы
-            </p>
-          </div>
-        </div>
-
-        <div className="card p-6 lg:p-8 mt-6 lg:mt-8 animate-fadeIn" style={{animationDelay: '0.6s'}}>
-          <h3 className="text-xl lg:text-2xl font-bold mb-4 text-center">Правила игры</h3>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-8 text-sm lg:text-base text-gray-300">
-            <div>
-              <p className="mb-3">
-                <strong className="text-white">CTF (Capture The Flag)</strong> — это формат
-                соревнований по информационной безопасности, где участники ищут уязвимости
-                и собирают «флаги» — секретные строки, подтверждающие выполнение задания.
-              </p>
-              <p className="mb-3">
-                В испытании принимают участие 2 человека. Даётся случайный таск
-                категории Web на ограниченное количество времени.
-              </p>
-              <p>
-                Время меняется в зависимости от сложности задания.
-              </p>
-            </div>
-            <div>
-              <p className="mb-3">
-                Побеждает тот, кто первый выполнит задание и отправит флаг в заданное время.
-              </p>
-              <p>
-                Если оба участника не смогут выполнить таск — оба являются
-                проигравшими и игра завершается.
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
       </main>
     </>
   );

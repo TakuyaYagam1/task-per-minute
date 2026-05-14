@@ -1132,7 +1132,7 @@ export const TaskPage: React.FC = () => {
 
         <div className={styles.card}>
           <h2 className={styles.cardTitle}>
-            {categoryConfig.icon} {categoryConfig.label} — Задание
+            {categoryConfig.icon} {categoryConfig.label} - Задание
           </h2>
 
           <div className={styles.taskBadges}>
