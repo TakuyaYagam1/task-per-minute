@@ -727,15 +727,15 @@ export default function HomePage() {
               </div>
 
               <div className="lg:w-1/3 p-6 lg:p-8 flex flex-col justify-center animate-slideInRight">
-                <h1 className="text-2xl lg:text-3xl xl:text-4xl font-bold mb-4 lg:mb-6">
+                <h1 className="text-2xl lg:text-3xl xl:text-4xl font-bold mb-4 lg:mb-6 text-center">
                   Стань первым!
                 </h1>
 
-                <h2 className="text-lg lg:text-xl font-semibold mb-4 text-blue-200">
+                <h2 className="text-lg lg:text-xl font-semibold mb-4 text-blue-200 text-center">
                   Сразись в CTF дуэли!
                 </h2>
 
-                <p className="text-sm lg:text-base text-gray-300 mb-6 lg:mb-8 leading-relaxed">
+                <p className="text-sm lg:text-base text-gray-300 mb-6 lg:mb-8 leading-relaxed text-center">
                   Испытай наш новый формат CTF соревнований на скорость! Каждая
                   секунда решает исход битвы.
                 </p>
@@ -795,12 +795,12 @@ export default function HomePage() {
 
                 <div className="text-xs text-gray-400">
                   {playerID ? (
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center justify-center gap-2">
                       <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
                       Игрок готов
                     </div>
                   ) : (
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center justify-center gap-2">
                       <div className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse"></div>
                       {isInitializing ? "Подключение..." : "Введите никнейм"}
                     </div>
