@@ -247,7 +247,7 @@ Actions run со всеми jobs. В настройках репозитория
 Workflow использует GitHub-hosted runner и подключается к серверу по SSH.
 Self-hosted runner на продакшн-сервере для этого сценария не нужен.
 
-Заводите эти значения в `Settings → Environments → production`, чтобы они были
+Заводите эти значения в `Settings -> Environments -> production`, чтобы они были
 ограничены продовым environment, а не доступны всему репозиторию.
 
 Обязательные environment **secrets** (чувствительные значения):
@@ -267,8 +267,8 @@ TG_DEPLOY_WEBHOOK     # URL вебхука Telegram-бота для уведом
 SLACK_DEPLOY_WEBHOOK  # URL Slack-вебхука (используется, если TG не задан)
 ```
 
-Опциональные environment **variables** (`Settings → Environments → production →
-Variables`, не secrets — это нечувствительные операционные значения):
+Опциональные environment **variables** (`Settings -> Environments -> production ->
+Variables`, не secrets - это нечувствительные операционные значения):
 
 Если VS Code/GitHub Actions extension показывает `Value 'production' is not
 valid`, это обычно значит, что в настройках репозитория ещё не создан GitHub

@@ -246,7 +246,7 @@ reviewers in repository settings.
 The workflow uses GitHub-hosted runners and deploys to the server over SSH. A
 self-hosted runner on the production server is not required.
 
-Configure these in `Settings → Environments → production` so they are scoped
+Configure these in `Settings -> Environments -> production` so they are scoped
 to the production environment, not the whole repo.
 
 Required environment **secrets** (sensitive values):
@@ -265,8 +265,8 @@ TG_DEPLOY_WEBHOOK     # Telegram bot webhook URL for deploy notifications
 SLACK_DEPLOY_WEBHOOK  # Slack webhook URL (used if TG webhook is not set)
 ```
 
-Optional environment **variables** (`Settings → Environments → production →
-Variables`, not secrets — these are non-sensitive operational config):
+Optional environment **variables** (`Settings -> Environments -> production ->
+Variables`, not secrets - these are non-sensitive operational config):
 
 If the VS Code/GitHub Actions extension reports `Value 'production' is not
 valid`, it usually means the repository does not have a GitHub Environment named
