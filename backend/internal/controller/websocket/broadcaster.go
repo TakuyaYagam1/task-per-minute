@@ -84,9 +84,16 @@ func (b *Broadcaster) BroadcastDuelFinished(_ context.Context, duel *domain.Duel
 		b.hubs.Close(duel.ID)
 		return
 	}
-	runAfterOrDone(b.ctx, delay, func() {
+	runAfterOrDone(b.done(), delay, func() {
 		b.hubs.Close(duel.ID)
 	})
+}
+
+func (b *Broadcaster) done() <-chan struct{} {
+	if b == nil || b.ctx == nil {
+		return nil
+	}
+	return b.ctx.Done()
 }
 
 func (b *Broadcaster) winnerUsername(duel *domain.Duel) *string {

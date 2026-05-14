@@ -54,14 +54,14 @@ func SetPlayerSessionCookie(w http.ResponseWriter, r *http.Request, token uuid.U
 }
 
 func ClearPlayerSessionCookie(w http.ResponseWriter, r *http.Request) {
-	//nolint:gosec // G124: helper sets HttpOnly/SameSite and derives Secure from trusted TLS/proxy scheme for local HTTP compatibility.
+	//nolint:gosec,nolintlint // G124 in newer gosec: helper sets HttpOnly/SameSite; Secure follows trusted TLS/proxy scheme for local HTTP compatibility.
 	cookie := playerSessionCookie(r, "", -1)
 	cookie.Expires = expiredCookieTime()
 	http.SetCookie(w, cookie)
 }
 
 func playerSessionCookie(r *http.Request, value string, maxAge int) *http.Cookie {
-	//nolint:gosec // G124: Secure is intentionally request-scheme aware; production HTTPS is resolved from TLS or trusted X-Forwarded-Proto.
+	//nolint:gosec,nolintlint // G124 in newer gosec: Secure is intentionally request-scheme aware via TLS or trusted X-Forwarded-Proto.
 	return &http.Cookie{
 		Name:     PlayerSessionCookieName,
 		Value:    value,

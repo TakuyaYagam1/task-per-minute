@@ -186,7 +186,8 @@ func NewServer(
 	for _, opt := range options {
 		opt(s)
 	}
-	s.ctx, s.cancel = context.WithCancel(s.ctx)
+
+	s.ctx, s.cancel = context.WithCancel(s.ctx) //nolint:gosec,nolintlint // G118 in older gosec: cancel is stored on Server and invoked by Shutdown.
 	s.broadcaster = newBroadcaster(s.ctx, s.hubs, s.clientByPlayer, s.closeDelay)
 	if s.hints != nil {
 		s.hints.SetSender(s.sendHintUnlocked)

@@ -52,7 +52,7 @@ func SetAdminSessionCookies(w http.ResponseWriter, r *http.Request, pair *usecas
 
 func ClearAdminSessionCookies(w http.ResponseWriter, r *http.Request) {
 	for _, name := range []string{AdminAccessCookieName, AdminRefreshCookieName} {
-		//nolint:gosec // G124: helper sets HttpOnly/SameSite and derives Secure from trusted TLS/proxy scheme for local HTTP compatibility.
+		//nolint:gosec,nolintlint // G124 in newer gosec: helper sets HttpOnly/SameSite; Secure follows trusted TLS/proxy scheme for local HTTP compatibility.
 		cookie := adminSessionCookie(r, name, "", time.Now().Add(-time.Hour))
 		cookie.Expires = expiredCookieTime()
 		cookie.MaxAge = -1
@@ -92,7 +92,7 @@ func hasFetchMetadata(r *http.Request) bool {
 }
 
 func adminSessionCookie(r *http.Request, name, value string, expires time.Time) *http.Cookie {
-	//nolint:gosec // G124: Secure is intentionally request-scheme aware; production HTTPS is resolved from TLS or trusted X-Forwarded-Proto.
+	//nolint:gosec,nolintlint // G124 in newer gosec: Secure is intentionally request-scheme aware via TLS or trusted X-Forwarded-Proto.
 	return &http.Cookie{
 		Name:     name,
 		Value:    value,

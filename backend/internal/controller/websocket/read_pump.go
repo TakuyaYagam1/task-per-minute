@@ -148,7 +148,7 @@ func (s *Server) closeAfterError(c *client) {
 	if delay <= 0 {
 		delay = 10 * time.Millisecond
 	}
-	runAfterOrDone(s.ctx, delay, c.Close)
+	runAfterOrDone(s.done(), delay, c.Close)
 }
 
 // validateSession compares the WS connection's session token captured at
@@ -424,9 +424,16 @@ func (s *Server) publishDuelFinished(ctx context.Context, duel *domain.Duel, sol
 		s.hubs.Close(duel.ID)
 		return
 	}
-	runAfterOrDone(s.ctx, delay, func() {
+	runAfterOrDone(s.done(), delay, func() {
 		s.hubs.Close(duel.ID)
 	})
+}
+
+func (s *Server) done() <-chan struct{} {
+	if s == nil || s.ctx == nil {
+		return nil
+	}
+	return s.ctx.Done()
 }
 
 func (s *Server) winnerUsername(ctx context.Context, duel *domain.Duel) *string {

@@ -1,20 +1,14 @@
 package websocket
 
-import (
-	"context"
-	"time"
-)
+import "time"
 
-func runAfterOrDone(ctx context.Context, delay time.Duration, fn func()) {
+func runAfterOrDone(done <-chan struct{}, delay time.Duration, fn func()) {
 	if fn == nil {
 		return
 	}
 	if delay <= 0 {
 		fn()
 		return
-	}
-	if ctx == nil {
-		ctx = context.Background()
 	}
 
 	timer := time.NewTimer(delay)
@@ -23,7 +17,7 @@ func runAfterOrDone(ctx context.Context, delay time.Duration, fn func()) {
 		select {
 		case <-timer.C:
 			fn()
-		case <-ctx.Done():
+		case <-done:
 		}
 	}()
 }

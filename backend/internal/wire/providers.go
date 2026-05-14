@@ -326,7 +326,7 @@ func provideRawWebSocketServer(
 }
 
 // provideHandshakeRateLimiter creates a per-IP gate for /ws handshakes.
-// The reuse of LoginRateLimiter is intentional — it already provides token
+// The reuse of LoginRateLimiter is intentional - it already provides token
 // bucket semantics with the right TTL and IP-keyed eviction.
 func provideHandshakeRateLimiter(
 	ctx context.Context,

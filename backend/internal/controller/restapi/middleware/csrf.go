@@ -158,14 +158,14 @@ func SetPlayerCSRFCookie(w http.ResponseWriter, r *http.Request, token string) {
 }
 
 func ClearPlayerCSRFCookie(w http.ResponseWriter, r *http.Request) {
-	//nolint:gosec // G124: CSRF cookie is intentionally readable and Secure follows trusted TLS/proxy scheme.
+	//nolint:gosec,nolintlint // G124 in newer gosec: CSRF cookie is intentionally readable; Secure follows trusted TLS/proxy scheme.
 	cookie := playerCSRFCookie(r, "", -1)
 	cookie.Expires = expiredCookieTime()
 	http.SetCookie(w, cookie)
 }
 
 func playerCSRFCookie(r *http.Request, value string, maxAge int) *http.Cookie {
-	//nolint:gosec // G124: double-submit CSRF token must be readable by JS; SameSite is set and Secure is scheme-aware.
+	//nolint:gosec,nolintlint // G124 in newer gosec: double-submit CSRF token must be readable by JS; SameSite is set and Secure is scheme-aware.
 	return &http.Cookie{
 		Name:     PlayerCSRFCookieName,
 		Value:    value,
@@ -252,7 +252,7 @@ func SetAdminCSRFCookie(w http.ResponseWriter, r *http.Request, cookieName, toke
 
 func ClearAdminCSRFCookies(w http.ResponseWriter, r *http.Request) {
 	for _, name := range []string{AdminAccessCSRFCookieName, AdminRefreshCSRFCookieName} {
-		//nolint:gosec // G124: CSRF cookie is intentionally readable and Secure follows trusted TLS/proxy scheme.
+		//nolint:gosec,nolintlint // G124 in newer gosec: CSRF cookie is intentionally readable; Secure follows trusted TLS/proxy scheme.
 		cookie := adminCSRFCookie(r, name, "", -1)
 		cookie.Expires = expiredCookieTime()
 		http.SetCookie(w, cookie)
@@ -260,7 +260,7 @@ func ClearAdminCSRFCookies(w http.ResponseWriter, r *http.Request) {
 }
 
 func adminCSRFCookie(r *http.Request, name, value string, maxAge int) *http.Cookie {
-	//nolint:gosec // G124: double-submit CSRF token must be readable by JS; SameSite is set and Secure is scheme-aware.
+	//nolint:gosec,nolintlint // G124 in newer gosec: double-submit CSRF token must be readable by JS; SameSite is set and Secure is scheme-aware.
 	return &http.Cookie{
 		Name:     name,
 		Value:    value,

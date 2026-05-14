@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -18,7 +19,7 @@ import (
 func TestBuild_SuccessAddsRequestIDSecurityHeadersAndLog(t *testing.T) {
 	t.Parallel()
 
-	var logs bytes.Buffer
+	var logs lockedBuffer
 	log := newTestLogger(t, &logs)
 	const requestID = "req-123"
 
@@ -72,7 +73,7 @@ func TestBuild_AddsNoStoreHeadersForSensitiveResponses(t *testing.T) {
 func TestBuild_RecovererReturnsInternalJSONAndLogsError(t *testing.T) {
 	t.Parallel()
 
-	var logs bytes.Buffer
+	var logs lockedBuffer
 	log := newTestLogger(t, &logs)
 	const requestID = "panic-req-123"
 
@@ -140,7 +141,7 @@ func TestTimeoutReturnsProblemJSON(t *testing.T) {
 func TestTimeoutLogsPanicAfterDeadline(t *testing.T) {
 	t.Parallel()
 
-	var logs bytes.Buffer
+	var logs lockedBuffer
 	log := newTestLogger(t, &logs)
 	const requestID = "late-panic-req"
 
@@ -191,7 +192,7 @@ func TestBuild_TrustedProxyCIDRsResolveForwardedClientIP(t *testing.T) {
 	require.Equal(t, "198.51.100.42", got)
 }
 
-func newTestLogger(t *testing.T, buf *bytes.Buffer) logkit.Logger {
+func newTestLogger(t *testing.T, buf *lockedBuffer) logkit.Logger {
 	t.Helper()
 
 	log, err := logkit.New(
@@ -203,6 +204,23 @@ func newTestLogger(t *testing.T, buf *bytes.Buffer) logkit.Logger {
 		require.NoError(t, log.Close())
 	})
 	return log
+}
+
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }
 
 func requireLogEntry(t *testing.T, raw, message string) map[string]any {
