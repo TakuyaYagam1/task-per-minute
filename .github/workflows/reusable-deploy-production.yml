@@ -273,7 +273,7 @@ jobs:
 
           username = f"smoke-{int(time.time())}"
           status, player = request("POST", "/api/v1/players/join", {"username": username})
-          assert status == 200 and player["username"] == username
+          assert status == 200 and player.get("player_id"), player
           status, me = request("GET", "/api/v1/players/me")
           assert status == 200 and me["player"]["username"] == username
 
