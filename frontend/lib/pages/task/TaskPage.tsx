@@ -29,6 +29,7 @@ import {
   TaskPayload,
   WebSocketMessage,
 } from "../../shared/types";
+import { ViewportPortal } from "../../shared/ui";
 
 type TaskCategory = TaskPayload["category"];
 type TaskDifficulty = TaskPayload["difficulty"];
@@ -1156,9 +1157,11 @@ export const TaskPage: React.FC = () => {
   return (
     <main className={`${styles.container} motion-page gpu-optimized`}>
       {notification && (
-        <div className={`${styles.notification} ${styles.notificationError}`}>
-          {notification}
-        </div>
+        <ViewportPortal>
+          <div className={`${styles.notification} ${styles.notificationError}`}>
+            {notification}
+          </div>
+        </ViewportPortal>
       )}
 
       {isPaused && gameState === "playing" && (

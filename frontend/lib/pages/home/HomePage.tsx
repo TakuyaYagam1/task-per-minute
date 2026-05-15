@@ -21,6 +21,7 @@ import {
   Player,
   WebSocketMessage,
 } from "../../shared/types";
+import { ViewportPortal } from "../../shared/ui";
 import { WaitingOverlay } from "../../widgets/waiting-overlay";
 
 type HomeFlow = "queue" | "restore";
@@ -728,11 +729,13 @@ export default function HomePage() {
   return (
     <>
       {notification && (
-        <div className="fixed right-4 top-4 z-50 flex max-w-[calc(100vw-2rem)] justify-end pointer-events-none sm:right-6 sm:top-6">
-          <div className="pointer-events-auto max-w-md bg-black/80 text-white px-4 py-2 rounded-lg animate-fadeIn">
-            {notification}
+        <ViewportPortal>
+          <div className="fixed right-4 top-4 z-50 flex max-w-[calc(100vw-2rem)] justify-end pointer-events-none sm:right-6 sm:top-6">
+            <div className="pointer-events-auto max-w-md bg-black/80 text-white px-4 py-2 rounded-lg animate-fadeIn">
+              {notification}
+            </div>
           </div>
-        </div>
+        </ViewportPortal>
       )}
 
       {isTransitioningToTask && (

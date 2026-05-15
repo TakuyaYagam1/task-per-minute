@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Route } from '@playwright/test';
 import { jsonHeaders, nowISO } from './support/common';
 import {
   adminAccessNew,
@@ -252,6 +252,20 @@ test('admin task lifecycle uses cookie auth, refresh retry, and source upload', 
   await expect
     .poll(() => createToast.evaluate((node) => getComputedStyle(node).position))
     .toBe('fixed');
+  const toastTopBeforeScroll = await createToast.evaluate((node) =>
+    Math.round(node.getBoundingClientRect().top),
+  );
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  await expect.poll(() => page.evaluate(() => window.scrollY > 0)).toBe(true);
+  await expect
+    .poll(() =>
+      createToast.evaluate(
+        (node, expectedTop) =>
+          Math.abs(Math.round(node.getBoundingClientRect().top) - expectedTop) <= 1,
+        toastTopBeforeScroll,
+      ),
+    )
+    .toBe(true);
   await expect(page.getByText('Исходники загружены в SeaweedFS')).toBeVisible();
   await expect(page.getByRole('link', { name: 'Скачать загруженный ZIP' })).toHaveAttribute(
     'href',
@@ -278,6 +292,81 @@ test('admin task lifecycle uses cookie auth, refresh retry, and source upload', 
   expect(updateCalls).toBe(1);
   expect(deleteCalls).toBe(1);
   expect(bearerTokens).toEqual([]);
+});
+
+test('admin shows newly created task before list refresh completes', async ({ page }) => {
+  const taskID = '42424242-4242-4242-4242-424242424242';
+  let listCalls = 0;
+  let task: MockAdminTask | null = null;
+  let pendingRefreshRoute: Route | null = null;
+  let markRefreshRequested: () => void = () => {};
+  const refreshRequested = new Promise<void>((resolve) => {
+    markRefreshRequested = resolve;
+  });
+
+  await page.route('**/api/v1/admin/login', async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: jsonHeaders,
+      body: JSON.stringify({
+        access_token: adminAccessNew,
+        refresh_token: adminRefreshNew,
+        token_type: 'Bearer',
+        expires_in: 900,
+      }),
+    });
+  });
+
+  await page.route('**/api/v1/admin/tasks**', async (route) => {
+    const request = route.request();
+    const method = request.method();
+    const path = new URL(request.url()).pathname;
+
+    if (path === '/api/v1/admin/tasks' && method === 'GET') {
+      listCalls += 1;
+      if (listCalls === 1) {
+        await route.fulfill({ status: 200, headers: jsonHeaders, body: '[]' });
+        return;
+      }
+      pendingRefreshRoute = route;
+      markRefreshRequested();
+      return;
+    }
+
+    if (path === '/api/v1/admin/tasks' && method === 'POST') {
+      task = taskResponse({
+        id: taskID,
+        title: 'Realtime Task',
+        description: 'Created task should appear without F5.',
+        category: 'web',
+        task_url: 'https://example.com/task',
+      });
+      await route.fulfill({
+        status: 200,
+        headers: jsonHeaders,
+        body: JSON.stringify(task),
+      });
+      return;
+    }
+
+    await route.fulfill({ status: 404, headers: jsonHeaders, body: '{}' });
+  });
+
+  await loginAdminWithEmptyTaskList(page);
+  await fillAdminTaskForm(page, {
+    title: 'Realtime Task',
+    description: 'Created task should appear without F5.',
+  });
+  await page.getByRole('button', { name: /Создать задачу/ }).click();
+
+  await refreshRequested;
+  await expect(page.getByText('Realtime Task', { exact: true })).toBeVisible();
+  expect(pendingRefreshRoute).not.toBeNull();
+  await pendingRefreshRoute!.fulfill({
+    status: 200,
+    headers: jsonHeaders,
+    body: JSON.stringify(task ? [task] : []),
+  });
 });
 
 test('admin players section updates and deletes player stats', async ({ page }) => {

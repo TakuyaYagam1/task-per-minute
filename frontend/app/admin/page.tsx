@@ -14,6 +14,7 @@ import {
   type UpdateTaskRequest,
 } from "../../lib/shared/api";
 import { log, useTimedNotification } from "../../lib/shared/lib";
+import { ViewportPortal } from "../../lib/shared/ui";
 import styles from "./admin.module.css";
 
 type Task = AdminTask;
@@ -618,7 +619,7 @@ export default function AdminPanel() {
     }
   };
 
-  const fetchTasks = useCallback(async () => {
+  const fetchTasks = useCallback(async (options: { silent?: boolean } = {}) => {
     if (!tokens) return;
     const sessionVersion = authSessionVersionRef.current;
     const requestID = tasksRequestIDRef.current + 1;
@@ -626,7 +627,9 @@ export default function AdminPanel() {
     const canApplyTasksRequest = () =>
       isCurrentAuthSession(sessionVersion) &&
       tasksRequestIDRef.current === requestID;
-    setTasksLoading(true);
+    if (!options.silent) {
+      setTasksLoading(true);
+    }
     try {
       const data = await runAdminRequest((accessToken) =>
         adminApi.listTasks(accessToken),
@@ -641,16 +644,36 @@ export default function AdminPanel() {
       ) {
         return;
       }
+      if (options.silent) {
+        log.warn("admin tasks realtime refresh failed", error);
+        return;
+      }
       showNotification(
         "error",
         apiErrorMessage(error, "Не удалось загрузить задачи"),
       );
     } finally {
-      if (canApplyTasksRequest()) {
+      if (canApplyTasksRequest() && !options.silent) {
         setTasksLoading(false);
       }
     }
   }, [isCurrentAuthSession, runAdminRequest, showNotification, tokens]);
+
+  const upsertTaskInList = useCallback((task: Task) => {
+    setTasks((current) => {
+      const index = current.findIndex((item) => item.id === task.id);
+      if (index === -1) {
+        return [task, ...current];
+      }
+      const next = [...current];
+      next[index] = task;
+      return next;
+    });
+  }, []);
+
+  const removeTaskFromList = useCallback((taskId: string) => {
+    setTasks((current) => current.filter((task) => task.id !== taskId));
+  }, []);
 
   const fetchPlayers = useCallback(
     async (options: { silent?: boolean } = {}) => {
@@ -993,6 +1016,10 @@ export default function AdminPanel() {
             url: upload.source_file_url,
             expiresInSeconds: parsedTimeLimit,
           };
+          savedTask = {
+            ...savedTask,
+            source_file_url: upload.source_file_url,
+          };
         } catch (uploadError) {
           if (
             uploadError instanceof Error &&
@@ -1027,8 +1054,9 @@ export default function AdminPanel() {
             : "Задача успешно создана!",
         );
       }
+      upsertTaskInList(savedTask);
       resetForm();
-      fetchTasks();
+      void fetchTasks({ silent: true });
     } catch (err) {
       if (
         !isCurrentAuthSession(sessionVersion) ||
@@ -1061,7 +1089,8 @@ export default function AdminPanel() {
         return;
       }
       showNotification("success", "Задача удалена");
-      fetchTasks();
+      removeTaskFromList(taskId);
+      void fetchTasks({ silent: true });
     } catch (error) {
       if (
         !isCurrentAuthSession(sessionVersion) ||
@@ -1849,6 +1878,27 @@ export default function AdminPanel() {
         </div>
 
         {notification && (
+          <ViewportPortal>
+            <div
+              className={`${styles.notification} ${
+                notification.type === "success"
+                  ? styles.notificationSuccess
+                  : notification.type === "warning"
+                    ? styles.notificationWarning
+                    : styles.notificationError
+              }`}
+            >
+              {notification.message}
+            </div>
+          </ViewportPortal>
+        )}
+      </main>
+    );
+  }
+  return (
+    <main className={`${styles.container} motion-page gpu-optimized`}>
+      {notification && (
+        <ViewportPortal>
           <div
             className={`${styles.notification} ${
               notification.type === "success"
@@ -1860,24 +1910,7 @@ export default function AdminPanel() {
           >
             {notification.message}
           </div>
-        )}
-      </main>
-    );
-  }
-  return (
-    <main className={`${styles.container} motion-page gpu-optimized`}>
-      {notification && (
-        <div
-          className={`${styles.notification} ${
-            notification.type === "success"
-              ? styles.notificationSuccess
-              : notification.type === "warning"
-                ? styles.notificationWarning
-                : styles.notificationError
-          }`}
-        >
-          {notification.message}
-        </div>
+        </ViewportPortal>
       )}
       <div className={`${styles.header} motion-panel`}>
         <button
