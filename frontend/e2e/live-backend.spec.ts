@@ -103,7 +103,7 @@ test.describe('live backend smoke', () => {
       await page.locator('select').first().selectOption('web');
       await page.getByPlaceholder('https://example.com/task').fill('https://example.com/live-smoke');
       await page.getByPlaceholder('60').fill('90');
-      await page.getByPlaceholder('ctf{...}').fill('ctf{live_admin}');
+      await page.getByPlaceholder('flag{...}').fill('flag{live_admin}');
       await page.getByPlaceholder('Подсказка 1').fill('one');
       await page.getByPlaceholder('Подсказка 2').fill('two');
       await page.getByPlaceholder('Подсказка 3').fill('three');
@@ -158,7 +158,7 @@ test.describe('live backend smoke', () => {
           category: 'web',
           difficulty: 'easy',
           time_limit: 120,
-          flag: 'ctf{live_player}',
+          flag: 'flag{live_player}',
           hints: ['one', 'two', 'three'],
           task_url: 'https://example.com/live-player',
         },
@@ -190,11 +190,11 @@ test.describe('live backend smoke', () => {
         await expect(playerA).toHaveURL(/\/task$/, { timeout: 20000 });
         await expect(playerB).toHaveURL(/\/task$/, { timeout: 20000 });
 
-        await playerA.getByPlaceholder('ctf{...}').fill('ctf{wrong}');
+        await playerA.getByPlaceholder('flag{...}').fill('flag{wrong}');
         await playerA.getByRole('button', { name: /Отправить/ }).click();
         await expect(playerA.getByText('Неверный флаг')).toBeVisible({ timeout: 10000 });
 
-        await playerA.getByPlaceholder('ctf{...}').fill('ctf{live_player}');
+        await playerA.getByPlaceholder('flag{...}').fill('flag{live_player}');
         await playerA.getByRole('button', { name: /Отправить/ }).click();
         await expect(playerA.getByText('ПОБЕДА!')).toBeVisible({ timeout: 15000 });
 

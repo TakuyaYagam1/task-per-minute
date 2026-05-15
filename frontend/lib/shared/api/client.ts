@@ -1,6 +1,7 @@
 import createClient from "openapi-fetch";
 
 import { CONFIG } from "../config";
+import { isAdminTokenResponse } from "./guards";
 import type { components, paths } from "./schema";
 
 export type ProblemDetails = components["schemas"]["ProblemDetails"];
@@ -97,6 +98,20 @@ export const clearAdminCSRFTokens = (): void => {
   clearStoredToken(ADMIN_REFRESH_CSRF_STORAGE_KEY);
 };
 
+let adminRefreshPromise: Promise<boolean> | null = null;
+let adminRefreshFailureHandler: (() => void) | null = null;
+let adminSessionEpoch = 0;
+
+export const setAdminRefreshFailureHandler = (
+  handler: (() => void) | null,
+): void => {
+  adminRefreshFailureHandler = handler;
+};
+
+export const advanceAdminSessionEpoch = (): void => {
+  adminSessionEpoch += 1;
+};
+
 const readPlayerCSRFToken = (): string | null =>
   readCookie(CSRF_COOKIE_NAME) || readStoredToken(CSRF_STORAGE_KEY);
 
@@ -176,6 +191,62 @@ export const credentialedFetch: typeof fetch = async (input, init) => {
   return response;
 };
 
+const isAdminRefreshableRequest = (request: Request): boolean => {
+  const pathname = new URL(request.url).pathname;
+  if (!pathname.startsWith("/api/v1/admin/")) {
+    return false;
+  }
+  return ![
+    "/api/v1/admin/login",
+    "/api/v1/admin/refresh",
+    "/api/v1/admin/logout",
+  ].includes(pathname);
+};
+
+const refreshAdminSession = async (): Promise<boolean> => {
+  try {
+    const response = await credentialedFetch("/api/v1/admin/refresh", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: "" }),
+    });
+    const body: unknown = await response.clone().json().catch(() => null);
+    if (response.ok && isAdminTokenResponse(body)) {
+      return true;
+    }
+  } catch {
+    // The original 401 is the response the caller should see.
+  }
+  clearAdminCSRFTokens();
+  adminRefreshFailureHandler?.();
+  return false;
+};
+
+const ensureAdminSessionFresh = (): Promise<boolean> => {
+  if (adminRefreshPromise === null) {
+    adminRefreshPromise = refreshAdminSession().finally(() => {
+      adminRefreshPromise = null;
+    });
+  }
+  return adminRefreshPromise;
+};
+
+export const adminCredentialedFetch: typeof fetch = async (input, init) => {
+  const request = requestFromInput(input, init);
+  const retryRequest = request.clone();
+  const requestSessionEpoch = adminSessionEpoch;
+  const response = await credentialedFetch(request);
+  if (response.status !== 401 || !isAdminRefreshableRequest(request)) {
+    return response;
+  }
+
+  const refreshed = await ensureAdminSessionFresh();
+  if (!refreshed || adminSessionEpoch !== requestSessionEpoch) {
+    return response;
+  }
+  return credentialedFetch(retryRequest);
+};
+
 export const publicClient = createClient<paths>({
   baseUrl: CONFIG.apiUrl,
   fetch: credentialedFetch,
@@ -183,7 +254,7 @@ export const publicClient = createClient<paths>({
 
 export const adminClient = createClient<paths>({
   baseUrl: CONFIG.adminApiUrl,
-  fetch: credentialedFetch,
+  fetch: adminCredentialedFetch,
 });
 
 const isAbortLikeError = (value: unknown): boolean =>

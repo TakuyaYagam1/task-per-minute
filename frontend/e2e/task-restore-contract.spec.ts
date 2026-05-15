@@ -940,7 +940,7 @@ test('mismatched stored task result is cleared and active duel reconnects', asyn
   await expect(page.getByRole('heading', { name: 'Active Duel With Stale Result' })).toBeVisible();
   await expect.poll(() => activeSocket !== null).toBeTruthy();
   await expect(page.getByText('ПОБЕДА!')).toBeHidden();
-  await expect(page.getByPlaceholder('ctf{...}')).toBeEnabled();
+  await expect(page.getByPlaceholder('flag{...}')).toBeEnabled();
   await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('game_result'))).toBeNull();
   expect(pageErrors).toEqual([]);
 });

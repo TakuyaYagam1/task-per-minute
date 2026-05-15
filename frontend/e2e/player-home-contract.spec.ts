@@ -1254,7 +1254,7 @@ test('player flow uses cookie-backed WS connection and flag_submit payload', asy
       }
 
       if (message.type === 'flag_submit') {
-        const correct = message.payload?.flag === 'ctf{ok}';
+        const correct = message.payload?.flag === 'flag{ok}';
         ws.send(JSON.stringify({
           type: 'flag_result',
           payload: {
@@ -1300,11 +1300,11 @@ test('player flow uses cookie-backed WS connection and flag_submit payload', asy
     .poll(() => page.evaluate(() => Object.prototype.hasOwnProperty.call(window, 'gameWebSocket')))
     .toBe(false);
 
-  await page.getByPlaceholder('ctf{...}').fill('wrong');
+  await page.getByPlaceholder('flag{...}').fill('wrong');
   await page.getByRole('button', { name: /Отправить/ }).click();
   await expect(page.getByText('Неверный флаг')).toBeVisible();
 
-  await page.getByPlaceholder('ctf{...}').fill('ctf{ok}');
+  await page.getByPlaceholder('flag{...}').fill('flag{ok}');
   await page.getByRole('button', { name: /Отправить/ }).click();
   await expect(page.getByText('ПОБЕДА!')).toBeVisible();
 
@@ -1324,7 +1324,7 @@ test('player flow uses cookie-backed WS connection and flag_submit payload', asy
     type: 'flag_submit',
     payload: {
       duel_id: duelID,
-      flag: 'ctf{ok}',
+      flag: 'flag{ok}',
     },
   });
 });

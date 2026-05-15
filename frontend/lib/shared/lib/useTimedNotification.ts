@@ -14,13 +14,29 @@ export const useTimedNotification = <TValue,>() => {
     }
   }, []);
 
+  const scheduleClear = useCallback((generation: number, duration: number) => {
+    if (duration <= 0) {
+      return;
+    }
+    timerRef.current = setTimeout(() => {
+      if (generationRef.current === generation) {
+        timerRef.current = null;
+        setNotificationState(null);
+      }
+    }, duration);
+  }, []);
+
   const setNotification = useCallback(
-    (value: TValue | null) => {
+    (value: TValue | null, duration = 3000) => {
       generationRef.current += 1;
+      const generation = generationRef.current;
       clearTimer();
       setNotificationState(value);
+      if (value !== null) {
+        scheduleClear(generation, duration);
+      }
     },
-    [clearTimer],
+    [clearTimer, scheduleClear],
   );
 
   const showNotification = useCallback(
@@ -29,14 +45,9 @@ export const useTimedNotification = <TValue,>() => {
       const generation = generationRef.current;
       clearTimer();
       setNotificationState(value);
-      timerRef.current = setTimeout(() => {
-        if (generationRef.current === generation) {
-          timerRef.current = null;
-          setNotificationState(null);
-        }
-      }, duration);
+      scheduleClear(generation, duration);
     },
-    [clearTimer],
+    [clearTimer, scheduleClear],
   );
 
   useEffect(() => {

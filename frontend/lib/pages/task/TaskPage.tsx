@@ -18,7 +18,6 @@ import {
   isSafeNavigationURL,
   log,
   openExternalUrl,
-  parseWebSocketMessage,
   redirectNotificationStorage,
   useTimedNotification,
 } from "../../shared/lib";
@@ -34,7 +33,9 @@ import {
 type TaskCategory = TaskPayload["category"];
 type TaskDifficulty = TaskPayload["difficulty"];
 type TerminalSource = "none" | "local_timer" | "server";
+type TaskViewState = GameState | "timeup_pending";
 type SafeNavigationResult = "opened" | "copied" | "failed";
+const FLAG_SUBMIT_TIMEOUT_MS = 10_000;
 
 interface HintView {
   index: number;
@@ -103,10 +104,11 @@ const buildHints = (task: TaskPayload): HintView[] => {
 
 export const TaskPage: React.FC = () => {
   const router = useRouter();
-  const { connectWebSocket, sendMessage, closeWebSocket } = useWebSocket();
+  const { connectionState, connectWebSocket, sendMessage, closeWebSocket } =
+    useWebSocket();
 
   const [gameData, setGameData] = useState<GameData | null>(null);
-  const [gameState, setGameState] = useState<GameState>("playing");
+  const [gameState, setGameState] = useState<TaskViewState>("playing");
   const [flagStatus, setFlagStatus] = useState<FlagStatus>("idle");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSurrendering, setIsSurrendering] = useState(false);
@@ -125,6 +127,7 @@ export const TaskPage: React.FC = () => {
   const hasFinished = useRef(false);
   const terminalSource = useRef<TerminalSource>("none");
   const flagStatusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flagSubmitTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const {
     notification,
     setNotification,
@@ -139,6 +142,13 @@ export const TaskPage: React.FC = () => {
     if (flagStatusTimer.current) {
       clearTimeout(flagStatusTimer.current);
       flagStatusTimer.current = null;
+    }
+  }, []);
+
+  const clearFlagSubmitTimeout = useCallback(() => {
+    if (flagSubmitTimeout.current) {
+      clearTimeout(flagSubmitTimeout.current);
+      flagSubmitTimeout.current = null;
     }
   }, []);
 
@@ -236,9 +246,10 @@ export const TaskPage: React.FC = () => {
     terminalSource.current = "none";
     hasFinished.current = false;
     clearFlagStatusTimer();
+    clearFlagSubmitTimeout();
     setGameState("playing");
     gameModel.clearGameResult();
-  }, [clearFlagStatusTimer]);
+  }, [clearFlagStatusTimer, clearFlagSubmitTimeout]);
 
   const shouldApplyActiveDuelEvent = useCallback(
     (duelID?: string): boolean => {
@@ -258,6 +269,7 @@ export const TaskPage: React.FC = () => {
     (persistGameData = true) => {
       setIsSubmitting(false);
       setIsSurrendering(false);
+      clearFlagSubmitTimeout();
       clearFlagStatusTimer();
       setIsPaused(false);
       setOpponentReconnectDeadline(undefined);
@@ -281,7 +293,7 @@ export const TaskPage: React.FC = () => {
         opponent_reconnect_deadline: undefined,
       });
     },
-    [clearFlagStatusTimer, updateGameData],
+    [clearFlagStatusTimer, clearFlagSubmitTimeout, updateGameData],
   );
 
   const clearStoredPlayerSessionForNextEntrant = useCallback(() => {
@@ -295,6 +307,7 @@ export const TaskPage: React.FC = () => {
     gameModel.clearGameData();
     gameDataRef.current = null;
     clearFlagStatusTimer();
+    clearFlagSubmitTimeout();
     setGameData(null);
     setGameState("playing");
     setFlagStatus("idle");
@@ -310,7 +323,13 @@ export const TaskPage: React.FC = () => {
     redirectNotificationStorage.set(message);
     setNotification(message);
     router.replace("/");
-  }, [clearFlagStatusTimer, closeWebSocket, router, setNotification]);
+    }, [
+      clearFlagStatusTimer,
+      clearFlagSubmitTimeout,
+      closeWebSocket,
+      router,
+      setNotification,
+    ]);
 
   const redirectStaleActiveDuel = useCallback(
     (message: string) => {
@@ -319,6 +338,7 @@ export const TaskPage: React.FC = () => {
       gameModel.clearGameData();
       gameDataRef.current = null;
       clearFlagStatusTimer();
+      clearFlagSubmitTimeout();
       setGameData(null);
       setGameState("playing");
       setFlagStatus("idle");
@@ -334,8 +354,39 @@ export const TaskPage: React.FC = () => {
       setNotification(message);
       router.replace("/");
     },
-    [clearFlagStatusTimer, closeWebSocket, router, setNotification],
-  );
+      [
+        clearFlagStatusTimer,
+        clearFlagSubmitTimeout,
+        closeWebSocket,
+        router,
+        setNotification,
+      ],
+    );
+
+  const refreshAfterMissingSubmitResponse = useCallback(async () => {
+    const player = currentPlayerRef.current;
+    if (!player || hasFinished.current) {
+      return;
+    }
+    const result = await playerModel.refreshCurrentPlayer(player);
+    if (hasFinished.current) {
+      return;
+    }
+    if (result.kind === "expired") {
+      handleExpiredSession();
+      return;
+    }
+    if (result.kind === "ok") {
+      currentPlayerRef.current = result.state.player;
+      const activeDuelID = result.state.activeDuel?.id;
+      const currentDuelID = gameDataRef.current?.duel_id;
+      if (!activeDuelID || activeDuelID !== currentDuelID) {
+        redirectStaleActiveDuel(
+          "Дуэль уже завершена. Возвращаемся на главную.",
+        );
+      }
+    }
+  }, [handleExpiredSession, redirectStaleActiveDuel]);
 
   const finishDuel = useCallback(
     (message: Extract<WebSocketMessage, { type: "duel_finished" }>) => {
@@ -349,6 +400,7 @@ export const TaskPage: React.FC = () => {
       }
       terminalSource.current = "server";
       hasFinished.current = true;
+      clearFlagSubmitTimeout();
       clearActiveDuelState(false);
 
       const winnerID = message.payload.winner_id || null;
@@ -369,7 +421,11 @@ export const TaskPage: React.FC = () => {
       gameModel.clearCurrentGame();
       clearStoredPlayerSessionForNextEntrant();
     },
-    [clearActiveDuelState, clearStoredPlayerSessionForNextEntrant],
+    [
+      clearActiveDuelState,
+      clearFlagSubmitTimeout,
+      clearStoredPlayerSessionForNextEntrant,
+    ],
   );
 
   const handleWebSocketMessage = useCallback(
@@ -378,14 +434,15 @@ export const TaskPage: React.FC = () => {
         case "pong":
           break;
 
-        case "flag_result":
-          if (
-            !message.payload ||
-            !shouldApplyActiveDuelEvent(message.payload.duel_id)
-          ) {
-            break;
-          }
-          setIsSubmitting(false);
+          case "flag_result":
+            if (
+              !message.payload ||
+              !shouldApplyActiveDuelEvent(message.payload.duel_id)
+            ) {
+              break;
+            }
+            clearFlagSubmitTimeout();
+            setIsSubmitting(false);
           if (message.payload.correct) {
             setPersistentFlagStatus("correct");
           } else {
@@ -507,12 +564,13 @@ export const TaskPage: React.FC = () => {
           }
           break;
 
-        case "duel_expired":
-          if (!message.payload || !isCurrentDuelID(message.payload.duel_id)) {
-            break;
-          }
-          if (terminalSource.current !== "server") {
-            terminalSource.current = "server";
+          case "duel_expired":
+            if (!message.payload || !isCurrentDuelID(message.payload.duel_id)) {
+              break;
+            }
+            if (terminalSource.current !== "server") {
+              clearFlagSubmitTimeout();
+              terminalSource.current = "server";
             hasFinished.current = true;
             clearActiveDuelState(false);
             setGameState("timeup");
@@ -533,19 +591,29 @@ export const TaskPage: React.FC = () => {
           finishDuel(message);
           break;
 
-        case "error":
+          case "error":
           log.warn("ws server error", {
             code: message.code,
             message: message.message,
           });
-          if (isInvalidSessionWebSocketMessage(message)) {
-            handleExpiredSession();
-            break;
-          }
-          if (hasFinished.current) {
-            break;
-          }
-          setIsSubmitting(false);
+            if (isInvalidSessionWebSocketMessage(message)) {
+              handleExpiredSession();
+              break;
+            }
+            if (message.code === "duel.finished") {
+              clearFlagSubmitTimeout();
+              setIsSubmitting(false);
+              setIsSurrendering(false);
+              setPersistentFlagStatus("idle");
+              setNotification("Дуэль уже завершена. Обновляем состояние...");
+              void refreshAfterMissingSubmitResponse();
+              break;
+            }
+            if (hasFinished.current) {
+              break;
+            }
+            clearFlagSubmitTimeout();
+            setIsSubmitting(false);
           setIsSurrendering(false);
           if (message.code === "duel.paused") {
             setPersistentFlagStatus("idle");
@@ -564,27 +632,32 @@ export const TaskPage: React.FC = () => {
         default:
           break;
       }
-    },
-    [
-      clearActiveDuelState,
-      clearStoredPlayerSessionForNextEntrant,
-      finishDuel,
-      handleExpiredSession,
+      },
+      [
+        clearActiveDuelState,
+        clearFlagSubmitTimeout,
+        clearStoredPlayerSessionForNextEntrant,
+        finishDuel,
+        handleExpiredSession,
       isCurrentDuelID,
       isCurrentTaskID,
       isExpectedOpponentPlayerID,
       isExpectedResumeOpponentID,
       shouldApplyActiveDuelEvent,
-      setPersistentFlagStatus,
-      setNotification,
-      showTemporaryFlagStatus,
+        refreshAfterMissingSubmitResponse,
+        setPersistentFlagStatus,
+        setNotification,
+        showTemporaryFlagStatus,
       updateGameData,
     ],
   );
 
   useEffect(() => {
-    return clearFlagStatusTimer;
-  }, [clearFlagStatusTimer]);
+    return () => {
+      clearFlagStatusTimer();
+      clearFlagSubmitTimeout();
+    };
+  }, [clearFlagStatusTimer, clearFlagSubmitTimeout]);
 
   useEffect(() => {
     const storedGame = gameModel.getGameData();
@@ -635,33 +708,12 @@ export const TaskPage: React.FC = () => {
       gameModel.clearGameResult();
     }
 
-    const setupWebSocketListeners = (websocket: WebSocket) => {
-      websocket.onmessage = (event) => {
-        if (typeof event.data !== "string") {
-          log.error("Ignored non-text WebSocket message");
-          return;
-        }
-        const message = parseWebSocketMessage(event.data);
-        if (!message) {
-          log.error("Ignored invalid WebSocket message");
-          return;
-        }
-        handleWebSocketMessage(message);
-      };
-      websocket.onclose = () => {
-        if (hasFinished.current) {
-          return;
-        }
-        setIsSubmitting(false);
-        setIsSurrendering(false);
-      };
-      websocket.onerror = () => {
-        if (hasFinished.current) {
-          return;
-        }
-        setIsSubmitting(false);
-        setIsSurrendering(false);
-      };
+    const handleSocketClosed = () => {
+      if (hasFinished.current) {
+        return;
+      }
+      setIsSubmitting(false);
+      setIsSurrendering(false);
     };
 
     const preventBack = () => {
@@ -681,10 +733,11 @@ export const TaskPage: React.FC = () => {
       if (!activePlayer || cancelled) {
         return;
       }
-      const ws = connectWebSocket({
-        onReconnect: (newWs) => {
-          setupWebSocketListeners(newWs);
-        },
+      connectWebSocket({
+        onMessage: handleWebSocketMessage,
+        onClose: handleSocketClosed,
+        onError: handleSocketClosed,
+        onReconnect: () => {},
         onBeforeReconnect: async () => {
           const player = currentPlayerRef.current;
           if (!player) {
@@ -727,7 +780,6 @@ export const TaskPage: React.FC = () => {
           setNotification("Соединение потеряно. Обновите страницу.");
         },
       });
-      setupWebSocketListeners(ws);
     };
 
     void (async () => {
@@ -818,17 +870,15 @@ export const TaskPage: React.FC = () => {
     const tick = () => {
       const remaining = gameModel.calculateRemainingTime(gameData.deadline);
       setTimeLeft(remaining);
-      if (remaining <= 0 && !hasFinished.current) {
-        hasFinished.current = true;
+      if (remaining <= 0 && terminalSource.current === "none") {
         terminalSource.current = "local_timer";
-        clearActiveDuelState();
-        setGameState("timeup");
-        gameModel.saveGameResult({
-          state: "timeup",
-          source: "local_timer",
-          duel_id: gameData.duel_id,
-        });
-        clearStoredPlayerSessionForNextEntrant();
+        clearFlagSubmitTimeout();
+        clearFlagStatusTimer();
+        setIsSubmitting(false);
+        setIsSurrendering(false);
+        setTimeLeft(0);
+        setGameState("timeup_pending");
+        setNotification("Время вышло. Ждём подтверждение сервера...");
       }
     };
 
@@ -836,12 +886,12 @@ export const TaskPage: React.FC = () => {
     const interval = setInterval(tick, 1000);
     return () => clearInterval(interval);
   }, [
-    clearActiveDuelState,
-    clearStoredPlayerSessionForNextEntrant,
+    clearFlagStatusTimer,
+    clearFlagSubmitTimeout,
     gameData?.deadline,
-    gameData?.duel_id,
     gameState,
     isPaused,
+    setNotification,
   ]);
 
   useEffect(() => {
@@ -863,27 +913,23 @@ export const TaskPage: React.FC = () => {
       if (hasFinished.current || terminalSource.current === "server") {
         return;
       }
-      hasFinished.current = true;
       terminalSource.current = "local_timer";
-      clearActiveDuelState(false);
-      setGameState("timeup");
-      gameModel.clearGameData();
-      clearStoredPlayerSessionForNextEntrant();
-      const message = "Соперник не вернулся вовремя. Дуэль закрыта.";
-      redirectNotificationStorage.set(message);
+      clearFlagSubmitTimeout();
+      clearFlagStatusTimer();
+      setIsSubmitting(false);
+      setIsSurrendering(false);
+      setGameState("timeup_pending");
+      const message =
+        "Окно реконнекта соперника истекло. Ждём подтверждение сервера...";
       setNotification(message);
-      closeWebSocket();
-      router.push("/");
     }, delay);
     return () => clearTimeout(timer);
   }, [
-    clearActiveDuelState,
-    clearStoredPlayerSessionForNextEntrant,
-    closeWebSocket,
+    clearFlagStatusTimer,
+    clearFlagSubmitTimeout,
     gameState,
     isPaused,
     opponentReconnectDeadline,
-    router,
     setNotification,
   ]);
 
@@ -897,7 +943,12 @@ export const TaskPage: React.FC = () => {
       setNotification("Дуэль на паузе: дождитесь возвращения соперника.");
       return;
     }
+    if (connectionState !== "open") {
+      setNotification("Соединение восстанавливается. Подождите перед отправкой.");
+      return;
+    }
 
+    clearFlagSubmitTimeout();
     setIsSubmitting(true);
     setPersistentFlagStatus("idle");
 
@@ -906,13 +957,30 @@ export const TaskPage: React.FC = () => {
       flag,
     });
     if (!sent) {
+      clearFlagSubmitTimeout();
       setIsSubmitting(false);
       setNotification("Соединение потеряно. Обновите страницу для реконнекта.");
+      return;
     }
+    flagSubmitTimeout.current = setTimeout(() => {
+      flagSubmitTimeout.current = null;
+      if (hasFinished.current) {
+        return;
+      }
+      setIsSubmitting(false);
+      setPersistentFlagStatus("idle");
+      setNotification("Ответ на флаг не пришёл. Обновляем состояние дуэли...");
+      void refreshAfterMissingSubmitResponse();
+    }, FLAG_SUBMIT_TIMEOUT_MS);
   };
 
   const handleSurrender = () => {
-    if (!gameData || gameState !== "playing" || isSurrendering) {
+    if (
+      !gameData ||
+      gameState !== "playing" ||
+      isSurrendering ||
+      connectionState !== "open"
+    ) {
       return;
     }
     if (!window.confirm("Сдаться и завершить дуэль поражением?")) {
@@ -1040,13 +1108,20 @@ export const TaskPage: React.FC = () => {
           message: "Другой игрок раньше ввел правильный флаг.",
           color: "#ef4444",
         };
-      case "timeup":
-        return {
+        case "timeup":
+          return {
           emoji: "⏰",
           title: "ВРЕМЯ ВЫШЛО!",
           message: "Дуэль завершилась без победителя.",
-          color: "#fbbf24",
-        };
+            color: "#fbbf24",
+          };
+        case "timeup_pending":
+          return {
+            emoji: "⏳",
+            title: "ВРЕМЯ ВЫШЛО!",
+            message: "Ждём подтверждение результата от сервера.",
+            color: "#fbbf24",
+          };
       default:
         return {
           emoji: "❓",
@@ -1057,12 +1132,13 @@ export const TaskPage: React.FC = () => {
     }
   };
 
-  const timerClass =
+    const timerClass =
     timeLeft <= 10
       ? styles.timerDanger
       : timeLeft <= 60
-        ? styles.timerWarning
-        : styles.timerNormal;
+          ? styles.timerWarning
+          : styles.timerNormal;
+    const canUseWebSocket = connectionState === "open";
 
   return (
     <main className={`${styles.container} motion-page gpu-optimized`}>
@@ -1092,9 +1168,11 @@ export const TaskPage: React.FC = () => {
             )}
             <button
               className={`${styles.modalBtn} ${styles.modalBtnDanger} motion-button`}
-              onClick={handleSurrender}
-              disabled={isSurrendering || gameState !== "playing"}
-            >
+                onClick={handleSurrender}
+                disabled={
+                  isSurrendering || gameState !== "playing" || !canUseWebSocket
+                }
+              >
               {isSurrendering ? "Сдаёмся..." : "Сдаться"}
             </button>
           </div>
@@ -1237,13 +1315,14 @@ export const TaskPage: React.FC = () => {
                   if (
                     e.key === "Enter" &&
                     !isSubmitting &&
-                    gameState === "playing"
-                  ) {
+                    gameState === "playing" &&
+                    canUseWebSocket
+                    ) {
                     handleFlagSubmit();
                   }
                 }}
-                placeholder="ctf{...}"
-                disabled={gameState !== "playing" || isPaused}
+                placeholder="flag{...}"
+                  disabled={gameState !== "playing" || isPaused || !canUseWebSocket}
               />
               <button
                 className={`${styles.flagSubmitBtn} motion-button`}
@@ -1251,9 +1330,10 @@ export const TaskPage: React.FC = () => {
                 disabled={
                   isSubmitting ||
                   !flagInput.trim() ||
-                  gameState !== "playing" ||
-                  isPaused
-                }
+                    gameState !== "playing" ||
+                    isPaused ||
+                    !canUseWebSocket
+                  }
               >
                 {isSubmitting ? (
                   <>
@@ -1270,14 +1350,16 @@ export const TaskPage: React.FC = () => {
             </div>
 
             <p className={styles.flagHint}>
-              Флаг должен быть в формате ctf&#123;...&#125;
+              Флаг должен быть в формате flag&#123;...&#125;
             </p>
 
             <button
               type="button"
               className={`${styles.surrenderBtn} motion-button`}
               onClick={handleSurrender}
-              disabled={isSurrendering || gameState !== "playing"}
+                disabled={
+                  isSurrendering || gameState !== "playing" || !canUseWebSocket
+                }
             >
               {isSurrendering ? (
                 <>
@@ -1312,7 +1394,26 @@ export const TaskPage: React.FC = () => {
         </div>
       </div>
 
-      {gameState !== "playing" && (
+        {gameState === "timeup_pending" && (
+          <div className={`${styles.overlay} motion-modal-backdrop`}>
+            <div className={`${styles.modal} motion-modal`}>
+              <span className={styles.modalEmoji}>{getResultConfig().emoji}</span>
+              <h2
+                className={styles.modalTitle}
+                style={{ color: getResultConfig().color }}
+              >
+                {getResultConfig().title}
+              </h2>
+              <p className={styles.modalMessage}>{getResultConfig().message}</p>
+              <div
+                className={styles.spinner}
+                style={{ width: 24, height: 24, borderWidth: 3 }}
+              ></div>
+            </div>
+          </div>
+        )}
+
+        {gameState !== "playing" && gameState !== "timeup_pending" && (
         <div className={`${styles.overlay} motion-modal-backdrop`}>
           <div className={`${styles.modal} motion-modal`}>
             <span className={styles.modalEmoji}>{getResultConfig().emoji}</span>

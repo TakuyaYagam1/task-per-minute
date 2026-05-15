@@ -1,15 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { CONFIG } from "../../../shared/config";
-import { log } from "../../../shared/lib/logger";
+import { log, parseWebSocketMessage } from "../../../shared/lib";
 import {
   ClientMessageType,
   ClientMessageWithoutPayload,
   ClientMessageWithPayload,
   ClientPayloadByType,
   ClientWebSocketMessage,
+  WebSocketMessage,
 } from "../../../shared/types";
 
 type SendMessage = {
@@ -27,6 +28,10 @@ export type ReconnectGiveUpReason =
   | "stale_duel";
 
 type ConnectOptions = {
+  onMessage?: (message: WebSocketMessage, ws: WebSocket) => void;
+  onOpen?: (ws: WebSocket) => void;
+  onClose?: (event: CloseEvent, ws: WebSocket) => void;
+  onError?: (event: Event, ws: WebSocket) => void;
   onReconnect?: (ws: WebSocket, attempt: number) => void;
   onReconnectGiveUp?: (reason: ReconnectGiveUpReason) => void;
   onBeforeReconnect?: () =>
@@ -34,6 +39,14 @@ type ConnectOptions = {
     | null
     | Promise<ReconnectGiveUpReason | null>;
 };
+
+export type WebSocketConnectionState =
+  | "closed"
+  | "connecting"
+  | "open"
+  | "closing"
+  | "reconnecting"
+  | "auth_failed";
 
 const MAX_RECONNECT_ATTEMPTS = 10;
 const BASE_RECONNECT_DELAY_MS = 1_000;
@@ -69,6 +82,8 @@ const computeReconnectDelay = (attemptIndex: number): number => {
 };
 
 export const useWebSocket = () => {
+  const [connectionState, setConnectionState] =
+    useState<WebSocketConnectionState>("closed");
   const websocketRef = useRef<WebSocket | null>(null);
   const attemptsRef = useRef(0);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -118,6 +133,7 @@ export const useWebSocket = () => {
     cancelPongDeadline();
     attemptsRef.current = 0;
     lastOptionsRef.current = null;
+    setConnectionState("closing");
     if (
       websocketRef.current &&
       websocketRef.current.readyState !== WebSocket.CLOSED
@@ -125,6 +141,7 @@ export const useWebSocket = () => {
       websocketRef.current.close(NORMAL_CLOSURE_CODE);
     }
     websocketRef.current = null;
+    setConnectionState("closed");
   }, [
     cancelHeartbeatTimer,
     cancelPendingReconnect,
@@ -137,6 +154,7 @@ export const useWebSocket = () => {
       const generation = generationRef.current;
       const ws = new WebSocket(CONFIG.websocketUrl);
       websocketRef.current = ws;
+      setConnectionState("connecting");
 
       const isCurrentGeneration = (): boolean =>
         generationRef.current === generation;
@@ -178,11 +196,22 @@ export const useWebSocket = () => {
         }
       };
 
-      ws.addEventListener("message", () => {
+      ws.addEventListener("message", (event) => {
         if (!isCurrentGeneration() || websocketRef.current !== ws) {
           return;
         }
-        cancelPongDeadline();
+        if (typeof event.data !== "string") {
+          return;
+        }
+        const message = parseWebSocketMessage(event.data);
+        if (message === null) {
+          log.warn("ws: invalid message ignored");
+          return;
+        }
+        if (message.type === "pong") {
+          cancelPongDeadline();
+        }
+        options.onMessage?.(message, ws);
       });
 
       ws.addEventListener("open", () => {
@@ -193,6 +222,7 @@ export const useWebSocket = () => {
         if (websocketRef.current === ws) {
           cancelHeartbeatTimer();
           cancelPongDeadline();
+          setConnectionState("open");
           sendHeartbeat();
           heartbeatTimerRef.current = setInterval(
             sendHeartbeat,
@@ -208,13 +238,22 @@ export const useWebSocket = () => {
               attemptsRef.current = 0;
             }
           }, RECONNECT_STABLE_MS);
+          options.onOpen?.(ws);
         }
+      });
+
+      ws.addEventListener("error", (event) => {
+        if (!isCurrentGeneration() || websocketRef.current !== ws) {
+          return;
+        }
+        options.onError?.(event, ws);
       });
 
       ws.addEventListener("close", (event) => {
         if (!isCurrentGeneration()) {
           return;
         }
+        options.onClose?.(event, ws);
         if (websocketRef.current === ws) {
           cancelStableOpenTimer();
           cancelHeartbeatTimer();
@@ -224,6 +263,7 @@ export const useWebSocket = () => {
           websocketRef.current = null;
         }
         if (manualCloseRef.current || event.code === NORMAL_CLOSURE_CODE) {
+          setConnectionState("closed");
           return;
         }
         const giveUp = lastOptionsRef.current?.onReconnectGiveUp;
@@ -234,10 +274,14 @@ export const useWebSocket = () => {
           );
           attemptsRef.current = 0;
           lastOptionsRef.current = null;
+          setConnectionState(
+            nonRecoverableReason === "auth" ? "auth_failed" : "closed",
+          );
           giveUp?.(nonRecoverableReason);
           return;
         }
         if (lastOptionsRef.current?.onReconnect === undefined) {
+          setConnectionState("closed");
           return;
         }
 
@@ -254,6 +298,7 @@ export const useWebSocket = () => {
             );
             attemptsRef.current = 0;
             lastOptionsRef.current = null;
+            setConnectionState("closed");
             giveUp?.("max_attempts");
             return;
           }
@@ -261,6 +306,7 @@ export const useWebSocket = () => {
           const attempt = attemptIndex + 1;
           attemptsRef.current = attempt;
           const delay = computeReconnectDelay(attemptIndex);
+          setConnectionState("reconnecting");
           log.warn(
             `ws: reconnect attempt ${attempt} in ${Math.round(delay)}ms`,
           );
@@ -289,6 +335,7 @@ export const useWebSocket = () => {
               }
               attemptsRef.current = 0;
               lastOptionsRef.current = null;
+              setConnectionState(reason === "auth" ? "auth_failed" : "closed");
               giveUp?.(reason);
             })
             .catch((error) => {
@@ -315,6 +362,7 @@ export const useWebSocket = () => {
       manualCloseRef.current = false;
       attemptsRef.current = 0;
       lastOptionsRef.current = options;
+      setConnectionState("connecting");
 
       if (
         websocketRef.current &&
@@ -365,6 +413,7 @@ export const useWebSocket = () => {
       cancelHeartbeatTimer();
       cancelPongDeadline();
       manualCloseRef.current = true;
+      setConnectionState("closing");
       if (
         websocketRef.current &&
         websocketRef.current.readyState !== WebSocket.CLOSED
@@ -372,6 +421,7 @@ export const useWebSocket = () => {
         websocketRef.current.close(NORMAL_CLOSURE_CODE);
       }
       websocketRef.current = null;
+      setConnectionState("closed");
     };
   }, [
     cancelHeartbeatTimer,
@@ -382,6 +432,7 @@ export const useWebSocket = () => {
 
   return {
     websocketRef,
+    connectionState,
     connectWebSocket,
     sendMessage,
     closeWebSocket,

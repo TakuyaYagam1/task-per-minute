@@ -486,19 +486,18 @@
 }
 
 .notification {
-  position: fixed;
-  top: 1.5rem;
-  left: 0;
-  right: 0;
-  width: max-content;
+  position: sticky;
+  top: 1rem;
+  align-self: flex-end;
+  width: min(28rem, calc(100vw - 3rem));
   max-width: calc(100vw - 2rem);
-  margin: 0 auto;
+  margin: 0 0 1rem;
   padding: 0.75rem 1.5rem;
   border-radius: 0.75rem;
   font-size: 0.9rem;
   font-weight: 500;
-  z-index: 100;
-  animation: slideDown 0.3s ease-out;
+  z-index: 10;
+  animation: slideInRight 0.3s ease-out;
   backdrop-filter: blur(10px);
   box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2);
 }
@@ -521,14 +520,22 @@
   color: #fbbf24;
 }
 
-@keyframes slideDown {
+@keyframes slideInRight {
   from {
     opacity: 0;
-    transform: translateY(-20px);
+    transform: translateX(20px);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: translateX(0);
+  }
+}
+
+@media (max-width: 640px) {
+  .notification {
+    align-self: stretch;
+    width: auto;
+    max-width: none;
   }
 }
 

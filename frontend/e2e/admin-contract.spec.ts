@@ -157,7 +157,7 @@ test('admin task lifecycle uses cookie auth, refresh retry, and source upload', 
         category: 'forensics',
         difficulty: 'easy',
         time_limit: 120,
-        flag: 'ctf{admin_ok}',
+        flag: 'flag{admin_ok}',
         hints: ['first', 'second', 'third'],
         task_url: null,
       });
@@ -236,7 +236,7 @@ test('admin task lifecycle uses cookie auth, refresh retry, and source upload', 
   await page.getByPlaceholder('Опишите задачу...').fill('Created through mocked backend');
   await page.locator('select').first().selectOption('forensics');
   await page.getByPlaceholder('60').fill('120');
-  await page.getByPlaceholder('ctf{...}').fill('ctf{admin_ok}');
+  await page.getByPlaceholder('flag{...}').fill('flag{admin_ok}');
   await page.getByPlaceholder('Подсказка 1').fill('first');
   await page.getByPlaceholder('Подсказка 2').fill('second');
   await page.getByPlaceholder('Подсказка 3').fill('third');
@@ -326,6 +326,20 @@ test('admin players section updates and deletes player stats', async ({ page }) 
       body: JSON.stringify({
         access_token: adminAccessOld,
         refresh_token: adminRefreshOld,
+        token_type: 'Bearer',
+        expires_in: 900,
+      }),
+    });
+  });
+
+  await page.route('**/api/v1/admin/refresh', async (route) => {
+    expect(route.request().postDataJSON()).toEqual({ refresh_token: '' });
+    await route.fulfill({
+      status: 200,
+      headers: jsonHeaders,
+      body: JSON.stringify({
+        access_token: adminAccessNew,
+        refresh_token: adminRefreshNew,
         token_type: 'Bearer',
         expires_in: 900,
       }),
@@ -484,6 +498,86 @@ test('admin players section updates and deletes player stats', async ({ page }) 
   await expect(auditDialog.getByText('jti: delete-j')).toBeVisible();
 });
 
+test('admin players realtime SSE failures do not spam refresh', async ({ page }) => {
+  const playerID = '88888888-8888-8888-8888-888888888888';
+  let refreshCalls = 0;
+  let eventsCalls = 0;
+  let playerListCalls = 0;
+
+  await page.route('**/api/v1/admin/login', async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: jsonHeaders,
+      body: JSON.stringify({
+        access_token: adminAccessOld,
+        refresh_token: adminRefreshOld,
+        token_type: 'Bearer',
+        expires_in: 900,
+      }),
+    });
+  });
+
+  await page.route('**/api/v1/admin/refresh', async (route) => {
+    refreshCalls += 1;
+    expect(route.request().postDataJSON()).toEqual({ refresh_token: '' });
+    await route.fulfill({
+      status: 200,
+      headers: jsonHeaders,
+      body: JSON.stringify({
+        access_token: adminAccessNew,
+        refresh_token: adminRefreshNew,
+        token_type: 'Bearer',
+        expires_in: 900,
+      }),
+    });
+  });
+
+  await page.route('**/api/v1/admin/tasks**', async (route) => {
+    await route.fulfill({ status: 200, headers: jsonHeaders, body: '[]' });
+  });
+
+  await page.route('**/api/v1/admin/players**', async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    expect(route.request().headers().authorization).toBeUndefined();
+    if (path === '/api/v1/admin/players/events') {
+      eventsCalls += 1;
+      await route.fulfill({ status: 500, headers: jsonHeaders, body: '{}' });
+      return;
+    }
+    if (path === '/api/v1/admin/players') {
+      playerListCalls += 1;
+      await route.fulfill({
+        status: 200,
+        headers: jsonHeaders,
+        body: JSON.stringify([
+          {
+            id: playerID,
+            username: 'poll_user',
+            status: 'idle',
+            created_at: nowISO(),
+            deleted_at: null,
+            wins: 0,
+            average_solve_time_ms: 0,
+            stats_overridden: false,
+          },
+        ]),
+      });
+      return;
+    }
+    await route.fulfill({ status: 404, headers: jsonHeaders, body: '{}' });
+  });
+
+  await page.goto('/admin');
+  await page.getByPlaceholder('Введите пароль...').fill('correct-password');
+  await page.getByRole('button', { name: 'Войти' }).click();
+  await page.getByRole('button', { name: 'Игроки' }).click();
+  await expect(page.getByText('poll_user')).toBeVisible();
+
+  await expect.poll(() => eventsCalls, { timeout: 5000 }).toBeGreaterThanOrEqual(2);
+  await expect.poll(() => playerListCalls, { timeout: 5000 }).toBeGreaterThanOrEqual(2);
+  expect(refreshCalls).toBe(1);
+});
+
 test('admin malformed player audit response does not break players section', async ({ page }) => {
   const playerID = '67676767-6767-6767-6767-676767676767';
 
@@ -494,6 +588,20 @@ test('admin malformed player audit response does not break players section', asy
       body: JSON.stringify({
         access_token: adminAccessOld,
         refresh_token: adminRefreshOld,
+        token_type: 'Bearer',
+        expires_in: 900,
+      }),
+    });
+  });
+
+  await page.route('**/api/v1/admin/refresh', async (route) => {
+    expect(route.request().postDataJSON()).toEqual({ refresh_token: '' });
+    await route.fulfill({
+      status: 200,
+      headers: jsonHeaders,
+      body: JSON.stringify({
+        access_token: adminAccessNew,
+        refresh_token: adminRefreshNew,
         token_type: 'Bearer',
         expires_in: 900,
       }),
@@ -879,7 +987,7 @@ test('admin pwn task keeps raw host-port task_url on create and update', async (
         category: 'pwn',
         difficulty: 'easy',
         time_limit: 120,
-        flag: 'ctf{pwn_ok}',
+        flag: 'flag{pwn_ok}',
         hints: ['first', 'second', 'third'],
         task_url: 'pwn.example:31337',
       });
@@ -888,7 +996,7 @@ test('admin pwn task keeps raw host-port task_url on create and update', async (
         title: 'Pwn Endpoint',
         description: 'Raw host-port target should reach backend unchanged.',
         category: 'pwn',
-        flag: 'ctf{pwn_ok}',
+        flag: 'flag{pwn_ok}',
         task_url: 'pwn.example:31337',
       });
       await route.fulfill({
@@ -908,7 +1016,7 @@ test('admin pwn task keeps raw host-port task_url on create and update', async (
         category: 'pwn',
         difficulty: 'easy',
         time_limit: 120,
-        flag: 'ctf{pwn_ok}',
+        flag: 'flag{pwn_ok}',
         hints: ['first', 'second', 'third'],
         task_url: 'pwn.example:31338',
       });
@@ -917,7 +1025,7 @@ test('admin pwn task keeps raw host-port task_url on create and update', async (
         title: 'Pwn Endpoint Updated',
         description: 'Raw host-port target should reach backend unchanged.',
         category: 'pwn',
-        flag: 'ctf{pwn_ok}',
+        flag: 'flag{pwn_ok}',
         task_url: 'pwn.example:31338',
       });
       await route.fulfill({
@@ -941,7 +1049,7 @@ test('admin pwn task keeps raw host-port task_url on create and update', async (
   await page.getByPlaceholder('Опишите задачу...').fill('Raw host-port target should reach backend unchanged.');
   await page.locator('select').first().selectOption('pwn');
   await page.getByPlaceholder('60').fill('120');
-  await page.getByPlaceholder('ctf{...}').fill('ctf{pwn_ok}');
+  await page.getByPlaceholder('flag{...}').fill('flag{pwn_ok}');
   await page.getByPlaceholder('host:port').fill('pwn.example:31337');
   await page.getByPlaceholder('Подсказка 1').fill('first');
   await page.getByPlaceholder('Подсказка 2').fill('second');
@@ -988,7 +1096,7 @@ test('admin task form keeps valid decimal time_limit as number', async ({ page }
       category: 'web',
       difficulty: 'easy',
       time_limit: 120,
-      flag: 'ctf{validated}',
+      flag: 'flag{validated}',
       hints: ['first', 'second', 'third'],
       task_url: 'https://example.com/task',
     });
@@ -1032,7 +1140,7 @@ test('admin task form rejects whitespace-only required fields before update', as
     title: 'Existing Validated Task',
     description: 'Existing admin validation task.',
     category: 'web',
-    flag: 'ctf{existing_validated}',
+    flag: 'flag{existing_validated}',
     task_url: 'https://example.com/task',
   });
   let updateCalls = 0;
@@ -1093,7 +1201,7 @@ test('admin task form rejects whitespace-only required fields before update', as
   await expect(page.getByText('Описание не должно быть пустым')).toBeVisible();
 
   await page.getByPlaceholder('Опишите задачу...').fill('Existing admin validation task.');
-  await page.getByPlaceholder('ctf{...}').fill('   ');
+  await page.getByPlaceholder('flag{...}').fill('   ');
   await page.getByRole('button', { name: /Сохранить задачу/ }).click();
   await expect(page.getByText('Флаг должен быть от 1 до 255 символов')).toBeVisible();
 
@@ -1221,7 +1329,7 @@ test('admin create refresh is reused for source upload in the same submit', asyn
   await page.getByPlaceholder('Опишите задачу...').fill('Create refresh should feed upload.');
   await page.locator('select').first().selectOption('forensics');
   await page.getByPlaceholder('60').fill('120');
-  await page.getByPlaceholder('ctf{...}').fill('ctf{refresh_reuse}');
+  await page.getByPlaceholder('flag{...}').fill('flag{refresh_reuse}');
   await page.getByPlaceholder('Подсказка 1').fill('first');
   await page.getByPlaceholder('Подсказка 2').fill('second');
   await page.getByPlaceholder('Подсказка 3').fill('third');
@@ -1307,7 +1415,7 @@ test('admin invalid source file clears previous selection and prevents stale upl
   await page.getByPlaceholder('Опишите задачу...').fill('Invalid source should clear stale file');
   await page.locator('select').first().selectOption('forensics');
   await page.getByPlaceholder('60').fill('120');
-  await page.getByPlaceholder('ctf{...}').fill('ctf{admin_ok}');
+  await page.getByPlaceholder('flag{...}').fill('flag{admin_ok}');
   await page.getByPlaceholder('Подсказка 1').fill('first');
   await page.getByPlaceholder('Подсказка 2').fill('second');
   await page.getByPlaceholder('Подсказка 3').fill('third');
@@ -1453,7 +1561,7 @@ test('admin malformed successful REST responses do not persist invalid state', a
   await page.getByPlaceholder('Опишите задачу...').fill('Malformed upload response should be a warning');
   await page.locator('select').first().selectOption('forensics');
   await page.getByPlaceholder('60').fill('120');
-  await page.getByPlaceholder('ctf{...}').fill('ctf{admin_ok}');
+  await page.getByPlaceholder('flag{...}').fill('flag{admin_ok}');
   await page.getByPlaceholder('Подсказка 1').fill('first');
   await page.getByPlaceholder('Подсказка 2').fill('second');
   await page.getByPlaceholder('Подсказка 3').fill('third');
@@ -2070,7 +2178,7 @@ test('malformed admin create and update responses keep previous valid task state
   await page.getByPlaceholder('Опишите задачу...').fill('Malformed create should be rejected.');
   await page.locator('select').first().selectOption('forensics');
   await page.getByPlaceholder('60').fill('120');
-  await page.getByPlaceholder('ctf{...}').fill('ctf{admin_ok}');
+  await page.getByPlaceholder('flag{...}').fill('flag{admin_ok}');
   await page.getByPlaceholder('Подсказка 1').fill('first');
   await page.getByPlaceholder('Подсказка 2').fill('second');
   await page.getByPlaceholder('Подсказка 3').fill('third');

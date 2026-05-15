@@ -73,6 +73,10 @@ const MAX_TASK_TITLE_LENGTH = 255;
 const MAX_TASK_FLAG_LENGTH = 255;
 const USERNAME_RE = /^[a-zA-Z0-9_-]{2,50}$/;
 const LOGOUT_TIMEOUT_MS = 8_000;
+const PLAYERS_EVENTS_RETRY_BASE_MS = 1_000;
+const PLAYERS_EVENTS_RETRY_MAX_MS = 30_000;
+const PLAYERS_EVENTS_REFRESH_COOLDOWN_MS = 60_000;
+const PLAYERS_EVENTS_FALLBACK_POLL_MS = 5_000;
 
 const countChars = (value: string): number => Array.from(value).length;
 
@@ -296,6 +300,8 @@ export default function AdminPanel() {
   const playersRequestIDRef = useRef(0);
   const playersEventsRef = useRef<EventSource | null>(null);
   const playersRealtimeRefreshTimerRef = useRef<number | null>(null);
+  const playersEventsRetryTimerRef = useRef<number | null>(null);
+  const playersEventsFallbackPollTimerRef = useRef<number | null>(null);
   const playerAuditRequestIDRef = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const passwordInputRef = useRef<HTMLInputElement>(null);
@@ -321,6 +327,14 @@ export default function AdminPanel() {
       if (playersRealtimeRefreshTimerRef.current !== null) {
         window.clearTimeout(playersRealtimeRefreshTimerRef.current);
         playersRealtimeRefreshTimerRef.current = null;
+      }
+      if (playersEventsRetryTimerRef.current !== null) {
+        window.clearTimeout(playersEventsRetryTimerRef.current);
+        playersEventsRetryTimerRef.current = null;
+      }
+      if (playersEventsFallbackPollTimerRef.current !== null) {
+        window.clearTimeout(playersEventsFallbackPollTimerRef.current);
+        playersEventsFallbackPollTimerRef.current = null;
       }
     };
   }, []);
@@ -384,6 +398,14 @@ export default function AdminPanel() {
       if (playersRealtimeRefreshTimerRef.current !== null) {
         window.clearTimeout(playersRealtimeRefreshTimerRef.current);
         playersRealtimeRefreshTimerRef.current = null;
+      }
+      if (playersEventsRetryTimerRef.current !== null) {
+        window.clearTimeout(playersEventsRetryTimerRef.current);
+        playersEventsRetryTimerRef.current = null;
+      }
+      if (playersEventsFallbackPollTimerRef.current !== null) {
+        window.clearTimeout(playersEventsFallbackPollTimerRef.current);
+        playersEventsFallbackPollTimerRef.current = null;
       }
       adminSession.clear({ preserveCSRF: options.preserveAdminCSRF });
       tokensRef.current = null;
@@ -454,6 +476,11 @@ export default function AdminPanel() {
           throw error;
         }
         if (!isCurrentAuthSession(sessionVersion)) {
+          throw new Error("Unauthorized");
+        }
+        if (!adminSession.load()) {
+          clearTokens();
+          showNotification("error", "Сессия истекла. Войдите снова.");
           throw new Error("Unauthorized");
         }
 
@@ -681,32 +708,147 @@ export default function AdminPanel() {
       return undefined;
     }
 
-    const source = adminApi.openPlayerEvents();
-    playersEventsRef.current = source;
-
+    let active = true;
+    let retryAttempt = 0;
+    let lastRefreshAttemptAt = 0;
     const handlePlayersChanged: EventListener = () => {
       schedulePlayersRealtimeRefresh();
     };
-    source.addEventListener(ADMIN_PLAYERS_CHANGED_EVENT, handlePlayersChanged);
-    source.onerror = (event) => {
-      log.warn("admin players realtime stream error", event);
+
+    const clearRetryTimer = (): void => {
+      if (playersEventsRetryTimerRef.current !== null) {
+        window.clearTimeout(playersEventsRetryTimerRef.current);
+        playersEventsRetryTimerRef.current = null;
+      }
     };
 
-    return () => {
+    const clearFallbackPollTimer = (): void => {
+      if (playersEventsFallbackPollTimerRef.current !== null) {
+        window.clearTimeout(playersEventsFallbackPollTimerRef.current);
+        playersEventsFallbackPollTimerRef.current = null;
+      }
+    };
+
+    const markStreamOpen = (): void => {
+      retryAttempt = 0;
+      clearFallbackPollTimer();
+    };
+
+    const scheduleFallbackPoll = (): void => {
+      if (
+        !active ||
+        !tokensRef.current ||
+        activeSection !== "players" ||
+        playersEventsFallbackPollTimerRef.current !== null
+      ) {
+        return;
+      }
+      playersEventsFallbackPollTimerRef.current = window.setTimeout(() => {
+        playersEventsFallbackPollTimerRef.current = null;
+        if (!active || !tokensRef.current || activeSection !== "players") {
+          return;
+        }
+        void fetchPlayers({ silent: true });
+        scheduleFallbackPoll();
+      }, PLAYERS_EVENTS_FALLBACK_POLL_MS);
+    };
+
+    const closeCurrentSource = (): void => {
+      const source = playersEventsRef.current;
+      if (!source) {
+        return;
+      }
       source.removeEventListener(
         ADMIN_PLAYERS_CHANGED_EVENT,
         handlePlayersChanged,
       );
-      if (playersEventsRef.current === source) {
-        playersEventsRef.current = null;
-      }
+      source.removeEventListener("ready", markStreamOpen);
+      source.onopen = null;
+      source.onerror = null;
+      playersEventsRef.current = null;
       source.close();
+    };
+
+    const scheduleOpen = (): void => {
+      if (!active || !tokensRef.current || activeSection !== "players") {
+        return;
+      }
+      clearRetryTimer();
+      const delay = Math.min(
+        PLAYERS_EVENTS_RETRY_MAX_MS,
+        PLAYERS_EVENTS_RETRY_BASE_MS * 2 ** Math.min(retryAttempt, 5),
+      );
+      retryAttempt += 1;
+      playersEventsRetryTimerRef.current = window.setTimeout(() => {
+        playersEventsRetryTimerRef.current = null;
+        void openStream();
+      }, delay);
+    };
+
+    const openStream = async (): Promise<void> => {
+      if (!active || !tokensRef.current || activeSection !== "players") {
+        return;
+      }
+      const sessionVersion = authSessionVersionRef.current;
+      const now = Date.now();
+      const shouldRefreshSession =
+        now - lastRefreshAttemptAt >= PLAYERS_EVENTS_REFRESH_COOLDOWN_MS;
+      if (shouldRefreshSession) {
+        lastRefreshAttemptAt = now;
+        try {
+          await adminApi.ensureFreshSession();
+          if (!active || !isCurrentAuthSession(sessionVersion)) {
+            return;
+          }
+        } catch (error) {
+          log.warn("admin players realtime refresh failed", error);
+          scheduleOpen();
+          return;
+        }
+      }
+
+      if (!active || !tokensRef.current || activeSection !== "players") {
+        return;
+      }
+      closeCurrentSource();
+      const source = adminApi.openPlayerEvents();
+      playersEventsRef.current = source;
+      source.onopen = markStreamOpen;
+      source.addEventListener("ready", markStreamOpen);
+      source.addEventListener(
+        ADMIN_PLAYERS_CHANGED_EVENT,
+        handlePlayersChanged,
+      );
+      source.onerror = (event) => {
+        log.warn("admin players realtime stream error", event);
+        if (playersEventsRef.current === source) {
+          closeCurrentSource();
+          void fetchPlayers({ silent: true });
+          scheduleFallbackPoll();
+          scheduleOpen();
+        }
+      };
+    };
+
+    void openStream();
+
+    return () => {
+      active = false;
+      clearRetryTimer();
+      clearFallbackPollTimer();
+      closeCurrentSource();
       if (playersRealtimeRefreshTimerRef.current !== null) {
         window.clearTimeout(playersRealtimeRefreshTimerRef.current);
         playersRealtimeRefreshTimerRef.current = null;
       }
     };
-  }, [activeSection, schedulePlayersRealtimeRefresh, tokens]);
+  }, [
+    activeSection,
+    fetchPlayers,
+    isCurrentAuthSession,
+    schedulePlayersRealtimeRefresh,
+    tokens,
+  ]);
 
   const resetForm = useCallback(() => {
     setEditingTaskId(null);
@@ -1872,7 +2014,7 @@ export default function AdminPanel() {
                         clearTaskFormError("flag");
                         clearTaskFormError("form");
                       }}
-                      placeholder="ctf{...}"
+                      placeholder="flag{...}"
                       className={
                         taskFormErrors.flag ? styles.inputError : undefined
                       }

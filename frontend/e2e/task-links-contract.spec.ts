@@ -523,7 +523,7 @@ test('task page clears submitting state when websocket closes after flag submit'
   await page.goto('/task');
   await expect(page.getByRole('heading', { name: 'Close During Submit' })).toBeVisible();
 
-  await page.getByPlaceholder('ctf{...}').fill('ctf{maybe}');
+  await page.getByPlaceholder('flag{...}').fill('flag{maybe}');
   await page.getByRole('button', { name: /Отправить/ }).click();
 
   await expect(page.getByRole('button', { name: /Отправить/ })).toBeEnabled();

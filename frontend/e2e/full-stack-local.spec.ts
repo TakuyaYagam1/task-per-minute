@@ -113,7 +113,7 @@ const fillAdminTaskForm = async (page: Page, input: FullStackTaskInput): Promise
   await page.locator('select').first().selectOption(input.category);
   await page.locator('select').nth(1).selectOption(input.difficulty);
   await page.getByPlaceholder('60').fill(String(input.time_limit));
-  await page.getByPlaceholder('ctf{...}').fill(input.flag);
+  await page.getByPlaceholder('flag{...}').fill(input.flag);
   await page.getByPlaceholder('https://example.com/task').fill(input.task_url ?? '');
   await page.getByPlaceholder('Подсказка 1').fill(input.hints[0]);
   await page.getByPlaceholder('Подсказка 2').fill(input.hints[1]);
@@ -197,7 +197,7 @@ test.describe('local compose full stack e2e', () => {
       category: 'web',
       difficulty: 'easy',
       time_limit: 90,
-      flag: `ctf{${title.replaceAll('-', '_')}}`,
+      flag: `flag{${title.replaceAll('-', '_')}}`,
       hints: ['first hint', 'second hint', 'third hint'],
       task_url: 'https://example.com/full-stack-admin',
     };
@@ -249,7 +249,7 @@ test.describe('local compose full stack e2e', () => {
         category: 'forensics',
         difficulty: 'easy',
         time_limit: 90,
-        flag: `ctf{${title.replaceAll('-', '_')}}`,
+        flag: `flag{${title.replaceAll('-', '_')}}`,
         hints: ['first hint', 'second hint', 'third hint'],
         task_url: null,
       });
@@ -280,7 +280,7 @@ test.describe('local compose full stack e2e', () => {
 
     const tokens = await adminLogin(request);
     const title = uniqueName('fullstack-duel');
-    const flag = `ctf{${title.replaceAll('-', '_')}}`;
+    const flag = `flag{${title.replaceAll('-', '_')}}`;
     await createTaskViaApi(request, tokens, {
       title,
       description: 'Full stack duel task selected from an isolated local compose database.',
@@ -319,11 +319,11 @@ test.describe('local compose full stack e2e', () => {
       await expect(playerA).toHaveURL(/\/task$/, { timeout: 25_000 });
       await expect(playerA.getByRole('heading', { name: title })).toBeVisible({ timeout: 15_000 });
 
-      await playerA.getByPlaceholder('ctf{...}').fill('ctf{wrong}');
+      await playerA.getByPlaceholder('flag{...}').fill('flag{wrong}');
       await playerA.getByRole('button', { name: /Отправить/ }).click();
       await expect(playerA.getByText('Неверный флаг')).toBeVisible({ timeout: 10_000 });
 
-      await playerA.getByPlaceholder('ctf{...}').fill(flag);
+      await playerA.getByPlaceholder('flag{...}').fill(flag);
       await playerA.getByRole('button', { name: /Отправить/ }).click();
       await expect(playerA.getByText('Флаг верный!')).toBeVisible({ timeout: 10_000 });
       await expect(playerA.getByText('ПОБЕДА!')).toBeVisible({ timeout: 20_000 });

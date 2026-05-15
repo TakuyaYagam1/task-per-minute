@@ -28,7 +28,7 @@ export const taskResponse = (overrides: Partial<MockAdminTask> = {}): MockAdminT
   category: 'forensics',
   difficulty: 'easy',
   time_limit: 120,
-  flag: 'ctf{admin_ok}',
+  flag: 'flag{admin_ok}',
   hints: ['first', 'second', 'third'],
   task_url: null,
   source_file_url: null,
@@ -61,7 +61,7 @@ export const fillAdminTaskForm = async (
     description: 'Admin validation contract task.',
     category: 'web',
     timeLimit: '120',
-    flag: 'ctf{validated}',
+    flag: 'flag{validated}',
     taskUrl: 'https://example.com/task',
     hints: ['first', 'second', 'third'] as [string, string, string],
     ...overrides,
@@ -71,7 +71,7 @@ export const fillAdminTaskForm = async (
   await page.getByPlaceholder('Опишите задачу...').fill(values.description);
   await page.locator('select').first().selectOption(values.category);
   await page.getByPlaceholder('60').fill(values.timeLimit);
-  await page.getByPlaceholder('ctf{...}').fill(values.flag);
+  await page.getByPlaceholder('flag{...}').fill(values.flag);
   await page.locator('input[placeholder="https://example.com/task"], input[placeholder="host:port"]').fill(values.taskUrl);
   await page.getByPlaceholder('Подсказка 1').fill(values.hints[0]);
   await page.getByPlaceholder('Подсказка 2').fill(values.hints[1]);
@@ -114,7 +114,7 @@ export const setupAdminValidationApi = async (
           title: 'Validated Task',
           description: 'Admin validation contract task.',
           category: 'web',
-          flag: 'ctf{validated}',
+          flag: 'flag{validated}',
           task_url: 'https://example.com/task',
         })),
       });

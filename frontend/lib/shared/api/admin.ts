@@ -1,10 +1,12 @@
 import { CONFIG } from "../config";
 import { log } from "../lib/logger";
 import {
+  adminCredentialedFetch,
   adminClient,
   ApiError,
+  advanceAdminSessionEpoch,
   clearAdminCSRFTokens,
-  credentialedFetch,
+  setAdminRefreshFailureHandler,
   type ProblemDetails,
   unwrapApi,
   unwrapApiVoid,
@@ -135,6 +137,7 @@ export const adminSession = {
     try {
       clearLegacyAdminTokens();
       sessionStorage.setItem(SESSION_MARKER_KEY, "1");
+      advanceAdminSessionEpoch();
     } catch (error) {
       log.warn("adminSession.save: sessionStorage write failed", error);
     }
@@ -147,11 +150,14 @@ export const adminSession = {
       if (!options.preserveCSRF) {
         clearAdminCSRFTokens();
       }
+      advanceAdminSessionEpoch();
     } catch (error) {
       log.warn("adminSession.clear: sessionStorage remove failed", error);
     }
   },
 };
+
+setAdminRefreshFailureHandler(() => adminSession.clear());
 
 export const adminApi = {
   async login(password: string, signal?: AbortSignal): Promise<AdminTokenResponse> {
@@ -174,6 +180,10 @@ export const adminApi = {
     );
     const tokens = assertApiResponse(data, isAdminTokenResponse, "admin/refresh");
     return cookieSessionTokens(tokens.expires_in);
+  },
+
+  async ensureFreshSession(signal?: AbortSignal): Promise<AdminTokenResponse> {
+    return this.refresh(COOKIE_SESSION_TOKEN, signal);
   },
 
   async logout(_accessToken: string, _refreshToken: string, signal?: AbortSignal): Promise<void> {
@@ -310,7 +320,7 @@ export const adminApi = {
     const linkedSignal = linkSignals([options.signal, timeoutController.signal]);
 
     try {
-      const response = await credentialedFetch(adminURL(`/api/v1/admin/tasks/${id}/source`), {
+      const response = await adminCredentialedFetch(adminURL(`/api/v1/admin/tasks/${id}/source`), {
         method: "POST",
         credentials: "include",
         body: formData,

@@ -341,7 +341,7 @@ test('reconnect pause disables flag submit until duel_resume updates deadline', 
   });
 
   await expect(page.getByRole('heading', { name: 'СОПЕРНИК ОТКЛЮЧИЛСЯ' })).toBeVisible();
-  await expect(page.getByPlaceholder('ctf{...}')).toBeDisabled();
+  await expect(page.getByPlaceholder('flag{...}')).toBeDisabled();
   await expect(page.getByRole('button', { name: /Отправить/ })).toBeDisabled();
 
   sendServerEvent({
@@ -355,28 +355,28 @@ test('reconnect pause disables flag submit until duel_resume updates deadline', 
   });
 
   await expect(page.getByRole('heading', { name: 'СОПЕРНИК ОТКЛЮЧИЛСЯ' })).toBeHidden();
-  await expect(page.getByPlaceholder('ctf{...}')).toBeEnabled();
+  await expect(page.getByPlaceholder('flag{...}')).toBeEnabled();
 
-  await page.getByPlaceholder('ctf{...}').fill('ctf{resume}');
+  await page.getByPlaceholder('flag{...}').fill('flag{resume}');
   await page.getByRole('button', { name: /Отправить/ }).click();
 
   expect(messages).toContainEqual({
     type: 'flag_submit',
     payload: {
       duel_id: duelID,
-      flag: 'ctf{resume}',
+      flag: 'flag{resume}',
     },
   });
   expect(messages).not.toContainEqual({
     type: 'flag_submit',
     payload: {
       duel_id: duelID,
-      flag: 'ctf{paused}',
+      flag: 'flag{paused}',
     },
   });
 });
 
-test('task reconnect fallback redirects home with stored notification', async ({ page }) => {
+test('task reconnect fallback waits for server terminal confirmation', async ({ page }) => {
   const baseTime = new Date('2026-01-01T00:00:00.000Z');
   await page.clock.install({ time: baseTime });
 
@@ -446,9 +446,11 @@ test('task reconnect fallback redirects home with stored notification', async ({
 
   await page.clock.fastForward(6_100);
 
-  await expect(page).toHaveURL(/\/$/);
-  await expect(page.getByText('Соперник не вернулся вовремя. Дуэль закрыта.')).toBeVisible();
-  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('currentGame'))).toBeNull();
+  await expect(page).toHaveURL(/\/task$/);
+  await expect(page.getByText('ВРЕМЯ ВЫШЛО!')).toBeVisible();
+  await expect(page.getByText('Окно реконнекта соперника истекло. Ждём подтверждение сервера...')).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('currentGame'))).not.toBeNull();
+  await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('game_result'))).toBeNull();
 });
 
 test('task page sends surrender payload and waits for duel_finished result', async ({ page }) => {
@@ -837,7 +839,7 @@ test('server duel_resume recovers task page from local timer timeup', async ({ p
   });
 
   await expect(page.getByText('ВРЕМЯ ВЫШЛО!')).toBeHidden();
-  await expect(page.getByPlaceholder('ctf{...}')).toBeEnabled();
+  await expect(page.getByPlaceholder('flag{...}')).toBeEnabled();
   await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('game_result'))).toBeNull();
   const storedGame = await page.evaluate(() => {
     const raw = window.sessionStorage.getItem('currentGame');
@@ -904,7 +906,7 @@ test('server opponent_reconnected recovers task page from local timer timeup', a
 
   await expect(page.getByText('ВРЕМЯ ВЫШЛО!')).toBeHidden();
   await expect(page.getByText('Соперник вернулся. Дуэль продолжается.')).toBeVisible();
-  await expect(page.getByPlaceholder('ctf{...}')).toBeEnabled();
+  await expect(page.getByPlaceholder('flag{...}')).toBeEnabled();
   await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('game_result'))).toBeNull();
 });
 
@@ -966,7 +968,7 @@ test('server opponent_disconnected replaces local timer timeup with pause UI', a
 
   await expect(page.getByText('ВРЕМЯ ВЫШЛО!')).toBeHidden();
   await expect(page.getByRole('heading', { name: 'СОПЕРНИК ОТКЛЮЧИЛСЯ' })).toBeVisible();
-  await expect(page.getByPlaceholder('ctf{...}')).toBeDisabled();
+  await expect(page.getByPlaceholder('flag{...}')).toBeDisabled();
   await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('game_result'))).toBeNull();
   const storedGame = await page.evaluate(() => {
     const raw = window.sessionStorage.getItem('currentGame');
@@ -1038,7 +1040,7 @@ test('task page ignores same-duel hint_unlocked for another task', async ({ page
 
   await page.waitForTimeout(150);
   await expect(page.getByText('Wrong task hint must not render')).toBeHidden();
-  await expect(page.getByPlaceholder('ctf{...}')).toBeEnabled();
+  await expect(page.getByPlaceholder('flag{...}')).toBeEnabled();
   await expect(page.getByRole('heading', { name: 'ВРЕМЯ ВЫШЛО!' })).toBeHidden();
   await expect(page.getByRole('heading', { name: 'СОПЕРНИК ОТКЛЮЧИЛСЯ' })).toBeHidden();
   await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('game_result'))).toBeNull();
@@ -1113,11 +1115,7 @@ test('wrong-task hint_unlocked does not recover task page from local timer timeu
     const raw = window.sessionStorage.getItem('game_result');
     return raw ? JSON.parse(raw) as { state?: string; source?: string; duel_id?: string } : null;
   });
-  expect(storedResult).toMatchObject({
-    state: 'timeup',
-    source: 'local_timer',
-    duel_id: duelID,
-  });
+  expect(storedResult).toBeNull();
 });
 
 test('same-task hint_unlocked still reveals current task hint while playing', async ({ page }) => {
@@ -1171,7 +1169,7 @@ test('same-task hint_unlocked still reveals current task hint while playing', as
 
   await expect(page.getByText('Same task hint while playing')).toBeVisible();
   await expect(page.getByText('ВРЕМЯ ВЫШЛО!')).toBeHidden();
-  await expect(page.getByPlaceholder('ctf{...}')).toBeEnabled();
+  await expect(page.getByPlaceholder('flag{...}')).toBeEnabled();
   await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('game_result'))).toBeNull();
 });
 
@@ -1224,7 +1222,7 @@ test('task page ignores self opponent_solved but accepts opponent solved event',
 
   await page.waitForTimeout(150);
   await expect(page.getByText('Соперник уже решил задание. Ждем завершение дуэли...')).toBeHidden();
-  await expect(page.getByPlaceholder('ctf{...}')).toBeEnabled();
+  await expect(page.getByPlaceholder('flag{...}')).toBeEnabled();
   await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('game_result'))).toBeNull();
 
   activeSocket!.send(JSON.stringify({
@@ -1298,7 +1296,7 @@ test('task page ignores self opponent disconnect and reconnect while playing', a
   await expect(page.getByRole('heading', { name: 'СОПЕРНИК ОТКЛЮЧИЛСЯ' })).toBeHidden();
   await expect(page.getByText('Соперник отключился. Отправка флага временно недоступна.')).toBeHidden();
   await expect(page.getByText('Соперник вернулся. Дуэль продолжается.')).toBeHidden();
-  await expect(page.getByPlaceholder('ctf{...}')).toBeEnabled();
+  await expect(page.getByPlaceholder('flag{...}')).toBeEnabled();
 
   const storedGame = await page.evaluate(() => {
     const raw = window.sessionStorage.getItem('currentGame');
@@ -1393,11 +1391,7 @@ test('self opponent events do not recover task page from local timer timeup', as
     const raw = window.sessionStorage.getItem('game_result');
     return raw ? JSON.parse(raw) as { state?: string; source?: string; duel_id?: string } : null;
   });
-  expect(storedResult).toMatchObject({
-    state: 'timeup',
-    source: 'local_timer',
-    duel_id: duelID,
-  });
+  expect(storedResult).toBeNull();
 
   const storedGame = await page.evaluate(() => {
     const raw = window.sessionStorage.getItem('currentGame');
@@ -1410,7 +1404,7 @@ test('self opponent events do not recover task page from local timer timeup', as
       : null;
   });
   expect(storedGame?.deadline).toBe(deadline);
-  expect(storedGame?.opponent_disconnected).toBe(false);
+  expect(storedGame?.opponent_disconnected).toBeUndefined();
   expect(storedGame?.opponent_reconnect_deadline).toBeUndefined();
 });
 
@@ -1484,7 +1478,7 @@ test('task page ignores third-party opponent events when opponent id is known', 
   await expect(page.getByText('Соперник уже решил задание. Ждем завершение дуэли...')).toBeHidden();
   await expect(page.getByRole('heading', { name: 'СОПЕРНИК ОТКЛЮЧИЛСЯ' })).toBeHidden();
   await expect(page.getByText('Соперник вернулся. Дуэль продолжается.')).toBeHidden();
-  await expect(page.getByPlaceholder('ctf{...}')).toBeEnabled();
+  await expect(page.getByPlaceholder('flag{...}')).toBeEnabled();
 
   const storedAfterThirdParty = await page.evaluate(() => {
     const raw = window.sessionStorage.getItem('currentGame');
@@ -1609,11 +1603,7 @@ test('third-party opponent events do not recover task page from local timer time
     const raw = window.sessionStorage.getItem('game_result');
     return raw ? JSON.parse(raw) as { state?: string; source?: string; duel_id?: string } : null;
   });
-  expect(storedResult).toMatchObject({
-    state: 'timeup',
-    source: 'local_timer',
-    duel_id: duelID,
-  });
+  expect(storedResult).toBeNull();
 
   const storedGame = await page.evaluate(() => {
     const raw = window.sessionStorage.getItem('currentGame');
@@ -1626,7 +1616,7 @@ test('third-party opponent events do not recover task page from local timer time
       : null;
   });
   expect(storedGame?.deadline).toBe(deadline);
-  expect(storedGame?.opponent_disconnected).toBe(false);
+  expect(storedGame?.opponent_disconnected).toBeUndefined();
   expect(storedGame?.opponent_id).toBe(opponentID);
 });
 
@@ -1780,16 +1770,12 @@ test('self and mismatched duel_resume do not recover task page from local timer 
 
   await page.waitForTimeout(150);
   await expect(page.getByText('ВРЕМЯ ВЫШЛО!')).toBeVisible();
-  await expect(page.getByPlaceholder('ctf{...}')).toBeDisabled();
+  await expect(page.getByPlaceholder('flag{...}')).toBeDisabled();
   const storedResult = await page.evaluate(() => {
     const raw = window.sessionStorage.getItem('game_result');
     return raw ? JSON.parse(raw) as { state?: string; source?: string; duel_id?: string } : null;
   });
-  expect(storedResult).toMatchObject({
-    state: 'timeup',
-    source: 'local_timer',
-    duel_id: duelID,
-  });
+  expect(storedResult).toBeNull();
 
   const storedGame = await page.evaluate(() => {
     const raw = window.sessionStorage.getItem('currentGame');
@@ -2026,19 +2012,19 @@ test('duel.paused error after flag submit pauses UI without incorrect flag state
   await page.goto('/task');
   await expect(page.getByRole('heading', { name: 'Duel Paused Error Contract Check' })).toBeVisible();
 
-  await page.getByPlaceholder('ctf{...}').fill('ctf{paused}');
+  await page.getByPlaceholder('flag{...}').fill('flag{paused}');
   await page.getByRole('button', { name: /Отправить/ }).click();
 
   await expect(page.getByText('Дуэль на паузе: дождитесь возвращения соперника.')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'СОПЕРНИК ОТКЛЮЧИЛСЯ' })).toBeVisible();
-  await expect(page.getByPlaceholder('ctf{...}')).toBeDisabled();
+  await expect(page.getByPlaceholder('flag{...}')).toBeDisabled();
   await expect(page.getByRole('button', { name: /Отправить/ })).toBeDisabled();
   await expect(page.getByText('Неверный флаг')).toBeHidden();
   expect(messages).toContainEqual({
     type: 'flag_submit',
     payload: {
       duel_id: duelID,
-      flag: 'ctf{paused}',
+      flag: 'flag{paused}',
     },
   });
 });
@@ -2083,7 +2069,7 @@ test('stale wrong flag timeout does not clear a later correct result', async ({ 
         type: 'flag_result',
         payload: {
           duel_id: duelID,
-          correct: message.payload?.flag === 'ctf{correct}',
+          correct: message.payload?.flag === 'flag{correct}',
         },
       }));
     });
@@ -2092,11 +2078,11 @@ test('stale wrong flag timeout does not clear a later correct result', async ({ 
   await page.goto('/task');
   await expect(page.getByRole('heading', { name: 'Flag Status Timer Guard' })).toBeVisible();
 
-  await page.getByPlaceholder('ctf{...}').fill('ctf{wrong}');
+  await page.getByPlaceholder('flag{...}').fill('flag{wrong}');
   await page.getByRole('button', { name: /Отправить/ }).click();
   await expect(page.getByText('Неверный флаг')).toBeVisible();
 
-  await page.getByPlaceholder('ctf{...}').fill('ctf{correct}');
+  await page.getByPlaceholder('flag{...}').fill('flag{correct}');
   await page.getByRole('button', { name: /Отправить/ }).click();
   await expect(page.getByText('Флаг верный!')).toBeVisible();
 
@@ -2207,7 +2193,7 @@ test('invalid resume and reconnect payloads do not mutate task deadline', async 
   expect(storedGame?.opponent_disconnected).toBeUndefined();
   expect(storedGame?.opponent_reconnect_deadline).toBeUndefined();
   await expect(page.getByRole('heading', { name: 'Invalid Resume Guard' })).toBeVisible();
-  await expect(page.getByPlaceholder('ctf{...}')).toBeEnabled();
+  await expect(page.getByPlaceholder('flag{...}')).toBeEnabled();
   await expect(page.getByText('ВРЕМЯ ВЫШЛО!')).toBeHidden();
   expect(pageErrors).toEqual([]);
 });
@@ -2390,7 +2376,7 @@ test('task page ignores websocket events for other duels', async ({ page }) => {
   expect(storedGame?.task?.title).toBe('Current Duel Guard');
   await expect(page.getByRole('heading', { name: 'Current Duel Guard' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Wrong Duel Task' })).toBeHidden();
-  await expect(page.getByPlaceholder('ctf{...}')).toBeEnabled();
+  await expect(page.getByPlaceholder('flag{...}')).toBeEnabled();
   await expect(page.getByText('Флаг верный!')).toBeHidden();
   await expect(page.getByText('Неверный флаг')).toBeHidden();
   await expect(page.getByText('Wrong duel hint')).toBeHidden();

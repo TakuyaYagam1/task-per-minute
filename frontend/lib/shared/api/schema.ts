@@ -286,7 +286,7 @@ export interface paths {
         post?: never;
         /**
          * Delete a task
-         * @description Returns 409 if the task is referenced by an existing duel or solved history.
+         * @description Returns 409 if the task is referenced by an active duel. Historical references are removed with the task.
          */
         delete: operations["deleteTask"];
         options?: never;
@@ -1382,7 +1382,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Task is referenced by an existing duel or solved history. */
+            /** @description Task is referenced by an active duel. */
             409: {
                 headers: {
                     [name: string]: unknown;

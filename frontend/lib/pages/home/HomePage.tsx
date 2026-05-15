@@ -12,7 +12,6 @@ import {
   isInvalidSessionWebSocketMessage,
   isValidUsername,
   log,
-  parseWebSocketMessage,
   redirectNotificationStorage,
   useTimedNotification,
 } from "../../shared/lib";
@@ -72,8 +71,13 @@ export default function HomePage() {
   const sessionPromiseRef = useRef<Promise<RefreshPlayerResult> | null>(null);
   const { notification, showNotification } = useTimedNotification<string>();
 
-  const { websocketRef, connectWebSocket, sendMessage, closeWebSocket } =
-    useWebSocket();
+  const {
+    websocketRef,
+    connectionState,
+    connectWebSocket,
+    sendMessage,
+    closeWebSocket,
+  } = useWebSocket();
 
   useEffect(() => {
     const redirectNotification = redirectNotificationStorage.consume();
@@ -314,7 +318,14 @@ export default function HomePage() {
         break;
 
       case "duel_resume":
-        if (currentHomeFlow.current !== "restore") {
+        if (
+          currentHomeFlow.current !== "restore" &&
+          !(
+            currentHomeFlow.current === "queue" &&
+            message.payload &&
+            expectedRestoreDuelID.current === message.payload.duel_id
+          )
+        ) {
           log.error("Ignored duel_resume outside restore flow");
           break;
         }
@@ -325,6 +336,7 @@ export default function HomePage() {
           log.error("Ignored duel_resume for unexpected duel");
           break;
         }
+        currentHomeFlow.current = "restore";
         if (!message.payload.task) {
           showNotification(
             "Не удалось восстановить активную дуэль. Обновите страницу.",
@@ -532,7 +544,11 @@ export default function HomePage() {
         ) {
           return;
         }
-        sendMessage("join_queue");
+        if (!sendMessage("join_queue")) {
+          clearHomeFlow();
+          setIsWaiting(false);
+          showNotification("Соединение потеряно. Попробуйте ещё раз.");
+        }
       };
 
       const sendJoinQueueOnOpen = (websocket: WebSocket) => {
@@ -550,100 +566,115 @@ export default function HomePage() {
         );
       };
 
-      const setupWebSocketListeners = (websocket: WebSocket) => {
-        let activeDuelRestored = false;
-        let flowCompleted = false;
-        let restoreFailureNotified = false;
-        let socketOpened = false;
-        const notifyRestoreFailure = () => {
-          if (shouldJoinQueue || activeDuelRestored || restoreFailureNotified) {
-            return;
-          }
-          restoreFailureNotified = true;
-          showNotification(
-            "Не удалось восстановить активную дуэль. Обновите страницу.",
-          );
-        };
-
-        websocket.onmessage = (event) => {
-          if (typeof event.data !== "string") {
-            log.error("Ignored non-text WebSocket message");
-            return;
-          }
-          const message = parseWebSocketMessage(event.data);
-          if (!message) {
-            log.error("Ignored invalid WebSocket message");
-            return;
-          }
-          if (
-            isInvalidSessionWebSocketMessage(message) ||
-            (message.type === "duel_resume" &&
-              currentHomeFlow.current === "restore" &&
-              message.payload &&
-              expectedRestoreDuelID.current === message.payload.duel_id &&
-              !message.payload.task)
-          ) {
-            flowCompleted = true;
-          }
-          if (
-            message.type === "task_assigned" &&
-            currentHomeFlow.current === "queue" &&
-            message.payload &&
-            pendingMatch.current?.duel_id === message.payload.duel_id
-          ) {
-            flowCompleted = true;
-          }
-          if (
-            message.type === "duel_resume" &&
+      type HomeSocketState = {
+        activeDuelRestored: boolean;
+        flowCompleted: boolean;
+        restoreFailureNotified: boolean;
+        socketOpened: boolean;
+      };
+      const socketStates = new WeakMap<WebSocket, HomeSocketState>();
+      const stateFor = (websocket: WebSocket): HomeSocketState => {
+        let state = socketStates.get(websocket);
+        if (!state) {
+          state = {
+            activeDuelRestored: false,
+            flowCompleted: false,
+            restoreFailureNotified: false,
+            socketOpened: false,
+          };
+          socketStates.set(websocket, state);
+        }
+        return state;
+      };
+      const notifyRestoreFailure = (state: HomeSocketState) => {
+        if (
+          shouldJoinQueue ||
+          state.activeDuelRestored ||
+          state.restoreFailureNotified
+        ) {
+          return;
+        }
+        state.restoreFailureNotified = true;
+        showNotification(
+          "Не удалось восстановить активную дуэль. Обновите страницу.",
+        );
+      };
+      const handleSocketMessage = (
+        message: WebSocketMessage,
+        websocket: WebSocket,
+      ) => {
+        const state = stateFor(websocket);
+        if (
+          isInvalidSessionWebSocketMessage(message) ||
+          (message.type === "duel_resume" &&
             currentHomeFlow.current === "restore" &&
-            message.payload?.task &&
-            expectedRestoreDuelID.current === message.payload.duel_id
-          ) {
-            activeDuelRestored = true;
-            flowCompleted = true;
-          }
-          if (
-            message.type === "duel_finished" &&
             message.payload &&
-            expectedTerminalDuelID() === message.payload.duel_id
-          ) {
-            activeDuelRestored = true;
-            flowCompleted = true;
-          }
-          handleWebSocketMessage(message);
-        };
-
-        websocket.onopen = () => {
-          socketOpened = true;
-        };
-
-        websocket.onclose = (event) => {
-          if (isCurrentAttempt() && !flowCompleted) {
-            if (event.code !== NORMAL_CLOSURE_CODE && !socketOpened) {
-              setIsWaiting(false);
-              clearHomeFlow();
-              showNotification(
-                "Ошибка WebSocket соединения. Проверьте адрес страницы и обновите.",
-              );
-              return;
-            }
-            if (event.code !== NORMAL_CLOSURE_CODE) {
-              return;
-            }
+            expectedRestoreDuelID.current === message.payload.duel_id &&
+            !message.payload.task)
+        ) {
+          state.flowCompleted = true;
+        }
+        if (
+          message.type === "task_assigned" &&
+          currentHomeFlow.current === "queue" &&
+          message.payload &&
+          pendingMatch.current?.duel_id === message.payload.duel_id
+        ) {
+          state.flowCompleted = true;
+        }
+        if (
+          message.type === "duel_resume" &&
+          message.payload?.task &&
+          expectedRestoreDuelID.current === message.payload.duel_id
+        ) {
+          currentHomeFlow.current = "restore";
+          state.activeDuelRestored = true;
+          state.flowCompleted = true;
+        }
+        if (
+          message.type === "duel_finished" &&
+          message.payload &&
+          expectedTerminalDuelID() === message.payload.duel_id
+        ) {
+          state.activeDuelRestored = true;
+          state.flowCompleted = true;
+        }
+        handleWebSocketMessage(message);
+      };
+      const handleSocketClose = (
+        event: CloseEvent,
+        websocket: WebSocket,
+      ) => {
+        const state = stateFor(websocket);
+        if (isCurrentAttempt() && !state.flowCompleted) {
+          if (event.code !== NORMAL_CLOSURE_CODE && !state.socketOpened) {
             setIsWaiting(false);
-            notifyRestoreFailure();
             clearHomeFlow();
+            showNotification(
+              "Ошибка WebSocket соединения. Проверьте адрес страницы и обновите.",
+            );
+            return;
           }
-        };
-
-        websocket.onerror = (error) => {
-          log.error("WebSocket error:", error);
-        };
+          if (event.code !== NORMAL_CLOSURE_CODE) {
+            return;
+          }
+          setIsWaiting(false);
+          notifyRestoreFailure(state);
+          clearHomeFlow();
+        }
       };
 
       const ws = connectWebSocket({
+        onMessage: handleSocketMessage,
+        onOpen: (websocket) => {
+          stateFor(websocket).socketOpened = true;
+        },
+        onClose: handleSocketClose,
+        onError: (error) => {
+          log.error("WebSocket error:", error);
+        },
         onReconnect: (newWs) => {
-          setupWebSocketListeners(newWs);
+          stateFor(newWs);
           sendJoinQueueOnOpen(newWs);
         },
         onBeforeReconnect: async () => {
@@ -660,6 +691,11 @@ export default function HomePage() {
             setCurrentPlayer(refreshResult.state.player);
             setPlayerID(refreshResult.state.player.id);
             setNickname(refreshResult.state.player.username);
+            if (refreshResult.state.activeDuel) {
+              expectedRestoreDuelID.current = refreshResult.state.activeDuel.id;
+              pendingMatch.current = null;
+              currentHomeFlow.current = "restore";
+            }
           }
           return null;
         },
@@ -677,7 +713,7 @@ export default function HomePage() {
         },
       });
 
-      setupWebSocketListeners(ws);
+      stateFor(ws);
       sendJoinQueueOnOpen(ws);
     } catch {
       if (isCurrentAttempt()) {
@@ -691,8 +727,8 @@ export default function HomePage() {
   return (
     <>
       {notification && (
-        <div className="fixed inset-x-0 top-4 z-50 flex justify-center px-4 pointer-events-none">
-          <div className="pointer-events-auto bg-black/80 text-white px-4 py-2 rounded-lg animate-fadeIn">
+        <div className="fixed right-4 top-4 z-50 flex max-w-[calc(100vw-2rem)] justify-end pointer-events-none sm:right-6 sm:top-6">
+          <div className="pointer-events-auto max-w-md bg-black/80 text-white px-4 py-2 rounded-lg animate-fadeIn">
             {notification}
           </div>
         </div>
@@ -796,7 +832,13 @@ export default function HomePage() {
                     <div className="animate-on-hover will-change-transform">
                       <PlayButton
                         onClick={handleReady}
-                        disabled={!playerID || isWaiting || isClearingPlayer}
+                        disabled={
+                          !playerID ||
+                          isWaiting ||
+                          isClearingPlayer ||
+                          connectionState === "connecting" ||
+                          connectionState === "reconnecting"
+                        }
                       />
                     </div>
                     {!isWaiting && (
