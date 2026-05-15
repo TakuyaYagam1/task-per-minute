@@ -303,6 +303,10 @@ export const adminApi = {
     });
   },
 
+  sourceDownloadURL(id: string): string {
+    return adminURL(`/api/v1/admin/tasks/${encodeURIComponent(id)}/source`);
+  },
+
   async uploadSource(
     _accessToken: string,
     id: string,

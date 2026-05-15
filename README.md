@@ -106,6 +106,17 @@ CI/CD deploy использует тот же стек с override-файлом
 - [Развертывание на сервере](docs/ru/deploy.md)
 - [Runbook деплоя и отката](docs/ru/runbook.md)
 
+## Источники контракта
+
+- [OpenAPI](backend/internal/openapi/openapi.yml) - актуальный REST-контракт.
+- [Развертывание](docs/ru/deploy.md) - production-конфигурация, cookie-auth,
+  CSRF и WebSocket origin policy.
+- [Runbook](docs/ru/runbook.md) - операционные проверки, rollback и runtime
+  механики дуэлей.
+
+Старый PRD удалён как устаревший: он больше не является источником истины для
+auth, WebSocket или reconnect-поведения.
+
 ## Команда разработки
 
 - [CaXaRo4iK](https://github.com/CaXaRo4iK) - DevOps, деплой, инфраструктура и таски

@@ -96,6 +96,8 @@ test('task description wraps long unbroken text inside card', async ({ page }) =
 
   await page.goto('/task');
   await expect(page.getByRole('heading', { name: 'Long Crypto Contract' })).toBeVisible();
+  await expect(page.getByText('Ваш соперник')).toBeVisible();
+  await expect(page.getByText('bob')).toBeVisible();
   const descriptionNode = page.getByText(description);
   await expect(descriptionNode).toBeVisible();
   await expect.poll(async () => descriptionNode.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
@@ -335,20 +337,24 @@ test('duel_resume accepts non-core task category from websocket guard', async ({
       duel_id: duelID,
       deadline: resumedDeadline,
       opponent_disconnected: false,
+      opponent_username: 'charlie',
       task: resumedTask,
     },
   });
 
   await expect(page.getByRole('heading', { name: 'Hardware Resume Contract' })).toBeVisible();
+  await expect(page.getByText('charlie')).toBeVisible();
   const storedGame = await page.evaluate(() => {
     const raw = window.sessionStorage.getItem('currentGame');
     return raw ? JSON.parse(raw) as {
       deadline?: string;
+      opponent_username?: string;
       time_limit_seconds?: number;
       task?: { category?: string; title?: string };
     } : null;
   });
   expect(storedGame?.deadline).toBe(resumedDeadline);
+  expect(storedGame?.opponent_username).toBe('charlie');
   expect(storedGame?.time_limit_seconds).toBe(240);
   expect(storedGame?.task?.category).toBe('hardware');
 });

@@ -223,3 +223,18 @@ the task's `time_limit` (see `domain.BuildHintSchedule`).
 - End-to-end coverage: `TestE2EHintFlow_AutoUnlocksAt25_50_75` in
   `backend/integration_test/e2e_test.go` boots the real backend and asserts
   ordering and text of all three events.
+
+## Reconnect Mechanics
+
+- A WebSocket disconnect during an active duel puts the duel into reconnect
+  pause: the duel deadline and hint schedule freeze, and the opponent receives
+  `opponent_disconnected`.
+- If the player returns within the reconnect window, the server sends
+  `duel_resume` to that player and `opponent_reconnected` to the opponent; the
+  deadline and hints then continue with the paused duration accounted for.
+- If the reconnect window expires, the duel finishes as a draw. Exceeding the
+  disconnect/reconnect limit for a player also immediately finishes the duel as
+  a draw.
+- If both players disconnect and both reconnect windows expire, the result is
+  still a draw.
+- Draws do not increment the leaderboard; `winner_id` remains empty.

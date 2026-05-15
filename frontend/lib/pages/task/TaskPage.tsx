@@ -559,6 +559,9 @@ export const TaskPage: React.FC = () => {
           if (resume.opponent_id) {
             patch.opponent_id = resume.opponent_id;
           }
+          if (resume.opponent_username) {
+            patch.opponent_username = resume.opponent_username;
+          }
           if (resume.task) {
             patch.task = resume.task;
             patch.time_limit_seconds = resume.task.time_limit_seconds;
@@ -1017,6 +1020,8 @@ export const TaskPage: React.FC = () => {
     taskData?.source_url || taskData?.source_file_url || null;
   const taskTarget = taskData?.task_url?.trim() || null;
   const isExternalTaskURL = Boolean(taskTarget && isHttpURL(taskTarget));
+  const opponentUsername =
+    gameData?.opponent_username?.trim() || "Ник уточняется";
 
   const openWithSafeNavigationGuard = async (
     url: string,
@@ -1194,6 +1199,11 @@ export const TaskPage: React.FC = () => {
             <h1 className={styles.title}>{taskData.title}</h1>
           </div>
           <p className={styles.subtitle}>Решите задание быстрее соперника</p>
+        </div>
+
+        <div className={styles.duelInfo}>
+          <span className={styles.duelInfoLabel}>Ваш соперник</span>
+          <strong className={styles.duelInfoName}>{opponentUsername}</strong>
         </div>
 
         <div className={styles.card}>

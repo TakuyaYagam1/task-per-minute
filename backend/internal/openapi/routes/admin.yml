@@ -538,6 +538,33 @@
       schema:
         type: string
         format: uuid
+  get:
+    operationId: downloadTaskSource
+    tags: [admin]
+    summary: Redirect to a temporary source-file ZIP download URL
+    security:
+      - BearerAuth: []
+    responses:
+      '302':
+        description: Redirects to a temporary SeaweedFS presigned URL.
+        headers:
+          Location:
+            required: true
+            schema:
+              type: string
+              format: uri
+      '401':
+        description: Missing or invalid admin session.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '404':
+        description: Task or source file not found.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
   post:
     operationId: uploadTaskSource
     tags: [admin]

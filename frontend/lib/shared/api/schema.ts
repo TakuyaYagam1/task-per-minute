@@ -327,7 +327,8 @@ export interface paths {
             };
             cookie?: never;
         };
-        get?: never;
+        /** Redirect to a temporary source-file ZIP download URL */
+        get: operations["downloadTaskSource"];
         put?: never;
         /** Upload a source-file ZIP (≤ 100 MB) and store it in SeaweedFS */
         post: operations["uploadTaskSource"];
@@ -1448,6 +1449,45 @@ export interface operations {
             };
             /** @description Task is referenced by an active duel. */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    downloadTaskSource: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Redirects to a temporary SeaweedFS presigned URL. */
+            302: {
+                headers: {
+                    Location: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing or invalid admin session. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Task or source file not found. */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

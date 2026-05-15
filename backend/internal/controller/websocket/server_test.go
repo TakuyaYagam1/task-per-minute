@@ -63,7 +63,7 @@ func TestServerShutdownLeavesQueuedClient(t *testing.T) {
 	}
 }
 
-func TestServerSendDuelResumeIncludesOpponentID(t *testing.T) {
+func TestServerSendDuelResumeIncludesOpponent(t *testing.T) {
 	t.Parallel()
 
 	playerID := uuid.New()
@@ -77,7 +77,11 @@ func TestServerSendDuelResumeIncludesOpponentID(t *testing.T) {
 		send: make(chan []byte, 1),
 		done: make(chan struct{}),
 	}
-	server := &Server{}
+	server := &Server{
+		players: &shutdownPlayerRepo{
+			player: &domain.Player{ID: opponentID, Username: "bob"},
+		},
+	}
 
 	require.NoError(t, server.sendDuelResume(context.Background(), c, &duelusecase.ReconnectDecision{
 		Duel: &domain.Duel{
@@ -101,6 +105,7 @@ func TestServerSendDuelResumeIncludesOpponentID(t *testing.T) {
 		require.Equal(t, EventDuelResume, got.Type)
 		require.Equal(t, duelID, got.Payload.DuelID)
 		require.Equal(t, opponentID, got.Payload.OpponentID)
+		require.Equal(t, "bob", got.Payload.OpponentUsername)
 		require.Equal(t, deadline, got.Payload.Deadline)
 	case <-time.After(time.Second):
 		t.Fatal("duel_resume event was not sent")

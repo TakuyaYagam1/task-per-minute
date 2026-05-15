@@ -60,6 +60,9 @@ const isOptionalDateStringOrNull = (value: unknown): value is string | null | un
 const isOptionalStringOrNull = (value: unknown): value is string | null | undefined =>
   value === undefined || value === null || isString(value);
 
+const isOptionalString = (value: unknown): value is string | undefined =>
+  value === undefined || isString(value);
+
 const isInteger = (value: unknown): value is number =>
   typeof value === "number" && Number.isInteger(value);
 
@@ -235,6 +238,7 @@ const isValidPayload = (type: ServerMessageType, payload: unknown): boolean => {
         isRecord(payload) &&
         isUUID(payload.duel_id) &&
         (payload.opponent_id === undefined || isUUID(payload.opponent_id)) &&
+        isOptionalString(payload.opponent_username) &&
         isDateString(payload.deadline) &&
         (payload.opponent_disconnected === undefined ||
           isBoolean(payload.opponent_disconnected)) &&

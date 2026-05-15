@@ -58,6 +58,9 @@ type ServerInterface interface {
 	// Update a task (partial update is allowed via PATCH semantics)
 	// (PUT /api/v1/admin/tasks/{id})
 	UpdateTask(w http.ResponseWriter, r *http.Request, id openapi_types.UUID)
+	// Redirect to a temporary source-file ZIP download URL
+	// (GET /api/v1/admin/tasks/{id}/source)
+	DownloadTaskSource(w http.ResponseWriter, r *http.Request, id openapi_types.UUID)
 	// Upload a source-file ZIP (≤ 100 MB) and store it in SeaweedFS
 	// (POST /api/v1/admin/tasks/{id}/source)
 	UploadTaskSource(w http.ResponseWriter, r *http.Request, id openapi_types.UUID)
@@ -160,6 +163,12 @@ func (_ Unimplemented) GetTask(w http.ResponseWriter, r *http.Request, id openap
 // Update a task (partial update is allowed via PATCH semantics)
 // (PUT /api/v1/admin/tasks/{id})
 func (_ Unimplemented) UpdateTask(w http.ResponseWriter, r *http.Request, id openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Redirect to a temporary source-file ZIP download URL
+// (GET /api/v1/admin/tasks/{id}/source)
+func (_ Unimplemented) DownloadTaskSource(w http.ResponseWriter, r *http.Request, id openapi_types.UUID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -546,6 +555,37 @@ func (siw *ServerInterfaceWrapper) UpdateTask(w http.ResponseWriter, r *http.Req
 	handler.ServeHTTP(w, r)
 }
 
+// DownloadTaskSource operation middleware
+func (siw *ServerInterfaceWrapper) DownloadTaskSource(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DownloadTaskSource(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // UploadTaskSource operation middleware
 func (siw *ServerInterfaceWrapper) UploadTaskSource(w http.ResponseWriter, r *http.Request) {
 
@@ -835,6 +875,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Put(options.BaseURL+"/api/v1/admin/tasks/{id}", wrapper.UpdateTask)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/admin/tasks/{id}/source", wrapper.DownloadTaskSource)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/admin/tasks/{id}/source", wrapper.UploadTaskSource)
@@ -1452,6 +1495,46 @@ func (response UpdateTask404ApplicationProblemPlusJSONResponse) VisitUpdateTaskR
 	return json.NewEncoder(w).Encode(response)
 }
 
+type DownloadTaskSourceRequestObject struct {
+	Id openapi_types.UUID `json:"id"`
+}
+
+type DownloadTaskSourceResponseObject interface {
+	VisitDownloadTaskSourceResponse(w http.ResponseWriter) error
+}
+
+type DownloadTaskSource302ResponseHeaders struct {
+	Location string
+}
+
+type DownloadTaskSource302Response struct {
+	Headers DownloadTaskSource302ResponseHeaders
+}
+
+func (response DownloadTaskSource302Response) VisitDownloadTaskSourceResponse(w http.ResponseWriter) error {
+	w.Header().Set("Location", fmt.Sprint(response.Headers.Location))
+	w.WriteHeader(302)
+	return nil
+}
+
+type DownloadTaskSource401ApplicationProblemPlusJSONResponse ProblemDetails
+
+func (response DownloadTaskSource401ApplicationProblemPlusJSONResponse) VisitDownloadTaskSourceResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type DownloadTaskSource404ApplicationProblemPlusJSONResponse ProblemDetails
+
+func (response DownloadTaskSource404ApplicationProblemPlusJSONResponse) VisitDownloadTaskSourceResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
 type UploadTaskSourceRequestObject struct {
 	Id   openapi_types.UUID `json:"id"`
 	Body *multipart.Reader
@@ -1751,6 +1834,9 @@ type StrictServerInterface interface {
 	// Update a task (partial update is allowed via PATCH semantics)
 	// (PUT /api/v1/admin/tasks/{id})
 	UpdateTask(ctx context.Context, request UpdateTaskRequestObject) (UpdateTaskResponseObject, error)
+	// Redirect to a temporary source-file ZIP download URL
+	// (GET /api/v1/admin/tasks/{id}/source)
+	DownloadTaskSource(ctx context.Context, request DownloadTaskSourceRequestObject) (DownloadTaskSourceResponseObject, error)
 	// Upload a source-file ZIP (≤ 100 MB) and store it in SeaweedFS
 	// (POST /api/v1/admin/tasks/{id}/source)
 	UploadTaskSource(ctx context.Context, request UploadTaskSourceRequestObject) (UploadTaskSourceResponseObject, error)
@@ -2165,6 +2251,32 @@ func (sh *strictHandler) UpdateTask(w http.ResponseWriter, r *http.Request, id o
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(UpdateTaskResponseObject); ok {
 		if err := validResponse.VisitUpdateTaskResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DownloadTaskSource operation middleware
+func (sh *strictHandler) DownloadTaskSource(w http.ResponseWriter, r *http.Request, id openapi_types.UUID) {
+	var request DownloadTaskSourceRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DownloadTaskSource(ctx, request.(DownloadTaskSourceRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DownloadTaskSource")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DownloadTaskSourceResponseObject); ok {
+		if err := validResponse.VisitDownloadTaskSourceResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

@@ -247,8 +247,17 @@ test('admin task lifecycle uses cookie auth, refresh retry, and source upload', 
   });
   await page.getByRole('button', { name: /Создать задачу/ }).click();
 
-  await expect(page.getByText('Задача успешно создана!')).toBeVisible();
-  await expect(page.getByText('Contract Task')).toBeVisible();
+  const createToast = page.getByText('Задача успешно создана!');
+  await expect(createToast).toBeVisible();
+  await expect
+    .poll(() => createToast.evaluate((node) => getComputedStyle(node).position))
+    .toBe('fixed');
+  await expect(page.getByText('Исходники загружены в SeaweedFS')).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Скачать загруженный ZIP' })).toHaveAttribute(
+    'href',
+    'https://files.example/source.zip',
+  );
+  await expect(page.getByText('Contract Task', { exact: true })).toBeVisible();
 
   await page.locator('[title="Редактировать задачу"]').click();
   await page.getByPlaceholder('Введите название...').fill('Contract Task Updated');
@@ -916,17 +925,23 @@ test('admin canceling a replacement source file preserves existing source_file_u
     .click();
 
   await expect(page.getByText('Текущий архив сохранён')).toBeVisible();
+  await expect(page.getByText('Удаление применится только после сохранения задачи')).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Скачать текущий ZIP' })).toHaveAttribute(
+    'href',
+    `/api/v1/admin/tasks/${taskID}/source`,
+  );
+  await page.getByRole('button', { name: 'Пометить текущий архив к удалению' }).click();
+  await expect(page.getByText('Архив будет удалён после сохранения задачи')).toBeVisible();
+  await page.getByRole('button', { name: 'Отменить удаление архива' }).click();
+  await expect(page.getByText('Текущий архив сохранён')).toBeVisible();
+
   await page.locator('input[type="file"]').setInputFiles({
     name: 'replacement.zip',
     mimeType: 'application/zip',
     buffer: Buffer.from('PK\u0005\u0006replacement'),
   });
   await expect(page.getByText('replacement.zip')).toBeVisible();
-  await page
-    .locator('[class*="fileInfo"]')
-    .filter({ hasText: 'replacement.zip' })
-    .locator('[class*="fileInfoRemove"]')
-    .click();
+  await page.getByRole('button', { name: 'Убрать выбранный ZIP' }).click();
   await expect(page.getByText('Текущий архив сохранён')).toBeVisible();
   await page.getByRole('button', { name: /Сохранить задачу/ }).click();
 

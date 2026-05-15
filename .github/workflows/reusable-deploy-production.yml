@@ -97,6 +97,62 @@ jobs:
           git fetch --prune origin
           git reset --hard "$TARGET_SHA"
 
+          read_env_value() {
+            key="$1"
+            awk -v key="$key" '
+              /^[[:space:]]*#/ { next }
+              index($0, key "=") == 1 {
+                sub("^[^=]*=", "")
+                print
+                found = 1
+                exit
+              }
+              END {
+                if (found != 1) {
+                  exit 2
+                }
+              }
+            ' .env | tr -d '\r'
+          }
+          normalize_env_value() {
+            value="$(printf '%s' "$1" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+            if [[ "$value" == \"*\" && "$value" == *\" ]]; then
+              value="${value:1:${#value}-2}"
+            elif [[ "$value" == \'*\' && "$value" == *\' ]]; then
+              value="${value:1:${#value}-2}"
+            fi
+            printf '%s' "$value"
+          }
+          require_env_value() {
+            key="$1"
+            if ! raw="$(read_env_value "$key")"; then
+              echo "::error::$key is required in production .env" >&2
+              exit 1
+            fi
+            value="$(normalize_env_value "$raw")"
+            if [[ -z "$value" ]]; then
+              echo "::error::$key must not be empty in production .env" >&2
+              exit 1
+            fi
+            printf '%s' "$value"
+          }
+          require_non_wildcard_origin_list() {
+            key="$1"
+            value="$(require_env_value "$key")"
+            if [[ "$value" == *"*"* ]]; then
+              echo "::error::$key must not contain wildcard origins in production .env" >&2
+              exit 1
+            fi
+          }
+
+          ws_require_origin="$(require_env_value WS_REQUIRE_ORIGIN)"
+          if [[ "$ws_require_origin" != "true" ]]; then
+            echo "::error::WS_REQUIRE_ORIGIN must be true in production .env" >&2
+            exit 1
+          fi
+          require_non_wildcard_origin_list HTTP_ALLOWED_ORIGINS
+          require_non_wildcard_origin_list WS_ALLOWED_ORIGINS
+
           echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_ACTOR" --password-stdin
 
           cd deployment/docker
@@ -243,6 +299,7 @@ jobs:
           import ssl
           import sys
           import time
+          import uuid
           import urllib.error
           import urllib.parse
           import urllib.request
@@ -316,19 +373,41 @@ jobs:
                   message = json.loads(await asyncio.wait_for(ws.recv(), timeout=10))
                   assert message.get("type") == "pong", message
 
-              try:
-                  async with websockets.connect(
-                      ws_url,
-                      origin="https://denied-origin.invalid",
-                      additional_headers={"Cookie": cookie_header},
-                      ssl=ssl_ctx,
-                      open_timeout=10,
-                  ):
-                      raise AssertionError("denied-origin websocket unexpectedly upgraded")
-              except AssertionError:
-                  raise
-              except Exception:
-                  return
+              async def expect_ws_rejected(label, url=ws_url, origin_header=origin, headers=None, subprotocols=None):
+                  try:
+                      async with websockets.connect(
+                          url,
+                          origin=origin_header,
+                          additional_headers=headers or {"Cookie": cookie_header},
+                          subprotocols=subprotocols,
+                          ssl=ssl_ctx,
+                          open_timeout=10,
+                      ):
+                          raise AssertionError(f"{label} websocket unexpectedly upgraded")
+                  except AssertionError:
+                      raise
+                  except Exception:
+                      return
+
+              await expect_ws_rejected(
+                  "query-token",
+                  url=f"{ws_url}?token={uuid.uuid4()}",
+              )
+              await expect_ws_rejected(
+                  "header-token",
+                  headers={
+                      "Cookie": cookie_header,
+                      "X-Session-Token": str(uuid.uuid4()),
+                  },
+              )
+              await expect_ws_rejected(
+                  "bearer-subprotocol",
+                  subprotocols=[f"tpm.bearer.{uuid.uuid4()}"],
+              )
+              await expect_ws_rejected(
+                  "denied-origin",
+                  origin_header="https://denied-origin.invalid",
+              )
 
           asyncio.run(ws_smoke())
           print("auth and websocket smoke checks passed")

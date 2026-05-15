@@ -614,6 +614,12 @@ func (s *Server) sendDuelResume(ctx context.Context, c *client, decision *duelus
 		OpponentID: decision.OpponentID,
 		Deadline:   decision.NewDeadline,
 	}
+	if s.players != nil {
+		opponent, err := s.players.GetByID(ctx, decision.OpponentID)
+		if err == nil && opponent != nil {
+			payload.OpponentUsername = opponent.Username
+		}
+	}
 	if decision.OpponentDisconnected {
 		payload.OpponentDisconnected = true
 		payload.OpponentReconnectDeadline = &decision.OpponentReconnectDeadline

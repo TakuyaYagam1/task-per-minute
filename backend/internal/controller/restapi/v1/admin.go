@@ -407,6 +407,25 @@ func (s *Server) DeleteTask(w http.ResponseWriter, r *http.Request, id openapi_t
 	response.WriteJSON(w, http.StatusNoContent, nil)
 }
 
+// (GET /api/v1/admin/tasks/{id}/source).
+func (s *Server) DownloadTaskSource(w http.ResponseWriter, r *http.Request, id openapi_types.UUID) {
+	if !requireAdmin(w, r) {
+		return
+	}
+	if s.upload == nil {
+		errmap.HandleError(w, r, apperr.ErrInternal)
+		return
+	}
+
+	sourceURL, err := s.upload.PresignedSourceFileURL(r.Context(), id)
+	if err != nil {
+		errmap.HandleError(w, r, err)
+		return
+	}
+
+	http.Redirect(w, r, sourceURL, http.StatusFound)
+}
+
 // (POST /api/v1/admin/tasks/{id}/source).
 func (s *Server) UploadTaskSource(w http.ResponseWriter, r *http.Request, id openapi_types.UUID) {
 	if !requireAdmin(w, r) {

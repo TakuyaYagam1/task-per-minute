@@ -221,3 +221,17 @@ docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.
 - E2E покрытие: `TestE2EHintFlow_AutoUnlocksAt25_50_75` в
   `backend/integration_test/e2e_test.go` поднимает реальный backend и
   проверяет порядок и текст всех трёх событий.
+
+## Механика reconnect
+
+- Разрыв WebSocket во время активной дуэли переводит дуэль в reconnect-паузу:
+  дедлайн дуэли и расписание подсказок замораживаются, а соперник получает
+  `opponent_disconnected`.
+- Если игрок возвращается внутри reconnect-window, сервер отправляет ему
+  `duel_resume`, сопернику - `opponent_reconnected`, после чего дедлайн и
+  подсказки продолжаются с учётом времени паузы.
+- Если reconnect-window истёк, дуэль завершается ничьей. Превышение лимита
+  disconnect/reconnect для игрока тоже немедленно завершает дуэль ничьей.
+- Если оба участника отключились и оба reconnect-window истекли, результат
+  также остаётся ничьей.
+- При ничьей leaderboard не получает win; `winner_id` остаётся пустым.

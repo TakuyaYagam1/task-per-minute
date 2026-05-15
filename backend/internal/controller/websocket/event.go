@@ -152,6 +152,7 @@ type OpponentReconnectedPayload struct {
 type DuelResumePayload struct {
 	DuelID                    uuid.UUID    `json:"duel_id"`
 	OpponentID                uuid.UUID    `json:"opponent_id"`
+	OpponentUsername          string       `json:"opponent_username,omitempty"`
 	Deadline                  time.Time    `json:"deadline"`
 	OpponentDisconnected      bool         `json:"opponent_disconnected,omitempty"`
 	OpponentReconnectDeadline *time.Time   `json:"opponent_reconnect_deadline,omitempty"`

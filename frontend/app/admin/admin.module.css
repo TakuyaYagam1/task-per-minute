@@ -486,17 +486,19 @@
 }
 
 .notification {
-  position: sticky;
-  top: 1rem;
-  align-self: flex-end;
+  position: fixed;
+  top: 1.5rem;
+  right: 1.5rem;
   width: min(28rem, calc(100vw - 3rem));
   max-width: calc(100vw - 2rem);
-  margin: 0 0 1rem;
+  max-height: calc(100dvh - 3rem);
+  overflow-y: auto;
+  margin: 0;
   padding: 0.75rem 1.5rem;
   border-radius: 0.75rem;
   font-size: 0.9rem;
   font-weight: 500;
-  z-index: 10;
+  z-index: 1000;
   animation: slideInRight 0.3s ease-out;
   backdrop-filter: blur(10px);
   box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2);
@@ -533,7 +535,8 @@
 
 @media (max-width: 640px) {
   .notification {
-    align-self: stretch;
+    left: 1rem;
+    right: 1rem;
     width: auto;
     max-width: none;
   }
@@ -1006,21 +1009,95 @@
 
 .fileInfoName {
   flex: 1;
-  white-space: nowrap;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.fileInfoName strong {
+  color: rgba(255, 255, 255, 0.86);
+  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.fileInfoRemove {
+.fileInfoMeta {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.74rem;
+  line-height: 1.25;
+}
+
+.fileInfoAction {
+  border: 1px solid rgba(114, 209, 235, 0.25);
+  border-radius: 0.4rem;
+  background: rgba(114, 209, 235, 0.08);
+  color: #72d1eb;
   cursor: pointer;
-  color: #ef4444;
-  font-size: 1.1rem;
-  line-height: 1;
-  transition: all 0.2s ease;
+  flex-shrink: 0;
+  font-size: 0.74rem;
+  font-weight: 600;
+  line-height: 1.2;
+  padding: 0.35rem 0.55rem;
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease,
+    transform 0.2s ease;
+  text-decoration: none;
+  white-space: nowrap;
 }
 
-.fileInfoRemove:hover {
-  transform: scale(1.2);
+.fileInfoAction:hover {
+  background: rgba(114, 209, 235, 0.14);
+  border-color: rgba(114, 209, 235, 0.45);
+  transform: translateY(-1px);
+}
+
+.fileInfoActionDanger {
+  border-color: rgba(239, 68, 68, 0.28);
+  background: rgba(239, 68, 68, 0.08);
+  color: #fca5a5;
+}
+
+.fileInfoActionDanger:hover {
+  border-color: rgba(239, 68, 68, 0.5);
+  background: rgba(239, 68, 68, 0.14);
+  color: #fecaca;
+}
+
+.sourceDownloadNotice {
+  align-items: center;
+  background: rgba(34, 197, 94, 0.08);
+  border: 1px solid rgba(34, 197, 94, 0.22);
+  border-radius: 0.75rem;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  margin: 1rem 0 0;
+  max-width: 800px;
+  padding: 0.9rem 1rem;
+  width: 100%;
+}
+
+.sourceDownloadText {
+  color: rgba(255, 255, 255, 0.62);
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  font-size: 0.82rem;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.sourceDownloadText strong {
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 0.9rem;
+}
+
+.sourceDownloadButton {
+  flex-shrink: 0;
 }
 
 .loginCard {
@@ -1138,6 +1215,25 @@
 
   .auditDiff {
     grid-template-columns: 1fr;
+  }
+
+  .fileInfo {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .fileInfoAction {
+    margin-left: auto;
+  }
+
+  .sourceDownloadNotice {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .sourceDownloadButton {
+    justify-content: center;
+    width: 100%;
   }
 
   .card:hover,

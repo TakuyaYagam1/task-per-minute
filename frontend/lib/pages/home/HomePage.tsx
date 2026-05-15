@@ -361,6 +361,7 @@ export default function HomePage() {
           time_limit_seconds: message.payload.task.time_limit_seconds,
           task: message.payload.task,
           opponent_id: message.payload.opponent_id,
+          opponent_username: message.payload.opponent_username,
           opponent_disconnected: message.payload.opponent_disconnected,
           opponent_reconnect_deadline:
             message.payload.opponent_reconnect_deadline,

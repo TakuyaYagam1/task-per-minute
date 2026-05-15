@@ -42,6 +42,13 @@ interface Notification {
   message: string;
 }
 
+interface LastUploadedSource {
+  taskTitle: string;
+  fileName: string;
+  url: string;
+  expiresInSeconds: number;
+}
+
 const CATEGORY_CONFIG: Record<
   TaskCategory,
   { label: string; icon: string; color: string }
@@ -280,6 +287,8 @@ export default function AdminPanel() {
     string | null
   >(null);
   const [sourceFileCleared, setSourceFileCleared] = useState(false);
+  const [lastUploadedSource, setLastUploadedSource] =
+    useState<LastUploadedSource | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [taskFormErrors, setTaskFormErrors] = useState<TaskFormErrors>({});
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
@@ -972,11 +981,18 @@ export default function AdminPanel() {
       }
 
       let uploadFailed = false;
+      let uploadedSource: LastUploadedSource | null = null;
       if (sourceFile) {
         try {
-          await runAdminRequest((accessToken) =>
+          const upload = await runAdminRequest((accessToken) =>
             adminApi.uploadSource(accessToken, savedTask.id, sourceFile),
           );
+          uploadedSource = {
+            taskTitle: savedTask.title,
+            fileName: sourceFile.name,
+            url: upload.source_file_url,
+            expiresInSeconds: parsedTimeLimit,
+          };
         } catch (uploadError) {
           if (
             uploadError instanceof Error &&
@@ -993,11 +1009,17 @@ export default function AdminPanel() {
       }
 
       if (uploadFailed) {
+        if (sourceFile) {
+          setLastUploadedSource(null);
+        }
         showNotification(
           "warning",
           `${editingTaskId ? "Задача обновлена" : "Задача создана"}, но файл не загрузился`,
         );
       } else {
+        if (uploadedSource) {
+          setLastUploadedSource(uploadedSource);
+        }
         showNotification(
           "success",
           editingTaskId
@@ -1350,40 +1372,73 @@ export default function AdminPanel() {
             />
             {sourceFile && (
               <div className={styles.fileInfo}>
-                <span>📦</span>
-                <span className={styles.fileInfoName}>{sourceFile.name}</span>
-                <span>({(sourceFile.size / 1024 / 1024).toFixed(1)} MB)</span>
-                <span className={styles.fileInfoRemove} onClick={removeFile}>
-                  ✕
+                <span aria-hidden="true">📦</span>
+                <span className={styles.fileInfoName}>
+                  <strong>{sourceFile.name}</strong>
+                  <span className={styles.fileInfoMeta}>
+                    {(sourceFile.size / 1024 / 1024).toFixed(1)} MB ·{" "}
+                    {existingSourceFileURL && !sourceFileCleared
+                      ? "заменит текущий архив после сохранения"
+                      : "загрузится после сохранения"}
+                  </span>
                 </span>
+                <button
+                  type="button"
+                  className={`${styles.fileInfoAction} ${styles.fileInfoActionDanger}`}
+                  onClick={removeFile}
+                  aria-label="Убрать выбранный ZIP"
+                >
+                  Убрать
+                </button>
               </div>
             )}
             {!sourceFile && existingSourceFileURL && !sourceFileCleared && (
               <div className={styles.fileInfo}>
-                <span>📦</span>
+                <span aria-hidden="true">📦</span>
                 <span className={styles.fileInfoName}>
-                  Текущий архив сохранён
+                  <strong>Текущий архив сохранён</strong>
+                  <span className={styles.fileInfoMeta}>
+                    Удаление применится только после сохранения задачи
+                  </span>
                 </span>
-                <span
-                  className={styles.fileInfoRemove}
+                {editingTaskId && (
+                  <a
+                    className={styles.fileInfoAction}
+                    href={adminApi.sourceDownloadURL(editingTaskId)}
+                    download="source.zip"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Скачать текущий ZIP
+                  </a>
+                )}
+                <button
+                  type="button"
+                  className={`${styles.fileInfoAction} ${styles.fileInfoActionDanger}`}
                   onClick={removeExistingSourceFile}
+                  aria-label="Пометить текущий архив к удалению"
                 >
-                  ✕
-                </span>
+                  Пометить к удалению
+                </button>
               </div>
             )}
             {!sourceFile && existingSourceFileURL && sourceFileCleared && (
               <div className={styles.fileInfo}>
-                <span>🗑</span>
+                <span aria-hidden="true">🗑</span>
                 <span className={styles.fileInfoName}>
-                  Текущий архив будет удалён
+                  <strong>Архив будет удалён после сохранения задачи</strong>
+                  <span className={styles.fileInfoMeta}>
+                    До сохранения можно отменить это действие
+                  </span>
                 </span>
-                <span
-                  className={styles.fileInfoRemove}
+                <button
+                  type="button"
+                  className={styles.fileInfoAction}
                   onClick={restoreExistingSourceFile}
+                  aria-label="Отменить удаление архива"
                 >
-                  ↺
-                </span>
+                  Отменить удаление
+                </button>
               </div>
             )}
             {taskFormErrors.sourceFile && (
@@ -2113,6 +2168,27 @@ export default function AdminPanel() {
                 )}
               </form>
             </div>
+            {lastUploadedSource && (
+              <div className={styles.sourceDownloadNotice} role="status">
+                <div className={styles.sourceDownloadText}>
+                  <strong>Исходники загружены в SeaweedFS</strong>
+                  <span>
+                    {lastUploadedSource.fileName} для задачи «
+                    {lastUploadedSource.taskTitle}». Ссылка временная:{" "}
+                    {lastUploadedSource.expiresInSeconds} сек.
+                  </span>
+                </div>
+                <a
+                  className={`${styles.btn} ${styles.btnSecondary} ${styles.sourceDownloadButton} motion-button`}
+                  href={lastUploadedSource.url}
+                  download={lastUploadedSource.fileName}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Скачать загруженный ZIP
+                </a>
+              </div>
+            )}
             <div className={styles.taskList}>
               <h2 className={styles.taskListTitle}>📋 Список задач</h2>
 

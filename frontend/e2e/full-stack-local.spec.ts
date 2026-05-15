@@ -27,6 +27,13 @@ type LeaderboardResponse = {
   }>;
 };
 
+type BrowserAuthStorage = {
+  sessionToken: string | null;
+  localSessionToken: string | null;
+  adminAccessToken: string | null;
+  adminRefreshToken: string | null;
+};
+
 type FullStackTaskInput = {
   title: string;
   description: string;
@@ -166,6 +173,24 @@ const joinAsPlayer = async (page: Page, username: string): Promise<void> => {
   await expect(page.getByText('Игрок готов')).toBeVisible({ timeout: 15_000 });
 };
 
+const cookieHeaderForPage = async (page: Page): Promise<string> => {
+  const cookies = await page.context().cookies();
+  return cookies.map((cookie) => `${cookie.name}=${cookie.value}`).join('; ');
+};
+
+const expectNoSensitiveAuthStorage = async (page: Page): Promise<void> => {
+  const storage = await page.evaluate((): BrowserAuthStorage => ({
+    sessionToken: window.sessionStorage.getItem('session_token'),
+    localSessionToken: window.localStorage.getItem('session_token'),
+    adminAccessToken: window.sessionStorage.getItem('admin_access_token'),
+    adminRefreshToken: window.sessionStorage.getItem('admin_refresh_token'),
+  }));
+  expect(storage.sessionToken, 'player session token must stay out of sessionStorage').toBeNull();
+  expect(storage.localSessionToken, 'player session token must stay out of localStorage').toBeNull();
+  expect(storage.adminAccessToken, 'admin access token must stay out of sessionStorage').toBeNull();
+  expect(storage.adminRefreshToken, 'admin refresh token must stay out of sessionStorage').toBeNull();
+};
+
 const expectLeaderboardContains = async (
   request: APIRequestContext,
   username: string,
@@ -185,6 +210,40 @@ test.describe('local compose full stack e2e', () => {
 
   test.beforeEach(async ({ request }) => {
     await ensureFullStackEnabled(request);
+  });
+
+  test('player session is cookie-backed and logout invalidates it', async ({ page, request }) => {
+    test.setTimeout(60_000);
+
+    const username = uniqueName('player-auth');
+    await joinAsPlayer(page, username);
+    await expectNoSensitiveAuthStorage(page);
+
+    const cookieHeader = await cookieHeaderForPage(page);
+    expect(cookieHeader, 'player join must issue a player session cookie').toContain('tpm_player_session=');
+    expect(cookieHeader, 'player join must issue a player csrf cookie').toContain('tpm_player_csrf=');
+
+    const meResponse = await request.get(`${backendURL}/api/v1/players/me`, {
+      headers: {
+        Cookie: cookieHeader,
+        Origin: frontendURL,
+      },
+    });
+    expect(meResponse.ok(), `players/me failed with ${meResponse.status()}`).toBeTruthy();
+    const me = (await meResponse.json()) as { player: { username: string } };
+    expect(me.player.username).toBe(username);
+
+    await page.getByRole('button', { name: /Сменить игрока/ }).click();
+    await expect(page.getByPlaceholder('Введите никнейм...')).toBeVisible({ timeout: 15_000 });
+    await expectNoSensitiveAuthStorage(page);
+
+    const staleMeResponse = await request.get(`${backendURL}/api/v1/players/me`, {
+      headers: {
+        Cookie: cookieHeader,
+        Origin: frontendURL,
+      },
+    });
+    expect(staleMeResponse.status(), 'old player session cookie must be invalid after logout').toBe(401);
   });
 
   test('admin UI creates and deletes a task through the real backend', async ({ page, request }) => {

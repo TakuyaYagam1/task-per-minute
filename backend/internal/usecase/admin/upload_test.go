@@ -63,6 +63,44 @@ func TestUploadUsecase_UploadSourceFile_HappyPath(t *testing.T) {
 	require.Equal(t, []string{"upload", "presigned"}, storage.calls)
 }
 
+func TestUploadUsecase_PresignedSourceFileURL_HappyPath(t *testing.T) {
+	t.Parallel()
+
+	taskID := uuid.New()
+	key := domain.TaskSourceFileKey(taskID)
+	sourceURL := sourceFileURLForKey(key)
+	task := uploadTask(taskID, &sourceURL)
+
+	tasks := usecasemocks.NewMockTaskRepo(t)
+	tasks.EXPECT().GetByID(mock.Anything, taskID).Return(task, nil)
+
+	storage := &sourceFileStorageMock{
+		presignedGetURLFunc: func(_ context.Context, gotKey string, ttl time.Duration) (string, error) {
+			require.Equal(t, key, gotKey)
+			require.Equal(t, time.Duration(task.TimeLimit)*time.Second, ttl)
+			return sourceURL + "?X-Amz-Signature=test", nil
+		},
+	}
+
+	got, err := admin.NewUploadUsecase(tasks, storage).PresignedSourceFileURL(t.Context(), taskID)
+
+	require.NoError(t, err)
+	require.Equal(t, sourceURL+"?X-Amz-Signature=test", got)
+	require.Equal(t, []string{"presigned"}, storage.calls)
+}
+
+func TestUploadUsecase_PresignedSourceFileURL_NoSource(t *testing.T) {
+	t.Parallel()
+
+	taskID := uuid.New()
+	tasks := usecasemocks.NewMockTaskRepo(t)
+	tasks.EXPECT().GetByID(mock.Anything, taskID).Return(uploadTask(taskID, nil), nil)
+
+	_, err := admin.NewUploadUsecase(tasks, &sourceFileStorageMock{}).PresignedSourceFileURL(t.Context(), taskID)
+
+	require.ErrorIs(t, err, apperr.ErrTaskNotFound)
+}
+
 func TestUploadUsecase_UploadSourceFile_AcceptsCommonZIPContentTypes(t *testing.T) {
 	t.Parallel()
 

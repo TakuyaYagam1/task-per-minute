@@ -117,6 +117,58 @@ func TestWebSocketController_ExpiredPlayerSessionCannotConnect(t *testing.T) {
 	require.Nil(t, cleared.SessionExpiresAt)
 }
 
+func TestWebSocketController_RejectsUnsafeSessionTokenTransports(t *testing.T) {
+	f := newWebSocketFixture(t)
+	player := f.joinPlayer(t, uniq("legacy_transport"))
+	sessionToken := *player.SessionToken
+
+	cases := []struct {
+		name     string
+		endpoint string
+		options  func() *coderws.DialOptions
+	}{
+		{
+			name:     "query token",
+			endpoint: wsEndpoint(f.httpServer.URL) + "?token=" + uuid.NewString(),
+			options: func() *coderws.DialOptions {
+				return wsDialOptions(sessionToken)
+			},
+		},
+		{
+			name:     "x session token header",
+			endpoint: wsEndpoint(f.httpServer.URL),
+			options: func() *coderws.DialOptions {
+				opts := wsDialOptions(sessionToken)
+				opts.HTTPHeader.Set("X-Session-Token", uuid.NewString())
+				return opts
+			},
+		},
+		{
+			name:     "bearer subprotocol",
+			endpoint: wsEndpoint(f.httpServer.URL),
+			options: func() *coderws.DialOptions {
+				opts := wsDialOptions(sessionToken)
+				opts.Subprotocols = []string{"tpm.bearer." + uuid.NewString()}
+				return opts
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dialCtx, cancel := context.WithTimeout(context.Background(), wsTestTimeout)
+			defer cancel()
+			conn, resp, err := coderws.Dial(dialCtx, tc.endpoint, tc.options())
+			if conn != nil {
+				closeWSSilent(conn)
+			}
+			require.Error(t, err)
+			require.NotNil(t, resp)
+			require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+		})
+	}
+}
+
 func TestWebSocketController_HintUnlocksInOrder(t *testing.T) {
 	f := newIsolatedWebSocketFixtureWithReconnectWindow(t, duelusecase.DefaultReconnectWindow)
 
@@ -195,14 +247,9 @@ func TestWebSocketController_ReconnectRestoresTaskWithoutHintSnapshot(t *testing
 	require.Empty(t, resume.Task.UnlockedHints)
 }
 
-func TestWebSocketController_UnknownEventAndInvalidToken(t *testing.T) {
+func TestWebSocketController_UnknownEventReturnsError(t *testing.T) {
 	f := newWebSocketFixture(t)
 	player := f.joinPlayer(t, uniq("alice"))
-
-	resp, err := http.Get(f.httpServer.URL + "/ws?token=" + uuid.NewString())
-	require.NoError(t, err)
-	require.NoError(t, resp.Body.Close())
-	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 
 	conn := f.connect(t, *player.SessionToken)
 	defer closeWS(t, conn)

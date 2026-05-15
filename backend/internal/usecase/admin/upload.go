@@ -128,6 +128,23 @@ func (u *UploadUsecase) ClearSourceFile(ctx context.Context, taskID uuid.UUID, i
 	return updated, nil
 }
 
+func (u *UploadUsecase) PresignedSourceFileURL(ctx context.Context, taskID uuid.UUID) (string, error) {
+	task, err := u.tasks.GetByID(ctx, taskID)
+	if err != nil {
+		return "", fmt.Errorf("UploadUsecase - PresignedSourceFileURL - TaskRepo.GetByID: %w", err)
+	}
+	if task.SourceFileURL == nil {
+		return "", apperr.ErrTaskNotFound
+	}
+
+	key := domain.TaskSourceFileKeyFromURL(taskID, *task.SourceFileURL)
+	presignedURL, err := u.storage.PresignedGetURL(ctx, key, time.Duration(task.TimeLimit)*time.Second)
+	if err != nil {
+		return "", fmt.Errorf("UploadUsecase - PresignedSourceFileURL - SourceFileStorage.PresignedGetURL: %w", err)
+	}
+	return presignedURL, nil
+}
+
 func (u *UploadUsecase) DeleteSourceFile(ctx context.Context, taskID uuid.UUID, sourceFileURL *string) error {
 	key := SourceFileKey(taskID)
 	if sourceFileURL != nil {

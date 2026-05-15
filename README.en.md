@@ -107,6 +107,17 @@ from prebuilt image tags.
 - [Server deployment](docs/en/deploy.md)
 - [Deploy and rollback runbook](docs/en/runbook.md)
 
+## Contracts
+
+- [OpenAPI](backend/internal/openapi/openapi.yml) is the current REST contract.
+- [Deployment](docs/en/deploy.md) documents production configuration,
+  cookie-auth, CSRF, and WebSocket origin policy.
+- [Runbook](docs/en/runbook.md) documents operational checks, rollback, and
+  duel runtime mechanics.
+
+The old PRD was removed as stale documentation. It is no longer a source of
+truth for auth, WebSocket, or reconnect behavior.
+
 ## Development Team
 
 - [CaXaRo4iK](https://github.com/CaXaRo4iK) - DevOps, deployment,
