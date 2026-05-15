@@ -391,7 +391,7 @@ jobs:
 
       - name: rollback
         id: rollback
-        if: ${{ failure() && steps.deploy.outcome == 'success' }}
+        if: ${{ failure() && steps.deploy.outcome != 'skipped' }}
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
