@@ -106,6 +106,9 @@ jobs:
           REDIS_PORT=16379
           SEAWEEDFS_MASTER_PORT=19333
           SEAWEEDFS_S3_PORT=18333
+          POSTGRES_USER=tpm_ci
+          POSTGRES_PASSWORD=tpm_ci_password
+          POSTGRES_DB=task_per_minute
           HTTP_PORT=8080
           HTTP_HOST=0.0.0.0
           HTTP_ALLOWED_ORIGINS=http://127.0.0.1:3100,http://localhost:3100
