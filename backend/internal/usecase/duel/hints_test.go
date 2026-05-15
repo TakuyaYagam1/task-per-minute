@@ -81,6 +81,107 @@ func TestHintScheduler_FreezeResumeShiftsFutureUnlocks(t *testing.T) {
 	require.Empty(t, after.Unlocked)
 }
 
+func TestHintScheduler_PreservesSparseHintSlots(t *testing.T) {
+	t.Parallel()
+
+	duelID := uuid.New()
+	playerID := uuid.New()
+	startedAt := time.Now().Add(-time.Second)
+	duel := &domain.Duel{
+		ID:        duelID,
+		Player1ID: playerID,
+		Deadline:  time.Now().Add(time.Second),
+		StartedAt: startedAt,
+	}
+	task := hintTestTask(1)
+	task.Hints = []string{"", "", "hint 3"}
+
+	scheduler := duelusecase.NewHintScheduler(clock.Real{}, nil)
+	scheduler.StartDuel(duel, map[uuid.UUID]*domain.Task{playerID: task})
+	t.Cleanup(func() {
+		scheduler.StopDuel(duelID)
+	})
+
+	require.Eventually(t, func() bool {
+		snapshot, ok := scheduler.PlayerSnapshot(duelID, playerID)
+		return ok && len(snapshot.Unlocked) == 1
+	}, time.Second, 10*time.Millisecond)
+
+	snapshot, ok := scheduler.PlayerSnapshot(duelID, playerID)
+	require.True(t, ok)
+	require.Equal(t, []domain.HintScheduleEntry{
+		{Index: 3, UnlockAt: startedAt.Add(750 * time.Millisecond)},
+	}, snapshot.Schedule)
+	require.Equal(t, []domain.UnlockedHint{
+		{Index: 3, Text: "hint 3", UnlockedAt: startedAt.Add(750 * time.Millisecond)},
+	}, snapshot.Unlocked)
+}
+
+func TestHintScheduler_FirstAndThirdSlotsUnlockAtOriginalPercentages(t *testing.T) {
+	t.Parallel()
+
+	duelID := uuid.New()
+	playerID := uuid.New()
+	startedAt := time.Now().Add(-time.Second)
+	duel := &domain.Duel{
+		ID:        duelID,
+		Player1ID: playerID,
+		Deadline:  time.Now().Add(time.Second),
+		StartedAt: startedAt,
+	}
+	task := hintTestTask(1)
+	task.Hints = []string{"hint 1", "", "hint 3"}
+
+	scheduler := duelusecase.NewHintScheduler(clock.Real{}, nil)
+	scheduler.StartDuel(duel, map[uuid.UUID]*domain.Task{playerID: task})
+	t.Cleanup(func() {
+		scheduler.StopDuel(duelID)
+	})
+
+	require.Eventually(t, func() bool {
+		snapshot, ok := scheduler.PlayerSnapshot(duelID, playerID)
+		return ok && len(snapshot.Unlocked) == 2
+	}, time.Second, 10*time.Millisecond)
+
+	snapshot, ok := scheduler.PlayerSnapshot(duelID, playerID)
+	require.True(t, ok)
+	require.Equal(t, []domain.HintScheduleEntry{
+		{Index: 1, UnlockAt: startedAt.Add(250 * time.Millisecond)},
+		{Index: 3, UnlockAt: startedAt.Add(750 * time.Millisecond)},
+	}, snapshot.Schedule)
+	require.Equal(t, []domain.UnlockedHint{
+		{Index: 1, Text: "hint 1", UnlockedAt: startedAt.Add(250 * time.Millisecond)},
+		{Index: 3, Text: "hint 3", UnlockedAt: startedAt.Add(750 * time.Millisecond)},
+	}, snapshot.Unlocked)
+}
+
+func TestHintScheduler_NoHintTaskHasEmptySchedule(t *testing.T) {
+	t.Parallel()
+
+	duelID := uuid.New()
+	playerID := uuid.New()
+	startedAt := time.Now().Add(time.Hour)
+	duel := &domain.Duel{
+		ID:        duelID,
+		Player1ID: playerID,
+		Deadline:  startedAt.Add(time.Minute),
+		StartedAt: startedAt,
+	}
+	task := hintTestTask(60)
+	task.Hints = []string{"", "", ""}
+
+	scheduler := duelusecase.NewHintScheduler(clock.Real{}, nil)
+	scheduler.StartDuel(duel, map[uuid.UUID]*domain.Task{playerID: task})
+	t.Cleanup(func() {
+		scheduler.StopDuel(duelID)
+	})
+
+	snapshot, ok := scheduler.PlayerSnapshot(duelID, playerID)
+	require.True(t, ok)
+	require.Empty(t, snapshot.Schedule)
+	require.Empty(t, snapshot.Unlocked)
+}
+
 func hintTestTask(timeLimit int) *domain.Task {
 	return &domain.Task{
 		ID:          uuid.New(),

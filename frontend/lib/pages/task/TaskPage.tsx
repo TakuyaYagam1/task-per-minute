@@ -90,16 +90,24 @@ const buildHints = (task: TaskPayload): HintView[] => {
     });
   }
 
-  const count = Math.max(task.hint_schedule?.length || 0, unlocked.size, 3);
-  return Array.from({ length: count }, (_, offset) => {
-    const index = offset + 1;
-    const item = unlocked.get(index);
-    return {
-      index,
-      hint: item?.hint,
-      unlockedAt: item?.unlocked_at,
-    };
-  });
+  const indexes = new Set<number>();
+  for (const hint of task.hint_schedule || []) {
+    indexes.add(hint.hint_index);
+  }
+  for (const index of unlocked.keys()) {
+    indexes.add(index);
+  }
+
+  return Array.from(indexes)
+    .sort((a, b) => a - b)
+    .map((index) => {
+      const item = unlocked.get(index);
+      return {
+        index,
+        hint: item?.hint,
+        unlockedAt: item?.unlocked_at,
+      };
+    });
 };
 
 export const TaskPage: React.FC = () => {

@@ -21,14 +21,15 @@ var placeholderFragments = []string{
 }
 
 type Config struct {
-	HTTP      HTTP      `env-prefix:"HTTP_"`
-	DB        DB        `env-prefix:"DB_"`
-	Redis     Redis     `env-prefix:"REDIS_"`
-	SeaweedFS SeaweedFS `env-prefix:"SEAWEEDFS_"`
-	JWT       JWT       `env-prefix:"JWT_"`
-	Admin     Admin     `env-prefix:"ADMIN_"`
-	Player    Player    `env-prefix:"PLAYER_"`
-	WS        WebSocket `env-prefix:"WS_"`
+	HTTP        HTTP        `env-prefix:"HTTP_"`
+	DB          DB          `env-prefix:"DB_"`
+	Redis       Redis       `env-prefix:"REDIS_"`
+	SeaweedFS   SeaweedFS   `env-prefix:"SEAWEEDFS_"`
+	JWT         JWT         `env-prefix:"JWT_"`
+	Admin       Admin       `env-prefix:"ADMIN_"`
+	Player      Player      `env-prefix:"PLAYER_"`
+	Leaderboard Leaderboard `env-prefix:"LEADERBOARD_"`
+	WS          WebSocket   `env-prefix:"WS_"`
 }
 
 type MigrationConfig struct {
@@ -93,6 +94,12 @@ type Player struct {
 	SessionTTL        time.Duration `env:"SESSION_TTL"          env-default:"24h"`
 }
 
+type Leaderboard struct {
+	RateAttempts  int           `env:"RATE_ATTEMPTS"   env-default:"120"`
+	RateWindow    time.Duration `env:"RATE_WINDOW"     env-default:"1m"`
+	RateBucketTTL time.Duration `env:"RATE_BUCKET_TTL" env-default:"15m"`
+}
+
 type WebSocket struct {
 	AllowedOrigins         []string      `env:"ALLOWED_ORIGINS"           env-separator:","`
 	RequireOrigin          bool          `env:"REQUIRE_ORIGIN"            env-default:"false"`
@@ -150,6 +157,9 @@ func (c *Config) Validate() error {
 		return err
 	}
 	if err := validatePlayer(c.Player); err != nil {
+		return err
+	}
+	if err := validateLeaderboard(c.Leaderboard); err != nil {
 		return err
 	}
 	if err := validateWS(&c.WS); err != nil {
@@ -301,7 +311,7 @@ func validateAdmin(cfg *Admin) error {
 		cfg.RefreshRateBucketTTL = cfg.LoginRateBucketTTL
 	}
 	if cfg.RefreshRateAttempts < 0 {
-		return fmt.Errorf("ADMIN_REFRESH_RATE_ATTEMPTS must be positive")
+		return fmt.Errorf("ADMIN_REFRESH_RATE_ATTEMPTS must be non-negative")
 	}
 	if err := positiveDuration("ADMIN_REFRESH_RATE_WINDOW", cfg.RefreshRateWindow); err != nil {
 		return err
@@ -320,6 +330,16 @@ func validatePlayer(cfg Player) error {
 		return err
 	}
 	return positiveDuration("PLAYER_SESSION_TTL", cfg.SessionTTL)
+}
+
+func validateLeaderboard(cfg Leaderboard) error {
+	if cfg.RateAttempts <= 0 {
+		return fmt.Errorf("LEADERBOARD_RATE_ATTEMPTS must be positive")
+	}
+	if err := positiveDuration("LEADERBOARD_RATE_WINDOW", cfg.RateWindow); err != nil {
+		return err
+	}
+	return positiveDuration("LEADERBOARD_RATE_BUCKET_TTL", cfg.RateBucketTTL)
 }
 
 func validateWS(cfg *WebSocket) error {

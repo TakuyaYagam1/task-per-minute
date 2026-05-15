@@ -14,7 +14,7 @@ func createTaskInput(body openapi.CreateTaskRequest) adminusecase.TaskInput {
 		Difficulty:  domain.Difficulty(body.Difficulty),
 		TimeLimit:   int(body.TimeLimit),
 		Flag:        body.Flag,
-		Hints:       cloneHints(body.Hints),
+		Hints:       hintsFromNullable(body.Hints),
 		TaskURL:     body.TaskUrl,
 	}
 }
@@ -64,7 +64,7 @@ func mergeTaskUpdate(input *adminusecase.TaskInput, body openapi.UpdateTaskReque
 		input.Flag = *body.Flag
 	}
 	if body.Hints != nil {
-		input.Hints = cloneHints(*body.Hints)
+		input.Hints = hintsFromNullable(*body.Hints)
 	}
 	if value, set := body.SourceFileUrl.Value(); set {
 		input.SourceFileURL = value
@@ -76,4 +76,14 @@ func mergeTaskUpdate(input *adminusecase.TaskInput, body openapi.UpdateTaskReque
 
 func cloneHints(hints []string) []string {
 	return append([]string(nil), hints...)
+}
+
+func hintsFromNullable(hints []*string) []string {
+	out := make([]string, len(hints))
+	for i, hint := range hints {
+		if hint != nil {
+			out[i] = *hint
+		}
+	}
+	return out
 }

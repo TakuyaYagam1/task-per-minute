@@ -310,7 +310,7 @@ func TestTaskRepo_CountByDifficulty_UsesIsolatedDB(t *testing.T) {
 	require.Equal(t, int64(0), easyAfterTruncate)
 }
 
-func TestTaskRepo_CountByDifficulty_ExcludesTasksWithoutHints(t *testing.T) {
+func TestTaskRepo_CountByDifficulty_IncludesTasksWithoutHints(t *testing.T) {
 	pool, cleanup := SetupTestDB(t)
 	t.Cleanup(cleanup)
 
@@ -325,7 +325,7 @@ func TestTaskRepo_CountByDifficulty_ExcludesTasksWithoutHints(t *testing.T) {
 
 	got, err := repo.CountByDifficulty(ctx, domain.DifficultyEasy)
 	require.NoError(t, err)
-	require.Equal(t, int64(1), got)
+	require.Equal(t, int64(2), got)
 }
 
 func TestTaskRepo_IsUsedInActiveDuel(t *testing.T) {

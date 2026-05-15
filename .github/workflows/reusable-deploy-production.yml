@@ -103,11 +103,22 @@ jobs:
           compose() {
             docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml "$@"
           }
+          remove_legacy_edge() {
+            ids="$(
+              docker ps -aq \
+                --filter "label=com.docker.compose.project=task-per-minute" \
+                --filter "label=com.docker.compose.service=nginx"
+              docker ps -aq \
+                --filter "label=com.docker.compose.project=task-per-minute" \
+                --filter "label=com.docker.compose.service=certbot"
+            )"
+            [ -z "$ids" ] || docker rm -f $ids
+          }
 
           BACKEND_IMAGE="$BACKEND_IMAGE_REF" FRONTEND_IMAGE="$FRONTEND_IMAGE_REF" compose pull backend frontend
           BACKEND_IMAGE="$BACKEND_IMAGE_REF" FRONTEND_IMAGE="$FRONTEND_IMAGE_REF" compose up -d --remove-orphans backend frontend
-          BACKEND_IMAGE="$BACKEND_IMAGE_REF" FRONTEND_IMAGE="$FRONTEND_IMAGE_REF" compose up -d --remove-orphans nginx certbot
-          BACKEND_IMAGE="$BACKEND_IMAGE_REF" FRONTEND_IMAGE="$FRONTEND_IMAGE_REF" compose exec -T nginx sh -c 'touch /var/run/certbot/reload-nginx'
+          remove_legacy_edge
+          BACKEND_IMAGE="$BACKEND_IMAGE_REF" FRONTEND_IMAGE="$FRONTEND_IMAGE_REF" compose up -d --remove-orphans caddy
           REMOTE
 
       - name: verify backend health
@@ -140,7 +151,7 @@ jobs:
           PY
           )"
 
-          for attempt in $(seq 1 12); do
+          for attempt in $(seq 1 24); do
             body="$(curl -fsS --max-time 5 "$health_url" || true)"
             if printf '%s' "$body" | jq -e '.status == "ok" and .db == "ok" and .redis == "ok" and .seaweedfs == "ok" and (.schema_version | type == "number" and . > 0)' >/dev/null 2>&1; then
               echo "backend health check passed on attempt $attempt"
@@ -150,7 +161,7 @@ jobs:
             sleep 5
           done
 
-          echo "backend health check failed after 12 attempts"
+          echo "backend health check failed after 24 attempts"
           exit 1
 
       - name: verify frontend health
@@ -190,7 +201,7 @@ jobs:
           PY
           )"
 
-          for attempt in $(seq 1 12); do
+          for attempt in $(seq 1 24); do
             if curl -fsS --max-time 5 "$health_url" >/dev/null; then
               api_body="$(curl -fsS --max-time 5 "$api_url" || true)"
               if printf '%s' "$api_body" | jq -e '.entries | type == "array"' >/dev/null 2>&1; then
@@ -201,12 +212,12 @@ jobs:
             else
               echo "frontend health check attempt $attempt failed"
             fi
-            if [ "$attempt" -lt 12 ]; then
+            if [ "$attempt" -lt 24 ]; then
               sleep 5
             fi
           done
 
-          echo "frontend health or same-origin api rewrite check failed after 12 attempts"
+          echo "frontend health or same-origin api rewrite check failed after 24 attempts"
           exit 1
 
       - name: verify auth and websocket smoke
@@ -427,11 +438,38 @@ jobs:
           compose() {
             docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.yml "$@"
           }
+          compose_has_service() {
+            compose config --services | grep -Fxq "$1"
+          }
+          remove_legacy_edge() {
+            ids="$(
+              docker ps -aq \
+                --filter "label=com.docker.compose.project=task-per-minute" \
+                --filter "label=com.docker.compose.service=nginx"
+              docker ps -aq \
+                --filter "label=com.docker.compose.project=task-per-minute" \
+                --filter "label=com.docker.compose.service=certbot"
+            )"
+            [ -z "$ids" ] || docker rm -f $ids
+          }
+          start_edge() {
+            if compose_has_service caddy; then
+              remove_legacy_edge
+              BACKEND_IMAGE="$previous_backend_image" FRONTEND_IMAGE="$previous_frontend_image" compose up -d --remove-orphans caddy
+              return
+            fi
+            if compose_has_service nginx && compose_has_service certbot; then
+              BACKEND_IMAGE="$previous_backend_image" FRONTEND_IMAGE="$previous_frontend_image" compose up -d --remove-orphans nginx certbot
+              BACKEND_IMAGE="$previous_backend_image" FRONTEND_IMAGE="$previous_frontend_image" compose exec -T nginx sh -c 'touch /var/run/certbot/reload-nginx'
+              return
+            fi
+            echo "no supported edge service found in rollback compose stack"
+            exit 1
+          }
 
           BACKEND_IMAGE="$previous_backend_image" FRONTEND_IMAGE="$previous_frontend_image" compose pull backend frontend
           BACKEND_IMAGE="$previous_backend_image" FRONTEND_IMAGE="$previous_frontend_image" compose up -d --remove-orphans backend frontend
-          BACKEND_IMAGE="$previous_backend_image" FRONTEND_IMAGE="$previous_frontend_image" compose up -d --remove-orphans nginx certbot
-          BACKEND_IMAGE="$previous_backend_image" FRONTEND_IMAGE="$previous_frontend_image" compose exec -T nginx sh -c 'touch /var/run/certbot/reload-nginx'
+          start_edge
           cd ../..
 
           set_env_var() {
@@ -492,7 +530,7 @@ jobs:
           PY
           )"
 
-          for attempt in $(seq 1 12); do
+          for attempt in $(seq 1 24); do
             body="$(curl -fsS --max-time 5 "$health_url" || true)"
             if printf '%s' "$body" | jq -e '.status == "ok" and .db == "ok" and .redis == "ok" and .seaweedfs == "ok" and (.schema_version | type == "number" and . > 0)' >/dev/null 2>&1; then
               echo "backend rollback health check passed on attempt $attempt"
@@ -502,7 +540,7 @@ jobs:
             sleep 5
           done
 
-          echo "backend rollback health check failed after 12 attempts"
+          echo "backend rollback health check failed after 24 attempts"
           exit 1
 
       - name: verify rollback frontend health
@@ -543,7 +581,7 @@ jobs:
           PY
           )"
 
-          for attempt in $(seq 1 12); do
+          for attempt in $(seq 1 24); do
             if curl -fsS --max-time 5 "$health_url" >/dev/null; then
               api_body="$(curl -fsS --max-time 5 "$api_url" || true)"
               if printf '%s' "$api_body" | jq -e '.entries | type == "array"' >/dev/null 2>&1; then
@@ -554,12 +592,12 @@ jobs:
             else
               echo "frontend rollback health check attempt $attempt failed"
             fi
-            if [ "$attempt" -lt 12 ]; then
+            if [ "$attempt" -lt 24 ]; then
               sleep 5
             fi
           done
 
-          echo "frontend rollback health or same-origin api rewrite check failed after 12 attempts"
+          echo "frontend rollback health or same-origin api rewrite check failed after 24 attempts"
           exit 1
 
       - name: notify

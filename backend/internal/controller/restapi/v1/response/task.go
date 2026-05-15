@@ -14,11 +14,24 @@ func Task(task *domain.Task) openapi.TaskResponse {
 		Difficulty:    openapi.TaskDifficulty(task.Difficulty),
 		TimeLimit:     IntToInt32(task.TimeLimit),
 		Flag:          task.Flag,
-		Hints:         append([]string(nil), task.Hints...),
+		Hints:         nullableHints(task.Hints),
 		TaskUrl:       task.TaskURL,
 		SourceFileUrl: task.SourceFileURL,
 		CreatedAt:     task.CreatedAt,
 	}
+}
+
+func nullableHints(hints []string) []*string {
+	normalized, _ := domain.NormalizeTaskHints(hints)
+	out := make([]*string, len(normalized))
+	for i, hint := range normalized {
+		if hint == "" {
+			continue
+		}
+		value := hint
+		out[i] = &value
+	}
+	return out
 }
 
 func Tasks(tasks []*domain.Task) []openapi.TaskResponse {

@@ -101,6 +101,79 @@ test('task description wraps long unbroken text inside card', async ({ page }) =
   await expect.poll(async () => descriptionNode.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
 });
 
+test('task page hides hints card when schedule is empty', async ({ page }) => {
+  const playerID = '16161616-1616-1616-1616-161616161616';
+  const sessionToken = '10000000-0000-0000-0000-000000000116';
+  const duelID = '17171717-1717-1717-1717-171717171717';
+  const deadline = inSecondsISO(300);
+
+  await page.addInitScript(({ playerID, sessionToken, duelID, deadline }) => {
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('currentGame', JSON.stringify({
+      duel_id: duelID,
+      deadline,
+      time_limit_seconds: 300,
+      task: {
+        id: '18181818-1818-1818-1818-181818181818',
+        title: 'No Hint Task',
+        description: 'Task has no configured hint slots.',
+        category: 'web',
+        difficulty: 'easy',
+        time_limit: 300,
+        time_limit_seconds: 300,
+        task_url: 'https://example.com/task',
+        hint_schedule: [],
+      },
+      opponent_username: 'bob',
+    }));
+  }, { playerID, sessionToken, duelID, deadline });
+
+  await page.routeWebSocket((url) => url.pathname === '/ws', () => {});
+
+  await page.goto('/task');
+  await expect(page.getByRole('heading', { name: 'No Hint Task' })).toBeVisible();
+  await expect(page.getByText('Подсказки')).toBeHidden();
+});
+
+test('task page preserves sparse positional hint schedule indexes', async ({ page }) => {
+  const playerID = '19191919-1919-1919-1919-191919191919';
+  const sessionToken = '10000000-0000-0000-0000-000000000119';
+  const duelID = '20202020-2020-2020-2020-202020202020';
+  const deadline = inSecondsISO(300);
+  const unlockAt = inSecondsISO(225);
+
+  await page.addInitScript(({ playerID, sessionToken, duelID, deadline, unlockAt }) => {
+    window.sessionStorage.setItem('player_id', playerID);
+    window.sessionStorage.setItem('username', 'alice');
+    window.sessionStorage.setItem('currentGame', JSON.stringify({
+      duel_id: duelID,
+      deadline,
+      time_limit_seconds: 300,
+      task: {
+        id: '21212121-2121-2121-2121-212121212121',
+        title: 'Sparse Hint Task',
+        description: 'Only slot 3 is configured.',
+        category: 'web',
+        difficulty: 'easy',
+        time_limit: 300,
+        time_limit_seconds: 300,
+        task_url: 'https://example.com/task',
+        hint_schedule: [{ hint_index: 3, unlock_at: unlockAt }],
+      },
+      opponent_username: 'bob',
+    }));
+  }, { playerID, sessionToken, duelID, deadline, unlockAt });
+
+  await page.routeWebSocket((url) => url.pathname === '/ws', () => {});
+
+  await page.goto('/task');
+  await expect(page.getByRole('heading', { name: 'Sparse Hint Task' })).toBeVisible();
+  await expect(page.getByText('Подсказка #3 пока закрыта')).toBeVisible();
+  await expect(page.getByText('Подсказка #1 пока закрыта')).toBeHidden();
+  await expect(page.getByText('Подсказка #2 пока закрыта')).toBeHidden();
+});
+
 test('task_assigned accepts non-core task category from websocket guard', async ({ page }) => {
   const playerID = '12121212-1212-1212-1212-121212121212';
   const sessionToken = '10000000-0000-0000-0000-000000000101';

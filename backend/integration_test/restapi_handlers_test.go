@@ -80,7 +80,7 @@ func TestRESTHandlers_OpenAPIResponseShapes(t *testing.T) {
 	require.Equal(t, http.StatusCreated, createResp.Code)
 	f.validateResponse(t, createReq, createResp)
 	createdTask := decodeJSON[openapi.TaskResponse](t, createResp)
-	require.Equal(t, []string{"first hint", "second hint", "third hint"}, createdTask.Hints)
+	require.Equal(t, nullableOpenAPIHints([]string{"first hint", "second hint", "third hint"}), createdTask.Hints)
 
 	for _, tc := range []struct {
 		name   string

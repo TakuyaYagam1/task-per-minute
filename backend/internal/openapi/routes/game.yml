@@ -13,6 +13,17 @@
           application/json:
             schema:
               $ref: '../components/schemas.yml#/LeaderboardResponse'
+      '429':
+        description: Too many leaderboard requests from the same client IP.
+        headers:
+          Retry-After:
+            description: Seconds until the leaderboard rate window resets.
+            schema:
+              type: string
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
 
 /api/v1/duels/{id}:
   get:

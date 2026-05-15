@@ -17,9 +17,6 @@ FROM player_task_history pth
   JOIN tasks t ON t.id = pth.task_id
 WHERE pth.player_id = $1
   AND t.difficulty = $2
-  AND btrim(t.hint_1) <> ''
-  AND btrim(t.hint_2) <> ''
-  AND btrim(t.hint_3) <> ''
 `
 
 type CountSolvedTasksByDifficultyParams struct {
@@ -38,9 +35,6 @@ const countTasksByDifficulty = `-- name: CountTasksByDifficulty :one
 SELECT COUNT(*) AS count
 FROM tasks
 WHERE difficulty = $1
-  AND btrim(hint_1) <> ''
-  AND btrim(hint_2) <> ''
-  AND btrim(hint_3) <> ''
 `
 
 func (q *Queries) CountTasksByDifficulty(ctx context.Context, difficulty string) (int64, error) {
@@ -256,9 +250,6 @@ SELECT id,
   created_at
 FROM tasks
 WHERE difficulty = $1
-  AND btrim(hint_1) <> ''
-  AND btrim(hint_2) <> ''
-  AND btrim(hint_3) <> ''
 ORDER BY created_at DESC,
   id DESC
 `

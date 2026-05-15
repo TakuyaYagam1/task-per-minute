@@ -175,7 +175,7 @@ type CreateTaskRequest struct {
 	Description string         `json:"description"`
 	Difficulty  TaskDifficulty `json:"difficulty"`
 	Flag        string         `json:"flag"`
-	Hints       []string       `json:"hints"`
+	Hints       []*string      `json:"hints,omitempty"`
 
 	// TaskUrl Task endpoint. Accepts http(s) URLs or host:port targets for pwn/nc tasks.
 	TaskUrl   *string `json:"task_url"`
@@ -296,7 +296,7 @@ type TaskResponse struct {
 	Description   string             `json:"description"`
 	Difficulty    TaskDifficulty     `json:"difficulty"`
 	Flag          string             `json:"flag"`
-	Hints         []string           `json:"hints"`
+	Hints         []*string          `json:"hints"`
 	Id            openapi_types.UUID `json:"id"`
 	SourceFileUrl *string            `json:"source_file_url"`
 
@@ -321,7 +321,7 @@ type UpdateTaskRequest struct {
 	Description *string         `json:"description,omitempty"`
 	Difficulty  *TaskDifficulty `json:"difficulty,omitempty"`
 	Flag        *string         `json:"flag,omitempty"`
-	Hints       *[]string       `json:"hints,omitempty"`
+	Hints       *[]*string      `json:"hints,omitempty"`
 
 	// SourceFileUrl Set to null to clear an uploaded source file. Non-null values are managed by the source upload endpoint.
 	SourceFileUrl NullableString `json:"source_file_url,omitempty"`

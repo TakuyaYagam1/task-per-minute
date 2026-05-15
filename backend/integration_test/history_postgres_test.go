@@ -91,21 +91,23 @@ func TestHistoryRepo_SelectAnyTaskByDifficulty_IgnoresHistory(t *testing.T) {
 		"the result must come from the requested bucket - id may belong to any concurrent test")
 }
 
-func TestHistoryRepo_SelectTaskByDifficulty_SkipsTasksWithoutHints(t *testing.T) {
+func TestHistoryRepo_SelectTaskByDifficulty_IncludesTasksWithoutHints(t *testing.T) {
 	pool, cleanup := SetupTestDB(t)
 	t.Cleanup(cleanup)
 	f := newDuelFixtureWithPool(pool)
 	ctx := context.Background()
 
-	_, err := pool.Exec(ctx, `
+	var noHintID uuid.UUID
+	err := pool.QueryRow(ctx, `
 		INSERT INTO tasks (title, description, category, difficulty, time_limit, flag)
-		VALUES ('legacy', 'missing hints', 'web', 'easy', 60, 'FLAG{legacy}')`)
+		VALUES ('legacy', 'missing hints', 'web', 'easy', 60, 'FLAG{legacy}')
+		RETURNING id`).Scan(&noHintID)
 	require.NoError(t, err)
 	valid := f.makeTask(t, uniq("valid"), domain.DifficultyEasy)
 
 	got, err := f.history.SelectAnyTaskByDifficulty(ctx, domain.DifficultyEasy)
 	require.NoError(t, err)
-	require.Equal(t, valid.ID, got.ID)
+	require.True(t, got.ID == noHintID || got.ID == valid.ID)
 }
 
 func TestHistoryRepo_RejectsInvalidDifficulty(t *testing.T) {

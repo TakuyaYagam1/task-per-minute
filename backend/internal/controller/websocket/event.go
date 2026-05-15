@@ -196,6 +196,20 @@ func taskPayload(task *domain.Task, hints duelusecase.HintSnapshot) TaskPayload 
 	}
 }
 
+func taskVisibleHintSchedule(startedAt time.Time, task *domain.Task) []domain.HintScheduleEntry {
+	if task == nil {
+		return nil
+	}
+	schedule := domain.BuildHintSchedule(startedAt, task.TimeLimit)
+	out := make([]domain.HintScheduleEntry, 0, len(schedule))
+	for idx, entry := range schedule {
+		if _, ok := domain.TaskHintText(task.Hints, idx); ok {
+			out = append(out, entry)
+		}
+	}
+	return out
+}
+
 func duelFinishedPayload(
 	duel *domain.Duel,
 	recipientID uuid.UUID,

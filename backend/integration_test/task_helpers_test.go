@@ -85,6 +85,19 @@ func defaultTaskHints(seed string) []string {
 	}
 }
 
+func defaultOpenAPIHints(seed string) []*string {
+	return nullableOpenAPIHints(defaultTaskHints(seed))
+}
+
+func nullableOpenAPIHints(hints []string) []*string {
+	out := make([]*string, len(hints))
+	for i, hint := range hints {
+		value := hint
+		out[i] = &value
+	}
+	return out
+}
+
 func taskForPlayer(t testing.TB, result *duelusecase.MatchResult, playerID uuid.UUID) *domain.Task {
 	t.Helper()
 

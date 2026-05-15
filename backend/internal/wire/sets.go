@@ -110,6 +110,7 @@ var HTTPSet = wire.NewSet(
 	provideLoginRateLimiter,
 	provideRefreshRateLimiter,
 	provideJoinRateLimiter,
+	provideLeaderboardRateLimiter,
 	provideRESTServer,
 	provideHTTPHandler,
 	provideHTTPServer,

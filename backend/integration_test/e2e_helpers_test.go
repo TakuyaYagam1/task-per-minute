@@ -137,7 +137,7 @@ func (a *e2eApp) createAdminTask(t *testing.T, title, flag string) openapi.TaskR
 		Difficulty:  openapi.Easy,
 		TimeLimit:   90,
 		Flag:        flag,
-		Hints:       defaultTaskHints(title),
+		Hints:       defaultOpenAPIHints(title),
 	})
 }
 

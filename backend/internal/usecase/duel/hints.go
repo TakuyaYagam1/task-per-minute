@@ -81,17 +81,26 @@ func (s *HintScheduler) StartDuel(duel *domain.Duel, assignments map[uuid.UUID]*
 	s.mu.Lock()
 	s.states[duel.ID] = state
 	for playerID, task := range assignments {
-		if task == nil || !domain.IsValidTaskHints(task.Hints) {
+		if task == nil {
 			continue
 		}
+		normalizedHints, ok := domain.NormalizeTaskHints(task.Hints)
+		if !ok {
+			continue
+		}
+		task = cloneTask(task)
+		task.Hints = normalizedHints
 		player := &hintPlayerState{
 			playerID: playerID,
 			duelID:   duel.ID,
-			task:     cloneTask(task),
+			task:     task,
 			schedule: domain.BuildHintSchedule(duel.StartedAt, task.TimeLimit),
 		}
 		state.players[playerID] = player
 		for idx := range domain.TaskHintCount {
+			if _, ok := domain.TaskHintText(player.task.Hints, idx); !ok {
+				continue
+			}
 			delay := player.schedule[idx].UnlockAt.Sub(now)
 			if delay < 0 {
 				delay = 0
@@ -164,6 +173,9 @@ func (s *HintScheduler) Freeze(duelID uuid.UUID, pausedAt time.Time) bool {
 		}
 		player.paused = true
 		for idx, schedule := range player.schedule {
+			if _, ok := domain.TaskHintText(player.task.Hints, idx); !ok {
+				continue
+			}
 			if player.isUnlocked(idx) {
 				continue
 			}
@@ -196,6 +208,9 @@ func (s *HintScheduler) Resume(duelID uuid.UUID, resumedAt time.Time) bool {
 		}
 		player.paused = false
 		for idx := range domain.TaskHintCount {
+			if _, ok := domain.TaskHintText(player.task.Hints, idx); !ok {
+				continue
+			}
 			if player.isUnlocked(idx) {
 				continue
 			}
@@ -228,7 +243,7 @@ func (s *HintScheduler) PlayerSnapshot(duelID, playerID uuid.UUID) (HintSnapshot
 	}
 	return HintSnapshot{
 		Task:     cloneTask(player.task),
-		Schedule: cloneSchedule(player.schedule),
+		Schedule: player.visibleSchedule(),
 		Unlocked: cloneUnlocked(player.unlocked),
 	}, true
 }
@@ -249,7 +264,11 @@ func (s *HintScheduler) unlock(duelID, playerID uuid.UUID, idx int) {
 		return
 	}
 
-	hint := player.task.Hints[idx]
+	hint, ok := domain.TaskHintText(player.task.Hints, idx)
+	if !ok {
+		s.mu.Unlock()
+		return
+	}
 	unlocked := domain.UnlockedHint{
 		Index:      idx + 1,
 		Text:       hint,
@@ -279,6 +298,16 @@ func (p *hintPlayerState) isUnlocked(idx int) bool {
 	return false
 }
 
+func (p *hintPlayerState) visibleSchedule() []domain.HintScheduleEntry {
+	out := make([]domain.HintScheduleEntry, 0, len(p.schedule))
+	for idx, entry := range p.schedule {
+		if _, ok := domain.TaskHintText(p.task.Hints, idx); ok {
+			out = append(out, entry)
+		}
+	}
+	return out
+}
+
 func cloneTask(task *domain.Task) *domain.Task {
 	if task == nil {
 		return nil
@@ -286,10 +315,6 @@ func cloneTask(task *domain.Task) *domain.Task {
 	out := *task
 	out.Hints = append([]string(nil), task.Hints...)
 	return &out
-}
-
-func cloneSchedule(in []domain.HintScheduleEntry) []domain.HintScheduleEntry {
-	return append([]domain.HintScheduleEntry(nil), in...)
 }
 
 func cloneUnlocked(in []domain.UnlockedHint) []domain.UnlockedHint {

@@ -17,6 +17,11 @@ func (s *Server) GetLeaderboard(w http.ResponseWriter, r *http.Request) {
 		errmap.HandleError(w, r, apperr.ErrInternal)
 		return
 	}
+	if !s.leaderboardLimiter.Allow(middleware.ClientIPFromRequest(r)) {
+		w.Header().Set("Retry-After", s.leaderboardLimiter.RetryAfter())
+		errmap.HandleError(w, r, apperr.ErrRateLimited)
+		return
+	}
 
 	entries, err := s.leaderboard.Top50(r.Context())
 	if err != nil {

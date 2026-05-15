@@ -50,10 +50,7 @@ func TestTaskUsecase_CreateTask_Validation(t *testing.T) {
 		{"unsupported task url scheme", func(in *admin.TaskInput) { url := "ftp://example.com/task"; in.TaskURL = &url }},
 		{"invalid source file url", func(in *admin.TaskInput) { url := "not-a-url"; in.SourceFileURL = &url }},
 		{"unsupported source file url scheme", func(in *admin.TaskInput) { url := "ftp://example.com/source.zip"; in.SourceFileURL = &url }},
-		{"missing hints", func(in *admin.TaskInput) { in.Hints = nil }},
-		{"too few hints", func(in *admin.TaskInput) { in.Hints = []string{"one", "two"} }},
 		{"too many hints", func(in *admin.TaskInput) { in.Hints = []string{"one", "two", "three", "four"} }},
-		{"empty hint", func(in *admin.TaskInput) { in.Hints[1] = " " }},
 	}
 
 	for _, tt := range tests {
@@ -64,6 +61,39 @@ func TestTaskUsecase_CreateTask_Validation(t *testing.T) {
 			tt.mutate(&in)
 			_, err := admin.NewTaskUsecase(usecasemocks.NewMockTaskRepo(t)).CreateTask(t.Context(), in)
 			require.ErrorIs(t, err, apperr.ErrTaskValidation)
+		})
+	}
+}
+
+func TestTaskUsecase_CreateTask_NormalizesPositionalHints(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		hints []string
+		want  []string
+	}{
+		{name: "missing", hints: nil, want: []string{"", "", ""}},
+		{name: "first only", hints: []string{" first "}, want: []string{"first", "", ""}},
+		{name: "third only", hints: []string{"", " ", " third "}, want: []string{"", "", "third"}},
+		{name: "first and third", hints: []string{" first ", "", " third "}, want: []string{"first", "", "third"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			tasks := usecasemocks.NewMockTaskRepo(t)
+			in := validTaskInput()
+			in.Hints = tt.hints
+			normalized := in
+			normalized.Hints = tt.want
+			created := taskFromInput(uuid.New(), normalized)
+			tasks.EXPECT().Create(mock.Anything, normalized).Return(created, nil)
+
+			got, err := admin.NewTaskUsecase(tasks).CreateTask(t.Context(), in)
+			require.NoError(t, err)
+			require.Same(t, created, got)
 		})
 	}
 }

@@ -25,10 +25,11 @@ func NewTaskPostgres(tx *TxManager) *TaskPostgres {
 type TaskInput = usecase.TaskInput
 
 func (r *TaskPostgres) Create(ctx context.Context, in TaskInput) (*domain.Task, error) {
-	if err := validateTaskInput(in); err != nil {
+	normalized, err := normalizeTaskInput(in)
+	if err != nil {
 		return nil, err
 	}
-	row, err := r.tx.Querier(ctx).CreateTask(ctx, createTaskParams(in))
+	row, err := r.tx.Querier(ctx).CreateTask(ctx, createTaskParams(normalized))
 	if err != nil {
 		return nil, fmt.Errorf("TaskPostgres - Create - Querier.CreateTask: %w", err)
 	}
@@ -74,10 +75,11 @@ func (r *TaskPostgres) ListByDifficulty(ctx context.Context, difficulty domain.D
 }
 
 func (r *TaskPostgres) Update(ctx context.Context, id uuid.UUID, in TaskInput) (*domain.Task, error) {
-	if err := validateTaskInput(in); err != nil {
+	normalized, err := normalizeTaskInput(in)
+	if err != nil {
 		return nil, err
 	}
-	row, err := r.tx.Querier(ctx).UpdateTask(ctx, updateTaskParams(id, in))
+	row, err := r.tx.Querier(ctx).UpdateTask(ctx, updateTaskParams(id, normalized))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, apperr.ErrTaskNotFound
@@ -87,29 +89,31 @@ func (r *TaskPostgres) Update(ctx context.Context, id uuid.UUID, in TaskInput) (
 	return taskToDomain(row), nil
 }
 
-func validateTaskInput(in TaskInput) error {
+func normalizeTaskInput(in TaskInput) (TaskInput, error) {
 	if !domain.IsValidTaskTitle(in.Title) {
-		return apperr.ErrTaskValidation
+		return TaskInput{}, apperr.ErrTaskValidation
 	}
 	if !domain.IsValidTaskDescription(in.Description) {
-		return apperr.ErrTaskValidation
+		return TaskInput{}, apperr.ErrTaskValidation
 	}
 	if !in.Category.IsValid() || !in.Difficulty.IsValid() {
-		return apperr.ErrTaskValidation
+		return TaskInput{}, apperr.ErrTaskValidation
 	}
 	if !domain.IsValidTaskTimeLimit(in.TimeLimit) {
-		return apperr.ErrTaskValidation
+		return TaskInput{}, apperr.ErrTaskValidation
 	}
 	if !domain.IsValidTaskFlag(in.Flag) {
-		return apperr.ErrTaskValidation
+		return TaskInput{}, apperr.ErrTaskValidation
 	}
 	if !domain.IsValidTaskURLShape(in.Category, in.TaskURL, in.SourceFileURL) {
-		return apperr.ErrTaskValidation
+		return TaskInput{}, apperr.ErrTaskValidation
 	}
-	if !domain.IsValidTaskHints(in.Hints) {
-		return apperr.ErrTaskValidation
+	hints, ok := domain.NormalizeTaskHints(in.Hints)
+	if !ok {
+		return TaskInput{}, apperr.ErrTaskValidation
 	}
-	return nil
+	in.Hints = hints
+	return in, nil
 }
 
 func createTaskParams(in TaskInput) sqlc.CreateTaskParams {
@@ -119,7 +123,7 @@ func createTaskParams(in TaskInput) sqlc.CreateTaskParams {
 		Description:   in.Description,
 		Category:      string(in.Category),
 		Difficulty:    string(in.Difficulty),
-		TimeLimit:     int32(in.TimeLimit), //nolint:gosec // validateTaskInput rejects values outside the PostgreSQL int4 range.
+		TimeLimit:     int32(in.TimeLimit), //nolint:gosec // normalizeTaskInput rejects values outside the PostgreSQL int4 range.
 		Flag:          in.Flag,
 		Hint1:         hint1,
 		Hint2:         hint2,
@@ -137,7 +141,7 @@ func updateTaskParams(id uuid.UUID, in TaskInput) sqlc.UpdateTaskParams {
 		Description:   in.Description,
 		Category:      string(in.Category),
 		Difficulty:    string(in.Difficulty),
-		TimeLimit:     int32(in.TimeLimit), //nolint:gosec // validateTaskInput rejects values outside the PostgreSQL int4 range.
+		TimeLimit:     int32(in.TimeLimit), //nolint:gosec // normalizeTaskInput rejects values outside the PostgreSQL int4 range.
 		Flag:          in.Flag,
 		Hint1:         hint1,
 		Hint2:         hint2,
@@ -148,8 +152,15 @@ func updateTaskParams(id uuid.UUID, in TaskInput) sqlc.UpdateTaskParams {
 }
 
 func taskHintPointers(hints []string) (*string, *string, *string) {
-	hint1, hint2, hint3 := hints[0], hints[1], hints[2]
-	return &hint1, &hint2, &hint3
+	normalized, _ := domain.NormalizeTaskHints(hints)
+	return taskHintPointer(normalized[0]), taskHintPointer(normalized[1]), taskHintPointer(normalized[2])
+}
+
+func taskHintPointer(hint string) *string {
+	if hint == "" {
+		return nil
+	}
+	return &hint
 }
 
 func (r *TaskPostgres) Delete(ctx context.Context, id uuid.UUID) error {

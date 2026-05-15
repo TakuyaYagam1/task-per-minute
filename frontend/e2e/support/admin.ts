@@ -14,7 +14,7 @@ export type MockAdminTask = {
   difficulty: string;
   time_limit: number;
   flag: string;
-  hints: string[];
+  hints: (string | null)[];
   task_url: string | null;
   source_file_url: string | null;
   created_at: string;

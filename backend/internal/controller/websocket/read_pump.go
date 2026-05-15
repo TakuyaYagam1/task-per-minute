@@ -515,7 +515,7 @@ func taskAssignedPayload(duel *domain.Duel, task *domain.Task) TaskAssignedPaylo
 		Deadline:         duel.Deadline,
 		TimeLimitSeconds: task.TimeLimit,
 		Task: taskPayload(task, duelusecase.HintSnapshot{
-			Schedule: domain.BuildHintSchedule(duel.StartedAt, task.TimeLimit),
+			Schedule: taskVisibleHintSchedule(duel.StartedAt, task),
 		}),
 	}
 }

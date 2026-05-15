@@ -53,11 +53,12 @@ func taskToDomain(t sqlc.Task) *domain.Task {
 }
 
 func taskHintsToDomain(hint1, hint2, hint3 *string) []string {
-	return []string{
+	hints, _ := domain.NormalizeTaskHints([]string{
 		stringValue(hint1),
 		stringValue(hint2),
 		stringValue(hint3),
-	}
+	})
+	return hints
 }
 
 func stringValue(value *string) string {

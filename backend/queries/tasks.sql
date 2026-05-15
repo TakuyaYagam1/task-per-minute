@@ -75,9 +75,6 @@ SELECT id,
   created_at
 FROM tasks
 WHERE difficulty = $1
-  AND btrim(hint_1) <> ''
-  AND btrim(hint_2) <> ''
-  AND btrim(hint_3) <> ''
 ORDER BY created_at DESC,
   id DESC;
 -- name: UpdateTask :one
@@ -132,16 +129,10 @@ SELECT EXISTS (
 -- name: CountTasksByDifficulty :one
 SELECT COUNT(*) AS count
 FROM tasks
-WHERE difficulty = $1
-  AND btrim(hint_1) <> ''
-  AND btrim(hint_2) <> ''
-  AND btrim(hint_3) <> '';
+WHERE difficulty = $1;
 -- name: CountSolvedTasksByDifficulty :one
 SELECT COUNT(*) AS count
 FROM player_task_history pth
   JOIN tasks t ON t.id = pth.task_id
 WHERE pth.player_id = $1
-  AND t.difficulty = $2
-  AND btrim(t.hint_1) <> ''
-  AND btrim(t.hint_2) <> ''
-  AND btrim(t.hint_3) <> '';
+  AND t.difficulty = $2;

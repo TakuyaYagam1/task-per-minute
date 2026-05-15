@@ -30,7 +30,7 @@ func TestCORS_AllowedPreflight(t *testing.T) {
 	require.Equal(t, "http://localhost:3000", rr.Header().Get("Access-Control-Allow-Origin"))
 	require.Equal(t, "true", rr.Header().Get("Access-Control-Allow-Credentials"))
 	require.Equal(t, "GET, POST, PUT, DELETE, OPTIONS", rr.Header().Get("Access-Control-Allow-Methods"))
-	require.Equal(t, "Content-Type, Authorization, X-CSRF-Token", rr.Header().Get("Access-Control-Allow-Headers"))
+	require.Equal(t, "Content-Type, Authorization, X-CSRF-Token, X-Admin-Refresh-CSRF-Token", rr.Header().Get("Access-Control-Allow-Headers"))
 	require.Equal(t, "Retry-After, X-CSRF-Token, X-Admin-Refresh-CSRF-Token", rr.Header().Get("Access-Control-Expose-Headers"))
 	require.Contains(t, rr.Header().Values("Vary"), "Origin")
 	require.Contains(t, rr.Header().Values("Vary"), "Access-Control-Request-Method")

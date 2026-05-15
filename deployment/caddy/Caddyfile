@@ -1,0 +1,143 @@
+{
+	admin localhost:2019
+	email {$CADDY_ACME_EMAIL}
+	acme_ca {$CADDY_ACME_CA}
+}
+
+(common_headers) {
+	encode gzip zstd
+	header {
+		Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+	}
+}
+
+{$APP_DOMAIN} {
+	import common_headers
+	request_body {
+		max_size 125MB
+	}
+
+	handle /admin {
+		respond 404
+	}
+	handle /admin/* {
+		respond 404
+	}
+	handle /api/v1/admin {
+		respond 404
+	}
+	handle /api/v1/admin/* {
+		respond 404
+	}
+	handle /ws {
+		reverse_proxy {$CADDY_BACKEND_UPSTREAM}
+	}
+	handle /api/* {
+		reverse_proxy {$CADDY_BACKEND_UPSTREAM}
+	}
+	handle {
+		reverse_proxy {$CADDY_FRONTEND_UPSTREAM}
+	}
+}
+
+{$ADMIN_DOMAIN} {
+	import common_headers
+	request_body {
+		max_size 125MB
+	}
+
+	handle / {
+		redir /admin 302
+	}
+	handle /ws {
+		reverse_proxy {$CADDY_BACKEND_UPSTREAM}
+	}
+	handle /api/* {
+		reverse_proxy {$CADDY_BACKEND_UPSTREAM}
+	}
+	handle {
+		reverse_proxy {$CADDY_FRONTEND_UPSTREAM}
+	}
+}
+
+{$API_DOMAIN} {
+	import common_headers
+	request_body {
+		max_size 125MB
+	}
+
+	handle /ws {
+		reverse_proxy {$CADDY_BACKEND_UPSTREAM}
+	}
+	handle {
+		reverse_proxy {$CADDY_BACKEND_UPSTREAM}
+	}
+}
+
+{$FILES_DOMAIN} {
+	import common_headers
+	request_body {
+		max_size 250MB
+	}
+
+	handle {
+		reverse_proxy {$CADDY_FILES_UPSTREAM}
+	}
+}
+
+{$TASK_COOKIE_DOMAIN} {
+	import common_headers
+	request_body {
+		max_size 125MB
+	}
+
+	handle {
+		reverse_proxy {$TASK_COOKIE_UPSTREAM}
+	}
+}
+
+{$TASK_ARCHIVE_DOMAIN} {
+	import common_headers
+	request_body {
+		max_size 125MB
+	}
+
+	handle {
+		reverse_proxy {$TASK_ARCHIVE_UPSTREAM}
+	}
+}
+
+{$TASK_SAMOVAR_DOMAIN} {
+	import common_headers
+	request_body {
+		max_size 125MB
+	}
+
+	handle {
+		reverse_proxy {$TASK_SAMOVAR_UPSTREAM}
+	}
+}
+
+{$TASK_VKONTAKTE_DOMAIN} {
+	import common_headers
+	request_body {
+		max_size 125MB
+	}
+
+	handle {
+		reverse_proxy {$TASK_VKONTAKTE_UPSTREAM}
+	}
+}
+
+{$TASK_DEDYS_DOMAIN} {
+	import common_headers
+	request_body {
+		max_size 125MB
+	}
+
+	handle {
+		reverse_proxy {$TASK_DEDYS_UPSTREAM}
+	}
+}

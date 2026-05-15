@@ -99,7 +99,7 @@ func TestE2EAdminFlow_LoginCreateUploadListDelete(t *testing.T) {
 		Difficulty:  openapi.Easy,
 		TimeLimit:   90,
 		Flag:        "FLAG{" + uniq("admin") + "}",
-		Hints:       defaultTaskHints("e2e admin"),
+		Hints:       defaultOpenAPIHints("e2e admin"),
 	})
 
 	upload := app.uploadTaskSource(t, token, created.Id, []byte{'P', 'K', 0x03, 0x04, 'z', 'i', 'p'})
@@ -126,7 +126,7 @@ func TestE2ESourceFileFlow_TaskAssignedUsesPresignedURL(t *testing.T) {
 		Difficulty:  openapi.Easy,
 		TimeLimit:   90,
 		Flag:        flag,
-		Hints:       defaultTaskHints("e2e source"),
+		Hints:       defaultOpenAPIHints("e2e source"),
 	})
 	upload := app.uploadTaskSource(t, token, created.Id, payload)
 	require.Contains(t, upload.SourceFileUrl, "X-Amz-Signature")
@@ -171,7 +171,7 @@ func TestE2ESourceFileFlow_DuelResumeRefreshesPresignedURL(t *testing.T) {
 		Difficulty:  openapi.Easy,
 		TimeLimit:   3,
 		Flag:        "FLAG{" + uniq("resume_source") + "}",
-		Hints:       defaultTaskHints("e2e resume source"),
+		Hints:       defaultOpenAPIHints("e2e resume source"),
 	})
 	upload := app.uploadTaskSource(t, token, created.Id, payload)
 	require.Contains(t, upload.SourceFileUrl, "X-Amz-Signature")
@@ -265,7 +265,7 @@ func TestE2EHintFlow_AutoUnlocksAt25_50_75(t *testing.T) {
 		Difficulty:  openapi.Easy,
 		TimeLimit:   hintTimeLimit,
 		Flag:        flag,
-		Hints:       hints,
+		Hints:       nullableOpenAPIHints(hints),
 	})
 	require.Equal(t, hintTimeLimit, int(created.TimeLimit))
 

@@ -22,9 +22,6 @@ SELECT id,
   created_at
 FROM tasks
 WHERE difficulty = $2
-  AND btrim(hint_1) <> ''
-  AND btrim(hint_2) <> ''
-  AND btrim(hint_3) <> ''
   AND id NOT IN (
     SELECT task_id
     FROM player_task_history
@@ -48,8 +45,5 @@ SELECT id,
   created_at
 FROM tasks
 WHERE difficulty = $1
-  AND btrim(hint_1) <> ''
-  AND btrim(hint_2) <> ''
-  AND btrim(hint_3) <> ''
 ORDER BY RANDOM()
 LIMIT 1;

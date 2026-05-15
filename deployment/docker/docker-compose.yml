@@ -1,8 +1,8 @@
 name: task-per-minute
 
 services:
-  nginx:
-    image: ${NGINX_IMAGE:-nginx:1.30.0-alpine3.23}
+  caddy:
+    image: ${CADDY_IMAGE:-caddy:2-alpine}
     restart: unless-stopped
     deploy:
       resources:
@@ -13,55 +13,32 @@ services:
           cpus: "0.1"
           memory: 32M
     ports:
-      - "${NGINX_HTTP_PORT:-80}:80"
-      - "${NGINX_HTTPS_PORT:-443}:443"
+      - "${CADDY_HTTP_PORT:-80}:80"
+      - "${CADDY_HTTPS_PORT:-443}:443"
     environment:
-      NGINX_APP_HOST: ${APP_DOMAIN:-localhost}
-      NGINX_ADMIN_HOST: ${ADMIN_DOMAIN:-admin.localhost}
-      NGINX_API_HOST: ${API_DOMAIN:-api.localhost}
-      NGINX_FILES_HOST: ${FILES_DOMAIN:-files.localhost}
-      NGINX_FRONTEND_UPSTREAM: frontend:${FRONTEND_PORT:-3000}
-      NGINX_BACKEND_UPSTREAM: backend:${BACKEND_PORT:-8080}
-      NGINX_FILES_UPSTREAM: seaweedfs:8333
-      NGINX_TLS_CERTIFICATE: /etc/letsencrypt/live/${CERTBOT_CERT_NAME:-task-per-minute}/fullchain.pem
-      NGINX_TLS_CERTIFICATE_KEY: /etc/letsencrypt/live/${CERTBOT_CERT_NAME:-task-per-minute}/privkey.pem
+      CADDY_ACME_EMAIL: ${CADDY_ACME_EMAIL:?CADDY_ACME_EMAIL is required for Caddy ACME account}
+      CADDY_ACME_CA: ${CADDY_ACME_CA:-https://acme-v02.api.letsencrypt.org/directory}
+      APP_DOMAIN: ${APP_DOMAIN:?APP_DOMAIN is required for Caddy certificates}
+      ADMIN_DOMAIN: ${ADMIN_DOMAIN:?ADMIN_DOMAIN is required for Caddy certificates}
+      API_DOMAIN: ${API_DOMAIN:?API_DOMAIN is required for Caddy certificates}
+      FILES_DOMAIN: ${FILES_DOMAIN:?FILES_DOMAIN is required for Caddy certificates}
+      TASK_COOKIE_DOMAIN: ${TASK_COOKIE_DOMAIN:?TASK_COOKIE_DOMAIN is required for Caddy task certificates}
+      TASK_ARCHIVE_DOMAIN: ${TASK_ARCHIVE_DOMAIN:?TASK_ARCHIVE_DOMAIN is required for Caddy task certificates}
+      TASK_SAMOVAR_DOMAIN: ${TASK_SAMOVAR_DOMAIN:?TASK_SAMOVAR_DOMAIN is required for Caddy task certificates}
+      TASK_VKONTAKTE_DOMAIN: ${TASK_VKONTAKTE_DOMAIN:?TASK_VKONTAKTE_DOMAIN is required for Caddy task certificates}
+      TASK_DEDYS_DOMAIN: ${TASK_DEDYS_DOMAIN:?TASK_DEDYS_DOMAIN is required for Caddy task certificates}
+      TASK_COOKIE_UPSTREAM: ${TASK_COOKIE_UPSTREAM:-frontend:3000}
+      TASK_ARCHIVE_UPSTREAM: ${TASK_ARCHIVE_UPSTREAM:-frontend:3000}
+      TASK_SAMOVAR_UPSTREAM: ${TASK_SAMOVAR_UPSTREAM:-frontend:3000}
+      TASK_VKONTAKTE_UPSTREAM: ${TASK_VKONTAKTE_UPSTREAM:-frontend:3000}
+      TASK_DEDYS_UPSTREAM: ${TASK_DEDYS_UPSTREAM:-frontend:3000}
+      CADDY_FRONTEND_UPSTREAM: ${CADDY_FRONTEND_UPSTREAM:-frontend:3000}
+      CADDY_BACKEND_UPSTREAM: ${CADDY_BACKEND_UPSTREAM:-backend:8080}
+      CADDY_FILES_UPSTREAM: ${CADDY_FILES_UPSTREAM:-seaweedfs:8333}
     volumes:
-      - ../nginx:/etc/task-per-minute/nginx:ro
-      - nginx_cache:/var/cache/nginx
-      - certbot_data:/etc/letsencrypt:ro
-      - certbot_webroot:/var/www/certbot:ro
-      - certbot_runtime:/var/run/certbot
-    entrypoint:
-      - "/bin/sh"
-      - "-c"
-    command:
-      - |
-        set -eu
-        rendered=/tmp/nginx.conf
-        nginx_envs='$${NGINX_APP_HOST} $${NGINX_ADMIN_HOST} $${NGINX_API_HOST} $${NGINX_FILES_HOST} $${NGINX_FRONTEND_UPSTREAM} $${NGINX_BACKEND_UPSTREAM} $${NGINX_FILES_UPSTREAM} $${NGINX_TLS_CERTIFICATE} $${NGINX_TLS_CERTIFICATE_KEY}'
-
-        render_nginx() {
-          source=/etc/task-per-minute/nginx/nginx.bootstrap.conf
-          if [ -s "$$NGINX_TLS_CERTIFICATE" ] && [ -s "$$NGINX_TLS_CERTIFICATE_KEY" ]; then
-            source=/etc/task-per-minute/nginx/nginx.conf
-          fi
-          envsubst "$$nginx_envs" < "$$source" > "$$rendered"
-          nginx -t -c "$$rendered"
-        }
-
-        render_nginx
-        (
-          while :; do
-            if [ -f /var/run/certbot/reload-nginx ]; then
-              rm -f /var/run/certbot/reload-nginx
-              if render_nginx; then
-                nginx -c "$$rendered" -s reload
-              fi
-            fi
-            sleep 30
-          done
-        ) &
-        exec nginx -c "$$rendered" -g "daemon off;"
+      - ../caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
     depends_on:
       backend:
         condition: service_healthy
@@ -70,104 +47,11 @@ services:
       seaweedfs:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/nginx-health"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:2019/config/"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 10s
-    networks:
-      - internal
-
-  certbot:
-    image: ${CERTBOT_IMAGE:-certbot/certbot:v5.5.0}
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          cpus: "0.25"
-          memory: 128M
-        reservations:
-          cpus: "0.05"
-          memory: 32M
-    environment:
-      CERTBOT_CERT_NAME: ${CERTBOT_CERT_NAME:-task-per-minute}
-      APP_DOMAIN: ${APP_DOMAIN:?APP_DOMAIN is required for Let's Encrypt certificates}
-      ADMIN_DOMAIN: ${ADMIN_DOMAIN:?ADMIN_DOMAIN is required for Let's Encrypt certificates}
-      API_DOMAIN: ${API_DOMAIN:?API_DOMAIN is required for Let's Encrypt certificates}
-      FILES_DOMAIN: ${FILES_DOMAIN:?FILES_DOMAIN is required for Let's Encrypt certificates}
-      ACME_EMAIL: ${ACME_EMAIL:-}
-      USE_LE_STAGING: ${USE_LE_STAGING:-false}
-      CERTBOT_RENEW_INTERVAL_SECONDS: ${CERTBOT_RENEW_INTERVAL_SECONDS:-43200}
-    volumes:
-      - certbot_data:/etc/letsencrypt
-      - certbot_webroot:/var/www/certbot
-      - certbot_runtime:/var/run/certbot
-    entrypoint:
-      - "/bin/sh"
-      - "-c"
-    command:
-      - |
-        set -eu
-        cert_dir="/etc/letsencrypt/live/$$CERTBOT_CERT_NAME"
-        cert_file="$$cert_dir/fullchain.pem"
-        key_file="$$cert_dir/privkey.pem"
-        domain_args=""
-        seen_domains=""
-
-        for domain in "$$APP_DOMAIN" "$$ADMIN_DOMAIN" "$$API_DOMAIN" "$$FILES_DOMAIN"; do
-          [ -n "$$domain" ] || continue
-          case " $$seen_domains " in
-            *" $$domain "*) continue ;;
-          esac
-          domain_args="$$domain_args -d $$domain"
-          seen_domains="$$seen_domains $$domain"
-        done
-
-        staging_flag=""
-        if [ "$$USE_LE_STAGING" = "true" ]; then
-          staging_flag="--staging"
-          echo "[certbot] STAGING mode - cert will not be trusted by browsers"
-        fi
-
-        email_args="--register-unsafely-without-email"
-        if [ -n "$$ACME_EMAIL" ]; then
-          email_args="--email $$ACME_EMAIL"
-        fi
-
-        if [ ! -s "$$cert_file" ] || [ ! -s "$$key_file" ]; then
-          issued=0
-          for attempt in 1 2 3; do
-            if certbot certonly --webroot -w /var/www/certbot --preferred-challenges http --cert-name "$$CERTBOT_CERT_NAME" $$staging_flag $$domain_args $$email_args --agree-tos --non-interactive --keep-until-expiring; then
-              issued=1
-              break
-            fi
-            if [ "$$attempt" -lt 3 ]; then
-              echo "[certbot] attempt $$attempt failed; retrying in 60s"
-              sleep 60
-            fi
-          done
-          if [ "$$issued" = "0" ]; then
-            echo "[certbot] all 3 issuance attempts failed"
-            echo "[certbot] fix DNS/firewall, then run: docker compose --env-file ../../.env restart certbot"
-            while :; do sleep 86400; done
-          fi
-        fi
-
-        touch /var/run/certbot/reload-nginx
-        trap exit TERM INT
-        while :; do
-          sleep "$$CERTBOT_RENEW_INTERVAL_SECONDS" & wait $$!
-          certbot renew --webroot -w /var/www/certbot --deploy-hook "touch /var/run/certbot/reload-nginx" || echo "[certbot] renew failed; will retry on next interval"
-        done
-    depends_on:
-      nginx:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "test -s \"/etc/letsencrypt/live/$${CERTBOT_CERT_NAME:-task-per-minute}/fullchain.pem\" && test -s \"/etc/letsencrypt/live/$${CERTBOT_CERT_NAME:-task-per-minute}/privkey.pem\""]
-      interval: 1m
-      timeout: 5s
-      retries: 3
-      start_period: 5m
     networks:
       - internal
 
@@ -354,6 +238,11 @@ services:
       PLAYER_JOIN_RATE_BUCKET_TTL: ${PLAYER_JOIN_RATE_BUCKET_TTL:-1h}
       PLAYER_SESSION_TTL: ${PLAYER_SESSION_TTL:-24h}
 
+      # Leaderboard
+      LEADERBOARD_RATE_ATTEMPTS: ${LEADERBOARD_RATE_ATTEMPTS:-120}
+      LEADERBOARD_RATE_WINDOW: ${LEADERBOARD_RATE_WINDOW:-1m}
+      LEADERBOARD_RATE_BUCKET_TTL: ${LEADERBOARD_RATE_BUCKET_TTL:-15m}
+
       # WebSocket
       WS_ALLOWED_ORIGINS: ${WS_ALLOWED_ORIGINS:-}
       WS_REQUIRE_ORIGIN: ${WS_REQUIRE_ORIGIN:-false}
@@ -425,10 +314,8 @@ networks:
         - subnet: ${DOCKER_INTERNAL_SUBNET:-172.30.0.0/24}
 
 volumes:
-  certbot_data:
-  certbot_runtime:
-  certbot_webroot:
-  nginx_cache:
+  caddy_config:
+  caddy_data:
   postgres_data:
   redis_data:
   seaweedfs_data:

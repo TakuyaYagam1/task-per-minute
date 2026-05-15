@@ -8,8 +8,8 @@
       also sets HttpOnly tpm_admin_access and tpm_admin_refresh cookies for
       browser clients. Browser-sourced requests receive cookie-session marker
       values in the JSON token fields and must use X-CSRF-Token with the
-      access CSRF token for unsafe admin mutations, and X-CSRF-Token with the
-      refresh CSRF token for refresh/logout.
+      access CSRF token for unsafe admin mutations. Refresh/logout may send the
+      refresh CSRF token in X-CSRF-Token or X-Admin-Refresh-CSRF-Token.
     requestBody:
       required: true
       content:
@@ -62,8 +62,8 @@
       backwards-compatible non-browser clients and refreshes the HttpOnly admin
       cookies. Cookie-authenticated browser refresh requests receive
       cookie-session marker values in the JSON token fields and must send
-      X-CSRF-Token with the refresh CSRF token from
-      X-Admin-Refresh-CSRF-Token.
+      the refresh CSRF token from X-Admin-Refresh-CSRF-Token in either
+      X-CSRF-Token or X-Admin-Refresh-CSRF-Token.
     requestBody:
       required: true
       content:
@@ -117,8 +117,9 @@
       (it expires naturally via its short TTL). Logout does not require a
       currently valid access token, so an expired browser session can still
       revoke the refresh token and clear auth cookies.
-      Cookie-authenticated browser requests must send X-CSRF-Token with the
-      refresh CSRF token from X-Admin-Refresh-CSRF-Token.
+      Cookie-authenticated browser requests must send the refresh CSRF token
+      from X-Admin-Refresh-CSRF-Token in either X-CSRF-Token or
+      X-Admin-Refresh-CSRF-Token.
     requestBody:
       required: true
       content:
@@ -170,6 +171,32 @@
               type: array
               items:
                 $ref: '../components/schemas.yml#/AdminPlayerResponse'
+      '401':
+        description: Missing or invalid admin session.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+
+/api/v1/admin/players/events:
+  get:
+    operationId: streamAdminPlayerEvents
+    tags: [admin]
+    summary: Stream admin player list invalidation events
+    description: |
+      Server-Sent Events stream for the admin player dashboard. The stream emits
+      `ready` immediately after subscription and `players_changed` whenever the
+      player list, player status, or admin leaderboard overrides change.
+      Heartbeats are sent as SSE comments while the connection is idle.
+    security:
+      - BearerAuth: []
+    responses:
+      '200':
+        description: SSE stream. Events are formatted as text/event-stream.
+        content:
+          text/event-stream:
+            schema:
+              type: string
       '401':
         description: Missing or invalid admin session.
         content:

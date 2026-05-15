@@ -110,10 +110,13 @@ func Initialize(ctx context.Context, cfg *config.Config, log logkit.Logger) (*Ap
 	recovery := NewStartupRecoverer(
 		wired.Tx,
 		wired.Duels,
+		wired.DuelTasks,
 		wired.Players,
 		wired.Queued,
 		wired.Queue,
 		wired.Broadcaster,
+		wired.Reconnect,
+		wired.Hints,
 		wired.Clock,
 		log,
 	)

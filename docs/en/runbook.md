@@ -53,9 +53,9 @@ shape:
 cd /opt/task-per-minute/deployment/docker
 docker compose --env-file ../../.env exec -T frontend sh -c 'wget -qO- "http://127.0.0.1:${PORT:-3000}/" >/dev/null'
 docker compose --env-file ../../.env exec -T frontend sh -c 'wget -qO- "http://127.0.0.1:${PORT:-3000}/api/v1/leaderboard"' | jq -e '.entries | type == "array"'
-docker compose --env-file ../../.env exec -T nginx nginx -t -c /tmp/nginx.conf
-docker compose --env-file ../../.env exec -T nginx wget -qO- http://127.0.0.1/nginx-health
-docker compose --env-file ../../.env logs --tail=100 certbot
+docker compose --env-file ../../.env exec -T caddy caddy validate --config /etc/caddy/Caddyfile
+docker compose --env-file ../../.env exec -T caddy wget -qO- http://127.0.0.1:2019/config/ >/dev/null
+docker compose --env-file ../../.env logs --tail=100 caddy
 ```
 
 ## Fast Auth/WS Troubleshooting
@@ -79,17 +79,18 @@ If unsafe REST requests receive `403 csrf token invalid`:
 - For player cookie-auth, check `tpm_player_csrf` and `X-CSRF-Token`.
 - For admin mutations, check the access CSRF token in `X-CSRF-Token`.
 - For admin refresh/logout, check the refresh CSRF token from
-  `X-Admin-Refresh-CSRF-Token`; the access CSRF token is not valid for these
+  `X-Admin-Refresh-CSRF-Token`; send it in either `X-CSRF-Token` or
+  `X-Admin-Refresh-CSRF-Token`. The access CSRF token is not valid for these
   endpoints.
 - After logout, the frontend should clear the session marker and CSRF tokens;
   the next login should receive fresh CSRF headers.
 
-If every user receives `429` behind NGINX:
+If every user receives `429` behind Caddy:
 
 - Check `HTTP_TRUSTED_PROXY_CIDRS` against the real compose network:
   `docker network inspect task-per-minute_internal`.
-- Compare backend `client_ip` in security logs with the NGINX access log.
-- Ensure NGINX sends `X-Forwarded-For`, and the backend trusts only the proxy
+- Compare backend `client_ip` in security logs with Caddy logs.
+- Ensure Caddy sends `X-Forwarded-For`, and the backend trusts only the proxy
   CIDR, not the whole internet.
 
 ## Roll Back Backend Image

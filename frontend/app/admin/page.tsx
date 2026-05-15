@@ -78,6 +78,17 @@ const PLAYERS_EVENTS_RETRY_MAX_MS = 30_000;
 const PLAYERS_EVENTS_REFRESH_COOLDOWN_MS = 60_000;
 const PLAYERS_EVENTS_FALLBACK_POLL_MS = 5_000;
 
+const emptyHintInputs = (): string[] => ["", "", ""];
+
+const hintInputsFromTask = (task: Task): string[] =>
+  emptyHintInputs().map((_, index) => task.hints[index] ?? "");
+
+const hintInputsToRequest = (values: string[]): NonNullable<CreateTaskRequest["hints"]> =>
+  values.slice(0, 3).map((hint) => {
+    const trimmed = hint.trim();
+    return trimmed ? trimmed : null;
+  });
+
 const countChars = (value: string): number => Array.from(value).length;
 
 const parsePositiveInt32 = (value: string): number | null => {
@@ -262,7 +273,7 @@ export default function AdminPanel() {
   const [difficulty, setDifficulty] = useState<TaskDifficulty>("easy");
   const [timeLimit, setTimeLimit] = useState("60");
   const [flag, setFlag] = useState("");
-  const [hints, setHints] = useState<string[]>(["", "", ""]);
+  const [hints, setHints] = useState<string[]>(emptyHintInputs);
   const [taskUrl, setTaskUrl] = useState("");
   const [sourceFile, setSourceFile] = useState<File | null>(null);
   const [existingSourceFileURL, setExistingSourceFileURL] = useState<
@@ -858,7 +869,7 @@ export default function AdminPanel() {
     setDifficulty("easy");
     setTimeLimit("60");
     setFlag("");
-    setHints(["", "", ""]);
+    setHints(emptyHintInputs());
     setTaskUrl("");
     setSourceFile(null);
     setExistingSourceFileURL(null);
@@ -875,7 +886,7 @@ export default function AdminPanel() {
     setDifficulty(task.difficulty);
     setTimeLimit(String(task.time_limit));
     setFlag(task.flag);
-    setHints(task.hints.length === 3 ? task.hints : ["", "", ""]);
+    setHints(hintInputsFromTask(task));
     setTaskUrl(task.task_url ?? "");
     setSourceFile(null);
     setExistingSourceFileURL(task.source_file_url ?? null);
@@ -890,7 +901,7 @@ export default function AdminPanel() {
     const trimmedTitle = title.trim();
     const trimmedDescription = description.trim();
     const trimmedFlag = flag.trim();
-    const validHints = hints.map((h) => h.trim());
+    const validHints = hintInputsToRequest(hints);
     const parsedTimeLimit = parsePositiveInt32(timeLimit);
     const taskUrlValue = taskUrl.trim() || null;
     const nextErrors: TaskFormErrors = {};
@@ -915,13 +926,6 @@ export default function AdminPanel() {
     } else if (countChars(trimmedFlag) > MAX_TASK_FLAG_LENGTH) {
       nextErrors.flag = "Флаг должен быть от 1 до 255 символов";
     }
-
-    validHints.forEach((hint, index) => {
-      if (!hint) {
-        nextErrors[`hint${index}` as TaskFormErrorField] =
-          `Заполните подсказку ${index + 1}`;
-      }
-    });
 
     if (taskUrlValue && !isValidTaskUrl(taskUrlValue)) {
       nextErrors.taskUrl =
@@ -2037,13 +2041,12 @@ export default function AdminPanel() {
                 </div>
                 {renderCategoryFields()}
                 <div className={styles.inputGroup}>
-                  <label>Подсказки (3 шт)</label>
+                  <label>Подсказки (до 3, необязательно)</label>
                   <div className={styles.hintsGrid}>
                     {hints.map((hint, i) => (
                       <div key={i}>
                         <input
                           type="text"
-                          required
                           value={hint}
                           onChange={(e) => updateHint(i, e.target.value)}
                           placeholder={`Подсказка ${i + 1}`}

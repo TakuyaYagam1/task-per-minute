@@ -12,6 +12,8 @@ info:
         POST /admin/login and POST /admin/refresh. `Authorization: Bearer <jwt>`
         remains supported only for requests without browser Origin/Referer headers.
         Unsafe cookie-authenticated admin requests must send `X-CSRF-Token`.
+        Refresh/logout requests may send the refresh CSRF token in either
+        `X-CSRF-Token` or `X-Admin-Refresh-CSRF-Token`.
   version: "1.0.0"
 
 servers:
@@ -49,6 +51,8 @@ paths:
     $ref: 'routes/admin.yml#/~1api~1v1~1admin~1logout'
   /api/v1/admin/players:
     $ref: 'routes/admin.yml#/~1api~1v1~1admin~1players'
+  /api/v1/admin/players/events:
+    $ref: 'routes/admin.yml#/~1api~1v1~1admin~1players~1events'
   /api/v1/admin/players/{id}/audit:
     $ref: 'routes/admin.yml#/~1api~1v1~1admin~1players~1{id}~1audit'
   /api/v1/admin/players/{id}:

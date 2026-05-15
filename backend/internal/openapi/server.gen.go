@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"mime/multipart"
 	"net/http"
 
@@ -27,6 +28,9 @@ type ServerInterface interface {
 	// List players with effective leaderboard stats
 	// (GET /api/v1/admin/players)
 	ListAdminPlayers(w http.ResponseWriter, r *http.Request, params ListAdminPlayersParams)
+	// Stream admin player list invalidation events
+	// (GET /api/v1/admin/players/events)
+	StreamAdminPlayerEvents(w http.ResponseWriter, r *http.Request)
 	// Soft-delete an idle player
 	// (DELETE /api/v1/admin/players/{id})
 	DeleteAdminPlayer(w http.ResponseWriter, r *http.Request, id openapi_types.UUID)
@@ -96,6 +100,12 @@ func (_ Unimplemented) AdminLogout(w http.ResponseWriter, r *http.Request) {
 // List players with effective leaderboard stats
 // (GET /api/v1/admin/players)
 func (_ Unimplemented) ListAdminPlayers(w http.ResponseWriter, r *http.Request, params ListAdminPlayersParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Stream admin player list invalidation events
+// (GET /api/v1/admin/players/events)
+func (_ Unimplemented) StreamAdminPlayerEvents(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -256,6 +266,26 @@ func (siw *ServerInterfaceWrapper) ListAdminPlayers(w http.ResponseWriter, r *ht
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListAdminPlayers(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// StreamAdminPlayerEvents operation middleware
+func (siw *ServerInterfaceWrapper) StreamAdminPlayerEvents(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.StreamAdminPlayerEvents(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -777,6 +807,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/api/v1/admin/players", wrapper.ListAdminPlayers)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/admin/players/events", wrapper.StreamAdminPlayerEvents)
+	})
+	r.Group(func(r chi.Router) {
 		r.Delete(options.BaseURL+"/api/v1/admin/players/{id}", wrapper.DeleteAdminPlayer)
 	})
 	r.Group(func(r chi.Router) {
@@ -945,6 +978,41 @@ func (response ListAdminPlayers200JSONResponse) VisitListAdminPlayersResponse(w 
 type ListAdminPlayers401ApplicationProblemPlusJSONResponse ProblemDetails
 
 func (response ListAdminPlayers401ApplicationProblemPlusJSONResponse) VisitListAdminPlayersResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type StreamAdminPlayerEventsRequestObject struct {
+}
+
+type StreamAdminPlayerEventsResponseObject interface {
+	VisitStreamAdminPlayerEventsResponse(w http.ResponseWriter) error
+}
+
+type StreamAdminPlayerEvents200TexteventStreamResponse struct {
+	Body          io.Reader
+	ContentLength int64
+}
+
+func (response StreamAdminPlayerEvents200TexteventStreamResponse) VisitStreamAdminPlayerEventsResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "text/event-stream")
+	if response.ContentLength != 0 {
+		w.Header().Set("Content-Length", fmt.Sprint(response.ContentLength))
+	}
+	w.WriteHeader(200)
+
+	if closer, ok := response.Body.(io.ReadCloser); ok {
+		defer closer.Close()
+	}
+	_, err := io.Copy(w, response.Body)
+	return err
+}
+
+type StreamAdminPlayerEvents401ApplicationProblemPlusJSONResponse ProblemDetails
+
+func (response StreamAdminPlayerEvents401ApplicationProblemPlusJSONResponse) VisitStreamAdminPlayerEventsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(401)
 
@@ -1498,6 +1566,23 @@ func (response GetLeaderboard200JSONResponse) VisitGetLeaderboardResponse(w http
 	return json.NewEncoder(w).Encode(response)
 }
 
+type GetLeaderboard429ResponseHeaders struct {
+	RetryAfter string
+}
+
+type GetLeaderboard429ApplicationProblemPlusJSONResponse struct {
+	Body    ProblemDetails
+	Headers GetLeaderboard429ResponseHeaders
+}
+
+func (response GetLeaderboard429ApplicationProblemPlusJSONResponse) VisitGetLeaderboardResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
+	w.WriteHeader(429)
+
+	return json.NewEncoder(w).Encode(response.Body)
+}
+
 type JoinPlayerRequestObject struct {
 	Body *JoinPlayerJSONRequestBody
 }
@@ -1636,6 +1721,9 @@ type StrictServerInterface interface {
 	// List players with effective leaderboard stats
 	// (GET /api/v1/admin/players)
 	ListAdminPlayers(ctx context.Context, request ListAdminPlayersRequestObject) (ListAdminPlayersResponseObject, error)
+	// Stream admin player list invalidation events
+	// (GET /api/v1/admin/players/events)
+	StreamAdminPlayerEvents(ctx context.Context, request StreamAdminPlayerEventsRequestObject) (StreamAdminPlayerEventsResponseObject, error)
 	// Soft-delete an idle player
 	// (DELETE /api/v1/admin/players/{id})
 	DeleteAdminPlayer(ctx context.Context, request DeleteAdminPlayerRequestObject) (DeleteAdminPlayerResponseObject, error)
@@ -1796,6 +1884,30 @@ func (sh *strictHandler) ListAdminPlayers(w http.ResponseWriter, r *http.Request
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ListAdminPlayersResponseObject); ok {
 		if err := validResponse.VisitListAdminPlayersResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// StreamAdminPlayerEvents operation middleware
+func (sh *strictHandler) StreamAdminPlayerEvents(w http.ResponseWriter, r *http.Request) {
+	var request StreamAdminPlayerEventsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.StreamAdminPlayerEvents(ctx, request.(StreamAdminPlayerEventsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "StreamAdminPlayerEvents")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(StreamAdminPlayerEventsResponseObject); ok {
+		if err := validResponse.VisitStreamAdminPlayerEventsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

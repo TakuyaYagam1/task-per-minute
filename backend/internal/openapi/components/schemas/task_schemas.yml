@@ -36,9 +36,10 @@ TaskResponse:
       type: array
       minItems: 3
       maxItems: 3
+      x-go-type: "[]*string"
       items:
         type: string
-        minLength: 1
+        nullable: true
     task_url:
       type: string
       description: Task endpoint. Accepts http(s) URLs or host:port targets for pwn/nc tasks.
@@ -53,7 +54,7 @@ TaskResponse:
 
 CreateTaskRequest:
   type: object
-  required: [title, description, category, difficulty, time_limit, flag, hints]
+  required: [title, description, category, difficulty, time_limit, flag]
   properties:
     title:
       type: string
@@ -76,11 +77,12 @@ CreateTaskRequest:
       maxLength: 255
     hints:
       type: array
-      minItems: 3
       maxItems: 3
+      x-go-type: "[]*string"
+      x-go-type-skip-optional-pointer: true
       items:
         type: string
-        minLength: 1
+        nullable: true
     task_url:
       type: string
       description: Task endpoint. Accepts http(s) URLs or host:port targets for pwn/nc tasks.
@@ -110,11 +112,11 @@ UpdateTaskRequest:
       maxLength: 255
     hints:
       type: array
-      minItems: 3
       maxItems: 3
+      x-go-type: "[]*string"
       items:
         type: string
-        minLength: 1
+        nullable: true
     task_url:
       type: string
       description: Task endpoint. Accepts http(s) URLs or host:port targets for pwn/nc tasks.

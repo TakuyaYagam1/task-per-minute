@@ -52,9 +52,9 @@ Frontend health gate проверяет, что frontend URL отвечает у
 cd /opt/task-per-minute/deployment/docker
 docker compose --env-file ../../.env exec -T frontend sh -c 'wget -qO- "http://127.0.0.1:${PORT:-3000}/" >/dev/null'
 docker compose --env-file ../../.env exec -T frontend sh -c 'wget -qO- "http://127.0.0.1:${PORT:-3000}/api/v1/leaderboard"' | jq -e '.entries | type == "array"'
-docker compose --env-file ../../.env exec -T nginx nginx -t -c /tmp/nginx.conf
-docker compose --env-file ../../.env exec -T nginx wget -qO- http://127.0.0.1/nginx-health
-docker compose --env-file ../../.env logs --tail=100 certbot
+docker compose --env-file ../../.env exec -T caddy caddy validate --config /etc/caddy/Caddyfile
+docker compose --env-file ../../.env exec -T caddy wget -qO- http://127.0.0.1:2019/config/ >/dev/null
+docker compose --env-file ../../.env logs --tail=100 caddy
 ```
 
 ## Быстрый troubleshooting Auth/WS
@@ -78,17 +78,18 @@ docker compose --env-file ../../.env logs --tail=100 certbot
 - Для player cookie-auth проверьте `tpm_player_csrf` и header `X-CSRF-Token`.
 - Для admin mutations проверьте access CSRF token в `X-CSRF-Token`.
 - Для admin refresh/logout проверьте refresh CSRF token из
-  `X-Admin-Refresh-CSRF-Token`; access CSRF token для этих endpoints не
+  `X-Admin-Refresh-CSRF-Token`; отправлять его можно в `X-CSRF-Token` или
+  `X-Admin-Refresh-CSRF-Token`. Access CSRF token для этих endpoints не
   подходит.
 - После logout frontend должен очистить marker сессии и CSRF tokens; повторный
   login должен получить новые CSRF headers.
 
-Если все пользователи получают `429` за NGINX:
+Если все пользователи получают `429` за Caddy:
 
 - Проверьте `HTTP_TRUSTED_PROXY_CIDRS` против реальной compose-сети:
   `docker network inspect task-per-minute_internal`.
-- Сравните backend `client_ip` в security logs с NGINX access log.
-- Убедитесь, что NGINX передает `X-Forwarded-For`, а backend доверяет только
+- Сравните backend `client_ip` в security logs с Caddy logs.
+- Убедитесь, что Caddy передает `X-Forwarded-For`, а backend доверяет только
   CIDR самого proxy, не всему интернету.
 
 ## Откат backend image

@@ -6,9 +6,11 @@ BearerAuth:
     Admin access token (HS256). Browser clients should use the HttpOnly
     tpm_admin_access cookie issued by POST /api/v1/admin/login or
     POST /api/v1/admin/refresh. Unsafe cookie-authenticated admin requests
-    must also send X-CSRF-Token. Authorization: Bearer remains accepted only
-    for requests without browser Origin/Referer headers, so non-browser and
-    backwards-compatible clients can keep using it.
+    must also send X-CSRF-Token. Refresh/logout requests may send the refresh
+    CSRF token in either X-CSRF-Token or X-Admin-Refresh-CSRF-Token.
+    Authorization: Bearer remains accepted only for requests without browser
+    Origin/Referer headers, so non-browser and backwards-compatible clients can
+    keep using it.
 
 SessionTokenAuth:
   type: apiKey

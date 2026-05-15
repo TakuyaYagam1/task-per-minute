@@ -332,6 +332,64 @@ func TestMatchmakingUsecase_JoinQueue_AssignsOnlyCommonUnsolvedTaskToBothPlayers
 	require.Equal(t, binary.ID, result.Player2Task.ID)
 }
 
+func TestMatchmakingUsecase_JoinQueue_AssignsTaskWithoutHints(t *testing.T) {
+	t.Parallel()
+
+	f := newFixture(t)
+	now := time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC)
+	player1 := &domain.Player{ID: uuid.New(), Username: "alice", Status: domain.PlayerStatusIdle}
+	player2 := &domain.Player{ID: uuid.New(), Username: "bob", Status: domain.PlayerStatusIdle}
+	noHintTask := &domain.Task{
+		ID:         uuid.New(),
+		Title:      "без подсказок",
+		Category:   domain.CategoryWeb,
+		Difficulty: domain.DifficultyEasy,
+		TimeLimit:  45,
+		Flag:       "FLAG{no_hints}",
+		Hints:      []string{"", "", ""},
+	}
+	created := &domain.Duel{
+		ID:        uuid.New(),
+		Player1ID: player1.ID,
+		Player2ID: player2.ID,
+		Status:    domain.DuelStatusActive,
+		StartedAt: now,
+		Deadline:  now.Add(45 * time.Second),
+	}
+
+	f.players.EXPECT().GetByID(mock.Anything, player1.ID).Return(player1, nil).Once()
+	f.players.EXPECT().
+		UpdateStatusIfCurrent(mock.Anything, player1.ID, domain.PlayerStatusIdle, domain.PlayerStatusQueued).
+		Return(withStatus(player1, domain.PlayerStatusQueued), true, nil).Once()
+	f.queue.EXPECT().Enqueue(mock.Anything, player1.ID).Return(nil)
+	f.queue.EXPECT().PopPair(mock.Anything).Return(player1.ID, player2.ID, true, nil)
+	f.tx.EXPECT().Do(mock.Anything, mock.Anything).RunAndReturn(runTx)
+	f.players.EXPECT().GetByID(mock.Anything, player1.ID).Return(withStatus(player1, domain.PlayerStatusQueued), nil).Once()
+	f.players.EXPECT().GetByID(mock.Anything, player2.ID).Return(withStatus(player2, domain.PlayerStatusQueued), nil).Once()
+	f.players.EXPECT().
+		UpdateStatusIfCurrent(mock.Anything, player1.ID, domain.PlayerStatusQueued, domain.PlayerStatusInDuel).
+		Return(withStatus(player1, domain.PlayerStatusInDuel), true, nil).Once()
+	f.players.EXPECT().
+		UpdateStatusIfCurrent(mock.Anything, player2.ID, domain.PlayerStatusQueued, domain.PlayerStatusInDuel).
+		Return(withStatus(player2, domain.PlayerStatusInDuel), true, nil).Once()
+	f.tasks.EXPECT().CountByDifficulty(mock.Anything, domain.DifficultyEasy).Return(int64(1), nil).Twice()
+	f.tasks.EXPECT().CountSolvedByDifficulty(mock.Anything, mock.Anything, domain.DifficultyEasy).Return(int64(0), nil).Twice()
+	f.tasks.EXPECT().ListByDifficulty(mock.Anything, domain.DifficultyEasy).Return([]*domain.Task{noHintTask}, nil).Times(3)
+	f.history.EXPECT().ListSolvedTaskIDs(mock.Anything, player1.ID).Return(nil, nil).Once()
+	f.history.EXPECT().ListSolvedTaskIDs(mock.Anything, player2.ID).Return(nil, nil).Once()
+	f.duels.EXPECT().Create(mock.Anything, player1.ID, player2.ID, now.Add(45*time.Second)).Return(created, nil)
+	f.duels.EXPECT().CreateDuelPlayerTask(mock.Anything, created.ID, player1.ID, noHintTask.ID).Return(nil)
+	f.duels.EXPECT().CreateDuelPlayerTask(mock.Anything, created.ID, player2.ID, noHintTask.ID).Return(nil)
+
+	result, err := f.uc.JoinQueue(t.Context(), player1.ID)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, noHintTask.ID, result.Player1Task.ID)
+	require.Equal(t, noHintTask.ID, result.Player2Task.ID)
+	require.Equal(t, []string{"", "", ""}, result.Player1Task.Hints)
+}
+
 type matchmakingFixture struct {
 	uc      *duelusecase.MatchmakingUsecase
 	tx      *usecasemocks.MockTxManager

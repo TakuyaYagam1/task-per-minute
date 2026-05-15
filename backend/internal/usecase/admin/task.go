@@ -22,10 +22,11 @@ func NewTaskUsecase(tasks usecase.TaskRepo) *TaskUsecase {
 }
 
 func (u *TaskUsecase) CreateTask(ctx context.Context, in TaskInput) (*domain.Task, error) {
-	if err := validateTaskInput(in); err != nil {
+	normalized, err := normalizeTaskInput(in)
+	if err != nil {
 		return nil, err
 	}
-	task, err := u.tasks.Create(ctx, in)
+	task, err := u.tasks.Create(ctx, normalized)
 	if err != nil {
 		return nil, fmt.Errorf("TaskUsecase - CreateTask - TaskRepo.Create: %w", err)
 	}
@@ -49,10 +50,11 @@ func (u *TaskUsecase) ListTasks(ctx context.Context) ([]*domain.Task, error) {
 }
 
 func (u *TaskUsecase) UpdateTask(ctx context.Context, id uuid.UUID, in TaskInput) (*domain.Task, error) {
-	if err := validateTaskInput(in); err != nil {
+	normalized, err := normalizeTaskInput(in)
+	if err != nil {
 		return nil, err
 	}
-	task, err := u.tasks.Update(ctx, id, in)
+	task, err := u.tasks.Update(ctx, id, normalized)
 	if err != nil {
 		return nil, fmt.Errorf("TaskUsecase - UpdateTask - TaskRepo.Update: %w", err)
 	}
@@ -77,26 +79,33 @@ func (u *TaskUsecase) DeleteTask(ctx context.Context, id uuid.UUID) error {
 }
 
 func validateTaskInput(in TaskInput) error {
+	_, err := normalizeTaskInput(in)
+	return err
+}
+
+func normalizeTaskInput(in TaskInput) (TaskInput, error) {
 	if !domain.IsValidTaskTitle(in.Title) {
-		return apperr.ErrTaskValidation
+		return TaskInput{}, apperr.ErrTaskValidation
 	}
 	if !domain.IsValidTaskDescription(in.Description) {
-		return apperr.ErrTaskValidation
+		return TaskInput{}, apperr.ErrTaskValidation
 	}
 	if !in.Category.IsValid() || !in.Difficulty.IsValid() {
-		return apperr.ErrTaskValidation
+		return TaskInput{}, apperr.ErrTaskValidation
 	}
 	if !domain.IsValidTaskTimeLimit(in.TimeLimit) {
-		return apperr.ErrTaskValidation
+		return TaskInput{}, apperr.ErrTaskValidation
 	}
 	if !domain.IsValidTaskFlag(in.Flag) {
-		return apperr.ErrTaskValidation
+		return TaskInput{}, apperr.ErrTaskValidation
 	}
 	if !domain.IsValidTaskURLShape(in.Category, in.TaskURL, in.SourceFileURL) {
-		return apperr.ErrTaskValidation
+		return TaskInput{}, apperr.ErrTaskValidation
 	}
-	if !domain.IsValidTaskHints(in.Hints) {
-		return apperr.ErrTaskValidation
+	hints, ok := domain.NormalizeTaskHints(in.Hints)
+	if !ok {
+		return TaskInput{}, apperr.ErrTaskValidation
 	}
-	return nil
+	in.Hints = hints
+	return in, nil
 }

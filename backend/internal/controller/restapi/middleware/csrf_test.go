@@ -242,6 +242,15 @@ func TestCSRFGuard_RefreshUsesAdminRefreshCSRF(t *testing.T) {
 	rightReq.Header.Set(middleware.CSRFHeaderName, refreshCSRF)
 	handler.ServeHTTP(right, rightReq)
 	require.Equal(t, http.StatusNoContent, right.Code)
+
+	refreshHeader := httptest.NewRecorder()
+	refreshHeaderReq := httptest.NewRequest(http.MethodPost, "/api/v1/admin/refresh", nil)
+	refreshHeaderReq.AddCookie(&http.Cookie{Name: middleware.AdminRefreshCookieName, Value: "refresh-token"})
+	refreshHeaderReq.AddCookie(&http.Cookie{Name: middleware.AdminRefreshCSRFCookieName, Value: refreshCSRF})
+	refreshHeaderReq.Header.Set(middleware.CSRFHeaderName, accessCSRF)
+	refreshHeaderReq.Header.Set(middleware.AdminRefreshCSRFHeaderName, refreshCSRF)
+	handler.ServeHTTP(refreshHeader, refreshHeaderReq)
+	require.Equal(t, http.StatusNoContent, refreshHeader.Code)
 }
 
 func TestEnsurePlayerCSRFCookieSetsReadableCookie(t *testing.T) {

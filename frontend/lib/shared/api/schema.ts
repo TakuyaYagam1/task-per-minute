@@ -132,7 +132,7 @@ export interface paths {
         put?: never;
         /**
          * Exchange the shared admin password for an admin session
-         * @description Returns the token pair for backwards-compatible non-browser clients and also sets HttpOnly tpm_admin_access and tpm_admin_refresh cookies for browser clients. Browser-sourced requests receive cookie-session marker values in the JSON token fields and must use X-CSRF-Token with the access CSRF token for unsafe admin mutations, and X-CSRF-Token with the refresh CSRF token for refresh/logout.
+         * @description Returns the token pair for backwards-compatible non-browser clients and also sets HttpOnly tpm_admin_access and tpm_admin_refresh cookies for browser clients. Browser-sourced requests receive cookie-session marker values in the JSON token fields and must use X-CSRF-Token with the access CSRF token for unsafe admin mutations. Refresh/logout may send the refresh CSRF token in X-CSRF-Token or X-Admin-Refresh-CSRF-Token.
          */
         post: operations["adminLogin"];
         delete?: never;
@@ -152,7 +152,7 @@ export interface paths {
         put?: never;
         /**
          * Rotate the admin session
-         * @description Accepts refresh_token from the JSON body or the HttpOnly tpm_admin_refresh cookie. Returns the new token pair for backwards-compatible non-browser clients and refreshes the HttpOnly admin cookies. Cookie-authenticated browser refresh requests receive cookie-session marker values in the JSON token fields and must send X-CSRF-Token with the refresh CSRF token from X-Admin-Refresh-CSRF-Token.
+         * @description Accepts refresh_token from the JSON body or the HttpOnly tpm_admin_refresh cookie. Returns the new token pair for backwards-compatible non-browser clients and refreshes the HttpOnly admin cookies. Cookie-authenticated browser refresh requests receive cookie-session marker values in the JSON token fields and must send the refresh CSRF token from X-Admin-Refresh-CSRF-Token in either X-CSRF-Token or X-Admin-Refresh-CSRF-Token.
          */
         post: operations["adminRefresh"];
         delete?: never;
@@ -178,8 +178,9 @@ export interface paths {
          *     (it expires naturally via its short TTL). Logout does not require a
          *     currently valid access token, so an expired browser session can still
          *     revoke the refresh token and clear auth cookies.
-         *     Cookie-authenticated browser requests must send X-CSRF-Token with the
-         *     refresh CSRF token from X-Admin-Refresh-CSRF-Token.
+         *     Cookie-authenticated browser requests must send the refresh CSRF token
+         *     from X-Admin-Refresh-CSRF-Token in either X-CSRF-Token or
+         *     X-Admin-Refresh-CSRF-Token.
          */
         post: operations["adminLogout"];
         delete?: never;
@@ -197,6 +198,29 @@ export interface paths {
         };
         /** List players with effective leaderboard stats */
         get: operations["listAdminPlayers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/players/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream admin player list invalidation events
+         * @description Server-Sent Events stream for the admin player dashboard. The stream emits
+         *     `ready` immediately after subscription and `players_changed` whenever the
+         *     player list, player status, or admin leaderboard overrides change.
+         *     Heartbeats are sent as SSE comments while the connection is idle.
+         */
+        get: operations["streamAdminPlayerEvents"];
         put?: never;
         post?: never;
         delete?: never;
@@ -508,7 +532,7 @@ export interface components {
             description: string;
             difficulty: components["schemas"]["TaskDifficulty"];
             flag: string;
-            hints: string[];
+            hints: (string | null)[];
             /** Format: uuid */
             id: string;
             /** Format: uri */
@@ -527,7 +551,7 @@ export interface components {
             description: string;
             difficulty: components["schemas"]["TaskDifficulty"];
             flag: string;
-            hints: string[];
+            hints?: (string | null)[];
             /** @description Task endpoint. Accepts http(s) URLs or host:port targets for pwn/nc tasks. */
             task_url?: string | null;
             /** Format: int32 */
@@ -539,7 +563,7 @@ export interface components {
             description?: string;
             difficulty?: components["schemas"]["TaskDifficulty"];
             flag?: string;
-            hints?: string[];
+            hints?: (string | null)[];
             /**
              * Format: uri
              * @description Set to null to clear an uploaded source file. Non-null values are managed by the source upload endpoint.
@@ -696,6 +720,17 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LeaderboardResponse"];
+                };
+            };
+            /** @description Too many leaderboard requests from the same client IP. */
+            429: {
+                headers: {
+                    /** @description Seconds until the leaderboard rate window resets. */
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
         };
@@ -955,6 +990,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AdminPlayerResponse"][];
+                };
+            };
+            /** @description Missing or invalid admin session. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    streamAdminPlayerEvents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description SSE stream. Events are formatted as text/event-stream. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
                 };
             };
             /** @description Missing or invalid admin session. */

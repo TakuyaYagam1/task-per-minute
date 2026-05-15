@@ -74,6 +74,42 @@ func TestUsecase_Join_UpdatesExistingIdlePlayerSessionToken(t *testing.T) {
 	require.NotEqual(t, oldToken, *got.SessionToken)
 }
 
+func TestUsecase_Join_UsesInjectedClockForSessionExpiry(t *testing.T) {
+	t.Parallel()
+
+	tx, players, duels := newFixture(t)
+	runTxInline(tx)
+
+	now := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
+	ttl := 90 * time.Minute
+	wantExpiresAt := now.Add(ttl)
+	created := &domain.Player{
+		ID:        uuid.New(),
+		Username:  "alice",
+		Status:    domain.PlayerStatusIdle,
+		CreatedAt: now,
+	}
+	players.EXPECT().
+		JoinByUsername(mock.Anything, "alice", mock.MatchedBy(nonNilUUID), wantExpiresAt).
+		RunAndReturn(func(_ context.Context, _ string, token uuid.UUID, expiresAt time.Time) (*domain.Player, error) {
+			updated := *created
+			updated.SessionToken = &token
+			updated.SessionExpiresAt = &expiresAt
+			return &updated, nil
+		})
+
+	got, err := playerusecase.NewPlayerUsecase(
+		tx,
+		players,
+		duels,
+		playerusecase.WithSessionTTL(ttl),
+		playerusecase.WithClock(fixedPlayerClock{now: now}),
+	).Join(t.Context(), "alice")
+	require.NoError(t, err)
+	require.NotNil(t, got.SessionExpiresAt)
+	require.Equal(t, wantExpiresAt, *got.SessionExpiresAt)
+}
+
 func TestUsecase_Join_RejectsPlayerInDuel(t *testing.T) {
 	t.Parallel()
 
@@ -226,4 +262,12 @@ func nonNilUUID(token uuid.UUID) bool {
 
 func futureTime(t time.Time) bool {
 	return t.After(time.Now().UTC())
+}
+
+type fixedPlayerClock struct {
+	now time.Time
+}
+
+func (c fixedPlayerClock) Now() time.Time {
+	return c.now
 }

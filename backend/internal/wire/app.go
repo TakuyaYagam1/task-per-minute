@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase"
+	duelusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel"
 	"github.com/TakuyaYagam1/task-per-minute/pkg/clock"
 )
 
@@ -29,10 +30,13 @@ type App struct {
 	WebSocket   WebSocketShutdowner
 	Tx          usecase.TxManager
 	Duels       usecase.ActiveDuelRepo
+	DuelTasks   usecase.DuelRepo
 	Players     usecase.PlayerStatusRepo
 	Queued      usecase.QueuedPlayerResetter
 	Queue       usecase.MatchmakingQueueCleaner
 	Broadcaster usecase.DuelBroadcaster
+	Reconnect   *duelusecase.ReconnectManager
+	Hints       *duelusecase.HintScheduler
 	Clock       clock.Clock
 	Revocation  RevocationJanitor
 }

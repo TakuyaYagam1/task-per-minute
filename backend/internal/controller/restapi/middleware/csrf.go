@@ -278,9 +278,17 @@ func validateAdminCSRF(r *http.Request, cookieName, secret string) bool {
 		return false
 	}
 
-	headerToken := strings.TrimSpace(r.Header.Get(CSRFHeaderName))
-	return validAdminCSRFToken(cookieName, secret, headerToken) &&
-		subtle.ConstantTimeCompare([]byte(cookieToken), []byte(headerToken)) == 1
+	headerTokens := []string{strings.TrimSpace(r.Header.Get(CSRFHeaderName))}
+	if cookieName == AdminRefreshCSRFCookieName {
+		headerTokens = append(headerTokens, strings.TrimSpace(r.Header.Get(AdminRefreshCSRFHeaderName)))
+	}
+	for _, headerToken := range headerTokens {
+		if validAdminCSRFToken(cookieName, secret, headerToken) &&
+			subtle.ConstantTimeCompare([]byte(cookieToken), []byte(headerToken)) == 1 {
+			return true
+		}
+	}
+	return false
 }
 
 func validAdminCSRFToken(cookieName, secret, token string) bool {

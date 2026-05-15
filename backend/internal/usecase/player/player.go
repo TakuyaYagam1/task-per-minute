@@ -12,6 +12,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase"
+	"github.com/TakuyaYagam1/task-per-minute/pkg/clock"
 )
 
 var usernameRE = regexp.MustCompile(`^[a-zA-Z0-9_-]{2,50}$`)
@@ -23,6 +24,7 @@ type PlayerUsecase struct {
 	players    usecase.PlayerRepo
 	duels      usecase.DuelRepo
 	sessionTTL time.Duration
+	clock      clock.Clock
 }
 
 type Option func(*PlayerUsecase)
@@ -31,6 +33,14 @@ func WithSessionTTL(ttl time.Duration) Option {
 	return func(u *PlayerUsecase) {
 		if ttl > 0 {
 			u.sessionTTL = ttl
+		}
+	}
+}
+
+func WithClock(clk clock.Clock) Option {
+	return func(u *PlayerUsecase) {
+		if clk != nil {
+			u.clock = clk
 		}
 	}
 }
@@ -45,6 +55,7 @@ func NewPlayerUsecase(tx usecase.TxManager, players usecase.PlayerRepo, duels us
 		players:    players,
 		duels:      duels,
 		sessionTTL: defaultSessionTTL,
+		clock:      clock.Real{},
 	}
 	for _, opt := range options {
 		if opt != nil {
@@ -60,7 +71,7 @@ func (u *PlayerUsecase) Join(ctx context.Context, username string) (*domain.Play
 	}
 
 	sessionToken := uuid.New()
-	sessionExpiresAt := time.Now().UTC().Add(u.sessionTTL)
+	sessionExpiresAt := u.clock.Now().Add(u.sessionTTL)
 	var joined *domain.Player
 
 	if err := u.tx.Do(ctx, func(txCtx context.Context) error {

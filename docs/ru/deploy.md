@@ -70,8 +70,7 @@ openssl rand -base64 32 # ADMIN_PASSWORD
 # Ручной production compose собирает backend/frontend из исходников.
 BACKEND_IMAGE=ghcr.io/<owner>/task-per-minute-backend:<tag>
 FRONTEND_IMAGE=ghcr.io/<owner>/task-per-minute-frontend:<tag>
-NGINX_IMAGE=nginx:1.30.0-alpine3.23
-CERTBOT_IMAGE=certbot/certbot:v5.5.0
+CADDY_IMAGE=caddy:2-alpine
 BACKEND_PORT=8080
 FRONTEND_PORT=3000
 DB_DSN=postgres://admin:<POSTGRES_PASSWORD>@postgres:5432/task_per_minute?sslmode=disable
@@ -79,9 +78,21 @@ APP_DOMAIN=example.com
 ADMIN_DOMAIN=admin.example.com
 API_DOMAIN=api.example.com
 FILES_DOMAIN=files.example.com
-CERTBOT_CERT_NAME=task-per-minute
-ACME_EMAIL=admin@example.com
-USE_LE_STAGING=false
+CADDY_ACME_EMAIL=admin@example.com
+CADDY_ACME_CA=https://acme-v02.api.letsencrypt.org/directory
+TASK_COOKIE_DOMAIN=myfirstsite.example.com
+TASK_ARCHIVE_DOMAIN=archive.example.com
+TASK_SAMOVAR_DOMAIN=samovar.example.com
+TASK_VKONTAKTE_DOMAIN=vkontakte.example.com
+TASK_DEDYS_DOMAIN=dedys.example.com
+TASK_COOKIE_UPSTREAM=frontend:3000
+TASK_ARCHIVE_UPSTREAM=frontend:3000
+TASK_SAMOVAR_UPSTREAM=frontend:3000
+TASK_VKONTAKTE_UPSTREAM=frontend:3000
+TASK_DEDYS_UPSTREAM=frontend:3000
+CADDY_FRONTEND_UPSTREAM=frontend:3000
+CADDY_BACKEND_UPSTREAM=backend:8080
+CADDY_FILES_UPSTREAM=seaweedfs:8333
 SEAWEEDFS_PUBLIC_ENDPOINT=files.example.com
 SEAWEEDFS_PUBLIC_SECURE=true
 DOCKER_INTERNAL_SUBNET=172.30.0.0/24
@@ -93,7 +104,7 @@ compose; внутри docker-сети остаются дефолтные пор
 backend прямо с хоста временно используйте host-вариант `DB_DSN` с
 `localhost:5432`; для compose оставляйте `postgres:5432`.
 `SEAWEEDFS_PUBLIC_ENDPOINT` указывается без схемы и должен совпадать с
-`FILES_DOMAIN`; именно этот host попадает в presigned ZIP URL, а NGINX
+`FILES_DOMAIN`; именно этот host попадает в presigned ZIP URL, а Caddy
 проксирует его на SeaweedFS S3 endpoint.
 
 Для текущего продового разреза доменов backend открыт как
@@ -108,6 +119,11 @@ APP_DOMAIN=xn--90aeebbpdxndkcm5abncn1ej9mqa.xn--p1ai
 ADMIN_DOMAIN=admin.xn--90aeebbpdxndkcm5abncn1ej9mqa.xn--p1ai
 API_DOMAIN=api.xn--90aeebbpdxndkcm5abncn1ej9mqa.xn--p1ai
 FILES_DOMAIN=files.xn--90aeebbpdxndkcm5abncn1ej9mqa.xn--p1ai
+TASK_COOKIE_DOMAIN=myfirstsite.xn--90aeebbpdxndkcm5abncn1ej9mqa.xn--p1ai
+TASK_ARCHIVE_DOMAIN=archive.xn--90aeebbpdxndkcm5abncn1ej9mqa.xn--p1ai
+TASK_SAMOVAR_DOMAIN=samovar.xn--90aeebbpdxndkcm5abncn1ej9mqa.xn--p1ai
+TASK_VKONTAKTE_DOMAIN=vkontakte.xn--90aeebbpdxndkcm5abncn1ej9mqa.xn--p1ai
+TASK_DEDYS_DOMAIN=dedys.xn--90aeebbpdxndkcm5abncn1ej9mqa.xn--p1ai
 HTTP_ALLOWED_ORIGINS=https://admin.xn--90aeebbpdxndkcm5abncn1ej9mqa.xn--p1ai,https://xn--90aeebbpdxndkcm5abncn1ej9mqa.xn--p1ai
 WS_ALLOWED_ORIGINS=https://xn--90aeebbpdxndkcm5abncn1ej9mqa.xn--p1ai
 WS_REQUIRE_ORIGIN=true
@@ -122,6 +138,9 @@ ADMIN_LOGIN_RATE_BUCKET_TTL=15m
 ADMIN_REFRESH_RATE_ATTEMPTS=10
 ADMIN_REFRESH_RATE_WINDOW=3m
 ADMIN_REFRESH_RATE_BUCKET_TTL=15m
+LEADERBOARD_RATE_ATTEMPTS=120
+LEADERBOARD_RATE_WINDOW=1m
+LEADERBOARD_RATE_BUCKET_TTL=15m
 WS_HANDSHAKE_RATE_ATTEMPTS=60
 WS_HANDSHAKE_RATE_WINDOW=1m
 WS_HANDSHAKE_RATE_BUCKET_TTL=15m
@@ -148,46 +167,46 @@ origins. Для browser-only production режима рекомендуется 
 tokens не должны храниться в `localStorage` или `sessionStorage`; frontend
 держит только marker активной admin-сессии и readable CSRF tokens. Unsafe REST
 запросы с cookie-auth должны отправлять `X-CSRF-Token`; admin refresh/logout
-используют refresh CSRF token из `X-Admin-Refresh-CSRF-Token`. WebSocket
+используют refresh CSRF token из `X-Admin-Refresh-CSRF-Token` в
+`X-CSRF-Token` или `X-Admin-Refresh-CSRF-Token`. WebSocket
 подключается только к `/ws` с player session cookie: query token
 `/ws?token=...`, `X-Session-Token` и bearer subprotocol больше не являются
 поддерживаемым браузерным контрактом.
 
-NGINX/compose defaults рассчитаны на backend upload до 100MB: API-capable
-server blocks используют `client_max_body_size 125m`, API proxy timeout `300s`,
-а backend read/write timeout `5m`.
+Caddy/compose defaults рассчитаны на backend upload до 100MB: API-capable
+routes используют `request_body max_size 125MB`, а backend read/write timeout
+остается `5m`.
 
-Production compose уже содержит NGINX edge service. Наружу публикуются только
-`NGINX_HTTP_PORT` и `NGINX_HTTPS_PORT`; backend, frontend, Postgres, Redis и
+Production compose уже содержит Caddy edge service. Наружу публикуются только
+`CADDY_HTTP_PORT` и `CADDY_HTTPS_PORT`; backend, frontend, Postgres, Redis и
 SeaweedFS остаются внутри Docker-сети. `expose` у внутренних сервисов не
 открывает порт на host, а только документирует порт внутри compose network.
 
 Если backend должен видеть реальный IP клиента для rate-limit и логов,
-`HTTP_TRUSTED_PROXY_CIDRS` должен совпадать с внутренней Docker-сетью NGINX:
+`HTTP_TRUSTED_PROXY_CIDRS` должен совпадать с внутренней Docker-сетью Caddy:
 
 ```env
 DOCKER_INTERNAL_SUBNET=172.30.0.0/24
 HTTP_TRUSTED_PROXY_CIDRS=172.30.0.0/24
 ```
 
-Если все пользователи за NGINX получают `429` на login/refresh/join или `/ws`,
-проверьте, что `HTTP_TRUSTED_PROXY_CIDRS` совпадает с Docker subnet, а NGINX
+Если все пользователи за Caddy получают `429` на login/refresh/join или `/ws`,
+проверьте, что `HTTP_TRUSTED_PROXY_CIDRS` совпадает с Docker subnet, а Caddy
 передает `X-Forwarded-For`. Backend читает forwarded headers только от trusted
 proxy; при пустом или неверном CIDR лимиты будут считаться по адресу proxy.
 
 ## 4. Первый запуск
 
 Перед запуском HTTPS нужны DNS `A/AAAA` записи для `APP_DOMAIN`,
-`ADMIN_DOMAIN`, `API_DOMAIN` и `FILES_DOMAIN`, указывающие на сервер. NGINX
-первым стартом поднимается в HTTP-only bootstrap mode, отдает
-`/.well-known/acme-challenge/` из общего `certbot_webroot` volume, а `certbot`
-sidecar выпускает сертификат webroot-режимом, ставит reload marker и NGINX
-перезагружает полноценный HTTPS config.
+`ADMIN_DOMAIN`, `API_DOMAIN`, `FILES_DOMAIN` и всех `TASK_*_DOMAIN`,
+указывающие на сервер. Caddy на первом старте сам обслуживает HTTP-01 challenge,
+выпускает сертификаты, кладет их в `caddy_data` и затем обслуживает HTTPS для
+основного сервиса и task-subdomains.
 
 ```bash
 cd /opt/task-per-minute/deployment/docker
 docker compose --env-file ../../.env up -d --build --remove-orphans
-docker compose --env-file ../../.env logs -f nginx certbot
+docker compose --env-file ../../.env logs -f caddy
 ```
 
 Это ручной source-build режим: backend/frontend собираются на сервере из
@@ -196,17 +215,17 @@ docker compose --env-file ../../.env logs -f nginx certbot
 SHA-tagged images.
 
 Для проверки DNS/firewall без риска rate-limit можно сначала поставить
-`USE_LE_STAGING=true`. После staging-проверки удалите staging lineage и
-перезапустите certbot с `USE_LE_STAGING=false`:
+`CADDY_ACME_CA=https://acme-staging-v02.api.letsencrypt.org/directory`. После
+staging-проверки верните
+`https://acme-v02.api.letsencrypt.org/directory` и перезапустите Caddy:
 
 ```bash
-docker compose --env-file ../../.env run --rm --no-deps --entrypoint certbot certbot delete --cert-name task-per-minute
-docker compose --env-file ../../.env restart certbot
+docker compose --env-file ../../.env restart caddy
 ```
 
-Certbot делает 3 попытки initial issuance с паузой 60s. Если все 3 попытки
-упали, контейнер не долбит Let's Encrypt бесконечно; исправьте DNS/firewall и
-выполните `docker compose --env-file ../../.env restart certbot`.
+Caddy сам управляет initial issuance и renew. Если выпуск сертификата упал,
+исправьте DNS/firewall и выполните
+`docker compose --env-file ../../.env restart caddy`.
 
 После первого запуска Docker будет поднимать контейнеры после перезагрузки
 хоста, потому что сервисы используют `restart: unless-stopped`.
@@ -216,28 +235,29 @@ Certbot делает 3 попытки initial issuance с паузой 60s. Ес
 ```bash
 cd /opt/task-per-minute/deployment/docker
 docker compose --env-file ../../.env ps
-docker compose --env-file ../../.env exec -T nginx nginx -t -c /tmp/nginx.conf
-docker compose --env-file ../../.env exec -T nginx wget -qO- http://127.0.0.1/nginx-health
-docker compose --env-file ../../.env logs --tail=100 certbot
+docker compose --env-file ../../.env exec -T caddy caddy validate --config /etc/caddy/Caddyfile
+docker compose --env-file ../../.env exec -T caddy wget -qO- http://127.0.0.1:2019/config/ >/dev/null
+docker compose --env-file ../../.env logs --tail=100 caddy
 docker compose --env-file ../../.env logs -f backend
 docker compose --env-file ../../.env exec -T backend wget -qO- http://127.0.0.1:8080/health
 docker compose --env-file ../../.env exec -T frontend sh -c 'wget -qO- "http://127.0.0.1:${PORT:-3000}/" >/dev/null'
 ```
 
 Production compose не публикует backend/frontend порты на host. Публичный вход
-идет через NGINX:
+идет через Caddy:
 
 ```bash
 curl -fsSI "https://$APP_DOMAIN/"
 curl -fsSI "https://$ADMIN_DOMAIN/admin"
 curl -fsS "https://$API_DOMAIN/health"
 curl -fsSI "https://$FILES_DOMAIN/"
+curl -fsSI "https://$TASK_COOKIE_DOMAIN/"
 ```
 
-Renewal идет тем же certbot sidecar через webroot challenge каждые
-`CERTBOT_RENEW_INTERVAL_SECONDS` секунд. После успешного renew certbot трогает
-`/var/run/certbot/reload-nginx`, а NGINX reload watcher делает hot reload без
-открытия Docker socket наружу.
+Renewal идет внутри Caddy и использует persistent volume `caddy_data`. Старые
+`certbot_*` и `nginx_cache` volumes больше не используются Caddy-стеком;
+удаление сервисов из compose или контейнеров через `docker rm -f` не удаляет
+эти volumes, пока явно не передан флаг удаления томов.
 
 ## 6. Деплой через GitHub Actions
 
@@ -304,6 +324,9 @@ WS_REQUIRE_ORIGIN       # требовать browser Origin на /ws, реком
 ADMIN_REFRESH_RATE_ATTEMPTS  # лимит POST /api/v1/admin/refresh, по умолчанию 10
 ADMIN_REFRESH_RATE_WINDOW    # окно refresh rate-limit, по умолчанию 3m
 ADMIN_REFRESH_RATE_BUCKET_TTL # TTL idle bucket refresh limiter, по умолчанию 15m
+LEADERBOARD_RATE_ATTEMPTS    # лимит GET /api/v1/leaderboard на IP, по умолчанию 120
+LEADERBOARD_RATE_WINDOW      # окно leaderboard rate-limit, по умолчанию 1m
+LEADERBOARD_RATE_BUCKET_TTL  # TTL idle bucket leaderboard limiter, по умолчанию 15m
 WS_HANDSHAKE_RATE_ATTEMPTS   # лимит /ws handshakes на IP, по умолчанию 60
 WS_HANDSHAKE_RATE_WINDOW     # окно WS handshake limiter, по умолчанию 1m
 WS_HANDSHAKE_RATE_BUCKET_TTL # TTL idle bucket WS limiter, по умолчанию 15m

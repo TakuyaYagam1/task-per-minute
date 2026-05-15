@@ -670,8 +670,8 @@ func (s *Server) taskPayloadForPlayer(ctx context.Context, duel *domain.Duel, pl
 	if err != nil {
 		return nil, err
 	}
-	if !ok || len(snapshot.Schedule) == 0 {
-		snapshot.Schedule = domain.BuildHintSchedule(duel.StartedAt, task.TimeLimit)
+	if !ok {
+		snapshot.Schedule = taskVisibleHintSchedule(duel.StartedAt, task)
 	}
 	snapshot.Task = task
 

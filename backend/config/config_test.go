@@ -19,6 +19,7 @@ var configEnvVars = []string{
 	"ADMIN_PASSWORD", "ADMIN_LOGIN_RATE_ATTEMPTS", "ADMIN_LOGIN_RATE_WINDOW", "ADMIN_LOGIN_RATE_BUCKET_TTL",
 	"ADMIN_REFRESH_RATE_ATTEMPTS", "ADMIN_REFRESH_RATE_WINDOW", "ADMIN_REFRESH_RATE_BUCKET_TTL",
 	"PLAYER_JOIN_RATE_ATTEMPTS", "PLAYER_JOIN_RATE_WINDOW", "PLAYER_JOIN_RATE_BUCKET_TTL", "PLAYER_SESSION_TTL",
+	"LEADERBOARD_RATE_ATTEMPTS", "LEADERBOARD_RATE_WINDOW", "LEADERBOARD_RATE_BUCKET_TTL",
 	"WS_ALLOWED_ORIGINS", "WS_REQUIRE_ORIGIN", "WS_HANDSHAKE_RATE_ATTEMPTS", "WS_HANDSHAKE_RATE_WINDOW", "WS_HANDSHAKE_RATE_BUCKET_TTL",
 	"WS_MESSAGE_RATE_ATTEMPTS", "WS_MESSAGE_RATE_WINDOW", "WS_ACTION_RATE_ATTEMPTS", "WS_ACTION_RATE_WINDOW",
 }
@@ -120,6 +121,15 @@ func TestLoad_AppliesDefaults(t *testing.T) {
 	if cfg.Player.SessionTTL != 24*time.Hour {
 		t.Errorf("Player.SessionTTL = %s, want 24h", cfg.Player.SessionTTL)
 	}
+	if cfg.Leaderboard.RateAttempts != 120 {
+		t.Errorf("Leaderboard.RateAttempts = %d, want 120", cfg.Leaderboard.RateAttempts)
+	}
+	if cfg.Leaderboard.RateWindow != time.Minute {
+		t.Errorf("Leaderboard.RateWindow = %s, want 1m", cfg.Leaderboard.RateWindow)
+	}
+	if cfg.Leaderboard.RateBucketTTL != 15*time.Minute {
+		t.Errorf("Leaderboard.RateBucketTTL = %s, want 15m", cfg.Leaderboard.RateBucketTTL)
+	}
 	if len(cfg.WS.AllowedOrigins) != 0 {
 		t.Errorf("WS.AllowedOrigins = %v, want empty", cfg.WS.AllowedOrigins)
 	}
@@ -170,6 +180,9 @@ func TestLoad_OverridesAreApplied(t *testing.T) {
 	t.Setenv("PLAYER_JOIN_RATE_WINDOW", "30s")
 	t.Setenv("PLAYER_JOIN_RATE_BUCKET_TTL", "3h")
 	t.Setenv("PLAYER_SESSION_TTL", "12h")
+	t.Setenv("LEADERBOARD_RATE_ATTEMPTS", "31")
+	t.Setenv("LEADERBOARD_RATE_WINDOW", "25s")
+	t.Setenv("LEADERBOARD_RATE_BUCKET_TTL", "7m")
 	t.Setenv("WS_ALLOWED_ORIGINS", "https://example.com,https://api.example.com")
 	t.Setenv("WS_REQUIRE_ORIGIN", "true")
 	t.Setenv("WS_HANDSHAKE_RATE_ATTEMPTS", "17")
@@ -237,6 +250,15 @@ func TestLoad_OverridesAreApplied(t *testing.T) {
 	}
 	if cfg.Player.SessionTTL != 12*time.Hour {
 		t.Errorf("Player.SessionTTL = %s, want 12h", cfg.Player.SessionTTL)
+	}
+	if cfg.Leaderboard.RateAttempts != 31 {
+		t.Errorf("Leaderboard.RateAttempts = %d, want 31", cfg.Leaderboard.RateAttempts)
+	}
+	if cfg.Leaderboard.RateWindow != 25*time.Second {
+		t.Errorf("Leaderboard.RateWindow = %s, want 25s", cfg.Leaderboard.RateWindow)
+	}
+	if cfg.Leaderboard.RateBucketTTL != 7*time.Minute {
+		t.Errorf("Leaderboard.RateBucketTTL = %s, want 7m", cfg.Leaderboard.RateBucketTTL)
 	}
 	if got := cfg.WS.AllowedOrigins; len(got) != 2 || got[0] != "https://example.com" || got[1] != "https://api.example.com" {
 		t.Errorf("WS.AllowedOrigins = %v, want configured origins", got)
@@ -344,6 +366,9 @@ func TestLoad_ValidationFailures(t *testing.T) {
 		{"bad admin refresh rate window", "ADMIN_REFRESH_RATE_WINDOW", "-1s", "ADMIN_REFRESH_RATE_WINDOW"},
 		{"bad player rate window", "PLAYER_JOIN_RATE_WINDOW", "-1s", "PLAYER_JOIN_RATE_WINDOW"},
 		{"bad player session ttl", "PLAYER_SESSION_TTL", "0s", "PLAYER_SESSION_TTL"},
+		{"bad leaderboard rate attempts", "LEADERBOARD_RATE_ATTEMPTS", "0", "LEADERBOARD_RATE_ATTEMPTS"},
+		{"bad leaderboard rate window", "LEADERBOARD_RATE_WINDOW", "0s", "LEADERBOARD_RATE_WINDOW"},
+		{"bad leaderboard rate bucket ttl", "LEADERBOARD_RATE_BUCKET_TTL", "-1s", "LEADERBOARD_RATE_BUCKET_TTL"},
 		{"bad ws handshake rate attempts", "WS_HANDSHAKE_RATE_ATTEMPTS", "0", "WS_HANDSHAKE_RATE_ATTEMPTS"},
 		{"bad ws handshake rate window", "WS_HANDSHAKE_RATE_WINDOW", "0s", "WS_HANDSHAKE_RATE_WINDOW"},
 		{"bad ws handshake rate bucket ttl", "WS_HANDSHAKE_RATE_BUCKET_TTL", "-1s", "WS_HANDSHAKE_RATE_BUCKET_TTL"},

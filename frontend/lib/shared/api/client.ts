@@ -135,6 +135,11 @@ const csrfTokenForRequest = (request: Request): string | null => {
   return null;
 };
 
+const isAdminRefreshCSRFRequest = (request: Request): boolean => {
+  const pathname = new URL(request.url).pathname;
+  return pathname === "/api/v1/admin/refresh" || pathname === "/api/v1/admin/logout";
+};
+
 const syncCSRFTokenFromResponse = (request: Request, response: Response): void => {
   const pathname = new URL(request.url).pathname;
   if (pathname === "/api/v1/admin/login" || pathname === "/api/v1/admin/refresh") {
@@ -179,10 +184,15 @@ const requestFromInput = (input: RequestInfo | URL, init?: RequestInit): Request
 export const credentialedFetch: typeof fetch = async (input, init) => {
   const request = requestFromInput(input, init);
   const headers = new Headers(request.headers);
-  if (isUnsafeMethod(request.method) && !headers.has(CSRF_HEADER_NAME)) {
+  if (isUnsafeMethod(request.method)) {
     const csrfToken = csrfTokenForRequest(request);
     if (csrfToken) {
-      headers.set(CSRF_HEADER_NAME, csrfToken);
+      if (!headers.has(CSRF_HEADER_NAME)) {
+        headers.set(CSRF_HEADER_NAME, csrfToken);
+      }
+      if (isAdminRefreshCSRFRequest(request) && !headers.has(ADMIN_REFRESH_CSRF_HEADER_NAME)) {
+        headers.set(ADMIN_REFRESH_CSRF_HEADER_NAME, csrfToken);
+      }
     }
   }
   const credentialedRequest = new Request(request, { credentials: "include", headers });

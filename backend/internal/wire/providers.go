@@ -143,12 +143,14 @@ func providePlayerUsecase(
 	tx usecase.TxManager,
 	players usecase.PlayerRepo,
 	duels usecase.DuelRepo,
+	clk clock.Clock,
 ) *playerusecase.PlayerUsecase {
 	return playerusecase.NewPlayerUsecase(
 		tx,
 		players,
 		duels,
 		playerusecase.WithSessionTTL(cfg.Player.SessionTTL),
+		playerusecase.WithClock(clk),
 	)
 }
 
@@ -203,22 +205,24 @@ func provideRESTServer(
 	loginLimiter *middleware.LoginRateLimiter,
 	refreshLimiter adminRefreshRateLimiter,
 	joinLimiter *middleware.JoinRateLimiter,
+	leaderboardLimiter leaderboardRateLimiter,
 	log logkit.Logger,
 ) *restv1.Server {
 	return restv1.New(restv1.Dependencies{
-		Players:           players,
-		AdminAuth:         auth,
-		Tasks:             tasks,
-		AdminPlayers:      adminPlayers,
-		AdminPlayerEvents: adminPlayerEvents,
-		Upload:            upload,
-		Leaderboard:       leaderboard,
-		Duels:             duels,
-		Health:            health,
-		LoginLimiter:      loginLimiter,
-		RefreshLimiter:    refreshLimiter.Inner,
-		JoinLimiter:       joinLimiter,
-		Log:               log,
+		Players:            players,
+		AdminAuth:          auth,
+		Tasks:              tasks,
+		AdminPlayers:       adminPlayers,
+		AdminPlayerEvents:  adminPlayerEvents,
+		Upload:             upload,
+		Leaderboard:        leaderboard,
+		Duels:              duels,
+		Health:             health,
+		LoginLimiter:       loginLimiter,
+		RefreshLimiter:     refreshLimiter.Inner,
+		JoinLimiter:        joinLimiter,
+		LeaderboardLimiter: leaderboardLimiter.Inner,
+		Log:                log,
 	})
 }
 
@@ -253,6 +257,21 @@ func provideJoinRateLimiter(ctx context.Context, cfg *config.Config) *middleware
 		cfg.Player.JoinRateWindow,
 		cfg.Player.JoinRateBucketTTL,
 	)
+}
+
+type leaderboardRateLimiter struct {
+	Inner *middleware.LoginRateLimiter
+}
+
+func provideLeaderboardRateLimiter(ctx context.Context, cfg *config.Config) leaderboardRateLimiter {
+	return leaderboardRateLimiter{
+		Inner: middleware.NewLoginRateLimiter(
+			ctx,
+			cfg.Leaderboard.RateAttempts,
+			cfg.Leaderboard.RateWindow,
+			cfg.Leaderboard.RateBucketTTL,
+		),
+	}
 }
 
 func provideRESTMiddlewares(log logkit.Logger, cfg *config.Config) []openapi.MiddlewareFunc {
@@ -474,10 +493,13 @@ func provideApp(
 	seaweed *storage.SeaweedStorage,
 	tx usecase.TxManager,
 	duels usecase.ActiveDuelRepo,
+	duelTasks usecase.DuelRepo,
 	players usecase.PlayerStatusRepo,
 	queued usecase.QueuedPlayerResetter,
 	queue usecase.MatchmakingQueueCleaner,
 	broadcaster usecase.DuelBroadcaster,
+	reconnect *duelusecase.ReconnectManager,
+	hints *duelusecase.HintScheduler,
 	clk clock.Clock,
 	server *http.Server,
 	ws *websocket.Server,
@@ -489,10 +511,13 @@ func provideApp(
 		WebSocket:   ws,
 		Tx:          tx,
 		Duels:       duels,
+		DuelTasks:   duelTasks,
 		Players:     players,
 		Queued:      queued,
 		Queue:       queue,
 		Broadcaster: broadcaster,
+		Reconnect:   reconnect,
+		Hints:       hints,
 		Clock:       clk,
 		Revocation:  revocation,
 	}

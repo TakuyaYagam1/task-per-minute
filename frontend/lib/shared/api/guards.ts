@@ -82,10 +82,10 @@ const isHttpURL = (value: unknown): value is string => {
 const isOptionalHttpURLOrNull = (value: unknown): value is string | null | undefined =>
   value === undefined || value === null || isHttpURL(value);
 
-const isThreeNonEmptyStringArray = (value: unknown): value is [string, string, string] =>
+const isPositionalHintArray = (value: unknown): value is (string | null)[] =>
   Array.isArray(value) &&
-  value.length === 3 &&
-  value.every((item) => isString(item) && item.trim().length > 0);
+  value.length <= 3 &&
+  value.every((item) => item === null || (isString(item) && item.trim().length > 0));
 
 export class ApiContractError extends Error {
   constructor(contract: string) {
@@ -156,7 +156,7 @@ export const isAdminTask = (value: unknown): value is AdminTask =>
   TASK_DIFFICULTIES.has(value.difficulty as AdminTask["difficulty"]) &&
   isPositiveInteger(value.time_limit) &&
   isString(value.flag) &&
-  isThreeNonEmptyStringArray(value.hints) &&
+  isPositionalHintArray(value.hints) &&
   isDateString(value.created_at) &&
   isOptionalStringOrNull(value.task_url) &&
   isOptionalHttpURLOrNull(value.source_file_url);

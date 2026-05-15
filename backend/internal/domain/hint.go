@@ -27,14 +27,27 @@ func BuildHintSchedule(startedAt time.Time, timeLimitSeconds int) []HintSchedule
 	}
 }
 
+func NormalizeTaskHints(hints []string) ([]string, bool) {
+	if len(hints) > TaskHintCount {
+		return nil, false
+	}
+	out := make([]string, TaskHintCount)
+	for i, hint := range hints {
+		out[i] = strings.TrimSpace(hint)
+	}
+	return out, true
+}
+
 func IsValidTaskHints(hints []string) bool {
-	if len(hints) != TaskHintCount {
-		return false
+	_, ok := NormalizeTaskHints(hints)
+	return ok
+}
+
+func TaskHintText(hints []string, idx int) (string, bool) {
+	normalized, ok := NormalizeTaskHints(hints)
+	if !ok || idx < 0 || idx >= TaskHintCount {
+		return "", false
 	}
-	for _, hint := range hints {
-		if strings.TrimSpace(hint) == "" {
-			return false
-		}
-	}
-	return true
+	text := normalized[idx]
+	return text, text != ""
 }

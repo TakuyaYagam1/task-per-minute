@@ -1110,6 +1110,46 @@ test('admin task form keeps valid decimal time_limit as number', async ({ page }
   expect(createCalls).toBe(1);
 });
 
+test('admin task form allows empty positional hints', async ({ page }) => {
+  let createCalls = 0;
+  await setupAdminValidationApi(page, (payload) => {
+    createCalls += 1;
+    expect(payload).toMatchObject({
+      hints: [null, null, null],
+      task_url: null,
+    });
+  });
+
+  await loginAdminWithEmptyTaskList(page);
+  await fillAdminTaskForm(page, {
+    taskUrl: '',
+    hints: ['', '', ''],
+  });
+  await page.getByRole('button', { name: /Создать задачу/ }).click();
+
+  await expect(page.getByText('Задача успешно создана!')).toBeVisible();
+  expect(createCalls).toBe(1);
+});
+
+test('admin task form preserves sparse hint slot indexes', async ({ page }) => {
+  let createCalls = 0;
+  await setupAdminValidationApi(page, (payload) => {
+    createCalls += 1;
+    expect(payload).toMatchObject({
+      hints: [null, null, 'third only'],
+    });
+  });
+
+  await loginAdminWithEmptyTaskList(page);
+  await fillAdminTaskForm(page, {
+    hints: ['', '', 'third only'],
+  });
+  await page.getByRole('button', { name: /Создать задачу/ }).click();
+
+  await expect(page.getByText('Задача успешно создана!')).toBeVisible();
+  expect(createCalls).toBe(1);
+});
+
 test('admin task form rejects whitespace-only required fields before create', async ({ page }) => {
   let createCalls = 0;
   await setupAdminValidationApi(page, () => {
@@ -1744,6 +1784,7 @@ test('admin logout ignores delayed refresh and prevents stale retry', async ({ p
 test('admin logout sends stored refresh csrf before clearing local admin session', async ({ page }) => {
   const refreshCSRFToken = 'stored-refresh-csrf-token';
   let logoutCSRFHeader: string | undefined;
+  let logoutRefreshCSRFHeader: string | undefined;
 
   await page.addInitScript((token) => {
     window.sessionStorage.setItem('admin_session_active', '1');
@@ -1755,6 +1796,7 @@ test('admin logout sends stored refresh csrf before clearing local admin session
 
   await page.route('**/api/v1/admin/logout', async (route) => {
     logoutCSRFHeader = route.request().headers()['x-csrf-token'];
+    logoutRefreshCSRFHeader = route.request().headers()['x-admin-refresh-csrf-token'];
     expect(route.request().headers().authorization).toBeUndefined();
     await route.fulfill({ status: 204 });
   });
@@ -1774,6 +1816,7 @@ test('admin logout sends stored refresh csrf before clearing local admin session
   await expect(page.getByText('Авторизация')).toBeVisible();
 
   expect(logoutCSRFHeader).toBe(refreshCSRFToken);
+  expect(logoutRefreshCSRFHeader).toBe(refreshCSRFToken);
   await expect
     .poll(() => page.evaluate(() => window.sessionStorage.getItem('admin_session_active')))
     .toBeNull();
