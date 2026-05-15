@@ -16,7 +16,7 @@ services:
       - "${CADDY_HTTP_PORT:-${NGINX_HTTP_PORT:-80}}:80"
       - "${CADDY_HTTPS_PORT:-${NGINX_HTTPS_PORT:-443}}:443"
     environment:
-      CADDY_ACME_EMAIL: ${CADDY_ACME_EMAIL:-${ACME_EMAIL:?CADDY_ACME_EMAIL or ACME_EMAIL is required for Caddy ACME account}}
+      CADDY_ACME_EMAIL: ${CADDY_ACME_EMAIL:-${ACME_EMAIL:-admin@${APP_DOMAIN:?APP_DOMAIN is required for Caddy certificates}}}
       CADDY_ACME_CA: ${CADDY_ACME_CA:-https://acme-v02.api.letsencrypt.org/directory}
       APP_DOMAIN: ${APP_DOMAIN:?APP_DOMAIN is required for Caddy certificates}
       ADMIN_DOMAIN: ${ADMIN_DOMAIN:?ADMIN_DOMAIN is required for Caddy certificates}
