@@ -49,7 +49,7 @@
 	}
 
 	handle / {
-		redir /admin 302
+		redir * /admin 302
 	}
 	handle /ws {
 		reverse_proxy {$CADDY_BACKEND_UPSTREAM}
