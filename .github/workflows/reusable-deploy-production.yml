@@ -209,6 +209,114 @@ jobs:
           echo "frontend health or same-origin api rewrite check failed after 12 attempts"
           exit 1
 
+      - name: verify auth and websocket smoke
+        env:
+          DEPLOY_FRONTEND_HEALTH_URL: ${{ vars.DEPLOY_FRONTEND_HEALTH_URL }}
+          DEPLOY_SMOKE_ADMIN_PASSWORD: ${{ secrets.DEPLOY_SMOKE_ADMIN_PASSWORD }}
+        run: |
+          set -Eeuo pipefail
+
+          if [ -z "${DEPLOY_SMOKE_ADMIN_PASSWORD:-}" ]; then
+            echo "::error::DEPLOY_SMOKE_ADMIN_PASSWORD is required for production auth smoke checks"
+            exit 1
+          fi
+          python3 -m pip install --disable-pip-version-check websockets==15.0.1
+          python3 - <<'PY'
+          import asyncio
+          import http.cookiejar
+          import json
+          import os
+          import ssl
+          import sys
+          import time
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+          import websockets
+
+          raw = os.environ["DEPLOY_FRONTEND_HEALTH_URL"].strip()
+          parsed = urllib.parse.urlsplit(raw)
+          if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+              raise SystemExit(f"invalid DEPLOY_FRONTEND_HEALTH_URL: {raw!r}")
+          origin = urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, "", "", ""))
+          ws_scheme = "wss" if parsed.scheme == "https" else "ws"
+          ws_url = urllib.parse.urlunsplit((ws_scheme, parsed.netloc, "/ws", "", ""))
+
+          jar = http.cookiejar.CookieJar()
+          opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
+
+          def request(method, path, payload=None, extra_headers=None):
+              headers = {
+                  "Accept": "application/json",
+                  "Origin": origin,
+              }
+              body = None
+              if payload is not None:
+                  body = json.dumps(payload).encode("utf-8")
+                  headers["Content-Type"] = "application/json"
+              if extra_headers:
+                  headers.update(extra_headers)
+              req = urllib.request.Request(
+                  urllib.parse.urljoin(origin, path),
+                  data=body,
+                  headers=headers,
+                  method=method,
+              )
+              with opener.open(req, timeout=10) as resp:
+                  data = resp.read()
+                  if not data:
+                      return resp.status, None
+                  return resp.status, json.loads(data.decode("utf-8"))
+
+          username = f"smoke-{int(time.time())}"
+          status, player = request("POST", "/api/v1/players/join", {"username": username})
+          assert status == 200 and player["username"] == username
+          status, me = request("GET", "/api/v1/players/me")
+          assert status == 200 and me["player"]["username"] == username
+
+          status, admin = request(
+              "POST",
+              "/api/v1/admin/login",
+              {"password": os.environ["DEPLOY_SMOKE_ADMIN_PASSWORD"]},
+          )
+          assert status == 200 and admin.get("token_type") == "Bearer"
+
+          cookie_header = "; ".join(f"{cookie.name}={cookie.value}" for cookie in jar)
+          if "tpm_player_session=" not in cookie_header:
+              raise SystemExit("player session cookie missing after join")
+
+          async def ws_smoke():
+              ssl_ctx = ssl.create_default_context() if ws_url.startswith("wss://") else None
+              async with websockets.connect(
+                  ws_url,
+                  origin=origin,
+                  additional_headers={"Cookie": cookie_header},
+                  ssl=ssl_ctx,
+                  open_timeout=10,
+              ) as ws:
+                  await ws.send(json.dumps({"type": "ping"}))
+                  message = json.loads(await asyncio.wait_for(ws.recv(), timeout=10))
+                  assert message.get("type") == "pong", message
+
+              try:
+                  async with websockets.connect(
+                      ws_url,
+                      origin="https://denied-origin.invalid",
+                      additional_headers={"Cookie": cookie_header},
+                      ssl=ssl_ctx,
+                      open_timeout=10,
+                  ):
+                      raise AssertionError("denied-origin websocket unexpectedly upgraded")
+              except AssertionError:
+                  raise
+              except Exception:
+                  return
+
+          asyncio.run(ws_smoke())
+          print("auth and websocket smoke checks passed")
+          PY
+
       - name: persist deployed sha
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}

@@ -70,3 +70,88 @@ jobs:
         env:
           E2E_WORKERS: 1
         run: npm run test:e2e -- --reporter=line
+
+  full-stack-e2e:
+    name: full-stack e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ inputs.target_sha }}
+
+      - name: setup node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: install frontend dependencies
+        working-directory: ${{ env.FRONTEND_WORKDIR }}
+        run: npm ci
+
+      - name: install playwright browser
+        working-directory: ${{ env.FRONTEND_WORKDIR }}
+        run: npx playwright install --with-deps chromium
+
+      - name: write disposable e2e env
+        run: |
+          set -Eeuo pipefail
+          cat > .env.local <<'ENV'
+          BACKEND_PORT=18080
+          FRONTEND_PORT=3100
+          POSTGRES_PORT=15432
+          REDIS_PORT=16379
+          SEAWEEDFS_MASTER_PORT=19333
+          SEAWEEDFS_S3_PORT=18333
+          HTTP_PORT=8080
+          HTTP_HOST=0.0.0.0
+          HTTP_ALLOWED_ORIGINS=http://127.0.0.1:3100,http://localhost:3100
+          HTTP_TRUSTED_PROXY_CIDRS=172.30.0.0/24
+          DB_DSN=postgres://tpm_ci:tpm_ci_password@postgres:5432/task_per_minute?sslmode=disable
+          DB_MAX_CONNS=20
+          REDIS_ADDR=redis:6379
+          REDIS_PASSWORD=tpm_ci_redis_password
+          REDIS_DB=0
+          SEAWEEDFS_ENDPOINT=seaweedfs:8333
+          SEAWEEDFS_PUBLIC_ENDPOINT=127.0.0.1:18333
+          SEAWEEDFS_ACCESS_KEY=tpm_ci_access
+          SEAWEEDFS_SECRET_KEY=tpm_ci_secret
+          SEAWEEDFS_BUCKET=task-per-minute
+          SEAWEEDFS_SECURE=false
+          SEAWEEDFS_PUBLIC_SECURE=false
+          JWT_SECRET=tpm-ci-jwt-secret-with-at-least-32-chars
+          JWT_ACCESS_TTL=15m
+          JWT_REFRESH_TTL=168h
+          ADMIN_PASSWORD=tpm-ci-admin-password
+          ADMIN_LOGIN_RATE_ATTEMPTS=10
+          ADMIN_LOGIN_RATE_WINDOW=3m
+          ADMIN_LOGIN_RATE_BUCKET_TTL=15m
+          ADMIN_REFRESH_RATE_ATTEMPTS=20
+          ADMIN_REFRESH_RATE_WINDOW=3m
+          ADMIN_REFRESH_RATE_BUCKET_TTL=15m
+          PLAYER_JOIN_RATE_ATTEMPTS=100
+          PLAYER_JOIN_RATE_WINDOW=5m
+          PLAYER_JOIN_RATE_BUCKET_TTL=1h
+          PLAYER_SESSION_TTL=1h
+          WS_ALLOWED_ORIGINS=http://127.0.0.1:3100,http://localhost:3100
+          WS_REQUIRE_ORIGIN=true
+          WS_HANDSHAKE_RATE_ATTEMPTS=200
+          WS_HANDSHAKE_RATE_WINDOW=1m
+          WS_HANDSHAKE_RATE_BUCKET_TTL=15m
+          WS_MESSAGE_RATE_ATTEMPTS=240
+          WS_MESSAGE_RATE_WINDOW=1m
+          WS_ACTION_RATE_ATTEMPTS=120
+          WS_ACTION_RATE_WINDOW=1m
+          NEXT_PUBLIC_API_URL=
+          NEXT_PUBLIC_ADMIN_API_URL=
+          NEXT_PUBLIC_WS_URL=
+          ENV
+
+      - name: full-stack e2e
+        env:
+          E2E_ADMIN_PASSWORD: tpm-ci-admin-password
+          E2E_COMPOSE_PROJECT_NAME: task-per-minute-ci-${{ github.run_id }}-${{ github.run_attempt }}
+        run: npm --prefix frontend run test:e2e:full-stack
