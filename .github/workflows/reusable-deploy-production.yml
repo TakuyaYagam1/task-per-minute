@@ -118,7 +118,8 @@ jobs:
           BACKEND_IMAGE="$BACKEND_IMAGE_REF" FRONTEND_IMAGE="$FRONTEND_IMAGE_REF" compose pull backend frontend
           BACKEND_IMAGE="$BACKEND_IMAGE_REF" FRONTEND_IMAGE="$FRONTEND_IMAGE_REF" compose up -d --remove-orphans backend frontend
           remove_legacy_edge
-          BACKEND_IMAGE="$BACKEND_IMAGE_REF" FRONTEND_IMAGE="$FRONTEND_IMAGE_REF" compose up -d --remove-orphans caddy
+          BACKEND_IMAGE="$BACKEND_IMAGE_REF" FRONTEND_IMAGE="$FRONTEND_IMAGE_REF" compose run --rm --no-deps caddy caddy validate --config /etc/caddy/Caddyfile
+          BACKEND_IMAGE="$BACKEND_IMAGE_REF" FRONTEND_IMAGE="$FRONTEND_IMAGE_REF" compose up -d --remove-orphans --force-recreate caddy
           REMOTE
 
       - name: verify backend health
@@ -455,7 +456,8 @@ jobs:
           start_edge() {
             if compose_has_service caddy; then
               remove_legacy_edge
-              BACKEND_IMAGE="$previous_backend_image" FRONTEND_IMAGE="$previous_frontend_image" compose up -d --remove-orphans caddy
+              BACKEND_IMAGE="$previous_backend_image" FRONTEND_IMAGE="$previous_frontend_image" compose run --rm --no-deps caddy caddy validate --config /etc/caddy/Caddyfile
+              BACKEND_IMAGE="$previous_backend_image" FRONTEND_IMAGE="$previous_frontend_image" compose up -d --remove-orphans --force-recreate caddy
               return
             fi
             if compose_has_service nginx && compose_has_service certbot; then
