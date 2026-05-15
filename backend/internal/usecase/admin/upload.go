@@ -13,12 +13,14 @@ import (
 	logkit "github.com/wahrwelt-kit/go-logkit"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
+	"github.com/TakuyaYagam1/task-per-minute/internal/ctxutil"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase"
 )
 
 const (
-	MaxSourceFileSize int64 = 100 * 1024 * 1024
+	MaxSourceFileSize        int64 = 100 * 1024 * 1024
+	sourceFileCleanupTimeout       = 10 * time.Second
 )
 
 var zipLocalFileHeader = []byte{'P', 'K', 0x03, 0x04}
@@ -86,18 +88,18 @@ func (u *UploadUsecase) UploadSourceFile(
 
 	presignedURL, err := u.storage.PresignedGetURL(ctx, key, time.Duration(task.TimeLimit)*time.Second)
 	if err != nil {
-		u.deleteSourceFileKey(context.WithoutCancel(ctx), "upload_presign_failed", taskID, key)
+		u.deleteSourceFileKeyDetached(ctx, "upload_presign_failed", taskID, key)
 		return "", fmt.Errorf("UploadUsecase - UploadSourceFile - SourceFileStorage.PresignedGetURL: %w", err)
 	}
 
 	if _, err := u.tasks.Update(ctx, taskID, taskInputWithSourceFileURL(task, storedURL)); err != nil {
-		u.deleteSourceFileKey(context.WithoutCancel(ctx), "upload_update_failed", taskID, key)
+		u.deleteSourceFileKeyDetached(ctx, "upload_update_failed", taskID, key)
 		return "", fmt.Errorf("UploadUsecase - UploadSourceFile - TaskRepo.Update: %w", err)
 	}
 	if task.SourceFileURL != nil {
 		oldKey := domain.TaskSourceFileKeyFromURL(taskID, *task.SourceFileURL)
 		if oldKey != key {
-			u.deleteSourceFileKey(context.WithoutCancel(ctx), "upload_replace_old", taskID, oldKey)
+			u.deleteSourceFileKeyDetached(ctx, "upload_replace_old", taskID, oldKey)
 		}
 	}
 
@@ -119,7 +121,9 @@ func (u *UploadUsecase) ClearSourceFile(ctx context.Context, taskID uuid.UUID, i
 		return nil, fmt.Errorf("UploadUsecase - ClearSourceFile - TaskRepo.Update: %w", err)
 	}
 	if existing.SourceFileURL != nil {
-		_ = u.DeleteSourceFile(context.WithoutCancel(ctx), taskID, existing.SourceFileURL)
+		cleanupCtx, cleanupCancel := ctxutil.DetachedWithTimeout(ctx, sourceFileCleanupTimeout)
+		defer cleanupCancel()
+		_ = u.DeleteSourceFile(cleanupCtx, taskID, existing.SourceFileURL)
 	}
 	return updated, nil
 }
@@ -140,6 +144,12 @@ func (u *UploadUsecase) deleteSourceFileKey(ctx context.Context, operation strin
 	if err := u.storage.Delete(ctx, key); err != nil {
 		u.logSourceCleanupError(operation, taskID, key, err)
 	}
+}
+
+func (u *UploadUsecase) deleteSourceFileKeyDetached(ctx context.Context, operation string, taskID uuid.UUID, key string) {
+	cleanupCtx, cleanupCancel := ctxutil.DetachedWithTimeout(ctx, sourceFileCleanupTimeout)
+	defer cleanupCancel()
+	u.deleteSourceFileKey(cleanupCtx, operation, taskID, key)
 }
 
 func (u *UploadUsecase) logSourceCleanupError(operation string, taskID uuid.UUID, key string, err error) {

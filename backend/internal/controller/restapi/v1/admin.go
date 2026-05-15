@@ -1,7 +1,6 @@
 package v1
 
 import (
-	"context"
 	"errors"
 	"net/http"
 	"time"
@@ -12,10 +11,13 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/controller/restapi/errmap"
 	"github.com/TakuyaYagam1/task-per-minute/internal/controller/restapi/middleware"
 	"github.com/TakuyaYagam1/task-per-minute/internal/controller/restapi/v1/response"
+	"github.com/TakuyaYagam1/task-per-minute/internal/ctxutil"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/openapi"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase"
 )
+
+const sourceFileDeleteCleanupTimeout = 10 * time.Second
 
 // (POST /api/v1/admin/login).
 func (s *Server) AdminLogin(w http.ResponseWriter, r *http.Request) {
@@ -397,7 +399,9 @@ func (s *Server) DeleteTask(w http.ResponseWriter, r *http.Request, id openapi_t
 		return
 	}
 	if existing.SourceFileURL != nil {
-		_ = s.upload.DeleteSourceFile(context.WithoutCancel(r.Context()), id, existing.SourceFileURL)
+		cleanupCtx, cleanupCancel := ctxutil.DetachedWithTimeout(r.Context(), sourceFileDeleteCleanupTimeout)
+		defer cleanupCancel()
+		_ = s.upload.DeleteSourceFile(cleanupCtx, id, existing.SourceFileURL)
 	}
 
 	response.WriteJSON(w, http.StatusNoContent, nil)

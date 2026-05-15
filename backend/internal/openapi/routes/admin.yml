@@ -478,7 +478,7 @@
     operationId: deleteTask
     tags: [admin]
     summary: Delete a task
-    description: Returns 409 if the task is referenced by an existing duel or solved history.
+    description: Returns 409 if the task is referenced by an active duel. Historical references are removed with the task.
     security:
       - BearerAuth: []
     responses:
@@ -497,7 +497,7 @@
             schema:
               $ref: '../components/schemas.yml#/ProblemDetails'
       '409':
-        description: Task is referenced by an existing duel or solved history.
+        description: Task is referenced by an active duel.
         content:
           application/problem+json:
             schema:

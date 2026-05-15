@@ -51,6 +51,16 @@ func WithTimeout(timeout time.Duration) StackOption {
 
 // Build creates the REST middleware stack.
 func Build(log logkit.Logger, opts ...StackOption) func(http.Handler) http.Handler {
+	return build(log, true, opts...)
+}
+
+// BuildStreaming creates the common safety stack for long-lived streaming
+// endpoints without wrapping the handler in a request timeout goroutine.
+func BuildStreaming(log logkit.Logger, opts ...StackOption) func(http.Handler) http.Handler {
+	return build(log, false, opts...)
+}
+
+func build(log logkit.Logger, withTimeout bool, opts ...StackOption) func(http.Handler) http.Handler {
 	cfg := stackConfig{timeout: defaultStackTimeout}
 	for _, opt := range opts {
 		if opt != nil {
@@ -66,7 +76,7 @@ func Build(log logkit.Logger, opts ...StackOption) func(http.Handler) http.Handl
 		clientIP, _ = httpkitmw.ClientIP(nil)
 	}
 
-	return chain(
+	middlewares := []func(http.Handler) http.Handler{
 		httpkitmw.RequestID(),
 		clientIP,
 		ForwardedProto(cfg.trustedProxyCIDRs, log),
@@ -76,8 +86,11 @@ func Build(log logkit.Logger, opts ...StackOption) func(http.Handler) http.Handl
 		NoStoreSensitiveResponses(),
 		OriginGuard(cfg.allowedOrigins),
 		CSRFGuard(),
-		Timeout(cfg.timeout, log),
-	)
+	}
+	if withTimeout {
+		middlewares = append(middlewares, Timeout(cfg.timeout, log))
+	}
+	return chain(middlewares...)
 }
 
 // GetRequestIDFromCtx returns the request ID stored by the REST stack.
@@ -103,7 +116,7 @@ func Logger(log logkit.Logger) func(http.Handler) http.Handler {
 
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
-			recorder := &statusRecorder{ResponseWriter: w}
+			recorder := newStatusRecorder(w)
 
 			next.ServeHTTP(recorder, r)
 
@@ -370,4 +383,34 @@ func (w *statusRecorder) Status() int {
 		return http.StatusOK
 	}
 	return w.status
+}
+
+type responseStatusRecorder interface {
+	http.ResponseWriter
+	Status() int
+}
+
+func newStatusRecorder(w http.ResponseWriter) responseStatusRecorder {
+	recorder := &statusRecorder{ResponseWriter: w}
+	if _, ok := w.(http.Flusher); ok {
+		return &flushStatusRecorder{statusRecorder: recorder}
+	}
+	return recorder
+}
+
+type flushStatusRecorder struct {
+	*statusRecorder
+}
+
+func (w *flushStatusRecorder) Flush() {
+	if !w.hasWrittenHeader() {
+		w.WriteHeader(http.StatusOK)
+	}
+	w.ResponseWriter.(http.Flusher).Flush()
+}
+
+func (w *statusRecorder) hasWrittenHeader() bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.wroteHeader
 }

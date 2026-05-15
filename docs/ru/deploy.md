@@ -125,6 +125,10 @@ ADMIN_REFRESH_RATE_BUCKET_TTL=15m
 WS_HANDSHAKE_RATE_ATTEMPTS=60
 WS_HANDSHAKE_RATE_WINDOW=1m
 WS_HANDSHAKE_RATE_BUCKET_TTL=15m
+WS_MESSAGE_RATE_ATTEMPTS=120
+WS_MESSAGE_RATE_WINDOW=1m
+WS_ACTION_RATE_ATTEMPTS=30
+WS_ACTION_RATE_WINDOW=1m
 ```
 
 Если `NEXT_PUBLIC_*` оставить пустыми, frontend будет ходить в backend через
@@ -303,6 +307,10 @@ ADMIN_REFRESH_RATE_BUCKET_TTL # TTL idle bucket refresh limiter, по умолч
 WS_HANDSHAKE_RATE_ATTEMPTS   # лимит /ws handshakes на IP, по умолчанию 60
 WS_HANDSHAKE_RATE_WINDOW     # окно WS handshake limiter, по умолчанию 1m
 WS_HANDSHAKE_RATE_BUCKET_TTL # TTL idle bucket WS limiter, по умолчанию 15m
+WS_MESSAGE_RATE_ATTEMPTS     # parsed WS messages на соединение, по умолчанию 120
+WS_MESSAGE_RATE_WINDOW       # окно WS message limiter, по умолчанию 1m
+WS_ACTION_RATE_ATTEMPTS      # join/leave/flag/surrender actions на соединение, по умолчанию 30
+WS_ACTION_RATE_WINDOW        # окно WS action limiter, по умолчанию 1m
 ```
 
 Если оставить эти значения как `secrets.*` вместо `vars.*`, GitHub Actions либо

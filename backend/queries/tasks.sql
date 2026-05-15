@@ -108,8 +108,19 @@ RETURNING id,
   source_file_url,
   created_at;
 -- name: DeleteTask :exec
+WITH deleted_history AS (
+  DELETE FROM player_task_history
+  WHERE task_id = $1
+),
+deleted_finished_duel_tasks AS (
+  DELETE FROM duel_player_tasks dpt
+  USING duels d
+  WHERE dpt.duel_id = d.id
+    AND dpt.task_id = $1
+    AND d.status <> 'active'
+)
 DELETE FROM tasks
-WHERE id = $1;
+WHERE tasks.id = $1;
 -- name: TaskInActiveDuel :one
 SELECT EXISTS (
     SELECT 1

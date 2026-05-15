@@ -90,6 +90,9 @@ func (u *MatchmakingUsecase) JoinQueue(ctx context.Context, playerID uuid.UUID) 
 	for {
 		player1ID, player2ID, ok, err := u.queue.PopPair(ctx)
 		if err != nil {
+			if rollbackErr := u.rollbackQueuedJoin(ctx, playerID); rollbackErr != nil {
+				err = errors.Join(err, rollbackErr)
+			}
 			return nil, fmt.Errorf("MatchmakingUsecase - JoinQueue - MatchmakingQueue.PopPair: %w", err)
 		}
 		if !ok {
@@ -134,6 +137,17 @@ func (u *MatchmakingUsecase) LeaveQueue(ctx context.Context, playerID uuid.UUID)
 		return fmt.Errorf("MatchmakingUsecase - LeaveQueue - PlayerRepo.UpdateStatusIfCurrent idle: %w", err)
 	}
 	return nil
+}
+
+func (u *MatchmakingUsecase) rollbackQueuedJoin(ctx context.Context, playerID uuid.UUID) error {
+	var errs []error
+	if err := u.queue.Remove(ctx, playerID); err != nil {
+		errs = append(errs, fmt.Errorf("MatchmakingUsecase - rollbackQueuedJoin - MatchmakingQueue.Remove: %w", err))
+	}
+	if err := u.releaseQueuedPlayers(ctx, playerID); err != nil {
+		errs = append(errs, err)
+	}
+	return errors.Join(errs...)
 }
 
 func (u *MatchmakingUsecase) ensureQueuedForJoin(ctx context.Context, playerID uuid.UUID) error {

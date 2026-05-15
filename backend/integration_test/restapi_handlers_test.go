@@ -173,12 +173,29 @@ func TestRESTHandlers_ExpiredPlayerSessionReturns401(t *testing.T) {
 	require.Nil(t, cleared.SessionExpiresAt)
 }
 
-func TestRESTHandlers_DeleteReferencedTaskReturns409(t *testing.T) {
+func TestRESTHandlers_DeleteTaskReferencedByActiveDuelReturns409(t *testing.T) {
 	f := newRESTFixture(t)
 	adminToken := f.adminAccessToken(t)
 	ctx := context.Background()
 
-	task := f.makeTask(t, uniq("referenced"), domain.DifficultyEasy)
+	task := f.makeTask(t, uniq("active_referenced"), domain.DifficultyEasy)
+	alice := f.joinPlayerViaUsecase(t, uniq("alice"))
+	bob := f.joinPlayerViaUsecase(t, uniq("bob"))
+	duel, err := f.duels.Create(ctx, alice.ID, bob.ID, time.Now().Add(time.Minute))
+	require.NoError(t, err)
+	require.NoError(t, f.duels.CreateDuelPlayerTask(ctx, duel.ID, alice.ID, task.ID))
+
+	req, resp := f.doJSON(t, http.MethodDelete, "/api/v1/admin/tasks/"+task.ID.String(), "", bearer(adminToken))
+	require.Equal(t, http.StatusConflict, resp.Code)
+	f.validateResponse(t, req, resp)
+}
+
+func TestRESTHandlers_DeleteTaskReferencedByFinishedDuelReturns204(t *testing.T) {
+	f := newRESTFixture(t)
+	adminToken := f.adminAccessToken(t)
+	ctx := context.Background()
+
+	task := f.makeTask(t, uniq("finished_referenced"), domain.DifficultyEasy)
 	alice := f.joinPlayerViaUsecase(t, uniq("alice"))
 	bob := f.joinPlayerViaUsecase(t, uniq("bob"))
 	duel, err := f.duels.Create(ctx, alice.ID, bob.ID, time.Now().Add(time.Minute))
@@ -188,7 +205,7 @@ func TestRESTHandlers_DeleteReferencedTaskReturns409(t *testing.T) {
 	require.NoError(t, err)
 
 	req, resp := f.doJSON(t, http.MethodDelete, "/api/v1/admin/tasks/"+task.ID.String(), "", bearer(adminToken))
-	require.Equal(t, http.StatusConflict, resp.Code)
+	require.Equal(t, http.StatusNoContent, resp.Code)
 	f.validateResponse(t, req, resp)
 }
 

@@ -10,6 +10,7 @@ import (
 	logkit "github.com/wahrwelt-kit/go-logkit"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
+	"github.com/TakuyaYagam1/task-per-minute/internal/ctxutil"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase"
 	"github.com/TakuyaYagam1/task-per-minute/pkg/clock"
@@ -18,6 +19,7 @@ import (
 const (
 	DefaultReconnectWindow          = 2 * time.Minute
 	DefaultReconnectDisconnectLimit = 2
+	reconnectAsyncTimeout           = 10 * time.Second
 )
 
 type DuelTimer interface {
@@ -143,66 +145,119 @@ func (m *ReconnectManager) StartDuelTimer(duel *domain.Duel) {
 	})
 }
 
-func (m *ReconnectManager) HandleDisconnect(ctx context.Context, duelID, playerID uuid.UUID) {
-	if m == nil || m.duels == nil {
-		return
-	}
+func (m *ReconnectManager) BeginDisconnect(ctx context.Context, duelID, playerID uuid.UUID) {
+	m.handleDisconnect(ctx, duelID, playerID, false)
+}
 
-	duel, err := m.duels.GetByID(ctx, duelID)
-	if err != nil || duel == nil || duel.Status != domain.DuelStatusActive {
-		return
-	}
-	_, ok := opponentID(duel, playerID)
+func (m *ReconnectManager) HandleDisconnect(ctx context.Context, duelID, playerID uuid.UUID) {
+	m.handleDisconnect(ctx, duelID, playerID, true)
+}
+
+func (m *ReconnectManager) handleDisconnect(ctx context.Context, duelID, playerID uuid.UUID, notify bool) {
+	duel, ok := m.activeDuelForDisconnect(ctx, duelID, playerID)
 	if !ok {
 		return
 	}
 
-	now := m.clock.Now()
-	state := m.stateFor(duel)
-	var reconnectDeadline time.Time
-	shouldBroadcastDisconnect := false
-	immediateDraw := false
-
-	state.mu.Lock()
-	if state.closed {
-		state.mu.Unlock()
+	outcome := m.recordDisconnect(duel, playerID, m.clock.Now(), notify) //nolint:contextcheck // Disconnect timers intentionally outlive request cleanup.
+	if outcome.finalizeDraw {
+		m.finalize(ctx, duel.ID, nil, "disconnect_limit_exceeded")
 		return
 	}
-	if _, exists := state.disconnected[playerID]; exists {
-		state.mu.Unlock()
-		return
+	if outcome.broadcast && m.broadcaster != nil {
+		m.broadcaster.BroadcastOpponentDisconnected(ctx, duel.ID, playerID, outcome.deadline)
+	}
+}
+
+func (m *ReconnectManager) activeDuelForDisconnect(
+	ctx context.Context,
+	duelID uuid.UUID,
+	playerID uuid.UUID,
+) (*domain.Duel, bool) {
+	if m == nil || m.duels == nil {
+		return nil, false
+	}
+	duel, err := m.duels.GetByID(ctx, duelID)
+	if err != nil || duel == nil || duel.Status != domain.DuelStatusActive {
+		return nil, false
+	}
+	_, ok := opponentID(duel, playerID)
+	if !ok {
+		return nil, false
+	}
+	return duel, true
+}
+
+type disconnectOutcome struct {
+	deadline     time.Time
+	broadcast    bool
+	finalizeDraw bool
+}
+
+func (m *ReconnectManager) recordDisconnect(
+	duel *domain.Duel,
+	playerID uuid.UUID,
+	now time.Time,
+	notify bool,
+) disconnectOutcome {
+	state := m.stateFor(duel)
+	var outcome disconnectOutcome
+
+	state.mu.Lock()
+	defer state.mu.Unlock()
+
+	if state.closed {
+		return outcome
+	}
+	if entry, exists := state.disconnected[playerID]; exists {
+		return updateExistingDisconnect(entry, notify)
 	}
 
 	state.counts[playerID]++
 	if state.counts[playerID] > m.disconnectLimit {
-		immediateDraw = true
 		state.closed = true
 		state.stopReconnectTimersLocked()
-	} else {
-		if len(state.disconnected) == 0 && m.timers != nil {
-			m.timers.Freeze(duelID, now)
-		}
-		reconnectDeadline = now.Add(m.window)
-		entry := &reconnectPlayerState{
-			deadline:       reconnectDeadline,
-			disconnectedAt: now,
-		}
-		//nolint:contextcheck // Reconnect windows must keep running after the disconnect cleanup returns.
-		entry.timer = time.AfterFunc(m.window, func() {
-			m.expireReconnect(duelID, playerID)
-		})
-		state.disconnected[playerID] = entry
-		shouldBroadcastDisconnect = true
+		outcome.finalizeDraw = true
+		return outcome
 	}
-	state.mu.Unlock()
 
-	if immediateDraw {
-		m.finalize(ctx, duelID, nil)
-		return
+	if len(state.disconnected) == 0 && m.timers != nil {
+		m.timers.Freeze(duel.ID, now)
 	}
-	if shouldBroadcastDisconnect && m.broadcaster != nil {
-		m.broadcaster.BroadcastOpponentDisconnected(ctx, duelID, playerID, reconnectDeadline)
+	outcome.deadline = now.Add(m.window)
+	outcome.broadcast = notify
+
+	state.disconnected[playerID] = m.newReconnectEntry(duel.ID, playerID, now, outcome.deadline, notify)
+	return outcome
+}
+
+func updateExistingDisconnect(entry *reconnectPlayerState, notify bool) disconnectOutcome {
+	var outcome disconnectOutcome
+	if notify && !entry.notified && !entry.expired {
+		entry.notified = true
+		outcome.deadline = entry.deadline
+		outcome.broadcast = true
 	}
+	return outcome
+}
+
+func (m *ReconnectManager) newReconnectEntry(
+	duelID uuid.UUID,
+	playerID uuid.UUID,
+	now time.Time,
+	deadline time.Time,
+	notify bool,
+) *reconnectPlayerState {
+	entry := &reconnectPlayerState{
+		deadline:       deadline,
+		disconnectedAt: now,
+		notified:       notify,
+	}
+
+	entry.timer = time.AfterFunc(m.window, func() {
+		m.expireReconnect(duelID, playerID)
+	})
+	return entry
 }
 
 type ReconnectDecision struct {
@@ -352,7 +407,8 @@ func (m *ReconnectManager) FinalizePlayerForfeit(
 	if m == nil || m.duels == nil {
 		return nil, nil
 	}
-	finalizeCtx := withoutCancel(ctx)
+	finalizeCtx, finalizeCancel := boundedDetached(ctx)
+	defer finalizeCancel()
 	duel, err := m.duels.GetByID(finalizeCtx, duelID)
 	if err != nil {
 		return nil, err
@@ -438,30 +494,43 @@ func (m *ReconnectManager) expireReconnect(duelID, playerID uuid.UUID) {
 	state.stopReconnectTimersLocked()
 	state.mu.Unlock()
 
-	finalizeCtx := m.detachedCtx()
-	m.finalize(finalizeCtx, duelID, nil)
+	finalizeCtx, finalizeCancel := m.detachedCtx()
+	defer finalizeCancel()
+	m.finalize(finalizeCtx, duelID, nil, "reconnect_window_expired")
 }
 
 // detachedCtx returns a context derived from the server lifecycle but
 // stripped of cancellation, so async finalize work that started before
 // shutdown can complete (or hit a DB timeout) without being aborted
 // mid-transaction by ctx.Done().
-func (m *ReconnectManager) detachedCtx() context.Context {
+func (m *ReconnectManager) detachedCtx() (context.Context, context.CancelFunc) {
 	if m == nil || m.ctx == nil {
-		return context.Background()
+		return context.WithTimeout(context.Background(), reconnectAsyncTimeout)
 	}
-	return context.WithoutCancel(m.ctx)
+	return ctxutil.DetachedWithTimeout(m.ctx, reconnectAsyncTimeout)
 }
 
-func withoutCancel(ctx context.Context) context.Context {
+func boundedDetached(ctx context.Context) (context.Context, context.CancelFunc) {
 	if ctx == nil {
-		return context.Background()
+		return context.WithTimeout(context.Background(), reconnectAsyncTimeout)
 	}
-	return context.WithoutCancel(ctx)
+	return ctxutil.DetachedWithTimeout(ctx, reconnectAsyncTimeout)
 }
 
-func (m *ReconnectManager) finalize(ctx context.Context, duelID uuid.UUID, winnerID *uuid.UUID) {
-	_, _ = m.finalizeAndBroadcast(ctx, duelID, winnerID)
+func (m *ReconnectManager) finalize(ctx context.Context, duelID uuid.UUID, winnerID *uuid.UUID, reason string) {
+	if _, err := m.finalizeAndBroadcast(ctx, duelID, winnerID); err != nil && m.log != nil {
+		fields := logkit.Fields{
+			"duel_id": duelID.String(),
+			"error":   err.Error(),
+		}
+		if reason != "" {
+			fields["reason"] = reason
+		}
+		if winnerID != nil {
+			fields["winner_id"] = winnerID.String()
+		}
+		m.log.Error("duel async finalize failed", fields)
+	}
 }
 
 func (m *ReconnectManager) finalizeAndBroadcast(
@@ -489,9 +558,19 @@ func (m *ReconnectManager) handleDuelTimerExpired(duelID uuid.UUID) {
 	if m == nil || m.duels == nil {
 		return
 	}
-	ctx := m.detachedCtx()
+	ctx, cancel := m.detachedCtx()
+	defer cancel()
 	duel, err := m.duels.GetByID(ctx, duelID)
-	if err != nil || duel == nil {
+	if err != nil {
+		if m.log != nil {
+			m.log.Error("duel timer load failed", logkit.Fields{
+				"duel_id": duelID.String(),
+				"error":   err.Error(),
+			})
+		}
+		return
+	}
+	if duel == nil {
 		return
 	}
 	m.CloseDuel(duelID)
@@ -627,6 +706,7 @@ type reconnectPlayerState struct {
 	disconnectedAt time.Time
 	expired        bool
 	reconnecting   bool
+	notified       bool
 }
 
 func opponentID(duel *domain.Duel, playerID uuid.UUID) (uuid.UUID, bool) {

@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase"
 	duelusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel"
@@ -181,10 +182,11 @@ func TestServerFlagSubmitRejectsMismatchedDuelID(t *testing.T) {
 		send:   make(chan []byte, 1),
 		done:   make(chan struct{}),
 	}
+	server.clients.Store(playerID, c)
 	c.setDuel(activeDuelID)
 	rawPayload, err := json.Marshal(map[string]any{
 		"duel_id": wireDuelID,
-		"flag":    "ctf{wrong-duel}",
+		"flag":    "flag{wrong-duel}",
 	})
 	require.NoError(t, err)
 
@@ -231,6 +233,48 @@ func TestServerNoPayloadEventAllowsNullPayload(t *testing.T) {
 	require.Equal(t, EventPong, event.Type)
 }
 
+func TestWebSocketInboundRateLimitClosesClient(t *testing.T) {
+	t.Parallel()
+
+	server := NewServer(nil, nil, nil, NewHubRegistry(), WithHubCloseDelay(0))
+	c := &client{
+		player:         &domain.Player{ID: uuid.New()},
+		send:           make(chan []byte, 2),
+		done:           make(chan struct{}),
+		messageLimiter: newInboundLimiter(1, time.Hour),
+	}
+
+	require.True(t, server.allowInboundEvent(c, EventPing))
+	require.False(t, server.allowInboundEvent(c, EventPing))
+
+	event := readBufferedClientEvent(t, c)
+	require.Equal(t, EventError, event.Type)
+	require.Equal(t, string(apperr.CodeRateLimited), event.Code)
+	require.True(t, c.closed.Load())
+}
+
+func TestWebSocketActionRateLimitClosesClient(t *testing.T) {
+	t.Parallel()
+
+	server := NewServer(nil, nil, nil, NewHubRegistry(), WithHubCloseDelay(0))
+	c := &client{
+		player:         &domain.Player{ID: uuid.New()},
+		send:           make(chan []byte, 2),
+		done:           make(chan struct{}),
+		messageLimiter: newInboundLimiter(10, time.Hour),
+		actionLimiter:  newInboundLimiter(1, time.Hour),
+	}
+
+	require.True(t, server.allowInboundEvent(c, EventPing))
+	require.True(t, server.allowInboundEvent(c, EventJoinQueue))
+	require.False(t, server.allowInboundEvent(c, EventLeaveQueue))
+
+	event := readBufferedClientEvent(t, c)
+	require.Equal(t, EventError, event.Type)
+	require.Equal(t, string(apperr.CodeRateLimited), event.Code)
+	require.True(t, c.closed.Load())
+}
+
 func TestServerFlagSubmitAcceptsMatchingDuelID(t *testing.T) {
 	t.Parallel()
 
@@ -243,10 +287,11 @@ func TestServerFlagSubmitAcceptsMatchingDuelID(t *testing.T) {
 		send:   make(chan []byte, 1),
 		done:   make(chan struct{}),
 	}
+	server.clients.Store(playerID, c)
 	c.setDuel(duelID)
 	rawPayload, err := json.Marshal(map[string]any{
 		"duel_id": duelID,
-		"flag":    " ctf{candidate} ",
+		"flag":    " flag{candidate} ",
 	})
 	require.NoError(t, err)
 
@@ -267,10 +312,11 @@ func TestServerFlagSubmitRejectsUnknownPayloadField(t *testing.T) {
 		send:   make(chan []byte, 1),
 		done:   make(chan struct{}),
 	}
+	server.clients.Store(playerID, c)
 	c.setDuel(duelID)
 	rawPayload, err := json.Marshal(map[string]any{
 		"duel_id": duelID,
-		"flag":    "ctf{candidate}",
+		"flag":    "flag{candidate}",
 		"extra":   true,
 	})
 	require.NoError(t, err)
@@ -296,6 +342,7 @@ func TestServerSurrenderRejectsMismatchedDuelID(t *testing.T) {
 		send:   make(chan []byte, 1),
 		done:   make(chan struct{}),
 	}
+	server.clients.Store(playerID, c)
 	c.setDuel(activeDuelID)
 	rawPayload, err := json.Marshal(map[string]any{"duel_id": wireDuelID})
 	require.NoError(t, err)
@@ -385,9 +432,10 @@ func (r *publishMatchPlayerRepo) UpdateStatusIfCurrent(
 }
 
 type recordingReconnectManager struct {
-	started     []*domain.Duel
-	disconnects []recordedDisconnect
-	stopAll     int
+	started          []*domain.Duel
+	beginDisconnects []recordedDisconnect
+	disconnects      []recordedDisconnect
+	stopAll          int
 }
 
 type recordedDisconnect struct {
@@ -399,6 +447,10 @@ var _ ReconnectManager = (*recordingReconnectManager)(nil)
 
 func (m *recordingReconnectManager) StartDuelTimer(duel *domain.Duel) {
 	m.started = append(m.started, duel)
+}
+
+func (m *recordingReconnectManager) BeginDisconnect(_ context.Context, duelID, playerID uuid.UUID) {
+	m.beginDisconnects = append(m.beginDisconnects, recordedDisconnect{duelID: duelID, playerID: playerID})
 }
 
 func (m *recordingReconnectManager) HandleDisconnect(_ context.Context, duelID, playerID uuid.UUID) {

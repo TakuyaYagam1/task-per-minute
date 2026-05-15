@@ -76,15 +76,11 @@ func (b *Broadcaster) BroadcastDuelFinished(ctx context.Context, duel *domain.Du
 	if b.clients != nil {
 		if c, ok := b.clients(duel.Player1ID); ok {
 			payload := duelFinishedPayload(duel, duel.Player1ID, nil, winnerUsername)
-			_ = c.sendEvent(EventDuelFinished, payload)
-			c.clearDuel()
-			c.setQueued(false)
+			_ = c.sendDuelFinishedIfCurrent(duel.ID, payload)
 		}
 		if c, ok := b.clients(duel.Player2ID); ok {
 			payload := duelFinishedPayload(duel, duel.Player2ID, nil, winnerUsername)
-			_ = c.sendEvent(EventDuelFinished, payload)
-			c.clearDuel()
-			c.setQueued(false)
+			_ = c.sendDuelFinishedIfCurrent(duel.ID, payload)
 		}
 	}
 

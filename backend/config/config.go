@@ -99,6 +99,10 @@ type WebSocket struct {
 	HandshakeRateAttempts  int           `env:"HANDSHAKE_RATE_ATTEMPTS"   env-default:"60"`
 	HandshakeRateWindow    time.Duration `env:"HANDSHAKE_RATE_WINDOW"     env-default:"1m"`
 	HandshakeRateBucketTTL time.Duration `env:"HANDSHAKE_RATE_BUCKET_TTL" env-default:"15m"`
+	MessageRateAttempts    int           `env:"MESSAGE_RATE_ATTEMPTS"     env-default:"120"`
+	MessageRateWindow      time.Duration `env:"MESSAGE_RATE_WINDOW"       env-default:"1m"`
+	ActionRateAttempts     int           `env:"ACTION_RATE_ATTEMPTS"      env-default:"30"`
+	ActionRateWindow       time.Duration `env:"ACTION_RATE_WINDOW"        env-default:"1m"`
 }
 
 func Load() (*Config, error) {
@@ -329,6 +333,18 @@ func validateWS(cfg *WebSocket) error {
 		return err
 	}
 	if err := positiveDuration("WS_HANDSHAKE_RATE_BUCKET_TTL", cfg.HandshakeRateBucketTTL); err != nil {
+		return err
+	}
+	if cfg.MessageRateAttempts <= 0 {
+		return fmt.Errorf("WS_MESSAGE_RATE_ATTEMPTS must be positive")
+	}
+	if err := positiveDuration("WS_MESSAGE_RATE_WINDOW", cfg.MessageRateWindow); err != nil {
+		return err
+	}
+	if cfg.ActionRateAttempts <= 0 {
+		return fmt.Errorf("WS_ACTION_RATE_ATTEMPTS must be positive")
+	}
+	if err := positiveDuration("WS_ACTION_RATE_WINDOW", cfg.ActionRateWindow); err != nil {
 		return err
 	}
 	origins, err := normalizeAllowedOrigins("WS_ALLOWED_ORIGINS", cfg.AllowedOrigins)

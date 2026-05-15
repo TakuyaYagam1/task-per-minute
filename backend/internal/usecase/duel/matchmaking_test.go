@@ -2,6 +2,7 @@ package duel_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -29,6 +30,28 @@ func TestMatchmakingUsecase_JoinQueue_NoPairEnqueuesAndMarksQueued(t *testing.T)
 
 	result, err := f.uc.JoinQueue(t.Context(), player.ID)
 	require.NoError(t, err)
+	require.Nil(t, result)
+}
+
+func TestMatchmakingUsecase_JoinQueue_RollsBackEnqueueWhenPopPairFails(t *testing.T) {
+	t.Parallel()
+
+	f := newFixture(t)
+	player := &domain.Player{ID: uuid.New(), Username: "alice", Status: domain.PlayerStatusIdle}
+	popErr := errors.New("redis unavailable")
+	f.players.EXPECT().GetByID(mock.Anything, player.ID).Return(player, nil)
+	f.players.EXPECT().
+		UpdateStatusIfCurrent(mock.Anything, player.ID, domain.PlayerStatusIdle, domain.PlayerStatusQueued).
+		Return(withStatus(player, domain.PlayerStatusQueued), true, nil)
+	f.queue.EXPECT().Enqueue(mock.Anything, player.ID).Return(nil)
+	f.queue.EXPECT().PopPair(mock.Anything).Return(uuid.Nil, uuid.Nil, false, popErr)
+	f.queue.EXPECT().Remove(mock.Anything, player.ID).Return(nil)
+	f.players.EXPECT().
+		UpdateStatusIfCurrent(mock.Anything, player.ID, domain.PlayerStatusQueued, domain.PlayerStatusIdle).
+		Return(withStatus(player, domain.PlayerStatusIdle), true, nil)
+
+	result, err := f.uc.JoinQueue(t.Context(), player.ID)
+	require.ErrorIs(t, err, popErr)
 	require.Nil(t, result)
 }
 

@@ -182,9 +182,11 @@ func provideTimerRegistry(
 	duels usecase.DuelRepo,
 	players usecase.PlayerRepo,
 	clk clock.Clock,
+	log logkit.Logger,
 ) *duelusecase.TimerRegistry {
 	return duelusecase.NewTimerRegistry(tx, duels, players, clk,
 		duelusecase.WithTimerRegistryContext(ctx),
+		duelusecase.WithTimerRegistryLogger(log),
 	)
 }
 
@@ -330,6 +332,12 @@ func provideRawWebSocketServer(
 		websocket.WithClientIPResolver(clientIPResolver),
 		websocket.WithRequireOrigin(cfg.WS.RequireOrigin),
 		websocket.WithLogger(log),
+		websocket.WithInboundRateLimits(websocket.InboundRateLimits{
+			MessageAttempts: cfg.WS.MessageRateAttempts,
+			MessageWindow:   cfg.WS.MessageRateWindow,
+			ActionAttempts:  cfg.WS.ActionRateAttempts,
+			ActionWindow:    cfg.WS.ActionRateWindow,
+		}),
 	}
 	if accept := provideWSAcceptOptions(cfg); accept != nil {
 		options = append(options, websocket.WithAcceptOptions(accept))
@@ -419,6 +427,7 @@ func provideHTTPHandler(
 	auth *adminusecase.AuthUsecase,
 	players usecase.PlayerRepo,
 	middlewares []openapi.MiddlewareFunc,
+	log logkit.Logger,
 ) http.Handler {
 	generatedRouter := chi.NewRouter()
 	generatedRouter.Handle("/ws", ws)
@@ -430,18 +439,26 @@ func provideHTTPHandler(
 	})
 
 	router := chi.NewRouter()
-	router.Method(http.MethodGet, "/api/v1/admin/players/events", adminPlayerEventsHandler(rest, auth))
+	router.Method(http.MethodGet, "/api/v1/admin/players/events", adminPlayerEventsHandler(rest, auth, log, cfg))
 	router.Mount("/", handler)
 
 	return middleware.CORS(cfg.HTTP.AllowedOrigins)(router)
 }
 
-func adminPlayerEventsHandler(rest *restv1.Server, auth *adminusecase.AuthUsecase) http.Handler {
+func adminPlayerEventsHandler(rest *restv1.Server, auth *adminusecase.AuthUsecase, log logkit.Logger, cfg *config.Config) http.Handler {
 	var handler http.Handler = http.HandlerFunc(rest.StreamAdminPlayerEvents)
 	if auth != nil {
 		handler = middleware.AdminJWT(auth)(handler)
 	}
-	return middleware.NoStoreSensitiveResponses()(handler)
+	handler = middleware.NoStoreSensitiveResponses()(handler)
+	if cfg != nil {
+		handler = middleware.BuildStreaming(
+			log,
+			middleware.WithTrustedProxyCIDRs(cfg.HTTP.TrustedProxyCIDRs),
+			middleware.WithAllowedOrigins(cfg.HTTP.AllowedOrigins),
+		)(handler)
+	}
+	return handler
 }
 
 func provideHTTPServer(cfg *config.Config, handler http.Handler) *http.Server {

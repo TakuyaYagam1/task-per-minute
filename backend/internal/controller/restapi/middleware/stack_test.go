@@ -70,6 +70,29 @@ func TestBuild_AddsNoStoreHeadersForSensitiveResponses(t *testing.T) {
 	require.Equal(t, "0", rr.Header().Get("Expires"))
 }
 
+func TestBuildStreaming_PreservesFlusher(t *testing.T) {
+	t.Parallel()
+
+	handler := middleware.BuildStreaming(logkit.Noop())(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		flusher, ok := w.(http.Flusher)
+		require.True(t, ok, "streaming middleware must preserve http.Flusher")
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, err := w.Write([]byte("event: ready\ndata: {}\n\n"))
+		require.NoError(t, err)
+		flusher.Flush()
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/players/events", nil)
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	require.True(t, rr.Flushed)
+	require.Equal(t, "text/event-stream", rr.Header().Get("Content-Type"))
+	require.Contains(t, rr.Body.String(), "event: ready\ndata: {}\n\n")
+}
+
 func TestBuild_RecovererReturnsInternalJSONAndLogsError(t *testing.T) {
 	t.Parallel()
 

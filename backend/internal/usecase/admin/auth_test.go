@@ -101,6 +101,26 @@ func signWithSubject(t *testing.T, secret []byte, sub string, kind admin.TokenKi
 	return signed
 }
 
+func signWithClaims(t *testing.T, secret []byte, method jwt.SigningMethod, claims jwt.MapClaims) string {
+	t.Helper()
+	tok := jwt.NewWithClaims(method, claims)
+	signed, err := tok.SignedString(secret)
+	require.NoError(t, err)
+	return signed
+}
+
+func validAdminClaims(now time.Time) jwt.MapClaims {
+	return jwt.MapClaims{
+		"iss":  "task-per-minute-backend",
+		"aud":  "task-per-minute-admin",
+		"sub":  "admin",
+		"kind": string(admin.TokenKindAccess),
+		"iat":  now.Unix(),
+		"exp":  now.Add(accessTTL).Unix(),
+		"jti":  uuid.NewString(),
+	}
+}
+
 func TestAuthUsecase_Login_Success(t *testing.T) {
 	t.Parallel()
 
@@ -485,6 +505,68 @@ func TestAuthUsecase_VerifyAccess_UnknownKind_ReturnsErrInvalidCredentials(t *te
 	bogus := signWithKind(t, []byte(testSecret), "bogus", now, now.Add(accessTTL))
 
 	_, err := uc.VerifyAccess(context.Background(), bogus)
+	require.ErrorIs(t, err, apperr.ErrInvalidCredentials)
+}
+
+func TestAuthUsecase_VerifyAccess_MissingExp_ReturnsErrInvalidCredentials(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC)
+	clk := newStubClock(t, now)
+	rev := usecasemocks.NewMockRevocationStore(t)
+	uc := admin.NewAuthUsecase(newAuthCfg(), clk, rev)
+
+	claims := validAdminClaims(now)
+	delete(claims, "exp")
+	token := signWithClaims(t, []byte(testSecret), jwt.SigningMethodHS256, claims)
+
+	_, err := uc.VerifyAccess(context.Background(), token)
+	require.ErrorIs(t, err, apperr.ErrInvalidCredentials)
+}
+
+func TestAuthUsecase_VerifyAccess_MissingIssuedAt_ReturnsErrInvalidCredentials(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC)
+	clk := newStubClock(t, now)
+	rev := usecasemocks.NewMockRevocationStore(t)
+	uc := admin.NewAuthUsecase(newAuthCfg(), clk, rev)
+
+	claims := validAdminClaims(now)
+	delete(claims, "iat")
+	token := signWithClaims(t, []byte(testSecret), jwt.SigningMethodHS256, claims)
+
+	_, err := uc.VerifyAccess(context.Background(), token)
+	require.ErrorIs(t, err, apperr.ErrInvalidCredentials)
+}
+
+func TestAuthUsecase_VerifyAccess_ExpiresBeforeIssuedAt_ReturnsErrInvalidCredentials(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC)
+	clk := newStubClock(t, now)
+	rev := usecasemocks.NewMockRevocationStore(t)
+	uc := admin.NewAuthUsecase(newAuthCfg(), clk, rev)
+
+	claims := validAdminClaims(now)
+	claims["exp"] = now.Unix()
+	token := signWithClaims(t, []byte(testSecret), jwt.SigningMethodHS256, claims)
+
+	_, err := uc.VerifyAccess(context.Background(), token)
+	require.ErrorIs(t, err, apperr.ErrInvalidCredentials)
+}
+
+func TestAuthUsecase_VerifyAccess_WrongAlgorithm_ReturnsErrInvalidCredentials(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC)
+	clk := newStubClock(t, now)
+	rev := usecasemocks.NewMockRevocationStore(t)
+	uc := admin.NewAuthUsecase(newAuthCfg(), clk, rev)
+
+	token := signWithClaims(t, []byte(testSecret), jwt.SigningMethodHS512, validAdminClaims(now))
+
+	_, err := uc.VerifyAccess(context.Background(), token)
 	require.ErrorIs(t, err, apperr.ErrInvalidCredentials)
 }
 

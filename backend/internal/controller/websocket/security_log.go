@@ -89,7 +89,7 @@ func wsAuthFailureReason(r *http.Request) string {
 	if r == nil {
 		return "missing_session"
 	}
-	if strings.TrimSpace(r.URL.Query().Get("token")) != "" {
+	if queryHasToken(r) {
 		return "query_token_rejected"
 	}
 	if strings.TrimSpace(r.Header.Get("X-Session-Token")) != "" {
@@ -102,6 +102,23 @@ func wsAuthFailureReason(r *http.Request) string {
 		return "invalid_cookie"
 	}
 	return "missing_session"
+}
+
+func hasUnsafeSessionTokenTransport(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	return queryHasToken(r) ||
+		strings.TrimSpace(r.Header.Get("X-Session-Token")) != "" ||
+		hasLegacyBearerSubprotocol(r.Header.Values("Sec-WebSocket-Protocol"))
+}
+
+func queryHasToken(r *http.Request) bool {
+	if r == nil || r.URL == nil {
+		return false
+	}
+	_, ok := r.URL.Query()["token"]
+	return ok
 }
 
 func hasLegacyBearerSubprotocol(values []string) bool {

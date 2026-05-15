@@ -20,6 +20,7 @@ func TestSentinels_IdentityIs(t *testing.T) {
 		{"username_taken", apperr.ErrUsernameTaken, apperr.CodeUsernameTaken},
 		{"username_invalid", apperr.ErrUsernameInvalid, apperr.CodeUsernameInvalid},
 		{"player_in_duel", apperr.ErrPlayerInDuel, apperr.CodePlayerInDuel},
+		{"player_queued", apperr.ErrPlayerQueued, apperr.CodePlayerQueued},
 		{"invalid_session", apperr.ErrInvalidSession, apperr.CodeInvalidSession},
 		{"task_not_found", apperr.ErrTaskNotFound, apperr.CodeTaskNotFound},
 		{"task_in_use", apperr.ErrTaskInUse, apperr.CodeTaskInUse},

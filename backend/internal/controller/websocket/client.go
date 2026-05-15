@@ -2,6 +2,7 @@ package websocket
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -9,6 +10,7 @@ import (
 	coderws "github.com/coder/websocket"
 	"github.com/google/uuid"
 	wskit "github.com/wahrwelt-kit/go-wskit"
+	"golang.org/x/time/rate"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
@@ -21,12 +23,17 @@ const (
 	defaultReadLimit       = 16 * 1024
 )
 
+var errClientSendFailed = errors.New("websocket client send failed")
+
 type client struct {
-	player       *domain.Player
-	sessionToken uuid.UUID
-	conn         *coderws.Conn
-	send         chan []byte
-	done         chan struct{}
+	player           *domain.Player
+	sessionToken     uuid.UUID
+	sessionExpiresAt *time.Time
+	messageLimiter   *rate.Limiter
+	actionLimiter    *rate.Limiter
+	conn             *coderws.Conn
+	send             chan []byte
+	done             chan struct{}
 
 	closeOnce sync.Once
 	closed    atomic.Bool
@@ -39,19 +46,42 @@ type client struct {
 
 var _ wskit.Subscriber = (*client)(nil)
 
-func newClient(player *domain.Player, conn *coderws.Conn) *client {
+func newClient(player *domain.Player, conn *coderws.Conn, limits InboundRateLimits) *client {
 	conn.SetReadLimit(defaultReadLimit)
 	var sessionToken uuid.UUID
+	var sessionExpiresAt *time.Time
 	if player != nil && player.SessionToken != nil {
 		sessionToken = *player.SessionToken
 	}
-	return &client{
-		player:       player,
-		sessionToken: sessionToken,
-		conn:         conn,
-		send:         make(chan []byte, defaultSendBufferSize),
-		done:         make(chan struct{}),
+	if player != nil && player.SessionExpiresAt != nil {
+		expiresAt := *player.SessionExpiresAt
+		sessionExpiresAt = &expiresAt
 	}
+	return &client{
+		player:           player,
+		sessionToken:     sessionToken,
+		sessionExpiresAt: sessionExpiresAt,
+		messageLimiter:   newInboundLimiter(limits.MessageAttempts, limits.MessageWindow),
+		actionLimiter:    newInboundLimiter(limits.ActionAttempts, limits.ActionWindow),
+		conn:             conn,
+		send:             make(chan []byte, defaultSendBufferSize),
+		done:             make(chan struct{}),
+	}
+}
+
+func newInboundLimiter(attempts int, window time.Duration) *rate.Limiter {
+	if attempts <= 0 || window <= 0 {
+		return nil
+	}
+	return rate.NewLimiter(rate.Every(window/time.Duration(attempts)), attempts)
+}
+
+func (c *client) allowMessage() bool {
+	return c == nil || c.messageLimiter == nil || c.messageLimiter.Allow()
+}
+
+func (c *client) allowAction() bool {
+	return c == nil || c.actionLimiter == nil || c.actionLimiter.Allow()
 }
 
 func (c *client) Send(data []byte) bool {
@@ -136,7 +166,9 @@ func (c *client) sendEvent(typ string, payload any) error {
 	if err != nil {
 		return err
 	}
-	c.Send(data)
+	if !c.Send(data) {
+		return errClientSendFailed
+	}
 	return nil
 }
 
@@ -145,7 +177,28 @@ func (c *client) sendError(code, message string) error {
 	if err != nil {
 		return err
 	}
-	c.Send(data)
+	if !c.Send(data) {
+		return errClientSendFailed
+	}
+	return nil
+}
+
+func (c *client) sendDuelFinishedIfCurrent(duelID uuid.UUID, payload DuelFinishedPayload) error {
+	data, err := marshalEvent(EventDuelFinished, payload)
+	if err != nil {
+		return err
+	}
+
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
+	if c.duelID == nil || *c.duelID != duelID {
+		return nil
+	}
+	if !c.Send(data) {
+		return errClientSendFailed
+	}
+	c.duelID = nil
+	c.queued = false
 	return nil
 }
 

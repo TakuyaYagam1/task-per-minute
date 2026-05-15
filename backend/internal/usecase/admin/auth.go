@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -214,16 +215,12 @@ func (u *AuthUsecase) sign(sub string, kind TokenKind, iat, exp time.Time) (stri
 
 func (u *AuthUsecase) parse(tokenStr string) (*Claims, error) {
 	parsed, err := jwt.Parse(tokenStr,
-		func(t *jwt.Token) (any, error) {
-			if t.Method.Alg() != jwt.SigningMethodHS256.Alg() {
-				return nil, fmt.Errorf("unexpected signing method: %s", t.Method.Alg())
-			}
-			return u.cfg.Secret, nil
-		},
+		u.jwtKeyfunc,
 		jwt.WithTimeFunc(u.clock.Now),
 		jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}),
 		jwt.WithIssuer(jwtIssuer),
 		jwt.WithAudience(jwtAudience),
+		jwt.WithExpirationRequired(),
 		jwt.WithLeeway(jwtClockSkewLeeway),
 	)
 	if err != nil {
@@ -235,33 +232,109 @@ func (u *AuthUsecase) parse(tokenStr string) (*Claims, error) {
 	if !parsed.Valid {
 		return nil, apperr.ErrInvalidCredentials
 	}
-
 	mc, ok := parsed.Claims.(jwt.MapClaims)
 	if !ok {
 		return nil, apperr.ErrInvalidCredentials
 	}
+	return claimsFromMap(mc)
+}
 
-	sub, _ := mc["sub"].(string)
-	kindStr, _ := mc["kind"].(string)
-	jti, _ := mc["jti"].(string)
-	iat, _ := mc["iat"].(float64)
-	exp, _ := mc["exp"].(float64)
+func (u *AuthUsecase) jwtKeyfunc(t *jwt.Token) (any, error) {
+	if t.Method.Alg() != jwt.SigningMethodHS256.Alg() {
+		return nil, fmt.Errorf("unexpected signing method: %s", t.Method.Alg())
+	}
+	return u.cfg.Secret, nil
+}
 
-	if jti == "" || sub == "" || kindStr == "" {
+func claimsFromMap(mc jwt.MapClaims) (*Claims, error) {
+	sub, err := adminSubjectFromClaims(mc)
+	if err != nil {
 		return nil, apperr.ErrInvalidCredentials
 	}
-	if sub != adminSubject {
+	kind, err := tokenKindFromClaims(mc)
+	if err != nil {
 		return nil, apperr.ErrInvalidCredentials
 	}
-	if kindStr != string(TokenKindAccess) && kindStr != string(TokenKindRefresh) {
+	jti, err := requiredStringClaim(mc, "jti")
+	if err != nil {
+		return nil, apperr.ErrInvalidCredentials
+	}
+	iat, exp, err := issuedAndExpiryClaims(mc)
+	if err != nil {
 		return nil, apperr.ErrInvalidCredentials
 	}
 
 	return &Claims{
 		JTI:       jti,
 		Subject:   sub,
-		Kind:      TokenKind(kindStr),
-		IssuedAt:  time.Unix(int64(iat), 0).UTC(),
-		ExpiresAt: time.Unix(int64(exp), 0).UTC(),
+		Kind:      kind,
+		IssuedAt:  iat,
+		ExpiresAt: exp,
 	}, nil
+}
+
+func adminSubjectFromClaims(mc jwt.MapClaims) (string, error) {
+	sub, err := requiredStringClaim(mc, "sub")
+	if err != nil || sub != adminSubject {
+		return "", apperr.ErrInvalidCredentials
+	}
+	return sub, nil
+}
+
+func tokenKindFromClaims(mc jwt.MapClaims) (TokenKind, error) {
+	kindStr, err := requiredStringClaim(mc, "kind")
+	if err != nil {
+		return "", apperr.ErrInvalidCredentials
+	}
+	switch TokenKind(kindStr) {
+	case TokenKindAccess:
+		return TokenKindAccess, nil
+	case TokenKindRefresh:
+		return TokenKindRefresh, nil
+	default:
+		return "", apperr.ErrInvalidCredentials
+	}
+}
+
+func requiredStringClaim(mc jwt.MapClaims, name string) (string, error) {
+	value, ok := mc[name].(string)
+	if !ok || value == "" {
+		return "", apperr.ErrInvalidCredentials
+	}
+	return value, nil
+}
+
+func issuedAndExpiryClaims(mc jwt.MapClaims) (time.Time, time.Time, error) {
+	iat, ok := claimNumericDate(mc["iat"])
+	if !ok {
+		return time.Time{}, time.Time{}, apperr.ErrInvalidCredentials
+	}
+	exp, ok := claimNumericDate(mc["exp"])
+	if !ok || !exp.After(iat) {
+		return time.Time{}, time.Time{}, apperr.ErrInvalidCredentials
+	}
+	return iat, exp, nil
+}
+
+func claimNumericDate(value any) (time.Time, bool) {
+	switch v := value.(type) {
+	case float64:
+		if v <= 0 {
+			return time.Time{}, false
+		}
+		return time.Unix(int64(v), 0).UTC(), true
+	case int64:
+		if v <= 0 {
+			return time.Time{}, false
+		}
+		return time.Unix(v, 0).UTC(), true
+	case json.Number:
+		unix, err := v.Int64()
+		if err != nil || unix <= 0 {
+			return time.Time{}, false
+		}
+		return time.Unix(unix, 0).UTC(), true
+	default:
+		return time.Time{}, false
+	}
 }

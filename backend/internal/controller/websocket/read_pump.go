@@ -30,9 +30,13 @@ type surrenderPayload struct {
 var (
 	errTrailingJSON     = errors.New("websocket message must contain a single json value")
 	errMissingEventType = errors.New("websocket message type is required")
+	errMalformedFrame   = errors.New("malformed websocket frame")
 )
 
+const maxMalformedFrames = 3
+
 func (s *Server) readPump(ctx context.Context, c *client) {
+	malformedFrames := 0
 	for {
 		// Per-iteration idle deadline: half-open clients (no FIN, no error)
 		// would otherwise pin a goroutine on conn.Reader indefinitely. The
@@ -41,9 +45,18 @@ func (s *Server) readPump(ctx context.Context, c *client) {
 		readCtx, cancel := context.WithTimeout(ctx, defaultReadIdleTimeout)
 		err := s.readOnce(readCtx, c)
 		cancel()
+		if errors.Is(err, errMalformedFrame) {
+			malformedFrames++
+			if malformedFrames >= maxMalformedFrames {
+				c.Close()
+				return
+			}
+			continue
+		}
 		if err != nil {
 			return
 		}
+		malformedFrames = 0
 	}
 }
 
@@ -52,48 +65,43 @@ func (s *Server) readOnce(ctx context.Context, c *client) error {
 	if err != nil {
 		return err
 	}
+	if !s.ensureValidSession(ctx, c) {
+		return apperr.ErrInvalidSession
+	}
 	if msgType != coderws.MessageText {
 		_, _ = io.Copy(io.Discard, reader)
 		_ = c.sendError(ErrorInvalidPayload, "message must be text")
-		return nil
+		return errMalformedFrame
 	}
 	event, err := decodeIncomingEvent(reader)
 	if err != nil {
 		_ = c.sendError(ErrorInvalidJSON, "invalid json")
-		return nil //nolint:nilerr // invalid client JSON is reported over WS; keep the connection open for later events.
+		return errMalformedFrame
+	}
+	if !s.allowInboundEvent(c, event.Type) {
+		return apperr.ErrRateLimited
 	}
 	s.routeEvent(ctx, c, event)
 	return nil
 }
 
 func (s *Server) routeEvent(ctx context.Context, c *client, event IncomingEvent) {
-	if c.isDisplaced() || c.closed.Load() {
-		return
-	}
-	if !s.validateSession(ctx, c) {
-		s.logClientSecurityEvent(c, "ws.session", wsSecurityOutcomeFailure, logkit.Fields{
-			"error_code": string(apperr.CodeInvalidSession),
-			"reason":     "stale_session",
-		})
-		_ = c.sendError(string(apperr.CodeInvalidSession), "invalid session token")
-		s.closeAfterError(c)
+	if !s.canRouteEvent(ctx, c) {
 		return
 	}
 	switch event.Type {
 	case EventJoinQueue:
-		if rejectUnexpectedPayload(c, event.Payload) {
-			return
-		}
-		s.handleJoinQueue(ctx, c)
+		s.routeCurrentNoPayloadEvent(ctx, c, event.Payload, s.handleJoinQueue)
 	case EventLeaveQueue:
-		if rejectUnexpectedPayload(c, event.Payload) {
-			return
-		}
-		s.handleLeaveQueue(ctx, c)
+		s.routeCurrentNoPayloadEvent(ctx, c, event.Payload, s.handleLeaveQueue)
 	case EventFlagSubmit:
-		s.handleFlagSubmit(ctx, c, event.Payload)
+		s.routeCurrentPayloadEvent(ctx, c, func(ctx context.Context, c *client) {
+			s.handleFlagSubmit(ctx, c, event.Payload)
+		})
 	case EventSurrender:
-		s.handleSurrender(ctx, c, event.Payload)
+		s.routeCurrentPayloadEvent(ctx, c, func(ctx context.Context, c *client) {
+			s.handleSurrender(ctx, c, event.Payload)
+		})
 	case EventPing:
 		if rejectUnexpectedPayload(c, event.Payload) {
 			return
@@ -102,6 +110,92 @@ func (s *Server) routeEvent(ctx context.Context, c *client, event IncomingEvent)
 	default:
 		_ = c.sendError(ErrorUnknownEvent, "unknown event type")
 	}
+}
+
+func (s *Server) canRouteEvent(ctx context.Context, c *client) bool {
+	if c.isDisplaced() || c.closed.Load() {
+		return false
+	}
+	return s.ensureValidSession(ctx, c)
+}
+
+func (s *Server) routeCurrentNoPayloadEvent(
+	ctx context.Context,
+	c *client,
+	payload json.RawMessage,
+	handle func(context.Context, *client),
+) {
+	if rejectUnexpectedPayload(c, payload) || !s.requireCurrentClient(c) {
+		return
+	}
+	handle(ctx, c)
+}
+
+func (s *Server) routeCurrentPayloadEvent(
+	ctx context.Context,
+	c *client,
+	handle func(context.Context, *client),
+) {
+	if !s.requireCurrentClient(c) {
+		return
+	}
+	handle(ctx, c)
+}
+
+func (s *Server) ensureValidSession(ctx context.Context, c *client) bool {
+	if s.validateSession(ctx, c) {
+		return true
+	}
+	s.rejectInvalidSession(c, "stale_session")
+	return false
+}
+
+func (s *Server) rejectInvalidSession(c *client, reason string) {
+	s.logClientSecurityEvent(c, "ws.session", wsSecurityOutcomeFailure, logkit.Fields{
+		"error_code": string(apperr.CodeInvalidSession),
+		"reason":     reason,
+	})
+	_ = c.sendError(string(apperr.CodeInvalidSession), "invalid session token")
+	s.closeAfterError(c)
+}
+
+func (s *Server) allowInboundEvent(c *client, eventType string) bool {
+	if !c.allowMessage() {
+		s.rejectRateLimited(c, eventType, "message_rate_limit")
+		return false
+	}
+	if isActionEvent(eventType) && !c.allowAction() {
+		s.rejectRateLimited(c, eventType, "action_rate_limit")
+		return false
+	}
+	return true
+}
+
+func (s *Server) rejectRateLimited(c *client, eventType, reason string) {
+	s.logClientSecurityEvent(c, "ws.message", wsSecurityOutcomeRateLimited, logkit.Fields{
+		"error_code": string(apperr.CodeRateLimited),
+		"event_type": eventType,
+		"reason":     reason,
+	})
+	_ = c.sendError(string(apperr.CodeRateLimited), "too many websocket messages")
+	s.closeAfterError(c)
+}
+
+func isActionEvent(eventType string) bool {
+	switch eventType {
+	case EventJoinQueue, EventLeaveQueue, EventFlagSubmit, EventSurrender:
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *Server) requireCurrentClient(c *client) bool {
+	if s.isCurrentClient(c) {
+		return true
+	}
+	_ = c.sendError(ErrorStaleConnection, "stale websocket connection")
+	return false
 }
 
 func rejectUnexpectedPayload(c *client, raw json.RawMessage) bool {
@@ -148,7 +242,13 @@ func (s *Server) closeAfterError(c *client) {
 	if delay <= 0 {
 		delay = 10 * time.Millisecond
 	}
-	runAfterOrDone(s.done(), delay, c.Close)
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		c.Close()
+	case <-s.done():
+	}
 }
 
 // validateSession compares the WS connection's session token captured at
@@ -246,6 +346,7 @@ func (s *Server) handleFlagSubmit(ctx context.Context, c *client, raw json.RawMe
 		return
 	}
 	if result.AlreadyFinished {
+		_ = c.sendError(string(apperr.CodeDuelFinished), apperr.ErrDuelFinished.Message)
 		return
 	}
 	if !result.Correct || result.FinishedDuel == nil {
@@ -351,8 +452,13 @@ func (s *Server) publishMatch(ctx context.Context, result *duelusecase.MatchResu
 		if !ok {
 			continue
 		}
-		_ = participant.sendEvent(EventMatchFound, s.matchFoundPayload(ctx, duel, playerID))
-		_ = participant.sendEvent(EventTaskAssigned, assignment)
+		if !s.sendCriticalEvent(participant, EventMatchFound, s.matchFoundPayload(ctx, duel, playerID)) {
+			s.hubs.Unregister(duel.ID, participant)
+			continue
+		}
+		if !s.sendCriticalEvent(participant, EventTaskAssigned, assignment) {
+			s.hubs.Unregister(duel.ID, participant)
+		}
 	}
 	if s.hints != nil {
 		s.hints.StartDuel(duel, map[uuid.UUID]*domain.Task{
@@ -369,6 +475,38 @@ func (s *Server) publishMatch(ctx context.Context, result *duelusecase.MatchResu
 			s.reconnect.HandleDisconnect(ctx, duel.ID, playerID)
 		}
 	}
+}
+
+func (s *Server) sendCriticalEvent(c *client, eventType string, payload any) bool {
+	if c == nil {
+		return false
+	}
+	if err := c.sendEvent(eventType, payload); err != nil {
+		s.closeAfterCriticalSendFailure(c, eventType, err)
+		return false
+	}
+	return true
+}
+
+func (s *Server) closeAfterCriticalSendFailure(c *client, eventType string, err error) {
+	s.logClientDeliveryFailure(c, eventType, err)
+	if c != nil {
+		c.CloseNow()
+	}
+}
+
+func (s *Server) logClientDeliveryFailure(c *client, eventType string, err error) {
+	if s == nil || s.log == nil || err == nil {
+		return
+	}
+	fields := logkit.Fields{
+		"event_type": eventType,
+		"error":      err.Error(),
+	}
+	if c != nil && c.player != nil {
+		fields["player_id"] = c.player.ID.String()
+	}
+	s.log.Warn("websocket event delivery failed", fields)
 }
 
 func taskAssignedPayload(duel *domain.Duel, task *domain.Task) TaskAssignedPayload {
@@ -414,15 +552,11 @@ func (s *Server) publishDuelFinished(ctx context.Context, duel *domain.Duel, sol
 
 	if c, ok := s.clientByPlayer(duel.Player1ID); ok {
 		payload := duelFinishedPayload(duel, duel.Player1ID, solvedPlayerID, s.winnerUsername(ctx, duel))
-		_ = c.sendEvent(EventDuelFinished, payload)
-		c.clearDuel()
-		c.setQueued(false)
+		_ = c.sendDuelFinishedIfCurrent(duel.ID, payload)
 	}
 	if c, ok := s.clientByPlayer(duel.Player2ID); ok {
 		payload := duelFinishedPayload(duel, duel.Player2ID, solvedPlayerID, s.winnerUsername(ctx, duel))
-		_ = c.sendEvent(EventDuelFinished, payload)
-		c.clearDuel()
-		c.setQueued(false)
+		_ = c.sendDuelFinishedIfCurrent(duel.ID, payload)
 	}
 
 	delay := s.closeDelay

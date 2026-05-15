@@ -79,7 +79,7 @@ func TestServerSendDuelResumeIncludesOpponentID(t *testing.T) {
 	}
 	server := &Server{}
 
-	server.sendDuelResume(context.Background(), c, &duelusecase.ReconnectDecision{
+	require.NoError(t, server.sendDuelResume(context.Background(), c, &duelusecase.ReconnectDecision{
 		Duel: &domain.Duel{
 			ID:        duelID,
 			Player1ID: playerID,
@@ -89,7 +89,7 @@ func TestServerSendDuelResumeIncludesOpponentID(t *testing.T) {
 		},
 		OpponentID:  opponentID,
 		NewDeadline: deadline,
-	}, false)
+	}, false))
 
 	select {
 	case data := <-c.send:
@@ -182,6 +182,38 @@ func TestQueryTokenAuthRejected(t *testing.T) {
 	require.Equal(t, wsSecurityOutcomeFailure, entry["outcome"])
 	require.Equal(t, string(apperr.CodeInvalidSession), entry["error_code"])
 	require.Equal(t, "query_token_rejected", entry["reason"])
+}
+
+func TestEmptyQueryTokenRejectedEvenWithCookie(t *testing.T) {
+	t.Parallel()
+
+	token := uuid.New()
+	players := &countingSessionPlayerRepo{}
+	server := NewServer(
+		players,
+		&shutdownMatchmaking{left: make(chan uuid.UUID, 1)},
+		nil,
+		NewHubRegistry(),
+		WithHubCloseDelay(0),
+	)
+	httpServer := httptest.NewServer(server)
+	defer httpServer.Close()
+
+	headers := http.Header{}
+	headers.Add("Cookie", (&http.Cookie{Name: restmw.PlayerSessionCookieName, Value: token.String()}).String())
+	conn, resp, err := coderws.Dial(t.Context(), wsTestEndpoint(httpServer.URL)+"?token=", &coderws.DialOptions{
+		HTTPHeader: headers,
+	})
+	if conn != nil {
+		_ = conn.Close(coderws.StatusNormalClosure, "")
+	}
+	require.Error(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+	if resp.Body != nil {
+		require.NoError(t, resp.Body.Close())
+	}
+	require.Zero(t, players.sessionLookups)
 }
 
 func TestCookieAuth(t *testing.T) {
@@ -421,6 +453,119 @@ func TestStaleSessionSecurityLogRedactsTokens(t *testing.T) {
 	require.Equal(t, player.ID.String(), entry["player_id"])
 }
 
+func TestActiveWebSocketExpiredSessionClosesWithoutClientMessage(t *testing.T) {
+	t.Parallel()
+
+	token := uuid.New()
+	expiresAt := time.Now().Add(30 * time.Millisecond).UTC()
+	player := &domain.Player{
+		ID:               uuid.New(),
+		Username:         "alice",
+		SessionToken:     &token,
+		SessionExpiresAt: &expiresAt,
+		Status:           domain.PlayerStatusIdle,
+	}
+	server := NewServer(
+		&shutdownPlayerRepo{player: player},
+		&shutdownMatchmaking{left: make(chan uuid.UUID, 1)},
+		nil,
+		NewHubRegistry(),
+		WithHubCloseDelay(0),
+		WithSessionMonitor(10*time.Millisecond, 20*time.Millisecond),
+	)
+	httpServer := httptest.NewServer(server)
+	defer httpServer.Close()
+
+	conn, resp, err := dialTestWS(t, httpServer.URL, token)
+	require.NoError(t, err)
+	if resp != nil && resp.Body != nil {
+		defer resp.Body.Close()
+	}
+	defer func() { _ = conn.Close(coderws.StatusNormalClosure, "") }()
+
+	event := readTestEvent(t, conn)
+	require.Equal(t, EventError, event.Type)
+	require.Equal(t, string(apperr.CodeInvalidSession), event.Code)
+}
+
+func TestActiveWebSocketRotatedSessionClosesWithoutClientMessage(t *testing.T) {
+	t.Parallel()
+
+	oldToken := uuid.New()
+	newToken := uuid.New()
+	player := &domain.Player{
+		ID:           uuid.New(),
+		Username:     "alice",
+		SessionToken: &oldToken,
+		Status:       domain.PlayerStatusIdle,
+	}
+	players := newRotatingSessionPlayerRepo(player)
+	server := NewServer(
+		players,
+		&shutdownMatchmaking{left: make(chan uuid.UUID, 1)},
+		nil,
+		NewHubRegistry(),
+		WithHubCloseDelay(0),
+		WithSessionMonitor(10*time.Millisecond, 20*time.Millisecond),
+	)
+	httpServer := httptest.NewServer(server)
+	defer httpServer.Close()
+
+	conn, resp, err := dialTestWS(t, httpServer.URL, oldToken)
+	require.NoError(t, err)
+	if resp != nil && resp.Body != nil {
+		defer resp.Body.Close()
+	}
+	defer func() { _ = conn.Close(coderws.StatusNormalClosure, "") }()
+
+	players.setSessionToken(newToken)
+	event := readTestEvent(t, conn)
+	require.Equal(t, EventError, event.Type)
+	require.Equal(t, string(apperr.CodeInvalidSession), event.Code)
+}
+
+func TestDuelResumeSendFailureClosesReconnectSocket(t *testing.T) {
+	t.Parallel()
+
+	playerID := uuid.New()
+	opponentID := uuid.New()
+	duel := &domain.Duel{
+		ID:        uuid.New(),
+		Player1ID: playerID,
+		Player2ID: opponentID,
+		Status:    domain.DuelStatusActive,
+		StartedAt: time.Now().UTC(),
+		Deadline:  time.Now().Add(time.Minute).UTC(),
+	}
+	reconnect := &restoreReconnectManager{
+		decision: &duelusecase.ReconnectDecision{
+			Duel:        duel,
+			OpponentID:  opponentID,
+			NewDeadline: duel.Deadline,
+		},
+	}
+	server := NewServer(
+		&publishMatchPlayerRepo{players: map[uuid.UUID]*domain.Player{
+			playerID:   {ID: playerID, Username: "alice"},
+			opponentID: {ID: opponentID, Username: "bob"},
+		}},
+		nil,
+		nil,
+		NewHubRegistry(),
+		WithReconnectManager(reconnect),
+		WithHubCloseDelay(0),
+	)
+	c := &client{
+		player: &domain.Player{ID: playerID, Username: "alice"},
+		send:   make(chan []byte, 1),
+		done:   make(chan struct{}),
+	}
+	c.send <- []byte(`{"type":"already_full"}`)
+
+	require.True(t, server.handleActiveDuelRestore(context.Background(), c))
+	require.True(t, c.closed.Load())
+}
+
 func TestHandshakeRateLimitSecurityLogUsesResolvedClientIP(t *testing.T) {
 	t.Parallel()
 
@@ -571,7 +716,7 @@ func TestServerFlagSubmitRequiresConnectionDuel(t *testing.T) {
 	foreignDuelID := uuid.New()
 	writeTestEvent(t, conn, EventFlagSubmit, map[string]any{
 		"duel_id": foreignDuelID,
-		"flag":    "ctf{maliciously-guessed}",
+		"flag":    "flag{maliciously-guessed}",
 	})
 
 	event := readTestEvent(t, conn)
@@ -646,6 +791,8 @@ var _ ReconnectManager = (*noopReconnectManager)(nil)
 
 func (m *noopReconnectManager) StartDuelTimer(*domain.Duel) {}
 
+func (m *noopReconnectManager) BeginDisconnect(context.Context, uuid.UUID, uuid.UUID) {}
+
 func (m *noopReconnectManager) HandleDisconnect(context.Context, uuid.UUID, uuid.UUID) {}
 
 func (m *noopReconnectManager) ConsumeReconnect(
@@ -697,6 +844,50 @@ func (rejectingHandshakeLimiter) Allow(string) bool { return false }
 
 func (rejectingHandshakeLimiter) RetryAfter() string { return "1" }
 
+type restoreReconnectManager struct {
+	decision *duelusecase.ReconnectDecision
+}
+
+var _ ReconnectManager = (*restoreReconnectManager)(nil)
+
+func (m *restoreReconnectManager) StartDuelTimer(*domain.Duel) {}
+
+func (m *restoreReconnectManager) BeginDisconnect(context.Context, uuid.UUID, uuid.UUID) {}
+
+func (m *restoreReconnectManager) HandleDisconnect(context.Context, uuid.UUID, uuid.UUID) {}
+
+func (m *restoreReconnectManager) ConsumeReconnect(
+	context.Context,
+	uuid.UUID,
+) (*duelusecase.ReconnectDecision, error) {
+	return nil, nil
+}
+
+func (m *restoreReconnectManager) ActiveDuel(
+	context.Context,
+	uuid.UUID,
+) (*duelusecase.ReconnectDecision, error) {
+	return m.decision, nil
+}
+
+func (m *restoreReconnectManager) DuelPaused(uuid.UUID) bool { return false }
+
+func (m *restoreReconnectManager) FinalizeDraw(context.Context, uuid.UUID) (*domain.Duel, error) {
+	return nil, nil
+}
+
+func (m *restoreReconnectManager) FinalizePlayerForfeit(
+	context.Context,
+	uuid.UUID,
+	uuid.UUID,
+) (*domain.Duel, error) {
+	return nil, nil
+}
+
+func (m *restoreReconnectManager) CloseDuel(uuid.UUID) {}
+
+func (m *restoreReconnectManager) StopAll() {}
+
 func TestServerCleanupClientSkipsDisconnectForFastReplacement(t *testing.T) {
 	t.Parallel()
 
@@ -729,6 +920,7 @@ func TestServerCleanupClientSkipsDisconnectForFastReplacement(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("cleanup did not finish after disconnect grace")
 	}
+	require.Equal(t, []recordedDisconnect{{duelID: duelID, playerID: playerID}}, reconnect.beginDisconnects)
 	require.Empty(t, reconnect.disconnects)
 	require.True(t, oldClient.closed.Load())
 
@@ -756,6 +948,7 @@ func TestServerCleanupClientDisconnectsAfterGraceWithoutReplacement(t *testing.T
 
 	server.cleanupClient(context.Background(), c)
 
+	require.Equal(t, []recordedDisconnect{{duelID: duelID, playerID: playerID}}, reconnect.beginDisconnects)
 	require.Equal(t, []recordedDisconnect{{duelID: duelID, playerID: playerID}}, reconnect.disconnects)
 	require.True(t, c.closed.Load())
 	_, ok := server.clientByPlayer(playerID)

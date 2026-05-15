@@ -14,6 +14,7 @@ const (
 	CodeUsernameTaken   Code = "player.username_taken"
 	CodeUsernameInvalid Code = "player.username_invalid"
 	CodePlayerInDuel    Code = "player.in_duel"
+	CodePlayerQueued    Code = "player.queued"
 	CodeInvalidSession  Code = "player.invalid_session"
 
 	CodeTaskNotFound   Code = "task.not_found"

@@ -46,7 +46,7 @@ func InitializeApp(ctx context.Context, cfg *config.Config, log logkit.Logger) (
 	leaderboardRedis := provideLeaderboardRedis(client)
 	leaderboardPostgres := persistent.NewLeaderboardPostgres(txManager)
 	leaderboardUsecase := leaderboard.NewLeaderboardUsecase(leaderboardRedis, leaderboardPostgres, clock)
-	timerRegistry := provideTimerRegistry(ctx, txManager, duelPostgres, playerPostgres, clock)
+	timerRegistry := provideTimerRegistry(ctx, txManager, duelPostgres, playerPostgres, clock, log)
 	flagSubmitUsecase := provideFlagSubmitUsecase(txManager, duelPostgres, playerPostgres, historyPostgres, leaderboardUsecase, clock, timerRegistry, log)
 	hubRegistry := provideHubRegistry()
 	hintScheduler := provideHintScheduler(clock)
@@ -72,7 +72,7 @@ func InitializeApp(ctx context.Context, cfg *config.Config, log logkit.Logger) (
 	reconnectManager := provideReconnectManager(ctx, txManager, duelPostgres, playerPostgres, duelTimer, duelBroadcaster, clock, leaderboardUsecase, log)
 	websocketServer := provideWebSocketServer(wireRawWebSocketServer, reconnectManager)
 	v := provideRESTMiddlewares(log, cfg)
-	handler := provideHTTPHandler(cfg, server, websocketServer, authUsecase, playerPostgres, v)
+	handler := provideHTTPHandler(cfg, server, websocketServer, authUsecase, playerPostgres, v, log)
 	httpServer := provideHTTPServer(cfg, handler)
 	app := provideApp(seaweedStorage, txManager, duelPostgres, playerPostgres, playerPostgres, matchmakingRedis, duelBroadcaster, clock, httpServer, websocketServer, revocationRedis)
 	return app, func() {

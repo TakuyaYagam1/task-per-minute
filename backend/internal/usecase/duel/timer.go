@@ -6,11 +6,15 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	logkit "github.com/wahrwelt-kit/go-logkit"
 
+	"github.com/TakuyaYagam1/task-per-minute/internal/ctxutil"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase"
 	"github.com/TakuyaYagam1/task-per-minute/pkg/clock"
 )
+
+const asyncFinalizeTimeout = 10 * time.Second
 
 type TimerRegistry struct {
 	ctx     context.Context
@@ -18,6 +22,7 @@ type TimerRegistry struct {
 	duels   usecase.DuelRepo
 	players usecase.PlayerRepo
 	clock   clock.Clock
+	log     logkit.Logger
 	timers  sync.Map // map[uuid.UUID]*timerEntry
 }
 
@@ -28,6 +33,12 @@ func WithTimerRegistryContext(ctx context.Context) TimerRegistryOption {
 		if ctx != nil {
 			r.ctx = ctx
 		}
+	}
+}
+
+func WithTimerRegistryLogger(log logkit.Logger) TimerRegistryOption {
+	return func(r *TimerRegistry) {
+		r.log = log
 	}
 }
 
@@ -172,8 +183,16 @@ func (r *TimerRegistry) expire(duelID uuid.UUID, entry *timerEntry) {
 	}
 	r.timers.CompareAndDelete(duelID, entry)
 
-	finished, err := r.finishExpired(r.detachedCtx(), duelID)
+	finalizeCtx, finalizeCancel := r.detachedCtx()
+	defer finalizeCancel()
+	finished, err := r.finishExpired(finalizeCtx, duelID)
 	if err != nil || finished == nil {
+		if err != nil && r.log != nil {
+			r.log.Error("duel timer finalize failed", logkit.Fields{
+				"duel_id": duelID.String(),
+				"error":   err.Error(),
+			})
+		}
 		return
 	}
 	if entry.onExpire != nil {
@@ -181,11 +200,11 @@ func (r *TimerRegistry) expire(duelID uuid.UUID, entry *timerEntry) {
 	}
 }
 
-func (r *TimerRegistry) detachedCtx() context.Context {
+func (r *TimerRegistry) detachedCtx() (context.Context, context.CancelFunc) {
 	if r == nil || r.ctx == nil {
-		return context.Background()
+		return context.WithTimeout(context.Background(), asyncFinalizeTimeout)
 	}
-	return context.WithoutCancel(r.ctx)
+	return ctxutil.DetachedWithTimeout(r.ctx, asyncFinalizeTimeout)
 }
 
 func (r *TimerRegistry) finishExpired(ctx context.Context, duelID uuid.UUID) (*domain.Duel, error) {

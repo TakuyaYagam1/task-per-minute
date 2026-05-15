@@ -45,7 +45,7 @@ func classify(err error) (int, *apperr.Error) {
 		return http.StatusUnauthorized, appError(err, apperr.ErrInternal)
 	case errors.Is(err, apperr.ErrNotDuelParticipant):
 		return http.StatusForbidden, appError(err, apperr.ErrInternal)
-	case isAny(err, apperr.ErrUsernameTaken, apperr.ErrPlayerInDuel, apperr.ErrTaskInUse, apperr.ErrDuelFinished, apperr.ErrConflict):
+	case isAny(err, apperr.ErrUsernameTaken, apperr.ErrPlayerInDuel, apperr.ErrPlayerQueued, apperr.ErrTaskInUse, apperr.ErrDuelFinished, apperr.ErrConflict):
 		return http.StatusConflict, appError(err, apperr.ErrInternal)
 	case isAny(err, apperr.ErrFlagIncorrect, apperr.ErrDuelDeadlinePassed):
 		return http.StatusUnprocessableEntity, appError(err, apperr.ErrInternal)

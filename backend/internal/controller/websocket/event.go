@@ -34,12 +34,13 @@ const (
 )
 
 const (
-	ErrorUnknownEvent   = "unknown_event"
-	ErrorInvalidJSON    = "invalid_json"
-	ErrorInvalidPayload = "invalid_payload"
-	ErrorServerShutdown = "server_shutdown"
-	ErrorInternal       = "internal"
-	ErrorDuelPaused     = "duel.paused"
+	ErrorUnknownEvent    = "unknown_event"
+	ErrorInvalidJSON     = "invalid_json"
+	ErrorInvalidPayload  = "invalid_payload"
+	ErrorServerShutdown  = "server_shutdown"
+	ErrorInternal        = "internal"
+	ErrorDuelPaused      = "duel.paused"
+	ErrorStaleConnection = "stale_connection"
 )
 
 type IncomingEvent struct {

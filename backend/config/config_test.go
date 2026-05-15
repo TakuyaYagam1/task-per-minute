@@ -20,6 +20,7 @@ var configEnvVars = []string{
 	"ADMIN_REFRESH_RATE_ATTEMPTS", "ADMIN_REFRESH_RATE_WINDOW", "ADMIN_REFRESH_RATE_BUCKET_TTL",
 	"PLAYER_JOIN_RATE_ATTEMPTS", "PLAYER_JOIN_RATE_WINDOW", "PLAYER_JOIN_RATE_BUCKET_TTL", "PLAYER_SESSION_TTL",
 	"WS_ALLOWED_ORIGINS", "WS_REQUIRE_ORIGIN", "WS_HANDSHAKE_RATE_ATTEMPTS", "WS_HANDSHAKE_RATE_WINDOW", "WS_HANDSHAKE_RATE_BUCKET_TTL",
+	"WS_MESSAGE_RATE_ATTEMPTS", "WS_MESSAGE_RATE_WINDOW", "WS_ACTION_RATE_ATTEMPTS", "WS_ACTION_RATE_WINDOW",
 }
 
 func clearConfigEnv(t *testing.T) {
@@ -134,6 +135,18 @@ func TestLoad_AppliesDefaults(t *testing.T) {
 	if cfg.WS.HandshakeRateBucketTTL != 15*time.Minute {
 		t.Errorf("WS.HandshakeRateBucketTTL = %s, want 15m", cfg.WS.HandshakeRateBucketTTL)
 	}
+	if cfg.WS.MessageRateAttempts != 120 {
+		t.Errorf("WS.MessageRateAttempts = %d, want 120", cfg.WS.MessageRateAttempts)
+	}
+	if cfg.WS.MessageRateWindow != time.Minute {
+		t.Errorf("WS.MessageRateWindow = %s, want 1m", cfg.WS.MessageRateWindow)
+	}
+	if cfg.WS.ActionRateAttempts != 30 {
+		t.Errorf("WS.ActionRateAttempts = %d, want 30", cfg.WS.ActionRateAttempts)
+	}
+	if cfg.WS.ActionRateWindow != time.Minute {
+		t.Errorf("WS.ActionRateWindow = %s, want 1m", cfg.WS.ActionRateWindow)
+	}
 }
 
 func TestLoad_OverridesAreApplied(t *testing.T) {
@@ -162,6 +175,10 @@ func TestLoad_OverridesAreApplied(t *testing.T) {
 	t.Setenv("WS_HANDSHAKE_RATE_ATTEMPTS", "17")
 	t.Setenv("WS_HANDSHAKE_RATE_WINDOW", "45s")
 	t.Setenv("WS_HANDSHAKE_RATE_BUCKET_TTL", "30m")
+	t.Setenv("WS_MESSAGE_RATE_ATTEMPTS", "29")
+	t.Setenv("WS_MESSAGE_RATE_WINDOW", "15s")
+	t.Setenv("WS_ACTION_RATE_ATTEMPTS", "9")
+	t.Setenv("WS_ACTION_RATE_WINDOW", "20s")
 
 	cfg, err := Load()
 	if err != nil {
@@ -235,6 +252,18 @@ func TestLoad_OverridesAreApplied(t *testing.T) {
 	}
 	if cfg.WS.HandshakeRateBucketTTL != 30*time.Minute {
 		t.Errorf("WS.HandshakeRateBucketTTL = %s, want 30m", cfg.WS.HandshakeRateBucketTTL)
+	}
+	if cfg.WS.MessageRateAttempts != 29 {
+		t.Errorf("WS.MessageRateAttempts = %d, want 29", cfg.WS.MessageRateAttempts)
+	}
+	if cfg.WS.MessageRateWindow != 15*time.Second {
+		t.Errorf("WS.MessageRateWindow = %s, want 15s", cfg.WS.MessageRateWindow)
+	}
+	if cfg.WS.ActionRateAttempts != 9 {
+		t.Errorf("WS.ActionRateAttempts = %d, want 9", cfg.WS.ActionRateAttempts)
+	}
+	if cfg.WS.ActionRateWindow != 20*time.Second {
+		t.Errorf("WS.ActionRateWindow = %s, want 20s", cfg.WS.ActionRateWindow)
 	}
 }
 
@@ -318,6 +347,10 @@ func TestLoad_ValidationFailures(t *testing.T) {
 		{"bad ws handshake rate attempts", "WS_HANDSHAKE_RATE_ATTEMPTS", "0", "WS_HANDSHAKE_RATE_ATTEMPTS"},
 		{"bad ws handshake rate window", "WS_HANDSHAKE_RATE_WINDOW", "0s", "WS_HANDSHAKE_RATE_WINDOW"},
 		{"bad ws handshake rate bucket ttl", "WS_HANDSHAKE_RATE_BUCKET_TTL", "-1s", "WS_HANDSHAKE_RATE_BUCKET_TTL"},
+		{"bad ws message rate attempts", "WS_MESSAGE_RATE_ATTEMPTS", "0", "WS_MESSAGE_RATE_ATTEMPTS"},
+		{"bad ws message rate window", "WS_MESSAGE_RATE_WINDOW", "0s", "WS_MESSAGE_RATE_WINDOW"},
+		{"bad ws action rate attempts", "WS_ACTION_RATE_ATTEMPTS", "0", "WS_ACTION_RATE_ATTEMPTS"},
+		{"bad ws action rate window", "WS_ACTION_RATE_WINDOW", "0s", "WS_ACTION_RATE_WINDOW"},
 		{"placeholder seaweed secret", "SEAWEEDFS_SECRET_KEY", "your-secret-key", "SEAWEEDFS_SECRET_KEY"},
 		{"seaweed public endpoint with scheme", "SEAWEEDFS_PUBLIC_ENDPOINT", "https://files.example.com", "SEAWEEDFS_PUBLIC_ENDPOINT"},
 		{"seaweed public endpoint with path", "SEAWEEDFS_PUBLIC_ENDPOINT", "files.example.com/s3", "SEAWEEDFS_PUBLIC_ENDPOINT"},

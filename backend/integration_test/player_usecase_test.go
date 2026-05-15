@@ -59,7 +59,7 @@ func TestPlayerUsecase_Join_CreateAndRepeatUpdatesSessionToken(t *testing.T) {
 	require.Equal(t, first.ID, byNewToken.ID)
 }
 
-func TestPlayerUsecase_Join_RejoinWhileQueuedRotatesTokenAndResetsIdle(t *testing.T) {
+func TestPlayerUsecase_Join_RejoinWhileQueuedRejectedAndPreservesSession(t *testing.T) {
 	t.Parallel()
 
 	f := newPlayerUsecaseFixture()
@@ -74,16 +74,18 @@ func TestPlayerUsecase_Join_RejoinWhileQueuedRotatesTokenAndResetsIdle(t *testin
 	_, err = f.players.UpdateStatus(ctx, first.ID, domain.PlayerStatusQueued)
 	require.NoError(t, err)
 
-	second, err := f.uc.Join(ctx, username)
-	require.NoError(t, err)
-	require.Equal(t, first.ID, second.ID)
-	require.NotNil(t, second.SessionToken)
-	require.NotEqual(t, firstToken, *second.SessionToken)
-	require.Equal(t, domain.PlayerStatusIdle, second.Status,
-		"rejoining while queued must make the old queue entry stale")
+	_, err = f.uc.Join(ctx, username)
+	require.ErrorIs(t, err, apperr.ErrPlayerQueued)
 
-	_, err = f.players.GetBySessionToken(ctx, firstToken)
-	require.ErrorIs(t, err, apperr.ErrPlayerNotFound)
+	current, err := f.players.GetByID(ctx, first.ID)
+	require.NoError(t, err)
+	require.Equal(t, domain.PlayerStatusQueued, current.Status)
+	require.NotNil(t, current.SessionToken)
+	require.Equal(t, firstToken, *current.SessionToken)
+
+	byToken, err := f.players.GetBySessionToken(ctx, firstToken)
+	require.NoError(t, err)
+	require.Equal(t, first.ID, byToken.ID)
 }
 
 func TestPlayerUsecase_Join_ConcurrentSameUsernameUsesSingleCurrentSessionToken(t *testing.T) {

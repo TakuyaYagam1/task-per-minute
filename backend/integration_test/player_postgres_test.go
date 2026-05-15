@@ -50,7 +50,7 @@ func TestPlayerRepo_Create_DuplicateUsername_ReturnsErrUsernameTaken(t *testing.
 		"second Create with same username must map unique violation to apperr.ErrUsernameTaken")
 }
 
-func TestPlayerRepo_JoinByUsername_QueuedPlayerResetsIdle(t *testing.T) {
+func TestPlayerRepo_JoinByUsername_QueuedPlayerRejected(t *testing.T) {
 	t.Parallel()
 	repo, _ := newPlayerRepo()
 	ctx := context.Background()
@@ -63,15 +63,18 @@ func TestPlayerRepo_JoinByUsername_QueuedPlayerResetsIdle(t *testing.T) {
 	require.NoError(t, err)
 
 	token := uuid.New()
-	joined, err := repo.JoinByUsername(ctx, name, token, time.Now().Add(time.Hour).UTC())
+	_, err = repo.JoinByUsername(ctx, name, token, time.Now().Add(time.Hour).UTC())
+	require.ErrorIs(t, err, apperr.ErrPlayerQueued)
+
+	joined, err := repo.GetByID(ctx, created.ID)
 	require.NoError(t, err)
 	require.Equal(t, created.ID, joined.ID)
 	require.NotNil(t, joined.SessionToken)
-	require.Equal(t, token, *joined.SessionToken)
+	require.NotEqual(t, token, *joined.SessionToken)
 	require.NotNil(t, joined.SessionExpiresAt)
 	require.True(t, joined.SessionExpiresAt.After(time.Now().UTC()))
-	require.Equal(t, domain.PlayerStatusIdle, joined.Status,
-		"session rotation must stale old queue entries by resetting queued players to idle")
+	require.Equal(t, domain.PlayerStatusQueued, joined.Status,
+		"queued players must not be reset to idle while a Redis queue entry may still exist")
 }
 
 func TestPlayerRepo_ResetQueuedToIdle_OnlyQueuedPlayers(t *testing.T) {

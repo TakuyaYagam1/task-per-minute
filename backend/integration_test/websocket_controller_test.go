@@ -341,7 +341,7 @@ func TestWebSocketController_StaleSessionTokenCannotSendEvents(t *testing.T) {
 	require.Equal(t, string(apperr.CodeInvalidSession), event.Code)
 }
 
-func TestWebSocketController_QueuedSessionRotationPreventsStaleMatch(t *testing.T) {
+func TestWebSocketController_QueuedRejoinRejectedPreservesCurrentQueuedSocket(t *testing.T) {
 	f := newWebSocketFixture(t)
 	ctx := context.Background()
 
@@ -353,9 +353,17 @@ func TestWebSocketController_QueuedSessionRotationPreventsStaleMatch(t *testing.
 	writeWSEvent(t, aliceConn, wscontroller.EventJoinQueue, nil)
 	require.Equal(t, wscontroller.EventQueueJoined, readWSEventType(t, aliceConn, wscontroller.EventQueueJoined).Type)
 
-	refreshedAlice := f.joinPlayer(t, alice.Username)
-	require.NotEqual(t, *alice.SessionToken, *refreshedAlice.SessionToken)
-	require.Equal(t, domain.PlayerStatusIdle, refreshedAlice.Status)
+	_, err := f.playerUC.Join(ctx, alice.Username)
+	require.ErrorIs(t, err, apperr.ErrPlayerQueued)
+
+	currentAlice, err := f.players.GetByID(ctx, alice.ID)
+	require.NoError(t, err)
+	require.Equal(t, domain.PlayerStatusQueued, currentAlice.Status)
+	require.NotNil(t, currentAlice.SessionToken)
+	require.Equal(t, *alice.SessionToken, *currentAlice.SessionToken)
+
+	writeWSEvent(t, aliceConn, wscontroller.EventPing, nil)
+	require.Equal(t, wscontroller.EventPong, readWSEventType(t, aliceConn, wscontroller.EventPong).Type)
 
 	bob := f.joinPlayer(t, uniq("bob"))
 	bobConn := f.connect(t, *bob.SessionToken)
@@ -364,17 +372,19 @@ func TestWebSocketController_QueuedSessionRotationPreventsStaleMatch(t *testing.
 	writeWSEvent(t, bobConn, wscontroller.EventJoinQueue, nil)
 	require.Equal(t, wscontroller.EventQueueJoined, readWSEventType(t, bobConn, wscontroller.EventQueueJoined).Type)
 
+	aliceMatch := readWSEventType(t, aliceConn, wscontroller.EventMatchFound)
+	bobMatch := readWSEventType(t, bobConn, wscontroller.EventMatchFound)
+	require.Equal(t, decodeMatchDuelID(t, aliceMatch), decodeMatchDuelID(t, bobMatch))
+	require.Equal(t, wscontroller.EventTaskAssigned, readWSEventType(t, aliceConn, wscontroller.EventTaskAssigned).Type)
+	require.Equal(t, wscontroller.EventTaskAssigned, readWSEventType(t, bobConn, wscontroller.EventTaskAssigned).Type)
+
 	active, err := f.duels.GetActiveByPlayerID(ctx, bob.ID)
 	require.NoError(t, err)
-	require.Nil(t, active, "bob must not be matched against alice's stale queued session")
+	require.NotNil(t, active)
 
 	bobCurrent, err := f.players.GetByID(ctx, bob.ID)
 	require.NoError(t, err)
-	require.Equal(t, domain.PlayerStatusQueued, bobCurrent.Status)
-
-	writeWSEvent(t, aliceConn, wscontroller.EventPing, nil)
-	stale := readWSEventType(t, aliceConn, wscontroller.EventError)
-	require.Equal(t, string(apperr.CodeInvalidSession), stale.Code)
+	require.Equal(t, domain.PlayerStatusInDuel, bobCurrent.Status)
 }
 
 func TestWebSocketController_ReconnectTimeoutDrawsDuel(t *testing.T) {

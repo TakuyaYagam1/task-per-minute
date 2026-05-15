@@ -35,6 +35,7 @@ func TestHandleError_MapsAllSentinels(t *testing.T) {
 		{"not_duel_participant", apperr.ErrNotDuelParticipant, http.StatusForbidden, apperr.ErrNotDuelParticipant.Message},
 		{"username_taken", apperr.ErrUsernameTaken, http.StatusConflict, apperr.ErrUsernameTaken.Message},
 		{"player_in_duel", apperr.ErrPlayerInDuel, http.StatusConflict, apperr.ErrPlayerInDuel.Message},
+		{"player_queued", apperr.ErrPlayerQueued, http.StatusConflict, apperr.ErrPlayerQueued.Message},
 		{"task_in_use", apperr.ErrTaskInUse, http.StatusConflict, apperr.ErrTaskInUse.Message},
 		{"duel_finished", apperr.ErrDuelFinished, http.StatusConflict, apperr.ErrDuelFinished.Message},
 		{"conflict", apperr.ErrConflict, http.StatusConflict, apperr.ErrConflict.Message},

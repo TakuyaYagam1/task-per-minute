@@ -124,6 +124,10 @@ ADMIN_REFRESH_RATE_BUCKET_TTL=15m
 WS_HANDSHAKE_RATE_ATTEMPTS=60
 WS_HANDSHAKE_RATE_WINDOW=1m
 WS_HANDSHAKE_RATE_BUCKET_TTL=15m
+WS_MESSAGE_RATE_ATTEMPTS=120
+WS_MESSAGE_RATE_WINDOW=1m
+WS_ACTION_RATE_ATTEMPTS=30
+WS_ACTION_RATE_WINDOW=1m
 ```
 
 If `NEXT_PUBLIC_*` stays empty, the frontend reaches the backend through
@@ -301,6 +305,10 @@ ADMIN_REFRESH_RATE_BUCKET_TTL # refresh limiter idle bucket TTL, default 15m
 WS_HANDSHAKE_RATE_ATTEMPTS   # /ws handshakes per-IP limit, default 60
 WS_HANDSHAKE_RATE_WINDOW     # WS handshake limiter window, default 1m
 WS_HANDSHAKE_RATE_BUCKET_TTL # WS limiter idle bucket TTL, default 15m
+WS_MESSAGE_RATE_ATTEMPTS     # parsed WS messages per connection, default 120
+WS_MESSAGE_RATE_WINDOW       # WS message limiter window, default 1m
+WS_ACTION_RATE_ATTEMPTS      # join/leave/flag/surrender actions per connection, default 30
+WS_ACTION_RATE_WINDOW        # WS action limiter window, default 1m
 ```
 
 If you keep these values as `secrets.*` instead of `vars.*`, GitHub Actions will

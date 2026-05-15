@@ -102,7 +102,7 @@ func TestAdminTaskUsecase_DeleteTask_ActiveDuelReturnsTaskInUse(t *testing.T) {
 	require.ErrorIs(t, err, apperr.ErrTaskInUse)
 }
 
-func TestAdminTaskUsecase_DeleteTask_FinishedDuelReferenceReturnsTaskInUse(t *testing.T) {
+func TestAdminTaskUsecase_DeleteTask_FinishedDuelReferenceDeletesTask(t *testing.T) {
 	t.Parallel()
 
 	uc, f := newAdminTaskUsecaseFixture()
@@ -127,8 +127,9 @@ func TestAdminTaskUsecase_DeleteTask_FinishedDuelReferenceReturnsTaskInUse(t *te
 	_, err = f.duels.Finish(ctx, duel.ID, nil, time.Now().UTC(), domain.DuelStatusFinished)
 	require.NoError(t, err)
 
-	err = uc.DeleteTask(ctx, task.ID)
-	require.ErrorIs(t, err, apperr.ErrTaskInUse)
+	require.NoError(t, uc.DeleteTask(ctx, task.ID))
+	_, err = uc.GetTask(ctx, task.ID)
+	require.ErrorIs(t, err, apperr.ErrTaskNotFound)
 }
 
 func TestAdminTaskUsecase_DeleteTask_MissingReturnsTaskNotFound(t *testing.T) {

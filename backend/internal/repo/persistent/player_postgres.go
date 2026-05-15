@@ -12,10 +12,13 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
+	"github.com/TakuyaYagam1/task-per-minute/internal/ctxutil"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/repo/persistent/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase"
 )
+
+const expiredSessionCleanupTimeout = 2 * time.Second
 
 const playersUsernameUniqueConstraint = "players_username_key"
 
@@ -51,6 +54,13 @@ func (r *PlayerPostgres) JoinByUsername(
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
+			existing, getErr := r.GetByUsername(ctx, username)
+			if getErr != nil {
+				return nil, apperr.ErrPlayerInDuel
+			}
+			if existing.Status == domain.PlayerStatusQueued {
+				return nil, apperr.ErrPlayerQueued
+			}
 			return nil, apperr.ErrPlayerInDuel
 		}
 		return nil, fmt.Errorf("PlayerPostgres - JoinByUsername - Querier.UpsertPlayerSessionByUsername: %w", err)
@@ -90,7 +100,8 @@ func (r *PlayerPostgres) GetBySessionToken(ctx context.Context, token uuid.UUID)
 	}
 	player := playerToDomain(row)
 	if sessionExpired(player.SessionExpiresAt, time.Now().UTC()) {
-		cleanupCtx := context.WithoutCancel(ctx)
+		cleanupCtx, cleanupCancel := ctxutil.DetachedWithTimeout(ctx, expiredSessionCleanupTimeout)
+		defer cleanupCancel()
 		_, _ = r.UpdateSessionToken(cleanupCtx, player.ID, nil, nil)
 		return nil, apperr.ErrPlayerNotFound
 	}

@@ -358,7 +358,7 @@ func TestTaskRepo_IsUsedInActiveDuel(t *testing.T) {
 	require.False(t, isUsed, "finished duel must not count as active usage")
 }
 
-func TestTaskRepo_Delete_ReferencedTaskReturnsTaskInUse(t *testing.T) {
+func TestTaskRepo_Delete_ActiveDuelReferencedTaskReturnsTaskInUse(t *testing.T) {
 	t.Parallel()
 	repo := newTaskRepo()
 	f := newDuelFixture()
@@ -374,7 +374,27 @@ func TestTaskRepo_Delete_ReferencedTaskReturnsTaskInUse(t *testing.T) {
 	require.ErrorIs(t, repo.Delete(ctx, task.ID), apperr.ErrTaskInUse)
 }
 
-func TestTaskRepo_Delete_HistoryReferencedTaskReturnsTaskInUse(t *testing.T) {
+func TestTaskRepo_Delete_FinishedDuelReferenceDeletesTask(t *testing.T) {
+	t.Parallel()
+	repo := newTaskRepo()
+	f := newDuelFixture()
+	ctx := context.Background()
+
+	p1 := f.makePlayer(t, uniq("alice"))
+	p2 := f.makePlayer(t, uniq("bob"))
+	task := mustCreateTask(t, repo, uniq("finished"), domain.DifficultyEasy)
+	d, err := f.duels.Create(ctx, p1.ID, p2.ID, time.Now().Add(time.Minute))
+	require.NoError(t, err)
+	require.NoError(t, f.duels.CreateDuelPlayerTask(ctx, d.ID, p1.ID, task.ID))
+	_, err = f.duels.Finish(ctx, d.ID, nil, time.Now().UTC(), domain.DuelStatusFinished)
+	require.NoError(t, err)
+
+	require.NoError(t, repo.Delete(ctx, task.ID))
+	_, err = repo.GetByID(ctx, task.ID)
+	require.ErrorIs(t, err, apperr.ErrTaskNotFound)
+}
+
+func TestTaskRepo_Delete_HistoryReferencedTaskDeletesTask(t *testing.T) {
 	t.Parallel()
 	repo := newTaskRepo()
 	f := newDuelFixture()
@@ -384,7 +404,9 @@ func TestTaskRepo_Delete_HistoryReferencedTaskReturnsTaskInUse(t *testing.T) {
 	task := mustCreateTask(t, repo, uniq("solved"), domain.DifficultyEasy)
 	require.NoError(t, f.history.AddSolved(ctx, player.ID, task.ID, time.Now().UTC()))
 
-	require.ErrorIs(t, repo.Delete(ctx, task.ID), apperr.ErrTaskInUse)
+	require.NoError(t, repo.Delete(ctx, task.ID))
+	_, err := repo.GetByID(ctx, task.ID)
+	require.ErrorIs(t, err, apperr.ErrTaskNotFound)
 }
 
 func TestTaskRepo_CountSolvedByDifficulty(t *testing.T) {

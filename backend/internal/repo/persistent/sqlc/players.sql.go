@@ -590,9 +590,8 @@ INSERT INTO players (username, session_token, session_expires_at)
 VALUES ($1, $2, $3) ON CONFLICT (username) DO
 UPDATE
 SET session_token = EXCLUDED.session_token,
-    session_expires_at = EXCLUDED.session_expires_at,
-    status = 'idle'
-WHERE players.status <> 'in_duel'
+    session_expires_at = EXCLUDED.session_expires_at
+WHERE players.status = 'idle'
     AND players.deleted_at IS NULL
 RETURNING id,
     username,
