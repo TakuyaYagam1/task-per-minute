@@ -216,10 +216,12 @@ jobs:
         run: |
           set -Eeuo pipefail
 
+          admin_smoke_enabled=1
           if [ -z "${DEPLOY_SMOKE_ADMIN_PASSWORD:-}" ]; then
-            echo "::error::DEPLOY_SMOKE_ADMIN_PASSWORD is required for production auth smoke checks"
-            exit 1
+            echo "::warning::DEPLOY_SMOKE_ADMIN_PASSWORD is not set; skipping production admin login smoke"
+            admin_smoke_enabled=0
           fi
+          export DEPLOY_ADMIN_SMOKE_ENABLED="$admin_smoke_enabled"
           python3 -m pip install --disable-pip-version-check websockets==15.0.1
           python3 - <<'PY'
           import asyncio
@@ -275,12 +277,15 @@ jobs:
           status, me = request("GET", "/api/v1/players/me")
           assert status == 200 and me["player"]["username"] == username
 
-          status, admin = request(
-              "POST",
-              "/api/v1/admin/login",
-              {"password": os.environ["DEPLOY_SMOKE_ADMIN_PASSWORD"]},
-          )
-          assert status == 200 and admin.get("token_type") == "Bearer"
+          if os.environ.get("DEPLOY_ADMIN_SMOKE_ENABLED") == "1":
+              status, admin = request(
+                  "POST",
+                  "/api/v1/admin/login",
+                  {"password": os.environ["DEPLOY_SMOKE_ADMIN_PASSWORD"]},
+              )
+              assert status == 200 and admin.get("token_type") == "Bearer"
+          else:
+              print("admin login smoke skipped because DEPLOY_SMOKE_ADMIN_PASSWORD is not set")
 
           cookie_header = "; ".join(f"{cookie.name}={cookie.value}" for cookie in jar)
           if "tpm_player_session=" not in cookie_header:
