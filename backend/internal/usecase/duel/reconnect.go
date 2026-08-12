@@ -12,8 +12,6 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/ctxutil"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	"github.com/TakuyaYagam1/task-per-minute/internal/usecase"
-	"github.com/TakuyaYagam1/task-per-minute/pkg/clock"
 )
 
 const (
@@ -31,13 +29,13 @@ type DuelTimer interface {
 
 type ReconnectManager struct {
 	ctx         context.Context
-	tx          usecase.TxManager
-	duels       usecase.DuelRepo
-	players     usecase.PlayerRepo
+	tx          TransactionManager
+	duels       ReconnectDuelRepository
+	players     FinalizationPlayerRepository
 	timers      DuelTimer
-	broadcaster usecase.DuelBroadcaster
-	clock       clock.Clock
-	board       usecase.LeaderboardBumper
+	broadcaster Broadcaster
+	clock       Clock
+	board       LeaderboardBumper
 	log         logkit.Logger
 
 	window          time.Duration
@@ -64,7 +62,7 @@ func WithReconnectDisconnectLimit(limit int) ReconnectOption {
 	}
 }
 
-func WithLeaderboardStore(board usecase.LeaderboardBumper) ReconnectOption {
+func WithLeaderboardStore(board LeaderboardBumper) ReconnectOption {
 	return func(m *ReconnectManager) {
 		m.board = board
 	}
@@ -91,17 +89,14 @@ func WithReconnectLogger(log logkit.Logger) ReconnectOption {
 }
 
 func NewReconnectManager(
-	tx usecase.TxManager,
-	duels usecase.DuelRepo,
-	players usecase.PlayerRepo,
+	tx TransactionManager,
+	duels ReconnectDuelRepository,
+	players FinalizationPlayerRepository,
 	timers DuelTimer,
-	broadcaster usecase.DuelBroadcaster,
-	clk clock.Clock,
+	broadcaster Broadcaster,
+	clk Clock,
 	options ...ReconnectOption,
 ) *ReconnectManager {
-	if clk == nil {
-		clk = clock.Real{}
-	}
 	m := &ReconnectManager{
 		ctx:             context.Background(),
 		tx:              tx,

@@ -10,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
-	"github.com/TakuyaYagam1/task-per-minute/internal/repo/persistent"
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 )
 
 func playerExists(t *testing.T, pool *pgxpool.Pool, username string) bool {
@@ -22,7 +22,7 @@ func playerExists(t *testing.T, pool *pgxpool.Pool, username string) bool {
 	return n > 0
 }
 
-func insertPlayer(ctx context.Context, mgr *persistent.TxManager, username string) error {
+func insertPlayer(ctx context.Context, mgr *postgres.TxManager, username string) error {
 	_, err := mgr.Conn(ctx).Exec(ctx,
 		"INSERT INTO players (username) VALUES ($1)", username)
 	return err
@@ -30,7 +30,7 @@ func insertPlayer(ctx context.Context, mgr *persistent.TxManager, username strin
 
 func TestTxManager_Commit_PersistsRows(t *testing.T) {
 	t.Parallel()
-	mgr := persistent.NewTxManager(sharedPool)
+	mgr := postgres.NewTxManager(sharedPool)
 	a, b := uniq("alice"), uniq("bob")
 
 	err := mgr.Do(context.Background(), func(ctx context.Context) error {
@@ -46,7 +46,7 @@ func TestTxManager_Commit_PersistsRows(t *testing.T) {
 
 func TestTxManager_ErrorRollsBackBothInserts(t *testing.T) {
 	t.Parallel()
-	mgr := persistent.NewTxManager(sharedPool)
+	mgr := postgres.NewTxManager(sharedPool)
 	a, b := uniq("alice"), uniq("bob")
 	bust := errors.New("bust")
 
@@ -66,7 +66,7 @@ func TestTxManager_ErrorRollsBackBothInserts(t *testing.T) {
 
 func TestTxManager_PanicRollsBackAndRepanics(t *testing.T) {
 	t.Parallel()
-	mgr := persistent.NewTxManager(sharedPool)
+	mgr := postgres.NewTxManager(sharedPool)
 	a := uniq("alice")
 
 	func() {
@@ -88,7 +88,7 @@ func TestTxManager_PanicRollsBackAndRepanics(t *testing.T) {
 
 func TestTxManager_NestedDoReusesOuterTx(t *testing.T) {
 	t.Parallel()
-	mgr := persistent.NewTxManager(sharedPool)
+	mgr := postgres.NewTxManager(sharedPool)
 	a, b := uniq("alice"), uniq("bob")
 	bust := errors.New("inner bust")
 
@@ -110,7 +110,7 @@ func TestTxManager_NestedDoReusesOuterTx(t *testing.T) {
 
 func TestTxManager_QuerierOutsideTx_UsesPool(t *testing.T) {
 	t.Parallel()
-	mgr := persistent.NewTxManager(sharedPool)
+	mgr := postgres.NewTxManager(sharedPool)
 
 	got, err := mgr.Querier(context.Background()).CountTasksByDifficulty(context.Background(), "easy")
 	require.NoError(t, err, "Querier(ctx) without tx must execute against the pool")

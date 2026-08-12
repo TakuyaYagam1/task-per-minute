@@ -26,21 +26,18 @@ import (
 	"github.com/stretchr/testify/require"
 	logkit "github.com/wahrwelt-kit/go-logkit"
 
-	"github.com/TakuyaYagam1/task-per-minute/internal/controller/restapi/middleware"
-	restv1 "github.com/TakuyaYagam1/task-per-minute/internal/controller/restapi/v1"
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/api"
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/middleware"
+	restv1 "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/v1"
+	clockadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/clock"
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/memory"
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	redisadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/redis"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	"github.com/TakuyaYagam1/task-per-minute/internal/openapi"
-	"github.com/TakuyaYagam1/task-per-minute/internal/repo/inmem"
-	"github.com/TakuyaYagam1/task-per-minute/internal/repo/persistent"
-	redisrepo "github.com/TakuyaYagam1/task-per-minute/internal/repo/redis"
-	"github.com/TakuyaYagam1/task-per-minute/internal/usecase"
 	adminusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/admin"
 	duelusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel"
 	leaderboardusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/leaderboard"
 	playerusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/player"
-	"github.com/TakuyaYagam1/task-per-minute/pkg/clock"
-	pgclient "github.com/TakuyaYagam1/task-per-minute/pkg/postgres"
-	redisclient "github.com/TakuyaYagam1/task-per-minute/pkg/redis"
 )
 
 const restAdminPassword = "admin-password"
@@ -48,7 +45,7 @@ const restAdminPassword = "admin-password"
 type restFixture struct {
 	*duelFixture
 	handler   http.Handler
-	auth      *adminusecase.AuthUsecase
+	auth      *adminusecase.AuthUseCase
 	redis     *goredis.Client
 	validator routers.Router
 }
@@ -60,13 +57,13 @@ func TestRESTHandlers_OpenAPIResponseShapes(t *testing.T) {
 	loginReq, loginResp := f.doJSON(t, http.MethodPost, "/api/v1/admin/login", `{"password":"`+restAdminPassword+`"}`, "")
 	require.Equal(t, http.StatusOK, loginResp.Code)
 	f.validateResponse(t, loginReq, loginResp)
-	adminToken := decodeJSON[openapi.AdminTokenResponse](t, loginResp).AccessToken
+	adminToken := decodeJSON[api.AdminTokenResponse](t, loginResp).AccessToken
 
 	refreshReq, refreshResp := f.doJSON(t, http.MethodPost, "/api/v1/admin/refresh",
-		`{"refresh_token":"`+decodeJSON[openapi.AdminTokenResponse](t, loginResp).RefreshToken+`"}`, "")
+		`{"refresh_token":"`+decodeJSON[api.AdminTokenResponse](t, loginResp).RefreshToken+`"}`, "")
 	require.Equal(t, http.StatusOK, refreshResp.Code)
 	f.validateResponse(t, refreshReq, refreshResp)
-	adminToken = decodeJSON[openapi.AdminTokenResponse](t, refreshResp).AccessToken
+	adminToken = decodeJSON[api.AdminTokenResponse](t, refreshResp).AccessToken
 
 	createReq, createResp := f.doJSON(t, http.MethodPost, "/api/v1/admin/tasks", `{
 		"title":"`+uniq("rest_task")+`",
@@ -79,7 +76,7 @@ func TestRESTHandlers_OpenAPIResponseShapes(t *testing.T) {
 	}`, bearer(adminToken))
 	require.Equal(t, http.StatusCreated, createResp.Code)
 	f.validateResponse(t, createReq, createResp)
-	createdTask := decodeJSON[openapi.TaskResponse](t, createResp)
+	createdTask := decodeJSON[api.TaskResponse](t, createResp)
 	require.Equal(t, nullableOpenAPIHints([]string{"first hint", "second hint", "third hint"}), createdTask.Hints)
 
 	for _, tc := range []struct {
@@ -106,16 +103,16 @@ func TestRESTHandlers_OpenAPIResponseShapes(t *testing.T) {
 	aliceReq, aliceResp := f.doJSON(t, http.MethodPost, "/api/v1/players/join", `{"username":"`+uniq("alice")+`"}`, "")
 	require.Equal(t, http.StatusOK, aliceResp.Code)
 	f.validateResponse(t, aliceReq, aliceResp)
-	aliceJoin := decodeJSON[openapi.JoinResponse](t, aliceResp)
+	aliceJoin := decodeJSON[api.JoinResponse](t, aliceResp)
 	aliceSession := playerSessionCookieValue(t, aliceResp)
 
 	bobReq, bobResp := f.doJSON(t, http.MethodPost, "/api/v1/players/join", `{"username":"`+uniq("bob")+`"}`, "")
 	require.Equal(t, http.StatusOK, bobResp.Code)
 	f.validateResponse(t, bobReq, bobResp)
-	bobJoin := decodeJSON[openapi.JoinResponse](t, bobResp)
+	bobJoin := decodeJSON[api.JoinResponse](t, bobResp)
 
 	duelID := f.createRESTDuel(t, aliceJoin.PlayerId, bobJoin.PlayerId)
-	require.NoError(t, redisrepo.NewLeaderboardRedis(f.redis, "leaderboard:rest:"+uniq("z")).IncrementWin(ctx, "alice_rest"))
+	require.NoError(t, redisadapter.NewLeaderboardRedis(f.redis, "leaderboard:rest:"+uniq("z")).IncrementWin(ctx, "alice_rest"))
 
 	meReq, meResp := f.doJSON(t, http.MethodGet, "/api/v1/players/me", "", cookieSession(aliceSession))
 	require.Equal(t, http.StatusOK, meResp.Code)
@@ -132,7 +129,7 @@ func TestRESTHandlers_OpenAPIResponseShapes(t *testing.T) {
 	healthReq, healthResp := f.doJSON(t, http.MethodGet, "/health", "", "")
 	require.Equal(t, http.StatusOK, healthResp.Code)
 	f.validateResponse(t, healthReq, healthResp)
-	require.Greater(t, decodeJSON[openapi.HealthResponse](t, healthResp).SchemaVersion, int64(0))
+	require.Greater(t, decodeJSON[api.HealthResponse](t, healthResp).SchemaVersion, int64(0))
 
 	deleteReq, deleteResp := f.doJSON(t, http.MethodDelete, "/api/v1/admin/tasks/"+createdTask.Id.String(), "", bearer(adminToken))
 	require.Equal(t, http.StatusNoContent, deleteResp.Code)
@@ -156,7 +153,7 @@ func TestRESTHandlers_ExpiredPlayerSessionReturns401(t *testing.T) {
 	joinReq, joinResp := f.doJSON(t, http.MethodPost, "/api/v1/players/join", `{"username":"`+uniq("alice")+`"}`, "")
 	require.Equal(t, http.StatusOK, joinResp.Code)
 	f.validateResponse(t, joinReq, joinResp)
-	joined := decodeJSON[openapi.JoinResponse](t, joinResp)
+	joined := decodeJSON[api.JoinResponse](t, joinResp)
 	sessionToken := uuid.MustParse(playerSessionCookieValue(t, joinResp))
 
 	expiresAt := time.Now().Add(-time.Minute).UTC()
@@ -226,7 +223,7 @@ func TestRESTHandlers_UpdateTaskURLPreserveSetAndClear(t *testing.T) {
 	}`, uniq("task_url"), initialURL), bearer(adminToken))
 	require.Equal(t, http.StatusCreated, createResp.Code)
 	f.validateResponse(t, createReq, createResp)
-	created := decodeJSON[openapi.TaskResponse](t, createResp)
+	created := decodeJSON[api.TaskResponse](t, createResp)
 	require.NotNil(t, created.TaskUrl)
 	require.Equal(t, initialURL, *created.TaskUrl)
 
@@ -239,7 +236,7 @@ func TestRESTHandlers_UpdateTaskURLPreserveSetAndClear(t *testing.T) {
 	)
 	require.Equal(t, http.StatusOK, preserveResp.Code)
 	f.validateResponse(t, preserveReq, preserveResp)
-	preserved := decodeJSON[openapi.TaskResponse](t, preserveResp)
+	preserved := decodeJSON[api.TaskResponse](t, preserveResp)
 	require.NotNil(t, preserved.TaskUrl)
 	require.Equal(t, initialURL, *preserved.TaskUrl)
 
@@ -252,7 +249,7 @@ func TestRESTHandlers_UpdateTaskURLPreserveSetAndClear(t *testing.T) {
 	)
 	require.Equal(t, http.StatusOK, clearResp.Code)
 	f.validateResponse(t, clearReq, clearResp)
-	cleared := decodeJSON[openapi.TaskResponse](t, clearResp)
+	cleared := decodeJSON[api.TaskResponse](t, clearResp)
 	require.Nil(t, cleared.TaskUrl)
 
 	nextURL := "pwn.example.com:31337"
@@ -265,7 +262,7 @@ func TestRESTHandlers_UpdateTaskURLPreserveSetAndClear(t *testing.T) {
 	)
 	require.Equal(t, http.StatusOK, setResp.Code)
 	f.validateResponse(t, setReq, setResp)
-	updated := decodeJSON[openapi.TaskResponse](t, setResp)
+	updated := decodeJSON[api.TaskResponse](t, setResp)
 	require.NotNil(t, updated.TaskUrl)
 	require.Equal(t, nextURL, *updated.TaskUrl)
 }
@@ -287,8 +284,8 @@ func TestRESTHandlers_TaskURLAllowedForForensics(t *testing.T) {
 	}`, uniq("forensics_url"), initialURL), bearer(adminToken))
 	require.Equal(t, http.StatusCreated, createResp.Code)
 	f.validateResponse(t, createReq, createResp)
-	forensics := decodeJSON[openapi.TaskResponse](t, createResp)
-	require.Equal(t, openapi.Forensics, forensics.Category)
+	forensics := decodeJSON[api.TaskResponse](t, createResp)
+	require.Equal(t, api.Forensics, forensics.Category)
 	require.NotNil(t, forensics.TaskUrl)
 	require.Equal(t, initialURL, *forensics.TaskUrl)
 
@@ -304,7 +301,7 @@ func TestRESTHandlers_TaskURLAllowedForForensics(t *testing.T) {
 	}`, uniq("web_url"), initialURL), bearer(adminToken))
 	require.Equal(t, http.StatusCreated, webCreateResp.Code)
 	f.validateResponse(t, webCreateReq, webCreateResp)
-	created := decodeJSON[openapi.TaskResponse](t, webCreateResp)
+	created := decodeJSON[api.TaskResponse](t, webCreateResp)
 	require.NotNil(t, created.TaskUrl)
 
 	updateReq, updateResp := f.doJSON(
@@ -316,8 +313,8 @@ func TestRESTHandlers_TaskURLAllowedForForensics(t *testing.T) {
 	)
 	require.Equal(t, http.StatusOK, updateResp.Code)
 	f.validateResponse(t, updateReq, updateResp)
-	updated := decodeJSON[openapi.TaskResponse](t, updateResp)
-	require.Equal(t, openapi.Forensics, updated.Category)
+	updated := decodeJSON[api.TaskResponse](t, updateResp)
+	require.Equal(t, api.Forensics, updated.Category)
 	require.NotNil(t, updated.TaskUrl)
 	require.Equal(t, initialURL, *updated.TaskUrl)
 }
@@ -337,7 +334,7 @@ func TestRESTHandlers_UpdateTaskSourceFileURLClear(t *testing.T) {
 	}`, uniq("source_url")), bearer(adminToken))
 	require.Equal(t, http.StatusCreated, createResp.Code)
 	f.validateResponse(t, createReq, createResp)
-	created := decodeJSON[openapi.TaskResponse](t, createResp)
+	created := decodeJSON[api.TaskResponse](t, createResp)
 
 	zipBody, contentType := multipartBody(t, []byte{'P', 'K', 0x03, 0x04, 'z', 'i', 'p'})
 	uploadReq, uploadResp := f.do(
@@ -350,7 +347,7 @@ func TestRESTHandlers_UpdateTaskSourceFileURLClear(t *testing.T) {
 	)
 	require.Equal(t, http.StatusOK, uploadResp.Code)
 	f.validateResponse(t, uploadReq, uploadResp)
-	uploaded := decodeJSON[openapi.UploadSourceResponse](t, uploadResp)
+	uploaded := decodeJSON[api.UploadSourceResponse](t, uploadResp)
 	beforeClear := httpGetWithTimeout(t, uploaded.SourceFileUrl)
 	defer beforeClear.Body.Close()
 	require.Equal(t, http.StatusOK, beforeClear.StatusCode)
@@ -364,7 +361,7 @@ func TestRESTHandlers_UpdateTaskSourceFileURLClear(t *testing.T) {
 	)
 	require.Equal(t, http.StatusOK, preserveResp.Code)
 	f.validateResponse(t, preserveReq, preserveResp)
-	preserved := decodeJSON[openapi.TaskResponse](t, preserveResp)
+	preserved := decodeJSON[api.TaskResponse](t, preserveResp)
 	require.NotNil(t, preserved.SourceFileUrl)
 
 	clearReq, clearResp := f.doJSON(
@@ -376,7 +373,7 @@ func TestRESTHandlers_UpdateTaskSourceFileURLClear(t *testing.T) {
 	)
 	require.Equal(t, http.StatusOK, clearResp.Code)
 	f.validateResponse(t, clearReq, clearResp)
-	cleared := decodeJSON[openapi.TaskResponse](t, clearResp)
+	cleared := decodeJSON[api.TaskResponse](t, clearResp)
 	require.Nil(t, cleared.SourceFileUrl)
 
 	afterClear := httpGetWithTimeout(t, uploaded.SourceFileUrl)
@@ -399,7 +396,7 @@ func TestRESTHandlers_UpdateForensicsTaskToWebPreservesSource(t *testing.T) {
 	}`, uniq("source_category")), bearer(adminToken))
 	require.Equal(t, http.StatusCreated, createResp.Code)
 	f.validateResponse(t, createReq, createResp)
-	created := decodeJSON[openapi.TaskResponse](t, createResp)
+	created := decodeJSON[api.TaskResponse](t, createResp)
 
 	zipBody, contentType := multipartBody(t, []byte{'P', 'K', 0x03, 0x04, 'c', 'a', 't'})
 	uploadReq, uploadResp := f.do(
@@ -412,7 +409,7 @@ func TestRESTHandlers_UpdateForensicsTaskToWebPreservesSource(t *testing.T) {
 	)
 	require.Equal(t, http.StatusOK, uploadResp.Code)
 	f.validateResponse(t, uploadReq, uploadResp)
-	uploaded := decodeJSON[openapi.UploadSourceResponse](t, uploadResp)
+	uploaded := decodeJSON[api.UploadSourceResponse](t, uploadResp)
 
 	updateReq, updateResp := f.doJSON(
 		t,
@@ -423,8 +420,8 @@ func TestRESTHandlers_UpdateForensicsTaskToWebPreservesSource(t *testing.T) {
 	)
 	require.Equal(t, http.StatusOK, updateResp.Code)
 	f.validateResponse(t, updateReq, updateResp)
-	updated := decodeJSON[openapi.TaskResponse](t, updateResp)
-	require.Equal(t, openapi.Web, updated.Category)
+	updated := decodeJSON[api.TaskResponse](t, updateResp)
+	require.Equal(t, api.Web, updated.Category)
 	require.NotNil(t, updated.TaskUrl)
 	require.NotNil(t, updated.SourceFileUrl)
 
@@ -470,7 +467,7 @@ func TestRESTHandlers_DeleteTaskWithSourceDeletesStoredObject(t *testing.T) {
 	}`, uniq("source_delete")), bearer(adminToken))
 	require.Equal(t, http.StatusCreated, createResp.Code)
 	f.validateResponse(t, createReq, createResp)
-	created := decodeJSON[openapi.TaskResponse](t, createResp)
+	created := decodeJSON[api.TaskResponse](t, createResp)
 
 	zipBody, contentType := multipartBody(t, []byte{'P', 'K', 0x03, 0x04, 'd', 'e', 'l'})
 	uploadReq, uploadResp := f.do(
@@ -483,7 +480,7 @@ func TestRESTHandlers_DeleteTaskWithSourceDeletesStoredObject(t *testing.T) {
 	)
 	require.Equal(t, http.StatusOK, uploadResp.Code)
 	f.validateResponse(t, uploadReq, uploadResp)
-	uploaded := decodeJSON[openapi.UploadSourceResponse](t, uploadResp)
+	uploaded := decodeJSON[api.UploadSourceResponse](t, uploadResp)
 	beforeDelete := httpGetWithTimeout(t, uploaded.SourceFileUrl)
 	defer beforeDelete.Body.Close()
 	require.Equal(t, http.StatusOK, beforeDelete.StatusCode)
@@ -571,7 +568,7 @@ func TestRESTHandlers_UploadSourceForWebReturns200(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, resp.Code)
 	f.validateResponse(t, req, resp)
-	uploaded := decodeJSON[openapi.UploadSourceResponse](t, resp)
+	uploaded := decodeJSON[api.UploadSourceResponse](t, resp)
 	require.Contains(t, uploaded.SourceFileUrl, "X-Amz-Signature")
 }
 
@@ -594,7 +591,7 @@ func TestRESTHandlers_AdminPlayersListUpdateDelete(t *testing.T) {
 	listReq, listResp := f.doJSON(t, http.MethodGet, "/api/v1/admin/players", "", bearer(adminToken))
 	require.Equal(t, http.StatusOK, listResp.Code)
 	f.validateResponse(t, listReq, listResp)
-	players := decodeJSON[[]openapi.AdminPlayerResponse](t, listResp)
+	players := decodeJSON[[]api.AdminPlayerResponse](t, listResp)
 	require.Contains(t, adminPlayerIDs(players), alice.ID)
 	require.Nil(t, adminPlayerByID(players, alice.ID).DeletedAt)
 
@@ -607,7 +604,7 @@ func TestRESTHandlers_AdminPlayersListUpdateDelete(t *testing.T) {
 	)
 	require.Equal(t, http.StatusOK, updateResp.Code)
 	f.validateResponse(t, updateReq, updateResp)
-	updated := decodeJSON[openapi.AdminPlayerResponse](t, updateResp)
+	updated := decodeJSON[api.AdminPlayerResponse](t, updateResp)
 	require.Equal(t, "renamed_admin_player", updated.Username)
 	require.Equal(t, int32(3), updated.Wins)
 	require.Equal(t, int64(90000), updated.AverageSolveTimeMs)
@@ -617,9 +614,9 @@ func TestRESTHandlers_AdminPlayersListUpdateDelete(t *testing.T) {
 	auditReq, auditResp := f.doJSON(t, http.MethodGet, "/api/v1/admin/players/"+alice.ID.String()+"/audit", "", bearer(adminToken))
 	require.Equal(t, http.StatusOK, auditResp.Code)
 	f.validateResponse(t, auditReq, auditResp)
-	auditEvents := decodeJSON[[]openapi.AdminPlayerAuditEventResponse](t, auditResp)
+	auditEvents := decodeJSON[[]api.AdminPlayerAuditEventResponse](t, auditResp)
 	require.Len(t, auditEvents, 1)
-	require.Equal(t, openapi.Update, auditEvents[0].Action)
+	require.Equal(t, api.Update, auditEvents[0].Action)
 	require.Equal(t, "admin", auditEvents[0].ActorSubject)
 	require.Equal(t, adminClaims.JTI, auditEvents[0].ActorJti)
 	require.Equal(t, alice.Username, auditEvents[0].BeforeState.Username)
@@ -649,7 +646,7 @@ func TestRESTHandlers_AdminPlayersListUpdateDelete(t *testing.T) {
 	bobAuditReq, bobAuditResp := f.doJSON(t, http.MethodGet, "/api/v1/admin/players/"+bob.ID.String()+"/audit", "", bearer(adminToken))
 	require.Equal(t, http.StatusOK, bobAuditResp.Code)
 	f.validateResponse(t, bobAuditReq, bobAuditResp)
-	bobAuditEvents := decodeJSON[[]openapi.AdminPlayerAuditEventResponse](t, bobAuditResp)
+	bobAuditEvents := decodeJSON[[]api.AdminPlayerAuditEventResponse](t, bobAuditResp)
 	require.Empty(t, bobAuditEvents)
 
 	deleteReq, deleteResp := f.doJSON(t, http.MethodDelete, "/api/v1/admin/players/"+alice.ID.String(), "", bearer(adminToken))
@@ -659,9 +656,9 @@ func TestRESTHandlers_AdminPlayersListUpdateDelete(t *testing.T) {
 	auditAfterDeleteReq, auditAfterDeleteResp := f.doJSON(t, http.MethodGet, "/api/v1/admin/players/"+alice.ID.String()+"/audit", "", bearer(adminToken))
 	require.Equal(t, http.StatusOK, auditAfterDeleteResp.Code)
 	f.validateResponse(t, auditAfterDeleteReq, auditAfterDeleteResp)
-	auditEvents = decodeJSON[[]openapi.AdminPlayerAuditEventResponse](t, auditAfterDeleteResp)
+	auditEvents = decodeJSON[[]api.AdminPlayerAuditEventResponse](t, auditAfterDeleteResp)
 	require.Len(t, auditEvents, 2)
-	require.Equal(t, openapi.Delete, auditEvents[0].Action)
+	require.Equal(t, api.Delete, auditEvents[0].Action)
 	require.Equal(t, "renamed_admin_player", auditEvents[0].BeforeState.Username)
 	require.False(t, auditEvents[0].BeforeState.Deleted)
 	require.True(t, auditEvents[0].AfterState.Deleted)
@@ -670,18 +667,18 @@ func TestRESTHandlers_AdminPlayersListUpdateDelete(t *testing.T) {
 	limitedAuditReq, limitedAuditResp := f.doJSON(t, http.MethodGet, "/api/v1/admin/players/"+alice.ID.String()+"/audit?limit=1", "", bearer(adminToken))
 	require.Equal(t, http.StatusOK, limitedAuditResp.Code)
 	f.validateResponse(t, limitedAuditReq, limitedAuditResp)
-	limitedAudit := decodeJSON[[]openapi.AdminPlayerAuditEventResponse](t, limitedAuditResp)
+	limitedAudit := decodeJSON[[]api.AdminPlayerAuditEventResponse](t, limitedAuditResp)
 	require.Len(t, limitedAudit, 1)
-	require.Equal(t, openapi.Delete, limitedAudit[0].Action)
+	require.Equal(t, api.Delete, limitedAudit[0].Action)
 
 	afterDeleteReq, afterDeleteResp := f.doJSON(t, http.MethodGet, "/api/v1/admin/players", "", bearer(adminToken))
 	require.Equal(t, http.StatusOK, afterDeleteResp.Code)
 	f.validateResponse(t, afterDeleteReq, afterDeleteResp)
-	require.NotContains(t, adminPlayerIDs(decodeJSON[[]openapi.AdminPlayerResponse](t, afterDeleteResp)), alice.ID)
+	require.NotContains(t, adminPlayerIDs(decodeJSON[[]api.AdminPlayerResponse](t, afterDeleteResp)), alice.ID)
 	withDeletedReq, withDeletedResp := f.doJSON(t, http.MethodGet, "/api/v1/admin/players?include_deleted=true", "", bearer(adminToken))
 	require.Equal(t, http.StatusOK, withDeletedResp.Code)
 	f.validateResponse(t, withDeletedReq, withDeletedResp)
-	withDeletedPlayers := decodeJSON[[]openapi.AdminPlayerResponse](t, withDeletedResp)
+	withDeletedPlayers := decodeJSON[[]api.AdminPlayerResponse](t, withDeletedResp)
 	deletedPlayer := adminPlayerByID(withDeletedPlayers, alice.ID)
 	require.NotNil(t, deletedPlayer.DeletedAt)
 
@@ -710,41 +707,41 @@ func newRESTFixture(t *testing.T) *restFixture {
 	f := newDuelFixture()
 	redisClient := sharedRedis(t).client
 	st := newSeaweedStorage(t)
-	auth := adminusecase.NewAuthUsecase(adminusecase.AuthConfig{
+	auth := adminusecase.NewAuthUseCase(adminusecase.AuthConfig{
 		Secret:        []byte("01234567890123456789012345678901"),
 		AccessTTL:     15 * time.Minute,
 		RefreshTTL:    7 * 24 * time.Hour,
 		AdminPassword: []byte(restAdminPassword),
-	}, clock.Real{}, inmem.NewRevocation(clock.Real{}))
+	}, clockadapter.Real{}, memory.NewRevocation(clockadapter.Real{}))
 
-	board := redisrepo.NewLeaderboardRedis(redisClient, "leaderboard:rest:"+uniq("z"))
-	leaderboardUC := leaderboardusecase.NewLeaderboardUsecase(board, f.board, clock.Real{})
+	board := redisadapter.NewLeaderboardRedis(redisClient, "leaderboard:rest:"+uniq("z"))
+	leaderboardUC := leaderboardusecase.NewUseCase(board, f.board, clockadapter.Real{})
 	server := restv1.New(restv1.Dependencies{
-		Players:      playerusecase.NewPlayerUsecase(f.mgr, f.players, f.duels),
+		Players:      playerusecase.NewUseCase(f.mgr, f.players, f.duels, clockadapter.Real{}),
 		AdminAuth:    auth,
-		Tasks:        adminusecase.NewTaskUsecase(f.tasks),
-		AdminPlayers: adminusecase.NewPlayerUsecase(f.mgr, f.players, leaderboardUC, clock.Real{}),
-		Upload:       adminusecase.NewUploadUsecase(f.tasks, st),
+		Tasks:        adminusecase.NewTaskUseCase(f.tasks),
+		AdminPlayers: adminusecase.NewPlayerUseCase(f.mgr, f.players, leaderboardUC, clockadapter.Real{}),
+		Upload:       adminusecase.NewUploadUseCase(f.tasks, st),
 		Leaderboard:  leaderboardUC,
-		Duels:        duelusecase.NewReadUsecase(f.duels),
+		Duels:        duelusecase.NewReadUseCase(f.duels),
 		Health: restv1.HealthChecks{
-			DB: usecase.HealthCheckerFunc(func(ctx context.Context) error {
-				return pgclient.HealthCheck(ctx, sharedPool)
+			DB: restv1.HealthCheckerFunc(func(ctx context.Context) error {
+				return postgres.HealthCheck(ctx, sharedPool)
 			}),
-			Redis: usecase.HealthCheckerFunc(func(ctx context.Context) error {
-				return redisclient.HealthCheck(ctx, redisClient)
+			Redis: restv1.HealthCheckerFunc(func(ctx context.Context) error {
+				return redisadapter.HealthCheck(ctx, redisClient)
 			}),
-			SeaweedFS: usecase.HealthCheckerFunc(func(ctx context.Context) error {
+			SeaweedFS: restv1.HealthCheckerFunc(func(ctx context.Context) error {
 				return st.EnsureBucket(ctx)
 			}),
-			SchemaVersion: persistent.NewSchemaVersionPostgres(sharedPool),
+			SchemaVersion: postgres.NewSchemaVersionPostgres(sharedPool),
 		},
 	})
 
 	handler := restv1.NewHandler(server, restv1.HandlerOptions{
 		AdminAuth:  auth,
 		PlayerRepo: f.players,
-		Middlewares: []openapi.MiddlewareFunc{
+		Middlewares: []api.MiddlewareFunc{
 			middleware.Build(logkit.Noop()),
 		},
 	})
@@ -760,7 +757,7 @@ func newRESTFixture(t *testing.T) *restFixture {
 
 func newOpenAPIResponseValidator(t *testing.T) routers.Router {
 	t.Helper()
-	spec, err := openapi.GetSwagger()
+	spec, err := api.GetSwagger()
 	require.NoError(t, err)
 	spec.Servers = openapi3.Servers{}
 	require.NoError(t, spec.Validate(context.Background()))
@@ -828,7 +825,7 @@ func (f *restFixture) adminAccessToken(t *testing.T) string {
 
 func (f *restFixture) joinPlayerViaUsecase(t *testing.T, username string) *domain.Player {
 	t.Helper()
-	uc := playerusecase.NewPlayerUsecase(f.mgr, f.players, f.duels)
+	uc := playerusecase.NewUseCase(f.mgr, f.players, f.duels, clockadapter.Real{})
 	player, err := uc.Join(context.Background(), username)
 	require.NoError(t, err)
 	require.NotNil(t, player.SessionToken)
@@ -851,7 +848,7 @@ func (f *restFixture) createRESTDuel(t *testing.T, player1ID, player2ID uuid.UUI
 	return duel.ID
 }
 
-func adminPlayerIDs(players []openapi.AdminPlayerResponse) []uuid.UUID {
+func adminPlayerIDs(players []api.AdminPlayerResponse) []uuid.UUID {
 	out := make([]uuid.UUID, 0, len(players))
 	for _, player := range players {
 		out = append(out, player.Id)
@@ -859,16 +856,16 @@ func adminPlayerIDs(players []openapi.AdminPlayerResponse) []uuid.UUID {
 	return out
 }
 
-func adminPlayerByID(players []openapi.AdminPlayerResponse, id uuid.UUID) openapi.AdminPlayerResponse {
+func adminPlayerByID(players []api.AdminPlayerResponse, id uuid.UUID) api.AdminPlayerResponse {
 	for _, player := range players {
 		if player.Id == id {
 			return player
 		}
 	}
-	return openapi.AdminPlayerResponse{}
+	return api.AdminPlayerResponse{}
 }
 
-func leaderboardUsernames(rows []persistent.LeaderboardRow) []string {
+func leaderboardUsernames(rows []postgres.LeaderboardRow) []string {
 	out := make([]string, 0, len(rows))
 	for _, row := range rows {
 		out = append(out, row.Username)
@@ -952,13 +949,13 @@ func (zeroReader) Read(p []byte) (int, error) {
 func TestRESTHandlers_HealthDegradedShape(t *testing.T) {
 	server := restv1.New(restv1.Dependencies{
 		Health: restv1.HealthChecks{
-			DB: usecase.HealthCheckerFunc(func(context.Context) error {
+			DB: restv1.HealthCheckerFunc(func(context.Context) error {
 				return errors.New("db down")
 			}),
-			Redis: usecase.HealthCheckerFunc(func(context.Context) error {
+			Redis: restv1.HealthCheckerFunc(func(context.Context) error {
 				return nil
 			}),
-			SeaweedFS: usecase.HealthCheckerFunc(func(context.Context) error {
+			SeaweedFS: restv1.HealthCheckerFunc(func(context.Context) error {
 				return nil
 			}),
 		},
@@ -989,16 +986,16 @@ func TestRESTHandlers_HealthDegradedShape(t *testing.T) {
 func TestRESTHandlers_HealthSchemaVersionZeroIsDegraded(t *testing.T) {
 	server := restv1.New(restv1.Dependencies{
 		Health: restv1.HealthChecks{
-			DB: usecase.HealthCheckerFunc(func(context.Context) error {
+			DB: restv1.HealthCheckerFunc(func(context.Context) error {
 				return nil
 			}),
-			Redis: usecase.HealthCheckerFunc(func(context.Context) error {
+			Redis: restv1.HealthCheckerFunc(func(context.Context) error {
 				return nil
 			}),
-			SeaweedFS: usecase.HealthCheckerFunc(func(context.Context) error {
+			SeaweedFS: restv1.HealthCheckerFunc(func(context.Context) error {
 				return nil
 			}),
-			SchemaVersion: usecase.SchemaVersionReaderFunc(func(context.Context) (int64, error) {
+			SchemaVersion: restv1.SchemaVersionReaderFunc(func(context.Context) (int64, error) {
 				return 0, nil
 			}),
 		},
@@ -1011,8 +1008,8 @@ func TestRESTHandlers_HealthSchemaVersionZeroIsDegraded(t *testing.T) {
 	handler.ServeHTTP(resp, req)
 
 	require.Equal(t, http.StatusServiceUnavailable, resp.Code)
-	got := decodeJSON[openapi.HealthResponse](t, resp)
-	require.Equal(t, openapi.HealthResponseStatusDegraded, got.Status)
+	got := decodeJSON[api.HealthResponse](t, resp)
+	require.Equal(t, api.HealthResponseStatusDegraded, got.Status)
 	require.Equal(t, int64(0), got.SchemaVersion)
 
 	route, pathParams, err := validator.FindRoute(req)

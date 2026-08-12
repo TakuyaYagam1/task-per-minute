@@ -8,22 +8,17 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	"github.com/TakuyaYagam1/task-per-minute/internal/usecase"
 )
 
-// Detail aliases usecase.DuelDetail so callers may use either duel.Detail
-// or usecase.DuelDetail.
-type Detail = usecase.DuelDetail
-
-type ReadUsecase struct {
-	duels usecase.DuelRepo
+type ReadUseCase struct {
+	duels ReadDuelRepository
 }
 
-func NewReadUsecase(duels usecase.DuelRepo) *ReadUsecase {
-	return &ReadUsecase{duels: duels}
+func NewReadUseCase(duels ReadDuelRepository) *ReadUseCase {
+	return &ReadUseCase{duels: duels}
 }
 
-func (u *ReadUsecase) GetDuel(ctx context.Context, duelID, playerID uuid.UUID) (*Detail, error) {
+func (u *ReadUseCase) GetDuel(ctx context.Context, duelID, playerID uuid.UUID) (*Detail, error) {
 	duel, err := u.duels.GetByID(ctx, duelID)
 	if err != nil {
 		return nil, fmt.Errorf("ReadUsecase - GetDuel - DuelRepo.GetByID: %w", err)

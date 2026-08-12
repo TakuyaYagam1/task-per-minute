@@ -8,20 +8,17 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	"github.com/TakuyaYagam1/task-per-minute/internal/usecase"
 )
 
-type TaskInput = usecase.TaskInput
-
-type TaskUsecase struct {
-	tasks usecase.TaskRepo
+type TaskUseCase struct {
+	tasks TaskRepository
 }
 
-func NewTaskUsecase(tasks usecase.TaskRepo) *TaskUsecase {
-	return &TaskUsecase{tasks: tasks}
+func NewTaskUseCase(tasks TaskRepository) *TaskUseCase {
+	return &TaskUseCase{tasks: tasks}
 }
 
-func (u *TaskUsecase) CreateTask(ctx context.Context, in TaskInput) (*domain.Task, error) {
+func (u *TaskUseCase) CreateTask(ctx context.Context, in TaskInput) (*domain.Task, error) {
 	normalized, err := normalizeTaskInput(in)
 	if err != nil {
 		return nil, err
@@ -33,7 +30,7 @@ func (u *TaskUsecase) CreateTask(ctx context.Context, in TaskInput) (*domain.Tas
 	return task, nil
 }
 
-func (u *TaskUsecase) GetTask(ctx context.Context, id uuid.UUID) (*domain.Task, error) {
+func (u *TaskUseCase) GetTask(ctx context.Context, id uuid.UUID) (*domain.Task, error) {
 	task, err := u.tasks.GetByID(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("TaskUsecase - GetTask - TaskRepo.GetByID: %w", err)
@@ -41,7 +38,7 @@ func (u *TaskUsecase) GetTask(ctx context.Context, id uuid.UUID) (*domain.Task, 
 	return task, nil
 }
 
-func (u *TaskUsecase) ListTasks(ctx context.Context) ([]*domain.Task, error) {
+func (u *TaskUseCase) ListTasks(ctx context.Context) ([]*domain.Task, error) {
 	tasks, err := u.tasks.List(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("TaskUsecase - ListTasks - TaskRepo.List: %w", err)
@@ -49,7 +46,7 @@ func (u *TaskUsecase) ListTasks(ctx context.Context) ([]*domain.Task, error) {
 	return tasks, nil
 }
 
-func (u *TaskUsecase) UpdateTask(ctx context.Context, id uuid.UUID, in TaskInput) (*domain.Task, error) {
+func (u *TaskUseCase) UpdateTask(ctx context.Context, id uuid.UUID, in TaskInput) (*domain.Task, error) {
 	normalized, err := normalizeTaskInput(in)
 	if err != nil {
 		return nil, err
@@ -61,7 +58,7 @@ func (u *TaskUsecase) UpdateTask(ctx context.Context, id uuid.UUID, in TaskInput
 	return task, nil
 }
 
-func (u *TaskUsecase) DeleteTask(ctx context.Context, id uuid.UUID) error {
+func (u *TaskUseCase) DeleteTask(ctx context.Context, id uuid.UUID) error {
 	if _, err := u.tasks.GetByID(ctx, id); err != nil {
 		return fmt.Errorf("TaskUsecase - DeleteTask - TaskRepo.GetByID: %w", err)
 	}

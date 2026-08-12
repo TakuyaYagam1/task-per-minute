@@ -12,11 +12,10 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	"github.com/TakuyaYagam1/task-per-minute/internal/usecase"
 	duelusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel"
 )
 
-// recordingBroadcaster is a usecase.DuelBroadcaster fake that captures every
+// recordingBroadcaster captures every
 // fan-out event the reconnect manager emits. Tests assert against the
 // captured slices instead of touching real WebSocket transport.
 type recordingBroadcaster struct {
@@ -485,7 +484,7 @@ func TestReconnectManager_TimerExpiry_DrawDoesNotBumpLeaderboard(t *testing.T) {
 		"draw (timer expiry, winner_id=NULL) must not touch the leaderboard")
 }
 
-// recordingLeaderboardStore is a usecase.LeaderboardStore fake that records
+// recordingLeaderboardStore records
 // every IncrementWin call so reconnect tests can assert which usernames got
 // credited (or that none did, for draws).
 type recordingLeaderboardStore struct {
@@ -503,10 +502,6 @@ func (s *recordingLeaderboardStore) IncrementWin(_ context.Context, username str
 	defer s.mu.Unlock()
 	s.bumps = append(s.bumps, username)
 	return s.failure
-}
-
-func (s *recordingLeaderboardStore) WinScores(context.Context) ([]usecase.LeaderboardScore, error) {
-	return nil, nil
 }
 
 func (s *recordingLeaderboardStore) snapshot() []string {

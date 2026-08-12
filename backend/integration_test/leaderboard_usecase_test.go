@@ -9,8 +9,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	redisadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/redis"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	redisrepo "github.com/TakuyaYagam1/task-per-minute/internal/repo/redis"
 	leaderboardusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/leaderboard"
 )
 
@@ -85,11 +85,11 @@ func TestLeaderboardUsecase_IgnoresRedisOnlyWinPollution(t *testing.T) {
 	require.Empty(t, entries, "Redis-only counters without a solved flag win must stay out of leaderboard")
 }
 
-func newLeaderboardUsecaseFixture(t *testing.T) (*leaderboardusecase.LeaderboardUsecase, *duelFixture) {
+func newLeaderboardUsecaseFixture(t *testing.T) (*leaderboardusecase.UseCase, *duelFixture) {
 	t.Helper()
 	f := newIsolatedDuelFixture(t)
-	store := redisrepo.NewLeaderboardRedis(sharedRedis(t).client, "leaderboard:"+uniq("z"))
-	uc := leaderboardusecase.NewLeaderboardUsecase(store, f.board, fixedIntegrationClock{
+	store := redisadapter.NewLeaderboardRedis(sharedRedis(t).client, "leaderboard:"+uniq("z"))
+	uc := leaderboardusecase.NewUseCase(store, f.board, fixedIntegrationClock{
 		now: time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC),
 	})
 	return uc, f

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Merge per-domain OpenAPI schema YAMLs into a single components/schemas.yml.
 
-Inputs:  internal/openapi/components/schemas/*.yml (any number of files,
+Inputs:  api/components/schemas/*.yml (any number of files,
          each providing a top-level mapping of schema names -> definitions).
-Output:  internal/openapi/components/schemas.yml - one merged mapping that the
+Output:  api/components/schemas.yml - one merged mapping that the
          main openapi.yml references via $ref.
 
 Duplicate schema names across files are a hard error: name collisions silently
@@ -26,8 +26,8 @@ except ImportError:
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-SRC_DIR = REPO_ROOT / "internal" / "openapi" / "components" / "schemas"
-DEST_FILE = REPO_ROOT / "internal" / "openapi" / "components" / "schemas.yml"
+SRC_DIR = REPO_ROOT / "api" / "components" / "schemas"
+DEST_FILE = REPO_ROOT / "api" / "components" / "schemas.yml"
 
 
 def main() -> int:

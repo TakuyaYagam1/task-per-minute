@@ -10,8 +10,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	logkit "github.com/wahrwelt-kit/go-logkit"
-
-	"github.com/TakuyaYagam1/task-per-minute/internal/usecase"
 )
 
 func TestBumpLeaderboard_IncrementsWinner(t *testing.T) {
@@ -71,10 +69,6 @@ func (s *leaderboardStoreSpy) IncrementWin(_ context.Context, username string) e
 	defer s.mu.Unlock()
 	s.users = append(s.users, username)
 	return s.err
-}
-
-func (s *leaderboardStoreSpy) WinScores(context.Context) ([]usecase.LeaderboardScore, error) {
-	return nil, nil
 }
 
 func (s *leaderboardStoreSpy) snapshot() []string {

@@ -9,7 +9,7 @@
     "lint": "eslint . --ext .js,.jsx,.ts,.tsx --max-warnings=0 --ignore-pattern .next --ignore-pattern node_modules --ignore-pattern lib/shared/api/schema.ts",
     "lint:fix": "eslint . --ext .js,.jsx,.ts,.tsx --max-warnings=0 --ignore-pattern .next --ignore-pattern node_modules --ignore-pattern lib/shared/api/schema.ts --fix",
     "typecheck": "tsc --noEmit --pretty false",
-    "openapi:generate": "sh -c 'cd ../backend && python3 scripts/merge-schemas.py && cd ../frontend && trap \"rm -f ../backend/internal/openapi/components/schemas.yml\" EXIT && openapi-typescript ../backend/internal/openapi/openapi.yml -o lib/shared/api/schema.ts'",
+    "openapi:generate": "sh -c 'cd ../backend && python3 scripts/merge-schemas.py && cd ../frontend && trap \"rm -f ../backend/api/components/schemas.yml\" EXIT && openapi-typescript ../backend/api/openapi.yml -o lib/shared/api/schema.ts'",
     "codegen": "npm run openapi:generate",
     "gen:types": "npm run openapi:generate",
     "test:e2e": "playwright test",

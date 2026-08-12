@@ -8,12 +8,12 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	redisrepo "github.com/TakuyaYagam1/task-per-minute/internal/repo/redis"
+	redisadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/redis"
 )
 
-func newLeaderboardRedis(t *testing.T) *redisrepo.LeaderboardRedis {
+func newLeaderboardRedis(t *testing.T) *redisadapter.LeaderboardRedis {
 	t.Helper()
-	return redisrepo.NewLeaderboardRedis(sharedRedis(t).client, "leaderboard:"+uniq("z"))
+	return redisadapter.NewLeaderboardRedis(sharedRedis(t).client, "leaderboard:"+uniq("z"))
 }
 
 func TestLeaderboardRedis_IncrementWin_PersistsScore(t *testing.T) {
@@ -92,9 +92,9 @@ func TestLeaderboardRedis_WinScores_EmptyKey(t *testing.T) {
 
 func TestLeaderboardRedis_NilClient_ReturnsError(t *testing.T) {
 	t.Parallel()
-	repo := redisrepo.NewLeaderboardRedis(nil, "leaderboard:nil")
+	repo := redisadapter.NewLeaderboardRedis(nil, "leaderboard:nil")
 
-	require.ErrorIs(t, repo.IncrementWin(context.Background(), uniq("x")), redisrepo.ErrNilLeaderboardClient)
+	require.ErrorIs(t, repo.IncrementWin(context.Background(), uniq("x")), redisadapter.ErrNilLeaderboardClient)
 	_, err := repo.WinScores(context.Background())
-	require.ErrorIs(t, err, redisrepo.ErrNilLeaderboardClient)
+	require.ErrorIs(t, err, redisadapter.ErrNilLeaderboardClient)
 }

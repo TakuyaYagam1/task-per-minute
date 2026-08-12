@@ -10,12 +10,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	redisrepo "github.com/TakuyaYagam1/task-per-minute/internal/repo/redis"
+	redisadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/redis"
 )
 
-func newMatchmakingRedis(t *testing.T) *redisrepo.MatchmakingRedis {
+func newMatchmakingRedis(t *testing.T) *redisadapter.MatchmakingRedis {
 	t.Helper()
-	return redisrepo.NewMatchmakingRedis(sharedRedis(t).client, "matchmaking:"+uniq("q"))
+	return redisadapter.NewMatchmakingRedis(sharedRedis(t).client, "matchmaking:"+uniq("q"))
 }
 
 func TestMatchmakingRedis_PopPair_EmptyQueueReturnsFalse(t *testing.T) {
@@ -99,7 +99,7 @@ func TestMatchmakingRedis_Clear_RemovesQueueAndIsIdempotent(t *testing.T) {
 	ctx := context.Background()
 	key := "matchmaking:" + uniq("clear")
 	redis := sharedRedis(t).client
-	q := redisrepo.NewMatchmakingRedis(redis, key)
+	q := redisadapter.NewMatchmakingRedis(redis, key)
 
 	require.NoError(t, q.Enqueue(ctx, uuid.New()))
 	require.NoError(t, q.Enqueue(ctx, uuid.New()))
@@ -161,11 +161,11 @@ func TestMatchmakingRedis_PopPair_ConcurrentAtomicity(t *testing.T) {
 
 func TestMatchmakingRedis_NilClient_ReturnsError(t *testing.T) {
 	t.Parallel()
-	q := redisrepo.NewMatchmakingRedis(nil, "matchmaking:nil")
+	q := redisadapter.NewMatchmakingRedis(nil, "matchmaking:nil")
 
-	require.ErrorIs(t, q.Enqueue(context.Background(), uuid.New()), redisrepo.ErrNilClient)
+	require.ErrorIs(t, q.Enqueue(context.Background(), uuid.New()), redisadapter.ErrNilClient)
 	_, _, _, err := q.PopPair(context.Background())
-	require.ErrorIs(t, err, redisrepo.ErrNilClient)
-	require.ErrorIs(t, q.Remove(context.Background(), uuid.New()), redisrepo.ErrNilClient)
-	require.ErrorIs(t, q.Clear(context.Background()), redisrepo.ErrNilClient)
+	require.ErrorIs(t, err, redisadapter.ErrNilClient)
+	require.ErrorIs(t, q.Remove(context.Background(), uuid.New()), redisadapter.ErrNilClient)
+	require.ErrorIs(t, q.Clear(context.Background()), redisadapter.ErrNilClient)
 }

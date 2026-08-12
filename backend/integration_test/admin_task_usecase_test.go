@@ -140,9 +140,9 @@ func TestAdminTaskUsecase_DeleteTask_MissingReturnsTaskNotFound(t *testing.T) {
 	require.ErrorIs(t, err, apperr.ErrTaskNotFound)
 }
 
-func newAdminTaskUsecaseFixture() (*admin.TaskUsecase, *duelFixture) {
+func newAdminTaskUsecaseFixture() (*admin.TaskUseCase, *duelFixture) {
 	f := newDuelFixture()
-	return admin.NewTaskUsecase(f.tasks), f
+	return admin.NewTaskUseCase(f.tasks), f
 }
 
 func taskIDs(tasks []*domain.Task) []uuid.UUID {

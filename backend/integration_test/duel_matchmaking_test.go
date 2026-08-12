@@ -10,15 +10,15 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	redisadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/redis"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	redisrepo "github.com/TakuyaYagam1/task-per-minute/internal/repo/redis"
 	duelusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel"
 )
 
 type matchmakingFixture struct {
 	*duelFixture
-	uc    *duelusecase.MatchmakingUsecase
-	queue *redisrepo.MatchmakingRedis
+	uc    *duelusecase.MatchmakingUseCase
+	queue *redisadapter.MatchmakingRedis
 }
 
 func newMatchmakingFixture(t *testing.T) *matchmakingFixture {
@@ -26,8 +26,8 @@ func newMatchmakingFixture(t *testing.T) *matchmakingFixture {
 
 	f := newDuelFixture()
 	queueKey := "matchmaking:" + uniq("q")
-	queue := redisrepo.NewMatchmakingRedis(sharedRedis(t).client, queueKey)
-	uc := duelusecase.NewMatchmakingUsecase(
+	queue := redisadapter.NewMatchmakingRedis(sharedRedis(t).client, queueKey)
+	uc := duelusecase.NewMatchmakingUseCase(
 		f.mgr,
 		queue,
 		f.players,

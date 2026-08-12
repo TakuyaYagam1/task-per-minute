@@ -11,13 +11,13 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	"github.com/TakuyaYagam1/task-per-minute/internal/repo/persistent"
 )
 
-func newTaskRepo() *persistent.TaskPostgres {
-	return persistent.NewTaskPostgres(persistent.NewTxManager(sharedPool))
+func newTaskRepo() *postgres.TaskPostgres {
+	return postgres.NewTaskPostgres(postgres.NewTxManager(sharedPool))
 }
 
 // hasTaskID is a parallel-safe replacement for asserting list length: it only
@@ -38,7 +38,7 @@ func TestTaskRepo_Create_HappyPath(t *testing.T) {
 	ctx := context.Background()
 	taskURL := "https://example.com/" + uniq("task")
 
-	got, err := repo.Create(ctx, persistent.TaskInput{
+	got, err := repo.Create(ctx, postgres.TaskInput{
 		Title:       uniq("Easy SQLi"),
 		Description: "find the flag",
 		Category:    domain.CategoryWeb,
@@ -64,7 +64,7 @@ func TestTaskRepo_Create_AllowsHostPortTaskURL(t *testing.T) {
 	ctx := context.Background()
 	taskURL := "pwn.example.com:31337"
 
-	got, err := repo.Create(ctx, persistent.TaskInput{
+	got, err := repo.Create(ctx, postgres.TaskInput{
 		Title:       uniq("Pwn"),
 		Description: "connect with nc",
 		Category:    domain.CategoryPwn,
@@ -83,7 +83,7 @@ func TestTaskRepo_Create_RejectsInvalidEnums(t *testing.T) {
 	t.Parallel()
 	repo := newTaskRepo()
 	ctx := context.Background()
-	base := persistent.TaskInput{
+	base := postgres.TaskInput{
 		Title:       uniq("X"),
 		Description: "x",
 		Category:    domain.CategoryWeb,
@@ -94,16 +94,16 @@ func TestTaskRepo_Create_RejectsInvalidEnums(t *testing.T) {
 	}
 	tests := []struct {
 		name  string
-		patch func(*persistent.TaskInput)
+		patch func(*postgres.TaskInput)
 	}{
-		{"empty_title", func(in *persistent.TaskInput) { in.Title = "" }},
-		{"empty_description", func(in *persistent.TaskInput) { in.Description = " " }},
-		{"invalid_category", func(in *persistent.TaskInput) { in.Category = domain.Category("nope") }},
-		{"invalid_difficulty", func(in *persistent.TaskInput) { in.Difficulty = domain.Difficulty("insane") }},
-		{"non-positive_time_limit", func(in *persistent.TaskInput) { in.TimeLimit = 0 }},
-		{"too_long_flag", func(in *persistent.TaskInput) { in.Flag = strings.Repeat("x", 256) }},
-		{"relative_task_url", func(in *persistent.TaskInput) { raw := "/relative"; in.TaskURL = &raw }},
-		{"invalid_source_file_url", func(in *persistent.TaskInput) { raw := "not-a-url"; in.SourceFileURL = &raw }},
+		{"empty_title", func(in *postgres.TaskInput) { in.Title = "" }},
+		{"empty_description", func(in *postgres.TaskInput) { in.Description = " " }},
+		{"invalid_category", func(in *postgres.TaskInput) { in.Category = domain.Category("nope") }},
+		{"invalid_difficulty", func(in *postgres.TaskInput) { in.Difficulty = domain.Difficulty("insane") }},
+		{"non-positive_time_limit", func(in *postgres.TaskInput) { in.TimeLimit = 0 }},
+		{"too_long_flag", func(in *postgres.TaskInput) { in.Flag = strings.Repeat("x", 256) }},
+		{"relative_task_url", func(in *postgres.TaskInput) { raw := "/relative"; in.TaskURL = &raw }},
+		{"invalid_source_file_url", func(in *postgres.TaskInput) { raw := "not-a-url"; in.SourceFileURL = &raw }},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -176,7 +176,7 @@ func TestTaskRepo_Update(t *testing.T) {
 	created := mustCreateTask(t, repo, uniq("t"), domain.DifficultyEasy)
 
 	src := "https://cdn.example/" + uniq("src")
-	updated, err := repo.Update(ctx, created.ID, persistent.TaskInput{
+	updated, err := repo.Update(ctx, created.ID, postgres.TaskInput{
 		Title:         created.Title + "_updated",
 		Description:   "new desc",
 		Category:      domain.CategoryForensics,
@@ -198,7 +198,7 @@ func TestTaskRepo_Update(t *testing.T) {
 
 func TestTaskRepo_Update_NotFound(t *testing.T) {
 	t.Parallel()
-	_, err := newTaskRepo().Update(context.Background(), uuid.New(), persistent.TaskInput{
+	_, err := newTaskRepo().Update(context.Background(), uuid.New(), postgres.TaskInput{
 		Title: "x", Description: "x",
 		Category: domain.CategoryWeb, Difficulty: domain.DifficultyEasy,
 		TimeLimit: 60, Flag: "x", Hints: defaultTaskHints("x"),
@@ -212,7 +212,7 @@ func TestTaskRepo_Update_RejectsInvalidInput(t *testing.T) {
 	ctx := context.Background()
 	created := mustCreateTask(t, repo, uniq("t"), domain.DifficultyEasy)
 
-	_, err := repo.Update(ctx, created.ID, persistent.TaskInput{
+	_, err := repo.Update(ctx, created.ID, postgres.TaskInput{
 		Title:       "x",
 		Description: "x",
 		Category:    domain.CategoryWeb,
@@ -231,7 +231,7 @@ func TestTaskRepo_Update_RejectsInvalidTaskAssetURLs(t *testing.T) {
 	created := mustCreateTask(t, repo, uniq("t"), domain.DifficultyEasy)
 
 	taskURL := "/relative/" + uniq("task")
-	_, err := repo.Update(ctx, created.ID, persistent.TaskInput{
+	_, err := repo.Update(ctx, created.ID, postgres.TaskInput{
 		Title:       "x",
 		Description: "x",
 		Category:    domain.CategoryWeb,
@@ -244,7 +244,7 @@ func TestTaskRepo_Update_RejectsInvalidTaskAssetURLs(t *testing.T) {
 	require.ErrorIs(t, err, apperr.ErrTaskValidation)
 
 	sourceURL := "ftp://files.example/" + uniq("source") + ".zip"
-	_, err = repo.Update(ctx, created.ID, persistent.TaskInput{
+	_, err = repo.Update(ctx, created.ID, postgres.TaskInput{
 		Title:         "x",
 		Description:   "x",
 		Category:      domain.CategoryWeb,
@@ -278,7 +278,7 @@ func TestTaskRepo_CountByDifficulty_UsesIsolatedDB(t *testing.T) {
 	pool, cleanup := SetupTestDB(t)
 	t.Cleanup(cleanup)
 
-	repo := persistent.NewTaskPostgres(persistent.NewTxManager(pool))
+	repo := postgres.NewTaskPostgres(postgres.NewTxManager(pool))
 	ctx := context.Background()
 
 	easyBefore, err := repo.CountByDifficulty(ctx, domain.DifficultyEasy)
@@ -314,7 +314,7 @@ func TestTaskRepo_CountByDifficulty_IncludesTasksWithoutHints(t *testing.T) {
 	pool, cleanup := SetupTestDB(t)
 	t.Cleanup(cleanup)
 
-	repo := persistent.NewTaskPostgres(persistent.NewTxManager(pool))
+	repo := postgres.NewTaskPostgres(postgres.NewTxManager(pool))
 	ctx := context.Background()
 
 	_, err := pool.Exec(ctx, `
@@ -414,8 +414,8 @@ func TestTaskRepo_CountSolvedByDifficulty(t *testing.T) {
 	repo := newTaskRepo()
 	ctx := context.Background()
 
-	playerRepo := persistent.NewPlayerPostgres(persistent.NewTxManager(sharedPool))
-	historyRepo := persistent.NewHistoryPostgres(persistent.NewTxManager(sharedPool))
+	playerRepo := postgres.NewPlayerPostgres(postgres.NewTxManager(sharedPool))
+	historyRepo := postgres.NewHistoryPostgres(postgres.NewTxManager(sharedPool))
 
 	alice, err := playerRepo.Create(ctx, uniq("alice"))
 	require.NoError(t, err)

@@ -13,7 +13,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	duelusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel"
-	usecasemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/mocks"
+	duelmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel/mocks"
 )
 
 func TestFlagSubmitUsecase_SubmitFlag_CorrectFinishesDuel(t *testing.T) {
@@ -42,7 +42,7 @@ func TestFlagSubmitUsecase_SubmitFlag_CorrectFinishesDuel(t *testing.T) {
 	f.players.EXPECT().UpdateStatus(mock.Anything, duel.Player2ID, domain.PlayerStatusIdle).Return(&domain.Player{ID: duel.Player2ID, Username: "bob", Status: domain.PlayerStatusIdle}, nil)
 	f.board.EXPECT().IncrementWin(mock.Anything, winner.Username).Return(nil)
 
-	got, err := duelusecase.NewFlagSubmitUsecase(
+	got, err := duelusecase.NewFlagSubmitUseCase(
 		f.tx, f.duels, f.players, f.history, f.board, fixedClock{now: now}, timers,
 	).SubmitFlag(t.Context(), duel.ID, playerID, "FLAG{ok}")
 
@@ -64,7 +64,7 @@ func TestFlagSubmitUsecase_SubmitFlag_DeadlinePassed(t *testing.T) {
 	f.tx.EXPECT().Do(mock.Anything, mock.Anything).RunAndReturn(runTx)
 	f.duels.EXPECT().GetByID(mock.Anything, duel.ID).Return(duel, nil)
 
-	_, err := duelusecase.NewFlagSubmitUsecase(
+	_, err := duelusecase.NewFlagSubmitUseCase(
 		f.tx, f.duels, f.players, f.history, f.board, fixedClock{now: now},
 	).SubmitFlag(t.Context(), duel.ID, duel.Player1ID, "FLAG{ok}")
 
@@ -83,7 +83,7 @@ func TestFlagSubmitUsecase_SubmitFlag_IncorrectFlag(t *testing.T) {
 	f.duels.EXPECT().GetByID(mock.Anything, duel.ID).Return(duel, nil)
 	f.duels.EXPECT().GetPlayerTask(mock.Anything, duel.ID, duel.Player1ID).Return(task, nil)
 
-	_, err := duelusecase.NewFlagSubmitUsecase(
+	_, err := duelusecase.NewFlagSubmitUseCase(
 		f.tx, f.duels, f.players, f.history, f.board, fixedClock{now: now},
 	).SubmitFlag(t.Context(), duel.ID, duel.Player1ID, "FLAG{bad}")
 
@@ -101,7 +101,7 @@ func TestFlagSubmitUsecase_SubmitFlag_FinishedDuel(t *testing.T) {
 	f.tx.EXPECT().Do(mock.Anything, mock.Anything).RunAndReturn(runTx)
 	f.duels.EXPECT().GetByID(mock.Anything, duel.ID).Return(duel, nil)
 
-	got, err := duelusecase.NewFlagSubmitUsecase(
+	got, err := duelusecase.NewFlagSubmitUseCase(
 		f.tx, f.duels, f.players, f.history, f.board, fixedClock{now: now},
 	).SubmitFlag(t.Context(), duel.ID, duel.Player1ID, "FLAG{ok}")
 
@@ -130,7 +130,7 @@ func TestFlagSubmitUsecase_SubmitFlag_FinishRaceReturnsAlreadyFinished(t *testin
 	f.duels.EXPECT().Finish(mock.Anything, duel.ID, &playerID, now, domain.DuelStatusFinished).
 		Return(nil, apperr.ErrDuelFinished)
 
-	got, err := duelusecase.NewFlagSubmitUsecase(
+	got, err := duelusecase.NewFlagSubmitUseCase(
 		f.tx, f.duels, f.players, f.history, f.board, fixedClock{now: now}, timers,
 	).SubmitFlag(t.Context(), duel.ID, playerID, "FLAG{ok}")
 
@@ -160,7 +160,7 @@ func TestFlagSubmitUsecase_SubmitFlag_TimerNotStoppedOnTxRollback(t *testing.T) 
 	f.players.EXPECT().GetByID(mock.Anything, playerID).Return(winner, nil)
 	f.duels.EXPECT().Finish(mock.Anything, duel.ID, &playerID, now, domain.DuelStatusFinished).Return(nil, finishErr)
 
-	_, err := duelusecase.NewFlagSubmitUsecase(
+	_, err := duelusecase.NewFlagSubmitUseCase(
 		f.tx, f.duels, f.players, f.history, f.board, fixedClock{now: now}, timers,
 	).SubmitFlag(t.Context(), duel.ID, playerID, "FLAG{ok}")
 
@@ -194,7 +194,7 @@ func TestFlagSubmitUsecase_SubmitFlag_LeaderboardFailureDoesNotFailRequest(t *te
 	f.players.EXPECT().UpdateStatus(mock.Anything, duel.Player2ID, domain.PlayerStatusIdle).Return(&domain.Player{ID: duel.Player2ID, Username: "bob", Status: domain.PlayerStatusIdle}, nil)
 	f.board.EXPECT().IncrementWin(mock.Anything, winner.Username).Return(errors.New("redis is down"))
 
-	got, err := duelusecase.NewFlagSubmitUsecase(
+	got, err := duelusecase.NewFlagSubmitUseCase(
 		f.tx, f.duels, f.players, f.history, f.board, fixedClock{now: now}, timers,
 	).SubmitFlag(t.Context(), duel.ID, playerID, "FLAG{ok}")
 
@@ -204,21 +204,21 @@ func TestFlagSubmitUsecase_SubmitFlag_LeaderboardFailureDoesNotFailRequest(t *te
 }
 
 type flagFixture struct {
-	tx      *usecasemocks.MockTxManager
-	duels   *usecasemocks.MockDuelRepo
-	players *usecasemocks.MockPlayerRepo
-	history *usecasemocks.MockHistoryRepo
-	board   *usecasemocks.MockLeaderboardStore
+	tx      *duelmocks.MockTransactionManager
+	duels   *duelmocks.MockFlagDuelRepository
+	players *duelmocks.MockFinalizationPlayerRepository
+	history *duelmocks.MockSolvedHistoryWriter
+	board   *duelmocks.MockLeaderboardBumper
 }
 
 func newFlagFixture(t *testing.T) *flagFixture {
 	t.Helper()
 	return &flagFixture{
-		tx:      usecasemocks.NewMockTxManager(t),
-		duels:   usecasemocks.NewMockDuelRepo(t),
-		players: usecasemocks.NewMockPlayerRepo(t),
-		history: usecasemocks.NewMockHistoryRepo(t),
-		board:   usecasemocks.NewMockLeaderboardStore(t),
+		tx:      duelmocks.NewMockTransactionManager(t),
+		duels:   duelmocks.NewMockFlagDuelRepository(t),
+		players: duelmocks.NewMockFinalizationPlayerRepository(t),
+		history: duelmocks.NewMockSolvedHistoryWriter(t),
+		board:   duelmocks.NewMockLeaderboardBumper(t),
 	}
 }
 

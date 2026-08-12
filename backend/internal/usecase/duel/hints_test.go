@@ -9,7 +9,6 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	duelusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel"
-	"github.com/TakuyaYagam1/task-per-minute/pkg/clock"
 )
 
 func TestHintScheduler_PlayerSnapshotIncludesMissedHints(t *testing.T) {
@@ -25,7 +24,7 @@ func TestHintScheduler_PlayerSnapshotIncludesMissedHints(t *testing.T) {
 		StartedAt: time.Now().Add(-time.Second),
 	}
 
-	scheduler := duelusecase.NewHintScheduler(clock.Real{}, nil)
+	scheduler := duelusecase.NewHintScheduler(wallClock{}, nil)
 	scheduler.StartDuel(duel, map[uuid.UUID]*domain.Task{playerID: task})
 	t.Cleanup(func() {
 		scheduler.StopDuel(duelID)
@@ -60,7 +59,7 @@ func TestHintScheduler_FreezeResumeShiftsFutureUnlocks(t *testing.T) {
 		StartedAt: startedAt,
 	}
 
-	scheduler := duelusecase.NewHintScheduler(clock.Real{}, nil)
+	scheduler := duelusecase.NewHintScheduler(wallClock{}, nil)
 	scheduler.StartDuel(duel, map[uuid.UUID]*domain.Task{playerID: hintTestTask(4)})
 	t.Cleanup(func() {
 		scheduler.StopDuel(duelID)
@@ -96,7 +95,7 @@ func TestHintScheduler_PreservesSparseHintSlots(t *testing.T) {
 	task := hintTestTask(1)
 	task.Hints = []string{"", "", "hint 3"}
 
-	scheduler := duelusecase.NewHintScheduler(clock.Real{}, nil)
+	scheduler := duelusecase.NewHintScheduler(wallClock{}, nil)
 	scheduler.StartDuel(duel, map[uuid.UUID]*domain.Task{playerID: task})
 	t.Cleanup(func() {
 		scheduler.StopDuel(duelID)
@@ -132,7 +131,7 @@ func TestHintScheduler_FirstAndThirdSlotsUnlockAtOriginalPercentages(t *testing.
 	task := hintTestTask(1)
 	task.Hints = []string{"hint 1", "", "hint 3"}
 
-	scheduler := duelusecase.NewHintScheduler(clock.Real{}, nil)
+	scheduler := duelusecase.NewHintScheduler(wallClock{}, nil)
 	scheduler.StartDuel(duel, map[uuid.UUID]*domain.Task{playerID: task})
 	t.Cleanup(func() {
 		scheduler.StopDuel(duelID)
@@ -170,7 +169,7 @@ func TestHintScheduler_NoHintTaskHasEmptySchedule(t *testing.T) {
 	task := hintTestTask(60)
 	task.Hints = []string{"", "", ""}
 
-	scheduler := duelusecase.NewHintScheduler(clock.Real{}, nil)
+	scheduler := duelusecase.NewHintScheduler(wallClock{}, nil)
 	scheduler.StartDuel(duel, map[uuid.UUID]*domain.Task{playerID: task})
 	t.Cleanup(func() {
 		scheduler.StopDuel(duelID)
@@ -193,4 +192,10 @@ func hintTestTask(timeLimit int) *domain.Task {
 		Flag:        "FLAG{task}",
 		Hints:       []string{"hint 1", "hint 2", "hint 3"},
 	}
+}
+
+type wallClock struct{}
+
+func (wallClock) Now() time.Time {
+	return time.Now().UTC()
 }

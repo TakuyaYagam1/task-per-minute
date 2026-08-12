@@ -15,7 +15,6 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/ctxutil"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	"github.com/TakuyaYagam1/task-per-minute/internal/usecase"
 )
 
 const (
@@ -31,35 +30,35 @@ var allowedSourceFileMediaTypes = map[string]struct{}{
 	"application/octet-stream":     {},
 }
 
-type UploadUsecase struct {
-	tasks   usecase.TaskRepo
-	storage usecase.SourceFileStorage
+type UploadUseCase struct {
+	tasks   UploadTaskRepository
+	storage SourceFileStorage
 	log     logkit.Logger
 }
 
-func NewUploadUsecase(tasks usecase.TaskRepo, storage usecase.SourceFileStorage) *UploadUsecase {
-	return &UploadUsecase{
+func NewUploadUseCase(tasks UploadTaskRepository, storage SourceFileStorage) *UploadUseCase {
+	return &UploadUseCase{
 		tasks:   tasks,
 		storage: storage,
 	}
 }
 
-type UploadOption func(*UploadUsecase)
+type UploadOption func(*UploadUseCase)
 
 func WithUploadLogger(log logkit.Logger) UploadOption {
-	return func(u *UploadUsecase) {
+	return func(u *UploadUseCase) {
 		u.log = log
 	}
 }
 
-func (u *UploadUsecase) Configure(options ...UploadOption) *UploadUsecase {
+func (u *UploadUseCase) Configure(options ...UploadOption) *UploadUseCase {
 	for _, option := range options {
 		option(u)
 	}
 	return u
 }
 
-func (u *UploadUsecase) UploadSourceFile(
+func (u *UploadUseCase) UploadSourceFile(
 	ctx context.Context,
 	taskID uuid.UUID,
 	reader io.Reader,
@@ -106,7 +105,7 @@ func (u *UploadUsecase) UploadSourceFile(
 	return presignedURL, nil
 }
 
-func (u *UploadUsecase) ClearSourceFile(ctx context.Context, taskID uuid.UUID, in TaskInput) (*domain.Task, error) {
+func (u *UploadUseCase) ClearSourceFile(ctx context.Context, taskID uuid.UUID, in TaskInput) (*domain.Task, error) {
 	if err := validateTaskInput(in); err != nil {
 		return nil, err
 	}
@@ -128,7 +127,7 @@ func (u *UploadUsecase) ClearSourceFile(ctx context.Context, taskID uuid.UUID, i
 	return updated, nil
 }
 
-func (u *UploadUsecase) PresignedSourceFileURL(ctx context.Context, taskID uuid.UUID) (string, error) {
+func (u *UploadUseCase) PresignedSourceFileURL(ctx context.Context, taskID uuid.UUID) (string, error) {
 	task, err := u.tasks.GetByID(ctx, taskID)
 	if err != nil {
 		return "", fmt.Errorf("UploadUsecase - PresignedSourceFileURL - TaskRepo.GetByID: %w", err)
@@ -145,7 +144,7 @@ func (u *UploadUsecase) PresignedSourceFileURL(ctx context.Context, taskID uuid.
 	return presignedURL, nil
 }
 
-func (u *UploadUsecase) DeleteSourceFile(ctx context.Context, taskID uuid.UUID, sourceFileURL *string) error {
+func (u *UploadUseCase) DeleteSourceFile(ctx context.Context, taskID uuid.UUID, sourceFileURL *string) error {
 	key := SourceFileKey(taskID)
 	if sourceFileURL != nil {
 		key = domain.TaskSourceFileKeyFromURL(taskID, *sourceFileURL)
@@ -157,19 +156,19 @@ func (u *UploadUsecase) DeleteSourceFile(ctx context.Context, taskID uuid.UUID, 
 	return nil
 }
 
-func (u *UploadUsecase) deleteSourceFileKey(ctx context.Context, operation string, taskID uuid.UUID, key string) {
+func (u *UploadUseCase) deleteSourceFileKey(ctx context.Context, operation string, taskID uuid.UUID, key string) {
 	if err := u.storage.Delete(ctx, key); err != nil {
 		u.logSourceCleanupError(operation, taskID, key, err)
 	}
 }
 
-func (u *UploadUsecase) deleteSourceFileKeyDetached(ctx context.Context, operation string, taskID uuid.UUID, key string) {
+func (u *UploadUseCase) deleteSourceFileKeyDetached(ctx context.Context, operation string, taskID uuid.UUID, key string) {
 	cleanupCtx, cleanupCancel := ctxutil.DetachedWithTimeout(ctx, sourceFileCleanupTimeout)
 	defer cleanupCancel()
 	u.deleteSourceFileKey(cleanupCtx, operation, taskID, key)
 }
 
-func (u *UploadUsecase) logSourceCleanupError(operation string, taskID uuid.UUID, key string, err error) {
+func (u *UploadUseCase) logSourceCleanupError(operation string, taskID uuid.UUID, key string, err error) {
 	if u.log == nil || err == nil {
 		return
 	}

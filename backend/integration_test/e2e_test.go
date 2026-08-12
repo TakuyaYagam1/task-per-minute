@@ -12,8 +12,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	wscontroller "github.com/TakuyaYagam1/task-per-minute/internal/controller/websocket"
-	"github.com/TakuyaYagam1/task-per-minute/internal/openapi"
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/api"
+	wsadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket"
 )
 
 // POST /api/v1/players/join + WS join_queue/flag_submit + GET /api/v1/leaderboard: player duel flow from queue to leaderboard win.
@@ -27,18 +27,18 @@ func TestE2EPlayerFlow_HTTPJoinWSMatchSubmitAndLeaderboard(t *testing.T) {
 
 	aliceConn := app.connectWS(t, alice.SessionCookie)
 	defer closeWSSilent(aliceConn)
-	writeWSEvent(t, aliceConn, wscontroller.EventJoinQueue, nil)
-	require.Equal(t, wscontroller.EventQueueJoined, readWSEventType(t, aliceConn, wscontroller.EventQueueJoined).Type)
+	writeWSEvent(t, aliceConn, wsadapter.EventJoinQueue, nil)
+	require.Equal(t, wsadapter.EventQueueJoined, readWSEventType(t, aliceConn, wsadapter.EventQueueJoined).Type)
 
 	bobConn := app.connectWS(t, bob.SessionCookie)
 	defer closeWSSilent(bobConn)
-	writeWSEvent(t, bobConn, wscontroller.EventJoinQueue, nil)
-	require.Equal(t, wscontroller.EventQueueJoined, readWSEventType(t, bobConn, wscontroller.EventQueueJoined).Type)
+	writeWSEvent(t, bobConn, wsadapter.EventJoinQueue, nil)
+	require.Equal(t, wsadapter.EventQueueJoined, readWSEventType(t, bobConn, wsadapter.EventQueueJoined).Type)
 
-	aliceMatch := decodeMatchFound(t, readWSEventType(t, aliceConn, wscontroller.EventMatchFound))
-	aliceAssigned := decodeTaskAssigned(t, readWSEventType(t, aliceConn, wscontroller.EventTaskAssigned))
-	bobMatch := decodeMatchFound(t, readWSEventType(t, bobConn, wscontroller.EventMatchFound))
-	bobAssigned := decodeTaskAssigned(t, readWSEventType(t, bobConn, wscontroller.EventTaskAssigned))
+	aliceMatch := decodeMatchFound(t, readWSEventType(t, aliceConn, wsadapter.EventMatchFound))
+	aliceAssigned := decodeTaskAssigned(t, readWSEventType(t, aliceConn, wsadapter.EventTaskAssigned))
+	bobMatch := decodeMatchFound(t, readWSEventType(t, bobConn, wsadapter.EventMatchFound))
+	bobAssigned := decodeTaskAssigned(t, readWSEventType(t, bobConn, wsadapter.EventTaskAssigned))
 
 	duelID := aliceMatch.DuelID
 	require.Equal(t, aliceMatch.Duel.ID, aliceMatch.DuelID)
@@ -55,21 +55,21 @@ func TestE2EPlayerFlow_HTTPJoinWSMatchSubmitAndLeaderboard(t *testing.T) {
 	require.Equal(t, int(bobAssigned.Task.TimeLimit), bobAssigned.TimeLimitSeconds)
 	require.Equal(t, int(bobAssigned.Task.TimeLimit), bobAssigned.Task.TimeLimitSec)
 
-	writeWSEvent(t, aliceConn, wscontroller.EventFlagSubmit, map[string]any{
+	writeWSEvent(t, aliceConn, wsadapter.EventFlagSubmit, map[string]any{
 		"duel_id": duelID,
 		"flag":    flag,
 	})
 
-	flagResult := decodeFlagResult(t, readWSEventType(t, aliceConn, wscontroller.EventFlagResult))
+	flagResult := decodeFlagResult(t, readWSEventType(t, aliceConn, wsadapter.EventFlagResult))
 	require.Equal(t, duelID, flagResult.DuelID)
 	require.True(t, flagResult.Correct)
 
-	opponentSolved := decodeOpponentSolved(t, readWSEventType(t, bobConn, wscontroller.EventOpponentSolved))
+	opponentSolved := decodeOpponentSolved(t, readWSEventType(t, bobConn, wsadapter.EventOpponentSolved))
 	require.Equal(t, duelID, opponentSolved.DuelID)
 	require.Equal(t, alice.PlayerID, opponentSolved.PlayerID)
 
-	aliceFinished := decodeDuelFinished(t, readWSEventType(t, aliceConn, wscontroller.EventDuelFinished))
-	bobFinished := decodeDuelFinished(t, readWSEventType(t, bobConn, wscontroller.EventDuelFinished))
+	aliceFinished := decodeDuelFinished(t, readWSEventType(t, aliceConn, wsadapter.EventDuelFinished))
+	bobFinished := decodeDuelFinished(t, readWSEventType(t, bobConn, wsadapter.EventDuelFinished))
 	require.Equal(t, alice.PlayerID, *aliceFinished.WinnerID)
 	require.Equal(t, alice.PlayerID, *bobFinished.WinnerID)
 	require.Equal(t, duelID, aliceFinished.DuelID)
@@ -92,11 +92,11 @@ func TestE2EAdminFlow_LoginCreateUploadListDelete(t *testing.T) {
 	app := startE2EApp(t)
 	token := app.adminLogin(t)
 
-	created := app.createTask(t, token, openapi.CreateTaskRequest{
+	created := app.createTask(t, token, api.CreateTaskRequest{
 		Title:       uniq("e2e_admin_task"),
 		Description: "created by e2e admin flow",
-		Category:    openapi.Forensics,
-		Difficulty:  openapi.Easy,
+		Category:    api.Forensics,
+		Difficulty:  api.Easy,
 		TimeLimit:   90,
 		Flag:        "FLAG{" + uniq("admin") + "}",
 		Hints:       defaultOpenAPIHints("e2e admin"),
@@ -119,11 +119,11 @@ func TestE2ESourceFileFlow_TaskAssignedUsesPresignedURL(t *testing.T) {
 	token := app.adminLogin(t)
 	flag := "FLAG{" + uniq("source") + "}"
 	payload := []byte{'P', 'K', 0x03, 0x04, 's', 'r', 'c'}
-	created := app.createTask(t, token, openapi.CreateTaskRequest{
+	created := app.createTask(t, token, api.CreateTaskRequest{
 		Title:       uniq("e2e_source_task"),
 		Description: "download the archive",
-		Category:    openapi.Forensics,
-		Difficulty:  openapi.Easy,
+		Category:    api.Forensics,
+		Difficulty:  api.Easy,
 		TimeLimit:   90,
 		Flag:        flag,
 		Hints:       defaultOpenAPIHints("e2e source"),
@@ -136,15 +136,15 @@ func TestE2ESourceFileFlow_TaskAssignedUsesPresignedURL(t *testing.T) {
 
 	aliceConn := app.connectWS(t, alice.SessionCookie)
 	defer closeWSSilent(aliceConn)
-	writeWSEvent(t, aliceConn, wscontroller.EventJoinQueue, nil)
-	require.Equal(t, wscontroller.EventQueueJoined, readWSEventType(t, aliceConn, wscontroller.EventQueueJoined).Type)
+	writeWSEvent(t, aliceConn, wsadapter.EventJoinQueue, nil)
+	require.Equal(t, wsadapter.EventQueueJoined, readWSEventType(t, aliceConn, wsadapter.EventQueueJoined).Type)
 
 	bobConn := app.connectWS(t, bob.SessionCookie)
 	defer closeWSSilent(bobConn)
-	writeWSEvent(t, bobConn, wscontroller.EventJoinQueue, nil)
+	writeWSEvent(t, bobConn, wsadapter.EventJoinQueue, nil)
 
-	require.Equal(t, wscontroller.EventMatchFound, readWSEventType(t, aliceConn, wscontroller.EventMatchFound).Type)
-	assigned := decodeTaskAssigned(t, readWSEventType(t, aliceConn, wscontroller.EventTaskAssigned))
+	require.Equal(t, wsadapter.EventMatchFound, readWSEventType(t, aliceConn, wsadapter.EventMatchFound).Type)
+	assigned := decodeTaskAssigned(t, readWSEventType(t, aliceConn, wsadapter.EventTaskAssigned))
 	require.NotNil(t, assigned.Task.SourceFileURL)
 	require.Contains(t, *assigned.Task.SourceFileURL, "X-Amz-Signature")
 	assignedURL, err := url.Parse(*assigned.Task.SourceFileURL)
@@ -164,11 +164,11 @@ func TestE2ESourceFileFlow_DuelResumeRefreshesPresignedURL(t *testing.T) {
 	app := startE2EApp(t)
 	token := app.adminLogin(t)
 	payload := []byte{'P', 'K', 0x03, 0x04, 'r', 'e', 's', 'u', 'm', 'e'}
-	created := app.createTask(t, token, openapi.CreateTaskRequest{
+	created := app.createTask(t, token, api.CreateTaskRequest{
 		Title:       uniq("e2e_resume_source"),
 		Description: "download the archive after reconnect",
-		Category:    openapi.Forensics,
-		Difficulty:  openapi.Easy,
+		Category:    api.Forensics,
+		Difficulty:  api.Easy,
 		TimeLimit:   3,
 		Flag:        "FLAG{" + uniq("resume_source") + "}",
 		Hints:       defaultOpenAPIHints("e2e resume source"),
@@ -180,27 +180,27 @@ func TestE2ESourceFileFlow_DuelResumeRefreshesPresignedURL(t *testing.T) {
 	bob := app.joinPlayer(t, uniq("bob"))
 
 	aliceConn := app.connectWS(t, alice.SessionCookie)
-	writeWSEvent(t, aliceConn, wscontroller.EventJoinQueue, nil)
-	require.Equal(t, wscontroller.EventQueueJoined, readWSEventType(t, aliceConn, wscontroller.EventQueueJoined).Type)
+	writeWSEvent(t, aliceConn, wsadapter.EventJoinQueue, nil)
+	require.Equal(t, wsadapter.EventQueueJoined, readWSEventType(t, aliceConn, wsadapter.EventQueueJoined).Type)
 
 	bobConn := app.connectWS(t, bob.SessionCookie)
 	defer closeWSSilent(bobConn)
-	writeWSEvent(t, bobConn, wscontroller.EventJoinQueue, nil)
+	writeWSEvent(t, bobConn, wsadapter.EventJoinQueue, nil)
 
-	require.Equal(t, wscontroller.EventMatchFound, readWSEventType(t, aliceConn, wscontroller.EventMatchFound).Type)
-	assigned := decodeTaskAssigned(t, readWSEventType(t, aliceConn, wscontroller.EventTaskAssigned))
+	require.Equal(t, wsadapter.EventMatchFound, readWSEventType(t, aliceConn, wsadapter.EventMatchFound).Type)
+	assigned := decodeTaskAssigned(t, readWSEventType(t, aliceConn, wsadapter.EventTaskAssigned))
 	require.NotNil(t, assigned.Task.SourceFileURL)
 
 	disconnectWS(t, aliceConn)
 	require.Equal(t, alice.PlayerID, decodeOpponentDisconnected(t,
-		readWSEventType(t, bobConn, wscontroller.EventOpponentDisconnected)).PlayerID)
+		readWSEventType(t, bobConn, wsadapter.EventOpponentDisconnected)).PlayerID)
 
 	time.Sleep(4 * time.Second)
 
 	aliceReconnect := app.connectWS(t, alice.SessionCookie)
 	defer closeWSSilent(aliceReconnect)
 
-	resume := decodeDuelResume(t, readWSEventType(t, aliceReconnect, wscontroller.EventDuelResume))
+	resume := decodeDuelResume(t, readWSEventType(t, aliceReconnect, wsadapter.EventDuelResume))
 	require.NotNil(t, resume.Task)
 	require.NotNil(t, resume.Task.SourceFileURL)
 	require.Contains(t, *resume.Task.SourceFileURL, "X-Amz-Signature")
@@ -223,29 +223,29 @@ func TestE2EReconnectFlow_DisconnectAndResume(t *testing.T) {
 	bob := app.joinPlayer(t, uniq("bob"))
 
 	aliceConn := app.connectWS(t, alice.SessionCookie)
-	writeWSEvent(t, aliceConn, wscontroller.EventJoinQueue, nil)
-	require.Equal(t, wscontroller.EventQueueJoined, readWSEventType(t, aliceConn, wscontroller.EventQueueJoined).Type)
+	writeWSEvent(t, aliceConn, wsadapter.EventJoinQueue, nil)
+	require.Equal(t, wsadapter.EventQueueJoined, readWSEventType(t, aliceConn, wsadapter.EventQueueJoined).Type)
 
 	bobConn := app.connectWS(t, bob.SessionCookie)
 	defer closeWSSilent(bobConn)
-	writeWSEvent(t, bobConn, wscontroller.EventJoinQueue, nil)
+	writeWSEvent(t, bobConn, wsadapter.EventJoinQueue, nil)
 
-	aliceMatch := readWSEventType(t, aliceConn, wscontroller.EventMatchFound)
-	require.Equal(t, wscontroller.EventTaskAssigned, readWSEventType(t, aliceConn, wscontroller.EventTaskAssigned).Type)
-	bobMatch := readWSEventType(t, bobConn, wscontroller.EventMatchFound)
-	require.Equal(t, wscontroller.EventTaskAssigned, readWSEventType(t, bobConn, wscontroller.EventTaskAssigned).Type)
+	aliceMatch := readWSEventType(t, aliceConn, wsadapter.EventMatchFound)
+	require.Equal(t, wsadapter.EventTaskAssigned, readWSEventType(t, aliceConn, wsadapter.EventTaskAssigned).Type)
+	bobMatch := readWSEventType(t, bobConn, wsadapter.EventMatchFound)
+	require.Equal(t, wsadapter.EventTaskAssigned, readWSEventType(t, bobConn, wsadapter.EventTaskAssigned).Type)
 	duelID := decodeMatchDuelID(t, aliceMatch)
 	require.Equal(t, duelID, decodeMatchDuelID(t, bobMatch))
 
 	disconnectWS(t, aliceConn)
-	disconnected := readWSEventType(t, bobConn, wscontroller.EventOpponentDisconnected)
+	disconnected := readWSEventType(t, bobConn, wsadapter.EventOpponentDisconnected)
 	require.Equal(t, alice.PlayerID, decodeOpponentDisconnected(t, disconnected).PlayerID)
 
 	aliceReconnect := app.connectWS(t, alice.SessionCookie)
 	defer closeWSSilent(aliceReconnect)
 
-	resume := readWSEventType(t, aliceReconnect, wscontroller.EventDuelResume)
-	reconnected := readWSEventType(t, bobConn, wscontroller.EventOpponentReconnected)
+	resume := readWSEventType(t, aliceReconnect, wsadapter.EventDuelResume)
+	reconnected := readWSEventType(t, bobConn, wsadapter.EventOpponentReconnected)
 	require.Equal(t, duelID, decodeDuelResume(t, resume).DuelID)
 	require.Equal(t, alice.PlayerID, decodeOpponentReconnected(t, reconnected).PlayerID)
 }
@@ -258,11 +258,11 @@ func TestE2EHintFlow_AutoUnlocksAt25_50_75(t *testing.T) {
 	flag := "FLAG{" + uniq("hint") + "}"
 	token := app.adminLogin(t)
 	hints := defaultTaskHints("e2e hint flow")
-	created := app.createTask(t, token, openapi.CreateTaskRequest{
+	created := app.createTask(t, token, api.CreateTaskRequest{
 		Title:       uniq("e2e_hint_easy"),
 		Description: "duel with auto hints at 25/50/75%",
-		Category:    openapi.Web,
-		Difficulty:  openapi.Easy,
+		Category:    api.Web,
+		Difficulty:  api.Easy,
 		TimeLimit:   hintTimeLimit,
 		Flag:        flag,
 		Hints:       nullableOpenAPIHints(hints),
@@ -274,17 +274,17 @@ func TestE2EHintFlow_AutoUnlocksAt25_50_75(t *testing.T) {
 
 	aliceConn := app.connectWS(t, alice.SessionCookie)
 	defer closeWSSilent(aliceConn)
-	writeWSEvent(t, aliceConn, wscontroller.EventJoinQueue, nil)
-	require.Equal(t, wscontroller.EventQueueJoined, readWSEventType(t, aliceConn, wscontroller.EventQueueJoined).Type)
+	writeWSEvent(t, aliceConn, wsadapter.EventJoinQueue, nil)
+	require.Equal(t, wsadapter.EventQueueJoined, readWSEventType(t, aliceConn, wsadapter.EventQueueJoined).Type)
 
 	bobConn := app.connectWS(t, bob.SessionCookie)
 	defer closeWSSilent(bobConn)
-	writeWSEvent(t, bobConn, wscontroller.EventJoinQueue, nil)
+	writeWSEvent(t, bobConn, wsadapter.EventJoinQueue, nil)
 
-	require.Equal(t, wscontroller.EventMatchFound, readWSEventType(t, aliceConn, wscontroller.EventMatchFound).Type)
-	aliceAssigned := readWSEventType(t, aliceConn, wscontroller.EventTaskAssigned)
-	require.Equal(t, wscontroller.EventMatchFound, readWSEventType(t, bobConn, wscontroller.EventMatchFound).Type)
-	bobAssigned := readWSEventType(t, bobConn, wscontroller.EventTaskAssigned)
+	require.Equal(t, wsadapter.EventMatchFound, readWSEventType(t, aliceConn, wsadapter.EventMatchFound).Type)
+	aliceAssigned := readWSEventType(t, aliceConn, wsadapter.EventTaskAssigned)
+	require.Equal(t, wsadapter.EventMatchFound, readWSEventType(t, bobConn, wsadapter.EventMatchFound).Type)
+	bobAssigned := readWSEventType(t, bobConn, wsadapter.EventTaskAssigned)
 
 	aliceTask := decodeTaskAssigned(t, aliceAssigned)
 	bobTask := decodeTaskAssigned(t, bobAssigned)
@@ -292,8 +292,8 @@ func TestE2EHintFlow_AutoUnlocksAt25_50_75(t *testing.T) {
 	require.Len(t, bobTask.Task.HintSchedule, 3, "task_assigned must advertise 3 scheduled hints")
 
 	for index := 1; index <= 3; index++ {
-		aliceHint := decodeHintUnlocked(t, readWSEventType(t, aliceConn, wscontroller.EventHintUnlocked))
-		bobHint := decodeHintUnlocked(t, readWSEventType(t, bobConn, wscontroller.EventHintUnlocked))
+		aliceHint := decodeHintUnlocked(t, readWSEventType(t, aliceConn, wsadapter.EventHintUnlocked))
+		bobHint := decodeHintUnlocked(t, readWSEventType(t, bobConn, wsadapter.EventHintUnlocked))
 		require.Equal(t, index, aliceHint.HintIndex, "alice hint order must be sequential")
 		require.Equal(t, index, bobHint.HintIndex, "bob hint order must be sequential")
 		require.Equal(t, hints[index-1], aliceHint.Hint, "alice hint text must match the configured hint")
@@ -312,17 +312,17 @@ func TestE2EConcurrentFlagSubmit_SingleWinnerAndSingleLeaderboardBump(t *testing
 
 	aliceConn := app.connectWS(t, alice.SessionCookie)
 	defer closeWSSilent(aliceConn)
-	writeWSEvent(t, aliceConn, wscontroller.EventJoinQueue, nil)
-	require.Equal(t, wscontroller.EventQueueJoined, readWSEventType(t, aliceConn, wscontroller.EventQueueJoined).Type)
+	writeWSEvent(t, aliceConn, wsadapter.EventJoinQueue, nil)
+	require.Equal(t, wsadapter.EventQueueJoined, readWSEventType(t, aliceConn, wsadapter.EventQueueJoined).Type)
 
 	bobConn := app.connectWS(t, bob.SessionCookie)
 	defer closeWSSilent(bobConn)
-	writeWSEvent(t, bobConn, wscontroller.EventJoinQueue, nil)
+	writeWSEvent(t, bobConn, wsadapter.EventJoinQueue, nil)
 
-	aliceMatch := readWSEventType(t, aliceConn, wscontroller.EventMatchFound)
-	require.Equal(t, wscontroller.EventTaskAssigned, readWSEventType(t, aliceConn, wscontroller.EventTaskAssigned).Type)
-	bobMatch := readWSEventType(t, bobConn, wscontroller.EventMatchFound)
-	require.Equal(t, wscontroller.EventTaskAssigned, readWSEventType(t, bobConn, wscontroller.EventTaskAssigned).Type)
+	aliceMatch := readWSEventType(t, aliceConn, wsadapter.EventMatchFound)
+	require.Equal(t, wsadapter.EventTaskAssigned, readWSEventType(t, aliceConn, wsadapter.EventTaskAssigned).Type)
+	bobMatch := readWSEventType(t, bobConn, wsadapter.EventMatchFound)
+	require.Equal(t, wsadapter.EventTaskAssigned, readWSEventType(t, bobConn, wsadapter.EventTaskAssigned).Type)
 	duelID := decodeMatchDuelID(t, aliceMatch)
 	require.Equal(t, duelID, decodeMatchDuelID(t, bobMatch))
 
@@ -332,7 +332,7 @@ func TestE2EConcurrentFlagSubmit_SingleWinnerAndSingleLeaderboardBump(t *testing
 	go func() {
 		defer wg.Done()
 		<-start
-		writeWSEvent(t, aliceConn, wscontroller.EventFlagSubmit, map[string]any{
+		writeWSEvent(t, aliceConn, wsadapter.EventFlagSubmit, map[string]any{
 			"duel_id": duelID,
 			"flag":    flag,
 		})
@@ -340,7 +340,7 @@ func TestE2EConcurrentFlagSubmit_SingleWinnerAndSingleLeaderboardBump(t *testing
 	go func() {
 		defer wg.Done()
 		<-start
-		writeWSEvent(t, bobConn, wscontroller.EventFlagSubmit, map[string]any{
+		writeWSEvent(t, bobConn, wsadapter.EventFlagSubmit, map[string]any{
 			"duel_id": duelID,
 			"flag":    flag,
 		})
@@ -348,8 +348,8 @@ func TestE2EConcurrentFlagSubmit_SingleWinnerAndSingleLeaderboardBump(t *testing
 	close(start)
 	wg.Wait()
 
-	aliceFinished := readWSEventType(t, aliceConn, wscontroller.EventDuelFinished)
-	bobFinished := readWSEventType(t, bobConn, wscontroller.EventDuelFinished)
+	aliceFinished := readWSEventType(t, aliceConn, wsadapter.EventDuelFinished)
+	bobFinished := readWSEventType(t, bobConn, wsadapter.EventDuelFinished)
 
 	aliceWinner := decodeWinnerID(t, aliceFinished)
 	bobWinner := decodeWinnerID(t, bobFinished)

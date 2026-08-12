@@ -3,7 +3,7 @@ SHELL := /usr/bin/env bash
 
 # Pinned tool versions - keep in sync with codegen configs.
 GOOSE_VERSION   ?= v3.27.0
-SQLC_VERSION    ?= v1.31.0
+SQLC_VERSION    ?= v1.31.1
 OAPI_VERSION    ?= v2.5.1
 MOCKERY_VERSION ?= v3.5.5
 WIRE_VERSION    ?= v0.7.0
@@ -23,7 +23,7 @@ export
 endif
 
 DB_DSN ?= postgres://tpm:tpm@localhost:5432/task_per_minute?sslmode=disable
-MIGRATIONS_DIR := migrations
+MIGRATIONS_DIR := db/migrations
 
 ##@ Build & run
 
@@ -57,18 +57,18 @@ merge-schemas: ## Only merge components/schemas/*.yml -> schemas.yml (no codegen
 .PHONY: gen-openapi openapi
 gen-openapi openapi: ## Merge OpenAPI components, run oapi-codegen, cleanup intermediate files
 	OAPI_VERSION=$(OAPI_VERSION) bash scripts/openapi-generate.sh
-	@rm -f internal/openapi/components/schemas.yml
+	@rm -f api/components/schemas.yml
 
 .PHONY: gen-sqlc
-gen-sqlc: ## Generate type-safe SQL code from queries/
+gen-sqlc: ## Generate type-safe SQL code from db/queries/
 	$(SQLC) generate -f codegen/sqlc.yaml
 
 .PHONY: gen-wire
 gen-wire: ## Generate compile-time DI graph
-	$(WIRE) ./internal/wire/...
+	$(WIRE) ./internal/bootstrap/...
 
 .PHONY: mocks
-mocks: ## Generate testify mocks for hand-written usecase ports (skipped while no targets are defined)
+mocks: ## Generate testify mocks for consumer-owned usecase ports
 	@if grep -qE '^[[:space:]]+github\.com/' codegen/.mockery.yml; then \
 		$(MOCKERY) --config codegen/.mockery.yml; \
 	else \

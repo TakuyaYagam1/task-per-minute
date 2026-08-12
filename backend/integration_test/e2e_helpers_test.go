@@ -18,10 +18,10 @@ import (
 	logkit "github.com/wahrwelt-kit/go-logkit"
 
 	"github.com/TakuyaYagam1/task-per-minute/config"
-	"github.com/TakuyaYagam1/task-per-minute/internal/app"
-	"github.com/TakuyaYagam1/task-per-minute/internal/controller/restapi/middleware"
-	"github.com/TakuyaYagam1/task-per-minute/internal/openapi"
-	redisrepo "github.com/TakuyaYagam1/task-per-minute/internal/repo/redis"
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/api"
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/middleware"
+	redisadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/redis"
+	"github.com/TakuyaYagam1/task-per-minute/internal/bootstrap"
 )
 
 type e2eApp struct {
@@ -44,7 +44,7 @@ func startE2EApp(t *testing.T) *e2eApp {
 	ctx, cancel := context.WithCancel(context.Background())
 	cfg, err := config.Load()
 	require.NoError(t, err)
-	application, cleanup, err := app.Initialize(ctx, cfg, logkit.Noop())
+	application, cleanup, err := bootstrap.Initialize(ctx, cfg, logkit.Noop())
 	require.NoError(t, err)
 
 	errCh := make(chan error, 1)
@@ -81,8 +81,8 @@ func clearE2ERedis(t *testing.T) {
 	redis := sharedRedis(t).client
 	err := redis.Del(
 		context.Background(),
-		redisrepo.DefaultLeaderboardKey,
-		redisrepo.DefaultMatchmakingQueueKey,
+		redisadapter.DefaultLeaderboardKey,
+		redisadapter.DefaultMatchmakingQueueKey,
 	).Err()
 	require.NoError(t, err)
 }
@@ -96,13 +96,13 @@ type e2eJoin struct {
 func (a *e2eApp) joinPlayer(t *testing.T, username string) e2eJoin {
 	t.Helper()
 	var buf bytes.Buffer
-	require.NoError(t, json.NewEncoder(&buf).Encode(openapi.JoinRequest{Username: username}))
+	require.NoError(t, json.NewEncoder(&buf).Encode(api.JoinRequest{Username: username}))
 	req := a.newRequest(t, http.MethodPost, "/api/v1/players/join", &buf)
 	req.Header.Set("Content-Type", "application/json")
 	resp := a.do(t, req)
 	defer resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
-	got := e2eDecodeJSON[openapi.JoinResponse](t, resp.Body)
+	got := e2eDecodeJSON[api.JoinResponse](t, resp.Body)
 	return e2eJoin{
 		PlayerID:      got.PlayerId,
 		SessionCookie: e2ePlayerSessionCookieValue(t, resp),
@@ -117,33 +117,33 @@ func (a *e2eApp) adminLogin(t *testing.T) string {
 		t,
 		a,
 		"/api/v1/admin/login",
-		openapi.AdminLoginRequest{Password: &password},
+		api.AdminLoginRequest{Password: &password},
 		"",
 		http.StatusOK,
-		openapi.AdminTokenResponse{},
+		api.AdminTokenResponse{},
 	)
 	require.NotEmpty(t, got.AccessToken)
 	require.NotEmpty(t, got.RefreshToken)
 	return got.AccessToken
 }
 
-func (a *e2eApp) createAdminTask(t *testing.T, title, flag string) openapi.TaskResponse {
+func (a *e2eApp) createAdminTask(t *testing.T, title, flag string) api.TaskResponse {
 	t.Helper()
 	token := a.adminLogin(t)
-	return a.createTask(t, token, openapi.CreateTaskRequest{
+	return a.createTask(t, token, api.CreateTaskRequest{
 		Title:       title,
 		Description: "created by e2e setup",
-		Category:    openapi.Web,
-		Difficulty:  openapi.Easy,
+		Category:    api.Web,
+		Difficulty:  api.Easy,
 		TimeLimit:   90,
 		Flag:        flag,
 		Hints:       defaultOpenAPIHints(title),
 	})
 }
 
-func (a *e2eApp) createTask(t *testing.T, token string, body openapi.CreateTaskRequest) openapi.TaskResponse {
+func (a *e2eApp) createTask(t *testing.T, token string, body api.CreateTaskRequest) api.TaskResponse {
 	t.Helper()
-	return e2ePostJSON(t, a, "/api/v1/admin/tasks", body, bearer(token), http.StatusCreated, openapi.TaskResponse{})
+	return e2ePostJSON(t, a, "/api/v1/admin/tasks", body, bearer(token), http.StatusCreated, api.TaskResponse{})
 }
 
 func (a *e2eApp) uploadTaskSource(
@@ -151,7 +151,7 @@ func (a *e2eApp) uploadTaskSource(
 	token string,
 	taskID uuid.UUID,
 	payload []byte,
-) openapi.UploadSourceResponse {
+) api.UploadSourceResponse {
 	t.Helper()
 	body, contentType := multipartBody(t, payload)
 	req := a.newRequest(t, http.MethodPost, "/api/v1/admin/tasks/"+taskID.String()+"/source", body)
@@ -160,17 +160,17 @@ func (a *e2eApp) uploadTaskSource(
 	resp := a.do(t, req)
 	defer resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
-	return e2eDecodeJSON[openapi.UploadSourceResponse](t, resp.Body)
+	return e2eDecodeJSON[api.UploadSourceResponse](t, resp.Body)
 }
 
-func (a *e2eApp) listTasks(t *testing.T, token string) []openapi.TaskResponse {
+func (a *e2eApp) listTasks(t *testing.T, token string) []api.TaskResponse {
 	t.Helper()
 	req := a.newRequest(t, http.MethodGet, "/api/v1/admin/tasks", nil)
 	req.Header.Set("Authorization", bearer(token))
 	resp := a.do(t, req)
 	defer resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
-	return e2eDecodeJSON[[]openapi.TaskResponse](t, resp.Body)
+	return e2eDecodeJSON[[]api.TaskResponse](t, resp.Body)
 }
 
 func (a *e2eApp) deleteTask(t *testing.T, token string, taskID uuid.UUID) {
@@ -182,13 +182,13 @@ func (a *e2eApp) deleteTask(t *testing.T, token string, taskID uuid.UUID) {
 	require.Equal(t, http.StatusNoContent, resp.StatusCode)
 }
 
-func (a *e2eApp) getLeaderboard(t *testing.T) openapi.LeaderboardResponse {
+func (a *e2eApp) getLeaderboard(t *testing.T) api.LeaderboardResponse {
 	t.Helper()
 	req := a.newRequest(t, http.MethodGet, "/api/v1/leaderboard", nil)
 	resp := a.do(t, req)
 	defer resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
-	return e2eDecodeJSON[openapi.LeaderboardResponse](t, resp.Body)
+	return e2eDecodeJSON[api.LeaderboardResponse](t, resp.Body)
 }
 
 func e2ePostJSON[T any](
@@ -264,7 +264,7 @@ func e2ePlayerSessionCookieValue(t *testing.T, resp *http.Response) string {
 	return ""
 }
 
-func containsTaskID(tasks []openapi.TaskResponse, id uuid.UUID) bool {
+func containsTaskID(tasks []api.TaskResponse, id uuid.UUID) bool {
 	for _, task := range tasks {
 		if task.Id == id {
 			return true

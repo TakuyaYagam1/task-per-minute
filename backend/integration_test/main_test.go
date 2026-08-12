@@ -24,7 +24,7 @@ import (
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
 
-	"github.com/TakuyaYagam1/task-per-minute/internal/repo/storage"
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/objectstorage"
 )
 
 const containerStartupTimeout = 90 * time.Second
@@ -206,7 +206,7 @@ func startSeaweedFS() (*seaweedFx, func(), error) {
 }
 
 func waitForSeaweedS3(ctx context.Context, fx *seaweedFx) error {
-	st, err := storage.New(storage.Config{
+	st, err := objectstorage.New(objectstorage.Config{
 		Endpoint:  fx.endpoint,
 		AccessKey: "tpm",
 		SecretKey: "tpm-secret",
@@ -300,7 +300,7 @@ func runMigrations(ctx context.Context, dsn string) error {
 
 func migrationsDirAbs() string {
 	_, thisFile, _, _ := runtime.Caller(0)
-	return filepath.Join(filepath.Dir(thisFile), "..", "migrations")
+	return filepath.Join(filepath.Dir(thisFile), "..", "db", "migrations")
 }
 
 // uniq builds a unique-per-call identifier suffixed with 8 hex chars.

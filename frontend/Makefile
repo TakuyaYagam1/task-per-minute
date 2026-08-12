@@ -6,8 +6,8 @@ NPX ?= npx
 
 ROOT_DIR := $(abspath ..)
 BACKEND_DIR := $(ROOT_DIR)/backend
-OPENAPI_FILE := $(BACKEND_DIR)/internal/openapi/openapi.yml
-OPENAPI_TMP := $(BACKEND_DIR)/internal/openapi/components/schemas.yml
+OPENAPI_FILE := $(BACKEND_DIR)/api/openapi.yml
+OPENAPI_TMP := $(BACKEND_DIR)/api/components/schemas.yml
 GENERATED_TYPES := lib/shared/api/schema.ts
 ESLINT_EXT := .js,.jsx,.ts,.tsx
 ESLINT_IGNORE := --ignore-pattern .next --ignore-pattern node_modules --ignore-pattern lib/shared/api/schema.ts

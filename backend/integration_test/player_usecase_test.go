@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	clockadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/clock"
 	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	playerusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/player"
@@ -17,14 +18,14 @@ import (
 
 type playerUsecaseFixture struct {
 	*duelFixture
-	uc *playerusecase.PlayerUsecase
+	uc *playerusecase.UseCase
 }
 
 func newPlayerUsecaseFixture() *playerUsecaseFixture {
 	f := newDuelFixture()
 	return &playerUsecaseFixture{
 		duelFixture: f,
-		uc:          playerusecase.NewPlayerUsecase(f.mgr, f.players, f.duels),
+		uc:          playerusecase.NewUseCase(f.mgr, f.players, f.duels, clockadapter.Real{}),
 	}
 }
 

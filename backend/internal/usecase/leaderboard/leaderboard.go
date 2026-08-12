@@ -9,9 +9,6 @@ import (
 
 	cachekit "github.com/wahrwelt-kit/go-cachekit"
 	"golang.org/x/sync/singleflight"
-
-	"github.com/TakuyaYagam1/task-per-minute/internal/usecase"
-	"github.com/TakuyaYagam1/task-per-minute/pkg/clock"
 )
 
 const (
@@ -21,14 +18,10 @@ const (
 	cacheMaxLen = 1
 )
 
-// Entry aliases usecase.LeaderboardEntry so callers may use either
-// leaderboard.Entry or usecase.LeaderboardEntry.
-type Entry = usecase.LeaderboardEntry
-
-type LeaderboardUsecase struct {
-	store usecase.LeaderboardStore
-	repo  usecase.LeaderboardRepo
-	clock clock.Clock
+type UseCase struct {
+	store WinStore
+	repo  StatsRepository
+	clock Clock
 
 	mu    sync.Mutex
 	cache *cachekit.LRFUCache[string, cachedTop]
@@ -41,11 +34,8 @@ type cachedTop struct {
 	expiresAt time.Time
 }
 
-func NewLeaderboardUsecase(store usecase.LeaderboardStore, repo usecase.LeaderboardRepo, clk clock.Clock) *LeaderboardUsecase {
-	if clk == nil {
-		clk = clock.Real{}
-	}
-	return &LeaderboardUsecase{
+func NewUseCase(store WinStore, repo StatsRepository, clk Clock) *UseCase {
+	return &UseCase{
 		store: store,
 		repo:  repo,
 		clock: clk,
@@ -53,7 +43,7 @@ func NewLeaderboardUsecase(store usecase.LeaderboardStore, repo usecase.Leaderbo
 	}
 }
 
-func (u *LeaderboardUsecase) IncrementWin(ctx context.Context, username string) error {
+func (u *UseCase) IncrementWin(ctx context.Context, username string) error {
 	err := u.store.IncrementWin(ctx, username)
 	u.Invalidate()
 	if err != nil {
@@ -62,7 +52,7 @@ func (u *LeaderboardUsecase) IncrementWin(ctx context.Context, username string) 
 	return nil
 }
 
-func (u *LeaderboardUsecase) Top50(ctx context.Context) ([]Entry, error) {
+func (u *UseCase) Top50(ctx context.Context) ([]Entry, error) {
 	now := u.clock.Now()
 	if entries, ok := u.cached(now); ok {
 		return entries, nil
@@ -98,7 +88,7 @@ func (u *LeaderboardUsecase) Top50(ctx context.Context) ([]Entry, error) {
 	return cloneEntries(entries), nil
 }
 
-func (u *LeaderboardUsecase) cached(now time.Time) ([]Entry, bool) {
+func (u *UseCase) cached(now time.Time) ([]Entry, bool) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 
@@ -109,13 +99,13 @@ func (u *LeaderboardUsecase) cached(now time.Time) ([]Entry, bool) {
 	return cloneEntries(cached.entries), true
 }
 
-func (u *LeaderboardUsecase) Invalidate() {
+func (u *UseCase) Invalidate() {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	u.cache = cachekit.NewLRFUCache[string, cachedTop](cacheMaxLen)
 }
 
-func (u *LeaderboardUsecase) loadTop(ctx context.Context) ([]Entry, error) {
+func (u *UseCase) loadTop(ctx context.Context) ([]Entry, error) {
 	stats, err := u.repo.TopStats(ctx, topLimit)
 	if err != nil {
 		return nil, fmt.Errorf("LeaderboardUsecase - Top50 - LeaderboardRepo.TopStats: %w", err)

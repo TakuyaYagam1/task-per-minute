@@ -9,8 +9,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	"github.com/TakuyaYagam1/task-per-minute/internal/repo/persistent"
 	duelusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel"
 )
 
@@ -26,7 +26,7 @@ func (f *duelFixture) makeTaskWithLimit(
 	limit int,
 ) *domain.Task {
 	t.Helper()
-	return f.makeTaskWithInput(t, persistent.TaskInput{
+	return f.makeTaskWithInput(t, postgres.TaskInput{
 		Title:       title,
 		Description: "x",
 		Category:    domain.CategoryWeb,
@@ -39,7 +39,7 @@ func (f *duelFixture) makeTaskWithLimit(
 
 func (f *duelFixture) makeForensicsTask(t testing.TB, title string, limit int) *domain.Task {
 	t.Helper()
-	return f.makeTaskWithInput(t, persistent.TaskInput{
+	return f.makeTaskWithInput(t, postgres.TaskInput{
 		Title:       title,
 		Description: "download the archive",
 		Category:    domain.CategoryForensics,
@@ -50,7 +50,7 @@ func (f *duelFixture) makeForensicsTask(t testing.TB, title string, limit int) *
 	})
 }
 
-func (f *duelFixture) makeTaskWithInput(t testing.TB, input persistent.TaskInput) *domain.Task {
+func (f *duelFixture) makeTaskWithInput(t testing.TB, input postgres.TaskInput) *domain.Task {
 	t.Helper()
 	task, err := f.tasks.Create(context.Background(), input)
 	require.NoError(t, err)
@@ -59,12 +59,12 @@ func (f *duelFixture) makeTaskWithInput(t testing.TB, input persistent.TaskInput
 
 func mustCreateTask(
 	t testing.TB,
-	repo *persistent.TaskPostgres,
+	repo *postgres.TaskPostgres,
 	title string,
 	diff domain.Difficulty,
 ) *domain.Task {
 	t.Helper()
-	task, err := repo.Create(context.Background(), persistent.TaskInput{
+	task, err := repo.Create(context.Background(), postgres.TaskInput{
 		Title:       title,
 		Description: "x",
 		Category:    domain.CategoryWeb,

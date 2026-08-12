@@ -10,7 +10,7 @@ import (
 	logkit "github.com/wahrwelt-kit/go-logkit"
 
 	"github.com/TakuyaYagam1/task-per-minute/config"
-	"github.com/TakuyaYagam1/task-per-minute/internal/app"
+	"github.com/TakuyaYagam1/task-per-minute/internal/bootstrap"
 )
 
 func main() {
@@ -45,7 +45,7 @@ func run() int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	if err := app.RunMigrationsDSN(ctx, cfg.DB.DSN, l, command); err != nil {
+	if err := bootstrap.RunMigrationsDSN(ctx, cfg.DB.DSN, l, command); err != nil {
 		l.WithError(err).Error("migration failed")
 		return 1
 	}

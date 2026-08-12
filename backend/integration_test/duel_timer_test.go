@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	clockadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/clock"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	duelusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel"
 )
@@ -27,7 +28,7 @@ func TestDuelTimer_ExpiresDuelAsDraw(t *testing.T) {
 	require.NoError(t, f.duels.CreateDuelPlayerTask(ctx, duel.ID, alice.ID, aliceTask.ID))
 	require.NoError(t, f.duels.CreateDuelPlayerTask(ctx, duel.ID, bob.ID, bobTask.ID))
 
-	registry := duelusecase.NewTimerRegistry(f.mgr, f.duels, f.players, nil)
+	registry := duelusecase.NewTimerRegistry(f.mgr, f.duels, f.players, clockadapter.Real{})
 	expired := make(chan struct{})
 	registry.Start(duel.ID, deadline, func() { close(expired) })
 

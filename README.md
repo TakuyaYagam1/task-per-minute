@@ -108,7 +108,7 @@ CI/CD deploy использует тот же стек с override-файлом
 
 ## Источники контракта
 
-- [OpenAPI](backend/internal/openapi/openapi.yml) - актуальный REST-контракт.
+- [OpenAPI](backend/api/openapi.yml) - актуальный REST-контракт.
 - [Развертывание](docs/ru/deploy.md) - production-конфигурация, cookie-auth,
   CSRF и WebSocket origin policy.
 - [Runbook](docs/ru/runbook.md) - операционные проверки, rollback и runtime

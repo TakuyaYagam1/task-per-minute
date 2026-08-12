@@ -1,5 +1,5 @@
-package: openapi
-output: internal/openapi/types.gen.go
+package: api
+output: internal/adapter/inbound/http/api/types.gen.go
 generate:
   models: true
 output-options:

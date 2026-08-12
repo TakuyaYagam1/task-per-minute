@@ -9,8 +9,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	"github.com/TakuyaYagam1/task-per-minute/internal/repo/persistent"
 )
 
 func TestAdminPlayerEventsPostgres_NotifiesOnPlayerListChanges(t *testing.T) {
@@ -18,13 +18,13 @@ func TestAdminPlayerEventsPostgres_NotifiesOnPlayerListChanges(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	eventsRepo := persistent.NewAdminPlayerEventsPostgres(pool)
+	eventsRepo := postgres.NewAdminPlayerEventsPostgres(pool)
 	events, unsubscribe, err := eventsRepo.SubscribeAdminPlayerChanges(ctx)
 	require.NoError(t, err)
 	defer unsubscribe()
 
-	tx := persistent.NewTxManager(pool)
-	players := persistent.NewPlayerPostgres(tx)
+	tx := postgres.NewTxManager(pool)
+	players := postgres.NewPlayerPostgres(tx)
 
 	player, err := players.Create(ctx, uniq("events_player"))
 	require.NoError(t, err)

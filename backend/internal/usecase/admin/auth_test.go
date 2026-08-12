@@ -13,11 +13,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/memory"
 	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
-	"github.com/TakuyaYagam1/task-per-minute/internal/repo/inmem"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/admin"
-	usecasemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/mocks"
-	clockmocks "github.com/TakuyaYagam1/task-per-minute/pkg/clock/mocks"
+	adminmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/admin/mocks"
 )
 
 const (
@@ -36,14 +35,18 @@ func newAuthCfg() admin.AuthConfig {
 	}
 }
 
-// newStubClock returns a fixed-time clock. Mockery is used here to satisfy the
-// mockery requirement for test doubles, but a struct fake (mutableClock below)
-// is preferred when the test needs to advance time.
-func newStubClock(t *testing.T, now time.Time) *clockmocks.MockClock {
+// newStubClock returns a fixed-time clock.
+func newStubClock(t *testing.T, now time.Time) fixedAuthClock {
 	t.Helper()
-	c := clockmocks.NewMockClock(t)
-	c.EXPECT().Now().Return(now).Maybe()
-	return c
+	return fixedAuthClock{now: now}
+}
+
+type fixedAuthClock struct {
+	now time.Time
+}
+
+func (c fixedAuthClock) Now() time.Time {
+	return c.now
 }
 
 // mutableClock is a tiny in-test fake for tests that advance time between
@@ -121,14 +124,14 @@ func validAdminClaims(now time.Time) jwt.MapClaims {
 	}
 }
 
-func TestAuthUsecase_Login_Success(t *testing.T) {
+func TestAuthUseCase_Login_Success(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC)
 	clk := newStubClock(t, now)
-	rev := usecasemocks.NewMockRevocationStore(t)
+	rev := adminmocks.NewMockRevocationStore(t)
 
-	uc := admin.NewAuthUsecase(newAuthCfg(), clk, rev)
+	uc := admin.NewAuthUseCase(newAuthCfg(), clk, rev)
 
 	pair, err := uc.Login(context.Background(), testPass)
 	require.NoError(t, err)
@@ -140,29 +143,29 @@ func TestAuthUsecase_Login_Success(t *testing.T) {
 	require.Equal(t, now.Add(refreshTTL).Unix(), pair.RefreshExpiresAt.Unix())
 }
 
-func TestAuthUsecase_Login_WrongPassword_ReturnsErrInvalidCredentials(t *testing.T) {
+func TestAuthUseCase_Login_WrongPassword_ReturnsErrInvalidCredentials(t *testing.T) {
 	t.Parallel()
 
 	clk := newStubClock(t, time.Now().UTC())
-	rev := usecasemocks.NewMockRevocationStore(t)
-	uc := admin.NewAuthUsecase(newAuthCfg(), clk, rev)
+	rev := adminmocks.NewMockRevocationStore(t)
+	uc := admin.NewAuthUseCase(newAuthCfg(), clk, rev)
 
 	_, err := uc.Login(context.Background(), "wrong")
 	require.ErrorIs(t, err, apperr.ErrInvalidCredentials)
 }
 
-func TestAuthUsecase_Login_PlaintextRejectsWrongPasswordWithDifferentLength(t *testing.T) {
+func TestAuthUseCase_Login_PlaintextRejectsWrongPasswordWithDifferentLength(t *testing.T) {
 	t.Parallel()
 
 	clk := newStubClock(t, time.Now().UTC())
-	rev := usecasemocks.NewMockRevocationStore(t)
-	uc := admin.NewAuthUsecase(newAuthCfg(), clk, rev)
+	rev := adminmocks.NewMockRevocationStore(t)
+	uc := admin.NewAuthUseCase(newAuthCfg(), clk, rev)
 
 	_, err := uc.Login(context.Background(), testPass+"-extra")
 	require.ErrorIs(t, err, apperr.ErrInvalidCredentials)
 }
 
-func TestAuthUsecase_Login_BcryptHash_AcceptsCorrectPassword(t *testing.T) {
+func TestAuthUseCase_Login_BcryptHash_AcceptsCorrectPassword(t *testing.T) {
 	t.Parallel()
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(testPass), bcrypt.MinCost)
@@ -172,8 +175,8 @@ func TestAuthUsecase_Login_BcryptHash_AcceptsCorrectPassword(t *testing.T) {
 	cfg.AdminPassword = hash
 
 	clk := newStubClock(t, time.Now().UTC())
-	rev := usecasemocks.NewMockRevocationStore(t)
-	uc := admin.NewAuthUsecase(cfg, clk, rev)
+	rev := adminmocks.NewMockRevocationStore(t)
+	uc := admin.NewAuthUseCase(cfg, clk, rev)
 
 	pair, err := uc.Login(context.Background(), testPass)
 	require.NoError(t, err)
@@ -181,7 +184,7 @@ func TestAuthUsecase_Login_BcryptHash_AcceptsCorrectPassword(t *testing.T) {
 	require.NotEmpty(t, pair.RefreshToken)
 }
 
-func TestAuthUsecase_Login_BcryptHash_RejectsWrongPassword(t *testing.T) {
+func TestAuthUseCase_Login_BcryptHash_RejectsWrongPassword(t *testing.T) {
 	t.Parallel()
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(testPass), bcrypt.MinCost)
@@ -191,20 +194,20 @@ func TestAuthUsecase_Login_BcryptHash_RejectsWrongPassword(t *testing.T) {
 	cfg.AdminPassword = hash
 
 	clk := newStubClock(t, time.Now().UTC())
-	rev := usecasemocks.NewMockRevocationStore(t)
-	uc := admin.NewAuthUsecase(cfg, clk, rev)
+	rev := adminmocks.NewMockRevocationStore(t)
+	uc := admin.NewAuthUseCase(cfg, clk, rev)
 
 	_, err = uc.Login(context.Background(), "wrong-password")
 	require.ErrorIs(t, err, apperr.ErrInvalidCredentials)
 }
 
-func TestAuthUsecase_VerifyAccess_AfterLogin(t *testing.T) {
+func TestAuthUseCase_VerifyAccess_AfterLogin(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC)
 	clk := newStubClock(t, now)
-	rev := usecasemocks.NewMockRevocationStore(t)
-	uc := admin.NewAuthUsecase(newAuthCfg(), clk, rev)
+	rev := adminmocks.NewMockRevocationStore(t)
+	uc := admin.NewAuthUseCase(newAuthCfg(), clk, rev)
 
 	pair, err := uc.Login(context.Background(), testPass)
 	require.NoError(t, err)
@@ -217,12 +220,12 @@ func TestAuthUsecase_VerifyAccess_AfterLogin(t *testing.T) {
 	require.NotEmpty(t, claims.JTI)
 }
 
-func TestAuthUsecase_VerifyAccess_RejectsRefreshToken(t *testing.T) {
+func TestAuthUseCase_VerifyAccess_RejectsRefreshToken(t *testing.T) {
 	t.Parallel()
 
 	clk := newStubClock(t, time.Now().UTC())
-	rev := usecasemocks.NewMockRevocationStore(t)
-	uc := admin.NewAuthUsecase(newAuthCfg(), clk, rev)
+	rev := adminmocks.NewMockRevocationStore(t)
+	uc := admin.NewAuthUseCase(newAuthCfg(), clk, rev)
 
 	pair, err := uc.Login(context.Background(), testPass)
 	require.NoError(t, err)
@@ -232,13 +235,13 @@ func TestAuthUsecase_VerifyAccess_RejectsRefreshToken(t *testing.T) {
 		"a refresh token must NOT pass VerifyAccess - kind mismatch")
 }
 
-func TestAuthUsecase_VerifyAccess_ExpiredToken_ReturnsErrTokenExpired(t *testing.T) {
+func TestAuthUseCase_VerifyAccess_ExpiredToken_ReturnsErrTokenExpired(t *testing.T) {
 	t.Parallel()
 
 	issuedAt := time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC)
 	clk := &mutableClock{now: issuedAt}
-	rev := usecasemocks.NewMockRevocationStore(t)
-	uc := admin.NewAuthUsecase(newAuthCfg(), clk, rev)
+	rev := adminmocks.NewMockRevocationStore(t)
+	uc := admin.NewAuthUseCase(newAuthCfg(), clk, rev)
 
 	pair, err := uc.Login(context.Background(), testPass)
 	require.NoError(t, err)
@@ -249,13 +252,13 @@ func TestAuthUsecase_VerifyAccess_ExpiredToken_ReturnsErrTokenExpired(t *testing
 	require.ErrorIs(t, err, apperr.ErrTokenExpired)
 }
 
-func TestAuthUsecase_Refresh_AfterLogin(t *testing.T) {
+func TestAuthUseCase_Refresh_AfterLogin(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC)
 	clk := newStubClock(t, now)
-	rev := usecasemocks.NewMockRevocationStore(t)
-	uc := admin.NewAuthUsecase(newAuthCfg(), clk, rev)
+	rev := adminmocks.NewMockRevocationStore(t)
+	uc := admin.NewAuthUseCase(newAuthCfg(), clk, rev)
 
 	pair, err := uc.Login(context.Background(), testPass)
 	require.NoError(t, err)
@@ -270,12 +273,12 @@ func TestAuthUsecase_Refresh_AfterLogin(t *testing.T) {
 		"refresh rotation must mint a NEW refresh token (different jti)")
 }
 
-func TestAuthUsecase_Refresh_RevokedToken_ReturnsErrTokenRevoked(t *testing.T) {
+func TestAuthUseCase_Refresh_RevokedToken_ReturnsErrTokenRevoked(t *testing.T) {
 	t.Parallel()
 
 	clk := newStubClock(t, time.Now().UTC())
-	rev := usecasemocks.NewMockRevocationStore(t)
-	uc := admin.NewAuthUsecase(newAuthCfg(), clk, rev)
+	rev := adminmocks.NewMockRevocationStore(t)
+	uc := admin.NewAuthUseCase(newAuthCfg(), clk, rev)
 
 	pair, err := uc.Login(context.Background(), testPass)
 	require.NoError(t, err)
@@ -286,13 +289,13 @@ func TestAuthUsecase_Refresh_RevokedToken_ReturnsErrTokenRevoked(t *testing.T) {
 	require.ErrorIs(t, err, apperr.ErrTokenRevoked)
 }
 
-func TestAuthUsecase_Refresh_ReusingOldRefreshTokenReturnsErrTokenRevoked(t *testing.T) {
+func TestAuthUseCase_Refresh_ReusingOldRefreshTokenReturnsErrTokenRevoked(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC)
 	clk := &mutableClock{now: now}
-	rev := inmem.NewRevocation(clk)
-	uc := admin.NewAuthUsecase(newAuthCfg(), clk, rev)
+	rev := memory.NewRevocation(clk)
+	uc := admin.NewAuthUseCase(newAuthCfg(), clk, rev)
 
 	pair, err := uc.Login(context.Background(), testPass)
 	require.NoError(t, err)
@@ -305,13 +308,13 @@ func TestAuthUsecase_Refresh_ReusingOldRefreshTokenReturnsErrTokenRevoked(t *tes
 	require.ErrorIs(t, err, apperr.ErrTokenRevoked)
 }
 
-func TestAuthUsecase_Refresh_ReusingOldRefreshTokenInsideClockSkewLeewayReturnsErrTokenRevoked(t *testing.T) {
+func TestAuthUseCase_Refresh_ReusingOldRefreshTokenInsideClockSkewLeewayReturnsErrTokenRevoked(t *testing.T) {
 	t.Parallel()
 
 	issuedAt := time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC)
 	clk := &mutableClock{now: issuedAt}
-	rev := inmem.NewRevocation(clk)
-	uc := admin.NewAuthUsecase(newAuthCfg(), clk, rev)
+	rev := memory.NewRevocation(clk)
+	uc := admin.NewAuthUseCase(newAuthCfg(), clk, rev)
 
 	pair, err := uc.Login(context.Background(), testPass)
 	require.NoError(t, err)
@@ -326,12 +329,12 @@ func TestAuthUsecase_Refresh_ReusingOldRefreshTokenInsideClockSkewLeewayReturnsE
 	require.ErrorIs(t, err, apperr.ErrTokenRevoked)
 }
 
-func TestAuthUsecase_Refresh_RejectsAccessToken(t *testing.T) {
+func TestAuthUseCase_Refresh_RejectsAccessToken(t *testing.T) {
 	t.Parallel()
 
 	clk := newStubClock(t, time.Now().UTC())
-	rev := usecasemocks.NewMockRevocationStore(t)
-	uc := admin.NewAuthUsecase(newAuthCfg(), clk, rev)
+	rev := adminmocks.NewMockRevocationStore(t)
+	uc := admin.NewAuthUseCase(newAuthCfg(), clk, rev)
 
 	pair, err := uc.Login(context.Background(), testPass)
 	require.NoError(t, err)
@@ -341,12 +344,12 @@ func TestAuthUsecase_Refresh_RejectsAccessToken(t *testing.T) {
 		"access token in Refresh must be rejected by kind check")
 }
 
-func TestAuthUsecase_Refresh_RevocationStoreFailure_PropagatesError(t *testing.T) {
+func TestAuthUseCase_Refresh_RevocationStoreFailure_PropagatesError(t *testing.T) {
 	t.Parallel()
 
 	clk := newStubClock(t, time.Now().UTC())
-	rev := usecasemocks.NewMockRevocationStore(t)
-	uc := admin.NewAuthUsecase(newAuthCfg(), clk, rev)
+	rev := adminmocks.NewMockRevocationStore(t)
+	uc := admin.NewAuthUseCase(newAuthCfg(), clk, rev)
 
 	pair, err := uc.Login(context.Background(), testPass)
 	require.NoError(t, err)
@@ -359,13 +362,13 @@ func TestAuthUsecase_Refresh_RevocationStoreFailure_PropagatesError(t *testing.T
 	require.Contains(t, err.Error(), "AuthUsecase - Refresh - RevocationStore.Revoke")
 }
 
-func TestAuthUsecase_Logout_ReusingRefreshTokenReturnsErrTokenRevoked(t *testing.T) {
+func TestAuthUseCase_Logout_ReusingRefreshTokenReturnsErrTokenRevoked(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC)
 	clk := &mutableClock{now: now}
-	rev := inmem.NewRevocation(clk)
-	uc := admin.NewAuthUsecase(newAuthCfg(), clk, rev)
+	rev := memory.NewRevocation(clk)
+	uc := admin.NewAuthUseCase(newAuthCfg(), clk, rev)
 
 	pair, err := uc.Login(context.Background(), testPass)
 	require.NoError(t, err)
@@ -374,13 +377,13 @@ func TestAuthUsecase_Logout_ReusingRefreshTokenReturnsErrTokenRevoked(t *testing
 	require.ErrorIs(t, uc.Logout(context.Background(), pair.RefreshToken), apperr.ErrTokenRevoked)
 }
 
-func TestAuthUsecase_Logout_RevokesAccessToken(t *testing.T) {
+func TestAuthUseCase_Logout_RevokesAccessToken(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC)
 	clk := &mutableClock{now: now}
-	rev := inmem.NewRevocation(clk)
-	uc := admin.NewAuthUsecase(newAuthCfg(), clk, rev)
+	rev := memory.NewRevocation(clk)
+	uc := admin.NewAuthUseCase(newAuthCfg(), clk, rev)
 
 	pair, err := uc.Login(context.Background(), testPass)
 	require.NoError(t, err)
@@ -390,13 +393,13 @@ func TestAuthUsecase_Logout_RevokesAccessToken(t *testing.T) {
 	require.ErrorIs(t, err, apperr.ErrTokenRevoked)
 }
 
-func TestAuthUsecase_Logout_ReusingRefreshTokenInsideClockSkewLeewayReturnsErrTokenRevoked(t *testing.T) {
+func TestAuthUseCase_Logout_ReusingRefreshTokenInsideClockSkewLeewayReturnsErrTokenRevoked(t *testing.T) {
 	t.Parallel()
 
 	issuedAt := time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC)
 	clk := &mutableClock{now: issuedAt}
-	rev := inmem.NewRevocation(clk)
-	uc := admin.NewAuthUsecase(newAuthCfg(), clk, rev)
+	rev := memory.NewRevocation(clk)
+	uc := admin.NewAuthUseCase(newAuthCfg(), clk, rev)
 
 	pair, err := uc.Login(context.Background(), testPass)
 	require.NoError(t, err)
@@ -407,44 +410,44 @@ func TestAuthUsecase_Logout_ReusingRefreshTokenInsideClockSkewLeewayReturnsErrTo
 	require.ErrorIs(t, uc.Logout(context.Background(), pair.RefreshToken), apperr.ErrTokenRevoked)
 }
 
-func TestAuthUsecase_VerifyAccess_BadSignature_ReturnsErrInvalidCredentials(t *testing.T) {
+func TestAuthUseCase_VerifyAccess_BadSignature_ReturnsErrInvalidCredentials(t *testing.T) {
 	t.Parallel()
 
 	clk := newStubClock(t, time.Now().UTC())
-	rev := usecasemocks.NewMockRevocationStore(t)
-	uc := admin.NewAuthUsecase(newAuthCfg(), clk, rev)
+	rev := adminmocks.NewMockRevocationStore(t)
+	uc := admin.NewAuthUseCase(newAuthCfg(), clk, rev)
 
 	_, err := uc.VerifyAccess(context.Background(), "garbage.not.a.jwt")
 	require.ErrorIs(t, err, apperr.ErrInvalidCredentials)
 }
 
-func TestAuthUsecase_VerifyAccess_DifferentSecret_ReturnsErrInvalidCredentials(t *testing.T) {
+func TestAuthUseCase_VerifyAccess_DifferentSecret_ReturnsErrInvalidCredentials(t *testing.T) {
 	t.Parallel()
 
 	now := time.Now().UTC()
 	clk := newStubClock(t, now)
-	rev := usecasemocks.NewMockRevocationStore(t)
+	rev := adminmocks.NewMockRevocationStore(t)
 
-	uc := admin.NewAuthUsecase(newAuthCfg(), clk, rev)
+	uc := admin.NewAuthUseCase(newAuthCfg(), clk, rev)
 	pair, err := uc.Login(context.Background(), testPass)
 	require.NoError(t, err)
 
 	cfg2 := newAuthCfg()
 	cfg2.Secret = []byte("ffffeeeeddddccccbbbbaaaa9999888877776666555544443333222211110000")
-	uc2 := admin.NewAuthUsecase(cfg2, clk, rev)
+	uc2 := admin.NewAuthUseCase(cfg2, clk, rev)
 
 	_, err = uc2.VerifyAccess(context.Background(), pair.AccessToken)
 	require.ErrorIs(t, err, apperr.ErrInvalidCredentials,
 		"token signed with a different secret must be rejected")
 }
 
-func TestAuthUsecase_VerifyAccess_ClockSkewWithinLeeway_Accepted(t *testing.T) {
+func TestAuthUseCase_VerifyAccess_ClockSkewWithinLeeway_Accepted(t *testing.T) {
 	t.Parallel()
 
 	issuedAt := time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC)
 	clk := &mutableClock{now: issuedAt}
-	rev := usecasemocks.NewMockRevocationStore(t)
-	uc := admin.NewAuthUsecase(newAuthCfg(), clk, rev)
+	rev := adminmocks.NewMockRevocationStore(t)
+	uc := admin.NewAuthUseCase(newAuthCfg(), clk, rev)
 
 	pair, err := uc.Login(context.Background(), testPass)
 	require.NoError(t, err)
@@ -458,13 +461,13 @@ func TestAuthUsecase_VerifyAccess_ClockSkewWithinLeeway_Accepted(t *testing.T) {
 	require.Equal(t, admin.TokenKindAccess, claims.Kind)
 }
 
-func TestAuthUsecase_VerifyAccess_RevokedToken_ReturnsErrTokenRevoked(t *testing.T) {
+func TestAuthUseCase_VerifyAccess_RevokedToken_ReturnsErrTokenRevoked(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC)
 	clk := newStubClock(t, now)
-	rev := usecasemocks.NewMockRevocationStore(t)
-	uc := admin.NewAuthUsecase(newAuthCfg(), clk, rev)
+	rev := adminmocks.NewMockRevocationStore(t)
+	uc := admin.NewAuthUseCase(newAuthCfg(), clk, rev)
 
 	pair, err := uc.Login(context.Background(), testPass)
 	require.NoError(t, err)
@@ -475,13 +478,13 @@ func TestAuthUsecase_VerifyAccess_RevokedToken_ReturnsErrTokenRevoked(t *testing
 	require.ErrorIs(t, err, apperr.ErrTokenRevoked)
 }
 
-func TestAuthUsecase_VerifyAccess_RevocationStoreFailure_PropagatesError(t *testing.T) {
+func TestAuthUseCase_VerifyAccess_RevocationStoreFailure_PropagatesError(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC)
 	clk := newStubClock(t, now)
-	rev := usecasemocks.NewMockRevocationStore(t)
-	uc := admin.NewAuthUsecase(newAuthCfg(), clk, rev)
+	rev := adminmocks.NewMockRevocationStore(t)
+	uc := admin.NewAuthUseCase(newAuthCfg(), clk, rev)
 
 	pair, err := uc.Login(context.Background(), testPass)
 	require.NoError(t, err)
@@ -494,13 +497,13 @@ func TestAuthUsecase_VerifyAccess_RevocationStoreFailure_PropagatesError(t *test
 	require.Contains(t, err.Error(), "AuthUsecase - VerifyAccess - RevocationStore.IsRevoked")
 }
 
-func TestAuthUsecase_VerifyAccess_UnknownKind_ReturnsErrInvalidCredentials(t *testing.T) {
+func TestAuthUseCase_VerifyAccess_UnknownKind_ReturnsErrInvalidCredentials(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC)
 	clk := newStubClock(t, now)
-	rev := usecasemocks.NewMockRevocationStore(t)
-	uc := admin.NewAuthUsecase(newAuthCfg(), clk, rev)
+	rev := adminmocks.NewMockRevocationStore(t)
+	uc := admin.NewAuthUseCase(newAuthCfg(), clk, rev)
 
 	bogus := signWithKind(t, []byte(testSecret), "bogus", now, now.Add(accessTTL))
 
@@ -508,13 +511,13 @@ func TestAuthUsecase_VerifyAccess_UnknownKind_ReturnsErrInvalidCredentials(t *te
 	require.ErrorIs(t, err, apperr.ErrInvalidCredentials)
 }
 
-func TestAuthUsecase_VerifyAccess_MissingExp_ReturnsErrInvalidCredentials(t *testing.T) {
+func TestAuthUseCase_VerifyAccess_MissingExp_ReturnsErrInvalidCredentials(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC)
 	clk := newStubClock(t, now)
-	rev := usecasemocks.NewMockRevocationStore(t)
-	uc := admin.NewAuthUsecase(newAuthCfg(), clk, rev)
+	rev := adminmocks.NewMockRevocationStore(t)
+	uc := admin.NewAuthUseCase(newAuthCfg(), clk, rev)
 
 	claims := validAdminClaims(now)
 	delete(claims, "exp")
@@ -524,13 +527,13 @@ func TestAuthUsecase_VerifyAccess_MissingExp_ReturnsErrInvalidCredentials(t *tes
 	require.ErrorIs(t, err, apperr.ErrInvalidCredentials)
 }
 
-func TestAuthUsecase_VerifyAccess_MissingIssuedAt_ReturnsErrInvalidCredentials(t *testing.T) {
+func TestAuthUseCase_VerifyAccess_MissingIssuedAt_ReturnsErrInvalidCredentials(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC)
 	clk := newStubClock(t, now)
-	rev := usecasemocks.NewMockRevocationStore(t)
-	uc := admin.NewAuthUsecase(newAuthCfg(), clk, rev)
+	rev := adminmocks.NewMockRevocationStore(t)
+	uc := admin.NewAuthUseCase(newAuthCfg(), clk, rev)
 
 	claims := validAdminClaims(now)
 	delete(claims, "iat")
@@ -540,13 +543,13 @@ func TestAuthUsecase_VerifyAccess_MissingIssuedAt_ReturnsErrInvalidCredentials(t
 	require.ErrorIs(t, err, apperr.ErrInvalidCredentials)
 }
 
-func TestAuthUsecase_VerifyAccess_ExpiresBeforeIssuedAt_ReturnsErrInvalidCredentials(t *testing.T) {
+func TestAuthUseCase_VerifyAccess_ExpiresBeforeIssuedAt_ReturnsErrInvalidCredentials(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC)
 	clk := newStubClock(t, now)
-	rev := usecasemocks.NewMockRevocationStore(t)
-	uc := admin.NewAuthUsecase(newAuthCfg(), clk, rev)
+	rev := adminmocks.NewMockRevocationStore(t)
+	uc := admin.NewAuthUseCase(newAuthCfg(), clk, rev)
 
 	claims := validAdminClaims(now)
 	claims["exp"] = now.Unix()
@@ -556,13 +559,13 @@ func TestAuthUsecase_VerifyAccess_ExpiresBeforeIssuedAt_ReturnsErrInvalidCredent
 	require.ErrorIs(t, err, apperr.ErrInvalidCredentials)
 }
 
-func TestAuthUsecase_VerifyAccess_WrongAlgorithm_ReturnsErrInvalidCredentials(t *testing.T) {
+func TestAuthUseCase_VerifyAccess_WrongAlgorithm_ReturnsErrInvalidCredentials(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC)
 	clk := newStubClock(t, now)
-	rev := usecasemocks.NewMockRevocationStore(t)
-	uc := admin.NewAuthUsecase(newAuthCfg(), clk, rev)
+	rev := adminmocks.NewMockRevocationStore(t)
+	uc := admin.NewAuthUseCase(newAuthCfg(), clk, rev)
 
 	token := signWithClaims(t, []byte(testSecret), jwt.SigningMethodHS512, validAdminClaims(now))
 
@@ -570,13 +573,13 @@ func TestAuthUsecase_VerifyAccess_WrongAlgorithm_ReturnsErrInvalidCredentials(t 
 	require.ErrorIs(t, err, apperr.ErrInvalidCredentials)
 }
 
-func TestAuthUsecase_VerifyAccess_ForeignSubject_ReturnsErrInvalidCredentials(t *testing.T) {
+func TestAuthUseCase_VerifyAccess_ForeignSubject_ReturnsErrInvalidCredentials(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC)
 	clk := newStubClock(t, now)
-	rev := usecasemocks.NewMockRevocationStore(t)
-	uc := admin.NewAuthUsecase(newAuthCfg(), clk, rev)
+	rev := adminmocks.NewMockRevocationStore(t)
+	uc := admin.NewAuthUseCase(newAuthCfg(), clk, rev)
 
 	bogus := signWithSubject(t, []byte(testSecret), "not-admin", admin.TokenKindAccess, now, now.Add(accessTTL))
 

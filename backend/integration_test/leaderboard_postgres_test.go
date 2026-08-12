@@ -10,8 +10,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	"github.com/TakuyaYagam1/task-per-minute/internal/repo/persistent"
 )
 
 // fixedFinishedDuel injects a finished duel with explicit started_at and the
@@ -42,12 +42,12 @@ func markSolvedRaw(t *testing.T, duelID, playerID, taskID uuid.UUID, solvedAt ti
 	require.NoError(t, err)
 }
 
-func filterRows(rows []persistent.LeaderboardRow, ids ...uuid.UUID) []persistent.LeaderboardRow {
+func filterRows(rows []postgres.LeaderboardRow, ids ...uuid.UUID) []postgres.LeaderboardRow {
 	want := make(map[uuid.UUID]struct{}, len(ids))
 	for _, id := range ids {
 		want[id] = struct{}{}
 	}
-	out := make([]persistent.LeaderboardRow, 0, len(ids))
+	out := make([]postgres.LeaderboardRow, 0, len(ids))
 	for _, r := range rows {
 		if _, ok := want[r.PlayerID]; ok {
 			out = append(out, r)
@@ -56,7 +56,7 @@ func filterRows(rows []persistent.LeaderboardRow, ids ...uuid.UUID) []persistent
 	return out
 }
 
-func containsPlayer(rows []persistent.LeaderboardRow, id uuid.UUID) bool {
+func containsPlayer(rows []postgres.LeaderboardRow, id uuid.UUID) bool {
 	for _, r := range rows {
 		if r.PlayerID == id {
 			return true
@@ -94,7 +94,7 @@ func TestLeaderboardRepo_TopStats_AggregatesSolvedWins(t *testing.T) {
 	mine := filterRows(all, alice.ID, bob.ID, charlie.ID)
 	require.Len(t, mine, 2, "only alice and bob have wins among our trio")
 
-	by := make(map[uuid.UUID]persistent.LeaderboardRow, 2)
+	by := make(map[uuid.UUID]postgres.LeaderboardRow, 2)
 	for _, r := range mine {
 		by[r.PlayerID] = r
 	}
@@ -124,7 +124,7 @@ func TestLeaderboardRepo_TopStats_ExcludesUnsolvedWinnerRows(t *testing.T) {
 	rows, err := f.board.TopStats(ctx, 50)
 	require.NoError(t, err)
 
-	byUsername := make(map[string]persistent.LeaderboardRow, 2)
+	byUsername := make(map[string]postgres.LeaderboardRow, 2)
 	for _, row := range rows {
 		byUsername[row.Username] = row
 	}

@@ -15,22 +15,22 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	restmw "github.com/TakuyaYagam1/task-per-minute/internal/controller/restapi/middleware"
-	wscontroller "github.com/TakuyaYagam1/task-per-minute/internal/controller/websocket"
+	restmw "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/middleware"
+	wsadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket"
+	clockadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/clock"
+	redisadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/redis"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	redisrepo "github.com/TakuyaYagam1/task-per-minute/internal/repo/redis"
 	duelusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel"
 	playerusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/player"
-	"github.com/TakuyaYagam1/task-per-minute/pkg/clock"
 )
 
 const wsTestTimeout = 15 * time.Second
 
 type websocketFixture struct {
 	*duelFixture
-	playerUC   *playerusecase.PlayerUsecase
-	boardStore *redisrepo.LeaderboardRedis
-	hubs       *wscontroller.HubRegistry
+	playerUC   *playerusecase.UseCase
+	boardStore *redisadapter.LeaderboardRedis
+	hubs       *wsadapter.HubRegistry
 	hints      *duelusecase.HintScheduler
 	httpServer *httptest.Server
 }
@@ -57,10 +57,10 @@ func newWebSocketFixtureFromDuelFixture(
 	t.Helper()
 
 	redisClient := sharedRedis(t).client
-	queue := redisrepo.NewMatchmakingRedis(redisClient, "matchmaking:"+uniq("q"))
-	board := redisrepo.NewLeaderboardRedis(redisClient, "leaderboard:"+uniq("z"))
-	playerUC := playerusecase.NewPlayerUsecase(f.mgr, f.players, f.duels)
-	matchmaking := duelusecase.NewMatchmakingUsecase(
+	queue := redisadapter.NewMatchmakingRedis(redisClient, "matchmaking:"+uniq("q"))
+	board := redisadapter.NewLeaderboardRedis(redisClient, "leaderboard:"+uniq("z"))
+	playerUC := playerusecase.NewUseCase(f.mgr, f.players, f.duels, clockadapter.Real{})
+	matchmaking := duelusecase.NewMatchmakingUseCase(
 		f.mgr,
 		queue,
 		f.players,
@@ -68,42 +68,42 @@ func newWebSocketFixtureFromDuelFixture(
 		f.history,
 		f.duels,
 		nil,
-		clock.Real{},
+		clockadapter.Real{},
 	)
-	timers := duelusecase.NewTimerRegistry(f.mgr, f.duels, f.players, nil)
-	hints := duelusecase.NewHintScheduler(clock.Real{}, nil)
-	flags := duelusecase.NewFlagSubmitUsecase(
+	timers := duelusecase.NewTimerRegistry(f.mgr, f.duels, f.players, clockadapter.Real{})
+	hints := duelusecase.NewHintScheduler(clockadapter.Real{}, nil)
+	flags := duelusecase.NewFlagSubmitUseCase(
 		f.mgr,
 		f.duels,
 		f.players,
 		f.history,
 		board,
-		clock.Real{},
+		clockadapter.Real{},
 		timers,
 	)
-	hubs := wscontroller.NewHubRegistry()
-	server := wscontroller.NewServer(
+	hubs := wsadapter.NewHubRegistry()
+	server := wsadapter.NewServer(
 		f.players,
 		matchmaking,
 		flags,
 		hubs,
-		wscontroller.WithHubCloseDelay(20*time.Millisecond),
-		wscontroller.WithDisconnectGrace(0),
-		wscontroller.WithHintScheduler(hints),
-		wscontroller.WithTimerStopper(timers),
-		wscontroller.WithTaskResolver(f.duels, nil),
+		wsadapter.WithHubCloseDelay(20*time.Millisecond),
+		wsadapter.WithDisconnectGrace(0),
+		wsadapter.WithHintScheduler(hints),
+		wsadapter.WithTimerStopper(timers),
+		wsadapter.WithTaskResolver(f.duels, nil),
 	)
 	reconnect := duelusecase.NewReconnectManager(
 		f.mgr,
 		f.duels,
 		f.players,
-		wscontroller.NewPauseableDuelTimers(timers, hints),
+		wsadapter.NewPauseableDuelTimers(timers, hints),
 		server.Broadcaster(),
-		nil,
+		clockadapter.Real{},
 		duelusecase.WithReconnectWindow(reconnectWindow),
 		duelusecase.WithLeaderboardStore(board),
 	)
-	wscontroller.WithReconnectManager(reconnect)(server)
+	wsadapter.WithReconnectManager(reconnect)(server)
 	httpServer := httptest.NewServer(server)
 	t.Cleanup(httpServer.Close)
 	// Drain leaked time.AfterFunc goroutines from this server before the next
@@ -142,15 +142,15 @@ func (f *websocketFixture) matchPlayers(t *testing.T, taskTimeLimit int) wsMatch
 	aliceConn := f.connect(t, *alice.SessionToken)
 	bobConn := f.connect(t, *bob.SessionToken)
 
-	writeWSEvent(t, aliceConn, wscontroller.EventJoinQueue, nil)
-	require.Equal(t, wscontroller.EventQueueJoined, readWSEventType(t, aliceConn, wscontroller.EventQueueJoined).Type)
-	writeWSEvent(t, bobConn, wscontroller.EventJoinQueue, nil)
-	require.Equal(t, wscontroller.EventQueueJoined, readWSEventType(t, bobConn, wscontroller.EventQueueJoined).Type)
+	writeWSEvent(t, aliceConn, wsadapter.EventJoinQueue, nil)
+	require.Equal(t, wsadapter.EventQueueJoined, readWSEventType(t, aliceConn, wsadapter.EventQueueJoined).Type)
+	writeWSEvent(t, bobConn, wsadapter.EventJoinQueue, nil)
+	require.Equal(t, wsadapter.EventQueueJoined, readWSEventType(t, bobConn, wsadapter.EventQueueJoined).Type)
 
-	aliceMatch := readWSEventType(t, aliceConn, wscontroller.EventMatchFound)
-	require.Equal(t, wscontroller.EventTaskAssigned, readWSEventType(t, aliceConn, wscontroller.EventTaskAssigned).Type)
-	bobMatch := readWSEventType(t, bobConn, wscontroller.EventMatchFound)
-	require.Equal(t, wscontroller.EventTaskAssigned, readWSEventType(t, bobConn, wscontroller.EventTaskAssigned).Type)
+	aliceMatch := readWSEventType(t, aliceConn, wsadapter.EventMatchFound)
+	require.Equal(t, wsadapter.EventTaskAssigned, readWSEventType(t, aliceConn, wsadapter.EventTaskAssigned).Type)
+	bobMatch := readWSEventType(t, bobConn, wsadapter.EventMatchFound)
+	require.Equal(t, wsadapter.EventTaskAssigned, readWSEventType(t, bobConn, wsadapter.EventTaskAssigned).Type)
 
 	duelID := decodeMatchDuelID(t, aliceMatch)
 	require.Equal(t, duelID, decodeMatchDuelID(t, bobMatch))
@@ -192,7 +192,7 @@ type wsTestEvent struct {
 func writeWSEvent(t *testing.T, conn *coderws.Conn, typ string, payload any) {
 	t.Helper()
 
-	data, err := json.Marshal(wscontroller.Event{Type: typ, Payload: payload})
+	data, err := json.Marshal(wsadapter.Event{Type: typ, Payload: payload})
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithTimeout(context.Background(), wsTestTimeout)
@@ -226,63 +226,63 @@ func readWSEventType(t *testing.T, conn *coderws.Conn, typ string) wsTestEvent {
 
 func decodeMatchDuelID(t *testing.T, event wsTestEvent) uuid.UUID {
 	t.Helper()
-	var payload wscontroller.MatchFoundPayload
+	var payload wsadapter.MatchFoundPayload
 	require.NoError(t, json.Unmarshal(event.Payload, &payload))
 	return payload.Duel.ID
 }
 
-func decodeMatchFound(t *testing.T, event wsTestEvent) wscontroller.MatchFoundPayload {
+func decodeMatchFound(t *testing.T, event wsTestEvent) wsadapter.MatchFoundPayload {
 	t.Helper()
-	var payload wscontroller.MatchFoundPayload
+	var payload wsadapter.MatchFoundPayload
 	require.NoError(t, json.Unmarshal(event.Payload, &payload))
 	return payload
 }
 
 func decodeAssignmentDuelID(t *testing.T, event wsTestEvent) uuid.UUID {
 	t.Helper()
-	var payload wscontroller.TaskAssignedPayload
+	var payload wsadapter.TaskAssignedPayload
 	require.NoError(t, json.Unmarshal(event.Payload, &payload))
 	return payload.DuelID
 }
 
-func decodeTaskAssigned(t *testing.T, event wsTestEvent) wscontroller.TaskAssignedPayload {
+func decodeTaskAssigned(t *testing.T, event wsTestEvent) wsadapter.TaskAssignedPayload {
 	t.Helper()
-	var payload wscontroller.TaskAssignedPayload
+	var payload wsadapter.TaskAssignedPayload
 	require.NoError(t, json.Unmarshal(event.Payload, &payload))
 	return payload
 }
 
-func decodeFlagResult(t *testing.T, event wsTestEvent) wscontroller.FlagResultPayload {
+func decodeFlagResult(t *testing.T, event wsTestEvent) wsadapter.FlagResultPayload {
 	t.Helper()
-	var payload wscontroller.FlagResultPayload
+	var payload wsadapter.FlagResultPayload
 	require.NoError(t, json.Unmarshal(event.Payload, &payload))
 	return payload
 }
 
-func decodeOpponentSolved(t *testing.T, event wsTestEvent) wscontroller.OpponentSolvedPayload {
+func decodeOpponentSolved(t *testing.T, event wsTestEvent) wsadapter.OpponentSolvedPayload {
 	t.Helper()
-	var payload wscontroller.OpponentSolvedPayload
+	var payload wsadapter.OpponentSolvedPayload
 	require.NoError(t, json.Unmarshal(event.Payload, &payload))
 	return payload
 }
 
-func decodeDuelFinished(t *testing.T, event wsTestEvent) wscontroller.DuelFinishedPayload {
+func decodeDuelFinished(t *testing.T, event wsTestEvent) wsadapter.DuelFinishedPayload {
 	t.Helper()
-	var payload wscontroller.DuelFinishedPayload
+	var payload wsadapter.DuelFinishedPayload
 	require.NoError(t, json.Unmarshal(event.Payload, &payload))
 	return payload
 }
 
-func decodeHintUnlocked(t *testing.T, event wsTestEvent) wscontroller.HintUnlockedPayload {
+func decodeHintUnlocked(t *testing.T, event wsTestEvent) wsadapter.HintUnlockedPayload {
 	t.Helper()
-	var payload wscontroller.HintUnlockedPayload
+	var payload wsadapter.HintUnlockedPayload
 	require.NoError(t, json.Unmarshal(event.Payload, &payload))
 	return payload
 }
 
 func decodeWinnerID(t *testing.T, event wsTestEvent) uuid.UUID {
 	t.Helper()
-	var payload wscontroller.DuelFinishedPayload
+	var payload wsadapter.DuelFinishedPayload
 	require.NoError(t, json.Unmarshal(event.Payload, &payload))
 	if payload.Duel.WinnerID == nil {
 		return uuid.Nil
@@ -290,23 +290,23 @@ func decodeWinnerID(t *testing.T, event wsTestEvent) uuid.UUID {
 	return *payload.Duel.WinnerID
 }
 
-func decodeOpponentDisconnected(t *testing.T, event wsTestEvent) wscontroller.OpponentDisconnectedPayload {
+func decodeOpponentDisconnected(t *testing.T, event wsTestEvent) wsadapter.OpponentDisconnectedPayload {
 	t.Helper()
-	var payload wscontroller.OpponentDisconnectedPayload
+	var payload wsadapter.OpponentDisconnectedPayload
 	require.NoError(t, json.Unmarshal(event.Payload, &payload))
 	return payload
 }
 
-func decodeOpponentReconnected(t *testing.T, event wsTestEvent) wscontroller.OpponentReconnectedPayload {
+func decodeOpponentReconnected(t *testing.T, event wsTestEvent) wsadapter.OpponentReconnectedPayload {
 	t.Helper()
-	var payload wscontroller.OpponentReconnectedPayload
+	var payload wsadapter.OpponentReconnectedPayload
 	require.NoError(t, json.Unmarshal(event.Payload, &payload))
 	return payload
 }
 
-func decodeDuelResume(t *testing.T, event wsTestEvent) wscontroller.DuelResumePayload {
+func decodeDuelResume(t *testing.T, event wsTestEvent) wsadapter.DuelResumePayload {
 	t.Helper()
-	var payload wscontroller.DuelResumePayload
+	var payload wsadapter.DuelResumePayload
 	require.NoError(t, json.Unmarshal(event.Payload, &payload))
 	return payload
 }

@@ -11,13 +11,12 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	"github.com/TakuyaYagam1/task-per-minute/internal/usecase"
 )
 
-func TestPlayerUsecase_UpdatePlayerWritesAuditAndInvalidatesLeaderboard(t *testing.T) {
+func TestPlayerUseCase_UpdatePlayerWritesAuditAndInvalidatesLeaderboard(t *testing.T) {
 	now := time.Date(2026, 5, 6, 12, 0, 0, 0, time.UTC)
 	playerID := uuid.New()
-	repo := newAdminPlayerRepoFake(usecase.AdminPlayerRecord{
+	repo := newAdminPlayerRepoFake(PlayerRecord{
 		PlayerID:           playerID,
 		Username:           "alice",
 		Status:             domain.PlayerStatusIdle,
@@ -26,13 +25,13 @@ func TestPlayerUsecase_UpdatePlayerWritesAuditAndInvalidatesLeaderboard(t *testi
 		AverageSolveTimeMs: 1500,
 	})
 	leaderboard := &leaderboardInvalidatorSpy{}
-	uc := NewPlayerUsecase(txPassthrough{}, repo, leaderboard, fixedAdminClock{now: now})
+	uc := NewPlayerUseCase(txPassthrough{}, repo, leaderboard, fixedAdminClock{now: now})
 
-	updated, err := uc.UpdatePlayer(t.Context(), playerID, usecase.AdminPlayerInput{
+	updated, err := uc.UpdatePlayer(t.Context(), playerID, PlayerInput{
 		Username:           "renamed",
 		Wins:               3,
 		AverageSolveTimeMs: 90000,
-	}, usecase.AdminActor{Subject: "admin", JTI: "access-jti"})
+	}, Actor{Subject: "admin", JTI: "access-jti"})
 
 	require.NoError(t, err)
 	require.Equal(t, "renamed", updated.Username)
@@ -42,7 +41,7 @@ func TestPlayerUsecase_UpdatePlayerWritesAuditAndInvalidatesLeaderboard(t *testi
 	require.Equal(t, 1, leaderboard.invalidations)
 	require.Len(t, repo.audit, 1)
 	audit := repo.audit[0]
-	require.Equal(t, usecase.AdminPlayerAuditActionUpdate, audit.Action)
+	require.Equal(t, PlayerAuditActionUpdate, audit.Action)
 	require.Equal(t, "admin", audit.Actor.Subject)
 	require.Equal(t, "access-jti", audit.Actor.JTI)
 	require.Equal(t, now, audit.CreatedAt)
@@ -56,10 +55,10 @@ func TestPlayerUsecase_UpdatePlayerWritesAuditAndInvalidatesLeaderboard(t *testi
 	require.False(t, audit.AfterState.Deleted)
 }
 
-func TestPlayerUsecase_DeletePlayerWritesAuditAndInvalidatesLeaderboard(t *testing.T) {
+func TestPlayerUseCase_DeletePlayerWritesAuditAndInvalidatesLeaderboard(t *testing.T) {
 	now := time.Date(2026, 5, 6, 12, 0, 0, 0, time.UTC)
 	playerID := uuid.New()
-	repo := newAdminPlayerRepoFake(usecase.AdminPlayerRecord{
+	repo := newAdminPlayerRepoFake(PlayerRecord{
 		PlayerID:           playerID,
 		Username:           "alice",
 		Status:             domain.PlayerStatusIdle,
@@ -69,9 +68,9 @@ func TestPlayerUsecase_DeletePlayerWritesAuditAndInvalidatesLeaderboard(t *testi
 		StatsOverridden:    true,
 	})
 	leaderboard := &leaderboardInvalidatorSpy{}
-	uc := NewPlayerUsecase(txPassthrough{}, repo, leaderboard, fixedAdminClock{now: now})
+	uc := NewPlayerUseCase(txPassthrough{}, repo, leaderboard, fixedAdminClock{now: now})
 
-	err := uc.DeletePlayer(t.Context(), playerID, usecase.AdminActor{Subject: "admin", JTI: "delete-jti"})
+	err := uc.DeletePlayer(t.Context(), playerID, Actor{Subject: "admin", JTI: "delete-jti"})
 
 	require.NoError(t, err)
 	require.True(t, repo.deleted)
@@ -80,7 +79,7 @@ func TestPlayerUsecase_DeletePlayerWritesAuditAndInvalidatesLeaderboard(t *testi
 	require.Equal(t, 1, leaderboard.invalidations)
 	require.Len(t, repo.audit, 1)
 	audit := repo.audit[0]
-	require.Equal(t, usecase.AdminPlayerAuditActionDelete, audit.Action)
+	require.Equal(t, PlayerAuditActionDelete, audit.Action)
 	require.Equal(t, "alice", audit.BeforeState.Username)
 	require.False(t, audit.BeforeState.Deleted)
 	require.Equal(t, repo.deletedUsername, audit.AfterState.Username)
@@ -89,40 +88,40 @@ func TestPlayerUsecase_DeletePlayerWritesAuditAndInvalidatesLeaderboard(t *testi
 	require.Equal(t, int64(45000), audit.AfterState.AverageSolveTimeMs)
 }
 
-func TestPlayerUsecase_InvalidInputDoesNotWriteAudit(t *testing.T) {
+func TestPlayerUseCase_InvalidInputDoesNotWriteAudit(t *testing.T) {
 	now := time.Date(2026, 5, 6, 12, 0, 0, 0, time.UTC)
 	playerID := uuid.New()
-	repo := newAdminPlayerRepoFake(usecase.AdminPlayerRecord{
+	repo := newAdminPlayerRepoFake(PlayerRecord{
 		PlayerID:  playerID,
 		Username:  "alice",
 		Status:    domain.PlayerStatusIdle,
 		CreatedAt: now.Add(-time.Hour),
 	})
 	leaderboard := &leaderboardInvalidatorSpy{}
-	uc := NewPlayerUsecase(txPassthrough{}, repo, leaderboard, fixedAdminClock{now: now})
+	uc := NewPlayerUseCase(txPassthrough{}, repo, leaderboard, fixedAdminClock{now: now})
 
-	_, err := uc.UpdatePlayer(t.Context(), playerID, usecase.AdminPlayerInput{
+	_, err := uc.UpdatePlayer(t.Context(), playerID, PlayerInput{
 		Username:           "alice",
 		Wins:               1,
 		AverageSolveTimeMs: 0,
-	}, usecase.AdminActor{Subject: "admin", JTI: "access-jti"})
+	}, Actor{Subject: "admin", JTI: "access-jti"})
 
 	require.ErrorIs(t, err, apperr.ErrValidation)
 	require.Empty(t, repo.audit)
 	require.Equal(t, 0, leaderboard.invalidations)
 
-	err = uc.DeletePlayer(t.Context(), playerID, usecase.AdminActor{})
+	err = uc.DeletePlayer(t.Context(), playerID, Actor{})
 
 	require.ErrorIs(t, err, apperr.ErrInvalidCredentials)
 	require.Empty(t, repo.audit)
 	require.Equal(t, 0, leaderboard.invalidations)
 }
 
-func TestPlayerUsecase_ListPlayerAuditFindsDeletedPlayer(t *testing.T) {
+func TestPlayerUseCase_ListPlayerAuditFindsDeletedPlayer(t *testing.T) {
 	now := time.Date(2026, 5, 6, 12, 0, 0, 0, time.UTC)
 	playerID := uuid.New()
 	deletedAt := now.Add(-time.Minute)
-	repo := newAdminPlayerRepoFake(usecase.AdminPlayerRecord{
+	repo := newAdminPlayerRepoFake(PlayerRecord{
 		PlayerID:           playerID,
 		Username:           "deleted_player",
 		Status:             domain.PlayerStatusIdle,
@@ -131,30 +130,30 @@ func TestPlayerUsecase_ListPlayerAuditFindsDeletedPlayer(t *testing.T) {
 		Wins:               2,
 		AverageSolveTimeMs: 45000,
 	})
-	repo.auditEvents = []usecase.AdminPlayerAuditEvent{{
+	repo.auditEvents = []PlayerAuditEvent{{
 		ID:       uuid.New(),
-		Action:   usecase.AdminPlayerAuditActionDelete,
+		Action:   PlayerAuditActionDelete,
 		PlayerID: playerID,
-		Actor:    usecase.AdminActor{Subject: "admin", JTI: "delete-jti"},
-		BeforeState: usecase.AdminPlayerAuditState{
+		Actor:    Actor{Subject: "admin", JTI: "delete-jti"},
+		BeforeState: PlayerAuditState{
 			Username: "deleted_player",
 			Wins:     2,
 		},
-		AfterState: usecase.AdminPlayerAuditState{
+		AfterState: PlayerAuditState{
 			Username: "deleted_" + strings.Repeat("a", 32),
 			Wins:     2,
 			Deleted:  true,
 		},
 		CreatedAt: now,
 	}}
-	uc := NewPlayerUsecase(txPassthrough{}, repo, nil, fixedAdminClock{now: now})
+	uc := NewPlayerUseCase(txPassthrough{}, repo, nil, fixedAdminClock{now: now})
 
 	events, err := uc.ListPlayerAudit(t.Context(), playerID, 500)
 
 	require.NoError(t, err)
 	require.Len(t, events, 1)
 	require.Equal(t, int32(200), repo.auditLimit)
-	require.Equal(t, usecase.AdminPlayerAuditActionDelete, events[0].Action)
+	require.Equal(t, PlayerAuditActionDelete, events[0].Action)
 }
 
 type fixedAdminClock struct {
@@ -180,24 +179,24 @@ func (s *leaderboardInvalidatorSpy) Invalidate() {
 }
 
 type adminPlayerRepoFake struct {
-	player          usecase.AdminPlayerRecord
-	audit           []usecase.AdminPlayerAuditInput
-	auditEvents     []usecase.AdminPlayerAuditEvent
+	player          PlayerRecord
+	audit           []PlayerAuditInput
+	auditEvents     []PlayerAuditEvent
 	auditLimit      int32
 	deleted         bool
 	deletedUsername string
 	deletedAt       time.Time
 }
 
-func newAdminPlayerRepoFake(player usecase.AdminPlayerRecord) *adminPlayerRepoFake {
+func newAdminPlayerRepoFake(player PlayerRecord) *adminPlayerRepoFake {
 	return &adminPlayerRepoFake{player: player}
 }
 
-func (r *adminPlayerRepoFake) ListAdminPlayers(context.Context, bool) ([]usecase.AdminPlayerRecord, error) {
-	return []usecase.AdminPlayerRecord{r.player}, nil
+func (r *adminPlayerRepoFake) ListAdminPlayers(context.Context, bool) ([]PlayerRecord, error) {
+	return []PlayerRecord{r.player}, nil
 }
 
-func (r *adminPlayerRepoFake) GetAdminPlayer(context.Context, uuid.UUID) (*usecase.AdminPlayerRecord, error) {
+func (r *adminPlayerRepoFake) GetAdminPlayer(context.Context, uuid.UUID) (*PlayerRecord, error) {
 	if r.deleted {
 		return nil, apperr.ErrPlayerNotFound
 	}
@@ -205,7 +204,7 @@ func (r *adminPlayerRepoFake) GetAdminPlayer(context.Context, uuid.UUID) (*useca
 	return &out, nil
 }
 
-func (r *adminPlayerRepoFake) GetAdminPlayerIncludingDeleted(context.Context, uuid.UUID) (*usecase.AdminPlayerRecord, error) {
+func (r *adminPlayerRepoFake) GetAdminPlayerIncludingDeleted(context.Context, uuid.UUID) (*PlayerRecord, error) {
 	out := r.player
 	return &out, nil
 }
@@ -218,7 +217,7 @@ func (r *adminPlayerRepoFake) UpdateAdminPlayerUsername(_ context.Context, _ uui
 func (r *adminPlayerRepoFake) UpsertAdminPlayerStats(
 	_ context.Context,
 	_ uuid.UUID,
-	in usecase.AdminPlayerStatsInput,
+	in PlayerStatsInput,
 	_ time.Time,
 ) error {
 	r.player.Wins = in.Wins
@@ -239,7 +238,7 @@ func (r *adminPlayerRepoFake) SoftDeleteAdminPlayer(
 	return nil
 }
 
-func (r *adminPlayerRepoFake) CreateAdminPlayerAudit(_ context.Context, in usecase.AdminPlayerAuditInput) error {
+func (r *adminPlayerRepoFake) CreateAdminPlayerAudit(_ context.Context, in PlayerAuditInput) error {
 	r.audit = append(r.audit, in)
 	return nil
 }
@@ -248,7 +247,7 @@ func (r *adminPlayerRepoFake) ListAdminPlayerAudit(
 	_ context.Context,
 	_ uuid.UUID,
 	limit int32,
-) ([]usecase.AdminPlayerAuditEvent, error) {
+) ([]PlayerAuditEvent, error) {
 	r.auditLimit = limit
 	return r.auditEvents, nil
 }

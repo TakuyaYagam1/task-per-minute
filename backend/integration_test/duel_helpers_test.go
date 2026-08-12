@@ -110,7 +110,7 @@ func createSolvedWinOnPool(
 
 func joinPlayersConcurrently(
 	t testing.TB,
-	uc *duelusecase.MatchmakingUsecase,
+	uc *duelusecase.MatchmakingUseCase,
 	playerIDs ...uuid.UUID,
 ) []*duelusecase.MatchResult {
 	t.Helper()

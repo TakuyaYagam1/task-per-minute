@@ -16,10 +16,10 @@ import (
 	logkit "github.com/wahrwelt-kit/go-logkit"
 
 	"github.com/TakuyaYagam1/task-per-minute/config"
-	"github.com/TakuyaYagam1/task-per-minute/internal/app"
-	wscontroller "github.com/TakuyaYagam1/task-per-minute/internal/controller/websocket"
+	wsadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket"
+	redisadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/redis"
+	"github.com/TakuyaYagam1/task-per-minute/internal/bootstrap"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	redisrepo "github.com/TakuyaYagam1/task-per-minute/internal/repo/redis"
 )
 
 func TestAppLifecycle_StartsHealthAndStopsOnCancel(t *testing.T) {
@@ -29,7 +29,7 @@ func TestAppLifecycle_StartsHealthAndStopsOnCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cfg, err := config.Load()
 	require.NoError(t, err)
-	application, cleanup, err := app.Initialize(ctx, cfg, logkit.Noop())
+	application, cleanup, err := bootstrap.Initialize(ctx, cfg, logkit.Noop())
 	require.NoError(t, err)
 	defer cleanup()
 
@@ -68,7 +68,7 @@ func TestAppLifecycle_StartupRecoveryFinishesActiveDuel(t *testing.T) {
 	appCtx, cancel := context.WithCancel(context.Background())
 	cfg, err := config.Load()
 	require.NoError(t, err)
-	application, cleanup, err := app.Initialize(appCtx, cfg, logkit.Noop())
+	application, cleanup, err := bootstrap.Initialize(appCtx, cfg, logkit.Noop())
 	require.NoError(t, err)
 	defer cleanup()
 
@@ -107,7 +107,7 @@ func TestAppLifecycle_StartupRecoveryClearsQueuedPlayersAndRedisQueue(t *testing
 
 	f := newDuelFixture()
 	ctx := context.Background()
-	queue := redisrepo.NewMatchmakingRedis(sharedRedis(t).client, redisrepo.DefaultMatchmakingQueueKey)
+	queue := redisadapter.NewMatchmakingRedis(sharedRedis(t).client, redisadapter.DefaultMatchmakingQueueKey)
 
 	idle := f.makePlayer(t, uniq("idle"))
 	queued := f.makePlayer(t, uniq("queued"))
@@ -124,7 +124,7 @@ func TestAppLifecycle_StartupRecoveryClearsQueuedPlayersAndRedisQueue(t *testing
 	appCtx, cancel := context.WithCancel(context.Background())
 	cfg, err := config.Load()
 	require.NoError(t, err)
-	application, cleanup, err := app.Initialize(appCtx, cfg, logkit.Noop())
+	application, cleanup, err := bootstrap.Initialize(appCtx, cfg, logkit.Noop())
 	require.NoError(t, err)
 	defer cleanup()
 
@@ -145,7 +145,7 @@ func TestAppLifecycle_StartupRecoveryClearsQueuedPlayersAndRedisQueue(t *testing
 	require.NoError(t, err)
 	require.Equal(t, domain.PlayerStatusInDuel, gotActive.Status)
 
-	size, err := sharedRedis(t).client.LLen(ctx, redisrepo.DefaultMatchmakingQueueKey).Result()
+	size, err := sharedRedis(t).client.LLen(ctx, redisadapter.DefaultMatchmakingQueueKey).Result()
 	require.NoError(t, err)
 	require.Zero(t, size)
 
@@ -175,7 +175,7 @@ func TestAppLifecycle_ShutdownLeavesQueuedWebSocketIdle(t *testing.T) {
 	defer cancel()
 	cfg, err := config.Load()
 	require.NoError(t, err)
-	application, cleanup, err := app.Initialize(appCtx, cfg, logkit.Noop())
+	application, cleanup, err := bootstrap.Initialize(appCtx, cfg, logkit.Noop())
 	require.NoError(t, err)
 	defer cleanup()
 
@@ -199,8 +199,8 @@ func TestAppLifecycle_ShutdownLeavesQueuedWebSocketIdle(t *testing.T) {
 	}
 	defer closeWSSilent(conn)
 
-	writeWSEvent(t, conn, wscontroller.EventJoinQueue, nil)
-	require.Equal(t, wscontroller.EventQueueJoined, readWSEventType(t, conn, wscontroller.EventQueueJoined).Type)
+	writeWSEvent(t, conn, wsadapter.EventJoinQueue, nil)
+	require.Equal(t, wsadapter.EventQueueJoined, readWSEventType(t, conn, wsadapter.EventQueueJoined).Type)
 
 	require.NoError(t, application.Shutdown(context.Background()))
 	select {
@@ -214,7 +214,7 @@ func TestAppLifecycle_ShutdownLeavesQueuedWebSocketIdle(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, domain.PlayerStatusIdle, got.Status)
 
-	size, err := sharedRedis(t).client.LLen(ctx, redisrepo.DefaultMatchmakingQueueKey).Result()
+	size, err := sharedRedis(t).client.LLen(ctx, redisadapter.DefaultMatchmakingQueueKey).Result()
 	require.NoError(t, err)
 	require.Zero(t, size)
 }

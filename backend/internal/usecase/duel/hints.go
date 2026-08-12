@@ -8,7 +8,6 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	"github.com/TakuyaYagam1/task-per-minute/pkg/clock"
 )
 
 type HintSender func(playerID uuid.UUID, event HintUnlocked)
@@ -27,7 +26,7 @@ type HintSnapshot struct {
 
 type HintScheduler struct {
 	mu     sync.Mutex
-	clock  clock.Clock
+	clock  Clock
 	send   HintSender
 	states map[uuid.UUID]*hintDuelState
 }
@@ -48,10 +47,7 @@ type hintPlayerState struct {
 	stopped   bool
 }
 
-func NewHintScheduler(clk clock.Clock, send HintSender) *HintScheduler {
-	if clk == nil {
-		clk = clock.Real{}
-	}
+func NewHintScheduler(clk Clock, send HintSender) *HintScheduler {
 	return &HintScheduler{
 		clock:  clk,
 		send:   send,

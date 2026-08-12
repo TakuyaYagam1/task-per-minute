@@ -7,19 +7,27 @@ dir: "{{.InterfaceDir}}/mocks"
 pkgname: "mocks"
 
 packages:
-  github.com/TakuyaYagam1/task-per-minute/pkg/clock:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/admin:
     interfaces:
-      Clock:
-
-  github.com/TakuyaYagam1/task-per-minute/internal/usecase:
-    interfaces:
-      DuelRepo:
-      HistoryRepo:
-      LeaderboardRepo:
-      LeaderboardStore:
-      MatchmakingQueue:
-      PlayerRepo:
       RevocationStore:
-      SourceFileStorage:
-      TaskRepo:
-      TxManager:
+
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/player:
+    interfaces:
+      TransactionManager:
+      Repository:
+      ActiveDuelReader:
+
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel:
+    interfaces:
+      TransactionManager:
+      MatchmakingQueue:
+      MatchmakingPlayerRepository:
+      MatchmakingTaskRepository:
+      MatchmakingHistoryRepository:
+      MatchmakingDuelRepository:
+      SourceFileURLSigner:
+      FlagDuelRepository:
+      FinalizationPlayerRepository:
+      SolvedHistoryWriter:
+      LeaderboardBumper:
+      ReadDuelRepository:

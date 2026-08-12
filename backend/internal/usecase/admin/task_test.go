@@ -13,25 +13,24 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/admin"
-	usecasemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/mocks"
 )
 
-func TestTaskUsecase_CreateTask(t *testing.T) {
+func TestTaskUseCase_CreateTask(t *testing.T) {
 	t.Parallel()
 
-	tasks := usecasemocks.NewMockTaskRepo(t)
+	tasks := newTaskRepositoryMock(t)
 	in := validTaskInput()
 	taskURL := "pwn.example.com:31337"
 	in.TaskURL = &taskURL
 	created := taskFromInput(uuid.New(), in)
-	tasks.EXPECT().Create(mock.Anything, in).Return(created, nil)
+	tasks.On("Create", mock.Anything, in).Return(created, nil)
 
-	got, err := admin.NewTaskUsecase(tasks).CreateTask(t.Context(), in)
+	got, err := admin.NewTaskUseCase(tasks).CreateTask(t.Context(), in)
 	require.NoError(t, err)
 	require.Same(t, created, got)
 }
 
-func TestTaskUsecase_CreateTask_Validation(t *testing.T) {
+func TestTaskUseCase_CreateTask_Validation(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -59,13 +58,13 @@ func TestTaskUsecase_CreateTask_Validation(t *testing.T) {
 
 			in := validTaskInput()
 			tt.mutate(&in)
-			_, err := admin.NewTaskUsecase(usecasemocks.NewMockTaskRepo(t)).CreateTask(t.Context(), in)
+			_, err := admin.NewTaskUseCase(newTaskRepositoryMock(t)).CreateTask(t.Context(), in)
 			require.ErrorIs(t, err, apperr.ErrTaskValidation)
 		})
 	}
 }
 
-func TestTaskUsecase_CreateTask_NormalizesPositionalHints(t *testing.T) {
+func TestTaskUseCase_CreateTask_NormalizesPositionalHints(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -83,36 +82,36 @@ func TestTaskUsecase_CreateTask_NormalizesPositionalHints(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			tasks := usecasemocks.NewMockTaskRepo(t)
+			tasks := newTaskRepositoryMock(t)
 			in := validTaskInput()
 			in.Hints = tt.hints
 			normalized := in
 			normalized.Hints = tt.want
 			created := taskFromInput(uuid.New(), normalized)
-			tasks.EXPECT().Create(mock.Anything, normalized).Return(created, nil)
+			tasks.On("Create", mock.Anything, normalized).Return(created, nil)
 
-			got, err := admin.NewTaskUsecase(tasks).CreateTask(t.Context(), in)
+			got, err := admin.NewTaskUseCase(tasks).CreateTask(t.Context(), in)
 			require.NoError(t, err)
 			require.Same(t, created, got)
 		})
 	}
 }
 
-func TestTaskUsecase_GetListUpdate(t *testing.T) {
+func TestTaskUseCase_GetListUpdate(t *testing.T) {
 	t.Parallel()
 
-	tasks := usecasemocks.NewMockTaskRepo(t)
-	uc := admin.NewTaskUsecase(tasks)
+	tasks := newTaskRepositoryMock(t)
+	uc := admin.NewTaskUseCase(tasks)
 	id := uuid.New()
 	in := validTaskInput()
 	task := taskFromInput(id, in)
 
-	tasks.EXPECT().GetByID(mock.Anything, id).Return(task, nil)
+	tasks.On("GetByID", mock.Anything, id).Return(task, nil)
 	got, err := uc.GetTask(t.Context(), id)
 	require.NoError(t, err)
 	require.Same(t, task, got)
 
-	tasks.EXPECT().List(mock.Anything).Return([]*domain.Task{task}, nil)
+	tasks.On("List", mock.Anything).Return([]*domain.Task{task}, nil)
 	list, err := uc.ListTasks(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, []*domain.Task{task}, list)
@@ -120,85 +119,85 @@ func TestTaskUsecase_GetListUpdate(t *testing.T) {
 	updatedInput := validTaskInput()
 	updatedInput.Title = "updated"
 	updated := taskFromInput(id, updatedInput)
-	tasks.EXPECT().Update(mock.Anything, id, updatedInput).Return(updated, nil)
+	tasks.On("Update", mock.Anything, id, updatedInput).Return(updated, nil)
 	got, err = uc.UpdateTask(t.Context(), id, updatedInput)
 	require.NoError(t, err)
 	require.Same(t, updated, got)
 }
 
-func TestTaskUsecase_UpdateTask_Validation(t *testing.T) {
+func TestTaskUseCase_UpdateTask_Validation(t *testing.T) {
 	t.Parallel()
 
 	in := validTaskInput()
 	in.Difficulty = domain.Difficulty("bad")
 
-	_, err := admin.NewTaskUsecase(usecasemocks.NewMockTaskRepo(t)).UpdateTask(t.Context(), uuid.New(), in)
+	_, err := admin.NewTaskUseCase(newTaskRepositoryMock(t)).UpdateTask(t.Context(), uuid.New(), in)
 	require.ErrorIs(t, err, apperr.ErrTaskValidation)
 }
 
-func TestTaskUsecase_DeleteTask_UnusedDeletes(t *testing.T) {
+func TestTaskUseCase_DeleteTask_UnusedDeletes(t *testing.T) {
 	t.Parallel()
 
-	tasks := usecasemocks.NewMockTaskRepo(t)
+	tasks := newTaskRepositoryMock(t)
 	id := uuid.New()
 	task := taskFromInput(id, validTaskInput())
-	tasks.EXPECT().GetByID(mock.Anything, id).Return(task, nil)
-	tasks.EXPECT().IsUsedInActiveDuel(mock.Anything, id).Return(false, nil)
-	tasks.EXPECT().Delete(mock.Anything, id).Return(nil)
+	tasks.On("GetByID", mock.Anything, id).Return(task, nil)
+	tasks.On("IsUsedInActiveDuel", mock.Anything, id).Return(false, nil)
+	tasks.On("Delete", mock.Anything, id).Return(nil)
 
-	require.NoError(t, admin.NewTaskUsecase(tasks).DeleteTask(t.Context(), id))
+	require.NoError(t, admin.NewTaskUseCase(tasks).DeleteTask(t.Context(), id))
 }
 
-func TestTaskUsecase_DeleteTask_ActiveDuelReturnsTaskInUse(t *testing.T) {
+func TestTaskUseCase_DeleteTask_ActiveDuelReturnsTaskInUse(t *testing.T) {
 	t.Parallel()
 
-	tasks := usecasemocks.NewMockTaskRepo(t)
+	tasks := newTaskRepositoryMock(t)
 	id := uuid.New()
 	task := taskFromInput(id, validTaskInput())
-	tasks.EXPECT().GetByID(mock.Anything, id).Return(task, nil)
-	tasks.EXPECT().IsUsedInActiveDuel(mock.Anything, id).Return(true, nil)
+	tasks.On("GetByID", mock.Anything, id).Return(task, nil)
+	tasks.On("IsUsedInActiveDuel", mock.Anything, id).Return(true, nil)
 
-	err := admin.NewTaskUsecase(tasks).DeleteTask(t.Context(), id)
+	err := admin.NewTaskUseCase(tasks).DeleteTask(t.Context(), id)
 	require.ErrorIs(t, err, apperr.ErrTaskInUse)
 }
 
-func TestTaskUsecase_DeleteTask_MissingReturnsTaskNotFound(t *testing.T) {
+func TestTaskUseCase_DeleteTask_MissingReturnsTaskNotFound(t *testing.T) {
 	t.Parallel()
 
-	tasks := usecasemocks.NewMockTaskRepo(t)
+	tasks := newTaskRepositoryMock(t)
 	id := uuid.New()
-	tasks.EXPECT().GetByID(mock.Anything, id).Return(nil, apperr.ErrTaskNotFound)
+	tasks.On("GetByID", mock.Anything, id).Return(nil, apperr.ErrTaskNotFound)
 
-	err := admin.NewTaskUsecase(tasks).DeleteTask(t.Context(), id)
+	err := admin.NewTaskUseCase(tasks).DeleteTask(t.Context(), id)
 	require.ErrorIs(t, err, apperr.ErrTaskNotFound)
 }
 
-func TestTaskUsecase_DeleteTask_RepoErrorIsWrapped(t *testing.T) {
+func TestTaskUseCase_DeleteTask_RepoErrorIsWrapped(t *testing.T) {
 	t.Parallel()
 
-	tasks := usecasemocks.NewMockTaskRepo(t)
+	tasks := newTaskRepositoryMock(t)
 	id := uuid.New()
 	lowLevelErr := errors.New("db down")
 	task := taskFromInput(id, validTaskInput())
-	tasks.EXPECT().GetByID(mock.Anything, id).Return(task, nil)
-	tasks.EXPECT().IsUsedInActiveDuel(mock.Anything, id).Return(false, nil)
-	tasks.EXPECT().Delete(mock.Anything, id).Return(lowLevelErr)
+	tasks.On("GetByID", mock.Anything, id).Return(task, nil)
+	tasks.On("IsUsedInActiveDuel", mock.Anything, id).Return(false, nil)
+	tasks.On("Delete", mock.Anything, id).Return(lowLevelErr)
 
-	err := admin.NewTaskUsecase(tasks).DeleteTask(t.Context(), id)
+	err := admin.NewTaskUseCase(tasks).DeleteTask(t.Context(), id)
 	require.ErrorIs(t, err, lowLevelErr)
 }
 
-func TestTaskUsecase_DeleteTask_RepoTaskInUseIsPreserved(t *testing.T) {
+func TestTaskUseCase_DeleteTask_RepoTaskInUseIsPreserved(t *testing.T) {
 	t.Parallel()
 
-	tasks := usecasemocks.NewMockTaskRepo(t)
+	tasks := newTaskRepositoryMock(t)
 	id := uuid.New()
 	task := taskFromInput(id, validTaskInput())
-	tasks.EXPECT().GetByID(mock.Anything, id).Return(task, nil)
-	tasks.EXPECT().IsUsedInActiveDuel(mock.Anything, id).Return(false, nil)
-	tasks.EXPECT().Delete(mock.Anything, id).Return(apperr.ErrTaskInUse)
+	tasks.On("GetByID", mock.Anything, id).Return(task, nil)
+	tasks.On("IsUsedInActiveDuel", mock.Anything, id).Return(false, nil)
+	tasks.On("Delete", mock.Anything, id).Return(apperr.ErrTaskInUse)
 
-	err := admin.NewTaskUsecase(tasks).DeleteTask(t.Context(), id)
+	err := admin.NewTaskUseCase(tasks).DeleteTask(t.Context(), id)
 	require.ErrorIs(t, err, apperr.ErrTaskInUse)
 }
 

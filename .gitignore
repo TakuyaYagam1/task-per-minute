@@ -30,7 +30,7 @@ next-env.d.ts
 /backend/server
 /backend/coverage.out
 /backend/coverage.html
-/backend/internal/openapi/components/schemas.yml
+/backend/api/components/schemas.yml
 *.test
 *.out
 *.prof

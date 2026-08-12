@@ -12,10 +12,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	wsadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket"
+	redisadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/redis"
 	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
-	wscontroller "github.com/TakuyaYagam1/task-per-minute/internal/controller/websocket"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	"github.com/TakuyaYagam1/task-per-minute/internal/usecase"
 	duelusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel"
 )
 
@@ -32,15 +32,15 @@ func TestWebSocketController_MatchAndFlagSubmit(t *testing.T) {
 	bobConn := f.connect(t, *bob.SessionToken)
 	defer closeWS(t, bobConn)
 
-	writeWSEvent(t, aliceConn, wscontroller.EventJoinQueue, nil)
-	require.Equal(t, wscontroller.EventQueueJoined, readWSEventType(t, aliceConn, wscontroller.EventQueueJoined).Type)
+	writeWSEvent(t, aliceConn, wsadapter.EventJoinQueue, nil)
+	require.Equal(t, wsadapter.EventQueueJoined, readWSEventType(t, aliceConn, wsadapter.EventQueueJoined).Type)
 
-	writeWSEvent(t, bobConn, wscontroller.EventJoinQueue, nil)
+	writeWSEvent(t, bobConn, wsadapter.EventJoinQueue, nil)
 
-	aliceMatch := readWSEventType(t, aliceConn, wscontroller.EventMatchFound)
-	aliceAssigned := readWSEventType(t, aliceConn, wscontroller.EventTaskAssigned)
-	bobMatch := readWSEventType(t, bobConn, wscontroller.EventMatchFound)
-	bobAssigned := readWSEventType(t, bobConn, wscontroller.EventTaskAssigned)
+	aliceMatch := readWSEventType(t, aliceConn, wsadapter.EventMatchFound)
+	aliceAssigned := readWSEventType(t, aliceConn, wsadapter.EventTaskAssigned)
+	bobMatch := readWSEventType(t, bobConn, wsadapter.EventMatchFound)
+	bobAssigned := readWSEventType(t, bobConn, wsadapter.EventTaskAssigned)
 
 	duelID := decodeMatchDuelID(t, aliceMatch)
 	require.Equal(t, duelID, decodeMatchDuelID(t, bobMatch))
@@ -50,13 +50,13 @@ func TestWebSocketController_MatchAndFlagSubmit(t *testing.T) {
 	aliceTask, err := f.duels.GetPlayerTask(ctx, duelID, alice.ID)
 	require.NoError(t, err)
 
-	writeWSEvent(t, aliceConn, wscontroller.EventFlagSubmit, map[string]any{
+	writeWSEvent(t, aliceConn, wsadapter.EventFlagSubmit, map[string]any{
 		"duel_id": duelID,
 		"flag":    aliceTask.Flag,
 	})
 
-	aliceFinished := readWSEventType(t, aliceConn, wscontroller.EventDuelFinished)
-	bobFinished := readWSEventType(t, bobConn, wscontroller.EventDuelFinished)
+	aliceFinished := readWSEventType(t, aliceConn, wsadapter.EventDuelFinished)
+	bobFinished := readWSEventType(t, bobConn, wsadapter.EventDuelFinished)
 	require.Equal(t, alice.ID, decodeWinnerID(t, aliceFinished))
 	require.Equal(t, alice.ID, decodeWinnerID(t, bobFinished))
 
@@ -181,16 +181,16 @@ func TestWebSocketController_HintUnlocksInOrder(t *testing.T) {
 	bobConn := f.connect(t, *bob.SessionToken)
 	defer closeWSSilent(bobConn)
 
-	writeWSEvent(t, aliceConn, wscontroller.EventJoinQueue, nil)
-	require.Equal(t, wscontroller.EventQueueJoined, readWSEventType(t, aliceConn, wscontroller.EventQueueJoined).Type)
-	writeWSEvent(t, bobConn, wscontroller.EventJoinQueue, nil)
+	writeWSEvent(t, aliceConn, wsadapter.EventJoinQueue, nil)
+	require.Equal(t, wsadapter.EventQueueJoined, readWSEventType(t, aliceConn, wsadapter.EventQueueJoined).Type)
+	writeWSEvent(t, bobConn, wsadapter.EventJoinQueue, nil)
 
-	require.Equal(t, wscontroller.EventMatchFound, readWSEventType(t, aliceConn, wscontroller.EventMatchFound).Type)
-	assigned := decodeTaskAssigned(t, readWSEventType(t, aliceConn, wscontroller.EventTaskAssigned))
+	require.Equal(t, wsadapter.EventMatchFound, readWSEventType(t, aliceConn, wsadapter.EventMatchFound).Type)
+	assigned := decodeTaskAssigned(t, readWSEventType(t, aliceConn, wsadapter.EventTaskAssigned))
 	require.Len(t, assigned.Task.HintSchedule, 3)
 
 	for want := 1; want <= 3; want++ {
-		event := readWSEventType(t, aliceConn, wscontroller.EventHintUnlocked)
+		event := readWSEventType(t, aliceConn, wsadapter.EventHintUnlocked)
 		hint := decodeHintUnlocked(t, event)
 		require.Equal(t, assigned.DuelID, hint.DuelID)
 		require.Equal(t, assigned.Task.ID, hint.TaskID)
@@ -206,21 +206,21 @@ func TestWebSocketController_ReconnectFreezesHints(t *testing.T) {
 
 	disconnectWS(t, match.aliceConn)
 	require.Equal(t, match.alice.ID, decodeOpponentDisconnected(t,
-		readWSEventType(t, match.bobConn, wscontroller.EventOpponentDisconnected)).PlayerID)
+		readWSEventType(t, match.bobConn, wsadapter.EventOpponentDisconnected)).PlayerID)
 
 	time.Sleep(1200 * time.Millisecond)
 
 	aliceReconnect := f.connect(t, *match.alice.SessionToken)
 	defer closeWSSilent(aliceReconnect)
 
-	resume := decodeDuelResume(t, readWSEventType(t, aliceReconnect, wscontroller.EventDuelResume))
+	resume := decodeDuelResume(t, readWSEventType(t, aliceReconnect, wsadapter.EventDuelResume))
 	require.Equal(t, match.duelID, resume.DuelID)
 	require.NotNil(t, resume.Task)
 	require.Empty(t, resume.Task.UnlockedHints)
 	require.Len(t, resume.Task.HintSchedule, 3)
 	require.True(t, resume.Task.HintSchedule[0].UnlockAt.After(time.Now()))
 
-	firstHint := decodeHintUnlocked(t, readWSEventType(t, aliceReconnect, wscontroller.EventHintUnlocked))
+	firstHint := decodeHintUnlocked(t, readWSEventType(t, aliceReconnect, wsadapter.EventHintUnlocked))
 	require.Equal(t, 1, firstHint.HintIndex)
 	require.Equal(t, resume.Task.ID, firstHint.TaskID)
 }
@@ -234,12 +234,12 @@ func TestWebSocketController_ReconnectRestoresTaskWithoutHintSnapshot(t *testing
 
 	disconnectWS(t, match.aliceConn)
 	require.Equal(t, match.alice.ID, decodeOpponentDisconnected(t,
-		readWSEventType(t, match.bobConn, wscontroller.EventOpponentDisconnected)).PlayerID)
+		readWSEventType(t, match.bobConn, wsadapter.EventOpponentDisconnected)).PlayerID)
 
 	aliceReconnect := f.connect(t, *match.alice.SessionToken)
 	defer closeWSSilent(aliceReconnect)
 
-	resume := decodeDuelResume(t, readWSEventType(t, aliceReconnect, wscontroller.EventDuelResume))
+	resume := decodeDuelResume(t, readWSEventType(t, aliceReconnect, wsadapter.EventDuelResume))
 	require.Equal(t, match.duelID, resume.DuelID)
 	require.NotNil(t, resume.Task)
 	require.NotEqual(t, uuid.Nil, resume.Task.ID)
@@ -255,8 +255,8 @@ func TestWebSocketController_UnknownEventReturnsError(t *testing.T) {
 	defer closeWS(t, conn)
 
 	writeWSEvent(t, conn, "definitely_unknown", nil)
-	event := readWSEventType(t, conn, wscontroller.EventError)
-	require.Equal(t, wscontroller.ErrorUnknownEvent, event.Code)
+	event := readWSEventType(t, conn, wsadapter.EventError)
+	require.Equal(t, wsadapter.ErrorUnknownEvent, event.Code)
 }
 
 func TestWebSocketController_ReconnectResumesDuel(t *testing.T) {
@@ -269,15 +269,15 @@ func TestWebSocketController_ReconnectResumesDuel(t *testing.T) {
 	require.NoError(t, err)
 
 	disconnectWS(t, match.aliceConn)
-	disconnected := readWSEventType(t, match.bobConn, wscontroller.EventOpponentDisconnected)
+	disconnected := readWSEventType(t, match.bobConn, wsadapter.EventOpponentDisconnected)
 	require.Equal(t, match.alice.ID, decodeOpponentDisconnected(t, disconnected).PlayerID)
 
 	time.Sleep(50 * time.Millisecond)
 	aliceReconnect := f.connect(t, *match.alice.SessionToken)
 	defer closeWSSilent(aliceReconnect)
 
-	resume := readWSEventType(t, aliceReconnect, wscontroller.EventDuelResume)
-	reconnected := readWSEventType(t, match.bobConn, wscontroller.EventOpponentReconnected)
+	resume := readWSEventType(t, aliceReconnect, wsadapter.EventDuelResume)
+	reconnected := readWSEventType(t, match.bobConn, wsadapter.EventOpponentReconnected)
 	resumePayload := decodeDuelResume(t, resume)
 	require.Equal(t, match.duelID, resumePayload.DuelID)
 	require.Equal(t, match.alice.ID, decodeOpponentReconnected(t, reconnected).PlayerID)
@@ -289,12 +289,12 @@ func TestWebSocketController_ReconnectResumesDuel(t *testing.T) {
 
 	aliceTask, err := f.duels.GetPlayerTask(ctx, match.duelID, match.alice.ID)
 	require.NoError(t, err)
-	writeWSEvent(t, aliceReconnect, wscontroller.EventFlagSubmit, map[string]any{
+	writeWSEvent(t, aliceReconnect, wsadapter.EventFlagSubmit, map[string]any{
 		"duel_id": match.duelID,
 		"flag":    aliceTask.Flag,
 	})
-	require.Equal(t, match.alice.ID, decodeWinnerID(t, readWSEventType(t, aliceReconnect, wscontroller.EventDuelFinished)))
-	require.Equal(t, match.alice.ID, decodeWinnerID(t, readWSEventType(t, match.bobConn, wscontroller.EventDuelFinished)))
+	require.Equal(t, match.alice.ID, decodeWinnerID(t, readWSEventType(t, aliceReconnect, wsadapter.EventDuelFinished)))
+	require.Equal(t, match.alice.ID, decodeWinnerID(t, readWSEventType(t, match.bobConn, wsadapter.EventDuelFinished)))
 }
 
 func TestWebSocketController_DoubleDisconnectPartialReconnectWaitsForOpponent(t *testing.T) {
@@ -307,19 +307,19 @@ func TestWebSocketController_DoubleDisconnectPartialReconnectWaitsForOpponent(t 
 
 	disconnectWS(t, match.aliceConn)
 	require.Equal(t, match.alice.ID, decodeOpponentDisconnected(t,
-		readWSEventType(t, match.bobConn, wscontroller.EventOpponentDisconnected)).PlayerID)
+		readWSEventType(t, match.bobConn, wsadapter.EventOpponentDisconnected)).PlayerID)
 	disconnectWS(t, match.bobConn)
 
 	aliceReconnect := f.connect(t, *match.alice.SessionToken)
 	defer closeWSSilent(aliceReconnect)
 
-	aliceResume := decodeDuelResume(t, readWSEventType(t, aliceReconnect, wscontroller.EventDuelResume))
+	aliceResume := decodeDuelResume(t, readWSEventType(t, aliceReconnect, wsadapter.EventDuelResume))
 	require.Equal(t, match.duelID, aliceResume.DuelID)
 	require.NotNil(t, aliceResume.Task)
 	require.True(t, aliceResume.OpponentDisconnected)
 	require.NotNil(t, aliceResume.OpponentReconnectDeadline)
 
-	waiting := decodeOpponentDisconnected(t, readWSEventType(t, aliceReconnect, wscontroller.EventOpponentDisconnected))
+	waiting := decodeOpponentDisconnected(t, readWSEventType(t, aliceReconnect, wsadapter.EventOpponentDisconnected))
 	require.Equal(t, match.duelID, waiting.DuelID)
 	require.Equal(t, match.bob.ID, waiting.PlayerID)
 	require.WithinDuration(t, *aliceResume.OpponentReconnectDeadline, waiting.ReconnectDeadline, time.Second)
@@ -331,8 +331,8 @@ func TestWebSocketController_DoubleDisconnectPartialReconnectWaitsForOpponent(t 
 	bobReconnect := f.connect(t, *match.bob.SessionToken)
 	defer closeWSSilent(bobReconnect)
 
-	bobResume := decodeDuelResume(t, readWSEventType(t, bobReconnect, wscontroller.EventDuelResume))
-	reconnected := decodeOpponentReconnected(t, readWSEventType(t, aliceReconnect, wscontroller.EventOpponentReconnected))
+	bobResume := decodeDuelResume(t, readWSEventType(t, bobReconnect, wsadapter.EventDuelResume))
+	reconnected := decodeOpponentReconnected(t, readWSEventType(t, aliceReconnect, wsadapter.EventOpponentReconnected))
 	require.Equal(t, match.duelID, bobResume.DuelID)
 	require.False(t, bobResume.OpponentDisconnected)
 	require.Equal(t, match.duelID, reconnected.DuelID)
@@ -358,19 +358,19 @@ func TestWebSocketController_ConnectionReplacementDuringDuelReceivesResume(t *te
 	aliceReplacement := f.connect(t, *match.alice.SessionToken)
 	defer closeWSSilent(aliceReplacement)
 
-	resume := decodeDuelResume(t, readWSEventType(t, aliceReplacement, wscontroller.EventDuelResume))
+	resume := decodeDuelResume(t, readWSEventType(t, aliceReplacement, wsadapter.EventDuelResume))
 	require.Equal(t, match.duelID, resume.DuelID)
 	require.NotNil(t, resume.Task)
 
 	aliceTask, err := f.duels.GetPlayerTask(ctx, match.duelID, match.alice.ID)
 	require.NoError(t, err)
-	writeWSEvent(t, aliceReplacement, wscontroller.EventFlagSubmit, map[string]any{
+	writeWSEvent(t, aliceReplacement, wsadapter.EventFlagSubmit, map[string]any{
 		"duel_id": match.duelID,
 		"flag":    aliceTask.Flag,
 	})
 
-	require.Equal(t, match.alice.ID, decodeWinnerID(t, readWSEventType(t, match.bobConn, wscontroller.EventDuelFinished)))
-	require.Equal(t, match.alice.ID, decodeWinnerID(t, readWSEventType(t, aliceReplacement, wscontroller.EventDuelFinished)))
+	require.Equal(t, match.alice.ID, decodeWinnerID(t, readWSEventType(t, match.bobConn, wsadapter.EventDuelFinished)))
+	require.Equal(t, match.alice.ID, decodeWinnerID(t, readWSEventType(t, aliceReplacement, wsadapter.EventDuelFinished)))
 }
 
 func TestWebSocketController_StaleSessionTokenCannotSendEvents(t *testing.T) {
@@ -383,8 +383,8 @@ func TestWebSocketController_StaleSessionTokenCannotSendEvents(t *testing.T) {
 	refreshed := f.joinPlayer(t, player.Username)
 	require.NotEqual(t, *player.SessionToken, *refreshed.SessionToken)
 
-	writeWSEvent(t, conn, wscontroller.EventPing, nil)
-	event := readWSEventType(t, conn, wscontroller.EventError)
+	writeWSEvent(t, conn, wsadapter.EventPing, nil)
+	event := readWSEventType(t, conn, wsadapter.EventError)
 	require.Equal(t, string(apperr.CodeInvalidSession), event.Code)
 }
 
@@ -397,8 +397,8 @@ func TestWebSocketController_QueuedRejoinRejectedPreservesCurrentQueuedSocket(t 
 	aliceConn := f.connect(t, *alice.SessionToken)
 	defer closeWSSilent(aliceConn)
 
-	writeWSEvent(t, aliceConn, wscontroller.EventJoinQueue, nil)
-	require.Equal(t, wscontroller.EventQueueJoined, readWSEventType(t, aliceConn, wscontroller.EventQueueJoined).Type)
+	writeWSEvent(t, aliceConn, wsadapter.EventJoinQueue, nil)
+	require.Equal(t, wsadapter.EventQueueJoined, readWSEventType(t, aliceConn, wsadapter.EventQueueJoined).Type)
 
 	_, err := f.playerUC.Join(ctx, alice.Username)
 	require.ErrorIs(t, err, apperr.ErrPlayerQueued)
@@ -409,21 +409,21 @@ func TestWebSocketController_QueuedRejoinRejectedPreservesCurrentQueuedSocket(t 
 	require.NotNil(t, currentAlice.SessionToken)
 	require.Equal(t, *alice.SessionToken, *currentAlice.SessionToken)
 
-	writeWSEvent(t, aliceConn, wscontroller.EventPing, nil)
-	require.Equal(t, wscontroller.EventPong, readWSEventType(t, aliceConn, wscontroller.EventPong).Type)
+	writeWSEvent(t, aliceConn, wsadapter.EventPing, nil)
+	require.Equal(t, wsadapter.EventPong, readWSEventType(t, aliceConn, wsadapter.EventPong).Type)
 
 	bob := f.joinPlayer(t, uniq("bob"))
 	bobConn := f.connect(t, *bob.SessionToken)
 	defer closeWSSilent(bobConn)
 
-	writeWSEvent(t, bobConn, wscontroller.EventJoinQueue, nil)
-	require.Equal(t, wscontroller.EventQueueJoined, readWSEventType(t, bobConn, wscontroller.EventQueueJoined).Type)
+	writeWSEvent(t, bobConn, wsadapter.EventJoinQueue, nil)
+	require.Equal(t, wsadapter.EventQueueJoined, readWSEventType(t, bobConn, wsadapter.EventQueueJoined).Type)
 
-	aliceMatch := readWSEventType(t, aliceConn, wscontroller.EventMatchFound)
-	bobMatch := readWSEventType(t, bobConn, wscontroller.EventMatchFound)
+	aliceMatch := readWSEventType(t, aliceConn, wsadapter.EventMatchFound)
+	bobMatch := readWSEventType(t, bobConn, wsadapter.EventMatchFound)
 	require.Equal(t, decodeMatchDuelID(t, aliceMatch), decodeMatchDuelID(t, bobMatch))
-	require.Equal(t, wscontroller.EventTaskAssigned, readWSEventType(t, aliceConn, wscontroller.EventTaskAssigned).Type)
-	require.Equal(t, wscontroller.EventTaskAssigned, readWSEventType(t, bobConn, wscontroller.EventTaskAssigned).Type)
+	require.Equal(t, wsadapter.EventTaskAssigned, readWSEventType(t, aliceConn, wsadapter.EventTaskAssigned).Type)
+	require.Equal(t, wsadapter.EventTaskAssigned, readWSEventType(t, bobConn, wsadapter.EventTaskAssigned).Type)
 
 	active, err := f.duels.GetActiveByPlayerID(ctx, bob.ID)
 	require.NoError(t, err)
@@ -440,10 +440,10 @@ func TestWebSocketController_ReconnectTimeoutDrawsDuel(t *testing.T) {
 	defer closeWSSilent(match.bobConn)
 
 	disconnectWS(t, match.aliceConn)
-	disconnected := readWSEventType(t, match.bobConn, wscontroller.EventOpponentDisconnected)
+	disconnected := readWSEventType(t, match.bobConn, wsadapter.EventOpponentDisconnected)
 	require.Equal(t, match.alice.ID, decodeOpponentDisconnected(t, disconnected).PlayerID)
 
-	finished := readWSEventType(t, match.bobConn, wscontroller.EventDuelFinished)
+	finished := readWSEventType(t, match.bobConn, wsadapter.EventDuelFinished)
 	require.Equal(t, uuid.Nil, decodeWinnerID(t, finished))
 	got, err := f.duels.GetByID(context.Background(), match.duelID)
 	require.NoError(t, err)
@@ -465,15 +465,15 @@ func TestWebSocketController_FlagSubmitPausedDuringReconnect(t *testing.T) {
 	require.NoError(t, err)
 
 	disconnectWS(t, match.aliceConn)
-	disconnected := readWSEventType(t, match.bobConn, wscontroller.EventOpponentDisconnected)
+	disconnected := readWSEventType(t, match.bobConn, wsadapter.EventOpponentDisconnected)
 	require.Equal(t, match.alice.ID, decodeOpponentDisconnected(t, disconnected).PlayerID)
 
-	writeWSEvent(t, match.bobConn, wscontroller.EventFlagSubmit, map[string]any{
+	writeWSEvent(t, match.bobConn, wsadapter.EventFlagSubmit, map[string]any{
 		"duel_id": match.duelID,
 		"flag":    bobTask.Flag,
 	})
-	paused := readWSEventType(t, match.bobConn, wscontroller.EventError)
-	require.Equal(t, wscontroller.ErrorDuelPaused, paused.Code)
+	paused := readWSEventType(t, match.bobConn, wsadapter.EventError)
+	require.Equal(t, wsadapter.ErrorDuelPaused, paused.Code)
 	require.Equal(t, "duel is paused while a player reconnects", paused.Message)
 
 	active, err := f.duels.GetByID(ctx, match.duelID)
@@ -486,17 +486,17 @@ func TestWebSocketController_FlagSubmitPausedDuringReconnect(t *testing.T) {
 
 	aliceReconnect := f.connect(t, *match.alice.SessionToken)
 	defer closeWSSilent(aliceReconnect)
-	resume := decodeDuelResume(t, readWSEventType(t, aliceReconnect, wscontroller.EventDuelResume))
-	reconnected := decodeOpponentReconnected(t, readWSEventType(t, match.bobConn, wscontroller.EventOpponentReconnected))
+	resume := decodeDuelResume(t, readWSEventType(t, aliceReconnect, wsadapter.EventDuelResume))
+	reconnected := decodeOpponentReconnected(t, readWSEventType(t, match.bobConn, wsadapter.EventOpponentReconnected))
 	require.Equal(t, match.duelID, resume.DuelID)
 	require.Equal(t, match.alice.ID, reconnected.PlayerID)
 
-	writeWSEvent(t, match.bobConn, wscontroller.EventFlagSubmit, map[string]any{
+	writeWSEvent(t, match.bobConn, wsadapter.EventFlagSubmit, map[string]any{
 		"duel_id": match.duelID,
 		"flag":    bobTask.Flag,
 	})
-	require.Equal(t, match.bob.ID, decodeWinnerID(t, readWSEventType(t, match.bobConn, wscontroller.EventDuelFinished)))
-	require.Equal(t, match.bob.ID, decodeWinnerID(t, readWSEventType(t, aliceReconnect, wscontroller.EventDuelFinished)))
+	require.Equal(t, match.bob.ID, decodeWinnerID(t, readWSEventType(t, match.bobConn, wsadapter.EventDuelFinished)))
+	require.Equal(t, match.bob.ID, decodeWinnerID(t, readWSEventType(t, aliceReconnect, wsadapter.EventDuelFinished)))
 }
 
 func TestWebSocketController_SurrenderFinishesDuelForOpponentWithoutLeaderboard(t *testing.T) {
@@ -506,10 +506,10 @@ func TestWebSocketController_SurrenderFinishesDuelForOpponentWithoutLeaderboard(
 	defer closeWSSilent(match.aliceConn)
 	defer closeWSSilent(match.bobConn)
 
-	writeWSEvent(t, match.aliceConn, wscontroller.EventSurrender, nil)
+	writeWSEvent(t, match.aliceConn, wsadapter.EventSurrender, nil)
 
-	aliceFinished := decodeDuelFinished(t, readWSEventType(t, match.aliceConn, wscontroller.EventDuelFinished))
-	bobFinished := decodeDuelFinished(t, readWSEventType(t, match.bobConn, wscontroller.EventDuelFinished))
+	aliceFinished := decodeDuelFinished(t, readWSEventType(t, match.aliceConn, wsadapter.EventDuelFinished))
+	bobFinished := decodeDuelFinished(t, readWSEventType(t, match.bobConn, wsadapter.EventDuelFinished))
 	require.NotNil(t, aliceFinished.WinnerID)
 	require.NotNil(t, bobFinished.WinnerID)
 	require.Equal(t, match.bob.ID, *aliceFinished.WinnerID)
@@ -555,7 +555,7 @@ func TestWebSocketController_SurrenderFinishesDuelForOpponentWithoutLeaderboard(
 	require.NoError(t, err)
 	require.False(t, bobTask.Solved)
 
-	writeWSEvent(t, match.aliceConn, wscontroller.EventSurrender, map[string]any{
+	writeWSEvent(t, match.aliceConn, wsadapter.EventSurrender, map[string]any{
 		"duel_id": match.duelID,
 	})
 	time.Sleep(50 * time.Millisecond)
@@ -573,17 +573,17 @@ func TestWebSocketController_ThirdDisconnectDrawsImmediately(t *testing.T) {
 	for i := 0; i < 2; i++ {
 		disconnectWS(t, aliceConn)
 		require.Equal(t, match.alice.ID, decodeOpponentDisconnected(t,
-			readWSEventType(t, match.bobConn, wscontroller.EventOpponentDisconnected)).PlayerID)
+			readWSEventType(t, match.bobConn, wsadapter.EventOpponentDisconnected)).PlayerID)
 
 		aliceConn = f.connect(t, *match.alice.SessionToken)
 		require.Equal(t, match.duelID, decodeDuelResume(t,
-			readWSEventType(t, aliceConn, wscontroller.EventDuelResume)).DuelID)
+			readWSEventType(t, aliceConn, wsadapter.EventDuelResume)).DuelID)
 		require.Equal(t, match.alice.ID, decodeOpponentReconnected(t,
-			readWSEventType(t, match.bobConn, wscontroller.EventOpponentReconnected)).PlayerID)
+			readWSEventType(t, match.bobConn, wsadapter.EventOpponentReconnected)).PlayerID)
 	}
 
 	disconnectWS(t, aliceConn)
-	finished := readWSEventType(t, match.bobConn, wscontroller.EventDuelFinished)
+	finished := readWSEventType(t, match.bobConn, wsadapter.EventDuelFinished)
 	require.Equal(t, uuid.Nil, decodeWinnerID(t, finished))
 }
 
@@ -593,7 +593,7 @@ func TestWebSocketController_DoubleDisconnectDraw(t *testing.T) {
 
 	disconnectWS(t, match.aliceConn)
 	require.Equal(t, match.alice.ID, decodeOpponentDisconnected(t,
-		readWSEventType(t, match.bobConn, wscontroller.EventOpponentDisconnected)).PlayerID)
+		readWSEventType(t, match.bobConn, wsadapter.EventOpponentDisconnected)).PlayerID)
 	disconnectWS(t, match.bobConn)
 
 	require.Eventually(t, func() bool {
@@ -604,7 +604,7 @@ func TestWebSocketController_DoubleDisconnectDraw(t *testing.T) {
 	}, time.Second, 10*time.Millisecond)
 }
 
-func scoreUsernames(scores []usecase.LeaderboardScore) []string {
+func scoreUsernames(scores []redisadapter.Score) []string {
 	usernames := make([]string, 0, len(scores))
 	for _, score := range scores {
 		usernames = append(usernames, score.Username)

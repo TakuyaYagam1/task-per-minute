@@ -9,8 +9,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	redisadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/redis"
 	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
-	redisrepo "github.com/TakuyaYagam1/task-per-minute/internal/repo/redis"
 )
 
 func TestRevocationRedis_RevokePersistsAcrossRepositoryInstances(t *testing.T) {
@@ -24,8 +24,8 @@ func TestRevocationRedis_RevokePersistsAcrossRepositoryInstances(t *testing.T) {
 		_ = client.Del(context.Background(), keyPrefix+jti).Err()
 	})
 
-	store1 := redisrepo.NewRevocationRedis(client, keyPrefix)
-	store2 := redisrepo.NewRevocationRedis(client, keyPrefix)
+	store1 := redisadapter.NewRevocationRedis(client, keyPrefix)
+	store2 := redisadapter.NewRevocationRedis(client, keyPrefix)
 
 	revoked, err := store1.IsRevoked(ctx, jti)
 	require.NoError(t, err)
@@ -43,9 +43,9 @@ func TestRevocationRedis_RevokePersistsAcrossRepositoryInstances(t *testing.T) {
 func TestRevocationRedis_NilClient(t *testing.T) {
 	t.Parallel()
 
-	store := redisrepo.NewRevocationRedis(nil, "revocation:nil:")
-	require.ErrorIs(t, store.Revoke(context.Background(), uniq("jti"), time.Now().Add(time.Hour)), redisrepo.ErrNilRevocationClient)
+	store := redisadapter.NewRevocationRedis(nil, "revocation:nil:")
+	require.ErrorIs(t, store.Revoke(context.Background(), uniq("jti"), time.Now().Add(time.Hour)), redisadapter.ErrNilRevocationClient)
 	revoked, err := store.IsRevoked(context.Background(), uniq("jti"))
-	require.ErrorIs(t, err, redisrepo.ErrNilRevocationClient)
+	require.ErrorIs(t, err, redisadapter.ErrNilRevocationClient)
 	require.False(t, revoked)
 }

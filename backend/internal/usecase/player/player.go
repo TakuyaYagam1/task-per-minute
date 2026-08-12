@@ -11,51 +11,37 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	"github.com/TakuyaYagam1/task-per-minute/internal/usecase"
-	"github.com/TakuyaYagam1/task-per-minute/pkg/clock"
 )
 
 var usernameRE = regexp.MustCompile(`^[a-zA-Z0-9_-]{2,50}$`)
 
 const defaultSessionTTL = 24 * time.Hour
 
-type PlayerUsecase struct {
-	tx         usecase.TxManager
-	players    usecase.PlayerRepo
-	duels      usecase.DuelRepo
+type UseCase struct {
+	tx         TransactionManager
+	players    Repository
+	duels      ActiveDuelReader
 	sessionTTL time.Duration
-	clock      clock.Clock
+	clock      Clock
 }
 
-type Option func(*PlayerUsecase)
+type Option func(*UseCase)
 
 func WithSessionTTL(ttl time.Duration) Option {
-	return func(u *PlayerUsecase) {
+	return func(u *UseCase) {
 		if ttl > 0 {
 			u.sessionTTL = ttl
 		}
 	}
 }
 
-func WithClock(clk clock.Clock) Option {
-	return func(u *PlayerUsecase) {
-		if clk != nil {
-			u.clock = clk
-		}
-	}
-}
-
-// PlayerWithActiveDuel aliases the canonical declaration in
-// internal/usecase/contracts.go.
-type PlayerWithActiveDuel = usecase.PlayerWithActiveDuel
-
-func NewPlayerUsecase(tx usecase.TxManager, players usecase.PlayerRepo, duels usecase.DuelRepo, options ...Option) *PlayerUsecase {
-	u := &PlayerUsecase{
+func NewUseCase(tx TransactionManager, players Repository, duels ActiveDuelReader, clk Clock, options ...Option) *UseCase {
+	u := &UseCase{
 		tx:         tx,
 		players:    players,
 		duels:      duels,
 		sessionTTL: defaultSessionTTL,
-		clock:      clock.Real{},
+		clock:      clk,
 	}
 	for _, opt := range options {
 		if opt != nil {
@@ -65,7 +51,7 @@ func NewPlayerUsecase(tx usecase.TxManager, players usecase.PlayerRepo, duels us
 	return u
 }
 
-func (u *PlayerUsecase) Join(ctx context.Context, username string) (*domain.Player, error) {
+func (u *UseCase) Join(ctx context.Context, username string) (*domain.Player, error) {
 	if !usernameRE.MatchString(username) {
 		return nil, apperr.ErrUsernameInvalid
 	}
@@ -77,7 +63,7 @@ func (u *PlayerUsecase) Join(ctx context.Context, username string) (*domain.Play
 	if err := u.tx.Do(ctx, func(txCtx context.Context) error {
 		updated, err := u.players.JoinByUsername(txCtx, username, sessionToken, sessionExpiresAt)
 		if err != nil {
-			return fmt.Errorf("PlayerUsecase - Join - PlayerRepo.JoinByUsername: %w", err)
+			return fmt.Errorf("UseCase - Join - Repository.JoinByUsername: %w", err)
 		}
 		if updated.Status == domain.PlayerStatusInDuel {
 			return apperr.ErrPlayerInDuel
@@ -91,37 +77,37 @@ func (u *PlayerUsecase) Join(ctx context.Context, username string) (*domain.Play
 	return joined, nil
 }
 
-func (u *PlayerUsecase) GetMe(ctx context.Context, sessionToken uuid.UUID) (*PlayerWithActiveDuel, error) {
+func (u *UseCase) GetMe(ctx context.Context, sessionToken uuid.UUID) (*PlayerWithActiveDuel, error) {
 	player, err := u.players.GetBySessionToken(ctx, sessionToken)
 	if err != nil {
 		if errors.Is(err, apperr.ErrPlayerNotFound) {
 			return nil, apperr.ErrInvalidSession
 		}
-		return nil, fmt.Errorf("PlayerUsecase - GetMe - PlayerRepo.GetBySessionToken: %w", err)
+		return nil, fmt.Errorf("UseCase - GetMe - Repository.GetBySessionToken: %w", err)
 	}
 
 	activeDuel, err := u.duels.GetActiveByPlayerID(ctx, player.ID)
 	if err != nil {
-		return nil, fmt.Errorf("PlayerUsecase - GetMe - DuelRepo.GetActiveByPlayerID: %w", err)
+		return nil, fmt.Errorf("UseCase - GetMe - ActiveDuelReader.GetActiveByPlayerID: %w", err)
 	}
 
 	return &PlayerWithActiveDuel{Player: player, ActiveDuel: activeDuel}, nil
 }
 
-func (u *PlayerUsecase) Logout(ctx context.Context, sessionToken uuid.UUID) error {
+func (u *UseCase) Logout(ctx context.Context, sessionToken uuid.UUID) error {
 	return u.tx.Do(ctx, func(txCtx context.Context) error {
 		player, err := u.players.GetBySessionToken(txCtx, sessionToken)
 		if err != nil {
 			if errors.Is(err, apperr.ErrPlayerNotFound) {
 				return nil
 			}
-			return fmt.Errorf("PlayerUsecase - Logout - PlayerRepo.GetBySessionToken: %w", err)
+			return fmt.Errorf("UseCase - Logout - Repository.GetBySessionToken: %w", err)
 		}
 		if player == nil {
 			return nil
 		}
 		if _, err := u.players.UpdateSessionToken(txCtx, player.ID, nil, nil); err != nil {
-			return fmt.Errorf("PlayerUsecase - Logout - PlayerRepo.UpdateSessionToken: %w", err)
+			return fmt.Errorf("UseCase - Logout - Repository.UpdateSessionToken: %w", err)
 		}
 		return nil
 	})

@@ -13,8 +13,8 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	usecasemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/mocks"
 	playerusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/player"
+	playermocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/player/mocks"
 )
 
 func TestUsecase_Join_CreatesNewPlayerWithSessionToken(t *testing.T) {
@@ -38,7 +38,7 @@ func TestUsecase_Join_CreatesNewPlayerWithSessionToken(t *testing.T) {
 			return &updated, nil
 		})
 
-	got, err := playerusecase.NewPlayerUsecase(tx, players, duels).Join(t.Context(), "alice")
+	got, err := newPlayerUseCase(tx, players, duels).Join(t.Context(), "alice")
 	require.NoError(t, err)
 	require.Equal(t, created.ID, got.ID)
 	require.NotNil(t, got.SessionToken)
@@ -68,7 +68,7 @@ func TestUsecase_Join_UpdatesExistingIdlePlayerSessionToken(t *testing.T) {
 			return &updated, nil
 		})
 
-	got, err := playerusecase.NewPlayerUsecase(tx, players, duels).Join(t.Context(), "alice")
+	got, err := newPlayerUseCase(tx, players, duels).Join(t.Context(), "alice")
 	require.NoError(t, err)
 	require.NotNil(t, got.SessionToken)
 	require.NotEqual(t, oldToken, *got.SessionToken)
@@ -98,12 +98,12 @@ func TestUsecase_Join_UsesInjectedClockForSessionExpiry(t *testing.T) {
 			return &updated, nil
 		})
 
-	got, err := playerusecase.NewPlayerUsecase(
+	got, err := playerusecase.NewUseCase(
 		tx,
 		players,
 		duels,
+		fixedPlayerClock{now: now},
 		playerusecase.WithSessionTTL(ttl),
-		playerusecase.WithClock(fixedPlayerClock{now: now}),
 	).Join(t.Context(), "alice")
 	require.NoError(t, err)
 	require.NotNil(t, got.SessionExpiresAt)
@@ -120,7 +120,7 @@ func TestUsecase_Join_RejectsPlayerInDuel(t *testing.T) {
 		JoinByUsername(mock.Anything, "alice", mock.MatchedBy(nonNilUUID), mock.MatchedBy(futureTime)).
 		Return(nil, apperr.ErrPlayerInDuel)
 
-	_, err := playerusecase.NewPlayerUsecase(tx, players, duels).Join(t.Context(), "alice")
+	_, err := newPlayerUseCase(tx, players, duels).Join(t.Context(), "alice")
 	require.ErrorIs(t, err, apperr.ErrPlayerInDuel)
 }
 
@@ -132,7 +132,7 @@ func TestUsecase_Join_RejectsInvalidUsername(t *testing.T) {
 		t.Run(username, func(t *testing.T) {
 			t.Parallel()
 			tx, players, duels := newFixture(t)
-			_, err := playerusecase.NewPlayerUsecase(tx, players, duels).Join(t.Context(), username)
+			_, err := newPlayerUseCase(tx, players, duels).Join(t.Context(), username)
 			require.ErrorIs(t, err, apperr.ErrUsernameInvalid)
 		})
 	}
@@ -148,7 +148,7 @@ func TestUsecase_GetMe_ReturnsPlayerWithoutActiveDuel(t *testing.T) {
 	players.EXPECT().GetBySessionToken(mock.Anything, sessionToken).Return(player, nil)
 	duels.EXPECT().GetActiveByPlayerID(mock.Anything, player.ID).Return(nil, nil)
 
-	got, err := playerusecase.NewPlayerUsecase(tx, players, duels).GetMe(t.Context(), sessionToken)
+	got, err := newPlayerUseCase(tx, players, duels).GetMe(t.Context(), sessionToken)
 	require.NoError(t, err)
 	require.Same(t, player, got.Player)
 	require.Nil(t, got.ActiveDuel)
@@ -171,7 +171,7 @@ func TestUsecase_GetMe_ReturnsActiveDuel(t *testing.T) {
 	players.EXPECT().GetBySessionToken(mock.Anything, sessionToken).Return(player, nil)
 	duels.EXPECT().GetActiveByPlayerID(mock.Anything, player.ID).Return(activeDuel, nil)
 
-	got, err := playerusecase.NewPlayerUsecase(tx, players, duels).GetMe(t.Context(), sessionToken)
+	got, err := newPlayerUseCase(tx, players, duels).GetMe(t.Context(), sessionToken)
 	require.NoError(t, err)
 	require.Same(t, activeDuel, got.ActiveDuel)
 }
@@ -184,7 +184,7 @@ func TestUsecase_GetMe_InvalidSessionMapsToInvalidSession(t *testing.T) {
 
 	players.EXPECT().GetBySessionToken(mock.Anything, sessionToken).Return(nil, apperr.ErrPlayerNotFound)
 
-	_, err := playerusecase.NewPlayerUsecase(tx, players, duels).GetMe(t.Context(), sessionToken)
+	_, err := newPlayerUseCase(tx, players, duels).GetMe(t.Context(), sessionToken)
 	require.ErrorIs(t, err, apperr.ErrInvalidSession)
 }
 
@@ -197,7 +197,7 @@ func TestUsecase_GetMe_RepoErrorIsWrapped(t *testing.T) {
 
 	players.EXPECT().GetBySessionToken(mock.Anything, sessionToken).Return(nil, lowLevelErr)
 
-	_, err := playerusecase.NewPlayerUsecase(tx, players, duels).GetMe(t.Context(), sessionToken)
+	_, err := newPlayerUseCase(tx, players, duels).GetMe(t.Context(), sessionToken)
 	require.ErrorIs(t, err, lowLevelErr)
 }
 
@@ -212,7 +212,7 @@ func TestUsecase_Logout_ClearsSessionToken(t *testing.T) {
 	players.EXPECT().GetBySessionToken(mock.Anything, sessionToken).Return(player, nil)
 	players.EXPECT().UpdateSessionToken(mock.Anything, player.ID, (*uuid.UUID)(nil), (*time.Time)(nil)).Return(player, nil)
 
-	err := playerusecase.NewPlayerUsecase(tx, players, duels).Logout(t.Context(), sessionToken)
+	err := newPlayerUseCase(tx, players, duels).Logout(t.Context(), sessionToken)
 	require.NoError(t, err)
 }
 
@@ -225,7 +225,7 @@ func TestUsecase_Logout_IgnoresMissingSession(t *testing.T) {
 
 	players.EXPECT().GetBySessionToken(mock.Anything, sessionToken).Return(nil, apperr.ErrPlayerNotFound)
 
-	err := playerusecase.NewPlayerUsecase(tx, players, duels).Logout(t.Context(), sessionToken)
+	err := newPlayerUseCase(tx, players, duels).Logout(t.Context(), sessionToken)
 	require.NoError(t, err)
 }
 
@@ -239,16 +239,24 @@ func TestUsecase_Logout_RepoErrorIsWrapped(t *testing.T) {
 
 	players.EXPECT().GetBySessionToken(mock.Anything, sessionToken).Return(nil, lowLevelErr)
 
-	err := playerusecase.NewPlayerUsecase(tx, players, duels).Logout(t.Context(), sessionToken)
+	err := newPlayerUseCase(tx, players, duels).Logout(t.Context(), sessionToken)
 	require.ErrorIs(t, err, lowLevelErr)
 }
 
-func newFixture(t *testing.T) (*usecasemocks.MockTxManager, *usecasemocks.MockPlayerRepo, *usecasemocks.MockDuelRepo) {
+func newFixture(t *testing.T) (*playermocks.MockTransactionManager, *playermocks.MockRepository, *playermocks.MockActiveDuelReader) {
 	t.Helper()
-	return usecasemocks.NewMockTxManager(t), usecasemocks.NewMockPlayerRepo(t), usecasemocks.NewMockDuelRepo(t)
+	return playermocks.NewMockTransactionManager(t), playermocks.NewMockRepository(t), playermocks.NewMockActiveDuelReader(t)
 }
 
-func runTxInline(tx *usecasemocks.MockTxManager) {
+func newPlayerUseCase(
+	tx playerusecase.TransactionManager,
+	players playerusecase.Repository,
+	duels playerusecase.ActiveDuelReader,
+) *playerusecase.UseCase {
+	return playerusecase.NewUseCase(tx, players, duels, wallPlayerClock{})
+}
+
+func runTxInline(tx *playermocks.MockTransactionManager) {
 	tx.EXPECT().
 		Do(mock.Anything, mock.Anything).
 		RunAndReturn(func(ctx context.Context, fn func(context.Context) error) error {
@@ -266,6 +274,12 @@ func futureTime(t time.Time) bool {
 
 type fixedPlayerClock struct {
 	now time.Time
+}
+
+type wallPlayerClock struct{}
+
+func (wallPlayerClock) Now() time.Time {
+	return time.Now().UTC()
 }
 
 func (c fixedPlayerClock) Now() time.Time {

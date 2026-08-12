@@ -12,49 +12,43 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	"github.com/TakuyaYagam1/task-per-minute/internal/usecase"
-	"github.com/TakuyaYagam1/task-per-minute/pkg/clock"
 )
 
-type MatchmakingUsecase struct {
-	tx      usecase.TxManager
-	queue   usecase.MatchmakingQueue
-	players usecase.PlayerRepo
-	tasks   usecase.TaskRepo
-	history usecase.HistoryRepo
-	duels   usecase.DuelRepo
-	storage usecase.SourceFileStorage
-	clock   clock.Clock
+type MatchmakingUseCase struct {
+	tx      TransactionManager
+	queue   MatchmakingQueue
+	players MatchmakingPlayerRepository
+	tasks   MatchmakingTaskRepository
+	history MatchmakingHistoryRepository
+	duels   MatchmakingDuelRepository
+	storage SourceFileURLSigner
+	clock   Clock
 	log     logkit.Logger
 }
 
-// MatchmakingOption configures optional behavior on a MatchmakingUsecase.
-type MatchmakingOption func(*MatchmakingUsecase)
+// MatchmakingOption configures optional behavior on a MatchmakingUseCase.
+type MatchmakingOption func(*MatchmakingUseCase)
 
 // WithMatchmakingLogger attaches a structured logger so each matched pair
 // emits a decision record (which branch was taken, which tasks were chosen)
 // for production debugging.
 func WithMatchmakingLogger(log logkit.Logger) MatchmakingOption {
-	return func(u *MatchmakingUsecase) {
+	return func(u *MatchmakingUseCase) {
 		u.log = log
 	}
 }
 
-// MatchResult aliases the canonical declaration in
-// internal/usecase/contracts.go.
-type MatchResult = usecase.MatchResult
-
-func NewMatchmakingUsecase(
-	tx usecase.TxManager,
-	queue usecase.MatchmakingQueue,
-	players usecase.PlayerRepo,
-	tasks usecase.TaskRepo,
-	history usecase.HistoryRepo,
-	duels usecase.DuelRepo,
-	storage usecase.SourceFileStorage,
-	clk clock.Clock,
-) *MatchmakingUsecase {
-	return &MatchmakingUsecase{
+func NewMatchmakingUseCase(
+	tx TransactionManager,
+	queue MatchmakingQueue,
+	players MatchmakingPlayerRepository,
+	tasks MatchmakingTaskRepository,
+	history MatchmakingHistoryRepository,
+	duels MatchmakingDuelRepository,
+	storage SourceFileURLSigner,
+	clk Clock,
+) *MatchmakingUseCase {
+	return &MatchmakingUseCase{
 		tx:      tx,
 		queue:   queue,
 		players: players,
@@ -66,7 +60,7 @@ func NewMatchmakingUsecase(
 	}
 }
 
-func (u *MatchmakingUsecase) Configure(options ...MatchmakingOption) *MatchmakingUsecase {
+func (u *MatchmakingUseCase) Configure(options ...MatchmakingOption) *MatchmakingUseCase {
 	for _, opt := range options {
 		if opt != nil {
 			opt(u)
@@ -75,7 +69,7 @@ func (u *MatchmakingUsecase) Configure(options ...MatchmakingOption) *Matchmakin
 	return u
 }
 
-func (u *MatchmakingUsecase) JoinQueue(ctx context.Context, playerID uuid.UUID) (*MatchResult, error) {
+func (u *MatchmakingUseCase) JoinQueue(ctx context.Context, playerID uuid.UUID) (*MatchResult, error) {
 	if err := u.ensureQueuedForJoin(ctx, playerID); err != nil {
 		return nil, err
 	}
@@ -118,7 +112,7 @@ func (u *MatchmakingUsecase) JoinQueue(ctx context.Context, playerID uuid.UUID) 
 	}
 }
 
-func (u *MatchmakingUsecase) LeaveQueue(ctx context.Context, playerID uuid.UUID) error {
+func (u *MatchmakingUseCase) LeaveQueue(ctx context.Context, playerID uuid.UUID) error {
 	if err := u.queue.Remove(ctx, playerID); err != nil {
 		return fmt.Errorf("MatchmakingUsecase - LeaveQueue - MatchmakingQueue.Remove: %w", err)
 	}
@@ -139,7 +133,7 @@ func (u *MatchmakingUsecase) LeaveQueue(ctx context.Context, playerID uuid.UUID)
 	return nil
 }
 
-func (u *MatchmakingUsecase) rollbackQueuedJoin(ctx context.Context, playerID uuid.UUID) error {
+func (u *MatchmakingUseCase) rollbackQueuedJoin(ctx context.Context, playerID uuid.UUID) error {
 	var errs []error
 	if err := u.queue.Remove(ctx, playerID); err != nil {
 		errs = append(errs, fmt.Errorf("MatchmakingUsecase - rollbackQueuedJoin - MatchmakingQueue.Remove: %w", err))
@@ -150,7 +144,7 @@ func (u *MatchmakingUsecase) rollbackQueuedJoin(ctx context.Context, playerID uu
 	return errors.Join(errs...)
 }
 
-func (u *MatchmakingUsecase) ensureQueuedForJoin(ctx context.Context, playerID uuid.UUID) error {
+func (u *MatchmakingUseCase) ensureQueuedForJoin(ctx context.Context, playerID uuid.UUID) error {
 	for attempt := 0; attempt < 2; attempt++ {
 		player, err := u.players.GetByID(ctx, playerID)
 		if err != nil {
@@ -172,7 +166,7 @@ func (u *MatchmakingUsecase) ensureQueuedForJoin(ctx context.Context, playerID u
 	return apperr.ErrConflict
 }
 
-func (u *MatchmakingUsecase) createMatch(ctx context.Context, player1ID, player2ID uuid.UUID) (*MatchResult, []uuid.UUID, error) {
+func (u *MatchmakingUseCase) createMatch(ctx context.Context, player1ID, player2ID uuid.UUID) (*MatchResult, []uuid.UUID, error) {
 	var result *MatchResult
 	var requeue []uuid.UUID
 	if err := u.tx.Do(ctx, func(txCtx context.Context) error {
@@ -206,7 +200,7 @@ func (u *MatchmakingUsecase) createMatch(ctx context.Context, player1ID, player2
 	return result, requeue, nil
 }
 
-func (u *MatchmakingUsecase) claimQueuedPair(
+func (u *MatchmakingUseCase) claimQueuedPair(
 	ctx context.Context,
 	player1ID uuid.UUID,
 	player2ID uuid.UUID,
@@ -239,7 +233,7 @@ func (u *MatchmakingUsecase) claimQueuedPair(
 	return player1, player2, nil, nil
 }
 
-func (u *MatchmakingUsecase) rollbackClaimedPlayer(ctx context.Context, playerID uuid.UUID) error {
+func (u *MatchmakingUseCase) rollbackClaimedPlayer(ctx context.Context, playerID uuid.UUID) error {
 	if _, ok, err := u.players.UpdateStatusIfCurrent(ctx, playerID, domain.PlayerStatusInDuel, domain.PlayerStatusQueued); err != nil {
 		return fmt.Errorf("MatchmakingUsecase - rollbackClaimedPlayer - PlayerRepo.UpdateStatusIfCurrent queued: %w", err)
 	} else if !ok {
@@ -248,7 +242,7 @@ func (u *MatchmakingUsecase) rollbackClaimedPlayer(ctx context.Context, playerID
 	return nil
 }
 
-func (u *MatchmakingUsecase) selectPreparedTasks(
+func (u *MatchmakingUseCase) selectPreparedTasks(
 	ctx context.Context,
 	player1ID uuid.UUID,
 	player2ID uuid.UUID,
@@ -268,7 +262,7 @@ func (u *MatchmakingUsecase) selectPreparedTasks(
 	return player1Task, player2Task, nil
 }
 
-func (u *MatchmakingUsecase) createDuelAssignments(
+func (u *MatchmakingUseCase) createDuelAssignments(
 	ctx context.Context,
 	player1 *domain.Player,
 	player2 *domain.Player,
@@ -299,7 +293,7 @@ func queuedPlayerIDs(players ...*domain.Player) []uuid.UUID {
 	return out
 }
 
-func (u *MatchmakingUsecase) requeuePlayers(ctx context.Context, playerIDs ...uuid.UUID) error {
+func (u *MatchmakingUseCase) requeuePlayers(ctx context.Context, playerIDs ...uuid.UUID) error {
 	for _, playerID := range playerIDs {
 		if err := u.queue.Enqueue(ctx, playerID); err != nil {
 			return fmt.Errorf("MatchmakingUsecase - requeuePlayers - MatchmakingQueue.Enqueue: %w", err)
@@ -308,7 +302,7 @@ func (u *MatchmakingUsecase) requeuePlayers(ctx context.Context, playerIDs ...uu
 	return nil
 }
 
-func (u *MatchmakingUsecase) releaseQueuedPlayers(ctx context.Context, playerIDs ...uuid.UUID) error {
+func (u *MatchmakingUseCase) releaseQueuedPlayers(ctx context.Context, playerIDs ...uuid.UUID) error {
 	for _, playerID := range playerIDs {
 		if _, _, err := u.players.UpdateStatusIfCurrent(ctx, playerID, domain.PlayerStatusQueued, domain.PlayerStatusIdle); err != nil {
 			return fmt.Errorf("MatchmakingUsecase - releaseQueuedPlayers - PlayerRepo.UpdateStatusIfCurrent idle: %w", err)
@@ -317,7 +311,7 @@ func (u *MatchmakingUsecase) releaseQueuedPlayers(ctx context.Context, playerIDs
 	return nil
 }
 
-func (u *MatchmakingUsecase) prepareAssignedTask(ctx context.Context, task *domain.Task) (*domain.Task, error) {
+func (u *MatchmakingUseCase) prepareAssignedTask(ctx context.Context, task *domain.Task) (*domain.Task, error) {
 	if task == nil || task.SourceFileURL == nil {
 		return task, nil
 	}
@@ -340,7 +334,7 @@ func (u *MatchmakingUsecase) prepareAssignedTask(ctx context.Context, task *doma
 	return &out, nil
 }
 
-func (u *MatchmakingUsecase) selectDifficultyForPlayer(ctx context.Context, playerID uuid.UUID) (domain.Difficulty, error) {
+func (u *MatchmakingUseCase) selectDifficultyForPlayer(ctx context.Context, playerID uuid.UUID) (domain.Difficulty, error) {
 	difficulties, err := u.unlockedDifficulties(ctx, playerID)
 	if err != nil {
 		return "", err
@@ -358,7 +352,7 @@ func (u *MatchmakingUsecase) selectDifficultyForPlayer(ctx context.Context, play
 	return "", apperr.ErrTaskNotFound
 }
 
-func (u *MatchmakingUsecase) selectTasksForPair(
+func (u *MatchmakingUseCase) selectTasksForPair(
 	ctx context.Context,
 	player1ID uuid.UUID,
 	player2ID uuid.UUID,
@@ -396,7 +390,7 @@ func (u *MatchmakingUsecase) selectTasksForPair(
 	return u.selectPairTasksInDifficulty(ctx, player1ID, player2ID, player1Difficulty)
 }
 
-func (u *MatchmakingUsecase) selectTaskForPlayerInDifficulty(
+func (u *MatchmakingUseCase) selectTaskForPlayerInDifficulty(
 	ctx context.Context,
 	playerID uuid.UUID,
 	difficulty domain.Difficulty,
@@ -423,7 +417,7 @@ func (u *MatchmakingUsecase) selectTaskForPlayerInDifficulty(
 	return randomTask(tasks), nil
 }
 
-func (u *MatchmakingUsecase) selectPairTasksInDifficulty(
+func (u *MatchmakingUseCase) selectPairTasksInDifficulty(
 	ctx context.Context,
 	player1ID uuid.UUID,
 	player2ID uuid.UUID,
@@ -521,7 +515,7 @@ type matchmakingDecisionFields struct {
 	Player2Task         *domain.Task
 }
 
-func (u *MatchmakingUsecase) logDecision(d matchmakingDecisionFields) {
+func (u *MatchmakingUseCase) logDecision(d matchmakingDecisionFields) {
 	if u.log == nil {
 		return
 	}
@@ -549,7 +543,7 @@ func (u *MatchmakingUsecase) logDecision(d matchmakingDecisionFields) {
 	u.log.Info("matchmaking task selection", fields)
 }
 
-func (u *MatchmakingUsecase) solvedTaskSet(ctx context.Context, playerID uuid.UUID) (map[uuid.UUID]struct{}, error) {
+func (u *MatchmakingUseCase) solvedTaskSet(ctx context.Context, playerID uuid.UUID) (map[uuid.UUID]struct{}, error) {
 	ids, err := u.history.ListSolvedTaskIDs(ctx, playerID)
 	if err != nil {
 		return nil, fmt.Errorf("HistoryRepo.ListSolvedTaskIDs: %w", err)
@@ -608,7 +602,7 @@ func shuffledTasks(tasks []*domain.Task) []*domain.Task {
 	return out
 }
 
-func (u *MatchmakingUsecase) unlockedDifficulties(ctx context.Context, playerID uuid.UUID) ([]domain.Difficulty, error) {
+func (u *MatchmakingUseCase) unlockedDifficulties(ctx context.Context, playerID uuid.UUID) ([]domain.Difficulty, error) {
 	out := []domain.Difficulty{domain.DifficultyEasy}
 	if ok, err := u.completedDifficulty(ctx, playerID, domain.DifficultyEasy); err != nil || !ok {
 		return out, err
@@ -621,7 +615,7 @@ func (u *MatchmakingUsecase) unlockedDifficulties(ctx context.Context, playerID 
 	return out, nil
 }
 
-func (u *MatchmakingUsecase) completedDifficulty(ctx context.Context, playerID uuid.UUID, difficulty domain.Difficulty) (bool, error) {
+func (u *MatchmakingUseCase) completedDifficulty(ctx context.Context, playerID uuid.UUID, difficulty domain.Difficulty) (bool, error) {
 	total, err := u.tasks.CountByDifficulty(ctx, difficulty)
 	if err != nil {
 		return false, fmt.Errorf("TaskRepo.CountByDifficulty(%s): %w", difficulty, err)

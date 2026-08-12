@@ -11,19 +11,19 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	redisadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/redis"
 	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	redisrepo "github.com/TakuyaYagam1/task-per-minute/internal/repo/redis"
 	duelusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel"
 	leaderboardusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/leaderboard"
 )
 
 type duelScenarioFixture struct {
 	*duelFixture
-	boardStore  *redisrepo.LeaderboardRedis
-	matchmaking *duelusecase.MatchmakingUsecase
-	flags       *duelusecase.FlagSubmitUsecase
-	leaderboard *leaderboardusecase.LeaderboardUsecase
+	boardStore  *redisadapter.LeaderboardRedis
+	matchmaking *duelusecase.MatchmakingUseCase
+	flags       *duelusecase.FlagSubmitUseCase
+	leaderboard *leaderboardusecase.UseCase
 	now         time.Time
 }
 
@@ -124,7 +124,7 @@ func newDuelScenarioFixture(t *testing.T) *duelScenarioFixture {
 	t.Helper()
 
 	base := newIsolatedDuelFixture(t)
-	boardStore := redisrepo.NewLeaderboardRedis(sharedRedis(t).client, "leaderboard:duel:"+uniq("z"))
+	boardStore := redisadapter.NewLeaderboardRedis(sharedRedis(t).client, "leaderboard:duel:"+uniq("z"))
 	now := time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
 
 	f := &duelScenarioFixture{
@@ -132,9 +132,9 @@ func newDuelScenarioFixture(t *testing.T) *duelScenarioFixture {
 		boardStore:  boardStore,
 		now:         now,
 	}
-	f.matchmaking = duelusecase.NewMatchmakingUsecase(
+	f.matchmaking = duelusecase.NewMatchmakingUseCase(
 		base.mgr,
-		redisrepo.NewMatchmakingRedis(sharedRedis(t).client, "matchmaking:duel:"+uniq("q")),
+		redisadapter.NewMatchmakingRedis(sharedRedis(t).client, "matchmaking:duel:"+uniq("q")),
 		base.players,
 		base.tasks,
 		base.history,
@@ -142,7 +142,7 @@ func newDuelScenarioFixture(t *testing.T) *duelScenarioFixture {
 		nil,
 		fixedIntegrationClock{now: now},
 	)
-	f.flags = duelusecase.NewFlagSubmitUsecase(
+	f.flags = duelusecase.NewFlagSubmitUseCase(
 		base.mgr,
 		base.duels,
 		base.players,
@@ -150,7 +150,7 @@ func newDuelScenarioFixture(t *testing.T) *duelScenarioFixture {
 		boardStore,
 		fixedIntegrationClock{now: now.Add(10 * time.Second)},
 	)
-	f.leaderboard = leaderboardusecase.NewLeaderboardUsecase(
+	f.leaderboard = leaderboardusecase.NewUseCase(
 		boardStore,
 		base.board,
 		fixedIntegrationClock{now: now.Add(time.Minute)},
@@ -359,12 +359,12 @@ func TestDuel_ReadUsecaseReturnsParticipantDetail(t *testing.T) {
 	require.NoError(t, f.duels.CreateDuelPlayerTask(ctx, duel.ID, alice.ID, aliceTask.ID))
 	require.NoError(t, f.duels.CreateDuelPlayerTask(ctx, duel.ID, bob.ID, bobTask.ID))
 
-	detail, err := duelusecase.NewReadUsecase(f.duels).GetDuel(ctx, duel.ID, alice.ID)
+	detail, err := duelusecase.NewReadUseCase(f.duels).GetDuel(ctx, duel.ID, alice.ID)
 	require.NoError(t, err)
 	require.Equal(t, duel.ID, detail.Duel.ID)
 	require.Len(t, detail.PlayerTasks, 2)
 
-	_, err = duelusecase.NewReadUsecase(f.duels).GetDuel(ctx, duel.ID, stranger.ID)
+	_, err = duelusecase.NewReadUseCase(f.duels).GetDuel(ctx, duel.ID, stranger.ID)
 	require.ErrorIs(t, err, apperr.ErrNotDuelParticipant)
 }
 

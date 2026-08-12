@@ -13,13 +13,13 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/TakuyaYagam1/task-per-minute/internal/repo/storage"
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/objectstorage"
 )
 
-func newSeaweedStorage(t *testing.T) *storage.SeaweedStorage {
+func newSeaweedStorage(t *testing.T) *objectstorage.SeaweedStorage {
 	t.Helper()
 	fx := sharedSeaweed(t)
-	st, err := storage.New(storage.Config{
+	st, err := objectstorage.New(objectstorage.Config{
 		Endpoint:  fx.endpoint,
 		AccessKey: "tpm",
 		SecretKey: "tpm-secret",

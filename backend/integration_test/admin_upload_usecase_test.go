@@ -20,7 +20,7 @@ func TestAdminUploadUsecase_UploadSourceFile_HappyPath(t *testing.T) {
 	ctx := context.Background()
 	f := newDuelFixture()
 	st := newSeaweedStorage(t)
-	uc := admin.NewUploadUsecase(f.tasks, st)
+	uc := admin.NewUploadUseCase(f.tasks, st)
 	task := f.makeForensicsTask(t, uniq("forensics"), 90)
 	payload := []byte{'P', 'K', 0x03, 0x04, 'z', 'i', 'p'}
 

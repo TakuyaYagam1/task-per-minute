@@ -13,7 +13,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	duelusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel"
-	usecasemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/mocks"
+	duelmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel/mocks"
 )
 
 func TestMatchmakingUsecase_JoinQueue_NoPairEnqueuesAndMarksQueued(t *testing.T) {
@@ -391,27 +391,27 @@ func TestMatchmakingUsecase_JoinQueue_AssignsTaskWithoutHints(t *testing.T) {
 }
 
 type matchmakingFixture struct {
-	uc      *duelusecase.MatchmakingUsecase
-	tx      *usecasemocks.MockTxManager
-	queue   *usecasemocks.MockMatchmakingQueue
-	players *usecasemocks.MockPlayerRepo
-	tasks   *usecasemocks.MockTaskRepo
-	history *usecasemocks.MockHistoryRepo
-	duels   *usecasemocks.MockDuelRepo
-	storage *usecasemocks.MockSourceFileStorage
+	uc      *duelusecase.MatchmakingUseCase
+	tx      *duelmocks.MockTransactionManager
+	queue   *duelmocks.MockMatchmakingQueue
+	players *duelmocks.MockMatchmakingPlayerRepository
+	tasks   *duelmocks.MockMatchmakingTaskRepository
+	history *duelmocks.MockMatchmakingHistoryRepository
+	duels   *duelmocks.MockMatchmakingDuelRepository
+	storage *duelmocks.MockSourceFileURLSigner
 }
 
 func newFixture(t *testing.T) *matchmakingFixture {
 	t.Helper()
 
-	tx := usecasemocks.NewMockTxManager(t)
-	queue := usecasemocks.NewMockMatchmakingQueue(t)
-	players := usecasemocks.NewMockPlayerRepo(t)
-	tasks := usecasemocks.NewMockTaskRepo(t)
-	history := usecasemocks.NewMockHistoryRepo(t)
-	duels := usecasemocks.NewMockDuelRepo(t)
-	storage := usecasemocks.NewMockSourceFileStorage(t)
-	uc := duelusecase.NewMatchmakingUsecase(
+	tx := duelmocks.NewMockTransactionManager(t)
+	queue := duelmocks.NewMockMatchmakingQueue(t)
+	players := duelmocks.NewMockMatchmakingPlayerRepository(t)
+	tasks := duelmocks.NewMockMatchmakingTaskRepository(t)
+	history := duelmocks.NewMockMatchmakingHistoryRepository(t)
+	duels := duelmocks.NewMockMatchmakingDuelRepository(t)
+	storage := duelmocks.NewMockSourceFileURLSigner(t)
+	uc := duelusecase.NewMatchmakingUseCase(
 		tx,
 		queue,
 		players,

@@ -9,18 +9,18 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	"github.com/TakuyaYagam1/task-per-minute/internal/repo/persistent"
 )
 
 type duelFixture struct {
 	pool    *pgxpool.Pool
-	mgr     *persistent.TxManager
-	players *persistent.PlayerPostgres
-	tasks   *persistent.TaskPostgres
-	duels   *persistent.DuelPostgres
-	history *persistent.HistoryPostgres
-	board   *persistent.LeaderboardPostgres
+	mgr     *postgres.TxManager
+	players *postgres.PlayerPostgres
+	tasks   *postgres.TaskPostgres
+	duels   *postgres.DuelPostgres
+	history *postgres.HistoryPostgres
+	board   *postgres.LeaderboardPostgres
 }
 
 func newDuelFixture() *duelFixture {
@@ -34,15 +34,15 @@ func newIsolatedDuelFixture(t testing.TB) *duelFixture {
 }
 
 func newDuelFixtureWithPool(pool *pgxpool.Pool) *duelFixture {
-	mgr := persistent.NewTxManager(pool)
+	mgr := postgres.NewTxManager(pool)
 	return &duelFixture{
 		pool:    pool,
 		mgr:     mgr,
-		players: persistent.NewPlayerPostgres(mgr),
-		tasks:   persistent.NewTaskPostgres(mgr),
-		duels:   persistent.NewDuelPostgres(mgr),
-		history: persistent.NewHistoryPostgres(mgr),
-		board:   persistent.NewLeaderboardPostgres(mgr),
+		players: postgres.NewPlayerPostgres(mgr),
+		tasks:   postgres.NewTaskPostgres(mgr),
+		duels:   postgres.NewDuelPostgres(mgr),
+		history: postgres.NewHistoryPostgres(mgr),
+		board:   postgres.NewLeaderboardPostgres(mgr),
 	}
 }
 

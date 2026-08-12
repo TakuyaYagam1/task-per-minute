@@ -11,54 +11,45 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	"github.com/TakuyaYagam1/task-per-minute/internal/usecase"
-	"github.com/TakuyaYagam1/task-per-minute/pkg/clock"
 )
 
-// Result aliases usecase.FlagSubmitResult so callers may use either
-// duel.Result or usecase.FlagSubmitResult.
-type Result = usecase.FlagSubmitResult
-
-type FlagSubmitUsecase struct {
-	tx      usecase.TxManager
-	duels   usecase.DuelRepo
-	players usecase.PlayerRepo
-	history usecase.HistoryRepo
-	board   usecase.LeaderboardBumper
+type FlagSubmitUseCase struct {
+	tx      TransactionManager
+	duels   FlagDuelRepository
+	players FinalizationPlayerRepository
+	history SolvedHistoryWriter
+	board   LeaderboardBumper
 	timers  TimerStopper
 	log     logkit.Logger
-	clock   clock.Clock
+	clock   Clock
 }
 
 type TimerStopper interface {
 	Stop(duelID uuid.UUID) bool
 }
 
-type FlagSubmitOption func(*FlagSubmitUsecase)
+type FlagSubmitOption func(*FlagSubmitUseCase)
 
 func WithFlagSubmitLogger(log logkit.Logger) FlagSubmitOption {
-	return func(u *FlagSubmitUsecase) {
+	return func(u *FlagSubmitUseCase) {
 		u.log = log
 	}
 }
 
-func NewFlagSubmitUsecase(
-	tx usecase.TxManager,
-	duels usecase.DuelRepo,
-	players usecase.PlayerRepo,
-	history usecase.HistoryRepo,
-	board usecase.LeaderboardBumper,
-	clk clock.Clock,
+func NewFlagSubmitUseCase(
+	tx TransactionManager,
+	duels FlagDuelRepository,
+	players FinalizationPlayerRepository,
+	history SolvedHistoryWriter,
+	board LeaderboardBumper,
+	clk Clock,
 	timers ...TimerStopper,
-) *FlagSubmitUsecase {
-	if clk == nil {
-		clk = clock.Real{}
-	}
+) *FlagSubmitUseCase {
 	var timer TimerStopper
 	if len(timers) > 0 {
 		timer = timers[0]
 	}
-	return &FlagSubmitUsecase{
+	return &FlagSubmitUseCase{
 		tx:      tx,
 		duels:   duels,
 		players: players,
@@ -69,7 +60,7 @@ func NewFlagSubmitUsecase(
 	}
 }
 
-func (u *FlagSubmitUsecase) Configure(options ...FlagSubmitOption) *FlagSubmitUsecase {
+func (u *FlagSubmitUseCase) Configure(options ...FlagSubmitOption) *FlagSubmitUseCase {
 	for _, opt := range options {
 		if opt != nil {
 			opt(u)
@@ -78,7 +69,7 @@ func (u *FlagSubmitUsecase) Configure(options ...FlagSubmitOption) *FlagSubmitUs
 	return u
 }
 
-func (u *FlagSubmitUsecase) SubmitFlag(ctx context.Context, duelID, playerID uuid.UUID, flag string) (Result, error) {
+func (u *FlagSubmitUseCase) SubmitFlag(ctx context.Context, duelID, playerID uuid.UUID, flag string) (Result, error) {
 	now := u.clock.Now()
 	var result Result
 
@@ -113,7 +104,7 @@ func (u *FlagSubmitUsecase) SubmitFlag(ctx context.Context, duelID, playerID uui
 	return result, nil
 }
 
-func (u *FlagSubmitUsecase) validateSubmission(
+func (u *FlagSubmitUseCase) validateSubmission(
 	ctx context.Context,
 	duelID uuid.UUID,
 	playerID uuid.UUID,
@@ -141,7 +132,7 @@ func (u *FlagSubmitUsecase) validateSubmission(
 	return duel, task, nil
 }
 
-func (u *FlagSubmitUsecase) finishCorrectFlag(
+func (u *FlagSubmitUseCase) finishCorrectFlag(
 	ctx context.Context,
 	duel *domain.Duel,
 	task *domain.Task,

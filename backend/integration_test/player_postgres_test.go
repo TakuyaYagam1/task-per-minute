@@ -10,14 +10,14 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	"github.com/TakuyaYagam1/task-per-minute/internal/repo/persistent"
 )
 
-func newPlayerRepo() (*persistent.PlayerPostgres, *persistent.TxManager) {
-	mgr := persistent.NewTxManager(sharedPool)
-	return persistent.NewPlayerPostgres(mgr), mgr
+func newPlayerRepo() (*postgres.PlayerPostgres, *postgres.TxManager) {
+	mgr := postgres.NewTxManager(sharedPool)
+	return postgres.NewPlayerPostgres(mgr), mgr
 }
 
 func TestPlayerRepo_Create_HappyPath(t *testing.T) {
@@ -79,8 +79,8 @@ func TestPlayerRepo_JoinByUsername_QueuedPlayerRejected(t *testing.T) {
 
 func TestPlayerRepo_ResetQueuedToIdle_OnlyQueuedPlayers(t *testing.T) {
 	pool, _ := SetupTestDB(t)
-	mgr := persistent.NewTxManager(pool)
-	repo := persistent.NewPlayerPostgres(mgr)
+	mgr := postgres.NewTxManager(pool)
+	repo := postgres.NewPlayerPostgres(mgr)
 	ctx := context.Background()
 
 	idle, err := repo.Create(ctx, uniq("idle"))

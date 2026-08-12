@@ -16,12 +16,10 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	"github.com/TakuyaYagam1/task-per-minute/internal/usecase"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/admin"
-	usecasemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/mocks"
 )
 
-func TestUploadUsecase_UploadSourceFile_HappyPath(t *testing.T) {
+func TestUploadUseCase_UploadSourceFile_HappyPath(t *testing.T) {
 	t.Parallel()
 
 	taskID := uuid.New()
@@ -29,11 +27,10 @@ func TestUploadUsecase_UploadSourceFile_HappyPath(t *testing.T) {
 	task := uploadTask(taskID, nil)
 	var uploadedKey string
 
-	tasks := usecasemocks.NewMockTaskRepo(t)
-	tasks.EXPECT().GetByID(mock.Anything, taskID).Return(task, nil)
-	tasks.EXPECT().
-		Update(mock.Anything, taskID, taskInputWithVersionedSourceFileURL(taskID)).
-		RunAndReturn(func(_ context.Context, _ uuid.UUID, in usecase.TaskInput) (*domain.Task, error) {
+	tasks := newTaskRepositoryMock(t)
+	tasks.On("GetByID", mock.Anything, taskID).Return(task, nil)
+	tasks.On("Update", mock.Anything, taskID, taskInputWithVersionedSourceFileURL(taskID)).
+		Return(func(_ context.Context, _ uuid.UUID, in admin.TaskInput) (*domain.Task, error) {
 			return taskWithSource(task, *in.SourceFileURL), nil
 		})
 
@@ -54,7 +51,7 @@ func TestUploadUsecase_UploadSourceFile_HappyPath(t *testing.T) {
 		},
 	}
 
-	got, err := admin.NewUploadUsecase(tasks, storage).UploadSourceFile(
+	got, err := admin.NewUploadUseCase(tasks, storage).UploadSourceFile(
 		t.Context(), taskID, bytes.NewReader(payload), int64(len(payload)), "application/zip",
 	)
 
@@ -63,7 +60,7 @@ func TestUploadUsecase_UploadSourceFile_HappyPath(t *testing.T) {
 	require.Equal(t, []string{"upload", "presigned"}, storage.calls)
 }
 
-func TestUploadUsecase_PresignedSourceFileURL_HappyPath(t *testing.T) {
+func TestUploadUseCase_PresignedSourceFileURL_HappyPath(t *testing.T) {
 	t.Parallel()
 
 	taskID := uuid.New()
@@ -71,8 +68,8 @@ func TestUploadUsecase_PresignedSourceFileURL_HappyPath(t *testing.T) {
 	sourceURL := sourceFileURLForKey(key)
 	task := uploadTask(taskID, &sourceURL)
 
-	tasks := usecasemocks.NewMockTaskRepo(t)
-	tasks.EXPECT().GetByID(mock.Anything, taskID).Return(task, nil)
+	tasks := newTaskRepositoryMock(t)
+	tasks.On("GetByID", mock.Anything, taskID).Return(task, nil)
 
 	storage := &sourceFileStorageMock{
 		presignedGetURLFunc: func(_ context.Context, gotKey string, ttl time.Duration) (string, error) {
@@ -82,26 +79,26 @@ func TestUploadUsecase_PresignedSourceFileURL_HappyPath(t *testing.T) {
 		},
 	}
 
-	got, err := admin.NewUploadUsecase(tasks, storage).PresignedSourceFileURL(t.Context(), taskID)
+	got, err := admin.NewUploadUseCase(tasks, storage).PresignedSourceFileURL(t.Context(), taskID)
 
 	require.NoError(t, err)
 	require.Equal(t, sourceURL+"?X-Amz-Signature=test", got)
 	require.Equal(t, []string{"presigned"}, storage.calls)
 }
 
-func TestUploadUsecase_PresignedSourceFileURL_NoSource(t *testing.T) {
+func TestUploadUseCase_PresignedSourceFileURL_NoSource(t *testing.T) {
 	t.Parallel()
 
 	taskID := uuid.New()
-	tasks := usecasemocks.NewMockTaskRepo(t)
-	tasks.EXPECT().GetByID(mock.Anything, taskID).Return(uploadTask(taskID, nil), nil)
+	tasks := newTaskRepositoryMock(t)
+	tasks.On("GetByID", mock.Anything, taskID).Return(uploadTask(taskID, nil), nil)
 
-	_, err := admin.NewUploadUsecase(tasks, &sourceFileStorageMock{}).PresignedSourceFileURL(t.Context(), taskID)
+	_, err := admin.NewUploadUseCase(tasks, &sourceFileStorageMock{}).PresignedSourceFileURL(t.Context(), taskID)
 
 	require.ErrorIs(t, err, apperr.ErrTaskNotFound)
 }
 
-func TestUploadUsecase_UploadSourceFile_AcceptsCommonZIPContentTypes(t *testing.T) {
+func TestUploadUseCase_UploadSourceFile_AcceptsCommonZIPContentTypes(t *testing.T) {
 	t.Parallel()
 
 	contentTypes := []struct {
@@ -122,11 +119,10 @@ func TestUploadUsecase_UploadSourceFile_AcceptsCommonZIPContentTypes(t *testing.
 			payload := zipPayload("x")
 			task := uploadTask(taskID, nil)
 
-			tasks := usecasemocks.NewMockTaskRepo(t)
-			tasks.EXPECT().GetByID(mock.Anything, taskID).Return(task, nil)
-			tasks.EXPECT().
-				Update(mock.Anything, taskID, taskInputWithVersionedSourceFileURL(taskID)).
-				RunAndReturn(func(_ context.Context, _ uuid.UUID, in usecase.TaskInput) (*domain.Task, error) {
+			tasks := newTaskRepositoryMock(t)
+			tasks.On("GetByID", mock.Anything, taskID).Return(task, nil)
+			tasks.On("Update", mock.Anything, taskID, taskInputWithVersionedSourceFileURL(taskID)).
+				Return(func(_ context.Context, _ uuid.UUID, in admin.TaskInput) (*domain.Task, error) {
 					return taskWithSource(task, *in.SourceFileURL), nil
 				})
 
@@ -140,7 +136,7 @@ func TestUploadUsecase_UploadSourceFile_AcceptsCommonZIPContentTypes(t *testing.
 				},
 			}
 
-			got, err := admin.NewUploadUsecase(tasks, storage).UploadSourceFile(
+			got, err := admin.NewUploadUseCase(tasks, storage).UploadSourceFile(
 				t.Context(), taskID, bytes.NewReader(payload), int64(len(payload)), tt.contentType,
 			)
 
@@ -150,7 +146,7 @@ func TestUploadUsecase_UploadSourceFile_AcceptsCommonZIPContentTypes(t *testing.
 	}
 }
 
-func TestUploadUsecase_UploadSourceFile_ReuploadUsesVersionedKeyAndDeletesOldObject(t *testing.T) {
+func TestUploadUseCase_UploadSourceFile_ReuploadUsesVersionedKeyAndDeletesOldObject(t *testing.T) {
 	t.Parallel()
 
 	taskID := uuid.New()
@@ -160,11 +156,10 @@ func TestUploadUsecase_UploadSourceFile_ReuploadUsesVersionedKeyAndDeletesOldObj
 	task := uploadTask(taskID, &oldURL)
 	var uploadedKey string
 
-	tasks := usecasemocks.NewMockTaskRepo(t)
-	tasks.EXPECT().GetByID(mock.Anything, taskID).Return(task, nil)
-	tasks.EXPECT().
-		Update(mock.Anything, taskID, taskInputWithVersionedSourceFileURL(taskID)).
-		RunAndReturn(func(_ context.Context, _ uuid.UUID, in usecase.TaskInput) (*domain.Task, error) {
+	tasks := newTaskRepositoryMock(t)
+	tasks.On("GetByID", mock.Anything, taskID).Return(task, nil)
+	tasks.On("Update", mock.Anything, taskID, taskInputWithVersionedSourceFileURL(taskID)).
+		Return(func(_ context.Context, _ uuid.UUID, in admin.TaskInput) (*domain.Task, error) {
 			return taskWithSource(task, *in.SourceFileURL), nil
 		})
 
@@ -184,7 +179,7 @@ func TestUploadUsecase_UploadSourceFile_ReuploadUsesVersionedKeyAndDeletesOldObj
 		},
 	}
 
-	_, err := admin.NewUploadUsecase(tasks, storage).UploadSourceFile(
+	_, err := admin.NewUploadUseCase(tasks, storage).UploadSourceFile(
 		t.Context(), taskID, bytes.NewReader(payload), int64(len(payload)), "application/zip",
 	)
 
@@ -192,7 +187,7 @@ func TestUploadUsecase_UploadSourceFile_ReuploadUsesVersionedKeyAndDeletesOldObj
 	require.Equal(t, []string{"upload", "presigned", "delete"}, storage.calls)
 }
 
-func TestUploadUsecase_UploadSourceFile_OldDeleteErrorDoesNotFailCommittedUpload(t *testing.T) {
+func TestUploadUseCase_UploadSourceFile_OldDeleteErrorDoesNotFailCommittedUpload(t *testing.T) {
 	t.Parallel()
 
 	taskID := uuid.New()
@@ -202,11 +197,10 @@ func TestUploadUsecase_UploadSourceFile_OldDeleteErrorDoesNotFailCommittedUpload
 	task := uploadTask(taskID, &oldURL)
 	var uploadedKey string
 
-	tasks := usecasemocks.NewMockTaskRepo(t)
-	tasks.EXPECT().GetByID(mock.Anything, taskID).Return(task, nil)
-	tasks.EXPECT().
-		Update(mock.Anything, taskID, taskInputWithVersionedSourceFileURL(taskID)).
-		RunAndReturn(func(_ context.Context, _ uuid.UUID, in usecase.TaskInput) (*domain.Task, error) {
+	tasks := newTaskRepositoryMock(t)
+	tasks.On("GetByID", mock.Anything, taskID).Return(task, nil)
+	tasks.On("Update", mock.Anything, taskID, taskInputWithVersionedSourceFileURL(taskID)).
+		Return(func(_ context.Context, _ uuid.UUID, in admin.TaskInput) (*domain.Task, error) {
 			return taskWithSource(task, *in.SourceFileURL), nil
 		})
 
@@ -229,7 +223,7 @@ func TestUploadUsecase_UploadSourceFile_OldDeleteErrorDoesNotFailCommittedUpload
 	var logs bytes.Buffer
 	log := newUploadTestLogger(t, &logs)
 
-	got, err := admin.NewUploadUsecase(tasks, storage).
+	got, err := admin.NewUploadUseCase(tasks, storage).
 		Configure(admin.WithUploadLogger(log)).
 		UploadSourceFile(
 			t.Context(), taskID, bytes.NewReader(payload), int64(len(payload)), "application/zip",
@@ -244,7 +238,7 @@ func TestUploadUsecase_UploadSourceFile_OldDeleteErrorDoesNotFailCommittedUpload
 	require.Contains(t, logs.String(), "cleanup failed")
 }
 
-func TestUploadUsecase_UploadSourceFile_ReuploadUploadErrorDoesNotDeleteOldFile(t *testing.T) {
+func TestUploadUseCase_UploadSourceFile_ReuploadUploadErrorDoesNotDeleteOldFile(t *testing.T) {
 	t.Parallel()
 
 	taskID := uuid.New()
@@ -253,8 +247,8 @@ func TestUploadUsecase_UploadSourceFile_ReuploadUploadErrorDoesNotDeleteOldFile(
 	task := uploadTask(taskID, &oldURL)
 	lowLevelErr := errors.New("storage down")
 
-	tasks := usecasemocks.NewMockTaskRepo(t)
-	tasks.EXPECT().GetByID(mock.Anything, taskID).Return(task, nil)
+	tasks := newTaskRepositoryMock(t)
+	tasks.On("GetByID", mock.Anything, taskID).Return(task, nil)
 
 	storage := &sourceFileStorageMock{
 		deleteFunc: func(context.Context, string) error {
@@ -267,7 +261,7 @@ func TestUploadUsecase_UploadSourceFile_ReuploadUploadErrorDoesNotDeleteOldFile(
 		},
 	}
 
-	_, err := admin.NewUploadUsecase(tasks, storage).UploadSourceFile(
+	_, err := admin.NewUploadUseCase(tasks, storage).UploadSourceFile(
 		t.Context(), taskID, bytes.NewReader(payload), int64(len(payload)), "application/zip",
 	)
 
@@ -275,7 +269,7 @@ func TestUploadUsecase_UploadSourceFile_ReuploadUploadErrorDoesNotDeleteOldFile(
 	require.Equal(t, []string{"upload"}, storage.calls)
 }
 
-func TestUploadUsecase_UploadSourceFile_UpdateErrorDeletesNewObject(t *testing.T) {
+func TestUploadUseCase_UploadSourceFile_UpdateErrorDeletesNewObject(t *testing.T) {
 	t.Parallel()
 
 	taskID := uuid.New()
@@ -284,10 +278,9 @@ func TestUploadUsecase_UploadSourceFile_UpdateErrorDeletesNewObject(t *testing.T
 	lowLevelErr := errors.New("db down")
 	var uploadedKey string
 
-	tasks := usecasemocks.NewMockTaskRepo(t)
-	tasks.EXPECT().GetByID(mock.Anything, taskID).Return(task, nil)
-	tasks.EXPECT().
-		Update(mock.Anything, taskID, taskInputWithVersionedSourceFileURL(taskID)).
+	tasks := newTaskRepositoryMock(t)
+	tasks.On("GetByID", mock.Anything, taskID).Return(task, nil)
+	tasks.On("Update", mock.Anything, taskID, taskInputWithVersionedSourceFileURL(taskID)).
 		Return(nil, lowLevelErr)
 
 	storage := &sourceFileStorageMock{
@@ -306,7 +299,7 @@ func TestUploadUsecase_UploadSourceFile_UpdateErrorDeletesNewObject(t *testing.T
 		},
 	}
 
-	_, err := admin.NewUploadUsecase(tasks, storage).UploadSourceFile(
+	_, err := admin.NewUploadUseCase(tasks, storage).UploadSourceFile(
 		t.Context(), taskID, bytes.NewReader(payload), int64(len(payload)), "application/zip",
 	)
 
@@ -314,7 +307,7 @@ func TestUploadUsecase_UploadSourceFile_UpdateErrorDeletesNewObject(t *testing.T
 	require.Equal(t, []string{"upload", "presigned", "delete"}, storage.calls)
 }
 
-func TestUploadUsecase_UploadSourceFile_PresignErrorDeletesNewObjectAndSkipsUpdate(t *testing.T) {
+func TestUploadUseCase_UploadSourceFile_PresignErrorDeletesNewObjectAndSkipsUpdate(t *testing.T) {
 	t.Parallel()
 
 	taskID := uuid.New()
@@ -323,8 +316,8 @@ func TestUploadUsecase_UploadSourceFile_PresignErrorDeletesNewObjectAndSkipsUpda
 	lowLevelErr := errors.New("presign down")
 	var uploadedKey string
 
-	tasks := usecasemocks.NewMockTaskRepo(t)
-	tasks.EXPECT().GetByID(mock.Anything, taskID).Return(task, nil)
+	tasks := newTaskRepositoryMock(t)
+	tasks.On("GetByID", mock.Anything, taskID).Return(task, nil)
 
 	storage := &sourceFileStorageMock{
 		deleteFunc: func(_ context.Context, key string) error {
@@ -342,7 +335,7 @@ func TestUploadUsecase_UploadSourceFile_PresignErrorDeletesNewObjectAndSkipsUpda
 		},
 	}
 
-	_, err := admin.NewUploadUsecase(tasks, storage).UploadSourceFile(
+	_, err := admin.NewUploadUseCase(tasks, storage).UploadSourceFile(
 		t.Context(), taskID, bytes.NewReader(payload), int64(len(payload)), "application/zip",
 	)
 
@@ -350,7 +343,7 @@ func TestUploadUsecase_UploadSourceFile_PresignErrorDeletesNewObjectAndSkipsUpda
 	require.Equal(t, []string{"upload", "presigned", "delete"}, storage.calls)
 }
 
-func TestUploadUsecase_UploadSourceFile_AcceptsWebTask(t *testing.T) {
+func TestUploadUseCase_UploadSourceFile_AcceptsWebTask(t *testing.T) {
 	t.Parallel()
 
 	taskID := uuid.New()
@@ -359,11 +352,10 @@ func TestUploadUsecase_UploadSourceFile_AcceptsWebTask(t *testing.T) {
 	task.Category = domain.CategoryWeb
 	var uploadedKey string
 
-	tasks := usecasemocks.NewMockTaskRepo(t)
-	tasks.EXPECT().GetByID(mock.Anything, taskID).Return(task, nil)
-	tasks.EXPECT().
-		Update(mock.Anything, taskID, taskInputWithVersionedSourceFileURLForCategory(taskID, domain.CategoryWeb)).
-		RunAndReturn(func(_ context.Context, _ uuid.UUID, in usecase.TaskInput) (*domain.Task, error) {
+	tasks := newTaskRepositoryMock(t)
+	tasks.On("GetByID", mock.Anything, taskID).Return(task, nil)
+	tasks.On("Update", mock.Anything, taskID, taskInputWithVersionedSourceFileURLForCategory(taskID, domain.CategoryWeb)).
+		Return(func(_ context.Context, _ uuid.UUID, in admin.TaskInput) (*domain.Task, error) {
 			return taskWithSource(task, *in.SourceFileURL), nil
 		})
 
@@ -379,7 +371,7 @@ func TestUploadUsecase_UploadSourceFile_AcceptsWebTask(t *testing.T) {
 		},
 	}
 
-	got, err := admin.NewUploadUsecase(tasks, storage).UploadSourceFile(
+	got, err := admin.NewUploadUseCase(tasks, storage).UploadSourceFile(
 		t.Context(), taskID, bytes.NewReader(payload), int64(len(payload)), "application/zip",
 	)
 
@@ -388,7 +380,7 @@ func TestUploadUsecase_UploadSourceFile_AcceptsWebTask(t *testing.T) {
 	require.Equal(t, []string{"upload", "presigned"}, storage.calls)
 }
 
-func TestUploadUsecase_ClearSourceFile_UpdatesTaskAndDeletesObject(t *testing.T) {
+func TestUploadUseCase_ClearSourceFile_UpdatesTaskAndDeletesObject(t *testing.T) {
 	t.Parallel()
 
 	taskID := uuid.New()
@@ -397,10 +389,9 @@ func TestUploadUsecase_ClearSourceFile_UpdatesTaskAndDeletesObject(t *testing.T)
 	cleared := *task
 	cleared.SourceFileURL = nil
 
-	tasks := usecasemocks.NewMockTaskRepo(t)
-	tasks.EXPECT().GetByID(mock.Anything, taskID).Return(task, nil)
-	tasks.EXPECT().
-		Update(mock.Anything, taskID, taskInputWithoutSourceFileURL()).
+	tasks := newTaskRepositoryMock(t)
+	tasks.On("GetByID", mock.Anything, taskID).Return(task, nil)
+	tasks.On("Update", mock.Anything, taskID, taskInputWithoutSourceFileURL()).
 		Return(&cleared, nil)
 
 	storage := &sourceFileStorageMock{
@@ -410,7 +401,7 @@ func TestUploadUsecase_ClearSourceFile_UpdatesTaskAndDeletesObject(t *testing.T)
 		},
 	}
 
-	got, err := admin.NewUploadUsecase(tasks, storage).ClearSourceFile(
+	got, err := admin.NewUploadUseCase(tasks, storage).ClearSourceFile(
 		t.Context(), taskID, taskInputFromTask(task),
 	)
 
@@ -419,7 +410,7 @@ func TestUploadUsecase_ClearSourceFile_UpdatesTaskAndDeletesObject(t *testing.T)
 	require.Equal(t, []string{"delete"}, storage.calls)
 }
 
-func TestUploadUsecase_ClearSourceFile_DeleteErrorDoesNotFailCommittedClear(t *testing.T) {
+func TestUploadUseCase_ClearSourceFile_DeleteErrorDoesNotFailCommittedClear(t *testing.T) {
 	t.Parallel()
 
 	taskID := uuid.New()
@@ -428,10 +419,9 @@ func TestUploadUsecase_ClearSourceFile_DeleteErrorDoesNotFailCommittedClear(t *t
 	cleared := *task
 	cleared.SourceFileURL = nil
 
-	tasks := usecasemocks.NewMockTaskRepo(t)
-	tasks.EXPECT().GetByID(mock.Anything, taskID).Return(task, nil)
-	tasks.EXPECT().
-		Update(mock.Anything, taskID, taskInputWithoutSourceFileURL()).
+	tasks := newTaskRepositoryMock(t)
+	tasks.On("GetByID", mock.Anything, taskID).Return(task, nil)
+	tasks.On("Update", mock.Anything, taskID, taskInputWithoutSourceFileURL()).
 		Return(&cleared, nil)
 
 	storage := &sourceFileStorageMock{
@@ -444,7 +434,7 @@ func TestUploadUsecase_ClearSourceFile_DeleteErrorDoesNotFailCommittedClear(t *t
 	var logs bytes.Buffer
 	log := newUploadTestLogger(t, &logs)
 
-	got, err := admin.NewUploadUsecase(tasks, storage).
+	got, err := admin.NewUploadUseCase(tasks, storage).
 		Configure(admin.WithUploadLogger(log)).
 		ClearSourceFile(
 			t.Context(), taskID, taskInputFromTask(task),
@@ -459,16 +449,15 @@ func TestUploadUsecase_ClearSourceFile_DeleteErrorDoesNotFailCommittedClear(t *t
 	require.Contains(t, logs.String(), "cleanup failed")
 }
 
-func TestUploadUsecase_ClearSourceFile_SkipsDeleteWhenNoSource(t *testing.T) {
+func TestUploadUseCase_ClearSourceFile_SkipsDeleteWhenNoSource(t *testing.T) {
 	t.Parallel()
 
 	taskID := uuid.New()
 	task := uploadTask(taskID, nil)
 
-	tasks := usecasemocks.NewMockTaskRepo(t)
-	tasks.EXPECT().GetByID(mock.Anything, taskID).Return(task, nil)
-	tasks.EXPECT().
-		Update(mock.Anything, taskID, taskInputWithoutSourceFileURL()).
+	tasks := newTaskRepositoryMock(t)
+	tasks.On("GetByID", mock.Anything, taskID).Return(task, nil)
+	tasks.On("Update", mock.Anything, taskID, taskInputWithoutSourceFileURL()).
 		Return(task, nil)
 
 	storage := &sourceFileStorageMock{
@@ -478,7 +467,7 @@ func TestUploadUsecase_ClearSourceFile_SkipsDeleteWhenNoSource(t *testing.T) {
 		},
 	}
 
-	got, err := admin.NewUploadUsecase(tasks, storage).ClearSourceFile(
+	got, err := admin.NewUploadUseCase(tasks, storage).ClearSourceFile(
 		t.Context(), taskID, taskInputFromTask(task),
 	)
 
@@ -487,7 +476,7 @@ func TestUploadUsecase_ClearSourceFile_SkipsDeleteWhenNoSource(t *testing.T) {
 	require.Empty(t, storage.calls)
 }
 
-func TestUploadUsecase_DeleteSourceFile_DeletesStableKey(t *testing.T) {
+func TestUploadUseCase_DeleteSourceFile_DeletesStableKey(t *testing.T) {
 	t.Parallel()
 
 	taskID := uuid.New()
@@ -498,13 +487,13 @@ func TestUploadUsecase_DeleteSourceFile_DeletesStableKey(t *testing.T) {
 		},
 	}
 
-	err := admin.NewUploadUsecase(usecasemocks.NewMockTaskRepo(t), storage).DeleteSourceFile(t.Context(), taskID, nil)
+	err := admin.NewUploadUseCase(newTaskRepositoryMock(t), storage).DeleteSourceFile(t.Context(), taskID, nil)
 
 	require.NoError(t, err)
 	require.Equal(t, []string{"delete"}, storage.calls)
 }
 
-func TestUploadUsecase_UploadSourceFile_Validation(t *testing.T) {
+func TestUploadUseCase_UploadSourceFile_Validation(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -543,8 +532,8 @@ func TestUploadUsecase_UploadSourceFile_Validation(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := admin.NewUploadUsecase(
-				usecasemocks.NewMockTaskRepo(t),
+			got, err := admin.NewUploadUseCase(
+				newTaskRepositoryMock(t),
 				&sourceFileStorageMock{},
 			).UploadSourceFile(t.Context(), uuid.New(), bytes.NewReader(tt.payload), tt.size, tt.contentType)
 
@@ -554,7 +543,7 @@ func TestUploadUsecase_UploadSourceFile_Validation(t *testing.T) {
 	}
 }
 
-func TestUploadUsecase_UploadSourceFile_StorageErrorIsWrapped(t *testing.T) {
+func TestUploadUseCase_UploadSourceFile_StorageErrorIsWrapped(t *testing.T) {
 	t.Parallel()
 
 	taskID := uuid.New()
@@ -562,15 +551,15 @@ func TestUploadUsecase_UploadSourceFile_StorageErrorIsWrapped(t *testing.T) {
 	task := uploadTask(taskID, nil)
 	lowLevelErr := errors.New("storage down")
 
-	tasks := usecasemocks.NewMockTaskRepo(t)
-	tasks.EXPECT().GetByID(mock.Anything, taskID).Return(task, nil)
+	tasks := newTaskRepositoryMock(t)
+	tasks.On("GetByID", mock.Anything, taskID).Return(task, nil)
 	storage := &sourceFileStorageMock{
 		uploadFunc: func(_ context.Context, _ string, _ io.Reader, _ int64) (string, error) {
 			return "", lowLevelErr
 		},
 	}
 
-	_, err := admin.NewUploadUsecase(tasks, storage).UploadSourceFile(
+	_, err := admin.NewUploadUseCase(tasks, storage).UploadSourceFile(
 		t.Context(), taskID, bytes.NewReader(payload), int64(len(payload)), "application/zip",
 	)
 
@@ -602,8 +591,8 @@ func taskWithSource(task *domain.Task, sourceFileURL string) *domain.Task {
 	return &updated
 }
 
-func taskInputFromTask(task *domain.Task) usecase.TaskInput {
-	return usecase.TaskInput{
+func taskInputFromTask(task *domain.Task) admin.TaskInput {
+	return admin.TaskInput{
 		Title:         task.Title,
 		Description:   task.Description,
 		Category:      task.Category,
@@ -621,7 +610,7 @@ func taskInputWithVersionedSourceFileURL(taskID uuid.UUID) interface{} {
 }
 
 func taskInputWithVersionedSourceFileURLForCategory(taskID uuid.UUID, category domain.Category) interface{} {
-	return mock.MatchedBy(func(in usecase.TaskInput) bool {
+	return mock.MatchedBy(func(in admin.TaskInput) bool {
 		return in.Title == "task" &&
 			in.Description == "description" &&
 			in.Category == category &&
@@ -640,7 +629,7 @@ func taskInputWithVersionedSourceFileURLForCategory(taskID uuid.UUID, category d
 }
 
 func taskInputWithoutSourceFileURL() interface{} {
-	return mock.MatchedBy(func(in usecase.TaskInput) bool {
+	return mock.MatchedBy(func(in admin.TaskInput) bool {
 		return in.Title == "task" &&
 			in.Description == "description" &&
 			in.Category == domain.CategoryForensics &&

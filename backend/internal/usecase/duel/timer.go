@@ -10,18 +10,16 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/ctxutil"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	"github.com/TakuyaYagam1/task-per-minute/internal/usecase"
-	"github.com/TakuyaYagam1/task-per-minute/pkg/clock"
 )
 
 const asyncFinalizeTimeout = 10 * time.Second
 
 type TimerRegistry struct {
 	ctx     context.Context
-	tx      usecase.TxManager
-	duels   usecase.DuelRepo
-	players usecase.PlayerRepo
-	clock   clock.Clock
+	tx      TransactionManager
+	duels   FinalizationDuelRepository
+	players FinalizationPlayerRepository
+	clock   Clock
 	log     logkit.Logger
 	timers  sync.Map // map[uuid.UUID]*timerEntry
 }
@@ -53,15 +51,12 @@ type timerEntry struct {
 }
 
 func NewTimerRegistry(
-	tx usecase.TxManager,
-	duels usecase.DuelRepo,
-	players usecase.PlayerRepo,
-	clk clock.Clock,
+	tx TransactionManager,
+	duels FinalizationDuelRepository,
+	players FinalizationPlayerRepository,
+	clk Clock,
 	options ...TimerRegistryOption,
 ) *TimerRegistry {
-	if clk == nil {
-		clk = clock.Real{}
-	}
 	r := &TimerRegistry{
 		ctx:     context.Background(),
 		tx:      tx,

@@ -5,8 +5,6 @@ import (
 
 	"github.com/google/uuid"
 	logkit "github.com/wahrwelt-kit/go-logkit"
-
-	"github.com/TakuyaYagam1/task-per-minute/internal/usecase"
 )
 
 // bumpLeaderboard runs LeaderboardBumper.IncrementWin and logs the error
@@ -19,7 +17,7 @@ import (
 // at least surfaced in the structured logs so operators can react to it.
 func bumpLeaderboard(
 	ctx context.Context,
-	board usecase.LeaderboardBumper,
+	board LeaderboardBumper,
 	log logkit.Logger,
 	duelID uuid.UUID,
 	username string,

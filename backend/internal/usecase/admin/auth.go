@@ -15,19 +15,9 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
-	"github.com/TakuyaYagam1/task-per-minute/internal/usecase"
-	"github.com/TakuyaYagam1/task-per-minute/pkg/clock"
-)
-
-type (
-	TokenKind = usecase.TokenKind
-	Claims    = usecase.Claims
-	TokenPair = usecase.TokenPair
 )
 
 const (
-	TokenKindAccess    = usecase.TokenKindAccess
-	TokenKindRefresh   = usecase.TokenKindRefresh
 	adminSubject       = "admin"
 	jwtClockSkewLeeway = 10 * time.Second
 	jwtIssuer          = "task-per-minute-backend"
@@ -41,17 +31,17 @@ type AuthConfig struct {
 	AdminPassword []byte
 }
 
-type AuthUsecase struct {
+type AuthUseCase struct {
 	cfg         AuthConfig
-	clock       clock.Clock
-	revocations usecase.RevocationStore
+	clock       Clock
+	revocations RevocationStore
 }
 
-func NewAuthUsecase(cfg AuthConfig, clk clock.Clock, rev usecase.RevocationStore) *AuthUsecase {
-	return &AuthUsecase{cfg: cfg, clock: clk, revocations: rev}
+func NewAuthUseCase(cfg AuthConfig, clk Clock, rev RevocationStore) *AuthUseCase {
+	return &AuthUseCase{cfg: cfg, clock: clk, revocations: rev}
 }
 
-func (u *AuthUsecase) Login(_ context.Context, password string) (*TokenPair, error) {
+func (u *AuthUseCase) Login(_ context.Context, password string) (*TokenPair, error) {
 	if !verifyAdminPassword(u.cfg.AdminPassword, password) {
 		return nil, apperr.ErrInvalidCredentials
 	}
@@ -77,7 +67,7 @@ func isBcryptHash(stored []byte) bool {
 		bytes.HasPrefix(stored, []byte("$2y$"))
 }
 
-func (u *AuthUsecase) Refresh(ctx context.Context, refreshToken string) (*TokenPair, error) {
+func (u *AuthUseCase) Refresh(ctx context.Context, refreshToken string) (*TokenPair, error) {
 	claims, err := u.parse(refreshToken)
 	if err != nil {
 		return nil, err
@@ -100,7 +90,7 @@ func (u *AuthUsecase) Refresh(ctx context.Context, refreshToken string) (*TokenP
 	return pair, nil
 }
 
-func (u *AuthUsecase) VerifyAccess(ctx context.Context, token string) (*Claims, error) {
+func (u *AuthUseCase) VerifyAccess(ctx context.Context, token string) (*Claims, error) {
 	claims, err := u.parse(token)
 	if err != nil {
 		return nil, err
@@ -114,7 +104,7 @@ func (u *AuthUsecase) VerifyAccess(ctx context.Context, token string) (*Claims, 
 	return claims, nil
 }
 
-func (u *AuthUsecase) Logout(ctx context.Context, refreshToken string, accessTokens ...string) error {
+func (u *AuthUseCase) Logout(ctx context.Context, refreshToken string, accessTokens ...string) error {
 	claims, err := u.parse(refreshToken)
 	if err != nil {
 		return err
@@ -136,7 +126,7 @@ func (u *AuthUsecase) Logout(ctx context.Context, refreshToken string, accessTok
 	return nil
 }
 
-func (u *AuthUsecase) ensureNotRevoked(ctx context.Context, claims *Claims) error {
+func (u *AuthUseCase) ensureNotRevoked(ctx context.Context, claims *Claims) error {
 	revoked, err := u.revocations.IsRevoked(ctx, claims.JTI)
 	if err != nil {
 		return fmt.Errorf("AuthUsecase - VerifyAccess - RevocationStore.IsRevoked: %w", err)
@@ -147,7 +137,7 @@ func (u *AuthUsecase) ensureNotRevoked(ctx context.Context, claims *Claims) erro
 	return nil
 }
 
-func (u *AuthUsecase) revokeAccessToken(ctx context.Context, token string) error {
+func (u *AuthUseCase) revokeAccessToken(ctx context.Context, token string) error {
 	claims, err := u.parse(token)
 	if err != nil {
 		if errors.Is(err, apperr.ErrInvalidCredentials) || errors.Is(err, apperr.ErrTokenExpired) {
@@ -174,7 +164,7 @@ func revocationExpiresAt(claims *Claims) time.Time {
 	return claims.ExpiresAt.Add(jwtClockSkewLeeway)
 }
 
-func (u *AuthUsecase) issuePair(sub string) (*TokenPair, error) {
+func (u *AuthUseCase) issuePair(sub string) (*TokenPair, error) {
 	now := u.clock.Now()
 	accessExp := now.Add(u.cfg.AccessTTL)
 	refreshExp := now.Add(u.cfg.RefreshTTL)
@@ -195,7 +185,7 @@ func (u *AuthUsecase) issuePair(sub string) (*TokenPair, error) {
 	}, nil
 }
 
-func (u *AuthUsecase) sign(sub string, kind TokenKind, iat, exp time.Time) (string, error) {
+func (u *AuthUseCase) sign(sub string, kind TokenKind, iat, exp time.Time) (string, error) {
 	claims := jwt.MapClaims{
 		"iss":  jwtIssuer,
 		"aud":  jwtAudience,
@@ -213,7 +203,7 @@ func (u *AuthUsecase) sign(sub string, kind TokenKind, iat, exp time.Time) (stri
 	return signed, nil
 }
 
-func (u *AuthUsecase) parse(tokenStr string) (*Claims, error) {
+func (u *AuthUseCase) parse(tokenStr string) (*Claims, error) {
 	parsed, err := jwt.Parse(tokenStr,
 		u.jwtKeyfunc,
 		jwt.WithTimeFunc(u.clock.Now),
@@ -239,7 +229,7 @@ func (u *AuthUsecase) parse(tokenStr string) (*Claims, error) {
 	return claimsFromMap(mc)
 }
 
-func (u *AuthUsecase) jwtKeyfunc(t *jwt.Token) (any, error) {
+func (u *AuthUseCase) jwtKeyfunc(t *jwt.Token) (any, error) {
 	if t.Method.Alg() != jwt.SigningMethodHS256.Alg() {
 		return nil, fmt.Errorf("unexpected signing method: %s", t.Method.Alg())
 	}

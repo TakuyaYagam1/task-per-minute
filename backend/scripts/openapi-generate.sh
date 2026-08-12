@@ -17,7 +17,7 @@ OAPI="go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@${OAPI_VER
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 "$PYTHON_BIN" scripts/merge-schemas.py
 
-SPEC="internal/openapi/openapi.yml"
+SPEC="api/openapi.yml"
 
 shopt -s nullglob
 configs=(codegen/oapi-codegen-*.yml codegen/oapi-codegen-*.yaml)
@@ -45,4 +45,4 @@ done
 # Drop the merged schemas.yml - it is a build artefact reconstructed by
 # merge-schemas.py on every run. The bundled openapi.bundle.yml in $BUNDLE_DIR
 # is auto-removed by the trap above.
-rm -f internal/openapi/components/schemas.yml
+rm -f api/components/schemas.yml

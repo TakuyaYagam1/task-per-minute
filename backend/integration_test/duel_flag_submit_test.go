@@ -10,9 +10,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	redisadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/redis"
 	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	redisrepo "github.com/TakuyaYagam1/task-per-minute/internal/repo/redis"
 	duelusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel"
 )
 
@@ -201,15 +201,15 @@ func TestDuelFlagSubmit_IncorrectFlagLeavesDuelActive(t *testing.T) {
 
 type flagSubmitFixture struct {
 	*duelFixture
-	store *redisrepo.LeaderboardRedis
-	uc    *duelusecase.FlagSubmitUsecase
+	store *redisadapter.LeaderboardRedis
+	uc    *duelusecase.FlagSubmitUseCase
 }
 
 func newFlagSubmitFixture(t *testing.T, now time.Time) *flagSubmitFixture {
 	t.Helper()
 	f := newDuelFixture()
-	store := redisrepo.NewLeaderboardRedis(sharedRedis(t).client, "leaderboard:"+uniq("z"))
-	uc := duelusecase.NewFlagSubmitUsecase(
+	store := redisadapter.NewLeaderboardRedis(sharedRedis(t).client, "leaderboard:"+uniq("z"))
+	uc := duelusecase.NewFlagSubmitUseCase(
 		f.mgr,
 		f.duels,
 		f.players,

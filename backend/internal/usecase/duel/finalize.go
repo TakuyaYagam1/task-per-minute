@@ -11,7 +11,6 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	"github.com/TakuyaYagam1/task-per-minute/internal/usecase"
 )
 
 // finalizeDuel atomically finishes the duel with the given winner (nil = draw)
@@ -30,13 +29,13 @@ import (
 // callers should pass nil unless they intentionally want a compatibility bump.
 func finalizeDuel(
 	ctx context.Context,
-	tx usecase.TxManager,
-	duels usecase.DuelRepo,
-	players usecase.PlayerRepo,
+	tx TransactionManager,
+	duels FinalizationDuelRepository,
+	players FinalizationPlayerRepository,
 	now time.Time,
 	duelID uuid.UUID,
 	winnerID *uuid.UUID,
-	board usecase.LeaderboardBumper,
+	board LeaderboardBumper,
 	log logkit.Logger,
 ) (*domain.Duel, error) {
 	finished, winnerUsername, err := finalizeDuelInTx(ctx, tx, duels, players, now, duelID, winnerID, board != nil)
@@ -57,9 +56,9 @@ func finalizeDuel(
 // username while the row is still consistent with the duel finish.
 func finalizeDuelInTx(
 	ctx context.Context,
-	tx usecase.TxManager,
-	duels usecase.DuelRepo,
-	players usecase.PlayerRepo,
+	tx TransactionManager,
+	duels FinalizationDuelRepository,
+	players FinalizationPlayerRepository,
 	now time.Time,
 	duelID uuid.UUID,
 	winnerID *uuid.UUID,

@@ -11,8 +11,6 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	"github.com/TakuyaYagam1/task-per-minute/internal/usecase"
-	"github.com/TakuyaYagam1/task-per-minute/pkg/clock"
 )
 
 var adminUsernameRE = regexp.MustCompile(`^[a-zA-Z0-9_-]{2,50}$`)
@@ -22,23 +20,20 @@ const (
 	maxAdminPlayerAuditLimit     = int32(200)
 )
 
-type PlayerUsecase struct {
-	tx          usecase.TxManager
-	players     usecase.AdminPlayerRepo
-	leaderboard usecase.LeaderboardInvalidator
-	clock       clock.Clock
+type PlayerUseCase struct {
+	tx          TransactionManager
+	players     PlayerRepository
+	leaderboard LeaderboardInvalidator
+	clock       Clock
 }
 
-func NewPlayerUsecase(
-	tx usecase.TxManager,
-	players usecase.AdminPlayerRepo,
-	leaderboard usecase.LeaderboardInvalidator,
-	clk clock.Clock,
-) *PlayerUsecase {
-	if clk == nil {
-		clk = clock.Real{}
-	}
-	return &PlayerUsecase{
+func NewPlayerUseCase(
+	tx TransactionManager,
+	players PlayerRepository,
+	leaderboard LeaderboardInvalidator,
+	clk Clock,
+) *PlayerUseCase {
+	return &PlayerUseCase{
 		tx:          tx,
 		players:     players,
 		leaderboard: leaderboard,
@@ -46,7 +41,7 @@ func NewPlayerUsecase(
 	}
 }
 
-func (u *PlayerUsecase) ListPlayers(ctx context.Context, includeDeleted bool) ([]usecase.AdminPlayerRecord, error) {
+func (u *PlayerUseCase) ListPlayers(ctx context.Context, includeDeleted bool) ([]PlayerRecord, error) {
 	players, err := u.players.ListAdminPlayers(ctx, includeDeleted)
 	if err != nil {
 		return nil, fmt.Errorf("AdminPlayerUsecase - ListPlayers - AdminPlayerRepo.ListAdminPlayers: %w", err)
@@ -54,11 +49,11 @@ func (u *PlayerUsecase) ListPlayers(ctx context.Context, includeDeleted bool) ([
 	return players, nil
 }
 
-func (u *PlayerUsecase) ListPlayerAudit(
+func (u *PlayerUseCase) ListPlayerAudit(
 	ctx context.Context,
 	id uuid.UUID,
 	limit int32,
-) ([]usecase.AdminPlayerAuditEvent, error) {
+) ([]PlayerAuditEvent, error) {
 	if limit <= 0 {
 		limit = defaultAdminPlayerAuditLimit
 	}
@@ -75,12 +70,12 @@ func (u *PlayerUsecase) ListPlayerAudit(
 	return events, nil
 }
 
-func (u *PlayerUsecase) UpdatePlayer(
+func (u *PlayerUseCase) UpdatePlayer(
 	ctx context.Context,
 	id uuid.UUID,
-	in usecase.AdminPlayerInput,
-	actor usecase.AdminActor,
-) (*usecase.AdminPlayerRecord, error) {
+	in PlayerInput,
+	actor Actor,
+) (*PlayerRecord, error) {
 	if err := validateAdminPlayerInput(in); err != nil {
 		return nil, err
 	}
@@ -88,7 +83,7 @@ func (u *PlayerUsecase) UpdatePlayer(
 		return nil, err
 	}
 
-	var updated *usecase.AdminPlayerRecord
+	var updated *PlayerRecord
 	now := u.clock.Now()
 	if err := u.tx.Do(ctx, func(txCtx context.Context) error {
 		before, err := u.players.GetAdminPlayer(txCtx, id)
@@ -98,7 +93,7 @@ func (u *PlayerUsecase) UpdatePlayer(
 		if err := u.players.UpdateAdminPlayerUsername(txCtx, id, in.Username); err != nil {
 			return fmt.Errorf("AdminPlayerUsecase - UpdatePlayer - AdminPlayerRepo.UpdateAdminPlayerUsername: %w", err)
 		}
-		if err := u.players.UpsertAdminPlayerStats(txCtx, id, usecase.AdminPlayerStatsInput{
+		if err := u.players.UpsertAdminPlayerStats(txCtx, id, PlayerStatsInput{
 			Wins:               in.Wins,
 			AverageSolveTimeMs: in.AverageSolveTimeMs,
 		}, now); err != nil {
@@ -109,9 +104,9 @@ func (u *PlayerUsecase) UpdatePlayer(
 		if err != nil {
 			return fmt.Errorf("AdminPlayerUsecase - UpdatePlayer - AdminPlayerRepo.GetAdminPlayer updated: %w", err)
 		}
-		if err := u.players.CreateAdminPlayerAudit(txCtx, usecase.AdminPlayerAuditInput{
+		if err := u.players.CreateAdminPlayerAudit(txCtx, PlayerAuditInput{
 			Actor:       actor,
-			Action:      usecase.AdminPlayerAuditActionUpdate,
+			Action:      PlayerAuditActionUpdate,
 			PlayerID:    id,
 			BeforeState: adminPlayerAuditState(*before, false),
 			AfterState:  adminPlayerAuditState(*player, false),
@@ -129,7 +124,7 @@ func (u *PlayerUsecase) UpdatePlayer(
 	return updated, nil
 }
 
-func (u *PlayerUsecase) DeletePlayer(ctx context.Context, id uuid.UUID, actor usecase.AdminActor) error {
+func (u *PlayerUseCase) DeletePlayer(ctx context.Context, id uuid.UUID, actor Actor) error {
 	if err := validateAdminActor(actor); err != nil {
 		return err
 	}
@@ -150,9 +145,9 @@ func (u *PlayerUsecase) DeletePlayer(ctx context.Context, id uuid.UUID, actor us
 		if err := u.players.SoftDeleteAdminPlayer(txCtx, id, deletedUsername, deletedAt); err != nil {
 			return fmt.Errorf("AdminPlayerUsecase - DeletePlayer - AdminPlayerRepo.SoftDeleteAdminPlayer: %w", err)
 		}
-		if err := u.players.CreateAdminPlayerAudit(txCtx, usecase.AdminPlayerAuditInput{
+		if err := u.players.CreateAdminPlayerAudit(txCtx, PlayerAuditInput{
 			Actor:       actor,
-			Action:      usecase.AdminPlayerAuditActionDelete,
+			Action:      PlayerAuditActionDelete,
 			PlayerID:    id,
 			BeforeState: adminPlayerAuditState(*player, false),
 			AfterState:  afterState,
@@ -169,15 +164,15 @@ func (u *PlayerUsecase) DeletePlayer(ctx context.Context, id uuid.UUID, actor us
 	return nil
 }
 
-func validateAdminActor(actor usecase.AdminActor) error {
+func validateAdminActor(actor Actor) error {
 	if strings.TrimSpace(actor.Subject) == "" || strings.TrimSpace(actor.JTI) == "" {
 		return apperr.ErrInvalidCredentials
 	}
 	return nil
 }
 
-func adminPlayerAuditState(player usecase.AdminPlayerRecord, deleted bool) usecase.AdminPlayerAuditState {
-	return usecase.AdminPlayerAuditState{
+func adminPlayerAuditState(player PlayerRecord, deleted bool) PlayerAuditState {
+	return PlayerAuditState{
 		Username:           player.Username,
 		Status:             string(player.Status),
 		Wins:               player.Wins,
@@ -187,13 +182,13 @@ func adminPlayerAuditState(player usecase.AdminPlayerRecord, deleted bool) useca
 	}
 }
 
-func (u *PlayerUsecase) invalidateLeaderboard() {
+func (u *PlayerUseCase) invalidateLeaderboard() {
 	if u.leaderboard != nil {
 		u.leaderboard.Invalidate()
 	}
 }
 
-func validateAdminPlayerInput(in usecase.AdminPlayerInput) error {
+func validateAdminPlayerInput(in PlayerInput) error {
 	if !adminUsernameRE.MatchString(in.Username) {
 		return apperr.ErrUsernameInvalid
 	}
