@@ -20,10 +20,7 @@ func (s *Server) JoinPlayer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !s.joinLimiter.Allow(middleware.ClientIPFromRequest(r)) {
-		w.Header().Set("Retry-After", s.joinLimiter.RetryAfter())
-		s.logSecurityEvent(r, "player.join", securityOutcomeRateLimited, nil)
-		errmap.HandleError(w, r, apperr.ErrRateLimited)
+	if !s.enterPublicRequest(w, r, s.playerJoinPolicy()) {
 		return
 	}
 

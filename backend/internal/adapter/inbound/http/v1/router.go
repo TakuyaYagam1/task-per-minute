@@ -12,14 +12,21 @@ import (
 )
 
 type HandlerOptions struct {
-	Router      chi.Router
-	AdminAuth   middleware.AdminAccessVerifier
-	PlayerRepo  middleware.PlayerSessionReader
-	Middlewares []api.MiddlewareFunc
+	Router           chi.Router
+	AdminAuth        middleware.AdminAccessVerifier
+	PlayerRepo       middleware.PlayerSessionReader
+	RequestValidator api.MiddlewareFunc
+	Middlewares      []api.MiddlewareFunc
 }
 
 func NewHandler(server *Server, opts HandlerOptions) http.Handler {
-	middlewares := make([]api.MiddlewareFunc, 0, len(opts.Middlewares)+1)
+	middlewares := make([]api.MiddlewareFunc, 0, len(opts.Middlewares)+2)
+	if opts.RequestValidator != nil {
+		middlewares = append(middlewares, opts.RequestValidator)
+	}
+	if server != nil {
+		middlewares = append(middlewares, server.publicRequestGuard())
+	}
 	if opts.AdminAuth != nil || opts.PlayerRepo != nil {
 		middlewares = append(middlewares, middleware.Auth(opts.AdminAuth, opts.PlayerRepo))
 	}

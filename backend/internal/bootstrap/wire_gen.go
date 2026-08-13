@@ -75,8 +75,13 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 	bootstrapLeaderboardRateLimiter := provideLeaderboardRateLimiter(context, cfg)
 	server := provideRESTServer(playerUseCase, authUseCase, taskUseCase, adminPlayerUseCase, adminPlayerEventsPostgres, uploadUseCase, useCase, readUseCase, healthChecks, loginRateLimiter, bootstrapAdminRefreshRateLimiter, joinRateLimiter, bootstrapLeaderboardRateLimiter, log)
 	websocketServer := provideWebSocketServer(bootstrapRawWebSocketServer, reconnectManager)
-	v := provideRESTMiddlewares(log, cfg)
-	handler := provideHTTPHandler(cfg, server, websocketServer, authUseCase, playerPostgres, v, log)
+	bootstrapRestMiddlewareStack, err := provideRESTMiddlewares(context, log, cfg)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	handler := provideHTTPHandler(cfg, server, websocketServer, authUseCase, playerPostgres, bootstrapRestMiddlewareStack, log)
 	httpServer := provideHTTPServer(cfg, handler)
 	app := provideApplication(cfg, log, runtime, seaweedStorage, migrator, startupRecoverer, httpServer, websocketServer, revocationRedis)
 	return app, func() {

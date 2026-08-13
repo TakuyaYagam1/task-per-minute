@@ -311,15 +311,28 @@ func provideLeaderboardRateLimiter(ctx context.Context, cfg *config.Config) lead
 	}
 }
 
-func provideRESTMiddlewares(log logkit.Logger, cfg *config.Config) []api.MiddlewareFunc {
-	return []api.MiddlewareFunc{
-		middleware.Build(
-			log,
-			middleware.WithTimeout(cfg.HTTP.WriteTimeout),
-			middleware.WithTrustedProxyCIDRs(cfg.HTTP.TrustedProxyCIDRs),
-			middleware.WithAllowedOrigins(cfg.HTTP.AllowedOrigins),
-		),
+type restMiddlewareStack struct {
+	RequestValidator api.MiddlewareFunc
+	Outer            []api.MiddlewareFunc
+}
+
+func provideRESTMiddlewares(ctx context.Context, log logkit.Logger, cfg *config.Config) (restMiddlewareStack, error) {
+	openAPIValidator, err := middleware.OpenAPIRequestValidator(ctx, log)
+	if err != nil {
+		return restMiddlewareStack{}, err
 	}
+
+	return restMiddlewareStack{
+		RequestValidator: openAPIValidator,
+		Outer: []api.MiddlewareFunc{
+			middleware.Build(
+				log,
+				middleware.WithTimeout(cfg.HTTP.WriteTimeout),
+				middleware.WithTrustedProxyCIDRs(cfg.HTTP.TrustedProxyCIDRs),
+				middleware.WithAllowedOrigins(cfg.HTTP.AllowedOrigins),
+			),
+		},
+	}, nil
 }
 
 func provideHubRegistry() *websocket.HubRegistry {
@@ -482,16 +495,17 @@ func provideHTTPHandler(
 	ws *websocket.Server,
 	auth *adminusecase.AuthUseCase,
 	players middleware.PlayerSessionReader,
-	middlewares []api.MiddlewareFunc,
+	middlewares restMiddlewareStack,
 	log logkit.Logger,
 ) http.Handler {
 	generatedRouter := chi.NewRouter()
 	generatedRouter.Handle("/ws", ws)
 	handler := restv1.NewHandler(rest, restv1.HandlerOptions{
-		Router:      generatedRouter,
-		AdminAuth:   auth,
-		PlayerRepo:  players,
-		Middlewares: middlewares,
+		Router:           generatedRouter,
+		AdminAuth:        auth,
+		PlayerRepo:       players,
+		RequestValidator: middlewares.RequestValidator,
+		Middlewares:      middlewares.Outer,
 	})
 
 	router := chi.NewRouter()

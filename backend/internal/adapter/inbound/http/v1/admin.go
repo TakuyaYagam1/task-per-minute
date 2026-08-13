@@ -26,10 +26,7 @@ func (s *Server) AdminLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !s.loginLimiter.Allow(middleware.ClientIPFromRequest(r)) {
-		w.Header().Set("Retry-After", s.loginLimiter.RetryAfter())
-		s.logSecurityEvent(r, "admin.login", securityOutcomeRateLimited, nil)
-		errmap.HandleError(w, r, apperr.ErrRateLimited)
+	if !s.enterPublicRequest(w, r, s.adminLoginPolicy()) {
 		return
 	}
 
@@ -106,10 +103,7 @@ func (s *Server) AdminRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !s.refreshLimiter.Allow(middleware.ClientIPFromRequest(r)) {
-		w.Header().Set("Retry-After", s.refreshLimiter.RetryAfter())
-		s.logSecurityEvent(r, "admin.refresh", securityOutcomeRateLimited, nil)
-		errmap.HandleError(w, r, apperr.ErrRateLimited)
+	if !s.enterPublicRequest(w, r, s.adminRefreshPolicy()) {
 		return
 	}
 
