@@ -11,27 +11,27 @@ import (
 func TestArenaPreset(t *testing.T) {
 	t.Parallel()
 
-	preset := domain.ArenaPreset60V1
+	preset := domain.ArenaPresetV1
 	if !preset.IsValid() {
-		t.Fatal("ArenaPreset60V1.IsValid() = false, want true")
+		t.Fatal("ArenaPresetV1.IsValid() = false, want true")
 	}
-	if got := preset.String(); got != "arena_60_v1" {
-		t.Errorf("ArenaPreset60V1.String() = %q, want %q", got, "arena_60_v1")
+	if got := preset.String(); got != "arena_v1" {
+		t.Errorf("ArenaPresetV1.String() = %q, want %q", got, "arena_v1")
 	}
 	if got := preset.MinParticipants(); got != 4 {
-		t.Errorf("ArenaPreset60V1.MinParticipants() = %d, want 4", got)
+		t.Errorf("ArenaPresetV1.MinParticipants() = %d, want 4", got)
 	}
 	if got := preset.MaxParticipants(); got != 16 {
-		t.Errorf("ArenaPreset60V1.MaxParticipants() = %d, want 16", got)
+		t.Errorf("ArenaPresetV1.MaxParticipants() = %d, want 16", got)
 	}
 	if got := preset.TaskDuration(); got != 180*time.Second {
-		t.Errorf("ArenaPreset60V1.TaskDuration() = %s, want 180s", got)
+		t.Errorf("ArenaPresetV1.TaskDuration() = %s, want 180s", got)
 	}
 	if got := preset.NominalDuration(); got != 60*time.Minute {
-		t.Errorf("ArenaPreset60V1.NominalDuration() = %s, want 60m", got)
+		t.Errorf("ArenaPresetV1.NominalDuration() = %s, want 60m", got)
 	}
 	if preset.EnforcesNominalDuration() {
-		t.Error("ArenaPreset60V1.EnforcesNominalDuration() = true, want false")
+		t.Error("ArenaPresetV1.EnforcesNominalDuration() = true, want false")
 	}
 }
 
@@ -56,7 +56,7 @@ func TestArenaPresetRosterAndRoundBoundaries(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			preset := domain.ArenaPreset60V1
+			preset := domain.ArenaPresetV1
 			if got := preset.ValidRosterSize(tt.participants); got != tt.wantValid {
 				t.Errorf("ValidRosterSize(%d) = %v, want %v", tt.participants, got, tt.wantValid)
 			}

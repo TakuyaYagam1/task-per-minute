@@ -8,18 +8,18 @@ import (
 type ArenaPreset string
 
 const (
-	ArenaPreset60V1 ArenaPreset = "arena_60_v1"
+	ArenaPresetV1 ArenaPreset = "arena_v1"
 
-	Arena60MinParticipants = 4
-	Arena60MaxParticipants = 16
-	Arena60TaskDuration    = 180 * time.Second
-	Arena60NominalDuration = 60 * time.Minute
+	ArenaMinParticipants = 4
+	ArenaMaxParticipants = 16
+	ArenaTaskDuration    = 180 * time.Second
+	ArenaNominalDuration = 60 * time.Minute
 )
 
 var ErrInvalidArenaRosterSize = errors.New("invalid Arena roster size")
 
 func (p ArenaPreset) IsValid() bool {
-	return p == ArenaPreset60V1
+	return p == ArenaPresetV1
 }
 
 func (p ArenaPreset) String() string {
@@ -27,31 +27,31 @@ func (p ArenaPreset) String() string {
 }
 
 func (p ArenaPreset) MinParticipants() int {
-	if p != ArenaPreset60V1 {
+	if p != ArenaPresetV1 {
 		return 0
 	}
-	return Arena60MinParticipants
+	return ArenaMinParticipants
 }
 
 func (p ArenaPreset) MaxParticipants() int {
-	if p != ArenaPreset60V1 {
+	if p != ArenaPresetV1 {
 		return 0
 	}
-	return Arena60MaxParticipants
+	return ArenaMaxParticipants
 }
 
 func (p ArenaPreset) TaskDuration() time.Duration {
-	if p != ArenaPreset60V1 {
+	if p != ArenaPresetV1 {
 		return 0
 	}
-	return Arena60TaskDuration
+	return ArenaTaskDuration
 }
 
 func (p ArenaPreset) NominalDuration() time.Duration {
-	if p != ArenaPreset60V1 {
+	if p != ArenaPresetV1 {
 		return 0
 	}
-	return Arena60NominalDuration
+	return ArenaNominalDuration
 }
 
 func (p ArenaPreset) EnforcesNominalDuration() bool {
@@ -59,9 +59,9 @@ func (p ArenaPreset) EnforcesNominalDuration() bool {
 }
 
 func (p ArenaPreset) ValidRosterSize(participants int) bool {
-	return p == ArenaPreset60V1 &&
-		participants >= Arena60MinParticipants &&
-		participants <= Arena60MaxParticipants
+	return p == ArenaPresetV1 &&
+		participants >= ArenaMinParticipants &&
+		participants <= ArenaMaxParticipants
 }
 
 func (p ArenaPreset) SwissRounds(participants int) (int, error) {
