@@ -93,6 +93,9 @@ fmt: ## golangci-lint fmt
 test: ## Unit tests with race detector (skips integration_test/)
 	go test -race -count=1 -parallel=5 $$(go list ./... | grep -v /integration_test)
 
+.PHONY: test-plugin-race
+test-plugin-race: test ## Run the unit race gate used by plugin validation
+
 .PHONY: test-int
 test-int: ## Integration tests (testcontainers - requires Docker, fully sequential)
 	go test -race -count=1 -p=1 -parallel=1 -tags=integration ./integration_test/...
