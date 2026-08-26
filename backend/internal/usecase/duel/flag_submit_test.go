@@ -6,14 +6,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
-	"github.com/stretchr/testify/mock"
-	"github.com/stretchr/testify/require"
-
-	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	duelusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel"
 	duelmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel/mocks"
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 func TestFlagSubmitUsecase_SubmitFlag_CorrectFinishesDuel(t *testing.T) {
@@ -68,7 +66,7 @@ func TestFlagSubmitUsecase_SubmitFlag_DeadlinePassed(t *testing.T) {
 		f.tx, f.duels, f.players, f.history, f.board, fixedClock{now: now},
 	).SubmitFlag(t.Context(), duel.ID, duel.Player1ID, "FLAG{ok}")
 
-	require.ErrorIs(t, err, apperr.ErrDuelDeadlinePassed)
+	require.ErrorIs(t, err, domain.ErrDuelDeadlinePassed)
 }
 
 func TestFlagSubmitUsecase_SubmitFlag_IncorrectFlag(t *testing.T) {
@@ -87,7 +85,7 @@ func TestFlagSubmitUsecase_SubmitFlag_IncorrectFlag(t *testing.T) {
 		f.tx, f.duels, f.players, f.history, f.board, fixedClock{now: now},
 	).SubmitFlag(t.Context(), duel.ID, duel.Player1ID, "FLAG{bad}")
 
-	require.ErrorIs(t, err, apperr.ErrFlagIncorrect)
+	require.ErrorIs(t, err, domain.ErrFlagIncorrect)
 }
 
 func TestFlagSubmitUsecase_SubmitFlag_FinishedDuel(t *testing.T) {
@@ -128,7 +126,7 @@ func TestFlagSubmitUsecase_SubmitFlag_FinishRaceReturnsAlreadyFinished(t *testin
 	f.duels.EXPECT().GetPlayerTask(mock.Anything, duel.ID, playerID).Return(task, nil)
 	f.players.EXPECT().GetByID(mock.Anything, playerID).Return(winner, nil)
 	f.duels.EXPECT().Finish(mock.Anything, duel.ID, &playerID, now, domain.DuelStatusFinished).
-		Return(nil, apperr.ErrDuelFinished)
+		Return(nil, domain.ErrDuelFinished)
 
 	got, err := duelusecase.NewFlagSubmitUseCase(
 		f.tx, f.duels, f.players, f.history, f.board, fixedClock{now: now}, timers,

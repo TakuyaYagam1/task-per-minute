@@ -7,10 +7,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/google/uuid"
-
-	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
+	"github.com/google/uuid"
 )
 
 var adminUsernameRE = regexp.MustCompile(`^[a-zA-Z0-9_-]{2,50}$`)
@@ -138,7 +136,7 @@ func (u *PlayerUseCase) DeletePlayer(ctx context.Context, id uuid.UUID, actor Ac
 			return fmt.Errorf("AdminPlayerUsecase - DeletePlayer - AdminPlayerRepo.GetAdminPlayer: %w", err)
 		}
 		if player.Status != domain.PlayerStatusIdle {
-			return apperr.ErrConflict
+			return domain.ErrConflict
 		}
 		afterState := adminPlayerAuditState(*player, true)
 		afterState.Username = deletedUsername
@@ -166,7 +164,7 @@ func (u *PlayerUseCase) DeletePlayer(ctx context.Context, id uuid.UUID, actor Ac
 
 func validateAdminActor(actor Actor) error {
 	if strings.TrimSpace(actor.Subject) == "" || strings.TrimSpace(actor.JTI) == "" {
-		return apperr.ErrInvalidCredentials
+		return domain.ErrInvalidCredentials
 	}
 	return nil
 }
@@ -190,19 +188,19 @@ func (u *PlayerUseCase) invalidateLeaderboard() {
 
 func validateAdminPlayerInput(in PlayerInput) error {
 	if !adminUsernameRE.MatchString(in.Username) {
-		return apperr.ErrUsernameInvalid
+		return domain.ErrUsernameInvalid
 	}
 	if in.Wins < 0 || in.Wins > math.MaxInt32 {
-		return apperr.ErrValidation
+		return domain.ErrValidation
 	}
 	if in.AverageSolveTimeMs < 0 {
-		return apperr.ErrValidation
+		return domain.ErrValidation
 	}
 	if in.Wins == 0 && in.AverageSolveTimeMs != 0 {
-		return apperr.ErrValidation
+		return domain.ErrValidation
 	}
 	if in.Wins > 0 && in.AverageSolveTimeMs == 0 {
-		return apperr.ErrValidation
+		return domain.ErrValidation
 	}
 	return nil
 }

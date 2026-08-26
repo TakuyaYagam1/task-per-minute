@@ -7,11 +7,9 @@ import (
 	"math/rand"
 	"time"
 
+	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/google/uuid"
 	logkit "github.com/wahrwelt-kit/go-logkit"
-
-	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
-	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
 type MatchmakingUseCase struct {
@@ -152,7 +150,7 @@ func (u *MatchmakingUseCase) ensureQueuedForJoin(ctx context.Context, playerID u
 		}
 		switch player.Status {
 		case domain.PlayerStatusInDuel:
-			return apperr.ErrPlayerInDuel
+			return domain.ErrPlayerInDuel
 		case domain.PlayerStatusQueued:
 			return nil
 		}
@@ -163,7 +161,7 @@ func (u *MatchmakingUseCase) ensureQueuedForJoin(ctx context.Context, playerID u
 			return nil
 		}
 	}
-	return apperr.ErrConflict
+	return domain.ErrConflict
 }
 
 func (u *MatchmakingUseCase) createMatch(ctx context.Context, player1ID, player2ID uuid.UUID) (*MatchResult, []uuid.UUID, error) {
@@ -237,7 +235,7 @@ func (u *MatchmakingUseCase) rollbackClaimedPlayer(ctx context.Context, playerID
 	if _, ok, err := u.players.UpdateStatusIfCurrent(ctx, playerID, domain.PlayerStatusInDuel, domain.PlayerStatusQueued); err != nil {
 		return fmt.Errorf("MatchmakingUsecase - rollbackClaimedPlayer - PlayerRepo.UpdateStatusIfCurrent queued: %w", err)
 	} else if !ok {
-		return fmt.Errorf("MatchmakingUsecase - rollbackClaimedPlayer - stale player status: %w", apperr.ErrConflict)
+		return fmt.Errorf("MatchmakingUsecase - rollbackClaimedPlayer - stale player status: %w", domain.ErrConflict)
 	}
 	return nil
 }
@@ -316,7 +314,7 @@ func (u *MatchmakingUseCase) prepareAssignedTask(ctx context.Context, task *doma
 		return task, nil
 	}
 	if u.storage == nil {
-		return nil, apperr.ErrInternal
+		return nil, domain.ErrInternal
 	}
 
 	url, err := u.storage.PresignedGetURL(
@@ -349,7 +347,7 @@ func (u *MatchmakingUseCase) selectDifficultyForPlayer(ctx context.Context, play
 			return difficulty, nil
 		}
 	}
-	return "", apperr.ErrTaskNotFound
+	return "", domain.ErrTaskNotFound
 }
 
 func (u *MatchmakingUseCase) selectTasksForPair(
@@ -400,7 +398,7 @@ func (u *MatchmakingUseCase) selectTaskForPlayerInDifficulty(
 		return nil, fmt.Errorf("TaskRepo.ListByDifficulty(%s): %w", difficulty, err)
 	}
 	if len(tasks) == 0 {
-		return nil, apperr.ErrTaskNotFound
+		return nil, domain.ErrTaskNotFound
 	}
 
 	solved, err := u.solvedTaskSet(ctx, playerID)
@@ -428,7 +426,7 @@ func (u *MatchmakingUseCase) selectPairTasksInDifficulty(
 		return nil, nil, fmt.Errorf("TaskRepo.ListByDifficulty(%s): %w", difficulty, err)
 	}
 	if len(tasks) == 0 {
-		return nil, nil, apperr.ErrTaskNotFound
+		return nil, nil, domain.ErrTaskNotFound
 	}
 
 	player1Solved, err := u.solvedTaskSet(ctx, player1ID)
@@ -495,7 +493,7 @@ func (u *MatchmakingUseCase) selectPairTasksInDifficulty(
 		u.logDecision(decision)
 		return player1Task, player2Task, nil
 	}
-	return nil, nil, apperr.ErrTaskNotFound
+	return nil, nil, domain.ErrTaskNotFound
 }
 
 // matchmakingDecisionFields captures the inputs and outputs of a single

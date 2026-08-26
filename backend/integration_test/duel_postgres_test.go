@@ -8,11 +8,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
-
-	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
-	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
 func hasDuelID(list []*domain.Duel, id uuid.UUID) bool {
@@ -50,14 +48,14 @@ func TestDuelRepo_Create_SamePlayerTwice_ReturnsValidation(t *testing.T) {
 	f := newDuelFixture()
 	p := f.makePlayer(t, uniq("alice"))
 	_, err := f.duels.Create(context.Background(), p.ID, p.ID, time.Now().Add(time.Minute))
-	require.ErrorIs(t, err, apperr.ErrValidation)
+	require.ErrorIs(t, err, domain.ErrValidation)
 }
 
 func TestDuelRepo_GetByID_NotFound(t *testing.T) {
 	t.Parallel()
 	f := newDuelFixture()
 	_, err := f.duels.GetByID(context.Background(), uuid.New())
-	require.ErrorIs(t, err, apperr.ErrDuelNotFound)
+	require.ErrorIs(t, err, domain.ErrDuelNotFound)
 }
 
 func TestDuelRepo_GetActiveByPlayerID(t *testing.T) {
@@ -108,12 +106,12 @@ func TestDuelRepo_UpdateDeadline(t *testing.T) {
 	require.WithinDuration(t, newDeadline, updated.Deadline, time.Second)
 
 	_, err = f.duels.UpdateDeadline(ctx, uuid.New(), newDeadline)
-	require.ErrorIs(t, err, apperr.ErrDuelNotFound)
+	require.ErrorIs(t, err, domain.ErrDuelNotFound)
 
 	_, err = f.duels.Finish(ctx, d.ID, nil, time.Now().UTC(), domain.DuelStatusFinished)
 	require.NoError(t, err)
 	_, err = f.duels.UpdateDeadline(ctx, d.ID, time.Now().Add(10*time.Minute))
-	require.ErrorIs(t, err, apperr.ErrDuelFinished)
+	require.ErrorIs(t, err, domain.ErrDuelFinished)
 }
 
 func TestDuelRepo_Finish_NormalWin(t *testing.T) {
@@ -155,7 +153,7 @@ func TestDuelRepo_Finish_NotFound(t *testing.T) {
 	t.Parallel()
 	f := newDuelFixture()
 	_, err := f.duels.Finish(context.Background(), uuid.New(), nil, time.Now(), domain.DuelStatusFinished)
-	require.ErrorIs(t, err, apperr.ErrDuelNotFound)
+	require.ErrorIs(t, err, domain.ErrDuelNotFound)
 }
 
 func TestDuelRepo_Finish_RejectsNonFinishedStatus(t *testing.T) {
@@ -167,7 +165,7 @@ func TestDuelRepo_Finish_RejectsNonFinishedStatus(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = f.duels.Finish(context.Background(), d.ID, nil, time.Now(), domain.DuelStatusActive)
-	require.ErrorIs(t, err, apperr.ErrValidation)
+	require.ErrorIs(t, err, domain.ErrValidation)
 }
 
 func TestDuelRepo_Finish_ConcurrentSecondReturnsFinished(t *testing.T) {
@@ -193,7 +191,7 @@ func TestDuelRepo_Finish_ConcurrentSecondReturnsFinished(t *testing.T) {
 		switch {
 		case err == nil:
 			successes++
-		case errors.Is(err, apperr.ErrDuelFinished):
+		case errors.Is(err, domain.ErrDuelFinished):
 			finishedRaces++
 		default:
 			require.NoError(t, err)
@@ -282,7 +280,7 @@ func TestDuelRepo_DuelPlayerTask_TxRollback(t *testing.T) {
 	t1 := f.makeTask(t, uniq("t1"), domain.DifficultyEasy)
 
 	var duelID uuid.UUID
-	bust := apperr.ErrInternal
+	bust := domain.ErrInternal
 	err := f.mgr.Do(ctx, func(txCtx context.Context) error {
 		d, err := f.duels.Create(txCtx, p1.ID, p2.ID, time.Now().Add(time.Minute))
 		if err != nil {
@@ -298,7 +296,7 @@ func TestDuelRepo_DuelPlayerTask_TxRollback(t *testing.T) {
 
 	if duelID != uuid.Nil {
 		_, err = f.duels.GetByID(ctx, duelID)
-		require.ErrorIs(t, err, apperr.ErrDuelNotFound, "rolled-back duel must not exist")
+		require.ErrorIs(t, err, domain.ErrDuelNotFound, "rolled-back duel must not exist")
 	}
 
 	got, err := f.duels.GetActiveByPlayerID(ctx, p1.ID)
@@ -318,7 +316,7 @@ func TestDuelRepo_GetDuelPlayerTask_NotParticipant(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = f.duels.GetDuelPlayerTask(ctx, d.ID, stranger.ID)
-	require.ErrorIs(t, err, apperr.ErrNotDuelParticipant)
+	require.ErrorIs(t, err, domain.ErrNotDuelParticipant)
 }
 
 func TestDuelRepo_GetPlayerTask(t *testing.T) {
@@ -346,7 +344,7 @@ func TestDuelRepo_GetPlayerTask(t *testing.T) {
 	require.Equal(t, t2.ID, got.ID)
 
 	_, err = f.duels.GetPlayerTask(ctx, d.ID, stranger.ID)
-	require.ErrorIs(t, err, apperr.ErrNotDuelParticipant)
+	require.ErrorIs(t, err, domain.ErrNotDuelParticipant)
 }
 
 func TestDuelRepo_MarkSolved(t *testing.T) {

@@ -17,7 +17,6 @@ import (
 	logkit "github.com/wahrwelt-kit/go-logkit"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/requestmeta"
-	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	duelusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel"
 )
@@ -185,7 +184,7 @@ func TestQueryTokenAuthRejected(t *testing.T) {
 	require.NotContains(t, rawLogs, token.String())
 	entry := requireWebSocketSecurityLogEntry(t, rawLogs, "ws.auth")
 	require.Equal(t, wsSecurityOutcomeFailure, entry["outcome"])
-	require.Equal(t, string(apperr.CodeInvalidSession), entry["error_code"])
+	require.Equal(t, string(domain.ErrorCodeInvalidSession), entry["error_code"])
 	require.Equal(t, "query_token_rejected", entry["reason"])
 }
 
@@ -446,14 +445,14 @@ func TestStaleSessionSecurityLogRedactsTokens(t *testing.T) {
 
 	event := readTestEvent(t, conn)
 	require.Equal(t, EventError, event.Type)
-	require.Equal(t, string(apperr.CodeInvalidSession), event.Code)
+	require.Equal(t, string(domain.ErrorCodeInvalidSession), event.Code)
 
 	rawLogs := logs.String()
 	require.NotContains(t, rawLogs, oldToken.String())
 	require.NotContains(t, rawLogs, newToken.String())
 	entry := requireWebSocketSecurityLogEntry(t, rawLogs, "ws.session")
 	require.Equal(t, wsSecurityOutcomeFailure, entry["outcome"])
-	require.Equal(t, string(apperr.CodeInvalidSession), entry["error_code"])
+	require.Equal(t, string(domain.ErrorCodeInvalidSession), entry["error_code"])
 	require.Equal(t, "stale_session", entry["reason"])
 	require.Equal(t, player.ID.String(), entry["player_id"])
 }
@@ -490,7 +489,7 @@ func TestActiveWebSocketExpiredSessionClosesWithoutClientMessage(t *testing.T) {
 	players.expireSession()
 	event := readTestEvent(t, conn)
 	require.Equal(t, EventError, event.Type)
-	require.Equal(t, string(apperr.CodeInvalidSession), event.Code)
+	require.Equal(t, string(domain.ErrorCodeInvalidSession), event.Code)
 }
 
 func TestActiveWebSocketRotatedSessionClosesWithoutClientMessage(t *testing.T) {
@@ -526,7 +525,7 @@ func TestActiveWebSocketRotatedSessionClosesWithoutClientMessage(t *testing.T) {
 	players.setSessionToken(newToken)
 	event := readTestEvent(t, conn)
 	require.Equal(t, EventError, event.Type)
-	require.Equal(t, string(apperr.CodeInvalidSession), event.Code)
+	require.Equal(t, string(domain.ErrorCodeInvalidSession), event.Code)
 }
 
 func TestDuelResumeSendFailureClosesReconnectSocket(t *testing.T) {

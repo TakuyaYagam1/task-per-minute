@@ -7,12 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
-	"github.com/stretchr/testify/require"
-
-	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/admin"
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/require"
 )
 
 func TestAdminTaskUsecase_TaskLifecycle(t *testing.T) {
@@ -56,7 +54,7 @@ func TestAdminTaskUsecase_TaskLifecycle(t *testing.T) {
 
 	require.NoError(t, uc.DeleteTask(ctx, created.ID))
 	_, err = uc.GetTask(ctx, created.ID)
-	require.ErrorIs(t, err, apperr.ErrTaskNotFound)
+	require.ErrorIs(t, err, domain.ErrTaskNotFound)
 }
 
 func TestAdminTaskUsecase_CreateTask_InvalidDifficulty(t *testing.T) {
@@ -72,7 +70,7 @@ func TestAdminTaskUsecase_CreateTask_InvalidDifficulty(t *testing.T) {
 		Flag:        "FLAG{task}",
 		Hints:       defaultTaskHints("task"),
 	})
-	require.ErrorIs(t, err, apperr.ErrTaskValidation)
+	require.ErrorIs(t, err, domain.ErrTaskValidation)
 }
 
 func TestAdminTaskUsecase_DeleteTask_ActiveDuelReturnsTaskInUse(t *testing.T) {
@@ -99,7 +97,7 @@ func TestAdminTaskUsecase_DeleteTask_ActiveDuelReturnsTaskInUse(t *testing.T) {
 	require.NoError(t, f.duels.CreateDuelPlayerTask(ctx, duel.ID, p1.ID, task.ID))
 
 	err = uc.DeleteTask(ctx, task.ID)
-	require.ErrorIs(t, err, apperr.ErrTaskInUse)
+	require.ErrorIs(t, err, domain.ErrTaskInUse)
 }
 
 func TestAdminTaskUsecase_DeleteTask_FinishedDuelReferenceDeletesTask(t *testing.T) {
@@ -129,7 +127,7 @@ func TestAdminTaskUsecase_DeleteTask_FinishedDuelReferenceDeletesTask(t *testing
 
 	require.NoError(t, uc.DeleteTask(ctx, task.ID))
 	_, err = uc.GetTask(ctx, task.ID)
-	require.ErrorIs(t, err, apperr.ErrTaskNotFound)
+	require.ErrorIs(t, err, domain.ErrTaskNotFound)
 }
 
 func TestAdminTaskUsecase_DeleteTask_MissingReturnsTaskNotFound(t *testing.T) {
@@ -137,7 +135,7 @@ func TestAdminTaskUsecase_DeleteTask_MissingReturnsTaskNotFound(t *testing.T) {
 
 	uc, _ := newAdminTaskUsecaseFixture()
 	err := uc.DeleteTask(context.Background(), uuid.New())
-	require.ErrorIs(t, err, apperr.ErrTaskNotFound)
+	require.ErrorIs(t, err, domain.ErrTaskNotFound)
 }
 
 func newAdminTaskUsecaseFixture() (*admin.TaskUseCase, *duelFixture) {

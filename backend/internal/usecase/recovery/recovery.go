@@ -6,11 +6,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/google/uuid"
 	logkit "github.com/wahrwelt-kit/go-logkit"
-
-	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
-	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
 type StartupRecoverer struct {
@@ -108,7 +106,7 @@ func (r *StartupRecoverer) recoverActiveDuel(ctx context.Context, duel *domain.D
 		return finished, false, err
 	}
 	if err := r.rearmDuel(ctx, duel); err != nil {
-		if !errors.Is(err, apperr.ErrNotDuelParticipant) {
+		if !errors.Is(err, domain.ErrNotDuelParticipant) {
 			return nil, false, err
 		}
 		if r.log != nil {
@@ -192,7 +190,7 @@ func (r *StartupRecoverer) rearmDuel(ctx context.Context, duel *domain.Duel) err
 		})
 	}
 	if r.duelTasks != nil && (player1Task == nil || player2Task == nil) {
-		return apperr.ErrNotDuelParticipant
+		return domain.ErrNotDuelParticipant
 	}
 	if r.timers != nil {
 		r.timers.StartDuelTimer(duel)

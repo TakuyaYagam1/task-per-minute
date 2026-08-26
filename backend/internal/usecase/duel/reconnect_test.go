@@ -7,12 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
-	"github.com/stretchr/testify/require"
-
-	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	duelusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel"
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/require"
 )
 
 // recordingBroadcaster captures every
@@ -164,7 +162,7 @@ func (r *reconnDuelRepo) UpdateDeadline(_ context.Context, id uuid.UUID, deadlin
 	defer r.timerDuelRepo.mu.Unlock()
 	duel, ok := r.duels[id]
 	if !ok {
-		return nil, apperr.ErrDuelNotFound
+		return nil, domain.ErrDuelNotFound
 	}
 	duel.Deadline = deadline
 	snapshot := *duel

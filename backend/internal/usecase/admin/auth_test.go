@@ -14,7 +14,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/memory"
-	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
+	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/admin"
 	adminmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/admin/mocks"
 )
@@ -151,7 +151,7 @@ func TestAuthUseCase_Login_WrongPassword_ReturnsErrInvalidCredentials(t *testing
 	uc := admin.NewAuthUseCase(newAuthCfg(), clk, rev)
 
 	_, err := uc.Login(context.Background(), "wrong")
-	require.ErrorIs(t, err, apperr.ErrInvalidCredentials)
+	require.ErrorIs(t, err, domain.ErrInvalidCredentials)
 }
 
 func TestAuthUseCase_Login_PlaintextRejectsWrongPasswordWithDifferentLength(t *testing.T) {
@@ -162,7 +162,7 @@ func TestAuthUseCase_Login_PlaintextRejectsWrongPasswordWithDifferentLength(t *t
 	uc := admin.NewAuthUseCase(newAuthCfg(), clk, rev)
 
 	_, err := uc.Login(context.Background(), testPass+"-extra")
-	require.ErrorIs(t, err, apperr.ErrInvalidCredentials)
+	require.ErrorIs(t, err, domain.ErrInvalidCredentials)
 }
 
 func TestAuthUseCase_Login_BcryptHash_AcceptsCorrectPassword(t *testing.T) {
@@ -198,7 +198,7 @@ func TestAuthUseCase_Login_BcryptHash_RejectsWrongPassword(t *testing.T) {
 	uc := admin.NewAuthUseCase(cfg, clk, rev)
 
 	_, err = uc.Login(context.Background(), "wrong-password")
-	require.ErrorIs(t, err, apperr.ErrInvalidCredentials)
+	require.ErrorIs(t, err, domain.ErrInvalidCredentials)
 }
 
 func TestAuthUseCase_VerifyAccess_AfterLogin(t *testing.T) {
@@ -231,7 +231,7 @@ func TestAuthUseCase_VerifyAccess_RejectsRefreshToken(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = uc.VerifyAccess(context.Background(), pair.RefreshToken)
-	require.ErrorIs(t, err, apperr.ErrInvalidCredentials,
+	require.ErrorIs(t, err, domain.ErrInvalidCredentials,
 		"a refresh token must NOT pass VerifyAccess - kind mismatch")
 }
 
@@ -249,7 +249,7 @@ func TestAuthUseCase_VerifyAccess_ExpiredToken_ReturnsErrTokenExpired(t *testing
 	clk.Set(issuedAt.Add(accessTTL + time.Minute))
 
 	_, err = uc.VerifyAccess(context.Background(), pair.AccessToken)
-	require.ErrorIs(t, err, apperr.ErrTokenExpired)
+	require.ErrorIs(t, err, domain.ErrTokenExpired)
 }
 
 func TestAuthUseCase_Refresh_AfterLogin(t *testing.T) {
@@ -283,10 +283,10 @@ func TestAuthUseCase_Refresh_RevokedToken_ReturnsErrTokenRevoked(t *testing.T) {
 	pair, err := uc.Login(context.Background(), testPass)
 	require.NoError(t, err)
 
-	rev.EXPECT().Revoke(mock.Anything, mock.Anything, mock.Anything).Return(apperr.ErrTokenRevoked).Once()
+	rev.EXPECT().Revoke(mock.Anything, mock.Anything, mock.Anything).Return(domain.ErrTokenRevoked).Once()
 
 	_, err = uc.Refresh(context.Background(), pair.RefreshToken)
-	require.ErrorIs(t, err, apperr.ErrTokenRevoked)
+	require.ErrorIs(t, err, domain.ErrTokenRevoked)
 }
 
 func TestAuthUseCase_Refresh_ReusingOldRefreshTokenReturnsErrTokenRevoked(t *testing.T) {
@@ -305,7 +305,7 @@ func TestAuthUseCase_Refresh_ReusingOldRefreshTokenReturnsErrTokenRevoked(t *tes
 	require.NotEmpty(t, rotated.RefreshToken)
 
 	_, err = uc.Refresh(context.Background(), pair.RefreshToken)
-	require.ErrorIs(t, err, apperr.ErrTokenRevoked)
+	require.ErrorIs(t, err, domain.ErrTokenRevoked)
 }
 
 func TestAuthUseCase_Refresh_ReusingOldRefreshTokenInsideClockSkewLeewayReturnsErrTokenRevoked(t *testing.T) {
@@ -326,7 +326,7 @@ func TestAuthUseCase_Refresh_ReusingOldRefreshTokenInsideClockSkewLeewayReturnsE
 	require.NotEmpty(t, rotated.RefreshToken)
 
 	_, err = uc.Refresh(context.Background(), pair.RefreshToken)
-	require.ErrorIs(t, err, apperr.ErrTokenRevoked)
+	require.ErrorIs(t, err, domain.ErrTokenRevoked)
 }
 
 func TestAuthUseCase_Refresh_RejectsAccessToken(t *testing.T) {
@@ -340,7 +340,7 @@ func TestAuthUseCase_Refresh_RejectsAccessToken(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = uc.Refresh(context.Background(), pair.AccessToken)
-	require.ErrorIs(t, err, apperr.ErrInvalidCredentials,
+	require.ErrorIs(t, err, domain.ErrInvalidCredentials,
 		"access token in Refresh must be rejected by kind check")
 }
 
@@ -374,7 +374,7 @@ func TestAuthUseCase_Logout_ReusingRefreshTokenReturnsErrTokenRevoked(t *testing
 	require.NoError(t, err)
 
 	require.NoError(t, uc.Logout(context.Background(), pair.RefreshToken))
-	require.ErrorIs(t, uc.Logout(context.Background(), pair.RefreshToken), apperr.ErrTokenRevoked)
+	require.ErrorIs(t, uc.Logout(context.Background(), pair.RefreshToken), domain.ErrTokenRevoked)
 }
 
 func TestAuthUseCase_Logout_RevokesAccessToken(t *testing.T) {
@@ -390,7 +390,7 @@ func TestAuthUseCase_Logout_RevokesAccessToken(t *testing.T) {
 
 	require.NoError(t, uc.Logout(context.Background(), pair.RefreshToken, pair.AccessToken))
 	_, err = uc.VerifyAccess(context.Background(), pair.AccessToken)
-	require.ErrorIs(t, err, apperr.ErrTokenRevoked)
+	require.ErrorIs(t, err, domain.ErrTokenRevoked)
 }
 
 func TestAuthUseCase_Logout_ReusingRefreshTokenInsideClockSkewLeewayReturnsErrTokenRevoked(t *testing.T) {
@@ -407,7 +407,7 @@ func TestAuthUseCase_Logout_ReusingRefreshTokenInsideClockSkewLeewayReturnsErrTo
 	clk.Set(issuedAt.Add(refreshTTL + 5*time.Second))
 
 	require.NoError(t, uc.Logout(context.Background(), pair.RefreshToken))
-	require.ErrorIs(t, uc.Logout(context.Background(), pair.RefreshToken), apperr.ErrTokenRevoked)
+	require.ErrorIs(t, uc.Logout(context.Background(), pair.RefreshToken), domain.ErrTokenRevoked)
 }
 
 func TestAuthUseCase_VerifyAccess_BadSignature_ReturnsErrInvalidCredentials(t *testing.T) {
@@ -418,7 +418,7 @@ func TestAuthUseCase_VerifyAccess_BadSignature_ReturnsErrInvalidCredentials(t *t
 	uc := admin.NewAuthUseCase(newAuthCfg(), clk, rev)
 
 	_, err := uc.VerifyAccess(context.Background(), "garbage.not.a.jwt")
-	require.ErrorIs(t, err, apperr.ErrInvalidCredentials)
+	require.ErrorIs(t, err, domain.ErrInvalidCredentials)
 }
 
 func TestAuthUseCase_VerifyAccess_DifferentSecret_ReturnsErrInvalidCredentials(t *testing.T) {
@@ -437,7 +437,7 @@ func TestAuthUseCase_VerifyAccess_DifferentSecret_ReturnsErrInvalidCredentials(t
 	uc2 := admin.NewAuthUseCase(cfg2, clk, rev)
 
 	_, err = uc2.VerifyAccess(context.Background(), pair.AccessToken)
-	require.ErrorIs(t, err, apperr.ErrInvalidCredentials,
+	require.ErrorIs(t, err, domain.ErrInvalidCredentials,
 		"token signed with a different secret must be rejected")
 }
 
@@ -475,7 +475,7 @@ func TestAuthUseCase_VerifyAccess_RevokedToken_ReturnsErrTokenRevoked(t *testing
 	rev.EXPECT().IsRevoked(mock.Anything, mock.Anything).Return(true, nil).Once()
 
 	_, err = uc.VerifyAccess(context.Background(), pair.AccessToken)
-	require.ErrorIs(t, err, apperr.ErrTokenRevoked)
+	require.ErrorIs(t, err, domain.ErrTokenRevoked)
 }
 
 func TestAuthUseCase_VerifyAccess_RevocationStoreFailure_PropagatesError(t *testing.T) {
@@ -508,7 +508,7 @@ func TestAuthUseCase_VerifyAccess_UnknownKind_ReturnsErrInvalidCredentials(t *te
 	bogus := signWithKind(t, []byte(testSecret), "bogus", now, now.Add(accessTTL))
 
 	_, err := uc.VerifyAccess(context.Background(), bogus)
-	require.ErrorIs(t, err, apperr.ErrInvalidCredentials)
+	require.ErrorIs(t, err, domain.ErrInvalidCredentials)
 }
 
 func TestAuthUseCase_VerifyAccess_MissingExp_ReturnsErrInvalidCredentials(t *testing.T) {
@@ -524,7 +524,7 @@ func TestAuthUseCase_VerifyAccess_MissingExp_ReturnsErrInvalidCredentials(t *tes
 	token := signWithClaims(t, []byte(testSecret), jwt.SigningMethodHS256, claims)
 
 	_, err := uc.VerifyAccess(context.Background(), token)
-	require.ErrorIs(t, err, apperr.ErrInvalidCredentials)
+	require.ErrorIs(t, err, domain.ErrInvalidCredentials)
 }
 
 func TestAuthUseCase_VerifyAccess_MissingIssuedAt_ReturnsErrInvalidCredentials(t *testing.T) {
@@ -540,7 +540,7 @@ func TestAuthUseCase_VerifyAccess_MissingIssuedAt_ReturnsErrInvalidCredentials(t
 	token := signWithClaims(t, []byte(testSecret), jwt.SigningMethodHS256, claims)
 
 	_, err := uc.VerifyAccess(context.Background(), token)
-	require.ErrorIs(t, err, apperr.ErrInvalidCredentials)
+	require.ErrorIs(t, err, domain.ErrInvalidCredentials)
 }
 
 func TestAuthUseCase_VerifyAccess_ExpiresBeforeIssuedAt_ReturnsErrInvalidCredentials(t *testing.T) {
@@ -556,7 +556,7 @@ func TestAuthUseCase_VerifyAccess_ExpiresBeforeIssuedAt_ReturnsErrInvalidCredent
 	token := signWithClaims(t, []byte(testSecret), jwt.SigningMethodHS256, claims)
 
 	_, err := uc.VerifyAccess(context.Background(), token)
-	require.ErrorIs(t, err, apperr.ErrInvalidCredentials)
+	require.ErrorIs(t, err, domain.ErrInvalidCredentials)
 }
 
 func TestAuthUseCase_VerifyAccess_WrongAlgorithm_ReturnsErrInvalidCredentials(t *testing.T) {
@@ -570,7 +570,7 @@ func TestAuthUseCase_VerifyAccess_WrongAlgorithm_ReturnsErrInvalidCredentials(t 
 	token := signWithClaims(t, []byte(testSecret), jwt.SigningMethodHS512, validAdminClaims(now))
 
 	_, err := uc.VerifyAccess(context.Background(), token)
-	require.ErrorIs(t, err, apperr.ErrInvalidCredentials)
+	require.ErrorIs(t, err, domain.ErrInvalidCredentials)
 }
 
 func TestAuthUseCase_VerifyAccess_ForeignSubject_ReturnsErrInvalidCredentials(t *testing.T) {
@@ -584,5 +584,5 @@ func TestAuthUseCase_VerifyAccess_ForeignSubject_ReturnsErrInvalidCredentials(t 
 	bogus := signWithSubject(t, []byte(testSecret), "not-admin", admin.TokenKindAccess, now, now.Add(accessTTL))
 
 	_, err := uc.VerifyAccess(context.Background(), bogus)
-	require.ErrorIs(t, err, apperr.ErrInvalidCredentials)
+	require.ErrorIs(t, err, domain.ErrInvalidCredentials)
 }

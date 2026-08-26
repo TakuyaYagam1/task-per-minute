@@ -14,7 +14,7 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
+	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
 const (
@@ -43,7 +43,7 @@ func NewAuthUseCase(cfg AuthConfig, clk Clock, rev RevocationStore) *AuthUseCase
 
 func (u *AuthUseCase) Login(_ context.Context, password string) (*TokenPair, error) {
 	if !verifyAdminPassword(u.cfg.AdminPassword, password) {
-		return nil, apperr.ErrInvalidCredentials
+		return nil, domain.ErrInvalidCredentials
 	}
 	pair, err := u.issuePair(adminSubject)
 	if err != nil {
@@ -73,12 +73,12 @@ func (u *AuthUseCase) Refresh(ctx context.Context, refreshToken string) (*TokenP
 		return nil, err
 	}
 	if claims.Kind != TokenKindRefresh {
-		return nil, apperr.ErrInvalidCredentials
+		return nil, domain.ErrInvalidCredentials
 	}
 
 	if err := u.revocations.Revoke(ctx, claims.JTI, revocationExpiresAt(claims)); err != nil {
-		if errors.Is(err, apperr.ErrTokenRevoked) {
-			return nil, apperr.ErrTokenRevoked
+		if errors.Is(err, domain.ErrTokenRevoked) {
+			return nil, domain.ErrTokenRevoked
 		}
 		return nil, fmt.Errorf("AuthUsecase - Refresh - RevocationStore.Revoke: %w", err)
 	}
@@ -96,7 +96,7 @@ func (u *AuthUseCase) VerifyAccess(ctx context.Context, token string) (*Claims, 
 		return nil, err
 	}
 	if claims.Kind != TokenKindAccess {
-		return nil, apperr.ErrInvalidCredentials
+		return nil, domain.ErrInvalidCredentials
 	}
 	if err := u.ensureNotRevoked(ctx, claims); err != nil {
 		return nil, err
@@ -110,11 +110,11 @@ func (u *AuthUseCase) Logout(ctx context.Context, refreshToken string, accessTok
 		return err
 	}
 	if claims.Kind != TokenKindRefresh {
-		return apperr.ErrInvalidCredentials
+		return domain.ErrInvalidCredentials
 	}
 	if err := u.revocations.Revoke(ctx, claims.JTI, revocationExpiresAt(claims)); err != nil {
-		if errors.Is(err, apperr.ErrTokenRevoked) {
-			return apperr.ErrTokenRevoked
+		if errors.Is(err, domain.ErrTokenRevoked) {
+			return domain.ErrTokenRevoked
 		}
 		return fmt.Errorf("AuthUsecase - Logout - RevocationStore.Revoke: %w", err)
 	}
@@ -132,7 +132,7 @@ func (u *AuthUseCase) ensureNotRevoked(ctx context.Context, claims *Claims) erro
 		return fmt.Errorf("AuthUsecase - VerifyAccess - RevocationStore.IsRevoked: %w", err)
 	}
 	if revoked {
-		return apperr.ErrTokenRevoked
+		return domain.ErrTokenRevoked
 	}
 	return nil
 }
@@ -140,7 +140,7 @@ func (u *AuthUseCase) ensureNotRevoked(ctx context.Context, claims *Claims) erro
 func (u *AuthUseCase) revokeAccessToken(ctx context.Context, token string) error {
 	claims, err := u.parse(token)
 	if err != nil {
-		if errors.Is(err, apperr.ErrInvalidCredentials) || errors.Is(err, apperr.ErrTokenExpired) {
+		if errors.Is(err, domain.ErrInvalidCredentials) || errors.Is(err, domain.ErrTokenExpired) {
 			return nil
 		}
 		return err
@@ -149,7 +149,7 @@ func (u *AuthUseCase) revokeAccessToken(ctx context.Context, token string) error
 		return nil
 	}
 	if err := u.revocations.Revoke(ctx, claims.JTI, revocationExpiresAt(claims)); err != nil {
-		if errors.Is(err, apperr.ErrTokenRevoked) {
+		if errors.Is(err, domain.ErrTokenRevoked) {
 			return nil
 		}
 		return fmt.Errorf("AuthUsecase - Logout - RevocationStore.Revoke access: %w", err)
@@ -215,16 +215,16 @@ func (u *AuthUseCase) parse(tokenStr string) (*Claims, error) {
 	)
 	if err != nil {
 		if errors.Is(err, jwt.ErrTokenExpired) {
-			return nil, apperr.ErrTokenExpired
+			return nil, domain.ErrTokenExpired
 		}
-		return nil, apperr.ErrInvalidCredentials
+		return nil, domain.ErrInvalidCredentials
 	}
 	if !parsed.Valid {
-		return nil, apperr.ErrInvalidCredentials
+		return nil, domain.ErrInvalidCredentials
 	}
 	mc, ok := parsed.Claims.(jwt.MapClaims)
 	if !ok {
-		return nil, apperr.ErrInvalidCredentials
+		return nil, domain.ErrInvalidCredentials
 	}
 	return claimsFromMap(mc)
 }
@@ -239,19 +239,19 @@ func (u *AuthUseCase) jwtKeyfunc(t *jwt.Token) (any, error) {
 func claimsFromMap(mc jwt.MapClaims) (*Claims, error) {
 	sub, err := adminSubjectFromClaims(mc)
 	if err != nil {
-		return nil, apperr.ErrInvalidCredentials
+		return nil, domain.ErrInvalidCredentials
 	}
 	kind, err := tokenKindFromClaims(mc)
 	if err != nil {
-		return nil, apperr.ErrInvalidCredentials
+		return nil, domain.ErrInvalidCredentials
 	}
 	jti, err := requiredStringClaim(mc, "jti")
 	if err != nil {
-		return nil, apperr.ErrInvalidCredentials
+		return nil, domain.ErrInvalidCredentials
 	}
 	iat, exp, err := issuedAndExpiryClaims(mc)
 	if err != nil {
-		return nil, apperr.ErrInvalidCredentials
+		return nil, domain.ErrInvalidCredentials
 	}
 
 	return &Claims{
@@ -266,7 +266,7 @@ func claimsFromMap(mc jwt.MapClaims) (*Claims, error) {
 func adminSubjectFromClaims(mc jwt.MapClaims) (string, error) {
 	sub, err := requiredStringClaim(mc, "sub")
 	if err != nil || sub != adminSubject {
-		return "", apperr.ErrInvalidCredentials
+		return "", domain.ErrInvalidCredentials
 	}
 	return sub, nil
 }
@@ -274,7 +274,7 @@ func adminSubjectFromClaims(mc jwt.MapClaims) (string, error) {
 func tokenKindFromClaims(mc jwt.MapClaims) (TokenKind, error) {
 	kindStr, err := requiredStringClaim(mc, "kind")
 	if err != nil {
-		return "", apperr.ErrInvalidCredentials
+		return "", domain.ErrInvalidCredentials
 	}
 	switch TokenKind(kindStr) {
 	case TokenKindAccess:
@@ -282,14 +282,14 @@ func tokenKindFromClaims(mc jwt.MapClaims) (TokenKind, error) {
 	case TokenKindRefresh:
 		return TokenKindRefresh, nil
 	default:
-		return "", apperr.ErrInvalidCredentials
+		return "", domain.ErrInvalidCredentials
 	}
 }
 
 func requiredStringClaim(mc jwt.MapClaims, name string) (string, error) {
 	value, ok := mc[name].(string)
 	if !ok || value == "" {
-		return "", apperr.ErrInvalidCredentials
+		return "", domain.ErrInvalidCredentials
 	}
 	return value, nil
 }
@@ -297,11 +297,11 @@ func requiredStringClaim(mc jwt.MapClaims, name string) (string, error) {
 func issuedAndExpiryClaims(mc jwt.MapClaims) (time.Time, time.Time, error) {
 	iat, ok := claimNumericDate(mc["iat"])
 	if !ok {
-		return time.Time{}, time.Time{}, apperr.ErrInvalidCredentials
+		return time.Time{}, time.Time{}, domain.ErrInvalidCredentials
 	}
 	exp, ok := claimNumericDate(mc["exp"])
 	if !ok || !exp.After(iat) {
-		return time.Time{}, time.Time{}, apperr.ErrInvalidCredentials
+		return time.Time{}, time.Time{}, domain.ErrInvalidCredentials
 	}
 	return iat, exp, nil
 }

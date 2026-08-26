@@ -13,7 +13,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/api"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/errmap"
-	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
+	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
 func TestHandleError_MapsAllSentinels(t *testing.T) {
@@ -25,27 +25,27 @@ func TestHandleError_MapsAllSentinels(t *testing.T) {
 		status int
 		detail string
 	}{
-		{"player_not_found", apperr.ErrPlayerNotFound, http.StatusNotFound, apperr.ErrPlayerNotFound.Message},
-		{"task_not_found", apperr.ErrTaskNotFound, http.StatusNotFound, apperr.ErrTaskNotFound.Message},
-		{"duel_not_found", apperr.ErrDuelNotFound, http.StatusNotFound, apperr.ErrDuelNotFound.Message},
-		{"invalid_credentials", apperr.ErrInvalidCredentials, http.StatusUnauthorized, apperr.ErrInvalidCredentials.Message},
-		{"token_expired", apperr.ErrTokenExpired, http.StatusUnauthorized, apperr.ErrTokenExpired.Message},
-		{"token_revoked", apperr.ErrTokenRevoked, http.StatusUnauthorized, apperr.ErrTokenRevoked.Message},
-		{"invalid_session", apperr.ErrInvalidSession, http.StatusUnauthorized, apperr.ErrInvalidSession.Message},
-		{"not_duel_participant", apperr.ErrNotDuelParticipant, http.StatusForbidden, apperr.ErrNotDuelParticipant.Message},
-		{"username_taken", apperr.ErrUsernameTaken, http.StatusConflict, apperr.ErrUsernameTaken.Message},
-		{"player_in_duel", apperr.ErrPlayerInDuel, http.StatusConflict, apperr.ErrPlayerInDuel.Message},
-		{"player_queued", apperr.ErrPlayerQueued, http.StatusConflict, apperr.ErrPlayerQueued.Message},
-		{"task_in_use", apperr.ErrTaskInUse, http.StatusConflict, apperr.ErrTaskInUse.Message},
-		{"duel_finished", apperr.ErrDuelFinished, http.StatusConflict, apperr.ErrDuelFinished.Message},
-		{"conflict", apperr.ErrConflict, http.StatusConflict, apperr.ErrConflict.Message},
-		{"flag_incorrect", apperr.ErrFlagIncorrect, http.StatusUnprocessableEntity, apperr.ErrFlagIncorrect.Message},
-		{"duel_deadline_passed", apperr.ErrDuelDeadlinePassed, http.StatusUnprocessableEntity, apperr.ErrDuelDeadlinePassed.Message},
-		{"validation", apperr.ErrValidation, http.StatusBadRequest, apperr.ErrValidation.Message},
-		{"username_invalid", apperr.ErrUsernameInvalid, http.StatusBadRequest, apperr.ErrUsernameInvalid.Message},
-		{"task_validation", apperr.ErrTaskValidation, http.StatusBadRequest, apperr.ErrTaskValidation.Message},
-		{"rate_limited", apperr.ErrRateLimited, http.StatusTooManyRequests, apperr.ErrRateLimited.Message},
-		{"internal", apperr.ErrInternal, http.StatusInternalServerError, apperr.ErrInternal.Message},
+		{"player_not_found", domain.ErrPlayerNotFound, http.StatusNotFound, domain.ErrPlayerNotFound.Message},
+		{"task_not_found", domain.ErrTaskNotFound, http.StatusNotFound, domain.ErrTaskNotFound.Message},
+		{"duel_not_found", domain.ErrDuelNotFound, http.StatusNotFound, domain.ErrDuelNotFound.Message},
+		{"invalid_credentials", domain.ErrInvalidCredentials, http.StatusUnauthorized, domain.ErrInvalidCredentials.Message},
+		{"token_expired", domain.ErrTokenExpired, http.StatusUnauthorized, domain.ErrTokenExpired.Message},
+		{"token_revoked", domain.ErrTokenRevoked, http.StatusUnauthorized, domain.ErrTokenRevoked.Message},
+		{"invalid_session", domain.ErrInvalidSession, http.StatusUnauthorized, domain.ErrInvalidSession.Message},
+		{"not_duel_participant", domain.ErrNotDuelParticipant, http.StatusForbidden, domain.ErrNotDuelParticipant.Message},
+		{"username_taken", domain.ErrUsernameTaken, http.StatusConflict, domain.ErrUsernameTaken.Message},
+		{"player_in_duel", domain.ErrPlayerInDuel, http.StatusConflict, domain.ErrPlayerInDuel.Message},
+		{"player_queued", domain.ErrPlayerQueued, http.StatusConflict, domain.ErrPlayerQueued.Message},
+		{"task_in_use", domain.ErrTaskInUse, http.StatusConflict, domain.ErrTaskInUse.Message},
+		{"duel_finished", domain.ErrDuelFinished, http.StatusConflict, domain.ErrDuelFinished.Message},
+		{"conflict", domain.ErrConflict, http.StatusConflict, domain.ErrConflict.Message},
+		{"flag_incorrect", domain.ErrFlagIncorrect, http.StatusUnprocessableEntity, domain.ErrFlagIncorrect.Message},
+		{"duel_deadline_passed", domain.ErrDuelDeadlinePassed, http.StatusUnprocessableEntity, domain.ErrDuelDeadlinePassed.Message},
+		{"validation", domain.ErrValidation, http.StatusBadRequest, domain.ErrValidation.Message},
+		{"username_invalid", domain.ErrUsernameInvalid, http.StatusBadRequest, domain.ErrUsernameInvalid.Message},
+		{"task_validation", domain.ErrTaskValidation, http.StatusBadRequest, domain.ErrTaskValidation.Message},
+		{"rate_limited", domain.ErrRateLimited, http.StatusTooManyRequests, domain.ErrRateLimited.Message},
+		{"internal", domain.ErrInternal, http.StatusInternalServerError, domain.ErrInternal.Message},
 	}
 
 	for _, tt := range tests {
@@ -73,11 +73,11 @@ func TestHandleError_WrappedAppErrorKeepsSafeDetail(t *testing.T) {
 	t.Parallel()
 
 	cause := errors.New("db connection password leaked here")
-	rr, problem := handle(t, apperr.Wrap(cause, apperr.ErrPlayerNotFound))
+	rr, problem := handle(t, domain.WrapError(cause, domain.ErrPlayerNotFound))
 
 	require.Equal(t, http.StatusNotFound, rr.Code)
 	require.NotNil(t, problem.Detail)
-	require.Equal(t, apperr.ErrPlayerNotFound.Message, *problem.Detail)
+	require.Equal(t, domain.ErrPlayerNotFound.Message, *problem.Detail)
 	require.NotContains(t, *problem.Detail, "password")
 }
 
@@ -89,7 +89,7 @@ func TestHandleError_UnknownErrorMapsToInternal(t *testing.T) {
 	require.Equal(t, http.StatusInternalServerError, rr.Code)
 	require.Equal(t, "Internal Server Error", problem.Title)
 	require.NotNil(t, problem.Detail)
-	require.Equal(t, apperr.ErrInternal.Message, *problem.Detail)
+	require.Equal(t, domain.ErrInternal.Message, *problem.Detail)
 }
 
 func TestHandleError_NilErrorDoesNotWrite(t *testing.T) {

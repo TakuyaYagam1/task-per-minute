@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"time"
 
 	coderws "github.com/coder/websocket"
 	"github.com/go-chi/chi/v5"
@@ -17,7 +18,6 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/middleware"
 	restv1 "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/v1"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket"
-	clockadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/clock"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/objectstorage"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	redisadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/redis"
@@ -32,12 +32,18 @@ type rawWebSocketServer struct {
 	*websocket.Server
 }
 
+type clockFunc func() time.Time
+
+func (f clockFunc) Now() time.Time {
+	return f().UTC()
+}
+
 func provideRuntimeContext(runtime *RuntimeContext) context.Context {
 	return runtime.Context()
 }
 
-func provideClock() *clockadapter.Real {
-	return &clockadapter.Real{}
+func provideClock() clockFunc {
+	return time.Now
 }
 
 func providePostgresConfig(cfg *config.Config) postgres.Config {

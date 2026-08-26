@@ -11,7 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
-	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
@@ -46,8 +45,8 @@ func TestPlayerRepo_Create_DuplicateUsername_ReturnsErrUsernameTaken(t *testing.
 
 	_, err = repo.Create(ctx, name)
 	require.Error(t, err)
-	require.ErrorIs(t, err, apperr.ErrUsernameTaken,
-		"second Create with same username must map unique violation to apperr.ErrUsernameTaken")
+	require.ErrorIs(t, err, domain.ErrUsernameTaken,
+		"second Create with same username must map unique violation to domain.ErrUsernameTaken")
 }
 
 func TestPlayerRepo_JoinByUsername_QueuedPlayerRejected(t *testing.T) {
@@ -64,7 +63,7 @@ func TestPlayerRepo_JoinByUsername_QueuedPlayerRejected(t *testing.T) {
 
 	token := uuid.New()
 	_, err = repo.JoinByUsername(ctx, name, token, time.Now().Add(time.Hour).UTC())
-	require.ErrorIs(t, err, apperr.ErrPlayerQueued)
+	require.ErrorIs(t, err, domain.ErrPlayerQueued)
 
 	joined, err := repo.GetByID(ctx, created.ID)
 	require.NoError(t, err)
@@ -127,7 +126,7 @@ func TestPlayerRepo_GetByID_NotFound(t *testing.T) {
 	t.Parallel()
 	repo, _ := newPlayerRepo()
 	_, err := repo.GetByID(context.Background(), uuid.New())
-	require.ErrorIs(t, err, apperr.ErrPlayerNotFound)
+	require.ErrorIs(t, err, domain.ErrPlayerNotFound)
 }
 
 func TestPlayerRepo_GetByUsername(t *testing.T) {
@@ -148,7 +147,7 @@ func TestPlayerRepo_GetByUsername_NotFound(t *testing.T) {
 	t.Parallel()
 	repo, _ := newPlayerRepo()
 	_, err := repo.GetByUsername(context.Background(), uniq("ghost"))
-	require.ErrorIs(t, err, apperr.ErrPlayerNotFound)
+	require.ErrorIs(t, err, domain.ErrPlayerNotFound)
 }
 
 func TestPlayerRepo_UpdateSessionToken_SetThenClear(t *testing.T) {
@@ -178,7 +177,7 @@ func TestPlayerRepo_UpdateSessionToken_SetThenClear(t *testing.T) {
 	require.Nil(t, cleared.SessionExpiresAt)
 
 	_, err = repo.GetBySessionToken(ctx, token)
-	require.ErrorIs(t, err, apperr.ErrPlayerNotFound,
+	require.ErrorIs(t, err, domain.ErrPlayerNotFound,
 		"after clearing the token nobody should match it")
 }
 
@@ -196,7 +195,7 @@ func TestPlayerRepo_GetBySessionToken_ExpiredSessionClearsToken(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = repo.GetBySessionToken(ctx, token)
-	require.ErrorIs(t, err, apperr.ErrPlayerNotFound)
+	require.ErrorIs(t, err, domain.ErrPlayerNotFound)
 
 	cleared, err := repo.GetByID(ctx, p.ID)
 	require.NoError(t, err)
@@ -217,7 +216,7 @@ func TestPlayerRepo_GetBySessionToken_NullExpiryIsExpired(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = repo.GetBySessionToken(ctx, token)
-	require.ErrorIs(t, err, apperr.ErrPlayerNotFound)
+	require.ErrorIs(t, err, domain.ErrPlayerNotFound)
 }
 
 func TestPlayerRepo_UpdateSessionToken_NotFound(t *testing.T) {
@@ -226,7 +225,7 @@ func TestPlayerRepo_UpdateSessionToken_NotFound(t *testing.T) {
 	token := uuid.New()
 	expiresAt := time.Now().Add(time.Hour).UTC()
 	_, err := repo.UpdateSessionToken(context.Background(), uuid.New(), &token, &expiresAt)
-	require.ErrorIs(t, err, apperr.ErrPlayerNotFound)
+	require.ErrorIs(t, err, domain.ErrPlayerNotFound)
 }
 
 func TestPlayerRepo_UpdateStatus(t *testing.T) {
@@ -246,7 +245,7 @@ func TestPlayerRepo_UpdateStatus_InvalidStatus(t *testing.T) {
 	t.Parallel()
 	repo, _ := newPlayerRepo()
 	_, err := repo.UpdateStatus(context.Background(), uuid.New(), domain.PlayerStatus("offline"))
-	require.ErrorIs(t, err, apperr.ErrValidation,
+	require.ErrorIs(t, err, domain.ErrValidation,
 		"invalid enum must be rejected before hitting the DB")
 }
 
@@ -254,7 +253,7 @@ func TestPlayerRepo_UpdateStatus_NotFound(t *testing.T) {
 	t.Parallel()
 	repo, _ := newPlayerRepo()
 	_, err := repo.UpdateStatus(context.Background(), uuid.New(), domain.PlayerStatusIdle)
-	require.ErrorIs(t, err, apperr.ErrPlayerNotFound)
+	require.ErrorIs(t, err, domain.ErrPlayerNotFound)
 }
 
 func TestPlayerRepo_InsideTx_RollsBackOnError(t *testing.T) {
@@ -263,7 +262,7 @@ func TestPlayerRepo_InsideTx_RollsBackOnError(t *testing.T) {
 	ctx := context.Background()
 	a, b := uniq("alice"), uniq("bob")
 
-	bust := apperr.ErrInternal
+	bust := domain.ErrInternal
 	err := mgr.Do(ctx, func(txCtx context.Context) error {
 		_, err := repo.Create(txCtx, a)
 		require.NoError(t, err)
@@ -274,7 +273,7 @@ func TestPlayerRepo_InsideTx_RollsBackOnError(t *testing.T) {
 	require.ErrorIs(t, err, bust)
 
 	_, err = repo.GetByUsername(ctx, a)
-	require.ErrorIs(t, err, apperr.ErrPlayerNotFound, "tx rollback must wipe %s", a)
+	require.ErrorIs(t, err, domain.ErrPlayerNotFound, "tx rollback must wipe %s", a)
 	_, err = repo.GetByUsername(ctx, b)
-	require.ErrorIs(t, err, apperr.ErrPlayerNotFound, "tx rollback must wipe %s", b)
+	require.ErrorIs(t, err, domain.ErrPlayerNotFound, "tx rollback must wipe %s", b)
 }

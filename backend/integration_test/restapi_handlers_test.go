@@ -29,7 +29,6 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/api"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/middleware"
 	restv1 "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/v1"
-	clockadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/clock"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/memory"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	redisadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/redis"
@@ -707,20 +706,21 @@ func newRESTFixture(t *testing.T) *restFixture {
 	f := newDuelFixture()
 	redisClient := sharedRedis(t).client
 	st := newSeaweedStorage(t)
+	clock := realIntegrationClock()
 	auth := adminusecase.NewAuthUseCase(adminusecase.AuthConfig{
 		Secret:        []byte("01234567890123456789012345678901"),
 		AccessTTL:     15 * time.Minute,
 		RefreshTTL:    7 * 24 * time.Hour,
 		AdminPassword: []byte(restAdminPassword),
-	}, clockadapter.Real{}, memory.NewRevocation(clockadapter.Real{}))
+	}, clock, memory.NewRevocation(clock))
 
 	board := redisadapter.NewLeaderboardRedis(redisClient, "leaderboard:rest:"+uniq("z"))
-	leaderboardUC := leaderboardusecase.NewUseCase(board, f.board, clockadapter.Real{})
+	leaderboardUC := leaderboardusecase.NewUseCase(board, f.board, clock)
 	server := restv1.New(restv1.Dependencies{
-		Players:      playerusecase.NewUseCase(f.mgr, f.players, f.duels, clockadapter.Real{}),
+		Players:      playerusecase.NewUseCase(f.mgr, f.players, f.duels, clock),
 		AdminAuth:    auth,
 		Tasks:        adminusecase.NewTaskUseCase(f.tasks),
-		AdminPlayers: adminusecase.NewPlayerUseCase(f.mgr, f.players, leaderboardUC, clockadapter.Real{}),
+		AdminPlayers: adminusecase.NewPlayerUseCase(f.mgr, f.players, leaderboardUC, clock),
 		Upload:       adminusecase.NewUploadUseCase(f.tasks, st),
 		Leaderboard:  leaderboardUC,
 		Duels:        duelusecase.NewReadUseCase(f.duels),
@@ -825,7 +825,7 @@ func (f *restFixture) adminAccessToken(t *testing.T) string {
 
 func (f *restFixture) joinPlayerViaUsecase(t *testing.T, username string) *domain.Player {
 	t.Helper()
-	uc := playerusecase.NewUseCase(f.mgr, f.players, f.duels, clockadapter.Real{})
+	uc := playerusecase.NewUseCase(f.mgr, f.players, f.duels, realIntegrationClock())
 	player, err := uc.Join(context.Background(), username)
 	require.NoError(t, err)
 	require.NotNil(t, player.SessionToken)

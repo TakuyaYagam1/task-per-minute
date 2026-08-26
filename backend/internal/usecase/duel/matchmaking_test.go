@@ -6,14 +6,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
-	"github.com/stretchr/testify/mock"
-	"github.com/stretchr/testify/require"
-
-	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	duelusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel"
 	duelmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel/mocks"
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 func TestMatchmakingUsecase_JoinQueue_NoPairEnqueuesAndMarksQueued(t *testing.T) {
@@ -63,7 +61,7 @@ func TestMatchmakingUsecase_JoinQueue_RejectsPlayerInDuel(t *testing.T) {
 	f.players.EXPECT().GetByID(mock.Anything, player.ID).Return(player, nil)
 
 	_, err := f.uc.JoinQueue(t.Context(), player.ID)
-	require.ErrorIs(t, err, apperr.ErrPlayerInDuel)
+	require.ErrorIs(t, err, domain.ErrPlayerInDuel)
 }
 
 func TestMatchmakingUsecase_JoinQueue_RollsBackFirstClaimWhenSecondClaimFails(t *testing.T) {

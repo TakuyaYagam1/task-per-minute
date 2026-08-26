@@ -10,13 +10,13 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/errmap"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/middleware"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/v1/response"
-	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
+	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
 // (POST /api/v1/players/join).
 func (s *Server) JoinPlayer(w http.ResponseWriter, r *http.Request) {
 	if s.players == nil {
-		errmap.HandleError(w, r, apperr.ErrInternal)
+		errmap.HandleError(w, r, domain.ErrInternal)
 		return
 	}
 
@@ -25,8 +25,8 @@ func (s *Server) JoinPlayer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body api.JoinRequest
-	if !decodeJSONBody(w, r, &body, apperr.ErrValidation) {
-		s.logSecurityEvent(r, "player.join", securityOutcomeFailure, logkitFields("error_code", apperr.CodeValidation))
+	if !decodeJSONBody(w, r, &body, domain.ErrValidation) {
+		s.logSecurityEvent(r, "player.join", securityOutcomeFailure, logkitFields("error_code", domain.ErrorCodeValidation))
 		return
 	}
 
@@ -37,14 +37,14 @@ func (s *Server) JoinPlayer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if player.SessionToken == nil || *player.SessionToken == uuid.Nil {
-		s.logSecurityEvent(r, "player.join", securityOutcomeFailure, logkitFields("error_code", apperr.CodeInternal))
-		errmap.HandleError(w, r, apperr.ErrInternal)
+		s.logSecurityEvent(r, "player.join", securityOutcomeFailure, logkitFields("error_code", domain.ErrorCodeInternal))
+		errmap.HandleError(w, r, domain.ErrInternal)
 		return
 	}
 	csrfToken, err := middleware.NewPlayerCSRFToken(*player.SessionToken)
 	if err != nil {
-		s.logSecurityEvent(r, "player.join", securityOutcomeFailure, logkitFields("error_code", apperr.CodeInternal))
-		errmap.HandleError(w, r, apperr.ErrInternal)
+		s.logSecurityEvent(r, "player.join", securityOutcomeFailure, logkitFields("error_code", domain.ErrorCodeInternal))
+		errmap.HandleError(w, r, domain.ErrInternal)
 		return
 	}
 
@@ -59,26 +59,26 @@ func (s *Server) JoinPlayer(w http.ResponseWriter, r *http.Request) {
 // (GET /api/v1/players/me).
 func (s *Server) GetMe(w http.ResponseWriter, r *http.Request) {
 	if s.players == nil {
-		errmap.HandleError(w, r, apperr.ErrInternal)
+		errmap.HandleError(w, r, domain.ErrInternal)
 		return
 	}
 
 	player, ok := middleware.GetPlayerFromCtx(r.Context())
 	if !ok || player.SessionToken == nil {
-		errmap.HandleError(w, r, apperr.ErrInvalidSession)
+		errmap.HandleError(w, r, domain.ErrInvalidSession)
 		return
 	}
 
 	me, err := s.players.GetMe(r.Context(), *player.SessionToken)
 	if err != nil {
-		if errors.Is(err, apperr.ErrPlayerNotFound) {
-			err = apperr.ErrInvalidSession
+		if errors.Is(err, domain.ErrPlayerNotFound) {
+			err = domain.ErrInvalidSession
 		}
 		errmap.HandleError(w, r, err)
 		return
 	}
 	if err := middleware.EnsurePlayerCSRFCookie(w, r, *player.SessionToken); err != nil {
-		errmap.HandleError(w, r, apperr.ErrInternal)
+		errmap.HandleError(w, r, domain.ErrInternal)
 		return
 	}
 

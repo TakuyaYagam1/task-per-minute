@@ -15,7 +15,6 @@ import (
 	logkit "github.com/wahrwelt-kit/go-logkit"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/middleware"
-	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	adminusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/admin"
 )
@@ -54,7 +53,7 @@ func TestAdminLoginFailureSecurityLogUsesErrorCodeOnly(t *testing.T) {
 
 	var logs bytes.Buffer
 	server := New(Dependencies{
-		AdminAuth:    adminLoginLogStub{err: apperr.ErrInvalidCredentials},
+		AdminAuth:    adminLoginLogStub{err: domain.ErrInvalidCredentials},
 		LoginLimiter: middleware.NewLoginRateLimiter(t.Context(), 10, time.Minute, time.Minute),
 		Log:          newV1TestLogger(t, &logs),
 	})
@@ -70,7 +69,7 @@ func TestAdminLoginFailureSecurityLogUsesErrorCodeOnly(t *testing.T) {
 
 	entry := requireSecurityLogEntry(t, rawLogs, "admin.login")
 	require.Equal(t, "failure", entry["outcome"])
-	require.Equal(t, string(apperr.CodeInvalidCredentials), entry["error_code"])
+	require.Equal(t, string(domain.ErrorCodeInvalidCredentials), entry["error_code"])
 }
 
 func TestPlayerJoinSecurityLogRedactsSessionToken(t *testing.T) {

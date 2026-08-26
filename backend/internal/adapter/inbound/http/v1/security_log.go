@@ -8,7 +8,7 @@ import (
 	logkit "github.com/wahrwelt-kit/go-logkit"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/middleware"
-	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
+	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	adminusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/admin"
 )
 
@@ -51,11 +51,11 @@ func securityErrorCode(err error) string {
 	if err == nil {
 		return ""
 	}
-	var app *apperr.Error
+	var app *domain.Error
 	if errors.As(err, &app) && app != nil {
 		return string(app.Code)
 	}
-	return string(apperr.CodeInternal)
+	return string(domain.ErrorCodeInternal)
 }
 
 func logkitFields(key string, value any) logkit.Fields {

@@ -4,11 +4,12 @@
 
 - The Go module root is `backend/` and the module requires Go 1.26.2.
 - Keep the existing import direction: inbound and outbound adapters -> consumer-owned usecase ports -> `internal/domain`.
-- `internal/domain` owns business types and validation without transport or infrastructure concerns.
+- `internal/domain` owns business types, validation, and stable application error identities without transport or infrastructure dependencies.
 - Each package under `internal/usecase/{admin,duel,leaderboard,player,recovery}` owns its narrow ports in `ports.go` and its workflow models in `models.go` where needed.
-- HTTP and WebSocket adapters live under `internal/adapter/inbound`. PostgreSQL, Redis, memory, object-storage, and wall-clock adapters live under `internal/adapter/outbound`.
-- `internal/bootstrap` is the only composition root and owns providers, Wire generation, startup, recovery coordination, server lifetime, and shutdown.
+- HTTP and WebSocket adapters live under `internal/adapter/inbound`. PostgreSQL, Redis, memory, and object-storage adapters live under `internal/adapter/outbound`.
+- `internal/bootstrap` is the only composition root and owns providers, Wire generation, startup, recovery coordination, server lifetime, shutdown, and the wall-clock function injected through consumer-owned ports.
 - Add dependencies only when existing repository packages cannot satisfy the requirement. Keep interfaces consumer-owned and narrow.
+- Map domain errors to HTTP or WebSocket responses inside the corresponding inbound adapter. Preserve wrapped causes for diagnostics, but return only the safe domain message to clients.
 
 ## Contract Sources
 

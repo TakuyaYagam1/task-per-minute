@@ -8,18 +8,18 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/errmap"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/middleware"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/v1/response"
-	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
+	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
 // (GET /api/v1/leaderboard).
 func (s *Server) GetLeaderboard(w http.ResponseWriter, r *http.Request) {
 	if s.leaderboard == nil {
-		errmap.HandleError(w, r, apperr.ErrInternal)
+		errmap.HandleError(w, r, domain.ErrInternal)
 		return
 	}
 	if !s.leaderboardLimiter.Allow(middleware.ClientIPFromRequest(r)) {
 		w.Header().Set("Retry-After", s.leaderboardLimiter.RetryAfter())
-		errmap.HandleError(w, r, apperr.ErrRateLimited)
+		errmap.HandleError(w, r, domain.ErrRateLimited)
 		return
 	}
 
@@ -35,13 +35,13 @@ func (s *Server) GetLeaderboard(w http.ResponseWriter, r *http.Request) {
 // (GET /api/v1/duels/{id}).
 func (s *Server) GetDuel(w http.ResponseWriter, r *http.Request, id openapi_types.UUID) {
 	if s.duels == nil {
-		errmap.HandleError(w, r, apperr.ErrInternal)
+		errmap.HandleError(w, r, domain.ErrInternal)
 		return
 	}
 
 	player, ok := middleware.GetPlayerFromCtx(r.Context())
 	if !ok {
-		errmap.HandleError(w, r, apperr.ErrInvalidSession)
+		errmap.HandleError(w, r, domain.ErrInvalidSession)
 		return
 	}
 

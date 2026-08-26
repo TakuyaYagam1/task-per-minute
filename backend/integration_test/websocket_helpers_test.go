@@ -17,7 +17,6 @@ import (
 
 	restmw "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/middleware"
 	wsadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket"
-	clockadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/clock"
 	redisadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/redis"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	duelusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel"
@@ -59,7 +58,8 @@ func newWebSocketFixtureFromDuelFixture(
 	redisClient := sharedRedis(t).client
 	queue := redisadapter.NewMatchmakingRedis(redisClient, "matchmaking:"+uniq("q"))
 	board := redisadapter.NewLeaderboardRedis(redisClient, "leaderboard:"+uniq("z"))
-	playerUC := playerusecase.NewUseCase(f.mgr, f.players, f.duels, clockadapter.Real{})
+	clock := realIntegrationClock()
+	playerUC := playerusecase.NewUseCase(f.mgr, f.players, f.duels, clock)
 	matchmaking := duelusecase.NewMatchmakingUseCase(
 		f.mgr,
 		queue,
@@ -68,17 +68,17 @@ func newWebSocketFixtureFromDuelFixture(
 		f.history,
 		f.duels,
 		nil,
-		clockadapter.Real{},
+		clock,
 	)
-	timers := duelusecase.NewTimerRegistry(f.mgr, f.duels, f.players, clockadapter.Real{})
-	hints := duelusecase.NewHintScheduler(clockadapter.Real{}, nil)
+	timers := duelusecase.NewTimerRegistry(f.mgr, f.duels, f.players, clock)
+	hints := duelusecase.NewHintScheduler(clock, nil)
 	flags := duelusecase.NewFlagSubmitUseCase(
 		f.mgr,
 		f.duels,
 		f.players,
 		f.history,
 		board,
-		clockadapter.Real{},
+		clock,
 		timers,
 	)
 	hubs := wsadapter.NewHubRegistry()
@@ -99,7 +99,7 @@ func newWebSocketFixtureFromDuelFixture(
 		f.players,
 		wsadapter.NewPauseableDuelTimers(timers, hints),
 		server.Broadcaster(),
-		clockadapter.Real{},
+		clock,
 		duelusecase.WithReconnectWindow(reconnectWindow),
 		duelusecase.WithLeaderboardStore(board),
 	)

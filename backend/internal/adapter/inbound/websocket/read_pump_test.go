@@ -7,12 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
-	"github.com/stretchr/testify/require"
-
-	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	duelusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel"
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/require"
 )
 
 func TestServerPublishMatchMarksMissingParticipantDisconnected(t *testing.T) {
@@ -248,7 +246,7 @@ func TestWebSocketInboundRateLimitClosesClient(t *testing.T) {
 
 	event := readBufferedClientEvent(t, c)
 	require.Equal(t, EventError, event.Type)
-	require.Equal(t, string(apperr.CodeRateLimited), event.Code)
+	require.Equal(t, string(domain.ErrorCodeRateLimit), event.Code)
 	require.True(t, c.closed.Load())
 }
 
@@ -270,7 +268,7 @@ func TestWebSocketActionRateLimitClosesClient(t *testing.T) {
 
 	event := readBufferedClientEvent(t, c)
 	require.Equal(t, EventError, event.Type)
-	require.Equal(t, string(apperr.CodeRateLimited), event.Code)
+	require.Equal(t, string(domain.ErrorCodeRateLimit), event.Code)
 	require.True(t, c.closed.Load())
 }
 

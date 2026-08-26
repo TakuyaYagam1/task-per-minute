@@ -12,7 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
-	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
@@ -111,7 +110,7 @@ func TestTaskRepo_Create_RejectsInvalidEnums(t *testing.T) {
 			in := base
 			tt.patch(&in)
 			_, err := repo.Create(ctx, in)
-			require.ErrorIs(t, err, apperr.ErrTaskValidation)
+			require.ErrorIs(t, err, domain.ErrTaskValidation)
 		})
 	}
 }
@@ -131,7 +130,7 @@ func TestTaskRepo_GetByID(t *testing.T) {
 func TestTaskRepo_GetByID_NotFound(t *testing.T) {
 	t.Parallel()
 	_, err := newTaskRepo().GetByID(context.Background(), uuid.New())
-	require.ErrorIs(t, err, apperr.ErrTaskNotFound)
+	require.ErrorIs(t, err, domain.ErrTaskNotFound)
 }
 
 func TestTaskRepo_List_ContainsCreated(t *testing.T) {
@@ -203,7 +202,7 @@ func TestTaskRepo_Update_NotFound(t *testing.T) {
 		Category: domain.CategoryWeb, Difficulty: domain.DifficultyEasy,
 		TimeLimit: 60, Flag: "x", Hints: defaultTaskHints("x"),
 	})
-	require.ErrorIs(t, err, apperr.ErrTaskNotFound)
+	require.ErrorIs(t, err, domain.ErrTaskNotFound)
 }
 
 func TestTaskRepo_Update_RejectsInvalidInput(t *testing.T) {
@@ -221,7 +220,7 @@ func TestTaskRepo_Update_RejectsInvalidInput(t *testing.T) {
 		Flag:        "x",
 		Hints:       defaultTaskHints("x"),
 	})
-	require.ErrorIs(t, err, apperr.ErrTaskValidation)
+	require.ErrorIs(t, err, domain.ErrTaskValidation)
 }
 
 func TestTaskRepo_Update_RejectsInvalidTaskAssetURLs(t *testing.T) {
@@ -241,7 +240,7 @@ func TestTaskRepo_Update_RejectsInvalidTaskAssetURLs(t *testing.T) {
 		Hints:       defaultTaskHints("x"),
 		TaskURL:     &taskURL,
 	})
-	require.ErrorIs(t, err, apperr.ErrTaskValidation)
+	require.ErrorIs(t, err, domain.ErrTaskValidation)
 
 	sourceURL := "ftp://files.example/" + uniq("source") + ".zip"
 	_, err = repo.Update(ctx, created.ID, postgres.TaskInput{
@@ -254,7 +253,7 @@ func TestTaskRepo_Update_RejectsInvalidTaskAssetURLs(t *testing.T) {
 		Hints:         defaultTaskHints("x"),
 		SourceFileURL: &sourceURL,
 	})
-	require.ErrorIs(t, err, apperr.ErrTaskValidation)
+	require.ErrorIs(t, err, domain.ErrTaskValidation)
 }
 
 func TestTaskRepo_Delete(t *testing.T) {
@@ -265,7 +264,7 @@ func TestTaskRepo_Delete(t *testing.T) {
 
 	require.NoError(t, repo.Delete(ctx, created.ID))
 	_, err := repo.GetByID(ctx, created.ID)
-	require.ErrorIs(t, err, apperr.ErrTaskNotFound)
+	require.ErrorIs(t, err, domain.ErrTaskNotFound)
 }
 
 func TestTaskRepo_Delete_Idempotent(t *testing.T) {
@@ -302,7 +301,7 @@ func TestTaskRepo_CountByDifficulty_UsesIsolatedDB(t *testing.T) {
 	require.Equal(t, int64(0), medium)
 
 	_, err = repo.CountByDifficulty(ctx, domain.Difficulty("impossible"))
-	require.ErrorIs(t, err, apperr.ErrValidation)
+	require.ErrorIs(t, err, domain.ErrValidation)
 
 	TruncateTables(t, pool)
 	easyAfterTruncate, err := repo.CountByDifficulty(ctx, domain.DifficultyEasy)
@@ -371,7 +370,7 @@ func TestTaskRepo_Delete_ActiveDuelReferencedTaskReturnsTaskInUse(t *testing.T) 
 	require.NoError(t, err)
 	require.NoError(t, f.duels.CreateDuelPlayerTask(ctx, d.ID, p1.ID, task.ID))
 
-	require.ErrorIs(t, repo.Delete(ctx, task.ID), apperr.ErrTaskInUse)
+	require.ErrorIs(t, repo.Delete(ctx, task.ID), domain.ErrTaskInUse)
 }
 
 func TestTaskRepo_Delete_FinishedDuelReferenceDeletesTask(t *testing.T) {
@@ -391,7 +390,7 @@ func TestTaskRepo_Delete_FinishedDuelReferenceDeletesTask(t *testing.T) {
 
 	require.NoError(t, repo.Delete(ctx, task.ID))
 	_, err = repo.GetByID(ctx, task.ID)
-	require.ErrorIs(t, err, apperr.ErrTaskNotFound)
+	require.ErrorIs(t, err, domain.ErrTaskNotFound)
 }
 
 func TestTaskRepo_Delete_HistoryReferencedTaskDeletesTask(t *testing.T) {
@@ -406,7 +405,7 @@ func TestTaskRepo_Delete_HistoryReferencedTaskDeletesTask(t *testing.T) {
 
 	require.NoError(t, repo.Delete(ctx, task.ID))
 	_, err := repo.GetByID(ctx, task.ID)
-	require.ErrorIs(t, err, apperr.ErrTaskNotFound)
+	require.ErrorIs(t, err, domain.ErrTaskNotFound)
 }
 
 func TestTaskRepo_CountSolvedByDifficulty(t *testing.T) {

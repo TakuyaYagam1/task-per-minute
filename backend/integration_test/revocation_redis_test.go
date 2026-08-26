@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	redisadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/redis"
-	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
+	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
 func TestRevocationRedis_RevokePersistsAcrossRepositoryInstances(t *testing.T) {
@@ -32,7 +32,7 @@ func TestRevocationRedis_RevokePersistsAcrossRepositoryInstances(t *testing.T) {
 	require.False(t, revoked)
 
 	require.NoError(t, store1.Revoke(ctx, jti, time.Now().Add(time.Hour)))
-	require.ErrorIs(t, store1.Revoke(ctx, jti, time.Now().Add(time.Hour)), apperr.ErrTokenRevoked)
+	require.ErrorIs(t, store1.Revoke(ctx, jti, time.Now().Add(time.Hour)), domain.ErrTokenRevoked)
 
 	revoked, err = store2.IsRevoked(ctx, jti)
 	require.NoError(t, err)

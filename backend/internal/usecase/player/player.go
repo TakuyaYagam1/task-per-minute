@@ -7,10 +7,8 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/google/uuid"
-
-	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
+	"github.com/google/uuid"
 )
 
 var usernameRE = regexp.MustCompile(`^[a-zA-Z0-9_-]{2,50}$`)
@@ -53,7 +51,7 @@ func NewUseCase(tx TransactionManager, players Repository, duels ActiveDuelReade
 
 func (u *UseCase) Join(ctx context.Context, username string) (*domain.Player, error) {
 	if !usernameRE.MatchString(username) {
-		return nil, apperr.ErrUsernameInvalid
+		return nil, domain.ErrUsernameInvalid
 	}
 
 	sessionToken := uuid.New()
@@ -66,7 +64,7 @@ func (u *UseCase) Join(ctx context.Context, username string) (*domain.Player, er
 			return fmt.Errorf("UseCase - Join - Repository.JoinByUsername: %w", err)
 		}
 		if updated.Status == domain.PlayerStatusInDuel {
-			return apperr.ErrPlayerInDuel
+			return domain.ErrPlayerInDuel
 		}
 		joined = updated
 		return nil
@@ -80,8 +78,8 @@ func (u *UseCase) Join(ctx context.Context, username string) (*domain.Player, er
 func (u *UseCase) GetMe(ctx context.Context, sessionToken uuid.UUID) (*PlayerWithActiveDuel, error) {
 	player, err := u.players.GetBySessionToken(ctx, sessionToken)
 	if err != nil {
-		if errors.Is(err, apperr.ErrPlayerNotFound) {
-			return nil, apperr.ErrInvalidSession
+		if errors.Is(err, domain.ErrPlayerNotFound) {
+			return nil, domain.ErrInvalidSession
 		}
 		return nil, fmt.Errorf("UseCase - GetMe - Repository.GetBySessionToken: %w", err)
 	}
@@ -98,7 +96,7 @@ func (u *UseCase) Logout(ctx context.Context, sessionToken uuid.UUID) error {
 	return u.tx.Do(ctx, func(txCtx context.Context) error {
 		player, err := u.players.GetBySessionToken(txCtx, sessionToken)
 		if err != nil {
-			if errors.Is(err, apperr.ErrPlayerNotFound) {
+			if errors.Is(err, domain.ErrPlayerNotFound) {
 				return nil
 			}
 			return fmt.Errorf("UseCase - Logout - Repository.GetBySessionToken: %w", err)

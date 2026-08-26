@@ -9,12 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
-	logkit "github.com/wahrwelt-kit/go-logkit"
-
-	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/ctxutil"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
+	"github.com/google/uuid"
+	logkit "github.com/wahrwelt-kit/go-logkit"
 )
 
 const (
@@ -133,7 +131,7 @@ func (u *UploadUseCase) PresignedSourceFileURL(ctx context.Context, taskID uuid.
 		return "", fmt.Errorf("UploadUsecase - PresignedSourceFileURL - TaskRepo.GetByID: %w", err)
 	}
 	if task.SourceFileURL == nil {
-		return "", apperr.ErrTaskNotFound
+		return "", domain.ErrTaskNotFound
 	}
 
 	key := domain.TaskSourceFileKeyFromURL(taskID, *task.SourceFileURL)
@@ -186,7 +184,7 @@ func SourceFileKey(taskID uuid.UUID) string {
 
 func validateSourceFileMeta(size int64, contentType string) error {
 	if size < int64(len(zipLocalFileHeader)) || size > MaxSourceFileSize {
-		return apperr.ErrTaskValidation
+		return domain.ErrTaskValidation
 	}
 
 	if strings.TrimSpace(contentType) == "" {
@@ -194,10 +192,10 @@ func validateSourceFileMeta(size int64, contentType string) error {
 	}
 	mediaType, _, err := mime.ParseMediaType(contentType)
 	if err != nil {
-		return apperr.ErrTaskValidation
+		return domain.ErrTaskValidation
 	}
 	if _, ok := allowedSourceFileMediaTypes[mediaType]; !ok {
-		return apperr.ErrTaskValidation
+		return domain.ErrTaskValidation
 	}
 	return nil
 }
@@ -205,10 +203,10 @@ func validateSourceFileMeta(size int64, contentType string) error {
 func readZipHeader(reader io.Reader) ([]byte, error) {
 	header := make([]byte, len(zipLocalFileHeader))
 	if _, err := io.ReadFull(reader, header); err != nil {
-		return nil, apperr.ErrTaskValidation
+		return nil, domain.ErrTaskValidation
 	}
 	if !bytes.Equal(header, zipLocalFileHeader) {
-		return nil, apperr.ErrTaskValidation
+		return nil, domain.ErrTaskValidation
 	}
 	return header, nil
 }

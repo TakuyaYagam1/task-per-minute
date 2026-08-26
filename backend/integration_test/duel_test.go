@@ -12,7 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	redisadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/redis"
-	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	duelusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel"
 	leaderboardusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/leaderboard"
@@ -365,7 +364,7 @@ func TestDuel_ReadUsecaseReturnsParticipantDetail(t *testing.T) {
 	require.Len(t, detail.PlayerTasks, 2)
 
 	_, err = duelusecase.NewReadUseCase(f.duels).GetDuel(ctx, duel.ID, stranger.ID)
-	require.ErrorIs(t, err, apperr.ErrNotDuelParticipant)
+	require.ErrorIs(t, err, domain.ErrNotDuelParticipant)
 }
 
 func TestDuel_ReconnectResumeUpdatesDeadline(t *testing.T) {

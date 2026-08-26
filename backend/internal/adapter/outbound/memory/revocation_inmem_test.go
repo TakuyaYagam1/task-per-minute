@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/memory"
-	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
+	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
 type mutableClock struct {
@@ -55,7 +55,7 @@ func TestRevocation_RevokeExistingLiveJTI_ReturnsErrTokenRevoked(t *testing.T) {
 	expiresAt := clk.Now().Add(time.Hour)
 
 	require.NoError(t, store.Revoke(context.Background(), jti, expiresAt))
-	require.ErrorIs(t, store.Revoke(context.Background(), jti, expiresAt), apperr.ErrTokenRevoked)
+	require.ErrorIs(t, store.Revoke(context.Background(), jti, expiresAt), domain.ErrTokenRevoked)
 }
 
 func TestRevocation_ExpiredEntryAutoEvicts(t *testing.T) {

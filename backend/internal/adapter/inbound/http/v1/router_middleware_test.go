@@ -15,7 +15,7 @@ import (
 	logkit "github.com/wahrwelt-kit/go-logkit"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/middleware"
-	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
+	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	adminusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/admin"
 )
 
@@ -150,7 +150,7 @@ func TestNewHandler_DoesNotDoubleCountValidPublicRequest(t *testing.T) {
 
 	limiter := middleware.NewLoginRateLimiter(t.Context(), 1, time.Hour, time.Hour)
 	handler := NewHandler(New(Dependencies{
-		AdminAuth:    adminLoginLogStub{err: apperr.ErrInvalidCredentials},
+		AdminAuth:    adminLoginLogStub{err: domain.ErrInvalidCredentials},
 		LoginLimiter: limiter,
 	}), HandlerOptions{RequestValidator: validator})
 	request := func() *httptest.ResponseRecorder {

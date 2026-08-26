@@ -9,7 +9,6 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
-	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/admin"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel"
@@ -47,7 +46,7 @@ func (r *TaskPostgres) GetByID(ctx context.Context, id uuid.UUID) (*domain.Task,
 	row, err := r.tx.Querier(ctx).GetTaskByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, apperr.ErrTaskNotFound
+			return nil, domain.ErrTaskNotFound
 		}
 		return nil, fmt.Errorf("TaskPostgres - GetByID - Querier.GetTaskByID: %w", err)
 	}
@@ -68,7 +67,7 @@ func (r *TaskPostgres) List(ctx context.Context) ([]*domain.Task, error) {
 
 func (r *TaskPostgres) ListByDifficulty(ctx context.Context, difficulty domain.Difficulty) ([]*domain.Task, error) {
 	if !difficulty.IsValid() {
-		return nil, apperr.ErrValidation
+		return nil, domain.ErrValidation
 	}
 	rows, err := r.tx.Querier(ctx).ListTasksByDifficulty(ctx, string(difficulty))
 	if err != nil {
@@ -89,7 +88,7 @@ func (r *TaskPostgres) Update(ctx context.Context, id uuid.UUID, in TaskInput) (
 	row, err := r.tx.Querier(ctx).UpdateTask(ctx, updateTaskParams(id, normalized))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, apperr.ErrTaskNotFound
+			return nil, domain.ErrTaskNotFound
 		}
 		return nil, fmt.Errorf("TaskPostgres - Update - Querier.UpdateTask: %w", err)
 	}
@@ -98,26 +97,26 @@ func (r *TaskPostgres) Update(ctx context.Context, id uuid.UUID, in TaskInput) (
 
 func normalizeTaskInput(in TaskInput) (TaskInput, error) {
 	if !domain.IsValidTaskTitle(in.Title) {
-		return TaskInput{}, apperr.ErrTaskValidation
+		return TaskInput{}, domain.ErrTaskValidation
 	}
 	if !domain.IsValidTaskDescription(in.Description) {
-		return TaskInput{}, apperr.ErrTaskValidation
+		return TaskInput{}, domain.ErrTaskValidation
 	}
 	if !in.Category.IsValid() || !in.Difficulty.IsValid() {
-		return TaskInput{}, apperr.ErrTaskValidation
+		return TaskInput{}, domain.ErrTaskValidation
 	}
 	if !domain.IsValidTaskTimeLimit(in.TimeLimit) {
-		return TaskInput{}, apperr.ErrTaskValidation
+		return TaskInput{}, domain.ErrTaskValidation
 	}
 	if !domain.IsValidTaskFlag(in.Flag) {
-		return TaskInput{}, apperr.ErrTaskValidation
+		return TaskInput{}, domain.ErrTaskValidation
 	}
 	if !domain.IsValidTaskURLShape(in.Category, in.TaskURL, in.SourceFileURL) {
-		return TaskInput{}, apperr.ErrTaskValidation
+		return TaskInput{}, domain.ErrTaskValidation
 	}
 	hints, ok := domain.NormalizeTaskHints(in.Hints)
 	if !ok {
-		return TaskInput{}, apperr.ErrTaskValidation
+		return TaskInput{}, domain.ErrTaskValidation
 	}
 	in.Hints = hints
 	return in, nil
@@ -173,7 +172,7 @@ func taskHintPointer(hint string) *string {
 func (r *TaskPostgres) Delete(ctx context.Context, id uuid.UUID) error {
 	if err := r.tx.Querier(ctx).DeleteTask(ctx, id); err != nil {
 		if isForeignKeyViolation(err) {
-			return apperr.Wrap(err, apperr.ErrTaskInUse)
+			return domain.WrapError(err, domain.ErrTaskInUse)
 		}
 		return fmt.Errorf("TaskPostgres - Delete - Querier.DeleteTask: %w", err)
 	}
@@ -190,7 +189,7 @@ func (r *TaskPostgres) IsUsedInActiveDuel(ctx context.Context, id uuid.UUID) (bo
 
 func (r *TaskPostgres) CountByDifficulty(ctx context.Context, difficulty domain.Difficulty) (int64, error) {
 	if !difficulty.IsValid() {
-		return 0, apperr.ErrValidation
+		return 0, domain.ErrValidation
 	}
 	n, err := r.tx.Querier(ctx).CountTasksByDifficulty(ctx, string(difficulty))
 	if err != nil {
@@ -201,7 +200,7 @@ func (r *TaskPostgres) CountByDifficulty(ctx context.Context, difficulty domain.
 
 func (r *TaskPostgres) CountSolvedByDifficulty(ctx context.Context, playerID uuid.UUID, difficulty domain.Difficulty) (int64, error) {
 	if !difficulty.IsValid() {
-		return 0, apperr.ErrValidation
+		return 0, domain.ErrValidation
 	}
 	n, err := r.tx.Querier(ctx).CountSolvedTasksByDifficulty(ctx, sqlc.CountSolvedTasksByDifficultyParams{
 		PlayerID:   playerID,

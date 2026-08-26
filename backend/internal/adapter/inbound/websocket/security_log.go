@@ -7,7 +7,7 @@ import (
 	logkit "github.com/wahrwelt-kit/go-logkit"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/requestmeta"
-	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
+	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
 const (
@@ -80,7 +80,7 @@ func (s *Server) logClientSecurityEvent(c *client, event, outcome string, fields
 
 func wsAuthFailureFields(r *http.Request) logkit.Fields {
 	return logkit.Fields{
-		"error_code": string(apperr.CodeInvalidSession),
+		"error_code": string(domain.ErrorCodeInvalidSession),
 		"reason":     wsAuthFailureReason(r),
 	}
 }

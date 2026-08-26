@@ -12,7 +12,6 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
-	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/ctxutil"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/admin"
@@ -46,7 +45,7 @@ func (r *PlayerPostgres) Create(ctx context.Context, username string) (*domain.P
 	row, err := r.tx.Querier(ctx).CreatePlayer(ctx, username)
 	if err != nil {
 		if isUniqueViolation(err, playersUsernameUniqueConstraint) {
-			return nil, apperr.Wrap(err, apperr.ErrUsernameTaken)
+			return nil, domain.WrapError(err, domain.ErrUsernameTaken)
 		}
 		return nil, fmt.Errorf("PlayerPostgres - Create - Querier.CreatePlayer: %w", err)
 	}
@@ -68,12 +67,12 @@ func (r *PlayerPostgres) JoinByUsername(
 		if errors.Is(err, pgx.ErrNoRows) {
 			existing, getErr := r.GetByUsername(ctx, username)
 			if getErr != nil {
-				return nil, apperr.ErrPlayerInDuel
+				return nil, domain.ErrPlayerInDuel
 			}
 			if existing.Status == domain.PlayerStatusQueued {
-				return nil, apperr.ErrPlayerQueued
+				return nil, domain.ErrPlayerQueued
 			}
-			return nil, apperr.ErrPlayerInDuel
+			return nil, domain.ErrPlayerInDuel
 		}
 		return nil, fmt.Errorf("PlayerPostgres - JoinByUsername - Querier.UpsertPlayerSessionByUsername: %w", err)
 	}
@@ -84,7 +83,7 @@ func (r *PlayerPostgres) GetByID(ctx context.Context, id uuid.UUID) (*domain.Pla
 	row, err := r.tx.Querier(ctx).GetPlayerByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, apperr.ErrPlayerNotFound
+			return nil, domain.ErrPlayerNotFound
 		}
 		return nil, fmt.Errorf("PlayerPostgres - GetByID - Querier.GetPlayerByID: %w", err)
 	}
@@ -95,7 +94,7 @@ func (r *PlayerPostgres) GetByUsername(ctx context.Context, username string) (*d
 	row, err := r.tx.Querier(ctx).GetPlayerByUsername(ctx, username)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, apperr.ErrPlayerNotFound
+			return nil, domain.ErrPlayerNotFound
 		}
 		return nil, fmt.Errorf("PlayerPostgres - GetByUsername - Querier.GetPlayerByUsername: %w", err)
 	}
@@ -106,7 +105,7 @@ func (r *PlayerPostgres) GetBySessionToken(ctx context.Context, token uuid.UUID)
 	row, err := r.tx.Querier(ctx).GetPlayerBySessionToken(ctx, uuid.NullUUID{UUID: token, Valid: true})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, apperr.ErrPlayerNotFound
+			return nil, domain.ErrPlayerNotFound
 		}
 		return nil, fmt.Errorf("PlayerPostgres - GetBySessionToken - Querier.GetPlayerBySessionToken: %w", err)
 	}
@@ -115,7 +114,7 @@ func (r *PlayerPostgres) GetBySessionToken(ctx context.Context, token uuid.UUID)
 		cleanupCtx, cleanupCancel := ctxutil.DetachedWithTimeout(ctx, expiredSessionCleanupTimeout)
 		defer cleanupCancel()
 		_, _ = r.UpdateSessionToken(cleanupCtx, player.ID, nil, nil)
-		return nil, apperr.ErrPlayerNotFound
+		return nil, domain.ErrPlayerNotFound
 	}
 	return player, nil
 }
@@ -133,7 +132,7 @@ func (r *PlayerPostgres) UpdateSessionToken(
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, apperr.ErrPlayerNotFound
+			return nil, domain.ErrPlayerNotFound
 		}
 		return nil, fmt.Errorf("PlayerPostgres - UpdateSessionToken - Querier.UpdatePlayerSessionToken: %w", err)
 	}
@@ -146,7 +145,7 @@ func sessionExpired(expiresAt *time.Time, now time.Time) bool {
 
 func (r *PlayerPostgres) UpdateStatus(ctx context.Context, id uuid.UUID, status domain.PlayerStatus) (*domain.Player, error) {
 	if !status.IsValid() {
-		return nil, apperr.ErrValidation
+		return nil, domain.ErrValidation
 	}
 	row, err := r.tx.Querier(ctx).UpdatePlayerStatus(ctx, sqlc.UpdatePlayerStatusParams{
 		ID:     id,
@@ -154,7 +153,7 @@ func (r *PlayerPostgres) UpdateStatus(ctx context.Context, id uuid.UUID, status 
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, apperr.ErrPlayerNotFound
+			return nil, domain.ErrPlayerNotFound
 		}
 		return nil, fmt.Errorf("PlayerPostgres - UpdateStatus - Querier.UpdatePlayerStatus: %w", err)
 	}
@@ -168,7 +167,7 @@ func (r *PlayerPostgres) UpdateStatusIfCurrent(
 	to domain.PlayerStatus,
 ) (*domain.Player, bool, error) {
 	if !from.IsValid() || !to.IsValid() {
-		return nil, false, apperr.ErrValidation
+		return nil, false, domain.ErrValidation
 	}
 	row, err := r.tx.Querier(ctx).UpdatePlayerStatusIfCurrent(ctx, sqlc.UpdatePlayerStatusIfCurrentParams{
 		ID:       id,
@@ -217,7 +216,7 @@ func (r *PlayerPostgres) GetAdminPlayer(ctx context.Context, id uuid.UUID) (*adm
 	row, err := r.tx.Querier(ctx).GetAdminPlayer(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, apperr.ErrPlayerNotFound
+			return nil, domain.ErrPlayerNotFound
 		}
 		return nil, fmt.Errorf("PlayerPostgres - GetAdminPlayer - Querier.GetAdminPlayer: %w", err)
 	}
@@ -238,7 +237,7 @@ func (r *PlayerPostgres) GetAdminPlayerIncludingDeleted(ctx context.Context, id 
 	row, err := r.tx.Querier(ctx).GetAdminPlayerIncludingDeleted(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, apperr.ErrPlayerNotFound
+			return nil, domain.ErrPlayerNotFound
 		}
 		return nil, fmt.Errorf("PlayerPostgres - GetAdminPlayerIncludingDeleted - Querier.GetAdminPlayerIncludingDeleted: %w", err)
 	}
@@ -261,10 +260,10 @@ func (r *PlayerPostgres) UpdateAdminPlayerUsername(ctx context.Context, id uuid.
 		Username: username,
 	}); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return apperr.ErrPlayerNotFound
+			return domain.ErrPlayerNotFound
 		}
 		if isUniqueViolation(err, playersUsernameUniqueConstraint) {
-			return apperr.Wrap(err, apperr.ErrUsernameTaken)
+			return domain.WrapError(err, domain.ErrUsernameTaken)
 		}
 		return fmt.Errorf("PlayerPostgres - UpdateAdminPlayerUsername - Querier.UpdatePlayerUsername: %w", err)
 	}
@@ -278,7 +277,7 @@ func (r *PlayerPostgres) UpsertAdminPlayerStats(
 	updatedAt time.Time,
 ) error {
 	if in.Wins < 0 || in.Wins > math.MaxInt32 {
-		return apperr.ErrValidation
+		return domain.ErrValidation
 	}
 
 	if _, err := r.tx.Querier(ctx).UpsertPlayerLeaderboardOverride(ctx, sqlc.UpsertPlayerLeaderboardOverrideParams{
@@ -288,7 +287,7 @@ func (r *PlayerPostgres) UpsertAdminPlayerStats(
 		UpdatedAt:          tstz(updatedAt),
 	}); err != nil {
 		if isForeignKeyViolation(err) {
-			return apperr.ErrPlayerNotFound
+			return domain.ErrPlayerNotFound
 		}
 		return fmt.Errorf("PlayerPostgres - UpsertAdminPlayerStats - Querier.UpsertPlayerLeaderboardOverride: %w", err)
 	}
@@ -310,10 +309,10 @@ func (r *PlayerPostgres) SoftDeleteAdminPlayer(
 			if _, lookupErr := r.GetAdminPlayer(ctx, id); lookupErr != nil {
 				return lookupErr
 			}
-			return apperr.ErrConflict
+			return domain.ErrConflict
 		}
 		if isUniqueViolation(err, playersUsernameUniqueConstraint) {
-			return apperr.Wrap(err, apperr.ErrUsernameTaken)
+			return domain.WrapError(err, domain.ErrUsernameTaken)
 		}
 		return fmt.Errorf("PlayerPostgres - SoftDeleteAdminPlayer - Querier.SoftDeleteIdlePlayer: %w", err)
 	}
@@ -340,7 +339,7 @@ func (r *PlayerPostgres) CreateAdminPlayerAudit(ctx context.Context, in admin.Pl
 		CreatedAt:    tstz(in.CreatedAt),
 	}); err != nil {
 		if isForeignKeyViolation(err) {
-			return apperr.ErrPlayerNotFound
+			return domain.ErrPlayerNotFound
 		}
 		return fmt.Errorf("PlayerPostgres - CreateAdminPlayerAudit - Querier.CreateAdminPlayerAuditEvent: %w", err)
 	}

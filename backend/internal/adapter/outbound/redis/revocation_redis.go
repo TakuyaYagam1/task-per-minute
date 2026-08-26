@@ -8,7 +8,7 @@ import (
 
 	goredis "github.com/redis/go-redis/v9"
 
-	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
+	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/admin"
 )
 
@@ -43,7 +43,7 @@ func (r *RevocationRedis) Revoke(ctx context.Context, jti string, expiresAt time
 		return fmt.Errorf("RevocationRedis - Revoke - Client.SetNX: %w", err)
 	}
 	if !ok {
-		return apperr.ErrTokenRevoked
+		return domain.ErrTokenRevoked
 	}
 	return nil
 }

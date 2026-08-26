@@ -4,14 +4,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
-	"github.com/stretchr/testify/mock"
-	"github.com/stretchr/testify/require"
-
-	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	duelusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel"
 	duelmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel/mocks"
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 func TestReadUsecase_GetDuel_ReturnsDetailForParticipant(t *testing.T) {
@@ -54,5 +52,5 @@ func TestReadUsecase_GetDuel_RejectsStranger(t *testing.T) {
 
 	_, err := duelusecase.NewReadUseCase(repo).GetDuel(t.Context(), duel.ID, uuid.New())
 
-	require.ErrorIs(t, err, apperr.ErrNotDuelParticipant)
+	require.ErrorIs(t, err, domain.ErrNotDuelParticipant)
 }

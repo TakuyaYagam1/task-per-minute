@@ -10,7 +10,6 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
-	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel"
 )
@@ -48,12 +47,12 @@ func (r *HistoryPostgres) ListSolvedTaskIDs(ctx context.Context, playerID uuid.U
 }
 
 // SelectUnsolvedTaskByDifficulty returns a random task of the given difficulty
-// the player has NOT yet solved. Returns apperr.ErrTaskNotFound when every
+// the player has NOT yet solved. Returns domain.ErrTaskNotFound when every
 // task in that bucket is already in the player's history; the caller is
 // responsible for falling back to SelectAnyTaskByDifficulty.
 func (r *HistoryPostgres) SelectUnsolvedTaskByDifficulty(ctx context.Context, playerID uuid.UUID, difficulty domain.Difficulty) (*domain.Task, error) {
 	if !difficulty.IsValid() {
-		return nil, apperr.ErrValidation
+		return nil, domain.ErrValidation
 	}
 	row, err := r.tx.Querier(ctx).SelectUnsolvedTaskByDifficulty(ctx, sqlc.SelectUnsolvedTaskByDifficultyParams{
 		PlayerID:   playerID,
@@ -61,7 +60,7 @@ func (r *HistoryPostgres) SelectUnsolvedTaskByDifficulty(ctx context.Context, pl
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, apperr.ErrTaskNotFound
+			return nil, domain.ErrTaskNotFound
 		}
 		return nil, fmt.Errorf("HistoryPostgres - SelectUnsolvedTaskByDifficulty - Querier.SelectUnsolvedTaskByDifficulty: %w", err)
 	}
@@ -72,12 +71,12 @@ func (r *HistoryPostgres) SelectUnsolvedTaskByDifficulty(ctx context.Context, pl
 // solved every task in the bucket we still need to start the duel.
 func (r *HistoryPostgres) SelectAnyTaskByDifficulty(ctx context.Context, difficulty domain.Difficulty) (*domain.Task, error) {
 	if !difficulty.IsValid() {
-		return nil, apperr.ErrValidation
+		return nil, domain.ErrValidation
 	}
 	row, err := r.tx.Querier(ctx).SelectAnyTaskByDifficulty(ctx, string(difficulty))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, apperr.ErrTaskNotFound
+			return nil, domain.ErrTaskNotFound
 		}
 		return nil, fmt.Errorf("HistoryPostgres - SelectAnyTaskByDifficulty - Querier.SelectAnyTaskByDifficulty: %w", err)
 	}

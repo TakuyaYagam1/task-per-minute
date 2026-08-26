@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/errmap"
-	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
+	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
 const adminPlayerEventsHeartbeat = 25 * time.Second
@@ -16,18 +16,18 @@ func (s *Server) StreamAdminPlayerEvents(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if s.adminPlayerEvents == nil {
-		errmap.HandleError(w, r, apperr.ErrInternal)
+		errmap.HandleError(w, r, domain.ErrInternal)
 		return
 	}
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		errmap.HandleError(w, r, apperr.ErrInternal)
+		errmap.HandleError(w, r, domain.ErrInternal)
 		return
 	}
 
 	events, unsubscribe, err := s.adminPlayerEvents.SubscribeAdminPlayerChanges(r.Context())
 	if err != nil {
-		errmap.HandleError(w, r, apperr.ErrInternal)
+		errmap.HandleError(w, r, domain.ErrInternal)
 		return
 	}
 	defer unsubscribe()

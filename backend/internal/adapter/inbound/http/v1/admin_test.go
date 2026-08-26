@@ -15,7 +15,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/middleware"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/v1/response"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/memory"
-	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
+	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	adminusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/admin"
 )
 
@@ -264,7 +264,7 @@ func TestAdminLogoutUsesRefreshCookieWithoutAccessAndClearsAdminCookies(t *testi
 	require.Equal(t, -1, requireCookie(t, cookies, middleware.AdminAccessCSRFCookieName).MaxAge)
 	require.Equal(t, -1, requireCookie(t, cookies, middleware.AdminRefreshCSRFCookieName).MaxAge)
 	_, err = auth.Refresh(t.Context(), pair.RefreshToken)
-	require.ErrorIs(t, err, apperr.ErrTokenRevoked)
+	require.ErrorIs(t, err, domain.ErrTokenRevoked)
 }
 
 func TestAdminLogoutRevokesAccessCookie(t *testing.T) {
@@ -286,7 +286,7 @@ func TestAdminLogoutRevokesAccessCookie(t *testing.T) {
 
 	require.Equal(t, http.StatusNoContent, rr.Code)
 	_, err = auth.VerifyAccess(t.Context(), pair.AccessToken)
-	require.ErrorIs(t, err, apperr.ErrTokenRevoked)
+	require.ErrorIs(t, err, domain.ErrTokenRevoked)
 }
 
 func TestAdminLogoutRouteAllowsRefreshCookieWithoutAccess(t *testing.T) {
@@ -308,7 +308,7 @@ func TestAdminLogoutRouteAllowsRefreshCookieWithoutAccess(t *testing.T) {
 
 	require.Equal(t, http.StatusNoContent, rr.Code)
 	_, err = auth.Refresh(t.Context(), pair.RefreshToken)
-	require.ErrorIs(t, err, apperr.ErrTokenRevoked)
+	require.ErrorIs(t, err, domain.ErrTokenRevoked)
 }
 
 type refreshAuthStub struct{}

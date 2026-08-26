@@ -10,8 +10,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	clockadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/clock"
-	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	playerusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/player"
 )
@@ -25,7 +23,7 @@ func newPlayerUsecaseFixture() *playerUsecaseFixture {
 	f := newDuelFixture()
 	return &playerUsecaseFixture{
 		duelFixture: f,
-		uc:          playerusecase.NewUseCase(f.mgr, f.players, f.duels, clockadapter.Real{}),
+		uc:          playerusecase.NewUseCase(f.mgr, f.players, f.duels, realIntegrationClock()),
 	}
 }
 
@@ -53,7 +51,7 @@ func TestPlayerUsecase_Join_CreateAndRepeatUpdatesSessionToken(t *testing.T) {
 	require.NotEqual(t, firstToken, *second.SessionToken)
 
 	_, err = f.players.GetBySessionToken(ctx, firstToken)
-	require.ErrorIs(t, err, apperr.ErrPlayerNotFound)
+	require.ErrorIs(t, err, domain.ErrPlayerNotFound)
 
 	byNewToken, err := f.players.GetBySessionToken(ctx, *second.SessionToken)
 	require.NoError(t, err)
@@ -76,7 +74,7 @@ func TestPlayerUsecase_Join_RejoinWhileQueuedRejectedAndPreservesSession(t *test
 	require.NoError(t, err)
 
 	_, err = f.uc.Join(ctx, username)
-	require.ErrorIs(t, err, apperr.ErrPlayerQueued)
+	require.ErrorIs(t, err, domain.ErrPlayerQueued)
 
 	current, err := f.players.GetByID(ctx, first.ID)
 	require.NoError(t, err)
@@ -129,7 +127,7 @@ func TestPlayerUsecase_Join_ConcurrentSameUsernameUsesSingleCurrentSessionToken(
 			require.Equal(t, current.ID, byToken.ID)
 			continue
 		}
-		require.ErrorIs(t, err, apperr.ErrPlayerNotFound)
+		require.ErrorIs(t, err, domain.ErrPlayerNotFound)
 	}
 }
 
@@ -147,7 +145,7 @@ func TestPlayerUsecase_Join_PlayerInDuelRejected(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = f.uc.Join(ctx, username)
-	require.ErrorIs(t, err, apperr.ErrPlayerInDuel)
+	require.ErrorIs(t, err, domain.ErrPlayerInDuel)
 }
 
 func TestPlayerUsecase_GetMe_WithoutAndWithActiveDuel(t *testing.T) {
@@ -191,5 +189,5 @@ func TestPlayerUsecase_GetMe_InvalidSession(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = f.uc.GetMe(ctx, oldToken)
-	require.ErrorIs(t, err, apperr.ErrInvalidSession)
+	require.ErrorIs(t, err, domain.ErrInvalidSession)
 }

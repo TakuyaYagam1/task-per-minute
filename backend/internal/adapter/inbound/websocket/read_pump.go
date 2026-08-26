@@ -9,13 +9,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
+	duelusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel"
 	coderws "github.com/coder/websocket"
 	"github.com/google/uuid"
 	logkit "github.com/wahrwelt-kit/go-logkit"
-
-	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
-	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	duelusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel"
 )
 
 type flagSubmitPayload struct {
@@ -66,7 +64,7 @@ func (s *Server) readOnce(ctx context.Context, c *client) error {
 		return err
 	}
 	if !s.ensureValidSession(ctx, c) {
-		return apperr.ErrInvalidSession
+		return domain.ErrInvalidSession
 	}
 	if msgType != coderws.MessageText {
 		_, _ = io.Copy(io.Discard, reader)
@@ -79,7 +77,7 @@ func (s *Server) readOnce(ctx context.Context, c *client) error {
 		return errMalformedFrame
 	}
 	if !s.allowInboundEvent(c, event.Type) {
-		return apperr.ErrRateLimited
+		return domain.ErrRateLimited
 	}
 	s.routeEvent(ctx, c, event)
 	return nil
@@ -152,10 +150,10 @@ func (s *Server) ensureValidSession(ctx context.Context, c *client) bool {
 
 func (s *Server) rejectInvalidSession(c *client, reason string) {
 	s.logClientSecurityEvent(c, "ws.session", wsSecurityOutcomeFailure, logkit.Fields{
-		"error_code": string(apperr.CodeInvalidSession),
+		"error_code": string(domain.ErrorCodeInvalidSession),
 		"reason":     reason,
 	})
-	_ = c.sendError(string(apperr.CodeInvalidSession), "invalid session token")
+	_ = c.sendError(string(domain.ErrorCodeInvalidSession), "invalid session token")
 	s.closeAfterError(c)
 }
 
@@ -173,11 +171,11 @@ func (s *Server) allowInboundEvent(c *client, eventType string) bool {
 
 func (s *Server) rejectRateLimited(c *client, eventType, reason string) {
 	s.logClientSecurityEvent(c, "ws.message", wsSecurityOutcomeRateLimited, logkit.Fields{
-		"error_code": string(apperr.CodeRateLimited),
+		"error_code": string(domain.ErrorCodeRateLimit),
 		"event_type": eventType,
 		"reason":     reason,
 	})
-	_ = c.sendError(string(apperr.CodeRateLimited), "too many websocket messages")
+	_ = c.sendError(string(domain.ErrorCodeRateLimit), "too many websocket messages")
 	s.closeAfterError(c)
 }
 
@@ -334,7 +332,7 @@ func (s *Server) handleFlagSubmit(ctx context.Context, c *client, raw json.RawMe
 
 	result, err := s.flags.SubmitFlag(ctx, duelID, c.player.ID, payload.Flag)
 	if err != nil {
-		if errors.Is(err, apperr.ErrFlagIncorrect) {
+		if errors.Is(err, domain.ErrFlagIncorrect) {
 			_ = c.sendEvent(EventFlagResult, FlagResultPayload{
 				DuelID:  duelID,
 				Correct: false,
@@ -346,7 +344,7 @@ func (s *Server) handleFlagSubmit(ctx context.Context, c *client, raw json.RawMe
 		return
 	}
 	if result.AlreadyFinished {
-		_ = c.sendError(string(apperr.CodeDuelFinished), apperr.ErrDuelFinished.Message)
+		_ = c.sendError(string(domain.ErrorCodeDuelFinished), domain.ErrDuelFinished.Message)
 		return
 	}
 	if !result.Correct || result.FinishedDuel == nil {

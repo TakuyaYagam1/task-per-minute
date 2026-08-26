@@ -149,3 +149,13 @@ type fixedIntegrationClock struct {
 func (c fixedIntegrationClock) Now() time.Time {
 	return c.now
 }
+
+type integrationClockFunc func() time.Time
+
+func (f integrationClockFunc) Now() time.Time {
+	return f().UTC()
+}
+
+func realIntegrationClock() integrationClockFunc {
+	return time.Now
+}

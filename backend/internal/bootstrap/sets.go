@@ -6,7 +6,6 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/middleware"
 	restv1 "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/v1"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket"
-	clockadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/clock"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/objectstorage"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	redisadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/redis"
@@ -96,11 +95,11 @@ var ReposSet = wire.NewSet(
 
 var UseCasesSet = wire.NewSet(
 	provideClock,
-	wire.Bind(new(adminusecase.Clock), new(*clockadapter.Real)),
-	wire.Bind(new(duelusecase.Clock), new(*clockadapter.Real)),
-	wire.Bind(new(leaderboardusecase.Clock), new(*clockadapter.Real)),
-	wire.Bind(new(playerusecase.Clock), new(*clockadapter.Real)),
-	wire.Bind(new(recovery.Clock), new(*clockadapter.Real)),
+	wire.Bind(new(adminusecase.Clock), new(clockFunc)),
+	wire.Bind(new(duelusecase.Clock), new(clockFunc)),
+	wire.Bind(new(leaderboardusecase.Clock), new(clockFunc)),
+	wire.Bind(new(playerusecase.Clock), new(clockFunc)),
+	wire.Bind(new(recovery.Clock), new(clockFunc)),
 	provideRevocationRedis,
 	wire.Bind(new(adminusecase.RevocationStore), new(*redisadapter.RevocationRedis)),
 	wire.Bind(new(RevocationJanitor), new(*redisadapter.RevocationRedis)),

@@ -6,12 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
-	"github.com/stretchr/testify/require"
-
-	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	duelusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel"
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/require"
 )
 
 func TestTimerRegistry_ExpiresDuelAsDraw(t *testing.T) {
@@ -166,7 +164,7 @@ func (r *timerDuelRepo) GetByID(_ context.Context, id uuid.UUID) (*domain.Duel, 
 	defer r.mu.Unlock()
 	duel, ok := r.duels[id]
 	if !ok {
-		return nil, apperr.ErrDuelNotFound
+		return nil, domain.ErrDuelNotFound
 	}
 	snapshot := *duel
 	return &snapshot, nil
@@ -185,10 +183,10 @@ func (r *timerDuelRepo) Finish(_ context.Context, id uuid.UUID, winnerID *uuid.U
 	defer r.mu.Unlock()
 	duel, ok := r.duels[id]
 	if !ok {
-		return nil, apperr.ErrDuelNotFound
+		return nil, domain.ErrDuelNotFound
 	}
 	if duel.Status == domain.DuelStatusFinished {
-		return nil, apperr.ErrDuelFinished
+		return nil, domain.ErrDuelFinished
 	}
 	duel.Status = status
 	duel.WinnerID = winnerID

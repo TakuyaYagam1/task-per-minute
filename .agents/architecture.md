@@ -26,13 +26,15 @@ domain
         <- bootstrap and Wire composition
 ```
 
-- `backend/internal/domain/` contains models, statuses, and pure validation.
+- `backend/internal/domain/` contains models, statuses, pure validation, and stable error identities shared across application boundaries.
 - Each package under `backend/internal/usecase/` owns its business workflow, narrow input ports, and workflow-specific models.
 - `backend/internal/adapter/inbound/http/` and `backend/internal/adapter/inbound/websocket/` translate external protocols into usecase calls.
-- `backend/internal/adapter/outbound/postgres/`, `redis/`, `memory/`, `objectstorage/`, and `clock/` implement usecase ports.
-- `backend/internal/bootstrap/` is the only dependency composition root and owns startup, migrations, recovery coordination, serving, and shutdown order.
+- `backend/internal/adapter/outbound/postgres/`, `redis/`, `memory/`, and `objectstorage/` implement infrastructure-facing usecase ports.
+- `backend/internal/bootstrap/` is the only dependency composition root and owns startup, migrations, recovery coordination, serving, shutdown order, and the wall-clock implementation injected through consumer-owned ports.
 
 Dependencies point inward. Domain and usecase code must not depend on HTTP, WebSocket, generated transport DTOs, or concrete adapters. Inbound and outbound adapters must not import each other. `backend/internal/architecture/import_boundary_test.go` enforces these production import rules.
+
+Inbound adapters map domain errors to protocol-specific statuses and payloads. Internal causes remain in the error chain for diagnostics and must not be exposed to clients.
 
 ## Frontend Boundaries
 

@@ -6,11 +6,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/google/uuid"
 	logkit "github.com/wahrwelt-kit/go-logkit"
-
-	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
-	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
 // finalizeDuel atomically finishes the duel with the given winner (nil = draw)
@@ -71,7 +69,7 @@ func finalizeDuelInTx(
 	if err := tx.Do(ctx, func(txCtx context.Context) error {
 		duel, err := duels.GetByID(txCtx, duelID)
 		if err != nil {
-			if errors.Is(err, apperr.ErrDuelNotFound) {
+			if errors.Is(err, domain.ErrDuelNotFound) {
 				return nil
 			}
 			return fmt.Errorf("finalizeDuel - DuelRepo.GetByID: %w", err)
@@ -90,7 +88,7 @@ func finalizeDuelInTx(
 
 		finishedDuel, err := duels.Finish(txCtx, duelID, winnerID, now, domain.DuelStatusFinished)
 		if err != nil {
-			if errors.Is(err, apperr.ErrDuelFinished) {
+			if errors.Is(err, domain.ErrDuelFinished) {
 				return nil
 			}
 			return fmt.Errorf("finalizeDuel - DuelRepo.Finish: %w", err)

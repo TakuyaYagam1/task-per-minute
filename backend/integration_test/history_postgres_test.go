@@ -7,11 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
-
-	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
-	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
 func hasUUID(list []uuid.UUID, id uuid.UUID) bool {
@@ -117,8 +115,8 @@ func TestHistoryRepo_RejectsInvalidDifficulty(t *testing.T) {
 	ctx := context.Background()
 
 	_, err := f.history.SelectUnsolvedTaskByDifficulty(ctx, p.ID, domain.Difficulty("nightmare"))
-	require.ErrorIs(t, err, apperr.ErrValidation)
+	require.ErrorIs(t, err, domain.ErrValidation)
 
 	_, err = f.history.SelectAnyTaskByDifficulty(ctx, domain.Difficulty("nightmare"))
-	require.ErrorIs(t, err, apperr.ErrValidation)
+	require.ErrorIs(t, err, domain.ErrValidation)
 }

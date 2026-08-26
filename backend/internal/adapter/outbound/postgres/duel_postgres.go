@@ -10,7 +10,6 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
-	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/player"
@@ -38,7 +37,7 @@ func NewDuelPostgres(tx *TxManager) *DuelPostgres {
 
 func (r *DuelPostgres) Create(ctx context.Context, player1ID, player2ID uuid.UUID, deadline time.Time) (*domain.Duel, error) {
 	if player1ID == player2ID {
-		return nil, apperr.ErrValidation
+		return nil, domain.ErrValidation
 	}
 	row, err := r.tx.Querier(ctx).CreateDuel(ctx, sqlc.CreateDuelParams{
 		Player1ID: player1ID,
@@ -55,7 +54,7 @@ func (r *DuelPostgres) GetByID(ctx context.Context, id uuid.UUID) (*domain.Duel,
 	row, err := r.tx.Querier(ctx).GetDuelByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, apperr.ErrDuelNotFound
+			return nil, domain.ErrDuelNotFound
 		}
 		return nil, fmt.Errorf("DuelPostgres - GetByID - Querier.GetDuelByID: %w", err)
 	}
@@ -84,9 +83,9 @@ func (r *DuelPostgres) UpdateDeadline(ctx context.Context, id uuid.UUID, deadlin
 		if errors.Is(err, pgx.ErrNoRows) {
 			existing, getErr := r.GetByID(ctx, id)
 			if getErr == nil && existing.Status == domain.DuelStatusFinished {
-				return nil, apperr.ErrDuelFinished
+				return nil, domain.ErrDuelFinished
 			}
-			return nil, apperr.ErrDuelNotFound
+			return nil, domain.ErrDuelNotFound
 		}
 		return nil, fmt.Errorf("DuelPostgres - UpdateDeadline - Querier.UpdateDuelDeadline: %w", err)
 	}
@@ -98,7 +97,7 @@ func (r *DuelPostgres) UpdateDeadline(ctx context.Context, id uuid.UUID, deadlin
 // (status='finished') = (finished_at IS NOT NULL).
 func (r *DuelPostgres) Finish(ctx context.Context, id uuid.UUID, winnerID *uuid.UUID, finishedAt time.Time, status domain.DuelStatus) (*domain.Duel, error) {
 	if status != domain.DuelStatusFinished {
-		return nil, apperr.ErrValidation
+		return nil, domain.ErrValidation
 	}
 	row, err := r.tx.Querier(ctx).FinishDuel(ctx, sqlc.FinishDuelParams{
 		ID:         id,
@@ -110,9 +109,9 @@ func (r *DuelPostgres) Finish(ctx context.Context, id uuid.UUID, winnerID *uuid.
 		if errors.Is(err, pgx.ErrNoRows) {
 			existing, getErr := r.GetByID(ctx, id)
 			if getErr == nil && existing.Status == domain.DuelStatusFinished {
-				return nil, apperr.ErrDuelFinished
+				return nil, domain.ErrDuelFinished
 			}
-			return nil, apperr.ErrDuelNotFound
+			return nil, domain.ErrDuelNotFound
 		}
 		return nil, fmt.Errorf("DuelPostgres - Finish - Querier.FinishDuel: %w", err)
 	}
@@ -149,7 +148,7 @@ func (r *DuelPostgres) GetDuelPlayerTask(ctx context.Context, duelID, playerID u
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, apperr.ErrNotDuelParticipant
+			return nil, domain.ErrNotDuelParticipant
 		}
 		return nil, fmt.Errorf("DuelPostgres - GetDuelPlayerTask - Querier.GetDuelPlayerTask: %w", err)
 	}
@@ -163,7 +162,7 @@ func (r *DuelPostgres) GetPlayerTask(ctx context.Context, duelID, playerID uuid.
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, apperr.ErrNotDuelParticipant
+			return nil, domain.ErrNotDuelParticipant
 		}
 		return nil, fmt.Errorf("DuelPostgres - GetPlayerTask - Querier.GetPlayerTask: %w", err)
 	}

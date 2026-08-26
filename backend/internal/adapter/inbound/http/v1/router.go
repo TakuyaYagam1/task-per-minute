@@ -8,7 +8,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/api"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/errmap"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/middleware"
-	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
+	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
 type HandlerOptions struct {
@@ -36,7 +36,7 @@ func NewHandler(server *Server, opts HandlerOptions) http.Handler {
 		BaseRouter:  opts.Router,
 		Middlewares: middlewares,
 		ErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, _ error) {
-			errmap.HandleError(w, r, apperr.ErrValidation)
+			errmap.HandleError(w, r, domain.ErrValidation)
 		},
 	})
 }

@@ -4,10 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/google/uuid"
-
-	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
+	"github.com/google/uuid"
 )
 
 type TaskUseCase struct {
@@ -67,7 +65,7 @@ func (u *TaskUseCase) DeleteTask(ctx context.Context, id uuid.UUID) error {
 		return fmt.Errorf("TaskUsecase - DeleteTask - TaskRepo.IsUsedInActiveDuel: %w", err)
 	}
 	if used {
-		return apperr.ErrTaskInUse
+		return domain.ErrTaskInUse
 	}
 	if err := u.tasks.Delete(ctx, id); err != nil {
 		return fmt.Errorf("TaskUsecase - DeleteTask - TaskRepo.Delete: %w", err)
@@ -82,26 +80,26 @@ func validateTaskInput(in TaskInput) error {
 
 func normalizeTaskInput(in TaskInput) (TaskInput, error) {
 	if !domain.IsValidTaskTitle(in.Title) {
-		return TaskInput{}, apperr.ErrTaskValidation
+		return TaskInput{}, domain.ErrTaskValidation
 	}
 	if !domain.IsValidTaskDescription(in.Description) {
-		return TaskInput{}, apperr.ErrTaskValidation
+		return TaskInput{}, domain.ErrTaskValidation
 	}
 	if !in.Category.IsValid() || !in.Difficulty.IsValid() {
-		return TaskInput{}, apperr.ErrTaskValidation
+		return TaskInput{}, domain.ErrTaskValidation
 	}
 	if !domain.IsValidTaskTimeLimit(in.TimeLimit) {
-		return TaskInput{}, apperr.ErrTaskValidation
+		return TaskInput{}, domain.ErrTaskValidation
 	}
 	if !domain.IsValidTaskFlag(in.Flag) {
-		return TaskInput{}, apperr.ErrTaskValidation
+		return TaskInput{}, domain.ErrTaskValidation
 	}
 	if !domain.IsValidTaskURLShape(in.Category, in.TaskURL, in.SourceFileURL) {
-		return TaskInput{}, apperr.ErrTaskValidation
+		return TaskInput{}, domain.ErrTaskValidation
 	}
 	hints, ok := domain.NormalizeTaskHints(in.Hints)
 	if !ok {
-		return TaskInput{}, apperr.ErrTaskValidation
+		return TaskInput{}, domain.ErrTaskValidation
 	}
 	in.Hints = hints
 	return in, nil

@@ -6,11 +6,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/google/uuid"
 	logkit "github.com/wahrwelt-kit/go-logkit"
-
-	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
-	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
 type FlagSubmitUseCase struct {
@@ -76,7 +74,7 @@ func (u *FlagSubmitUseCase) SubmitFlag(ctx context.Context, duelID, playerID uui
 	if err := u.tx.Do(ctx, func(txCtx context.Context) error {
 		duel, task, err := u.validateSubmission(txCtx, duelID, playerID, flag, now)
 		if err != nil {
-			if errors.Is(err, apperr.ErrDuelFinished) {
+			if errors.Is(err, domain.ErrDuelFinished) {
 				result = Result{AlreadyFinished: true}
 				return nil
 			}
@@ -116,10 +114,10 @@ func (u *FlagSubmitUseCase) validateSubmission(
 		return nil, nil, fmt.Errorf("FlagSubmitUsecase - validateSubmission - DuelRepo.GetByID: %w", err)
 	}
 	if duel.Status != domain.DuelStatusActive {
-		return nil, nil, apperr.ErrDuelFinished
+		return nil, nil, domain.ErrDuelFinished
 	}
 	if !now.Before(duel.Deadline) {
-		return nil, nil, apperr.ErrDuelDeadlinePassed
+		return nil, nil, domain.ErrDuelDeadlinePassed
 	}
 
 	task, err := u.duels.GetPlayerTask(ctx, duelID, playerID)
@@ -127,7 +125,7 @@ func (u *FlagSubmitUseCase) validateSubmission(
 		return nil, nil, fmt.Errorf("FlagSubmitUsecase - validateSubmission - DuelRepo.GetPlayerTask: %w", err)
 	}
 	if task.Flag != flag {
-		return nil, nil, apperr.ErrFlagIncorrect
+		return nil, nil, domain.ErrFlagIncorrect
 	}
 	return duel, task, nil
 }
@@ -146,7 +144,7 @@ func (u *FlagSubmitUseCase) finishCorrectFlag(
 
 	finished, err := u.duels.Finish(ctx, duel.ID, &playerID, now, domain.DuelStatusFinished)
 	if err != nil {
-		if errors.Is(err, apperr.ErrDuelFinished) {
+		if errors.Is(err, domain.ErrDuelFinished) {
 			return Result{AlreadyFinished: true}, nil
 		}
 		return Result{}, fmt.Errorf("FlagSubmitUsecase - finishCorrectFlag - DuelRepo.Finish: %w", err)

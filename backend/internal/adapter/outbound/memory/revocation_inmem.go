@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
+	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/admin"
 )
 
@@ -46,7 +46,7 @@ func (s *Revocation) Revoke(_ context.Context, jti string, expiresAt time.Time) 
 			s.entries.CompareAndDelete(jti, existing)
 			continue
 		}
-		return apperr.ErrTokenRevoked
+		return domain.ErrTokenRevoked
 	}
 }
 

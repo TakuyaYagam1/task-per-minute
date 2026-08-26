@@ -9,14 +9,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
+	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/admin"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	logkit "github.com/wahrwelt-kit/go-logkit"
-
-	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
-	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/admin"
 )
 
 func TestUploadUseCase_UploadSourceFile_HappyPath(t *testing.T) {
@@ -95,7 +93,7 @@ func TestUploadUseCase_PresignedSourceFileURL_NoSource(t *testing.T) {
 
 	_, err := admin.NewUploadUseCase(tasks, &sourceFileStorageMock{}).PresignedSourceFileURL(t.Context(), taskID)
 
-	require.ErrorIs(t, err, apperr.ErrTaskNotFound)
+	require.ErrorIs(t, err, domain.ErrTaskNotFound)
 }
 
 func TestUploadUseCase_UploadSourceFile_AcceptsCommonZIPContentTypes(t *testing.T) {
@@ -538,7 +536,7 @@ func TestUploadUseCase_UploadSourceFile_Validation(t *testing.T) {
 			).UploadSourceFile(t.Context(), uuid.New(), bytes.NewReader(tt.payload), tt.size, tt.contentType)
 
 			require.Empty(t, got)
-			require.ErrorIs(t, err, apperr.ErrTaskValidation)
+			require.ErrorIs(t, err, domain.ErrTaskValidation)
 		})
 	}
 }

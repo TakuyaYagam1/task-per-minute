@@ -11,7 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	redisadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/redis"
-	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	duelusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel"
 )
@@ -82,7 +81,7 @@ func TestDuelFlagSubmit_DeadlinePassed(t *testing.T) {
 	require.NoError(t, f.duels.CreateDuelPlayerTask(ctx, duel.ID, alice.ID, task.ID))
 
 	_, err := f.uc.SubmitFlag(ctx, duel.ID, alice.ID, task.Flag)
-	require.ErrorIs(t, err, apperr.ErrDuelDeadlinePassed)
+	require.ErrorIs(t, err, domain.ErrDuelDeadlinePassed)
 
 	gotDuel, err := f.duels.GetByID(ctx, duel.ID)
 	require.NoError(t, err)
@@ -184,7 +183,7 @@ func TestDuelFlagSubmit_IncorrectFlagLeavesDuelActive(t *testing.T) {
 	require.NoError(t, f.duels.CreateDuelPlayerTask(ctx, duel.ID, alice.ID, task.ID))
 
 	_, err := f.uc.SubmitFlag(ctx, duel.ID, alice.ID, "FLAG{wrong}")
-	require.ErrorIs(t, err, apperr.ErrFlagIncorrect)
+	require.ErrorIs(t, err, domain.ErrFlagIncorrect)
 
 	gotDuel, err := f.duels.GetByID(ctx, duel.ID)
 	require.NoError(t, err)

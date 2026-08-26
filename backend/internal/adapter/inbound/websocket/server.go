@@ -17,7 +17,6 @@ import (
 	logkit "github.com/wahrwelt-kit/go-logkit"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/requestmeta"
-	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/ctxutil"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	duelusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel"
@@ -706,7 +705,7 @@ func (s *Server) authenticate(w http.ResponseWriter, r *http.Request) (*domain.P
 	player, err := s.players.GetBySessionToken(r.Context(), token)
 	if err != nil || player == nil {
 		s.logRequestSecurityEvent(r, "ws.auth", wsSecurityOutcomeFailure, logkit.Fields{
-			"error_code": string(apperr.CodeInvalidSession),
+			"error_code": string(domain.ErrorCodeInvalidSession),
 			"reason":     "invalid_session",
 		})
 		writeHandshakeProblem(w, r, http.StatusUnauthorized, "invalid session token")
@@ -840,7 +839,7 @@ func (s *Server) sendHintUnlocked(playerID uuid.UUID, event duelusecase.HintUnlo
 }
 
 func (s *Server) sendAppError(c *client, err error) {
-	var appErr *apperr.Error
+	var appErr *domain.Error
 	if errors.As(err, &appErr) {
 		_ = c.sendError(string(appErr.Code), appErr.Message)
 		return

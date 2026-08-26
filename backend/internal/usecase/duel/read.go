@@ -4,10 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/google/uuid"
-
-	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
+	"github.com/google/uuid"
 )
 
 type ReadUseCase struct {
@@ -24,7 +22,7 @@ func (u *ReadUseCase) GetDuel(ctx context.Context, duelID, playerID uuid.UUID) (
 		return nil, fmt.Errorf("ReadUsecase - GetDuel - DuelRepo.GetByID: %w", err)
 	}
 	if duel.Player1ID != playerID && duel.Player2ID != playerID {
-		return nil, apperr.ErrNotDuelParticipant
+		return nil, domain.ErrNotDuelParticipant
 	}
 
 	playerTasks := make([]*domain.DuelPlayerTask, 0, 2)

@@ -6,13 +6,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
+	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/admin"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-
-	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
-	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/admin"
 )
 
 func TestTaskUseCase_CreateTask(t *testing.T) {
@@ -59,7 +57,7 @@ func TestTaskUseCase_CreateTask_Validation(t *testing.T) {
 			in := validTaskInput()
 			tt.mutate(&in)
 			_, err := admin.NewTaskUseCase(newTaskRepositoryMock(t)).CreateTask(t.Context(), in)
-			require.ErrorIs(t, err, apperr.ErrTaskValidation)
+			require.ErrorIs(t, err, domain.ErrTaskValidation)
 		})
 	}
 }
@@ -132,7 +130,7 @@ func TestTaskUseCase_UpdateTask_Validation(t *testing.T) {
 	in.Difficulty = domain.Difficulty("bad")
 
 	_, err := admin.NewTaskUseCase(newTaskRepositoryMock(t)).UpdateTask(t.Context(), uuid.New(), in)
-	require.ErrorIs(t, err, apperr.ErrTaskValidation)
+	require.ErrorIs(t, err, domain.ErrTaskValidation)
 }
 
 func TestTaskUseCase_DeleteTask_UnusedDeletes(t *testing.T) {
@@ -158,7 +156,7 @@ func TestTaskUseCase_DeleteTask_ActiveDuelReturnsTaskInUse(t *testing.T) {
 	tasks.On("IsUsedInActiveDuel", mock.Anything, id).Return(true, nil)
 
 	err := admin.NewTaskUseCase(tasks).DeleteTask(t.Context(), id)
-	require.ErrorIs(t, err, apperr.ErrTaskInUse)
+	require.ErrorIs(t, err, domain.ErrTaskInUse)
 }
 
 func TestTaskUseCase_DeleteTask_MissingReturnsTaskNotFound(t *testing.T) {
@@ -166,10 +164,10 @@ func TestTaskUseCase_DeleteTask_MissingReturnsTaskNotFound(t *testing.T) {
 
 	tasks := newTaskRepositoryMock(t)
 	id := uuid.New()
-	tasks.On("GetByID", mock.Anything, id).Return(nil, apperr.ErrTaskNotFound)
+	tasks.On("GetByID", mock.Anything, id).Return(nil, domain.ErrTaskNotFound)
 
 	err := admin.NewTaskUseCase(tasks).DeleteTask(t.Context(), id)
-	require.ErrorIs(t, err, apperr.ErrTaskNotFound)
+	require.ErrorIs(t, err, domain.ErrTaskNotFound)
 }
 
 func TestTaskUseCase_DeleteTask_RepoErrorIsWrapped(t *testing.T) {
@@ -195,10 +193,10 @@ func TestTaskUseCase_DeleteTask_RepoTaskInUseIsPreserved(t *testing.T) {
 	task := taskFromInput(id, validTaskInput())
 	tasks.On("GetByID", mock.Anything, id).Return(task, nil)
 	tasks.On("IsUsedInActiveDuel", mock.Anything, id).Return(false, nil)
-	tasks.On("Delete", mock.Anything, id).Return(apperr.ErrTaskInUse)
+	tasks.On("Delete", mock.Anything, id).Return(domain.ErrTaskInUse)
 
 	err := admin.NewTaskUseCase(tasks).DeleteTask(t.Context(), id)
-	require.ErrorIs(t, err, apperr.ErrTaskInUse)
+	require.ErrorIs(t, err, domain.ErrTaskInUse)
 }
 
 func validTaskInput() admin.TaskInput {

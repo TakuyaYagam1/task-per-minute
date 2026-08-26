@@ -7,14 +7,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
-	"github.com/stretchr/testify/mock"
-	"github.com/stretchr/testify/require"
-
-	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	playerusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/player"
 	playermocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/player/mocks"
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 func TestUsecase_Join_CreatesNewPlayerWithSessionToken(t *testing.T) {
@@ -118,10 +116,10 @@ func TestUsecase_Join_RejectsPlayerInDuel(t *testing.T) {
 
 	players.EXPECT().
 		JoinByUsername(mock.Anything, "alice", mock.MatchedBy(nonNilUUID), mock.MatchedBy(futureTime)).
-		Return(nil, apperr.ErrPlayerInDuel)
+		Return(nil, domain.ErrPlayerInDuel)
 
 	_, err := newPlayerUseCase(tx, players, duels).Join(t.Context(), "alice")
-	require.ErrorIs(t, err, apperr.ErrPlayerInDuel)
+	require.ErrorIs(t, err, domain.ErrPlayerInDuel)
 }
 
 func TestUsecase_Join_RejectsInvalidUsername(t *testing.T) {
@@ -133,7 +131,7 @@ func TestUsecase_Join_RejectsInvalidUsername(t *testing.T) {
 			t.Parallel()
 			tx, players, duels := newFixture(t)
 			_, err := newPlayerUseCase(tx, players, duels).Join(t.Context(), username)
-			require.ErrorIs(t, err, apperr.ErrUsernameInvalid)
+			require.ErrorIs(t, err, domain.ErrUsernameInvalid)
 		})
 	}
 }
@@ -182,10 +180,10 @@ func TestUsecase_GetMe_InvalidSessionMapsToInvalidSession(t *testing.T) {
 	tx, players, duels := newFixture(t)
 	sessionToken := uuid.New()
 
-	players.EXPECT().GetBySessionToken(mock.Anything, sessionToken).Return(nil, apperr.ErrPlayerNotFound)
+	players.EXPECT().GetBySessionToken(mock.Anything, sessionToken).Return(nil, domain.ErrPlayerNotFound)
 
 	_, err := newPlayerUseCase(tx, players, duels).GetMe(t.Context(), sessionToken)
-	require.ErrorIs(t, err, apperr.ErrInvalidSession)
+	require.ErrorIs(t, err, domain.ErrInvalidSession)
 }
 
 func TestUsecase_GetMe_RepoErrorIsWrapped(t *testing.T) {
@@ -223,7 +221,7 @@ func TestUsecase_Logout_IgnoresMissingSession(t *testing.T) {
 	runTxInline(tx)
 	sessionToken := uuid.New()
 
-	players.EXPECT().GetBySessionToken(mock.Anything, sessionToken).Return(nil, apperr.ErrPlayerNotFound)
+	players.EXPECT().GetBySessionToken(mock.Anything, sessionToken).Return(nil, domain.ErrPlayerNotFound)
 
 	err := newPlayerUseCase(tx, players, duels).Logout(t.Context(), sessionToken)
 	require.NoError(t, err)

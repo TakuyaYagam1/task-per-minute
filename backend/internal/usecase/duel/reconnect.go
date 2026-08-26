@@ -6,12 +6,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
-	logkit "github.com/wahrwelt-kit/go-logkit"
-
-	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/ctxutil"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
+	"github.com/google/uuid"
+	logkit "github.com/wahrwelt-kit/go-logkit"
 )
 
 const (
@@ -413,7 +411,7 @@ func (m *ReconnectManager) FinalizePlayerForfeit(
 	}
 	winnerID, ok := opponentID(duel, loserID)
 	if !ok {
-		return nil, apperr.ErrNotDuelParticipant
+		return nil, domain.ErrNotDuelParticipant
 	}
 	winner := winnerID
 	return m.finalizeAndBroadcast(finalizeCtx, duelID, &winner)

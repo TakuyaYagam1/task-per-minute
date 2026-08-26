@@ -7,7 +7,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/api"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/middleware"
-	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
+	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
 const problemContentType = "application/problem+json"
@@ -37,26 +37,26 @@ func HandleError(w http.ResponseWriter, r *http.Request, err error) {
 	_ = json.NewEncoder(w).Encode(problem)
 }
 
-func classify(err error) (int, *apperr.Error) {
+func classify(err error) (int, *domain.Error) {
 	switch {
-	case isAny(err, apperr.ErrPlayerNotFound, apperr.ErrTaskNotFound, apperr.ErrDuelNotFound):
-		return http.StatusNotFound, appError(err, apperr.ErrInternal)
-	case isAny(err, apperr.ErrInvalidCredentials, apperr.ErrTokenExpired, apperr.ErrTokenRevoked, apperr.ErrInvalidSession):
-		return http.StatusUnauthorized, appError(err, apperr.ErrInternal)
-	case errors.Is(err, apperr.ErrNotDuelParticipant):
-		return http.StatusForbidden, appError(err, apperr.ErrInternal)
-	case isAny(err, apperr.ErrUsernameTaken, apperr.ErrPlayerInDuel, apperr.ErrPlayerQueued, apperr.ErrTaskInUse, apperr.ErrDuelFinished, apperr.ErrConflict):
-		return http.StatusConflict, appError(err, apperr.ErrInternal)
-	case isAny(err, apperr.ErrFlagIncorrect, apperr.ErrDuelDeadlinePassed):
-		return http.StatusUnprocessableEntity, appError(err, apperr.ErrInternal)
-	case isAny(err, apperr.ErrValidation, apperr.ErrUsernameInvalid, apperr.ErrTaskValidation):
-		return http.StatusBadRequest, appError(err, apperr.ErrInternal)
-	case errors.Is(err, apperr.ErrRateLimited):
-		return http.StatusTooManyRequests, appError(err, apperr.ErrInternal)
-	case errors.Is(err, apperr.ErrInternal):
-		return http.StatusInternalServerError, apperr.ErrInternal
+	case isAny(err, domain.ErrPlayerNotFound, domain.ErrTaskNotFound, domain.ErrDuelNotFound):
+		return http.StatusNotFound, appError(err, domain.ErrInternal)
+	case isAny(err, domain.ErrInvalidCredentials, domain.ErrTokenExpired, domain.ErrTokenRevoked, domain.ErrInvalidSession):
+		return http.StatusUnauthorized, appError(err, domain.ErrInternal)
+	case errors.Is(err, domain.ErrNotDuelParticipant):
+		return http.StatusForbidden, appError(err, domain.ErrInternal)
+	case isAny(err, domain.ErrUsernameTaken, domain.ErrPlayerInDuel, domain.ErrPlayerQueued, domain.ErrTaskInUse, domain.ErrDuelFinished, domain.ErrConflict):
+		return http.StatusConflict, appError(err, domain.ErrInternal)
+	case isAny(err, domain.ErrFlagIncorrect, domain.ErrDuelDeadlinePassed):
+		return http.StatusUnprocessableEntity, appError(err, domain.ErrInternal)
+	case isAny(err, domain.ErrValidation, domain.ErrUsernameInvalid, domain.ErrTaskValidation):
+		return http.StatusBadRequest, appError(err, domain.ErrInternal)
+	case errors.Is(err, domain.ErrRateLimited):
+		return http.StatusTooManyRequests, appError(err, domain.ErrInternal)
+	case errors.Is(err, domain.ErrInternal):
+		return http.StatusInternalServerError, domain.ErrInternal
 	default:
-		return http.StatusInternalServerError, apperr.ErrInternal
+		return http.StatusInternalServerError, domain.ErrInternal
 	}
 }
 
@@ -69,8 +69,8 @@ func isAny(err error, targets ...error) bool {
 	return false
 }
 
-func appError(err error, fallback *apperr.Error) *apperr.Error {
-	var app *apperr.Error
+func appError(err error, fallback *domain.Error) *domain.Error {
+	var app *domain.Error
 	if errors.As(err, &app) {
 		return app
 	}

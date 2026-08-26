@@ -14,7 +14,6 @@ import (
 
 	wsadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket"
 	redisadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/redis"
-	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	duelusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel"
 )
@@ -385,7 +384,7 @@ func TestWebSocketController_StaleSessionTokenCannotSendEvents(t *testing.T) {
 
 	writeWSEvent(t, conn, wsadapter.EventPing, nil)
 	event := readWSEventType(t, conn, wsadapter.EventError)
-	require.Equal(t, string(apperr.CodeInvalidSession), event.Code)
+	require.Equal(t, string(domain.ErrorCodeInvalidSession), event.Code)
 }
 
 func TestWebSocketController_QueuedRejoinRejectedPreservesCurrentQueuedSocket(t *testing.T) {
@@ -401,7 +400,7 @@ func TestWebSocketController_QueuedRejoinRejectedPreservesCurrentQueuedSocket(t 
 	require.Equal(t, wsadapter.EventQueueJoined, readWSEventType(t, aliceConn, wsadapter.EventQueueJoined).Type)
 
 	_, err := f.playerUC.Join(ctx, alice.Username)
-	require.ErrorIs(t, err, apperr.ErrPlayerQueued)
+	require.ErrorIs(t, err, domain.ErrPlayerQueued)
 
 	currentAlice, err := f.players.GetByID(ctx, alice.ID)
 	require.NoError(t, err)

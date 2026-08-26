@@ -6,7 +6,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/errmap"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/middleware"
-	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
+	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
 type requestRateLimiter interface {
@@ -16,7 +16,7 @@ type requestRateLimiter interface {
 
 type publicRequestPolicy struct {
 	event          string
-	validationCode apperr.Code
+	validationCode domain.ErrorCode
 	limiter        requestRateLimiter
 }
 
@@ -38,7 +38,7 @@ func (s *Server) publicRequestGuard() func(http.Handler) http.Handler {
 			if !policy.limiter.Allow(middleware.ClientIPFromRequest(r)) {
 				w.Header().Set("Retry-After", policy.limiter.RetryAfter())
 				s.logSecurityEvent(r, policy.event, securityOutcomeRateLimited, nil)
-				errmap.HandleError(w, r, apperr.ErrRateLimited)
+				errmap.HandleError(w, r, domain.ErrRateLimited)
 				return
 			}
 
@@ -69,7 +69,7 @@ func (s *Server) enterPublicRequest(w http.ResponseWriter, r *http.Request, poli
 
 	w.Header().Set("Retry-After", policy.limiter.RetryAfter())
 	s.logSecurityEvent(r, policy.event, securityOutcomeRateLimited, nil)
-	errmap.HandleError(w, r, apperr.ErrRateLimited)
+	errmap.HandleError(w, r, domain.ErrRateLimited)
 	return false
 }
 
@@ -93,7 +93,7 @@ func (s *Server) publicRequestPolicy(r *http.Request) (publicRequestPolicy, bool
 func (s *Server) adminLoginPolicy() publicRequestPolicy {
 	return publicRequestPolicy{
 		event:          "admin.login",
-		validationCode: apperr.CodeInvalidCredentials,
+		validationCode: domain.ErrorCodeInvalidCredentials,
 		limiter:        s.loginLimiter,
 	}
 }
@@ -101,7 +101,7 @@ func (s *Server) adminLoginPolicy() publicRequestPolicy {
 func (s *Server) adminRefreshPolicy() publicRequestPolicy {
 	return publicRequestPolicy{
 		event:          "admin.refresh",
-		validationCode: apperr.CodeInvalidCredentials,
+		validationCode: domain.ErrorCodeInvalidCredentials,
 		limiter:        s.refreshLimiter,
 	}
 }
@@ -109,7 +109,7 @@ func (s *Server) adminRefreshPolicy() publicRequestPolicy {
 func (s *Server) playerJoinPolicy() publicRequestPolicy {
 	return publicRequestPolicy{
 		event:          "player.join",
-		validationCode: apperr.CodeValidation,
+		validationCode: domain.ErrorCodeValidation,
 		limiter:        s.joinLimiter,
 	}
 }

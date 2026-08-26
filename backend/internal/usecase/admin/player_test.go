@@ -6,11 +6,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
-
-	"github.com/TakuyaYagam1/task-per-minute/internal/apperr"
-	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
 func TestPlayerUseCase_UpdatePlayerWritesAuditAndInvalidatesLeaderboard(t *testing.T) {
@@ -106,13 +104,13 @@ func TestPlayerUseCase_InvalidInputDoesNotWriteAudit(t *testing.T) {
 		AverageSolveTimeMs: 0,
 	}, Actor{Subject: "admin", JTI: "access-jti"})
 
-	require.ErrorIs(t, err, apperr.ErrValidation)
+	require.ErrorIs(t, err, domain.ErrValidation)
 	require.Empty(t, repo.audit)
 	require.Equal(t, 0, leaderboard.invalidations)
 
 	err = uc.DeletePlayer(t.Context(), playerID, Actor{})
 
-	require.ErrorIs(t, err, apperr.ErrInvalidCredentials)
+	require.ErrorIs(t, err, domain.ErrInvalidCredentials)
 	require.Empty(t, repo.audit)
 	require.Equal(t, 0, leaderboard.invalidations)
 }
@@ -198,7 +196,7 @@ func (r *adminPlayerRepoFake) ListAdminPlayers(context.Context, bool) ([]PlayerR
 
 func (r *adminPlayerRepoFake) GetAdminPlayer(context.Context, uuid.UUID) (*PlayerRecord, error) {
 	if r.deleted {
-		return nil, apperr.ErrPlayerNotFound
+		return nil, domain.ErrPlayerNotFound
 	}
 	out := r.player
 	return &out, nil
