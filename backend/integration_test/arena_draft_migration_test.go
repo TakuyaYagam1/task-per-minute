@@ -30,6 +30,8 @@ func TestArenaDraftMigration(t *testing.T) {
 	t.Cleanup(func() { resetArenaMigrationTables(t) })
 
 	fixture := createArenaDraftMigrationFixture(t, ctx)
+	assertArenaDraftTurnIdentityRejected(t, ctx, fixture)
+
 	pausedRevisionID := uuid.New()
 	pausedCommandID := uuid.New()
 	_, err := sharedPool.Exec(ctx, `
@@ -238,6 +240,59 @@ func TestArenaDraftMigration(t *testing.T) {
 		fixture.createdAt.Add(7*time.Second),
 	)
 	require.Error(t, err)
+}
+
+func assertArenaDraftTurnIdentityRejected(
+	t *testing.T,
+	ctx context.Context,
+	fixture arenaDraftMigrationFixture,
+) {
+	t.Helper()
+
+	for _, testCase := range []struct {
+		name           string
+		currentActorID uuid.UUID
+		currentAction  string
+	}{
+		{
+			name:           "wrong actor",
+			currentActorID: fixture.participantIDs[1],
+			currentAction:  "ban",
+		},
+		{
+			name:           "wrong action",
+			currentActorID: fixture.participantIDs[0],
+			currentAction:  "pick",
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			_, err := sharedPool.Exec(ctx, `
+				INSERT INTO arena_draft_revisions (
+					draft_id, series_id, roster_id, revision,
+					previous_revision_id, command_id, service_epoch,
+					state, turn_number, current_actor_id, current_action,
+					absolute_deadline, created_at
+				)
+				VALUES (
+					$1, $2, $3, 2,
+					$4, $5, $6,
+					'active', 1, $7, $8,
+					$9, $10
+				)`,
+				fixture.draftID,
+				fixture.seriesID,
+				fixture.rosterID,
+				fixture.initialRevisionID,
+				uuid.New(),
+				fixture.initialServiceEpoch,
+				testCase.currentActorID,
+				testCase.currentAction,
+				fixture.createdAt.Add(20*time.Second),
+				fixture.createdAt.Add(time.Second),
+			)
+			require.Error(t, err)
+		})
+	}
 }
 
 func createArenaDraftMigrationFixture(

@@ -169,6 +169,15 @@ func TestArenaAssignmentMigration(t *testing.T) {
 		draft.rosterID,
 		committedAt,
 	)
+	assertCrossRosterArenaAssignmentRejected(
+		t,
+		ctx,
+		exactPlanID,
+		activeBranchID,
+		activeReservations[0],
+		committedAt,
+	)
+
 	assignmentID := createActiveArenaMigrationAssignment(
 		t,
 		ctx,
@@ -187,6 +196,23 @@ func TestArenaAssignmentMigration(t *testing.T) {
 		SET disclosed_at = $2
 		WHERE id = $1`, activeReservations[0].reservationID, deliveredAt)
 	require.NoError(t, err)
+
+	_, err = sharedPool.Exec(ctx, `
+		INSERT INTO arena_task_delivery_receipts (
+			assignment_id, attempt_id, roster_id, participant_id,
+			snapshot_id, task_id, task_version, delivered_at, created_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)`,
+		assignmentID,
+		attemptID,
+		draft.rosterID,
+		draft.participantIDs[0],
+		activeReservations[1].snapshotID,
+		activeReservations[1].taskID,
+		activeReservations[1].taskVersion,
+		deliveredAt,
+	)
+	require.Error(t, err)
 
 	for _, participantID := range draft.participantIDs {
 		_, err = sharedPool.Exec(ctx, `
@@ -283,6 +309,60 @@ func TestArenaAssignmentMigration(t *testing.T) {
 		WHERE plan_id = $1 AND state = 'released'`, exactPlanID).Scan(&releasedBranches)
 	require.NoError(t, err)
 	require.Equal(t, 1, releasedBranches)
+}
+
+func assertCrossRosterArenaAssignmentRejected(
+	t testing.TB,
+	ctx context.Context,
+	planID uuid.UUID,
+	branchID uuid.UUID,
+	reservation arenaAssignmentReservationFixture,
+	createdAt time.Time,
+) {
+	t.Helper()
+
+	otherDraft := createArenaDraftMigrationFixture(t, ctx)
+	otherSlotID := createArenaMigrationGameSlot(
+		t,
+		ctx,
+		otherDraft.seriesID,
+		otherDraft.rosterID,
+		1,
+		"crypto",
+	)
+	otherAttemptID := createActiveArenaMigrationAttempt(
+		t,
+		ctx,
+		otherSlotID,
+		otherDraft.seriesID,
+		otherDraft.rosterID,
+		createdAt,
+	)
+
+	_, err := sharedPool.Exec(ctx, `
+		INSERT INTO arena_assignments (
+			id, attempt_id, series_id, roster_id,
+			plan_id, branch_id, reservation_id, snapshot_id,
+			task_id, task_version, created_at, updated_at
+		)
+		VALUES (
+			$1, $2, $3, $4,
+			$5, $6, $7, $8,
+			$9, $10, $11, $11
+		)`,
+		uuid.New(),
+		otherAttemptID,
+		otherDraft.seriesID,
+		otherDraft.rosterID,
+		planID,
+		branchID,
+		reservation.reservationID,
+		reservation.snapshotID,
+		reservation.taskID,
+		reservation.taskVersion,
+		createdAt.Add(time.Second),
+	)
+	require.Error(t, err)
 }
 
 func createConservativeArenaAssignmentPlan(
