@@ -235,7 +235,7 @@ func (e ArenaDecisionEvidence) replayDigest(result []string) [sha256.Size]byte {
 }
 
 type arenaDecisionWriter interface {
-	Write([]byte) (int, error)
+	Write(data []byte) (int, error)
 }
 
 func writeArenaDecisionField(writer arenaDecisionWriter, value string) {

@@ -21,12 +21,12 @@ var (
 	ErrUnsupportedMediaType = errors.New("content type must be application/json or application/*+json")
 )
 
-// UnknownFieldsErr reports a JSON field that is not present in the target DTO.
-type UnknownFieldsErr struct {
+// UnknownFieldsError reports a JSON field that is not present in the target DTO.
+type UnknownFieldsError struct {
 	Field string
 }
 
-func (e *UnknownFieldsErr) Error() string {
+func (e *UnknownFieldsError) Error() string {
 	if e == nil || e.Field == "" {
 		return "request body contains unknown field"
 	}
@@ -94,7 +94,7 @@ func normalizeDecodeError(err error) error {
 		if unquoteErr != nil {
 			field = strings.Trim(rawField, `"`)
 		}
-		return &UnknownFieldsErr{Field: field}
+		return &UnknownFieldsError{Field: field}
 	}
 	return err
 }

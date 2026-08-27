@@ -1,3 +1,4 @@
+# supported golangci-lint version = 2.12.2
 version: "2"
 
 run:
@@ -7,27 +8,64 @@ run:
 linters:
   default: standard
   enable:
+    - asasalint
+    - asciicheck
+    - bidichk
     - bodyclose
     - contextcheck
+    - copyloopvar
+    - durationcheck
+    - embeddedstructfieldcheck
+    - errname
     - errorlint
+    - exhaustive
+    - exptostd
+    - fatcontext
+    - gocheckcompilerdirectives
+    - gochecknoinits
+    - gochecksumtype
     - gocritic
     - gocyclo
     - gosec
+    - goprintffuncname
+    - inamedparam
+    - iotamixing
+    - loggercheck
+    - makezero
+    - mirror
     - misspell
+    - musttag
     - nakedret
     - nilerr
+    - nilnesserr
+    - noctx
     - nolintlint
     - prealloc
+    - predeclared
+    - reassign
     - revive
     - rowserrcheck
+    - sloglint
     - sqlclosecheck
+    - tagalign
+    - testableexamples
+    - testifylint
+    - thelper
     - unconvert
     - unparam
+    - unqueryvet
+    - wastedassign
     - whitespace
+    - zerologlint
 
   settings:
     gocyclo:
       min-complexity: 15
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment
+        - shadow
     revive:
       rules:
         - name: blank-imports
@@ -48,13 +86,25 @@ linters:
         - name: unreachable-code
         - name: redefines-builtin-id
     nolintlint:
+      allow-unused: false
       require-explanation: true
       require-specific: true
     gosec:
       excludes:
         - G104  # errcheck overlap
+    staticcheck:
+      checks:
+        - all
+    testifylint:
+      enable-all: true
+      disable:
+        - go-require
 
   exclusions:
+    generated: strict
+    presets:
+      - comments
+      - common-false-positives
     rules:
       - path: _test\.go
         linters:
@@ -62,19 +112,20 @@ linters:
           - gosec
           - errcheck
           - dupl
-      - path: \.gen\.go
+      - path: internal/adapter/inbound/http/v1/router_middleware_test\.go
         linters:
-          - revive
-          - gocritic
-          - unused
-          - unparam
-          - gocyclo
-          - prealloc
+          - thelper
+      - path: _test\.go
+        text: net/http/httptest\.NewRequest must not be called
+        linters:
+          - noctx
 
 formatters:
   enable:
     - gofmt
     - goimports
+  exclusions:
+    generated: strict
 
 issues:
   max-issues-per-linter: 0

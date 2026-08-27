@@ -59,7 +59,6 @@ func TestArenaTournamentTransitions(t *testing.T) {
 
 	for _, from := range states {
 		for _, to := range states {
-			from, to := from, to
 			t.Run(from.String()+"_to_"+to.String(), func(t *testing.T) {
 				t.Parallel()
 
@@ -98,7 +97,6 @@ func TestArenaTournamentTransitionsRetainPauseOrigin(t *testing.T) {
 		domain.ArenaTournamentStateGolden,
 		domain.ArenaTournamentStatePlayoffs,
 	} {
-		origin := origin
 		t.Run(origin.String(), func(t *testing.T) {
 			t.Parallel()
 
@@ -132,7 +130,6 @@ func TestArenaTournamentTransitionsTerminalStatesAreIdempotent(t *testing.T) {
 		domain.ArenaTournamentStateCompleted,
 		domain.ArenaTournamentStateCancelled,
 	} {
-		terminal := terminal
 		t.Run(terminal.String(), func(t *testing.T) {
 			t.Parallel()
 

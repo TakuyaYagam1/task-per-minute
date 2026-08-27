@@ -78,10 +78,10 @@ type JWT struct {
 }
 
 type Admin struct {
-	Password             string        `env:"PASSWORD"              env-required:"true"`
-	LoginRateAttempts    int           `env:"LOGIN_RATE_ATTEMPTS"   env-default:"5"`
-	LoginRateWindow      time.Duration `env:"LOGIN_RATE_WINDOW"     env-default:"15m"`
-	LoginRateBucketTTL   time.Duration `env:"LOGIN_RATE_BUCKET_TTL" env-default:"1h"`
+	Password             string        `env:"PASSWORD"                env-required:"true"`
+	LoginRateAttempts    int           `env:"LOGIN_RATE_ATTEMPTS"     env-default:"5"`
+	LoginRateWindow      time.Duration `env:"LOGIN_RATE_WINDOW"       env-default:"15m"`
+	LoginRateBucketTTL   time.Duration `env:"LOGIN_RATE_BUCKET_TTL"   env-default:"1h"`
 	RefreshRateAttempts  int           `env:"REFRESH_RATE_ATTEMPTS"`
 	RefreshRateWindow    time.Duration `env:"REFRESH_RATE_WINDOW"`
 	RefreshRateBucketTTL time.Duration `env:"REFRESH_RATE_BUCKET_TTL"`

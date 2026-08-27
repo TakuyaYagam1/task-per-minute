@@ -48,7 +48,7 @@ func TestBuild_SuccessAddsRequestIDSecurityHeadersAndLog(t *testing.T) {
 	require.Equal(t, requestID, entry["request_id"])
 	require.Equal(t, http.MethodGet, entry["method"])
 	require.Equal(t, "/api/v1/leaderboard", entry["path"])
-	require.Equal(t, float64(http.StatusOK), entry["status"])
+	require.InDelta(t, float64(http.StatusOK), entry["status"], 0)
 	require.NotEmpty(t, entry["duration"])
 	require.Contains(t, entry, "duration_ms")
 }

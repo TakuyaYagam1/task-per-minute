@@ -19,7 +19,6 @@ func TestSwissByePolicy(t *testing.T) {
 		t.Parallel()
 
 		for rosterSize := 5; rosterSize <= 15; rosterSize += 2 {
-			rosterSize := rosterSize
 			t.Run(time.Duration(rosterSize).String(), func(t *testing.T) {
 				t.Parallel()
 

@@ -149,6 +149,13 @@ func isArenaTournamentPauseOrigin(state ArenaTournamentState) bool {
 	switch state {
 	case ArenaTournamentStateSwiss, ArenaTournamentStateGolden, ArenaTournamentStatePlayoffs:
 		return true
+	case ArenaTournamentStateDraft,
+		ArenaTournamentStateRegistration,
+		ArenaTournamentStateRosterLocked,
+		ArenaTournamentStateTechnicalPause,
+		ArenaTournamentStateCompleted,
+		ArenaTournamentStateCancelled:
+		return false
 	}
 	return false
 }

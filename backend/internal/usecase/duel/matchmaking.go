@@ -153,6 +153,7 @@ func (u *MatchmakingUseCase) ensureQueuedForJoin(ctx context.Context, playerID u
 			return domain.ErrPlayerInDuel
 		case domain.PlayerStatusQueued:
 			return nil
+		case domain.PlayerStatusIdle:
 		}
 
 		if _, ok, err := u.players.UpdateStatusIfCurrent(ctx, playerID, player.Status, domain.PlayerStatusQueued); err != nil {

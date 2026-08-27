@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
@@ -87,7 +86,7 @@ func TestStreamAdminPlayerEventsRequiresAdmin(t *testing.T) {
 	handler.ServeHTTP(rr, req)
 
 	require.Equal(t, http.StatusUnauthorized, rr.Code)
-	require.True(t, strings.Contains(rr.Body.String(), `"status":401`))
+	require.Contains(t, rr.Body.String(), `"status":401`)
 }
 
 type adminPlayerEventsFake struct {

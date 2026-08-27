@@ -18,7 +18,6 @@ func TestSwissMatching(t *testing.T) {
 		t.Parallel()
 
 		for rosterSize := 4; rosterSize <= 16; rosterSize++ {
-			rosterSize := rosterSize
 			t.Run(fmt.Sprintf("roster_%d", rosterSize), func(t *testing.T) {
 				t.Parallel()
 

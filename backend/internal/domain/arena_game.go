@@ -80,6 +80,8 @@ func (s ArenaGameState) IsTerminal() bool {
 	switch s {
 	case ArenaGameStateCompleted, ArenaGameStateVoid, ArenaGameStateCancelled, ArenaGameStateSuperseded:
 		return true
+	case ArenaGameStatePlanned, ArenaGameStateReady, ArenaGameStateActive, ArenaGameStatePaused:
+		return false
 	}
 	return false
 }
@@ -109,6 +111,8 @@ func (r ArenaGameResultReason) IsLegalFor(state ArenaGameState) bool {
 			r == ArenaGameResultReasonTournamentCancelled
 	case ArenaGameStateSuperseded:
 		return r == ArenaGameResultReasonDerivedRevisionSuperseded
+	case ArenaGameStatePlanned, ArenaGameStateReady, ArenaGameStateActive, ArenaGameStatePaused:
+		return false
 	default:
 		return false
 	}

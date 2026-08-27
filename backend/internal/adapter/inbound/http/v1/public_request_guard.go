@@ -10,7 +10,7 @@ import (
 )
 
 type requestRateLimiter interface {
-	Allow(string) bool
+	Allow(key string) bool
 	RetryAfter() string
 }
 

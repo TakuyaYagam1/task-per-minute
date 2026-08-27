@@ -120,6 +120,7 @@ func (t *fakeTimer) wasFrozen(duelID uuid.UUID) bool {
 // reconnDuelRepo extends the timer test fake with UpdateDeadline + active-by-player support.
 type reconnDuelRepo struct {
 	*timerDuelRepo
+
 	mu                sync.Mutex
 	byPlayer          map[uuid.UUID]uuid.UUID
 	updateDeadlineErr error

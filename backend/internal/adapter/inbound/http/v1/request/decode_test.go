@@ -84,7 +84,7 @@ func TestDecodeJSON_RejectsUnknownFields(t *testing.T) {
 
 	err := request.DecodeJSON(req, &got)
 
-	var unknown *request.UnknownFieldsErr
+	var unknown *request.UnknownFieldsError
 	require.ErrorAs(t, err, &unknown)
 	require.Equal(t, "extra", unknown.Field)
 }
