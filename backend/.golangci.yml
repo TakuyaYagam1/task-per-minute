@@ -102,6 +102,11 @@ linters:
 
   exclusions:
     generated: strict
+    paths:
+      - internal/adapter/inbound/http/api/.*\.gen\.go$
+      - internal/adapter/outbound/postgres/sqlc/
+      - internal/bootstrap/wire_gen\.go$
+      - (^|/)mocks/
     presets:
       - comments
       - common-false-positives
@@ -126,6 +131,11 @@ formatters:
     - goimports
   exclusions:
     generated: strict
+    paths:
+      - internal/adapter/inbound/http/api/.*\.gen\.go$
+      - internal/adapter/outbound/postgres/sqlc/
+      - internal/bootstrap/wire_gen\.go$
+      - (^|/)mocks/
 
 issues:
   max-issues-per-linter: 0

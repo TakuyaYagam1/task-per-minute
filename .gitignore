@@ -32,6 +32,7 @@ next-env.d.ts
 /backend/coverage.html
 /backend/api/components/schemas.yml
 /backend/.venv-quality/
+/backend/.cache/
 *.test
 *.out
 *.prof

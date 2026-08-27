@@ -29,6 +29,7 @@ QUALITY_PY_REQUIREMENTS ?= scripts/requirements-quality.txt
 QUALITY_VENV ?= .venv-quality
 QUALITY_PYTHON ?= $(QUALITY_VENV)/bin/python
 QUALITY_PY_DEPS_STAMP ?= $(QUALITY_VENV)/.deps.stamp
+GO_LINT_CACHE := $(CURDIR)/.cache/golangci-lint
 
 ##@ Build & run
 
@@ -92,16 +93,24 @@ $(QUALITY_PY_DEPS_STAMP): $(QUALITY_PY_REQUIREMENTS)
 	@touch $(QUALITY_PY_DEPS_STAMP)
 
 .PHONY: lint lint-go
-lint: lint-go lint-sql ## Run Go and SQL linters
+lint: ## Run Go and SQL linters, reporting failures from both
+	@go_status=0; sql_status=0; \
+	$(MAKE) --no-print-directory lint-go || go_status=$$?; \
+	$(MAKE) --no-print-directory lint-sql || sql_status=$$?; \
+	if [ "$$go_status" -ne 0 ] || [ "$$sql_status" -ne 0 ]; then exit 1; fi
 
 lint-go: ## Run golangci-lint
-	golangci-lint run ./...
+	GOLANGCI_LINT_CACHE="$(GO_LINT_CACHE)" golangci-lint run ./...
 
 .PHONY: lint-fix lint-go-fix
-lint-fix: lint-go-fix lint-sql-fix ## Auto-fix Go and SQL queries, then lint all SQL
+lint-fix: ## Auto-fix Go and SQL queries, reporting failures from both
+	@go_status=0; sql_status=0; \
+	$(MAKE) --no-print-directory lint-go-fix || go_status=$$?; \
+	$(MAKE) --no-print-directory lint-sql-fix || sql_status=$$?; \
+	if [ "$$go_status" -ne 0 ] || [ "$$sql_status" -ne 0 ]; then exit 1; fi
 
 lint-go-fix: ## Auto-fix Go lint findings
-	golangci-lint run --fix ./...
+	GOLANGCI_LINT_CACHE="$(GO_LINT_CACHE)" golangci-lint run --fix ./...
 
 .PHONY: lint-sql
 lint-sql: install-quality-python-deps ## Lint migrations and sqlc queries
