@@ -283,6 +283,60 @@ func TestArenaReconnectMigrationIntervalPauseIntegrity(t *testing.T) {
 func TestArenaReconnectMigrationCASLocks(t *testing.T) {
 	ctx := context.Background()
 
+	t.Run("pause snapshot locks live presence", func(t *testing.T) {
+		resetArenaMigrationTables(t)
+		t.Cleanup(func() { resetArenaMigrationTables(t) })
+
+		fixture := createArenaReconnectMigrationFixture(t, ctx)
+		participantID := fixture.draft.participantIDs[0]
+		lockTx, err := sharedPool.Begin(ctx)
+		require.NoError(t, err)
+		defer func() { _ = lockTx.Rollback(ctx) }()
+		_, err = lockTx.Exec(ctx, `
+			SELECT 1
+			FROM arena_presence_states
+			WHERE series_id = $1 AND participant_id = $2
+			FOR NO KEY UPDATE`, fixture.draft.seriesID, participantID)
+		require.NoError(t, err)
+
+		probeTx := beginArenaReconnectLockProbe(t, ctx)
+		defer func() { _ = probeTx.Rollback(ctx) }()
+		pauseID := uuid.New()
+		pausedAt := fixture.pausedAt.Add(10 * time.Second)
+		_, err = probeTx.Exec(ctx, `
+			INSERT INTO arena_pauses (
+				id, tournament_id, roster_id, scope_kind, scope_id,
+				reason, paused_from_state, current_revision_id,
+				started_at, created_at, updated_at
+			)
+			VALUES (
+				$1, $2, $3, 'tournament', $2,
+				'operator', 'active', $4,
+				$5, $5, $5
+			)`,
+			pauseID,
+			fixture.draft.tournamentID,
+			fixture.draft.rosterID,
+			uuid.New(),
+			pausedAt,
+		)
+		require.NoError(t, err)
+		_, err = probeTx.Exec(ctx, `
+			INSERT INTO arena_pause_presence_snapshots (
+				pause_id, roster_id, series_id, participant_id,
+				presence_state, presence_epoch, presence_revision,
+				captured_at, created_at
+			)
+			VALUES ($1, $2, $3, $4, 'connected', 1, 1, $5, $5)`,
+			pauseID,
+			fixture.draft.rosterID,
+			fixture.draft.seriesID,
+			participantID,
+			pausedAt,
+		)
+		require.ErrorContains(t, err, "lock timeout")
+	})
+
 	t.Run("interval creation locks owning pause", func(t *testing.T) {
 		resetArenaMigrationTables(t)
 		t.Cleanup(func() { resetArenaMigrationTables(t) })
