@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 )
 
@@ -132,6 +133,215 @@ func TestArenaReconnectMigration(t *testing.T) {
 
 	assertArenaReconnectPersistence(t, ctx, fixture)
 	assertArenaReconnectCAS(t, ctx, fixture)
+}
+
+func TestArenaReconnectMigrationCASLocks(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("interval creation locks live presence", func(t *testing.T) {
+		resetArenaMigrationTables(t)
+		t.Cleanup(func() { resetArenaMigrationTables(t) })
+
+		fixture := createArenaReconnectMigrationFixture(t, ctx)
+		participantID := fixture.draft.participantIDs[0]
+		disconnectedAt := fixture.pausedAt.Add(time.Second)
+		_, err := sharedPool.Exec(ctx, `
+			UPDATE arena_presence_states
+			SET state = 'disconnected',
+				presence_epoch = presence_epoch + 1,
+				revision = revision + 1,
+				disconnected_at = $3,
+				updated_at = $3
+			WHERE series_id = $1 AND participant_id = $2`,
+			fixture.draft.seriesID,
+			participantID,
+			disconnectedAt,
+		)
+		require.NoError(t, err)
+
+		lockTx, err := sharedPool.Begin(ctx)
+		require.NoError(t, err)
+		defer func() { _ = lockTx.Rollback(ctx) }()
+		_, err = lockTx.Exec(ctx, `
+			SELECT 1
+			FROM arena_presence_states
+			WHERE series_id = $1 AND participant_id = $2
+			FOR NO KEY UPDATE`, fixture.draft.seriesID, participantID)
+		require.NoError(t, err)
+
+		probeTx := beginArenaReconnectLockProbe(t, ctx)
+		defer func() { _ = probeTx.Rollback(ctx) }()
+		_, err = probeTx.Exec(ctx, `
+			INSERT INTO arena_reconnect_intervals (
+				id, pause_id, roster_id, series_id, game_attempt_id,
+				participant_id, presence_epoch, interval_number,
+				opened_at, deadline_at, created_at, updated_at
+			)
+			VALUES (
+				$1, $2, $3, $4, $5,
+				$6, 2, 1,
+				$7, $8, $7, $7
+			)`,
+			uuid.New(),
+			fixture.gamePauseID,
+			fixture.draft.rosterID,
+			fixture.draft.seriesID,
+			fixture.attemptID,
+			participantID,
+			disconnectedAt,
+			disconnectedAt.Add(2*time.Minute),
+		)
+		require.ErrorContains(t, err, "lock timeout")
+	})
+
+	t.Run("resume decision locks live presence", func(t *testing.T) {
+		resetArenaMigrationTables(t)
+		t.Cleanup(func() { resetArenaMigrationTables(t) })
+
+		fixture := createArenaReconnectMigrationFixture(t, ctx)
+		lockTx, err := sharedPool.Begin(ctx)
+		require.NoError(t, err)
+		defer func() { _ = lockTx.Rollback(ctx) }()
+		_, err = lockTx.Exec(ctx, `
+			SELECT 1
+			FROM arena_presence_states
+			WHERE series_id = $1 AND participant_id = $2
+			FOR NO KEY UPDATE`, fixture.draft.seriesID, fixture.draft.participantIDs[0])
+		require.NoError(t, err)
+
+		probeTx := beginArenaReconnectLockProbe(t, ctx)
+		defer func() { _ = probeTx.Rollback(ctx) }()
+		err = insertArenaResumeDecisionEvidence(
+			ctx,
+			probeTx,
+			fixture,
+			fixture.gamePauseID,
+			1,
+			nil,
+			nil,
+			"connected",
+			"connected",
+			1,
+			1,
+			1,
+			1,
+			"resume",
+			fixture.pausedAt,
+		)
+		require.ErrorContains(t, err, "lock timeout")
+	})
+
+	t.Run("resume decision locks reconnect interval", func(t *testing.T) {
+		resetArenaMigrationTables(t)
+		t.Cleanup(func() { resetArenaMigrationTables(t) })
+
+		fixture := createArenaReconnectMigrationFixture(t, ctx)
+		intervalID, _ := disconnectArenaParticipant(
+			t,
+			ctx,
+			fixture,
+			fixture.draft.participantIDs[0],
+			fixture.pausedAt.Add(time.Second),
+			2*time.Minute,
+		)
+
+		lockTx, err := sharedPool.Begin(ctx)
+		require.NoError(t, err)
+		defer func() { _ = lockTx.Rollback(ctx) }()
+		_, err = lockTx.Exec(ctx, `
+			SELECT 1
+			FROM arena_reconnect_intervals
+			WHERE id = $1
+			FOR NO KEY UPDATE`, intervalID)
+		require.NoError(t, err)
+
+		probeTx := beginArenaReconnectLockProbe(t, ctx)
+		defer func() { _ = probeTx.Rollback(ctx) }()
+		err = insertArenaResumeDecisionEvidence(
+			ctx,
+			probeTx,
+			fixture,
+			fixture.gamePauseID,
+			1,
+			&intervalID,
+			nil,
+			"disconnected",
+			"connected",
+			2,
+			1,
+			2,
+			1,
+			"wait_first",
+			fixture.pausedAt.Add(time.Second),
+		)
+		require.ErrorContains(t, err, "lock timeout")
+	})
+}
+
+func beginArenaReconnectLockProbe(t testing.TB, ctx context.Context) pgx.Tx {
+	t.Helper()
+
+	tx, err := sharedPool.Begin(ctx)
+	require.NoError(t, err)
+	_, err = tx.Exec(ctx, "SET LOCAL lock_timeout = '100ms'")
+	require.NoError(t, err)
+	return tx
+}
+
+func insertArenaResumeDecisionEvidence(
+	ctx context.Context,
+	tx pgx.Tx,
+	fixture arenaReconnectMigrationFixture,
+	pauseID uuid.UUID,
+	decisionNumber int,
+	firstIntervalID *uuid.UUID,
+	secondIntervalID *uuid.UUID,
+	firstLiveState string,
+	secondLiveState string,
+	firstPresenceEpoch int64,
+	secondPresenceEpoch int64,
+	firstPresenceRevision int64,
+	secondPresenceRevision int64,
+	action string,
+	decidedAt time.Time,
+) error {
+	_, err := tx.Exec(ctx, `
+		INSERT INTO arena_resume_decisions (
+			pause_id, decision_number,
+			first_participant_id, second_participant_id,
+			first_pre_pause_state, second_pre_pause_state,
+			first_live_state, second_live_state,
+			first_presence_epoch, second_presence_epoch,
+			first_presence_revision, second_presence_revision,
+			first_reconnect_interval_id, second_reconnect_interval_id,
+			action, decided_at, created_at
+		)
+		VALUES (
+			$1, $2,
+			$3, $4,
+			'connected', 'connected',
+			$5, $6,
+			$7, $8,
+			$9, $10,
+			$11, $12,
+			$13, $14, $14
+		)`,
+		pauseID,
+		decisionNumber,
+		fixture.draft.participantIDs[0],
+		fixture.draft.participantIDs[1],
+		firstLiveState,
+		secondLiveState,
+		firstPresenceEpoch,
+		secondPresenceEpoch,
+		firstPresenceRevision,
+		secondPresenceRevision,
+		firstIntervalID,
+		secondIntervalID,
+		action,
+		decidedAt,
+	)
+	return err
 }
 
 func createArenaReconnectMigrationFixture(
