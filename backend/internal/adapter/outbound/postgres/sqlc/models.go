@@ -20,6 +20,121 @@ type AdminPlayerAuditEvent struct {
 	CreatedAt    pgtype.Timestamptz
 }
 
+type ArenaParticipant struct {
+	ID         uuid.UUID
+	RosterID   uuid.UUID
+	PlayerID   uuid.UUID
+	Seed       int32
+	Attendance string
+	CreatedAt  pgtype.Timestamptz
+	UpdatedAt  pgtype.Timestamptz
+}
+
+type ArenaRoster struct {
+	ID                 uuid.UUID
+	TournamentID       uuid.UUID
+	Revision           int64
+	LockedAt           pgtype.Timestamptz
+	ExecutionStartedAt pgtype.Timestamptz
+	CreatedAt          pgtype.Timestamptz
+	UpdatedAt          pgtype.Timestamptz
+}
+
+type ArenaSwissBye struct {
+	RoundID                  uuid.UUID
+	RosterID                 uuid.UUID
+	ParticipantID            uuid.UUID
+	PointsAwarded            int16
+	DecisionEvidenceID       uuid.UUID
+	DecisionAlgorithmVersion string
+	DecisionInputs           []byte
+	DecisionSeed             []byte
+	DecisionResult           []byte
+	DecisionReplayDigest     []byte
+	DecisionOwnerID          uuid.UUID
+	DecidedAt                pgtype.Timestamptz
+	CreatedAt                pgtype.Timestamptz
+}
+
+type ArenaSwissOpponentHistory struct {
+	PairingID         uuid.UUID
+	RoundID           uuid.UUID
+	RosterID          uuid.UUID
+	PriorMeetingCount int16
+	RepeatOverrideID  uuid.NullUUID
+	RecordedAt        pgtype.Timestamptz
+}
+
+type ArenaSwissPairing struct {
+	ID               uuid.UUID
+	RoundID          uuid.UUID
+	RosterID         uuid.UUID
+	SlotNumber       int16
+	RepeatOverrideID uuid.NullUUID
+	CreatedAt        pgtype.Timestamptz
+}
+
+type ArenaSwissPairingMember struct {
+	PairingID     uuid.UUID
+	RoundID       uuid.UUID
+	RosterID      uuid.UUID
+	Seat          int16
+	ParticipantID uuid.UUID
+	CreatedAt     pgtype.Timestamptz
+}
+
+type ArenaSwissRepeatOverride struct {
+	ID                          uuid.UUID
+	RoundID                     uuid.UUID
+	RosterID                    uuid.UUID
+	ActorID                     uuid.UUID
+	Reason                      string
+	ConfirmedAt                 pgtype.Timestamptz
+	RosterParticipantIds        []byte
+	ProposedPairings            []byte
+	ByeParticipantID            uuid.NullUUID
+	PreviousMeetings            []byte
+	RepeatedPairings            []byte
+	AlternativeAlgorithmVersion string
+	AlternativeSearchComplete   bool
+	AlternativePairings         []byte
+	CreatedAt                   pgtype.Timestamptz
+}
+
+type ArenaSwissRound struct {
+	ID                       uuid.UUID
+	RosterID                 uuid.UUID
+	RoundNumber              int16
+	Revision                 int64
+	SourceRosterRevision     int64
+	SourceHistoryRevision    int64
+	GenerationKind           string
+	PairingInputs            []byte
+	DecisionEvidenceID       uuid.NullUUID
+	DecisionAlgorithmVersion *string
+	DecisionSeed             []byte
+	DecisionResult           []byte
+	DecisionReplayDigest     []byte
+	DecisionOwnerID          uuid.NullUUID
+	GeneratedAt              pgtype.Timestamptz
+	LockRevision             *int64
+	LockedAt                 pgtype.Timestamptz
+	CreatedAt                pgtype.Timestamptz
+	UpdatedAt                pgtype.Timestamptz
+}
+
+type ArenaTournament struct {
+	ID              uuid.UUID
+	Preset          string
+	State           string
+	PausedFromState *string
+	Revision        int64
+	CreatedAt       pgtype.Timestamptz
+	UpdatedAt       pgtype.Timestamptz
+	StartedAt       pgtype.Timestamptz
+	FinishedAt      pgtype.Timestamptz
+}
+
 type Duel struct {
 	ID         uuid.UUID
 	Player1ID  uuid.UUID
@@ -37,6 +152,18 @@ type DuelPlayerTask struct {
 	TaskID   uuid.UUID
 	Solved   bool
 	SolvedAt pgtype.Timestamptz
+}
+
+type ParticipantReservation struct {
+	PlayerID          uuid.UUID
+	ReservationID     uuid.UUID
+	OwnerKind         string
+	OwnerID           uuid.UUID
+	ArenaTournamentID uuid.NullUUID
+	CasualDuelID      uuid.NullUUID
+	Revision          int64
+	AcquiredAt        pgtype.Timestamptz
+	UpdatedAt         pgtype.Timestamptz
 }
 
 type Player struct {
