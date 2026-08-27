@@ -256,6 +256,28 @@ func TestArenaReconnectMigrationIntervalPauseIntegrity(t *testing.T) {
 			fixture.pausedAt.Add(time.Second),
 		)
 	})
+
+	t.Run("rejects cancellation with open interval", func(t *testing.T) {
+		resetArenaMigrationTables(t)
+		t.Cleanup(func() { resetArenaMigrationTables(t) })
+
+		fixture := createArenaReconnectMigrationFixture(t, ctx)
+		_, _ = disconnectArenaParticipant(
+			t,
+			ctx,
+			fixture,
+			fixture.draft.participantIDs[0],
+			fixture.pausedAt.Add(time.Second),
+			2*time.Minute,
+		)
+		assertArenaPauseCancellationRejected(
+			t,
+			ctx,
+			fixture,
+			fixture.pausedAt.Add(2*time.Second),
+			"closed reconnect intervals",
+		)
+	})
 }
 
 func TestArenaReconnectMigrationCASLocks(t *testing.T) {
@@ -499,6 +521,57 @@ func TestArenaReconnectMigrationCASLocks(t *testing.T) {
 		)
 		require.ErrorContains(t, err, "lock timeout")
 	})
+
+	t.Run("pause cancellation locks reconnect intervals", func(t *testing.T) {
+		resetArenaMigrationTables(t)
+		t.Cleanup(func() { resetArenaMigrationTables(t) })
+
+		fixture := createArenaReconnectMigrationFixture(t, ctx)
+		intervalID, _ := disconnectArenaParticipant(
+			t,
+			ctx,
+			fixture,
+			fixture.draft.participantIDs[0],
+			fixture.pausedAt.Add(time.Second),
+			2*time.Minute,
+		)
+
+		lockTx, err := sharedPool.Begin(ctx)
+		require.NoError(t, err)
+		defer func() { _ = lockTx.Rollback(ctx) }()
+		_, err = lockTx.Exec(ctx, `
+			SELECT 1
+			FROM arena_reconnect_intervals
+			WHERE id = $1
+			FOR NO KEY UPDATE`, intervalID)
+		require.NoError(t, err)
+
+		probeTx := beginArenaReconnectLockProbe(t, ctx)
+		defer func() { _ = probeTx.Rollback(ctx) }()
+		revisionID := uuid.New()
+		cancelledAt := fixture.pausedAt.Add(2 * time.Second)
+		_, err = probeTx.Exec(ctx, `
+			INSERT INTO arena_pause_revisions (
+				id, pause_id, previous_revision_id, revision_number,
+				state, transition_reason, created_at
+			)
+			VALUES ($1, $2, $3, 2, 'cancelled', 'operator cancel', $4)`,
+			revisionID,
+			fixture.gamePauseID,
+			fixture.gamePauseRevisionID,
+			cancelledAt,
+		)
+		require.NoError(t, err)
+		_, err = probeTx.Exec(ctx, `
+			UPDATE arena_pauses
+			SET state = 'cancelled',
+				current_revision_id = $2,
+				revision = revision + 1,
+				resolved_at = $3,
+				updated_at = $3
+			WHERE id = $1`, fixture.gamePauseID, revisionID, cancelledAt)
+		require.ErrorContains(t, err, "lock timeout")
+	})
 }
 
 func assertArenaReconnectIntervalRejected(
@@ -585,6 +658,42 @@ func assertArenaPauseResumeRejected(
 			resolved_at = $3,
 			updated_at = $3
 		WHERE id = $1`, pauseID, revisionID, resumedAt)
+	require.ErrorContains(t, err, expected)
+}
+
+func assertArenaPauseCancellationRejected(
+	t testing.TB,
+	ctx context.Context,
+	fixture arenaReconnectMigrationFixture,
+	cancelledAt time.Time,
+	expected string,
+) {
+	t.Helper()
+
+	tx, err := sharedPool.Begin(ctx)
+	require.NoError(t, err)
+	defer func() { _ = tx.Rollback(ctx) }()
+	revisionID := uuid.New()
+	_, err = tx.Exec(ctx, `
+		INSERT INTO arena_pause_revisions (
+			id, pause_id, previous_revision_id, revision_number,
+			state, transition_reason, created_at
+		)
+		VALUES ($1, $2, $3, 2, 'cancelled', 'operator cancel', $4)`,
+		revisionID,
+		fixture.gamePauseID,
+		fixture.gamePauseRevisionID,
+		cancelledAt,
+	)
+	require.NoError(t, err)
+	_, err = tx.Exec(ctx, `
+		UPDATE arena_pauses
+		SET state = 'cancelled',
+			current_revision_id = $2,
+			revision = revision + 1,
+			resolved_at = $3,
+			updated_at = $3
+		WHERE id = $1`, fixture.gamePauseID, revisionID, cancelledAt)
 	require.ErrorContains(t, err, expected)
 }
 
