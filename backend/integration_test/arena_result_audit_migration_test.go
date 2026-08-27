@@ -38,6 +38,7 @@ func TestArenaResultAuditMigration(t *testing.T) {
 
 	fixture := createArenaResultAuditMigrationFixture(t, ctx)
 	submissionID, submissionKey := createAcceptedArenaSubmission(t, ctx, fixture)
+	assertArenaResultParticipantIntegrity(t, ctx, fixture, submissionID)
 
 	_, err := sharedPool.Exec(ctx, `
 		INSERT INTO arena_submission_events (
@@ -141,6 +142,100 @@ func TestArenaResultAuditMigration(t *testing.T) {
 	assertArenaResultEventCannotCommitPartially(t, ctx, fixture)
 	assertArenaAuditRejectsNestedFlag(t, ctx, fixture)
 	assertArenaOutboxRetainsPublishedEvidence(t, ctx, commit)
+}
+
+func assertArenaResultParticipantIntegrity(
+	t testing.TB,
+	ctx context.Context,
+	fixture arenaResultAuditMigrationFixture,
+	submissionID uuid.UUID,
+) {
+	t.Helper()
+
+	playerIDs := createArenaMigrationPlayers(t, ctx, 1)
+	var outsideParticipantID uuid.UUID
+	err := sharedPool.QueryRow(ctx, `
+		INSERT INTO arena_participants (roster_id, player_id, seed, attendance)
+		VALUES ($1, $2, 3, 'checked_in')
+		RETURNING id`, fixture.draft.rosterID, playerIDs[0]).Scan(&outsideParticipantID)
+	require.NoError(t, err)
+
+	createdAt := fixture.lockedAt.Add(2 * time.Second)
+	_, err = sharedPool.Exec(ctx, `
+		INSERT INTO arena_submission_events (
+			tournament_id, roster_id, series_id, attempt_id, assignment_id,
+			participant_id, server_sequence, idempotency_key, status,
+			payload_digest, submitted_at, received_at, created_at
+		)
+		VALUES (
+			$1, $2, $3, $4, $5,
+			$6, 2, $7, 'accepted',
+			$8, $9, $9, $9
+		)`,
+		fixture.draft.tournamentID,
+		fixture.draft.rosterID,
+		fixture.draft.seriesID,
+		fixture.attemptID,
+		fixture.assignmentID,
+		outsideParticipantID,
+		uuid.New(),
+		bytes.Repeat([]byte{23}, 32),
+		createdAt,
+	)
+	require.ErrorContains(t, err, "Arena submission participant is outside the Series")
+
+	_, err = sharedPool.Exec(ctx, `
+		INSERT INTO arena_result_events (
+			tournament_id, roster_id, series_id, attempt_id,
+			server_sequence, idempotency_key, result_state,
+			result_reason, winner_id, occurred_at, created_at
+		)
+		VALUES (
+			$1, $2, $3, $4,
+			1, $5, 'completed',
+			'operator_forfeit', $6, $7, $7
+		)`,
+		fixture.draft.tournamentID,
+		fixture.draft.rosterID,
+		fixture.draft.seriesID,
+		fixture.attemptID,
+		uuid.New(),
+		outsideParticipantID,
+		createdAt,
+	)
+	require.ErrorContains(t, err, "Arena result winner is outside the Series")
+
+	_, err = sharedPool.Exec(ctx, `
+		INSERT INTO arena_result_events (
+			tournament_id, roster_id, series_id, attempt_id,
+			submission_event_id, server_sequence, idempotency_key,
+			result_state, result_reason, winner_id, occurred_at, created_at
+		)
+		VALUES (
+			$1, $2, $3, $4,
+			$5, 1, $6,
+			'completed', 'solved', $7, $8, $8
+		)`,
+		fixture.draft.tournamentID,
+		fixture.draft.rosterID,
+		fixture.draft.seriesID,
+		fixture.attemptID,
+		submissionID,
+		uuid.New(),
+		fixture.draft.participantIDs[1],
+		createdAt,
+	)
+	require.ErrorContains(
+		t,
+		err,
+		"Arena solved result winner must match the submission participant",
+	)
+
+	_, err = sharedPool.Exec(ctx, `
+		UPDATE arena_series
+		SET first_participant_id = $2
+		WHERE id = $1`, fixture.draft.seriesID, outsideParticipantID)
+	require.ErrorContains(t, err, "Arena Series result identity is immutable")
 }
 
 func createArenaResultAuditMigrationFixture(
