@@ -40,6 +40,7 @@ func TestArenaResultAuditMigration(t *testing.T) {
 	fixture := createArenaResultAuditMigrationFixture(t, ctx)
 	submissionID, submissionKey := createAcceptedArenaSubmission(t, ctx, fixture)
 	assertArenaResultParticipantIntegrity(t, ctx, fixture, submissionID)
+	assertArenaResultCommitRequiresCurrentHeads(t, ctx, fixture, submissionID)
 
 	_, err := sharedPool.Exec(ctx, `
 		INSERT INTO arena_submission_events (
@@ -508,6 +509,32 @@ func createAtomicArenaResultCommit(
 ) arenaResultAuditCommit {
 	t.Helper()
 
+	commit, err := createArenaResultCommit(t, ctx, fixture, submissionID, true)
+	require.NoError(t, err)
+	return commit
+}
+
+func assertArenaResultCommitRequiresCurrentHeads(
+	t testing.TB,
+	ctx context.Context,
+	fixture arenaResultAuditMigrationFixture,
+	submissionID uuid.UUID,
+) {
+	t.Helper()
+
+	_, err := createArenaResultCommit(t, ctx, fixture, submissionID, false)
+	require.ErrorContains(t, err, "Arena result commit revisions must be current heads")
+}
+
+func createArenaResultCommit(
+	t testing.TB,
+	ctx context.Context,
+	fixture arenaResultAuditMigrationFixture,
+	submissionID uuid.UUID,
+	advanceCurrentHeads bool,
+) (arenaResultAuditCommit, error) {
+	t.Helper()
+
 	commit := arenaResultAuditCommit{
 		resultEventID:          uuid.New(),
 		gameResultRevisionID:   uuid.New(),
@@ -693,6 +720,9 @@ func createAtomicArenaResultCommit(
 		commit.settledAt,
 	)
 	require.NoError(t, err)
+	if !advanceCurrentHeads {
+		return commit, tx.Commit(ctx)
+	}
 
 	_, err = tx.Exec(ctx, `
 		INSERT INTO arena_official_result_heads (
@@ -767,8 +797,7 @@ func createAtomicArenaResultCommit(
 		fixture.lockedAt,
 	)
 	require.NoError(t, err)
-	require.NoError(t, tx.Commit(ctx))
-	return commit
+	return commit, tx.Commit(ctx)
 }
 
 func assertArenaResultEvidenceIsImmutable(
