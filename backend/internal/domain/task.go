@@ -12,6 +12,18 @@ import (
 	"github.com/google/uuid"
 )
 
+const (
+	ErrorCodeTaskNotFound   ErrorCode = "task.not_found"
+	ErrorCodeTaskInUse      ErrorCode = "task.in_use"
+	ErrorCodeTaskValidation ErrorCode = "task.validation"
+)
+
+var (
+	ErrTaskNotFound   = &Error{Code: ErrorCodeTaskNotFound, Message: "task not found"}
+	ErrTaskInUse      = &Error{Code: ErrorCodeTaskInUse, Message: "task is in use by an active duel"}
+	ErrTaskValidation = &Error{Code: ErrorCodeTaskValidation, Message: "task validation failed"}
+)
+
 type Difficulty string
 
 const (
