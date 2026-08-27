@@ -10,6 +10,8 @@ Preserve existing public behavior unless the task explicitly changes it. Use
 the existing package manager and lockfile. Do not add a dependency when the
 repository already provides the required capability.
 
+Use Feature-Sliced Design for frontend ownership and dependency direction.
+
 ## Current Boundaries
 
 | Path | Responsibility |
@@ -41,6 +43,10 @@ app -> pages -> widgets -> features -> entities -> shared
 A layer may use the layers to its right. Do not introduce deep imports across
 feature internals. Export the intended public surface from the local
 `index.ts` or `exports.ts` file.
+
+Do not add architecture-only tests that scan imports or directory layout.
+Preserve FSD boundaries through public module surfaces, code review, strict
+TypeScript, and tests of observable behavior.
 
 `lib/pages/task/TaskPage.tsx` currently imports `app/task/task.module.css`.
 Treat this reverse style import as legacy debt, not a pattern for new code.

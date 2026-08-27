@@ -29,6 +29,12 @@ Do not load every document by default. Read the smallest set that covers the tas
 - `.agents/` remains canonical. Keep the root adapter short and do not duplicate product or engineering rules in it.
 - After moving or renaming the adapter or an imported file, resolve every relative import. In Claude Code, use `/memory` to verify the loaded hierarchy.
 
+## Architecture Policy
+
+- Backend work follows Clean Architecture inside a hexagonal monolith. The canonical dependency and ownership rules live in `architecture.md` and `standards/backend.md`.
+- Frontend work follows Feature-Sliced Design. The canonical layer direction and public-surface rules live in `architecture.md` and `standards/frontend.md`.
+- Preserve these boundaries through design, code review, narrow interfaces, and behavior-focused tests. Do not add `architecture_test.go`, AST import scanners, or reflection-only tests whose sole purpose is policing directory or layer shape.
+
 ## Routing Table
 
 | Task area                | Read                                                                                       |

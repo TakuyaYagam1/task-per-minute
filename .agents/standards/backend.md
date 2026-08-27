@@ -2,10 +2,11 @@
 
 ## Scope
 
+- Treat the backend as a hexagonal monolith following Clean Architecture. Keep business policy inward and infrastructure at the edges.
 - The Go module root is `backend/` and the module requires Go 1.26.2.
 - Keep the existing import direction: inbound and outbound adapters -> consumer-owned usecase ports -> `internal/domain`.
 - `internal/domain` owns business types, validation, and stable application error identities without transport or infrastructure dependencies.
-- Each package under `internal/usecase/{admin,duel,leaderboard,player,recovery}` owns its narrow ports in `ports.go` and its workflow models in `models.go` where needed.
+- Each package under `internal/usecase/` owns its narrow ports in `ports.go` and its workflow models in `models.go` where needed.
 - HTTP and WebSocket adapters live under `internal/adapter/inbound`. PostgreSQL, Redis, memory, and object-storage adapters live under `internal/adapter/outbound`.
 - `internal/bootstrap` is the only composition root and owns providers, Wire generation, startup, recovery coordination, server lifetime, shutdown, and the wall-clock function injected through consumer-owned ports.
 - Add dependencies only when existing repository packages cannot satisfy the requirement. Keep interfaces consumer-owned and narrow.
@@ -86,4 +87,5 @@ Report every skipped gate and its residual risk.
 - Inspect `git status --short` before editing and preserve unrelated work.
 - Do not inspect, print, overwrite, or commit `.env` files, credentials, session material, or private task data. An explicitly authorized repository command may consume an env file without exposing its contents.
 - Do not bypass use cases by calling outbound implementations from inbound adapters.
+- Do not add architecture-only test packages, AST import scanners, or reflection tests to police layer shape. Enforce boundaries through the documented ownership model, code review, narrow ports, and tests of observable behavior.
 - Do not stage, commit, push, deploy, or change external state unless the task explicitly authorizes it.

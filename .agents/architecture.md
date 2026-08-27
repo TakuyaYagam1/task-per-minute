@@ -17,7 +17,7 @@ Go backend
 
 Caddy is the public routing and security boundary. Database, Redis, and internal storage traffic remain on private Docker networks. Do not expose internal services or backend host ports without a reviewed operational requirement.
 
-## Backend Layers
+## Backend: Clean Architecture In A Hexagonal Monolith
 
 ```text
 domain
@@ -32,11 +32,17 @@ domain
 - `backend/internal/adapter/outbound/postgres/`, `redis/`, `memory/`, and `objectstorage/` implement infrastructure-facing usecase ports.
 - `backend/internal/bootstrap/` is the only dependency composition root and owns startup, migrations, recovery coordination, serving, shutdown order, and the wall-clock implementation injected through consumer-owned ports.
 
-Dependencies point inward. Domain and usecase code must not depend on HTTP, WebSocket, generated transport DTOs, or concrete adapters. Inbound and outbound adapters must not import each other. `backend/internal/architecture/import_boundary_test.go` enforces these production import rules.
+Dependencies point inward. Domain and usecase code must not depend on HTTP, WebSocket, generated transport DTOs, or concrete adapters. Inbound and outbound adapters must not import each other. Preserve these boundaries through package ownership, consumer-owned ports, code review, and behavior-focused tests.
+
+Do not add `architecture_test.go`, AST import scanners, or reflection-only tests whose sole purpose is enforcing directory structure, import direction, or interface shape. Tests should prove business behavior, public contracts, persistence behavior, or runtime invariants.
 
 Inbound adapters map domain errors to protocol-specific statuses and payloads. Internal causes remain in the error chain for diagnostics and must not be exposed to clients.
 
-## Frontend Boundaries
+## Frontend: Feature-Sliced Design
+
+```text
+app -> pages -> widgets -> features -> entities -> shared
+```
 
 - `frontend/app/` contains Next.js route entrypoints.
 - `frontend/lib/pages/` coordinates page-level state and composition.
