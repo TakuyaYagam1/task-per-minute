@@ -133,6 +133,16 @@ func TestArenaAssignmentMigration(t *testing.T) {
 		WHERE id = $1`, exactPlanID)
 	require.Error(t, err)
 
+	assertArenaAssignmentTransitionEvidenceImmutable(
+		t,
+		ctx,
+		exactPlanID,
+		activeBranchID,
+		releasedBranchID,
+		activeReservations[0].reservationID,
+		committedAt,
+	)
+
 	_, err = sharedPool.Exec(ctx, `
 		UPDATE arena_task_snapshots
 		SET title = 'changed official evidence'
@@ -309,6 +319,63 @@ func TestArenaAssignmentMigration(t *testing.T) {
 		WHERE plan_id = $1 AND state = 'released'`, exactPlanID).Scan(&releasedBranches)
 	require.NoError(t, err)
 	require.Equal(t, 1, releasedBranches)
+}
+
+func assertArenaAssignmentTransitionEvidenceImmutable(
+	t testing.TB,
+	ctx context.Context,
+	planID uuid.UUID,
+	activeBranchID uuid.UUID,
+	releasedBranchID uuid.UUID,
+	reservationID uuid.UUID,
+	committedAt time.Time,
+) {
+	t.Helper()
+
+	changedAt := committedAt.Add(time.Second)
+	_, err := sharedPool.Exec(ctx, `
+		UPDATE arena_assignment_plans
+		SET active_branch_id = $2
+		WHERE id = $1`, planID, releasedBranchID)
+	require.Error(t, err)
+
+	_, err = sharedPool.Exec(ctx, `
+		UPDATE arena_assignment_plans
+		SET committed_at = $2
+		WHERE id = $1`, planID, changedAt)
+	require.Error(t, err)
+
+	_, err = sharedPool.Exec(ctx, `
+		UPDATE arena_assignment_branches
+		SET activated_at = $2
+		WHERE id = $1`, activeBranchID, changedAt)
+	require.Error(t, err)
+
+	_, err = sharedPool.Exec(ctx, `
+		UPDATE arena_task_version_reservations
+		SET committed_at = $2
+		WHERE id = $1`, reservationID, changedAt)
+	require.Error(t, err)
+
+	_, err = sharedPool.Exec(ctx, `
+		UPDATE arena_assignment_branches
+		SET disclosed_at = $2
+		WHERE id = $1`, activeBranchID, changedAt)
+	require.NoError(t, err)
+
+	_, err = sharedPool.Exec(ctx, `
+		UPDATE arena_assignment_branches
+		SET disclosed_at = NULL
+		WHERE id = $1`, activeBranchID)
+	require.Error(t, err)
+
+	_, err = sharedPool.Exec(ctx, `
+		UPDATE arena_assignment_branches
+		SET state = 'superseded',
+			superseded_at = $2,
+			supersession_reason = 'attempted branch replacement'
+		WHERE id = $1`, activeBranchID, changedAt)
+	require.Error(t, err)
 }
 
 func assertCrossRosterArenaAssignmentRejected(
