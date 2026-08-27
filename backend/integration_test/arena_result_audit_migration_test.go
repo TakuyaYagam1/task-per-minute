@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 )
 
@@ -142,6 +143,96 @@ func TestArenaResultAuditMigration(t *testing.T) {
 	assertArenaResultEventCannotCommitPartially(t, ctx, fixture)
 	assertArenaAuditRejectsNestedFlag(t, ctx, fixture)
 	assertArenaOutboxRetainsPublishedEvidence(t, ctx, commit)
+}
+
+func TestArenaResultAuditMigrationCommitLocks(t *testing.T) {
+	ctx := context.Background()
+	resetArenaMigrationTables(t)
+	t.Cleanup(func() { resetArenaMigrationTables(t) })
+
+	fixture := createArenaResultAuditMigrationFixture(t, ctx)
+	submissionID, _ := createAcceptedArenaSubmission(t, ctx, fixture)
+	commit := createAtomicArenaResultCommit(t, ctx, fixture, submissionID)
+
+	t.Run("official revision locks Game before commit seal check", func(t *testing.T) {
+		lockTx, err := sharedPool.Begin(ctx)
+		require.NoError(t, err)
+		defer func() { _ = lockTx.Rollback(ctx) }()
+		_, err = lockTx.Exec(ctx, `
+			SELECT 1
+			FROM arena_game_attempts
+			WHERE id = $1
+			FOR NO KEY UPDATE`, fixture.attemptID)
+		require.NoError(t, err)
+
+		probeTx := beginArenaResultAuditLockProbe(t, ctx)
+		defer func() { _ = probeTx.Rollback(ctx) }()
+		_, err = probeTx.Exec(ctx, `
+			INSERT INTO arena_official_result_revisions (
+				id, tournament_id, roster_id, entity_kind, entity_id,
+				series_id, game_attempt_id, result_event_id,
+				previous_revision_id, revision_number,
+				result_state, result_reason, winner_id, created_at
+			)
+			VALUES (
+				$1, $2, $3, 'game_attempt', $4,
+				$5, $4, $6,
+				$7, 2,
+				'completed', 'solved', $8, $9
+			)`,
+			uuid.New(),
+			fixture.draft.tournamentID,
+			fixture.draft.rosterID,
+			fixture.attemptID,
+			fixture.draft.seriesID,
+			commit.resultEventID,
+			commit.gameResultRevisionID,
+			fixture.draft.participantIDs[0],
+			commit.settledAt.Add(time.Second),
+		)
+		require.ErrorContains(t, err, "lock timeout")
+	})
+
+	t.Run("score revision locks Series before commit seal check", func(t *testing.T) {
+		lockTx, err := sharedPool.Begin(ctx)
+		require.NoError(t, err)
+		defer func() { _ = lockTx.Rollback(ctx) }()
+		_, err = lockTx.Exec(ctx, `
+			SELECT 1
+			FROM arena_series
+			WHERE id = $1
+			FOR NO KEY UPDATE`, fixture.draft.seriesID)
+		require.NoError(t, err)
+
+		probeTx := beginArenaResultAuditLockProbe(t, ctx)
+		defer func() { _ = probeTx.Rollback(ctx) }()
+		_, err = probeTx.Exec(ctx, `
+			INSERT INTO arena_series_score_revisions (
+				id, tournament_id, roster_id, series_id, result_event_id,
+				previous_revision_id, revision_number,
+				first_participant_wins, second_participant_wins, created_at
+			)
+			VALUES ($1, $2, $3, $4, $5, $6, 3, 1, 0, $7)`,
+			uuid.New(),
+			fixture.draft.tournamentID,
+			fixture.draft.rosterID,
+			fixture.draft.seriesID,
+			commit.resultEventID,
+			commit.scoreRevisionID,
+			commit.settledAt.Add(time.Second),
+		)
+		require.ErrorContains(t, err, "lock timeout")
+	})
+}
+
+func beginArenaResultAuditLockProbe(t testing.TB, ctx context.Context) pgx.Tx {
+	t.Helper()
+
+	tx, err := sharedPool.Begin(ctx)
+	require.NoError(t, err)
+	_, err = tx.Exec(ctx, "SET LOCAL lock_timeout = '100ms'")
+	require.NoError(t, err)
+	return tx
 }
 
 func assertArenaResultParticipantIntegrity(
