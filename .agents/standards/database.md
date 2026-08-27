@@ -36,7 +36,11 @@
 
 Follow the env-inheritance and tool-install preflight in `backend.md` before any backend `make` command. Applying migrations requires an explicitly authorized disposable database and a validated target supplied without inspecting the user's private env file.
 
+- Run `make lint-sql` after changing SQL migrations or sqlc queries.
+- Never auto-fix an applied migration. `make lint-sql-fix` intentionally edits only `db/queries/` and then checks both queries and migrations.
+
 ```bash
+make lint-sql
 make gen-sqlc
 make mocks
 make test

@@ -13,8 +13,34 @@ permissions:
 env:
   GO_VERSION_FILE: backend/go.mod
   GO_WORKDIR: backend
+  PYTHON_VERSION: '3.13'
 
 jobs:
+  sql-lint:
+    name: sql lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ inputs.target_sha }}
+
+      - name: setup python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: backend/scripts/requirements-quality.txt
+
+      - name: install sqlfluff
+        working-directory: ${{ env.GO_WORKDIR }}
+        run: python -m pip install --disable-pip-version-check -r scripts/requirements-quality.txt
+
+      - name: sqlfluff
+        working-directory: ${{ env.GO_WORKDIR }}
+        run: python -m sqlfluff lint --config .sqlfluff db/migrations db/queries
+
   lint:
     name: lint
     runs-on: ubuntu-latest

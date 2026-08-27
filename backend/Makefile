@@ -24,6 +24,11 @@ endif
 
 DB_DSN ?= postgres://tpm:tpm@localhost:5432/task_per_minute?sslmode=disable
 MIGRATIONS_DIR := db/migrations
+PYTHON ?= python3
+QUALITY_PY_REQUIREMENTS ?= scripts/requirements-quality.txt
+QUALITY_VENV ?= .venv-quality
+QUALITY_PYTHON ?= $(QUALITY_VENV)/bin/python
+QUALITY_PY_DEPS_STAMP ?= $(QUALITY_VENV)/.deps.stamp
 
 ##@ Build & run
 
@@ -77,13 +82,36 @@ mocks: ## Generate testify mocks for consumer-owned usecase ports
 
 ##@ Lint, format, test
 
-.PHONY: lint
-lint: ## golangci-lint run
+.PHONY: install-quality-python-deps
+install-quality-python-deps: $(QUALITY_PY_DEPS_STAMP) ## Install pinned Python quality tools
+
+$(QUALITY_PY_DEPS_STAMP): $(QUALITY_PY_REQUIREMENTS)
+	@echo "Installing Python quality tools..."
+	$(PYTHON) -m venv $(QUALITY_VENV)
+	$(QUALITY_PYTHON) -m pip install --disable-pip-version-check -r $(QUALITY_PY_REQUIREMENTS)
+	@touch $(QUALITY_PY_DEPS_STAMP)
+
+.PHONY: lint lint-go
+lint: lint-go lint-sql ## Run Go and SQL linters
+
+lint-go: ## Run golangci-lint
 	golangci-lint run ./...
 
-.PHONY: lint-fix
-lint-fix: ## golangci-lint run --fix
+.PHONY: lint-fix lint-go-fix
+lint-fix: lint-go-fix lint-sql-fix ## Auto-fix Go and SQL queries, then lint all SQL
+
+lint-go-fix: ## Auto-fix Go lint findings
 	golangci-lint run --fix ./...
+
+.PHONY: lint-sql
+lint-sql: install-quality-python-deps ## Lint migrations and sqlc queries
+	$(QUALITY_PYTHON) -m sqlfluff lint --config .sqlfluff db/migrations db/queries
+
+# Applied migrations are immutable. Keep the fixer hard-scoped to queries.
+.PHONY: lint-sql-fix
+lint-sql-fix: install-quality-python-deps ## Auto-fix queries, then lint queries and immutable migrations
+	$(QUALITY_PYTHON) -m sqlfluff fix --config .sqlfluff db/queries
+	$(QUALITY_PYTHON) -m sqlfluff lint --config .sqlfluff db/migrations db/queries
 
 .PHONY: fmt
 fmt: ## golangci-lint fmt

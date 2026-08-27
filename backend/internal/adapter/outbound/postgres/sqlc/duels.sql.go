@@ -107,7 +107,7 @@ WHERE status = 'active'
     player1_id = $1
     OR player2_id = $1
   )
-LIMIT 1
+/* Domain invariant: at most one active duel exists per player. */ /* noqa: AM09 */ LIMIT 1
 `
 
 func (q *Queries) GetActiveDuelByPlayerID(ctx context.Context, player1ID uuid.UUID) (Duel, error) {
