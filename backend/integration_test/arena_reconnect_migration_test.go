@@ -135,6 +135,85 @@ func TestArenaReconnectMigration(t *testing.T) {
 	assertArenaReconnectCAS(t, ctx, fixture)
 }
 
+func TestArenaReconnectMigrationResumeCAS(t *testing.T) {
+	ctx := context.Background()
+	resetArenaMigrationTables(t)
+	t.Cleanup(func() { resetArenaMigrationTables(t) })
+
+	fixture := createArenaReconnectMigrationFixture(t, ctx)
+	assertArenaPauseResumeRejected(
+		t,
+		ctx,
+		fixture.gamePauseID,
+		fixture.gamePauseRevisionID,
+		fixture.pausedAt.Add(time.Second),
+		"current resume decision",
+	)
+
+	insertArenaResumeDecision(
+		t,
+		ctx,
+		fixture,
+		fixture.gamePauseID,
+		1,
+		nil,
+		nil,
+		"resume",
+		fixture.pausedAt.Add(time.Second),
+	)
+	_, _ = disconnectArenaParticipant(
+		t,
+		ctx,
+		fixture,
+		fixture.draft.participantIDs[0],
+		fixture.pausedAt.Add(2*time.Second),
+		2*time.Minute,
+	)
+	assertArenaPauseResumeRejected(
+		t,
+		ctx,
+		fixture.gamePauseID,
+		fixture.gamePauseRevisionID,
+		fixture.pausedAt.Add(3*time.Second),
+		"current reconnect evidence",
+	)
+
+	reconnectedAt := fixture.pausedAt.Add(4 * time.Second)
+	_, err := sharedPool.Exec(ctx, `
+		UPDATE arena_presence_states
+		SET state = 'connected',
+			presence_epoch = presence_epoch + 1,
+			revision = revision + 1,
+			connected_at = $3,
+			disconnected_at = NULL,
+			updated_at = $3
+		WHERE series_id = $1 AND participant_id = $2`,
+		fixture.draft.seriesID,
+		fixture.draft.participantIDs[0],
+		reconnectedAt,
+	)
+	require.NoError(t, err)
+	insertArenaResumeDecision(
+		t,
+		ctx,
+		fixture,
+		fixture.gamePauseID,
+		2,
+		nil,
+		nil,
+		"resume",
+		reconnectedAt,
+	)
+	assertArenaPauseResumeRejected(
+		t,
+		ctx,
+		fixture.gamePauseID,
+		fixture.gamePauseRevisionID,
+		fixture.pausedAt.Add(5*time.Second),
+		"current reconnect evidence",
+	)
+}
+
 func TestArenaReconnectMigrationCASLocks(t *testing.T) {
 	ctx := context.Background()
 
@@ -276,6 +355,87 @@ func TestArenaReconnectMigrationCASLocks(t *testing.T) {
 		)
 		require.ErrorContains(t, err, "lock timeout")
 	})
+
+	t.Run("pause resume locks live presence", func(t *testing.T) {
+		resetArenaMigrationTables(t)
+		t.Cleanup(func() { resetArenaMigrationTables(t) })
+
+		fixture := createArenaReconnectMigrationFixture(t, ctx)
+		insertArenaResumeDecision(
+			t,
+			ctx,
+			fixture,
+			fixture.gamePauseID,
+			1,
+			nil,
+			nil,
+			"resume",
+			fixture.pausedAt,
+		)
+
+		lockTx, err := sharedPool.Begin(ctx)
+		require.NoError(t, err)
+		defer func() { _ = lockTx.Rollback(ctx) }()
+		_, err = lockTx.Exec(ctx, `
+			SELECT 1
+			FROM arena_presence_states
+			WHERE series_id = $1 AND participant_id = $2
+			FOR NO KEY UPDATE`, fixture.draft.seriesID, fixture.draft.participantIDs[0])
+		require.NoError(t, err)
+
+		probeTx := beginArenaReconnectLockProbe(t, ctx)
+		defer func() { _ = probeTx.Rollback(ctx) }()
+		_, err = probeTx.Exec(ctx, `
+			UPDATE arena_pauses
+			SET state = 'resumed',
+				current_revision_id = $2,
+				revision = revision + 1,
+				resolved_at = $3,
+				updated_at = $3
+			WHERE id = $1`,
+			fixture.gamePauseID,
+			uuid.New(),
+			fixture.pausedAt.Add(time.Second),
+		)
+		require.ErrorContains(t, err, "lock timeout")
+	})
+}
+
+func assertArenaPauseResumeRejected(
+	t testing.TB,
+	ctx context.Context,
+	pauseID uuid.UUID,
+	previousRevisionID uuid.UUID,
+	resumedAt time.Time,
+	expected string,
+) {
+	t.Helper()
+
+	tx, err := sharedPool.Begin(ctx)
+	require.NoError(t, err)
+	defer func() { _ = tx.Rollback(ctx) }()
+	revisionID := uuid.New()
+	_, err = tx.Exec(ctx, `
+		INSERT INTO arena_pause_revisions (
+			id, pause_id, previous_revision_id, revision_number,
+			state, transition_reason, created_at
+		)
+		VALUES ($1, $2, $3, 2, 'resumed', 'presence restored', $4)`,
+		revisionID,
+		pauseID,
+		previousRevisionID,
+		resumedAt,
+	)
+	require.NoError(t, err)
+	_, err = tx.Exec(ctx, `
+		UPDATE arena_pauses
+		SET state = 'resumed',
+			current_revision_id = $2,
+			revision = revision + 1,
+			resolved_at = $3,
+			updated_at = $3
+		WHERE id = $1`, pauseID, revisionID, resumedAt)
+	require.ErrorContains(t, err, expected)
 }
 
 func beginArenaReconnectLockProbe(t testing.TB, ctx context.Context) pgx.Tx {
