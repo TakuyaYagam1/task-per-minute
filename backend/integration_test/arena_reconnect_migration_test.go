@@ -214,8 +214,108 @@ func TestArenaReconnectMigrationResumeCAS(t *testing.T) {
 	)
 }
 
+func TestArenaReconnectMigrationIntervalPauseIntegrity(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("rejects interval after Game pause resolution", func(t *testing.T) {
+		resetArenaMigrationTables(t)
+		t.Cleanup(func() { resetArenaMigrationTables(t) })
+
+		fixture := createArenaReconnectMigrationFixture(t, ctx)
+		insertArenaResumeDecision(
+			t,
+			ctx,
+			fixture,
+			fixture.gamePauseID,
+			1,
+			nil,
+			nil,
+			"resume",
+			fixture.pausedAt,
+		)
+		resumeArenaMigrationPause(t, ctx, fixture, true, fixture.pausedAt.Add(time.Second))
+		assertArenaReconnectIntervalRejected(
+			t,
+			ctx,
+			fixture,
+			fixture.gamePauseID,
+			fixture.pausedAt.Add(2*time.Second),
+		)
+	})
+
+	t.Run("rejects interval outside Game pause scope", func(t *testing.T) {
+		resetArenaMigrationTables(t)
+		t.Cleanup(func() { resetArenaMigrationTables(t) })
+
+		fixture := createArenaReconnectMigrationFixture(t, ctx)
+		assertArenaReconnectIntervalRejected(
+			t,
+			ctx,
+			fixture,
+			fixture.rootPauseID,
+			fixture.pausedAt.Add(time.Second),
+		)
+	})
+}
+
 func TestArenaReconnectMigrationCASLocks(t *testing.T) {
 	ctx := context.Background()
+
+	t.Run("interval creation locks owning pause", func(t *testing.T) {
+		resetArenaMigrationTables(t)
+		t.Cleanup(func() { resetArenaMigrationTables(t) })
+
+		fixture := createArenaReconnectMigrationFixture(t, ctx)
+		participantID := fixture.draft.participantIDs[0]
+		disconnectedAt := fixture.pausedAt.Add(time.Second)
+		_, err := sharedPool.Exec(ctx, `
+			UPDATE arena_presence_states
+			SET state = 'disconnected',
+				presence_epoch = presence_epoch + 1,
+				revision = revision + 1,
+				disconnected_at = $3,
+				updated_at = $3
+			WHERE series_id = $1 AND participant_id = $2`,
+			fixture.draft.seriesID,
+			participantID,
+			disconnectedAt,
+		)
+		require.NoError(t, err)
+
+		lockTx, err := sharedPool.Begin(ctx)
+		require.NoError(t, err)
+		defer func() { _ = lockTx.Rollback(ctx) }()
+		_, err = lockTx.Exec(ctx, `
+			SELECT 1
+			FROM arena_pauses
+			WHERE id = $1
+			FOR NO KEY UPDATE`, fixture.gamePauseID)
+		require.NoError(t, err)
+
+		probeTx := beginArenaReconnectLockProbe(t, ctx)
+		defer func() { _ = probeTx.Rollback(ctx) }()
+		_, err = probeTx.Exec(ctx, `
+			INSERT INTO arena_reconnect_intervals (
+				id, pause_id, roster_id, series_id, game_attempt_id,
+				participant_id, presence_epoch, interval_number,
+				opened_at, deadline_at, created_at, updated_at
+			)
+			VALUES (
+				$1, $2, $3, $4, $5,
+				$6, 2, 1,
+				$7, $8, $7, $7
+			)`,
+			uuid.New(),
+			fixture.gamePauseID,
+			fixture.draft.rosterID,
+			fixture.draft.seriesID,
+			fixture.attemptID,
+			participantID,
+			disconnectedAt,
+			disconnectedAt.Add(2*time.Minute),
+		)
+		require.ErrorContains(t, err, "lock timeout")
+	})
 
 	t.Run("interval creation locks live presence", func(t *testing.T) {
 		resetArenaMigrationTables(t)
@@ -399,6 +499,56 @@ func TestArenaReconnectMigrationCASLocks(t *testing.T) {
 		)
 		require.ErrorContains(t, err, "lock timeout")
 	})
+}
+
+func assertArenaReconnectIntervalRejected(
+	t testing.TB,
+	ctx context.Context,
+	fixture arenaReconnectMigrationFixture,
+	pauseID uuid.UUID,
+	disconnectedAt time.Time,
+) {
+	t.Helper()
+
+	participantID := fixture.draft.participantIDs[0]
+	_, err := sharedPool.Exec(ctx, `
+		UPDATE arena_presence_states
+		SET state = 'disconnected',
+			presence_epoch = presence_epoch + 1,
+			revision = revision + 1,
+			disconnected_at = $3,
+			updated_at = $3
+		WHERE series_id = $1 AND participant_id = $2`,
+		fixture.draft.seriesID,
+		participantID,
+		disconnectedAt,
+	)
+	require.NoError(t, err)
+
+	tx, err := sharedPool.Begin(ctx)
+	require.NoError(t, err)
+	defer func() { _ = tx.Rollback(ctx) }()
+	_, err = tx.Exec(ctx, `
+		INSERT INTO arena_reconnect_intervals (
+			id, pause_id, roster_id, series_id, game_attempt_id,
+			participant_id, presence_epoch, interval_number,
+			opened_at, deadline_at, created_at, updated_at
+		)
+		VALUES (
+			$1, $2, $3, $4, $5,
+			$6, 2, 1,
+			$7, $8, $7, $7
+		)`,
+		uuid.New(),
+		pauseID,
+		fixture.draft.rosterID,
+		fixture.draft.seriesID,
+		fixture.attemptID,
+		participantID,
+		disconnectedAt,
+		disconnectedAt.Add(2*time.Minute),
+	)
+	require.ErrorContains(t, err, "active Game pause")
 }
 
 func assertArenaPauseResumeRejected(
@@ -768,6 +918,12 @@ func disconnectArenaParticipant(
 	tx, err := sharedPool.Begin(ctx)
 	require.NoError(t, err)
 	defer func() { _ = tx.Rollback(ctx) }()
+	_, err = tx.Exec(ctx, `
+		SELECT 1
+		FROM arena_pauses
+		WHERE id = $1
+		FOR UPDATE`, fixture.gamePauseID)
+	require.NoError(t, err)
 	_, err = tx.Exec(ctx, `
 		UPDATE arena_presence_states
 		SET state = 'disconnected',
