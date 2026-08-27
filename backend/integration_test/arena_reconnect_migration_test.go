@@ -273,9 +273,25 @@ func TestArenaReconnectMigrationIntervalPauseIntegrity(t *testing.T) {
 		assertArenaPauseCancellationRejected(
 			t,
 			ctx,
-			fixture,
+			fixture.gamePauseID,
+			fixture.gamePauseRevisionID,
 			fixture.pausedAt.Add(2*time.Second),
 			"closed reconnect intervals",
+		)
+	})
+
+	t.Run("rejects cancellation with active child pause", func(t *testing.T) {
+		resetArenaMigrationTables(t)
+		t.Cleanup(func() { resetArenaMigrationTables(t) })
+
+		fixture := createArenaReconnectMigrationFixture(t, ctx)
+		assertArenaPauseCancellationRejected(
+			t,
+			ctx,
+			fixture.rootPauseID,
+			fixture.rootPauseRevisionID,
+			fixture.pausedAt.Add(time.Second),
+			"active descendants",
 		)
 	})
 }
@@ -718,7 +734,8 @@ func assertArenaPauseResumeRejected(
 func assertArenaPauseCancellationRejected(
 	t testing.TB,
 	ctx context.Context,
-	fixture arenaReconnectMigrationFixture,
+	pauseID uuid.UUID,
+	previousRevisionID uuid.UUID,
 	cancelledAt time.Time,
 	expected string,
 ) {
@@ -735,8 +752,8 @@ func assertArenaPauseCancellationRejected(
 		)
 		VALUES ($1, $2, $3, 2, 'cancelled', 'operator cancel', $4)`,
 		revisionID,
-		fixture.gamePauseID,
-		fixture.gamePauseRevisionID,
+		pauseID,
+		previousRevisionID,
 		cancelledAt,
 	)
 	require.NoError(t, err)
@@ -747,7 +764,7 @@ func assertArenaPauseCancellationRejected(
 			revision = revision + 1,
 			resolved_at = $3,
 			updated_at = $3
-		WHERE id = $1`, fixture.gamePauseID, revisionID, cancelledAt)
+		WHERE id = $1`, pauseID, revisionID, cancelledAt)
 	require.ErrorContains(t, err, expected)
 }
 
