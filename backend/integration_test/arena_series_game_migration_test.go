@@ -274,16 +274,16 @@ func assertArenaSeriesResultConstraints(
 	t.Helper()
 	finishedAt := createdAt.Add(time.Minute)
 
+	// TASK-010 owns the valid terminal settlement path because current result
+	// and score pointers now require atomic retained evidence. This assertion
+	// keeps the earlier migration focused on the valid non-terminal shape.
 	_, err := sharedPool.Exec(ctx, `
 		INSERT INTO arena_series (
 			tournament_id, roster_id, first_participant_id, second_participant_id,
-			format, state, first_participant_wins, second_participant_wins,
-			winner_id, current_score_revision_id, current_result_revision_id,
-			created_at, updated_at, started_at, finished_at
+			format, created_at, updated_at
 		)
-		VALUES ($1, $2, $3, $4, 'bo3', 'completed', 2, 1, $3, $5, $6, $7, $8, $7, $8)`,
-		tournamentID, rosterID, participantIDs[0], participantIDs[1],
-		uuid.New(), uuid.New(), createdAt, finishedAt)
+		VALUES ($1, $2, $3, $4, 'bo3', $5, $5)`,
+		tournamentID, rosterID, participantIDs[0], participantIDs[1], createdAt)
 	require.NoError(t, err)
 
 	_, err = sharedPool.Exec(ctx, `
