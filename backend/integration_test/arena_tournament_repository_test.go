@@ -466,6 +466,90 @@ func TestArenaTournamentUseCases(t *testing.T) {
 	require.Empty(t, reservations)
 }
 
+func TestArenaTournamentLifecycleUseCase(t *testing.T) {
+	ctx := context.Background()
+	resetArenaMigrationTables(t)
+	t.Cleanup(func() { resetArenaMigrationTables(t) })
+	fixture := newArenaRepositoryFixture()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	useCase := arena.NewTournamentLifecycleUseCase(fixture.tournaments, fixedArenaIntegrationClock{now: now})
+
+	first, _ := createArenaRepositoryTournament(t, ctx, fixture, now.Add(-2*time.Minute))
+	second, _ := createArenaRepositoryTournament(t, ctx, fixture, now.Add(-time.Minute))
+	for _, id := range []uuid.UUID{first.ID, second.ID} {
+		registration, changed, err := useCase.Transition(ctx, arena.TournamentLifecycleCommand{
+			TournamentID: id, ExpectedRevision: 1, NextState: domain.ArenaTournamentStateRegistration,
+		})
+		require.NoError(t, err)
+		require.True(t, changed)
+		_, changed, err = useCase.Transition(ctx, arena.TournamentLifecycleCommand{
+			TournamentID: id, ExpectedRevision: registration.Revision,
+			NextState: domain.ArenaTournamentStateRosterLocked,
+		})
+		require.NoError(t, err)
+		require.True(t, changed)
+	}
+
+	type startResult struct {
+		id      uuid.UUID
+		record  *arena.TournamentRecord
+		changed bool
+		err     error
+	}
+	start := make(chan struct{})
+	results := make(chan startResult, 2)
+	for _, id := range []uuid.UUID{first.ID, second.ID} {
+		go func() {
+			<-start
+			record, changed, err := useCase.Transition(ctx, arena.TournamentLifecycleCommand{
+				TournamentID: id, ExpectedRevision: 3, NextState: domain.ArenaTournamentStateSwiss,
+			})
+			results <- startResult{id: id, record: record, changed: changed, err: err}
+		}()
+	}
+	close(start)
+	concurrent := []startResult{<-results, <-results}
+	var winner, loser startResult
+	for _, result := range concurrent {
+		if result.changed {
+			winner = result
+		} else {
+			loser = result
+		}
+	}
+	require.NotNil(t, winner.record)
+	require.NoError(t, winner.err)
+	require.ErrorIs(t, loser.err, domain.ErrConflict)
+	require.False(t, loser.changed)
+
+	retried, changed, err := useCase.Transition(ctx, arena.TournamentLifecycleCommand{
+		TournamentID: winner.id, ExpectedRevision: 3, NextState: domain.ArenaTournamentStateSwiss,
+	})
+	require.NoError(t, err)
+	require.False(t, changed)
+	require.Equal(t, winner.id, retried.ID)
+
+	playoffs, changed, err := useCase.Transition(ctx, arena.TournamentLifecycleCommand{
+		TournamentID: winner.id, ExpectedRevision: winner.record.Revision,
+		NextState: domain.ArenaTournamentStatePlayoffs,
+	})
+	require.NoError(t, err)
+	require.True(t, changed)
+	_, changed, err = useCase.Transition(ctx, arena.TournamentLifecycleCommand{
+		TournamentID: winner.id, ExpectedRevision: playoffs.Revision,
+		NextState: domain.ArenaTournamentStateCompleted,
+	})
+	require.NoError(t, err)
+	require.True(t, changed)
+
+	started, changed, err := useCase.Transition(ctx, arena.TournamentLifecycleCommand{
+		TournamentID: loser.id, ExpectedRevision: 3, NextState: domain.ArenaTournamentStateSwiss,
+	})
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.Equal(t, loser.id, started.ID)
+}
+
 type fixedArenaIntegrationClock struct {
 	now time.Time
 }

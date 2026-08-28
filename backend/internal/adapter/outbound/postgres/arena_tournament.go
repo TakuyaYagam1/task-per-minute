@@ -27,9 +27,10 @@ type ArenaTournamentPostgres struct {
 }
 
 var (
-	_ arena.TournamentRepository = (*ArenaTournamentPostgres)(nil)
-	_ arena.AttendanceRepository = (*ArenaTournamentPostgres)(nil)
-	_ arena.RosterLockRepository = (*ArenaTournamentPostgres)(nil)
+	_ arena.TournamentRepository          = (*ArenaTournamentPostgres)(nil)
+	_ arena.AttendanceRepository          = (*ArenaTournamentPostgres)(nil)
+	_ arena.RosterLockRepository          = (*ArenaTournamentPostgres)(nil)
+	_ arena.TournamentLifecycleRepository = (*ArenaTournamentPostgres)(nil)
 )
 
 type ArenaTournamentRecord struct {
@@ -148,6 +149,47 @@ func (r *ArenaTournamentPostgres) ListTournaments(ctx context.Context) ([]arena.
 		out = append(out, *record)
 	}
 	return out, nil
+}
+
+func (r *ArenaTournamentPostgres) TransitionTournament(
+	ctx context.Context,
+	in arena.TournamentLifecycleTransitionInput,
+) (*arena.TournamentRecord, bool, error) {
+	if r == nil || r.tx == nil {
+		return nil, false, domain.ErrValidation
+	}
+	transition := ArenaTournamentTransitionInput{
+		ID: in.TournamentID, ExpectedRevision: in.ExpectedRevision, ExpectedState: in.ExpectedState,
+		NextState: in.NextState, PausedFromState: in.PausedFromState, UpdatedAt: in.TransitionedAt,
+		StartedAt: in.StartedAt, FinishedAt: in.FinishedAt,
+	}
+	if err := validateTournamentTransitionInput(transition); err != nil {
+		return nil, false, err
+	}
+	current := domain.ArenaTournament{State: in.ExpectedState}
+	if !current.CanTransitionTo(in.NextState) {
+		return nil, false, domain.ErrValidation
+	}
+
+	var record *arena.TournamentRecord
+	changed := false
+	err := r.tx.Do(ctx, func(txCtx context.Context) error {
+		_, transitionChanged, err := r.Transition(txCtx, transition)
+		if err != nil || !transitionChanged {
+			return err
+		}
+		changed = true
+		row, err := r.tx.Querier(txCtx).GetArenaTournamentSummary(txCtx, in.TournamentID)
+		if err != nil {
+			return fmt.Errorf("load transitioned tournament: %w", err)
+		}
+		record, err = arenaTournamentSummaryRecord(row)
+		return err
+	})
+	if err != nil {
+		return nil, false, err
+	}
+	return record, changed, nil
 }
 
 func (r *ArenaTournamentPostgres) InviteParticipant(

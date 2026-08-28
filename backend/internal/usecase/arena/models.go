@@ -132,3 +132,90 @@ type RosterUnlockCommand struct {
 	ActorID          uuid.UUID
 	Reason           string
 }
+
+type TournamentLifecycleCommand struct {
+	TournamentID     uuid.UUID
+	ExpectedRevision int64
+	NextState        domain.ArenaTournamentState
+}
+
+type TournamentLifecycleTransitionInput struct {
+	TournamentID     uuid.UUID
+	ExpectedRevision int64
+	ExpectedState    domain.ArenaTournamentState
+	NextState        domain.ArenaTournamentState
+	PausedFromState  *domain.ArenaTournamentState
+	TransitionedAt   time.Time
+	StartedAt        *time.Time
+	FinishedAt       *time.Time
+}
+
+type TournamentCancellationCommand struct {
+	TournamentID     uuid.UUID
+	ExpectedRevision int64
+	CommandID        uuid.UUID
+	ActorID          uuid.UUID
+	Reason           string
+	Confirmed        bool
+}
+
+type TournamentCancellationInput struct {
+	TournamentID     uuid.UUID
+	ExpectedRevision int64
+	ExpectedState    domain.ArenaTournamentState
+	CommandID        uuid.UUID
+	ActorID          uuid.UUID
+	Reason           string
+	CancelledAt      time.Time
+}
+
+type TournamentCancellationRecord struct {
+	Tournament    TournamentRecord
+	CommandID     uuid.UUID
+	ActorID       uuid.UUID
+	Reason        string
+	AuditEventID  uuid.UUID
+	OutboxEventID uuid.UUID
+	CancelledAt   time.Time
+	ChampionID    *uuid.UUID
+}
+
+type TournamentTechnicalPauseCommand struct {
+	TournamentID     uuid.UUID
+	ExpectedRevision int64
+	CommandID        uuid.UUID
+	PauseID          uuid.UUID
+	ActorID          uuid.UUID
+	Reason           string
+	Confirmed        bool
+}
+
+type TournamentPauseAdmission struct {
+	TournamentID     uuid.UUID
+	GraphRevision    int64
+	ExpectedChildren int
+	ObservedChildren int
+	ActiveGolden     bool
+	Complete         bool
+}
+
+type TournamentTechnicalPauseInput struct {
+	TournamentID     uuid.UUID
+	ExpectedRevision int64
+	ExpectedState    domain.ArenaTournamentState
+	GraphRevision    int64
+	CommandID        uuid.UUID
+	PauseID          uuid.UUID
+	ActorID          uuid.UUID
+	Reason           string
+	PausedAt         time.Time
+}
+
+type TournamentTechnicalPauseRecord struct {
+	Tournament TournamentRecord
+	CommandID  uuid.UUID
+	PauseID    uuid.UUID
+	ActorID    uuid.UUID
+	Reason     string
+	PausedAt   time.Time
+}
