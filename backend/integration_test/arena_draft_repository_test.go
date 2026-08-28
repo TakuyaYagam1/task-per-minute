@@ -1,0 +1,157 @@
+//go:build integration
+
+package integration_test
+
+import (
+	"context"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/require"
+
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
+)
+
+func TestArenaDraftRepositoryPersistsOneImmutableRevisionChain(t *testing.T) {
+	ctx := context.Background()
+	resetArenaMigrationTables(t)
+	t.Cleanup(func() { resetArenaMigrationTables(t) })
+
+	tournamentID := createArenaMigrationTournament(t, ctx)
+	rosterID := createArenaMigrationRoster(t, ctx, tournamentID)
+	players := createArenaMigrationPlayers(t, ctx, 2)
+	participants := createSwissMigrationParticipants(t, ctx, rosterID, players)
+	seriesID := createArenaMigrationSeries(t, ctx, tournamentID, rosterID, participants, "bo1")
+	baseTime := time.Now().UTC().Add(-time.Minute).Truncate(time.Microsecond)
+	repository := postgres.NewArenaDraftPostgres(postgres.NewTxManager(sharedPool))
+
+	draftID := uuid.New()
+	decision, err := domain.NewArenaDecisionEvidence(
+		uuid.New(), domain.ArenaDecisionPurposeDraftOrder, domain.ArenaDecisionAlgorithmV1,
+		[]string{participants[0].String(), participants[1].String()}, draftID, baseTime,
+	)
+	require.NoError(t, err)
+	serviceEpoch := uuid.New()
+	initialRevisionID := uuid.New()
+	draft, err := repository.Create(ctx, postgres.ArenaDraftCreateInput{
+		ID: draftID, SeriesID: seriesID, RosterID: rosterID, CategoryRevisionID: uuid.New(),
+		CategoryRevision: 1, SourcePoolRevision: uuid.New(), FirstParticipantID: participants[0],
+		SecondParticipantID: participants[1], Format: domain.ArenaSeriesFormatBO1,
+		Pool:              []domain.Category{domain.CategoryWeb, domain.CategoryCrypto, domain.CategoryPwn},
+		InitialRevisionID: initialRevisionID, CommandID: uuid.New(), ServiceEpoch: serviceEpoch,
+		AbsoluteDeadline: baseTime.Add(15 * time.Second), DecisionEvidence: decision, CreatedAt: baseTime,
+	})
+	require.NoError(t, err)
+	require.Len(t, draft.Revisions, 1)
+	require.EqualValues(t, 1, draft.Revisions[0].Revision)
+
+	expected := postgres.ArenaDraftRevisionExpectation{ID: initialRevisionID, Revision: 1, ServiceEpoch: serviceEpoch}
+	type appendResult struct {
+		record  *postgres.ArenaDraftRevisionRecord
+		changed bool
+		err     error
+	}
+	start := make(chan struct{})
+	results := make(chan appendResult, 2)
+	var workers sync.WaitGroup
+	for index, category := range []domain.Category{domain.CategoryWeb, domain.CategoryCrypto} {
+		index, category := index, category
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			<-start
+			deadline := baseTime.Add(30 * time.Second)
+			record, changed, appendErr := repository.AppendRevision(ctx, draftID, expected, postgres.ArenaDraftRevisionInput{
+				ID: uuid.New(), CommandID: uuid.New(), ServiceEpoch: serviceEpoch,
+				State: postgres.ArenaDraftPersistenceStateActive, TurnNumber: 2,
+				CurrentActorID: &participants[1], CurrentAction: draftActionPointer(domain.ArenaDraftActionBan),
+				AbsoluteDeadline: &deadline, CreatedAt: baseTime.Add(time.Duration(index+1) * time.Second),
+				Action: &postgres.ArenaDraftActionInput{
+					ID: uuid.New(), TurnNumber: 1, ActorID: participants[0], Action: domain.ArenaDraftActionBan,
+					Category: category, ScheduledDeadline: baseTime.Add(15 * time.Second),
+					OccurredAt: baseTime.Add(time.Second),
+				},
+			})
+			results <- appendResult{record: record, changed: changed, err: appendErr}
+		}()
+	}
+	close(start)
+	workers.Wait()
+	close(results)
+
+	var winningRevision *postgres.ArenaDraftRevisionRecord
+	winners := 0
+	for item := range results {
+		require.NoError(t, item.err)
+		if item.changed {
+			winners++
+			winningRevision = item.record
+		}
+	}
+	require.Equal(t, 1, winners)
+	require.NotNil(t, winningRevision)
+
+	loaded, err := repository.Get(ctx, draftID)
+	require.NoError(t, err)
+	require.Len(t, loaded.Revisions, 2)
+	require.Len(t, loaded.Actions, 1)
+	require.EqualValues(t, 1, loaded.Actions[0].TurnNumber)
+	require.Equal(t, participants[0], loaded.Actions[0].ActorID)
+	require.Equal(t, participants[1], *loaded.Revisions[1].CurrentActorID)
+
+	selected := domain.CategoryPwn
+	if loaded.Actions[0].Category == selected {
+		selected = domain.CategoryWeb
+	}
+	completed, changed, err := repository.AppendRevision(
+		ctx,
+		draftID,
+		postgres.ArenaDraftRevisionExpectation{
+			ID: winningRevision.ID, Revision: winningRevision.Revision, ServiceEpoch: serviceEpoch,
+		},
+		postgres.ArenaDraftRevisionInput{
+			ID: uuid.New(), CommandID: uuid.New(), ServiceEpoch: serviceEpoch,
+			State: postgres.ArenaDraftPersistenceStateCompleted, TurnNumber: 2,
+			SelectedCategories: []domain.Category{selected}, CreatedAt: baseTime.Add(3 * time.Second),
+			Action: &postgres.ArenaDraftActionInput{
+				ID: uuid.New(), TurnNumber: 2, ActorID: participants[1], Action: domain.ArenaDraftActionBan,
+				Category:          otherDraftBanCategory(loaded.Actions[0].Category, selected),
+				ScheduledDeadline: baseTime.Add(30 * time.Second), OccurredAt: baseTime.Add(2 * time.Second),
+			},
+		},
+	)
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.EqualValues(t, 3, completed.Revision)
+
+	_, changed, err = repository.AppendRevision(ctx, draftID, expected, postgres.ArenaDraftRevisionInput{
+		ID: uuid.New(), CommandID: uuid.New(), ServiceEpoch: serviceEpoch,
+		State: postgres.ArenaDraftPersistenceStateCompleted, TurnNumber: 2,
+		SelectedCategories: []domain.Category{selected}, CreatedAt: baseTime.Add(4 * time.Second),
+	})
+	require.NoError(t, err)
+	require.False(t, changed, "stale revision must not append a competing history")
+
+	loaded, err = repository.Get(ctx, draftID)
+	require.NoError(t, err)
+	require.Len(t, loaded.Revisions, 3)
+	require.Len(t, loaded.Actions, 2)
+	require.Equal(t, postgres.ArenaDraftPersistenceStateCompleted, loaded.Revisions[2].State)
+	require.Equal(t, []domain.Category{selected}, loaded.Revisions[2].SelectedCategories)
+}
+
+func draftActionPointer(value domain.ArenaDraftActionType) *domain.ArenaDraftActionType {
+	return &value
+}
+
+func otherDraftBanCategory(first, selected domain.Category) domain.Category {
+	for _, category := range []domain.Category{domain.CategoryWeb, domain.CategoryCrypto, domain.CategoryPwn} {
+		if category != first && category != selected {
+			return category
+		}
+	}
+	return ""
+}
