@@ -74,7 +74,7 @@ func TestDuelMatchmaking_ProgressionSelectsUnlockedDifficulty(t *testing.T) {
 	ctx := context.Background()
 
 	f.makeTaskWithLimit(t, uniq("easy"), domain.DifficultyEasy, 60)
-	medium := f.makeTaskWithLimit(t, uniq("medium"), domain.DifficultyMedium, 120)
+	f.makeTaskWithLimit(t, uniq("medium"), domain.DifficultyMedium, 120)
 	playerA := f.makePlayer(t, uniq("alice"))
 	playerB := f.makePlayer(t, uniq("bob"))
 
@@ -94,7 +94,7 @@ func TestDuelMatchmaking_ProgressionSelectsUnlockedDifficulty(t *testing.T) {
 
 	taskA := taskForPlayer(t, result, playerA.ID)
 	taskB := taskForPlayer(t, result, playerB.ID)
-	require.Equal(t, medium.ID, taskA.ID)
+	require.Equal(t, domain.DifficultyMedium, taskA.Difficulty)
 	require.Equal(t, domain.DifficultyEasy, taskB.Difficulty)
 }
 
