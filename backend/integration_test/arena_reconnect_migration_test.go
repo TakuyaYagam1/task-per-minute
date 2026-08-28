@@ -294,6 +294,79 @@ func TestArenaReconnectMigrationIntervalPauseIntegrity(t *testing.T) {
 			"active descendants",
 		)
 	})
+
+	t.Run("rejects interval expiry before deadline", func(t *testing.T) {
+		resetArenaMigrationTables(t)
+		t.Cleanup(func() { resetArenaMigrationTables(t) })
+
+		fixture := createArenaReconnectMigrationFixture(t, ctx)
+		intervalID, deadline := disconnectArenaParticipant(
+			t,
+			ctx,
+			fixture,
+			fixture.draft.participantIDs[0],
+			fixture.pausedAt.Add(time.Second),
+			2*time.Minute,
+		)
+		closedAt := deadline.Add(-time.Second)
+		_, err := sharedPool.Exec(ctx, `
+			UPDATE arena_reconnect_intervals
+			SET state = 'expired',
+				closed_at = $2,
+				revision = revision + 1,
+				updated_at = $2
+			WHERE id = $1`, intervalID, closedAt)
+		require.ErrorContains(t, err, "arena_reconnect_intervals_terminal_time_check")
+	})
+
+	t.Run("rejects interval reconnect after deadline", func(t *testing.T) {
+		resetArenaMigrationTables(t)
+		t.Cleanup(func() { resetArenaMigrationTables(t) })
+
+		fixture := createArenaReconnectMigrationFixture(t, ctx)
+		intervalID, deadline := disconnectArenaParticipant(
+			t,
+			ctx,
+			fixture,
+			fixture.draft.participantIDs[0],
+			fixture.pausedAt.Add(time.Second),
+			2*time.Minute,
+		)
+		closedAt := deadline.Add(time.Second)
+		_, err := sharedPool.Exec(ctx, `
+			UPDATE arena_reconnect_intervals
+			SET state = 'reconnected',
+				closed_at = $2,
+				revision = revision + 1,
+				updated_at = $2
+			WHERE id = $1`, intervalID, closedAt)
+		require.ErrorContains(t, err, "arena_reconnect_intervals_terminal_time_check")
+	})
+
+	t.Run("rejects interval close after update evidence", func(t *testing.T) {
+		resetArenaMigrationTables(t)
+		t.Cleanup(func() { resetArenaMigrationTables(t) })
+
+		fixture := createArenaReconnectMigrationFixture(t, ctx)
+		intervalID, _ := disconnectArenaParticipant(
+			t,
+			ctx,
+			fixture,
+			fixture.draft.participantIDs[0],
+			fixture.pausedAt.Add(time.Second),
+			2*time.Minute,
+		)
+		updatedAt := fixture.pausedAt.Add(2 * time.Second)
+		closedAt := updatedAt.Add(time.Second)
+		_, err := sharedPool.Exec(ctx, `
+			UPDATE arena_reconnect_intervals
+			SET state = 'cancelled',
+				closed_at = $2,
+				revision = revision + 1,
+				updated_at = $3
+			WHERE id = $1`, intervalID, closedAt, updatedAt)
+		require.ErrorContains(t, err, "arena_reconnect_intervals_terminal_time_check")
+	})
 }
 
 func TestArenaReconnectMigrationCASLocks(t *testing.T) {
