@@ -61,6 +61,25 @@ SELECT id,
 FROM arena_tournaments
 WHERE id = sqlc.arg(id);
 
+-- name: GetArenaTournamentSummary :one
+SELECT tournament.id,
+    tournament.preset,
+    tournament.state,
+    tournament.paused_from_state,
+    tournament.revision,
+    tournament.created_at,
+    tournament.updated_at,
+    tournament.started_at,
+    tournament.finished_at,
+    roster.id AS roster_id,
+    COUNT(participant.id)::BIGINT AS roster_size
+FROM arena_tournaments AS tournament
+INNER JOIN arena_rosters AS roster ON roster.tournament_id = tournament.id
+LEFT JOIN arena_participants AS participant ON participant.roster_id = roster.id
+WHERE tournament.id = sqlc.arg(id)
+GROUP BY tournament.id,
+    roster.id;
+
 -- name: GetActiveArenaTournament :one
 SELECT id,
     preset,
@@ -87,6 +106,26 @@ SELECT id,
 FROM arena_tournaments
 ORDER BY created_at DESC,
     id;
+
+-- name: ListArenaTournamentSummaries :many
+SELECT tournament.id,
+    tournament.preset,
+    tournament.state,
+    tournament.paused_from_state,
+    tournament.revision,
+    tournament.created_at,
+    tournament.updated_at,
+    tournament.started_at,
+    tournament.finished_at,
+    roster.id AS roster_id,
+    COUNT(participant.id)::BIGINT AS roster_size
+FROM arena_tournaments AS tournament
+INNER JOIN arena_rosters AS roster ON roster.tournament_id = tournament.id
+LEFT JOIN arena_participants AS participant ON participant.roster_id = roster.id
+GROUP BY tournament.id,
+    roster.id
+ORDER BY tournament.created_at DESC,
+    tournament.id;
 
 -- name: UpdateArenaTournamentCAS :one
 UPDATE arena_tournaments
@@ -142,14 +181,17 @@ INSERT INTO arena_participants (
     created_at,
     updated_at
 )
-SELECT sqlc.arg(id),
-    roster.id,
-    sqlc.arg(player_id),
+SELECT sqlc.arg(id) AS participant_id,
+    roster.id AS roster_id,
+    player.id AS player_id,
     sqlc.arg(seed),
     sqlc.arg(attendance),
     sqlc.arg(created_at),
     sqlc.arg(created_at)
 FROM arena_rosters AS roster
+INNER JOIN players AS player
+    ON player.id = sqlc.arg(player_id)
+    AND player.deleted_at IS NULL
 WHERE roster.id = sqlc.arg(roster_id)
     AND roster.locked_at IS NULL
     AND roster.execution_started_at IS NULL
@@ -171,6 +213,30 @@ WHERE participant.id = sqlc.arg(id)
     AND roster.id = participant.roster_id
     AND roster.locked_at IS NULL
     AND roster.execution_started_at IS NULL
+RETURNING participant.id,
+    participant.roster_id,
+    participant.player_id,
+    participant.seed,
+    participant.attendance,
+    participant.created_at,
+    participant.updated_at;
+
+-- name: ReplaceWithdrawnArenaParticipant :one
+UPDATE arena_participants AS participant
+SET id = sqlc.arg(replacement_participant_id),
+    player_id = replacement.id,
+    attendance = 'invited',
+    updated_at = sqlc.arg(replaced_at)
+FROM arena_rosters AS roster,
+    players AS replacement
+WHERE participant.id = sqlc.arg(withdrawn_participant_id)
+    AND participant.roster_id = sqlc.arg(roster_id)
+    AND participant.attendance = 'withdrawn'
+    AND roster.id = participant.roster_id
+    AND roster.locked_at IS NULL
+    AND roster.execution_started_at IS NULL
+    AND replacement.id = sqlc.arg(replacement_player_id)
+    AND replacement.deleted_at IS NULL
 RETURNING participant.id,
     participant.roster_id,
     participant.player_id,

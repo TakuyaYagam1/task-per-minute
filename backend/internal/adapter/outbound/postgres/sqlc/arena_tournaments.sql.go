@@ -196,6 +196,59 @@ func (q *Queries) GetArenaTournament(ctx context.Context, id uuid.UUID) (ArenaTo
 	return i, err
 }
 
+const getArenaTournamentSummary = `-- name: GetArenaTournamentSummary :one
+SELECT tournament.id,
+    tournament.preset,
+    tournament.state,
+    tournament.paused_from_state,
+    tournament.revision,
+    tournament.created_at,
+    tournament.updated_at,
+    tournament.started_at,
+    tournament.finished_at,
+    roster.id AS roster_id,
+    COUNT(participant.id)::BIGINT AS roster_size
+FROM arena_tournaments AS tournament
+INNER JOIN arena_rosters AS roster ON roster.tournament_id = tournament.id
+LEFT JOIN arena_participants AS participant ON participant.roster_id = roster.id
+WHERE tournament.id = $1
+GROUP BY tournament.id,
+    roster.id
+`
+
+type GetArenaTournamentSummaryRow struct {
+	ID              uuid.UUID
+	Preset          string
+	State           string
+	PausedFromState *string
+	Revision        int64
+	CreatedAt       pgtype.Timestamptz
+	UpdatedAt       pgtype.Timestamptz
+	StartedAt       pgtype.Timestamptz
+	FinishedAt      pgtype.Timestamptz
+	RosterID        uuid.UUID
+	RosterSize      int64
+}
+
+func (q *Queries) GetArenaTournamentSummary(ctx context.Context, id uuid.UUID) (GetArenaTournamentSummaryRow, error) {
+	row := q.db.QueryRow(ctx, getArenaTournamentSummary, id)
+	var i GetArenaTournamentSummaryRow
+	err := row.Scan(
+		&i.ID,
+		&i.Preset,
+		&i.State,
+		&i.PausedFromState,
+		&i.Revision,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.RosterID,
+		&i.RosterSize,
+	)
+	return i, err
+}
+
 const insertArenaParticipant = `-- name: InsertArenaParticipant :one
 INSERT INTO arena_participants (
     id,
@@ -206,14 +259,17 @@ INSERT INTO arena_participants (
     created_at,
     updated_at
 )
-SELECT $1,
-    roster.id,
+SELECT $1 AS participant_id,
+    roster.id AS roster_id,
+    player.id AS player_id,
     $2,
     $3,
     $4,
-    $5,
-    $5
+    $4
 FROM arena_rosters AS roster
+INNER JOIN players AS player
+    ON player.id = $5
+    AND player.deleted_at IS NULL
 WHERE roster.id = $6
     AND roster.locked_at IS NULL
     AND roster.execution_started_at IS NULL
@@ -228,20 +284,20 @@ RETURNING id,
 
 type InsertArenaParticipantParams struct {
 	ID         uuid.UUID
-	PlayerID   uuid.UUID
 	Seed       int32
 	Attendance string
 	CreatedAt  pgtype.Timestamptz
+	PlayerID   uuid.UUID
 	RosterID   uuid.UUID
 }
 
 func (q *Queries) InsertArenaParticipant(ctx context.Context, arg InsertArenaParticipantParams) (ArenaParticipant, error) {
 	row := q.db.QueryRow(ctx, insertArenaParticipant,
 		arg.ID,
-		arg.PlayerID,
 		arg.Seed,
 		arg.Attendance,
 		arg.CreatedAt,
+		arg.PlayerID,
 		arg.RosterID,
 	)
 	var i ArenaParticipant
@@ -348,6 +404,73 @@ func (q *Queries) ListArenaReservations(ctx context.Context, tournamentID uuid.N
 			&i.Revision,
 			&i.AcquiredAt,
 			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listArenaTournamentSummaries = `-- name: ListArenaTournamentSummaries :many
+SELECT tournament.id,
+    tournament.preset,
+    tournament.state,
+    tournament.paused_from_state,
+    tournament.revision,
+    tournament.created_at,
+    tournament.updated_at,
+    tournament.started_at,
+    tournament.finished_at,
+    roster.id AS roster_id,
+    COUNT(participant.id)::BIGINT AS roster_size
+FROM arena_tournaments AS tournament
+INNER JOIN arena_rosters AS roster ON roster.tournament_id = tournament.id
+LEFT JOIN arena_participants AS participant ON participant.roster_id = roster.id
+GROUP BY tournament.id,
+    roster.id
+ORDER BY tournament.created_at DESC,
+    tournament.id
+`
+
+type ListArenaTournamentSummariesRow struct {
+	ID              uuid.UUID
+	Preset          string
+	State           string
+	PausedFromState *string
+	Revision        int64
+	CreatedAt       pgtype.Timestamptz
+	UpdatedAt       pgtype.Timestamptz
+	StartedAt       pgtype.Timestamptz
+	FinishedAt      pgtype.Timestamptz
+	RosterID        uuid.UUID
+	RosterSize      int64
+}
+
+func (q *Queries) ListArenaTournamentSummaries(ctx context.Context) ([]ListArenaTournamentSummariesRow, error) {
+	rows, err := q.db.Query(ctx, listArenaTournamentSummaries)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListArenaTournamentSummariesRow{}
+	for rows.Next() {
+		var i ListArenaTournamentSummariesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Preset,
+			&i.State,
+			&i.PausedFromState,
+			&i.Revision,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.StartedAt,
+			&i.FinishedAt,
+			&i.RosterID,
+			&i.RosterSize,
 		); err != nil {
 			return nil, err
 		}
@@ -551,6 +674,60 @@ func (q *Queries) ReleaseArenaReservations(ctx context.Context, tournamentID uui
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const replaceWithdrawnArenaParticipant = `-- name: ReplaceWithdrawnArenaParticipant :one
+UPDATE arena_participants AS participant
+SET id = $1,
+    player_id = replacement.id,
+    attendance = 'invited',
+    updated_at = $2
+FROM arena_rosters AS roster,
+    players AS replacement
+WHERE participant.id = $3
+    AND participant.roster_id = $4
+    AND participant.attendance = 'withdrawn'
+    AND roster.id = participant.roster_id
+    AND roster.locked_at IS NULL
+    AND roster.execution_started_at IS NULL
+    AND replacement.id = $5
+    AND replacement.deleted_at IS NULL
+RETURNING participant.id,
+    participant.roster_id,
+    participant.player_id,
+    participant.seed,
+    participant.attendance,
+    participant.created_at,
+    participant.updated_at
+`
+
+type ReplaceWithdrawnArenaParticipantParams struct {
+	ReplacementParticipantID uuid.UUID
+	ReplacedAt               pgtype.Timestamptz
+	WithdrawnParticipantID   uuid.UUID
+	RosterID                 uuid.UUID
+	ReplacementPlayerID      uuid.UUID
+}
+
+func (q *Queries) ReplaceWithdrawnArenaParticipant(ctx context.Context, arg ReplaceWithdrawnArenaParticipantParams) (ArenaParticipant, error) {
+	row := q.db.QueryRow(ctx, replaceWithdrawnArenaParticipant,
+		arg.ReplacementParticipantID,
+		arg.ReplacedAt,
+		arg.WithdrawnParticipantID,
+		arg.RosterID,
+		arg.ReplacementPlayerID,
+	)
+	var i ArenaParticipant
+	err := row.Scan(
+		&i.ID,
+		&i.RosterID,
+		&i.PlayerID,
+		&i.Seed,
+		&i.Attendance,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const reserveCheckedInArenaParticipants = `-- name: ReserveCheckedInArenaParticipants :many

@@ -13,6 +13,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
+	arena "github.com/TakuyaYagam1/task-per-minute/internal/usecase/arena"
 )
 
 type arenaRepositoryFixture struct {
@@ -344,6 +345,133 @@ func TestArenaTournamentRepository(t *testing.T) {
 	reservations, err = fixture.tournaments.ListReservations(ctx, rollbackTournament.ID)
 	require.NoError(t, err)
 	require.Empty(t, reservations, "nested repository work must reuse and roll back with the outer transaction")
+}
+
+func TestArenaTournamentUseCases(t *testing.T) {
+	ctx := context.Background()
+	resetArenaMigrationTables(t)
+	t.Cleanup(func() { resetArenaMigrationTables(t) })
+	fixture := newArenaRepositoryFixture()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	clock := fixedArenaIntegrationClock{now: now}
+	catalog := arena.NewTournamentUseCase(fixture.tournaments, clock)
+	attendance := arena.NewAttendanceUseCase(fixture.tournaments, clock)
+	rosterLock := arena.NewRosterLockUseCase(fixture.tournaments, clock)
+	command := arena.TournamentCreateCommand{TournamentID: uuid.New(), RosterID: uuid.New()}
+
+	created, changed, err := catalog.CreateTournament(ctx, command)
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.Equal(t, domain.ArenaPresetV1, created.Preset)
+	require.Equal(t, command.RosterID, created.RosterID)
+	retried, changed, err := catalog.CreateTournament(ctx, command)
+	require.NoError(t, err)
+	require.False(t, changed)
+	require.Equal(t, created.ID, retried.ID)
+
+	playerIDs := createArenaMigrationPlayers(t, ctx, 5)
+	participantIDs := make([]uuid.UUID, 4)
+	for index := range participantIDs {
+		participantIDs[index] = uuid.New()
+		participant, inviteChanged, inviteErr := attendance.InviteParticipant(ctx, arena.ParticipantInvitationCommand{
+			ParticipantID: participantIDs[index], RosterID: command.RosterID,
+			PlayerID: playerIDs[index], Seed: index + 1,
+		})
+		require.NoError(t, inviteErr)
+		require.True(t, inviteChanged)
+		participant, attendanceChanged, attendanceErr := attendance.ChangeAttendance(ctx, arena.AttendanceChangeCommand{
+			ParticipantID: participant.ID, Expected: domain.ArenaAttendanceStateInvited,
+			Next: domain.ArenaAttendanceStateRegistered,
+		})
+		require.NoError(t, attendanceErr)
+		require.True(t, attendanceChanged)
+		_, attendanceChanged, attendanceErr = attendance.ChangeAttendance(ctx, arena.AttendanceChangeCommand{
+			ParticipantID: participant.ID, Expected: domain.ArenaAttendanceStateRegistered,
+			Next: domain.ArenaAttendanceStateCheckedIn,
+		})
+		require.NoError(t, attendanceErr)
+		require.True(t, attendanceChanged)
+	}
+
+	_, changed, err = attendance.ChangeAttendance(ctx, arena.AttendanceChangeCommand{
+		ParticipantID: participantIDs[0], Expected: domain.ArenaAttendanceStateCheckedIn,
+		Next: domain.ArenaAttendanceStateWithdrawn,
+	})
+	require.NoError(t, err)
+	require.True(t, changed)
+	replacementID := uuid.New()
+	replacement, changed, err := attendance.ReplaceWithdrawnParticipant(ctx, arena.ParticipantReplacementCommand{
+		WithdrawnParticipantID: participantIDs[0], ReplacementParticipantID: replacementID,
+		RosterID: command.RosterID, ReplacementPlayerID: playerIDs[4],
+	})
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.Equal(t, 1, replacement.Seed)
+	require.Equal(t, domain.ArenaAttendanceStateInvited, replacement.Attendance)
+	replacement, changed, err = attendance.ChangeAttendance(ctx, arena.AttendanceChangeCommand{
+		ParticipantID: replacementID, Expected: domain.ArenaAttendanceStateInvited,
+		Next: domain.ArenaAttendanceStateRegistered,
+	})
+	require.NoError(t, err)
+	require.True(t, changed)
+	_, changed, err = attendance.ChangeAttendance(ctx, arena.AttendanceChangeCommand{
+		ParticipantID: replacement.ID, Expected: domain.ArenaAttendanceStateRegistered,
+		Next: domain.ArenaAttendanceStateCheckedIn,
+	})
+	require.NoError(t, err)
+	require.True(t, changed)
+
+	listed, err := catalog.ListTournaments(ctx, arena.TournamentListFilter{
+		States: []domain.ArenaTournamentState{domain.ArenaTournamentStateDraft},
+	})
+	require.NoError(t, err)
+	require.Len(t, listed, 1)
+	require.Equal(t, command.RosterID, listed[0].RosterID)
+	require.Equal(t, 4, listed[0].RosterSize)
+
+	currentRoster, err := fixture.tournaments.GetRoster(ctx, command.RosterID)
+	require.NoError(t, err)
+	checkedInPlayerIDs := []uuid.UUID{playerIDs[1], playerIDs[2], playerIDs[3], playerIDs[4]}
+	wrongEvidence := arena.RosterPreflightEvidence{
+		RosterID: command.RosterID, RosterRevision: currentRoster.Revision,
+		CheckedInPlayerIDs: []uuid.UUID{playerIDs[0], playerIDs[1], playerIDs[2], playerIDs[3]}, Approved: true,
+	}
+	_, changed, err = rosterLock.LockRoster(ctx, arena.RosterLockCommand{Preflight: wrongEvidence})
+	require.ErrorIs(t, err, domain.ErrConflict)
+	require.False(t, changed)
+	reservations, err := fixture.tournaments.ListReservations(ctx, command.TournamentID)
+	require.NoError(t, err)
+	require.Empty(t, reservations)
+
+	locked, changed, err := rosterLock.LockRoster(ctx, arena.RosterLockCommand{Preflight: arena.RosterPreflightEvidence{
+		RosterID: command.RosterID, RosterRevision: currentRoster.Revision,
+		CheckedInPlayerIDs: checkedInPlayerIDs, Approved: true,
+	}})
+	require.NoError(t, err)
+	require.True(t, changed)
+	reservations, err = fixture.tournaments.ListReservations(ctx, command.TournamentID)
+	require.NoError(t, err)
+	require.Len(t, reservations, 4)
+
+	unlocked, changed, err := rosterLock.UnlockRoster(ctx, arena.RosterUnlockCommand{
+		RosterID: command.RosterID, ExpectedRevision: locked.Revision,
+		ActorID: uuid.New(), Reason: "replace pre-start participant",
+	})
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.Nil(t, unlocked.LockedAt)
+	require.Equal(t, locked.Revision+1, unlocked.Revision)
+	reservations, err = fixture.tournaments.ListReservations(ctx, command.TournamentID)
+	require.NoError(t, err)
+	require.Empty(t, reservations)
+}
+
+type fixedArenaIntegrationClock struct {
+	now time.Time
+}
+
+func (c fixedArenaIntegrationClock) Now() time.Time {
+	return c.now
 }
 
 func createArenaRepositoryTournament(
