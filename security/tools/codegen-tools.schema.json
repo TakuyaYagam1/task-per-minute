@@ -1,0 +1,405 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://task-per-minute.local/schemas/codegen-tools.schema.json",
+  "title": "Task Per Minute code generation tool lock",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "schema_version",
+    "reviewed_at",
+    "platform",
+    "tools"
+  ],
+  "properties": {
+    "schema": {
+      "const": "security/tools/codegen-tools.schema.json"
+    },
+    "schema_version": {
+      "const": 1
+    },
+    "reviewed_at": {
+      "type": "string",
+      "format": "date"
+    },
+    "platform": {
+      "$ref": "#/$defs/platform"
+    },
+    "tools": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "$ref": "#/$defs/tool"
+      }
+    }
+  },
+  "$defs": {
+    "platform": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "os",
+        "arch"
+      ],
+      "properties": {
+        "os": {
+          "const": "linux"
+        },
+        "arch": {
+          "const": "amd64"
+        }
+      }
+    },
+    "tool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "version",
+        "executable_name",
+        "source",
+        "archive",
+        "executable",
+        "maintenance_review",
+        "security_review",
+        "trust_decision"
+      ],
+      "properties": {
+        "name": {
+          "enum": [
+            "sqlc",
+            "wire"
+          ]
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^v[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "executable_name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        },
+        "archive": {
+          "$ref": "#/$defs/archive"
+        },
+        "executable": {
+          "$ref": "#/$defs/executable"
+        },
+        "maintenance_review": {
+          "$ref": "#/$defs/maintenanceReview"
+        },
+        "security_review": {
+          "$ref": "#/$defs/securityReview"
+        },
+        "trust_decision": {
+          "$ref": "#/$defs/trustDecision"
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository_url",
+        "release_url",
+        "tag",
+        "commit_sha",
+        "release_published_at",
+        "commit_signature_verified",
+        "license"
+      ],
+      "properties": {
+        "repository_url": {
+          "$ref": "#/$defs/httpsUrl"
+        },
+        "release_url": {
+          "$ref": "#/$defs/httpsUrl"
+        },
+        "tag": {
+          "type": "string",
+          "pattern": "^v[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "commit_sha": {
+          "$ref": "#/$defs/sha1"
+        },
+        "release_published_at": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+        },
+        "commit_signature_verified": {
+          "const": true
+        },
+        "license": {
+          "$ref": "#/$defs/license"
+        }
+      }
+    },
+    "license": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "spdx",
+        "file_url",
+        "file_sha256"
+      ],
+      "properties": {
+        "spdx": {
+          "enum": [
+            "MIT",
+            "Apache-2.0"
+          ]
+        },
+        "file_url": {
+          "$ref": "#/$defs/httpsUrl"
+        },
+        "file_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "archive": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "url",
+        "file_name",
+        "format",
+        "sha256",
+        "extraction_member"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "prebuilt",
+            "source"
+          ]
+        },
+        "url": {
+          "$ref": "#/$defs/httpsUrl"
+        },
+        "file_name": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._-]+\\.tar\\.gz$"
+        },
+        "format": {
+          "const": "tar.gz"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "extraction_member": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9._/-]+$"
+        }
+      }
+    },
+    "executable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sha256",
+        "command_module",
+        "go_module",
+        "go_module_version",
+        "go_version",
+        "version_probe",
+        "build"
+      ],
+      "properties": {
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "command_module": {
+          "type": "string",
+          "pattern": "^github\\.com/[A-Za-z0-9._/-]+$"
+        },
+        "go_module": {
+          "type": "string",
+          "pattern": "^github\\.com/[A-Za-z0-9._/-]+$"
+        },
+        "go_module_version": {
+          "type": "string",
+          "pattern": "^v[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "go_version": {
+          "type": "string",
+          "pattern": "^go[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "version_probe": {
+          "$ref": "#/$defs/versionProbe"
+        },
+        "build": {
+          "$ref": "#/$defs/build"
+        }
+      }
+    },
+    "versionProbe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "arguments",
+        "expected_stdout"
+      ],
+      "properties": {
+        "arguments": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "expected_stdout": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "build": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "method",
+        "command",
+        "module_sum"
+      ],
+      "properties": {
+        "method": {
+          "enum": [
+            "upstream_prebuilt",
+            "go_install"
+          ]
+        },
+        "command": {
+          "type": "string",
+          "minLength": 10
+        },
+        "module_sum": {
+          "type": "string",
+          "pattern": "^(not-applicable|h1:[A-Za-z0-9+/=]+)$"
+        }
+      }
+    },
+    "maintenanceReview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reviewed_at",
+        "status",
+        "evidence_url",
+        "evidence_note"
+      ],
+      "properties": {
+        "reviewed_at": {
+          "type": "string",
+          "format": "date"
+        },
+        "status": {
+          "enum": [
+            "active",
+            "archived_unmaintained"
+          ]
+        },
+        "evidence_url": {
+          "$ref": "#/$defs/httpsUrl"
+        },
+        "evidence_note": {
+          "type": "string",
+          "minLength": 20
+        }
+      }
+    },
+    "securityReview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reviewed_at",
+        "upstream_advisory_url",
+        "upstream_public_advisory_count",
+        "scanner",
+        "result",
+        "finding_ids",
+        "risk_note"
+      ],
+      "properties": {
+        "reviewed_at": {
+          "type": "string",
+          "format": "date"
+        },
+        "upstream_advisory_url": {
+          "$ref": "#/$defs/httpsUrl"
+        },
+        "upstream_public_advisory_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "scanner": {
+          "const": "govulncheck binary symbol scan against https://vuln.go.dev"
+        },
+        "result": {
+          "enum": [
+            "pass",
+            "findings_accepted_for_offline_codegen"
+          ]
+        },
+        "finding_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^GO-[0-9]{4}-[0-9]+$"
+          }
+        },
+        "risk_note": {
+          "type": "string",
+          "minLength": 30
+        }
+      }
+    },
+    "trustDecision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "rationale",
+        "constraints"
+      ],
+      "properties": {
+        "status": {
+          "const": "accepted_with_constraints"
+        },
+        "rationale": {
+          "type": "string",
+          "minLength": 40
+        },
+        "constraints": {
+          "type": "array",
+          "minItems": 2,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 10
+          }
+        }
+      }
+    },
+    "sha1": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "httpsUrl": {
+      "type": "string",
+      "pattern": "^https://\\S+$"
+    }
+  }
+}

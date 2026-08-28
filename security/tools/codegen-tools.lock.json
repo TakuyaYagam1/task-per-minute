@@ -1,0 +1,179 @@
+{
+  "schema": "security/tools/codegen-tools.schema.json",
+  "schema_version": 1,
+  "reviewed_at": "2026-08-28",
+  "platform": {
+    "os": "linux",
+    "arch": "amd64"
+  },
+  "tools": [
+    {
+      "name": "sqlc",
+      "version": "v1.31.1",
+      "executable_name": "sqlc",
+      "source": {
+        "repository_url": "https://github.com/sqlc-dev/sqlc",
+        "release_url": "https://github.com/sqlc-dev/sqlc/releases/tag/v1.31.1",
+        "tag": "v1.31.1",
+        "commit_sha": "a95e91d70ad9e1181253c333a1cfdd75ae4b95a5",
+        "release_published_at": "2026-04-22T14:55:41Z",
+        "commit_signature_verified": true,
+        "license": {
+          "spdx": "MIT",
+          "file_url": "https://raw.githubusercontent.com/sqlc-dev/sqlc/v1.31.1/LICENSE",
+          "file_sha256": "fc69a4525f6f7e79675fba3645351f2cdaf9331978e72d44155634575a4455ea"
+        }
+      },
+      "archive": {
+        "kind": "prebuilt",
+        "url": "https://github.com/sqlc-dev/sqlc/releases/download/v1.31.1/sqlc_1.31.1_linux_amd64.tar.gz",
+        "file_name": "sqlc_1.31.1_linux_amd64.tar.gz",
+        "format": "tar.gz",
+        "sha256": "497ae4fcdfa64c5b0c311ffe4c2bd991e43991e82e5367792ed78bc2dca27354",
+        "extraction_member": "sqlc"
+      },
+      "executable": {
+        "sha256": "0496fbc18f603e2fbd10c752942d1389a1fa9bc3d18de7243ec00cccd611575f",
+        "command_module": "github.com/sqlc-dev/sqlc/cmd/sqlc",
+        "go_module": "github.com/sqlc-dev/sqlc",
+        "go_module_version": "v1.31.1",
+        "go_version": "go1.26.2",
+        "version_probe": {
+          "arguments": [
+            "version"
+          ],
+          "expected_stdout": "v1.31.1"
+        },
+        "build": {
+          "method": "upstream_prebuilt",
+          "command": "extract member sqlc only after archive verification",
+          "module_sum": "not-applicable"
+        }
+      },
+      "maintenance_review": {
+        "reviewed_at": "2026-08-28",
+        "status": "active",
+        "evidence_url": "https://github.com/sqlc-dev/sqlc",
+        "evidence_note": "The repository was active and the pinned release remained listed by upstream at review time."
+      },
+      "security_review": {
+        "reviewed_at": "2026-08-28",
+        "upstream_advisory_url": "https://github.com/sqlc-dev/sqlc/security/advisories",
+        "upstream_public_advisory_count": 0,
+        "scanner": "govulncheck binary symbol scan against https://vuln.go.dev",
+        "result": "findings_accepted_for_offline_codegen",
+        "finding_ids": [
+          "GO-2026-6218",
+          "GO-2026-6094",
+          "GO-2026-6091",
+          "GO-2026-6090",
+          "GO-2026-6089",
+          "GO-2026-6088",
+          "GO-2026-6061",
+          "GO-2026-5972",
+          "GO-2026-5970",
+          "GO-2026-5942",
+          "GO-2026-5856",
+          "GO-2026-5039",
+          "GO-2026-5038",
+          "GO-2026-5037",
+          "GO-2026-5030",
+          "GO-2026-5029",
+          "GO-2026-5028",
+          "GO-2026-5027",
+          "GO-2026-5026",
+          "GO-2026-5025",
+          "GO-2026-4986",
+          "GO-2026-4982",
+          "GO-2026-4981",
+          "GO-2026-4980",
+          "GO-2026-4977",
+          "GO-2026-4976",
+          "GO-2026-4971",
+          "GO-2026-4970",
+          "GO-2026-4918"
+        ],
+        "risk_note": "The official binary contains known reachable symbols. It is accepted only for offline generation from reviewed repository inputs with no credentials or network access."
+      },
+      "trust_decision": {
+        "status": "accepted_with_constraints",
+        "rationale": "The exact upstream binary is required by the approved generator contract and is content-pinned despite dated transitive and standard-library code.",
+        "constraints": [
+          "run only in a credential-free offline environment",
+          "generate only from reviewed repository-owned SQL and schema inputs",
+          "review every generated diff before acceptance",
+          "repeat the vulnerability review before changing the pinned artifact"
+        ]
+      }
+    },
+    {
+      "name": "wire",
+      "version": "v0.7.0",
+      "executable_name": "wire",
+      "source": {
+        "repository_url": "https://github.com/google/wire",
+        "release_url": "https://github.com/google/wire/releases/tag/v0.7.0",
+        "tag": "v0.7.0",
+        "commit_sha": "9c25c9016f6825302537c4efdd5e897976f9c826",
+        "release_published_at": "2025-08-22T13:56:56Z",
+        "commit_signature_verified": true,
+        "license": {
+          "spdx": "Apache-2.0",
+          "file_url": "https://raw.githubusercontent.com/google/wire/v0.7.0/LICENSE",
+          "file_sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+        }
+      },
+      "archive": {
+        "kind": "source",
+        "url": "https://github.com/google/wire/archive/refs/tags/v0.7.0.tar.gz",
+        "file_name": "wire_v0.7.0.tar.gz",
+        "format": "tar.gz",
+        "sha256": "06d07189bf3c2e5e1fd3d90c10e3dacf23dbf26334cd9812bfd76753b2523a97",
+        "extraction_member": "wire-0.7.0/"
+      },
+      "executable": {
+        "sha256": "79a571b879ac048fb1b8f584a7e91da7735efd15762d1d648d3cc1798d826e5d",
+        "command_module": "github.com/google/wire/cmd/wire",
+        "go_module": "github.com/google/wire",
+        "go_module_version": "v0.7.0",
+        "go_version": "go1.26.5",
+        "version_probe": {
+          "arguments": [
+            "help"
+          ],
+          "expected_stdout": "Usage: wire <flags> <subcommand> <subcommand args>"
+        },
+        "build": {
+          "method": "go_install",
+          "command": "GOTOOLCHAIN=local GOPROXY=<reviewed-local-proxy> GOSUMDB=off GOBIN=<output-dir> go install github.com/google/wire/cmd/wire@v0.7.0",
+          "module_sum": "h1:JxUKI6+CVBgCO2WToKy/nQk0sS+amI9z9EjVmdaocj4="
+        }
+      },
+      "maintenance_review": {
+        "reviewed_at": "2026-08-28",
+        "status": "archived_unmaintained",
+        "evidence_url": "https://github.com/google/wire",
+        "evidence_note": "Upstream archived the repository on 2025-08-25 and states that Wire is no longer maintained."
+      },
+      "security_review": {
+        "reviewed_at": "2026-08-28",
+        "upstream_advisory_url": "https://github.com/google/wire/security/advisories",
+        "upstream_public_advisory_count": 0,
+        "scanner": "govulncheck binary symbol scan against https://vuln.go.dev",
+        "result": "pass",
+        "finding_ids": [],
+        "risk_note": "The exact binary had no known reachable symbol vulnerabilities, but the archived upstream will not provide future maintenance fixes."
+      },
+      "trust_decision": {
+        "status": "accepted_with_constraints",
+        "rationale": "Wire remains the generator for the existing composition root, but its archived status requires a frozen source, build identity, and generated-diff review.",
+        "constraints": [
+          "build only from the pinned module version in an offline environment",
+          "reject any executable or Go build metadata mismatch",
+          "review every wire_gen.go diff before acceptance",
+          "replace Wire through a separately approved migration if maintenance risk becomes unacceptable"
+        ]
+      }
+    }
+  ]
+}
