@@ -61,7 +61,7 @@ func TestAutomaticSwissPairingEvidence(t *testing.T) {
 
 	tampered := record
 	tampered.Pairings = append([]arena.SwissPair(nil), record.Pairings...)
-	tampered.Pairings[0].SecondParticipantID = participants[0]
+	tampered.Pairings[0].SecondParticipantID = tampered.Pairings[0].FirstParticipantID
 	if _, err := arena.ReplayAutomaticSwissPairing(tampered); !errors.Is(err, domain.ErrArenaDecisionReplayMismatch) {
 		t.Fatalf("ReplayAutomaticSwissPairing(tampered) error = %v, want ErrArenaDecisionReplayMismatch", err)
 	}
