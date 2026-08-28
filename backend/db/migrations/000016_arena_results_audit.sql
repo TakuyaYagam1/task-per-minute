@@ -971,10 +971,12 @@ BEGIN
     FROM arena_series_score_revisions
     WHERE result_event_id = NEW.result_event_id;
 
-    IF official_revision_count <> 1 + CASE
-        WHEN NEW.series_result_revision_id IS NOT NULL THEN 1
-        ELSE 0
-    END
+    IF official_revision_count <> 1 + (
+        CASE
+            WHEN NEW.series_result_revision_id IS NOT NULL THEN 1
+            ELSE 0
+        END
+    )
         OR score_revision_count <> 1 THEN
         RAISE EXCEPTION 'Arena result commit must exhaustively link event revisions'
             USING ERRCODE = 'check_violation';

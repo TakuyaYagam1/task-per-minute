@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 )
 
@@ -26,7 +27,11 @@ func TestArenaSeriesGameMigration(t *testing.T) {
 	chainSlotID := createArenaMigrationGameSlot(t, ctx, seriesID, rosterID, 1, "web")
 	firstAttemptID := createActiveArenaMigrationAttempt(t, ctx, chainSlotID, seriesID, rosterID, createdAt)
 
-	_, err := sharedPool.Exec(ctx, `
+	tx, err := sharedPool.Begin(ctx)
+	require.NoError(t, err)
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	_, err = tx.Exec(ctx, `
 		UPDATE arena_game_attempts
 		SET state = 'void',
 			result_reason = 'no_solve',
@@ -38,7 +43,7 @@ func TestArenaSeriesGameMigration(t *testing.T) {
 	require.NoError(t, err)
 
 	var secondAttemptID uuid.UUID
-	err = sharedPool.QueryRow(ctx, `
+	err = tx.QueryRow(ctx, `
 		INSERT INTO arena_game_attempts (
 			slot_id, series_id, roster_id, attempt_number,
 			state, created_at, updated_at, started_at
@@ -48,35 +53,57 @@ func TestArenaSeriesGameMigration(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEqual(t, uuid.Nil, secondAttemptID)
 
-	_, err = sharedPool.Exec(ctx, `
+	assertArenaSeriesGameStatementRejected(t, ctx, tx, `
 		INSERT INTO arena_game_attempts (
 			slot_id, series_id, roster_id, attempt_number,
 			state, created_at, updated_at, started_at
 		)
 		VALUES ($1, $2, $3, 2, 'active', $4, $4, $4)`,
 		chainSlotID, seriesID, rosterID, createdAt.Add(50*time.Second))
-	require.Error(t, err)
 
-	_, err = sharedPool.Exec(ctx, `
+	assertArenaSeriesGameStatementRejected(t, ctx, tx, `
 		UPDATE arena_game_attempts
 		SET attempt_number = 3
 		WHERE id = $1`, secondAttemptID)
-	require.Error(t, err)
 
-	_, err = sharedPool.Exec(ctx, `DELETE FROM arena_game_attempts WHERE id = $1`, firstAttemptID)
-	require.Error(t, err)
+	assertArenaSeriesGameStatementRejected(
+		t,
+		ctx,
+		tx,
+		`DELETE FROM arena_game_attempts WHERE id = $1`,
+		firstAttemptID,
+	)
 
-	_, err = sharedPool.Exec(ctx, `
+	assertArenaSeriesGameStatementRejected(t, ctx, tx, `
 		UPDATE arena_game_slots
 		SET slot_number = 2
 		WHERE id = $1`, chainSlotID)
-	require.Error(t, err)
+	require.NoError(t, tx.Rollback(ctx))
 
 	concurrentSlotID := createArenaMigrationGameSlot(t, ctx, seriesID, rosterID, 2, "crypto")
 	assertOneConcurrentArenaAttempt(t, ctx, concurrentSlotID, seriesID, rosterID, createdAt)
 	assertArenaGameTerminalReasons(t, ctx, tournamentID, rosterID, participantIDs[:2], createdAt)
 	assertArenaSeriesResultConstraints(t, ctx, tournamentID, rosterID, participantIDs[:2], createdAt)
 	assertNoArenaDuelDependency(t, ctx)
+}
+
+func assertArenaSeriesGameStatementRejected(
+	t testing.TB,
+	ctx context.Context,
+	tx pgx.Tx,
+	query string,
+	args ...any,
+) {
+	t.Helper()
+
+	_, err := tx.Exec(ctx, "SAVEPOINT expected_failure")
+	require.NoError(t, err)
+	_, err = tx.Exec(ctx, query, args...)
+	require.Error(t, err)
+	_, err = tx.Exec(ctx, "ROLLBACK TO SAVEPOINT expected_failure")
+	require.NoError(t, err)
+	_, err = tx.Exec(ctx, "RELEASE SAVEPOINT expected_failure")
+	require.NoError(t, err)
 }
 
 func createArenaMigrationSeries(
@@ -220,7 +247,10 @@ func assertArenaGameTerminalReasons(
 		t.Run(tt.state+"_"+tt.reason, func(t *testing.T) {
 			seriesID := createArenaMigrationSeries(t, ctx, tournamentID, rosterID, participantIDs, "bo3")
 			slotID := createArenaMigrationGameSlot(t, ctx, seriesID, rosterID, 1, "reverse")
-			_, err := sharedPool.Exec(ctx, `
+			tx, err := sharedPool.Begin(ctx)
+			require.NoError(t, err)
+			defer func() { _ = tx.Rollback(ctx) }()
+			_, err = tx.Exec(ctx, `
 				INSERT INTO arena_game_attempts (
 					slot_id, series_id, roster_id, attempt_number, state,
 					result_reason, winner_id, result_revision_id,
@@ -230,6 +260,7 @@ func assertArenaGameTerminalReasons(
 				slotID, seriesID, rosterID, tt.state, tt.reason, tt.winner,
 				uuid.New(), createdAt, createdAt.Add(time.Second))
 			require.NoError(t, err)
+			require.NoError(t, tx.Rollback(ctx))
 		})
 	}
 

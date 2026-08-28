@@ -161,7 +161,7 @@ func TestArenaReconnectMigrationResumeCAS(t *testing.T) {
 		"resume",
 		fixture.pausedAt.Add(time.Second),
 	)
-	_, _ = disconnectArenaParticipant(
+	intervalID, _ := disconnectArenaParticipant(
 		t,
 		ctx,
 		fixture,
@@ -179,20 +179,14 @@ func TestArenaReconnectMigrationResumeCAS(t *testing.T) {
 	)
 
 	reconnectedAt := fixture.pausedAt.Add(4 * time.Second)
-	_, err := sharedPool.Exec(ctx, `
-		UPDATE arena_presence_states
-		SET state = 'connected',
-			presence_epoch = presence_epoch + 1,
-			revision = revision + 1,
-			connected_at = $3,
-			disconnected_at = NULL,
-			updated_at = $3
-		WHERE series_id = $1 AND participant_id = $2`,
-		fixture.draft.seriesID,
+	reconnectArenaParticipant(
+		t,
+		ctx,
+		fixture,
 		fixture.draft.participantIDs[0],
+		intervalID,
 		reconnectedAt,
 	)
-	require.NoError(t, err)
 	insertArenaResumeDecision(
 		t,
 		ctx,
@@ -204,14 +198,7 @@ func TestArenaReconnectMigrationResumeCAS(t *testing.T) {
 		"resume",
 		reconnectedAt,
 	)
-	assertArenaPauseResumeRejected(
-		t,
-		ctx,
-		fixture.gamePauseID,
-		fixture.gamePauseRevisionID,
-		fixture.pausedAt.Add(5*time.Second),
-		"current reconnect evidence",
-	)
+	resumeArenaMigrationPause(t, ctx, fixture, true, fixture.pausedAt.Add(5*time.Second))
 }
 
 func TestArenaReconnectMigrationIntervalPauseIntegrity(t *testing.T) {
@@ -1472,7 +1459,7 @@ func resumeArenaMigrationPause(
 		_, err = tx.Exec(ctx, `
 			UPDATE arena_pause_clocks
 			SET resumed_at = $2,
-				resumed_deadline = $2 + INTERVAL '5 minutes',
+				resumed_deadline = $2::TIMESTAMPTZ + INTERVAL '5 minutes',
 				revision = revision + 1,
 				updated_at = $2
 			WHERE pause_id = $1`, pauseID, resumedAt)

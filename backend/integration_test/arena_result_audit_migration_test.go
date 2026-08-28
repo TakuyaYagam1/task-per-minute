@@ -355,11 +355,28 @@ func createArenaResultAuditMigrationFixture(
 		`["web"]`,
 		createdAt.Add(2*time.Second),
 	)
+	releasedBranchID := createArenaAssignmentBranch(
+		t,
+		ctx,
+		exactPlanID,
+		draft,
+		"web-fallback",
+		`["web"]`,
+		createdAt.Add(2*time.Second),
+	)
 	reservations := createArenaAssignmentBranchReservations(
 		t,
 		ctx,
 		exactPlanID,
 		branchID,
+		"web",
+		createdAt.Add(3*time.Second),
+	)
+	releasedReservations := createArenaAssignmentBranchReservations(
+		t,
+		ctx,
+		exactPlanID,
+		releasedBranchID,
 		"web",
 		createdAt.Add(3*time.Second),
 	)
@@ -371,11 +388,27 @@ func createArenaResultAuditMigrationFixture(
 			WHERE id = $1`, reservation.reservationID, committedAt)
 		require.NoError(t, err)
 	}
+	for _, reservation := range releasedReservations {
+		_, err := sharedPool.Exec(ctx, `
+			UPDATE arena_task_version_reservations
+			SET state = 'released',
+				released_at = $2,
+				release_reason = 'unused fixture branch'
+			WHERE id = $1`, reservation.reservationID, committedAt)
+		require.NoError(t, err)
+	}
 
 	_, err := sharedPool.Exec(ctx, `
 		UPDATE arena_assignment_branches
 		SET state = 'active', activated_at = $2
 		WHERE id = $1`, branchID, committedAt.Add(time.Second))
+	require.NoError(t, err)
+	_, err = sharedPool.Exec(ctx, `
+		UPDATE arena_assignment_branches
+		SET state = 'released',
+			released_at = $2,
+			release_reason = 'unused fixture branch'
+		WHERE id = $1`, releasedBranchID, committedAt.Add(time.Second))
 	require.NoError(t, err)
 	_, err = sharedPool.Exec(ctx, `
 		UPDATE arena_assignment_plans
@@ -680,7 +713,7 @@ func createArenaResultCommit(
 		VALUES (
 			$1, $2, $3, $4, $5,
 			$6, 'arena.result.committed',
-			jsonb_build_object('result_event_id', $5::TEXT), $7
+			jsonb_build_object('result_event_id', $5::UUID::TEXT), $7
 		)`,
 		commit.outboxEventID,
 		fixture.draft.tournamentID,
