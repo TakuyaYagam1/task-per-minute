@@ -369,6 +369,107 @@ func TestArenaReconnectMigrationIntervalPauseIntegrity(t *testing.T) {
 	})
 }
 
+func TestArenaReconnectMigrationTerminalPresenceCAS(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("rejects reconnect without presence CAS", func(t *testing.T) {
+		resetArenaMigrationTables(t)
+		t.Cleanup(func() { resetArenaMigrationTables(t) })
+
+		fixture := createArenaReconnectMigrationFixture(t, ctx)
+		intervalID, _ := disconnectArenaParticipant(
+			t,
+			ctx,
+			fixture,
+			fixture.draft.participantIDs[0],
+			fixture.pausedAt.Add(time.Second),
+			2*time.Minute,
+		)
+		reconnectedAt := fixture.pausedAt.Add(2 * time.Second)
+		_, err := sharedPool.Exec(ctx, `
+			UPDATE arena_reconnect_intervals
+			SET state = 'reconnected',
+				closed_at = $2,
+				revision = revision + 1,
+				updated_at = $2
+			WHERE id = $1`, intervalID, reconnectedAt)
+		require.ErrorContains(t, err, "terminal state differs from live presence CAS")
+	})
+
+	t.Run("rejects presence reconnect with open interval", func(t *testing.T) {
+		resetArenaMigrationTables(t)
+		t.Cleanup(func() { resetArenaMigrationTables(t) })
+
+		fixture := createArenaReconnectMigrationFixture(t, ctx)
+		_, _ = disconnectArenaParticipant(
+			t,
+			ctx,
+			fixture,
+			fixture.draft.participantIDs[0],
+			fixture.pausedAt.Add(time.Second),
+			2*time.Minute,
+		)
+		reconnectedAt := fixture.pausedAt.Add(2 * time.Second)
+		_, err := sharedPool.Exec(ctx, `
+			UPDATE arena_presence_states
+			SET state = 'connected',
+				presence_epoch = presence_epoch + 1,
+				revision = revision + 1,
+				connected_at = $3,
+				disconnected_at = NULL,
+				updated_at = $3
+			WHERE series_id = $1 AND participant_id = $2`,
+			fixture.draft.seriesID,
+			fixture.draft.participantIDs[0],
+			reconnectedAt,
+		)
+		require.ErrorContains(t, err, "presence retains an open interval")
+	})
+
+	t.Run("rejects expiry with reconnected presence", func(t *testing.T) {
+		resetArenaMigrationTables(t)
+		t.Cleanup(func() { resetArenaMigrationTables(t) })
+
+		fixture := createArenaReconnectMigrationFixture(t, ctx)
+		participantID := fixture.draft.participantIDs[0]
+		intervalID, deadline := disconnectArenaParticipant(
+			t,
+			ctx,
+			fixture,
+			participantID,
+			fixture.pausedAt.Add(time.Second),
+			2*time.Minute,
+		)
+		tx, err := sharedPool.Begin(ctx)
+		require.NoError(t, err)
+		defer func() { _ = tx.Rollback(ctx) }()
+		_, err = tx.Exec(ctx, `
+			UPDATE arena_reconnect_intervals
+			SET state = 'expired',
+				closed_at = $2,
+				revision = revision + 1,
+				updated_at = $2
+			WHERE id = $1`, intervalID, deadline)
+		require.NoError(t, err)
+		_, err = tx.Exec(ctx, `
+			UPDATE arena_presence_states
+			SET state = 'connected',
+				presence_epoch = presence_epoch + 1,
+				revision = revision + 1,
+				connected_at = $3,
+				disconnected_at = NULL,
+				updated_at = $3
+			WHERE series_id = $1 AND participant_id = $2`,
+			fixture.draft.seriesID,
+			participantID,
+			deadline,
+		)
+		require.NoError(t, err)
+		err = tx.Commit(ctx)
+		require.ErrorContains(t, err, "terminal state differs from live presence CAS")
+	})
+}
+
 func TestArenaReconnectMigrationCASLocks(t *testing.T) {
 	ctx := context.Background()
 
@@ -423,6 +524,43 @@ func TestArenaReconnectMigrationCASLocks(t *testing.T) {
 			participantID,
 			pausedAt,
 		)
+		require.ErrorContains(t, err, "lock timeout")
+	})
+
+	t.Run("interval terminal transition locks live presence", func(t *testing.T) {
+		resetArenaMigrationTables(t)
+		t.Cleanup(func() { resetArenaMigrationTables(t) })
+
+		fixture := createArenaReconnectMigrationFixture(t, ctx)
+		participantID := fixture.draft.participantIDs[0]
+		intervalID, deadline := disconnectArenaParticipant(
+			t,
+			ctx,
+			fixture,
+			participantID,
+			fixture.pausedAt.Add(time.Second),
+			2*time.Minute,
+		)
+
+		lockTx, err := sharedPool.Begin(ctx)
+		require.NoError(t, err)
+		defer func() { _ = lockTx.Rollback(ctx) }()
+		_, err = lockTx.Exec(ctx, `
+			SELECT 1
+			FROM arena_presence_states
+			WHERE series_id = $1 AND participant_id = $2
+			FOR NO KEY UPDATE`, fixture.draft.seriesID, participantID)
+		require.NoError(t, err)
+
+		probeTx := beginArenaReconnectLockProbe(t, ctx)
+		defer func() { _ = probeTx.Rollback(ctx) }()
+		_, err = probeTx.Exec(ctx, `
+			UPDATE arena_reconnect_intervals
+			SET state = 'expired',
+				closed_at = $2,
+				revision = revision + 1,
+				updated_at = $2
+			WHERE id = $1`, intervalID, deadline)
 		require.ErrorContains(t, err, "lock timeout")
 	})
 
