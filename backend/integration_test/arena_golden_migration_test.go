@@ -122,7 +122,7 @@ func TestArenaGoldenMigration(t *testing.T) {
 		FROM arena_golden_memberships
 		WHERE id = $1`, secondMembershipID).Scan(&retainedReadyAt)
 	require.NoError(t, err)
-	require.Equal(t, readyAt, retainedReadyAt)
+	require.WithinDuration(t, readyAt, retainedReadyAt, 0)
 
 	firstSubmissionID := createArenaGoldenSubmission(
 		t, ctx, fixture, firstAttemptID, firstMembershipID,
