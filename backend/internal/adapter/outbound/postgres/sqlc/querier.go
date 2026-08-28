@@ -15,15 +15,35 @@ type Querier interface {
 	CountSolvedTasksByDifficulty(ctx context.Context, arg CountSolvedTasksByDifficultyParams) (int64, error)
 	CountTasksByDifficulty(ctx context.Context, difficulty string) (int64, error)
 	CreateAdminPlayerAuditEvent(ctx context.Context, arg CreateAdminPlayerAuditEventParams) error
+	CreateArenaRoster(ctx context.Context, arg CreateArenaRosterParams) (ArenaRoster, error)
+	CreateArenaSwissBye(ctx context.Context, arg CreateArenaSwissByeParams) error
+	CreateArenaSwissOpponentHistory(ctx context.Context, arg CreateArenaSwissOpponentHistoryParams) error
+	CreateArenaSwissPairing(ctx context.Context, arg CreateArenaSwissPairingParams) error
+	CreateArenaSwissPairingMember(ctx context.Context, arg CreateArenaSwissPairingMemberParams) error
+	CreateArenaSwissRepeatOverride(ctx context.Context, arg CreateArenaSwissRepeatOverrideParams) error
+	CreateArenaTournament(ctx context.Context, arg CreateArenaTournamentParams) (ArenaTournament, error)
+	CreateAutomaticArenaSwissRound(ctx context.Context, arg CreateAutomaticArenaSwissRoundParams) (ArenaSwissRound, error)
 	CreateDuel(ctx context.Context, arg CreateDuelParams) (Duel, error)
 	CreateDuelPlayerTask(ctx context.Context, arg CreateDuelPlayerTaskParams) error
+	CreateManualArenaSwissRound(ctx context.Context, arg CreateManualArenaSwissRoundParams) (ArenaSwissRound, error)
 	CreatePlayer(ctx context.Context, username string) (Player, error)
 	CreateTask(ctx context.Context, arg CreateTaskParams) (Task, error)
+	DeleteArenaSwissBye(ctx context.Context, roundID uuid.UUID) error
+	DeleteArenaSwissOpponentHistory(ctx context.Context, roundID uuid.UUID) error
+	DeleteArenaSwissPairingMembers(ctx context.Context, roundID uuid.UUID) error
+	DeleteArenaSwissPairings(ctx context.Context, roundID uuid.UUID) error
+	DeleteArenaSwissRepeatOverride(ctx context.Context, roundID uuid.UUID) error
 	DeleteTask(ctx context.Context, id uuid.UUID) error
 	FinishDuel(ctx context.Context, arg FinishDuelParams) (Duel, error)
+	GetActiveArenaTournament(ctx context.Context) (ArenaTournament, error)
 	GetActiveDuelByPlayerID(ctx context.Context, player1ID uuid.UUID) (Duel, error)
 	GetAdminPlayer(ctx context.Context, id uuid.UUID) (GetAdminPlayerRow, error)
 	GetAdminPlayerIncludingDeleted(ctx context.Context, id uuid.UUID) (GetAdminPlayerIncludingDeletedRow, error)
+	GetArenaRoster(ctx context.Context, id uuid.UUID) (ArenaRoster, error)
+	GetArenaSwissBye(ctx context.Context, roundID uuid.UUID) (ArenaSwissBye, error)
+	GetArenaSwissRepeatOverride(ctx context.Context, roundID uuid.UUID) (ArenaSwissRepeatOverride, error)
+	GetArenaSwissRound(ctx context.Context, id uuid.UUID) (ArenaSwissRound, error)
+	GetArenaTournament(ctx context.Context, id uuid.UUID) (ArenaTournament, error)
 	GetDuelByID(ctx context.Context, id uuid.UUID) (Duel, error)
 	GetDuelPlayerTask(ctx context.Context, arg GetDuelPlayerTaskParams) (DuelPlayerTask, error)
 	GetPlayerByID(ctx context.Context, id uuid.UUID) (Player, error)
@@ -31,20 +51,39 @@ type Querier interface {
 	GetPlayerByUsername(ctx context.Context, username string) (Player, error)
 	GetPlayerTask(ctx context.Context, arg GetPlayerTaskParams) (Task, error)
 	GetTaskByID(ctx context.Context, id uuid.UUID) (Task, error)
+	InsertArenaParticipant(ctx context.Context, arg InsertArenaParticipantParams) (ArenaParticipant, error)
 	ListActiveDuels(ctx context.Context) ([]Duel, error)
 	ListAdminPlayerAuditEventsByPlayer(ctx context.Context, arg ListAdminPlayerAuditEventsByPlayerParams) ([]AdminPlayerAuditEvent, error)
 	ListAdminPlayers(ctx context.Context, dollar_1 bool) ([]ListAdminPlayersRow, error)
+	ListArenaParticipants(ctx context.Context, rosterID uuid.UUID) ([]ListArenaParticipantsRow, error)
+	ListArenaReservations(ctx context.Context, tournamentID uuid.NullUUID) ([]ParticipantReservation, error)
+	ListArenaSwissOpponentHistory(ctx context.Context, rosterID uuid.UUID) ([]ListArenaSwissOpponentHistoryRow, error)
+	ListArenaSwissRounds(ctx context.Context, rosterID uuid.UUID) ([]ArenaSwissRound, error)
+	ListArenaTournaments(ctx context.Context) ([]ArenaTournament, error)
+	ListCheckedInArenaPlayerIDs(ctx context.Context, rosterID uuid.UUID) ([]uuid.UUID, error)
 	ListSolvedTaskIDs(ctx context.Context, playerID uuid.UUID) ([]uuid.UUID, error)
 	ListTasks(ctx context.Context) ([]Task, error)
 	ListTasksByDifficulty(ctx context.Context, difficulty string) ([]Task, error)
+	LockArenaRosterCAS(ctx context.Context, arg LockArenaRosterCASParams) (ArenaRoster, error)
+	LockArenaRosterForUpdate(ctx context.Context, id uuid.UUID) (ArenaRoster, error)
+	LockArenaSwissRoundCAS(ctx context.Context, arg LockArenaSwissRoundCASParams) (ArenaSwissRound, error)
+	LockArenaSwissRoundForUpdate(ctx context.Context, id uuid.UUID) (ArenaSwissRound, error)
+	MarkArenaRosterExecutionStartedCAS(ctx context.Context, arg MarkArenaRosterExecutionStartedCASParams) (ArenaRoster, error)
 	MarkDuelPlayerTaskSolved(ctx context.Context, arg MarkDuelPlayerTaskSolvedParams) error
+	ReleaseArenaReservations(ctx context.Context, tournamentID uuid.UUID) (int64, error)
+	ReserveCheckedInArenaParticipants(ctx context.Context, arg ReserveCheckedInArenaParticipantsParams) ([]uuid.UUID, error)
 	ResetQueuedPlayers(ctx context.Context) (int64, error)
 	SelectAnyTaskByDifficulty(ctx context.Context, difficulty string) (Task, error)
 	SelectUnsolvedTaskByDifficulty(ctx context.Context, arg SelectUnsolvedTaskByDifficultyParams) (Task, error)
 	SoftDeleteIdlePlayer(ctx context.Context, arg SoftDeleteIdlePlayerParams) (Player, error)
 	TaskInActiveDuel(ctx context.Context, taskID uuid.UUID) (bool, error)
 	TopLeaderboardStats(ctx context.Context, limit int32) ([]TopLeaderboardStatsRow, error)
+	UnlockArenaRosterCAS(ctx context.Context, arg UnlockArenaRosterCASParams) (ArenaRoster, error)
+	UpdateArenaParticipantAttendanceCAS(ctx context.Context, arg UpdateArenaParticipantAttendanceCASParams) (ArenaParticipant, error)
+	UpdateArenaTournamentCAS(ctx context.Context, arg UpdateArenaTournamentCASParams) (ArenaTournament, error)
+	UpdateAutomaticArenaSwissRoundCAS(ctx context.Context, arg UpdateAutomaticArenaSwissRoundCASParams) (ArenaSwissRound, error)
 	UpdateDuelDeadline(ctx context.Context, arg UpdateDuelDeadlineParams) (Duel, error)
+	UpdateManualArenaSwissRoundCAS(ctx context.Context, arg UpdateManualArenaSwissRoundCASParams) (ArenaSwissRound, error)
 	UpdatePlayerSessionToken(ctx context.Context, arg UpdatePlayerSessionTokenParams) (Player, error)
 	UpdatePlayerStatus(ctx context.Context, arg UpdatePlayerStatusParams) (Player, error)
 	UpdatePlayerStatusIfCurrent(ctx context.Context, arg UpdatePlayerStatusIfCurrentParams) (Player, error)
