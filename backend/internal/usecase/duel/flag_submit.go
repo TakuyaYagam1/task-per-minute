@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
+	"github.com/TakuyaYagam1/task-per-minute/internal/taskexec"
 	"github.com/google/uuid"
 	logkit "github.com/wahrwelt-kit/go-logkit"
 )
@@ -116,7 +117,7 @@ func (u *FlagSubmitUseCase) validateSubmission(
 	if duel.Status != domain.DuelStatusActive {
 		return nil, nil, domain.ErrDuelFinished
 	}
-	if !now.Before(duel.Deadline) {
+	if !taskexec.PrecedesDeadline(now, duel.Deadline) {
 		return nil, nil, domain.ErrDuelDeadlinePassed
 	}
 
@@ -124,7 +125,7 @@ func (u *FlagSubmitUseCase) validateSubmission(
 	if err != nil {
 		return nil, nil, fmt.Errorf("FlagSubmitUsecase - validateSubmission - DuelRepo.GetPlayerTask: %w", err)
 	}
-	if task.Flag != flag {
+	if !taskexec.MatchesFlag(task.Flag, flag) {
 		return nil, nil, domain.ErrFlagIncorrect
 	}
 	return duel, task, nil

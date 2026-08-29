@@ -404,6 +404,9 @@ func TestMatchmakingUsecase_JoinQueue_AssignsOnlyCommonUnsolvedTaskToBothPlayers
 	require.NotNil(t, result)
 	require.Equal(t, binary.ID, result.Player1Task.ID)
 	require.Equal(t, binary.ID, result.Player2Task.ID)
+	result.Player1Task.Hints[0] = "changed"
+	require.Equal(t, "one", binary.Hints[0])
+	require.Equal(t, "one", result.Player2Task.Hints[0])
 }
 
 func TestMatchmakingUsecase_JoinQueue_AssignsTaskWithoutHints(t *testing.T) {

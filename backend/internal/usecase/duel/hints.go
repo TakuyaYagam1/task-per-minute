@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
+	"github.com/TakuyaYagam1/task-per-minute/internal/taskexec"
 )
 
 type HintSender func(playerID uuid.UUID, event HintUnlocked)
@@ -84,7 +85,7 @@ func (s *HintScheduler) StartDuel(duel *domain.Duel, assignments map[uuid.UUID]*
 		if !ok {
 			continue
 		}
-		task = cloneTask(task)
+		task = taskexec.CloneTask(task)
 		task.Hints = normalizedHints
 		player := &hintPlayerState{
 			playerID: playerID,
@@ -238,7 +239,7 @@ func (s *HintScheduler) PlayerSnapshot(duelID, playerID uuid.UUID) (HintSnapshot
 		return HintSnapshot{}, false
 	}
 	return HintSnapshot{
-		Task:     cloneTask(player.task),
+		Task:     taskexec.CloneTask(player.task),
 		Schedule: player.visibleSchedule(),
 		Unlocked: cloneUnlocked(player.unlocked),
 	}, true
@@ -302,15 +303,6 @@ func (p *hintPlayerState) visibleSchedule() []domain.HintScheduleEntry {
 		}
 	}
 	return out
-}
-
-func cloneTask(task *domain.Task) *domain.Task {
-	if task == nil {
-		return nil
-	}
-	out := *task
-	out.Hints = append([]string(nil), task.Hints...)
-	return &out
 }
 
 func cloneUnlocked(in []domain.UnlockedHint) []domain.UnlockedHint {

@@ -6,6 +6,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
+	"github.com/TakuyaYagam1/task-per-minute/internal/taskexec"
 )
 
 type GameScope struct {
@@ -15,24 +16,11 @@ type GameScope struct {
 	GameID       uuid.UUID
 }
 
-type TaskSnapshotInput struct {
-	SnapshotID uuid.UUID
-	Version    int
-	Kind       domain.ArenaTaskKind
-	Task       domain.Task
-}
+type TaskSnapshotInput = taskexec.SnapshotInput
 
-type FlagValidationInput struct {
-	ParticipantID uuid.UUID
-	Snapshot      domain.ArenaTaskSnapshot
-	SubmittedFlag string
-}
+type FlagValidationInput = taskexec.FlagValidationInput
 
-type Submission struct {
-	ID            uuid.UUID
-	ParticipantID uuid.UUID
-	ReceivedAt    time.Time
-}
+type Submission = taskexec.Submission
 
 type TournamentRecord struct {
 	ID              uuid.UUID

@@ -44,6 +44,30 @@ func TestHintScheduler_PlayerSnapshotIncludesMissedHints(t *testing.T) {
 	}, snapshot.Unlocked)
 }
 
+func TestHintScheduler_UsesImmutableTaskSnapshot(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now()
+	duelID := uuid.New()
+	playerID := uuid.New()
+	task := hintTestTask(60)
+	duel := &domain.Duel{
+		ID: duelID, Player1ID: playerID, StartedAt: now, Deadline: now.Add(time.Minute),
+	}
+	scheduler := duelusecase.NewHintScheduler(wallClock{}, nil)
+	scheduler.StartDuel(duel, map[uuid.UUID]*domain.Task{playerID: task})
+	t.Cleanup(func() { scheduler.StopDuel(duelID) })
+
+	task.Hints[0] = "changed outside"
+	first, ok := scheduler.PlayerSnapshot(duelID, playerID)
+	require.True(t, ok)
+	require.Equal(t, "hint 1", first.Task.Hints[0])
+	first.Task.Hints[0] = "changed result"
+	second, ok := scheduler.PlayerSnapshot(duelID, playerID)
+	require.True(t, ok)
+	require.Equal(t, "hint 1", second.Task.Hints[0])
+}
+
 func TestHintScheduler_FreezeResumeShiftsFutureUnlocks(t *testing.T) {
 	t.Parallel()
 

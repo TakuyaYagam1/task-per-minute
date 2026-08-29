@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
+	"github.com/TakuyaYagam1/task-per-minute/internal/taskexec"
 	"github.com/google/uuid"
 	logkit "github.com/wahrwelt-kit/go-logkit"
 )
@@ -473,6 +474,7 @@ func queuedReservationPlayerIDs(
 }
 
 func (u *MatchmakingUseCase) prepareAssignedTask(ctx context.Context, task *domain.Task) (*domain.Task, error) {
+	task = taskexec.CloneTask(task)
 	if task == nil || task.SourceFileURL == nil {
 		return task, nil
 	}
@@ -489,10 +491,8 @@ func (u *MatchmakingUseCase) prepareAssignedTask(ctx context.Context, task *doma
 		return nil, fmt.Errorf("SourceFileStorage.PresignedGetURL: %w", err)
 	}
 
-	out := *task
-	out.Hints = append([]string(nil), task.Hints...)
-	out.SourceFileURL = &url
-	return &out, nil
+	task.SourceFileURL = &url
+	return task, nil
 }
 
 func (u *MatchmakingUseCase) selectDifficultyForPlayer(ctx context.Context, playerID uuid.UUID) (domain.Difficulty, error) {
