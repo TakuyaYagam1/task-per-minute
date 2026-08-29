@@ -230,6 +230,28 @@ func TestServerNoPayloadEventAllowsNullPayload(t *testing.T) {
 	require.Equal(t, EventPong, event.Type)
 }
 
+func TestWebSocketReservationGuard(t *testing.T) {
+	t.Parallel()
+
+	playerID := uuid.New()
+	matchmaking := &reservationGuardMatchmaking{}
+	server := NewServer(nil, matchmaking, nil, NewHubRegistry(), WithHubCloseDelay(0))
+	c := &client{
+		player: &domain.Player{ID: playerID},
+		send:   make(chan []byte, 1),
+		done:   make(chan struct{}),
+	}
+	server.clients.Store(playerID, c)
+
+	server.routeEvent(context.Background(), c, IncomingEvent{Type: EventJoinQueue})
+
+	event := readBufferedClientEvent(t, c)
+	require.Equal(t, EventError, event.Type)
+	require.Equal(t, string(domain.ErrorCodePlayerReserved), event.Code)
+	require.False(t, c.isQueued())
+	require.Equal(t, 1, matchmaking.joinCalls)
+}
+
 func TestWebSocketInboundRateLimitClosesClient(t *testing.T) {
 	t.Parallel()
 
@@ -382,6 +404,19 @@ func drainBufferedClientEvents(t *testing.T, c *client) []Event {
 
 type publishMatchPlayerRepo struct {
 	players map[uuid.UUID]*domain.Player
+}
+
+type reservationGuardMatchmaking struct {
+	joinCalls int
+}
+
+func (m *reservationGuardMatchmaking) JoinQueue(context.Context, uuid.UUID) (*duelusecase.MatchResult, error) {
+	m.joinCalls++
+	return nil, domain.ErrPlayerReserved
+}
+
+func (m *reservationGuardMatchmaking) LeaveQueue(context.Context, uuid.UUID) error {
+	return nil
 }
 
 var _ PlayerReader = (*publishMatchPlayerRepo)(nil)

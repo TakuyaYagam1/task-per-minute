@@ -14,6 +14,87 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestMatchmakingReservationCAS_ArenaConflictBeforeQueueMutation(t *testing.T) {
+	t.Parallel()
+
+	f := newStrictFixture(t)
+	player := &domain.Player{ID: uuid.New(), Username: "alice", Status: domain.PlayerStatusIdle}
+	f.tx.EXPECT().Do(mock.Anything, mock.Anything).RunAndReturn(runTx).Once()
+	f.players.EXPECT().GetByID(mock.Anything, player.ID).Return(player, nil).Once()
+	f.players.EXPECT().AcquireParticipantReservation(
+		mock.Anything,
+		player.ID,
+		domain.ParticipantReservationOwnerCasualQueue,
+		player.ID,
+		mock.Anything,
+	).Return(nil, false, domain.ErrPlayerReserved).Once()
+
+	result, err := f.uc.JoinQueue(t.Context(), player.ID)
+	require.Nil(t, result)
+	require.ErrorIs(t, err, domain.ErrPlayerReserved)
+}
+
+func TestMatchmakingReservationCAS_DuplicateQueueUsesSameClaim(t *testing.T) {
+	t.Parallel()
+
+	f := newStrictFixture(t)
+	now := time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC)
+	player := &domain.Player{ID: uuid.New(), Username: "alice", Status: domain.PlayerStatusQueued}
+	reservation := queueReservation(player.ID, now)
+	f.tx.EXPECT().Do(mock.Anything, mock.Anything).RunAndReturn(runTx).Once()
+	f.players.EXPECT().GetByID(mock.Anything, player.ID).Return(player, nil).Once()
+	f.players.EXPECT().AcquireParticipantReservation(
+		mock.Anything,
+		player.ID,
+		domain.ParticipantReservationOwnerCasualQueue,
+		player.ID,
+		now,
+	).Return(reservation, false, nil).Once()
+	f.queue.EXPECT().Enqueue(mock.Anything, player.ID).Return(nil).Once()
+	f.queue.EXPECT().PopPair(mock.Anything).Return(uuid.Nil, uuid.Nil, false, nil).Once()
+
+	result, err := f.uc.JoinQueue(t.Context(), player.ID)
+	require.NoError(t, err)
+	require.Nil(t, result)
+}
+
+func TestMatchmakingReservationCAS_EnqueueFailureReleasesOwnClaim(t *testing.T) {
+	t.Parallel()
+
+	f := newStrictFixture(t)
+	now := time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC)
+	player := &domain.Player{ID: uuid.New(), Username: "alice", Status: domain.PlayerStatusIdle}
+	reservation := queueReservation(player.ID, now)
+	queueErr := errors.New("redis unavailable")
+	f.tx.EXPECT().Do(mock.Anything, mock.Anything).RunAndReturn(runTx).Twice()
+	f.players.EXPECT().GetByID(mock.Anything, player.ID).Return(player, nil).Once()
+	f.players.EXPECT().AcquireParticipantReservation(
+		mock.Anything,
+		player.ID,
+		domain.ParticipantReservationOwnerCasualQueue,
+		player.ID,
+		now,
+	).Return(reservation, true, nil).Once()
+	f.players.EXPECT().UpdateStatusIfCurrent(
+		mock.Anything,
+		player.ID,
+		domain.PlayerStatusIdle,
+		domain.PlayerStatusQueued,
+	).Return(withStatus(player, domain.PlayerStatusQueued), true, nil).Once()
+	f.queue.EXPECT().Enqueue(mock.Anything, player.ID).Return(queueErr).Once()
+	f.players.EXPECT().ReleaseParticipantReservation(mock.Anything, *reservation).Return(true, nil).Once()
+	f.players.EXPECT().UpdateStatusIfCurrent(
+		mock.Anything,
+		player.ID,
+		domain.PlayerStatusQueued,
+		domain.PlayerStatusIdle,
+	).Return(player, true, nil).Once()
+
+	result, err := f.uc.JoinQueue(t.Context(), player.ID)
+	require.Nil(t, result)
+	require.ErrorIs(t, err, queueErr)
+}
+
 func TestMatchmakingUsecase_JoinQueue_NoPairEnqueuesAndMarksQueued(t *testing.T) {
 	t.Parallel()
 
@@ -77,7 +158,6 @@ func TestMatchmakingUsecase_JoinQueue_RollsBackFirstClaimWhenSecondClaimFails(t 
 		Return(withStatus(player1, domain.PlayerStatusQueued), true, nil).Once()
 	f.queue.EXPECT().Enqueue(mock.Anything, player1.ID).Return(nil).Once()
 	f.queue.EXPECT().PopPair(mock.Anything).Return(player1.ID, player2.ID, true, nil).Once()
-	f.tx.EXPECT().Do(mock.Anything, mock.Anything).RunAndReturn(runTx).Once()
 	f.players.EXPECT().GetByID(mock.Anything, player1.ID).Return(withStatus(player1, domain.PlayerStatusQueued), nil).Once()
 	f.players.EXPECT().GetByID(mock.Anything, player2.ID).Return(player2, nil).Once()
 	f.players.EXPECT().
@@ -103,7 +183,6 @@ func TestMatchmakingUsecase_LeaveQueue_RemovesAndMarksIdle(t *testing.T) {
 	f := newFixture(t)
 	player := &domain.Player{ID: uuid.New(), Username: "alice", Status: domain.PlayerStatusQueued}
 	f.queue.EXPECT().Remove(mock.Anything, player.ID).Return(nil)
-	f.players.EXPECT().GetByID(mock.Anything, player.ID).Return(player, nil)
 	f.players.EXPECT().
 		UpdateStatusIfCurrent(mock.Anything, player.ID, domain.PlayerStatusQueued, domain.PlayerStatusIdle).
 		Return(withStatus(player, domain.PlayerStatusIdle), true, nil)
@@ -156,7 +235,6 @@ func TestMatchmakingUsecase_JoinQueue_PresignsSourceFileURL(t *testing.T) {
 		Return(withStatus(player1, domain.PlayerStatusQueued), true, nil).Once()
 	f.queue.EXPECT().Enqueue(mock.Anything, player1.ID).Return(nil)
 	f.queue.EXPECT().PopPair(mock.Anything).Return(player1.ID, player2.ID, true, nil)
-	f.tx.EXPECT().Do(mock.Anything, mock.Anything).RunAndReturn(runTx)
 	f.players.EXPECT().GetByID(mock.Anything, player1.ID).Return(withStatus(player1, domain.PlayerStatusQueued), nil).Once()
 	f.players.EXPECT().GetByID(mock.Anything, player2.ID).Return(withStatus(player2, domain.PlayerStatusQueued), nil).Once()
 	f.players.EXPECT().
@@ -222,7 +300,6 @@ func TestMatchmakingUsecase_JoinQueue_AssignsSameSharedUnsolvedTaskWhenManyAvail
 		Return(withStatus(player1, domain.PlayerStatusQueued), true, nil).Once()
 	f.queue.EXPECT().Enqueue(mock.Anything, player1.ID).Return(nil)
 	f.queue.EXPECT().PopPair(mock.Anything).Return(player1.ID, player2.ID, true, nil)
-	f.tx.EXPECT().Do(mock.Anything, mock.Anything).RunAndReturn(runTx)
 	f.players.EXPECT().GetByID(mock.Anything, player1.ID).Return(withStatus(player1, domain.PlayerStatusQueued), nil).Once()
 	f.players.EXPECT().GetByID(mock.Anything, player2.ID).Return(withStatus(player2, domain.PlayerStatusQueued), nil).Once()
 	f.players.EXPECT().
@@ -303,7 +380,6 @@ func TestMatchmakingUsecase_JoinQueue_AssignsOnlyCommonUnsolvedTaskToBothPlayers
 		Return(withStatus(player1, domain.PlayerStatusQueued), true, nil).Once()
 	f.queue.EXPECT().Enqueue(mock.Anything, player1.ID).Return(nil)
 	f.queue.EXPECT().PopPair(mock.Anything).Return(player1.ID, player2.ID, true, nil)
-	f.tx.EXPECT().Do(mock.Anything, mock.Anything).RunAndReturn(runTx)
 	f.players.EXPECT().GetByID(mock.Anything, player1.ID).Return(withStatus(player1, domain.PlayerStatusQueued), nil).Once()
 	f.players.EXPECT().GetByID(mock.Anything, player2.ID).Return(withStatus(player2, domain.PlayerStatusQueued), nil).Once()
 	f.players.EXPECT().
@@ -361,7 +437,6 @@ func TestMatchmakingUsecase_JoinQueue_AssignsTaskWithoutHints(t *testing.T) {
 		Return(withStatus(player1, domain.PlayerStatusQueued), true, nil).Once()
 	f.queue.EXPECT().Enqueue(mock.Anything, player1.ID).Return(nil)
 	f.queue.EXPECT().PopPair(mock.Anything).Return(player1.ID, player2.ID, true, nil)
-	f.tx.EXPECT().Do(mock.Anything, mock.Anything).RunAndReturn(runTx)
 	f.players.EXPECT().GetByID(mock.Anything, player1.ID).Return(withStatus(player1, domain.PlayerStatusQueued), nil).Once()
 	f.players.EXPECT().GetByID(mock.Anything, player2.ID).Return(withStatus(player2, domain.PlayerStatusQueued), nil).Once()
 	f.players.EXPECT().
@@ -402,6 +477,53 @@ type matchmakingFixture struct {
 func newFixture(t *testing.T) *matchmakingFixture {
 	t.Helper()
 
+	f := newStrictFixture(t)
+	f.tx.EXPECT().Do(mock.Anything, mock.Anything).RunAndReturn(runTx).Maybe()
+	f.players.EXPECT().AcquireParticipantReservation(
+		mock.Anything,
+		mock.Anything,
+		domain.ParticipantReservationOwnerCasualQueue,
+		mock.Anything,
+		mock.Anything,
+	).RunAndReturn(func(
+		_ context.Context,
+		playerID uuid.UUID,
+		_ domain.ParticipantReservationOwner,
+		_ uuid.UUID,
+		at time.Time,
+	) (*domain.ParticipantReservation, bool, error) {
+		return queueReservation(playerID, at), true, nil
+	}).Maybe()
+	f.players.EXPECT().GetParticipantReservation(mock.Anything, mock.Anything).
+		RunAndReturn(func(_ context.Context, playerID uuid.UUID) (*domain.ParticipantReservation, error) {
+			return queueReservation(playerID, time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC)), nil
+		}).Maybe()
+	f.players.EXPECT().PromoteParticipantReservation(
+		mock.Anything,
+		mock.Anything,
+		domain.ParticipantReservationOwnerCasualDuel,
+		mock.Anything,
+		mock.Anything,
+	).RunAndReturn(func(
+		_ context.Context,
+		expected domain.ParticipantReservation,
+		_ domain.ParticipantReservationOwner,
+		duelID uuid.UUID,
+		at time.Time,
+	) (*domain.ParticipantReservation, bool, error) {
+		expected.OwnerKind = domain.ParticipantReservationOwnerCasualDuel
+		expected.OwnerID = duelID
+		expected.Revision++
+		expected.UpdatedAt = at
+		return &expected, true, nil
+	}).Maybe()
+	f.players.EXPECT().ReleaseParticipantReservation(mock.Anything, mock.Anything).Return(true, nil).Maybe()
+	return f
+}
+
+func newStrictFixture(t *testing.T) *matchmakingFixture {
+	t.Helper()
+
 	tx := duelmocks.NewMockTransactionManager(t)
 	queue := duelmocks.NewMockMatchmakingQueue(t)
 	players := duelmocks.NewMockMatchmakingPlayerRepository(t)
@@ -426,6 +548,18 @@ func withStatus(player *domain.Player, status domain.PlayerStatus) *domain.Playe
 	updated := *player
 	updated.Status = status
 	return &updated
+}
+
+func queueReservation(playerID uuid.UUID, at time.Time) *domain.ParticipantReservation {
+	return &domain.ParticipantReservation{
+		PlayerID:      playerID,
+		ReservationID: uuid.New(),
+		OwnerKind:     domain.ParticipantReservationOwnerCasualQueue,
+		OwnerID:       playerID,
+		Revision:      1,
+		AcquiredAt:    at,
+		UpdatedAt:     at,
+	}
 }
 
 type fixedClock struct {

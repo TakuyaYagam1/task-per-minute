@@ -11,6 +11,7 @@ import (
 )
 
 type Querier interface {
+	AcquireParticipantReservation(ctx context.Context, arg AcquireParticipantReservationParams) (AcquireParticipantReservationRow, error)
 	ActivateArenaAssignmentBranch(ctx context.Context, arg ActivateArenaAssignmentBranchParams) (ArenaAssignmentBranch, error)
 	AddSolvedTask(ctx context.Context, arg AddSolvedTaskParams) error
 	AdvanceArenaCorrectionOfficialHeadCAS(ctx context.Context, arg AdvanceArenaCorrectionOfficialHeadCASParams) (ArenaOfficialResultHead, error)
@@ -88,7 +89,7 @@ type Querier interface {
 	DeleteTask(ctx context.Context, id uuid.UUID) error
 	DiscloseArenaTaskReservationCAS(ctx context.Context, arg DiscloseArenaTaskReservationCASParams) (ArenaTaskVersionReservation, error)
 	EstablishArenaGoldenParticipation(ctx context.Context, arg EstablishArenaGoldenParticipationParams) (ArenaGoldenMembership, error)
-	FinishDuel(ctx context.Context, arg FinishDuelParams) (Duel, error)
+	FinishDuel(ctx context.Context, arg FinishDuelParams) (FinishDuelRow, error)
 	GetActiveArenaTournament(ctx context.Context) (ArenaTournament, error)
 	GetActiveDuelByPlayerID(ctx context.Context, player1ID uuid.UUID) (Duel, error)
 	GetAdminPlayer(ctx context.Context, id uuid.UUID) (GetAdminPlayerRow, error)
@@ -133,6 +134,7 @@ type Querier interface {
 	GetDuelPlayerTask(ctx context.Context, arg GetDuelPlayerTaskParams) (DuelPlayerTask, error)
 	GetLatestArenaGoldenRecoveryRevision(ctx context.Context, arg GetLatestArenaGoldenRecoveryRevisionParams) (ArenaGoldenRecoveryRevision, error)
 	GetLatestArenaProjectionCutoff(ctx context.Context, arg GetLatestArenaProjectionCutoffParams) (ArenaProjectionCutoff, error)
+	GetParticipantReservation(ctx context.Context, playerID uuid.UUID) (GetParticipantReservationRow, error)
 	GetPlayerByID(ctx context.Context, id uuid.UUID) (Player, error)
 	GetPlayerBySessionToken(ctx context.Context, sessionToken uuid.NullUUID) (Player, error)
 	GetPlayerByUsername(ctx context.Context, username string) (Player, error)
@@ -202,10 +204,12 @@ type Querier interface {
 	MarkArenaWaveReadinessCAS(ctx context.Context, arg MarkArenaWaveReadinessCASParams) (ArenaWafe, error)
 	MarkDuelPlayerTaskSolved(ctx context.Context, arg MarkDuelPlayerTaskSolvedParams) error
 	OpenArenaWaveReadyWindowCAS(ctx context.Context, arg OpenArenaWaveReadyWindowCASParams) (ArenaWafe, error)
+	PromoteParticipantReservation(ctx context.Context, arg PromoteParticipantReservationParams) (PromoteParticipantReservationRow, error)
 	PublishArenaProjectionRevisionCAS(ctx context.Context, arg PublishArenaProjectionRevisionCASParams) (ArenaProjectionRevision, error)
 	ReleaseArenaReservations(ctx context.Context, tournamentID uuid.UUID) (int64, error)
 	ReleaseOtherArenaAssignmentBranches(ctx context.Context, arg ReleaseOtherArenaAssignmentBranchesParams) ([]uuid.UUID, error)
 	ReleaseOtherArenaBranchReservations(ctx context.Context, arg ReleaseOtherArenaBranchReservationsParams) ([]uuid.UUID, error)
+	ReleaseParticipantReservation(ctx context.Context, arg ReleaseParticipantReservationParams) (uuid.UUID, error)
 	ReplaceWithdrawnArenaParticipant(ctx context.Context, arg ReplaceWithdrawnArenaParticipantParams) (ArenaParticipant, error)
 	ReserveCheckedInArenaParticipants(ctx context.Context, arg ReserveCheckedInArenaParticipantsParams) ([]uuid.UUID, error)
 	ResetQueuedPlayers(ctx context.Context) (int64, error)

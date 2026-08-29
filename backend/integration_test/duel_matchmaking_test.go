@@ -62,6 +62,13 @@ func TestDuelMatchmaking_TwoPlayersParallelCreatesOneDuel(t *testing.T) {
 	got2, err := f.players.GetByID(ctx, p2.ID)
 	require.NoError(t, err)
 	require.Equal(t, domain.PlayerStatusInDuel, got2.Status)
+	for _, playerID := range []uuid.UUID{p1.ID, p2.ID} {
+		reservation, reservationErr := f.players.GetParticipantReservation(ctx, playerID)
+		require.NoError(t, reservationErr)
+		require.NotNil(t, reservation)
+		require.Equal(t, domain.ParticipantReservationOwnerCasualDuel, reservation.OwnerKind)
+		require.Equal(t, result.Duel.ID, reservation.OwnerID)
+	}
 
 	_, err = f.duels.GetDuelPlayerTask(ctx, result.Duel.ID, p1.ID)
 	require.NoError(t, err)
@@ -134,6 +141,9 @@ func TestDuelMatchmaking_LeaveQueueRemovesPlayerAndSetsIdle(t *testing.T) {
 	got, err := f.players.GetByID(ctx, player.ID)
 	require.NoError(t, err)
 	require.Equal(t, domain.PlayerStatusIdle, got.Status)
+	reservation, err := f.players.GetParticipantReservation(ctx, player.ID)
+	require.NoError(t, err)
+	require.Nil(t, reservation)
 
 	next := f.makePlayer(t, uniq("bob"))
 	result, err = f.uc.JoinQueue(ctx, next.ID)

@@ -50,20 +50,36 @@ RETURNING id,
   started_at,
   finished_at;
 -- name: FinishDuel :one
-UPDATE duels
-SET status = $4,
-  winner_id = $2,
-  finished_at = $3
-WHERE id = $1
-  AND status = 'active'
-RETURNING id,
+WITH finished AS (
+  UPDATE duels
+  SET status = $4,
+    winner_id = $2,
+    finished_at = $3
+  WHERE id = $1
+    AND status = 'active'
+  RETURNING id,
+    player1_id,
+    player2_id,
+    status,
+    winner_id,
+    deadline,
+    started_at,
+    finished_at
+), released AS (
+  DELETE FROM participant_reservations AS reservation
+  USING finished
+  WHERE reservation.owner_kind = 'casual_duel'
+    AND reservation.casual_duel_id = finished.id
+)
+SELECT id,
   player1_id,
   player2_id,
   status,
   winner_id,
   deadline,
   started_at,
-  finished_at;
+  finished_at
+FROM finished;
 -- name: ListActiveDuels :many
 SELECT id,
   player1_id,

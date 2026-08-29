@@ -47,7 +47,16 @@ func (r *DuelPostgres) Create(ctx context.Context, player1ID, player2ID uuid.UUI
 	if err != nil {
 		return nil, fmt.Errorf("DuelPostgres - Create - Querier.CreateDuel: %w", err)
 	}
-	return duelToDomain(row), nil
+	return duelFieldsToDomain(
+		row.ID,
+		row.Player1ID,
+		row.Player2ID,
+		row.Status,
+		row.WinnerID,
+		row.Deadline,
+		row.StartedAt,
+		row.FinishedAt,
+	), nil
 }
 
 func (r *DuelPostgres) GetByID(ctx context.Context, id uuid.UUID) (*domain.Duel, error) {
@@ -115,7 +124,16 @@ func (r *DuelPostgres) Finish(ctx context.Context, id uuid.UUID, winnerID *uuid.
 		}
 		return nil, fmt.Errorf("DuelPostgres - Finish - Querier.FinishDuel: %w", err)
 	}
-	return duelToDomain(row), nil
+	return duelFieldsToDomain(
+		row.ID,
+		row.Player1ID,
+		row.Player2ID,
+		row.Status,
+		row.WinnerID,
+		row.Deadline,
+		row.StartedAt,
+		row.FinishedAt,
+	), nil
 }
 
 func (r *DuelPostgres) ListActive(ctx context.Context) ([]*domain.Duel, error) {

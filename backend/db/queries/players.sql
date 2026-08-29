@@ -9,13 +9,25 @@ RETURNING id,
     deleted_at,
     session_expires_at;
 -- name: UpsertPlayerSessionByUsername :one
-INSERT INTO players (username, session_token, session_expires_at)
+WITH existing AS MATERIALIZED (
+    SELECT player.id,
+        NOT EXISTS (
+            SELECT 1
+            FROM participant_reservations AS reservation
+            WHERE reservation.player_id = player.id
+        ) AS unreserved
+    FROM players AS player
+    WHERE player.username = $1
+    FOR UPDATE OF player
+)
+INSERT INTO players AS target (username, session_token, session_expires_at)
 VALUES ($1, $2, $3) ON CONFLICT (username) DO
 UPDATE
 SET session_token = EXCLUDED.session_token,
     session_expires_at = EXCLUDED.session_expires_at
-WHERE players.status = 'idle'
-    AND players.deleted_at IS NULL
+WHERE target.status = 'idle'
+    AND target.deleted_at IS NULL
+    AND COALESCE((SELECT unreserved FROM existing), TRUE)
 RETURNING id,
     username,
     session_token,
@@ -94,7 +106,117 @@ RETURNING id,
     deleted_at,
     session_expires_at;
 
+-- name: GetParticipantReservation :one
+SELECT player_id,
+    reservation_id,
+    owner_kind,
+    owner_id,
+    revision,
+    acquired_at,
+    updated_at
+FROM participant_reservations
+WHERE player_id = sqlc.arg(player_id);
+
+-- name: AcquireParticipantReservation :one
+WITH acquired AS (
+    INSERT INTO participant_reservations (
+        player_id,
+        owner_kind,
+        owner_id,
+        arena_tournament_id,
+        casual_duel_id,
+        acquired_at,
+        updated_at
+    )
+    VALUES (
+        sqlc.arg(player_id),
+        sqlc.arg(owner_kind)::TEXT,
+        sqlc.arg(owner_id)::UUID,
+        CASE
+            WHEN sqlc.arg(owner_kind)::TEXT = 'arena' THEN sqlc.arg(owner_id)::UUID
+        END,
+        CASE
+            WHEN sqlc.arg(owner_kind)::TEXT = 'casual_duel' THEN sqlc.arg(owner_id)::UUID
+        END,
+        sqlc.arg(acquired_at),
+        sqlc.arg(acquired_at)
+    )
+    ON CONFLICT (player_id) DO NOTHING
+    RETURNING player_id,
+        reservation_id,
+        owner_kind,
+        owner_id,
+        revision,
+        acquired_at,
+        updated_at
+)
+SELECT player_id,
+    reservation_id,
+    owner_kind,
+    owner_id,
+    revision,
+    acquired_at,
+    updated_at,
+    TRUE AS changed
+FROM acquired
+UNION ALL
+SELECT reservation.player_id,
+    reservation.reservation_id,
+    reservation.owner_kind,
+    reservation.owner_id,
+    reservation.revision,
+    reservation.acquired_at,
+    reservation.updated_at,
+    FALSE AS changed
+FROM participant_reservations AS reservation
+WHERE reservation.player_id = sqlc.arg(player_id)
+    AND reservation.owner_kind = sqlc.arg(owner_kind)::TEXT
+    AND reservation.owner_id = sqlc.arg(owner_id)::UUID
+LIMIT 1;
+
+-- name: PromoteParticipantReservation :one
+UPDATE participant_reservations
+SET owner_kind = sqlc.arg(next_owner_kind)::TEXT,
+    owner_id = sqlc.arg(next_owner_id)::UUID,
+    arena_tournament_id = CASE
+        WHEN sqlc.arg(next_owner_kind)::TEXT = 'arena' THEN sqlc.arg(next_owner_id)::UUID
+    END,
+    casual_duel_id = CASE
+        WHEN sqlc.arg(next_owner_kind)::TEXT = 'casual_duel' THEN sqlc.arg(next_owner_id)::UUID
+    END,
+    revision = revision + 1,
+    updated_at = sqlc.arg(updated_at)
+WHERE player_id = sqlc.arg(player_id)
+    AND reservation_id = sqlc.arg(reservation_id)
+    AND owner_kind = sqlc.arg(expected_owner_kind)::TEXT
+    AND owner_id = sqlc.arg(expected_owner_id)::UUID
+    AND revision = sqlc.arg(expected_revision)
+RETURNING player_id,
+    reservation_id,
+    owner_kind,
+    owner_id,
+    revision,
+    acquired_at,
+    updated_at;
+
+-- name: ReleaseParticipantReservation :one
+DELETE FROM participant_reservations
+WHERE player_id = sqlc.arg(player_id)
+    AND reservation_id = sqlc.arg(reservation_id)
+    AND owner_kind = sqlc.arg(expected_owner_kind)::TEXT
+    AND owner_id = sqlc.arg(expected_owner_id)::UUID
+    AND revision = sqlc.arg(expected_revision)
+RETURNING player_id;
+
 -- name: ResetQueuedPlayers :execrows
+WITH released AS (
+    DELETE FROM participant_reservations AS reservation
+    USING players AS player
+    WHERE reservation.player_id = player.id
+        AND reservation.owner_kind = 'casual_queue'
+        AND player.status = 'queued'
+        AND player.deleted_at IS NULL
+)
 UPDATE players
 SET status = 'idle'
 WHERE status = 'queued'

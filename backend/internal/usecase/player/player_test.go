@@ -122,6 +122,20 @@ func TestUsecase_Join_RejectsPlayerInDuel(t *testing.T) {
 	require.ErrorIs(t, err, domain.ErrPlayerInDuel)
 }
 
+func TestPlayerReservationGuard(t *testing.T) {
+	t.Parallel()
+
+	tx, players, duels := newFixture(t)
+	runTxInline(tx)
+
+	players.EXPECT().
+		JoinByUsername(mock.Anything, "alice", mock.MatchedBy(nonNilUUID), mock.MatchedBy(futureTime)).
+		Return(nil, domain.ErrPlayerReserved)
+
+	_, err := newPlayerUseCase(tx, players, duels).Join(t.Context(), "alice")
+	require.ErrorIs(t, err, domain.ErrPlayerReserved)
+}
+
 func TestUsecase_Join_RejectsInvalidUsername(t *testing.T) {
 	t.Parallel()
 

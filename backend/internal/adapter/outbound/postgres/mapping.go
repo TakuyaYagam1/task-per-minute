@@ -76,20 +76,42 @@ func nullableUUID(p *uuid.UUID) uuid.NullUUID {
 }
 
 func duelToDomain(d sqlc.Duel) *domain.Duel {
+	return duelFieldsToDomain(
+		d.ID,
+		d.Player1ID,
+		d.Player2ID,
+		d.Status,
+		d.WinnerID,
+		d.Deadline,
+		d.StartedAt,
+		d.FinishedAt,
+	)
+}
+
+func duelFieldsToDomain(
+	id uuid.UUID,
+	player1ID uuid.UUID,
+	player2ID uuid.UUID,
+	status string,
+	winnerID uuid.NullUUID,
+	deadline pgtype.Timestamptz,
+	startedAt pgtype.Timestamptz,
+	finishedAt pgtype.Timestamptz,
+) *domain.Duel {
 	out := &domain.Duel{
-		ID:        d.ID,
-		Player1ID: d.Player1ID,
-		Player2ID: d.Player2ID,
-		Status:    domain.DuelStatus(d.Status),
-		Deadline:  d.Deadline.Time,
-		StartedAt: d.StartedAt.Time,
+		ID:        id,
+		Player1ID: player1ID,
+		Player2ID: player2ID,
+		Status:    domain.DuelStatus(status),
+		Deadline:  deadline.Time,
+		StartedAt: startedAt.Time,
 	}
-	if d.WinnerID.Valid {
-		w := d.WinnerID.UUID
+	if winnerID.Valid {
+		w := winnerID.UUID
 		out.WinnerID = &w
 	}
-	if d.FinishedAt.Valid {
-		t := d.FinishedAt.Time
+	if finishedAt.Valid {
+		t := finishedAt.Time
 		out.FinishedAt = &t
 	}
 	return out

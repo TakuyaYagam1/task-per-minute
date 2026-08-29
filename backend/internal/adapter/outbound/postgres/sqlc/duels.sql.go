@@ -48,13 +48,28 @@ func (q *Queries) CreateDuel(ctx context.Context, arg CreateDuelParams) (Duel, e
 }
 
 const finishDuel = `-- name: FinishDuel :one
-UPDATE duels
-SET status = $4,
-  winner_id = $2,
-  finished_at = $3
-WHERE id = $1
-  AND status = 'active'
-RETURNING id,
+WITH finished AS (
+  UPDATE duels
+  SET status = $4,
+    winner_id = $2,
+    finished_at = $3
+  WHERE id = $1
+    AND status = 'active'
+  RETURNING id,
+    player1_id,
+    player2_id,
+    status,
+    winner_id,
+    deadline,
+    started_at,
+    finished_at
+), released AS (
+  DELETE FROM participant_reservations AS reservation
+  USING finished
+  WHERE reservation.owner_kind = 'casual_duel'
+    AND reservation.casual_duel_id = finished.id
+)
+SELECT id,
   player1_id,
   player2_id,
   status,
@@ -62,6 +77,7 @@ RETURNING id,
   deadline,
   started_at,
   finished_at
+FROM finished
 `
 
 type FinishDuelParams struct {
@@ -71,14 +87,25 @@ type FinishDuelParams struct {
 	Status     string
 }
 
-func (q *Queries) FinishDuel(ctx context.Context, arg FinishDuelParams) (Duel, error) {
+type FinishDuelRow struct {
+	ID         uuid.UUID
+	Player1ID  uuid.UUID
+	Player2ID  uuid.UUID
+	Status     string
+	WinnerID   uuid.NullUUID
+	Deadline   pgtype.Timestamptz
+	StartedAt  pgtype.Timestamptz
+	FinishedAt pgtype.Timestamptz
+}
+
+func (q *Queries) FinishDuel(ctx context.Context, arg FinishDuelParams) (FinishDuelRow, error) {
 	row := q.db.QueryRow(ctx, finishDuel,
 		arg.ID,
 		arg.WinnerID,
 		arg.FinishedAt,
 		arg.Status,
 	)
-	var i Duel
+	var i FinishDuelRow
 	err := row.Scan(
 		&i.ID,
 		&i.Player1ID,

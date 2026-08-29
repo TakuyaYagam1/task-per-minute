@@ -26,6 +26,25 @@ type MatchmakingQueue interface {
 type MatchmakingPlayerRepository interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*domain.Player, error)
 	UpdateStatusIfCurrent(ctx context.Context, id uuid.UUID, from, to domain.PlayerStatus) (*domain.Player, bool, error)
+	GetParticipantReservation(ctx context.Context, playerID uuid.UUID) (*domain.ParticipantReservation, error)
+	AcquireParticipantReservation(
+		ctx context.Context,
+		playerID uuid.UUID,
+		ownerKind domain.ParticipantReservationOwner,
+		ownerID uuid.UUID,
+		acquiredAt time.Time,
+	) (*domain.ParticipantReservation, bool, error)
+	PromoteParticipantReservation(
+		ctx context.Context,
+		expected domain.ParticipantReservation,
+		nextOwnerKind domain.ParticipantReservationOwner,
+		nextOwnerID uuid.UUID,
+		updatedAt time.Time,
+	) (*domain.ParticipantReservation, bool, error)
+	ReleaseParticipantReservation(
+		ctx context.Context,
+		expected domain.ParticipantReservation,
+	) (bool, error)
 }
 
 type MatchmakingTaskRepository interface {

@@ -21,6 +21,7 @@ func TestApplicationErrorSentinels(t *testing.T) {
 		{"username_invalid", domain.ErrUsernameInvalid, domain.ErrorCodeUsernameInvalid},
 		{"player_in_duel", domain.ErrPlayerInDuel, domain.ErrorCodePlayerInDuel},
 		{"player_queued", domain.ErrPlayerQueued, domain.ErrorCodePlayerQueued},
+		{"player_reserved", domain.ErrPlayerReserved, domain.ErrorCodePlayerReserved},
 		{"invalid_session", domain.ErrInvalidSession, domain.ErrorCodeInvalidSession},
 		{"task_not_found", domain.ErrTaskNotFound, domain.ErrorCodeTaskNotFound},
 		{"task_in_use", domain.ErrTaskInUse, domain.ErrorCodeTaskInUse},

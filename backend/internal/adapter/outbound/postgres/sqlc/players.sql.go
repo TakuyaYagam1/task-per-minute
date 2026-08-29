@@ -12,6 +12,103 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const acquireParticipantReservation = `-- name: AcquireParticipantReservation :one
+WITH acquired AS (
+    INSERT INTO participant_reservations (
+        player_id,
+        owner_kind,
+        owner_id,
+        arena_tournament_id,
+        casual_duel_id,
+        acquired_at,
+        updated_at
+    )
+    VALUES (
+        $1,
+        $2::TEXT,
+        $3::UUID,
+        CASE
+            WHEN $2::TEXT = 'arena' THEN $3::UUID
+        END,
+        CASE
+            WHEN $2::TEXT = 'casual_duel' THEN $3::UUID
+        END,
+        $4,
+        $4
+    )
+    ON CONFLICT (player_id) DO NOTHING
+    RETURNING player_id,
+        reservation_id,
+        owner_kind,
+        owner_id,
+        revision,
+        acquired_at,
+        updated_at
+)
+SELECT player_id,
+    reservation_id,
+    owner_kind,
+    owner_id,
+    revision,
+    acquired_at,
+    updated_at,
+    TRUE AS changed
+FROM acquired
+UNION ALL
+SELECT reservation.player_id,
+    reservation.reservation_id,
+    reservation.owner_kind,
+    reservation.owner_id,
+    reservation.revision,
+    reservation.acquired_at,
+    reservation.updated_at,
+    FALSE AS changed
+FROM participant_reservations AS reservation
+WHERE reservation.player_id = $1
+    AND reservation.owner_kind = $2::TEXT
+    AND reservation.owner_id = $3::UUID
+LIMIT 1
+`
+
+type AcquireParticipantReservationParams struct {
+	PlayerID   uuid.UUID
+	OwnerKind  string
+	OwnerID    uuid.UUID
+	AcquiredAt pgtype.Timestamptz
+}
+
+type AcquireParticipantReservationRow struct {
+	PlayerID      uuid.UUID
+	ReservationID uuid.UUID
+	OwnerKind     string
+	OwnerID       uuid.UUID
+	Revision      int64
+	AcquiredAt    pgtype.Timestamptz
+	UpdatedAt     pgtype.Timestamptz
+	Changed       bool
+}
+
+func (q *Queries) AcquireParticipantReservation(ctx context.Context, arg AcquireParticipantReservationParams) (AcquireParticipantReservationRow, error) {
+	row := q.db.QueryRow(ctx, acquireParticipantReservation,
+		arg.PlayerID,
+		arg.OwnerKind,
+		arg.OwnerID,
+		arg.AcquiredAt,
+	)
+	var i AcquireParticipantReservationRow
+	err := row.Scan(
+		&i.PlayerID,
+		&i.ReservationID,
+		&i.OwnerKind,
+		&i.OwnerID,
+		&i.Revision,
+		&i.AcquiredAt,
+		&i.UpdatedAt,
+		&i.Changed,
+	)
+	return i, err
+}
+
 const createPlayer = `-- name: CreatePlayer :one
 INSERT INTO players (username)
 VALUES ($1)
@@ -176,6 +273,43 @@ func (q *Queries) GetAdminPlayerIncludingDeleted(ctx context.Context, id uuid.UU
 		&i.Wins,
 		&i.AverageSolveTimeMs,
 		&i.StatsOverridden,
+	)
+	return i, err
+}
+
+const getParticipantReservation = `-- name: GetParticipantReservation :one
+SELECT player_id,
+    reservation_id,
+    owner_kind,
+    owner_id,
+    revision,
+    acquired_at,
+    updated_at
+FROM participant_reservations
+WHERE player_id = $1
+`
+
+type GetParticipantReservationRow struct {
+	PlayerID      uuid.UUID
+	ReservationID uuid.UUID
+	OwnerKind     string
+	OwnerID       uuid.UUID
+	Revision      int64
+	AcquiredAt    pgtype.Timestamptz
+	UpdatedAt     pgtype.Timestamptz
+}
+
+func (q *Queries) GetParticipantReservation(ctx context.Context, playerID uuid.UUID) (GetParticipantReservationRow, error) {
+	row := q.db.QueryRow(ctx, getParticipantReservation, playerID)
+	var i GetParticipantReservationRow
+	err := row.Scan(
+		&i.PlayerID,
+		&i.ReservationID,
+		&i.OwnerKind,
+		&i.OwnerID,
+		&i.Revision,
+		&i.AcquiredAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -348,7 +482,117 @@ func (q *Queries) ListAdminPlayers(ctx context.Context, dollar_1 bool) ([]ListAd
 	return items, nil
 }
 
+const promoteParticipantReservation = `-- name: PromoteParticipantReservation :one
+UPDATE participant_reservations
+SET owner_kind = $1::TEXT,
+    owner_id = $2::UUID,
+    arena_tournament_id = CASE
+        WHEN $1::TEXT = 'arena' THEN $2::UUID
+    END,
+    casual_duel_id = CASE
+        WHEN $1::TEXT = 'casual_duel' THEN $2::UUID
+    END,
+    revision = revision + 1,
+    updated_at = $3
+WHERE player_id = $4
+    AND reservation_id = $5
+    AND owner_kind = $6::TEXT
+    AND owner_id = $7::UUID
+    AND revision = $8
+RETURNING player_id,
+    reservation_id,
+    owner_kind,
+    owner_id,
+    revision,
+    acquired_at,
+    updated_at
+`
+
+type PromoteParticipantReservationParams struct {
+	NextOwnerKind     string
+	NextOwnerID       uuid.UUID
+	UpdatedAt         pgtype.Timestamptz
+	PlayerID          uuid.UUID
+	ReservationID     uuid.UUID
+	ExpectedOwnerKind string
+	ExpectedOwnerID   uuid.UUID
+	ExpectedRevision  int64
+}
+
+type PromoteParticipantReservationRow struct {
+	PlayerID      uuid.UUID
+	ReservationID uuid.UUID
+	OwnerKind     string
+	OwnerID       uuid.UUID
+	Revision      int64
+	AcquiredAt    pgtype.Timestamptz
+	UpdatedAt     pgtype.Timestamptz
+}
+
+func (q *Queries) PromoteParticipantReservation(ctx context.Context, arg PromoteParticipantReservationParams) (PromoteParticipantReservationRow, error) {
+	row := q.db.QueryRow(ctx, promoteParticipantReservation,
+		arg.NextOwnerKind,
+		arg.NextOwnerID,
+		arg.UpdatedAt,
+		arg.PlayerID,
+		arg.ReservationID,
+		arg.ExpectedOwnerKind,
+		arg.ExpectedOwnerID,
+		arg.ExpectedRevision,
+	)
+	var i PromoteParticipantReservationRow
+	err := row.Scan(
+		&i.PlayerID,
+		&i.ReservationID,
+		&i.OwnerKind,
+		&i.OwnerID,
+		&i.Revision,
+		&i.AcquiredAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const releaseParticipantReservation = `-- name: ReleaseParticipantReservation :one
+DELETE FROM participant_reservations
+WHERE player_id = $1
+    AND reservation_id = $2
+    AND owner_kind = $3::TEXT
+    AND owner_id = $4::UUID
+    AND revision = $5
+RETURNING player_id
+`
+
+type ReleaseParticipantReservationParams struct {
+	PlayerID          uuid.UUID
+	ReservationID     uuid.UUID
+	ExpectedOwnerKind string
+	ExpectedOwnerID   uuid.UUID
+	ExpectedRevision  int64
+}
+
+func (q *Queries) ReleaseParticipantReservation(ctx context.Context, arg ReleaseParticipantReservationParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, releaseParticipantReservation,
+		arg.PlayerID,
+		arg.ReservationID,
+		arg.ExpectedOwnerKind,
+		arg.ExpectedOwnerID,
+		arg.ExpectedRevision,
+	)
+	var player_id uuid.UUID
+	err := row.Scan(&player_id)
+	return player_id, err
+}
+
 const resetQueuedPlayers = `-- name: ResetQueuedPlayers :execrows
+WITH released AS (
+    DELETE FROM participant_reservations AS reservation
+    USING players AS player
+    WHERE reservation.player_id = player.id
+        AND reservation.owner_kind = 'casual_queue'
+        AND player.status = 'queued'
+        AND player.deleted_at IS NULL
+)
 UPDATE players
 SET status = 'idle'
 WHERE status = 'queued'
@@ -586,13 +830,25 @@ func (q *Queries) UpsertPlayerLeaderboardOverride(ctx context.Context, arg Upser
 }
 
 const upsertPlayerSessionByUsername = `-- name: UpsertPlayerSessionByUsername :one
-INSERT INTO players (username, session_token, session_expires_at)
+WITH existing AS MATERIALIZED (
+    SELECT player.id,
+        NOT EXISTS (
+            SELECT 1
+            FROM participant_reservations AS reservation
+            WHERE reservation.player_id = player.id
+        ) AS unreserved
+    FROM players AS player
+    WHERE player.username = $1
+    FOR UPDATE OF player
+)
+INSERT INTO players AS target (username, session_token, session_expires_at)
 VALUES ($1, $2, $3) ON CONFLICT (username) DO
 UPDATE
 SET session_token = EXCLUDED.session_token,
     session_expires_at = EXCLUDED.session_expires_at
-WHERE players.status = 'idle'
-    AND players.deleted_at IS NULL
+WHERE target.status = 'idle'
+    AND target.deleted_at IS NULL
+    AND COALESCE((SELECT unreserved FROM existing), TRUE)
 RETURNING id,
     username,
     session_token,

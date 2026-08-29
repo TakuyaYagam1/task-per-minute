@@ -68,12 +68,13 @@ func (u *MatchmakingUseCase) Configure(options ...MatchmakingOption) *Matchmakin
 }
 
 func (u *MatchmakingUseCase) JoinQueue(ctx context.Context, playerID uuid.UUID) (*MatchResult, error) {
-	if err := u.ensureQueuedForJoin(ctx, playerID); err != nil {
+	reservation, err := u.ensureQueuedForJoin(ctx, playerID)
+	if err != nil {
 		return nil, err
 	}
 
 	if err := u.queue.Enqueue(ctx, playerID); err != nil {
-		if releaseErr := u.releaseQueuedPlayers(ctx, playerID); releaseErr != nil {
+		if releaseErr := u.releaseQueuedReservation(ctx, playerID, reservation); releaseErr != nil {
 			err = errors.Join(err, releaseErr)
 		}
 		return nil, fmt.Errorf("MatchmakingUsecase - JoinQueue - MatchmakingQueue.Enqueue: %w", err)
@@ -82,7 +83,7 @@ func (u *MatchmakingUseCase) JoinQueue(ctx context.Context, playerID uuid.UUID) 
 	for {
 		player1ID, player2ID, ok, err := u.queue.PopPair(ctx)
 		if err != nil {
-			if rollbackErr := u.rollbackQueuedJoin(ctx, playerID); rollbackErr != nil {
+			if rollbackErr := u.rollbackQueuedJoin(ctx, playerID, reservation); rollbackErr != nil {
 				err = errors.Join(err, rollbackErr)
 			}
 			return nil, fmt.Errorf("MatchmakingUsecase - JoinQueue - MatchmakingQueue.PopPair: %w", err)
@@ -94,6 +95,9 @@ func (u *MatchmakingUseCase) JoinQueue(ctx context.Context, playerID uuid.UUID) 
 		result, requeue, err := u.createMatch(ctx, player1ID, player2ID)
 		if len(requeue) > 0 {
 			if requeueErr := u.requeuePlayers(ctx, requeue...); requeueErr != nil {
+				if releaseErr := u.releaseQueuedPlayers(ctx, requeue...); releaseErr != nil {
+					requeueErr = errors.Join(requeueErr, releaseErr)
+				}
 				return nil, requeueErr
 			}
 		}
@@ -111,65 +115,100 @@ func (u *MatchmakingUseCase) JoinQueue(ctx context.Context, playerID uuid.UUID) 
 }
 
 func (u *MatchmakingUseCase) LeaveQueue(ctx context.Context, playerID uuid.UUID) error {
+	reservation, err := u.players.GetParticipantReservation(ctx, playerID)
+	if err != nil {
+		return fmt.Errorf("MatchmakingUsecase - LeaveQueue - PlayerRepo.GetParticipantReservation: %w", err)
+	}
+	if reservation != nil && !isCasualQueueReservation(reservation, playerID) {
+		player, getErr := u.players.GetByID(ctx, playerID)
+		if getErr != nil {
+			return fmt.Errorf("MatchmakingUsecase - LeaveQueue - PlayerRepo.GetByID: %w", getErr)
+		}
+		if player.Status == domain.PlayerStatusInDuel &&
+			reservation.OwnerKind == domain.ParticipantReservationOwnerCasualDuel {
+			return nil
+		}
+		return domain.ErrPlayerReserved
+	}
 	if err := u.queue.Remove(ctx, playerID); err != nil {
 		return fmt.Errorf("MatchmakingUsecase - LeaveQueue - MatchmakingQueue.Remove: %w", err)
 	}
-
-	player, err := u.players.GetByID(ctx, playerID)
-	if err != nil {
-		return fmt.Errorf("MatchmakingUsecase - LeaveQueue - PlayerRepo.GetByID: %w", err)
-	}
-	if player.Status == domain.PlayerStatusInDuel {
-		return nil
-	}
-	if player.Status != domain.PlayerStatusQueued {
-		return nil
-	}
-	if _, _, err := u.players.UpdateStatusIfCurrent(ctx, playerID, domain.PlayerStatusQueued, domain.PlayerStatusIdle); err != nil {
-		return fmt.Errorf("MatchmakingUsecase - LeaveQueue - PlayerRepo.UpdateStatusIfCurrent idle: %w", err)
-	}
-	return nil
+	return u.releaseQueuedReservation(ctx, playerID, reservation)
 }
 
-func (u *MatchmakingUseCase) rollbackQueuedJoin(ctx context.Context, playerID uuid.UUID) error {
+func (u *MatchmakingUseCase) rollbackQueuedJoin(
+	ctx context.Context,
+	playerID uuid.UUID,
+	reservation *domain.ParticipantReservation,
+) error {
 	var errs []error
 	if err := u.queue.Remove(ctx, playerID); err != nil {
 		errs = append(errs, fmt.Errorf("MatchmakingUsecase - rollbackQueuedJoin - MatchmakingQueue.Remove: %w", err))
 	}
-	if err := u.releaseQueuedPlayers(ctx, playerID); err != nil {
+	if err := u.releaseQueuedReservation(ctx, playerID, reservation); err != nil {
 		errs = append(errs, err)
 	}
 	return errors.Join(errs...)
 }
 
-func (u *MatchmakingUseCase) ensureQueuedForJoin(ctx context.Context, playerID uuid.UUID) error {
+func (u *MatchmakingUseCase) ensureQueuedForJoin(
+	ctx context.Context,
+	playerID uuid.UUID,
+) (*domain.ParticipantReservation, error) {
 	for attempt := 0; attempt < 2; attempt++ {
-		player, err := u.players.GetByID(ctx, playerID)
-		if err != nil {
-			return fmt.Errorf("MatchmakingUsecase - ensureQueuedForJoin - PlayerRepo.GetByID: %w", err)
-		}
-		switch player.Status {
-		case domain.PlayerStatusInDuel:
-			return domain.ErrPlayerInDuel
-		case domain.PlayerStatusQueued:
+		var reservation *domain.ParticipantReservation
+		err := u.tx.Do(ctx, func(txCtx context.Context) error {
+			player, err := u.players.GetByID(txCtx, playerID)
+			if err != nil {
+				return fmt.Errorf("MatchmakingUsecase - ensureQueuedForJoin - PlayerRepo.GetByID: %w", err)
+			}
+			if player.Status == domain.PlayerStatusInDuel {
+				return domain.ErrPlayerInDuel
+			}
+			reservation, _, err = u.players.AcquireParticipantReservation(
+				txCtx,
+				playerID,
+				domain.ParticipantReservationOwnerCasualQueue,
+				playerID,
+				u.clock.Now(),
+			)
+			if err != nil {
+				return fmt.Errorf("MatchmakingUsecase - ensureQueuedForJoin - acquire reservation: %w", err)
+			}
+			if player.Status == domain.PlayerStatusQueued {
+				return nil
+			}
+			if _, ok, updateErr := u.players.UpdateStatusIfCurrent(
+				txCtx,
+				playerID,
+				player.Status,
+				domain.PlayerStatusQueued,
+			); updateErr != nil {
+				return fmt.Errorf("MatchmakingUsecase - ensureQueuedForJoin - PlayerRepo.UpdateStatusIfCurrent queued: %w", updateErr)
+			} else if !ok {
+				return domain.ErrConflict
+			}
 			return nil
-		case domain.PlayerStatusIdle:
+		})
+		if err == nil {
+			return reservation, nil
 		}
-
-		if _, ok, err := u.players.UpdateStatusIfCurrent(ctx, playerID, player.Status, domain.PlayerStatusQueued); err != nil {
-			return fmt.Errorf("MatchmakingUsecase - ensureQueuedForJoin - PlayerRepo.UpdateStatusIfCurrent queued: %w", err)
-		} else if ok {
-			return nil
+		if !errors.Is(err, domain.ErrConflict) {
+			return nil, err
 		}
 	}
-	return domain.ErrConflict
+	return nil, domain.ErrConflict
 }
 
 func (u *MatchmakingUseCase) createMatch(ctx context.Context, player1ID, player2ID uuid.UUID) (*MatchResult, []uuid.UUID, error) {
 	var result *MatchResult
 	var requeue []uuid.UUID
 	if err := u.tx.Do(ctx, func(txCtx context.Context) error {
-		player1, player2, queuedRequeue, err := u.claimQueuedPair(txCtx, player1ID, player2ID)
+		player1, player2, reservation1, reservation2, queuedRequeue, err := u.claimQueuedPair(
+			txCtx,
+			player1ID,
+			player2ID,
+		)
 		if err != nil {
 			return err
 		}
@@ -184,6 +223,9 @@ func (u *MatchmakingUseCase) createMatch(ctx context.Context, player1ID, player2
 		}
 		duel, err := u.createDuelAssignments(txCtx, player1, player2, player1Task, player2Task)
 		if err != nil {
+			return err
+		}
+		if err := u.promotePairReservations(txCtx, reservation1, reservation2, duel.ID); err != nil {
 			return err
 		}
 
@@ -203,33 +245,55 @@ func (u *MatchmakingUseCase) claimQueuedPair(
 	ctx context.Context,
 	player1ID uuid.UUID,
 	player2ID uuid.UUID,
-) (*domain.Player, *domain.Player, []uuid.UUID, error) {
+) (
+	*domain.Player,
+	*domain.Player,
+	*domain.ParticipantReservation,
+	*domain.ParticipantReservation,
+	[]uuid.UUID,
+	error,
+) {
 	player1, err := u.players.GetByID(ctx, player1ID)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("MatchmakingUsecase - claimQueuedPair - PlayerRepo.GetByID player1: %w", err)
+		return nil, nil, nil, nil, nil, fmt.Errorf("MatchmakingUsecase - claimQueuedPair - PlayerRepo.GetByID player1: %w", err)
 	}
 	player2, err := u.players.GetByID(ctx, player2ID)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("MatchmakingUsecase - claimQueuedPair - PlayerRepo.GetByID player2: %w", err)
+		return nil, nil, nil, nil, nil, fmt.Errorf("MatchmakingUsecase - claimQueuedPair - PlayerRepo.GetByID player2: %w", err)
 	}
-	if player1.Status != domain.PlayerStatusQueued || player2.Status != domain.PlayerStatusQueued {
-		return nil, nil, queuedPlayerIDs(player1, player2), nil
+	reservation1, err := u.players.GetParticipantReservation(ctx, player1ID)
+	if err != nil {
+		return nil, nil, nil, nil, nil, fmt.Errorf("MatchmakingUsecase - claimQueuedPair - reservation player1: %w", err)
+	}
+	reservation2, err := u.players.GetParticipantReservation(ctx, player2ID)
+	if err != nil {
+		return nil, nil, nil, nil, nil, fmt.Errorf("MatchmakingUsecase - claimQueuedPair - reservation player2: %w", err)
+	}
+	valid1 := player1.Status == domain.PlayerStatusQueued && isCasualQueueReservation(reservation1, player1ID)
+	valid2 := player2.Status == domain.PlayerStatusQueued && isCasualQueueReservation(reservation2, player2ID)
+	if !valid1 || !valid2 {
+		return nil, nil, nil, nil, queuedReservationPlayerIDs(
+			player1,
+			reservation1,
+			player2,
+			reservation2,
+		), nil
 	}
 
 	if _, ok, err := u.players.UpdateStatusIfCurrent(ctx, player1.ID, domain.PlayerStatusQueued, domain.PlayerStatusInDuel); err != nil {
-		return nil, nil, nil, fmt.Errorf("MatchmakingUsecase - claimQueuedPair - PlayerRepo.UpdateStatusIfCurrent player1 in_duel: %w", err)
+		return nil, nil, nil, nil, nil, fmt.Errorf("MatchmakingUsecase - claimQueuedPair - PlayerRepo.UpdateStatusIfCurrent player1 in_duel: %w", err)
 	} else if !ok {
-		return nil, nil, []uuid.UUID{player2.ID}, nil
+		return nil, nil, nil, nil, []uuid.UUID{player2.ID}, nil
 	}
 	if _, ok, err := u.players.UpdateStatusIfCurrent(ctx, player2.ID, domain.PlayerStatusQueued, domain.PlayerStatusInDuel); err != nil {
-		return nil, nil, nil, fmt.Errorf("MatchmakingUsecase - claimQueuedPair - PlayerRepo.UpdateStatusIfCurrent player2 in_duel: %w", err)
+		return nil, nil, nil, nil, nil, fmt.Errorf("MatchmakingUsecase - claimQueuedPair - PlayerRepo.UpdateStatusIfCurrent player2 in_duel: %w", err)
 	} else if !ok {
 		if err := u.rollbackClaimedPlayer(ctx, player1.ID); err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, nil, err
 		}
-		return nil, nil, []uuid.UUID{player1.ID}, nil
+		return nil, nil, nil, nil, []uuid.UUID{player1.ID}, nil
 	}
-	return player1, player2, nil, nil
+	return player1, player2, reservation1, reservation2, nil, nil
 }
 
 func (u *MatchmakingUseCase) rollbackClaimedPlayer(ctx context.Context, playerID uuid.UUID) error {
@@ -282,16 +346,6 @@ func (u *MatchmakingUseCase) createDuelAssignments(
 	return duel, nil
 }
 
-func queuedPlayerIDs(players ...*domain.Player) []uuid.UUID {
-	out := make([]uuid.UUID, 0, len(players))
-	for _, player := range players {
-		if player != nil && player.Status == domain.PlayerStatusQueued {
-			out = append(out, player.ID)
-		}
-	}
-	return out
-}
-
 func (u *MatchmakingUseCase) requeuePlayers(ctx context.Context, playerIDs ...uuid.UUID) error {
 	for _, playerID := range playerIDs {
 		if err := u.queue.Enqueue(ctx, playerID); err != nil {
@@ -302,12 +356,120 @@ func (u *MatchmakingUseCase) requeuePlayers(ctx context.Context, playerIDs ...uu
 }
 
 func (u *MatchmakingUseCase) releaseQueuedPlayers(ctx context.Context, playerIDs ...uuid.UUID) error {
-	for _, playerID := range playerIDs {
-		if _, _, err := u.players.UpdateStatusIfCurrent(ctx, playerID, domain.PlayerStatusQueued, domain.PlayerStatusIdle); err != nil {
-			return fmt.Errorf("MatchmakingUsecase - releaseQueuedPlayers - PlayerRepo.UpdateStatusIfCurrent idle: %w", err)
+	return u.tx.Do(ctx, func(txCtx context.Context) error {
+		for _, playerID := range playerIDs {
+			reservation, err := u.players.GetParticipantReservation(txCtx, playerID)
+			if err != nil {
+				return fmt.Errorf("MatchmakingUsecase - releaseQueuedPlayers - get reservation: %w", err)
+			}
+			if reservation != nil && !isCasualQueueReservation(reservation, playerID) {
+				return domain.ErrPlayerReserved
+			}
+			if err := u.releaseQueuedReservationInTx(txCtx, playerID, reservation); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func (u *MatchmakingUseCase) releaseQueuedReservation(
+	ctx context.Context,
+	playerID uuid.UUID,
+	reservation *domain.ParticipantReservation,
+) error {
+	return u.tx.Do(ctx, func(txCtx context.Context) error {
+		return u.releaseQueuedReservationInTx(txCtx, playerID, reservation)
+	})
+}
+
+func (u *MatchmakingUseCase) releaseQueuedReservationInTx(
+	ctx context.Context,
+	playerID uuid.UUID,
+	reservation *domain.ParticipantReservation,
+) error {
+	if reservation != nil {
+		if !isCasualQueueReservation(reservation, playerID) {
+			return domain.ErrPlayerReserved
+		}
+		if _, err := u.players.ReleaseParticipantReservation(ctx, *reservation); err != nil {
+			return fmt.Errorf("MatchmakingUsecase - release queue reservation: %w", err)
+		}
+	}
+	if _, changed, err := u.players.UpdateStatusIfCurrent(
+		ctx,
+		playerID,
+		domain.PlayerStatusQueued,
+		domain.PlayerStatusIdle,
+	); err != nil {
+		return fmt.Errorf("MatchmakingUsecase - release queue status: %w", err)
+	} else if changed {
+		return nil
+	}
+	player, err := u.players.GetByID(ctx, playerID)
+	if err != nil {
+		return fmt.Errorf("MatchmakingUsecase - release queue status lookup: %w", err)
+	}
+	if player.Status == domain.PlayerStatusIdle {
+		return nil
+	}
+	return domain.ErrConflict
+}
+
+func (u *MatchmakingUseCase) promotePairReservations(
+	ctx context.Context,
+	first *domain.ParticipantReservation,
+	second *domain.ParticipantReservation,
+	duelID uuid.UUID,
+) error {
+	for _, reservation := range []*domain.ParticipantReservation{first, second} {
+		if reservation == nil || !isCasualQueueReservation(reservation, reservation.PlayerID) {
+			return domain.ErrPlayerReserved
+		}
+		promoted, _, err := u.players.PromoteParticipantReservation(
+			ctx,
+			*reservation,
+			domain.ParticipantReservationOwnerCasualDuel,
+			duelID,
+			u.clock.Now(),
+		)
+		if err != nil {
+			return fmt.Errorf("MatchmakingUsecase - promote reservation: %w", err)
+		}
+		if promoted == nil || promoted.OwnerKind != domain.ParticipantReservationOwnerCasualDuel ||
+			promoted.OwnerID != duelID {
+			return domain.ErrConflict
 		}
 	}
 	return nil
+}
+
+func isCasualQueueReservation(reservation *domain.ParticipantReservation, playerID uuid.UUID) bool {
+	return reservation != nil && reservation.IsValid() && reservation.PlayerID == playerID &&
+		reservation.OwnerKind == domain.ParticipantReservationOwnerCasualQueue &&
+		reservation.OwnerID == playerID
+}
+
+func queuedReservationPlayerIDs(
+	firstPlayer *domain.Player,
+	firstReservation *domain.ParticipantReservation,
+	secondPlayer *domain.Player,
+	secondReservation *domain.ParticipantReservation,
+) []uuid.UUID {
+	out := make([]uuid.UUID, 0, 2)
+	for _, value := range []struct {
+		player      *domain.Player
+		reservation *domain.ParticipantReservation
+	}{
+		{player: firstPlayer, reservation: firstReservation},
+		{player: secondPlayer, reservation: secondReservation},
+	} {
+		if value.player != nil && value.player.Status == domain.PlayerStatusQueued &&
+			isCasualQueueReservation(value.reservation, value.player.ID) {
+			out = append(out, value.player.ID)
+		}
+	}
+	return out
 }
 
 func (u *MatchmakingUseCase) prepareAssignedTask(ctx context.Context, task *domain.Task) (*domain.Task, error) {
