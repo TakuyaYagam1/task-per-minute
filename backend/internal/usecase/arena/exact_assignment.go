@@ -179,12 +179,33 @@ func BuildExactNormalAssignment(
 	command ExactNormalAssignmentCommand,
 	authority ExactNormalAssignmentAuthority,
 ) (ExactNormalAssignmentPlan, error) {
+	return buildExactNormalAssignment(command, authority, nil)
+}
+
+func buildExactNormalAssignment(
+	command ExactNormalAssignmentCommand,
+	authority ExactNormalAssignmentAuthority,
+	unavailable map[TaskVersionRef]struct{},
+) (ExactNormalAssignmentPlan, error) {
 	if err := validateExactNormalAssignmentCommand(command); err != nil {
 		return ExactNormalAssignmentPlan{}, err
 	}
 	canonical, eligible, err := normalizeExactNormalAssignmentAuthority(command.Scope, authority)
 	if err != nil {
 		return ExactNormalAssignmentPlan{}, err
+	}
+	if len(unavailable) > 0 {
+		available := make([]ExactNormalTaskVersion, 0, len(eligible))
+		for _, candidate := range eligible {
+			ref := TaskVersionRef{TaskID: candidate.Task.ID, Version: candidate.Version}
+			if _, reserved := unavailable[ref]; !reserved {
+				available = append(available, candidate)
+			}
+		}
+		eligible = available
+	}
+	if len(eligible) < domain.ArenaAssignmentReserveCount+1 {
+		return ExactNormalAssignmentPlan{}, exactNormalAssignmentError("fewer than three unreserved task versions")
 	}
 
 	inputs := make([]string, len(eligible))
