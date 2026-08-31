@@ -32,6 +32,7 @@ func TestNormalPauseGraphEntry(t *testing.T) {
 			t.Fatalf("Enter() error = %v, changed = %v", err, changed)
 		}
 		if record.State != arena.PauseStateActive || record.Graph.Tournament.State != domain.ArenaTournamentStateTechnicalPause ||
+			record.ScopeKind != arena.PauseScopeWave || record.ScopeID != record.Scope.WaveID ||
 			record.Graph.Tournament.PausedFromState == nil || *record.Graph.Tournament.PausedFromState != domain.ArenaTournamentStateSwiss ||
 			record.Graph.Wave.Wave.State != domain.ArenaWaveStatePaused || !record.Graph.DeadlinesSuppressed ||
 			len(record.Graph.Series) != 1 || record.Graph.Series[0].Execution.Series.State != domain.ArenaSeriesStateTechnicalPause ||
@@ -51,6 +52,159 @@ func TestNormalPauseGraphEntry(t *testing.T) {
 		retried, changed, err := useCase.Enter(t.Context(), command)
 		if err != nil || changed || retried.Graph.Series[0].Revision == 99 || repository.writeCount() != 1 {
 			t.Fatalf("retry error = %v, changed = %v, record = %+v, writes = %d", err, changed, retried, repository.writeCount())
+		}
+	})
+
+	t.Run("cancels open reconnect with explicit immutable suspension evidence", func(t *testing.T) {
+		t.Parallel()
+
+		authority, command := normalPauseFixture(pausedAt)
+		makeReconnectOpenBeforePause(&authority, &command, pausedAt, 40*time.Second)
+		beforeAuthority := cloneNormalPauseAuthority(authority)
+		beforeInterval := authority.Graph.Reconnect[0]
+		beforeCounter := authority.Graph.Counters[0]
+		repository := newNormalPauseRepositoryFake(authority)
+		useCase := arena.NewNormalPauseGraphUseCase(directArenaTransactionManager{}, repository, fixedArenaClock{now: pausedAt})
+
+		record, changed, err := useCase.Enter(t.Context(), command)
+		if err != nil || !changed || len(record.SuspendedReconnect) != 1 ||
+			!beforeInterval.OpenedAt.Before(pausedAt) ||
+			record.SuspendedReconnect[0] != (arena.PauseChildRevision{ID: beforeInterval.ID, Revision: beforeInterval.Revision}) {
+			t.Fatalf("Enter() error = %v, changed = %v, suspension = %+v", err, changed, record.SuspendedReconnect)
+		}
+		closed := record.Graph.Reconnect[0]
+		expectedClosed := beforeInterval
+		expectedClosed.State = arena.ReconnectStateCancelled
+		expectedClosed.ClosedAt = &pausedAt
+		expectedClosed.Revision++
+		expectedClosed.UpdatedAt = pausedAt
+		expectedClosed.SuspendedByPauseID = &command.PauseID
+		if !reflect.DeepEqual(closed, expectedClosed) || !reflect.DeepEqual(record.Graph.Counters[0], beforeCounter) {
+			t.Fatalf("closed reconnect = %+v, want %+v, counter = %+v", closed, expectedClosed, record.Graph.Counters[0])
+		}
+		if !reflect.DeepEqual(authority, beforeAuthority) {
+			t.Fatal("Enter() mutated caller authority")
+		}
+
+		record.SuspendedReconnect[0].Revision++
+		retried, changed, err := useCase.Enter(t.Context(), command)
+		if err != nil || changed || retried.SuspendedReconnect[0].Revision != beforeInterval.Revision || repository.writeCount() != 1 {
+			t.Fatalf("retry error = %v, changed = %v, suspension = %+v, writes = %d", err, changed, retried.SuspendedReconnect, repository.writeCount())
+		}
+	})
+
+	t.Run("repository cannot mutate canonical suspension evidence in place", func(t *testing.T) {
+		t.Parallel()
+		authority, command := normalPauseFixture(pausedAt)
+		makeReconnectOpenBeforePause(&authority, &command, pausedAt, 40*time.Second)
+		beforeAuthority := cloneNormalPauseAuthority(authority)
+		repository := newNormalPauseRepositoryFake(authority)
+		repository.mutateCommitInPlace = true
+		record, changed, err := arena.NewNormalPauseGraphUseCase(directArenaTransactionManager{}, repository, fixedArenaClock{now: pausedAt}).Enter(t.Context(), command)
+		if !errors.Is(err, domain.ErrInternal) || changed || record != nil || !reflect.DeepEqual(authority, beforeAuthority) {
+			t.Fatalf("Enter() error = %v, changed = %v, record = %+v, authority changed = %v", err, changed, record, !reflect.DeepEqual(authority, beforeAuthority))
+		}
+	})
+
+	t.Run("later normal pause suspends only the open continuation", func(t *testing.T) {
+		t.Parallel()
+
+		authority, command := normalPauseFixture(pausedAt)
+		oldNormalPauseID := uuid.New()
+		source := authority.Graph.Reconnect[0]
+		source.State = arena.ReconnectStateCancelled
+		source.ContinuationNumber = 0
+		source.ContinuedFromID = nil
+		source.SuspendedByPauseID = &oldNormalPauseID
+		source.OpenedAt = pausedAt.Add(-2 * time.Minute)
+		source.Deadline = pausedAt.Add(-30 * time.Second)
+		sourceClosedAt := pausedAt.Add(-time.Minute)
+		source.ClosedAt = &sourceClosedAt
+		source.UpdatedAt = sourceClosedAt
+		currentOpenedAt := pausedAt.Add(-20 * time.Second)
+		current := source
+		current.ID = uuid.New()
+		current.State = arena.ReconnectStateOpen
+		current.ContinuationNumber = 1
+		current.ContinuedFromID = &source.ID
+		current.SuspendedByPauseID = nil
+		current.OpenedAt = currentOpenedAt
+		current.Deadline = currentOpenedAt.Add(source.Deadline.Sub(sourceClosedAt))
+		current.ClosedAt = nil
+		current.Revision = 1
+		current.UpdatedAt = currentOpenedAt
+		presence := &authority.Graph.Presence[0]
+		presence.State = arena.PresenceStateDisconnected
+		presence.DisconnectedAt = &currentOpenedAt
+		presence.UpdatedAt = currentOpenedAt
+		source.PresenceEpoch = presence.PresenceEpoch
+		current.PresenceEpoch = presence.PresenceEpoch
+		authority.Graph.Reconnect = []arena.PauseReconnectInterval{source, current}
+		authority.Graph.Counters[0].Used = 1
+		refreshNormalPauseRevisions(&authority, &command)
+		repository := newNormalPauseRepositoryFake(authority)
+		useCase := arena.NewNormalPauseGraphUseCase(directArenaTransactionManager{}, repository, fixedArenaClock{now: pausedAt})
+
+		record, changed, err := useCase.Enter(t.Context(), command)
+		if err != nil || !changed || len(record.SuspendedReconnect) != 1 ||
+			record.SuspendedReconnect[0] != (arena.PauseChildRevision{ID: current.ID, Revision: current.Revision}) {
+			t.Fatalf("Enter() error = %v, changed = %v, suspension = %+v", err, changed, record.SuspendedReconnect)
+		}
+		if got := reconnectByID(t, record.Graph.Reconnect, source.ID); !reflect.DeepEqual(got, source) {
+			t.Fatalf("predecessor changed: got %+v, want %+v", got, source)
+		}
+		expectedCurrent := current
+		expectedCurrent.State = arena.ReconnectStateCancelled
+		expectedCurrent.ClosedAt = &pausedAt
+		expectedCurrent.Revision++
+		expectedCurrent.UpdatedAt = pausedAt
+		expectedCurrent.SuspendedByPauseID = &command.PauseID
+		if got := reconnectByID(t, record.Graph.Reconnect, current.ID); !reflect.DeepEqual(got, expectedCurrent) {
+			t.Fatalf("current continuation = %+v, want %+v", got, expectedCurrent)
+		}
+	})
+
+	t.Run("rejects malformed stored continuation temporal lineage", func(t *testing.T) {
+		t.Parallel()
+
+		for _, test := range []struct {
+			name   string
+			mutate func(*arena.NormalPauseRecord)
+		}{
+			{name: "source has no remaining time", mutate: func(record *arena.NormalPauseRecord) {
+				source := &record.Graph.Reconnect[0]
+				source.Deadline = *source.ClosedAt
+			}},
+			{name: "source has zero suspension identity", mutate: func(record *arena.NormalPauseRecord) {
+				zero := uuid.Nil
+				record.Graph.Reconnect[0].SuspendedByPauseID = &zero
+			}},
+			{name: "continuation opens at source close", mutate: func(record *arena.NormalPauseRecord) {
+				source := &record.Graph.Reconnect[0]
+				record.Graph.Reconnect[1].OpenedAt = *source.ClosedAt
+			}},
+			{name: "continuation deadline does not preserve remaining time", mutate: func(record *arena.NormalPauseRecord) {
+				record.Graph.Reconnect[1].Deadline = record.Graph.Reconnect[1].Deadline.Add(time.Second)
+			}},
+		} {
+			t.Run(test.name, func(t *testing.T) {
+				t.Parallel()
+				authority, command := normalPauseFixture(pausedAt)
+				makeReconnectContinuationBeforePause(&authority, &command, pausedAt)
+				leaderRepository := newNormalPauseRepositoryFake(authority)
+				leader := arena.NewNormalPauseGraphUseCase(directArenaTransactionManager{}, leaderRepository, fixedArenaClock{now: pausedAt})
+				stored, changed, err := leader.Enter(t.Context(), command)
+				if err != nil || !changed {
+					t.Fatalf("prepare stored continuation: error = %v, changed = %v", err, changed)
+				}
+				test.mutate(stored)
+				repository := newNormalPauseRepositoryFake(authority)
+				repository.storeCommand(*stored)
+				useCase := arena.NewNormalPauseGraphUseCase(directArenaTransactionManager{}, repository, fixedArenaClock{now: pausedAt.Add(time.Second)})
+				if _, changed, err := useCase.Enter(t.Context(), command); !errors.Is(err, arena.ErrNormalPauseCommandReuse) || changed || repository.writeCount() != 0 {
+					t.Fatalf("Enter() error = %v, changed = %v, writes = %d", err, changed, repository.writeCount())
+				}
+			})
 		}
 	})
 
@@ -99,10 +253,9 @@ func TestNormalPauseGraphEntry(t *testing.T) {
 			{name: "Reconnect belongs to a foreign participant", mutate: func(a *arena.NormalPauseAuthority, _ *arena.NormalPauseCommand) {
 				a.Graph.Reconnect[0].ParticipantID = uuid.New()
 			}, want: arena.ErrNormalPauseGraphIncomplete},
-			{name: "open Reconnect would strand the pause", mutate: func(a *arena.NormalPauseAuthority, _ *arena.NormalPauseCommand) {
-				a.Graph.Reconnect[0].State = arena.ReconnectStateOpen
-				a.Graph.Reconnect[0].ClosedAt = nil
-			}, want: arena.ErrInvalidNormalPauseGraph},
+			{name: "open Reconnect deadline is already reached", mutate: func(a *arena.NormalPauseAuthority, c *arena.NormalPauseCommand) {
+				makeReconnectOpenBeforePause(a, c, pausedAt, 0)
+			}, want: arena.ErrNormalPauseDeadline},
 			{name: "terminal Reconnect update precedes its close", mutate: func(a *arena.NormalPauseAuthority, _ *arena.NormalPauseCommand) {
 				a.Graph.Reconnect[0].UpdatedAt = a.Graph.Reconnect[0].ClosedAt.Add(-time.Second)
 			}, want: arena.ErrInvalidNormalPauseGraph},
@@ -224,6 +377,27 @@ func TestNormalPauseGraphEntry(t *testing.T) {
 		}
 	})
 
+	t.Run("rejects an unused cancelled root with zero suspension identity", func(t *testing.T) {
+		t.Parallel()
+
+		authority, command := normalPauseFixture(pausedAt)
+		leaderRepository := newNormalPauseRepositoryFake(authority)
+		leader := arena.NewNormalPauseGraphUseCase(directArenaTransactionManager{}, leaderRepository, fixedArenaClock{now: pausedAt})
+		stored, changed, err := leader.Enter(t.Context(), command)
+		if err != nil || !changed {
+			t.Fatalf("prepare stored pause: error = %v, changed = %v", err, changed)
+		}
+		zero := uuid.Nil
+		stored.Graph.Reconnect[0].State = arena.ReconnectStateCancelled
+		stored.Graph.Reconnect[0].SuspendedByPauseID = &zero
+		repository := newNormalPauseRepositoryFake(authority)
+		repository.storeCommand(*stored)
+		useCase := arena.NewNormalPauseGraphUseCase(directArenaTransactionManager{}, repository, fixedArenaClock{now: pausedAt.Add(time.Second)})
+		if _, changed, err := useCase.Enter(t.Context(), command); !errors.Is(err, arena.ErrNormalPauseCommandReuse) || changed || repository.writeCount() != 0 {
+			t.Fatalf("Enter() error = %v, changed = %v, writes = %d", err, changed, repository.writeCount())
+		}
+	})
+
 	t.Run("rejects structurally valid stored pause records with wrong transitions", func(t *testing.T) {
 		t.Parallel()
 
@@ -272,6 +446,60 @@ func TestNormalPauseGraphEntry(t *testing.T) {
 				useCase := arena.NewNormalPauseGraphUseCase(directArenaTransactionManager{}, repository, fixedArenaClock{now: pausedAt.Add(time.Second)})
 				if _, changed, err := useCase.Enter(t.Context(), command); !errors.Is(err, arena.ErrNormalPauseCommandReuse) || changed {
 					t.Fatalf("Enter() error = %v, changed = %v", err, changed)
+				}
+			})
+		}
+	})
+
+	t.Run("rejects malformed stored reconnect suspension evidence", func(t *testing.T) {
+		t.Parallel()
+
+		tests := []struct {
+			name   string
+			mutate func(*arena.NormalPauseRecord)
+		}{
+			{name: "missing suspension", mutate: func(record *arena.NormalPauseRecord) {
+				record.SuspendedReconnect = nil
+			}},
+			{name: "wrong source revision", mutate: func(record *arena.NormalPauseRecord) {
+				record.SuspendedReconnect[0].Revision++
+			}},
+			{name: "duplicate suspension", mutate: func(record *arena.NormalPauseRecord) {
+				record.SuspendedReconnect = append(record.SuspendedReconnect, record.SuspendedReconnect[0])
+			}},
+			{name: "wrong cancellation time", mutate: func(record *arena.NormalPauseRecord) {
+				closedAt := record.PausedAt.Add(time.Second)
+				record.Graph.Reconnect[0].ClosedAt = &closedAt
+				record.Graph.Reconnect[0].UpdatedAt = closedAt
+			}},
+			{name: "source deadline reached at pause", mutate: func(record *arena.NormalPauseRecord) {
+				record.Graph.Reconnect[0].Deadline = record.PausedAt
+			}},
+			{name: "source opened at pause", mutate: func(record *arena.NormalPauseRecord) {
+				record.Graph.Reconnect[0].OpenedAt = record.PausedAt
+			}},
+			{name: "current pause provenance is omitted at unchanged revision", mutate: func(record *arena.NormalPauseRecord) {
+				record.SuspendedReconnect = nil
+				record.Graph.Reconnect[0].Revision--
+			}},
+		}
+		for _, test := range tests {
+			t.Run(test.name, func(t *testing.T) {
+				t.Parallel()
+				authority, command := normalPauseFixture(pausedAt)
+				makeReconnectOpenBeforePause(&authority, &command, pausedAt, 40*time.Second)
+				leaderRepository := newNormalPauseRepositoryFake(authority)
+				leader := arena.NewNormalPauseGraphUseCase(directArenaTransactionManager{}, leaderRepository, fixedArenaClock{now: pausedAt})
+				stored, changed, err := leader.Enter(t.Context(), command)
+				if err != nil || !changed {
+					t.Fatalf("prepare stored pause: error = %v, changed = %v", err, changed)
+				}
+				test.mutate(stored)
+				repository := newNormalPauseRepositoryFake(authority)
+				repository.storeCommand(*stored)
+				useCase := arena.NewNormalPauseGraphUseCase(directArenaTransactionManager{}, repository, fixedArenaClock{now: pausedAt.Add(time.Second)})
+				if _, changed, err := useCase.Enter(t.Context(), command); !errors.Is(err, arena.ErrNormalPauseCommandReuse) || changed || repository.writeCount() != 0 {
+					t.Fatalf("Enter() error = %v, changed = %v, writes = %d", err, changed, repository.writeCount())
 				}
 			})
 		}
@@ -437,19 +665,20 @@ func TestNormalPauseGraphEntry(t *testing.T) {
 }
 
 type normalPauseRepositoryFake struct {
-	mu                 sync.Mutex
-	authority          arena.NormalPauseAuthority
-	commands           map[uuid.UUID]arena.NormalPauseRecord
-	conflictOnce       bool
-	conflictsRemaining int
-	loadErr            error
-	commitErr          error
-	loadCount          int
-	writes             int
-	commitCalls        int
-	loadStarted        chan struct{}
-	loadRelease        chan struct{}
-	loadOnce           sync.Once
+	mu                  sync.Mutex
+	authority           arena.NormalPauseAuthority
+	commands            map[uuid.UUID]arena.NormalPauseRecord
+	conflictOnce        bool
+	conflictsRemaining  int
+	loadErr             error
+	commitErr           error
+	loadCount           int
+	writes              int
+	commitCalls         int
+	loadStarted         chan struct{}
+	loadRelease         chan struct{}
+	loadOnce            sync.Once
+	mutateCommitInPlace bool
 }
 
 func newNormalPauseRepositoryFake(authority arena.NormalPauseAuthority) *normalPauseRepositoryFake {
@@ -506,6 +735,10 @@ func (f *normalPauseRepositoryFake) CommitNormalPause(_ context.Context, expecte
 	}
 	if !reflect.DeepEqual(expected, f.authority.Revisions) {
 		return nil, false, domain.ErrConflict
+	}
+	if f.mutateCommitInPlace {
+		expected.Presence[0].Revision++
+		record.Graph.Presence[0], record.Graph.Presence[1] = record.Graph.Presence[1], record.Graph.Presence[0]
 	}
 	f.writes++
 	f.commands[record.CommandID] = cloneNormalPauseRecord(record)
@@ -592,6 +825,58 @@ func normalPauseFixture(now time.Time) (arena.NormalPauseAuthority, arena.Normal
 	return arena.NormalPauseAuthority{Scope: scope, Revisions: revisions, Graph: graph, Complete: true}, command
 }
 
+func makeReconnectOpenBeforePause(authority *arena.NormalPauseAuthority, command *arena.NormalPauseCommand, pausedAt time.Time, remaining time.Duration) {
+	interval := &authority.Graph.Reconnect[0]
+	presence := &authority.Graph.Presence[0]
+	disconnectedAt := pausedAt.Add(-20 * time.Second)
+	presence.State = arena.PresenceStateDisconnected
+	presence.DisconnectedAt = &disconnectedAt
+	presence.UpdatedAt = disconnectedAt
+	interval.State = arena.ReconnectStateOpen
+	interval.SuspendedByPauseID = nil
+	interval.OpenedAt = disconnectedAt
+	interval.Deadline = pausedAt.Add(remaining)
+	interval.ClosedAt = nil
+	interval.UpdatedAt = disconnectedAt
+	interval.PresenceEpoch = presence.PresenceEpoch
+	refreshNormalPauseRevisions(authority, command)
+}
+
+func makeReconnectContinuationBeforePause(authority *arena.NormalPauseAuthority, command *arena.NormalPauseCommand, pausedAt time.Time) {
+	source := authority.Graph.Reconnect[0]
+	oldPauseID := uuid.New()
+	source.State = arena.ReconnectStateCancelled
+	source.ContinuationNumber = 0
+	source.ContinuedFromID = nil
+	source.SuspendedByPauseID = &oldPauseID
+	source.OpenedAt = pausedAt.Add(-2 * time.Minute)
+	sourceClosedAt := pausedAt.Add(-time.Minute)
+	source.Deadline = sourceClosedAt.Add(30 * time.Second)
+	source.ClosedAt = &sourceClosedAt
+	source.UpdatedAt = sourceClosedAt
+	currentOpenedAt := pausedAt.Add(-20 * time.Second)
+	current := source
+	current.ID = uuid.New()
+	current.State = arena.ReconnectStateOpen
+	current.ContinuationNumber = 1
+	current.ContinuedFromID = &source.ID
+	current.SuspendedByPauseID = nil
+	current.OpenedAt = currentOpenedAt
+	current.Deadline = currentOpenedAt.Add(source.Deadline.Sub(sourceClosedAt))
+	current.ClosedAt = nil
+	current.Revision = 1
+	current.UpdatedAt = currentOpenedAt
+	presence := &authority.Graph.Presence[0]
+	presence.State = arena.PresenceStateDisconnected
+	presence.DisconnectedAt = &currentOpenedAt
+	presence.UpdatedAt = currentOpenedAt
+	source.PresenceEpoch = presence.PresenceEpoch
+	current.PresenceEpoch = presence.PresenceEpoch
+	authority.Graph.Reconnect = []arena.PauseReconnectInterval{source, current}
+	authority.Graph.Counters[0].Used = 1
+	refreshNormalPauseRevisions(authority, command)
+}
+
 func refreshNormalPauseRevisions(authority *arena.NormalPauseAuthority, command *arena.NormalPauseCommand) {
 	authority.Revisions = arena.PauseGraphRevisionsFrom(authority.Graph)
 	command.Expected = clonePauseGraphRevisions(authority.Revisions)
@@ -606,21 +891,29 @@ func cloneNormalPauseAuthority(value arena.NormalPauseAuthority) arena.NormalPau
 func cloneNormalPauseRecord(value arena.NormalPauseRecord) arena.NormalPauseRecord {
 	value.Expected = clonePauseGraphRevisions(value.Expected)
 	value.Graph = clonePauseGraph(value.Graph)
+	value.SuspendedReconnect = cloneTestSlice(value.SuspendedReconnect)
 	return value
 }
 
 func clonePauseGraphRevisions(value arena.PauseGraphRevisions) arena.PauseGraphRevisions {
-	value.Series = append([]arena.PauseChildRevision(nil), value.Series...)
-	value.Games = append([]arena.PauseChildRevision(nil), value.Games...)
-	value.Presence = append([]arena.PausePresenceRevision(nil), value.Presence...)
-	value.Reconnect = append([]arena.PauseChildRevision(nil), value.Reconnect...)
-	value.Counters = append([]arena.PauseReconnectCounterRevision(nil), value.Counters...)
-	value.FrozenDeadlines = append([]arena.PauseFrozenDeadlineRevision(nil), value.FrozenDeadlines...)
+	value.Series = cloneTestSlice(value.Series)
+	value.Games = cloneTestSlice(value.Games)
+	value.Presence = cloneTestSlice(value.Presence)
+	value.Reconnect = cloneTestSlice(value.Reconnect)
+	value.Counters = cloneTestSlice(value.Counters)
+	value.FrozenDeadlines = cloneTestSlice(value.FrozenDeadlines)
 	if value.Draft != nil {
 		draft := *value.Draft
 		value.Draft = &draft
 	}
 	return value
+}
+
+func cloneTestSlice[T any](value []T) []T {
+	if value == nil {
+		return nil
+	}
+	return append(make([]T, 0, len(value)), value...)
 }
 
 type countingArenaTransactionManager struct {
@@ -700,8 +993,32 @@ func clonePauseGraph(value arena.PauseGraph) arena.PauseGraph {
 	}
 	value.Presence = append([]arena.PausePresence(nil), value.Presence...)
 	value.Reconnect = append([]arena.PauseReconnectInterval(nil), value.Reconnect...)
+	for i := range value.Reconnect {
+		if value.Reconnect[i].ClosedAt != nil {
+			closedAt := *value.Reconnect[i].ClosedAt
+			value.Reconnect[i].ClosedAt = &closedAt
+		}
+		if value.Reconnect[i].ContinuedFromID != nil {
+			id := *value.Reconnect[i].ContinuedFromID
+			value.Reconnect[i].ContinuedFromID = &id
+		}
+		if value.Reconnect[i].SuspendedByPauseID != nil {
+			id := *value.Reconnect[i].SuspendedByPauseID
+			value.Reconnect[i].SuspendedByPauseID = &id
+		}
+	}
 	value.Counters = append([]arena.PauseReconnectCounter(nil), value.Counters...)
 	value.FrozenDeadlines = append([]arena.PauseFrozenDeadline(nil), value.FrozenDeadlines...)
+	for i := range value.FrozenDeadlines {
+		if value.FrozenDeadlines[i].ResumedAt != nil {
+			resumedAt := *value.FrozenDeadlines[i].ResumedAt
+			value.FrozenDeadlines[i].ResumedAt = &resumedAt
+		}
+		if value.FrozenDeadlines[i].ResumedDeadline != nil {
+			deadline := *value.FrozenDeadlines[i].ResumedDeadline
+			value.FrozenDeadlines[i].ResumedDeadline = &deadline
+		}
+	}
 	return value
 }
 

@@ -556,6 +556,12 @@ type ArenaReconnectInterval struct {
 	Revision       int64
 	CreatedAt      pgtype.Timestamptz
 	UpdatedAt      pgtype.Timestamptz
+	// Zero for a slot-charging root and positive for resumed segments of that root
+	ContinuationNumber int32
+	// Immediate predecessor segment; null only for a root segment
+	ContinuedFromID uuid.NullUUID
+	// Normal Wave pause that atomically cancelled this segment
+	SuspendedByPauseID uuid.NullUUID
 }
 
 type ArenaReconnectSlotCounter struct {

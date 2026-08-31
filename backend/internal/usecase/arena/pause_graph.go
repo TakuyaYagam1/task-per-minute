@@ -69,6 +69,10 @@ const (
 	PauseDeadlineDraft       PauseDeadlineKind = "draft"
 )
 
+type PauseScopeKind string
+
+const PauseScopeWave PauseScopeKind = "wave"
+
 type PauseGraphScope struct {
 	TournamentID uuid.UUID
 	RosterID     uuid.UUID
@@ -154,20 +158,23 @@ type PausePresence struct {
 }
 
 type PauseReconnectInterval struct {
-	ID            uuid.UUID
-	PauseID       uuid.UUID
-	RosterID      uuid.UUID
-	SeriesID      uuid.UUID
-	GameID        uuid.UUID
-	ParticipantID uuid.UUID
-	PresenceEpoch int64
-	Number        int
-	State         ReconnectState
-	OpenedAt      time.Time
-	Deadline      time.Time
-	ClosedAt      *time.Time
-	Revision      int64
-	UpdatedAt     time.Time
+	ID                 uuid.UUID
+	PauseID            uuid.UUID
+	RosterID           uuid.UUID
+	SeriesID           uuid.UUID
+	GameID             uuid.UUID
+	ParticipantID      uuid.UUID
+	PresenceEpoch      int64
+	Number             int
+	ContinuationNumber int
+	ContinuedFromID    *uuid.UUID
+	SuspendedByPauseID *uuid.UUID
+	State              ReconnectState
+	OpenedAt           time.Time
+	Deadline           time.Time
+	ClosedAt           *time.Time
+	Revision           int64
+	UpdatedAt          time.Time
 }
 
 type PauseReconnectCounter struct {
@@ -233,6 +240,8 @@ type NormalPauseCommand struct {
 
 type NormalPauseRecord struct {
 	Scope                 PauseGraphScope
+	ScopeKind             PauseScopeKind
+	ScopeID               uuid.UUID
 	CommandID             uuid.UUID
 	PauseID               uuid.UUID
 	ActorID               uuid.UUID
@@ -242,6 +251,7 @@ type NormalPauseRecord struct {
 	Revision              int64
 	Expected              PauseGraphRevisions
 	Graph                 PauseGraph
+	SuspendedReconnect    []PauseChildRevision
 	PausedAt              time.Time
 	ResolvedAt            *time.Time
 }
@@ -352,7 +362,8 @@ func reconcileNormalPauseOutcome(recorded *NormalPauseRecord, command NormalPaus
 }
 
 func (u *NormalPauseGraphUseCase) commitNormalPause(ctx context.Context, command NormalPauseCommand, built NormalPauseRecord) (normalPauseAttemptOutcome, error) {
-	committed, changed, err := u.repository.CommitNormalPause(ctx, clonePauseGraphRevisions(command.Expected), built)
+	canonical := cloneNormalPauseRecord(built)
+	committed, changed, err := u.repository.CommitNormalPause(ctx, clonePauseGraphRevisions(command.Expected), cloneNormalPauseRecord(canonical))
 	if errors.Is(err, domain.ErrConflict) {
 		return normalPauseAttemptOutcome{retry: true}, nil
 	}
@@ -363,7 +374,7 @@ func (u *NormalPauseGraphUseCase) commitNormalPause(ctx context.Context, command
 		return normalPauseAttemptOutcome{}, domain.ErrInternal
 	}
 	result, err := reconcileNormalPause(*committed, command)
-	if err != nil || (changed && !reflect.DeepEqual(*result, built)) {
+	if err != nil || (changed && !reflect.DeepEqual(*result, canonical)) {
 		return normalPauseAttemptOutcome{}, domain.ErrInternal
 	}
 	return normalPauseAttemptOutcome{record: result, changed: changed}, nil
@@ -418,9 +429,6 @@ func validateNormalPauseAuthority(authority NormalPauseAuthority) error {
 	if err := validatePauseGraph(authority.Graph, false); err != nil {
 		return err
 	}
-	if !normalPauseReconnectSetTerminal(authority.Graph.Reconnect) {
-		return normalPauseError("open Reconnect cannot enter a normal pause")
-	}
 	if !pauseGraphRevisionsEqual(authority.Revisions, PauseGraphRevisionsFrom(authority.Graph)) {
 		return normalPauseError("authority revisions do not match graph")
 	}
@@ -436,6 +444,10 @@ func buildNormalPauseRecord(authority NormalPauseAuthority, command NormalPauseC
 		return NormalPauseRecord{}, normalPauseError("pause time precedes durable history")
 	}
 	graph := clonePauseGraph(authority.Graph)
+	suspendedReconnect, err := suspendOpenReconnect(&graph, command.PauseID, pausedAt)
+	if err != nil {
+		return NormalPauseRecord{}, err
+	}
 	if graph.Revision == math.MaxInt64 || graph.Tournament.Revision == math.MaxInt64 {
 		return NormalPauseRecord{}, ErrNormalPauseOverflow
 	}
@@ -463,15 +475,40 @@ func buildNormalPauseRecord(authority NormalPauseAuthority, command NormalPauseC
 	graph.PausedAt = cloneTimePointer(&pausedAt)
 	graph.DeadlinesSuppressed = true
 	record := NormalPauseRecord{
-		Scope: command.Scope, CommandID: command.CommandID, PauseID: command.PauseID,
+		Scope: command.Scope, ScopeKind: PauseScopeWave, ScopeID: command.Scope.WaveID,
+		CommandID: command.CommandID, PauseID: command.PauseID,
 		ActorID: command.ActorID, DraftResultRevisionID: command.DraftResultRevisionID,
 		Reason: command.Reason, State: PauseStateActive, Revision: 1,
-		Expected: clonePauseGraphRevisions(command.Expected), Graph: graph, PausedAt: pausedAt,
+		Expected: clonePauseGraphRevisions(command.Expected), Graph: graph,
+		SuspendedReconnect: suspendedReconnect, PausedAt: pausedAt,
 	}
 	if err := validateNormalPauseRecord(record); err != nil {
 		return NormalPauseRecord{}, err
 	}
 	return cloneNormalPauseRecord(record), nil
+}
+
+func suspendOpenReconnect(graph *PauseGraph, normalPauseID uuid.UUID, pausedAt time.Time) ([]PauseChildRevision, error) {
+	suspended := make([]PauseChildRevision, 0)
+	for index := range graph.Reconnect {
+		interval := &graph.Reconnect[index]
+		if interval.State != ReconnectStateOpen {
+			continue
+		}
+		if interval.Revision == math.MaxInt64 {
+			return nil, ErrNormalPauseOverflow
+		}
+		if !interval.OpenedAt.Before(pausedAt) || !interval.Deadline.After(pausedAt) || interval.SuspendedByPauseID != nil {
+			return nil, ErrNormalPauseDeadline
+		}
+		suspended = append(suspended, PauseChildRevision{ID: interval.ID, Revision: interval.Revision})
+		interval.State = ReconnectStateCancelled
+		interval.ClosedAt = cloneTimePointer(&pausedAt)
+		interval.Revision++
+		interval.UpdatedAt = pausedAt
+		interval.SuspendedByPauseID = cloneUUIDPointer(&normalPauseID)
+	}
+	return suspended, nil
 }
 
 func pauseWaveInGraph(graph *PauseGraph, pausedAt time.Time) error {
@@ -653,6 +690,7 @@ func validateNormalPauseRecord(record NormalPauseRecord) error {
 
 func validNormalPauseRecordHeader(record NormalPauseRecord) bool {
 	return validPauseGraphScope(record.Scope) && record.CommandID != uuid.Nil && record.PauseID != uuid.Nil &&
+		record.ScopeKind == PauseScopeWave && record.ScopeID == record.Scope.WaveID &&
 		record.ActorID != uuid.Nil && record.Reason.allowsNormalPause() && record.State == PauseStateActive &&
 		record.CommandID != record.PauseID && record.CommandID != record.ActorID && record.PauseID != record.ActorID &&
 		record.Revision == 1 && validArenaServerTime(record.PausedAt) && record.ResolvedAt == nil &&
@@ -666,7 +704,7 @@ func validNormalPauseRecordGraphLink(record NormalPauseRecord) bool {
 		record.Graph.DeadlinesSuppressed && normalPauseReconnectSetTerminal(record.Graph.Reconnect) &&
 		pauseTimeCoversGraphHistory(record.Graph, record.PausedAt) &&
 		pausedGraphMatchesExpected(record.Graph, record.Expected, record.DraftResultRevisionID,
-			record.CommandID, record.ActorID, record.Reason, record.PausedAt)
+			record.CommandID, record.ActorID, record.Reason, record.PausedAt, record.PauseID, record.SuspendedReconnect)
 }
 
 func normalPauseReconnectSetTerminal(values []PauseReconnectInterval) bool {
@@ -686,12 +724,14 @@ func pausedGraphMatchesExpected(
 	actorID uuid.UUID,
 	reason PauseReason,
 	pausedAt time.Time,
+	pauseID uuid.UUID,
+	suspended []PauseChildRevision,
 ) bool {
 	if !pausedRootRevisionsMatch(graph, expected) {
 		return false
 	}
 	current := PauseGraphRevisionsFrom(graph)
-	if !pausedChildRevisionsMatch(graph, current, expected, draftResultRevisionID, commandID, actorID, reason, pausedAt) {
+	if !pausedChildRevisionsMatch(graph, current, expected, draftResultRevisionID, commandID, actorID, reason, pausedAt, pauseID, suspended) {
 		return false
 	}
 	for _, frozen := range graph.FrozenDeadlines {
@@ -725,9 +765,11 @@ func pausedChildRevisionsMatch(
 	actorID uuid.UUID,
 	reason PauseReason,
 	pausedAt time.Time,
+	pauseID uuid.UUID,
+	suspended []PauseChildRevision,
 ) bool {
 	return pausedSeriesRevisionsMatch(graph.Series, expected.Series) && pausedGameRevisionsMatch(graph.Games, expected.Games) &&
-		presenceRevisionMapEqual(current.Presence, expected.Presence) && revisionMapEqual(current.Reconnect, expected.Reconnect) &&
+		presenceRevisionMapEqual(current.Presence, expected.Presence) && pausedReconnectRevisionsMatch(graph.Reconnect, expected.Reconnect, suspended, pauseID, pausedAt) &&
 		counterRevisionMapEqual(current.Counters, expected.Counters) && current.TerminalActionRevision == expected.TerminalActionRevision &&
 		pausedDraftRevisionMatches(graph.Draft, expected.Draft, expected.DraftPreviousRevisionID,
 			draftResultRevisionID, commandID, actorID, reason, pausedAt) && len(expected.FrozenDeadlines) == 0
@@ -800,6 +842,87 @@ func pausedGameRevisionMatches(current PauseGame, expected int64) bool {
 	default:
 		return false
 	}
+}
+
+func pausedReconnectRevisionsMatch(
+	current []PauseReconnectInterval,
+	expected []PauseChildRevision,
+	suspended []PauseChildRevision,
+	pauseID uuid.UUID,
+	pausedAt time.Time,
+) bool {
+	if len(current) != len(expected) {
+		return false
+	}
+	expectedByID, ok := pauseChildRevisionMap(expected)
+	if !ok {
+		return false
+	}
+	suspendedByID, ok := suspendedReconnectRevisionMap(suspended, expectedByID)
+	if !ok {
+		return false
+	}
+	seen := make(map[uuid.UUID]struct{}, len(current))
+	for _, interval := range current {
+		revision, exists := expectedByID[interval.ID]
+		if !exists || pauseUUIDSeen(seen, interval.ID) {
+			return false
+		}
+		seen[interval.ID] = struct{}{}
+		if sourceRevision, wasSuspended := suspendedByID[interval.ID]; wasSuspended {
+			if !pausedSuspendedReconnectMatches(interval, sourceRevision, pauseID, pausedAt) {
+				return false
+			}
+		} else if !pausedUnchangedReconnectMatches(interval, revision, pauseID) {
+			return false
+		}
+	}
+	return len(seen) == len(expectedByID)
+}
+
+func pauseChildRevisionMap(values []PauseChildRevision) (map[uuid.UUID]int64, bool) {
+	result := make(map[uuid.UUID]int64, len(values))
+	for _, value := range values {
+		if value.ID == uuid.Nil || pauseUUIDSeenRevision(result, value.ID) {
+			return nil, false
+		}
+		result[value.ID] = value.Revision
+	}
+	return result, true
+}
+
+func suspendedReconnectRevisionMap(values []PauseChildRevision, expected map[uuid.UUID]int64) (map[uuid.UUID]int64, bool) {
+	result := make(map[uuid.UUID]int64, len(values))
+	for _, value := range values {
+		revision, exists := expected[value.ID]
+		if !exists || revision != value.Revision || pauseUUIDSeenRevision(result, value.ID) {
+			return nil, false
+		}
+		result[value.ID] = value.Revision
+	}
+	return result, true
+}
+
+func pauseUUIDSeen(values map[uuid.UUID]struct{}, id uuid.UUID) bool {
+	_, exists := values[id]
+	return exists
+}
+
+func pauseUUIDSeenRevision(values map[uuid.UUID]int64, id uuid.UUID) bool {
+	_, exists := values[id]
+	return exists
+}
+
+func pausedSuspendedReconnectMatches(interval PauseReconnectInterval, sourceRevision int64, pauseID uuid.UUID, pausedAt time.Time) bool {
+	return sourceRevision < math.MaxInt64 && interval.Revision == sourceRevision+1 &&
+		interval.State == ReconnectStateCancelled && interval.ClosedAt != nil && interval.ClosedAt.Equal(pausedAt) &&
+		interval.OpenedAt.Before(pausedAt) && interval.Deadline.After(pausedAt) && interval.UpdatedAt.Equal(pausedAt) &&
+		interval.SuspendedByPauseID != nil && *interval.SuspendedByPauseID == pauseID
+}
+
+func pausedUnchangedReconnectMatches(interval PauseReconnectInterval, revision int64, pauseID uuid.UUID) bool {
+	return interval.Revision == revision &&
+		(interval.SuspendedByPauseID == nil || *interval.SuspendedByPauseID != pauseID)
 }
 
 func pausedDraftRevisionMatches(
@@ -1206,37 +1329,140 @@ func validateReconnectCounters(graph PauseGraph, index pauseGraphIndex) (map[rec
 	return counters, nil
 }
 
+type reconnectLogicalSegment struct {
+	number       int
+	continuation int
+}
+
 func validateReconnectIntervals(graph PauseGraph, index pauseGraphIndex, counters map[reconnectCounterIdentity]PauseReconnectCounter) (map[reconnectCounterIdentity]int, error) {
 	counts := make(map[reconnectCounterIdentity]int, len(counters))
-	seen := make(map[uuid.UUID]struct{}, len(graph.Reconnect))
-	seenNumbers := make(map[reconnectCounterIdentity]map[int]struct{}, len(counters))
+	byID := make(map[uuid.UUID]PauseReconnectInterval, len(graph.Reconnect))
+	seenSegments := make(map[reconnectCounterIdentity]map[reconnectLogicalSegment]struct{}, len(counters))
 	for _, interval := range graph.Reconnect {
-		presence, participantExists := index.presenceByParticipant[interval.ParticipantID]
-		game, gameExists := index.gamesByID[interval.GameID]
-		key := reconnectCounterIdentity{PauseID: interval.PauseID, RosterID: interval.RosterID, ParticipantID: interval.ParticipantID}
-		counter, counterExists := counters[key]
-		if validatePauseReconnect(interval) != nil {
-			return nil, normalPauseError("invalid Reconnect descendant")
+		key, err := validateReconnectIntervalMembership(graph, index, counters, interval)
+		if err != nil {
+			return nil, err
 		}
-		if interval.RosterID != graph.Scope.RosterID || !participantExists || !gameExists ||
-			presence.SeriesID != interval.SeriesID || presence.PresenceEpoch < interval.PresenceEpoch || game.SeriesID != interval.SeriesID ||
-			!counterExists || interval.Number > counter.Used {
-			return nil, ErrNormalPauseGraphIncomplete
+		if err := recordReconnectInterval(byID, seenSegments, key, interval); err != nil {
+			return nil, err
 		}
-		if _, duplicate := seen[interval.ID]; duplicate {
-			return nil, normalPauseError("duplicate Reconnect descendant")
+		if interval.ContinuationNumber == 0 {
+			counts[key]++
 		}
-		seen[interval.ID] = struct{}{}
-		if seenNumbers[key] == nil {
-			seenNumbers[key] = make(map[int]struct{})
-		}
-		if _, duplicate := seenNumbers[key][interval.Number]; duplicate {
-			return nil, normalPauseError("duplicate Reconnect number")
-		}
-		seenNumbers[key][interval.Number] = struct{}{}
-		counts[key]++
+	}
+	if err := validateReconnectLineage(graph.Reconnect, byID); err != nil {
+		return nil, err
 	}
 	return counts, nil
+}
+
+func validateReconnectIntervalMembership(
+	graph PauseGraph,
+	index pauseGraphIndex,
+	counters map[reconnectCounterIdentity]PauseReconnectCounter,
+	interval PauseReconnectInterval,
+) (reconnectCounterIdentity, error) {
+	key := reconnectCounterIdentity{PauseID: interval.PauseID, RosterID: interval.RosterID, ParticipantID: interval.ParticipantID}
+	if validatePauseReconnect(interval) != nil {
+		return key, normalPauseError("invalid Reconnect descendant")
+	}
+	presence, participantExists := index.presenceByParticipant[interval.ParticipantID]
+	game, gameExists := index.gamesByID[interval.GameID]
+	counter, counterExists := counters[key]
+	if interval.RosterID != graph.Scope.RosterID || !participantExists || !gameExists || !counterExists ||
+		presence.SeriesID != interval.SeriesID || presence.PresenceEpoch < interval.PresenceEpoch ||
+		game.SeriesID != interval.SeriesID || interval.Number > counter.Used {
+		return key, ErrNormalPauseGraphIncomplete
+	}
+	return key, nil
+}
+
+func recordReconnectInterval(
+	byID map[uuid.UUID]PauseReconnectInterval,
+	seen map[reconnectCounterIdentity]map[reconnectLogicalSegment]struct{},
+	key reconnectCounterIdentity,
+	interval PauseReconnectInterval,
+) error {
+	if _, duplicate := byID[interval.ID]; duplicate {
+		return normalPauseError("duplicate Reconnect descendant")
+	}
+	byID[interval.ID] = interval
+	if seen[key] == nil {
+		seen[key] = make(map[reconnectLogicalSegment]struct{})
+	}
+	segment := reconnectLogicalSegment{number: interval.Number, continuation: interval.ContinuationNumber}
+	if _, duplicate := seen[key][segment]; duplicate {
+		return normalPauseError("duplicate Reconnect segment")
+	}
+	seen[key][segment] = struct{}{}
+	return nil
+}
+
+func validateReconnectLineage(values []PauseReconnectInterval, byID map[uuid.UUID]PauseReconnectInterval) error {
+	continued := make(map[uuid.UUID]uuid.UUID, len(values))
+	for _, interval := range values {
+		if interval.ContinuationNumber == 0 {
+			if err := validateReconnectRoot(interval); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := validateReconnectContinuation(interval, byID, continued); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateReconnectRoot(interval PauseReconnectInterval) error {
+	if interval.ContinuedFromID != nil {
+		return normalPauseError("root Reconnect has predecessor")
+	}
+	return nil
+}
+
+func validateReconnectContinuation(
+	interval PauseReconnectInterval,
+	byID map[uuid.UUID]PauseReconnectInterval,
+	continued map[uuid.UUID]uuid.UUID,
+) error {
+	if interval.ContinuedFromID == nil || *interval.ContinuedFromID == interval.ID {
+		return normalPauseError("continuation Reconnect lacks predecessor")
+	}
+	predecessorID := *interval.ContinuedFromID
+	if _, fork := continued[predecessorID]; fork {
+		return normalPauseError("Reconnect predecessor has multiple continuations")
+	}
+	continued[predecessorID] = interval.ID
+	predecessor, exists := byID[predecessorID]
+	if !exists || !validReconnectPredecessor(predecessor) || !sameReconnectLineage(predecessor, interval) {
+		return normalPauseError("invalid Reconnect continuation lineage")
+	}
+	if !validReconnectContinuationTime(predecessor, interval) {
+		return normalPauseError("invalid Reconnect continuation deadline")
+	}
+	return nil
+}
+
+func validReconnectPredecessor(value PauseReconnectInterval) bool {
+	return value.State == ReconnectStateCancelled && value.SuspendedByPauseID != nil &&
+		*value.SuspendedByPauseID != uuid.Nil && value.ClosedAt != nil
+}
+
+func sameReconnectLineage(predecessor, interval PauseReconnectInterval) bool {
+	return predecessor.PauseID == interval.PauseID && predecessor.RosterID == interval.RosterID &&
+		predecessor.SeriesID == interval.SeriesID && predecessor.GameID == interval.GameID &&
+		predecessor.ParticipantID == interval.ParticipantID && predecessor.PresenceEpoch == interval.PresenceEpoch &&
+		predecessor.Number == interval.Number && predecessor.ContinuationNumber+1 == interval.ContinuationNumber
+}
+
+func validReconnectContinuationTime(predecessor, interval PauseReconnectInterval) bool {
+	if predecessor.ClosedAt == nil || !predecessor.Deadline.After(*predecessor.ClosedAt) ||
+		!interval.OpenedAt.After(*predecessor.ClosedAt) {
+		return false
+	}
+	deadline, ok := safePauseTimeAdd(interval.OpenedAt, predecessor.Deadline.Sub(*predecessor.ClosedAt))
+	return ok && interval.Deadline.Equal(deadline)
 }
 
 func validPauseReconnectCounter(counter PauseReconnectCounter) bool {
@@ -1284,7 +1510,7 @@ func validatePauseReconnect(value PauseReconnectInterval) error {
 func validPauseReconnectHeader(value PauseReconnectInterval) bool {
 	return value.ID != uuid.Nil && value.PauseID != uuid.Nil && value.RosterID != uuid.Nil &&
 		value.SeriesID != uuid.Nil && value.GameID != uuid.Nil && value.ParticipantID != uuid.Nil &&
-		value.PresenceEpoch >= 1 && value.Number >= 1 && value.Revision >= 1 &&
+		value.PresenceEpoch >= 1 && value.Number >= 1 && value.ContinuationNumber >= 0 && value.Revision >= 1 &&
 		validArenaServerTime(value.OpenedAt) && validArenaServerTime(value.Deadline) &&
 		validArenaServerTime(value.UpdatedAt) && value.Deadline.After(value.OpenedAt) &&
 		!value.UpdatedAt.Before(value.OpenedAt)
@@ -1293,7 +1519,7 @@ func validPauseReconnectHeader(value PauseReconnectInterval) bool {
 func validatePauseReconnectState(value PauseReconnectInterval) error {
 	switch value.State {
 	case ReconnectStateOpen:
-		if value.ClosedAt != nil {
+		if value.ClosedAt != nil || value.SuspendedByPauseID != nil {
 			return normalPauseError("open Reconnect has close time")
 		}
 	case ReconnectStateReconnected, ReconnectStateExpired, ReconnectStateCancelled:
@@ -1303,6 +1529,14 @@ func validatePauseReconnectState(value PauseReconnectInterval) error {
 		}
 	default:
 		return normalPauseError("unknown Reconnect state %q", value.State)
+	}
+	if value.SuspendedByPauseID != nil {
+		if *value.SuspendedByPauseID == uuid.Nil {
+			return normalPauseError("Reconnect suspension identity is empty")
+		}
+		if value.State != ReconnectStateCancelled {
+			return normalPauseError("only cancelled Reconnect can carry suspension")
+		}
 	}
 	return nil
 }
@@ -1738,14 +1972,14 @@ func clonePauseGraph(value PauseGraph) PauseGraph {
 	}
 	clone.Presence = clonePausePresenceSlice(value.Presence)
 	clone.Reconnect = clonePauseReconnectSlice(value.Reconnect)
-	clone.Counters = append([]PauseReconnectCounter(nil), value.Counters...)
+	clone.Counters = clonePauseSlice(value.Counters)
 	clone.FrozenDeadlines = clonePauseFrozenDeadlineSlice(value.FrozenDeadlines)
 	clone.PausedAt = cloneTimePointer(value.PausedAt)
 	return clone
 }
 
 func clonePausePresenceSlice(values []PausePresence) []PausePresence {
-	clone := append([]PausePresence(nil), values...)
+	clone := clonePauseSlice(values)
 	for index := range clone {
 		clone[index].DisconnectedAt = cloneTimePointer(values[index].DisconnectedAt)
 	}
@@ -1753,15 +1987,17 @@ func clonePausePresenceSlice(values []PausePresence) []PausePresence {
 }
 
 func clonePauseReconnectSlice(values []PauseReconnectInterval) []PauseReconnectInterval {
-	clone := append([]PauseReconnectInterval(nil), values...)
+	clone := clonePauseSlice(values)
 	for index := range clone {
-		clone[index].ClosedAt = cloneTimePointer(values[index].ClosedAt)
+		clone[index].ClosedAt = cloneTimePointer(clone[index].ClosedAt)
+		clone[index].ContinuedFromID = cloneUUIDPointer(clone[index].ContinuedFromID)
+		clone[index].SuspendedByPauseID = cloneUUIDPointer(clone[index].SuspendedByPauseID)
 	}
 	return clone
 }
 
 func clonePauseFrozenDeadlineSlice(values []PauseFrozenDeadline) []PauseFrozenDeadline {
-	clone := append([]PauseFrozenDeadline(nil), values...)
+	clone := clonePauseSlice(values)
 	for index := range clone {
 		clone[index].ResumedAt = cloneTimePointer(values[index].ResumedAt)
 		clone[index].ResumedDeadline = cloneTimePointer(values[index].ResumedDeadline)
@@ -1773,23 +2009,31 @@ func cloneNormalPauseRecord(value NormalPauseRecord) NormalPauseRecord {
 	clone := value
 	clone.Expected = clonePauseGraphRevisions(value.Expected)
 	clone.Graph = clonePauseGraph(value.Graph)
+	clone.SuspendedReconnect = clonePauseSlice(value.SuspendedReconnect)
 	clone.ResolvedAt = cloneTimePointer(value.ResolvedAt)
 	return clone
 }
 
 func clonePauseGraphRevisions(value PauseGraphRevisions) PauseGraphRevisions {
 	clone := value
-	clone.Series = append([]PauseChildRevision(nil), value.Series...)
-	clone.Games = append([]PauseChildRevision(nil), value.Games...)
-	clone.Presence = append([]PausePresenceRevision(nil), value.Presence...)
-	clone.Reconnect = append([]PauseChildRevision(nil), value.Reconnect...)
-	clone.Counters = append([]PauseReconnectCounterRevision(nil), value.Counters...)
-	clone.FrozenDeadlines = append([]PauseFrozenDeadlineRevision(nil), value.FrozenDeadlines...)
+	clone.Series = clonePauseSlice(value.Series)
+	clone.Games = clonePauseSlice(value.Games)
+	clone.Presence = clonePauseSlice(value.Presence)
+	clone.Reconnect = clonePauseSlice(value.Reconnect)
+	clone.Counters = clonePauseSlice(value.Counters)
+	clone.FrozenDeadlines = clonePauseSlice(value.FrozenDeadlines)
 	if value.Draft != nil {
 		draft := *value.Draft
 		clone.Draft = &draft
 	}
 	return clone
+}
+
+func clonePauseSlice[T any](value []T) []T {
+	if value == nil {
+		return nil
+	}
+	return append(make([]T, 0, len(value)), value...)
 }
 
 func cloneTournamentStatePointer(value *domain.ArenaTournamentState) *domain.ArenaTournamentState {
