@@ -30,6 +30,333 @@ const (
 	Bearer AdminTokenResponseTokenType = "Bearer"
 )
 
+// Defines values for ArenaArtifactKind.
+const (
+	Bracket      ArenaArtifactKind = "bracket"
+	Champion     ArenaArtifactKind = "champion"
+	GameResult   ArenaArtifactKind = "game_result"
+	GoldenGroup  ArenaArtifactKind = "golden_group"
+	SeriesResult ArenaArtifactKind = "series_result"
+	SeriesScore  ArenaArtifactKind = "series_score"
+	Standings    ArenaArtifactKind = "standings"
+	TopFour      ArenaArtifactKind = "top_four"
+)
+
+// Defines values for ArenaAttendanceState.
+const (
+	CheckedIn  ArenaAttendanceState = "checked_in"
+	Invited    ArenaAttendanceState = "invited"
+	Registered ArenaAttendanceState = "registered"
+	Withdrawn  ArenaAttendanceState = "withdrawn"
+)
+
+// Defines values for ArenaAuditEntityKind.
+const (
+	ArenaAuditEntityKindGameAttempt ArenaAuditEntityKind = "game_attempt"
+	ArenaAuditEntityKindSeries      ArenaAuditEntityKind = "series"
+)
+
+// Defines values for ArenaCategory.
+const (
+	ArenaCategoryCrypto        ArenaCategory = "crypto"
+	ArenaCategoryForensics     ArenaCategory = "forensics"
+	ArenaCategoryHardware      ArenaCategory = "hardware"
+	ArenaCategoryMisc          ArenaCategory = "misc"
+	ArenaCategoryMobile        ArenaCategory = "mobile"
+	ArenaCategoryOsint         ArenaCategory = "osint"
+	ArenaCategoryPpc           ArenaCategory = "ppc"
+	ArenaCategoryPwn           ArenaCategory = "pwn"
+	ArenaCategoryReverse       ArenaCategory = "reverse"
+	ArenaCategorySteganography ArenaCategory = "steganography"
+	ArenaCategoryWeb           ArenaCategory = "web"
+)
+
+// Defines values for ArenaCategoryMode.
+const (
+	ArenaCategoryModeAdmin  ArenaCategoryMode = "admin"
+	ArenaCategoryModeDraft  ArenaCategoryMode = "draft"
+	ArenaCategoryModeRandom ArenaCategoryMode = "random"
+)
+
+// Defines values for ArenaCorrectionField.
+const (
+	ResultReason  ArenaCorrectionField = "result_reason"
+	SolveMetadata ArenaCorrectionField = "solve_metadata"
+	Winner        ArenaCorrectionField = "winner"
+)
+
+// Defines values for ArenaCorrectionReason.
+const (
+	OperatorRuling     ArenaCorrectionReason = "operator_ruling"
+	ScorekeepingError  ArenaCorrectionReason = "scorekeeping_error"
+	VerifiedSubmission ArenaCorrectionReason = "verified_submission"
+)
+
+// Defines values for ArenaDifficulty.
+const (
+	ArenaDifficultyEasy   ArenaDifficulty = "easy"
+	ArenaDifficultyHard   ArenaDifficulty = "hard"
+	ArenaDifficultyMedium ArenaDifficulty = "medium"
+)
+
+// Defines values for ArenaDraftActionType.
+const (
+	Ban  ArenaDraftActionType = "ban"
+	Pick ArenaDraftActionType = "pick"
+)
+
+// Defines values for ArenaDraftState.
+const (
+	ArenaDraftStateActive    ArenaDraftState = "active"
+	ArenaDraftStateCompleted ArenaDraftState = "completed"
+)
+
+// Defines values for ArenaGameResultReason.
+const (
+	ArenaGameResultReasonCommonPlatformFailure     ArenaGameResultReason = "common_platform_failure"
+	ArenaGameResultReasonDerivedRevisionSuperseded ArenaGameResultReason = "derived_revision_superseded"
+	ArenaGameResultReasonDisconnect                ArenaGameResultReason = "disconnect"
+	ArenaGameResultReasonExecutionEpochBreak       ArenaGameResultReason = "execution_epoch_break"
+	ArenaGameResultReasonNoShow                    ArenaGameResultReason = "no_show"
+	ArenaGameResultReasonNoSolve                   ArenaGameResultReason = "no_solve"
+	ArenaGameResultReasonOperatorForfeit           ArenaGameResultReason = "operator_forfeit"
+	ArenaGameResultReasonSeriesCancelled           ArenaGameResultReason = "series_cancelled"
+	ArenaGameResultReasonSolved                    ArenaGameResultReason = "solved"
+	ArenaGameResultReasonSurrender                 ArenaGameResultReason = "surrender"
+	ArenaGameResultReasonTaskFailure               ArenaGameResultReason = "task_failure"
+	ArenaGameResultReasonTournamentCancelled       ArenaGameResultReason = "tournament_cancelled"
+)
+
+// Defines values for ArenaGameState.
+const (
+	ArenaGameStateActive     ArenaGameState = "active"
+	ArenaGameStateCancelled  ArenaGameState = "cancelled"
+	ArenaGameStateCompleted  ArenaGameState = "completed"
+	ArenaGameStatePaused     ArenaGameState = "paused"
+	ArenaGameStatePlanned    ArenaGameState = "planned"
+	ArenaGameStateReady      ArenaGameState = "ready"
+	ArenaGameStateSuperseded ArenaGameState = "superseded"
+	ArenaGameStateVoid       ArenaGameState = "void"
+)
+
+// Defines values for ArenaIncidentBundleCanonicalContentEncoding.
+const (
+	Base64 ArenaIncidentBundleCanonicalContentEncoding = "base64"
+)
+
+// Defines values for ArenaIncidentBundleCanonicalContentType.
+const (
+	Applicationjson ArenaIncidentBundleCanonicalContentType = "application/json"
+)
+
+// Defines values for ArenaOfficialResultSubjectKind.
+const (
+	ArenaOfficialResultSubjectKindGame   ArenaOfficialResultSubjectKind = "game"
+	ArenaOfficialResultSubjectKindSeries ArenaOfficialResultSubjectKind = "series"
+)
+
+// Defines values for ArenaParticipantPostSeriesRequestAction.
+const (
+	ArenaParticipantPostSeriesRequestActionAcknowledgeResult     ArenaParticipantPostSeriesRequestAction = "acknowledge_result"
+	ArenaParticipantPostSeriesRequestActionLeaveLobby            ArenaParticipantPostSeriesRequestAction = "leave_lobby"
+	ArenaParticipantPostSeriesRequestActionRequestNextAssignment ArenaParticipantPostSeriesRequestAction = "request_next_assignment"
+)
+
+// Defines values for ArenaParticipantPostSeriesResponseAcceptedAction.
+const (
+	ArenaParticipantPostSeriesResponseAcceptedActionAcknowledgeResult     ArenaParticipantPostSeriesResponseAcceptedAction = "acknowledge_result"
+	ArenaParticipantPostSeriesResponseAcceptedActionLeaveLobby            ArenaParticipantPostSeriesResponseAcceptedAction = "leave_lobby"
+	ArenaParticipantPostSeriesResponseAcceptedActionRequestNextAssignment ArenaParticipantPostSeriesResponseAcceptedAction = "request_next_assignment"
+)
+
+// Defines values for ArenaPauseDeadlineKind.
+const (
+	ArenaPauseDeadlineKindDraft       ArenaPauseDeadlineKind = "draft"
+	ArenaPauseDeadlineKindGame        ArenaPauseDeadlineKind = "game"
+	ArenaPauseDeadlineKindReadyWindow ArenaPauseDeadlineKind = "ready_window"
+)
+
+// Defines values for ArenaPreflightCode.
+const (
+	ArenaPreflightRuntimeAuthoritativeStorage   ArenaPreflightCode = "arena.preflight.runtime.authoritative_storage"
+	ArenaPreflightRuntimeCapacity               ArenaPreflightCode = "arena.preflight.runtime.capacity"
+	ArenaPreflightRuntimeClock                  ArenaPreflightCode = "arena.preflight.runtime.clock"
+	ArenaPreflightRuntimeConfiguration          ArenaPreflightCode = "arena.preflight.runtime.configuration"
+	ArenaPreflightRuntimeDependencies           ArenaPreflightCode = "arena.preflight.runtime.dependencies"
+	ArenaPreflightRuntimeRealtime               ArenaPreflightCode = "arena.preflight.runtime.realtime"
+	ArenaPreflightRuntimeSchedule               ArenaPreflightCode = "arena.preflight.runtime.schedule"
+	ArenaPreflightRuntimeSubmission             ArenaPreflightCode = "arena.preflight.runtime.submission"
+	ArenaPreflightRuntimeTaskDelivery           ArenaPreflightCode = "arena.preflight.runtime.task_delivery"
+	ArenaPreflightStructureAttendance           ArenaPreflightCode = "arena.preflight.structure.attendance"
+	ArenaPreflightStructureByes                 ArenaPreflightCode = "arena.preflight.structure.byes"
+	ArenaPreflightStructureCategories           ArenaPreflightCode = "arena.preflight.structure.categories"
+	ArenaPreflightStructureOverrides            ArenaPreflightCode = "arena.preflight.structure.overrides"
+	ArenaPreflightStructurePairings             ArenaPreflightCode = "arena.preflight.structure.pairings"
+	ArenaPreflightStructureParticipantExclusive ArenaPreflightCode = "arena.preflight.structure.participant_exclusive"
+	ArenaPreflightStructurePreset               ArenaPreflightCode = "arena.preflight.structure.preset"
+	ArenaPreflightStructureRosterComplete       ArenaPreflightCode = "arena.preflight.structure.roster_complete"
+	ArenaPreflightTasksDisabled                 ArenaPreflightCode = "arena.preflight.tasks.disabled"
+	ArenaPreflightTasksInventory                ArenaPreflightCode = "arena.preflight.tasks.inventory"
+	ArenaPreflightTasksMissing                  ArenaPreflightCode = "arena.preflight.tasks.missing"
+	ArenaPreflightTasksMutable                  ArenaPreflightCode = "arena.preflight.tasks.mutable"
+	ArenaPreflightTasksPoolConfiguration        ArenaPreflightCode = "arena.preflight.tasks.pool_configuration"
+	ArenaPreflightTasksPubliclyExposed          ArenaPreflightCode = "arena.preflight.tasks.publicly_exposed"
+	ArenaPreflightTasksUnhealthy                ArenaPreflightCode = "arena.preflight.tasks.unhealthy"
+	ArenaPreflightTasksWrongPool                ArenaPreflightCode = "arena.preflight.tasks.wrong_pool"
+)
+
+// Defines values for ArenaPreflightReportAlgorithmVersion.
+const (
+	ArenaPreflightReportV1 ArenaPreflightReportAlgorithmVersion = "arena-preflight-report-v1"
+)
+
+// Defines values for ArenaPresenceState.
+const (
+	Connected    ArenaPresenceState = "connected"
+	Disconnected ArenaPresenceState = "disconnected"
+)
+
+// Defines values for ArenaPreset.
+const (
+	ArenaV1 ArenaPreset = "arena_v1"
+)
+
+// Defines values for ArenaPublicBracketMatchStage.
+const (
+	ArenaPublicBracketMatchStageFinal     ArenaPublicBracketMatchStage = "final"
+	ArenaPublicBracketMatchStageSemifinal ArenaPublicBracketMatchStage = "semifinal"
+)
+
+// Defines values for ArenaReadinessEventType.
+const (
+	ArenaReadinessEventTypeCleared ArenaReadinessEventType = "cleared"
+	ArenaReadinessEventTypeReady   ArenaReadinessEventType = "ready"
+)
+
+// Defines values for ArenaReadyWindowState.
+const (
+	ArenaReadyWindowStateConsumed   ArenaReadyWindowState = "consumed"
+	ArenaReadyWindowStateExpired    ArenaReadyWindowState = "expired"
+	ArenaReadyWindowStateOpen       ArenaReadyWindowState = "open"
+	ArenaReadyWindowStateSuperseded ArenaReadyWindowState = "superseded"
+)
+
+// Defines values for ArenaReconnectState.
+const (
+	ArenaReconnectStateCancelled   ArenaReconnectState = "cancelled"
+	ArenaReconnectStateExpired     ArenaReconnectState = "expired"
+	ArenaReconnectStateOpen        ArenaReconnectState = "open"
+	ArenaReconnectStateReconnected ArenaReconnectState = "reconnected"
+)
+
+// Defines values for ArenaResultActorKind.
+const (
+	Operator ArenaResultActorKind = "operator"
+	Server   ArenaResultActorKind = "server"
+)
+
+// Defines values for ArenaSeriesFormat.
+const (
+	Bo1 ArenaSeriesFormat = "bo1"
+	Bo3 ArenaSeriesFormat = "bo3"
+)
+
+// Defines values for ArenaSeriesResultReason.
+const (
+	ArenaSeriesResultReasonOperatorCorrection  ArenaSeriesResultReason = "operator_correction"
+	ArenaSeriesResultReasonScoreComplete       ArenaSeriesResultReason = "score_complete"
+	ArenaSeriesResultReasonSeriesCancelled     ArenaSeriesResultReason = "series_cancelled"
+	ArenaSeriesResultReasonTournamentCancelled ArenaSeriesResultReason = "tournament_cancelled"
+)
+
+// Defines values for ArenaSeriesState.
+const (
+	ArenaSeriesStateActive         ArenaSeriesState = "active"
+	ArenaSeriesStateCancelled      ArenaSeriesState = "cancelled"
+	ArenaSeriesStateCompleted      ArenaSeriesState = "completed"
+	ArenaSeriesStateDraft          ArenaSeriesState = "draft"
+	ArenaSeriesStateLocked         ArenaSeriesState = "locked"
+	ArenaSeriesStatePlanned        ArenaSeriesState = "planned"
+	ArenaSeriesStateReady          ArenaSeriesState = "ready"
+	ArenaSeriesStateReplayRequired ArenaSeriesState = "replay_required"
+	ArenaSeriesStateTechnicalPause ArenaSeriesState = "technical_pause"
+)
+
+// Defines values for ArenaSwissBuchholzStatus.
+const (
+	ArenaSwissBuchholzStatusFinal       ArenaSwissBuchholzStatus = "final"
+	ArenaSwissBuchholzStatusProvisional ArenaSwissBuchholzStatus = "provisional"
+)
+
+// Defines values for ArenaSwissPairingEvidenceAlgorithmVersion.
+const (
+	HmacSha256OrderV1 ArenaSwissPairingEvidenceAlgorithmVersion = "hmac-sha256-order-v1"
+)
+
+// Defines values for ArenaSwissPairingEvidencePurpose.
+const (
+	Pairing ArenaSwissPairingEvidencePurpose = "pairing"
+)
+
+// Defines values for ArenaSwissPointsLabel.
+const (
+	Final       ArenaSwissPointsLabel = "final"
+	Provisional ArenaSwissPointsLabel = "provisional"
+)
+
+// Defines values for ArenaTaskKind.
+const (
+	Golden ArenaTaskKind = "golden"
+	Normal ArenaTaskKind = "normal"
+)
+
+// Defines values for ArenaTournamentActionRequestAction.
+const (
+	ArenaTournamentActionRequestActionCancel           ArenaTournamentActionRequestAction = "cancel"
+	ArenaTournamentActionRequestActionComplete         ArenaTournamentActionRequestAction = "complete"
+	ArenaTournamentActionRequestActionOpenRegistration ArenaTournamentActionRequestAction = "open_registration"
+	ArenaTournamentActionRequestActionPause            ArenaTournamentActionRequestAction = "pause"
+	ArenaTournamentActionRequestActionResume           ArenaTournamentActionRequestAction = "resume"
+	ArenaTournamentActionRequestActionStartGolden      ArenaTournamentActionRequestAction = "start_golden"
+	ArenaTournamentActionRequestActionStartPlayoffs    ArenaTournamentActionRequestAction = "start_playoffs"
+	ArenaTournamentActionRequestActionStartSwiss       ArenaTournamentActionRequestAction = "start_swiss"
+)
+
+// Defines values for ArenaTournamentState.
+const (
+	ArenaTournamentStateCancelled      ArenaTournamentState = "cancelled"
+	ArenaTournamentStateCompleted      ArenaTournamentState = "completed"
+	ArenaTournamentStateDraft          ArenaTournamentState = "draft"
+	ArenaTournamentStateGolden         ArenaTournamentState = "golden"
+	ArenaTournamentStatePlayoffs       ArenaTournamentState = "playoffs"
+	ArenaTournamentStateRegistration   ArenaTournamentState = "registration"
+	ArenaTournamentStateRosterLocked   ArenaTournamentState = "roster_locked"
+	ArenaTournamentStateSwiss          ArenaTournamentState = "swiss"
+	ArenaTournamentStateTechnicalPause ArenaTournamentState = "technical_pause"
+)
+
+// Defines values for ArenaWaveControlRequestAction.
+const (
+	ArenaWaveControlRequestActionCancel          ArenaWaveControlRequestAction = "cancel"
+	ArenaWaveControlRequestActionComplete        ArenaWaveControlRequestAction = "complete"
+	ArenaWaveControlRequestActionOpenReadyWindow ArenaWaveControlRequestAction = "open_ready_window"
+	ArenaWaveControlRequestActionPause           ArenaWaveControlRequestAction = "pause"
+	ArenaWaveControlRequestActionResume          ArenaWaveControlRequestAction = "resume"
+	ArenaWaveControlRequestActionStart           ArenaWaveControlRequestAction = "start"
+)
+
+// Defines values for ArenaWaveState.
+const (
+	ArenaWaveStateActive             ArenaWaveState = "active"
+	ArenaWaveStateCompleted          ArenaWaveState = "completed"
+	ArenaWaveStatePaused             ArenaWaveState = "paused"
+	ArenaWaveStatePlanned            ArenaWaveState = "planned"
+	ArenaWaveStateReady              ArenaWaveState = "ready"
+	ArenaWaveStateReadyWindowExpired ArenaWaveState = "ready_window_expired"
+	ArenaWaveStateReadyWindowOpen    ArenaWaveState = "ready_window_open"
+	ArenaWaveStateSuperseded         ArenaWaveState = "superseded"
+)
+
 // Defines values for DuelStatus.
 const (
 	DuelStatusActive   DuelStatus = "active"
@@ -168,6 +495,953 @@ type AdminTokenResponse struct {
 
 // AdminTokenResponseTokenType defines model for AdminTokenResponse.TokenType.
 type AdminTokenResponseTokenType string
+
+// ArenaArtifactKind defines model for ArenaArtifactKind.
+type ArenaArtifactKind string
+
+// ArenaAssignment defines model for ArenaAssignment.
+type ArenaAssignment struct {
+	// ActiveSnapshot Public immutable task snapshot. Private flag material and undisclosed reserves are excluded.
+	ActiveSnapshot          ArenaTaskSnapshot      `json:"active_snapshot"`
+	AttemptId               openapi_types.UUID     `json:"attempt_id"`
+	Id                      openapi_types.UUID     `json:"id"`
+	ParticipantIds          []openapi_types.UUID   `json:"participant_ids"`
+	Receipts                []ArenaDeliveryReceipt `json:"receipts"`
+	UndisclosedReserveCount int32                  `json:"undisclosed_reserve_count"`
+}
+
+// ArenaAttendanceState defines model for ArenaAttendanceState.
+type ArenaAttendanceState string
+
+// ArenaAuditCursor Stable keyset cursor ordered by occurrence time, audit event ID, and immutable result revision ID.
+type ArenaAuditCursor struct {
+	AuditEventId openapi_types.UUID `json:"audit_event_id"`
+	OccurredAt   time.Time          `json:"occurred_at"`
+	RevisionId   openapi_types.UUID `json:"revision_id"`
+}
+
+// ArenaAuditEntityKind defines model for ArenaAuditEntityKind.
+type ArenaAuditEntityKind string
+
+// ArenaAuditEvent Redacted immutable audit projection. Raw internal payload is never included.
+type ArenaAuditEvent struct {
+	ActorId                  *openapi_types.UUID     `json:"actor_id"`
+	ActorKind                ArenaResultActorKind    `json:"actor_kind"`
+	AuditEventId             *openapi_types.UUID     `json:"audit_event_id,omitempty"`
+	CreatedAt                *time.Time              `json:"created_at,omitempty"`
+	EntityId                 *openapi_types.UUID     `json:"entity_id,omitempty"`
+	EntityKind               ArenaAuditEntityKind    `json:"entity_kind"`
+	EventType                *string                 `json:"event_type,omitempty"`
+	IsCurrent                *bool                   `json:"is_current,omitempty"`
+	IsSuperseded             *bool                   `json:"is_superseded,omitempty"`
+	OccurredAt               *time.Time              `json:"occurred_at,omitempty"`
+	OfficialResultRevisionId *openapi_types.UUID     `json:"official_result_revision_id,omitempty"`
+	RedactedPayload          *map[string]interface{} `json:"redacted_payload,omitempty"`
+	ResultEventId            *openapi_types.UUID     `json:"result_event_id,omitempty"`
+	ResultReason             *string                 `json:"result_reason,omitempty"`
+	ResultState              *string                 `json:"result_state,omitempty"`
+	RevisionNumber           *int64                  `json:"revision_number,omitempty"`
+	RosterId                 *openapi_types.UUID     `json:"roster_id,omitempty"`
+	SeriesId                 *openapi_types.UUID     `json:"series_id,omitempty"`
+	TournamentId             *openapi_types.UUID     `json:"tournament_id,omitempty"`
+	WinnerId                 *openapi_types.UUID     `json:"winner_id"`
+}
+
+// ArenaAuditPage defines model for ArenaAuditPage.
+type ArenaAuditPage struct {
+	Events     []ArenaAuditEvent `json:"events"`
+	NextCursor *ArenaAuditCursor `json:"next_cursor"`
+}
+
+// ArenaCategory defines model for ArenaCategory.
+type ArenaCategory string
+
+// ArenaCategoryMode defines model for ArenaCategoryMode.
+type ArenaCategoryMode string
+
+// ArenaCorrectionEvidence Immutable correction record. All projection and unlock evidence is retained by value.
+type ArenaCorrectionEvidence struct {
+	CommandId        *openapi_types.UUID                      `json:"command_id,omitempty"`
+	Fields           *[]ArenaCorrectionField                  `json:"fields,omitempty"`
+	GameId           *openapi_types.UUID                      `json:"game_id,omitempty"`
+	OperatorId       *openapi_types.UUID                      `json:"operator_id,omitempty"`
+	Reason           ArenaCorrectionReason                    `json:"reason"`
+	RequestedAt      *time.Time                               `json:"requested_at,omitempty"`
+	SeriesId         *openapi_types.UUID                      `json:"series_id,omitempty"`
+	Supersessions    *[]ArenaCorrectionProjectionSupersession `json:"supersessions,omitempty"`
+	TournamentId     *openapi_types.UUID                      `json:"tournament_id,omitempty"`
+	UnlockIntents    *[]ArenaCorrectionUnlockIntent           `json:"unlock_intents,omitempty"`
+	ValidationDigest *string                                  `json:"validation_digest,omitempty"`
+}
+
+// ArenaCorrectionField defines model for ArenaCorrectionField.
+type ArenaCorrectionField string
+
+// ArenaCorrectionPatch defines model for ArenaCorrectionPatch.
+type ArenaCorrectionPatch struct {
+	Reason        ArenaGameResultReason        `json:"reason"`
+	SolveMetadata ArenaCorrectionSolveMetadata `json:"solve_metadata"`
+	State         ArenaGameState               `json:"state"`
+	WinnerId      *openapi_types.UUID          `json:"winner_id"`
+}
+
+// ArenaCorrectionProjectionIntent Digest-only projection mutation intent. Raw projection payload is not exposed.
+type ArenaCorrectionProjectionIntent struct {
+	DecisionId openapi_types.UUID `json:"decision_id"`
+
+	// ExpectedRevision Immutable revision metadata for a derived Arena artifact.
+	ExpectedRevision ArenaProjectionRevision `json:"expected_revision"`
+	NextRevisionId   openapi_types.UUID      `json:"next_revision_id"`
+	PayloadDigest    string                  `json:"payload_digest"`
+}
+
+// ArenaCorrectionProjectionSupersession defines model for ArenaCorrectionProjectionSupersession.
+type ArenaCorrectionProjectionSupersession struct {
+	ArtifactId            openapi_types.UUID  `json:"artifact_id"`
+	ArtifactKind          ArenaArtifactKind   `json:"artifact_kind"`
+	PreviousDecisionId    *openapi_types.UUID `json:"previous_decision_id"`
+	PreviousRevisionId    *openapi_types.UUID `json:"previous_revision_id,omitempty"`
+	ReplacementDecisionId *openapi_types.UUID `json:"replacement_decision_id,omitempty"`
+	SuccessorRevisionId   *openapi_types.UUID `json:"successor_revision_id,omitempty"`
+}
+
+// ArenaCorrectionReason defines model for ArenaCorrectionReason.
+type ArenaCorrectionReason string
+
+// ArenaCorrectionSolveMetadata defines model for ArenaCorrectionSolveMetadata.
+type ArenaCorrectionSolveMetadata struct {
+	EvidenceDigest string              `json:"evidence_digest"`
+	SolvedAt       *time.Time          `json:"solved_at"`
+	SubmissionId   *openapi_types.UUID `json:"submission_id"`
+}
+
+// ArenaCorrectionUnlockIntent Complete compare-and-set evidence for releasing an undisclosed, unused reservation.
+type ArenaCorrectionUnlockIntent struct {
+	BindingDigest     *string             `json:"binding_digest,omitempty"`
+	EvidenceDigest    *string             `json:"evidence_digest,omitempty"`
+	ExpectedDisclosed bool                `json:"expected_disclosed"`
+	ExpectedRevision  int64               `json:"expected_revision"`
+	ExpectedUsed      bool                `json:"expected_used"`
+	OwnerId           openapi_types.UUID  `json:"owner_id"`
+	ReservationId     openapi_types.UUID  `json:"reservation_id"`
+	SourceRevisionId  *openapi_types.UUID `json:"source_revision_id,omitempty"`
+	TournamentId      openapi_types.UUID  `json:"tournament_id"`
+}
+
+// ArenaCreateTournamentRequest defines model for ArenaCreateTournamentRequest.
+type ArenaCreateTournamentRequest struct {
+	ExpectedProjectionRevision int64       `json:"expected_projection_revision"`
+	Preset                     ArenaPreset `json:"preset"`
+	RosterSize                 int32       `json:"roster_size"`
+}
+
+// ArenaDeliveryReceipt defines model for ArenaDeliveryReceipt.
+type ArenaDeliveryReceipt struct {
+	AssignmentId  openapi_types.UUID `json:"assignment_id"`
+	AttemptId     openapi_types.UUID `json:"attempt_id"`
+	DeliveredAt   *time.Time         `json:"delivered_at,omitempty"`
+	Id            openapi_types.UUID `json:"id"`
+	ParticipantId openapi_types.UUID `json:"participant_id"`
+	SnapshotId    openapi_types.UUID `json:"snapshot_id"`
+	TaskId        openapi_types.UUID `json:"task_id"`
+}
+
+// ArenaDifficulty defines model for ArenaDifficulty.
+type ArenaDifficulty string
+
+// ArenaDraft defines model for ArenaDraft.
+type ArenaDraft struct {
+	Actions             []ArenaDraftAction `json:"actions"`
+	FirstParticipantId  openapi_types.UUID `json:"first_participant_id"`
+	Format              ArenaSeriesFormat  `json:"format"`
+	Id                  openapi_types.UUID `json:"id"`
+	Pool                []ArenaCategory    `json:"pool"`
+	SecondParticipantId openapi_types.UUID `json:"second_participant_id"`
+	SelectedCategories  []ArenaCategory    `json:"selected_categories"`
+	SeriesId            openapi_types.UUID `json:"series_id"`
+	State               ArenaDraftState    `json:"state"`
+	Turn                int32              `json:"turn"`
+	TurnDeadline        *time.Time         `json:"turn_deadline"`
+}
+
+// ArenaDraftAction defines model for ArenaDraftAction.
+type ArenaDraftAction struct {
+	Action       ArenaDraftActionType `json:"action"`
+	ActorId      openapi_types.UUID   `json:"actor_id"`
+	Category     ArenaCategory        `json:"category"`
+	OccurredAt   *time.Time           `json:"occurred_at,omitempty"`
+	Turn         int32                `json:"turn"`
+	TurnDeadline *time.Time           `json:"turn_deadline,omitempty"`
+}
+
+// ArenaDraftActionType defines model for ArenaDraftActionType.
+type ArenaDraftActionType string
+
+// ArenaDraftState defines model for ArenaDraftState.
+type ArenaDraftState string
+
+// ArenaFrozenDeadline defines model for ArenaFrozenDeadline.
+type ArenaFrozenDeadline struct {
+	FrozenAt         *time.Time             `json:"frozen_at,omitempty"`
+	Kind             ArenaPauseDeadlineKind `json:"kind"`
+	OriginalDeadline *time.Time             `json:"original_deadline,omitempty"`
+	OwnerId          openapi_types.UUID     `json:"owner_id"`
+	RemainingMs      *int64                 `json:"remaining_ms,omitempty"`
+	ResumedAt        *time.Time             `json:"resumed_at"`
+	ResumedDeadline  *time.Time             `json:"resumed_deadline"`
+	Revision         *int64                 `json:"revision,omitempty"`
+}
+
+// ArenaGame One attempt in a stable Series slot. Replays get a new Game ID and retain the slot_id.
+type ArenaGame struct {
+	AttemptNo        int32                  `json:"attempt_no"`
+	Id               openapi_types.UUID     `json:"id"`
+	ResultReason     *ArenaGameResultReason `json:"result_reason"`
+	ResultRevisionId *openapi_types.UUID    `json:"result_revision_id"`
+	SlotId           openapi_types.UUID     `json:"slot_id"`
+	State            ArenaGameState         `json:"state"`
+	WinnerId         *openapi_types.UUID    `json:"winner_id"`
+}
+
+// ArenaGameResultReason defines model for ArenaGameResultReason.
+type ArenaGameResultReason string
+
+// ArenaGameSlot defines model for ArenaGameSlot.
+type ArenaGameSlot struct {
+	Attempts    []ArenaGame        `json:"attempts"`
+	Category    ArenaCategory      `json:"category"`
+	Id          openapi_types.UUID `json:"id"`
+	Position    int32              `json:"position"`
+	ScoreBefore ArenaSeriesScore   `json:"score_before"`
+	SeriesId    openapi_types.UUID `json:"series_id"`
+}
+
+// ArenaGameState defines model for ArenaGameState.
+type ArenaGameState string
+
+// ArenaIncidentBundle Canonical redacted JSON audit bundle containing at most 4096 events.
+type ArenaIncidentBundle struct {
+	// CanonicalContent Base64-encoded canonical JSON containing no more than 4096 redacted audit events.
+	CanonicalContent         *[]byte                                      `json:"canonical_content,omitempty"`
+	CanonicalContentEncoding *ArenaIncidentBundleCanonicalContentEncoding `json:"canonical_content_encoding,omitempty"`
+	CanonicalContentLength   *int64                                       `json:"canonical_content_length,omitempty"`
+	CanonicalContentType     *ArenaIncidentBundleCanonicalContentType     `json:"canonical_content_type,omitempty"`
+	GeneratedAt              *time.Time                                   `json:"generated_at,omitempty"`
+	ProjectionRevision       *int64                                       `json:"projection_revision,omitempty"`
+	Sha256                   *string                                      `json:"sha256,omitempty"`
+	TournamentId             *openapi_types.UUID                          `json:"tournament_id,omitempty"`
+}
+
+// ArenaIncidentBundleCanonicalContentEncoding defines model for ArenaIncidentBundle.CanonicalContentEncoding.
+type ArenaIncidentBundleCanonicalContentEncoding string
+
+// ArenaIncidentBundleCanonicalContentType defines model for ArenaIncidentBundle.CanonicalContentType.
+type ArenaIncidentBundleCanonicalContentType string
+
+// ArenaLockRosterRequest defines model for ArenaLockRosterRequest.
+type ArenaLockRosterRequest struct {
+	CheckedInPlayerIds         []openapi_types.UUID `json:"checked_in_player_ids"`
+	ExpectedProjectionRevision int64                `json:"expected_projection_revision"`
+	PreflightRevisionId        openapi_types.UUID   `json:"preflight_revision_id"`
+}
+
+// ArenaOfficialResultRevision Immutable official result revision for one Game or Series.
+type ArenaOfficialResultRevision struct {
+	ActorId                    *openapi_types.UUID            `json:"actor_id"`
+	ActorKind                  ArenaResultActorKind           `json:"actor_kind"`
+	CommandId                  *openapi_types.UUID            `json:"command_id,omitempty"`
+	GameId                     *openapi_types.UUID            `json:"game_id"`
+	GameReason                 *ArenaGameResultReason         `json:"game_reason"`
+	GameState                  *ArenaGameState                `json:"game_state"`
+	Id                         *openapi_types.UUID            `json:"id,omitempty"`
+	Ordinal                    *int32                         `json:"ordinal,omitempty"`
+	PreviousRevisionId         *openapi_types.UUID            `json:"previous_revision_id"`
+	RecordedAt                 *time.Time                     `json:"recorded_at,omitempty"`
+	ScoreRevisionId            *openapi_types.UUID            `json:"score_revision_id"`
+	SeriesId                   openapi_types.UUID             `json:"series_id"`
+	SeriesReason               *ArenaSeriesResultReason       `json:"series_reason"`
+	SeriesState                *ArenaSeriesState              `json:"series_state"`
+	SourceProjectionRevisionId *openapi_types.UUID            `json:"source_projection_revision_id,omitempty"`
+	SubjectKind                ArenaOfficialResultSubjectKind `json:"subject_kind"`
+	TournamentId               openapi_types.UUID             `json:"tournament_id"`
+	WinnerId                   *openapi_types.UUID            `json:"winner_id"`
+}
+
+// ArenaOfficialResultSubjectKind defines model for ArenaOfficialResultSubjectKind.
+type ArenaOfficialResultSubjectKind string
+
+// ArenaOperatorCorrectionRequest defines model for ArenaOperatorCorrectionRequest.
+type ArenaOperatorCorrectionRequest struct {
+	Confirmed                  bool                               `json:"confirmed"`
+	ExpectedProjectionRevision int64                              `json:"expected_projection_revision"`
+	Explanation                string                             `json:"explanation"`
+	Fields                     []ArenaCorrectionField             `json:"fields"`
+	Patch                      ArenaCorrectionPatch               `json:"patch"`
+	ProjectionIntents          *[]ArenaCorrectionProjectionIntent `json:"projection_intents,omitempty"`
+	Reason                     ArenaCorrectionReason              `json:"reason"`
+	UnlockIntents              *[]ArenaCorrectionUnlockIntent     `json:"unlock_intents,omitempty"`
+}
+
+// ArenaOperatorRecoveryCursor defines model for ArenaOperatorRecoveryCursor.
+type ArenaOperatorRecoveryCursor struct {
+	AuditSequence      int64 `json:"audit_sequence"`
+	AuthorityRevision  int64 `json:"authority_revision"`
+	ProjectionRevision int64 `json:"projection_revision"`
+}
+
+// ArenaOperatorRecoverySnapshot defines model for ArenaOperatorRecoverySnapshot.
+type ArenaOperatorRecoverySnapshot struct {
+	NextCursor ArenaOperatorRecoveryCursor `json:"next_cursor"`
+	PauseGraph *ArenaPauseGraph            `json:"pause_graph"`
+
+	// Roster Full tournament roster. Execution can start only while locked, and a started roster cannot be unlocked.
+	Roster     ArenaRoster     `json:"roster"`
+	Series     []ArenaSeries   `json:"series"`
+	Tournament ArenaTournament `json:"tournament"`
+	Waves      []ArenaWave     `json:"waves"`
+}
+
+// ArenaOperatorTournamentList defines model for ArenaOperatorTournamentList.
+type ArenaOperatorTournamentList struct {
+	Items      []ArenaTournament `json:"items"`
+	NextCursor *string           `json:"next_cursor"`
+}
+
+// ArenaPairingConfigurationRequest defines model for ArenaPairingConfigurationRequest.
+type ArenaPairingConfigurationRequest struct {
+	AllowRepeats               *bool             `json:"allow_repeats,omitempty"`
+	Categories                 []ArenaCategory   `json:"categories"`
+	CategoryMode               ArenaCategoryMode `json:"category_mode"`
+	ExpectedProjectionRevision int64             `json:"expected_projection_revision"`
+	RoundNumber                int32             `json:"round_number"`
+}
+
+// ArenaParticipant defines model for ArenaParticipant.
+type ArenaParticipant struct {
+	Attendance   ArenaAttendanceState `json:"attendance"`
+	CreatedAt    *time.Time           `json:"created_at,omitempty"`
+	Id           openapi_types.UUID   `json:"id"`
+	PlayerId     openapi_types.UUID   `json:"player_id"`
+	RosterId     openapi_types.UUID   `json:"roster_id"`
+	Seed         int32                `json:"seed"`
+	TournamentId openapi_types.UUID   `json:"tournament_id"`
+	UpdatedAt    *time.Time           `json:"updated_at,omitempty"`
+}
+
+// ArenaParticipantAssignmentResponse defines model for ArenaParticipantAssignmentResponse.
+type ArenaParticipantAssignmentResponse struct {
+	Assignment         ArenaAssignment    `json:"assignment"`
+	ProjectionRevision int64              `json:"projection_revision"`
+	TournamentId       openapi_types.UUID `json:"tournament_id"`
+}
+
+// ArenaParticipantDraftActionRequest defines model for ArenaParticipantDraftActionRequest.
+type ArenaParticipantDraftActionRequest struct {
+	Action                     ArenaDraftActionType `json:"action"`
+	Category                   ArenaCategory        `json:"category"`
+	ExpectedProjectionRevision int64                `json:"expected_projection_revision"`
+}
+
+// ArenaParticipantLobbyResponse defines model for ArenaParticipantLobbyResponse.
+type ArenaParticipantLobbyResponse struct {
+	ProjectionRevision int64                         `json:"projection_revision"`
+	RosterLocked       bool                          `json:"roster_locked"`
+	Series             []ArenaParticipantLobbySeries `json:"series"`
+	State              ArenaTournamentState          `json:"state"`
+	TournamentId       openapi_types.UUID            `json:"tournament_id"`
+}
+
+// ArenaParticipantLobbySeries defines model for ArenaParticipantLobbySeries.
+type ArenaParticipantLobbySeries struct {
+	Format              ArenaSeriesFormat  `json:"format"`
+	OpponentDisplayName string             `json:"opponent_display_name"`
+	SeriesId            openapi_types.UUID `json:"series_id"`
+	State               ArenaSeriesState   `json:"state"`
+	WaveId              openapi_types.UUID `json:"wave_id"`
+}
+
+// ArenaParticipantPostSeriesRequest defines model for ArenaParticipantPostSeriesRequest.
+type ArenaParticipantPostSeriesRequest struct {
+	Action                     ArenaParticipantPostSeriesRequestAction `json:"action"`
+	ExpectedProjectionRevision int64                                   `json:"expected_projection_revision"`
+}
+
+// ArenaParticipantPostSeriesRequestAction defines model for ArenaParticipantPostSeriesRequest.Action.
+type ArenaParticipantPostSeriesRequestAction string
+
+// ArenaParticipantPostSeriesResponse defines model for ArenaParticipantPostSeriesResponse.
+type ArenaParticipantPostSeriesResponse struct {
+	AcceptedAction     ArenaParticipantPostSeriesResponseAcceptedAction `json:"accepted_action"`
+	ProjectionRevision int64                                            `json:"projection_revision"`
+	SeriesId           openapi_types.UUID                               `json:"series_id"`
+}
+
+// ArenaParticipantPostSeriesResponseAcceptedAction defines model for ArenaParticipantPostSeriesResponse.AcceptedAction.
+type ArenaParticipantPostSeriesResponseAcceptedAction string
+
+// ArenaParticipantReadyRequest defines model for ArenaParticipantReadyRequest.
+type ArenaParticipantReadyRequest struct {
+	ExpectedProjectionRevision int64 `json:"expected_projection_revision"`
+	Ready                      bool  `json:"ready"`
+}
+
+// ArenaParticipantRecoveryCursor defines model for ArenaParticipantRecoveryCursor.
+type ArenaParticipantRecoveryCursor struct {
+	EventSequence           int64 `json:"event_sequence"`
+	ParticipantViewRevision int64 `json:"participant_view_revision"`
+	ProjectionRevision      int64 `json:"projection_revision"`
+}
+
+// ArenaParticipantRecoverySnapshot defines model for ArenaParticipantRecoverySnapshot.
+type ArenaParticipantRecoverySnapshot struct {
+	Assignment         *ArenaAssignment               `json:"assignment"`
+	Draft              *ArenaDraft                    `json:"draft"`
+	Lobby              ArenaParticipantLobbyResponse  `json:"lobby"`
+	NextCursor         ArenaParticipantRecoveryCursor `json:"next_cursor"`
+	ProjectionRevision int64                          `json:"projection_revision"`
+	Series             *ArenaSeries                   `json:"series"`
+	TournamentId       openapi_types.UUID             `json:"tournament_id"`
+	Wave               *ArenaWave                     `json:"wave"`
+}
+
+// ArenaParticipantSubmissionRequest defines model for ArenaParticipantSubmissionRequest.
+type ArenaParticipantSubmissionRequest struct {
+	ExpectedProjectionRevision int64   `json:"expected_projection_revision"`
+	SubmittedFlag              *string `json:"submitted_flag,omitempty"`
+}
+
+// ArenaParticipantSubmissionResponse defines model for ArenaParticipantSubmissionResponse.
+type ArenaParticipantSubmissionResponse struct {
+	ProjectionRevision int64                 `json:"projection_revision"`
+	Submission         ArenaSubmissionRecord `json:"submission"`
+}
+
+// ArenaParticipantSurrenderRequest defines model for ArenaParticipantSurrenderRequest.
+type ArenaParticipantSurrenderRequest struct {
+	Confirmed                  bool    `json:"confirmed"`
+	ExpectedProjectionRevision int64   `json:"expected_projection_revision"`
+	Reason                     *string `json:"reason,omitempty"`
+}
+
+// ArenaPauseDeadlineKind defines model for ArenaPauseDeadlineKind.
+type ArenaPauseDeadlineKind string
+
+// ArenaPauseGame defines model for ArenaPauseGame.
+type ArenaPauseGame struct {
+	Deadline *time.Time `json:"deadline"`
+
+	// Game One attempt in a stable Series slot. Replays get a new Game ID and retain the slot_id.
+	Game        ArenaGame          `json:"game"`
+	ResumeState *ArenaGameState    `json:"resume_state"`
+	Revision    *int64             `json:"revision,omitempty"`
+	SeriesId    openapi_types.UUID `json:"series_id"`
+}
+
+// ArenaPauseGraph Durable pause snapshot. Runtime timers and process-local pause authority are excluded.
+type ArenaPauseGraph struct {
+	ActivePauseId          *openapi_types.UUID          `json:"active_pause_id"`
+	Counters               []ArenaPauseReconnectCounter `json:"counters"`
+	DeadlinesSuppressed    *bool                        `json:"deadlines_suppressed,omitempty"`
+	Draft                  *ArenaDraft                  `json:"draft"`
+	FrozenDeadlines        []ArenaFrozenDeadline        `json:"frozen_deadlines"`
+	Games                  []ArenaPauseGame             `json:"games"`
+	GraphRevision          *int64                       `json:"graph_revision,omitempty"`
+	PausedAt               *time.Time                   `json:"paused_at"`
+	Presence               []ArenaPresence              `json:"presence"`
+	Reconnect              []ArenaReconnectInterval     `json:"reconnect"`
+	RosterId               openapi_types.UUID           `json:"roster_id"`
+	Series                 []ArenaPauseSeries           `json:"series"`
+	TerminalActionRevision *int64                       `json:"terminal_action_revision,omitempty"`
+	TournamentId           openapi_types.UUID           `json:"tournament_id"`
+	Wave                   ArenaWave                    `json:"wave"`
+}
+
+// ArenaPauseReconnectCounter defines model for ArenaPauseReconnectCounter.
+type ArenaPauseReconnectCounter struct {
+	Limit         *int32             `json:"limit,omitempty"`
+	ParticipantId openapi_types.UUID `json:"participant_id"`
+	PauseId       openapi_types.UUID `json:"pause_id"`
+	Revision      *int64             `json:"revision,omitempty"`
+	RosterId      openapi_types.UUID `json:"roster_id"`
+	Used          *int32             `json:"used,omitempty"`
+}
+
+// ArenaPauseSeries defines model for ArenaPauseSeries.
+type ArenaPauseSeries struct {
+	CurrentGameId *openapi_types.UUID `json:"current_game_id"`
+	ResumeState   *ArenaSeriesState   `json:"resume_state"`
+	Revision      *int64              `json:"revision,omitempty"`
+	Series        ArenaSeries         `json:"series"`
+}
+
+// ArenaPreflightCheck defines model for ArenaPreflightCheck.
+type ArenaPreflightCheck struct {
+	Code        ArenaPreflightCode `json:"code"`
+	Evidence    []string           `json:"evidence"`
+	Explanation string             `json:"explanation"`
+	Passed      bool               `json:"passed"`
+}
+
+// ArenaPreflightCode defines model for ArenaPreflightCode.
+type ArenaPreflightCode string
+
+// ArenaPreflightReport Immutable preflight result used as roster-lock evidence.
+type ArenaPreflightReport struct {
+	AlgorithmVersion *ArenaPreflightReportAlgorithmVersion `json:"algorithm_version,omitempty"`
+	Checks           *[]ArenaPreflightCheck                `json:"checks,omitempty"`
+	EvaluatedAt      *time.Time                            `json:"evaluated_at,omitempty"`
+	Id               *openapi_types.UUID                   `json:"id,omitempty"`
+	NormalizedInputs *[]string                             `json:"normalized_inputs,omitempty"`
+	Passed           *bool                                 `json:"passed,omitempty"`
+	ProofHash        *string                               `json:"proof_hash,omitempty"`
+	Revisions        *[]ArenaPreflightSourceRevision       `json:"revisions,omitempty"`
+	TournamentId     *openapi_types.UUID                   `json:"tournament_id,omitempty"`
+}
+
+// ArenaPreflightReportAlgorithmVersion defines model for ArenaPreflightReport.AlgorithmVersion.
+type ArenaPreflightReportAlgorithmVersion string
+
+// ArenaPreflightRequest defines model for ArenaPreflightRequest.
+type ArenaPreflightRequest struct {
+	ExpectedProjectionRevision int64 `json:"expected_projection_revision"`
+}
+
+// ArenaPreflightSourceRevision defines model for ArenaPreflightSourceRevision.
+type ArenaPreflightSourceRevision struct {
+	Source string `json:"source"`
+	Value  string `json:"value"`
+}
+
+// ArenaPresence defines model for ArenaPresence.
+type ArenaPresence struct {
+	ConnectedAt    *time.Time         `json:"connected_at,omitempty"`
+	DisconnectedAt *time.Time         `json:"disconnected_at"`
+	Id             openapi_types.UUID `json:"id"`
+	ParticipantId  openapi_types.UUID `json:"participant_id"`
+	PresenceEpoch  *int64             `json:"presence_epoch,omitempty"`
+	Revision       *int64             `json:"revision,omitempty"`
+	RosterId       openapi_types.UUID `json:"roster_id"`
+	SeriesId       openapi_types.UUID `json:"series_id"`
+	State          ArenaPresenceState `json:"state"`
+	TournamentId   openapi_types.UUID `json:"tournament_id"`
+	UpdatedAt      *time.Time         `json:"updated_at,omitempty"`
+}
+
+// ArenaPresenceState defines model for ArenaPresenceState.
+type ArenaPresenceState string
+
+// ArenaPreset defines model for ArenaPreset.
+type ArenaPreset string
+
+// ArenaProjectionRevision Immutable revision metadata for a derived Arena artifact.
+type ArenaProjectionRevision struct {
+	ArtifactId         *openapi_types.UUID `json:"artifact_id,omitempty"`
+	ArtifactKind       ArenaArtifactKind   `json:"artifact_kind"`
+	CreatedAt          *time.Time          `json:"created_at,omitempty"`
+	Id                 *openapi_types.UUID `json:"id,omitempty"`
+	PayloadDigest      *string             `json:"payload_digest,omitempty"`
+	PreviousRevisionId *openapi_types.UUID `json:"previous_revision_id"`
+	RevisionNo         *int32              `json:"revision_no,omitempty"`
+	TournamentId       *openapi_types.UUID `json:"tournament_id,omitempty"`
+}
+
+// ArenaPublicBracketMatch defines model for ArenaPublicBracketMatch.
+type ArenaPublicBracketMatch struct {
+	FirstDisplayName  string                       `json:"first_display_name"`
+	Position          int32                        `json:"position"`
+	Score             ArenaSeriesScore             `json:"score"`
+	SecondDisplayName string                       `json:"second_display_name"`
+	Stage             ArenaPublicBracketMatchStage `json:"stage"`
+	State             ArenaSeriesState             `json:"state"`
+}
+
+// ArenaPublicBracketMatchStage defines model for ArenaPublicBracketMatch.Stage.
+type ArenaPublicBracketMatchStage string
+
+// ArenaPublicBracketResponse defines model for ArenaPublicBracketResponse.
+type ArenaPublicBracketResponse struct {
+	Matches            []ArenaPublicBracketMatch `json:"matches"`
+	ProjectionRevision int64                     `json:"projection_revision"`
+	TournamentId       openapi_types.UUID        `json:"tournament_id"`
+}
+
+// ArenaPublicDraftAction defines model for ArenaPublicDraftAction.
+type ArenaPublicDraftAction struct {
+	Action           ArenaDraftActionType `json:"action"`
+	ActorDisplayName string               `json:"actor_display_name"`
+	Category         ArenaCategory        `json:"category"`
+	OccurredAt       time.Time            `json:"occurred_at"`
+	Turn             int32                `json:"turn"`
+}
+
+// ArenaPublicLiveDraftResponse defines model for ArenaPublicLiveDraftResponse.
+type ArenaPublicLiveDraftResponse struct {
+	Actions            []ArenaPublicDraftAction `json:"actions"`
+	Format             ArenaSeriesFormat        `json:"format"`
+	Pool               []ArenaCategory          `json:"pool"`
+	ProjectionRevision int64                    `json:"projection_revision"`
+	SelectedCategories []ArenaCategory          `json:"selected_categories"`
+	SeriesId           openapi_types.UUID       `json:"series_id"`
+	State              ArenaDraftState          `json:"state"`
+	TournamentId       openapi_types.UUID       `json:"tournament_id"`
+}
+
+// ArenaPublicRecoveryCursor defines model for ArenaPublicRecoveryCursor.
+type ArenaPublicRecoveryCursor struct {
+	EventSequence      int64 `json:"event_sequence"`
+	ProjectionRevision int64 `json:"projection_revision"`
+}
+
+// ArenaPublicRecoverySnapshot defines model for ArenaPublicRecoverySnapshot.
+type ArenaPublicRecoverySnapshot struct {
+	Bracket    ArenaPublicBracketResponse    `json:"bracket"`
+	LiveDraft  *ArenaPublicLiveDraftResponse `json:"live_draft"`
+	NextCursor ArenaPublicRecoveryCursor     `json:"next_cursor"`
+	Scoreboard ArenaPublicScoreboardResponse `json:"scoreboard"`
+	Tournament ArenaPublicTournamentResponse `json:"tournament"`
+}
+
+// ArenaPublicScoreboardEntry defines model for ArenaPublicScoreboardEntry.
+type ArenaPublicScoreboardEntry struct {
+	Buchholz        int32  `json:"buchholz"`
+	DisplayName     string `json:"display_name"`
+	EffectiveTimeMs int64  `json:"effective_time_ms"`
+	Points          int32  `json:"points"`
+	Rank            int32  `json:"rank"`
+}
+
+// ArenaPublicScoreboardResponse defines model for ArenaPublicScoreboardResponse.
+type ArenaPublicScoreboardResponse struct {
+	Entries            []ArenaPublicScoreboardEntry `json:"entries"`
+	ProjectionRevision int64                        `json:"projection_revision"`
+	TournamentId       openapi_types.UUID           `json:"tournament_id"`
+}
+
+// ArenaPublicTournamentResponse defines model for ArenaPublicTournamentResponse.
+type ArenaPublicTournamentResponse struct {
+	FinishedAt         *time.Time           `json:"finished_at"`
+	Preset             ArenaPreset          `json:"preset"`
+	ProjectionRevision int64                `json:"projection_revision"`
+	RosterSize         int32                `json:"roster_size"`
+	StartedAt          *time.Time           `json:"started_at"`
+	State              ArenaTournamentState `json:"state"`
+	TournamentId       openapi_types.UUID   `json:"tournament_id"`
+}
+
+// ArenaReadinessEvent defines model for ArenaReadinessEvent.
+type ArenaReadinessEvent struct {
+	CommandId     openapi_types.UUID      `json:"command_id"`
+	OccurredAt    *time.Time              `json:"occurred_at,omitempty"`
+	ParticipantId openapi_types.UUID      `json:"participant_id"`
+	Type          ArenaReadinessEventType `json:"type"`
+	WaveId        openapi_types.UUID      `json:"wave_id"`
+	WindowId      openapi_types.UUID      `json:"window_id"`
+}
+
+// ArenaReadinessEventType defines model for ArenaReadinessEventType.
+type ArenaReadinessEventType string
+
+// ArenaReadyWindow defines model for ArenaReadyWindow.
+type ArenaReadyWindow struct {
+	ConsumedAt *time.Time            `json:"consumed_at"`
+	Deadline   *time.Time            `json:"deadline,omitempty"`
+	Id         openapi_types.UUID    `json:"id"`
+	OpenedAt   *time.Time            `json:"opened_at,omitempty"`
+	RevisionId *openapi_types.UUID   `json:"revision_id,omitempty"`
+	State      ArenaReadyWindowState `json:"state"`
+	WaveId     openapi_types.UUID    `json:"wave_id"`
+}
+
+// ArenaReadyWindowState defines model for ArenaReadyWindowState.
+type ArenaReadyWindowState string
+
+// ArenaReconnectInterval Durable reconnect interval. Continued intervals preserve their lineage across a tournament pause.
+type ArenaReconnectInterval struct {
+	ClosedAt           *time.Time          `json:"closed_at"`
+	ContinuationNumber *int32              `json:"continuation_number,omitempty"`
+	ContinuedFromId    *openapi_types.UUID `json:"continued_from_id"`
+	Deadline           *time.Time          `json:"deadline,omitempty"`
+	GameId             openapi_types.UUID  `json:"game_id"`
+	Id                 openapi_types.UUID  `json:"id"`
+	Number             *int32              `json:"number,omitempty"`
+	OpenedAt           *time.Time          `json:"opened_at,omitempty"`
+	ParticipantId      openapi_types.UUID  `json:"participant_id"`
+	PauseId            openapi_types.UUID  `json:"pause_id"`
+	PresenceEpoch      *int64              `json:"presence_epoch,omitempty"`
+	Revision           *int64              `json:"revision,omitempty"`
+	RosterId           openapi_types.UUID  `json:"roster_id"`
+	SeriesId           openapi_types.UUID  `json:"series_id"`
+	State              ArenaReconnectState `json:"state"`
+	SuspendedByPauseId *openapi_types.UUID `json:"suspended_by_pause_id"`
+	UpdatedAt          *time.Time          `json:"updated_at,omitempty"`
+}
+
+// ArenaReconnectState defines model for ArenaReconnectState.
+type ArenaReconnectState string
+
+// ArenaReplaceRosterRequest defines model for ArenaReplaceRosterRequest.
+type ArenaReplaceRosterRequest struct {
+	ExpectedProjectionRevision int64                         `json:"expected_projection_revision"`
+	Participants               []ArenaRosterParticipantInput `json:"participants"`
+}
+
+// ArenaResultActorKind defines model for ArenaResultActorKind.
+type ArenaResultActorKind string
+
+// ArenaRevisionConflict Stable optimistic-concurrency details that can accompany a 409 response.
+type ArenaRevisionConflict struct {
+	CurrentRevision  int64                 `json:"current_revision"`
+	CurrentState     *ArenaTournamentState `json:"current_state,omitempty"`
+	ExpectedRevision int64                 `json:"expected_revision"`
+}
+
+// ArenaRoster Full tournament roster. Execution can start only while locked, and a started roster cannot be unlocked.
+type ArenaRoster struct {
+	CreatedAt *time.Time `json:"created_at,omitempty"`
+
+	// ExecutionStarted True only when locked is also true.
+	ExecutionStarted   *bool              `json:"execution_started,omitempty"`
+	ExecutionStartedAt *time.Time         `json:"execution_started_at"`
+	Id                 openapi_types.UUID `json:"id"`
+	Locked             *bool              `json:"locked,omitempty"`
+	LockedAt           *time.Time         `json:"locked_at"`
+	Participants       []ArenaParticipant `json:"participants"`
+	Revision           *int64             `json:"revision,omitempty"`
+	TournamentId       openapi_types.UUID `json:"tournament_id"`
+	UpdatedAt          *time.Time         `json:"updated_at,omitempty"`
+}
+
+// ArenaRosterParticipantInput defines model for ArenaRosterParticipantInput.
+type ArenaRosterParticipantInput struct {
+	Attendance ArenaAttendanceState `json:"attendance"`
+	PlayerId   openapi_types.UUID   `json:"player_id"`
+	Seed       int32                `json:"seed"`
+}
+
+// ArenaSeries defines model for ArenaSeries.
+type ArenaSeries struct {
+	CurrentResultRevisionId *openapi_types.UUID `json:"current_result_revision_id"`
+	CurrentScoreRevisionId  *openapi_types.UUID `json:"current_score_revision_id"`
+	FirstParticipantId      openapi_types.UUID  `json:"first_participant_id"`
+	Format                  ArenaSeriesFormat   `json:"format"`
+	Id                      openapi_types.UUID  `json:"id"`
+	Score                   ArenaSeriesScore    `json:"score"`
+	SecondParticipantId     openapi_types.UUID  `json:"second_participant_id"`
+	Slots                   []ArenaGameSlot     `json:"slots"`
+	State                   ArenaSeriesState    `json:"state"`
+	TournamentId            openapi_types.UUID  `json:"tournament_id"`
+	WinnerId                *openapi_types.UUID `json:"winner_id"`
+}
+
+// ArenaSeriesFormat defines model for ArenaSeriesFormat.
+type ArenaSeriesFormat string
+
+// ArenaSeriesResultReason defines model for ArenaSeriesResultReason.
+type ArenaSeriesResultReason string
+
+// ArenaSeriesScore defines model for ArenaSeriesScore.
+type ArenaSeriesScore struct {
+	FirstParticipantWins  int32 `json:"first_participant_wins"`
+	SecondParticipantWins int32 `json:"second_participant_wins"`
+}
+
+// ArenaSeriesState defines model for ArenaSeriesState.
+type ArenaSeriesState string
+
+// ArenaSubmissionRecord defines model for ArenaSubmissionRecord.
+type ArenaSubmissionRecord struct {
+	CommandId     openapi_types.UUID   `json:"command_id"`
+	CommittedAt   *time.Time           `json:"committed_at,omitempty"`
+	ContentDigest *string              `json:"content_digest,omitempty"`
+	Correct       *bool                `json:"correct,omitempty"`
+	ParticipantId openapi_types.UUID   `json:"participant_id"`
+	Scope         ArenaSubmissionScope `json:"scope"`
+	Sequence      int64                `json:"sequence"`
+	SnapshotId    openapi_types.UUID   `json:"snapshot_id"`
+	TaskId        openapi_types.UUID   `json:"task_id"`
+}
+
+// ArenaSubmissionScope defines model for ArenaSubmissionScope.
+type ArenaSubmissionScope struct {
+	AssignmentId openapi_types.UUID `json:"assignment_id"`
+	GameId       openapi_types.UUID `json:"game_id"`
+	SeriesId     openapi_types.UUID `json:"series_id"`
+	SlotId       openapi_types.UUID `json:"slot_id"`
+	TournamentId openapi_types.UUID `json:"tournament_id"`
+	WaveId       openapi_types.UUID `json:"wave_id"`
+}
+
+// ArenaSwissBuchholzStatus defines model for ArenaSwissBuchholzStatus.
+type ArenaSwissBuchholzStatus string
+
+// ArenaSwissBye defines model for ArenaSwissBye.
+type ArenaSwissBye struct {
+	EvidenceId    openapi_types.UUID  `json:"evidence_id"`
+	Id            openapi_types.UUID  `json:"id"`
+	ParticipantId openapi_types.UUID  `json:"participant_id"`
+	PointsAwarded int32               `json:"points_awarded"`
+	RevisionId    *openapi_types.UUID `json:"revision_id,omitempty"`
+	RoundId       openapi_types.UUID  `json:"round_id"`
+}
+
+// ArenaSwissPairing defines model for ArenaSwissPairing.
+type ArenaSwissPairing struct {
+	EvidenceId          openapi_types.UUID  `json:"evidence_id"`
+	FirstParticipantId  openapi_types.UUID  `json:"first_participant_id"`
+	Id                  openapi_types.UUID  `json:"id"`
+	OverrideActorId     *openapi_types.UUID `json:"override_actor_id"`
+	OverrideReason      *string             `json:"override_reason"`
+	Repeated            *bool               `json:"repeated,omitempty"`
+	RoundId             openapi_types.UUID  `json:"round_id"`
+	SecondParticipantId openapi_types.UUID  `json:"second_participant_id"`
+}
+
+// ArenaSwissPairingEvidence Recorded decision evidence for automatic pairings and byes. The private decision seed is not exposed.
+type ArenaSwissPairingEvidence struct {
+	AlgorithmVersion *ArenaSwissPairingEvidenceAlgorithmVersion `json:"algorithm_version,omitempty"`
+	DecidedAt        *time.Time                                 `json:"decided_at,omitempty"`
+	Id               *openapi_types.UUID                        `json:"id,omitempty"`
+	NormalizedInputs *[]string                                  `json:"normalized_inputs,omitempty"`
+	OwnerId          *openapi_types.UUID                        `json:"owner_id,omitempty"`
+	Purpose          *ArenaSwissPairingEvidencePurpose          `json:"purpose,omitempty"`
+	ReplayDigest     *string                                    `json:"replay_digest,omitempty"`
+	Result           *[]string                                  `json:"result,omitempty"`
+}
+
+// ArenaSwissPairingEvidenceAlgorithmVersion defines model for ArenaSwissPairingEvidence.AlgorithmVersion.
+type ArenaSwissPairingEvidenceAlgorithmVersion string
+
+// ArenaSwissPairingEvidencePurpose defines model for ArenaSwissPairingEvidence.Purpose.
+type ArenaSwissPairingEvidencePurpose string
+
+// ArenaSwissPointsLabel defines model for ArenaSwissPointsLabel.
+type ArenaSwissPointsLabel string
+
+// ArenaSwissRound defines model for ArenaSwissRound.
+type ArenaSwissRound struct {
+	Bye         *ArenaSwissBye     `json:"bye"`
+	CompletedAt *time.Time         `json:"completed_at"`
+	CreatedAt   *time.Time         `json:"created_at,omitempty"`
+	Id          openapi_types.UUID `json:"id"`
+	Locked      *bool              `json:"locked,omitempty"`
+	LockedAt    *time.Time         `json:"locked_at"`
+
+	// PairingEvidence Recorded decision evidence for automatic pairings and byes. The private decision seed is not exposed.
+	PairingEvidence      *ArenaSwissPairingEvidence `json:"pairing_evidence,omitempty"`
+	Pairings             []ArenaSwissPairing        `json:"pairings"`
+	Revision             *int64                     `json:"revision,omitempty"`
+	RosterParticipantIds []openapi_types.UUID       `json:"roster_participant_ids"`
+	RoundNumber          int32                      `json:"round_number"`
+	Standings            []ArenaSwissStanding       `json:"standings"`
+	StartedAt            *time.Time                 `json:"started_at"`
+	TournamentId         openapi_types.UUID         `json:"tournament_id"`
+	UpdatedAt            *time.Time                 `json:"updated_at,omitempty"`
+}
+
+// ArenaSwissStanding defines model for ArenaSwissStanding.
+type ArenaSwissStanding struct {
+	AcceptedSolveTimeMs *int64                   `json:"accepted_solve_time_ms"`
+	Buchholz            int32                    `json:"buchholz"`
+	BuchholzStatus      ArenaSwissBuchholzStatus `json:"buchholz_status"`
+	EffectiveTimeMs     int64                    `json:"effective_time_ms"`
+	HeadToHeadApplied   bool                     `json:"head_to_head_applied"`
+	HeadToHeadPoints    int32                    `json:"head_to_head_points"`
+	ParticipantId       openapi_types.UUID       `json:"participant_id"`
+	Points              int32                    `json:"points"`
+	PointsLabel         ArenaSwissPointsLabel    `json:"points_label"`
+	Position            int32                    `json:"position"`
+	StableSeed          int32                    `json:"stable_seed"`
+}
+
+// ArenaTaskKind defines model for ArenaTaskKind.
+type ArenaTaskKind string
+
+// ArenaTaskSnapshot Public immutable task snapshot. Private flag material and undisclosed reserves are excluded.
+type ArenaTaskSnapshot struct {
+	Category      ArenaCategory      `json:"category"`
+	Description   string             `json:"description"`
+	Difficulty    ArenaDifficulty    `json:"difficulty"`
+	Hints         []string           `json:"hints"`
+	Kind          ArenaTaskKind      `json:"kind"`
+	SnapshotId    openapi_types.UUID `json:"snapshot_id"`
+	SourceFileUrl *string            `json:"source_file_url"`
+	TaskId        openapi_types.UUID `json:"task_id"`
+	TaskUrl       *string            `json:"task_url"`
+	TimeLimit     int32              `json:"time_limit"`
+	Title         string             `json:"title"`
+	Version       int32              `json:"version"`
+}
+
+// ArenaTournament defines model for ArenaTournament.
+type ArenaTournament struct {
+	CreatedAt       *time.Time            `json:"created_at,omitempty"`
+	FinishedAt      *time.Time            `json:"finished_at"`
+	Id              openapi_types.UUID    `json:"id"`
+	PausedFromState *ArenaTournamentState `json:"paused_from_state"`
+	Preset          ArenaPreset           `json:"preset"`
+	Revision        *int64                `json:"revision,omitempty"`
+	RosterId        openapi_types.UUID    `json:"roster_id"`
+	RosterSize      int32                 `json:"roster_size"`
+	StartedAt       *time.Time            `json:"started_at"`
+	State           ArenaTournamentState  `json:"state"`
+	UpdatedAt       *time.Time            `json:"updated_at,omitempty"`
+}
+
+// ArenaTournamentActionRequest defines model for ArenaTournamentActionRequest.
+type ArenaTournamentActionRequest struct {
+	Action                     ArenaTournamentActionRequestAction `json:"action"`
+	Confirmed                  bool                               `json:"confirmed"`
+	ExpectedProjectionRevision int64                              `json:"expected_projection_revision"`
+	Reason                     *string                            `json:"reason,omitempty"`
+}
+
+// ArenaTournamentActionRequestAction defines model for ArenaTournamentActionRequest.Action.
+type ArenaTournamentActionRequestAction string
+
+// ArenaTournamentState defines model for ArenaTournamentState.
+type ArenaTournamentState string
+
+// ArenaUnlockRosterRequest defines model for ArenaUnlockRosterRequest.
+type ArenaUnlockRosterRequest struct {
+	Confirmed                  bool   `json:"confirmed"`
+	ExpectedProjectionRevision int64  `json:"expected_projection_revision"`
+	Reason                     string `json:"reason"`
+}
+
+// ArenaWave defines model for ArenaWave.
+type ArenaWave struct {
+	Id           openapi_types.UUID  `json:"id"`
+	Members      []ArenaWaveMember   `json:"members"`
+	PausedAt     *time.Time          `json:"paused_at"`
+	ReadyWindow  *ArenaReadyWindow   `json:"ready_window"`
+	Revision     *int64              `json:"revision,omitempty"`
+	RevisionId   *openapi_types.UUID `json:"revision_id,omitempty"`
+	StartedAt    *time.Time          `json:"started_at"`
+	State        ArenaWaveState      `json:"state"`
+	TournamentId openapi_types.UUID  `json:"tournament_id"`
+}
+
+// ArenaWaveControlRequest defines model for ArenaWaveControlRequest.
+type ArenaWaveControlRequest struct {
+	Action                     ArenaWaveControlRequestAction `json:"action"`
+	Confirmed                  bool                          `json:"confirmed"`
+	ExpectedProjectionRevision int64                         `json:"expected_projection_revision"`
+	Reason                     *string                       `json:"reason,omitempty"`
+}
+
+// ArenaWaveControlRequestAction defines model for ArenaWaveControlRequest.Action.
+type ArenaWaveControlRequestAction string
+
+// ArenaWaveMember defines model for ArenaWaveMember.
+type ArenaWaveMember struct {
+	ParticipantId     openapi_types.UUID `json:"participant_id"`
+	ReadinessRevision *int64             `json:"readiness_revision,omitempty"`
+	Ready             *bool              `json:"ready,omitempty"`
+	SeriesId          openapi_types.UUID `json:"series_id"`
+}
+
+// ArenaWaveState defines model for ArenaWaveState.
+type ArenaWaveState string
 
 // CreateTaskRequest defines model for CreateTaskRequest.
 type CreateTaskRequest struct {
@@ -337,6 +1611,87 @@ type UploadSourceResponse struct {
 	SourceFileUrl string `json:"source_file_url"`
 }
 
+// ArenaAdminCSRFToken defines model for ArenaAdminCSRFToken.
+type ArenaAdminCSRFToken = string
+
+// ArenaAssignmentId defines model for ArenaAssignmentId.
+type ArenaAssignmentId = openapi_types.UUID
+
+// ArenaAuditActorId defines model for ArenaAuditActorId.
+type ArenaAuditActorId = openapi_types.UUID
+
+// ArenaAuditActorKind defines model for ArenaAuditActorKind.
+type ArenaAuditActorKind = ArenaResultActorKind
+
+// ArenaAuditEntityId defines model for ArenaAuditEntityId.
+type ArenaAuditEntityId = openapi_types.UUID
+
+// ArenaAuditEventType defines model for ArenaAuditEventType.
+type ArenaAuditEventType = string
+
+// ArenaAuditOccurredFrom defines model for ArenaAuditOccurredFrom.
+type ArenaAuditOccurredFrom = time.Time
+
+// ArenaAuditOccurredTo defines model for ArenaAuditOccurredTo.
+type ArenaAuditOccurredTo = time.Time
+
+// ArenaAuditPageSize defines model for ArenaAuditPageSize.
+type ArenaAuditPageSize = int32
+
+// ArenaAuditResultReason defines model for ArenaAuditResultReason.
+type ArenaAuditResultReason = string
+
+// ArenaAuditTournamentId defines model for ArenaAuditTournamentId.
+type ArenaAuditTournamentId = openapi_types.UUID
+
+// ArenaCSRFToken defines model for ArenaCSRFToken.
+type ArenaCSRFToken = string
+
+// ArenaGameId defines model for ArenaGameId.
+type ArenaGameId = openapi_types.UUID
+
+// ArenaIdempotencyKey defines model for ArenaIdempotencyKey.
+type ArenaIdempotencyKey = openapi_types.UUID
+
+// ArenaOperatorCursor defines model for ArenaOperatorCursor.
+type ArenaOperatorCursor = ArenaOperatorRecoveryCursor
+
+// ArenaOperatorListCursor defines model for ArenaOperatorListCursor.
+type ArenaOperatorListCursor = string
+
+// ArenaOperatorListPageSize defines model for ArenaOperatorListPageSize.
+type ArenaOperatorListPageSize = int32
+
+// ArenaOperatorTournamentState defines model for ArenaOperatorTournamentState.
+type ArenaOperatorTournamentState = ArenaTournamentState
+
+// ArenaParticipantCursor defines model for ArenaParticipantCursor.
+type ArenaParticipantCursor = ArenaParticipantRecoveryCursor
+
+// ArenaPublicCursor defines model for ArenaPublicCursor.
+type ArenaPublicCursor = ArenaPublicRecoveryCursor
+
+// ArenaSeriesId defines model for ArenaSeriesId.
+type ArenaSeriesId = openapi_types.UUID
+
+// ArenaTournamentId defines model for ArenaTournamentId.
+type ArenaTournamentId = openapi_types.UUID
+
+// ArenaWaveId defines model for ArenaWaveId.
+type ArenaWaveId = openapi_types.UUID
+
+// ArenaForbiddenResponse RFC 7807 error envelope used by every 4xx/5xx response.
+type ArenaForbiddenResponse = ProblemDetails
+
+// ArenaNotFoundResponse RFC 7807 error envelope used by every 4xx/5xx response.
+type ArenaNotFoundResponse = ProblemDetails
+
+// ArenaRevisionConflictResponse Stable optimistic-concurrency details that can accompany a 409 response.
+type ArenaRevisionConflictResponse = ArenaRevisionConflict
+
+// ArenaUnauthorizedResponse RFC 7807 error envelope used by every 4xx/5xx response.
+type ArenaUnauthorizedResponse = ProblemDetails
+
 // ListAdminPlayersParams defines parameters for ListAdminPlayers.
 type ListAdminPlayersParams struct {
 	IncludeDeleted *bool `form:"include_deleted,omitempty" json:"include_deleted,omitempty"`
@@ -350,6 +1705,145 @@ type ListAdminPlayerAuditParams struct {
 // UploadTaskSourceMultipartBody defines parameters for UploadTaskSource.
 type UploadTaskSourceMultipartBody struct {
 	File openapi_types.File `json:"file"`
+}
+
+// ListArenaOperatorAuditParams defines parameters for ListArenaOperatorAudit.
+type ListArenaOperatorAuditParams struct {
+	TournamentId ArenaAuditTournamentId  `form:"tournament_id" json:"tournament_id"`
+	EntityKind   *ArenaAuditEntityKind   `form:"entity_kind,omitempty" json:"entity_kind,omitempty"`
+	EntityId     *ArenaAuditEntityId     `form:"entity_id,omitempty" json:"entity_id,omitempty"`
+	EventType    *ArenaAuditEventType    `form:"event_type,omitempty" json:"event_type,omitempty"`
+	ActorKind    *ArenaAuditActorKind    `form:"actor_kind,omitempty" json:"actor_kind,omitempty"`
+	ActorId      *ArenaAuditActorId      `form:"actor_id,omitempty" json:"actor_id,omitempty"`
+	ResultReason *ArenaAuditResultReason `form:"result_reason,omitempty" json:"result_reason,omitempty"`
+	OccurredFrom *ArenaAuditOccurredFrom `form:"occurred_from,omitempty" json:"occurred_from,omitempty"`
+	OccurredTo   *ArenaAuditOccurredTo   `form:"occurred_to,omitempty" json:"occurred_to,omitempty"`
+	Cursor       *ArenaAuditCursor       `json:"cursor,omitempty"`
+	PageSize     *ArenaAuditPageSize     `form:"page_size,omitempty" json:"page_size,omitempty"`
+}
+
+// ListArenaOperatorTournamentsParams defines parameters for ListArenaOperatorTournaments.
+type ListArenaOperatorTournamentsParams struct {
+	State    *ArenaOperatorTournamentState `form:"state,omitempty" json:"state,omitempty"`
+	Cursor   *ArenaOperatorListCursor      `form:"cursor,omitempty" json:"cursor,omitempty"`
+	PageSize *ArenaOperatorListPageSize    `form:"page_size,omitempty" json:"page_size,omitempty"`
+}
+
+// CreateArenaTournamentParams defines parameters for CreateArenaTournament.
+type CreateArenaTournamentParams struct {
+	IdempotencyKey ArenaIdempotencyKey `json:"Idempotency-Key"`
+
+	// XCSRFToken Required only for cookie-authenticated browser admin requests.
+	XCSRFToken *ArenaAdminCSRFToken `json:"X-CSRF-Token,omitempty"`
+}
+
+// ApplyArenaTournamentActionParams defines parameters for ApplyArenaTournamentAction.
+type ApplyArenaTournamentActionParams struct {
+	IdempotencyKey ArenaIdempotencyKey `json:"Idempotency-Key"`
+
+	// XCSRFToken Required only for cookie-authenticated browser admin requests.
+	XCSRFToken *ArenaAdminCSRFToken `json:"X-CSRF-Token,omitempty"`
+}
+
+// ConfigureArenaTournamentPairingsParams defines parameters for ConfigureArenaTournamentPairings.
+type ConfigureArenaTournamentPairingsParams struct {
+	IdempotencyKey ArenaIdempotencyKey `json:"Idempotency-Key"`
+
+	// XCSRFToken Required only for cookie-authenticated browser admin requests.
+	XCSRFToken *ArenaAdminCSRFToken `json:"X-CSRF-Token,omitempty"`
+}
+
+// ReplaceArenaTournamentRosterParams defines parameters for ReplaceArenaTournamentRoster.
+type ReplaceArenaTournamentRosterParams struct {
+	IdempotencyKey ArenaIdempotencyKey `json:"Idempotency-Key"`
+
+	// XCSRFToken Required only for cookie-authenticated browser admin requests.
+	XCSRFToken *ArenaAdminCSRFToken `json:"X-CSRF-Token,omitempty"`
+}
+
+// LockArenaTournamentRosterParams defines parameters for LockArenaTournamentRoster.
+type LockArenaTournamentRosterParams struct {
+	IdempotencyKey ArenaIdempotencyKey `json:"Idempotency-Key"`
+
+	// XCSRFToken Required only for cookie-authenticated browser admin requests.
+	XCSRFToken *ArenaAdminCSRFToken `json:"X-CSRF-Token,omitempty"`
+}
+
+// RunArenaRosterPreflightParams defines parameters for RunArenaRosterPreflight.
+type RunArenaRosterPreflightParams struct {
+	IdempotencyKey ArenaIdempotencyKey `json:"Idempotency-Key"`
+
+	// XCSRFToken Required only for cookie-authenticated browser admin requests.
+	XCSRFToken *ArenaAdminCSRFToken `json:"X-CSRF-Token,omitempty"`
+}
+
+// UnlockArenaTournamentRosterParams defines parameters for UnlockArenaTournamentRoster.
+type UnlockArenaTournamentRosterParams struct {
+	IdempotencyKey ArenaIdempotencyKey `json:"Idempotency-Key"`
+
+	// XCSRFToken Required only for cookie-authenticated browser admin requests.
+	XCSRFToken *ArenaAdminCSRFToken `json:"X-CSRF-Token,omitempty"`
+}
+
+// CorrectArenaGameResultParams defines parameters for CorrectArenaGameResult.
+type CorrectArenaGameResultParams struct {
+	IdempotencyKey ArenaIdempotencyKey `json:"Idempotency-Key"`
+
+	// XCSRFToken Required only for cookie-authenticated browser admin requests.
+	XCSRFToken *ArenaAdminCSRFToken `json:"X-CSRF-Token,omitempty"`
+}
+
+// GetArenaOperatorSnapshotParams defines parameters for GetArenaOperatorSnapshot.
+type GetArenaOperatorSnapshotParams struct {
+	Cursor *ArenaOperatorCursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// ControlArenaTournamentWaveParams defines parameters for ControlArenaTournamentWave.
+type ControlArenaTournamentWaveParams struct {
+	IdempotencyKey ArenaIdempotencyKey `json:"Idempotency-Key"`
+
+	// XCSRFToken Required only for cookie-authenticated browser admin requests.
+	XCSRFToken *ArenaAdminCSRFToken `json:"X-CSRF-Token,omitempty"`
+}
+
+// GetArenaPublicSnapshotParams defines parameters for GetArenaPublicSnapshot.
+type GetArenaPublicSnapshotParams struct {
+	Cursor *ArenaPublicCursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// SubmitArenaParticipantDraftActionParams defines parameters for SubmitArenaParticipantDraftAction.
+type SubmitArenaParticipantDraftActionParams struct {
+	IdempotencyKey ArenaIdempotencyKey `json:"Idempotency-Key"`
+	XCSRFToken     ArenaCSRFToken      `json:"X-CSRF-Token"`
+}
+
+// SubmitArenaParticipantFlagParams defines parameters for SubmitArenaParticipantFlag.
+type SubmitArenaParticipantFlagParams struct {
+	IdempotencyKey ArenaIdempotencyKey `json:"Idempotency-Key"`
+	XCSRFToken     ArenaCSRFToken      `json:"X-CSRF-Token"`
+}
+
+// ApplyArenaParticipantPostSeriesActionParams defines parameters for ApplyArenaParticipantPostSeriesAction.
+type ApplyArenaParticipantPostSeriesActionParams struct {
+	IdempotencyKey ArenaIdempotencyKey `json:"Idempotency-Key"`
+	XCSRFToken     ArenaCSRFToken      `json:"X-CSRF-Token"`
+}
+
+// SurrenderArenaParticipantSeriesParams defines parameters for SurrenderArenaParticipantSeries.
+type SurrenderArenaParticipantSeriesParams struct {
+	IdempotencyKey ArenaIdempotencyKey `json:"Idempotency-Key"`
+	XCSRFToken     ArenaCSRFToken      `json:"X-CSRF-Token"`
+}
+
+// GetArenaParticipantSnapshotParams defines parameters for GetArenaParticipantSnapshot.
+type GetArenaParticipantSnapshotParams struct {
+	Cursor *ArenaParticipantCursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// SetArenaParticipantReadyParams defines parameters for SetArenaParticipantReady.
+type SetArenaParticipantReadyParams struct {
+	IdempotencyKey ArenaIdempotencyKey `json:"Idempotency-Key"`
+	XCSRFToken     ArenaCSRFToken      `json:"X-CSRF-Token"`
 }
 
 // AdminLoginJSONRequestBody defines body for AdminLogin for application/json ContentType.
@@ -372,6 +1866,48 @@ type UpdateTaskJSONRequestBody = UpdateTaskRequest
 
 // UploadTaskSourceMultipartRequestBody defines body for UploadTaskSource for multipart/form-data ContentType.
 type UploadTaskSourceMultipartRequestBody UploadTaskSourceMultipartBody
+
+// CreateArenaTournamentJSONRequestBody defines body for CreateArenaTournament for application/json ContentType.
+type CreateArenaTournamentJSONRequestBody = ArenaCreateTournamentRequest
+
+// ApplyArenaTournamentActionJSONRequestBody defines body for ApplyArenaTournamentAction for application/json ContentType.
+type ApplyArenaTournamentActionJSONRequestBody = ArenaTournamentActionRequest
+
+// ConfigureArenaTournamentPairingsJSONRequestBody defines body for ConfigureArenaTournamentPairings for application/json ContentType.
+type ConfigureArenaTournamentPairingsJSONRequestBody = ArenaPairingConfigurationRequest
+
+// ReplaceArenaTournamentRosterJSONRequestBody defines body for ReplaceArenaTournamentRoster for application/json ContentType.
+type ReplaceArenaTournamentRosterJSONRequestBody = ArenaReplaceRosterRequest
+
+// LockArenaTournamentRosterJSONRequestBody defines body for LockArenaTournamentRoster for application/json ContentType.
+type LockArenaTournamentRosterJSONRequestBody = ArenaLockRosterRequest
+
+// RunArenaRosterPreflightJSONRequestBody defines body for RunArenaRosterPreflight for application/json ContentType.
+type RunArenaRosterPreflightJSONRequestBody = ArenaPreflightRequest
+
+// UnlockArenaTournamentRosterJSONRequestBody defines body for UnlockArenaTournamentRoster for application/json ContentType.
+type UnlockArenaTournamentRosterJSONRequestBody = ArenaUnlockRosterRequest
+
+// CorrectArenaGameResultJSONRequestBody defines body for CorrectArenaGameResult for application/json ContentType.
+type CorrectArenaGameResultJSONRequestBody = ArenaOperatorCorrectionRequest
+
+// ControlArenaTournamentWaveJSONRequestBody defines body for ControlArenaTournamentWave for application/json ContentType.
+type ControlArenaTournamentWaveJSONRequestBody = ArenaWaveControlRequest
+
+// SubmitArenaParticipantDraftActionJSONRequestBody defines body for SubmitArenaParticipantDraftAction for application/json ContentType.
+type SubmitArenaParticipantDraftActionJSONRequestBody = ArenaParticipantDraftActionRequest
+
+// SubmitArenaParticipantFlagJSONRequestBody defines body for SubmitArenaParticipantFlag for application/json ContentType.
+type SubmitArenaParticipantFlagJSONRequestBody = ArenaParticipantSubmissionRequest
+
+// ApplyArenaParticipantPostSeriesActionJSONRequestBody defines body for ApplyArenaParticipantPostSeriesAction for application/json ContentType.
+type ApplyArenaParticipantPostSeriesActionJSONRequestBody = ArenaParticipantPostSeriesRequest
+
+// SurrenderArenaParticipantSeriesJSONRequestBody defines body for SurrenderArenaParticipantSeries for application/json ContentType.
+type SurrenderArenaParticipantSeriesJSONRequestBody = ArenaParticipantSurrenderRequest
+
+// SetArenaParticipantReadyJSONRequestBody defines body for SetArenaParticipantReady for application/json ContentType.
+type SetArenaParticipantReadyJSONRequestBody = ArenaParticipantReadyRequest
 
 // JoinPlayerJSONRequestBody defines body for JoinPlayer for application/json ContentType.
 type JoinPlayerJSONRequestBody = JoinRequest

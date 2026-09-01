@@ -101,6 +101,18 @@ fi
 require_policy_equal redocly.trust_decision accepted-bounded
 require_policy_value redocly.residual_risk >/dev/null
 
+require_policy_equal yaml.package yaml
+require_policy_equal yaml.version 2.9.0
+require_policy_equal yaml.repository https://github.com/eemeli/yaml
+require_policy_equal yaml.registry https://registry.npmjs.org/
+require_policy_equal yaml.license ISC
+require_policy_value yaml.publisher >/dev/null
+YAML_INTEGRITY="$(require_policy_value yaml.integrity)"
+require_policy_value yaml.tarball_sha1 >/dev/null
+validate_fresh_date yaml.security_evidence_date
+require_policy_equal yaml.trust_decision accepted-compatibility
+require_policy_value yaml.residual_risk >/dev/null
+
 require_policy_equal oapi.module github.com/oapi-codegen/oapi-codegen/v2
 require_policy_equal oapi.command github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen
 require_policy_equal oapi.version v2.5.1
@@ -126,7 +138,7 @@ fi
 require_policy_equal oapi.trust_decision accepted-bounded
 require_policy_value oapi.residual_risk >/dev/null
 
-node - "$PACKAGE_JSON" "$PACKAGE_LOCK" "$REDOCLY_INTEGRITY" <<'NODE'
+node - "$PACKAGE_JSON" "$PACKAGE_LOCK" "$REDOCLY_INTEGRITY" "$YAML_INTEGRITY" <<'NODE'
 const fs = require('node:fs');
 
 function fail(message) {
@@ -137,6 +149,7 @@ function fail(message) {
 const packageJson = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 const packageLock = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'));
 const expectedIntegrity = process.argv[4];
+const expectedYamlIntegrity = process.argv[5];
 const lifecycle = ['preinstall', 'install', 'postinstall', 'prepare'];
 
 if (packageJson.devDependencies?.['@redocly/cli'] !== '1.34.0') {
@@ -158,6 +171,20 @@ if (cli.integrity !== expectedIntegrity) fail('package-lock @redocly/cli checksu
 if (cli.license !== 'MIT') fail('package-lock @redocly/cli license is missing or wrong');
 if (cli.hasInstallScript) fail('@redocly/cli must not declare a lifecycle install script');
 if (cli.bin?.redocly !== 'bin/cli.js') fail('@redocly/cli binary identity is wrong');
+
+if (packageJson.devDependencies?.yaml !== '2.9.0') fail('package.json must pin yaml to 2.9.0');
+if (packageLock.packages?.['']?.devDependencies?.yaml !== '2.9.0') {
+  fail('package-lock root has the wrong yaml compatibility identity');
+}
+const yaml = packageLock.packages?.['node_modules/yaml'];
+if (!yaml || yaml.version !== '2.9.0') fail('package-lock entry for yaml 2.9.0 is missing');
+if (yaml.resolved !== 'https://registry.npmjs.org/yaml/-/yaml-2.9.0.tgz') {
+  fail('package-lock has an unofficial yaml source');
+}
+if (yaml.integrity !== expectedYamlIntegrity) fail('package-lock yaml checksum does not match policy');
+if (yaml.license !== 'ISC') fail('package-lock yaml license is missing or wrong');
+if (yaml.hasInstallScript) fail('yaml must not declare a lifecycle install script');
+if (yaml.bin?.yaml !== 'bin.mjs') fail('yaml package binary identity is wrong');
 
 for (const [name, entry] of Object.entries(packageLock.packages || {})) {
   if (!entry.resolved) continue;

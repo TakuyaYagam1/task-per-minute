@@ -31,6 +31,9 @@ type Dependencies struct {
 	Upload             UploadService
 	Leaderboard        LeaderboardService
 	Duels              DuelService
+	ArenaOperator      ArenaOperatorController
+	ArenaParticipant   ArenaParticipantController
+	ArenaPublic        ArenaPublicController
 	Health             HealthChecks
 	LoginLimiter       *middleware.LoginRateLimiter
 	RefreshLimiter     *middleware.LoginRateLimiter
@@ -41,6 +44,10 @@ type Dependencies struct {
 }
 
 type Server struct {
+	ArenaOperatorController
+	ArenaParticipantController
+	ArenaPublicController
+
 	players            PlayerService
 	adminAuth          AdminAuthService
 	tasks              AdminTaskService
@@ -63,21 +70,36 @@ func New(deps Dependencies) *Server {
 	if now == nil {
 		now = func() time.Time { return time.Now().UTC() }
 	}
+	arenaOperator := deps.ArenaOperator
+	if arenaOperator == nil {
+		arenaOperator = api.Unimplemented{}
+	}
+	arenaParticipant := deps.ArenaParticipant
+	if arenaParticipant == nil {
+		arenaParticipant = api.Unimplemented{}
+	}
+	arenaPublic := deps.ArenaPublic
+	if arenaPublic == nil {
+		arenaPublic = api.Unimplemented{}
+	}
 	return &Server{
-		players:            deps.Players,
-		adminAuth:          deps.AdminAuth,
-		tasks:              deps.Tasks,
-		adminPlayers:       deps.AdminPlayers,
-		adminPlayerEvents:  deps.AdminPlayerEvents,
-		upload:             deps.Upload,
-		leaderboard:        deps.Leaderboard,
-		duels:              deps.Duels,
-		health:             deps.Health,
-		loginLimiter:       deps.LoginLimiter,
-		refreshLimiter:     deps.RefreshLimiter,
-		joinLimiter:        deps.JoinLimiter,
-		leaderboardLimiter: deps.LeaderboardLimiter,
-		now:                now,
-		log:                deps.Log,
+		ArenaOperatorController:    arenaOperator,
+		ArenaParticipantController: arenaParticipant,
+		ArenaPublicController:      arenaPublic,
+		players:                    deps.Players,
+		adminAuth:                  deps.AdminAuth,
+		tasks:                      deps.Tasks,
+		adminPlayers:               deps.AdminPlayers,
+		adminPlayerEvents:          deps.AdminPlayerEvents,
+		upload:                     deps.Upload,
+		leaderboard:                deps.Leaderboard,
+		duels:                      deps.Duels,
+		health:                     deps.Health,
+		loginLimiter:               deps.LoginLimiter,
+		refreshLimiter:             deps.RefreshLimiter,
+		joinLimiter:                deps.JoinLimiter,
+		leaderboardLimiter:         deps.LeaderboardLimiter,
+		now:                        now,
+		log:                        deps.Log,
 	}
 }

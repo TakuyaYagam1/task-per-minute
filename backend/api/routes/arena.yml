@@ -767,8 +767,9 @@ components:
         bracket:
           $ref: '#/components/schemas/ArenaPublicBracketResponse'
         live_draft:
-          $ref: '#/components/schemas/ArenaPublicLiveDraftResponse'
           nullable: true
+          allOf:
+            - $ref: '#/components/schemas/ArenaPublicLiveDraftResponse'
         next_cursor:
           $ref: '#/components/schemas/ArenaPublicRecoveryCursor'
     ArenaParticipantRecoverySnapshot:
@@ -786,17 +787,21 @@ components:
         lobby:
           $ref: '#/components/schemas/ArenaParticipantLobbyResponse'
         series:
-          $ref: '../components/schemas/arena_schemas.yml#/ArenaSeries'
           nullable: true
+          allOf:
+            - $ref: '../components/schemas/arena_schemas.yml#/ArenaSeries'
         wave:
-          $ref: '../components/schemas/arena_schemas.yml#/ArenaWave'
           nullable: true
+          allOf:
+            - $ref: '../components/schemas/arena_schemas.yml#/ArenaWave'
         draft:
-          $ref: '../components/schemas/arena_schemas.yml#/ArenaDraft'
           nullable: true
+          allOf:
+            - $ref: '../components/schemas/arena_schemas.yml#/ArenaDraft'
         assignment:
-          $ref: '../components/schemas/arena_schemas.yml#/ArenaAssignment'
           nullable: true
+          allOf:
+            - $ref: '../components/schemas/arena_schemas.yml#/ArenaAssignment'
         next_cursor:
           $ref: '#/components/schemas/ArenaParticipantRecoveryCursor'
     ArenaOperatorRecoverySnapshot:
@@ -817,8 +822,9 @@ components:
           items:
             $ref: '../components/schemas/arena_schemas.yml#/ArenaSeries'
         pause_graph:
-          $ref: '../components/schemas/arena_schemas.yml#/ArenaPauseGraph'
           nullable: true
+          allOf:
+            - $ref: '../components/schemas/arena_schemas.yml#/ArenaPauseGraph'
         next_cursor:
           $ref: '#/components/schemas/ArenaOperatorRecoveryCursor'
 

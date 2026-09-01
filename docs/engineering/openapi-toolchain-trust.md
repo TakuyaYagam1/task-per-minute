@@ -1,7 +1,8 @@
 # OpenAPI toolchain trust record
 
 This record covers the two development-only executables used by the OpenAPI
-generator. It does not approve either tool for untrusted schemas, runtime use,
+generator and the YAML compatibility library required by the pinned Redocly
+package. It does not approve these packages for untrusted schemas, runtime use,
 or network access. Evidence was retrieved on 2026-09-02 from the official npm
 registry, Go module services, GitHub API, and OpenSSF Scorecard API.
 
@@ -26,6 +27,17 @@ redocly.scorecard_url=
 redocly.scorecard_justification=OpenSSF returned HTTP 404 for this repository on 2026-09-02; official npm signature, GitHub maintenance metadata, and GitHub repository advisories are the bounded substitute
 redocly.trust_decision=accepted-bounded
 redocly.residual_risk=required version has known advisories and a large transitive npm tree; use only bundle on reviewed local schemas with telemetry disabled
+yaml.package=yaml
+yaml.version=2.9.0
+yaml.publisher=eemeli npm account
+yaml.repository=https://github.com/eemeli/yaml
+yaml.registry=https://registry.npmjs.org/
+yaml.license=ISC
+yaml.integrity=sha512-2AvhNX3mb8zd6Zy7INTtSpl1F15HW6Wnqj0srWlkKLcpYl/gMIMJiyuGq2KeI2YFxUPjdlB+3Lc10seMLtL4cA==
+yaml.tarball_sha1=78274afd93598a1dfdd6130df6a566defcbf9aa4
+yaml.security_evidence_date=2026-09-02
+yaml.trust_decision=accepted-compatibility
+yaml.residual_risk=the package exposes an unused CLI; this project resolves only its library API for the pinned Redocly bundle
 oapi.module=github.com/oapi-codegen/oapi-codegen/v2
 oapi.command=github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen
 oapi.version=v2.5.1
@@ -83,6 +95,26 @@ Official evidence:
 - https://api.github.com/repos/Redocly/redocly-cli/security-advisories/GHSA-657c-g7qc-r9j2
 - https://api.github.com/repos/Redocly/redocly-cli/security-advisories/GHSA-xw2f-5386-m542
 
+## YAML compatibility library 2.9.0
+
+Redocly CLI 1.34.0 loads the bundled Redoc 2.4.0 documentation command graph
+at startup. That graph requires the `yaml` library but does not declare a
+top-level dependency that Node can resolve from the locked install. Without an
+explicit compatibility dependency, even `redocly bundle` exits before parsing
+the command.
+
+The frontend therefore pins `yaml` 2.9.0 exactly. The official npm record maps
+it to `eemeli/yaml`, ISC license, SHA-512 integrity and SHA-1 values recorded
+above, and publication on 2026-05-11. This version also satisfies the existing
+optional `postcss-load-config` peer range. Its package exposes a `yaml` binary,
+but the generator never invokes it; only Redocly's library resolution uses the
+package. Lifecycle scripts remain disabled during lock preparation and install.
+
+Official evidence:
+
+- https://registry.npmjs.org/yaml/2.9.0
+- https://github.com/eemeli/yaml
+
 ## oapi-codegen v2.5.1
 
 The Go proxy version record maps v2.5.1 to the official repository, tag, and
@@ -116,6 +148,8 @@ archive must use `https://registry.npmjs.org/` and have a valid SHA-512
 integrity value. Lock preparation uses the credential-free user config and
 disables lifecycle scripts. The generator requires the already installed
 local `node_modules/.bin/redocly` entrypoint and checks its package identity.
+The trust validator also requires the exact YAML compatibility library and
+rejects a different source, version, checksum, license, or install script.
 
 `backend/tools/openapi/go.sum` locks the complete Go module resolution. The
 generator runs `go mod verify` and builds the command with `GOPROXY=off`,

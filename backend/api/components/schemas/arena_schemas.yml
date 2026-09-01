@@ -29,8 +29,9 @@ ArenaTournament:
     state:
       $ref: '#/ArenaTournamentState'
     paused_from_state:
-      $ref: '#/ArenaTournamentState'
       nullable: true
+      allOf:
+        - $ref: '#/ArenaTournamentState'
     revision:
       type: integer
       format: int64
@@ -596,8 +597,9 @@ ArenaSwissRound:
       items:
         $ref: '#/ArenaSwissPairing'
     bye:
-      $ref: '#/ArenaSwissBye'
       nullable: true
+      allOf:
+        - $ref: '#/ArenaSwissBye'
     standings:
       type: array
       minItems: 4
@@ -970,10 +972,23 @@ ArenaSeriesScoreRevisionOperation:
 ArenaCategory:
   type: string
   enum: [web, crypto, forensics, reverse, pwn, steganography, ppc, osint, mobile, hardware, misc]
+  x-enum-varnames:
+    - ArenaCategoryWeb
+    - ArenaCategoryCrypto
+    - ArenaCategoryForensics
+    - ArenaCategoryReverse
+    - ArenaCategoryPwn
+    - ArenaCategorySteganography
+    - ArenaCategoryPpc
+    - ArenaCategoryOsint
+    - ArenaCategoryMobile
+    - ArenaCategoryHardware
+    - ArenaCategoryMisc
 
 ArenaDifficulty:
   type: string
   enum: [easy, medium, hard]
+  x-enum-varnames: [ArenaDifficultyEasy, ArenaDifficultyMedium, ArenaDifficultyHard]
 
 ArenaGame:
   type: object
@@ -993,8 +1008,9 @@ ArenaGame:
     state:
       $ref: '#/ArenaGameState'
     result_reason:
-      $ref: '#/ArenaGameResultReason'
       nullable: true
+      allOf:
+        - $ref: '#/ArenaGameResultReason'
     winner_id:
       type: string
       format: uuid
@@ -1462,17 +1478,21 @@ ArenaOfficialResultRevision:
       format: uuid
       nullable: true
     game_state:
-      $ref: '#/ArenaGameState'
       nullable: true
+      allOf:
+        - $ref: '#/ArenaGameState'
     game_reason:
-      $ref: '#/ArenaGameResultReason'
       nullable: true
+      allOf:
+        - $ref: '#/ArenaGameResultReason'
     series_state:
-      $ref: '#/ArenaSeriesState'
       nullable: true
+      allOf:
+        - $ref: '#/ArenaSeriesState'
     series_reason:
-      $ref: '#/ArenaSeriesResultReason'
       nullable: true
+      allOf:
+        - $ref: '#/ArenaSeriesResultReason'
     winner_id:
       type: string
       format: uuid
@@ -1670,8 +1690,9 @@ ArenaWave:
       items:
         $ref: '#/ArenaWaveMember'
     ready_window:
-      $ref: '#/ArenaReadyWindow'
       nullable: true
+      allOf:
+        - $ref: '#/ArenaReadyWindow'
     started_at:
       type: string
       format: date-time
@@ -1882,8 +1903,9 @@ ArenaPauseGame:
       nullable: true
       readOnly: true
     resume_state:
-      $ref: '#/ArenaGameState'
       nullable: true
+      allOf:
+        - $ref: '#/ArenaGameState'
 
 ArenaPauseSeries:
   type: object
@@ -1902,8 +1924,9 @@ ArenaPauseSeries:
       nullable: true
       readOnly: true
     resume_state:
-      $ref: '#/ArenaSeriesState'
       nullable: true
+      allOf:
+        - $ref: '#/ArenaSeriesState'
 
 ArenaPauseReconnectCounter:
   type: object
@@ -1956,8 +1979,9 @@ ArenaPauseGraph:
       items:
         $ref: '#/ArenaPauseGame'
     draft:
-      $ref: '#/ArenaDraft'
       nullable: true
+      allOf:
+        - $ref: '#/ArenaDraft'
     presence:
       type: array
       items:
@@ -2070,16 +2094,18 @@ ArenaReconnectRecord:
       format: date-time
       readOnly: true
     terminal_reason:
-      $ref: '#/ArenaGameResultReason'
       nullable: true
+      allOf:
+        - $ref: '#/ArenaGameResultReason'
     result_revision_id:
       type: string
       format: uuid
       nullable: true
       readOnly: true
     conflict:
-      $ref: '#/ArenaAuthorityRevisionConflict'
       nullable: true
+      allOf:
+        - $ref: '#/ArenaAuthorityRevisionConflict'
 
 ArenaReplayRequirement:
   type: object
@@ -2904,8 +2930,9 @@ ArenaAuditPage:
       items:
         $ref: '#/ArenaAuditEvent'
     next_cursor:
-      $ref: '#/ArenaAuditCursor'
       nullable: true
+      allOf:
+        - $ref: '#/ArenaAuditCursor'
 
 ArenaIncidentBundle:
   type: object

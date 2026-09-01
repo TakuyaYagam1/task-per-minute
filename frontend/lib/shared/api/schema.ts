@@ -338,6 +338,543 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/arena/operator/tournaments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Arena tournaments for the authenticated operator */
+        get: operations["listArenaOperatorTournaments"];
+        put?: never;
+        /**
+         * Create an Arena tournament
+         * @description Operator identity comes from the authenticated session.
+         */
+        post: operations["createArenaTournament"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/arena/operator/tournaments/{tournament_id}/roster": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tournament_id: components["parameters"]["ArenaTournamentId"];
+            };
+            cookie?: never;
+        };
+        /** Read the operator roster projection */
+        get: operations["getArenaOperatorRoster"];
+        /**
+         * Replace tournament roster entries before lock
+         * @description Operator identity comes from the authenticated tournament scope.
+         */
+        put: operations["replaceArenaTournamentRoster"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/arena/operator/tournaments/{tournament_id}/roster/preflight": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tournament_id: components["parameters"]["ArenaTournamentId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Evaluate roster and runtime preflight checks
+         * @description Operator identity comes from the authenticated tournament scope.
+         */
+        post: operations["runArenaRosterPreflight"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/arena/operator/tournaments/{tournament_id}/roster/lock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tournament_id: components["parameters"]["ArenaTournamentId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Lock a preflight-approved tournament roster
+         * @description Operator identity comes from the authenticated tournament scope.
+         */
+        post: operations["lockArenaTournamentRoster"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/arena/operator/tournaments/{tournament_id}/roster/unlock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tournament_id: components["parameters"]["ArenaTournamentId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Unlock a roster before tournament execution starts
+         * @description This corrective action requires explicit confirmation. Operator identity comes from auth.
+         */
+        post: operations["unlockArenaTournamentRoster"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/arena/operator/tournaments/{tournament_id}/pairings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tournament_id: components["parameters"]["ArenaTournamentId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Configure a Swiss round and its category policy
+         * @description Operator identity comes from the authenticated tournament scope.
+         */
+        post: operations["configureArenaTournamentPairings"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/arena/operator/tournaments/{tournament_id}/actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tournament_id: components["parameters"]["ArenaTournamentId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply a tournament lifecycle operator action
+         * @description Cancel, pause, resume, and terminal actions require explicit confirmation.
+         */
+        post: operations["applyArenaTournamentAction"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/arena/operator/tournaments/{tournament_id}/waves/{wave_id}/actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tournament_id: components["parameters"]["ArenaTournamentId"];
+                wave_id: components["parameters"]["ArenaWaveId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Open, start, pause, resume, complete, or cancel a Wave
+         * @description Wave control requires explicit confirmation and authenticated operator identity.
+         */
+        post: operations["controlArenaTournamentWave"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/arena/operator/tournaments/{tournament_id}/series/{series_id}/games/{game_id}/corrections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tournament_id: components["parameters"]["ArenaTournamentId"];
+                series_id: components["parameters"]["ArenaSeriesId"];
+                game_id: components["parameters"]["ArenaGameId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Correct an official Game result and dependent projections
+         * @description The correction requires confirmation. Operator identity comes only from auth.
+         */
+        post: operations["correctArenaGameResult"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/arena/operator/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search the redacted Arena audit projection
+         * @description The complete ArenaAuditFilter is available only to an authorized tournament operator.
+         */
+        get: operations["listArenaOperatorAudit"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/arena/operator/tournaments/{tournament_id}/incident-export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tournament_id: components["parameters"]["ArenaTournamentId"];
+            };
+            cookie?: never;
+        };
+        /** Export a canonical redacted Arena incident bundle */
+        get: operations["exportArenaOperatorIncident"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/arena/operator/tournaments/{tournament_id}/snapshot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tournament_id: components["parameters"]["ArenaTournamentId"];
+            };
+            cookie?: never;
+        };
+        /** Recover the full operator tournament projection */
+        get: operations["getArenaOperatorSnapshot"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/arena/tournaments/{tournament_id}/participant/lobby": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tournament_id: components["parameters"]["ArenaTournamentId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Read the authenticated participant tournament lobby
+         * @description Participant identity and roster membership come only from the authenticated session.
+         */
+        get: operations["getArenaParticipantLobby"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/arena/tournaments/{tournament_id}/participant/assignments/{assignment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tournament_id: components["parameters"]["ArenaTournamentId"];
+                assignment_id: components["parameters"]["ArenaAssignmentId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Read a private task assignment for the authenticated participant
+         * @description Task delivery fields are returned only after participant ownership is authorized.
+         */
+        get: operations["getArenaParticipantAssignment"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/arena/tournaments/{tournament_id}/participant/waves/{wave_id}/ready": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tournament_id: components["parameters"]["ArenaTournamentId"];
+                wave_id: components["parameters"]["ArenaWaveId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set readiness for the authenticated participant
+         * @description Participant identity comes from auth and is not accepted in the request body.
+         */
+        post: operations["setArenaParticipantReady"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/arena/tournaments/{tournament_id}/participant/series/{series_id}/draft/actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tournament_id: components["parameters"]["ArenaTournamentId"];
+                series_id: components["parameters"]["ArenaSeriesId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Submit an authenticated participant draft action
+         * @description The current draft actor comes from auth and the durable draft turn.
+         */
+        post: operations["submitArenaParticipantDraftAction"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/arena/tournaments/{tournament_id}/participant/series/{series_id}/games/{game_id}/submissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tournament_id: components["parameters"]["ArenaTournamentId"];
+                series_id: components["parameters"]["ArenaSeriesId"];
+                game_id: components["parameters"]["ArenaGameId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Submit a secret for the authenticated participant Game
+         * @description The secret is write-only. Participant identity and assignment scope come from auth and the path.
+         */
+        post: operations["submitArenaParticipantFlag"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/arena/tournaments/{tournament_id}/participant/series/{series_id}/surrender": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tournament_id: components["parameters"]["ArenaTournamentId"];
+                series_id: components["parameters"]["ArenaSeriesId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Surrender the authenticated participant Series
+         * @description Surrender is destructive and requires explicit confirmation. Actor identity comes from auth.
+         */
+        post: operations["surrenderArenaParticipantSeries"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/arena/tournaments/{tournament_id}/participant/series/{series_id}/post-series": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tournament_id: components["parameters"]["ArenaTournamentId"];
+                series_id: components["parameters"]["ArenaSeriesId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply a post-Series participant action
+         * @description Participant identity comes from auth and is not accepted in the body.
+         */
+        post: operations["applyArenaParticipantPostSeriesAction"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/arena/tournaments/{tournament_id}/participant/snapshot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tournament_id: components["parameters"]["ArenaTournamentId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Recover the authenticated participant tournament view
+         * @description The snapshot may contain a private assignment only after participant ownership checks.
+         */
+        get: operations["getArenaParticipantSnapshot"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/arena/public/tournaments/{tournament_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tournament_id: components["parameters"]["ArenaTournamentId"];
+            };
+            cookie?: never;
+        };
+        /** Read the public tournament display projection */
+        get: operations["getArenaPublicTournament"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/arena/public/tournaments/{tournament_id}/scoreboard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tournament_id: components["parameters"]["ArenaTournamentId"];
+            };
+            cookie?: never;
+        };
+        /** Read the public Arena scoreboard */
+        get: operations["getArenaPublicScoreboard"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/arena/public/tournaments/{tournament_id}/bracket": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tournament_id: components["parameters"]["ArenaTournamentId"];
+            };
+            cookie?: never;
+        };
+        /** Read the public Arena playoff bracket */
+        get: operations["getArenaPublicBracket"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/arena/public/tournaments/{tournament_id}/live-draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tournament_id: components["parameters"]["ArenaTournamentId"];
+            };
+            cookie?: never;
+        };
+        /** Read the public live draft display projection */
+        get: operations["getArenaPublicLiveDraft"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/arena/public/tournaments/{tournament_id}/snapshot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tournament_id: components["parameters"]["ArenaTournamentId"];
+            };
+            cookie?: never;
+        };
+        /** Recover the public tournament display view */
+        get: operations["getArenaPublicSnapshot"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -352,24 +889,24 @@ export interface components {
         };
         /** @description RFC 7807 error envelope used by every 4xx/5xx response. */
         ProblemDetails: {
+            /**
+             * Format: uri
+             * @example about:blank
+             */
+            type: string;
+            /** @example Validation Failed */
+            title: string;
+            /**
+             * Format: int32
+             * @example 400
+             */
+            status: number;
             /** @example username must be 2..50 characters */
             detail?: string;
             /** @example /api/v1/players/join */
             instance?: string;
             /** @example 01HXC2K9F4ZG6YV1AAB7TBQ7AP */
             request_id?: string;
-            /**
-             * Format: int32
-             * @example 400
-             */
-            status: number;
-            /** @example Validation Failed */
-            title: string;
-            /**
-             * Format: uri
-             * @example about:blank
-             */
-            type: string;
         };
         ActiveDuelInfo: {
             /** Format: date-time */
@@ -580,9 +1117,1120 @@ export interface components {
             /** Format: uri */
             source_file_url: string;
         };
+        /** @enum {string} */
+        ArenaTournamentState: "draft" | "registration" | "roster_locked" | "swiss" | "golden" | "playoffs" | "technical_pause" | "completed" | "cancelled";
+        /** @enum {string} */
+        ArenaPreset: "arena_v1";
+        ArenaTournament: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            roster_id: string;
+            preset: components["schemas"]["ArenaPreset"];
+            state: components["schemas"]["ArenaTournamentState"];
+            paused_from_state?: components["schemas"]["ArenaTournamentState"] | null;
+            /** Format: int64 */
+            readonly revision: number;
+            /** Format: int32 */
+            roster_size: number;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+            /** Format: date-time */
+            readonly started_at?: string | null;
+            /** Format: date-time */
+            readonly finished_at?: string | null;
+        };
+        ArenaOperatorTournamentList: {
+            items: components["schemas"]["ArenaTournament"][];
+            next_cursor: string | null;
+        };
+        ArenaCreateTournamentRequest: {
+            /** Format: int64 */
+            expected_projection_revision: number;
+            preset: components["schemas"]["ArenaPreset"];
+            /** Format: int32 */
+            roster_size: number;
+        };
+        /** @description Stable optimistic-concurrency details that can accompany a 409 response. */
+        ArenaRevisionConflict: {
+            /** Format: int64 */
+            expected_revision: number;
+            /** Format: int64 */
+            current_revision: number;
+            current_state?: components["schemas"]["ArenaTournamentState"];
+        };
+        /** @enum {string} */
+        ArenaAttendanceState: "invited" | "registered" | "checked_in" | "withdrawn";
+        ArenaParticipant: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            roster_id: string;
+            /** Format: uuid */
+            tournament_id: string;
+            /** Format: uuid */
+            player_id: string;
+            /** Format: int32 */
+            seed: number;
+            attendance: components["schemas"]["ArenaAttendanceState"];
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+        };
+        /** @description Full tournament roster. Execution can start only while locked, and a started roster cannot be unlocked. */
+        ArenaRoster: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            tournament_id: string;
+            /** Format: int64 */
+            readonly revision: number;
+            participants: components["schemas"]["ArenaParticipant"][];
+            readonly locked: boolean;
+            /** @description True only when locked is also true. */
+            readonly execution_started: boolean;
+            /** Format: date-time */
+            readonly locked_at?: string | null;
+            /** Format: date-time */
+            readonly execution_started_at?: string | null;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+        };
+        ArenaRosterParticipantInput: {
+            /** Format: uuid */
+            player_id: string;
+            /** Format: int32 */
+            seed: number;
+            attendance: components["schemas"]["ArenaAttendanceState"];
+        };
+        ArenaReplaceRosterRequest: {
+            /** Format: int64 */
+            expected_projection_revision: number;
+            participants: components["schemas"]["ArenaRosterParticipantInput"][];
+        };
+        ArenaPreflightRequest: {
+            /** Format: int64 */
+            expected_projection_revision: number;
+        };
+        ArenaPreflightSourceRevision: {
+            source: string;
+            value: string;
+        };
+        /** @enum {string} */
+        ArenaPreflightCode: "arena.preflight.structure.roster_complete" | "arena.preflight.structure.attendance" | "arena.preflight.structure.participant_exclusive" | "arena.preflight.structure.preset" | "arena.preflight.structure.categories" | "arena.preflight.structure.pairings" | "arena.preflight.structure.byes" | "arena.preflight.structure.overrides" | "arena.preflight.tasks.pool_configuration" | "arena.preflight.tasks.inventory" | "arena.preflight.tasks.missing" | "arena.preflight.tasks.disabled" | "arena.preflight.tasks.unhealthy" | "arena.preflight.tasks.mutable" | "arena.preflight.tasks.publicly_exposed" | "arena.preflight.tasks.wrong_pool" | "arena.preflight.runtime.configuration" | "arena.preflight.runtime.authoritative_storage" | "arena.preflight.runtime.submission" | "arena.preflight.runtime.task_delivery" | "arena.preflight.runtime.realtime" | "arena.preflight.runtime.capacity" | "arena.preflight.runtime.clock" | "arena.preflight.runtime.dependencies" | "arena.preflight.runtime.schedule";
+        ArenaPreflightCheck: {
+            code: components["schemas"]["ArenaPreflightCode"];
+            passed: boolean;
+            explanation: string;
+            evidence: string[];
+        };
+        /** @description Immutable preflight result used as roster-lock evidence. */
+        ArenaPreflightReport: {
+            /** Format: uuid */
+            readonly id: string;
+            /** Format: uuid */
+            readonly tournament_id: string;
+            /** @enum {string} */
+            readonly algorithm_version: "arena-preflight-report-v1";
+            /** Format: date-time */
+            readonly evaluated_at: string;
+            readonly normalized_inputs: string[];
+            readonly revisions: components["schemas"]["ArenaPreflightSourceRevision"][];
+            readonly proof_hash: string;
+            readonly checks: components["schemas"]["ArenaPreflightCheck"][];
+            readonly passed: boolean;
+        };
+        ArenaLockRosterRequest: {
+            /** Format: int64 */
+            expected_projection_revision: number;
+            /** Format: uuid */
+            preflight_revision_id: string;
+            checked_in_player_ids: string[];
+        };
+        ArenaUnlockRosterRequest: {
+            /** Format: int64 */
+            expected_projection_revision: number;
+            confirmed: boolean;
+            reason: string;
+        };
+        /** @enum {string} */
+        ArenaCategoryMode: "random" | "admin" | "draft";
+        /** @enum {string} */
+        ArenaCategory: "web" | "crypto" | "forensics" | "reverse" | "pwn" | "steganography" | "ppc" | "osint" | "mobile" | "hardware" | "misc";
+        ArenaPairingConfigurationRequest: {
+            /** Format: int64 */
+            expected_projection_revision: number;
+            /** Format: int32 */
+            round_number: number;
+            category_mode: components["schemas"]["ArenaCategoryMode"];
+            categories: components["schemas"]["ArenaCategory"][];
+            /** @default false */
+            allow_repeats: boolean;
+        };
+        /** @description Recorded decision evidence for automatic pairings and byes. The private decision seed is not exposed. */
+        ArenaSwissPairingEvidence: {
+            /** Format: uuid */
+            readonly id: string;
+            /** @enum {string} */
+            readonly purpose: "pairing";
+            /** @enum {string} */
+            readonly algorithm_version: "hmac-sha256-order-v1";
+            readonly normalized_inputs: string[];
+            readonly result: string[];
+            readonly replay_digest: string;
+            /** Format: uuid */
+            readonly owner_id: string;
+            /** Format: date-time */
+            readonly decided_at: string;
+        };
+        ArenaSwissPairing: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            round_id: string;
+            /** Format: uuid */
+            first_participant_id: string;
+            /** Format: uuid */
+            second_participant_id: string;
+            /** Format: uuid */
+            evidence_id: string;
+            /** @default false */
+            repeated: boolean;
+            /** Format: uuid */
+            override_actor_id?: string | null;
+            override_reason?: string | null;
+        };
+        ArenaSwissBye: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            round_id: string;
+            /** Format: uuid */
+            participant_id: string;
+            /** Format: int32 */
+            points_awarded: number;
+            /** Format: uuid */
+            readonly revision_id: string;
+            /** Format: uuid */
+            evidence_id: string;
+        };
+        /** @enum {string} */
+        ArenaSwissPointsLabel: "provisional" | "final";
+        /** @enum {string} */
+        ArenaSwissBuchholzStatus: "provisional" | "final";
+        ArenaSwissStanding: {
+            /** Format: uuid */
+            participant_id: string;
+            /** Format: int32 */
+            position: number;
+            /** Format: int32 */
+            points: number;
+            points_label: components["schemas"]["ArenaSwissPointsLabel"];
+            /** Format: int32 */
+            buchholz: number;
+            buchholz_status: components["schemas"]["ArenaSwissBuchholzStatus"];
+            /** Format: int32 */
+            head_to_head_points: number;
+            head_to_head_applied: boolean;
+            /** Format: int64 */
+            effective_time_ms: number;
+            /** Format: int64 */
+            accepted_solve_time_ms?: number | null;
+            /** Format: int32 */
+            stable_seed: number;
+        };
+        ArenaSwissRound: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            tournament_id: string;
+            /** Format: int32 */
+            round_number: number;
+            /** Format: int64 */
+            readonly revision: number;
+            roster_participant_ids: string[];
+            pairing_evidence?: components["schemas"]["ArenaSwissPairingEvidence"];
+            pairings: components["schemas"]["ArenaSwissPairing"][];
+            bye?: components["schemas"]["ArenaSwissBye"] | null;
+            standings: components["schemas"]["ArenaSwissStanding"][];
+            readonly locked: boolean;
+            /** Format: date-time */
+            readonly locked_at?: string | null;
+            /** Format: date-time */
+            readonly started_at?: string | null;
+            /** Format: date-time */
+            readonly completed_at?: string | null;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+        };
+        ArenaTournamentActionRequest: {
+            /** Format: int64 */
+            expected_projection_revision: number;
+            /** @enum {string} */
+            action: "open_registration" | "start_swiss" | "start_golden" | "start_playoffs" | "pause" | "resume" | "complete" | "cancel";
+            confirmed: boolean;
+            reason?: string;
+        };
+        ArenaWaveControlRequest: {
+            /** Format: int64 */
+            expected_projection_revision: number;
+            /** @enum {string} */
+            action: "open_ready_window" | "start" | "pause" | "resume" | "complete" | "cancel";
+            confirmed: boolean;
+            reason?: string;
+        };
+        /** @enum {string} */
+        ArenaWaveState: "planned" | "ready_window_open" | "ready" | "active" | "paused" | "completed" | "ready_window_expired" | "superseded";
+        ArenaWaveMember: {
+            /** Format: uuid */
+            participant_id: string;
+            /** Format: uuid */
+            series_id: string;
+            readonly ready: boolean;
+            /** Format: int64 */
+            readonly readiness_revision: number;
+        };
+        /** @enum {string} */
+        ArenaReadyWindowState: "open" | "consumed" | "expired" | "superseded";
+        ArenaReadyWindow: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            wave_id: string;
+            /** Format: uuid */
+            readonly revision_id: string;
+            state: components["schemas"]["ArenaReadyWindowState"];
+            /** Format: date-time */
+            readonly opened_at: string;
+            /** Format: date-time */
+            readonly deadline: string;
+            /** Format: date-time */
+            readonly consumed_at: string | null;
+        };
+        ArenaWave: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            tournament_id: string;
+            /** Format: uuid */
+            readonly revision_id: string;
+            /** Format: int64 */
+            readonly revision: number;
+            state: components["schemas"]["ArenaWaveState"];
+            members: components["schemas"]["ArenaWaveMember"][];
+            ready_window: components["schemas"]["ArenaReadyWindow"] | null;
+            /** Format: date-time */
+            readonly started_at: string | null;
+            /** Format: date-time */
+            readonly paused_at: string | null;
+        };
+        /** @enum {string} */
+        ArenaCorrectionReason: "scorekeeping_error" | "verified_submission" | "operator_ruling";
+        /** @enum {string} */
+        ArenaCorrectionField: "winner" | "result_reason" | "solve_metadata";
+        /** @enum {string} */
+        ArenaGameState: "planned" | "ready" | "active" | "paused" | "completed" | "void" | "cancelled" | "superseded";
+        /** @enum {string} */
+        ArenaGameResultReason: "solved" | "surrender" | "operator_forfeit" | "no_solve" | "task_failure" | "common_platform_failure" | "disconnect" | "execution_epoch_break" | "no_show" | "series_cancelled" | "tournament_cancelled" | "derived_revision_superseded";
+        ArenaCorrectionSolveMetadata: {
+            /** Format: date-time */
+            solved_at: string | null;
+            /** Format: uuid */
+            submission_id: string | null;
+            evidence_digest: string;
+        };
+        ArenaCorrectionPatch: {
+            state: components["schemas"]["ArenaGameState"];
+            reason: components["schemas"]["ArenaGameResultReason"];
+            /** Format: uuid */
+            winner_id: string | null;
+            solve_metadata: components["schemas"]["ArenaCorrectionSolveMetadata"];
+        };
+        /** @enum {string} */
+        ArenaArtifactKind: "game_result" | "series_score" | "series_result" | "standings" | "golden_group" | "top_four" | "bracket" | "champion";
+        /** @description Immutable revision metadata for a derived Arena artifact. */
+        ArenaProjectionRevision: {
+            /** Format: uuid */
+            readonly id: string;
+            /** Format: uuid */
+            readonly tournament_id: string;
+            artifact_kind: components["schemas"]["ArenaArtifactKind"];
+            /** Format: uuid */
+            readonly artifact_id: string;
+            /** Format: int32 */
+            readonly revision_no: number;
+            /** Format: uuid */
+            readonly previous_revision_id?: string | null;
+            readonly payload_digest: string;
+            /** Format: date-time */
+            readonly created_at: string;
+        };
+        /** @description Digest-only projection mutation intent. Raw projection payload is not exposed. */
+        ArenaCorrectionProjectionIntent: {
+            expected_revision: components["schemas"]["ArenaProjectionRevision"];
+            /** Format: uuid */
+            next_revision_id: string;
+            /** Format: uuid */
+            decision_id: string;
+            payload_digest: string;
+        };
+        /** @description Complete compare-and-set evidence for releasing an undisclosed, unused reservation. */
+        ArenaCorrectionUnlockIntent: {
+            /** Format: uuid */
+            reservation_id: string;
+            /** Format: uuid */
+            tournament_id: string;
+            /** Format: uuid */
+            owner_id: string;
+            /** Format: uuid */
+            readonly source_revision_id: string;
+            /** Format: int64 */
+            expected_revision: number;
+            expected_used: boolean;
+            expected_disclosed: boolean;
+            readonly evidence_digest: string;
+            readonly binding_digest: string;
+        };
+        ArenaOperatorCorrectionRequest: {
+            /** Format: int64 */
+            expected_projection_revision: number;
+            confirmed: boolean;
+            reason: components["schemas"]["ArenaCorrectionReason"];
+            explanation: string;
+            fields: components["schemas"]["ArenaCorrectionField"][];
+            patch: components["schemas"]["ArenaCorrectionPatch"];
+            projection_intents?: components["schemas"]["ArenaCorrectionProjectionIntent"][];
+            unlock_intents?: components["schemas"]["ArenaCorrectionUnlockIntent"][];
+        };
+        ArenaCorrectionProjectionSupersession: {
+            artifact_kind: components["schemas"]["ArenaArtifactKind"];
+            /** Format: uuid */
+            artifact_id: string;
+            /** Format: uuid */
+            readonly previous_revision_id: string;
+            /** Format: uuid */
+            readonly successor_revision_id: string;
+            /** Format: uuid */
+            readonly previous_decision_id: string | null;
+            /** Format: uuid */
+            readonly replacement_decision_id: string;
+        };
+        /** @description Immutable correction record. All projection and unlock evidence is retained by value. */
+        ArenaCorrectionEvidence: {
+            /** Format: uuid */
+            readonly command_id: string;
+            /** Format: uuid */
+            readonly tournament_id: string;
+            /** Format: uuid */
+            readonly series_id: string;
+            /** Format: uuid */
+            readonly game_id: string;
+            /** Format: uuid */
+            readonly operator_id: string;
+            reason: components["schemas"]["ArenaCorrectionReason"];
+            readonly fields: components["schemas"]["ArenaCorrectionField"][];
+            /** Format: date-time */
+            readonly requested_at: string;
+            readonly validation_digest: string;
+            readonly supersessions: components["schemas"]["ArenaCorrectionProjectionSupersession"][];
+            readonly unlock_intents: components["schemas"]["ArenaCorrectionUnlockIntent"][];
+        };
+        /** @enum {string} */
+        ArenaAuditEntityKind: "game_attempt" | "series";
+        /** @enum {string} */
+        ArenaResultActorKind: "server" | "operator";
+        /** @description Stable keyset cursor ordered by occurrence time, audit event ID, and immutable result revision ID. */
+        ArenaAuditCursor: {
+            /** Format: date-time */
+            occurred_at: string;
+            /** Format: uuid */
+            audit_event_id: string;
+            /** Format: uuid */
+            revision_id: string;
+        };
+        /** @description Redacted immutable audit projection. Raw internal payload is never included. */
+        ArenaAuditEvent: {
+            /** Format: uuid */
+            readonly audit_event_id: string;
+            /** Format: uuid */
+            readonly tournament_id: string;
+            /** Format: uuid */
+            readonly roster_id: string;
+            /** Format: uuid */
+            readonly series_id: string;
+            /** Format: uuid */
+            readonly result_event_id: string;
+            actor_kind: components["schemas"]["ArenaResultActorKind"];
+            /** Format: uuid */
+            readonly actor_id: string | null;
+            readonly event_type: string;
+            readonly redacted_payload: Record<string, never>;
+            /** Format: date-time */
+            readonly occurred_at: string;
+            /** Format: date-time */
+            readonly created_at: string;
+            readonly result_state: string;
+            readonly result_reason: string;
+            /** Format: uuid */
+            readonly winner_id: string | null;
+            /** Format: uuid */
+            readonly official_result_revision_id: string;
+            entity_kind: components["schemas"]["ArenaAuditEntityKind"];
+            /** Format: uuid */
+            readonly entity_id: string;
+            /** Format: int64 */
+            readonly revision_number: number;
+            readonly is_current: boolean;
+            readonly is_superseded: boolean;
+        };
+        ArenaAuditPage: {
+            events: components["schemas"]["ArenaAuditEvent"][];
+            next_cursor: components["schemas"]["ArenaAuditCursor"] | null;
+        };
+        /** @description Canonical redacted JSON audit bundle containing at most 4096 events. */
+        ArenaIncidentBundle: {
+            /** Format: uuid */
+            readonly tournament_id: string;
+            /** Format: int64 */
+            readonly projection_revision: number;
+            /** Format: date-time */
+            readonly generated_at: string;
+            /**
+             * Format: byte
+             * @description Base64-encoded canonical JSON containing no more than 4096 redacted audit events.
+             */
+            readonly canonical_content: string;
+            /** @enum {string} */
+            readonly canonical_content_type: "application/json";
+            /** @enum {string} */
+            readonly canonical_content_encoding: "base64";
+            /** Format: int64 */
+            readonly canonical_content_length: number;
+            readonly sha256: string;
+        };
+        ArenaOperatorRecoveryCursor: {
+            /** Format: int64 */
+            projection_revision: number;
+            /** Format: int64 */
+            authority_revision: number;
+            /** Format: int64 */
+            audit_sequence: number;
+        };
+        /** @enum {string} */
+        ArenaSeriesFormat: "bo1" | "bo3";
+        /** @enum {string} */
+        ArenaSeriesState: "planned" | "locked" | "draft" | "ready" | "active" | "replay_required" | "technical_pause" | "completed" | "cancelled";
+        ArenaSeriesScore: {
+            /** Format: int32 */
+            first_participant_wins: number;
+            /** Format: int32 */
+            second_participant_wins: number;
+        };
+        /** @description One attempt in a stable Series slot. Replays get a new Game ID and retain the slot_id. */
+        ArenaGame: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            slot_id: string;
+            /** Format: int32 */
+            attempt_no: number;
+            state: components["schemas"]["ArenaGameState"];
+            result_reason: components["schemas"]["ArenaGameResultReason"] | null;
+            /** Format: uuid */
+            winner_id: string | null;
+            /** Format: uuid */
+            readonly result_revision_id: string | null;
+        };
+        ArenaGameSlot: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            series_id: string;
+            /** Format: int32 */
+            position: number;
+            category: components["schemas"]["ArenaCategory"];
+            score_before: components["schemas"]["ArenaSeriesScore"];
+            attempts: components["schemas"]["ArenaGame"][];
+        };
+        ArenaSeries: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            tournament_id: string;
+            /** Format: uuid */
+            first_participant_id: string;
+            /** Format: uuid */
+            second_participant_id: string;
+            format: components["schemas"]["ArenaSeriesFormat"];
+            state: components["schemas"]["ArenaSeriesState"];
+            score: components["schemas"]["ArenaSeriesScore"];
+            /** Format: uuid */
+            winner_id: string | null;
+            slots: components["schemas"]["ArenaGameSlot"][];
+            /** Format: uuid */
+            readonly current_score_revision_id: string | null;
+            /** Format: uuid */
+            readonly current_result_revision_id: string | null;
+        };
+        ArenaPauseSeries: {
+            series: components["schemas"]["ArenaSeries"];
+            /** Format: int64 */
+            readonly revision: number;
+            /** Format: uuid */
+            readonly current_game_id: string | null;
+            resume_state: components["schemas"]["ArenaSeriesState"] | null;
+        };
+        ArenaPauseGame: {
+            /** Format: uuid */
+            series_id: string;
+            game: components["schemas"]["ArenaGame"];
+            /** Format: int64 */
+            readonly revision: number;
+            /** Format: date-time */
+            readonly deadline: string | null;
+            resume_state: components["schemas"]["ArenaGameState"] | null;
+        };
+        /** @enum {string} */
+        ArenaDraftState: "active" | "completed";
+        /** @enum {string} */
+        ArenaDraftActionType: "ban" | "pick";
+        ArenaDraftAction: {
+            /** Format: int32 */
+            turn: number;
+            /** Format: uuid */
+            actor_id: string;
+            action: components["schemas"]["ArenaDraftActionType"];
+            category: components["schemas"]["ArenaCategory"];
+            /** Format: date-time */
+            readonly occurred_at: string;
+            /** Format: date-time */
+            readonly turn_deadline: string;
+        };
+        ArenaDraft: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            series_id: string;
+            format: components["schemas"]["ArenaSeriesFormat"];
+            /** Format: uuid */
+            first_participant_id: string;
+            /** Format: uuid */
+            second_participant_id: string;
+            pool: components["schemas"]["ArenaCategory"][];
+            state: components["schemas"]["ArenaDraftState"];
+            /** Format: int32 */
+            turn: number;
+            /** Format: date-time */
+            turn_deadline: string | null;
+            actions: components["schemas"]["ArenaDraftAction"][];
+            selected_categories: components["schemas"]["ArenaCategory"][];
+        };
+        /** @enum {string} */
+        ArenaPresenceState: "connected" | "disconnected";
+        ArenaPresence: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            tournament_id: string;
+            /** Format: uuid */
+            roster_id: string;
+            /** Format: uuid */
+            series_id: string;
+            /** Format: uuid */
+            participant_id: string;
+            state: components["schemas"]["ArenaPresenceState"];
+            /** Format: int64 */
+            readonly presence_epoch: number;
+            /** Format: int64 */
+            readonly revision: number;
+            /** Format: date-time */
+            readonly connected_at: string;
+            /** Format: date-time */
+            readonly disconnected_at: string | null;
+            /** Format: date-time */
+            readonly updated_at: string;
+        };
+        /** @enum {string} */
+        ArenaReconnectState: "open" | "reconnected" | "expired" | "cancelled";
+        /** @description Durable reconnect interval. Continued intervals preserve their lineage across a tournament pause. */
+        ArenaReconnectInterval: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            pause_id: string;
+            /** Format: uuid */
+            roster_id: string;
+            /** Format: uuid */
+            series_id: string;
+            /** Format: uuid */
+            game_id: string;
+            /** Format: uuid */
+            participant_id: string;
+            /** Format: int64 */
+            readonly presence_epoch: number;
+            /** Format: int32 */
+            readonly number: number;
+            /** Format: int32 */
+            readonly continuation_number: number;
+            /** Format: uuid */
+            readonly continued_from_id: string | null;
+            /** Format: uuid */
+            readonly suspended_by_pause_id: string | null;
+            state: components["schemas"]["ArenaReconnectState"];
+            /** Format: date-time */
+            readonly opened_at: string;
+            /** Format: date-time */
+            readonly deadline: string;
+            /** Format: date-time */
+            readonly closed_at: string | null;
+            /** Format: int64 */
+            readonly revision: number;
+            /** Format: date-time */
+            readonly updated_at: string;
+        };
+        ArenaPauseReconnectCounter: {
+            /** Format: uuid */
+            pause_id: string;
+            /** Format: uuid */
+            roster_id: string;
+            /** Format: uuid */
+            participant_id: string;
+            /** Format: int32 */
+            readonly limit: number;
+            /** Format: int32 */
+            readonly used: number;
+            /** Format: int64 */
+            readonly revision: number;
+        };
+        /** @enum {string} */
+        ArenaPauseDeadlineKind: "ready_window" | "game" | "draft";
+        ArenaFrozenDeadline: {
+            kind: components["schemas"]["ArenaPauseDeadlineKind"];
+            /** Format: uuid */
+            owner_id: string;
+            /** Format: date-time */
+            readonly original_deadline: string;
+            /** Format: date-time */
+            readonly frozen_at: string;
+            /** Format: int64 */
+            readonly remaining_ms: number;
+            /** Format: date-time */
+            readonly resumed_at: string | null;
+            /** Format: date-time */
+            readonly resumed_deadline: string | null;
+            /** Format: int64 */
+            readonly revision: number;
+        };
+        /** @description Durable pause snapshot. Runtime timers and process-local pause authority are excluded. */
+        ArenaPauseGraph: {
+            /** Format: uuid */
+            tournament_id: string;
+            /** Format: uuid */
+            roster_id: string;
+            wave: components["schemas"]["ArenaWave"];
+            series: components["schemas"]["ArenaPauseSeries"][];
+            games: components["schemas"]["ArenaPauseGame"][];
+            draft: components["schemas"]["ArenaDraft"] | null;
+            presence: components["schemas"]["ArenaPresence"][];
+            reconnect: components["schemas"]["ArenaReconnectInterval"][];
+            counters: components["schemas"]["ArenaPauseReconnectCounter"][];
+            frozen_deadlines: components["schemas"]["ArenaFrozenDeadline"][];
+            /** Format: uuid */
+            active_pause_id: string | null;
+            /** Format: date-time */
+            readonly paused_at: string | null;
+            readonly deadlines_suppressed: boolean;
+            /** Format: int64 */
+            readonly graph_revision: number;
+            /** Format: int64 */
+            readonly terminal_action_revision: number;
+        };
+        ArenaOperatorRecoverySnapshot: {
+            tournament: components["schemas"]["ArenaTournament"];
+            roster: components["schemas"]["ArenaRoster"];
+            waves: components["schemas"]["ArenaWave"][];
+            series: components["schemas"]["ArenaSeries"][];
+            pause_graph: components["schemas"]["ArenaPauseGraph"] | null;
+            next_cursor: components["schemas"]["ArenaOperatorRecoveryCursor"];
+        };
+        ArenaParticipantLobbySeries: {
+            /** Format: uuid */
+            series_id: string;
+            state: components["schemas"]["ArenaSeriesState"];
+            format: components["schemas"]["ArenaSeriesFormat"];
+            opponent_display_name: string;
+            /** Format: uuid */
+            wave_id: string;
+        };
+        ArenaParticipantLobbyResponse: {
+            /** Format: uuid */
+            tournament_id: string;
+            state: components["schemas"]["ArenaTournamentState"];
+            /** Format: int64 */
+            projection_revision: number;
+            roster_locked: boolean;
+            series: components["schemas"]["ArenaParticipantLobbySeries"][];
+        };
+        /** @enum {string} */
+        ArenaTaskKind: "normal" | "golden";
+        /** @enum {string} */
+        ArenaDifficulty: "easy" | "medium" | "hard";
+        /** @description Public immutable task snapshot. Private flag material and undisclosed reserves are excluded. */
+        ArenaTaskSnapshot: {
+            /** Format: uuid */
+            snapshot_id: string;
+            /** Format: uuid */
+            task_id: string;
+            /** Format: int32 */
+            version: number;
+            kind: components["schemas"]["ArenaTaskKind"];
+            title: string;
+            description: string;
+            category: components["schemas"]["ArenaCategory"];
+            difficulty: components["schemas"]["ArenaDifficulty"];
+            /** Format: int32 */
+            time_limit: number;
+            hints: string[];
+            task_url?: string | null;
+            /** Format: uri */
+            source_file_url?: string | null;
+        };
+        ArenaDeliveryReceipt: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            assignment_id: string;
+            /** Format: uuid */
+            attempt_id: string;
+            /** Format: uuid */
+            participant_id: string;
+            /** Format: uuid */
+            snapshot_id: string;
+            /** Format: uuid */
+            task_id: string;
+            /** Format: date-time */
+            readonly delivered_at: string;
+        };
+        ArenaAssignment: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            attempt_id: string;
+            participant_ids: string[];
+            active_snapshot: components["schemas"]["ArenaTaskSnapshot"];
+            /** Format: int32 */
+            undisclosed_reserve_count: number;
+            receipts: components["schemas"]["ArenaDeliveryReceipt"][];
+        };
+        ArenaParticipantAssignmentResponse: {
+            /** Format: uuid */
+            tournament_id: string;
+            /** Format: int64 */
+            projection_revision: number;
+            assignment: components["schemas"]["ArenaAssignment"];
+        };
+        ArenaParticipantReadyRequest: {
+            /** Format: int64 */
+            expected_projection_revision: number;
+            ready: boolean;
+        };
+        /** @enum {string} */
+        ArenaReadinessEventType: "ready" | "cleared";
+        ArenaReadinessEvent: {
+            /** Format: uuid */
+            command_id: string;
+            /** Format: uuid */
+            wave_id: string;
+            /** Format: uuid */
+            window_id: string;
+            /** Format: uuid */
+            participant_id: string;
+            type: components["schemas"]["ArenaReadinessEventType"];
+            /** Format: date-time */
+            readonly occurred_at: string;
+        };
+        ArenaParticipantDraftActionRequest: {
+            /** Format: int64 */
+            expected_projection_revision: number;
+            action: components["schemas"]["ArenaDraftActionType"];
+            category: components["schemas"]["ArenaCategory"];
+        };
+        ArenaParticipantSubmissionRequest: {
+            /** Format: int64 */
+            expected_projection_revision: number;
+            submitted_flag: string;
+        };
+        ArenaSubmissionScope: {
+            /** Format: uuid */
+            wave_id: string;
+            /** Format: uuid */
+            tournament_id: string;
+            /** Format: uuid */
+            series_id: string;
+            /** Format: uuid */
+            slot_id: string;
+            /** Format: uuid */
+            game_id: string;
+            /** Format: uuid */
+            assignment_id: string;
+        };
+        ArenaSubmissionRecord: {
+            scope: components["schemas"]["ArenaSubmissionScope"];
+            /** Format: uuid */
+            command_id: string;
+            /** Format: uuid */
+            participant_id: string;
+            /** Format: int64 */
+            sequence: number;
+            /** Format: date-time */
+            readonly committed_at: string;
+            readonly correct: boolean;
+            /** Format: uuid */
+            snapshot_id: string;
+            /** Format: uuid */
+            task_id: string;
+            readonly content_digest: string;
+        };
+        ArenaParticipantSubmissionResponse: {
+            /** Format: int64 */
+            projection_revision: number;
+            submission: components["schemas"]["ArenaSubmissionRecord"];
+        };
+        ArenaParticipantSurrenderRequest: {
+            /** Format: int64 */
+            expected_projection_revision: number;
+            confirmed: boolean;
+            reason?: string;
+        };
+        /** @enum {string} */
+        ArenaOfficialResultSubjectKind: "game" | "series";
+        /** @enum {string} */
+        ArenaSeriesResultReason: "score_complete" | "operator_correction" | "series_cancelled" | "tournament_cancelled";
+        /** @description Immutable official result revision for one Game or Series. */
+        ArenaOfficialResultRevision: {
+            /** Format: uuid */
+            readonly id: string;
+            /** Format: uuid */
+            readonly previous_revision_id: string | null;
+            /** Format: int32 */
+            readonly ordinal: number;
+            /** Format: uuid */
+            readonly command_id: string;
+            subject_kind: components["schemas"]["ArenaOfficialResultSubjectKind"];
+            /** Format: uuid */
+            tournament_id: string;
+            /** Format: uuid */
+            series_id: string;
+            /** Format: uuid */
+            game_id: string | null;
+            actor_kind: components["schemas"]["ArenaResultActorKind"];
+            /** Format: uuid */
+            actor_id: string | null;
+            game_state: components["schemas"]["ArenaGameState"] | null;
+            game_reason: components["schemas"]["ArenaGameResultReason"] | null;
+            series_state: components["schemas"]["ArenaSeriesState"] | null;
+            series_reason: components["schemas"]["ArenaSeriesResultReason"] | null;
+            /** Format: uuid */
+            winner_id: string | null;
+            /** Format: uuid */
+            score_revision_id: string | null;
+            /** Format: uuid */
+            readonly source_projection_revision_id: string;
+            /** Format: date-time */
+            readonly recorded_at: string;
+        };
+        ArenaParticipantPostSeriesRequest: {
+            /** Format: int64 */
+            expected_projection_revision: number;
+            /** @enum {string} */
+            action: "acknowledge_result" | "request_next_assignment" | "leave_lobby";
+        };
+        ArenaParticipantPostSeriesResponse: {
+            /** Format: uuid */
+            series_id: string;
+            /** Format: int64 */
+            projection_revision: number;
+            /** @enum {string} */
+            accepted_action: "acknowledge_result" | "request_next_assignment" | "leave_lobby";
+        };
+        ArenaParticipantRecoveryCursor: {
+            /** Format: int64 */
+            projection_revision: number;
+            /** Format: int64 */
+            participant_view_revision: number;
+            /** Format: int64 */
+            event_sequence: number;
+        };
+        ArenaParticipantRecoverySnapshot: {
+            /** Format: uuid */
+            tournament_id: string;
+            /** Format: int64 */
+            projection_revision: number;
+            lobby: components["schemas"]["ArenaParticipantLobbyResponse"];
+            series: components["schemas"]["ArenaSeries"] | null;
+            wave: components["schemas"]["ArenaWave"] | null;
+            draft: components["schemas"]["ArenaDraft"] | null;
+            assignment: components["schemas"]["ArenaAssignment"] | null;
+            next_cursor: components["schemas"]["ArenaParticipantRecoveryCursor"];
+        };
+        ArenaPublicTournamentResponse: {
+            /** Format: uuid */
+            tournament_id: string;
+            preset: components["schemas"]["ArenaPreset"];
+            state: components["schemas"]["ArenaTournamentState"];
+            /** Format: int32 */
+            roster_size: number;
+            /** Format: date-time */
+            started_at: string | null;
+            /** Format: date-time */
+            finished_at: string | null;
+            /** Format: int64 */
+            projection_revision: number;
+        };
+        ArenaPublicScoreboardEntry: {
+            /** Format: int32 */
+            rank: number;
+            display_name: string;
+            /** Format: int32 */
+            points: number;
+            /** Format: int32 */
+            buchholz: number;
+            /** Format: int64 */
+            effective_time_ms: number;
+        };
+        ArenaPublicScoreboardResponse: {
+            /** Format: uuid */
+            tournament_id: string;
+            /** Format: int64 */
+            projection_revision: number;
+            entries: components["schemas"]["ArenaPublicScoreboardEntry"][];
+        };
+        ArenaPublicBracketMatch: {
+            /** @enum {string} */
+            stage: "semifinal" | "final";
+            /** Format: int32 */
+            position: number;
+            first_display_name: string;
+            second_display_name: string;
+            score: components["schemas"]["ArenaSeriesScore"];
+            state: components["schemas"]["ArenaSeriesState"];
+        };
+        ArenaPublicBracketResponse: {
+            /** Format: uuid */
+            tournament_id: string;
+            /** Format: int64 */
+            projection_revision: number;
+            matches: components["schemas"]["ArenaPublicBracketMatch"][];
+        };
+        ArenaPublicDraftAction: {
+            /** Format: int32 */
+            turn: number;
+            actor_display_name: string;
+            action: components["schemas"]["ArenaDraftActionType"];
+            category: components["schemas"]["ArenaCategory"];
+            /** Format: date-time */
+            occurred_at: string;
+        };
+        ArenaPublicLiveDraftResponse: {
+            /** Format: uuid */
+            tournament_id: string;
+            /** Format: uuid */
+            series_id: string;
+            /** Format: int64 */
+            projection_revision: number;
+            format: components["schemas"]["ArenaSeriesFormat"];
+            state: components["schemas"]["ArenaDraftState"];
+            pool: components["schemas"]["ArenaCategory"][];
+            actions: components["schemas"]["ArenaPublicDraftAction"][];
+            selected_categories: components["schemas"]["ArenaCategory"][];
+        };
+        ArenaPublicRecoveryCursor: {
+            /** Format: int64 */
+            projection_revision: number;
+            /** Format: int64 */
+            event_sequence: number;
+        };
+        ArenaPublicRecoverySnapshot: {
+            tournament: components["schemas"]["ArenaPublicTournamentResponse"];
+            scoreboard: components["schemas"]["ArenaPublicScoreboardResponse"];
+            bracket: components["schemas"]["ArenaPublicBracketResponse"];
+            live_draft: components["schemas"]["ArenaPublicLiveDraftResponse"] | null;
+            next_cursor: components["schemas"]["ArenaPublicRecoveryCursor"];
+        };
     };
-    responses: never;
-    parameters: never;
+    responses: {
+        /** @description The authenticated session is missing, invalid, or expired. */
+        ArenaUnauthorizedResponse: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["ProblemDetails"];
+            };
+        };
+        /** @description The authenticated actor lacks access to this tournament or role. */
+        ArenaForbiddenResponse: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["ProblemDetails"];
+            };
+        };
+        /** @description The expected Arena projection revision is stale. */
+        ArenaRevisionConflictResponse: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ArenaRevisionConflict"];
+            };
+        };
+        /** @description The requested Arena resource was not found. */
+        ArenaNotFoundResponse: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["ProblemDetails"];
+            };
+        };
+    };
+    parameters: {
+        ArenaOperatorTournamentState: components["schemas"]["ArenaTournamentState"];
+        ArenaOperatorListCursor: string;
+        ArenaOperatorListPageSize: number;
+        ArenaIdempotencyKey: string;
+        /** @description Required only for cookie-authenticated browser admin requests. */
+        ArenaAdminCSRFToken: string;
+        ArenaTournamentId: string;
+        ArenaWaveId: string;
+        ArenaSeriesId: string;
+        ArenaGameId: string;
+        ArenaAuditTournamentId: string;
+        ArenaAuditEntityKind: components["schemas"]["ArenaAuditEntityKind"];
+        ArenaAuditEntityId: string;
+        ArenaAuditEventType: string;
+        ArenaAuditActorKind: components["schemas"]["ArenaResultActorKind"];
+        ArenaAuditActorId: string;
+        ArenaAuditResultReason: string;
+        ArenaAuditOccurredFrom: string;
+        ArenaAuditOccurredTo: string;
+        ArenaAuditCursor: components["schemas"]["ArenaAuditCursor"];
+        ArenaAuditPageSize: number;
+        ArenaOperatorCursor: components["schemas"]["ArenaOperatorRecoveryCursor"];
+        ArenaAssignmentId: string;
+        ArenaCSRFToken: string;
+        ArenaParticipantCursor: components["schemas"]["ArenaParticipantRecoveryCursor"];
+        ArenaPublicCursor: components["schemas"]["ArenaPublicRecoveryCursor"];
+    };
     requestBodies: never;
     headers: never;
     pathItems: never;
@@ -1560,6 +3208,819 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
+        };
+    };
+    listArenaOperatorTournaments: {
+        parameters: {
+            query?: {
+                state?: components["parameters"]["ArenaOperatorTournamentState"];
+                cursor?: components["parameters"]["ArenaOperatorListCursor"];
+                page_size?: components["parameters"]["ArenaOperatorListPageSize"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Operator tournament page. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArenaOperatorTournamentList"];
+                };
+            };
+            401: components["responses"]["ArenaUnauthorizedResponse"];
+            403: components["responses"]["ArenaForbiddenResponse"];
+        };
+    };
+    createArenaTournament: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["ArenaIdempotencyKey"];
+                /** @description Required only for cookie-authenticated browser admin requests. */
+                "X-CSRF-Token"?: components["parameters"]["ArenaAdminCSRFToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ArenaCreateTournamentRequest"];
+            };
+        };
+        responses: {
+            /** @description Tournament created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArenaTournament"];
+                };
+            };
+            401: components["responses"]["ArenaUnauthorizedResponse"];
+            403: components["responses"]["ArenaForbiddenResponse"];
+            409: components["responses"]["ArenaRevisionConflictResponse"];
+        };
+    };
+    getArenaOperatorRoster: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tournament_id: components["parameters"]["ArenaTournamentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Tournament roster. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArenaRoster"];
+                };
+            };
+            401: components["responses"]["ArenaUnauthorizedResponse"];
+            403: components["responses"]["ArenaForbiddenResponse"];
+            404: components["responses"]["ArenaNotFoundResponse"];
+        };
+    };
+    replaceArenaTournamentRoster: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["ArenaIdempotencyKey"];
+                /** @description Required only for cookie-authenticated browser admin requests. */
+                "X-CSRF-Token"?: components["parameters"]["ArenaAdminCSRFToken"];
+            };
+            path: {
+                tournament_id: components["parameters"]["ArenaTournamentId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ArenaReplaceRosterRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated roster. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArenaRoster"];
+                };
+            };
+            401: components["responses"]["ArenaUnauthorizedResponse"];
+            403: components["responses"]["ArenaForbiddenResponse"];
+            404: components["responses"]["ArenaNotFoundResponse"];
+            409: components["responses"]["ArenaRevisionConflictResponse"];
+        };
+    };
+    runArenaRosterPreflight: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["ArenaIdempotencyKey"];
+                /** @description Required only for cookie-authenticated browser admin requests. */
+                "X-CSRF-Token"?: components["parameters"]["ArenaAdminCSRFToken"];
+            };
+            path: {
+                tournament_id: components["parameters"]["ArenaTournamentId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ArenaPreflightRequest"];
+            };
+        };
+        responses: {
+            /** @description Immutable preflight report. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArenaPreflightReport"];
+                };
+            };
+            401: components["responses"]["ArenaUnauthorizedResponse"];
+            403: components["responses"]["ArenaForbiddenResponse"];
+            404: components["responses"]["ArenaNotFoundResponse"];
+            409: components["responses"]["ArenaRevisionConflictResponse"];
+        };
+    };
+    lockArenaTournamentRoster: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["ArenaIdempotencyKey"];
+                /** @description Required only for cookie-authenticated browser admin requests. */
+                "X-CSRF-Token"?: components["parameters"]["ArenaAdminCSRFToken"];
+            };
+            path: {
+                tournament_id: components["parameters"]["ArenaTournamentId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ArenaLockRosterRequest"];
+            };
+        };
+        responses: {
+            /** @description Locked roster. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArenaRoster"];
+                };
+            };
+            401: components["responses"]["ArenaUnauthorizedResponse"];
+            403: components["responses"]["ArenaForbiddenResponse"];
+            404: components["responses"]["ArenaNotFoundResponse"];
+            409: components["responses"]["ArenaRevisionConflictResponse"];
+        };
+    };
+    unlockArenaTournamentRoster: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["ArenaIdempotencyKey"];
+                /** @description Required only for cookie-authenticated browser admin requests. */
+                "X-CSRF-Token"?: components["parameters"]["ArenaAdminCSRFToken"];
+            };
+            path: {
+                tournament_id: components["parameters"]["ArenaTournamentId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ArenaUnlockRosterRequest"];
+            };
+        };
+        responses: {
+            /** @description Unlocked roster. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArenaRoster"];
+                };
+            };
+            401: components["responses"]["ArenaUnauthorizedResponse"];
+            403: components["responses"]["ArenaForbiddenResponse"];
+            404: components["responses"]["ArenaNotFoundResponse"];
+            409: components["responses"]["ArenaRevisionConflictResponse"];
+        };
+    };
+    configureArenaTournamentPairings: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["ArenaIdempotencyKey"];
+                /** @description Required only for cookie-authenticated browser admin requests. */
+                "X-CSRF-Token"?: components["parameters"]["ArenaAdminCSRFToken"];
+            };
+            path: {
+                tournament_id: components["parameters"]["ArenaTournamentId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ArenaPairingConfigurationRequest"];
+            };
+        };
+        responses: {
+            /** @description Configured Swiss round. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArenaSwissRound"];
+                };
+            };
+            401: components["responses"]["ArenaUnauthorizedResponse"];
+            403: components["responses"]["ArenaForbiddenResponse"];
+            404: components["responses"]["ArenaNotFoundResponse"];
+            409: components["responses"]["ArenaRevisionConflictResponse"];
+        };
+    };
+    applyArenaTournamentAction: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["ArenaIdempotencyKey"];
+                /** @description Required only for cookie-authenticated browser admin requests. */
+                "X-CSRF-Token"?: components["parameters"]["ArenaAdminCSRFToken"];
+            };
+            path: {
+                tournament_id: components["parameters"]["ArenaTournamentId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ArenaTournamentActionRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated tournament. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArenaTournament"];
+                };
+            };
+            401: components["responses"]["ArenaUnauthorizedResponse"];
+            403: components["responses"]["ArenaForbiddenResponse"];
+            404: components["responses"]["ArenaNotFoundResponse"];
+            409: components["responses"]["ArenaRevisionConflictResponse"];
+        };
+    };
+    controlArenaTournamentWave: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["ArenaIdempotencyKey"];
+                /** @description Required only for cookie-authenticated browser admin requests. */
+                "X-CSRF-Token"?: components["parameters"]["ArenaAdminCSRFToken"];
+            };
+            path: {
+                tournament_id: components["parameters"]["ArenaTournamentId"];
+                wave_id: components["parameters"]["ArenaWaveId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ArenaWaveControlRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated Wave. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArenaWave"];
+                };
+            };
+            401: components["responses"]["ArenaUnauthorizedResponse"];
+            403: components["responses"]["ArenaForbiddenResponse"];
+            404: components["responses"]["ArenaNotFoundResponse"];
+            409: components["responses"]["ArenaRevisionConflictResponse"];
+        };
+    };
+    correctArenaGameResult: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["ArenaIdempotencyKey"];
+                /** @description Required only for cookie-authenticated browser admin requests. */
+                "X-CSRF-Token"?: components["parameters"]["ArenaAdminCSRFToken"];
+            };
+            path: {
+                tournament_id: components["parameters"]["ArenaTournamentId"];
+                series_id: components["parameters"]["ArenaSeriesId"];
+                game_id: components["parameters"]["ArenaGameId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ArenaOperatorCorrectionRequest"];
+            };
+        };
+        responses: {
+            /** @description Immutable correction evidence. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArenaCorrectionEvidence"];
+                };
+            };
+            401: components["responses"]["ArenaUnauthorizedResponse"];
+            403: components["responses"]["ArenaForbiddenResponse"];
+            404: components["responses"]["ArenaNotFoundResponse"];
+            409: components["responses"]["ArenaRevisionConflictResponse"];
+        };
+    };
+    listArenaOperatorAudit: {
+        parameters: {
+            query: {
+                tournament_id: components["parameters"]["ArenaAuditTournamentId"];
+                entity_kind?: components["parameters"]["ArenaAuditEntityKind"];
+                entity_id?: components["parameters"]["ArenaAuditEntityId"];
+                event_type?: components["parameters"]["ArenaAuditEventType"];
+                actor_kind?: components["parameters"]["ArenaAuditActorKind"];
+                actor_id?: components["parameters"]["ArenaAuditActorId"];
+                result_reason?: components["parameters"]["ArenaAuditResultReason"];
+                occurred_from?: components["parameters"]["ArenaAuditOccurredFrom"];
+                occurred_to?: components["parameters"]["ArenaAuditOccurredTo"];
+                cursor?: components["parameters"]["ArenaAuditCursor"];
+                page_size?: components["parameters"]["ArenaAuditPageSize"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Redacted audit page with a stable keyset cursor. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArenaAuditPage"];
+                };
+            };
+            401: components["responses"]["ArenaUnauthorizedResponse"];
+            403: components["responses"]["ArenaForbiddenResponse"];
+            404: components["responses"]["ArenaNotFoundResponse"];
+        };
+    };
+    exportArenaOperatorIncident: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tournament_id: components["parameters"]["ArenaTournamentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Incident bundle with generation time and SHA-256 metadata. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArenaIncidentBundle"];
+                };
+            };
+            401: components["responses"]["ArenaUnauthorizedResponse"];
+            403: components["responses"]["ArenaForbiddenResponse"];
+            404: components["responses"]["ArenaNotFoundResponse"];
+        };
+    };
+    getArenaOperatorSnapshot: {
+        parameters: {
+            query?: {
+                cursor?: components["parameters"]["ArenaOperatorCursor"];
+            };
+            header?: never;
+            path: {
+                tournament_id: components["parameters"]["ArenaTournamentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Operator recovery snapshot and authority cursor. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArenaOperatorRecoverySnapshot"];
+                };
+            };
+            401: components["responses"]["ArenaUnauthorizedResponse"];
+            403: components["responses"]["ArenaForbiddenResponse"];
+            404: components["responses"]["ArenaNotFoundResponse"];
+            409: components["responses"]["ArenaRevisionConflictResponse"];
+        };
+    };
+    getArenaParticipantLobby: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tournament_id: components["parameters"]["ArenaTournamentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Participant lobby view. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArenaParticipantLobbyResponse"];
+                };
+            };
+            401: components["responses"]["ArenaUnauthorizedResponse"];
+            403: components["responses"]["ArenaForbiddenResponse"];
+            404: components["responses"]["ArenaNotFoundResponse"];
+        };
+    };
+    getArenaParticipantAssignment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tournament_id: components["parameters"]["ArenaTournamentId"];
+                assignment_id: components["parameters"]["ArenaAssignmentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Private participant assignment. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArenaParticipantAssignmentResponse"];
+                };
+            };
+            401: components["responses"]["ArenaUnauthorizedResponse"];
+            403: components["responses"]["ArenaForbiddenResponse"];
+            404: components["responses"]["ArenaNotFoundResponse"];
+        };
+    };
+    setArenaParticipantReady: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["ArenaIdempotencyKey"];
+                "X-CSRF-Token": components["parameters"]["ArenaCSRFToken"];
+            };
+            path: {
+                tournament_id: components["parameters"]["ArenaTournamentId"];
+                wave_id: components["parameters"]["ArenaWaveId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ArenaParticipantReadyRequest"];
+            };
+        };
+        responses: {
+            /** @description Recorded readiness event. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArenaReadinessEvent"];
+                };
+            };
+            401: components["responses"]["ArenaUnauthorizedResponse"];
+            403: components["responses"]["ArenaForbiddenResponse"];
+            404: components["responses"]["ArenaNotFoundResponse"];
+            409: components["responses"]["ArenaRevisionConflictResponse"];
+        };
+    };
+    submitArenaParticipantDraftAction: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["ArenaIdempotencyKey"];
+                "X-CSRF-Token": components["parameters"]["ArenaCSRFToken"];
+            };
+            path: {
+                tournament_id: components["parameters"]["ArenaTournamentId"];
+                series_id: components["parameters"]["ArenaSeriesId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ArenaParticipantDraftActionRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated participant draft view. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArenaDraft"];
+                };
+            };
+            401: components["responses"]["ArenaUnauthorizedResponse"];
+            403: components["responses"]["ArenaForbiddenResponse"];
+            404: components["responses"]["ArenaNotFoundResponse"];
+            409: components["responses"]["ArenaRevisionConflictResponse"];
+        };
+    };
+    submitArenaParticipantFlag: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["ArenaIdempotencyKey"];
+                "X-CSRF-Token": components["parameters"]["ArenaCSRFToken"];
+            };
+            path: {
+                tournament_id: components["parameters"]["ArenaTournamentId"];
+                series_id: components["parameters"]["ArenaSeriesId"];
+                game_id: components["parameters"]["ArenaGameId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ArenaParticipantSubmissionRequest"];
+            };
+        };
+        responses: {
+            /** @description Redacted submission result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArenaParticipantSubmissionResponse"];
+                };
+            };
+            401: components["responses"]["ArenaUnauthorizedResponse"];
+            403: components["responses"]["ArenaForbiddenResponse"];
+            404: components["responses"]["ArenaNotFoundResponse"];
+            409: components["responses"]["ArenaRevisionConflictResponse"];
+        };
+    };
+    surrenderArenaParticipantSeries: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["ArenaIdempotencyKey"];
+                "X-CSRF-Token": components["parameters"]["ArenaCSRFToken"];
+            };
+            path: {
+                tournament_id: components["parameters"]["ArenaTournamentId"];
+                series_id: components["parameters"]["ArenaSeriesId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ArenaParticipantSurrenderRequest"];
+            };
+        };
+        responses: {
+            /** @description Official surrender result revision. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArenaOfficialResultRevision"];
+                };
+            };
+            401: components["responses"]["ArenaUnauthorizedResponse"];
+            403: components["responses"]["ArenaForbiddenResponse"];
+            404: components["responses"]["ArenaNotFoundResponse"];
+            409: components["responses"]["ArenaRevisionConflictResponse"];
+        };
+    };
+    applyArenaParticipantPostSeriesAction: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["ArenaIdempotencyKey"];
+                "X-CSRF-Token": components["parameters"]["ArenaCSRFToken"];
+            };
+            path: {
+                tournament_id: components["parameters"]["ArenaTournamentId"];
+                series_id: components["parameters"]["ArenaSeriesId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ArenaParticipantPostSeriesRequest"];
+            };
+        };
+        responses: {
+            /** @description Accepted post-Series action. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArenaParticipantPostSeriesResponse"];
+                };
+            };
+            401: components["responses"]["ArenaUnauthorizedResponse"];
+            403: components["responses"]["ArenaForbiddenResponse"];
+            404: components["responses"]["ArenaNotFoundResponse"];
+            409: components["responses"]["ArenaRevisionConflictResponse"];
+        };
+    };
+    getArenaParticipantSnapshot: {
+        parameters: {
+            query?: {
+                cursor?: components["parameters"]["ArenaParticipantCursor"];
+            };
+            header?: never;
+            path: {
+                tournament_id: components["parameters"]["ArenaTournamentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Participant recovery snapshot and cursor. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArenaParticipantRecoverySnapshot"];
+                };
+            };
+            401: components["responses"]["ArenaUnauthorizedResponse"];
+            403: components["responses"]["ArenaForbiddenResponse"];
+            404: components["responses"]["ArenaNotFoundResponse"];
+            409: components["responses"]["ArenaRevisionConflictResponse"];
+        };
+    };
+    getArenaPublicTournament: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tournament_id: components["parameters"]["ArenaTournamentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Allowlisted public tournament fields. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArenaPublicTournamentResponse"];
+                };
+            };
+            404: components["responses"]["ArenaNotFoundResponse"];
+        };
+    };
+    getArenaPublicScoreboard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tournament_id: components["parameters"]["ArenaTournamentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Allowlisted display names and scoring fields. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArenaPublicScoreboardResponse"];
+                };
+            };
+            404: components["responses"]["ArenaNotFoundResponse"];
+        };
+    };
+    getArenaPublicBracket: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tournament_id: components["parameters"]["ArenaTournamentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Allowlisted bracket display projection. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArenaPublicBracketResponse"];
+                };
+            };
+            404: components["responses"]["ArenaNotFoundResponse"];
+        };
+    };
+    getArenaPublicLiveDraft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tournament_id: components["parameters"]["ArenaTournamentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Allowlisted draft display data without private assignments. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArenaPublicLiveDraftResponse"];
+                };
+            };
+            404: components["responses"]["ArenaNotFoundResponse"];
+        };
+    };
+    getArenaPublicSnapshot: {
+        parameters: {
+            query?: {
+                cursor?: components["parameters"]["ArenaPublicCursor"];
+            };
+            header?: never;
+            path: {
+                tournament_id: components["parameters"]["ArenaTournamentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Public recovery snapshot and public cursor. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArenaPublicRecoverySnapshot"];
+                };
+            };
+            404: components["responses"]["ArenaNotFoundResponse"];
+            409: components["responses"]["ArenaRevisionConflictResponse"];
         };
     };
 }

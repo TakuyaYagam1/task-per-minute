@@ -25,15 +25,16 @@ type arenaSchemaDefinition struct {
 }
 
 type arenaSchemaProperty struct {
-	Type     string               `yaml:"type"`
-	Format   string               `yaml:"format"`
-	Ref      string               `yaml:"$ref"`
-	Nullable bool                 `yaml:"nullable"`
-	ReadOnly bool                 `yaml:"readOnly"`
-	Minimum  *int64               `yaml:"minimum"`
-	MinItems *int                 `yaml:"minItems"`
-	MaxItems *int                 `yaml:"maxItems"`
-	Items    *arenaSchemaProperty `yaml:"items"`
+	Type     string                `yaml:"type"`
+	Format   string                `yaml:"format"`
+	Ref      string                `yaml:"$ref"`
+	Nullable bool                  `yaml:"nullable"`
+	ReadOnly bool                  `yaml:"readOnly"`
+	Minimum  *int64                `yaml:"minimum"`
+	MinItems *int                  `yaml:"minItems"`
+	MaxItems *int                  `yaml:"maxItems"`
+	Items    *arenaSchemaProperty  `yaml:"items"`
+	AllOf    []arenaSchemaProperty `yaml:"allOf"`
 }
 
 func TestArenaTournamentSchemaSource(t *testing.T) {
@@ -173,7 +174,9 @@ func requireArenaRef(t *testing.T, schemas arenaSchemaSource, schemaName, proper
 func requireArenaNullableRef(t *testing.T, schemas arenaSchemaSource, schemaName, propertyName, ref string) {
 	t.Helper()
 	property := requireArenaProperty(t, schemas, schemaName, propertyName)
-	require.Equal(t, ref, property.Ref, schemaName+"."+propertyName)
+	require.Empty(t, property.Ref, schemaName+"."+propertyName+" must not use ignored $ref siblings")
+	require.Len(t, property.AllOf, 1, schemaName+"."+propertyName)
+	require.Equal(t, ref, property.AllOf[0].Ref, schemaName+"."+propertyName)
 	require.True(t, property.Nullable, schemaName+"."+propertyName)
 }
 

@@ -64,6 +64,87 @@ type ServerInterface interface {
 	// Upload a source-file ZIP (≤ 100 MB) and store it in SeaweedFS
 	// (POST /api/v1/admin/tasks/{id}/source)
 	UploadTaskSource(w http.ResponseWriter, r *http.Request, id openapi_types.UUID)
+	// Search the redacted Arena audit projection
+	// (GET /api/v1/arena/operator/audit)
+	ListArenaOperatorAudit(w http.ResponseWriter, r *http.Request, params ListArenaOperatorAuditParams)
+	// List Arena tournaments for the authenticated operator
+	// (GET /api/v1/arena/operator/tournaments)
+	ListArenaOperatorTournaments(w http.ResponseWriter, r *http.Request, params ListArenaOperatorTournamentsParams)
+	// Create an Arena tournament
+	// (POST /api/v1/arena/operator/tournaments)
+	CreateArenaTournament(w http.ResponseWriter, r *http.Request, params CreateArenaTournamentParams)
+	// Apply a tournament lifecycle operator action
+	// (POST /api/v1/arena/operator/tournaments/{tournament_id}/actions)
+	ApplyArenaTournamentAction(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId, params ApplyArenaTournamentActionParams)
+	// Export a canonical redacted Arena incident bundle
+	// (GET /api/v1/arena/operator/tournaments/{tournament_id}/incident-export)
+	ExportArenaOperatorIncident(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId)
+	// Configure a Swiss round and its category policy
+	// (POST /api/v1/arena/operator/tournaments/{tournament_id}/pairings)
+	ConfigureArenaTournamentPairings(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId, params ConfigureArenaTournamentPairingsParams)
+	// Read the operator roster projection
+	// (GET /api/v1/arena/operator/tournaments/{tournament_id}/roster)
+	GetArenaOperatorRoster(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId)
+	// Replace tournament roster entries before lock
+	// (PUT /api/v1/arena/operator/tournaments/{tournament_id}/roster)
+	ReplaceArenaTournamentRoster(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId, params ReplaceArenaTournamentRosterParams)
+	// Lock a preflight-approved tournament roster
+	// (POST /api/v1/arena/operator/tournaments/{tournament_id}/roster/lock)
+	LockArenaTournamentRoster(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId, params LockArenaTournamentRosterParams)
+	// Evaluate roster and runtime preflight checks
+	// (POST /api/v1/arena/operator/tournaments/{tournament_id}/roster/preflight)
+	RunArenaRosterPreflight(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId, params RunArenaRosterPreflightParams)
+	// Unlock a roster before tournament execution starts
+	// (POST /api/v1/arena/operator/tournaments/{tournament_id}/roster/unlock)
+	UnlockArenaTournamentRoster(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId, params UnlockArenaTournamentRosterParams)
+	// Correct an official Game result and dependent projections
+	// (POST /api/v1/arena/operator/tournaments/{tournament_id}/series/{series_id}/games/{game_id}/corrections)
+	CorrectArenaGameResult(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId, seriesId ArenaSeriesId, gameId ArenaGameId, params CorrectArenaGameResultParams)
+	// Recover the full operator tournament projection
+	// (GET /api/v1/arena/operator/tournaments/{tournament_id}/snapshot)
+	GetArenaOperatorSnapshot(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId, params GetArenaOperatorSnapshotParams)
+	// Open, start, pause, resume, complete, or cancel a Wave
+	// (POST /api/v1/arena/operator/tournaments/{tournament_id}/waves/{wave_id}/actions)
+	ControlArenaTournamentWave(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId, waveId ArenaWaveId, params ControlArenaTournamentWaveParams)
+	// Read the public tournament display projection
+	// (GET /api/v1/arena/public/tournaments/{tournament_id})
+	GetArenaPublicTournament(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId)
+	// Read the public Arena playoff bracket
+	// (GET /api/v1/arena/public/tournaments/{tournament_id}/bracket)
+	GetArenaPublicBracket(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId)
+	// Read the public live draft display projection
+	// (GET /api/v1/arena/public/tournaments/{tournament_id}/live-draft)
+	GetArenaPublicLiveDraft(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId)
+	// Read the public Arena scoreboard
+	// (GET /api/v1/arena/public/tournaments/{tournament_id}/scoreboard)
+	GetArenaPublicScoreboard(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId)
+	// Recover the public tournament display view
+	// (GET /api/v1/arena/public/tournaments/{tournament_id}/snapshot)
+	GetArenaPublicSnapshot(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId, params GetArenaPublicSnapshotParams)
+	// Read a private task assignment for the authenticated participant
+	// (GET /api/v1/arena/tournaments/{tournament_id}/participant/assignments/{assignment_id})
+	GetArenaParticipantAssignment(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId, assignmentId ArenaAssignmentId)
+	// Read the authenticated participant tournament lobby
+	// (GET /api/v1/arena/tournaments/{tournament_id}/participant/lobby)
+	GetArenaParticipantLobby(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId)
+	// Submit an authenticated participant draft action
+	// (POST /api/v1/arena/tournaments/{tournament_id}/participant/series/{series_id}/draft/actions)
+	SubmitArenaParticipantDraftAction(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId, seriesId ArenaSeriesId, params SubmitArenaParticipantDraftActionParams)
+	// Submit a secret for the authenticated participant Game
+	// (POST /api/v1/arena/tournaments/{tournament_id}/participant/series/{series_id}/games/{game_id}/submissions)
+	SubmitArenaParticipantFlag(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId, seriesId ArenaSeriesId, gameId ArenaGameId, params SubmitArenaParticipantFlagParams)
+	// Apply a post-Series participant action
+	// (POST /api/v1/arena/tournaments/{tournament_id}/participant/series/{series_id}/post-series)
+	ApplyArenaParticipantPostSeriesAction(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId, seriesId ArenaSeriesId, params ApplyArenaParticipantPostSeriesActionParams)
+	// Surrender the authenticated participant Series
+	// (POST /api/v1/arena/tournaments/{tournament_id}/participant/series/{series_id}/surrender)
+	SurrenderArenaParticipantSeries(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId, seriesId ArenaSeriesId, params SurrenderArenaParticipantSeriesParams)
+	// Recover the authenticated participant tournament view
+	// (GET /api/v1/arena/tournaments/{tournament_id}/participant/snapshot)
+	GetArenaParticipantSnapshot(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId, params GetArenaParticipantSnapshotParams)
+	// Set readiness for the authenticated participant
+	// (POST /api/v1/arena/tournaments/{tournament_id}/participant/waves/{wave_id}/ready)
+	SetArenaParticipantReady(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId, waveId ArenaWaveId, params SetArenaParticipantReadyParams)
 	// Read a duel state (for reconnect)
 	// (GET /api/v1/duels/{id})
 	GetDuel(w http.ResponseWriter, r *http.Request, id openapi_types.UUID)
@@ -175,6 +256,168 @@ func (_ Unimplemented) DownloadTaskSource(w http.ResponseWriter, r *http.Request
 // Upload a source-file ZIP (≤ 100 MB) and store it in SeaweedFS
 // (POST /api/v1/admin/tasks/{id}/source)
 func (_ Unimplemented) UploadTaskSource(w http.ResponseWriter, r *http.Request, id openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Search the redacted Arena audit projection
+// (GET /api/v1/arena/operator/audit)
+func (_ Unimplemented) ListArenaOperatorAudit(w http.ResponseWriter, r *http.Request, params ListArenaOperatorAuditParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List Arena tournaments for the authenticated operator
+// (GET /api/v1/arena/operator/tournaments)
+func (_ Unimplemented) ListArenaOperatorTournaments(w http.ResponseWriter, r *http.Request, params ListArenaOperatorTournamentsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Create an Arena tournament
+// (POST /api/v1/arena/operator/tournaments)
+func (_ Unimplemented) CreateArenaTournament(w http.ResponseWriter, r *http.Request, params CreateArenaTournamentParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Apply a tournament lifecycle operator action
+// (POST /api/v1/arena/operator/tournaments/{tournament_id}/actions)
+func (_ Unimplemented) ApplyArenaTournamentAction(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId, params ApplyArenaTournamentActionParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Export a canonical redacted Arena incident bundle
+// (GET /api/v1/arena/operator/tournaments/{tournament_id}/incident-export)
+func (_ Unimplemented) ExportArenaOperatorIncident(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Configure a Swiss round and its category policy
+// (POST /api/v1/arena/operator/tournaments/{tournament_id}/pairings)
+func (_ Unimplemented) ConfigureArenaTournamentPairings(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId, params ConfigureArenaTournamentPairingsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Read the operator roster projection
+// (GET /api/v1/arena/operator/tournaments/{tournament_id}/roster)
+func (_ Unimplemented) GetArenaOperatorRoster(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Replace tournament roster entries before lock
+// (PUT /api/v1/arena/operator/tournaments/{tournament_id}/roster)
+func (_ Unimplemented) ReplaceArenaTournamentRoster(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId, params ReplaceArenaTournamentRosterParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Lock a preflight-approved tournament roster
+// (POST /api/v1/arena/operator/tournaments/{tournament_id}/roster/lock)
+func (_ Unimplemented) LockArenaTournamentRoster(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId, params LockArenaTournamentRosterParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Evaluate roster and runtime preflight checks
+// (POST /api/v1/arena/operator/tournaments/{tournament_id}/roster/preflight)
+func (_ Unimplemented) RunArenaRosterPreflight(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId, params RunArenaRosterPreflightParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Unlock a roster before tournament execution starts
+// (POST /api/v1/arena/operator/tournaments/{tournament_id}/roster/unlock)
+func (_ Unimplemented) UnlockArenaTournamentRoster(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId, params UnlockArenaTournamentRosterParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Correct an official Game result and dependent projections
+// (POST /api/v1/arena/operator/tournaments/{tournament_id}/series/{series_id}/games/{game_id}/corrections)
+func (_ Unimplemented) CorrectArenaGameResult(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId, seriesId ArenaSeriesId, gameId ArenaGameId, params CorrectArenaGameResultParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Recover the full operator tournament projection
+// (GET /api/v1/arena/operator/tournaments/{tournament_id}/snapshot)
+func (_ Unimplemented) GetArenaOperatorSnapshot(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId, params GetArenaOperatorSnapshotParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Open, start, pause, resume, complete, or cancel a Wave
+// (POST /api/v1/arena/operator/tournaments/{tournament_id}/waves/{wave_id}/actions)
+func (_ Unimplemented) ControlArenaTournamentWave(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId, waveId ArenaWaveId, params ControlArenaTournamentWaveParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Read the public tournament display projection
+// (GET /api/v1/arena/public/tournaments/{tournament_id})
+func (_ Unimplemented) GetArenaPublicTournament(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Read the public Arena playoff bracket
+// (GET /api/v1/arena/public/tournaments/{tournament_id}/bracket)
+func (_ Unimplemented) GetArenaPublicBracket(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Read the public live draft display projection
+// (GET /api/v1/arena/public/tournaments/{tournament_id}/live-draft)
+func (_ Unimplemented) GetArenaPublicLiveDraft(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Read the public Arena scoreboard
+// (GET /api/v1/arena/public/tournaments/{tournament_id}/scoreboard)
+func (_ Unimplemented) GetArenaPublicScoreboard(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Recover the public tournament display view
+// (GET /api/v1/arena/public/tournaments/{tournament_id}/snapshot)
+func (_ Unimplemented) GetArenaPublicSnapshot(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId, params GetArenaPublicSnapshotParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Read a private task assignment for the authenticated participant
+// (GET /api/v1/arena/tournaments/{tournament_id}/participant/assignments/{assignment_id})
+func (_ Unimplemented) GetArenaParticipantAssignment(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId, assignmentId ArenaAssignmentId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Read the authenticated participant tournament lobby
+// (GET /api/v1/arena/tournaments/{tournament_id}/participant/lobby)
+func (_ Unimplemented) GetArenaParticipantLobby(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Submit an authenticated participant draft action
+// (POST /api/v1/arena/tournaments/{tournament_id}/participant/series/{series_id}/draft/actions)
+func (_ Unimplemented) SubmitArenaParticipantDraftAction(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId, seriesId ArenaSeriesId, params SubmitArenaParticipantDraftActionParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Submit a secret for the authenticated participant Game
+// (POST /api/v1/arena/tournaments/{tournament_id}/participant/series/{series_id}/games/{game_id}/submissions)
+func (_ Unimplemented) SubmitArenaParticipantFlag(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId, seriesId ArenaSeriesId, gameId ArenaGameId, params SubmitArenaParticipantFlagParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Apply a post-Series participant action
+// (POST /api/v1/arena/tournaments/{tournament_id}/participant/series/{series_id}/post-series)
+func (_ Unimplemented) ApplyArenaParticipantPostSeriesAction(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId, seriesId ArenaSeriesId, params ApplyArenaParticipantPostSeriesActionParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Surrender the authenticated participant Series
+// (POST /api/v1/arena/tournaments/{tournament_id}/participant/series/{series_id}/surrender)
+func (_ Unimplemented) SurrenderArenaParticipantSeries(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId, seriesId ArenaSeriesId, params SurrenderArenaParticipantSeriesParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Recover the authenticated participant tournament view
+// (GET /api/v1/arena/tournaments/{tournament_id}/participant/snapshot)
+func (_ Unimplemented) GetArenaParticipantSnapshot(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId, params GetArenaParticipantSnapshotParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Set readiness for the authenticated participant
+// (POST /api/v1/arena/tournaments/{tournament_id}/participant/waves/{wave_id}/ready)
+func (_ Unimplemented) SetArenaParticipantReady(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId, waveId ArenaWaveId, params SetArenaParticipantReadyParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -617,6 +860,1712 @@ func (siw *ServerInterfaceWrapper) UploadTaskSource(w http.ResponseWriter, r *ht
 	handler.ServeHTTP(w, r)
 }
 
+// ListArenaOperatorAudit operation middleware
+func (siw *ServerInterfaceWrapper) ListArenaOperatorAudit(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListArenaOperatorAuditParams
+
+	// ------------- Required query parameter "tournament_id" -------------
+
+	if paramValue := r.URL.Query().Get("tournament_id"); paramValue != "" {
+
+	} else {
+		siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "tournament_id"})
+		return
+	}
+
+	err = runtime.BindQueryParameter("form", true, true, "tournament_id", r.URL.Query(), &params.TournamentId)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tournament_id", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "entity_kind" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "entity_kind", r.URL.Query(), &params.EntityKind)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "entity_kind", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "entity_id" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "entity_id", r.URL.Query(), &params.EntityId)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "entity_id", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "event_type" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "event_type", r.URL.Query(), &params.EventType)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "event_type", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "actor_kind" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "actor_kind", r.URL.Query(), &params.ActorKind)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "actor_kind", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "actor_id" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "actor_id", r.URL.Query(), &params.ActorId)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "actor_id", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "result_reason" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "result_reason", r.URL.Query(), &params.ResultReason)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "result_reason", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "occurred_from" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "occurred_from", r.URL.Query(), &params.OccurredFrom)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "occurred_from", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "occurred_to" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "occurred_to", r.URL.Query(), &params.OccurredTo)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "occurred_to", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameter("deepObject", true, false, "cursor", r.URL.Query(), &params.Cursor)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "page_size" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "page_size", r.URL.Query(), &params.PageSize)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "page_size", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListArenaOperatorAudit(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListArenaOperatorTournaments operation middleware
+func (siw *ServerInterfaceWrapper) ListArenaOperatorTournaments(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListArenaOperatorTournamentsParams
+
+	// ------------- Optional query parameter "state" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "state", r.URL.Query(), &params.State)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "state", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "cursor", r.URL.Query(), &params.Cursor)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "page_size" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "page_size", r.URL.Query(), &params.PageSize)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "page_size", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListArenaOperatorTournaments(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateArenaTournament operation middleware
+func (siw *ServerInterfaceWrapper) CreateArenaTournament(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateArenaTournamentParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey ArenaIdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	// ------------- Optional header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken ArenaAdminCSRFToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = &XCSRFToken
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateArenaTournament(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ApplyArenaTournamentAction operation middleware
+func (siw *ServerInterfaceWrapper) ApplyArenaTournamentAction(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "tournament_id" -------------
+	var tournamentId ArenaTournamentId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "tournament_id", chi.URLParam(r, "tournament_id"), &tournamentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tournament_id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ApplyArenaTournamentActionParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey ArenaIdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	// ------------- Optional header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken ArenaAdminCSRFToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = &XCSRFToken
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ApplyArenaTournamentAction(w, r, tournamentId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ExportArenaOperatorIncident operation middleware
+func (siw *ServerInterfaceWrapper) ExportArenaOperatorIncident(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "tournament_id" -------------
+	var tournamentId ArenaTournamentId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "tournament_id", chi.URLParam(r, "tournament_id"), &tournamentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tournament_id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ExportArenaOperatorIncident(w, r, tournamentId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ConfigureArenaTournamentPairings operation middleware
+func (siw *ServerInterfaceWrapper) ConfigureArenaTournamentPairings(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "tournament_id" -------------
+	var tournamentId ArenaTournamentId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "tournament_id", chi.URLParam(r, "tournament_id"), &tournamentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tournament_id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ConfigureArenaTournamentPairingsParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey ArenaIdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	// ------------- Optional header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken ArenaAdminCSRFToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = &XCSRFToken
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ConfigureArenaTournamentPairings(w, r, tournamentId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetArenaOperatorRoster operation middleware
+func (siw *ServerInterfaceWrapper) GetArenaOperatorRoster(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "tournament_id" -------------
+	var tournamentId ArenaTournamentId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "tournament_id", chi.URLParam(r, "tournament_id"), &tournamentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tournament_id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetArenaOperatorRoster(w, r, tournamentId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ReplaceArenaTournamentRoster operation middleware
+func (siw *ServerInterfaceWrapper) ReplaceArenaTournamentRoster(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "tournament_id" -------------
+	var tournamentId ArenaTournamentId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "tournament_id", chi.URLParam(r, "tournament_id"), &tournamentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tournament_id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ReplaceArenaTournamentRosterParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey ArenaIdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	// ------------- Optional header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken ArenaAdminCSRFToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = &XCSRFToken
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ReplaceArenaTournamentRoster(w, r, tournamentId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// LockArenaTournamentRoster operation middleware
+func (siw *ServerInterfaceWrapper) LockArenaTournamentRoster(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "tournament_id" -------------
+	var tournamentId ArenaTournamentId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "tournament_id", chi.URLParam(r, "tournament_id"), &tournamentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tournament_id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params LockArenaTournamentRosterParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey ArenaIdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	// ------------- Optional header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken ArenaAdminCSRFToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = &XCSRFToken
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.LockArenaTournamentRoster(w, r, tournamentId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RunArenaRosterPreflight operation middleware
+func (siw *ServerInterfaceWrapper) RunArenaRosterPreflight(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "tournament_id" -------------
+	var tournamentId ArenaTournamentId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "tournament_id", chi.URLParam(r, "tournament_id"), &tournamentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tournament_id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RunArenaRosterPreflightParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey ArenaIdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	// ------------- Optional header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken ArenaAdminCSRFToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = &XCSRFToken
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RunArenaRosterPreflight(w, r, tournamentId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UnlockArenaTournamentRoster operation middleware
+func (siw *ServerInterfaceWrapper) UnlockArenaTournamentRoster(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "tournament_id" -------------
+	var tournamentId ArenaTournamentId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "tournament_id", chi.URLParam(r, "tournament_id"), &tournamentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tournament_id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params UnlockArenaTournamentRosterParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey ArenaIdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	// ------------- Optional header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken ArenaAdminCSRFToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = &XCSRFToken
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UnlockArenaTournamentRoster(w, r, tournamentId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CorrectArenaGameResult operation middleware
+func (siw *ServerInterfaceWrapper) CorrectArenaGameResult(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "tournament_id" -------------
+	var tournamentId ArenaTournamentId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "tournament_id", chi.URLParam(r, "tournament_id"), &tournamentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tournament_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "series_id" -------------
+	var seriesId ArenaSeriesId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "series_id", chi.URLParam(r, "series_id"), &seriesId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "series_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "game_id" -------------
+	var gameId ArenaGameId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "game_id", chi.URLParam(r, "game_id"), &gameId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "game_id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CorrectArenaGameResultParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey ArenaIdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	// ------------- Optional header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken ArenaAdminCSRFToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = &XCSRFToken
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CorrectArenaGameResult(w, r, tournamentId, seriesId, gameId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetArenaOperatorSnapshot operation middleware
+func (siw *ServerInterfaceWrapper) GetArenaOperatorSnapshot(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "tournament_id" -------------
+	var tournamentId ArenaTournamentId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "tournament_id", chi.URLParam(r, "tournament_id"), &tournamentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tournament_id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetArenaOperatorSnapshotParams
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "cursor", r.URL.Query(), &params.Cursor)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetArenaOperatorSnapshot(w, r, tournamentId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ControlArenaTournamentWave operation middleware
+func (siw *ServerInterfaceWrapper) ControlArenaTournamentWave(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "tournament_id" -------------
+	var tournamentId ArenaTournamentId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "tournament_id", chi.URLParam(r, "tournament_id"), &tournamentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tournament_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "wave_id" -------------
+	var waveId ArenaWaveId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "wave_id", chi.URLParam(r, "wave_id"), &waveId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "wave_id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ControlArenaTournamentWaveParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey ArenaIdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	// ------------- Optional header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken ArenaAdminCSRFToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = &XCSRFToken
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ControlArenaTournamentWave(w, r, tournamentId, waveId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetArenaPublicTournament operation middleware
+func (siw *ServerInterfaceWrapper) GetArenaPublicTournament(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "tournament_id" -------------
+	var tournamentId ArenaTournamentId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "tournament_id", chi.URLParam(r, "tournament_id"), &tournamentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tournament_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetArenaPublicTournament(w, r, tournamentId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetArenaPublicBracket operation middleware
+func (siw *ServerInterfaceWrapper) GetArenaPublicBracket(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "tournament_id" -------------
+	var tournamentId ArenaTournamentId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "tournament_id", chi.URLParam(r, "tournament_id"), &tournamentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tournament_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetArenaPublicBracket(w, r, tournamentId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetArenaPublicLiveDraft operation middleware
+func (siw *ServerInterfaceWrapper) GetArenaPublicLiveDraft(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "tournament_id" -------------
+	var tournamentId ArenaTournamentId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "tournament_id", chi.URLParam(r, "tournament_id"), &tournamentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tournament_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetArenaPublicLiveDraft(w, r, tournamentId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetArenaPublicScoreboard operation middleware
+func (siw *ServerInterfaceWrapper) GetArenaPublicScoreboard(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "tournament_id" -------------
+	var tournamentId ArenaTournamentId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "tournament_id", chi.URLParam(r, "tournament_id"), &tournamentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tournament_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetArenaPublicScoreboard(w, r, tournamentId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetArenaPublicSnapshot operation middleware
+func (siw *ServerInterfaceWrapper) GetArenaPublicSnapshot(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "tournament_id" -------------
+	var tournamentId ArenaTournamentId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "tournament_id", chi.URLParam(r, "tournament_id"), &tournamentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tournament_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetArenaPublicSnapshotParams
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "cursor", r.URL.Query(), &params.Cursor)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetArenaPublicSnapshot(w, r, tournamentId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetArenaParticipantAssignment operation middleware
+func (siw *ServerInterfaceWrapper) GetArenaParticipantAssignment(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "tournament_id" -------------
+	var tournamentId ArenaTournamentId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "tournament_id", chi.URLParam(r, "tournament_id"), &tournamentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tournament_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "assignment_id" -------------
+	var assignmentId ArenaAssignmentId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "assignment_id", chi.URLParam(r, "assignment_id"), &assignmentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "assignment_id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, SessionTokenAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetArenaParticipantAssignment(w, r, tournamentId, assignmentId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetArenaParticipantLobby operation middleware
+func (siw *ServerInterfaceWrapper) GetArenaParticipantLobby(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "tournament_id" -------------
+	var tournamentId ArenaTournamentId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "tournament_id", chi.URLParam(r, "tournament_id"), &tournamentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tournament_id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, SessionTokenAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetArenaParticipantLobby(w, r, tournamentId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SubmitArenaParticipantDraftAction operation middleware
+func (siw *ServerInterfaceWrapper) SubmitArenaParticipantDraftAction(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "tournament_id" -------------
+	var tournamentId ArenaTournamentId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "tournament_id", chi.URLParam(r, "tournament_id"), &tournamentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tournament_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "series_id" -------------
+	var seriesId ArenaSeriesId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "series_id", chi.URLParam(r, "series_id"), &seriesId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "series_id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, SessionTokenAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params SubmitArenaParticipantDraftActionParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey ArenaIdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken ArenaCSRFToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SubmitArenaParticipantDraftAction(w, r, tournamentId, seriesId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SubmitArenaParticipantFlag operation middleware
+func (siw *ServerInterfaceWrapper) SubmitArenaParticipantFlag(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "tournament_id" -------------
+	var tournamentId ArenaTournamentId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "tournament_id", chi.URLParam(r, "tournament_id"), &tournamentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tournament_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "series_id" -------------
+	var seriesId ArenaSeriesId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "series_id", chi.URLParam(r, "series_id"), &seriesId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "series_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "game_id" -------------
+	var gameId ArenaGameId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "game_id", chi.URLParam(r, "game_id"), &gameId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "game_id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, SessionTokenAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params SubmitArenaParticipantFlagParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey ArenaIdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken ArenaCSRFToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SubmitArenaParticipantFlag(w, r, tournamentId, seriesId, gameId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ApplyArenaParticipantPostSeriesAction operation middleware
+func (siw *ServerInterfaceWrapper) ApplyArenaParticipantPostSeriesAction(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "tournament_id" -------------
+	var tournamentId ArenaTournamentId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "tournament_id", chi.URLParam(r, "tournament_id"), &tournamentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tournament_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "series_id" -------------
+	var seriesId ArenaSeriesId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "series_id", chi.URLParam(r, "series_id"), &seriesId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "series_id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, SessionTokenAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ApplyArenaParticipantPostSeriesActionParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey ArenaIdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken ArenaCSRFToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ApplyArenaParticipantPostSeriesAction(w, r, tournamentId, seriesId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SurrenderArenaParticipantSeries operation middleware
+func (siw *ServerInterfaceWrapper) SurrenderArenaParticipantSeries(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "tournament_id" -------------
+	var tournamentId ArenaTournamentId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "tournament_id", chi.URLParam(r, "tournament_id"), &tournamentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tournament_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "series_id" -------------
+	var seriesId ArenaSeriesId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "series_id", chi.URLParam(r, "series_id"), &seriesId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "series_id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, SessionTokenAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params SurrenderArenaParticipantSeriesParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey ArenaIdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken ArenaCSRFToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SurrenderArenaParticipantSeries(w, r, tournamentId, seriesId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetArenaParticipantSnapshot operation middleware
+func (siw *ServerInterfaceWrapper) GetArenaParticipantSnapshot(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "tournament_id" -------------
+	var tournamentId ArenaTournamentId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "tournament_id", chi.URLParam(r, "tournament_id"), &tournamentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tournament_id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, SessionTokenAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetArenaParticipantSnapshotParams
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "cursor", r.URL.Query(), &params.Cursor)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetArenaParticipantSnapshot(w, r, tournamentId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SetArenaParticipantReady operation middleware
+func (siw *ServerInterfaceWrapper) SetArenaParticipantReady(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "tournament_id" -------------
+	var tournamentId ArenaTournamentId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "tournament_id", chi.URLParam(r, "tournament_id"), &tournamentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tournament_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "wave_id" -------------
+	var waveId ArenaWaveId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "wave_id", chi.URLParam(r, "wave_id"), &waveId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "wave_id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, SessionTokenAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params SetArenaParticipantReadyParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey ArenaIdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken ArenaCSRFToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SetArenaParticipantReady(w, r, tournamentId, waveId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetDuel operation middleware
 func (siw *ServerInterfaceWrapper) GetDuel(w http.ResponseWriter, r *http.Request) {
 
@@ -883,6 +2832,87 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Post(options.BaseURL+"/api/v1/admin/tasks/{id}/source", wrapper.UploadTaskSource)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/arena/operator/audit", wrapper.ListArenaOperatorAudit)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/arena/operator/tournaments", wrapper.ListArenaOperatorTournaments)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/arena/operator/tournaments", wrapper.CreateArenaTournament)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/arena/operator/tournaments/{tournament_id}/actions", wrapper.ApplyArenaTournamentAction)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/arena/operator/tournaments/{tournament_id}/incident-export", wrapper.ExportArenaOperatorIncident)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/arena/operator/tournaments/{tournament_id}/pairings", wrapper.ConfigureArenaTournamentPairings)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/arena/operator/tournaments/{tournament_id}/roster", wrapper.GetArenaOperatorRoster)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/api/v1/arena/operator/tournaments/{tournament_id}/roster", wrapper.ReplaceArenaTournamentRoster)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/arena/operator/tournaments/{tournament_id}/roster/lock", wrapper.LockArenaTournamentRoster)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/arena/operator/tournaments/{tournament_id}/roster/preflight", wrapper.RunArenaRosterPreflight)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/arena/operator/tournaments/{tournament_id}/roster/unlock", wrapper.UnlockArenaTournamentRoster)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/arena/operator/tournaments/{tournament_id}/series/{series_id}/games/{game_id}/corrections", wrapper.CorrectArenaGameResult)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/arena/operator/tournaments/{tournament_id}/snapshot", wrapper.GetArenaOperatorSnapshot)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/arena/operator/tournaments/{tournament_id}/waves/{wave_id}/actions", wrapper.ControlArenaTournamentWave)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/arena/public/tournaments/{tournament_id}", wrapper.GetArenaPublicTournament)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/arena/public/tournaments/{tournament_id}/bracket", wrapper.GetArenaPublicBracket)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/arena/public/tournaments/{tournament_id}/live-draft", wrapper.GetArenaPublicLiveDraft)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/arena/public/tournaments/{tournament_id}/scoreboard", wrapper.GetArenaPublicScoreboard)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/arena/public/tournaments/{tournament_id}/snapshot", wrapper.GetArenaPublicSnapshot)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/arena/tournaments/{tournament_id}/participant/assignments/{assignment_id}", wrapper.GetArenaParticipantAssignment)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/arena/tournaments/{tournament_id}/participant/lobby", wrapper.GetArenaParticipantLobby)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/arena/tournaments/{tournament_id}/participant/series/{series_id}/draft/actions", wrapper.SubmitArenaParticipantDraftAction)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/arena/tournaments/{tournament_id}/participant/series/{series_id}/games/{game_id}/submissions", wrapper.SubmitArenaParticipantFlag)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/arena/tournaments/{tournament_id}/participant/series/{series_id}/post-series", wrapper.ApplyArenaParticipantPostSeriesAction)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/arena/tournaments/{tournament_id}/participant/series/{series_id}/surrender", wrapper.SurrenderArenaParticipantSeries)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/arena/tournaments/{tournament_id}/participant/snapshot", wrapper.GetArenaParticipantSnapshot)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/arena/tournaments/{tournament_id}/participant/waves/{wave_id}/ready", wrapper.SetArenaParticipantReady)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/duels/{id}", wrapper.GetDuel)
 	})
 	r.Group(func(r chi.Router) {
@@ -903,6 +2933,14 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 
 	return r
 }
+
+type ArenaForbiddenResponseApplicationProblemPlusJSONResponse ProblemDetails
+
+type ArenaNotFoundResponseApplicationProblemPlusJSONResponse ProblemDetails
+
+type ArenaRevisionConflictResponseJSONResponse ArenaRevisionConflict
+
+type ArenaUnauthorizedResponseApplicationProblemPlusJSONResponse ProblemDetails
 
 type AdminLoginRequestObject struct {
 	Body *AdminLoginJSONRequestBody
@@ -1589,6 +3627,1451 @@ func (response UploadTaskSource413ApplicationProblemPlusJSONResponse) VisitUploa
 	return json.NewEncoder(w).Encode(response)
 }
 
+type ListArenaOperatorAuditRequestObject struct {
+	Params ListArenaOperatorAuditParams
+}
+
+type ListArenaOperatorAuditResponseObject interface {
+	VisitListArenaOperatorAuditResponse(w http.ResponseWriter) error
+}
+
+type ListArenaOperatorAudit200JSONResponse ArenaAuditPage
+
+func (response ListArenaOperatorAudit200JSONResponse) VisitListArenaOperatorAuditResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ListArenaOperatorAudit401ApplicationProblemPlusJSONResponse struct {
+	ArenaUnauthorizedResponseApplicationProblemPlusJSONResponse
+}
+
+func (response ListArenaOperatorAudit401ApplicationProblemPlusJSONResponse) VisitListArenaOperatorAuditResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ListArenaOperatorAudit403ApplicationProblemPlusJSONResponse struct {
+	ArenaForbiddenResponseApplicationProblemPlusJSONResponse
+}
+
+func (response ListArenaOperatorAudit403ApplicationProblemPlusJSONResponse) VisitListArenaOperatorAuditResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ListArenaOperatorAudit404ApplicationProblemPlusJSONResponse struct {
+	ArenaNotFoundResponseApplicationProblemPlusJSONResponse
+}
+
+func (response ListArenaOperatorAudit404ApplicationProblemPlusJSONResponse) VisitListArenaOperatorAuditResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ListArenaOperatorTournamentsRequestObject struct {
+	Params ListArenaOperatorTournamentsParams
+}
+
+type ListArenaOperatorTournamentsResponseObject interface {
+	VisitListArenaOperatorTournamentsResponse(w http.ResponseWriter) error
+}
+
+type ListArenaOperatorTournaments200JSONResponse ArenaOperatorTournamentList
+
+func (response ListArenaOperatorTournaments200JSONResponse) VisitListArenaOperatorTournamentsResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ListArenaOperatorTournaments401ApplicationProblemPlusJSONResponse struct {
+	ArenaUnauthorizedResponseApplicationProblemPlusJSONResponse
+}
+
+func (response ListArenaOperatorTournaments401ApplicationProblemPlusJSONResponse) VisitListArenaOperatorTournamentsResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ListArenaOperatorTournaments403ApplicationProblemPlusJSONResponse struct {
+	ArenaForbiddenResponseApplicationProblemPlusJSONResponse
+}
+
+func (response ListArenaOperatorTournaments403ApplicationProblemPlusJSONResponse) VisitListArenaOperatorTournamentsResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type CreateArenaTournamentRequestObject struct {
+	Params CreateArenaTournamentParams
+	Body   *CreateArenaTournamentJSONRequestBody
+}
+
+type CreateArenaTournamentResponseObject interface {
+	VisitCreateArenaTournamentResponse(w http.ResponseWriter) error
+}
+
+type CreateArenaTournament201JSONResponse ArenaTournament
+
+func (response CreateArenaTournament201JSONResponse) VisitCreateArenaTournamentResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type CreateArenaTournament401ApplicationProblemPlusJSONResponse struct {
+	ArenaUnauthorizedResponseApplicationProblemPlusJSONResponse
+}
+
+func (response CreateArenaTournament401ApplicationProblemPlusJSONResponse) VisitCreateArenaTournamentResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type CreateArenaTournament403ApplicationProblemPlusJSONResponse struct {
+	ArenaForbiddenResponseApplicationProblemPlusJSONResponse
+}
+
+func (response CreateArenaTournament403ApplicationProblemPlusJSONResponse) VisitCreateArenaTournamentResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type CreateArenaTournament409JSONResponse struct {
+	ArenaRevisionConflictResponseJSONResponse
+}
+
+func (response CreateArenaTournament409JSONResponse) VisitCreateArenaTournamentResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ApplyArenaTournamentActionRequestObject struct {
+	TournamentId ArenaTournamentId `json:"tournament_id"`
+	Params       ApplyArenaTournamentActionParams
+	Body         *ApplyArenaTournamentActionJSONRequestBody
+}
+
+type ApplyArenaTournamentActionResponseObject interface {
+	VisitApplyArenaTournamentActionResponse(w http.ResponseWriter) error
+}
+
+type ApplyArenaTournamentAction200JSONResponse ArenaTournament
+
+func (response ApplyArenaTournamentAction200JSONResponse) VisitApplyArenaTournamentActionResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ApplyArenaTournamentAction401ApplicationProblemPlusJSONResponse struct {
+	ArenaUnauthorizedResponseApplicationProblemPlusJSONResponse
+}
+
+func (response ApplyArenaTournamentAction401ApplicationProblemPlusJSONResponse) VisitApplyArenaTournamentActionResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ApplyArenaTournamentAction403ApplicationProblemPlusJSONResponse struct {
+	ArenaForbiddenResponseApplicationProblemPlusJSONResponse
+}
+
+func (response ApplyArenaTournamentAction403ApplicationProblemPlusJSONResponse) VisitApplyArenaTournamentActionResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ApplyArenaTournamentAction404ApplicationProblemPlusJSONResponse struct {
+	ArenaNotFoundResponseApplicationProblemPlusJSONResponse
+}
+
+func (response ApplyArenaTournamentAction404ApplicationProblemPlusJSONResponse) VisitApplyArenaTournamentActionResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ApplyArenaTournamentAction409JSONResponse struct {
+	ArenaRevisionConflictResponseJSONResponse
+}
+
+func (response ApplyArenaTournamentAction409JSONResponse) VisitApplyArenaTournamentActionResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ExportArenaOperatorIncidentRequestObject struct {
+	TournamentId ArenaTournamentId `json:"tournament_id"`
+}
+
+type ExportArenaOperatorIncidentResponseObject interface {
+	VisitExportArenaOperatorIncidentResponse(w http.ResponseWriter) error
+}
+
+type ExportArenaOperatorIncident200JSONResponse ArenaIncidentBundle
+
+func (response ExportArenaOperatorIncident200JSONResponse) VisitExportArenaOperatorIncidentResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ExportArenaOperatorIncident401ApplicationProblemPlusJSONResponse struct {
+	ArenaUnauthorizedResponseApplicationProblemPlusJSONResponse
+}
+
+func (response ExportArenaOperatorIncident401ApplicationProblemPlusJSONResponse) VisitExportArenaOperatorIncidentResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ExportArenaOperatorIncident403ApplicationProblemPlusJSONResponse struct {
+	ArenaForbiddenResponseApplicationProblemPlusJSONResponse
+}
+
+func (response ExportArenaOperatorIncident403ApplicationProblemPlusJSONResponse) VisitExportArenaOperatorIncidentResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ExportArenaOperatorIncident404ApplicationProblemPlusJSONResponse struct {
+	ArenaNotFoundResponseApplicationProblemPlusJSONResponse
+}
+
+func (response ExportArenaOperatorIncident404ApplicationProblemPlusJSONResponse) VisitExportArenaOperatorIncidentResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ConfigureArenaTournamentPairingsRequestObject struct {
+	TournamentId ArenaTournamentId `json:"tournament_id"`
+	Params       ConfigureArenaTournamentPairingsParams
+	Body         *ConfigureArenaTournamentPairingsJSONRequestBody
+}
+
+type ConfigureArenaTournamentPairingsResponseObject interface {
+	VisitConfigureArenaTournamentPairingsResponse(w http.ResponseWriter) error
+}
+
+type ConfigureArenaTournamentPairings200JSONResponse ArenaSwissRound
+
+func (response ConfigureArenaTournamentPairings200JSONResponse) VisitConfigureArenaTournamentPairingsResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ConfigureArenaTournamentPairings401ApplicationProblemPlusJSONResponse struct {
+	ArenaUnauthorizedResponseApplicationProblemPlusJSONResponse
+}
+
+func (response ConfigureArenaTournamentPairings401ApplicationProblemPlusJSONResponse) VisitConfigureArenaTournamentPairingsResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ConfigureArenaTournamentPairings403ApplicationProblemPlusJSONResponse struct {
+	ArenaForbiddenResponseApplicationProblemPlusJSONResponse
+}
+
+func (response ConfigureArenaTournamentPairings403ApplicationProblemPlusJSONResponse) VisitConfigureArenaTournamentPairingsResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ConfigureArenaTournamentPairings404ApplicationProblemPlusJSONResponse struct {
+	ArenaNotFoundResponseApplicationProblemPlusJSONResponse
+}
+
+func (response ConfigureArenaTournamentPairings404ApplicationProblemPlusJSONResponse) VisitConfigureArenaTournamentPairingsResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ConfigureArenaTournamentPairings409JSONResponse struct {
+	ArenaRevisionConflictResponseJSONResponse
+}
+
+func (response ConfigureArenaTournamentPairings409JSONResponse) VisitConfigureArenaTournamentPairingsResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetArenaOperatorRosterRequestObject struct {
+	TournamentId ArenaTournamentId `json:"tournament_id"`
+}
+
+type GetArenaOperatorRosterResponseObject interface {
+	VisitGetArenaOperatorRosterResponse(w http.ResponseWriter) error
+}
+
+type GetArenaOperatorRoster200JSONResponse ArenaRoster
+
+func (response GetArenaOperatorRoster200JSONResponse) VisitGetArenaOperatorRosterResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetArenaOperatorRoster401ApplicationProblemPlusJSONResponse struct {
+	ArenaUnauthorizedResponseApplicationProblemPlusJSONResponse
+}
+
+func (response GetArenaOperatorRoster401ApplicationProblemPlusJSONResponse) VisitGetArenaOperatorRosterResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetArenaOperatorRoster403ApplicationProblemPlusJSONResponse struct {
+	ArenaForbiddenResponseApplicationProblemPlusJSONResponse
+}
+
+func (response GetArenaOperatorRoster403ApplicationProblemPlusJSONResponse) VisitGetArenaOperatorRosterResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetArenaOperatorRoster404ApplicationProblemPlusJSONResponse struct {
+	ArenaNotFoundResponseApplicationProblemPlusJSONResponse
+}
+
+func (response GetArenaOperatorRoster404ApplicationProblemPlusJSONResponse) VisitGetArenaOperatorRosterResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ReplaceArenaTournamentRosterRequestObject struct {
+	TournamentId ArenaTournamentId `json:"tournament_id"`
+	Params       ReplaceArenaTournamentRosterParams
+	Body         *ReplaceArenaTournamentRosterJSONRequestBody
+}
+
+type ReplaceArenaTournamentRosterResponseObject interface {
+	VisitReplaceArenaTournamentRosterResponse(w http.ResponseWriter) error
+}
+
+type ReplaceArenaTournamentRoster200JSONResponse ArenaRoster
+
+func (response ReplaceArenaTournamentRoster200JSONResponse) VisitReplaceArenaTournamentRosterResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ReplaceArenaTournamentRoster401ApplicationProblemPlusJSONResponse struct {
+	ArenaUnauthorizedResponseApplicationProblemPlusJSONResponse
+}
+
+func (response ReplaceArenaTournamentRoster401ApplicationProblemPlusJSONResponse) VisitReplaceArenaTournamentRosterResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ReplaceArenaTournamentRoster403ApplicationProblemPlusJSONResponse struct {
+	ArenaForbiddenResponseApplicationProblemPlusJSONResponse
+}
+
+func (response ReplaceArenaTournamentRoster403ApplicationProblemPlusJSONResponse) VisitReplaceArenaTournamentRosterResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ReplaceArenaTournamentRoster404ApplicationProblemPlusJSONResponse struct {
+	ArenaNotFoundResponseApplicationProblemPlusJSONResponse
+}
+
+func (response ReplaceArenaTournamentRoster404ApplicationProblemPlusJSONResponse) VisitReplaceArenaTournamentRosterResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ReplaceArenaTournamentRoster409JSONResponse struct {
+	ArenaRevisionConflictResponseJSONResponse
+}
+
+func (response ReplaceArenaTournamentRoster409JSONResponse) VisitReplaceArenaTournamentRosterResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type LockArenaTournamentRosterRequestObject struct {
+	TournamentId ArenaTournamentId `json:"tournament_id"`
+	Params       LockArenaTournamentRosterParams
+	Body         *LockArenaTournamentRosterJSONRequestBody
+}
+
+type LockArenaTournamentRosterResponseObject interface {
+	VisitLockArenaTournamentRosterResponse(w http.ResponseWriter) error
+}
+
+type LockArenaTournamentRoster200JSONResponse ArenaRoster
+
+func (response LockArenaTournamentRoster200JSONResponse) VisitLockArenaTournamentRosterResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type LockArenaTournamentRoster401ApplicationProblemPlusJSONResponse struct {
+	ArenaUnauthorizedResponseApplicationProblemPlusJSONResponse
+}
+
+func (response LockArenaTournamentRoster401ApplicationProblemPlusJSONResponse) VisitLockArenaTournamentRosterResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type LockArenaTournamentRoster403ApplicationProblemPlusJSONResponse struct {
+	ArenaForbiddenResponseApplicationProblemPlusJSONResponse
+}
+
+func (response LockArenaTournamentRoster403ApplicationProblemPlusJSONResponse) VisitLockArenaTournamentRosterResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type LockArenaTournamentRoster404ApplicationProblemPlusJSONResponse struct {
+	ArenaNotFoundResponseApplicationProblemPlusJSONResponse
+}
+
+func (response LockArenaTournamentRoster404ApplicationProblemPlusJSONResponse) VisitLockArenaTournamentRosterResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type LockArenaTournamentRoster409JSONResponse struct {
+	ArenaRevisionConflictResponseJSONResponse
+}
+
+func (response LockArenaTournamentRoster409JSONResponse) VisitLockArenaTournamentRosterResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type RunArenaRosterPreflightRequestObject struct {
+	TournamentId ArenaTournamentId `json:"tournament_id"`
+	Params       RunArenaRosterPreflightParams
+	Body         *RunArenaRosterPreflightJSONRequestBody
+}
+
+type RunArenaRosterPreflightResponseObject interface {
+	VisitRunArenaRosterPreflightResponse(w http.ResponseWriter) error
+}
+
+type RunArenaRosterPreflight200JSONResponse ArenaPreflightReport
+
+func (response RunArenaRosterPreflight200JSONResponse) VisitRunArenaRosterPreflightResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type RunArenaRosterPreflight401ApplicationProblemPlusJSONResponse struct {
+	ArenaUnauthorizedResponseApplicationProblemPlusJSONResponse
+}
+
+func (response RunArenaRosterPreflight401ApplicationProblemPlusJSONResponse) VisitRunArenaRosterPreflightResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type RunArenaRosterPreflight403ApplicationProblemPlusJSONResponse struct {
+	ArenaForbiddenResponseApplicationProblemPlusJSONResponse
+}
+
+func (response RunArenaRosterPreflight403ApplicationProblemPlusJSONResponse) VisitRunArenaRosterPreflightResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type RunArenaRosterPreflight404ApplicationProblemPlusJSONResponse struct {
+	ArenaNotFoundResponseApplicationProblemPlusJSONResponse
+}
+
+func (response RunArenaRosterPreflight404ApplicationProblemPlusJSONResponse) VisitRunArenaRosterPreflightResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type RunArenaRosterPreflight409JSONResponse struct {
+	ArenaRevisionConflictResponseJSONResponse
+}
+
+func (response RunArenaRosterPreflight409JSONResponse) VisitRunArenaRosterPreflightResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type UnlockArenaTournamentRosterRequestObject struct {
+	TournamentId ArenaTournamentId `json:"tournament_id"`
+	Params       UnlockArenaTournamentRosterParams
+	Body         *UnlockArenaTournamentRosterJSONRequestBody
+}
+
+type UnlockArenaTournamentRosterResponseObject interface {
+	VisitUnlockArenaTournamentRosterResponse(w http.ResponseWriter) error
+}
+
+type UnlockArenaTournamentRoster200JSONResponse ArenaRoster
+
+func (response UnlockArenaTournamentRoster200JSONResponse) VisitUnlockArenaTournamentRosterResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type UnlockArenaTournamentRoster401ApplicationProblemPlusJSONResponse struct {
+	ArenaUnauthorizedResponseApplicationProblemPlusJSONResponse
+}
+
+func (response UnlockArenaTournamentRoster401ApplicationProblemPlusJSONResponse) VisitUnlockArenaTournamentRosterResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type UnlockArenaTournamentRoster403ApplicationProblemPlusJSONResponse struct {
+	ArenaForbiddenResponseApplicationProblemPlusJSONResponse
+}
+
+func (response UnlockArenaTournamentRoster403ApplicationProblemPlusJSONResponse) VisitUnlockArenaTournamentRosterResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type UnlockArenaTournamentRoster404ApplicationProblemPlusJSONResponse struct {
+	ArenaNotFoundResponseApplicationProblemPlusJSONResponse
+}
+
+func (response UnlockArenaTournamentRoster404ApplicationProblemPlusJSONResponse) VisitUnlockArenaTournamentRosterResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type UnlockArenaTournamentRoster409JSONResponse struct {
+	ArenaRevisionConflictResponseJSONResponse
+}
+
+func (response UnlockArenaTournamentRoster409JSONResponse) VisitUnlockArenaTournamentRosterResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type CorrectArenaGameResultRequestObject struct {
+	TournamentId ArenaTournamentId `json:"tournament_id"`
+	SeriesId     ArenaSeriesId     `json:"series_id"`
+	GameId       ArenaGameId       `json:"game_id"`
+	Params       CorrectArenaGameResultParams
+	Body         *CorrectArenaGameResultJSONRequestBody
+}
+
+type CorrectArenaGameResultResponseObject interface {
+	VisitCorrectArenaGameResultResponse(w http.ResponseWriter) error
+}
+
+type CorrectArenaGameResult200JSONResponse ArenaCorrectionEvidence
+
+func (response CorrectArenaGameResult200JSONResponse) VisitCorrectArenaGameResultResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type CorrectArenaGameResult401ApplicationProblemPlusJSONResponse struct {
+	ArenaUnauthorizedResponseApplicationProblemPlusJSONResponse
+}
+
+func (response CorrectArenaGameResult401ApplicationProblemPlusJSONResponse) VisitCorrectArenaGameResultResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type CorrectArenaGameResult403ApplicationProblemPlusJSONResponse struct {
+	ArenaForbiddenResponseApplicationProblemPlusJSONResponse
+}
+
+func (response CorrectArenaGameResult403ApplicationProblemPlusJSONResponse) VisitCorrectArenaGameResultResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type CorrectArenaGameResult404ApplicationProblemPlusJSONResponse struct {
+	ArenaNotFoundResponseApplicationProblemPlusJSONResponse
+}
+
+func (response CorrectArenaGameResult404ApplicationProblemPlusJSONResponse) VisitCorrectArenaGameResultResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type CorrectArenaGameResult409JSONResponse struct {
+	ArenaRevisionConflictResponseJSONResponse
+}
+
+func (response CorrectArenaGameResult409JSONResponse) VisitCorrectArenaGameResultResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetArenaOperatorSnapshotRequestObject struct {
+	TournamentId ArenaTournamentId `json:"tournament_id"`
+	Params       GetArenaOperatorSnapshotParams
+}
+
+type GetArenaOperatorSnapshotResponseObject interface {
+	VisitGetArenaOperatorSnapshotResponse(w http.ResponseWriter) error
+}
+
+type GetArenaOperatorSnapshot200JSONResponse ArenaOperatorRecoverySnapshot
+
+func (response GetArenaOperatorSnapshot200JSONResponse) VisitGetArenaOperatorSnapshotResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetArenaOperatorSnapshot401ApplicationProblemPlusJSONResponse struct {
+	ArenaUnauthorizedResponseApplicationProblemPlusJSONResponse
+}
+
+func (response GetArenaOperatorSnapshot401ApplicationProblemPlusJSONResponse) VisitGetArenaOperatorSnapshotResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetArenaOperatorSnapshot403ApplicationProblemPlusJSONResponse struct {
+	ArenaForbiddenResponseApplicationProblemPlusJSONResponse
+}
+
+func (response GetArenaOperatorSnapshot403ApplicationProblemPlusJSONResponse) VisitGetArenaOperatorSnapshotResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetArenaOperatorSnapshot404ApplicationProblemPlusJSONResponse struct {
+	ArenaNotFoundResponseApplicationProblemPlusJSONResponse
+}
+
+func (response GetArenaOperatorSnapshot404ApplicationProblemPlusJSONResponse) VisitGetArenaOperatorSnapshotResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetArenaOperatorSnapshot409JSONResponse struct {
+	ArenaRevisionConflictResponseJSONResponse
+}
+
+func (response GetArenaOperatorSnapshot409JSONResponse) VisitGetArenaOperatorSnapshotResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ControlArenaTournamentWaveRequestObject struct {
+	TournamentId ArenaTournamentId `json:"tournament_id"`
+	WaveId       ArenaWaveId       `json:"wave_id"`
+	Params       ControlArenaTournamentWaveParams
+	Body         *ControlArenaTournamentWaveJSONRequestBody
+}
+
+type ControlArenaTournamentWaveResponseObject interface {
+	VisitControlArenaTournamentWaveResponse(w http.ResponseWriter) error
+}
+
+type ControlArenaTournamentWave200JSONResponse ArenaWave
+
+func (response ControlArenaTournamentWave200JSONResponse) VisitControlArenaTournamentWaveResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ControlArenaTournamentWave401ApplicationProblemPlusJSONResponse struct {
+	ArenaUnauthorizedResponseApplicationProblemPlusJSONResponse
+}
+
+func (response ControlArenaTournamentWave401ApplicationProblemPlusJSONResponse) VisitControlArenaTournamentWaveResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ControlArenaTournamentWave403ApplicationProblemPlusJSONResponse struct {
+	ArenaForbiddenResponseApplicationProblemPlusJSONResponse
+}
+
+func (response ControlArenaTournamentWave403ApplicationProblemPlusJSONResponse) VisitControlArenaTournamentWaveResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ControlArenaTournamentWave404ApplicationProblemPlusJSONResponse struct {
+	ArenaNotFoundResponseApplicationProblemPlusJSONResponse
+}
+
+func (response ControlArenaTournamentWave404ApplicationProblemPlusJSONResponse) VisitControlArenaTournamentWaveResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ControlArenaTournamentWave409JSONResponse struct {
+	ArenaRevisionConflictResponseJSONResponse
+}
+
+func (response ControlArenaTournamentWave409JSONResponse) VisitControlArenaTournamentWaveResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetArenaPublicTournamentRequestObject struct {
+	TournamentId ArenaTournamentId `json:"tournament_id"`
+}
+
+type GetArenaPublicTournamentResponseObject interface {
+	VisitGetArenaPublicTournamentResponse(w http.ResponseWriter) error
+}
+
+type GetArenaPublicTournament200JSONResponse ArenaPublicTournamentResponse
+
+func (response GetArenaPublicTournament200JSONResponse) VisitGetArenaPublicTournamentResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetArenaPublicTournament404ApplicationProblemPlusJSONResponse struct {
+	ArenaNotFoundResponseApplicationProblemPlusJSONResponse
+}
+
+func (response GetArenaPublicTournament404ApplicationProblemPlusJSONResponse) VisitGetArenaPublicTournamentResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetArenaPublicBracketRequestObject struct {
+	TournamentId ArenaTournamentId `json:"tournament_id"`
+}
+
+type GetArenaPublicBracketResponseObject interface {
+	VisitGetArenaPublicBracketResponse(w http.ResponseWriter) error
+}
+
+type GetArenaPublicBracket200JSONResponse ArenaPublicBracketResponse
+
+func (response GetArenaPublicBracket200JSONResponse) VisitGetArenaPublicBracketResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetArenaPublicBracket404ApplicationProblemPlusJSONResponse struct {
+	ArenaNotFoundResponseApplicationProblemPlusJSONResponse
+}
+
+func (response GetArenaPublicBracket404ApplicationProblemPlusJSONResponse) VisitGetArenaPublicBracketResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetArenaPublicLiveDraftRequestObject struct {
+	TournamentId ArenaTournamentId `json:"tournament_id"`
+}
+
+type GetArenaPublicLiveDraftResponseObject interface {
+	VisitGetArenaPublicLiveDraftResponse(w http.ResponseWriter) error
+}
+
+type GetArenaPublicLiveDraft200JSONResponse ArenaPublicLiveDraftResponse
+
+func (response GetArenaPublicLiveDraft200JSONResponse) VisitGetArenaPublicLiveDraftResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetArenaPublicLiveDraft404ApplicationProblemPlusJSONResponse struct {
+	ArenaNotFoundResponseApplicationProblemPlusJSONResponse
+}
+
+func (response GetArenaPublicLiveDraft404ApplicationProblemPlusJSONResponse) VisitGetArenaPublicLiveDraftResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetArenaPublicScoreboardRequestObject struct {
+	TournamentId ArenaTournamentId `json:"tournament_id"`
+}
+
+type GetArenaPublicScoreboardResponseObject interface {
+	VisitGetArenaPublicScoreboardResponse(w http.ResponseWriter) error
+}
+
+type GetArenaPublicScoreboard200JSONResponse ArenaPublicScoreboardResponse
+
+func (response GetArenaPublicScoreboard200JSONResponse) VisitGetArenaPublicScoreboardResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetArenaPublicScoreboard404ApplicationProblemPlusJSONResponse struct {
+	ArenaNotFoundResponseApplicationProblemPlusJSONResponse
+}
+
+func (response GetArenaPublicScoreboard404ApplicationProblemPlusJSONResponse) VisitGetArenaPublicScoreboardResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetArenaPublicSnapshotRequestObject struct {
+	TournamentId ArenaTournamentId `json:"tournament_id"`
+	Params       GetArenaPublicSnapshotParams
+}
+
+type GetArenaPublicSnapshotResponseObject interface {
+	VisitGetArenaPublicSnapshotResponse(w http.ResponseWriter) error
+}
+
+type GetArenaPublicSnapshot200JSONResponse ArenaPublicRecoverySnapshot
+
+func (response GetArenaPublicSnapshot200JSONResponse) VisitGetArenaPublicSnapshotResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetArenaPublicSnapshot404ApplicationProblemPlusJSONResponse struct {
+	ArenaNotFoundResponseApplicationProblemPlusJSONResponse
+}
+
+func (response GetArenaPublicSnapshot404ApplicationProblemPlusJSONResponse) VisitGetArenaPublicSnapshotResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetArenaPublicSnapshot409JSONResponse struct {
+	ArenaRevisionConflictResponseJSONResponse
+}
+
+func (response GetArenaPublicSnapshot409JSONResponse) VisitGetArenaPublicSnapshotResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetArenaParticipantAssignmentRequestObject struct {
+	TournamentId ArenaTournamentId `json:"tournament_id"`
+	AssignmentId ArenaAssignmentId `json:"assignment_id"`
+}
+
+type GetArenaParticipantAssignmentResponseObject interface {
+	VisitGetArenaParticipantAssignmentResponse(w http.ResponseWriter) error
+}
+
+type GetArenaParticipantAssignment200JSONResponse ArenaParticipantAssignmentResponse
+
+func (response GetArenaParticipantAssignment200JSONResponse) VisitGetArenaParticipantAssignmentResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetArenaParticipantAssignment401ApplicationProblemPlusJSONResponse struct {
+	ArenaUnauthorizedResponseApplicationProblemPlusJSONResponse
+}
+
+func (response GetArenaParticipantAssignment401ApplicationProblemPlusJSONResponse) VisitGetArenaParticipantAssignmentResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetArenaParticipantAssignment403ApplicationProblemPlusJSONResponse struct {
+	ArenaForbiddenResponseApplicationProblemPlusJSONResponse
+}
+
+func (response GetArenaParticipantAssignment403ApplicationProblemPlusJSONResponse) VisitGetArenaParticipantAssignmentResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetArenaParticipantAssignment404ApplicationProblemPlusJSONResponse struct {
+	ArenaNotFoundResponseApplicationProblemPlusJSONResponse
+}
+
+func (response GetArenaParticipantAssignment404ApplicationProblemPlusJSONResponse) VisitGetArenaParticipantAssignmentResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetArenaParticipantLobbyRequestObject struct {
+	TournamentId ArenaTournamentId `json:"tournament_id"`
+}
+
+type GetArenaParticipantLobbyResponseObject interface {
+	VisitGetArenaParticipantLobbyResponse(w http.ResponseWriter) error
+}
+
+type GetArenaParticipantLobby200JSONResponse ArenaParticipantLobbyResponse
+
+func (response GetArenaParticipantLobby200JSONResponse) VisitGetArenaParticipantLobbyResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetArenaParticipantLobby401ApplicationProblemPlusJSONResponse struct {
+	ArenaUnauthorizedResponseApplicationProblemPlusJSONResponse
+}
+
+func (response GetArenaParticipantLobby401ApplicationProblemPlusJSONResponse) VisitGetArenaParticipantLobbyResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetArenaParticipantLobby403ApplicationProblemPlusJSONResponse struct {
+	ArenaForbiddenResponseApplicationProblemPlusJSONResponse
+}
+
+func (response GetArenaParticipantLobby403ApplicationProblemPlusJSONResponse) VisitGetArenaParticipantLobbyResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetArenaParticipantLobby404ApplicationProblemPlusJSONResponse struct {
+	ArenaNotFoundResponseApplicationProblemPlusJSONResponse
+}
+
+func (response GetArenaParticipantLobby404ApplicationProblemPlusJSONResponse) VisitGetArenaParticipantLobbyResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type SubmitArenaParticipantDraftActionRequestObject struct {
+	TournamentId ArenaTournamentId `json:"tournament_id"`
+	SeriesId     ArenaSeriesId     `json:"series_id"`
+	Params       SubmitArenaParticipantDraftActionParams
+	Body         *SubmitArenaParticipantDraftActionJSONRequestBody
+}
+
+type SubmitArenaParticipantDraftActionResponseObject interface {
+	VisitSubmitArenaParticipantDraftActionResponse(w http.ResponseWriter) error
+}
+
+type SubmitArenaParticipantDraftAction200JSONResponse ArenaDraft
+
+func (response SubmitArenaParticipantDraftAction200JSONResponse) VisitSubmitArenaParticipantDraftActionResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type SubmitArenaParticipantDraftAction401ApplicationProblemPlusJSONResponse struct {
+	ArenaUnauthorizedResponseApplicationProblemPlusJSONResponse
+}
+
+func (response SubmitArenaParticipantDraftAction401ApplicationProblemPlusJSONResponse) VisitSubmitArenaParticipantDraftActionResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type SubmitArenaParticipantDraftAction403ApplicationProblemPlusJSONResponse struct {
+	ArenaForbiddenResponseApplicationProblemPlusJSONResponse
+}
+
+func (response SubmitArenaParticipantDraftAction403ApplicationProblemPlusJSONResponse) VisitSubmitArenaParticipantDraftActionResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type SubmitArenaParticipantDraftAction404ApplicationProblemPlusJSONResponse struct {
+	ArenaNotFoundResponseApplicationProblemPlusJSONResponse
+}
+
+func (response SubmitArenaParticipantDraftAction404ApplicationProblemPlusJSONResponse) VisitSubmitArenaParticipantDraftActionResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type SubmitArenaParticipantDraftAction409JSONResponse struct {
+	ArenaRevisionConflictResponseJSONResponse
+}
+
+func (response SubmitArenaParticipantDraftAction409JSONResponse) VisitSubmitArenaParticipantDraftActionResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type SubmitArenaParticipantFlagRequestObject struct {
+	TournamentId ArenaTournamentId `json:"tournament_id"`
+	SeriesId     ArenaSeriesId     `json:"series_id"`
+	GameId       ArenaGameId       `json:"game_id"`
+	Params       SubmitArenaParticipantFlagParams
+	Body         *SubmitArenaParticipantFlagJSONRequestBody
+}
+
+type SubmitArenaParticipantFlagResponseObject interface {
+	VisitSubmitArenaParticipantFlagResponse(w http.ResponseWriter) error
+}
+
+type SubmitArenaParticipantFlag200JSONResponse ArenaParticipantSubmissionResponse
+
+func (response SubmitArenaParticipantFlag200JSONResponse) VisitSubmitArenaParticipantFlagResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type SubmitArenaParticipantFlag401ApplicationProblemPlusJSONResponse struct {
+	ArenaUnauthorizedResponseApplicationProblemPlusJSONResponse
+}
+
+func (response SubmitArenaParticipantFlag401ApplicationProblemPlusJSONResponse) VisitSubmitArenaParticipantFlagResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type SubmitArenaParticipantFlag403ApplicationProblemPlusJSONResponse struct {
+	ArenaForbiddenResponseApplicationProblemPlusJSONResponse
+}
+
+func (response SubmitArenaParticipantFlag403ApplicationProblemPlusJSONResponse) VisitSubmitArenaParticipantFlagResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type SubmitArenaParticipantFlag404ApplicationProblemPlusJSONResponse struct {
+	ArenaNotFoundResponseApplicationProblemPlusJSONResponse
+}
+
+func (response SubmitArenaParticipantFlag404ApplicationProblemPlusJSONResponse) VisitSubmitArenaParticipantFlagResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type SubmitArenaParticipantFlag409JSONResponse struct {
+	ArenaRevisionConflictResponseJSONResponse
+}
+
+func (response SubmitArenaParticipantFlag409JSONResponse) VisitSubmitArenaParticipantFlagResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ApplyArenaParticipantPostSeriesActionRequestObject struct {
+	TournamentId ArenaTournamentId `json:"tournament_id"`
+	SeriesId     ArenaSeriesId     `json:"series_id"`
+	Params       ApplyArenaParticipantPostSeriesActionParams
+	Body         *ApplyArenaParticipantPostSeriesActionJSONRequestBody
+}
+
+type ApplyArenaParticipantPostSeriesActionResponseObject interface {
+	VisitApplyArenaParticipantPostSeriesActionResponse(w http.ResponseWriter) error
+}
+
+type ApplyArenaParticipantPostSeriesAction200JSONResponse ArenaParticipantPostSeriesResponse
+
+func (response ApplyArenaParticipantPostSeriesAction200JSONResponse) VisitApplyArenaParticipantPostSeriesActionResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ApplyArenaParticipantPostSeriesAction401ApplicationProblemPlusJSONResponse struct {
+	ArenaUnauthorizedResponseApplicationProblemPlusJSONResponse
+}
+
+func (response ApplyArenaParticipantPostSeriesAction401ApplicationProblemPlusJSONResponse) VisitApplyArenaParticipantPostSeriesActionResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ApplyArenaParticipantPostSeriesAction403ApplicationProblemPlusJSONResponse struct {
+	ArenaForbiddenResponseApplicationProblemPlusJSONResponse
+}
+
+func (response ApplyArenaParticipantPostSeriesAction403ApplicationProblemPlusJSONResponse) VisitApplyArenaParticipantPostSeriesActionResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ApplyArenaParticipantPostSeriesAction404ApplicationProblemPlusJSONResponse struct {
+	ArenaNotFoundResponseApplicationProblemPlusJSONResponse
+}
+
+func (response ApplyArenaParticipantPostSeriesAction404ApplicationProblemPlusJSONResponse) VisitApplyArenaParticipantPostSeriesActionResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ApplyArenaParticipantPostSeriesAction409JSONResponse struct {
+	ArenaRevisionConflictResponseJSONResponse
+}
+
+func (response ApplyArenaParticipantPostSeriesAction409JSONResponse) VisitApplyArenaParticipantPostSeriesActionResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type SurrenderArenaParticipantSeriesRequestObject struct {
+	TournamentId ArenaTournamentId `json:"tournament_id"`
+	SeriesId     ArenaSeriesId     `json:"series_id"`
+	Params       SurrenderArenaParticipantSeriesParams
+	Body         *SurrenderArenaParticipantSeriesJSONRequestBody
+}
+
+type SurrenderArenaParticipantSeriesResponseObject interface {
+	VisitSurrenderArenaParticipantSeriesResponse(w http.ResponseWriter) error
+}
+
+type SurrenderArenaParticipantSeries200JSONResponse ArenaOfficialResultRevision
+
+func (response SurrenderArenaParticipantSeries200JSONResponse) VisitSurrenderArenaParticipantSeriesResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type SurrenderArenaParticipantSeries401ApplicationProblemPlusJSONResponse struct {
+	ArenaUnauthorizedResponseApplicationProblemPlusJSONResponse
+}
+
+func (response SurrenderArenaParticipantSeries401ApplicationProblemPlusJSONResponse) VisitSurrenderArenaParticipantSeriesResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type SurrenderArenaParticipantSeries403ApplicationProblemPlusJSONResponse struct {
+	ArenaForbiddenResponseApplicationProblemPlusJSONResponse
+}
+
+func (response SurrenderArenaParticipantSeries403ApplicationProblemPlusJSONResponse) VisitSurrenderArenaParticipantSeriesResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type SurrenderArenaParticipantSeries404ApplicationProblemPlusJSONResponse struct {
+	ArenaNotFoundResponseApplicationProblemPlusJSONResponse
+}
+
+func (response SurrenderArenaParticipantSeries404ApplicationProblemPlusJSONResponse) VisitSurrenderArenaParticipantSeriesResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type SurrenderArenaParticipantSeries409JSONResponse struct {
+	ArenaRevisionConflictResponseJSONResponse
+}
+
+func (response SurrenderArenaParticipantSeries409JSONResponse) VisitSurrenderArenaParticipantSeriesResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetArenaParticipantSnapshotRequestObject struct {
+	TournamentId ArenaTournamentId `json:"tournament_id"`
+	Params       GetArenaParticipantSnapshotParams
+}
+
+type GetArenaParticipantSnapshotResponseObject interface {
+	VisitGetArenaParticipantSnapshotResponse(w http.ResponseWriter) error
+}
+
+type GetArenaParticipantSnapshot200JSONResponse ArenaParticipantRecoverySnapshot
+
+func (response GetArenaParticipantSnapshot200JSONResponse) VisitGetArenaParticipantSnapshotResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetArenaParticipantSnapshot401ApplicationProblemPlusJSONResponse struct {
+	ArenaUnauthorizedResponseApplicationProblemPlusJSONResponse
+}
+
+func (response GetArenaParticipantSnapshot401ApplicationProblemPlusJSONResponse) VisitGetArenaParticipantSnapshotResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetArenaParticipantSnapshot403ApplicationProblemPlusJSONResponse struct {
+	ArenaForbiddenResponseApplicationProblemPlusJSONResponse
+}
+
+func (response GetArenaParticipantSnapshot403ApplicationProblemPlusJSONResponse) VisitGetArenaParticipantSnapshotResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetArenaParticipantSnapshot404ApplicationProblemPlusJSONResponse struct {
+	ArenaNotFoundResponseApplicationProblemPlusJSONResponse
+}
+
+func (response GetArenaParticipantSnapshot404ApplicationProblemPlusJSONResponse) VisitGetArenaParticipantSnapshotResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetArenaParticipantSnapshot409JSONResponse struct {
+	ArenaRevisionConflictResponseJSONResponse
+}
+
+func (response GetArenaParticipantSnapshot409JSONResponse) VisitGetArenaParticipantSnapshotResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type SetArenaParticipantReadyRequestObject struct {
+	TournamentId ArenaTournamentId `json:"tournament_id"`
+	WaveId       ArenaWaveId       `json:"wave_id"`
+	Params       SetArenaParticipantReadyParams
+	Body         *SetArenaParticipantReadyJSONRequestBody
+}
+
+type SetArenaParticipantReadyResponseObject interface {
+	VisitSetArenaParticipantReadyResponse(w http.ResponseWriter) error
+}
+
+type SetArenaParticipantReady200JSONResponse ArenaReadinessEvent
+
+func (response SetArenaParticipantReady200JSONResponse) VisitSetArenaParticipantReadyResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type SetArenaParticipantReady401ApplicationProblemPlusJSONResponse struct {
+	ArenaUnauthorizedResponseApplicationProblemPlusJSONResponse
+}
+
+func (response SetArenaParticipantReady401ApplicationProblemPlusJSONResponse) VisitSetArenaParticipantReadyResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type SetArenaParticipantReady403ApplicationProblemPlusJSONResponse struct {
+	ArenaForbiddenResponseApplicationProblemPlusJSONResponse
+}
+
+func (response SetArenaParticipantReady403ApplicationProblemPlusJSONResponse) VisitSetArenaParticipantReadyResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type SetArenaParticipantReady404ApplicationProblemPlusJSONResponse struct {
+	ArenaNotFoundResponseApplicationProblemPlusJSONResponse
+}
+
+func (response SetArenaParticipantReady404ApplicationProblemPlusJSONResponse) VisitSetArenaParticipantReadyResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type SetArenaParticipantReady409JSONResponse struct {
+	ArenaRevisionConflictResponseJSONResponse
+}
+
+func (response SetArenaParticipantReady409JSONResponse) VisitSetArenaParticipantReadyResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
 type GetDuelRequestObject struct {
 	Id openapi_types.UUID `json:"id"`
 }
@@ -1840,6 +5323,87 @@ type StrictServerInterface interface {
 	// Upload a source-file ZIP (≤ 100 MB) and store it in SeaweedFS
 	// (POST /api/v1/admin/tasks/{id}/source)
 	UploadTaskSource(ctx context.Context, request UploadTaskSourceRequestObject) (UploadTaskSourceResponseObject, error)
+	// Search the redacted Arena audit projection
+	// (GET /api/v1/arena/operator/audit)
+	ListArenaOperatorAudit(ctx context.Context, request ListArenaOperatorAuditRequestObject) (ListArenaOperatorAuditResponseObject, error)
+	// List Arena tournaments for the authenticated operator
+	// (GET /api/v1/arena/operator/tournaments)
+	ListArenaOperatorTournaments(ctx context.Context, request ListArenaOperatorTournamentsRequestObject) (ListArenaOperatorTournamentsResponseObject, error)
+	// Create an Arena tournament
+	// (POST /api/v1/arena/operator/tournaments)
+	CreateArenaTournament(ctx context.Context, request CreateArenaTournamentRequestObject) (CreateArenaTournamentResponseObject, error)
+	// Apply a tournament lifecycle operator action
+	// (POST /api/v1/arena/operator/tournaments/{tournament_id}/actions)
+	ApplyArenaTournamentAction(ctx context.Context, request ApplyArenaTournamentActionRequestObject) (ApplyArenaTournamentActionResponseObject, error)
+	// Export a canonical redacted Arena incident bundle
+	// (GET /api/v1/arena/operator/tournaments/{tournament_id}/incident-export)
+	ExportArenaOperatorIncident(ctx context.Context, request ExportArenaOperatorIncidentRequestObject) (ExportArenaOperatorIncidentResponseObject, error)
+	// Configure a Swiss round and its category policy
+	// (POST /api/v1/arena/operator/tournaments/{tournament_id}/pairings)
+	ConfigureArenaTournamentPairings(ctx context.Context, request ConfigureArenaTournamentPairingsRequestObject) (ConfigureArenaTournamentPairingsResponseObject, error)
+	// Read the operator roster projection
+	// (GET /api/v1/arena/operator/tournaments/{tournament_id}/roster)
+	GetArenaOperatorRoster(ctx context.Context, request GetArenaOperatorRosterRequestObject) (GetArenaOperatorRosterResponseObject, error)
+	// Replace tournament roster entries before lock
+	// (PUT /api/v1/arena/operator/tournaments/{tournament_id}/roster)
+	ReplaceArenaTournamentRoster(ctx context.Context, request ReplaceArenaTournamentRosterRequestObject) (ReplaceArenaTournamentRosterResponseObject, error)
+	// Lock a preflight-approved tournament roster
+	// (POST /api/v1/arena/operator/tournaments/{tournament_id}/roster/lock)
+	LockArenaTournamentRoster(ctx context.Context, request LockArenaTournamentRosterRequestObject) (LockArenaTournamentRosterResponseObject, error)
+	// Evaluate roster and runtime preflight checks
+	// (POST /api/v1/arena/operator/tournaments/{tournament_id}/roster/preflight)
+	RunArenaRosterPreflight(ctx context.Context, request RunArenaRosterPreflightRequestObject) (RunArenaRosterPreflightResponseObject, error)
+	// Unlock a roster before tournament execution starts
+	// (POST /api/v1/arena/operator/tournaments/{tournament_id}/roster/unlock)
+	UnlockArenaTournamentRoster(ctx context.Context, request UnlockArenaTournamentRosterRequestObject) (UnlockArenaTournamentRosterResponseObject, error)
+	// Correct an official Game result and dependent projections
+	// (POST /api/v1/arena/operator/tournaments/{tournament_id}/series/{series_id}/games/{game_id}/corrections)
+	CorrectArenaGameResult(ctx context.Context, request CorrectArenaGameResultRequestObject) (CorrectArenaGameResultResponseObject, error)
+	// Recover the full operator tournament projection
+	// (GET /api/v1/arena/operator/tournaments/{tournament_id}/snapshot)
+	GetArenaOperatorSnapshot(ctx context.Context, request GetArenaOperatorSnapshotRequestObject) (GetArenaOperatorSnapshotResponseObject, error)
+	// Open, start, pause, resume, complete, or cancel a Wave
+	// (POST /api/v1/arena/operator/tournaments/{tournament_id}/waves/{wave_id}/actions)
+	ControlArenaTournamentWave(ctx context.Context, request ControlArenaTournamentWaveRequestObject) (ControlArenaTournamentWaveResponseObject, error)
+	// Read the public tournament display projection
+	// (GET /api/v1/arena/public/tournaments/{tournament_id})
+	GetArenaPublicTournament(ctx context.Context, request GetArenaPublicTournamentRequestObject) (GetArenaPublicTournamentResponseObject, error)
+	// Read the public Arena playoff bracket
+	// (GET /api/v1/arena/public/tournaments/{tournament_id}/bracket)
+	GetArenaPublicBracket(ctx context.Context, request GetArenaPublicBracketRequestObject) (GetArenaPublicBracketResponseObject, error)
+	// Read the public live draft display projection
+	// (GET /api/v1/arena/public/tournaments/{tournament_id}/live-draft)
+	GetArenaPublicLiveDraft(ctx context.Context, request GetArenaPublicLiveDraftRequestObject) (GetArenaPublicLiveDraftResponseObject, error)
+	// Read the public Arena scoreboard
+	// (GET /api/v1/arena/public/tournaments/{tournament_id}/scoreboard)
+	GetArenaPublicScoreboard(ctx context.Context, request GetArenaPublicScoreboardRequestObject) (GetArenaPublicScoreboardResponseObject, error)
+	// Recover the public tournament display view
+	// (GET /api/v1/arena/public/tournaments/{tournament_id}/snapshot)
+	GetArenaPublicSnapshot(ctx context.Context, request GetArenaPublicSnapshotRequestObject) (GetArenaPublicSnapshotResponseObject, error)
+	// Read a private task assignment for the authenticated participant
+	// (GET /api/v1/arena/tournaments/{tournament_id}/participant/assignments/{assignment_id})
+	GetArenaParticipantAssignment(ctx context.Context, request GetArenaParticipantAssignmentRequestObject) (GetArenaParticipantAssignmentResponseObject, error)
+	// Read the authenticated participant tournament lobby
+	// (GET /api/v1/arena/tournaments/{tournament_id}/participant/lobby)
+	GetArenaParticipantLobby(ctx context.Context, request GetArenaParticipantLobbyRequestObject) (GetArenaParticipantLobbyResponseObject, error)
+	// Submit an authenticated participant draft action
+	// (POST /api/v1/arena/tournaments/{tournament_id}/participant/series/{series_id}/draft/actions)
+	SubmitArenaParticipantDraftAction(ctx context.Context, request SubmitArenaParticipantDraftActionRequestObject) (SubmitArenaParticipantDraftActionResponseObject, error)
+	// Submit a secret for the authenticated participant Game
+	// (POST /api/v1/arena/tournaments/{tournament_id}/participant/series/{series_id}/games/{game_id}/submissions)
+	SubmitArenaParticipantFlag(ctx context.Context, request SubmitArenaParticipantFlagRequestObject) (SubmitArenaParticipantFlagResponseObject, error)
+	// Apply a post-Series participant action
+	// (POST /api/v1/arena/tournaments/{tournament_id}/participant/series/{series_id}/post-series)
+	ApplyArenaParticipantPostSeriesAction(ctx context.Context, request ApplyArenaParticipantPostSeriesActionRequestObject) (ApplyArenaParticipantPostSeriesActionResponseObject, error)
+	// Surrender the authenticated participant Series
+	// (POST /api/v1/arena/tournaments/{tournament_id}/participant/series/{series_id}/surrender)
+	SurrenderArenaParticipantSeries(ctx context.Context, request SurrenderArenaParticipantSeriesRequestObject) (SurrenderArenaParticipantSeriesResponseObject, error)
+	// Recover the authenticated participant tournament view
+	// (GET /api/v1/arena/tournaments/{tournament_id}/participant/snapshot)
+	GetArenaParticipantSnapshot(ctx context.Context, request GetArenaParticipantSnapshotRequestObject) (GetArenaParticipantSnapshotResponseObject, error)
+	// Set readiness for the authenticated participant
+	// (POST /api/v1/arena/tournaments/{tournament_id}/participant/waves/{wave_id}/ready)
+	SetArenaParticipantReady(ctx context.Context, request SetArenaParticipantReadyRequestObject) (SetArenaParticipantReadyResponseObject, error)
 	// Read a duel state (for reconnect)
 	// (GET /api/v1/duels/{id})
 	GetDuel(ctx context.Context, request GetDuelRequestObject) (GetDuelResponseObject, error)
@@ -2310,6 +5874,832 @@ func (sh *strictHandler) UploadTaskSource(w http.ResponseWriter, r *http.Request
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(UploadTaskSourceResponseObject); ok {
 		if err := validResponse.VisitUploadTaskSourceResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListArenaOperatorAudit operation middleware
+func (sh *strictHandler) ListArenaOperatorAudit(w http.ResponseWriter, r *http.Request, params ListArenaOperatorAuditParams) {
+	var request ListArenaOperatorAuditRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListArenaOperatorAudit(ctx, request.(ListArenaOperatorAuditRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListArenaOperatorAudit")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListArenaOperatorAuditResponseObject); ok {
+		if err := validResponse.VisitListArenaOperatorAuditResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListArenaOperatorTournaments operation middleware
+func (sh *strictHandler) ListArenaOperatorTournaments(w http.ResponseWriter, r *http.Request, params ListArenaOperatorTournamentsParams) {
+	var request ListArenaOperatorTournamentsRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListArenaOperatorTournaments(ctx, request.(ListArenaOperatorTournamentsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListArenaOperatorTournaments")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListArenaOperatorTournamentsResponseObject); ok {
+		if err := validResponse.VisitListArenaOperatorTournamentsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateArenaTournament operation middleware
+func (sh *strictHandler) CreateArenaTournament(w http.ResponseWriter, r *http.Request, params CreateArenaTournamentParams) {
+	var request CreateArenaTournamentRequestObject
+
+	request.Params = params
+
+	var body CreateArenaTournamentJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateArenaTournament(ctx, request.(CreateArenaTournamentRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateArenaTournament")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateArenaTournamentResponseObject); ok {
+		if err := validResponse.VisitCreateArenaTournamentResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ApplyArenaTournamentAction operation middleware
+func (sh *strictHandler) ApplyArenaTournamentAction(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId, params ApplyArenaTournamentActionParams) {
+	var request ApplyArenaTournamentActionRequestObject
+
+	request.TournamentId = tournamentId
+	request.Params = params
+
+	var body ApplyArenaTournamentActionJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ApplyArenaTournamentAction(ctx, request.(ApplyArenaTournamentActionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ApplyArenaTournamentAction")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ApplyArenaTournamentActionResponseObject); ok {
+		if err := validResponse.VisitApplyArenaTournamentActionResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ExportArenaOperatorIncident operation middleware
+func (sh *strictHandler) ExportArenaOperatorIncident(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId) {
+	var request ExportArenaOperatorIncidentRequestObject
+
+	request.TournamentId = tournamentId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ExportArenaOperatorIncident(ctx, request.(ExportArenaOperatorIncidentRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ExportArenaOperatorIncident")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ExportArenaOperatorIncidentResponseObject); ok {
+		if err := validResponse.VisitExportArenaOperatorIncidentResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ConfigureArenaTournamentPairings operation middleware
+func (sh *strictHandler) ConfigureArenaTournamentPairings(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId, params ConfigureArenaTournamentPairingsParams) {
+	var request ConfigureArenaTournamentPairingsRequestObject
+
+	request.TournamentId = tournamentId
+	request.Params = params
+
+	var body ConfigureArenaTournamentPairingsJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ConfigureArenaTournamentPairings(ctx, request.(ConfigureArenaTournamentPairingsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ConfigureArenaTournamentPairings")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ConfigureArenaTournamentPairingsResponseObject); ok {
+		if err := validResponse.VisitConfigureArenaTournamentPairingsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetArenaOperatorRoster operation middleware
+func (sh *strictHandler) GetArenaOperatorRoster(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId) {
+	var request GetArenaOperatorRosterRequestObject
+
+	request.TournamentId = tournamentId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetArenaOperatorRoster(ctx, request.(GetArenaOperatorRosterRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetArenaOperatorRoster")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetArenaOperatorRosterResponseObject); ok {
+		if err := validResponse.VisitGetArenaOperatorRosterResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ReplaceArenaTournamentRoster operation middleware
+func (sh *strictHandler) ReplaceArenaTournamentRoster(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId, params ReplaceArenaTournamentRosterParams) {
+	var request ReplaceArenaTournamentRosterRequestObject
+
+	request.TournamentId = tournamentId
+	request.Params = params
+
+	var body ReplaceArenaTournamentRosterJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ReplaceArenaTournamentRoster(ctx, request.(ReplaceArenaTournamentRosterRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ReplaceArenaTournamentRoster")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ReplaceArenaTournamentRosterResponseObject); ok {
+		if err := validResponse.VisitReplaceArenaTournamentRosterResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// LockArenaTournamentRoster operation middleware
+func (sh *strictHandler) LockArenaTournamentRoster(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId, params LockArenaTournamentRosterParams) {
+	var request LockArenaTournamentRosterRequestObject
+
+	request.TournamentId = tournamentId
+	request.Params = params
+
+	var body LockArenaTournamentRosterJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.LockArenaTournamentRoster(ctx, request.(LockArenaTournamentRosterRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "LockArenaTournamentRoster")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(LockArenaTournamentRosterResponseObject); ok {
+		if err := validResponse.VisitLockArenaTournamentRosterResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RunArenaRosterPreflight operation middleware
+func (sh *strictHandler) RunArenaRosterPreflight(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId, params RunArenaRosterPreflightParams) {
+	var request RunArenaRosterPreflightRequestObject
+
+	request.TournamentId = tournamentId
+	request.Params = params
+
+	var body RunArenaRosterPreflightJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RunArenaRosterPreflight(ctx, request.(RunArenaRosterPreflightRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RunArenaRosterPreflight")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RunArenaRosterPreflightResponseObject); ok {
+		if err := validResponse.VisitRunArenaRosterPreflightResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UnlockArenaTournamentRoster operation middleware
+func (sh *strictHandler) UnlockArenaTournamentRoster(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId, params UnlockArenaTournamentRosterParams) {
+	var request UnlockArenaTournamentRosterRequestObject
+
+	request.TournamentId = tournamentId
+	request.Params = params
+
+	var body UnlockArenaTournamentRosterJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UnlockArenaTournamentRoster(ctx, request.(UnlockArenaTournamentRosterRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UnlockArenaTournamentRoster")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UnlockArenaTournamentRosterResponseObject); ok {
+		if err := validResponse.VisitUnlockArenaTournamentRosterResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CorrectArenaGameResult operation middleware
+func (sh *strictHandler) CorrectArenaGameResult(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId, seriesId ArenaSeriesId, gameId ArenaGameId, params CorrectArenaGameResultParams) {
+	var request CorrectArenaGameResultRequestObject
+
+	request.TournamentId = tournamentId
+	request.SeriesId = seriesId
+	request.GameId = gameId
+	request.Params = params
+
+	var body CorrectArenaGameResultJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CorrectArenaGameResult(ctx, request.(CorrectArenaGameResultRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CorrectArenaGameResult")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CorrectArenaGameResultResponseObject); ok {
+		if err := validResponse.VisitCorrectArenaGameResultResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetArenaOperatorSnapshot operation middleware
+func (sh *strictHandler) GetArenaOperatorSnapshot(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId, params GetArenaOperatorSnapshotParams) {
+	var request GetArenaOperatorSnapshotRequestObject
+
+	request.TournamentId = tournamentId
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetArenaOperatorSnapshot(ctx, request.(GetArenaOperatorSnapshotRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetArenaOperatorSnapshot")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetArenaOperatorSnapshotResponseObject); ok {
+		if err := validResponse.VisitGetArenaOperatorSnapshotResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ControlArenaTournamentWave operation middleware
+func (sh *strictHandler) ControlArenaTournamentWave(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId, waveId ArenaWaveId, params ControlArenaTournamentWaveParams) {
+	var request ControlArenaTournamentWaveRequestObject
+
+	request.TournamentId = tournamentId
+	request.WaveId = waveId
+	request.Params = params
+
+	var body ControlArenaTournamentWaveJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ControlArenaTournamentWave(ctx, request.(ControlArenaTournamentWaveRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ControlArenaTournamentWave")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ControlArenaTournamentWaveResponseObject); ok {
+		if err := validResponse.VisitControlArenaTournamentWaveResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetArenaPublicTournament operation middleware
+func (sh *strictHandler) GetArenaPublicTournament(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId) {
+	var request GetArenaPublicTournamentRequestObject
+
+	request.TournamentId = tournamentId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetArenaPublicTournament(ctx, request.(GetArenaPublicTournamentRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetArenaPublicTournament")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetArenaPublicTournamentResponseObject); ok {
+		if err := validResponse.VisitGetArenaPublicTournamentResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetArenaPublicBracket operation middleware
+func (sh *strictHandler) GetArenaPublicBracket(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId) {
+	var request GetArenaPublicBracketRequestObject
+
+	request.TournamentId = tournamentId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetArenaPublicBracket(ctx, request.(GetArenaPublicBracketRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetArenaPublicBracket")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetArenaPublicBracketResponseObject); ok {
+		if err := validResponse.VisitGetArenaPublicBracketResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetArenaPublicLiveDraft operation middleware
+func (sh *strictHandler) GetArenaPublicLiveDraft(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId) {
+	var request GetArenaPublicLiveDraftRequestObject
+
+	request.TournamentId = tournamentId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetArenaPublicLiveDraft(ctx, request.(GetArenaPublicLiveDraftRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetArenaPublicLiveDraft")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetArenaPublicLiveDraftResponseObject); ok {
+		if err := validResponse.VisitGetArenaPublicLiveDraftResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetArenaPublicScoreboard operation middleware
+func (sh *strictHandler) GetArenaPublicScoreboard(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId) {
+	var request GetArenaPublicScoreboardRequestObject
+
+	request.TournamentId = tournamentId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetArenaPublicScoreboard(ctx, request.(GetArenaPublicScoreboardRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetArenaPublicScoreboard")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetArenaPublicScoreboardResponseObject); ok {
+		if err := validResponse.VisitGetArenaPublicScoreboardResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetArenaPublicSnapshot operation middleware
+func (sh *strictHandler) GetArenaPublicSnapshot(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId, params GetArenaPublicSnapshotParams) {
+	var request GetArenaPublicSnapshotRequestObject
+
+	request.TournamentId = tournamentId
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetArenaPublicSnapshot(ctx, request.(GetArenaPublicSnapshotRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetArenaPublicSnapshot")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetArenaPublicSnapshotResponseObject); ok {
+		if err := validResponse.VisitGetArenaPublicSnapshotResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetArenaParticipantAssignment operation middleware
+func (sh *strictHandler) GetArenaParticipantAssignment(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId, assignmentId ArenaAssignmentId) {
+	var request GetArenaParticipantAssignmentRequestObject
+
+	request.TournamentId = tournamentId
+	request.AssignmentId = assignmentId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetArenaParticipantAssignment(ctx, request.(GetArenaParticipantAssignmentRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetArenaParticipantAssignment")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetArenaParticipantAssignmentResponseObject); ok {
+		if err := validResponse.VisitGetArenaParticipantAssignmentResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetArenaParticipantLobby operation middleware
+func (sh *strictHandler) GetArenaParticipantLobby(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId) {
+	var request GetArenaParticipantLobbyRequestObject
+
+	request.TournamentId = tournamentId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetArenaParticipantLobby(ctx, request.(GetArenaParticipantLobbyRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetArenaParticipantLobby")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetArenaParticipantLobbyResponseObject); ok {
+		if err := validResponse.VisitGetArenaParticipantLobbyResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SubmitArenaParticipantDraftAction operation middleware
+func (sh *strictHandler) SubmitArenaParticipantDraftAction(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId, seriesId ArenaSeriesId, params SubmitArenaParticipantDraftActionParams) {
+	var request SubmitArenaParticipantDraftActionRequestObject
+
+	request.TournamentId = tournamentId
+	request.SeriesId = seriesId
+	request.Params = params
+
+	var body SubmitArenaParticipantDraftActionJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SubmitArenaParticipantDraftAction(ctx, request.(SubmitArenaParticipantDraftActionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SubmitArenaParticipantDraftAction")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SubmitArenaParticipantDraftActionResponseObject); ok {
+		if err := validResponse.VisitSubmitArenaParticipantDraftActionResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SubmitArenaParticipantFlag operation middleware
+func (sh *strictHandler) SubmitArenaParticipantFlag(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId, seriesId ArenaSeriesId, gameId ArenaGameId, params SubmitArenaParticipantFlagParams) {
+	var request SubmitArenaParticipantFlagRequestObject
+
+	request.TournamentId = tournamentId
+	request.SeriesId = seriesId
+	request.GameId = gameId
+	request.Params = params
+
+	var body SubmitArenaParticipantFlagJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SubmitArenaParticipantFlag(ctx, request.(SubmitArenaParticipantFlagRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SubmitArenaParticipantFlag")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SubmitArenaParticipantFlagResponseObject); ok {
+		if err := validResponse.VisitSubmitArenaParticipantFlagResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ApplyArenaParticipantPostSeriesAction operation middleware
+func (sh *strictHandler) ApplyArenaParticipantPostSeriesAction(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId, seriesId ArenaSeriesId, params ApplyArenaParticipantPostSeriesActionParams) {
+	var request ApplyArenaParticipantPostSeriesActionRequestObject
+
+	request.TournamentId = tournamentId
+	request.SeriesId = seriesId
+	request.Params = params
+
+	var body ApplyArenaParticipantPostSeriesActionJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ApplyArenaParticipantPostSeriesAction(ctx, request.(ApplyArenaParticipantPostSeriesActionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ApplyArenaParticipantPostSeriesAction")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ApplyArenaParticipantPostSeriesActionResponseObject); ok {
+		if err := validResponse.VisitApplyArenaParticipantPostSeriesActionResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SurrenderArenaParticipantSeries operation middleware
+func (sh *strictHandler) SurrenderArenaParticipantSeries(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId, seriesId ArenaSeriesId, params SurrenderArenaParticipantSeriesParams) {
+	var request SurrenderArenaParticipantSeriesRequestObject
+
+	request.TournamentId = tournamentId
+	request.SeriesId = seriesId
+	request.Params = params
+
+	var body SurrenderArenaParticipantSeriesJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SurrenderArenaParticipantSeries(ctx, request.(SurrenderArenaParticipantSeriesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SurrenderArenaParticipantSeries")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SurrenderArenaParticipantSeriesResponseObject); ok {
+		if err := validResponse.VisitSurrenderArenaParticipantSeriesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetArenaParticipantSnapshot operation middleware
+func (sh *strictHandler) GetArenaParticipantSnapshot(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId, params GetArenaParticipantSnapshotParams) {
+	var request GetArenaParticipantSnapshotRequestObject
+
+	request.TournamentId = tournamentId
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetArenaParticipantSnapshot(ctx, request.(GetArenaParticipantSnapshotRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetArenaParticipantSnapshot")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetArenaParticipantSnapshotResponseObject); ok {
+		if err := validResponse.VisitGetArenaParticipantSnapshotResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SetArenaParticipantReady operation middleware
+func (sh *strictHandler) SetArenaParticipantReady(w http.ResponseWriter, r *http.Request, tournamentId ArenaTournamentId, waveId ArenaWaveId, params SetArenaParticipantReadyParams) {
+	var request SetArenaParticipantReadyRequestObject
+
+	request.TournamentId = tournamentId
+	request.WaveId = waveId
+	request.Params = params
+
+	var body SetArenaParticipantReadyJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SetArenaParticipantReady(ctx, request.(SetArenaParticipantReadyRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SetArenaParticipantReady")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SetArenaParticipantReadyResponseObject); ok {
+		if err := validResponse.VisitSetArenaParticipantReadyResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

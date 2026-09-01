@@ -83,6 +83,10 @@ fixture="$(make_fixture checksum-mismatch)"
 sed -i '0,/"integrity": "sha512-[^"]*"/s//"integrity": "sha512-INVALID"/' "$fixture/package-lock.json"
 expect_reject checksum-mismatch "$fixture"
 
+fixture="$(make_fixture missing-yaml-compatibility)"
+sed -i 's/"yaml": "2.9.0"/"yaml": "2.8.4"/' "$fixture/package.json"
+expect_reject missing-yaml-compatibility "$fixture"
+
 fixture="$(make_fixture unnamed-trust-decision)"
 sed -i 's/^oapi.trust_decision=.*/oapi.trust_decision=/' "$fixture/policy.md"
 expect_reject unnamed-trust-decision "$fixture"
