@@ -5,10 +5,6 @@ NPM ?= npm
 NPX ?= npx
 
 ROOT_DIR := $(abspath ..)
-BACKEND_DIR := $(ROOT_DIR)/backend
-OPENAPI_FILE := $(BACKEND_DIR)/api/openapi.yml
-OPENAPI_TMP := $(BACKEND_DIR)/api/components/schemas.yml
-GENERATED_TYPES := lib/shared/api/schema.ts
 ESLINT_EXT := .js,.jsx,.ts,.tsx
 ESLINT_IGNORE := --ignore-pattern .next --ignore-pattern node_modules --ignore-pattern lib/shared/api/schema.ts
 
@@ -44,10 +40,7 @@ generate: gen ## Alias for gen
 
 .PHONY: gen-types
 gen-types: ## Generate REST API types from backend OpenAPI
-	@set -euo pipefail; \
-	trap 'rm -f "$(OPENAPI_TMP)"' EXIT; \
-	cd "$(BACKEND_DIR)" && python3 scripts/merge-schemas.py; \
-	cd "$(CURDIR)" && $(NPX) openapi-typescript "$(OPENAPI_FILE)" -o "$(GENERATED_TYPES)"
+	$(NPM) run openapi:generate
 
 .PHONY: openapi
 openapi: gen-types ## Alias for gen-types

@@ -4,7 +4,6 @@ SHELL := /usr/bin/env bash
 # Pinned tool versions - keep in sync with codegen configs.
 GOOSE_VERSION   ?= v3.27.0
 SQLC_VERSION    ?= v1.31.1
-OAPI_VERSION    ?= v2.5.1
 MOCKERY_VERSION ?= v3.5.5
 WIRE_VERSION    ?= v0.7.0
 
@@ -12,7 +11,6 @@ GOOSE   := go run github.com/pressly/goose/v3/cmd/goose@$(GOOSE_VERSION)
 # sqlc cannot be `go run` (its go.mod uses replace directives); install once with
 # `go install github.com/sqlc-dev/sqlc/cmd/sqlc@$(SQLC_VERSION)` or via your package manager.
 SQLC    := sqlc
-OAPI    := go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@$(OAPI_VERSION)
 MOCKERY := go run github.com/vektra/mockery/v3@$(MOCKERY_VERSION)
 WIRE    := go run github.com/google/wire/cmd/wire@$(WIRE_VERSION)
 
@@ -62,8 +60,7 @@ merge-schemas: ## Only merge components/schemas/*.yml -> schemas.yml (no codegen
 
 .PHONY: gen-openapi openapi
 gen-openapi openapi: ## Merge OpenAPI components, run oapi-codegen, cleanup intermediate files
-	OAPI_VERSION=$(OAPI_VERSION) bash scripts/openapi-generate.sh
-	@rm -f api/components/schemas.yml
+	bash scripts/openapi-generate.sh
 
 .PHONY: gen-sqlc
 gen-sqlc: ## Generate type-safe SQL code from db/queries/
