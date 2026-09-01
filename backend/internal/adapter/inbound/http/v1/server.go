@@ -31,6 +31,7 @@ type Dependencies struct {
 	Upload             UploadService
 	Leaderboard        LeaderboardService
 	Duels              DuelService
+	ArenaAdmin         ArenaAdminService
 	ArenaOperator      ArenaOperatorController
 	ArenaParticipant   ArenaParticipantController
 	ArenaPublic        ArenaPublicController
@@ -70,9 +71,17 @@ func New(deps Dependencies) *Server {
 	if now == nil {
 		now = func() time.Time { return time.Now().UTC() }
 	}
+	var arenaAdmin *arenaAdminController
+	if deps.ArenaAdmin != nil {
+		arenaAdmin = newArenaAdminController(deps.ArenaAdmin)
+	}
 	arenaOperator := deps.ArenaOperator
 	if arenaOperator == nil {
-		arenaOperator = api.Unimplemented{}
+		if arenaAdmin != nil {
+			arenaOperator = arenaAdmin
+		} else {
+			arenaOperator = api.Unimplemented{}
+		}
 	}
 	arenaParticipant := deps.ArenaParticipant
 	if arenaParticipant == nil {
@@ -80,7 +89,11 @@ func New(deps Dependencies) *Server {
 	}
 	arenaPublic := deps.ArenaPublic
 	if arenaPublic == nil {
-		arenaPublic = api.Unimplemented{}
+		if arenaAdmin != nil {
+			arenaPublic = arenaAdmin
+		} else {
+			arenaPublic = api.Unimplemented{}
+		}
 	}
 	return &Server{
 		ArenaOperatorController:    arenaOperator,

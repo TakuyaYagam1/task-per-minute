@@ -2936,6 +2936,8 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 
 type ArenaForbiddenResponseApplicationProblemPlusJSONResponse ProblemDetails
 
+type ArenaInvalidRequestResponseApplicationProblemPlusJSONResponse ProblemDetails
+
 type ArenaNotFoundResponseApplicationProblemPlusJSONResponse ProblemDetails
 
 type ArenaRevisionConflictResponseJSONResponse ArenaRevisionConflict
@@ -3786,6 +3788,17 @@ func (response ApplyArenaTournamentAction200JSONResponse) VisitApplyArenaTournam
 	return json.NewEncoder(w).Encode(response)
 }
 
+type ApplyArenaTournamentAction400ApplicationProblemPlusJSONResponse struct {
+	ArenaInvalidRequestResponseApplicationProblemPlusJSONResponse
+}
+
+func (response ApplyArenaTournamentAction400ApplicationProblemPlusJSONResponse) VisitApplyArenaTournamentActionResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
 type ApplyArenaTournamentAction401ApplicationProblemPlusJSONResponse struct {
 	ArenaUnauthorizedResponseApplicationProblemPlusJSONResponse
 }
@@ -3895,6 +3908,17 @@ type ConfigureArenaTournamentPairings200JSONResponse ArenaSwissRound
 func (response ConfigureArenaTournamentPairings200JSONResponse) VisitConfigureArenaTournamentPairingsResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ConfigureArenaTournamentPairings400ApplicationProblemPlusJSONResponse struct {
+	ArenaInvalidRequestResponseApplicationProblemPlusJSONResponse
+}
+
+func (response ConfigureArenaTournamentPairings400ApplicationProblemPlusJSONResponse) VisitConfigureArenaTournamentPairingsResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
 
 	return json.NewEncoder(w).Encode(response)
 }

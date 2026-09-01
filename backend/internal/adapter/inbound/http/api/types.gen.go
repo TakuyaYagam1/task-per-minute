@@ -155,6 +155,12 @@ const (
 	ArenaOfficialResultSubjectKindSeries ArenaOfficialResultSubjectKind = "series"
 )
 
+// Defines values for ArenaPairingConfigurationRequestPairingMode.
+const (
+	Automatic ArenaPairingConfigurationRequestPairingMode = "automatic"
+	Manual    ArenaPairingConfigurationRequestPairingMode = "manual"
+)
+
 // Defines values for ArenaParticipantPostSeriesRequestAction.
 const (
 	ArenaParticipantPostSeriesRequestActionAcknowledgeResult     ArenaParticipantPostSeriesRequestAction = "acknowledge_result"
@@ -745,6 +751,12 @@ type ArenaLockRosterRequest struct {
 	PreflightRevisionId        openapi_types.UUID   `json:"preflight_revision_id"`
 }
 
+// ArenaManualPairInput defines model for ArenaManualPairInput.
+type ArenaManualPairInput struct {
+	FirstParticipantId  openapi_types.UUID `json:"first_participant_id"`
+	SecondParticipantId openapi_types.UUID `json:"second_participant_id"`
+}
+
 // ArenaOfficialResultRevision Immutable official result revision for one Game or Series.
 type ArenaOfficialResultRevision struct {
 	ActorId                    *openapi_types.UUID            `json:"actor_id"`
@@ -807,13 +819,25 @@ type ArenaOperatorTournamentList struct {
 	NextCursor *string           `json:"next_cursor"`
 }
 
-// ArenaPairingConfigurationRequest defines model for ArenaPairingConfigurationRequest.
+// ArenaPairingConfigurationRequest Manual mode requires complete manual_pairings and an explicit nullable bye. Repeated pairs require repeat_override evidence.
 type ArenaPairingConfigurationRequest struct {
-	AllowRepeats               *bool             `json:"allow_repeats,omitempty"`
-	Categories                 []ArenaCategory   `json:"categories"`
-	CategoryMode               ArenaCategoryMode `json:"category_mode"`
-	ExpectedProjectionRevision int64             `json:"expected_projection_revision"`
-	RoundNumber                int32             `json:"round_number"`
+	Categories                 []ArenaCategory                             `json:"categories"`
+	CategoryMode               ArenaCategoryMode                           `json:"category_mode"`
+	ExpectedProjectionRevision int64                                       `json:"expected_projection_revision"`
+	ManualByeParticipantId     *openapi_types.UUID                         `json:"manual_bye_participant_id"`
+	ManualPairings             *[]ArenaManualPairInput                     `json:"manual_pairings,omitempty"`
+	PairingMode                ArenaPairingConfigurationRequestPairingMode `json:"pairing_mode"`
+	RepeatOverride             *ArenaPairingRepeatOverrideRequest          `json:"repeat_override,omitempty"`
+	RoundNumber                int32                                       `json:"round_number"`
+}
+
+// ArenaPairingConfigurationRequestPairingMode defines model for ArenaPairingConfigurationRequest.PairingMode.
+type ArenaPairingConfigurationRequestPairingMode string
+
+// ArenaPairingRepeatOverrideRequest defines model for ArenaPairingRepeatOverrideRequest.
+type ArenaPairingRepeatOverrideRequest struct {
+	Confirmed bool   `json:"confirmed"`
+	Reason    string `json:"reason"`
 }
 
 // ArenaParticipant defines model for ArenaParticipant.
@@ -1682,6 +1706,9 @@ type ArenaWaveId = openapi_types.UUID
 
 // ArenaForbiddenResponse RFC 7807 error envelope used by every 4xx/5xx response.
 type ArenaForbiddenResponse = ProblemDetails
+
+// ArenaInvalidRequestResponse RFC 7807 error envelope used by every 4xx/5xx response.
+type ArenaInvalidRequestResponse = ProblemDetails
 
 // ArenaNotFoundResponse RFC 7807 error envelope used by every 4xx/5xx response.
 type ArenaNotFoundResponse = ProblemDetails

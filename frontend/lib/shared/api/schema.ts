@@ -1262,15 +1262,30 @@ export interface components {
         ArenaCategoryMode: "random" | "admin" | "draft";
         /** @enum {string} */
         ArenaCategory: "web" | "crypto" | "forensics" | "reverse" | "pwn" | "steganography" | "ppc" | "osint" | "mobile" | "hardware" | "misc";
+        ArenaManualPairInput: {
+            /** Format: uuid */
+            first_participant_id: string;
+            /** Format: uuid */
+            second_participant_id: string;
+        };
+        ArenaPairingRepeatOverrideRequest: {
+            confirmed: boolean;
+            reason: string;
+        };
+        /** @description Manual mode requires complete manual_pairings and an explicit nullable bye. Repeated pairs require repeat_override evidence. */
         ArenaPairingConfigurationRequest: {
             /** Format: int64 */
             expected_projection_revision: number;
             /** Format: int32 */
             round_number: number;
+            /** @enum {string} */
+            pairing_mode: "automatic" | "manual";
             category_mode: components["schemas"]["ArenaCategoryMode"];
             categories: components["schemas"]["ArenaCategory"][];
-            /** @default false */
-            allow_repeats: boolean;
+            manual_pairings?: components["schemas"]["ArenaManualPairInput"][];
+            /** Format: uuid */
+            manual_bye_participant_id?: string | null;
+            repeat_override?: components["schemas"]["ArenaPairingRepeatOverrideRequest"];
         };
         /** @description Recorded decision evidence for automatic pairings and byes. The private decision seed is not exposed. */
         ArenaSwissPairingEvidence: {
@@ -2195,6 +2210,15 @@ export interface components {
         };
         /** @description The requested Arena resource was not found. */
         ArenaNotFoundResponse: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["ProblemDetails"];
+            };
+        };
+        /** @description The Arena command payload violates a semantic request rule. */
+        ArenaInvalidRequestResponse: {
             headers: {
                 [name: string]: unknown;
             };
@@ -3456,6 +3480,7 @@ export interface operations {
                     "application/json": components["schemas"]["ArenaSwissRound"];
                 };
             };
+            400: components["responses"]["ArenaInvalidRequestResponse"];
             401: components["responses"]["ArenaUnauthorizedResponse"];
             403: components["responses"]["ArenaForbiddenResponse"];
             404: components["responses"]["ArenaNotFoundResponse"];
@@ -3490,6 +3515,7 @@ export interface operations {
                     "application/json": components["schemas"]["ArenaTournament"];
                 };
             };
+            400: components["responses"]["ArenaInvalidRequestResponse"];
             401: components["responses"]["ArenaUnauthorizedResponse"];
             403: components["responses"]["ArenaForbiddenResponse"];
             404: components["responses"]["ArenaNotFoundResponse"];

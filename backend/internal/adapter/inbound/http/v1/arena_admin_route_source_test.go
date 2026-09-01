@@ -148,6 +148,42 @@ func TestArenaAdminRouteSource(t *testing.T) {
 	require.False(t, document.Components.Parameters["ArenaAdminCSRFToken"].Required)
 }
 
+func TestArenaPairingConfigurationSupportsManualAndAuditedOverride(t *testing.T) {
+	t.Parallel()
+
+	routes, document := loadArenaRouteSource(t)
+	for _, path := range []string{
+		"/api/v1/arena/operator/tournaments/{tournament_id}/pairings",
+		"/api/v1/arena/operator/tournaments/{tournament_id}/actions",
+	} {
+		operation := requireArenaRouteOperation(t, routes, path, "post")
+		require.Equal(t, "#/components/responses/ArenaInvalidRequestResponse", operation.Responses["400"].Ref)
+	}
+	require.Equal(t,
+		"../components/schemas/common_schemas.yml#/ProblemDetails",
+		document.Components.Responses["ArenaInvalidRequestResponse"].Content["application/problem+json"].Schema.Ref,
+	)
+
+	request := requireArenaRouteSchema(t, document, "ArenaPairingConfigurationRequest")
+	require.Contains(t, request.Required, "pairing_mode")
+	require.Equal(t, "string", request.Properties["pairing_mode"].Type)
+	require.Equal(t, "array", request.Properties["manual_pairings"].Type)
+	require.Equal(t, "#/components/schemas/ArenaManualPairInput", request.Properties["manual_pairings"].Items.Ref)
+	require.Equal(t, "uuid", request.Properties["manual_bye_participant_id"].Format)
+	require.True(t, request.Properties["manual_bye_participant_id"].Nullable)
+	require.Equal(t, "#/components/schemas/ArenaPairingRepeatOverrideRequest", request.Properties["repeat_override"].Ref)
+
+	manualPair := requireArenaRouteSchema(t, document, "ArenaManualPairInput")
+	require.ElementsMatch(t, []string{"first_participant_id", "second_participant_id"}, manualPair.Required)
+	require.Equal(t, "uuid", manualPair.Properties["first_participant_id"].Format)
+	require.Equal(t, "uuid", manualPair.Properties["second_participant_id"].Format)
+
+	override := requireArenaRouteSchema(t, document, "ArenaPairingRepeatOverrideRequest")
+	require.ElementsMatch(t, []string{"confirmed", "reason"}, override.Required)
+	require.Equal(t, "boolean", override.Properties["confirmed"].Type)
+	require.Equal(t, "string", override.Properties["reason"].Type)
+}
+
 func loadArenaRouteSource(t *testing.T) (map[string]arenaRoutePathItem, arenaRouteDocument) {
 	t.Helper()
 

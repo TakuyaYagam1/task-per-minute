@@ -181,6 +181,12 @@ components:
         default: 50
 
   responses:
+    ArenaInvalidRequestResponse:
+      description: The Arena command payload violates a semantic request rule.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../components/schemas/common_schemas.yml#/ProblemDetails'
     ArenaUnauthorizedResponse:
       description: The authenticated session is missing, invalid, or expired.
       content:
@@ -311,10 +317,33 @@ components:
           type: string
           minLength: 1
           maxLength: 512
+    ArenaManualPairInput:
+      type: object
+      additionalProperties: false
+      required: [first_participant_id, second_participant_id]
+      properties:
+        first_participant_id:
+          type: string
+          format: uuid
+        second_participant_id:
+          type: string
+          format: uuid
+    ArenaPairingRepeatOverrideRequest:
+      type: object
+      additionalProperties: false
+      required: [confirmed, reason]
+      properties:
+        confirmed:
+          type: boolean
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 512
     ArenaPairingConfigurationRequest:
       type: object
       additionalProperties: false
-      required: [expected_projection_revision, round_number, category_mode, categories]
+      description: Manual mode requires complete manual_pairings and an explicit nullable bye. Repeated pairs require repeat_override evidence.
+      required: [expected_projection_revision, round_number, pairing_mode, category_mode, categories]
       properties:
         expected_projection_revision:
           type: integer
@@ -325,6 +354,9 @@ components:
           format: int32
           minimum: 1
           maximum: 4
+        pairing_mode:
+          type: string
+          enum: [automatic, manual]
         category_mode:
           $ref: '../components/schemas/arena_schemas.yml#/ArenaCategoryMode'
         categories:
@@ -333,9 +365,18 @@ components:
           uniqueItems: true
           items:
             $ref: '../components/schemas/arena_schemas.yml#/ArenaCategory'
-        allow_repeats:
-          type: boolean
-          default: false
+        manual_pairings:
+          type: array
+          minItems: 2
+          maxItems: 8
+          items:
+            $ref: '#/components/schemas/ArenaManualPairInput'
+        manual_bye_participant_id:
+          type: string
+          format: uuid
+          nullable: true
+        repeat_override:
+          $ref: '#/components/schemas/ArenaPairingRepeatOverrideRequest'
     ArenaTournamentActionRequest:
       type: object
       additionalProperties: false
@@ -1073,6 +1114,8 @@ components:
           application/json:
             schema:
               $ref: '../components/schemas/arena_schemas.yml#/ArenaSwissRound'
+      '400':
+        $ref: '#/components/responses/ArenaInvalidRequestResponse'
       '401':
         $ref: '#/components/responses/ArenaUnauthorizedResponse'
       '403':
@@ -1109,6 +1152,8 @@ components:
           application/json:
             schema:
               $ref: '../components/schemas/arena_schemas.yml#/ArenaTournament'
+      '400':
+        $ref: '#/components/responses/ArenaInvalidRequestResponse'
       '401':
         $ref: '#/components/responses/ArenaUnauthorizedResponse'
       '403':
