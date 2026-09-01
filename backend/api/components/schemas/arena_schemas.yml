@@ -1,0 +1,920 @@
+ArenaPreset:
+  type: string
+  enum: [arena_v1]
+
+ArenaTournamentState:
+  type: string
+  enum: [draft, registration, roster_locked, swiss, golden, playoffs, technical_pause, completed, cancelled]
+
+ArenaAttendanceState:
+  type: string
+  enum: [invited, registered, checked_in, withdrawn]
+
+ArenaParticipantReservationOwner:
+  type: string
+  enum: [arena, casual_queue, casual_duel]
+
+ArenaTournament:
+  type: object
+  required: [id, roster_id, preset, state, revision, roster_size, created_at, updated_at]
+  properties:
+    id:
+      type: string
+      format: uuid
+    roster_id:
+      type: string
+      format: uuid
+    preset:
+      $ref: '#/ArenaPreset'
+    state:
+      $ref: '#/ArenaTournamentState'
+    paused_from_state:
+      $ref: '#/ArenaTournamentState'
+      nullable: true
+    revision:
+      type: integer
+      format: int64
+      minimum: 1
+      readOnly: true
+    roster_size:
+      type: integer
+      format: int32
+      minimum: 4
+      maximum: 16
+    created_at:
+      type: string
+      format: date-time
+      readOnly: true
+    updated_at:
+      type: string
+      format: date-time
+      readOnly: true
+    started_at:
+      type: string
+      format: date-time
+      nullable: true
+      readOnly: true
+    finished_at:
+      type: string
+      format: date-time
+      nullable: true
+      readOnly: true
+
+ArenaParticipant:
+  type: object
+  required: [id, roster_id, tournament_id, player_id, seed, attendance, created_at, updated_at]
+  properties:
+    id:
+      type: string
+      format: uuid
+    roster_id:
+      type: string
+      format: uuid
+    tournament_id:
+      type: string
+      format: uuid
+    player_id:
+      type: string
+      format: uuid
+    seed:
+      type: integer
+      format: int32
+      minimum: 1
+      maximum: 16
+    attendance:
+      $ref: '#/ArenaAttendanceState'
+    created_at:
+      type: string
+      format: date-time
+      readOnly: true
+    updated_at:
+      type: string
+      format: date-time
+      readOnly: true
+
+ArenaRoster:
+  type: object
+  description: Full tournament roster. Execution can start only while locked, and a started roster cannot be unlocked.
+  required: [id, tournament_id, revision, participants, locked, execution_started, created_at, updated_at]
+  properties:
+    id:
+      type: string
+      format: uuid
+    tournament_id:
+      type: string
+      format: uuid
+    revision:
+      type: integer
+      format: int64
+      minimum: 1
+      readOnly: true
+    participants:
+      type: array
+      maxItems: 16
+      items:
+        $ref: '#/ArenaParticipant'
+    locked:
+      type: boolean
+      readOnly: true
+    execution_started:
+      type: boolean
+      description: True only when locked is also true.
+      readOnly: true
+    locked_at:
+      type: string
+      format: date-time
+      nullable: true
+      readOnly: true
+    execution_started_at:
+      type: string
+      format: date-time
+      nullable: true
+      readOnly: true
+    created_at:
+      type: string
+      format: date-time
+      readOnly: true
+    updated_at:
+      type: string
+      format: date-time
+      readOnly: true
+
+ArenaParticipantReservation:
+  type: object
+  required: [player_id, reservation_id, owner_kind, owner_id, revision, acquired_at, updated_at]
+  properties:
+    player_id:
+      type: string
+      format: uuid
+    reservation_id:
+      type: string
+      format: uuid
+    owner_kind:
+      $ref: '#/ArenaParticipantReservationOwner'
+    owner_id:
+      type: string
+      format: uuid
+    revision:
+      type: integer
+      format: int64
+      minimum: 1
+      readOnly: true
+    acquired_at:
+      type: string
+      format: date-time
+      readOnly: true
+    updated_at:
+      type: string
+      format: date-time
+      readOnly: true
+
+ArenaTournamentLifecycleRequest:
+  type: object
+  required: [expected_revision, next_state]
+  properties:
+    expected_revision:
+      type: integer
+      format: int64
+      minimum: 1
+    next_state:
+      $ref: '#/ArenaTournamentState'
+
+ArenaAttendanceChangeRequest:
+  type: object
+  required: [expected_attendance, next_attendance]
+  properties:
+    expected_attendance:
+      $ref: '#/ArenaAttendanceState'
+    next_attendance:
+      $ref: '#/ArenaAttendanceState'
+
+ArenaRosterLockRequest:
+  type: object
+  required: [expected_revision, preflight_revision_id, checked_in_player_ids]
+  properties:
+    expected_revision:
+      type: integer
+      format: int64
+      minimum: 1
+    preflight_revision_id:
+      type: string
+      format: uuid
+    checked_in_player_ids:
+      type: array
+      minItems: 4
+      maxItems: 16
+      uniqueItems: true
+      items:
+        type: string
+        format: uuid
+
+ArenaRosterUnlockRequest:
+  type: object
+  required: [expected_revision, actor_id, reason]
+  properties:
+    expected_revision:
+      type: integer
+      format: int64
+      minimum: 1
+    actor_id:
+      type: string
+      format: uuid
+    reason:
+      type: string
+      minLength: 1
+      maxLength: 512
+
+ArenaPreflightCode:
+  type: string
+  enum:
+    - arena.preflight.structure.roster_complete
+    - arena.preflight.structure.attendance
+    - arena.preflight.structure.participant_exclusive
+    - arena.preflight.structure.preset
+    - arena.preflight.structure.categories
+    - arena.preflight.structure.pairings
+    - arena.preflight.structure.byes
+    - arena.preflight.structure.overrides
+    - arena.preflight.tasks.pool_configuration
+    - arena.preflight.tasks.inventory
+    - arena.preflight.tasks.missing
+    - arena.preflight.tasks.disabled
+    - arena.preflight.tasks.unhealthy
+    - arena.preflight.tasks.mutable
+    - arena.preflight.tasks.publicly_exposed
+    - arena.preflight.tasks.wrong_pool
+    - arena.preflight.runtime.configuration
+    - arena.preflight.runtime.authoritative_storage
+    - arena.preflight.runtime.submission
+    - arena.preflight.runtime.task_delivery
+    - arena.preflight.runtime.realtime
+    - arena.preflight.runtime.capacity
+    - arena.preflight.runtime.clock
+    - arena.preflight.runtime.dependencies
+    - arena.preflight.runtime.schedule
+
+ArenaPreflightCheck:
+  type: object
+  required: [code, passed, explanation, evidence]
+  properties:
+    code:
+      $ref: '#/ArenaPreflightCode'
+    passed:
+      type: boolean
+    explanation:
+      type: string
+    evidence:
+      type: array
+      items:
+        type: string
+
+ArenaPreflightSourceRevision:
+  type: object
+  required: [source, value]
+  properties:
+    source:
+      type: string
+    value:
+      type: string
+
+ArenaPreflightReport:
+  type: object
+  description: Immutable preflight result used as roster-lock evidence.
+  required: [id, tournament_id, algorithm_version, evaluated_at, normalized_inputs, revisions, proof_hash, checks, passed]
+  properties:
+    id:
+      type: string
+      format: uuid
+      readOnly: true
+    tournament_id:
+      type: string
+      format: uuid
+      readOnly: true
+    algorithm_version:
+      type: string
+      enum: [arena-preflight-report-v1]
+      readOnly: true
+    evaluated_at:
+      type: string
+      format: date-time
+      readOnly: true
+    normalized_inputs:
+      type: array
+      readOnly: true
+      items:
+        type: string
+    revisions:
+      type: array
+      minItems: 1
+      readOnly: true
+      items:
+        $ref: '#/ArenaPreflightSourceRevision'
+    proof_hash:
+      type: string
+      minLength: 64
+      maxLength: 64
+      pattern: '^[0-9a-f]{64}$'
+      readOnly: true
+    checks:
+      type: array
+      minItems: 1
+      readOnly: true
+      items:
+        $ref: '#/ArenaPreflightCheck'
+    passed:
+      type: boolean
+      readOnly: true
+
+ArenaRevisionConflict:
+  type: object
+  description: Stable optimistic-concurrency details that can accompany a 409 response.
+  required: [expected_revision, current_revision]
+  properties:
+    expected_revision:
+      type: integer
+      format: int64
+      minimum: 1
+    current_revision:
+      type: integer
+      format: int64
+      minimum: 1
+    current_state:
+      $ref: '#/ArenaTournamentState'
+
+ArenaArtifactKind:
+  type: string
+  enum: [game_result, series_score, series_result, standings, golden_group, top_four, bracket, champion]
+
+ArenaSwissPointsLabel:
+  type: string
+  enum: [provisional, final]
+
+ArenaSwissBuchholzStatus:
+  type: string
+  enum: [provisional, final]
+
+ArenaSemifinalWinnerPath:
+  type: string
+  enum: [final]
+
+ArenaSemifinalLoserPath:
+  type: string
+  enum: [eliminated]
+
+ArenaProjectionRevision:
+  type: object
+  description: Immutable revision metadata for a derived Arena artifact.
+  required: [id, tournament_id, artifact_kind, artifact_id, revision_no, payload_digest, created_at]
+  properties:
+    id:
+      type: string
+      format: uuid
+      readOnly: true
+    tournament_id:
+      type: string
+      format: uuid
+      readOnly: true
+    artifact_kind:
+      $ref: '#/ArenaArtifactKind'
+    artifact_id:
+      type: string
+      format: uuid
+      readOnly: true
+    revision_no:
+      type: integer
+      format: int32
+      minimum: 1
+      readOnly: true
+    previous_revision_id:
+      type: string
+      format: uuid
+      nullable: true
+      readOnly: true
+    payload_digest:
+      type: string
+      minLength: 64
+      maxLength: 64
+      pattern: '^[0-9a-f]{64}$'
+      readOnly: true
+    created_at:
+      type: string
+      format: date-time
+      readOnly: true
+
+ArenaProjectionDependency:
+  type: object
+  required: [source_revision_id, derived_revision_id]
+  properties:
+    source_revision_id:
+      type: string
+      format: uuid
+      readOnly: true
+    derived_revision_id:
+      type: string
+      format: uuid
+      readOnly: true
+
+ArenaSwissPairingEvidence:
+  type: object
+  description: Recorded decision evidence for automatic pairings and byes. The private decision seed is not exposed.
+  required: [id, purpose, algorithm_version, normalized_inputs, result, replay_digest, owner_id, decided_at]
+  properties:
+    id:
+      type: string
+      format: uuid
+      readOnly: true
+    purpose:
+      type: string
+      enum: [pairing]
+      readOnly: true
+    algorithm_version:
+      type: string
+      enum: [hmac-sha256-order-v1]
+      readOnly: true
+    normalized_inputs:
+      type: array
+      minItems: 1
+      readOnly: true
+      items:
+        type: string
+    result:
+      type: array
+      minItems: 1
+      readOnly: true
+      items:
+        type: string
+    replay_digest:
+      type: string
+      minLength: 64
+      maxLength: 64
+      pattern: '^[0-9a-f]{64}$'
+      readOnly: true
+    owner_id:
+      type: string
+      format: uuid
+      readOnly: true
+    decided_at:
+      type: string
+      format: date-time
+      readOnly: true
+
+ArenaSwissPairing:
+  type: object
+  required: [id, round_id, first_participant_id, second_participant_id, evidence_id]
+  properties:
+    id:
+      type: string
+      format: uuid
+    round_id:
+      type: string
+      format: uuid
+    first_participant_id:
+      type: string
+      format: uuid
+    second_participant_id:
+      type: string
+      format: uuid
+    evidence_id:
+      type: string
+      format: uuid
+    repeated:
+      type: boolean
+      default: false
+    override_actor_id:
+      type: string
+      format: uuid
+      nullable: true
+    override_reason:
+      type: string
+      nullable: true
+
+ArenaSwissBye:
+  type: object
+  required: [id, round_id, participant_id, points_awarded, revision_id, evidence_id]
+  properties:
+    id:
+      type: string
+      format: uuid
+    round_id:
+      type: string
+      format: uuid
+    participant_id:
+      type: string
+      format: uuid
+    points_awarded:
+      type: integer
+      format: int32
+      minimum: 1
+      maximum: 1
+    revision_id:
+      type: string
+      format: uuid
+      readOnly: true
+    evidence_id:
+      type: string
+      format: uuid
+
+ArenaSwissStanding:
+  type: object
+  required: [participant_id, position, points, points_label, buchholz, buchholz_status, head_to_head_points, head_to_head_applied, effective_time_ms, stable_seed]
+  properties:
+    participant_id:
+      type: string
+      format: uuid
+    position:
+      type: integer
+      format: int32
+      minimum: 1
+      maximum: 16
+    points:
+      type: integer
+      format: int32
+      minimum: 0
+    points_label:
+      $ref: '#/ArenaSwissPointsLabel'
+    buchholz:
+      type: integer
+      format: int32
+      minimum: 0
+    buchholz_status:
+      $ref: '#/ArenaSwissBuchholzStatus'
+    head_to_head_points:
+      type: integer
+      format: int32
+      minimum: 0
+    head_to_head_applied:
+      type: boolean
+    effective_time_ms:
+      type: integer
+      format: int64
+      minimum: 0
+    accepted_solve_time_ms:
+      type: integer
+      format: int64
+      minimum: 0
+      nullable: true
+    stable_seed:
+      type: integer
+      format: int32
+      minimum: 1
+      maximum: 16
+
+ArenaSwissRound:
+  type: object
+  required: [id, tournament_id, round_number, revision, roster_participant_ids, pairings, standings, locked, created_at, updated_at]
+  properties:
+    id:
+      type: string
+      format: uuid
+    tournament_id:
+      type: string
+      format: uuid
+    round_number:
+      type: integer
+      format: int32
+      minimum: 1
+      maximum: 4
+    revision:
+      type: integer
+      format: int64
+      minimum: 1
+      readOnly: true
+    roster_participant_ids:
+      type: array
+      minItems: 4
+      maxItems: 16
+      uniqueItems: true
+      items:
+        type: string
+        format: uuid
+    pairing_evidence:
+      $ref: '#/ArenaSwissPairingEvidence'
+    pairings:
+      type: array
+      minItems: 1
+      maxItems: 8
+      items:
+        $ref: '#/ArenaSwissPairing'
+    bye:
+      $ref: '#/ArenaSwissBye'
+      nullable: true
+    standings:
+      type: array
+      minItems: 4
+      maxItems: 16
+      items:
+        $ref: '#/ArenaSwissStanding'
+    locked:
+      type: boolean
+      readOnly: true
+    locked_at:
+      type: string
+      format: date-time
+      nullable: true
+      readOnly: true
+    started_at:
+      type: string
+      format: date-time
+      nullable: true
+      readOnly: true
+    completed_at:
+      type: string
+      format: date-time
+      nullable: true
+      readOnly: true
+    created_at:
+      type: string
+      format: date-time
+      readOnly: true
+    updated_at:
+      type: string
+      format: date-time
+      readOnly: true
+
+ArenaGoldenSeed:
+  type: object
+  description: Immutable seed for an impactful tied standings segment.
+  required: [group_id, revision_id, source_projection_revision_id, position_from, position_to, participant_ids]
+  properties:
+    group_id:
+      type: string
+      format: uuid
+    revision_id:
+      type: string
+      format: uuid
+      readOnly: true
+    source_projection_revision_id:
+      type: string
+      format: uuid
+      readOnly: true
+    position_from:
+      type: integer
+      format: int32
+      minimum: 1
+    position_to:
+      type: integer
+      format: int32
+      minimum: 1
+    participant_ids:
+      type: array
+      minItems: 2
+      maxItems: 16
+      uniqueItems: true
+      items:
+        type: string
+        format: uuid
+
+ArenaSwissStandingsProjection:
+  type: object
+  required: [revision, participant_ids, standings, golden_seeds, dependencies]
+  properties:
+    revision:
+      $ref: '#/ArenaProjectionRevision'
+    participant_ids:
+      type: array
+      minItems: 4
+      maxItems: 16
+      uniqueItems: true
+      items:
+        type: string
+        format: uuid
+    standings:
+      type: array
+      minItems: 4
+      maxItems: 16
+      items:
+        $ref: '#/ArenaSwissStanding'
+    golden_seeds:
+      type: array
+      items:
+        $ref: '#/ArenaGoldenSeed'
+    dependencies:
+      type: array
+      items:
+        $ref: '#/ArenaProjectionDependency'
+
+ArenaTop4Participant:
+  type: object
+  required: [seed, participant_id]
+  properties:
+    seed:
+      type: integer
+      format: int32
+      minimum: 1
+      maximum: 4
+    participant_id:
+      type: string
+      format: uuid
+
+ArenaTop4Projection:
+  type: object
+  required: [revision, source_standings_revision_id, participants, dependencies]
+  properties:
+    revision:
+      $ref: '#/ArenaProjectionRevision'
+    source_standings_revision_id:
+      type: string
+      format: uuid
+      readOnly: true
+    participants:
+      type: array
+      minItems: 4
+      maxItems: 4
+      items:
+        $ref: '#/ArenaTop4Participant'
+    dependencies:
+      type: array
+      items:
+        $ref: '#/ArenaProjectionDependency'
+
+ArenaSemifinalMatch:
+  type: object
+  required: [position, series_id, first_participant_id, second_participant_id, winner_path, loser_path]
+  properties:
+    position:
+      type: integer
+      format: int32
+      minimum: 1
+      maximum: 2
+    series_id:
+      type: string
+      format: uuid
+    first_participant_id:
+      type: string
+      format: uuid
+    second_participant_id:
+      type: string
+      format: uuid
+    winner_path:
+      $ref: '#/ArenaSemifinalWinnerPath'
+    loser_path:
+      $ref: '#/ArenaSemifinalLoserPath'
+
+ArenaSemifinalAdvancement:
+  type: object
+  required: [position, series_id, winner_id, loser_id, score_revision_id, result_revision_id]
+  properties:
+    position:
+      type: integer
+      format: int32
+      minimum: 1
+      maximum: 2
+    series_id:
+      type: string
+      format: uuid
+    winner_id:
+      type: string
+      format: uuid
+    loser_id:
+      type: string
+      format: uuid
+    score_revision_id:
+      type: string
+      format: uuid
+      readOnly: true
+    result_revision_id:
+      type: string
+      format: uuid
+      readOnly: true
+
+ArenaElimination:
+  type: object
+  required: [participant_id, series_id, result_revision_id, eliminated_at_stage]
+  properties:
+    participant_id:
+      type: string
+      format: uuid
+    series_id:
+      type: string
+      format: uuid
+    result_revision_id:
+      type: string
+      format: uuid
+      readOnly: true
+    eliminated_at_stage:
+      type: string
+      enum: [semifinal, final]
+
+ArenaSemifinalBracketProjection:
+  type: object
+  required: [revision, top_four_revision_id, semifinals, advancements, eliminations, dependencies, locked_at]
+  properties:
+    revision:
+      $ref: '#/ArenaProjectionRevision'
+    top_four_revision_id:
+      type: string
+      format: uuid
+      readOnly: true
+    semifinals:
+      type: array
+      minItems: 2
+      maxItems: 2
+      items:
+        $ref: '#/ArenaSemifinalMatch'
+    advancements:
+      type: array
+      maxItems: 2
+      items:
+        $ref: '#/ArenaSemifinalAdvancement'
+    eliminations:
+      type: array
+      maxItems: 2
+      items:
+        $ref: '#/ArenaElimination'
+    dependencies:
+      type: array
+      items:
+        $ref: '#/ArenaProjectionDependency'
+    locked_at:
+      type: string
+      format: date-time
+      readOnly: true
+
+ArenaSeriesScore:
+  type: object
+  required: [first_participant_wins, second_participant_wins]
+  properties:
+    first_participant_wins:
+      type: integer
+      format: int32
+      minimum: 0
+      maximum: 2
+    second_participant_wins:
+      type: integer
+      format: int32
+      minimum: 0
+      maximum: 2
+
+ArenaFinalProjection:
+  type: object
+  required: [revision, bracket_revision_id, series_id, participant_ids, score, score_revision_id, result_revision_id, winner_id, loser_id, dependencies]
+  properties:
+    revision:
+      $ref: '#/ArenaProjectionRevision'
+    bracket_revision_id:
+      type: string
+      format: uuid
+      readOnly: true
+    series_id:
+      type: string
+      format: uuid
+    participant_ids:
+      type: array
+      minItems: 2
+      maxItems: 2
+      uniqueItems: true
+      items:
+        type: string
+        format: uuid
+    score:
+      $ref: '#/ArenaSeriesScore'
+    score_revision_id:
+      type: string
+      format: uuid
+      readOnly: true
+    result_revision_id:
+      type: string
+      format: uuid
+      readOnly: true
+    winner_id:
+      type: string
+      format: uuid
+    loser_id:
+      type: string
+      format: uuid
+    dependencies:
+      type: array
+      items:
+        $ref: '#/ArenaProjectionDependency'
+
+ArenaChampionProjection:
+  type: object
+  required: [revision, final_revision_id, series_id, champion_id, runner_up_id, score_revision_id, result_revision_id, dependencies]
+  properties:
+    revision:
+      $ref: '#/ArenaProjectionRevision'
+    final_revision_id:
+      type: string
+      format: uuid
+      readOnly: true
+    series_id:
+      type: string
+      format: uuid
+    champion_id:
+      type: string
+      format: uuid
+    runner_up_id:
+      type: string
+      format: uuid
+    score_revision_id:
+      type: string
+      format: uuid
+      readOnly: true
+    result_revision_id:
+      type: string
+      format: uuid
+      readOnly: true
+    dependencies:
+      type: array
+      items:
+        $ref: '#/ArenaProjectionDependency'
