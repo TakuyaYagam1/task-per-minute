@@ -98,7 +98,7 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 	duelTimer := provideDuelTimers(timerRegistry, hintScheduler)
 	reconnectManager := provideReconnectManager(context, txManager, duelPostgres, playerPostgres, duelTimer, broadcaster, bootstrapClockFunc, useCase, log)
 	startupRecoverer := provideStartupRecoverer(txManager, duelPostgres, duelPostgres, playerPostgres, playerPostgres, matchmakingRedis, broadcaster, reconnectManager, hintScheduler, bootstrapClockFunc, log)
-	bootstrapArenaCore := provideArenaCore(arenaTournamentPostgres, arenaTournamentPostgres, arenaTournamentPostgres, arenaTournamentPostgres, bootstrapClockFunc)
+	bootstrapArenaCore := provideArenaCore(arenaTournamentPostgres, arenaTournamentPostgres, arenaTournamentPostgres, arenaTournamentPostgres, bootstrapClockFunc, log)
 	playerUseCase := providePlayerUseCase(cfg, txManager, playerPostgres, duelPostgres, bootstrapClockFunc)
 	taskUseCase := provideAdminTaskUseCase(taskPostgres)
 	adminPlayerUseCase := provideAdminPlayerUseCase(txManager, playerPostgres, useCase, bootstrapClockFunc)

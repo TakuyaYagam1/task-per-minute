@@ -2,6 +2,8 @@ package recovery
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"sort"
 	"time"
@@ -9,9 +11,18 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
+	"github.com/TakuyaYagam1/task-per-minute/internal/observability"
 )
 
 const ArenaRecoveryCursorSchemaVersion = 1
+
+type arenaRecoveryEventReason string
+
+const (
+	arenaRecoveryReasonNoWork        arenaRecoveryEventReason = "nothing_to_rearm"
+	arenaRecoveryReasonWorkRearmed   arenaRecoveryEventReason = "work_rearmed"
+	arenaRecoveryReasonRearmerFailed arenaRecoveryEventReason = "rearmer_failed"
+)
 
 type ArenaRecoveryFailReason string
 
@@ -147,15 +158,21 @@ type ArenaRecoveryRearmer interface {
 }
 
 type ArenaRecoveryReconciler struct {
-	rearmer ArenaRecoveryRearmer
-	clock   Clock
+	rearmer  ArenaRecoveryRearmer
+	clock    Clock
+	observer observability.ArenaEventObserver
 }
 
 func NewArenaRecoveryReconciler(
 	rearmer ArenaRecoveryRearmer,
 	clock Clock,
+	observers ...observability.ArenaEventObserver,
 ) *ArenaRecoveryReconciler {
-	return &ArenaRecoveryReconciler{rearmer: rearmer, clock: clock}
+	return &ArenaRecoveryReconciler{
+		rearmer:  rearmer,
+		clock:    clock,
+		observer: observability.FirstArenaEventObserver(observers...),
+	}
 }
 
 func (r *ArenaRecoveryReconciler) Reconcile(
@@ -172,6 +189,13 @@ func (r *ArenaRecoveryReconciler) Reconcile(
 
 	indexed, failReason := validateArenaRecoveryGraph(graph, now)
 	if failReason != "" {
+		r.emitRecoveryEvent(
+			ctx,
+			graph,
+			observability.ArenaOutcomeRejected,
+			"fail_closed",
+			arenaRecoveryEventReason(failReason),
+		)
 		return ArenaRecoveryResult{FailReason: failReason}, nil
 	}
 	plan := ArenaRecoveryRearmPlan{
@@ -180,13 +204,75 @@ func (r *ArenaRecoveryReconciler) Reconcile(
 		Work:         indexed.deadlines,
 	}
 	if len(plan.Work) == 0 {
+		r.emitRecoveryEvent(
+			ctx,
+			graph,
+			observability.ArenaOutcomeSuccess,
+			"no_work",
+			arenaRecoveryReasonNoWork,
+		)
 		return ArenaRecoveryResult{Plan: plan}, nil
 	}
 	plan.Lease = *graph.Lease
 	if err := r.rearmer.RearmArenaRecovery(ctx, plan); err != nil {
+		r.emitRecoveryEvent(
+			ctx,
+			graph,
+			observability.ArenaOutcomeFailure,
+			"rearm_failed",
+			arenaRecoveryReasonRearmerFailed,
+		)
 		return ArenaRecoveryResult{}, fmt.Errorf("ArenaRecoveryReconciler - rearm: %w", err)
 	}
+	r.emitRecoveryEvent(
+		ctx,
+		graph,
+		observability.ArenaOutcomeSuccess,
+		"rearm_succeeded",
+		arenaRecoveryReasonWorkRearmed,
+	)
 	return ArenaRecoveryResult{Plan: plan, Rearmed: len(plan.Work)}, nil
+}
+
+func (r *ArenaRecoveryReconciler) emitRecoveryEvent(
+	ctx context.Context,
+	graph ArenaRecoveryGraph,
+	outcome string,
+	transition string,
+	reason arenaRecoveryEventReason,
+) {
+	if r == nil || r.observer == nil {
+		return
+	}
+	revision := graph.Cursor.ProjectionRevision
+	if revision < 0 {
+		revision = 0
+	}
+	_ = observability.EmitArenaEvent(ctx, r.observer, observability.ArenaEventInput{
+		Event:         "arena.recovery",
+		Outcome:       outcome,
+		CorrelationID: arenaRecoveryCorrelation(graph),
+		TournamentID:  graph.TournamentID.String(),
+		EntityKind:    "tournament",
+		EntityID:      graph.TournamentID.String(),
+		Stage:         "startup_recovery",
+		Transition:    transition,
+		ReasonCode:    string(reason),
+		Revision:      revision,
+	})
+}
+
+func arenaRecoveryCorrelation(graph ArenaRecoveryGraph) string {
+	identity := fmt.Sprintf(
+		"%s:%d:%d:%d:%s",
+		graph.TournamentID,
+		graph.Cursor.SchemaVersion,
+		graph.Cursor.LastSequence,
+		graph.Cursor.ProjectionRevision,
+		graph.Cursor.DerivedRevisionID.UUID(),
+	)
+	digest := sha256.Sum256([]byte(identity))
+	return "recovery-" + hex.EncodeToString(digest[:12])
 }
 
 type arenaRecoveryGame struct {

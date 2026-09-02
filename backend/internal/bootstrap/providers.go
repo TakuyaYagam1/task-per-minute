@@ -25,6 +25,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	redisadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/redis"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
+	"github.com/TakuyaYagam1/task-per-minute/internal/observability"
 	adminusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/admin"
 	arenausecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/arena"
 	duelusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel"
@@ -77,12 +78,14 @@ func provideArenaCore(
 	rosters arenausecase.RosterLockRepository,
 	lifecycle arenausecase.TournamentLifecycleRepository,
 	clk arenausecase.Clock,
+	log logkit.Logger,
 ) *arenaCore {
+	arenaObserver := observability.NewArenaStructuredLogger(log)
 	return &arenaCore{
 		tournaments: arenausecase.NewTournamentUseCase(tournaments, clk),
 		attendance:  arenausecase.NewAttendanceUseCase(attendance, clk),
 		rosters:     arenausecase.NewRosterLockUseCase(rosters, clk),
-		lifecycle:   arenausecase.NewTournamentLifecycleUseCase(lifecycle, clk),
+		lifecycle:   arenausecase.NewTournamentLifecycleUseCase(lifecycle, clk, arenaObserver),
 	}
 }
 

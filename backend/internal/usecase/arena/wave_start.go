@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
+	"github.com/TakuyaYagam1/task-per-minute/internal/observability"
 )
 
 const waveStartAttempts = 2
@@ -89,33 +90,75 @@ type WaveStartRepository interface {
 type WaveStartUseCase struct {
 	repository WaveStartRepository
 	clock      Clock
+	observer   observability.ArenaEventObserver
 }
 
-func NewWaveStartUseCase(repository WaveStartRepository, clock Clock) *WaveStartUseCase {
-	return &WaveStartUseCase{repository: repository, clock: clock}
+func NewWaveStartUseCase(
+	repository WaveStartRepository,
+	clock Clock,
+	observers ...observability.ArenaEventObserver,
+) *WaveStartUseCase {
+	return &WaveStartUseCase{
+		repository: repository,
+		clock:      clock,
+		observer:   firstArenaEventObserver(observers...),
+	}
 }
 
 func (u *WaveStartUseCase) Start(
 	ctx context.Context,
 	command StartWaveCommand,
-) (*WaveStartRecord, bool, error) {
+) (record *WaveStartRecord, changed bool, err error) {
+	var clock Clock
+	var observer observability.ArenaEventObserver
+	if u != nil {
+		clock = u.clock
+		observer = u.observer
+	}
+	measurement := newArenaEventMeasurement(clock, observer)
+	phase := arenaEventPhaseValidation
+	retried := false
+	var revision int64
+	defer func() {
+		emitWaveStartEvent(
+			ctx,
+			measurement,
+			command,
+			record,
+			changed,
+			retried,
+			err,
+			phase,
+			revision,
+		)
+	}()
+
 	if u == nil || u.repository == nil || u.clock == nil {
 		return nil, false, domain.ErrValidation
 	}
 	if err := validateStartWaveCommand(command); err != nil {
 		return nil, false, err
 	}
+	phase = arenaEventPhaseClock
 	startedAt := u.clock.Now().Round(0).UTC()
 	if !validArenaServerTime(startedAt) {
 		return nil, false, domain.ErrValidation
 	}
 
 	for range waveStartAttempts {
-		record, changed, retry, err := u.startAttempt(ctx, command, startedAt)
+		phase = arenaEventPhaseAuthorityLookup
+		attemptRecord, attemptChanged, retry, attemptErr := u.startAttempt(
+			ctx,
+			command,
+			startedAt,
+			&phase,
+			&revision,
+		)
 		if retry {
+			retried = true
 			continue
 		}
-		return record, changed, err
+		return attemptRecord, attemptChanged, attemptErr
 	}
 	return nil, false, ErrWaveStartConflict
 }
@@ -124,33 +167,41 @@ func (u *WaveStartUseCase) startAttempt(
 	ctx context.Context,
 	command StartWaveCommand,
 	startedAt time.Time,
+	phase *string,
+	revision *int64,
 ) (*WaveStartRecord, bool, bool, error) {
 	authority, err := u.repository.LoadWaveStartAuthority(ctx, command.Scope)
 	if err != nil {
 		return nil, false, false, fmt.Errorf("WaveStartUseCase - load authority: %w", err)
 	}
+	*revision = authority.Revision
+	*phase = arenaEventPhaseAuthorityValidation
 	if err := validateWaveStartAuthority(authority); err != nil {
 		return nil, false, false, err
 	}
 	if authority.Current != nil {
+		*phase = arenaEventPhaseResultValidation
 		record, reconcileErr := reconcileWaveStart(*authority.Current, command)
 		return record, false, false, reconcileErr
 	}
 	if !waveStartAuthorityMatchesCommand(authority, command, startedAt) {
 		return nil, false, false, ErrWaveStartAuthorityConflict
 	}
+	*phase = arenaEventPhaseBuild
 	record, err := buildWaveStartRecord(command, authority, startedAt)
 	if err != nil {
 		return nil, false, false, err
 	}
-	return u.commitWaveStart(ctx, command, record)
+	return u.commitWaveStart(ctx, command, record, phase)
 }
 
 func (u *WaveStartUseCase) commitWaveStart(
 	ctx context.Context,
 	command StartWaveCommand,
 	record WaveStartRecord,
+	phase *string,
 ) (*WaveStartRecord, bool, bool, error) {
+	*phase = arenaEventPhaseCommit
 	committed, changed, err := u.repository.CommitWaveStart(ctx, record)
 	if errors.Is(err, domain.ErrConflict) {
 		return nil, false, true, nil
@@ -158,6 +209,7 @@ func (u *WaveStartUseCase) commitWaveStart(
 	if err != nil {
 		return nil, false, false, fmt.Errorf("WaveStartUseCase - commit start: %w", err)
 	}
+	*phase = arenaEventPhaseResultValidation
 	if committed == nil || committed.Validate() != nil {
 		return nil, false, false, domain.ErrInternal
 	}

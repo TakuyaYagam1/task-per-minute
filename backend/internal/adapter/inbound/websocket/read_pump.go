@@ -10,8 +10,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/requestmeta"
 	arenaws "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket/arena"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
+	appobservability "github.com/TakuyaYagam1/task-per-minute/internal/observability"
 	duelusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel"
 	coderws "github.com/coder/websocket"
 	"github.com/google/uuid"
@@ -55,6 +57,43 @@ func (s *Server) serveArenaConnection(
 	if role == ArenaRolePublic {
 		ctx = withArenaPublicSession(ctx)
 	}
+	startedAt := time.Now()
+	observer := appobservability.NewArenaStructuredLogger(s.log)
+	tournamentID := uuid.Nil
+	revision := int64(0)
+	observe := func(action, outcome, reason string, eventRevision int64) {
+		if tournamentID == uuid.Nil {
+			return
+		}
+		requestID := requestmeta.RequestIDFromContext(ctx)
+		_ = arenaws.ObserveTransportEvent(ctx, observer, arenaws.ArenaTransportEvent{
+			CorrelationID: arenaws.TransportCorrelationID(requestID, tournamentID),
+			TournamentID:  tournamentID,
+			Role:          string(role),
+			Action:        action,
+			Outcome:       outcome,
+			ReasonCode:    reason,
+			Duration:      time.Since(startedAt),
+			Revision:      eventRevision,
+		})
+	}
+	writeRejection := func(cause error) error {
+		observe(
+			arenaws.ArenaTransportReject,
+			appobservability.ArenaOutcomeRejected,
+			string(ArenaRejectionFor(cause).Code),
+			revision,
+		)
+		return writeArenaRejection(ctx, conn, cause)
+	}
+	defer func() {
+		observe(
+			arenaws.ArenaTransportDisconnect,
+			appobservability.ArenaOutcomeSuccess,
+			"closed",
+			revision,
+		)
+	}()
 	conn.SetReadLimit(defaultReadLimit)
 	readCtx, cancelRead := context.WithCancel(ctx)
 	reads := make(chan arenaReadResult, 1)
@@ -74,23 +113,25 @@ func (s *Server) serveArenaConnection(
 		return
 	}
 	if first.err != nil {
-		_ = writeArenaRejection(ctx, conn, first.err)
+		_ = writeRejection(first.err)
 		return
 	}
 	command, err := DecodeArenaCommand(role, first.data)
 	if err != nil {
-		_ = writeArenaRejection(ctx, conn, err)
+		_ = writeRejection(err)
 		return
 	}
-	tournamentID, cursor, err := arenaCommandScope(command)
+	scopedTournamentID, cursor, err := arenaCommandScope(command)
 	if err != nil {
-		_ = writeArenaRejection(ctx, conn, err)
+		_ = writeRejection(err)
 		return
 	}
+	tournamentID = scopedTournamentID
+	revision = arenaTransportCursorRevision(cursor)
 
 	active, principalID, err := s.openArenaConnection(ctx, r, role, player, tournamentID, cursor)
 	if err != nil {
-		_ = writeArenaRejection(ctx, conn, err)
+		_ = writeRejection(err)
 		return
 	}
 
@@ -104,7 +145,7 @@ func (s *Server) serveArenaConnection(
 			ParticipantID: principalID,
 		})
 		if err != nil {
-			_ = writeArenaRejection(ctx, conn, err)
+			_ = writeRejection(err)
 			return
 		}
 		if subscription != nil {
@@ -113,8 +154,15 @@ func (s *Server) serveArenaConnection(
 		}
 	}
 	if err := writeArenaMessage(ctx, conn, active); err != nil {
+		observe(arenaws.ArenaTransportDelivery, appobservability.ArenaOutcomeFailure, "write_failed", revision)
 		return
 	}
+	observe(
+		arenaTransportCommandAction(command),
+		appobservability.ArenaOutcomeSuccess,
+		arenaTransportCommandReason(command),
+		revision,
+	)
 
 	for {
 		select {
@@ -124,12 +172,18 @@ func (s *Server) serveArenaConnection(
 			if !open {
 				return
 			}
+			revision = delivery.ProjectionRevision
 			encoded, terminal, marshalErr := marshalArenaCancellation(role, delivery)
 			if marshalErr != nil {
-				_ = writeArenaRejection(ctx, conn, marshalErr)
+				_ = writeRejection(marshalErr)
 				return
 			}
-			if err := writeArenaMessage(ctx, conn, encoded); err != nil || terminal {
+			if err := writeArenaMessage(ctx, conn, encoded); err != nil {
+				observe(arenaws.ArenaTransportDelivery, appobservability.ArenaOutcomeFailure, "write_failed", revision)
+				return
+			}
+			observe(arenaws.ArenaTransportDelivery, appobservability.ArenaOutcomeSuccess, string(delivery.Kind), revision)
+			if terminal {
 				return
 			}
 		case next, open := <-reads:
@@ -137,37 +191,66 @@ func (s *Server) serveArenaConnection(
 				return
 			}
 			if next.err != nil {
-				if err := writeArenaRejection(ctx, conn, next.err); err != nil {
+				if err := writeRejection(next.err); err != nil {
 					return
 				}
 				continue
 			}
 			command, decodeErr := DecodeArenaCommand(role, next.data)
 			if decodeErr != nil {
-				if err := writeArenaRejection(ctx, conn, decodeErr); err != nil {
+				if err := writeRejection(decodeErr); err != nil {
 					return
 				}
 				continue
 			}
 			nextTournamentID, nextCursor, scopeErr := arenaCommandScope(command)
 			if scopeErr != nil || nextTournamentID != tournamentID {
-				if err := writeArenaRejection(ctx, conn, ErrArenaInvalidPayload); err != nil {
+				if err := writeRejection(ErrArenaInvalidPayload); err != nil {
 					return
 				}
 				continue
 			}
 			encoded, _, openErr := s.openArenaConnection(ctx, r, role, player, nextTournamentID, nextCursor)
 			if openErr != nil {
-				if err := writeArenaRejection(ctx, conn, openErr); err != nil {
+				if err := writeRejection(openErr); err != nil {
 					return
 				}
 				continue
 			}
+			revision = arenaTransportCursorRevision(nextCursor)
 			if err := writeArenaMessage(ctx, conn, encoded); err != nil {
+				observe(arenaws.ArenaTransportDelivery, appobservability.ArenaOutcomeFailure, "write_failed", revision)
 				return
 			}
+			observe(
+				arenaTransportCommandAction(command),
+				appobservability.ArenaOutcomeSuccess,
+				arenaTransportCommandReason(command),
+				revision,
+			)
 		}
 	}
+}
+
+func arenaTransportCursorRevision(cursor *arenaws.RealtimeCursor) int64 {
+	if cursor == nil {
+		return 0
+	}
+	return cursor.ProjectionRevision
+}
+
+func arenaTransportCommandAction(command ArenaCommand) string {
+	if command.Type == EventArenaResume {
+		return arenaws.ArenaTransportResume
+	}
+	return arenaws.ArenaTransportConnect
+}
+
+func arenaTransportCommandReason(command ArenaCommand) string {
+	if command.Type == EventArenaResume {
+		return "resumed"
+	}
+	return "opened"
 }
 
 func readArenaFrames(ctx context.Context, conn *coderws.Conn, reads chan<- arenaReadResult) {

@@ -12,12 +12,38 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
+	"github.com/TakuyaYagam1/task-per-minute/internal/observability"
 	"github.com/TakuyaYagam1/task-per-minute/internal/taskexec"
 )
 
 const (
 	arenaSubmissionAttempts = 2
 	maxArenaFlagBytes       = 4096
+
+	arenaSubmissionEventAccepted   = "arena.command.accepted"
+	arenaSubmissionEventRejected   = "arena.command.rejected"
+	arenaSubmissionEventIdempotent = "arena.command.idempotent"
+	arenaSubmissionEventRetry      = "arena.command.retry"
+	arenaSubmissionEventFailed     = "arena.command.failed"
+)
+
+type arenaSubmissionEventReason string
+
+const (
+	arenaSubmissionReasonCommitted             arenaSubmissionEventReason = "committed"
+	arenaSubmissionReasonAlreadyCommitted      arenaSubmissionEventReason = "already_committed"
+	arenaSubmissionReasonInvalid               arenaSubmissionEventReason = "invalid_submission"
+	arenaSubmissionReasonParticipantMismatch   arenaSubmissionEventReason = "participant_mismatch"
+	arenaSubmissionReasonParticipantDisconnect arenaSubmissionEventReason = "participant_disconnected"
+	arenaSubmissionReasonNotOpen               arenaSubmissionEventReason = "submission_not_open"
+	arenaSubmissionReasonCommandReused         arenaSubmissionEventReason = "command_reused"
+	arenaSubmissionReasonCommitConflict        arenaSubmissionEventReason = "commit_conflict"
+	arenaSubmissionReasonConflictExhausted     arenaSubmissionEventReason = "conflict_exhausted"
+	arenaSubmissionReasonLoadFailed            arenaSubmissionEventReason = "load_failed"
+	arenaSubmissionReasonInvalidAuthority      arenaSubmissionEventReason = "invalid_authority"
+	arenaSubmissionReasonSnapshotValidation    arenaSubmissionEventReason = "snapshot_validation_failed"
+	arenaSubmissionReasonCommitFailed          arenaSubmissionEventReason = "commit_failed"
+	arenaSubmissionReasonInvalidCommit         arenaSubmissionEventReason = "invalid_commit"
 )
 
 var (
@@ -94,10 +120,17 @@ type ArenaSubmissionRepository interface {
 
 type ArenaSubmissionUseCase struct {
 	repository ArenaSubmissionRepository
+	observer   observability.ArenaEventObserver
 }
 
-func NewArenaSubmissionUseCase(repository ArenaSubmissionRepository) *ArenaSubmissionUseCase {
-	return &ArenaSubmissionUseCase{repository: repository}
+func NewArenaSubmissionUseCase(
+	repository ArenaSubmissionRepository,
+	observers ...observability.ArenaEventObserver,
+) *ArenaSubmissionUseCase {
+	return &ArenaSubmissionUseCase{
+		repository: repository,
+		observer:   observability.FirstArenaEventObserver(observers...),
+	}
 }
 
 func (u *ArenaSubmissionUseCase) Submit(
@@ -108,36 +141,60 @@ func (u *ArenaSubmissionUseCase) Submit(
 		return ArenaSubmissionRecord{}, false, domain.ErrValidation
 	}
 	if err := validateArenaSubmissionCommand(command); err != nil {
+		u.emitSubmissionResult(
+			ctx, command, ArenaSubmissionRecord{}, false, "", err,
+		)
 		return ArenaSubmissionRecord{}, false, err
 	}
 
-	for range arenaSubmissionAttempts {
-		record, changed, retry, err := u.submitAttempt(ctx, command)
+	for attempt := range arenaSubmissionAttempts {
+		record, changed, retry, failureReason, err := u.submitAttempt(ctx, command)
 		if retry {
+			if attempt+1 < arenaSubmissionAttempts {
+				u.emitSubmissionEvent(
+					ctx,
+					command,
+					arenaSubmissionEventRetry,
+					observability.ArenaOutcomeRetry,
+					"submission_conflict_retry",
+					arenaSubmissionReasonCommitConflict,
+					0,
+				)
+			}
 			continue
 		}
+		u.emitSubmissionResult(ctx, command, record, changed, failureReason, err)
 		return record, changed, err
 	}
+	u.emitSubmissionEvent(
+		ctx,
+		command,
+		arenaSubmissionEventFailed,
+		observability.ArenaOutcomeFailure,
+		"submission_failed",
+		arenaSubmissionReasonConflictExhausted,
+		0,
+	)
 	return ArenaSubmissionRecord{}, false, ErrArenaSubmissionConflict
 }
 
 func (u *ArenaSubmissionUseCase) submitAttempt(
 	ctx context.Context,
 	command ArenaSubmissionCommand,
-) (ArenaSubmissionRecord, bool, bool, error) {
+) (ArenaSubmissionRecord, bool, bool, arenaSubmissionEventReason, error) {
 	authority, err := u.repository.LoadArenaSubmissionAuthority(ctx, command.Scope)
 	if err != nil {
-		return ArenaSubmissionRecord{}, false, false,
+		return ArenaSubmissionRecord{}, false, false, arenaSubmissionReasonLoadFailed,
 			fmt.Errorf("ArenaSubmissionUseCase - load authority: %w", err)
 	}
 	if err := validateArenaSubmissionAuthority(authority); err != nil {
-		return ArenaSubmissionRecord{}, false, false, err
+		return ArenaSubmissionRecord{}, false, false, arenaSubmissionReasonInvalidAuthority, err
 	}
 	if command.ActorParticipantID != command.ParticipantID {
-		return ArenaSubmissionRecord{}, false, false, domain.ErrArenaAssignmentParticipant
+		return ArenaSubmissionRecord{}, false, false, "", domain.ErrArenaAssignmentParticipant
 	}
 	if _, assigned := authority.Snapshot.InstanceFor(command.ParticipantID); !assigned {
-		return ArenaSubmissionRecord{}, false, false, domain.ErrArenaAssignmentParticipant
+		return ArenaSubmissionRecord{}, false, false, "", domain.ErrArenaAssignmentParticipant
 	}
 
 	correct, err := taskexec.ValidateSnapshotFlag(taskexec.FlagValidationInput{
@@ -146,35 +203,106 @@ func (u *ArenaSubmissionUseCase) submitAttempt(
 		SubmittedFlag: command.SubmittedFlag,
 	})
 	if err != nil {
-		return ArenaSubmissionRecord{}, false, false,
+		return ArenaSubmissionRecord{}, false, false, arenaSubmissionReasonSnapshotValidation,
 			arenaSubmissionError("snapshot flag validation failed")
 	}
 	if retained, found := arenaSubmissionForCommand(authority.Submissions, command.CommandID); found {
 		if !arenaSubmissionMatchesCommand(retained, command, authority, correct) {
-			return ArenaSubmissionRecord{}, false, false, ErrArenaSubmissionCommandReuse
+			return ArenaSubmissionRecord{}, false, false, "", ErrArenaSubmissionCommandReuse
 		}
-		return retained, false, false, nil
+		return retained, false, false, "", nil
 	}
 	if authority.Paused || arenaSubmissionGameState(authority.StartedGame) != domain.ArenaGameStateActive {
-		return ArenaSubmissionRecord{}, false, false, ErrArenaSubmissionNotOpen
+		return ArenaSubmissionRecord{}, false, false, "", ErrArenaSubmissionNotOpen
 	}
 	if !arenaParticipantConnected(authority.ConnectedParticipantIDs, command.ParticipantID) {
-		return ArenaSubmissionRecord{}, false, false, ErrArenaSubmissionDisconnected
+		return ArenaSubmissionRecord{}, false, false, "", ErrArenaSubmissionDisconnected
 	}
 
 	commit := newArenaSubmissionCommit(authority, command, correct)
 	committed, changed, err := u.repository.CommitArenaSubmission(ctx, commit)
 	if errors.Is(err, domain.ErrConflict) {
-		return ArenaSubmissionRecord{}, false, true, nil
+		return ArenaSubmissionRecord{}, false, true, "", nil
 	}
 	if err != nil {
-		return ArenaSubmissionRecord{}, false, false,
+		return ArenaSubmissionRecord{}, false, false, arenaSubmissionReasonCommitFailed,
 			fmt.Errorf("ArenaSubmissionUseCase - commit submission: %w", err)
 	}
 	if !validCommittedArenaSubmission(committed, commit, authority.StartedGame) {
-		return ArenaSubmissionRecord{}, false, false, domain.ErrInternal
+		return ArenaSubmissionRecord{}, false, false, arenaSubmissionReasonInvalidCommit, domain.ErrInternal
 	}
-	return *committed, changed, false, nil
+	return *committed, changed, false, "", nil
+}
+
+func (u *ArenaSubmissionUseCase) emitSubmissionResult(
+	ctx context.Context,
+	command ArenaSubmissionCommand,
+	record ArenaSubmissionRecord,
+	changed bool,
+	failureReason arenaSubmissionEventReason,
+	err error,
+) {
+	if err == nil && changed {
+		u.emitSubmissionEvent(
+			ctx, command, arenaSubmissionEventAccepted, observability.ArenaOutcomeSuccess,
+			"submission_accepted", arenaSubmissionReasonCommitted, record.Sequence,
+		)
+		return
+	}
+	if err == nil {
+		u.emitSubmissionEvent(
+			ctx, command, arenaSubmissionEventIdempotent, observability.ArenaOutcomeSuccess,
+			"submission_idempotent", arenaSubmissionReasonAlreadyCommitted, record.Sequence,
+		)
+		return
+	}
+	if failureReason != "" {
+		u.emitSubmissionEvent(
+			ctx, command, arenaSubmissionEventFailed, observability.ArenaOutcomeFailure,
+			"submission_failed", failureReason, 0,
+		)
+		return
+	}
+	u.emitSubmissionEvent(
+		ctx, command, arenaSubmissionEventRejected, observability.ArenaOutcomeRejected,
+		"submission_rejected", arenaSubmissionRejectionReason(err), 0,
+	)
+}
+
+func (u *ArenaSubmissionUseCase) emitSubmissionEvent(
+	ctx context.Context,
+	command ArenaSubmissionCommand,
+	event string,
+	outcome string,
+	transition string,
+	reason arenaSubmissionEventReason,
+	revision int64,
+) {
+	if u == nil || u.observer == nil {
+		return
+	}
+	commandID := command.CommandID.String()
+	_ = observability.EmitArenaEvent(ctx, u.observer, observability.ArenaEventInput{
+		Event: event, Outcome: outcome, CorrelationID: commandID, CommandID: commandID,
+		TournamentID: command.Scope.Game.TournamentID.String(), EntityKind: "game",
+		EntityID: command.Scope.Game.GameID.String(), Stage: "submission",
+		Transition: transition, ReasonCode: string(reason), Revision: revision,
+	})
+}
+
+func arenaSubmissionRejectionReason(err error) arenaSubmissionEventReason {
+	switch {
+	case errors.Is(err, ErrArenaSubmissionDisconnected):
+		return arenaSubmissionReasonParticipantDisconnect
+	case errors.Is(err, ErrArenaSubmissionNotOpen):
+		return arenaSubmissionReasonNotOpen
+	case errors.Is(err, ErrArenaSubmissionCommandReuse):
+		return arenaSubmissionReasonCommandReused
+	case errors.Is(err, domain.ErrArenaAssignmentParticipant):
+		return arenaSubmissionReasonParticipantMismatch
+	default:
+		return arenaSubmissionReasonInvalid
+	}
 }
 
 func (r ArenaSubmissionRecord) Validate() error {

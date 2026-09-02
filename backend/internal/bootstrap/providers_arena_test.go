@@ -26,7 +26,14 @@ func TestProvideArenaCoreComposesSupportedUseCases(t *testing.T) {
 	t.Parallel()
 
 	var repository arenaTournamentRepositoryStub
-	core := provideArenaCore(&repository, &repository, &repository, &repository, fixedArenaClock{})
+	core := provideArenaCore(
+		&repository,
+		&repository,
+		&repository,
+		&repository,
+		fixedArenaClock{},
+		logkit.Noop(),
+	)
 
 	require.NotNil(t, core)
 	require.NotNil(t, core.tournaments)

@@ -12,6 +12,7 @@ import (
 	logkit "github.com/wahrwelt-kit/go-logkit"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/requestmeta"
+	appobservability "github.com/TakuyaYagam1/task-per-minute/internal/observability"
 )
 
 const (
@@ -83,6 +84,7 @@ func build(log logkit.Logger, withTimeout bool, opts ...StackOption) func(http.H
 		clientIP,
 		ForwardedProto(cfg.trustedProxyCIDRs, log),
 		Logger(log),
+		ArenaStructuredLogging(appobservability.NewArenaStructuredLogger(log)),
 		Recoverer(log),
 		httpkitmw.SecurityHeaders(false, httpkitmw.WithCSP(stackCSP)),
 		NoStoreSensitiveResponses(),

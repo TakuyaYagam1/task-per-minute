@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
+	"github.com/TakuyaYagam1/task-per-minute/internal/observability"
 )
 
 var ErrTournamentGuardedTransition = errors.New("arena tournament transition requires a dedicated command")
@@ -16,36 +17,68 @@ var ErrTournamentGuardedTransition = errors.New("arena tournament transition req
 type TournamentLifecycleUseCase struct {
 	repository TournamentLifecycleRepository
 	clock      Clock
+	observer   observability.ArenaEventObserver
 }
 
 func NewTournamentLifecycleUseCase(
 	repository TournamentLifecycleRepository,
 	clock Clock,
+	observers ...observability.ArenaEventObserver,
 ) *TournamentLifecycleUseCase {
-	return &TournamentLifecycleUseCase{repository: repository, clock: clock}
+	return &TournamentLifecycleUseCase{
+		repository: repository,
+		clock:      clock,
+		observer:   firstArenaEventObserver(observers...),
+	}
 }
 
 func (u *TournamentLifecycleUseCase) Transition(
 	ctx context.Context,
 	command TournamentLifecycleCommand,
-) (*TournamentRecord, bool, error) {
+) (record *TournamentRecord, changed bool, err error) {
+	var clock Clock
+	var observer observability.ArenaEventObserver
+	if u != nil {
+		clock = u.clock
+		observer = u.observer
+	}
+	measurement := newArenaEventMeasurement(clock, observer)
+	phase := arenaEventPhaseValidation
+	var currentState domain.ArenaTournamentState
+	defer func() {
+		emitTournamentLifecycleEvent(
+			ctx,
+			measurement,
+			command,
+			currentState,
+			record,
+			changed,
+			err,
+			phase,
+		)
+	}()
+
 	if !u.isAvailable() || !validTournamentLifecycleCommand(command) {
 		return nil, false, domain.ErrValidation
 	}
+	phase = arenaEventPhaseRepositoryLookup
 	current, err := u.repository.GetTournament(ctx, command.TournamentID)
 	if err != nil {
 		return nil, false, tournamentLifecycleLookupError("Transition", err)
 	}
+	currentState = tournamentRecordState(current)
 	if err := validateTournamentRecordPointer(current, command.TournamentID); err != nil {
 		return nil, false, err
 	}
 	if reconciled, ok := reconcileLifecycleTransition(current, command); ok {
 		return reconciled, false, nil
 	}
+	phase = arenaEventPhaseValidation
 	next, err := prepareLifecycleTransition(current, command)
 	if err != nil {
 		return nil, false, err
 	}
+	phase = arenaEventPhaseClock
 	transitionedAt := u.clock.Now()
 	if !validArenaServerTime(transitionedAt) {
 		return nil, false, domain.ErrValidation
@@ -60,6 +93,7 @@ func (u *TournamentLifecycleUseCase) Transition(
 		finishedAt = &transitionedAt
 	}
 
+	phase = arenaEventPhaseRepositoryMutation
 	updated, changed, err := u.repository.TransitionTournament(ctx, TournamentLifecycleTransitionInput{
 		TournamentID: command.TournamentID, ExpectedRevision: command.ExpectedRevision,
 		ExpectedState: current.State, NextState: next.State, PausedFromState: next.PausedFromState,
@@ -69,8 +103,11 @@ func (u *TournamentLifecycleUseCase) Transition(
 		return nil, false, tournamentLifecycleMutationError("Transition", err)
 	}
 	if !changed {
-		return u.reconcileUnchangedTransition(ctx, command)
+		phase = arenaEventPhaseRepositoryLookup
+		reconciled, reconcileErr := u.reconcileUnchangedTransition(ctx, command)
+		return reconciled, false, reconcileErr
 	}
+	phase = arenaEventPhaseResultValidation
 	if err := validateLifecycleTransitionResult(updated, command, transitionedAt); err != nil {
 		return nil, false, err
 	}
@@ -84,18 +121,25 @@ func (u *TournamentLifecycleUseCase) isAvailable() bool {
 func (u *TournamentLifecycleUseCase) reconcileUnchangedTransition(
 	ctx context.Context,
 	command TournamentLifecycleCommand,
-) (*TournamentRecord, bool, error) {
+) (*TournamentRecord, error) {
 	current, err := u.repository.GetTournament(ctx, command.TournamentID)
 	if err != nil {
-		return nil, false, tournamentLifecycleLookupError("reconcile transition", err)
+		return nil, tournamentLifecycleLookupError("reconcile transition", err)
 	}
 	if err := validateTournamentRecordPointer(current, command.TournamentID); err != nil {
-		return nil, false, err
+		return nil, err
 	}
 	if reconciled, ok := reconcileLifecycleTransition(current, command); ok {
-		return reconciled, false, nil
+		return reconciled, nil
 	}
-	return nil, false, domain.ErrConflict
+	return nil, domain.ErrConflict
+}
+
+func tournamentRecordState(record *TournamentRecord) domain.ArenaTournamentState {
+	if record == nil {
+		return ""
+	}
+	return record.State
 }
 
 func validTournamentLifecycleCommand(command TournamentLifecycleCommand) bool {
