@@ -42,12 +42,12 @@ func TestArenaControllerComposition(t *testing.T) {
 				arenaPaths++
 			}
 		}
-		require.Equal(t, 25, arenaPaths)
+		require.Equal(t, 29, arenaPaths)
 	})
 
 	t.Run("each generated Arena operation belongs to one controller port", func(t *testing.T) {
 		generated := reflect.TypeOf((*api.ServerInterface)(nil)).Elem()
-		generatedArena := make([]string, 0, 27)
+		generatedArena := make([]string, 0, 31)
 		for index := range generated.NumMethod() {
 			method := generated.Method(index)
 			if strings.Contains(method.Name, "Arena") {
@@ -55,8 +55,8 @@ func TestArenaControllerComposition(t *testing.T) {
 			}
 		}
 
-		ownedArena := make([]string, 0, 27)
-		seen := make(map[string]struct{}, 27)
+		ownedArena := make([]string, 0, 31)
+		seen := make(map[string]struct{}, 31)
 		for _, controller := range []reflect.Type{
 			reflect.TypeOf((*ArenaOperatorController)(nil)).Elem(),
 			reflect.TypeOf((*ArenaParticipantController)(nil)).Elem(),
@@ -71,7 +71,7 @@ func TestArenaControllerComposition(t *testing.T) {
 			}
 		}
 
-		require.Len(t, generatedArena, 27)
+		require.Len(t, generatedArena, 31)
 		require.ElementsMatch(t, generatedArena, ownedArena)
 	})
 

@@ -458,6 +458,351 @@ components:
           maxItems: 4096
           items:
             $ref: '../components/schemas/arena_schemas.yml#/ArenaCorrectionUnlockIntent'
+    ArenaOperatorNoShowRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - tournament_id
+        - wave_id
+        - window_id
+        - series_id
+        - confirmed
+        - reason
+        - expected_authority_revision
+        - expected_wave_revision_id
+        - expected_window_revision_id
+        - expected_series_state
+        - game_result_revision_ids
+        - score_revision_id
+        - series_result_revision_id
+      properties:
+        tournament_id:
+          type: string
+          format: uuid
+        wave_id:
+          type: string
+          format: uuid
+        window_id:
+          type: string
+          format: uuid
+        series_id:
+          type: string
+          format: uuid
+        confirmed:
+          type: boolean
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 512
+        expected_authority_revision:
+          type: integer
+          format: int64
+          minimum: 1
+        expected_wave_revision_id:
+          type: string
+          format: uuid
+        expected_window_revision_id:
+          type: string
+          format: uuid
+        expected_series_state:
+          $ref: '../components/schemas/arena_schemas.yml#/ArenaSeriesState'
+        game_result_revision_ids:
+          type: array
+          minItems: 1
+          maxItems: 3
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+        score_revision_id:
+          type: string
+          format: uuid
+        series_result_revision_id:
+          type: string
+          format: uuid
+    ArenaOperatorReserveRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - tournament_id
+        - old_wave_id
+        - series_id
+        - slot_id
+        - assignment_id
+        - assignment_attempt_id
+        - confirmed
+        - reason
+        - expected_authority_revision
+        - expected_exhaustion_command_id
+        - expected_assignment_revision
+        - expected_pool_revision_id
+        - expected_pool_revision
+        - expected_history_revision_id
+        - expected_history_revision
+        - expected_artifact_revision_id
+        - expected_artifact_revision
+        - expected_reservation_revision_id
+        - expected_reservation_revision
+        - expected_category_revision_id
+        - expected_category_revision
+        - proposed_task_id
+        - proposed_version
+        - proposed_snapshot_id
+        - expected_snapshot_id
+        - evidence_id
+      properties:
+        tournament_id:
+          type: string
+          format: uuid
+        old_wave_id:
+          type: string
+          format: uuid
+        series_id:
+          type: string
+          format: uuid
+        slot_id:
+          type: string
+          format: uuid
+        assignment_id:
+          type: string
+          format: uuid
+        assignment_attempt_id:
+          type: string
+          format: uuid
+        confirmed:
+          type: boolean
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 512
+        expected_authority_revision:
+          type: integer
+          format: int64
+          minimum: 1
+        expected_exhaustion_command_id:
+          type: string
+          format: uuid
+        expected_assignment_revision:
+          type: integer
+          format: int64
+          minimum: 1
+        expected_pool_revision_id:
+          type: string
+          format: uuid
+        expected_pool_revision:
+          type: integer
+          format: int64
+          minimum: 1
+        expected_history_revision_id:
+          type: string
+          format: uuid
+        expected_history_revision:
+          type: integer
+          format: int64
+          minimum: 1
+        expected_artifact_revision_id:
+          type: string
+          format: uuid
+        expected_artifact_revision:
+          type: integer
+          format: int64
+          minimum: 1
+        expected_reservation_revision_id:
+          type: string
+          format: uuid
+        expected_reservation_revision:
+          type: integer
+          format: int64
+          minimum: 1
+        expected_category_revision_id:
+          type: string
+          format: uuid
+        expected_category_revision:
+          type: integer
+          format: int64
+          minimum: 1
+        proposed_task_id:
+          type: string
+          format: uuid
+        proposed_version:
+          type: integer
+          format: int32
+          minimum: 1
+        proposed_snapshot_id:
+          type: string
+          format: uuid
+        expected_snapshot_id:
+          type: string
+          format: uuid
+        evidence_id:
+          type: string
+          format: uuid
+    ArenaOperatorForfeitGameExpectation:
+      type: object
+      additionalProperties: false
+      required: [slot_id, game_id, attempt_no, state]
+      properties:
+        slot_id:
+          type: string
+          format: uuid
+        game_id:
+          type: string
+          format: uuid
+        attempt_no:
+          type: integer
+          format: int32
+          minimum: 1
+        state:
+          $ref: '../components/schemas/arena_schemas.yml#/ArenaGameState'
+    ArenaOperatorForfeitRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - tournament_id
+        - series_id
+        - forfeiting_participant_id
+        - confirmed
+        - reason
+        - expected_authority_revision
+        - expected_game
+        - basis
+        - rule_id
+        - evidence_ids
+        - game_result_revision_id
+        - score_revision_id
+        - series_result_revision_id
+        - audit_event_id
+        - outbox_event_id
+        - projection_revision_id
+      properties:
+        tournament_id:
+          type: string
+          format: uuid
+        series_id:
+          type: string
+          format: uuid
+        forfeiting_participant_id:
+          type: string
+          format: uuid
+        confirmed:
+          type: boolean
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 256
+        expected_authority_revision:
+          type: integer
+          format: int64
+          minimum: 1
+        expected_game:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/ArenaOperatorForfeitGameExpectation'
+        basis:
+          type: string
+          enum: [rule_violation]
+        rule_id:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: '^[A-Za-z0-9._:-]+$'
+        evidence_ids:
+          type: array
+          minItems: 1
+          maxItems: 16
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+        game_result_revision_id:
+          type: string
+          format: uuid
+          nullable: true
+        score_revision_id:
+          type: string
+          format: uuid
+        series_result_revision_id:
+          type: string
+          format: uuid
+        audit_event_id:
+          type: string
+          format: uuid
+        outbox_event_id:
+          type: string
+          format: uuid
+        projection_revision_id:
+          type: string
+          format: uuid
+    ArenaOperatorReplayRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - tournament_id
+        - old_wave_id
+        - series_id
+        - slot_id
+        - assignment_id
+        - failed_game_id
+        - confirmed
+        - reason
+        - expected_authority_revision
+        - expected_closure_revision_id
+        - assignment_attempt_id
+        - replacement_game_id
+        - replacement_wave_id
+        - replacement_wave_revision_id
+        - ready_window_id
+        - ready_window_revision_id
+      properties:
+        tournament_id:
+          type: string
+          format: uuid
+        old_wave_id:
+          type: string
+          format: uuid
+        series_id:
+          type: string
+          format: uuid
+        slot_id:
+          type: string
+          format: uuid
+        assignment_id:
+          type: string
+          format: uuid
+        failed_game_id:
+          type: string
+          format: uuid
+        confirmed:
+          type: boolean
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 512
+        expected_authority_revision:
+          type: integer
+          format: int64
+          minimum: 1
+        expected_closure_revision_id:
+          type: string
+          format: uuid
+        assignment_attempt_id:
+          type: string
+          format: uuid
+        replacement_game_id:
+          type: string
+          format: uuid
+        replacement_wave_id:
+          type: string
+          format: uuid
+        replacement_wave_revision_id:
+          type: string
+          format: uuid
+        ready_window_id:
+          type: string
+          format: uuid
+        ready_window_revision_id:
+          type: string
+          format: uuid
     ArenaParticipantLobbySeries:
       type: object
       additionalProperties: false
@@ -1232,6 +1577,148 @@ components:
           application/json:
             schema:
               $ref: '../components/schemas/arena_schemas.yml#/ArenaWave'
+      '401':
+        $ref: '#/components/responses/ArenaUnauthorizedResponse'
+      '403':
+        $ref: '#/components/responses/ArenaForbiddenResponse'
+      '404':
+        $ref: '#/components/responses/ArenaNotFoundResponse'
+      '409':
+        $ref: '#/components/responses/ArenaRevisionConflictResponse'
+
+/api/v1/arena/operator/tournaments/{tournament_id}/waves/{wave_id}/no-shows:
+  parameters:
+    - $ref: '#/components/parameters/ArenaTournamentId'
+    - $ref: '#/components/parameters/ArenaWaveId'
+  post:
+    operationId: resolveArenaNoShow
+    tags: [arena-operator]
+    summary: Resolve a confirmed ready-window no-show
+    description: The body repeats the command scope and revision evidence. Operator identity comes only from auth.
+    x-arena-auth-scope: operator:tournament
+    security:
+      - BearerAuth: []
+    parameters:
+      - $ref: '#/components/parameters/ArenaIdempotencyKey'
+      - $ref: '#/components/parameters/ArenaAdminCSRFToken'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ArenaOperatorNoShowRequest'
+    responses:
+      '204':
+        description: No-show resolved.
+      '400':
+        $ref: '#/components/responses/ArenaInvalidRequestResponse'
+      '401':
+        $ref: '#/components/responses/ArenaUnauthorizedResponse'
+      '403':
+        $ref: '#/components/responses/ArenaForbiddenResponse'
+      '404':
+        $ref: '#/components/responses/ArenaNotFoundResponse'
+      '409':
+        $ref: '#/components/responses/ArenaRevisionConflictResponse'
+
+/api/v1/arena/operator/tournaments/{tournament_id}/series/{series_id}/assignments/{assignment_id}/operator-reserves:
+  parameters:
+    - $ref: '#/components/parameters/ArenaTournamentId'
+    - $ref: '#/components/parameters/ArenaSeriesId'
+    - $ref: '#/components/parameters/ArenaAssignmentId'
+  post:
+    operationId: assignArenaOperatorReserve
+    tags: [arena-operator]
+    summary: Assign an operator-selected reserve after exhaustion
+    description: The body repeats the command scope and source revisions. Operator identity comes only from auth.
+    x-arena-auth-scope: operator:tournament
+    security:
+      - BearerAuth: []
+    parameters:
+      - $ref: '#/components/parameters/ArenaIdempotencyKey'
+      - $ref: '#/components/parameters/ArenaAdminCSRFToken'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ArenaOperatorReserveRequest'
+    responses:
+      '204':
+        description: Operator reserve assigned.
+      '400':
+        $ref: '#/components/responses/ArenaInvalidRequestResponse'
+      '401':
+        $ref: '#/components/responses/ArenaUnauthorizedResponse'
+      '403':
+        $ref: '#/components/responses/ArenaForbiddenResponse'
+      '404':
+        $ref: '#/components/responses/ArenaNotFoundResponse'
+      '409':
+        $ref: '#/components/responses/ArenaRevisionConflictResponse'
+
+/api/v1/arena/operator/tournaments/{tournament_id}/series/{series_id}/operator-forfeits:
+  parameters:
+    - $ref: '#/components/parameters/ArenaTournamentId'
+    - $ref: '#/components/parameters/ArenaSeriesId'
+  post:
+    operationId: recordArenaOperatorForfeit
+    tags: [arena-operator]
+    summary: Record a confirmed operator forfeit
+    description: The body repeats the command scope and settlement evidence. Operator identity comes only from auth.
+    x-arena-auth-scope: operator:tournament
+    security:
+      - BearerAuth: []
+    parameters:
+      - $ref: '#/components/parameters/ArenaIdempotencyKey'
+      - $ref: '#/components/parameters/ArenaAdminCSRFToken'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ArenaOperatorForfeitRequest'
+    responses:
+      '204':
+        description: Operator forfeit recorded.
+      '400':
+        $ref: '#/components/responses/ArenaInvalidRequestResponse'
+      '401':
+        $ref: '#/components/responses/ArenaUnauthorizedResponse'
+      '403':
+        $ref: '#/components/responses/ArenaForbiddenResponse'
+      '404':
+        $ref: '#/components/responses/ArenaNotFoundResponse'
+      '409':
+        $ref: '#/components/responses/ArenaRevisionConflictResponse'
+
+/api/v1/arena/operator/tournaments/{tournament_id}/series/{series_id}/games/{game_id}/replays:
+  parameters:
+    - $ref: '#/components/parameters/ArenaTournamentId'
+    - $ref: '#/components/parameters/ArenaSeriesId'
+    - $ref: '#/components/parameters/ArenaGameId'
+  post:
+    operationId: replayArenaOperatorGame
+    tags: [arena-operator]
+    summary: Replace a failed Game with a reserved task
+    description: The body repeats the failed Game scope and provides fresh replacement identities. Operator identity comes only from auth.
+    x-arena-auth-scope: operator:tournament
+    security:
+      - BearerAuth: []
+    parameters:
+      - $ref: '#/components/parameters/ArenaIdempotencyKey'
+      - $ref: '#/components/parameters/ArenaAdminCSRFToken'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ArenaOperatorReplayRequest'
+    responses:
+      '204':
+        description: Replay replacement opened.
+      '400':
+        $ref: '#/components/responses/ArenaInvalidRequestResponse'
       '401':
         $ref: '#/components/responses/ArenaUnauthorizedResponse'
       '403':

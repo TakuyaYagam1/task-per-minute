@@ -83,6 +83,14 @@ paths:
     $ref: 'routes/arena.yml#/~1api~1v1~1arena~1operator~1tournaments~1{tournament_id}~1actions'
   /api/v1/arena/operator/tournaments/{tournament_id}/waves/{wave_id}/actions:
     $ref: 'routes/arena.yml#/~1api~1v1~1arena~1operator~1tournaments~1{tournament_id}~1waves~1{wave_id}~1actions'
+  /api/v1/arena/operator/tournaments/{tournament_id}/waves/{wave_id}/no-shows:
+    $ref: 'routes/arena.yml#/~1api~1v1~1arena~1operator~1tournaments~1{tournament_id}~1waves~1{wave_id}~1no-shows'
+  /api/v1/arena/operator/tournaments/{tournament_id}/series/{series_id}/assignments/{assignment_id}/operator-reserves:
+    $ref: 'routes/arena.yml#/~1api~1v1~1arena~1operator~1tournaments~1{tournament_id}~1series~1{series_id}~1assignments~1{assignment_id}~1operator-reserves'
+  /api/v1/arena/operator/tournaments/{tournament_id}/series/{series_id}/operator-forfeits:
+    $ref: 'routes/arena.yml#/~1api~1v1~1arena~1operator~1tournaments~1{tournament_id}~1series~1{series_id}~1operator-forfeits'
+  /api/v1/arena/operator/tournaments/{tournament_id}/series/{series_id}/games/{game_id}/replays:
+    $ref: 'routes/arena.yml#/~1api~1v1~1arena~1operator~1tournaments~1{tournament_id}~1series~1{series_id}~1games~1{game_id}~1replays'
   /api/v1/arena/operator/tournaments/{tournament_id}/series/{series_id}/games/{game_id}/corrections:
     $ref: 'routes/arena.yml#/~1api~1v1~1arena~1operator~1tournaments~1{tournament_id}~1series~1{series_id}~1games~1{game_id}~1corrections'
   /api/v1/arena/operator/audit:

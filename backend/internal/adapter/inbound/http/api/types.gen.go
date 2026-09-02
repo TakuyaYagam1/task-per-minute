@@ -155,6 +155,11 @@ const (
 	ArenaOfficialResultSubjectKindSeries ArenaOfficialResultSubjectKind = "series"
 )
 
+// Defines values for ArenaOperatorForfeitRequestBasis.
+const (
+	RuleViolation ArenaOperatorForfeitRequestBasis = "rule_violation"
+)
+
 // Defines values for ArenaPairingConfigurationRequestPairingMode.
 const (
 	Automatic ArenaPairingConfigurationRequestPairingMode = "automatic"
@@ -784,6 +789,54 @@ type ArenaOperatorCorrectionRequest struct {
 	UnlockIntents              *[]ArenaCorrectionUnlockIntent     `json:"unlock_intents,omitempty"`
 }
 
+// ArenaOperatorForfeitGameExpectation defines model for ArenaOperatorForfeitGameExpectation.
+type ArenaOperatorForfeitGameExpectation struct {
+	AttemptNo int32              `json:"attempt_no"`
+	GameId    openapi_types.UUID `json:"game_id"`
+	SlotId    openapi_types.UUID `json:"slot_id"`
+	State     ArenaGameState     `json:"state"`
+}
+
+// ArenaOperatorForfeitRequest defines model for ArenaOperatorForfeitRequest.
+type ArenaOperatorForfeitRequest struct {
+	AuditEventId              openapi_types.UUID                   `json:"audit_event_id"`
+	Basis                     ArenaOperatorForfeitRequestBasis     `json:"basis"`
+	Confirmed                 bool                                 `json:"confirmed"`
+	EvidenceIds               []openapi_types.UUID                 `json:"evidence_ids"`
+	ExpectedAuthorityRevision int64                                `json:"expected_authority_revision"`
+	ExpectedGame              *ArenaOperatorForfeitGameExpectation `json:"expected_game"`
+	ForfeitingParticipantId   openapi_types.UUID                   `json:"forfeiting_participant_id"`
+	GameResultRevisionId      *openapi_types.UUID                  `json:"game_result_revision_id"`
+	OutboxEventId             openapi_types.UUID                   `json:"outbox_event_id"`
+	ProjectionRevisionId      openapi_types.UUID                   `json:"projection_revision_id"`
+	Reason                    string                               `json:"reason"`
+	RuleId                    string                               `json:"rule_id"`
+	ScoreRevisionId           openapi_types.UUID                   `json:"score_revision_id"`
+	SeriesId                  openapi_types.UUID                   `json:"series_id"`
+	SeriesResultRevisionId    openapi_types.UUID                   `json:"series_result_revision_id"`
+	TournamentId              openapi_types.UUID                   `json:"tournament_id"`
+}
+
+// ArenaOperatorForfeitRequestBasis defines model for ArenaOperatorForfeitRequest.Basis.
+type ArenaOperatorForfeitRequestBasis string
+
+// ArenaOperatorNoShowRequest defines model for ArenaOperatorNoShowRequest.
+type ArenaOperatorNoShowRequest struct {
+	Confirmed                 bool                 `json:"confirmed"`
+	ExpectedAuthorityRevision int64                `json:"expected_authority_revision"`
+	ExpectedSeriesState       ArenaSeriesState     `json:"expected_series_state"`
+	ExpectedWaveRevisionId    openapi_types.UUID   `json:"expected_wave_revision_id"`
+	ExpectedWindowRevisionId  openapi_types.UUID   `json:"expected_window_revision_id"`
+	GameResultRevisionIds     []openapi_types.UUID `json:"game_result_revision_ids"`
+	Reason                    string               `json:"reason"`
+	ScoreRevisionId           openapi_types.UUID   `json:"score_revision_id"`
+	SeriesId                  openapi_types.UUID   `json:"series_id"`
+	SeriesResultRevisionId    openapi_types.UUID   `json:"series_result_revision_id"`
+	TournamentId              openapi_types.UUID   `json:"tournament_id"`
+	WaveId                    openapi_types.UUID   `json:"wave_id"`
+	WindowId                  openapi_types.UUID   `json:"window_id"`
+}
+
 // ArenaOperatorRecoveryCursor defines model for ArenaOperatorRecoveryCursor.
 type ArenaOperatorRecoveryCursor struct {
 	AuditSequence      int64 `json:"audit_sequence"`
@@ -801,6 +854,56 @@ type ArenaOperatorRecoverySnapshot struct {
 	Series     []ArenaSeries   `json:"series"`
 	Tournament ArenaTournament `json:"tournament"`
 	Waves      []ArenaWave     `json:"waves"`
+}
+
+// ArenaOperatorReplayRequest defines model for ArenaOperatorReplayRequest.
+type ArenaOperatorReplayRequest struct {
+	AssignmentAttemptId       openapi_types.UUID `json:"assignment_attempt_id"`
+	AssignmentId              openapi_types.UUID `json:"assignment_id"`
+	Confirmed                 bool               `json:"confirmed"`
+	ExpectedAuthorityRevision int64              `json:"expected_authority_revision"`
+	ExpectedClosureRevisionId openapi_types.UUID `json:"expected_closure_revision_id"`
+	FailedGameId              openapi_types.UUID `json:"failed_game_id"`
+	OldWaveId                 openapi_types.UUID `json:"old_wave_id"`
+	ReadyWindowId             openapi_types.UUID `json:"ready_window_id"`
+	ReadyWindowRevisionId     openapi_types.UUID `json:"ready_window_revision_id"`
+	Reason                    string             `json:"reason"`
+	ReplacementGameId         openapi_types.UUID `json:"replacement_game_id"`
+	ReplacementWaveId         openapi_types.UUID `json:"replacement_wave_id"`
+	ReplacementWaveRevisionId openapi_types.UUID `json:"replacement_wave_revision_id"`
+	SeriesId                  openapi_types.UUID `json:"series_id"`
+	SlotId                    openapi_types.UUID `json:"slot_id"`
+	TournamentId              openapi_types.UUID `json:"tournament_id"`
+}
+
+// ArenaOperatorReserveRequest defines model for ArenaOperatorReserveRequest.
+type ArenaOperatorReserveRequest struct {
+	AssignmentAttemptId           openapi_types.UUID `json:"assignment_attempt_id"`
+	AssignmentId                  openapi_types.UUID `json:"assignment_id"`
+	Confirmed                     bool               `json:"confirmed"`
+	EvidenceId                    openapi_types.UUID `json:"evidence_id"`
+	ExpectedArtifactRevision      int64              `json:"expected_artifact_revision"`
+	ExpectedArtifactRevisionId    openapi_types.UUID `json:"expected_artifact_revision_id"`
+	ExpectedAssignmentRevision    int64              `json:"expected_assignment_revision"`
+	ExpectedAuthorityRevision     int64              `json:"expected_authority_revision"`
+	ExpectedCategoryRevision      int64              `json:"expected_category_revision"`
+	ExpectedCategoryRevisionId    openapi_types.UUID `json:"expected_category_revision_id"`
+	ExpectedExhaustionCommandId   openapi_types.UUID `json:"expected_exhaustion_command_id"`
+	ExpectedHistoryRevision       int64              `json:"expected_history_revision"`
+	ExpectedHistoryRevisionId     openapi_types.UUID `json:"expected_history_revision_id"`
+	ExpectedPoolRevision          int64              `json:"expected_pool_revision"`
+	ExpectedPoolRevisionId        openapi_types.UUID `json:"expected_pool_revision_id"`
+	ExpectedReservationRevision   int64              `json:"expected_reservation_revision"`
+	ExpectedReservationRevisionId openapi_types.UUID `json:"expected_reservation_revision_id"`
+	ExpectedSnapshotId            openapi_types.UUID `json:"expected_snapshot_id"`
+	OldWaveId                     openapi_types.UUID `json:"old_wave_id"`
+	ProposedSnapshotId            openapi_types.UUID `json:"proposed_snapshot_id"`
+	ProposedTaskId                openapi_types.UUID `json:"proposed_task_id"`
+	ProposedVersion               int32              `json:"proposed_version"`
+	Reason                        string             `json:"reason"`
+	SeriesId                      openapi_types.UUID `json:"series_id"`
+	SlotId                        openapi_types.UUID `json:"slot_id"`
+	TournamentId                  openapi_types.UUID `json:"tournament_id"`
 }
 
 // ArenaOperatorTournamentList defines model for ArenaOperatorTournamentList.
@@ -1817,8 +1920,32 @@ type UnlockArenaTournamentRosterParams struct {
 	XCSRFToken *ArenaAdminCSRFToken `json:"X-CSRF-Token,omitempty"`
 }
 
+// AssignArenaOperatorReserveParams defines parameters for AssignArenaOperatorReserve.
+type AssignArenaOperatorReserveParams struct {
+	IdempotencyKey ArenaIdempotencyKey `json:"Idempotency-Key"`
+
+	// XCSRFToken Required only for cookie-authenticated browser admin requests.
+	XCSRFToken *ArenaAdminCSRFToken `json:"X-CSRF-Token,omitempty"`
+}
+
 // CorrectArenaGameResultParams defines parameters for CorrectArenaGameResult.
 type CorrectArenaGameResultParams struct {
+	IdempotencyKey ArenaIdempotencyKey `json:"Idempotency-Key"`
+
+	// XCSRFToken Required only for cookie-authenticated browser admin requests.
+	XCSRFToken *ArenaAdminCSRFToken `json:"X-CSRF-Token,omitempty"`
+}
+
+// ReplayArenaOperatorGameParams defines parameters for ReplayArenaOperatorGame.
+type ReplayArenaOperatorGameParams struct {
+	IdempotencyKey ArenaIdempotencyKey `json:"Idempotency-Key"`
+
+	// XCSRFToken Required only for cookie-authenticated browser admin requests.
+	XCSRFToken *ArenaAdminCSRFToken `json:"X-CSRF-Token,omitempty"`
+}
+
+// RecordArenaOperatorForfeitParams defines parameters for RecordArenaOperatorForfeit.
+type RecordArenaOperatorForfeitParams struct {
 	IdempotencyKey ArenaIdempotencyKey `json:"Idempotency-Key"`
 
 	// XCSRFToken Required only for cookie-authenticated browser admin requests.
@@ -1832,6 +1959,14 @@ type GetArenaOperatorSnapshotParams struct {
 
 // ControlArenaTournamentWaveParams defines parameters for ControlArenaTournamentWave.
 type ControlArenaTournamentWaveParams struct {
+	IdempotencyKey ArenaIdempotencyKey `json:"Idempotency-Key"`
+
+	// XCSRFToken Required only for cookie-authenticated browser admin requests.
+	XCSRFToken *ArenaAdminCSRFToken `json:"X-CSRF-Token,omitempty"`
+}
+
+// ResolveArenaNoShowParams defines parameters for ResolveArenaNoShow.
+type ResolveArenaNoShowParams struct {
 	IdempotencyKey ArenaIdempotencyKey `json:"Idempotency-Key"`
 
 	// XCSRFToken Required only for cookie-authenticated browser admin requests.
@@ -1920,11 +2055,23 @@ type RunArenaRosterPreflightJSONRequestBody = ArenaPreflightRequest
 // UnlockArenaTournamentRosterJSONRequestBody defines body for UnlockArenaTournamentRoster for application/json ContentType.
 type UnlockArenaTournamentRosterJSONRequestBody = ArenaUnlockRosterRequest
 
+// AssignArenaOperatorReserveJSONRequestBody defines body for AssignArenaOperatorReserve for application/json ContentType.
+type AssignArenaOperatorReserveJSONRequestBody = ArenaOperatorReserveRequest
+
 // CorrectArenaGameResultJSONRequestBody defines body for CorrectArenaGameResult for application/json ContentType.
 type CorrectArenaGameResultJSONRequestBody = ArenaOperatorCorrectionRequest
 
+// ReplayArenaOperatorGameJSONRequestBody defines body for ReplayArenaOperatorGame for application/json ContentType.
+type ReplayArenaOperatorGameJSONRequestBody = ArenaOperatorReplayRequest
+
+// RecordArenaOperatorForfeitJSONRequestBody defines body for RecordArenaOperatorForfeit for application/json ContentType.
+type RecordArenaOperatorForfeitJSONRequestBody = ArenaOperatorForfeitRequest
+
 // ControlArenaTournamentWaveJSONRequestBody defines body for ControlArenaTournamentWave for application/json ContentType.
 type ControlArenaTournamentWaveJSONRequestBody = ArenaWaveControlRequest
+
+// ResolveArenaNoShowJSONRequestBody defines body for ResolveArenaNoShow for application/json ContentType.
+type ResolveArenaNoShowJSONRequestBody = ArenaOperatorNoShowRequest
 
 // SubmitArenaParticipantDraftActionJSONRequestBody defines body for SubmitArenaParticipantDraftAction for application/json ContentType.
 type SubmitArenaParticipantDraftActionJSONRequestBody = ArenaParticipantDraftActionRequest

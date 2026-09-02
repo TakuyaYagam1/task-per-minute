@@ -401,9 +401,13 @@ type ArenaOperatorController interface {
 	LockArenaTournamentRoster(w http.ResponseWriter, r *http.Request, tournamentID api.ArenaTournamentId, params api.LockArenaTournamentRosterParams)
 	RunArenaRosterPreflight(w http.ResponseWriter, r *http.Request, tournamentID api.ArenaTournamentId, params api.RunArenaRosterPreflightParams)
 	UnlockArenaTournamentRoster(w http.ResponseWriter, r *http.Request, tournamentID api.ArenaTournamentId, params api.UnlockArenaTournamentRosterParams)
+	AssignArenaOperatorReserve(w http.ResponseWriter, r *http.Request, tournamentID api.ArenaTournamentId, seriesID api.ArenaSeriesId, assignmentID api.ArenaAssignmentId, params api.AssignArenaOperatorReserveParams)
 	CorrectArenaGameResult(w http.ResponseWriter, r *http.Request, tournamentID api.ArenaTournamentId, seriesID api.ArenaSeriesId, gameID api.ArenaGameId, params api.CorrectArenaGameResultParams)
+	ReplayArenaOperatorGame(w http.ResponseWriter, r *http.Request, tournamentID api.ArenaTournamentId, seriesID api.ArenaSeriesId, gameID api.ArenaGameId, params api.ReplayArenaOperatorGameParams)
+	RecordArenaOperatorForfeit(w http.ResponseWriter, r *http.Request, tournamentID api.ArenaTournamentId, seriesID api.ArenaSeriesId, params api.RecordArenaOperatorForfeitParams)
 	GetArenaOperatorSnapshot(w http.ResponseWriter, r *http.Request, tournamentID api.ArenaTournamentId, params api.GetArenaOperatorSnapshotParams)
 	ControlArenaTournamentWave(w http.ResponseWriter, r *http.Request, tournamentID api.ArenaTournamentId, waveID api.ArenaWaveId, params api.ControlArenaTournamentWaveParams)
+	ResolveArenaNoShow(w http.ResponseWriter, r *http.Request, tournamentID api.ArenaTournamentId, waveID api.ArenaWaveId, params api.ResolveArenaNoShowParams)
 }
 
 type ArenaParticipantController interface {
