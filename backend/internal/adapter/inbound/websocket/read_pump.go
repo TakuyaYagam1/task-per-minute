@@ -52,6 +52,9 @@ func (s *Server) serveArenaConnection(
 	if conn == nil {
 		return
 	}
+	if role == ArenaRolePublic {
+		ctx = withArenaPublicSession(ctx)
+	}
 	conn.SetReadLimit(defaultReadLimit)
 	readCtx, cancelRead := context.WithCancel(ctx)
 	reads := make(chan arenaReadResult, 1)

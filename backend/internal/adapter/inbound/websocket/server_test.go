@@ -110,6 +110,45 @@ func TestArenaTransportComposition(t *testing.T) {
 		require.Zero(t, public.calls())
 	})
 
+	t.Run("public resume reuses one connection slot", func(t *testing.T) {
+		source := &arenaFlowPublicSource{read: arenaFlowPublicRead(t, tournamentID)}
+		public := arenaFlowPublic(t, source, 1)
+		server := NewServer(nil, nil, nil, NewHubRegistry(), WithArenaPublicFlow(public))
+		httpServer := httptest.NewServer(server)
+		defer httpServer.Close()
+
+		conn, resp, err := coderws.Dial(t.Context(), wsTestEndpoint(httpServer.URL)+"?arena_role=public", nil)
+		require.NoError(t, err)
+		if resp != nil && resp.Body != nil {
+			defer resp.Body.Close()
+		}
+		defer conn.CloseNow()
+
+		writeTestEvent(t, conn, EventArenaConnect, ArenaConnectPayload{
+			Role: ArenaRolePublic, TournamentID: tournamentID,
+		})
+		message, err := DecodeArenaPublicMessage(readArenaTestMessage(t, conn))
+		require.NoError(t, err)
+		require.NotNil(t, message.Public)
+
+		for sequence := int64(1); sequence <= 3; sequence++ {
+			writeTestEvent(t, conn, EventArenaResume, ArenaResumePayload{
+				Role: ArenaRolePublic,
+				Cursor: arenaws.RealtimeCursor{
+					SchemaVersion:      arenaws.ArenaRealtimeSchemaVersion,
+					TournamentID:       tournamentID,
+					LastSequence:       sequence,
+					ProjectionRevision: sequence,
+				},
+			})
+			message, err = DecodeArenaPublicMessage(readArenaTestMessage(t, conn))
+			require.NoError(t, err)
+			require.NotNil(t, message.Public)
+			require.Nil(t, message.Rejected)
+		}
+		require.Equal(t, 4, source.readCount())
+	})
+
 	t.Run("authenticated roles use trusted principals", func(t *testing.T) {
 		token := uuid.New()
 		player := &domain.Player{ID: uuid.New(), Username: "alice", SessionToken: &token, Status: domain.PlayerStatusIdle}

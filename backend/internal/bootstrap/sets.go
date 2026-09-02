@@ -6,10 +6,12 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/middleware"
 	restv1 "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/v1"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket"
+	arenaws "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket/arena"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/objectstorage"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	redisadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/redis"
 	adminusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/admin"
+	arenausecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/arena"
 	duelusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel"
 	leaderboardusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/leaderboard"
 	playerusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/player"
@@ -84,6 +86,14 @@ var ReposSet = wire.NewSet(
 	wire.Bind(new(duelusecase.MatchmakingHistoryRepository), new(*postgres.HistoryPostgres)),
 	wire.Bind(new(duelusecase.SolvedHistoryWriter), new(*postgres.HistoryPostgres)),
 
+	postgres.NewArenaTournamentPostgres,
+	wire.Bind(new(websocket.ArenaTournamentSnapshotReader), new(*postgres.ArenaTournamentPostgres)),
+	wire.Bind(new(websocket.ArenaRosterSnapshotReader), new(*postgres.ArenaTournamentPostgres)),
+	wire.Bind(new(arenausecase.TournamentRepository), new(*postgres.ArenaTournamentPostgres)),
+	wire.Bind(new(arenausecase.AttendanceRepository), new(*postgres.ArenaTournamentPostgres)),
+	wire.Bind(new(arenausecase.RosterLockRepository), new(*postgres.ArenaTournamentPostgres)),
+	wire.Bind(new(arenausecase.TournamentLifecycleRepository), new(*postgres.ArenaTournamentPostgres)),
+
 	postgres.NewLeaderboardPostgres,
 	wire.Bind(new(leaderboardusecase.StatsRepository), new(*postgres.LeaderboardPostgres)),
 	provideLeaderboardRedis,
@@ -100,6 +110,7 @@ var UseCasesSet = wire.NewSet(
 	wire.Bind(new(leaderboardusecase.Clock), new(clockFunc)),
 	wire.Bind(new(playerusecase.Clock), new(clockFunc)),
 	wire.Bind(new(recovery.Clock), new(clockFunc)),
+	wire.Bind(new(arenausecase.Clock), new(clockFunc)),
 	provideRevocationRedis,
 	wire.Bind(new(adminusecase.RevocationStore), new(*redisadapter.RevocationRedis)),
 	wire.Bind(new(RevocationJanitor), new(*redisadapter.RevocationRedis)),
@@ -131,6 +142,8 @@ var UseCasesSet = wire.NewSet(
 	wire.Bind(new(restv1.LeaderboardService), new(*leaderboardusecase.UseCase)),
 	wire.Bind(new(adminusecase.LeaderboardInvalidator), new(*leaderboardusecase.UseCase)),
 	wire.Bind(new(duelusecase.LeaderboardBumper), new(*leaderboardusecase.UseCase)),
+
+	provideArenaCore,
 )
 
 var MiddlewareSet = wire.NewSet(
@@ -140,7 +153,24 @@ var MiddlewareSet = wire.NewSet(
 var WebSocketSet = wire.NewSet(
 	provideHubRegistry,
 	provideHandshakeRateLimiter,
-	provideRawWebSocketServer,
+	websocket.NewArenaProductionSnapshotSource,
+	wire.Bind(new(arenaws.ParticipantRealtimeReadSource), new(*websocket.ArenaProductionSnapshotSource)),
+	wire.Bind(new(arenaws.PublicRealtimeReadSource), new(*websocket.ArenaProductionSnapshotSource)),
+	wire.Bind(new(arenaws.OperatorRealtimeReadSource), new(*websocket.ArenaProductionSnapshotSource)),
+	wire.Bind(new(websocket.ArenaParticipantConnectionFlow), new(*websocket.ArenaParticipantFlow)),
+	wire.Bind(new(websocket.ArenaPublicConnectionFlow), new(*websocket.ArenaPublicFlow)),
+	wire.Bind(new(websocket.ArenaOperatorConnectionFlow), new(*websocket.ArenaOperatorFlow)),
+	wire.Bind(new(websocket.ArenaTerminalSubscriptionFlow), new(*websocket.ArenaTerminalFlow)),
+	websocket.NewArenaParticipantFlow,
+	provideArenaPublicRealtimeConfig,
+	websocket.NewArenaPublicFlow,
+	websocket.NewArenaOperatorFlow,
+	provideArenaCancellationCoordinators,
+	websocket.NewArenaTerminalRegistry,
+	websocket.NewArenaTerminalFlow,
+	provideArenaOperatorPrincipalResolver,
+	provideArenaWebSocketOptions,
+	provideRawWebSocketServerWithArena,
 	provideDuelBroadcaster,
 	provideReconnectManager,
 	provideWebSocketServer,
@@ -152,7 +182,7 @@ var HTTPSet = wire.NewSet(
 	provideRefreshRateLimiter,
 	provideJoinRateLimiter,
 	provideLeaderboardRateLimiter,
-	provideRESTServer,
+	provideRESTServerWithClock,
 	provideHTTPHandler,
 	provideHTTPServer,
 )
@@ -160,5 +190,5 @@ var HTTPSet = wire.NewSet(
 var AppSet = wire.NewSet(
 	provideMigrator,
 	provideStartupRecoverer,
-	provideApplication,
+	provideArenaApplication,
 )

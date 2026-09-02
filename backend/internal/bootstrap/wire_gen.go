@@ -8,6 +8,7 @@ package bootstrap
 
 import (
 	"github.com/TakuyaYagam1/task-per-minute/config"
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	"github.com/wahrwelt-kit/go-logkit"
 )
@@ -53,15 +54,52 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 	hubRegistry := provideHubRegistry()
 	hintScheduler := provideHintScheduler(bootstrapClockFunc)
 	bootstrapWsHandshakeRateLimiter := provideHandshakeRateLimiter(context, cfg)
-	bootstrapRawWebSocketServer := provideRawWebSocketServer(context, cfg, log, playerPostgres, matchmakingUseCase, flagSubmitUseCase, hubRegistry, hintScheduler, timerRegistry, duelPostgres, seaweedStorage, bootstrapWsHandshakeRateLimiter)
+	arenaTournamentPostgres := postgres.NewArenaTournamentPostgres(txManager)
+	arenaProductionSnapshotSource := websocket.NewArenaProductionSnapshotSource(arenaTournamentPostgres, arenaTournamentPostgres)
+	arenaParticipantFlow, err := websocket.NewArenaParticipantFlow(arenaProductionSnapshotSource)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	publicRealtimeConfig := provideArenaPublicRealtimeConfig()
+	arenaPublicFlow, err := websocket.NewArenaPublicFlow(arenaProductionSnapshotSource, publicRealtimeConfig)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	arenaOperatorFlow, err := websocket.NewArenaOperatorFlow(arenaProductionSnapshotSource)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	v := provideArenaCancellationCoordinators()
+	arenaTerminalRegistry, err := websocket.NewArenaTerminalRegistry(v)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	arenaTerminalFlow, err := websocket.NewArenaTerminalFlow(arenaTerminalRegistry)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	authConfig := provideAuthConfig(cfg)
+	revocationRedis := provideRevocationRedis(client)
+	authUseCase := provideAuthUseCase(authConfig, bootstrapClockFunc, revocationRedis)
+	arenaOperatorPrincipalResolver := provideArenaOperatorPrincipalResolver(authUseCase)
+	bootstrapArenaWebSocketOptions := provideArenaWebSocketOptions(arenaParticipantFlow, arenaPublicFlow, arenaOperatorFlow, arenaTerminalFlow, arenaOperatorPrincipalResolver)
+	bootstrapRawWebSocketServer := provideRawWebSocketServerWithArena(context, cfg, log, playerPostgres, matchmakingUseCase, flagSubmitUseCase, hubRegistry, hintScheduler, timerRegistry, duelPostgres, seaweedStorage, bootstrapWsHandshakeRateLimiter, bootstrapArenaWebSocketOptions)
 	broadcaster := provideDuelBroadcaster(bootstrapRawWebSocketServer)
 	duelTimer := provideDuelTimers(timerRegistry, hintScheduler)
 	reconnectManager := provideReconnectManager(context, txManager, duelPostgres, playerPostgres, duelTimer, broadcaster, bootstrapClockFunc, useCase, log)
 	startupRecoverer := provideStartupRecoverer(txManager, duelPostgres, duelPostgres, playerPostgres, playerPostgres, matchmakingRedis, broadcaster, reconnectManager, hintScheduler, bootstrapClockFunc, log)
+	bootstrapArenaCore := provideArenaCore(arenaTournamentPostgres, arenaTournamentPostgres, arenaTournamentPostgres, arenaTournamentPostgres, bootstrapClockFunc)
 	playerUseCase := providePlayerUseCase(cfg, txManager, playerPostgres, duelPostgres, bootstrapClockFunc)
-	authConfig := provideAuthConfig(cfg)
-	revocationRedis := provideRevocationRedis(client)
-	authUseCase := provideAuthUseCase(authConfig, bootstrapClockFunc, revocationRedis)
 	taskUseCase := provideAdminTaskUseCase(taskPostgres)
 	adminPlayerUseCase := provideAdminPlayerUseCase(txManager, playerPostgres, useCase, bootstrapClockFunc)
 	adminPlayerEventsPostgres := postgres.NewAdminPlayerEventsPostgres(pool)
@@ -73,7 +111,7 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 	bootstrapAdminRefreshRateLimiter := provideRefreshRateLimiter(context, cfg)
 	joinRateLimiter := provideJoinRateLimiter(context, cfg)
 	bootstrapLeaderboardRateLimiter := provideLeaderboardRateLimiter(context, cfg)
-	server := provideRESTServer(playerUseCase, authUseCase, taskUseCase, adminPlayerUseCase, adminPlayerEventsPostgres, uploadUseCase, useCase, readUseCase, healthChecks, loginRateLimiter, bootstrapAdminRefreshRateLimiter, joinRateLimiter, bootstrapLeaderboardRateLimiter, log)
+	server := provideRESTServerWithClock(playerUseCase, authUseCase, taskUseCase, adminPlayerUseCase, adminPlayerEventsPostgres, uploadUseCase, useCase, readUseCase, healthChecks, bootstrapClockFunc, loginRateLimiter, bootstrapAdminRefreshRateLimiter, joinRateLimiter, bootstrapLeaderboardRateLimiter, log)
 	websocketServer := provideWebSocketServer(bootstrapRawWebSocketServer, reconnectManager)
 	bootstrapRestMiddlewareStack, err := provideRESTMiddlewares(context, log, cfg)
 	if err != nil {
@@ -83,7 +121,7 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 	}
 	handler := provideHTTPHandler(cfg, server, websocketServer, authUseCase, playerPostgres, bootstrapRestMiddlewareStack, log)
 	httpServer := provideHTTPServer(cfg, handler)
-	app := provideApplication(cfg, log, runtime, seaweedStorage, migrator, startupRecoverer, httpServer, websocketServer, revocationRedis)
+	app := provideArenaApplication(cfg, log, runtime, seaweedStorage, migrator, startupRecoverer, bootstrapArenaCore, httpServer, websocketServer, revocationRedis)
 	return app, func() {
 		cleanup2()
 		cleanup()

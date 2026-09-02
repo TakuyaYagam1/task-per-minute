@@ -5,10 +5,12 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	coderws "github.com/coder/websocket"
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	goredis "github.com/redis/go-redis/v9"
 	logkit "github.com/wahrwelt-kit/go-logkit"
@@ -18,10 +20,13 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/middleware"
 	restv1 "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/v1"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket"
+	arenaws "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket/arena"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/objectstorage"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	redisadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/redis"
+	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	adminusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/admin"
+	arenausecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/arena"
 	duelusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel"
 	leaderboardusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/leaderboard"
 	playerusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/player"
@@ -44,6 +49,106 @@ func provideRuntimeContext(runtime *RuntimeContext) context.Context {
 
 func provideClock() clockFunc {
 	return time.Now
+}
+
+type arenaCore struct {
+	tournaments *arenausecase.TournamentUseCase
+	attendance  *arenausecase.AttendanceUseCase
+	rosters     *arenausecase.RosterLockUseCase
+	lifecycle   *arenausecase.TournamentLifecycleUseCase
+}
+
+const (
+	arenaPublicMaxConnections  = 128
+	arenaPublicMaxReplayEvents = 128
+)
+
+type arenaWebSocketOptions struct {
+	participant      websocket.ArenaParticipantConnectionFlow
+	public           websocket.ArenaPublicConnectionFlow
+	operator         websocket.ArenaOperatorConnectionFlow
+	terminal         websocket.ArenaTerminalSubscriptionFlow
+	operatorResolver websocket.ArenaOperatorPrincipalResolver
+}
+
+func provideArenaCore(
+	tournaments arenausecase.TournamentRepository,
+	attendance arenausecase.AttendanceRepository,
+	rosters arenausecase.RosterLockRepository,
+	lifecycle arenausecase.TournamentLifecycleRepository,
+	clk arenausecase.Clock,
+) *arenaCore {
+	return &arenaCore{
+		tournaments: arenausecase.NewTournamentUseCase(tournaments, clk),
+		attendance:  arenausecase.NewAttendanceUseCase(attendance, clk),
+		rosters:     arenausecase.NewRosterLockUseCase(rosters, clk),
+		lifecycle:   arenausecase.NewTournamentLifecycleUseCase(lifecycle, clk),
+	}
+}
+
+func provideArenaPublicRealtimeConfig() *arenaws.PublicRealtimeConfig {
+	// Arena MVP runs one 16-player event per process. This leaves bounded room
+	// for spectators and matches the existing operator replay limit.
+	return &arenaws.PublicRealtimeConfig{
+		MaxConnections:  arenaPublicMaxConnections,
+		MaxReplayEvents: arenaPublicMaxReplayEvents,
+	}
+}
+
+func provideArenaCancellationCoordinators() map[uuid.UUID]*arenaws.CancellationCoordinator {
+	return make(map[uuid.UUID]*arenaws.CancellationCoordinator)
+}
+
+func provideArenaWebSocketOptions(
+	participant websocket.ArenaParticipantConnectionFlow,
+	public websocket.ArenaPublicConnectionFlow,
+	operator websocket.ArenaOperatorConnectionFlow,
+	terminal websocket.ArenaTerminalSubscriptionFlow,
+	operatorResolver websocket.ArenaOperatorPrincipalResolver,
+) arenaWebSocketOptions {
+	return arenaWebSocketOptions{
+		participant:      participant,
+		public:           public,
+		operator:         operator,
+		terminal:         terminal,
+		operatorResolver: operatorResolver,
+	}
+}
+
+func provideArenaOperatorPrincipalResolver(
+	auth *adminusecase.AuthUseCase,
+) websocket.ArenaOperatorPrincipalResolver {
+	return func(
+		r *http.Request,
+		_ *domain.Player,
+		tournamentID uuid.UUID,
+	) (arenaws.OperatorRealtimePrincipal, bool) {
+		if auth == nil || r == nil || tournamentID == uuid.Nil {
+			return arenaws.OperatorRealtimePrincipal{}, false
+		}
+		token, ok := middleware.AdminAccessTokenFromRequest(r)
+		if !ok {
+			return arenaws.OperatorRealtimePrincipal{}, false
+		}
+		claims, err := auth.VerifyAccess(r.Context(), token)
+		if err != nil || claims == nil {
+			return arenaws.OperatorRealtimePrincipal{}, false
+		}
+		subject := strings.TrimSpace(claims.Subject)
+		if subject == "" {
+			return arenaws.OperatorRealtimePrincipal{}, false
+		}
+		principalID := uuid.NewSHA1(uuid.NameSpaceOID, []byte("arena-operator:"+subject))
+		if principalID == uuid.Nil {
+			return arenaws.OperatorRealtimePrincipal{}, false
+		}
+		return arenaws.OperatorRealtimePrincipal{
+			Authenticated: true,
+			PrincipalID:   principalID,
+			Role:          arenaws.OperatorRealtimeRole,
+			TournamentID:  tournamentID,
+		}, true
+	}
 }
 
 func providePostgresConfig(cfg *config.Config) postgres.Config {
@@ -235,7 +340,7 @@ func provideTimerRegistry(
 	)
 }
 
-func provideRESTServer(
+func provideRESTServerWithClock(
 	players restv1.PlayerService,
 	auth restv1.AdminAuthService,
 	tasks restv1.AdminTaskService,
@@ -245,12 +350,17 @@ func provideRESTServer(
 	leaderboard restv1.LeaderboardService,
 	duels restv1.DuelService,
 	health restv1.HealthChecks,
+	clk clockFunc,
 	loginLimiter *middleware.LoginRateLimiter,
 	refreshLimiter adminRefreshRateLimiter,
 	joinLimiter *middleware.JoinRateLimiter,
 	leaderboardLimiter leaderboardRateLimiter,
 	log logkit.Logger,
 ) *restv1.Server {
+	var now func() time.Time
+	if clk != nil {
+		now = clk.Now
+	}
 	return restv1.New(restv1.Dependencies{
 		Players:            players,
 		AdminAuth:          auth,
@@ -261,6 +371,7 @@ func provideRESTServer(
 		Leaderboard:        leaderboard,
 		Duels:              duels,
 		Health:             health,
+		Now:                now,
 		LoginLimiter:       loginLimiter,
 		RefreshLimiter:     refreshLimiter.Inner,
 		JoinLimiter:        joinLimiter,
@@ -378,7 +489,7 @@ func (l *wsHandshakeRateLimiter) RetryAfter() string {
 	return l.Inner.RetryAfter()
 }
 
-func provideRawWebSocketServer(
+func provideRawWebSocketServerWithArena(
 	ctx context.Context,
 	cfg *config.Config,
 	log logkit.Logger,
@@ -391,6 +502,39 @@ func provideRawWebSocketServer(
 	duels websocket.DuelTaskReader,
 	storage websocket.SourceFileURLSigner,
 	handshakeLimiter *wsHandshakeRateLimiter,
+	arena arenaWebSocketOptions,
+) rawWebSocketServer {
+	return provideRawWebSocketServerOptions(
+		ctx,
+		cfg,
+		log,
+		players,
+		matchmaking,
+		flags,
+		hubs,
+		hints,
+		timers,
+		duels,
+		storage,
+		handshakeLimiter,
+		arena,
+	)
+}
+
+func provideRawWebSocketServerOptions(
+	ctx context.Context,
+	cfg *config.Config,
+	log logkit.Logger,
+	players websocket.PlayerReader,
+	matchmaking websocket.Matchmaking,
+	flags websocket.FlagSubmitter,
+	hubs *websocket.HubRegistry,
+	hints *duelusecase.HintScheduler,
+	timers *duelusecase.TimerRegistry,
+	duels websocket.DuelTaskReader,
+	storage websocket.SourceFileURLSigner,
+	handshakeLimiter *wsHandshakeRateLimiter,
+	arena arenaWebSocketOptions,
 ) rawWebSocketServer {
 	clientIPResolver, err := middleware.NewClientIPResolver(cfg.HTTP.TrustedProxyCIDRs)
 	if err != nil {
@@ -419,6 +563,21 @@ func provideRawWebSocketServer(
 	}
 	if handshakeLimiter != nil && handshakeLimiter.Inner != nil {
 		options = append(options, websocket.WithHandshakeRateLimiter(handshakeLimiter))
+	}
+	if arena.participant != nil {
+		options = append(options, websocket.WithArenaParticipantFlow(arena.participant))
+	}
+	if arena.public != nil {
+		options = append(options, websocket.WithArenaPublicFlow(arena.public))
+	}
+	if arena.operator != nil {
+		options = append(options, websocket.WithArenaOperatorFlow(arena.operator))
+	}
+	if arena.terminal != nil {
+		options = append(options, websocket.WithArenaTerminalFlow(arena.terminal))
+	}
+	if arena.operatorResolver != nil {
+		options = append(options, websocket.WithArenaOperatorPrincipalResolver(arena.operatorResolver))
 	}
 	return rawWebSocketServer{
 		Server: websocket.NewServer(players, matchmaking, flags, hubs, options...),
@@ -578,16 +737,17 @@ func provideStartupRecoverer(
 	)
 }
 
-func provideApplication(
+func provideArenaApplication(
 	cfg *config.Config,
 	log logkit.Logger,
 	runtime *RuntimeContext,
 	seaweed *objectstorage.SeaweedStorage,
 	migrator *Migrator,
 	recoverer *recovery.StartupRecoverer,
+	arena *arenaCore,
 	server *http.Server,
 	ws *websocket.Server,
 	revocation RevocationJanitor,
 ) *App {
-	return NewApplication(cfg, log, runtime, seaweed, migrator, recoverer, server, ws, revocation)
+	return newArenaApplication(cfg, log, runtime, seaweed, migrator, recoverer, arena, server, ws, revocation)
 }

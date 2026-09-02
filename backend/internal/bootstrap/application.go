@@ -73,6 +73,7 @@ type App struct {
 	storage    BucketEnsurer
 	migrator   *Migrator
 	recovery   *recovery.StartupRecoverer
+	arena      *arenaCore
 	server     *http.Server
 	websocket  WebSocketShutdowner
 	revocation RevocationJanitor
@@ -89,6 +90,32 @@ func NewApplication(
 	websocket WebSocketShutdowner,
 	revocation RevocationJanitor,
 ) *App {
+	return newArenaApplication(
+		cfg,
+		log,
+		runtime,
+		storage,
+		migrator,
+		recovery,
+		nil,
+		server,
+		websocket,
+		revocation,
+	)
+}
+
+func newArenaApplication(
+	cfg *config.Config,
+	log logkit.Logger,
+	runtime *RuntimeContext,
+	storage BucketEnsurer,
+	migrator *Migrator,
+	recovery *recovery.StartupRecoverer,
+	arena *arenaCore,
+	server *http.Server,
+	websocket WebSocketShutdowner,
+	revocation RevocationJanitor,
+) *App {
 	return &App{
 		cfg:        cfg,
 		log:        log,
@@ -96,6 +123,7 @@ func NewApplication(
 		storage:    storage,
 		migrator:   migrator,
 		recovery:   recovery,
+		arena:      arena,
 		server:     server,
 		websocket:  websocket,
 		revocation: revocation,
