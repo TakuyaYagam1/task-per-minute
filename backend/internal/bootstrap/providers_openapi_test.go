@@ -16,7 +16,12 @@ import (
 func TestProvideRESTMiddlewares_IncludesOpenAPIValidation(t *testing.T) {
 	t.Parallel()
 
-	middlewares, err := provideRESTMiddlewares(context.Background(), logkit.Noop(), &config.Config{})
+	middlewares, err := provideRESTMiddlewares(
+		context.Background(),
+		logkit.Noop(),
+		&config.Config{},
+		provideArenaObservability(logkit.Noop()),
+	)
 	require.NoError(t, err)
 	require.NotNil(t, middlewares.RequestValidator)
 	require.Len(t, middlewares.Outer, 1)

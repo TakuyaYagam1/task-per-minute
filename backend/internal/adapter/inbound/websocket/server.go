@@ -20,6 +20,7 @@ import (
 	arenaws "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket/arena"
 	"github.com/TakuyaYagam1/task-per-minute/internal/ctxutil"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
+	appobservability "github.com/TakuyaYagam1/task-per-minute/internal/observability"
 	duelusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel"
 )
 
@@ -83,6 +84,7 @@ type Server struct {
 	arenaOperator        ArenaOperatorConnectionFlow
 	arenaTerminal        ArenaTerminalSubscriptionFlow
 	arenaOperatorResolve ArenaOperatorPrincipalResolver
+	arenaObserver        appobservability.ArenaEventObserver
 	requireOrigin        bool
 	log                  logkit.Logger
 
@@ -200,6 +202,12 @@ func WithArenaOperatorPrincipalResolver(resolver ArenaOperatorPrincipalResolver)
 	}
 }
 
+func WithArenaEventObserver(observer appobservability.ArenaEventObserver) Option {
+	return func(s *Server) {
+		s.arenaObserver = observer
+	}
+}
+
 func WithRequireOrigin(require bool) Option {
 	return func(s *Server) {
 		s.requireOrigin = require
@@ -235,6 +243,9 @@ func NewServer(
 	}
 	for _, opt := range options {
 		opt(s)
+	}
+	if s.arenaObserver == nil {
+		s.arenaObserver = appobservability.NewArenaStructuredLogger(s.log)
 	}
 
 	s.ctx, s.cancel = context.WithCancel(s.ctx) //nolint:gosec,nolintlint // G118 in older gosec: cancel is stored on Server and invoked by Shutdown.

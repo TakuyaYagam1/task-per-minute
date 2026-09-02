@@ -3,10 +3,12 @@ package v1
 import (
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	logkit "github.com/wahrwelt-kit/go-logkit"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/api"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/middleware"
+	"github.com/TakuyaYagam1/task-per-minute/internal/observability"
 )
 
 var _ api.ServerInterface = (*Server)(nil)
@@ -18,6 +20,7 @@ type HealthChecks struct {
 	Redis         HealthChecker
 	SeaweedFS     HealthChecker
 	SchemaVersion SchemaVersionReader
+	Arena         observability.ArenaHealthSource
 }
 
 // Dependencies bundles every usecase port the v1 controller needs. Wiring
@@ -38,6 +41,7 @@ type Dependencies struct {
 	ArenaSubmissionLimiter  ArenaSubmissionRateLimiter
 	ArenaPublic             ArenaPublicController
 	Health                  HealthChecks
+	ArenaMetrics            prometheus.Gatherer
 	LoginLimiter            *middleware.LoginRateLimiter
 	RefreshLimiter          *middleware.LoginRateLimiter
 	JoinLimiter             *middleware.JoinRateLimiter
@@ -60,6 +64,7 @@ type Server struct {
 	leaderboard        LeaderboardService
 	duels              DuelService
 	health             HealthChecks
+	arenaMetrics       prometheus.Gatherer
 	loginLimiter       *middleware.LoginRateLimiter
 	refreshLimiter     *middleware.LoginRateLimiter
 	joinLimiter        *middleware.JoinRateLimiter
@@ -117,6 +122,7 @@ func New(deps Dependencies) *Server {
 		leaderboard:                deps.Leaderboard,
 		duels:                      deps.Duels,
 		health:                     deps.Health,
+		arenaMetrics:               deps.ArenaMetrics,
 		loginLimiter:               deps.LoginLimiter,
 		refreshLimiter:             deps.RefreshLimiter,
 		joinLimiter:                deps.JoinLimiter,

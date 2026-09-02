@@ -60,6 +60,11 @@ type ArenaEventObserver interface {
 	ObserveArenaEvent(ctx context.Context, event ArenaEvent)
 }
 
+// ArenaLagObserver consumes one bounded server-side lag measurement.
+type ArenaLagObserver interface {
+	ObserveArenaLag(kind string, lag time.Duration)
+}
+
 // NewArenaEvent validates an input and returns its canonical event.
 func NewArenaEvent(input ArenaEventInput) (ArenaEvent, error) {
 	fields := []struct {
@@ -123,6 +128,46 @@ func FirstArenaEventObserver(observers ...ArenaEventObserver) ArenaEventObserver
 		}
 	}
 	return nil
+}
+
+// NewArenaEventFanout sends each validated event to every non-nil observer.
+func NewArenaEventFanout(observers ...ArenaEventObserver) ArenaEventObserver {
+	filtered := make([]ArenaEventObserver, 0, len(observers))
+	for _, observer := range observers {
+		if !nilArenaEventObserver(observer) {
+			filtered = append(filtered, observer)
+		}
+	}
+	if len(filtered) == 0 {
+		return nil
+	}
+	return arenaEventFanout(filtered)
+}
+
+// ObserveArenaLag forwards lag only to observers that explicitly support it.
+func ObserveArenaLag(observer ArenaEventObserver, kind string, lag time.Duration) {
+	if nilArenaEventObserver(observer) {
+		return
+	}
+	if lagObserver, ok := observer.(ArenaLagObserver); ok {
+		lagObserver.ObserveArenaLag(kind, lag)
+	}
+}
+
+type arenaEventFanout []ArenaEventObserver
+
+func (fanout arenaEventFanout) ObserveArenaEvent(ctx context.Context, event ArenaEvent) {
+	for _, observer := range fanout {
+		observer.ObserveArenaEvent(ctx, event)
+	}
+}
+
+func (fanout arenaEventFanout) ObserveArenaLag(kind string, lag time.Duration) {
+	for _, observer := range fanout {
+		if lagObserver, ok := observer.(ArenaLagObserver); ok {
+			lagObserver.ObserveArenaLag(kind, lag)
+		}
+	}
 }
 
 // NewArenaStructuredLogger adapts a logkit logger to arena events.

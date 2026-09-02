@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
+	"github.com/TakuyaYagam1/task-per-minute/internal/observability"
 )
 
 const goldenAttemptCommitAttempts = 3
@@ -642,13 +643,19 @@ type GoldenAttemptCommitRepository interface {
 type GoldenAttemptCommitUseCase struct {
 	repository GoldenAttemptCommitRepository
 	clock      Clock
+	observer   observability.ArenaEventObserver
 }
 
 func NewGoldenAttemptCommitUseCase(
 	repository GoldenAttemptCommitRepository,
 	clock Clock,
+	observers ...observability.ArenaEventObserver,
 ) *GoldenAttemptCommitUseCase {
-	return &GoldenAttemptCommitUseCase{repository: repository, clock: clock}
+	return &GoldenAttemptCommitUseCase{
+		repository: repository,
+		clock:      clock,
+		observer:   observability.FirstArenaEventObserver(observers...),
+	}
 }
 
 func (u *GoldenAttemptCommitUseCase) CommitAttempt(
@@ -669,11 +676,60 @@ func (u *GoldenAttemptCommitUseCase) CommitAttempt(
 	for range goldenAttemptCommitAttempts {
 		record, changed, retry, err := u.commitAttempt(ctx, command, finishedAt)
 		if retry {
+			u.emitGoldenAttemptEvent(
+				ctx, command, nil, observability.ArenaOutcomeRetry, "conflict_retried", 0,
+			)
 			continue
 		}
+		outcome, reason := arenaCoreEventResult(changed, err, ErrGoldenAttemptCommitConflict)
+		switch {
+		case errors.Is(err, ErrGoldenAttemptCommitAuthorityConflict):
+			outcome, reason = observability.ArenaOutcomeRejected, "authority_conflict"
+		case errors.Is(err, ErrGoldenAttemptCommitCommandReuse):
+			outcome, reason = observability.ArenaOutcomeRejected, "command_reused"
+		case errors.Is(err, ErrGoldenAttemptNotTerminal), errors.Is(err, ErrInvalidGoldenAttemptCommit):
+			outcome, reason = observability.ArenaOutcomeRejected, "attempt_not_terminal"
+		}
+		u.emitGoldenAttemptEvent(ctx, command, record, outcome, reason, 0)
 		return record, changed, err
 	}
+	u.emitGoldenAttemptEvent(
+		ctx, command, nil, observability.ArenaOutcomeFailure, "conflict_exhausted", 0,
+	)
 	return nil, false, ErrGoldenAttemptCommitConflict
+}
+
+func (u *GoldenAttemptCommitUseCase) emitGoldenAttemptEvent(
+	ctx context.Context,
+	command GoldenAttemptCommitCommand,
+	record *GoldenAttemptCommitRecord,
+	outcome string,
+	reason string,
+	revision int64,
+) {
+	duration := time.Duration(0)
+	if record != nil {
+		revision = record.ActiveExecution.Revision
+		if record.Attempt.StartedAt != nil && !record.FinishedAt.Before(*record.Attempt.StartedAt) {
+			duration = record.FinishedAt.Sub(*record.Attempt.StartedAt)
+		}
+	}
+	emitArenaCoreEvent(ctx, u.observer, arenaCoreEventInput{
+		event: "arena.command.golden_attempt", outcome: outcome,
+		correlationID: command.CommandID.String(), commandID: command.CommandID.String(),
+		tournamentID: command.Scope.State.TournamentID.String(), entityKind: "golden_attempt",
+		entityID: command.Scope.AttemptID.String(), stage: "golden", transition: "commit_attempt",
+		duration: duration, reasonCode: reason, revision: revision,
+	})
+	if record != nil && outcome == observability.ArenaOutcomeSuccess && reason == "committed" {
+		emitArenaCoreEvent(ctx, u.observer, arenaCoreEventInput{
+			event: "arena.game.duration", outcome: outcome,
+			correlationID: command.CommandID.String(), tournamentID: command.Scope.State.TournamentID.String(),
+			entityKind: "golden_attempt", entityID: command.Scope.AttemptID.String(),
+			stage: "game", transition: "completed", duration: duration,
+			reasonCode: "completed", revision: revision,
+		})
+	}
 }
 
 func (u *GoldenAttemptCommitUseCase) commitAttempt(

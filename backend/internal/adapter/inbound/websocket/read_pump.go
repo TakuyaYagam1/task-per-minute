@@ -58,7 +58,6 @@ func (s *Server) serveArenaConnection(
 		ctx = withArenaPublicSession(ctx)
 	}
 	startedAt := time.Now()
-	observer := appobservability.NewArenaStructuredLogger(s.log)
 	tournamentID := uuid.Nil
 	revision := int64(0)
 	observe := func(action, outcome, reason string, eventRevision int64) {
@@ -66,7 +65,7 @@ func (s *Server) serveArenaConnection(
 			return
 		}
 		requestID := requestmeta.RequestIDFromContext(ctx)
-		_ = arenaws.ObserveTransportEvent(ctx, observer, arenaws.ArenaTransportEvent{
+		_ = arenaws.ObserveTransportEvent(ctx, s.arenaObserver, arenaws.ArenaTransportEvent{
 			CorrelationID: arenaws.TransportCorrelationID(requestID, tournamentID),
 			TournamentID:  tournamentID,
 			Role:          string(role),
@@ -182,6 +181,7 @@ func (s *Server) serveArenaConnection(
 				observe(arenaws.ArenaTransportDelivery, appobservability.ArenaOutcomeFailure, "write_failed", revision)
 				return
 			}
+			appobservability.ObserveArenaLag(s.arenaObserver, "projection", time.Since(delivery.OccurredAt))
 			observe(arenaws.ArenaTransportDelivery, appobservability.ArenaOutcomeSuccess, string(delivery.Kind), revision)
 			if terminal {
 				return

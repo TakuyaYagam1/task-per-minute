@@ -27,6 +27,7 @@ type stackConfig struct {
 	trustedProxyCIDRs []string
 	allowedOrigins    []string
 	timeout           time.Duration
+	arenaObserver     appobservability.ArenaEventObserver
 }
 
 // WithTrustedProxyCIDRs configures CIDRs that are allowed to supply client IP headers.
@@ -49,6 +50,13 @@ func WithTimeout(timeout time.Duration) StackOption {
 		if timeout > 0 {
 			cfg.timeout = timeout
 		}
+	}
+}
+
+// WithArenaEventObserver supplies the shared Arena observer used by HTTP call sites.
+func WithArenaEventObserver(observer appobservability.ArenaEventObserver) StackOption {
+	return func(cfg *stackConfig) {
+		cfg.arenaObserver = observer
 	}
 }
 
@@ -78,13 +86,17 @@ func build(log logkit.Logger, withTimeout bool, opts ...StackOption) func(http.H
 		}
 		clientIP, _ = httpkitmw.ClientIP(nil)
 	}
+	arenaObserver := cfg.arenaObserver
+	if arenaObserver == nil {
+		arenaObserver = appobservability.NewArenaStructuredLogger(log)
+	}
 
 	middlewares := []func(http.Handler) http.Handler{
 		httpkitmw.RequestID(),
 		clientIP,
 		ForwardedProto(cfg.trustedProxyCIDRs, log),
 		Logger(log),
-		ArenaStructuredLogging(appobservability.NewArenaStructuredLogger(log)),
+		ArenaStructuredLogging(arenaObserver),
 		Recoverer(log),
 		httpkitmw.SecurityHeaders(false, httpkitmw.WithCSP(stackCSP)),
 		NoStoreSensitiveResponses(),

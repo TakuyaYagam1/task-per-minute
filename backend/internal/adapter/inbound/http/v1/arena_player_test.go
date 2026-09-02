@@ -207,7 +207,7 @@ func arenaAssignmentFixture(assignmentID uuid.UUID) api.ArenaParticipantAssignme
 			ParticipantId: uuid.New(), SnapshotId: snapshotID, TaskId: taskID,
 		},
 		ActiveSnapshot: api.ArenaTaskSnapshot{
-			SnapshotId: snapshotID, TaskId: taskID, Version: 1, Kind: api.Normal,
+			SnapshotId: snapshotID, TaskId: taskID, Version: 1, Kind: api.ArenaTaskKindNormal,
 			Title: "web task", Description: "solve the task", Category: api.ArenaCategoryWeb,
 			Difficulty: api.ArenaDifficultyEasy, TimeLimit: 300, Hints: []string{},
 		},

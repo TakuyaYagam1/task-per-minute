@@ -1070,7 +1070,21 @@ export interface components {
             duel: components["schemas"]["DuelResponse"];
             player_tasks: components["schemas"]["DuelPlayerTaskResponse"][];
         };
+        /** @description Independent operating health and traffic readiness for one Arena dependency. */
+        ArenaDependencyStatus: {
+            /** @enum {string} */
+            health: "healthy" | "degraded" | "failed";
+            /** @enum {string} */
+            readiness: "ready" | "not_ready" | "stale";
+        };
         HealthResponse: {
+            arena_authority: components["schemas"]["ArenaDependencyStatus"];
+            arena_clock: components["schemas"]["ArenaDependencyStatus"];
+            arena_outbox: components["schemas"]["ArenaDependencyStatus"];
+            arena_realtime: components["schemas"]["ArenaDependencyStatus"];
+            arena_recovery: components["schemas"]["ArenaDependencyStatus"];
+            arena_submission: components["schemas"]["ArenaDependencyStatus"];
+            arena_task_delivery: components["schemas"]["ArenaDependencyStatus"];
             /** @enum {string} */
             db: "ok" | "error";
             /** @enum {string} */

@@ -2,21 +2,32 @@ package arena
 
 import (
 	"context"
+	"errors"
 	"math"
 	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
+	"github.com/TakuyaYagam1/task-per-minute/internal/observability"
 )
 
 type ReconnectTimeoutUseCase struct {
 	repository ReconnectRepository
 	clock      Clock
+	observer   observability.ArenaEventObserver
 }
 
-func NewReconnectTimeoutUseCase(repository ReconnectRepository, clock Clock) *ReconnectTimeoutUseCase {
-	return &ReconnectTimeoutUseCase{repository: repository, clock: clock}
+func NewReconnectTimeoutUseCase(
+	repository ReconnectRepository,
+	clock Clock,
+	observers ...observability.ArenaEventObserver,
+) *ReconnectTimeoutUseCase {
+	return &ReconnectTimeoutUseCase{
+		repository: repository,
+		clock:      clock,
+		observer:   observability.FirstArenaEventObserver(observers...),
+	}
 }
 
 func (u *ReconnectTimeoutUseCase) Expire(ctx context.Context, command ReconnectTimeoutCommand) (*ReconnectRecord, bool, error) {
@@ -24,10 +35,51 @@ func (u *ReconnectTimeoutUseCase) Expire(ctx context.Context, command ReconnectT
 	if u == nil || u.repository == nil || u.clock == nil || !validReconnectTimeoutCommand(command) {
 		return nil, false, domain.ErrValidation
 	}
-	return runClockedReconnectMutation(ctx, u.repository, u.clock, command.Scope, command.CommandID,
+	measurement := newArenaEventMeasurement(u.clock, u.observer)
+	record, changed, err := runClockedReconnectMutation(ctx, u.repository, u.clock, command.Scope, command.CommandID,
 		func(record ReconnectRecord) bool {
 			return record.Kind == ReconnectMutationTimeout && record.TimeoutCommand != nil && *record.TimeoutCommand == command
 		}, reconnectTimeoutMutationBuilder(command))
+	u.observeReconnectTimeout(ctx, measurement, command, record, changed, err)
+	return record, changed, err
+}
+
+func (u *ReconnectTimeoutUseCase) observeReconnectTimeout(
+	ctx context.Context,
+	measurement arenaEventMeasurement,
+	command ReconnectTimeoutCommand,
+	record *ReconnectRecord,
+	changed bool,
+	err error,
+) {
+	outcome, reason := arenaCoreEventResult(changed, err, ErrReconnectConflict)
+	switch {
+	case errors.Is(err, ErrReconnectDeadline):
+		outcome, reason = observability.ArenaOutcomeRejected, "deadline_not_reached"
+	case errors.Is(err, ErrReconnectCommandReuse):
+		outcome, reason = observability.ArenaOutcomeRejected, "command_reused"
+	case errors.Is(err, ErrReconnectUnavailable), errors.Is(err, ErrInvalidReconnectMutation):
+		outcome, reason = observability.ArenaOutcomeRejected, "reconnect_unavailable"
+	}
+	revision := int64(0)
+	if record != nil {
+		revision = record.Authority.Revision
+	}
+	if record != nil && changed {
+		for _, interval := range record.Authority.Reconnect {
+			if interval.ID == command.IntervalID && !record.RecordedAt.Before(interval.Deadline) {
+				observability.ObserveArenaLag(u.observer, "deadline", record.RecordedAt.Sub(interval.Deadline))
+				break
+			}
+		}
+	}
+	emitArenaCoreEvent(ctx, u.observer, arenaCoreEventInput{
+		event: "arena.command.reconnect_timeout", outcome: outcome,
+		correlationID: command.CommandID.String(), commandID: command.CommandID.String(),
+		tournamentID: command.Scope.TournamentID.String(), entityKind: "participant",
+		entityID: command.ParticipantID.String(), stage: "deadline", transition: "expire_reconnect",
+		duration: measurement.duration(), reasonCode: reason, revision: revision,
+	})
 }
 
 func reconnectTimeoutMutationBuilder(command ReconnectTimeoutCommand) reconnectRecordBuilder {

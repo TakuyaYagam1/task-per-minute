@@ -26,9 +26,33 @@ ProblemDetails:
       type: string
       example: "01HXC2K9F4ZG6YV1AAB7TBQ7AP"
 
+ArenaDependencyStatus:
+  type: object
+  description: Independent operating health and traffic readiness for one Arena dependency.
+  required: [health, readiness]
+  properties:
+    health:
+      type: string
+      enum: [healthy, degraded, failed]
+    readiness:
+      type: string
+      enum: [ready, not_ready, stale]
+
 HealthResponse:
   type: object
-  required: [status, db, redis, seaweedfs, schema_version]
+  required:
+    - status
+    - db
+    - redis
+    - seaweedfs
+    - schema_version
+    - arena_authority
+    - arena_submission
+    - arena_task_delivery
+    - arena_outbox
+    - arena_realtime
+    - arena_clock
+    - arena_recovery
   properties:
     status:
       type: string
@@ -46,3 +70,17 @@ HealthResponse:
       type: integer
       format: int64
       minimum: 0
+    arena_authority:
+      $ref: '#/ArenaDependencyStatus'
+    arena_submission:
+      $ref: '#/ArenaDependencyStatus'
+    arena_task_delivery:
+      $ref: '#/ArenaDependencyStatus'
+    arena_outbox:
+      $ref: '#/ArenaDependencyStatus'
+    arena_realtime:
+      $ref: '#/ArenaDependencyStatus'
+    arena_clock:
+      $ref: '#/ArenaDependencyStatus'
+    arena_recovery:
+      $ref: '#/ArenaDependencyStatus'

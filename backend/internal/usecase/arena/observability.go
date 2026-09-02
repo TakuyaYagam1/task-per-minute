@@ -33,6 +33,21 @@ type arenaEventMeasurement struct {
 	startedAt time.Time
 }
 
+type arenaCoreEventInput struct {
+	event         string
+	outcome       string
+	correlationID string
+	commandID     string
+	tournamentID  string
+	entityKind    string
+	entityID      string
+	stage         string
+	transition    string
+	duration      time.Duration
+	reasonCode    string
+	revision      int64
+}
+
 func newArenaEventMeasurement(
 	clock Clock,
 	observer observability.ArenaEventObserver,
@@ -229,6 +244,54 @@ func nonnegativeArenaRevision(revision int64) int64 {
 		return 0
 	}
 	return revision
+}
+
+func emitArenaCoreEvent(
+	ctx context.Context,
+	observer observability.ArenaEventObserver,
+	input arenaCoreEventInput,
+) {
+	if observer == nil {
+		return
+	}
+	if input.duration < 0 {
+		input.duration = 0
+	}
+	_ = observability.EmitArenaEvent(ctx, observer, observability.ArenaEventInput{
+		Event:         input.event,
+		Outcome:       input.outcome,
+		CorrelationID: input.correlationID,
+		CommandID:     input.commandID,
+		TournamentID:  input.tournamentID,
+		EntityKind:    input.entityKind,
+		EntityID:      input.entityID,
+		Stage:         input.stage,
+		Transition:    input.transition,
+		Duration:      input.duration,
+		ReasonCode:    input.reasonCode,
+		Revision:      nonnegativeArenaRevision(input.revision),
+	})
+}
+
+func arenaCoreEventResult(changed bool, err error, conflicts ...error) (string, string) {
+	if err == nil {
+		if changed {
+			return observability.ArenaOutcomeSuccess, "committed"
+		}
+		return observability.ArenaOutcomeSuccess, "idempotent_replay"
+	}
+	if errors.Is(err, domain.ErrValidation) {
+		return observability.ArenaOutcomeRejected, "invalid_command"
+	}
+	for _, conflict := range conflicts {
+		if errors.Is(err, conflict) {
+			return observability.ArenaOutcomeFailure, "conflict_exhausted"
+		}
+	}
+	if errors.Is(err, domain.ErrConflict) {
+		return observability.ArenaOutcomeFailure, "conflict_exhausted"
+	}
+	return observability.ArenaOutcomeFailure, "operation_failed"
 }
 
 func firstArenaEventObserver(

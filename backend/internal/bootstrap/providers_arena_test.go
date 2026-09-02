@@ -32,7 +32,7 @@ func TestProvideArenaCoreComposesSupportedUseCases(t *testing.T) {
 		&repository,
 		&repository,
 		fixedArenaClock{},
-		logkit.Noop(),
+		provideArenaObservability(logkit.Noop()),
 	)
 
 	require.NotNil(t, core)
@@ -121,6 +121,7 @@ func TestProvideRawWebSocketServerAddsArenaFlows(t *testing.T) {
 		nil,
 		nil,
 		arenaWebSocketOptions{public: arenaPublicFlowStub{}},
+		provideArenaObservability(logkit.Noop()),
 	)
 	server := httptest.NewServer(raw.Server)
 	t.Cleanup(server.Close)
@@ -185,6 +186,7 @@ func TestProvideRESTServerWithClockUsesSharedClock(t *testing.T) {
 		nil,
 		leaderboardRateLimiter{},
 		logkit.Noop(),
+		provideArenaObservability(logkit.Noop()),
 	)
 	request := httptest.NewRequest(
 		http.MethodPost,

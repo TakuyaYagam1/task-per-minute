@@ -92,6 +92,20 @@ const (
 	VerifiedSubmission ArenaCorrectionReason = "verified_submission"
 )
 
+// Defines values for ArenaDependencyStatusHealth.
+const (
+	ArenaDependencyStatusHealthDegraded ArenaDependencyStatusHealth = "degraded"
+	ArenaDependencyStatusHealthFailed   ArenaDependencyStatusHealth = "failed"
+	ArenaDependencyStatusHealthHealthy  ArenaDependencyStatusHealth = "healthy"
+)
+
+// Defines values for ArenaDependencyStatusReadiness.
+const (
+	ArenaDependencyStatusReadinessNotReady ArenaDependencyStatusReadiness = "not_ready"
+	ArenaDependencyStatusReadinessReady    ArenaDependencyStatusReadiness = "ready"
+	ArenaDependencyStatusReadinessStale    ArenaDependencyStatusReadiness = "stale"
+)
+
 // Defines values for ArenaDifficulty.
 const (
 	ArenaDifficultyEasy   ArenaDifficulty = "easy"
@@ -317,8 +331,8 @@ const (
 
 // Defines values for ArenaTaskKind.
 const (
-	Golden ArenaTaskKind = "golden"
-	Normal ArenaTaskKind = "normal"
+	ArenaTaskKindGolden ArenaTaskKind = "golden"
+	ArenaTaskKindNormal ArenaTaskKind = "normal"
 )
 
 // Defines values for ArenaTournamentActionRequestAction.
@@ -388,8 +402,8 @@ const (
 
 // Defines values for HealthResponseSeaweedfs.
 const (
-	HealthResponseSeaweedfsError HealthResponseSeaweedfs = "error"
-	HealthResponseSeaweedfsOk    HealthResponseSeaweedfs = "ok"
+	Error HealthResponseSeaweedfs = "error"
+	Ok    HealthResponseSeaweedfs = "ok"
 )
 
 // Defines values for HealthResponseStatus.
@@ -645,6 +659,18 @@ type ArenaDeliveryReceipt struct {
 	SnapshotId    openapi_types.UUID `json:"snapshot_id"`
 	TaskId        openapi_types.UUID `json:"task_id"`
 }
+
+// ArenaDependencyStatus Independent operating health and traffic readiness for one Arena dependency.
+type ArenaDependencyStatus struct {
+	Health    ArenaDependencyStatusHealth    `json:"health"`
+	Readiness ArenaDependencyStatusReadiness `json:"readiness"`
+}
+
+// ArenaDependencyStatusHealth defines model for ArenaDependencyStatus.Health.
+type ArenaDependencyStatusHealth string
+
+// ArenaDependencyStatusReadiness defines model for ArenaDependencyStatus.Readiness.
+type ArenaDependencyStatusReadiness string
 
 // ArenaDifficulty defines model for ArenaDifficulty.
 type ArenaDifficulty string
@@ -1617,11 +1643,31 @@ type DuelStatus string
 
 // HealthResponse defines model for HealthResponse.
 type HealthResponse struct {
-	Db            HealthResponseDb        `json:"db"`
-	Redis         HealthResponseRedis     `json:"redis"`
-	SchemaVersion int64                   `json:"schema_version"`
-	Seaweedfs     HealthResponseSeaweedfs `json:"seaweedfs"`
-	Status        HealthResponseStatus    `json:"status"`
+	// ArenaAuthority Independent operating health and traffic readiness for one Arena dependency.
+	ArenaAuthority ArenaDependencyStatus `json:"arena_authority"`
+
+	// ArenaClock Independent operating health and traffic readiness for one Arena dependency.
+	ArenaClock ArenaDependencyStatus `json:"arena_clock"`
+
+	// ArenaOutbox Independent operating health and traffic readiness for one Arena dependency.
+	ArenaOutbox ArenaDependencyStatus `json:"arena_outbox"`
+
+	// ArenaRealtime Independent operating health and traffic readiness for one Arena dependency.
+	ArenaRealtime ArenaDependencyStatus `json:"arena_realtime"`
+
+	// ArenaRecovery Independent operating health and traffic readiness for one Arena dependency.
+	ArenaRecovery ArenaDependencyStatus `json:"arena_recovery"`
+
+	// ArenaSubmission Independent operating health and traffic readiness for one Arena dependency.
+	ArenaSubmission ArenaDependencyStatus `json:"arena_submission"`
+
+	// ArenaTaskDelivery Independent operating health and traffic readiness for one Arena dependency.
+	ArenaTaskDelivery ArenaDependencyStatus   `json:"arena_task_delivery"`
+	Db                HealthResponseDb        `json:"db"`
+	Redis             HealthResponseRedis     `json:"redis"`
+	SchemaVersion     int64                   `json:"schema_version"`
+	Seaweedfs         HealthResponseSeaweedfs `json:"seaweedfs"`
+	Status            HealthResponseStatus    `json:"status"`
 }
 
 // HealthResponseDb defines model for HealthResponse.Db.

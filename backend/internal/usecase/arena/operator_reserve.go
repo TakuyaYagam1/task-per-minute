@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
+	"github.com/TakuyaYagam1/task-per-minute/internal/observability"
 )
 
 const operatorReserveAttempts = 2
@@ -64,10 +65,17 @@ type OperatorReserveRepository interface {
 
 type OperatorReserveUseCase struct {
 	repository OperatorReserveRepository
+	observer   observability.ArenaEventObserver
 }
 
-func NewOperatorReserveUseCase(repository OperatorReserveRepository) *OperatorReserveUseCase {
-	return &OperatorReserveUseCase{repository: repository}
+func NewOperatorReserveUseCase(
+	repository OperatorReserveRepository,
+	observers ...observability.ArenaEventObserver,
+) *OperatorReserveUseCase {
+	return &OperatorReserveUseCase{
+		repository: repository,
+		observer:   observability.FirstArenaEventObserver(observers...),
+	}
 }
 
 func (u *OperatorReserveUseCase) Reserve(
@@ -84,11 +92,45 @@ func (u *OperatorReserveUseCase) Reserve(
 	for range operatorReserveAttempts {
 		record, changed, retry, err := u.reserveAttempt(ctx, command)
 		if retry {
+			u.emitOperatorReserveEvent(
+				ctx, command, nil, observability.ArenaOutcomeRetry, "conflict_retried",
+			)
 			continue
 		}
+		outcome, reason := arenaCoreEventResult(changed, err, ErrOperatorReserveConflict)
+		switch {
+		case errors.Is(err, ErrOperatorReserveReuse):
+			outcome, reason = observability.ArenaOutcomeRejected, "command_reused"
+		case errors.Is(err, ErrInvalidOperatorReserve):
+			outcome, reason = observability.ArenaOutcomeRejected, "reserve_rejected"
+		}
+		u.emitOperatorReserveEvent(ctx, command, record, outcome, reason)
 		return record, changed, err
 	}
+	u.emitOperatorReserveEvent(
+		ctx, command, nil, observability.ArenaOutcomeFailure, "conflict_exhausted",
+	)
 	return nil, false, ErrOperatorReserveConflict
+}
+
+func (u *OperatorReserveUseCase) emitOperatorReserveEvent(
+	ctx context.Context,
+	command OperatorReserveCommand,
+	record *OperatorReserve,
+	outcome string,
+	reason string,
+) {
+	revision := int64(0)
+	if record != nil {
+		revision = record.ExpectedAuthorityRevision + 1
+	}
+	emitArenaCoreEvent(ctx, u.observer, arenaCoreEventInput{
+		event: "arena.command.operator_reserve", outcome: outcome,
+		correlationID: command.CommandID.String(), commandID: command.CommandID.String(),
+		tournamentID: command.Scope.TournamentID.String(), entityKind: "assignment",
+		entityID: command.Scope.AssignmentID.String(), stage: "reserve", transition: "operator_reserve",
+		reasonCode: reason, revision: revision,
+	})
 }
 
 func (u *OperatorReserveUseCase) reserveAttempt(

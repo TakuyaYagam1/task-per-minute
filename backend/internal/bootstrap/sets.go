@@ -105,6 +105,8 @@ var ReposSet = wire.NewSet(
 
 var UseCasesSet = wire.NewSet(
 	provideClock,
+	provideArenaObservability,
+	provideArenaHealthSource,
 	wire.Bind(new(adminusecase.Clock), new(clockFunc)),
 	wire.Bind(new(duelusecase.Clock), new(clockFunc)),
 	wire.Bind(new(leaderboardusecase.Clock), new(clockFunc)),

@@ -210,6 +210,19 @@ func TestArenaStructuredLogging(t *testing.T) {
 		require.Equal(t, "corr-123", first.events[0].CorrelationID)
 	})
 
+	t.Run("fans out validated events to every observer", func(t *testing.T) {
+		first := &arenaEventCapture{}
+		second := &arenaEventCapture{}
+		observer := NewArenaEventFanout(nil, first, second)
+
+		err := EmitArenaEvent(t.Context(), observer, validArenaEventInput())
+
+		require.NoError(t, err)
+		require.Len(t, first.events, 1)
+		require.Len(t, second.events, 1)
+		require.Equal(t, first.events, second.events)
+	})
+
 	t.Run("does not observe invalid input", func(t *testing.T) {
 		capture := &arenaEventCapture{}
 		input := validArenaEventInput()

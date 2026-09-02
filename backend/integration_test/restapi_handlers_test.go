@@ -33,6 +33,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	redisadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/redis"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
+	"github.com/TakuyaYagam1/task-per-minute/internal/observability"
 	adminusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/admin"
 	duelusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel"
 	leaderboardusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/leaderboard"
@@ -735,6 +736,11 @@ func newRESTFixture(t *testing.T) *restFixture {
 				return st.EnsureBucket(ctx)
 			}),
 			SchemaVersion: postgres.NewSchemaVersionPostgres(sharedPool),
+			Arena: observability.ArenaHealthSourceFunc(
+				func(context.Context) observability.ArenaHealthSnapshot {
+					return observability.HealthyArenaHealthSnapshot()
+				},
+			),
 		},
 	})
 

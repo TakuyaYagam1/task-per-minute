@@ -59,6 +59,18 @@ type arenaCore struct {
 	lifecycle   *arenausecase.TournamentLifecycleUseCase
 }
 
+type arenaObservability struct {
+	metrics  *observability.ArenaMetrics
+	observer observability.ArenaEventObserver
+}
+
+type arenaHealthProbe struct {
+	runtime context.Context
+	pool    *pgxpool.Pool
+	clock   clockFunc
+	metrics *observability.ArenaMetrics
+}
+
 const (
 	arenaPublicMaxConnections  = 128
 	arenaPublicMaxReplayEvents = 128
@@ -78,14 +90,113 @@ func provideArenaCore(
 	rosters arenausecase.RosterLockRepository,
 	lifecycle arenausecase.TournamentLifecycleRepository,
 	clk arenausecase.Clock,
-	log logkit.Logger,
+	telemetry arenaObservability,
 ) *arenaCore {
-	arenaObserver := observability.NewArenaStructuredLogger(log)
 	return &arenaCore{
 		tournaments: arenausecase.NewTournamentUseCase(tournaments, clk),
 		attendance:  arenausecase.NewAttendanceUseCase(attendance, clk),
 		rosters:     arenausecase.NewRosterLockUseCase(rosters, clk),
-		lifecycle:   arenausecase.NewTournamentLifecycleUseCase(lifecycle, clk, arenaObserver),
+		lifecycle:   arenausecase.NewTournamentLifecycleUseCase(lifecycle, clk, telemetry.observer),
+	}
+}
+
+func provideArenaObservability(log logkit.Logger) arenaObservability {
+	metrics := observability.NewArenaMetrics()
+	return arenaObservability{
+		metrics: metrics,
+		observer: observability.NewArenaEventFanout(
+			observability.NewArenaStructuredLogger(log),
+			metrics,
+		),
+	}
+}
+
+func provideArenaHealthSource(
+	runtime context.Context,
+	pool *pgxpool.Pool,
+	clk clockFunc,
+	telemetry arenaObservability,
+) *arenaHealthProbe {
+	return &arenaHealthProbe{
+		runtime: runtime,
+		pool:    pool,
+		clock:   clk,
+		metrics: telemetry.metrics,
+	}
+}
+
+func (probe *arenaHealthProbe) ArenaHealth(ctx context.Context) observability.ArenaHealthSnapshot {
+	snapshot := observability.HealthyArenaHealthSnapshot()
+	if probe == nil || probe.pool == nil || postgres.HealthCheck(ctx, probe.pool) != nil {
+		failed := observability.ArenaDependencyStatus{
+			Health:    observability.ArenaHealthStateFailed,
+			Readiness: observability.ArenaReadinessStateNotReady,
+		}
+		snapshot.Authority = failed
+		snapshot.Submission = failed
+		snapshot.TaskDelivery = failed
+		snapshot.Outbox = failed
+		snapshot.Clock = failed
+		snapshot.Recovery = failed
+	} else {
+		probe.measureClockDrift(ctx, &snapshot)
+	}
+	if probe == nil || probe.runtime == nil {
+		snapshot.Realtime = observability.ArenaDependencyStatus{
+			Health:    observability.ArenaHealthStateFailed,
+			Readiness: observability.ArenaReadinessStateNotReady,
+		}
+	} else {
+		select {
+		case <-probe.runtime.Done():
+			snapshot.Realtime = observability.ArenaDependencyStatus{
+				Health:    observability.ArenaHealthStateFailed,
+				Readiness: observability.ArenaReadinessStateNotReady,
+			}
+		default:
+		}
+	}
+	return snapshot
+}
+
+func (probe *arenaHealthProbe) measureClockDrift(
+	ctx context.Context,
+	snapshot *observability.ArenaHealthSnapshot,
+) {
+	if probe.clock == nil {
+		snapshot.Clock = observability.ArenaDependencyStatus{
+			Health:    observability.ArenaHealthStateFailed,
+			Readiness: observability.ArenaReadinessStateNotReady,
+		}
+		return
+	}
+	var databaseNow time.Time
+	if err := probe.pool.QueryRow(ctx, "SELECT clock_timestamp()").Scan(&databaseNow); err != nil {
+		snapshot.Clock = observability.ArenaDependencyStatus{
+			Health:    observability.ArenaHealthStateFailed,
+			Readiness: observability.ArenaReadinessStateNotReady,
+		}
+		return
+	}
+	drift := probe.clock.Now().Sub(databaseNow.UTC())
+	if probe.metrics != nil {
+		_ = probe.metrics.SetClockDrift("database", drift)
+	}
+	absoluteDrift := drift
+	if absoluteDrift < 0 {
+		absoluteDrift = -absoluteDrift
+	}
+	switch {
+	case absoluteDrift > 30*time.Second:
+		snapshot.Clock = observability.ArenaDependencyStatus{
+			Health:    observability.ArenaHealthStateFailed,
+			Readiness: observability.ArenaReadinessStateNotReady,
+		}
+	case absoluteDrift > 2*time.Second:
+		snapshot.Clock = observability.ArenaDependencyStatus{
+			Health:    observability.ArenaHealthStateDegraded,
+			Readiness: observability.ArenaReadinessStateNotReady,
+		}
 	}
 }
 
@@ -260,6 +371,7 @@ func provideHealthChecks(
 	redis *goredis.Client,
 	seaweed *objectstorage.SeaweedStorage,
 	schemaVersion restv1.SchemaVersionReader,
+	arena *arenaHealthProbe,
 ) restv1.HealthChecks {
 	return restv1.HealthChecks{
 		DB: restv1.HealthCheckerFunc(func(ctx context.Context) error {
@@ -272,6 +384,7 @@ func provideHealthChecks(
 			return seaweed.EnsureBucket(ctx)
 		}),
 		SchemaVersion: schemaVersion,
+		Arena:         arena,
 	}
 }
 
@@ -359,6 +472,7 @@ func provideRESTServerWithClock(
 	joinLimiter *middleware.JoinRateLimiter,
 	leaderboardLimiter leaderboardRateLimiter,
 	log logkit.Logger,
+	telemetry arenaObservability,
 ) *restv1.Server {
 	var now func() time.Time
 	if clk != nil {
@@ -374,6 +488,7 @@ func provideRESTServerWithClock(
 		Leaderboard:        leaderboard,
 		Duels:              duels,
 		Health:             health,
+		ArenaMetrics:       telemetry.metrics.Gatherer(),
 		Now:                now,
 		LoginLimiter:       loginLimiter,
 		RefreshLimiter:     refreshLimiter.Inner,
@@ -436,7 +551,12 @@ type restMiddlewareStack struct {
 	Outer            []api.MiddlewareFunc
 }
 
-func provideRESTMiddlewares(ctx context.Context, log logkit.Logger, cfg *config.Config) (restMiddlewareStack, error) {
+func provideRESTMiddlewares(
+	ctx context.Context,
+	log logkit.Logger,
+	cfg *config.Config,
+	telemetry arenaObservability,
+) (restMiddlewareStack, error) {
 	openAPIValidator, err := middleware.OpenAPIRequestValidator(ctx, log)
 	if err != nil {
 		return restMiddlewareStack{}, err
@@ -450,6 +570,7 @@ func provideRESTMiddlewares(ctx context.Context, log logkit.Logger, cfg *config.
 				middleware.WithTimeout(cfg.HTTP.WriteTimeout),
 				middleware.WithTrustedProxyCIDRs(cfg.HTTP.TrustedProxyCIDRs),
 				middleware.WithAllowedOrigins(cfg.HTTP.AllowedOrigins),
+				middleware.WithArenaEventObserver(telemetry.observer),
 			),
 		},
 	}, nil
@@ -506,6 +627,7 @@ func provideRawWebSocketServerWithArena(
 	storage websocket.SourceFileURLSigner,
 	handshakeLimiter *wsHandshakeRateLimiter,
 	arena arenaWebSocketOptions,
+	telemetry arenaObservability,
 ) rawWebSocketServer {
 	return provideRawWebSocketServerOptions(
 		ctx,
@@ -521,6 +643,7 @@ func provideRawWebSocketServerWithArena(
 		storage,
 		handshakeLimiter,
 		arena,
+		telemetry,
 	)
 }
 
@@ -538,6 +661,7 @@ func provideRawWebSocketServerOptions(
 	storage websocket.SourceFileURLSigner,
 	handshakeLimiter *wsHandshakeRateLimiter,
 	arena arenaWebSocketOptions,
+	telemetry arenaObservability,
 ) rawWebSocketServer {
 	clientIPResolver, err := middleware.NewClientIPResolver(cfg.HTTP.TrustedProxyCIDRs)
 	if err != nil {
@@ -554,6 +678,7 @@ func provideRawWebSocketServerOptions(
 		websocket.WithClientIPResolver(clientIPResolver),
 		websocket.WithRequireOrigin(cfg.WS.RequireOrigin),
 		websocket.WithLogger(log),
+		websocket.WithArenaEventObserver(telemetry.observer),
 		websocket.WithInboundRateLimits(websocket.InboundRateLimits{
 			MessageAttempts: cfg.WS.MessageRateAttempts,
 			MessageWindow:   cfg.WS.MessageRateWindow,
@@ -677,6 +802,7 @@ func provideHTTPHandler(
 	})
 
 	router := chi.NewRouter()
+	router.Method(http.MethodGet, "/internal/metrics", rest.ArenaPrivateMetricsHandler())
 	router.Method(http.MethodGet, "/api/v1/admin/players/events", adminPlayerEventsHandler(rest, auth, log, cfg))
 	router.Mount("/", handler)
 

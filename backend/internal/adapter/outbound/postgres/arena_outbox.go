@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
+	"github.com/TakuyaYagam1/task-per-minute/internal/observability"
 )
 
 const arenaOutboxProjectionMappingSQL = `
@@ -173,16 +174,29 @@ type arenaOutboxTransaction interface {
 }
 
 type ArenaOutboxPublisher struct {
-	tx   arenaOutboxTransaction
-	sink ArenaOutboxSink
+	tx       arenaOutboxTransaction
+	sink     ArenaOutboxSink
+	observer observability.ArenaEventObserver
 }
 
-func NewArenaOutboxPublisher(tx *TxManager, sink ArenaOutboxSink) *ArenaOutboxPublisher {
-	return newArenaOutboxPublisher(tx, sink)
+func NewArenaOutboxPublisher(
+	tx *TxManager,
+	sink ArenaOutboxSink,
+	observers ...observability.ArenaEventObserver,
+) *ArenaOutboxPublisher {
+	return newArenaOutboxPublisher(tx, sink, observers...)
 }
 
-func newArenaOutboxPublisher(tx arenaOutboxTransaction, sink ArenaOutboxSink) *ArenaOutboxPublisher {
-	return &ArenaOutboxPublisher{tx: tx, sink: sink}
+func newArenaOutboxPublisher(
+	tx arenaOutboxTransaction,
+	sink ArenaOutboxSink,
+	observers ...observability.ArenaEventObserver,
+) *ArenaOutboxPublisher {
+	return &ArenaOutboxPublisher{
+		tx:       tx,
+		sink:     sink,
+		observer: observability.FirstArenaEventObserver(observers...),
+	}
 }
 
 //nolint:gocyclo // One transaction keeps candidate retry, sink delivery, and the publication marker ordered.
@@ -194,17 +208,21 @@ func (publisher *ArenaOutboxPublisher) PublishNext(ctx context.Context) (bool, e
 		return false, ErrArenaOutboxPublisherConfiguration
 	}
 
+	startedAt := time.Now()
 	for {
 		if err := ctx.Err(); err != nil {
 			return false, err
 		}
 		published := false
+		var selectedTournamentID uuid.UUID
+		var selectedEvent ArenaOutboxEvent
 		err := publisher.tx.Do(ctx, func(txCtx context.Context) error {
 			conn := publisher.tx.Conn(txCtx)
 			tournamentID, found, err := nextArenaOutboxTournament(txCtx, conn)
 			if err != nil || !found {
 				return err
 			}
+			selectedTournamentID = tournamentID
 			if _, err := conn.Exec(txCtx, arenaOutboxTournamentLockSQL, tournamentID); err != nil {
 				return fmt.Errorf("ArenaOutboxPublisher - lock tournament: %w", err)
 			}
@@ -216,6 +234,7 @@ func (publisher *ArenaOutboxPublisher) PublishNext(ctx context.Context) (bool, e
 			if !found {
 				return errArenaOutboxCandidateChanged
 			}
+			selectedEvent = event
 			if err := publisher.sink.Publish(txCtx, cloneArenaOutboxEvent(event)); err != nil {
 				return fmt.Errorf("ArenaOutboxPublisher - publish: %w", err)
 			}
@@ -230,13 +249,93 @@ func (publisher *ArenaOutboxPublisher) PublishNext(ctx context.Context) (bool, e
 			return nil
 		})
 		if errors.Is(err, errArenaOutboxCandidateChanged) {
+			publisher.observeOutbox(
+				ctx,
+				selectedTournamentID,
+				selectedEvent,
+				observability.ArenaOutcomeRetry,
+				"candidate_changed",
+				time.Since(startedAt),
+			)
 			continue
 		}
 		if err != nil {
+			publisher.observeOutbox(
+				ctx,
+				selectedTournamentID,
+				selectedEvent,
+				observability.ArenaOutcomeFailure,
+				arenaOutboxFailureReason(err),
+				time.Since(startedAt),
+			)
 			return false, err
+		}
+		reason := "no_work"
+		if published {
+			reason = "published"
+		}
+		publisher.observeOutbox(
+			ctx,
+			selectedTournamentID,
+			selectedEvent,
+			observability.ArenaOutcomeSuccess,
+			reason,
+			time.Since(startedAt),
+		)
+		if published && !selectedEvent.OccurredAt.IsZero() {
+			observability.ObserveArenaLag(
+				publisher.observer,
+				"delivery",
+				time.Since(selectedEvent.OccurredAt),
+			)
 		}
 		return published, nil
 	}
+}
+
+func (publisher *ArenaOutboxPublisher) observeOutbox(
+	ctx context.Context,
+	tournamentID uuid.UUID,
+	event ArenaOutboxEvent,
+	outcome string,
+	reason string,
+	duration time.Duration,
+) {
+	if publisher == nil || publisher.observer == nil {
+		return
+	}
+	tournament := tournamentID.String()
+	if tournamentID == uuid.Nil {
+		tournament = "unscoped"
+	}
+	entityID := event.ID.String()
+	if event.ID == uuid.Nil {
+		entityID = tournament
+	}
+	revision := event.ProjectionRevision
+	if revision < 0 {
+		revision = 0
+	}
+	_ = observability.EmitArenaEvent(ctx, publisher.observer, observability.ArenaEventInput{
+		Event:         "arena.outbox",
+		Outcome:       outcome,
+		CorrelationID: entityID,
+		TournamentID:  tournament,
+		EntityKind:    "outbox_event",
+		EntityID:      entityID,
+		Stage:         "outbox",
+		Transition:    "publish",
+		Duration:      duration,
+		ReasonCode:    reason,
+		Revision:      revision,
+	})
+}
+
+func arenaOutboxFailureReason(err error) string {
+	if errors.Is(err, ErrArenaOutboxPublicationConflict) {
+		return "publication_conflict"
+	}
+	return "publish_failed"
 }
 
 func nextArenaOutboxTournament(
