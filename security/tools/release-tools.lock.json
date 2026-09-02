@@ -1,0 +1,197 @@
+{
+  "schema": "security/tools/release-tools.schema.json",
+  "schema_version": 1,
+  "reviewed_at": "2026-09-02",
+  "platform": {
+    "os": "linux",
+    "arch": "amd64"
+  },
+  "tools": [
+    {
+      "name": "go",
+      "version": "1.26.5",
+      "source": {
+        "repository_url": "https://go.googlesource.com/go",
+        "release_url": "https://go.dev/dl/go1.26.5.linux-amd64.tar.gz",
+        "license": {"spdx": "BSD-3-Clause", "reviewed_at": "2026-09-02", "status": "accepted", "evidence_url": "https://go.dev/LICENSE"}
+      },
+      "runtime_identity": {"arguments": ["version"], "expected_output": "go version go1.26.5 linux/amd64", "timeout_seconds": 5},
+      "provisioning": {"kind": "nix_store", "immutable_root": "/nix/store/pwj3x44pp735yb038fnmqckyyra9k29x-go-1.26.5", "relative_path": "share/go/bin/go", "executable_sha256": "abe5a36e95186f29453f3e1d1840d436445e208417191e10c83998b6a7d8e652", "nar_hash": "sha256:0bx5lffp8mchxrqvar3f4xdm0dnlsj3v9lsx9f85mwg38ff01yim"},
+      "trust_decision": {"status": "accepted", "rationale": "Exact local Nix store root, NAR identity, executable digest, and runtime version are locked."}
+    },
+    {
+      "name": "node",
+      "version": "24.18.1",
+      "source": {
+        "repository_url": "https://github.com/nodejs/node",
+        "release_url": "https://nodejs.org/dist/v24.18.1/",
+        "license": {"spdx": "MIT", "reviewed_at": "2026-09-02", "status": "accepted", "evidence_url": "https://github.com/nodejs/node/blob/v24.18.1/LICENSE"}
+      },
+      "runtime_identity": {"arguments": ["--version"], "expected_output": "v24.18.1", "timeout_seconds": 5},
+      "provisioning": {"kind": "nix_store", "immutable_root": "/nix/store/jy3vlmdzmyjpb37r6r2n24lc3zarhjz3-nodejs-slim-24.18.1", "relative_path": "bin/node", "executable_sha256": "5d270d274dfe9a142289b7e1b781408826fda929d42229b6d761462f4e21be17", "nar_hash": "sha256:0dk62alicfa8xkq7k6n538n11i7fd7c8mji9gca04cxxzf5c3glr"},
+      "trust_decision": {"status": "accepted", "rationale": "Exact local Nix store root, NAR identity, executable digest, and runtime version are locked."}
+    },
+    {
+      "name": "npm",
+      "version": "11.16.0",
+      "source": {
+        "repository_url": "https://github.com/npm/cli",
+        "release_url": "https://github.com/npm/cli/releases/tag/v11.16.0",
+        "license": {"spdx": "Artistic-2.0", "reviewed_at": "2026-09-02", "status": "accepted", "evidence_url": "https://github.com/npm/cli/blob/v11.16.0/LICENSE"}
+      },
+      "runtime_identity": {"arguments": ["--version"], "expected_output": "11.16.0", "timeout_seconds": 5},
+      "provisioning": {"kind": "nix_store", "immutable_root": "/nix/store/3nyq1g44akas41r304bk8ai76ywl9p9h-nodejs-slim-24.18.1-npm", "relative_path": "lib/node_modules/npm/bin/npm-cli.js", "executable_sha256": "537622a5481d5577f3beb9d7d04285fead594f2335d69b12b8bd0584f8193dd3", "nar_hash": "sha256:15vqq6xfzp8lcrbrshq5xs050qsbkhvyjka2dlxfbgqxg7cy9grl"},
+      "trust_decision": {"status": "accepted", "rationale": "Exact local Nix store root, NAR identity, executable digest, and runtime version are locked."}
+    },
+    {
+      "name": "playwright",
+      "version": "1.59.1",
+      "source": {
+        "repository_url": "https://github.com/microsoft/playwright",
+        "release_url": "https://github.com/microsoft/playwright/releases/tag/v1.59.1",
+        "license": {"spdx": "Apache-2.0", "reviewed_at": "2026-09-02", "status": "accepted", "evidence_url": "https://github.com/microsoft/playwright/blob/v1.59.1/LICENSE"}
+      },
+      "runtime_identity": {"arguments": ["--version"], "expected_output": "Version 1.59.1", "timeout_seconds": 5},
+      "provisioning": {"kind": "unresolved", "reason": "The package lock is pinned, but no matching immutable Playwright 1.59.1 executable root is approved."},
+      "trust_decision": {"status": "unresolved", "rationale": "Package version is known, while executable and package-content provenance remain unresolved."}
+    },
+    {
+      "name": "chromium",
+      "version": "149.0.7827.55",
+      "source": {
+        "repository_url": "https://chromium.googlesource.com/chromium/src",
+        "release_url": "https://chromiumdash.appspot.com/releases?platform=Linux",
+        "license": {"spdx": "BSD-3-Clause", "reviewed_at": "2026-09-02", "status": "accepted", "evidence_url": "https://chromium.googlesource.com/chromium/src/+/main/LICENSE"}
+      },
+      "runtime_identity": {"arguments": ["--version"], "expected_output": "Google Chrome for Testing 149.0.7827.55", "timeout_seconds": 5},
+      "provisioning": {"kind": "nix_store", "immutable_root": "/nix/store/8gsyn6xgbqwccdz93f3kqc9glmx37ab7-playwright-chromium", "relative_path": "chrome-linux64/chrome", "executable_sha256": "ef4c0f78ac9f95d43f9f42a9d3b2188e6b053213238cb55836bb1061dafdab05", "nar_hash": "sha256:0bybac93zqfi3nb4wvlmb53iiaj5jkh4shsk50rs35sr29yvkqha"},
+      "trust_decision": {"status": "accepted", "rationale": "The exact observed browser binary is locked even though its Playwright compatibility decision fails."}
+    },
+    {
+      "name": "jq",
+      "version": "1.8.2",
+      "source": {
+        "repository_url": "https://github.com/jqlang/jq",
+        "release_url": "https://github.com/jqlang/jq/releases/tag/jq-1.8.2",
+        "license": {"spdx": "MIT", "reviewed_at": "2026-09-02", "status": "accepted", "evidence_url": "https://github.com/jqlang/jq/blob/jq-1.8.2/COPYING"}
+      },
+      "runtime_identity": {"arguments": ["--version"], "expected_output": "jq-1.8.2", "timeout_seconds": 5},
+      "provisioning": {"kind": "nix_store", "immutable_root": "/nix/store/4b6f9wb1qak318gk7mxlfkhril6lxpcx-jq-1.8.2-bin", "relative_path": "bin/jq", "executable_sha256": "d4ff128418c17645afc7d20a45aa660554ff6db7111b4528f7ed30b52ed7b94a", "nar_hash": "sha256:187v3fhz9vw4ar677n5hgmgzqjayxsqlzcxsx8ap2izcxz63rx3l"},
+      "trust_decision": {"status": "accepted", "rationale": "Exact local Nix store root, NAR identity, executable digest, and runtime version are locked."}
+    },
+    {
+      "name": "yq",
+      "version": "4.53.3",
+      "source": {
+        "repository_url": "https://github.com/mikefarah/yq",
+        "release_url": "https://github.com/mikefarah/yq/releases/tag/v4.53.3",
+        "license": {"spdx": "MIT", "reviewed_at": "2026-09-02", "status": "accepted", "evidence_url": "https://github.com/mikefarah/yq/blob/v4.53.3/LICENSE"}
+      },
+      "runtime_identity": {"arguments": ["--version"], "expected_output": "yq (https://github.com/mikefarah/yq/) version v4.53.3", "timeout_seconds": 5},
+      "provisioning": {"kind": "nix_store", "immutable_root": "/nix/store/pyy2agrvaazs49lkpn75dibpvz45pwkm-yq-go-4.53.3", "relative_path": "bin/yq", "executable_sha256": "e15f0a6c7d8e79989df49f126935e6cc02580cecf0730d2307576898332918e5", "nar_hash": "sha256:10jvgh8ly5himsqpa5cyiv7ph1i491iz3i4ngbgfrb4fk8y9ffs4"},
+      "trust_decision": {"status": "accepted", "rationale": "Exact local Nix store root, NAR identity, executable digest, and runtime version are locked."}
+    },
+    {
+      "name": "docker",
+      "version": "29.6.2",
+      "source": {
+        "repository_url": "https://github.com/docker/cli",
+        "release_url": "https://github.com/docker/cli/releases/tag/v29.6.2",
+        "license": {"spdx": "Apache-2.0", "reviewed_at": "2026-09-02", "status": "accepted", "evidence_url": "https://github.com/docker/cli/blob/v29.6.2/LICENSE"}
+      },
+      "runtime_identity": {"arguments": ["--version"], "expected_output": "Docker version 29.6.2, build v29.6.2", "timeout_seconds": 5},
+      "provisioning": {"kind": "nix_store", "immutable_root": "/nix/store/4xp6gj3sr1f41cx24xxc8vr61v232gwk-docker-29.6.2", "relative_path": "bin/docker", "executable_sha256": "f7ede3d98482427297e5e0482593375bdc06053cf1475513f030e5c89588ee41", "nar_hash": "sha256:1sglpl8s501rzp7jrwai6960nxdkni1m743czm9bfw0xhlwcjs19"},
+      "trust_decision": {"status": "accepted", "rationale": "Exact local Nix store root, NAR identity, executable digest, and runtime version are locked."}
+    },
+    {
+      "name": "docker-compose",
+      "version": "5.3.1",
+      "source": {
+        "repository_url": "https://github.com/docker/compose",
+        "release_url": "https://github.com/docker/compose/releases/tag/v5.3.1",
+        "license": {"spdx": "Apache-2.0", "reviewed_at": "2026-09-02", "status": "accepted", "evidence_url": "https://github.com/docker/compose/blob/v5.3.1/LICENSE"}
+      },
+      "runtime_identity": {"arguments": ["version"], "expected_output": "Docker Compose version 5.3.1", "timeout_seconds": 5},
+      "provisioning": {"kind": "nix_store", "immutable_root": "/nix/store/9l67dh3kkp5fyjajy8056a2nvjy20pcp-docker-compose-5.3.1", "relative_path": "libexec/docker/cli-plugins/docker-compose", "executable_sha256": "186be4bd0d97f228f5491b913fb397631f828e1b295c507a5f35c2edb4e3f907", "nar_hash": "sha256:0djfpcrhngzddrbrbdxyz5h9q4hivy2wcsg8g6fhk10cgb5qiw47"},
+      "trust_decision": {"status": "accepted", "rationale": "Exact local Nix store root, NAR identity, executable digest, and runtime version are locked."}
+    },
+    {
+      "name": "govulncheck",
+      "version": "1.6.0",
+      "source": {
+        "repository_url": "https://github.com/golang/vuln",
+        "release_url": "https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck@v1.6.0",
+        "license": {"spdx": "BSD-3-Clause", "reviewed_at": "2026-09-02", "status": "accepted", "evidence_url": "https://github.com/golang/vuln/blob/v1.6.0/LICENSE"}
+      },
+      "runtime_identity": {"arguments": ["-version"], "expected_output": "Go: go1.26.5\nScanner: govulncheck@1.6.0\nDB: https://vuln.go.dev", "timeout_seconds": 5},
+      "provisioning": {"kind": "nix_store", "immutable_root": "/nix/store/jal1aq2n1kn41h6akxgghnn9zbsdahml-govulncheck-1.6.0", "relative_path": "bin/govulncheck", "executable_sha256": "8d79e0e0eed3dd53544ae92784535e1fb21fe8877828b2d9e645338ea9f1f0fd", "nar_hash": "sha256:1kknlv6nd8xax32nbw30mnrvx3fyprxlr62sclzr5z5wyfqmjl9n"},
+      "trust_decision": {"status": "unresolved", "rationale": "The artifact is content-locked, but its version command also emits mutable vulnerability database state."}
+    },
+    {
+      "name": "gitleaks",
+      "version": "8.30.1",
+      "source": {
+        "repository_url": "https://github.com/gitleaks/gitleaks",
+        "release_url": "https://github.com/gitleaks/gitleaks/releases/tag/v8.30.1",
+        "license": {"spdx": "MIT", "reviewed_at": "2026-09-02", "status": "accepted", "evidence_url": "https://github.com/gitleaks/gitleaks/blob/v8.30.1/LICENSE"}
+      },
+      "runtime_identity": {"arguments": ["version"], "expected_output": "8.30.1", "timeout_seconds": 5},
+      "provisioning": {"kind": "nix_store", "immutable_root": "/nix/store/8mah9ns6j29jgb0v44q7rsm2l14bdjpb-gitleaks-8.30.1", "relative_path": "bin/gitleaks", "executable_sha256": "fa53210940f3b8d973d90ace85ff10b4b0d5a88950330e8a909e75eec270b53c", "nar_hash": "sha256:1b4mfkv7dbpz5nmqg2k9pkm33s9jbyc2i3mvx5gjclh612by57y7"},
+      "trust_decision": {"status": "accepted", "rationale": "Exact local Nix store root, NAR identity, executable digest, and runtime version are locked."}
+    },
+    {
+      "name": "semgrep",
+      "version": "1.161.0",
+      "source": {
+        "repository_url": "https://github.com/semgrep/semgrep",
+        "release_url": "https://github.com/semgrep/semgrep/releases/tag/v1.161.0",
+        "license": {"spdx": "LGPL-2.1-or-later", "reviewed_at": "2026-09-02", "status": "accepted", "evidence_url": "https://github.com/semgrep/semgrep/blob/v1.161.0/LICENSE"}
+      },
+      "runtime_identity": {"arguments": ["--version"], "expected_output": "1.161.0", "timeout_seconds": 15},
+      "provisioning": {"kind": "nix_store", "immutable_root": "/nix/store/0jfw4qyzrnj8psfa5lns526j9mhbrpkf-python3.13-semgrep-1.161.0", "relative_path": "bin/semgrep", "executable_sha256": "2de5c309b7c309527635507ff648ce4375c0d595b92aa4a40233cf696708b0b8", "nar_hash": "sha256:0k0d2cy3lsp2lkjxvs77qnqf7s17h1p6yfiwsxh44lwfxa4df0a3"},
+      "trust_decision": {"status": "unresolved", "rationale": "Artifact identity is locked, but the version probe requires an undeclared runtime helper and remains fail-closed."}
+    },
+    {
+      "name": "trivy",
+      "version": "0.72.0",
+      "source": {
+        "repository_url": "https://github.com/aquasecurity/trivy",
+        "release_url": "https://github.com/aquasecurity/trivy/releases/tag/v0.72.0",
+        "license": {"spdx": "Apache-2.0", "reviewed_at": "2026-09-02", "status": "accepted", "evidence_url": "https://github.com/aquasecurity/trivy/blob/v0.72.0/LICENSE"}
+      },
+      "runtime_identity": {"arguments": ["--version"], "expected_output": "Version: 0.72.0", "timeout_seconds": 5},
+      "provisioning": {"kind": "nix_store", "immutable_root": "/nix/store/f1h7j5xlfabdimvsjx1zq46hgpvdvkpm-trivy-0.72.0", "relative_path": "bin/trivy", "executable_sha256": "2eb4760538ee74783f2413485aaf6013743154fa129b802ff39de5dc737824d0", "nar_hash": "sha256:1wwwvvvpfkbdcqv2lfcgis05r71a36jljy2dbkvqqzx0sxpycmdz"},
+      "trust_decision": {"status": "accepted", "rationale": "Exact local Nix store root, NAR identity, executable digest, and offline runtime version are locked."}
+    }
+  ],
+  "playwright_chromium": {
+    "status": "unresolved",
+    "package_lock_relative_path": "frontend/package-lock.json",
+    "package_lock_sha256": "97fcb885fb3e5d7e8b533c90db9396a950c2c144e58eb2c3d73ffa28b78f8ba2",
+    "playwright_package_version": "1.59.1",
+    "browsers_json_relative_path": "frontend/node_modules/playwright-core/browsers.json",
+    "browsers_json_sha256": "469f17a82348978f79738981bc8af9b4e8516aac5a020018911fff39b755fe60",
+    "chromium_revision": "1217",
+    "chromium_browser_version": "147.0.7727.15",
+    "observed_browser_version": "149.0.7827.55",
+    "chromium_executable_sha256": "ef4c0f78ac9f95d43f9f42a9d3b2188e6b053213238cb55836bb1061dafdab05",
+    "reason": "Playwright revision 1217 requires browser 147.0.7727.15, but the observed Nix browser is 149.0.7827.55."
+  },
+  "validation_images": [
+    {"status": "unresolved", "name": "caddy", "requested_tag": "caddy:2-alpine", "source": "https://github.com/caddyserver/caddy-docker", "reason": "Required image is absent and no reviewed repository digest or config digest is available."},
+    {"status": "unresolved", "name": "postgres", "requested_tag": "postgres:18.3-alpine3.23", "source": "https://github.com/docker-library/postgres", "reason": "Required image is absent and no reviewed repository digest or config digest is available."},
+    {"status": "unresolved", "name": "redis", "requested_tag": "redis:8.6.2-alpine3.23", "source": "https://github.com/docker-library/redis", "reason": "Required image is absent and no reviewed repository digest or config digest is available."},
+    {"status": "unresolved", "name": "seaweedfs", "requested_tag": "chrislusf/seaweedfs:4.20", "source": "https://github.com/seaweedfs/seaweedfs", "reason": "Required image is absent and no reviewed repository digest or config digest is available."}
+  ],
+  "trivy_database": {
+    "status": "accepted",
+    "source": "https://github.com/aquasecurity/trivy-db",
+    "immutable_root": "/home/takuya/.cache/trivy/db",
+    "metadata_relative_path": "metadata.json",
+    "database_relative_path": "trivy.db",
+    "metadata_sha256": "526ff2a5b5fbc099342c0ef5e2bda49fa67468ba166295facaa4ce2404cfcdcd",
+    "database_sha256": "5b9a2be561c5d1788c1df9e5974654bda5780f3e511eb20ae3a50945302ed502",
+    "updated_at": "2026-08-09T07:04:26.972846897Z",
+    "max_age_hours": 168
+  }
+}
