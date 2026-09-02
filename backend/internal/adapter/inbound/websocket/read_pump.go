@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net/http"
 	"strings"
 	"time"
 
+	arenaws "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket/arena"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	duelusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel"
 	coderws "github.com/coder/websocket"
@@ -32,6 +34,351 @@ var (
 )
 
 const maxMalformedFrames = 3
+
+type arenaReadResult struct {
+	data  []byte
+	err   error
+	fatal bool
+}
+
+//nolint:gocyclo // One loop owns Arena reads, role routing, terminal ordering, writes, and connection cleanup.
+func (s *Server) serveArenaConnection(
+	ctx context.Context,
+	r *http.Request,
+	conn *coderws.Conn,
+	role ArenaRole,
+	player *domain.Player,
+) {
+	if conn == nil {
+		return
+	}
+	conn.SetReadLimit(defaultReadLimit)
+	readCtx, cancelRead := context.WithCancel(ctx)
+	reads := make(chan arenaReadResult, 1)
+	readerDone := make(chan struct{})
+	go func() {
+		defer close(readerDone)
+		readArenaFrames(readCtx, conn, reads)
+	}()
+	defer func() {
+		cancelRead()
+		_ = conn.CloseNow()
+		<-readerDone
+	}()
+
+	first, ok := <-reads
+	if !ok || first.fatal {
+		return
+	}
+	if first.err != nil {
+		_ = writeArenaRejection(ctx, conn, first.err)
+		return
+	}
+	command, err := DecodeArenaCommand(role, first.data)
+	if err != nil {
+		_ = writeArenaRejection(ctx, conn, err)
+		return
+	}
+	tournamentID, cursor, err := arenaCommandScope(command)
+	if err != nil {
+		_ = writeArenaRejection(ctx, conn, err)
+		return
+	}
+
+	active, principalID, err := s.openArenaConnection(ctx, r, role, player, tournamentID, cursor)
+	if err != nil {
+		_ = writeArenaRejection(ctx, conn, err)
+		return
+	}
+
+	var subscription ArenaTerminalSubscription
+	var deliveries <-chan arenaws.CancellationDelivery
+	if s.arenaTerminal != nil {
+		subscription, err = s.arenaTerminal.SubscribeArenaTerminal(ctx, ArenaTerminalSubscriptionRequest{
+			Role:          role,
+			Authenticated: role != ArenaRolePublic,
+			TournamentID:  tournamentID,
+			ParticipantID: principalID,
+		})
+		if err != nil {
+			_ = writeArenaRejection(ctx, conn, err)
+			return
+		}
+		if subscription != nil {
+			defer subscription.Close()
+			deliveries = subscription.Deliveries()
+		}
+	}
+	if err := writeArenaMessage(ctx, conn, active); err != nil {
+		return
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case delivery, open := <-deliveries:
+			if !open {
+				return
+			}
+			encoded, terminal, marshalErr := marshalArenaCancellation(role, delivery)
+			if marshalErr != nil {
+				_ = writeArenaRejection(ctx, conn, marshalErr)
+				return
+			}
+			if err := writeArenaMessage(ctx, conn, encoded); err != nil || terminal {
+				return
+			}
+		case next, open := <-reads:
+			if !open || next.fatal {
+				return
+			}
+			if next.err != nil {
+				if err := writeArenaRejection(ctx, conn, next.err); err != nil {
+					return
+				}
+				continue
+			}
+			command, decodeErr := DecodeArenaCommand(role, next.data)
+			if decodeErr != nil {
+				if err := writeArenaRejection(ctx, conn, decodeErr); err != nil {
+					return
+				}
+				continue
+			}
+			nextTournamentID, nextCursor, scopeErr := arenaCommandScope(command)
+			if scopeErr != nil || nextTournamentID != tournamentID {
+				if err := writeArenaRejection(ctx, conn, ErrArenaInvalidPayload); err != nil {
+					return
+				}
+				continue
+			}
+			encoded, _, openErr := s.openArenaConnection(ctx, r, role, player, nextTournamentID, nextCursor)
+			if openErr != nil {
+				if err := writeArenaRejection(ctx, conn, openErr); err != nil {
+					return
+				}
+				continue
+			}
+			if err := writeArenaMessage(ctx, conn, encoded); err != nil {
+				return
+			}
+		}
+	}
+}
+
+func readArenaFrames(ctx context.Context, conn *coderws.Conn, reads chan<- arenaReadResult) {
+	defer close(reads)
+	for {
+		messageType, data, err := conn.Read(ctx)
+		if err != nil {
+			select {
+			case reads <- arenaReadResult{err: err, fatal: true}:
+			case <-ctx.Done():
+			}
+			return
+		}
+		result := arenaReadResult{data: data}
+		if messageType != coderws.MessageText {
+			result = arenaReadResult{err: ErrArenaInvalidPayload}
+		}
+		select {
+		case reads <- result:
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+func arenaCommandScope(command ArenaCommand) (uuid.UUID, *arenaws.RealtimeCursor, error) {
+	switch command.Type {
+	case EventArenaConnect:
+		if command.Connect == nil || command.Connect.TournamentID == uuid.Nil {
+			return uuid.Nil, nil, ErrArenaInvalidPayload
+		}
+		return command.Connect.TournamentID, nil, nil
+	case EventArenaResume:
+		if command.Resume == nil {
+			return uuid.Nil, nil, ErrArenaInvalidPayload
+		}
+		cursor := command.Resume.Cursor
+		return cursor.TournamentID, &cursor, nil
+	default:
+		return uuid.Nil, nil, ErrArenaUnknownEvent
+	}
+}
+
+//nolint:gocyclo // Role dispatch validates each trusted principal and keeps payload construction role-exclusive.
+func (s *Server) openArenaConnection(
+	ctx context.Context,
+	r *http.Request,
+	role ArenaRole,
+	player *domain.Player,
+	tournamentID uuid.UUID,
+	cursor *arenaws.RealtimeCursor,
+) ([]byte, uuid.UUID, error) {
+	switch role {
+	case ArenaRoleParticipant:
+		if player == nil || s.arenaParticipant == nil {
+			return nil, uuid.Nil, ErrArenaRoleMismatch
+		}
+		payload, err := s.arenaParticipant.OpenArenaParticipant(ctx, ArenaParticipantConnectionRequest{
+			Principal: arenaws.ParticipantRealtimePrincipal{
+				Authenticated: true,
+				TournamentID:  tournamentID,
+				PlayerID:      player.ID,
+			},
+			TournamentID: tournamentID,
+			Cursor:       cloneArenaCursor(cursor),
+		})
+		if err != nil {
+			return nil, uuid.Nil, err
+		}
+		encoded, err := MarshalArenaParticipant(payload)
+		return encoded, player.ID, err
+	case ArenaRolePublic:
+		if s.arenaPublic == nil {
+			return nil, uuid.Nil, ErrArenaInvalidPayload
+		}
+		payload, err := s.arenaPublic.OpenArenaPublic(ctx, ArenaPublicConnectionRequest{
+			TournamentID: tournamentID,
+			Cursor:       cloneArenaCursor(cursor),
+		})
+		if err != nil {
+			return nil, uuid.Nil, err
+		}
+		encoded, err := MarshalArenaPublic(payload)
+		return encoded, uuid.Nil, err
+	case ArenaRoleOperator:
+		if player == nil || s.arenaOperator == nil || s.arenaOperatorResolve == nil {
+			return nil, uuid.Nil, ErrArenaRoleMismatch
+		}
+		principal, ok := s.arenaOperatorResolve(r, player, tournamentID)
+		if !ok || !principal.Authenticated || principal.PrincipalID == uuid.Nil ||
+			principal.Role != arenaws.OperatorRealtimeRole || principal.TournamentID != tournamentID {
+			return nil, uuid.Nil, ErrArenaRoleMismatch
+		}
+		payload, err := s.arenaOperator.OpenArenaOperator(ctx, ArenaOperatorConnectionRequest{
+			Principal:    principal,
+			TournamentID: tournamentID,
+			Cursor:       cloneArenaCursor(cursor),
+		})
+		if err != nil {
+			return nil, uuid.Nil, err
+		}
+		encoded, err := MarshalArenaOperator(payload)
+		return encoded, principal.PrincipalID, err
+	default:
+		return nil, uuid.Nil, ErrArenaRoleMismatch
+	}
+}
+
+func cloneArenaCursor(cursor *arenaws.RealtimeCursor) *arenaws.RealtimeCursor {
+	if cursor == nil {
+		return nil
+	}
+	clone := *cursor
+	return &clone
+}
+
+func writeArenaRejection(ctx context.Context, conn *coderws.Conn, cause error) error {
+	encoded, err := MarshalArenaRejected(ArenaRejectionFor(cause))
+	if err != nil {
+		return err
+	}
+	return writeArenaMessage(ctx, conn, encoded)
+}
+
+func writeArenaMessage(ctx context.Context, conn *coderws.Conn, data []byte) error {
+	writeCtx, cancel := context.WithTimeout(ctx, defaultWriteWait)
+	defer cancel()
+	return conn.Write(writeCtx, coderws.MessageText, data)
+}
+
+func marshalArenaCancellation(role ArenaRole, delivery arenaws.CancellationDelivery) ([]byte, bool, error) {
+	switch delivery.Kind {
+	case arenaws.CancellationDeliverySnapshot:
+		if delivery.Snapshot == nil {
+			return nil, false, ErrArenaInvalidPayload
+		}
+		return marshalArenaCancellationSnapshot(role, *delivery.Snapshot)
+	case arenaws.CancellationDeliveryTerminal:
+		return marshalArenaCancellationTerminal(role, delivery)
+	default:
+		return nil, false, ErrArenaInvalidPayload
+	}
+}
+
+func marshalArenaCancellationSnapshot(role ArenaRole, snapshot arenaws.RealtimeEnvelope) ([]byte, bool, error) {
+	switch role {
+	case ArenaRoleParticipant:
+		if snapshot.Participant == nil || snapshot.Public != nil || snapshot.Operator != nil {
+			return nil, false, ErrArenaRoleMismatch
+		}
+		envelope := arenaws.ParticipantRealtimeEnvelope{
+			SchemaVersion:      snapshot.SchemaVersion,
+			TournamentID:       snapshot.TournamentID,
+			Sequence:           snapshot.Sequence,
+			EventID:            snapshot.EventID,
+			OccurredAt:         snapshot.OccurredAt,
+			ProjectionRevision: snapshot.ProjectionRevision,
+			Participant:        *snapshot.Participant,
+		}
+		payload, err := NewArenaParticipantPayload(arenaws.ParticipantRealtimeResult{
+			UsesSnapshot: true,
+			Envelopes:    []arenaws.ParticipantRealtimeEnvelope{envelope},
+		})
+		if err != nil {
+			return nil, false, err
+		}
+		encoded, err := MarshalArenaParticipant(payload)
+		return encoded, false, err
+	case ArenaRolePublic:
+		payload, err := NewArenaPublicPayload(true, []arenaws.RealtimeEnvelope{snapshot})
+		if err != nil {
+			return nil, false, err
+		}
+		encoded, err := MarshalArenaPublic(payload)
+		return encoded, false, err
+	case ArenaRoleOperator:
+		payload, err := NewArenaOperatorPayload(arenaws.OperatorRealtimeResult{
+			UsesSnapshot: true,
+			Envelopes:    []arenaws.RealtimeEnvelope{snapshot},
+		})
+		if err != nil {
+			return nil, false, err
+		}
+		encoded, err := MarshalArenaOperator(payload)
+		return encoded, false, err
+	default:
+		return nil, false, ErrArenaRoleMismatch
+	}
+}
+
+func marshalArenaCancellationTerminal(role ArenaRole, delivery arenaws.CancellationDelivery) ([]byte, bool, error) {
+	switch role {
+	case ArenaRoleParticipant:
+		if delivery.Participant == nil || delivery.Public != nil || delivery.Operator != nil {
+			return nil, false, ErrArenaRoleMismatch
+		}
+		encoded, err := MarshalArenaParticipantTerminal(ArenaParticipantTerminalPayload(*delivery.Participant))
+		return encoded, true, err
+	case ArenaRolePublic:
+		if delivery.Public == nil || delivery.Participant != nil || delivery.Operator != nil {
+			return nil, false, ErrArenaRoleMismatch
+		}
+		encoded, err := MarshalArenaPublicTerminal(ArenaPublicTerminalPayload(*delivery.Public))
+		return encoded, true, err
+	case ArenaRoleOperator:
+		if delivery.Operator == nil || delivery.Participant != nil || delivery.Public != nil {
+			return nil, false, ErrArenaRoleMismatch
+		}
+		encoded, err := MarshalArenaOperatorTerminal(ArenaOperatorTerminalPayload(*delivery.Operator))
+		return encoded, true, err
+	default:
+		return nil, false, ErrArenaRoleMismatch
+	}
+}
 
 func (s *Server) readPump(ctx context.Context, c *client) {
 	malformedFrames := 0

@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 
+	arenaws "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket/arena"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	duelusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel"
 )
@@ -43,4 +44,54 @@ type DuelTaskReader interface {
 
 type SourceFileURLSigner interface {
 	PresignedGetURL(ctx context.Context, key string, ttl time.Duration) (string, error)
+}
+
+type ArenaParticipantConnectionRequest struct {
+	Principal    arenaws.ParticipantRealtimePrincipal
+	TournamentID uuid.UUID
+	Cursor       *arenaws.RealtimeCursor
+}
+
+type ArenaPublicConnectionRequest struct {
+	TournamentID uuid.UUID
+	Cursor       *arenaws.RealtimeCursor
+}
+
+type ArenaOperatorConnectionRequest struct {
+	Principal    arenaws.OperatorRealtimePrincipal
+	TournamentID uuid.UUID
+	Cursor       *arenaws.RealtimeCursor
+}
+
+type ArenaParticipantConnectionFlow interface {
+	// ctx covers the full WebSocket connection lifetime.
+	OpenArenaParticipant(ctx context.Context, request ArenaParticipantConnectionRequest) (ArenaParticipantPayload, error)
+}
+
+type ArenaPublicConnectionFlow interface {
+	// ctx covers the full WebSocket connection lifetime and releases public capacity when canceled.
+	OpenArenaPublic(ctx context.Context, request ArenaPublicConnectionRequest) (ArenaPublicPayload, error)
+}
+
+type ArenaOperatorConnectionFlow interface {
+	// ctx covers the full WebSocket connection lifetime.
+	OpenArenaOperator(ctx context.Context, request ArenaOperatorConnectionRequest) (ArenaOperatorPayload, error)
+}
+
+type ArenaTerminalSubscriptionRequest struct {
+	Role          ArenaRole
+	Authenticated bool
+	TournamentID  uuid.UUID
+	ParticipantID uuid.UUID
+}
+
+type ArenaTerminalSubscription interface {
+	Deliveries() <-chan arenaws.CancellationDelivery
+	// Close is idempotent.
+	Close()
+}
+
+type ArenaTerminalSubscriptionFlow interface {
+	// ctx covers the full WebSocket connection lifetime.
+	SubscribeArenaTerminal(ctx context.Context, request ArenaTerminalSubscriptionRequest) (ArenaTerminalSubscription, error)
 }

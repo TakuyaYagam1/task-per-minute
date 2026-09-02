@@ -17,6 +17,7 @@ import (
 	logkit "github.com/wahrwelt-kit/go-logkit"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/requestmeta"
+	arenaws "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket/arena"
 	"github.com/TakuyaYagam1/task-per-minute/internal/ctxutil"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	duelusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel"
@@ -36,6 +37,12 @@ type HandshakeRateLimiter interface {
 }
 
 type ClientIPResolver func(r *http.Request) string
+
+type ArenaOperatorPrincipalResolver func(
+	r *http.Request,
+	player *domain.Player,
+	tournamentID uuid.UUID,
+) (arenaws.OperatorRealtimePrincipal, bool)
 
 type TimerStopper interface {
 	StopAll()
@@ -71,6 +78,11 @@ type Server struct {
 	sessionCheckInterval time.Duration
 	sessionCheckTimeout  time.Duration
 	clientIP             ClientIPResolver
+	arenaParticipant     ArenaParticipantConnectionFlow
+	arenaPublic          ArenaPublicConnectionFlow
+	arenaOperator        ArenaOperatorConnectionFlow
+	arenaTerminal        ArenaTerminalSubscriptionFlow
+	arenaOperatorResolve ArenaOperatorPrincipalResolver
 	requireOrigin        bool
 	log                  logkit.Logger
 
@@ -155,6 +167,36 @@ func WithClientIPResolver(resolver ClientIPResolver) Option {
 		if resolver != nil {
 			s.clientIP = resolver
 		}
+	}
+}
+
+func WithArenaParticipantFlow(flow ArenaParticipantConnectionFlow) Option {
+	return func(s *Server) {
+		s.arenaParticipant = flow
+	}
+}
+
+func WithArenaPublicFlow(flow ArenaPublicConnectionFlow) Option {
+	return func(s *Server) {
+		s.arenaPublic = flow
+	}
+}
+
+func WithArenaOperatorFlow(flow ArenaOperatorConnectionFlow) Option {
+	return func(s *Server) {
+		s.arenaOperator = flow
+	}
+}
+
+func WithArenaTerminalFlow(flow ArenaTerminalSubscriptionFlow) Option {
+	return func(s *Server) {
+		s.arenaTerminal = flow
+	}
+}
+
+func WithArenaOperatorPrincipalResolver(resolver ArenaOperatorPrincipalResolver) Option {
+	return func(s *Server) {
+		s.arenaOperatorResolve = resolver
 	}
 }
 
@@ -285,6 +327,7 @@ func (s *Server) stopBackgroundTimers() {
 	}
 }
 
+//nolint:gocyclo // Handshake ordering keeps method, transport, rate, origin, auth, and upgrade checks fail-closed.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
@@ -296,7 +339,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if hasUnsafeSessionTokenTransport(r) {
+	if hasUnsafeSessionTokenTransport(r) || hasArenaQueryCredential(r) {
 		s.logRequestSecurityEvent(r, "ws.auth", wsSecurityOutcomeFailure, wsAuthFailureFields(r))
 		writeHandshakeProblem(w, r, http.StatusUnauthorized, "unsupported session token transport")
 		return
@@ -326,9 +369,19 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	player, ok := s.authenticate(w, r)
-	if !ok {
+	arenaRole, arenaConnection, validArenaMarker := arenaRoleFromRequest(r)
+	if !validArenaMarker {
+		writeHandshakeProblem(w, r, http.StatusBadRequest, "invalid Arena role")
 		return
+	}
+
+	var player *domain.Player
+	if !arenaConnection || arenaRole != ArenaRolePublic {
+		var ok bool
+		player, ok = s.authenticate(w, r)
+		if !ok {
+			return
+		}
 	}
 
 	acceptOpts := s.acceptOptions
@@ -340,15 +393,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	s.logRequestSecurityEvent(r, "ws.auth", wsSecurityOutcomeSuccess, logkit.Fields{
-		"player_id": player.ID.String(),
-	})
-
-	c := newClient(player, conn, s.inboundLimits)
-	var oldClient *client
-	if old, loaded := s.clients.Swap(player.ID, c); loaded {
-		oldClient = old.(*client)
-		oldClient.markDisplaced()
+	if player != nil {
+		s.logRequestSecurityEvent(r, "ws.auth", wsSecurityOutcomeSuccess, logkit.Fields{
+			"player_id": player.ID.String(),
+		})
 	}
 
 	connCtx, cancel := context.WithCancel(context.WithoutCancel(r.Context()))
@@ -356,6 +404,22 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	stopOnServerShutdown := context.AfterFunc(s.ctx, cancel)
 	defer cancel()
 	defer stopOnServerShutdown()
+	if arenaConnection {
+		s.wg.Add(1)
+		defer func() {
+			cancel()
+			s.wg.Done()
+		}()
+		s.serveArenaConnection(connCtx, r, conn, arenaRole, player)
+		return
+	}
+
+	c := newClient(player, conn, s.inboundLimits)
+	var oldClient *client
+	if old, loaded := s.clients.Swap(player.ID, c); loaded {
+		oldClient = old.(*client)
+		oldClient.markDisplaced()
+	}
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
@@ -379,6 +443,39 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	s.readPump(connCtx, c)
 	s.cleanupClient(connCtx, c)
+}
+
+func arenaRoleFromRequest(r *http.Request) (ArenaRole, bool, bool) {
+	if r == nil || r.URL == nil {
+		return "", false, true
+	}
+	values, present := r.URL.Query()["arena_role"]
+	if !present {
+		return "", false, true
+	}
+	if len(values) != 1 {
+		return "", true, false
+	}
+	role := ArenaRole(strings.TrimSpace(values[0]))
+	switch role {
+	case ArenaRoleParticipant, ArenaRolePublic, ArenaRoleOperator:
+		return role, true, true
+	default:
+		return role, true, false
+	}
+}
+
+func hasArenaQueryCredential(r *http.Request) bool {
+	if r == nil || r.URL == nil {
+		return false
+	}
+	for key := range r.URL.Query() {
+		switch strings.ToLower(strings.TrimSpace(key)) {
+		case "access_token", "authorization", "credential", "password", "session_token":
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) startSessionMonitor(ctx context.Context, c *client) {

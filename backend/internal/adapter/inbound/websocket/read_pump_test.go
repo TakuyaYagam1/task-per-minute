@@ -374,6 +374,47 @@ func TestServerSurrenderRejectsMismatchedDuelID(t *testing.T) {
 	require.Zero(t, reconnect.forfeitCalls)
 }
 
+func TestDuelCommandsRegression(t *testing.T) {
+	playerID := uuid.New()
+	duelID := uuid.New()
+	matchmaking := &shutdownMatchmaking{left: make(chan uuid.UUID, 1)}
+	flags := &countingFlagSubmitter{}
+	reconnect := &noopReconnectManager{}
+	server := NewServer(
+		nil,
+		matchmaking,
+		flags,
+		NewHubRegistry(),
+		WithReconnectManager(reconnect),
+		WithHubCloseDelay(0),
+	)
+	c := &client{
+		player: &domain.Player{ID: playerID},
+		send:   make(chan []byte, 8),
+		done:   make(chan struct{}),
+	}
+	server.clients.Store(playerID, c)
+
+	server.routeEvent(context.Background(), c, IncomingEvent{Type: EventJoinQueue})
+	require.Equal(t, EventQueueJoined, readBufferedClientEvent(t, c).Type)
+	server.routeEvent(context.Background(), c, IncomingEvent{Type: EventLeaveQueue})
+	require.Equal(t, EventQueueLeft, readBufferedClientEvent(t, c).Type)
+	server.routeEvent(context.Background(), c, IncomingEvent{Type: EventPing})
+	require.Equal(t, EventPong, readBufferedClientEvent(t, c).Type)
+
+	c.setDuel(duelID)
+	flagPayload, err := json.Marshal(flagSubmitPayload{DuelID: &duelID, Flag: "flag{candidate}"})
+	require.NoError(t, err)
+	server.routeEvent(context.Background(), c, IncomingEvent{Type: EventFlagSubmit, Payload: flagPayload})
+	require.Equal(t, EventFlagResult, readBufferedClientEvent(t, c).Type)
+	require.Equal(t, 1, flags.submitCalls)
+
+	surrender, err := json.Marshal(surrenderPayload{DuelID: &duelID})
+	require.NoError(t, err)
+	server.routeEvent(context.Background(), c, IncomingEvent{Type: EventSurrender, Payload: surrender})
+	require.Equal(t, 1, reconnect.forfeitCalls)
+}
+
 func readBufferedClientEvent(t *testing.T, c *client) Event {
 	t.Helper()
 	select {

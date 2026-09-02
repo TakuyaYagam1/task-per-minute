@@ -17,9 +17,389 @@ import (
 	logkit "github.com/wahrwelt-kit/go-logkit"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/requestmeta"
+	arenaws "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket/arena"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	duelusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel"
 )
+
+func TestArenaTransportComposition(t *testing.T) {
+	tournamentID := uuid.MustParse("72000000-0000-4000-8000-000000000001")
+
+	t.Run("anonymous public socket is read only and releases connection state", func(t *testing.T) {
+		public := &arenaPublicFlowStub{
+			payload:  ArenaPublicPayload{Envelopes: []ArenaPublicEnvelope{}},
+			opened:   make(chan ArenaPublicConnectionRequest, 1),
+			released: make(chan struct{}),
+		}
+		subscription := &arenaTerminalSubscriptionStub{
+			deliveries: make(chan arenaws.CancellationDelivery),
+			closed:     make(chan struct{}),
+		}
+		terminal := &arenaTerminalFlowStub{subscription: subscription}
+		server := NewServer(
+			nil,
+			nil,
+			nil,
+			NewHubRegistry(),
+			WithArenaPublicFlow(public),
+			WithArenaTerminalFlow(terminal),
+			WithHubCloseDelay(0),
+		)
+		httpServer := httptest.NewServer(server)
+		defer httpServer.Close()
+
+		conn, resp, err := coderws.Dial(t.Context(), wsTestEndpoint(httpServer.URL)+"?arena_role=public", nil)
+		require.NoError(t, err)
+		if resp != nil && resp.Body != nil {
+			defer resp.Body.Close()
+		}
+
+		writeTestEvent(t, conn, EventArenaConnect, ArenaConnectPayload{
+			Role: ArenaRolePublic, TournamentID: tournamentID,
+		})
+		message, err := DecodeArenaPublicMessage(readArenaTestMessage(t, conn))
+		require.NoError(t, err)
+		require.NotNil(t, message.Public)
+
+		select {
+		case request := <-public.opened:
+			require.Equal(t, tournamentID, request.TournamentID)
+			require.Nil(t, request.Cursor)
+		case <-time.After(time.Second):
+			t.Fatal("public flow was not opened")
+		}
+		terminalRequest := terminal.lastRequest()
+		require.Equal(t, ArenaRolePublic, terminalRequest.Role)
+		require.False(t, terminalRequest.Authenticated)
+
+		writeTestEvent(t, conn, "arena_submit", map[string]any{"flag": "not-routed"})
+		message, err = DecodeArenaPublicMessage(readArenaTestMessage(t, conn))
+		require.NoError(t, err)
+		require.Equal(t, ArenaRejectionForbidden, message.Rejected.Code)
+
+		require.NoError(t, conn.Close(coderws.StatusNormalClosure, ""))
+		requireSignal(t, public.released, "public connection context was not released")
+		requireSignal(t, subscription.closed, "terminal subscription was not closed")
+	})
+
+	t.Run("public marker preserves origin and query credential checks", func(t *testing.T) {
+		public := &arenaPublicFlowStub{payload: ArenaPublicPayload{Envelopes: []ArenaPublicEnvelope{}}}
+		server := NewServer(nil, nil, nil, NewHubRegistry(), WithArenaPublicFlow(public))
+		httpServer := httptest.NewServer(server)
+		defer httpServer.Close()
+
+		headers := http.Header{}
+		headers.Set("Origin", "https://untrusted.example")
+		conn, resp, err := coderws.Dial(t.Context(), wsTestEndpoint(httpServer.URL)+"?arena_role=public", &coderws.DialOptions{HTTPHeader: headers})
+		if conn != nil {
+			_ = conn.Close(coderws.StatusNormalClosure, "")
+		}
+		require.Error(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusForbidden, resp.StatusCode)
+		require.NoError(t, resp.Body.Close())
+
+		conn, resp, err = coderws.Dial(t.Context(), wsTestEndpoint(httpServer.URL)+"?arena_role=public&access_token=unsafe", nil)
+		if conn != nil {
+			_ = conn.Close(coderws.StatusNormalClosure, "")
+		}
+		require.Error(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+		require.NoError(t, resp.Body.Close())
+		require.Zero(t, public.calls())
+	})
+
+	t.Run("authenticated roles use trusted principals", func(t *testing.T) {
+		token := uuid.New()
+		player := &domain.Player{ID: uuid.New(), Username: "alice", SessionToken: &token, Status: domain.PlayerStatusIdle}
+		participant := &arenaParticipantFlowStub{payload: ArenaParticipantPayload{Envelopes: []arenaws.ParticipantRealtimeEnvelope{}}}
+		operator := &arenaOperatorFlowStub{payload: ArenaOperatorPayload{Envelopes: []ArenaOperatorEnvelope{}}}
+		server := NewServer(
+			&shutdownPlayerRepo{player: player},
+			nil,
+			nil,
+			NewHubRegistry(),
+			WithArenaParticipantFlow(participant),
+			WithArenaOperatorFlow(operator),
+			WithHubCloseDelay(0),
+		)
+		httpServer := httptest.NewServer(server)
+		defer httpServer.Close()
+
+		conn, resp, err := dialArenaTestWS(t, httpServer.URL, ArenaRoleParticipant, token)
+		require.NoError(t, err)
+		if resp != nil && resp.Body != nil {
+			defer resp.Body.Close()
+		}
+		writeTestEvent(t, conn, EventArenaResume, ArenaResumePayload{
+			Role: ArenaRoleParticipant,
+			Cursor: arenaws.RealtimeCursor{
+				SchemaVersion: arenaws.ArenaRealtimeSchemaVersion, TournamentID: tournamentID,
+				LastSequence: 4, ProjectionRevision: 4,
+			},
+		})
+		message, err := DecodeArenaParticipantMessage(readArenaTestMessage(t, conn))
+		require.NoError(t, err)
+		require.NotNil(t, message.Participant)
+		require.Equal(t, player.ID, participant.request.Principal.PlayerID)
+		require.True(t, participant.request.Principal.Authenticated)
+		require.Equal(t, tournamentID, participant.request.Principal.TournamentID)
+		require.NoError(t, conn.Close(coderws.StatusNormalClosure, ""))
+
+		conn, resp, err = dialArenaTestWS(t, httpServer.URL, ArenaRoleOperator, token)
+		require.NoError(t, err)
+		if resp != nil && resp.Body != nil {
+			defer resp.Body.Close()
+		}
+		writeTestEvent(t, conn, EventArenaConnect, ArenaConnectPayload{Role: ArenaRoleOperator, TournamentID: tournamentID})
+		operatorMessage, err := DecodeArenaOperatorMessage(readArenaTestMessage(t, conn))
+		require.NoError(t, err)
+		require.Equal(t, ArenaRejectionRoleMismatch, operatorMessage.Rejected.Code)
+		require.Zero(t, operator.calls)
+		_ = conn.CloseNow()
+	})
+
+	t.Run("operator resolver supplies the only operator authority", func(t *testing.T) {
+		token := uuid.New()
+		player := &domain.Player{ID: uuid.New(), Username: "operator", SessionToken: &token, Status: domain.PlayerStatusIdle}
+		operator := &arenaOperatorFlowStub{payload: ArenaOperatorPayload{Envelopes: []ArenaOperatorEnvelope{}}}
+		server := NewServer(
+			&shutdownPlayerRepo{player: player},
+			nil,
+			nil,
+			NewHubRegistry(),
+			WithArenaOperatorFlow(operator),
+			WithArenaOperatorPrincipalResolver(func(_ *http.Request, authenticated *domain.Player, scopedTournamentID uuid.UUID) (arenaws.OperatorRealtimePrincipal, bool) {
+				return arenaws.OperatorRealtimePrincipal{
+					Authenticated: true,
+					PrincipalID:   authenticated.ID,
+					Role:          arenaws.OperatorRealtimeRole,
+					TournamentID:  scopedTournamentID,
+				}, true
+			}),
+			WithHubCloseDelay(0),
+		)
+		httpServer := httptest.NewServer(server)
+		defer httpServer.Close()
+
+		conn, resp, err := dialArenaTestWS(t, httpServer.URL, ArenaRoleOperator, token)
+		require.NoError(t, err)
+		if resp != nil && resp.Body != nil {
+			defer resp.Body.Close()
+		}
+		writeTestEvent(t, conn, EventArenaConnect, ArenaConnectPayload{Role: ArenaRoleOperator, TournamentID: tournamentID})
+		message, err := DecodeArenaOperatorMessage(readArenaTestMessage(t, conn))
+		require.NoError(t, err)
+		require.NotNil(t, message.Operator)
+		require.Equal(t, player.ID, operator.request.Principal.PrincipalID)
+		require.Equal(t, arenaws.OperatorRealtimeRole, operator.request.Principal.Role)
+		require.NoError(t, conn.Close(coderws.StatusNormalClosure, ""))
+	})
+
+	t.Run("cancellation snapshot precedes terminal close", func(t *testing.T) {
+		public := &arenaPublicFlowStub{
+			payload:  ArenaPublicPayload{Envelopes: []ArenaPublicEnvelope{}},
+			released: make(chan struct{}),
+		}
+		deliveries := make(chan arenaws.CancellationDelivery, 2)
+		snapshot := arenaPublicCancellationSnapshot(t, tournamentID)
+		deliveries <- arenaws.CancellationDelivery{Kind: arenaws.CancellationDeliverySnapshot, Snapshot: &snapshot}
+		deliveries <- arenaws.CancellationDelivery{
+			Kind: arenaws.CancellationDeliveryTerminal,
+			Public: &arenaws.CancellationPublicTerminal{
+				TournamentID: tournamentID, State: arenaws.CancellationTerminalState,
+			},
+		}
+		close(deliveries)
+		terminal := &arenaTerminalFlowStub{subscription: &arenaTerminalSubscriptionStub{
+			deliveries: deliveries,
+			closed:     make(chan struct{}),
+		}}
+		server := NewServer(
+			nil,
+			nil,
+			nil,
+			NewHubRegistry(),
+			WithArenaPublicFlow(public),
+			WithArenaTerminalFlow(terminal),
+			WithHubCloseDelay(0),
+		)
+		httpServer := httptest.NewServer(server)
+		defer httpServer.Close()
+
+		conn, resp, err := coderws.Dial(t.Context(), wsTestEndpoint(httpServer.URL)+"?arena_role=public", nil)
+		require.NoError(t, err)
+		if resp != nil && resp.Body != nil {
+			defer resp.Body.Close()
+		}
+		writeTestEvent(t, conn, EventArenaConnect, ArenaConnectPayload{Role: ArenaRolePublic, TournamentID: tournamentID})
+
+		initial, err := DecodeArenaPublicMessage(readArenaTestMessage(t, conn))
+		require.NoError(t, err)
+		require.NotNil(t, initial.Public)
+		finalSnapshot, err := DecodeArenaPublicMessage(readArenaTestMessage(t, conn))
+		require.NoError(t, err)
+		require.NotNil(t, finalSnapshot.Public)
+		require.Len(t, finalSnapshot.Public.Envelopes, 1)
+		require.Equal(t, int64(8), finalSnapshot.Public.Envelopes[0].Sequence)
+		terminalMessage, err := DecodeArenaPublicMessage(readArenaTestMessage(t, conn))
+		require.NoError(t, err)
+		require.NotNil(t, terminalMessage.Terminal)
+
+		readCtx, cancel := context.WithTimeout(t.Context(), time.Second)
+		defer cancel()
+		_, _, err = conn.Read(readCtx)
+		require.Error(t, err)
+		requireSignal(t, public.released, "public connection context was not released after terminal close")
+	})
+}
+
+type arenaPublicFlowStub struct {
+	mu          sync.Mutex
+	payload     ArenaPublicPayload
+	opened      chan ArenaPublicConnectionRequest
+	released    chan struct{}
+	releaseOnce sync.Once
+	openCalls   int
+}
+
+func (s *arenaPublicFlowStub) OpenArenaPublic(ctx context.Context, request ArenaPublicConnectionRequest) (ArenaPublicPayload, error) {
+	s.mu.Lock()
+	s.openCalls++
+	s.mu.Unlock()
+	if s.opened != nil {
+		s.opened <- request
+	}
+	if s.released != nil {
+		go func() {
+			<-ctx.Done()
+			s.releaseOnce.Do(func() { close(s.released) })
+		}()
+	}
+	return s.payload, nil
+}
+
+func (s *arenaPublicFlowStub) calls() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.openCalls
+}
+
+type arenaParticipantFlowStub struct {
+	payload ArenaParticipantPayload
+	request ArenaParticipantConnectionRequest
+	calls   int
+}
+
+func (s *arenaParticipantFlowStub) OpenArenaParticipant(_ context.Context, request ArenaParticipantConnectionRequest) (ArenaParticipantPayload, error) {
+	s.calls++
+	s.request = request
+	return s.payload, nil
+}
+
+type arenaOperatorFlowStub struct {
+	payload ArenaOperatorPayload
+	request ArenaOperatorConnectionRequest
+	calls   int
+}
+
+func (s *arenaOperatorFlowStub) OpenArenaOperator(_ context.Context, request ArenaOperatorConnectionRequest) (ArenaOperatorPayload, error) {
+	s.calls++
+	s.request = request
+	return s.payload, nil
+}
+
+type arenaTerminalFlowStub struct {
+	mu           sync.Mutex
+	request      ArenaTerminalSubscriptionRequest
+	subscription ArenaTerminalSubscription
+}
+
+func (s *arenaTerminalFlowStub) SubscribeArenaTerminal(_ context.Context, request ArenaTerminalSubscriptionRequest) (ArenaTerminalSubscription, error) {
+	s.mu.Lock()
+	s.request = request
+	s.mu.Unlock()
+	return s.subscription, nil
+}
+
+func (s *arenaTerminalFlowStub) lastRequest() ArenaTerminalSubscriptionRequest {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.request
+}
+
+type arenaTerminalSubscriptionStub struct {
+	deliveries <-chan arenaws.CancellationDelivery
+	closed     chan struct{}
+	closeOnce  sync.Once
+}
+
+func (s *arenaTerminalSubscriptionStub) Deliveries() <-chan arenaws.CancellationDelivery {
+	return s.deliveries
+}
+
+func (s *arenaTerminalSubscriptionStub) Close() {
+	s.closeOnce.Do(func() {
+		if s.closed != nil {
+			close(s.closed)
+		}
+	})
+}
+
+func dialArenaTestWS(t *testing.T, baseURL string, role ArenaRole, token uuid.UUID) (*coderws.Conn, *http.Response, error) {
+	t.Helper()
+	headers := http.Header{}
+	headers.Add("Cookie", (&http.Cookie{Name: requestmeta.PlayerSessionCookieName, Value: token.String()}).String())
+	return coderws.Dial(t.Context(), wsTestEndpoint(baseURL)+"?arena_role="+string(role), &coderws.DialOptions{HTTPHeader: headers})
+}
+
+func readArenaTestMessage(t *testing.T, conn *coderws.Conn) []byte {
+	t.Helper()
+	readCtx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	messageType, data, err := conn.Read(readCtx)
+	require.NoError(t, err)
+	require.Equal(t, coderws.MessageText, messageType)
+	return data
+}
+
+func requireSignal(t *testing.T, signal <-chan struct{}, message string) {
+	t.Helper()
+	select {
+	case <-signal:
+	case <-time.After(time.Second):
+		t.Fatal(message)
+	}
+}
+
+func arenaPublicCancellationSnapshot(t *testing.T, tournamentID uuid.UUID) arenaws.RealtimeEnvelope {
+	t.Helper()
+	snapshot, err := arenaws.NewPublicSnapshot(tournamentID, arenaws.PublicSnapshotInput{
+		Revision:     8,
+		LastSequence: 8,
+		Tournament: arenaws.PublicTournamentInput{
+			TournamentID: tournamentID,
+			Preset:       "swiss",
+			State:        arenaws.CancellationTerminalState,
+		},
+		Scoreboard:      []arenaws.PublicScoreboardEntryInput{},
+		Bracket:         []arenaws.PublicBracketMatchInput{},
+		LiveSeries:      []arenaws.PublicSeriesInput{},
+		OfficialResults: []arenaws.PublicOfficialResultInput{},
+	})
+	require.NoError(t, err)
+	envelope, err := arenaws.NewRealtimeEnvelope(arenaws.RealtimeEnvelopeMetadata{
+		SchemaVersion:      arenaws.ArenaRealtimeSchemaVersion,
+		TournamentID:       tournamentID,
+		Sequence:           8,
+		EventID:            uuid.MustParse("72000000-0000-4000-8000-000000000008"),
+		OccurredAt:         time.Date(2026, 9, 2, 11, 0, 0, 0, time.UTC),
+		ProjectionRevision: 8,
+	}, snapshot)
+	require.NoError(t, err)
+	return envelope
+}
 
 func TestServerShutdownLeavesQueuedClient(t *testing.T) {
 	t.Parallel()
