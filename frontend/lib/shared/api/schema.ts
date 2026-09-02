@@ -1733,6 +1733,8 @@ export interface components {
             id: string;
             /** Format: uuid */
             series_id: string;
+            /** Format: int64 */
+            revision: number;
             format: components["schemas"]["ArenaSeriesFormat"];
             /** Format: uuid */
             first_participant_id: string;
@@ -1933,23 +1935,22 @@ export interface components {
             /** Format: date-time */
             readonly delivered_at: string;
         };
-        ArenaAssignment: {
+        ArenaParticipantAssignment: {
             /** Format: uuid */
             id: string;
             /** Format: uuid */
             attempt_id: string;
-            participant_ids: string[];
             active_snapshot: components["schemas"]["ArenaTaskSnapshot"];
             /** Format: int32 */
             undisclosed_reserve_count: number;
-            receipts: components["schemas"]["ArenaDeliveryReceipt"][];
+            receipt: components["schemas"]["ArenaDeliveryReceipt"];
         };
         ArenaParticipantAssignmentResponse: {
             /** Format: uuid */
             tournament_id: string;
             /** Format: int64 */
             projection_revision: number;
-            assignment: components["schemas"]["ArenaAssignment"];
+            assignment: components["schemas"]["ArenaParticipantAssignment"];
         };
         ArenaParticipantReadyRequest: {
             /** Format: int64 */
@@ -1974,6 +1975,10 @@ export interface components {
         ArenaParticipantDraftActionRequest: {
             /** Format: int64 */
             expected_projection_revision: number;
+            /** Format: int64 */
+            expected_draft_revision: number;
+            /** Format: int32 */
+            expected_turn: number;
             action: components["schemas"]["ArenaDraftActionType"];
             category: components["schemas"]["ArenaCategory"];
         };
@@ -2092,7 +2097,7 @@ export interface components {
             series: components["schemas"]["ArenaSeries"] | null;
             wave: components["schemas"]["ArenaWave"] | null;
             draft: components["schemas"]["ArenaDraft"] | null;
-            assignment: components["schemas"]["ArenaAssignment"] | null;
+            assignment: components["schemas"]["ArenaParticipantAssignment"] | null;
             next_cursor: components["schemas"]["ArenaParticipantRecoveryCursor"];
         };
         ArenaPublicTournamentResponse: {
@@ -2220,6 +2225,17 @@ export interface components {
         /** @description The Arena command payload violates a semantic request rule. */
         ArenaInvalidRequestResponse: {
             headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["ProblemDetails"];
+            };
+        };
+        /** @description The authenticated participant exceeded the Arena command rate limit. */
+        ArenaRateLimitedResponse: {
+            headers: {
+                /** @description Seconds until the participant may retry the command. */
+                "Retry-After"?: number;
                 [name: string]: unknown;
             };
             content: {
@@ -3794,6 +3810,7 @@ export interface operations {
                     "application/json": components["schemas"]["ArenaDraft"];
                 };
             };
+            400: components["responses"]["ArenaInvalidRequestResponse"];
             401: components["responses"]["ArenaUnauthorizedResponse"];
             403: components["responses"]["ArenaForbiddenResponse"];
             404: components["responses"]["ArenaNotFoundResponse"];
@@ -3829,10 +3846,12 @@ export interface operations {
                     "application/json": components["schemas"]["ArenaParticipantSubmissionResponse"];
                 };
             };
+            400: components["responses"]["ArenaInvalidRequestResponse"];
             401: components["responses"]["ArenaUnauthorizedResponse"];
             403: components["responses"]["ArenaForbiddenResponse"];
             404: components["responses"]["ArenaNotFoundResponse"];
             409: components["responses"]["ArenaRevisionConflictResponse"];
+            429: components["responses"]["ArenaRateLimitedResponse"];
         };
     };
     surrenderArenaParticipantSeries: {
@@ -3863,10 +3882,12 @@ export interface operations {
                     "application/json": components["schemas"]["ArenaOfficialResultRevision"];
                 };
             };
+            400: components["responses"]["ArenaInvalidRequestResponse"];
             401: components["responses"]["ArenaUnauthorizedResponse"];
             403: components["responses"]["ArenaForbiddenResponse"];
             404: components["responses"]["ArenaNotFoundResponse"];
             409: components["responses"]["ArenaRevisionConflictResponse"];
+            429: components["responses"]["ArenaRateLimitedResponse"];
         };
     };
     applyArenaParticipantPostSeriesAction: {

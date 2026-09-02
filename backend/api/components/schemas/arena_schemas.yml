@@ -1130,7 +1130,7 @@ ArenaDraftAction:
 
 ArenaDraft:
   type: object
-  required: [id, series_id, format, first_participant_id, second_participant_id, pool, state, turn, turn_deadline, actions, selected_categories]
+  required: [id, series_id, revision, format, first_participant_id, second_participant_id, pool, state, turn, turn_deadline, actions, selected_categories]
   properties:
     id:
       type: string
@@ -1138,6 +1138,10 @@ ArenaDraft:
     series_id:
       type: string
       format: uuid
+    revision:
+      type: integer
+      format: int64
+      minimum: 1
     format:
       $ref: '#/ArenaSeriesFormat'
     first_participant_id:

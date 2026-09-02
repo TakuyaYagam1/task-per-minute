@@ -505,17 +505,6 @@ type AdminTokenResponseTokenType string
 // ArenaArtifactKind defines model for ArenaArtifactKind.
 type ArenaArtifactKind string
 
-// ArenaAssignment defines model for ArenaAssignment.
-type ArenaAssignment struct {
-	// ActiveSnapshot Public immutable task snapshot. Private flag material and undisclosed reserves are excluded.
-	ActiveSnapshot          ArenaTaskSnapshot      `json:"active_snapshot"`
-	AttemptId               openapi_types.UUID     `json:"attempt_id"`
-	Id                      openapi_types.UUID     `json:"id"`
-	ParticipantIds          []openapi_types.UUID   `json:"participant_ids"`
-	Receipts                []ArenaDeliveryReceipt `json:"receipts"`
-	UndisclosedReserveCount int32                  `json:"undisclosed_reserve_count"`
-}
-
 // ArenaAttendanceState defines model for ArenaAttendanceState.
 type ArenaAttendanceState string
 
@@ -662,6 +651,7 @@ type ArenaDraft struct {
 	Format              ArenaSeriesFormat  `json:"format"`
 	Id                  openapi_types.UUID `json:"id"`
 	Pool                []ArenaCategory    `json:"pool"`
+	Revision            int64              `json:"revision"`
 	SecondParticipantId openapi_types.UUID `json:"second_participant_id"`
 	SelectedCategories  []ArenaCategory    `json:"selected_categories"`
 	SeriesId            openapi_types.UUID `json:"series_id"`
@@ -852,18 +842,30 @@ type ArenaParticipant struct {
 	UpdatedAt    *time.Time           `json:"updated_at,omitempty"`
 }
 
+// ArenaParticipantAssignment defines model for ArenaParticipantAssignment.
+type ArenaParticipantAssignment struct {
+	// ActiveSnapshot Public immutable task snapshot. Private flag material and undisclosed reserves are excluded.
+	ActiveSnapshot          ArenaTaskSnapshot    `json:"active_snapshot"`
+	AttemptId               openapi_types.UUID   `json:"attempt_id"`
+	Id                      openapi_types.UUID   `json:"id"`
+	Receipt                 ArenaDeliveryReceipt `json:"receipt"`
+	UndisclosedReserveCount int32                `json:"undisclosed_reserve_count"`
+}
+
 // ArenaParticipantAssignmentResponse defines model for ArenaParticipantAssignmentResponse.
 type ArenaParticipantAssignmentResponse struct {
-	Assignment         ArenaAssignment    `json:"assignment"`
-	ProjectionRevision int64              `json:"projection_revision"`
-	TournamentId       openapi_types.UUID `json:"tournament_id"`
+	Assignment         ArenaParticipantAssignment `json:"assignment"`
+	ProjectionRevision int64                      `json:"projection_revision"`
+	TournamentId       openapi_types.UUID         `json:"tournament_id"`
 }
 
 // ArenaParticipantDraftActionRequest defines model for ArenaParticipantDraftActionRequest.
 type ArenaParticipantDraftActionRequest struct {
 	Action                     ArenaDraftActionType `json:"action"`
 	Category                   ArenaCategory        `json:"category"`
+	ExpectedDraftRevision      int64                `json:"expected_draft_revision"`
 	ExpectedProjectionRevision int64                `json:"expected_projection_revision"`
+	ExpectedTurn               int32                `json:"expected_turn"`
 }
 
 // ArenaParticipantLobbyResponse defines model for ArenaParticipantLobbyResponse.
@@ -918,7 +920,7 @@ type ArenaParticipantRecoveryCursor struct {
 
 // ArenaParticipantRecoverySnapshot defines model for ArenaParticipantRecoverySnapshot.
 type ArenaParticipantRecoverySnapshot struct {
-	Assignment         *ArenaAssignment               `json:"assignment"`
+	Assignment         *ArenaParticipantAssignment    `json:"assignment"`
 	Draft              *ArenaDraft                    `json:"draft"`
 	Lobby              ArenaParticipantLobbyResponse  `json:"lobby"`
 	NextCursor         ArenaParticipantRecoveryCursor `json:"next_cursor"`
@@ -1712,6 +1714,9 @@ type ArenaInvalidRequestResponse = ProblemDetails
 
 // ArenaNotFoundResponse RFC 7807 error envelope used by every 4xx/5xx response.
 type ArenaNotFoundResponse = ProblemDetails
+
+// ArenaRateLimitedResponse RFC 7807 error envelope used by every 4xx/5xx response.
+type ArenaRateLimitedResponse = ProblemDetails
 
 // ArenaRevisionConflictResponse Stable optimistic-concurrency details that can accompany a 409 response.
 type ArenaRevisionConflictResponse = ArenaRevisionConflict

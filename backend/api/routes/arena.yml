@@ -211,6 +211,19 @@ components:
         application/json:
           schema:
             $ref: '../components/schemas/arena_schemas.yml#/ArenaRevisionConflict'
+    ArenaRateLimitedResponse:
+      description: The authenticated participant exceeded the Arena command rate limit.
+      headers:
+        Retry-After:
+          description: Seconds until the participant may retry the command.
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+      content:
+        application/problem+json:
+          schema:
+            $ref: '../components/schemas/common_schemas.yml#/ProblemDetails'
 
   schemas:
     ArenaCreateTournamentRequest:
@@ -496,7 +509,27 @@ components:
           format: int64
           minimum: 1
         assignment:
-          $ref: '../components/schemas/arena_schemas.yml#/ArenaAssignment'
+          $ref: '#/components/schemas/ArenaParticipantAssignment'
+    ArenaParticipantAssignment:
+      type: object
+      additionalProperties: false
+      required: [id, attempt_id, active_snapshot, undisclosed_reserve_count, receipt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        attempt_id:
+          type: string
+          format: uuid
+        active_snapshot:
+          $ref: '../components/schemas/arena_schemas.yml#/ArenaTaskSnapshot'
+        undisclosed_reserve_count:
+          type: integer
+          format: int32
+          minimum: 0
+          maximum: 2
+        receipt:
+          $ref: '../components/schemas/arena_schemas.yml#/ArenaDeliveryReceipt'
     ArenaParticipantReadyRequest:
       type: object
       additionalProperties: false
@@ -511,11 +544,19 @@ components:
     ArenaParticipantDraftActionRequest:
       type: object
       additionalProperties: false
-      required: [expected_projection_revision, action, category]
+      required: [expected_projection_revision, expected_draft_revision, expected_turn, action, category]
       properties:
         expected_projection_revision:
           type: integer
           format: int64
+          minimum: 1
+        expected_draft_revision:
+          type: integer
+          format: int64
+          minimum: 1
+        expected_turn:
+          type: integer
+          format: int32
           minimum: 1
         action:
           $ref: '../components/schemas/arena_schemas.yml#/ArenaDraftActionType'
@@ -842,7 +883,7 @@ components:
         assignment:
           nullable: true
           allOf:
-            - $ref: '../components/schemas/arena_schemas.yml#/ArenaAssignment'
+            - $ref: '#/components/schemas/ArenaParticipantAssignment'
         next_cursor:
           $ref: '#/components/schemas/ArenaParticipantRecoveryCursor'
     ArenaOperatorRecoverySnapshot:
@@ -1354,6 +1395,8 @@ components:
           application/json:
             schema:
               $ref: '../components/schemas/arena_schemas.yml#/ArenaDraft'
+      '400':
+        $ref: '#/components/responses/ArenaInvalidRequestResponse'
       '401':
         $ref: '#/components/responses/ArenaUnauthorizedResponse'
       '403':
@@ -1392,6 +1435,8 @@ components:
           application/json:
             schema:
               $ref: '#/components/schemas/ArenaParticipantSubmissionResponse'
+      '400':
+        $ref: '#/components/responses/ArenaInvalidRequestResponse'
       '401':
         $ref: '#/components/responses/ArenaUnauthorizedResponse'
       '403':
@@ -1400,6 +1445,8 @@ components:
         $ref: '#/components/responses/ArenaNotFoundResponse'
       '409':
         $ref: '#/components/responses/ArenaRevisionConflictResponse'
+      '429':
+        $ref: '#/components/responses/ArenaRateLimitedResponse'
 
 /api/v1/arena/tournaments/{tournament_id}/participant/series/{series_id}/surrender:
   parameters:
@@ -1429,6 +1476,8 @@ components:
           application/json:
             schema:
               $ref: '../components/schemas/arena_schemas.yml#/ArenaOfficialResultRevision'
+      '400':
+        $ref: '#/components/responses/ArenaInvalidRequestResponse'
       '401':
         $ref: '#/components/responses/ArenaUnauthorizedResponse'
       '403':
@@ -1437,6 +1486,8 @@ components:
         $ref: '#/components/responses/ArenaNotFoundResponse'
       '409':
         $ref: '#/components/responses/ArenaRevisionConflictResponse'
+      '429':
+        $ref: '#/components/responses/ArenaRateLimitedResponse'
 
 /api/v1/arena/tournaments/{tournament_id}/participant/series/{series_id}/post-series:
   parameters:

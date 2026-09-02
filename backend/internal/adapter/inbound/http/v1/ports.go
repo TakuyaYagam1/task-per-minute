@@ -74,6 +74,7 @@ type ArenaAdminService interface {
 	LockRoster(ctx context.Context, command ArenaLockRosterCommand) (api.ArenaRoster, error)
 	UnlockRoster(ctx context.Context, command ArenaUnlockRosterCommand) (api.ArenaRoster, error)
 	ConfigurePairings(ctx context.Context, command ArenaConfigurePairingsCommand) (api.ArenaSwissRound, error)
+	ControlWave(ctx context.Context, command ArenaWaveControlCommand) (api.ArenaWave, error)
 	GetStandings(ctx context.Context, command ArenaTournamentReadCommand) (api.ArenaPublicScoreboardResponse, error)
 	GetBracket(ctx context.Context, command ArenaTournamentReadCommand) (api.ArenaPublicBracketResponse, error)
 }
@@ -207,6 +208,151 @@ type ArenaConfigurePairingsCommand struct {
 
 type ArenaTournamentReadCommand struct {
 	TournamentID uuid.UUID
+}
+
+type ArenaWaveControlAction string
+
+const (
+	ArenaWaveControlActionOpenReadyWindow ArenaWaveControlAction = "open_ready_window"
+	ArenaWaveControlActionStart           ArenaWaveControlAction = "start"
+	ArenaWaveControlActionPause           ArenaWaveControlAction = "pause"
+	ArenaWaveControlActionResume          ArenaWaveControlAction = "resume"
+	ArenaWaveControlActionComplete        ArenaWaveControlAction = "complete"
+	ArenaWaveControlActionCancel          ArenaWaveControlAction = "cancel"
+)
+
+func (a ArenaWaveControlAction) IsValid() bool {
+	switch a {
+	case ArenaWaveControlActionOpenReadyWindow,
+		ArenaWaveControlActionStart,
+		ArenaWaveControlActionPause,
+		ArenaWaveControlActionResume,
+		ArenaWaveControlActionComplete,
+		ArenaWaveControlActionCancel:
+		return true
+	default:
+		return false
+	}
+}
+
+type ArenaWaveControlCommand struct {
+	Operator         ArenaOperatorIdentity
+	TournamentID     uuid.UUID
+	WaveID           uuid.UUID
+	CommandID        uuid.UUID
+	ExpectedRevision int64
+	Action           ArenaWaveControlAction
+	Confirmed        bool
+	Reason           string
+}
+
+// ArenaParticipantService is the transport-facing application port for the
+// authenticated Arena participant flow. Application code resolves the Arena
+// participant from Actor.PlayerID and enforces aggregate ownership and state.
+type ArenaParticipantService interface {
+	GetLobby(ctx context.Context, command ArenaParticipantLobbyCommand) (api.ArenaParticipantLobbyResponse, error)
+	GetAssignment(ctx context.Context, command ArenaParticipantAssignmentCommand) (api.ArenaParticipantAssignmentResponse, error)
+	SetReady(ctx context.Context, command ArenaParticipantReadyCommand) (api.ArenaReadinessEvent, error)
+	SubmitDraftAction(ctx context.Context, command ArenaParticipantDraftActionCommand) (api.ArenaDraft, error)
+	SubmitFlag(ctx context.Context, command ArenaParticipantSubmissionCommand) (api.ArenaParticipantSubmissionResponse, error)
+	Surrender(ctx context.Context, command ArenaParticipantSurrenderCommand) (api.ArenaOfficialResultRevision, error)
+	ApplyPostSeriesAction(ctx context.Context, command ArenaParticipantPostSeriesCommand) (api.ArenaParticipantPostSeriesResponse, error)
+	GetSnapshot(ctx context.Context, command ArenaParticipantSnapshotCommand) (api.ArenaParticipantRecoverySnapshot, error)
+}
+
+type ArenaParticipantIdentity struct {
+	PlayerID uuid.UUID
+}
+
+type ArenaParticipantDraftActionCommand struct {
+	Actor                      ArenaParticipantIdentity
+	TournamentID               uuid.UUID
+	SeriesID                   uuid.UUID
+	CommandID                  uuid.UUID
+	ExpectedProjectionRevision int64
+	ExpectedDraftRevision      int64
+	ExpectedTurn               int32
+	Action                     domain.ArenaDraftActionType
+	Category                   domain.Category
+}
+
+type ArenaParticipantLobbyCommand struct {
+	Actor        ArenaParticipantIdentity
+	TournamentID uuid.UUID
+}
+
+type ArenaParticipantAssignmentCommand struct {
+	Actor        ArenaParticipantIdentity
+	TournamentID uuid.UUID
+	AssignmentID uuid.UUID
+}
+
+type ArenaParticipantReadyCommand struct {
+	Actor                      ArenaParticipantIdentity
+	TournamentID               uuid.UUID
+	WaveID                     uuid.UUID
+	CommandID                  uuid.UUID
+	ExpectedProjectionRevision int64
+	Ready                      bool
+}
+
+type ArenaParticipantSnapshotCommand struct {
+	Actor        ArenaParticipantIdentity
+	TournamentID uuid.UUID
+	Cursor       *api.ArenaParticipantRecoveryCursor
+}
+
+type ArenaParticipantPostSeriesAction string
+
+const (
+	ArenaParticipantPostSeriesActionAcknowledgeResult     ArenaParticipantPostSeriesAction = "acknowledge_result"
+	ArenaParticipantPostSeriesActionRequestNextAssignment ArenaParticipantPostSeriesAction = "request_next_assignment"
+	ArenaParticipantPostSeriesActionLeaveLobby            ArenaParticipantPostSeriesAction = "leave_lobby"
+)
+
+func (a ArenaParticipantPostSeriesAction) IsValid() bool {
+	switch a {
+	case ArenaParticipantPostSeriesActionAcknowledgeResult,
+		ArenaParticipantPostSeriesActionRequestNextAssignment,
+		ArenaParticipantPostSeriesActionLeaveLobby:
+		return true
+	default:
+		return false
+	}
+}
+
+type ArenaParticipantPostSeriesCommand struct {
+	Actor                      ArenaParticipantIdentity
+	TournamentID               uuid.UUID
+	SeriesID                   uuid.UUID
+	CommandID                  uuid.UUID
+	ExpectedProjectionRevision int64
+	Action                     ArenaParticipantPostSeriesAction
+}
+
+type ArenaParticipantSubmissionCommand struct {
+	Actor                      ArenaParticipantIdentity
+	TournamentID               uuid.UUID
+	SeriesID                   uuid.UUID
+	GameID                     uuid.UUID
+	CommandID                  uuid.UUID
+	ExpectedProjectionRevision int64
+	SubmittedFlag              string
+}
+
+type ArenaParticipantSurrenderCommand struct {
+	Actor                      ArenaParticipantIdentity
+	TournamentID               uuid.UUID
+	SeriesID                   uuid.UUID
+	CommandID                  uuid.UUID
+	ExpectedProjectionRevision int64
+	Confirmed                  bool
+	Reason                     string
+}
+
+type ArenaSubmissionRateLimiter interface {
+	Allow(key string) bool
+	RetryAfter() string
 }
 
 type ArenaRevisionConflictError struct {

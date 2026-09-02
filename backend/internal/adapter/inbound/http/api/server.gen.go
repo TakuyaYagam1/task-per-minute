@@ -2940,6 +2940,15 @@ type ArenaInvalidRequestResponseApplicationProblemPlusJSONResponse ProblemDetail
 
 type ArenaNotFoundResponseApplicationProblemPlusJSONResponse ProblemDetails
 
+type ArenaRateLimitedResponseResponseHeaders struct {
+	RetryAfter int32
+}
+type ArenaRateLimitedResponseApplicationProblemPlusJSONResponse struct {
+	Body ProblemDetails
+
+	Headers ArenaRateLimitedResponseResponseHeaders
+}
+
 type ArenaRevisionConflictResponseJSONResponse ArenaRevisionConflict
 
 type ArenaUnauthorizedResponseApplicationProblemPlusJSONResponse ProblemDetails
@@ -4733,6 +4742,17 @@ func (response SubmitArenaParticipantDraftAction200JSONResponse) VisitSubmitAren
 	return json.NewEncoder(w).Encode(response)
 }
 
+type SubmitArenaParticipantDraftAction400ApplicationProblemPlusJSONResponse struct {
+	ArenaInvalidRequestResponseApplicationProblemPlusJSONResponse
+}
+
+func (response SubmitArenaParticipantDraftAction400ApplicationProblemPlusJSONResponse) VisitSubmitArenaParticipantDraftActionResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
 type SubmitArenaParticipantDraftAction401ApplicationProblemPlusJSONResponse struct {
 	ArenaUnauthorizedResponseApplicationProblemPlusJSONResponse
 }
@@ -4798,6 +4818,17 @@ func (response SubmitArenaParticipantFlag200JSONResponse) VisitSubmitArenaPartic
 	return json.NewEncoder(w).Encode(response)
 }
 
+type SubmitArenaParticipantFlag400ApplicationProblemPlusJSONResponse struct {
+	ArenaInvalidRequestResponseApplicationProblemPlusJSONResponse
+}
+
+func (response SubmitArenaParticipantFlag400ApplicationProblemPlusJSONResponse) VisitSubmitArenaParticipantFlagResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
 type SubmitArenaParticipantFlag401ApplicationProblemPlusJSONResponse struct {
 	ArenaUnauthorizedResponseApplicationProblemPlusJSONResponse
 }
@@ -4840,6 +4871,18 @@ func (response SubmitArenaParticipantFlag409JSONResponse) VisitSubmitArenaPartic
 	w.WriteHeader(409)
 
 	return json.NewEncoder(w).Encode(response)
+}
+
+type SubmitArenaParticipantFlag429ApplicationProblemPlusJSONResponse struct {
+	ArenaRateLimitedResponseApplicationProblemPlusJSONResponse
+}
+
+func (response SubmitArenaParticipantFlag429ApplicationProblemPlusJSONResponse) VisitSubmitArenaParticipantFlagResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
+	w.WriteHeader(429)
+
+	return json.NewEncoder(w).Encode(response.Body)
 }
 
 type ApplyArenaParticipantPostSeriesActionRequestObject struct {
@@ -4926,6 +4969,17 @@ func (response SurrenderArenaParticipantSeries200JSONResponse) VisitSurrenderAre
 	return json.NewEncoder(w).Encode(response)
 }
 
+type SurrenderArenaParticipantSeries400ApplicationProblemPlusJSONResponse struct {
+	ArenaInvalidRequestResponseApplicationProblemPlusJSONResponse
+}
+
+func (response SurrenderArenaParticipantSeries400ApplicationProblemPlusJSONResponse) VisitSurrenderArenaParticipantSeriesResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
 type SurrenderArenaParticipantSeries401ApplicationProblemPlusJSONResponse struct {
 	ArenaUnauthorizedResponseApplicationProblemPlusJSONResponse
 }
@@ -4968,6 +5022,18 @@ func (response SurrenderArenaParticipantSeries409JSONResponse) VisitSurrenderAre
 	w.WriteHeader(409)
 
 	return json.NewEncoder(w).Encode(response)
+}
+
+type SurrenderArenaParticipantSeries429ApplicationProblemPlusJSONResponse struct {
+	ArenaRateLimitedResponseApplicationProblemPlusJSONResponse
+}
+
+func (response SurrenderArenaParticipantSeries429ApplicationProblemPlusJSONResponse) VisitSurrenderArenaParticipantSeriesResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
+	w.WriteHeader(429)
+
+	return json.NewEncoder(w).Encode(response.Body)
 }
 
 type GetArenaParticipantSnapshotRequestObject struct {

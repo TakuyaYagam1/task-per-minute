@@ -23,25 +23,27 @@ type HealthChecks struct {
 // Dependencies bundles every usecase port the v1 controller needs. Wiring
 // The bootstrap package constructs it from concrete use case implementations.
 type Dependencies struct {
-	Players            PlayerService
-	AdminAuth          AdminAuthService
-	Tasks              AdminTaskService
-	AdminPlayers       AdminPlayerService
-	AdminPlayerEvents  AdminPlayerEventSubscriber
-	Upload             UploadService
-	Leaderboard        LeaderboardService
-	Duels              DuelService
-	ArenaAdmin         ArenaAdminService
-	ArenaOperator      ArenaOperatorController
-	ArenaParticipant   ArenaParticipantController
-	ArenaPublic        ArenaPublicController
-	Health             HealthChecks
-	LoginLimiter       *middleware.LoginRateLimiter
-	RefreshLimiter     *middleware.LoginRateLimiter
-	JoinLimiter        *middleware.JoinRateLimiter
-	LeaderboardLimiter *middleware.LoginRateLimiter
-	Now                func() time.Time
-	Log                logkit.Logger
+	Players                 PlayerService
+	AdminAuth               AdminAuthService
+	Tasks                   AdminTaskService
+	AdminPlayers            AdminPlayerService
+	AdminPlayerEvents       AdminPlayerEventSubscriber
+	Upload                  UploadService
+	Leaderboard             LeaderboardService
+	Duels                   DuelService
+	ArenaAdmin              ArenaAdminService
+	ArenaOperator           ArenaOperatorController
+	ArenaParticipant        ArenaParticipantController
+	ArenaParticipantService ArenaParticipantService
+	ArenaSubmissionLimiter  ArenaSubmissionRateLimiter
+	ArenaPublic             ArenaPublicController
+	Health                  HealthChecks
+	LoginLimiter            *middleware.LoginRateLimiter
+	RefreshLimiter          *middleware.LoginRateLimiter
+	JoinLimiter             *middleware.JoinRateLimiter
+	LeaderboardLimiter      *middleware.LoginRateLimiter
+	Now                     func() time.Time
+	Log                     logkit.Logger
 }
 
 type Server struct {
@@ -85,7 +87,14 @@ func New(deps Dependencies) *Server {
 	}
 	arenaParticipant := deps.ArenaParticipant
 	if arenaParticipant == nil {
-		arenaParticipant = api.Unimplemented{}
+		if deps.ArenaParticipantService != nil {
+			arenaParticipant = newArenaParticipantController(
+				deps.ArenaParticipantService,
+				deps.ArenaSubmissionLimiter,
+			)
+		} else {
+			arenaParticipant = api.Unimplemented{}
+		}
 	}
 	arenaPublic := deps.ArenaPublic
 	if arenaPublic == nil {

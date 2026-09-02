@@ -66,6 +66,25 @@ func TestArenaParticipantRouteSource(t *testing.T) {
 	require.True(t, submission.Properties["submitted_flag"].WriteOnly)
 	require.NotContains(t, requireArenaRouteSchema(t, document, "ArenaParticipantSubmissionResponse").Properties, "submitted_flag")
 
+	draftAction := requireArenaRouteSchema(t, document, "ArenaParticipantDraftActionRequest")
+	for _, field := range []string{"expected_draft_revision", "expected_turn"} {
+		require.Contains(t, draftAction.Required, field)
+		require.Contains(t, draftAction.Properties, field)
+	}
+
+	for _, path := range []string{
+		"/api/v1/arena/tournaments/{tournament_id}/participant/series/{series_id}/games/{game_id}/submissions",
+		"/api/v1/arena/tournaments/{tournament_id}/participant/series/{series_id}/surrender",
+	} {
+		operation := requireArenaRouteOperation(t, routes, path, "post")
+		require.Equal(t, "#/components/responses/ArenaInvalidRequestResponse", operation.Responses["400"].Ref)
+		require.Equal(t, "#/components/responses/ArenaRateLimitedResponse", operation.Responses["429"].Ref)
+	}
+	require.Equal(t,
+		"../components/schemas/common_schemas.yml#/ProblemDetails",
+		document.Components.Responses["ArenaRateLimitedResponse"].Content["application/problem+json"].Schema.Ref,
+	)
+
 	assignmentPath := "/api/v1/arena/tournaments/{tournament_id}/participant/assignments/{assignment_id}"
 	assignmentOperation := requireArenaRouteOperation(t, routes, assignmentPath, "get")
 	require.Equal(t,
@@ -75,11 +94,27 @@ func TestArenaParticipantRouteSource(t *testing.T) {
 	assignment := requireArenaRouteSchema(t, document, "ArenaParticipantAssignmentResponse")
 	require.Contains(t, assignment.Properties, "assignment")
 	require.Equal(t,
-		"../components/schemas/arena_schemas.yml#/ArenaAssignment",
+		"#/components/schemas/ArenaParticipantAssignment",
 		assignment.Properties["assignment"].Ref,
 	)
+	privateAssignment := requireArenaRouteSchema(t, document, "ArenaParticipantAssignment")
+	for _, field := range []string{"id", "attempt_id", "active_snapshot", "undisclosed_reserve_count", "receipt"} {
+		require.Contains(t, privateAssignment.Required, field)
+		require.Contains(t, privateAssignment.Properties, field)
+	}
+	for _, forbidden := range []string{"participant_ids", "receipts"} {
+		require.NotContains(t, privateAssignment.Properties, forbidden)
+	}
 	require.True(t, document.Components.Parameters["ArenaIdempotencyKey"].Required)
 	require.True(t, document.Components.Parameters["ArenaCSRFToken"].Required)
+}
+
+func TestArenaDraftSchemaExposesRevision(t *testing.T) {
+	t.Parallel()
+
+	schemas := loadArenaSchemaSource(t)
+	requireArenaObject(t, schemas, "ArenaDraft", []string{"revision"})
+	requireArenaMinimum(t, schemas, "ArenaDraft", "revision", 1)
 }
 
 func requireParticipantMutationParameters(t *testing.T, operation arenaRouteOperation) {
