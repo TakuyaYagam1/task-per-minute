@@ -758,13 +758,64 @@ func TestTournamentAdminCorrectionRollsBackResultWritesOnLateStageFailure(t *tes
 	require.Equal(t, beforeProjectionRevision, afterProjectionRevision)
 }
 
+func TestTournamentAdminCorrectionRollsBackSuccessfulNestedCommit(t *testing.T) {
+	ctx := context.Background()
+	fixture, progressionCommand := preparePlayoffPublication(ctx, t)
+	_, err := publishSwissPlayoffs(ctx, fixture, progressionCommand)
+	require.NoError(t, err)
+	openCorrectionReadyWave(ctx, t, fixture)
+
+	seriesID := fixture.binding[0].SeriesID
+	var gameID uuid.UUID
+	require.NoError(t, sharedPool.QueryRow(ctx, `
+		SELECT attempt.id
+		FROM game_attempts AS attempt
+		WHERE attempt.series_id = $1
+		ORDER BY attempt.attempt_number DESC
+		LIMIT 1`, seriesID).Scan(&gameID))
+	repository := postgres.NewTournamentAdminCorrectionPostgres(fixture.tx)
+	var authority tournamentadmin.CorrectionWorkflowAuthority
+	require.NoError(t, fixture.tx.Do(ctx, func(txCtx context.Context) error {
+		var loadErr error
+		authority, loadErr = repository.LockCorrectionAuthority(txCtx, fixture.tournamentID, seriesID, gameID)
+		return loadErr
+	}))
+	mutation := correctionStageMutation(t, authority, seriesID, gameID)
+	require.Equal(t, correctionusecase.StagePlayoffToGolden, mutation.Stage.Transition)
+
+	before := correctionStagePersistenceCounts(ctx, t, fixture.tournamentID)
+	beforeProjectionID, beforeProjectionRevision := currentPublishedProjection(
+		ctx, t, fixture.tournamentID, fixture.rosterID,
+	)
+	rollback := errors.New("rollback successful correction")
+	var evidence tournamentadmin.CorrectionEvidence
+	var changed bool
+	err = fixture.tx.Do(ctx, func(txCtx context.Context) error {
+		var commitErr error
+		evidence, changed, commitErr = repository.CommitCorrection(txCtx, mutation)
+		if commitErr != nil {
+			return commitErr
+		}
+		return rollback
+	})
+	require.ErrorIs(t, err, rollback)
+	require.True(t, changed)
+	require.Equal(t, mutation.Evidence, evidence)
+	require.Equal(t, before, correctionStagePersistenceCounts(ctx, t, fixture.tournamentID))
+	afterProjectionID, afterProjectionRevision := currentPublishedProjection(
+		ctx, t, fixture.tournamentID, fixture.rosterID,
+	)
+	require.Equal(t, beforeProjectionID, afterProjectionID)
+	require.Equal(t, beforeProjectionRevision, afterProjectionRevision)
+}
+
 func correctionStagePersistenceCounts(
 	ctx context.Context,
 	t *testing.T,
 	tournamentID uuid.UUID,
-) [6]int64 {
+) [10]int64 {
 	t.Helper()
-	var counts [6]int64
+	var counts [10]int64
 	require.NoError(t, sharedPool.QueryRow(ctx, `
 		SELECT
 			(SELECT revision FROM tournaments WHERE id = $1),
@@ -772,8 +823,13 @@ func correctionStagePersistenceCounts(
 			(SELECT COUNT(*) FROM official_result_revisions WHERE tournament_id = $1),
 			(SELECT COUNT(*) FROM projection_revisions WHERE tournament_id = $1),
 			(SELECT COUNT(*) FROM tournament_stage_progressions WHERE tournament_id = $1),
-			(SELECT COUNT(*) FROM outbox_events WHERE tournament_id = $1)`, tournamentID).Scan(
-		&counts[0], &counts[1], &counts[2], &counts[3], &counts[4], &counts[5],
+			(SELECT COUNT(*) FROM outbox_events WHERE tournament_id = $1),
+			(SELECT COUNT(*) FROM result_commits WHERE tournament_id = $1),
+			(SELECT COUNT(*) FROM series_score_revisions WHERE tournament_id = $1),
+			(SELECT COUNT(*) FROM correction_projection_bindings WHERE tournament_id = $1),
+			(SELECT COUNT(*) FROM final_swiss_projection_receipts WHERE tournament_id = $1)`, tournamentID).Scan(
+		&counts[0], &counts[1], &counts[2], &counts[3], &counts[4],
+		&counts[5], &counts[6], &counts[7], &counts[8], &counts[9],
 	))
 	return counts
 }
