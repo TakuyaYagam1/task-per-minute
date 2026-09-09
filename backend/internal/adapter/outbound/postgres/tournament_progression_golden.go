@@ -3,6 +3,7 @@ package postgres
 import (
 	"cmp"
 	"crypto/sha256"
+	"fmt"
 	"slices"
 	"time"
 
@@ -81,11 +82,11 @@ func progressionGoldenSettlements(
 	}
 	groups, err := progressionGoldenGroups(authority, settlementRows, attemptRows, commitRows)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("restore Golden groups: %w", err)
 	}
 	ledgers, err := progressionGoldenLedgers(groups, ledgerRows, seals, authority)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("restore Golden ledgers: %w", err)
 	}
 	settlements := make([]playoff.Top4GoldenSettlement, 0, len(groups))
 	groupIDs := make([]uuid.UUID, 0, len(groups))
@@ -103,13 +104,14 @@ func progressionGoldenSettlements(
 		}
 		settlement, err := progressionGoldenSettlement(authority, group, ledger)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("restore Golden settlement: %w", err)
 		}
 		settlements = append(settlements, settlement)
 	}
 	return settlements, nil
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func progressionGoldenGroups(
 	authority tournamentprogression.Authority,
 	settlementRows []sqlc.LockTournamentProgressionGoldenSettlementsRow,
@@ -131,7 +133,7 @@ func progressionGoldenGroups(
 			!row.PositionCommitID.Valid || row.PositionCommitID.UUID == uuid.Nil ||
 			!row.ParticipantID.Valid || row.ParticipantID.UUID == uuid.Nil || row.Position == nil ||
 			int(*row.Position) < int(row.PositionFrom) || int(*row.Position) > int(row.PositionTo) {
-			return nil, domain.ErrConflict
+			return nil, fmt.Errorf("invalid persisted Golden group row: %w", domain.ErrConflict)
 		}
 		group, found := groups[row.GroupRevisionID]
 		if !found {
@@ -159,10 +161,10 @@ func progressionGoldenGroups(
 		groups[row.GroupRevisionID] = group
 	}
 	if err := progressionGoldenAttemptsMatch(groups, attemptRows); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("golden attempts differ from groups: %w", err)
 	}
 	if err := progressionGoldenCommitsMatch(groups, commitRows); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("golden commits differ from groups: %w", err)
 	}
 	return groups, nil
 }
@@ -197,6 +199,7 @@ func progressionGoldenAttemptsMatch(
 	return nil
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func progressionGoldenCommitsMatch(
 	groups map[uuid.UUID]progressionGoldenGroup,
 	rows []sqlc.LockTournamentProgressionGoldenPositionCommitsRow,
@@ -205,6 +208,7 @@ func progressionGoldenCommitsMatch(
 	for _, row := range rows {
 		group, found := groups[row.GroupRevisionID]
 		if !found || row.PositionCommitID == uuid.Nil || row.AttemptID == uuid.Nil ||
+			//nolint:gosec // Domain validation bounds this value before the storage conversion.
 			row.ParticipantID == uuid.Nil || row.Position < int16(group.from) || row.Position > int16(group.to) {
 			return domain.ErrConflict
 		}
@@ -277,6 +281,7 @@ func progressionGoldenLedgers(
 	return ordered, nil
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func progressionGoldenLedgerRow(
 	row sqlc.LockTournamentProgressionGoldenPositionLedgerRow,
 ) (progressionGoldenLedgerRevision, error) {
@@ -326,6 +331,7 @@ func progressionGoldenLedgerRow(
 	return revision, nil
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func progressionGoldenLedgerAttemptFromRow(
 	row sqlc.LockTournamentProgressionGoldenPositionLedgerRow,
 ) (progressionGoldenLedgerAttempt, error) {
@@ -390,6 +396,7 @@ func progressionGoldenPreviousEqual(left, right *uuid.UUID) bool {
 	return *left == *right
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func progressionGoldenLedgerChain(
 	chain []progressionGoldenLedgerRevision,
 	seals []sqlc.GoldenPositionLedgerRevisionSeal,
@@ -428,6 +435,7 @@ func progressionGoldenLedgerChain(
 	return nil
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func progressionGoldenSettlement(
 	authority tournamentprogression.Authority,
 	group progressionGoldenGroup,

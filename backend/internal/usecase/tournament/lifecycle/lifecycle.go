@@ -172,14 +172,14 @@ func lifecycleValidateTournamentRecordPointer(record *LifecycleTournamentRecord,
 }
 
 func tournamentLifecycleLookupError(operation string, err error) error {
-	if errors.Is(err, LifecycleErrTournamentNotFound) {
-		return LifecycleErrTournamentNotFound
+	if errors.Is(err, ErrTournamentNotFound) {
+		return ErrTournamentNotFound
 	}
 	return fmt.Errorf("TournamentLifecycleUseCase - %s - repository lookup: %w", operation, err)
 }
 
 func tournamentLifecycleMutationError(operation string, err error) error {
-	if errors.Is(err, domain.ErrConflict) || errors.Is(err, LifecycleErrTournamentNotFound) {
+	if errors.Is(err, domain.ErrConflict) || errors.Is(err, ErrTournamentNotFound) {
 		return err
 	}
 	return fmt.Errorf("TournamentLifecycleUseCase - %s - repository mutation: %w", operation, err)

@@ -201,13 +201,6 @@ func (a SemifinalAdvancementAuthority) Validate() error {
 	return nil
 }
 
-func semifinalAdvancementResult(
-	bracket SemifinalBracket,
-	completed domain.Series,
-) (SemifinalAdvancementResult, error) {
-	return semifinalAdvancementResultForAuthority(semifinalAdvancementAuthority(bracket), completed)
-}
-
 func semifinalAdvancementResultForAuthority(
 	authority SemifinalAdvancementAuthority,
 	completed domain.Series,

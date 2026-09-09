@@ -16,7 +16,7 @@ func noShowCloneUUIDPointer(value *uuid.UUID) *uuid.UUID {
 	return &cloned
 }
 
-func noShowUuidPointersEqual(first, second *uuid.UUID) bool {
+func noShowUUIDPointersEqual(first, second *uuid.UUID) bool {
 	if first == nil || second == nil {
 		return first == nil && second == nil
 	}

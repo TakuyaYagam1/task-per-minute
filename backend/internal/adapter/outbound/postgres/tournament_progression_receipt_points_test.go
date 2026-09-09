@@ -18,14 +18,15 @@ func TestProgressionReceiptPointsSelectExactSeries(t *testing.T) {
 		FirstParticipantID: first, SecondParticipantID: second, SeriesWinnerID: nullableUUIDValue(first),
 	}
 	label := string(swiss.SeriesResultPlayed)
-	ledger := []sqlc.LockTournamentProgressionFinalSwissReceiptLedgerRow{
-		{ProjectionRevisionID: receiptID, RoundID: roundID, RoundNumber: 1, SourceKind: string(swiss.PointSourceSeries),
+	ledger := make([]sqlc.LockTournamentProgressionFinalSwissReceiptLedgerRow, 0, 3)
+	ledger = append(ledger,
+		sqlc.LockTournamentProgressionFinalSwissReceiptLedgerRow{ProjectionRevisionID: receiptID, RoundID: roundID, RoundNumber: 1, SourceKind: string(swiss.PointSourceSeries),
 			SourceSeriesID: nullableUUIDValue(evidence.SeriesID), SeriesResultRevisionID: nullableUUIDValue(evidence.SeriesResultRevisionID),
 			ResultLabel: &label, ParticipantID: first, OpponentID: nullableUUIDValue(second), Points: swiss.SeriesWinPoints, StableSeed: 1},
-		{ProjectionRevisionID: receiptID, RoundID: roundID, RoundNumber: 1, SourceKind: string(swiss.PointSourceSeries),
+		sqlc.LockTournamentProgressionFinalSwissReceiptLedgerRow{ProjectionRevisionID: receiptID, RoundID: roundID, RoundNumber: 1, SourceKind: string(swiss.PointSourceSeries),
 			SourceSeriesID: nullableUUIDValue(evidence.SeriesID), SeriesResultRevisionID: nullableUUIDValue(evidence.SeriesResultRevisionID),
 			ResultLabel: &label, ParticipantID: second, OpponentID: nullableUUIDValue(first), StableSeed: 2},
-	}
+	)
 	other := ledger[0]
 	other.SourceSeriesID = nullableUUIDValue(uuid.New())
 	ledger = append(ledger, other)

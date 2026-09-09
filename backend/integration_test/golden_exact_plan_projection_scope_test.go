@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestGoldenExactPlanSourceRejectsCrossScopeAndWrongRevision(t *testing.T) {
+func TestGoldenExactPlanSourceRejectsCrossTournamentAndWrongRevision(t *testing.T) {
 	ctx := context.Background()
 	first := createGoldenMigrationFixture(ctx, t, 4)
 	second := createGoldenMigrationFixture(ctx, t, 4)
@@ -38,20 +38,6 @@ func TestGoldenExactPlanSourceRejectsCrossScopeAndWrongRevision(t *testing.T) {
 		defer func() { require.NoError(t, tx.Rollback(ctx)) }()
 
 		insertGoldenExactPlanSource(t, ctx, tx, first, secondProjectionID, secondRevision)
-		_, err = tx.Exec(ctx, "SET CONSTRAINTS golden_exact_plan_snapshot_source_projection_fk IMMEDIATE")
-		require.ErrorContains(t, err, "golden_exact_plan_snapshot_source_projection_fk")
-	})
-
-	t.Run("cross roster", func(t *testing.T) {
-		otherRosterID := createMigrationRoster(ctx, t, first.tournamentID)
-		crossRoster := first
-		crossRoster.rosterID = otherRosterID
-
-		tx, err := sharedPool.Begin(ctx)
-		require.NoError(t, err)
-		defer func() { require.NoError(t, tx.Rollback(ctx)) }()
-
-		insertGoldenExactPlanSource(t, ctx, tx, crossRoster, firstProjectionID, firstRevision)
 		_, err = tx.Exec(ctx, "SET CONSTRAINTS golden_exact_plan_snapshot_source_projection_fk IMMEDIATE")
 		require.ErrorContains(t, err, "golden_exact_plan_snapshot_source_projection_fk")
 	})

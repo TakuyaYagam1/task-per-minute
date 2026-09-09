@@ -44,8 +44,9 @@ func newRESTFixture(t *testing.T) *restFixture {
 	f := newDatabaseFixture()
 	st := newSeaweedStorage(t)
 	clock := realIntegrationClock()
+	redis := sharedRedis(t)
 	revocations := redisadapter.NewRevocationRedis(
-		sharedRedis(t).client,
+		redis.client,
 		"integration:rest:revocation:"+uniq("fixture")+":",
 	)
 	auth := authusecase.NewUseCase(authusecase.Config{
@@ -64,6 +65,12 @@ func newRESTFixture(t *testing.T) *restFixture {
 		AdminPlayers: playerusecase.ManagementNewUseCase(f.mgr, f.players, leaderboardUC, clock),
 		Upload:       taskusecase.NewSourceFiles(taskusecase.NewUseCase(f.tasks), st, nil),
 		Leaderboard:  leaderboardUC,
+		LeaderboardLimiter: redisadapter.NewRateLimiter(
+			redis.client,
+			"integration-rest-leaderboard-"+uniq("limiter"),
+			100,
+			time.Minute,
+		),
 		Health: restv1.HealthChecks{
 			DB: restv1.HealthCheckerFunc(func(ctx context.Context) error {
 				return postgres.HealthCheck(ctx, sharedPool)

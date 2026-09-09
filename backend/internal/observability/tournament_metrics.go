@@ -235,6 +235,7 @@ func tournamentMetricOperation(event TournamentEvent) string {
 	return tournamentMetricEventOperation(event.Event)
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func tournamentMetricStageOperation(stage string) string {
 	switch stage {
 	case "tournament_lifecycle":

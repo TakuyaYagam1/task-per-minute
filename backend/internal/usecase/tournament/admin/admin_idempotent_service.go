@@ -56,7 +56,7 @@ func (service *AdminIdempotentService) ReplaceRoster(
 	ctx context.Context,
 	command ReplaceRosterCommand,
 ) (RosterView, error) {
-	return executeAdminMutation(service, ctx, validReplaceRosterCommand(command), func() (idempotency.Command, error) {
+	return executeAdminMutation(ctx, service, validReplaceRosterCommand(command), func() (idempotency.Command, error) {
 		return replaceRosterReceipt(command)
 	}, func() (RosterView, error) {
 		return service.next.ReplaceRoster(ctx, command)
@@ -67,7 +67,7 @@ func (service *AdminIdempotentService) RunPreflight(
 	ctx context.Context,
 	command PreflightCommand,
 ) (tournamentpreflight.ReportRevision, error) {
-	return executeAdminMutation(service, ctx, validPreflightCommand(command), func() (idempotency.Command, error) {
+	return executeAdminMutation(ctx, service, validPreflightCommand(command), func() (idempotency.Command, error) {
 		return preflightReceipt(command)
 	}, func() (tournamentpreflight.ReportRevision, error) {
 		return service.next.RunPreflight(ctx, command)
@@ -78,7 +78,7 @@ func (service *AdminIdempotentService) LockRoster(
 	ctx context.Context,
 	command LockRosterCommand,
 ) (RosterView, error) {
-	return executeAdminMutation(service, ctx, validLockRosterCommand(command), func() (idempotency.Command, error) {
+	return executeAdminMutation(ctx, service, validLockRosterCommand(command), func() (idempotency.Command, error) {
 		return lockRosterReceipt(command)
 	}, func() (RosterView, error) {
 		return service.next.LockRoster(ctx, command)
@@ -89,7 +89,7 @@ func (service *AdminIdempotentService) UnlockRoster(
 	ctx context.Context,
 	command UnlockRosterCommand,
 ) (RosterView, error) {
-	return executeAdminMutation(service, ctx, validUnlockRosterCommand(command), func() (idempotency.Command, error) {
+	return executeAdminMutation(ctx, service, validUnlockRosterCommand(command), func() (idempotency.Command, error) {
 		return unlockRosterReceipt(command)
 	}, func() (RosterView, error) {
 		return service.next.UnlockRoster(ctx, command)
@@ -100,7 +100,7 @@ func (service *AdminIdempotentService) ConfigurePairings(
 	ctx context.Context,
 	command PairingCommand,
 ) (SwissRoundView, error) {
-	return executeAdminMutation(service, ctx, validPairingCommand(command), func() (idempotency.Command, error) {
+	return executeAdminMutation(ctx, service, validPairingCommand(command), func() (idempotency.Command, error) {
 		return pairingReceipt(command)
 	}, func() (SwissRoundView, error) {
 		return service.next.ConfigurePairings(ctx, command)
@@ -111,7 +111,7 @@ func (service *AdminIdempotentService) ApplyTournamentAction(
 	ctx context.Context,
 	command TournamentActionCommand,
 ) (usecase.TournamentView, error) {
-	return executeAdminMutation(service, ctx, validTournamentActionCommand(command), func() (idempotency.Command, error) {
+	return executeAdminMutation(ctx, service, validTournamentActionCommand(command), func() (idempotency.Command, error) {
 		return tournamentActionReceipt(command)
 	}, func() (usecase.TournamentView, error) {
 		return service.next.ApplyTournamentAction(ctx, command)
@@ -119,7 +119,7 @@ func (service *AdminIdempotentService) ApplyTournamentAction(
 }
 
 func (service *AdminIdempotentService) ControlWave(ctx context.Context, command WaveCommand) (WaveView, error) {
-	return executeAdminMutation(service, ctx, validWaveCommand(command), func() (idempotency.Command, error) {
+	return executeAdminMutation(ctx, service, validWaveCommand(command), func() (idempotency.Command, error) {
 		return waveReceipt(command)
 	}, func() (WaveView, error) {
 		return service.next.ControlWave(ctx, command)
@@ -127,7 +127,7 @@ func (service *AdminIdempotentService) ControlWave(ctx context.Context, command 
 }
 
 func (service *AdminIdempotentService) ResolveNoShow(ctx context.Context, command NoShowCommand) error {
-	_, err := executeAdminMutation(service, ctx, validNoShowCommand(command), func() (idempotency.Command, error) {
+	_, err := executeAdminMutation(ctx, service, validNoShowCommand(command), func() (idempotency.Command, error) {
 		return noShowReceipt(command)
 	}, func() (struct{}, error) {
 		return struct{}{}, service.next.ResolveNoShow(ctx, command)
@@ -136,7 +136,7 @@ func (service *AdminIdempotentService) ResolveNoShow(ctx context.Context, comman
 }
 
 func (service *AdminIdempotentService) AssignReserve(ctx context.Context, command ReserveCommand) error {
-	_, err := executeAdminMutation(service, ctx, validReserveCommand(command), func() (idempotency.Command, error) {
+	_, err := executeAdminMutation(ctx, service, validReserveCommand(command), func() (idempotency.Command, error) {
 		return reserveReceipt(command)
 	}, func() (struct{}, error) {
 		return struct{}{}, service.next.AssignReserve(ctx, command)
@@ -145,7 +145,7 @@ func (service *AdminIdempotentService) AssignReserve(ctx context.Context, comman
 }
 
 func (service *AdminIdempotentService) RecordForfeit(ctx context.Context, command ForfeitCommand) error {
-	_, err := executeAdminMutation(service, ctx, validForfeitCommand(command), func() (idempotency.Command, error) {
+	_, err := executeAdminMutation(ctx, service, validForfeitCommand(command), func() (idempotency.Command, error) {
 		return forfeitReceipt(command)
 	}, func() (struct{}, error) {
 		return struct{}{}, service.next.RecordForfeit(ctx, command)
@@ -154,7 +154,7 @@ func (service *AdminIdempotentService) RecordForfeit(ctx context.Context, comman
 }
 
 func (service *AdminIdempotentService) ReplayGame(ctx context.Context, command ReplayCommand) error {
-	_, err := executeAdminMutation(service, ctx, validReplayCommand(command), func() (idempotency.Command, error) {
+	_, err := executeAdminMutation(ctx, service, validReplayCommand(command), func() (idempotency.Command, error) {
 		return replayReceipt(command)
 	}, func() (struct{}, error) {
 		return struct{}{}, service.next.ReplayGame(ctx, command)
@@ -166,7 +166,7 @@ func (service *AdminIdempotentService) CorrectGameResult(
 	ctx context.Context,
 	command CorrectionCommand,
 ) (CorrectionEvidence, error) {
-	return executeAdminMutation(service, ctx, validCorrectionCommand(command), func() (idempotency.Command, error) {
+	return executeAdminMutation(ctx, service, validCorrectionCommand(command), func() (idempotency.Command, error) {
 		return correctionReceipt(command)
 	}, func() (CorrectionEvidence, error) {
 		return service.next.CorrectGameResult(ctx, command)
@@ -219,8 +219,8 @@ func (service *AdminIdempotentService) CreateTournament(
 }
 
 func executeAdminMutation[T any](
-	service *AdminIdempotentService,
 	ctx context.Context,
+	service *AdminIdempotentService,
 	valid bool,
 	receipt func() (idempotency.Command, error),
 	invoke func() (T, error),

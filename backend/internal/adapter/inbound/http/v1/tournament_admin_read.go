@@ -76,11 +76,7 @@ func (c *tournamentController) ExportTournamentIncident(
 		writeTournamentAdminError(w, r, err)
 		return
 	}
-	payload, err := tournamentIncidentResponse(bundle)
-	if err != nil {
-		errmap.HandleError(w, r, err)
-		return
-	}
+	payload := tournamentIncidentResponse(bundle)
 	response.WriteJSON(w, http.StatusOK, payload)
 }
 

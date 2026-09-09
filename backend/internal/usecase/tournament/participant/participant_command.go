@@ -192,6 +192,7 @@ func validateReadinessResult(command usecase.ReadyCommand, event readiness.Readi
 	return nil
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func validateOfficialResultView(view usecase.OfficialResultView) error {
 	if view.ID.IsZero() || view.Ordinal < 1 || view.CommandID == uuid.Nil ||
 		view.TournamentID == uuid.Nil || view.SeriesID == uuid.Nil ||

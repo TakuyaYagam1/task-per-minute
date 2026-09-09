@@ -2,9 +2,10 @@ package postgres
 
 import (
 	"context"
+	"time"
+
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/google/uuid"
-	"time"
 )
 
 func loadFinalSwissPublicationChildren(ctx context.Context, q *sqlc.Queries, scope ProjectionScope, receiptID uuid.UUID, now time.Time, rows *progressionFinalSwissReceiptRows) error {

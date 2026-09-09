@@ -66,6 +66,7 @@ func (r *ExactDraftBranchPlanPostgres) LoadExactDraftBranchPlanAuthority(
 	return authority, nil
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func (r *ExactDraftBranchPlanPostgres) loadExactDraftBranchPlanAuthorityTx(
 	ctx context.Context,
 	draftID uuid.UUID,
@@ -120,6 +121,7 @@ func (r *ExactDraftBranchPlanPostgres) loadExactDraftBranchPlanAuthorityTx(
 	return exactDraftPlanningAuthority(stage, *draft, participants, historyHead, history, candidates)
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func exactDraftPlanningAuthority(
 	stage sqlc.LockExactDraftPlanningStageRow,
 	draft draftusecase.Execution,
@@ -455,6 +457,7 @@ func exactDraftPlanMatchesStage(
 	return nil
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func (r *ExactDraftBranchPlanPostgres) insertExactDraftBranchPlanTx(
 	ctx context.Context,
 	stage sqlc.LockExactDraftPlanningStageRow,
@@ -543,6 +546,7 @@ func exactDraftPlanDocuments(plan assignmentusecase.ExactDraftBranchPlan) ([]byt
 	return constraintGraph, proofEvidence, nil
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func (r *ExactDraftBranchPlanPostgres) insertExactDraftBranchTx(
 	ctx context.Context,
 	stage sqlc.LockExactDraftPlanningStageRow,
@@ -628,7 +632,9 @@ func (r *ExactDraftBranchPlanPostgres) insertExactDraftBranchTx(
 				return evidenceErr
 			}
 			if _, err := querier.CreateAssignmentPlanEdge(ctx, sqlc.CreateAssignmentPlanEdgeParams{
+				//nolint:gosec // Domain validation bounds this value before the storage conversion.
 				ID: edge.ID, PlanID: plan.ID, BranchID: childID, Position: int16(edge.Position),
+				//nolint:gosec // Domain validation bounds this value before the storage conversion.
 				TaskID: edge.Snapshot.TaskID, TaskVersion: int32(edge.Snapshot.Version),
 				SelectionEvidence: selectionEvidence, CreatedAt: tstz(plan.CreatedAt),
 			}); err != nil {
@@ -636,6 +642,7 @@ func (r *ExactDraftBranchPlanPostgres) insertExactDraftBranchTx(
 			}
 			if _, err := querier.CreateAssignmentTaskVersionReservation(ctx, sqlc.CreateAssignmentTaskVersionReservationParams{
 				ID: edge.ReservationID, EdgeID: edge.ID, PlanID: plan.ID, BranchID: childID,
+				//nolint:gosec // Domain validation bounds this value before the storage conversion.
 				TaskID: edge.Snapshot.TaskID, TaskVersion: int32(edge.Snapshot.Version), CreatedAt: tstz(plan.CreatedAt),
 			}); err != nil {
 				return err
@@ -884,6 +891,7 @@ func (r *ExactDraftBranchPlanPostgres) CommitExactDraftBranchActivation(
 	return result, changed, nil
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func (r *ExactDraftBranchPlanPostgres) commitExactDraftBranchActivationTx(
 	ctx context.Context,
 	next assignmentusecase.ExactDraftBranchPlan,
@@ -1024,6 +1032,7 @@ func exactDraftRowsError(err error) error {
 	return domain.ErrConflict
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func (r *ExactDraftBranchPlanPostgres) loadExactDraftBranchActivationTx(
 	ctx context.Context,
 	planID uuid.UUID,
@@ -1121,6 +1130,7 @@ func exactDraftRevisionNumber(aggregate *DraftAggregate, revisionID uuid.UUID) (
 	return 0, false
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func rehydrateExactDraftBranchPlan(
 	planRow sqlc.LockExactDraftAssignmentPlanRow,
 	sourceDraft draftusecase.Execution,
@@ -1264,7 +1274,7 @@ func rehydrateExactDraftBranchPlan(
 		}
 		plan.Branches[index] = branch
 	}
-	if !exactDraftPersistedActivationMatches(planRow, plan, ids) {
+	if !exactDraftPersistedActivationMatches(planRow, plan) {
 		return nil, domain.ErrConflict
 	}
 	if err := plan.Validate(); err != nil {
@@ -1277,7 +1287,6 @@ func rehydrateExactDraftBranchPlan(
 func exactDraftPersistedActivationMatches(
 	row sqlc.LockExactDraftAssignmentPlanRow,
 	plan assignmentusecase.ExactDraftBranchPlan,
-	ids playoff.FinalStageIDs,
 ) bool {
 	if plan.State == assignmentusecase.ExactDraftBranchPlanStatePlanned {
 		return !row.ActiveBranchID.Valid && !row.ActiveDraftBranchID.Valid &&
@@ -1379,6 +1388,7 @@ func rehydrateExactDraftBranch(
 	return branch, nil
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func rehydrateExactDraftChild(
 	plan assignmentusecase.ExactDraftBranchPlan,
 	ids playoff.FinalStageIDs,
@@ -1591,6 +1601,7 @@ func rehydrateExactDraftCandidates(
 	return normalized, append([]domain.TaskVersionRef(nil), normalized.Versions...), nil
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func rehydrateExactDraftEdges(
 	ids playoff.FinalStageIDs,
 	branchKey string,

@@ -3,11 +3,12 @@ package tasktelemetry
 import (
 	"bytes"
 	"errors"
+	"testing"
+
 	taskusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/task"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	logkit "github.com/wahrwelt-kit/go-logkit"
-	"testing"
 )
 
 func TestSourceFileCleanupLoggerWritesStructuredFailure(t *testing.T) {

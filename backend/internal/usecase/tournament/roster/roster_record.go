@@ -9,7 +9,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
-var RosterErrRosterNotFound = errors.New("tournament roster not found")
+var ErrRosterNotFound = errors.New("tournament roster not found")
 
 type RosterRosterRecord struct {
 	ID                 uuid.UUID

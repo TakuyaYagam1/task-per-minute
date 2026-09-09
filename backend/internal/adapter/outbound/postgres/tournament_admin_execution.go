@@ -274,6 +274,7 @@ func (r *TournamentAdminExecutionPostgres) FindWaveCommand(
 	return tournamentAdminWaveCommand(row)
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func (r *TournamentAdminExecutionPostgres) CommitWave(
 	ctx context.Context,
 	mutation tournamentadmin.WaveMutation,

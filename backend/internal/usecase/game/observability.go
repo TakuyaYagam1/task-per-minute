@@ -83,7 +83,7 @@ func ObserveEvent(ctx context.Context, observer Observer, event ReconnectEvent) 
 		return
 	}
 	if ctx == nil {
-		ctx = context.Background()
+		return
 	}
 	defer func() {
 		_ = recover()

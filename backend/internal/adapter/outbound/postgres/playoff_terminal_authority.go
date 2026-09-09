@@ -25,6 +25,7 @@ func validTerminalDraftCommand(command playoff.TerminalDraftCommand) bool {
 		command.DraftID != uuid.Nil && command.CommandID != uuid.Nil
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func validFinalDraftPlan(plan playoff.FinalDraftPlan) bool {
 	return plan.StageCommandID != uuid.Nil && plan.RosterID != uuid.Nil && plan.IDs.Valid() &&
 		plan.Series.ID == plan.IDs.FinalSeriesID && plan.Series.TournamentID != uuid.Nil &&
@@ -38,6 +39,7 @@ func validFinalDraftPlan(plan playoff.FinalDraftPlan) bool {
 		domain.IsValidServerTime(plan.CreatedAt)
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func (repository *PlayoffTerminalPostgres) semifinalStageAuthority(
 	ctx context.Context,
 	rows []sqlc.LockPostseasonSemifinalAuthorityRow,
@@ -208,6 +210,7 @@ func (repository *PlayoffTerminalPostgres) lockFinalStage(
 	return row, true, nil
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func finalDraftStageMatchesPlan(stage sqlc.LockPostseasonFinalStageRow, plan playoff.FinalDraftPlan) bool {
 	return stage.CommandID == plan.StageCommandID && stage.TournamentID == plan.Series.TournamentID &&
 		stage.RosterID == plan.RosterID && stage.FinalSeriesID == plan.Series.ID &&
@@ -285,6 +288,7 @@ func (repository *PlayoffTerminalPostgres) finalDraftExecution(
 	return *execution, nil
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func (repository *PlayoffTerminalPostgres) finalSemifinalAuthority(
 	ctx context.Context,
 	stage sqlc.LockPostseasonFinalStageRow,

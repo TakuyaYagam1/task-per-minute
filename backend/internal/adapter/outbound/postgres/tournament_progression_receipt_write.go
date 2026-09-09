@@ -62,6 +62,7 @@ func (r *TournamentProgressionPostgres) persistCorrectionFinalSwissReceipt(
 	return r.persistFinalSwissReceiptCurrent(ctx, scope, projectionID, now, view, &commandID, &predecessor)
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func (r *TournamentProgressionPostgres) persistFinalSwissReceiptCurrent(
 	ctx context.Context,
 	scope ProjectionScope,
@@ -156,15 +157,11 @@ func (r *TournamentProgressionPostgres) persistFinalSwissReceiptCurrent(
 		return fmt.Errorf("restore source projections: %w", err)
 	}
 	root := rows.chain[0]
-	command := tournamentprogression.Command{
-		CommandID: projectionID, TournamentID: scope.TournamentID, RosterID: scope.RosterID,
-		ExpectedProjectionRevision: current.RevisionNumber, Action: tournamentprogression.ActionStartPlayoffs,
-	}
 	var previous *playoff.FinalSwissProjection
 	if correctionPredecessor != nil {
 		previous = correctionPredecessor.projection
 	} else {
-		previous, err = r.finalSwissReceiptPredecessor(ctx, command, authority)
+		previous, err = r.finalSwissReceiptPredecessor(ctx, authority)
 		if err != nil {
 			return fmt.Errorf("restore predecessor receipt: %w", err)
 		}
@@ -173,7 +170,7 @@ func (r *TournamentProgressionPostgres) persistFinalSwissReceiptCurrent(
 	if err != nil {
 		return err
 	}
-	input, err := progressionReceiptInput(command, authority, root, previous, rows, nodes, proofs, sources)
+	input, err := progressionReceiptInput(authority, root, previous, rows, nodes, proofs, sources)
 	if err != nil {
 		return fmt.Errorf("restore publication input: %w", err)
 	}
@@ -190,13 +187,14 @@ func (r *TournamentProgressionPostgres) persistFinalSwissReceiptCurrent(
 	if err != nil {
 		return fmt.Errorf("read receipt: %w", err)
 	}
-	_, err = progressionSwissInputFromReceipt(command, authority, retained)
+	_, err = progressionSwissInputFromReceipt(authority, retained)
 	if err != nil {
 		return fmt.Errorf("restore receipt: %w", err)
 	}
 	return nil
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func correctionFinalSwissReceiptLedger(
 	series []sqlc.LockTournamentProgressionFinalSwissReceiptSeriesEvidenceRow,
 	ledger []sqlc.LockTournamentProgressionFinalSwissReceiptLedgerRow,
@@ -259,15 +257,15 @@ type correctionFinalSwissReceiptPredecessor struct {
 	projection               *playoff.FinalSwissProjection
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func (r *TournamentProgressionPostgres) prepareCorrectionFinalSwissReceiptPredecessor(
 	ctx context.Context,
 	scope ProjectionScope,
 	projectionID uuid.UUID,
 	physicalRevision int64,
-	commandID uuid.UUID,
 ) (correctionFinalSwissReceiptPredecessor, error) {
 	if r == nil || r.tx == nil || ctx == nil || scope.TournamentID == uuid.Nil || scope.RosterID == uuid.Nil ||
-		projectionID == uuid.Nil || physicalRevision < 1 || commandID == uuid.Nil {
+		projectionID == uuid.Nil || physicalRevision < 1 {
 		return correctionFinalSwissReceiptPredecessor{}, domain.ErrValidation
 	}
 	q := r.tx.Querier(ctx)
@@ -329,11 +327,7 @@ func (r *TournamentProgressionPostgres) prepareCorrectionFinalSwissReceiptPredec
 	if err != nil {
 		return correctionFinalSwissReceiptPredecessor{}, fmt.Errorf("lock correction predecessor receipt: %w", err)
 	}
-	command := tournamentprogression.Command{
-		CommandID: commandID, TournamentID: scope.TournamentID, RosterID: scope.RosterID,
-		ExpectedProjectionRevision: physicalRevision, Action: tournamentprogression.ActionStartPlayoffs,
-	}
-	input, err := progressionSwissInputFromReceipt(command, authority, rows)
+	input, err := progressionSwissInputFromReceipt(authority, rows)
 	if err != nil {
 		return correctionFinalSwissReceiptPredecessor{}, fmt.Errorf("restore correction predecessor receipt: %w", err)
 	}
@@ -355,7 +349,7 @@ func (r *TournamentProgressionPostgres) prepareCorrectionFinalSwissReceiptPredec
 	}, nil
 }
 
-func (r *TournamentProgressionPostgres) finalSwissReceiptPredecessor(ctx context.Context, command tournamentprogression.Command, authority tournamentprogression.Authority) (*playoff.FinalSwissProjection, error) {
+func (r *TournamentProgressionPostgres) finalSwissReceiptPredecessor(ctx context.Context, authority tournamentprogression.Authority) (*playoff.FinalSwissProjection, error) {
 	latest, err := r.tx.Querier(ctx).LockLatestFinalSwissReceipt(ctx, sqlc.LockLatestFinalSwissReceiptParams{
 		TournamentID: authority.Tournament.ID, RosterID: authority.Tournament.RosterID,
 	})
@@ -374,7 +368,7 @@ func (r *TournamentProgressionPostgres) finalSwissReceiptPredecessor(ctx context
 	if err != nil {
 		return nil, err
 	}
-	input, err := progressionSwissInputFromReceipt(command, previousAuthority, retained)
+	input, err := progressionSwissInputFromReceipt(previousAuthority, retained)
 	if err != nil {
 		return nil, err
 	}

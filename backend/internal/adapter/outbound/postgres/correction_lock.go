@@ -263,7 +263,7 @@ func validateCorrectionLockedResult(
 		return domain.ErrConflict
 	}
 	if err := in.Score.Validate(domain.SeriesFormat(series.Format)); err != nil {
-		return fmt.Errorf("%w: corrected series score: %v", domain.ErrValidation, err)
+		return fmt.Errorf("%w: corrected series score: %w", domain.ErrValidation, err)
 	}
 	if !correctionSeriesWinnerMatches(in, series) {
 		return fmt.Errorf("%w: corrected series winner does not match score", domain.ErrValidation)

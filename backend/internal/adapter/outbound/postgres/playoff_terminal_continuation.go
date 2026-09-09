@@ -10,6 +10,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 )
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func (repository *PlayoffTerminalPostgres) PersistFinalContinuation(
 	ctx context.Context,
 	plan playoff.FinalContinuationPlan,
@@ -87,13 +88,14 @@ func (repository *PlayoffTerminalPostgres) PersistFinalContinuation(
 			FinalSeriesID:              stage.FinalSeriesID,
 			SourceScoreRevisionID:      plan.SourceScoreRevision.UUID(),
 			SourceGameResultRevisionID: plan.SourceResultRevision.UUID(),
-			NextPosition:               int16(plan.Slot.Position),
-			NextSlotID:                 plan.Slot.ID,
-			NextGameID:                 plan.Next.GameID,
-			NextWaveID:                 plan.Wave.ID,
-			NextWaveRevisionID:         plan.Wave.RevisionID.UUID(),
-			NextAssignmentID:           plan.Binding.AssignmentID,
-			CreatedAt:                  tstz(plan.CreatedAt),
+			//nolint:gosec // Domain validation bounds this value before the storage conversion.
+			NextPosition:       int16(plan.Slot.Position),
+			NextSlotID:         plan.Slot.ID,
+			NextGameID:         plan.Next.GameID,
+			NextWaveID:         plan.Wave.ID,
+			NextWaveRevisionID: plan.Wave.RevisionID.UUID(),
+			NextAssignmentID:   plan.Binding.AssignmentID,
+			CreatedAt:          tstz(plan.CreatedAt),
 		}); err != nil {
 			return err
 		}

@@ -95,7 +95,7 @@ func TestRESTHandlers_OpenAPIResponseShapes(t *testing.T) {
 	f.validateResponse(t, meReq, meResp)
 
 	boardReq, boardResp := f.doJSON(t, http.MethodGet, "/api/v1/leaderboard", "", "")
-	require.Equal(t, http.StatusOK, boardResp.Code)
+	require.Equal(t, http.StatusOK, boardResp.Code, boardResp.Body.String())
 	f.validateResponse(t, boardReq, boardResp)
 
 	healthReq, healthResp := f.doJSON(t, http.MethodGet, "/health", "", "")

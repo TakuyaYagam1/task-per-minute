@@ -15,6 +15,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 )
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func (repository *PlayoffTerminalPostgres) LoadFinalSettlement(
 	ctx context.Context,
 	command playoff.TerminalSeriesCommand,
@@ -156,6 +157,7 @@ func (repository *PlayoffTerminalPostgres) LoadFinalSettlement(
 	return authority, nil
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func (repository *PlayoffTerminalPostgres) finalSeriesHistory(
 	ctx context.Context,
 	stage sqlc.LockPostseasonFinalStageRow,
@@ -269,6 +271,8 @@ func (repository *PlayoffTerminalPostgres) finalSeriesHistory(
 // committed exact-draft branch remains the source of all three canonical
 // bindings, so Game 2 and Game 3 may legitimately be absent until their
 // preceding settlement creates them.
+//
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func (repository *PlayoffTerminalPostgres) finalExistingBindings(
 	ctx context.Context,
 	stage sqlc.LockPostseasonFinalStageRow,
@@ -344,6 +348,7 @@ func validateFinalMaterializedBindingPrefix(
 	return nil
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func (repository *PlayoffTerminalPostgres) finalProgressionAuthority(
 	ctx context.Context,
 	stage sqlc.LockPostseasonFinalStageRow,

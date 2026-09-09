@@ -76,7 +76,7 @@ func TestAssignmentMigration(t *testing.T) {
 	for _, reservation := range activeReservations {
 		_, err = sharedPool.Exec(ctx, `
 			UPDATE task_version_reservations
-			SET state = 'committed', committed_at = $2
+			SET state = 'committed', committed_at = $2, revision = revision + 1
 			WHERE id = $1`, reservation.reservationID, createdAt.Add(4*time.Second))
 		require.NoError(t, err)
 	}
@@ -92,7 +92,8 @@ func TestAssignmentMigration(t *testing.T) {
 		SET state = 'released',
 			disclosed_at = $2,
 			released_at = $2,
-			release_reason = 'unused draft branch'
+			release_reason = 'unused draft branch',
+			revision = revision + 1
 		WHERE id = $1`,
 		releasedReservations[0].reservationID,
 		createdAt.Add(4*time.Second),
@@ -104,7 +105,8 @@ func TestAssignmentMigration(t *testing.T) {
 			UPDATE task_version_reservations
 			SET state = 'released',
 				released_at = $2,
-				release_reason = 'unused draft branch'
+				release_reason = 'unused draft branch',
+				revision = revision + 1
 			WHERE id = $1`, reservation.reservationID, createdAt.Add(4*time.Second))
 		require.NoError(t, err)
 	}
@@ -194,7 +196,7 @@ func TestAssignmentMigration(t *testing.T) {
 	deliveredAt := committedAt.Add(2 * time.Second)
 	_, err = sharedPool.Exec(ctx, `
 		UPDATE task_version_reservations
-		SET disclosed_at = $2
+		SET disclosed_at = $2, revision = revision + 1
 		WHERE id = $1`, activeReservations[0].reservationID, deliveredAt)
 	require.NoError(t, err)
 
@@ -268,9 +270,9 @@ func TestAssignmentMigration(t *testing.T) {
 		WHERE id = $1`, assignmentID, supersededAt)
 	require.NoError(t, err)
 
-	_, err = sharedPool.Exec(ctx, `
-		UPDATE task_version_reservations
-		SET disclosed_at = $2
+		_, err = sharedPool.Exec(ctx, `
+			UPDATE task_version_reservations
+			SET disclosed_at = $2, revision = revision + 1
 		WHERE id = $1`, activeReservations[1].reservationID, supersededAt)
 	require.NoError(t, err)
 

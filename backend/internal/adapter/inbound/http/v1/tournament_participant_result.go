@@ -72,6 +72,7 @@ func participantPostSeriesResponse(
 	}, nil
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func participantOfficialResultResponse(
 	revision usecase.OfficialResultView,
 ) (api.OfficialResultRevision, error) {
@@ -92,7 +93,7 @@ func participantOfficialResultResponse(
 	result := api.OfficialResultRevision{
 		Id:                         revision.ID.UUID(),
 		PreviousRevisionId:         officialResultRevisionID(revision.PreviousRevisionID),
-		Ordinal:                    int32(revision.Ordinal), //nolint:gosec // bounded above.
+		Ordinal:                    int32(revision.Ordinal),
 		CommandId:                  revision.CommandID,
 		SubjectKind:                api.OfficialResultSubjectKindSeries,
 		TournamentId:               revision.TournamentID,
@@ -107,9 +108,4 @@ func participantOfficialResultResponse(
 		SeriesReason:               &seriesReason,
 	}
 	return result, nil
-}
-
-func participantUUIDValuePointer(value uuid.UUID) *uuid.UUID {
-	cloned := value
-	return &cloned
 }

@@ -38,6 +38,7 @@ func TestProjectionPostgresRejectsChampionFromUndesignatedBO3(t *testing.T) {
 		string(domain.SeriesFormatBO3),
 	)
 	startedAt := time.Now().UTC().Truncate(time.Microsecond)
+	attachWaveScoreGenesis(ctx, t, fixture, seriesID, startedAt)
 	firstSlotID := createMigrationGameSlot(ctx, t, seriesID, fixture.rosterID, 1, "web")
 	secondSlotID := createMigrationGameSlot(ctx, t, seriesID, fixture.rosterID, 2, "crypto")
 	firstAttemptID := createActiveMigrationAttempt(ctx, t, firstSlotID, seriesID, fixture.rosterID, startedAt)
@@ -111,8 +112,73 @@ func TestProjectionPostgresRejectsChampionFromUndesignatedBO3(t *testing.T) {
 		startedAt.Add(3*time.Second),
 	)
 	_, err = postgres.NewProjectionPostgres(postgres.NewTxManager(sharedPool)).PublishFinal(ctx, publication)
-	require.ErrorIs(t, err, domain.ErrConflict)
+	require.ErrorIs(t, err, postgres.ErrProjectionNotFound)
 	assertFinalProjectionNotPersisted(ctx, t, publication, tournamentRevision)
+}
+
+func attachWaveScoreGenesis(
+	ctx context.Context,
+	tb testing.TB,
+	fixture goldenMigrationFixture,
+	seriesID uuid.UUID,
+	createdAt time.Time,
+) {
+	tb.Helper()
+	waveID, _ := createMigrationWave(
+		ctx,
+		tb,
+		fixture.tournamentID,
+		fixture.rosterID,
+		fixture.participantIDs[:2],
+		createdAt,
+	)
+	_, err := sharedPool.Exec(ctx, `
+		INSERT INTO wave_series (wave_id, tournament_id, roster_id, series_id, created_at)
+		VALUES ($1, $2, $3, $4, $5)`,
+		waveID,
+		fixture.tournamentID,
+		fixture.rosterID,
+		seriesID,
+		createdAt,
+	)
+	require.NoError(tb, err)
+
+	var scoreRevisionID uuid.UUID
+	require.NoError(tb, sharedPool.QueryRow(ctx, `
+		SELECT current_revision_id
+		FROM series_score_heads
+		WHERE series_id = $1`, seriesID).Scan(&scoreRevisionID))
+	authorityID := uuid.NewSHA1(waveID, []byte("result-projection-wave-initialization"))
+	payload := []byte(`{"schema":"result-projection-series-score-genesis-v1"}`)
+	payloadDigest := sha256.Sum256(payload)
+	_, err = sharedPool.Exec(ctx, `
+		INSERT INTO result_projection_node_authorities (
+			id, tournament_id, roster_id, source_kind, wave_id, created_at
+		)
+		VALUES ($1, $2, $3, 'wave_initialization', $4, $5)`,
+		authorityID,
+		fixture.tournamentID,
+		fixture.rosterID,
+		waveID,
+		createdAt,
+	)
+	require.NoError(tb, err)
+	_, err = sharedPool.Exec(ctx, `
+		INSERT INTO result_projection_nodes (
+			id, authority_id, tournament_id, roster_id, artifact_kind,
+			entity_id, revision_number, payload, payload_digest, created_at
+		)
+		VALUES ($1, $2, $3, $4, 'series_score', $5, 1, $6::JSON, $7, $8)`,
+		scoreRevisionID,
+		authorityID,
+		fixture.tournamentID,
+		fixture.rosterID,
+		seriesID,
+		payload,
+		payloadDigest[:],
+		createdAt,
+	)
+	require.NoError(tb, err)
 }
 
 func TestOutboxChampionSourceGuardRejectsUndesignatedBO3(t *testing.T) {

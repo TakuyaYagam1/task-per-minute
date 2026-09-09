@@ -165,6 +165,7 @@ func (repository *GoldenRepositoryStorePostgres) Commit(
 	return cloneGoldenRepositoryRevision(*stored), changed, nil
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func (repository *GoldenRepositoryStorePostgres) commit(
 	ctx context.Context,
 	commit GoldenRepositoryCommit,

@@ -141,7 +141,7 @@ type openAPITournamentHTTPRegistration struct {
 
 func openAPITournamentHTTPRegistrations(t *testing.T) []openAPITournamentHTTPRegistration {
 	t.Helper()
-	spec, err := api.GetSwagger()
+	spec, err := api.GetSpec()
 	require.NoError(t, err)
 
 	registrations := make([]openAPITournamentHTTPRegistration, 0)

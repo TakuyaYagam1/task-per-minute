@@ -54,6 +54,7 @@ func participantSettlementProjectionLedger(
 	return ledger
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func (r *ParticipantSettlementRepository) publishParticipantSettlementProjection(
 	ctx context.Context,
 	rosterID uuid.UUID,
@@ -362,6 +363,7 @@ func (r *ParticipantSettlementRepository) persistParticipantSettlementStandings(
 	members := make([]ProjectionMemberInput, len(artifact.Members))
 	for index, member := range artifact.Members {
 		members[index] = ProjectionMemberInput{
+			//nolint:gosec // Domain validation bounds this value before the storage conversion.
 			ParticipantID: member.ParticipantID, Position: int32(member.Position), ScoreMilli: member.ScoreMilli,
 		}
 	}

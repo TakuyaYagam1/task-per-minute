@@ -312,6 +312,7 @@ func (w *LifecycleWorkflow) transition(
 }
 
 func lifecycleProgressionAction(action TournamentAction) (tournamentprogression.Action, bool) {
+	//nolint:exhaustive // This switch intentionally handles only the valid states for this boundary.
 	switch action {
 	case TournamentActionStartGolden:
 		return tournamentprogression.ActionStartGolden, true
@@ -323,6 +324,7 @@ func lifecycleProgressionAction(action TournamentAction) (tournamentprogression.
 }
 
 func lifecycleTransitionAdmitted(action TournamentAction, authority LifecycleAuthority) bool {
+	//nolint:exhaustive // This switch intentionally handles only the valid states for this boundary.
 	switch action {
 	case TournamentActionOpenRegistration:
 		return authority.Tournament.State == domain.TournamentStateDraft

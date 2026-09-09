@@ -191,6 +191,7 @@ func canonicalSwissInput(input resultprojection.CanonicalMaterializationInput) r
 	return clone
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func validateSwissEvidence(authority Authority, evidence SwissEvidence) error {
 	if evidence.ExpectedRounds < 1 || evidence.ExpectedRounds != evidence.TerminalRounds ||
 		evidence.ExpectedWaves != evidence.TerminalWaves || evidence.ExpectedWaves != evidence.ExpectedRounds ||

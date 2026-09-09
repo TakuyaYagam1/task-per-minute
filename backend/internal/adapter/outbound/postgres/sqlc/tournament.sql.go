@@ -419,6 +419,16 @@ func (q *Queries) InsertTournamentCreateReceipt(ctx context.Context, arg InsertT
 }
 
 const insertTournamentParticipant = `-- name: InsertTournamentParticipant :one
+WITH locked_roster AS MATERIALIZED (
+    UPDATE rosters AS roster
+    SET revision = roster.revision + 1,
+        updated_at = $4
+    WHERE roster.id = $6
+        AND roster.locked_at IS NULL
+        AND roster.execution_started_at IS NULL
+    RETURNING roster.id,
+        roster.tournament_id
+)
 INSERT INTO participants (
     id,
     roster_id,
@@ -435,13 +445,10 @@ SELECT $1 AS participant_id,
     $3,
     $4,
     $4
-FROM rosters AS roster
+FROM locked_roster AS roster
 INNER JOIN players AS player
     ON player.id = $5
     AND player.deleted_at IS NULL
-WHERE roster.id = $6
-    AND roster.locked_at IS NULL
-    AND roster.execution_started_at IS NULL
 RETURNING id,
     roster_id,
     player_id,

@@ -51,6 +51,7 @@ func persistTerminalSwissPoints(ctx context.Context, q *sqlc.Queries, in ResultS
 			ID: uuid.NewSHA1(commit.CommandID, []byte("terminal-swiss-point:"+award.ParticipantID.String())), TournamentID: in.Scope.TournamentID, RosterID: in.Scope.RosterID,
 			RoundID: row.RoundID, RoundNumber: row.RoundNumber, SourceKind: "series", SourceSeriesID: nullableUUIDValue(in.Scope.SeriesID),
 			SeriesResultRevisionID: nullableUUIDValue(commit.SeriesResultRevisionID), ResultLabel: optionalTrimmedString(string(label)),
+			//nolint:gosec // Domain validation bounds this value before the storage conversion.
 			ParticipantID: award.ParticipantID, OpponentID: nullableUUIDValue(award.OpponentID), Points: int16(award.Points),
 			StableSeed: seeds[award.ParticipantID], CreatedAt: tstz(in.SettledAt),
 		}); err != nil {
@@ -60,6 +61,7 @@ func persistTerminalSwissPoints(ctx context.Context, q *sqlc.Queries, in ResultS
 	return nil
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func materializeTerminalSwissStandings(ctx context.Context, tx *TxManager, in ResultSettlementInput) (bool, error) {
 	q := tx.Querier(ctx)
 	commits, err := q.LockTerminalProjectionCommit(ctx, sqlc.LockTerminalProjectionCommitParams{TournamentID: in.Scope.TournamentID, RosterID: in.Scope.RosterID, SeriesID: in.Scope.SeriesID, ProjectionRevisionID: in.IDs.ProjectionEvidenceID})
@@ -106,6 +108,7 @@ func materializeTerminalSwissStandings(ctx context.Context, tx *TxManager, in Re
 	artifact := materialized.Artifacts[0]
 	members := make([]ProjectionMemberInput, len(artifact.Members))
 	for index, member := range artifact.Members {
+		//nolint:gosec // Domain validation bounds this value before the storage conversion.
 		members[index] = ProjectionMemberInput{ParticipantID: member.ParticipantID, Position: int32(member.Position), ScoreMilli: member.ScoreMilli}
 	}
 	canonicalLedger := make([]participantSettlementLedgerEntry, len(ledger))

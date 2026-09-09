@@ -22,8 +22,8 @@ func TestProgressionReceiptOrdinaryHeadHydration(t *testing.T) {
 	previous := domain.DerivedRevisionID(score.PreviousRevisionID.UUID())
 	scoreNode, err := domain.NewProjectionRevision(domain.DerivedRevisionID(score.ID.UUID()), input.TournamentID, official.ScoreProjection.Revision().Artifact(), score.Ordinal, &previous, score.RecordedAt, official.ScoreProjection.Payload())
 	require.NoError(t, err)
-	var physical []sqlc.LockTournamentProgressionFinalSwissReceiptProjectionNodesRow
-	var logical []sqlc.LockTournamentProgressionFinalSwissReceiptLogicalResultNodesRow
+	physical := make([]sqlc.LockTournamentProgressionFinalSwissReceiptProjectionNodesRow, 0, 2)
+	logical := make([]sqlc.LockTournamentProgressionFinalSwissReceiptLogicalResultNodesRow, 0, 2)
 	for _, node := range []domain.ProjectionRevision{resultNode, scoreNode} {
 		revision := node.Revision()
 		digest := revision.PayloadDigest()
@@ -73,7 +73,7 @@ func TestProgressionReceiptOrdinaryHeadHydration(t *testing.T) {
 			ResultEventID: uuid.New(), OccurredAt: tstz(score.RecordedAt), CreatedAt: tstz(score.RecordedAt),
 			ResultState: string(attempt.State), ResultReason: string(attempt.Reason), WinnerID: nullableUUIDValue(*attempt.WinnerID),
 		}}
-		head, err := progressionReceiptScoreHead(authority, sqlc.LockTournamentProgressionFinalSwissReceiptChainRow{ProjectionRevisionID: input.RevisionID.UUID()}, row, evidence.Series(), nil, nodes[progressionReceiptNodeKey{input.RevisionID.UUID(), score.ID.UUID()}], attemptRows, nil, nil)
+		head, err := progressionReceiptScoreHead(authority, sqlc.LockTournamentProgressionFinalSwissReceiptChainRow{ProjectionRevisionID: input.RevisionID.UUID()}, row, evidence.Series(), nodes[progressionReceiptNodeKey{input.RevisionID.UUID(), score.ID.UUID()}], attemptRows, nil, nil)
 		require.NoError(t, err)
 		require.True(t, head.HasOrdinarySourceIdentity())
 		require.NoError(t, head.Clone().Validate())

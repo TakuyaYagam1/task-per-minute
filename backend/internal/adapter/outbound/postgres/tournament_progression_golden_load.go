@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
@@ -18,18 +19,21 @@ func (r *TournamentProgressionPostgres) LoadGoldenEvidence(ctx context.Context, 
 		var err error
 		result.Swiss, err = r.loadSwissEvidence(txCtx, authority, func(lockCtx context.Context) error {
 			result.Settlements, err = r.loadGoldenSettlements(lockCtx, authority)
-			return err
+			if err != nil {
+				return fmt.Errorf("load Golden settlements: %w", err)
+			}
+			return nil
 		})
 		if err != nil {
-			return err
+			return fmt.Errorf("load Golden Swiss evidence: %w", err)
 		}
 		rows, err := r.lockFinalSwissReceiptRows(txCtx, authority)
 		if err != nil {
-			return err
+			return fmt.Errorf("lock Golden Final Swiss receipt: %w", err)
 		}
-		input, err := progressionSwissInputFromReceipt(tournamentprogression.Command{}, authority, rows)
+		input, err := progressionSwissInputFromReceipt(authority, rows)
 		if err != nil {
-			return err
+			return fmt.Errorf("restore Golden Final Swiss receipt: %w", err)
 		}
 		for _, round := range input.Rounds {
 			result.CurrentTerminalSeries = append(result.CurrentTerminalSeries, round.Series...)
@@ -47,9 +51,19 @@ func (r *TournamentProgressionPostgres) LoadGoldenEvidence(ctx context.Context, 
 
 func (r *TournamentProgressionPostgres) loadGoldenSettlements(ctx context.Context, authority tournamentprogression.Authority) ([]playoff.Top4GoldenSettlement, error) {
 	q := r.tx.Querier(ctx)
+	resolved, err := q.ResolveTournamentProgressionGoldenSource(ctx, sqlc.ResolveTournamentProgressionGoldenSourceParams{
+		TournamentID: authority.Tournament.ID, RosterID: authority.Tournament.RosterID,
+		ProjectionRevisionID: authority.ProjectionRevisionID, ProjectionRevision: authority.ProjectionRevision,
+	})
+	if err != nil {
+		return nil, tournamentProgressionReadError("resolve Golden source", err)
+	}
+	goldenAuthority := authority
+	goldenAuthority.ProjectionRevisionID = resolved.ProjectionRevisionID
+	goldenAuthority.ProjectionRevision = resolved.ProjectionRevision
 	p := sqlc.LockTournamentProgressionGoldenSettlementsParams{
 		TournamentID: authority.Tournament.ID, RosterID: authority.Tournament.RosterID,
-		SourceProjectionRevisionID: authority.ProjectionRevisionID, SourceProjectionRevision: authority.ProjectionRevision,
+		SourceProjectionRevisionID: resolved.ProjectionRevisionID, SourceProjectionRevision: resolved.ProjectionRevision,
 	}
 	groups, err := q.LockTournamentProgressionGoldenSettlements(ctx, p)
 	if err != nil {
@@ -71,5 +85,5 @@ func (r *TournamentProgressionPostgres) loadGoldenSettlements(ctx context.Contex
 	if err != nil {
 		return nil, tournamentProgressionReadError("lock Golden seals", err)
 	}
-	return progressionGoldenSettlements(authority, groups, attempts, commits, ledger, seals)
+	return progressionGoldenSettlements(goldenAuthority, groups, attempts, commits, ledger, seals)
 }

@@ -36,6 +36,7 @@ func (r *TournamentAdminResultPostgres) CommitOperatorNoShow(
 	return committed, true, nil
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func (r *TournamentAdminResultPostgres) commitOperatorNoShow(
 	ctx context.Context,
 	command tournamentadmin.NoShowCommand,
@@ -120,7 +121,7 @@ func (r *TournamentAdminResultPostgres) commitOperatorNoShow(
 	if _, err = querier.CreateResultEvent(ctx, sqlc.CreateResultEventParams{
 		ID: ids.resultEventID, TournamentID: command.TournamentID, RosterID: snapshot.series.RosterID,
 		SeriesID: command.SeriesID, AttemptID: resolution.GameRevisions[0].GameID,
-		ServerSequence: int64(sequence), IdempotencyKey: ids.resultIdempotencyKey,
+		ServerSequence: sequence, IdempotencyKey: ids.resultIdempotencyKey,
 		ResultState: string(domain.GameStateCancelled), ResultReason: string(domain.GameResultReasonSeriesCancelled),
 		OccurredAt: tstz(resolution.ResolvedAt), CreatedAt: tstz(resolution.ResolvedAt),
 	}); err != nil {
@@ -267,7 +268,7 @@ func (r *TournamentAdminResultPostgres) createOperatorNoShowRevisions(
 			ResultScope{TournamentID: resolution.Scope.TournamentID, RosterID: snapshot.series.RosterID,
 				SeriesID: resolution.Scope.SeriesID, AttemptID: item.GameAttemptID},
 			resolution.ScoreRevision.ID.UUID(),
-			int16(index+1), //nolint:gosec // a BO1 or BO3 no-show has at most three slots.
+			int16(index+1),
 			item,
 		); err != nil {
 			return err

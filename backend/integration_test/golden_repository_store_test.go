@@ -45,10 +45,10 @@ func TestGoldenRepositoryStorePreservesScopeRevisionAndReplay(t *testing.T) {
 
 	_, err = sharedPool.Exec(ctx, `
 		INSERT INTO golden_repository_revisions (
-			scope_id, revision_id, revision_number, previous_revision_id,
+			scope_id, aggregate_kind, revision_id, revision_number, previous_revision_id,
 			payload, payload_digest, created_at
 		)
-		VALUES ($1, $2, 1, NULL, $3::JSONB, $4, $5)`,
+		VALUES ($1, 'state', $2, 1, NULL, $3::JSONB, $4, $5)`,
 		scopeID,
 		revisionID,
 		payload,

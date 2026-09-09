@@ -91,6 +91,7 @@ func (payload *participantReceiptPayload) uuid(value uuid.UUID) {
 
 func (payload *participantReceiptPayload) int64(value int64) {
 	var encoded [8]byte
+	//nolint:gosec // Signed timestamp bits are intentionally encoded as unsigned digest input.
 	binary.BigEndian.PutUint64(encoded[:], uint64(value))
 	_, _ = payload.buffer.Write(encoded[:])
 }

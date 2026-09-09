@@ -60,8 +60,8 @@ type RealtimeDelivery struct {
 type realtimeEventRenderer func(context.Context, eventdelivery.Event) ([]byte, error)
 
 type realtimeSocket interface {
-	Write(context.Context, coderws.MessageType, []byte) error
-	Ping(context.Context) error
+	Write(ctx context.Context, messageType coderws.MessageType, payload []byte) error
+	Ping(ctx context.Context) error
 	CloseNow() error
 }
 
@@ -216,8 +216,8 @@ func cloneRealtimeTimePointer(value *time.Time) *time.Time {
 }
 
 func realtimeTimePointer(value time.Time) *time.Time {
-	copy := value
-	return &copy
+	clone := value
+	return &clone
 }
 
 func (delivery *RealtimeDelivery) catchUpSessions(ctx context.Context) error {
@@ -253,6 +253,7 @@ func waitRealtimeDeliveryPoll(ctx context.Context, interval time.Duration) bool 
 	}
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func (delivery *RealtimeDelivery) openSession(
 	ctx context.Context,
 	tournamentID uuid.UUID,

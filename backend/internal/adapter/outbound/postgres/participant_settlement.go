@@ -296,8 +296,9 @@ func (r *ParticipantSettlementRepository) appendParticipantSettlementSwissLedger
 			SourceKind: "series", SourceSeriesID: nullableUUIDValue(record.Scope.Game.SeriesID),
 			SeriesResultRevisionID: nullableUUIDValue(result.Commit.SeriesResultRevisionID.UUID),
 			ResultLabel:            optionalTrimmedString("played"), ParticipantID: row.ParticipantID,
+			//nolint:gosec // Domain validation bounds this value before the storage conversion.
 			OpponentID: nullableUUIDValue(row.OpponentID), Points: int16(row.Points),
-			EffectiveTimeNs: record.EffectiveSolveTime.Nanoseconds(), StableSeed: int32(row.StableSeed),
+			EffectiveTimeNs: record.EffectiveSolveTime.Nanoseconds(), StableSeed: row.StableSeed,
 			CreatedAt: tstz(record.SettledAt),
 		}
 		if row.ParticipantID == record.WinningSubmission.ParticipantID {

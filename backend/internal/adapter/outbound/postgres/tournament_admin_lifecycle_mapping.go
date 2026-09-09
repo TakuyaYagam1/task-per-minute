@@ -49,6 +49,7 @@ func tournamentAdminLifecycleAuthority(
 	}, nil
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func lifecycleRosterReadyForSwiss(
 	roster sqlc.Roster,
 	participants []sqlc.ListTournamentAdminRosterParticipantsRow,

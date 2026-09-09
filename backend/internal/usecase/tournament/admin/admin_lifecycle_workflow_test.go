@@ -318,6 +318,7 @@ func lifecycleAuthorityFixture(state domain.TournamentState) tournamentadmin.Lif
 	createdAt := time.Date(2026, time.September, 6, 10, 0, 0, 0, time.UTC)
 	startedAt := createdAt.Add(time.Minute)
 	var started *time.Time
+	//nolint:exhaustive // This switch intentionally handles only the valid states for this boundary.
 	switch state {
 	case domain.TournamentStateSwiss, domain.TournamentStateGolden, domain.TournamentStatePlayoffs,
 		domain.TournamentStateTechnicalPause:

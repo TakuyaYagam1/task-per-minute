@@ -78,7 +78,20 @@ func TestReplayReserveAuthorityProducerGuards(t *testing.T) {
 		tx, err = sharedPool.Begin(ctx)
 		require.NoError(t, err)
 		defer func() { _ = tx.Rollback(ctx) }()
-		_, err = tx.Exec(ctx, `UPDATE tasks SET enabled = false WHERE id = $1`, candidateID)
+		_, err = tx.Exec(ctx, `
+			UPDATE tasks
+			SET enabled = false
+			WHERE id IN (
+				SELECT pool_version.task_id
+				FROM replay_reserve_authorities AS authority
+				INNER JOIN replay_reserve_authority_pool_versions AS pool_version
+					ON pool_version.assignment_id = authority.assignment_id
+				INNER JOIN task_versions AS version
+					ON version.task_id = pool_version.task_id
+					AND version.version = pool_version.task_version
+				WHERE authority.assignment_id = $1
+					AND version.category = authority.required_category
+			)`, assignmentID)
 		require.NoError(t, err)
 		_, eligible = findReplayEligibleCandidateWith(ctx, t, tx, assignmentID)
 		require.False(t, eligible)
@@ -232,6 +245,7 @@ func completeReplayAuthorityDraft(
 	}
 	for index, step := range steps {
 		revisionID := uuid.New()
+		commandID := uuid.New()
 		tx, err := sharedPool.Begin(ctx)
 		require.NoError(t, err)
 		defer func() { _ = tx.Rollback(ctx) }()
@@ -248,7 +262,7 @@ func completeReplayAuthorityDraft(
 			)
 			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::JSONB, $15)`,
 			revisionID, fixture.draftID, fixture.seriesID, fixture.rosterID, index+2,
-			previousID, uuid.New(), uuid.New(), step.state, step.turn, step.currentActor,
+			previousID, commandID, uuid.New(), step.state, step.turn, step.currentActor,
 			step.currentAction, step.absoluteDeadline, selectedCategories, createdAt,
 		)
 		require.NoError(t, err)
@@ -258,7 +272,7 @@ func completeReplayAuthorityDraft(
 				category, scheduled_deadline, occurred_at, automatic, created_at
 			)
 			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, false, $10)`,
-			fixture.draftID, revisionID, uuid.New(), step.actionTurn, step.actor,
+			fixture.draftID, revisionID, commandID, step.actionTurn, step.actor,
 			step.action, step.category, deadline, createdAt, createdAt,
 		)
 		require.NoError(t, err)

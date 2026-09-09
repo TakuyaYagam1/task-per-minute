@@ -28,8 +28,8 @@ const (
 var (
 	ErrTournamentNotFound           = &Error{Code: ErrorCodeTournamentNotFound, Message: "tournament not found"}
 	ErrTournamentProjectionNotFound = &Error{Code: ErrorCodeTournamentProjectionNotFound, Message: "tournament projection not found"}
-	ErrInvalidTournamentState = errors.New("invalid tournament state")
-	ErrTournamentTransition   = errors.New("tournament transition is not allowed")
+	ErrInvalidTournamentState       = errors.New("invalid tournament state")
+	ErrTournamentTransition         = errors.New("tournament transition is not allowed")
 )
 
 var tournamentTransitions = map[TournamentState]map[TournamentState]struct{}{

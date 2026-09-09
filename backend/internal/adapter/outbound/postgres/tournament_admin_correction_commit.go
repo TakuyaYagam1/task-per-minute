@@ -21,6 +21,7 @@ import (
 	tournamentprogression "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/progression"
 )
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func (r *TournamentAdminCorrectionPostgres) buildCorrectionCommit(
 	ctx context.Context,
 	querier *sqlc.Queries,
@@ -137,6 +138,7 @@ func correctionSettlementIDs(commandID uuid.UUID) ResultSettlementIDs {
 	}
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func persistTournamentAdminCorrectionSwissLedger(
 	ctx context.Context,
 	querier *sqlc.Queries,
@@ -159,6 +161,7 @@ func persistTournamentAdminCorrectionSwissLedger(
 		}
 		if entry.ParticipantID == uuid.Nil || entry.OpponentID == nil || *entry.OpponentID == uuid.Nil ||
 			entry.ParticipantID == *entry.OpponentID || entry.RoundID == uuid.Nil || entry.RoundNumber < 1 ||
+			//nolint:gosec // Domain validation bounds this value before the storage conversion.
 			entry.StableSeed < 1 || int(int32(entry.StableSeed)) != entry.StableSeed {
 			return domain.ErrConflict
 		}
@@ -172,7 +175,7 @@ func persistTournamentAdminCorrectionSwissLedger(
 		if entry.Points < 0 || entry.Points > domain.TournamentMaxParticipants {
 			return domain.ErrValidation
 		}
-		points := int16(entry.Points) //nolint:gosec // bounded by TournamentMaxParticipants.
+		points := int16(entry.Points)
 		var accepted *int64
 		if entry.AcceptedSolveTime != nil {
 			value := int64(*entry.AcceptedSolveTime)
@@ -186,11 +189,12 @@ func persistTournamentAdminCorrectionSwissLedger(
 			ResultLabel: optionalTrimmedString(string(entry.ResultLabel)), ParticipantID: entry.ParticipantID,
 			OpponentID: nullableUUIDValue(*entry.OpponentID), Points: points,
 			EffectiveTimeNs: int64(entry.EffectiveTime), AcceptedSolveTimeNs: accepted,
+			//nolint:gosec // Domain validation bounds this value before the storage conversion.
 			StableSeed: int32(entry.StableSeed), CreatedAt: tstz(mutation.Evidence.RequestedAt),
 		})
 		if writeErr != nil {
 			return fmt.Errorf(
-				"create Swiss ledger successor for participant %s: %w: %v",
+				"create Swiss ledger successor for participant %s: %w: %w",
 				entry.ParticipantID,
 				mapRepositoryWriteError("TournamentAdminCorrectionPostgres - create Swiss ledger successor", writeErr),
 				writeErr,
@@ -221,6 +225,7 @@ func correctionOfficialUUIDPointer(value domain.OfficialResultRevisionID) *uuid.
 	return &id
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func (r *TournamentAdminCorrectionPostgres) materializedCorrectionArtifacts(
 	ctx context.Context,
 	querier *sqlc.Queries,
@@ -376,7 +381,7 @@ func (r *TournamentAdminCorrectionPostgres) materializedCorrectionArtifacts(
 	materialized, err := correctionusecase.BuildMaterializedProjections(state)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf(
-			"%w: materialize correction projections: %v (kinds=%v ledger=%d top_four=%d bracket=%d)",
+			"%w: materialize correction projections: %w (kinds=%v ledger=%d top_four=%d bracket=%d)",
 			domain.ErrValidation,
 			err,
 			state.ArtifactKinds,
@@ -429,6 +434,7 @@ func (r *TournamentAdminCorrectionPostgres) materializedCorrectionArtifacts(
 			Payload: correctionJSONRaw(artifact.Payload), PayloadDigest: artifact.PayloadDigest,
 			Members: correctionMaterializedMembers(artifact.Members),
 		}
+		//nolint:exhaustive // This switch intentionally handles only the valid states for this boundary.
 		switch artifact.Kind {
 		case domain.ArtifactKindStandings:
 			input.Dependencies = []ProjectionDependencyInput{
@@ -440,7 +446,6 @@ func (r *TournamentAdminCorrectionPostgres) materializedCorrectionArtifacts(
 				mutation.Command.CommandID, artifact.Kind, standingsID,
 			)}
 			for _, commitID := range artifact.GoldenPositionCommitIDs {
-				commitID := commitID
 				input.Dependencies = append(input.Dependencies, ProjectionDependencyInput{
 					ID: correctionWorkflowUUID(
 						mutation.Command.CommandID,
@@ -558,6 +563,7 @@ func correctionMaterializedMembers(
 	result := make([]ProjectionMemberInput, len(members))
 	for index, member := range members {
 		result[index] = ProjectionMemberInput{
+			//nolint:gosec // Domain validation bounds this value before the storage conversion.
 			ParticipantID: member.ParticipantID, Position: int32(member.Position), ScoreMilli: member.ScoreMilli,
 		}
 	}
@@ -634,6 +640,7 @@ func correctionLogicalBindings(
 }
 
 func correctionResultArtifactKind(kind domain.ArtifactKind) bool {
+	//nolint:exhaustive // This switch intentionally handles only the valid states for this boundary.
 	switch kind {
 	case domain.ArtifactKindGameResult, domain.ArtifactKindSeriesScore, domain.ArtifactKindSeriesResult:
 		return true
@@ -642,6 +649,7 @@ func correctionResultArtifactKind(kind domain.ArtifactKind) bool {
 	}
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func persistTournamentAdminCorrectionLogicalPlan(
 	ctx context.Context,
 	querier *sqlc.Queries,
@@ -682,6 +690,7 @@ func persistTournamentAdminCorrectionLogicalPlan(
 		revision := projection.Revision()
 		if mutation.Stage.CreatePlayoff && revision.Artifact().EntityID == mutation.Command.TournamentID {
 			var stageNodeID uuid.UUID
+			//nolint:exhaustive // This switch intentionally handles only the valid states for this boundary.
 			switch revision.Artifact().Kind {
 			case domain.ArtifactKindTopFour:
 				stageNodeID = playoffIDs.Top4NodeID
@@ -866,6 +875,7 @@ func persistTournamentAdminCorrectionLogicalPlan(
 			return fmt.Errorf("correction decision projection %s is not persisted: %w", decision.ProjectionRevisionID.UUID(), domain.ErrConflict)
 		}
 		if err := querier.CreateCorrectionProjectionDecision(ctx, sqlc.CreateCorrectionProjectionDecisionParams{
+			//nolint:gosec // Domain validation bounds this value before the storage conversion.
 			ID: decision.ID, CommandID: mutation.Command.CommandID, SequenceNumber: int32(decision.Sequence),
 			ProjectionNodeID: node.id, Payload: decision.Payload,
 			PayloadDigest: correctionDigestBytes(decision.PayloadDigest), RecordedAt: tstz(decision.RecordedAt),
@@ -891,6 +901,7 @@ func persistTournamentAdminCorrectionLogicalPlan(
 }
 
 func correctionAuthorityResultSourceID(authority correctionusecase.Authority, kind domain.ArtifactKind) uuid.UUID {
+	//nolint:exhaustive // This switch intentionally handles only the valid states for this boundary.
 	switch kind {
 	case domain.ArtifactKindGameResult:
 		return authority.GameResult.ID.UUID()
@@ -978,6 +989,7 @@ func marshalTournamentAdminCorrectionEvidence(
 		Supersessions:    append([]tournamentadmin.ProjectionSupersessionView(nil), evidence.Supersessions...),
 		UnlockIntents:    append(make([]tournamentadmin.CorrectionUnlockIntent, 0, len(evidence.UnlockIntents)), evidence.UnlockIntents...),
 	}
+	//nolint:musttag // This versioned application-owned document is validated on both encode and decode.
 	payload, err := json.Marshal(document)
 	if err != nil {
 		return nil, fmt.Errorf("TournamentAdminCorrectionPostgres - marshal evidence: %w", err)
@@ -985,6 +997,7 @@ func marshalTournamentAdminCorrectionEvidence(
 	return payload, nil
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func tournamentAdminCorrectionCommandRecord(
 	row sqlc.ResultCorrectionCommit,
 ) (*tournamentadmin.CorrectionCommandRecord, error) {
@@ -998,6 +1011,7 @@ func tournamentAdminCorrectionCommandRecord(
 		return nil, domain.ErrConflict
 	}
 	var document tournamentAdminCorrectionEvidenceDocument
+	//nolint:musttag // This versioned application-owned document is validated on both encode and decode.
 	if err := json.Unmarshal(row.EvidenceDocument, &document); err != nil {
 		return nil, domain.ErrConflict
 	}
@@ -1028,8 +1042,4 @@ func validTournamentAdminCorrectionEvidence(value tournamentadmin.CorrectionEvid
 	return value.CommandID != uuid.Nil && value.TournamentID != uuid.Nil && value.SeriesID != uuid.Nil &&
 		value.GameID != uuid.Nil && value.OperatorID != uuid.Nil && value.Reason != "" &&
 		validServerTime(correctionTime(value.RequestedAt)) && value.ValidationDigest != ([sha256.Size]byte{})
-}
-
-func correctionCommitNoRows(err error) bool {
-	return errors.Is(err, pgx.ErrNoRows)
 }

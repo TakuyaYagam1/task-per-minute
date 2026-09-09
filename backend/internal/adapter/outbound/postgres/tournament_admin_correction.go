@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -75,6 +74,7 @@ func (r *TournamentAdminCorrectionPostgres) LockCorrectionAuthority(
 	return r.loadCorrectionAuthority(ctx, tournamentID, seriesID, gameID)
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func (r *TournamentAdminCorrectionPostgres) CommitCorrection(
 	ctx context.Context,
 	mutation tournamentadmin.CorrectionMutation,
@@ -84,7 +84,7 @@ func (r *TournamentAdminCorrectionPostgres) CommitCorrection(
 	}
 	if !validTournamentAdminCorrectionMutation(mutation) {
 		return tournamentadmin.CorrectionEvidence{}, false, fmt.Errorf(
-			"%w: correction mutation command=%t authority=%t request=%t plan=%v evidence=%t",
+			"%w: correction mutation command=%t authority=%t request=%t plan=%w evidence=%t",
 			domain.ErrValidation,
 			mutation.Command.CommandID != uuid.Nil && mutation.Command.TournamentID != uuid.Nil &&
 				mutation.Command.SeriesID != uuid.Nil && mutation.Command.GameID != uuid.Nil &&
@@ -144,7 +144,6 @@ func (r *TournamentAdminCorrectionPostgres) CommitCorrection(
 			ProjectionScope{TournamentID: scope.TournamentID, RosterID: scope.RosterID},
 			mutation.Authority.ProjectionRevisionID,
 			mutation.Authority.ProjectionRevision,
-			mutation.Command.CommandID,
 		)
 		if err != nil {
 			return fmt.Errorf("TournamentAdminCorrectionPostgres - lock Final Swiss predecessor: %w", err)
@@ -409,10 +408,6 @@ func correctionJSONDocument(value any) ([]byte, [sha256.Size]byte, error) {
 	return payload, sha256.Sum256(payload), nil
 }
 
-func correctionHexDigest(value [sha256.Size]byte) string {
-	return hex.EncodeToString(value[:])
-}
-
 func correctionBytesEqual(first, second []byte) bool {
 	return bytes.Equal(first, second)
 }
@@ -433,31 +428,4 @@ func tournamentAdminCorrectionError(operation string, err error) error {
 		return domain.ErrConflict
 	}
 	return fmt.Errorf("TournamentAdminCorrectionPostgres - %s: %w", operation, err)
-}
-
-func correctionProjectionState(kind domain.ArtifactKind, entityID, sourceID uuid.UUID, revision int64, at time.Time) (domain.ProjectionRevision, error) {
-	payload, _, err := correctionJSONDocument(struct {
-		Schema   string `json:"schema"`
-		Kind     string `json:"kind"`
-		EntityID string `json:"entity_id"`
-		SourceID string `json:"source_id"`
-	}{
-		Schema: "tournament-correction-baseline-v1", Kind: string(kind),
-		EntityID: entityID.String(), SourceID: sourceID.String(),
-	})
-	if err != nil {
-		return domain.ProjectionRevision{}, err
-	}
-	if revision < 1 {
-		return domain.ProjectionRevision{}, domain.ErrValidation
-	}
-	var previous *domain.DerivedRevisionID
-	if revision > 1 {
-		previousValue := domain.DerivedRevisionID(correctionLogicalBaselineUUID(kind, uuid.NewSHA1(sourceID, []byte("previous"))))
-		previous = &previousValue
-	}
-	return domain.NewProjectionRevision(
-		domain.DerivedRevisionID(correctionLogicalBaselineUUID(kind, sourceID)), uuid.Nil,
-		domain.ArtifactRef{Kind: kind, EntityID: entityID}, int(revision), previous, correctionTime(at), payload,
-	)
 }

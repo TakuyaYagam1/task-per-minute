@@ -94,7 +94,7 @@ func TestExactDraftContingencyReservationGuards(t *testing.T) {
 		)
 		err = insertExactDraftReservation(ctx, sharedPool, second)
 		require.Error(t, err)
-		require.NoError(t, releaseExactDraftReservation(ctx, sharedPool, first.id, fixture.createdAt.Add(time.Minute)))
+			require.NoError(t, releaseExactDraftReservation(ctx, sharedPool, first.id, fixture.createdAt.Add(2*time.Minute)))
 	})
 
 	t.Run("ordinary and contingent writers serialize", func(t *testing.T) {
@@ -239,8 +239,14 @@ func createExactDraftReservationFixture(ctx context.Context, t *testing.T) exact
 	require.NoError(t, err)
 	_, err = sharedPool.Exec(ctx, `
 		INSERT INTO task_version_health_attestations (task_id, task_version, revision, healthy, source)
-		SELECT task_id, version, 1, true, 'integration'
-		FROM task_versions`)
+		SELECT version.task_id, version.version, 1, true, 'content_validation'
+		FROM task_versions AS version
+		WHERE NOT EXISTS (
+			SELECT 1
+			FROM task_version_health_attestations AS attestation
+			WHERE attestation.task_id = version.task_id
+				AND attestation.task_version = version.version
+		)`)
 	require.NoError(t, err)
 	_, err = sharedPool.Exec(ctx, `SELECT publish_task_pool_heads()`)
 	require.NoError(t, err)
@@ -628,7 +634,7 @@ func requireExactlyOneExactDraftReservationWinner(
 			winnerID = id
 		}
 	}
-	require.NotEqual(t, uuid.Nil, winnerID)
+	require.NotEqual(t, uuid.Nil, winnerID, "reservation writes: %v", results)
 	require.Len(t, results, 2)
 	for id, err := range results {
 		if id != winnerID {

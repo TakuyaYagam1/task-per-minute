@@ -193,8 +193,9 @@ func exactDraftBranchPlanFixture(
 	require.NoError(t, err)
 
 	poolID := task031ID(20)
-	versions := make([]domain.TaskVersionRef, 0)
-	candidates := make([]assignmentusecase.ExactNormalTaskVersion, 0)
+	capacity := (domain.AssignmentReserveCount + 1) * len(draft.Pool)
+	versions := make([]domain.TaskVersionRef, 0, capacity)
+	candidates := make([]assignmentusecase.ExactNormalTaskVersion, 0, capacity)
 	nextID := 10000
 	for _, category := range draft.Pool {
 		for range domain.AssignmentReserveCount + 1 {

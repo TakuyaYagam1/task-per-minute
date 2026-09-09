@@ -110,6 +110,7 @@ func (c *tournamentController) ApplyTournamentAction(
 // only production path that completes a tournament after exact terminal proof.
 func tournamentAction(action api.TournamentActionRequestAction) (inbound.AdminTournamentAction, error) {
 	value := inbound.AdminTournamentAction(action)
+	//nolint:exhaustive // This switch intentionally handles only the valid states for this boundary.
 	switch value {
 	case inbound.AdminTournamentActionOpenRegistration,
 		inbound.AdminTournamentActionStartSwiss,

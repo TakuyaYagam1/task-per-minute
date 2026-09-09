@@ -233,6 +233,7 @@ func claimSemifinalSwissHeadIdentities(
 	return claimSemifinalOrdinaryHeadIdentities(claim, head)
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func claimSemifinalOrdinaryHeadIdentities(
 	claim func(uuid.UUID, string) error,
 	head terminalSeriesRecord,
@@ -314,25 +315,6 @@ func claimSemifinalOrdinaryScoreIdentities(
 				if err := claim(identity.id, identity.role); err != nil {
 					return err
 				}
-			}
-		}
-	}
-	return nil
-}
-
-func claimSemifinalProjectionPredecessors(
-	claim func(uuid.UUID, string) error,
-	head terminalSeriesRecord,
-) error {
-	for _, projection := range []*domain.ProjectionRevision{
-		&head.Projection, head.OfficialResult.ScoreProjection,
-	} {
-		if projection == nil {
-			continue
-		}
-		if previous := projection.Revision().PreviousRevisionID(); previous != nil {
-			if err := claim(previous.UUID(), "projection predecessor"); err != nil {
-				return err
 			}
 		}
 	}

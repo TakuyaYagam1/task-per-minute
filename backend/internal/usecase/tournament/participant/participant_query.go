@@ -111,6 +111,7 @@ func (a *ParticipantUseCase) loadAuthority(
 	return view, nil
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func validateAuthorityView(
 	view usecase.ParticipantSnapshotView,
 	actor usecase.Identity,

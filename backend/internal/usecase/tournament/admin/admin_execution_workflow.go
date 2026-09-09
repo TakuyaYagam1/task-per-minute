@@ -194,6 +194,7 @@ func (w *ExecutionWorkflow) ControlWave(ctx context.Context, command WaveCommand
 	return cloneExecutionWaveView(result), nil
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func (w *ExecutionWorkflow) controlWaveLocked(
 	ctx context.Context,
 	command WaveCommand,

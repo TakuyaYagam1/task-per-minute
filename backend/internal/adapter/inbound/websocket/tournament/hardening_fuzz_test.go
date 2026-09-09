@@ -24,7 +24,7 @@ func FuzzParticipantRealtimeEnvelopeCopiesSource(f *testing.F) {
 			t.Fatal(err)
 		}
 		envelope := hardeningEnvelope(t, tournamentID, snapshot.Revision, snapshot.LastSequence, snapshot)
-		copy, err := cloneRealtimeEnvelope(envelope)
+		clone, err := cloneRealtimeEnvelope(envelope)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -40,7 +40,7 @@ func FuzzParticipantRealtimeEnvelopeCopiesSource(f *testing.F) {
 
 		envelope.Participant.Assignment.Task.Title = probe
 		envelope.Participant.Opponent.DisplayName = probe
-		requireFrameWithoutProbe(t, copy, probe)
+		requireFrameWithoutProbe(t, clone, probe)
 	})
 }
 
@@ -55,7 +55,7 @@ func FuzzPublicRealtimeEnvelopeCopiesSource(f *testing.F) {
 			t.Fatal(err)
 		}
 		envelope := hardeningEnvelope(t, tournamentID, snapshot.Revision, snapshot.LastSequence, snapshot)
-		copy, err := cloneRealtimeEnvelope(envelope)
+		clone, err := cloneRealtimeEnvelope(envelope)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -74,7 +74,7 @@ func FuzzPublicRealtimeEnvelopeCopiesSource(f *testing.F) {
 		envelope.Public.Scoreboard[0].DisplayName = probe
 		envelope.Public.Draft.Pool[0] = probe
 		*envelope.Public.Tournament.StartedAt = envelope.Public.Tournament.StartedAt.Add(time.Minute)
-		requireFrameWithoutProbe(t, copy, probe)
+		requireFrameWithoutProbe(t, clone, probe)
 	})
 }
 
@@ -90,7 +90,7 @@ func FuzzOperatorRealtimeEnvelopeCopiesSource(f *testing.F) {
 			t.Fatal(err)
 		}
 		envelope := hardeningEnvelope(t, tournamentID, snapshot.Revision, snapshot.LastSequence, snapshot)
-		copy, err := cloneRealtimeEnvelope(envelope)
+		clone, err := cloneRealtimeEnvelope(envelope)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -109,7 +109,7 @@ func FuzzOperatorRealtimeEnvelopeCopiesSource(f *testing.F) {
 		envelope.Operator.Waves[0].State = probe
 		*envelope.Operator.Waves[0].Members[0].SeriesID = testUUID("95000000-0000-4000-8000-000000000125")
 		*envelope.Operator.Waves[0].WindowDeadline = envelope.Operator.Waves[0].WindowDeadline.Add(time.Minute)
-		requireFrameWithoutProbe(t, copy, probe)
+		requireFrameWithoutProbe(t, clone, probe)
 	})
 }
 
@@ -173,8 +173,8 @@ func FuzzRealtimeEnvelopeRejectsDuplicateNestedKeys(f *testing.F) {
 	})
 }
 
-func hardeningEnvelope(t testing.TB, tournamentID uuid.UUID, revision, sequence int64, payload any) RealtimeEnvelope {
-	t.Helper()
+func hardeningEnvelope(tb testing.TB, tournamentID uuid.UUID, revision, sequence int64, payload any) RealtimeEnvelope {
+	tb.Helper()
 	envelope, err := NewRealtimeEnvelope(RealtimeEnvelopeMetadata{
 		SchemaVersion:      TournamentRealtimeSchemaVersion,
 		TournamentID:       tournamentID,
@@ -184,7 +184,7 @@ func hardeningEnvelope(t testing.TB, tournamentID uuid.UUID, revision, sequence 
 		ProjectionRevision: revision,
 	}, payload)
 	if err != nil {
-		t.Fatal(err)
+		tb.Fatal(err)
 	}
 	return envelope
 }
@@ -229,16 +229,16 @@ func hardeningDuplicateField(role uint8) (string, string) {
 	}
 }
 
-func replaceJSONField(t testing.TB, encoded []byte, field, original, value string) []byte {
-	t.Helper()
+func replaceJSONField(tb testing.TB, encoded []byte, field, original, value string) []byte {
+	tb.Helper()
 	replacement, err := json.Marshal(value)
 	if err != nil {
-		t.Fatal(err)
+		tb.Fatal(err)
 	}
 	needle := []byte(`"` + field + `":"` + original + `"`)
 	candidate := bytes.Replace(encoded, needle, append([]byte(`"`+field+`":`), replacement...), 1)
 	if bytes.Equal(candidate, encoded) {
-		t.Fatalf("fixture lacks timestamp field %q", field)
+		tb.Fatalf("fixture lacks timestamp field %q", field)
 	}
 	return candidate
 }
@@ -253,13 +253,13 @@ func hardeningProbe(value string) string {
 	return "probe-" + hex.EncodeToString(digest[:])
 }
 
-func requireFrameWithoutProbe(t testing.TB, envelope RealtimeEnvelope, probe string) {
-	t.Helper()
+func requireFrameWithoutProbe(tb testing.TB, envelope RealtimeEnvelope, probe string) {
+	tb.Helper()
 	encoded, err := json.Marshal(envelope)
 	if err != nil {
-		t.Fatal(err)
+		tb.Fatal(err)
 	}
 	if strings.Contains(string(encoded), probe) {
-		t.Fatalf("realtime frame retained mutated source value %q", probe)
+		tb.Fatalf("realtime frame retained mutated source value %q", probe)
 	}
 }

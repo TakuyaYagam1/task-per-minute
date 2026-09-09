@@ -24,6 +24,7 @@ func (recorded RecordedNoGameResult) HasSQLSourceIdentity() bool {
 	return recorded.restoredOrigin == noGameSQLOrigin && validateRecordedNoGameResult(recorded) == nil
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func validSQLNoGameIdentity(recorded RecordedNoGameResult) bool {
 	if len(recorded.GameResults) != len(recorded.GameProjections) || recorded.Score.PreviousRevisionID == nil ||
 		recorded.Series.PreviousRevisionID != nil {

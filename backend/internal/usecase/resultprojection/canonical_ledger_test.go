@@ -51,6 +51,7 @@ func TestBuildCanonicalSwissRoundsRejectsPartialOfficialRound(t *testing.T) {
 	require.ErrorIs(t, err, projection.ErrInvalidCanonicalMaterialization)
 }
 
+//nolint:unparam // The round number stays explicit so multi-round fixtures remain readable.
 func canonicalLedgerSeriesRow(
 	roundID, revisionID uuid.UUID,
 	roundNumber int,

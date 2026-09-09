@@ -138,7 +138,7 @@ func newRosterLockRepository(
 			GetRosterSnapshot(mock.Anything, mock.Anything).
 			RunAndReturn(func(_ context.Context, id uuid.UUID) (*rosterusecase.RosterRosterRecord, error) {
 				if id != state.roster.ID {
-					return nil, rosterusecase.RosterErrRosterNotFound
+					return nil, rosterusecase.ErrRosterNotFound
 				}
 				return cloneRosterRecord(state.roster), nil
 			}).

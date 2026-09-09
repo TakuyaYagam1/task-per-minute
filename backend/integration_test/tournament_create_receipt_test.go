@@ -190,8 +190,14 @@ func prepareTournamentCreateReceiptContent(ctx context.Context, t *testing.T) {
 	}
 	_, err := sharedPool.Exec(ctx, `
 		INSERT INTO task_version_health_attestations (task_id, task_version, revision, healthy, source)
-		SELECT task_id, version, 1, true, 'content_validation'
-		FROM task_versions`)
+		SELECT version.task_id, version.version, 1, true, 'content_validation'
+		FROM task_versions AS version
+		WHERE NOT EXISTS (
+			SELECT 1
+			FROM task_version_health_attestations AS attestation
+			WHERE attestation.task_id = version.task_id
+				AND attestation.task_version = version.version
+		)`)
 	require.NoError(t, err)
 	_, err = sharedPool.Exec(ctx, `SELECT publish_task_pool_heads()`)
 	require.NoError(t, err)

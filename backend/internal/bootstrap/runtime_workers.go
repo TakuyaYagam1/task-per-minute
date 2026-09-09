@@ -19,7 +19,7 @@ const (
 )
 
 type RuntimeWorker interface {
-	Run(context.Context) error
+	Run(ctx context.Context) error
 }
 
 type namedRuntimeWorker struct {
@@ -194,7 +194,7 @@ func (workers *runtimeWorkers) startWorkerHeartbeat(
 			case <-ctx.Done():
 				return
 			case <-ticks:
-				reported, reportErr := workers.reportRuntimeWorkerHeartbeat(ctx, entry)
+				_, reportErr := workers.reportRuntimeWorkerHeartbeat(ctx, entry)
 				if reportErr != nil {
 					workers.setState(entry.name, runtimeWorkerStateFailed)
 					reportRuntimeWorkerHeartbeatError(
@@ -203,9 +203,6 @@ func (workers *runtimeWorkers) startWorkerHeartbeat(
 						fmt.Errorf("runtime worker %s heartbeat: %w", entry.name, reportErr),
 					)
 					return
-				}
-				if !reported {
-					continue
 				}
 			}
 		}

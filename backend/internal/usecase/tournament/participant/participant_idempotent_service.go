@@ -50,7 +50,7 @@ func (service *ParticipantIdempotentService) SetReady(
 	ctx context.Context,
 	command usecase.ReadyCommand,
 ) (usecase.ReadinessEvent, error) {
-	return executeParticipantMutation(service, ctx, validReadyCommand(command), func() (idempotency.Command, error) {
+	return executeParticipantMutation(ctx, service, validReadyCommand(command), func() (idempotency.Command, error) {
 		return readyReceipt(command)
 	}, func() (usecase.ReadinessEvent, error) {
 		return service.next.SetReady(ctx, command)
@@ -61,7 +61,7 @@ func (service *ParticipantIdempotentService) SubmitDraftAction(
 	ctx context.Context,
 	command usecase.DraftActionCommand,
 ) (usecase.DraftExecutionView, error) {
-	return executeParticipantMutation(service, ctx, validDraftActionCommand(command), func() (idempotency.Command, error) {
+	return executeParticipantMutation(ctx, service, validDraftActionCommand(command), func() (idempotency.Command, error) {
 		return draftActionReceipt(command)
 	}, func() (usecase.DraftExecutionView, error) {
 		return service.next.SubmitDraftAction(ctx, command)
@@ -72,7 +72,7 @@ func (service *ParticipantIdempotentService) SubmitFlag(
 	ctx context.Context,
 	command usecase.SubmissionCommand,
 ) (usecase.SubmissionResult, error) {
-	return executeParticipantMutation(service, ctx, validSubmissionCommand(command), func() (idempotency.Command, error) {
+	return executeParticipantMutation(ctx, service, validSubmissionCommand(command), func() (idempotency.Command, error) {
 		return submissionReceipt(command)
 	}, func() (usecase.SubmissionResult, error) {
 		return service.next.SubmitFlag(ctx, command)
@@ -84,7 +84,7 @@ func (service *ParticipantIdempotentService) Surrender(
 	command usecase.SurrenderCommand,
 ) (usecase.OfficialResultView, error) {
 	command.Reason = strings.TrimSpace(command.Reason)
-	return executeParticipantMutation(service, ctx, validSurrenderCommand(command), func() (idempotency.Command, error) {
+	return executeParticipantMutation(ctx, service, validSurrenderCommand(command), func() (idempotency.Command, error) {
 		return surrenderReceipt(command)
 	}, func() (usecase.OfficialResultView, error) {
 		return service.next.Surrender(ctx, command)
@@ -95,7 +95,7 @@ func (service *ParticipantIdempotentService) ApplyPostSeriesAction(
 	ctx context.Context,
 	command usecase.PostSeriesCommand,
 ) (usecase.PostSeriesResult, error) {
-	return executeParticipantMutation(service, ctx, validPostSeriesCommand(command), func() (idempotency.Command, error) {
+	return executeParticipantMutation(ctx, service, validPostSeriesCommand(command), func() (idempotency.Command, error) {
 		return postSeriesReceipt(command)
 	}, func() (usecase.PostSeriesResult, error) {
 		return service.next.ApplyPostSeriesAction(ctx, command)
@@ -113,8 +113,8 @@ func (service *ParticipantIdempotentService) GetSnapshot(
 }
 
 func executeParticipantMutation[T any](
-	service *ParticipantIdempotentService,
 	ctx context.Context,
+	service *ParticipantIdempotentService,
 	valid bool,
 	receipt func() (idempotency.Command, error),
 	invoke func() (T, error),

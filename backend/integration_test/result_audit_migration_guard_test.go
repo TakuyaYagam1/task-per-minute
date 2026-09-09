@@ -55,6 +55,13 @@ func assertResultEventCannotCommitPartially(
 
 	tx, err := sharedPool.Begin(ctx)
 	require.NoError(tb, err)
+	var serverSequence int64
+	err = tx.QueryRow(ctx, `
+		UPDATE game_attempts
+		SET result_event_sequence = result_event_sequence + 1
+		WHERE id = $1
+		RETURNING result_event_sequence`, fixture.attemptID).Scan(&serverSequence)
+	require.NoError(tb, err)
 	_, err = tx.Exec(
 		ctx, `
 		INSERT INTO result_events (
@@ -64,13 +71,14 @@ func assertResultEventCannotCommitPartially(
 		)
 		VALUES (
 			$1, $2, $3, $4,
-			2, $5, 'superseded',
-			'derived_revision_superseded', $6, $6
+			$5, $6, 'superseded',
+			'derived_revision_superseded', $7, $7
 		)`,
 		fixture.draft.tournamentID,
 		fixture.draft.rosterID,
 		fixture.draft.seriesID,
 		fixture.attemptID,
+		serverSequence,
 		uuid.New(),
 		fixture.lockedAt.Add(6*time.Second),
 	)
@@ -88,6 +96,13 @@ func assertAuditRejectsNestedFlag(
 	tx, err := sharedPool.Begin(ctx)
 	require.NoError(tb, err)
 	defer func() { _ = tx.Rollback(ctx) }()
+	var serverSequence int64
+	err = tx.QueryRow(ctx, `
+		UPDATE game_attempts
+		SET result_event_sequence = result_event_sequence + 1
+		WHERE id = $1
+		RETURNING result_event_sequence`, fixture.attemptID).Scan(&serverSequence)
+	require.NoError(tb, err)
 	createdAt := fixture.lockedAt.Add(7 * time.Second)
 	_, err = tx.Exec(
 		ctx, `
@@ -98,14 +113,15 @@ func assertAuditRejectsNestedFlag(
 		)
 		VALUES (
 			$1, $2, $3, $4, $5,
-			2, $6, 'superseded',
-			'derived_revision_superseded', $7, $7
+			$6, $7, 'superseded',
+			'derived_revision_superseded', $8, $8
 		)`,
 		resultEventID,
 		fixture.draft.tournamentID,
 		fixture.draft.rosterID,
 		fixture.draft.seriesID,
 		fixture.attemptID,
+		serverSequence,
 		uuid.New(),
 		createdAt,
 	)
@@ -137,9 +153,22 @@ func assertOutboxRetainsPublishedEvidence(
 	tb.Helper()
 
 	publishedAt := commit.settledAt.Add(time.Second)
+	workerID := uuid.New()
+	claimToken := uuid.New()
 	_, err := sharedPool.Exec(ctx, `
 		UPDATE outbox_events
-		SET published_at = $2
+		SET claimed_by = $2,
+			claim_token = $3,
+			claimed_until = $4,
+			attempt_count = attempt_count + 1
+		WHERE id = $1`, commit.outboxEventID, workerID, claimToken, publishedAt.Add(time.Minute))
+	require.NoError(tb, err)
+	_, err = sharedPool.Exec(ctx, `
+		UPDATE outbox_events
+		SET published_at = $2,
+			claimed_by = NULL,
+			claim_token = NULL,
+			claimed_until = NULL
 		WHERE id = $1`, commit.outboxEventID, publishedAt)
 	require.NoError(tb, err)
 	_, err = sharedPool.Exec(ctx, `

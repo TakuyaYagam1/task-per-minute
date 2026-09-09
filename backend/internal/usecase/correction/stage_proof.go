@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"sort"
 
-	"github.com/google/uuid"
-
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
@@ -86,8 +84,8 @@ func marshalCorrectionStageProof(correction Plan, result StageResult) ([]byte, e
 		entry := supersession{GroupID: value.GroupID.String(), PreviousID: value.PreviousRevisionID.UUID().String(),
 			SuccessorID: value.RevisionID.UUID().String()}
 		if value.ReplacementGroupID != nil {
-			copy := value.ReplacementGroupID.String()
-			entry.ReplacementID = &copy
+			clone := value.ReplacementGroupID.String()
+			entry.ReplacementID = &clone
 		}
 		document.Supersessions = append(document.Supersessions, entry)
 	}
@@ -111,12 +109,4 @@ func correctionStageProofMatches(correction Plan, result StageResult) bool {
 	clone.ProofDigest = [sha256.Size]byte{}
 	proof, err := marshalCorrectionStageProof(correction, clone)
 	return err == nil && string(proof) == string(result.Proof) && sha256.Sum256(proof) == result.ProofDigest
-}
-
-func correctionStageProofUUID(value *uuid.UUID) *string {
-	if value == nil {
-		return nil
-	}
-	text := value.String()
-	return &text
 }

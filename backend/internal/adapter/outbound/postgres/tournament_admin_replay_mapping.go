@@ -17,6 +17,8 @@ var errReplayWorkflowAuthority = errors.New("invalid replay workflow authority")
 // evidence. The fourth position may exist only when it is bound to the
 // operator command that authorized it. The active snapshot is supplied by the
 // failed-attempt evidence rather than inferred from a mutable assignment head.
+//
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func replayWorkflowReserveChain(
 	assignmentID uuid.UUID,
 	activeSnapshotID uuid.UUID,

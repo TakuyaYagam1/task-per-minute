@@ -90,7 +90,7 @@ func forfeitGameRevisionsEqual(first, second *GameRevision) bool {
 func forfeitSeriesRevisionsEqual(first, second SeriesRevision) bool {
 	return first.Ordinal == second.Ordinal && first.ID == second.ID && first.SeriesID == second.SeriesID &&
 		forfeitOfficialResultRevisionPointersEqual(first.PreviousRevisionID, second.PreviousRevisionID) &&
-		first.State == second.State && forfeitUuidPointersEqual(first.WinnerID, second.WinnerID) &&
+		first.State == second.State && forfeitUUIDPointersEqual(first.WinnerID, second.WinnerID) &&
 		first.ScoreRevisionID == second.ScoreRevisionID && first.Reason == second.Reason &&
 		first.RecordedAt.Equal(second.RecordedAt)
 }

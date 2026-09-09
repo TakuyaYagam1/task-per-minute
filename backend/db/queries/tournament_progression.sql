@@ -2176,6 +2176,41 @@ WHERE revision.id = sqlc.arg(projection_revision_id)
 ORDER BY member.position, member.participant_id
 FOR UPDATE OF revision, revision_artifact, artifact, member;
 
+-- An unchanged correction publishes a new projection without rewriting the
+-- immutable Golden group revisions. Follow correction predecessors until the
+-- nearest projection that owns the active Golden authority is found.
+-- name: ResolveTournamentProgressionGoldenSource :one
+WITH RECURSIVE projection_lineage AS (
+    SELECT sqlc.arg(projection_revision_id)::UUID AS projection_revision_id,
+        sqlc.arg(projection_revision)::BIGINT AS projection_revision,
+        0::BIGINT AS depth
+
+    UNION ALL
+
+    SELECT correction.source_projection_revision_id,
+        correction.source_projection_revision,
+        lineage.depth + 1
+    FROM projection_lineage AS lineage
+    INNER JOIN result_correction_commits AS correction
+        ON correction.tournament_id = sqlc.arg(tournament_id)
+        AND correction.roster_id = sqlc.arg(roster_id)
+        AND correction.resulting_projection_revision_id = lineage.projection_revision_id
+        AND correction.resulting_projection_revision = lineage.projection_revision
+)
+SELECT lineage.projection_revision_id,
+    lineage.projection_revision
+FROM projection_lineage AS lineage
+WHERE EXISTS (
+    SELECT 1
+    FROM golden_group_revisions AS group_revision
+    WHERE group_revision.tournament_id = sqlc.arg(tournament_id)
+        AND group_revision.roster_id = sqlc.arg(roster_id)
+        AND group_revision.source_projection_revision_id = lineage.projection_revision_id
+        AND group_revision.source_projection_revision = lineage.projection_revision
+)
+ORDER BY lineage.depth
+LIMIT 1;
+
 -- name: LockTournamentProgressionGoldenSettlements :many
 SELECT group_revision.revision_id AS group_revision_id,
     group_revision.group_id,

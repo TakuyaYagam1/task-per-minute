@@ -292,9 +292,9 @@ func newWaveStartRepositoryHarness(
 	return &waveStartRepositoryHarness{repository: repository, state: state}
 }
 
-func waveStartAuthorityTime(t testing.TB, authority gameusecase.StartAuthority) time.Time {
-	t.Helper()
-	require.NotNil(t, authority.Wave.ReadyWindow)
+func waveStartAuthorityTime(tb testing.TB, authority gameusecase.StartAuthority) time.Time {
+	tb.Helper()
+	require.NotNil(tb, authority.Wave.ReadyWindow)
 	return authority.Wave.ReadyWindow.OpenedAt.Add(10 * time.Second)
 }
 
@@ -318,18 +318,6 @@ func (h *waveStartRepositoryHarness) setCommitError(err error) {
 	h.state.mu.Lock()
 	defer h.state.mu.Unlock()
 	h.state.commitErr = err
-}
-
-func (h *waveStartRepositoryHarness) setCommitConflicts(count int) {
-	h.state.mu.Lock()
-	defer h.state.mu.Unlock()
-	h.state.commitConflicts = count
-}
-
-func (h *waveStartRepositoryHarness) setLoadError(err error) {
-	h.state.mu.Lock()
-	defer h.state.mu.Unlock()
-	h.state.loadErr = err
 }
 
 func (h *waveStartRepositoryHarness) setServerTime(value time.Time) {

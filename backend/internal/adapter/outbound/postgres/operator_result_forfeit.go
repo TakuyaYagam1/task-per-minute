@@ -191,6 +191,7 @@ func (r *TournamentAdminResultPostgres) commitLiveOperatorForfeit(
 	return &stored, nil
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func (r *TournamentAdminResultPostgres) commitPreStartOperatorForfeit(
 	ctx context.Context,
 	command tournamentadmin.ForfeitCommand,
@@ -237,7 +238,7 @@ func (r *TournamentAdminResultPostgres) commitPreStartOperatorForfeit(
 	}
 	if _, err = querier.CreateResultEvent(ctx, sqlc.CreateResultEventParams{
 		ID: ids.resultEventID, TournamentID: command.TournamentID, RosterID: snapshot.series.RosterID,
-		SeriesID: command.SeriesID, AttemptID: anchor.ID, ServerSequence: int64(sequence),
+		SeriesID: command.SeriesID, AttemptID: anchor.ID, ServerSequence: sequence,
 		IdempotencyKey: ids.resultIdempotencyKey, ResultState: string(domain.GameStateCompleted),
 		ResultReason: string(domain.GameResultReasonOperatorForfeit),
 		WinnerID:     nullableUUID(resolution.Series.Series.WinnerID),

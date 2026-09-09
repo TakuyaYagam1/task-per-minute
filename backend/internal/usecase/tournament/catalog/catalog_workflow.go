@@ -11,7 +11,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
-var CatalogErrTournamentNotFound = errors.New("tournament not found")
+var ErrTournamentNotFound = errors.New("tournament not found")
 
 type TournamentUseCase struct {
 	repository TournamentRepository
@@ -34,7 +34,7 @@ func (u *TournamentUseCase) CreateTournament(
 	if err == nil {
 		return reconcileTournamentCreate(existing, command)
 	}
-	if !errors.Is(err, CatalogErrTournamentNotFound) {
+	if !errors.Is(err, ErrTournamentNotFound) {
 		return nil, false, fmt.Errorf("TournamentUseCase - CreateTournament - TournamentRepository.Get: %w", err)
 	}
 

@@ -98,7 +98,7 @@ func TestDraftRepositoryPersistsOneImmutableRevisionChain(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, loaded.Revisions, 2)
 	require.Len(t, loaded.Actions, 1)
-	require.Equal(t, int64(1), loaded.Actions[0].TurnNumber)
+	require.Equal(t, 1, loaded.Actions[0].TurnNumber)
 	require.Equal(t, participants[0], loaded.Actions[0].ActorID)
 	require.Equal(t, participants[1], *loaded.Revisions[1].CurrentActorID)
 

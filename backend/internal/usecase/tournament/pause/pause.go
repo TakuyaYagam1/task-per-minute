@@ -83,7 +83,7 @@ func (u *TournamentPauseUseCase) reconcileTechnicalPause(
 ) (*TournamentTechnicalPauseRecord, bool, error) {
 	record, err := u.repository.GetTournamentTechnicalPause(ctx, command.TournamentID, command.CommandID)
 	if err != nil {
-		if errors.Is(err, PauseErrTournamentNotFound) {
+		if errors.Is(err, ErrTournamentNotFound) {
 			return nil, false, domain.ErrConflict
 		}
 		return nil, false, tournamentPauseLookupError("reconcile technical pause", err)
@@ -194,14 +194,14 @@ func validateTechnicalPauseRecord(
 }
 
 func tournamentPauseLookupError(operation string, err error) error {
-	if errors.Is(err, PauseErrTournamentNotFound) {
-		return PauseErrTournamentNotFound
+	if errors.Is(err, ErrTournamentNotFound) {
+		return ErrTournamentNotFound
 	}
 	return fmt.Errorf("TournamentPauseUseCase - %s - repository lookup: %w", operation, err)
 }
 
 func tournamentPauseMutationError(err error) error {
-	if errors.Is(err, domain.ErrConflict) || errors.Is(err, PauseErrTournamentNotFound) ||
+	if errors.Is(err, domain.ErrConflict) || errors.Is(err, ErrTournamentNotFound) ||
 		errors.Is(err, ErrTournamentPauseGraphPartial) || errors.Is(err, ErrTournamentGoldenActive) {
 		return err
 	}

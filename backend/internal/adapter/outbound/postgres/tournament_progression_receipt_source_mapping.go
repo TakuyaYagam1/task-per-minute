@@ -2,7 +2,6 @@ package postgres
 
 import (
 	"crypto/sha256"
-	"sort"
 
 	"github.com/google/uuid"
 
@@ -35,6 +34,8 @@ type progressionPhysicalArtifact struct {
 // from logical result nodes. A superseded physical source remains valid only
 // because the receipt names it exactly; this mapper never replaces it with a
 // newer current projection.
+//
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func indexProgressionReceiptSources(
 	rows []sqlc.LockTournamentProgressionFinalSwissReceiptSourceProjectionsRow,
 ) (map[progressionReceiptSourceKey]progressionReceiptSourceProjection, error) {
@@ -144,23 +145,4 @@ func progressionUUIDPointersEqual(left *uuid.UUID, right uuid.NullUUID) bool {
 		return !right.Valid
 	}
 	return right.Valid && *left == right.UUID
-}
-
-func progressionReceiptSourceKeys(
-	indexed map[progressionReceiptSourceKey]progressionReceiptSourceProjection,
-) []progressionReceiptSourceKey {
-	keys := make([]progressionReceiptSourceKey, 0, len(indexed))
-	for key := range indexed {
-		keys = append(keys, key)
-	}
-	sort.Slice(keys, func(first, second int) bool {
-		if keys[first].receiptProjectionRevisionID != keys[second].receiptProjectionRevisionID {
-			return keys[first].receiptProjectionRevisionID.String() < keys[second].receiptProjectionRevisionID.String()
-		}
-		if keys[first].resultKind != keys[second].resultKind {
-			return keys[first].resultKind < keys[second].resultKind
-		}
-		return keys[first].resultRevisionID.String() < keys[second].resultRevisionID.String()
-	})
-	return keys
 }

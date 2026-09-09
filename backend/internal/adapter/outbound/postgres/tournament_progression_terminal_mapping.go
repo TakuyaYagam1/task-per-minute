@@ -24,7 +24,6 @@ import (
 // mutable heads. A later correction can therefore supersede a physical
 // projection without changing an earlier Final Swiss receipt.
 func progressionSwissInputFromReceipt(
-	command tournamentprogression.Command,
 	authority tournamentprogression.Authority,
 	rows progressionFinalSwissReceiptRows,
 ) (playoff.ProgressionSwissInput, error) {
@@ -47,14 +46,21 @@ func progressionSwissInputFromReceipt(
 
 	var previous *playoff.FinalSwissProjection
 	var current playoff.ProgressionSwissInput
-	for _, receipt := range chain {
-		input, buildErr := progressionReceiptInput(command, authority, receipt, previous, rows, nodes, proofs, sources)
+	for index, receipt := range chain {
+		input, buildErr := progressionReceiptInput(authority, receipt, previous, rows, nodes, proofs, sources)
 		if buildErr != nil {
 			return playoff.ProgressionSwissInput{}, buildErr
 		}
-		planned, input, planErr := progressionPlanSwissReceipt(input, receipt, rows.goldenGroups)
+		planned, input, planErr := progressionPlanSwissReceipt(
+			input,
+			receipt,
+			rows.goldenGroups,
+			rows.goldenSourceID,
+			rows.goldenSourceRevision,
+			authority.Tournament.State == domain.TournamentStateGolden && index == len(chain)-1,
+		)
 		if planErr != nil {
-			return playoff.ProgressionSwissInput{}, fmt.Errorf("Final Swiss receipt %s: %w", receipt.ProjectionRevisionID, planErr)
+			return playoff.ProgressionSwissInput{}, fmt.Errorf("final Swiss receipt %s: %w", receipt.ProjectionRevisionID, planErr)
 		}
 		current = input
 		previousSnapshot := planned.Snapshot()
@@ -68,15 +74,23 @@ func progressionSwissInputFromReceipt(
 	return current, nil
 }
 
-func progressionPlanSwissReceipt(input playoff.ProgressionSwissInput, receipt sqlc.LockTournamentProgressionFinalSwissReceiptChainRow, groups []sqlc.LockTournamentProgressionGoldenSettlementsRow) (playoff.FinalSwissProjection, playoff.ProgressionSwissInput, error) {
+func progressionPlanSwissReceipt(
+	input playoff.ProgressionSwissInput,
+	receipt sqlc.LockTournamentProgressionFinalSwissReceiptChainRow,
+	groups []sqlc.LockTournamentProgressionGoldenSettlementsRow,
+	goldenSourceID uuid.UUID,
+	goldenSourceRevision int64,
+	applyGoldenAuthority bool,
+) (playoff.FinalSwissProjection, playoff.ProgressionSwissInput, error) {
 	var matched []sqlc.LockTournamentProgressionGoldenSettlementsRow
-	for _, group := range groups {
-		if group.SourceProjectionRevisionID == receipt.ProjectionRevisionID {
-			matched = append(matched, group)
-		}
+	if applyGoldenAuthority {
+		matched = groups
 	}
 	if len(matched) > 0 {
-		identities, err := progressionGoldenIdentities(tournamentprogression.Authority{ProjectionRevisionID: receipt.ProjectionRevisionID, ProjectionRevision: receipt.PhysicalProjectionRevision}, matched)
+		identities, err := progressionGoldenIdentities(tournamentprogression.Authority{
+			ProjectionRevisionID: goldenSourceID,
+			ProjectionRevision:   goldenSourceRevision,
+		}, matched)
 		if err != nil {
 			return playoff.FinalSwissProjection{}, playoff.ProgressionSwissInput{}, err
 		}
@@ -106,6 +120,7 @@ type progressionReceiptNodeKey struct {
 	nodeID    uuid.UUID
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func progressionReceiptNodeIndex(
 	authority tournamentprogression.Authority,
 	rows []sqlc.LockTournamentProgressionFinalSwissReceiptProjectionNodesRow,
@@ -191,6 +206,7 @@ func validProgressionReceiptNodeOrigin(row sqlc.LockTournamentProgressionFinalSw
 	}
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func progressionReceiptRoundProofs(
 	authority tournamentprogression.Authority,
 	roots []sqlc.SwissRoundLockProof,
@@ -263,7 +279,6 @@ func progressionReceiptRoundProofs(
 }
 
 func progressionReceiptInput(
-	command tournamentprogression.Command,
 	authority tournamentprogression.Authority,
 	receipt sqlc.LockTournamentProgressionFinalSwissReceiptChainRow,
 	previous *playoff.FinalSwissProjection,
@@ -276,7 +291,7 @@ func progressionReceiptInput(
 	if err != nil {
 		return playoff.ProgressionSwissInput{}, err
 	}
-	rounds, err := progressionReceiptRounds(command, authority, receipt, rows, nodes, proofs, sources)
+	rounds, err := progressionReceiptRounds(authority, receipt, rows, nodes, proofs, sources)
 	if err != nil {
 		return playoff.ProgressionSwissInput{}, fmt.Errorf("restore rounds: %w", err)
 	}
@@ -321,8 +336,8 @@ func progressionReceiptParticipants(
 	return participants, seeds, nil
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func progressionReceiptRounds(
-	command tournamentprogression.Command,
 	authority tournamentprogression.Authority,
 	receipt sqlc.LockTournamentProgressionFinalSwissReceiptChainRow,
 	rows progressionFinalSwissReceiptRows,
@@ -347,7 +362,7 @@ func progressionReceiptRounds(
 			if evidence.ProjectionRevisionID != receipt.ProjectionRevisionID || evidence.RoundID != row.RoundID {
 				continue
 			}
-			terminal, err := progressionReceiptTerminalSeries(command, authority, receipt, evidence, rows, nodes, sources)
+			terminal, err := progressionReceiptTerminalSeries(authority, receipt, evidence, rows, nodes, sources)
 			if err != nil {
 				return nil, fmt.Errorf("restore terminal Series %s: %w", evidence.SeriesID, err)
 			}
@@ -377,6 +392,7 @@ func progressionReceiptRounds(
 	return rounds, nil
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func progressionReceiptBye(
 	receiptID, roundID uuid.UUID,
 	roundNumber int,
@@ -387,6 +403,7 @@ func progressionReceiptBye(
 		if row.ProjectionRevisionID != receiptID || row.RoundID != roundID || row.SourceKind != string(swissusecase.PointSourceBye) {
 			continue
 		}
+		//nolint:gosec // Domain validation bounds this value before the storage conversion.
 		if row.RoundNumber != int16(roundNumber) || !row.ByeRevisionID.Valid || row.ByeRevisionID.UUID == uuid.Nil ||
 			row.SourceSeriesID.Valid || row.SeriesResultRevisionID.Valid || row.ResultLabel != nil || row.ParticipantID == uuid.Nil ||
 			row.OpponentID.Valid || row.Points != swissusecase.StandingsByePoints || row.EffectiveTimeNs != 0 || row.AcceptedSolveTimeNs != nil || row.StableSeed < 1 {
@@ -400,8 +417,8 @@ func progressionReceiptBye(
 	return found, nil
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func progressionReceiptTerminalSeries(
-	command tournamentprogression.Command,
 	authority tournamentprogression.Authority,
 	receipt sqlc.LockTournamentProgressionFinalSwissReceiptChainRow,
 	evidence sqlc.LockTournamentProgressionFinalSwissReceiptSeriesEvidenceRow,
@@ -416,10 +433,10 @@ func progressionReceiptTerminalSeries(
 		return playoff.TerminalSeriesEvidence{}, domain.ErrConflict
 	}
 	if err := progressionRequireReceiptSource(sources, receipt.ProjectionRevisionID, domain.ArtifactKindSeriesResult, evidence.SeriesID, evidence.SeriesResultRevisionID); err != nil {
-		return playoff.TerminalSeriesEvidence{}, fmt.Errorf("Series result source: %w", err)
+		return playoff.TerminalSeriesEvidence{}, fmt.Errorf("series result source: %w", err)
 	}
 	if err := progressionRequireReceiptSource(sources, receipt.ProjectionRevisionID, domain.ArtifactKindSeriesScore, evidence.SeriesID, evidence.ScoreRevisionID); err != nil {
-		return playoff.TerminalSeriesEvidence{}, fmt.Errorf("Series score source: %w", err)
+		return playoff.TerminalSeriesEvidence{}, fmt.Errorf("series score source: %w", err)
 	}
 	resultProjection, found := nodes[progressionReceiptNodeKey{receiptID: receipt.ProjectionRevisionID, nodeID: evidence.SeriesResultNodeID}]
 	if !found || resultProjection.Revision().Artifact() != (domain.ArtifactRef{Kind: domain.ArtifactKindSeriesResult, EntityID: evidence.SeriesID}) {
@@ -438,30 +455,30 @@ func progressionReceiptTerminalSeries(
 
 	series, gameRows, err := progressionReceiptSeriesTopology(authority.Tournament.ID, receipt.ProjectionRevisionID, evidence, rows.gameEvidence)
 	if err != nil {
-		return playoff.TerminalSeriesEvidence{}, fmt.Errorf("Series topology: %w", err)
+		return playoff.TerminalSeriesEvidence{}, fmt.Errorf("series topology: %w", err)
 	}
 	if err := progressionRequireReceiptGames(receipt.ProjectionRevisionID, evidence.SeriesID, gameRows, rows.games, rows.logicalNodes, sources); err != nil {
-		return playoff.TerminalSeriesEvidence{}, fmt.Errorf("Series Games: %w", err)
+		return playoff.TerminalSeriesEvidence{}, fmt.Errorf("series Games: %w", err)
 	}
 	point, err := progressionReceiptSeriesPoints(receipt.ProjectionRevisionID, evidence, rows.ledger)
 	if err != nil {
-		return playoff.TerminalSeriesEvidence{}, fmt.Errorf("Series points: %w", err)
+		return playoff.TerminalSeriesEvidence{}, fmt.Errorf("series points: %w", err)
 	}
 	if point.RoundID != evidence.RoundID || point.SeriesID != evidence.SeriesID || point.ResultRevisionID != domain.OfficialResultRevisionID(evidence.SeriesResultRevisionID) {
 		return playoff.TerminalSeriesEvidence{}, domain.ErrConflict
 	}
 
 	input, noGameDigest, err := progressionReceiptOfficialResultInput(
-		command, authority, receipt, evidence, series, gameRows, resultProjection, scoreProjection, rows, nodes, sources,
+		authority, receipt, evidence, series, gameRows, resultProjection, scoreProjection, rows, nodes, sources,
 	)
 	if err != nil {
-		return playoff.TerminalSeriesEvidence{}, fmt.Errorf("Series official input: %w", err)
+		return playoff.TerminalSeriesEvidence{}, fmt.Errorf("series official input: %w", err)
 	}
 	terminal, err := playoff.NewTerminalSeriesEvidence(playoff.TerminalSeriesEvidenceInput{
 		Series: series, OfficialResult: input, Projection: resultProjection, Result: point, NoGameEvidenceDigest: noGameDigest,
 	})
 	if err != nil {
-		return playoff.TerminalSeriesEvidence{}, fmt.Errorf("terminal evidence: %v: %w", err, domain.ErrConflict)
+		return playoff.TerminalSeriesEvidence{}, fmt.Errorf("terminal evidence: %w: %w", err, domain.ErrConflict)
 	}
 	return terminal, nil
 }
@@ -480,6 +497,7 @@ func progressionRequireReceiptSource(
 	return nil
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func progressionRequireReceiptGames(
 	receiptID, seriesID uuid.UUID,
 	evidence []sqlc.LockTournamentProgressionFinalSwissReceiptGameEvidenceRow,
@@ -548,6 +566,7 @@ func progressionRequireLogicalReceiptNode(
 	return nil
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func progressionReceiptSeriesTopology(
 	tournamentID uuid.UUID,
 	receiptID uuid.UUID,
@@ -628,6 +647,7 @@ func progressionReceiptSeriesTopology(
 	return series, matched, nil
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func progressionReceiptSeriesPoints(
 	receiptID uuid.UUID,
 	evidence sqlc.LockTournamentProgressionFinalSwissReceiptSeriesEvidenceRow,
@@ -653,17 +673,18 @@ func progressionReceiptSeriesPoints(
 			row.Points < 0 || row.EffectiveTimeNs < 0 || row.StableSeed < 1 {
 			return swissusecase.SeriesPointResult{}, domain.ErrConflict
 		}
-		if row.ParticipantID == evidence.FirstParticipantID {
+		switch row.ParticipantID {
+		case evidence.FirstParticipantID:
 			if first != nil || row.OpponentID.UUID != evidence.SecondParticipantID {
 				return swissusecase.SeriesPointResult{}, domain.ErrConflict
 			}
 			first = row
-		} else if row.ParticipantID == evidence.SecondParticipantID {
+		case evidence.SecondParticipantID:
 			if second != nil || row.OpponentID.UUID != evidence.FirstParticipantID {
 				return swissusecase.SeriesPointResult{}, domain.ErrConflict
 			}
 			second = row
-		} else {
+		default:
 			return swissusecase.SeriesPointResult{}, domain.ErrConflict
 		}
 	}
@@ -675,11 +696,12 @@ func progressionReceiptSeriesPoints(
 	var winner *uuid.UUID
 	switch label {
 	case swissusecase.SeriesResultPlayed, swissusecase.SeriesResultNoShow:
-		if first.Points == swissusecase.SeriesWinPoints && second.Points == 0 {
+		switch {
+		case first.Points == swissusecase.SeriesWinPoints && second.Points == 0:
 			winner = progressionUUIDPointerValue(evidence.FirstParticipantID)
-		} else if second.Points == swissusecase.SeriesWinPoints && first.Points == 0 {
+		case second.Points == swissusecase.SeriesWinPoints && first.Points == 0:
 			winner = progressionUUIDPointerValue(evidence.SecondParticipantID)
-		} else {
+		default:
 			return swissusecase.SeriesPointResult{}, domain.ErrConflict
 		}
 	case swissusecase.SeriesResultVoid:
@@ -708,7 +730,6 @@ func progressionReceiptSeriesPoints(
 }
 
 func progressionReceiptOfficialResultInput(
-	command tournamentprogression.Command,
 	authority tournamentprogression.Authority,
 	receipt sqlc.LockTournamentProgressionFinalSwissReceiptChainRow,
 	evidence sqlc.LockTournamentProgressionFinalSwissReceiptSeriesEvidenceRow,
@@ -722,7 +743,7 @@ func progressionReceiptOfficialResultInput(
 	switch evidence.TerminalSource {
 	case string(resultprojection.TerminalResultSourceNormalNoShow):
 		recorded, digest, err := progressionReceiptNoGame(
-			command, authority, receipt, evidence, series, gameRows, resultProjection, scoreProjection, rows, nodes, sources,
+			authority, receipt, evidence, series, gameRows, resultProjection, scoreProjection, rows, nodes, sources,
 		)
 		if err != nil {
 			return resultprojection.OfficialResultProjectionInput{}, "", err
@@ -734,7 +755,7 @@ func progressionReceiptOfficialResultInput(
 			return resultprojection.OfficialResultProjectionInput{}, "", err
 		}
 		score, err := progressionReceiptScoreHead(
-			authority, receipt, evidence, series, gameRows, scoreProjection,
+			authority, receipt, evidence, series, scoreProjection,
 			rows.scoreAttempts, rows.scoreAdjudications, rows.logicalNodes,
 		)
 		if err != nil {
@@ -753,6 +774,7 @@ func progressionReceiptOfficialResultInput(
 	}
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func progressionReceiptSeriesResultHead(
 	authority tournamentprogression.Authority,
 	evidence sqlc.LockTournamentProgressionFinalSwissReceiptSeriesEvidenceRow,
@@ -820,12 +842,12 @@ func progressionReceiptSeriesResultHead(
 	return restored, nil
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func progressionReceiptScoreHead(
 	authority tournamentprogression.Authority,
 	receipt sqlc.LockTournamentProgressionFinalSwissReceiptChainRow,
 	evidence sqlc.LockTournamentProgressionFinalSwissReceiptSeriesEvidenceRow,
 	series domain.Series,
-	gameRows []sqlc.LockTournamentProgressionFinalSwissReceiptGameEvidenceRow,
 	source domain.ProjectionRevision,
 	attemptRows []sqlc.LockTournamentProgressionFinalSwissReceiptScoreRevisionAttemptsRow,
 	adjudications []sqlc.LockTournamentProgressionFinalSwissReceiptScoreRevisionAdjudicationsRow,
@@ -939,6 +961,7 @@ type receiptResultBindingInput struct {
 	previousSourceID uuid.NullUUID
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func progressionPersistedCorrectionBinding(
 	authority tournamentprogression.Authority,
 	input receiptResultBindingInput,
@@ -974,6 +997,7 @@ func progressionPersistedCorrectionBinding(
 	}, nil
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func progressionReceiptScoreAttempts(
 	receiptID uuid.UUID,
 	evidence sqlc.LockTournamentProgressionFinalSwissReceiptSeriesEvidenceRow,
@@ -1002,6 +1026,7 @@ func progressionReceiptScoreAttempts(
 	return attempts, nil
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func progressionReceiptScoreAdjudication(
 	receiptID uuid.UUID,
 	evidence sqlc.LockTournamentProgressionFinalSwissReceiptSeriesEvidenceRow,
@@ -1023,8 +1048,8 @@ func progressionReceiptScoreAdjudication(
 	return found, found.OperatorForfeitCommitID != uuid.Nil
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func progressionReceiptNoGame(
-	command tournamentprogression.Command,
 	authority tournamentprogression.Authority,
 	receipt sqlc.LockTournamentProgressionFinalSwissReceiptChainRow,
 	evidence sqlc.LockTournamentProgressionFinalSwissReceiptSeriesEvidenceRow,
@@ -1101,7 +1126,6 @@ func progressionReceiptNoGame(
 			!game.ResultOccurredAt.Valid || !game.ResultOccurredAt.Time.UTC().Equal(resolvedAt) ||
 			domain.GameState(game.ResultState) != domain.GameStateCancelled ||
 			domain.GameResultReason(game.ResultReason) != domain.GameResultReasonSeriesCancelled {
-
 			return resultprojection.RecordedNoGameResult{}, "", domain.ErrConflict
 		}
 		projection, found := nodes[progressionReceiptNodeKey{receiptID: receipt.ProjectionRevisionID, nodeID: game.GameResultNodeID}]
@@ -1227,16 +1251,16 @@ func progressionUUIDPointer(value uuid.NullUUID) *uuid.UUID {
 	if !value.Valid || value.UUID == uuid.Nil {
 		return nil
 	}
-	copy := value.UUID
-	return &copy
+	clone := value.UUID
+	return &clone
 }
 
 func progressionUUIDPointerValue(value uuid.UUID) *uuid.UUID {
 	if value == uuid.Nil {
 		return nil
 	}
-	copy := value
-	return &copy
+	clone := value
+	return &clone
 }
 
 func progressionUUIDPointerEqual(first, second *uuid.UUID) bool {

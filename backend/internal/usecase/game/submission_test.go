@@ -255,12 +255,6 @@ func (h *submissionRepositoryHarness) setCommitError(err error) {
 	h.state.commitErr = err
 }
 
-func (h *submissionRepositoryHarness) setCommitConflicts(count int) {
-	h.state.mu.Lock()
-	defer h.state.mu.Unlock()
-	h.state.commitConflicts = count
-}
-
 func submissionFixture(
 	t *testing.T,
 	now time.Time,

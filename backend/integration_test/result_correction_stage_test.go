@@ -1324,15 +1324,20 @@ func TestTournamentAdminCorrectionCarriesNativeGoldenAuthorityAcrossUnchangedSta
 			LockLifecycleAuthority(txCtx, fixture.tournamentID)
 		return loadErr
 	}))
-	golden, err := postgres.NewTournamentProgressionPostgres(fixture.tx).LoadGoldenEvidence(
+	terminal, err := postgres.NewTournamentProgressionPostgres(fixture.tx).LoadLockedSwissTerminalEvidence(
 		ctx,
+		progression.Command{
+			CommandID: uuid.New(), TournamentID: fixture.tournamentID, RosterID: fixture.rosterID,
+			ActorID: uuid.New(), ExpectedProjectionRevision: firstProjectionRevision,
+			Action: progression.ActionStartPlayoffs,
+		},
 		progression.Authority{
 			Tournament: lifecycle.Tournament, ProjectionRevisionID: firstProjectionID,
 			ProjectionRevision: firstProjectionRevision,
 		},
 	)
 	require.NoError(t, err)
-	require.NotEmpty(t, golden.CurrentTerminalSeries)
+	require.NotEmpty(t, terminal.Rounds)
 
 	second := commitUnchanged(domain.GameResultReasonSurrender)
 	_, replayed, err := repository.CommitCorrection(ctx, second)

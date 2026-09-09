@@ -17,14 +17,14 @@ var _ playoff.ExactDraftCommittedPlanReader = (*ExactDraftBranchPlanPostgres)(ni
 // LoadCommittedExactDraftPlan exposes the exact-draft owner's already
 // validated rehydration path to terminal progression. A missing plan is a
 // durable final-stage inconsistency, not a retryable absence.
-func (repository *ExactDraftBranchPlanPostgres) LoadCommittedExactDraftPlan(
+func (r *ExactDraftBranchPlanPostgres) LoadCommittedExactDraftPlan(
 	ctx context.Context,
 	planID uuid.UUID,
 ) (*assignmentusecase.ExactDraftBranchPlan, error) {
-	if repository == nil || ctx == nil || planID == uuid.Nil {
+	if r == nil || ctx == nil || planID == uuid.Nil {
 		return nil, domain.ErrValidation
 	}
-	plan, _, err := repository.LoadExactDraftBranchActivation(ctx, planID)
+	plan, _, err := r.LoadExactDraftBranchActivation(ctx, planID)
 	if errors.Is(err, assignmentusecase.ErrExactDraftBranchPlanNotFound) {
 		return nil, domain.ErrConflict
 	}

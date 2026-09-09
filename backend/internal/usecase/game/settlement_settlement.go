@@ -455,6 +455,7 @@ func validateSettlementScoreRevision(settlement SettlementRecord) error {
 	return nil
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func validateSettledSeries(settlement SettlementRecord) error {
 	series := settlement.Series
 	if series.Validate() != nil || series.ID != settlement.Scope.Game.SeriesID ||

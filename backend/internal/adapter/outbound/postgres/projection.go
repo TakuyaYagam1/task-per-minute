@@ -307,6 +307,7 @@ func validProjectionArtifactSet(artifacts []ProjectionArtifactInput) bool {
 	return true
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func validProjectionSource(source ProjectionSource) bool {
 	result := source.OfficialResultRevisionID != nil && *source.OfficialResultRevisionID != uuid.Nil
 	golden := source.GoldenPositionCommitID != nil && *source.GoldenPositionCommitID != uuid.Nil

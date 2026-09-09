@@ -116,6 +116,7 @@ func validateRequestedScoreTransition(
 	current []SeriesScoreAttemptReference,
 	projected []SeriesScoreAttemptReference,
 ) error {
+	//nolint:exhaustive // This switch intentionally handles only the valid states for this boundary.
 	switch command.Operation {
 	case SeriesScoreRevisionOperationAppendAttempt:
 		if len(projected) != len(current)+1 ||
@@ -233,6 +234,7 @@ func validateScoreTargetStateTransition(
 	persisted domain.Game,
 	projected domain.Game,
 ) error {
+	//nolint:exhaustive // This switch intentionally handles only the valid states for this boundary.
 	switch operation {
 	case SeriesScoreRevisionOperationAppendAttempt:
 		if persisted.State.IsTerminal() || !projected.State.IsTerminal() {

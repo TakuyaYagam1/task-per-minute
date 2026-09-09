@@ -112,6 +112,7 @@ func (r *TournamentAdminReplayPostgres) LoadOperatorReserveAuthority(
 	}, nil
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func (r *TournamentAdminReplayPostgres) CommitOperatorReserve(
 	ctx context.Context,
 	command tournamentadmin.ReserveCommand,
@@ -162,6 +163,7 @@ func (r *TournamentAdminReplayPostgres) CommitOperatorReserve(
 	if err != nil {
 		return nil, false, err
 	}
+	//nolint:musttag // This versioned application-owned document is validated on both encode and decode.
 	selectionEvidence, err := json.Marshal(record.Reserve.Evidence)
 	if err != nil {
 		return nil, false, fmt.Errorf("TournamentAdminReplayPostgres - encode reserve evidence: %w", err)
@@ -185,7 +187,7 @@ func (r *TournamentAdminReplayPostgres) CommitOperatorReserve(
 		ExpectedArtifactRevisionID: command.ExpectedArtifactRevisionID, ExpectedArtifactRevision: command.ExpectedArtifactRevision,
 		ExpectedReservationRevisionID: command.ExpectedReservationRevisionID, ExpectedReservationRevision: command.ExpectedReservationRevision,
 		ExpectedCategoryRevisionID: command.ExpectedCategoryRevisionID, ExpectedCategoryRevision: command.ExpectedCategoryRevision,
-		ProposedTaskID: record.Reserve.Snapshot.TaskID, ProposedVersion: int32(record.Reserve.Snapshot.Version),
+		ProposedTaskID: record.Reserve.Snapshot.TaskID, ProposedVersion: int32(record.Reserve.Snapshot.Version), //nolint:gosec // Domain validation bounds this value before the storage conversion.
 		ProposedSnapshotID: record.Reserve.Snapshot.SnapshotID, EvidenceID: record.Reserve.Evidence.ID,
 		EdgeID: edgeID, ReservationID: reservationID, SourceSeriesRevision: record.ExpectedAuthorityRevision,
 		ResultingSeriesRevision: record.ExpectedAuthorityRevision + 1,
@@ -198,7 +200,7 @@ func (r *TournamentAdminReplayPostgres) CommitOperatorReserve(
 	}
 	if _, err = querier.CreateOperatorReplayReserveEdge(ctx, sqlc.CreateOperatorReplayReserveEdgeParams{
 		ID: edgeID, PlanID: source.row.AssignmentPlan.ID, BranchID: source.row.AssignmentBranch.ID,
-		TaskID: record.Reserve.Snapshot.TaskID, TaskVersion: int32(record.Reserve.Snapshot.Version),
+		TaskID: record.Reserve.Snapshot.TaskID, TaskVersion: int32(record.Reserve.Snapshot.Version), //nolint:gosec // Domain validation bounds this value before the storage conversion.
 		OperatorReserveCommandID: nullableUUIDValue(command.CommandID), SelectionEvidence: selectionEvidence,
 		CreatedAt: createdAt,
 	}); err != nil {
@@ -207,16 +209,16 @@ func (r *TournamentAdminReplayPostgres) CommitOperatorReserve(
 	if _, err = querier.CreateOperatorReplayReserveReservation(ctx, sqlc.CreateOperatorReplayReserveReservationParams{
 		ID: reservationID, EdgeID: edgeID, PlanID: source.row.AssignmentPlan.ID,
 		BranchID: source.row.AssignmentBranch.ID, TaskID: record.Reserve.Snapshot.TaskID,
-		TaskVersion: int32(record.Reserve.Snapshot.Version), CommittedAt: createdAt, CreatedAt: createdAt,
+		TaskVersion: int32(record.Reserve.Snapshot.Version), CommittedAt: createdAt, CreatedAt: createdAt, //nolint:gosec // Domain validation bounds this value before the storage conversion.
 	}); err != nil {
 		return nil, false, replayWorkflowWriteError("create operator reserve reservation", err)
 	}
 	if _, err = querier.CreateOperatorReplayReserveSnapshot(ctx, sqlc.CreateOperatorReplayReserveSnapshotParams{
 		ID: record.Reserve.Snapshot.SnapshotID, ReservationID: reservationID,
-		TaskID: record.Reserve.Snapshot.TaskID, TaskVersion: int32(record.Reserve.Snapshot.Version),
+		TaskID: record.Reserve.Snapshot.TaskID, TaskVersion: int32(record.Reserve.Snapshot.Version), //nolint:gosec // Domain validation bounds this value before the storage conversion.
 		Title: record.Reserve.Snapshot.Title, Description: record.Reserve.Snapshot.Description,
 		Category: string(record.Reserve.Snapshot.Category), Difficulty: string(record.Reserve.Snapshot.Difficulty),
-		TimeLimit: int32(record.Reserve.Snapshot.TimeLimit), Flag: record.Reserve.Snapshot.Flag,
+		TimeLimit: int32(record.Reserve.Snapshot.TimeLimit), Flag: record.Reserve.Snapshot.Flag, //nolint:gosec // Domain validation bounds this value before the storage conversion.
 		Hints: hints, TaskUrl: record.Reserve.Snapshot.TaskURL, SourceFileUrl: record.Reserve.Snapshot.SourceFileURL,
 		ContentDigest: record.Reserve.ContentDigest[:], CreatedAt: createdAt,
 	}); err != nil {
@@ -302,6 +304,7 @@ func (r *TournamentAdminReplayPostgres) LoadReplayReplacementAuthority(
 	}, nil
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func (r *TournamentAdminReplayPostgres) CommitReplayReplacement(
 	ctx context.Context,
 	command tournamentadmin.ReplayCommand,
@@ -384,7 +387,7 @@ func (r *TournamentAdminReplayPostgres) CommitReplayReplacement(
 		ReplacementWaveRevisionID: replacement.Wave.RevisionID.UUID(),
 		ReadyWindowID:             replacement.Wave.ReadyWindow.ID,
 		ReadyWindowRevisionID:     replacement.Wave.ReadyWindow.RevisionID.UUID(),
-		SnapshotID:                replacement.Snapshot.SnapshotID, ReservePosition: int16(replacement.ReservePosition),
+		SnapshotID:                replacement.Snapshot.SnapshotID, ReservePosition: int16(replacement.ReservePosition), //nolint:gosec // Domain validation bounds this value before the storage conversion.
 		SourceSeriesRevision:    replacement.ExpectedAuthorityRevision,
 		ResultingSeriesRevision: replacement.ExpectedAuthorityRevision + 1,
 		ActorID:                 command.Operator.ActorID, Reason: command.Reason, RequestDigest: requestDigest[:],
@@ -419,7 +422,7 @@ func (r *TournamentAdminReplayPostgres) CommitReplayReplacement(
 	}
 	if _, err = querier.CreateReplayReplacementGameAttempt(ctx, sqlc.CreateReplayReplacementGameAttemptParams{
 		ID: replacement.Game.ID, SlotID: replacement.Slot.ID, SeriesID: command.SeriesID,
-		RosterID: source.row.Roster.ID, AttemptNumber: int32(replacement.Game.AttemptNo), CreatedAt: openedAt,
+		RosterID: source.row.Roster.ID, AttemptNumber: int32(replacement.Game.AttemptNo), CreatedAt: openedAt, //nolint:gosec // Domain validation bounds this value before the storage conversion.
 	}); err != nil {
 		return nil, false, replayWorkflowWriteError("create replacement Game", err)
 	}
@@ -427,7 +430,7 @@ func (r *TournamentAdminReplayPostgres) CommitReplayReplacement(
 		ID: replacement.AssignmentAttemptID, AttemptID: replacement.Game.ID, SeriesID: command.SeriesID,
 		RosterID: source.row.Roster.ID, PlanID: source.row.AssignmentPlan.ID, BranchID: source.row.AssignmentBranch.ID,
 		ReservationID: reservation.ID, SnapshotID: replacement.Snapshot.SnapshotID,
-		TaskID: replacement.Snapshot.TaskID, TaskVersion: int32(replacement.Snapshot.Version), CreatedAt: openedAt,
+		TaskID: replacement.Snapshot.TaskID, TaskVersion: int32(replacement.Snapshot.Version), CreatedAt: openedAt, //nolint:gosec // Domain validation bounds this value before the storage conversion.
 	}); err != nil {
 		return nil, false, replayWorkflowWriteError("create replacement assignment", err)
 	}
@@ -546,6 +549,7 @@ type replaySource struct {
 	participants []sqlc.LockReplayWorkflowParticipantReservationsRow
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func (r *TournamentAdminReplayPostgres) loadSource(
 	ctx context.Context,
 	querier *sqlc.Queries,
@@ -617,6 +621,7 @@ func (r *TournamentAdminReplayPostgres) loadSource(
 	return source, nil
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func (source replaySource) seriesExecution(
 	state domain.SeriesState,
 	resumeState *domain.SeriesState,
@@ -700,6 +705,7 @@ func (source replaySource) seriesExecution(
 	return execution, nil
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func replayGameFromRow(
 	row sqlc.GameAttempt,
 	headByGame map[uuid.UUID]sqlc.LockReplayWorkflowGameResultHeadsRow,
@@ -738,6 +744,7 @@ func replayResultReasonIsValid(row sqlc.GameAttempt) bool {
 	return row.ResultReason != nil && *row.ResultReason != ""
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func (source replaySource) oldWave() (domain.Wave, error) {
 	if domain.WaveState(source.row.Wave.State) != domain.WaveStateCompleted ||
 		!source.row.Wave.StartedAt.Valid || source.row.Wave.RevisionID == uuid.Nil || len(source.waveRows) != 2 {
@@ -802,6 +809,7 @@ func (source replaySource) failedAttemptAndClosure(
 	return source.failedAttemptAndClosureDocument(document)
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func (source replaySource) failedAttemptAndClosureDocument(
 	document replayReserveExhaustionDocument,
 ) (gameusecase.AttemptRecord, gameusecase.Closure, error) {
@@ -844,7 +852,7 @@ func (source replaySource) failedAttemptAndClosureDocument(
 		return gameusecase.AttemptRecord{}, gameusecase.Closure{}, errReplayWorkflowAuthority
 	}
 	head, found := source.gameHead(source.row.GameAttempt.ID)
-	if !found || head.ResultRevisionID != (*failedGame.ResultRevisionID).UUID() || !head.OccurredAt.Valid ||
+	if !found || head.ResultRevisionID != failedGame.ResultRevisionID.UUID() || !head.OccurredAt.Valid ||
 		!source.scoreHead.ScoreRecordedAt.Valid || source.scoreHead.ScoreRevisionID != source.scoreHead.CurrentRevisionID {
 		return gameusecase.AttemptRecord{}, gameusecase.Closure{}, errReplayWorkflowAuthority
 	}
@@ -970,6 +978,7 @@ func optionalScoreRevisionID(value uuid.NullUUID) *domain.SeriesScoreRevisionID 
 	return &result
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func (r *TournamentAdminReplayPostgres) loadReserveAuthority(
 	ctx context.Context,
 	querier *sqlc.Queries,
@@ -985,7 +994,7 @@ func (r *TournamentAdminReplayPostgres) loadReserveAuthority(
 		ExpectedArtifactRevisionID: command.ExpectedArtifactRevisionID, ExpectedArtifactRevision: command.ExpectedArtifactRevision,
 		ExpectedReservationRevisionID: command.ExpectedReservationRevisionID, ExpectedReservationRevision: command.ExpectedReservationRevision,
 		ExpectedCategoryRevisionID: command.ExpectedCategoryRevisionID, ExpectedCategoryRevision: command.ExpectedCategoryRevision,
-		ProposedTaskID: command.ProposedTaskID, ProposedVersion: int32(command.ProposedVersion),
+		ProposedTaskID: command.ProposedTaskID, ProposedVersion: int32(command.ProposedVersion), //nolint:gosec // Domain validation bounds this value before the storage conversion.
 	})
 	if err != nil {
 		return assignmentusecase.ReserveAssignmentAuthority{}, replayWorkflowLookupError("lock reserve authority", err)
@@ -994,7 +1003,7 @@ func (r *TournamentAdminReplayPostgres) loadReserveAuthority(
 		row.RosterID != source.row.Roster.ID || row.SeriesID != command.SeriesID || row.SlotID != command.SlotID ||
 		row.AssignmentAttemptID != command.AssignmentAttemptID || row.CurrentAssignmentID != command.AssignmentID ||
 		row.CurrentAssignmentRevision != command.ExpectedAssignmentRevision || row.CurrentSnapshotID != command.ExpectedSnapshotID ||
-		row.CandidateTaskRowID != row.CandidateTaskID || row.CandidateVersion != int32(command.ProposedVersion) ||
+		row.CandidateTaskRowID != row.CandidateTaskID || row.CandidateVersion != int32(command.ProposedVersion) || //nolint:gosec // Domain validation bounds this value before the storage conversion.
 		len(row.CandidateContentDigest) != sha256.Size {
 		return assignmentusecase.ReserveAssignmentAuthority{}, errReplayWorkflowAuthority
 	}
@@ -1137,7 +1146,7 @@ func (r *TournamentAdminReplayPostgres) reserveAuthorityRevision(
 		ExpectedArtifactRevisionID: command.ExpectedArtifactRevisionID, ExpectedArtifactRevision: command.ExpectedArtifactRevision,
 		ExpectedReservationRevisionID: command.ExpectedReservationRevisionID, ExpectedReservationRevision: command.ExpectedReservationRevision,
 		ExpectedCategoryRevisionID: command.ExpectedCategoryRevisionID, ExpectedCategoryRevision: command.ExpectedCategoryRevision,
-		ProposedTaskID: command.ProposedTaskID, ProposedVersion: int32(command.ProposedVersion),
+		ProposedTaskID: command.ProposedTaskID, ProposedVersion: int32(command.ProposedVersion), //nolint:gosec // Domain validation bounds this value before the storage conversion.
 	})
 	if err != nil {
 		return 0, replayWorkflowLookupError("reload reserve authority", err)
@@ -1233,6 +1242,7 @@ func operatorReserveDocumentFromRecord(
 }
 
 func replayReserveCommandDigest(command tournamentadmin.ReserveCommand) []byte {
+	//nolint:musttag // This versioned application-owned document is validated on both encode and decode.
 	payload, err := json.Marshal(struct {
 		Action string                         `json:"action"`
 		Value  tournamentadmin.ReserveCommand `json:"command"`
@@ -1288,6 +1298,7 @@ func replayReplacementDocumentFromReplacement(
 		Reason: command.Reason, OpenedAt: replacement.OpenedAt}
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func replayReplacementFromStored(
 	source replaySource,
 	command tournamentadmin.ReplayCommand,

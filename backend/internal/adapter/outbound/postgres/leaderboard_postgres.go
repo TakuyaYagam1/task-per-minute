@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"fmt"
+
 	leaderboardusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/leaderboard"
 )
 

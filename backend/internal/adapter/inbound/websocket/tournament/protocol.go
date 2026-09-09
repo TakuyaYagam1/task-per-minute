@@ -193,16 +193,16 @@ func optionalResumeID(value uuid.UUID) *uuid.UUID {
 	if value == uuid.Nil {
 		return nil
 	}
-	copy := value
-	return &copy
+	clone := value
+	return &clone
 }
 
 func cloneResumeID(value *uuid.UUID) *uuid.UUID {
 	if value == nil {
 		return nil
 	}
-	copy := *value
-	return &copy
+	clone := *value
+	return &clone
 }
 
 func resumeIDValue(value *uuid.UUID) uuid.UUID {

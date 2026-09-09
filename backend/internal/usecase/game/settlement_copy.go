@@ -35,7 +35,7 @@ func settlementCloneSeriesScoreRevisionIDPointer(
 	return &cloned
 }
 
-func settlementUuidPointersEqual(first, second *uuid.UUID) bool {
+func settlementUUIDPointersEqual(first, second *uuid.UUID) bool {
 	if first == nil || second == nil {
 		return first == nil && second == nil
 	}
@@ -45,7 +45,7 @@ func settlementUuidPointersEqual(first, second *uuid.UUID) bool {
 func settlementSettlementGamesEqual(first, second domain.Game) bool {
 	return first.ID == second.ID && first.SlotID == second.SlotID && first.AttemptNo == second.AttemptNo &&
 		first.State == second.State && first.ResultReason == second.ResultReason &&
-		settlementUuidPointersEqual(first.WinnerID, second.WinnerID) &&
+		settlementUUIDPointersEqual(first.WinnerID, second.WinnerID) &&
 		settlementOfficialResultRevisionPointersEqual(first.ResultRevisionID, second.ResultRevisionID)
 }
 

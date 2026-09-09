@@ -84,6 +84,7 @@ func recoveryGameSettlementInput(
 	}, nil
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func (repository *RecoveryTerminalPostgres) commitReadyWindow(
 	ctx context.Context,
 	querier *sqlc.Queries,
@@ -377,7 +378,7 @@ func createRecoveryNoShowSeriesEvidence(
 			ResultScope{TournamentID: plan.Deadline.TournamentID, RosterID: plan.Deadline.RosterID,
 				SeriesID: resolution.Scope.SeriesID, AttemptID: item.GameAttemptID},
 			resolution.ScoreRevision.ID.UUID(),
-			int16(index+1), //nolint:gosec // a BO1 or BO3 no-show has at most three slots.
+			int16(index+1),
 			item,
 		); err != nil {
 			return err

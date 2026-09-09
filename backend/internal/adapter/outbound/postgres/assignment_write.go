@@ -30,6 +30,7 @@ func (r *AssignmentPostgres) CreateAssignment(
 	return r.GetAssignment(ctx, in.ID)
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func (r *AssignmentPostgres) createAssignmentTx(
 	ctx context.Context,
 	in AssignmentCreateInput,

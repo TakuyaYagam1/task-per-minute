@@ -9,7 +9,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
-var LifecycleErrTournamentNotFound = errors.New("tournament not found")
+var ErrTournamentNotFound = errors.New("tournament not found")
 
 type LifecycleTournamentRecord struct {
 	ID              uuid.UUID

@@ -23,7 +23,7 @@ const maxOpenAPIRequestBodyBytes int64 = 1 << 20
 // contract. Authentication and authorization remain owned by the existing
 // application middleware.
 func OpenAPIRequestValidator(ctx context.Context, log logkit.Logger) (func(http.Handler) http.Handler, error) {
-	swagger, err := api.GetSwagger()
+	swagger, err := api.GetSpec()
 	if err != nil {
 		return nil, fmt.Errorf("load OpenAPI spec: %w", err)
 	}

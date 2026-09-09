@@ -17,7 +17,7 @@ func forfeitCloneUUIDPointer(value *uuid.UUID) *uuid.UUID {
 	return &cloned
 }
 
-func forfeitUuidPointersEqual(first, second *uuid.UUID) bool {
+func forfeitUUIDPointersEqual(first, second *uuid.UUID) bool {
 	if first == nil || second == nil {
 		return first == nil && second == nil
 	}
@@ -61,7 +61,7 @@ func forfeitCloneGame(game domain.Game) domain.Game {
 func forfeitSettlementGamesEqual(first, second domain.Game) bool {
 	return first.ID == second.ID && first.SlotID == second.SlotID && first.AttemptNo == second.AttemptNo &&
 		first.State == second.State && first.ResultReason == second.ResultReason &&
-		forfeitUuidPointersEqual(first.WinnerID, second.WinnerID) &&
+		forfeitUUIDPointersEqual(first.WinnerID, second.WinnerID) &&
 		forfeitOfficialResultRevisionPointersEqual(first.ResultRevisionID, second.ResultRevisionID)
 }
 

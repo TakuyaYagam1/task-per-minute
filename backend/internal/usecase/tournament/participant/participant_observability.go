@@ -129,7 +129,7 @@ func observeParticipantOperationSafely(
 	event ParticipantOperationEvent,
 ) {
 	if ctx == nil {
-		ctx = context.Background()
+		return
 	}
 	defer func() {
 		_ = recover()

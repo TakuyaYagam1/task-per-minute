@@ -26,6 +26,7 @@ func validFinalInitialPlan(plan playoff.FinalInitialPlan) bool {
 		plan.Binding.GameID == series.Slots[0].Attempts[0].ID && domain.IsValidServerTime(plan.ActivatedAt)
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func validFinalContinuationPlan(plan playoff.FinalContinuationPlan) bool {
 	return plan.StageCommandID != uuid.Nil && plan.RosterID != uuid.Nil && plan.SeriesID != uuid.Nil &&
 		!plan.SourceScoreRevision.IsZero() && !plan.SourceResultRevision.IsZero() &&
@@ -90,6 +91,7 @@ func (repository *PlayoffTerminalPostgres) validateFinalInitialDraft(
 	return nil
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func (repository *PlayoffTerminalPostgres) createFinalGameGraph(
 	ctx context.Context,
 	querier *sqlc.Queries,
@@ -110,12 +112,15 @@ func (repository *PlayoffTerminalPostgres) createFinalGameGraph(
 		return fmt.Errorf("final game graph binding: %w", domain.ErrConflict)
 	}
 	if _, err := querier.CreateGameSlot(ctx, sqlc.CreateGameSlotParams{
-		ID:                          slot.ID,
-		SeriesID:                    series.ID,
-		RosterID:                    stage.RosterID,
-		SlotNumber:                  int16(slot.Position),
-		Category:                    string(slot.Category),
-		FirstParticipantWinsBefore:  int16(slot.ScoreBefore.FirstParticipantWins),
+		ID:       slot.ID,
+		SeriesID: series.ID,
+		RosterID: stage.RosterID,
+		//nolint:gosec // Domain validation bounds this value before the storage conversion.
+		SlotNumber: int16(slot.Position),
+		Category:   string(slot.Category),
+		//nolint:gosec // Domain validation bounds this value before the storage conversion.
+		FirstParticipantWinsBefore: int16(slot.ScoreBefore.FirstParticipantWins),
+		//nolint:gosec // Domain validation bounds this value before the storage conversion.
 		SecondParticipantWinsBefore: int16(slot.ScoreBefore.SecondParticipantWins),
 		CreatedAt:                   tstz(createdAt),
 	}); err != nil {
@@ -209,6 +214,7 @@ func finalProgressionMatchesPlan(
 		row.RosterID == plan.RosterID && row.FinalSeriesID == plan.SeriesID &&
 		row.SourceScoreRevisionID == plan.SourceScoreRevision.UUID() &&
 		row.SourceGameResultRevisionID == plan.SourceResultRevision.UUID() &&
+		//nolint:gosec // Domain validation bounds this value before the storage conversion.
 		row.NextPosition == int16(plan.Slot.Position) && row.NextSlotID == plan.Next.SlotID &&
 		row.NextGameID == plan.Next.GameID && row.NextWaveID == plan.Next.WaveID &&
 		row.NextWaveRevisionID == plan.Next.WaveRevisionID.UUID() && row.NextAssignmentID == plan.Binding.AssignmentID

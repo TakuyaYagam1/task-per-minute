@@ -17,6 +17,7 @@ import (
 	projection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection"
 )
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func (repository *PlayoffTerminalPostgres) finalPublication(
 	ctx context.Context,
 	stage sqlc.LockPostseasonFinalStageRow,
@@ -28,7 +29,7 @@ func (repository *PlayoffTerminalPostgres) finalPublication(
 		aggregate.TournamentState != string(domain.TournamentStatePlayoffs) &&
 			aggregate.TournamentState != string(domain.TournamentStateCompleted) ||
 		aggregate.SeriesState != string(domain.SeriesStateCompleted) || !aggregate.WinnerID.Valid ||
-		aggregate.CurrentResultRevisionID.Valid == false ||
+		!aggregate.CurrentResultRevisionID.Valid ||
 		aggregate.CurrentResultRevisionID.UUID != progression.Progression.TerminalResultRevisionID.UUID() {
 		return nil, domain.ErrConflict
 	}
@@ -194,11 +195,12 @@ func (repository *PlayoffTerminalPostgres) finalPublication(
 		PublishedAt:            publishedAt,
 	}
 	if err := publication.Validate(); err != nil {
-		return nil, fmt.Errorf("final publication validation (%v): %w", err, domain.ErrConflict)
+		return nil, fmt.Errorf("final publication validation (%w): %w", err, domain.ErrConflict)
 	}
 	return publication, nil
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func finalPublicationArtifacts(
 	ids playoff.FinalPublicationIDs,
 	record ProjectionRecord,
@@ -217,8 +219,8 @@ func finalPublicationArtifacts(
 			membership.RevisionID != record.Revision.ID || membership.TournamentID != stage.TournamentID ||
 			membership.RosterID != stage.RosterID || membership.ProducedByRevisionID == uuid.Nil ||
 			membership.ProducerRevision < 1 ||
-			!(membership.ChangeKind == "produced" && membership.ProducedByRevisionID == record.Revision.ID && membership.ProducerRevision == record.Revision.RevisionNumber ||
-				membership.ChangeKind == "reused" && membership.ProducedByRevisionID != record.Revision.ID && membership.ProducerRevision < record.Revision.RevisionNumber) {
+			((membership.ChangeKind != "produced" || membership.ProducedByRevisionID != record.Revision.ID || membership.ProducerRevision != record.Revision.RevisionNumber) &&
+				(membership.ChangeKind != "reused" || membership.ProducedByRevisionID == record.Revision.ID || membership.ProducerRevision >= record.Revision.RevisionNumber)) {
 			return nil, domain.ErrConflict
 		}
 		byArtifact[membership.ArtifactID] = membership

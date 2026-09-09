@@ -352,6 +352,7 @@ func epochReplayCommandDigest(command EpochReplayCommand) [sha256.Size]byte {
 	// Authority is server-owned fencing evidence. It deliberately does not
 	// participate in request identity so a completed replay remains retryable
 	// after the lease has been renewed or taken over by another replica.
+	//nolint:musttag // This versioned application-owned document is validated on both encode and decode.
 	document, err := json.Marshal(struct {
 		BrokenAuthority authoritydomain.Stamp
 		RosterID        uuid.UUID

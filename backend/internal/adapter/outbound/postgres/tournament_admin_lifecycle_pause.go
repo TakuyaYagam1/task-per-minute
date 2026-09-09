@@ -24,7 +24,7 @@ func (r *TournamentAdminLifecyclePostgres) GetTournament(
 	}
 	row, err := r.tx.Querier(ctx).GetTournamentSummary(ctx, id)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, tournamentpause.PauseErrTournamentNotFound
+		return nil, tournamentpause.ErrTournamentNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("TournamentAdminLifecyclePostgres - get tournament: %w", err)
@@ -49,7 +49,7 @@ func (r *TournamentAdminLifecyclePostgres) GetTournamentTechnicalPause(
 		sqlc.FindTournamentLifecycleCommandParams{TournamentID: tournamentID, CommandID: commandID},
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, tournamentpause.PauseErrTournamentNotFound
+		return nil, tournamentpause.ErrTournamentNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("TournamentAdminLifecyclePostgres - get technical pause: %w", err)

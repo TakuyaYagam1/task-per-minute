@@ -1,11 +1,12 @@
 package assignment_test
 
 import (
+	"testing"
+
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	assignment "github.com/TakuyaYagam1/task-per-minute/internal/usecase/assignment"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
-	"testing"
 )
 
 func TestExactDraftExcludesLockedReservations(t *testing.T) {

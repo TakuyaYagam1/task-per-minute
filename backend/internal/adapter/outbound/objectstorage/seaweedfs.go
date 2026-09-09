@@ -4,11 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"time"
+
 	taskusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/task"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
-	"io"
-	"time"
 )
 
 var (

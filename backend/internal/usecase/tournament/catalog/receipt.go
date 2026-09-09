@@ -93,6 +93,7 @@ func createTournamentPayloadDigest(command usecase.TournamentCreateCommand) [sha
 	payload = append(payload, "tournament-create:v1\x00"...)
 	payload = append(payload, command.Operator.ActorID[:]...)
 	revision := [8]byte{}
+	//nolint:gosec // Signed timestamp bits are intentionally encoded as unsigned digest input.
 	binary.BigEndian.PutUint64(revision[:], uint64(command.ExpectedRevision))
 	payload = append(payload, revision[:]...)
 	payload = append(payload, 0)

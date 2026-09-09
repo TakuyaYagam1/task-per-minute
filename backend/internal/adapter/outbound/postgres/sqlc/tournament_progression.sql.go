@@ -8005,3 +8005,63 @@ func (q *Queries) LockTournamentProgressionSwissSeries(ctx context.Context, arg 
 	}
 	return items, nil
 }
+
+const resolveTournamentProgressionGoldenSource = `-- name: ResolveTournamentProgressionGoldenSource :one
+WITH RECURSIVE projection_lineage AS (
+    SELECT $3::UUID AS projection_revision_id,
+        $4::BIGINT AS projection_revision,
+        0::BIGINT AS depth
+
+    UNION ALL
+
+    SELECT correction.source_projection_revision_id,
+        correction.source_projection_revision,
+        lineage.depth + 1
+    FROM projection_lineage AS lineage
+    INNER JOIN result_correction_commits AS correction
+        ON correction.tournament_id = $1
+        AND correction.roster_id = $2
+        AND correction.resulting_projection_revision_id = lineage.projection_revision_id
+        AND correction.resulting_projection_revision = lineage.projection_revision
+)
+SELECT lineage.projection_revision_id,
+    lineage.projection_revision
+FROM projection_lineage AS lineage
+WHERE EXISTS (
+    SELECT 1
+    FROM golden_group_revisions AS group_revision
+    WHERE group_revision.tournament_id = $1
+        AND group_revision.roster_id = $2
+        AND group_revision.source_projection_revision_id = lineage.projection_revision_id
+        AND group_revision.source_projection_revision = lineage.projection_revision
+)
+ORDER BY lineage.depth
+LIMIT 1
+`
+
+type ResolveTournamentProgressionGoldenSourceParams struct {
+	TournamentID         uuid.UUID
+	RosterID             uuid.UUID
+	ProjectionRevisionID uuid.UUID
+	ProjectionRevision   int64
+}
+
+type ResolveTournamentProgressionGoldenSourceRow struct {
+	ProjectionRevisionID uuid.UUID
+	ProjectionRevision   int64
+}
+
+// An unchanged correction publishes a new projection without rewriting the
+// immutable Golden group revisions. Follow correction predecessors until the
+// nearest projection that owns the active Golden authority is found.
+func (q *Queries) ResolveTournamentProgressionGoldenSource(ctx context.Context, arg ResolveTournamentProgressionGoldenSourceParams) (ResolveTournamentProgressionGoldenSourceRow, error) {
+	row := q.db.QueryRow(ctx, resolveTournamentProgressionGoldenSource,
+		arg.TournamentID,
+		arg.RosterID,
+		arg.ProjectionRevisionID,
+		arg.ProjectionRevision,
+	)
+	var i ResolveTournamentProgressionGoldenSourceRow
+	err := row.Scan(&i.ProjectionRevisionID, &i.ProjectionRevision)
+	return i, err
+}

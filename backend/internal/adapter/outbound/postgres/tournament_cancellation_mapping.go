@@ -53,31 +53,6 @@ func foundCancellationRecord(
 	)
 }
 
-func createdCancellationRecord(
-	row sqlc.TournamentCancellation,
-	tournamentRow sqlc.Tournament,
-) (*tournamentcancellation.TournamentCancellationRecord, error) {
-	tournament, err := cancellationTournamentRecord(tournamentRow)
-	if err != nil {
-		return nil, err
-	}
-	return mapCancellationRecord(
-		row.CommandID,
-		row.TournamentID,
-		row.RosterID,
-		row.SourceRevision,
-		row.ResultingRevision,
-		row.SourceState,
-		row.ActorID,
-		row.Reason,
-		row.AuditEventID,
-		row.OutboxEventID,
-		row.CancelledAt,
-		row.CreatedAt,
-		tournament,
-	)
-}
-
 func mapCancellationRecord(
 	commandID uuid.UUID,
 	tournamentID uuid.UUID,

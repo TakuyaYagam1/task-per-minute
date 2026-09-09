@@ -261,6 +261,16 @@ WHERE id = sqlc.arg(id)
 FOR UPDATE;
 
 -- name: InsertTournamentParticipant :one
+WITH locked_roster AS MATERIALIZED (
+    UPDATE rosters AS roster
+    SET revision = roster.revision + 1,
+        updated_at = sqlc.arg(created_at)
+    WHERE roster.id = sqlc.arg(roster_id)
+        AND roster.locked_at IS NULL
+        AND roster.execution_started_at IS NULL
+    RETURNING roster.id,
+        roster.tournament_id
+)
 INSERT INTO participants (
     id,
     roster_id,
@@ -277,13 +287,10 @@ SELECT sqlc.arg(id) AS participant_id,
     sqlc.arg(attendance),
     sqlc.arg(created_at),
     sqlc.arg(created_at)
-FROM rosters AS roster
+FROM locked_roster AS roster
 INNER JOIN players AS player
     ON player.id = sqlc.arg(player_id)
     AND player.deleted_at IS NULL
-WHERE roster.id = sqlc.arg(roster_id)
-    AND roster.locked_at IS NULL
-    AND roster.execution_started_at IS NULL
 RETURNING id,
     roster_id,
     player_id,

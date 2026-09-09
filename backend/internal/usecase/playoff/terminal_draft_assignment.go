@@ -109,6 +109,7 @@ func (s *FinalDraftAssignmentService) ActivateFinalDraft(
 	return bindings, changed, nil
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func (s *FinalDraftAssignmentService) RehydrateFinalBindings(
 	ctx context.Context,
 	authority FinalSettlementAuthority,
@@ -148,6 +149,7 @@ func (s *FinalDraftAssignmentService) RehydrateFinalBindings(
 	return reconcileFinalBindings(authority.IDs, bindings, authority.Bindings, prefix)
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func finalDraftAssignmentCommand(
 	plan FinalDraftPlan,
 	authority assignmentusecase.ExactDraftBranchPlanAuthority,
@@ -204,6 +206,7 @@ func finalDraftAssignmentCommand(
 	return command, nil
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func finalDraftGameBindings(
 	ids FinalStageIDs,
 	plan assignmentusecase.ExactDraftBranchPlan,
@@ -274,7 +277,7 @@ func reconcileFinalBindings(
 
 func finalSettlementBindingPrefix(authority FinalSettlementAuthority) (int, error) {
 	currentID := authority.Progression.Progression.Game.ID
-	prefix := 0
+	var prefix int
 	switch currentID {
 	case authority.IDs.FirstGameID:
 		prefix = 1

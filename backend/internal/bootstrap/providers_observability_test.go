@@ -348,7 +348,6 @@ func TestHealthProbeFailsClosedWithoutSharedWorkerHeartbeats(t *testing.T) {
 		t.Context(),
 		"event-delivery",
 		now,
-		runtimeEventDeliveryLastSuccessStaleAfter,
 	))
 }
 

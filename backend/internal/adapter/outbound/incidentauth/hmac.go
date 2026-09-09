@@ -71,6 +71,7 @@ func validHMACConfig(cfg HMACConfig) bool {
 	return len(cfg.Secret) >= minSecretBytes && validHMACKeyID(cfg.KeyID)
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func validHMACKeyID(value string) bool {
 	if len(value) == 0 || len(value) > 64 {
 		return false

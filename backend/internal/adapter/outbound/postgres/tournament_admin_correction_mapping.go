@@ -7,12 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
@@ -135,6 +133,7 @@ func loadTournamentAdminCorrectionStage(
 		_, canonicalErr := resultprojection.BuildCanonicalSwissRounds(stage.Swiss.Ledger)
 		stage.Swiss.Complete = canonicalErr == nil
 	}
+	//nolint:exhaustive // This switch intentionally handles only the valid states for this boundary.
 	switch input.tournamentState {
 	case domain.TournamentStatePlayoffs:
 		stage.Layout.Mode = correctionusecase.StageModePlayoff
@@ -171,6 +170,7 @@ WHERE id = $1
 	return rosterID, nil
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func (r *TournamentAdminCorrectionPostgres) loadCorrectionAuthorityInputs(
 	ctx context.Context,
 	querier *sqlc.Queries,
@@ -271,6 +271,7 @@ func correctionTargetGameRow(
 	return sqlc.ListTournamentAdminCorrectionGameResultsRow{}, false
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func correctionCurrentBaseArtifacts(
 	ctx context.Context,
 	querier *sqlc.Queries,
@@ -505,6 +506,7 @@ func correctionAuthorityLogicalGraph(
 	return correctionLogicalGraph{graph: graph, byID: byID, current: current, bindings: bindings}, nil
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func correctionLogicalProjectionChain(
 	ctx context.Context,
 	querier *sqlc.Queries,
@@ -746,6 +748,7 @@ func correctionAuthorityGameHead(
 	return head, nil
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func correctionAuthorityScoreHead(
 	ctx context.Context,
 	querier *sqlc.Queries,
@@ -814,6 +817,7 @@ func correctionAuthorityScoreHead(
 	return head, nil
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func correctionAuthoritySeriesHead(
 	ctx context.Context,
 	querier *sqlc.Queries,
@@ -931,6 +935,7 @@ func correctionAuthoritySolve(
 	return correctionusecase.SolveMetadata{SolvedAt: &solvedAt, SubmissionID: &submissionID, EvidenceDigest: digest}
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func correctionAuthorityDecisions(
 	ctx context.Context,
 	querier *sqlc.Queries,
@@ -991,17 +996,6 @@ func correctionAuthorityDecisions(
 		}
 	}
 	return decisions, nil
-}
-
-func correctionTrimmedReason(value string) string {
-	return strings.TrimSpace(value)
-}
-
-func correctionPGTime(value pgtype.Timestamptz) (time.Time, bool) {
-	if !value.Valid {
-		return time.Time{}, false
-	}
-	return correctionTime(value.Time), validServerTime(correctionTime(value.Time))
 }
 
 func correctionJSONRaw(value []byte) json.RawMessage {

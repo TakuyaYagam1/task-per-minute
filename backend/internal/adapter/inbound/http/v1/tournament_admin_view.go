@@ -286,7 +286,7 @@ func tournamentAuditPageResponse(page inbound.AdminAuditPage) (api.AuditPage, er
 	return api.AuditPage{Events: events, NextCursor: cursor}, nil
 }
 
-func tournamentIncidentResponse(bundle inbound.AdminIncidentBundle) (api.IncidentBundle, error) {
+func tournamentIncidentResponse(bundle inbound.AdminIncidentBundle) api.IncidentBundle {
 	return api.IncidentBundle{
 		TournamentId: bundle.TournamentID, ProjectionRevision: bundle.ProjectionRevision,
 		GeneratedAt: bundle.GeneratedAt, CanonicalContent: append([]byte(nil), bundle.CanonicalContent...),
@@ -295,7 +295,7 @@ func tournamentIncidentResponse(bundle inbound.AdminIncidentBundle) (api.Inciden
 		CanonicalContentLength:   int64(len(bundle.CanonicalContent)), Sha256: hex.EncodeToString(bundle.SHA256[:]),
 		Algorithm: api.IncidentBundleAlgorithm(bundle.Algorithm), KeyId: bundle.KeyID,
 		Mac: hex.EncodeToString(bundle.MAC[:]),
-	}, nil
+	}
 }
 
 func cloneStringPointer(value *string) *string {

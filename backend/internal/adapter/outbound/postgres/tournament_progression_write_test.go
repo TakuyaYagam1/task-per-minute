@@ -76,6 +76,16 @@ func (tx *progressionReadTx) Query(_ context.Context, query string, _ ...any) (p
 	return rows, nil
 }
 
+func (tx *progressionReadTx) QueryRow(_ context.Context, query string, _ ...any) pgx.Row {
+	tx.t.Helper()
+	require.NotEmpty(tx.t, tx.queries, "unexpected query: %s", query)
+	require.Contains(tx.t, strings.Split(query, "\n")[0], tx.queries[0])
+	require.NotEmpty(tx.t, tx.results[0])
+	row := tx.results[0][0]
+	tx.queries, tx.results = tx.queries[1:], tx.results[1:]
+	return row
+}
+
 func progressionStructRow(value any) progressionRow {
 	v := reflect.ValueOf(value)
 	row := progressionRow{}
@@ -91,7 +101,11 @@ func TestProgressionLoadGoldenSettlementsUsesLockedSealedRows(t *testing.T) {
 		if malformed {
 			fixture.commitRows[0].ParticipantID = uuid.New()
 		}
-		tx := &progressionReadTx{t: t, queries: []string{"LockTournamentProgressionGoldenSettlements", "LockTournamentProgressionGoldenAttempts", "LockTournamentProgressionGoldenPositionCommits", "LockTournamentProgressionGoldenPositionLedger", "LockTournamentProgressionGoldenPositionLedgerRevisionSeals"}}
+		tx := &progressionReadTx{t: t, queries: []string{"ResolveTournamentProgressionGoldenSource", "LockTournamentProgressionGoldenSettlements", "LockTournamentProgressionGoldenAttempts", "LockTournamentProgressionGoldenPositionCommits", "LockTournamentProgressionGoldenPositionLedger", "LockTournamentProgressionGoldenPositionLedgerRevisionSeals"}}
+		tx.results = append(tx.results, []progressionRow{{values: []any{
+			fixture.authority.ProjectionRevisionID,
+			fixture.authority.ProjectionRevision,
+		}}})
 		for _, values := range []any{fixture.settlementRows, fixture.attemptRows, fixture.commitRows, fixture.ledgerRows, fixture.seals} {
 			v := reflect.ValueOf(values)
 			rows := make([]progressionRow, v.Len())

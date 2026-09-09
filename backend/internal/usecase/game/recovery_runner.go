@@ -140,7 +140,7 @@ func (runner *RecoveryRunner) runScan(ctx context.Context) error {
 	for _, tournamentID := range tournaments {
 		identity, owned, authorityErr := runner.authority.RecoveryAuthorityFor(ctx, tournamentID)
 		if authorityErr != nil {
-			runner.emitRecoveryEvent(tournamentID, 0, RecoveryOutcomeFailure, "scan_failed", "authority_failed")
+			runner.emitRecoveryEvent(ctx, tournamentID, 0, RecoveryOutcomeFailure, "scan_failed", "authority_failed")
 			runner.recordFailure(attemptedAt)
 			return fmt.Errorf("execution recovery runner - authority: %w", authorityErr)
 		}
@@ -148,7 +148,7 @@ func (runner *RecoveryRunner) runScan(ctx context.Context) error {
 			continue
 		}
 		if identity.Validate() != nil || identity.TournamentID != tournamentID {
-			runner.emitRecoveryEvent(tournamentID, 0, RecoveryOutcomeFailure, "scan_failed", "invalid_authority")
+			runner.emitRecoveryEvent(ctx, tournamentID, 0, RecoveryOutcomeFailure, "scan_failed", "invalid_authority")
 			runner.recordFailure(attemptedAt)
 			return domain.ErrInternal
 		}
@@ -158,6 +158,7 @@ func (runner *RecoveryRunner) runScan(ctx context.Context) error {
 		})
 		if recoverErr != nil {
 			runner.emitRecoveryEvent(
+				ctx,
 				tournamentID,
 				identity.Epoch,
 				RecoveryOutcomeFailure,
@@ -169,6 +170,7 @@ func (runner *RecoveryRunner) runScan(ctx context.Context) error {
 		}
 		if reason, observed := executionRecoverySuccessReason(report); observed {
 			runner.emitRecoveryEvent(
+				ctx,
 				tournamentID,
 				identity.Epoch,
 				RecoveryOutcomeSuccess,
@@ -182,6 +184,7 @@ func (runner *RecoveryRunner) runScan(ctx context.Context) error {
 }
 
 func (runner *RecoveryRunner) emitRecoveryEvent(
+	ctx context.Context,
 	tournamentID uuid.UUID,
 	revision int64,
 	outcome string,
@@ -191,7 +194,7 @@ func (runner *RecoveryRunner) emitRecoveryEvent(
 	if runner == nil || tournamentID == uuid.Nil || revision < 0 {
 		return
 	}
-	observeExecutionRecoverySafely(context.Background(), runner.observer, RecoveryEvent{
+	observeExecutionRecoverySafely(ctx, runner.observer, RecoveryEvent{
 		TournamentID: tournamentID,
 		Outcome:      outcome,
 		Transition:   transition,

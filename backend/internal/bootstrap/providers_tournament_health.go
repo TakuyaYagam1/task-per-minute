@@ -164,7 +164,6 @@ func (probe *healthProbe) TournamentHealth(ctx context.Context) observability.To
 			ctx,
 			"event-delivery",
 			now,
-			runtimeEventDeliveryLastSuccessStaleAfter,
 		))
 		// Durable submission intake is the same PostgreSQL authority checked
 		// above. Private task availability is separately verified from its local
@@ -179,7 +178,6 @@ func (probe *healthProbe) TournamentHealth(ctx context.Context) observability.To
 			ctx,
 			"private-task-availability",
 			now,
-			runtimePrivateTaskAvailabilityLastSuccessStaleAfter,
 		))
 		snapshot.TaskDelivery = combinedDependencyHealth(snapshot.TaskDelivery, probe.privateTaskAvailabilityBacklogHealth(ctx, now))
 		snapshot.Outbox = probe.outboxHealth(ctx, now, delivery)
@@ -202,7 +200,6 @@ func (probe *healthProbe) TournamentHealth(ctx context.Context) observability.To
 			ctx,
 			"realtime-session-delivery",
 			now,
-			runtimeEventDeliveryLastSuccessStaleAfter,
 		))
 		select {
 		case <-probe.runtime.Done():
@@ -240,21 +237,18 @@ func (probe *healthProbe) recoveryHealth(
 		ctx,
 		"deadline-scheduler",
 		now,
-		runtimeRecoveryCompletionStaleAfter,
 	))
 	status = workerBoundDependencyHealth(status, probe.workers, "deadline-recovery")
 	status = combinedDependencyHealth(status, probe.sharedWorkerHealth(
 		ctx,
 		"deadline-recovery",
 		now,
-		runtimeRecoveryCompletionStaleAfter,
 	))
 	status = workerBoundDependencyHealth(status, probe.workers, "execution-recovery")
 	return combinedDependencyHealth(status, probe.sharedWorkerHealth(
 		ctx,
 		"execution-recovery",
 		now,
-		runtimeRecoveryCompletionStaleAfter,
 	))
 }
 
@@ -262,15 +256,14 @@ func (probe *healthProbe) sharedWorkerHealth(
 	ctx context.Context,
 	worker string,
 	now time.Time,
-	staleAfter time.Duration,
 ) observability.TournamentDependencyStatus {
 	if probe == nil || probe.heartbeats == nil {
 		return failedTournamentDependency()
 	}
-	if ctx == nil || !domain.IsValidServerTime(now) || staleAfter <= 0 {
+	if ctx == nil || !domain.IsValidServerTime(now) {
 		return failedTournamentDependency()
 	}
-	status, err := probe.heartbeats.RuntimeWorkerHeartbeatStatus(ctx, worker, now.Add(-staleAfter))
+	status, err := probe.heartbeats.RuntimeWorkerHeartbeatStatus(ctx, worker, now.Add(-runtimeWorkerHeartbeatStaleAfter))
 	if err != nil || status.Worker != worker {
 		return failedTournamentDependency()
 	}
@@ -437,6 +430,7 @@ func privateTaskAvailabilityHealthHasFutureTimestamp(
 	return false
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func validEventDeliveryHealthSnapshot(health eventdelivery.HealthSnapshot, now time.Time) bool {
 	if health.ConsecutiveFailures < 0 || health.Running && !health.Started ||
 		health.Started != (health.StartedAt != nil) {
@@ -479,6 +473,7 @@ func recoveryHealthStatus(
 		return failedTournamentDependency()
 	}
 	health := source.Health(now)
+	//nolint:exhaustive // This switch intentionally handles only the valid states for this boundary.
 	switch health.State {
 	case recovery.WorkerHealthHealthy:
 		if health.Ready {

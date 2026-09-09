@@ -23,6 +23,7 @@ func TestTournamentUseCases(t *testing.T) {
 	ctx := context.Background()
 	resetMigrationTables(ctx, t)
 	t.Cleanup(func() { resetMigrationTables(ctx, t) })
+	prepareTournamentCreateReceiptContent(ctx, t)
 	fixture := newRepositoryFixture()
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	clock := newTournamentClock(t, now)

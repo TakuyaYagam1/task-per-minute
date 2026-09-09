@@ -16,14 +16,7 @@ import (
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
 )
 
-func TestTournamentAdminCorrectionPostgresImplementsWorkflowRepository(t *testing.T) {
-	t.Parallel()
-
-	var repository tournamentadmin.CorrectionWorkflowRepository = (*TournamentAdminCorrectionPostgres)(nil)
-	if repository == nil {
-		t.Fatal("correction workflow repository is nil")
-	}
-}
+var _ tournamentadmin.CorrectionWorkflowRepository = (*TournamentAdminCorrectionPostgres)(nil)
 
 func TestCorrectionSettlementIDsKeepCommandIdempotencyForCommitLedger(t *testing.T) {
 	t.Parallel()
@@ -77,8 +70,10 @@ func TestTournamentAdminCorrectionCommandRecordRejectsTamperedEvidence(t *testin
 	require.NotNil(t, record.Evidence.UnlockIntents)
 
 	var document tournamentAdminCorrectionEvidenceDocument
+	//nolint:musttag // This versioned application-owned document is validated on both encode and decode.
 	require.NoError(t, json.Unmarshal(payload, &document))
 	document.OperatorID = uuid.New()
+	//nolint:musttag // This versioned application-owned document is validated on both encode and decode.
 	tampered, err := json.Marshal(document)
 	require.NoError(t, err)
 	row.EvidenceDocument = tampered

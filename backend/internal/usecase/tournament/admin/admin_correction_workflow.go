@@ -29,6 +29,7 @@ func NewCorrectionWorkflow(deps CorrectionWorkflowDependencies) *CorrectionWorkf
 	return &CorrectionWorkflow{transactions: deps.Transactions, repository: deps.Repository}
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func (w *CorrectionWorkflow) CorrectGameResult(
 	ctx context.Context,
 	command CorrectionCommand,
@@ -329,6 +330,7 @@ func correctionRequestDigest(command CorrectionCommand) ([sha256.Size]byte, erro
 		return canonical.UnlockIntents[first].ReservationID.String() <
 			canonical.UnlockIntents[second].ReservationID.String()
 	})
+	//nolint:musttag // This versioned application-owned document is validated on both encode and decode.
 	payload, err := json.Marshal(canonical)
 	if err != nil {
 		return [sha256.Size]byte{}, fmt.Errorf("CorrectionWorkflow - encode command: %w", err)
@@ -336,6 +338,7 @@ func correctionRequestDigest(command CorrectionCommand) ([sha256.Size]byte, erro
 	return sha256.Sum256(payload), nil
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func correctionEvidence(
 	command CorrectionCommand,
 	plan correctionusecase.Plan,
@@ -387,6 +390,7 @@ func correctionEvidence(
 	return evidence, nil
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func validCorrectionWorkflowAuthority(
 	authority CorrectionWorkflowAuthority,
 	command CorrectionCommand,

@@ -66,14 +66,6 @@ func replaceMigrationWave(
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	_, err = tx.Exec(ctx, `
-		UPDATE wave_readiness
-		SET ready = false,
-			ready_at = NULL,
-			revision = revision + 1,
-			updated_at = $2
-		WHERE wave_id = $1 AND ready`, originalWaveID, createdAt)
-	require.NoError(tb, err)
-	_, err = tx.Exec(ctx, `
 		UPDATE ready_windows
 		SET state = 'superseded', consumed_at = NULL
 		WHERE id = $1`, originalWindowID)

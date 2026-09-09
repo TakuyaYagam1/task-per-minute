@@ -165,6 +165,7 @@ func participantRecoveryResponse(
 	return result, nil
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func participantDraftResponse(execution usecase.DraftExecutionView) (api.Draft, error) {
 	if execution.ID == uuid.Nil || execution.SeriesID == uuid.Nil || execution.Revision < 1 {
 		return api.Draft{}, domain.ErrInternal
@@ -371,7 +372,9 @@ func participantCategories(values []domain.Category) ([]api.Category, error) {
 
 func participantSeriesScore(score domain.SeriesScore) api.SeriesScore {
 	return api.SeriesScore{
-		FirstParticipantWins:  int32(score.FirstParticipantWins),
+		//nolint:gosec // Domain validation bounds this value before the storage conversion.
+		FirstParticipantWins: int32(score.FirstParticipantWins),
+		//nolint:gosec // Domain validation bounds this value before the storage conversion.
 		SecondParticipantWins: int32(score.SecondParticipantWins),
 	}
 }

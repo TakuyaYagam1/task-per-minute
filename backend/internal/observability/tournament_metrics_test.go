@@ -25,7 +25,6 @@ func TestTournamentMetrics(t *testing.T) {
 		require.InDelta(t, 1, tournamentMetricCounterValue(
 			t,
 			families,
-			"tpm_tournament_operations_total",
 			map[string]string{"operation": "submission", "outcome": "success"},
 		), 0)
 		tournamentRequireBoundedLabels(t, families)
@@ -45,7 +44,6 @@ func TestTournamentMetrics(t *testing.T) {
 		require.InDelta(t, 2, tournamentMetricCounterValue(
 			t,
 			families,
-			"tpm_tournament_operations_total",
 			map[string]string{"operation": "wave", "outcome": "retry"},
 		), 0)
 	})
@@ -77,7 +75,6 @@ func TestTournamentMetrics(t *testing.T) {
 		require.InDelta(t, 1, tournamentMetricCounterValue(
 			t,
 			families,
-			"tpm_tournament_operations_total",
 			map[string]string{"operation": "other", "outcome": "failure"},
 		), 0)
 		require.Equal(t, uint64(1), tournamentMetricHistogramCount(
@@ -114,7 +111,6 @@ func TestTournamentMetrics(t *testing.T) {
 				require.InDelta(t, 1, tournamentMetricCounterValue(
 					t,
 					families,
-					"tpm_tournament_operations_total",
 					map[string]string{"operation": test.operation, "outcome": "success"},
 				), 0)
 			})
@@ -171,11 +167,10 @@ func tournamentMetricTestEvent(t *testing.T, outcome, stage string) TournamentEv
 func tournamentMetricCounterValue(
 	t *testing.T,
 	families []*dto.MetricFamily,
-	name string,
 	labels map[string]string,
 ) float64 {
 	t.Helper()
-	metric := tournamentMetricWithLabels(t, families, name, labels)
+	metric := tournamentMetricWithLabels(t, families, "tpm_tournament_operations_total", labels)
 	require.NotNil(t, metric.Counter)
 	return metric.Counter.GetValue()
 }

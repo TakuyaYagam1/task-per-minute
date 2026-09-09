@@ -36,6 +36,7 @@ type persistedCorrectionSourceBinding struct {
 	PersistedCorrectionSourceBinding
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func restoreCorrectionSourceBinding(
 	binding PersistedCorrectionSourceBinding,
 	tournamentID, seriesID, entityID uuid.UUID,

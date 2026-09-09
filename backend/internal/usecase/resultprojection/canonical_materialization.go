@@ -102,6 +102,7 @@ func BuildCanonicalMaterialization(
 		return CanonicalMaterialization{}, err
 	}
 	for _, kind := range requested {
+		//nolint:exhaustive // This switch intentionally handles only the valid states for this boundary.
 		switch kind {
 		case domain.ArtifactKindStandings:
 			artifacts = append(artifacts, standingsArtifact)
@@ -284,6 +285,7 @@ func canonicalTopFourArtifact(
 	return artifact, nil
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func canonicalBracketArtifact(
 	input CanonicalMaterializationInput,
 ) (CanonicalMaterializedArtifact, error) {
@@ -314,6 +316,7 @@ func canonicalBracketArtifact(
 		}
 		seen[match.Position] = struct{}{}
 	}
+	//nolint:musttag // This versioned application-owned document is validated on both encode and decode.
 	payload, err := json.Marshal(struct {
 		Rounds []CanonicalBracketMatch `json:"rounds"`
 	}{Rounds: rounds})

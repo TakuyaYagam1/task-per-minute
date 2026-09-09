@@ -178,7 +178,7 @@ func newCancellationRepository(
 				state.mu.Lock()
 				defer state.mu.Unlock()
 				if id != state.tournament.ID {
-					return nil, tournamentcancellation.CancellationErrTournamentNotFound
+					return nil, tournamentcancellation.ErrTournamentNotFound
 				}
 				return cancellationCloneTournamentRecord(state.tournament), nil
 			}).
@@ -196,7 +196,7 @@ func newCancellationRepository(
 				defer state.mu.Unlock()
 				record, ok := state.cancellations[commandID]
 				if !ok || tournamentID != state.tournament.ID {
-					return nil, tournamentcancellation.CancellationErrTournamentNotFound
+					return nil, tournamentcancellation.ErrTournamentNotFound
 				}
 				return cloneCancellationTestRecord(record), nil
 			}).

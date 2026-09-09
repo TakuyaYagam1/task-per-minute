@@ -148,7 +148,7 @@ func TestAppRunReturnsStartedWorkerPanic(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	address := listener.Addr().String()
 	require.NoError(t, listener.Close())
@@ -165,7 +165,7 @@ func TestAppRunReturnsStartedWorkerPanic(t *testing.T) {
 	}()
 	require.Eventually(t, channelClosed(workerStarted), time.Second, time.Millisecond)
 	require.Eventually(t, func() bool {
-		connection, dialErr := net.DialTimeout("tcp", address, 10*time.Millisecond)
+		connection, dialErr := (&net.Dialer{Timeout: 10 * time.Millisecond}).DialContext(t.Context(), "tcp", address)
 		if dialErr != nil {
 			return false
 		}

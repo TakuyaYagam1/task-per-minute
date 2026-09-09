@@ -8,6 +8,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func (r *ResultPostgres) Settle(
 	ctx context.Context,
 	in ResultSettlementInput,

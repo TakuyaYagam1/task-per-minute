@@ -9,7 +9,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
-var CancellationErrTournamentNotFound = errors.New("tournament not found")
+var ErrTournamentNotFound = errors.New("tournament not found")
 
 type CancellationTournamentRecord struct {
 	ID              uuid.UUID

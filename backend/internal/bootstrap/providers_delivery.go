@@ -115,14 +115,14 @@ func provideRuntimeWorkers(
 			worker: executionRecovery,
 			ready:  executionRecovery.Ready,
 		},
-		namedRuntimeWorker{
+		{
 			name:   "deadline-recovery",
 			worker: recoveryWorker,
 			ready: func() bool {
 				return recoveryWorker.Health(clock.Now()).Ready
 			},
 		},
-		namedRuntimeWorker{
+		{
 			name:   "event-delivery",
 			worker: outboxDelivery,
 			ready: func() bool {
@@ -131,7 +131,7 @@ func provideRuntimeWorkers(
 					health.ConsecutiveFailures == 0 && !health.Stale
 			},
 		},
-		namedRuntimeWorker{
+		{
 			name:   "realtime-session-delivery",
 			worker: sessionDelivery,
 			ready:  sessionDelivery.Ready,

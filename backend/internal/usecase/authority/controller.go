@@ -67,6 +67,8 @@ func NewController(
 
 // AuthorityFor returns a currently live identity for this service. A replica
 // never replaces a still-live foreign lease; it fails closed with ErrNotOwner.
+//
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func (controller *Controller) AuthorityFor(
 	ctx context.Context,
 	tournamentID uuid.UUID,

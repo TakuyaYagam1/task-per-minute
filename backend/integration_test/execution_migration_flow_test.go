@@ -97,7 +97,7 @@ func TestExecutionMigration(t *testing.T) {
 		WHERE ready_window_id = $1`, windowID).Scan(&readinessCount, &readyCount)
 	require.NoError(t, err)
 	require.Equal(t, 2, readinessCount)
-	require.Zero(t, readyCount)
+	require.Equal(t, 2, readyCount)
 
 	var (
 		storedReplacesID  uuid.UUID

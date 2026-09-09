@@ -65,8 +65,8 @@ func copyInboundUUID(value *uuid.UUID) *uuid.UUID {
 	if value == nil {
 		return nil
 	}
-	copy := *value
-	return &copy
+	clone := *value
+	return &clone
 }
 
 func mapIncidentBundle(bundle audit.IncidentBundle) inbound.AdminIncidentBundle {

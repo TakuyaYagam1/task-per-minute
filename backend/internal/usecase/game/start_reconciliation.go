@@ -26,6 +26,7 @@ func reconcileWaveStart(
 	return &clone, nil
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func waveStartRecordsEqual(first, second StartRecord) bool {
 	if first.Scope != second.Scope || first.CommandID != second.CommandID || first.ActorID != second.ActorID ||
 		first.ExecutionAuthority != second.ExecutionAuthority ||

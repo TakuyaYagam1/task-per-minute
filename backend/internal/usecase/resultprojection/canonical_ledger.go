@@ -109,6 +109,7 @@ func BuildCanonicalSwissRounds(entries []CanonicalSwissPointLedgerEntry) ([]swis
 	return rounds, nil
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func validCanonicalSwissLedgerEntry(entry CanonicalSwissPointLedgerEntry) bool {
 	if entry.RoundID == uuid.Nil || entry.RoundRevisionID == uuid.Nil || entry.RoundNumber < 1 ||
 		entry.ParticipantID == uuid.Nil || entry.StableSeed < 1 || entry.Points < 0 || entry.EffectiveTime < 0 ||
@@ -131,6 +132,7 @@ func validCanonicalSwissLedgerEntry(entry CanonicalSwissPointLedgerEntry) bool {
 	}
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func canonicalSwissSeriesResult(rows []CanonicalSwissPointLedgerEntry) (swissusecase.SeriesPointResult, error) {
 	if len(rows) != 2 {
 		return swissusecase.SeriesPointResult{}, ErrInvalidCanonicalMaterialization

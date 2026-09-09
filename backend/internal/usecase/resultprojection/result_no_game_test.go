@@ -1,10 +1,11 @@
 package resultprojection_test
 
 import (
-	"github.com/google/uuid"
 	"math"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/stretchr/testify/require"
 

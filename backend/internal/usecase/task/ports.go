@@ -83,6 +83,7 @@ func (fn HealthSourceFunc) Health(now time.Time) HealthSnapshot {
 	return fn(now)
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func (snapshot HealthSnapshot) Validate() error {
 	if snapshot.ConsecutiveFailures < 0 || snapshot.Running && !snapshot.Started ||
 		snapshot.Started != (snapshot.StartedAt != nil) {

@@ -52,6 +52,7 @@ type WebSocketShutdowner interface {
 	Shutdown(ctx context.Context)
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func (a *App) Run(ctx context.Context) error {
 	if ctx == nil {
 		return errors.New("app: nil context")
@@ -63,7 +64,7 @@ func (a *App) Run(ctx context.Context) error {
 	if err := a.bootstrap(ctx); err != nil {
 		return err
 	}
-	workerErrors, err := a.workers.Start(a.runtime.Context())
+	workerErrors, err := a.workers.Start(ctx)
 	if err != nil {
 		shutdownErr := a.Shutdown(context.WithoutCancel(ctx))
 		return errors.Join(

@@ -181,6 +181,7 @@ func (r *TournamentAdminExecutionPostgres) findWaveStartCommand(
 	return &record, nil
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func (r *TournamentAdminExecutionPostgres) lockWaveStartSnapshot(
 	ctx context.Context,
 	scope gameusecase.StartScope,
@@ -267,6 +268,7 @@ func (r *TournamentAdminExecutionPostgres) lockWaveStartSnapshot(
 	}, nil
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func waveStartAuthorityHeader(
 	header sqlc.LockWaveStartAuthorityRow,
 	scope gameusecase.StartScope,
@@ -444,6 +446,7 @@ func applyWaveStartReadiness(
 	return nil
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func waveStartGameAuthorities(
 	authority gameusecase.StartAuthority,
 	rosterID uuid.UUID,
@@ -536,6 +539,7 @@ func waveStartDigest(value []byte) ([sha256.Size]byte, error) {
 	return digest, nil
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func waveStartRecordMatchesSnapshot(record gameusecase.StartRecord, snapshot waveStartSnapshot) bool {
 	authority := snapshot.authority
 	if record.Validate() != nil || authority.Scope != record.Scope || authority.WaveRevision != record.ExpectedWaveRevision ||
@@ -567,6 +571,7 @@ func waveStartRecordMatchesSnapshot(record gameusecase.StartRecord, snapshot wav
 	return true
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func waveStartGameMatchesRow(
 	game gamedomain.Started,
 	row sqlc.LockWaveStartGamesRow,
@@ -649,6 +654,7 @@ type swissRoundProofOrigin struct {
 	commandID uuid.UUID
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func ensureSwissRoundLockProof(ctx context.Context, querier *sqlc.Queries, proof swissusecase.RoundLockProof, lockedAt time.Time, origins ...swissRoundProofOrigin) error {
 	if proof.Validate() != nil || !domain.IsValidServerTime(lockedAt) {
 		return domain.ErrConflict
@@ -678,10 +684,11 @@ func ensureSwissRoundLockProof(ctx context.Context, querier *sqlc.Queries, proof
 		return domain.ErrConflict
 	}
 	if err := querier.CreateSwissRoundLockProof(ctx, sqlc.CreateSwissRoundLockProofParams{
-		RoundID:                    proof.RoundID,
-		TournamentID:               proof.TournamentID,
-		RosterID:                   proof.RosterID,
-		Preset:                     string(proof.Preset),
+		RoundID:      proof.RoundID,
+		TournamentID: proof.TournamentID,
+		RosterID:     proof.RosterID,
+		Preset:       string(proof.Preset),
+		//nolint:gosec // Domain validation bounds this value before the storage conversion.
 		RoundNumber:                int16(proof.RoundNumber),
 		SourceProjectionRevisionID: proof.SourceProjectionRevisionID,
 		PreflightRevisionID:        proof.PreflightRevisionID,
@@ -864,6 +871,7 @@ func startWaveSeries(
 	return nil
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func startWaveGames(
 	ctx context.Context,
 	querier *sqlc.Queries,
@@ -976,6 +984,7 @@ func saveWaveStartCommand(
 	record gameusecase.StartRecord,
 	snapshot waveStartSnapshot,
 ) error {
+	//nolint:musttag // This versioned application-owned document is validated on both encode and decode.
 	sourceRevisions, err := json.Marshal(record.Revisions)
 	if err != nil {
 		return fmt.Errorf("encode Wave start source revisions: %w", err)
@@ -988,6 +997,7 @@ func saveWaveStartCommand(
 	if err != nil {
 		return fmt.Errorf("encode Wave start graph: %w", err)
 	}
+	//nolint:musttag // This versioned application-owned document is validated on both encode and decode.
 	resultDocument, err := json.Marshal(record)
 	if err != nil {
 		return fmt.Errorf("encode Wave start result: %w", err)
@@ -1053,6 +1063,7 @@ func sameWaveStartRequest(first, second gameusecase.StartRecord) bool {
 		maps.Equal(first.ReadinessRevisions, second.ReadinessRevisions) && first.RequestDigest == second.RequestDigest
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func waveStartRecordFromControl(row sqlc.WaveControlCommand) (gameusecase.StartRecord, error) {
 	if row.Action != "start" || row.CommandID == uuid.Nil || row.TournamentID == uuid.Nil || row.RosterID == uuid.Nil ||
 		row.WaveID == uuid.Nil || row.ActorID == uuid.Nil || !row.ExecutedAt.Valid || !json.Valid(row.ResultDocument) ||
@@ -1060,10 +1071,12 @@ func waveStartRecordFromControl(row sqlc.WaveControlCommand) (gameusecase.StartR
 		return gameusecase.StartRecord{}, domain.ErrInternal
 	}
 	var record gameusecase.StartRecord
+	//nolint:musttag // This versioned application-owned document is validated on both encode and decode.
 	if err := json.Unmarshal(row.ResultDocument, &record); err != nil || record.Validate() != nil {
 		return gameusecase.StartRecord{}, domain.ErrInternal
 	}
 	var sourceRevisions domain.ReadyWindowSourceRevisions
+	//nolint:musttag // This versioned application-owned document is validated on both encode and decode.
 	if err := json.Unmarshal(row.SourceRevisions, &sourceRevisions); err != nil || sourceRevisions != record.Revisions {
 		return gameusecase.StartRecord{}, domain.ErrInternal
 	}

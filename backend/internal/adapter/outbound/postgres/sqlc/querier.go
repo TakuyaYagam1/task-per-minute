@@ -852,6 +852,10 @@ type Querier interface {
 	ReleaseTournamentReservations(ctx context.Context, tournamentID uuid.UUID) (int64, error)
 	ReplaceWithdrawnTournamentParticipant(ctx context.Context, arg ReplaceWithdrawnTournamentParticipantParams) (Participant, error)
 	ReserveCheckedInTournamentParticipants(ctx context.Context, arg ReserveCheckedInTournamentParticipantsParams) ([]uuid.UUID, error)
+	// An unchanged correction publishes a new projection without rewriting the
+	// immutable Golden group revisions. Follow correction predecessors until the
+	// nearest projection that owns the active Golden authority is found.
+	ResolveTournamentProgressionGoldenSource(ctx context.Context, arg ResolveTournamentProgressionGoldenSourceParams) (ResolveTournamentProgressionGoldenSourceRow, error)
 	ResumeTournamentAdminWaveGames(ctx context.Context, arg ResumeTournamentAdminWaveGamesParams) ([]uuid.UUID, error)
 	ResumeTournamentAdminWaveSeries(ctx context.Context, arg ResumeTournamentAdminWaveSeriesParams) ([]uuid.UUID, error)
 	ResumeTournamentTechnicalPause(ctx context.Context, arg ResumeTournamentTechnicalPauseParams) (ResumeTournamentTechnicalPauseRow, error)

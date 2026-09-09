@@ -67,11 +67,11 @@ func attemptCloneGameSlot(slot domain.GameSlot) domain.GameSlot {
 func attemptSettlementGamesEqual(first, second domain.Game) bool {
 	return first.ID == second.ID && first.SlotID == second.SlotID && first.AttemptNo == second.AttemptNo &&
 		first.State == second.State && first.ResultReason == second.ResultReason &&
-		attemptUuidPointersEqual(first.WinnerID, second.WinnerID) &&
+		attemptUUIDPointersEqual(first.WinnerID, second.WinnerID) &&
 		attemptOfficialResultRevisionPointersEqual(first.ResultRevisionID, second.ResultRevisionID)
 }
 
-func attemptUuidPointersEqual(first, second *uuid.UUID) bool {
+func attemptUUIDPointersEqual(first, second *uuid.UUID) bool {
 	if first == nil || second == nil {
 		return first == nil && second == nil
 	}

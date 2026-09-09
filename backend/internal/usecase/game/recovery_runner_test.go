@@ -25,7 +25,7 @@ func TestRecoveryRunnerReadinessRequiresCompletedInitialScan(t *testing.T) {
 	release := make(chan struct{})
 	tournaments := gamemocks.NewMockRecoveryTournamentSource(t)
 	tournaments.EXPECT().ListRecoveryTournaments(mock.Anything).
-		RunAndReturn(func(ctx context.Context) ([]uuid.UUID, error) {
+		RunAndReturn(func(_ context.Context) ([]uuid.UUID, error) {
 			close(listed)
 			<-release
 			return []uuid.UUID{lease.TournamentID}, nil

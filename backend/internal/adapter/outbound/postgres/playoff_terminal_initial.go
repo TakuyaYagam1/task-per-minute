@@ -9,6 +9,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 )
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func (repository *PlayoffTerminalPostgres) PersistFinalInitial(
 	ctx context.Context,
 	plan playoff.FinalInitialPlan,

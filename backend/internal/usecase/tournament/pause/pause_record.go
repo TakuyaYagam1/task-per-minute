@@ -11,7 +11,7 @@ import (
 
 const pauseMaxTournamentCommandReasonLength = 512
 
-var PauseErrTournamentNotFound = errors.New("tournament not found")
+var ErrTournamentNotFound = errors.New("tournament not found")
 
 type PauseTournamentRecord struct {
 	ID              uuid.UUID

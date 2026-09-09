@@ -272,6 +272,7 @@ type tournamentV1ContentBinding struct {
 	bo3CategoryPoolID    uuid.UUID
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func loadTournamentV1ContentBinding(
 	ctx context.Context,
 	querier *sqlc.Queries,
@@ -337,6 +338,7 @@ func loadTournamentV1ContentBinding(
 	return binding, nil
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func revalidateTournamentV1ContentPools(
 	ctx context.Context,
 	querier *sqlc.Queries,

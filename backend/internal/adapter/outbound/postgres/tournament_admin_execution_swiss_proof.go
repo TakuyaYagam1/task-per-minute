@@ -42,6 +42,8 @@ func loadRetainedSwissRoundProof(ctx context.Context, q *sqlc.Queries, tournamen
 
 // ensurePreStartSwissRoundProof freezes the exact pairing and assignment
 // authority before a terminal action can change it. It never starts a Wave.
+//
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func ensurePreStartSwissRoundProof(ctx context.Context, tx *TxManager, tournamentID, seriesID uuid.UUID, at time.Time, origin swissRoundProofOrigin) error {
 	q := tx.Querier(ctx)
 	waves, err := q.LockPreStartSwissSeriesWave(ctx, sqlc.LockPreStartSwissSeriesWaveParams{TournamentID: tournamentID, SeriesID: seriesID})

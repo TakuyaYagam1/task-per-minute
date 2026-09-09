@@ -84,6 +84,7 @@ func validateReplayReplacementCommand(command ReplayReplacementCommand) error {
 	return nil
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func validateReplayReplacementAuthority(authority ReplayReplacementAuthority) error {
 	if !authority.Scope.IsValid() || authority.Revision < 1 ||
 		authority.FailedAttempt.Validate() != nil || authority.OldWaveClosure.Validate() != nil {

@@ -153,8 +153,8 @@ func rosterMutationError(useCaseOperation string, repositoryOperation string, er
 	if errors.Is(err, domain.ErrConflict) {
 		return domain.ErrConflict
 	}
-	if errors.Is(err, RosterErrRosterNotFound) {
-		return RosterErrRosterNotFound
+	if errors.Is(err, ErrRosterNotFound) {
+		return ErrRosterNotFound
 	}
 	return fmt.Errorf(
 		"RosterLockUseCase - %s - RosterLockRepository.%s: %w",
@@ -191,8 +191,8 @@ func validUnlockedRosterRecord(record *RosterRosterRecord, rosterID uuid.UUID, r
 }
 
 func rosterLookupError(operation string, err error) error {
-	if errors.Is(err, RosterErrRosterNotFound) {
-		return RosterErrRosterNotFound
+	if errors.Is(err, ErrRosterNotFound) {
+		return ErrRosterNotFound
 	}
 	return fmt.Errorf("RosterLockUseCase - %s - RosterLockRepository.GetRoster: %w", operation, err)
 }

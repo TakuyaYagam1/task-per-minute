@@ -26,22 +26,22 @@ func (e *AdminRevisionConflictError) Unwrap() error { return domain.ErrConflict 
 // single tournament. The inbound adapter derives operator identity from the
 // authenticated session and never accepts it from an external request.
 type TournamentAdminUseCase interface {
-	GetRoster(context.Context, AdminRosterQuery) (AdminRosterView, error)
-	ReplaceRoster(context.Context, AdminReplaceRosterCommand) (AdminRosterView, error)
-	RunPreflight(context.Context, AdminPreflightCommand) (AdminPreflightReport, error)
-	LockRoster(context.Context, AdminLockRosterCommand) (AdminRosterView, error)
-	UnlockRoster(context.Context, AdminUnlockRosterCommand) (AdminRosterView, error)
-	ConfigurePairings(context.Context, AdminPairingCommand) (AdminSwissRoundView, error)
-	ApplyTournamentAction(context.Context, AdminTournamentActionCommand) (TournamentView, error)
-	ControlWave(context.Context, AdminWaveCommand) (AdminWaveView, error)
-	ResolveNoShow(context.Context, AdminNoShowCommand) error
-	AssignReserve(context.Context, AdminReserveCommand) error
-	RecordForfeit(context.Context, AdminForfeitCommand) error
-	ReplayGame(context.Context, AdminReplayCommand) error
-	CorrectGameResult(context.Context, AdminCorrectionCommand) (AdminCorrectionEvidence, error)
-	ListAudit(context.Context, AdminAuditQuery) (AdminAuditPage, error)
-	ExportIncident(context.Context, AdminIncidentQuery) (AdminIncidentBundle, error)
-	GetOperatorSnapshot(context.Context, AdminSnapshotQuery) (AdminOperatorSnapshotView, error)
+	GetRoster(ctx context.Context, query AdminRosterQuery) (AdminRosterView, error)
+	ReplaceRoster(ctx context.Context, command AdminReplaceRosterCommand) (AdminRosterView, error)
+	RunPreflight(ctx context.Context, command AdminPreflightCommand) (AdminPreflightReport, error)
+	LockRoster(ctx context.Context, command AdminLockRosterCommand) (AdminRosterView, error)
+	UnlockRoster(ctx context.Context, command AdminUnlockRosterCommand) (AdminRosterView, error)
+	ConfigurePairings(ctx context.Context, command AdminPairingCommand) (AdminSwissRoundView, error)
+	ApplyTournamentAction(ctx context.Context, command AdminTournamentActionCommand) (TournamentView, error)
+	ControlWave(ctx context.Context, command AdminWaveCommand) (AdminWaveView, error)
+	ResolveNoShow(ctx context.Context, command AdminNoShowCommand) error
+	AssignReserve(ctx context.Context, command AdminReserveCommand) error
+	RecordForfeit(ctx context.Context, command AdminForfeitCommand) error
+	ReplayGame(ctx context.Context, command AdminReplayCommand) error
+	CorrectGameResult(ctx context.Context, command AdminCorrectionCommand) (AdminCorrectionEvidence, error)
+	ListAudit(ctx context.Context, query AdminAuditQuery) (AdminAuditPage, error)
+	ExportIncident(ctx context.Context, query AdminIncidentQuery) (AdminIncidentBundle, error)
+	GetOperatorSnapshot(ctx context.Context, query AdminSnapshotQuery) (AdminOperatorSnapshotView, error)
 }
 
 type AdminOperatorIdentity struct{ ActorID uuid.UUID }
@@ -65,17 +65,20 @@ type AdminRosterParticipantInput struct {
 
 type AdminReplaceRosterCommand struct {
 	AdminCommandScope
+
 	ExpectedProjectionRevision int64
 	Participants               []AdminRosterParticipantInput
 }
 
 type AdminPreflightCommand struct {
 	AdminCommandScope
+
 	ExpectedProjectionRevision int64
 }
 
 type AdminLockRosterCommand struct {
 	AdminCommandScope
+
 	ExpectedProjectionRevision int64
 	PreflightRevisionID        uuid.UUID
 	CheckedInPlayerIDs         []uuid.UUID
@@ -83,6 +86,7 @@ type AdminLockRosterCommand struct {
 
 type AdminUnlockRosterCommand struct {
 	AdminCommandScope
+
 	ExpectedProjectionRevision int64
 	Confirmed                  bool
 	Reason                     string
@@ -147,6 +151,7 @@ type AdminRepeatOverride struct {
 
 type AdminPairingCommand struct {
 	AdminCommandScope
+
 	ExpectedProjectionRevision int64
 	RoundNumber                int
 	PairingMode                AdminPairingMode
@@ -171,6 +176,7 @@ const (
 
 type AdminWaveCommand struct {
 	AdminCommandScope
+
 	WaveID                     uuid.UUID
 	ExpectedProjectionRevision int64
 	Action                     AdminWaveAction
@@ -247,6 +253,7 @@ const (
 
 type AdminTournamentActionCommand struct {
 	AdminCommandScope
+
 	ExpectedProjectionRevision int64
 	Action                     AdminTournamentAction
 	Confirmed                  bool
@@ -255,6 +262,7 @@ type AdminTournamentActionCommand struct {
 
 type AdminNoShowCommand struct {
 	AdminCommandScope
+
 	WaveID, WindowID, SeriesID                       uuid.UUID
 	Confirmed                                        bool
 	Reason                                           string
@@ -267,6 +275,7 @@ type AdminNoShowCommand struct {
 
 type AdminReserveCommand struct {
 	AdminCommandScope
+
 	OldWaveID, SeriesID, SlotID, AssignmentID, AssignmentAttemptID uuid.UUID
 	Confirmed                                                      bool
 	Reason                                                         string
@@ -296,6 +305,7 @@ type AdminGameExpectation struct {
 
 type AdminForfeitCommand struct {
 	AdminCommandScope
+
 	SeriesID, ForfeitingParticipantID                                                          uuid.UUID
 	Confirmed                                                                                  bool
 	Reason                                                                                     string
@@ -309,6 +319,7 @@ type AdminForfeitCommand struct {
 
 type AdminReplayCommand struct {
 	AdminCommandScope
+
 	OldWaveID, SeriesID, SlotID, AssignmentID, FailedGameID                                                                                               uuid.UUID
 	Confirmed                                                                                                                                             bool
 	Reason                                                                                                                                                string
@@ -350,6 +361,7 @@ type AdminCorrectionPatch struct {
 
 type AdminCorrectionCommand struct {
 	AdminCommandScope
+
 	SeriesID, GameID           uuid.UUID
 	ExpectedProjectionRevision int64
 	Confirmed                  bool

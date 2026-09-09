@@ -34,12 +34,23 @@ func assertResultParticipantIntegrity(
 	var outsideParticipantID uuid.UUID
 	err := sharedPool.QueryRow(ctx, `
 		INSERT INTO participants (roster_id, player_id, seed, attendance)
-		VALUES ($1, $2, 3, 'checked_in')
+		SELECT $1, $2, COALESCE(MAX(seed), 0) + 1, 'checked_in'
+		FROM participants
+		WHERE roster_id = $1
 		RETURNING id`, fixture.draft.rosterID, playerIDs[0]).Scan(&outsideParticipantID)
 	require.NoError(tb, err)
 
 	createdAt := fixture.lockedAt.Add(2 * time.Second)
-	_, err = sharedPool.Exec(
+	probeTx, err := sharedPool.Begin(ctx)
+	require.NoError(tb, err)
+	var eventSequence int64
+	err = probeTx.QueryRow(ctx, `
+		UPDATE game_attempts
+		SET submission_event_sequence = submission_event_sequence + 1
+		WHERE id = $1
+		RETURNING submission_event_sequence`, fixture.attemptID).Scan(&eventSequence)
+	require.NoError(tb, err)
+	_, err = probeTx.Exec(
 		ctx, `
 		INSERT INTO submission_events (
 			tournament_id, roster_id, series_id, attempt_id, assignment_id,
@@ -48,8 +59,8 @@ func assertResultParticipantIntegrity(
 		)
 		VALUES (
 			$1, $2, $3, $4, $5,
-			$6, 2, $7, 'accepted',
-			$8, $9, $9, $9
+			$6, $7, $8, 'accepted',
+			$9, $10, $10, $10
 		)`,
 		fixture.draft.tournamentID,
 		fixture.draft.rosterID,
@@ -57,13 +68,23 @@ func assertResultParticipantIntegrity(
 		fixture.attemptID,
 		fixture.assignmentID,
 		outsideParticipantID,
+		eventSequence,
 		uuid.New(),
 		bytes.Repeat([]byte{23}, 32),
 		createdAt,
 	)
 	require.ErrorContains(tb, err, "submission participant is outside the Series")
+	require.NoError(tb, probeTx.Rollback(ctx))
 
-	_, err = sharedPool.Exec(
+	probeTx, err = sharedPool.Begin(ctx)
+	require.NoError(tb, err)
+	err = probeTx.QueryRow(ctx, `
+		UPDATE game_attempts
+		SET result_event_sequence = result_event_sequence + 1
+		WHERE id = $1
+		RETURNING result_event_sequence`, fixture.attemptID).Scan(&eventSequence)
+	require.NoError(tb, err)
+	_, err = probeTx.Exec(
 		ctx, `
 		INSERT INTO result_events (
 			tournament_id, roster_id, series_id, attempt_id,
@@ -72,20 +93,30 @@ func assertResultParticipantIntegrity(
 		)
 		VALUES (
 			$1, $2, $3, $4,
-			1, $5, 'completed',
-			'operator_forfeit', $6, $7, $7
+			$5, $6, 'completed',
+			'operator_forfeit', $7, $8, $8
 		)`,
 		fixture.draft.tournamentID,
 		fixture.draft.rosterID,
 		fixture.draft.seriesID,
 		fixture.attemptID,
+		eventSequence,
 		uuid.New(),
 		outsideParticipantID,
 		createdAt,
 	)
 	require.ErrorContains(tb, err, "result winner is outside the Series")
+	require.NoError(tb, probeTx.Rollback(ctx))
 
-	_, err = sharedPool.Exec(
+	probeTx, err = sharedPool.Begin(ctx)
+	require.NoError(tb, err)
+	err = probeTx.QueryRow(ctx, `
+		UPDATE game_attempts
+		SET result_event_sequence = result_event_sequence + 1
+		WHERE id = $1
+		RETURNING result_event_sequence`, fixture.attemptID).Scan(&eventSequence)
+	require.NoError(tb, err)
+	_, err = probeTx.Exec(
 		ctx, `
 		INSERT INTO result_events (
 			tournament_id, roster_id, series_id, attempt_id,
@@ -94,14 +125,15 @@ func assertResultParticipantIntegrity(
 		)
 		VALUES (
 			$1, $2, $3, $4,
-			$5, 1, $6,
-			'completed', 'solved', $7, $8, $8
+			$5, $6, $7,
+			'completed', 'solved', $8, $9, $9
 		)`,
 		fixture.draft.tournamentID,
 		fixture.draft.rosterID,
 		fixture.draft.seriesID,
 		fixture.attemptID,
 		submissionID,
+		eventSequence,
 		uuid.New(),
 		fixture.draft.participantIDs[1],
 		createdAt,
@@ -111,6 +143,7 @@ func assertResultParticipantIntegrity(
 		err,
 		"solved result winner must match the submission participant",
 	)
+	require.NoError(tb, probeTx.Rollback(ctx))
 
 	_, err = sharedPool.Exec(ctx, `
 		UPDATE series
@@ -296,17 +329,22 @@ func createAcceptedSubmission(
 	submissionID := uuid.New()
 	idempotencyKey := uuid.New()
 	receivedAt := fixture.lockedAt.Add(time.Second)
-	_, err := sharedPool.Exec(
+	_, err := sharedPool.Exec(ctx, `
+		UPDATE game_attempts
+		SET submission_event_sequence = submission_event_sequence + 1
+		WHERE id = $1`, fixture.attemptID)
+	require.NoError(tb, err)
+	_, err = sharedPool.Exec(
 		ctx, `
 		INSERT INTO submission_events (
 			id, tournament_id, roster_id, series_id, attempt_id, assignment_id,
 			participant_id, server_sequence, idempotency_key, status,
-			payload_digest, submitted_at, received_at, created_at
+			payload_digest, intent_digest, submitted_at, received_at, created_at
 		)
 		VALUES (
 			$1, $2, $3, $4, $5, $6,
 			$7, 1, $8, 'accepted',
-			$9, $10, $10, $10
+			$9, $10, $11, $11, $11
 		)`,
 		submissionID,
 		fixture.draft.tournamentID,
@@ -317,6 +355,7 @@ func createAcceptedSubmission(
 		fixture.draft.participantIDs[0],
 		idempotencyKey,
 		bytes.Repeat([]byte{20}, 32),
+		bytes.Repeat([]byte{21}, 32),
 		receivedAt,
 	)
 	require.NoError(tb, err)

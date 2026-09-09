@@ -223,6 +223,7 @@ func participantSubmissionReplay(
 	return resolved, nil
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func participantRecordedSubmissionReplay(
 	command gameusecase.SubmissionCommand,
 	row sqlc.FindParticipantSubmissionReplayRow,

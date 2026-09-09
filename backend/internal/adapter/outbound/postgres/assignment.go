@@ -274,7 +274,7 @@ func (r *AssignmentPostgres) CreateExactPlan(
 				CreatedAt:                tstz(in.CreatedAt),
 			},
 		); err != nil {
-			return err
+			return fmt.Errorf("create exact assignment plan: %w", err)
 		}
 		for _, branch := range in.Branches {
 			categories, jsonErr := categoryJSON(branch.Categories)
@@ -293,7 +293,7 @@ func (r *AssignmentPostgres) CreateExactPlan(
 					CreatedAt:        tstz(in.CreatedAt),
 				},
 			); err != nil {
-				return err
+				return fmt.Errorf("create assignment branch: %w", err)
 			}
 			for _, edge := range branch.Edges {
 				selectionEvidence, jsonErr := requiredJSONObject(edge.SelectionEvidence)
@@ -313,7 +313,13 @@ func (r *AssignmentPostgres) CreateExactPlan(
 						CreatedAt:         tstz(in.CreatedAt),
 					},
 				); err != nil {
-					return err
+					return fmt.Errorf(
+						"create assignment plan edge %s position %d for task %s: %w",
+						branch.Key,
+						edge.Position,
+						edge.Snapshot.TaskID,
+						err,
+					)
 				}
 				if _, err := querier.CreateAssignmentTaskVersionReservation(
 					txCtx,
@@ -327,7 +333,7 @@ func (r *AssignmentPostgres) CreateExactPlan(
 						CreatedAt:   tstz(in.CreatedAt),
 					},
 				); err != nil {
-					return err
+					return fmt.Errorf("create assignment task-version reservation: %w", err)
 				}
 				snapshotParams, jsonErr := taskSnapshotParams(edge, in.CreatedAt)
 				if jsonErr != nil {
@@ -337,7 +343,7 @@ func (r *AssignmentPostgres) CreateExactPlan(
 					txCtx,
 					snapshotParams,
 				); err != nil {
-					return err
+					return fmt.Errorf("create assignment task snapshot: %w", err)
 				}
 			}
 		}

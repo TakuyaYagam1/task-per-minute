@@ -11,6 +11,7 @@ import (
 	tournamentprogression "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/progression"
 )
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func tournamentProgressionReceipt(
 	row sqlc.FindTournamentStageProgressionRow,
 ) (*tournamentprogression.Receipt, error) {

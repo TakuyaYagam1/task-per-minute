@@ -34,6 +34,7 @@ func TestTournamentRepository(t *testing.T) {
 	ctx := context.Background()
 	resetMigrationTables(ctx, t)
 	t.Cleanup(func() { resetMigrationTables(ctx, t) })
+	prepareTournamentCreateReceiptContent(ctx, t)
 	fixture := newRepositoryFixture()
 	baseTime := time.Now().UTC().Truncate(time.Microsecond)
 
@@ -93,6 +94,10 @@ func TestTournamentRepository(t *testing.T) {
 	require.Len(t, participants, 3)
 	require.Equal(t, firstTournament.ID, participants[0].TournamentID)
 	require.Equal(t, []int{1, 2, 3}, []int{participants[0].Seed, participants[1].Seed, participants[2].Seed})
+	firstRoster, err = fixture.tournaments.GetRoster(ctx, firstRoster.ID)
+	require.NoError(t, err)
+	secondRoster, err = fixture.tournaments.GetRoster(ctx, secondRoster.ID)
+	require.NoError(t, err)
 
 	locked, changed, err := fixture.tournaments.LockRosterAndReserve(
 		ctx,
@@ -102,7 +107,7 @@ func TestTournamentRepository(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.True(t, changed)
-	require.EqualValues(t, 2, locked.Revision)
+	require.Equal(t, firstRoster.Revision+1, locked.Revision)
 	require.NotNil(t, locked.LockedAt)
 	reservations, err := fixture.tournaments.ListReservations(ctx, firstTournament.ID)
 	require.NoError(t, err)
@@ -239,6 +244,10 @@ func TestTournamentRepository(t *testing.T) {
 			seed++
 		}
 	}
+	concurrentFirstRoster, err = fixture.tournaments.GetRoster(ctx, concurrentFirstRoster.ID)
+	require.NoError(t, err)
+	concurrentSecondRoster, err = fixture.tournaments.GetRoster(ctx, concurrentSecondRoster.ID)
+	require.NoError(t, err)
 	type concurrentLockResult struct {
 		tournamentID uuid.UUID
 		rosterID     uuid.UUID
@@ -320,6 +329,8 @@ func TestTournamentRepository(t *testing.T) {
 		)
 		seed++
 	}
+	rollbackRoster, err = fixture.tournaments.GetRoster(ctx, rollbackRoster.ID)
+	require.NoError(t, err)
 	rollbackCause := errors.New("force outer rollback")
 	err = fixture.tx.Do(ctx, func(txCtx context.Context) error {
 		_, innerChanged, lockErr := fixture.tournaments.LockRosterAndReserve(

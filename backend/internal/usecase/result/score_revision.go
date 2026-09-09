@@ -274,6 +274,7 @@ func validateSeriesScoreTerminalPayload(r SeriesScoreRevision) error {
 	return nil
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func validateSeriesScoreRevisionOperation(r SeriesScoreRevision) error {
 	switch r.operation {
 	case SeriesScoreRevisionOperationInitialize:

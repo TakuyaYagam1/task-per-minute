@@ -45,6 +45,7 @@ func NewTournamentCreatePostgres(tournaments *TournamentPostgres) *TournamentCre
 	return &TournamentCreatePostgres{tournaments: tournaments}
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func (r *TournamentCreatePostgres) Create(
 	ctx context.Context,
 	command catalogusecase.CreateReceiptCommand,
@@ -130,6 +131,7 @@ func validTournamentCreateReceiptCommand(command catalogusecase.CreateReceiptCom
 		validServerTime(command.CreatedAt)
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func tournamentCreateReceiptResult(
 	receipt sqlc.TournamentCreateCommandReceipt,
 	command catalogusecase.CreateReceiptCommand,

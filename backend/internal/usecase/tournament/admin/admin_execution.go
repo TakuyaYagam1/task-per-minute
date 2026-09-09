@@ -382,6 +382,7 @@ func validSHA256Hex(value string) bool {
 	return err == nil && len(decoded) == 32
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func validWaveView(view WaveView, tournamentID, waveID uuid.UUID) bool {
 	if view.Revision < 1 || view.Wave.ID != waveID || view.Wave.TournamentID != tournamentID ||
 		view.Wave.Validate() != nil || view.ReadinessRevisions == nil || view.SeriesIDs == nil ||

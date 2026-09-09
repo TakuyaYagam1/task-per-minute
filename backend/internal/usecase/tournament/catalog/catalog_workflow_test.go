@@ -117,7 +117,7 @@ func newTournamentCatalogRepository(
 		RunAndReturn(func(_ context.Context, id uuid.UUID) (*catalogusecase.CatalogTournamentRecord, error) {
 			record, exists := state.records[id]
 			if !exists {
-				return nil, catalogusecase.CatalogErrTournamentNotFound
+				return nil, catalogusecase.ErrTournamentNotFound
 			}
 			return catalogCloneTournamentRecord(record), nil
 		}).

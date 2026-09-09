@@ -237,6 +237,7 @@ func NewWorkflow(dependencies ProgressionDependencies) *Workflow {
 	}
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func (w *Workflow) Advance(ctx context.Context, command Command, authority Authority) (Receipt, error) {
 	if ctx == nil || !validCommand(command) || !validAuthority(authority, command) {
 		return Receipt{}, domain.ErrValidation
@@ -371,6 +372,7 @@ func prepareSwissTerminalInput(
 	authority Authority,
 	terminal playoff.ProgressionSwissInput,
 ) (playoff.ProgressionSwissInput, error) {
+	//nolint:exhaustive // This switch intentionally handles only the valid states for this boundary.
 	switch authority.Tournament.State {
 	case domain.TournamentStateSwiss:
 		if len(terminal.GoldenGroups) != 0 {
@@ -406,6 +408,7 @@ func prepareSwissTerminalIdentityRanges(
 	terminal playoff.ProgressionSwissInput,
 	ranges []playoff.ImpactfulGoldenTieRange,
 ) (playoff.ProgressionSwissInput, error) {
+	//nolint:exhaustive // This switch intentionally handles only the valid states for this boundary.
 	switch state {
 	case domain.TournamentStateSwiss:
 		if len(terminal.GoldenGroups) != 0 {

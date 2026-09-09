@@ -109,12 +109,13 @@ func (repository *ExecutionRecoveryPostgres) ListActiveGames(
 	return candidates, nil
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func (repository *ExecutionRecoveryPostgres) RearmDeadline(
 	ctx context.Context,
 	arm gameusecase.DeadlineArm,
 ) error {
 	if !validExecutionRecoveryRepository(ctx, repository) || repository.deadlines == nil ||
-		arm.Scope.IsValid() == false || arm.AttemptNo < 1 || arm.Authority.Validate() != nil ||
+		!arm.Scope.IsValid() || arm.AttemptNo < 1 || arm.Authority.Validate() != nil ||
 		arm.RosterID == uuid.Nil || !domain.IsValidServerTime(arm.Deadline) {
 		return domain.ErrValidation
 	}
@@ -215,6 +216,7 @@ func (repository *ExecutionRecoveryPostgres) LoadEpochReplayAuthority(
 	return result, nil
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func (repository *ExecutionRecoveryPostgres) CommitEpochReplay(
 	ctx context.Context,
 	condition gameusecase.EpochReplayCommitCondition,
@@ -301,11 +303,11 @@ func (repository *ExecutionRecoveryPostgres) CommitEpochReplay(
 		}, record.Attempt.WaveRoute); routeErr != nil {
 			return routeErr
 		}
-		if createErr := repository.createEpochReplay(txCtx, condition, record, fence); createErr != nil {
+		if createErr := repository.createEpochReplay(txCtx, condition, record); createErr != nil {
 			return createErr
 		}
-		copy := record
-		committed = &copy
+		clone := record
+		committed = &clone
 		changed = true
 		return nil
 	})
@@ -348,6 +350,7 @@ func validExecutionRecoveryRepository(
 		repository.deadlines != nil && repository.terminal != nil
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func executionRecoveryCandidateFromRow(
 	row sqlc.ListExecutionRecoveryGamesRow,
 	current authoritydomain.Identity,
@@ -550,8 +553,8 @@ func (repository *ExecutionRecoveryPostgres) createEpochReplay(
 	ctx context.Context,
 	condition gameusecase.EpochReplayCommitCondition,
 	record gameusecase.EpochReplayRecord,
-	fence executionRecoveryFence,
 ) error {
+	//nolint:musttag // This versioned application-owned document is validated on both encode and decode.
 	document, err := json.Marshal(record)
 	if err != nil {
 		return fmt.Errorf("marshal immutable replay record: %w", err)
@@ -625,6 +628,7 @@ func executionEpochReplayRecordFromRow(
 	})
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func mapExecutionEpochReplayRecord(
 	row executionEpochReplayStoredRow,
 ) (*gameusecase.EpochReplayRecord, error) {
@@ -639,6 +643,7 @@ func mapExecutionEpochReplayRecord(
 		return nil, domain.ErrInternal
 	}
 	var record gameusecase.EpochReplayRecord
+	//nolint:musttag // This versioned application-owned document is validated on both encode and decode.
 	if err := json.Unmarshal(row.recordDocument, &record); err != nil {
 		return nil, fmt.Errorf("decode immutable replay record: %w", err)
 	}
@@ -662,6 +667,7 @@ func mapExecutionEpochReplayRecord(
 	return &record, nil
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func executionRecoveryFenceFromRow(
 	row sqlc.LockExecutionEpochReplayFenceRow,
 	scope domain.FailedAttemptScope,

@@ -89,46 +89,46 @@ type Incident struct {
 }
 
 type Admin struct {
-	Password            string        `env:"PASSWORD"                env-required:"true"`
-	LoginRateAttempts   int           `env:"LOGIN_RATE_ATTEMPTS"     env-default:"5"`
-	LoginRateWindow     time.Duration `env:"LOGIN_RATE_WINDOW"       env-default:"15m"`
+	Password            string        `env:"PASSWORD"              env-required:"true"`
+	LoginRateAttempts   int           `env:"LOGIN_RATE_ATTEMPTS"   env-default:"5"`
+	LoginRateWindow     time.Duration `env:"LOGIN_RATE_WINDOW"     env-default:"15m"`
 	RefreshRateAttempts int           `env:"REFRESH_RATE_ATTEMPTS"`
 	RefreshRateWindow   time.Duration `env:"REFRESH_RATE_WINDOW"`
 }
 
 type Player struct {
-	JoinRateAttempts int           `env:"JOIN_RATE_ATTEMPTS"   env-default:"20"`
-	JoinRateWindow   time.Duration `env:"JOIN_RATE_WINDOW"     env-default:"5m"`
-	SessionTTL       time.Duration `env:"SESSION_TTL"          env-default:"24h"`
+	JoinRateAttempts int           `env:"JOIN_RATE_ATTEMPTS" env-default:"20"`
+	JoinRateWindow   time.Duration `env:"JOIN_RATE_WINDOW"   env-default:"5m"`
+	SessionTTL       time.Duration `env:"SESSION_TTL"        env-default:"24h"`
 }
 
 type Leaderboard struct {
-	RateAttempts int           `env:"RATE_ATTEMPTS"   env-default:"120"`
-	RateWindow   time.Duration `env:"RATE_WINDOW"     env-default:"1m"`
+	RateAttempts int           `env:"RATE_ATTEMPTS" env-default:"120"`
+	RateWindow   time.Duration `env:"RATE_WINDOW"   env-default:"1m"`
 }
 
 type Tournament struct {
-	PublicReadRateAttempts          int           `env:"PUBLIC_READ_RATE_ATTEMPTS"           env-default:"120"`
-	PublicReadRateWindow            time.Duration `env:"PUBLIC_READ_RATE_WINDOW"             env-default:"1m"`
-	OperatorReadRateAttempts        int           `env:"OPERATOR_READ_RATE_ATTEMPTS"         env-default:"120"`
-	OperatorReadRateWindow          time.Duration `env:"OPERATOR_READ_RATE_WINDOW"           env-default:"1m"`
-	OperatorMutationRateAttempts    int           `env:"OPERATOR_MUTATION_RATE_ATTEMPTS"     env-default:"120"`
-	OperatorMutationRateWindow      time.Duration `env:"OPERATOR_MUTATION_RATE_WINDOW"       env-default:"1m"`
-	ParticipantReadRateAttempts     int           `env:"PARTICIPANT_READ_RATE_ATTEMPTS"      env-default:"120"`
-	ParticipantReadRateWindow       time.Duration `env:"PARTICIPANT_READ_RATE_WINDOW"        env-default:"1m"`
-	ParticipantMutationRateAttempts int           `env:"PARTICIPANT_MUTATION_RATE_ATTEMPTS"  env-default:"120"`
-	ParticipantMutationRateWindow   time.Duration `env:"PARTICIPANT_MUTATION_RATE_WINDOW"    env-default:"1m"`
+	PublicReadRateAttempts          int           `env:"PUBLIC_READ_RATE_ATTEMPTS"          env-default:"120"`
+	PublicReadRateWindow            time.Duration `env:"PUBLIC_READ_RATE_WINDOW"            env-default:"1m"`
+	OperatorReadRateAttempts        int           `env:"OPERATOR_READ_RATE_ATTEMPTS"        env-default:"120"`
+	OperatorReadRateWindow          time.Duration `env:"OPERATOR_READ_RATE_WINDOW"          env-default:"1m"`
+	OperatorMutationRateAttempts    int           `env:"OPERATOR_MUTATION_RATE_ATTEMPTS"    env-default:"120"`
+	OperatorMutationRateWindow      time.Duration `env:"OPERATOR_MUTATION_RATE_WINDOW"      env-default:"1m"`
+	ParticipantReadRateAttempts     int           `env:"PARTICIPANT_READ_RATE_ATTEMPTS"     env-default:"120"`
+	ParticipantReadRateWindow       time.Duration `env:"PARTICIPANT_READ_RATE_WINDOW"       env-default:"1m"`
+	ParticipantMutationRateAttempts int           `env:"PARTICIPANT_MUTATION_RATE_ATTEMPTS" env-default:"120"`
+	ParticipantMutationRateWindow   time.Duration `env:"PARTICIPANT_MUTATION_RATE_WINDOW"   env-default:"1m"`
 }
 
 type WebSocket struct {
-	AllowedOrigins                  []string      `env:"ALLOWED_ORIGINS"               env-separator:","`
-	RequireOrigin                   bool          `env:"REQUIRE_ORIGIN"                env-default:"false"`
-	HandshakeRateAttempts           int           `env:"HANDSHAKE_RATE_ATTEMPTS"       env-default:"60"`
-	HandshakeRateWindow             time.Duration `env:"HANDSHAKE_RATE_WINDOW"         env-default:"1m"`
-	MaxConnections                  int           `env:"MAX_CONNECTIONS"               env-default:"512"`
-	MaxConnectionsPerPrincipal      int           `env:"MAX_CONNECTIONS_PER_PRINCIPAL" env-default:"4"`
-	DeliveryReceiptRetention        time.Duration `env:"DELIVERY_RECEIPT_RETENTION"    env-default:"720h"`
-	DeliveryReceiptCleanupInterval  time.Duration `env:"DELIVERY_RECEIPT_CLEANUP_INTERVAL" env-default:"5m"`
+	AllowedOrigins                  []string      `env:"ALLOWED_ORIGINS"                     env-separator:","`
+	RequireOrigin                   bool          `env:"REQUIRE_ORIGIN"                      env-default:"false"`
+	HandshakeRateAttempts           int           `env:"HANDSHAKE_RATE_ATTEMPTS"             env-default:"60"`
+	HandshakeRateWindow             time.Duration `env:"HANDSHAKE_RATE_WINDOW"               env-default:"1m"`
+	MaxConnections                  int           `env:"MAX_CONNECTIONS"                     env-default:"512"`
+	MaxConnectionsPerPrincipal      int           `env:"MAX_CONNECTIONS_PER_PRINCIPAL"       env-default:"4"`
+	DeliveryReceiptRetention        time.Duration `env:"DELIVERY_RECEIPT_RETENTION"          env-default:"720h"`
+	DeliveryReceiptCleanupInterval  time.Duration `env:"DELIVERY_RECEIPT_CLEANUP_INTERVAL"   env-default:"5m"`
 	DeliveryReceiptCleanupBatchSize int32         `env:"DELIVERY_RECEIPT_CLEANUP_BATCH_SIZE" env-default:"128"`
 }
 
@@ -331,6 +331,7 @@ func validateIncident(cfg *Incident, jwtSecret string) error {
 	return nil
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func validIncidentHMACKeyID(value string) bool {
 	if len(value) == 0 || len(value) > maxIncidentHMACKeyIDBytes {
 		return false

@@ -1,8 +1,6 @@
 package v1
 
 import (
-	"github.com/google/uuid"
-
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/api"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/v1/response"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
@@ -249,11 +247,4 @@ func adminPausedDraftResponse(draft inbound.AdminDraftView) (api.Draft, error) {
 		actions[i] = api.DraftAction{Turn: response.IntToInt32(action.Turn), ActorId: action.ActorID, Action: kind, Category: category, OccurredAt: action.OccurredAt, TurnDeadline: action.TurnDeadline}
 	}
 	return api.Draft{Id: draft.ID, SeriesId: draft.SeriesID, Format: format, FirstParticipantId: draft.FirstParticipantID, SecondParticipantId: draft.SecondParticipantID, Pool: pool, State: state, Turn: response.IntToInt32(draft.Turn), TurnDeadline: cloneTimePointer(draft.TurnDeadline), Actions: actions, SelectedCategories: selected, Revision: draft.Revision}, nil
-}
-
-func activePauseIDPointer(value uuid.UUID) *uuid.UUID {
-	if value == uuid.Nil {
-		return nil
-	}
-	return cloneUUIDPointer(&value)
 }

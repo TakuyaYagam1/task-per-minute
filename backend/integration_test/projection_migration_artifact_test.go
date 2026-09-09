@@ -70,11 +70,11 @@ func createProjectionArtifactSetWithoutStandings(
 			12,
 			createdAt,
 		),
-		"top4": createProjectionArtifact(
+		"top_four": createProjectionArtifact(
 			ctx, tb,
 			fixture,
 			revisionID,
-			"top4",
+			"top_four",
 			"top4-"+keySuffix,
 			topFourPayload,
 			13,

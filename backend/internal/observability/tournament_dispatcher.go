@@ -22,7 +22,7 @@ var (
 // event cannot recurse through the same full queue.
 type TournamentEventQueueObserver interface {
 	ObserveTournamentEventDrop()
-	ObserveTournamentEventQueueLag(time.Duration)
+	ObserveTournamentEventQueueLag(lag time.Duration)
 }
 
 type TournamentEventDispatcherConfig struct {
@@ -132,10 +132,9 @@ func (dispatcher *TournamentEventDispatcher) ObserveTournamentEvent(
 		return
 	}
 	if ctx == nil {
-		ctx = context.Background()
-	} else {
-		ctx = context.WithoutCancel(ctx)
+		return
 	}
+	ctx = context.WithoutCancel(ctx)
 	dispatcher.enqueue(tournamentObservation{
 		ctx: ctx, event: &validated, enqueuedAt: dispatcher.now().Round(0).UTC(),
 	})
@@ -166,7 +165,7 @@ func (dispatcher *TournamentEventDispatcher) dispatch(observation tournamentObse
 	}
 	for _, observer := range dispatcher.observers {
 		if observation.event != nil {
-			observeTournamentEventSafely(observer, observation.ctx, *observation.event)
+			observeTournamentEventSafely(observation.ctx, observer, *observation.event)
 			continue
 		}
 		lagObserver, ok := observer.(TournamentLagObserver)
@@ -193,8 +192,8 @@ func (dispatcher *TournamentEventDispatcher) observeQueueLagSafely(lag time.Dura
 }
 
 func observeTournamentEventSafely(
-	observer TournamentEventObserver,
 	ctx context.Context,
+	observer TournamentEventObserver,
 	event TournamentEvent,
 ) {
 	defer func() { _ = recover() }()

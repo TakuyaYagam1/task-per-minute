@@ -103,7 +103,7 @@ func (s *Server) tournamentRatePolicy(r *http.Request) (tournamentRequestPolicy,
 
 func (route tournamentRateRoute) matches(method, path string) bool {
 	if path == "" || strings.HasSuffix(path, "/") ||
-		(method != route.method && !(route.method == http.MethodGet && method == http.MethodHead)) {
+		(method != route.method && (route.method != http.MethodGet || method != http.MethodHead)) {
 		return false
 	}
 	segments := strings.Split(strings.TrimPrefix(path, "/"), "/")

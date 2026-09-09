@@ -229,11 +229,11 @@ func TestSchemaMigration(t *testing.T) {
 					AND column_name IN ('owner_kind', 'owner_id')
 			))::INT`,
 	).Scan(&removedLegacy))
-	require.Equal(t, 181, applicationTables)
-	require.Equal(t, 166, applicationFunctions)
-	require.Equal(t, 246, triggers)
+	require.Equal(t, 182, applicationTables)
+	require.Equal(t, 174, applicationFunctions)
+	require.Equal(t, 265, triggers)
 	require.Equal(t, 81, explicitIndexes)
-	require.Equal(t, 553, foreignKeys)
+	require.Equal(t, 563, foreignKeys)
 	require.Zero(t, legacyIdentifiers,
 		"domain baseline must not expose legacy-prefixed schema identifiers")
 	require.Zero(t, removedLegacy,

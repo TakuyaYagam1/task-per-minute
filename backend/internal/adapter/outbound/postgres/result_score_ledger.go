@@ -120,7 +120,7 @@ func scoreRevisionAttemptPosition(
 
 func nextScoreRevisionAttemptPosition(rows []sqlc.SeriesScoreRevisionAttempt) (int16, error) {
 	if len(rows) >= math.MaxInt16 {
-		return 0, fmt.Errorf("Series-score attempt ledger exceeds position range")
+		return 0, fmt.Errorf("series-score attempt ledger exceeds position range")
 	}
 	return int16(len(rows) + 1), nil //nolint:gosec // bounded directly above by the smallint maximum.
 }
@@ -129,9 +129,10 @@ func scoreSlotPosition(value int32) (int16, error) {
 	if value < 1 || value > math.MaxInt16 {
 		return 0, fmt.Errorf("invalid Series-score slot position")
 	}
-	return int16(value), nil //nolint:gosec // bounds are checked above.
+	return int16(value), nil
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func normalNoShowScoreEvidence(
 	graph []sqlc.ListRecoverySeriesGraphRow,
 	seriesID uuid.UUID,

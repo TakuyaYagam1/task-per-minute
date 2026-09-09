@@ -21,6 +21,7 @@ func NewTournamentAdminLifecyclePostgres(tx *TxManager) *TournamentAdminLifecycl
 	return &TournamentAdminLifecyclePostgres{tx: tx}
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func (r *TournamentAdminLifecyclePostgres) LockLifecycleAuthority(
 	ctx context.Context,
 	tournamentID uuid.UUID,

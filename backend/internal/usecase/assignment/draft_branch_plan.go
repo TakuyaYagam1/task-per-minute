@@ -74,6 +74,7 @@ func ReachableExactDraftBranches(draft draftusecase.Execution) ([]ExactDraftBran
 	return cloneExactDraftBranchPaths(paths), nil
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func BuildExactDraftBranchPlan(
 	command ExactDraftBranchPlanCommand,
 	authority ExactDraftBranchPlanAuthority,

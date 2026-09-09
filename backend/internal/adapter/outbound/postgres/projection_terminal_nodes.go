@@ -9,6 +9,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func persistTerminalProjectionNodes(ctx context.Context, tx *TxManager, in ResultSettlementInput) error {
 	q := tx.Querier(ctx)
 	commits, err := q.LockTerminalProjectionCommit(ctx, sqlc.LockTerminalProjectionCommitParams{

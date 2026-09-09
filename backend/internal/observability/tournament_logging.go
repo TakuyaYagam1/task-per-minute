@@ -158,7 +158,7 @@ type tournamentEventFanout []TournamentEventObserver
 
 func (fanout tournamentEventFanout) ObserveTournamentEvent(ctx context.Context, event TournamentEvent) {
 	for _, observer := range fanout {
-		observeTournamentEventSafely(observer, ctx, event)
+		observeTournamentEventSafely(ctx, observer, event)
 	}
 }
 

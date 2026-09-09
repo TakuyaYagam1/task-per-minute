@@ -167,6 +167,7 @@ func replayReplacementDocumentFromRow(row sqlc.ReplayReplacement) replayReplacem
 	}
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func validateReplayReplacementDocument(
 	document replayReplacementDocument,
 	row sqlc.ReplayReplacement,
@@ -218,6 +219,7 @@ func operatorReserveDocumentFromRow(row sqlc.OperatorReplayReserve) operatorRese
 	}
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func validateOperatorReserveDocument(
 	document operatorReserveDocument,
 	row sqlc.OperatorReplayReserve,
@@ -247,6 +249,7 @@ func validateOperatorReserveDocument(
 	return nil
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func validateReplayReserveExhaustionDocument(
 	document replayReserveExhaustionDocument,
 	row sqlc.ReplayReserveExhaustion,

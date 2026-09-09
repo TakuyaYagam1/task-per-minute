@@ -2,6 +2,7 @@ package tasktelemetry
 
 import (
 	"context"
+
 	taskusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/task"
 	logkit "github.com/wahrwelt-kit/go-logkit"
 )

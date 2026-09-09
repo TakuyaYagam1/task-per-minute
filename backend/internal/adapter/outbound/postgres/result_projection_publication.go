@@ -29,6 +29,7 @@ func resultProjectionTarget(
 	return resultProjectionTargetBinding{ID: targetID, Revision: source.RevisionNumber + 1}, true
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func publishResultProjection(
 	ctx context.Context,
 	tx *TxManager,

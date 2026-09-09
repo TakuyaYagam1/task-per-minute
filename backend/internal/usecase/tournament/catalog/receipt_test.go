@@ -20,7 +20,8 @@ func TestCreateTournamentPayloadDigest(t *testing.T) {
 		Preset:           domain.TournamentPresetV1,
 	}
 
-	require.Equal(t, createTournamentPayloadDigest(base), createTournamentPayloadDigest(base))
+	digest := createTournamentPayloadDigest(base)
+	require.Equal(t, digest, createTournamentPayloadDigest(base))
 
 	differentActor := base
 	differentActor.Operator.ActorID = uuid.MustParse("30000000-0000-0000-0000-000000000003")

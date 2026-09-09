@@ -52,15 +52,16 @@ func TestTournamentObservabilityFlowSurvivesApplicationRestart(t *testing.T) {
 	limiter := middlewaremocks.NewMockRateLimiter(t)
 	limiter.EXPECT().Allow("operator:" + operatorSubject).Return(true).Twice()
 
-	first := newTournamentFlowHandler(t, dispatcher, verifier, limiter)
+	first := newTournamentFlowHandler(t, logger, dispatcher, verifier, limiter)
 	response := tournamentFlowForfeitRequest(t, first, accessToken, forfeit)
-	require.Equal(t, http.StatusNoContent, response.Code)
+	require.Equal(t, http.StatusNoContent, response.Code, response.Body.String()+"\n"+logs.String())
 	assertTournamentFlowEvidence(ctx, t, forfeit.commandID, forfeit.auditID, forfeit.outboxID)
 
-	second := newTournamentFlowHandler(t, dispatcher, verifier, limiter)
+	second := newTournamentFlowHandler(t, logger, dispatcher, verifier, limiter)
 	response = tournamentFlowForfeitRequest(t, second, accessToken, forfeit)
-	require.Equal(t, http.StatusNoContent, response.Code)
+	require.Equal(t, http.StatusNoContent, response.Code, response.Body.String()+"\n"+logs.String())
 	assertTournamentFlowEvidence(ctx, t, forfeit.commandID, forfeit.auditID, forfeit.outboxID)
+	outboxCorrelationID := tournamentFlowOutboxCorrelation(ctx, t, forfeit.outboxID)
 	processTournamentFlowOutbox(t, ctx, dispatcher, forfeit)
 	assertTournamentFlowEvidence(ctx, t, forfeit.commandID, forfeit.auditID, forfeit.outboxID)
 	assertTournamentFlowOutboxPublished(ctx, t, forfeit.outboxID)
@@ -68,7 +69,7 @@ func TestTournamentObservabilityFlowSurvivesApplicationRestart(t *testing.T) {
 	require.Eventually(t, func() bool {
 		return tournamentFlowEventCount(logs.String(), "tournament.http", forfeit.commandID.String()) == 2 &&
 			tournamentFlowEventCount(logs.String(), "tournament.admin.command", forfeit.commandID.String()) == 2 &&
-			tournamentFlowEventCount(logs.String(), "tournament.outbox.delivery", forfeit.commandID.String()) == 1
+			tournamentFlowEventCount(logs.String(), "tournament.outbox.delivery", outboxCorrelationID.String()) == 1
 	}, time.Second, 10*time.Millisecond)
 	require.NotContains(t, logs.String(), tournamentFlowPrivateMarker)
 }
@@ -99,7 +100,7 @@ func prepareTournamentObservabilityForfeit(
 ) tournamentFlowForfeit {
 	t.Helper()
 
-	activatedAt := fixture.lockedAt.Add(time.Second)
+	activatedAt := time.Now().UTC().Truncate(time.Microsecond)
 	_, err := sharedPool.Exec(ctx, `
 		UPDATE tournaments
 		SET state = 'swiss', revision = revision + 1, started_at = $2, updated_at = $2
@@ -146,6 +147,7 @@ func prepareTournamentObservabilityForfeit(
 
 func newTournamentFlowHandler(
 	t *testing.T,
+	logger logkit.Logger,
 	observer observability.TournamentEventObserver,
 	verifier middleware.AdminAccessVerifier,
 	limiter middleware.RateLimiter,
@@ -181,7 +183,7 @@ func newTournamentFlowHandler(
 		TournamentAdmin:                   tournamentadmin.NewInboundAdapter(admin),
 		OperatorTournamentMutationLimiter: limiter,
 	})
-	return middleware.Build(logkit.Noop(), middleware.WithTournamentEventObserver(observer))(
+	return middleware.Build(logger, middleware.WithTournamentEventObserver(observer))(
 		v1.NewHandler(server, v1.HandlerOptions{AdminAuth: verifier}),
 	)
 }
@@ -241,11 +243,12 @@ func processTournamentFlowOutbox(
 	forfeit tournamentFlowForfeit,
 ) {
 	t.Helper()
+	correlationID := tournamentFlowOutboxCorrelation(ctx, t, forfeit.outboxID)
 
 	sink := eventdeliverymocks.NewMockSink(t)
 	sink.EXPECT().Deliver(mock.Anything, mock.MatchedBy(func(event delivery.Event) bool {
 		return event.ID == forfeit.outboxID &&
-			event.CorrelationID == forfeit.commandID &&
+			event.CorrelationID == correlationID &&
 			event.TournamentID == forfeit.tournamentID &&
 			event.ProjectionRevisionID == forfeit.projectionID &&
 			event.ProjectionRevision >= 1 &&
@@ -273,6 +276,16 @@ func processTournamentFlowOutbox(
 	result, err = restartedWorker.Process(ctx)
 	require.NoError(t, err)
 	require.Equal(t, delivery.ProcessResult{}, result)
+}
+
+func tournamentFlowOutboxCorrelation(ctx context.Context, t *testing.T, outboxID uuid.UUID) uuid.UUID {
+	t.Helper()
+	var correlationID uuid.UUID
+	require.NoError(t, sharedPool.QueryRow(ctx, `
+		SELECT idempotency_key
+		FROM outbox_events
+		WHERE id = $1`, outboxID).Scan(&correlationID))
+	return correlationID
 }
 
 func assertTournamentFlowEvidence(

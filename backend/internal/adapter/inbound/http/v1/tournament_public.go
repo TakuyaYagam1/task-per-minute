@@ -219,6 +219,7 @@ func publicBracketResponse(
 	}, nil
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func publicLiveDraftResponse(
 	view tournamentsnapshot.PublicSnapshotView,
 ) (*api.PublicLiveDraftResponse, error) {

@@ -87,6 +87,7 @@ func loadTournamentAdminCorrectionGoldenStage(
 	)
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func mapTournamentAdminCorrectionGoldenStage(
 	tournamentID uuid.UUID,
 	rows []sqlc.LockCorrectionGoldenStageGroupsRow,
@@ -157,7 +158,7 @@ func mapTournamentAdminCorrectionGoldenStage(
 			Members:                  members, Attempts: attempts,
 		}
 		if _, err := domain.NewGoldenGroup(group); err != nil {
-			return correctionusecase.StageLayout{}, fmt.Errorf("map Golden correction group: %v: %w", err, domain.ErrConflict)
+			return correctionusecase.StageLayout{}, fmt.Errorf("map Golden correction group: %w: %w", err, domain.ErrConflict)
 		}
 		layout.GoldenGroups = append(layout.GoldenGroups, group)
 		knownGroups[row.GroupID] = group.RevisionID
@@ -313,6 +314,7 @@ func lockTournamentAdminCorrectionStage(
 	return stage, tournament, nil
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func persistTournamentAdminCorrectionStage(
 	ctx context.Context,
 	querier *sqlc.Queries,
@@ -422,6 +424,7 @@ type correctionGoldenTombstoneAuthority struct {
 	attempts       map[uuid.UUID]sqlc.LockCorrectionGoldenLatestStateAttemptsRow
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func lockTournamentAdminCorrectionGoldenTombstoneAuthority(
 	ctx context.Context,
 	querier *sqlc.Queries,
@@ -499,6 +502,7 @@ func lockTournamentAdminCorrectionGoldenTombstoneAuthority(
 	return authority, nil
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func persistTournamentAdminCorrectionGoldenTombstones(
 	ctx context.Context,
 	querier *sqlc.Queries,
@@ -607,6 +611,7 @@ func persistTournamentAdminCorrectionGoldenTombstones(
 }
 
 func correctionStagePersistenceTransition(result correctionusecase.StageResult) (string, domain.TournamentState, error) {
+	//nolint:exhaustive // This switch intentionally handles only the valid states for this boundary.
 	switch result.Transition {
 	case correctionusecase.StagePlayoffToGolden:
 		return "correction_start_golden", domain.TournamentStateGolden, nil
@@ -717,11 +722,13 @@ func persistTournamentAdminCorrectionPlayoffStage(
 	return nil
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func correctionPlayoffStageMaterializationFrom(
 	artifacts []ProjectionArtifactInput,
 ) (correctionPlayoffStageMaterialization, error) {
 	var result correctionPlayoffStageMaterialization
 	for _, artifact := range artifacts {
+		//nolint:exhaustive // This switch intentionally handles only the valid states for this boundary.
 		switch artifact.Kind {
 		case domain.ArtifactKindTopFour:
 			result.topFour = artifact
@@ -736,6 +743,7 @@ func correctionPlayoffStageMaterializationFrom(
 	var document struct {
 		Rounds []projection.CanonicalBracketMatch `json:"rounds"`
 	}
+	//nolint:musttag // This versioned application-owned document is validated on both encode and decode.
 	if json.Unmarshal(result.bracket.Payload, &document) != nil || len(document.Rounds) != len(result.matches) {
 		return correctionPlayoffStageMaterialization{}, domain.ErrConflict
 	}
@@ -751,6 +759,7 @@ func correctionPlayoffStageMaterializationFrom(
 	return result, nil
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func persistTournamentAdminCorrectionPlayoffGraph(
 	ctx context.Context,
 	querier *sqlc.Queries,
@@ -981,5 +990,5 @@ func correctionInt16(value int) (int16, error) {
 	if value < 1 || value > domain.TournamentMaxParticipants {
 		return 0, domain.ErrValidation
 	}
-	return int16(value), nil //nolint:gosec // bounded by TournamentMaxParticipants.
+	return int16(value), nil
 }

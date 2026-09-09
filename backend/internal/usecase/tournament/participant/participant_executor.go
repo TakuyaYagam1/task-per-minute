@@ -138,6 +138,7 @@ func (c *CommandCoordinator) SubmitDraftAction(
 	return execution, nil
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func (c *CommandCoordinator) SubmitFlag(
 	ctx context.Context,
 	command usecase.SubmissionCommand,
@@ -390,6 +391,7 @@ func validateResolvedSubmission(command usecase.SubmissionCommand, resolved Reso
 	return nil
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func validateResolvedSubmissionReplay(
 	command usecase.SubmissionCommand,
 	resolved ResolvedSubmission,

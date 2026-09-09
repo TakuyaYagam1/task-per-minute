@@ -70,6 +70,8 @@ func setAppEnv(t *testing.T, port int) {
 	t.Setenv("JWT_SECRET", "01234567890123456789012345678901")
 	t.Setenv("JWT_ACCESS_TTL", "15m")
 	t.Setenv("JWT_REFRESH_TTL", "168h")
+	t.Setenv("INCIDENT_EXPORT_HMAC_KEY_ID", "incident-2026-09")
+	t.Setenv("INCIDENT_EXPORT_HMAC_SECRET", "incident-export-hmac-secret-0123456789")
 	t.Setenv("ADMIN_PASSWORD", "admin-password")
 	t.Setenv("WS_ALLOWED_ORIGINS", "")
 	t.Setenv("WS_REQUIRE_ORIGIN", "false")

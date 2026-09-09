@@ -401,7 +401,7 @@ func normalNoShowResolutionHeadersEqual(first, second NoShowResolution) bool {
 		!noShowWavesEqual(first.Wave, second.Wave) ||
 		first.Series.Series.State != second.Series.Series.State ||
 		first.Series.Series.Score != second.Series.Series.Score ||
-		!noShowUuidPointersEqual(first.Series.Series.WinnerID, second.Series.Series.WinnerID) ||
+		!noShowUUIDPointersEqual(first.Series.Series.WinnerID, second.Series.Series.WinnerID) ||
 		len(first.GameRevisions) != len(second.GameRevisions) {
 		return false
 	}
@@ -452,7 +452,7 @@ func normalNoShowSeriesRevisionsEqual(
 ) bool {
 	return first.Ordinal == second.Ordinal && first.ID == second.ID &&
 		first.SeriesID == second.SeriesID && first.State == second.State &&
-		noShowUuidPointersEqual(first.WinnerID, second.WinnerID) &&
+		noShowUUIDPointersEqual(first.WinnerID, second.WinnerID) &&
 		first.ScoreRevisionID == second.ScoreRevisionID && first.RecordedAt.Equal(second.RecordedAt)
 }
 

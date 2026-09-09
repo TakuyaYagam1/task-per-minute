@@ -363,6 +363,7 @@ func officialResultRevisionHeadsEqual(
 		first.RecordedAt.Equal(second.RecordedAt)
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func validateCorrectionReadiness(
 	readiness Readiness,
 	series domain.Series,

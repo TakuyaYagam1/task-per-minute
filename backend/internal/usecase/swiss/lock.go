@@ -276,6 +276,7 @@ func validateLockedMembership(proof RoundLockProof) error {
 	return nil
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func validateLockedSeries(
 	series LockedSeries,
 	roster map[uuid.UUID]struct{},

@@ -211,7 +211,7 @@ func newLifecycleRepository(
 				defer state.mu.Unlock()
 				record, ok := state.records[id]
 				if !ok {
-					return nil, lifecycleusecase.LifecycleErrTournamentNotFound
+					return nil, lifecycleusecase.ErrTournamentNotFound
 				}
 				return lifecycleCloneTournamentRecord(record), nil
 			}).
@@ -228,7 +228,7 @@ func newLifecycleRepository(
 				defer state.mu.Unlock()
 				record, ok := state.records[in.TournamentID]
 				if !ok {
-					return nil, false, lifecycleusecase.LifecycleErrTournamentNotFound
+					return nil, false, lifecycleusecase.ErrTournamentNotFound
 				}
 				if record.Revision != in.ExpectedRevision || record.State != in.ExpectedState {
 					return nil, false, nil

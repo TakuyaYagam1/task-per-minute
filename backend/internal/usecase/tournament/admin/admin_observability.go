@@ -124,7 +124,7 @@ func operationResult(err error) (string, string) {
 
 func observeOperationSafely(ctx context.Context, observer OperationObserver, event OperationEvent) {
 	if ctx == nil {
-		ctx = context.Background()
+		return
 	}
 	defer func() {
 		_ = recover()

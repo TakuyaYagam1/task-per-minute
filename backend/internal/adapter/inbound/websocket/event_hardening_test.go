@@ -40,7 +40,6 @@ func TestTournamentMessageDecodeRejectsDuplicateKeysAndBounds(t *testing.T) {
 func TestTournamentRolePayloadsCopySource(t *testing.T) {
 	t.Parallel()
 	for _, role := range []uint8{0, 1, 2} {
-		role := role
 		t.Run(tournamentRoleName(role), func(t *testing.T) {
 			t.Parallel()
 			probe := tournamentPayloadProbe("static")
@@ -150,8 +149,8 @@ func mapKeys(object map[string]json.RawMessage) []string {
 	return keys
 }
 
-func tournamentRoleFrame(t testing.TB, role uint8, probe string) []byte {
-	t.Helper()
+func tournamentRoleFrame(tb testing.TB, role uint8, probe string) []byte {
+	tb.Helper()
 	tournamentID := tournamentSourceID(951)
 	metadata := tournamentRoleMetadata(tournamentID)
 	switch role {
@@ -191,9 +190,9 @@ func tournamentRoleFrame(t testing.TB, role uint8, probe string) []byte {
 				},
 			},
 		)
-		require.NoError(t, err)
+		require.NoError(tb, err)
 		envelope, err := tournamentws.NewRealtimeEnvelope(metadata, snapshot)
-		require.NoError(t, err)
+		require.NoError(tb, err)
 		participant := tournamentws.ParticipantRealtimeEnvelope{
 			SchemaVersion:      envelope.SchemaVersion,
 			TournamentID:       envelope.TournamentID,
@@ -205,11 +204,11 @@ func tournamentRoleFrame(t testing.TB, role uint8, probe string) []byte {
 			Participant:        *envelope.Participant,
 		}
 		payload, err := NewTournamentParticipantPayload(participant)
-		require.NoError(t, err)
+		require.NoError(tb, err)
 		participant.Participant.Assignment.Task.Title = probe
 		participant.Participant.Opponent.DisplayName = probe
 		frame, err := MarshalTournamentParticipant(payload)
-		require.NoError(t, err)
+		require.NoError(tb, err)
 		return frame
 	case 1:
 		startedAt := time.Date(2026, 9, 6, 8, 0, 0, 0, time.UTC)
@@ -241,16 +240,16 @@ func tournamentRoleFrame(t testing.TB, role uint8, probe string) []byte {
 				}},
 			},
 		})
-		require.NoError(t, err)
+		require.NoError(tb, err)
 		envelope, err := tournamentws.NewRealtimeEnvelope(metadata, snapshot)
-		require.NoError(t, err)
+		require.NoError(tb, err)
 		payload, err := NewTournamentPublicPayload(envelope)
-		require.NoError(t, err)
+		require.NoError(tb, err)
 		envelope.Public.Scoreboard[0].DisplayName = probe
 		envelope.Public.Draft.Pool[0] = probe
 		*envelope.Public.Tournament.StartedAt = envelope.Public.Tournament.StartedAt.Add(time.Minute)
 		frame, err := MarshalTournamentPublic(payload)
-		require.NoError(t, err)
+		require.NoError(tb, err)
 		return frame
 	default:
 		deadline := time.Date(2026, 9, 6, 9, 0, 0, 0, time.UTC)
@@ -275,16 +274,16 @@ func tournamentRoleFrame(t testing.TB, role uint8, probe string) []byte {
 				AuditLinks: []tournamentws.OperatorAuditLinkInput{},
 			},
 		)
-		require.NoError(t, err)
+		require.NoError(tb, err)
 		envelope, err := tournamentws.NewRealtimeEnvelope(metadata, snapshot)
-		require.NoError(t, err)
+		require.NoError(tb, err)
 		payload, err := NewTournamentOperatorPayload(envelope)
-		require.NoError(t, err)
+		require.NoError(tb, err)
 		envelope.Operator.Waves[0].State = probe
 		*envelope.Operator.Waves[0].Members[0].SeriesID = tournamentSourceID(966)
 		*envelope.Operator.Waves[0].WindowDeadline = envelope.Operator.Waves[0].WindowDeadline.Add(time.Minute)
 		frame, err := MarshalTournamentOperator(payload)
-		require.NoError(t, err)
+		require.NoError(tb, err)
 		return frame
 	}
 }
@@ -316,29 +315,29 @@ func tournamentPayloadProbe(value string) string {
 	return "probe-" + hex.EncodeToString(digest[:])
 }
 
-func requireNoTournamentPrivateKeys(t testing.TB, frame []byte) {
-	t.Helper()
+func requireNoTournamentPrivateKeys(tb testing.TB, frame []byte) {
+	tb.Helper()
 	var decoded any
-	require.NoError(t, json.Unmarshal(frame, &decoded))
+	require.NoError(tb, json.Unmarshal(frame, &decoded))
 	forbidden := map[string]struct{}{
 		"audit_actor": {}, "command": {}, "credential": {}, "flag": {}, "hidden_hint": {},
 		"password": {}, "raw_connection": {}, "secret": {}, "source_file_url": {}, "submission": {}, "task_url": {},
 	}
-	requireNoForbiddenKey(t, decoded, forbidden)
+	requireNoForbiddenKey(tb, decoded, forbidden)
 }
 
-func requireNoForbiddenKey(t testing.TB, value any, forbidden map[string]struct{}) {
-	t.Helper()
+func requireNoForbiddenKey(tb testing.TB, value any, forbidden map[string]struct{}) {
+	tb.Helper()
 	switch typed := value.(type) {
 	case []any:
 		for _, item := range typed {
-			requireNoForbiddenKey(t, item, forbidden)
+			requireNoForbiddenKey(tb, item, forbidden)
 		}
 	case map[string]any:
 		for key, item := range typed {
 			_, found := forbidden[strings.ToLower(key)]
-			require.Falsef(t, found, "forbidden realtime key %q", key)
-			requireNoForbiddenKey(t, item, forbidden)
+			require.Falsef(tb, found, "forbidden realtime key %q", key)
+			requireNoForbiddenKey(tb, item, forbidden)
 		}
 	}
 }

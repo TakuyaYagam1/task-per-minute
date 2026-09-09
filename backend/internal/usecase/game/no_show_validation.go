@@ -145,7 +145,7 @@ func validateNormalNoShowSeriesRevision(
 		resolution.SeriesRevision.State != resolution.Series.Series.State ||
 		resolution.SeriesRevision.ScoreRevisionID != resolution.ScoreRevision.ID ||
 		!resolution.SeriesRevision.RecordedAt.Equal(resolution.ResolvedAt) ||
-		!noShowUuidPointersEqual(resolution.SeriesRevision.WinnerID, resolution.Series.Series.WinnerID) {
+		!noShowUUIDPointersEqual(resolution.SeriesRevision.WinnerID, resolution.Series.Series.WinnerID) {
 		return normalNoShowError("invalid ordered Series revision")
 	}
 	if resolution.Series.Series.CurrentScoreRevisionID == nil ||

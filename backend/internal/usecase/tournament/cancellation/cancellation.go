@@ -86,7 +86,7 @@ func (u *TournamentCancellationUseCase) reconcileCancellation(
 ) (*TournamentCancellationRecord, bool, error) {
 	record, err := u.repository.GetTournamentCancellation(ctx, command.TournamentID, command.CommandID)
 	if err != nil {
-		if errors.Is(err, CancellationErrTournamentNotFound) {
+		if errors.Is(err, ErrTournamentNotFound) {
 			return nil, false, domain.ErrConflict
 		}
 		return nil, false, tournamentCancellationLookupError("reconcile cancellation", err)
@@ -143,14 +143,14 @@ func validCancelledTournamentRecord(
 }
 
 func tournamentCancellationLookupError(operation string, err error) error {
-	if errors.Is(err, CancellationErrTournamentNotFound) {
-		return CancellationErrTournamentNotFound
+	if errors.Is(err, ErrTournamentNotFound) {
+		return ErrTournamentNotFound
 	}
 	return fmt.Errorf("TournamentCancellationUseCase - %s - repository lookup: %w", operation, err)
 }
 
 func tournamentCancellationMutationError(err error) error {
-	if errors.Is(err, domain.ErrConflict) || errors.Is(err, CancellationErrTournamentNotFound) {
+	if errors.Is(err, domain.ErrConflict) || errors.Is(err, ErrTournamentNotFound) {
 		return err
 	}
 	return fmt.Errorf("TournamentCancellationUseCase - Cancel - repository mutation: %w", err)

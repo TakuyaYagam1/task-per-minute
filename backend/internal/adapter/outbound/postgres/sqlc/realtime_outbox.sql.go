@@ -162,7 +162,8 @@ WITH locked_subscriber AS MATERIALIZED (
         subscriber.tournament_id,
         subscriber.role,
         subscriber.principal_id,
-        subscriber.last_acknowledged_sequence
+        subscriber.last_acknowledged_sequence,
+        subscriber.snapshot_sequence
     FROM realtime_subscribers AS subscriber
     WHERE subscriber.id = $7
         AND subscriber.instance_id = $8

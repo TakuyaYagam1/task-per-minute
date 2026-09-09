@@ -55,7 +55,7 @@ func TestProjectionMigration(t *testing.T) {
 		ctx, t, fixture, firstArtifacts["bracket"], firstArtifacts["standings"],
 	)
 	createProjectionArtifactDependency(
-		ctx, t, fixture, firstArtifacts["top4"], firstArtifacts["bracket"],
+		ctx, t, fixture, firstArtifacts["top_four"], firstArtifacts["bracket"],
 	)
 
 	_, err := sharedPool.Exec(
@@ -188,7 +188,7 @@ func TestProjectionMigration(t *testing.T) {
 		ctx, t, fixture, secondArtifacts["bracket"], firstArtifacts["standings"],
 	)
 	createProjectionArtifactDependency(
-		ctx, t, fixture, secondArtifacts["top4"], secondArtifacts["bracket"],
+		ctx, t, fixture, secondArtifacts["top_four"], secondArtifacts["bracket"],
 	)
 
 	_, err = sharedPool.Exec(ctx, `
@@ -266,7 +266,7 @@ func TestProjectionMigrationRejectsChampionBeforeTerminalFinal(t *testing.T) {
 	}
 	createProjectionGoldenDependency(ctx, t, fixture, artifacts["standings"], goldenPositionCommitID)
 	createProjectionArtifactDependency(ctx, t, fixture, artifacts["bracket"], artifacts["standings"])
-	createProjectionArtifactDependency(ctx, t, fixture, artifacts["top4"], artifacts["bracket"])
+	createProjectionArtifactDependency(ctx, t, fixture, artifacts["top_four"], artifacts["bracket"])
 
 	championID := createProjectionArtifact(
 		ctx, t, fixture, revisionID, "champion", "champion-planned",

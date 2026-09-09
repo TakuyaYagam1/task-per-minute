@@ -35,14 +35,6 @@ func playerToDomain(p sqlc.Player) *domain.Player {
 	return out
 }
 
-func taskToDomain(t sqlc.Task) *domain.Task {
-	return taskValuesToDomain(
-		t.ID, t.Title, t.Description, t.Category, t.Difficulty, t.TimeLimit, t.Flag,
-		t.Hint1, t.Hint2, t.Hint3, t.TaskUrl, t.SourceFileUrl, t.Kind, t.Enabled,
-		t.CurrentVersion, t.CreatedAt.Time,
-	)
-}
-
 func createTaskToDomain(t sqlc.CreateTaskRow) *domain.Task {
 	return taskValuesToDomain(
 		t.ID, t.Title, t.Description, t.Category, t.Difficulty, t.TimeLimit, t.Flag,

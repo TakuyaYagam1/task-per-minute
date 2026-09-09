@@ -197,7 +197,7 @@ func newPauseRepository(
 				state.mu.Lock()
 				defer state.mu.Unlock()
 				if id != state.tournament.ID {
-					return nil, tournamentpause.PauseErrTournamentNotFound
+					return nil, tournamentpause.ErrTournamentNotFound
 				}
 				return pauseCloneTournamentRecord(state.tournament), nil
 			}).
@@ -215,7 +215,7 @@ func newPauseRepository(
 				defer state.mu.Unlock()
 				record, ok := state.pauses[commandID]
 				if !ok || tournamentID != state.tournament.ID {
-					return nil, tournamentpause.PauseErrTournamentNotFound
+					return nil, tournamentpause.ErrTournamentNotFound
 				}
 				return clonePauseTestRecord(record), nil
 			}).
@@ -231,7 +231,7 @@ func newPauseRepository(
 				state.mu.Lock()
 				defer state.mu.Unlock()
 				if tournamentID != state.tournament.ID {
-					return nil, tournamentpause.PauseErrTournamentNotFound
+					return nil, tournamentpause.ErrTournamentNotFound
 				}
 				admission := state.admission
 				return &admission, nil

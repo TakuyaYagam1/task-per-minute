@@ -32,7 +32,7 @@ func (r *TournamentProgressionPostgres) LoadLockedSwissTerminalEvidence(
 		if err != nil {
 			return err
 		}
-		input, err = progressionSwissInputFromReceipt(command, authority, rows)
+		input, err = progressionSwissInputFromReceipt(authority, rows)
 		return err
 	})
 	if err != nil {
@@ -66,6 +66,8 @@ func progressionGoldenIdentities(authority tournamentprogression.Authority, rows
 
 type progressionFinalSwissReceiptRows struct {
 	goldenGroups           []sqlc.LockTournamentProgressionGoldenSettlementsRow
+	goldenSourceID         uuid.UUID
+	goldenSourceRevision   int64
 	chain                  []sqlc.LockTournamentProgressionFinalSwissReceiptChainRow
 	participants           []sqlc.LockTournamentProgressionFinalSwissReceiptParticipantsRow
 	rounds                 []sqlc.LockTournamentProgressionFinalSwissReceiptRoundsRow
@@ -88,6 +90,7 @@ type progressionFinalSwissReceiptRows struct {
 	lockProofSeries        []sqlc.SwissRoundLockProofSeries
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func (r *TournamentProgressionPostgres) lockFinalSwissReceiptRows(
 	ctx context.Context,
 	authority tournamentprogression.Authority,
@@ -104,18 +107,24 @@ func (r *TournamentProgressionPostgres) lockFinalSwissReceiptRows(
 		return rows, tournamentProgressionReadError("lock Final Swiss receipt chain", err)
 	}
 	if authority.Tournament.State == domain.TournamentStateGolden {
-		for _, receipt := range rows.chain {
-			groups, err := querier.LockTournamentProgressionGoldenSettlements(ctx, sqlc.LockTournamentProgressionGoldenSettlementsParams{
-				TournamentID: authority.Tournament.ID, RosterID: authority.Tournament.RosterID,
-				SourceProjectionRevisionID: receipt.ProjectionRevisionID, SourceProjectionRevision: receipt.PhysicalProjectionRevision,
-			})
-			if err != nil {
-				return rows, tournamentProgressionReadError("read receipt Golden identities", err)
-			}
-			if receipt.ProjectionRevisionID == authority.ProjectionRevisionID && len(groups) == 0 {
-				return rows, domain.ErrConflict
-			}
-			rows.goldenGroups = append(rows.goldenGroups, groups...)
+		resolved, resolveErr := querier.ResolveTournamentProgressionGoldenSource(ctx, sqlc.ResolveTournamentProgressionGoldenSourceParams{
+			TournamentID: authority.Tournament.ID, RosterID: authority.Tournament.RosterID,
+			ProjectionRevisionID: authority.ProjectionRevisionID, ProjectionRevision: authority.ProjectionRevision,
+		})
+		if resolveErr != nil {
+			return rows, tournamentProgressionReadError("resolve receipt Golden source", resolveErr)
+		}
+		rows.goldenSourceID = resolved.ProjectionRevisionID
+		rows.goldenSourceRevision = resolved.ProjectionRevision
+		rows.goldenGroups, err = querier.LockTournamentProgressionGoldenSettlements(ctx, sqlc.LockTournamentProgressionGoldenSettlementsParams{
+			TournamentID: authority.Tournament.ID, RosterID: authority.Tournament.RosterID,
+			SourceProjectionRevisionID: resolved.ProjectionRevisionID, SourceProjectionRevision: resolved.ProjectionRevision,
+		})
+		if err != nil {
+			return rows, tournamentProgressionReadError("read receipt Golden identities", err)
+		}
+		if len(rows.goldenGroups) == 0 {
+			return rows, domain.ErrConflict
 		}
 	}
 	// Every child query is parameterized by the same immutable receipt root.

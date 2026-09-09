@@ -28,7 +28,7 @@ func newPlayerUsecaseFixture() *playerUsecaseFixture {
 	}
 }
 
-func TestPlayerUsecase_Join_CreateAndRepeatUpdatesSessionToken(t *testing.T) {
+func TestPlayerUsecase_Join_CreateAndRejectActiveSession(t *testing.T) {
 	t.Parallel()
 
 	f := newPlayerUsecaseFixture()
@@ -44,18 +44,12 @@ func TestPlayerUsecase_Join_CreateAndRepeatUpdatesSessionToken(t *testing.T) {
 	firstToken := *first.SessionToken
 
 	second, err := f.uc.Join(ctx, username)
-	require.NoError(t, err)
-	require.Equal(t, first.ID, second.ID)
-	require.NotNil(t, second.SessionToken)
-	require.NotNil(t, second.SessionExpiresAt)
-	require.NotEqual(t, firstToken, *second.SessionToken)
+	require.ErrorIs(t, err, domain.ErrUsernameTaken)
+	require.Nil(t, second)
 
-	_, err = f.players.GetBySessionToken(ctx, firstToken)
-	require.ErrorIs(t, err, domain.ErrPlayerNotFound)
-
-	byNewToken, err := f.players.GetBySessionToken(ctx, *second.SessionToken)
+	retained, err := f.players.GetBySessionToken(ctx, firstToken)
 	require.NoError(t, err)
-	require.Equal(t, first.ID, byNewToken.ID)
+	require.Equal(t, first.ID, retained.ID)
 }
 
 func TestPlayerUsecase_Join_ConcurrentSameUsernameUsesSingleCurrentSessionToken(t *testing.T) {
@@ -77,29 +71,26 @@ func TestPlayerUsecase_Join_ConcurrentSameUsernameUsesSingleCurrentSessionToken(
 		}(i)
 	}
 	wg.Wait()
-	for _, err := range errs {
-		require.NoError(t, err)
+	var succeeded int
+	for index, err := range errs {
+		if err == nil {
+			succeeded++
+			require.NotNil(t, results[index])
+			require.NotNil(t, results[index].SessionToken)
+			require.Equal(t, username, results[index].Username)
+			continue
+		}
+		require.ErrorIs(t, err, domain.ErrUsernameTaken)
+		require.Nil(t, results[index])
 	}
-	for _, result := range results {
-		require.NotNil(t, result)
-		require.NotNil(t, result.SessionToken)
-		require.Equal(t, results[0].ID, result.ID)
-		require.Equal(t, username, result.Username)
-	}
+	require.Equal(t, 1, succeeded)
 
 	current, err := f.players.GetByUsername(ctx, username)
 	require.NoError(t, err)
 	require.NotNil(t, current.SessionToken)
-	for _, result := range results {
-		token := *result.SessionToken
-		byToken, err := f.players.GetBySessionToken(ctx, token)
-		if token == *current.SessionToken {
-			require.NoError(t, err)
-			require.Equal(t, current.ID, byToken.ID)
-			continue
-		}
-		require.ErrorIs(t, err, domain.ErrPlayerNotFound)
-	}
+	byToken, err := f.players.GetBySessionToken(ctx, *current.SessionToken)
+	require.NoError(t, err)
+	require.Equal(t, current.ID, byToken.ID)
 }
 
 func TestPlayerUsecase_GetCurrentPlayer_ReturnsCurrentPlayer(t *testing.T) {
@@ -130,7 +121,7 @@ func TestPlayerUsecase_GetCurrentPlayer_InvalidSession(t *testing.T) {
 	require.NotNil(t, player.SessionToken)
 
 	oldToken := *player.SessionToken
-	_, err = f.uc.Join(ctx, player.Username)
+	err = f.uc.Logout(ctx, oldToken)
 	require.NoError(t, err)
 
 	_, err = f.uc.GetCurrentPlayer(ctx, oldToken)

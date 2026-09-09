@@ -160,7 +160,7 @@ func canonicalSwissSeries(
 	roundID uuid.UUID,
 	roundNumber int,
 	first, second, winner uuid.UUID,
-	createdAt time.Time,
+	_ time.Time,
 ) swissusecase.SeriesPointResult {
 	winnerID := winner
 	return swissusecase.SeriesPointResult{

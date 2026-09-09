@@ -9,7 +9,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/require"
+
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 )
 
 func createResultCommit(
@@ -31,9 +34,21 @@ func createResultCommit(
 		settledAt:              fixture.lockedAt.Add(5 * time.Second),
 	}
 	winnerID := fixture.draft.participantIDs[0]
+	sourceProjectionID, sourceProjectionRevision := currentPublishedProjection(
+		ctx,
+		tb,
+		fixture.draft.tournamentID,
+		fixture.draft.rosterID,
+	)
 	tx, err := sharedPool.Begin(ctx)
 	require.NoError(tb, err)
 	defer func() { _ = tx.Rollback(ctx) }()
+
+	_, err = tx.Exec(ctx, `
+		UPDATE game_attempts
+		SET result_event_sequence = result_event_sequence + 1
+		WHERE id = $1`, fixture.attemptID)
+	require.NoError(tb, err)
 
 	_, err = tx.Exec(
 		ctx, `
@@ -58,18 +73,19 @@ func createResultCommit(
 		commit.settledAt,
 	)
 	require.NoError(tb, err)
-
 	_, err = tx.Exec(
 		ctx, `
 		INSERT INTO official_result_revisions (
 			id, tournament_id, roster_id, entity_kind, entity_id,
 			series_id, game_attempt_id, result_event_id, revision_number,
+			command_id, actor_kind, source_projection_revision_id, source_projection_revision,
 			result_state, result_reason, winner_id, created_at
 		)
 		VALUES (
 			$1, $2, $3, 'game_attempt', $4,
 			$5, $4, $6, 1,
-			'completed', 'solved', $7, $8
+			$7, 'server', $8, $9,
+			'completed', 'solved', $10, $11
 		)`,
 		commit.gameResultRevisionID,
 		fixture.draft.tournamentID,
@@ -77,28 +93,35 @@ func createResultCommit(
 		fixture.attemptID,
 		fixture.draft.seriesID,
 		commit.resultEventID,
+		uuid.New(),
+		sourceProjectionID,
+		sourceProjectionRevision,
 		winnerID,
 		commit.settledAt,
 	)
 	require.NoError(tb, err)
-
 	_, err = tx.Exec(
 		ctx, `
 		INSERT INTO official_result_revisions (
 			id, tournament_id, roster_id, entity_kind, entity_id,
 			series_id, result_event_id, revision_number,
+			command_id, actor_kind, source_projection_revision_id, source_projection_revision,
 			result_state, result_reason, winner_id, created_at
 		)
 		VALUES (
 			$1, $2, $3, 'series', $4,
 			$4, $5, 1,
-			'completed', 'score_complete', $6, $7
+			$6, 'server', $7, $8,
+			'completed', 'score_complete', $9, $10
 		)`,
 		commit.seriesResultRevisionID,
 		fixture.draft.tournamentID,
 		fixture.draft.rosterID,
 		fixture.draft.seriesID,
 		commit.resultEventID,
+		uuid.New(),
+		sourceProjectionID,
+		sourceProjectionRevision,
 		winnerID,
 		commit.settledAt,
 	)
@@ -109,16 +132,54 @@ func createResultCommit(
 		INSERT INTO series_score_revisions (
 			id, tournament_id, roster_id, series_id, result_event_id,
 			previous_revision_id, revision_number,
+			operation, command_id, actor_kind, command_attempt_id,
+			source_projection_revision_id, source_projection_revision,
 			first_participant_wins, second_participant_wins, created_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, 2, 1, 0, $7)`,
+		VALUES (
+			$1, $2, $3, $4, $5,
+			$6, 2,
+			'append_attempt', $7, 'server', $8,
+			$9, $10,
+			1, 0, $11
+		)`,
 		commit.scoreRevisionID,
 		fixture.draft.tournamentID,
 		fixture.draft.rosterID,
 		fixture.draft.seriesID,
 		commit.resultEventID,
 		fixture.initialScoreRevisionID,
+		uuid.New(),
+		fixture.attemptID,
+		sourceProjectionID,
+		sourceProjectionRevision,
 		commit.settledAt,
+	)
+	require.NoError(tb, err)
+
+	_, err = tx.Exec(ctx, `
+		INSERT INTO series_score_revision_attempts (
+			score_revision_id, tournament_id, roster_id, series_id,
+			position, slot_id, slot_position, game_attempt_id, attempt_number,
+			game_result_revision_id, result_event_id, result_state, result_reason,
+			winner_id, occurred_at, created_at
+		)
+		SELECT $1, $2, $3, $4,
+			1, attempt.slot_id, slot.slot_number, attempt.id, attempt.attempt_number,
+			$5, $6, 'completed', 'solved',
+			$7, $8, $8
+		FROM game_attempts AS attempt
+		INNER JOIN game_slots AS slot ON slot.id = attempt.slot_id
+		WHERE attempt.id = $9`,
+		commit.scoreRevisionID,
+		fixture.draft.tournamentID,
+		fixture.draft.rosterID,
+		fixture.draft.seriesID,
+		commit.gameResultRevisionID,
+		commit.resultEventID,
+		winnerID,
+		commit.settledAt,
+		fixture.attemptID,
 	)
 	require.NoError(tb, err)
 
@@ -163,25 +224,20 @@ func createResultCommit(
 	)
 	require.NoError(tb, err)
 
-	_, err = tx.Exec(
-		ctx, `
-		INSERT INTO outbox_events (
-			id, tournament_id, roster_id, series_id, result_event_id,
-			idempotency_key, topic, payload, created_at
-		)
-		VALUES (
-			$1, $2, $3, $4, $5,
-			$6, 'tournament.result.committed',
-			jsonb_build_object('result_event_id', $5::UUID::TEXT), $7
-		)`,
-		commit.outboxEventID,
-		fixture.draft.tournamentID,
-		fixture.draft.rosterID,
-		fixture.draft.seriesID,
-		commit.resultEventID,
-		uuid.New(),
-		commit.settledAt,
-	)
+	_, err = sqlc.New(tx).CreateResultOutboxEvent(ctx, sqlc.CreateResultOutboxEventParams{
+		ID:                   commit.outboxEventID,
+		TournamentID:         fixture.draft.tournamentID,
+		RosterID:             fixture.draft.rosterID,
+		ProjectionRevisionID: sourceProjectionID,
+		ProjectionRevision:   sourceProjectionRevision,
+		SeriesID:             fixture.draft.seriesID,
+		ResultEventID:        commit.resultEventID,
+		ProjectionEvidenceID: commit.projectionEvidenceID,
+		IdempotencyKey:       uuid.New(),
+		Topic:                "tournament.result.committed",
+		Payload:              []byte(`{"event":"result.committed"}`),
+		CreatedAt:            pgtype.Timestamptz{Time: commit.settledAt, Valid: true},
+	})
 	require.NoError(tb, err)
 
 	_, err = tx.Exec(

@@ -2,10 +2,11 @@ package postgres
 
 import (
 	"errors"
+	"testing"
+
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
-	"testing"
 )
 
 func TestTournamentAdminReplayPostgresImplementsWorkflowRepository(t *testing.T) {

@@ -11,6 +11,7 @@ import (
 
 const (
 	runtimeEventDeliveryLastSuccessStaleAfter           = 30 * time.Second
+	runtimeWorkerHeartbeatStaleAfter                    = 30 * time.Second
 	runtimeEventDeliveryFailedAfter                     = 1
 	runtimePrivateTaskAvailabilityLastSuccessStaleAfter = 30 * time.Second
 	runtimePrivateTaskAvailabilityFailedAfter           = 1
@@ -88,6 +89,7 @@ func runtimeWorkerHealthStatus(
 	if source == nil {
 		return failedRuntimeDependency()
 	}
+	//nolint:exhaustive // This switch intentionally handles only the valid states for this boundary.
 	switch source.WorkerHealth(name).State {
 	case runtimeWorkerStateHealthy:
 		return observability.TournamentDependencyStatus{

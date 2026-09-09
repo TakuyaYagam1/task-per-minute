@@ -14,14 +14,14 @@ import (
 // The inbound adapter derives participant authority from the authenticated
 // session and never accepts a participant ID from an external request body.
 type TournamentParticipantUseCase interface {
-	GetLobby(context.Context, LobbyQuery) (LobbyView, error)
-	GetAssignment(context.Context, AssignmentQuery) (AssignmentResult, error)
-	SetReady(context.Context, ReadyCommand) (ReadinessEvent, error)
-	SubmitDraftAction(context.Context, DraftActionCommand) (DraftExecutionView, error)
-	SubmitFlag(context.Context, SubmissionCommand) (SubmissionResult, error)
-	Surrender(context.Context, SurrenderCommand) (OfficialResultView, error)
-	ApplyPostSeriesAction(context.Context, PostSeriesCommand) (PostSeriesResult, error)
-	GetSnapshot(context.Context, SnapshotQuery) (RecoveryView, error)
+	GetLobby(ctx context.Context, query LobbyQuery) (LobbyView, error)
+	GetAssignment(ctx context.Context, query AssignmentQuery) (AssignmentResult, error)
+	SetReady(ctx context.Context, command ReadyCommand) (ReadinessEvent, error)
+	SubmitDraftAction(ctx context.Context, command DraftActionCommand) (DraftExecutionView, error)
+	SubmitFlag(ctx context.Context, command SubmissionCommand) (SubmissionResult, error)
+	Surrender(ctx context.Context, command SurrenderCommand) (OfficialResultView, error)
+	ApplyPostSeriesAction(ctx context.Context, command PostSeriesCommand) (PostSeriesResult, error)
+	GetSnapshot(ctx context.Context, query SnapshotQuery) (RecoveryView, error)
 }
 
 type Identity struct {

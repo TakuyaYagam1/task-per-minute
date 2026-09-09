@@ -11,6 +11,7 @@ import (
 	tournamentprogression "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/progression"
 )
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func (r *TournamentProgressionPostgres) finalSwissPublicationRows(ctx context.Context, authority tournamentprogression.Authority, now time.Time) (progressionFinalSwissReceiptRows, error) {
 	q := r.tx.Querier(ctx)
 	scope := ProjectionScope{TournamentID: authority.Tournament.ID, RosterID: authority.Tournament.RosterID}

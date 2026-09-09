@@ -187,6 +187,7 @@ func progressionPersistenceSourceMatches(plan tournamentprogression.Plan, source
 		source.RosterID == plan.Record.Command.RosterID && source.RevisionNumber == plan.Record.Source.Revision
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func (r *TournamentProgressionPostgres) persistStageProgression(txCtx context.Context, plan tournamentprogression.Plan, publication *tournamentprogression.PlayoffPublication, now time.Time) (tournamentprogression.PersistenceReceipt, error) {
 	q := r.tx.Querier(txCtx)
 	command := plan.Record.Command

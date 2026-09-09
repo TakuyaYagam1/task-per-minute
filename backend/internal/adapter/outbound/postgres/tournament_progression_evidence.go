@@ -24,6 +24,7 @@ func (r *TournamentProgressionPostgres) LoadSwissEvidence(
 	return r.loadSwissEvidence(ctx, authority, nil)
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func (r *TournamentProgressionPostgres) loadSwissEvidence(
 	ctx context.Context,
 	authority tournamentprogression.Authority,
@@ -155,6 +156,8 @@ func validTournamentProgressionAuthority(authority tournamentprogression.Authori
 // progressionFinalSwissReceiptChain validates the persisted canonical receipt
 // ancestry in receipt order. Physical projection revisions may begin at any
 // number; only the separate receipt counter is required to begin at one.
+//
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func progressionFinalSwissReceiptChain(
 	authority tournamentprogression.Authority,
 	rows []sqlc.LockTournamentProgressionFinalSwissReceiptChainRow,
@@ -204,6 +207,7 @@ func progressionFinalSwissReceiptChain(
 	return chain, nil
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func progressionCurrentStandings(
 	authority tournamentprogression.Authority,
 	rows []sqlc.LockTournamentProgressionCurrentStandingsRow,
@@ -246,6 +250,7 @@ func progressionCurrentStandings(
 	}, nil
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func progressionSwissCounts(
 	rounds []sqlc.LockTournamentProgressionSwissRoundsRow,
 	series []sqlc.LockTournamentProgressionSwissSeriesRow,

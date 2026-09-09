@@ -33,7 +33,7 @@ func (r *TournamentCancellationPostgres) GetTournament(
 	}
 	row, err := r.tx.Querier(ctx).GetTournament(ctx, id)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, tournamentcancellation.CancellationErrTournamentNotFound
+		return nil, tournamentcancellation.ErrTournamentNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("TournamentCancellationPostgres - GetTournament: %w", err)
@@ -58,7 +58,7 @@ func (r *TournamentCancellationPostgres) GetTournamentCancellation(
 		sqlc.FindTournamentCancellationParams{TournamentID: tournamentID, CommandID: commandID},
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, tournamentcancellation.CancellationErrTournamentNotFound
+		return nil, tournamentcancellation.ErrTournamentNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("TournamentCancellationPostgres - GetTournamentCancellation: %w", err)
@@ -101,7 +101,7 @@ func (r *TournamentCancellationPostgres) cancelTournament(
 	querier := r.tx.Querier(ctx)
 	authority, err := querier.LockTournamentCancellationAuthority(ctx, in.TournamentID)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, false, tournamentcancellation.CancellationErrTournamentNotFound
+		return nil, false, tournamentcancellation.ErrTournamentNotFound
 	}
 	if err != nil {
 		return nil, false, fmt.Errorf("TournamentCancellationPostgres - lock authority: %w", err)

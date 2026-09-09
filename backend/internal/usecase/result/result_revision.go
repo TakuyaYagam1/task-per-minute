@@ -129,6 +129,7 @@ type OfficialResultRevision struct {
 	recordedAt         time.Time
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func (r OfficialResultRevision) Validate() error {
 	if err := r.scope.Validate(); err != nil {
 		return err
@@ -150,7 +151,8 @@ func (r OfficialResultRevision) Validate() error {
 		return err
 	}
 	ordinarySource := r.sourceOrigin == ordinaryRevisionSource
-	if ordinarySource {
+	switch {
+	case ordinarySource:
 		var previous uuid.UUID
 		if r.previousRevisionID != nil {
 			previous = r.previousRevisionID.UUID()
@@ -158,7 +160,7 @@ func (r OfficialResultRevision) Validate() error {
 		if !matchesOrdinarySource(r.sourceProjection, r.id.UUID(), r.ordinal, previous) {
 			return invalidOfficialResultRevision("ordinary source lineage does not match official revision")
 		}
-	} else if r.sourceOrigin == correctionRevisionSource {
+	case r.sourceOrigin == correctionRevisionSource:
 		if r.previousRevisionID == nil {
 			return invalidOfficialResultRevision("correction source has no predecessor")
 		}
@@ -174,7 +176,7 @@ func (r OfficialResultRevision) Validate() error {
 		) {
 			return invalidOfficialResultRevision("invalid persisted correction source binding")
 		}
-	} else if r.sourceOrigin != 0 {
+	case r.sourceOrigin != 0:
 		return invalidOfficialResultRevision("unknown result source origin")
 	}
 	return validateOfficialUUIDRoles(OfficialResultRevisionCommand{

@@ -50,7 +50,7 @@ func observeExecutionRecoverySafely(
 		return
 	}
 	if ctx == nil {
-		ctx = context.Background()
+		return
 	}
 	defer func() {
 		_ = recover()

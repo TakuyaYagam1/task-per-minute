@@ -156,6 +156,7 @@ func defineFinalSwissRoundIdentities(
 	return nil
 }
 
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func defineFinalSwissHeadIdentities(
 	registry *finalSwissIdentityRegistry,
 	round finalSwissRound,

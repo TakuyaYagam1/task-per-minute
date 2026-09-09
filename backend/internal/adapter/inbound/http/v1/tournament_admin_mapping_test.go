@@ -36,13 +36,11 @@ func TestTournamentIncidentResponseIncludesHMACAuthenticityEnvelope(t *testing.T
 		MAC:                sha256.Sum256([]byte("signature")),
 	}
 
-	payload, err := tournamentIncidentResponse(bundle)
-	require.NoError(t, err)
+	payload := tournamentIncidentResponse(bundle)
 	require.Equal(t, api.HmacSha256V1, payload.Algorithm)
 	require.Equal(t, "incident-2026-09", payload.KeyId)
 	require.Equal(t, hex.EncodeToString(bundle.MAC[:]), payload.Mac)
 	require.Equal(t, hex.EncodeToString(bundle.SHA256[:]), payload.Sha256)
-
 }
 
 func TestParseSHA256Hex(t *testing.T) {

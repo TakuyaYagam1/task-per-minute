@@ -137,6 +137,7 @@ func validIncidentBundleEnvelope(bundle IncidentBundle) bool {
 		bundle.SHA256 != ([sha256.Size]byte{}) && sha256.Sum256(bundle.CanonicalContent) == bundle.SHA256
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func validIncidentBundleKeyID(value string) bool {
 	if len(value) == 0 || len(value) > maxIncidentBundleAuthenticationKeyIDLen {
 		return false

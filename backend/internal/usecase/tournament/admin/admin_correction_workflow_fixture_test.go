@@ -404,6 +404,7 @@ func correctionWorkflowRequestDigest(t *testing.T, command tournamentadmin.Corre
 	sort.Slice(canonical.UnlockIntents, func(i, j int) bool {
 		return canonical.UnlockIntents[i].ReservationID.String() < canonical.UnlockIntents[j].ReservationID.String()
 	})
+	//nolint:musttag // This versioned application-owned document is validated on both encode and decode.
 	payload, err := json.Marshal(canonical)
 	require.NoError(t, err)
 	return sha256.Sum256(payload)

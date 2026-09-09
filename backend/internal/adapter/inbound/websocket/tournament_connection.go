@@ -397,8 +397,8 @@ func optionalTournamentResumeID(value uuid.UUID) *uuid.UUID {
 	if value == uuid.Nil {
 		return nil
 	}
-	copy := value
-	return &copy
+	clone := value
+	return &clone
 }
 
 func tournamentDeliveryAudience(

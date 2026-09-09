@@ -210,7 +210,7 @@ func newAttendanceRepository(
 		ListRosterParticipants(mock.Anything, mock.Anything).
 		RunAndReturn(func(_ context.Context, rosterID uuid.UUID) ([]attendanceusecase.ParticipantRecord, error) {
 			if rosterID != state.rosterID {
-				return nil, attendanceusecase.AttendanceErrRosterNotFound
+				return nil, attendanceusecase.ErrRosterNotFound
 			}
 			out := make([]attendanceusecase.ParticipantRecord, 0, len(state.participants))
 			for _, participant := range state.participants {

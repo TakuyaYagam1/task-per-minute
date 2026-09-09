@@ -97,11 +97,12 @@ func correctionStageApplySwissSuccessor(
 			matched++
 			clone.SeriesResultRevisionID = series.CurrentResultRevisionID.UUID()
 			clone.ResultLabel = label
-			if winner == nil {
+			switch {
+			case winner == nil:
 				clone.Points = 0
-			} else if clone.ParticipantID == *winner {
+			case clone.ParticipantID == *winner:
 				clone.Points = swissusecase.SeriesWinPoints
-			} else {
+			default:
 				clone.Points = 0
 			}
 		}
@@ -127,6 +128,7 @@ func correctionStageSeriesLedgerOutcome(
 	series domain.Series,
 ) (swissusecase.SeriesResultLabel, *uuid.UUID, error) {
 	game := correction.GameResultRevision().Revision().Outcome()
+	//nolint:exhaustive // This switch intentionally handles only the valid states for this boundary.
 	switch series.State {
 	case domain.SeriesStateCompleted:
 		if series.WinnerID == nil || *series.WinnerID == uuid.Nil {

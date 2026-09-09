@@ -2,7 +2,6 @@ package playoff
 
 import (
 	"bytes"
-	"time"
 
 	"github.com/google/uuid"
 
@@ -17,6 +16,7 @@ func (a SemifinalStageAuthority) valid() error {
 	return nil
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func (p FinalDraftPlan) valid() error {
 	if p.StageCommandID == uuid.Nil || p.RosterID == uuid.Nil || !p.IDs.Valid() ||
 		!domain.IsValidServerTime(p.CreatedAt) || len(p.Advancement) != 2 ||
@@ -54,6 +54,7 @@ func (a FinalSettlementAuthority) valid() error {
 	return nil
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func (a FinalSettlementAuthority) validBase() error {
 	if a.StageCommandID == uuid.Nil || a.RosterID == uuid.Nil || a.Bracket.Validate() != nil ||
 		len(a.Advancement) != 2 || !a.IDs.Valid() || a.Draft.Validate() != nil ||
@@ -74,36 +75,6 @@ func (a FinalSettlementAuthority) validBase() error {
 		if !a.Progression.ChampionRevisionID.IsZero() || !a.Progression.RecordedAt.IsZero() {
 			return terminalConflict("continuing final has terminal fields")
 		}
-	}
-	return nil
-}
-
-func (p FinalInitialPlan) valid() error {
-	series := p.Execution.Series
-	if p.StageCommandID == uuid.Nil || p.RosterID == uuid.Nil || p.ExpectedSeriesRevision < 1 ||
-		p.InitialScoreRevisionID.IsZero() || !domain.IsValidServerTime(p.ActivatedAt) ||
-		p.Execution.Validate() != nil || series.Format != domain.SeriesFormatBO3 ||
-		series.State != domain.SeriesStateActive || series.CurrentScoreRevisionID == nil ||
-		*series.CurrentScoreRevisionID != p.InitialScoreRevisionID || len(series.Slots) != 1 ||
-		p.CurrentWave.Validate() != nil || p.CurrentWave.State != domain.WaveStatePlanned ||
-		!p.Binding.valid() || p.Binding.GameID != series.Slots[0].Attempts[0].ID {
-		return terminalConflict("invalid final initial graph")
-	}
-	return nil
-}
-
-func (p FinalContinuationPlan) valid() error {
-	if p.StageCommandID == uuid.Nil || p.RosterID == uuid.Nil || p.SeriesID == uuid.Nil ||
-		p.SourceScoreRevision.IsZero() || p.SourceResultRevision.IsZero() ||
-		p.Next.WaveID == uuid.Nil || p.Next.WaveRevisionID.IsZero() ||
-		p.Slot.Validate() != nil || len(p.Slot.Attempts) != 1 ||
-		p.Slot.ID != p.Next.SlotID || p.Slot.SeriesID != p.SeriesID ||
-		p.Slot.Attempts[0].ID != p.Next.GameID || p.Slot.Attempts[0].State != domain.GameStatePlanned ||
-		p.Wave.Validate() != nil || p.Wave.ID != p.Next.WaveID ||
-		p.Wave.RevisionID != p.Next.WaveRevisionID || p.Wave.State != domain.WaveStatePlanned ||
-		!p.Binding.valid() || p.Binding.GameID != p.Next.GameID ||
-		!domain.IsValidServerTime(p.CreatedAt) {
-		return terminalConflict("invalid final continuation graph")
 	}
 	return nil
 }
@@ -137,8 +108,4 @@ func hasFinalBindings(bindings []FinalGameBinding, ids FinalStageIDs) bool {
 		}
 	}
 	return true
-}
-
-func finalStageTime(value time.Time) bool {
-	return domain.IsValidServerTime(value)
 }

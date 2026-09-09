@@ -24,7 +24,7 @@ func TestAssignmentRepositoryCommitsProofAndDeliversExactlyOnce(t *testing.T) {
 	draft := createDraftMigrationFixture(ctx, t)
 	baseTime := draft.createdAt.Add(5 * time.Second)
 	repository := postgres.NewAssignmentPostgres(postgres.NewTxManager(sharedPool))
-	poolRevisionID := uuid.New()
+	poolRevisionID := draft.normalPoolRevisionID
 	conservativeID := uuid.New()
 	conservative, err := repository.CreateConservativePlan(ctx, postgres.ConservativePlanInput{
 		ID: conservativeID, TournamentID: draft.tournamentID, RosterID: draft.rosterID,
@@ -216,9 +216,30 @@ func assignmentRepositoryBranch(
 		Key: key, Categories: []domain.Category{category},
 	}
 	for position := 1; position <= 3; position++ {
-		taskID := createAssignmentMigrationTask(ctx, tb, string(category), position-1, nil)
+		var taskID uuid.UUID
+		var taskVersion int
+		err := sharedPool.QueryRow(ctx, `
+			SELECT membership.task_id, membership.task_version
+			FROM task_pool_version_memberships AS membership
+			INNER JOIN tasks AS task ON task.id = membership.task_id
+			INNER JOIN LATERAL (
+				SELECT attestation.healthy
+				FROM task_version_health_attestations AS attestation
+				WHERE attestation.task_id = membership.task_id
+					AND attestation.task_version = membership.task_version
+				ORDER BY attestation.revision DESC
+				LIMIT 1
+			) AS health ON health.healthy
+			WHERE membership.task_pool_revision_id = $1
+				AND task.category = $2
+				AND task.enabled
+				AND task.deleted_at IS NULL
+			ORDER BY membership.task_id
+			OFFSET $3 LIMIT 1`, draft.normalPoolRevisionID, string(category), position-1).
+			Scan(&taskID, &taskVersion)
+		require.NoError(tb, err)
 		snapshot := domain.AssignmentTaskSnapshot{
-			SnapshotID: uuid.New(), TaskID: taskID, Version: 1, Kind: domain.AssignmentTaskKindNormal,
+			SnapshotID: uuid.New(), TaskID: taskID, Version: taskVersion, Kind: domain.AssignmentTaskKindNormal,
 			Title: key + " task", Description: "immutable assignment task description",
 			Category: category, Difficulty: domain.DifficultyMedium, TimeLimit: 180,
 			Flag: "FLAG{repository-snapshot}", Hints: []string{"repository hint"},

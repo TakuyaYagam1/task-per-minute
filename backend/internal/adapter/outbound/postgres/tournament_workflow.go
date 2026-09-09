@@ -43,7 +43,7 @@ func (r *TournamentCatalogPostgres) GetTournament(
 	row, err := r.tournaments.tx.Querier(ctx).GetTournamentSummary(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, catalogusecase.CatalogErrTournamentNotFound
+			return nil, catalogusecase.ErrTournamentNotFound
 		}
 		return nil, fmt.Errorf("TournamentPostgres - GetTournament - Querier.GetTournamentSummary: %w", err)
 	}
@@ -82,7 +82,7 @@ func (r *TournamentLifecyclePostgres) GetTournament(
 	row, err := r.tournaments.tx.Querier(ctx).GetTournamentSummary(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, lifecycleusecase.LifecycleErrTournamentNotFound
+			return nil, lifecycleusecase.ErrTournamentNotFound
 		}
 		return nil, fmt.Errorf("TournamentLifecyclePostgres - GetTournament - Querier.GetTournamentSummary: %w", err)
 	}
@@ -221,7 +221,7 @@ func (r *TournamentRosterPostgres) GetRosterSnapshot(
 	}
 	record, err := r.tournaments.GetRoster(ctx, id)
 	if errors.Is(err, ErrRosterNotFound) {
-		return nil, rosterusecase.RosterErrRosterNotFound
+		return nil, rosterusecase.ErrRosterNotFound
 	}
 	return rosterUseCaseRecord(record), err
 }
@@ -245,7 +245,7 @@ func (r *TournamentRosterPostgres) LockRosterAndReserveExpected(
 		case errors.Is(err, errRosterCAS):
 			return nil, false, nil
 		case errors.Is(err, pgx.ErrNoRows):
-			return nil, false, rosterusecase.RosterErrRosterNotFound
+			return nil, false, rosterusecase.ErrRosterNotFound
 		case errors.Is(err, domain.ErrConflict):
 			return nil, false, domain.ErrConflict
 		default:
@@ -266,7 +266,7 @@ func (r *TournamentRosterPostgres) UnlockRosterAndReleaseExpected(
 	}
 	record, changed, err := r.tournaments.UnlockRosterAndRelease(ctx, rosterID, expectedRevision, updatedAt)
 	if errors.Is(err, ErrRosterNotFound) {
-		return nil, false, rosterusecase.RosterErrRosterNotFound
+		return nil, false, rosterusecase.ErrRosterNotFound
 	}
 	return rosterUseCaseRecord(record), changed, err
 }

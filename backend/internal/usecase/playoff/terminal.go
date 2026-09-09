@@ -2,7 +2,6 @@ package playoff
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -76,6 +75,8 @@ func (c *TerminalCoordinator) AdvanceAfterSeriesSettlement(
 // ActivateFinalAfterDraft reuses the planned Series' exact initial score head
 // and creates the first final Game after the draft is authoritatively complete.
 // The Wave then follows the ordinary readiness pipeline before Game 1 starts.
+//
+//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func (c *TerminalCoordinator) ActivateFinalAfterDraft(
 	ctx context.Context,
 	command TerminalDraftCommand,
@@ -322,8 +323,8 @@ func rehydrateSemifinalAdvancement(
 			advancement.results[result.Position-1] != nil {
 			return SemifinalAdvancement{}, terminalConflict("final semifinal advancement is ambiguous")
 		}
-		copy := result
-		advancement.results[result.Position-1] = &copy
+		clone := result
+		advancement.results[result.Position-1] = &clone
 	}
 	if err := advancement.validateAuthority(authority); err != nil || !advancement.Complete() {
 		return SemifinalAdvancement{}, terminalConflict("final semifinal advancement is invalid")
@@ -391,6 +392,7 @@ func plannedFinalWave(
 	return wave, nil
 }
 
+//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func terminalPublicationMatches(
 	final Final,
 	progression FinalProgressionCommand,
@@ -441,8 +443,4 @@ func validTerminalDraftCommand(command TerminalDraftCommand) bool {
 
 func terminalConflict(format string, arguments ...any) error {
 	return fmt.Errorf("%w: %s", domain.ErrConflict, fmt.Sprintf(format, arguments...))
-}
-
-func terminalErrorIsConflict(err error) bool {
-	return errors.Is(err, domain.ErrConflict)
 }
