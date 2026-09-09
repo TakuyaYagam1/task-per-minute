@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
+	bootstrapmocks "github.com/TakuyaYagam1/task-per-minute/internal/bootstrap/mocks"
 	"github.com/TakuyaYagam1/task-per-minute/internal/observability"
 )
 
@@ -37,7 +38,7 @@ func TestRuntimeWorkersStartInOrderAndStopWithContext(t *testing.T) {
 
 func TestRuntimeWorkersPropagateUnexpectedStop(t *testing.T) {
 	workerErr := errors.New("worker failed")
-	worker := NewMockRuntimeWorker(t)
+	worker := bootstrapmocks.NewMockRuntimeWorker(t)
 	worker.EXPECT().Run(mock.Anything).Return(workerErr).Once()
 	workers, err := newRuntimeWorkers(namedRuntimeWorker{
 		name: "failing", worker: worker, ready: func() bool { return false },
@@ -52,7 +53,7 @@ func TestRuntimeWorkersPropagateUnexpectedStop(t *testing.T) {
 }
 
 func TestRuntimeWorkersConvertWorkerPanicToStartupFailure(t *testing.T) {
-	worker := NewMockRuntimeWorker(t)
+	worker := bootstrapmocks.NewMockRuntimeWorker(t)
 	worker.EXPECT().Run(mock.Anything).RunAndReturn(func(context.Context) error {
 		panic("worker panic")
 	}).Once()
@@ -226,7 +227,7 @@ func TestRuntimeWorkersPeriodicHeartbeatErrorStopsOnContextCancelWhenErrorChanne
 	ticks := make(chan time.Time, 1)
 	tickerStopped := make(chan struct{})
 	periodicReport := make(chan struct{})
-	worker := NewMockRuntimeWorker(t)
+	worker := bootstrapmocks.NewMockRuntimeWorker(t)
 	workers, err := newRuntimeWorkers(namedRuntimeWorker{name: workerName, worker: worker})
 	require.NoError(t, err)
 	workers.setState(workerName, runtimeWorkerStateHealthy)
@@ -282,7 +283,7 @@ func TestRuntimeWorkersKeepOtherStartupStateWhenEarlierWorkerFails(t *testing.T)
 	secondStarted := make(chan struct{})
 	allowFirstFailure := make(chan struct{})
 	firstFailure := errors.New("first worker failed")
-	first := NewMockRuntimeWorker(t)
+	first := bootstrapmocks.NewMockRuntimeWorker(t)
 	first.EXPECT().Run(mock.Anything).RunAndReturn(func(ctx context.Context) error {
 		close(firstStarted)
 		select {
@@ -322,7 +323,7 @@ func TestRuntimeWorkersRejectInvalidGraphAndDuplicateStart(t *testing.T) {
 	_, err := newRuntimeWorkers(namedRuntimeWorker{})
 	require.ErrorContains(t, err, "invalid entry")
 
-	worker := NewMockRuntimeWorker(t)
+	worker := bootstrapmocks.NewMockRuntimeWorker(t)
 	_, err = newRuntimeWorkers(
 		namedRuntimeWorker{name: "duplicate", worker: worker},
 		namedRuntimeWorker{name: "duplicate", worker: worker},
@@ -337,9 +338,9 @@ func TestRuntimeWorkersRejectInvalidGraphAndDuplicateStart(t *testing.T) {
 	require.ErrorContains(t, err, "already started")
 }
 
-func blockingRuntimeWorker(t *testing.T, started chan struct{}) *MockRuntimeWorker {
+func blockingRuntimeWorker(t *testing.T, started chan struct{}) *bootstrapmocks.MockRuntimeWorker {
 	t.Helper()
-	worker := NewMockRuntimeWorker(t)
+	worker := bootstrapmocks.NewMockRuntimeWorker(t)
 	worker.EXPECT().Run(mock.Anything).RunAndReturn(func(ctx context.Context) error {
 		close(started)
 		<-ctx.Done()

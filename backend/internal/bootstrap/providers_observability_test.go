@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 	logkit "github.com/wahrwelt-kit/go-logkit"
 
+	bootstrapmocks "github.com/TakuyaYagam1/task-per-minute/internal/bootstrap/mocks"
 	"github.com/TakuyaYagam1/task-per-minute/internal/observability"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/eventdelivery"
 	eventdeliverymocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/eventdelivery/mocks"
@@ -66,7 +67,7 @@ func TestEventTelemetryProviders(t *testing.T) {
 
 		runtime, cancel := context.WithCancel(t.Context())
 		telemetry := requireEventTelemetry(t)
-		realtime := NewMockRealtimeHealthSource(t)
+		realtime := bootstrapmocks.NewMockRealtimeHealthSource(t)
 		realtime.EXPECT().Health(mock.Anything).Return(healthyWorkerHealth(provideClock().Now())).Maybe()
 		heartbeats := runtimeWorkerHeartbeatReaderFunc(func(
 			context.Context,
@@ -96,7 +97,7 @@ func TestEventTelemetryProviders(t *testing.T) {
 	t.Run("health source fails closed when realtime is not ready", func(t *testing.T) {
 		t.Parallel()
 
-		realtime := NewMockRealtimeHealthSource(t)
+		realtime := bootstrapmocks.NewMockRealtimeHealthSource(t)
 		realtime.EXPECT().Health(mock.Anything).Return(eventdelivery.HealthSnapshot{}).Once()
 		probe := provideHealthProbe(t.Context(), realtime, nil, provideClock(), requireEventTelemetry(t), nil, nil, nil, nil, nil, nil, nil, nil)
 
@@ -188,7 +189,7 @@ func TestPreflightRuntimeHealthSourceSamplesBoundedProductionSignals(t *testing.
 	t.Parallel()
 
 	now := time.Date(2026, time.September, 7, 14, 0, 0, 0, time.UTC)
-	realtime := NewMockRealtimeHealthSource(t)
+	realtime := bootstrapmocks.NewMockRealtimeHealthSource(t)
 	realtime.EXPECT().Health(now).Return(healthyWorkerHealth(now)).Once()
 
 	source := preflightRuntimeHealthSource{
@@ -237,7 +238,7 @@ func TestPreflightRuntimeHealthSourceFailsClosedAndRecovers(t *testing.T) {
 
 	now := time.Date(2026, time.September, 7, 14, 1, 0, 0, time.UTC)
 	available := false
-	realtime := NewMockRealtimeHealthSource(t)
+	realtime := bootstrapmocks.NewMockRealtimeHealthSource(t)
 	realtime.EXPECT().Health(now).Return(healthyWorkerHealth(now)).Twice()
 	source := preflightRuntimeHealthSource{
 		clock:            clockFunc(func() time.Time { return now }),
@@ -292,7 +293,7 @@ func TestPreflightRuntimeHealthSourceFailsClosedForStaleSharedWorkerHeartbeats(t
 
 	now := time.Date(2026, time.September, 7, 14, 1, 30, 0, time.UTC)
 	fresh := false
-	realtime := NewMockRealtimeHealthSource(t)
+	realtime := bootstrapmocks.NewMockRealtimeHealthSource(t)
 	realtime.EXPECT().Health(now).Return(healthyWorkerHealth(now)).Twice()
 	source := preflightRuntimeHealthSource{
 		clock:            clockFunc(func() time.Time { return now }),
@@ -429,7 +430,7 @@ func TestPreflightRuntimeHealthSourceUsesClockQueryMidpoint(t *testing.T) {
 		clockIndex++
 		return value
 	})
-	realtime := NewMockRealtimeHealthSource(t)
+	realtime := bootstrapmocks.NewMockRealtimeHealthSource(t)
 	realtime.EXPECT().Health(before).Return(healthyWorkerHealth(before)).Once()
 	source := preflightRuntimeHealthSource{
 		clock:            clock,

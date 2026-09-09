@@ -123,10 +123,6 @@ packages:
     interfaces:
       TournamentEventObserver:
   github.com/TakuyaYagam1/task-per-minute/internal/bootstrap:
-    config:
-      dir: "{{.InterfaceDir}}"
-      pkgname: bootstrap
-      filename: "{{.InterfaceName | snakecase}}_mock_test.go"
     interfaces:
       BucketEnsurer:
       WebSocketShutdowner:

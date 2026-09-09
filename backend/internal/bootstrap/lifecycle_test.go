@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/config"
+	bootstrapmocks "github.com/TakuyaYagam1/task-per-minute/internal/bootstrap/mocks"
 )
 
 func TestAppBootstrapStageOrder(t *testing.T) {
@@ -137,7 +138,7 @@ func TestAppRunShutsDownRuntimeWhenHTTPServerFails(t *testing.T) {
 func TestAppRunReturnsStartedWorkerPanic(t *testing.T) {
 	workerStarted := make(chan struct{})
 	triggerPanic := make(chan struct{})
-	worker := NewMockRuntimeWorker(t)
+	worker := bootstrapmocks.NewMockRuntimeWorker(t)
 	worker.EXPECT().Run(mock.Anything).RunAndReturn(func(context.Context) error {
 		close(workerStarted)
 		<-triggerPanic
@@ -269,9 +270,9 @@ func (o *lifecycleOrder) snapshot() []string {
 	return append([]string(nil), o.steps...)
 }
 
-func newRecordingBucket(t *testing.T, order *lifecycleOrder, err error) *MockBucketEnsurer {
+func newRecordingBucket(t *testing.T, order *lifecycleOrder, err error) *bootstrapmocks.MockBucketEnsurer {
 	t.Helper()
-	bucket := NewMockBucketEnsurer(t)
+	bucket := bootstrapmocks.NewMockBucketEnsurer(t)
 	bucket.EXPECT().
 		EnsureBucket(mock.Anything).
 		Run(func(context.Context) { order.add("bucket") }).
@@ -284,11 +285,11 @@ func newRecordingWebSocketShutdowner(
 	t *testing.T,
 	order *lifecycleOrder,
 	runtimeError func() error,
-) (*MockWebSocketShutdowner, func() bool) {
+) (*bootstrapmocks.MockWebSocketShutdowner, func() bool) {
 	t.Helper()
 	var mu sync.Mutex
 	runtimeWasCancelled := false
-	shutdowner := NewMockWebSocketShutdowner(t)
+	shutdowner := bootstrapmocks.NewMockWebSocketShutdowner(t)
 	shutdowner.EXPECT().
 		Shutdown(mock.Anything).
 		Run(func(_ context.Context) {
