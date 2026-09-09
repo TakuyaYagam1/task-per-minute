@@ -7,7 +7,7 @@ import (
 	logkit "github.com/wahrwelt-kit/go-logkit"
 
 	"github.com/TakuyaYagam1/task-per-minute/config"
-	"github.com/TakuyaYagam1/task-per-minute/internal/bootstrap"
+	"github.com/TakuyaYagam1/task-per-minute/internal/app"
 )
 
 func main() {
@@ -29,7 +29,7 @@ func defaultRunDeps() runDeps {
 				logkit.WithServiceName("task-per-minute"),
 			)
 		},
-		runApp: bootstrap.Run,
+		runApp: app.Run,
 	}
 }
 

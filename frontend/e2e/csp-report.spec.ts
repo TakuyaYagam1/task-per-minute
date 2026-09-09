@@ -40,7 +40,7 @@ test('csp report endpoint rejects oversized reports', async ({ request }) => {
   expect(response.status()).toBe(413);
 });
 
-test('csp report-only header keeps same-origin api and ws reports enabled', async ({ request }) => {
+test('csp report-only header keeps same-origin API and realtime enabled', async ({ request }) => {
   const response = await request.get('/');
   const csp = response.headers()['content-security-policy-report-only'];
 

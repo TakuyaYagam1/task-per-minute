@@ -9,6 +9,8 @@ The canonical REST contract is the backend OpenAPI source:
 - `backend/api/openapi.yml`
 - `backend/api/routes/*.yml`
 - `backend/api/components/security.yml`
+- `backend/api/components/parameters.yml`
+- `backend/api/components/responses.yml`
 - `backend/api/components/schemas/*.yml`
 
 `frontend/lib/shared/api/schema.ts` is generated from that source. It is a
@@ -29,33 +31,23 @@ The canonical WebSocket wire behavior is defined by the backend WebSocket
 adapter, primarily:
 
 - `backend/internal/adapter/inbound/websocket/event.go`
-- `backend/internal/adapter/inbound/websocket/read_pump.go`
-- the associated backend WebSocket tests
+- `backend/internal/adapter/inbound/websocket/server.go`
+- `backend/internal/adapter/inbound/websocket/tournament/protocol.go`
+- the associated role-scoped snapshot and handshake tests
 
-The frontend mirrors this protocol in:
-
-- `frontend/lib/shared/types/websocket.ts`
-- `frontend/lib/shared/lib/utils.ts`
-- `frontend/lib/features/game-queue/lib/useWebSocket.ts`
-- page or feature event handlers
-
-OpenAPI intentionally does not describe the WebSocket protocol. Handwritten
-frontend types alone are not validation; every inbound message must pass the
-runtime parser.
+OpenAPI intentionally does not describe the WebSocket protocol. The current
+frontend has no tournament realtime consumer. A future consumer must define
+runtime validation beside its transport adapter before it handles snapshots.
 
 ### Browser Storage
 
-`frontend/lib/shared/lib/storage.ts` owns game restore and notification storage.
-`frontend/lib/shared/api/client.ts` owns CSRF token storage, while
-`frontend/lib/shared/api/admin.ts` owns admin session markers and legacy-token
-cleanup. Treat all browser storage as a cache for restore or transport behavior.
-Backend session and match state remain authoritative. Current session storage
-contains CSRF tokens and the cached `GameData`, whose task payload can include
-unlocked hints and presigned or task URLs. Treat that state as sensitive,
-short-lived XSS-reachable data: never log, export, or expose it to third-party
-scripts, and clear it on logout, invalid session, or terminal cleanup. Do not
-add credentials, flags, or broader privileged payloads. Reducing the stored
-task shape is preferred when restore behavior is changed.
+`frontend/lib/shared/lib/storage.ts` owns the recoverable player ID and username
+display cache. `frontend/lib/shared/api/client.ts` owns short-lived CSRF token
+storage. No browser session marker or tournament state is authoritative;
+HttpOnly backend cookies and PostgreSQL state remain the source of truth. Treat
+CSRF tokens as XSS-reachable transport material: never log or export them, and
+clear them on logout or invalid session. Do not store credentials, flags,
+private task payloads, presigned URLs, or tournament authority in the browser.
 
 ## Atomic REST Changes
 
@@ -107,14 +99,21 @@ Preserve these invariants:
 
 - Ignore unknown or malformed server messages without mutating valid state.
 - Check aggregate identifiers before applying an event.
-- Check task and opponent ownership where the event depends on them.
+- Check tournament, participant, series, game, and assignment ownership where
+  the event depends on them.
 - Do not let a stale socket generation mutate the current session.
-- Terminal server events are idempotent and dominate later active events.
-- A local timeout does not finalize a duel.
-- Reconnect must revalidate the authenticated session and active aggregate.
+- Server snapshots are read-only; clients cannot advance durable state through
+  the realtime channel.
+- A local timeout does not finalize a game or series.
+- Reconnect must revalidate the authenticated session and tournament role.
 - Do not retry non-recoverable authentication or authorization closures.
 - Client commands must include only fields accepted by the server. Never trust
   a client-supplied player identity when it can be derived from the session.
+
+Tournament realtime is snapshot-only. It uses the public, participant, and
+operator `/api/v1/.../realtime` paths. Every connection starts at sequence 1;
+there is no durable resume cursor or replay stream. A reconnect obtains a fresh
+consistent snapshot and starts a new connection-local sequence.
 
 ## SSE And New Event Feeds
 
@@ -129,7 +128,7 @@ A durable or public event feed must define before implementation:
 - initial snapshot semantics
 - resume cursor and retention behavior
 - duplicate and out-of-order handling
-- provisional and terminal state rules
+- provisional and final state rules
 - authentication, authorization, and public redaction
 - heartbeat, stale, disconnect, and retry behavior
 - schema compatibility and deprecation policy
@@ -146,7 +145,7 @@ participant, admin, task-secret, or audit-only fields.
 - Admin refresh is single-flight. Concurrent `401` responses must not start
   independent refresh rotations.
 - Logout and session replacement invalidate stale in-flight work.
-- Browser clients must not restore legacy bearer tokens from storage.
+- Browser clients must not restore bearer tokens from storage.
 - WebSocket and EventSource connections must use the documented cookie and
   origin model. Do not move credentials into query strings.
 - Add negative tests for missing, expired, wrong-owner, and forbidden sessions
@@ -158,15 +157,17 @@ The deployed configuration contract supports two modes:
 
 1. Same-origin mode with empty `NEXT_PUBLIC_*` URLs and Next.js rewrites to
    `BACKEND_URL`.
-2. Direct browser mode where all public API and WebSocket URLs are explicitly
-   configured with compatible secure origins.
+2. Direct browser mode where public player and admin API origins are explicitly
+   configured.
 
-The current runtime resolver can derive a WebSocket URL from a configured API
-URL and can fall back to an API URL for the admin client. CI deliberately
-rejects these partial combinations for deployable builds. Do not broaden or
-depend on partial mode without an explicit contract decision. Changes to URL
-resolution, rewrites, cookies, CORS, CSP, or WebSocket origins require both
-deployment-mode tests and review of browser credential behavior.
+The current frontend does not open tournament WebSocket connections. A future
+public or participant client must derive its WebSocket origin from the player
+API origin, while an operator client must derive it from the admin API origin.
+Do not add a third WebSocket URL setting. CI rejects partial public API URL
+combinations for deployable builds. Do not depend on partial mode without an
+explicit contract decision. Changes to URL resolution, rewrites, cookies, CORS,
+CSP, or WebSocket origins require deployment-mode tests and review of browser
+credential behavior.
 
 ## Contract Ownership
 

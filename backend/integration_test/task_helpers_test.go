@@ -6,74 +6,49 @@ import (
 	"context"
 	"testing"
 
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	duelusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel"
+	taskusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/task"
 )
 
-func (f *duelFixture) makeTask(t testing.TB, title string, diff domain.Difficulty) *domain.Task {
-	t.Helper()
-	return f.makeTaskWithLimit(t, title, diff, 60)
-}
-
-func (f *duelFixture) makeTaskWithLimit(
-	t testing.TB,
-	title string,
-	diff domain.Difficulty,
-	limit int,
-) *domain.Task {
-	t.Helper()
-	return f.makeTaskWithInput(t, postgres.TaskInput{
-		Title:       title,
-		Description: "x",
-		Category:    domain.CategoryWeb,
-		Difficulty:  diff,
-		TimeLimit:   limit,
-		Flag:        "FLAG{" + title + "}",
-		Hints:       defaultTaskHints(title),
-	})
-}
-
-func (f *duelFixture) makeForensicsTask(t testing.TB, title string, limit int) *domain.Task {
-	t.Helper()
-	return f.makeTaskWithInput(t, postgres.TaskInput{
-		Title:       title,
-		Description: "download the archive",
-		Category:    domain.CategoryForensics,
-		Difficulty:  domain.DifficultyEasy,
-		TimeLimit:   limit,
-		Flag:        "FLAG{" + title + "}",
-		Hints:       defaultTaskHints(title),
-	})
-}
-
-func (f *duelFixture) makeTaskWithInput(t testing.TB, input postgres.TaskInput) *domain.Task {
-	t.Helper()
-	task, err := f.tasks.Create(context.Background(), input)
-	require.NoError(t, err)
-	return task
-}
-
-func mustCreateTask(
-	t testing.TB,
-	repo *postgres.TaskPostgres,
-	title string,
-	diff domain.Difficulty,
-) *domain.Task {
-	t.Helper()
-	task, err := repo.Create(context.Background(), postgres.TaskInput{
+func (f *databaseFixture) makeTask(tb testing.TB, title string, diff domain.Difficulty) *domain.Task {
+	tb.Helper()
+	task, err := f.tasks.Create(context.Background(), taskusecase.UpdateInput{
 		Title:       title,
 		Description: "x",
 		Category:    domain.CategoryWeb,
 		Difficulty:  diff,
 		TimeLimit:   60,
 		Flag:        "FLAG{" + title + "}",
+		Kind:        domain.TaskKindNormal,
+		Enabled:     true,
 		Hints:       defaultTaskHints(title),
 	})
-	require.NoError(t, err)
+	require.NoError(tb, err)
+	return task
+}
+
+func mustCreateTask(
+	tb testing.TB,
+	repo *postgres.TaskPostgres,
+	title string,
+	diff domain.Difficulty,
+) *domain.Task {
+	tb.Helper()
+	task, err := repo.Create(context.Background(), taskusecase.UpdateInput{
+		Title:       title,
+		Description: "x",
+		Category:    domain.CategoryWeb,
+		Difficulty:  diff,
+		TimeLimit:   60,
+		Flag:        "FLAG{" + title + "}",
+		Kind:        domain.TaskKindNormal,
+		Enabled:     true,
+		Hints:       defaultTaskHints(title),
+	})
+	require.NoError(tb, err)
 	return task
 }
 
@@ -85,10 +60,6 @@ func defaultTaskHints(seed string) []string {
 	}
 }
 
-func defaultOpenAPIHints(seed string) []*string {
-	return nullableOpenAPIHints(defaultTaskHints(seed))
-}
-
 func nullableOpenAPIHints(hints []string) []*string {
 	out := make([]*string, len(hints))
 	for i, hint := range hints {
@@ -96,18 +67,4 @@ func nullableOpenAPIHints(hints []string) []*string {
 		out[i] = &value
 	}
 	return out
-}
-
-func taskForPlayer(t testing.TB, result *duelusecase.MatchResult, playerID uuid.UUID) *domain.Task {
-	t.Helper()
-
-	switch playerID {
-	case result.Duel.Player1ID:
-		return result.Player1Task
-	case result.Duel.Player2ID:
-		return result.Player2Task
-	default:
-		t.Fatalf("player %s is not part of duel %s", playerID, result.Duel.ID)
-		return nil
-	}
 }

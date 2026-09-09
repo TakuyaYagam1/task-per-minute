@@ -2,40 +2,46 @@
   post:
     operationId: joinPlayer
     tags: [player]
-    summary: Register or refresh a player session
+    summary: Create an available player session
     description: >
-      Upserts a player by username and issues an HttpOnly player session cookie.
-      A readable session-bound tpm_player_csrf cookie and X-CSRF-Token response
-      header are issued alongside it for unsafe player REST requests. Existing
-      sessions for the same username are invalidated. Returns 409 if the player
-      is currently in an active duel.
+      Creates a player or reclaims a username only after its previous session
+      expires, then issues an HttpOnly player session cookie. A readable
+      session-bound tpm_player_csrf cookie and X-CSRF-Token response header are
+      issued alongside it for unsafe player REST requests. An active session is
+      never replaced by knowledge of its public username.
+    security: []
     requestBody:
       required: true
       content:
         application/json:
           schema:
-            $ref: '../components/schemas.yml#/JoinRequest'
+            $ref: '../components/schemas.yml#/JoinPlayerRequest'
     responses:
       '200':
         description: Player session created or refreshed.
+        headers:
+          X-CSRF-Token:
+            description: CSRF token bound to the issued HttpOnly player session cookie.
+            schema:
+              type: string
         content:
           application/json:
             schema:
-              $ref: '../components/schemas.yml#/JoinResponse'
+              $ref: '../components/schemas.yml#/JoinPlayerResponse'
       '400':
         description: Validation error.
         content:
           application/problem+json:
             schema:
               $ref: '../components/schemas.yml#/ProblemDetails'
-      '415':
-        description: Request content type must be application/json.
+      '403':
+        description: Request origin or referer is not allowed.
         content:
           application/problem+json:
             schema:
               $ref: '../components/schemas.yml#/ProblemDetails'
       '409':
-        description: Player is currently in_duel; cannot rejoin.
+        description: Username already has an active session.
         content:
           application/problem+json:
             schema:
@@ -46,33 +52,59 @@
           application/problem+json:
             schema:
               $ref: '../components/schemas.yml#/ProblemDetails'
+      '415':
+        description: Request content type must be application/json.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '429':
+        description: Too many join attempts from the same client IP.
+        headers:
+          Retry-After:
+            description: Seconds until the join rate window resets.
+            schema:
+              type: string
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
 
 /api/v1/players/me:
   get:
-    operationId: getMe
+    operationId: getCurrentPlayer
     tags: [player]
     summary: Resolve the current player session
     description: >
-      Returns the player and any active duel they are participating in. If the
-      readable tpm_player_csrf cookie is missing, the response refreshes it.
-      The current session-bound CSRF token is also returned in X-CSRF-Token for
-      split-domain browser deployments where JavaScript cannot read the API host
-      cookie.
+      Returns the player bound to the current session. Tournament participation
+      is exposed by tournament participant endpoints. If the readable
+      tpm_player_csrf cookie is missing, the response refreshes it. The current
+      session-bound CSRF token is also returned in X-CSRF-Token for split-domain
+      browser deployments where JavaScript cannot read the API host cookie.
     security:
-      - SessionTokenAuth: []
+      - PlayerSessionAuth: []
     responses:
       '200':
         description: Resolved player.
+        headers:
+          X-CSRF-Token:
+            description: CSRF token bound to the current HttpOnly player session cookie.
+            schema:
+              type: string
         content:
           application/json:
             schema:
-              $ref: '../components/schemas.yml#/PlayerMeResponse'
+              $ref: '../components/schemas.yml#/CurrentPlayerResponse'
       '401':
         description: Missing or invalid session token.
         content:
           application/problem+json:
             schema:
               $ref: '../components/schemas.yml#/ProblemDetails'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
 
 /api/v1/players/logout:
   post:
@@ -84,12 +116,17 @@
       server-side player session when a valid cookie is present. Requests that
       carry a player session cookie must send X-CSRF-Token matching the readable
       tpm_player_csrf cookie.
+    security: []
+    parameters:
+      - $ref: '../components/parameters.yml#/PlayerCSRFToken'
     responses:
       '204':
         description: Player session cleared.
       '403':
-        description: CSRF token missing or invalid for an existing player session.
+        description: CSRF token is invalid for an existing session, or the request origin or referer is not allowed.
         content:
           application/problem+json:
             schema:
               $ref: '../components/schemas.yml#/ProblemDetails'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'

@@ -1,7 +1,6 @@
 package v1
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -9,31 +8,32 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/api"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/middleware"
-	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/v1/response"
-	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/memory"
-	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	adminusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/admin"
+	middlewaremocks "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/middleware/mocks"
+	authusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/auth"
 )
+
+const adminAccessTestToken = "admin-access-token"
 
 func TestAdminLoginSetsHttpOnlySessionCookies(t *testing.T) {
 	t.Parallel()
 
 	now := time.Unix(100, 0).UTC()
-	auth := &adminCookieAuthStub{
-		loginPair: &adminusecase.TokenPair{
-			AccessToken:      "access-token",
-			RefreshToken:     "refresh-token",
-			AccessExpiresAt:  now.Add(time.Minute),
-			RefreshExpiresAt: now.Add(time.Hour),
-		},
+	pair := &authusecase.TokenPair{
+		AccessToken:      "access-token",
+		RefreshToken:     "refresh-token",
+		AccessExpiresAt:  now.Add(time.Minute),
+		RefreshExpiresAt: now.Add(time.Hour),
 	}
+	auth := NewMockAdminAuthService(t)
+	auth.EXPECT().Login(mock.Anything, "admin-password").Return(pair, nil)
 	server := New(Dependencies{
 		AdminAuth:    auth,
-		LoginLimiter: middleware.NewLoginRateLimiter(t.Context(), 10, time.Hour, time.Hour),
+		LoginLimiter: newAllowingRateLimiter(t),
 		Now:          func() time.Time { return now },
 	})
 
@@ -41,7 +41,7 @@ func TestAdminLoginSetsHttpOnlySessionCookies(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
 
-	server.AdminLogin(rr, req)
+	server.LoginAdmin(rr, req)
 
 	require.Equal(t, http.StatusOK, rr.Code)
 	cookies := rr.Result().Cookies()
@@ -74,155 +74,90 @@ func TestAdminLoginSetsHttpOnlySessionCookies(t *testing.T) {
 	require.Equal(t, "/api/v1/admin", refreshCSRFCookie.Path)
 	require.False(t, refreshCSRFCookie.HttpOnly)
 	require.True(t, refreshCSRFCookie.Secure)
-}
 
-func TestAdminLoginBrowserSourceReturnsCookieSessionMarkers(t *testing.T) {
-	t.Parallel()
-
-	now := time.Unix(100, 0).UTC()
-	auth := &adminCookieAuthStub{
-		loginPair: &adminusecase.TokenPair{
-			AccessToken:      "access-token",
-			RefreshToken:     "refresh-token",
-			AccessExpiresAt:  now.Add(time.Minute),
-			RefreshExpiresAt: now.Add(time.Hour),
-		},
-	}
-	server := New(Dependencies{
-		AdminAuth:    auth,
-		LoginLimiter: middleware.NewLoginRateLimiter(t.Context(), 10, time.Hour, time.Hour),
-		Now:          func() time.Time { return now },
-	})
-
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/login", strings.NewReader(`{"password":"admin-password"}`))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Origin", "https://app.example.com")
-	rr := httptest.NewRecorder()
-
-	server.AdminLogin(rr, req)
-
-	require.Equal(t, http.StatusOK, rr.Code)
-	require.Equal(t, "access-token", requireCookie(t, rr.Result().Cookies(), middleware.AdminAccessCookieName).Value)
-	require.Equal(t, "refresh-token", requireCookie(t, rr.Result().Cookies(), middleware.AdminRefreshCookieName).Value)
-
-	got := decodeAdminTokenResponse(t, rr)
-	require.Equal(t, response.CookieAdminSessionToken, got.AccessToken)
-	require.Equal(t, response.CookieAdminSessionToken, got.RefreshToken)
+	got := decodeAdminSessionResponse(t, rr)
 	require.Equal(t, int32(60), got.ExpiresIn)
-}
-
-func TestAdminLoginFetchMetadataReturnsCookieSessionMarkers(t *testing.T) {
-	t.Parallel()
-
-	now := time.Unix(100, 0).UTC()
-	auth := &adminCookieAuthStub{
-		loginPair: &adminusecase.TokenPair{
-			AccessToken:      "access-token",
-			RefreshToken:     "refresh-token",
-			AccessExpiresAt:  now.Add(time.Minute),
-			RefreshExpiresAt: now.Add(time.Hour),
-		},
-	}
-	server := New(Dependencies{
-		AdminAuth:    auth,
-		LoginLimiter: middleware.NewLoginRateLimiter(t.Context(), 10, time.Hour, time.Hour),
-		Now:          func() time.Time { return now },
-	})
-
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/login", strings.NewReader(`{"password":"admin-password"}`))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Sec-Fetch-Site", "same-origin")
-	rr := httptest.NewRecorder()
-
-	server.AdminLogin(rr, req)
-
-	require.Equal(t, http.StatusOK, rr.Code)
-
-	got := decodeAdminTokenResponse(t, rr)
-	require.Equal(t, response.CookieAdminSessionToken, got.AccessToken)
-	require.Equal(t, response.CookieAdminSessionToken, got.RefreshToken)
-	require.Equal(t, int32(60), got.ExpiresIn)
+	require.NotContains(t, rr.Body.String(), "access_token")
+	require.NotContains(t, rr.Body.String(), "refresh_token")
 }
 
 func TestAdminRefreshRateLimited(t *testing.T) {
 	t.Parallel()
 
+	pair := &authusecase.TokenPair{
+		AccessToken:      "access",
+		RefreshToken:     "refresh",
+		AccessExpiresAt:  time.Unix(100, 0).UTC().Add(time.Minute),
+		RefreshExpiresAt: time.Unix(100, 0).UTC().Add(time.Hour),
+	}
+	auth := NewMockAdminAuthService(t)
+	auth.EXPECT().Refresh(mock.Anything, "refresh-token").Return(pair, nil)
 	server := New(Dependencies{
-		AdminAuth:      refreshAuthStub{},
-		RefreshLimiter: middleware.NewLoginRateLimiter(t.Context(), 1, time.Hour, time.Hour),
+		AdminAuth:      auth,
+		RefreshLimiter: newOneRequestRateLimiter(t, "3600"),
 		Now:            func() time.Time { return time.Unix(100, 0).UTC() },
 	})
 
-	body := `{"refresh_token":"refresh-token"}`
 	first := httptest.NewRecorder()
-	firstReq := httptest.NewRequest(http.MethodPost, "/api/v1/admin/refresh", strings.NewReader(body))
-	firstReq.Header.Set("Content-Type", "application/json")
+	firstReq := httptest.NewRequest(http.MethodPost, "/api/v1/admin/refresh", nil)
+	firstReq.AddCookie(&http.Cookie{Name: middleware.AdminRefreshCookieName, Value: "refresh-token"})
 	firstReq.RemoteAddr = "198.51.100.10:1234"
-	server.AdminRefresh(first, firstReq)
+	server.RefreshAdminSession(first, firstReq, api.RefreshAdminSessionParams{})
 	require.Equal(t, http.StatusOK, first.Code)
 
 	second := httptest.NewRecorder()
-	secondReq := httptest.NewRequest(http.MethodPost, "/api/v1/admin/refresh", strings.NewReader(body))
-	secondReq.Header.Set("Content-Type", "application/json")
+	secondReq := httptest.NewRequest(http.MethodPost, "/api/v1/admin/refresh", nil)
+	secondReq.AddCookie(&http.Cookie{Name: middleware.AdminRefreshCookieName, Value: "refresh-token"})
 	secondReq.RemoteAddr = "198.51.100.10:1234"
-	server.AdminRefresh(second, secondReq)
+	server.RefreshAdminSession(second, secondReq, api.RefreshAdminSessionParams{})
 	require.Equal(t, http.StatusTooManyRequests, second.Code)
 	require.Equal(t, "3600", second.Header().Get("Retry-After"))
 }
 
-func TestAdminRefreshUsesRefreshCookieWhenBodyTokenIsEmpty(t *testing.T) {
+func TestAdminRefreshUsesRefreshCookie(t *testing.T) {
 	t.Parallel()
 
 	now := time.Unix(100, 0).UTC()
-	auth := &adminCookieAuthStub{
-		refreshPair: &adminusecase.TokenPair{
-			AccessToken:      "next-access",
-			RefreshToken:     "next-refresh",
-			AccessExpiresAt:  now.Add(time.Minute),
-			RefreshExpiresAt: now.Add(time.Hour),
-		},
+	pair := &authusecase.TokenPair{
+		AccessToken:      "next-access",
+		RefreshToken:     "next-refresh",
+		AccessExpiresAt:  now.Add(time.Minute),
+		RefreshExpiresAt: now.Add(time.Hour),
 	}
+	auth := NewMockAdminAuthService(t)
+	auth.EXPECT().Refresh(mock.Anything, "cookie-refresh").Return(pair, nil)
 	server := New(Dependencies{
 		AdminAuth:      auth,
-		RefreshLimiter: middleware.NewLoginRateLimiter(t.Context(), 10, time.Hour, time.Hour),
+		RefreshLimiter: newAllowingRateLimiter(t),
 		Now:            func() time.Time { return now },
 	})
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/refresh", strings.NewReader(`{"refresh_token":""}`))
-	req.Header.Set("Content-Type", "application/json")
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/refresh", nil)
 	req.AddCookie(&http.Cookie{Name: middleware.AdminRefreshCookieName, Value: "cookie-refresh"})
 	rr := httptest.NewRecorder()
 
-	server.AdminRefresh(rr, req)
+	server.RefreshAdminSession(rr, req, api.RefreshAdminSessionParams{})
 
 	require.Equal(t, http.StatusOK, rr.Code)
-	require.Equal(t, "cookie-refresh", auth.refreshToken)
 	require.Equal(t, "next-access", requireCookie(t, rr.Result().Cookies(), middleware.AdminAccessCookieName).Value)
 	require.Equal(t, "next-refresh", requireCookie(t, rr.Result().Cookies(), middleware.AdminRefreshCookieName).Value)
 	require.NotEmpty(t, rr.Header().Get(middleware.CSRFHeaderName))
 	require.NotEmpty(t, rr.Header().Get(middleware.AdminRefreshCSRFHeaderName))
 
-	got := decodeAdminTokenResponse(t, rr)
-	require.Equal(t, response.CookieAdminSessionToken, got.AccessToken)
-	require.Equal(t, response.CookieAdminSessionToken, got.RefreshToken)
+	got := decodeAdminSessionResponse(t, rr)
 	require.Equal(t, int32(60), got.ExpiresIn)
+	require.NotContains(t, rr.Body.String(), "next-access")
+	require.NotContains(t, rr.Body.String(), "next-refresh")
 }
 
-func TestAdminRefreshBodyTokenReturnsRawTokenResponse(t *testing.T) {
+func TestAdminRefreshRejectsBodyTokenWithoutCookie(t *testing.T) {
 	t.Parallel()
 
 	now := time.Unix(100, 0).UTC()
-	auth := &adminCookieAuthStub{
-		refreshPair: &adminusecase.TokenPair{
-			AccessToken:      "next-access",
-			RefreshToken:     "next-refresh",
-			AccessExpiresAt:  now.Add(time.Minute),
-			RefreshExpiresAt: now.Add(time.Hour),
-		},
-	}
+	auth := NewMockAdminAuthService(t)
 	server := New(Dependencies{
 		AdminAuth:      auth,
-		RefreshLimiter: middleware.NewLoginRateLimiter(t.Context(), 10, time.Hour, time.Hour),
+		RefreshLimiter: newAllowingRateLimiter(t),
 		Now:            func() time.Time { return now },
 	})
 
@@ -230,31 +165,38 @@ func TestAdminRefreshBodyTokenReturnsRawTokenResponse(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
 
-	server.AdminRefresh(rr, req)
+	server.RefreshAdminSession(rr, req, api.RefreshAdminSessionParams{})
 
-	require.Equal(t, http.StatusOK, rr.Code)
-	require.Equal(t, "body-refresh", auth.refreshToken)
+	require.Equal(t, http.StatusUnauthorized, rr.Code)
+}
 
-	got := decodeAdminTokenResponse(t, rr)
-	require.Equal(t, "next-access", got.AccessToken)
-	require.Equal(t, "next-refresh", got.RefreshToken)
+func TestAdminLogoutRejectsBodyTokenWithoutCookie(t *testing.T) {
+	t.Parallel()
+
+	auth := NewMockAdminAuthService(t)
+	server := New(Dependencies{AdminAuth: auth})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/logout", strings.NewReader(`{"refresh_token":"body-refresh"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+
+	server.LogoutAdmin(rr, req, api.LogoutAdminParams{})
+
+	require.Equal(t, http.StatusUnauthorized, rr.Code)
 }
 
 func TestAdminLogoutUsesRefreshCookieWithoutAccessAndClearsAdminCookies(t *testing.T) {
 	t.Parallel()
 
-	auth := newAdminCookieAuthUsecase(t)
-	pair, err := auth.Login(t.Context(), "admin-password")
-	require.NoError(t, err)
-
+	auth := NewMockAdminAuthService(t)
+	auth.EXPECT().Logout(mock.Anything, "refresh-token").Return(nil).Once()
 	server := New(Dependencies{AdminAuth: auth})
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/logout", strings.NewReader(`{"refresh_token":""}`))
-	req.Header.Set("Content-Type", "application/json")
-	req.AddCookie(&http.Cookie{Name: middleware.AdminRefreshCookieName, Value: pair.RefreshToken})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/logout", nil)
+	req.AddCookie(&http.Cookie{Name: middleware.AdminRefreshCookieName, Value: "refresh-token"})
 	rr := httptest.NewRecorder()
 
-	server.AdminLogout(rr, req)
+	server.LogoutAdmin(rr, req, api.LogoutAdminParams{})
 
 	require.Equal(t, http.StatusNoContent, rr.Code)
 	cookies := rr.Result().Cookies()
@@ -263,119 +205,65 @@ func TestAdminLogoutUsesRefreshCookieWithoutAccessAndClearsAdminCookies(t *testi
 	require.Equal(t, -1, requireCookie(t, cookies, middleware.AdminRefreshCookieName).MaxAge)
 	require.Equal(t, -1, requireCookie(t, cookies, middleware.AdminAccessCSRFCookieName).MaxAge)
 	require.Equal(t, -1, requireCookie(t, cookies, middleware.AdminRefreshCSRFCookieName).MaxAge)
-	_, err = auth.Refresh(t.Context(), pair.RefreshToken)
-	require.ErrorIs(t, err, domain.ErrTokenRevoked)
 }
 
 func TestAdminLogoutRevokesAccessCookie(t *testing.T) {
 	t.Parallel()
 
-	auth := newAdminCookieAuthUsecase(t)
-	pair, err := auth.Login(t.Context(), "admin-password")
-	require.NoError(t, err)
-
+	auth := NewMockAdminAuthService(t)
+	auth.EXPECT().Logout(mock.Anything, "refresh-token", []string{"access-token"}).Return(nil).Once()
 	server := New(Dependencies{AdminAuth: auth})
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/logout", strings.NewReader(`{"refresh_token":""}`))
-	req.Header.Set("Content-Type", "application/json")
-	req.AddCookie(&http.Cookie{Name: middleware.AdminAccessCookieName, Value: pair.AccessToken})
-	req.AddCookie(&http.Cookie{Name: middleware.AdminRefreshCookieName, Value: pair.RefreshToken})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/logout", nil)
+	req.AddCookie(&http.Cookie{Name: middleware.AdminAccessCookieName, Value: "access-token"})
+	req.AddCookie(&http.Cookie{Name: middleware.AdminRefreshCookieName, Value: "refresh-token"})
 	rr := httptest.NewRecorder()
 
-	server.AdminLogout(rr, req)
+	server.LogoutAdmin(rr, req, api.LogoutAdminParams{})
 
 	require.Equal(t, http.StatusNoContent, rr.Code)
-	_, err = auth.VerifyAccess(t.Context(), pair.AccessToken)
-	require.ErrorIs(t, err, domain.ErrTokenRevoked)
 }
 
 func TestAdminLogoutRouteAllowsRefreshCookieWithoutAccess(t *testing.T) {
 	t.Parallel()
 
-	auth := newAdminCookieAuthUsecase(t)
-	pair, err := auth.Login(t.Context(), "admin-password")
-	require.NoError(t, err)
-
+	auth := NewMockAdminAuthService(t)
+	auth.EXPECT().Logout(mock.Anything, "refresh-token").Return(nil).Once()
 	server := New(Dependencies{AdminAuth: auth})
-	handler := NewHandler(server, HandlerOptions{AdminAuth: auth})
+	verifier := middlewaremocks.NewMockAdminAccessVerifier(t)
+	handler := NewHandler(server, HandlerOptions{AdminAuth: verifier})
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/logout", strings.NewReader(`{"refresh_token":""}`))
-	req.Header.Set("Content-Type", "application/json")
-	req.AddCookie(&http.Cookie{Name: middleware.AdminRefreshCookieName, Value: pair.RefreshToken})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/logout", nil)
+	req.AddCookie(&http.Cookie{Name: middleware.AdminRefreshCookieName, Value: "refresh-token"})
+	csrfToken, err := middleware.NewAdminCSRFToken(middleware.AdminRefreshCSRFCookieName, "refresh-token")
+	require.NoError(t, err)
+	req.AddCookie(&http.Cookie{Name: middleware.AdminRefreshCSRFCookieName, Value: csrfToken})
+	req.Header.Set(middleware.CSRFHeaderName, csrfToken)
 	rr := httptest.NewRecorder()
 
 	handler.ServeHTTP(rr, req)
 
 	require.Equal(t, http.StatusNoContent, rr.Code)
-	_, err = auth.Refresh(t.Context(), pair.RefreshToken)
-	require.ErrorIs(t, err, domain.ErrTokenRevoked)
 }
 
-type refreshAuthStub struct{}
-
-func (refreshAuthStub) Login(context.Context, string) (*adminusecase.TokenPair, error) {
-	panic("unused")
-}
-
-func (refreshAuthStub) Refresh(context.Context, string) (*adminusecase.TokenPair, error) {
-	now := time.Unix(100, 0).UTC()
-	return &adminusecase.TokenPair{
-		AccessToken:      "access",
-		RefreshToken:     "refresh",
-		AccessExpiresAt:  now.Add(time.Minute),
-		RefreshExpiresAt: now.Add(time.Hour),
-	}, nil
-}
-
-func (refreshAuthStub) Logout(context.Context, string, ...string) error {
-	panic("unused")
-}
-
-type adminCookieAuthStub struct {
-	loginPair    *adminusecase.TokenPair
-	refreshPair  *adminusecase.TokenPair
-	refreshToken string
-	logoutToken  string
-}
-
-func (s *adminCookieAuthStub) Login(context.Context, string) (*adminusecase.TokenPair, error) {
-	return s.loginPair, nil
-}
-
-func (s *adminCookieAuthStub) Refresh(_ context.Context, token string) (*adminusecase.TokenPair, error) {
-	s.refreshToken = token
-	return s.refreshPair, nil
-}
-
-func (s *adminCookieAuthStub) Logout(_ context.Context, token string, _ ...string) error {
-	s.logoutToken = token
-	return nil
-}
-
-func newAdminCookieAuthUsecase(t *testing.T) *adminusecase.AuthUseCase {
+func newAdminAccessVerifier(t *testing.T) *middlewaremocks.MockAdminAccessVerifier {
 	t.Helper()
 
-	clk := adminCookieFixedClock{now: time.Date(2026, 5, 13, 12, 0, 0, 0, time.UTC)}
-	return adminusecase.NewAuthUseCase(adminusecase.AuthConfig{
-		Secret:        []byte("01234567890123456789012345678901"),
-		AccessTTL:     15 * time.Minute,
-		RefreshTTL:    time.Hour,
-		AdminPassword: []byte("admin-password"),
-	}, clk, memory.NewRevocation(clk))
+	verifier := middlewaremocks.NewMockAdminAccessVerifier(t)
+	verifier.EXPECT().VerifyAccess(mock.Anything, adminAccessTestToken).Return(&authusecase.Claims{
+		JTI:       "admin-access-session",
+		Subject:   "admin",
+		Kind:      authusecase.TokenKindAccess,
+		IssuedAt:  time.Date(2026, 5, 13, 12, 0, 0, 0, time.UTC),
+		ExpiresAt: time.Date(2026, 5, 13, 12, 15, 0, 0, time.UTC),
+	}, nil).Once()
+	return verifier
 }
 
-func decodeAdminTokenResponse(t *testing.T, rr *httptest.ResponseRecorder) api.AdminTokenResponse {
+func decodeAdminSessionResponse(t *testing.T, rr *httptest.ResponseRecorder) api.AdminSessionResponse {
 	t.Helper()
 
-	var got api.AdminTokenResponse
+	var got api.AdminSessionResponse
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &got))
 	return got
-}
-
-type adminCookieFixedClock struct {
-	now time.Time
-}
-
-func (c adminCookieFixedClock) Now() time.Time {
-	return c.now
 }

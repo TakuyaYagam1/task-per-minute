@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Task Per Minute is a competitive CTF platform for short one-on-one challenge duels. Players join, enter matchmaking, receive a task, submit a flag, and receive a server-authoritative result. The repository also contains leaderboard and administrative flows.
+Task Per Minute is a competitive CTF tournament platform. Operators manage a roster and tournament lifecycle, participants receive private task assignments, and the server owns result, recovery, audit, and public projection authority. The repository also contains leaderboard and administrative flows.
 
 This document describes the current public implementation. Desired future behavior belongs in a private requirement file only when the active user instruction authorizes that exact path.
 
@@ -13,28 +13,37 @@ This document describes the current public implementation. Desired future behavi
 | `backend/`             | Go application, domain logic, REST and WebSocket transports, persistence, migrations, code generation |
 | `backend/api/`         | Canonical OpenAPI routes, components, and root specification                                            |
 | `backend/db/`          | Canonical Goose migrations and sqlc query sources                                                       |
-| `backend/codegen/`     | Reproducible configuration for OpenAPI, sqlc, Wire-adjacent mocks, and generators                       |
+| `backend/codegen/`     | Reproducible OpenAPI, sqlc, Wire, and Mockery generator configuration                                   |
 | `backend/cmd/`         | Application and migration command entrypoints                                                           |
 | `backend/config/`      | Backend runtime configuration parsing and validation                                                     |
-| `backend/internal/`    | Domain, usecases, inbound and outbound adapters, bootstrap, errors, and context helpers                  |
-| `frontend/`            | Next.js application, player UI, task UI, leaderboard, admin UI, browser contract tests                |
+| `backend/internal/`    | Process boot, domain policies, usecases, ports, adapters, bootstrap, and context helpers                 |
+| `frontend/`            | Next.js application, player join, leaderboard, admin UI, and browser contract tests                   |
 | `deployment/`          | Docker Compose and Caddy runtime configuration                                                        |
 | `scripts/`             | Server bootstrap, deployment helpers, and disposable full-stack E2E orchestration                     |
 | `docs/ru/`, `docs/en/` | Deployment and operational runbooks                                                                   |
 | `.github/workflows/`   | CI and deployment automation                                                                          |
 | `.agents/`             | Public coding-agent operating guidance                                                                |
-| `AGENTS.md`            | Root Codex instruction entrypoint and route map                                                        |
+| `AGENTS.md`            | Root Codex instruction entrypoint                                                                      |
+| `AGENT_ROUTING.md`     | Project route, risk, companion, and validation selector                                                |
 | `CLAUDE.md`            | Root Claude Code adapter importing the shared agent entrypoint                                         |
 | `PRD/`                 | Private ignored requirements, task content, reports, and temporary project artifacts; may be absent   |
 
 ## Current User Surfaces
 
 - Player join and cookie-backed session.
-- Matchmaking queue and duel assignment.
-- Task presentation, hints, source links, flag submission, surrender, reconnect, pause, and terminal result.
 - Public leaderboard.
 - Administrative task and player management.
-- REST health endpoints and real-time WebSocket gameplay.
+- Operator tournament catalog listing and tournament creation.
+- REST health endpoints and role-scoped, read-only tournament WebSocket snapshots.
+
+All protocol-neutral business workflows live under `internal/usecase`,
+including assignment, authority, draft, game execution, Golden, Swiss,
+tournament administration, progression, recovery, realtime delivery, result
+projection and correction, leaderboard caching, and task source files.
+`internal/app/app.go` only starts the dependency graph assembled by
+`internal/bootstrap`. A usecase is not a public REST surface until it has an
+inbound port, durable adapters where required, composition-root wiring, and
+contract tests for the complete operation.
 
 Do not assume an unimplemented feature exists merely because a private PRD mentions it. Verify current behavior against the canonical implementation contracts.
 

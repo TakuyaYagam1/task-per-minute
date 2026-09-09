@@ -37,9 +37,6 @@
 	handle /internal/* {
 		respond 404
 	}
-	handle /ws {
-		reverse_proxy {$CADDY_BACKEND_UPSTREAM}
-	}
 	handle /api/* {
 		reverse_proxy {$CADDY_BACKEND_UPSTREAM}
 	}
@@ -63,9 +60,6 @@
 	handle /internal/* {
 		respond 404
 	}
-	handle /ws {
-		reverse_proxy {$CADDY_BACKEND_UPSTREAM}
-	}
 	handle /api/* {
 		reverse_proxy {$CADDY_BACKEND_UPSTREAM}
 	}
@@ -85,9 +79,6 @@
 	}
 	handle /internal/* {
 		respond 404
-	}
-	handle /ws {
-		reverse_proxy {$CADDY_BACKEND_UPSTREAM}
 	}
 	handle {
 		reverse_proxy {$CADDY_BACKEND_UPSTREAM}

@@ -1,12 +1,13 @@
 # OpenAPI Components
 
-Split OpenAPI schemas for the task-per-minute backend, plus the security scheme definitions.
+Split OpenAPI schemas and shared transport components for the task-per-minute backend.
 
-## ⚠️ Do NOT edit `schemas.yml` by hand
+## Generated merge
 
-`schemas.yml` is generated only inside the code generator's private temporary
-directory. The source of truth is the `schemas/` subdirectory - that is where
-you add or change types.
+The source of truth is the `schemas/` subdirectory. The generator merges those
+files into a private temporary `schemas.yml`, bundles every local reference,
+and removes the temporary directory when generation finishes. There is no
+repository-local merged-schema workflow or intermediate to maintain.
 
 ## Generation commands
 
@@ -16,17 +17,13 @@ make generate     # alias of `make gen`
 
 # OpenAPI only.
 make openapi      # alias of `make gen-openapi`
-
-# Just merge schemas/*.yml -> schemas.yml without running code generation.
-# This compatibility target writes the ignored repository intermediate.
-make merge-schemas
 ```
 
 ## How it works
 
-1. `scripts/merge-schemas.py` reads every YAML under `components/schemas/` and writes a
-   single mapping to the explicit temporary destination. Schema names are taken
-   verbatim from the file contents - collisions cause the script to fail loudly.
+1. `scripts/openapi-generate.sh` calls `scripts/merge-schemas.py` with explicit
+   source and temporary output paths. Schema names are taken verbatim from the
+   source files - collisions cause the merge to fail loudly.
 2. `scripts/openapi-generate.sh` invokes `@redocly/cli bundle` to inline every `$ref`
    (including the freshly merged `schemas.yml`) into a single bundled spec in a
    tempdir.
@@ -42,11 +39,13 @@ components/
 ├── schemas/               # source of truth - edit these
 │   ├── admin_schemas.yml
 │   ├── common_schemas.yml
-│   ├── duel_schemas.yml
+│   ├── leaderboard_schemas.yml
 │   ├── player_schemas.yml
-│   └── task_schemas.yml
-├── schemas.yml            # ignored compatibility output of make merge-schemas
-├── security.yml           # security schemes (bearer/session-token), edited by hand
+│   ├── task_schemas.yml
+│   └── tournament_schemas.yml
+├── parameters.yml         # shared request parameters
+├── responses.yml          # shared error responses
+├── security.yml           # admin/player cookie security schemes, edited by hand
 └── README.md              # this file
 
 ```
@@ -56,7 +55,7 @@ components/
 1. Add or change schemas in `components/schemas/<domain>_schemas.yml`.
 2. Run `make openapi` (or `make generate` for the full pipeline).
 3. Commit the source YAMLs, regenerated `*.gen.go` files, and regenerated frontend
-   API types. `schemas.yml` should never appear in `git status`.
+   API types.
 
 ## Routes
 
@@ -65,3 +64,11 @@ because the generator copies `api/` into its tempdir and creates `schemas.yml` t
 before bundling. Do not switch the references to per-file paths - the merged file
 intentionally hides the per-domain split from generators so route fragments stay
 adapter-agnostic.
+
+## Naming
+
+Tags follow the resource domain: `admin` is reserved for admin session
+operations, while player management uses `player` and task management uses
+`task`. Operation IDs use lower camel case with the verb first. Schema names
+describe the resource or response view, not the authenticated actor that can
+access it.

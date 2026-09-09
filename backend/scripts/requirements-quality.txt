@@ -1,1 +1,2 @@
 sqlfluff==4.3.0
+PyYAML==6.0.3

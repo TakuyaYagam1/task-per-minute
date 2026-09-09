@@ -1,10 +1,10 @@
 import { CONFIG } from "../config";
-import { log } from "../lib/logger";
 import {
   adminCredentialedFetch,
   adminClient,
   ApiError,
   advanceAdminSessionEpoch,
+  canResumeAdminSession,
   clearAdminCSRFTokens,
   setAdminRefreshFailureHandler,
   type ProblemDetails,
@@ -16,29 +16,28 @@ import {
   isAdminPlayer,
   isAdminPlayerArray,
   isAdminPlayerAuditEventArray,
+  isAdminSessionResponse,
   isAdminTask,
   isAdminTaskArray,
-  isAdminTokenResponse,
   isUploadSourceResponse,
 } from "./guards";
 import type { components } from "./schema";
 
-export type AdminTokenResponse = components["schemas"]["AdminTokenResponse"];
-export type AdminPlayer = components["schemas"]["AdminPlayerResponse"];
-export type AdminPlayerAuditEvent = components["schemas"]["AdminPlayerAuditEventResponse"];
-export type AdminTask = components["schemas"]["TaskResponse"];
+export type AdminSessionResponse = components["schemas"]["AdminSessionResponse"];
+export type AdminPlayer = components["schemas"]["PlayerManagementView"];
+export type AdminPlayerAuditEvent = components["schemas"]["PlayerAuditEvent"];
+export type AdminTask = components["schemas"]["TaskDetails"];
 export type CreateTaskRequest = components["schemas"]["CreateTaskRequest"];
-export type UpdateAdminPlayerRequest = components["schemas"]["UpdateAdminPlayerRequest"];
+export type UpdateAdminPlayerRequest = components["schemas"]["UpdatePlayerRequest"];
 export type UpdateTaskRequest = components["schemas"]["UpdateTaskRequest"];
-export type UploadSourceResponse = components["schemas"]["UploadSourceResponse"];
-
-const SESSION_MARKER_KEY = "admin_session_active";
-const LEGACY_ACCESS_TOKEN_KEY = "admin_access_token";
-const LEGACY_REFRESH_TOKEN_KEY = "admin_refresh_token";
-const COOKIE_SESSION_TOKEN = "__cookie_admin_session__";
+export type UploadSourceResponse = components["schemas"]["TaskSourceUploadResponse"];
 
 const UPLOAD_SOURCE_TIMEOUT_MS = 5 * 60 * 1000;
 export const ADMIN_PLAYERS_CHANGED_EVENT = "players_changed";
+
+// Generated request types require the header at each unsafe endpoint. The
+// credentialed fetch layer replaces this placeholder with the current token.
+const requiredCSRFHeader = { "X-CSRF-Token": "" } as const;
 
 const adminURL = (path: string): string => `${CONFIG.adminApiUrl}${path}`;
 
@@ -103,99 +102,60 @@ const isAbortLikeError = (error: unknown): boolean =>
   error instanceof DOMException &&
   (error.name === "AbortError" || error.name === "TimeoutError");
 
-const cookieSessionTokens = (expiresIn = 0): AdminTokenResponse => ({
-  access_token: COOKIE_SESSION_TOKEN,
-  refresh_token: COOKIE_SESSION_TOKEN,
-  token_type: "Bearer",
-  expires_in: expiresIn,
-});
-
-const clearLegacyAdminTokens = (): void => {
-  sessionStorage.removeItem(LEGACY_ACCESS_TOKEN_KEY);
-  sessionStorage.removeItem(LEGACY_REFRESH_TOKEN_KEY);
-};
-
 type ClearAdminSessionOptions = {
   preserveCSRF?: boolean;
 };
 
-export const adminSession = {
-  load(): AdminTokenResponse | null {
-    try {
-      clearLegacyAdminTokens();
-      if (sessionStorage.getItem(SESSION_MARKER_KEY) !== "1") {
-        return null;
-      }
-      return cookieSessionTokens();
-    } catch (error) {
-      log.warn("adminSession.load: sessionStorage unavailable", error);
-      return null;
-    }
-  },
+export { canResumeAdminSession };
 
-  save(_tokens: AdminTokenResponse): void {
-    try {
-      clearLegacyAdminTokens();
-      sessionStorage.setItem(SESSION_MARKER_KEY, "1");
-      advanceAdminSessionEpoch();
-    } catch (error) {
-      log.warn("adminSession.save: sessionStorage write failed", error);
-    }
-  },
-
-  clear(options: ClearAdminSessionOptions = {}): void {
-    try {
-      sessionStorage.removeItem(SESSION_MARKER_KEY);
-      clearLegacyAdminTokens();
-      if (!options.preserveCSRF) {
-        clearAdminCSRFTokens();
-      }
-      advanceAdminSessionEpoch();
-    } catch (error) {
-      log.warn("adminSession.clear: sessionStorage remove failed", error);
-    }
-  },
+export const activateAdminSession = (): void => {
+  advanceAdminSessionEpoch();
 };
 
-setAdminRefreshFailureHandler(() => adminSession.clear());
+export const clearAdminSession = (options: ClearAdminSessionOptions = {}): void => {
+  if (!options.preserveCSRF) {
+    clearAdminCSRFTokens();
+  }
+  advanceAdminSessionEpoch();
+};
+
+setAdminRefreshFailureHandler(clearAdminCSRFTokens);
 
 export const adminApi = {
-  async login(password: string, signal?: AbortSignal): Promise<AdminTokenResponse> {
+  async login(password: string, signal?: AbortSignal): Promise<AdminSessionResponse> {
     const data = await unwrapApi(
       await adminClient.POST("/api/v1/admin/login", {
         body: { password },
         signal,
       }),
     );
-    const tokens = assertApiResponse(data, isAdminTokenResponse, "admin/login");
-    return cookieSessionTokens(tokens.expires_in);
+    return assertApiResponse(data, isAdminSessionResponse, "admin/login");
   },
 
-  async refresh(_refreshToken: string, signal?: AbortSignal): Promise<AdminTokenResponse> {
+  async refresh(signal?: AbortSignal): Promise<AdminSessionResponse> {
     const data = await unwrapApi(
       await adminClient.POST("/api/v1/admin/refresh", {
-        body: { refresh_token: "" },
+        params: { header: requiredCSRFHeader },
         signal,
       }),
     );
-    const tokens = assertApiResponse(data, isAdminTokenResponse, "admin/refresh");
-    return cookieSessionTokens(tokens.expires_in);
+    return assertApiResponse(data, isAdminSessionResponse, "admin/refresh");
   },
 
-  async ensureFreshSession(signal?: AbortSignal): Promise<AdminTokenResponse> {
-    return this.refresh(COOKIE_SESSION_TOKEN, signal);
+  async ensureFreshSession(signal?: AbortSignal): Promise<AdminSessionResponse> {
+    return this.refresh(signal);
   },
 
-  async logout(_accessToken: string, _refreshToken: string, signal?: AbortSignal): Promise<void> {
+  async logout(signal?: AbortSignal): Promise<void> {
     await unwrapApiVoid(
       await adminClient.POST("/api/v1/admin/logout", {
-        body: { refresh_token: "" },
+        params: { header: requiredCSRFHeader },
         signal,
       }),
     );
   },
 
-  async listTasks(_accessToken: string, signal?: AbortSignal): Promise<AdminTask[]> {
+  async listTasks(signal?: AbortSignal): Promise<AdminTask[]> {
     const data = await unwrapApi(
       await adminClient.GET("/api/v1/admin/tasks", {
         signal,
@@ -205,12 +165,12 @@ export const adminApi = {
   },
 
   async createTask(
-    _accessToken: string,
     body: CreateTaskRequest,
     signal?: AbortSignal,
   ): Promise<AdminTask> {
     const data = await unwrapApi(
       await adminClient.POST("/api/v1/admin/tasks", {
+        params: { header: requiredCSRFHeader },
         body,
         signal,
       }),
@@ -219,14 +179,13 @@ export const adminApi = {
   },
 
   async updateTask(
-    _accessToken: string,
     id: string,
     body: UpdateTaskRequest,
     signal?: AbortSignal,
   ): Promise<AdminTask> {
     const data = await unwrapApi(
       await adminClient.PUT("/api/v1/admin/tasks/{id}", {
-        params: { path: { id } },
+        params: { path: { id }, header: requiredCSRFHeader },
         body,
         signal,
       }),
@@ -234,17 +193,16 @@ export const adminApi = {
     return assertApiResponse(data, isAdminTask, "admin/tasks update");
   },
 
-  async deleteTask(_accessToken: string, id: string, signal?: AbortSignal): Promise<void> {
+  async deleteTask(id: string, signal?: AbortSignal): Promise<void> {
     await unwrapApiVoid(
       await adminClient.DELETE("/api/v1/admin/tasks/{id}", {
-        params: { path: { id } },
+        params: { path: { id }, header: requiredCSRFHeader },
         signal,
       }),
     );
   },
 
   async listPlayers(
-    _accessToken: string,
     includeDeleted = false,
     signal?: AbortSignal,
   ): Promise<AdminPlayer[]> {
@@ -258,7 +216,6 @@ export const adminApi = {
   },
 
   async listPlayerAudit(
-    _accessToken: string,
     id: string,
     limit = 50,
     signal?: AbortSignal,
@@ -273,14 +230,13 @@ export const adminApi = {
   },
 
   async updatePlayer(
-    _accessToken: string,
     id: string,
     body: UpdateAdminPlayerRequest,
     signal?: AbortSignal,
   ): Promise<AdminPlayer> {
     const data = await unwrapApi(
       await adminClient.PUT("/api/v1/admin/players/{id}", {
-        params: { path: { id } },
+        params: { path: { id }, header: requiredCSRFHeader },
         body,
         signal,
       }),
@@ -288,10 +244,10 @@ export const adminApi = {
     return assertApiResponse(data, isAdminPlayer, "admin/players update");
   },
 
-  async deletePlayer(_accessToken: string, id: string, signal?: AbortSignal): Promise<void> {
+  async deletePlayer(id: string, signal?: AbortSignal): Promise<void> {
     await unwrapApiVoid(
       await adminClient.DELETE("/api/v1/admin/players/{id}", {
-        params: { path: { id } },
+        params: { path: { id }, header: requiredCSRFHeader },
         signal,
       }),
     );
@@ -308,7 +264,6 @@ export const adminApi = {
   },
 
   async uploadSource(
-    _accessToken: string,
     id: string,
     file: File,
     options: { signal?: AbortSignal; timeoutMs?: number } = {},

@@ -1,0 +1,490 @@
+CorrectionReason:
+  type: string
+  enum: [scorekeeping_error, verified_submission, operator_ruling]
+
+CorrectionField:
+  type: string
+  enum: [winner, result_reason, solve_metadata]
+
+CorrectionReadinessState:
+  type: string
+  enum: [open, closed]
+
+CorrectionCutoffKind:
+  type: string
+  enum: [wave_started, task_delivered, no_show_recorded, forfeit_recorded, golden_direct_allocated]
+
+AuditEntityKind:
+  type: string
+  enum: [game_attempt, series]
+
+CorrectionUnlockIntent:
+  type: object
+  description: Complete compare-and-set evidence for releasing an undisclosed, unused reservation.
+  required: [reservation_id, tournament_id, owner_id, source_revision_id, expected_revision, expected_used, expected_disclosed, evidence_digest, binding_digest]
+  properties:
+    reservation_id:
+      type: string
+      format: uuid
+    tournament_id:
+      type: string
+      format: uuid
+    owner_id:
+      type: string
+      format: uuid
+    source_revision_id:
+      type: string
+      format: uuid
+      readOnly: true
+    expected_revision:
+      type: integer
+      format: int64
+      minimum: 1
+    expected_used:
+      type: boolean
+    expected_disclosed:
+      type: boolean
+    evidence_digest:
+      type: string
+      minLength: 64
+      maxLength: 64
+      pattern: '^[0-9a-f]{64}$'
+      readOnly: true
+    binding_digest:
+      type: string
+      minLength: 64
+      maxLength: 64
+      pattern: '^[0-9a-f]{64}$'
+      readOnly: true
+
+CorrectionProjectionIntent:
+  type: object
+  description: Digest-only projection mutation intent. Raw projection payload is not exposed.
+  required: [expected_revision, next_revision_id, decision_id, payload_digest]
+  properties:
+    expected_revision:
+      $ref: '#/ProjectionRevision'
+    next_revision_id:
+      type: string
+      format: uuid
+    decision_id:
+      type: string
+      format: uuid
+    payload_digest:
+      type: string
+      minLength: 64
+      maxLength: 64
+      pattern: '^[0-9a-f]{64}$'
+
+CorrectionSolveMetadata:
+  type: object
+  required: [solved_at, submission_id, evidence_digest]
+  properties:
+    solved_at:
+      type: string
+      format: date-time
+      nullable: true
+    submission_id:
+      type: string
+      format: uuid
+      nullable: true
+    evidence_digest:
+      type: string
+      minLength: 64
+      maxLength: 64
+      pattern: '^[0-9a-f]{64}$'
+
+CorrectionPatch:
+  type: object
+  required: [state, reason, winner_id, solve_metadata]
+  properties:
+    state:
+      $ref: '#/GameState'
+    reason:
+      $ref: '#/GameResultReason'
+    winner_id:
+      type: string
+      format: uuid
+      nullable: true
+    solve_metadata:
+      $ref: '#/CorrectionSolveMetadata'
+
+CorrectionRequest:
+  type: object
+  required: [tournament_id, series_id, game_id, command_id, operator_id, confirmed, reason, explanation, requested_at, fields, patch, projection_intents, unlock_intents]
+  properties:
+    tournament_id:
+      type: string
+      format: uuid
+    series_id:
+      type: string
+      format: uuid
+    game_id:
+      type: string
+      format: uuid
+    command_id:
+      type: string
+      format: uuid
+    operator_id:
+      type: string
+      format: uuid
+    confirmed:
+      type: boolean
+    reason:
+      $ref: '#/CorrectionReason'
+    explanation:
+      type: string
+      minLength: 1
+      maxLength: 512
+    requested_at:
+      type: string
+      format: date-time
+    fields:
+      type: array
+      minItems: 1
+      maxItems: 3
+      items:
+        $ref: '#/CorrectionField'
+    patch:
+      $ref: '#/CorrectionPatch'
+    projection_intents:
+      type: array
+      items:
+        $ref: '#/CorrectionProjectionIntent'
+    unlock_intents:
+      type: array
+      maxItems: 4096
+      items:
+        $ref: '#/CorrectionUnlockIntent'
+
+CorrectionProjectionSupersession:
+  type: object
+  required: [artifact_kind, artifact_id, previous_revision_id, successor_revision_id, previous_decision_id, replacement_decision_id]
+  properties:
+    artifact_kind:
+      $ref: '#/ArtifactKind'
+    artifact_id:
+      type: string
+      format: uuid
+    previous_revision_id:
+      type: string
+      format: uuid
+      readOnly: true
+    successor_revision_id:
+      type: string
+      format: uuid
+      readOnly: true
+    previous_decision_id:
+      type: string
+      format: uuid
+      nullable: true
+      readOnly: true
+    replacement_decision_id:
+      type: string
+      format: uuid
+      readOnly: true
+
+CorrectionEvidence:
+  type: object
+  description: Immutable correction record. All projection and unlock evidence is retained by value.
+  required: [command_id, tournament_id, series_id, game_id, operator_id, reason, fields, requested_at, validation_digest, supersessions, unlock_intents]
+  properties:
+    command_id:
+      type: string
+      format: uuid
+      readOnly: true
+    tournament_id:
+      type: string
+      format: uuid
+      readOnly: true
+    series_id:
+      type: string
+      format: uuid
+      readOnly: true
+    game_id:
+      type: string
+      format: uuid
+      readOnly: true
+    operator_id:
+      type: string
+      format: uuid
+      readOnly: true
+    reason:
+      $ref: '#/CorrectionReason'
+    fields:
+      type: array
+      minItems: 1
+      maxItems: 3
+      readOnly: true
+      items:
+        $ref: '#/CorrectionField'
+    requested_at:
+      type: string
+      format: date-time
+      readOnly: true
+    validation_digest:
+      type: string
+      minLength: 64
+      maxLength: 64
+      pattern: '^[0-9a-f]{64}$'
+      readOnly: true
+    supersessions:
+      type: array
+      readOnly: true
+      items:
+        $ref: '#/CorrectionProjectionSupersession'
+    unlock_intents:
+      type: array
+      maxItems: 4096
+      readOnly: true
+      items:
+        $ref: '#/CorrectionUnlockIntent'
+
+AuditCursor:
+  type: object
+  description: Stable keyset cursor ordered by occurrence time, audit event ID, and immutable result revision ID.
+  required: [occurred_at, audit_event_id, revision_id, snapshot_bound]
+  properties:
+    occurred_at:
+      type: string
+      format: date-time
+    audit_event_id:
+      type: string
+      format: uuid
+    revision_id:
+      type: string
+      format: uuid
+    snapshot_bound:
+      type: string
+      minLength: 1
+      maxLength: 4096
+      description: Opaque database snapshot bound preserving a stable audit page across concurrent commits.
+
+AuditFilter:
+  type: object
+  required: [tournament_id]
+  properties:
+    tournament_id:
+      type: string
+      format: uuid
+    entity_kind:
+      $ref: '#/AuditEntityKind'
+    entity_id:
+      type: string
+      format: uuid
+    event_type:
+      type: string
+      maxLength: 64
+    actor_kind:
+      $ref: '#/ResultActorKind'
+    actor_id:
+      type: string
+      format: uuid
+    result_reason:
+      type: string
+      maxLength: 40
+    occurred_from:
+      type: string
+      format: date-time
+    occurred_to:
+      type: string
+      format: date-time
+    cursor:
+      $ref: '#/AuditCursor'
+    page_size:
+      type: integer
+      format: int32
+      minimum: 1
+      maximum: 200
+
+AuditEvent:
+  type: object
+  description: Redacted immutable audit projection. Raw internal payload is never included.
+  required: [audit_event_id, tournament_id, roster_id, series_id, result_event_id, actor_kind, actor_id, event_type, redacted_payload, occurred_at, created_at, result_state, result_reason, winner_id, official_result_revision_id, entity_kind, entity_id, revision_number, is_current, is_superseded]
+  properties:
+    audit_event_id:
+      type: string
+      format: uuid
+      readOnly: true
+    tournament_id:
+      type: string
+      format: uuid
+      readOnly: true
+    roster_id:
+      type: string
+      format: uuid
+      readOnly: true
+    series_id:
+      type: string
+      format: uuid
+      readOnly: true
+    result_event_id:
+      type: string
+      format: uuid
+      readOnly: true
+    actor_kind:
+      $ref: '#/ResultActorKind'
+    actor_id:
+      type: string
+      format: uuid
+      nullable: true
+      readOnly: true
+    event_type:
+      type: string
+      maxLength: 64
+      readOnly: true
+    redacted_payload:
+      type: object
+      readOnly: true
+    occurred_at:
+      type: string
+      format: date-time
+      readOnly: true
+    created_at:
+      type: string
+      format: date-time
+      readOnly: true
+    result_state:
+      type: string
+      maxLength: 40
+      readOnly: true
+    result_reason:
+      type: string
+      maxLength: 40
+      readOnly: true
+    winner_id:
+      type: string
+      format: uuid
+      nullable: true
+      readOnly: true
+    official_result_revision_id:
+      type: string
+      format: uuid
+      readOnly: true
+    entity_kind:
+      $ref: '#/AuditEntityKind'
+    entity_id:
+      type: string
+      format: uuid
+      readOnly: true
+    revision_number:
+      type: integer
+      format: int64
+      minimum: 1
+      readOnly: true
+    is_current:
+      type: boolean
+      readOnly: true
+    is_superseded:
+      type: boolean
+      readOnly: true
+
+AuditPage:
+  type: object
+  required: [events, next_cursor]
+  properties:
+    events:
+      type: array
+      maxItems: 200
+      items:
+        $ref: '#/AuditEvent'
+    next_cursor:
+      type: object
+      nullable: true
+      allOf:
+        - $ref: '#/AuditCursor'
+
+IncidentBundle:
+  type: object
+  additionalProperties: false
+  description: Canonical redacted JSON audit bundle containing at most 4096 events and an HMAC authenticity envelope.
+  required: [tournament_id, projection_revision, generated_at, canonical_content, canonical_content_type, canonical_content_encoding, canonical_content_length, sha256, algorithm, key_id, mac]
+  properties:
+    tournament_id:
+      type: string
+      format: uuid
+      readOnly: true
+    projection_revision:
+      type: integer
+      format: int64
+      minimum: 1
+      readOnly: true
+    generated_at:
+      type: string
+      format: date-time
+      readOnly: true
+    canonical_content:
+      type: string
+      format: byte
+      description: Base64-encoded canonical JSON containing no more than 4096 redacted audit events.
+      readOnly: true
+    canonical_content_type:
+      type: string
+      enum: [application/json]
+      readOnly: true
+    canonical_content_encoding:
+      type: string
+      enum: [base64]
+      readOnly: true
+    canonical_content_length:
+      type: integer
+      format: int64
+      minimum: 1
+      readOnly: true
+    sha256:
+      type: string
+      minLength: 64
+      maxLength: 64
+      pattern: '^[0-9a-f]{64}$'
+      readOnly: true
+    algorithm:
+      type: string
+      enum: [hmac-sha256-v1]
+      readOnly: true
+    key_id:
+      type: string
+      minLength: 1
+      maxLength: 64
+      pattern: '^[A-Za-z0-9][A-Za-z0-9._-]*$'
+      readOnly: true
+    mac:
+      type: string
+      minLength: 64
+      maxLength: 64
+      pattern: '^[0-9a-f]{64}$'
+      readOnly: true
+
+OperatorCorrectionRequest:
+  type: object
+  additionalProperties: false
+  required: [expected_projection_revision, confirmed, reason, explanation, fields, patch]
+  properties:
+    expected_projection_revision:
+      type: integer
+      format: int64
+      minimum: 1
+    confirmed:
+      type: boolean
+    reason:
+      $ref: '#/CorrectionReason'
+    explanation:
+      type: string
+      minLength: 1
+      maxLength: 512
+    fields:
+      type: array
+      minItems: 1
+      maxItems: 3
+      items:
+        $ref: '#/CorrectionField'
+    patch:
+      $ref: '#/CorrectionPatch'
+    projection_intents:
+      type: array
+      items:
+        $ref: '#/CorrectionProjectionIntent'
+    unlock_intents:
+      type: array
+      maxItems: 4096
+      items:
+        $ref: '#/CorrectionUnlockIntent'

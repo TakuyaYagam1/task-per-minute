@@ -23,7 +23,7 @@ func TestPlayerSessionTokenFromRequest(t *testing.T) {
 		ok      bool
 	}{
 		{name: "nil request"},
-		{name: "missing cookie", request: httptest.NewRequest(http.MethodGet, "/ws", nil)},
+		{name: "missing cookie", request: httptest.NewRequest(http.MethodGet, tournamentParticipantRealtimePath, nil)},
 		{
 			name:    "invalid cookie",
 			request: requestWithSessionCookie("not-a-uuid"),
@@ -58,13 +58,15 @@ func TestRequestIDFromContext(t *testing.T) {
 	handler := httpkitmw.RequestID()(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		got = requestmeta.RequestIDFromContext(r.Context())
 	}))
-	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/ws", nil))
+	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, tournamentParticipantRealtimePath, nil))
 
 	require.NotEmpty(t, got)
 }
 
 func requestWithSessionCookie(value string) *http.Request {
-	req := httptest.NewRequest(http.MethodGet, "/ws", nil)
+	req := httptest.NewRequest(http.MethodGet, tournamentParticipantRealtimePath, nil)
 	req.AddCookie(&http.Cookie{Name: requestmeta.PlayerSessionCookieName, Value: value})
 	return req
 }
+
+const tournamentParticipantRealtimePath = "/api/v1/tournaments/2c754c2e-8458-4417-b049-44c5f92840c7/participant/realtime"

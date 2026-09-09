@@ -1,7 +1,6 @@
 package middleware_test
 
 import (
-	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -9,16 +8,18 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/middleware"
+	middlewaremocks "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/middleware/mocks"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
 func TestPlayerSession_MissingCookieReturnsUnauthorized(t *testing.T) {
 	t.Parallel()
 
-	players := &playerSessionReaderStub{}
+	players := middlewaremocks.NewMockPlayerSessionReader(t)
 	handler := middleware.PlayerSession(players)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		t.Fatal("next handler should not be called")
 	}))
@@ -32,7 +33,7 @@ func TestPlayerSession_MissingCookieReturnsUnauthorized(t *testing.T) {
 func TestPlayerSession_InvalidCookieReturnsUnauthorized(t *testing.T) {
 	t.Parallel()
 
-	players := &playerSessionReaderStub{}
+	players := middlewaremocks.NewMockPlayerSessionReader(t)
 	handler := middleware.PlayerSession(players)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		t.Fatal("next handler should not be called")
 	}))
@@ -50,7 +51,8 @@ func TestPlayerSession_RepoErrorReturnsUnauthorized(t *testing.T) {
 	t.Parallel()
 
 	token := uuid.New()
-	players := &playerSessionReaderStub{err: errors.New("not found")}
+	players := middlewaremocks.NewMockPlayerSessionReader(t)
+	players.EXPECT().GetBySessionToken(mock.Anything, token).Return(nil, errors.New("not found")).Once()
 
 	handler := middleware.PlayerSession(players)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		t.Fatal("next handler should not be called")
@@ -73,11 +75,11 @@ func TestPlayerSession_ValidCookieInjectsPlayer(t *testing.T) {
 		ID:           uuid.New(),
 		Username:     "alice",
 		SessionToken: &token,
-		Status:       domain.PlayerStatusIdle,
 		CreatedAt:    time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC),
 	}
 
-	players := &playerSessionReaderStub{player: player}
+	players := middlewaremocks.NewMockPlayerSessionReader(t)
+	players.EXPECT().GetBySessionToken(mock.Anything, token).Return(player, nil).Once()
 
 	handler := middleware.PlayerSession(players)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		got, ok := middleware.GetPlayerFromCtx(r.Context())
@@ -93,14 +95,13 @@ func TestPlayerSession_ValidCookieInjectsPlayer(t *testing.T) {
 	handler.ServeHTTP(rr, req)
 
 	require.Equal(t, http.StatusNoContent, rr.Code)
-	require.Equal(t, token, players.token)
 }
 
 func TestPlayerSession_HeaderTokenIsRejected(t *testing.T) {
 	t.Parallel()
 
 	token := uuid.New()
-	players := &playerSessionReaderStub{}
+	players := middlewaremocks.NewMockPlayerSessionReader(t)
 	handler := middleware.PlayerSession(players)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		t.Fatal("next handler should not be called")
 	}))
@@ -122,11 +123,11 @@ func TestPlayerSession_InvalidHeaderDoesNotOverrideCookie(t *testing.T) {
 		ID:           uuid.New(),
 		Username:     "alice",
 		SessionToken: &cookieToken,
-		Status:       domain.PlayerStatusIdle,
 		CreatedAt:    time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC),
 	}
 
-	players := &playerSessionReaderStub{player: player}
+	players := middlewaremocks.NewMockPlayerSessionReader(t)
+	players.EXPECT().GetBySessionToken(mock.Anything, cookieToken).Return(player, nil).Once()
 
 	handler := middleware.PlayerSession(players)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
@@ -140,18 +141,6 @@ func TestPlayerSession_InvalidHeaderDoesNotOverrideCookie(t *testing.T) {
 	handler.ServeHTTP(rr, req)
 
 	require.Equal(t, http.StatusNoContent, rr.Code)
-	require.Equal(t, cookieToken, players.token)
-}
-
-type playerSessionReaderStub struct {
-	player *domain.Player
-	err    error
-	token  uuid.UUID
-}
-
-func (s *playerSessionReaderStub) GetBySessionToken(_ context.Context, token uuid.UUID) (*domain.Player, error) {
-	s.token = token
-	return s.player, s.err
 }
 
 func TestSetAndClearPlayerSessionCookie(t *testing.T) {

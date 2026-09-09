@@ -10,7 +10,11 @@ import (
 	"github.com/ilyakaznacheev/cleanenv"
 )
 
-const minJWTSecretBytes = 32
+const (
+	minJWTSecretBytes          = 32
+	minIncidentHMACSecretBytes = 32
+	maxIncidentHMACKeyIDBytes  = 64
+)
 
 var placeholderFragments = []string{
 	"change-me",
@@ -26,9 +30,11 @@ type Config struct {
 	Redis       Redis       `env-prefix:"REDIS_"`
 	SeaweedFS   SeaweedFS   `env-prefix:"SEAWEEDFS_"`
 	JWT         JWT         `env-prefix:"JWT_"`
+	Incident    Incident    `env-prefix:"INCIDENT_EXPORT_"`
 	Admin       Admin       `env-prefix:"ADMIN_"`
 	Player      Player      `env-prefix:"PLAYER_"`
 	Leaderboard Leaderboard `env-prefix:"LEADERBOARD_"`
+	Tournament  Tournament  `env-prefix:"TOURNAMENT_"`
 	WS          WebSocket   `env-prefix:"WS_"`
 }
 
@@ -77,39 +83,53 @@ type JWT struct {
 	RefreshTTL time.Duration `env:"REFRESH_TTL" env-default:"168h"`
 }
 
+type Incident struct {
+	HMACKeyID  string `env:"HMAC_KEY_ID" env-required:"true"`
+	HMACSecret string `env:"HMAC_SECRET" env-required:"true"`
+}
+
 type Admin struct {
-	Password             string        `env:"PASSWORD"                env-required:"true"`
-	LoginRateAttempts    int           `env:"LOGIN_RATE_ATTEMPTS"     env-default:"5"`
-	LoginRateWindow      time.Duration `env:"LOGIN_RATE_WINDOW"       env-default:"15m"`
-	LoginRateBucketTTL   time.Duration `env:"LOGIN_RATE_BUCKET_TTL"   env-default:"1h"`
-	RefreshRateAttempts  int           `env:"REFRESH_RATE_ATTEMPTS"`
-	RefreshRateWindow    time.Duration `env:"REFRESH_RATE_WINDOW"`
-	RefreshRateBucketTTL time.Duration `env:"REFRESH_RATE_BUCKET_TTL"`
+	Password            string        `env:"PASSWORD"                env-required:"true"`
+	LoginRateAttempts   int           `env:"LOGIN_RATE_ATTEMPTS"     env-default:"5"`
+	LoginRateWindow     time.Duration `env:"LOGIN_RATE_WINDOW"       env-default:"15m"`
+	RefreshRateAttempts int           `env:"REFRESH_RATE_ATTEMPTS"`
+	RefreshRateWindow   time.Duration `env:"REFRESH_RATE_WINDOW"`
 }
 
 type Player struct {
-	JoinRateAttempts  int           `env:"JOIN_RATE_ATTEMPTS"   env-default:"20"`
-	JoinRateWindow    time.Duration `env:"JOIN_RATE_WINDOW"     env-default:"5m"`
-	JoinRateBucketTTL time.Duration `env:"JOIN_RATE_BUCKET_TTL" env-default:"1h"`
-	SessionTTL        time.Duration `env:"SESSION_TTL"          env-default:"24h"`
+	JoinRateAttempts int           `env:"JOIN_RATE_ATTEMPTS"   env-default:"20"`
+	JoinRateWindow   time.Duration `env:"JOIN_RATE_WINDOW"     env-default:"5m"`
+	SessionTTL       time.Duration `env:"SESSION_TTL"          env-default:"24h"`
 }
 
 type Leaderboard struct {
-	RateAttempts  int           `env:"RATE_ATTEMPTS"   env-default:"120"`
-	RateWindow    time.Duration `env:"RATE_WINDOW"     env-default:"1m"`
-	RateBucketTTL time.Duration `env:"RATE_BUCKET_TTL" env-default:"15m"`
+	RateAttempts int           `env:"RATE_ATTEMPTS"   env-default:"120"`
+	RateWindow   time.Duration `env:"RATE_WINDOW"     env-default:"1m"`
+}
+
+type Tournament struct {
+	PublicReadRateAttempts          int           `env:"PUBLIC_READ_RATE_ATTEMPTS"           env-default:"120"`
+	PublicReadRateWindow            time.Duration `env:"PUBLIC_READ_RATE_WINDOW"             env-default:"1m"`
+	OperatorReadRateAttempts        int           `env:"OPERATOR_READ_RATE_ATTEMPTS"         env-default:"120"`
+	OperatorReadRateWindow          time.Duration `env:"OPERATOR_READ_RATE_WINDOW"           env-default:"1m"`
+	OperatorMutationRateAttempts    int           `env:"OPERATOR_MUTATION_RATE_ATTEMPTS"     env-default:"120"`
+	OperatorMutationRateWindow      time.Duration `env:"OPERATOR_MUTATION_RATE_WINDOW"       env-default:"1m"`
+	ParticipantReadRateAttempts     int           `env:"PARTICIPANT_READ_RATE_ATTEMPTS"      env-default:"120"`
+	ParticipantReadRateWindow       time.Duration `env:"PARTICIPANT_READ_RATE_WINDOW"        env-default:"1m"`
+	ParticipantMutationRateAttempts int           `env:"PARTICIPANT_MUTATION_RATE_ATTEMPTS"  env-default:"120"`
+	ParticipantMutationRateWindow   time.Duration `env:"PARTICIPANT_MUTATION_RATE_WINDOW"    env-default:"1m"`
 }
 
 type WebSocket struct {
-	AllowedOrigins         []string      `env:"ALLOWED_ORIGINS"           env-separator:","`
-	RequireOrigin          bool          `env:"REQUIRE_ORIGIN"            env-default:"false"`
-	HandshakeRateAttempts  int           `env:"HANDSHAKE_RATE_ATTEMPTS"   env-default:"60"`
-	HandshakeRateWindow    time.Duration `env:"HANDSHAKE_RATE_WINDOW"     env-default:"1m"`
-	HandshakeRateBucketTTL time.Duration `env:"HANDSHAKE_RATE_BUCKET_TTL" env-default:"15m"`
-	MessageRateAttempts    int           `env:"MESSAGE_RATE_ATTEMPTS"     env-default:"120"`
-	MessageRateWindow      time.Duration `env:"MESSAGE_RATE_WINDOW"       env-default:"1m"`
-	ActionRateAttempts     int           `env:"ACTION_RATE_ATTEMPTS"      env-default:"30"`
-	ActionRateWindow       time.Duration `env:"ACTION_RATE_WINDOW"        env-default:"1m"`
+	AllowedOrigins                  []string      `env:"ALLOWED_ORIGINS"               env-separator:","`
+	RequireOrigin                   bool          `env:"REQUIRE_ORIGIN"                env-default:"false"`
+	HandshakeRateAttempts           int           `env:"HANDSHAKE_RATE_ATTEMPTS"       env-default:"60"`
+	HandshakeRateWindow             time.Duration `env:"HANDSHAKE_RATE_WINDOW"         env-default:"1m"`
+	MaxConnections                  int           `env:"MAX_CONNECTIONS"               env-default:"512"`
+	MaxConnectionsPerPrincipal      int           `env:"MAX_CONNECTIONS_PER_PRINCIPAL" env-default:"4"`
+	DeliveryReceiptRetention        time.Duration `env:"DELIVERY_RECEIPT_RETENTION"    env-default:"720h"`
+	DeliveryReceiptCleanupInterval  time.Duration `env:"DELIVERY_RECEIPT_CLEANUP_INTERVAL" env-default:"5m"`
+	DeliveryReceiptCleanupBatchSize int32         `env:"DELIVERY_RECEIPT_CLEANUP_BATCH_SIZE" env-default:"128"`
 }
 
 func Load() (*Config, error) {
@@ -153,6 +173,9 @@ func (c *Config) Validate() error {
 	if err := validateJWT(c.JWT); err != nil {
 		return err
 	}
+	if err := validateIncident(&c.Incident, c.JWT.Secret); err != nil {
+		return err
+	}
 	if err := validateAdmin(&c.Admin); err != nil {
 		return err
 	}
@@ -160,6 +183,9 @@ func (c *Config) Validate() error {
 		return err
 	}
 	if err := validateLeaderboard(c.Leaderboard); err != nil {
+		return err
+	}
+	if err := validateTournament(c.Tournament); err != nil {
 		return err
 	}
 	if err := validateWS(&c.WS); err != nil {
@@ -285,6 +311,42 @@ func validateJWT(cfg JWT) error {
 	return positiveDuration("JWT_REFRESH_TTL", cfg.RefreshTTL)
 }
 
+func validateIncident(cfg *Incident, jwtSecret string) error {
+	if cfg == nil {
+		return fmt.Errorf("incident export config must not be nil")
+	}
+	cfg.HMACKeyID = strings.TrimSpace(cfg.HMACKeyID)
+	if !validIncidentHMACKeyID(cfg.HMACKeyID) {
+		return fmt.Errorf("INCIDENT_EXPORT_HMAC_KEY_ID must be 1 to %d ASCII key-id characters", maxIncidentHMACKeyIDBytes)
+	}
+	if len([]byte(cfg.HMACSecret)) < minIncidentHMACSecretBytes {
+		return fmt.Errorf("INCIDENT_EXPORT_HMAC_SECRET must be at least %d bytes", minIncidentHMACSecretBytes)
+	}
+	if hasPlaceholder(cfg.HMACSecret) {
+		return fmt.Errorf("INCIDENT_EXPORT_HMAC_SECRET must not use a placeholder value")
+	}
+	if cfg.HMACSecret == jwtSecret {
+		return fmt.Errorf("INCIDENT_EXPORT_HMAC_SECRET must not reuse JWT_SECRET")
+	}
+	return nil
+}
+
+func validIncidentHMACKeyID(value string) bool {
+	if len(value) == 0 || len(value) > maxIncidentHMACKeyIDBytes {
+		return false
+	}
+	for index := range len(value) {
+		current := value[index]
+		isLetter := (current >= 'a' && current <= 'z') || (current >= 'A' && current <= 'Z')
+		isDigit := current >= '0' && current <= '9'
+		if (index == 0 && !isLetter && !isDigit) ||
+			(index > 0 && !isLetter && !isDigit && current != '.' && current != '_' && current != '-') {
+			return false
+		}
+	}
+	return true
+}
+
 func validateAdmin(cfg *Admin) error {
 	if cfg == nil {
 		return fmt.Errorf("Admin config must not be nil")
@@ -295,10 +357,7 @@ func validateAdmin(cfg *Admin) error {
 	if cfg.LoginRateAttempts <= 0 {
 		return fmt.Errorf("ADMIN_LOGIN_RATE_ATTEMPTS must be positive")
 	}
-	if err := positiveDuration("ADMIN_LOGIN_RATE_WINDOW", cfg.LoginRateWindow); err != nil {
-		return err
-	}
-	if err := positiveDuration("ADMIN_LOGIN_RATE_BUCKET_TTL", cfg.LoginRateBucketTTL); err != nil {
+	if err := rateLimitDuration("ADMIN_LOGIN_RATE_WINDOW", cfg.LoginRateWindow); err != nil {
 		return err
 	}
 	if cfg.RefreshRateAttempts == 0 {
@@ -307,26 +366,20 @@ func validateAdmin(cfg *Admin) error {
 	if cfg.RefreshRateWindow == 0 {
 		cfg.RefreshRateWindow = cfg.LoginRateWindow
 	}
-	if cfg.RefreshRateBucketTTL == 0 {
-		cfg.RefreshRateBucketTTL = cfg.LoginRateBucketTTL
-	}
 	if cfg.RefreshRateAttempts < 0 {
 		return fmt.Errorf("ADMIN_REFRESH_RATE_ATTEMPTS must be non-negative")
 	}
-	if err := positiveDuration("ADMIN_REFRESH_RATE_WINDOW", cfg.RefreshRateWindow); err != nil {
+	if err := rateLimitDuration("ADMIN_REFRESH_RATE_WINDOW", cfg.RefreshRateWindow); err != nil {
 		return err
 	}
-	return positiveDuration("ADMIN_REFRESH_RATE_BUCKET_TTL", cfg.RefreshRateBucketTTL)
+	return nil
 }
 
 func validatePlayer(cfg Player) error {
 	if cfg.JoinRateAttempts <= 0 {
 		return fmt.Errorf("PLAYER_JOIN_RATE_ATTEMPTS must be positive")
 	}
-	if err := positiveDuration("PLAYER_JOIN_RATE_WINDOW", cfg.JoinRateWindow); err != nil {
-		return err
-	}
-	if err := positiveDuration("PLAYER_JOIN_RATE_BUCKET_TTL", cfg.JoinRateBucketTTL); err != nil {
+	if err := rateLimitDuration("PLAYER_JOIN_RATE_WINDOW", cfg.JoinRateWindow); err != nil {
 		return err
 	}
 	return positiveDuration("PLAYER_SESSION_TTL", cfg.SessionTTL)
@@ -336,10 +389,33 @@ func validateLeaderboard(cfg Leaderboard) error {
 	if cfg.RateAttempts <= 0 {
 		return fmt.Errorf("LEADERBOARD_RATE_ATTEMPTS must be positive")
 	}
-	if err := positiveDuration("LEADERBOARD_RATE_WINDOW", cfg.RateWindow); err != nil {
+	if err := rateLimitDuration("LEADERBOARD_RATE_WINDOW", cfg.RateWindow); err != nil {
 		return err
 	}
-	return positiveDuration("LEADERBOARD_RATE_BUCKET_TTL", cfg.RateBucketTTL)
+	return nil
+}
+
+func validateTournament(cfg Tournament) error {
+	policies := []struct {
+		name     string
+		attempts int
+		window   time.Duration
+	}{
+		{"TOURNAMENT_PUBLIC_READ_RATE", cfg.PublicReadRateAttempts, cfg.PublicReadRateWindow},
+		{"TOURNAMENT_OPERATOR_READ_RATE", cfg.OperatorReadRateAttempts, cfg.OperatorReadRateWindow},
+		{"TOURNAMENT_OPERATOR_MUTATION_RATE", cfg.OperatorMutationRateAttempts, cfg.OperatorMutationRateWindow},
+		{"TOURNAMENT_PARTICIPANT_READ_RATE", cfg.ParticipantReadRateAttempts, cfg.ParticipantReadRateWindow},
+		{"TOURNAMENT_PARTICIPANT_MUTATION_RATE", cfg.ParticipantMutationRateAttempts, cfg.ParticipantMutationRateWindow},
+	}
+	for _, policy := range policies {
+		if policy.attempts <= 0 {
+			return fmt.Errorf("%s_ATTEMPTS must be positive", policy.name)
+		}
+		if err := rateLimitDuration(policy.name+"_WINDOW", policy.window); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func validateWS(cfg *WebSocket) error {
@@ -349,23 +425,26 @@ func validateWS(cfg *WebSocket) error {
 	if cfg.HandshakeRateAttempts <= 0 {
 		return fmt.Errorf("WS_HANDSHAKE_RATE_ATTEMPTS must be positive")
 	}
-	if err := positiveDuration("WS_HANDSHAKE_RATE_WINDOW", cfg.HandshakeRateWindow); err != nil {
+	if err := rateLimitDuration("WS_HANDSHAKE_RATE_WINDOW", cfg.HandshakeRateWindow); err != nil {
 		return err
 	}
-	if err := positiveDuration("WS_HANDSHAKE_RATE_BUCKET_TTL", cfg.HandshakeRateBucketTTL); err != nil {
+	if cfg.MaxConnections <= 0 {
+		return fmt.Errorf("WS_MAX_CONNECTIONS must be positive")
+	}
+	if cfg.MaxConnectionsPerPrincipal <= 0 {
+		return fmt.Errorf("WS_MAX_CONNECTIONS_PER_PRINCIPAL must be positive")
+	}
+	if cfg.MaxConnectionsPerPrincipal > cfg.MaxConnections {
+		return fmt.Errorf("WS_MAX_CONNECTIONS_PER_PRINCIPAL must not exceed WS_MAX_CONNECTIONS")
+	}
+	if err := positiveDuration("WS_DELIVERY_RECEIPT_RETENTION", cfg.DeliveryReceiptRetention); err != nil {
 		return err
 	}
-	if cfg.MessageRateAttempts <= 0 {
-		return fmt.Errorf("WS_MESSAGE_RATE_ATTEMPTS must be positive")
-	}
-	if err := positiveDuration("WS_MESSAGE_RATE_WINDOW", cfg.MessageRateWindow); err != nil {
+	if err := positiveDuration("WS_DELIVERY_RECEIPT_CLEANUP_INTERVAL", cfg.DeliveryReceiptCleanupInterval); err != nil {
 		return err
 	}
-	if cfg.ActionRateAttempts <= 0 {
-		return fmt.Errorf("WS_ACTION_RATE_ATTEMPTS must be positive")
-	}
-	if err := positiveDuration("WS_ACTION_RATE_WINDOW", cfg.ActionRateWindow); err != nil {
-		return err
+	if cfg.DeliveryReceiptCleanupBatchSize < 1 || cfg.DeliveryReceiptCleanupBatchSize > 256 {
+		return fmt.Errorf("WS_DELIVERY_RECEIPT_CLEANUP_BATCH_SIZE must be between 1 and 256")
 	}
 	origins, err := normalizeAllowedOrigins("WS_ALLOWED_ORIGINS", cfg.AllowedOrigins)
 	if err != nil {
@@ -382,6 +461,13 @@ func positiveDuration(name string, value time.Duration) error {
 	return nil
 }
 
+func rateLimitDuration(name string, value time.Duration) error {
+	if value.Milliseconds() < 1 {
+		return fmt.Errorf("%s must be at least 1ms", name)
+	}
+	return nil
+}
+
 func normalizeAllowedOrigins(name string, origins []string) ([]string, error) {
 	normalized := make([]string, 0, len(origins))
 	seen := make(map[string]struct{}, len(origins))
@@ -390,7 +476,7 @@ func normalizeAllowedOrigins(name string, origins []string) ([]string, error) {
 		if origin == "" {
 			continue
 		}
-		if origin == "*" {
+		if strings.ContainsAny(origin, "*?[\\") {
 			return nil, fmt.Errorf("%s must not use wildcard origin", name)
 		}
 		parsed, err := url.Parse(origin)
@@ -446,12 +532,4 @@ func hasPlaceholder(value string) bool {
 		}
 	}
 	return false
-}
-
-func MustLoad() *Config {
-	cfg, err := Load()
-	if err != nil {
-		panic(err)
-	}
-	return cfg
 }

@@ -24,7 +24,7 @@ func (s *Server) JoinPlayer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var body api.JoinRequest
+	var body api.JoinPlayerRequest
 	if !decodeJSONBody(w, r, &body, domain.ErrValidation) {
 		s.logSecurityEvent(r, "player.join", securityOutcomeFailure, logkitFields("error_code", domain.ErrorCodeValidation))
 		return
@@ -51,13 +51,13 @@ func (s *Server) JoinPlayer(w http.ResponseWriter, r *http.Request) {
 	middleware.SetPlayerSessionCookie(w, r, *player.SessionToken)
 	middleware.SetPlayerCSRFCookie(w, r, csrfToken)
 	s.logSecurityEvent(r, "player.join", securityOutcomeSuccess, logkitFields("player_id", player.ID.String()))
-	response.WriteJSON(w, http.StatusOK, api.JoinResponse{
+	response.WriteJSON(w, http.StatusOK, api.JoinPlayerResponse{
 		PlayerId: player.ID,
 	})
 }
 
 // (GET /api/v1/players/me).
-func (s *Server) GetMe(w http.ResponseWriter, r *http.Request) {
+func (s *Server) GetCurrentPlayer(w http.ResponseWriter, r *http.Request) {
 	if s.players == nil {
 		errmap.HandleError(w, r, domain.ErrInternal)
 		return
@@ -69,7 +69,7 @@ func (s *Server) GetMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	me, err := s.players.GetMe(r.Context(), *player.SessionToken)
+	me, err := s.players.GetCurrentPlayer(r.Context(), *player.SessionToken)
 	if err != nil {
 		if errors.Is(err, domain.ErrPlayerNotFound) {
 			err = domain.ErrInvalidSession
@@ -82,11 +82,11 @@ func (s *Server) GetMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response.WriteJSON(w, http.StatusOK, response.PlayerMe(me))
+	response.WriteJSON(w, http.StatusOK, response.CurrentPlayer(me))
 }
 
 // (POST /api/v1/players/logout).
-func (s *Server) LogoutPlayer(w http.ResponseWriter, r *http.Request) {
+func (s *Server) LogoutPlayer(w http.ResponseWriter, r *http.Request, _ api.LogoutPlayerParams) {
 	middleware.ClearPlayerSessionCookie(w, r)
 	middleware.ClearPlayerCSRFCookie(w, r)
 	if s.players == nil {

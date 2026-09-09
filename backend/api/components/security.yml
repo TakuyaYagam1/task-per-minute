@@ -1,18 +1,23 @@
-BearerAuth:
-  type: http
-  scheme: bearer
-  bearerFormat: JWT
+AdminSessionAuth:
+  type: apiKey
+  in: cookie
+  name: tpm_admin_access
   description: >
-    Admin access token (HS256). Browser clients should use the HttpOnly
-    tpm_admin_access cookie issued by POST /api/v1/admin/login or
-    POST /api/v1/admin/refresh. Unsafe cookie-authenticated admin requests
-    must also send X-CSRF-Token. Refresh/logout requests may send the refresh
-    CSRF token in either X-CSRF-Token or X-Admin-Refresh-CSRF-Token.
-    Authorization: Bearer remains accepted only for requests without browser
-    Origin/Referer headers, so non-browser and backwards-compatible clients can
-    keep using it.
+    HttpOnly admin access session cookie issued by POST /api/v1/admin/login or
+    POST /api/v1/admin/refresh. Unsafe admin requests must also send the CSRF
+    token in X-CSRF-Token. Refresh and logout use the CSRF token bound to the
+    tpm_admin_refresh cookie in the same header.
 
-SessionTokenAuth:
+AdminRefreshSessionAuth:
+  type: apiKey
+  in: cookie
+  name: tpm_admin_refresh
+  description: >
+    HttpOnly admin refresh session cookie issued by POST /api/v1/admin/login or
+    POST /api/v1/admin/refresh. Refresh and logout requests must also send the
+    cookie-bound CSRF token in X-CSRF-Token.
+
+PlayerSessionAuth:
   type: apiKey
   in: cookie
   name: tpm_player_session

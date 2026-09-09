@@ -10,16 +10,11 @@ import (
 	"testing"
 	"time"
 
-	coderws "github.com/coder/websocket"
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	logkit "github.com/wahrwelt-kit/go-logkit"
 
 	"github.com/TakuyaYagam1/task-per-minute/config"
-	wsadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket"
-	redisadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/redis"
 	"github.com/TakuyaYagam1/task-per-minute/internal/bootstrap"
-	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
 func TestAppLifecycle_StartsHealthAndStopsOnCancel(t *testing.T) {
@@ -47,176 +42,6 @@ func TestAppLifecycle_StartsHealthAndStopsOnCancel(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("app did not stop within shutdown timeout")
 	}
-}
-
-func TestAppLifecycle_StartupRecoveryFinishesActiveDuel(t *testing.T) {
-	f := newDuelFixture()
-	ctx := context.Background()
-
-	alice := f.makePlayer(t, uniq("alice"))
-	bob := f.makePlayer(t, uniq("bob"))
-	duel, err := f.duels.Create(ctx, alice.ID, bob.ID, time.Now().Add(5*time.Minute).UTC())
-	require.NoError(t, err)
-	_, err = f.players.UpdateStatus(ctx, alice.ID, domain.PlayerStatusInDuel)
-	require.NoError(t, err)
-	_, err = f.players.UpdateStatus(ctx, bob.ID, domain.PlayerStatusInDuel)
-	require.NoError(t, err)
-
-	port := reservePort(t)
-	setAppEnv(t, port)
-
-	appCtx, cancel := context.WithCancel(context.Background())
-	cfg, err := config.Load()
-	require.NoError(t, err)
-	application, cleanup, err := bootstrap.Initialize(appCtx, cfg, logkit.Noop())
-	require.NoError(t, err)
-	defer cleanup()
-
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- application.Run(appCtx)
-	}()
-
-	waitForHealth(t, port, errCh)
-
-	recovered, err := f.duels.GetByID(ctx, duel.ID)
-	require.NoError(t, err)
-	require.Equal(t, domain.DuelStatusFinished, recovered.Status)
-	require.Nil(t, recovered.WinnerID)
-	require.NotNil(t, recovered.FinishedAt)
-
-	alice, err = f.players.GetByID(ctx, alice.ID)
-	require.NoError(t, err)
-	require.Equal(t, domain.PlayerStatusIdle, alice.Status)
-	bob, err = f.players.GetByID(ctx, bob.ID)
-	require.NoError(t, err)
-	require.Equal(t, domain.PlayerStatusIdle, bob.Status)
-
-	cancel()
-	select {
-	case err := <-errCh:
-		require.NoError(t, err)
-	case <-time.After(5 * time.Second):
-		t.Fatal("app did not stop within shutdown timeout")
-	}
-}
-
-func TestAppLifecycle_StartupRecoveryClearsQueuedPlayersAndRedisQueue(t *testing.T) {
-	clearE2ERedis(t)
-	t.Cleanup(func() { clearE2ERedis(t) })
-
-	f := newDuelFixture()
-	ctx := context.Background()
-	queue := redisadapter.NewMatchmakingRedis(sharedRedis(t).client, redisadapter.DefaultMatchmakingQueueKey)
-
-	idle := f.makePlayer(t, uniq("idle"))
-	queued := f.makePlayer(t, uniq("queued"))
-	active := f.makePlayer(t, uniq("active"))
-	_, err := f.players.UpdateStatus(ctx, queued.ID, domain.PlayerStatusQueued)
-	require.NoError(t, err)
-	_, err = f.players.UpdateStatus(ctx, active.ID, domain.PlayerStatusInDuel)
-	require.NoError(t, err)
-	require.NoError(t, queue.Enqueue(ctx, queued.ID))
-
-	port := reservePort(t)
-	setAppEnv(t, port)
-
-	appCtx, cancel := context.WithCancel(context.Background())
-	cfg, err := config.Load()
-	require.NoError(t, err)
-	application, cleanup, err := bootstrap.Initialize(appCtx, cfg, logkit.Noop())
-	require.NoError(t, err)
-	defer cleanup()
-
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- application.Run(appCtx)
-	}()
-
-	waitForHealth(t, port, errCh)
-
-	gotIdle, err := f.players.GetByID(ctx, idle.ID)
-	require.NoError(t, err)
-	require.Equal(t, domain.PlayerStatusIdle, gotIdle.Status)
-	gotQueued, err := f.players.GetByID(ctx, queued.ID)
-	require.NoError(t, err)
-	require.Equal(t, domain.PlayerStatusIdle, gotQueued.Status)
-	gotActive, err := f.players.GetByID(ctx, active.ID)
-	require.NoError(t, err)
-	require.Equal(t, domain.PlayerStatusInDuel, gotActive.Status)
-
-	size, err := sharedRedis(t).client.LLen(ctx, redisadapter.DefaultMatchmakingQueueKey).Result()
-	require.NoError(t, err)
-	require.Zero(t, size)
-
-	cancel()
-	select {
-	case err := <-errCh:
-		require.NoError(t, err)
-	case <-time.After(5 * time.Second):
-		t.Fatal("app did not stop within shutdown timeout")
-	}
-}
-
-func TestAppLifecycle_ShutdownLeavesQueuedWebSocketIdle(t *testing.T) {
-	clearE2ERedis(t)
-	t.Cleanup(func() { clearE2ERedis(t) })
-
-	f := newDuelFixture()
-	ctx := context.Background()
-	player, err := f.players.JoinByUsername(ctx, uniq("alice"), uuid.New(), time.Now().Add(time.Hour).UTC())
-	require.NoError(t, err)
-	require.NotNil(t, player.SessionToken)
-
-	port := reservePort(t)
-	setAppEnv(t, port)
-
-	appCtx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	cfg, err := config.Load()
-	require.NoError(t, err)
-	application, cleanup, err := bootstrap.Initialize(appCtx, cfg, logkit.Noop())
-	require.NoError(t, err)
-	defer cleanup()
-
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- application.Run(appCtx)
-	}()
-
-	waitForHealth(t, port, errCh)
-
-	dialCtx, dialCancel := context.WithTimeout(context.Background(), 5*time.Second)
-	conn, resp, err := coderws.Dial(
-		dialCtx,
-		wsEndpoint(fmt.Sprintf("http://127.0.0.1:%d", port)),
-		wsDialOptions(*player.SessionToken),
-	)
-	dialCancel()
-	require.NoError(t, err)
-	if resp != nil && resp.Body != nil {
-		defer resp.Body.Close()
-	}
-	defer closeWSSilent(conn)
-
-	writeWSEvent(t, conn, wsadapter.EventJoinQueue, nil)
-	require.Equal(t, wsadapter.EventQueueJoined, readWSEventType(t, conn, wsadapter.EventQueueJoined).Type)
-
-	require.NoError(t, application.Shutdown(context.Background()))
-	select {
-	case err := <-errCh:
-		require.NoError(t, err)
-	case <-time.After(5 * time.Second):
-		t.Fatal("app did not stop within shutdown timeout")
-	}
-
-	got, err := f.players.GetByID(ctx, player.ID)
-	require.NoError(t, err)
-	require.Equal(t, domain.PlayerStatusIdle, got.Status)
-
-	size, err := sharedRedis(t).client.LLen(ctx, redisadapter.DefaultMatchmakingQueueKey).Result()
-	require.NoError(t, err)
-	require.Zero(t, size)
 }
 
 func setAppEnv(t *testing.T, port int) {
@@ -252,7 +77,8 @@ func setAppEnv(t *testing.T, port int) {
 
 func reservePort(t *testing.T) int {
 	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	var listenConfig net.ListenConfig
+	listener, err := listenConfig.Listen(context.Background(), "tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	defer listener.Close()
 	return listener.Addr().(*net.TCPAddr).Port

@@ -2,9 +2,8 @@ import { expect, test, type APIRequestContext } from '@playwright/test';
 
 const backendURL = (process.env.E2E_BACKEND_URL || 'http://127.0.0.1:8080').replace(/\/+$/, '');
 
-type AdminTokens = {
-  access_token: string;
-  refresh_token: string;
+type AdminSession = {
+  expires_in: number;
   access_csrf_token: string;
   refresh_csrf_token: string;
 };
@@ -26,7 +25,7 @@ const skipUnlessHealthy = async (request: APIRequestContext) => {
   }
 };
 
-const adminLogin = async (request: APIRequestContext, password: string): Promise<AdminTokens> => {
+const adminLogin = async (request: APIRequestContext, password: string): Promise<AdminSession> => {
   const response = await request.post(`${backendURL}/api/v1/admin/login`, {
     data: { password },
   });
@@ -35,8 +34,14 @@ const adminLogin = async (request: APIRequestContext, password: string): Promise
   const refreshCSRFToken = response.headers()['x-admin-refresh-csrf-token'];
   expect(accessCSRFToken, 'admin login did not return access CSRF token').toBeTruthy();
   expect(refreshCSRFToken, 'admin login did not return refresh CSRF token').toBeTruthy();
+  const session = (await response.json()) as { expires_in: number };
+  expect(Object.keys(session)).toEqual(['expires_in']);
+  expect(session.expires_in).toBeGreaterThanOrEqual(0);
+  const cookieNames = (await request.storageState()).cookies.map((cookie) => cookie.name);
+  expect(cookieNames).toContain('tpm_admin_access');
+  expect(cookieNames).toContain('tpm_admin_refresh');
   return {
-    ...((await response.json()) as Omit<AdminTokens, 'access_csrf_token' | 'refresh_csrf_token'>),
+    expires_in: session.expires_in,
     access_csrf_token: accessCSRFToken,
     refresh_csrf_token: refreshCSRFToken,
   };
@@ -44,12 +49,10 @@ const adminLogin = async (request: APIRequestContext, password: string): Promise
 
 const cleanupTaskByTitle = async (
   request: APIRequestContext,
-  tokens: AdminTokens,
+  session: AdminSession,
   title: string,
 ) => {
-  const listResponse = await request.get(`${backendURL}/api/v1/admin/tasks`, {
-    headers: { Authorization: `Bearer ${tokens.access_token}` },
-  });
+  const listResponse = await request.get(`${backendURL}/api/v1/admin/tasks`);
   if (!listResponse.ok()) {
     return;
   }
@@ -60,8 +63,7 @@ const cleanupTaskByTitle = async (
       .filter((task) => task.title === title)
       .map((task) => request.delete(`${backendURL}/api/v1/admin/tasks/${task.id}`, {
         headers: {
-          Authorization: `Bearer ${tokens.access_token}`,
-          'X-CSRF-Token': tokens.access_csrf_token,
+          'X-CSRF-Token': session.access_csrf_token,
         },
       })),
   );
@@ -80,7 +82,7 @@ test.describe('live backend smoke', () => {
     await skipUnlessHealthy(request);
 
     const title = uniqueName('live-admin-contract');
-    let cleanupTokens: AdminTokens | null = null;
+    let cleanupSession: AdminSession | null = null;
 
     try {
       await page.goto('/admin');
@@ -88,15 +90,10 @@ test.describe('live backend smoke', () => {
       await page.getByRole('button', { name: 'Войти' }).click();
       await expect(page.getByText('Список задач')).toBeVisible({ timeout: 10000 });
 
-      const sessionState = await page.evaluate(() => ({
-        marker: window.sessionStorage.getItem('admin_session_active'),
-        accessToken: window.sessionStorage.getItem('admin_access_token'),
-        refreshToken: window.sessionStorage.getItem('admin_refresh_token'),
-      }));
-      expect(sessionState.marker).toBe('1');
-      expect(sessionState.accessToken).toBeNull();
-      expect(sessionState.refreshToken).toBeNull();
-      cleanupTokens = await adminLogin(request, adminPassword);
+      const cookies = await page.context().cookies();
+      expect(cookies.some((cookie) => cookie.name === 'tpm_admin_access')).toBe(true);
+      expect(cookies.some((cookie) => cookie.name === 'tpm_admin_refresh')).toBe(true);
+      cleanupSession = await adminLogin(request, adminPassword);
 
       await page.getByPlaceholder('Введите название...').fill(title);
       await page.getByPlaceholder('Опишите задачу...').fill('Live backend contract smoke task');
@@ -123,96 +120,10 @@ test.describe('live backend smoke', () => {
       const leaderboard = await request.get(`${backendURL}/api/v1/leaderboard`);
       expect(leaderboard.ok(), `leaderboard failed with ${leaderboard.status()}`).toBeTruthy();
     } finally {
-      if (cleanupTokens) {
-        await cleanupTaskByTitle(request, cleanupTokens, title);
+      if (cleanupSession) {
+        await cleanupTaskByTitle(request, cleanupSession, title);
       }
     }
   });
 
-  test('two-player duel flow against isolated disposable backend', async ({ browser, request }) => {
-    test.skip(
-      process.env.E2E_LIVE_ISOLATED !== '1',
-      'set E2E_LIVE_ISOLATED=1 only for a disposable DB where this task can be selected deterministically',
-    );
-    const adminPassword = process.env.E2E_ADMIN_PASSWORD;
-    if (!adminPassword) {
-      test.skip(true, 'E2E_ADMIN_PASSWORD is required for live player smoke');
-      return;
-    }
-
-    await skipUnlessHealthy(request);
-
-    const tokens = await adminLogin(request, adminPassword);
-    const title = uniqueName('live-player-contract');
-    let taskID: string | null = null;
-
-    try {
-      const createResponse = await request.post(`${backendURL}/api/v1/admin/tasks`, {
-        headers: {
-          Authorization: `Bearer ${tokens.access_token}`,
-          'X-CSRF-Token': tokens.access_csrf_token,
-        },
-        data: {
-          title,
-          description: 'Live player flow smoke task',
-          category: 'web',
-          difficulty: 'easy',
-          time_limit: 120,
-          flag: 'flag{live_player}',
-          hints: ['one', 'two', 'three'],
-          task_url: 'https://example.com/live-player',
-        },
-      });
-      expect(createResponse.ok(), `task create failed with ${createResponse.status()}`).toBeTruthy();
-      taskID = ((await createResponse.json()) as AdminTask).id;
-
-      const contextA = await browser.newContext();
-      const contextB = await browser.newContext();
-      const playerA = await contextA.newPage();
-      const playerB = await contextB.newPage();
-      const playerAName = uniqueName('alice');
-      const playerBName = uniqueName('bob');
-
-      try {
-        await Promise.all([playerA.goto('/'), playerB.goto('/')]);
-        await playerA.getByPlaceholder('Введите никнейм...').fill(playerAName);
-        await playerB.getByPlaceholder('Введите никнейм...').fill(playerBName);
-        await playerA.getByRole('button', { name: /ПОДКЛЮЧИТЬСЯ/ }).click();
-        await playerB.getByRole('button', { name: /ПОДКЛЮЧИТЬСЯ/ }).click();
-        await expect(playerA.getByText('Игрок готов')).toBeVisible({ timeout: 10000 });
-        await expect(playerB.getByText('Игрок готов')).toBeVisible({ timeout: 10000 });
-
-        await Promise.all([
-          playerA.getByRole('button', { name: /ИГРАТЬ/ }).click(),
-          playerB.getByRole('button', { name: /ИГРАТЬ/ }).click(),
-        ]);
-
-        await expect(playerA).toHaveURL(/\/task$/, { timeout: 20000 });
-        await expect(playerB).toHaveURL(/\/task$/, { timeout: 20000 });
-
-        await playerA.getByPlaceholder('flag{...}').fill('flag{wrong}');
-        await playerA.getByRole('button', { name: /Отправить/ }).click();
-        await expect(playerA.getByText('Неверный флаг')).toBeVisible({ timeout: 10000 });
-
-        await playerA.getByPlaceholder('flag{...}').fill('flag{live_player}');
-        await playerA.getByRole('button', { name: /Отправить/ }).click();
-        await expect(playerA.getByText('ПОБЕДА!')).toBeVisible({ timeout: 15000 });
-
-        await playerA.goto('/leaderboard');
-        await expect(playerA.getByText(playerAName)).toBeVisible({ timeout: 15000 });
-      } finally {
-        await contextA.close();
-        await contextB.close();
-      }
-    } finally {
-      if (taskID) {
-        await request.delete(`${backendURL}/api/v1/admin/tasks/${taskID}`, {
-          headers: {
-            Authorization: `Bearer ${tokens.access_token}`,
-            'X-CSRF-Token': tokens.access_csrf_token,
-          },
-        });
-      }
-    }
-  });
 });

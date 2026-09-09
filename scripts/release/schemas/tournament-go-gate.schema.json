@@ -1,0 +1,665 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://task-per-minute.local/schemas/tournament-go-gate.schema.json",
+  "title": "Tournament Go gate evidence record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "schema_version",
+    "gate",
+    "source_revision",
+    "source_modified",
+    "artifact_digests",
+    "result",
+    "exit_code",
+    "evidence_uri",
+    "evidence_sha256",
+    "summary",
+    "owner",
+    "environment",
+    "timeout_seconds",
+    "started_at",
+    "finished_at",
+    "duration_ms",
+    "outcome",
+    "exit_status",
+    "termination_signal",
+    "forwarded_signal",
+    "timed_out",
+    "command",
+    "stdout",
+    "stderr"
+  ],
+  "properties": {
+    "schema": {
+      "const": "scripts/release/schemas/tournament-go-gate.schema.json"
+    },
+    "schema_version": {
+      "const": 1
+    },
+    "gate": {
+      "enum": [
+        "capacity-nominal",
+        "capacity-peak",
+        "fixture-test"
+      ]
+    },
+    "source_revision": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "source_modified": {
+      "type": "boolean"
+    },
+    "artifact_digests": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 128,
+      "items": {
+        "$ref": "#/$defs/artifactDigest"
+      }
+    },
+    "result": {
+      "enum": [
+        "PASS",
+        "FAIL"
+      ]
+    },
+    "exit_code": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 255
+    },
+    "evidence_uri": {
+      "type": "string",
+      "pattern": "^tournament-evidence://tournament-(capacity-nominal|capacity-peak|fixture-test)-[A-Za-z0-9.-]+\\.json$"
+    },
+    "evidence_sha256": {
+      "$ref": "#/$defs/sha256",
+      "description": "SHA-256 of canonical compact JSON with this field replaced by 64 zeroes."
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[A-Za-z0-9 ._-]+$"
+    },
+    "owner": {
+      "type": "string",
+      "pattern": "^uid:[0-9]+$"
+    },
+    "environment": {
+      "$ref": "#/$defs/environment"
+    },
+    "timeout_seconds": {
+      "enum": [
+        3,
+        4500,
+        4800
+      ]
+    },
+    "started_at": {
+      "$ref": "#/$defs/timestamp"
+    },
+    "finished_at": {
+      "$ref": "#/$defs/timestamp"
+    },
+    "duration_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 36000000
+    },
+    "outcome": {
+      "enum": [
+        "pass",
+        "fail",
+        "timeout",
+        "signal",
+        "evidence-contract"
+      ]
+    },
+    "exit_status": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 255
+    },
+    "termination_signal": {
+      "$ref": "#/$defs/signal"
+    },
+    "forwarded_signal": {
+      "$ref": "#/$defs/signal"
+    },
+    "timed_out": {
+      "type": "boolean"
+    },
+    "command": {
+      "$ref": "#/$defs/command"
+    },
+    "stdout": {
+      "$ref": "#/$defs/capture"
+    },
+    "stderr": {
+      "$ref": "#/$defs/capture"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "pass"
+          }
+        },
+        "required": [
+          "outcome"
+        ]
+      },
+      "then": {
+        "properties": {
+          "result": {
+            "const": "PASS"
+          },
+          "exit_code": {
+            "const": 0
+          },
+          "exit_status": {
+            "const": 0
+          },
+          "timed_out": {
+            "const": false
+          },
+          "termination_signal": {
+            "const": null
+          },
+          "forwarded_signal": {
+            "const": null
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "evidence-contract"
+          }
+        },
+        "required": [
+          "outcome"
+        ]
+      },
+      "then": {
+        "properties": {
+          "result": {
+            "const": "FAIL"
+          },
+          "exit_code": {
+            "const": 0
+          },
+          "exit_status": {
+            "const": 0
+          },
+          "timed_out": {
+            "const": false
+          },
+          "termination_signal": {
+            "const": null
+          },
+          "forwarded_signal": {
+            "const": null
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "fail"
+          }
+        },
+        "required": [
+          "outcome"
+        ]
+      },
+      "then": {
+        "properties": {
+          "result": {
+            "const": "FAIL"
+          },
+          "exit_code": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "exit_status": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "timed_out": {
+            "const": false
+          },
+          "termination_signal": {
+            "const": null
+          },
+          "forwarded_signal": {
+            "const": null
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "timeout"
+          }
+        },
+        "required": [
+          "outcome"
+        ]
+      },
+      "then": {
+        "properties": {
+          "result": {
+            "const": "FAIL"
+          },
+          "timed_out": {
+            "const": true
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "signal"
+          }
+        },
+        "required": [
+          "outcome"
+        ]
+      },
+      "then": {
+        "properties": {
+          "result": {
+            "const": "FAIL"
+          },
+          "timed_out": {
+            "const": false
+          }
+        },
+        "anyOf": [
+          {
+            "properties": {
+              "termination_signal": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "properties": {
+              "forwarded_signal": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "gate": {
+            "const": "capacity-nominal"
+          }
+        },
+        "required": [
+          "gate"
+        ]
+      },
+      "then": {
+        "properties": {
+          "timeout_seconds": {
+            "const": 4800
+          },
+          "environment": {
+            "properties": {
+              "working_directory": {
+                "const": "backend"
+              }
+            }
+          },
+          "command": {
+            "properties": {
+              "allowlist_id": {
+                "const": "capacity-nominal-v1"
+              },
+              "kind": {
+                "const": "go-test"
+              },
+              "executable_basename": {
+                "const": "env"
+              },
+              "executable_sha256": {
+                "const": "c88776f602efc831ecffdda48d347648e9584b5e76c9ff4d6d4676a5daa5b4a7"
+              },
+              "argument_count": {
+                "const": 12
+              },
+              "go_executable_basename": {
+                "const": "go"
+              },
+              "go_executable_sha256": {
+                "const": "abe5a36e95186f29453f3e1d1840d436445e208417191e10c83998b6a7d8e652"
+              },
+              "go_test_identity": {
+                "const": "TestTournamentNominal60Minute"
+              },
+              "fixture_script_basename": {
+                "const": null
+              },
+              "fixture_script_sha256": {
+                "const": null
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "gate": {
+            "const": "capacity-peak"
+          }
+        },
+        "required": [
+          "gate"
+        ]
+      },
+      "then": {
+        "properties": {
+          "timeout_seconds": {
+            "const": 4500
+          },
+          "environment": {
+            "properties": {
+              "working_directory": {
+                "const": "backend"
+              }
+            }
+          },
+          "command": {
+            "properties": {
+              "allowlist_id": {
+                "const": "capacity-peak-v1"
+              },
+              "kind": {
+                "const": "go-test"
+              },
+              "executable_basename": {
+                "const": "env"
+              },
+              "executable_sha256": {
+                "const": "c88776f602efc831ecffdda48d347648e9584b5e76c9ff4d6d4676a5daa5b4a7"
+              },
+              "argument_count": {
+                "const": 12
+              },
+              "go_executable_basename": {
+                "const": "go"
+              },
+              "go_executable_sha256": {
+                "const": "abe5a36e95186f29453f3e1d1840d436445e208417191e10c83998b6a7d8e652"
+              },
+              "go_test_identity": {
+                "const": "TestTournamentPeakSoak"
+              },
+              "fixture_script_basename": {
+                "const": null
+              },
+              "fixture_script_sha256": {
+                "const": null
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "gate": {
+            "const": "fixture-test"
+          }
+        },
+        "required": [
+          "gate"
+        ]
+      },
+      "then": {
+        "properties": {
+          "timeout_seconds": {
+            "const": 3
+          },
+          "environment": {
+            "properties": {
+              "working_directory": {
+                "const": "repository-fixture"
+              }
+            }
+          },
+          "command": {
+            "properties": {
+              "allowlist_id": {
+                "const": "fixture-test-v1"
+              },
+              "kind": {
+                "const": "fixture"
+              },
+              "executable_basename": {
+                "const": "bash"
+              },
+              "executable_sha256": {
+                "const": "4eadb049773ad49e107adec9ad130ee83c0ec44f404740289620b234eeacc69d"
+              },
+              "go_executable_basename": {
+                "const": null
+              },
+              "go_executable_sha256": {
+                "const": null
+              },
+              "go_test_identity": {
+                "const": null
+              },
+              "fixture_script_basename": {
+                "const": "run-tournament-go-gate_test.sh"
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "artifactDigest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "sha256"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._/-]{1,160}$"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "os",
+        "arch",
+        "cgo_enabled",
+        "working_directory"
+      ],
+      "properties": {
+        "os": {
+          "const": "linux"
+        },
+        "arch": {
+          "enum": [
+            "amd64",
+            "arm64"
+          ]
+        },
+        "cgo_enabled": {
+          "const": false
+        },
+        "working_directory": {
+          "enum": [
+            "backend",
+            "repository-fixture"
+          ]
+        }
+      }
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+    },
+    "signal": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^SIG[A-Z0-9]+$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "command": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "allowlist_id",
+        "kind",
+        "executable_basename",
+        "executable_sha256",
+        "argument_count",
+        "go_executable_basename",
+        "go_executable_sha256",
+        "go_test_identity",
+        "fixture_script_basename",
+        "fixture_script_sha256"
+      ],
+      "properties": {
+        "allowlist_id": {
+          "enum": [
+            "capacity-nominal-v1",
+            "capacity-peak-v1",
+            "fixture-test-v1"
+          ]
+        },
+        "kind": {
+          "enum": [
+            "go-test",
+            "fixture"
+          ]
+        },
+        "executable_basename": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$"
+        },
+        "executable_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "argument_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 32
+        },
+        "go_executable_basename": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^go$"
+        },
+        "go_executable_sha256": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "go_test_identity": {
+          "enum": [
+            null,
+            "TestTournamentNominal60Minute",
+            "TestTournamentPeakSoak"
+          ]
+        },
+        "fixture_script_basename": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^run-tournament-go-gate_test\\.sh$"
+        },
+        "fixture_script_sha256": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "capture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "text",
+        "truncated",
+        "stored_bytes",
+        "total_bytes",
+        "sha256"
+      ],
+      "properties": {
+        "text": {
+          "type": "string",
+          "maxLength": 65536
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "stored_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65536
+        },
+        "total_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9223372036854775807
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    }
+  }
+}

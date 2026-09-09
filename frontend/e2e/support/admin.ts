@@ -1,10 +1,9 @@
 import { expect, type Page } from '@playwright/test';
 import { jsonHeaders, nowISO } from './common';
 
-export const adminAccessOld = 'admin-access-old';
-export const adminAccessNew = 'admin-access-new';
-export const adminRefreshOld = 'admin-refresh-old';
-export const adminRefreshNew = 'admin-refresh-new';
+export const adminSessionResponse = (expiresIn = 900): { expires_in: number } => ({
+  expires_in: expiresIn,
+});
 
 export type MockAdminTask = {
   id: string;
@@ -86,12 +85,7 @@ export const setupAdminValidationApi = async (
     await route.fulfill({
       status: 200,
       headers: jsonHeaders,
-      body: JSON.stringify({
-        access_token: adminAccessOld,
-        refresh_token: adminRefreshOld,
-        token_type: 'Bearer',
-        expires_in: 900,
-      }),
+      body: JSON.stringify(adminSessionResponse()),
     });
   });
 

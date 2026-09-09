@@ -2,11 +2,11 @@
 
 ## Ownership And Sources
 
-- PostgreSQL is the system of record for players, tasks, duels, assignments, outcomes, history, audit records, and canonical leaderboard statistics.
-- Redis owns ephemeral matchmaking, cache updates, and revocation entries with TTL. Do not treat Redis as the durable duel or scoring ledger.
+- PostgreSQL is the system of record for players, tasks, tournaments, assignments, results, projections, recovery, audit records, and canonical leaderboard statistics.
+- Redis owns revocation entries with TTL and explicitly disposable caches. Do not treat Redis as a durable tournament or scoring ledger.
 - Goose migrations under `backend/db/migrations/` are the schema source of truth.
 - SQL under `backend/db/queries/` is the source of truth for sqlc-managed queries. A small amount of handwritten operational SQL currently lives beside its PostgreSQL adapter, including schema-version reads and LISTEN or UNLISTEN commands. Generated sqlc code is derivative and must not be edited manually.
-- Usecase packages own narrow repository ports in their `ports.go` files. PostgreSQL implementations live in `backend/internal/adapter/outbound/postgres`.
+- Usecase packages own their narrow repository ports. PostgreSQL implementations live in `backend/internal/adapter/outbound/postgres`.
 
 ## Schema And Migration Rules
 
@@ -21,16 +21,16 @@
 
 ## Data Integrity Invariants
 
-- Duel participants must differ. A winner, when present, must be one of the participants.
-- Duel status and `finished_at` must remain consistent.
-- Each duel has at most one task assignment per player. `solved` must remain consistent with `solved_at`.
-- Terminal duel writes use a conditional update with `status = 'active'`. Preserve this compare-and-set behavior for concurrent submissions and timeout paths.
-- Keep terminal state, solved assignment, solved history, and both player status changes in one transaction. Nested repository work must reuse the transaction from context.
+- Series participants must differ. A winner, when present, must be one of the Series participants.
+- Tournament, Series, game, wave, roster, and pause state must remain consistent with their timestamps and revisions.
+- An assignment task snapshot is immutable, private, and linked to its delivery receipt and runtime instance.
+- Final-state writes use conditional revision and state checks. Preserve compare-and-set behavior for concurrent submissions, recovery, replay, and correction paths.
+- Keep official result, score head, audit, projection evidence, and outbox changes in one transaction. Nested repository work must reuse the transaction from context.
 - Capture authoritative timestamps once per operation and pass them through the transaction. Do not mix client timestamps into settlement state.
 - Leaderboard cache updates occur only after PostgreSQL commit. Canonical reads must remain derivable from PostgreSQL.
 - Admin leaderboard overrides intentionally take precedence over computed statistics and must remain auditable.
-- Current task deletion also removes related solved history and finished-duel assignments. Treat it as historical data destruction, not routine cleanup.
-- Startup recovery clears the ephemeral matchmaking queue, resets queued players, and finalizes or rearms persisted active duels. Schema changes must preserve recovery compatibility.
+- Task deletion must fail while immutable tournament evidence references the task. Treat historical data destruction as an explicit operation.
+- The recovery usecase reconstructs authority from persisted tournament state and production startup composes it. Schema changes must preserve recovery evidence and deadline rearming.
 
 ## Validation
 

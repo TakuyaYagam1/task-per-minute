@@ -9,40 +9,8 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
-
-const countSolvedTasksByDifficulty = `-- name: CountSolvedTasksByDifficulty :one
-SELECT COUNT(*) AS count
-FROM player_task_history pth
-  JOIN tasks t ON t.id = pth.task_id
-WHERE pth.player_id = $1
-  AND t.difficulty = $2
-`
-
-type CountSolvedTasksByDifficultyParams struct {
-	PlayerID   uuid.UUID
-	Difficulty string
-}
-
-func (q *Queries) CountSolvedTasksByDifficulty(ctx context.Context, arg CountSolvedTasksByDifficultyParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countSolvedTasksByDifficulty, arg.PlayerID, arg.Difficulty)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
-const countTasksByDifficulty = `-- name: CountTasksByDifficulty :one
-SELECT COUNT(*) AS count
-FROM tasks
-WHERE difficulty = $1
-`
-
-func (q *Queries) CountTasksByDifficulty(ctx context.Context, difficulty string) (int64, error) {
-	row := q.db.QueryRow(ctx, countTasksByDifficulty, difficulty)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
 
 const createTask = `-- name: CreateTask :one
 INSERT INTO tasks (
@@ -56,9 +24,11 @@ INSERT INTO tasks (
     hint_2,
     hint_3,
     task_url,
-    source_file_url
+    source_file_url,
+    kind,
+    enabled
   )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 RETURNING id,
   title,
   description,
@@ -71,7 +41,11 @@ RETURNING id,
   hint_3,
   task_url,
   source_file_url,
-  created_at
+  kind,
+  enabled,
+  current_version,
+  created_at,
+  updated_at
 `
 
 type CreateTaskParams struct {
@@ -86,9 +60,31 @@ type CreateTaskParams struct {
 	Hint3         *string
 	TaskUrl       *string
 	SourceFileUrl *string
+	Kind          string
+	Enabled       bool
 }
 
-func (q *Queries) CreateTask(ctx context.Context, arg CreateTaskParams) (Task, error) {
+type CreateTaskRow struct {
+	ID             uuid.UUID
+	Title          string
+	Description    string
+	Category       string
+	Difficulty     string
+	TimeLimit      int32
+	Flag           string
+	Hint1          *string
+	Hint2          *string
+	Hint3          *string
+	TaskUrl        *string
+	SourceFileUrl  *string
+	Kind           string
+	Enabled        bool
+	CurrentVersion int32
+	CreatedAt      pgtype.Timestamptz
+	UpdatedAt      pgtype.Timestamptz
+}
+
+func (q *Queries) CreateTask(ctx context.Context, arg CreateTaskParams) (CreateTaskRow, error) {
 	row := q.db.QueryRow(ctx, createTask,
 		arg.Title,
 		arg.Description,
@@ -101,8 +97,10 @@ func (q *Queries) CreateTask(ctx context.Context, arg CreateTaskParams) (Task, e
 		arg.Hint3,
 		arg.TaskUrl,
 		arg.SourceFileUrl,
+		arg.Kind,
+		arg.Enabled,
 	)
-	var i Task
+	var i CreateTaskRow
 	err := row.Scan(
 		&i.ID,
 		&i.Title,
@@ -116,25 +114,21 @@ func (q *Queries) CreateTask(ctx context.Context, arg CreateTaskParams) (Task, e
 		&i.Hint3,
 		&i.TaskUrl,
 		&i.SourceFileUrl,
+		&i.Kind,
+		&i.Enabled,
+		&i.CurrentVersion,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
 
 const deleteTask = `-- name: DeleteTask :exec
-WITH deleted_history AS (
-  DELETE FROM player_task_history
-  WHERE task_id = $1
-),
-deleted_finished_duel_tasks AS (
-  DELETE FROM duel_player_tasks dpt
-  USING duels d
-  WHERE dpt.duel_id = d.id
-    AND dpt.task_id = $1
-    AND d.status <> 'active'
-)
-DELETE FROM tasks
+UPDATE tasks
+SET enabled = false,
+  deleted_at = clock_timestamp()
 WHERE tasks.id = $1
+  AND tasks.deleted_at IS NULL
 `
 
 func (q *Queries) DeleteTask(ctx context.Context, id uuid.UUID) error {
@@ -155,14 +149,39 @@ SELECT id,
   hint_3,
   task_url,
   source_file_url,
-  created_at
+  kind,
+  enabled,
+  current_version,
+  created_at,
+  updated_at
 FROM tasks
 WHERE id = $1
+  AND deleted_at IS NULL
 `
 
-func (q *Queries) GetTaskByID(ctx context.Context, id uuid.UUID) (Task, error) {
+type GetTaskByIDRow struct {
+	ID             uuid.UUID
+	Title          string
+	Description    string
+	Category       string
+	Difficulty     string
+	TimeLimit      int32
+	Flag           string
+	Hint1          *string
+	Hint2          *string
+	Hint3          *string
+	TaskUrl        *string
+	SourceFileUrl  *string
+	Kind           string
+	Enabled        bool
+	CurrentVersion int32
+	CreatedAt      pgtype.Timestamptz
+	UpdatedAt      pgtype.Timestamptz
+}
+
+func (q *Queries) GetTaskByID(ctx context.Context, id uuid.UUID) (GetTaskByIDRow, error) {
 	row := q.db.QueryRow(ctx, getTaskByID, id)
-	var i Task
+	var i GetTaskByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.Title,
@@ -176,7 +195,11 @@ func (q *Queries) GetTaskByID(ctx context.Context, id uuid.UUID) (Task, error) {
 		&i.Hint3,
 		&i.TaskUrl,
 		&i.SourceFileUrl,
+		&i.Kind,
+		&i.Enabled,
+		&i.CurrentVersion,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -194,21 +217,46 @@ SELECT id,
   hint_3,
   task_url,
   source_file_url,
-  created_at
+  kind,
+  enabled,
+  current_version,
+  created_at,
+  updated_at
 FROM tasks
+WHERE deleted_at IS NULL
 ORDER BY created_at DESC,
   id DESC
 `
 
-func (q *Queries) ListTasks(ctx context.Context) ([]Task, error) {
+type ListTasksRow struct {
+	ID             uuid.UUID
+	Title          string
+	Description    string
+	Category       string
+	Difficulty     string
+	TimeLimit      int32
+	Flag           string
+	Hint1          *string
+	Hint2          *string
+	Hint3          *string
+	TaskUrl        *string
+	SourceFileUrl  *string
+	Kind           string
+	Enabled        bool
+	CurrentVersion int32
+	CreatedAt      pgtype.Timestamptz
+	UpdatedAt      pgtype.Timestamptz
+}
+
+func (q *Queries) ListTasks(ctx context.Context) ([]ListTasksRow, error) {
 	rows, err := q.db.Query(ctx, listTasks)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Task{}
+	items := []ListTasksRow{}
 	for rows.Next() {
-		var i Task
+		var i ListTasksRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Title,
@@ -222,7 +270,11 @@ func (q *Queries) ListTasks(ctx context.Context) ([]Task, error) {
 			&i.Hint3,
 			&i.TaskUrl,
 			&i.SourceFileUrl,
+			&i.Kind,
+			&i.Enabled,
+			&i.CurrentVersion,
 			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -234,72 +286,41 @@ func (q *Queries) ListTasks(ctx context.Context) ([]Task, error) {
 	return items, nil
 }
 
-const listTasksByDifficulty = `-- name: ListTasksByDifficulty :many
-SELECT id,
-  title,
-  description,
-  category,
-  difficulty,
-  time_limit,
-  flag,
-  hint_1,
-  hint_2,
-  hint_3,
-  task_url,
-  source_file_url,
-  created_at
-FROM tasks
-WHERE difficulty = $1
-ORDER BY created_at DESC,
-  id DESC
+const lockTaskForContentMutation = `-- name: LockTaskForContentMutation :one
+SELECT task.id
+FROM tasks AS task
+WHERE task.id = $1
+  AND task.deleted_at IS NULL
+FOR UPDATE
 `
 
-func (q *Queries) ListTasksByDifficulty(ctx context.Context, difficulty string) ([]Task, error) {
-	rows, err := q.db.Query(ctx, listTasksByDifficulty, difficulty)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Task{}
-	for rows.Next() {
-		var i Task
-		if err := rows.Scan(
-			&i.ID,
-			&i.Title,
-			&i.Description,
-			&i.Category,
-			&i.Difficulty,
-			&i.TimeLimit,
-			&i.Flag,
-			&i.Hint1,
-			&i.Hint2,
-			&i.Hint3,
-			&i.TaskUrl,
-			&i.SourceFileUrl,
-			&i.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
+func (q *Queries) LockTaskForContentMutation(ctx context.Context, id uuid.UUID) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, lockTaskForContentMutation, id)
+	var id_2 uuid.UUID
+	err := row.Scan(&id_2)
+	return id_2, err
 }
 
-const taskInActiveDuel = `-- name: TaskInActiveDuel :one
+const taskReferencedByTournament = `-- name: TaskReferencedByTournament :one
 SELECT EXISTS (
-    SELECT 1
-    FROM duel_player_tasks dpt
-      JOIN duels d ON d.id = dpt.duel_id
-    WHERE dpt.task_id = $1
-      AND d.status = 'active'
+  SELECT 1
+  FROM assignment_plan_edges AS edge
+  WHERE edge.task_id = $1
+  UNION ALL
+  SELECT 1
+  FROM tournament_content_configurations AS configuration
+  JOIN task_pool_version_memberships AS membership
+    ON membership.task_pool_revision_id IN (
+      configuration.normal_pool_revision_id,
+      configuration.golden_pool_revision_id
+    )
+  WHERE configuration.state = 'published'
+    AND membership.task_id = $1
   ) AS exists
 `
 
-func (q *Queries) TaskInActiveDuel(ctx context.Context, taskID uuid.UUID) (bool, error) {
-	row := q.db.QueryRow(ctx, taskInActiveDuel, taskID)
+func (q *Queries) TaskReferencedByTournament(ctx context.Context, taskID uuid.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, taskReferencedByTournament, taskID)
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
@@ -317,8 +338,11 @@ SET title = $2,
   hint_2 = $9,
   hint_3 = $10,
   task_url = $11,
-  source_file_url = $12
+  source_file_url = $12,
+  kind = $13,
+  enabled = $14
 WHERE id = $1
+  AND deleted_at IS NULL
 RETURNING id,
   title,
   description,
@@ -331,7 +355,11 @@ RETURNING id,
   hint_3,
   task_url,
   source_file_url,
-  created_at
+  kind,
+  enabled,
+  current_version,
+  created_at,
+  updated_at
 `
 
 type UpdateTaskParams struct {
@@ -347,9 +375,31 @@ type UpdateTaskParams struct {
 	Hint3         *string
 	TaskUrl       *string
 	SourceFileUrl *string
+	Kind          string
+	Enabled       bool
 }
 
-func (q *Queries) UpdateTask(ctx context.Context, arg UpdateTaskParams) (Task, error) {
+type UpdateTaskRow struct {
+	ID             uuid.UUID
+	Title          string
+	Description    string
+	Category       string
+	Difficulty     string
+	TimeLimit      int32
+	Flag           string
+	Hint1          *string
+	Hint2          *string
+	Hint3          *string
+	TaskUrl        *string
+	SourceFileUrl  *string
+	Kind           string
+	Enabled        bool
+	CurrentVersion int32
+	CreatedAt      pgtype.Timestamptz
+	UpdatedAt      pgtype.Timestamptz
+}
+
+func (q *Queries) UpdateTask(ctx context.Context, arg UpdateTaskParams) (UpdateTaskRow, error) {
 	row := q.db.QueryRow(ctx, updateTask,
 		arg.ID,
 		arg.Title,
@@ -363,8 +413,10 @@ func (q *Queries) UpdateTask(ctx context.Context, arg UpdateTaskParams) (Task, e
 		arg.Hint3,
 		arg.TaskUrl,
 		arg.SourceFileUrl,
+		arg.Kind,
+		arg.Enabled,
 	)
-	var i Task
+	var i UpdateTaskRow
 	err := row.Scan(
 		&i.ID,
 		&i.Title,
@@ -378,7 +430,11 @@ func (q *Queries) UpdateTask(ctx context.Context, arg UpdateTaskParams) (Task, e
 		&i.Hint3,
 		&i.TaskUrl,
 		&i.SourceFileUrl,
+		&i.Kind,
+		&i.Enabled,
+		&i.CurrentVersion,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }

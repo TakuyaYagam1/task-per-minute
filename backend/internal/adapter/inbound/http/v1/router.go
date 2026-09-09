@@ -15,25 +15,18 @@ type HandlerOptions struct {
 	Router           chi.Router
 	AdminAuth        middleware.AdminAccessVerifier
 	PlayerRepo       middleware.PlayerSessionReader
-	ArenaAuthorizer  middleware.ArenaScopeAuthorizer
-	ArenaLimits      *middleware.ArenaRequestLimits
 	RequestValidator api.MiddlewareFunc
 	Middlewares      []api.MiddlewareFunc
 }
 
 func NewHandler(server *Server, opts HandlerOptions) http.Handler {
 	middlewares := make([]api.MiddlewareFunc, 0, len(opts.Middlewares)+3)
-	if opts.ArenaAuthorizer != nil || opts.ArenaLimits != nil {
-		// Generated middleware applies this slice from first to last. Keep
-		// request-shape validation outside Arena limits while Auth remains the
-		// outer identity provider.
-		middlewares = append(middlewares, middleware.ArenaSecurity(opts.ArenaAuthorizer, opts.ArenaLimits))
-	}
 	if opts.RequestValidator != nil {
 		middlewares = append(middlewares, opts.RequestValidator)
 	}
 	if server != nil {
 		middlewares = append(middlewares, server.publicRequestGuard())
+		middlewares = append(middlewares, server.tournamentRateGuard())
 	}
 	if opts.AdminAuth != nil || opts.PlayerRepo != nil {
 		middlewares = append(middlewares, middleware.Auth(opts.AdminAuth, opts.PlayerRepo))

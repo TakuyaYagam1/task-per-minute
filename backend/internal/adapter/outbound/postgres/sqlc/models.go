@@ -20,7 +20,7 @@ type AdminPlayerAuditEvent struct {
 	CreatedAt    pgtype.Timestamptz
 }
 
-type ArenaAssignment struct {
+type Assignment struct {
 	ID                     uuid.UUID
 	AttemptID              uuid.UUID
 	SeriesID               uuid.UUID
@@ -41,36 +41,15 @@ type ArenaAssignment struct {
 	SupersessionReason     *string
 }
 
-type ArenaAssignmentBranch struct {
-	ID                 uuid.UUID
-	PlanID             uuid.UUID
-	DraftID            uuid.UUID
-	DraftRevisionID    uuid.UUID
-	BranchKey          string
-	CategorySequence   []byte
-	State              string
-	DisclosedAt        pgtype.Timestamptz
-	ActivatedAt        pgtype.Timestamptz
-	ReleasedAt         pgtype.Timestamptz
-	ReleaseReason      *string
-	SupersededAt       pgtype.Timestamptz
-	SupersessionReason *string
-	CreatedAt          pgtype.Timestamptz
-}
-
-type ArenaAssignmentPlan struct {
+type AssignmentBranch struct {
 	ID                       uuid.UUID
-	TournamentID             uuid.UUID
-	RosterID                 uuid.UUID
-	Kind                     string
-	ParentPlanID             uuid.NullUUID
-	RevisionID               uuid.UUID
-	SourceRosterRevision     int64
-	SourcePoolRevisionID     uuid.UUID
-	SourceDraftRevisionID    uuid.NullUUID
-	ReachableBranchCount     int32
-	ConstraintGraph          []byte
-	ProofEvidence            []byte
+	PlanID                   uuid.UUID
+	DraftID                  uuid.UUID
+	DraftRevisionID          uuid.UUID
+	BranchKey                string
+	CategorySequence         []byte
+	ExactDraftBranchID       uuid.NullUUID
+	ExactDraftPosition       *int16
 	DecisionEvidenceID       uuid.NullUUID
 	DecisionAlgorithmVersion *string
 	DecisionInputs           []byte
@@ -80,30 +59,68 @@ type ArenaAssignmentPlan struct {
 	DecisionOwnerID          uuid.NullUUID
 	DecidedAt                pgtype.Timestamptz
 	State                    string
-	ActiveBranchID           uuid.NullUUID
-	CommittedAt              pgtype.Timestamptz
+	DisclosedAt              pgtype.Timestamptz
+	ActivatedAt              pgtype.Timestamptz
+	ReleasedAt               pgtype.Timestamptz
+	ReleaseReason            *string
 	SupersededAt             pgtype.Timestamptz
 	SupersessionReason       *string
 	CreatedAt                pgtype.Timestamptz
 }
 
-type ArenaAssignmentPlanEdge struct {
-	ID                uuid.UUID
-	PlanID            uuid.UUID
-	BranchID          uuid.UUID
-	Position          int16
-	TaskID            uuid.UUID
-	TaskVersion       int32
-	SelectionEvidence []byte
-	CreatedAt         pgtype.Timestamptz
+type AssignmentPlan struct {
+	ID                        uuid.UUID
+	TournamentID              uuid.UUID
+	RosterID                  uuid.UUID
+	Kind                      string
+	ParentPlanID              uuid.NullUUID
+	RevisionID                uuid.UUID
+	SourceRosterRevision      int64
+	SourcePoolRevisionID      uuid.UUID
+	SourceDraftRevisionID     uuid.NullUUID
+	ReachableBranchCount      int32
+	ConstraintGraph           []byte
+	ProofEvidence             []byte
+	ProofHash                 *string
+	DecisionEvidenceID        uuid.NullUUID
+	DecisionAlgorithmVersion  *string
+	DecisionInputs            []byte
+	DecisionSeed              []byte
+	DecisionResult            []byte
+	DecisionReplayDigest      []byte
+	DecisionOwnerID           uuid.NullUUID
+	DecidedAt                 pgtype.Timestamptz
+	State                     string
+	ActiveBranchID            uuid.NullUUID
+	ActiveDraftBranchID       uuid.NullUUID
+	CompletionDraftRevisionID uuid.NullUUID
+	CompletionDraftRevision   *int64
+	ActivationCommandID       uuid.NullUUID
+	CompletedCategories       []byte
+	CommittedAt               pgtype.Timestamptz
+	SupersededAt              pgtype.Timestamptz
+	SupersessionReason        *string
+	CreatedAt                 pgtype.Timestamptz
 }
 
-type ArenaAuditEvent struct {
+type AssignmentPlanEdge struct {
+	ID                       uuid.UUID
+	PlanID                   uuid.UUID
+	BranchID                 uuid.UUID
+	Position                 int16
+	TaskID                   uuid.UUID
+	TaskVersion              int32
+	OperatorReserveCommandID uuid.NullUUID
+	SelectionEvidence        []byte
+	CreatedAt                pgtype.Timestamptz
+}
+
+type AuditEvent struct {
 	ID            uuid.UUID
 	TournamentID  uuid.UUID
 	RosterID      uuid.UUID
-	SeriesID      uuid.UUID
-	ResultEventID uuid.UUID
+	SeriesID      uuid.NullUUID
+	ResultEventID uuid.NullUUID
 	ActorKind     string
 	ActorID       uuid.NullUUID
 	Action        string
@@ -112,7 +129,7 @@ type ArenaAuditEvent struct {
 	CreatedAt     pgtype.Timestamptz
 }
 
-type ArenaCategoryRevision struct {
+type CategoryRevision struct {
 	ID                       uuid.UUID
 	SeriesID                 uuid.UUID
 	RosterID                 uuid.UUID
@@ -134,7 +151,51 @@ type ArenaCategoryRevision struct {
 	CreatedAt                pgtype.Timestamptz
 }
 
-type ArenaDraft struct {
+type CorrectionProjectionBinding struct {
+	CommandID    uuid.UUID
+	TournamentID uuid.UUID
+	RosterID     uuid.UUID
+	ArtifactKind string
+	EntityID     uuid.UUID
+	SourceID     uuid.UUID
+	NodeID       uuid.UUID
+	CreatedAt    pgtype.Timestamptz
+}
+
+type CorrectionProjectionDecision struct {
+	ID               uuid.UUID
+	CommandID        uuid.UUID
+	SequenceNumber   int32
+	ProjectionNodeID uuid.UUID
+	Payload          []byte
+	PayloadDigest    []byte
+	RecordedAt       pgtype.Timestamptz
+	CreatedAt        pgtype.Timestamptz
+}
+
+type DeadlineTransitionReceipt struct {
+	ID                        uuid.UUID
+	CommandID                 uuid.UUID
+	TransitionKind            string
+	DeadlineID                uuid.UUID
+	ExpectedDeadlineRevision  int64
+	ExpectedAuthorityRevision int64
+	TournamentID              uuid.UUID
+	RosterID                  uuid.UUID
+	WaveID                    uuid.UUID
+	SeriesID                  uuid.NullUUID
+	GameAttemptID             uuid.NullUUID
+	PauseID                   uuid.NullUUID
+	ParticipantID             uuid.NullUUID
+	ReadyWindowID             uuid.NullUUID
+	ResultCommitID            uuid.NullUUID
+	NormalNoShowCommitIds     []uuid.UUID
+	RouteEvidenceID           uuid.NullUUID
+	ResolvedAt                pgtype.Timestamptz
+	CreatedAt                 pgtype.Timestamptz
+}
+
+type Draft struct {
 	ID                  uuid.UUID
 	SeriesID            uuid.UUID
 	RosterID            uuid.UUID
@@ -145,7 +206,7 @@ type ArenaDraft struct {
 	CreatedAt           pgtype.Timestamptz
 }
 
-type ArenaDraftAction struct {
+type DraftAction struct {
 	ID                uuid.UUID
 	DraftID           uuid.UUID
 	ResultRevisionID  uuid.UUID
@@ -160,7 +221,7 @@ type ArenaDraftAction struct {
 	CreatedAt         pgtype.Timestamptz
 }
 
-type ArenaDraftRevision struct {
+type DraftRevision struct {
 	ID                       uuid.UUID
 	DraftID                  uuid.UUID
 	SeriesID                 uuid.UUID
@@ -190,24 +251,250 @@ type ArenaDraftRevision struct {
 	CreatedAt                pgtype.Timestamptz
 }
 
-type ArenaGameAttempt struct {
-	ID               uuid.UUID
-	SlotID           uuid.UUID
-	SeriesID         uuid.UUID
-	RosterID         uuid.UUID
-	AttemptNumber    int32
-	State            string
-	ResultReason     *string
-	WinnerID         uuid.NullUUID
-	ResultRevisionID uuid.NullUUID
-	Revision         int64
-	CreatedAt        pgtype.Timestamptz
-	UpdatedAt        pgtype.Timestamptz
-	StartedAt        pgtype.Timestamptz
-	FinishedAt       pgtype.Timestamptz
+type ExactDraftAssignmentBranch struct {
+	ID                 uuid.UUID
+	PlanID             uuid.UUID
+	DraftID            uuid.UUID
+	DraftRevisionID    uuid.UUID
+	BranchKey          string
+	CategorySequence   []byte
+	State              string
+	ActivatedAt        pgtype.Timestamptz
+	ReleasedAt         pgtype.Timestamptz
+	ReleaseReason      *string
+	SupersededAt       pgtype.Timestamptz
+	SupersessionReason *string
+	CreatedAt          pgtype.Timestamptz
 }
 
-type ArenaGameSlot struct {
+type ExactDraftAssignmentChildCandidate struct {
+	ChildBranchID  uuid.UUID
+	PlanID         uuid.UUID
+	TaskID         uuid.UUID
+	TaskVersion    int32
+	PoolRevisionID uuid.UUID
+	CreatedAt      pgtype.Timestamptz
+}
+
+type ExactDraftAssignmentChildHistory struct {
+	ChildBranchID uuid.UUID
+	PlanID        uuid.UUID
+	ParticipantID uuid.UUID
+	TaskID        uuid.UUID
+	CreatedAt     pgtype.Timestamptz
+}
+
+type ExactDraftAssignmentChildParticipant struct {
+	ChildBranchID       uuid.UUID
+	PlanID              uuid.UUID
+	ParticipantID       uuid.UUID
+	PlayerID            uuid.UUID
+	ReservationID       uuid.UUID
+	TournamentID        uuid.UUID
+	ReservationRevision int64
+	AcquiredAt          pgtype.Timestamptz
+	UpdatedAt           pgtype.Timestamptz
+	CreatedAt           pgtype.Timestamptz
+}
+
+type ExactDraftAssignmentChildSource struct {
+	ChildBranchID      uuid.UUID
+	PlanID             uuid.UUID
+	TournamentID       uuid.UUID
+	RosterID           uuid.UUID
+	SeriesID           uuid.UUID
+	SlotID             uuid.UUID
+	CategoryLockID     uuid.UUID
+	SeriesRevision     int64
+	PoolRevisionID     uuid.UUID
+	PoolRevision       int64
+	HistoryRevisionID  uuid.UUID
+	HistoryRevision    int64
+	RosterRevision     int64
+	ArtifactRevisionID uuid.UUID
+	ArtifactRevision   int64
+	CategoryRevisionID uuid.UUID
+	CategoryRevision   int64
+	GraphDigest        []byte
+	ArtifactDigest     []byte
+	ProofHash          string
+	CreatedAt          pgtype.Timestamptz
+}
+
+type ExecutionAuthorityLease struct {
+	TournamentID     uuid.UUID
+	CommandID        uuid.UUID
+	HolderID         uuid.UUID
+	LeaseID          uuid.UUID
+	Epoch            int64
+	ProcessKind      string
+	Revision         int64
+	PreviousRevision *int64
+	PreviousLeaseID  uuid.NullUUID
+	PreviousEpoch    *int64
+	AcquiredAt       pgtype.Timestamptz
+	RenewedAt        pgtype.Timestamptz
+	ExpiresAt        pgtype.Timestamptz
+	CreatedAt        pgtype.Timestamptz
+}
+
+type ExecutionEpochReplay struct {
+	CommandID               uuid.UUID
+	GameAttemptID           uuid.UUID
+	TournamentID            uuid.UUID
+	RosterID                uuid.UUID
+	WaveID                  uuid.UUID
+	SeriesID                uuid.UUID
+	SlotID                  uuid.UUID
+	AssignmentID            uuid.UUID
+	AssignmentAttemptID     uuid.UUID
+	CurrentHolderID         uuid.UUID
+	CurrentLeaseID          uuid.UUID
+	CurrentEpoch            int64
+	ExpectedLeaseRevision   int64
+	BrokenLeaseID           uuid.UUID
+	BrokenEpoch             int64
+	ExpectedAttemptRevision int64
+	CommandDigest           []byte
+	RecordDocument          []byte
+	ReplayedAt              pgtype.Timestamptz
+	CreatedAt               pgtype.Timestamptz
+}
+
+type ExecutionGameEpoch struct {
+	GameAttemptID     uuid.UUID
+	TournamentID      uuid.UUID
+	RosterID          uuid.UUID
+	WaveID            uuid.UUID
+	SeriesID          uuid.UUID
+	SlotID            uuid.UUID
+	AuthorityHolderID uuid.UUID
+	AuthorityLeaseID  uuid.UUID
+	AuthorityEpoch    int64
+	AuthorityRevision int64
+	BoundAt           pgtype.Timestamptz
+	CreatedAt         pgtype.Timestamptz
+}
+
+type ExecutionGameEpochRebind struct {
+	GameAttemptID             uuid.UUID
+	RebindSequence            int64
+	CommandID                 uuid.UUID
+	TournamentID              uuid.UUID
+	RosterID                  uuid.UUID
+	WaveID                    uuid.UUID
+	SeriesID                  uuid.UUID
+	SlotID                    uuid.UUID
+	PreviousAuthorityHolderID uuid.UUID
+	PreviousAuthorityLeaseID  uuid.UUID
+	PreviousAuthorityEpoch    int64
+	PreviousAuthorityRevision int64
+	AuthorityHolderID         uuid.UUID
+	AuthorityLeaseID          uuid.UUID
+	AuthorityEpoch            int64
+	AuthorityRevision         int64
+	ReboundAt                 pgtype.Timestamptz
+	CreatedAt                 pgtype.Timestamptz
+}
+
+type FinalDraftDeliveryHistoryHead struct {
+	DraftID             uuid.UUID
+	TournamentID        uuid.UUID
+	RosterID            uuid.UUID
+	FirstParticipantID  uuid.UUID
+	SecondParticipantID uuid.UUID
+	RevisionID          uuid.UUID
+	Revision            int64
+	CreatedAt           pgtype.Timestamptz
+	UpdatedAt           pgtype.Timestamptz
+}
+
+type FinalSwissProjectionReceipt struct {
+	ProjectionRevisionID                uuid.UUID
+	TournamentID                        uuid.UUID
+	RosterID                            uuid.UUID
+	ReceiptRevision                     int64
+	CanonicalProjectionID               uuid.UUID
+	PreviousReceiptProjectionRevisionID uuid.NullUUID
+	SourceStandingsArtifactID           uuid.UUID
+	SourceStandingsPayloadDigest        []byte
+	CanonicalPayloadDigest              []byte
+	CreatedAt                           pgtype.Timestamptz
+}
+
+type FinalSwissProjectionReceiptGame struct {
+	ProjectionRevisionID uuid.UUID
+	TournamentID         uuid.UUID
+	RosterID             uuid.UUID
+	SeriesID             uuid.UUID
+	GameAttemptID        uuid.UUID
+	GameResultRevisionID uuid.UUID
+	GameResultNodeID     uuid.UUID
+	CreatedAt            pgtype.Timestamptz
+}
+
+type FinalSwissProjectionReceiptLedgerEntry struct {
+	ProjectionRevisionID uuid.UUID
+	TournamentID         uuid.UUID
+	RosterID             uuid.UUID
+	LedgerEntryID        uuid.UUID
+	CreatedAt            pgtype.Timestamptz
+}
+
+type FinalSwissProjectionReceiptParticipant struct {
+	ProjectionRevisionID uuid.UUID
+	TournamentID         uuid.UUID
+	RosterID             uuid.UUID
+	ParticipantID        uuid.UUID
+	StableSeed           int32
+	CreatedAt            pgtype.Timestamptz
+}
+
+type FinalSwissProjectionReceiptRound struct {
+	ProjectionRevisionID uuid.UUID
+	TournamentID         uuid.UUID
+	RosterID             uuid.UUID
+	RoundID              uuid.UUID
+	RoundNumber          int16
+	CreatedAt            pgtype.Timestamptz
+}
+
+type FinalSwissProjectionReceiptSeries struct {
+	ProjectionRevisionID    uuid.UUID
+	TournamentID            uuid.UUID
+	RosterID                uuid.UUID
+	RoundID                 uuid.UUID
+	SeriesID                uuid.UUID
+	TerminalSource          string
+	SeriesResultRevisionID  uuid.UUID
+	ScoreRevisionID         uuid.UUID
+	SeriesResultNodeID      uuid.UUID
+	ScoreNodeID             uuid.UUID
+	NormalNoShowCommitID    uuid.NullUUID
+	OperatorForfeitCommitID uuid.NullUUID
+	CreatedAt               pgtype.Timestamptz
+}
+
+type GameAttempt struct {
+	ID                      uuid.UUID
+	SlotID                  uuid.UUID
+	SeriesID                uuid.UUID
+	RosterID                uuid.UUID
+	AttemptNumber           int32
+	State                   string
+	ResultReason            *string
+	WinnerID                uuid.NullUUID
+	ResultRevisionID        uuid.NullUUID
+	Revision                int64
+	CreatedAt               pgtype.Timestamptz
+	UpdatedAt               pgtype.Timestamptz
+	StartedAt               pgtype.Timestamptz
+	FinishedAt              pgtype.Timestamptz
+	ResultEventSequence     int64
+	SubmissionEventSequence int64
+}
+
+type GameSlot struct {
 	ID                          uuid.UUID
 	SeriesID                    uuid.UUID
 	RosterID                    uuid.UUID
@@ -220,7 +507,7 @@ type ArenaGameSlot struct {
 	UpdatedAt                   pgtype.Timestamptz
 }
 
-type ArenaGoldenAttempt struct {
+type GoldenAttempt struct {
 	ID                 uuid.UUID
 	TournamentID       uuid.UUID
 	RosterID           uuid.UUID
@@ -239,7 +526,270 @@ type ArenaGoldenAttempt struct {
 	CreatedAt          pgtype.Timestamptz
 }
 
-type ArenaGoldenMembership struct {
+type GoldenAttemptAuthority struct {
+	AttemptID       uuid.UUID
+	TournamentID    uuid.UUID
+	RosterID        uuid.UUID
+	GroupRevisionID uuid.UUID
+	WaveID          uuid.UUID
+	AssignmentID    uuid.UUID
+	SnapshotID      uuid.UUID
+	TaskID          uuid.UUID
+	TaskVersion     int32
+	SourceDigest    []byte
+	CreatedAt       pgtype.Timestamptz
+}
+
+type GoldenAttemptStageGroup struct {
+	AttemptID       uuid.UUID
+	TournamentID    uuid.UUID
+	RosterID        uuid.UUID
+	GroupRevisionID uuid.UUID
+	BoundAt         pgtype.Timestamptz
+}
+
+type GoldenAttemptSubmissionRevision struct {
+	RevisionID              uuid.UUID
+	AttemptID               uuid.UUID
+	TournamentID            uuid.UUID
+	RosterID                uuid.UUID
+	MembershipID            uuid.UUID
+	ParticipantID           uuid.UUID
+	RevisionNumber          int64
+	PreviousRevisionID      uuid.NullUUID
+	ProvisionalSubmissionID uuid.UUID
+	PayloadDigest           []byte
+	CommittedAt             pgtype.Timestamptz
+	CreatedAt               pgtype.Timestamptz
+}
+
+type GoldenCorrectionAttemptTombstone struct {
+	CommandID           uuid.UUID
+	TournamentID        uuid.UUID
+	RosterID            uuid.UUID
+	GroupRevisionID     uuid.UUID
+	SuccessorRevisionID uuid.UUID
+	StateRevisionID     uuid.UUID
+	AttemptID           uuid.UUID
+	PriorState          string
+	RetainedAt          pgtype.Timestamptz
+	CancelledAt         pgtype.Timestamptz
+	CancellationReason  string
+	StatePayloadDigest  []byte
+	CreatedAt           pgtype.Timestamptz
+}
+
+type GoldenCorrectionGroupTombstone struct {
+	CommandID           uuid.UUID
+	TournamentID        uuid.UUID
+	RosterID            uuid.UUID
+	GroupID             uuid.UUID
+	GroupRevisionID     uuid.UUID
+	SuccessorRevisionID uuid.UUID
+	ReplacementGroupID  uuid.NullUUID
+	SupersededAt        pgtype.Timestamptz
+	ProofDigest         []byte
+	CreatedAt           pgtype.Timestamptz
+}
+
+type GoldenCorrectionPositionTombstone struct {
+	CommandID        uuid.UUID
+	TournamentID     uuid.UUID
+	RosterID         uuid.UUID
+	GroupRevisionID  uuid.UUID
+	LedgerRevisionID uuid.UUID
+	PayloadDigest    []byte
+	TombstonedAt     pgtype.Timestamptz
+	CreatedAt        pgtype.Timestamptz
+}
+
+type GoldenCorrectionStageTombstone struct {
+	CommandID                     uuid.UUID
+	TournamentID                  uuid.UUID
+	RosterID                      uuid.UUID
+	SourceTournamentRevision      int64
+	ResultingTournamentRevision   int64
+	ResultingTournamentState      string
+	SourceProjectionRevisionID    uuid.UUID
+	SourceProjectionRevision      int64
+	ResultingProjectionRevisionID uuid.UUID
+	ResultingProjectionRevision   int64
+	ProofDigest                   []byte
+	CorrectedAt                   pgtype.Timestamptz
+	CreatedAt                     pgtype.Timestamptz
+}
+
+type GoldenCorrectionStateTombstone struct {
+	CommandID       uuid.UUID
+	TournamentID    uuid.UUID
+	RosterID        uuid.UUID
+	GroupRevisionID uuid.UUID
+	StateRevisionID uuid.UUID
+	PayloadDigest   []byte
+	TombstonedAt    pgtype.Timestamptz
+	CreatedAt       pgtype.Timestamptz
+}
+
+type GoldenCorrectionTombstoneSeal struct {
+	CommandID    uuid.UUID
+	TournamentID uuid.UUID
+	RosterID     uuid.UUID
+	ProofDigest  []byte
+	SealedAt     pgtype.Timestamptz
+}
+
+type GoldenExactPlanSnapshot struct {
+	PlanID                             uuid.UUID
+	PlanRevisionID                     uuid.UUID
+	TournamentID                       uuid.UUID
+	RosterID                           uuid.UUID
+	PlanSetID                          uuid.UUID
+	SourceProjectionRevisionID         uuid.UUID
+	SourceProjectionRevision           int64
+	SourceProjectionPreviousRevisionID uuid.NullUUID
+	SourceStandingsArtifactID          uuid.UUID
+	SourceStandingsPayloadDigest       []byte
+	GroupSetRevisionID                 uuid.UUID
+	GroupSetRevision                   int64
+	PoolRevisionID                     uuid.UUID
+	PoolRevision                       int64
+	HistoryRevisionID                  uuid.UUID
+	HistoryRevision                    int64
+	TaskHealthRevisionID               uuid.UUID
+	TaskHealthRevision                 int64
+	ArtifactRevisionID                 uuid.UUID
+	ArtifactRevision                   int64
+	ReservationRevisionID              uuid.UUID
+	ReservationRevision                int64
+	MembershipRevisionID               uuid.UUID
+	MembershipRevision                 int64
+	SourcePayloadDigest                []byte
+	GroupDigest                        []byte
+	PoolDigest                         []byte
+	HistoryDigest                      []byte
+	TaskHealthDigest                   []byte
+	ArtifactDigest                     []byte
+	ReservationDigest                  []byte
+	MembershipDigest                   []byte
+	ProofHash                          string
+	CreatedAt                          pgtype.Timestamptz
+}
+
+type GoldenExactPlanSnapshotCandidate struct {
+	PlanID          uuid.UUID
+	TournamentID    uuid.UUID
+	RosterID        uuid.UUID
+	PoolRevisionID  uuid.UUID
+	TaskID          uuid.UUID
+	TaskVersion     int32
+	ExistsInSource  bool
+	Enabled         bool
+	Healthy         bool
+	MutationLocked  bool
+	PubliclyExposed bool
+	ArtifactDigest  []byte
+	CreatedAt       pgtype.Timestamptz
+}
+
+type GoldenExactPlanSnapshotEdge struct {
+	PlanID          uuid.UUID
+	GroupRevisionID uuid.UUID
+	TournamentID    uuid.UUID
+	RosterID        uuid.UUID
+	EdgeID          uuid.UUID
+	ReservationID   uuid.UUID
+	SnapshotID      uuid.UUID
+	TaskID          uuid.UUID
+	TaskVersion     int32
+	Position        int16
+	ContentDigest   []byte
+	CreatedAt       pgtype.Timestamptz
+}
+
+type GoldenExactPlanSnapshotGroup struct {
+	PlanID                     uuid.UUID
+	TournamentID               uuid.UUID
+	RosterID                   uuid.UUID
+	GroupID                    uuid.UUID
+	GroupRevisionID            uuid.UUID
+	SourceProjectionRevisionID uuid.UUID
+	SourceProjectionRevision   int64
+	PositionFrom               int16
+	PositionTo                 int16
+	GroupOrdinal               int16
+	DefinitionDigest           []byte
+	CreatedAt                  pgtype.Timestamptz
+}
+
+type GoldenExactPlanSnapshotHistory struct {
+	PlanID        uuid.UUID
+	TournamentID  uuid.UUID
+	RosterID      uuid.UUID
+	ParticipantID uuid.UUID
+	TaskID        uuid.UUID
+	TaskVersion   int32
+	CreatedAt     pgtype.Timestamptz
+}
+
+type GoldenExactPlanSnapshotMember struct {
+	PlanID          uuid.UUID
+	GroupRevisionID uuid.UUID
+	TournamentID    uuid.UUID
+	RosterID        uuid.UUID
+	ParticipantID   uuid.UUID
+	Position        int16
+	CreatedAt       pgtype.Timestamptz
+}
+
+type GoldenExactPlanSnapshotParticipantReservation struct {
+	PlanID        uuid.UUID
+	TournamentID  uuid.UUID
+	RosterID      uuid.UUID
+	ParticipantID uuid.UUID
+	PlayerID      uuid.UUID
+	ReservationID uuid.UUID
+	Revision      int64
+	AcquiredAt    pgtype.Timestamptz
+	UpdatedAt     pgtype.Timestamptz
+	CreatedAt     pgtype.Timestamptz
+}
+
+type GoldenExactPlanSnapshotReservation struct {
+	PlanID              uuid.UUID
+	TournamentID        uuid.UUID
+	RosterID            uuid.UUID
+	TaskID              uuid.UUID
+	TaskVersion         int32
+	ReservationID       uuid.UUID
+	OwnerPlanID         uuid.UUID
+	OwnerPlanRevisionID uuid.UUID
+	CreatedAt           pgtype.Timestamptz
+}
+
+type GoldenExactPlanSnapshotSeal struct {
+	PlanID       uuid.UUID
+	TournamentID uuid.UUID
+	RosterID     uuid.UUID
+	ProofHash    string
+	SealedAt     pgtype.Timestamptz
+}
+
+type GoldenGroupRevision struct {
+	RevisionID                 uuid.UUID
+	GroupID                    uuid.UUID
+	StageProgressionCommandID  uuid.UUID
+	TournamentID               uuid.UUID
+	RosterID                   uuid.UUID
+	SourceProjectionRevisionID uuid.UUID
+	SourceProjectionRevision   int64
+	PositionFrom               int16
+	PositionTo                 int16
+	Definition                 []byte
+	DefinitionDigest           []byte
+	CreatedAt                  pgtype.Timestamptz
+}
+
+type GoldenMembership struct {
 	ID                         uuid.UUID
 	AttemptID                  uuid.UUID
 	TournamentID               uuid.UUID
@@ -256,7 +806,7 @@ type ArenaGoldenMembership struct {
 	CreatedAt                  pgtype.Timestamptz
 }
 
-type ArenaGoldenPositionCommit struct {
+type GoldenPositionCommit struct {
 	ID                       uuid.UUID
 	AttemptID                uuid.UUID
 	TournamentID             uuid.UUID
@@ -270,7 +820,51 @@ type ArenaGoldenPositionCommit struct {
 	CreatedAt                pgtype.Timestamptz
 }
 
-type ArenaGoldenProvisionalSubmission struct {
+type GoldenPositionLedgerAttempt struct {
+	LedgerRevisionID     uuid.UUID
+	AttemptID            uuid.UUID
+	SubmissionRevisionID uuid.UUID
+	TournamentID         uuid.UUID
+	RosterID             uuid.UUID
+	GroupRevisionID      uuid.UUID
+	AttemptNumber        int32
+	OrderCount           int16
+	CreatedAt            pgtype.Timestamptz
+}
+
+type GoldenPositionLedgerCommitBinding struct {
+	LedgerRevisionID uuid.UUID
+	AttemptID        uuid.UUID
+	PositionCommitID uuid.UUID
+	TournamentID     uuid.UUID
+	RosterID         uuid.UUID
+	ParticipantID    uuid.UUID
+	Position         int16
+	EvidenceDigest   []byte
+	CreatedAt        pgtype.Timestamptz
+}
+
+type GoldenPositionLedgerRevision struct {
+	RevisionID         uuid.UUID
+	TournamentID       uuid.UUID
+	RosterID           uuid.UUID
+	GroupRevisionID    uuid.UUID
+	RevisionNumber     int64
+	PreviousRevisionID uuid.NullUUID
+	PayloadDigest      []byte
+	FinalizedAt        pgtype.Timestamptz
+	CreatedAt          pgtype.Timestamptz
+}
+
+type GoldenPositionLedgerRevisionSeal struct {
+	LedgerRevisionID uuid.UUID
+	TournamentID     uuid.UUID
+	RosterID         uuid.UUID
+	PayloadDigest    []byte
+	SealedAt         pgtype.Timestamptz
+}
+
+type GoldenProvisionalSubmission struct {
 	ID                  uuid.UUID
 	AttemptID           uuid.UUID
 	TournamentID        uuid.UUID
@@ -289,7 +883,7 @@ type ArenaGoldenProvisionalSubmission struct {
 	CreatedAt           pgtype.Timestamptz
 }
 
-type ArenaGoldenReadyDisconnect struct {
+type GoldenReadyDisconnect struct {
 	ID             uuid.UUID
 	MembershipID   uuid.UUID
 	AttemptID      uuid.UUID
@@ -304,7 +898,7 @@ type ArenaGoldenReadyDisconnect struct {
 	CreatedAt      pgtype.Timestamptz
 }
 
-type ArenaGoldenRecoveryRevision struct {
+type GoldenRecoveryRevision struct {
 	ID                 uuid.UUID
 	AttemptID          uuid.UUID
 	TournamentID       uuid.UUID
@@ -317,7 +911,53 @@ type ArenaGoldenRecoveryRevision struct {
 	CreatedAt          pgtype.Timestamptz
 }
 
-type ArenaGoldenReservePromotion struct {
+type GoldenRepositoryCommandJournal struct {
+	ScopeID          uuid.UUID
+	TournamentID     uuid.UUID
+	CommandID        uuid.UUID
+	CommandKind      string
+	CommandDigest    []byte
+	ResultRevisionID uuid.UUID
+	OccurredAt       pgtype.Timestamptz
+	CreatedAt        pgtype.Timestamptz
+}
+
+type GoldenRepositoryHead struct {
+	ScopeID        uuid.UUID
+	RevisionID     uuid.UUID
+	RevisionNumber int64
+	PayloadDigest  []byte
+	UpdatedAt      pgtype.Timestamptz
+}
+
+type GoldenRepositoryRevision struct {
+	ScopeID            uuid.UUID
+	AggregateKind      string
+	RevisionID         uuid.UUID
+	RevisionNumber     int64
+	PreviousRevisionID uuid.NullUUID
+	Payload            []byte
+	PayloadDigest      []byte
+	CreatedAt          pgtype.Timestamptz
+}
+
+type GoldenRepositoryScope struct {
+	ID              uuid.UUID
+	AggregateKind   string
+	TournamentID    uuid.UUID
+	RosterID        uuid.UUID
+	PlanSetID       uuid.NullUUID
+	GroupID         uuid.NullUUID
+	GroupRevisionID uuid.NullUUID
+	AttemptID       uuid.NullUUID
+	WaveID          uuid.NullUUID
+	AssignmentID    uuid.NullUUID
+	SnapshotID      uuid.NullUUID
+	TaskID          uuid.NullUUID
+	CreatedAt       pgtype.Timestamptz
+}
+
+type GoldenReservePromotion struct {
 	ID                    uuid.UUID
 	AttemptID             uuid.UUID
 	TournamentID          uuid.UUID
@@ -331,7 +971,263 @@ type ArenaGoldenReservePromotion struct {
 	CreatedAt             pgtype.Timestamptz
 }
 
-type ArenaOfficialResultHead struct {
+type GoldenStateAllocation struct {
+	AllocationID               uuid.UUID
+	CommandID                  uuid.UUID
+	StateRevisionID            uuid.UUID
+	TournamentID               uuid.UUID
+	RosterID                   uuid.UUID
+	GroupID                    uuid.UUID
+	GroupRevisionID            uuid.UUID
+	ExpectedStateRevisionID    uuid.UUID
+	ExpectedStateRevision      int64
+	ExpectedStatePayloadDigest []byte
+	AllocatedAt                pgtype.Timestamptz
+	PayloadDigest              []byte
+	CreatedAt                  pgtype.Timestamptz
+}
+
+type GoldenStateAllocationInput struct {
+	AllocationID                  uuid.UUID
+	StateRevisionID               uuid.UUID
+	TournamentID                  uuid.UUID
+	RosterID                      uuid.UUID
+	ParticipantID                 uuid.UUID
+	Points                        int32
+	Buchholz                      int32
+	HeadToHeadPoints              int32
+	HeadToHeadApplied             bool
+	EffectiveTimeMilliseconds     int64
+	AcceptedSolveTimeMilliseconds *int64
+	StableSeed                    int32
+	Position                      int16
+	CreatedAt                     pgtype.Timestamptz
+}
+
+type GoldenStateAllocationPosition struct {
+	AllocationID    uuid.UUID
+	StateRevisionID uuid.UUID
+	TournamentID    uuid.UUID
+	RosterID        uuid.UUID
+	Position        int16
+	ParticipantID   uuid.UUID
+	PositionKind    string
+	CreatedAt       pgtype.Timestamptz
+}
+
+type GoldenStateAttempt struct {
+	StateRevisionID   uuid.UUID
+	TournamentID      uuid.UUID
+	RosterID          uuid.UUID
+	GroupRevisionID   uuid.UUID
+	AttemptID         uuid.UUID
+	AttemptNumber     int32
+	PreviousAttemptID uuid.NullUUID
+	State             string
+	RetainedAt        pgtype.Timestamptz
+	StartedAt         pgtype.Timestamptz
+	FinishedAt        pgtype.Timestamptz
+	CreatedAt         pgtype.Timestamptz
+}
+
+type GoldenStateAttemptMember struct {
+	StateRevisionID uuid.UUID
+	AttemptID       uuid.UUID
+	TournamentID    uuid.UUID
+	RosterID        uuid.UUID
+	ParticipantID   uuid.UUID
+	Position        int16
+	CreatedAt       pgtype.Timestamptz
+}
+
+type GoldenStateMember struct {
+	StateRevisionID uuid.UUID
+	TournamentID    uuid.UUID
+	RosterID        uuid.UUID
+	ParticipantID   uuid.UUID
+	Excluded        bool
+	Position        int16
+	CreatedAt       pgtype.Timestamptz
+}
+
+type GoldenStateNoShowParticipant struct {
+	StateRevisionID uuid.UUID
+	CommandID       uuid.UUID
+	TournamentID    uuid.UUID
+	RosterID        uuid.UUID
+	ParticipantID   uuid.UUID
+	MembershipKind  string
+	Position        int16
+	CreatedAt       pgtype.Timestamptz
+}
+
+type GoldenStateNoShowResolution struct {
+	CommandID                   uuid.UUID
+	StateRevisionID             uuid.UUID
+	TournamentID                uuid.UUID
+	RosterID                    uuid.UUID
+	GroupID                     uuid.UUID
+	GroupRevisionID             uuid.UUID
+	AttemptID                   uuid.UUID
+	AttemptNumber               int32
+	WindowID                    uuid.UUID
+	ExpectedStateRevisionID     uuid.UUID
+	ExpectedStateRevision       int64
+	ExpectedStatePayloadDigest  []byte
+	ExpectedWindowRevisionID    uuid.UUID
+	ExpectedWindowRevision      int64
+	ExpectedReadinessRevisionID uuid.UUID
+	ExpectedReadinessRevision   int64
+	ExpectedReadinessDigest     []byte
+	ExpectedPresenceRevisionID  uuid.UUID
+	ExpectedPresenceRevision    int64
+	ExpectedPresenceDigest      []byte
+	ResultWindowRevisionID      uuid.UUID
+	ResultMembershipRevisionID  uuid.UUID
+	Deadline                    pgtype.Timestamptz
+	ResolvedAt                  pgtype.Timestamptz
+	ReadinessRevisionID         uuid.UUID
+	ReadinessRevision           int64
+	ReadinessDigest             []byte
+	PresenceRevisionID          uuid.UUID
+	PresenceRevision            int64
+	PresenceDigest              []byte
+	CreatedAt                   pgtype.Timestamptz
+}
+
+type GoldenStateReadyEvent struct {
+	CommandID                   uuid.UUID
+	StateRevisionID             uuid.UUID
+	TournamentID                uuid.UUID
+	RosterID                    uuid.UUID
+	GroupID                     uuid.UUID
+	GroupRevisionID             uuid.UUID
+	ParticipantID               uuid.UUID
+	EventType                   string
+	AttemptID                   uuid.UUID
+	WindowID                    uuid.UUID
+	ExpectedStateRevisionID     uuid.UUID
+	ExpectedStateRevision       int64
+	ExpectedStatePayloadDigest  []byte
+	ExpectedWindowRevisionID    uuid.UUID
+	ExpectedWindowRevision      int64
+	ExpectedReadinessRevisionID uuid.UUID
+	ExpectedReadinessRevision   int64
+	ExpectedReadinessDigest     []byte
+	ExpectedPresenceRevisionID  uuid.UUID
+	ExpectedPresenceRevision    int64
+	ExpectedPresenceDigest      []byte
+	CommandDigest               []byte
+	ResultWindowRevisionID      uuid.UUID
+	ResultReadinessRevisionID   uuid.UUID
+	ResultPresenceRevisionID    uuid.UUID
+	OccurredAt                  pgtype.Timestamptz
+	CreatedAt                   pgtype.Timestamptz
+}
+
+type GoldenStateReadyWindow struct {
+	StateRevisionID             uuid.UUID
+	TournamentID                uuid.UUID
+	RosterID                    uuid.UUID
+	WindowID                    uuid.UUID
+	WindowRevisionID            uuid.UUID
+	WindowRevision              int64
+	WindowPreviousRevisionID    uuid.NullUUID
+	AttemptID                   uuid.UUID
+	AttemptNumber               int32
+	OpenedAt                    pgtype.Timestamptz
+	Deadline                    pgtype.Timestamptz
+	State                       string
+	ReadinessRevisionID         uuid.UUID
+	ReadinessRevision           int64
+	ReadinessPreviousRevisionID uuid.NullUUID
+	ReadinessDigest             []byte
+	PresenceRevisionID          uuid.UUID
+	PresenceRevision            int64
+	PresencePreviousRevisionID  uuid.NullUUID
+	PresenceDigest              []byte
+	CreatedAt                   pgtype.Timestamptz
+}
+
+type GoldenStateReadyWindowParticipant struct {
+	StateRevisionID uuid.UUID
+	WindowID        uuid.UUID
+	TournamentID    uuid.UUID
+	RosterID        uuid.UUID
+	ParticipantID   uuid.UUID
+	MembershipKind  string
+	Position        int16
+	CreatedAt       pgtype.Timestamptz
+}
+
+type GoldenStateRevision struct {
+	RevisionID                   uuid.UUID
+	TournamentID                 uuid.UUID
+	RosterID                     uuid.UUID
+	GroupID                      uuid.UUID
+	GroupRevisionID              uuid.UUID
+	RevisionNumber               int64
+	PreviousRevisionID           uuid.NullUUID
+	PlanID                       uuid.UUID
+	MembershipRevisionID         uuid.UUID
+	MembershipRevision           int64
+	MembershipPreviousRevisionID uuid.NullUUID
+	MembershipDigest             []byte
+	PayloadDigest                []byte
+	CreatedAt                    pgtype.Timestamptz
+}
+
+type GoldenStateRevisionSeal struct {
+	StateRevisionID uuid.UUID
+	TournamentID    uuid.UUID
+	RosterID        uuid.UUID
+	PayloadDigest   []byte
+	SealedAt        pgtype.Timestamptz
+}
+
+type GoldenStateTransition struct {
+	StateRevisionID         uuid.UUID
+	TournamentID            uuid.UUID
+	RosterID                uuid.UUID
+	GroupID                 uuid.UUID
+	GroupRevisionID         uuid.UUID
+	TransitionKind          string
+	CommandID               uuid.NullUUID
+	PreviousStateRevisionID uuid.NullUUID
+	OccurredAt              pgtype.Timestamptz
+	CreatedAt               pgtype.Timestamptz
+}
+
+type NormalNoShowCommit struct {
+	ID                        uuid.UUID
+	TournamentID              uuid.UUID
+	RosterID                  uuid.UUID
+	WaveID                    uuid.UUID
+	ReadyWindowID             uuid.UUID
+	ReadyWindowRevisionID     uuid.UUID
+	SeriesID                  uuid.UUID
+	ResultEventID             uuid.UUID
+	SeriesScoreRevisionID     uuid.UUID
+	SeriesResultRevisionID    uuid.UUID
+	AuditEventID              uuid.UUID
+	OutboxEventID             uuid.UUID
+	ProjectionEvidenceID      uuid.UUID
+	CommandID                 uuid.UUID
+	ExpectedAuthorityRevision int64
+	ExpectedWaveRevision      int64
+	Action                    string
+	ResolvedAt                pgtype.Timestamptz
+	CreatedAt                 pgtype.Timestamptz
+}
+
+type NormalNoShowCommitGame struct {
+	CommitID             uuid.UUID
+	GameAttemptID        uuid.UUID
+	GameResultRevisionID uuid.UUID
+	Position             int16
+}
+
+type OfficialResultHead struct {
 	EntityKind        string
 	EntityID          uuid.UUID
 	SeriesID          uuid.UUID
@@ -342,37 +1238,206 @@ type ArenaOfficialResultHead struct {
 	UpdatedAt         pgtype.Timestamptz
 }
 
-type ArenaOfficialResultRevision struct {
-	ID                 uuid.UUID
-	TournamentID       uuid.UUID
-	RosterID           uuid.UUID
-	EntityKind         string
-	EntityID           uuid.UUID
-	SeriesID           uuid.UUID
-	GameAttemptID      uuid.NullUUID
-	ResultEventID      uuid.UUID
-	PreviousRevisionID uuid.NullUUID
-	RevisionNumber     int64
-	ResultState        string
-	ResultReason       string
-	WinnerID           uuid.NullUUID
-	CreatedAt          pgtype.Timestamptz
+type OfficialResultRevision struct {
+	ID                         uuid.UUID
+	TournamentID               uuid.UUID
+	RosterID                   uuid.UUID
+	EntityKind                 string
+	EntityID                   uuid.UUID
+	SeriesID                   uuid.UUID
+	GameAttemptID              uuid.NullUUID
+	ResultEventID              uuid.UUID
+	PreviousRevisionID         uuid.NullUUID
+	RevisionNumber             int64
+	CommandID                  uuid.UUID
+	ActorKind                  string
+	ActorID                    uuid.NullUUID
+	SourceProjectionRevisionID uuid.UUID
+	SourceProjectionRevision   int64
+	ResultState                string
+	ResultReason               string
+	WinnerID                   uuid.NullUUID
+	CreatedAt                  pgtype.Timestamptz
 }
 
-type ArenaOutboxEvent struct {
-	ID             uuid.UUID
-	TournamentID   uuid.UUID
-	RosterID       uuid.UUID
-	SeriesID       uuid.UUID
-	ResultEventID  uuid.UUID
-	IdempotencyKey uuid.UUID
-	Topic          string
-	Payload        []byte
-	CreatedAt      pgtype.Timestamptz
-	PublishedAt    pgtype.Timestamptz
+type OperatorForfeitCommit struct {
+	ID                         uuid.UUID
+	TournamentID               uuid.UUID
+	RosterID                   uuid.UUID
+	SeriesID                   uuid.UUID
+	AnchorAttemptID            uuid.UUID
+	ResultEventID              uuid.UUID
+	SeriesScoreRevisionID      uuid.UUID
+	SeriesResultRevisionID     uuid.UUID
+	AuditEventID               uuid.UUID
+	OutboxEventID              uuid.UUID
+	ProjectionEvidenceID       uuid.UUID
+	CommandID                  uuid.UUID
+	ActorID                    uuid.UUID
+	ForfeitingParticipantID    uuid.UUID
+	ExpectedAuthorityRevision  int64
+	SourceProjectionRevisionID uuid.UUID
+	SourceProjectionRevision   int64
+	RuleID                     string
+	Reason                     string
+	EvidenceIds                []uuid.UUID
+	ResolvedAt                 pgtype.Timestamptz
+	CreatedAt                  pgtype.Timestamptz
 }
 
-type ArenaParticipant struct {
+type OperatorReplayReserve struct {
+	CommandID                     uuid.UUID
+	ExhaustionCommandID           uuid.UUID
+	TournamentID                  uuid.UUID
+	RosterID                      uuid.UUID
+	OldWaveID                     uuid.UUID
+	SeriesID                      uuid.UUID
+	SlotID                        uuid.UUID
+	AssignmentID                  uuid.UUID
+	AssignmentAttemptID           uuid.UUID
+	FailedGameID                  uuid.UUID
+	ClosureRevisionID             uuid.UUID
+	FromSnapshotID                uuid.UUID
+	ActorID                       uuid.UUID
+	Reason                        string
+	ExpectedAssignmentRevision    int64
+	ExpectedPoolRevisionID        uuid.UUID
+	ExpectedPoolRevision          int64
+	ExpectedHistoryRevisionID     uuid.UUID
+	ExpectedHistoryRevision       int64
+	ExpectedArtifactRevisionID    uuid.UUID
+	ExpectedArtifactRevision      int64
+	ExpectedReservationRevisionID uuid.UUID
+	ExpectedReservationRevision   int64
+	ExpectedCategoryRevisionID    uuid.UUID
+	ExpectedCategoryRevision      int64
+	ProposedTaskID                uuid.UUID
+	ProposedVersion               int32
+	ProposedSnapshotID            uuid.UUID
+	EvidenceID                    uuid.UUID
+	EdgeID                        uuid.UUID
+	ReservationID                 uuid.UUID
+	ReservePosition               int16
+	SourceSeriesRevision          int64
+	ResultingSeriesRevision       int64
+	RequestDigest                 []byte
+	EvidenceDigest                []byte
+	ProofDigest                   []byte
+	ContentDigest                 []byte
+	AuthorityDocument             []byte
+	RecordDocument                []byte
+	PromotedAt                    pgtype.Timestamptz
+	CreatedAt                     pgtype.Timestamptz
+}
+
+type OperatorResultCommand struct {
+	CommandID                 uuid.UUID
+	TournamentID              uuid.UUID
+	RosterID                  uuid.UUID
+	SeriesID                  uuid.UUID
+	ActorID                   uuid.UUID
+	Action                    string
+	ExpectedAuthorityRevision int64
+	RequestDigest             []byte
+	RequestDocument           []byte
+	CommitID                  uuid.UUID
+	ResultEventID             uuid.UUID
+	ExecutedAt                pgtype.Timestamptz
+	CreatedAt                 pgtype.Timestamptz
+}
+
+type OutboxChampionSource struct {
+	OutboxEventID         uuid.UUID
+	TournamentID          uuid.UUID
+	RosterID              uuid.UUID
+	FinalSeriesID         uuid.UUID
+	FinalResultRevisionID uuid.UUID
+	ChampionArtifactID    uuid.UUID
+	ArtifactKind          string
+	ProjectionRevisionID  uuid.UUID
+	ProjectionRevision    int64
+	ProjectionOrdinal     int16
+	CreatedAt             pgtype.Timestamptz
+}
+
+type OutboxEvent struct {
+	ID                   uuid.UUID
+	TournamentID         uuid.UUID
+	RosterID             uuid.UUID
+	ProjectionRevisionID uuid.UUID
+	ProjectionRevision   int64
+	Sequence             int64
+	ProjectionOrdinal    int16
+	Terminal             bool
+	IdempotencyKey       uuid.UUID
+	Audience             string
+	PrincipalID          uuid.NullUUID
+	Topic                string
+	Payload              []byte
+	CreatedAt            pgtype.Timestamptz
+	AvailableAt          pgtype.Timestamptz
+	ClaimedBy            uuid.NullUUID
+	ClaimToken           uuid.NullUUID
+	ClaimedUntil         pgtype.Timestamptz
+	AttemptCount         int32
+	LastError            *string
+	PublishedAt          pgtype.Timestamptz
+}
+
+type OutboxResultSource struct {
+	OutboxEventID        uuid.UUID
+	TournamentID         uuid.UUID
+	RosterID             uuid.UUID
+	SeriesID             uuid.UUID
+	ResultEventID        uuid.UUID
+	ProjectionEvidenceID uuid.UUID
+	ProjectionRevisionID uuid.UUID
+	ProjectionRevision   int64
+	ProjectionOrdinal    int16
+	CreatedAt            pgtype.Timestamptz
+}
+
+type OutboxStageProjectionSource struct {
+	OutboxEventID                    uuid.UUID
+	TournamentID                     uuid.UUID
+	RosterID                         uuid.UUID
+	StageCommandID                   uuid.UUID
+	ProjectionRevisionID             uuid.UUID
+	ProjectionRevision               int64
+	ProjectionOrdinal                int16
+	SwissReceiptProjectionRevisionID uuid.UUID
+	Top4ArtifactID                   uuid.UUID
+	Top4Kind                         string
+	BracketArtifactID                uuid.UUID
+	BracketKind                      string
+	CreatedAt                        pgtype.Timestamptz
+}
+
+type OutboxTournamentCancellationSource struct {
+	OutboxEventID         uuid.UUID
+	TournamentID          uuid.UUID
+	RosterID              uuid.UUID
+	CancellationCommandID uuid.UUID
+	ProjectionRevisionID  uuid.UUID
+	ProjectionRevision    int64
+	ProjectionOrdinal     int16
+	CreatedAt             pgtype.Timestamptz
+}
+
+type OutboxWaveSource struct {
+	OutboxEventID        uuid.UUID
+	TournamentID         uuid.UUID
+	RosterID             uuid.UUID
+	WaveID               uuid.UUID
+	WaveRevisionID       uuid.UUID
+	WaveRevision         int64
+	ProjectionRevisionID uuid.UUID
+	ProjectionRevision   int64
+	ProjectionOrdinal    int16
+	CreatedAt            pgtype.Timestamptz
+}
+
+type Participant struct {
 	ID         uuid.UUID
 	RosterID   uuid.UUID
 	PlayerID   uuid.UUID
@@ -382,7 +1447,32 @@ type ArenaParticipant struct {
 	UpdatedAt  pgtype.Timestamptz
 }
 
-type ArenaPause struct {
+type ParticipantPostSeriesAction struct {
+	CommandID                     uuid.UUID
+	TournamentID                  uuid.UUID
+	RosterID                      uuid.UUID
+	SeriesID                      uuid.UUID
+	ParticipantID                 uuid.UUID
+	CurrentResultRevisionID       uuid.UUID
+	SourceProjectionRevisionID    uuid.UUID
+	SourceProjectionRevision      int64
+	ResultingProjectionRevisionID uuid.UUID
+	ResultingProjectionRevision   int64
+	Action                        string
+	OccurredAt                    pgtype.Timestamptz
+	CreatedAt                     pgtype.Timestamptz
+}
+
+type ParticipantReservation struct {
+	PlayerID      uuid.UUID
+	ReservationID uuid.UUID
+	TournamentID  uuid.UUID
+	Revision      int64
+	AcquiredAt    pgtype.Timestamptz
+	UpdatedAt     pgtype.Timestamptz
+}
+
+type Pause struct {
 	ID                uuid.UUID
 	TournamentID      uuid.UUID
 	RosterID          uuid.UUID
@@ -404,7 +1494,7 @@ type ArenaPause struct {
 	UpdatedAt         pgtype.Timestamptz
 }
 
-type ArenaPauseClock struct {
+type PauseClock struct {
 	PauseID           uuid.UUID
 	GameAttemptID     uuid.UUID
 	OriginalDeadline  pgtype.Timestamptz
@@ -417,7 +1507,7 @@ type ArenaPauseClock struct {
 	UpdatedAt         pgtype.Timestamptz
 }
 
-type ArenaPausePresenceSnapshot struct {
+type PausePresenceSnapshot struct {
 	PauseID          uuid.UUID
 	RosterID         uuid.UUID
 	SeriesID         uuid.UUID
@@ -429,7 +1519,7 @@ type ArenaPausePresenceSnapshot struct {
 	CreatedAt        pgtype.Timestamptz
 }
 
-type ArenaPauseRevision struct {
+type PauseRevision struct {
 	ID                 uuid.UUID
 	PauseID            uuid.UUID
 	PreviousRevisionID uuid.NullUUID
@@ -439,7 +1529,23 @@ type ArenaPauseRevision struct {
 	CreatedAt          pgtype.Timestamptz
 }
 
-type ArenaPresenceState struct {
+type Player struct {
+	ID               uuid.UUID
+	Username         string
+	SessionToken     uuid.NullUUID
+	CreatedAt        pgtype.Timestamptz
+	DeletedAt        pgtype.Timestamptz
+	SessionExpiresAt pgtype.Timestamptz
+}
+
+type PlayerLeaderboardOverride struct {
+	PlayerID           uuid.UUID
+	Wins               int32
+	AverageSolveTimeMs int64
+	UpdatedAt          pgtype.Timestamptz
+}
+
+type PresenceState struct {
 	ID             uuid.UUID
 	TournamentID   uuid.UUID
 	RosterID       uuid.UUID
@@ -453,7 +1559,7 @@ type ArenaPresenceState struct {
 	UpdatedAt      pgtype.Timestamptz
 }
 
-type ArenaProjectionArtifact struct {
+type ProjectionArtifact struct {
 	ID                   uuid.UUID
 	TournamentID         uuid.UUID
 	RosterID             uuid.UUID
@@ -465,7 +1571,7 @@ type ArenaProjectionArtifact struct {
 	CreatedAt            pgtype.Timestamptz
 }
 
-type ArenaProjectionArtifactMember struct {
+type ProjectionArtifactMember struct {
 	ArtifactID    uuid.UUID
 	TournamentID  uuid.UUID
 	RosterID      uuid.UUID
@@ -476,21 +1582,22 @@ type ArenaProjectionArtifactMember struct {
 	CreatedAt     pgtype.Timestamptz
 }
 
-type ArenaProjectionCutoff struct {
-	ID                       uuid.UUID
-	TournamentID             uuid.UUID
-	RosterID                 uuid.UUID
-	SequenceNumber           int64
-	PreviousCutoffID         uuid.NullUUID
-	SourceKind               string
-	OfficialResultRevisionID uuid.NullUUID
-	GoldenPositionCommitID   uuid.NullUUID
-	Reason                   string
-	CutoffAt                 pgtype.Timestamptz
-	CreatedAt                pgtype.Timestamptz
+type ProjectionCutoff struct {
+	ID                        uuid.UUID
+	TournamentID              uuid.UUID
+	RosterID                  uuid.UUID
+	SequenceNumber            int64
+	PreviousCutoffID          uuid.NullUUID
+	SourceKind                string
+	OfficialResultRevisionID  uuid.NullUUID
+	GoldenPositionCommitID    uuid.NullUUID
+	StageProgressionCommandID uuid.NullUUID
+	Reason                    string
+	CutoffAt                  pgtype.Timestamptz
+	CreatedAt                 pgtype.Timestamptz
 }
 
-type ArenaProjectionDependency struct {
+type ProjectionDependency struct {
 	ID                       uuid.UUID
 	ArtifactID               uuid.UUID
 	TournamentID             uuid.UUID
@@ -503,7 +1610,15 @@ type ArenaProjectionDependency struct {
 	CreatedAt                pgtype.Timestamptz
 }
 
-type ArenaProjectionRevision struct {
+type ProjectionOutboxCursor struct {
+	ProjectionRevisionID uuid.UUID
+	TournamentID         uuid.UUID
+	RosterID             uuid.UUID
+	NextOrdinal          int32
+	UpdatedAt            pgtype.Timestamptz
+}
+
+type ProjectionRevision struct {
 	ID                     uuid.UUID
 	TournamentID           uuid.UUID
 	RosterID               uuid.UUID
@@ -518,7 +1633,7 @@ type ArenaProjectionRevision struct {
 	CreatedAt              pgtype.Timestamptz
 }
 
-type ArenaProjectionRevisionArtifact struct {
+type ProjectionRevisionArtifact struct {
 	RevisionID   uuid.UUID
 	TournamentID uuid.UUID
 	RosterID     uuid.UUID
@@ -528,7 +1643,19 @@ type ArenaProjectionRevisionArtifact struct {
 	CreatedAt    pgtype.Timestamptz
 }
 
-type ArenaReadyWindow struct {
+type ReadinessEvent struct {
+	CommandID         uuid.UUID
+	WaveID            uuid.UUID
+	ReadyWindowID     uuid.UUID
+	RosterID          uuid.UUID
+	ParticipantID     uuid.UUID
+	ReadinessRevision int64
+	EventType         string
+	OccurredAt        pgtype.Timestamptz
+	CreatedAt         pgtype.Timestamptz
+}
+
+type ReadyWindow struct {
 	ID         uuid.UUID
 	WaveID     uuid.UUID
 	RosterID   uuid.UUID
@@ -540,7 +1667,42 @@ type ArenaReadyWindow struct {
 	CreatedAt  pgtype.Timestamptz
 }
 
-type ArenaReconnectInterval struct {
+type RealtimeDeliveryReceipt struct {
+	SubscriberID        uuid.UUID
+	EventID             uuid.UUID
+	TournamentID        uuid.UUID
+	Sequence            int64
+	Role                string
+	PrincipalID         uuid.NullUUID
+	EnqueuedAt          pgtype.Timestamptz
+	AvailableAt         pgtype.Timestamptz
+	ClaimedBy           uuid.NullUUID
+	ClaimToken          uuid.NullUUID
+	ClaimedUntil        pgtype.Timestamptz
+	AttemptCount        int32
+	WriteAcknowledgedAt pgtype.Timestamptz
+	TerminalAt          pgtype.Timestamptz
+	Outcome             *string
+	LastError           *string
+}
+
+type RealtimeSubscriber struct {
+	ID                       uuid.UUID
+	InstanceID               uuid.UUID
+	ConnectionID             uuid.UUID
+	ConnectionGeneration     int64
+	TournamentID             uuid.UUID
+	Role                     string
+	PrincipalID              uuid.NullUUID
+	InitialSequence          int64
+	LastAcknowledgedSequence int64
+	SnapshotSequence         int64
+	ConnectedAt              pgtype.Timestamptz
+	ClosedAt                 pgtype.Timestamptz
+	CloseReason              *string
+}
+
+type ReconnectInterval struct {
 	ID             uuid.UUID
 	PauseID        uuid.UUID
 	RosterID       uuid.UUID
@@ -564,7 +1726,7 @@ type ArenaReconnectInterval struct {
 	SuspendedByPauseID uuid.NullUUID
 }
 
-type ArenaReconnectSlotCounter struct {
+type ReconnectSlotCounter struct {
 	PauseID       uuid.UUID
 	RosterID      uuid.UUID
 	ParticipantID uuid.UUID
@@ -575,7 +1737,94 @@ type ArenaReconnectSlotCounter struct {
 	UpdatedAt     pgtype.Timestamptz
 }
 
-type ArenaResultCommit struct {
+type ReplayReplacement struct {
+	CommandID                      uuid.UUID
+	TournamentID                   uuid.UUID
+	RosterID                       uuid.UUID
+	OldWaveID                      uuid.UUID
+	SeriesID                       uuid.UUID
+	SlotID                         uuid.UUID
+	AssignmentID                   uuid.UUID
+	AssignmentAttemptID            uuid.UUID
+	FailedGameID                   uuid.UUID
+	ClosureRevisionID              uuid.UUID
+	FromSnapshotID                 uuid.UUID
+	ReplacementAssignmentAttemptID uuid.UUID
+	ReplacementGameID              uuid.UUID
+	ReplacementWaveID              uuid.UUID
+	ReplacementWaveRevisionID      uuid.UUID
+	ReadyWindowID                  uuid.UUID
+	ReadyWindowRevisionID          uuid.UUID
+	SnapshotID                     uuid.UUID
+	ReservePosition                int16
+	SourceSeriesRevision           int64
+	ResultingSeriesRevision        int64
+	ActorID                        uuid.UUID
+	Reason                         string
+	RequestDigest                  []byte
+	AuthorityDocument              []byte
+	RecordDocument                 []byte
+	OpenedAt                       pgtype.Timestamptz
+	CreatedAt                      pgtype.Timestamptz
+}
+
+type ReplayReserveAuthority struct {
+	AssignmentID          uuid.UUID
+	TournamentID          uuid.UUID
+	RosterID              uuid.UUID
+	SeriesID              uuid.UUID
+	SlotID                uuid.UUID
+	AssignmentAttemptID   uuid.UUID
+	ActiveSnapshotID      uuid.UUID
+	RequiredCategory      string
+	AssignmentRevision    int64
+	PoolRevisionID        uuid.UUID
+	PoolRevision          int64
+	HistoryRevisionID     uuid.UUID
+	HistoryRevision       int64
+	ArtifactRevisionID    uuid.UUID
+	ArtifactRevision      int64
+	ReservationRevisionID uuid.UUID
+	ReservationRevision   int64
+	CategoryRevisionID    uuid.UUID
+	CategoryRevision      int64
+	Revision              int64
+	CreatedAt             pgtype.Timestamptz
+	UpdatedAt             pgtype.Timestamptz
+}
+
+type ReplayReserveAuthorityPoolVersion struct {
+	AssignmentID uuid.UUID
+	TaskID       uuid.UUID
+	TaskVersion  int32
+	CreatedAt    pgtype.Timestamptz
+}
+
+type ReplayReserveExhaustion struct {
+	CommandID               uuid.UUID
+	TournamentID            uuid.UUID
+	RosterID                uuid.UUID
+	OldWaveID               uuid.UUID
+	SeriesID                uuid.UUID
+	SlotID                  uuid.UUID
+	AssignmentID            uuid.UUID
+	AssignmentAttemptID     uuid.UUID
+	FailedGameID            uuid.UUID
+	ClosureRevisionID       uuid.UUID
+	ActiveSnapshotID        uuid.UUID
+	FromSnapshotID          uuid.UUID
+	ReservePosition         int16
+	Category                string
+	SourceSeriesRevision    int64
+	ResultingSeriesRevision int64
+	RequestDigest           []byte
+	AuthorityDocument       []byte
+	RecordDocument          []byte
+	PausedAt                pgtype.Timestamptz
+	CreatedAt               pgtype.Timestamptz
+}
+
+type ResultCommit struct {
 	ID                     uuid.UUID
 	TournamentID           uuid.UUID
 	RosterID               uuid.UUID
@@ -592,7 +1841,28 @@ type ArenaResultCommit struct {
 	CreatedAt              pgtype.Timestamptz
 }
 
-type ArenaResultEvent struct {
+type ResultCorrectionCommit struct {
+	CommandID                     uuid.UUID
+	TournamentID                  uuid.UUID
+	RosterID                      uuid.UUID
+	SeriesID                      uuid.UUID
+	GameAttemptID                 uuid.UUID
+	ActorID                       uuid.UUID
+	SourceProjectionRevisionID    uuid.UUID
+	SourceProjectionRevision      int64
+	ResultingProjectionRevisionID uuid.UUID
+	ResultingProjectionRevision   int64
+	RequestDigest                 []byte
+	PlanDigest                    []byte
+	ValidationDigest              []byte
+	PlanDocument                  []byte
+	EvidenceDocument              []byte
+	ResultCommitID                uuid.UUID
+	ExecutedAt                    pgtype.Timestamptz
+	CreatedAt                     pgtype.Timestamptz
+}
+
+type ResultEvent struct {
 	ID                uuid.UUID
 	TournamentID      uuid.UUID
 	RosterID          uuid.UUID
@@ -608,7 +1878,14 @@ type ArenaResultEvent struct {
 	CreatedAt         pgtype.Timestamptz
 }
 
-type ArenaResultProjectionEvidence struct {
+type ResultProjectionDependency struct {
+	AuthorityID   uuid.UUID
+	SourceNodeID  uuid.UUID
+	DerivedNodeID uuid.UUID
+	CreatedAt     pgtype.Timestamptz
+}
+
+type ResultProjectionEvidence struct {
 	ID            uuid.UUID
 	TournamentID  uuid.UUID
 	RosterID      uuid.UUID
@@ -619,7 +1896,35 @@ type ArenaResultProjectionEvidence struct {
 	CreatedAt     pgtype.Timestamptz
 }
 
-type ArenaResumeDecision struct {
+type ResultProjectionNode struct {
+	ID             uuid.UUID
+	AuthorityID    uuid.UUID
+	TournamentID   uuid.UUID
+	RosterID       uuid.UUID
+	ArtifactKind   string
+	EntityID       uuid.UUID
+	RevisionNumber int64
+	PreviousNodeID uuid.NullUUID
+	Payload        []byte
+	PayloadDigest  []byte
+	CreatedAt      pgtype.Timestamptz
+}
+
+type ResultProjectionNodeAuthority struct {
+	ID                      uuid.UUID
+	TournamentID            uuid.UUID
+	RosterID                uuid.UUID
+	SourceKind              string
+	ResultCommitID          uuid.NullUUID
+	CorrectionCommandID     uuid.NullUUID
+	WaveID                  uuid.NullUUID
+	StageCommandID          uuid.NullUUID
+	NormalNoShowCommitID    uuid.NullUUID
+	OperatorForfeitCommitID uuid.NullUUID
+	CreatedAt               pgtype.Timestamptz
+}
+
+type ResumeDecision struct {
 	ID                        uuid.UUID
 	PauseID                   uuid.UUID
 	DecisionNumber            int64
@@ -640,7 +1945,7 @@ type ArenaResumeDecision struct {
 	CreatedAt                 pgtype.Timestamptz
 }
 
-type ArenaRoster struct {
+type Roster struct {
 	ID                 uuid.UUID
 	TournamentID       uuid.UUID
 	Revision           int64
@@ -650,7 +1955,7 @@ type ArenaRoster struct {
 	UpdatedAt          pgtype.Timestamptz
 }
 
-type ArenaSeries struct {
+type Series struct {
 	ID                      uuid.UUID
 	TournamentID            uuid.UUID
 	RosterID                uuid.UUID
@@ -670,7 +1975,7 @@ type ArenaSeries struct {
 	FinishedAt              pgtype.Timestamptz
 }
 
-type ArenaSeriesScoreHead struct {
+type SeriesScoreHead struct {
 	SeriesID          uuid.UUID
 	RosterID          uuid.UUID
 	CurrentRevisionID uuid.UUID
@@ -678,20 +1983,62 @@ type ArenaSeriesScoreHead struct {
 	UpdatedAt         pgtype.Timestamptz
 }
 
-type ArenaSeriesScoreRevision struct {
-	ID                    uuid.UUID
-	TournamentID          uuid.UUID
-	RosterID              uuid.UUID
-	SeriesID              uuid.UUID
-	ResultEventID         uuid.NullUUID
-	PreviousRevisionID    uuid.NullUUID
-	RevisionNumber        int64
-	FirstParticipantWins  int16
-	SecondParticipantWins int16
-	CreatedAt             pgtype.Timestamptz
+type SeriesScoreRevision struct {
+	ID                         uuid.UUID
+	TournamentID               uuid.UUID
+	RosterID                   uuid.UUID
+	SeriesID                   uuid.UUID
+	ResultEventID              uuid.NullUUID
+	PreviousRevisionID         uuid.NullUUID
+	RevisionNumber             int64
+	Operation                  string
+	CommandID                  uuid.UUID
+	ActorKind                  string
+	ActorID                    uuid.NullUUID
+	CommandAttemptID           uuid.NullUUID
+	SourceProjectionRevisionID uuid.UUID
+	SourceProjectionRevision   int64
+	FirstParticipantWins       int16
+	SecondParticipantWins      int16
+	CreatedAt                  pgtype.Timestamptz
 }
 
-type ArenaSubmissionEvent struct {
+type SeriesScoreRevisionAdjudication struct {
+	ScoreRevisionID            uuid.UUID
+	TournamentID               uuid.UUID
+	RosterID                   uuid.UUID
+	SeriesID                   uuid.UUID
+	OperatorForfeitCommitID    uuid.UUID
+	CommandID                  uuid.UUID
+	ActorID                    uuid.UUID
+	AnchorAttemptID            uuid.UUID
+	ForfeitingParticipantID    uuid.UUID
+	WinnerID                   uuid.UUID
+	SourceProjectionRevisionID uuid.UUID
+	SourceProjectionRevision   int64
+	CreatedAt                  pgtype.Timestamptz
+}
+
+type SeriesScoreRevisionAttempt struct {
+	ScoreRevisionID      uuid.UUID
+	TournamentID         uuid.UUID
+	RosterID             uuid.UUID
+	SeriesID             uuid.UUID
+	Position             int16
+	SlotID               uuid.UUID
+	SlotPosition         int16
+	GameAttemptID        uuid.UUID
+	AttemptNumber        int32
+	GameResultRevisionID uuid.UUID
+	ResultEventID        uuid.UUID
+	ResultState          string
+	ResultReason         string
+	WinnerID             uuid.NullUUID
+	OccurredAt           pgtype.Timestamptz
+	CreatedAt            pgtype.Timestamptz
+}
+
+type SubmissionEvent struct {
 	ID             uuid.UUID
 	TournamentID   uuid.UUID
 	RosterID       uuid.UUID
@@ -704,12 +2051,13 @@ type ArenaSubmissionEvent struct {
 	Status         string
 	DecisionReason *string
 	PayloadDigest  []byte
+	IntentDigest   []byte
 	SubmittedAt    pgtype.Timestamptz
 	ReceivedAt     pgtype.Timestamptz
 	CreatedAt      pgtype.Timestamptz
 }
 
-type ArenaSwissBye struct {
+type SwissBye struct {
 	RoundID                  uuid.UUID
 	RosterID                 uuid.UUID
 	ParticipantID            uuid.UUID
@@ -725,7 +2073,7 @@ type ArenaSwissBye struct {
 	CreatedAt                pgtype.Timestamptz
 }
 
-type ArenaSwissOpponentHistory struct {
+type SwissOpponentHistory struct {
 	PairingID         uuid.UUID
 	RoundID           uuid.UUID
 	RosterID          uuid.UUID
@@ -734,7 +2082,7 @@ type ArenaSwissOpponentHistory struct {
 	RecordedAt        pgtype.Timestamptz
 }
 
-type ArenaSwissPairing struct {
+type SwissPairing struct {
 	ID               uuid.UUID
 	RoundID          uuid.UUID
 	RosterID         uuid.UUID
@@ -743,7 +2091,28 @@ type ArenaSwissPairing struct {
 	CreatedAt        pgtype.Timestamptz
 }
 
-type ArenaSwissPairingMember struct {
+type SwissPairingCommand struct {
+	CommandID                  uuid.UUID
+	TournamentID               uuid.UUID
+	RosterID                   uuid.UUID
+	RoundID                    uuid.UUID
+	ActorID                    uuid.UUID
+	RoundNumber                int16
+	PairingMode                string
+	CategoryMode               string
+	Categories                 []byte
+	SourceProjectionRevisionID uuid.UUID
+	SourceProjectionRevision   int64
+	SourceTournamentRevision   int64
+	SourceRosterRevision       int64
+	SourceHistoryRevision      int64
+	RequestDigest              []byte
+	ResultDocument             []byte
+	ExecutedAt                 pgtype.Timestamptz
+	CreatedAt                  pgtype.Timestamptz
+}
+
+type SwissPairingMember struct {
 	PairingID     uuid.UUID
 	RoundID       uuid.UUID
 	RosterID      uuid.UUID
@@ -752,7 +2121,27 @@ type ArenaSwissPairingMember struct {
 	CreatedAt     pgtype.Timestamptz
 }
 
-type ArenaSwissRepeatOverride struct {
+type SwissPointLedgerEntry struct {
+	ID                     uuid.UUID
+	TournamentID           uuid.UUID
+	RosterID               uuid.UUID
+	RoundID                uuid.UUID
+	RoundNumber            int16
+	SourceKind             string
+	SourceSeriesID         uuid.NullUUID
+	SeriesResultRevisionID uuid.NullUUID
+	ByeRevisionID          uuid.NullUUID
+	ResultLabel            *string
+	ParticipantID          uuid.UUID
+	OpponentID             uuid.NullUUID
+	Points                 int16
+	EffectiveTimeNs        int64
+	AcceptedSolveTimeNs    *int64
+	StableSeed             int32
+	CreatedAt              pgtype.Timestamptz
+}
+
+type SwissRepeatOverride struct {
 	ID                          uuid.UUID
 	RoundID                     uuid.UUID
 	RosterID                    uuid.UUID
@@ -770,7 +2159,7 @@ type ArenaSwissRepeatOverride struct {
 	CreatedAt                   pgtype.Timestamptz
 }
 
-type ArenaSwissRound struct {
+type SwissRound struct {
 	ID                       uuid.UUID
 	RosterID                 uuid.UUID
 	RoundNumber              int16
@@ -792,12 +2181,94 @@ type ArenaSwissRound struct {
 	UpdatedAt                pgtype.Timestamptz
 }
 
-type ArenaTaskDeliveryReceipt struct {
+type SwissRoundLockProof struct {
+	RoundID                    uuid.UUID
+	TournamentID               uuid.UUID
+	RosterID                   uuid.UUID
+	Preset                     string
+	RoundNumber                int16
+	SourceProjectionRevisionID uuid.UUID
+	PreflightRevisionID        uuid.UUID
+	NormalPoolRevisionID       uuid.UUID
+	WaveID                     uuid.UUID
+	WaveRevisionID             uuid.UUID
+	RoundRevision              int64
+	SourceProjectionRevision   int64
+	RosterRevision             int64
+	HistoryRevision            int64
+	NormalPoolRevision         int64
+	WaveRevision               int64
+	ByeParticipantID           uuid.NullUUID
+	ProofHash                  []byte
+	ProofMode                  string
+	TerminalCommandID          uuid.NullUUID
+	LockedAt                   pgtype.Timestamptz
+	CreatedAt                  pgtype.Timestamptz
+}
+
+type SwissRoundLockProofMember struct {
+	RoundID       uuid.UUID
+	RosterID      uuid.UUID
+	ParticipantID uuid.UUID
+	CreatedAt     pgtype.Timestamptz
+}
+
+type SwissRoundLockProofSeries struct {
+	RoundID                  uuid.UUID
+	RosterID                 uuid.UUID
+	PairingID                uuid.UUID
+	SeriesID                 uuid.UUID
+	FirstParticipantID       uuid.UUID
+	SecondParticipantID      uuid.UUID
+	CategoryRevisionID       uuid.UUID
+	CategoryRevision         int64
+	AssignmentID             uuid.UUID
+	AssignmentRevision       int64
+	AssignmentPlanID         uuid.UUID
+	AssignmentPlanRevisionID uuid.UUID
+	ReservationID            uuid.UUID
+	ReservationRevision      int64
+	CreatedAt                pgtype.Timestamptz
+}
+
+type SwissWaveLink struct {
+	WaveID           uuid.UUID
+	TournamentID     uuid.UUID
+	RosterID         uuid.UUID
+	RoundID          uuid.UUID
+	ByeParticipantID uuid.NullUUID
+	ByeRevisionID    uuid.NullUUID
+	CreatedAt        pgtype.Timestamptz
+}
+
+type Task struct {
+	ID             uuid.UUID
+	Title          string
+	Description    string
+	Category       string
+	Difficulty     string
+	TimeLimit      int32
+	Flag           string
+	Hint1          *string
+	Hint2          *string
+	Hint3          *string
+	TaskUrl        *string
+	SourceFileUrl  *string
+	Kind           string
+	Enabled        bool
+	CurrentVersion int32
+	CreatedAt      pgtype.Timestamptz
+	UpdatedAt      pgtype.Timestamptz
+	DeletedAt      pgtype.Timestamptz
+}
+
+type TaskDeliveryReceipt struct {
 	ID            uuid.UUID
 	AssignmentID  uuid.UUID
 	AttemptID     uuid.UUID
 	RosterID      uuid.UUID
 	ParticipantID uuid.UUID
+	InstanceID    uuid.UUID
 	SnapshotID    uuid.UUID
 	TaskID        uuid.UUID
 	TaskVersion   int32
@@ -805,7 +2276,32 @@ type ArenaTaskDeliveryReceipt struct {
 	CreatedAt     pgtype.Timestamptz
 }
 
-type ArenaTaskSnapshot struct {
+type TaskPoolPublication struct {
+	ID          uuid.UUID
+	Revision    int64
+	PublishedAt pgtype.Timestamptz
+}
+
+type TaskPoolPublicationLock struct {
+	Singleton bool
+}
+
+type TaskPoolRevision struct {
+	ID            uuid.UUID
+	PublicationID uuid.UUID
+	Kind          string
+	Revision      int64
+	PublishedAt   pgtype.Timestamptz
+}
+
+type TaskPoolVersionMembership struct {
+	TaskPoolRevisionID uuid.UUID
+	TaskID             uuid.UUID
+	TaskVersion        int32
+	CreatedAt          pgtype.Timestamptz
+}
+
+type TaskSnapshot struct {
 	ID            uuid.UUID
 	ReservationID uuid.UUID
 	TaskID        uuid.UUID
@@ -824,24 +2320,55 @@ type ArenaTaskSnapshot struct {
 	CreatedAt     pgtype.Timestamptz
 }
 
-type ArenaTaskVersionReservation struct {
-	ID                 uuid.UUID
-	EdgeID             uuid.UUID
-	PlanID             uuid.UUID
-	BranchID           uuid.UUID
-	TaskID             uuid.UUID
-	TaskVersion        int32
-	State              string
-	DisclosedAt        pgtype.Timestamptz
-	CommittedAt        pgtype.Timestamptz
-	ReleasedAt         pgtype.Timestamptz
-	ReleaseReason      *string
-	SupersededAt       pgtype.Timestamptz
-	SupersessionReason *string
-	CreatedAt          pgtype.Timestamptz
+type TaskVersion struct {
+	TaskID        uuid.UUID
+	Version       int32
+	Title         string
+	Description   string
+	Category      string
+	Difficulty    string
+	TimeLimit     int32
+	Flag          string
+	Hint1         *string
+	Hint2         *string
+	Hint3         *string
+	TaskUrl       *string
+	SourceFileUrl *string
+	ContentDigest []byte
+	CreatedAt     pgtype.Timestamptz
 }
 
-type ArenaTournament struct {
+type TaskVersionHealthAttestation struct {
+	ID          uuid.UUID
+	TaskID      uuid.UUID
+	TaskVersion int32
+	Revision    int64
+	Healthy     bool
+	Source      string
+	AttestedAt  pgtype.Timestamptz
+	CreatedAt   pgtype.Timestamptz
+}
+
+type TaskVersionReservation struct {
+	ID                       uuid.UUID
+	EdgeID                   uuid.UUID
+	PlanID                   uuid.UUID
+	BranchID                 uuid.UUID
+	ContingencyDraftBranchID uuid.NullUUID
+	TaskID                   uuid.UUID
+	TaskVersion              int32
+	Revision                 int64
+	State                    string
+	DisclosedAt              pgtype.Timestamptz
+	CommittedAt              pgtype.Timestamptz
+	ReleasedAt               pgtype.Timestamptz
+	ReleaseReason            *string
+	SupersededAt             pgtype.Timestamptz
+	SupersessionReason       *string
+	CreatedAt                pgtype.Timestamptz
+}
+
+type Tournament struct {
 	ID              uuid.UUID
 	Preset          string
 	State           string
@@ -853,7 +2380,274 @@ type ArenaTournament struct {
 	FinishedAt      pgtype.Timestamptz
 }
 
-type ArenaWafe struct {
+type TournamentCancellation struct {
+	CommandID         uuid.UUID
+	TournamentID      uuid.UUID
+	RosterID          uuid.UUID
+	SourceRevision    int64
+	ResultingRevision int64
+	SourceState       string
+	ActorID           uuid.UUID
+	Reason            string
+	AuditEventID      uuid.UUID
+	OutboxEventID     uuid.UUID
+	CancelledAt       pgtype.Timestamptz
+	CreatedAt         pgtype.Timestamptz
+}
+
+type TournamentCategoryPoolMembership struct {
+	CategoryPoolRevisionID uuid.UUID
+	Category               string
+	CreatedAt              pgtype.Timestamptz
+}
+
+type TournamentCategoryPoolRevision struct {
+	ID              uuid.UUID
+	ConfigurationID uuid.UUID
+	Format          string
+	Revision        int64
+	CreatedAt       pgtype.Timestamptz
+}
+
+type TournamentContentConfiguration struct {
+	ID                   uuid.UUID
+	TournamentID         uuid.UUID
+	Revision             int64
+	State                string
+	PoolPublicationID    uuid.UUID
+	NormalPoolRevisionID uuid.UUID
+	GoldenPoolRevisionID uuid.UUID
+	CreatedAt            pgtype.Timestamptz
+	PublishedAt          pgtype.Timestamptz
+}
+
+type TournamentContentStageDefault struct {
+	ConfigurationID        uuid.UUID
+	Stage                  string
+	Format                 string
+	CategoryMode           string
+	CategoryPoolRevisionID uuid.UUID
+	TaskPoolKind           string
+	CreatedAt              pgtype.Timestamptz
+}
+
+type TournamentCreateCommandReceipt struct {
+	CommandID              uuid.UUID
+	ActorID                uuid.UUID
+	RequestDigest          []byte
+	TournamentID           uuid.UUID
+	RosterID               uuid.UUID
+	ContentConfigurationID uuid.UUID
+	ResultSchemaVersion    int16
+	ResultPreset           string
+	ResultState            string
+	ResultRevision         int64
+	ResultRosterSize       int32
+	ResultCreatedAt        pgtype.Timestamptz
+	ResultUpdatedAt        pgtype.Timestamptz
+	ResultChanged          bool
+	ResultDocument         []byte
+	CreatedAt              pgtype.Timestamptz
+}
+
+type TournamentLifecycleCommand struct {
+	CommandID                   uuid.UUID
+	TournamentID                uuid.UUID
+	RosterID                    uuid.UUID
+	ActorID                     uuid.UUID
+	Action                      string
+	SourceProjectionRevisionID  uuid.UUID
+	SourceProjectionRevision    int64
+	SourceTournamentRevision    int64
+	SourceTournamentState       string
+	ResultingTournamentRevision int64
+	ResultingTournamentState    string
+	Reason                      *string
+	PauseID                     uuid.NullUUID
+	SourcePauseCommandID        uuid.NullUUID
+	ExecutionSnapshot           []byte
+	Preset                      string
+	RosterSize                  int32
+	TournamentCreatedAt         pgtype.Timestamptz
+	TournamentUpdatedAt         pgtype.Timestamptz
+	TournamentStartedAt         pgtype.Timestamptz
+	TournamentFinishedAt        pgtype.Timestamptz
+	ExecutedAt                  pgtype.Timestamptz
+	CreatedAt                   pgtype.Timestamptz
+}
+
+type TournamentOutboxCursor struct {
+	TournamentID uuid.UUID
+	NextSequence int64
+	UpdatedAt    pgtype.Timestamptz
+}
+
+type TournamentRosterOperation struct {
+	CommandID                   uuid.UUID
+	TournamentID                uuid.UUID
+	RosterID                    uuid.UUID
+	ActorID                     uuid.UUID
+	Action                      string
+	PreflightRevisionID         uuid.NullUUID
+	SourceProjectionRevisionID  uuid.UUID
+	SourceProjectionRevision    int64
+	SourceTournamentRevision    int64
+	SourceTournamentState       string
+	ResultingTournamentRevision int64
+	ResultingTournamentState    string
+	SourceRosterRevision        int64
+	ResultingRosterRevision     int64
+	RequestDigest               []byte
+	CheckedInPlayerIds          []uuid.UUID
+	ResultDocument              []byte
+	ExecutedAt                  pgtype.Timestamptz
+	CreatedAt                   pgtype.Timestamptz
+}
+
+type TournamentStagePlayoffEvidence struct {
+	CommandID                     uuid.UUID
+	TournamentID                  uuid.UUID
+	RosterID                      uuid.UUID
+	SourceProjectionRevisionID    uuid.UUID
+	SourceProjectionRevision      int64
+	PublishedProjectionRevisionID uuid.UUID
+	PublishedProjectionRevision   int64
+	Top4ArtifactID                uuid.UUID
+	BracketArtifactID             uuid.UUID
+	Top4NodeID                    uuid.UUID
+	BracketNodeID                 uuid.UUID
+	FirstSemifinalSeriesID        uuid.UUID
+	SecondSemifinalSeriesID       uuid.UUID
+	ProofDigest                   []byte
+	CreatedAt                     pgtype.Timestamptz
+}
+
+type TournamentStagePlayoffFinal struct {
+	CommandID              uuid.UUID
+	TournamentID           uuid.UUID
+	RosterID               uuid.UUID
+	FinalSeriesID          uuid.UUID
+	CategoryRevisionID     uuid.UUID
+	DraftID                uuid.UUID
+	DraftInitialRevisionID uuid.UUID
+	FirstParticipantID     uuid.UUID
+	SecondParticipantID    uuid.UUID
+	CreatedAt              pgtype.Timestamptz
+}
+
+type TournamentStagePlayoffFinalAdvancement struct {
+	CommandID         uuid.UUID
+	TournamentID      uuid.UUID
+	RosterID          uuid.UUID
+	Position          int16
+	SemifinalSeriesID uuid.UUID
+	WinnerID          uuid.UUID
+	LoserID           uuid.UUID
+	ScoreRevisionID   uuid.UUID
+	ResultRevisionID  uuid.UUID
+	CreatedAt         pgtype.Timestamptz
+}
+
+type TournamentStagePlayoffFinalInitialization struct {
+	CommandID                uuid.UUID
+	TournamentID             uuid.UUID
+	RosterID                 uuid.UUID
+	FinalSeriesID            uuid.UUID
+	DraftID                  uuid.UUID
+	CompletedDraftRevisionID uuid.UUID
+	InitialScoreRevisionID   uuid.UUID
+	FirstSlotID              uuid.UUID
+	FirstGameID              uuid.UUID
+	FirstWaveID              uuid.UUID
+	FirstWaveRevisionID      uuid.UUID
+	FirstAssignmentID        uuid.UUID
+	CreatedAt                pgtype.Timestamptz
+}
+
+type TournamentStagePlayoffFinalProgression struct {
+	CommandID                  uuid.UUID
+	TournamentID               uuid.UUID
+	RosterID                   uuid.UUID
+	FinalSeriesID              uuid.UUID
+	SourceScoreRevisionID      uuid.UUID
+	SourceGameResultRevisionID uuid.UUID
+	NextPosition               int16
+	NextSlotID                 uuid.UUID
+	NextGameID                 uuid.UUID
+	NextWaveID                 uuid.UUID
+	NextWaveRevisionID         uuid.UUID
+	NextAssignmentID           uuid.UUID
+	CreatedAt                  pgtype.Timestamptz
+}
+
+type TournamentStagePlayoffGoldenSettlement struct {
+	CommandID        uuid.UUID
+	TournamentID     uuid.UUID
+	RosterID         uuid.UUID
+	GroupRevisionID  uuid.UUID
+	AttemptID        uuid.UUID
+	PositionCommitID uuid.UUID
+	ParticipantID    uuid.UUID
+	Position         int16
+	CreatedAt        pgtype.Timestamptz
+}
+
+type TournamentStagePlayoffSemifinal struct {
+	CommandID         uuid.UUID
+	TournamentID      uuid.UUID
+	RosterID          uuid.UUID
+	BracketArtifactID uuid.UUID
+	Position          int16
+	SeriesID          uuid.UUID
+	CreatedAt         pgtype.Timestamptz
+}
+
+type TournamentStageProgression struct {
+	CommandID                     uuid.UUID
+	TournamentID                  uuid.UUID
+	RosterID                      uuid.UUID
+	ActorID                       uuid.UUID
+	Action                        string
+	SourceTournamentRevision      int64
+	SourceTournamentState         string
+	SourceProjectionRevisionID    uuid.UUID
+	SourceProjectionRevision      int64
+	ResultingProjectionRevisionID uuid.NullUUID
+	ResultingProjectionRevision   *int64
+	ResultingTournamentRevision   int64
+	ResultingTournamentState      string
+	Proof                         []byte
+	ProofDigest                   []byte
+	ExecutedAt                    pgtype.Timestamptz
+	CreatedAt                     pgtype.Timestamptz
+}
+
+type TournamentStageTieGroup struct {
+	CommandID                  uuid.UUID
+	TournamentID               uuid.UUID
+	RosterID                   uuid.UUID
+	GroupID                    uuid.UUID
+	GroupRevisionID            uuid.UUID
+	SourceProjectionRevisionID uuid.UUID
+	SourceProjectionRevision   int64
+	PositionFrom               int16
+	PositionTo                 int16
+	Proof                      []byte
+	ProofDigest                []byte
+	CreatedAt                  pgtype.Timestamptz
+}
+
+type TournamentStageTieGroupMember struct {
+	CommandID        uuid.UUID
+	TournamentID     uuid.UUID
+	RosterID         uuid.UUID
+	GroupID          uuid.UUID
+	ParticipantID    uuid.UUID
+	StandingPosition int16
+	CreatedAt        pgtype.Timestamptz
+}
+
+type Wave struct {
 	ID             uuid.UUID
 	TournamentID   uuid.UUID
 	RosterID       uuid.UUID
@@ -868,87 +2662,64 @@ type ArenaWafe struct {
 	ClosedAt       pgtype.Timestamptz
 }
 
-type ArenaWaveMember struct {
+type WaveControlCommand struct {
+	CommandID                  uuid.UUID
+	TournamentID               uuid.UUID
+	RosterID                   uuid.UUID
+	WaveID                     uuid.UUID
+	ActorID                    uuid.UUID
+	Action                     string
+	SourceProjectionRevisionID uuid.UUID
+	SourceProjectionRevision   int64
+	SourceTournamentRevision   int64
+	SourceRosterRevision       int64
+	SourceWaveRevision         int64
+	ResultingWaveRevision      int64
+	SourceRevisions            []byte
+	SourceGraph                []byte
+	RequestDigest              []byte
+	Reason                     *string
+	ResultDocument             []byte
+	ExecutedAt                 pgtype.Timestamptz
+	CreatedAt                  pgtype.Timestamptz
+}
+
+type WaveMember struct {
 	WaveID        uuid.UUID
 	RosterID      uuid.UUID
 	ParticipantID uuid.UUID
 	CreatedAt     pgtype.Timestamptz
 }
 
-type ArenaWaveReadiness struct {
-	ReadyWindowID uuid.UUID
-	WaveID        uuid.UUID
-	RosterID      uuid.UUID
-	ParticipantID uuid.UUID
-	ReadyAt       pgtype.Timestamptz
-}
-
-type Duel struct {
-	ID         uuid.UUID
-	Player1ID  uuid.UUID
-	Player2ID  uuid.UUID
-	Status     string
-	WinnerID   uuid.NullUUID
-	Deadline   pgtype.Timestamptz
-	StartedAt  pgtype.Timestamptz
-	FinishedAt pgtype.Timestamptz
-}
-
-type DuelPlayerTask struct {
-	DuelID   uuid.UUID
-	PlayerID uuid.UUID
-	TaskID   uuid.UUID
-	Solved   bool
-	SolvedAt pgtype.Timestamptz
-}
-
-type ParticipantReservation struct {
-	PlayerID          uuid.UUID
-	ReservationID     uuid.UUID
-	OwnerKind         string
-	OwnerID           uuid.UUID
-	ArenaTournamentID uuid.NullUUID
-	CasualDuelID      uuid.NullUUID
-	Revision          int64
-	AcquiredAt        pgtype.Timestamptz
-	UpdatedAt         pgtype.Timestamptz
-}
-
-type Player struct {
-	ID               uuid.UUID
-	Username         string
-	SessionToken     uuid.NullUUID
-	Status           string
-	CreatedAt        pgtype.Timestamptz
-	DeletedAt        pgtype.Timestamptz
-	SessionExpiresAt pgtype.Timestamptz
-}
-
-type PlayerLeaderboardOverride struct {
-	PlayerID           uuid.UUID
-	Wins               int32
-	AverageSolveTimeMs int64
-	UpdatedAt          pgtype.Timestamptz
-}
-
-type PlayerTaskHistory struct {
-	PlayerID uuid.UUID
-	TaskID   uuid.UUID
-	SolvedAt pgtype.Timestamptz
-}
-
-type Task struct {
+type WaveMemberRoute struct {
 	ID            uuid.UUID
-	Title         string
-	Description   string
+	TournamentID  uuid.UUID
+	RosterID      uuid.UUID
+	WaveID        uuid.UUID
+	SeriesID      uuid.UUID
+	SlotID        uuid.UUID
+	GameAttemptID uuid.UUID
 	Category      string
-	Difficulty    string
-	TimeLimit     int32
-	Flag          string
-	Hint1         *string
-	Hint2         *string
-	Hint3         *string
-	TaskUrl       *string
-	SourceFileUrl *string
+	RoutedAt      pgtype.Timestamptz
 	CreatedAt     pgtype.Timestamptz
+}
+
+type WaveReadiness struct {
+	ReadyWindowID uuid.NullUUID
+	WaveID        uuid.UUID
+	RosterID      uuid.UUID
+	ParticipantID uuid.UUID
+	Ready         bool
+	Revision      int64
+	ReadyAt       pgtype.Timestamptz
+	CreatedAt     pgtype.Timestamptz
+	UpdatedAt     pgtype.Timestamptz
+}
+
+type WaveSeries struct {
+	WaveID       uuid.UUID
+	TournamentID uuid.UUID
+	RosterID     uuid.UUID
+	SeriesID     uuid.UUID
+	CreatedAt    pgtype.Timestamptz
 }

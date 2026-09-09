@@ -12,99 +12,44 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const acquireParticipantReservation = `-- name: AcquireParticipantReservation :one
-WITH acquired AS (
-    INSERT INTO participant_reservations (
-        player_id,
-        owner_kind,
-        owner_id,
-        arena_tournament_id,
-        casual_duel_id,
-        acquired_at,
-        updated_at
+const claimPlayerSessionByUsername = `-- name: ClaimPlayerSessionByUsername :one
+INSERT INTO players AS target (username, session_token, session_expires_at)
+VALUES ($1, $2, $3) ON CONFLICT (username) DO
+UPDATE
+SET session_token = EXCLUDED.session_token,
+    session_expires_at = EXCLUDED.session_expires_at
+WHERE target.deleted_at IS NULL
+    AND (
+        (
+            target.session_token IS NULL
+            AND target.session_expires_at IS NULL
+        )
+        OR target.session_expires_at <= CURRENT_TIMESTAMP
     )
-    VALUES (
-        $1,
-        $2::TEXT,
-        $3::UUID,
-        CASE
-            WHEN $2::TEXT = 'arena' THEN $3::UUID
-        END,
-        CASE
-            WHEN $2::TEXT = 'casual_duel' THEN $3::UUID
-        END,
-        $4,
-        $4
-    )
-    ON CONFLICT (player_id) DO NOTHING
-    RETURNING player_id,
-        reservation_id,
-        owner_kind,
-        owner_id,
-        revision,
-        acquired_at,
-        updated_at
-)
-SELECT player_id,
-    reservation_id,
-    owner_kind,
-    owner_id,
-    revision,
-    acquired_at,
-    updated_at,
-    TRUE AS changed
-FROM acquired
-UNION ALL
-SELECT reservation.player_id,
-    reservation.reservation_id,
-    reservation.owner_kind,
-    reservation.owner_id,
-    reservation.revision,
-    reservation.acquired_at,
-    reservation.updated_at,
-    FALSE AS changed
-FROM participant_reservations AS reservation
-WHERE reservation.player_id = $1
-    AND reservation.owner_kind = $2::TEXT
-    AND reservation.owner_id = $3::UUID
-LIMIT 1
+RETURNING id,
+    username,
+    session_token,
+    created_at,
+    deleted_at,
+    session_expires_at
 `
 
-type AcquireParticipantReservationParams struct {
-	PlayerID   uuid.UUID
-	OwnerKind  string
-	OwnerID    uuid.UUID
-	AcquiredAt pgtype.Timestamptz
+type ClaimPlayerSessionByUsernameParams struct {
+	Username         string
+	SessionToken     uuid.NullUUID
+	SessionExpiresAt pgtype.Timestamptz
 }
 
-type AcquireParticipantReservationRow struct {
-	PlayerID      uuid.UUID
-	ReservationID uuid.UUID
-	OwnerKind     string
-	OwnerID       uuid.UUID
-	Revision      int64
-	AcquiredAt    pgtype.Timestamptz
-	UpdatedAt     pgtype.Timestamptz
-	Changed       bool
-}
-
-func (q *Queries) AcquireParticipantReservation(ctx context.Context, arg AcquireParticipantReservationParams) (AcquireParticipantReservationRow, error) {
-	row := q.db.QueryRow(ctx, acquireParticipantReservation,
-		arg.PlayerID,
-		arg.OwnerKind,
-		arg.OwnerID,
-		arg.AcquiredAt,
-	)
-	var i AcquireParticipantReservationRow
+func (q *Queries) ClaimPlayerSessionByUsername(ctx context.Context, arg ClaimPlayerSessionByUsernameParams) (Player, error) {
+	row := q.db.QueryRow(ctx, claimPlayerSessionByUsername, arg.Username, arg.SessionToken, arg.SessionExpiresAt)
+	var i Player
 	err := row.Scan(
-		&i.PlayerID,
-		&i.ReservationID,
-		&i.OwnerKind,
-		&i.OwnerID,
-		&i.Revision,
-		&i.AcquiredAt,
-		&i.UpdatedAt,
-		&i.Changed,
+		&i.ID,
+		&i.Username,
+		&i.SessionToken,
+		&i.CreatedAt,
+		&i.DeletedAt,
+		&i.SessionExpiresAt,
 	)
 	return i, err
 }
@@ -115,7 +60,6 @@ VALUES ($1)
 RETURNING id,
     username,
     session_token,
-    status,
     created_at,
     deleted_at,
     session_expires_at
@@ -128,7 +72,6 @@ func (q *Queries) CreatePlayer(ctx context.Context, username string) (Player, er
 		&i.ID,
 		&i.Username,
 		&i.SessionToken,
-		&i.Status,
 		&i.CreatedAt,
 		&i.DeletedAt,
 		&i.SessionExpiresAt,
@@ -138,31 +81,43 @@ func (q *Queries) CreatePlayer(ctx context.Context, username string) (Player, er
 
 const getAdminPlayer = `-- name: GetAdminPlayer :one
 WITH base_stats AS (
-    SELECT d.winner_id AS player_id,
+    SELECT participant.player_id,
         COUNT(*)::INT AS wins,
         FLOOR(
             AVG(
-                (
-                    EXTRACT(
-                        EPOCH
-                        FROM dpt.solved_at - d.started_at
-                    ) * 1000
-                )::BIGINT
+                EXTRACT(
+                    EPOCH
+                    FROM submission.received_at - attempt.started_at
+                ) * 1000
             )
         )::BIGINT AS average_solve_time_ms
-    FROM duels d
-        JOIN duel_player_tasks dpt ON dpt.duel_id = d.id
-            AND dpt.player_id = d.winner_id
-            AND dpt.solved = TRUE
-            AND dpt.solved_at IS NOT NULL
-    WHERE d.status = 'finished'
-        AND d.winner_id IS NOT NULL
-    GROUP BY d.winner_id
+    FROM official_result_heads AS head
+        JOIN official_result_revisions AS revision
+            ON revision.id = head.current_revision_id
+            AND revision.entity_kind = 'game_attempt'
+        JOIN result_events AS result
+            ON result.id = revision.result_event_id
+            AND result.result_state = 'completed'
+            AND result.result_reason = 'solved'
+        JOIN submission_events AS submission
+            ON submission.id = result.submission_event_id
+            AND submission.participant_id = revision.winner_id
+            AND submission.status = 'accepted'
+        JOIN game_attempts AS attempt
+            ON attempt.id = revision.game_attempt_id
+            AND attempt.started_at IS NOT NULL
+        JOIN participants AS participant
+            ON participant.roster_id = revision.roster_id
+            AND participant.id = revision.winner_id
+    WHERE head.entity_kind = 'game_attempt'
+        AND revision.result_state = 'completed'
+        AND revision.result_reason = 'solved'
+        AND submission.received_at >= attempt.started_at
+    GROUP BY participant.player_id
 )
 SELECT p.id,
     p.username,
     p.session_token,
-    p.status,
     p.created_at,
     p.deleted_at,
     p.session_expires_at,
@@ -180,7 +135,6 @@ type GetAdminPlayerRow struct {
 	ID                 uuid.UUID
 	Username           string
 	SessionToken       uuid.NullUUID
-	Status             string
 	CreatedAt          pgtype.Timestamptz
 	DeletedAt          pgtype.Timestamptz
 	SessionExpiresAt   pgtype.Timestamptz
@@ -196,7 +150,6 @@ func (q *Queries) GetAdminPlayer(ctx context.Context, id uuid.UUID) (GetAdminPla
 		&i.ID,
 		&i.Username,
 		&i.SessionToken,
-		&i.Status,
 		&i.CreatedAt,
 		&i.DeletedAt,
 		&i.SessionExpiresAt,
@@ -209,31 +162,43 @@ func (q *Queries) GetAdminPlayer(ctx context.Context, id uuid.UUID) (GetAdminPla
 
 const getAdminPlayerIncludingDeleted = `-- name: GetAdminPlayerIncludingDeleted :one
 WITH base_stats AS (
-    SELECT d.winner_id AS player_id,
+    SELECT participant.player_id,
         COUNT(*)::INT AS wins,
         FLOOR(
             AVG(
-                (
-                    EXTRACT(
-                        EPOCH
-                        FROM dpt.solved_at - d.started_at
-                    ) * 1000
-                )::BIGINT
+                EXTRACT(
+                    EPOCH
+                    FROM submission.received_at - attempt.started_at
+                ) * 1000
             )
         )::BIGINT AS average_solve_time_ms
-    FROM duels d
-        JOIN duel_player_tasks dpt ON dpt.duel_id = d.id
-            AND dpt.player_id = d.winner_id
-            AND dpt.solved = TRUE
-            AND dpt.solved_at IS NOT NULL
-    WHERE d.status = 'finished'
-        AND d.winner_id IS NOT NULL
-    GROUP BY d.winner_id
+    FROM official_result_heads AS head
+        JOIN official_result_revisions AS revision
+            ON revision.id = head.current_revision_id
+            AND revision.entity_kind = 'game_attempt'
+        JOIN result_events AS result
+            ON result.id = revision.result_event_id
+            AND result.result_state = 'completed'
+            AND result.result_reason = 'solved'
+        JOIN submission_events AS submission
+            ON submission.id = result.submission_event_id
+            AND submission.participant_id = revision.winner_id
+            AND submission.status = 'accepted'
+        JOIN game_attempts AS attempt
+            ON attempt.id = revision.game_attempt_id
+            AND attempt.started_at IS NOT NULL
+        JOIN participants AS participant
+            ON participant.roster_id = revision.roster_id
+            AND participant.id = revision.winner_id
+    WHERE head.entity_kind = 'game_attempt'
+        AND revision.result_state = 'completed'
+        AND revision.result_reason = 'solved'
+        AND submission.received_at >= attempt.started_at
+    GROUP BY participant.player_id
 )
 SELECT p.id,
     p.username,
     p.session_token,
-    p.status,
     p.created_at,
     p.deleted_at,
     p.session_expires_at,
@@ -250,7 +215,6 @@ type GetAdminPlayerIncludingDeletedRow struct {
 	ID                 uuid.UUID
 	Username           string
 	SessionToken       uuid.NullUUID
-	Status             string
 	CreatedAt          pgtype.Timestamptz
 	DeletedAt          pgtype.Timestamptz
 	SessionExpiresAt   pgtype.Timestamptz
@@ -266,7 +230,6 @@ func (q *Queries) GetAdminPlayerIncludingDeleted(ctx context.Context, id uuid.UU
 		&i.ID,
 		&i.Username,
 		&i.SessionToken,
-		&i.Status,
 		&i.CreatedAt,
 		&i.DeletedAt,
 		&i.SessionExpiresAt,
@@ -277,48 +240,10 @@ func (q *Queries) GetAdminPlayerIncludingDeleted(ctx context.Context, id uuid.UU
 	return i, err
 }
 
-const getParticipantReservation = `-- name: GetParticipantReservation :one
-SELECT player_id,
-    reservation_id,
-    owner_kind,
-    owner_id,
-    revision,
-    acquired_at,
-    updated_at
-FROM participant_reservations
-WHERE player_id = $1
-`
-
-type GetParticipantReservationRow struct {
-	PlayerID      uuid.UUID
-	ReservationID uuid.UUID
-	OwnerKind     string
-	OwnerID       uuid.UUID
-	Revision      int64
-	AcquiredAt    pgtype.Timestamptz
-	UpdatedAt     pgtype.Timestamptz
-}
-
-func (q *Queries) GetParticipantReservation(ctx context.Context, playerID uuid.UUID) (GetParticipantReservationRow, error) {
-	row := q.db.QueryRow(ctx, getParticipantReservation, playerID)
-	var i GetParticipantReservationRow
-	err := row.Scan(
-		&i.PlayerID,
-		&i.ReservationID,
-		&i.OwnerKind,
-		&i.OwnerID,
-		&i.Revision,
-		&i.AcquiredAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
 const getPlayerByID = `-- name: GetPlayerByID :one
 SELECT id,
     username,
     session_token,
-    status,
     created_at,
     deleted_at,
     session_expires_at
@@ -333,7 +258,6 @@ func (q *Queries) GetPlayerByID(ctx context.Context, id uuid.UUID) (Player, erro
 		&i.ID,
 		&i.Username,
 		&i.SessionToken,
-		&i.Status,
 		&i.CreatedAt,
 		&i.DeletedAt,
 		&i.SessionExpiresAt,
@@ -345,7 +269,6 @@ const getPlayerBySessionToken = `-- name: GetPlayerBySessionToken :one
 SELECT id,
     username,
     session_token,
-    status,
     created_at,
     deleted_at,
     session_expires_at
@@ -361,7 +284,6 @@ func (q *Queries) GetPlayerBySessionToken(ctx context.Context, sessionToken uuid
 		&i.ID,
 		&i.Username,
 		&i.SessionToken,
-		&i.Status,
 		&i.CreatedAt,
 		&i.DeletedAt,
 		&i.SessionExpiresAt,
@@ -373,7 +295,6 @@ const getPlayerByUsername = `-- name: GetPlayerByUsername :one
 SELECT id,
     username,
     session_token,
-    status,
     created_at,
     deleted_at,
     session_expires_at
@@ -389,7 +310,6 @@ func (q *Queries) GetPlayerByUsername(ctx context.Context, username string) (Pla
 		&i.ID,
 		&i.Username,
 		&i.SessionToken,
-		&i.Status,
 		&i.CreatedAt,
 		&i.DeletedAt,
 		&i.SessionExpiresAt,
@@ -399,31 +319,43 @@ func (q *Queries) GetPlayerByUsername(ctx context.Context, username string) (Pla
 
 const listAdminPlayers = `-- name: ListAdminPlayers :many
 WITH base_stats AS (
-    SELECT d.winner_id AS player_id,
+    SELECT participant.player_id,
         COUNT(*)::INT AS wins,
         FLOOR(
             AVG(
-                (
-                    EXTRACT(
-                        EPOCH
-                        FROM dpt.solved_at - d.started_at
-                    ) * 1000
-                )::BIGINT
+                EXTRACT(
+                    EPOCH
+                    FROM submission.received_at - attempt.started_at
+                ) * 1000
             )
         )::BIGINT AS average_solve_time_ms
-    FROM duels d
-        JOIN duel_player_tasks dpt ON dpt.duel_id = d.id
-            AND dpt.player_id = d.winner_id
-            AND dpt.solved = TRUE
-            AND dpt.solved_at IS NOT NULL
-    WHERE d.status = 'finished'
-        AND d.winner_id IS NOT NULL
-    GROUP BY d.winner_id
+    FROM official_result_heads AS head
+        JOIN official_result_revisions AS revision
+            ON revision.id = head.current_revision_id
+            AND revision.entity_kind = 'game_attempt'
+        JOIN result_events AS result
+            ON result.id = revision.result_event_id
+            AND result.result_state = 'completed'
+            AND result.result_reason = 'solved'
+        JOIN submission_events AS submission
+            ON submission.id = result.submission_event_id
+            AND submission.participant_id = revision.winner_id
+            AND submission.status = 'accepted'
+        JOIN game_attempts AS attempt
+            ON attempt.id = revision.game_attempt_id
+            AND attempt.started_at IS NOT NULL
+        JOIN participants AS participant
+            ON participant.roster_id = revision.roster_id
+            AND participant.id = revision.winner_id
+    WHERE head.entity_kind = 'game_attempt'
+        AND revision.result_state = 'completed'
+        AND revision.result_reason = 'solved'
+        AND submission.received_at >= attempt.started_at
+    GROUP BY participant.player_id
 )
 SELECT p.id,
     p.username,
     p.session_token,
-    p.status,
     p.created_at,
     p.deleted_at,
     p.session_expires_at,
@@ -442,7 +374,6 @@ type ListAdminPlayersRow struct {
 	ID                 uuid.UUID
 	Username           string
 	SessionToken       uuid.NullUUID
-	Status             string
 	CreatedAt          pgtype.Timestamptz
 	DeletedAt          pgtype.Timestamptz
 	SessionExpiresAt   pgtype.Timestamptz
@@ -464,7 +395,6 @@ func (q *Queries) ListAdminPlayers(ctx context.Context, dollar_1 bool) ([]ListAd
 			&i.ID,
 			&i.Username,
 			&i.SessionToken,
-			&i.Status,
 			&i.CreatedAt,
 			&i.DeletedAt,
 			&i.SessionExpiresAt,
@@ -482,164 +412,40 @@ func (q *Queries) ListAdminPlayers(ctx context.Context, dollar_1 bool) ([]ListAd
 	return items, nil
 }
 
-const promoteParticipantReservation = `-- name: PromoteParticipantReservation :one
-UPDATE participant_reservations
-SET owner_kind = $1::TEXT,
-    owner_id = $2::UUID,
-    arena_tournament_id = CASE
-        WHEN $1::TEXT = 'arena' THEN $2::UUID
-    END,
-    casual_duel_id = CASE
-        WHEN $1::TEXT = 'casual_duel' THEN $2::UUID
-    END,
-    revision = revision + 1,
-    updated_at = $3
-WHERE player_id = $4
-    AND reservation_id = $5
-    AND owner_kind = $6::TEXT
-    AND owner_id = $7::UUID
-    AND revision = $8
-RETURNING player_id,
-    reservation_id,
-    owner_kind,
-    owner_id,
-    revision,
-    acquired_at,
-    updated_at
-`
-
-type PromoteParticipantReservationParams struct {
-	NextOwnerKind     string
-	NextOwnerID       uuid.UUID
-	UpdatedAt         pgtype.Timestamptz
-	PlayerID          uuid.UUID
-	ReservationID     uuid.UUID
-	ExpectedOwnerKind string
-	ExpectedOwnerID   uuid.UUID
-	ExpectedRevision  int64
-}
-
-type PromoteParticipantReservationRow struct {
-	PlayerID      uuid.UUID
-	ReservationID uuid.UUID
-	OwnerKind     string
-	OwnerID       uuid.UUID
-	Revision      int64
-	AcquiredAt    pgtype.Timestamptz
-	UpdatedAt     pgtype.Timestamptz
-}
-
-func (q *Queries) PromoteParticipantReservation(ctx context.Context, arg PromoteParticipantReservationParams) (PromoteParticipantReservationRow, error) {
-	row := q.db.QueryRow(ctx, promoteParticipantReservation,
-		arg.NextOwnerKind,
-		arg.NextOwnerID,
-		arg.UpdatedAt,
-		arg.PlayerID,
-		arg.ReservationID,
-		arg.ExpectedOwnerKind,
-		arg.ExpectedOwnerID,
-		arg.ExpectedRevision,
-	)
-	var i PromoteParticipantReservationRow
-	err := row.Scan(
-		&i.PlayerID,
-		&i.ReservationID,
-		&i.OwnerKind,
-		&i.OwnerID,
-		&i.Revision,
-		&i.AcquiredAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const releaseParticipantReservation = `-- name: ReleaseParticipantReservation :one
-DELETE FROM participant_reservations
-WHERE player_id = $1
-    AND reservation_id = $2
-    AND owner_kind = $3::TEXT
-    AND owner_id = $4::UUID
-    AND revision = $5
-RETURNING player_id
-`
-
-type ReleaseParticipantReservationParams struct {
-	PlayerID          uuid.UUID
-	ReservationID     uuid.UUID
-	ExpectedOwnerKind string
-	ExpectedOwnerID   uuid.UUID
-	ExpectedRevision  int64
-}
-
-func (q *Queries) ReleaseParticipantReservation(ctx context.Context, arg ReleaseParticipantReservationParams) (uuid.UUID, error) {
-	row := q.db.QueryRow(ctx, releaseParticipantReservation,
-		arg.PlayerID,
-		arg.ReservationID,
-		arg.ExpectedOwnerKind,
-		arg.ExpectedOwnerID,
-		arg.ExpectedRevision,
-	)
-	var player_id uuid.UUID
-	err := row.Scan(&player_id)
-	return player_id, err
-}
-
-const resetQueuedPlayers = `-- name: ResetQueuedPlayers :execrows
-WITH released AS (
-    DELETE FROM participant_reservations AS reservation
-    USING players AS player
-    WHERE reservation.player_id = player.id
-        AND reservation.owner_kind = 'casual_queue'
-        AND player.status = 'queued'
-        AND player.deleted_at IS NULL
-)
-UPDATE players
-SET status = 'idle'
-WHERE status = 'queued'
-    AND deleted_at IS NULL
-`
-
-func (q *Queries) ResetQueuedPlayers(ctx context.Context) (int64, error) {
-	result, err := q.db.Exec(ctx, resetQueuedPlayers)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
-const softDeleteIdlePlayer = `-- name: SoftDeleteIdlePlayer :one
+const softDeletePlayer = `-- name: SoftDeletePlayer :one
 UPDATE players
 SET username = $2,
     session_token = NULL,
     session_expires_at = NULL,
-    status = 'idle',
     deleted_at = $3
 WHERE id = $1
-    AND status = 'idle'
+    AND NOT EXISTS (
+        SELECT 1
+        FROM participant_reservations AS reservation
+        WHERE reservation.player_id = players.id
+    )
     AND deleted_at IS NULL
 RETURNING id,
     username,
     session_token,
-    status,
     created_at,
     deleted_at,
     session_expires_at
 `
 
-type SoftDeleteIdlePlayerParams struct {
+type SoftDeletePlayerParams struct {
 	ID        uuid.UUID
 	Username  string
 	DeletedAt pgtype.Timestamptz
 }
 
-func (q *Queries) SoftDeleteIdlePlayer(ctx context.Context, arg SoftDeleteIdlePlayerParams) (Player, error) {
-	row := q.db.QueryRow(ctx, softDeleteIdlePlayer, arg.ID, arg.Username, arg.DeletedAt)
+func (q *Queries) SoftDeletePlayer(ctx context.Context, arg SoftDeletePlayerParams) (Player, error) {
+	row := q.db.QueryRow(ctx, softDeletePlayer, arg.ID, arg.Username, arg.DeletedAt)
 	var i Player
 	err := row.Scan(
 		&i.ID,
 		&i.Username,
 		&i.SessionToken,
-		&i.Status,
 		&i.CreatedAt,
 		&i.DeletedAt,
 		&i.SessionExpiresAt,
@@ -656,7 +462,6 @@ WHERE id = $1
 RETURNING id,
     username,
     session_token,
-    status,
     created_at,
     deleted_at,
     session_expires_at
@@ -675,77 +480,6 @@ func (q *Queries) UpdatePlayerSessionToken(ctx context.Context, arg UpdatePlayer
 		&i.ID,
 		&i.Username,
 		&i.SessionToken,
-		&i.Status,
-		&i.CreatedAt,
-		&i.DeletedAt,
-		&i.SessionExpiresAt,
-	)
-	return i, err
-}
-
-const updatePlayerStatus = `-- name: UpdatePlayerStatus :one
-UPDATE players
-SET status = $2
-WHERE id = $1
-    AND deleted_at IS NULL
-RETURNING id,
-    username,
-    session_token,
-    status,
-    created_at,
-    deleted_at,
-    session_expires_at
-`
-
-type UpdatePlayerStatusParams struct {
-	ID     uuid.UUID
-	Status string
-}
-
-func (q *Queries) UpdatePlayerStatus(ctx context.Context, arg UpdatePlayerStatusParams) (Player, error) {
-	row := q.db.QueryRow(ctx, updatePlayerStatus, arg.ID, arg.Status)
-	var i Player
-	err := row.Scan(
-		&i.ID,
-		&i.Username,
-		&i.SessionToken,
-		&i.Status,
-		&i.CreatedAt,
-		&i.DeletedAt,
-		&i.SessionExpiresAt,
-	)
-	return i, err
-}
-
-const updatePlayerStatusIfCurrent = `-- name: UpdatePlayerStatusIfCurrent :one
-UPDATE players
-SET status = $3
-WHERE id = $1
-    AND status = $2
-    AND deleted_at IS NULL
-RETURNING id,
-    username,
-    session_token,
-    status,
-    created_at,
-    deleted_at,
-    session_expires_at
-`
-
-type UpdatePlayerStatusIfCurrentParams struct {
-	ID       uuid.UUID
-	Status   string
-	Status_2 string
-}
-
-func (q *Queries) UpdatePlayerStatusIfCurrent(ctx context.Context, arg UpdatePlayerStatusIfCurrentParams) (Player, error) {
-	row := q.db.QueryRow(ctx, updatePlayerStatusIfCurrent, arg.ID, arg.Status, arg.Status_2)
-	var i Player
-	err := row.Scan(
-		&i.ID,
-		&i.Username,
-		&i.SessionToken,
-		&i.Status,
 		&i.CreatedAt,
 		&i.DeletedAt,
 		&i.SessionExpiresAt,
@@ -761,7 +495,6 @@ WHERE id = $1
 RETURNING id,
     username,
     session_token,
-    status,
     created_at,
     deleted_at,
     session_expires_at
@@ -779,7 +512,6 @@ func (q *Queries) UpdatePlayerUsername(ctx context.Context, arg UpdatePlayerUser
 		&i.ID,
 		&i.Username,
 		&i.SessionToken,
-		&i.Status,
 		&i.CreatedAt,
 		&i.DeletedAt,
 		&i.SessionExpiresAt,
@@ -825,56 +557,6 @@ func (q *Queries) UpsertPlayerLeaderboardOverride(ctx context.Context, arg Upser
 		&i.Wins,
 		&i.AverageSolveTimeMs,
 		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const upsertPlayerSessionByUsername = `-- name: UpsertPlayerSessionByUsername :one
-WITH existing AS MATERIALIZED (
-    SELECT player.id,
-        NOT EXISTS (
-            SELECT 1
-            FROM participant_reservations AS reservation
-            WHERE reservation.player_id = player.id
-        ) AS unreserved
-    FROM players AS player
-    WHERE player.username = $1
-    FOR UPDATE OF player
-)
-INSERT INTO players AS target (username, session_token, session_expires_at)
-VALUES ($1, $2, $3) ON CONFLICT (username) DO
-UPDATE
-SET session_token = EXCLUDED.session_token,
-    session_expires_at = EXCLUDED.session_expires_at
-WHERE target.status = 'idle'
-    AND target.deleted_at IS NULL
-    AND COALESCE((SELECT unreserved FROM existing), TRUE)
-RETURNING id,
-    username,
-    session_token,
-    status,
-    created_at,
-    deleted_at,
-    session_expires_at
-`
-
-type UpsertPlayerSessionByUsernameParams struct {
-	Username         string
-	SessionToken     uuid.NullUUID
-	SessionExpiresAt pgtype.Timestamptz
-}
-
-func (q *Queries) UpsertPlayerSessionByUsername(ctx context.Context, arg UpsertPlayerSessionByUsernameParams) (Player, error) {
-	row := q.db.QueryRow(ctx, upsertPlayerSessionByUsername, arg.Username, arg.SessionToken, arg.SessionExpiresAt)
-	var i Player
-	err := row.Scan(
-		&i.ID,
-		&i.Username,
-		&i.SessionToken,
-		&i.Status,
-		&i.CreatedAt,
-		&i.DeletedAt,
-		&i.SessionExpiresAt,
 	)
 	return i, err
 }

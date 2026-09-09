@@ -2,7 +2,6 @@ package v1
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -11,21 +10,30 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	logkit "github.com/wahrwelt-kit/go-logkit"
 
-	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/middleware"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	adminusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/admin"
+	authusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/auth"
 )
 
 func TestAdminLoginSecurityLogRedactsCredentialsAndTokens(t *testing.T) {
 	t.Parallel()
 
 	var logs bytes.Buffer
+	now := time.Unix(100, 0).UTC()
+	pair := &authusecase.TokenPair{
+		AccessToken:      "access-token",
+		RefreshToken:     "refresh-token",
+		AccessExpiresAt:  now.Add(time.Minute),
+		RefreshExpiresAt: now.Add(time.Hour),
+	}
+	auth := NewMockAdminAuthService(t)
+	auth.EXPECT().Login(mock.Anything, "super-secret").Return(pair, nil)
 	server := New(Dependencies{
-		AdminAuth:    adminLoginLogStub{},
-		LoginLimiter: middleware.NewLoginRateLimiter(t.Context(), 10, time.Minute, time.Minute),
+		AdminAuth:    auth,
+		LoginLimiter: newAllowingRateLimiter(t),
 		Now:          func() time.Time { return time.Unix(100, 0).UTC() },
 		Log:          newV1TestLogger(t, &logs),
 	})
@@ -34,7 +42,7 @@ func TestAdminLoginSecurityLogRedactsCredentialsAndTokens(t *testing.T) {
 	req.RemoteAddr = "198.51.100.10:1234"
 	rr := httptest.NewRecorder()
 
-	server.AdminLogin(rr, req)
+	server.LoginAdmin(rr, req)
 
 	require.Equal(t, http.StatusOK, rr.Code)
 	rawLogs := logs.String()
@@ -52,16 +60,18 @@ func TestAdminLoginFailureSecurityLogUsesErrorCodeOnly(t *testing.T) {
 	t.Parallel()
 
 	var logs bytes.Buffer
+	auth := NewMockAdminAuthService(t)
+	auth.EXPECT().Login(mock.Anything, "wrong-password").Return(nil, domain.ErrInvalidCredentials)
 	server := New(Dependencies{
-		AdminAuth:    adminLoginLogStub{err: domain.ErrInvalidCredentials},
-		LoginLimiter: middleware.NewLoginRateLimiter(t.Context(), 10, time.Minute, time.Minute),
+		AdminAuth:    auth,
+		LoginLimiter: newAllowingRateLimiter(t),
 		Log:          newV1TestLogger(t, &logs),
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/login", strings.NewReader(`{"password":"wrong-password"}`))
 	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
 
-	server.AdminLogin(rr, req)
+	server.LoginAdmin(rr, req)
 
 	require.Equal(t, http.StatusUnauthorized, rr.Code)
 	rawLogs := logs.String()
@@ -78,16 +88,15 @@ func TestPlayerJoinSecurityLogRedactsSessionToken(t *testing.T) {
 	var logs bytes.Buffer
 	sessionToken := uuid.New()
 	playerID := uuid.New()
+	players := NewMockPlayerService(t)
+	players.EXPECT().Join(mock.Anything, "alice").Return(&domain.Player{
+		ID:           playerID,
+		Username:     "alice",
+		SessionToken: &sessionToken,
+	}, nil)
 	server := New(Dependencies{
-		Players: &playerSessionStub{
-			joinPlayer: &domain.Player{
-				ID:           playerID,
-				Username:     "alice",
-				SessionToken: &sessionToken,
-				Status:       domain.PlayerStatusIdle,
-			},
-		},
-		JoinLimiter: middleware.NewJoinRateLimiter(t.Context(), 10, time.Minute, time.Minute),
+		Players:     players,
+		JoinLimiter: newAllowingRateLimiter(t),
 		Log:         newV1TestLogger(t, &logs),
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/players/join", strings.NewReader(`{"username":"alice"}`))
@@ -103,31 +112,6 @@ func TestPlayerJoinSecurityLogRedactsSessionToken(t *testing.T) {
 	entry := requireSecurityLogEntry(t, rawLogs, "player.join")
 	require.Equal(t, "success", entry["outcome"])
 	require.Equal(t, playerID.String(), entry["player_id"])
-}
-
-type adminLoginLogStub struct {
-	err error
-}
-
-func (s adminLoginLogStub) Login(context.Context, string) (*adminusecase.TokenPair, error) {
-	if s.err != nil {
-		return nil, s.err
-	}
-	now := time.Unix(100, 0).UTC()
-	return &adminusecase.TokenPair{
-		AccessToken:      "access-token",
-		RefreshToken:     "refresh-token",
-		AccessExpiresAt:  now.Add(time.Minute),
-		RefreshExpiresAt: now.Add(time.Hour),
-	}, nil
-}
-
-func (adminLoginLogStub) Refresh(context.Context, string) (*adminusecase.TokenPair, error) {
-	panic("unused")
-}
-
-func (adminLoginLogStub) Logout(context.Context, string, ...string) error {
-	panic("unused")
 }
 
 func newV1TestLogger(t *testing.T, buf *bytes.Buffer) logkit.Logger {

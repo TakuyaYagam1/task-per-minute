@@ -2,34 +2,32 @@ package websocket
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"net"
 	"net/http"
 	"net/url"
-	"path"
 	"strings"
 	"sync"
 	"time"
 
 	coderws "github.com/coder/websocket"
-	"github.com/google/uuid"
 	logkit "github.com/wahrwelt-kit/go-logkit"
 
-	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/requestmeta"
-	arenaws "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket/arena"
-	"github.com/TakuyaYagam1/task-per-minute/internal/ctxutil"
-	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket/wirelimits"
 	appobservability "github.com/TakuyaYagam1/task-per-minute/internal/observability"
-	duelusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel"
 )
 
 const (
-	defaultHubCloseDelay        = 100 * time.Millisecond
-	defaultDisconnectGrace      = time.Second
-	defaultSessionCheckInterval = 20 * time.Second
-	defaultSessionCheckTimeout  = 2 * time.Second
-	wsCleanupTimeout            = 5 * time.Second
+	TournamentPublicWebSocketPath      = "/api/v1/tournaments/{tournament_id}/realtime"
+	TournamentParticipantWebSocketPath = "/api/v1/tournaments/{tournament_id}/participant/realtime"
+	TournamentOperatorWebSocketPath    = "/api/v1/admin/tournaments/{tournament_id}/realtime"
+	defaultWriteWait                   = 10 * time.Second
+	defaultPingInterval                = 20 * time.Second
+	defaultSessionCheckInterval        = 20 * time.Second
+	defaultSessionCheckTimeout         = 2 * time.Second
+	defaultReadLimit                   = wirelimits.MaxMessageBytes
+	defaultMaxConnections              = 512
+	defaultMaxConnectionsPerPrincipal  = 4
+	serverShutdownCloseText            = "server shutdown"
 )
 
 type HandshakeRateLimiter interface {
@@ -39,798 +37,253 @@ type HandshakeRateLimiter interface {
 
 type ClientIPResolver func(r *http.Request) string
 
-type ArenaOperatorPrincipalResolver func(
-	r *http.Request,
-	player *domain.Player,
-	tournamentID uuid.UUID,
-) (arenaws.OperatorRealtimePrincipal, bool)
-
-type TimerStopper interface {
-	StopAll()
-}
-
-type replacementDecisionLookup func(context.Context, uuid.UUID) (*duelusecase.ReconnectDecision, error)
-
-type InboundRateLimits struct {
-	MessageAttempts int
-	MessageWindow   time.Duration
-	ActionAttempts  int
-	ActionWindow    time.Duration
-}
-
 type Server struct {
 	ctx                  context.Context
 	cancel               context.CancelFunc
-	players              PlayerReader
-	matchmaking          Matchmaking
-	flags                FlagSubmitter
-	hubs                 *HubRegistry
-	broadcaster          *Broadcaster
-	hints                *duelusecase.HintScheduler
-	duels                DuelTaskReader
-	storage              SourceFileURLSigner
-	timers               TimerStopper
+	players              PlayerSessionReader
 	acceptOptions        *coderws.AcceptOptions
-	reconnect            ReconnectManager
-	closeDelay           time.Duration
-	disconnectGrace      time.Duration
 	handshakeLimiter     HandshakeRateLimiter
-	inboundLimits        InboundRateLimits
+	clientIP             ClientIPResolver
+	participant          TournamentParticipantConnectionFlow
+	public               TournamentPublicConnectionFlow
+	operator             TournamentOperatorConnectionFlow
+	operatorResolve      TournamentOperatorSessionResolver
+	realtimeDelivery     *RealtimeDelivery
+	tournamentObserver   appobservability.TournamentEventObserver
 	sessionCheckInterval time.Duration
 	sessionCheckTimeout  time.Duration
-	clientIP             ClientIPResolver
-	arenaParticipant     ArenaParticipantConnectionFlow
-	arenaPublic          ArenaPublicConnectionFlow
-	arenaOperator        ArenaOperatorConnectionFlow
-	arenaTerminal        ArenaTerminalSubscriptionFlow
-	arenaOperatorResolve ArenaOperatorPrincipalResolver
-	arenaObserver        appobservability.ArenaEventObserver
+	maxConnections       int
+	maxPerPrincipal      int
 	requireOrigin        bool
 	log                  logkit.Logger
 
-	wg      sync.WaitGroup
-	clients sync.Map
+	lifecycleMu sync.Mutex
+	closing     bool
+	connections map[*coderws.Conn]struct{}
+	active      int
+	byPrincipal map[string]int
+	wg          sync.WaitGroup
 }
 
 type Option func(*Server)
 
 func WithContext(ctx context.Context) Option {
-	return func(s *Server) {
+	return func(server *Server) {
 		if ctx != nil {
-			s.ctx = ctx
+			server.ctx = ctx
 		}
 	}
 }
 
-func WithAcceptOptions(opts *coderws.AcceptOptions) Option {
-	return func(s *Server) {
-		s.acceptOptions = opts
+func WithAcceptOptions(options *coderws.AcceptOptions) Option {
+	return func(server *Server) {
+		server.acceptOptions = options
 	}
 }
 
-func WithReconnectManager(manager ReconnectManager) Option {
-	return func(s *Server) {
-		s.reconnect = manager
-	}
-}
-
-func WithHintScheduler(hints *duelusecase.HintScheduler) Option {
-	return func(s *Server) {
-		s.hints = hints
-	}
-}
-
-func WithTaskResolver(duels DuelTaskReader, storage SourceFileURLSigner) Option {
-	return func(s *Server) {
-		s.duels = duels
-		s.storage = storage
-	}
-}
-
-func WithTimerStopper(timers TimerStopper) Option {
-	return func(s *Server) {
-		s.timers = timers
-	}
-}
-
-func WithHubCloseDelay(delay time.Duration) Option {
-	return func(s *Server) {
-		s.closeDelay = delay
-	}
-}
-
-func WithDisconnectGrace(delay time.Duration) Option {
-	return func(s *Server) {
-		s.disconnectGrace = delay
-	}
-}
-
-func WithHandshakeRateLimiter(rl HandshakeRateLimiter) Option {
-	return func(s *Server) {
-		s.handshakeLimiter = rl
-	}
-}
-
-func WithInboundRateLimits(limits InboundRateLimits) Option {
-	return func(s *Server) {
-		s.inboundLimits = limits
-	}
-}
-
-func WithSessionMonitor(interval, timeout time.Duration) Option {
-	return func(s *Server) {
-		s.sessionCheckInterval = interval
-		s.sessionCheckTimeout = timeout
+func WithHandshakeRateLimiter(limiter HandshakeRateLimiter) Option {
+	return func(server *Server) {
+		server.handshakeLimiter = limiter
 	}
 }
 
 func WithClientIPResolver(resolver ClientIPResolver) Option {
-	return func(s *Server) {
+	return func(server *Server) {
 		if resolver != nil {
-			s.clientIP = resolver
+			server.clientIP = resolver
 		}
 	}
 }
 
-func WithArenaParticipantFlow(flow ArenaParticipantConnectionFlow) Option {
-	return func(s *Server) {
-		s.arenaParticipant = flow
+func WithSessionMonitor(interval, timeout time.Duration) Option {
+	return func(server *Server) {
+		server.sessionCheckInterval = interval
+		server.sessionCheckTimeout = timeout
 	}
 }
 
-func WithArenaPublicFlow(flow ArenaPublicConnectionFlow) Option {
-	return func(s *Server) {
-		s.arenaPublic = flow
+func WithConnectionLimits(maxConnections, maxPerPrincipal int) Option {
+	return func(server *Server) {
+		if maxConnections > 0 {
+			server.maxConnections = maxConnections
+		}
+		if maxPerPrincipal > 0 {
+			server.maxPerPrincipal = maxPerPrincipal
+		}
 	}
 }
 
-func WithArenaOperatorFlow(flow ArenaOperatorConnectionFlow) Option {
-	return func(s *Server) {
-		s.arenaOperator = flow
+func WithTournamentParticipantFlow(flow TournamentParticipantConnectionFlow) Option {
+	return func(server *Server) {
+		server.participant = flow
 	}
 }
 
-func WithArenaTerminalFlow(flow ArenaTerminalSubscriptionFlow) Option {
-	return func(s *Server) {
-		s.arenaTerminal = flow
+func WithTournamentPublicFlow(flow TournamentPublicConnectionFlow) Option {
+	return func(server *Server) {
+		server.public = flow
 	}
 }
 
-func WithArenaOperatorPrincipalResolver(resolver ArenaOperatorPrincipalResolver) Option {
-	return func(s *Server) {
-		s.arenaOperatorResolve = resolver
+func WithTournamentOperatorFlow(flow TournamentOperatorConnectionFlow) Option {
+	return func(server *Server) {
+		server.operator = flow
 	}
 }
 
-func WithArenaEventObserver(observer appobservability.ArenaEventObserver) Option {
-	return func(s *Server) {
-		s.arenaObserver = observer
+func WithTournamentOperatorSessionResolver(resolver TournamentOperatorSessionResolver) Option {
+	return func(server *Server) {
+		server.operatorResolve = resolver
+	}
+}
+
+func WithRealtimeDelivery(delivery *RealtimeDelivery) Option {
+	return func(server *Server) {
+		server.realtimeDelivery = delivery
+	}
+}
+
+func WithTournamentEventObserver(observer appobservability.TournamentEventObserver) Option {
+	return func(server *Server) {
+		server.tournamentObserver = observer
 	}
 }
 
 func WithRequireOrigin(require bool) Option {
-	return func(s *Server) {
-		s.requireOrigin = require
+	return func(server *Server) {
+		server.requireOrigin = require
 	}
 }
 
 func WithLogger(log logkit.Logger) Option {
-	return func(s *Server) {
-		s.log = log
+	return func(server *Server) {
+		server.log = log
 	}
 }
 
-func NewServer(
-	players PlayerReader,
-	matchmaking Matchmaking,
-	flags FlagSubmitter,
-	hubs *HubRegistry,
-	options ...Option,
-) *Server {
-	if hubs == nil {
-		hubs = NewHubRegistry()
-	}
-	s := &Server{
+func NewServer(players PlayerSessionReader, options ...Option) *Server {
+	server := &Server{
 		ctx:                  context.Background(),
 		players:              players,
-		matchmaking:          matchmaking,
-		flags:                flags,
-		hubs:                 hubs,
-		closeDelay:           defaultHubCloseDelay,
-		disconnectGrace:      defaultDisconnectGrace,
 		sessionCheckInterval: defaultSessionCheckInterval,
 		sessionCheckTimeout:  defaultSessionCheckTimeout,
+		maxConnections:       defaultMaxConnections,
+		maxPerPrincipal:      defaultMaxConnectionsPerPrincipal,
+		connections:          make(map[*coderws.Conn]struct{}),
+		byPrincipal:          make(map[string]int),
 	}
-	for _, opt := range options {
-		opt(s)
+	for _, option := range options {
+		option(server)
 	}
-	if s.arenaObserver == nil {
-		s.arenaObserver = appobservability.NewArenaStructuredLogger(s.log)
+	if server.tournamentObserver == nil {
+		server.tournamentObserver = appobservability.NewTournamentStructuredLogger(server.log)
 	}
-
-	s.ctx, s.cancel = context.WithCancel(s.ctx) //nolint:gosec,nolintlint // G118 in older gosec: cancel is stored on Server and invoked by Shutdown.
-	s.broadcaster = newBroadcaster(s.ctx, s.hubs, s.players, s.clientByPlayer, s.closeDelay)
-	if s.hints != nil {
-		s.hints.SetSender(s.sendHintUnlocked)
-	}
-	return s
+	server.ctx, server.cancel = context.WithCancel(server.ctx)
+	return server
 }
 
-func (s *Server) Broadcaster() *Broadcaster {
-	return s.broadcaster
-}
-
-func (s *Server) SetReconnectManager(manager ReconnectManager) {
-	s.reconnect = manager
-}
-
-func (s *Server) Shutdown(ctx context.Context) {
-	if s == nil {
+func (server *Server) Shutdown(ctx context.Context) {
+	if server == nil || ctx == nil {
 		return
 	}
-	if ctx == nil {
-		//nolint:contextcheck // Shutdown is a lifecycle boundary; nil input falls back to a root context.
-		ctx = context.Background()
+
+	server.lifecycleMu.Lock()
+	if !server.closing {
+		server.closing = true
+		if server.cancel != nil {
+			server.cancel()
+		}
 	}
-	s.clients.Range(func(_, raw any) bool {
-		c := raw.(*client)
-		_ = c.sendError(ErrorServerShutdown, "server is shutting down")
-		return true
-	})
-
-	drain := time.NewTimer(50 * time.Millisecond)
-	select {
-	case <-ctx.Done():
-		if !drain.Stop() {
-			<-drain.C
-		}
-	case <-drain.C:
+	connections := make([]*coderws.Conn, 0, len(server.connections))
+	for connection := range server.connections {
+		connections = append(connections, connection)
 	}
+	server.lifecycleMu.Unlock()
 
-	s.stopBackgroundTimers()
-
-	s.clients.Range(func(key, raw any) bool {
-		c := raw.(*client)
-		if c.isQueued() && s.matchmaking != nil {
-			_ = s.matchmaking.LeaveQueue(ctx, c.player.ID)
-			c.setQueued(false)
-		}
-		if duelID, ok := c.currentDuel(); ok {
-			s.hubs.Unregister(duelID, c)
-			if s.hints != nil {
-				s.hints.StopDuel(duelID)
-			}
-			if s.reconnect != nil {
-				s.reconnect.CloseDuel(duelID)
-			}
-		}
-		s.clients.Delete(key)
-		c.CloseNow()
-		return true
-	})
-
-	if s.cancel != nil {
-		s.cancel()
+	for _, connection := range connections {
+		_ = connection.CloseNow()
 	}
 
-	waitDone := make(chan struct{})
+	done := make(chan struct{})
 	go func() {
-		s.wg.Wait()
-		close(waitDone)
+		server.wg.Wait()
+		close(done)
 	}()
 	select {
-	case <-waitDone:
+	case <-done:
 	case <-ctx.Done():
-	}
-
-	s.hubs.CloseAll()
-}
-
-func (s *Server) stopBackgroundTimers() {
-	if s.reconnect != nil {
-		s.reconnect.StopAll()
-	}
-	if s.timers != nil {
-		s.timers.StopAll()
-	}
-	if s.hints != nil {
-		s.hints.StopAll()
+		for _, connection := range connections {
+			_ = connection.CloseNow()
+		}
+		return
 	}
 }
 
-//nolint:gocyclo // Handshake ordering keeps method, transport, rate, origin, auth, and upgrade checks fail-closed.
-func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.Header().Set("Allow", http.MethodGet)
-		writeHandshakeProblem(w, r, http.StatusMethodNotAllowed, "method not allowed")
+func (server *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	scope, principal, resume, ok := server.prepareTournamentConnection(w, r)
+	if !ok {
 		return
 	}
-	if r.URL.Path != "/ws" {
-		writeHandshakeProblem(w, r, http.StatusNotFound, "websocket endpoint not found")
+	release, limit := server.reserveConnection(scope, principal)
+	if limit != connectionAvailable {
+		server.writeConnectionLimitProblem(w, r, limit)
 		return
 	}
-
-	if hasUnsafeSessionTokenTransport(r) || hasArenaQueryCredential(r) {
-		s.logRequestSecurityEvent(r, "ws.auth", wsSecurityOutcomeFailure, wsAuthFailureFields(r))
-		writeHandshakeProblem(w, r, http.StatusUnauthorized, "unsupported session token transport")
-		return
-	}
-
-	if s.handshakeLimiter != nil {
-		ip := s.resolveClientIP(r)
-		if !s.handshakeLimiter.Allow(ip) {
-			if retry := s.handshakeLimiter.RetryAfter(); retry != "" {
-				w.Header().Set("Retry-After", retry)
-			}
-			s.logRequestSecurityEvent(r, "ws.handshake", wsSecurityOutcomeRateLimited, logkit.Fields{
-				"error_code": "rate_limited",
-				"reason":     "handshake_rate_limit",
-			})
-			writeHandshakeProblem(w, r, http.StatusTooManyRequests, "too many handshake attempts")
-			return
-		}
-	}
-
-	if !s.acceptsOrigin(r) {
-		s.logRequestSecurityEvent(r, "ws.handshake", wsSecurityOutcomeFailure, logkit.Fields{
-			"error_code": "origin_not_allowed",
-			"reason":     "origin_not_allowed",
-		})
-		writeHandshakeProblem(w, r, http.StatusForbidden, "origin not allowed")
-		return
-	}
-
-	arenaRole, arenaConnection, validArenaMarker := arenaRoleFromRequest(r)
-	if !validArenaMarker {
-		writeHandshakeProblem(w, r, http.StatusBadRequest, "invalid Arena role")
-		return
-	}
-
-	var player *domain.Player
-	if !arenaConnection || arenaRole != ArenaRolePublic {
-		var ok bool
-		player, ok = s.authenticate(w, r)
-		if !ok {
-			return
-		}
-	}
-
-	acceptOpts := s.acceptOptions
-	conn, err := coderws.Accept(w, r, acceptOpts)
+	defer release()
+	connection, err := coderws.Accept(w, r, server.acceptOptions)
 	if err != nil {
-		s.logRequestSecurityEvent(r, "ws.handshake", wsSecurityOutcomeFailure, logkit.Fields{
+		server.logRequestSecurityEvent(r, "ws.handshake", wsSecurityOutcomeFailure, logkit.Fields{
 			"error_code": "accept_failed",
 			"reason":     "upgrade_failed",
 		})
 		return
 	}
-	if player != nil {
-		s.logRequestSecurityEvent(r, "ws.auth", wsSecurityOutcomeSuccess, logkit.Fields{
-			"player_id": player.ID.String(),
-		})
+	connection.SetReadLimit(defaultReadLimit)
+	if !server.registerConnection(connection) {
+		_ = connection.Close(coderws.StatusGoingAway, serverShutdownCloseText)
+		return
 	}
+	defer server.unregisterConnection(connection)
+	defer func() { _ = connection.CloseNow() }()
 
-	connCtx, cancel := context.WithCancel(context.WithoutCancel(r.Context()))
-	//nolint:contextcheck // WebSocket connections also stop on server shutdown, not only request lifetime.
-	stopOnServerShutdown := context.AfterFunc(s.ctx, cancel)
+	connectionCtx, cancel := context.WithCancel(r.Context())
 	defer cancel()
-	defer stopOnServerShutdown()
-	if arenaConnection {
-		s.wg.Add(1)
-		defer func() {
-			cancel()
-			s.wg.Done()
-		}()
-		s.serveArenaConnection(connCtx, r, conn, arenaRole, player)
-		return
-	}
-
-	c := newClient(player, conn, s.inboundLimits)
-	var oldClient *client
-	if old, loaded := s.clients.Swap(player.ID, c); loaded {
-		oldClient = old.(*client)
-		oldClient.markDisplaced()
-	}
-	s.wg.Add(1)
-	go func() {
-		defer s.wg.Done()
-		c.writePump(connCtx)
-	}()
-	s.wg.Add(1)
-	go func() {
-		defer s.wg.Done()
-		s.startSessionMonitor(connCtx, c)
-	}()
-
-	handled := false
-	if oldClient != nil {
-		handled = s.handleConnectionReplacement(connCtx, c, oldClient)
-	}
-	if !handled {
-		handled = s.handleReconnect(connCtx, c)
-	}
-	if !handled {
-		s.handleActiveDuelRestore(connCtx, c)
-	}
-	s.readPump(connCtx, c)
-	s.cleanupClient(connCtx, c)
+	server.serveTournamentConnection(connectionCtx, connection, scope, principal, resume)
 }
 
-func arenaRoleFromRequest(r *http.Request) (ArenaRole, bool, bool) {
-	if r == nil || r.URL == nil {
-		return "", false, true
-	}
-	values, present := r.URL.Query()["arena_role"]
-	if !present {
-		return "", false, true
-	}
-	if len(values) != 1 {
-		return "", true, false
-	}
-	role := ArenaRole(strings.TrimSpace(values[0]))
-	switch role {
-	case ArenaRoleParticipant, ArenaRolePublic, ArenaRoleOperator:
-		return role, true, true
-	default:
-		return role, true, false
-	}
-}
-
-func hasArenaQueryCredential(r *http.Request) bool {
-	if r == nil || r.URL == nil {
+func (server *Server) registerConnection(connection *coderws.Conn) bool {
+	server.lifecycleMu.Lock()
+	defer server.lifecycleMu.Unlock()
+	if server.closing {
 		return false
 	}
-	for key := range r.URL.Query() {
-		switch strings.ToLower(strings.TrimSpace(key)) {
-		case "access_token", "authorization", "credential", "password", "session_token":
-			return true
-		}
-	}
-	return false
-}
-
-func (s *Server) startSessionMonitor(ctx context.Context, c *client) {
-	if c == nil {
-		return
-	}
-	interval := s.sessionCheckInterval
-	if interval <= 0 {
-		interval = defaultSessionCheckInterval
-	}
-	timeout := s.sessionCheckTimeout
-	if timeout <= 0 {
-		timeout = defaultSessionCheckTimeout
-	}
-
-	var expires <-chan time.Time
-	var expiryTimer *time.Timer
-	if c.sessionExpiresAt != nil {
-		delay := time.Until(*c.sessionExpiresAt)
-		if delay <= 0 {
-			s.rejectInvalidSession(c, "session_expired")
-			return
-		}
-		expiryTimer = time.NewTimer(delay)
-		defer expiryTimer.Stop()
-		expires = expiryTimer.C
-	}
-
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			checkCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeout)
-			valid := s.validateSession(checkCtx, c)
-			cancel()
-			if !valid {
-				s.rejectInvalidSession(c, "stale_session")
-				return
-			}
-		case <-expires:
-			s.rejectInvalidSession(c, "session_expired")
-			return
-		case <-c.done:
-			return
-		case <-ctx.Done():
-			return
-		}
-	}
-}
-
-func (s *Server) handleConnectionReplacement(ctx context.Context, c, old *client) bool {
-	queued, duelID, inDuel := old.stateSnapshot()
-	if s.reconnect != nil {
-		if s.handleReplacementDecision(ctx, c, old, duelID, inDuel, s.reconnect.ConsumeReconnect) {
-			return true
-		}
-		if s.handleReplacementDecision(ctx, c, old, duelID, inDuel, s.reconnect.ActiveDuel) {
-			return true
-		}
-	}
-
-	if inDuel {
-		return s.replaceActiveDuelClient(ctx, c, old, duelID)
-	}
-
-	if queued {
-		c.setQueued(true)
-		old.CloseNow()
-		return false
-	}
-
-	old.CloseNow()
-	return false
-}
-
-func (s *Server) handleReplacementDecision(
-	ctx context.Context,
-	c, old *client,
-	oldDuelID uuid.UUID,
-	oldInDuel bool,
-	lookup replacementDecisionLookup,
-) bool {
-	decision, err := lookup(ctx, c.player.ID)
-	if err != nil {
-		old.CloseNow()
-		s.sendAppError(c, err)
-		return true
-	}
-	if decision == nil {
-		return false
-	}
-	s.detachOldClientFromDuel(old, oldDuelID, oldInDuel)
-	if !s.attachToDuelHub(ctx, c, decision.Duel.ID) {
-		return true
-	}
-	if err := s.sendDuelResume(ctx, c, decision, false); err != nil {
-		s.closeAfterCriticalSendFailure(c, EventDuelResume, err)
-	}
+	server.connections[connection] = struct{}{}
+	server.wg.Add(1)
 	return true
 }
 
-func (s *Server) replaceActiveDuelClient(ctx context.Context, c, old *client, duelID uuid.UUID) bool {
-	s.detachOldClientFromDuel(old, duelID, true)
-	if s.reconnect == nil {
-		return s.attachToDuelHub(ctx, c, duelID)
-	}
-
-	decision, err := s.reconnect.ActiveDuel(ctx, c.player.ID)
-	if err != nil {
-		s.sendAppError(c, err)
-		return true
-	}
-	if decision == nil {
-		return true
-	}
-	if !s.attachToDuelHub(ctx, c, decision.Duel.ID) {
-		return true
-	}
-	if err := s.sendDuelResume(ctx, c, decision, false); err != nil {
-		s.closeAfterCriticalSendFailure(c, EventDuelResume, err)
-	}
-	return true
+func (server *Server) unregisterConnection(connection *coderws.Conn) {
+	server.lifecycleMu.Lock()
+	delete(server.connections, connection)
+	server.lifecycleMu.Unlock()
+	server.wg.Done()
 }
 
-func (s *Server) detachOldClientFromDuel(old *client, duelID uuid.UUID, inDuel bool) {
-	if inDuel {
-		s.hubs.Unregister(duelID, old)
-	}
-	old.CloseNow()
+func (server *Server) isClosing() bool {
+	server.lifecycleMu.Lock()
+	defer server.lifecycleMu.Unlock()
+	return server.closing
 }
 
-func (s *Server) handleReconnect(ctx context.Context, c *client) bool {
-	if s.reconnect == nil {
-		return false
-	}
-
-	decision, err := s.reconnect.ConsumeReconnect(ctx, c.player.ID)
-	if err != nil {
-		s.sendAppError(c, err)
-		return true
-	}
-	if decision == nil {
-		return false
-	}
-	if decision.WindowExpired {
-		_ = c.sendError(ErrorInvalidPayload, "reconnect window expired")
-		return true
-	}
-
-	if !s.attachToDuelHub(ctx, c, decision.Duel.ID) {
-		return true
-	}
-
-	if decision.OpponentExpired {
-		if _, err := s.reconnect.FinalizeDraw(ctx, decision.Duel.ID); err != nil {
-			s.sendAppError(c, err)
-		}
-		return true
-	}
-
-	if decision.Resume {
-		if err := s.sendDuelResume(ctx, c, decision, true); err != nil {
-			s.closeAfterCriticalSendFailure(c, EventDuelResume, err)
-		}
-		return true
-	}
-
-	if decision.OpponentDisconnected {
-		if err := s.sendDuelResume(ctx, c, decision, false); err != nil {
-			s.closeAfterCriticalSendFailure(c, EventDuelResume, err)
-			return true
-		}
-		deadline := decision.OpponentReconnectDeadline
-		_ = c.sendEvent(EventOpponentDisconnected, OpponentDisconnectedPayload{
-			DuelID:            decision.Duel.ID,
-			PlayerID:          decision.OpponentID,
-			ReconnectDeadline: deadline,
-		})
-	}
-	return true
-}
-
-func (s *Server) handleActiveDuelRestore(ctx context.Context, c *client) bool {
-	if s.reconnect == nil {
-		return false
-	}
-	decision, err := s.reconnect.ActiveDuel(ctx, c.player.ID)
-	if err != nil {
-		s.sendAppError(c, err)
-		return true
-	}
-	if decision == nil {
-		return false
-	}
-	if !s.attachToDuelHub(ctx, c, decision.Duel.ID) {
-		return true
-	}
-	if err := s.sendDuelResume(ctx, c, decision, false); err != nil {
-		s.closeAfterCriticalSendFailure(c, EventDuelResume, err)
-	}
-	return true
-}
-
-func (s *Server) sendDuelResume(ctx context.Context, c *client, decision *duelusecase.ReconnectDecision, notifyOpponent bool) error {
-	payload := DuelResumePayload{
-		DuelID:     decision.Duel.ID,
-		OpponentID: decision.OpponentID,
-		Deadline:   decision.NewDeadline,
-	}
-	if s.players != nil {
-		opponent, err := s.players.GetByID(ctx, decision.OpponentID)
-		if err == nil && opponent != nil {
-			payload.OpponentUsername = opponent.Username
-		}
-	}
-	if decision.OpponentDisconnected {
-		payload.OpponentDisconnected = true
-		payload.OpponentReconnectDeadline = &decision.OpponentReconnectDeadline
-	}
-	task, err := s.taskPayloadForPlayer(ctx, decision.Duel, c.player.ID)
-	if err != nil {
-		s.sendAppError(c, err)
-		return err
-	}
-	if task != nil {
-		payload.Task = task
-	}
-	if err := c.sendEvent(EventDuelResume, payload); err != nil {
-		return err
-	}
-	if notifyOpponent {
-		if opponent, ok := s.clientByPlayer(decision.OpponentID); ok {
-			if err := opponent.sendEvent(EventOpponentReconnected, OpponentReconnectedPayload{
-				DuelID:   decision.Duel.ID,
-				PlayerID: c.player.ID,
-				Deadline: decision.NewDeadline,
-			}); err != nil {
-				s.logClientDeliveryFailure(opponent, EventOpponentReconnected, err)
-			}
-		}
-	}
-	return nil
-}
-
-func (s *Server) taskPayloadForPlayer(ctx context.Context, duel *domain.Duel, playerID uuid.UUID) (*TaskPayload, error) {
-	if duel == nil {
-		return nil, nil
-	}
-
-	var snapshot duelusecase.HintSnapshot
-	var ok bool
-	if s.hints != nil {
-		snapshot, ok = s.hints.PlayerSnapshot(duel.ID, playerID)
-	}
-
-	task := snapshot.Task
-	if s.duels != nil {
-		persisted, err := s.duels.GetPlayerTask(ctx, duel.ID, playerID)
-		if err != nil {
-			return nil, fmt.Errorf("DuelRepo.GetPlayerTask: %w", err)
-		}
-		task = persisted
-	}
-	if task == nil {
-		return nil, nil
-	}
-
-	task, err := s.prepareOutboundTask(ctx, task)
-	if err != nil {
-		return nil, err
-	}
-	if !ok {
-		snapshot.Schedule = taskVisibleHintSchedule(duel.StartedAt, task)
-	}
-	snapshot.Task = task
-
-	payload := taskPayload(task, snapshot)
-	return &payload, nil
-}
-
-func (s *Server) prepareOutboundTask(ctx context.Context, task *domain.Task) (*domain.Task, error) {
-	if task == nil || task.SourceFileURL == nil {
-		return task, nil
-	}
-	if s.storage == nil {
-		return nil, errors.New("source file storage is not configured")
-	}
-	url, err := s.storage.PresignedGetURL(
-		ctx,
-		domain.TaskSourceFileKeyFromURL(task.ID, *task.SourceFileURL),
-		time.Duration(task.TimeLimit)*time.Second,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("SourceFileStorage.PresignedGetURL: %w", err)
-	}
-	clone := *task
-	clone.SourceFileURL = &url
-	return &clone, nil
-}
-
-func (s *Server) attachToDuelHub(ctx context.Context, c *client, duelID uuid.UUID) bool {
-	c.setDuel(duelID)
-	if _, ok := s.hubs.Get(duelID); !ok {
-		//nolint:contextcheck // Duel hubs are bound to server lifecycle, not to a single request.
-		s.hubs.Create(s.ctx, duelID)
-	}
-	if err := s.hubs.Register(ctx, duelID, c); err != nil {
-		c.clearDuel()
-		s.sendAppError(c, err)
-		return false
-	}
-	return true
-}
-
-func (s *Server) authenticate(w http.ResponseWriter, r *http.Request) (*domain.Player, bool) {
-	token, ok := requestmeta.PlayerSessionTokenFromRequest(r)
-	if !ok {
-		s.logRequestSecurityEvent(r, "ws.auth", wsSecurityOutcomeFailure, wsAuthFailureFields(r))
-		writeHandshakeProblem(w, r, http.StatusUnauthorized, "missing session token")
-		return nil, false
-	}
-	player, err := s.players.GetBySessionToken(r.Context(), token)
-	if err != nil || player == nil {
-		s.logRequestSecurityEvent(r, "ws.auth", wsSecurityOutcomeFailure, logkit.Fields{
-			"error_code": string(domain.ErrorCodeInvalidSession),
-			"reason":     "invalid_session",
-		})
-		writeHandshakeProblem(w, r, http.StatusUnauthorized, "invalid session token")
-		return nil, false
-	}
-	return player, true
-}
-
-func (s *Server) acceptsOrigin(r *http.Request) bool {
-	if s.acceptOptions != nil && s.acceptOptions.InsecureSkipVerify {
+func (server *Server) acceptsOrigin(r *http.Request) bool {
+	if server.acceptOptions != nil && server.acceptOptions.InsecureSkipVerify {
 		return true
 	}
 	var patterns []string
-	if s.acceptOptions != nil {
-		patterns = s.acceptOptions.OriginPatterns
+	if server.acceptOptions != nil {
+		patterns = server.acceptOptions.OriginPatterns
 	}
-	return websocketOriginAllowed(r, patterns, s.requireOrigin)
+	return websocketOriginAllowed(r, patterns, server.requireOrigin)
 }
 
 func websocketOriginAllowed(r *http.Request, originPatterns []string, requireOrigin bool) bool {
@@ -853,17 +306,16 @@ func websocketOriginAllowed(r *http.Request, originPatterns []string, requireOri
 		if strings.Contains(pattern, "://") {
 			target = parsed.Scheme + "://" + parsed.Host
 		}
-		matched, err := path.Match(strings.ToLower(pattern), strings.ToLower(target))
-		if err == nil && matched {
+		if strings.EqualFold(strings.TrimSpace(pattern), target) {
 			return true
 		}
 	}
 	return false
 }
 
-func (s *Server) resolveClientIP(r *http.Request) string {
-	if s.clientIP != nil {
-		if ip := s.clientIP(r); ip != "" {
+func (server *Server) resolveClientIP(r *http.Request) string {
+	if server.clientIP != nil {
+		if ip := server.clientIP(r); ip != "" {
 			return ip
 		}
 	}
@@ -872,85 +324,4 @@ func (s *Server) resolveClientIP(r *http.Request) string {
 		return r.RemoteAddr
 	}
 	return host
-}
-
-func (s *Server) cleanupClient(ctx context.Context, c *client) {
-	if !s.clients.CompareAndDelete(c.player.ID, c) {
-		c.CloseNow()
-		return
-	}
-	cleanupCtx, cleanupCancel := ctxutil.DetachedWithTimeout(ctx, wsCleanupTimeout)
-	defer cleanupCancel()
-	if c.isQueued() && s.matchmaking != nil {
-		_ = s.matchmaking.LeaveQueue(cleanupCtx, c.player.ID)
-	}
-	if duelID, ok := c.currentDuel(); ok {
-		s.hubs.Unregister(duelID, c)
-		if s.reconnect != nil {
-			s.reconnect.BeginDisconnect(cleanupCtx, duelID, c.player.ID)
-		}
-		s.handleDisconnectAfterGrace(cleanupCtx, c, duelID)
-	}
-	c.CloseNow()
-}
-
-func (s *Server) handleDisconnectAfterGrace(ctx context.Context, c *client, duelID uuid.UUID) {
-	if s.reconnect == nil {
-		return
-	}
-	if s.disconnectGrace <= 0 {
-		s.reconnect.HandleDisconnect(ctx, duelID, c.player.ID)
-		return
-	}
-
-	timer := time.NewTimer(s.disconnectGrace)
-	defer timer.Stop()
-
-	serverCtx := s.ctx
-	if serverCtx == nil {
-		serverCtx = context.Background()
-	}
-	select {
-	case <-timer.C:
-	case <-serverCtx.Done():
-		return
-	}
-
-	if replacement, ok := s.clientByPlayer(c.player.ID); ok && replacement != c {
-		if replacementDuelID, inDuel := replacement.currentDuel(); inDuel && replacementDuelID == duelID {
-			return
-		}
-	}
-	s.reconnect.HandleDisconnect(ctx, duelID, c.player.ID)
-}
-
-func (s *Server) clientByPlayer(playerID uuid.UUID) (*client, bool) {
-	raw, ok := s.clients.Load(playerID)
-	if !ok {
-		return nil, false
-	}
-	return raw.(*client), true
-}
-
-func (s *Server) isCurrentClient(c *client) bool {
-	if c == nil || c.player == nil || c.isDisplaced() || c.closed.Load() {
-		return false
-	}
-	current, ok := s.clientByPlayer(c.player.ID)
-	return ok && current == c
-}
-
-func (s *Server) sendHintUnlocked(playerID uuid.UUID, event duelusecase.HintUnlocked) {
-	if c, ok := s.clientByPlayer(playerID); ok {
-		_ = c.sendEvent(EventHintUnlocked, hintUnlockedPayload(event))
-	}
-}
-
-func (s *Server) sendAppError(c *client, err error) {
-	var appErr *domain.Error
-	if errors.As(err, &appErr) {
-		_ = c.sendError(string(appErr.Code), appErr.Message)
-		return
-	}
-	_ = c.sendError(ErrorInternal, "internal error")
 }

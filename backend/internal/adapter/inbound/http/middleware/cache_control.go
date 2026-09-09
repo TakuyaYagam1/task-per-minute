@@ -11,7 +11,7 @@ const (
 	expiredHTTPDate     = "0"
 )
 
-// NoStoreSensitiveResponses prevents auth/session/admin/duel responses from
+// NoStoreSensitiveResponses prevents auth/session/admin/participant responses from
 // being persisted by browsers or intermediary caches. Public cacheable
 // endpoints, such as the leaderboard, are intentionally left untouched.
 func NoStoreSensitiveResponses() func(http.Handler) http.Handler {
@@ -35,5 +35,5 @@ func isSensitiveResponsePath(r *http.Request) bool {
 	path := r.URL.Path
 	return strings.HasPrefix(path, "/api/v1/admin/") ||
 		strings.HasPrefix(path, "/api/v1/players/") ||
-		strings.HasPrefix(path, "/api/v1/duels/")
+		(strings.HasPrefix(path, "/api/v1/tournaments/") && strings.Contains(path, "/participant/"))
 }

@@ -1,25 +1,38 @@
 -- name: TopLeaderboardStats :many
 WITH base_stats AS (
-  SELECT d.winner_id AS player_id,
+  SELECT participant.player_id,
     COUNT(*)::INT AS wins,
     FLOOR(
       AVG(
-        (
-          EXTRACT(
-            EPOCH
-            FROM dpt.solved_at - d.started_at
-          ) * 1000
-        )::BIGINT
+        EXTRACT(
+          EPOCH
+          FROM submission.received_at - attempt.started_at
+        ) * 1000
       )
     )::BIGINT AS average_solve_time_ms
-  FROM duels d
-    JOIN duel_player_tasks dpt ON dpt.duel_id = d.id
-      AND dpt.player_id = d.winner_id
-      AND dpt.solved = TRUE
-      AND dpt.solved_at IS NOT NULL
-  WHERE d.status = 'finished'
-    AND d.winner_id IS NOT NULL
-  GROUP BY d.winner_id
+  FROM official_result_heads AS head
+    JOIN official_result_revisions AS revision
+      ON revision.id = head.current_revision_id
+      AND revision.entity_kind = 'game_attempt'
+    JOIN result_events AS result
+      ON result.id = revision.result_event_id
+      AND result.result_state = 'completed'
+      AND result.result_reason = 'solved'
+    JOIN submission_events AS submission
+      ON submission.id = result.submission_event_id
+      AND submission.participant_id = revision.winner_id
+      AND submission.status = 'accepted'
+    JOIN game_attempts AS attempt
+      ON attempt.id = revision.game_attempt_id
+      AND attempt.started_at IS NOT NULL
+    JOIN participants AS participant
+      ON participant.roster_id = revision.roster_id
+      AND participant.id = revision.winner_id
+  WHERE head.entity_kind = 'game_attempt'
+    AND revision.result_state = 'completed'
+    AND revision.result_reason = 'solved'
+    AND submission.received_at >= attempt.started_at
+  GROUP BY participant.player_id
 ),
 effective_stats AS (
   SELECT p.id AS player_id,

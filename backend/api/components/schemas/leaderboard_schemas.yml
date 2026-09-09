@@ -1,0 +1,28 @@
+LeaderboardEntry:
+  type: object
+  required: [rank, username, wins, average_solve_time_ms]
+  properties:
+    rank:
+      type: integer
+      format: int32
+      minimum: 1
+    username:
+      type: string
+    wins:
+      type: integer
+      format: int32
+      minimum: 0
+    average_solve_time_ms:
+      type: integer
+      format: int64
+      minimum: 0
+
+LeaderboardResponse:
+  type: object
+  required: [entries]
+  properties:
+    entries:
+      type: array
+      maxItems: 50
+      items:
+        $ref: '#/LeaderboardEntry'

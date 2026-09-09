@@ -29,6 +29,8 @@ import (
 
 const containerStartupTimeout = 90 * time.Second
 
+const externalPostgresDSNEnv = "TPM_TEST_POSTGRES_DSN"
+
 var sharedPool *pgxpool.Pool
 
 func TestMain(m *testing.M) {
@@ -58,17 +60,17 @@ type redisFx struct {
 var (
 	redisOnce     sync.Once
 	redisFixture  *redisFx
-	redisInitErr  error
+	errRedisInit  error
 	redisTeardown func()
 )
 
 func sharedRedis(t *testing.T) *redisFx {
 	t.Helper()
 	redisOnce.Do(func() {
-		redisFixture, redisTeardown, redisInitErr = startRedis()
+		redisFixture, redisTeardown, errRedisInit = startRedis()
 	})
-	if redisInitErr != nil {
-		t.Fatalf("redis setup: %v", redisInitErr)
+	if errRedisInit != nil {
+		t.Fatalf("redis setup: %v", errRedisInit)
 	}
 	return redisFixture
 }
@@ -125,17 +127,17 @@ type seaweedFx struct {
 var (
 	seaweedOnce     sync.Once
 	seaweedFixture  *seaweedFx
-	seaweedInitErr  error
+	errSeaweedInit  error
 	seaweedTeardown func()
 )
 
 func sharedSeaweed(t *testing.T) *seaweedFx {
 	t.Helper()
 	seaweedOnce.Do(func() {
-		seaweedFixture, seaweedTeardown, seaweedInitErr = startSeaweedFS()
+		seaweedFixture, seaweedTeardown, errSeaweedInit = startSeaweedFS()
 	})
-	if seaweedInitErr != nil {
-		t.Fatalf("seaweedfs setup: %v", seaweedInitErr)
+	if errSeaweedInit != nil {
+		t.Fatalf("seaweedfs setup: %v", errSeaweedInit)
 	}
 	return seaweedFixture
 }
@@ -233,6 +235,9 @@ func waitForSeaweedS3(ctx context.Context, fx *seaweedFx) error {
 }
 
 func startPostgres() (*pgxpool.Pool, func(), error) {
+	if dsn := strings.TrimSpace(os.Getenv(externalPostgresDSNEnv)); dsn != "" {
+		return startExternalPostgres(dsn)
+	}
 	ctx := context.Background()
 
 	pgC, err := postgres.Run(ctx, "postgres:18-alpine",
@@ -280,6 +285,29 @@ func startPostgres() (*pgxpool.Pool, func(), error) {
 		_ = pgC.Terminate(termCtx)
 	}
 	return pool, teardown, nil
+}
+
+// startExternalPostgres is intentionally non-destructive. The caller owns the
+// supplied disposable database; individual integration tests retain their
+// normal scoped cleanup rather than TestMain resetting all external state.
+func startExternalPostgres(dsn string) (*pgxpool.Pool, func(), error) {
+	ctx, cancel := context.WithTimeout(context.Background(), containerStartupTimeout)
+	defer cancel()
+
+	poolCfg, err := pgxpool.ParseConfig(dsn)
+	if err != nil {
+		return nil, nil, fmt.Errorf("parse external postgres configuration: %w", err)
+	}
+	poolCfg.MaxConns = 50
+	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
+	if err != nil {
+		return nil, nil, fmt.Errorf("connect external postgres: %w", err)
+	}
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		return nil, nil, fmt.Errorf("ping external postgres: %w", err)
+	}
+	return pool, pool.Close, nil
 }
 
 func runMigrations(ctx context.Context, dsn string) error {

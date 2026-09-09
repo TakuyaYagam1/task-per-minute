@@ -1,18 +1,17 @@
 import type { components } from "./schema";
 import { isUUID } from "../lib/validation";
 
-type ActiveDuelInfo = components["schemas"]["ActiveDuelInfo"];
-type AdminPlayer = components["schemas"]["AdminPlayerResponse"];
-type AdminPlayerAuditEvent = components["schemas"]["AdminPlayerAuditEventResponse"];
-type AdminPlayerAuditState = components["schemas"]["AdminPlayerAuditState"];
-type AdminTask = components["schemas"]["TaskResponse"];
-type AdminTokenResponse = components["schemas"]["AdminTokenResponse"];
-type JoinResponse = components["schemas"]["JoinResponse"];
+type AdminPlayer = components["schemas"]["PlayerManagementView"];
+type AdminPlayerAuditEvent = components["schemas"]["PlayerAuditEvent"];
+type AdminPlayerAuditState = components["schemas"]["PlayerAuditState"];
+type AdminTask = components["schemas"]["TaskDetails"];
+type AdminSessionResponse = components["schemas"]["AdminSessionResponse"];
+type JoinPlayerResponse = components["schemas"]["JoinPlayerResponse"];
 type LeaderboardEntry = components["schemas"]["LeaderboardEntry"];
 type LeaderboardResponse = components["schemas"]["LeaderboardResponse"];
-type PlayerMeResponse = components["schemas"]["PlayerMeResponse"];
+type CurrentPlayerResponse = components["schemas"]["CurrentPlayerResponse"];
 type PlayerResponse = components["schemas"]["PlayerResponse"];
-type UploadSourceResponse = components["schemas"]["UploadSourceResponse"];
+type UploadSourceResponse = components["schemas"]["TaskSourceUploadResponse"];
 
 type Guard<T> = (value: unknown) => value is T;
 
@@ -34,12 +33,6 @@ const TASK_DIFFICULTIES = new Set<AdminTask["difficulty"]>([
   "easy",
   "medium",
   "hard",
-]);
-
-const PLAYER_STATUSES = new Set<PlayerResponse["status"]>([
-  "idle",
-  "queued",
-  "in_duel",
 ]);
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -105,28 +98,18 @@ export const assertApiResponse = <T>(
   return value;
 };
 
-export const isJoinResponse = (value: unknown): value is JoinResponse =>
+export const isJoinPlayerResponse = (value: unknown): value is JoinPlayerResponse =>
   isRecord(value) && isUUID(value.player_id);
-
-const isActiveDuelInfo = (value: unknown): value is ActiveDuelInfo =>
-  isRecord(value) &&
-  isUUID(value.id) &&
-  value.status === "active" &&
-  isDateString(value.deadline) &&
-  isDateString(value.started_at);
 
 const isPlayerResponse = (value: unknown): value is PlayerResponse =>
   isRecord(value) &&
   isUUID(value.id) &&
   isString(value.username) &&
-  isString(value.status) &&
-  PLAYER_STATUSES.has(value.status as PlayerResponse["status"]) &&
   isDateString(value.created_at);
 
-export const isPlayerMeResponse = (value: unknown): value is PlayerMeResponse =>
+export const isCurrentPlayerResponse = (value: unknown): value is CurrentPlayerResponse =>
   isRecord(value) &&
-  isPlayerResponse(value.player) &&
-  (value.active_duel === undefined || isActiveDuelInfo(value.active_duel));
+  isPlayerResponse(value.player);
 
 const isLeaderboardEntry = (value: unknown): value is LeaderboardEntry =>
   isRecord(value) &&
@@ -138,12 +121,8 @@ const isLeaderboardEntry = (value: unknown): value is LeaderboardEntry =>
 export const isLeaderboardResponse = (value: unknown): value is LeaderboardResponse =>
   isRecord(value) && Array.isArray(value.entries) && value.entries.every(isLeaderboardEntry);
 
-export const isAdminTokenResponse = (value: unknown): value is AdminTokenResponse =>
-  isRecord(value) &&
-  isString(value.access_token) &&
-  isString(value.refresh_token) &&
-  value.token_type === "Bearer" &&
-  isPositiveInteger(value.expires_in);
+export const isAdminSessionResponse = (value: unknown): value is AdminSessionResponse =>
+  isRecord(value) && isNonNegativeInteger(value.expires_in);
 
 export const isAdminTask = (value: unknown): value is AdminTask =>
   isRecord(value) &&
@@ -168,8 +147,6 @@ export const isAdminPlayer = (value: unknown): value is AdminPlayer =>
   isRecord(value) &&
   isUUID(value.id) &&
   isString(value.username) &&
-  isString(value.status) &&
-  PLAYER_STATUSES.has(value.status as AdminPlayer["status"]) &&
   isDateString(value.created_at) &&
   isOptionalDateStringOrNull(value.deleted_at) &&
   isNonNegativeInteger(value.wins) &&
@@ -182,8 +159,6 @@ export const isAdminPlayerArray = (value: unknown): value is AdminPlayer[] =>
 const isAdminPlayerAuditState = (value: unknown): value is AdminPlayerAuditState =>
   isRecord(value) &&
   isString(value.username) &&
-  isString(value.status) &&
-  PLAYER_STATUSES.has(value.status as AdminPlayerAuditState["status"]) &&
   isNonNegativeInteger(value.wins) &&
   isNonNegativeInteger(value.average_solve_time_ms) &&
   typeof value.stats_overridden === "boolean" &&

@@ -17,17 +17,14 @@
 
 ## Existing Test Ownership
 
-| Spec                                  | Behavior owned                                                                              |
-| ------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `e2e/player-home-contract.spec.ts`    | Player join, cookie session, queue, restore, match transition, and reconnect                |
-| `e2e/task-websocket-contract.spec.ts` | Active duel events, flags, pause, resume, surrender, identity guards, and terminal ordering |
-| `e2e/task-restore-contract.spec.ts`   | Session preflight, storage restore, corrupt storage, reconnect, and server result authority |
-| `e2e/task-links-contract.spec.ts`     | External task links, host-port targets, clipboard, and mixed-content behavior               |
-| `e2e/admin-contract.spec.ts`          | Admin auth, refresh, tasks, players, source upload, audit history, and admin SSE            |
-| `e2e/leaderboard-contract.spec.ts`    | Polling, stale requests, malformed responses, and cached visible state                      |
-| `e2e/csp-report.spec.ts`              | CSP headers and report endpoint behavior                                                    |
-| `e2e/live-backend.spec.ts`            | Explicitly gated smoke against a disposable live backend                                    |
-| `e2e/full-stack-local.spec.ts`        | Disposable compose stack, real REST, real WebSocket, and multi-browser flows                |
+| Spec                               | Behavior owned                                                                   |
+| ---------------------------------- | -------------------------------------------------------------------------------- |
+| `e2e/player-home-contract.spec.ts` | Player join, cookie restore, logout, and leaderboard navigation                 |
+| `e2e/admin-contract.spec.ts`       | Admin auth, refresh, tasks, players, source upload, audit history, and admin SSE |
+| `e2e/leaderboard-contract.spec.ts` | Polling, stale requests, malformed responses, and cached visible state           |
+| `e2e/csp-report.spec.ts`           | CSP headers and report endpoint behavior                                         |
+| `e2e/live-backend.spec.ts`         | Explicitly gated admin smoke against a disposable live backend                   |
+| `e2e/full-stack-local.spec.ts`     | Disposable compose stack, real cookie REST, task CRUD, and source download       |
 
 Add a new focused spec when a new domain has independent behavior. Extend an
 existing spec when the change belongs to the behavior listed above. Keep shared
@@ -39,9 +36,6 @@ Run the narrowest affected test first from `frontend/`:
 
 ```bash
 ./node_modules/.bin/playwright test e2e/player-home-contract.spec.ts --workers=1
-./node_modules/.bin/playwright test e2e/task-websocket-contract.spec.ts --workers=1
-./node_modules/.bin/playwright test e2e/task-restore-contract.spec.ts --workers=1
-./node_modules/.bin/playwright test e2e/task-links-contract.spec.ts --workers=1
 ./node_modules/.bin/playwright test e2e/admin-contract.spec.ts --workers=1
 ./node_modules/.bin/playwright test e2e/leaderboard-contract.spec.ts --workers=1
 ./node_modules/.bin/playwright test e2e/csp-report.spec.ts --workers=1
@@ -50,10 +44,10 @@ Run the narrowest affected test first from `frontend/`:
 Use a line or title filter while iterating, then rerun the complete owning spec:
 
 ```bash
-./node_modules/.bin/playwright test e2e/task-websocket-contract.spec.ts -g "test title" --workers=1
+./node_modules/.bin/playwright test e2e/admin-contract.spec.ts -g "test title" --workers=1
 ```
 
-Contract-focused tests may mock REST and WebSocket boundaries. They must still
+Contract-focused tests may mock REST and realtime boundaries. They must still
 exercise the rendered page and validate the exact outgoing request or command
 when that is part of the contract.
 
@@ -139,10 +133,10 @@ Run full-stack validation for changes to:
 
 - REST request or response shapes
 - cookie, CSRF, refresh, logout, CORS, CSP, or origin behavior
-- WebSocket event or command shapes
-- matchmaking, timer, pause, reconnect, settlement, or leaderboard behavior
+- tournament realtime snapshot shapes
+- readiness, draft, submission, pause, replay, result, or leaderboard behavior
 - source upload and download behavior
-- Next.js API or WebSocket rewrites
+- Next.js API rewrites
 - browser and backend behavior that cannot be proven by mocked routes
 
 `e2e/live-backend.spec.ts` is opt-in and must target an explicitly disposable
@@ -156,8 +150,8 @@ backend. Respect its environment gates and cleanup requirements.
 | Page or feature behavior              | Owning Playwright spec, typecheck, lint, build                                                   |
 | REST adapter or response guard        | Focused success and malformed-response tests, codegen, typecheck, lint                           |
 | Auth, CSRF, storage, or authorization | Positive and negative browser tests plus full-stack gate                                         |
-| WebSocket parser or state transition  | Valid and malformed event tests, stale or wrong-owner tests, reconnect coverage, full-stack gate |
-| Timer or terminal result              | Controlled browser clock, server-authority regression, reconnect coverage, full-stack gate       |
+| Realtime parser or state transition   | Valid and malformed snapshot tests, stale or wrong-owner tests, reconnect coverage, full-stack gate |
+| Timer or official result              | Controlled browser clock, server-authority regression, reconnect coverage, full-stack gate         |
 | Dependency or lockfile                | Standard gate plus `npm audit --omit=dev`                                                        |
 | Deployment URL or rewrite             | Build, CSP or URL contract tests, and full-stack same-origin validation                          |
 
@@ -169,8 +163,8 @@ For async and realtime work, cover:
 - reconnect backoff and give-up behavior
 - late responses from a replaced session
 - stale socket generations
-- missing heartbeat or terminal confirmation
-- duplicate and out-of-order events
+- missing initial snapshots and closed connections
+- duplicate and out-of-order snapshots when a consumer accepts updates
 - local timer versus server result ordering
 - malformed storage and network payloads
 

@@ -5,8 +5,8 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
-func Task(task *domain.Task) api.TaskResponse {
-	return api.TaskResponse{
+func Task(task *domain.Task) api.TaskDetails {
+	return api.TaskDetails{
 		Id:            task.ID,
 		Title:         task.Title,
 		Description:   task.Description,
@@ -14,6 +14,8 @@ func Task(task *domain.Task) api.TaskResponse {
 		Difficulty:    api.TaskDifficulty(task.Difficulty),
 		TimeLimit:     IntToInt32(task.TimeLimit),
 		Flag:          task.Flag,
+		Kind:          api.TaskKind(task.Kind),
+		Enabled:       task.Enabled,
 		Hints:         nullableHints(task.Hints),
 		TaskUrl:       task.TaskURL,
 		SourceFileUrl: task.SourceFileURL,
@@ -34,8 +36,8 @@ func nullableHints(hints []string) []*string {
 	return out
 }
 
-func Tasks(tasks []*domain.Task) []api.TaskResponse {
-	out := make([]api.TaskResponse, 0, len(tasks))
+func Tasks(tasks []*domain.Task) []api.TaskDetails {
+	out := make([]api.TaskDetails, 0, len(tasks))
 	for _, task := range tasks {
 		out = append(out, Task(task))
 	}

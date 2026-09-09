@@ -75,8 +75,8 @@ test-full-stack: ## Start local compose with .env.local and run full-stack e2e
 	../scripts/e2e-local-compose.sh
 
 .PHONY: audit
-audit: ## npm production dependency audit
-	$(NPM) audit --omit=dev
+audit: ## Full dependency advisory gate with reviewed development-only exceptions
+	$(NPM) run audit:dependencies
 
 .PHONY: check
 check: gen-types typecheck lint build test ## Full frontend verification

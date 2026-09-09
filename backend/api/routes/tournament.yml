@@ -1,0 +1,1130 @@
+/api/v1/admin/tournaments:
+  get:
+    operationId: listTournaments
+    tags: [tournament]
+    summary: List tournaments for the authenticated operator
+    x-auth-scope: tournament:manage
+    security:
+      - AdminSessionAuth: []
+    parameters:
+      - $ref: '../components/parameters.yml#/TournamentStateFilter'
+      - $ref: '../components/parameters.yml#/TournamentListCursor'
+      - $ref: '../components/parameters.yml#/TournamentPageSize'
+    responses:
+      '200':
+        description: Operator tournament page.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/TournamentListResponse'
+      '401':
+        $ref: '../components/responses.yml#/UnauthorizedProblem'
+      '403':
+        $ref: '../components/responses.yml#/ForbiddenProblem'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+  post:
+    operationId: createTournament
+    tags: [tournament]
+    summary: Create a tournament
+    description: Operator identity comes from the authenticated session.
+    x-auth-scope: tournament:manage
+    security:
+      - AdminSessionAuth: []
+    parameters:
+      - $ref: '../components/parameters.yml#/IdempotencyKey'
+      - $ref: '../components/parameters.yml#/AdminCSRFToken'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../components/schemas.yml#/CreateTournamentRequest'
+    responses:
+      '201':
+        description: Tournament created.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/Tournament'
+      '401':
+        $ref: '../components/responses.yml#/UnauthorizedProblem'
+      '403':
+        $ref: '../components/responses.yml#/ForbiddenProblem'
+      '409':
+        $ref: '../components/responses.yml#/TournamentRevisionConflictProblem'
+
+      '400':
+        $ref: '../components/responses.yml#/InvalidRequestProblem'
+      '413':
+        $ref: '../components/responses.yml#/RequestEntityTooLargeProblem'
+      '415':
+        $ref: '../components/responses.yml#/UnsupportedMediaTypeProblem'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+/api/v1/admin/tournaments/{tournament_id}/roster:
+  parameters:
+    - $ref: '../components/parameters.yml#/TournamentId'
+  get:
+    operationId: getTournamentRoster
+    tags: [tournament]
+    summary: Read the operator roster projection
+    x-auth-scope: tournament:manage
+    security:
+      - AdminSessionAuth: []
+    responses:
+      '200':
+        description: Tournament roster.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/Roster'
+      '401':
+        $ref: '../components/responses.yml#/UnauthorizedProblem'
+      '403':
+        $ref: '../components/responses.yml#/ForbiddenProblem'
+      '404':
+        $ref: '../components/responses.yml#/NotFoundProblem'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+  put:
+    operationId: replaceTournamentRoster
+    tags: [tournament]
+    summary: Replace tournament roster entries before lock
+    description: Operator identity comes from the authenticated tournament scope.
+    x-auth-scope: tournament:manage
+    security:
+      - AdminSessionAuth: []
+    parameters:
+      - $ref: '../components/parameters.yml#/IdempotencyKey'
+      - $ref: '../components/parameters.yml#/AdminCSRFToken'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../components/schemas.yml#/ReplaceRosterRequest'
+    responses:
+      '200':
+        description: Updated roster.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/Roster'
+      '401':
+        $ref: '../components/responses.yml#/UnauthorizedProblem'
+      '403':
+        $ref: '../components/responses.yml#/ForbiddenProblem'
+      '404':
+        $ref: '../components/responses.yml#/NotFoundProblem'
+      '409':
+        $ref: '../components/responses.yml#/ProjectionRevisionConflictProblem'
+
+      '400':
+        $ref: '../components/responses.yml#/InvalidRequestProblem'
+      '413':
+        $ref: '../components/responses.yml#/RequestEntityTooLargeProblem'
+      '415':
+        $ref: '../components/responses.yml#/UnsupportedMediaTypeProblem'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+/api/v1/admin/tournaments/{tournament_id}/roster/preflight:
+  parameters:
+    - $ref: '../components/parameters.yml#/TournamentId'
+  post:
+    operationId: runTournamentRosterPreflight
+    tags: [tournament]
+    summary: Evaluate roster and runtime preflight checks
+    description: Operator identity comes from the authenticated tournament scope.
+    x-auth-scope: tournament:manage
+    security:
+      - AdminSessionAuth: []
+    parameters:
+      - $ref: '../components/parameters.yml#/IdempotencyKey'
+      - $ref: '../components/parameters.yml#/AdminCSRFToken'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../components/schemas.yml#/PreflightRequest'
+    responses:
+      '200':
+        description: Immutable preflight report.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/PreflightReport'
+      '401':
+        $ref: '../components/responses.yml#/UnauthorizedProblem'
+      '403':
+        $ref: '../components/responses.yml#/ForbiddenProblem'
+      '404':
+        $ref: '../components/responses.yml#/NotFoundProblem'
+      '409':
+        $ref: '../components/responses.yml#/ProjectionRevisionConflictProblem'
+
+      '400':
+        $ref: '../components/responses.yml#/InvalidRequestProblem'
+      '413':
+        $ref: '../components/responses.yml#/RequestEntityTooLargeProblem'
+      '415':
+        $ref: '../components/responses.yml#/UnsupportedMediaTypeProblem'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+/api/v1/admin/tournaments/{tournament_id}/roster/lock:
+  parameters:
+    - $ref: '../components/parameters.yml#/TournamentId'
+  post:
+    operationId: lockTournamentRoster
+    tags: [tournament]
+    summary: Lock a preflight-approved tournament roster
+    description: Operator identity comes from the authenticated tournament scope.
+    x-auth-scope: tournament:manage
+    security:
+      - AdminSessionAuth: []
+    parameters:
+      - $ref: '../components/parameters.yml#/IdempotencyKey'
+      - $ref: '../components/parameters.yml#/AdminCSRFToken'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../components/schemas.yml#/LockRosterRequest'
+    responses:
+      '200':
+        description: Locked roster.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/Roster'
+      '401':
+        $ref: '../components/responses.yml#/UnauthorizedProblem'
+      '403':
+        $ref: '../components/responses.yml#/ForbiddenProblem'
+      '404':
+        $ref: '../components/responses.yml#/NotFoundProblem'
+      '409':
+        $ref: '../components/responses.yml#/ProjectionRevisionConflictProblem'
+
+      '400':
+        $ref: '../components/responses.yml#/InvalidRequestProblem'
+      '413':
+        $ref: '../components/responses.yml#/RequestEntityTooLargeProblem'
+      '415':
+        $ref: '../components/responses.yml#/UnsupportedMediaTypeProblem'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+/api/v1/admin/tournaments/{tournament_id}/roster/unlock:
+  parameters:
+    - $ref: '../components/parameters.yml#/TournamentId'
+  post:
+    operationId: unlockTournamentRoster
+    tags: [tournament]
+    summary: Unlock a roster before tournament execution starts
+    description: This corrective action requires explicit confirmation. Operator identity comes from auth.
+    x-auth-scope: tournament:manage
+    security:
+      - AdminSessionAuth: []
+    parameters:
+      - $ref: '../components/parameters.yml#/IdempotencyKey'
+      - $ref: '../components/parameters.yml#/AdminCSRFToken'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../components/schemas.yml#/UnlockRosterRequest'
+    responses:
+      '200':
+        description: Unlocked roster.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/Roster'
+      '401':
+        $ref: '../components/responses.yml#/UnauthorizedProblem'
+      '403':
+        $ref: '../components/responses.yml#/ForbiddenProblem'
+      '404':
+        $ref: '../components/responses.yml#/NotFoundProblem'
+      '409':
+        $ref: '../components/responses.yml#/ProjectionRevisionConflictProblem'
+
+      '400':
+        $ref: '../components/responses.yml#/InvalidRequestProblem'
+      '413':
+        $ref: '../components/responses.yml#/RequestEntityTooLargeProblem'
+      '415':
+        $ref: '../components/responses.yml#/UnsupportedMediaTypeProblem'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+/api/v1/admin/tournaments/{tournament_id}/pairings:
+  parameters:
+    - $ref: '../components/parameters.yml#/TournamentId'
+  post:
+    operationId: configureTournamentPairings
+    tags: [tournament]
+    summary: Configure a Swiss round and its category policy
+    description: Operator identity comes from the authenticated tournament scope.
+    x-auth-scope: tournament:manage
+    security:
+      - AdminSessionAuth: []
+    parameters:
+      - $ref: '../components/parameters.yml#/IdempotencyKey'
+      - $ref: '../components/parameters.yml#/AdminCSRFToken'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../components/schemas.yml#/PairingConfigurationRequest'
+    responses:
+      '200':
+        description: Configured Swiss round.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/SwissRound'
+      '400':
+        $ref: '../components/responses.yml#/InvalidRequestProblem'
+      '401':
+        $ref: '../components/responses.yml#/UnauthorizedProblem'
+      '403':
+        $ref: '../components/responses.yml#/ForbiddenProblem'
+      '404':
+        $ref: '../components/responses.yml#/NotFoundProblem'
+      '409':
+        $ref: '../components/responses.yml#/ProjectionRevisionConflictProblem'
+
+      '413':
+        $ref: '../components/responses.yml#/RequestEntityTooLargeProblem'
+      '415':
+        $ref: '../components/responses.yml#/UnsupportedMediaTypeProblem'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+/api/v1/admin/tournaments/{tournament_id}/actions:
+  parameters:
+    - $ref: '../components/parameters.yml#/TournamentId'
+  post:
+    operationId: applyTournamentAction
+    tags: [tournament]
+    summary: Apply a tournament lifecycle operator action
+    description: Cancel, pause, resume, and terminal actions require explicit confirmation.
+    x-auth-scope: tournament:manage
+    security:
+      - AdminSessionAuth: []
+    parameters:
+      - $ref: '../components/parameters.yml#/IdempotencyKey'
+      - $ref: '../components/parameters.yml#/AdminCSRFToken'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../components/schemas.yml#/TournamentActionRequest'
+    responses:
+      '200':
+        description: Updated tournament.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/Tournament'
+      '400':
+        $ref: '../components/responses.yml#/InvalidRequestProblem'
+      '401':
+        $ref: '../components/responses.yml#/UnauthorizedProblem'
+      '403':
+        $ref: '../components/responses.yml#/ForbiddenProblem'
+      '404':
+        $ref: '../components/responses.yml#/NotFoundProblem'
+      '409':
+        $ref: '../components/responses.yml#/ProjectionRevisionConflictProblem'
+
+      '413':
+        $ref: '../components/responses.yml#/RequestEntityTooLargeProblem'
+      '415':
+        $ref: '../components/responses.yml#/UnsupportedMediaTypeProblem'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+/api/v1/admin/tournaments/{tournament_id}/waves/{wave_id}/actions:
+  parameters:
+    - $ref: '../components/parameters.yml#/TournamentId'
+    - $ref: '../components/parameters.yml#/WaveId'
+  post:
+    operationId: controlTournamentWave
+    tags: [tournament]
+    summary: Open, start, pause, resume, complete, or cancel a Wave
+    description: Wave control requires explicit confirmation and authenticated operator identity.
+    x-auth-scope: tournament:manage
+    security:
+      - AdminSessionAuth: []
+    parameters:
+      - $ref: '../components/parameters.yml#/IdempotencyKey'
+      - $ref: '../components/parameters.yml#/AdminCSRFToken'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../components/schemas.yml#/WaveControlRequest'
+    responses:
+      '200':
+        description: Updated Wave.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/Wave'
+      '401':
+        $ref: '../components/responses.yml#/UnauthorizedProblem'
+      '403':
+        $ref: '../components/responses.yml#/ForbiddenProblem'
+      '404':
+        $ref: '../components/responses.yml#/NotFoundProblem'
+      '409':
+        $ref: '../components/responses.yml#/ProjectionRevisionConflictProblem'
+
+      '400':
+        $ref: '../components/responses.yml#/InvalidRequestProblem'
+      '413':
+        $ref: '../components/responses.yml#/RequestEntityTooLargeProblem'
+      '415':
+        $ref: '../components/responses.yml#/UnsupportedMediaTypeProblem'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+/api/v1/admin/tournaments/{tournament_id}/waves/{wave_id}/no-shows:
+  parameters:
+    - $ref: '../components/parameters.yml#/TournamentId'
+    - $ref: '../components/parameters.yml#/WaveId'
+  post:
+    operationId: resolveTournamentNoShow
+    tags: [tournament]
+    summary: Resolve a confirmed ready-window no-show
+    description: The body repeats the command scope and revision evidence. Operator identity comes only from auth.
+    x-auth-scope: tournament:manage
+    security:
+      - AdminSessionAuth: []
+    parameters:
+      - $ref: '../components/parameters.yml#/IdempotencyKey'
+      - $ref: '../components/parameters.yml#/AdminCSRFToken'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../components/schemas.yml#/OperatorNoShowRequest'
+    responses:
+      '204':
+        description: No-show resolved.
+      '400':
+        $ref: '../components/responses.yml#/InvalidRequestProblem'
+      '401':
+        $ref: '../components/responses.yml#/UnauthorizedProblem'
+      '403':
+        $ref: '../components/responses.yml#/ForbiddenProblem'
+      '404':
+        $ref: '../components/responses.yml#/NotFoundProblem'
+      '409':
+        $ref: '../components/responses.yml#/ProjectionRevisionConflictProblem'
+
+      '413':
+        $ref: '../components/responses.yml#/RequestEntityTooLargeProblem'
+      '415':
+        $ref: '../components/responses.yml#/UnsupportedMediaTypeProblem'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+/api/v1/admin/tournaments/{tournament_id}/series/{series_id}/assignments/{assignment_id}/operator-reserves:
+  parameters:
+    - $ref: '../components/parameters.yml#/TournamentId'
+    - $ref: '../components/parameters.yml#/SeriesId'
+    - $ref: '../components/parameters.yml#/AssignmentId'
+  post:
+    operationId: assignOperatorReserve
+    tags: [tournament]
+    summary: Assign an operator-selected reserve after exhaustion
+    description: The body repeats the command scope and source revisions. Operator identity comes only from auth.
+    x-auth-scope: tournament:manage
+    security:
+      - AdminSessionAuth: []
+    parameters:
+      - $ref: '../components/parameters.yml#/IdempotencyKey'
+      - $ref: '../components/parameters.yml#/AdminCSRFToken'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../components/schemas.yml#/OperatorReserveRequest'
+    responses:
+      '204':
+        description: Operator reserve assigned.
+      '400':
+        $ref: '../components/responses.yml#/InvalidRequestProblem'
+      '401':
+        $ref: '../components/responses.yml#/UnauthorizedProblem'
+      '403':
+        $ref: '../components/responses.yml#/ForbiddenProblem'
+      '404':
+        $ref: '../components/responses.yml#/NotFoundProblem'
+      '409':
+        $ref: '../components/responses.yml#/ProjectionRevisionConflictProblem'
+
+      '413':
+        $ref: '../components/responses.yml#/RequestEntityTooLargeProblem'
+      '415':
+        $ref: '../components/responses.yml#/UnsupportedMediaTypeProblem'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+/api/v1/admin/tournaments/{tournament_id}/series/{series_id}/operator-forfeits:
+  parameters:
+    - $ref: '../components/parameters.yml#/TournamentId'
+    - $ref: '../components/parameters.yml#/SeriesId'
+  post:
+    operationId: recordTournamentForfeit
+    tags: [tournament]
+    summary: Record a confirmed operator forfeit
+    description: The body repeats the command scope and settlement evidence. Operator identity comes only from auth.
+    x-auth-scope: tournament:manage
+    security:
+      - AdminSessionAuth: []
+    parameters:
+      - $ref: '../components/parameters.yml#/IdempotencyKey'
+      - $ref: '../components/parameters.yml#/AdminCSRFToken'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../components/schemas.yml#/OperatorForfeitRequest'
+    responses:
+      '204':
+        description: Operator forfeit recorded.
+      '400':
+        $ref: '../components/responses.yml#/InvalidRequestProblem'
+      '401':
+        $ref: '../components/responses.yml#/UnauthorizedProblem'
+      '403':
+        $ref: '../components/responses.yml#/ForbiddenProblem'
+      '404':
+        $ref: '../components/responses.yml#/NotFoundProblem'
+      '409':
+        $ref: '../components/responses.yml#/ProjectionRevisionConflictProblem'
+
+      '413':
+        $ref: '../components/responses.yml#/RequestEntityTooLargeProblem'
+      '415':
+        $ref: '../components/responses.yml#/UnsupportedMediaTypeProblem'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+/api/v1/admin/tournaments/{tournament_id}/series/{series_id}/games/{game_id}/replays:
+  parameters:
+    - $ref: '../components/parameters.yml#/TournamentId'
+    - $ref: '../components/parameters.yml#/SeriesId'
+    - $ref: '../components/parameters.yml#/GameId'
+  post:
+    operationId: replayTournamentGame
+    tags: [tournament]
+    summary: Replace a failed Game with a reserved task
+    description: The body repeats the failed Game scope and provides fresh replacement identities. Operator identity comes only from auth.
+    x-auth-scope: tournament:manage
+    security:
+      - AdminSessionAuth: []
+    parameters:
+      - $ref: '../components/parameters.yml#/IdempotencyKey'
+      - $ref: '../components/parameters.yml#/AdminCSRFToken'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../components/schemas.yml#/OperatorReplayRequest'
+    responses:
+      '204':
+        description: Replay replacement opened.
+      '400':
+        $ref: '../components/responses.yml#/InvalidRequestProblem'
+      '401':
+        $ref: '../components/responses.yml#/UnauthorizedProblem'
+      '403':
+        $ref: '../components/responses.yml#/ForbiddenProblem'
+      '404':
+        $ref: '../components/responses.yml#/NotFoundProblem'
+      '409':
+        $ref: '../components/responses.yml#/ProjectionRevisionConflictProblem'
+
+      '413':
+        $ref: '../components/responses.yml#/RequestEntityTooLargeProblem'
+      '415':
+        $ref: '../components/responses.yml#/UnsupportedMediaTypeProblem'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+/api/v1/admin/tournaments/{tournament_id}/series/{series_id}/games/{game_id}/corrections:
+  parameters:
+    - $ref: '../components/parameters.yml#/TournamentId'
+    - $ref: '../components/parameters.yml#/SeriesId'
+    - $ref: '../components/parameters.yml#/GameId'
+  post:
+    operationId: correctTournamentGameResult
+    tags: [tournament]
+    summary: Correct an official Game result and dependent projections
+    description: The correction requires confirmation. Operator identity comes only from auth.
+    x-auth-scope: tournament:manage
+    security:
+      - AdminSessionAuth: []
+    parameters:
+      - $ref: '../components/parameters.yml#/IdempotencyKey'
+      - $ref: '../components/parameters.yml#/AdminCSRFToken'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../components/schemas.yml#/OperatorCorrectionRequest'
+    responses:
+      '200':
+        description: Immutable correction evidence.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/CorrectionEvidence'
+      '401':
+        $ref: '../components/responses.yml#/UnauthorizedProblem'
+      '403':
+        $ref: '../components/responses.yml#/ForbiddenProblem'
+      '404':
+        $ref: '../components/responses.yml#/NotFoundProblem'
+      '409':
+        $ref: '../components/responses.yml#/ProjectionRevisionConflictProblem'
+
+      '400':
+        $ref: '../components/responses.yml#/InvalidRequestProblem'
+      '413':
+        $ref: '../components/responses.yml#/RequestEntityTooLargeProblem'
+      '415':
+        $ref: '../components/responses.yml#/UnsupportedMediaTypeProblem'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+/api/v1/tournaments/{tournament_id}/participant/lobby:
+  parameters:
+    - $ref: '../components/parameters.yml#/TournamentId'
+  get:
+    operationId: getParticipantLobby
+    tags: [tournament]
+    summary: Read the authenticated participant tournament lobby
+    description: Participant identity and roster membership come only from the authenticated session.
+    x-auth-scope: tournament:participate
+    security:
+      - PlayerSessionAuth: []
+    responses:
+      '200':
+        description: Participant lobby view.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/ParticipantLobbyResponse'
+      '401':
+        $ref: '../components/responses.yml#/UnauthorizedProblem'
+      '403':
+        $ref: '../components/responses.yml#/ForbiddenProblem'
+      '404':
+        $ref: '../components/responses.yml#/NotFoundProblem'
+
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+/api/v1/tournaments/{tournament_id}/participant/assignments/{assignment_id}:
+  parameters:
+    - $ref: '../components/parameters.yml#/TournamentId'
+    - $ref: '../components/parameters.yml#/AssignmentId'
+  get:
+    operationId: getParticipantAssignment
+    tags: [tournament]
+    summary: Read a private task assignment for the authenticated participant
+    description: Task delivery fields are returned only after participant ownership is authorized.
+    x-auth-scope: tournament:participate
+    security:
+      - PlayerSessionAuth: []
+    responses:
+      '200':
+        description: Private participant assignment.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/ParticipantAssignmentResponse'
+      '401':
+        $ref: '../components/responses.yml#/UnauthorizedProblem'
+      '403':
+        $ref: '../components/responses.yml#/ForbiddenProblem'
+      '404':
+        $ref: '../components/responses.yml#/NotFoundProblem'
+
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+/api/v1/tournaments/{tournament_id}/participant/waves/{wave_id}/ready:
+  parameters:
+    - $ref: '../components/parameters.yml#/TournamentId'
+    - $ref: '../components/parameters.yml#/WaveId'
+  post:
+    operationId: setParticipantReady
+    tags: [tournament]
+    summary: Set readiness for the authenticated participant
+    description: Participant identity comes from auth and is not accepted in the request body.
+    x-auth-scope: tournament:participate
+    security:
+      - PlayerSessionAuth: []
+    parameters:
+      - $ref: '../components/parameters.yml#/IdempotencyKey'
+      - $ref: '../components/parameters.yml#/RequiredPlayerCSRFToken'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../components/schemas.yml#/ParticipantReadyRequest'
+    responses:
+      '200':
+        description: Recorded readiness event.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/ReadinessEvent'
+      '401':
+        $ref: '../components/responses.yml#/UnauthorizedProblem'
+      '403':
+        $ref: '../components/responses.yml#/ForbiddenProblem'
+      '404':
+        $ref: '../components/responses.yml#/NotFoundProblem'
+      '409':
+        $ref: '../components/responses.yml#/ProjectionRevisionConflictProblem'
+      '429':
+        $ref: '../components/responses.yml#/RateLimitedProblem'
+
+      '400':
+        $ref: '../components/responses.yml#/InvalidRequestProblem'
+      '413':
+        $ref: '../components/responses.yml#/RequestEntityTooLargeProblem'
+      '415':
+        $ref: '../components/responses.yml#/UnsupportedMediaTypeProblem'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+/api/v1/tournaments/{tournament_id}/participant/series/{series_id}/draft/actions:
+  parameters:
+    - $ref: '../components/parameters.yml#/TournamentId'
+    - $ref: '../components/parameters.yml#/SeriesId'
+  post:
+    operationId: submitParticipantDraftAction
+    tags: [tournament]
+    summary: Submit an authenticated participant draft action
+    description: The current draft actor comes from auth and the durable draft turn.
+    x-auth-scope: tournament:participate
+    security:
+      - PlayerSessionAuth: []
+    parameters:
+      - $ref: '../components/parameters.yml#/IdempotencyKey'
+      - $ref: '../components/parameters.yml#/RequiredPlayerCSRFToken'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../components/schemas.yml#/ParticipantDraftActionRequest'
+    responses:
+      '200':
+        description: Updated participant draft view.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/Draft'
+      '400':
+        $ref: '../components/responses.yml#/InvalidRequestProblem'
+      '401':
+        $ref: '../components/responses.yml#/UnauthorizedProblem'
+      '403':
+        $ref: '../components/responses.yml#/ForbiddenProblem'
+      '404':
+        $ref: '../components/responses.yml#/NotFoundProblem'
+      '409':
+        $ref: '../components/responses.yml#/ProjectionRevisionConflictProblem'
+      '429':
+        $ref: '../components/responses.yml#/RateLimitedProblem'
+
+      '413':
+        $ref: '../components/responses.yml#/RequestEntityTooLargeProblem'
+      '415':
+        $ref: '../components/responses.yml#/UnsupportedMediaTypeProblem'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+/api/v1/tournaments/{tournament_id}/participant/series/{series_id}/games/{game_id}/submissions:
+  parameters:
+    - $ref: '../components/parameters.yml#/TournamentId'
+    - $ref: '../components/parameters.yml#/SeriesId'
+    - $ref: '../components/parameters.yml#/GameId'
+  post:
+    operationId: submitParticipantFlag
+    tags: [tournament]
+    summary: Submit a secret for the authenticated participant Game
+    description: The secret is write-only. Participant identity and assignment scope come from auth and the path.
+    x-auth-scope: tournament:participate
+    security:
+      - PlayerSessionAuth: []
+    parameters:
+      - $ref: '../components/parameters.yml#/IdempotencyKey'
+      - $ref: '../components/parameters.yml#/RequiredPlayerCSRFToken'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../components/schemas.yml#/ParticipantSubmissionRequest'
+    responses:
+      '200':
+        description: Redacted submission result.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/ParticipantSubmissionResponse'
+      '400':
+        $ref: '../components/responses.yml#/InvalidRequestProblem'
+      '401':
+        $ref: '../components/responses.yml#/UnauthorizedProblem'
+      '403':
+        $ref: '../components/responses.yml#/ForbiddenProblem'
+      '404':
+        $ref: '../components/responses.yml#/NotFoundProblem'
+      '409':
+        $ref: '../components/responses.yml#/ProjectionRevisionConflictProblem'
+      '429':
+        $ref: '../components/responses.yml#/RateLimitedProblem'
+
+      '413':
+        $ref: '../components/responses.yml#/RequestEntityTooLargeProblem'
+      '415':
+        $ref: '../components/responses.yml#/UnsupportedMediaTypeProblem'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+/api/v1/tournaments/{tournament_id}/participant/series/{series_id}/surrender:
+  parameters:
+    - $ref: '../components/parameters.yml#/TournamentId'
+    - $ref: '../components/parameters.yml#/SeriesId'
+  post:
+    operationId: surrenderParticipantSeries
+    tags: [tournament]
+    summary: Surrender the authenticated participant Series
+    description: Surrender is destructive and requires explicit confirmation. Actor identity comes from auth.
+    x-auth-scope: tournament:participate
+    security:
+      - PlayerSessionAuth: []
+    parameters:
+      - $ref: '../components/parameters.yml#/IdempotencyKey'
+      - $ref: '../components/parameters.yml#/RequiredPlayerCSRFToken'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../components/schemas.yml#/ParticipantSurrenderRequest'
+    responses:
+      '200':
+        description: Official surrender result revision.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/OfficialResultRevision'
+      '400':
+        $ref: '../components/responses.yml#/InvalidRequestProblem'
+      '401':
+        $ref: '../components/responses.yml#/UnauthorizedProblem'
+      '403':
+        $ref: '../components/responses.yml#/ForbiddenProblem'
+      '404':
+        $ref: '../components/responses.yml#/NotFoundProblem'
+      '409':
+        $ref: '../components/responses.yml#/ProjectionRevisionConflictProblem'
+      '429':
+        $ref: '../components/responses.yml#/RateLimitedProblem'
+
+      '413':
+        $ref: '../components/responses.yml#/RequestEntityTooLargeProblem'
+      '415':
+        $ref: '../components/responses.yml#/UnsupportedMediaTypeProblem'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+/api/v1/tournaments/{tournament_id}/participant/series/{series_id}/post-series:
+  parameters:
+    - $ref: '../components/parameters.yml#/TournamentId'
+    - $ref: '../components/parameters.yml#/SeriesId'
+  post:
+    operationId: applyParticipantPostSeriesAction
+    tags: [tournament]
+    summary: Apply a post-Series participant action
+    description: Participant identity comes from auth and is not accepted in the body.
+    x-auth-scope: tournament:participate
+    security:
+      - PlayerSessionAuth: []
+    parameters:
+      - $ref: '../components/parameters.yml#/IdempotencyKey'
+      - $ref: '../components/parameters.yml#/RequiredPlayerCSRFToken'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../components/schemas.yml#/ParticipantPostSeriesRequest'
+    responses:
+      '200':
+        description: Accepted post-Series action.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/ParticipantPostSeriesResponse'
+      '401':
+        $ref: '../components/responses.yml#/UnauthorizedProblem'
+      '403':
+        $ref: '../components/responses.yml#/ForbiddenProblem'
+      '404':
+        $ref: '../components/responses.yml#/NotFoundProblem'
+      '409':
+        $ref: '../components/responses.yml#/ProjectionRevisionConflictProblem'
+      '429':
+        $ref: '../components/responses.yml#/RateLimitedProblem'
+
+      '400':
+        $ref: '../components/responses.yml#/InvalidRequestProblem'
+      '413':
+        $ref: '../components/responses.yml#/RequestEntityTooLargeProblem'
+      '415':
+        $ref: '../components/responses.yml#/UnsupportedMediaTypeProblem'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+/api/v1/tournaments/{tournament_id}/participant/snapshot:
+  parameters:
+    - $ref: '../components/parameters.yml#/TournamentId'
+  get:
+    operationId: getParticipantSnapshot
+    tags: [tournament]
+    summary: Recover the authenticated participant tournament view
+    description: The snapshot may contain a private assignment only after participant ownership checks.
+    x-auth-scope: tournament:participate
+    security:
+      - PlayerSessionAuth: []
+    parameters:
+      - $ref: '../components/parameters.yml#/ParticipantRecoveryCursor'
+    responses:
+      '200':
+        description: Participant recovery snapshot and cursor.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/ParticipantRecoverySnapshot'
+      '401':
+        $ref: '../components/responses.yml#/UnauthorizedProblem'
+      '403':
+        $ref: '../components/responses.yml#/ForbiddenProblem'
+      '404':
+        $ref: '../components/responses.yml#/NotFoundProblem'
+      '409':
+        $ref: '../components/responses.yml#/ProjectionRevisionConflictProblem'
+
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+/api/v1/tournaments/{tournament_id}:
+  parameters:
+    - $ref: '../components/parameters.yml#/TournamentId'
+  get:
+    operationId: getPublicTournament
+    tags: [tournament]
+    summary: Read the public tournament display projection
+    x-auth-scope: tournament:read
+    security: []
+    responses:
+      '200':
+        description: Allowlisted public tournament fields.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/PublicTournamentResponse'
+      '404':
+        $ref: '../components/responses.yml#/NotFoundProblem'
+
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+/api/v1/tournaments/{tournament_id}/scoreboard:
+  parameters:
+    - $ref: '../components/parameters.yml#/TournamentId'
+  get:
+    operationId: getPublicScoreboard
+    tags: [tournament]
+    summary: Read the public tournament scoreboard
+    x-auth-scope: tournament:read
+    security: []
+    responses:
+      '200':
+        description: Allowlisted display names and scoring fields.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/PublicScoreboardResponse'
+      '404':
+        $ref: '../components/responses.yml#/NotFoundProblem'
+
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+/api/v1/tournaments/{tournament_id}/bracket:
+  parameters:
+    - $ref: '../components/parameters.yml#/TournamentId'
+  get:
+    operationId: getPublicBracket
+    tags: [tournament]
+    summary: Read the public tournament playoff bracket
+    x-auth-scope: tournament:read
+    security: []
+    responses:
+      '200':
+        description: Allowlisted bracket display projection.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/PublicBracketResponse'
+      '404':
+        $ref: '../components/responses.yml#/NotFoundProblem'
+
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+/api/v1/tournaments/{tournament_id}/live-draft:
+  parameters:
+    - $ref: '../components/parameters.yml#/TournamentId'
+  get:
+    operationId: getPublicLiveDraft
+    tags: [tournament]
+    summary: Read the public live draft display projection
+    x-auth-scope: tournament:read
+    security: []
+    responses:
+      '200':
+        description: Allowlisted draft display data without private assignments.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/PublicLiveDraftResponse'
+      '404':
+        $ref: '../components/responses.yml#/NotFoundProblem'
+
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+/api/v1/tournaments/{tournament_id}/snapshot:
+  parameters:
+    - $ref: '../components/parameters.yml#/TournamentId'
+  get:
+    operationId: getPublicSnapshot
+    tags: [tournament]
+    summary: Recover the public tournament display view
+    x-auth-scope: tournament:read
+    security: []
+    parameters:
+      - $ref: '../components/parameters.yml#/PublicRecoveryCursor'
+    responses:
+      '200':
+        description: Public recovery snapshot and public cursor.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/PublicRecoverySnapshot'
+      '404':
+        $ref: '../components/responses.yml#/NotFoundProblem'
+      '409':
+        $ref: '../components/responses.yml#/ProjectionRevisionConflictProblem'
+
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+/api/v1/admin/tournament-audit:
+  get:
+    operationId: listTournamentAudit
+    tags: [tournament]
+    summary: Search the redacted tournament audit projection
+    description: The complete AuditFilter is available only to an authorized tournament operator.
+    x-auth-scope: tournament:manage
+    security:
+      - AdminSessionAuth: []
+    parameters:
+      - $ref: '../components/parameters.yml#/AuditTournamentId'
+      - $ref: '../components/parameters.yml#/AuditEntityKind'
+      - $ref: '../components/parameters.yml#/AuditEntityId'
+      - $ref: '../components/parameters.yml#/AuditEventType'
+      - $ref: '../components/parameters.yml#/AuditActorKind'
+      - $ref: '../components/parameters.yml#/AuditActorId'
+      - $ref: '../components/parameters.yml#/AuditResultReason'
+      - $ref: '../components/parameters.yml#/AuditOccurredFrom'
+      - $ref: '../components/parameters.yml#/AuditOccurredTo'
+      - $ref: '../components/parameters.yml#/AuditCursor'
+      - $ref: '../components/parameters.yml#/AuditPageSize'
+    responses:
+      '200':
+        description: Redacted audit page with a stable keyset cursor.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/AuditPage'
+      '401':
+        $ref: '../components/responses.yml#/UnauthorizedProblem'
+      '403':
+        $ref: '../components/responses.yml#/ForbiddenProblem'
+      '404':
+        $ref: '../components/responses.yml#/NotFoundProblem'
+
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+/api/v1/admin/tournaments/{tournament_id}/incident-export:
+  parameters:
+    - $ref: '../components/parameters.yml#/TournamentId'
+  get:
+    operationId: exportTournamentIncident
+    tags: [tournament]
+    summary: Export a canonical redacted tournament incident bundle
+    x-auth-scope: tournament:manage
+    security:
+      - AdminSessionAuth: []
+    responses:
+      '200':
+        description: Incident bundle with generation time, SHA-256 checksum, and HMAC authenticity envelope.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/IncidentBundle'
+      '401':
+        $ref: '../components/responses.yml#/UnauthorizedProblem'
+      '403':
+        $ref: '../components/responses.yml#/ForbiddenProblem'
+      '404':
+        $ref: '../components/responses.yml#/NotFoundProblem'
+
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+/api/v1/admin/tournaments/{tournament_id}/snapshot:
+  parameters:
+    - $ref: '../components/parameters.yml#/TournamentId'
+  get:
+    operationId: getOperatorSnapshot
+    tags: [tournament]
+    summary: Recover the full operator tournament projection
+    x-auth-scope: tournament:manage
+    security:
+      - AdminSessionAuth: []
+    parameters:
+      - $ref: '../components/parameters.yml#/OperatorRecoveryCursor'
+    responses:
+      '200':
+        description: Operator recovery snapshot and authority cursor.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/OperatorRecoverySnapshot'
+      '401':
+        $ref: '../components/responses.yml#/UnauthorizedProblem'
+      '403':
+        $ref: '../components/responses.yml#/ForbiddenProblem'
+      '404':
+        $ref: '../components/responses.yml#/NotFoundProblem'
+      '409':
+        $ref: '../components/responses.yml#/ProjectionRevisionConflictProblem'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'

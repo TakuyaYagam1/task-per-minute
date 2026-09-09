@@ -4,7 +4,7 @@ This directory is the public operating manual for coding agents working in this 
 
 ## Privacy Boundary
 
-- `.agents/`, root `AGENTS.md`, and root `CLAUDE.md` are public artifacts. They must be reviewed and committed before a clean clone can rely on them.
+- `.agents/`, root `AGENTS.md`, root `AGENT_ROUTING.md`, and root `CLAUDE.md` are public artifacts. They must be reviewed and committed before a clean clone can rely on them.
 - `PRD/` is ignored and private. It may contain `PRD.md`, task registries, reports, challenge packages, evidence, and temporary planning material.
 - Public agent documents may reference a private path, but must not copy private requirements, challenge flags, credentials, commercial details, or unpublished schedules.
 - A clean public clone must remain usable when `PRD/` is absent.
@@ -14,17 +14,18 @@ This directory is the public operating manual for coding agents working in this 
 Every task starts with:
 
 1. Root `AGENTS.md`.
-2. `project.md` for repository orientation.
-3. For implementation work, `workflows/task-lifecycle.md`, `workflows/validation.md`, and `workflows/handoff.md`.
-4. `sources-of-truth.md` for the affected behavior.
-5. `ownership.md` before parallel edits.
-6. The relevant standards and workflow files below.
+2. Root `AGENT_ROUTING.md` for route, risk, and validation selection.
+3. `project.md` for repository orientation.
+4. For implementation work, `workflows/task-lifecycle.md`, `workflows/validation.md`, and `workflows/handoff.md`.
+5. `sources-of-truth.md` for the affected behavior.
+6. `ownership.md` before parallel edits.
+7. The relevant standards and workflow files below.
 
 Do not load every document by default. Read the smallest set that covers the task.
 
 ## Agent Entry Points
 
-- Codex discovers root `AGENTS.md`, which routes to canonical guidance in `.agents/`.
+- Codex discovers root `AGENTS.md`, then uses root `AGENT_ROUTING.md` to select the applicable canonical guidance in `.agents/`.
 - Claude Code discovers root `CLAUDE.md`. That adapter imports `AGENTS.md` so both agents receive the same repository-wide rules.
 - `.agents/` remains canonical. Keep the root adapter short and do not duplicate product or engineering rules in it.
 - After moving or renaming the adapter or an imported file, resolve every relative import. In Claude Code, use `/memory` to verify the loaded hierarchy.
@@ -61,7 +62,8 @@ Do not load every document by default. Read the smallest set that covers the tas
 - `standards/` - stack-specific invariants and validation.
 - `workflows/` - repeatable task, review, handoff, and release processes.
 - `templates/` - small reusable task, ADR, and handoff formats.
-- `../AGENTS.md` - compact Codex entrypoint and routing table.
+- `../AGENTS.md` - compact Codex entrypoint.
+- `../AGENT_ROUTING.md` - project route, risk, companion, and validation selector.
 - `../CLAUDE.md` - thin root Claude Code adapter over the same canonical rules.
 
 ## Maintenance Rules

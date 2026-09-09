@@ -1,0 +1,410 @@
+package admin
+
+import (
+	"errors"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/mock"
+
+	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
+	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
+	gamedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/game"
+	seriesdomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/series"
+	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gamemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/mocks"
+	swissusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/swiss"
+)
+
+func TestBuildPairingPlanRejectsNonDeterministicManualBye(t *testing.T) {
+	t.Parallel()
+
+	authority := executionPairingAuthority(t, 5)
+	requested := authority.Participants[0].ID
+	command := PairingCommand{
+		CommandScope: CommandScope{
+			Operator:     OperatorIdentity{ActorID: executionTestID(80)},
+			TournamentID: authority.TournamentID, CommandID: executionTestID(81),
+		},
+		ExpectedProjectionRevision: authority.ProjectionRevision,
+		RoundNumber:                1, PairingMode: PairingModeManual,
+		CategoryMode: domain.CategoryModeAdmin, Categories: []domain.Category{domain.CategoryWeb},
+		ManualPairingsProvided: true, ManualByeParticipantID: &requested,
+	}
+
+	_, err := buildPairingPlan(command, authority, executionTestTime())
+	if !errors.Is(err, ErrManualByeMismatch) || !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("buildPairingPlan() error = %v, want deterministic bye conflict", err)
+	}
+	var mismatch *ManualByeMismatchError
+	if !errors.As(err, &mismatch) {
+		t.Fatalf("buildPairingPlan() error type = %T, want *ManualByeMismatchError", err)
+	}
+	selected := authority.Participants[len(authority.Participants)-1].ID
+	if mismatch.RequestedParticipantID != requested || mismatch.SelectedParticipantID != selected {
+		t.Fatalf("manual bye mismatch = (%s, %s), want (%s, %s)",
+			mismatch.RequestedParticipantID, mismatch.SelectedParticipantID, requested, selected)
+	}
+}
+
+func TestBuildAutomaticPairingPlanPreservesByeEvidence(t *testing.T) {
+	t.Parallel()
+
+	authority := executionPairingAuthority(t, 5)
+	command := PairingCommand{
+		CommandScope: CommandScope{
+			Operator:     OperatorIdentity{ActorID: executionTestID(90)},
+			TournamentID: authority.TournamentID, CommandID: executionTestID(91),
+		},
+		ExpectedProjectionRevision: authority.ProjectionRevision,
+		RoundNumber:                1, PairingMode: PairingModeAutomatic,
+		CategoryMode: domain.CategoryModeRandom, Categories: []domain.Category{domain.CategoryWeb},
+	}
+
+	plan, err := buildPairingPlan(command, authority, executionTestTime())
+	if err != nil {
+		t.Fatalf("buildPairingPlan() error = %v", err)
+	}
+	if plan.Automatic == nil || plan.Bye == nil || len(plan.Pairs) != 2 || len(plan.SeriesIDs) != 2 {
+		t.Fatalf("buildPairingPlan() produced incomplete plan: %+v", plan)
+	}
+	if plan.Bye.ParticipantID != authority.Participants[4].ID {
+		t.Fatalf("bye participant = %s, want %s", plan.Bye.ParticipantID, authority.Participants[4].ID)
+	}
+	for _, pair := range plan.Pairs {
+		if pair.FirstParticipantID == plan.Bye.ParticipantID || pair.SecondParticipantID == plan.Bye.ParticipantID {
+			t.Fatalf("bye participant %s appears in pair %+v", plan.Bye.ParticipantID, pair)
+		}
+	}
+	if _, err := plan.Bye.Evidence.Replay(); err != nil {
+		t.Fatalf("bye evidence replay error = %v", err)
+	}
+	if _, err := plan.Automatic.Evidence.Replay(); err != nil {
+		t.Fatalf("pairing evidence replay error = %v", err)
+	}
+}
+
+func TestPlanWaveStartAcceptsCompleteOddRosterGraph(t *testing.T) {
+	t.Parallel()
+
+	openedAt := executionTestTime()
+	authority := executionWaveAuthority(t, openedAt)
+	command := WaveCommand{
+		CommandScope: CommandScope{
+			Operator:     OperatorIdentity{ActorID: executionTestID(100)},
+			TournamentID: authority.View.Wave.TournamentID, CommandID: executionTestID(101),
+		},
+		WaveID: authority.View.Wave.ID, ExpectedProjectionRevision: authority.ProjectionRevision,
+		Action: WaveActionStart, Confirmed: true,
+	}
+
+	next, err := planWaveMutation(command, authority, openedAt.Add(time.Second))
+	if err != nil {
+		t.Fatalf("planWaveMutation() error = %v", err)
+	}
+	if next.State != domain.WaveStateActive || next.StartedAt == nil || next.ReadyWindow == nil ||
+		next.ReadyWindow.State != domain.ReadyWindowStateConsumed {
+		t.Fatalf("planWaveMutation() next = %+v, want active consumed Wave", next)
+	}
+}
+
+func TestPlanWaveStartFailsClosedOnIncompleteDeliveryGraph(t *testing.T) {
+	t.Parallel()
+
+	openedAt := executionTestTime()
+	authority := executionWaveAuthority(t, openedAt)
+	authority.Graph.DeliveryMemberCount--
+	command := WaveCommand{
+		CommandScope: CommandScope{
+			Operator:     OperatorIdentity{ActorID: executionTestID(110)},
+			TournamentID: authority.View.Wave.TournamentID, CommandID: executionTestID(111),
+		},
+		WaveID: authority.View.Wave.ID, ExpectedProjectionRevision: authority.ProjectionRevision,
+		Action: WaveActionStart, Confirmed: true,
+	}
+
+	_, err := planWaveMutation(command, authority, openedAt.Add(time.Second))
+	if !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("planWaveMutation() error = %v, want conflict", err)
+	}
+}
+
+func TestPlanWaveCompleteCreatesDeterministicClosureRevision(t *testing.T) {
+	t.Parallel()
+
+	mutatedAt := executionTestTime().Add(time.Minute)
+	authority := executionWaveAuthority(t, executionTestTime())
+	authority.View.Wave.State = domain.WaveStateActive
+	authority.View.Wave.StartedAt = testTimePointer(executionTestTime())
+	authority.View.Wave.ReadyWindow.State = domain.ReadyWindowStateConsumed
+	authority.View.Wave.ReadyWindow.ConsumedAt = testTimePointer(executionTestTime())
+	authority.Graph = WaveGraph{
+		SeriesCount: 2, PlayableMemberCount: 4, TerminalSeriesCount: 2,
+		CurrentGameCount: 2, TerminalGameCount: 2,
+	}
+	command := WaveCommand{
+		CommandScope: CommandScope{
+			Operator:     OperatorIdentity{ActorID: executionTestID(140)},
+			TournamentID: authority.View.Wave.TournamentID, CommandID: executionTestID(141),
+		},
+		WaveID: authority.View.Wave.ID, ExpectedProjectionRevision: authority.ProjectionRevision,
+		Action: WaveActionComplete, Confirmed: true,
+	}
+
+	first, err := planWaveMutation(command, authority, mutatedAt)
+	if err != nil {
+		t.Fatalf("planWaveMutation() error = %v", err)
+	}
+	second, err := planWaveMutation(command, authority, mutatedAt)
+	if err != nil {
+		t.Fatalf("planWaveMutation() replay error = %v", err)
+	}
+	wantRevisionID := domain.WaveRevisionID(executionID(command.CommandID, "wave-closure-revision"))
+	if first.State != domain.WaveStateCompleted || first.RevisionID != wantRevisionID ||
+		second.RevisionID != wantRevisionID || first.RevisionID == authority.View.Wave.RevisionID {
+		t.Fatalf("closure revisions = (%s, %s), want stable fresh %s",
+			first.RevisionID.UUID(), second.RevisionID.UUID(), wantRevisionID.UUID())
+	}
+}
+
+func TestStartWaveReplayReturnsRecordedResultAfterLaterWaveTransition(t *testing.T) {
+	t.Parallel()
+
+	record := executionWaveStartRecord(t)
+	repository := gamemocks.NewMockStartRepository(t)
+	repository.EXPECT().LoadWaveStartAuthority(mock.Anything, mock.Anything).
+		Return(gameusecase.StartAuthority{
+			Scope: record.Scope, WaveRevision: record.ExpectedWaveRevision + 2,
+			Revisions: record.Revisions, Current: &record,
+		}, nil).Once()
+	usecase := gameusecase.NewStartUseCase(repository, executionWorkflowClock{at: record.StartedAt})
+	workflow := &ExecutionWorkflow{waveStart: usecase}
+	later := record.Wave
+	later.State = domain.WaveStateCompleted
+	authority := WaveAuthority{
+		SourceRevisions: record.Revisions,
+		View:            WaveView{Wave: later, Revision: record.ExpectedWaveRevision + 2},
+	}
+	command := WaveCommand{
+		CommandScope: CommandScope{
+			Operator:     OperatorIdentity{ActorID: record.ActorID},
+			TournamentID: record.Scope.TournamentID, CommandID: record.CommandID,
+		},
+		WaveID: record.Scope.WaveID, ExpectedProjectionRevision: record.ExpectedProjectionRevision,
+		Action: WaveActionStart, Confirmed: true,
+	}
+
+	newAuthority := record.ExecutionAuthority
+	newAuthority.HolderID = executionTestID(220)
+	newAuthority.LeaseID = executionTestID(221)
+	newAuthority.Epoch++
+	view, err := workflow.startWaveLocked(t.Context(), command, record.RequestDigest, authority, newAuthority)
+	if err != nil {
+		t.Fatalf("startWaveLocked() error = %v", err)
+	}
+	if view.Wave.State != domain.WaveStateActive || view.Revision != record.ExpectedWaveRevision+1 ||
+		view.Wave.StartedAt == nil || !view.Wave.StartedAt.Equal(record.StartedAt) {
+		t.Fatalf("replayed view = %+v, want retained active start", view)
+	}
+}
+
+func TestStartWaveLockedRequiresStartDependency(t *testing.T) {
+	t.Parallel()
+
+	record := executionWaveStartRecord(t)
+	workflow := &ExecutionWorkflow{}
+	command := WaveCommand{
+		CommandScope: CommandScope{
+			Operator:     OperatorIdentity{ActorID: record.ActorID},
+			TournamentID: record.Scope.TournamentID, CommandID: record.CommandID,
+		},
+		WaveID: record.Scope.WaveID, ExpectedProjectionRevision: record.ExpectedProjectionRevision,
+		Action: WaveActionStart, Confirmed: true,
+	}
+	_, err := workflow.startWaveLocked(
+		t.Context(), command, record.RequestDigest, WaveAuthority{View: WaveView{Wave: record.Wave}},
+		record.ExecutionAuthority,
+	)
+	if !errors.Is(err, domain.ErrInternal) {
+		t.Fatalf("startWaveLocked() error = %v, want internal dependency error", err)
+	}
+}
+
+type executionWorkflowClock struct {
+	at time.Time
+}
+
+func (clock executionWorkflowClock) Now() time.Time {
+	return clock.at
+}
+
+func executionWaveStartRecord(t *testing.T) gameusecase.StartRecord {
+	t.Helper()
+	startedAt := executionTestTime()
+	tournamentID := executionTestID(201)
+	waveID := executionTestID(202)
+	windowID := executionTestID(203)
+	firstParticipantID := executionTestID(204)
+	secondParticipantID := executionTestID(205)
+	seriesID := executionTestID(206)
+	slotID := executionTestID(207)
+	gameID := executionTestID(208)
+	waveRevisionID := domain.WaveRevisionID(executionTestID(209))
+	wave := domain.Wave{
+		ID: waveID, TournamentID: tournamentID, RevisionID: waveRevisionID,
+		State: domain.WaveStateActive,
+		Members: []domain.WaveMember{
+			{ParticipantID: firstParticipantID, Ready: true},
+			{ParticipantID: secondParticipantID, Ready: true},
+		},
+		ReadyWindow: &domain.ReadyWindow{
+			ID: windowID, WaveID: waveID, RevisionID: domain.ReadyWindowRevisionID(executionTestID(210)),
+			State: domain.ReadyWindowStateConsumed, OpenedAt: startedAt.Add(-10 * time.Second),
+			Deadline: startedAt.Add(20 * time.Second), ConsumedAt: testTimePointer(startedAt),
+		},
+		StartedAt: testTimePointer(startedAt),
+	}
+	series := seriesdomain.Execution{Series: domain.Series{
+		ID: seriesID, TournamentID: tournamentID, FirstParticipantID: firstParticipantID,
+		SecondParticipantID: secondParticipantID, Format: domain.SeriesFormatBO1, State: domain.SeriesStateActive,
+		Slots: []domain.GameSlot{{
+			ID: slotID, SeriesID: seriesID, Position: 1, Category: domain.CategoryWeb,
+			Attempts: []domain.Game{{ID: gameID, SlotID: slotID, AttemptNo: 1, State: domain.GameStateActive}},
+		}},
+	}}
+	if err := wave.Validate(); err != nil {
+		t.Fatalf("wave.Validate() error = %v", err)
+	}
+	if err := series.Validate(); err != nil {
+		t.Fatalf("series.Validate() error = %v", err)
+	}
+	revisions := domain.ReadyWindowSourceRevisions{
+		WaveRevisionID: waveRevisionID, WaveRevision: 7,
+		ProjectionRevisionID: executionTestID(212), ProjectionRevision: 8,
+		ArtifactRevisionID: executionTestID(213), ArtifactRevision: 8,
+	}
+	record := gameusecase.StartRecord{
+		Scope:     gameusecase.StartScope{TournamentID: tournamentID, WaveID: waveID, WindowID: windowID},
+		CommandID: executionTestID(214), ActorID: executionTestID(215),
+		ExecutionAuthority: authoritydomain.Identity{
+			TournamentID: tournamentID, HolderID: executionTestID(218), LeaseID: executionTestID(219),
+			Epoch: 1, ProcessKind: authoritydomain.ProcessAuthority,
+		},
+		ExpectedWaveRevision: 7, ExpectedProjectionRevision: 8, Revisions: revisions,
+		ReadinessRevisions: map[uuid.UUID]int64{firstParticipantID: 1, secondParticipantID: 1},
+		RequestDigest:      [32]byte{1}, Wave: wave, StartedAt: startedAt,
+		Games: []gamedomain.Started{{
+			Scope:          gamedomain.Scope{TournamentID: tournamentID, SeriesID: seriesID, SlotID: slotID, GameID: gameID},
+			ParticipantIDs: [2]uuid.UUID{firstParticipantID, secondParticipantID}, Series: series,
+			AssignmentID: executionTestID(216), AssignmentRevision: 1, PlanRevisionID: executionTestID(211),
+			SnapshotID: executionTestID(217), ContentDigest: [32]byte{2}, DeadlineSeconds: 180,
+			StartedAt: startedAt, Deadline: startedAt.Add(180 * time.Second), DeliveryEnabled: true,
+		}},
+	}
+	if err := record.Validate(); err != nil {
+		t.Fatalf("record.Validate() error = %v", err)
+	}
+	return record
+}
+
+func executionPairingAuthority(t *testing.T, size int) PairingAuthority {
+	t.Helper()
+	participants := make([]PairingParticipant, size)
+	standings := make([]SwissStandingView, size)
+	received := make(map[uuid.UUID]bool, size)
+	for index := range size {
+		participantID := executionTestID(index + 1)
+		participants[index] = PairingParticipant{ID: participantID, StableSeed: index + 1}
+		standings[index] = SwissStandingView{
+			ParticipantID: participantID, Position: index + 1, Points: size - index,
+			PointsLabel: "provisional", Buchholz: size - index,
+			BuchholzStatus: "provisional", EffectiveTimeMS: int64(index), StableSeed: index + 1,
+		}
+		received[participantID] = false
+	}
+	return PairingAuthority{
+		TournamentID: executionTestID(60), TournamentState: domain.TournamentStateSwiss,
+		TournamentRevision: 3, RosterID: executionTestID(61), RosterRevision: 2,
+		RosterLockedAt:       executionTestTime().Add(-time.Hour),
+		ProjectionRevisionID: executionTestID(62), ProjectionRevision: 4,
+		Participants: participants, Standings: standings,
+		PriorMeetingCounts: make(map[swissusecase.PairKey]int),
+		ReceivedBye:        received,
+	}
+}
+
+func executionWaveAuthority(t *testing.T, openedAt time.Time) WaveAuthority {
+	t.Helper()
+	tournamentID := executionTestID(120)
+	waveID := executionTestID(121)
+	revisionID := domain.WaveRevisionID(executionTestID(122))
+	windowID := executionTestID(123)
+	windowRevisionID := domain.ReadyWindowRevisionID(executionTestID(124))
+	participants := []uuid.UUID{
+		executionTestID(125), executionTestID(126), executionTestID(127),
+		executionTestID(128), executionTestID(129),
+	}
+	members := make([]domain.WaveMember, len(participants))
+	readiness := make(map[uuid.UUID]int64, len(participants))
+	seriesIDs := make(map[uuid.UUID]uuid.UUID, len(participants)-1)
+	for index, participantID := range participants {
+		members[index] = domain.WaveMember{ParticipantID: participantID, Ready: true}
+		readiness[participantID] = 3
+		if index < 2 {
+			seriesIDs[participantID] = executionTestID(130)
+		} else if index < 4 {
+			seriesIDs[participantID] = executionTestID(131)
+		}
+	}
+	bye := participants[4]
+	view := WaveView{
+		Wave: domain.Wave{
+			ID: waveID, TournamentID: tournamentID, RevisionID: revisionID,
+			State: domain.WaveStateReady, Members: members,
+			ReadyWindow: &domain.ReadyWindow{
+				ID: windowID, WaveID: waveID, RevisionID: windowRevisionID,
+				State: domain.ReadyWindowStateOpen, OpenedAt: openedAt,
+				Deadline: openedAt.Add(domain.ReadyWindowDuration),
+			},
+		},
+		Revision: 7, ReadinessRevisions: readiness, SeriesIDs: seriesIDs, ByeParticipantID: &bye,
+	}
+	return WaveAuthority{
+		TournamentState: domain.TournamentStateSwiss, TournamentRevision: 4,
+		RosterID: executionTestID(132), RosterRevision: 2,
+		ProjectionRevisionID: executionTestID(133), ProjectionRevision: 8,
+		SourceRevisions: domain.ReadyWindowSourceRevisions{
+			WaveRevisionID: revisionID, WaveRevision: view.Revision,
+			ProjectionRevisionID: executionTestID(133), ProjectionRevision: 8,
+			ArtifactRevisionID: executionTestID(135), ArtifactRevision: 8,
+		},
+		View: view,
+		Graph: WaveGraph{
+			SeriesCount: 2, PlayableMemberCount: 4, CurrentGameCount: 2,
+			ReadySeriesCount: 2, ReadyGameCount: 2, AssignmentCount: 2, DeliveryMemberCount: 4,
+		},
+	}
+}
+
+func executionTestID(value int) uuid.UUID {
+	return uuid.MustParse("00000000-0000-4000-8000-" + leftPadExecutionID(value))
+}
+
+func leftPadExecutionID(value int) string {
+	const digits = "000000000000"
+	encoded := []byte(digits)
+	for index := len(encoded) - 1; value > 0; index-- {
+		encoded[index] = byte('0' + value%10)
+		value /= 10
+	}
+	return string(encoded)
+}
+
+func executionTestTime() time.Time {
+	return time.Date(2026, time.September, 6, 10, 0, 0, 0, time.UTC)
+}
+
+func testTimePointer(value time.Time) *time.Time {
+	return &value
+}

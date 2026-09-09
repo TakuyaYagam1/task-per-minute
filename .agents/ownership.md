@@ -19,7 +19,7 @@ The coordinator must:
 
 | Lane              | Exclusive responsibility                                    | Coordination boundary             |
 | ----------------- | ----------------------------------------------------------- | --------------------------------- |
-| Backend domain    | Domain, usecases, repository ports                          | REST, realtime, migrations        |
+| Backend domain    | Domain policies, usecases, ports, and process boot                | REST, realtime, migrations     |
 | Database          | Migration sequence, SQL queries, sqlc inputs                | Backend owner and deploy owner    |
 | REST contract     | OpenAPI sources, handlers, generated REST artifacts         | Backend and frontend consumers    |
 | Realtime contract | WebSocket or SSE event definitions, parsers, protocol tests | Backend, frontend, feed consumers |
@@ -34,7 +34,6 @@ The coordinator must:
 
 Only one writer at a time may edit:
 
-- `frontend/lib/pages/task/TaskPage.tsx`
 - `frontend/lib/pages/home/HomePage.tsx`
 - `frontend/app/admin/page.tsx`
 - `frontend/package-lock.json`

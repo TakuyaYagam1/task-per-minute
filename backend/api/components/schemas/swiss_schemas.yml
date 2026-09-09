@@ -1,0 +1,610 @@
+SwissPointsLabel:
+  type: string
+  enum: [provisional, final]
+
+SwissBuchholzStatus:
+  type: string
+  enum: [provisional, final]
+
+SemifinalWinnerPath:
+  type: string
+  enum: [final]
+
+SemifinalLoserPath:
+  type: string
+  enum: [eliminated]
+
+SwissPairingEvidence:
+  type: object
+  description: Recorded decision evidence for automatic pairings and byes. The private decision seed is not exposed.
+  required: [id, purpose, algorithm_version, normalized_inputs, result, replay_digest, owner_id, decided_at]
+  properties:
+    id:
+      type: string
+      format: uuid
+      readOnly: true
+    purpose:
+      type: string
+      enum: [pairing]
+      readOnly: true
+    algorithm_version:
+      type: string
+      enum: [hmac-sha256-order-v1]
+      readOnly: true
+    normalized_inputs:
+      type: array
+      minItems: 1
+      readOnly: true
+      items:
+        type: string
+    result:
+      type: array
+      minItems: 1
+      readOnly: true
+      items:
+        type: string
+    replay_digest:
+      type: string
+      minLength: 64
+      maxLength: 64
+      pattern: '^[0-9a-f]{64}$'
+      readOnly: true
+    owner_id:
+      type: string
+      format: uuid
+      readOnly: true
+    decided_at:
+      type: string
+      format: date-time
+      readOnly: true
+
+SwissPairing:
+  type: object
+  required: [id, round_id, first_participant_id, second_participant_id, evidence_id]
+  properties:
+    id:
+      type: string
+      format: uuid
+    round_id:
+      type: string
+      format: uuid
+    first_participant_id:
+      type: string
+      format: uuid
+    second_participant_id:
+      type: string
+      format: uuid
+    evidence_id:
+      type: string
+      format: uuid
+    repeated:
+      type: boolean
+      default: false
+    override_actor_id:
+      type: string
+      format: uuid
+      nullable: true
+    override_reason:
+      type: string
+      nullable: true
+
+SwissBye:
+  type: object
+  required: [id, round_id, participant_id, points_awarded, revision_id, evidence_id]
+  properties:
+    id:
+      type: string
+      format: uuid
+    round_id:
+      type: string
+      format: uuid
+    participant_id:
+      type: string
+      format: uuid
+    points_awarded:
+      type: integer
+      format: int32
+      minimum: 1
+      maximum: 1
+    revision_id:
+      type: string
+      format: uuid
+      readOnly: true
+    evidence_id:
+      type: string
+      format: uuid
+
+SwissStanding:
+  type: object
+  required: [participant_id, position, points, points_label, buchholz, buchholz_status, head_to_head_points, head_to_head_applied, effective_time_ms, stable_seed]
+  properties:
+    participant_id:
+      type: string
+      format: uuid
+    position:
+      type: integer
+      format: int32
+      minimum: 1
+      maximum: 16
+    points:
+      type: integer
+      format: int32
+      minimum: 0
+    points_label:
+      $ref: '#/SwissPointsLabel'
+    buchholz:
+      type: integer
+      format: int32
+      minimum: 0
+    buchholz_status:
+      $ref: '#/SwissBuchholzStatus'
+    head_to_head_points:
+      type: integer
+      format: int32
+      minimum: 0
+    head_to_head_applied:
+      type: boolean
+    effective_time_ms:
+      type: integer
+      format: int64
+      minimum: 0
+    accepted_solve_time_ms:
+      type: integer
+      format: int64
+      minimum: 0
+      nullable: true
+    stable_seed:
+      type: integer
+      format: int32
+      minimum: 1
+      maximum: 16
+
+SwissRound:
+  type: object
+  required: [id, tournament_id, round_number, revision, roster_participant_ids, pairings, standings, locked, created_at, updated_at]
+  properties:
+    id:
+      type: string
+      format: uuid
+    tournament_id:
+      type: string
+      format: uuid
+    round_number:
+      type: integer
+      format: int32
+      minimum: 1
+      maximum: 4
+    revision:
+      type: integer
+      format: int64
+      minimum: 1
+      readOnly: true
+    roster_participant_ids:
+      type: array
+      minItems: 4
+      maxItems: 16
+      uniqueItems: true
+      items:
+        type: string
+        format: uuid
+    pairing_evidence:
+      $ref: '#/SwissPairingEvidence'
+    pairings:
+      type: array
+      minItems: 1
+      maxItems: 8
+      items:
+        $ref: '#/SwissPairing'
+    bye:
+      type: object
+      nullable: true
+      allOf:
+        - $ref: '#/SwissBye'
+    standings:
+      type: array
+      minItems: 4
+      maxItems: 16
+      items:
+        $ref: '#/SwissStanding'
+    locked:
+      type: boolean
+      readOnly: true
+    locked_at:
+      type: string
+      format: date-time
+      nullable: true
+      readOnly: true
+    started_at:
+      type: string
+      format: date-time
+      nullable: true
+      readOnly: true
+    completed_at:
+      type: string
+      format: date-time
+      nullable: true
+      readOnly: true
+    created_at:
+      type: string
+      format: date-time
+      readOnly: true
+    updated_at:
+      type: string
+      format: date-time
+      readOnly: true
+
+SwissStandingsProjection:
+  type: object
+  required: [revision, participant_ids, standings, golden_seeds, dependencies]
+  properties:
+    revision:
+      $ref: '#/ProjectionRevision'
+    participant_ids:
+      type: array
+      minItems: 4
+      maxItems: 16
+      uniqueItems: true
+      items:
+        type: string
+        format: uuid
+    standings:
+      type: array
+      minItems: 4
+      maxItems: 16
+      items:
+        $ref: '#/SwissStanding'
+    golden_seeds:
+      type: array
+      items:
+        $ref: '#/GoldenSeed'
+    dependencies:
+      type: array
+      items:
+        $ref: '#/ProjectionDependency'
+
+Top4Participant:
+  type: object
+  required: [seed, participant_id]
+  properties:
+    seed:
+      type: integer
+      format: int32
+      minimum: 1
+      maximum: 4
+    participant_id:
+      type: string
+      format: uuid
+
+Top4Projection:
+  type: object
+  required: [revision, source_standings_revision_id, participants, dependencies]
+  properties:
+    revision:
+      $ref: '#/ProjectionRevision'
+    source_standings_revision_id:
+      type: string
+      format: uuid
+      readOnly: true
+    participants:
+      type: array
+      minItems: 4
+      maxItems: 4
+      items:
+        $ref: '#/Top4Participant'
+    dependencies:
+      type: array
+      items:
+        $ref: '#/ProjectionDependency'
+
+SemifinalMatch:
+  type: object
+  required: [position, series_id, first_participant_id, second_participant_id, winner_path, loser_path]
+  properties:
+    position:
+      type: integer
+      format: int32
+      minimum: 1
+      maximum: 2
+    series_id:
+      type: string
+      format: uuid
+    first_participant_id:
+      type: string
+      format: uuid
+    second_participant_id:
+      type: string
+      format: uuid
+    winner_path:
+      $ref: '#/SemifinalWinnerPath'
+    loser_path:
+      $ref: '#/SemifinalLoserPath'
+
+SemifinalAdvancement:
+  type: object
+  required: [position, series_id, winner_id, loser_id, score_revision_id, result_revision_id]
+  properties:
+    position:
+      type: integer
+      format: int32
+      minimum: 1
+      maximum: 2
+    series_id:
+      type: string
+      format: uuid
+    winner_id:
+      type: string
+      format: uuid
+    loser_id:
+      type: string
+      format: uuid
+    score_revision_id:
+      type: string
+      format: uuid
+      readOnly: true
+    result_revision_id:
+      type: string
+      format: uuid
+      readOnly: true
+
+Elimination:
+  type: object
+  required: [participant_id, series_id, result_revision_id, eliminated_at_stage]
+  properties:
+    participant_id:
+      type: string
+      format: uuid
+    series_id:
+      type: string
+      format: uuid
+    result_revision_id:
+      type: string
+      format: uuid
+      readOnly: true
+    eliminated_at_stage:
+      type: string
+      enum: [semifinal, final]
+
+SemifinalBracketProjection:
+  type: object
+  required: [revision, top_four_revision_id, semifinals, advancements, eliminations, dependencies, locked_at]
+  properties:
+    revision:
+      $ref: '#/ProjectionRevision'
+    top_four_revision_id:
+      type: string
+      format: uuid
+      readOnly: true
+    semifinals:
+      type: array
+      minItems: 2
+      maxItems: 2
+      items:
+        $ref: '#/SemifinalMatch'
+    advancements:
+      type: array
+      maxItems: 2
+      items:
+        $ref: '#/SemifinalAdvancement'
+    eliminations:
+      type: array
+      maxItems: 2
+      items:
+        $ref: '#/Elimination'
+    dependencies:
+      type: array
+      items:
+        $ref: '#/ProjectionDependency'
+    locked_at:
+      type: string
+      format: date-time
+      readOnly: true
+
+FinalProjection:
+  type: object
+  required: [revision, bracket_revision_id, series_id, participant_ids, score, score_revision_id, result_revision_id, winner_id, loser_id, dependencies]
+  properties:
+    revision:
+      $ref: '#/ProjectionRevision'
+    bracket_revision_id:
+      type: string
+      format: uuid
+      readOnly: true
+    series_id:
+      type: string
+      format: uuid
+    participant_ids:
+      type: array
+      minItems: 2
+      maxItems: 2
+      uniqueItems: true
+      items:
+        type: string
+        format: uuid
+    score:
+      $ref: '#/SeriesScore'
+    score_revision_id:
+      type: string
+      format: uuid
+      readOnly: true
+    result_revision_id:
+      type: string
+      format: uuid
+      readOnly: true
+    winner_id:
+      type: string
+      format: uuid
+    loser_id:
+      type: string
+      format: uuid
+    dependencies:
+      type: array
+      items:
+        $ref: '#/ProjectionDependency'
+
+ChampionProjection:
+  type: object
+  required: [revision, final_revision_id, series_id, champion_id, runner_up_id, score_revision_id, result_revision_id, dependencies]
+  properties:
+    revision:
+      $ref: '#/ProjectionRevision'
+    final_revision_id:
+      type: string
+      format: uuid
+      readOnly: true
+    series_id:
+      type: string
+      format: uuid
+    champion_id:
+      type: string
+      format: uuid
+    runner_up_id:
+      type: string
+      format: uuid
+    score_revision_id:
+      type: string
+      format: uuid
+      readOnly: true
+    result_revision_id:
+      type: string
+      format: uuid
+      readOnly: true
+    dependencies:
+      type: array
+      items:
+        $ref: '#/ProjectionDependency'
+
+PairingRepeatOverrideRequest:
+  type: object
+  additionalProperties: false
+  required: [confirmed, reason]
+  properties:
+    confirmed:
+      type: boolean
+    reason:
+      type: string
+      minLength: 1
+      maxLength: 512
+
+PairingConfigurationRequest:
+  type: object
+  additionalProperties: false
+  description: Manual mode requires complete manual_pairings and an explicit nullable bye. Repeated pairs require repeat_override evidence.
+  required: [expected_projection_revision, round_number, pairing_mode, category_mode, categories]
+  properties:
+    expected_projection_revision:
+      type: integer
+      format: int64
+      minimum: 1
+    round_number:
+      type: integer
+      format: int32
+      minimum: 1
+      maximum: 4
+    pairing_mode:
+      type: string
+      enum: [automatic, manual]
+    category_mode:
+      $ref: '#/CategoryMode'
+    categories:
+      type: array
+      minItems: 1
+      uniqueItems: true
+      items:
+        $ref: '#/Category'
+    manual_pairings:
+      type: array
+      minItems: 2
+      maxItems: 8
+      items:
+        $ref: '#/ManualPairInput'
+    manual_bye_participant_id:
+      type: string
+      format: uuid
+      nullable: true
+      description: Required for an odd roster and must confirm the deterministic fair-bye selection from current standings.
+    repeat_override:
+      $ref: '#/PairingRepeatOverrideRequest'
+
+PublicScoreboardEntry:
+  type: object
+  additionalProperties: false
+  required: [rank, display_name, points, buchholz, effective_time_ms]
+  properties:
+    rank:
+      type: integer
+      format: int32
+      minimum: 1
+    display_name:
+      type: string
+      maxLength: 64
+    points:
+      type: integer
+      format: int32
+      minimum: 0
+    buchholz:
+      type: integer
+      format: int32
+      minimum: 0
+    effective_time_ms:
+      type: integer
+      format: int64
+      minimum: 0
+
+PublicScoreboardResponse:
+  type: object
+  additionalProperties: false
+  required: [tournament_id, projection_revision, entries]
+  properties:
+    tournament_id:
+      type: string
+      format: uuid
+    projection_revision:
+      type: integer
+      format: int64
+      minimum: 1
+    entries:
+      type: array
+      maxItems: 16
+      items:
+        $ref: '#/PublicScoreboardEntry'
+
+PublicBracketMatch:
+  type: object
+  additionalProperties: false
+  required: [stage, position, first_display_name, second_display_name, score, state]
+  properties:
+    stage:
+      type: string
+      enum: [semifinal, final]
+    position:
+      type: integer
+      format: int32
+      minimum: 1
+    first_display_name:
+      type: string
+      maxLength: 64
+    second_display_name:
+      type: string
+      maxLength: 64
+    score:
+      $ref: '#/SeriesScore'
+    state:
+      $ref: '#/SeriesState'
+
+PublicBracketResponse:
+  type: object
+  additionalProperties: false
+  required: [tournament_id, projection_revision, matches]
+  properties:
+    tournament_id:
+      type: string
+      format: uuid
+    projection_revision:
+      type: integer
+      format: int64
+      minimum: 1
+    matches:
+      type: array
+      maxItems: 3
+      items:
+        $ref: '#/PublicBracketMatch'

@@ -10,36 +10,47 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/admin"
-	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel"
+	taskusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/task"
 )
 
 type TaskPostgres struct {
 	tx *TxManager
 }
 
-var (
-	_ admin.TaskRepository           = (*TaskPostgres)(nil)
-	_ admin.UploadTaskRepository     = (*TaskPostgres)(nil)
-	_ duel.MatchmakingTaskRepository = (*TaskPostgres)(nil)
-)
+var _ taskusecase.Repository = (*TaskPostgres)(nil)
 
 func NewTaskPostgres(tx *TxManager) *TaskPostgres {
 	return &TaskPostgres{tx: tx}
 }
 
-type TaskInput = admin.TaskInput
-
-func (r *TaskPostgres) Create(ctx context.Context, in TaskInput) (*domain.Task, error) {
+func (r *TaskPostgres) Create(ctx context.Context, in taskusecase.UpdateInput) (*domain.Task, error) {
 	normalized, err := normalizeTaskInput(in)
 	if err != nil {
 		return nil, err
 	}
-	row, err := r.tx.Querier(ctx).CreateTask(ctx, createTaskParams(normalized))
+	var row sqlc.CreateTaskRow
+	err = r.tx.Do(ctx, func(txCtx context.Context) error {
+		querier := r.tx.Querier(txCtx)
+		var createErr error
+		row, createErr = querier.CreateTask(txCtx, createTaskParams(normalized))
+		if createErr != nil {
+			return fmt.Errorf("TaskPostgres - Create - Querier.CreateTask: %w", createErr)
+		}
+		if _, createErr = querier.CreateTaskVersionContentValidationAttestation(
+			txCtx,
+			sqlc.CreateTaskVersionContentValidationAttestationParams{
+				TaskID:      row.ID,
+				TaskVersion: row.CurrentVersion,
+			},
+		); createErr != nil {
+			return fmt.Errorf("TaskPostgres - Create - content validation attestation: %w", createErr)
+		}
+		return nil
+	})
 	if err != nil {
-		return nil, fmt.Errorf("TaskPostgres - Create - Querier.CreateTask: %w", err)
+		return nil, err
 	}
-	return taskToDomain(row), nil
+	return createTaskToDomain(row), nil
 }
 
 func (r *TaskPostgres) GetByID(ctx context.Context, id uuid.UUID) (*domain.Task, error) {
@@ -50,7 +61,7 @@ func (r *TaskPostgres) GetByID(ctx context.Context, id uuid.UUID) (*domain.Task,
 		}
 		return nil, fmt.Errorf("TaskPostgres - GetByID - Querier.GetTaskByID: %w", err)
 	}
-	return taskToDomain(row), nil
+	return getTaskToDomain(row), nil
 }
 
 func (r *TaskPostgres) List(ctx context.Context) ([]*domain.Task, error) {
@@ -60,69 +71,88 @@ func (r *TaskPostgres) List(ctx context.Context) ([]*domain.Task, error) {
 	}
 	out := make([]*domain.Task, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, taskToDomain(row))
+		out = append(out, listTaskToDomain(row))
 	}
 	return out, nil
 }
 
-func (r *TaskPostgres) ListByDifficulty(ctx context.Context, difficulty domain.Difficulty) ([]*domain.Task, error) {
-	if !difficulty.IsValid() {
-		return nil, domain.ErrValidation
-	}
-	rows, err := r.tx.Querier(ctx).ListTasksByDifficulty(ctx, string(difficulty))
-	if err != nil {
-		return nil, fmt.Errorf("TaskPostgres - ListByDifficulty - Querier.ListTasksByDifficulty: %w", err)
-	}
-	out := make([]*domain.Task, 0, len(rows))
-	for _, row := range rows {
-		out = append(out, taskToDomain(row))
-	}
-	return out, nil
+func getTaskToDomain(row sqlc.GetTaskByIDRow) *domain.Task {
+	return taskValuesToDomain(
+		row.ID, row.Title, row.Description, row.Category, row.Difficulty, row.TimeLimit, row.Flag,
+		row.Hint1, row.Hint2, row.Hint3, row.TaskUrl, row.SourceFileUrl, row.Kind, row.Enabled,
+		row.CurrentVersion, row.CreatedAt.Time,
+	)
 }
 
-func (r *TaskPostgres) Update(ctx context.Context, id uuid.UUID, in TaskInput) (*domain.Task, error) {
+func listTaskToDomain(row sqlc.ListTasksRow) *domain.Task {
+	return taskValuesToDomain(
+		row.ID, row.Title, row.Description, row.Category, row.Difficulty, row.TimeLimit, row.Flag,
+		row.Hint1, row.Hint2, row.Hint3, row.TaskUrl, row.SourceFileUrl, row.Kind, row.Enabled,
+		row.CurrentVersion, row.CreatedAt.Time,
+	)
+}
+
+func (r *TaskPostgres) Update(ctx context.Context, id uuid.UUID, in taskusecase.UpdateInput) (*domain.Task, error) {
 	normalized, err := normalizeTaskInput(in)
 	if err != nil {
 		return nil, err
 	}
-	row, err := r.tx.Querier(ctx).UpdateTask(ctx, updateTaskParams(id, normalized))
+	var row sqlc.UpdateTaskRow
+	err = r.tx.Do(ctx, func(txCtx context.Context) error {
+		querier := r.tx.Querier(txCtx)
+		var updateErr error
+		row, updateErr = querier.UpdateTask(txCtx, updateTaskParams(id, normalized))
+		if updateErr != nil {
+			return fmt.Errorf("TaskPostgres - Update - Querier.UpdateTask: %w", updateErr)
+		}
+		if _, updateErr = querier.CreateTaskVersionContentValidationAttestation(
+			txCtx,
+			sqlc.CreateTaskVersionContentValidationAttestationParams{
+				TaskID:      row.ID,
+				TaskVersion: row.CurrentVersion,
+			},
+		); updateErr != nil {
+			return fmt.Errorf("TaskPostgres - Update - content validation attestation: %w", updateErr)
+		}
+		return nil
+	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, domain.ErrTaskNotFound
 		}
-		return nil, fmt.Errorf("TaskPostgres - Update - Querier.UpdateTask: %w", err)
+		return nil, err
 	}
-	return taskToDomain(row), nil
+	return updateTaskToDomain(row), nil
 }
 
-func normalizeTaskInput(in TaskInput) (TaskInput, error) {
+func normalizeTaskInput(in taskusecase.UpdateInput) (taskusecase.UpdateInput, error) {
 	if !domain.IsValidTaskTitle(in.Title) {
-		return TaskInput{}, domain.ErrTaskValidation
+		return taskusecase.UpdateInput{}, domain.ErrTaskValidation
 	}
 	if !domain.IsValidTaskDescription(in.Description) {
-		return TaskInput{}, domain.ErrTaskValidation
+		return taskusecase.UpdateInput{}, domain.ErrTaskValidation
 	}
-	if !in.Category.IsValid() || !in.Difficulty.IsValid() {
-		return TaskInput{}, domain.ErrTaskValidation
+	if !in.Category.IsValid() || !in.Difficulty.IsValid() || !in.Kind.IsValid() {
+		return taskusecase.UpdateInput{}, domain.ErrTaskValidation
 	}
 	if !domain.IsValidTaskTimeLimit(in.TimeLimit) {
-		return TaskInput{}, domain.ErrTaskValidation
+		return taskusecase.UpdateInput{}, domain.ErrTaskValidation
 	}
 	if !domain.IsValidTaskFlag(in.Flag) {
-		return TaskInput{}, domain.ErrTaskValidation
+		return taskusecase.UpdateInput{}, domain.ErrTaskValidation
 	}
 	if !domain.IsValidTaskURLShape(in.Category, in.TaskURL, in.SourceFileURL) {
-		return TaskInput{}, domain.ErrTaskValidation
+		return taskusecase.UpdateInput{}, domain.ErrTaskValidation
 	}
 	hints, ok := domain.NormalizeTaskHints(in.Hints)
 	if !ok {
-		return TaskInput{}, domain.ErrTaskValidation
+		return taskusecase.UpdateInput{}, domain.ErrTaskValidation
 	}
 	in.Hints = hints
 	return in, nil
 }
 
-func createTaskParams(in TaskInput) sqlc.CreateTaskParams {
+func createTaskParams(in taskusecase.UpdateInput) sqlc.CreateTaskParams {
 	hint1, hint2, hint3 := taskHintPointers(in.Hints)
 	return sqlc.CreateTaskParams{
 		Title:         in.Title,
@@ -136,10 +166,12 @@ func createTaskParams(in TaskInput) sqlc.CreateTaskParams {
 		Hint3:         hint3,
 		TaskUrl:       in.TaskURL,
 		SourceFileUrl: in.SourceFileURL,
+		Kind:          string(in.Kind),
+		Enabled:       in.Enabled,
 	}
 }
 
-func updateTaskParams(id uuid.UUID, in TaskInput) sqlc.UpdateTaskParams {
+func updateTaskParams(id uuid.UUID, in taskusecase.UpdateInput) sqlc.UpdateTaskParams {
 	hint1, hint2, hint3 := taskHintPointers(in.Hints)
 	return sqlc.UpdateTaskParams{
 		ID:            id,
@@ -154,6 +186,8 @@ func updateTaskParams(id uuid.UUID, in TaskInput) sqlc.UpdateTaskParams {
 		Hint3:         hint3,
 		TaskUrl:       in.TaskURL,
 		SourceFileUrl: in.SourceFileURL,
+		Kind:          string(in.Kind),
+		Enabled:       in.Enabled,
 	}
 }
 
@@ -170,44 +204,34 @@ func taskHintPointer(hint string) *string {
 }
 
 func (r *TaskPostgres) Delete(ctx context.Context, id uuid.UUID) error {
-	if err := r.tx.Querier(ctx).DeleteTask(ctx, id); err != nil {
-		if isForeignKeyViolation(err) {
-			return domain.WrapError(err, domain.ErrTaskInUse)
+	err := r.tx.Do(ctx, func(txCtx context.Context) error {
+		querier := r.tx.Querier(txCtx)
+		if _, lockErr := querier.LockTaskForContentMutation(txCtx, id); lockErr != nil {
+			if errors.Is(lockErr, pgx.ErrNoRows) {
+				return domain.ErrTaskNotFound
+			}
+			return fmt.Errorf("TaskPostgres - Delete - lock task: %w", lockErr)
 		}
-		return fmt.Errorf("TaskPostgres - Delete - Querier.DeleteTask: %w", err)
-	}
-	return nil
-}
-
-func (r *TaskPostgres) IsUsedInActiveDuel(ctx context.Context, id uuid.UUID) (bool, error) {
-	used, err := r.tx.Querier(ctx).TaskInActiveDuel(ctx, id)
-	if err != nil {
-		return false, fmt.Errorf("TaskPostgres - IsUsedInActiveDuel - Querier.TaskInActiveDuel: %w", err)
-	}
-	return used, nil
-}
-
-func (r *TaskPostgres) CountByDifficulty(ctx context.Context, difficulty domain.Difficulty) (int64, error) {
-	if !difficulty.IsValid() {
-		return 0, domain.ErrValidation
-	}
-	n, err := r.tx.Querier(ctx).CountTasksByDifficulty(ctx, string(difficulty))
-	if err != nil {
-		return 0, fmt.Errorf("TaskPostgres - CountByDifficulty - Querier.CountTasksByDifficulty: %w", err)
-	}
-	return n, nil
-}
-
-func (r *TaskPostgres) CountSolvedByDifficulty(ctx context.Context, playerID uuid.UUID, difficulty domain.Difficulty) (int64, error) {
-	if !difficulty.IsValid() {
-		return 0, domain.ErrValidation
-	}
-	n, err := r.tx.Querier(ctx).CountSolvedTasksByDifficulty(ctx, sqlc.CountSolvedTasksByDifficultyParams{
-		PlayerID:   playerID,
-		Difficulty: string(difficulty),
+		referenced, referenceErr := querier.TaskReferencedByTournament(txCtx, id)
+		if referenceErr != nil {
+			return fmt.Errorf("TaskPostgres - Delete - check published references: %w", referenceErr)
+		}
+		if referenced {
+			return domain.ErrTaskInUse
+		}
+		if deleteErr := querier.DeleteTask(txCtx, id); deleteErr != nil {
+			if errors.Is(deleteErr, pgx.ErrNoRows) {
+				return domain.ErrTaskNotFound
+			}
+			if isForeignKeyViolation(deleteErr) {
+				return domain.WrapError(deleteErr, domain.ErrTaskInUse)
+			}
+			return fmt.Errorf("TaskPostgres - Delete - Querier.DeleteTask: %w", deleteErr)
+		}
+		return nil
 	})
 	if err != nil {
-		return 0, fmt.Errorf("TaskPostgres - CountSolvedByDifficulty - Querier.CountSolvedTasksByDifficulty: %w", err)
+		return err
 	}
-	return n, nil
+	return nil
 }

@@ -15,15 +15,16 @@ import (
 )
 
 type playerUsecaseFixture struct {
-	*duelFixture
-	uc *playerusecase.UseCase
+	*databaseFixture
+
+	uc *playerusecase.SessionUseCase
 }
 
 func newPlayerUsecaseFixture() *playerUsecaseFixture {
-	f := newDuelFixture()
+	f := newDatabaseFixture()
 	return &playerUsecaseFixture{
-		duelFixture: f,
-		uc:          playerusecase.NewUseCase(f.mgr, f.players, f.duels, realIntegrationClock()),
+		databaseFixture: f,
+		uc:              playerusecase.SessionNewUseCase(f.mgr, f.players, realIntegrationClock()),
 	}
 }
 
@@ -37,7 +38,6 @@ func TestPlayerUsecase_Join_CreateAndRepeatUpdatesSessionToken(t *testing.T) {
 	first, err := f.uc.Join(ctx, username)
 	require.NoError(t, err)
 	require.Equal(t, username, first.Username)
-	require.Equal(t, domain.PlayerStatusIdle, first.Status)
 	require.NotNil(t, first.SessionToken)
 	require.NotNil(t, first.SessionExpiresAt)
 	require.True(t, first.SessionExpiresAt.After(time.Now().UTC()))
@@ -56,35 +56,6 @@ func TestPlayerUsecase_Join_CreateAndRepeatUpdatesSessionToken(t *testing.T) {
 	byNewToken, err := f.players.GetBySessionToken(ctx, *second.SessionToken)
 	require.NoError(t, err)
 	require.Equal(t, first.ID, byNewToken.ID)
-}
-
-func TestPlayerUsecase_Join_RejoinWhileQueuedRejectedAndPreservesSession(t *testing.T) {
-	t.Parallel()
-
-	f := newPlayerUsecaseFixture()
-	ctx := context.Background()
-	username := uniq("alice")
-
-	first, err := f.uc.Join(ctx, username)
-	require.NoError(t, err)
-	require.NotNil(t, first.SessionToken)
-	firstToken := *first.SessionToken
-
-	_, err = f.players.UpdateStatus(ctx, first.ID, domain.PlayerStatusQueued)
-	require.NoError(t, err)
-
-	_, err = f.uc.Join(ctx, username)
-	require.ErrorIs(t, err, domain.ErrPlayerQueued)
-
-	current, err := f.players.GetByID(ctx, first.ID)
-	require.NoError(t, err)
-	require.Equal(t, domain.PlayerStatusQueued, current.Status)
-	require.NotNil(t, current.SessionToken)
-	require.Equal(t, firstToken, *current.SessionToken)
-
-	byToken, err := f.players.GetBySessionToken(ctx, firstToken)
-	require.NoError(t, err)
-	require.Equal(t, first.ID, byToken.ID)
 }
 
 func TestPlayerUsecase_Join_ConcurrentSameUsernameUsesSingleCurrentSessionToken(t *testing.T) {
@@ -131,24 +102,7 @@ func TestPlayerUsecase_Join_ConcurrentSameUsernameUsesSingleCurrentSessionToken(
 	}
 }
 
-func TestPlayerUsecase_Join_PlayerInDuelRejected(t *testing.T) {
-	t.Parallel()
-
-	f := newPlayerUsecaseFixture()
-	ctx := context.Background()
-	username := uniq("alice")
-
-	joined, err := f.uc.Join(ctx, username)
-	require.NoError(t, err)
-
-	_, err = f.players.UpdateStatus(ctx, joined.ID, domain.PlayerStatusInDuel)
-	require.NoError(t, err)
-
-	_, err = f.uc.Join(ctx, username)
-	require.ErrorIs(t, err, domain.ErrPlayerInDuel)
-}
-
-func TestPlayerUsecase_GetMe_WithoutAndWithActiveDuel(t *testing.T) {
+func TestPlayerUsecase_GetCurrentPlayer_ReturnsCurrentPlayer(t *testing.T) {
 	t.Parallel()
 
 	f := newPlayerUsecaseFixture()
@@ -158,23 +112,14 @@ func TestPlayerUsecase_GetMe_WithoutAndWithActiveDuel(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, alice.SessionToken)
 
-	me, err := f.uc.GetMe(ctx, *alice.SessionToken)
+	me, err := f.uc.GetCurrentPlayer(ctx, *alice.SessionToken)
 	require.NoError(t, err)
-	require.Equal(t, alice.ID, me.Player.ID)
-	require.Nil(t, me.ActiveDuel)
-
-	bob, err := f.players.Create(ctx, uniq("bob"))
-	require.NoError(t, err)
-	active, err := f.duels.Create(ctx, alice.ID, bob.ID, time.Now().Add(5*time.Minute))
-	require.NoError(t, err)
-
-	me, err = f.uc.GetMe(ctx, *alice.SessionToken)
-	require.NoError(t, err)
-	require.NotNil(t, me.ActiveDuel)
-	require.Equal(t, active.ID, me.ActiveDuel.ID)
+	require.Equal(t, alice.ID, me.ID)
+	require.Equal(t, alice.Username, me.Username)
+	require.Equal(t, alice.SessionToken, me.SessionToken)
 }
 
-func TestPlayerUsecase_GetMe_InvalidSession(t *testing.T) {
+func TestPlayerUsecase_GetCurrentPlayer_InvalidSession(t *testing.T) {
 	t.Parallel()
 
 	f := newPlayerUsecaseFixture()
@@ -188,6 +133,6 @@ func TestPlayerUsecase_GetMe_InvalidSession(t *testing.T) {
 	_, err = f.uc.Join(ctx, player.Username)
 	require.NoError(t, err)
 
-	_, err = f.uc.GetMe(ctx, oldToken)
+	_, err = f.uc.GetCurrentPlayer(ctx, oldToken)
 	require.ErrorIs(t, err, domain.ErrInvalidSession)
 }

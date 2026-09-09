@@ -3,11 +3,8 @@ package postgres
 import (
 	"context"
 	"fmt"
-
-	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/leaderboard"
+	leaderboardusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/leaderboard"
 )
-
-type LeaderboardRow = leaderboard.PlayerStats
 
 type LeaderboardPostgres struct {
 	tx *TxManager
@@ -17,19 +14,17 @@ func NewLeaderboardPostgres(tx *TxManager) *LeaderboardPostgres {
 	return &LeaderboardPostgres{tx: tx}
 }
 
-var _ leaderboard.StatsRepository = (*LeaderboardPostgres)(nil)
+var _ leaderboardusecase.StatsRepository = (*LeaderboardPostgres)(nil)
 
-// TopStats returns players with at least one flag-solved duel win. Forfeits,
-// disconnect draws, and any polluted Redis-only counters are intentionally not
-// represented here.
-func (r *LeaderboardPostgres) TopStats(ctx context.Context, limit int32) ([]LeaderboardRow, error) {
+// TopStats returns players with a current, accepted tournament solve result.
+func (r *LeaderboardPostgres) TopStats(ctx context.Context, limit int32) ([]leaderboardusecase.PlayerStats, error) {
 	rows, err := r.tx.Querier(ctx).TopLeaderboardStats(ctx, limit)
 	if err != nil {
 		return nil, fmt.Errorf("LeaderboardPostgres - TopStats - Querier.TopLeaderboardStats: %w", err)
 	}
-	out := make([]LeaderboardRow, 0, len(rows))
+	out := make([]leaderboardusecase.PlayerStats, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, LeaderboardRow{
+		out = append(out, leaderboardusecase.PlayerStats{
 			PlayerID:           row.PlayerID,
 			Username:           row.Username,
 			Wins:               int(row.Wins),

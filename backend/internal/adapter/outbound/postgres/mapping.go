@@ -22,7 +22,6 @@ func playerToDomain(p sqlc.Player) *domain.Player {
 	out := &domain.Player{
 		ID:        p.ID,
 		Username:  p.Username,
-		Status:    domain.PlayerStatus(p.Status),
 		CreatedAt: p.CreatedAt.Time,
 	}
 	if p.SessionToken.Valid {
@@ -37,18 +36,55 @@ func playerToDomain(p sqlc.Player) *domain.Player {
 }
 
 func taskToDomain(t sqlc.Task) *domain.Task {
+	return taskValuesToDomain(
+		t.ID, t.Title, t.Description, t.Category, t.Difficulty, t.TimeLimit, t.Flag,
+		t.Hint1, t.Hint2, t.Hint3, t.TaskUrl, t.SourceFileUrl, t.Kind, t.Enabled,
+		t.CurrentVersion, t.CreatedAt.Time,
+	)
+}
+
+func createTaskToDomain(t sqlc.CreateTaskRow) *domain.Task {
+	return taskValuesToDomain(
+		t.ID, t.Title, t.Description, t.Category, t.Difficulty, t.TimeLimit, t.Flag,
+		t.Hint1, t.Hint2, t.Hint3, t.TaskUrl, t.SourceFileUrl, t.Kind, t.Enabled,
+		t.CurrentVersion, t.CreatedAt.Time,
+	)
+}
+
+func updateTaskToDomain(t sqlc.UpdateTaskRow) *domain.Task {
+	return taskValuesToDomain(
+		t.ID, t.Title, t.Description, t.Category, t.Difficulty, t.TimeLimit, t.Flag,
+		t.Hint1, t.Hint2, t.Hint3, t.TaskUrl, t.SourceFileUrl, t.Kind, t.Enabled,
+		t.CurrentVersion, t.CreatedAt.Time,
+	)
+}
+
+func taskValuesToDomain(
+	id uuid.UUID,
+	title, description, category, difficulty string,
+	timeLimit int32,
+	flag string,
+	hint1, hint2, hint3, taskURL, sourceFileURL *string,
+	kind string,
+	enabled bool,
+	currentVersion int32,
+	createdAt time.Time,
+) *domain.Task {
 	return &domain.Task{
-		ID:            t.ID,
-		Title:         t.Title,
-		Description:   t.Description,
-		Category:      domain.Category(t.Category),
-		Difficulty:    domain.Difficulty(t.Difficulty),
-		TimeLimit:     int(t.TimeLimit),
-		Flag:          t.Flag,
-		Hints:         taskHintsToDomain(t.Hint1, t.Hint2, t.Hint3),
-		TaskURL:       t.TaskUrl,
-		SourceFileURL: t.SourceFileUrl,
-		CreatedAt:     t.CreatedAt.Time,
+		ID:             id,
+		Title:          title,
+		Description:    description,
+		Category:       domain.Category(category),
+		Difficulty:     domain.Difficulty(difficulty),
+		TimeLimit:      int(timeLimit),
+		Flag:           flag,
+		Hints:          taskHintsToDomain(hint1, hint2, hint3),
+		TaskURL:        taskURL,
+		SourceFileURL:  sourceFileURL,
+		Kind:           domain.TaskKind(kind),
+		Enabled:        enabled,
+		CurrentVersion: int(currentVersion),
+		CreatedAt:      createdAt,
 	}
 }
 
@@ -73,62 +109,6 @@ func nullableUUID(p *uuid.UUID) uuid.NullUUID {
 		return uuid.NullUUID{}
 	}
 	return uuid.NullUUID{UUID: *p, Valid: true}
-}
-
-func duelToDomain(d sqlc.Duel) *domain.Duel {
-	return duelFieldsToDomain(
-		d.ID,
-		d.Player1ID,
-		d.Player2ID,
-		d.Status,
-		d.WinnerID,
-		d.Deadline,
-		d.StartedAt,
-		d.FinishedAt,
-	)
-}
-
-func duelFieldsToDomain(
-	id uuid.UUID,
-	player1ID uuid.UUID,
-	player2ID uuid.UUID,
-	status string,
-	winnerID uuid.NullUUID,
-	deadline pgtype.Timestamptz,
-	startedAt pgtype.Timestamptz,
-	finishedAt pgtype.Timestamptz,
-) *domain.Duel {
-	out := &domain.Duel{
-		ID:        id,
-		Player1ID: player1ID,
-		Player2ID: player2ID,
-		Status:    domain.DuelStatus(status),
-		Deadline:  deadline.Time,
-		StartedAt: startedAt.Time,
-	}
-	if winnerID.Valid {
-		w := winnerID.UUID
-		out.WinnerID = &w
-	}
-	if finishedAt.Valid {
-		t := finishedAt.Time
-		out.FinishedAt = &t
-	}
-	return out
-}
-
-func duelPlayerTaskToDomain(dpt sqlc.DuelPlayerTask) *domain.DuelPlayerTask {
-	out := &domain.DuelPlayerTask{
-		DuelID:   dpt.DuelID,
-		PlayerID: dpt.PlayerID,
-		TaskID:   dpt.TaskID,
-		Solved:   dpt.Solved,
-	}
-	if dpt.SolvedAt.Valid {
-		t := dpt.SolvedAt.Time
-		out.SolvedAt = &t
-	}
-	return out
 }
 
 func tstz(t time.Time) pgtype.Timestamptz {

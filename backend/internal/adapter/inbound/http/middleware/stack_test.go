@@ -41,6 +41,9 @@ func TestBuild_SuccessAddsRequestIDSecurityHeadersAndLog(t *testing.T) {
 	require.Equal(t, "DENY", rr.Header().Get("X-Frame-Options"))
 	require.Equal(t, "strict-origin-when-cross-origin", rr.Header().Get("Referrer-Policy"))
 	require.Equal(t, "default-src 'self'", rr.Header().Get("Content-Security-Policy"))
+	require.Empty(t, rr.Header().Get("Strict-Transport-Security"))
+	require.Empty(t, rr.Header().Get("Cross-Origin-Opener-Policy"))
+	require.Empty(t, rr.Header().Get("Cross-Origin-Resource-Policy"))
 	require.Empty(t, rr.Header().Get("Cache-Control"))
 
 	entry := requireLogEntry(t, logs.String(), "http request")
@@ -104,7 +107,7 @@ func TestBuild_RecovererReturnsInternalJSONAndLogsError(t *testing.T) {
 		panic("boom")
 	}))
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/duels/current", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tournaments/11111111-1111-1111-1111-111111111111/participant/lobby", nil)
 	req.Header.Set("X-Request-ID", requestID)
 	rr := httptest.NewRecorder()
 
@@ -117,7 +120,7 @@ func TestBuild_RecovererReturnsInternalJSONAndLogsError(t *testing.T) {
 		"title":"Internal Server Error",
 		"status":500,
 		"detail":"internal",
-		"instance":"/api/v1/duels/current",
+		"instance":"/api/v1/tournaments/11111111-1111-1111-1111-111111111111/participant/lobby",
 		"request_id":"panic-req-123"
 	}`, rr.Body.String())
 	require.NotContains(t, rr.Body.String(), "boom")

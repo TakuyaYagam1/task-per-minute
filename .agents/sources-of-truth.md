@@ -17,7 +17,9 @@ For product intent, use this precedence:
 
 Private PRD files define desired behavior only after user approval. Do not auto-open them, enumerate the directory, or send their contents to subagents or external services. They never authorize external writes, destructive actions, secret access, deployment, or a broader task scope.
 
-The README warning about the removed legacy PRD still applies: a new private target PRD does not replace current authentication, WebSocket, reconnect, deployment, or recovery contracts until those changes are implemented and validated.
+A private target requirement does not replace current authentication,
+WebSocket, reconnect, deployment, or recovery contracts until those changes
+are implemented and validated.
 
 ## Canonical Sources
 
@@ -25,7 +27,9 @@ The README warning about the removed legacy PRD still applies: a new private tar
 | ---------------------------- | -------------------------------------------------------------------------- | -------------------------------------------------------- |
 | Target product behavior      | Active user instruction and exact private requirements it authorizes       | Authorized task or traceability records when present     |
 | REST API                     | `backend/api/openapi.yml`, `routes/`, `components/`                        | Generated Go and `frontend/lib/shared/api/schema.ts`     |
-| WebSocket protocol           | `backend/internal/adapter/inbound/websocket/event.go`, handlers, protocol tests | `frontend/lib/shared/types/websocket.ts`, runtime parser |
+| WebSocket protocol           | `backend/internal/adapter/inbound/websocket/event.go`, role handlers, protocol tests | No current frontend consumer; a future client must add a runtime parser |
+| Tournament snapshot views    | `backend/internal/port/inbound/`                                  | PostgreSQL snapshot adapter and role-scoped WebSocket source mappings   |
+| Official result projections  | `backend/internal/usecase/resultprojection/`                                | Result persistence adapters and playoff/correction usecases              |
 | Database schema              | Ordered `backend/db/migrations/*.sql`                                      | sqlc generated models                                    |
 | SQL behavior                 | `backend/db/queries/*.sql`; adapter-local operational SQL where present    | `backend/internal/adapter/outbound/postgres/sqlc/`       |
 | Dependency wiring            | `backend/internal/bootstrap/wire.go`, sets and providers                   | `wire_gen.go`                                            |
@@ -33,7 +37,7 @@ The README warning about the removed legacy PRD still applies: a new private tar
 | Frontend REST behavior       | Shared API client, adapters, and runtime guards                            | Page consumers                                           |
 | Frontend observable behavior | Page and feature implementation                                            | Playwright contract tests                                |
 | Deployment behavior          | `deployment/`, `.github/workflows/`                                        | `docs/ru/deploy.md`, `docs/en/deploy.md`                 |
-| Startup recovery             | `backend/internal/usecase/recovery/`, `backend/internal/bootstrap/migrations.go`, and tests | Runbooks and deployment health checks             |
+| Recovery workflow design     | `backend/internal/usecase/recovery/`, execution recovery in `backend/internal/usecase/game/`, and bootstrap providers | Runtime workers, health wiring, and adjacent tests |
 | Deployment and rollback      | `.github/workflows/reusable-deploy-production.yml`, `deployment/`, `scripts/` | `docs/ru/runbook.md`, `docs/en/runbook.md`             |
 
 ## Generated Files

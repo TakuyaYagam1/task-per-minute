@@ -10,9 +10,11 @@ INSERT INTO tasks (
     hint_2,
     hint_3,
     task_url,
-    source_file_url
+    source_file_url,
+    kind,
+    enabled
   )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 RETURNING id,
   title,
   description,
@@ -25,7 +27,11 @@ RETURNING id,
   hint_3,
   task_url,
   source_file_url,
-  created_at;
+  kind,
+  enabled,
+  current_version,
+  created_at,
+  updated_at;
 -- name: GetTaskByID :one
 SELECT id,
   title,
@@ -39,9 +45,14 @@ SELECT id,
   hint_3,
   task_url,
   source_file_url,
-  created_at
+  kind,
+  enabled,
+  current_version,
+  created_at,
+  updated_at
 FROM tasks
-WHERE id = $1;
+WHERE id = $1
+  AND deleted_at IS NULL;
 -- name: ListTasks :many
 SELECT id,
   title,
@@ -55,26 +66,13 @@ SELECT id,
   hint_3,
   task_url,
   source_file_url,
-  created_at
+  kind,
+  enabled,
+  current_version,
+  created_at,
+  updated_at
 FROM tasks
-ORDER BY created_at DESC,
-  id DESC;
--- name: ListTasksByDifficulty :many
-SELECT id,
-  title,
-  description,
-  category,
-  difficulty,
-  time_limit,
-  flag,
-  hint_1,
-  hint_2,
-  hint_3,
-  task_url,
-  source_file_url,
-  created_at
-FROM tasks
-WHERE difficulty = $1
+WHERE deleted_at IS NULL
 ORDER BY created_at DESC,
   id DESC;
 -- name: UpdateTask :one
@@ -89,8 +87,11 @@ SET title = $2,
   hint_2 = $9,
   hint_3 = $10,
   task_url = $11,
-  source_file_url = $12
+  source_file_url = $12,
+  kind = $13,
+  enabled = $14
 WHERE id = $1
+  AND deleted_at IS NULL
 RETURNING id,
   title,
   description,
@@ -103,36 +104,38 @@ RETURNING id,
   hint_3,
   task_url,
   source_file_url,
-  created_at;
+  kind,
+  enabled,
+  current_version,
+  created_at,
+  updated_at;
 -- name: DeleteTask :exec
-WITH deleted_history AS (
-  DELETE FROM player_task_history
-  WHERE task_id = $1
-),
-deleted_finished_duel_tasks AS (
-  DELETE FROM duel_player_tasks dpt
-  USING duels d
-  WHERE dpt.duel_id = d.id
-    AND dpt.task_id = $1
-    AND d.status <> 'active'
-)
-DELETE FROM tasks
-WHERE tasks.id = $1;
--- name: TaskInActiveDuel :one
+UPDATE tasks
+SET enabled = false,
+  deleted_at = clock_timestamp()
+WHERE tasks.id = $1
+  AND tasks.deleted_at IS NULL;
+
+-- name: LockTaskForContentMutation :one
+SELECT task.id
+FROM tasks AS task
+WHERE task.id = $1
+  AND task.deleted_at IS NULL
+FOR UPDATE;
+
+-- name: TaskReferencedByTournament :one
 SELECT EXISTS (
-    SELECT 1
-    FROM duel_player_tasks dpt
-      JOIN duels d ON d.id = dpt.duel_id
-    WHERE dpt.task_id = $1
-      AND d.status = 'active'
+  SELECT 1
+  FROM assignment_plan_edges AS edge
+  WHERE edge.task_id = $1
+  UNION ALL
+  SELECT 1
+  FROM tournament_content_configurations AS configuration
+  JOIN task_pool_version_memberships AS membership
+    ON membership.task_pool_revision_id IN (
+      configuration.normal_pool_revision_id,
+      configuration.golden_pool_revision_id
+    )
+  WHERE configuration.state = 'published'
+    AND membership.task_id = $1
   ) AS exists;
--- name: CountTasksByDifficulty :one
-SELECT COUNT(*) AS count
-FROM tasks
-WHERE difficulty = $1;
--- name: CountSolvedTasksByDifficulty :one
-SELECT COUNT(*) AS count
-FROM player_task_history pth
-  JOIN tasks t ON t.id = pth.task_id
-WHERE pth.player_id = $1
-  AND t.difficulty = $2;

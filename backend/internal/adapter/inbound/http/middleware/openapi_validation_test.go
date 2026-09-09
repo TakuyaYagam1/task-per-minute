@@ -288,6 +288,48 @@ func TestOpenAPIRequestValidator_DoesNotBypassNearMatchTaskSourcePaths(t *testin
 	}
 }
 
+func TestOpenAPIRequestValidator_BypassesOnlyTournamentRealtimePaths(t *testing.T) {
+	t.Parallel()
+
+	validator, err := middleware.OpenAPIRequestValidator(context.Background(), logkit.Noop())
+	require.NoError(t, err)
+
+	const tournamentID = "2c754c2e-8458-4417-b049-44c5f92840c7"
+	tests := []struct {
+		name       string
+		path       string
+		wantCalled bool
+	}{
+		{name: "public", path: "/api/v1/tournaments/" + tournamentID + "/realtime", wantCalled: true},
+		{name: "participant", path: "/api/v1/tournaments/" + tournamentID + "/participant/realtime", wantCalled: true},
+		{name: "operator", path: "/api/v1/admin/tournaments/" + tournamentID + "/realtime", wantCalled: true},
+		{name: "legacy root", path: "/ws"},
+		{name: "invalid id", path: "/api/v1/tournaments/not-a-uuid/realtime"},
+		{name: "extra segment", path: "/api/v1/tournaments/" + tournamentID + "/realtime/extra"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			called := false
+			handler := validator(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				called = true
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			rr := httptest.NewRecorder()
+			handler.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, tt.path, nil))
+
+			require.Equal(t, tt.wantCalled, called)
+			if tt.wantCalled {
+				require.Equal(t, http.StatusNoContent, rr.Code)
+			} else {
+				require.Equal(t, http.StatusNotFound, rr.Code)
+			}
+		})
+	}
+}
+
 type countingErrorReader struct {
 	reads int
 }

@@ -2,9 +2,9 @@
 
 [Русский](README.md)
 
-Task Per Minute is a competitive CTF platform for short one-on-one duels.
-Players join a match, receive a web challenge, solve it against the clock, and
-win by submitting the correct flag first.
+Task Per Minute is a competitive CTF tournament platform. Participants advance
+through Swiss rounds, the Golden stage, and playoffs while the backend keeps
+rosters, assignments, results, recovery evidence, and projections authoritative.
 
 Created for **RedShift**.
 
@@ -80,6 +80,10 @@ go test ./...
 go run ./cmd/app
 ```
 
+Join creates a player session or reclaims a username only after its previous
+session expires. While that session is active, `POST /api/v1/players/join`
+returns `409`; knowing the public username does not allow session replacement.
+
 ## Server
 
 [scripts/server-bootstrap.sh](scripts/server-bootstrap.sh) is the first-time
@@ -113,10 +117,7 @@ from prebuilt image tags.
 - [Deployment](docs/en/deploy.md) documents production configuration,
   cookie-auth, CSRF, and WebSocket origin policy.
 - [Runbook](docs/en/runbook.md) documents operational checks, rollback, and
-  duel runtime mechanics.
-
-The old PRD was removed as stale documentation. It is no longer a source of
-truth for auth, WebSocket, or reconnect behavior.
+  tournament runtime mechanics.
 
 ## Development Team
 

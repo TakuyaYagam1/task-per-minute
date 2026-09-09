@@ -19,7 +19,11 @@ Intentionally vulnerable CTF services are hostile workloads. Do not execute, ins
 
 - Preserve HttpOnly cookie authentication.
 - Preserve CSRF protections, credentialed fetch behavior, cookie attributes, CORS policy, trusted proxy CIDRs, and WebSocket Origin validation.
-- Browser storage is not a general credential store. Existing sessionStorage exceptions are CSRF tokens and cached game restore data, which can contain unlocked hints and presigned or task URLs. Treat both as sensitive XSS-reachable state, keep them short-lived, clear them with session and match cleanup, and do not add bearer tokens, session cookies, passwords, flags, or broader privileged payloads.
+- Browser storage is not a general credential store. It may contain readable
+  CSRF material and the non-authoritative player display cache. Treat both as
+  XSS-reachable state, keep them short-lived, clear them with session cleanup,
+  and do not add bearer tokens, session cookies, passwords, flags, hints,
+  presigned URLs, task URLs, or broader privileged payloads.
 - Public DTOs must use explicit allowlists. Never serialize a full internal task or player object and attempt to redact it afterward.
 - Admin routes and APIs must remain isolated from player-facing domains according to Caddy and backend policy.
 
@@ -62,6 +66,6 @@ Resolve exact targets with read-only checks first. Never use broad paths, unreso
 
 Security-sensitive changes require focused tests for authorization, redaction, malicious input, boundary conditions, and failure behavior. Authentication, contracts, challenge isolation, or deployment changes also require review of the relevant Caddy, Compose, OpenAPI, browser, and integration tests.
 
-Changes to `AGENTS.md`, root `CLAUDE.md`, or `.agents/` require an independent agent-security review covering prompt injection, trusted authorization provenance, denial of unauthorized `.env` and PRD access, executable-command inspection, subagent read and delegation limits, sanitized evidence, import integrity, and destructive-action gates.
+Changes to `AGENTS.md`, root `AGENT_ROUTING.md`, root `CLAUDE.md`, or `.agents/` require an independent agent-security review covering prompt injection, trusted authorization provenance, denial of unauthorized `.env` and PRD access, executable-command inspection, subagent read and delegation limits, sanitized evidence, import integrity, and destructive-action gates.
 
 If a full security check cannot run, report the missing evidence and residual risk. Never convert an untested assumption into a completion claim.

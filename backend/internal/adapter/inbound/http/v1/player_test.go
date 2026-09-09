@@ -1,7 +1,6 @@
 package v1
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -10,11 +9,13 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/api"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/middleware"
+	middlewaremocks "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/middleware/mocks"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	playerusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/player"
 )
 
 func TestJoinPlayerSetsHttpOnlySessionCookie(t *testing.T) {
@@ -22,15 +23,14 @@ func TestJoinPlayerSetsHttpOnlySessionCookie(t *testing.T) {
 
 	token := uuid.New()
 	playerID := uuid.New()
-	stub := &playerSessionStub{
-		joinPlayer: &domain.Player{
-			ID:           playerID,
-			Username:     "alice",
-			SessionToken: &token,
-			Status:       domain.PlayerStatusIdle,
-		},
+	player := &domain.Player{
+		ID:           playerID,
+		Username:     "alice",
+		SessionToken: &token,
 	}
-	server := New(Dependencies{Players: stub})
+	players := NewMockPlayerService(t)
+	players.EXPECT().Join(mock.Anything, "alice").Return(player, nil)
+	server := New(Dependencies{Players: players})
 
 	req := httptest.NewRequest(http.MethodPost, "https://app.example.com/api/v1/players/join", strings.NewReader(`{"username":"alice"}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -67,7 +67,7 @@ func TestJoinPlayerSetsHttpOnlySessionCookie(t *testing.T) {
 func TestJoinPlayerRejectsUnsupportedMediaType(t *testing.T) {
 	t.Parallel()
 
-	server := New(Dependencies{Players: &playerSessionStub{}})
+	server := New(Dependencies{Players: NewMockPlayerService(t)})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/players/join", strings.NewReader(`{"username":"alice"}`))
 	req.Header.Set("Content-Type", "text/plain")
@@ -91,7 +91,7 @@ func TestJoinPlayerRejectsUnsupportedMediaType(t *testing.T) {
 func TestJoinPlayerRejectsOversizedBody(t *testing.T) {
 	t.Parallel()
 
-	server := New(Dependencies{Players: &playerSessionStub{}})
+	server := New(Dependencies{Players: NewMockPlayerService(t)})
 
 	body := `{"username":"` + strings.Repeat("a", 1<<20) + `"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/players/join", strings.NewReader(body))
@@ -113,21 +113,52 @@ func TestJoinPlayerRejectsOversizedBody(t *testing.T) {
 	require.Empty(t, rr.Result().Cookies())
 }
 
+func TestJoinPlayerRejectsActiveUsernameWithoutIssuingCookies(t *testing.T) {
+	t.Parallel()
+
+	players := NewMockPlayerService(t)
+	players.EXPECT().Join(mock.Anything, "alice").Return(nil, domain.ErrUsernameTaken)
+	server := New(Dependencies{Players: players})
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"https://app.example.com/api/v1/players/join",
+		strings.NewReader(`{"username":"alice"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+
+	server.JoinPlayer(rr, req)
+
+	require.Equal(t, http.StatusConflict, rr.Code)
+	require.Empty(t, rr.Result().Cookies())
+	require.NotContains(t, rr.Body.String(), "player_id")
+	require.NotContains(t, rr.Body.String(), "session_token")
+	require.JSONEq(t, `{
+		"type":"about:blank",
+		"title":"Conflict",
+		"status":409,
+		"detail":"username already taken",
+		"instance":"/api/v1/players/join",
+		"request_id":""
+	}`, rr.Body.String())
+}
+
 func TestLogoutPlayerClearsCookieAndInvalidatesSession(t *testing.T) {
 	t.Parallel()
 
 	token := uuid.New()
-	stub := playerSessionStub{}
-	server := New(Dependencies{Players: &stub})
+	players := NewMockPlayerService(t)
+	players.EXPECT().Logout(mock.Anything, token).Return(nil)
+	server := New(Dependencies{Players: players})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/players/logout", nil)
 	req.AddCookie(&http.Cookie{Name: middleware.PlayerSessionCookieName, Value: token.String()})
 	rr := httptest.NewRecorder()
 
-	server.LogoutPlayer(rr, req)
+	server.LogoutPlayer(rr, req, api.LogoutPlayerParams{})
 
 	require.Equal(t, http.StatusNoContent, rr.Code)
-	require.Equal(t, token, stub.logoutToken)
 
 	cookies := rr.Result().Cookies()
 	require.Len(t, cookies, 2)
@@ -150,17 +181,14 @@ func TestGetMeSetsCSRFCookieWhenMissing(t *testing.T) {
 		ID:           playerID,
 		Username:     "alice",
 		SessionToken: &token,
-		Status:       domain.PlayerStatusIdle,
 		CreatedAt:    time.Date(2026, 5, 13, 12, 0, 0, 0, time.UTC),
 	}
-	stub := &playerSessionStub{
-		me: &playerusecase.PlayerWithActiveDuel{
-			Player: player,
-		},
-	}
-	server := New(Dependencies{Players: stub})
-	playersRepo := &playerSessionReaderStub{player: player}
-	handler := middleware.PlayerSession(playersRepo)(http.HandlerFunc(server.GetMe))
+	players := NewMockPlayerService(t)
+	players.EXPECT().GetCurrentPlayer(mock.Anything, token).Return(player, nil)
+	server := New(Dependencies{Players: players})
+	playersRepo := middlewaremocks.NewMockPlayerSessionReader(t)
+	playersRepo.EXPECT().GetBySessionToken(mock.Anything, token).Return(player, nil)
+	handler := middleware.PlayerSession(playersRepo)(http.HandlerFunc(server.GetCurrentPlayer))
 
 	req := httptest.NewRequest(http.MethodGet, "https://app.example.com/api/v1/players/me", nil)
 	req.AddCookie(&http.Cookie{Name: middleware.PlayerSessionCookieName, Value: token.String()})
@@ -169,8 +197,6 @@ func TestGetMeSetsCSRFCookieWhenMissing(t *testing.T) {
 	handler.ServeHTTP(rr, req)
 
 	require.Equal(t, http.StatusOK, rr.Code)
-	require.Equal(t, token, stub.getMeToken)
-	require.Equal(t, token, playersRepo.token)
 
 	cookies := rr.Result().Cookies()
 	require.Len(t, cookies, 1)
@@ -179,37 +205,6 @@ func TestGetMeSetsCSRFCookieWhenMissing(t *testing.T) {
 	require.Equal(t, csrfCookie.Value, rr.Header().Get(middleware.CSRFHeaderName))
 	require.False(t, csrfCookie.HttpOnly)
 	require.True(t, csrfCookie.Secure)
-}
-
-type playerSessionStub struct {
-	joinPlayer  *domain.Player
-	me          *playerusecase.PlayerWithActiveDuel
-	getMeToken  uuid.UUID
-	logoutToken uuid.UUID
-}
-
-func (s *playerSessionStub) Join(context.Context, string) (*domain.Player, error) {
-	return s.joinPlayer, nil
-}
-
-func (s *playerSessionStub) GetMe(_ context.Context, token uuid.UUID) (*playerusecase.PlayerWithActiveDuel, error) {
-	s.getMeToken = token
-	return s.me, nil
-}
-
-func (s *playerSessionStub) Logout(_ context.Context, token uuid.UUID) error {
-	s.logoutToken = token
-	return nil
-}
-
-type playerSessionReaderStub struct {
-	player *domain.Player
-	token  uuid.UUID
-}
-
-func (s *playerSessionReaderStub) GetBySessionToken(_ context.Context, token uuid.UUID) (*domain.Player, error) {
-	s.token = token
-	return s.player, nil
 }
 
 func requireCookie(t *testing.T, cookies []*http.Cookie, name string) *http.Cookie {

@@ -9,7 +9,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/middleware"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	adminusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/admin"
+	playerusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/player"
 )
 
 const (
@@ -62,7 +62,7 @@ func logkitFields(key string, value any) logkit.Fields {
 	return logkit.Fields{key: value}
 }
 
-func adminSecurityFields(actor adminusecase.Actor, errorCode any) logkit.Fields {
+func adminSecurityFields(actor playerusecase.Actor, errorCode any) logkit.Fields {
 	fields := logkit.Fields{}
 	if actor.Subject != "" {
 		fields["admin_subject"] = actor.Subject

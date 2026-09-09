@@ -9,7 +9,7 @@ import (
 	goredis "github.com/redis/go-redis/v9"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/admin"
+	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/auth"
 )
 
 const DefaultRevocationKeyPrefix = "jwt:revoked:"
@@ -21,7 +21,7 @@ type RevocationRedis struct {
 	keyPrefix string
 }
 
-var _ admin.RevocationStore = (*RevocationRedis)(nil)
+var _ auth.RevocationStore = (*RevocationRedis)(nil)
 
 func NewRevocationRedis(client *goredis.Client, keyPrefix string) *RevocationRedis {
 	if keyPrefix == "" {
@@ -58,8 +58,6 @@ func (r *RevocationRedis) IsRevoked(ctx context.Context, jti string) (bool, erro
 	}
 	return n > 0, nil
 }
-
-func (r *RevocationRedis) Cleanup() {}
 
 func (r *RevocationRedis) key(jti string) string {
 	return r.keyPrefix + jti

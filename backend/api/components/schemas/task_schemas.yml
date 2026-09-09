@@ -1,15 +1,33 @@
 TaskCategory:
   type: string
   enum: [web, crypto, forensics, reverse, pwn, steganography, ppc, osint, mobile, hardware, misc]
+  x-enum-varnames:
+    - TaskCategoryWeb
+    - TaskCategoryCrypto
+    - TaskCategoryForensics
+    - TaskCategoryReverse
+    - TaskCategoryPwn
+    - TaskCategorySteganography
+    - TaskCategoryPpc
+    - TaskCategoryOsint
+    - TaskCategoryMobile
+    - TaskCategoryHardware
+    - TaskCategoryMisc
 
 TaskDifficulty:
   type: string
   enum: [easy, medium, hard]
+  x-enum-varnames: [TaskDifficultyEasy, TaskDifficultyMedium, TaskDifficultyHard]
 
-TaskResponse:
+TaskKind:
+  type: string
+  enum: [normal, golden]
+  x-enum-varnames: [TaskKindNormal, TaskKindGolden]
+
+TaskDetails:
   type: object
   description: Admin view of a task. The `flag` field is only ever returned to admins, never to players.
-  required: [id, title, description, category, difficulty, time_limit, flag, hints, created_at]
+  required: [id, title, description, category, difficulty, time_limit, flag, kind, enabled, hints, created_at]
   properties:
     id:
       type: string
@@ -32,6 +50,10 @@ TaskResponse:
     flag:
       type: string
       maxLength: 255
+    kind:
+      $ref: '#/TaskKind'
+    enabled:
+      type: boolean
     hints:
       type: array
       minItems: 3
@@ -54,6 +76,7 @@ TaskResponse:
 
 CreateTaskRequest:
   type: object
+  additionalProperties: false
   required: [title, description, category, difficulty, time_limit, flag]
   properties:
     title:
@@ -75,6 +98,13 @@ CreateTaskRequest:
       type: string
       minLength: 1
       maxLength: 255
+    kind:
+      allOf:
+        - $ref: '#/TaskKind'
+      default: normal
+    enabled:
+      type: boolean
+      default: true
     hints:
       type: array
       maxItems: 3
@@ -90,6 +120,7 @@ CreateTaskRequest:
 
 UpdateTaskRequest:
   type: object
+  additionalProperties: false
   properties:
     title:
       type: string
@@ -110,6 +141,10 @@ UpdateTaskRequest:
       type: string
       minLength: 1
       maxLength: 255
+    kind:
+      $ref: '#/TaskKind'
+    enabled:
+      type: boolean
     hints:
       type: array
       maxItems: 3
@@ -125,17 +160,11 @@ UpdateTaskRequest:
       x-go-type-skip-optional-pointer: true
       x-oapi-codegen-extra-tags:
         json: task_url,omitempty
-    source_file_url:
-      type: string
-      format: uri
-      description: Set to null to clear an uploaded source file. Non-null values are managed by the source upload endpoint.
-      nullable: true
-      x-go-type: NullableString
-      x-go-type-skip-optional-pointer: true
-      x-oapi-codegen-extra-tags:
-        json: source_file_url,omitempty
+    clear_source_file:
+      type: boolean
+      description: Set to true to delete the currently uploaded source file. Uploads use the source endpoint.
 
-UploadSourceResponse:
+TaskSourceUploadResponse:
   type: object
   required: [source_file_url]
   properties:

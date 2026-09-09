@@ -12,12 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/config"
-	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	recoveryusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/recovery"
 )
 
 func TestAppBootstrapStageOrder(t *testing.T) {
@@ -40,14 +38,14 @@ func TestAppBootstrapStageOrder(t *testing.T) {
 				return true
 			}
 			switch selector.Sel.Name {
-			case "EnsureBucket", "Up", "Recover":
+			case "EnsureBucket", "Up":
 				calls = append(calls, selector.Sel.Name)
 			}
 			return true
 		})
 	}
 
-	require.Equal(t, []string{"EnsureBucket", "Up", "Recover"}, calls)
+	require.Equal(t, []string{"EnsureBucket", "Up"}, calls)
 }
 
 func TestAppBootstrapShortCircuitsAndPropagatesStageErrors(t *testing.T) {
@@ -55,9 +53,8 @@ func TestAppBootstrapShortCircuitsAndPropagatesStageErrors(t *testing.T) {
 		order := &lifecycleOrder{}
 		stageErr := errors.New("bucket unavailable")
 		app := &App{
-			storage:  &recordingBucket{order: order, err: stageErr},
+			storage:  newRecordingBucket(t, order, stageErr),
 			migrator: NewMigrator("://invalid", t.TempDir()),
-			recovery: newRecordingRecoverer(order, errors.New("unexpected recovery")),
 		}
 
 		err := app.bootstrap(t.Context())
@@ -70,31 +67,15 @@ func TestAppBootstrapShortCircuitsAndPropagatesStageErrors(t *testing.T) {
 	t.Run("migrations", func(t *testing.T) {
 		order := &lifecycleOrder{}
 		app := &App{
-			storage:  &recordingBucket{order: order},
+			storage:  newRecordingBucket(t, order, nil),
 			migrator: NewMigrator("://invalid", t.TempDir()),
-			recovery: newRecordingRecoverer(order, errors.New("unexpected recovery")),
 		}
 
 		err := app.bootstrap(t.Context())
 
 		require.Error(t, err)
 		require.ErrorContains(t, err, "Migrator.Up")
-		require.Equal(t, []string{"bucket"}, order.snapshot(), "recovery must not run after migration failure")
-	})
-
-	t.Run("recovery", func(t *testing.T) {
-		order := &lifecycleOrder{}
-		stageErr := errors.New("recovery failed")
-		app := &App{
-			storage:  &recordingBucket{order: order},
-			recovery: newRecordingRecoverer(order, stageErr),
-		}
-
-		err := app.bootstrap(t.Context())
-
-		require.ErrorIs(t, err, stageErr)
-		require.ErrorContains(t, err, "StartupRecoverer.Recover")
-		require.Equal(t, []string{"bucket", "recovery"}, order.snapshot())
+		require.Equal(t, []string{"bucket"}, order.snapshot())
 	})
 }
 
@@ -102,23 +83,20 @@ func TestAppBootstrapRunsAvailableStagesInOrder(t *testing.T) {
 	t.Parallel()
 
 	order := &lifecycleOrder{}
-	app := &App{
-		storage:  &recordingBucket{order: order},
-		recovery: newRecordingRecoverer(order, nil),
-	}
+	app := &App{storage: newRecordingBucket(t, order, nil)}
 
 	require.NoError(t, app.bootstrap(t.Context()))
-	require.Equal(t, []string{"bucket", "recovery"}, order.snapshot())
+	require.Equal(t, []string{"bucket"}, order.snapshot())
 }
 
-func TestAppShutdownOrdersWebSocketRuntimeAndHTTP(t *testing.T) {
+func TestAppShutdownStopsHTTPBeforeWebSocketAndRuntime(t *testing.T) {
 	t.Parallel()
 
 	order := &lifecycleOrder{}
 	runtimeContext := NewRuntimeContext(t.Context())
 	listener := newLifecycleListener(runtimeContext.Context(), order, nil)
 	server, serveErr := startLifecycleHTTPServer(t, listener)
-	websocket := &recordingWebSocketShutdowner{order: order, runtime: runtimeContext.Context()}
+	websocket, runtimeCancelledAtCall := newRecordingWebSocketShutdowner(t, order, runtimeContext.Context().Err)
 	app := &App{
 		cfg:       lifecycleConfig(),
 		runtime:   runtimeContext,
@@ -127,10 +105,78 @@ func TestAppShutdownOrdersWebSocketRuntimeAndHTTP(t *testing.T) {
 	}
 
 	require.NoError(t, app.Shutdown(context.Background()))
-	require.False(t, websocket.runtimeCancelledAtCall())
-	require.True(t, listener.runtimeCancelledAtClose())
-	require.Equal(t, []string{"websocket", "runtime", "http"}, order.snapshot())
+	require.False(t, runtimeCancelledAtCall())
+	require.False(t, listener.runtimeCancelledAtClose())
+	require.ErrorIs(t, runtimeContext.Context().Err(), context.Canceled)
+	require.Equal(t, []string{"http", "websocket"}, order.snapshot())
 	require.ErrorIs(t, receiveServeError(t, serveErr), http.ErrServerClosed)
+}
+
+func TestAppRunShutsDownRuntimeWhenHTTPServerFails(t *testing.T) {
+	t.Parallel()
+
+	order := &lifecycleOrder{}
+	runtimeContext := NewRuntimeContext(context.Background())
+	websocket, runtimeCancelledAtCall := newRecordingWebSocketShutdowner(t, order, runtimeContext.Context().Err)
+	app := &App{
+		cfg:       lifecycleConfig(),
+		runtime:   runtimeContext,
+		server:    &http.Server{Addr: "://", Handler: http.NotFoundHandler()},
+		websocket: websocket,
+	}
+
+	err := app.Run(context.Background())
+
+	require.Error(t, err)
+	require.ErrorContains(t, err, "App - Run - http server")
+	require.False(t, runtimeCancelledAtCall())
+	require.ErrorIs(t, runtimeContext.Context().Err(), context.Canceled)
+	require.Equal(t, []string{"websocket"}, order.snapshot())
+}
+
+func TestAppRunReturnsStartedWorkerPanic(t *testing.T) {
+	workerStarted := make(chan struct{})
+	triggerPanic := make(chan struct{})
+	worker := NewMockRuntimeWorker(t)
+	worker.EXPECT().Run(mock.Anything).RunAndReturn(func(context.Context) error {
+		close(workerStarted)
+		<-triggerPanic
+		panic("started worker panic")
+	}).Once()
+	workers, err := newRuntimeWorkers(namedRuntimeWorker{
+		name: "panicking", worker: worker, ready: func() bool { return true },
+	})
+	require.NoError(t, err)
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	address := listener.Addr().String()
+	require.NoError(t, listener.Close())
+	runtimeContext := NewRuntimeContext(t.Context())
+	app := &App{
+		cfg:     lifecycleConfig(),
+		runtime: runtimeContext,
+		server:  &http.Server{Addr: address, Handler: http.NotFoundHandler()},
+		workers: workers,
+	}
+	result := make(chan error, 1)
+	go func() {
+		result <- app.Run(t.Context())
+	}()
+	require.Eventually(t, channelClosed(workerStarted), time.Second, time.Millisecond)
+	require.Eventually(t, func() bool {
+		connection, dialErr := net.DialTimeout("tcp", address, 10*time.Millisecond)
+		if dialErr != nil {
+			return false
+		}
+		return connection.Close() == nil
+	}, time.Second, time.Millisecond)
+
+	close(triggerPanic)
+	err = <-result
+	require.ErrorContains(t, err, "runtime worker panicking")
+	require.ErrorContains(t, err, "panic")
+	require.ErrorIs(t, runtimeContext.Context().Err(), context.Canceled)
 }
 
 func TestAppShutdownPropagatesHTTPErrorAfterEarlierStages(t *testing.T) {
@@ -141,7 +187,7 @@ func TestAppShutdownPropagatesHTTPErrorAfterEarlierStages(t *testing.T) {
 	stageErr := errors.New("listener close failed")
 	listener := newLifecycleListener(runtimeContext.Context(), order, stageErr)
 	server, serveErr := startLifecycleHTTPServer(t, listener)
-	websocket := &recordingWebSocketShutdowner{order: order, runtime: runtimeContext.Context()}
+	websocket, runtimeCancelledAtCall := newRecordingWebSocketShutdowner(t, order, runtimeContext.Context().Err)
 	app := &App{
 		cfg:       lifecycleConfig(),
 		runtime:   runtimeContext,
@@ -153,9 +199,10 @@ func TestAppShutdownPropagatesHTTPErrorAfterEarlierStages(t *testing.T) {
 
 	require.ErrorIs(t, err, stageErr)
 	require.ErrorContains(t, err, "HTTPServer.Shutdown")
-	require.False(t, websocket.runtimeCancelledAtCall())
-	require.True(t, listener.runtimeCancelledAtClose())
-	require.Equal(t, []string{"websocket", "runtime", "http"}, order.snapshot())
+	require.False(t, runtimeCancelledAtCall())
+	require.False(t, listener.runtimeCancelledAtClose())
+	require.ErrorIs(t, runtimeContext.Context().Err(), context.Canceled)
+	require.Equal(t, []string{"http", "websocket"}, order.snapshot())
 	require.ErrorIs(t, receiveServeError(t, serveErr), http.ErrServerClosed)
 }
 
@@ -164,7 +211,7 @@ func TestAppShutdownRejectsNilContextBeforeSideEffects(t *testing.T) {
 
 	order := &lifecycleOrder{}
 	runtimeContext := NewRuntimeContext(t.Context())
-	websocket := &recordingWebSocketShutdowner{order: order, runtime: runtimeContext.Context()}
+	websocket, _ := newRecordingWebSocketShutdowner(t, order, runtimeContext.Context().Err)
 	app := &App{runtime: runtimeContext, websocket: websocket}
 
 	err := app.Shutdown(nil) //nolint:staticcheck // Explicitly verifies the public nil-context rejection contract.
@@ -222,82 +269,40 @@ func (o *lifecycleOrder) snapshot() []string {
 	return append([]string(nil), o.steps...)
 }
 
-type recordingBucket struct {
-	order *lifecycleOrder
-	err   error
+func newRecordingBucket(t *testing.T, order *lifecycleOrder, err error) *MockBucketEnsurer {
+	t.Helper()
+	bucket := NewMockBucketEnsurer(t)
+	bucket.EXPECT().
+		EnsureBucket(mock.Anything).
+		Run(func(context.Context) { order.add("bucket") }).
+		Return(err).
+		Once()
+	return bucket
 }
 
-func (b *recordingBucket) EnsureBucket(context.Context) error {
-	b.order.add("bucket")
-	return b.err
-}
-
-type recordingQueueCleaner struct {
-	order *lifecycleOrder
-	err   error
-}
-
-func (c *recordingQueueCleaner) Clear(context.Context) error {
-	c.order.add("recovery")
-	return c.err
-}
-
-type emptyActiveDuelRepository struct{}
-
-func (emptyActiveDuelRepository) ListActive(context.Context) ([]*domain.Duel, error) {
-	return nil, nil
-}
-
-func (emptyActiveDuelRepository) Finish(
-	context.Context,
-	uuid.UUID,
-	*uuid.UUID,
-	time.Time,
-	domain.DuelStatus,
-) (*domain.Duel, error) {
-	panic("unexpected Finish call")
-}
-
-type fixedLifecycleClock struct{}
-
-func (fixedLifecycleClock) Now() time.Time {
-	return time.Unix(0, 0).UTC()
-}
-
-func newRecordingRecoverer(order *lifecycleOrder, err error) *recoveryusecase.StartupRecoverer {
-	return recoveryusecase.NewStartupRecoverer(
-		nil,
-		emptyActiveDuelRepository{},
-		nil,
-		nil,
-		nil,
-		&recordingQueueCleaner{order: order, err: err},
-		nil,
-		nil,
-		nil,
-		fixedLifecycleClock{},
-		nil,
-	)
-}
-
-type recordingWebSocketShutdowner struct {
-	mu                  sync.Mutex
-	order               *lifecycleOrder
-	runtime             context.Context
-	runtimeWasCancelled bool
-}
-
-func (s *recordingWebSocketShutdowner) Shutdown(context.Context) {
-	s.mu.Lock()
-	s.runtimeWasCancelled = s.runtime.Err() != nil
-	s.mu.Unlock()
-	s.order.add("websocket")
-}
-
-func (s *recordingWebSocketShutdowner) runtimeCancelledAtCall() bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.runtimeWasCancelled
+func newRecordingWebSocketShutdowner(
+	t *testing.T,
+	order *lifecycleOrder,
+	runtimeError func() error,
+) (*MockWebSocketShutdowner, func() bool) {
+	t.Helper()
+	var mu sync.Mutex
+	runtimeWasCancelled := false
+	shutdowner := NewMockWebSocketShutdowner(t)
+	shutdowner.EXPECT().
+		Shutdown(mock.Anything).
+		Run(func(_ context.Context) {
+			mu.Lock()
+			runtimeWasCancelled = runtimeError() != nil
+			mu.Unlock()
+			order.add("websocket")
+		}).
+		Maybe()
+	return shutdowner, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return runtimeWasCancelled
+	}
 }
 
 type lifecycleListener struct {
@@ -333,7 +338,6 @@ func (l *lifecycleListener) Close() error {
 		l.mu.Lock()
 		l.runtimeWasCancelled = l.runtime.Err() != nil
 		l.mu.Unlock()
-		l.order.add("runtime")
 		l.order.add("http")
 		close(l.closed)
 	})

@@ -2,31 +2,27 @@ SHELL := /usr/bin/env bash
 .DEFAULT_GOAL := help
 
 # Pinned tool versions - keep in sync with codegen configs.
-GOOSE_VERSION   ?= v3.27.0
+GOOSE_VERSION   ?= v3.28.0
 SQLC_VERSION    ?= v1.31.1
 MOCKERY_VERSION ?= v3.5.5
 WIRE_VERSION    ?= v0.7.0
 
+TOOLS_DIR  ?= $(CURDIR)/.cache/tools
+SQLC       := $(TOOLS_DIR)/sqlc
+SQLC_STAMP := $(TOOLS_DIR)/sqlc-$(SQLC_VERSION).stamp
+
 GOOSE   := go run github.com/pressly/goose/v3/cmd/goose@$(GOOSE_VERSION)
-# sqlc cannot be `go run` (its go.mod uses replace directives); install once with
-# `go install github.com/sqlc-dev/sqlc/cmd/sqlc@$(SQLC_VERSION)` or via your package manager.
-SQLC    := sqlc
 MOCKERY := go run github.com/vektra/mockery/v3@$(MOCKERY_VERSION)
 WIRE    := go run github.com/google/wire/cmd/wire@$(WIRE_VERSION)
 
-# Project-wide .env lives at the repo root; make targets inherit DB_DSN etc.
-ifneq (,$(wildcard ../.env))
-include ../.env
-export
-endif
-
 DB_DSN ?= postgres://tpm:tpm@localhost:5432/task_per_minute?sslmode=disable
 MIGRATIONS_DIR := db/migrations
-PYTHON ?= python3
 QUALITY_PY_REQUIREMENTS ?= scripts/requirements-quality.txt
-QUALITY_VENV ?= .venv-quality
+QUALITY_VENV ?= $(CURDIR)/.venv-quality
 QUALITY_PYTHON ?= $(QUALITY_VENV)/bin/python
 QUALITY_PY_DEPS_STAMP ?= $(QUALITY_VENV)/.deps.stamp
+BOOTSTRAP_PYTHON ?= python3
+PYTHON ?= $(QUALITY_PYTHON)
 GO_LINT_CACHE := $(CURDIR)/.cache/golangci-lint
 
 ##@ Build & run
@@ -37,7 +33,7 @@ build: ## Build the server binary into ./bin/server
 	go build -trimpath -o bin/server ./cmd/app
 
 .PHONY: run
-run: ## Run the server (uses .env if present)
+run: ## Run the server with the current shell environment
 	go run ./cmd/app
 
 .PHONY: tidy
@@ -54,17 +50,33 @@ clean: ## Remove build artefacts and generated mocks
 .PHONY: gen generate
 gen generate: gen-openapi gen-sqlc gen-wire mocks ## Run all code generators
 
-.PHONY: merge-schemas
-merge-schemas: ## Only merge components/schemas/*.yml -> schemas.yml (no codegen)
-	python3 scripts/merge-schemas.py
+.PHONY: install-tools
+install-tools: $(SQLC_STAMP) ## Install pinned project-local generator binaries
+
+$(SQLC_STAMP):
+	@mkdir -p "$(TOOLS_DIR)"
+	GOBIN="$(TOOLS_DIR)" go install github.com/sqlc-dev/sqlc/cmd/sqlc@$(SQLC_VERSION)
+	@actual="$$($(SQLC) version)"; test "$$actual" = "$(SQLC_VERSION)" || { \
+		echo "sqlc: expected $(SQLC_VERSION), got $$actual"; exit 1; \
+	}
+	@touch "$@"
 
 .PHONY: gen-openapi openapi
-gen-openapi openapi: ## Merge OpenAPI components, run oapi-codegen, cleanup intermediate files
-	bash scripts/openapi-generate.sh
+gen-openapi openapi: $(QUALITY_PY_DEPS_STAMP) ## Merge OpenAPI components, run oapi-codegen, cleanup intermediate files
+	PYTHON="$(PYTHON)" bash scripts/openapi-generate.sh
 
-.PHONY: gen-sqlc
-gen-sqlc: ## Generate type-safe SQL code from db/queries/
+.PHONY: test-openapi
+test-openapi: $(QUALITY_PY_DEPS_STAMP) ## Run OpenAPI generator and contract toolchain tests
+	PYTHON="$(PYTHON)" bash scripts/openapi-generate_test.sh
+
+.PHONY: gen-sqlc check-sqlc
+gen-sqlc: check-sqlc ## Generate type-safe SQL code from db/queries/
 	$(SQLC) generate -f codegen/sqlc.yaml
+
+check-sqlc: $(SQLC_STAMP) ## Verify the pinned project-local sqlc binary
+	@actual="$$($(SQLC) version)"; test "$$actual" = "$(SQLC_VERSION)" || { \
+		echo "sqlc: expected $(SQLC_VERSION), got $$actual"; exit 1; \
+	}
 
 .PHONY: gen-wire
 gen-wire: ## Generate compile-time DI graph
@@ -85,7 +97,10 @@ install-quality-python-deps: $(QUALITY_PY_DEPS_STAMP) ## Install pinned Python q
 
 $(QUALITY_PY_DEPS_STAMP): $(QUALITY_PY_REQUIREMENTS)
 	@echo "Installing Python quality tools..."
-	$(PYTHON) -m venv $(QUALITY_VENV)
+	@command -v "$(BOOTSTRAP_PYTHON)" >/dev/null 2>&1 || { \
+		echo "quality Python bootstrap interpreter not found: $(BOOTSTRAP_PYTHON)"; exit 1; \
+	}
+	$(BOOTSTRAP_PYTHON) -m venv $(QUALITY_VENV)
 	$(QUALITY_PYTHON) -m pip install --disable-pip-version-check -r $(QUALITY_PY_REQUIREMENTS)
 	@touch $(QUALITY_PY_DEPS_STAMP)
 
@@ -124,7 +139,7 @@ fmt: ## golangci-lint fmt
 	golangci-lint fmt ./...
 
 .PHONY: test
-test: ## Unit tests with race detector (skips integration_test/)
+test: test-migration-create ## Unit tests with race detector (skips integration_test/)
 	go test -race -count=1 -parallel=5 $$(go list ./... | grep -v /integration_test)
 
 .PHONY: test-plugin-race
@@ -161,7 +176,11 @@ migrate-status: ## goose status
 .PHONY: migrate-create
 migrate-create: ## Create a new migration: make migrate-create NAME=add_widgets
 	@if [ -z "$(NAME)" ]; then echo "Usage: make migrate-create NAME=<snake_case_name>"; exit 1; fi
-	$(GOOSE) -dir $(MIGRATIONS_DIR) -s create $(NAME) sql
+	bash scripts/create-migration.sh "$(MIGRATIONS_DIR)" "$(NAME)"
+
+.PHONY: test-migration-create
+test-migration-create: ## Test six-digit migration creation and validation
+	bash scripts/create-migration_test.sh
 
 ##@ Help
 

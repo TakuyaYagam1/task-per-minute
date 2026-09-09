@@ -1,7 +1,7 @@
 import createClient from "openapi-fetch";
 
 import { CONFIG } from "../config";
-import { isAdminTokenResponse } from "./guards";
+import { isAdminSessionResponse } from "./guards";
 import type { components, paths } from "./schema";
 
 export type ProblemDetails = components["schemas"]["ProblemDetails"];
@@ -121,6 +121,9 @@ const readAdminAccessCSRFToken = (): string | null =>
 const readAdminRefreshCSRFToken = (): string | null =>
   readCookie(ADMIN_REFRESH_CSRF_COOKIE_NAME) || readStoredToken(ADMIN_REFRESH_CSRF_STORAGE_KEY);
 
+export const canResumeAdminSession = (): boolean =>
+  readAdminRefreshCSRFToken() !== null;
+
 const csrfTokenForRequest = (request: Request): string | null => {
   const pathname = new URL(request.url).pathname;
   if (pathname === "/api/v1/admin/refresh" || pathname === "/api/v1/admin/logout") {
@@ -133,11 +136,6 @@ const csrfTokenForRequest = (request: Request): string | null => {
     return readPlayerCSRFToken();
   }
   return null;
-};
-
-const isAdminRefreshCSRFRequest = (request: Request): boolean => {
-  const pathname = new URL(request.url).pathname;
-  return pathname === "/api/v1/admin/refresh" || pathname === "/api/v1/admin/logout";
 };
 
 const syncCSRFTokenFromResponse = (request: Request, response: Response): void => {
@@ -186,13 +184,8 @@ export const credentialedFetch: typeof fetch = async (input, init) => {
   const headers = new Headers(request.headers);
   if (isUnsafeMethod(request.method)) {
     const csrfToken = csrfTokenForRequest(request);
-    if (csrfToken) {
-      if (!headers.has(CSRF_HEADER_NAME)) {
-        headers.set(CSRF_HEADER_NAME, csrfToken);
-      }
-      if (isAdminRefreshCSRFRequest(request) && !headers.has(ADMIN_REFRESH_CSRF_HEADER_NAME)) {
-        headers.set(ADMIN_REFRESH_CSRF_HEADER_NAME, csrfToken);
-      }
+    if (csrfToken && !headers.get(CSRF_HEADER_NAME)) {
+      headers.set(CSRF_HEADER_NAME, csrfToken);
     }
   }
   const credentialedRequest = new Request(request, { credentials: "include", headers });
@@ -215,13 +208,11 @@ const isAdminRefreshableRequest = (request: Request): boolean => {
 
 const refreshAdminSession = async (): Promise<boolean> => {
   try {
-    const response = await credentialedFetch("/api/v1/admin/refresh", {
+    const response = await credentialedFetch(`${CONFIG.adminApiUrl}/api/v1/admin/refresh`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refresh_token: "" }),
     });
     const body: unknown = await response.clone().json().catch(() => null);
-    if (response.ok && isAdminTokenResponse(body)) {
+    if (response.ok && isAdminSessionResponse(body)) {
       return true;
     }
   } catch {

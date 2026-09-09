@@ -20,7 +20,7 @@ func TestProvideRESTMiddlewares_IncludesOpenAPIValidation(t *testing.T) {
 		context.Background(),
 		logkit.Noop(),
 		&config.Config{},
-		provideArenaObservability(logkit.Noop()),
+		requireEventTelemetry(t),
 	)
 	require.NoError(t, err)
 	require.NotNil(t, middlewares.RequestValidator)

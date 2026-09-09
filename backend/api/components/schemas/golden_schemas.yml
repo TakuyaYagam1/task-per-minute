@@ -1,0 +1,398 @@
+GoldenSeed:
+  type: object
+  description: Immutable seed for an impactful tied standings segment.
+  required: [group_id, revision_id, source_projection_revision_id, position_from, position_to, participant_ids]
+  properties:
+    group_id:
+      type: string
+      format: uuid
+    revision_id:
+      type: string
+      format: uuid
+      readOnly: true
+    source_projection_revision_id:
+      type: string
+      format: uuid
+      readOnly: true
+    position_from:
+      type: integer
+      format: int32
+      minimum: 1
+    position_to:
+      type: integer
+      format: int32
+      minimum: 1
+    participant_ids:
+      type: array
+      minItems: 2
+      maxItems: 16
+      uniqueItems: true
+      items:
+        type: string
+        format: uuid
+
+GoldenAttemptState:
+  type: string
+  enum: [planned, waiting_ready, active, completed, void, cancelled]
+
+GoldenAttemptTerminalReason:
+  type: string
+  enum: [all_solved, deadline]
+
+GoldenGroupRevisionPurpose:
+  type: string
+  enum: [golden_seed_only]
+
+GoldenGroupRevisionEffect:
+  type: string
+  enum: [preserve_swiss_points_and_defer_rank]
+
+GoldenMember:
+  type: object
+  required: [participant_id, excluded]
+  properties:
+    participant_id:
+      type: string
+      format: uuid
+    excluded:
+      type: boolean
+      readOnly: true
+
+GoldenGroupMemberRevision:
+  type: object
+  required: [participant_id, points, buchholz, head_to_head_points, head_to_head_applied, effective_time_ms, accepted_solve_time_ms, seed]
+  properties:
+    participant_id:
+      type: string
+      format: uuid
+    points:
+      type: integer
+      format: int32
+      minimum: 0
+      readOnly: true
+    buchholz:
+      type: integer
+      format: int32
+      minimum: 0
+      readOnly: true
+    head_to_head_points:
+      type: integer
+      format: int32
+      minimum: 0
+      readOnly: true
+    head_to_head_applied:
+      type: boolean
+      readOnly: true
+    effective_time_ms:
+      type: integer
+      format: int64
+      minimum: 0
+      readOnly: true
+    accepted_solve_time_ms:
+      type: integer
+      format: int64
+      minimum: 0
+      nullable: true
+      readOnly: true
+    seed:
+      type: integer
+      format: int32
+      minimum: 1
+      readOnly: true
+
+GoldenAttempt:
+  type: object
+  description: Public attempt state excludes private task assignments and their flag material.
+  required: [id, group_id, group_revision_id, attempt_no, previous_attempt_id, state, participant_ids, retained_attempt_id, retained_at, started_at, finished_at]
+  properties:
+    id:
+      type: string
+      format: uuid
+    group_id:
+      type: string
+      format: uuid
+    group_revision_id:
+      type: string
+      format: uuid
+      readOnly: true
+    attempt_no:
+      type: integer
+      format: int32
+      minimum: 1
+      readOnly: true
+    previous_attempt_id:
+      type: string
+      format: uuid
+      nullable: true
+      readOnly: true
+    state:
+      $ref: '#/GoldenAttemptState'
+    participant_ids:
+      type: array
+      minItems: 2
+      items:
+        type: string
+        format: uuid
+    retained_attempt_id:
+      type: string
+      format: uuid
+      nullable: true
+      readOnly: true
+    retained_at:
+      type: string
+      format: date-time
+      nullable: true
+      readOnly: true
+    started_at:
+      type: string
+      format: date-time
+      nullable: true
+      readOnly: true
+    finished_at:
+      type: string
+      format: date-time
+      nullable: true
+      readOnly: true
+
+GoldenGroupRevision:
+  type: object
+  description: Immutable topology derived from one standings projection without mutating Swiss points.
+  required: [purpose, effect, tournament_id, group_id, revision_id, revision_no, previous_revision_id, source_projection_revision_id, source_projection_revision_no, source_projection_payload_digest, position_from, position_to, members, payload_digest, proof_hash]
+  properties:
+    purpose:
+      $ref: '#/GoldenGroupRevisionPurpose'
+    effect:
+      $ref: '#/GoldenGroupRevisionEffect'
+    tournament_id:
+      type: string
+      format: uuid
+    group_id:
+      type: string
+      format: uuid
+    revision_id:
+      type: string
+      format: uuid
+      readOnly: true
+    revision_no:
+      type: integer
+      format: int64
+      minimum: 1
+      readOnly: true
+    previous_revision_id:
+      type: string
+      format: uuid
+      nullable: true
+      readOnly: true
+    source_projection_revision_id:
+      type: string
+      format: uuid
+      readOnly: true
+    source_projection_revision_no:
+      type: integer
+      format: int64
+      minimum: 1
+      readOnly: true
+    source_projection_payload_digest:
+      type: string
+      minLength: 64
+      maxLength: 64
+      pattern: '^[0-9a-f]{64}$'
+      readOnly: true
+    position_from:
+      type: integer
+      format: int32
+      minimum: 1
+    position_to:
+      type: integer
+      format: int32
+      minimum: 1
+    members:
+      type: array
+      minItems: 2
+      items:
+        $ref: '#/GoldenGroupMemberRevision'
+    payload_digest:
+      type: string
+      minLength: 64
+      maxLength: 64
+      pattern: '^[0-9a-f]{64}$'
+      readOnly: true
+    proof_hash:
+      type: string
+      minLength: 64
+      maxLength: 64
+      pattern: '^[0-9a-f]{64}$'
+      readOnly: true
+
+GoldenGroup:
+  type: object
+  required: [id, tournament_id, revision_id, source_projection_revision_id, position_from, position_to, participation_established, members, attempts]
+  properties:
+    id:
+      type: string
+      format: uuid
+    tournament_id:
+      type: string
+      format: uuid
+    revision_id:
+      type: string
+      format: uuid
+      readOnly: true
+    source_projection_revision_id:
+      type: string
+      format: uuid
+      readOnly: true
+    position_from:
+      type: integer
+      format: int32
+      minimum: 1
+    position_to:
+      type: integer
+      format: int32
+      minimum: 1
+    participation_established:
+      type: boolean
+      readOnly: true
+    members:
+      type: array
+      minItems: 2
+      items:
+        $ref: '#/GoldenMember'
+    attempts:
+      type: array
+      items:
+        $ref: '#/GoldenAttempt'
+
+GoldenProvisionalOrderEntry:
+  type: object
+  required: [submission_id, participant_id, committed_at, evidence_digest]
+  properties:
+    submission_id:
+      type: integer
+      format: int64
+      minimum: 1
+      readOnly: true
+    participant_id:
+      type: string
+      format: uuid
+    committed_at:
+      type: string
+      format: date-time
+      readOnly: true
+    evidence_digest:
+      type: string
+      minLength: 64
+      maxLength: 64
+      pattern: '^[0-9a-f]{64}$'
+      readOnly: true
+
+GoldenProvisionalOrder:
+  type: object
+  description: Submission order evidence for an attempt. It is not a committed tournament position ledger.
+  required: [attempt_id, attempt_no, submission_revision_id, submission_revision, entries, payload_digest]
+  properties:
+    attempt_id:
+      type: string
+      format: uuid
+    attempt_no:
+      type: integer
+      format: int32
+      minimum: 1
+      readOnly: true
+    submission_revision_id:
+      type: string
+      format: uuid
+      readOnly: true
+    submission_revision:
+      type: integer
+      format: int64
+      minimum: 1
+      readOnly: true
+    entries:
+      type: array
+      items:
+        $ref: '#/GoldenProvisionalOrderEntry'
+    payload_digest:
+      type: string
+      minLength: 64
+      maxLength: 64
+      pattern: '^[0-9a-f]{64}$'
+      readOnly: true
+
+GoldenCommittedPosition:
+  type: object
+  required: [position, participant_id, attempt_id, attempt_no, submission_id, evidence_digest, commit_id]
+  properties:
+    position:
+      type: integer
+      format: int32
+      minimum: 1
+      readOnly: true
+    participant_id:
+      type: string
+      format: uuid
+    attempt_id:
+      type: string
+      format: uuid
+    attempt_no:
+      type: integer
+      format: int32
+      minimum: 1
+      readOnly: true
+    submission_id:
+      type: integer
+      format: int64
+      minimum: 1
+      readOnly: true
+    evidence_digest:
+      type: string
+      minLength: 64
+      maxLength: 64
+      pattern: '^[0-9a-f]{64}$'
+      readOnly: true
+    commit_id:
+      type: string
+      format: uuid
+      readOnly: true
+
+GoldenCommittedOrder:
+  type: object
+  description: Immutable committed position ledger, distinct from provisional attempt submission order.
+  required: [revision_id, revision, previous_revision_id, position_from, position_to, positions, attempts, payload_digest]
+  properties:
+    revision_id:
+      type: string
+      format: uuid
+      readOnly: true
+    revision:
+      type: integer
+      format: int64
+      minimum: 1
+      readOnly: true
+    previous_revision_id:
+      type: string
+      format: uuid
+      nullable: true
+      readOnly: true
+    position_from:
+      type: integer
+      format: int32
+      minimum: 1
+    position_to:
+      type: integer
+      format: int32
+      minimum: 1
+    positions:
+      type: array
+      items:
+        $ref: '#/GoldenCommittedPosition'
+    attempts:
+      type: array
+      items:
+        $ref: '#/GoldenProvisionalOrder'
+    payload_digest:
+      type: string
+      minLength: 64
+      maxLength: 64
+      pattern: '^[0-9a-f]{64}$'
+      readOnly: true

@@ -1,0 +1,253 @@
+ResultActorKind:
+  type: string
+  enum: [server, operator]
+
+OfficialResultSubjectKind:
+  type: string
+  enum: [game, series]
+
+SeriesScoreRevisionOperation:
+  type: string
+  enum: [initialize, append_attempt, replace_result]
+
+SubmissionScope:
+  type: object
+  required: [wave_id, tournament_id, series_id, slot_id, game_id, assignment_id]
+  properties:
+    wave_id:
+      type: string
+      format: uuid
+    tournament_id:
+      type: string
+      format: uuid
+    series_id:
+      type: string
+      format: uuid
+    slot_id:
+      type: string
+      format: uuid
+    game_id:
+      type: string
+      format: uuid
+    assignment_id:
+      type: string
+      format: uuid
+
+SubmissionRequest:
+  type: object
+  required: [scope, command_id, participant_id, submitted_flag]
+  properties:
+    scope:
+      $ref: '#/SubmissionScope'
+    command_id:
+      type: string
+      format: uuid
+    participant_id:
+      type: string
+      format: uuid
+    submitted_flag:
+      type: string
+      minLength: 1
+      maxLength: 4096
+      writeOnly: true
+
+SubmissionRecord:
+  type: object
+  required: [scope, command_id, participant_id, sequence, committed_at, correct, snapshot_id, task_id, content_digest]
+  properties:
+    scope:
+      $ref: '#/SubmissionScope'
+    command_id:
+      type: string
+      format: uuid
+    participant_id:
+      type: string
+      format: uuid
+    sequence:
+      type: integer
+      format: int64
+      minimum: 1
+    committed_at:
+      type: string
+      format: date-time
+      readOnly: true
+    correct:
+      type: boolean
+      readOnly: true
+    snapshot_id:
+      type: string
+      format: uuid
+    task_id:
+      type: string
+      format: uuid
+    content_digest:
+      type: string
+      minLength: 64
+      maxLength: 64
+      pattern: '^[0-9a-f]{64}$'
+      readOnly: true
+
+OfficialResultRevision:
+  type: object
+  description: Immutable official result revision for one Game or Series.
+  required: [id, previous_revision_id, ordinal, command_id, subject_kind, tournament_id, series_id, game_id, actor_kind, actor_id, game_state, game_reason, series_state, series_reason, winner_id, score_revision_id, source_projection_revision_id, recorded_at]
+  properties:
+    id:
+      type: string
+      format: uuid
+      readOnly: true
+    previous_revision_id:
+      type: string
+      format: uuid
+      nullable: true
+      readOnly: true
+    ordinal:
+      type: integer
+      format: int32
+      minimum: 1
+      readOnly: true
+    command_id:
+      type: string
+      format: uuid
+      readOnly: true
+    subject_kind:
+      $ref: '#/OfficialResultSubjectKind'
+    tournament_id:
+      type: string
+      format: uuid
+    series_id:
+      type: string
+      format: uuid
+    game_id:
+      type: string
+      format: uuid
+      nullable: true
+    actor_kind:
+      $ref: '#/ResultActorKind'
+    actor_id:
+      type: string
+      format: uuid
+      nullable: true
+    game_state:
+      type: string
+      nullable: true
+      allOf:
+        - $ref: '#/GameState'
+    game_reason:
+      type: string
+      nullable: true
+      allOf:
+        - $ref: '#/GameResultReason'
+    series_state:
+      type: string
+      nullable: true
+      allOf:
+        - $ref: '#/SeriesState'
+    series_reason:
+      type: string
+      nullable: true
+      allOf:
+        - $ref: '#/SeriesResultReason'
+    winner_id:
+      type: string
+      format: uuid
+      nullable: true
+    score_revision_id:
+      type: string
+      format: uuid
+      nullable: true
+    source_projection_revision_id:
+      type: string
+      format: uuid
+      readOnly: true
+    recorded_at:
+      type: string
+      format: date-time
+      readOnly: true
+
+SeriesScoreRevision:
+  type: object
+  description: Immutable score ledger revision with stable slot and Game attempt evidence.
+  required: [id, previous_revision_id, ordinal, operation, command_id, actor_kind, actor_id, tournament_id, series_id, first_participant_id, second_participant_id, format, score, attempts, source_projection_revision_id, recorded_at]
+  properties:
+    id:
+      type: string
+      format: uuid
+      readOnly: true
+    previous_revision_id:
+      type: string
+      format: uuid
+      nullable: true
+      readOnly: true
+    ordinal:
+      type: integer
+      format: int32
+      minimum: 1
+      readOnly: true
+    operation:
+      $ref: '#/SeriesScoreRevisionOperation'
+    command_id:
+      type: string
+      format: uuid
+      readOnly: true
+    actor_kind:
+      $ref: '#/ResultActorKind'
+    actor_id:
+      type: string
+      format: uuid
+      nullable: true
+    tournament_id:
+      type: string
+      format: uuid
+    series_id:
+      type: string
+      format: uuid
+    first_participant_id:
+      type: string
+      format: uuid
+    second_participant_id:
+      type: string
+      format: uuid
+    format:
+      $ref: '#/SeriesFormat'
+    score:
+      $ref: '#/SeriesScore'
+    attempts:
+      type: array
+      items:
+        $ref: '#/SeriesScoreAttemptReference'
+    source_projection_revision_id:
+      type: string
+      format: uuid
+      readOnly: true
+    recorded_at:
+      type: string
+      format: date-time
+      readOnly: true
+
+ParticipantSubmissionRequest:
+  type: object
+  additionalProperties: false
+  required: [expected_projection_revision, submitted_flag]
+  properties:
+    expected_projection_revision:
+      type: integer
+      format: int64
+      minimum: 1
+    submitted_flag:
+      type: string
+      minLength: 1
+      maxLength: 4096
+      writeOnly: true
+
+ParticipantSubmissionResponse:
+  type: object
+  additionalProperties: false
+  required: [projection_revision, submission]
+  properties:
+    projection_revision:
+      type: integer
+      format: int64
+      minimum: 1
+    submission:
+      $ref: '#/SubmissionRecord'

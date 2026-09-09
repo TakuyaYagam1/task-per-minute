@@ -10,11 +10,8 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/config"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/assignment"
 	"github.com/wahrwelt-kit/go-logkit"
-)
-
-import (
-	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 // Injectors from wire.go:
@@ -33,97 +30,235 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 		return nil, nil, err
 	}
 	txManager := postgres.NewTxManager(pool)
-	duelPostgres := postgres.NewDuelPostgres(txManager)
 	playerPostgres := postgres.NewPlayerPostgres(txManager)
+	bootstrapClockFunc := provideClock()
+	sessionUseCase := providePlayerSessionUseCase(cfg, txManager, playerPostgres, bootstrapClockFunc)
+	authConfig := provideAuthConfig(cfg)
 	redisConfig := provideRedisConfig(cfg)
 	client, cleanup2, err := provideRedis(context, redisConfig)
 	if err != nil {
 		cleanup()
 		return nil, nil, err
 	}
-	matchmakingRedis := provideMatchmakingRedis(client)
-	taskPostgres := postgres.NewTaskPostgres(txManager)
-	historyPostgres := postgres.NewHistoryPostgres(txManager)
-	bootstrapClockFunc := provideClock()
-	matchmakingUseCase := provideMatchmakingUseCase(txManager, matchmakingRedis, playerPostgres, taskPostgres, historyPostgres, duelPostgres, seaweedStorage, bootstrapClockFunc, log)
-	leaderboardRedis := provideLeaderboardRedis(client)
-	leaderboardPostgres := postgres.NewLeaderboardPostgres(txManager)
-	useCase := provideLeaderboardUseCase(leaderboardRedis, leaderboardPostgres, bootstrapClockFunc)
-	timerRegistry := provideTimerRegistry(context, txManager, duelPostgres, playerPostgres, bootstrapClockFunc, log)
-	flagSubmitUseCase := provideFlagSubmitUseCase(txManager, duelPostgres, playerPostgres, historyPostgres, useCase, bootstrapClockFunc, timerRegistry, log)
-	hubRegistry := provideHubRegistry()
-	hintScheduler := provideHintScheduler(bootstrapClockFunc)
-	bootstrapWsHandshakeRateLimiter := provideHandshakeRateLimiter(context, cfg)
-	arenaTournamentPostgres := postgres.NewArenaTournamentPostgres(txManager)
-	arenaProductionSnapshotSource := websocket.NewArenaProductionSnapshotSource(arenaTournamentPostgres, arenaTournamentPostgres)
-	arenaParticipantFlow, err := websocket.NewArenaParticipantFlow(arenaProductionSnapshotSource)
-	if err != nil {
-		cleanup2()
-		cleanup()
-		return nil, nil, err
-	}
-	publicRealtimeConfig := provideArenaPublicRealtimeConfig()
-	arenaPublicFlow, err := websocket.NewArenaPublicFlow(arenaProductionSnapshotSource, publicRealtimeConfig)
-	if err != nil {
-		cleanup2()
-		cleanup()
-		return nil, nil, err
-	}
-	arenaOperatorFlow, err := websocket.NewArenaOperatorFlow(arenaProductionSnapshotSource)
-	if err != nil {
-		cleanup2()
-		cleanup()
-		return nil, nil, err
-	}
-	v := provideArenaCancellationCoordinators()
-	arenaTerminalRegistry, err := websocket.NewArenaTerminalRegistry(v)
-	if err != nil {
-		cleanup2()
-		cleanup()
-		return nil, nil, err
-	}
-	arenaTerminalFlow, err := websocket.NewArenaTerminalFlow(arenaTerminalRegistry)
-	if err != nil {
-		cleanup2()
-		cleanup()
-		return nil, nil, err
-	}
-	authConfig := provideAuthConfig(cfg)
 	revocationRedis := provideRevocationRedis(client)
-	authUseCase := provideAuthUseCase(authConfig, bootstrapClockFunc, revocationRedis)
-	arenaOperatorPrincipalResolver := provideArenaOperatorPrincipalResolver(authUseCase)
-	bootstrapArenaWebSocketOptions := provideArenaWebSocketOptions(arenaParticipantFlow, arenaPublicFlow, arenaOperatorFlow, arenaTerminalFlow, arenaOperatorPrincipalResolver)
-	bootstrapArenaObservability := provideArenaObservability(log)
-	bootstrapRawWebSocketServer := provideRawWebSocketServerWithArena(context, cfg, log, playerPostgres, matchmakingUseCase, flagSubmitUseCase, hubRegistry, hintScheduler, timerRegistry, duelPostgres, seaweedStorage, bootstrapWsHandshakeRateLimiter, bootstrapArenaWebSocketOptions, bootstrapArenaObservability)
-	broadcaster := provideDuelBroadcaster(bootstrapRawWebSocketServer)
-	duelTimer := provideDuelTimers(timerRegistry, hintScheduler)
-	reconnectManager := provideReconnectManager(context, txManager, duelPostgres, playerPostgres, duelTimer, broadcaster, bootstrapClockFunc, useCase, log)
-	startupRecoverer := provideStartupRecoverer(txManager, duelPostgres, duelPostgres, playerPostgres, playerPostgres, matchmakingRedis, broadcaster, reconnectManager, hintScheduler, bootstrapClockFunc, log)
-	bootstrapArenaCore := provideArenaCore(arenaTournamentPostgres, arenaTournamentPostgres, arenaTournamentPostgres, arenaTournamentPostgres, bootstrapClockFunc, bootstrapArenaObservability)
-	playerUseCase := providePlayerUseCase(cfg, txManager, playerPostgres, duelPostgres, bootstrapClockFunc)
-	taskUseCase := provideAdminTaskUseCase(taskPostgres)
-	adminPlayerUseCase := provideAdminPlayerUseCase(txManager, playerPostgres, useCase, bootstrapClockFunc)
+	jwtCodec := provideJWTCodec(cfg, bootstrapClockFunc)
+	passwordVerifier := providePasswordVerifier(cfg)
+	useCase := provideAuthUseCase(authConfig, bootstrapClockFunc, revocationRedis, jwtCodec, passwordVerifier)
+	taskPostgres := postgres.NewTaskPostgres(txManager)
+	taskUseCase := provideTaskUseCase(taskPostgres)
+	leaderboardPostgres := postgres.NewLeaderboardPostgres(txManager)
+	ranking := provideLeaderboardRanking(leaderboardPostgres)
+	cache := provideLeaderboardCache(ranking, bootstrapClockFunc)
+	managementUseCase := providePlayerManagementUseCase(txManager, playerPostgres, cache, bootstrapClockFunc)
 	adminPlayerEventsPostgres := postgres.NewAdminPlayerEventsPostgres(pool)
-	uploadUseCase := provideUploadUseCase(taskPostgres, seaweedStorage, log)
-	readUseCase := provideReadUseCase(duelPostgres)
-	schemaVersionPostgres := postgres.NewSchemaVersionPostgres(pool)
-	bootstrapArenaHealthProbe := provideArenaHealthSource(context, pool, bootstrapClockFunc, bootstrapArenaObservability)
-	healthChecks := provideHealthChecks(pool, client, seaweedStorage, schemaVersionPostgres, bootstrapArenaHealthProbe)
-	loginRateLimiter := provideLoginRateLimiter(context, cfg)
-	bootstrapAdminRefreshRateLimiter := provideRefreshRateLimiter(context, cfg)
-	joinRateLimiter := provideJoinRateLimiter(context, cfg)
-	bootstrapLeaderboardRateLimiter := provideLeaderboardRateLimiter(context, cfg)
-	server := provideRESTServerWithClock(playerUseCase, authUseCase, taskUseCase, adminPlayerUseCase, adminPlayerEventsPostgres, uploadUseCase, useCase, readUseCase, healthChecks, bootstrapClockFunc, loginRateLimiter, bootstrapAdminRefreshRateLimiter, joinRateLimiter, bootstrapLeaderboardRateLimiter, log, bootstrapArenaObservability)
-	websocketServer := provideWebSocketServer(bootstrapRawWebSocketServer, reconnectManager)
-	bootstrapRestMiddlewareStack, err := provideRESTMiddlewares(context, log, cfg, bootstrapArenaObservability)
+	cleanupRunner := provideCleanupRunner()
+	sourceFiles := provideSourceFiles(taskUseCase, seaweedStorage, cleanupRunner, log)
+	deterministicIDGenerator, err := provideTournamentIDGenerator()
 	if err != nil {
 		cleanup2()
 		cleanup()
 		return nil, nil, err
 	}
-	handler := provideHTTPHandler(cfg, server, websocketServer, authUseCase, playerPostgres, bootstrapRestMiddlewareStack, log)
+	tournamentPostgres := postgres.NewTournamentPostgres(txManager)
+	tournamentUseCase := provideTournamentCatalog(tournamentPostgres, bootstrapClockFunc)
+	tournamentCreatePostgres := postgres.NewTournamentCreatePostgres(tournamentPostgres)
+	commandReceiptStore := provideTournamentCommandReceipts(client)
+	catalogUseCase := provideTournamentApplication(deterministicIDGenerator, bootstrapClockFunc, tournamentUseCase, tournamentCreatePostgres, commandReceiptStore)
+	tournamentAdminRosterPostgres := postgres.NewTournamentAdminRosterPostgres(txManager)
+	privateTaskAvailabilityPostgres := providePrivateTaskAvailabilityRepository(txManager)
+	availabilityMonitor, err := providePrivateTaskAvailabilityMonitor(privateTaskAvailabilityPostgres, bootstrapClockFunc)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	realtimeOutboxPostgres := provideRealtimeOutbox(txManager)
+	realtimeDelivery, err := provideRealtimeDelivery(realtimeOutboxPostgres, bootstrapClockFunc)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	bootstrapEventTelemetry, err := provideEventTelemetry(log)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	tournamentEventDispatcher := provideTournamentEventDispatcher(bootstrapEventTelemetry)
+	eventDeliveryObserver := provideEventDeliveryObserver(bootstrapEventTelemetry)
+	worker, err := provideObservedEventDeliveryWorker(realtimeOutboxPostgres, realtimeDelivery, bootstrapClockFunc, eventDeliveryObserver)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	executionAuthorityPostgres := postgres.NewExecutionAuthorityPostgres(txManager)
+	recoveryTerminalPostgres := provideRecoveryTerminalStore(txManager, executionAuthorityPostgres, bootstrapClockFunc)
+	reconnectObserver := provideReconnectObserver(bootstrapEventTelemetry)
+	terminalDeadlineHandler := provideRecoveryDeadlineHandler(recoveryTerminalPostgres, bootstrapClockFunc, reconnectObserver)
+	deadlineScheduler, err := provideRecoveryDeadlineScheduler(terminalDeadlineHandler)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	recoveryPostgres := provideRecoveryRepository(txManager, deadlineScheduler)
+	executionRecoveryPostgres := provideExecutionRecoveryRepository(txManager, recoveryPostgres, recoveryTerminalPostgres)
+	controller, err := provideExecutionAuthorityController(executionAuthorityPostgres)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	epochReplayUseCase := provideExecutionEpochReplay(executionRecoveryPostgres, executionAuthorityPostgres)
+	recoverer := provideExecutionRecoverer(executionAuthorityPostgres, executionRecoveryPostgres, epochReplayUseCase)
+	executionRecoveryObserver := provideExecutionRecoveryObserver(bootstrapEventTelemetry)
+	recoveryRunner, err := provideExecutionRecoveryRunner(executionRecoveryPostgres, controller, recoverer, bootstrapClockFunc, executionRecoveryObserver)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	recoveryObserver := provideRecoveryObserver(bootstrapEventTelemetry)
+	deadlineSweep := provideRecoveryDeadlineSweep(recoveryPostgres, recoveryObserver)
+	recoveryWorker, err := provideRecoveryWorker(deadlineSweep, bootstrapClockFunc, deadlineScheduler)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	runtimeWorkerHeartbeats := provideRuntimeWorkerHeartbeats(client)
+	bootstrapRuntimeWorkers, err := provideRuntimeWorkers(tournamentEventDispatcher, worker, realtimeDelivery, availabilityMonitor, deadlineScheduler, recoveryRunner, recoveryWorker, bootstrapClockFunc, runtimeWorkerHeartbeats)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	adminPreflightRuntimeHealthSource := providePreflightRuntimeHealthSource(bootstrapClockFunc, availabilityMonitor, privateTaskAvailabilityPostgres, realtimeDelivery, bootstrapRuntimeWorkers, runtimeWorkerHeartbeats, client, seaweedStorage, pool)
+	rosterWorkflow := provideTournamentAdminRoster(txManager, tournamentAdminRosterPostgres, adminPreflightRuntimeHealthSource)
+	tournamentAdminExecutionPostgres := postgres.NewTournamentAdminExecutionPostgres(txManager)
+	executionWorkflow := provideTournamentAdminExecution(txManager, tournamentAdminExecutionPostgres, tournamentAdminExecutionPostgres, controller, bootstrapClockFunc)
+	tournamentAdminLifecyclePostgres := postgres.NewTournamentAdminLifecyclePostgres(txManager)
+	tournamentLifecyclePostgres := postgres.NewTournamentLifecyclePostgres(tournamentPostgres)
+	tournamentLifecycleUseCase := provideTournamentLifecycle(tournamentLifecyclePostgres, bootstrapClockFunc)
+	tournamentPauseUseCase := provideTournamentPause(txManager, tournamentAdminLifecyclePostgres, bootstrapClockFunc)
+	tournamentCancellationPostgres := postgres.NewTournamentCancellationPostgres(txManager)
+	tournamentCancellationUseCase := provideTournamentCancellation(tournamentCancellationPostgres, bootstrapClockFunc)
+	tournamentProgressionPostgres := postgres.NewTournamentProgressionPostgres(txManager)
+	workflow := provideTournamentProgression(tournamentProgressionPostgres, tournamentProgressionPostgres, tournamentProgressionPostgres, tournamentProgressionPostgres, bootstrapClockFunc)
+	lifecycleWorkflow := provideTournamentAdminLifecycle(txManager, tournamentAdminLifecyclePostgres, tournamentLifecycleUseCase, tournamentPauseUseCase, tournamentCancellationUseCase, workflow, bootstrapClockFunc)
+	resultPostgres := postgres.NewResultPostgres(txManager)
+	tournamentAdminResultPostgres := postgres.NewTournamentAdminResultPostgres(txManager, resultPostgres)
+	draftPostgres := postgres.NewDraftPostgres(txManager)
+	assignmentPostgres := postgres.NewAssignmentPostgres(txManager)
+	playoffTerminalPostgres := postgres.NewPlayoffTerminalPostgres(txManager, draftPostgres, assignmentPostgres)
+	projectionPostgres := postgres.NewProjectionPostgres(txManager)
+	exactDraftBranchPlanPostgres := postgres.NewExactDraftBranchPlanPostgres(txManager, draftPostgres)
+	exactDraftBranchPlanUseCase := assignment.NewExactDraftBranchPlanUseCase(exactDraftBranchPlanPostgres)
+	finalDraftAssignmentService := provideFinalDraftAssignmentPlanner(exactDraftBranchPlanUseCase, exactDraftBranchPlanPostgres, exactDraftBranchPlanPostgres)
+	terminalCoordinator := providePlayoffTerminal(playoffTerminalPostgres, projectionPostgres, finalDraftAssignmentService, finalDraftAssignmentService)
+	operatorResultWorkflow := provideTournamentAdminResults(txManager, tournamentAdminResultPostgres, terminalCoordinator)
+	tournamentAdminReplayPostgres := postgres.NewTournamentAdminReplayPostgres(txManager)
+	replayWorkflow := provideTournamentAdminReplay(txManager, tournamentAdminReplayPostgres)
+	tournamentAdminCorrectionPostgres := postgres.NewTournamentAdminCorrectionPostgres(txManager)
+	correctionWorkflow := provideTournamentAdminCorrection(txManager, tournamentAdminCorrectionPostgres)
+	tournamentAdminAuditPostgres := postgres.NewTournamentAdminAuditPostgres(txManager)
+	hmacAuthenticator, err := provideIncidentAuthenticator(cfg)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	tournamentAdminSnapshotPostgres := postgres.NewTournamentAdminSnapshotPostgres(txManager)
+	adminUseCase := provideTournamentAdminApplication(catalogUseCase, rosterWorkflow, rosterWorkflow, executionWorkflow, lifecycleWorkflow, executionWorkflow, operatorResultWorkflow, replayWorkflow, operatorResultWorkflow, replayWorkflow, correctionWorkflow, tournamentAdminAuditPostgres, tournamentAdminAuditPostgres, hmacAuthenticator, tournamentAdminSnapshotPostgres)
+	coordinator := provideDistributedCommandCoordinator(commandReceiptStore)
+	adminIdempotentService, err := provideIdempotentTournamentAdminApplication(adminUseCase, catalogUseCase, coordinator)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	tournamentAdminObserver := provideTournamentAdminObserver(bootstrapEventTelemetry)
+	adminObservedService := provideObservedTournamentAdminApplication(adminIdempotentService, bootstrapClockFunc, tournamentAdminObserver)
+	tournamentAdminUseCase := provideTournamentAdminInbound(adminObservedService)
+	tournamentSnapshotPostgres := postgres.NewTournamentSnapshotPostgres(txManager)
+	participantStatePostgres := postgres.NewParticipantStatePostgres(txManager)
+	tournamentParticipantPostgres := postgres.NewTournamentParticipantPostgres(txManager)
+	wavePostgres := postgres.NewWavePostgres(txManager)
+	participantReadinessRepository := postgres.NewParticipantReadinessRepository(txManager, wavePostgres)
+	readinessUseCase := provideParticipantReadiness(participantReadinessRepository, bootstrapClockFunc)
+	participantDraftRepository := postgres.NewParticipantDraftRepository(txManager, draftPostgres)
+	actionUseCase := provideParticipantDraft(participantDraftRepository, bootstrapClockFunc)
+	participantSubmissionRepository := postgres.NewParticipantSubmissionRepository(txManager, resultPostgres)
+	submissionUseCase := provideParticipantSubmission(participantSubmissionRepository)
+	participantSettlementRepository := postgres.NewParticipantSettlementRepository(txManager, resultPostgres)
+	participantSettlementWorkflow := postgres.NewParticipantSettlementWorkflow(participantSettlementRepository)
+	participantForfeitRepository := postgres.NewParticipantForfeitRepository(txManager, resultPostgres)
+	participantSurrenderWorkflow := provideParticipantSurrender(participantForfeitRepository, bootstrapClockFunc)
+	participantPostSeriesRepository := postgres.NewParticipantPostSeriesRepository(txManager)
+	postSeriesUseCase := provideParticipantPostSeries(participantPostSeriesRepository, bootstrapClockFunc)
+	commandCoordinator := provideParticipantCommands(txManager, tournamentParticipantPostgres, readinessUseCase, actionUseCase, submissionUseCase, participantSettlementWorkflow, participantSurrenderWorkflow, postSeriesUseCase, terminalCoordinator)
+	participantUseCase := provideTournamentParticipantApplication(tournamentSnapshotPostgres, participantStatePostgres, commandCoordinator)
+	participantIdempotentService := provideIdempotentTournamentParticipantApplication(participantUseCase, coordinator)
+	tournamentParticipantObserver := provideTournamentParticipantObserver(bootstrapEventTelemetry)
+	participantObservedService := provideObservedTournamentParticipantApplication(participantIdempotentService, bootstrapClockFunc, tournamentParticipantObserver)
+	schemaVersionPostgres := postgres.NewSchemaVersionPostgres(pool)
+	healthSource := provideEventDeliveryHealth(worker)
+	backlogSource := provideOutboxBacklog(realtimeOutboxPostgres)
+	projectionHealthSource := provideProjectionHealth(txManager)
+	bootstrapHealthProbe := provideHealthProbe(context, realtimeDelivery, pool, bootstrapClockFunc, bootstrapEventTelemetry, availabilityMonitor, privateTaskAvailabilityPostgres, healthSource, backlogSource, recoveryWorker, bootstrapRuntimeWorkers, runtimeWorkerHeartbeats, projectionHealthSource)
+	healthChecks := provideHealthChecks(pool, client, seaweedStorage, schemaVersionPostgres, bootstrapHealthProbe)
+	bootstrapLoginRateLimiter := provideLoginRateLimiter(client, cfg)
+	bootstrapAdminRefreshRateLimiter := provideRefreshRateLimiter(client, cfg)
+	bootstrapJoinRateLimiter := provideJoinRateLimiter(client, cfg)
+	bootstrapLeaderboardRateLimiter := provideLeaderboardRateLimiter(client, cfg)
+	bootstrapPublicTournamentReadRateLimiter := providePublicTournamentReadRateLimiter(client, cfg)
+	bootstrapOperatorTournamentReadRateLimiter := provideOperatorTournamentReadRateLimiter(client, cfg)
+	bootstrapOperatorTournamentMutationRateLimiter := provideOperatorTournamentMutationRateLimiter(client, cfg)
+	bootstrapParticipantTournamentReadRateLimiter := provideParticipantTournamentReadRateLimiter(client, cfg)
+	bootstrapParticipantTournamentMutationRateLimiter := provideParticipantTournamentMutationRateLimiter(client, cfg)
+	server := provideRESTServerWithClock(sessionUseCase, useCase, taskUseCase, managementUseCase, adminPlayerEventsPostgres, sourceFiles, cache, catalogUseCase, tournamentAdminUseCase, participantObservedService, tournamentSnapshotPostgres, healthChecks, bootstrapClockFunc, bootstrapLoginRateLimiter, bootstrapAdminRefreshRateLimiter, bootstrapJoinRateLimiter, bootstrapLeaderboardRateLimiter, bootstrapPublicTournamentReadRateLimiter, bootstrapOperatorTournamentReadRateLimiter, bootstrapOperatorTournamentMutationRateLimiter, bootstrapParticipantTournamentReadRateLimiter, bootstrapParticipantTournamentMutationRateLimiter, log)
+	bootstrapWsHandshakeRateLimiter := provideHandshakeRateLimiter(client, cfg)
+	tournamentProductionSnapshotSource, err := websocket.NewTournamentProductionSnapshotSource(tournamentSnapshotPostgres)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	tournamentParticipantFlow, err := websocket.NewTournamentParticipantFlow(tournamentProductionSnapshotSource)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	publicRealtimeConfig := providePublicRealtimeConfig()
+	tournamentPublicFlow, err := websocket.NewTournamentPublicFlow(tournamentProductionSnapshotSource, publicRealtimeConfig)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	tournamentOperatorFlow, err := websocket.NewTournamentOperatorFlow(tournamentProductionSnapshotSource)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	tournamentOperatorSessionResolver := provideOperatorSessionResolver(useCase)
+	bootstrapTournamentRealtimeOptions := provideTournamentRealtimeOptions(tournamentParticipantFlow, tournamentPublicFlow, tournamentOperatorFlow, tournamentOperatorSessionResolver)
+	bootstrapRawWebSocketServer := provideRawWebSocketServer(context, cfg, log, playerPostgres, bootstrapWsHandshakeRateLimiter, bootstrapTournamentRealtimeOptions, realtimeDelivery, bootstrapEventTelemetry)
+	websocketServer := provideWebSocketServer(bootstrapRawWebSocketServer)
+	bootstrapRestMiddlewareStack, err := provideRESTMiddlewares(context, log, cfg, bootstrapEventTelemetry)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	bootstrapPrivateMetricsHandler := providePrivateMetricsHandler(bootstrapEventTelemetry)
+	handler := provideHTTPHandler(cfg, server, websocketServer, useCase, playerPostgres, bootstrapRestMiddlewareStack, bootstrapPrivateMetricsHandler, log)
 	httpServer := provideHTTPServer(cfg, handler)
-	app := provideArenaApplication(cfg, log, runtime, seaweedStorage, migrator, startupRecoverer, bootstrapArenaCore, httpServer, websocketServer, revocationRedis)
+	app := provideApplication(cfg, log, runtime, seaweedStorage, migrator, httpServer, websocketServer, bootstrapRuntimeWorkers)
 	return app, func() {
 		cleanup2()
 		cleanup()

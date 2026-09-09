@@ -1,0 +1,654 @@
+SeriesScore:
+  type: object
+  required: [first_participant_wins, second_participant_wins]
+  properties:
+    first_participant_wins:
+      type: integer
+      format: int32
+      minimum: 0
+      maximum: 2
+    second_participant_wins:
+      type: integer
+      format: int32
+      minimum: 0
+      maximum: 2
+
+SeriesFormat:
+  type: string
+  enum: [bo1, bo3]
+
+SeriesState:
+  type: string
+  enum: [planned, locked, draft, ready, active, replay_required, technical_pause, completed, cancelled]
+
+GameState:
+  type: string
+  enum: [planned, ready, active, paused, completed, void, cancelled, superseded]
+
+GameResultReason:
+  type: string
+  enum: [solved, surrender, operator_forfeit, no_solve, task_failure, common_platform_failure, disconnect, execution_epoch_break, no_show, series_cancelled, tournament_cancelled, derived_revision_superseded]
+
+SeriesResultReason:
+  type: string
+  enum: [score_complete, operator_correction, series_cancelled, tournament_cancelled]
+
+Game:
+  type: object
+  description: One attempt in a stable Series slot. Replays get a new Game ID and retain the slot_id.
+  required: [id, slot_id, attempt_no, state, result_reason, winner_id, result_revision_id]
+  properties:
+    id:
+      type: string
+      format: uuid
+    slot_id:
+      type: string
+      format: uuid
+    attempt_no:
+      type: integer
+      format: int32
+      minimum: 1
+    state:
+      $ref: '#/GameState'
+    result_reason:
+      type: string
+      nullable: true
+      allOf:
+        - $ref: '#/GameResultReason'
+    winner_id:
+      type: string
+      format: uuid
+      nullable: true
+    result_revision_id:
+      type: string
+      format: uuid
+      nullable: true
+      readOnly: true
+
+GameSlot:
+  type: object
+  required: [id, series_id, position, category, score_before, attempts]
+  properties:
+    id:
+      type: string
+      format: uuid
+    series_id:
+      type: string
+      format: uuid
+    position:
+      type: integer
+      format: int32
+      minimum: 1
+      maximum: 3
+    category:
+      $ref: '#/Category'
+    score_before:
+      $ref: '#/SeriesScore'
+    attempts:
+      type: array
+      items:
+        $ref: '#/Game'
+
+Series:
+  type: object
+  required: [id, tournament_id, first_participant_id, second_participant_id, format, state, score, winner_id, slots, current_score_revision_id, current_result_revision_id]
+  properties:
+    id:
+      type: string
+      format: uuid
+    tournament_id:
+      type: string
+      format: uuid
+    first_participant_id:
+      type: string
+      format: uuid
+    second_participant_id:
+      type: string
+      format: uuid
+    format:
+      $ref: '#/SeriesFormat'
+    state:
+      $ref: '#/SeriesState'
+    score:
+      $ref: '#/SeriesScore'
+    winner_id:
+      type: string
+      format: uuid
+      nullable: true
+    slots:
+      type: array
+      maxItems: 3
+      items:
+        $ref: '#/GameSlot'
+    current_score_revision_id:
+      type: string
+      format: uuid
+      nullable: true
+      readOnly: true
+    current_result_revision_id:
+      type: string
+      format: uuid
+      nullable: true
+      readOnly: true
+
+SeriesScoreAttemptReference:
+  type: object
+  required: [slot_id, slot_position, game_id, attempt_no, state, winner_id, reason, current_game_result_revision_id]
+  properties:
+    slot_id:
+      type: string
+      format: uuid
+    slot_position:
+      type: integer
+      format: int32
+      minimum: 1
+    game_id:
+      type: string
+      format: uuid
+    attempt_no:
+      type: integer
+      format: int32
+      minimum: 1
+    state:
+      $ref: '#/GameState'
+    winner_id:
+      type: string
+      format: uuid
+      nullable: true
+    reason:
+      $ref: '#/GameResultReason'
+    current_game_result_revision_id:
+      type: string
+      format: uuid
+
+WaveState:
+  type: string
+  enum: [planned, ready_window_open, ready, active, paused, completed, ready_window_expired, superseded]
+
+ReadyWindowState:
+  type: string
+  enum: [open, consumed, expired, superseded]
+
+ReadinessEventType:
+  type: string
+  enum: [ready, cleared]
+
+ReadyWindow:
+  type: object
+  required: [id, wave_id, revision_id, state, opened_at, deadline, consumed_at]
+  properties:
+    id:
+      type: string
+      format: uuid
+    wave_id:
+      type: string
+      format: uuid
+    revision_id:
+      type: string
+      format: uuid
+      readOnly: true
+    state:
+      $ref: '#/ReadyWindowState'
+    opened_at:
+      type: string
+      format: date-time
+      readOnly: true
+    deadline:
+      type: string
+      format: date-time
+      readOnly: true
+    consumed_at:
+      type: string
+      format: date-time
+      nullable: true
+      readOnly: true
+
+WaveMember:
+  type: object
+  required: [participant_id, ready, readiness_revision]
+  properties:
+    participant_id:
+      type: string
+      format: uuid
+    series_id:
+      type: string
+      format: uuid
+      nullable: true
+      description: Series identity for paired members. Null only for the Swiss bye participant.
+    ready:
+      type: boolean
+      readOnly: true
+    readiness_revision:
+      type: integer
+      format: int64
+      minimum: 1
+      readOnly: true
+
+Wave:
+  type: object
+  required: [id, tournament_id, revision_id, revision, state, members, ready_window, started_at, paused_at]
+  properties:
+    id:
+      type: string
+      format: uuid
+    tournament_id:
+      type: string
+      format: uuid
+    revision_id:
+      type: string
+      format: uuid
+      readOnly: true
+    revision:
+      type: integer
+      format: int64
+      minimum: 1
+      readOnly: true
+    state:
+      $ref: '#/WaveState'
+    members:
+      type: array
+      minItems: 2
+      items:
+        $ref: '#/WaveMember'
+    ready_window:
+      type: object
+      nullable: true
+      allOf:
+        - $ref: '#/ReadyWindow'
+    started_at:
+      type: string
+      format: date-time
+      nullable: true
+      readOnly: true
+    paused_at:
+      type: string
+      format: date-time
+      nullable: true
+      readOnly: true
+
+ReadinessEvent:
+  type: object
+  required: [command_id, wave_id, window_id, participant_id, type, occurred_at]
+  properties:
+    command_id:
+      type: string
+      format: uuid
+    wave_id:
+      type: string
+      format: uuid
+    window_id:
+      type: string
+      format: uuid
+    participant_id:
+      type: string
+      format: uuid
+    type:
+      $ref: '#/ReadinessEventType'
+    occurred_at:
+      type: string
+      format: date-time
+      readOnly: true
+
+ReplayRequirement:
+  type: object
+  description: Immutable replay lineage retains the stable slot while a replacement Game receives a new ID.
+  required: [tournament_id, old_wave_id, series_id, slot_id, assignment_id, failed_game_id, failed_result_revision_id, terminal_reason, closure_revision_id, expected_authority_revision]
+  properties:
+    tournament_id:
+      type: string
+      format: uuid
+    old_wave_id:
+      type: string
+      format: uuid
+    series_id:
+      type: string
+      format: uuid
+    slot_id:
+      type: string
+      format: uuid
+    assignment_id:
+      type: string
+      format: uuid
+    failed_game_id:
+      type: string
+      format: uuid
+    failed_result_revision_id:
+      type: string
+      format: uuid
+      readOnly: true
+    terminal_reason:
+      $ref: '#/GameResultReason'
+    closure_revision_id:
+      type: string
+      format: uuid
+      readOnly: true
+    expected_authority_revision:
+      type: integer
+      format: int64
+      minimum: 1
+
+WaveControlRequest:
+  type: object
+  additionalProperties: false
+  required: [expected_projection_revision, action, confirmed]
+  properties:
+    expected_projection_revision:
+      type: integer
+      format: int64
+      minimum: 1
+    action:
+      type: string
+      enum: [open_ready_window, start, pause, resume, complete, cancel]
+    confirmed:
+      type: boolean
+    reason:
+      type: string
+      maxLength: 512
+
+OperatorNoShowRequest:
+  type: object
+  additionalProperties: false
+  required:
+    - tournament_id
+    - wave_id
+    - window_id
+    - series_id
+    - confirmed
+    - reason
+    - expected_authority_revision
+    - expected_wave_revision_id
+    - expected_window_revision_id
+    - expected_series_state
+    - game_result_revision_ids
+    - score_revision_id
+    - series_result_revision_id
+  properties:
+    tournament_id:
+      type: string
+      format: uuid
+    wave_id:
+      type: string
+      format: uuid
+    window_id:
+      type: string
+      format: uuid
+    series_id:
+      type: string
+      format: uuid
+    confirmed:
+      type: boolean
+    reason:
+      type: string
+      minLength: 1
+      maxLength: 512
+    expected_authority_revision:
+      type: integer
+      format: int64
+      minimum: 1
+    expected_wave_revision_id:
+      type: string
+      format: uuid
+    expected_window_revision_id:
+      type: string
+      format: uuid
+    expected_series_state:
+      $ref: '#/SeriesState'
+    game_result_revision_ids:
+      type: array
+      minItems: 1
+      maxItems: 3
+      uniqueItems: true
+      items:
+        type: string
+        format: uuid
+    score_revision_id:
+      type: string
+      format: uuid
+    series_result_revision_id:
+      type: string
+      format: uuid
+
+OperatorForfeitGameExpectation:
+  type: object
+  additionalProperties: false
+  required: [slot_id, game_id, attempt_no, state]
+  properties:
+    slot_id:
+      type: string
+      format: uuid
+    game_id:
+      type: string
+      format: uuid
+    attempt_no:
+      type: integer
+      format: int32
+      minimum: 1
+    state:
+      $ref: '#/GameState'
+
+OperatorForfeitRequest:
+  type: object
+  additionalProperties: false
+  required:
+    - tournament_id
+    - series_id
+    - forfeiting_participant_id
+    - confirmed
+    - reason
+    - expected_authority_revision
+    - expected_game
+    - basis
+    - rule_id
+    - evidence_ids
+    - game_result_revision_id
+    - score_revision_id
+    - series_result_revision_id
+    - audit_event_id
+    - outbox_event_id
+    - projection_revision_id
+  properties:
+    tournament_id:
+      type: string
+      format: uuid
+    series_id:
+      type: string
+      format: uuid
+    forfeiting_participant_id:
+      type: string
+      format: uuid
+    confirmed:
+      type: boolean
+    reason:
+      type: string
+      minLength: 1
+      maxLength: 256
+    expected_authority_revision:
+      type: integer
+      format: int64
+      minimum: 1
+    expected_game:
+      type: object
+      nullable: true
+      allOf:
+        - $ref: '#/OperatorForfeitGameExpectation'
+    basis:
+      type: string
+      enum: [rule_violation]
+    rule_id:
+      type: string
+      minLength: 1
+      maxLength: 64
+      pattern: '^[A-Za-z0-9._:-]+$'
+    evidence_ids:
+      type: array
+      minItems: 1
+      maxItems: 16
+      uniqueItems: true
+      items:
+        type: string
+        format: uuid
+    game_result_revision_id:
+      type: string
+      format: uuid
+      nullable: true
+    score_revision_id:
+      type: string
+      format: uuid
+    series_result_revision_id:
+      type: string
+      format: uuid
+    audit_event_id:
+      type: string
+      format: uuid
+    outbox_event_id:
+      type: string
+      format: uuid
+    projection_revision_id:
+      type: string
+      format: uuid
+
+OperatorReplayRequest:
+  type: object
+  additionalProperties: false
+  required:
+    - tournament_id
+    - old_wave_id
+    - series_id
+    - slot_id
+    - assignment_id
+    - failed_game_id
+    - confirmed
+    - reason
+    - expected_authority_revision
+    - expected_closure_revision_id
+    - assignment_attempt_id
+    - replacement_game_id
+    - replacement_wave_id
+    - replacement_wave_revision_id
+    - ready_window_id
+    - ready_window_revision_id
+  properties:
+    tournament_id:
+      type: string
+      format: uuid
+    old_wave_id:
+      type: string
+      format: uuid
+    series_id:
+      type: string
+      format: uuid
+    slot_id:
+      type: string
+      format: uuid
+    assignment_id:
+      type: string
+      format: uuid
+    failed_game_id:
+      type: string
+      format: uuid
+    confirmed:
+      type: boolean
+    reason:
+      type: string
+      minLength: 1
+      maxLength: 512
+    expected_authority_revision:
+      type: integer
+      format: int64
+      minimum: 1
+    expected_closure_revision_id:
+      type: string
+      format: uuid
+    assignment_attempt_id:
+      type: string
+      format: uuid
+    replacement_game_id:
+      type: string
+      format: uuid
+    replacement_wave_id:
+      type: string
+      format: uuid
+    replacement_wave_revision_id:
+      type: string
+      format: uuid
+    ready_window_id:
+      type: string
+      format: uuid
+    ready_window_revision_id:
+      type: string
+      format: uuid
+
+ParticipantLobbySeries:
+  type: object
+  additionalProperties: false
+  required: [series_id, state, format, opponent_display_name, wave_id]
+  properties:
+    series_id:
+      type: string
+      format: uuid
+    state:
+      $ref: '#/SeriesState'
+    format:
+      $ref: '#/SeriesFormat'
+    opponent_display_name:
+      type: string
+      maxLength: 64
+    wave_id:
+      type: string
+      format: uuid
+
+ParticipantReadyRequest:
+  type: object
+  additionalProperties: false
+  required: [expected_projection_revision, ready]
+  properties:
+    expected_projection_revision:
+      type: integer
+      format: int64
+      minimum: 1
+    ready:
+      type: boolean
+
+ParticipantSurrenderRequest:
+  type: object
+  additionalProperties: false
+  required: [expected_projection_revision, confirmed]
+  properties:
+    expected_projection_revision:
+      type: integer
+      format: int64
+      minimum: 1
+    confirmed:
+      type: boolean
+    reason:
+      type: string
+      maxLength: 512
+
+ParticipantPostSeriesRequest:
+  type: object
+  additionalProperties: false
+  required: [expected_projection_revision, action]
+  properties:
+    expected_projection_revision:
+      type: integer
+      format: int64
+      minimum: 1
+    action:
+      type: string
+      enum: [acknowledge_result, request_next_assignment, leave_lobby]
+
+ParticipantPostSeriesResponse:
+  type: object
+  additionalProperties: false
+  required: [series_id, projection_revision, accepted_action]
+  properties:
+    series_id:
+      type: string
+      format: uuid
+    projection_revision:
+      type: integer
+      format: int64
+      minimum: 1
+    accepted_action:
+      type: string
+      enum: [acknowledge_result, request_next_assignment, leave_lobby]

@@ -41,7 +41,7 @@ Expected fields:
   "db": "ok",
   "redis": "ok",
   "seaweedfs": "ok",
-  "schema_version": 2
+  "schema_version": 11
 }
 ```
 
@@ -62,28 +62,40 @@ docker compose --env-file ../../.env logs --tail=100 caddy
 
 If WebSocket does not connect:
 
-- Check browser DevTools: the URL must be `/ws` or `wss://<api>/ws` without
-  `?token=...`.
+- Check browser DevTools: the URL must be one of the role-scoped tournament
+  endpoints and must not contain credentials in the query string:
+  - public: `/api/v1/tournaments/{tournament_id}/realtime`;
+  - participant: `/api/v1/tournaments/{tournament_id}/participant/realtime`;
+  - operator: `/api/v1/admin/tournaments/{tournament_id}/realtime`.
 - Check `WS_ALLOWED_ORIGINS`: the player frontend origin must match exactly,
   including punycode for IDN domains.
 - If `WS_REQUIRE_ORIGIN=true` is enabled, make sure the client sends a browser
   `Origin`; CLI/script clients without Origin will receive `403`.
 - Check that player join/me responses issue the `tpm_player_session` cookie and
-  that the browser sends it to `/ws`.
+  that the browser sends it to the participant endpoint. The operator endpoint
+  requires the `tpm_admin_access` cookie. The public endpoint is anonymous.
 - The backend should return `401/403/429` as `application/problem+json` before
   upgrade when the session is missing, the origin is denied, or the handshake
   rate-limit is exhausted.
+- A pre-upgrade `503` with detail `websocket capacity reached` means the global
+  `WS_MAX_CONNECTIONS` limit is full. A `429` with a valid session can also mean
+  the authenticated participant or operator reached
+  `WS_MAX_CONNECTIONS_PER_PRINCIPAL`.
 
 If unsafe REST requests receive `403 csrf token invalid`:
 
 - For player cookie-auth, check `tpm_player_csrf` and `X-CSRF-Token`.
 - For admin mutations, check the access CSRF token in `X-CSRF-Token`.
 - For admin refresh/logout, check the refresh CSRF token from
-  `X-Admin-Refresh-CSRF-Token`; send it in either `X-CSRF-Token` or
-  `X-Admin-Refresh-CSRF-Token`. The access CSRF token is not valid for these
-  endpoints.
-- After logout, the frontend should clear the session marker and CSRF tokens;
-  the next login should receive fresh CSRF headers.
+  the response header `X-Admin-Refresh-CSRF-Token`, then send its value in
+  `X-CSRF-Token`. `X-Admin-Refresh-CSRF-Token` is not accepted as a request
+  header. The access CSRF token is not valid for these endpoints.
+- After logout, the frontend should clear its in-memory CSRF tokens and reset
+  the authenticated UI state; the next login should receive fresh CSRF headers.
+
+If player join returns `409`, that username still owns an active session. Use a
+different username or wait for the current session to expire; the public
+username alone cannot reclaim it.
 
 If every user receives `429` behind Caddy:
 
@@ -208,33 +220,15 @@ docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.
 Repeat `/app/migrate down` only when each step has been reviewed. After schema
 rollback, redeploy the compatible backend image and verify `/health`.
 
-## Hint Mechanics
+## Tournament Realtime
 
-Every duel task carries exactly three hints. The backend pushes them to both
-players over the WebSocket `hint_unlocked` event at 25 %, 50 %, and 75 % of
-the task's `time_limit` (see `domain.BuildHintSchedule`).
+Each connection receives one role-scoped snapshot assembled from canonical
+PostgreSQL state. The public snapshot contains only tournament, scoreboard,
+bracket, series, draft, and official-result projections. The participant
+snapshot adds only that player's assignment, task, and current opponent. The
+operator snapshot contains operational wave, readiness, presence, pause,
+replay, and audit-link data.
 
-- Hints **do not affect scoring** and cannot be unlocked manually; they are
-  released on a timer aligned to `started_at`.
-- When the duel timer pauses (`opponent_disconnected`), the hint schedule
-  freezes together with the duel deadline and resumes after `duel_resume`.
-- On player reconnect, the backend replays already-unlocked hints inside
-  `duel_resume`, so no hint is ever dropped.
-- End-to-end coverage: `TestE2EHintFlow_AutoUnlocksAt25_50_75` in
-  `backend/integration_test/e2e_test.go` boots the real backend and asserts
-  ordering and text of all three events.
-
-## Reconnect Mechanics
-
-- A WebSocket disconnect during an active duel puts the duel into reconnect
-  pause: the duel deadline and hint schedule freeze, and the opponent receives
-  `opponent_disconnected`.
-- If the player returns within the reconnect window, the server sends
-  `duel_resume` to that player and `opponent_reconnected` to the opponent; the
-  deadline and hints then continue with the paused duration accounted for.
-- If the reconnect window expires, the duel finishes as a draw. Exceeding the
-  disconnect/reconnect limit for a player also immediately finishes the duel as
-  a draw.
-- If both players disconnect and both reconnect windows expire, the result is
-  still a draw.
-- Draws do not increment the leaderboard; `winner_id` remains empty.
+The current protocol is snapshot-based. A client reconnects by opening the
+same role endpoint and receiving a fresh snapshot. Clients must not infer
+missing events, identities, timers, or results locally.

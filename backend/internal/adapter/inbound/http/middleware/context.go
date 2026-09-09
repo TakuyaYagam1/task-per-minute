@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/admin"
+	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/auth"
 )
 
 type contextKey string
@@ -14,8 +14,8 @@ const (
 	playerKey      contextKey = "player"
 )
 
-func GetAdminClaimsFromCtx(ctx context.Context) (*admin.Claims, bool) {
-	claims, ok := ctx.Value(adminClaimsKey).(*admin.Claims)
+func GetAdminClaimsFromCtx(ctx context.Context) (*auth.Claims, bool) {
+	claims, ok := ctx.Value(adminClaimsKey).(*auth.Claims)
 	return claims, ok && claims != nil
 }
 
@@ -24,7 +24,7 @@ func GetPlayerFromCtx(ctx context.Context) (*domain.Player, bool) {
 	return player, ok && player != nil
 }
 
-func withAdminClaims(ctx context.Context, claims *admin.Claims) context.Context {
+func withAdminClaims(ctx context.Context, claims *auth.Claims) context.Context {
 	return context.WithValue(ctx, adminClaimsKey, claims)
 }
 

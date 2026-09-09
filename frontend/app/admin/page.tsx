@@ -2,13 +2,15 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ADMIN_PLAYERS_CHANGED_EVENT,
+  activateAdminSession,
   adminApi,
-  adminSession,
   ApiError,
+  canResumeAdminSession,
+  clearAdminSession,
   type AdminPlayer,
   type AdminPlayerAuditEvent,
+  type AdminSessionResponse,
   type AdminTask,
-  type AdminTokenResponse,
   type CreateTaskRequest,
   type UpdateAdminPlayerRequest,
   type UpdateTaskRequest,
@@ -210,7 +212,6 @@ const auditActionLabel = (action: PlayerAuditEvent["action"]): string =>
 
 const auditFieldLabels = {
   username: "Имя",
-  status: "Статус",
   wins: "Победы",
   average_solve_time_ms: "Среднее время",
   stats_overridden: "Ручная правка",
@@ -221,7 +222,6 @@ type AuditField = keyof typeof auditFieldLabels;
 
 const auditFields: AuditField[] = [
   "username",
-  "status",
   "wins",
   "average_solve_time_ms",
   "stats_overridden",
@@ -269,7 +269,8 @@ const apiErrorMessage = (error: unknown, fallback: string): string => {
 };
 
 export default function AdminPanel() {
-  const [tokens, setTokens] = useState<AdminTokenResponse | null>(null);
+  const [session, setSession] = useState<AdminSessionResponse | null>(null);
+  const [sessionChecking, setSessionChecking] = useState(true);
   const [activeSection, setActiveSection] = useState<AdminSection>("tasks");
   const [password, setPassword] = useState("");
   const [loginFormError, setLoginFormError] = useState<string | null>(null);
@@ -312,8 +313,7 @@ export default function AdminPanel() {
   >([]);
   const [playerAuditLoading, setPlayerAuditLoading] = useState(false);
   const [playerAuditError, setPlayerAuditError] = useState<string | null>(null);
-  const tokensRef = useRef<AdminTokenResponse | null>(null);
-  const refreshPromiseRef = useRef<Promise<AdminTokenResponse> | null>(null);
+  const sessionRef = useRef<AdminSessionResponse | null>(null);
   const logoutAbortRef = useRef<AbortController | null>(null);
   const isMountedRef = useRef(false);
   const authSessionVersionRef = useRef(0);
@@ -331,12 +331,38 @@ export default function AdminPanel() {
 
   useEffect(() => {
     isMountedRef.current = true;
-    const loadedTokens = adminSession.load();
-    tokensRef.current = loadedTokens;
-    setTokens(loadedTokens);
     const pendingPassword = passwordInputRef.current?.value;
     if (pendingPassword) {
       setPassword(pendingPassword);
+    }
+
+    if (!canResumeAdminSession()) {
+      setSessionChecking(false);
+    } else {
+      const sessionVersion = authSessionVersionRef.current + 1;
+      void adminApi.ensureFreshSession()
+        .then((nextSession) => {
+          if (!isMountedRef.current) {
+            return;
+          }
+          authSessionVersionRef.current = sessionVersion;
+          activateAdminSession();
+          sessionRef.current = nextSession;
+          setSession(nextSession);
+        })
+        .catch(() => {
+          if (!isMountedRef.current) {
+            return;
+          }
+          clearAdminSession();
+          sessionRef.current = null;
+          setSession(null);
+        })
+        .finally(() => {
+          if (isMountedRef.current) {
+            setSessionChecking(false);
+          }
+        });
     }
 
     return () => {
@@ -391,29 +417,28 @@ export default function AdminPanel() {
     [],
   );
 
-  const saveTokens = useCallback(
-    (nextTokens: AdminTokenResponse, sessionVersion?: number) => {
+  const saveSession = useCallback(
+    (nextSession: AdminSessionResponse, sessionVersion?: number) => {
       if (
         sessionVersion !== undefined &&
         !isCurrentAuthSession(sessionVersion)
       ) {
         return;
       }
-      adminSession.save(nextTokens);
-      tokensRef.current = nextTokens;
-      setTokens(nextTokens);
+      activateAdminSession();
+      sessionRef.current = nextSession;
+      setSession(nextSession);
     },
     [isCurrentAuthSession],
   );
 
-  const clearTokens = useCallback(
+  const clearSession = useCallback(
     (options: { preserveAdminCSRF?: boolean } = {}) => {
       const nextSessionVersion = authSessionVersionRef.current + 1;
       authSessionVersionRef.current = nextSessionVersion;
       tasksRequestIDRef.current += 1;
       playersRequestIDRef.current += 1;
       playerAuditRequestIDRef.current += 1;
-      refreshPromiseRef.current = null;
       playersEventsRef.current?.close();
       playersEventsRef.current = null;
       if (playersRealtimeRefreshTimerRef.current !== null) {
@@ -428,9 +453,9 @@ export default function AdminPanel() {
         window.clearTimeout(playersEventsFallbackPollTimerRef.current);
         playersEventsFallbackPollTimerRef.current = null;
       }
-      adminSession.clear({ preserveCSRF: options.preserveAdminCSRF });
-      tokensRef.current = null;
-      setTokens(null);
+      clearAdminSession({ preserveCSRF: options.preserveAdminCSRF });
+      sessionRef.current = null;
+      setSession(null);
       setActiveSection("tasks");
       setTasks([]);
       setPlayers([]);
@@ -449,45 +474,15 @@ export default function AdminPanel() {
     [],
   );
 
-  const refreshTokens = useCallback(async (): Promise<AdminTokenResponse> => {
-    const currentTokens = tokensRef.current;
-    if (!currentTokens) {
-      throw new Error("Unauthorized");
-    }
-    const sessionVersion = authSessionVersionRef.current;
-    const refreshToken = currentTokens.refresh_token;
-
-    if (!refreshPromiseRef.current) {
-      const refreshPromise = adminApi
-        .refresh(refreshToken)
-        .then((nextTokens) => {
-          if (!isCurrentAuthSession(sessionVersion)) {
-            throw new Error("Unauthorized");
-          }
-          saveTokens(nextTokens, sessionVersion);
-          return nextTokens;
-        })
-        .finally(() => {
-          if (refreshPromiseRef.current === refreshPromise) {
-            refreshPromiseRef.current = null;
-          }
-        });
-      refreshPromiseRef.current = refreshPromise;
-    }
-
-    return refreshPromiseRef.current;
-  }, [isCurrentAuthSession, saveTokens]);
-
   const runAdminRequest = useCallback(
-    async <T,>(request: (accessToken: string) => Promise<T>): Promise<T> => {
-      const currentTokens = tokensRef.current;
-      if (!currentTokens) {
+    async <T,>(request: () => Promise<T>): Promise<T> => {
+      if (!sessionRef.current) {
         throw new Error("Unauthorized");
       }
       const sessionVersion = authSessionVersionRef.current;
 
       try {
-        const result = await request(currentTokens.access_token);
+        const result = await request();
         if (!isCurrentAuthSession(sessionVersion)) {
           throw new Error("Unauthorized");
         }
@@ -499,42 +494,12 @@ export default function AdminPanel() {
         if (!isCurrentAuthSession(sessionVersion)) {
           throw new Error("Unauthorized");
         }
-        if (!adminSession.load()) {
-          clearTokens();
-          showNotification("error", "Сессия истекла. Войдите снова.");
-          throw new Error("Unauthorized");
-        }
-
-        const latestTokens = tokensRef.current;
-        if (
-          latestTokens &&
-          latestTokens.access_token !== currentTokens.access_token
-        ) {
-          const result = await request(latestTokens.access_token);
-          if (!isCurrentAuthSession(sessionVersion)) {
-            throw new Error("Unauthorized");
-          }
-          return result;
-        }
-
-        try {
-          const refreshed = await refreshTokens();
-          const result = await request(refreshed.access_token);
-          if (!isCurrentAuthSession(sessionVersion)) {
-            throw new Error("Unauthorized");
-          }
-          return result;
-        } catch (refreshError) {
-          log.warn("admin token refresh failed", refreshError);
-          if (isCurrentAuthSession(sessionVersion)) {
-            clearTokens();
-            showNotification("error", "Сессия истекла. Войдите снова.");
-          }
-          throw new Error("Unauthorized");
-        }
+        clearSession();
+        showNotification("error", "Сессия истекла. Войдите снова.");
+        throw new Error("Unauthorized");
       }
     },
-    [clearTokens, isCurrentAuthSession, refreshTokens, showNotification],
+    [clearSession, isCurrentAuthSession, showNotification],
   );
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -547,14 +512,13 @@ export default function AdminPanel() {
     setLoginFormError(null);
     setAuthLoading(true);
     const sessionVersion = authSessionVersionRef.current + 1;
-    refreshPromiseRef.current = null;
     try {
-      const nextTokens = await adminApi.login(password);
+      const nextSession = await adminApi.login(password);
       if (!isMountedRef.current) {
         return;
       }
       authSessionVersionRef.current = sessionVersion;
-      saveTokens(nextTokens, sessionVersion);
+      saveSession(nextSession, sessionVersion);
       setPassword("");
       setLoginFormError(null);
       showNotification("success", "Успешный вход в админ-панель");
@@ -581,10 +545,10 @@ export default function AdminPanel() {
   };
 
   const handleLogout = async () => {
-    const currentTokens = tokens;
-    const logoutSessionVersion = clearTokens({ preserveAdminCSRF: true });
-    if (!currentTokens) {
-      adminSession.clear();
+    const currentSession = session;
+    const logoutSessionVersion = clearSession({ preserveAdminCSRF: true });
+    if (!currentSession) {
+      clearAdminSession();
       return;
     }
     logoutAbortRef.current?.abort();
@@ -597,13 +561,9 @@ export default function AdminPanel() {
     }, LOGOUT_TIMEOUT_MS);
     setLogoutPending(true);
     try {
-      await adminApi.logout(
-        currentTokens.access_token,
-        currentTokens.refresh_token,
-        logoutController.signal,
-      );
+      await adminApi.logout(logoutController.signal);
     } catch (logoutError) {
-      // Local logout wins; access tokens are short-lived if refresh revocation fails offline.
+      // Local logout wins even if remote session revocation fails offline.
       log.warn("admin logout request failed", logoutError);
     } finally {
       window.clearTimeout(logoutTimeout);
@@ -611,7 +571,7 @@ export default function AdminPanel() {
         logoutAbortRef.current = null;
       }
       if (authSessionVersionRef.current === logoutSessionVersion) {
-        adminSession.clear();
+        clearAdminSession();
       }
       if (isMountedRef.current) {
         setLogoutPending(false);
@@ -620,7 +580,7 @@ export default function AdminPanel() {
   };
 
   const fetchTasks = useCallback(async (options: { silent?: boolean } = {}) => {
-    if (!tokens) return;
+    if (!session) return;
     const sessionVersion = authSessionVersionRef.current;
     const requestID = tasksRequestIDRef.current + 1;
     tasksRequestIDRef.current = requestID;
@@ -631,9 +591,7 @@ export default function AdminPanel() {
       setTasksLoading(true);
     }
     try {
-      const data = await runAdminRequest((accessToken) =>
-        adminApi.listTasks(accessToken),
-      );
+      const data = await runAdminRequest(() => adminApi.listTasks());
       if (canApplyTasksRequest()) {
         setTasks(data);
       }
@@ -657,7 +615,7 @@ export default function AdminPanel() {
         setTasksLoading(false);
       }
     }
-  }, [isCurrentAuthSession, runAdminRequest, showNotification, tokens]);
+  }, [isCurrentAuthSession, runAdminRequest, session, showNotification]);
 
   const upsertTaskInList = useCallback((task: Task) => {
     setTasks((current) => {
@@ -677,7 +635,7 @@ export default function AdminPanel() {
 
   const fetchPlayers = useCallback(
     async (options: { silent?: boolean } = {}) => {
-      if (!tokens) return;
+      if (!session) return;
       const sessionVersion = authSessionVersionRef.current;
       const requestID = playersRequestIDRef.current + 1;
       playersRequestIDRef.current = requestID;
@@ -688,9 +646,7 @@ export default function AdminPanel() {
         setPlayersLoading(true);
       }
       try {
-        const data = await runAdminRequest((accessToken) =>
-          adminApi.listPlayers(accessToken, showDeletedPlayers),
-        );
+        const data = await runAdminRequest(() => adminApi.listPlayers(showDeletedPlayers));
         if (canApplyPlayersRequest()) {
           setPlayers(data);
         }
@@ -720,12 +676,12 @@ export default function AdminPanel() {
       runAdminRequest,
       showDeletedPlayers,
       showNotification,
-      tokens,
+      session,
     ],
   );
 
   const schedulePlayersRealtimeRefresh = useCallback(() => {
-    if (!tokensRef.current || activeSection !== "players") {
+    if (!sessionRef.current || activeSection !== "players") {
       return;
     }
     if (playersRealtimeRefreshTimerRef.current !== null) {
@@ -738,16 +694,16 @@ export default function AdminPanel() {
   }, [activeSection, fetchPlayers]);
 
   useEffect(() => {
-    if (!tokens) return;
+    if (!session) return;
     if (activeSection === "tasks") {
       fetchTasks();
     } else {
       fetchPlayers();
     }
-  }, [activeSection, tokens, fetchPlayers, fetchTasks]);
+  }, [activeSection, fetchPlayers, fetchTasks, session]);
 
   useEffect(() => {
-    if (!tokens || activeSection !== "players") {
+    if (!session || activeSection !== "players") {
       return undefined;
     }
 
@@ -780,7 +736,7 @@ export default function AdminPanel() {
     const scheduleFallbackPoll = (): void => {
       if (
         !active ||
-        !tokensRef.current ||
+        !sessionRef.current ||
         activeSection !== "players" ||
         playersEventsFallbackPollTimerRef.current !== null
       ) {
@@ -788,7 +744,7 @@ export default function AdminPanel() {
       }
       playersEventsFallbackPollTimerRef.current = window.setTimeout(() => {
         playersEventsFallbackPollTimerRef.current = null;
-        if (!active || !tokensRef.current || activeSection !== "players") {
+        if (!active || !sessionRef.current || activeSection !== "players") {
           return;
         }
         void fetchPlayers({ silent: true });
@@ -813,7 +769,7 @@ export default function AdminPanel() {
     };
 
     const scheduleOpen = (): void => {
-      if (!active || !tokensRef.current || activeSection !== "players") {
+      if (!active || !sessionRef.current || activeSection !== "players") {
         return;
       }
       clearRetryTimer();
@@ -829,7 +785,7 @@ export default function AdminPanel() {
     };
 
     const openStream = async (): Promise<void> => {
-      if (!active || !tokensRef.current || activeSection !== "players") {
+      if (!active || !sessionRef.current || activeSection !== "players") {
         return;
       }
       const sessionVersion = authSessionVersionRef.current;
@@ -850,7 +806,7 @@ export default function AdminPanel() {
         }
       }
 
-      if (!active || !tokensRef.current || activeSection !== "players") {
+      if (!active || !sessionRef.current || activeSection !== "players") {
         return;
       }
       closeCurrentSource();
@@ -890,7 +846,7 @@ export default function AdminPanel() {
     fetchPlayers,
     isCurrentAuthSession,
     schedulePlayersRealtimeRefresh,
-    tokens,
+    session,
   ]);
 
   const resetForm = useCallback(() => {
@@ -992,23 +948,21 @@ export default function AdminPanel() {
       if (editingTaskId) {
         const updateBody: UpdateTaskRequest = { ...body };
         if (sourceFileCleared) {
-          updateBody.source_file_url = null;
+          updateBody.clear_source_file = true;
         }
-        savedTask = await runAdminRequest((accessToken) =>
-          adminApi.updateTask(accessToken, editingTaskId, updateBody),
+        savedTask = await runAdminRequest(() =>
+          adminApi.updateTask(editingTaskId, updateBody),
         );
       } else {
-        savedTask = await runAdminRequest((accessToken) =>
-          adminApi.createTask(accessToken, body),
-        );
+        savedTask = await runAdminRequest(() => adminApi.createTask(body));
       }
 
       let uploadFailed = false;
       let uploadedSource: LastUploadedSource | null = null;
       if (sourceFile) {
         try {
-          const upload = await runAdminRequest((accessToken) =>
-            adminApi.uploadSource(accessToken, savedTask.id, sourceFile),
+          const upload = await runAdminRequest(() =>
+            adminApi.uploadSource(savedTask.id, sourceFile),
           );
           uploadedSource = {
             taskTitle: savedTask.title,
@@ -1082,9 +1036,7 @@ export default function AdminPanel() {
     if (!confirm("Вы уверены, что хотите удалить эту задачу?")) return;
     const sessionVersion = authSessionVersionRef.current;
     try {
-      await runAdminRequest((accessToken) =>
-        adminApi.deleteTask(accessToken, taskId),
-      );
+      await runAdminRequest(() => adminApi.deleteTask(taskId));
       if (!isCurrentAuthSession(sessionVersion)) {
         return;
       }
@@ -1174,8 +1126,8 @@ export default function AdminPanel() {
         wins,
         average_solve_time_ms: averageSolveTimeMs,
       };
-      const updated = await runAdminRequest((accessToken) =>
-        adminApi.updatePlayer(accessToken, editingPlayerId, body),
+      const updated = await runAdminRequest(() =>
+        adminApi.updatePlayer(editingPlayerId, body),
       );
       if (!isCurrentAuthSession(sessionVersion)) {
         return;
@@ -1210,9 +1162,7 @@ export default function AdminPanel() {
     if (!confirm(`Удалить игрока ${player.username}?`)) return;
     const sessionVersion = authSessionVersionRef.current;
     try {
-      await runAdminRequest((accessToken) =>
-        adminApi.deletePlayer(accessToken, player.id),
-      );
+      await runAdminRequest(() => adminApi.deletePlayer(player.id));
       if (!isCurrentAuthSession(sessionVersion)) {
         return;
       }
@@ -1265,9 +1215,7 @@ export default function AdminPanel() {
       isCurrentAuthSession(sessionVersion) &&
       playerAuditRequestIDRef.current === requestID;
     try {
-      const events = await runAdminRequest((accessToken) =>
-        adminApi.listPlayerAudit(accessToken, player.id),
-      );
+      const events = await runAdminRequest(() => adminApi.listPlayerAudit(player.id));
       if (canApplyAuditRequest()) {
         setPlayerAuditEvents(events);
       }
@@ -1659,7 +1607,6 @@ export default function AdminPanel() {
                 <div className={styles.taskItemInfo}>
                   <div className={styles.taskItemTitle}>{player.username}</div>
                   <div className={styles.taskItemMeta}>
-                    <span className={styles.taskBadge}>{player.status}</span>
                     <span className={styles.taskBadge}>
                       Победы: {player.wins}
                     </span>
@@ -1820,7 +1767,17 @@ export default function AdminPanel() {
     );
   };
 
-  if (!tokens) {
+  if (sessionChecking) {
+    return (
+      <main className={`${styles.container} motion-page gpu-optimized`}>
+        <div className={`${styles.card} ${styles.loginCard} motion-panel`}>
+          <p role="status">Проверяем сессию...</p>
+        </div>
+      </main>
+    );
+  }
+
+  if (!session) {
     return (
       <main className={`${styles.container} motion-page gpu-optimized`}>
         <div className={`${styles.header} motion-panel`}>

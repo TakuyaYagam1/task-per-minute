@@ -1,0 +1,76 @@
+UnexpectedServerProblem:
+  description: Internal server failure or request timeout not otherwise documented.
+  content:
+    application/problem+json:
+      schema:
+        $ref: './schemas/common_schemas.yml#/ProblemDetails'
+
+UnauthorizedProblem:
+  description: The authenticated session is missing, invalid, or expired.
+  content:
+    application/problem+json:
+      schema:
+        $ref: './schemas/common_schemas.yml#/ProblemDetails'
+
+ForbiddenProblem:
+  description: The authenticated identity lacks access. Mutations can also fail when the CSRF token, origin, or referer is invalid.
+  content:
+    application/problem+json:
+      schema:
+        $ref: './schemas/common_schemas.yml#/ProblemDetails'
+
+TournamentRevisionConflictProblem:
+  description: The expected tournament revision is stale.
+  content:
+    application/problem+json:
+      schema:
+        $ref: './schemas/tournament_schemas.yml#/TournamentRevisionProblem'
+
+InvalidRequestProblem:
+  description: The command payload violates a semantic request rule.
+  content:
+    application/problem+json:
+      schema:
+        $ref: './schemas/common_schemas.yml#/ProblemDetails'
+
+RequestEntityTooLargeProblem:
+  description: The request body exceeds the configured JSON size limit.
+  content:
+    application/problem+json:
+      schema:
+        $ref: './schemas/common_schemas.yml#/ProblemDetails'
+
+UnsupportedMediaTypeProblem:
+  description: The request content type must be application/json.
+  content:
+    application/problem+json:
+      schema:
+        $ref: './schemas/common_schemas.yml#/ProblemDetails'
+
+NotFoundProblem:
+  description: The requested tournament resource was not found.
+  content:
+    application/problem+json:
+      schema:
+        $ref: './schemas/common_schemas.yml#/ProblemDetails'
+
+ProjectionRevisionConflictProblem:
+  description: The expected tournament projection revision is stale.
+  content:
+    application/problem+json:
+      schema:
+        $ref: './schemas.yml#/ProjectionRevisionProblem'
+
+RateLimitedProblem:
+  description: The authenticated participant exceeded the command rate limit.
+  headers:
+    Retry-After:
+      description: Seconds until the participant may retry the command.
+      schema:
+        type: integer
+        format: int32
+        minimum: 1
+  content:
+    application/problem+json:
+      schema:
+        $ref: './schemas/common_schemas.yml#/ProblemDetails'

@@ -1,6 +1,6 @@
 ProblemDetails:
   type: object
-  description: RFC 7807 error envelope used by every 4xx/5xx response.
+  description: RFC 7807 error envelope used by REST validation and operation errors.
   required: [type, title, status]
   properties:
     type:
@@ -26,17 +26,25 @@ ProblemDetails:
       type: string
       example: "01HXC2K9F4ZG6YV1AAB7TBQ7AP"
 
-ArenaDependencyStatus:
+DependencyStatus:
   type: object
-  description: Independent operating health and traffic readiness for one Arena dependency.
+  description: Independent operating health and traffic readiness for one tournament dependency.
   required: [health, readiness]
   properties:
     health:
       type: string
       enum: [healthy, degraded, failed]
+      x-enum-varnames:
+        - DependencyStatusHealthHealthy
+        - DependencyStatusHealthDegraded
+        - DependencyStatusHealthFailed
     readiness:
       type: string
       enum: [ready, not_ready, stale]
+      x-enum-varnames:
+        - DependencyStatusReadinessReady
+        - DependencyStatusReadinessNotReady
+        - DependencyStatusReadinessStale
 
 HealthResponse:
   type: object
@@ -46,41 +54,48 @@ HealthResponse:
     - redis
     - seaweedfs
     - schema_version
-    - arena_authority
-    - arena_submission
-    - arena_task_delivery
-    - arena_outbox
-    - arena_realtime
-    - arena_clock
-    - arena_recovery
+    - tournament_authority
+    - tournament_submission
+    - tournament_task_delivery
+    - tournament_outbox
+    - tournament_realtime
+    - tournament_projection
+    - tournament_clock
+    - tournament_recovery
   properties:
     status:
       type: string
       enum: [ok, degraded]
+      x-enum-varnames: [HealthResponseStatusOk, HealthResponseStatusDegraded]
     db:
       type: string
       enum: [ok, error]
+      x-enum-varnames: [HealthResponseDbOk, HealthResponseDbError]
     redis:
       type: string
       enum: [ok, error]
+      x-enum-varnames: [HealthResponseRedisOk, HealthResponseRedisError]
     seaweedfs:
       type: string
       enum: [ok, error]
+      x-enum-varnames: [HealthResponseSeaweedfsOk, HealthResponseSeaweedfsError]
     schema_version:
       type: integer
       format: int64
       minimum: 0
-    arena_authority:
-      $ref: '#/ArenaDependencyStatus'
-    arena_submission:
-      $ref: '#/ArenaDependencyStatus'
-    arena_task_delivery:
-      $ref: '#/ArenaDependencyStatus'
-    arena_outbox:
-      $ref: '#/ArenaDependencyStatus'
-    arena_realtime:
-      $ref: '#/ArenaDependencyStatus'
-    arena_clock:
-      $ref: '#/ArenaDependencyStatus'
-    arena_recovery:
-      $ref: '#/ArenaDependencyStatus'
+    tournament_authority:
+      $ref: '#/DependencyStatus'
+    tournament_submission:
+      $ref: '#/DependencyStatus'
+    tournament_task_delivery:
+      $ref: '#/DependencyStatus'
+    tournament_outbox:
+      $ref: '#/DependencyStatus'
+    tournament_realtime:
+      $ref: '#/DependencyStatus'
+    tournament_projection:
+      $ref: '#/DependencyStatus'
+    tournament_clock:
+      $ref: '#/DependencyStatus'
+    tournament_recovery:
+      $ref: '#/DependencyStatus'

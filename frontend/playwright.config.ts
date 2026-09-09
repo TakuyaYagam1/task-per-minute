@@ -35,7 +35,6 @@ export default defineConfig({
           BACKEND_URL: backendURL,
           NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || '',
           NEXT_PUBLIC_ADMIN_API_URL: process.env.NEXT_PUBLIC_ADMIN_API_URL || '',
-          NEXT_PUBLIC_WS_URL: process.env.NEXT_PUBLIC_WS_URL || '',
         },
       },
   projects: [

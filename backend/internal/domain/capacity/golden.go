@@ -1,0 +1,157 @@
+package capacity
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+
+	"github.com/google/uuid"
+
+	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
+)
+
+type GoldenGroupProof struct {
+	GroupSize           int
+	MaxConcurrentGroups int
+	Graph               ConstraintGraph
+}
+
+type GoldenProof struct {
+	Certified             bool
+	NormalPoolRevisionID  uuid.UUID
+	NormalPoolRevision    int64
+	PoolRevisionID        uuid.UUID
+	PoolRevision          int64
+	RosterSize            int
+	RequiredTaskVersions  int
+	AvailableTaskVersions int
+	GroupShapes           []GoldenGroupProof
+	Digest                string
+	Failure               *Failure
+}
+
+type GoldenInput struct {
+	Preset         domain.TournamentPreset
+	ParticipantIDs []uuid.UUID
+	NormalPool     domain.TaskPoolRevision
+	GoldenPool     domain.TaskPoolRevision
+	Versions       []TaskVersion
+	History        []TaskUse
+}
+
+func ProveGolden(in GoldenInput) GoldenProof {
+	participants, normalPool, goldenPool, versions, history, failure := normalizeGoldenInput(in)
+	if failure != nil {
+		return failedGolden(*failure)
+	}
+
+	chainSize := domain.AssignmentReserveCount + 1
+	required := len(participants) / 2 * chainSize
+	if len(versions) < required {
+		return failedGolden(Failure{
+			Code: FailureGoldenReserveShortage, Required: required, Available: len(versions),
+		})
+	}
+
+	usedByAny := make(map[uuid.UUID]struct{})
+	conflictingParticipantID := uuid.Nil
+	poolTaskIDs := taskIDSet(versions)
+	for _, participantID := range participants {
+		for taskID := range history[participantID] {
+			if _, belongsToPool := poolTaskIDs[taskID]; !belongsToPool {
+				continue
+			}
+			usedByAny[taskID] = struct{}{}
+			if conflictingParticipantID == uuid.Nil {
+				conflictingParticipantID = participantID
+			}
+		}
+	}
+	safeVersions := filterVersions(versions, usedByAny)
+	if len(safeVersions) < required {
+		return failedGolden(Failure{
+			Code:          FailureGoldenReuseConflict,
+			ParticipantID: conflictingParticipantID,
+			Required:      required,
+			Available:     len(safeVersions),
+		})
+	}
+
+	proof := GoldenProof{
+		Certified:             true,
+		NormalPoolRevisionID:  normalPool.ID,
+		NormalPoolRevision:    normalPool.Revision,
+		PoolRevisionID:        goldenPool.ID,
+		PoolRevision:          goldenPool.Revision,
+		RosterSize:            len(participants),
+		RequiredTaskVersions:  required,
+		AvailableTaskVersions: len(safeVersions),
+		GroupShapes:           make([]GoldenGroupProof, 0, len(participants)-1),
+	}
+	for groupSize := 2; groupSize <= len(participants); groupSize++ {
+		concurrent := 1 + (len(participants)-groupSize)/2
+		groupRequired := concurrent * chainSize
+		proof.GroupShapes = append(proof.GroupShapes, GoldenGroupProof{
+			GroupSize:           groupSize,
+			MaxConcurrentGroups: concurrent,
+			Graph: newConstraintGraph(
+				fmt.Sprintf("golden:group_size:%02d", groupSize),
+				"",
+				uuid.Nil,
+				groupRequired,
+				safeVersions,
+			),
+		})
+	}
+	proof.Digest = goldenDigest(proof, normalPool)
+	return proof
+}
+
+func normalizeGoldenInput(
+	in GoldenInput,
+) ([]uuid.UUID, domain.TaskPoolRevision, domain.TaskPoolRevision, []TaskVersion, map[uuid.UUID]map[uuid.UUID]struct{}, *Failure) {
+	participants, ok := normalizedParticipants(in.Preset, in.ParticipantIDs)
+	if !ok {
+		return nil, domain.TaskPoolRevision{}, domain.TaskPoolRevision{}, nil, nil, &Failure{Code: FailureGoldenInvalidInput}
+	}
+	normalPool, err := domain.NormalizeTaskPoolRevision(in.NormalPool, domain.AssignmentTaskKindNormal)
+	if err != nil {
+		return nil, domain.TaskPoolRevision{}, domain.TaskPoolRevision{}, nil, nil, &Failure{Code: FailureGoldenInvalidInput}
+	}
+	goldenPool, err := domain.NormalizeTaskPoolRevision(in.GoldenPool, domain.AssignmentTaskKindGolden)
+	if err != nil {
+		return nil, domain.TaskPoolRevision{}, domain.TaskPoolRevision{}, nil, nil, &Failure{Code: FailureGoldenInvalidInput}
+	}
+	if normalPool.ID == goldenPool.ID || domain.TaskPoolsOverlap(normalPool, goldenPool) {
+		return nil, domain.TaskPoolRevision{}, domain.TaskPoolRevision{}, nil, nil, &Failure{Code: FailureGoldenPoolOverlap}
+	}
+	versions, ok := normalizedVersions(goldenPool, in.Versions)
+	if !ok {
+		return nil, domain.TaskPoolRevision{}, domain.TaskPoolRevision{}, nil, nil, &Failure{Code: FailureGoldenInvalidInput}
+	}
+	history, ok := NormalizeHistory(participants, in.History)
+	if !ok {
+		return nil, domain.TaskPoolRevision{}, domain.TaskPoolRevision{}, nil, nil, &Failure{Code: FailureGoldenInvalidInput}
+	}
+	return participants, normalPool, goldenPool, versions, history, nil
+}
+
+func goldenDigest(proof GoldenProof, normalPool domain.TaskPoolRevision) string {
+	hash := sha256.New()
+	writeField(hash, GraphAlgorithmV1)
+	writeField(hash, "normal_pool:"+normalPool.ID.String())
+	writeField(hash, fmt.Sprintf("normal_pool_revision:%d", normalPool.Revision))
+	writeField(hash, "golden_pool:"+proof.PoolRevisionID.String())
+	writeField(hash, fmt.Sprintf("golden_pool_revision:%d", proof.PoolRevision))
+	writeField(hash, fmt.Sprintf("roster:%d", proof.RosterSize))
+	for _, shape := range proof.GroupShapes {
+		writeField(hash, fmt.Sprintf("group_size:%d", shape.GroupSize))
+		writeField(hash, fmt.Sprintf("concurrent:%d", shape.MaxConcurrentGroups))
+		writeField(hash, shape.Graph.Digest)
+	}
+	return hex.EncodeToString(hash.Sum(nil))
+}
+
+func failedGolden(failure Failure) GoldenProof {
+	return GoldenProof{Failure: &failure}
+}

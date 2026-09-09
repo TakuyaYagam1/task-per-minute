@@ -2,10 +2,9 @@ package v1
 
 import (
 	"errors"
+	taskusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/task"
 	"mime/multipart"
 	"net/http"
-
-	adminusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/admin"
 )
 
 const multipartMemory = 32 << 20
@@ -13,7 +12,7 @@ const multipartMemory = 32 << 20
 var errUploadTooLarge = errors.New("upload too large")
 
 func parseSourceFile(w http.ResponseWriter, r *http.Request) (multipart.File, *multipart.FileHeader, error) {
-	r.Body = http.MaxBytesReader(w, r.Body, adminusecase.MaxSourceFileSize+(1<<20))
+	r.Body = http.MaxBytesReader(w, r.Body, taskusecase.MaxSourceFileSize+(1<<20))
 	//nolint:gosec,nolintlint // G120 in newer gosec: MaxBytesReader bounds multipart parsing before form parsing.
 	if err := r.ParseMultipartForm(multipartMemory); err != nil {
 		var maxBytesErr *http.MaxBytesError
@@ -27,7 +26,7 @@ func parseSourceFile(w http.ResponseWriter, r *http.Request) (multipart.File, *m
 	if err != nil {
 		return nil, nil, err
 	}
-	if header.Size > adminusecase.MaxSourceFileSize {
+	if header.Size > taskusecase.MaxSourceFileSize {
 		_ = file.Close()
 		return nil, nil, errUploadTooLarge
 	}

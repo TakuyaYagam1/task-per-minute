@@ -1,1 +1,1 @@
-export * from './game-queue';
+export {};

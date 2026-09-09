@@ -139,7 +139,94 @@ func TestCSRFGuard_AllowsMatchingCSRF(t *testing.T) {
 	require.Equal(t, http.StatusNoContent, rr.Code)
 }
 
-func TestCSRFGuard_AllowsUnsafeAdminRequestWithoutCookieSession(t *testing.T) {
+func TestCSRFGuard_TournamentMutationRequiresSessionBoundToken(t *testing.T) {
+	t.Parallel()
+
+	sessionToken := uuid.New()
+	csrfToken, err := middleware.NewPlayerCSRFToken(sessionToken)
+	require.NoError(t, err)
+	mismatchedToken, err := middleware.NewPlayerCSRFToken(sessionToken)
+	require.NoError(t, err)
+	otherSessionToken, err := middleware.NewPlayerCSRFToken(uuid.New())
+	require.NoError(t, err)
+
+	for _, tt := range []struct {
+		name        string
+		cookieToken string
+		headerToken string
+		wantStatus  int
+	}{
+		{name: "missing token", wantStatus: http.StatusForbidden},
+		{name: "missing header", cookieToken: csrfToken, wantStatus: http.StatusForbidden},
+		{name: "missing cookie", headerToken: csrfToken, wantStatus: http.StatusForbidden},
+		{name: "mismatched token", cookieToken: csrfToken, headerToken: mismatchedToken, wantStatus: http.StatusForbidden},
+		{name: "other session", cookieToken: otherSessionToken, headerToken: otherSessionToken, wantStatus: http.StatusForbidden},
+		{name: "matching token", cookieToken: csrfToken, headerToken: csrfToken, wantStatus: http.StatusNoContent},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			called := false
+			handler := middleware.CSRFGuard()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				called = true
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			req := httptest.NewRequest(http.MethodPost,
+				"/api/v1/tournaments/2c754c2e-8458-4417-b049-44c5f92840c7/participant/waves/93b38c0f-30c6-4755-b1fd-9bdf6b2b7fc9/ready", nil)
+			req.AddCookie(&http.Cookie{Name: middleware.PlayerSessionCookieName, Value: sessionToken.String()})
+			if tt.cookieToken != "" {
+				req.AddCookie(&http.Cookie{Name: middleware.PlayerCSRFCookieName, Value: tt.cookieToken})
+			}
+			if tt.headerToken != "" {
+				req.Header.Set(middleware.CSRFHeaderName, tt.headerToken)
+			}
+			rr := httptest.NewRecorder()
+
+			handler.ServeHTTP(rr, req)
+
+			require.Equal(t, tt.wantStatus, rr.Code)
+			require.Equal(t, tt.wantStatus == http.StatusNoContent, called)
+			if tt.wantStatus == http.StatusForbidden {
+				require.Equal(t, "application/problem+json", rr.Header().Get("Content-Type"))
+				require.JSONEq(t, `{
+					"type":"about:blank",
+					"title":"Forbidden",
+					"status":403,
+					"detail":"csrf token invalid",
+					"instance":"`+req.URL.Path+`"
+				}`, rr.Body.String())
+			}
+		})
+	}
+}
+
+func TestCSRFGuard_TournamentReadsAndUnauthenticatedRequestsReachNextHandler(t *testing.T) {
+	t.Parallel()
+
+	for _, method := range []string{http.MethodGet, http.MethodHead, http.MethodOptions, http.MethodPost} {
+		t.Run(method, func(t *testing.T) {
+			t.Parallel()
+
+			called := false
+			handler := middleware.CSRFGuard()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				called = true
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			req := httptest.NewRequest(method, "/api/v1/tournaments/2c754c2e-8458-4417-b049-44c5f92840c7/participant/lobby", nil)
+			if method != http.MethodPost {
+				req.AddCookie(&http.Cookie{Name: middleware.PlayerSessionCookieName, Value: uuid.NewString()})
+			}
+			rr := httptest.NewRecorder()
+
+			handler.ServeHTTP(rr, req)
+
+			require.True(t, called)
+			require.Equal(t, http.StatusNoContent, rr.Code)
+		})
+	}
+}
+
+func TestCSRFGuard_AllowsUnauthenticatedAdminRequestToReachAuthMiddleware(t *testing.T) {
 	t.Parallel()
 
 	called := false
@@ -148,7 +235,7 @@ func TestCSRFGuard_AllowsUnsafeAdminRequestWithoutCookieSession(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/tasks", nil)
-	req.Header.Set("Authorization", "Bearer access-token")
+	req.AddCookie(&http.Cookie{Name: middleware.PlayerSessionCookieName, Value: uuid.NewString()})
 	rr := httptest.NewRecorder()
 
 	handler.ServeHTTP(rr, req)
@@ -183,6 +270,7 @@ func TestCSRFGuard_BlocksMissingAdminAccessCSRF(t *testing.T) {
 		t.Fatal("next handler should not be called")
 	}))
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/tasks", nil)
+	req.AddCookie(&http.Cookie{Name: middleware.PlayerSessionCookieName, Value: uuid.NewString()})
 	req.AddCookie(&http.Cookie{Name: middleware.AdminAccessCookieName, Value: "access-token"})
 	rr := httptest.NewRecorder()
 
@@ -204,6 +292,7 @@ func TestCSRFGuard_AllowsMatchingAdminAccessCSRF(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/tasks", nil)
+	req.AddCookie(&http.Cookie{Name: middleware.PlayerSessionCookieName, Value: uuid.NewString()})
 	req.AddCookie(&http.Cookie{Name: middleware.AdminAccessCookieName, Value: "access-token"})
 	req.AddCookie(&http.Cookie{Name: middleware.AdminAccessCSRFCookieName, Value: token})
 	req.Header.Set(middleware.CSRFHeaderName, token)
@@ -243,14 +332,13 @@ func TestCSRFGuard_RefreshUsesAdminRefreshCSRF(t *testing.T) {
 	handler.ServeHTTP(right, rightReq)
 	require.Equal(t, http.StatusNoContent, right.Code)
 
-	refreshHeader := httptest.NewRecorder()
-	refreshHeaderReq := httptest.NewRequest(http.MethodPost, "/api/v1/admin/refresh", nil)
-	refreshHeaderReq.AddCookie(&http.Cookie{Name: middleware.AdminRefreshCookieName, Value: "refresh-token"})
-	refreshHeaderReq.AddCookie(&http.Cookie{Name: middleware.AdminRefreshCSRFCookieName, Value: refreshCSRF})
-	refreshHeaderReq.Header.Set(middleware.CSRFHeaderName, accessCSRF)
-	refreshHeaderReq.Header.Set(middleware.AdminRefreshCSRFHeaderName, refreshCSRF)
-	handler.ServeHTTP(refreshHeader, refreshHeaderReq)
-	require.Equal(t, http.StatusNoContent, refreshHeader.Code)
+	alternateHeader := httptest.NewRecorder()
+	alternateHeaderReq := httptest.NewRequest(http.MethodPost, "/api/v1/admin/refresh", nil)
+	alternateHeaderReq.AddCookie(&http.Cookie{Name: middleware.AdminRefreshCookieName, Value: "refresh-token"})
+	alternateHeaderReq.AddCookie(&http.Cookie{Name: middleware.AdminRefreshCSRFCookieName, Value: refreshCSRF})
+	alternateHeaderReq.Header.Set(middleware.AdminRefreshCSRFHeaderName, refreshCSRF)
+	handler.ServeHTTP(alternateHeader, alternateHeaderReq)
+	require.Equal(t, http.StatusForbidden, alternateHeader.Code)
 }
 
 func TestEnsurePlayerCSRFCookieSetsReadableCookie(t *testing.T) {

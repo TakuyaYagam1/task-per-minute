@@ -5,50 +5,41 @@ package integration_test
 import (
 	"context"
 	"testing"
+	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
+	authmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/auth/mocks"
 )
 
-type duelFixture struct {
-	pool    *pgxpool.Pool
+type databaseFixture struct {
 	mgr     *postgres.TxManager
 	players *postgres.PlayerPostgres
 	tasks   *postgres.TaskPostgres
-	duels   *postgres.DuelPostgres
-	history *postgres.HistoryPostgres
 	board   *postgres.LeaderboardPostgres
 }
 
-func newDuelFixture() *duelFixture {
-	return newDuelFixtureWithPool(sharedPool)
-}
-
-func newIsolatedDuelFixture(t testing.TB) *duelFixture {
-	t.Helper()
-	pool, _ := SetupTestDB(t)
-	return newDuelFixtureWithPool(pool)
-}
-
-func newDuelFixtureWithPool(pool *pgxpool.Pool) *duelFixture {
-	mgr := postgres.NewTxManager(pool)
-	return &duelFixture{
-		pool:    pool,
+func newDatabaseFixture() *databaseFixture {
+	mgr := postgres.NewTxManager(sharedPool)
+	return &databaseFixture{
 		mgr:     mgr,
 		players: postgres.NewPlayerPostgres(mgr),
 		tasks:   postgres.NewTaskPostgres(mgr),
-		duels:   postgres.NewDuelPostgres(mgr),
-		history: postgres.NewHistoryPostgres(mgr),
 		board:   postgres.NewLeaderboardPostgres(mgr),
 	}
 }
 
-func (f *duelFixture) makePlayer(t testing.TB, name string) *domain.Player {
-	t.Helper()
+func (f *databaseFixture) makePlayer(tb testing.TB, name string) *domain.Player {
+	tb.Helper()
 	player, err := f.players.Create(context.Background(), name)
-	require.NoError(t, err)
+	require.NoError(tb, err)
 	return player
+}
+
+func realIntegrationClock() *authmocks.MockClock {
+	clock := &authmocks.MockClock{}
+	clock.EXPECT().Now().RunAndReturn(func() time.Time { return time.Now().UTC() }).Maybe()
+	return clock
 }

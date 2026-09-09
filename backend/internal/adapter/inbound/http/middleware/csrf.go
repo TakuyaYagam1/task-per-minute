@@ -21,10 +21,11 @@ const (
 	CSRFHeaderName             = "X-CSRF-Token"
 	AdminRefreshCSRFHeaderName = "X-Admin-Refresh-CSRF-Token"
 
-	playerCSRFNonceBytes = 32
-	playerCSRFSigBytes   = sha256.Size
-	playerCSRFPathPrefix = "/api/v1/players/"
-	adminCSRFPathPrefix  = "/api/v1/admin/"
+	playerCSRFNonceBytes     = 32
+	playerCSRFSigBytes       = sha256.Size
+	playerCSRFPathPrefix     = "/api/v1/players/"
+	tournamentCSRFPathPrefix = "/api/v1/tournaments/"
+	adminCSRFPathPrefix      = "/api/v1/admin/"
 )
 
 var errInvalidCSRFBinding = errors.New("invalid csrf binding")
@@ -79,7 +80,8 @@ func requiresPlayerCSRF(r *http.Request) bool {
 	if r == nil || !isUnsafeMethod(r.Method) || r.URL == nil {
 		return false
 	}
-	if !strings.HasPrefix(r.URL.Path, playerCSRFPathPrefix) {
+	if !strings.HasPrefix(r.URL.Path, playerCSRFPathPrefix) &&
+		!strings.HasPrefix(r.URL.Path, tournamentCSRFPathPrefix) {
 		return false
 	}
 	if r.URL.Path == "/api/v1/players/join" {
@@ -278,17 +280,9 @@ func validateAdminCSRF(r *http.Request, cookieName, secret string) bool {
 		return false
 	}
 
-	headerTokens := []string{strings.TrimSpace(r.Header.Get(CSRFHeaderName))}
-	if cookieName == AdminRefreshCSRFCookieName {
-		headerTokens = append(headerTokens, strings.TrimSpace(r.Header.Get(AdminRefreshCSRFHeaderName)))
-	}
-	for _, headerToken := range headerTokens {
-		if validAdminCSRFToken(cookieName, secret, headerToken) &&
-			subtle.ConstantTimeCompare([]byte(cookieToken), []byte(headerToken)) == 1 {
-			return true
-		}
-	}
-	return false
+	headerToken := strings.TrimSpace(r.Header.Get(CSRFHeaderName))
+	return validAdminCSRFToken(cookieName, secret, headerToken) &&
+		subtle.ConstantTimeCompare([]byte(cookieToken), []byte(headerToken)) == 1
 }
 
 func validAdminCSRFToken(cookieName, secret, token string) bool {

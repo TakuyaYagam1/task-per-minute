@@ -5,148 +5,79 @@ package integration_test
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
-	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
+	leaderboardusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/leaderboard"
 )
 
-// fixedFinishedDuel injects a finished duel with explicit started_at and the
-// given participants/winner via raw SQL. Used to make solve-time deterministic
-// in leaderboard tests.
-func fixedFinishedDuel(t *testing.T, p1, p2, winner uuid.UUID, startedAt, finishedAt time.Time) uuid.UUID {
-	t.Helper()
+func TestLeaderboardRepo_TopStatsUsesCurrentTournamentSolve(t *testing.T) {
 	ctx := context.Background()
-	var id uuid.UUID
+	resetMigrationTables(ctx, t)
+	t.Cleanup(func() { resetMigrationTables(ctx, t) })
+
+	fixture := createResultAuditMigrationFixture(ctx, t)
+	submissionID, _ := createAcceptedSubmission(ctx, t, fixture)
+	createAtomicResultCommit(ctx, t, fixture, submissionID)
+
+	var winnerPlayerID uuid.UUID
+	var expectedMillis int64
 	err := sharedPool.QueryRow(ctx, `
-		INSERT INTO duels (player1_id, player2_id, status, winner_id, deadline, started_at, finished_at)
-		VALUES ($1, $2, 'finished', $3, $5, $4, $5)
-		RETURNING id`,
-		p1, p2, winner, startedAt, finishedAt).Scan(&id)
+		SELECT participant.player_id,
+			FLOOR(
+				EXTRACT(EPOCH FROM submission.received_at - attempt.started_at) * 1000
+			)::BIGINT
+		FROM participants AS participant
+		JOIN submission_events AS submission
+			ON submission.participant_id = participant.id
+			AND submission.id = $1
+		JOIN game_attempts AS attempt ON attempt.id = submission.attempt_id
+		WHERE participant.roster_id = $2`,
+		submissionID,
+		fixture.draft.rosterID,
+	).Scan(&winnerPlayerID, &expectedMillis)
 	require.NoError(t, err)
-	return id
-}
 
-// markSolvedRaw inserts a duel_player_tasks row in solved=true state with an
-// explicit solved_at, bypassing the schema CHECK requirement of "create then
-// update" used in production code.
-func markSolvedRaw(t *testing.T, duelID, playerID, taskID uuid.UUID, solvedAt time.Time) {
-	t.Helper()
-	_, err := sharedPool.Exec(context.Background(), `
-		INSERT INTO duel_player_tasks (duel_id, player_id, task_id, solved, solved_at)
-		VALUES ($1, $2, $3, TRUE, $4)`,
-		duelID, playerID, taskID, solvedAt)
+	repository := postgres.NewLeaderboardPostgres(postgres.NewTxManager(sharedPool))
+	rows, err := repository.TopStats(ctx, 50)
 	require.NoError(t, err)
+
+	winner, ok := leaderboardRow(rows, winnerPlayerID)
+	require.True(t, ok)
+	require.Equal(t, 1, winner.Wins)
+	require.Equal(t, expectedMillis, winner.AverageSolveTimeMs)
 }
 
-func filterRows(rows []postgres.LeaderboardRow, ids ...uuid.UUID) []postgres.LeaderboardRow {
-	want := make(map[uuid.UUID]struct{}, len(ids))
-	for _, id := range ids {
-		want[id] = struct{}{}
-	}
-	out := make([]postgres.LeaderboardRow, 0, len(ids))
-	for _, r := range rows {
-		if _, ok := want[r.PlayerID]; ok {
-			out = append(out, r)
-		}
-	}
-	return out
-}
-
-func containsPlayer(rows []postgres.LeaderboardRow, id uuid.UUID) bool {
-	for _, r := range rows {
-		if r.PlayerID == id {
-			return true
-		}
-	}
-	return false
-}
-
-func TestLeaderboardRepo_TopStats_AggregatesSolvedWins(t *testing.T) {
-	t.Parallel()
-	f := newDuelFixture()
+func TestLeaderboardRepo_TopStatsIgnoresUnsettledSubmission(t *testing.T) {
 	ctx := context.Background()
+	resetMigrationTables(ctx, t)
+	t.Cleanup(func() { resetMigrationTables(ctx, t) })
 
-	alice := f.makePlayer(t, uniq("alice"))
-	bob := f.makePlayer(t, uniq("bob"))
-	charlie := f.makePlayer(t, uniq("charlie"))
-	t1 := f.makeTask(t, uniq("t"), domain.DifficultyEasy)
-	t2 := f.makeTask(t, uniq("t"), domain.DifficultyMedium)
-	t3 := f.makeTask(t, uniq("t"), domain.DifficultyEasy)
+	fixture := createResultAuditMigrationFixture(ctx, t)
+	_, _ = createAcceptedSubmission(ctx, t, fixture)
+	var playerID uuid.UUID
+	require.NoError(t, sharedPool.QueryRow(ctx, `
+		SELECT player_id
+		FROM participants
+		WHERE roster_id = $1 AND id = $2`,
+		fixture.draft.rosterID,
+		fixture.draft.participantIDs[0],
+	).Scan(&playerID))
 
-	now := time.Now().UTC().Add(-time.Hour)
-
-	d1 := fixedFinishedDuel(t, alice.ID, bob.ID, alice.ID, now, now.Add(2*time.Second))
-	markSolvedRaw(t, d1, alice.ID, t1.ID, now.Add(2*time.Second))
-
-	d2 := fixedFinishedDuel(t, alice.ID, charlie.ID, alice.ID, now.Add(time.Minute), now.Add(time.Minute+3*time.Second))
-	markSolvedRaw(t, d2, alice.ID, t2.ID, now.Add(time.Minute+3*time.Second))
-
-	d3 := fixedFinishedDuel(t, bob.ID, charlie.ID, bob.ID, now.Add(2*time.Minute), now.Add(2*time.Minute+10*time.Second))
-	markSolvedRaw(t, d3, bob.ID, t3.ID, now.Add(2*time.Minute+10*time.Second))
-
-	all, err := f.board.TopStats(ctx, 50)
+	repository := postgres.NewLeaderboardPostgres(postgres.NewTxManager(sharedPool))
+	rows, err := repository.TopStats(ctx, 50)
 	require.NoError(t, err)
-
-	mine := filterRows(all, alice.ID, bob.ID, charlie.ID)
-	require.Len(t, mine, 2, "only alice and bob have wins among our trio")
-
-	by := make(map[uuid.UUID]postgres.LeaderboardRow, 2)
-	for _, r := range mine {
-		by[r.PlayerID] = r
-	}
-	require.Equal(t, 2, by[alice.ID].Wins)
-	require.Equal(t, int64(2500), by[alice.ID].AverageSolveTimeMs, "alice = avg(2000ms, 3000ms)")
-	require.Equal(t, 1, by[bob.ID].Wins)
-	require.Equal(t, int64(10000), by[bob.ID].AverageSolveTimeMs)
-	require.False(t, containsPlayer(mine, charlie.ID), "charlie has no wins")
+	_, found := leaderboardRow(rows, playerID)
+	require.False(t, found)
 }
 
-func TestLeaderboardRepo_TopStats_ExcludesUnsolvedWinnerRows(t *testing.T) {
-	t.Parallel()
-	f := newDuelFixture()
-	ctx := context.Background()
-
-	alice := f.makePlayer(t, uniq("alice"))
-	bob := f.makePlayer(t, uniq("bob"))
-	charlie := f.makePlayer(t, uniq("charlie"))
-	task1 := f.makeTask(t, uniq("t"), domain.DifficultyEasy)
-
-	now := time.Now().UTC().Add(-time.Hour)
-	d1 := fixedFinishedDuel(t, alice.ID, bob.ID, alice.ID, now, now.Add(1500*time.Millisecond))
-	markSolvedRaw(t, d1, alice.ID, task1.ID, now.Add(1500*time.Millisecond))
-
-	fixedFinishedDuel(t, bob.ID, charlie.ID, bob.ID, now.Add(time.Minute), now.Add(time.Minute+4*time.Second))
-
-	rows, err := f.board.TopStats(ctx, 50)
-	require.NoError(t, err)
-
-	byUsername := make(map[string]postgres.LeaderboardRow, 2)
+func leaderboardRow(rows []leaderboardusecase.PlayerStats, playerID uuid.UUID) (leaderboardusecase.PlayerStats, bool) {
 	for _, row := range rows {
-		byUsername[row.Username] = row
+		if row.PlayerID == playerID {
+			return row, true
+		}
 	}
-	require.Contains(t, byUsername, alice.Username)
-	require.Equal(t, int64(1500), byUsername[alice.Username].AverageSolveTimeMs)
-	require.NotContains(t, byUsername, bob.Username, "winner without solved player task must not be counted")
-	require.NotContains(t, byUsername, charlie.Username, "players with no wins must not be counted")
-}
-
-func TestLeaderboardRepo_TopStats_IgnoresActiveDuels(t *testing.T) {
-	t.Parallel()
-	f := newDuelFixture()
-	ctx := context.Background()
-
-	alice := f.makePlayer(t, uniq("alice"))
-	bob := f.makePlayer(t, uniq("bob"))
-
-	_, err := f.duels.Create(ctx, alice.ID, bob.ID, time.Now().Add(time.Minute))
-	require.NoError(t, err)
-
-	rows, err := f.board.TopStats(ctx, 50)
-	require.NoError(t, err)
-	require.False(t, containsPlayer(rows, alice.ID), "alice with only active duel must not be in leaderboard")
-	require.False(t, containsPlayer(rows, bob.ID), "bob with only active duel must not be in leaderboard")
+	return leaderboardusecase.PlayerStats{}, false
 }

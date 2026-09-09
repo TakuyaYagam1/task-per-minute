@@ -1,0 +1,29 @@
+/api/v1/leaderboard:
+  get:
+    operationId: getLeaderboard
+    tags: [leaderboard]
+    summary: Top-50 leaderboard
+    description: >
+      Aggregated from committed tournament results and ordered by wins DESC,
+      average_solve_time_ms ASC, then username ASC.
+    security: []
+    responses:
+      '200':
+        description: Top 50 players by tournament wins.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/LeaderboardResponse'
+      '429':
+        description: Too many leaderboard requests from the same client IP.
+        headers:
+          Retry-After:
+            description: Seconds until the leaderboard rate window resets.
+            schema:
+              type: string
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'

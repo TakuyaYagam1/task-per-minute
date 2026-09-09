@@ -5,7 +5,7 @@ const inter = Inter({ subsets: ["latin"], weight: ["700"] });
 
 export const metadata = {
   title: "Task Per Minute",
-  description: "CTF duel game",
+  description: "CTF tournament platform",
 };
 
 export default function RootLayout({

@@ -10,7 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
-	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
 func TestAdminPlayerEventsPostgres_NotifiesOnPlayerListChanges(t *testing.T) {
@@ -30,7 +29,7 @@ func TestAdminPlayerEventsPostgres_NotifiesOnPlayerListChanges(t *testing.T) {
 	require.NoError(t, err)
 	requireAdminPlayerEvent(t, events)
 
-	_, err = players.UpdateStatus(ctx, player.ID, domain.PlayerStatusQueued)
+	err = players.UpdateUsername(ctx, player.ID, uniq("events_renamed"))
 	require.NoError(t, err)
 	requireAdminPlayerEvent(t, events)
 

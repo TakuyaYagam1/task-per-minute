@@ -24,21 +24,21 @@ func TestWriteHandshakeProblemPreservesProblemDetailsShape(t *testing.T) {
 		{
 			name: "unauthorized",
 			request: func() *http.Request {
-				return httptest.NewRequest(http.MethodGet, "/ws", nil)
+				return httptest.NewRequest(http.MethodGet, "/api/v1/tournaments/id/realtime", nil)
 			},
 			status:       http.StatusUnauthorized,
 			detail:       "authentication required",
-			wantInstance: "/ws",
+			wantInstance: "/api/v1/tournaments/id/realtime",
 		},
 		{
 			name: "forbidden with request id",
 			request: func() *http.Request {
-				return httptest.NewRequest(http.MethodGet, "/ws", nil)
+				return httptest.NewRequest(http.MethodGet, "/api/v1/admin/tournaments/id/realtime", nil)
 			},
 			requestID:    "req-forbidden",
 			status:       http.StatusForbidden,
 			detail:       "origin forbidden",
-			wantInstance: "/ws",
+			wantInstance: "/api/v1/admin/tournaments/id/realtime",
 		},
 		{
 			name: "not found strips query from instance",
@@ -52,20 +52,20 @@ func TestWriteHandshakeProblemPreservesProblemDetailsShape(t *testing.T) {
 		{
 			name: "method not allowed",
 			request: func() *http.Request {
-				return httptest.NewRequest(http.MethodPost, "/ws", nil)
+				return httptest.NewRequest(http.MethodPost, "/api/v1/tournaments/id/realtime", nil)
 			},
 			status:       http.StatusMethodNotAllowed,
 			detail:       "method not allowed",
-			wantInstance: "/ws",
+			wantInstance: "/api/v1/tournaments/id/realtime",
 		},
 		{
 			name: "too many requests",
 			request: func() *http.Request {
-				return httptest.NewRequest(http.MethodGet, "/ws", nil)
+				return httptest.NewRequest(http.MethodGet, "/api/v1/tournaments/id/realtime", nil)
 			},
 			status:       http.StatusTooManyRequests,
 			detail:       "rate limit exceeded",
-			wantInstance: "/ws",
+			wantInstance: "/api/v1/tournaments/id/realtime",
 		},
 		{
 			name:         "nil request",

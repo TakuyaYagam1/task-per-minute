@@ -8,237 +8,887 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Querier interface {
-	AcquireParticipantReservation(ctx context.Context, arg AcquireParticipantReservationParams) (AcquireParticipantReservationRow, error)
-	ActivateArenaAssignmentBranch(ctx context.Context, arg ActivateArenaAssignmentBranchParams) (ArenaAssignmentBranch, error)
-	AddSolvedTask(ctx context.Context, arg AddSolvedTaskParams) error
-	AdvanceArenaCorrectionOfficialHeadCAS(ctx context.Context, arg AdvanceArenaCorrectionOfficialHeadCASParams) (ArenaOfficialResultHead, error)
-	AdvanceArenaSeriesScoreHeadCAS(ctx context.Context, arg AdvanceArenaSeriesScoreHeadCASParams) (ArenaSeriesScoreHead, error)
-	AppendArenaDraftRevisionCAS(ctx context.Context, arg AppendArenaDraftRevisionCASParams) (ArenaDraftRevision, error)
-	CloseArenaGoldenReadyDisconnectCAS(ctx context.Context, arg CloseArenaGoldenReadyDisconnectCASParams) (ArenaGoldenReadyDisconnect, error)
-	CloseArenaReadyWindowCAS(ctx context.Context, arg CloseArenaReadyWindowCASParams) (ArenaReadyWindow, error)
-	CommitArenaAssignmentPlanCAS(ctx context.Context, arg CommitArenaAssignmentPlanCASParams) (ArenaAssignmentPlan, error)
-	CommitArenaBranchReservations(ctx context.Context, arg CommitArenaBranchReservationsParams) ([]ArenaTaskVersionReservation, error)
-	ConsumeArenaReadyWindowCAS(ctx context.Context, arg ConsumeArenaReadyWindowCASParams) (ArenaReadyWindow, error)
-	CorrectArenaGameAttemptCAS(ctx context.Context, arg CorrectArenaGameAttemptCASParams) (ArenaGameAttempt, error)
-	CorrectArenaSeriesCAS(ctx context.Context, arg CorrectArenaSeriesCASParams) (ArenaSeries, error)
-	CountArenaWaveMembers(ctx context.Context, waveID uuid.UUID) (int64, error)
-	CountArenaWaveReadiness(ctx context.Context, readyWindowID uuid.UUID) (int64, error)
-	CountSolvedTasksByDifficulty(ctx context.Context, arg CountSolvedTasksByDifficultyParams) (int64, error)
-	CountTasksByDifficulty(ctx context.Context, difficulty string) (int64, error)
+	AbandonRealtimeDeliveriesForSubscriber(ctx context.Context, arg AbandonRealtimeDeliveriesForSubscriberParams) (int64, error)
+	AcknowledgeRealtimeDelivery(ctx context.Context, arg AcknowledgeRealtimeDeliveryParams) (uuid.UUID, error)
+	AcknowledgeRealtimeOutboxEvent(ctx context.Context, arg AcknowledgeRealtimeOutboxEventParams) (uuid.UUID, error)
+	ActivateAssignmentBranch(ctx context.Context, arg ActivateAssignmentBranchParams) (ActivateAssignmentBranchRow, error)
+	ActivateExactDraftBranch(ctx context.Context, arg ActivateExactDraftBranchParams) (int64, error)
+	ActivateExactDraftChildren(ctx context.Context, arg ActivateExactDraftChildrenParams) ([]uuid.UUID, error)
+	ActivatePostseasonFinalSeriesCAS(ctx context.Context, arg ActivatePostseasonFinalSeriesCASParams) (int64, error)
+	AdvanceCorrectionGoldenStage(ctx context.Context, arg AdvanceCorrectionGoldenStageParams) (AdvanceCorrectionGoldenStageRow, error)
+	AdvanceCorrectionOfficialHeadCAS(ctx context.Context, arg AdvanceCorrectionOfficialHeadCASParams) (OfficialResultHead, error)
+	AdvanceCorrectionTournamentStageCAS(ctx context.Context, arg AdvanceCorrectionTournamentStageCASParams) (AdvanceCorrectionTournamentStageCASRow, error)
+	AdvanceGoldenRepositoryHeadCAS(ctx context.Context, arg AdvanceGoldenRepositoryHeadCASParams) (GoldenRepositoryHead, error)
+	AdvanceReplayReserveAuthorityCAS(ctx context.Context, arg AdvanceReplayReserveAuthorityCASParams) (int64, error)
+	AdvanceSeriesScoreHeadCAS(ctx context.Context, arg AdvanceSeriesScoreHeadCASParams) (SeriesScoreHead, error)
+	AdvanceTournamentAdminRosterRevision(ctx context.Context, arg AdvanceTournamentAdminRosterRevisionParams) (Roster, error)
+	// AllocateResultEventSequence advances the durable event cursor only after the
+	// caller has locked the exact attempt. A separate UPDATE statement avoids a
+	// stale READ COMMITTED snapshot over result_events.
+	AllocateResultEventSequence(ctx context.Context, arg AllocateResultEventSequenceParams) (int64, error)
+	// AllocateSubmissionEventSequence advances the independent immutable
+	// submission stream under the same exact attempt lock.
+	AllocateSubmissionEventSequence(ctx context.Context, arg AllocateSubmissionEventSequenceParams) (int64, error)
+	AppendDraftRevisionCAS(ctx context.Context, arg AppendDraftRevisionCASParams) (DraftRevision, error)
+	AssertOperatorProjectionRevision(ctx context.Context, arg AssertOperatorProjectionRevisionParams) (uuid.UUID, error)
+	// BindExecutionGameEpoch fences WaveStart to the exact service-owned
+	// authority identity supplied before the roster transaction. The latest lease
+	// must still be that identity and live according to PostgreSQL time.
+	BindExecutionGameEpoch(ctx context.Context, arg BindExecutionGameEpochParams) (ExecutionGameEpoch, error)
+	BindReplayReplacementReadinessHeads(ctx context.Context, arg BindReplayReplacementReadinessHeadsParams) ([]uuid.UUID, error)
+	BindWaveReadinessHeads(ctx context.Context, arg BindWaveReadinessHeadsParams) ([]WaveReadiness, error)
+	CancelCorrectionGoldenAttempt(ctx context.Context, arg CancelCorrectionGoldenAttemptParams) (CancelCorrectionGoldenAttemptRow, error)
+	CancelRecoveryPauseCAS(ctx context.Context, arg CancelRecoveryPauseCASParams) (Pause, error)
+	CancelTournamentForCancellationCAS(ctx context.Context, arg CancelTournamentForCancellationCASParams) (Tournament, error)
+	CancelTournamentTechnicalPause(ctx context.Context, arg CancelTournamentTechnicalPauseParams) (uuid.UUID, error)
+	ClaimPlayerSessionByUsername(ctx context.Context, arg ClaimPlayerSessionByUsernameParams) (Player, error)
+	ClaimRealtimeDelivery(ctx context.Context, arg ClaimRealtimeDeliveryParams) (uuid.UUID, error)
+	ClaimRealtimeOutboxEvents(ctx context.Context, arg ClaimRealtimeOutboxEventsParams) ([]ClaimRealtimeOutboxEventsRow, error)
+	ClearWaveReadinessHeads(ctx context.Context, arg ClearWaveReadinessHeadsParams) ([]WaveReadiness, error)
+	CloseGoldenReadyDisconnectCAS(ctx context.Context, arg CloseGoldenReadyDisconnectCASParams) (GoldenReadyDisconnect, error)
+	CloseReadyWindowCAS(ctx context.Context, arg CloseReadyWindowCASParams) (ReadyWindow, error)
+	CloseRealtimeSubscriber(ctx context.Context, arg CloseRealtimeSubscriberParams) (uuid.UUID, error)
+	// Closing a Wave is a new immutable result authority identity. Keep this CAS
+	// separate from transitions which intentionally retain the running identity.
+	CloseWaveCAS(ctx context.Context, arg CloseWaveCASParams) (Wave, error)
+	CommitAssignmentBranchReservations(ctx context.Context, arg CommitAssignmentBranchReservationsParams) ([]CommitAssignmentBranchReservationsRow, error)
+	CommitAssignmentPlanCAS(ctx context.Context, arg CommitAssignmentPlanCASParams) (CommitAssignmentPlanCASRow, error)
+	CommitExactDraftAssignmentPlan(ctx context.Context, arg CommitExactDraftAssignmentPlanParams) (int64, error)
+	CommitExactDraftChildReservations(ctx context.Context, arg CommitExactDraftChildReservationsParams) ([]uuid.UUID, error)
+	CompleteTournamentAdminWaveCAS(ctx context.Context, arg CompleteTournamentAdminWaveCASParams) (CompleteTournamentAdminWaveCASRow, error)
+	CompleteTournamentFromFinalProjectionCAS(ctx context.Context, arg CompleteTournamentFromFinalProjectionCASParams) (Tournament, error)
+	ConsumeReadyWindowCAS(ctx context.Context, arg ConsumeReadyWindowCASParams) (ReadyWindow, error)
+	CorrectGameAttemptCAS(ctx context.Context, arg CorrectGameAttemptCASParams) (CorrectGameAttemptCASRow, error)
+	CorrectSeriesCAS(ctx context.Context, arg CorrectSeriesCASParams) (Series, error)
+	CountWaveMembers(ctx context.Context, waveID uuid.UUID) (int64, error)
+	CountWaveReadiness(ctx context.Context, readyWindowID uuid.NullUUID) (int64, error)
 	CreateAdminPlayerAuditEvent(ctx context.Context, arg CreateAdminPlayerAuditEventParams) error
-	CreateArenaAssignment(ctx context.Context, arg CreateArenaAssignmentParams) (ArenaAssignment, error)
-	CreateArenaAssignmentBranch(ctx context.Context, arg CreateArenaAssignmentBranchParams) (ArenaAssignmentBranch, error)
-	CreateArenaAssignmentPlanEdge(ctx context.Context, arg CreateArenaAssignmentPlanEdgeParams) (ArenaAssignmentPlanEdge, error)
-	CreateArenaAuditEvent(ctx context.Context, arg CreateArenaAuditEventParams) (ArenaAuditEvent, error)
-	CreateArenaDraft(ctx context.Context, arg CreateArenaDraftParams) (ArenaDraft, error)
-	CreateArenaDraftAction(ctx context.Context, arg CreateArenaDraftActionParams) (ArenaDraftAction, error)
-	CreateArenaDraftCategoryRevision(ctx context.Context, arg CreateArenaDraftCategoryRevisionParams) (ArenaCategoryRevision, error)
-	CreateArenaGameAttempt(ctx context.Context, arg CreateArenaGameAttemptParams) (ArenaGameAttempt, error)
-	CreateArenaGameSlot(ctx context.Context, arg CreateArenaGameSlotParams) (ArenaGameSlot, error)
-	CreateArenaGoldenAttempt(ctx context.Context, arg CreateArenaGoldenAttemptParams) (ArenaGoldenAttempt, error)
-	CreateArenaGoldenMembership(ctx context.Context, arg CreateArenaGoldenMembershipParams) (ArenaGoldenMembership, error)
-	CreateArenaGoldenPositionCommit(ctx context.Context, arg CreateArenaGoldenPositionCommitParams) (ArenaGoldenPositionCommit, error)
-	CreateArenaGoldenProvisionalSubmission(ctx context.Context, arg CreateArenaGoldenProvisionalSubmissionParams) (ArenaGoldenProvisionalSubmission, error)
-	CreateArenaGoldenReadyDisconnect(ctx context.Context, arg CreateArenaGoldenReadyDisconnectParams) (ArenaGoldenReadyDisconnect, error)
-	CreateArenaGoldenRecoveryRevision(ctx context.Context, arg CreateArenaGoldenRecoveryRevisionParams) (ArenaGoldenRecoveryRevision, error)
-	CreateArenaGoldenReservePromotion(ctx context.Context, arg CreateArenaGoldenReservePromotionParams) (ArenaGoldenReservePromotion, error)
-	CreateArenaOfficialResultHead(ctx context.Context, arg CreateArenaOfficialResultHeadParams) (ArenaOfficialResultHead, error)
-	CreateArenaOfficialResultRevision(ctx context.Context, arg CreateArenaOfficialResultRevisionParams) (ArenaOfficialResultRevision, error)
-	CreateArenaOutboxEvent(ctx context.Context, arg CreateArenaOutboxEventParams) (ArenaOutboxEvent, error)
-	CreateArenaProjectionArtifact(ctx context.Context, arg CreateArenaProjectionArtifactParams) (ArenaProjectionArtifact, error)
-	CreateArenaProjectionArtifactMember(ctx context.Context, arg CreateArenaProjectionArtifactMemberParams) (ArenaProjectionArtifactMember, error)
-	CreateArenaProjectionCutoff(ctx context.Context, arg CreateArenaProjectionCutoffParams) (ArenaProjectionCutoff, error)
-	CreateArenaProjectionDependency(ctx context.Context, arg CreateArenaProjectionDependencyParams) (ArenaProjectionDependency, error)
-	CreateArenaProjectionRevision(ctx context.Context, arg CreateArenaProjectionRevisionParams) (ArenaProjectionRevision, error)
-	CreateArenaReadyWindow(ctx context.Context, arg CreateArenaReadyWindowParams) (ArenaReadyWindow, error)
-	CreateArenaResultCommit(ctx context.Context, arg CreateArenaResultCommitParams) (ArenaResultCommit, error)
-	CreateArenaResultEvent(ctx context.Context, arg CreateArenaResultEventParams) (ArenaResultEvent, error)
-	CreateArenaResultProjectionEvidence(ctx context.Context, arg CreateArenaResultProjectionEvidenceParams) (ArenaResultProjectionEvidence, error)
-	CreateArenaRoster(ctx context.Context, arg CreateArenaRosterParams) (ArenaRoster, error)
-	CreateArenaSeriesScoreRevision(ctx context.Context, arg CreateArenaSeriesScoreRevisionParams) (ArenaSeriesScoreRevision, error)
-	CreateArenaSubmissionEvent(ctx context.Context, arg CreateArenaSubmissionEventParams) (ArenaSubmissionEvent, error)
-	CreateArenaSwissBye(ctx context.Context, arg CreateArenaSwissByeParams) error
-	CreateArenaSwissOpponentHistory(ctx context.Context, arg CreateArenaSwissOpponentHistoryParams) error
-	CreateArenaSwissPairing(ctx context.Context, arg CreateArenaSwissPairingParams) error
-	CreateArenaSwissPairingMember(ctx context.Context, arg CreateArenaSwissPairingMemberParams) error
-	CreateArenaSwissRepeatOverride(ctx context.Context, arg CreateArenaSwissRepeatOverrideParams) error
-	CreateArenaTaskDeliveryReceipt(ctx context.Context, arg CreateArenaTaskDeliveryReceiptParams) (ArenaTaskDeliveryReceipt, error)
-	CreateArenaTaskSnapshot(ctx context.Context, arg CreateArenaTaskSnapshotParams) (ArenaTaskSnapshot, error)
-	CreateArenaTaskVersionReservation(ctx context.Context, arg CreateArenaTaskVersionReservationParams) (ArenaTaskVersionReservation, error)
-	CreateArenaTournament(ctx context.Context, arg CreateArenaTournamentParams) (ArenaTournament, error)
-	CreateArenaWave(ctx context.Context, arg CreateArenaWaveParams) (ArenaWafe, error)
-	CreateArenaWaveMember(ctx context.Context, arg CreateArenaWaveMemberParams) error
-	CreateArenaWaveReadiness(ctx context.Context, arg CreateArenaWaveReadinessParams) (ArenaWaveReadiness, error)
-	CreateAutomaticArenaSwissRound(ctx context.Context, arg CreateAutomaticArenaSwissRoundParams) (ArenaSwissRound, error)
-	CreateConservativeArenaAssignmentPlan(ctx context.Context, arg CreateConservativeArenaAssignmentPlanParams) (ArenaAssignmentPlan, error)
-	CreateDuel(ctx context.Context, arg CreateDuelParams) (Duel, error)
-	CreateDuelPlayerTask(ctx context.Context, arg CreateDuelPlayerTaskParams) error
-	CreateExactArenaAssignmentPlan(ctx context.Context, arg CreateExactArenaAssignmentPlanParams) (ArenaAssignmentPlan, error)
-	CreateInitialArenaDraftRevision(ctx context.Context, arg CreateInitialArenaDraftRevisionParams) (ArenaDraftRevision, error)
-	CreateManualArenaSwissRound(ctx context.Context, arg CreateManualArenaSwissRoundParams) (ArenaSwissRound, error)
+	CreateAssignment(ctx context.Context, arg CreateAssignmentParams) (Assignment, error)
+	CreateAssignmentBranch(ctx context.Context, arg CreateAssignmentBranchParams) (CreateAssignmentBranchRow, error)
+	// Assignment plans are pool-scoped. The normal pool is intentionally shared
+	// by Swiss, semifinal, and final workflows; stage authority is resolved before
+	// a plan is persisted and is not a plan field.
+	CreateAssignmentPlanEdge(ctx context.Context, arg CreateAssignmentPlanEdgeParams) (AssignmentPlanEdge, error)
+	CreateAssignmentTaskDeliveryReceipt(ctx context.Context, arg CreateAssignmentTaskDeliveryReceiptParams) (TaskDeliveryReceipt, error)
+	CreateAssignmentTaskSnapshot(ctx context.Context, arg CreateAssignmentTaskSnapshotParams) (TaskSnapshot, error)
+	CreateAssignmentTaskVersionReservation(ctx context.Context, arg CreateAssignmentTaskVersionReservationParams) (TaskVersionReservation, error)
+	CreateAutomaticSwissRound(ctx context.Context, arg CreateAutomaticSwissRoundParams) (SwissRound, error)
+	CreateConservativeAssignmentPlan(ctx context.Context, arg CreateConservativeAssignmentPlanParams) (CreateConservativeAssignmentPlanRow, error)
+	CreateCorrectionGoldenGroupRevision(ctx context.Context, arg CreateCorrectionGoldenGroupRevisionParams) (uuid.UUID, error)
+	CreateCorrectionProjectionBinding(ctx context.Context, arg CreateCorrectionProjectionBindingParams) error
+	CreateCorrectionProjectionDecision(ctx context.Context, arg CreateCorrectionProjectionDecisionParams) error
+	CreateCorrectionStageProgression(ctx context.Context, arg CreateCorrectionStageProgressionParams) (uuid.UUID, error)
+	CreateCorrectionStageTieGroup(ctx context.Context, arg CreateCorrectionStageTieGroupParams) (uuid.UUID, error)
+	CreateCorrectionStageTieGroupMember(ctx context.Context, arg CreateCorrectionStageTieGroupMemberParams) (uuid.UUID, error)
+	CreateCorrectionTournamentLifecycleCommand(ctx context.Context, arg CreateCorrectionTournamentLifecycleCommandParams) (uuid.UUID, error)
+	CreateDraft(ctx context.Context, arg CreateDraftParams) (Draft, error)
+	CreateDraftAction(ctx context.Context, arg CreateDraftActionParams) (DraftAction, error)
+	CreateDraftCategoryRevision(ctx context.Context, arg CreateDraftCategoryRevisionParams) (CategoryRevision, error)
+	CreateExactAssignmentPlan(ctx context.Context, arg CreateExactAssignmentPlanParams) (CreateExactAssignmentPlanRow, error)
+	CreateExactDraftAssignmentBranch(ctx context.Context, arg CreateExactDraftAssignmentBranchParams) error
+	CreateExactDraftAssignmentChild(ctx context.Context, arg CreateExactDraftAssignmentChildParams) error
+	CreateExactDraftAssignmentChildCandidate(ctx context.Context, arg CreateExactDraftAssignmentChildCandidateParams) error
+	CreateExactDraftAssignmentChildHistory(ctx context.Context, arg CreateExactDraftAssignmentChildHistoryParams) error
+	CreateExactDraftAssignmentChildParticipant(ctx context.Context, arg CreateExactDraftAssignmentChildParticipantParams) error
+	CreateExactDraftAssignmentChildSource(ctx context.Context, arg CreateExactDraftAssignmentChildSourceParams) error
+	CreateExactDraftAssignmentPlan(ctx context.Context, arg CreateExactDraftAssignmentPlanParams) error
+	CreateExecutionAuthorityLease(ctx context.Context, arg CreateExecutionAuthorityLeaseParams) (ExecutionAuthorityLease, error)
+	CreateExecutionEpochReplay(ctx context.Context, arg CreateExecutionEpochReplayParams) (uuid.UUID, error)
+	CreateFinalChampionOutboxEvent(ctx context.Context, arg CreateFinalChampionOutboxEventParams) (CreateFinalChampionOutboxEventRow, error)
+	// A writer persists the normalized receipt only after the replacement
+	// projection is published and the exact predecessor has been superseded. The
+	// deferred schema guard validates the complete child evidence at commit.
+	CreateFinalSwissProjectionReceipt(ctx context.Context, arg CreateFinalSwissProjectionReceiptParams) (uuid.UUID, error)
+	CreateFinalSwissProjectionReceiptGame(ctx context.Context, arg CreateFinalSwissProjectionReceiptGameParams) (uuid.UUID, error)
+	CreateFinalSwissProjectionReceiptLedgerEntry(ctx context.Context, arg CreateFinalSwissProjectionReceiptLedgerEntryParams) (uuid.UUID, error)
+	CreateFinalSwissProjectionReceiptParticipant(ctx context.Context, arg CreateFinalSwissProjectionReceiptParticipantParams) (uuid.UUID, error)
+	CreateFinalSwissProjectionReceiptRound(ctx context.Context, arg CreateFinalSwissProjectionReceiptRoundParams) (uuid.UUID, error)
+	CreateFinalSwissProjectionReceiptSeries(ctx context.Context, arg CreateFinalSwissProjectionReceiptSeriesParams) (uuid.UUID, error)
+	CreateGameAttempt(ctx context.Context, arg CreateGameAttemptParams) (CreateGameAttemptRow, error)
+	CreateGameSlot(ctx context.Context, arg CreateGameSlotParams) (GameSlot, error)
+	CreateGoldenAttempt(ctx context.Context, arg CreateGoldenAttemptParams) (GoldenAttempt, error)
+	CreateGoldenAttemptAuthority(ctx context.Context, arg CreateGoldenAttemptAuthorityParams) (uuid.UUID, error)
+	CreateGoldenAttemptStageGroup(ctx context.Context, arg CreateGoldenAttemptStageGroupParams) (uuid.UUID, error)
+	CreateGoldenAttemptSubmissionRevision(ctx context.Context, arg CreateGoldenAttemptSubmissionRevisionParams) (uuid.UUID, error)
+	CreateGoldenCorrectionAttemptTombstone(ctx context.Context, arg CreateGoldenCorrectionAttemptTombstoneParams) (uuid.UUID, error)
+	CreateGoldenCorrectionGroupTombstone(ctx context.Context, arg CreateGoldenCorrectionGroupTombstoneParams) (uuid.UUID, error)
+	CreateGoldenCorrectionPositionTombstone(ctx context.Context, arg CreateGoldenCorrectionPositionTombstoneParams) (uuid.UUID, error)
+	CreateGoldenCorrectionStageTombstone(ctx context.Context, arg CreateGoldenCorrectionStageTombstoneParams) (uuid.UUID, error)
+	CreateGoldenCorrectionStateTombstone(ctx context.Context, arg CreateGoldenCorrectionStateTombstoneParams) (uuid.UUID, error)
+	// The following writes form one immutable Golden authority snapshot. Callers
+	// must execute the root and all child writes inside the same outer transaction.
+	CreateGoldenExactPlanSnapshot(ctx context.Context, arg CreateGoldenExactPlanSnapshotParams) (uuid.UUID, error)
+	CreateGoldenExactPlanSnapshotCandidate(ctx context.Context, arg CreateGoldenExactPlanSnapshotCandidateParams) (uuid.UUID, error)
+	CreateGoldenExactPlanSnapshotEdge(ctx context.Context, arg CreateGoldenExactPlanSnapshotEdgeParams) (uuid.UUID, error)
+	CreateGoldenExactPlanSnapshotGroup(ctx context.Context, arg CreateGoldenExactPlanSnapshotGroupParams) (uuid.UUID, error)
+	CreateGoldenExactPlanSnapshotHistory(ctx context.Context, arg CreateGoldenExactPlanSnapshotHistoryParams) (uuid.UUID, error)
+	CreateGoldenExactPlanSnapshotMember(ctx context.Context, arg CreateGoldenExactPlanSnapshotMemberParams) (uuid.UUID, error)
+	CreateGoldenExactPlanSnapshotParticipantReservation(ctx context.Context, arg CreateGoldenExactPlanSnapshotParticipantReservationParams) (uuid.UUID, error)
+	CreateGoldenExactPlanSnapshotReservation(ctx context.Context, arg CreateGoldenExactPlanSnapshotReservationParams) (uuid.UUID, error)
+	CreateGoldenGroupRevision(ctx context.Context, arg CreateGoldenGroupRevisionParams) (uuid.UUID, error)
+	CreateGoldenMembership(ctx context.Context, arg CreateGoldenMembershipParams) (GoldenMembership, error)
+	CreateGoldenPositionCommit(ctx context.Context, arg CreateGoldenPositionCommitParams) (GoldenPositionCommit, error)
+	CreateGoldenPositionLedgerAttempt(ctx context.Context, arg CreateGoldenPositionLedgerAttemptParams) (uuid.UUID, error)
+	CreateGoldenPositionLedgerCommitBinding(ctx context.Context, arg CreateGoldenPositionLedgerCommitBindingParams) (uuid.UUID, error)
+	CreateGoldenPositionLedgerRevision(ctx context.Context, arg CreateGoldenPositionLedgerRevisionParams) (uuid.UUID, error)
+	CreateGoldenProvisionalSubmission(ctx context.Context, arg CreateGoldenProvisionalSubmissionParams) (GoldenProvisionalSubmission, error)
+	CreateGoldenReadyDisconnect(ctx context.Context, arg CreateGoldenReadyDisconnectParams) (GoldenReadyDisconnect, error)
+	CreateGoldenRecoveryRevision(ctx context.Context, arg CreateGoldenRecoveryRevisionParams) (GoldenRecoveryRevision, error)
+	CreateGoldenRepositoryCommand(ctx context.Context, arg CreateGoldenRepositoryCommandParams) (GoldenRepositoryCommandJournal, error)
+	CreateGoldenRepositoryHead(ctx context.Context, arg CreateGoldenRepositoryHeadParams) (GoldenRepositoryHead, error)
+	CreateGoldenRepositoryRevision(ctx context.Context, arg CreateGoldenRepositoryRevisionParams) (GoldenRepositoryRevision, error)
+	// Golden repository durable store. Normalized Golden evidence remains the
+	// authority; this store retains validated aggregate state and replay receipts
+	// only where the normalized rows cannot reconstruct the application graph.
+	CreateGoldenRepositoryScope(ctx context.Context, arg CreateGoldenRepositoryScopeParams) (uuid.UUID, error)
+	CreateGoldenReservePromotion(ctx context.Context, arg CreateGoldenReservePromotionParams) (GoldenReservePromotion, error)
+	CreateGoldenStateAllocation(ctx context.Context, arg CreateGoldenStateAllocationParams) (uuid.UUID, error)
+	CreateGoldenStateAllocationInput(ctx context.Context, arg CreateGoldenStateAllocationInputParams) (uuid.UUID, error)
+	CreateGoldenStateAllocationPosition(ctx context.Context, arg CreateGoldenStateAllocationPositionParams) (int16, error)
+	CreateGoldenStateAttempt(ctx context.Context, arg CreateGoldenStateAttemptParams) (uuid.UUID, error)
+	CreateGoldenStateAttemptMember(ctx context.Context, arg CreateGoldenStateAttemptMemberParams) (uuid.UUID, error)
+	CreateGoldenStateMember(ctx context.Context, arg CreateGoldenStateMemberParams) (uuid.UUID, error)
+	CreateGoldenStateNoShowParticipant(ctx context.Context, arg CreateGoldenStateNoShowParticipantParams) (uuid.UUID, error)
+	CreateGoldenStateNoShowResolution(ctx context.Context, arg CreateGoldenStateNoShowResolutionParams) (uuid.UUID, error)
+	CreateGoldenStateReadyEvent(ctx context.Context, arg CreateGoldenStateReadyEventParams) (uuid.UUID, error)
+	CreateGoldenStateReadyWindow(ctx context.Context, arg CreateGoldenStateReadyWindowParams) (uuid.UUID, error)
+	CreateGoldenStateReadyWindowParticipant(ctx context.Context, arg CreateGoldenStateReadyWindowParticipantParams) (uuid.UUID, error)
+	CreateGoldenStateRevision(ctx context.Context, arg CreateGoldenStateRevisionParams) (uuid.UUID, error)
+	CreateGoldenStateTransition(ctx context.Context, arg CreateGoldenStateTransitionParams) (uuid.UUID, error)
+	CreateInitialDraftRevision(ctx context.Context, arg CreateInitialDraftRevisionParams) (DraftRevision, error)
+	// The initial score head is created with the planned Series and is the sole
+	// allowed planned-state score authority. Binding the Series pointer here
+	// prevents an orphan head or a mutable zero-score compatibility path.
+	CreateInitialSeriesScoreHead(ctx context.Context, arg CreateInitialSeriesScoreHeadParams) (uuid.UUID, error)
+	CreateInitialSeriesScoreRevision(ctx context.Context, arg CreateInitialSeriesScoreRevisionParams) error
+	CreateManualSwissRound(ctx context.Context, arg CreateManualSwissRoundParams) (SwissRound, error)
+	CreateOfficialResultHead(ctx context.Context, arg CreateOfficialResultHeadParams) (OfficialResultHead, error)
+	CreateOfficialResultRevision(ctx context.Context, arg CreateOfficialResultRevisionParams) (OfficialResultRevision, error)
+	CreateOperatorForfeitCommit(ctx context.Context, arg CreateOperatorForfeitCommitParams) (OperatorForfeitCommit, error)
+	CreateOperatorNoShowCommit(ctx context.Context, arg CreateOperatorNoShowCommitParams) (NormalNoShowCommit, error)
+	CreateOperatorNoShowCommitGame(ctx context.Context, arg CreateOperatorNoShowCommitGameParams) error
+	CreateOperatorReplayReserveCommand(ctx context.Context, arg CreateOperatorReplayReserveCommandParams) (uuid.UUID, error)
+	CreateOperatorReplayReserveEdge(ctx context.Context, arg CreateOperatorReplayReserveEdgeParams) (uuid.UUID, error)
+	CreateOperatorReplayReserveReservation(ctx context.Context, arg CreateOperatorReplayReserveReservationParams) (uuid.UUID, error)
+	CreateOperatorReplayReserveSnapshot(ctx context.Context, arg CreateOperatorReplayReserveSnapshotParams) (uuid.UUID, error)
+	CreateOperatorResultCommand(ctx context.Context, arg CreateOperatorResultCommandParams) (OperatorResultCommand, error)
+	CreateParticipantPostSeriesAction(ctx context.Context, arg CreateParticipantPostSeriesActionParams) (ParticipantPostSeriesAction, error)
+	CreateParticipantReadinessEvent(ctx context.Context, arg CreateParticipantReadinessEventParams) (ReadinessEvent, error)
 	CreatePlayer(ctx context.Context, username string) (Player, error)
-	CreateTask(ctx context.Context, arg CreateTaskParams) (Task, error)
-	DeleteArenaSwissBye(ctx context.Context, roundID uuid.UUID) error
-	DeleteArenaSwissOpponentHistory(ctx context.Context, roundID uuid.UUID) error
-	DeleteArenaSwissPairingMembers(ctx context.Context, roundID uuid.UUID) error
-	DeleteArenaSwissPairings(ctx context.Context, roundID uuid.UUID) error
-	DeleteArenaSwissRepeatOverride(ctx context.Context, roundID uuid.UUID) error
+	CreatePostseasonFinalAdvancement(ctx context.Context, arg CreatePostseasonFinalAdvancementParams) error
+	CreatePostseasonFinalInitialization(ctx context.Context, arg CreatePostseasonFinalInitializationParams) error
+	CreatePostseasonFinalProgression(ctx context.Context, arg CreatePostseasonFinalProgressionParams) error
+	CreatePostseasonFinalStage(ctx context.Context, arg CreatePostseasonFinalStageParams) error
+	CreatePostseasonInitialScoreHead(ctx context.Context, arg CreatePostseasonInitialScoreHeadParams) error
+	CreatePostseasonPlannedWave(ctx context.Context, arg CreatePostseasonPlannedWaveParams) error
+	CreateProjectionArtifact(ctx context.Context, arg CreateProjectionArtifactParams) (ProjectionArtifact, error)
+	CreateProjectionArtifactMember(ctx context.Context, arg CreateProjectionArtifactMemberParams) (ProjectionArtifactMember, error)
+	CreateProjectionCutoff(ctx context.Context, arg CreateProjectionCutoffParams) (ProjectionCutoff, error)
+	CreateProjectionDependency(ctx context.Context, arg CreateProjectionDependencyParams) (ProjectionDependency, error)
+	CreateProjectionRevision(ctx context.Context, arg CreateProjectionRevisionParams) (ProjectionRevision, error)
+	CreateReadyWindow(ctx context.Context, arg CreateReadyWindowParams) (ReadyWindow, error)
+	CreateRecoveryDeadlineReceipt(ctx context.Context, arg CreateRecoveryDeadlineReceiptParams) (DeadlineTransitionReceipt, error)
+	CreateRecoveryNormalNoShowCommit(ctx context.Context, arg CreateRecoveryNormalNoShowCommitParams) (NormalNoShowCommit, error)
+	CreateRecoveryNormalNoShowGame(ctx context.Context, arg CreateRecoveryNormalNoShowGameParams) error
+	CreateRecoveryPauseRevision(ctx context.Context, arg CreateRecoveryPauseRevisionParams) (PauseRevision, error)
+	CreateRecoveryWaveMemberRoute(ctx context.Context, arg CreateRecoveryWaveMemberRouteParams) (WaveMemberRoute, error)
+	CreateReplayReplacementAssignment(ctx context.Context, arg CreateReplayReplacementAssignmentParams) (uuid.UUID, error)
+	CreateReplayReplacementCommand(ctx context.Context, arg CreateReplayReplacementCommandParams) (uuid.UUID, error)
+	CreateReplayReplacementGameAttempt(ctx context.Context, arg CreateReplayReplacementGameAttemptParams) (uuid.UUID, error)
+	CreateReplayReplacementReadinessHead(ctx context.Context, arg CreateReplayReplacementReadinessHeadParams) (uuid.UUID, error)
+	CreateReplayReplacementReadyWindow(ctx context.Context, arg CreateReplayReplacementReadyWindowParams) (uuid.UUID, error)
+	CreateReplayReplacementWave(ctx context.Context, arg CreateReplayReplacementWaveParams) (uuid.UUID, error)
+	CreateReplayReplacementWaveMember(ctx context.Context, arg CreateReplayReplacementWaveMemberParams) error
+	CreateReplayReplacementWaveSeries(ctx context.Context, arg CreateReplayReplacementWaveSeriesParams) error
+	// A replay authority is created only from the committed final draft child
+	// that produced this concrete assignment. Caller-supplied replay evidence is
+	// deliberately absent: source revisions, category, and reservation head all
+	// come from locked normalized rows.
+	CreateReplayReserveAuthority(ctx context.Context, assignmentID uuid.UUID) (uuid.UUID, error)
+	CreateReplayReserveAuthorityPoolVersion(ctx context.Context, assignmentID uuid.UUID) error
+	CreateResultAuditEvent(ctx context.Context, arg CreateResultAuditEventParams) (AuditEvent, error)
+	CreateResultCommit(ctx context.Context, arg CreateResultCommitParams) (ResultCommit, error)
+	CreateResultEvent(ctx context.Context, arg CreateResultEventParams) (ResultEvent, error)
+	CreateResultOutboxEvent(ctx context.Context, arg CreateResultOutboxEventParams) (CreateResultOutboxEventRow, error)
+	CreateResultProjectionDependency(ctx context.Context, arg CreateResultProjectionDependencyParams) error
+	CreateResultProjectionEvidence(ctx context.Context, arg CreateResultProjectionEvidenceParams) (ResultProjectionEvidence, error)
+	CreateResultProjectionNode(ctx context.Context, arg CreateResultProjectionNodeParams) error
+	CreateResultProjectionNodeAuthority(ctx context.Context, arg CreateResultProjectionNodeAuthorityParams) error
+	CreateResultSubmissionEvent(ctx context.Context, arg CreateResultSubmissionEventParams) (SubmissionEvent, error)
+	CreateSeries(ctx context.Context, arg CreateSeriesParams) (Series, error)
+	CreateSeriesScoreRevision(ctx context.Context, arg CreateSeriesScoreRevisionParams) (SeriesScoreRevision, error)
+	CreateSeriesScoreRevisionAdjudication(ctx context.Context, arg CreateSeriesScoreRevisionAdjudicationParams) error
+	CreateSeriesScoreRevisionAttempt(ctx context.Context, arg CreateSeriesScoreRevisionAttemptParams) error
+	// Final Swiss receipts retain the canonical logical projection identity even
+	// when a correction supersedes the physical standings artifact. The recursive
+	// read returns every exact predecessor for revalidation by the application
+	// planner; a cycle is retained in the result so the adapter can fail closed.
+	// A writer holds the projection authority lock before selecting the latest
+	// immutable receipt. Physical revisions may have gaps between receipts.
+	CreateStageProjectionOutboxEvent(ctx context.Context, arg CreateStageProjectionOutboxEventParams) (uuid.UUID, error)
+	CreateSwissBye(ctx context.Context, arg CreateSwissByeParams) error
+	CreateSwissOpponentHistory(ctx context.Context, arg CreateSwissOpponentHistoryParams) error
+	CreateSwissPairing(ctx context.Context, arg CreateSwissPairingParams) error
+	CreateSwissPairingCommand(ctx context.Context, arg CreateSwissPairingCommandParams) (uuid.UUID, error)
+	CreateSwissPairingMember(ctx context.Context, arg CreateSwissPairingMemberParams) error
+	CreateSwissPointLedgerEntry(ctx context.Context, arg CreateSwissPointLedgerEntryParams) (SwissPointLedgerEntry, error)
+	CreateSwissRepeatOverride(ctx context.Context, arg CreateSwissRepeatOverrideParams) error
+	CreateSwissRoundLockProof(ctx context.Context, arg CreateSwissRoundLockProofParams) error
+	CreateSwissRoundLockProofMember(ctx context.Context, arg CreateSwissRoundLockProofMemberParams) error
+	CreateSwissRoundLockProofSeries(ctx context.Context, arg CreateSwissRoundLockProofSeriesParams) error
+	CreateSwissWaveLink(ctx context.Context, arg CreateSwissWaveLinkParams) (uuid.UUID, error)
+	CreateTask(ctx context.Context, arg CreateTaskParams) (CreateTaskRow, error)
+	CreateTaskVersionContentValidationAttestation(ctx context.Context, arg CreateTaskVersionContentValidationAttestationParams) (TaskVersionHealthAttestation, error)
+	CreateTerminalProjectionAuthority(ctx context.Context, arg CreateTerminalProjectionAuthorityParams) error
+	CreateTournament(ctx context.Context, arg CreateTournamentParams) (Tournament, error)
+	CreateTournamentAdminCorrectionCommand(ctx context.Context, arg CreateTournamentAdminCorrectionCommandParams) (ResultCorrectionCommit, error)
+	CreateTournamentCancellation(ctx context.Context, arg CreateTournamentCancellationParams) (CreateTournamentCancellationRow, error)
+	CreateTournamentCancellationAuditEvent(ctx context.Context, arg CreateTournamentCancellationAuditEventParams) (uuid.UUID, error)
+	CreateTournamentCancellationOutboxEvent(ctx context.Context, arg CreateTournamentCancellationOutboxEventParams) (CreateTournamentCancellationOutboxEventRow, error)
+	CreateTournamentCategoryPoolMembership(ctx context.Context, arg CreateTournamentCategoryPoolMembershipParams) error
+	CreateTournamentCategoryPoolRevision(ctx context.Context, arg CreateTournamentCategoryPoolRevisionParams) (uuid.UUID, error)
+	CreateTournamentContentConfiguration(ctx context.Context, arg CreateTournamentContentConfigurationParams) (uuid.UUID, error)
+	CreateTournamentContentStageDefault(ctx context.Context, arg CreateTournamentContentStageDefaultParams) error
+	CreateTournamentLifecycleCommand(ctx context.Context, arg CreateTournamentLifecycleCommandParams) (uuid.UUID, error)
+	// The lifecycle coordinator locks tournament and roster first. Progression
+	// then locks these sources in the fixed order below: Swiss rounds and Waves,
+	// Series and result heads, Golden attempts and commits, projection artifacts.
+	// A semifinal has no Wave or client assignment authority at stage creation.
+	// It is nevertheless born with the same immutable zero-score genesis as a
+	// normal Series. The CTE binds the score head and the Series pointer before
+	// the deferred revision guards run, so an incomplete locked semifinal rolls
+	// back with the outer projection publication.
+	CreateTournamentProgressionLockedSemifinalSeries(ctx context.Context, arg CreateTournamentProgressionLockedSemifinalSeriesParams) (uuid.UUID, error)
+	CreateTournamentProgressionStageProjectionDependency(ctx context.Context, arg CreateTournamentProgressionStageProjectionDependencyParams) (uuid.UUID, error)
+	CreateTournamentProgressionStageProjectionNode(ctx context.Context, arg CreateTournamentProgressionStageProjectionNodeParams) (uuid.UUID, error)
+	// The stage evidence row is written before this authority. Its node foreign
+	// keys are deferred so the ensuing four-node graph can prove the exact Top4,
+	// bracket, and locked semifinal score genesis at transaction commit.
+	CreateTournamentProgressionStageProjectionNodeAuthority(ctx context.Context, arg CreateTournamentProgressionStageProjectionNodeAuthorityParams) (uuid.UUID, error)
+	CreateTournamentRoster(ctx context.Context, arg CreateTournamentRosterParams) (Roster, error)
+	CreateTournamentRosterOperation(ctx context.Context, arg CreateTournamentRosterOperationParams) (uuid.UUID, error)
+	CreateTournamentStagePlayoffEvidence(ctx context.Context, arg CreateTournamentStagePlayoffEvidenceParams) (uuid.UUID, error)
+	CreateTournamentStagePlayoffGoldenSettlement(ctx context.Context, arg CreateTournamentStagePlayoffGoldenSettlementParams) (uuid.UUID, error)
+	CreateTournamentStagePlayoffSemifinal(ctx context.Context, arg CreateTournamentStagePlayoffSemifinalParams) (uuid.UUID, error)
+	CreateTournamentStageProgressionCAS(ctx context.Context, arg CreateTournamentStageProgressionCASParams) (uuid.UUID, error)
+	CreateTournamentStageTieGroup(ctx context.Context, arg CreateTournamentStageTieGroupParams) (uuid.UUID, error)
+	CreateTournamentStageTieGroupMember(ctx context.Context, arg CreateTournamentStageTieGroupMemberParams) (uuid.UUID, error)
+	CreateTournamentTechnicalPause(ctx context.Context, arg CreateTournamentTechnicalPauseParams) (uuid.UUID, error)
+	CreateTournamentTechnicalPauseRevision(ctx context.Context, arg CreateTournamentTechnicalPauseRevisionParams) (uuid.UUID, error)
+	CreateWave(ctx context.Context, arg CreateWaveParams) (Wave, error)
+	CreateWaveControlCommand(ctx context.Context, arg CreateWaveControlCommandParams) (uuid.UUID, error)
+	CreateWaveDisclosureOutboxEvent(ctx context.Context, arg CreateWaveDisclosureOutboxEventParams) (CreateWaveDisclosureOutboxEventRow, error)
+	CreateWaveMember(ctx context.Context, arg CreateWaveMemberParams) error
+	CreateWaveReadinessHead(ctx context.Context, arg CreateWaveReadinessHeadParams) (WaveReadiness, error)
+	CreateWaveSeries(ctx context.Context, arg CreateWaveSeriesParams) error
+	DeleteExpiredRealtimeDeliveryReceipts(ctx context.Context, arg DeleteExpiredRealtimeDeliveryReceiptsParams) ([]DeleteExpiredRealtimeDeliveryReceiptsRow, error)
+	DeleteExpiredRealtimeSubscribers(ctx context.Context, arg DeleteExpiredRealtimeSubscribersParams) ([]uuid.UUID, error)
+	DeleteSwissBye(ctx context.Context, roundID uuid.UUID) error
+	DeleteSwissOpponentHistory(ctx context.Context, roundID uuid.UUID) error
+	DeleteSwissPairingMembers(ctx context.Context, roundID uuid.UUID) error
+	DeleteSwissPairings(ctx context.Context, roundID uuid.UUID) error
+	DeleteSwissRepeatOverride(ctx context.Context, roundID uuid.UUID) error
 	DeleteTask(ctx context.Context, id uuid.UUID) error
-	DiscloseArenaTaskReservationCAS(ctx context.Context, arg DiscloseArenaTaskReservationCASParams) (ArenaTaskVersionReservation, error)
-	EstablishArenaGoldenParticipation(ctx context.Context, arg EstablishArenaGoldenParticipationParams) (ArenaGoldenMembership, error)
-	FinishDuel(ctx context.Context, arg FinishDuelParams) (FinishDuelRow, error)
-	GetActiveArenaTournament(ctx context.Context) (ArenaTournament, error)
-	GetActiveDuelByPlayerID(ctx context.Context, player1ID uuid.UUID) (Duel, error)
+	DeleteTournamentAdminRosterParticipants(ctx context.Context, arg DeleteTournamentAdminRosterParticipantsParams) (int64, error)
+	DiscloseAssignmentTaskReservationCAS(ctx context.Context, arg DiscloseAssignmentTaskReservationCASParams) (DiscloseAssignmentTaskReservationCASRow, error)
+	DiscloseWaveStartReservationCAS(ctx context.Context, arg DiscloseWaveStartReservationCASParams) (DiscloseWaveStartReservationCASRow, error)
+	EnsureExactDraftPlanningHistoryHead(ctx context.Context, draftID uuid.UUID) error
+	EnterTournamentTechnicalPause(ctx context.Context, arg EnterTournamentTechnicalPauseParams) (EnterTournamentTechnicalPauseRow, error)
+	EstablishGoldenParticipation(ctx context.Context, arg EstablishGoldenParticipationParams) (GoldenMembership, error)
+	ExpireRecoveryReadyWindowCAS(ctx context.Context, arg ExpireRecoveryReadyWindowCASParams) (ReadyWindow, error)
+	ExpireRecoveryReconnectIntervalCAS(ctx context.Context, arg ExpireRecoveryReconnectIntervalCASParams) (ReconnectInterval, error)
+	ExpireRecoveryWaveCAS(ctx context.Context, arg ExpireRecoveryWaveCASParams) (Wave, error)
+	FindExecutionAuthorityCommand(ctx context.Context, arg FindExecutionAuthorityCommandParams) (ExecutionAuthorityLease, error)
+	FindExecutionEpochReplayByCommand(ctx context.Context, commandID uuid.UUID) (ExecutionEpochReplay, error)
+	FindExecutionEpochReplayByGame(ctx context.Context, gameAttemptID uuid.UUID) (ExecutionEpochReplay, error)
+	FindGoldenRepositoryCommand(ctx context.Context, arg FindGoldenRepositoryCommandParams) (FindGoldenRepositoryCommandRow, error)
+	FindLatestWaveStartCommand(ctx context.Context, arg FindLatestWaveStartCommandParams) (WaveControlCommand, error)
+	FindOperatorReplayReserveCommand(ctx context.Context, commandID uuid.UUID) (OperatorReplayReserve, error)
+	FindParticipantPostSeriesAction(ctx context.Context, commandID uuid.UUID) (ParticipantPostSeriesAction, error)
+	// An exact submission replay is visible only after the caller has locked and
+	// authenticated this participant's tournament scope. The caller compares the
+	// returned intent_digest with the shared submission intent contract before it
+	// permits stale projection replay handling.
+	FindParticipantSubmissionReplay(ctx context.Context, arg FindParticipantSubmissionReplayParams) (FindParticipantSubmissionReplayRow, error)
+	FindReplayReplacementCommand(ctx context.Context, commandID uuid.UUID) (ReplayReplacement, error)
+	FindSwissPairingCommand(ctx context.Context, arg FindSwissPairingCommandParams) (SwissPairingCommand, error)
+	FindTournamentCancellation(ctx context.Context, arg FindTournamentCancellationParams) (FindTournamentCancellationRow, error)
+	FindTournamentLifecycleCommand(ctx context.Context, arg FindTournamentLifecycleCommandParams) (TournamentLifecycleCommand, error)
+	FindTournamentRosterOperation(ctx context.Context, arg FindTournamentRosterOperationParams) (TournamentRosterOperation, error)
+	FindTournamentStageProgression(ctx context.Context, arg FindTournamentStageProgressionParams) (FindTournamentStageProgressionRow, error)
+	FindWaveControlCommand(ctx context.Context, arg FindWaveControlCommandParams) (WaveControlCommand, error)
+	FindWaveStartCommandByID(ctx context.Context, commandID uuid.UUID) (WaveControlCommand, error)
+	GetActiveTournament(ctx context.Context) (Tournament, error)
 	GetAdminPlayer(ctx context.Context, id uuid.UUID) (GetAdminPlayerRow, error)
 	GetAdminPlayerIncludingDeleted(ctx context.Context, id uuid.UUID) (GetAdminPlayerIncludingDeletedRow, error)
-	GetArenaAssignment(ctx context.Context, id uuid.UUID) (ArenaAssignment, error)
-	GetArenaAssignmentPlan(ctx context.Context, id uuid.UUID) (ArenaAssignmentPlan, error)
-	GetArenaAuditEventByID(ctx context.Context, id uuid.UUID) (ArenaAuditEvent, error)
-	GetArenaCorrectionCutoff(ctx context.Context, arg GetArenaCorrectionCutoffParams) (string, error)
-	GetArenaCorrectionSource(ctx context.Context, arg GetArenaCorrectionSourceParams) (GetArenaCorrectionSourceRow, error)
-	GetArenaDraft(ctx context.Context, id uuid.UUID) (ArenaDraft, error)
-	GetArenaDraftCategoryRevision(ctx context.Context, id uuid.UUID) (ArenaCategoryRevision, error)
-	GetArenaGameAttemptScoped(ctx context.Context, arg GetArenaGameAttemptScopedParams) (ArenaGameAttempt, error)
-	GetArenaGameSlot(ctx context.Context, arg GetArenaGameSlotParams) (ArenaGameSlot, error)
-	GetArenaGoldenAttemptScoped(ctx context.Context, arg GetArenaGoldenAttemptScopedParams) (ArenaGoldenAttempt, error)
-	GetArenaGoldenSubmissionByIdempotencyKey(ctx context.Context, idempotencyKey uuid.UUID) (ArenaGoldenProvisionalSubmission, error)
-	GetArenaOfficialResultRevisionByID(ctx context.Context, id uuid.UUID) (ArenaOfficialResultRevision, error)
-	GetArenaOutboxEventByID(ctx context.Context, id uuid.UUID) (ArenaOutboxEvent, error)
-	GetArenaProjectionArtifactScoped(ctx context.Context, arg GetArenaProjectionArtifactScopedParams) (ArenaProjectionArtifact, error)
-	GetArenaProjectionCutoffByID(ctx context.Context, arg GetArenaProjectionCutoffByIDParams) (ArenaProjectionCutoff, error)
-	GetArenaProjectionRevisionScoped(ctx context.Context, arg GetArenaProjectionRevisionScopedParams) (ArenaProjectionRevision, error)
-	GetArenaReadyWindow(ctx context.Context, waveID uuid.UUID) (ArenaReadyWindow, error)
-	GetArenaResultCommitByID(ctx context.Context, id uuid.UUID) (ArenaResultCommit, error)
-	GetArenaResultCommitByIdempotencyKey(ctx context.Context, idempotencyKey uuid.UUID) (ArenaResultCommit, error)
-	GetArenaResultEventByID(ctx context.Context, id uuid.UUID) (ArenaResultEvent, error)
-	GetArenaResultProjectionEvidenceByID(ctx context.Context, id uuid.UUID) (ArenaResultProjectionEvidence, error)
-	GetArenaRoster(ctx context.Context, id uuid.UUID) (ArenaRoster, error)
-	GetArenaSeriesScoreRevisionByID(ctx context.Context, id uuid.UUID) (ArenaSeriesScoreRevision, error)
-	GetArenaSubmissionEventByIdempotencyKey(ctx context.Context, idempotencyKey uuid.UUID) (ArenaSubmissionEvent, error)
-	GetArenaSwissBye(ctx context.Context, roundID uuid.UUID) (ArenaSwissBye, error)
-	GetArenaSwissRepeatOverride(ctx context.Context, roundID uuid.UUID) (ArenaSwissRepeatOverride, error)
-	GetArenaSwissRound(ctx context.Context, id uuid.UUID) (ArenaSwissRound, error)
-	GetArenaTaskSnapshot(ctx context.Context, id uuid.UUID) (ArenaTaskSnapshot, error)
-	GetArenaTournament(ctx context.Context, id uuid.UUID) (ArenaTournament, error)
-	GetArenaTournamentSummary(ctx context.Context, id uuid.UUID) (GetArenaTournamentSummaryRow, error)
-	GetArenaWave(ctx context.Context, arg GetArenaWaveParams) (ArenaWafe, error)
-	GetCurrentArenaBracketArtifact(ctx context.Context, arg GetCurrentArenaBracketArtifactParams) (ArenaProjectionArtifact, error)
-	GetCurrentArenaDraftRevision(ctx context.Context, draftID uuid.UUID) (ArenaDraftRevision, error)
-	GetCurrentArenaProjectionRevision(ctx context.Context, arg GetCurrentArenaProjectionRevisionParams) (ArenaProjectionRevision, error)
-	GetCurrentArenaResultCommitForAttempt(ctx context.Context, arg GetCurrentArenaResultCommitForAttemptParams) (ArenaResultCommit, error)
-	GetCurrentArenaStandingsArtifact(ctx context.Context, arg GetCurrentArenaStandingsArtifactParams) (ArenaProjectionArtifact, error)
-	GetDuelByID(ctx context.Context, id uuid.UUID) (Duel, error)
-	GetDuelPlayerTask(ctx context.Context, arg GetDuelPlayerTaskParams) (DuelPlayerTask, error)
-	GetLatestArenaGoldenRecoveryRevision(ctx context.Context, arg GetLatestArenaGoldenRecoveryRevisionParams) (ArenaGoldenRecoveryRevision, error)
-	GetLatestArenaProjectionCutoff(ctx context.Context, arg GetLatestArenaProjectionCutoffParams) (ArenaProjectionCutoff, error)
-	GetParticipantReservation(ctx context.Context, playerID uuid.UUID) (GetParticipantReservationRow, error)
+	GetAssignment(ctx context.Context, id uuid.UUID) (Assignment, error)
+	GetAssignmentPlan(ctx context.Context, id uuid.UUID) (GetAssignmentPlanRow, error)
+	GetAssignmentTaskSnapshot(ctx context.Context, id uuid.UUID) (TaskSnapshot, error)
+	GetCorrectionCutoff(ctx context.Context, arg GetCorrectionCutoffParams) (string, error)
+	GetCorrectionProjectionBinding(ctx context.Context, arg GetCorrectionProjectionBindingParams) (CorrectionProjectionBinding, error)
+	GetCorrectionProjectionNodeByRevision(ctx context.Context, arg GetCorrectionProjectionNodeByRevisionParams) (ResultProjectionNode, error)
+	GetCorrectionResultProjectionNodeForSource(ctx context.Context, arg GetCorrectionResultProjectionNodeForSourceParams) (ResultProjectionNode, error)
+	GetCorrectionSource(ctx context.Context, arg GetCorrectionSourceParams) (GetCorrectionSourceRow, error)
+	GetCorrectionStageReceiptBridge(ctx context.Context, arg GetCorrectionStageReceiptBridgeParams) (GetCorrectionStageReceiptBridgeRow, error)
+	GetCurrentDraftRevision(ctx context.Context, draftID uuid.UUID) (DraftRevision, error)
+	GetCurrentProjectionBracketArtifact(ctx context.Context, arg GetCurrentProjectionBracketArtifactParams) (ProjectionArtifact, error)
+	GetCurrentProjectionRevision(ctx context.Context, arg GetCurrentProjectionRevisionParams) (ProjectionRevision, error)
+	GetCurrentResultCommitForAttempt(ctx context.Context, arg GetCurrentResultCommitForAttemptParams) (ResultCommit, error)
+	GetCurrentStandingsArtifact(ctx context.Context, arg GetCurrentStandingsArtifactParams) (ProjectionArtifact, error)
+	GetCurrentTournamentContentConfiguration(ctx context.Context, tournamentID uuid.UUID) (GetCurrentTournamentContentConfigurationRow, error)
+	GetDraft(ctx context.Context, id uuid.UUID) (Draft, error)
+	GetDraftCategoryRevision(ctx context.Context, id uuid.UUID) (CategoryRevision, error)
+	GetGameAttemptScoped(ctx context.Context, arg GetGameAttemptScopedParams) (GetGameAttemptScopedRow, error)
+	GetGameSlot(ctx context.Context, arg GetGameSlotParams) (GameSlot, error)
+	GetGoldenAttemptScoped(ctx context.Context, arg GetGoldenAttemptScopedParams) (GoldenAttempt, error)
+	GetGoldenSubmissionByIdempotencyKey(ctx context.Context, idempotencyKey uuid.UUID) (GoldenProvisionalSubmission, error)
+	GetLatestGoldenRecoveryRevision(ctx context.Context, arg GetLatestGoldenRecoveryRevisionParams) (GoldenRecoveryRevision, error)
+	GetLatestProjectionCutoff(ctx context.Context, arg GetLatestProjectionCutoffParams) (ProjectionCutoff, error)
+	GetOfficialResultRevisionByID(ctx context.Context, id uuid.UUID) (OfficialResultRevision, error)
+	GetOperatorResultCommand(ctx context.Context, commandID uuid.UUID) (OperatorResultCommand, error)
+	GetOperatorResultTime(ctx context.Context) (pgtype.Timestamptz, error)
+	GetOperatorTournamentReadPause(ctx context.Context, tournamentID uuid.UUID) (GetOperatorTournamentReadPauseRow, error)
+	// Membership is checked without locks before acquiring the result scope prefix.
+	// The locked command authority below revalidates the same identity afterward.
+	GetParticipantCommandRoster(ctx context.Context, arg GetParticipantCommandRosterParams) (uuid.UUID, error)
+	GetParticipantReadAssignment(ctx context.Context, arg GetParticipantReadAssignmentParams) (GetParticipantReadAssignmentRow, error)
+	GetParticipantReadIdentity(ctx context.Context, arg GetParticipantReadIdentityParams) (uuid.UUID, error)
+	GetParticipantReadOpponent(ctx context.Context, arg GetParticipantReadOpponentParams) (GetParticipantReadOpponentRow, error)
+	GetParticipantSeriesExecution(ctx context.Context, arg GetParticipantSeriesExecutionParams) ([]GetParticipantSeriesExecutionRow, error)
+	GetParticipantSeriesRoster(ctx context.Context, arg GetParticipantSeriesRosterParams) (uuid.UUID, error)
+	GetParticipantStateAssignment(ctx context.Context, arg GetParticipantStateAssignmentParams) (GetParticipantStateAssignmentRow, error)
+	GetParticipantStateRoot(ctx context.Context, arg GetParticipantStateRootParams) (GetParticipantStateRootRow, error)
+	GetParticipantStateSeries(ctx context.Context, arg GetParticipantStateSeriesParams) (GetParticipantStateSeriesRow, error)
+	GetParticipantStateWave(ctx context.Context, arg GetParticipantStateWaveParams) (GetParticipantStateWaveRow, error)
+	GetParticipantSubmissionBinding(ctx context.Context, arg GetParticipantSubmissionBindingParams) (GetParticipantSubmissionBindingRow, error)
+	GetParticipantSubmissionCommitMetadata(ctx context.Context, arg GetParticipantSubmissionCommitMetadataParams) (GetParticipantSubmissionCommitMetadataRow, error)
+	GetParticipantSurrenderCommitMetadata(ctx context.Context, arg GetParticipantSurrenderCommitMetadataParams) (GetParticipantSurrenderCommitMetadataRow, error)
+	GetPendingRecoveryDeadline(ctx context.Context, arg GetPendingRecoveryDeadlineParams) (GetPendingRecoveryDeadlineRow, error)
 	GetPlayerByID(ctx context.Context, id uuid.UUID) (Player, error)
 	GetPlayerBySessionToken(ctx context.Context, sessionToken uuid.NullUUID) (Player, error)
 	GetPlayerByUsername(ctx context.Context, username string) (Player, error)
-	GetPlayerTask(ctx context.Context, arg GetPlayerTaskParams) (Task, error)
-	GetTaskByID(ctx context.Context, id uuid.UUID) (Task, error)
-	InsertArenaParticipant(ctx context.Context, arg InsertArenaParticipantParams) (ArenaParticipant, error)
-	LinkArenaProjectionArtifact(ctx context.Context, arg LinkArenaProjectionArtifactParams) (ArenaProjectionRevisionArtifact, error)
-	ListActiveDuels(ctx context.Context) ([]Duel, error)
+	// The private task delivery backlog is a durable availability invariant, not
+	// a public realtime queue. Every active Wave, Series, Game, and assignment
+	// graph must retain one
+	// immutable receipt for each participant before task material is considered
+	// available through the private participant snapshot.
+	GetPrivateTaskDeliveryBacklog(ctx context.Context) (GetPrivateTaskDeliveryBacklogRow, error)
+	GetProjectionArtifactScoped(ctx context.Context, arg GetProjectionArtifactScopedParams) (ProjectionArtifact, error)
+	GetProjectionCutoffByID(ctx context.Context, arg GetProjectionCutoffByIDParams) (ProjectionCutoff, error)
+	GetProjectionPublicationHealth(ctx context.Context) (GetProjectionPublicationHealthRow, error)
+	GetProjectionRevisionScoped(ctx context.Context, arg GetProjectionRevisionScopedParams) (ProjectionRevision, error)
+	GetPublicTournamentReadDraft(ctx context.Context, tournamentID uuid.UUID) (GetPublicTournamentReadDraftRow, error)
+	GetPublicTournamentReadSummary(ctx context.Context, tournamentID uuid.UUID) (GetPublicTournamentReadSummaryRow, error)
+	GetReadyWindow(ctx context.Context, waveID uuid.UUID) (ReadyWindow, error)
+	GetRealtimeDeliveryReceipt(ctx context.Context, arg GetRealtimeDeliveryReceiptParams) (RealtimeDeliveryReceipt, error)
+	GetRealtimeOutboxBacklog(ctx context.Context) (GetRealtimeOutboxBacklogRow, error)
+	GetRealtimeOutboxCursor(ctx context.Context, tournamentID uuid.UUID) (int64, error)
+	GetRealtimeSubscriberCursor(ctx context.Context, arg GetRealtimeSubscriberCursorParams) (int64, error)
+	GetRecoveryDeadlineReceipt(ctx context.Context, arg GetRecoveryDeadlineReceiptParams) (DeadlineTransitionReceipt, error)
+	GetResultAuditEventByID(ctx context.Context, id uuid.UUID) (AuditEvent, error)
+	GetResultCommitByID(ctx context.Context, id uuid.UUID) (ResultCommit, error)
+	GetResultCommitByIdempotencyKey(ctx context.Context, idempotencyKey uuid.UUID) (ResultCommit, error)
+	GetResultEventByID(ctx context.Context, id uuid.UUID) (ResultEvent, error)
+	GetResultOutboxEventByID(ctx context.Context, id uuid.UUID) (OutboxEvent, error)
+	GetResultProjectionEvidenceByID(ctx context.Context, id uuid.UUID) (ResultProjectionEvidence, error)
+	GetResultProjectionNode(ctx context.Context, id uuid.UUID) (ResultProjectionNode, error)
+	GetResultSubmissionEventByIdempotencyKey(ctx context.Context, idempotencyKey uuid.UUID) (SubmissionEvent, error)
+	GetSeriesScoreRevisionByID(ctx context.Context, id uuid.UUID) (SeriesScoreRevision, error)
+	GetSwissBye(ctx context.Context, roundID uuid.UUID) (SwissBye, error)
+	GetSwissRepeatOverride(ctx context.Context, roundID uuid.UUID) (SwissRepeatOverride, error)
+	GetSwissRound(ctx context.Context, id uuid.UUID) (SwissRound, error)
+	GetSwissRoundProofForUpdate(ctx context.Context, arg GetSwissRoundProofForUpdateParams) (SwissRoundLockProof, error)
+	GetTaskByID(ctx context.Context, id uuid.UUID) (GetTaskByIDRow, error)
+	GetTaskVersion(ctx context.Context, arg GetTaskVersionParams) (TaskVersion, error)
+	GetTournament(ctx context.Context, id uuid.UUID) (Tournament, error)
+	GetTournamentAdminCorrectionCommand(ctx context.Context, commandID uuid.UUID) (ResultCorrectionCommit, error)
+	GetTournamentAdminCorrectionConsistency(ctx context.Context, commandID uuid.UUID) (GetTournamentAdminCorrectionConsistencyRow, error)
+	GetTournamentAdminCorrectionSolve(ctx context.Context, arg GetTournamentAdminCorrectionSolveParams) (GetTournamentAdminCorrectionSolveRow, error)
+	GetTournamentAdminCorrectionTime(ctx context.Context) (pgtype.Timestamptz, error)
+	GetTournamentAdminReplayTime(ctx context.Context) (pgtype.Timestamptz, error)
+	GetTournamentAdminRoster(ctx context.Context, tournamentID uuid.UUID) (Roster, error)
+	GetTournamentAdminSnapshotHeader(ctx context.Context, tournamentID uuid.UUID) (GetTournamentAdminSnapshotHeaderRow, error)
+	GetTournamentCreateReceipt(ctx context.Context, commandID uuid.UUID) (TournamentCreateCommandReceipt, error)
+	GetTournamentExecutionRevisionSnapshot(ctx context.Context, arg GetTournamentExecutionRevisionSnapshotParams) ([]byte, error)
+	GetTournamentPreflightRound(ctx context.Context, rosterID uuid.UUID) (GetTournamentPreflightRoundRow, error)
+	GetTournamentReadCursor(ctx context.Context, tournamentID uuid.UUID) (GetTournamentReadCursorRow, error)
+	GetTournamentReadProjectionPayloads(ctx context.Context, tournamentID uuid.UUID) (GetTournamentReadProjectionPayloadsRow, error)
+	GetTournamentRoster(ctx context.Context, id uuid.UUID) (Roster, error)
+	// Read our own stage proof before the outer coordinator writes its deferred
+	// lifecycle receipt. Replay lookup remains bound to the lifecycle receipt.
+	GetTournamentStageProgressionProof(ctx context.Context, arg GetTournamentStageProgressionProofParams) (TournamentStageProgression, error)
+	GetTournamentSummary(ctx context.Context, id uuid.UUID) (GetTournamentSummaryRow, error)
+	GetWave(ctx context.Context, arg GetWaveParams) (Wave, error)
+	GetWaveReadinessHead(ctx context.Context, arg GetWaveReadinessHeadParams) (WaveReadiness, error)
+	InsertTournamentCreateReceipt(ctx context.Context, arg InsertTournamentCreateReceiptParams) (TournamentCreateCommandReceipt, error)
+	InsertTournamentParticipant(ctx context.Context, arg InsertTournamentParticipantParams) (Participant, error)
+	LinkProjectionArtifact(ctx context.Context, arg LinkProjectionArtifactParams) (ProjectionRevisionArtifact, error)
 	ListAdminPlayerAuditEventsByPlayer(ctx context.Context, arg ListAdminPlayerAuditEventsByPlayerParams) ([]AdminPlayerAuditEvent, error)
 	ListAdminPlayers(ctx context.Context, dollar_1 bool) ([]ListAdminPlayersRow, error)
-	ListArenaAssignmentBranches(ctx context.Context, planID uuid.UUID) ([]ArenaAssignmentBranch, error)
-	ListArenaAssignmentPlanEdges(ctx context.Context, planID uuid.UUID) ([]ArenaAssignmentPlanEdge, error)
-	ListArenaAuditPage(ctx context.Context, arg ListArenaAuditPageParams) ([]ListArenaAuditPageRow, error)
-	ListArenaCorrectionDescendants(ctx context.Context, arg ListArenaCorrectionDescendantsParams) ([]ListArenaCorrectionDescendantsRow, error)
-	ListArenaDraftActions(ctx context.Context, draftID uuid.UUID) ([]ArenaDraftAction, error)
-	ListArenaDraftRevisions(ctx context.Context, draftID uuid.UUID) ([]ArenaDraftRevision, error)
-	ListArenaGameAttempts(ctx context.Context, slotID uuid.UUID) ([]ArenaGameAttempt, error)
-	ListArenaGoldenAttempts(ctx context.Context, arg ListArenaGoldenAttemptsParams) ([]ArenaGoldenAttempt, error)
-	ListArenaGoldenMemberships(ctx context.Context, arg ListArenaGoldenMembershipsParams) ([]ArenaGoldenMembership, error)
-	ListArenaGoldenPositionCommits(ctx context.Context, arg ListArenaGoldenPositionCommitsParams) ([]ArenaGoldenPositionCommit, error)
-	ListArenaGoldenProvisionalSubmissions(ctx context.Context, arg ListArenaGoldenProvisionalSubmissionsParams) ([]ArenaGoldenProvisionalSubmission, error)
-	ListArenaGoldenReadyDisconnects(ctx context.Context, arg ListArenaGoldenReadyDisconnectsParams) ([]ArenaGoldenReadyDisconnect, error)
-	ListArenaGoldenRecoveryRevisions(ctx context.Context, arg ListArenaGoldenRecoveryRevisionsParams) ([]ArenaGoldenRecoveryRevision, error)
-	ListArenaGoldenReservePromotions(ctx context.Context, arg ListArenaGoldenReservePromotionsParams) ([]ArenaGoldenReservePromotion, error)
-	ListArenaParticipants(ctx context.Context, rosterID uuid.UUID) ([]ListArenaParticipantsRow, error)
-	ListArenaProjectionArtifactDependencies(ctx context.Context, arg ListArenaProjectionArtifactDependenciesParams) ([]ArenaProjectionDependency, error)
-	ListArenaProjectionArtifactMembers(ctx context.Context, arg ListArenaProjectionArtifactMembersParams) ([]ArenaProjectionArtifactMember, error)
-	ListArenaProjectionRevisionArtifacts(ctx context.Context, arg ListArenaProjectionRevisionArtifactsParams) ([]ArenaProjectionRevisionArtifact, error)
-	ListArenaProjectionRevisions(ctx context.Context, arg ListArenaProjectionRevisionsParams) ([]ArenaProjectionRevision, error)
-	ListArenaReservations(ctx context.Context, tournamentID uuid.NullUUID) ([]ParticipantReservation, error)
-	ListArenaResultHistory(ctx context.Context, arg ListArenaResultHistoryParams) ([]ListArenaResultHistoryRow, error)
-	ListArenaSwissOpponentHistory(ctx context.Context, rosterID uuid.UUID) ([]ListArenaSwissOpponentHistoryRow, error)
-	ListArenaSwissRounds(ctx context.Context, rosterID uuid.UUID) ([]ArenaSwissRound, error)
-	ListArenaTaskDeliveryReceipts(ctx context.Context, assignmentID uuid.UUID) ([]ArenaTaskDeliveryReceipt, error)
-	ListArenaTaskSnapshotsForPlan(ctx context.Context, planID uuid.UUID) ([]ArenaTaskSnapshot, error)
-	ListArenaTaskVersionReservations(ctx context.Context, planID uuid.UUID) ([]ArenaTaskVersionReservation, error)
-	ListArenaTournamentSummaries(ctx context.Context) ([]ListArenaTournamentSummariesRow, error)
-	ListArenaTournaments(ctx context.Context) ([]ArenaTournament, error)
-	ListArenaWaveMembers(ctx context.Context, waveID uuid.UUID) ([]ArenaWaveMember, error)
-	ListArenaWaveReadiness(ctx context.Context, readyWindowID uuid.UUID) ([]ArenaWaveReadiness, error)
-	ListCheckedInArenaPlayerIDs(ctx context.Context, rosterID uuid.UUID) ([]uuid.UUID, error)
-	ListSolvedTaskIDs(ctx context.Context, playerID uuid.UUID) ([]uuid.UUID, error)
-	ListTasks(ctx context.Context) ([]Task, error)
-	ListTasksByDifficulty(ctx context.Context, difficulty string) ([]Task, error)
-	LockArenaAssignment(ctx context.Context, id uuid.UUID) (ArenaAssignment, error)
-	LockArenaAssignmentPlan(ctx context.Context, id uuid.UUID) (ArenaAssignmentPlan, error)
-	LockArenaCorrectionAssignments(ctx context.Context, arg LockArenaCorrectionAssignmentsParams) ([]uuid.UUID, error)
-	LockArenaCorrectionCutoffWaves(ctx context.Context, arg LockArenaCorrectionCutoffWavesParams) ([]LockArenaCorrectionCutoffWavesRow, error)
-	LockArenaCorrectionDescendants(ctx context.Context, arg LockArenaCorrectionDescendantsParams) ([]LockArenaCorrectionDescendantsRow, error)
-	LockArenaCorrectionGoldenAttempts(ctx context.Context, arg LockArenaCorrectionGoldenAttemptsParams) ([]uuid.UUID, error)
-	LockArenaCorrectionOfficialHeads(ctx context.Context, arg LockArenaCorrectionOfficialHeadsParams) ([]ArenaOfficialResultHead, error)
-	LockArenaCorrectionOpenReadyWindows(ctx context.Context, arg LockArenaCorrectionOpenReadyWindowsParams) ([]LockArenaCorrectionOpenReadyWindowsRow, error)
-	LockArenaCorrectionSeriesAttempts(ctx context.Context, arg LockArenaCorrectionSeriesAttemptsParams) ([]uuid.UUID, error)
-	LockArenaCorrectionTournamentScope(ctx context.Context, arg LockArenaCorrectionTournamentScopeParams) (LockArenaCorrectionTournamentScopeRow, error)
-	LockArenaGoldenAttempt(ctx context.Context, arg LockArenaGoldenAttemptParams) (ArenaGoldenAttempt, error)
-	LockArenaProjectionRevisionSet(ctx context.Context, arg LockArenaProjectionRevisionSetParams) ([]uuid.UUID, error)
-	LockArenaProjectionRoster(ctx context.Context, arg LockArenaProjectionRosterParams) (ArenaRoster, error)
-	LockArenaResultAttempt(ctx context.Context, arg LockArenaResultAttemptParams) (ArenaGameAttempt, error)
-	LockArenaResultSeries(ctx context.Context, arg LockArenaResultSeriesParams) (LockArenaResultSeriesRow, error)
-	LockArenaRosterCAS(ctx context.Context, arg LockArenaRosterCASParams) (ArenaRoster, error)
-	LockArenaRosterForUpdate(ctx context.Context, id uuid.UUID) (ArenaRoster, error)
-	LockArenaSwissRoundCAS(ctx context.Context, arg LockArenaSwissRoundCASParams) (ArenaSwissRound, error)
-	LockArenaSwissRoundForUpdate(ctx context.Context, id uuid.UUID) (ArenaSwissRound, error)
-	MarkArenaGoldenMembershipNoShow(ctx context.Context, arg MarkArenaGoldenMembershipNoShowParams) (ArenaGoldenMembership, error)
-	MarkArenaGoldenMembershipReady(ctx context.Context, arg MarkArenaGoldenMembershipReadyParams) (ArenaGoldenMembership, error)
-	MarkArenaRosterExecutionStartedCAS(ctx context.Context, arg MarkArenaRosterExecutionStartedCASParams) (ArenaRoster, error)
-	MarkArenaWaveReadinessCAS(ctx context.Context, arg MarkArenaWaveReadinessCASParams) (ArenaWafe, error)
-	MarkDuelPlayerTaskSolved(ctx context.Context, arg MarkDuelPlayerTaskSolvedParams) error
-	OpenArenaWaveReadyWindowCAS(ctx context.Context, arg OpenArenaWaveReadyWindowCASParams) (ArenaWafe, error)
-	PromoteParticipantReservation(ctx context.Context, arg PromoteParticipantReservationParams) (PromoteParticipantReservationRow, error)
-	PublishArenaProjectionRevisionCAS(ctx context.Context, arg PublishArenaProjectionRevisionCASParams) (ArenaProjectionRevision, error)
-	ReleaseArenaReservations(ctx context.Context, tournamentID uuid.UUID) (int64, error)
-	ReleaseOtherArenaAssignmentBranches(ctx context.Context, arg ReleaseOtherArenaAssignmentBranchesParams) ([]uuid.UUID, error)
-	ReleaseOtherArenaBranchReservations(ctx context.Context, arg ReleaseOtherArenaBranchReservationsParams) ([]uuid.UUID, error)
-	ReleaseParticipantReservation(ctx context.Context, arg ReleaseParticipantReservationParams) (uuid.UUID, error)
-	ReplaceWithdrawnArenaParticipant(ctx context.Context, arg ReplaceWithdrawnArenaParticipantParams) (ArenaParticipant, error)
-	ReserveCheckedInArenaParticipants(ctx context.Context, arg ReserveCheckedInArenaParticipantsParams) ([]uuid.UUID, error)
-	ResetQueuedPlayers(ctx context.Context) (int64, error)
-	SelectAnyTaskByDifficulty(ctx context.Context, difficulty string) (Task, error)
-	SelectUnsolvedTaskByDifficulty(ctx context.Context, arg SelectUnsolvedTaskByDifficultyParams) (Task, error)
-	SettleArenaGameAttemptCAS(ctx context.Context, arg SettleArenaGameAttemptCASParams) (ArenaGameAttempt, error)
-	SettleArenaSeriesCAS(ctx context.Context, arg SettleArenaSeriesCASParams) (ArenaSeries, error)
-	SoftDeleteIdlePlayer(ctx context.Context, arg SoftDeleteIdlePlayerParams) (Player, error)
-	StartArenaWaveCAS(ctx context.Context, arg StartArenaWaveCASParams) (ArenaWafe, error)
-	SupersedeArenaAssignmentCAS(ctx context.Context, arg SupersedeArenaAssignmentCASParams) (ArenaAssignment, error)
-	SupersedeArenaProjectionRevisionCAS(ctx context.Context, arg SupersedeArenaProjectionRevisionCASParams) (ArenaProjectionRevision, error)
-	TaskInActiveDuel(ctx context.Context, taskID uuid.UUID) (bool, error)
+	ListAssignmentBranches(ctx context.Context, planID uuid.UUID) ([]ListAssignmentBranchesRow, error)
+	ListAssignmentPlanEdges(ctx context.Context, planID uuid.UUID) ([]AssignmentPlanEdge, error)
+	ListAssignmentTaskDeliveryReceipts(ctx context.Context, assignmentID uuid.UUID) ([]TaskDeliveryReceipt, error)
+	ListAssignmentTaskSnapshotsForPlan(ctx context.Context, planID uuid.UUID) ([]TaskSnapshot, error)
+	ListAssignmentTaskVersionReservations(ctx context.Context, planID uuid.UUID) ([]ListAssignmentTaskVersionReservationsRow, error)
+	ListCheckedInTournamentPlayerIDs(ctx context.Context, rosterID uuid.UUID) ([]uuid.UUID, error)
+	ListCorrectionDescendants(ctx context.Context, arg ListCorrectionDescendantsParams) ([]ListCorrectionDescendantsRow, error)
+	ListCorrectionProjectionDecisions(ctx context.Context, arg ListCorrectionProjectionDecisionsParams) ([]CorrectionProjectionDecision, error)
+	ListDraftActions(ctx context.Context, draftID uuid.UUID) ([]DraftAction, error)
+	ListDraftRevisions(ctx context.Context, draftID uuid.UUID) ([]DraftRevision, error)
+	ListExecutionRecoveryGames(ctx context.Context, arg ListExecutionRecoveryGamesParams) ([]ListExecutionRecoveryGamesRow, error)
+	ListExecutionRecoveryTournaments(ctx context.Context) ([]uuid.UUID, error)
+	ListGameAttempts(ctx context.Context, slotID uuid.UUID) ([]ListGameAttemptsRow, error)
+	ListGoldenAttempts(ctx context.Context, arg ListGoldenAttemptsParams) ([]GoldenAttempt, error)
+	ListGoldenMemberships(ctx context.Context, arg ListGoldenMembershipsParams) ([]GoldenMembership, error)
+	ListGoldenPositionCommits(ctx context.Context, arg ListGoldenPositionCommitsParams) ([]GoldenPositionCommit, error)
+	ListGoldenProvisionalSubmissions(ctx context.Context, arg ListGoldenProvisionalSubmissionsParams) ([]GoldenProvisionalSubmission, error)
+	ListGoldenReadyDisconnects(ctx context.Context, arg ListGoldenReadyDisconnectsParams) ([]GoldenReadyDisconnect, error)
+	ListGoldenRecoveryRevisions(ctx context.Context, arg ListGoldenRecoveryRevisionsParams) ([]GoldenRecoveryRevision, error)
+	ListGoldenReservePromotions(ctx context.Context, arg ListGoldenReservePromotionsParams) ([]GoldenReservePromotion, error)
+	ListOperatorTournamentReadAuditLinks(ctx context.Context, tournamentID uuid.UUID) ([]ListOperatorTournamentReadAuditLinksRow, error)
+	ListOperatorTournamentReadPresence(ctx context.Context, tournamentID uuid.UUID) ([]ListOperatorTournamentReadPresenceRow, error)
+	ListOperatorTournamentReadReplays(ctx context.Context, tournamentID uuid.UUID) ([]ListOperatorTournamentReadReplaysRow, error)
+	ListOperatorTournamentReadWaveMembers(ctx context.Context, tournamentID uuid.UUID) ([]ListOperatorTournamentReadWaveMembersRow, error)
+	ListOperatorTournamentReadWaves(ctx context.Context, tournamentID uuid.UUID) ([]ListOperatorTournamentReadWavesRow, error)
+	ListParticipantForfeitPresence(ctx context.Context, arg ListParticipantForfeitPresenceParams) ([]uuid.UUID, error)
+	ListParticipantGameResultRevisionIDs(ctx context.Context, arg ListParticipantGameResultRevisionIDsParams) ([]uuid.UUID, error)
+	ListParticipantLobbySeries(ctx context.Context, arg ListParticipantLobbySeriesParams) ([]ListParticipantLobbySeriesRow, error)
+	ListParticipantReadinessEvents(ctx context.Context, arg ListParticipantReadinessEventsParams) ([]ReadinessEvent, error)
+	// A participant settlement may expose an active Swiss round only at the
+	// instant its final Series becomes terminal. The eligibility CTE is stricter
+	// than the completed-wave reader: it locks the Wave graph, requires every
+	// current Game and Series head to be terminal, and requires exact immutable
+	// ledger coverage for every Series and optional bye. Partial active Waves are
+	// deliberately excluded and retain their previous standings artifact.
+	ListParticipantSettlementSwissProjectionLedger(ctx context.Context, arg ListParticipantSettlementSwissProjectionLedgerParams) ([]ListParticipantSettlementSwissProjectionLedgerRow, error)
+	// The completed Series is locked by ResultPostgres before this query runs.
+	// This query locks the immutable Swiss membership and participant source rows
+	// in stable order so ledger rows can be appended in the same transaction.
+	ListParticipantSettlementSwissSeriesLedgerSources(ctx context.Context, arg ListParticipantSettlementSwissSeriesLedgerSourcesParams) ([]ListParticipantSettlementSwissSeriesLedgerSourcesRow, error)
+	ListParticipantStateSeriesGraph(ctx context.Context, arg ListParticipantStateSeriesGraphParams) ([]ListParticipantStateSeriesGraphRow, error)
+	ListParticipantStateWaveMembers(ctx context.Context, waveID uuid.UUID) ([]ListParticipantStateWaveMembersRow, error)
+	ListParticipantSubmissionHistory(ctx context.Context, arg ListParticipantSubmissionHistoryParams) ([]SubmissionEvent, error)
+	ListParticipantSubmissionPresence(ctx context.Context, arg ListParticipantSubmissionPresenceParams) ([]uuid.UUID, error)
+	ListPendingRecoveryDeadlines(ctx context.Context, arg ListPendingRecoveryDeadlinesParams) ([]ListPendingRecoveryDeadlinesRow, error)
+	ListProjectionArtifactDependencies(ctx context.Context, arg ListProjectionArtifactDependenciesParams) ([]ProjectionDependency, error)
+	ListProjectionArtifactMembers(ctx context.Context, arg ListProjectionArtifactMembersParams) ([]ProjectionArtifactMember, error)
+	ListProjectionRevisionArtifacts(ctx context.Context, arg ListProjectionRevisionArtifactsParams) ([]ProjectionRevisionArtifact, error)
+	ListProjectionRevisions(ctx context.Context, arg ListProjectionRevisionsParams) ([]ProjectionRevision, error)
+	ListPublicTournamentReadDraftActions(ctx context.Context, draftID uuid.UUID) ([]ListPublicTournamentReadDraftActionsRow, error)
+	ListPublicTournamentReadResults(ctx context.Context, tournamentID uuid.UUID) ([]ListPublicTournamentReadResultsRow, error)
+	ListPublicTournamentReadSeries(ctx context.Context, tournamentID uuid.UUID) ([]ListPublicTournamentReadSeriesRow, error)
+	ListRealtimeOutboxAfter(ctx context.Context, arg ListRealtimeOutboxAfterParams) ([]ListRealtimeOutboxAfterRow, error)
+	ListRecoveryGameResultRevisionIDs(ctx context.Context, arg ListRecoveryGameResultRevisionIDsParams) ([]uuid.UUID, error)
+	ListRecoveryPresence(ctx context.Context, arg ListRecoveryPresenceParams) ([]PresenceState, error)
+	ListRecoveryReadyWindowSeries(ctx context.Context, arg ListRecoveryReadyWindowSeriesParams) ([]ListRecoveryReadyWindowSeriesRow, error)
+	ListRecoveryReconnectCounters(ctx context.Context, arg ListRecoveryReconnectCountersParams) ([]ReconnectSlotCounter, error)
+	ListRecoveryReconnectIntervals(ctx context.Context, arg ListRecoveryReconnectIntervalsParams) ([]ReconnectInterval, error)
+	ListRecoverySeriesGraph(ctx context.Context, arg ListRecoverySeriesGraphParams) ([]ListRecoverySeriesGraphRow, error)
+	ListResultAuditPage(ctx context.Context, arg ListResultAuditPageParams) ([]ListResultAuditPageRow, error)
+	ListResultHistory(ctx context.Context, arg ListResultHistoryParams) ([]ListResultHistoryRow, error)
+	ListResultProjectionDependencies(ctx context.Context, arg ListResultProjectionDependenciesParams) ([]ResultProjectionDependency, error)
+	ListResultProjectionNodes(ctx context.Context, arg ListResultProjectionNodesParams) ([]ResultProjectionNode, error)
+	ListSwissOpponentHistory(ctx context.Context, rosterID uuid.UUID) ([]ListSwissOpponentHistoryRow, error)
+	ListSwissRoundProofMembers(ctx context.Context, arg ListSwissRoundProofMembersParams) ([]SwissRoundLockProofMember, error)
+	ListSwissRoundProofSeries(ctx context.Context, arg ListSwissRoundProofSeriesParams) ([]SwissRoundLockProofSeries, error)
+	ListSwissRounds(ctx context.Context, rosterID uuid.UUID) ([]SwissRound, error)
+	ListTaskPoolVersionHealth(ctx context.Context, taskPoolRevisionIds []uuid.UUID) ([]ListTaskPoolVersionHealthRow, error)
+	ListTasks(ctx context.Context) ([]ListTasksRow, error)
+	ListTournamentAdminCorrectionGameResults(ctx context.Context, arg ListTournamentAdminCorrectionGameResultsParams) ([]ListTournamentAdminCorrectionGameResultsRow, error)
+	ListTournamentAdminCorrectionPlans(ctx context.Context, arg ListTournamentAdminCorrectionPlansParams) ([]ListTournamentAdminCorrectionPlansRow, error)
+	ListTournamentAdminCorrectionProjectionParticipants(ctx context.Context, rosterID uuid.UUID) ([]ListTournamentAdminCorrectionProjectionParticipantsRow, error)
+	ListTournamentAdminCorrectionProjectionSeries(ctx context.Context, arg ListTournamentAdminCorrectionProjectionSeriesParams) ([]ListTournamentAdminCorrectionProjectionSeriesRow, error)
+	ListTournamentAdminCorrectionReservations(ctx context.Context, arg ListTournamentAdminCorrectionReservationsParams) ([]ListTournamentAdminCorrectionReservationsRow, error)
+	ListTournamentAdminCorrectionSwissPointLedger(ctx context.Context, arg ListTournamentAdminCorrectionSwissPointLedgerParams) ([]ListTournamentAdminCorrectionSwissPointLedgerRow, error)
+	ListTournamentAdminRosterParticipants(ctx context.Context, tournamentID uuid.UUID) ([]ListTournamentAdminRosterParticipantsRow, error)
+	ListTournamentAdminSnapshotActiveDraftIDs(ctx context.Context, waveID uuid.UUID) ([]uuid.UUID, error)
+	ListTournamentAdminSnapshotGameAttempts(ctx context.Context, arg ListTournamentAdminSnapshotGameAttemptsParams) ([]ListTournamentAdminSnapshotGameAttemptsRow, error)
+	ListTournamentAdminSnapshotGameSlots(ctx context.Context, arg ListTournamentAdminSnapshotGameSlotsParams) ([]GameSlot, error)
+	ListTournamentAdminSnapshotPauseClocks(ctx context.Context, arg ListTournamentAdminSnapshotPauseClocksParams) ([]PauseClock, error)
+	ListTournamentAdminSnapshotPauses(ctx context.Context, arg ListTournamentAdminSnapshotPausesParams) ([]Pause, error)
+	ListTournamentAdminSnapshotPresence(ctx context.Context, arg ListTournamentAdminSnapshotPresenceParams) ([]PresenceState, error)
+	ListTournamentAdminSnapshotReconnectCounters(ctx context.Context, arg ListTournamentAdminSnapshotReconnectCountersParams) ([]ReconnectSlotCounter, error)
+	ListTournamentAdminSnapshotReconnectIntervals(ctx context.Context, arg ListTournamentAdminSnapshotReconnectIntervalsParams) ([]ReconnectInterval, error)
+	ListTournamentAdminSnapshotSeries(ctx context.Context, arg ListTournamentAdminSnapshotSeriesParams) ([]Series, error)
+	ListTournamentAdminSnapshotWaveMembers(ctx context.Context, arg ListTournamentAdminSnapshotWaveMembersParams) ([]ListTournamentAdminSnapshotWaveMembersRow, error)
+	ListTournamentAdminSnapshotWaves(ctx context.Context, arg ListTournamentAdminSnapshotWavesParams) ([]ListTournamentAdminSnapshotWavesRow, error)
+	ListTournamentContentCategoryPoolMemberships(ctx context.Context, configurationID uuid.UUID) ([]TournamentCategoryPoolMembership, error)
+	ListTournamentContentCategoryPoolRevisions(ctx context.Context, configurationID uuid.UUID) ([]TournamentCategoryPoolRevision, error)
+	ListTournamentContentStageDefaults(ctx context.Context, configurationID uuid.UUID) ([]TournamentContentStageDefault, error)
+	ListTournamentParticipants(ctx context.Context, rosterID uuid.UUID) ([]ListTournamentParticipantsRow, error)
+	ListTournamentPreflightPairings(ctx context.Context, arg ListTournamentPreflightPairingsParams) ([]ListTournamentPreflightPairingsRow, error)
+	ListTournamentPreflightParticipants(ctx context.Context, arg ListTournamentPreflightParticipantsParams) ([]ListTournamentPreflightParticipantsRow, error)
+	ListTournamentReadParticipants(ctx context.Context, tournamentID uuid.UUID) ([]ListTournamentReadParticipantsRow, error)
+	ListTournamentReservations(ctx context.Context, tournamentID uuid.UUID) ([]ParticipantReservation, error)
+	ListTournamentSummaries(ctx context.Context) ([]ListTournamentSummariesRow, error)
+	ListTournaments(ctx context.Context) ([]Tournament, error)
+	ListWaveMembers(ctx context.Context, waveID uuid.UUID) ([]WaveMember, error)
+	ListWaveReadinessHeads(ctx context.Context, waveID uuid.UUID) ([]WaveReadiness, error)
+	ListWaveSeries(ctx context.Context, waveID uuid.UUID) ([]Series, error)
+	LoadExecutionAuthority(ctx context.Context, tournamentID uuid.UUID) (ExecutionAuthorityLease, error)
+	LoadGoldenRepositoryHead(ctx context.Context, scopeID uuid.UUID) (LoadGoldenRepositoryHeadRow, error)
+	LoadGoldenRepositoryScope(ctx context.Context, id uuid.UUID) (GoldenRepositoryScope, error)
+	LockAssignment(ctx context.Context, id uuid.UUID) (Assignment, error)
+	LockAssignmentDraftChildScope(ctx context.Context, arg LockAssignmentDraftChildScopeParams) ([]LockAssignmentDraftChildScopeRow, error)
+	LockAssignmentPlan(ctx context.Context, id uuid.UUID) (LockAssignmentPlanRow, error)
+	LockCorrectionAssignments(ctx context.Context, arg LockCorrectionAssignmentsParams) ([]uuid.UUID, error)
+	LockCorrectionCutoffWaves(ctx context.Context, arg LockCorrectionCutoffWavesParams) ([]LockCorrectionCutoffWavesRow, error)
+	LockCorrectionDescendants(ctx context.Context, arg LockCorrectionDescendantsParams) ([]LockCorrectionDescendantsRow, error)
+	LockCorrectionGoldenAttempts(ctx context.Context, arg LockCorrectionGoldenAttemptsParams) ([]uuid.UUID, error)
+	LockCorrectionGoldenLatestStateAttemptMembers(ctx context.Context, arg LockCorrectionGoldenLatestStateAttemptMembersParams) ([]LockCorrectionGoldenLatestStateAttemptMembersRow, error)
+	LockCorrectionGoldenLatestStateAttempts(ctx context.Context, arg LockCorrectionGoldenLatestStateAttemptsParams) ([]LockCorrectionGoldenLatestStateAttemptsRow, error)
+	LockCorrectionGoldenLatestStateMembers(ctx context.Context, arg LockCorrectionGoldenLatestStateMembersParams) ([]LockCorrectionGoldenLatestStateMembersRow, error)
+	LockCorrectionGoldenPositionLedgerRevisions(ctx context.Context, arg LockCorrectionGoldenPositionLedgerRevisionsParams) ([]LockCorrectionGoldenPositionLedgerRevisionsRow, error)
+	LockCorrectionGoldenPrestartHeads(ctx context.Context, arg LockCorrectionGoldenPrestartHeadsParams) ([]LockCorrectionGoldenPrestartHeadsRow, error)
+	LockCorrectionGoldenStageGroups(ctx context.Context, arg LockCorrectionGoldenStageGroupsParams) ([]LockCorrectionGoldenStageGroupsRow, error)
+	LockCorrectionGoldenStageMembers(ctx context.Context, arg LockCorrectionGoldenStageMembersParams) ([]LockCorrectionGoldenStageMembersRow, error)
+	LockCorrectionGoldenStateRevisions(ctx context.Context, arg LockCorrectionGoldenStateRevisionsParams) ([]LockCorrectionGoldenStateRevisionsRow, error)
+	LockCorrectionLatestProjectionNode(ctx context.Context, arg LockCorrectionLatestProjectionNodeParams) (ResultProjectionNode, error)
+	LockCorrectionOfficialHeads(ctx context.Context, arg LockCorrectionOfficialHeadsParams) ([]OfficialResultHead, error)
+	LockCorrectionOpenReadyWindows(ctx context.Context, arg LockCorrectionOpenReadyWindowsParams) ([]LockCorrectionOpenReadyWindowsRow, error)
+	LockCorrectionSeriesAttempts(ctx context.Context, arg LockCorrectionSeriesAttemptsParams) ([]uuid.UUID, error)
+	LockCorrectionTournamentScope(ctx context.Context, arg LockCorrectionTournamentScopeParams) (LockCorrectionTournamentScopeRow, error)
+	LockCurrentTaskPoolPublication(ctx context.Context) ([]LockCurrentTaskPoolPublicationRow, error)
+	LockExactDraftAssignmentBranches(ctx context.Context, planID uuid.UUID) ([]LockExactDraftAssignmentBranchesRow, error)
+	LockExactDraftAssignmentChildCandidates(ctx context.Context, planID uuid.UUID) ([]ExactDraftAssignmentChildCandidate, error)
+	LockExactDraftAssignmentChildHistory(ctx context.Context, planID uuid.UUID) ([]ExactDraftAssignmentChildHistory, error)
+	LockExactDraftAssignmentChildParticipants(ctx context.Context, planID uuid.UUID) ([]ExactDraftAssignmentChildParticipant, error)
+	LockExactDraftAssignmentChildSources(ctx context.Context, planID uuid.UUID) ([]ExactDraftAssignmentChildSource, error)
+	LockExactDraftAssignmentChildren(ctx context.Context, planID uuid.UUID) ([]LockExactDraftAssignmentChildrenRow, error)
+	LockExactDraftAssignmentPlan(ctx context.Context, planID uuid.UUID) (LockExactDraftAssignmentPlanRow, error)
+	LockExactDraftAssignmentSource(ctx context.Context, planID uuid.UUID) (LockExactDraftAssignmentSourceRow, error)
+	// The health-attestation guard takes FOR UPDATE on task_version. This exact
+	// planning lock therefore serializes the candidate snapshot with every
+	// health transition until the plan has been persisted or rejected.
+	LockExactDraftPlanningCandidates(ctx context.Context, arg LockExactDraftPlanningCandidatesParams) ([]LockExactDraftPlanningCandidatesRow, error)
+	LockExactDraftPlanningHistory(ctx context.Context, draftID uuid.UUID) ([]LockExactDraftPlanningHistoryRow, error)
+	LockExactDraftPlanningHistoryHead(ctx context.Context, draftID uuid.UUID) (LockExactDraftPlanningHistoryHeadRow, error)
+	LockExactDraftPlanningParticipants(ctx context.Context, draftID uuid.UUID) ([]LockExactDraftPlanningParticipantsRow, error)
+	LockExactDraftPlanningReservationKeys(ctx context.Context, draftID uuid.UUID) error
+	// Exact draft assignment persistence keeps every reachable draft branch and
+	// every per-category normal assignment reservation. It is intentionally
+	// separate from assignment.sql because one draft branch owns three ordinary
+	// assignment branches, not one collapsed JSON payload.
+	LockExactDraftPlanningStage(ctx context.Context, draftID uuid.UUID) (LockExactDraftPlanningStageRow, error)
+	LockExecutionAuthorityScope(ctx context.Context, tournamentID uuid.UUID) (uuid.UUID, error)
+	LockExecutionEpochReplayFence(ctx context.Context, arg LockExecutionEpochReplayFenceParams) (LockExecutionEpochReplayFenceRow, error)
+	LockFinalProjectionAggregate(ctx context.Context, arg LockFinalProjectionAggregateParams) (LockFinalProjectionAggregateRow, error)
+	LockFinalProjectionAttempts(ctx context.Context, arg LockFinalProjectionAttemptsParams) ([]LockFinalProjectionAttemptsRow, error)
+	LockFinalProjectionResultCommits(ctx context.Context, arg LockFinalProjectionResultCommitsParams) ([]LockFinalProjectionResultCommitsRow, error)
+	LockFinalProjectionScoreHead(ctx context.Context, arg LockFinalProjectionScoreHeadParams) (LockFinalProjectionScoreHeadRow, error)
+	LockFinalProjectionSeriesResultHead(ctx context.Context, arg LockFinalProjectionSeriesResultHeadParams) (LockFinalProjectionSeriesResultHeadRow, error)
+	LockFinalPublicationArtifactMembership(ctx context.Context, arg LockFinalPublicationArtifactMembershipParams) ([]LockFinalPublicationArtifactMembershipRow, error)
+	LockFinalSwissPublicationGames(ctx context.Context, arg LockFinalSwissPublicationGamesParams) ([]LockFinalSwissPublicationGamesRow, error)
+	LockFinalSwissPublicationNodes(ctx context.Context, arg LockFinalSwissPublicationNodesParams) ([]LockFinalSwissPublicationNodesRow, error)
+	LockFinalSwissPublicationSeries(ctx context.Context, arg LockFinalSwissPublicationSeriesParams) ([]LockFinalSwissPublicationSeriesRow, error)
+	LockGoldenAttempt(ctx context.Context, arg LockGoldenAttemptParams) (GoldenAttempt, error)
+	LockGoldenRepositoryHead(ctx context.Context, scopeID uuid.UUID) (LockGoldenRepositoryHeadRow, error)
+	LockGoldenRepositoryScope(ctx context.Context, arg LockGoldenRepositoryScopeParams) (GoldenRepositoryScope, error)
+	LockLatestFinalSwissReceipt(ctx context.Context, arg LockLatestFinalSwissReceiptParams) (LockLatestFinalSwissReceiptRow, error)
+	// A pre-start operator forfeit may omit an expected Game. In that case the
+	// latest planned or ready attempt is the only legal sequence anchor.
+	LockOperatorForfeitAttempt(ctx context.Context, arg LockOperatorForfeitAttemptParams) (uuid.UUID, error)
+	LockOperatorForfeitSnapshot(ctx context.Context, arg LockOperatorForfeitSnapshotParams) (LockOperatorForfeitSnapshotRow, error)
+	LockOperatorNoShowAttempt(ctx context.Context, arg LockOperatorNoShowAttemptParams) (uuid.UUID, error)
+	// No-show locks the shared publication/Wave authority before any attempt,
+	// matching WaveStart's projection/header -> Series -> Game order. The lateral
+	// publication lock also precedes outer row locks in operator workflow prepare.
+	LockOperatorNoShowPublication(ctx context.Context, arg LockOperatorNoShowPublicationParams) (uuid.UUID, error)
+	LockOperatorNoShowReadiness(ctx context.Context, arg LockOperatorNoShowReadinessParams) ([]WaveReadiness, error)
+	LockOperatorNoShowSnapshot(ctx context.Context, arg LockOperatorNoShowSnapshotParams) (LockOperatorNoShowSnapshotRow, error)
+	LockOperatorReplayReserveForReplacement(ctx context.Context, arg LockOperatorReplayReserveForReplacementParams) (OperatorReplayReserve, error)
+	LockOperatorResultAuthority(ctx context.Context, arg LockOperatorResultAuthorityParams) (LockOperatorResultAuthorityRow, error)
+	LockParticipantCommandAuthority(ctx context.Context, arg LockParticipantCommandAuthorityParams) (LockParticipantCommandAuthorityRow, error)
+	LockParticipantDraftAuthority(ctx context.Context, arg LockParticipantDraftAuthorityParams) (LockParticipantDraftAuthorityRow, error)
+	LockParticipantPostSeriesAuthority(ctx context.Context, arg LockParticipantPostSeriesAuthorityParams) (LockParticipantPostSeriesAuthorityRow, error)
+	LockParticipantReadinessState(ctx context.Context, arg LockParticipantReadinessStateParams) (LockParticipantReadinessStateRow, error)
+	LockParticipantReadyAuthority(ctx context.Context, arg LockParticipantReadyAuthorityParams) (LockParticipantReadyAuthorityRow, error)
+	LockParticipantSubmissionAuthority(ctx context.Context, arg LockParticipantSubmissionAuthorityParams) (LockParticipantSubmissionAuthorityRow, error)
+	// This immutable scope lock is intentionally usable after Game completion.
+	// It establishes authorization for an exact command replay before fresh-command
+	// active-assignment checks and before projection revision comparison.
+	LockParticipantSubmissionReplayScope(ctx context.Context, arg LockParticipantSubmissionReplayScopeParams) (LockParticipantSubmissionReplayScopeRow, error)
+	LockParticipantSurrenderAuthority(ctx context.Context, arg LockParticipantSurrenderAuthorityParams) (LockParticipantSurrenderAuthorityRow, error)
+	LockPostseasonFinalAdvancements(ctx context.Context, arg LockPostseasonFinalAdvancementsParams) ([]LockPostseasonFinalAdvancementsRow, error)
+	LockPostseasonFinalGenesis(ctx context.Context, arg LockPostseasonFinalGenesisParams) (uuid.UUID, error)
+	LockPostseasonFinalInitialization(ctx context.Context, arg LockPostseasonFinalInitializationParams) (TournamentStagePlayoffFinalInitialization, error)
+	// The terminal playoff coordinator owns only normalized stage evidence and
+	// graph creation. Result settlement and final projection publication retain
+	// their existing repositories and execute in the caller's outer transaction.
+	LockPostseasonFinalNormalPool(ctx context.Context, arg LockPostseasonFinalNormalPoolParams) (uuid.UUID, error)
+	LockPostseasonFinalProgressions(ctx context.Context, arg LockPostseasonFinalProgressionsParams) ([]TournamentStagePlayoffFinalProgression, error)
+	LockPostseasonFinalScoreHistory(ctx context.Context, arg LockPostseasonFinalScoreHistoryParams) ([]LockPostseasonFinalScoreHistoryRow, error)
+	LockPostseasonFinalStage(ctx context.Context, arg LockPostseasonFinalStageParams) (LockPostseasonFinalStageRow, error)
+	LockPostseasonSemifinalAuthority(ctx context.Context, arg LockPostseasonSemifinalAuthorityParams) ([]LockPostseasonSemifinalAuthorityRow, error)
+	LockPreStartSwissSeriesWave(ctx context.Context, arg LockPreStartSwissSeriesWaveParams) ([]LockPreStartSwissSeriesWaveRow, error)
+	LockProjectionRevisionSet(ctx context.Context, arg LockProjectionRevisionSetParams) ([]uuid.UUID, error)
+	LockProjectionRoster(ctx context.Context, arg LockProjectionRosterParams) (Roster, error)
+	LockRecoveryGameTimeout(ctx context.Context, arg LockRecoveryGameTimeoutParams) (LockRecoveryGameTimeoutRow, error)
+	LockRecoveryReadyWindow(ctx context.Context, arg LockRecoveryReadyWindowParams) (LockRecoveryReadyWindowRow, error)
+	LockRecoveryReconnectTimeout(ctx context.Context, arg LockRecoveryReconnectTimeoutParams) (LockRecoveryReconnectTimeoutRow, error)
+	LockReplayReserveAuthority(ctx context.Context, arg LockReplayReserveAuthorityParams) (LockReplayReserveAuthorityRow, error)
+	LockReplayReserveAuthorityPool(ctx context.Context, assignmentID uuid.UUID) ([]ReplayReserveAuthorityPoolVersion, error)
+	LockReplayReserveExhaustionForOperatorReserve(ctx context.Context, arg LockReplayReserveExhaustionForOperatorReserveParams) (ReplayReserveExhaustion, error)
+	LockReplayWorkflowGameResultHeads(ctx context.Context, arg LockReplayWorkflowGameResultHeadsParams) ([]LockReplayWorkflowGameResultHeadsRow, error)
+	LockReplayWorkflowOldWaveExecution(ctx context.Context, arg LockReplayWorkflowOldWaveExecutionParams) ([]LockReplayWorkflowOldWaveExecutionRow, error)
+	LockReplayWorkflowParticipantReservations(ctx context.Context, arg LockReplayWorkflowParticipantReservationsParams) ([]LockReplayWorkflowParticipantReservationsRow, error)
+	LockReplayWorkflowReceipts(ctx context.Context, assignmentID uuid.UUID) ([]TaskDeliveryReceipt, error)
+	LockReplayWorkflowReserveChain(ctx context.Context, arg LockReplayWorkflowReserveChainParams) ([]LockReplayWorkflowReserveChainRow, error)
+	LockReplayWorkflowRoutes(ctx context.Context, arg LockReplayWorkflowRoutesParams) ([]WaveMemberRoute, error)
+	LockReplayWorkflowScoreHead(ctx context.Context, arg LockReplayWorkflowScoreHeadParams) (LockReplayWorkflowScoreHeadRow, error)
+	LockReplayWorkflowSeriesGraph(ctx context.Context, arg LockReplayWorkflowSeriesGraphParams) ([]LockReplayWorkflowSeriesGraphRow, error)
+	LockReplayWorkflowSource(ctx context.Context, arg LockReplayWorkflowSourceParams) (LockReplayWorkflowSourceRow, error)
+	LockReplayWorkflowTask(ctx context.Context, taskID uuid.UUID) (LockReplayWorkflowTaskRow, error)
+	LockResultAttempt(ctx context.Context, arg LockResultAttemptParams) (LockResultAttemptRow, error)
+	LockResultSeries(ctx context.Context, arg LockResultSeriesParams) (LockResultSeriesRow, error)
+	// The result writer reads this after the Series lock. It persists an exact
+	// source identity, rather than deriving a source from an eventual projection.
+	LockResultSourceProjection(ctx context.Context, arg LockResultSourceProjectionParams) (LockResultSourceProjectionRow, error)
+	LockSeriesScoreRevisionAttempts(ctx context.Context, arg LockSeriesScoreRevisionAttemptsParams) ([]SeriesScoreRevisionAttempt, error)
+	// Stage genesis separates the logical node ID from the score revision ID.
+	// Resolve only immutable, exact command/Series evidence, never mutable heads.
+	LockStageScoreGenesisNodes(ctx context.Context, arg LockStageScoreGenesisNodesParams) ([]LockStageScoreGenesisNodesRow, error)
+	LockSwissRoundCAS(ctx context.Context, arg LockSwissRoundCASParams) (SwissRound, error)
+	LockSwissRoundForUpdate(ctx context.Context, id uuid.UUID) (SwissRound, error)
+	LockTaskForContentMutation(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
+	LockTerminalProjectionCommit(ctx context.Context, arg LockTerminalProjectionCommitParams) ([]LockTerminalProjectionCommitRow, error)
+	LockTerminalProjectionRevisions(ctx context.Context, arg LockTerminalProjectionRevisionsParams) ([]LockTerminalProjectionRevisionsRow, error)
+	LockTerminalSwissPointSource(ctx context.Context, arg LockTerminalSwissPointSourceParams) ([]LockTerminalSwissPointSourceRow, error)
+	LockTournamentAdminCorrectionPlayoffBracket(ctx context.Context, arg LockTournamentAdminCorrectionPlayoffBracketParams) ([]LockTournamentAdminCorrectionPlayoffBracketRow, error)
+	LockTournamentAdminCorrectionSwissPointSourceSeries(ctx context.Context, arg LockTournamentAdminCorrectionSwissPointSourceSeriesParams) ([]uuid.UUID, error)
+	LockTournamentAdminCorrectionTopFour(ctx context.Context, arg LockTournamentAdminCorrectionTopFourParams) ([]LockTournamentAdminCorrectionTopFourRow, error)
+	LockTournamentAdminWaveAssignments(ctx context.Context, waveID uuid.UUID) ([]LockTournamentAdminWaveAssignmentsRow, error)
+	LockTournamentAdminWaveAuthority(ctx context.Context, arg LockTournamentAdminWaveAuthorityParams) (LockTournamentAdminWaveAuthorityRow, error)
+	LockTournamentAdminWaveDeliveries(ctx context.Context, waveID uuid.UUID) ([]LockTournamentAdminWaveDeliveriesRow, error)
+	LockTournamentAdminWaveGames(ctx context.Context, waveID uuid.UUID) ([]LockTournamentAdminWaveGamesRow, error)
+	LockTournamentAdminWaveMembers(ctx context.Context, waveID uuid.UUID) ([]LockTournamentAdminWaveMembersRow, error)
+	LockTournamentAdminWaveSeries(ctx context.Context, waveID uuid.UUID) ([]LockTournamentAdminWaveSeriesRow, error)
+	LockTournamentCancellationAuthority(ctx context.Context, tournamentID uuid.UUID) (LockTournamentCancellationAuthorityRow, error)
+	LockTournamentCancellationOutboxIdempotency(ctx context.Context, idempotencyKey string) error
+	LockTournamentCreateCommand(ctx context.Context, commandID string) (int32, error)
+	LockTournamentLifecycleAssignments(ctx context.Context, arg LockTournamentLifecycleAssignmentsParams) ([]uuid.UUID, error)
+	LockTournamentLifecycleAuthority(ctx context.Context, tournamentID uuid.UUID) (LockTournamentLifecycleAuthorityRow, error)
+	LockTournamentLifecycleChildPauses(ctx context.Context, arg LockTournamentLifecycleChildPausesParams) ([]uuid.UUID, error)
+	LockTournamentLifecycleDraftRevisions(ctx context.Context, arg LockTournamentLifecycleDraftRevisionsParams) ([]uuid.UUID, error)
+	LockTournamentLifecycleGames(ctx context.Context, arg LockTournamentLifecycleGamesParams) ([]uuid.UUID, error)
+	LockTournamentLifecycleGolden(ctx context.Context, arg LockTournamentLifecycleGoldenParams) ([]uuid.UUID, error)
+	LockTournamentLifecycleReadiness(ctx context.Context, arg LockTournamentLifecycleReadinessParams) ([]uuid.UUID, error)
+	LockTournamentLifecycleReadyWindows(ctx context.Context, arg LockTournamentLifecycleReadyWindowsParams) ([]uuid.UUID, error)
+	LockTournamentLifecycleReconnect(ctx context.Context, arg LockTournamentLifecycleReconnectParams) ([]uuid.UUID, error)
+	LockTournamentLifecycleScope(ctx context.Context, tournamentID uuid.UUID) (uuid.UUID, error)
+	LockTournamentLifecycleSeries(ctx context.Context, arg LockTournamentLifecycleSeriesParams) ([]uuid.UUID, error)
+	LockTournamentLifecycleWaves(ctx context.Context, arg LockTournamentLifecycleWavesParams) ([]uuid.UUID, error)
+	LockTournamentPairingAuthority(ctx context.Context, tournamentID uuid.UUID) (LockTournamentPairingAuthorityRow, error)
+	LockTournamentPairingByes(ctx context.Context, rosterID uuid.UUID) ([]LockTournamentPairingByesRow, error)
+	LockTournamentPairingHistory(ctx context.Context, rosterID uuid.UUID) ([]LockTournamentPairingHistoryRow, error)
+	LockTournamentPairingParticipants(ctx context.Context, rosterID uuid.UUID) ([]LockTournamentPairingParticipantsRow, error)
+	LockTournamentPairingRounds(ctx context.Context, rosterID uuid.UUID) ([]LockTournamentPairingRoundsRow, error)
+	LockTournamentPairingWaves(ctx context.Context, rosterID uuid.UUID) ([]LockTournamentPairingWavesRow, error)
+	// The Final Swiss receipt is an immutable incident snapshot. Unlike canonical
+	// materialization above, it must retain historical ledger pairs after a
+	// correction moves the Series head to its successor result revision.
+	LockTournamentProgressionAllSwissLedger(ctx context.Context, arg LockTournamentProgressionAllSwissLedgerParams) ([]LockTournamentProgressionAllSwissLedgerRow, error)
+	LockTournamentProgressionCurrentStandings(ctx context.Context, arg LockTournamentProgressionCurrentStandingsParams) ([]LockTournamentProgressionCurrentStandingsRow, error)
+	LockTournamentProgressionFinalSwissReceiptChain(ctx context.Context, arg LockTournamentProgressionFinalSwissReceiptChainParams) ([]LockTournamentProgressionFinalSwissReceiptChainRow, error)
+	LockTournamentProgressionFinalSwissReceiptGameEvidence(ctx context.Context, arg LockTournamentProgressionFinalSwissReceiptGameEvidenceParams) ([]LockTournamentProgressionFinalSwissReceiptGameEvidenceRow, error)
+	LockTournamentProgressionFinalSwissReceiptGames(ctx context.Context, arg LockTournamentProgressionFinalSwissReceiptGamesParams) ([]LockTournamentProgressionFinalSwissReceiptGamesRow, error)
+	LockTournamentProgressionFinalSwissReceiptLedger(ctx context.Context, arg LockTournamentProgressionFinalSwissReceiptLedgerParams) ([]LockTournamentProgressionFinalSwissReceiptLedgerRow, error)
+	LockTournamentProgressionFinalSwissReceiptLedgerEntries(ctx context.Context, arg LockTournamentProgressionFinalSwissReceiptLedgerEntriesParams) ([]LockTournamentProgressionFinalSwissReceiptLedgerEntriesRow, error)
+	// Logical result nodes are anchored by the exact IDs persisted in each
+	// receipt. Ordinary origins retain their revision identity; correction
+	// origins require their normalized binding. No current Series or Game head is
+	// consulted by this historical reader.
+	LockTournamentProgressionFinalSwissReceiptLogicalResultNodes(ctx context.Context, arg LockTournamentProgressionFinalSwissReceiptLogicalResultNodesParams) ([]LockTournamentProgressionFinalSwissReceiptLogicalResultNodesRow, error)
+	LockTournamentProgressionFinalSwissReceiptNormalNoShowCommits(ctx context.Context, arg LockTournamentProgressionFinalSwissReceiptNormalNoShowCommitsParams) ([]LockTournamentProgressionFinalSwissReceiptNormalNoShowCommitsRow, error)
+	LockTournamentProgressionFinalSwissReceiptOperatorForfeitCommits(ctx context.Context, arg LockTournamentProgressionFinalSwissReceiptOperatorForfeitCommitsParams) ([]LockTournamentProgressionFinalSwissReceiptOperatorForfeitCommitsRow, error)
+	// Every child read is scoped through the same canonical receipt chain. This
+	// makes a missing predecessor child observable instead of silently using the
+	// current mutable heads for an older canonical revision.
+	LockTournamentProgressionFinalSwissReceiptParticipants(ctx context.Context, arg LockTournamentProgressionFinalSwissReceiptParticipantsParams) ([]LockTournamentProgressionFinalSwissReceiptParticipantsRow, error)
+	LockTournamentProgressionFinalSwissReceiptProjectionDependencies(ctx context.Context, arg LockTournamentProgressionFinalSwissReceiptProjectionDependenciesParams) ([]LockTournamentProgressionFinalSwissReceiptProjectionDependenciesRow, error)
+	LockTournamentProgressionFinalSwissReceiptProjectionNodes(ctx context.Context, arg LockTournamentProgressionFinalSwissReceiptProjectionNodesParams) ([]LockTournamentProgressionFinalSwissReceiptProjectionNodesRow, error)
+	LockTournamentProgressionFinalSwissReceiptRounds(ctx context.Context, arg LockTournamentProgressionFinalSwissReceiptRoundsParams) ([]LockTournamentProgressionFinalSwissReceiptRoundsRow, error)
+	LockTournamentProgressionFinalSwissReceiptScoreRevisionAdjudications(ctx context.Context, arg LockTournamentProgressionFinalSwissReceiptScoreRevisionAdjudicationsParams) ([]LockTournamentProgressionFinalSwissReceiptScoreRevisionAdjudicationsRow, error)
+	LockTournamentProgressionFinalSwissReceiptScoreRevisionAttempts(ctx context.Context, arg LockTournamentProgressionFinalSwissReceiptScoreRevisionAttemptsParams) ([]LockTournamentProgressionFinalSwissReceiptScoreRevisionAttemptsRow, error)
+	LockTournamentProgressionFinalSwissReceiptSeries(ctx context.Context, arg LockTournamentProgressionFinalSwissReceiptSeriesParams) ([]LockTournamentProgressionFinalSwissReceiptSeriesRow, error)
+	// Historical receipt hydration deliberately joins the immutable IDs persisted
+	// by a receipt. It never follows a mutable Series, score, result, or
+	// correction head, so a corrected current projection cannot rewrite a prior
+	// Final Swiss predecessor.
+	LockTournamentProgressionFinalSwissReceiptSeriesEvidence(ctx context.Context, arg LockTournamentProgressionFinalSwissReceiptSeriesEvidenceParams) ([]LockTournamentProgressionFinalSwissReceiptSeriesEvidenceRow, error)
+	// Historical result and score revisions retain the exact physical published
+	// projection present when the receipt was accepted. This read is anchored to
+	// receipt IDs, never mutable current heads, so a correction cannot rewrite a
+	// prior Final Swiss predecessor.
+	LockTournamentProgressionFinalSwissReceiptSourceProjections(ctx context.Context, arg LockTournamentProgressionFinalSwissReceiptSourceProjectionsParams) ([]LockTournamentProgressionFinalSwissReceiptSourceProjectionsRow, error)
+	// Golden attempts are locked after their group revisions. A missing attempt
+	// remains observable in the preceding query and cannot be converted to a
+	// terminal settlement by this query.
+	LockTournamentProgressionGoldenAttempts(ctx context.Context, arg LockTournamentProgressionGoldenAttemptsParams) ([]LockTournamentProgressionGoldenAttemptsRow, error)
+	LockTournamentProgressionGoldenExactPlan(ctx context.Context, arg LockTournamentProgressionGoldenExactPlanParams) (LockTournamentProgressionGoldenExactPlanRow, error)
+	LockTournamentProgressionGoldenExactPlanCandidates(ctx context.Context, arg LockTournamentProgressionGoldenExactPlanCandidatesParams) ([]LockTournamentProgressionGoldenExactPlanCandidatesRow, error)
+	LockTournamentProgressionGoldenExactPlanEdges(ctx context.Context, arg LockTournamentProgressionGoldenExactPlanEdgesParams) ([]LockTournamentProgressionGoldenExactPlanEdgesRow, error)
+	LockTournamentProgressionGoldenExactPlanGroups(ctx context.Context, arg LockTournamentProgressionGoldenExactPlanGroupsParams) ([]LockTournamentProgressionGoldenExactPlanGroupsRow, error)
+	LockTournamentProgressionGoldenExactPlanHistory(ctx context.Context, arg LockTournamentProgressionGoldenExactPlanHistoryParams) ([]LockTournamentProgressionGoldenExactPlanHistoryRow, error)
+	LockTournamentProgressionGoldenExactPlanMembers(ctx context.Context, arg LockTournamentProgressionGoldenExactPlanMembersParams) ([]LockTournamentProgressionGoldenExactPlanMembersRow, error)
+	LockTournamentProgressionGoldenExactPlanParticipantReservations(ctx context.Context, arg LockTournamentProgressionGoldenExactPlanParticipantReservationsParams) ([]LockTournamentProgressionGoldenExactPlanParticipantReservationsRow, error)
+	LockTournamentProgressionGoldenExactPlanReservations(ctx context.Context, arg LockTournamentProgressionGoldenExactPlanReservationsParams) ([]LockTournamentProgressionGoldenExactPlanReservationsRow, error)
+	// Golden progression is hydrated from immutable plan, state, and position
+	// ledger rows. These locks follow the established Swiss result-head locks.
+	LockTournamentProgressionGoldenExactPlanSeal(ctx context.Context, arg LockTournamentProgressionGoldenExactPlanSealParams) (GoldenExactPlanSnapshotSeal, error)
+	// Position commits are locked after their bound Golden attempts.
+	LockTournamentProgressionGoldenPositionCommits(ctx context.Context, arg LockTournamentProgressionGoldenPositionCommitsParams) ([]LockTournamentProgressionGoldenPositionCommitsRow, error)
+	LockTournamentProgressionGoldenPositionLedger(ctx context.Context, arg LockTournamentProgressionGoldenPositionLedgerParams) ([]LockTournamentProgressionGoldenPositionLedgerRow, error)
+	LockTournamentProgressionGoldenPositionLedgerRevisionSeals(ctx context.Context, arg LockTournamentProgressionGoldenPositionLedgerRevisionSealsParams) ([]GoldenPositionLedgerRevisionSeal, error)
+	LockTournamentProgressionGoldenSettlements(ctx context.Context, arg LockTournamentProgressionGoldenSettlementsParams) ([]LockTournamentProgressionGoldenSettlementsRow, error)
+	LockTournamentProgressionGoldenStateAllocationInputs(ctx context.Context, arg LockTournamentProgressionGoldenStateAllocationInputsParams) ([]LockTournamentProgressionGoldenStateAllocationInputsRow, error)
+	LockTournamentProgressionGoldenStateAllocationPositions(ctx context.Context, arg LockTournamentProgressionGoldenStateAllocationPositionsParams) ([]LockTournamentProgressionGoldenStateAllocationPositionsRow, error)
+	LockTournamentProgressionGoldenStateAllocations(ctx context.Context, arg LockTournamentProgressionGoldenStateAllocationsParams) ([]LockTournamentProgressionGoldenStateAllocationsRow, error)
+	LockTournamentProgressionGoldenStateAttemptMembers(ctx context.Context, arg LockTournamentProgressionGoldenStateAttemptMembersParams) ([]LockTournamentProgressionGoldenStateAttemptMembersRow, error)
+	LockTournamentProgressionGoldenStateAttempts(ctx context.Context, arg LockTournamentProgressionGoldenStateAttemptsParams) ([]LockTournamentProgressionGoldenStateAttemptsRow, error)
+	LockTournamentProgressionGoldenStateMembers(ctx context.Context, arg LockTournamentProgressionGoldenStateMembersParams) ([]LockTournamentProgressionGoldenStateMembersRow, error)
+	LockTournamentProgressionGoldenStateNoShowParticipants(ctx context.Context, arg LockTournamentProgressionGoldenStateNoShowParticipantsParams) ([]LockTournamentProgressionGoldenStateNoShowParticipantsRow, error)
+	LockTournamentProgressionGoldenStateNoShowResolutions(ctx context.Context, arg LockTournamentProgressionGoldenStateNoShowResolutionsParams) ([]LockTournamentProgressionGoldenStateNoShowResolutionsRow, error)
+	LockTournamentProgressionGoldenStateReadyEvents(ctx context.Context, arg LockTournamentProgressionGoldenStateReadyEventsParams) ([]LockTournamentProgressionGoldenStateReadyEventsRow, error)
+	LockTournamentProgressionGoldenStateReadyWindowParticipants(ctx context.Context, arg LockTournamentProgressionGoldenStateReadyWindowParticipantsParams) ([]LockTournamentProgressionGoldenStateReadyWindowParticipantsRow, error)
+	LockTournamentProgressionGoldenStateReadyWindows(ctx context.Context, arg LockTournamentProgressionGoldenStateReadyWindowsParams) ([]LockTournamentProgressionGoldenStateReadyWindowsRow, error)
+	LockTournamentProgressionGoldenStateRevisionSeals(ctx context.Context, arg LockTournamentProgressionGoldenStateRevisionSealsParams) ([]GoldenStateRevisionSeal, error)
+	LockTournamentProgressionGoldenStateRevisions(ctx context.Context, arg LockTournamentProgressionGoldenStateRevisionsParams) ([]GoldenStateRevision, error)
+	LockTournamentProgressionGoldenStateTransitions(ctx context.Context, arg LockTournamentProgressionGoldenStateTransitionsParams) ([]LockTournamentProgressionGoldenStateTransitionsRow, error)
+	LockTournamentProgressionParticipants(ctx context.Context, rosterID uuid.UUID) ([]LockTournamentProgressionParticipantsRow, error)
+	// Terminal game heads supply the full, immutable game evidence referenced by
+	// a Series score. The progression adapter passes these normalized rows to the
+	// correction-owned SwissTerminalEvidenceReader; it must reject missing or
+	// non-terminal rows instead of filling them from an identifier.
+	LockTournamentProgressionSwissGameHeads(ctx context.Context, arg LockTournamentProgressionSwissGameHeadsParams) ([]LockTournamentProgressionSwissGameHeadsRow, error)
+	LockTournamentProgressionSwissLedger(ctx context.Context, arg LockTournamentProgressionSwissLedgerParams) ([]LockTournamentProgressionSwissLedgerRow, error)
+	// Normal no-show evidence is a distinct exhaustive terminal path. Its commit
+	// and game list are loaded separately from ordinary game heads so a missing
+	// game row cannot be mistaken for proof of a no-show.
+	LockTournamentProgressionSwissNormalNoShowCommits(ctx context.Context, arg LockTournamentProgressionSwissNormalNoShowCommitsParams) ([]LockTournamentProgressionSwissNormalNoShowCommitsRow, error)
+	LockTournamentProgressionSwissOperatorForfeitCommits(ctx context.Context, arg LockTournamentProgressionSwissOperatorForfeitCommitsParams) ([]LockTournamentProgressionSwissOperatorForfeitCommitsRow, error)
+	// Logical correction nodes retain the exact projection payload and digest for
+	// every game, score, and Series result. The reader selects only bindings whose
+	// source_id equals the already locked current result or score head.
+	LockTournamentProgressionSwissProjectionBindings(ctx context.Context, arg LockTournamentProgressionSwissProjectionBindingsParams) ([]LockTournamentProgressionSwissProjectionBindingsRow, error)
+	// Projection dependencies are immutable correction graph edges. A normal
+	// no-show needs these persisted edges to prove each cancelled Game feeds the
+	// score node and the score feeds the Series result node; the reader must not
+	// manufacture that lineage from node identifiers alone.
+	LockTournamentProgressionSwissProjectionDependencies(ctx context.Context, arg LockTournamentProgressionSwissProjectionDependenciesParams) ([]LockTournamentProgressionSwissProjectionDependenciesRow, error)
+	LockTournamentProgressionSwissProjectionNodes(ctx context.Context, arg LockTournamentProgressionSwissProjectionNodesParams) ([]LockTournamentProgressionSwissProjectionNodesRow, error)
+	// Result heads are locked after their Series. The INNER JOIN intentionally
+	// excludes Series without a result head, which remain invalid progression
+	// evidence rather than becoming nullable lock targets.
+	LockTournamentProgressionSwissResultHeads(ctx context.Context, arg LockTournamentProgressionSwissResultHeadsParams) ([]LockTournamentProgressionSwissResultHeadsRow, error)
+	LockTournamentProgressionSwissRoundLockProofMembers(ctx context.Context, arg LockTournamentProgressionSwissRoundLockProofMembersParams) ([]SwissRoundLockProofMember, error)
+	LockTournamentProgressionSwissRoundLockProofSeries(ctx context.Context, arg LockTournamentProgressionSwissRoundLockProofSeriesParams) ([]SwissRoundLockProofSeries, error)
+	// Locked proof roots are loaded after their Swiss round and Wave. They are
+	// normalized durable authority, not a reconstructed pairing document.
+	LockTournamentProgressionSwissRoundLockProofs(ctx context.Context, arg LockTournamentProgressionSwissRoundLockProofsParams) ([]SwissRoundLockProof, error)
+	LockTournamentProgressionSwissRounds(ctx context.Context, arg LockTournamentProgressionSwissRoundsParams) ([]LockTournamentProgressionSwissRoundsRow, error)
+	// Score heads are locked after official result heads for the same Series.
+	LockTournamentProgressionSwissScoreHeads(ctx context.Context, arg LockTournamentProgressionSwissScoreHeadsParams) ([]LockTournamentProgressionSwissScoreHeadsRow, error)
+	// Pre-start operator forfeits are the only score source without a game
+	// attempt ledger. The normalized adjudication child is therefore mandatory.
+	LockTournamentProgressionSwissScoreRevisionAdjudications(ctx context.Context, arg LockTournamentProgressionSwissScoreRevisionAdjudicationsParams) ([]LockTournamentProgressionSwissScoreRevisionAdjudicationsRow, error)
+	// Score attempt rows are immutable copies of the exact current score head.
+	// They are locked after the score head and are never reconstructed from game
+	// identifiers by the progression reader.
+	LockTournamentProgressionSwissScoreRevisionAttempts(ctx context.Context, arg LockTournamentProgressionSwissScoreRevisionAttemptsParams) ([]LockTournamentProgressionSwissScoreRevisionAttemptsRow, error)
+	LockTournamentProgressionSwissSeries(ctx context.Context, arg LockTournamentProgressionSwissSeriesParams) ([]LockTournamentProgressionSwissSeriesRow, error)
+	// Result/execution writers acquire this prefix before any projection or child
+	// lock. Materialized dependencies enforce Tournament -> Roster -> published
+	// Projection independently of join planning. Before initial publication, the
+	// same Tournament/Roster prefix is held even though no projection exists yet.
+	LockTournamentResultScope(ctx context.Context, arg LockTournamentResultScopeParams) (LockTournamentResultScopeRow, error)
+	LockTournamentRosterAuthority(ctx context.Context, tournamentID uuid.UUID) (LockTournamentRosterAuthorityRow, error)
+	LockTournamentRosterCAS(ctx context.Context, arg LockTournamentRosterCASParams) (Roster, error)
+	LockTournamentRosterForUpdate(ctx context.Context, id uuid.UUID) (Roster, error)
+	LockWaveStartAuthority(ctx context.Context, arg LockWaveStartAuthorityParams) (LockWaveStartAuthorityRow, error)
+	LockWaveStartGames(ctx context.Context, waveID uuid.UUID) ([]LockWaveStartGamesRow, error)
+	LockWaveStartReadiness(ctx context.Context, arg LockWaveStartReadinessParams) ([]LockWaveStartReadinessRow, error)
+	// Lock every expected Series before resolving the per-Series BO1 binding.
+	// The caller rejects absent or duplicate game bindings instead of silently
+	// reducing the proof to the rows an inner join happened to return.
+	LockWaveStartSeriesMemberships(ctx context.Context, waveID uuid.UUID) ([]LockWaveStartSeriesMembershipsRow, error)
+	// The pairing command creates this lineage without locking the round. Wave
+	// start or a pre-start terminal action captures all immutable source heads,
+	// persists the proof, then CAS-locks the round in the same transaction.
+	LockWaveStartSwissRoundProof(ctx context.Context, arg LockWaveStartSwissRoundProofParams) (LockWaveStartSwissRoundProofRow, error)
+	MarkGoldenMembershipNoShow(ctx context.Context, arg MarkGoldenMembershipNoShowParams) (GoldenMembership, error)
+	MarkGoldenMembershipReady(ctx context.Context, arg MarkGoldenMembershipReadyParams) (GoldenMembership, error)
+	MarkRealtimeOutboxTerminal(ctx context.Context, arg MarkRealtimeOutboxTerminalParams) (uuid.UUID, error)
+	MarkTournamentRosterExecutionStartedCAS(ctx context.Context, arg MarkTournamentRosterExecutionStartedCASParams) (Roster, error)
+	MarkWaveMemberReadyCAS(ctx context.Context, arg MarkWaveMemberReadyCASParams) (WaveReadiness, error)
+	MarkWaveReadinessCAS(ctx context.Context, arg MarkWaveReadinessCASParams) (Wave, error)
+	OpenRealtimeSubscription(ctx context.Context, arg OpenRealtimeSubscriptionParams) (OpenRealtimeSubscriptionRow, error)
+	OpenReplayReplacementWaveCAS(ctx context.Context, arg OpenReplayReplacementWaveCASParams) (uuid.UUID, error)
+	OpenWaveReadyWindowCAS(ctx context.Context, arg OpenWaveReadyWindowCASParams) (Wave, error)
+	PauseTournamentAdminWaveGames(ctx context.Context, arg PauseTournamentAdminWaveGamesParams) ([]uuid.UUID, error)
+	PauseTournamentAdminWaveSeries(ctx context.Context, arg PauseTournamentAdminWaveSeriesParams) ([]uuid.UUID, error)
+	PublishProjectionRevisionCAS(ctx context.Context, arg PublishProjectionRevisionCASParams) (ProjectionRevision, error)
+	PublishTournamentContentConfiguration(ctx context.Context, arg PublishTournamentContentConfigurationParams) (uuid.UUID, error)
+	ReadExecutionAuthorityTime(ctx context.Context) (pgtype.Timestamptz, error)
+	ReadTournamentExecutionTime(ctx context.Context) (pgtype.Timestamptz, error)
+	ReadTournamentRosterTime(ctx context.Context) (pgtype.Timestamptz, error)
+	// RebindPausedExecutionGameEpochs appends successor authority evidence before
+	// any paused Game becomes active. The supplied service-owned identity must be
+	// the exact latest live PostgreSQL lease; prior epoch rows are never updated.
+	RebindPausedExecutionGameEpochs(ctx context.Context, arg RebindPausedExecutionGameEpochsParams) ([]uuid.UUID, error)
+	RecordHealthyTaskVersionProbeAttestation(ctx context.Context, arg RecordHealthyTaskVersionProbeAttestationParams) (TaskVersionHealthAttestation, error)
+	RecordUnhealthyTaskVersionProbeAttestation(ctx context.Context, arg RecordUnhealthyTaskVersionProbeAttestationParams) (TaskVersionHealthAttestation, error)
+	ReleaseLosingExactDraftBranches(ctx context.Context, arg ReleaseLosingExactDraftBranchesParams) (int64, error)
+	ReleaseLosingExactDraftChildReservations(ctx context.Context, arg ReleaseLosingExactDraftChildReservationsParams) ([]uuid.UUID, error)
+	ReleaseLosingExactDraftChildren(ctx context.Context, arg ReleaseLosingExactDraftChildrenParams) ([]uuid.UUID, error)
+	ReleaseOtherAssignmentBranchReservations(ctx context.Context, arg ReleaseOtherAssignmentBranchReservationsParams) ([]uuid.UUID, error)
+	ReleaseOtherAssignmentBranches(ctx context.Context, arg ReleaseOtherAssignmentBranchesParams) ([]uuid.UUID, error)
+	ReleaseRealtimeOutboxClaims(ctx context.Context, workerID uuid.NullUUID) (int64, error)
+	ReleaseTournamentAdminCorrectionReservationCAS(ctx context.Context, arg ReleaseTournamentAdminCorrectionReservationCASParams) (ReleaseTournamentAdminCorrectionReservationCASRow, error)
+	ReleaseTournamentReservations(ctx context.Context, tournamentID uuid.UUID) (int64, error)
+	ReplaceWithdrawnTournamentParticipant(ctx context.Context, arg ReplaceWithdrawnTournamentParticipantParams) (Participant, error)
+	ReserveCheckedInTournamentParticipants(ctx context.Context, arg ReserveCheckedInTournamentParticipantsParams) ([]uuid.UUID, error)
+	ResumeTournamentAdminWaveGames(ctx context.Context, arg ResumeTournamentAdminWaveGamesParams) ([]uuid.UUID, error)
+	ResumeTournamentAdminWaveSeries(ctx context.Context, arg ResumeTournamentAdminWaveSeriesParams) ([]uuid.UUID, error)
+	ResumeTournamentTechnicalPause(ctx context.Context, arg ResumeTournamentTechnicalPauseParams) (ResumeTournamentTechnicalPauseRow, error)
+	RetryRealtimeDelivery(ctx context.Context, arg RetryRealtimeDeliveryParams) (uuid.UUID, error)
+	RetryRealtimeOutboxEvent(ctx context.Context, arg RetryRealtimeOutboxEventParams) (uuid.UUID, error)
+	SealGoldenCorrectionTombstones(ctx context.Context, arg SealGoldenCorrectionTombstonesParams) (uuid.UUID, error)
+	SealGoldenExactPlanSnapshot(ctx context.Context, arg SealGoldenExactPlanSnapshotParams) (uuid.UUID, error)
+	SealGoldenPositionLedgerRevision(ctx context.Context, arg SealGoldenPositionLedgerRevisionParams) (uuid.UUID, error)
+	SealGoldenStateRevision(ctx context.Context, arg SealGoldenStateRevisionParams) (uuid.UUID, error)
+	SetParticipantReadinessHead(ctx context.Context, arg SetParticipantReadinessHeadParams) (WaveReadiness, error)
+	SetParticipantWaveReadiness(ctx context.Context, arg SetParticipantWaveReadinessParams) (Wave, error)
+	SettleGameAttemptCAS(ctx context.Context, arg SettleGameAttemptCASParams) (SettleGameAttemptCASRow, error)
+	SettleSeriesCAS(ctx context.Context, arg SettleSeriesCASParams) (Series, error)
+	SoftDeletePlayer(ctx context.Context, arg SoftDeletePlayerParams) (Player, error)
+	StartTournamentAdminWaveGames(ctx context.Context, arg StartTournamentAdminWaveGamesParams) ([]uuid.UUID, error)
+	StartTournamentAdminWaveSeries(ctx context.Context, arg StartTournamentAdminWaveSeriesParams) ([]uuid.UUID, error)
+	StartWaveCAS(ctx context.Context, arg StartWaveCASParams) (Wave, error)
+	StartWaveGameCAS(ctx context.Context, arg StartWaveGameCASParams) (StartWaveGameCASRow, error)
+	StartWaveSeriesCAS(ctx context.Context, arg StartWaveSeriesCASParams) (StartWaveSeriesCASRow, error)
+	SupersedeAssignmentCAS(ctx context.Context, arg SupersedeAssignmentCASParams) (Assignment, error)
+	SupersedeProjectionRevisionCAS(ctx context.Context, arg SupersedeProjectionRevisionCASParams) (ProjectionRevision, error)
+	TaskReferencedByTournament(ctx context.Context, taskID uuid.UUID) (bool, error)
 	TopLeaderboardStats(ctx context.Context, limit int32) ([]TopLeaderboardStatsRow, error)
-	TransitionArenaWaveCAS(ctx context.Context, arg TransitionArenaWaveCASParams) (ArenaWafe, error)
-	UnlockArenaRosterCAS(ctx context.Context, arg UnlockArenaRosterCASParams) (ArenaRoster, error)
-	UpdateArenaGameAttemptCAS(ctx context.Context, arg UpdateArenaGameAttemptCASParams) (ArenaGameAttempt, error)
-	UpdateArenaGoldenAttemptCAS(ctx context.Context, arg UpdateArenaGoldenAttemptCASParams) (ArenaGoldenAttempt, error)
-	UpdateArenaParticipantAttendanceCAS(ctx context.Context, arg UpdateArenaParticipantAttendanceCASParams) (ArenaParticipant, error)
-	UpdateArenaTournamentCAS(ctx context.Context, arg UpdateArenaTournamentCASParams) (ArenaTournament, error)
-	UpdateAutomaticArenaSwissRoundCAS(ctx context.Context, arg UpdateAutomaticArenaSwissRoundCASParams) (ArenaSwissRound, error)
-	UpdateDuelDeadline(ctx context.Context, arg UpdateDuelDeadlineParams) (Duel, error)
-	UpdateManualArenaSwissRoundCAS(ctx context.Context, arg UpdateManualArenaSwissRoundCASParams) (ArenaSwissRound, error)
+	TransitionReplaySeriesCAS(ctx context.Context, arg TransitionReplaySeriesCASParams) (TransitionReplaySeriesCASRow, error)
+	TransitionTournamentForRosterCAS(ctx context.Context, arg TransitionTournamentForRosterCASParams) (uuid.UUID, error)
+	TransitionWaveCAS(ctx context.Context, arg TransitionWaveCASParams) (Wave, error)
+	UnlockTournamentRosterCAS(ctx context.Context, arg UnlockTournamentRosterCASParams) (Roster, error)
+	UpdateAutomaticSwissRoundCAS(ctx context.Context, arg UpdateAutomaticSwissRoundCASParams) (SwissRound, error)
+	UpdateGameAttemptCAS(ctx context.Context, arg UpdateGameAttemptCASParams) (UpdateGameAttemptCASRow, error)
+	UpdateGoldenAttemptCAS(ctx context.Context, arg UpdateGoldenAttemptCASParams) (GoldenAttempt, error)
+	UpdateManualSwissRoundCAS(ctx context.Context, arg UpdateManualSwissRoundCASParams) (SwissRound, error)
 	UpdatePlayerSessionToken(ctx context.Context, arg UpdatePlayerSessionTokenParams) (Player, error)
-	UpdatePlayerStatus(ctx context.Context, arg UpdatePlayerStatusParams) (Player, error)
-	UpdatePlayerStatusIfCurrent(ctx context.Context, arg UpdatePlayerStatusIfCurrentParams) (Player, error)
 	UpdatePlayerUsername(ctx context.Context, arg UpdatePlayerUsernameParams) (Player, error)
-	UpdateTask(ctx context.Context, arg UpdateTaskParams) (Task, error)
+	UpdateTask(ctx context.Context, arg UpdateTaskParams) (UpdateTaskRow, error)
+	UpdateTournamentCAS(ctx context.Context, arg UpdateTournamentCASParams) (Tournament, error)
+	UpdateTournamentParticipantAttendanceCAS(ctx context.Context, arg UpdateTournamentParticipantAttendanceCASParams) (Participant, error)
 	UpsertPlayerLeaderboardOverride(ctx context.Context, arg UpsertPlayerLeaderboardOverrideParams) (PlayerLeaderboardOverride, error)
-	UpsertPlayerSessionByUsername(ctx context.Context, arg UpsertPlayerSessionByUsernameParams) (Player, error)
 }
 
 var _ Querier = (*Queries)(nil)

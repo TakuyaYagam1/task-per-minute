@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestMigrations_TaskHintsInInitialSchema(t *testing.T) {
+func TestMigrations_TaskHintsInBaseline(t *testing.T) {
 	pool, cleanup := SetupTestDB(t)
 	t.Cleanup(cleanup)
 

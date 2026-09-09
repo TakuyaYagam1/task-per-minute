@@ -19,8 +19,8 @@ Use Feature-Sliced Design for frontend ownership and dependency direction.
 | `frontend/app/` | Next.js route entry points, route handlers, metadata, global styles, and application bootstrapping |
 | `frontend/lib/pages/` | Route-level orchestration and composition |
 | `frontend/lib/widgets/` | Reusable page sections composed from entities, features, and shared UI |
-| `frontend/lib/features/` | User actions and client-side use cases, including transport lifecycle hooks |
-| `frontend/lib/entities/` | Domain-specific models and state helpers for players and games |
+| `frontend/lib/features/` | Reusable user actions and client-side use cases |
+| `frontend/lib/entities/` | Domain-specific models and state helpers for players |
 | `frontend/lib/shared/api/` | REST transports, generated types, response guards, auth refresh, and API error normalization |
 | `frontend/lib/shared/types/` | Handwritten non-REST wire types and small shared domain types |
 | `frontend/lib/shared/lib/` | Storage, validation, logging, navigation, and generic hooks |
@@ -30,7 +30,7 @@ Use Feature-Sliced Design for frontend ownership and dependency direction.
 Keep route entry points thin. `app/admin/page.tsx` and
 `app/leaderboard/page.tsx` are current exceptions, not templates for new pages.
 The leaderboard route also manually duplicates REST DTO shapes and should be
-migrated to generated types when it is touched. Large changes to the home, task, or admin flows
+migrated to generated types when it is touched. Large changes to the home or admin flows
 should extract cohesive models, features, or widgets instead of adding more
 unrelated state to their route components.
 
@@ -48,23 +48,18 @@ Do not add architecture-only tests that scan imports or directory layout.
 Preserve FSD boundaries through public module surfaces, code review, strict
 TypeScript, and tests of observable behavior.
 
-`lib/pages/task/TaskPage.tsx` currently imports `app/task/task.module.css`.
-Treat this reverse style import as legacy debt, not a pattern for new code.
-When that styling boundary is changed, move page-owned styles toward the page
-layer or expose them through a deliberate public surface.
-
 ## State Ownership
 
-- The backend owns authenticated identity, duel membership, deadlines, and
-  terminal results.
+- The backend owns authenticated identity, tournament participation,
+  assignments, deadlines, and official results.
 - REST responses, WebSocket events, and SSE events are server state. Parse and
   validate them at the boundary before applying them to UI state.
-- Browser storage is a recoverable cache, not an authority. Current session
-  storage includes CSRF tokens and cached game data that can contain unlocked
-  hints and presigned or task URLs. Treat it as sensitive XSS-reachable state,
-  keep it short-lived, clear it on session or match cleanup, and reconcile
-  restored state with the server before enabling privileged or match-changing
-  actions. Do not expand the stored payload without security review.
+- Browser storage is a recoverable cache, not an authority. Current storage is
+  limited to readable CSRF material and a player display cache. Treat it as
+  sensitive XSS-reachable state, clear it on session replacement, and
+  reconcile restored state with the server before enabling privileged or
+  tournament-changing actions. Do not expand the payload without security
+  review.
 - Page-local display state belongs in the page or a dedicated view-model hook.
 - Transport lifecycle belongs in transport hooks. Business state transitions
   belong in a feature or entity reducer, not in a generic socket client.
@@ -75,7 +70,7 @@ layer or expose them through a deliberate public surface.
 
 Do not derive an official result from the browser clock. A local countdown may
 show an expired or pending state, but only a server event or validated server
-response may establish the terminal result.
+response may establish the result.
 
 ## Next.js And Browser Boundaries
 
@@ -86,9 +81,11 @@ response may establish the terminal result.
 - Use the configured API clients rather than direct `fetch` calls. A custom
   transport is allowed for cases such as uploads or event streams, but it must
   reuse the repository auth, CSRF, error, timeout, and cleanup rules.
-- Preserve both supported deployment modes: same-origin rewrites and explicit
-  `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_ADMIN_API_URL`, and
-  `NEXT_PUBLIC_WS_URL` values.
+- Preserve both supported deployment modes: same-origin `/api` rewrites and
+  explicit `NEXT_PUBLIC_API_URL` plus `NEXT_PUBLIC_ADMIN_API_URL` values.
+- If tournament realtime clients are added, derive public and participant
+  origins from the player API URL and the operator origin from the admin API
+  URL. Do not add a separate WebSocket origin setting.
 - Do not embed a private backend hostname or environment-specific origin in a
   component.
 
@@ -97,7 +94,7 @@ response may establish the terminal result.
 - Keep TypeScript strict. Do not use `any`, unchecked casts, or weakened
   compiler settings to bypass a contract mismatch.
 - REST DTOs come from `lib/shared/api/schema.ts`. Do not recreate them by hand.
-- WebSocket DTOs must match the backend wire structs and must pass the runtime
+- Future WebSocket DTOs must match the backend wire structs and pass a runtime
   parser before reaching feature code.
 - Validate identifiers, timestamps, enums, optional fields, and ownership
   relationships at network and storage boundaries.

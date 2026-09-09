@@ -4,8 +4,8 @@ This file is the repository entrypoint for coding agents. Keep it short. Detaile
 
 ## Start Here
 
-1. Run `git status --short` and preserve unrelated user changes.
-2. Read `.agents/README.md`.
+1. The coordinator runs `git status --short` and preserves unrelated user changes. A scoped subagent uses only a sanitized inventory or path-scoped status allowed by its read scope.
+2. Read `AGENT_ROUTING.md`, then `.agents/README.md`.
 3. For implementation work, read `.agents/workflows/task-lifecycle.md`, `.agents/workflows/validation.md`, and `.agents/workflows/handoff.md`.
 4. Read only the additional standards relevant to the task.
 5. For product-changing work, use only requirements named by the active user instruction. Read a private PRD file only when the current user request explicitly authorizes that exact path. Never enumerate adjacent `PRD/` contents.
@@ -25,14 +25,6 @@ This file is the repository entrypoint for coding agents. Keep it short. Detaile
 
 ## Routing
 
-- Backend or Go: `.agents/standards/backend.md`
-- PostgreSQL or migrations: `.agents/standards/database.md`
-- Frontend or browser behavior: `.agents/standards/frontend.md`
-- REST, WebSocket, or SSE: `.agents/standards/contracts.md`
-- Docker, Caddy, deployment, or runtime: `.agents/standards/infrastructure.md`
-- Security-sensitive work: `.agents/standards/security.md`
-- Agent instruction or adapter changes: `.agents/standards/security.md`, `.agents/workflows/validation.md`, `.agents/workflows/handoff.md`
-- Frontend browser tests: `.agents/standards/testing.md`
-- Any implementation lifecycle: `.agents/workflows/task-lifecycle.md`, `.agents/workflows/validation.md`, `.agents/workflows/handoff.md`
-- Multi-agent execution: `.agents/workflows/subagents.md`
-- Release decisions: `.agents/workflows/release.md`
+Use `AGENT_ROUTING.md` to select one primary project route, its companions,
+risk tier, required context, and validation depth. Detailed guidance remains
+canonical in `.agents/`.

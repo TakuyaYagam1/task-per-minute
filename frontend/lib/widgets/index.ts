@@ -1,2 +1,2 @@
-export * from './waiting-overlay';
+export {};
 export * from './error-page';

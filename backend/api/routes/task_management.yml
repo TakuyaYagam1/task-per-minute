@@ -1,0 +1,324 @@
+/api/v1/admin/tasks:
+  get:
+    operationId: listTasks
+    tags: [task]
+    summary: List all tasks (admin view, includes flag)
+    security:
+      - AdminSessionAuth: []
+    responses:
+      '200':
+        description: All tasks.
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '../components/schemas.yml#/TaskDetails'
+      '401':
+        description: Missing or invalid admin session.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+  post:
+    operationId: createTask
+    tags: [task]
+    summary: Create a task
+    security:
+      - AdminSessionAuth: []
+    parameters:
+      - $ref: '../components/parameters.yml#/AdminCSRFToken'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../components/schemas.yml#/CreateTaskRequest'
+    responses:
+      '201':
+        description: Created.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/TaskDetails'
+      '400':
+        description: Validation error.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '401':
+        description: Missing or invalid admin session.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '403':
+        description: CSRF token does not match the admin access session, or the request origin or referer is not allowed.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '413':
+        description: Request body exceeds the JSON size limit.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '415':
+        description: Request content type must be application/json.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+
+/api/v1/admin/tasks/{id}:
+  parameters:
+    - in: path
+      name: id
+      required: true
+      schema:
+        type: string
+        format: uuid
+  get:
+    operationId: getTask
+    tags: [task]
+    summary: Read a task by id
+    security:
+      - AdminSessionAuth: []
+    responses:
+      '200':
+        description: Task.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/TaskDetails'
+      '400':
+        description: Invalid task id.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '401':
+        description: Missing or invalid admin session.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '404':
+        description: Task not found.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+  put:
+    operationId: updateTask
+    tags: [task]
+    summary: Update a task (partial update is allowed via PATCH semantics)
+    security:
+      - AdminSessionAuth: []
+    parameters:
+      - $ref: '../components/parameters.yml#/AdminCSRFToken'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../components/schemas.yml#/UpdateTaskRequest'
+    responses:
+      '200':
+        description: Updated task.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/TaskDetails'
+      '400':
+        description: Validation error.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '401':
+        description: Missing or invalid admin session.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '403':
+        description: CSRF token does not match the admin access session, or the request origin or referer is not allowed.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '404':
+        description: Task not found.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '413':
+        description: Request body exceeds the JSON size limit.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '415':
+        description: Request content type must be application/json.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+  delete:
+    operationId: deleteTask
+    tags: [task]
+    summary: Delete a task
+    description: Returns 409 if tournament snapshots or assignments reference the task.
+    security:
+      - AdminSessionAuth: []
+    parameters:
+      - $ref: '../components/parameters.yml#/AdminCSRFToken'
+    responses:
+      '204':
+        description: Deleted.
+      '400':
+        description: Invalid task id or CSRF header.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '401':
+        description: Missing or invalid admin session.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '403':
+        description: CSRF token does not match the admin access session, or the request origin or referer is not allowed.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '404':
+        description: Task not found.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '409':
+        description: Task is referenced by tournament records.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+
+/api/v1/admin/tasks/{id}/source:
+  parameters:
+    - in: path
+      name: id
+      required: true
+      schema:
+        type: string
+        format: uuid
+  get:
+    operationId: downloadTaskSource
+    tags: [task]
+    summary: Redirect to a temporary source-file ZIP download URL
+    security:
+      - AdminSessionAuth: []
+    responses:
+      '302':
+        description: Redirects to a temporary SeaweedFS presigned URL.
+        headers:
+          Location:
+            required: true
+            schema:
+              type: string
+              format: uri
+      '400':
+        description: Invalid task id.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '401':
+        description: Missing or invalid admin session.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '404':
+        description: Task or source file not found.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+  post:
+    operationId: uploadTaskSource
+    tags: [task]
+    summary: Upload a source-file ZIP (≤ 100 MB) and store it in SeaweedFS
+    security:
+      - AdminSessionAuth: []
+    parameters:
+      - $ref: '../components/parameters.yml#/AdminCSRFToken'
+    requestBody:
+      required: true
+      content:
+        multipart/form-data:
+          schema:
+            type: object
+            required: [file]
+            properties:
+              file:
+                type: string
+                format: binary
+    responses:
+      '200':
+        description: Stored. Returns the canonical source-file URL.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/TaskSourceUploadResponse'
+      '400':
+        description: Not a ZIP, missing field, or other validation error.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '401':
+        description: Missing or invalid admin session.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '403':
+        description: CSRF token does not match the admin access session, or the request origin or referer is not allowed.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '404':
+        description: Task not found.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '413':
+        description: File exceeds the 100 MB limit.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'

@@ -24,10 +24,10 @@ const (
 type StackOption func(*stackConfig)
 
 type stackConfig struct {
-	trustedProxyCIDRs []string
-	allowedOrigins    []string
-	timeout           time.Duration
-	arenaObserver     appobservability.ArenaEventObserver
+	trustedProxyCIDRs  []string
+	allowedOrigins     []string
+	timeout            time.Duration
+	tournamentObserver appobservability.TournamentEventObserver
 }
 
 // WithTrustedProxyCIDRs configures CIDRs that are allowed to supply client IP headers.
@@ -53,10 +53,10 @@ func WithTimeout(timeout time.Duration) StackOption {
 	}
 }
 
-// WithArenaEventObserver supplies the shared Arena observer used by HTTP call sites.
-func WithArenaEventObserver(observer appobservability.ArenaEventObserver) StackOption {
+// WithTournamentEventObserver supplies the shared tournament observer used by HTTP call sites.
+func WithTournamentEventObserver(observer appobservability.TournamentEventObserver) StackOption {
 	return func(cfg *stackConfig) {
-		cfg.arenaObserver = observer
+		cfg.tournamentObserver = observer
 	}
 }
 
@@ -86,9 +86,9 @@ func build(log logkit.Logger, withTimeout bool, opts ...StackOption) func(http.H
 		}
 		clientIP, _ = httpkitmw.ClientIP(nil)
 	}
-	arenaObserver := cfg.arenaObserver
-	if arenaObserver == nil {
-		arenaObserver = appobservability.NewArenaStructuredLogger(log)
+	tournamentObserver := cfg.tournamentObserver
+	if tournamentObserver == nil {
+		tournamentObserver = appobservability.NewTournamentStructuredLogger(log)
 	}
 
 	middlewares := []func(http.Handler) http.Handler{
@@ -96,9 +96,13 @@ func build(log logkit.Logger, withTimeout bool, opts ...StackOption) func(http.H
 		clientIP,
 		ForwardedProto(cfg.trustedProxyCIDRs, log),
 		Logger(log),
-		ArenaStructuredLogging(arenaObserver),
+		TournamentStructuredLogging(tournamentObserver),
 		Recoverer(log),
-		httpkitmw.SecurityHeaders(false, httpkitmw.WithCSP(stackCSP)),
+		httpkitmw.SecurityHeaders(
+			httpkitmw.WithCSP(stackCSP),
+			httpkitmw.WithCrossOriginOpenerPolicy(""),
+			httpkitmw.WithCrossOriginResourcePolicy(""),
+		),
 		NoStoreSensitiveResponses(),
 		OriginGuard(cfg.allowedOrigins),
 		CSRFGuard(),

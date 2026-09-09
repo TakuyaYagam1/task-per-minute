@@ -125,59 +125,60 @@ TASK_SAMOVAR_DOMAIN=samovar.xn--90aeebbpdxndkcm5abncn1ej9mqa.xn--p1ai
 TASK_VKONTAKTE_DOMAIN=vkontakte.xn--90aeebbpdxndkcm5abncn1ej9mqa.xn--p1ai
 TASK_DEDYS_DOMAIN=dedys.xn--90aeebbpdxndkcm5abncn1ej9mqa.xn--p1ai
 HTTP_ALLOWED_ORIGINS=https://admin.xn--90aeebbpdxndkcm5abncn1ej9mqa.xn--p1ai,https://xn--90aeebbpdxndkcm5abncn1ej9mqa.xn--p1ai
-WS_ALLOWED_ORIGINS=https://xn--90aeebbpdxndkcm5abncn1ej9mqa.xn--p1ai
+WS_ALLOWED_ORIGINS=https://admin.xn--90aeebbpdxndkcm5abncn1ej9mqa.xn--p1ai,https://xn--90aeebbpdxndkcm5abncn1ej9mqa.xn--p1ai
 WS_REQUIRE_ORIGIN=true
 NEXT_PUBLIC_API_URL=https://api.xn--90aeebbpdxndkcm5abncn1ej9mqa.xn--p1ai
 NEXT_PUBLIC_ADMIN_API_URL=https://api.xn--90aeebbpdxndkcm5abncn1ej9mqa.xn--p1ai
-NEXT_PUBLIC_WS_URL=wss://api.xn--90aeebbpdxndkcm5abncn1ej9mqa.xn--p1ai/ws
 SEAWEEDFS_PUBLIC_ENDPOINT=files.xn--90aeebbpdxndkcm5abncn1ej9mqa.xn--p1ai
 SEAWEEDFS_PUBLIC_SECURE=true
 ADMIN_LOGIN_RATE_ATTEMPTS=3
 ADMIN_LOGIN_RATE_WINDOW=3m
-ADMIN_LOGIN_RATE_BUCKET_TTL=15m
 ADMIN_REFRESH_RATE_ATTEMPTS=10
 ADMIN_REFRESH_RATE_WINDOW=3m
-ADMIN_REFRESH_RATE_BUCKET_TTL=15m
 LEADERBOARD_RATE_ATTEMPTS=120
 LEADERBOARD_RATE_WINDOW=1m
-LEADERBOARD_RATE_BUCKET_TTL=15m
 WS_HANDSHAKE_RATE_ATTEMPTS=60
 WS_HANDSHAKE_RATE_WINDOW=1m
-WS_HANDSHAKE_RATE_BUCKET_TTL=15m
-WS_MESSAGE_RATE_ATTEMPTS=120
-WS_MESSAGE_RATE_WINDOW=1m
-WS_ACTION_RATE_ATTEMPTS=30
-WS_ACTION_RATE_WINDOW=1m
+WS_MAX_CONNECTIONS=512
+WS_MAX_CONNECTIONS_PER_PRINCIPAL=4
 ```
 
-Если `NEXT_PUBLIC_*` оставить пустыми, frontend будет ходить в backend через
-same-origin rewrites (`/api` и `/ws`) и внутренний `BACKEND_URL`. Если значения
-заданы, браузер обращается к публичному API/WS напрямую. Deploy workflow
-валидирует режим сборки: либо все `NEXT_PUBLIC_*` пустые, либо заданы все три
-`NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_ADMIN_API_URL`, `NEXT_PUBLIC_WS_URL`.
-Прямой режим требует `https://` для REST, `wss://.../ws` для WS, общий backend
-origin, а также явные GitHub vars `HTTP_ALLOWED_ORIGINS` и
-`WS_ALLOWED_ORIGINS` без wildcard; WS origins должны быть подмножеством REST
-origins. Для browser-only production режима рекомендуется `WS_REQUIRE_ORIGIN=true`;
-интеграционные CLI-клиенты без `Origin` при этом будут получать `403`. Эти
-значения вшиваются в frontend image на build-time, поэтому
-изменение серверного `.env` после сборки не меняет браузерный bundle.
+Если оба `NEXT_PUBLIC_*` оставить пустыми, frontend будет ходить в backend через
+same-origin rewrite `/api` и внутренний `BACKEND_URL`. Если значения заданы,
+браузер обращается напрямую к этому публичному API origin. Deploy workflow
+требует `NEXT_PUBLIC_API_URL` и `NEXT_PUBLIC_ADMIN_API_URL` вместе, с `https://`
+и единым backend origin. Tournament realtime использует тот же API origin с
+`wss://` и role-specific путем `/api/v1/.../realtime`, поэтому отдельного
+frontend WebSocket URL нет. Прямой режим также требует явные GitHub vars
+`HTTP_ALLOWED_ORIGINS` и `WS_ALLOWED_ORIGINS` без wildcard; WS origins должны
+быть подмножеством REST origins. Build-time значения вшиваются во frontend
+image. Для production browser-only режима рекомендуется
+`WS_REQUIRE_ORIGIN=true`; integration CLI clients без `Origin` получат `403`.
 
 Браузерная авторизация работает через HttpOnly cookies. Player/Admin session
 tokens не должны храниться в `localStorage` или `sessionStorage`; frontend
-держит только marker активной admin-сессии и readable CSRF tokens. Unsafe REST
-запросы с cookie-auth должны отправлять `X-CSRF-Token`; admin refresh/logout
-используют refresh CSRF token из `X-Admin-Refresh-CSRF-Token` в
-`X-CSRF-Token` или `X-Admin-Refresh-CSRF-Token`. WebSocket
-подключается только к `/ws` с player session cookie: query token
-`/ws?token=...`, `X-Session-Token` и bearer subprotocol больше не являются
-поддерживаемым браузерным контрактом.
+держит только readable CSRF tokens. Unsafe REST запросы с cookie auth должны
+отправлять `X-CSRF-Token`. Ответы login и refresh возвращают refresh CSRF в
+`X-Admin-Refresh-CSRF-Token`; запросы refresh и logout отправляют это значение
+в `X-CSRF-Token`. `X-Admin-Refresh-CSRF-Token` не является request header.
+Participant и operator tournament realtime handshakes используют
+соответствующую session cookie. Query credentials, `X-Session-Token` и bearer
+subprotocols отклоняются.
+
+Player join не заменяет активную session по username. До истечения текущей
+session он возвращает `409`, после чего username можно использовать снова.
+
+`WS_MAX_CONNECTIONS` ограничивает все принятые tournament realtime connections
+и по умолчанию равен `512`. `WS_MAX_CONNECTIONS_PER_PRINCIPAL` ограничивает
+одновременные participant или operator connections для одной authenticated
+principal и по умолчанию равен `4`. Anonymous public connections учитываются
+только в общем лимите.
 
 Caddy/compose defaults рассчитаны на backend upload до 100MB: API-capable
 routes используют `request_body max_size 125MB`, а backend read/write timeout
 остается `5m`.
 
-Production compose уже содержит Caddy edge service. Наружу публикуются только
+Production compose содержит Caddy edge service. Наружу публикуются только
 `CADDY_HTTP_PORT` и `CADDY_HTTPS_PORT`; backend, frontend, Postgres, Redis и
 SeaweedFS остаются внутри Docker-сети. `expose` у внутренних сервисов не
 открывает порт на host, а только документирует порт внутри compose network.
@@ -190,7 +191,8 @@ DOCKER_INTERNAL_SUBNET=172.30.0.0/24
 HTTP_TRUSTED_PROXY_CIDRS=172.30.0.0/24
 ```
 
-Если все пользователи за Caddy получают `429` на login/refresh/join или `/ws`,
+Если все пользователи за Caddy получают `429` на login/refresh/join или
+tournament realtime handshakes,
 проверьте, что `HTTP_TRUSTED_PROXY_CIDRS` совпадает с Docker subnet, а Caddy
 передает `X-Forwarded-For`. Backend читает forwarded headers только от trusted
 proxy; при пустом или неверном CIDR лимиты будут считаться по адресу proxy.
@@ -317,28 +319,29 @@ FRONTEND_BACKEND_URL    # build-time BACKEND_URL для Next rewrites, по ум
 FRONTEND_PORT           # build-time порт frontend image, по умолчанию 3000
 NEXT_PUBLIC_API_URL     # публичный API URL для прямого browser-to-backend режима
 NEXT_PUBLIC_ADMIN_API_URL # публичный admin API URL
-NEXT_PUBLIC_WS_URL      # публичный WS URL
 HTTP_ALLOWED_ORIGINS    # REST browser origins; обязательно для прямого режима
 WS_ALLOWED_ORIGINS      # WS browser origins; subset HTTP_ALLOWED_ORIGINS
-WS_REQUIRE_ORIGIN       # требовать browser Origin на /ws, рекомендуется true в prod
-ADMIN_REFRESH_RATE_ATTEMPTS  # лимит POST /api/v1/admin/refresh, по умолчанию 10
-ADMIN_REFRESH_RATE_WINDOW    # окно refresh rate-limit, по умолчанию 3m
-ADMIN_REFRESH_RATE_BUCKET_TTL # TTL idle bucket refresh limiter, по умолчанию 15m
-LEADERBOARD_RATE_ATTEMPTS    # лимит GET /api/v1/leaderboard на IP, по умолчанию 120
-LEADERBOARD_RATE_WINDOW      # окно leaderboard rate-limit, по умолчанию 1m
-LEADERBOARD_RATE_BUCKET_TTL  # TTL idle bucket leaderboard limiter, по умолчанию 15m
-WS_HANDSHAKE_RATE_ATTEMPTS   # лимит /ws handshakes на IP, по умолчанию 60
-WS_HANDSHAKE_RATE_WINDOW     # окно WS handshake limiter, по умолчанию 1m
-WS_HANDSHAKE_RATE_BUCKET_TTL # TTL idle bucket WS limiter, по умолчанию 15m
-WS_MESSAGE_RATE_ATTEMPTS     # parsed WS messages на соединение, по умолчанию 120
-WS_MESSAGE_RATE_WINDOW       # окно WS message limiter, по умолчанию 1m
-WS_ACTION_RATE_ATTEMPTS      # join/leave/flag/surrender actions на соединение, по умолчанию 30
-WS_ACTION_RATE_WINDOW        # окно WS action limiter, по умолчанию 1m
 ```
 
 Если оставить эти значения как `secrets.*` вместо `vars.*`, GitHub Actions либо
 не отдаст их нужному job, либо расширение GitHub Actions для VS Code будет
 показывать варнинги «Context access might be invalid».
+
+Origin allowlists также должны быть в runtime-конфигурации сервера. GitHub vars
+только валидируют direct browser build. Для изменения backend runtime defaults
+используйте следующие переменные:
+
+```text
+WS_REQUIRE_ORIGIN       # требовать browser Origin на tournament realtime endpoints
+ADMIN_REFRESH_RATE_ATTEMPTS  # лимит POST /api/v1/admin/refresh, по умолчанию 10
+ADMIN_REFRESH_RATE_WINDOW    # окно refresh rate-limit, по умолчанию 3m
+LEADERBOARD_RATE_ATTEMPTS    # лимит GET /api/v1/leaderboard на IP, по умолчанию 120
+LEADERBOARD_RATE_WINDOW      # окно leaderboard rate-limit, по умолчанию 1m
+WS_HANDSHAKE_RATE_ATTEMPTS   # лимит realtime handshakes на IP, по умолчанию 60
+WS_HANDSHAKE_RATE_WINDOW     # окно WS handshake limiter, по умолчанию 1m
+WS_MAX_CONNECTIONS          # общий лимит принятых realtime connections, по умолчанию 512
+WS_MAX_CONNECTIONS_PER_PRINCIPAL # participant/operator connections на principal, по умолчанию 4
+```
 
 `DEPLOY_USER` должен иметь shell, доступ к git, доступ к docker и права на
 `DEPLOY_PATH`/`.env`. Bootstrap настраивает это автоматически для пользователя

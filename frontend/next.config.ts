@@ -6,7 +6,6 @@ const buildConnectSrc = (): string => {
   const sources = new Set<string>(["'self'"]);
   const apiUrl = process.env.NEXT_PUBLIC_API_URL?.trim();
   const adminApiUrl = process.env.NEXT_PUBLIC_ADMIN_API_URL?.trim();
-  const wsUrl = process.env.NEXT_PUBLIC_WS_URL?.trim();
 
   for (const httpUrl of [apiUrl, adminApiUrl]) {
     if (!httpUrl) continue;
@@ -18,20 +17,13 @@ const buildConnectSrc = (): string => {
     }
   }
 
-  if (wsUrl) {
-    try {
-      const parsed = new URL(wsUrl);
-      sources.add(`${parsed.protocol}//${parsed.host}`);
-    } catch {
-      // Ignore malformed env value.
-    }
-  } else if (apiUrl) {
+  if (apiUrl) {
     try {
       const parsed = new URL(apiUrl);
       const wsScheme = parsed.protocol === "https:" ? "wss:" : "ws:";
       sources.add(`${wsScheme}//${parsed.host}`);
     } catch {
-      // Ignore.
+      // Ignore malformed env values; CSP just stays tighter.
     }
   }
 
@@ -93,10 +85,6 @@ const nextConfig: NextConfig = {
       {
         source: "/api/:path*",
         destination: `${backendBase}/api/:path*`,
-      },
-      {
-        source: "/ws",
-        destination: `${backendBase}/ws`,
       },
     ];
   },

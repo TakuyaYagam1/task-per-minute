@@ -8,6 +8,7 @@ type ErrorCode string
 const (
 	ErrorCodeInternal   ErrorCode = "internal"
 	ErrorCodeValidation ErrorCode = "validation"
+	ErrorCodeForbidden  ErrorCode = "forbidden"
 	ErrorCodeConflict   ErrorCode = "conflict"
 	ErrorCodeRateLimit  ErrorCode = "rate_limited"
 
@@ -63,6 +64,7 @@ func WrapError(err error, domainErr *Error) *Error {
 var (
 	ErrInternal    = &Error{Code: ErrorCodeInternal, Message: "internal error"}
 	ErrValidation  = &Error{Code: ErrorCodeValidation, Message: "validation failed"}
+	ErrForbidden   = &Error{Code: ErrorCodeForbidden, Message: "forbidden"}
 	ErrConflict    = &Error{Code: ErrorCodeConflict, Message: "conflict"}
 	ErrRateLimited = &Error{Code: ErrorCodeRateLimit, Message: "too many requests"}
 

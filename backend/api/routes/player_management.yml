@@ -1,0 +1,242 @@
+/api/v1/admin/players:
+  get:
+    operationId: listPlayers
+    tags: [player]
+    summary: List players with effective leaderboard stats
+    security:
+      - AdminSessionAuth: []
+    parameters:
+      - in: query
+        name: include_deleted
+        required: false
+        schema:
+          type: boolean
+          default: false
+    responses:
+      '200':
+        description: Active players, or all players when include_deleted is true.
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '../components/schemas.yml#/PlayerManagementView'
+      '400':
+        description: Invalid include_deleted query parameter.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '401':
+        description: Missing or invalid admin session.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+
+/api/v1/admin/players/events:
+  get:
+    operationId: streamPlayerEvents
+    tags: [player]
+    summary: Stream admin player list invalidation events
+    description: |
+      Server-Sent Events stream for the admin player dashboard. The stream emits
+      `ready` immediately after subscription and `players_changed` whenever the
+      player list, player status, or admin leaderboard overrides change.
+      Heartbeats are sent as SSE comments while the connection is idle.
+    security:
+      - AdminSessionAuth: []
+    responses:
+      '200':
+        description: SSE stream. Events are formatted as text/event-stream.
+        content:
+          text/event-stream:
+            schema:
+              type: string
+      '401':
+        description: Missing or invalid admin session.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+
+/api/v1/admin/players/{id}/audit:
+  parameters:
+    - in: path
+      name: id
+      required: true
+      schema:
+        type: string
+        format: uuid
+  get:
+    operationId: listPlayerAuditEvents
+    tags: [player]
+    summary: List player audit events
+    security:
+      - AdminSessionAuth: []
+    parameters:
+      - in: query
+        name: limit
+        required: false
+        schema:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 200
+          default: 50
+    responses:
+      '200':
+        description: Newest-first audit events for the player.
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '../components/schemas.yml#/PlayerAuditEvent'
+      '400':
+        description: Invalid player id or query parameter.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '401':
+        description: Missing or invalid admin session.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '404':
+        description: Player not found.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+
+/api/v1/admin/players/{id}:
+  parameters:
+    - in: path
+      name: id
+      required: true
+      schema:
+        type: string
+        format: uuid
+  put:
+    operationId: updatePlayer
+    tags: [player]
+    summary: Rename a player and override their leaderboard stats
+    description: |
+      Writes an explicit admin leaderboard override for wins and average solve time.
+      Set wins=0 and average_solve_time_ms=0 to remove the player from the public leaderboard.
+    security:
+      - AdminSessionAuth: []
+    parameters:
+      - $ref: '../components/parameters.yml#/AdminCSRFToken'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../components/schemas.yml#/UpdatePlayerRequest'
+    responses:
+      '200':
+        description: Updated player.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/PlayerManagementView'
+      '400':
+        description: Validation error.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '401':
+        description: Missing or invalid admin session.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '403':
+        description: CSRF token does not match the admin access session, or the request origin or referer is not allowed.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '404':
+        description: Player not found.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '409':
+        description: Username is already taken.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '413':
+        description: Request body exceeds the JSON size limit.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '415':
+        description: Request content type must be application/json.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+  delete:
+    operationId: deletePlayer
+    tags: [player]
+    summary: Soft-delete a player
+    description: |
+      Soft-deletes the player, clears their session token, and hides them from admin/player leaderboard lists.
+      Returns 409 while tournament records still reference the player.
+    security:
+      - AdminSessionAuth: []
+    parameters:
+      - $ref: '../components/parameters.yml#/AdminCSRFToken'
+    responses:
+      '204':
+        description: Deleted.
+      '400':
+        description: Invalid player id or CSRF header.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '401':
+        description: Missing or invalid admin session.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '403':
+        description: CSRF token does not match the admin access session, or the request origin or referer is not allowed.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '404':
+        description: Player not found.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '409':
+        description: Player is referenced by tournament records.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'

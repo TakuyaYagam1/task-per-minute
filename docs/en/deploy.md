@@ -124,58 +124,60 @@ TASK_SAMOVAR_DOMAIN=samovar.xn--90aeebbpdxndkcm5abncn1ej9mqa.xn--p1ai
 TASK_VKONTAKTE_DOMAIN=vkontakte.xn--90aeebbpdxndkcm5abncn1ej9mqa.xn--p1ai
 TASK_DEDYS_DOMAIN=dedys.xn--90aeebbpdxndkcm5abncn1ej9mqa.xn--p1ai
 HTTP_ALLOWED_ORIGINS=https://admin.xn--90aeebbpdxndkcm5abncn1ej9mqa.xn--p1ai,https://xn--90aeebbpdxndkcm5abncn1ej9mqa.xn--p1ai
-WS_ALLOWED_ORIGINS=https://xn--90aeebbpdxndkcm5abncn1ej9mqa.xn--p1ai
+WS_ALLOWED_ORIGINS=https://admin.xn--90aeebbpdxndkcm5abncn1ej9mqa.xn--p1ai,https://xn--90aeebbpdxndkcm5abncn1ej9mqa.xn--p1ai
 WS_REQUIRE_ORIGIN=true
 NEXT_PUBLIC_API_URL=https://api.xn--90aeebbpdxndkcm5abncn1ej9mqa.xn--p1ai
 NEXT_PUBLIC_ADMIN_API_URL=https://api.xn--90aeebbpdxndkcm5abncn1ej9mqa.xn--p1ai
-NEXT_PUBLIC_WS_URL=wss://api.xn--90aeebbpdxndkcm5abncn1ej9mqa.xn--p1ai/ws
 SEAWEEDFS_PUBLIC_ENDPOINT=files.xn--90aeebbpdxndkcm5abncn1ej9mqa.xn--p1ai
 SEAWEEDFS_PUBLIC_SECURE=true
 ADMIN_LOGIN_RATE_ATTEMPTS=3
 ADMIN_LOGIN_RATE_WINDOW=3m
-ADMIN_LOGIN_RATE_BUCKET_TTL=15m
 ADMIN_REFRESH_RATE_ATTEMPTS=10
 ADMIN_REFRESH_RATE_WINDOW=3m
-ADMIN_REFRESH_RATE_BUCKET_TTL=15m
 LEADERBOARD_RATE_ATTEMPTS=120
 LEADERBOARD_RATE_WINDOW=1m
-LEADERBOARD_RATE_BUCKET_TTL=15m
 WS_HANDSHAKE_RATE_ATTEMPTS=60
 WS_HANDSHAKE_RATE_WINDOW=1m
-WS_HANDSHAKE_RATE_BUCKET_TTL=15m
-WS_MESSAGE_RATE_ATTEMPTS=120
-WS_MESSAGE_RATE_WINDOW=1m
-WS_ACTION_RATE_ATTEMPTS=30
-WS_ACTION_RATE_WINDOW=1m
+WS_MAX_CONNECTIONS=512
+WS_MAX_CONNECTIONS_PER_PRINCIPAL=4
 ```
 
-If `NEXT_PUBLIC_*` stays empty, the frontend reaches the backend through
-same-origin rewrites (`/api` and `/ws`) and the internal `BACKEND_URL`. When
-these values are set, the browser talks to the public API/WS endpoints directly.
-The deploy workflow validates the build mode: either all `NEXT_PUBLIC_*` values
-are empty, or all three `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_ADMIN_API_URL`, and
-`NEXT_PUBLIC_WS_URL` are set. Direct mode requires `https://` for REST,
-`wss://.../ws` for WS, a shared backend origin, and explicit GitHub vars
+If both `NEXT_PUBLIC_*` values stay empty, the frontend reaches the backend
+through the same-origin `/api` rewrite and the internal `BACKEND_URL`. When the
+values are set, the browser talks to that public API origin directly. The deploy
+workflow requires `NEXT_PUBLIC_API_URL` and `NEXT_PUBLIC_ADMIN_API_URL` together,
+using `https://` and one backend origin. Tournament realtime uses the same API
+origin with `wss://` and its role-specific `/api/v1/.../realtime` path, so there
+is no separate frontend WebSocket URL. Direct mode also requires explicit
 `HTTP_ALLOWED_ORIGINS` and `WS_ALLOWED_ORIGINS` without wildcards; WS origins
-must be a subset of REST origins. These values are baked into the frontend image
-at build time, so changing the server `.env` after the build does not change
-the browser bundle. For browser-only production mode, `WS_REQUIRE_ORIGIN=true`
-is recommended; integration CLI clients without `Origin` will receive `403`.
+must be a subset of REST origins. Build-time values are baked into the frontend
+image. For browser-only production mode, `WS_REQUIRE_ORIGIN=true` is
+recommended; integration CLI clients without `Origin` will receive `403`.
 
 Browser authentication uses HttpOnly cookies. Player/Admin session tokens must
-not be stored in `localStorage` or `sessionStorage`; the frontend keeps only an
-admin-session marker and readable CSRF tokens. Unsafe REST requests with
-cookie-auth must send `X-CSRF-Token`; admin refresh/logout use the refresh CSRF
-token from `X-Admin-Refresh-CSRF-Token` in either `X-CSRF-Token` or
-`X-Admin-Refresh-CSRF-Token`. WebSocket connects only to `/ws` with
-the player session cookie: query token `/ws?token=...`, `X-Session-Token`, and
-bearer subprotocol are no longer supported browser contracts.
+not be stored in `localStorage` or `sessionStorage`; the frontend stores only
+readable CSRF tokens. Unsafe REST requests with cookie auth must send
+`X-CSRF-Token`. Login and refresh responses return the refresh CSRF value in
+`X-Admin-Refresh-CSRF-Token`; refresh and logout requests send that value in
+`X-CSRF-Token`. `X-Admin-Refresh-CSRF-Token` is not a request header.
+Participant and operator tournament realtime handshakes use the corresponding
+session cookie. Query credentials, `X-Session-Token`, and bearer subprotocols
+are rejected.
+
+Player join does not replace an active session by username. It returns `409`
+until the existing session expires, after which the username can be reclaimed.
+
+`WS_MAX_CONNECTIONS` limits all accepted tournament realtime connections and
+defaults to `512`. `WS_MAX_CONNECTIONS_PER_PRINCIPAL` limits concurrent
+participant or operator connections for one authenticated principal and
+defaults to `4`. Anonymous public connections count only toward the global
+limit.
 
 Caddy/compose defaults are sized for backend uploads up to 100MB: API-capable
 routes use `request_body max_size 125MB`, and backend read/write timeout stays
 at `5m`.
 
-Production compose now includes a Caddy edge service. Only `CADDY_HTTP_PORT`
+Production compose includes a Caddy edge service. Only `CADDY_HTTP_PORT`
 and `CADDY_HTTPS_PORT` are published to the host; backend, frontend, Postgres,
 Redis, and SeaweedFS stay inside the Docker network. `expose` on internal
 services does not publish a host port; it only documents the service port inside
@@ -190,7 +192,8 @@ DOCKER_INTERNAL_SUBNET=172.30.0.0/24
 HTTP_TRUSTED_PROXY_CIDRS=172.30.0.0/24
 ```
 
-If every user behind Caddy receives `429` on login/refresh/join or `/ws`, check
+If every user behind Caddy receives `429` on login/refresh/join or tournament
+realtime handshakes, check
 that `HTTP_TRUSTED_PROXY_CIDRS` matches the Docker subnet and that Caddy sends
 `X-Forwarded-For`. The backend reads forwarded headers only from trusted
 proxies; with an empty or wrong CIDR, limits collapse to the proxy address.
@@ -314,28 +317,29 @@ FRONTEND_BACKEND_URL    # build-time BACKEND_URL for Next rewrites, default http
 FRONTEND_PORT           # build-time frontend image port, default 3000
 NEXT_PUBLIC_API_URL     # public API URL for direct browser-to-backend mode
 NEXT_PUBLIC_ADMIN_API_URL # public admin API URL
-NEXT_PUBLIC_WS_URL      # public WS URL
 HTTP_ALLOWED_ORIGINS    # REST browser origins; required for direct mode
 WS_ALLOWED_ORIGINS      # WS browser origins; subset of HTTP_ALLOWED_ORIGINS
-WS_REQUIRE_ORIGIN       # require browser Origin on /ws, recommended true in prod
-ADMIN_REFRESH_RATE_ATTEMPTS  # POST /api/v1/admin/refresh limit, default 10
-ADMIN_REFRESH_RATE_WINDOW    # refresh rate-limit window, default 3m
-ADMIN_REFRESH_RATE_BUCKET_TTL # refresh limiter idle bucket TTL, default 15m
-LEADERBOARD_RATE_ATTEMPTS    # GET /api/v1/leaderboard per-IP limit, default 120
-LEADERBOARD_RATE_WINDOW      # leaderboard rate-limit window, default 1m
-LEADERBOARD_RATE_BUCKET_TTL  # leaderboard limiter idle bucket TTL, default 15m
-WS_HANDSHAKE_RATE_ATTEMPTS   # /ws handshakes per-IP limit, default 60
-WS_HANDSHAKE_RATE_WINDOW     # WS handshake limiter window, default 1m
-WS_HANDSHAKE_RATE_BUCKET_TTL # WS limiter idle bucket TTL, default 15m
-WS_MESSAGE_RATE_ATTEMPTS     # parsed WS messages per connection, default 120
-WS_MESSAGE_RATE_WINDOW       # WS message limiter window, default 1m
-WS_ACTION_RATE_ATTEMPTS      # join/leave/flag/surrender actions per connection, default 30
-WS_ACTION_RATE_WINDOW        # WS action limiter window, default 1m
 ```
 
 If you keep these values as `secrets.*` instead of `vars.*`, GitHub Actions will
 either not expose them to the relevant job or the VS Code GitHub Actions
 extension will flag context-access warnings.
+
+The origin allowlists must also be present in the server runtime configuration;
+the GitHub variables only validate the direct browser build. Backend runtime
+limits use these variables when their defaults need an override:
+
+```text
+WS_REQUIRE_ORIGIN       # require browser Origin on tournament realtime endpoints
+ADMIN_REFRESH_RATE_ATTEMPTS  # POST /api/v1/admin/refresh limit, default 10
+ADMIN_REFRESH_RATE_WINDOW    # refresh rate-limit window, default 3m
+LEADERBOARD_RATE_ATTEMPTS    # GET /api/v1/leaderboard per-IP limit, default 120
+LEADERBOARD_RATE_WINDOW      # leaderboard rate-limit window, default 1m
+WS_HANDSHAKE_RATE_ATTEMPTS   # realtime handshakes per-IP limit, default 60
+WS_HANDSHAKE_RATE_WINDOW     # WS handshake limiter window, default 1m
+WS_MAX_CONNECTIONS          # total accepted realtime connections, default 512
+WS_MAX_CONNECTIONS_PER_PRINCIPAL # participant/operator connections per principal, default 4
+```
 
 `DEPLOY_USER` should be an SSH user with shell, git access, docker access, and
 read/write access to `DEPLOY_PATH`/`.env`. Bootstrap configures this for the

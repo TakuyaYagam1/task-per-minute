@@ -1,16 +1,14 @@
 import { Player } from "../../shared/types";
-import { ApiError, playerApi, type PlayerMeResponse } from "../../shared/api";
+import { ApiError, playerApi } from "../../shared/api";
 import { ApiContractError } from "../../shared/api/guards";
-import { gameStorage } from "../../shared/lib/storage";
+import { playerStorage } from "../../shared/lib/storage";
 
 interface PlayerSessionState {
   player: Player;
-  activeDuel?: PlayerMeResponse["active_duel"];
 }
 
 export type InitializePlayerResult =
   | { kind: "ok"; player: Player }
-  | { kind: "in_duel" }
   | { kind: "rate_limited"; retryAfter?: string | null }
   | { kind: "aborted" }
   | { kind: "error" };
@@ -39,18 +37,14 @@ export const playerModel = {
         username: username,
       };
 
-      gameStorage.clearPlayerSession();
-      gameStorage.clearGameData();
-      gameStorage.setPlayerId(player.id);
-      gameStorage.setUsername(player.username);
+      playerStorage.clearSession();
+      playerStorage.setPlayerId(player.id);
+      playerStorage.setUsername(player.username);
 
       return { kind: "ok", player };
     } catch (error) {
       if (isAbortError(error)) {
         return { kind: "aborted" };
-      }
-      if (error instanceof ApiError && error.status === 409) {
-        return { kind: "in_duel" };
       }
       if (error instanceof ApiError && error.status === 429) {
         return { kind: "rate_limited", retryAfter: error.retryAfter };
@@ -70,15 +64,14 @@ export const playerModel = {
         username: data.player.username,
       };
 
-      gameStorage.clearPlayerSession();
-      gameStorage.setPlayerId(nextPlayer.id);
-      gameStorage.setUsername(nextPlayer.username);
+      playerStorage.clearSession();
+      playerStorage.setPlayerId(nextPlayer.id);
+      playerStorage.setUsername(nextPlayer.username);
 
       return {
         kind: "ok",
         state: {
           player: nextPlayer,
-          activeDuel: data.active_duel,
         },
       };
     } catch (error) {
@@ -86,8 +79,7 @@ export const playerModel = {
         return { kind: "aborted" };
       }
       if (error instanceof ApiError && error.status === 401) {
-        gameStorage.clearPlayerSession();
-        gameStorage.clearGameData();
+        playerStorage.clearSession();
         return { kind: "expired" };
       }
       if (error instanceof ApiContractError) {
@@ -98,7 +90,7 @@ export const playerModel = {
   },
 
   async clearCurrentPlayer(): Promise<void> {
-    gameStorage.clearPlayerSession();
+    playerStorage.clearSession();
     try {
       await playerApi.logout();
     } catch {
@@ -107,8 +99,8 @@ export const playerModel = {
   },
 
   getCurrentPlayer(): Player | null {
-    const id = gameStorage.getPlayerId();
-    const username = gameStorage.getUsername();
+    const id = playerStorage.getPlayerId();
+    const username = playerStorage.getUsername();
 
     if (!id || !username) return null;
 

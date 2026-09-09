@@ -1,10 +1,7 @@
 import { expect, test, type Route } from '@playwright/test';
 import { jsonHeaders, nowISO } from './support/common';
 import {
-  adminAccessNew,
-  adminAccessOld,
-  adminRefreshNew,
-  adminRefreshOld,
+  adminSessionResponse,
   fillAdminTaskForm,
   loginAdminWithEmptyTaskList,
   type MockAdminTask,
@@ -72,7 +69,7 @@ test('admin task lifecycle uses cookie auth, refresh retry, and source upload', 
   let updateCalls = 0;
   let deleteCalls = 0;
   let uploadCalls = 0;
-  const bearerTokens: string[] = [];
+  const authorizationHeaders: string[] = [];
 
   await page.route('**/api/v1/admin/login', async (route) => {
     expect(route.request().method()).toBe('POST');
@@ -84,19 +81,14 @@ test('admin task lifecycle uses cookie auth, refresh retry, and source upload', 
         'X-CSRF-Token': adminAccessCSRF,
         'X-Admin-Refresh-CSRF-Token': adminRefreshCSRF,
       },
-      body: JSON.stringify({
-        access_token: adminAccessOld,
-        refresh_token: adminRefreshOld,
-        token_type: 'Bearer',
-        expires_in: 900,
-      }),
+      body: JSON.stringify(adminSessionResponse()),
     });
   });
 
   await page.route('**/api/v1/admin/refresh', async (route) => {
     refreshCalls += 1;
     expect(route.request().method()).toBe('POST');
-    expect(route.request().postDataJSON()).toEqual({ refresh_token: '' });
+    expect(route.request().postData()).toBeNull();
     await route.fulfill({
       status: 200,
       headers: {
@@ -104,12 +96,7 @@ test('admin task lifecycle uses cookie auth, refresh retry, and source upload', 
         'X-CSRF-Token': adminAccessCSRF,
         'X-Admin-Refresh-CSRF-Token': adminRefreshCSRF,
       },
-      body: JSON.stringify({
-        access_token: adminAccessNew,
-        refresh_token: adminRefreshNew,
-        token_type: 'Bearer',
-        expires_in: 900,
-      }),
+      body: JSON.stringify(adminSessionResponse()),
     });
   });
 
@@ -119,7 +106,7 @@ test('admin task lifecycle uses cookie auth, refresh retry, and source upload', 
     const path = new URL(request.url()).pathname;
     const authorization = request.headers().authorization;
     if (authorization) {
-      bearerTokens.push(authorization);
+      authorizationHeaders.push(authorization);
     }
 
     if (path === '/api/v1/admin/tasks' && method === 'GET') {
@@ -291,7 +278,7 @@ test('admin task lifecycle uses cookie auth, refresh retry, and source upload', 
   expect(uploadCalls).toBe(1);
   expect(updateCalls).toBe(1);
   expect(deleteCalls).toBe(1);
-  expect(bearerTokens).toEqual([]);
+  expect(authorizationHeaders).toEqual([]);
 });
 
 test('admin shows newly created task before list refresh completes', async ({ page }) => {
@@ -308,12 +295,7 @@ test('admin shows newly created task before list refresh completes', async ({ pa
     await route.fulfill({
       status: 200,
       headers: jsonHeaders,
-      body: JSON.stringify({
-        access_token: adminAccessNew,
-        refresh_token: adminRefreshNew,
-        token_type: 'Bearer',
-        expires_in: 900,
-      }),
+      body: JSON.stringify(adminSessionResponse()),
     });
   });
 
@@ -374,7 +356,6 @@ test('admin players section updates and deletes player stats', async ({ page }) 
   type MockAdminPlayer = {
     id: string;
     username: string;
-    status: 'idle' | 'queued' | 'in_duel';
     created_at: string;
     deleted_at?: string | null;
     wins: number;
@@ -389,7 +370,6 @@ test('admin players section updates and deletes player stats', async ({ page }) 
     player_id: string;
     before_state: {
       username: string;
-      status: 'idle' | 'queued' | 'in_duel';
       wins: number;
       average_solve_time_ms: number;
       stats_overridden: boolean;
@@ -397,7 +377,6 @@ test('admin players section updates and deletes player stats', async ({ page }) 
     };
     after_state: {
       username: string;
-      status: 'idle' | 'queued' | 'in_duel';
       wins: number;
       average_solve_time_ms: number;
       stats_overridden: boolean;
@@ -408,7 +387,6 @@ test('admin players section updates and deletes player stats', async ({ page }) 
   let player: MockAdminPlayer | null = {
     id: playerID,
     username: 'bad_name',
-    status: 'idle',
     created_at: nowISO(),
     deleted_at: null,
     wins: 1,
@@ -421,26 +399,16 @@ test('admin players section updates and deletes player stats', async ({ page }) 
     await route.fulfill({
       status: 200,
       headers: jsonHeaders,
-      body: JSON.stringify({
-        access_token: adminAccessOld,
-        refresh_token: adminRefreshOld,
-        token_type: 'Bearer',
-        expires_in: 900,
-      }),
+      body: JSON.stringify(adminSessionResponse()),
     });
   });
 
   await page.route('**/api/v1/admin/refresh', async (route) => {
-    expect(route.request().postDataJSON()).toEqual({ refresh_token: '' });
+    expect(route.request().postData()).toBeNull();
     await route.fulfill({
       status: 200,
       headers: jsonHeaders,
-      body: JSON.stringify({
-        access_token: adminAccessNew,
-        refresh_token: adminRefreshNew,
-        token_type: 'Bearer',
-        expires_in: 900,
-      }),
+      body: JSON.stringify(adminSessionResponse()),
     });
   });
 
@@ -493,7 +461,6 @@ test('admin players section updates and deletes player stats', async ({ page }) 
         player_id: playerID,
         before_state: {
           username: 'bad_name',
-          status: 'idle',
           wins: 1,
           average_solve_time_ms: 90000,
           stats_overridden: false,
@@ -501,7 +468,6 @@ test('admin players section updates and deletes player stats', async ({ page }) 
         },
         after_state: {
           username: 'clean_name',
-          status: 'idle',
           wins: 2,
           average_solve_time_ms: 120000,
           stats_overridden: true,
@@ -529,7 +495,6 @@ test('admin players section updates and deletes player stats', async ({ page }) 
         player_id: playerID,
         before_state: {
           username: 'clean_name',
-          status: 'idle',
           wins: 2,
           average_solve_time_ms: 120000,
           stats_overridden: true,
@@ -537,7 +502,6 @@ test('admin players section updates and deletes player stats', async ({ page }) 
         },
         after_state: {
           username: 'deleted_777',
-          status: 'idle',
           wins: 2,
           average_solve_time_ms: 120000,
           stats_overridden: true,
@@ -548,7 +512,6 @@ test('admin players section updates and deletes player stats', async ({ page }) 
       player = {
         ...player!,
         username: 'deleted_777',
-        status: 'idle',
         deleted_at: nowISO(),
       };
       await route.fulfill({ status: 204 });
@@ -606,27 +569,17 @@ test('admin players realtime SSE failures do not spam refresh', async ({ page })
     await route.fulfill({
       status: 200,
       headers: jsonHeaders,
-      body: JSON.stringify({
-        access_token: adminAccessOld,
-        refresh_token: adminRefreshOld,
-        token_type: 'Bearer',
-        expires_in: 900,
-      }),
+      body: JSON.stringify(adminSessionResponse()),
     });
   });
 
   await page.route('**/api/v1/admin/refresh', async (route) => {
     refreshCalls += 1;
-    expect(route.request().postDataJSON()).toEqual({ refresh_token: '' });
+    expect(route.request().postData()).toBeNull();
     await route.fulfill({
       status: 200,
       headers: jsonHeaders,
-      body: JSON.stringify({
-        access_token: adminAccessNew,
-        refresh_token: adminRefreshNew,
-        token_type: 'Bearer',
-        expires_in: 900,
-      }),
+      body: JSON.stringify(adminSessionResponse()),
     });
   });
 
@@ -683,26 +636,16 @@ test('admin malformed player audit response does not break players section', asy
     await route.fulfill({
       status: 200,
       headers: jsonHeaders,
-      body: JSON.stringify({
-        access_token: adminAccessOld,
-        refresh_token: adminRefreshOld,
-        token_type: 'Bearer',
-        expires_in: 900,
-      }),
+      body: JSON.stringify(adminSessionResponse()),
     });
   });
 
   await page.route('**/api/v1/admin/refresh', async (route) => {
-    expect(route.request().postDataJSON()).toEqual({ refresh_token: '' });
+    expect(route.request().postData()).toBeNull();
     await route.fulfill({
       status: 200,
       headers: jsonHeaders,
-      body: JSON.stringify({
-        access_token: adminAccessNew,
-        refresh_token: adminRefreshNew,
-        token_type: 'Bearer',
-        expires_in: 900,
-      }),
+      body: JSON.stringify(adminSessionResponse()),
     });
   });
 
@@ -786,12 +729,7 @@ test('admin preserves source_file_url when editing source task to another catego
     await route.fulfill({
       status: 200,
       headers: jsonHeaders,
-      body: JSON.stringify({
-        access_token: adminAccessNew,
-        refresh_token: adminRefreshNew,
-        token_type: 'Bearer',
-        expires_in: 900,
-      }),
+      body: JSON.stringify(adminSessionResponse()),
     });
   });
 
@@ -859,6 +797,7 @@ test('admin preserves source_file_url when editing source task to another catego
     task_url: 'https://example.com/cleanup',
   }));
   expect(updatePayload).not.toHaveProperty('source_file_url');
+  expect(updatePayload).not.toHaveProperty('clear_source_file');
 });
 
 test('admin temporary category flip back to forensics preserves source_file_url', async ({ page }) => {
@@ -870,12 +809,7 @@ test('admin temporary category flip back to forensics preserves source_file_url'
     await route.fulfill({
       status: 200,
       headers: jsonHeaders,
-      body: JSON.stringify({
-        access_token: adminAccessNew,
-        refresh_token: adminRefreshNew,
-        token_type: 'Bearer',
-        expires_in: 900,
-      }),
+      body: JSON.stringify(adminSessionResponse()),
     });
   });
 
@@ -941,9 +875,10 @@ test('admin temporary category flip back to forensics preserves source_file_url'
     task_url: null,
   }));
   expect(updatePayload).not.toHaveProperty('source_file_url');
+  expect(updatePayload).not.toHaveProperty('clear_source_file');
 });
 
-test('admin canceling a replacement source file preserves existing source_file_url', async ({ page }) => {
+test('admin submits explicit source file clear after canceling a replacement', async ({ page }) => {
   const taskID = '59595959-5959-5959-5959-595959595959';
   const title = 'Forensics Replacement Cancel';
   let updatePayload: Record<string, unknown> | null = null;
@@ -952,12 +887,7 @@ test('admin canceling a replacement source file preserves existing source_file_u
     await route.fulfill({
       status: 200,
       headers: jsonHeaders,
-      body: JSON.stringify({
-        access_token: adminAccessNew,
-        refresh_token: adminRefreshNew,
-        token_type: 'Bearer',
-        expires_in: 900,
-      }),
+      body: JSON.stringify(adminSessionResponse()),
     });
   });
 
@@ -993,7 +923,7 @@ test('admin canceling a replacement source file preserves existing source_file_u
           title,
           category: 'forensics',
           task_url: null,
-          source_file_url: 'https://files.example/current.zip',
+          source_file_url: null,
         })),
       });
       return;
@@ -1032,12 +962,15 @@ test('admin canceling a replacement source file preserves existing source_file_u
   await expect(page.getByText('replacement.zip')).toBeVisible();
   await page.getByRole('button', { name: 'Убрать выбранный ZIP' }).click();
   await expect(page.getByText('Текущий архив сохранён')).toBeVisible();
+  await page.getByRole('button', { name: 'Пометить текущий архив к удалению' }).click();
+  await expect(page.getByText('Архив будет удалён после сохранения задачи')).toBeVisible();
   await page.getByRole('button', { name: /Сохранить задачу/ }).click();
 
   await expect(page.getByText('Задача успешно обновлена!')).toBeVisible();
   expect(updatePayload).toEqual(expect.objectContaining({
     category: 'forensics',
     task_url: null,
+    clear_source_file: true,
   }));
   expect(updatePayload).not.toHaveProperty('source_file_url');
 });
@@ -1047,19 +980,14 @@ test('admin pwn task keeps raw host-port task_url on create and update', async (
   let task: MockAdminTask | null = null;
   let createCalls = 0;
   let updateCalls = 0;
-  const bearerTokens: string[] = [];
+  const authorizationHeaders: string[] = [];
 
   await page.route('**/api/v1/admin/login', async (route) => {
     expect(route.request().method()).toBe('POST');
     await route.fulfill({
       status: 200,
       headers: jsonHeaders,
-      body: JSON.stringify({
-        access_token: adminAccessOld,
-        refresh_token: adminRefreshOld,
-        token_type: 'Bearer',
-        expires_in: 900,
-      }),
+      body: JSON.stringify(adminSessionResponse()),
     });
   });
 
@@ -1069,7 +997,7 @@ test('admin pwn task keeps raw host-port task_url on create and update', async (
     const path = new URL(request.url()).pathname;
     const authorization = request.headers().authorization;
     if (authorization) {
-      bearerTokens.push(authorization);
+      authorizationHeaders.push(authorization);
     }
 
     if (path === '/api/v1/admin/tasks' && method === 'GET') {
@@ -1173,7 +1101,7 @@ test('admin pwn task keeps raw host-port task_url on create and update', async (
 
   expect(createCalls).toBe(1);
   expect(updateCalls).toBe(1);
-  expect(bearerTokens).toEqual([]);
+  expect(authorizationHeaders).toEqual([]);
 });
 
 test('admin task form rejects non-decimal time limits before create', async ({ page }) => {
@@ -1293,12 +1221,7 @@ test('admin task form rejects whitespace-only required fields before update', as
     await route.fulfill({
       status: 200,
       headers: jsonHeaders,
-      body: JSON.stringify({
-        access_token: adminAccessOld,
-        refresh_token: adminRefreshOld,
-        token_type: 'Bearer',
-        expires_in: 900,
-      }),
+      body: JSON.stringify(adminSessionResponse()),
     });
   });
 
@@ -1383,27 +1306,17 @@ test('admin create refresh is reused for source upload in the same submit', asyn
     await route.fulfill({
       status: 200,
       headers: jsonHeaders,
-      body: JSON.stringify({
-        access_token: adminAccessOld,
-        refresh_token: adminRefreshOld,
-        token_type: 'Bearer',
-        expires_in: 900,
-      }),
+      body: JSON.stringify(adminSessionResponse()),
     });
   });
 
   await page.route('**/api/v1/admin/refresh', async (route) => {
     refreshCalls += 1;
-    expect(route.request().postDataJSON()).toEqual({ refresh_token: '' });
+    expect(route.request().postData()).toBeNull();
     await route.fulfill({
       status: 200,
       headers: jsonHeaders,
-      body: JSON.stringify({
-        access_token: adminAccessNew,
-        refresh_token: adminRefreshNew,
-        token_type: 'Bearer',
-        expires_in: 900,
-      }),
+      body: JSON.stringify(adminSessionResponse()),
     });
   });
 
@@ -1489,9 +1402,6 @@ test('admin create refresh is reused for source upload in the same submit', asyn
   expect(listAuthorizations).toEqual([undefined]);
   expect(createAuthorizations).toEqual([undefined, undefined]);
   expect(uploadAuthorizations).toEqual([undefined]);
-  await expect
-    .poll(() => page.evaluate(() => window.sessionStorage.getItem('admin_session_active')))
-    .toBe('1');
 });
 
 test('admin invalid source file clears previous selection and prevents stale upload', async ({ page }) => {
@@ -1503,12 +1413,7 @@ test('admin invalid source file clears previous selection and prevents stale upl
     await route.fulfill({
       status: 200,
       headers: jsonHeaders,
-      body: JSON.stringify({
-        access_token: adminAccessNew,
-        refresh_token: adminRefreshNew,
-        token_type: 'Bearer',
-        expires_in: 900,
-      }),
+      body: JSON.stringify(adminSessionResponse()),
     });
   });
 
@@ -1595,7 +1500,6 @@ test('admin source upload timeout is mapped to controlled api error', async () =
 
   try {
     await adminApi.uploadSource(
-      adminAccessOld,
       '90909090-9090-9090-9090-909090909090',
       new File([Buffer.from('PK\u0005\u0006contract')], 'source.zip', {
         type: 'application/zip',
@@ -1624,9 +1528,7 @@ test('admin malformed successful REST responses do not persist invalid state', a
       await route.fulfill({
         status: 200,
         headers: jsonHeaders,
-        body: JSON.stringify({
-          access_token: adminAccessNew,
-        }),
+        body: JSON.stringify({ expires_in: 'invalid' }),
       });
       return;
     }
@@ -1634,12 +1536,7 @@ test('admin malformed successful REST responses do not persist invalid state', a
     await route.fulfill({
       status: 200,
       headers: jsonHeaders,
-      body: JSON.stringify({
-        access_token: adminAccessNew,
-        refresh_token: adminRefreshNew,
-        token_type: 'Bearer',
-        expires_in: 900,
-      }),
+      body: JSON.stringify(adminSessionResponse()),
     });
   });
 
@@ -1692,9 +1589,6 @@ test('admin malformed successful REST responses do not persist invalid state', a
   await page.getByRole('button', { name: 'Войти' }).click();
 
   await expect(page.getByText('Ошибка подключения к серверу')).toBeVisible();
-  await expect
-    .poll(() => page.evaluate(() => window.sessionStorage.getItem('admin_access_token')))
-    .toBeNull();
 
   await page.getByPlaceholder('Введите пароль...').fill('correct-password');
   await page.getByRole('button', { name: 'Войти' }).click();
@@ -1718,36 +1612,27 @@ test('admin malformed successful REST responses do not persist invalid state', a
 
   await expect(page.getByText('Задача создана, но файл не загрузился')).toBeVisible();
   await expect(page.getByText('Invalid Source URL')).toBeHidden();
-  await expect
-    .poll(() => page.evaluate(() => window.sessionStorage.getItem('admin_session_active')))
-    .toBe('1');
   expect(createCalls).toBe(1);
   expect(uploadCalls).toBe(1);
 });
 
-test('malformed admin refresh clears session without retrying invalid tokens', async ({ page }) => {
+test('malformed admin bootstrap refresh rejects the session without a protected request', async ({ page }) => {
   let refreshCalls = 0;
   let listCalls = 0;
-  const bearerTokens: string[] = [];
+  const authorizationHeaders: string[] = [];
 
   await page.addInitScript(() => {
-    window.sessionStorage.setItem('admin_session_active', '1');
-    window.sessionStorage.removeItem('admin_access_token');
-    window.sessionStorage.removeItem('admin_refresh_token');
+    window.sessionStorage.setItem('admin_refresh_csrf_token', 'resume-refresh-csrf-token');
   });
 
   await page.route('**/api/v1/admin/refresh', async (route) => {
     refreshCalls += 1;
     expect(route.request().method()).toBe('POST');
-    expect(route.request().postDataJSON()).toEqual({ refresh_token: '' });
+    expect(route.request().postData()).toBeNull();
     await route.fulfill({
       status: 200,
       headers: jsonHeaders,
-      body: JSON.stringify({
-        access_token: adminAccessNew,
-        refresh_token: adminRefreshNew,
-        token_type: 'Bearer',
-      }),
+      body: JSON.stringify({ expires_in: 'invalid' }),
     });
   });
 
@@ -1757,7 +1642,7 @@ test('malformed admin refresh clears session without retrying invalid tokens', a
     const path = new URL(request.url()).pathname;
     const authorization = request.headers().authorization;
     if (authorization) {
-      bearerTokens.push(authorization);
+      authorizationHeaders.push(authorization);
     }
 
     if (path === '/api/v1/admin/tasks' && method === 'GET') {
@@ -1780,18 +1665,66 @@ test('malformed admin refresh clears session without retrying invalid tokens', a
 
   await page.goto('/admin');
 
+  await expect(page.getByText('Авторизация')).toBeVisible();
+  expect(refreshCalls).toBe(1);
+  expect(listCalls).toBe(0);
+  expect(authorizationHeaders).toEqual([]);
+});
+
+test('malformed admin retry refresh clears an active cookie session', async ({ page }) => {
+  let refreshCalls = 0;
+  let listCalls = 0;
+  const authorizationHeaders: string[] = [];
+
+  await page.route('**/api/v1/admin/login', async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: {
+        ...jsonHeaders,
+        'X-CSRF-Token': 'retry-access-csrf',
+        'X-Admin-Refresh-CSRF-Token': 'retry-refresh-csrf',
+      },
+      body: JSON.stringify(adminSessionResponse()),
+    });
+  });
+
+  await page.route('**/api/v1/admin/refresh', async (route) => {
+    refreshCalls += 1;
+    expect(route.request().postData()).toBeNull();
+    await route.fulfill({
+      status: 200,
+      headers: jsonHeaders,
+      body: JSON.stringify({ expires_in: 'invalid' }),
+    });
+  });
+
+  await page.route('**/api/v1/admin/tasks**', async (route) => {
+    listCalls += 1;
+    const authorization = route.request().headers().authorization;
+    if (authorization) {
+      authorizationHeaders.push(authorization);
+    }
+    await route.fulfill({
+      status: 401,
+      headers: jsonHeaders,
+      body: JSON.stringify({
+        type: 'about:blank',
+        title: 'unauthorized',
+        status: 401,
+        detail: 'expired access session',
+      }),
+    });
+  });
+
+  await page.goto('/admin');
+  await page.getByPlaceholder('Введите пароль...').fill('correct-password');
+  await page.getByRole('button', { name: 'Войти' }).click();
+
   await expect(page.getByText('Сессия истекла. Войдите снова.')).toBeVisible();
   await expect(page.getByText('Авторизация')).toBeVisible();
-  await expect
-    .poll(() => page.evaluate(() => window.sessionStorage.getItem('admin_access_token')))
-    .toBeNull();
-  await expect
-    .poll(() => page.evaluate(() => window.sessionStorage.getItem('admin_refresh_token')))
-    .toBeNull();
-
   expect(refreshCalls).toBe(1);
   expect(listCalls).toBe(1);
-  expect(bearerTokens).toEqual([]);
+  expect(authorizationHeaders).toEqual([]);
 });
 
 test('admin logout ignores delayed refresh and prevents stale retry', async ({ page }) => {
@@ -1803,24 +1736,25 @@ test('admin logout ignores delayed refresh and prevents stale retry', async ({ p
   });
 
   await page.addInitScript(() => {
-    window.sessionStorage.setItem('admin_session_active', '1');
-    window.sessionStorage.removeItem('admin_access_token');
-    window.sessionStorage.removeItem('admin_refresh_token');
+    window.sessionStorage.setItem('admin_refresh_csrf_token', 'resume-refresh-csrf-token');
   });
 
   await page.route('**/api/v1/admin/refresh', async (route) => {
     refreshCalls += 1;
-    expect(route.request().postDataJSON()).toEqual({ refresh_token: '' });
+    expect(route.request().postData()).toBeNull();
+    if (refreshCalls === 1) {
+      await route.fulfill({
+        status: 200,
+        headers: jsonHeaders,
+        body: JSON.stringify(adminSessionResponse()),
+      });
+      return;
+    }
     await refreshGate;
     await route.fulfill({
       status: 200,
       headers: jsonHeaders,
-      body: JSON.stringify({
-        access_token: adminAccessNew,
-        refresh_token: adminRefreshNew,
-        token_type: 'Bearer',
-        expires_in: 900,
-      }),
+      body: JSON.stringify(adminSessionResponse()),
     });
   });
 
@@ -1863,7 +1797,7 @@ test('admin logout ignores delayed refresh and prevents stale retry', async ({ p
 
   await page.goto('/admin');
   await expect(page.getByRole('button', { name: 'Выйти' })).toBeVisible();
-  await expect.poll(() => refreshCalls).toBe(1);
+  await expect.poll(() => refreshCalls).toBe(2);
 
   await page.getByRole('button', { name: 'Выйти' }).click();
   await expect(page.getByText('Авторизация')).toBeVisible();
@@ -1873,15 +1807,6 @@ test('admin logout ignores delayed refresh and prevents stale retry', async ({ p
 
   await expect(page.getByText('Авторизация')).toBeVisible();
   await expect(page.getByText('Stale Refreshed Task')).toBeHidden();
-  await expect
-    .poll(() => page.evaluate(() => window.sessionStorage.getItem('admin_access_token')))
-    .toBeNull();
-  await expect
-    .poll(() => page.evaluate(() => window.sessionStorage.getItem('admin_refresh_token')))
-    .toBeNull();
-  await expect
-    .poll(() => page.evaluate(() => window.sessionStorage.getItem('admin_session_active')))
-    .toBeNull();
   expect(listAuthorizations).toEqual([undefined]);
 });
 
@@ -1891,11 +1816,8 @@ test('admin logout sends stored refresh csrf before clearing local admin session
   let logoutRefreshCSRFHeader: string | undefined;
 
   await page.addInitScript((token) => {
-    window.sessionStorage.setItem('admin_session_active', '1');
     window.sessionStorage.setItem('admin_access_csrf_token', 'stored-access-csrf-token');
     window.sessionStorage.setItem('admin_refresh_csrf_token', token);
-    window.sessionStorage.removeItem('admin_access_token');
-    window.sessionStorage.removeItem('admin_refresh_token');
   }, refreshCSRFToken);
 
   await page.route('**/api/v1/admin/logout', async (route) => {
@@ -1903,6 +1825,15 @@ test('admin logout sends stored refresh csrf before clearing local admin session
     logoutRefreshCSRFHeader = route.request().headers()['x-admin-refresh-csrf-token'];
     expect(route.request().headers().authorization).toBeUndefined();
     await route.fulfill({ status: 204 });
+  });
+
+  await page.route('**/api/v1/admin/refresh', async (route) => {
+    expect(route.request().postData()).toBeNull();
+    await route.fulfill({
+      status: 200,
+      headers: jsonHeaders,
+      body: JSON.stringify(adminSessionResponse()),
+    });
   });
 
   await page.route('**/api/v1/admin/tasks**', async (route) => {
@@ -1920,10 +1851,7 @@ test('admin logout sends stored refresh csrf before clearing local admin session
   await expect(page.getByText('Авторизация')).toBeVisible();
 
   expect(logoutCSRFHeader).toBe(refreshCSRFToken);
-  expect(logoutRefreshCSRFHeader).toBe(refreshCSRFToken);
-  await expect
-    .poll(() => page.evaluate(() => window.sessionStorage.getItem('admin_session_active')))
-    .toBeNull();
+  expect(logoutRefreshCSRFHeader).toBeUndefined();
   await expect
     .poll(() => page.evaluate(() => window.sessionStorage.getItem('admin_access_csrf_token')))
     .toBeNull();
@@ -1940,10 +1868,7 @@ test('admin waits for delayed logout before accepting a new login', async ({ pag
   });
 
   await page.addInitScript(() => {
-    window.sessionStorage.setItem('admin_session_active', '1');
     window.sessionStorage.setItem('admin_refresh_csrf_token', 'stored-refresh-csrf-token');
-    window.sessionStorage.removeItem('admin_access_token');
-    window.sessionStorage.removeItem('admin_refresh_token');
   });
 
   await page.route('**/api/v1/admin/logout', async (route) => {
@@ -1951,17 +1876,21 @@ test('admin waits for delayed logout before accepting a new login', async ({ pag
     await route.fulfill({ status: 204 });
   });
 
+  await page.route('**/api/v1/admin/refresh', async (route) => {
+    expect(route.request().postData()).toBeNull();
+    await route.fulfill({
+      status: 200,
+      headers: jsonHeaders,
+      body: JSON.stringify(adminSessionResponse()),
+    });
+  });
+
   await page.route('**/api/v1/admin/login', async (route) => {
     loginCalls += 1;
     await route.fulfill({
       status: 200,
       headers: jsonHeaders,
-      body: JSON.stringify({
-        access_token: adminAccessNew,
-        refresh_token: adminRefreshNew,
-        token_type: 'Bearer',
-        expires_in: 900,
-      }),
+      body: JSON.stringify(adminSessionResponse()),
     });
   });
 
@@ -2003,37 +1932,33 @@ test('admin new login ignores delayed refresh from previous session', async ({ p
   });
 
   await page.addInitScript(() => {
-    window.sessionStorage.setItem('admin_session_active', '1');
-    window.sessionStorage.removeItem('admin_access_token');
-    window.sessionStorage.removeItem('admin_refresh_token');
+    window.sessionStorage.setItem('admin_refresh_csrf_token', 'resume-refresh-csrf-token');
   });
 
   await page.route('**/api/v1/admin/login', async (route) => {
     await route.fulfill({
       status: 200,
       headers: jsonHeaders,
-      body: JSON.stringify({
-        access_token: adminAccessNew,
-        refresh_token: adminRefreshNew,
-        token_type: 'Bearer',
-        expires_in: 900,
-      }),
+      body: JSON.stringify(adminSessionResponse()),
     });
   });
 
   await page.route('**/api/v1/admin/refresh', async (route) => {
     refreshCalls += 1;
-    expect(route.request().postDataJSON()).toEqual({ refresh_token: '' });
+    expect(route.request().postData()).toBeNull();
+    if (refreshCalls === 1) {
+      await route.fulfill({
+        status: 200,
+        headers: jsonHeaders,
+        body: JSON.stringify(adminSessionResponse()),
+      });
+      return;
+    }
     await refreshGate;
     await route.fulfill({
       status: 200,
       headers: jsonHeaders,
-      body: JSON.stringify({
-        access_token: 'admin-access-stale-refresh',
-        refresh_token: 'admin-refresh-stale-refresh',
-        token_type: 'Bearer',
-        expires_in: 900,
-      }),
+      body: JSON.stringify(adminSessionResponse()),
     });
   });
 
@@ -2083,7 +2008,7 @@ test('admin new login ignores delayed refresh from previous session', async ({ p
 
   await page.goto('/admin');
   await expect(page.getByRole('button', { name: 'Выйти' })).toBeVisible();
-  await expect.poll(() => refreshCalls).toBe(1);
+  await expect.poll(() => refreshCalls).toBe(2);
 
   await page.getByRole('button', { name: 'Выйти' }).click();
   await expect(page.getByText('Авторизация')).toBeVisible();
@@ -2097,12 +2022,6 @@ test('admin new login ignores delayed refresh from previous session', async ({ p
 
   await expect(page.getByText('New Login Task')).toBeVisible();
   await expect(page.getByText('Stale Refresh Task')).toBeHidden();
-  await expect
-    .poll(() => page.evaluate(() => window.sessionStorage.getItem('admin_session_active')))
-    .toBe('1');
-  await expect
-    .poll(() => page.evaluate(() => window.sessionStorage.getItem('admin_access_token')))
-    .toBeNull();
   expect(staleRefreshListCalls).toBe(0);
 });
 
@@ -2114,13 +2033,20 @@ test('admin logout ignores delayed task list response', async ({ page }) => {
   });
 
   await page.addInitScript(() => {
-    window.sessionStorage.setItem('admin_session_active', '1');
-    window.sessionStorage.removeItem('admin_access_token');
-    window.sessionStorage.removeItem('admin_refresh_token');
+    window.sessionStorage.setItem('admin_refresh_csrf_token', 'resume-refresh-csrf-token');
   });
 
   await page.route('**/api/v1/admin/logout', async (route) => {
     await route.fulfill({ status: 204 });
+  });
+
+  await page.route('**/api/v1/admin/refresh', async (route) => {
+    expect(route.request().postData()).toBeNull();
+    await route.fulfill({
+      status: 200,
+      headers: jsonHeaders,
+      body: JSON.stringify(adminSessionResponse()),
+    });
   });
 
   await page.route('**/api/v1/admin/tasks**', async (route) => {
@@ -2153,12 +2079,6 @@ test('admin logout ignores delayed task list response', async ({ page }) => {
 
   await expect(page.getByText('Авторизация')).toBeVisible();
   await expect(page.getByText('Old Delayed Task')).toBeHidden();
-  await expect
-    .poll(() => page.evaluate(() => window.sessionStorage.getItem('admin_access_token')))
-    .toBeNull();
-  await expect
-    .poll(() => page.evaluate(() => window.sessionStorage.getItem('admin_session_active')))
-    .toBeNull();
 });
 
 test('admin new login is not overwritten by old delayed task list', async ({ page }) => {
@@ -2170,26 +2090,28 @@ test('admin new login is not overwritten by old delayed task list', async ({ pag
   });
 
   await page.addInitScript(() => {
-    window.sessionStorage.setItem('admin_session_active', '1');
-    window.sessionStorage.removeItem('admin_access_token');
-    window.sessionStorage.removeItem('admin_refresh_token');
+    window.sessionStorage.setItem('admin_refresh_csrf_token', 'resume-refresh-csrf-token');
   });
 
   await page.route('**/api/v1/admin/login', async (route) => {
     await route.fulfill({
       status: 200,
       headers: jsonHeaders,
-      body: JSON.stringify({
-        access_token: adminAccessNew,
-        refresh_token: adminRefreshNew,
-        token_type: 'Bearer',
-        expires_in: 900,
-      }),
+      body: JSON.stringify(adminSessionResponse()),
     });
   });
 
   await page.route('**/api/v1/admin/logout', async (route) => {
     await route.fulfill({ status: 204 });
+  });
+
+  await page.route('**/api/v1/admin/refresh', async (route) => {
+    expect(route.request().postData()).toBeNull();
+    await route.fulfill({
+      status: 200,
+      headers: jsonHeaders,
+      body: JSON.stringify(adminSessionResponse()),
+    });
   });
 
   await page.route('**/api/v1/admin/tasks**', async (route) => {
@@ -2239,12 +2161,6 @@ test('admin new login is not overwritten by old delayed task list', async ({ pag
 
   await expect(page.getByText('New Session Task')).toBeVisible();
   await expect(page.getByText('Old Session Task')).toBeHidden();
-  await expect
-    .poll(() => page.evaluate(() => window.sessionStorage.getItem('admin_session_active')))
-    .toBe('1');
-  await expect
-    .poll(() => page.evaluate(() => window.sessionStorage.getItem('admin_access_token')))
-    .toBeNull();
 });
 
 test('malformed admin create and update responses keep previous valid task state', async ({ page }) => {
@@ -2261,12 +2177,7 @@ test('malformed admin create and update responses keep previous valid task state
     await route.fulfill({
       status: 200,
       headers: jsonHeaders,
-      body: JSON.stringify({
-        access_token: adminAccessNew,
-        refresh_token: adminRefreshNew,
-        token_type: 'Bearer',
-        expires_in: 900,
-      }),
+      body: JSON.stringify(adminSessionResponse()),
     });
   });
 

@@ -4,6 +4,8 @@ package integration_test
 
 import (
 	"context"
+	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -29,7 +31,6 @@ func TestPlayerRepo_Create_HappyPath(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEqual(t, uuid.Nil, p.ID)
 	require.Equal(t, name, p.Username)
-	require.Equal(t, domain.PlayerStatusIdle, p.Status, "default status must be idle")
 	require.Nil(t, p.SessionToken, "session_token starts NULL")
 	require.False(t, p.CreatedAt.IsZero())
 }
@@ -47,65 +48,6 @@ func TestPlayerRepo_Create_DuplicateUsername_ReturnsErrUsernameTaken(t *testing.
 	require.Error(t, err)
 	require.ErrorIs(t, err, domain.ErrUsernameTaken,
 		"second Create with same username must map unique violation to domain.ErrUsernameTaken")
-}
-
-func TestPlayerRepo_JoinByUsername_QueuedPlayerRejected(t *testing.T) {
-	t.Parallel()
-	repo, _ := newPlayerRepo()
-	ctx := context.Background()
-	name := uniq("alice")
-
-	created, err := repo.JoinByUsername(ctx, name, uuid.New(), time.Now().Add(time.Hour).UTC())
-	require.NoError(t, err)
-
-	_, err = repo.UpdateStatus(ctx, created.ID, domain.PlayerStatusQueued)
-	require.NoError(t, err)
-
-	token := uuid.New()
-	_, err = repo.JoinByUsername(ctx, name, token, time.Now().Add(time.Hour).UTC())
-	require.ErrorIs(t, err, domain.ErrPlayerQueued)
-
-	joined, err := repo.GetByID(ctx, created.ID)
-	require.NoError(t, err)
-	require.Equal(t, created.ID, joined.ID)
-	require.NotNil(t, joined.SessionToken)
-	require.NotEqual(t, token, *joined.SessionToken)
-	require.NotNil(t, joined.SessionExpiresAt)
-	require.True(t, joined.SessionExpiresAt.After(time.Now().UTC()))
-	require.Equal(t, domain.PlayerStatusQueued, joined.Status,
-		"queued players must not be reset to idle while a Redis queue entry may still exist")
-}
-
-func TestPlayerRepo_ResetQueuedToIdle_OnlyQueuedPlayers(t *testing.T) {
-	pool, _ := SetupTestDB(t)
-	mgr := postgres.NewTxManager(pool)
-	repo := postgres.NewPlayerPostgres(mgr)
-	ctx := context.Background()
-
-	idle, err := repo.Create(ctx, uniq("idle"))
-	require.NoError(t, err)
-	queued, err := repo.Create(ctx, uniq("queued"))
-	require.NoError(t, err)
-	active, err := repo.Create(ctx, uniq("active"))
-	require.NoError(t, err)
-	_, err = repo.UpdateStatus(ctx, queued.ID, domain.PlayerStatusQueued)
-	require.NoError(t, err)
-	_, err = repo.UpdateStatus(ctx, active.ID, domain.PlayerStatusInDuel)
-	require.NoError(t, err)
-
-	reset, err := repo.ResetQueuedToIdle(ctx)
-	require.NoError(t, err)
-	require.EqualValues(t, 1, reset)
-
-	gotIdle, err := repo.GetByID(ctx, idle.ID)
-	require.NoError(t, err)
-	require.Equal(t, domain.PlayerStatusIdle, gotIdle.Status)
-	gotQueued, err := repo.GetByID(ctx, queued.ID)
-	require.NoError(t, err)
-	require.Equal(t, domain.PlayerStatusIdle, gotQueued.Status)
-	gotActive, err := repo.GetByID(ctx, active.ID)
-	require.NoError(t, err)
-	require.Equal(t, domain.PlayerStatusInDuel, gotActive.Status)
 }
 
 func TestPlayerRepo_GetByID(t *testing.T) {
@@ -228,32 +170,136 @@ func TestPlayerRepo_UpdateSessionToken_NotFound(t *testing.T) {
 	require.ErrorIs(t, err, domain.ErrPlayerNotFound)
 }
 
-func TestPlayerRepo_UpdateStatus(t *testing.T) {
+func TestPlayerRepo_JoinByUsername_RejectsActiveSession(t *testing.T) {
 	t.Parallel()
+
 	repo, _ := newPlayerRepo()
 	ctx := context.Background()
+	username := uniq("active_session")
+	firstToken := uuid.New()
+	secondToken := uuid.New()
+	expiresAt := time.Now().UTC().Add(time.Hour)
 
-	p, err := repo.Create(ctx, uniq("alice"))
+	first, err := repo.JoinByUsername(ctx, username, firstToken, expiresAt)
 	require.NoError(t, err)
 
-	updated, err := repo.UpdateStatus(ctx, p.ID, domain.PlayerStatusQueued)
+	second, err := repo.JoinByUsername(ctx, username, secondToken, expiresAt)
+	require.ErrorIs(t, err, domain.ErrUsernameTaken)
+	require.Nil(t, second)
+
+	retained, err := repo.GetByID(ctx, first.ID)
 	require.NoError(t, err)
-	require.Equal(t, domain.PlayerStatusQueued, updated.Status)
+	require.NotNil(t, retained.SessionToken)
+	require.Equal(t, firstToken, *retained.SessionToken)
 }
 
-func TestPlayerRepo_UpdateStatus_InvalidStatus(t *testing.T) {
+func TestPlayerRepo_JoinByUsername_ReclaimsExpiredSession(t *testing.T) {
 	t.Parallel()
+
 	repo, _ := newPlayerRepo()
-	_, err := repo.UpdateStatus(context.Background(), uuid.New(), domain.PlayerStatus("offline"))
-	require.ErrorIs(t, err, domain.ErrValidation,
-		"invalid enum must be rejected before hitting the DB")
+	ctx := context.Background()
+	username := uniq("expired_session")
+	expiredToken := uuid.New()
+	newToken := uuid.New()
+	expiredAt := time.Now().UTC().Add(-time.Minute)
+
+	created, err := repo.Create(ctx, username)
+	require.NoError(t, err)
+	_, err = repo.UpdateSessionToken(ctx, created.ID, &expiredToken, &expiredAt)
+	require.NoError(t, err)
+
+	reclaimed, err := repo.JoinByUsername(ctx, username, newToken, time.Now().UTC().Add(time.Hour))
+	require.NoError(t, err)
+	require.Equal(t, created.ID, reclaimed.ID)
+	require.NotNil(t, reclaimed.SessionToken)
+	require.Equal(t, newToken, *reclaimed.SessionToken)
 }
 
-func TestPlayerRepo_UpdateStatus_NotFound(t *testing.T) {
+func TestPlayerRepo_JoinByUsername_AllowsOnlyOneConcurrentClaim(t *testing.T) {
 	t.Parallel()
+
 	repo, _ := newPlayerRepo()
-	_, err := repo.UpdateStatus(context.Background(), uuid.New(), domain.PlayerStatusIdle)
-	require.ErrorIs(t, err, domain.ErrPlayerNotFound)
+	ctx := context.Background()
+	username := uniq("concurrent_session")
+	_, err := repo.Create(ctx, username)
+	require.NoError(t, err)
+
+	type claimResult struct {
+		player *domain.Player
+		token  uuid.UUID
+		err    error
+	}
+
+	tokens := []uuid.UUID{uuid.New(), uuid.New()}
+	start := make(chan struct{})
+	results := make(chan claimResult, len(tokens))
+	var claims sync.WaitGroup
+	for _, token := range tokens {
+		claims.Add(1)
+		go func(token uuid.UUID) {
+			defer claims.Done()
+			<-start
+			claimed, claimErr := repo.JoinByUsername(ctx, username, token, time.Now().UTC().Add(time.Hour))
+			results <- claimResult{player: claimed, token: token, err: claimErr}
+		}(token)
+	}
+	close(start)
+	claims.Wait()
+	close(results)
+
+	var succeeded []claimResult
+	var rejected []claimResult
+	for result := range results {
+		switch {
+		case result.err == nil:
+			succeeded = append(succeeded, result)
+		case errors.Is(result.err, domain.ErrUsernameTaken):
+			rejected = append(rejected, result)
+		default:
+			require.NoError(t, result.err)
+		}
+	}
+
+	require.Len(t, succeeded, 1)
+	require.Len(t, rejected, 1)
+	require.NotNil(t, succeeded[0].player)
+	require.NotNil(t, succeeded[0].player.SessionToken)
+	require.Equal(t, succeeded[0].token, *succeeded[0].player.SessionToken)
+	require.Nil(t, rejected[0].player)
+}
+
+func TestPlayerRepo_TournamentReservationAllowsInitialSessionClaimAndBlocksAdminDelete(t *testing.T) {
+	ctx := context.Background()
+	resetMigrationTables(ctx, t)
+	t.Cleanup(func() { resetMigrationTables(ctx, t) })
+
+	repo, _ := newPlayerRepo()
+	player, err := repo.Create(ctx, uniq("reserved_player"))
+	require.NoError(t, err)
+	tournamentID := createMigrationTournament(ctx, t)
+	_, err = sharedPool.Exec(ctx, `
+		INSERT INTO participant_reservations (player_id, tournament_id)
+		VALUES ($1, $2)`, player.ID, tournamentID)
+	require.NoError(t, err)
+
+	token := uuid.New()
+	expiresAt := time.Now().UTC().Add(time.Hour)
+	claimed, err := repo.JoinByUsername(ctx, player.Username, token, expiresAt)
+	require.NoError(t, err)
+	require.NotNil(t, claimed.SessionToken)
+	require.Equal(t, token, *claimed.SessionToken)
+
+	err = repo.SoftDeletePlayer(
+		ctx,
+		player.ID,
+		"deleted_"+uuid.NewString(),
+		time.Now().UTC(),
+	)
+	require.ErrorIs(t, err, domain.ErrConflict)
+
+	retained, err := repo.GetByID(ctx, player.ID)
+	require.NoError(t, err)
+	require.Equal(t, player.Username, retained.Username)
 }
 
 func TestPlayerRepo_InsideTx_RollsBackOnError(t *testing.T) {

@@ -23,7 +23,7 @@
 - `.github/workflows/pipeline.yml` orchestrates backend checks, frontend verification, image builds, and production deploy.
 - Keep third-party actions pinned by commit SHA. Review workflow permissions against the least privilege needed per job; the current top-level pipeline grants `packages: write`, while reusable check and deploy workflows narrow their own permissions.
 - Static checks and tests must complete before image publication or deploy.
-- Backend startup applies Goose migrations and performs recovery before becoming healthy. Infrastructure changes must account for migration duration and recovery failure.
+- Backend startup applies Goose migrations before serving. Recovery coordination is composed as a runtime worker and participates in readiness and health checks.
 - Production health requires backend dependencies and a positive schema version. Frontend and Caddy have separate health gates.
 - Preserve `restart: unless-stopped`, resource limits, dependency health conditions, and graceful shutdown timeouts unless evidence supports a deliberate change.
 - WS hubs, timers, and reconnect state are process-local. Do not add replicas or load balancing without a concrete shared-state and connection-affinity design.
@@ -33,7 +33,7 @@
 
 Repository backend gates run from `backend/`:
 
-These are canonical CI targets. The current backend Makefile exports `../.env` into every target. Follow `backend.md` and do not run them in a checkout where a private root env file exists.
+These are canonical CI targets. The backend Makefile inherits the invoking shell environment and does not load an env file. Follow `backend.md` and inspect each target before running it.
 
 ```bash
 make mocks

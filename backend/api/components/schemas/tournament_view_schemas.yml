@@ -1,0 +1,216 @@
+Participant:
+  type: object
+  required: [id, roster_id, tournament_id, player_id, seed, attendance, created_at, updated_at]
+  properties:
+    id:
+      type: string
+      format: uuid
+    roster_id:
+      type: string
+      format: uuid
+    tournament_id:
+      type: string
+      format: uuid
+    player_id:
+      type: string
+      format: uuid
+    seed:
+      type: integer
+      format: int32
+      minimum: 1
+      maximum: 16
+    attendance:
+      $ref: '#/AttendanceState'
+    created_at:
+      type: string
+      format: date-time
+      readOnly: true
+    updated_at:
+      type: string
+      format: date-time
+      readOnly: true
+
+TournamentLifecycleRequest:
+  type: object
+  required: [expected_revision, next_state]
+  properties:
+    expected_revision:
+      type: integer
+      format: int64
+      minimum: 1
+    next_state:
+      $ref: '#/TournamentState'
+
+ProjectionRevisionProblem:
+  description: Stable optimistic-concurrency details that can accompany a 409 response.
+  allOf:
+    - $ref: '#/ProblemDetails'
+    - type: object
+      required: [expected_revision, current_revision]
+      properties:
+        expected_revision:
+          type: integer
+          format: int64
+          minimum: 1
+        current_revision:
+          type: integer
+          format: int64
+          minimum: 1
+        current_state:
+          $ref: '#/TournamentState'
+
+ArtifactKind:
+  type: string
+  enum: [game_result, series_score, series_result, standings, golden_group, top_four, bracket, champion]
+
+ProjectionRevision:
+  type: object
+  description: Immutable revision metadata for a derived Tournament artifact.
+  required: [id, tournament_id, artifact_kind, artifact_id, revision_no, payload_digest, created_at]
+  properties:
+    id:
+      type: string
+      format: uuid
+      readOnly: true
+    tournament_id:
+      type: string
+      format: uuid
+      readOnly: true
+    artifact_kind:
+      $ref: '#/ArtifactKind'
+    artifact_id:
+      type: string
+      format: uuid
+      readOnly: true
+    revision_no:
+      type: integer
+      format: int32
+      minimum: 1
+      readOnly: true
+    previous_revision_id:
+      type: string
+      format: uuid
+      nullable: true
+      readOnly: true
+    payload_digest:
+      type: string
+      minLength: 64
+      maxLength: 64
+      pattern: '^[0-9a-f]{64}$'
+      readOnly: true
+    created_at:
+      type: string
+      format: date-time
+      readOnly: true
+
+ProjectionDependency:
+  type: object
+  required: [source_revision_id, derived_revision_id]
+  properties:
+    source_revision_id:
+      type: string
+      format: uuid
+      readOnly: true
+    derived_revision_id:
+      type: string
+      format: uuid
+      readOnly: true
+
+AuthorityRevisionProblem:
+  type: object
+  required: [expected_authority_revision, current_authority_revision, observed_at]
+  properties:
+    expected_authority_revision:
+      type: integer
+      format: int64
+      minimum: 1
+    current_authority_revision:
+      type: integer
+      format: int64
+      minimum: 1
+      readOnly: true
+    observed_at:
+      type: string
+      format: date-time
+      readOnly: true
+
+ManualPairInput:
+  type: object
+  additionalProperties: false
+  required: [first_participant_id, second_participant_id]
+  properties:
+    first_participant_id:
+      type: string
+      format: uuid
+    second_participant_id:
+      type: string
+      format: uuid
+
+TournamentActionRequest:
+  type: object
+  additionalProperties: false
+  required: [expected_projection_revision, action, confirmed]
+  properties:
+    expected_projection_revision:
+      type: integer
+      format: int64
+      minimum: 1
+    action:
+      type: string
+      enum: [open_registration, start_swiss, start_golden, start_playoffs, pause, resume, cancel]
+    confirmed:
+      type: boolean
+    reason:
+      type: string
+      maxLength: 512
+
+ParticipantLobbyResponse:
+  type: object
+  additionalProperties: false
+  required: [tournament_id, state, projection_revision, roster_locked, series]
+  properties:
+    tournament_id:
+      type: string
+      format: uuid
+    state:
+      $ref: '#/TournamentState'
+    projection_revision:
+      type: integer
+      format: int64
+      minimum: 1
+    roster_locked:
+      type: boolean
+    series:
+      type: array
+      items:
+        $ref: '#/ParticipantLobbySeries'
+
+PublicTournamentResponse:
+  type: object
+  additionalProperties: false
+  required: [tournament_id, preset, state, roster_size, started_at, finished_at, projection_revision]
+  properties:
+    tournament_id:
+      type: string
+      format: uuid
+    preset:
+      $ref: '#/TournamentPreset'
+    state:
+      $ref: '#/TournamentState'
+    roster_size:
+      type: integer
+      format: int32
+      minimum: 4
+      maximum: 16
+    started_at:
+      type: string
+      format: date-time
+      nullable: true
+    finished_at:
+      type: string
+      format: date-time
+      nullable: true
+    projection_revision:
+      type: integer
+      format: int64
+      minimum: 1

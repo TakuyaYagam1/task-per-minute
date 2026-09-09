@@ -2,3 +2,5 @@ package: api
 output: internal/adapter/inbound/http/api/spec.gen.go
 generate:
   embedded-spec: true
+compatibility:
+  preserve-original-operation-id-casing-in-embedded-spec: true

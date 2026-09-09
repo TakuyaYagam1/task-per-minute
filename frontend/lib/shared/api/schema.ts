@@ -14,8 +14,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Register or refresh a player session
-         * @description Upserts a player by username and issues an HttpOnly player session cookie. A readable session-bound tpm_player_csrf cookie and X-CSRF-Token response header are issued alongside it for unsafe player REST requests. Existing sessions for the same username are invalidated. Returns 409 if the player is currently in an active duel.
+         * Create an available player session
+         * @description Creates a player or reclaims a username only after its previous session expires, then issues an HttpOnly player session cookie. A readable session-bound tpm_player_csrf cookie and X-CSRF-Token response header are issued alongside it for unsafe player REST requests. An active session is never replaced by knowledge of its public username.
          */
         post: operations["joinPlayer"];
         delete?: never;
@@ -33,9 +33,9 @@ export interface paths {
         };
         /**
          * Resolve the current player session
-         * @description Returns the player and any active duel they are participating in. If the readable tpm_player_csrf cookie is missing, the response refreshes it. The current session-bound CSRF token is also returned in X-CSRF-Token for split-domain browser deployments where JavaScript cannot read the API host cookie.
+         * @description Returns the player bound to the current session. Tournament participation is exposed by tournament participant endpoints. If the readable tpm_player_csrf cookie is missing, the response refreshes it. The current session-bound CSRF token is also returned in X-CSRF-Token for split-domain browser deployments where JavaScript cannot read the API host cookie.
          */
-        get: operations["getMe"];
+        get: operations["getCurrentPlayer"];
         put?: never;
         post?: never;
         delete?: never;
@@ -73,29 +73,9 @@ export interface paths {
         };
         /**
          * Top-50 leaderboard
-         * @description Sorted by wins DESC, average_solve_time_ms ASC. Cached for 10 seconds via go-cachekit LRFUCache.
+         * @description Aggregated from committed tournament results and ordered by wins DESC, average_solve_time_ms ASC, then username ASC.
          */
         get: operations["getLeaderboard"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/duels/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Read a duel state (for reconnect)
-         * @description Only the two participants of the duel may read it; others get 403.
-         */
-        get: operations["getDuel"];
         put?: never;
         post?: never;
         delete?: never;
@@ -132,9 +112,9 @@ export interface paths {
         put?: never;
         /**
          * Exchange the shared admin password for an admin session
-         * @description Returns the token pair for backwards-compatible non-browser clients and also sets HttpOnly tpm_admin_access and tpm_admin_refresh cookies for browser clients. Browser-sourced requests receive cookie-session marker values in the JSON token fields and must use X-CSRF-Token with the access CSRF token for unsafe admin mutations. Refresh/logout may send the refresh CSRF token in X-CSRF-Token or X-Admin-Refresh-CSRF-Token.
+         * @description Sets HttpOnly tpm_admin_access and tpm_admin_refresh cookies. Unsafe admin requests must use X-CSRF-Token with the access CSRF token. Refresh and logout send the refresh CSRF token in X-CSRF-Token.
          */
-        post: operations["adminLogin"];
+        post: operations["loginAdmin"];
         delete?: never;
         options?: never;
         head?: never;
@@ -152,9 +132,9 @@ export interface paths {
         put?: never;
         /**
          * Rotate the admin session
-         * @description Accepts refresh_token from the JSON body or the HttpOnly tpm_admin_refresh cookie. Returns the new token pair for backwards-compatible non-browser clients and refreshes the HttpOnly admin cookies. Cookie-authenticated browser refresh requests receive cookie-session marker values in the JSON token fields and must send the refresh CSRF token from X-Admin-Refresh-CSRF-Token in either X-CSRF-Token or X-Admin-Refresh-CSRF-Token.
+         * @description Rotates the session from the HttpOnly tpm_admin_refresh cookie and refreshes both HttpOnly admin cookies. The request must send the refresh CSRF token in X-CSRF-Token.
          */
-        post: operations["adminRefresh"];
+        post: operations["refreshAdminSession"];
         delete?: never;
         options?: never;
         head?: never;
@@ -171,18 +151,15 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Revoke the supplied admin refresh token
-         * @description Revokes the supplied refresh token so it can no longer be exchanged
-         *     for a new pair. The refresh token can be supplied in the JSON body or
-         *     by the HttpOnly tpm_admin_refresh cookie. The access token is unaffected
-         *     (it expires naturally via its short TTL). Logout does not require a
-         *     currently valid access token, so an expired browser session can still
-         *     revoke the refresh token and clear auth cookies.
-         *     Cookie-authenticated browser requests must send the refresh CSRF token
-         *     from X-Admin-Refresh-CSRF-Token in either X-CSRF-Token or
-         *     X-Admin-Refresh-CSRF-Token.
+         * Revoke the admin session
+         * @description Revokes the session from the HttpOnly tpm_admin_refresh cookie so it can
+         *     no longer be refreshed. The access session is also revoked when its
+         *     cookie is present. Logout does not require a
+         *     currently valid access session, so an expired browser session can still
+         *     revoke its refresh session and clear auth cookies.
+         *     Requests must send the refresh CSRF token in X-CSRF-Token.
          */
-        post: operations["adminLogout"];
+        post: operations["logoutAdmin"];
         delete?: never;
         options?: never;
         head?: never;
@@ -197,7 +174,7 @@ export interface paths {
             cookie?: never;
         };
         /** List players with effective leaderboard stats */
-        get: operations["listAdminPlayers"];
+        get: operations["listPlayers"];
         put?: never;
         post?: never;
         delete?: never;
@@ -220,7 +197,7 @@ export interface paths {
          *     player list, player status, or admin leaderboard overrides change.
          *     Heartbeats are sent as SSE comments while the connection is idle.
          */
-        get: operations["streamAdminPlayerEvents"];
+        get: operations["streamPlayerEvents"];
         put?: never;
         post?: never;
         delete?: never;
@@ -239,7 +216,7 @@ export interface paths {
             cookie?: never;
         };
         /** List player audit events */
-        get: operations["listAdminPlayerAudit"];
+        get: operations["listPlayerAuditEvents"];
         put?: never;
         post?: never;
         delete?: never;
@@ -263,14 +240,14 @@ export interface paths {
          * @description Writes an explicit admin leaderboard override for wins and average solve time.
          *     Set wins=0 and average_solve_time_ms=0 to remove the player from the public leaderboard.
          */
-        put: operations["updateAdminPlayer"];
+        put: operations["updatePlayer"];
         post?: never;
         /**
-         * Soft-delete an idle player
+         * Soft-delete a player
          * @description Soft-deletes the player, clears their session token, and hides them from admin/player leaderboard lists.
-         *     Returns 409 if the player is currently queued or in a duel.
+         *     Returns 409 while tournament records still reference the player.
          */
-        delete: operations["deleteAdminPlayer"];
+        delete: operations["deletePlayer"];
         options?: never;
         head?: never;
         patch?: never;
@@ -310,7 +287,7 @@ export interface paths {
         post?: never;
         /**
          * Delete a task
-         * @description Returns 409 if the task is referenced by an active duel. Historical references are removed with the task.
+         * @description Returns 409 if tournament snapshots or assignments reference the task.
          */
         delete: operations["deleteTask"];
         options?: never;
@@ -338,43 +315,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/arena/operator/tournaments": {
+    "/api/v1/admin/tournaments": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** List Arena tournaments for the authenticated operator */
-        get: operations["listArenaOperatorTournaments"];
+        /** List tournaments for the authenticated operator */
+        get: operations["listTournaments"];
         put?: never;
         /**
-         * Create an Arena tournament
+         * Create a tournament
          * @description Operator identity comes from the authenticated session.
          */
-        post: operations["createArenaTournament"];
+        post: operations["createTournament"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/arena/operator/tournaments/{tournament_id}/roster": {
+    "/api/v1/admin/tournaments/{tournament_id}/roster": {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                tournament_id: components["parameters"]["ArenaTournamentId"];
+                tournament_id: components["parameters"]["TournamentId"];
             };
             cookie?: never;
         };
         /** Read the operator roster projection */
-        get: operations["getArenaOperatorRoster"];
+        get: operations["getTournamentRoster"];
         /**
          * Replace tournament roster entries before lock
          * @description Operator identity comes from the authenticated tournament scope.
          */
-        put: operations["replaceArenaTournamentRoster"];
+        put: operations["replaceTournamentRoster"];
         post?: never;
         delete?: never;
         options?: never;
@@ -382,12 +359,12 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/arena/operator/tournaments/{tournament_id}/roster/preflight": {
+    "/api/v1/admin/tournaments/{tournament_id}/roster/preflight": {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                tournament_id: components["parameters"]["ArenaTournamentId"];
+                tournament_id: components["parameters"]["TournamentId"];
             };
             cookie?: never;
         };
@@ -397,19 +374,19 @@ export interface paths {
          * Evaluate roster and runtime preflight checks
          * @description Operator identity comes from the authenticated tournament scope.
          */
-        post: operations["runArenaRosterPreflight"];
+        post: operations["runTournamentRosterPreflight"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/arena/operator/tournaments/{tournament_id}/roster/lock": {
+    "/api/v1/admin/tournaments/{tournament_id}/roster/lock": {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                tournament_id: components["parameters"]["ArenaTournamentId"];
+                tournament_id: components["parameters"]["TournamentId"];
             };
             cookie?: never;
         };
@@ -419,19 +396,19 @@ export interface paths {
          * Lock a preflight-approved tournament roster
          * @description Operator identity comes from the authenticated tournament scope.
          */
-        post: operations["lockArenaTournamentRoster"];
+        post: operations["lockTournamentRoster"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/arena/operator/tournaments/{tournament_id}/roster/unlock": {
+    "/api/v1/admin/tournaments/{tournament_id}/roster/unlock": {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                tournament_id: components["parameters"]["ArenaTournamentId"];
+                tournament_id: components["parameters"]["TournamentId"];
             };
             cookie?: never;
         };
@@ -441,19 +418,19 @@ export interface paths {
          * Unlock a roster before tournament execution starts
          * @description This corrective action requires explicit confirmation. Operator identity comes from auth.
          */
-        post: operations["unlockArenaTournamentRoster"];
+        post: operations["unlockTournamentRoster"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/arena/operator/tournaments/{tournament_id}/pairings": {
+    "/api/v1/admin/tournaments/{tournament_id}/pairings": {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                tournament_id: components["parameters"]["ArenaTournamentId"];
+                tournament_id: components["parameters"]["TournamentId"];
             };
             cookie?: never;
         };
@@ -463,19 +440,19 @@ export interface paths {
          * Configure a Swiss round and its category policy
          * @description Operator identity comes from the authenticated tournament scope.
          */
-        post: operations["configureArenaTournamentPairings"];
+        post: operations["configureTournamentPairings"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/arena/operator/tournaments/{tournament_id}/actions": {
+    "/api/v1/admin/tournaments/{tournament_id}/actions": {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                tournament_id: components["parameters"]["ArenaTournamentId"];
+                tournament_id: components["parameters"]["TournamentId"];
             };
             cookie?: never;
         };
@@ -485,20 +462,20 @@ export interface paths {
          * Apply a tournament lifecycle operator action
          * @description Cancel, pause, resume, and terminal actions require explicit confirmation.
          */
-        post: operations["applyArenaTournamentAction"];
+        post: operations["applyTournamentAction"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/arena/operator/tournaments/{tournament_id}/waves/{wave_id}/actions": {
+    "/api/v1/admin/tournaments/{tournament_id}/waves/{wave_id}/actions": {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                tournament_id: components["parameters"]["ArenaTournamentId"];
-                wave_id: components["parameters"]["ArenaWaveId"];
+                tournament_id: components["parameters"]["TournamentId"];
+                wave_id: components["parameters"]["WaveId"];
             };
             cookie?: never;
         };
@@ -508,20 +485,20 @@ export interface paths {
          * Open, start, pause, resume, complete, or cancel a Wave
          * @description Wave control requires explicit confirmation and authenticated operator identity.
          */
-        post: operations["controlArenaTournamentWave"];
+        post: operations["controlTournamentWave"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/arena/operator/tournaments/{tournament_id}/waves/{wave_id}/no-shows": {
+    "/api/v1/admin/tournaments/{tournament_id}/waves/{wave_id}/no-shows": {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                tournament_id: components["parameters"]["ArenaTournamentId"];
-                wave_id: components["parameters"]["ArenaWaveId"];
+                tournament_id: components["parameters"]["TournamentId"];
+                wave_id: components["parameters"]["WaveId"];
             };
             cookie?: never;
         };
@@ -531,21 +508,21 @@ export interface paths {
          * Resolve a confirmed ready-window no-show
          * @description The body repeats the command scope and revision evidence. Operator identity comes only from auth.
          */
-        post: operations["resolveArenaNoShow"];
+        post: operations["resolveTournamentNoShow"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/arena/operator/tournaments/{tournament_id}/series/{series_id}/assignments/{assignment_id}/operator-reserves": {
+    "/api/v1/admin/tournaments/{tournament_id}/series/{series_id}/assignments/{assignment_id}/operator-reserves": {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                tournament_id: components["parameters"]["ArenaTournamentId"];
-                series_id: components["parameters"]["ArenaSeriesId"];
-                assignment_id: components["parameters"]["ArenaAssignmentId"];
+                tournament_id: components["parameters"]["TournamentId"];
+                series_id: components["parameters"]["SeriesId"];
+                assignment_id: components["parameters"]["AssignmentId"];
             };
             cookie?: never;
         };
@@ -555,20 +532,20 @@ export interface paths {
          * Assign an operator-selected reserve after exhaustion
          * @description The body repeats the command scope and source revisions. Operator identity comes only from auth.
          */
-        post: operations["assignArenaOperatorReserve"];
+        post: operations["assignOperatorReserve"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/arena/operator/tournaments/{tournament_id}/series/{series_id}/operator-forfeits": {
+    "/api/v1/admin/tournaments/{tournament_id}/series/{series_id}/operator-forfeits": {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                tournament_id: components["parameters"]["ArenaTournamentId"];
-                series_id: components["parameters"]["ArenaSeriesId"];
+                tournament_id: components["parameters"]["TournamentId"];
+                series_id: components["parameters"]["SeriesId"];
             };
             cookie?: never;
         };
@@ -578,21 +555,21 @@ export interface paths {
          * Record a confirmed operator forfeit
          * @description The body repeats the command scope and settlement evidence. Operator identity comes only from auth.
          */
-        post: operations["recordArenaOperatorForfeit"];
+        post: operations["recordTournamentForfeit"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/arena/operator/tournaments/{tournament_id}/series/{series_id}/games/{game_id}/replays": {
+    "/api/v1/admin/tournaments/{tournament_id}/series/{series_id}/games/{game_id}/replays": {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                tournament_id: components["parameters"]["ArenaTournamentId"];
-                series_id: components["parameters"]["ArenaSeriesId"];
-                game_id: components["parameters"]["ArenaGameId"];
+                tournament_id: components["parameters"]["TournamentId"];
+                series_id: components["parameters"]["SeriesId"];
+                game_id: components["parameters"]["GameId"];
             };
             cookie?: never;
         };
@@ -602,21 +579,21 @@ export interface paths {
          * Replace a failed Game with a reserved task
          * @description The body repeats the failed Game scope and provides fresh replacement identities. Operator identity comes only from auth.
          */
-        post: operations["replayArenaOperatorGame"];
+        post: operations["replayTournamentGame"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/arena/operator/tournaments/{tournament_id}/series/{series_id}/games/{game_id}/corrections": {
+    "/api/v1/admin/tournaments/{tournament_id}/series/{series_id}/games/{game_id}/corrections": {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                tournament_id: components["parameters"]["ArenaTournamentId"];
-                series_id: components["parameters"]["ArenaSeriesId"];
-                game_id: components["parameters"]["ArenaGameId"];
+                tournament_id: components["parameters"]["TournamentId"];
+                series_id: components["parameters"]["SeriesId"];
+                game_id: components["parameters"]["GameId"];
             };
             cookie?: never;
         };
@@ -626,14 +603,14 @@ export interface paths {
          * Correct an official Game result and dependent projections
          * @description The correction requires confirmation. Operator identity comes only from auth.
          */
-        post: operations["correctArenaGameResult"];
+        post: operations["correctTournamentGameResult"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/arena/operator/audit": {
+    "/api/v1/admin/tournament-audit": {
         parameters: {
             query?: never;
             header?: never;
@@ -641,10 +618,10 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Search the redacted Arena audit projection
-         * @description The complete ArenaAuditFilter is available only to an authorized tournament operator.
+         * Search the redacted tournament audit projection
+         * @description The complete AuditFilter is available only to an authorized tournament operator.
          */
-        get: operations["listArenaOperatorAudit"];
+        get: operations["listTournamentAudit"];
         put?: never;
         post?: never;
         delete?: never;
@@ -653,17 +630,17 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/arena/operator/tournaments/{tournament_id}/incident-export": {
+    "/api/v1/admin/tournaments/{tournament_id}/incident-export": {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                tournament_id: components["parameters"]["ArenaTournamentId"];
+                tournament_id: components["parameters"]["TournamentId"];
             };
             cookie?: never;
         };
-        /** Export a canonical redacted Arena incident bundle */
-        get: operations["exportArenaOperatorIncident"];
+        /** Export a canonical redacted tournament incident bundle */
+        get: operations["exportTournamentIncident"];
         put?: never;
         post?: never;
         delete?: never;
@@ -672,17 +649,17 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/arena/operator/tournaments/{tournament_id}/snapshot": {
+    "/api/v1/admin/tournaments/{tournament_id}/snapshot": {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                tournament_id: components["parameters"]["ArenaTournamentId"];
+                tournament_id: components["parameters"]["TournamentId"];
             };
             cookie?: never;
         };
         /** Recover the full operator tournament projection */
-        get: operations["getArenaOperatorSnapshot"];
+        get: operations["getOperatorSnapshot"];
         put?: never;
         post?: never;
         delete?: never;
@@ -691,12 +668,12 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/arena/tournaments/{tournament_id}/participant/lobby": {
+    "/api/v1/tournaments/{tournament_id}/participant/lobby": {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                tournament_id: components["parameters"]["ArenaTournamentId"];
+                tournament_id: components["parameters"]["TournamentId"];
             };
             cookie?: never;
         };
@@ -704,7 +681,7 @@ export interface paths {
          * Read the authenticated participant tournament lobby
          * @description Participant identity and roster membership come only from the authenticated session.
          */
-        get: operations["getArenaParticipantLobby"];
+        get: operations["getParticipantLobby"];
         put?: never;
         post?: never;
         delete?: never;
@@ -713,13 +690,13 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/arena/tournaments/{tournament_id}/participant/assignments/{assignment_id}": {
+    "/api/v1/tournaments/{tournament_id}/participant/assignments/{assignment_id}": {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                tournament_id: components["parameters"]["ArenaTournamentId"];
-                assignment_id: components["parameters"]["ArenaAssignmentId"];
+                tournament_id: components["parameters"]["TournamentId"];
+                assignment_id: components["parameters"]["AssignmentId"];
             };
             cookie?: never;
         };
@@ -727,7 +704,7 @@ export interface paths {
          * Read a private task assignment for the authenticated participant
          * @description Task delivery fields are returned only after participant ownership is authorized.
          */
-        get: operations["getArenaParticipantAssignment"];
+        get: operations["getParticipantAssignment"];
         put?: never;
         post?: never;
         delete?: never;
@@ -736,13 +713,13 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/arena/tournaments/{tournament_id}/participant/waves/{wave_id}/ready": {
+    "/api/v1/tournaments/{tournament_id}/participant/waves/{wave_id}/ready": {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                tournament_id: components["parameters"]["ArenaTournamentId"];
-                wave_id: components["parameters"]["ArenaWaveId"];
+                tournament_id: components["parameters"]["TournamentId"];
+                wave_id: components["parameters"]["WaveId"];
             };
             cookie?: never;
         };
@@ -752,20 +729,20 @@ export interface paths {
          * Set readiness for the authenticated participant
          * @description Participant identity comes from auth and is not accepted in the request body.
          */
-        post: operations["setArenaParticipantReady"];
+        post: operations["setParticipantReady"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/arena/tournaments/{tournament_id}/participant/series/{series_id}/draft/actions": {
+    "/api/v1/tournaments/{tournament_id}/participant/series/{series_id}/draft/actions": {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                tournament_id: components["parameters"]["ArenaTournamentId"];
-                series_id: components["parameters"]["ArenaSeriesId"];
+                tournament_id: components["parameters"]["TournamentId"];
+                series_id: components["parameters"]["SeriesId"];
             };
             cookie?: never;
         };
@@ -775,21 +752,21 @@ export interface paths {
          * Submit an authenticated participant draft action
          * @description The current draft actor comes from auth and the durable draft turn.
          */
-        post: operations["submitArenaParticipantDraftAction"];
+        post: operations["submitParticipantDraftAction"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/arena/tournaments/{tournament_id}/participant/series/{series_id}/games/{game_id}/submissions": {
+    "/api/v1/tournaments/{tournament_id}/participant/series/{series_id}/games/{game_id}/submissions": {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                tournament_id: components["parameters"]["ArenaTournamentId"];
-                series_id: components["parameters"]["ArenaSeriesId"];
-                game_id: components["parameters"]["ArenaGameId"];
+                tournament_id: components["parameters"]["TournamentId"];
+                series_id: components["parameters"]["SeriesId"];
+                game_id: components["parameters"]["GameId"];
             };
             cookie?: never;
         };
@@ -799,20 +776,20 @@ export interface paths {
          * Submit a secret for the authenticated participant Game
          * @description The secret is write-only. Participant identity and assignment scope come from auth and the path.
          */
-        post: operations["submitArenaParticipantFlag"];
+        post: operations["submitParticipantFlag"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/arena/tournaments/{tournament_id}/participant/series/{series_id}/surrender": {
+    "/api/v1/tournaments/{tournament_id}/participant/series/{series_id}/surrender": {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                tournament_id: components["parameters"]["ArenaTournamentId"];
-                series_id: components["parameters"]["ArenaSeriesId"];
+                tournament_id: components["parameters"]["TournamentId"];
+                series_id: components["parameters"]["SeriesId"];
             };
             cookie?: never;
         };
@@ -822,20 +799,20 @@ export interface paths {
          * Surrender the authenticated participant Series
          * @description Surrender is destructive and requires explicit confirmation. Actor identity comes from auth.
          */
-        post: operations["surrenderArenaParticipantSeries"];
+        post: operations["surrenderParticipantSeries"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/arena/tournaments/{tournament_id}/participant/series/{series_id}/post-series": {
+    "/api/v1/tournaments/{tournament_id}/participant/series/{series_id}/post-series": {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                tournament_id: components["parameters"]["ArenaTournamentId"];
-                series_id: components["parameters"]["ArenaSeriesId"];
+                tournament_id: components["parameters"]["TournamentId"];
+                series_id: components["parameters"]["SeriesId"];
             };
             cookie?: never;
         };
@@ -845,19 +822,19 @@ export interface paths {
          * Apply a post-Series participant action
          * @description Participant identity comes from auth and is not accepted in the body.
          */
-        post: operations["applyArenaParticipantPostSeriesAction"];
+        post: operations["applyParticipantPostSeriesAction"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/arena/tournaments/{tournament_id}/participant/snapshot": {
+    "/api/v1/tournaments/{tournament_id}/participant/snapshot": {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                tournament_id: components["parameters"]["ArenaTournamentId"];
+                tournament_id: components["parameters"]["TournamentId"];
             };
             cookie?: never;
         };
@@ -865,7 +842,7 @@ export interface paths {
          * Recover the authenticated participant tournament view
          * @description The snapshot may contain a private assignment only after participant ownership checks.
          */
-        get: operations["getArenaParticipantSnapshot"];
+        get: operations["getParticipantSnapshot"];
         put?: never;
         post?: never;
         delete?: never;
@@ -874,17 +851,17 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/arena/public/tournaments/{tournament_id}": {
+    "/api/v1/tournaments/{tournament_id}": {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                tournament_id: components["parameters"]["ArenaTournamentId"];
+                tournament_id: components["parameters"]["TournamentId"];
             };
             cookie?: never;
         };
         /** Read the public tournament display projection */
-        get: operations["getArenaPublicTournament"];
+        get: operations["getPublicTournament"];
         put?: never;
         post?: never;
         delete?: never;
@@ -893,17 +870,17 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/arena/public/tournaments/{tournament_id}/scoreboard": {
+    "/api/v1/tournaments/{tournament_id}/scoreboard": {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                tournament_id: components["parameters"]["ArenaTournamentId"];
+                tournament_id: components["parameters"]["TournamentId"];
             };
             cookie?: never;
         };
-        /** Read the public Arena scoreboard */
-        get: operations["getArenaPublicScoreboard"];
+        /** Read the public tournament scoreboard */
+        get: operations["getPublicScoreboard"];
         put?: never;
         post?: never;
         delete?: never;
@@ -912,17 +889,17 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/arena/public/tournaments/{tournament_id}/bracket": {
+    "/api/v1/tournaments/{tournament_id}/bracket": {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                tournament_id: components["parameters"]["ArenaTournamentId"];
+                tournament_id: components["parameters"]["TournamentId"];
             };
             cookie?: never;
         };
-        /** Read the public Arena playoff bracket */
-        get: operations["getArenaPublicBracket"];
+        /** Read the public tournament playoff bracket */
+        get: operations["getPublicBracket"];
         put?: never;
         post?: never;
         delete?: never;
@@ -931,17 +908,17 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/arena/public/tournaments/{tournament_id}/live-draft": {
+    "/api/v1/tournaments/{tournament_id}/live-draft": {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                tournament_id: components["parameters"]["ArenaTournamentId"];
+                tournament_id: components["parameters"]["TournamentId"];
             };
             cookie?: never;
         };
         /** Read the public live draft display projection */
-        get: operations["getArenaPublicLiveDraft"];
+        get: operations["getPublicLiveDraft"];
         put?: never;
         post?: never;
         delete?: never;
@@ -950,17 +927,17 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/arena/public/tournaments/{tournament_id}/snapshot": {
+    "/api/v1/tournaments/{tournament_id}/snapshot": {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                tournament_id: components["parameters"]["ArenaTournamentId"];
+                tournament_id: components["parameters"]["TournamentId"];
             };
             cookie?: never;
         };
         /** Recover the public tournament display view */
-        get: operations["getArenaPublicSnapshot"];
+        get: operations["getPublicSnapshot"];
         put?: never;
         post?: never;
         delete?: never;
@@ -973,15 +950,11 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        JoinRequest: {
+        JoinPlayerRequest: {
             /** @example takuya */
             username: string;
         };
-        JoinResponse: {
-            /** Format: uuid */
-            player_id: string;
-        };
-        /** @description RFC 7807 error envelope used by every 4xx/5xx response. */
+        /** @description RFC 7807 error envelope used by REST validation and operation errors. */
         ProblemDetails: {
             /**
              * Format: uri
@@ -1002,28 +975,18 @@ export interface components {
             /** @example 01HXC2K9F4ZG6YV1AAB7TBQ7AP */
             request_id?: string;
         };
-        ActiveDuelInfo: {
-            /** Format: date-time */
-            deadline: string;
+        JoinPlayerResponse: {
             /** Format: uuid */
-            id: string;
-            /** Format: date-time */
-            started_at: string;
-            /** @enum {string} */
-            status: "active";
+            player_id: string;
         };
-        /** @enum {string} */
-        PlayerStatus: "idle" | "queued" | "in_duel";
         PlayerResponse: {
             /** Format: date-time */
             created_at: string;
             /** Format: uuid */
             id: string;
-            status: components["schemas"]["PlayerStatus"];
             username: string;
         };
-        PlayerMeResponse: {
-            active_duel?: components["schemas"]["ActiveDuelInfo"];
+        CurrentPlayerResponse: {
             player: components["schemas"]["PlayerResponse"];
         };
         LeaderboardEntry: {
@@ -1038,53 +1001,14 @@ export interface components {
         LeaderboardResponse: {
             entries: components["schemas"]["LeaderboardEntry"][];
         };
-        /** @enum {string} */
-        DuelStatus: "active" | "finished";
-        DuelResponse: {
-            /** Format: date-time */
-            deadline: string;
-            /** Format: date-time */
-            finished_at?: string | null;
-            /** Format: uuid */
-            id: string;
-            /** Format: uuid */
-            player1_id: string;
-            /** Format: uuid */
-            player2_id: string;
-            /** Format: date-time */
-            started_at: string;
-            status: components["schemas"]["DuelStatus"];
-            /** Format: uuid */
-            winner_id?: string | null;
-        };
-        DuelPlayerTaskResponse: {
-            /** Format: uuid */
-            player_id: string;
-            solved: boolean;
-            /** Format: date-time */
-            solved_at?: string | null;
-            /** Format: uuid */
-            task_id: string;
-        };
-        DuelDetailResponse: {
-            duel: components["schemas"]["DuelResponse"];
-            player_tasks: components["schemas"]["DuelPlayerTaskResponse"][];
-        };
-        /** @description Independent operating health and traffic readiness for one Arena dependency. */
-        ArenaDependencyStatus: {
+        /** @description Independent operating health and traffic readiness for one tournament dependency. */
+        DependencyStatus: {
             /** @enum {string} */
             health: "healthy" | "degraded" | "failed";
             /** @enum {string} */
             readiness: "ready" | "not_ready" | "stale";
         };
         HealthResponse: {
-            arena_authority: components["schemas"]["ArenaDependencyStatus"];
-            arena_clock: components["schemas"]["ArenaDependencyStatus"];
-            arena_outbox: components["schemas"]["ArenaDependencyStatus"];
-            arena_realtime: components["schemas"]["ArenaDependencyStatus"];
-            arena_recovery: components["schemas"]["ArenaDependencyStatus"];
-            arena_submission: components["schemas"]["ArenaDependencyStatus"];
-            arena_task_delivery: components["schemas"]["ArenaDependencyStatus"];
             /** @enum {string} */
             db: "ok" | "error";
             /** @enum {string} */
@@ -1095,31 +1019,26 @@ export interface components {
             seaweedfs: "ok" | "error";
             /** @enum {string} */
             status: "ok" | "degraded";
+            tournament_authority: components["schemas"]["DependencyStatus"];
+            tournament_clock: components["schemas"]["DependencyStatus"];
+            tournament_outbox: components["schemas"]["DependencyStatus"];
+            tournament_projection: components["schemas"]["DependencyStatus"];
+            tournament_realtime: components["schemas"]["DependencyStatus"];
+            tournament_recovery: components["schemas"]["DependencyStatus"];
+            tournament_submission: components["schemas"]["DependencyStatus"];
+            tournament_task_delivery: components["schemas"]["DependencyStatus"];
         };
         AdminLoginRequest: {
             password: string;
         };
-        AdminTokenResponse: {
-            /** @description Bearer access token for backwards-compatible non-browser clients. Browser cookie-session responses use the opaque __cookie_admin_session__ marker instead of a usable JWT. */
-            access_token: string;
+        AdminSessionResponse: {
             /**
              * Format: int32
-             * @description Seconds until access_token expires.
+             * @description Seconds until the admin access session expires.
              */
             expires_in: number;
-            /** @description Bearer refresh token for backwards-compatible non-browser clients. Browser cookie-session responses use the opaque __cookie_admin_session__ marker instead of a usable JWT. */
-            refresh_token: string;
-            /** @enum {string} */
-            token_type: "Bearer";
         };
-        AdminRefreshRequest: {
-            refresh_token: string;
-        };
-        AdminLogoutRequest: {
-            /** @description Refresh token to revoke. Browser clients may rely on the HttpOnly tpm_admin_refresh cookie; non-browser clients can still provide the refresh token in the JSON body. */
-            refresh_token: string;
-        };
-        AdminPlayerResponse: {
+        PlayerManagementView: {
             /** Format: int64 */
             average_solve_time_ms: number;
             /** Format: date-time */
@@ -1129,29 +1048,27 @@ export interface components {
             /** Format: uuid */
             id: string;
             stats_overridden: boolean;
-            status: components["schemas"]["PlayerStatus"];
             username: string;
             /** Format: int32 */
             wins: number;
         };
         /** @enum {string} */
-        AdminPlayerAuditAction: "update" | "delete";
-        AdminPlayerAuditState: {
+        PlayerAuditAction: "update" | "delete";
+        PlayerAuditState: {
             /** Format: int64 */
             average_solve_time_ms: number;
             deleted: boolean;
             stats_overridden: boolean;
-            status: components["schemas"]["PlayerStatus"];
             username: string;
             /** Format: int32 */
             wins: number;
         };
-        AdminPlayerAuditEventResponse: {
-            action: components["schemas"]["AdminPlayerAuditAction"];
+        PlayerAuditEvent: {
+            action: components["schemas"]["PlayerAuditAction"];
             actor_jti: string;
             actor_subject: string;
-            after_state: components["schemas"]["AdminPlayerAuditState"];
-            before_state: components["schemas"]["AdminPlayerAuditState"];
+            after_state: components["schemas"]["PlayerAuditState"];
+            before_state: components["schemas"]["PlayerAuditState"];
             /** Format: date-time */
             created_at: string;
             /** Format: uuid */
@@ -1159,7 +1076,7 @@ export interface components {
             /** Format: uuid */
             player_id: string;
         };
-        UpdateAdminPlayerRequest: {
+        UpdatePlayerRequest: {
             /** Format: int64 */
             average_solve_time_ms: number;
             username: string;
@@ -1170,17 +1087,21 @@ export interface components {
         TaskCategory: "web" | "crypto" | "forensics" | "reverse" | "pwn" | "steganography" | "ppc" | "osint" | "mobile" | "hardware" | "misc";
         /** @enum {string} */
         TaskDifficulty: "easy" | "medium" | "hard";
+        /** @enum {string} */
+        TaskKind: "normal" | "golden";
         /** @description Admin view of a task. The `flag` field is only ever returned to admins, never to players. */
-        TaskResponse: {
+        TaskDetails: {
             category: components["schemas"]["TaskCategory"];
             /** Format: date-time */
             created_at: string;
             description: string;
             difficulty: components["schemas"]["TaskDifficulty"];
+            enabled: boolean;
             flag: string;
             hints: (string | null)[];
             /** Format: uuid */
             id: string;
+            kind: components["schemas"]["TaskKind"];
             /** Format: uri */
             source_file_url?: string | null;
             /** @description Task endpoint. Accepts http(s) URLs or host:port targets for pwn/nc tasks. */
@@ -1196,8 +1117,12 @@ export interface components {
             category: components["schemas"]["TaskCategory"];
             description: string;
             difficulty: components["schemas"]["TaskDifficulty"];
+            /** @default true */
+            enabled: boolean;
             flag: string;
             hints?: (string | null)[];
+            /** @default normal */
+            kind: components["schemas"]["TaskKind"];
             /** @description Task endpoint. Accepts http(s) URLs or host:port targets for pwn/nc tasks. */
             task_url?: string | null;
             /** Format: int32 */
@@ -1206,233 +1131,208 @@ export interface components {
         };
         UpdateTaskRequest: {
             category?: components["schemas"]["TaskCategory"];
+            /** @description Set to true to delete the currently uploaded source file. Uploads use the source endpoint. */
+            clear_source_file?: boolean;
             description?: string;
             difficulty?: components["schemas"]["TaskDifficulty"];
+            enabled?: boolean;
             flag?: string;
             hints?: (string | null)[];
-            /**
-             * Format: uri
-             * @description Set to null to clear an uploaded source file. Non-null values are managed by the source upload endpoint.
-             */
-            source_file_url?: string | null;
+            kind?: components["schemas"]["TaskKind"];
             /** @description Task endpoint. Accepts http(s) URLs or host:port targets for pwn/nc tasks. */
             task_url?: string | null;
             /** Format: int32 */
             time_limit?: number;
             title?: string;
         };
-        UploadSourceResponse: {
+        TaskSourceUploadResponse: {
             /** Format: uri */
             source_file_url: string;
         };
         /** @enum {string} */
-        ArenaTournamentState: "draft" | "registration" | "roster_locked" | "swiss" | "golden" | "playoffs" | "technical_pause" | "completed" | "cancelled";
+        TournamentState: "draft" | "registration" | "roster_locked" | "swiss" | "golden" | "playoffs" | "technical_pause" | "completed" | "cancelled";
         /** @enum {string} */
-        ArenaPreset: "arena_v1";
-        ArenaTournament: {
-            /** Format: uuid */
-            id: string;
-            /** Format: uuid */
-            roster_id: string;
-            preset: components["schemas"]["ArenaPreset"];
-            state: components["schemas"]["ArenaTournamentState"];
-            paused_from_state?: components["schemas"]["ArenaTournamentState"] | null;
-            /** Format: int64 */
-            readonly revision: number;
-            /** Format: int32 */
-            roster_size: number;
+        TournamentPreset: "tournament_v1";
+        Tournament: {
             /** Format: date-time */
             readonly created_at: string;
             /** Format: date-time */
-            readonly updated_at: string;
-            /** Format: date-time */
-            readonly started_at?: string | null;
-            /** Format: date-time */
             readonly finished_at?: string | null;
-        };
-        ArenaOperatorTournamentList: {
-            items: components["schemas"]["ArenaTournament"][];
-            next_cursor: string | null;
-        };
-        ArenaCreateTournamentRequest: {
+            /** Format: uuid */
+            id: string;
+            paused_from_state?: (string & components["schemas"]["TournamentState"]) | null;
+            preset: components["schemas"]["TournamentPreset"];
             /** Format: int64 */
-            expected_projection_revision: number;
-            preset: components["schemas"]["ArenaPreset"];
+            readonly revision: number;
+            /** Format: uuid */
+            roster_id: string;
             /** Format: int32 */
             roster_size: number;
+            /** Format: date-time */
+            readonly started_at?: string | null;
+            state: components["schemas"]["TournamentState"];
+            /** Format: date-time */
+            readonly updated_at: string;
         };
-        /** @description Stable optimistic-concurrency details that can accompany a 409 response. */
-        ArenaRevisionConflict: {
+        TournamentListResponse: {
+            items: components["schemas"]["Tournament"][];
+            next_cursor: string | null;
+        };
+        CreateTournamentRequest: {
+            /** Format: int64 */
+            expected_revision: number;
+            preset: components["schemas"]["TournamentPreset"];
+        };
+        /** @description RFC 7807 optimistic-concurrency error with the current tournament revision. */
+        TournamentRevisionProblem: components["schemas"]["ProblemDetails"] & {
             /** Format: int64 */
             expected_revision: number;
             /** Format: int64 */
             current_revision: number;
-            current_state?: components["schemas"]["ArenaTournamentState"];
+            current_state?: components["schemas"]["TournamentState"];
         };
         /** @enum {string} */
-        ArenaAttendanceState: "invited" | "registered" | "checked_in" | "withdrawn";
-        ArenaParticipant: {
+        AttendanceState: "invited" | "registered" | "checked_in" | "withdrawn";
+        Participant: {
+            attendance: components["schemas"]["AttendanceState"];
+            /** Format: date-time */
+            readonly created_at: string;
             /** Format: uuid */
             id: string;
             /** Format: uuid */
-            roster_id: string;
-            /** Format: uuid */
-            tournament_id: string;
-            /** Format: uuid */
             player_id: string;
+            /** Format: uuid */
+            roster_id: string;
             /** Format: int32 */
             seed: number;
-            attendance: components["schemas"]["ArenaAttendanceState"];
-            /** Format: date-time */
-            readonly created_at: string;
+            /** Format: uuid */
+            tournament_id: string;
             /** Format: date-time */
             readonly updated_at: string;
         };
         /** @description Full tournament roster. Execution can start only while locked, and a started roster cannot be unlocked. */
-        ArenaRoster: {
-            /** Format: uuid */
-            id: string;
-            /** Format: uuid */
-            tournament_id: string;
-            /** Format: int64 */
-            readonly revision: number;
-            participants: components["schemas"]["ArenaParticipant"][];
-            readonly locked: boolean;
+        Roster: {
+            /** Format: date-time */
+            readonly created_at: string;
             /** @description True only when locked is also true. */
             readonly execution_started: boolean;
             /** Format: date-time */
-            readonly locked_at?: string | null;
-            /** Format: date-time */
             readonly execution_started_at?: string | null;
+            /** Format: uuid */
+            id: string;
+            readonly locked: boolean;
             /** Format: date-time */
-            readonly created_at: string;
+            readonly locked_at?: string | null;
+            participants: components["schemas"]["Participant"][];
+            /** Format: int64 */
+            readonly revision: number;
+            /** Format: uuid */
+            tournament_id: string;
             /** Format: date-time */
             readonly updated_at: string;
         };
-        ArenaRosterParticipantInput: {
+        RosterParticipantInput: {
+            attendance: components["schemas"]["AttendanceState"];
             /** Format: uuid */
             player_id: string;
             /** Format: int32 */
             seed: number;
-            attendance: components["schemas"]["ArenaAttendanceState"];
         };
-        ArenaReplaceRosterRequest: {
+        ReplaceRosterRequest: {
             /** Format: int64 */
             expected_projection_revision: number;
-            participants: components["schemas"]["ArenaRosterParticipantInput"][];
+            participants: components["schemas"]["RosterParticipantInput"][];
         };
-        ArenaPreflightRequest: {
+        /** @description Stable optimistic-concurrency details that can accompany a 409 response. */
+        ProjectionRevisionProblem: components["schemas"]["ProblemDetails"] & {
+            /** Format: int64 */
+            current_revision: number;
+            current_state?: components["schemas"]["TournamentState"];
+            /** Format: int64 */
+            expected_revision: number;
+        };
+        PreflightRequest: {
             /** Format: int64 */
             expected_projection_revision: number;
         };
-        ArenaPreflightSourceRevision: {
+        /** @enum {string} */
+        PreflightCode: "tournament.preflight.structure.roster_complete" | "tournament.preflight.structure.attendance" | "tournament.preflight.structure.participant_exclusive" | "tournament.preflight.structure.preset" | "tournament.preflight.structure.categories" | "tournament.preflight.structure.pairings" | "tournament.preflight.structure.byes" | "tournament.preflight.structure.overrides" | "tournament.preflight.tasks.pool_configuration" | "tournament.preflight.tasks.inventory" | "tournament.preflight.tasks.missing" | "tournament.preflight.tasks.disabled" | "tournament.preflight.tasks.unhealthy" | "tournament.preflight.tasks.mutable" | "tournament.preflight.tasks.publicly_exposed" | "tournament.preflight.tasks.wrong_pool" | "tournament.preflight.runtime.configuration" | "tournament.preflight.runtime.authoritative_storage" | "tournament.preflight.runtime.submission" | "tournament.preflight.runtime.task_delivery" | "tournament.preflight.runtime.realtime" | "tournament.preflight.runtime.capacity" | "tournament.preflight.runtime.clock" | "tournament.preflight.runtime.dependencies" | "tournament.preflight.runtime.schedule";
+        PreflightCheck: {
+            code: components["schemas"]["PreflightCode"];
+            evidence: string[];
+            explanation: string;
+            passed: boolean;
+        };
+        PreflightSourceRevision: {
             source: string;
             value: string;
         };
-        /** @enum {string} */
-        ArenaPreflightCode: "arena.preflight.structure.roster_complete" | "arena.preflight.structure.attendance" | "arena.preflight.structure.participant_exclusive" | "arena.preflight.structure.preset" | "arena.preflight.structure.categories" | "arena.preflight.structure.pairings" | "arena.preflight.structure.byes" | "arena.preflight.structure.overrides" | "arena.preflight.tasks.pool_configuration" | "arena.preflight.tasks.inventory" | "arena.preflight.tasks.missing" | "arena.preflight.tasks.disabled" | "arena.preflight.tasks.unhealthy" | "arena.preflight.tasks.mutable" | "arena.preflight.tasks.publicly_exposed" | "arena.preflight.tasks.wrong_pool" | "arena.preflight.runtime.configuration" | "arena.preflight.runtime.authoritative_storage" | "arena.preflight.runtime.submission" | "arena.preflight.runtime.task_delivery" | "arena.preflight.runtime.realtime" | "arena.preflight.runtime.capacity" | "arena.preflight.runtime.clock" | "arena.preflight.runtime.dependencies" | "arena.preflight.runtime.schedule";
-        ArenaPreflightCheck: {
-            code: components["schemas"]["ArenaPreflightCode"];
-            passed: boolean;
-            explanation: string;
-            evidence: string[];
-        };
         /** @description Immutable preflight result used as roster-lock evidence. */
-        ArenaPreflightReport: {
-            /** Format: uuid */
-            readonly id: string;
-            /** Format: uuid */
-            readonly tournament_id: string;
+        PreflightReport: {
             /** @enum {string} */
-            readonly algorithm_version: "arena-preflight-report-v1";
+            readonly algorithm_version: "tournament-preflight-report-v1";
+            readonly checks: components["schemas"]["PreflightCheck"][];
             /** Format: date-time */
             readonly evaluated_at: string;
+            /** Format: uuid */
+            readonly id: string;
             readonly normalized_inputs: string[];
-            readonly revisions: components["schemas"]["ArenaPreflightSourceRevision"][];
-            readonly proof_hash: string;
-            readonly checks: components["schemas"]["ArenaPreflightCheck"][];
             readonly passed: boolean;
+            readonly proof_hash: string;
+            readonly revisions: components["schemas"]["PreflightSourceRevision"][];
+            /** Format: uuid */
+            readonly tournament_id: string;
         };
-        ArenaLockRosterRequest: {
+        LockRosterRequest: {
+            checked_in_player_ids: string[];
             /** Format: int64 */
             expected_projection_revision: number;
             /** Format: uuid */
             preflight_revision_id: string;
-            checked_in_player_ids: string[];
         };
-        ArenaUnlockRosterRequest: {
+        UnlockRosterRequest: {
+            confirmed: boolean;
             /** Format: int64 */
             expected_projection_revision: number;
-            confirmed: boolean;
             reason: string;
         };
         /** @enum {string} */
-        ArenaCategoryMode: "random" | "admin" | "draft";
+        Category: "web" | "crypto" | "forensics" | "reverse" | "pwn" | "steganography" | "ppc" | "osint" | "mobile" | "hardware" | "misc";
         /** @enum {string} */
-        ArenaCategory: "web" | "crypto" | "forensics" | "reverse" | "pwn" | "steganography" | "ppc" | "osint" | "mobile" | "hardware" | "misc";
-        ArenaManualPairInput: {
+        CategoryMode: "random" | "admin" | "draft";
+        ManualPairInput: {
             /** Format: uuid */
             first_participant_id: string;
             /** Format: uuid */
             second_participant_id: string;
         };
-        ArenaPairingRepeatOverrideRequest: {
+        PairingRepeatOverrideRequest: {
             confirmed: boolean;
             reason: string;
         };
         /** @description Manual mode requires complete manual_pairings and an explicit nullable bye. Repeated pairs require repeat_override evidence. */
-        ArenaPairingConfigurationRequest: {
+        PairingConfigurationRequest: {
+            categories: components["schemas"]["Category"][];
+            category_mode: components["schemas"]["CategoryMode"];
             /** Format: int64 */
             expected_projection_revision: number;
-            /** Format: int32 */
-            round_number: number;
+            /**
+             * Format: uuid
+             * @description Required for an odd roster and must confirm the deterministic fair-bye selection from current standings.
+             */
+            manual_bye_participant_id?: string | null;
+            manual_pairings?: components["schemas"]["ManualPairInput"][];
             /** @enum {string} */
             pairing_mode: "automatic" | "manual";
-            category_mode: components["schemas"]["ArenaCategoryMode"];
-            categories: components["schemas"]["ArenaCategory"][];
-            manual_pairings?: components["schemas"]["ArenaManualPairInput"][];
-            /** Format: uuid */
-            manual_bye_participant_id?: string | null;
-            repeat_override?: components["schemas"]["ArenaPairingRepeatOverrideRequest"];
+            repeat_override?: components["schemas"]["PairingRepeatOverrideRequest"];
+            /** Format: int32 */
+            round_number: number;
         };
-        /** @description Recorded decision evidence for automatic pairings and byes. The private decision seed is not exposed. */
-        ArenaSwissPairingEvidence: {
-            /** Format: uuid */
-            readonly id: string;
-            /** @enum {string} */
-            readonly purpose: "pairing";
-            /** @enum {string} */
-            readonly algorithm_version: "hmac-sha256-order-v1";
-            readonly normalized_inputs: string[];
-            readonly result: string[];
-            readonly replay_digest: string;
-            /** Format: uuid */
-            readonly owner_id: string;
-            /** Format: date-time */
-            readonly decided_at: string;
-        };
-        ArenaSwissPairing: {
-            /** Format: uuid */
-            id: string;
-            /** Format: uuid */
-            round_id: string;
-            /** Format: uuid */
-            first_participant_id: string;
-            /** Format: uuid */
-            second_participant_id: string;
+        SwissBye: {
             /** Format: uuid */
             evidence_id: string;
-            /** @default false */
-            repeated: boolean;
-            /** Format: uuid */
-            override_actor_id?: string | null;
-            override_reason?: string | null;
-        };
-        ArenaSwissBye: {
             /** Format: uuid */
             id: string;
-            /** Format: uuid */
-            round_id: string;
             /** Format: uuid */
             participant_id: string;
             /** Format: int32 */
@@ -1440,259 +1340,293 @@ export interface components {
             /** Format: uuid */
             readonly revision_id: string;
             /** Format: uuid */
-            evidence_id: string;
+            round_id: string;
         };
-        /** @enum {string} */
-        ArenaSwissPointsLabel: "provisional" | "final";
-        /** @enum {string} */
-        ArenaSwissBuchholzStatus: "provisional" | "final";
-        ArenaSwissStanding: {
+        /** @description Recorded decision evidence for automatic pairings and byes. The private decision seed is not exposed. */
+        SwissPairingEvidence: {
+            /** @enum {string} */
+            readonly algorithm_version: "hmac-sha256-order-v1";
+            /** Format: date-time */
+            readonly decided_at: string;
             /** Format: uuid */
-            participant_id: string;
-            /** Format: int32 */
-            position: number;
-            /** Format: int32 */
-            points: number;
-            points_label: components["schemas"]["ArenaSwissPointsLabel"];
-            /** Format: int32 */
-            buchholz: number;
-            buchholz_status: components["schemas"]["ArenaSwissBuchholzStatus"];
-            /** Format: int32 */
-            head_to_head_points: number;
-            head_to_head_applied: boolean;
-            /** Format: int64 */
-            effective_time_ms: number;
-            /** Format: int64 */
-            accepted_solve_time_ms?: number | null;
-            /** Format: int32 */
-            stable_seed: number;
+            readonly id: string;
+            readonly normalized_inputs: string[];
+            /** Format: uuid */
+            readonly owner_id: string;
+            /** @enum {string} */
+            readonly purpose: "pairing";
+            readonly replay_digest: string;
+            readonly result: string[];
         };
-        ArenaSwissRound: {
+        SwissPairing: {
+            /** Format: uuid */
+            evidence_id: string;
+            /** Format: uuid */
+            first_participant_id: string;
             /** Format: uuid */
             id: string;
             /** Format: uuid */
-            tournament_id: string;
-            /** Format: int32 */
-            round_number: number;
+            override_actor_id?: string | null;
+            override_reason?: string | null;
+            /** @default false */
+            repeated: boolean;
+            /** Format: uuid */
+            round_id: string;
+            /** Format: uuid */
+            second_participant_id: string;
+        };
+        /** @enum {string} */
+        SwissBuchholzStatus: "provisional" | "final";
+        /** @enum {string} */
+        SwissPointsLabel: "provisional" | "final";
+        SwissStanding: {
             /** Format: int64 */
-            readonly revision: number;
-            roster_participant_ids: string[];
-            pairing_evidence?: components["schemas"]["ArenaSwissPairingEvidence"];
-            pairings: components["schemas"]["ArenaSwissPairing"][];
-            bye?: components["schemas"]["ArenaSwissBye"] | null;
-            standings: components["schemas"]["ArenaSwissStanding"][];
-            readonly locked: boolean;
-            /** Format: date-time */
-            readonly locked_at?: string | null;
-            /** Format: date-time */
-            readonly started_at?: string | null;
+            accepted_solve_time_ms?: number | null;
+            /** Format: int32 */
+            buchholz: number;
+            buchholz_status: components["schemas"]["SwissBuchholzStatus"];
+            /** Format: int64 */
+            effective_time_ms: number;
+            head_to_head_applied: boolean;
+            /** Format: int32 */
+            head_to_head_points: number;
+            /** Format: uuid */
+            participant_id: string;
+            /** Format: int32 */
+            points: number;
+            points_label: components["schemas"]["SwissPointsLabel"];
+            /** Format: int32 */
+            position: number;
+            /** Format: int32 */
+            stable_seed: number;
+        };
+        SwissRound: {
+            bye?: components["schemas"]["SwissBye"] | null;
             /** Format: date-time */
             readonly completed_at?: string | null;
             /** Format: date-time */
             readonly created_at: string;
+            /** Format: uuid */
+            id: string;
+            readonly locked: boolean;
+            /** Format: date-time */
+            readonly locked_at?: string | null;
+            pairing_evidence?: components["schemas"]["SwissPairingEvidence"];
+            pairings: components["schemas"]["SwissPairing"][];
+            /** Format: int64 */
+            readonly revision: number;
+            roster_participant_ids: string[];
+            /** Format: int32 */
+            round_number: number;
+            standings: components["schemas"]["SwissStanding"][];
+            /** Format: date-time */
+            readonly started_at?: string | null;
+            /** Format: uuid */
+            tournament_id: string;
             /** Format: date-time */
             readonly updated_at: string;
         };
-        ArenaTournamentActionRequest: {
+        TournamentActionRequest: {
+            /** @enum {string} */
+            action: "open_registration" | "start_swiss" | "start_golden" | "start_playoffs" | "pause" | "resume" | "cancel";
+            confirmed: boolean;
             /** Format: int64 */
             expected_projection_revision: number;
-            /** @enum {string} */
-            action: "open_registration" | "start_swiss" | "start_golden" | "start_playoffs" | "pause" | "resume" | "complete" | "cancel";
-            confirmed: boolean;
             reason?: string;
         };
-        ArenaWaveControlRequest: {
-            /** Format: int64 */
-            expected_projection_revision: number;
+        WaveControlRequest: {
             /** @enum {string} */
             action: "open_ready_window" | "start" | "pause" | "resume" | "complete" | "cancel";
             confirmed: boolean;
+            /** Format: int64 */
+            expected_projection_revision: number;
             reason?: string;
         };
-        /** @enum {string} */
-        ArenaWaveState: "planned" | "ready_window_open" | "ready" | "active" | "paused" | "completed" | "ready_window_expired" | "superseded";
-        ArenaWaveMember: {
+        WaveMember: {
             /** Format: uuid */
             participant_id: string;
-            /** Format: uuid */
-            series_id: string;
-            readonly ready: boolean;
             /** Format: int64 */
             readonly readiness_revision: number;
+            readonly ready: boolean;
+            /**
+             * Format: uuid
+             * @description Series identity for paired members. Null only for the Swiss bye participant.
+             */
+            series_id?: string | null;
         };
         /** @enum {string} */
-        ArenaReadyWindowState: "open" | "consumed" | "expired" | "superseded";
-        ArenaReadyWindow: {
-            /** Format: uuid */
-            id: string;
-            /** Format: uuid */
-            wave_id: string;
-            /** Format: uuid */
-            readonly revision_id: string;
-            state: components["schemas"]["ArenaReadyWindowState"];
-            /** Format: date-time */
-            readonly opened_at: string;
-            /** Format: date-time */
-            readonly deadline: string;
+        ReadyWindowState: "open" | "consumed" | "expired" | "superseded";
+        ReadyWindow: {
             /** Format: date-time */
             readonly consumed_at: string | null;
-        };
-        ArenaWave: {
+            /** Format: date-time */
+            readonly deadline: string;
             /** Format: uuid */
             id: string;
-            /** Format: uuid */
-            tournament_id: string;
+            /** Format: date-time */
+            readonly opened_at: string;
             /** Format: uuid */
             readonly revision_id: string;
-            /** Format: int64 */
-            readonly revision: number;
-            state: components["schemas"]["ArenaWaveState"];
-            members: components["schemas"]["ArenaWaveMember"][];
-            ready_window: components["schemas"]["ArenaReadyWindow"] | null;
-            /** Format: date-time */
-            readonly started_at: string | null;
-            /** Format: date-time */
-            readonly paused_at: string | null;
+            state: components["schemas"]["ReadyWindowState"];
+            /** Format: uuid */
+            wave_id: string;
         };
         /** @enum {string} */
-        ArenaSeriesState: "planned" | "locked" | "draft" | "ready" | "active" | "replay_required" | "technical_pause" | "completed" | "cancelled";
-        ArenaOperatorNoShowRequest: {
+        WaveState: "planned" | "ready_window_open" | "ready" | "active" | "paused" | "completed" | "ready_window_expired" | "superseded";
+        Wave: {
+            /** Format: uuid */
+            id: string;
+            members: components["schemas"]["WaveMember"][];
+            /** Format: date-time */
+            readonly paused_at: string | null;
+            ready_window: components["schemas"]["ReadyWindow"] | null;
+            /** Format: int64 */
+            readonly revision: number;
+            /** Format: uuid */
+            readonly revision_id: string;
+            /** Format: date-time */
+            readonly started_at: string | null;
+            state: components["schemas"]["WaveState"];
+            /** Format: uuid */
+            tournament_id: string;
+        };
+        /** @enum {string} */
+        SeriesState: "planned" | "locked" | "draft" | "ready" | "active" | "replay_required" | "technical_pause" | "completed" | "cancelled";
+        OperatorNoShowRequest: {
+            confirmed: boolean;
+            /** Format: int64 */
+            expected_authority_revision: number;
+            expected_series_state: components["schemas"]["SeriesState"];
+            /** Format: uuid */
+            expected_wave_revision_id: string;
+            /** Format: uuid */
+            expected_window_revision_id: string;
+            game_result_revision_ids: string[];
+            reason: string;
+            /** Format: uuid */
+            score_revision_id: string;
+            /** Format: uuid */
+            series_id: string;
+            /** Format: uuid */
+            series_result_revision_id: string;
             /** Format: uuid */
             tournament_id: string;
             /** Format: uuid */
             wave_id: string;
             /** Format: uuid */
             window_id: string;
-            /** Format: uuid */
-            series_id: string;
-            confirmed: boolean;
-            reason: string;
-            /** Format: int64 */
-            expected_authority_revision: number;
-            /** Format: uuid */
-            expected_wave_revision_id: string;
-            /** Format: uuid */
-            expected_window_revision_id: string;
-            expected_series_state: components["schemas"]["ArenaSeriesState"];
-            game_result_revision_ids: string[];
-            /** Format: uuid */
-            score_revision_id: string;
-            /** Format: uuid */
-            series_result_revision_id: string;
         };
-        ArenaOperatorReserveRequest: {
-            /** Format: uuid */
-            tournament_id: string;
-            /** Format: uuid */
-            old_wave_id: string;
-            /** Format: uuid */
-            series_id: string;
-            /** Format: uuid */
-            slot_id: string;
-            /** Format: uuid */
-            assignment_id: string;
+        OperatorReserveRequest: {
             /** Format: uuid */
             assignment_attempt_id: string;
+            /** Format: uuid */
+            assignment_id: string;
             confirmed: boolean;
-            reason: string;
-            /** Format: int64 */
-            expected_authority_revision: number;
             /** Format: uuid */
-            expected_exhaustion_command_id: string;
-            /** Format: int64 */
-            expected_assignment_revision: number;
-            /** Format: uuid */
-            expected_pool_revision_id: string;
-            /** Format: int64 */
-            expected_pool_revision: number;
-            /** Format: uuid */
-            expected_history_revision_id: string;
-            /** Format: int64 */
-            expected_history_revision: number;
-            /** Format: uuid */
-            expected_artifact_revision_id: string;
+            evidence_id: string;
             /** Format: int64 */
             expected_artifact_revision: number;
             /** Format: uuid */
-            expected_reservation_revision_id: string;
+            expected_artifact_revision_id: string;
+            /** Format: int64 */
+            expected_assignment_revision: number;
+            /** Format: int64 */
+            expected_authority_revision: number;
+            /** Format: int64 */
+            expected_category_revision: number;
+            /** Format: uuid */
+            expected_category_revision_id: string;
+            /** Format: uuid */
+            expected_exhaustion_command_id: string;
+            /** Format: int64 */
+            expected_history_revision: number;
+            /** Format: uuid */
+            expected_history_revision_id: string;
+            /** Format: int64 */
+            expected_pool_revision: number;
+            /** Format: uuid */
+            expected_pool_revision_id: string;
             /** Format: int64 */
             expected_reservation_revision: number;
             /** Format: uuid */
-            expected_category_revision_id: string;
-            /** Format: int64 */
-            expected_category_revision: number;
+            expected_reservation_revision_id: string;
+            /** Format: uuid */
+            expected_snapshot_id: string;
+            /** Format: uuid */
+            old_wave_id: string;
+            /** Format: uuid */
+            proposed_snapshot_id: string;
             /** Format: uuid */
             proposed_task_id: string;
             /** Format: int32 */
             proposed_version: number;
-            /** Format: uuid */
-            proposed_snapshot_id: string;
-            /** Format: uuid */
-            expected_snapshot_id: string;
-            /** Format: uuid */
-            evidence_id: string;
-        };
-        /** @enum {string} */
-        ArenaGameState: "planned" | "ready" | "active" | "paused" | "completed" | "void" | "cancelled" | "superseded";
-        ArenaOperatorForfeitGameExpectation: {
-            /** Format: uuid */
-            slot_id: string;
-            /** Format: uuid */
-            game_id: string;
-            /** Format: int32 */
-            attempt_no: number;
-            state: components["schemas"]["ArenaGameState"];
-        };
-        ArenaOperatorForfeitRequest: {
-            /** Format: uuid */
-            tournament_id: string;
+            reason: string;
             /** Format: uuid */
             series_id: string;
             /** Format: uuid */
-            forfeiting_participant_id: string;
-            confirmed: boolean;
-            reason: string;
-            /** Format: int64 */
-            expected_authority_revision: number;
-            expected_game: components["schemas"]["ArenaOperatorForfeitGameExpectation"] | null;
-            /** @enum {string} */
-            basis: "rule_violation";
-            rule_id: string;
-            evidence_ids: string[];
+            slot_id: string;
             /** Format: uuid */
-            game_result_revision_id: string | null;
+            tournament_id: string;
+        };
+        /** @enum {string} */
+        GameState: "planned" | "ready" | "active" | "paused" | "completed" | "void" | "cancelled" | "superseded";
+        OperatorForfeitGameExpectation: {
+            /** Format: int32 */
+            attempt_no: number;
             /** Format: uuid */
-            score_revision_id: string;
+            game_id: string;
             /** Format: uuid */
-            series_result_revision_id: string;
+            slot_id: string;
+            state: components["schemas"]["GameState"];
+        };
+        OperatorForfeitRequest: {
             /** Format: uuid */
             audit_event_id: string;
+            /** @enum {string} */
+            basis: "rule_violation";
+            confirmed: boolean;
+            evidence_ids: string[];
+            /** Format: int64 */
+            expected_authority_revision: number;
+            expected_game: components["schemas"]["OperatorForfeitGameExpectation"] | null;
+            /** Format: uuid */
+            forfeiting_participant_id: string;
+            /** Format: uuid */
+            game_result_revision_id: string | null;
             /** Format: uuid */
             outbox_event_id: string;
             /** Format: uuid */
             projection_revision_id: string;
-        };
-        ArenaOperatorReplayRequest: {
+            reason: string;
+            rule_id: string;
             /** Format: uuid */
-            tournament_id: string;
-            /** Format: uuid */
-            old_wave_id: string;
+            score_revision_id: string;
             /** Format: uuid */
             series_id: string;
             /** Format: uuid */
-            slot_id: string;
+            series_result_revision_id: string;
+            /** Format: uuid */
+            tournament_id: string;
+        };
+        OperatorReplayRequest: {
+            /** Format: uuid */
+            assignment_attempt_id: string;
             /** Format: uuid */
             assignment_id: string;
-            /** Format: uuid */
-            failed_game_id: string;
             confirmed: boolean;
-            reason: string;
             /** Format: int64 */
             expected_authority_revision: number;
             /** Format: uuid */
             expected_closure_revision_id: string;
             /** Format: uuid */
-            assignment_attempt_id: string;
+            failed_game_id: string;
+            /** Format: uuid */
+            old_wave_id: string;
+            /** Format: uuid */
+            ready_window_id: string;
+            /** Format: uuid */
+            ready_window_revision_id: string;
+            reason: string;
             /** Format: uuid */
             replacement_game_id: string;
             /** Format: uuid */
@@ -1700,396 +1634,281 @@ export interface components {
             /** Format: uuid */
             replacement_wave_revision_id: string;
             /** Format: uuid */
-            ready_window_id: string;
+            series_id: string;
             /** Format: uuid */
-            ready_window_revision_id: string;
+            slot_id: string;
+            /** Format: uuid */
+            tournament_id: string;
         };
         /** @enum {string} */
-        ArenaCorrectionReason: "scorekeeping_error" | "verified_submission" | "operator_ruling";
+        CorrectionField: "winner" | "result_reason" | "solve_metadata";
         /** @enum {string} */
-        ArenaCorrectionField: "winner" | "result_reason" | "solve_metadata";
-        /** @enum {string} */
-        ArenaGameResultReason: "solved" | "surrender" | "operator_forfeit" | "no_solve" | "task_failure" | "common_platform_failure" | "disconnect" | "execution_epoch_break" | "no_show" | "series_cancelled" | "tournament_cancelled" | "derived_revision_superseded";
-        ArenaCorrectionSolveMetadata: {
+        GameResultReason: "solved" | "surrender" | "operator_forfeit" | "no_solve" | "task_failure" | "common_platform_failure" | "disconnect" | "execution_epoch_break" | "no_show" | "series_cancelled" | "tournament_cancelled" | "derived_revision_superseded";
+        CorrectionSolveMetadata: {
+            evidence_digest: string;
             /** Format: date-time */
             solved_at: string | null;
             /** Format: uuid */
             submission_id: string | null;
-            evidence_digest: string;
         };
-        ArenaCorrectionPatch: {
-            state: components["schemas"]["ArenaGameState"];
-            reason: components["schemas"]["ArenaGameResultReason"];
+        CorrectionPatch: {
+            reason: components["schemas"]["GameResultReason"];
+            solve_metadata: components["schemas"]["CorrectionSolveMetadata"];
+            state: components["schemas"]["GameState"];
             /** Format: uuid */
             winner_id: string | null;
-            solve_metadata: components["schemas"]["ArenaCorrectionSolveMetadata"];
         };
         /** @enum {string} */
-        ArenaArtifactKind: "game_result" | "series_score" | "series_result" | "standings" | "golden_group" | "top_four" | "bracket" | "champion";
-        /** @description Immutable revision metadata for a derived Arena artifact. */
-        ArenaProjectionRevision: {
-            /** Format: uuid */
-            readonly id: string;
-            /** Format: uuid */
-            readonly tournament_id: string;
-            artifact_kind: components["schemas"]["ArenaArtifactKind"];
+        ArtifactKind: "game_result" | "series_score" | "series_result" | "standings" | "golden_group" | "top_four" | "bracket" | "champion";
+        /** @description Immutable revision metadata for a derived Tournament artifact. */
+        ProjectionRevision: {
             /** Format: uuid */
             readonly artifact_id: string;
+            artifact_kind: components["schemas"]["ArtifactKind"];
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: uuid */
+            readonly id: string;
+            readonly payload_digest: string;
+            /** Format: uuid */
+            readonly previous_revision_id?: string | null;
             /** Format: int32 */
             readonly revision_no: number;
             /** Format: uuid */
-            readonly previous_revision_id?: string | null;
-            readonly payload_digest: string;
-            /** Format: date-time */
-            readonly created_at: string;
+            readonly tournament_id: string;
         };
         /** @description Digest-only projection mutation intent. Raw projection payload is not exposed. */
-        ArenaCorrectionProjectionIntent: {
-            expected_revision: components["schemas"]["ArenaProjectionRevision"];
-            /** Format: uuid */
-            next_revision_id: string;
+        CorrectionProjectionIntent: {
             /** Format: uuid */
             decision_id: string;
+            expected_revision: components["schemas"]["ProjectionRevision"];
+            /** Format: uuid */
+            next_revision_id: string;
             payload_digest: string;
         };
+        /** @enum {string} */
+        CorrectionReason: "scorekeeping_error" | "verified_submission" | "operator_ruling";
         /** @description Complete compare-and-set evidence for releasing an undisclosed, unused reservation. */
-        ArenaCorrectionUnlockIntent: {
-            /** Format: uuid */
-            reservation_id: string;
-            /** Format: uuid */
-            tournament_id: string;
-            /** Format: uuid */
-            owner_id: string;
-            /** Format: uuid */
-            readonly source_revision_id: string;
+        CorrectionUnlockIntent: {
+            readonly binding_digest: string;
+            readonly evidence_digest: string;
+            expected_disclosed: boolean;
             /** Format: int64 */
             expected_revision: number;
             expected_used: boolean;
-            expected_disclosed: boolean;
-            readonly evidence_digest: string;
-            readonly binding_digest: string;
+            /** Format: uuid */
+            owner_id: string;
+            /** Format: uuid */
+            reservation_id: string;
+            /** Format: uuid */
+            readonly source_revision_id: string;
+            /** Format: uuid */
+            tournament_id: string;
         };
-        ArenaOperatorCorrectionRequest: {
+        OperatorCorrectionRequest: {
+            confirmed: boolean;
             /** Format: int64 */
             expected_projection_revision: number;
-            confirmed: boolean;
-            reason: components["schemas"]["ArenaCorrectionReason"];
             explanation: string;
-            fields: components["schemas"]["ArenaCorrectionField"][];
-            patch: components["schemas"]["ArenaCorrectionPatch"];
-            projection_intents?: components["schemas"]["ArenaCorrectionProjectionIntent"][];
-            unlock_intents?: components["schemas"]["ArenaCorrectionUnlockIntent"][];
+            fields: components["schemas"]["CorrectionField"][];
+            patch: components["schemas"]["CorrectionPatch"];
+            projection_intents?: components["schemas"]["CorrectionProjectionIntent"][];
+            reason: components["schemas"]["CorrectionReason"];
+            unlock_intents?: components["schemas"]["CorrectionUnlockIntent"][];
         };
-        ArenaCorrectionProjectionSupersession: {
-            artifact_kind: components["schemas"]["ArenaArtifactKind"];
+        CorrectionProjectionSupersession: {
             /** Format: uuid */
             artifact_id: string;
-            /** Format: uuid */
-            readonly previous_revision_id: string;
-            /** Format: uuid */
-            readonly successor_revision_id: string;
+            artifact_kind: components["schemas"]["ArtifactKind"];
             /** Format: uuid */
             readonly previous_decision_id: string | null;
             /** Format: uuid */
+            readonly previous_revision_id: string;
+            /** Format: uuid */
             readonly replacement_decision_id: string;
+            /** Format: uuid */
+            readonly successor_revision_id: string;
         };
         /** @description Immutable correction record. All projection and unlock evidence is retained by value. */
-        ArenaCorrectionEvidence: {
+        CorrectionEvidence: {
             /** Format: uuid */
             readonly command_id: string;
-            /** Format: uuid */
-            readonly tournament_id: string;
-            /** Format: uuid */
-            readonly series_id: string;
+            readonly fields: components["schemas"]["CorrectionField"][];
             /** Format: uuid */
             readonly game_id: string;
             /** Format: uuid */
             readonly operator_id: string;
-            reason: components["schemas"]["ArenaCorrectionReason"];
-            readonly fields: components["schemas"]["ArenaCorrectionField"][];
+            reason: components["schemas"]["CorrectionReason"];
             /** Format: date-time */
             readonly requested_at: string;
+            /** Format: uuid */
+            readonly series_id: string;
+            readonly supersessions: components["schemas"]["CorrectionProjectionSupersession"][];
+            /** Format: uuid */
+            readonly tournament_id: string;
+            readonly unlock_intents: components["schemas"]["CorrectionUnlockIntent"][];
             readonly validation_digest: string;
-            readonly supersessions: components["schemas"]["ArenaCorrectionProjectionSupersession"][];
-            readonly unlock_intents: components["schemas"]["ArenaCorrectionUnlockIntent"][];
         };
         /** @enum {string} */
-        ArenaAuditEntityKind: "game_attempt" | "series";
+        AuditEntityKind: "game_attempt" | "series";
         /** @enum {string} */
-        ArenaResultActorKind: "server" | "operator";
+        ResultActorKind: "server" | "operator";
         /** @description Stable keyset cursor ordered by occurrence time, audit event ID, and immutable result revision ID. */
-        ArenaAuditCursor: {
+        AuditCursor: {
+            /** Format: uuid */
+            audit_event_id: string;
             /** Format: date-time */
             occurred_at: string;
             /** Format: uuid */
-            audit_event_id: string;
-            /** Format: uuid */
             revision_id: string;
+            /** @description Opaque database snapshot bound preserving a stable audit page across concurrent commits. */
+            snapshot_bound: string;
         };
         /** @description Redacted immutable audit projection. Raw internal payload is never included. */
-        ArenaAuditEvent: {
+        AuditEvent: {
+            /** Format: uuid */
+            readonly actor_id: string | null;
+            actor_kind: components["schemas"]["ResultActorKind"];
             /** Format: uuid */
             readonly audit_event_id: string;
+            /** Format: date-time */
+            readonly created_at: string;
             /** Format: uuid */
-            readonly tournament_id: string;
+            readonly entity_id: string;
+            entity_kind: components["schemas"]["AuditEntityKind"];
+            readonly event_type: string;
+            readonly is_current: boolean;
+            readonly is_superseded: boolean;
+            /** Format: date-time */
+            readonly occurred_at: string;
+            /** Format: uuid */
+            readonly official_result_revision_id: string;
+            readonly redacted_payload: Record<string, never>;
+            /** Format: uuid */
+            readonly result_event_id: string;
+            readonly result_reason: string;
+            readonly result_state: string;
+            /** Format: int64 */
+            readonly revision_number: number;
             /** Format: uuid */
             readonly roster_id: string;
             /** Format: uuid */
             readonly series_id: string;
             /** Format: uuid */
-            readonly result_event_id: string;
-            actor_kind: components["schemas"]["ArenaResultActorKind"];
-            /** Format: uuid */
-            readonly actor_id: string | null;
-            readonly event_type: string;
-            readonly redacted_payload: Record<string, never>;
-            /** Format: date-time */
-            readonly occurred_at: string;
-            /** Format: date-time */
-            readonly created_at: string;
-            readonly result_state: string;
-            readonly result_reason: string;
+            readonly tournament_id: string;
             /** Format: uuid */
             readonly winner_id: string | null;
-            /** Format: uuid */
-            readonly official_result_revision_id: string;
-            entity_kind: components["schemas"]["ArenaAuditEntityKind"];
-            /** Format: uuid */
-            readonly entity_id: string;
-            /** Format: int64 */
-            readonly revision_number: number;
-            readonly is_current: boolean;
-            readonly is_superseded: boolean;
         };
-        ArenaAuditPage: {
-            events: components["schemas"]["ArenaAuditEvent"][];
-            next_cursor: components["schemas"]["ArenaAuditCursor"] | null;
+        AuditPage: {
+            events: components["schemas"]["AuditEvent"][];
+            next_cursor: components["schemas"]["AuditCursor"] | null;
         };
-        /** @description Canonical redacted JSON audit bundle containing at most 4096 events. */
-        ArenaIncidentBundle: {
-            /** Format: uuid */
-            readonly tournament_id: string;
-            /** Format: int64 */
-            readonly projection_revision: number;
-            /** Format: date-time */
-            readonly generated_at: string;
+        /** @description Canonical redacted JSON audit bundle containing at most 4096 events and an HMAC authenticity envelope. */
+        IncidentBundle: {
+            /** @enum {string} */
+            readonly algorithm: "hmac-sha256-v1";
             /**
              * Format: byte
              * @description Base64-encoded canonical JSON containing no more than 4096 redacted audit events.
              */
             readonly canonical_content: string;
             /** @enum {string} */
-            readonly canonical_content_type: "application/json";
-            /** @enum {string} */
             readonly canonical_content_encoding: "base64";
             /** Format: int64 */
             readonly canonical_content_length: number;
-            readonly sha256: string;
-        };
-        ArenaOperatorRecoveryCursor: {
-            /** Format: int64 */
-            projection_revision: number;
-            /** Format: int64 */
-            authority_revision: number;
-            /** Format: int64 */
-            audit_sequence: number;
-        };
-        /** @enum {string} */
-        ArenaSeriesFormat: "bo1" | "bo3";
-        ArenaSeriesScore: {
-            /** Format: int32 */
-            first_participant_wins: number;
-            /** Format: int32 */
-            second_participant_wins: number;
-        };
-        /** @description One attempt in a stable Series slot. Replays get a new Game ID and retain the slot_id. */
-        ArenaGame: {
-            /** Format: uuid */
-            id: string;
-            /** Format: uuid */
-            slot_id: string;
-            /** Format: int32 */
-            attempt_no: number;
-            state: components["schemas"]["ArenaGameState"];
-            result_reason: components["schemas"]["ArenaGameResultReason"] | null;
-            /** Format: uuid */
-            winner_id: string | null;
-            /** Format: uuid */
-            readonly result_revision_id: string | null;
-        };
-        ArenaGameSlot: {
-            /** Format: uuid */
-            id: string;
-            /** Format: uuid */
-            series_id: string;
-            /** Format: int32 */
-            position: number;
-            category: components["schemas"]["ArenaCategory"];
-            score_before: components["schemas"]["ArenaSeriesScore"];
-            attempts: components["schemas"]["ArenaGame"][];
-        };
-        ArenaSeries: {
-            /** Format: uuid */
-            id: string;
-            /** Format: uuid */
-            tournament_id: string;
-            /** Format: uuid */
-            first_participant_id: string;
-            /** Format: uuid */
-            second_participant_id: string;
-            format: components["schemas"]["ArenaSeriesFormat"];
-            state: components["schemas"]["ArenaSeriesState"];
-            score: components["schemas"]["ArenaSeriesScore"];
-            /** Format: uuid */
-            winner_id: string | null;
-            slots: components["schemas"]["ArenaGameSlot"][];
-            /** Format: uuid */
-            readonly current_score_revision_id: string | null;
-            /** Format: uuid */
-            readonly current_result_revision_id: string | null;
-        };
-        ArenaPauseSeries: {
-            series: components["schemas"]["ArenaSeries"];
-            /** Format: int64 */
-            readonly revision: number;
-            /** Format: uuid */
-            readonly current_game_id: string | null;
-            resume_state: components["schemas"]["ArenaSeriesState"] | null;
-        };
-        ArenaPauseGame: {
-            /** Format: uuid */
-            series_id: string;
-            game: components["schemas"]["ArenaGame"];
-            /** Format: int64 */
-            readonly revision: number;
+            /** @enum {string} */
+            readonly canonical_content_type: "application/json";
             /** Format: date-time */
-            readonly deadline: string | null;
-            resume_state: components["schemas"]["ArenaGameState"] | null;
+            readonly generated_at: string;
+            readonly key_id: string;
+            readonly mac: string;
+            /** Format: int64 */
+            readonly projection_revision: number;
+            readonly sha256: string;
+            /** Format: uuid */
+            readonly tournament_id: string;
+        };
+        /** @description Watermark captured from one authoritative operator recovery snapshot. */
+        OperatorRecoveryCursor: {
+            /**
+             * Format: int64
+             * @description Number of append-only tournament audit events visible in the snapshot.
+             */
+            audit_sequence: number;
+            /**
+             * Format: int64
+             * @description Latest execution authority lease revision, or the tournament revision before the first authority lease exists.
+             */
+            authority_revision: number;
+            /**
+             * Format: int64
+             * @description Current durable tournament projection revision.
+             */
+            projection_revision: number;
+        };
+        PauseReconnectCounter: {
+            /** Format: int32 */
+            readonly limit: number;
+            /** Format: uuid */
+            participant_id: string;
+            /** Format: uuid */
+            pause_id: string;
+            /** Format: int64 */
+            readonly revision: number;
+            /** Format: uuid */
+            roster_id: string;
+            /** Format: int32 */
+            readonly used: number;
         };
         /** @enum {string} */
-        ArenaDraftState: "active" | "completed";
-        /** @enum {string} */
-        ArenaDraftActionType: "ban" | "pick";
-        ArenaDraftAction: {
-            /** Format: int32 */
-            turn: number;
+        DraftActionType: "ban" | "pick";
+        DraftAction: {
+            action: components["schemas"]["DraftActionType"];
             /** Format: uuid */
             actor_id: string;
-            action: components["schemas"]["ArenaDraftActionType"];
-            category: components["schemas"]["ArenaCategory"];
+            category: components["schemas"]["Category"];
             /** Format: date-time */
             readonly occurred_at: string;
+            /** Format: int32 */
+            turn: number;
             /** Format: date-time */
             readonly turn_deadline: string;
         };
-        ArenaDraft: {
-            /** Format: uuid */
-            id: string;
-            /** Format: uuid */
-            series_id: string;
-            /** Format: int64 */
-            revision: number;
-            format: components["schemas"]["ArenaSeriesFormat"];
+        /** @enum {string} */
+        SeriesFormat: "bo1" | "bo3";
+        /** @enum {string} */
+        DraftState: "active" | "completed";
+        Draft: {
+            actions: components["schemas"]["DraftAction"][];
             /** Format: uuid */
             first_participant_id: string;
+            format: components["schemas"]["SeriesFormat"];
+            /** Format: uuid */
+            id: string;
+            pool: components["schemas"]["Category"][];
+            /** Format: int64 */
+            revision: number;
             /** Format: uuid */
             second_participant_id: string;
-            pool: components["schemas"]["ArenaCategory"][];
-            state: components["schemas"]["ArenaDraftState"];
+            selected_categories: components["schemas"]["Category"][];
+            /** Format: uuid */
+            series_id: string;
+            state: components["schemas"]["DraftState"];
             /** Format: int32 */
             turn: number;
             /** Format: date-time */
             turn_deadline: string | null;
-            actions: components["schemas"]["ArenaDraftAction"][];
-            selected_categories: components["schemas"]["ArenaCategory"][];
         };
         /** @enum {string} */
-        ArenaPresenceState: "connected" | "disconnected";
-        ArenaPresence: {
-            /** Format: uuid */
-            id: string;
-            /** Format: uuid */
-            tournament_id: string;
-            /** Format: uuid */
-            roster_id: string;
-            /** Format: uuid */
-            series_id: string;
-            /** Format: uuid */
-            participant_id: string;
-            state: components["schemas"]["ArenaPresenceState"];
-            /** Format: int64 */
-            readonly presence_epoch: number;
-            /** Format: int64 */
-            readonly revision: number;
-            /** Format: date-time */
-            readonly connected_at: string;
-            /** Format: date-time */
-            readonly disconnected_at: string | null;
-            /** Format: date-time */
-            readonly updated_at: string;
-        };
-        /** @enum {string} */
-        ArenaReconnectState: "open" | "reconnected" | "expired" | "cancelled";
-        /** @description Durable reconnect interval. Continued intervals preserve their lineage across a tournament pause. */
-        ArenaReconnectInterval: {
-            /** Format: uuid */
-            id: string;
-            /** Format: uuid */
-            pause_id: string;
-            /** Format: uuid */
-            roster_id: string;
-            /** Format: uuid */
-            series_id: string;
-            /** Format: uuid */
-            game_id: string;
-            /** Format: uuid */
-            participant_id: string;
-            /** Format: int64 */
-            readonly presence_epoch: number;
-            /** Format: int32 */
-            readonly number: number;
-            /** Format: int32 */
-            readonly continuation_number: number;
-            /** Format: uuid */
-            readonly continued_from_id: string | null;
-            /** Format: uuid */
-            readonly suspended_by_pause_id: string | null;
-            state: components["schemas"]["ArenaReconnectState"];
-            /** Format: date-time */
-            readonly opened_at: string;
-            /** Format: date-time */
-            readonly deadline: string;
-            /** Format: date-time */
-            readonly closed_at: string | null;
-            /** Format: int64 */
-            readonly revision: number;
-            /** Format: date-time */
-            readonly updated_at: string;
-        };
-        ArenaPauseReconnectCounter: {
-            /** Format: uuid */
-            pause_id: string;
-            /** Format: uuid */
-            roster_id: string;
-            /** Format: uuid */
-            participant_id: string;
-            /** Format: int32 */
-            readonly limit: number;
-            /** Format: int32 */
-            readonly used: number;
-            /** Format: int64 */
-            readonly revision: number;
-        };
-        /** @enum {string} */
-        ArenaPauseDeadlineKind: "ready_window" | "game" | "draft";
-        ArenaFrozenDeadline: {
-            kind: components["schemas"]["ArenaPauseDeadlineKind"];
-            /** Format: uuid */
-            owner_id: string;
-            /** Format: date-time */
-            readonly original_deadline: string;
+        PauseDeadlineKind: "ready_window" | "game" | "draft";
+        FrozenDeadline: {
             /** Format: date-time */
             readonly frozen_at: string;
+            kind: components["schemas"]["PauseDeadlineKind"];
+            /** Format: date-time */
+            readonly original_deadline: string;
+            /** Format: uuid */
+            owner_id: string;
             /** Format: int64 */
             readonly remaining_ms: number;
             /** Format: date-time */
@@ -2099,349 +1918,489 @@ export interface components {
             /** Format: int64 */
             readonly revision: number;
         };
-        /** @description Durable pause snapshot. Runtime timers and process-local pause authority are excluded. */
-        ArenaPauseGraph: {
+        /** @description One attempt in a stable Series slot. Replays get a new Game ID and retain the slot_id. */
+        Game: {
+            /** Format: int32 */
+            attempt_no: number;
+            /** Format: uuid */
+            id: string;
+            result_reason: (string & components["schemas"]["GameResultReason"]) | null;
+            /** Format: uuid */
+            readonly result_revision_id: string | null;
+            /** Format: uuid */
+            slot_id: string;
+            state: components["schemas"]["GameState"];
+            /** Format: uuid */
+            winner_id: string | null;
+        };
+        PauseGame: {
+            /** Format: date-time */
+            readonly deadline: string | null;
+            game: components["schemas"]["Game"];
+            resume_state: (string & components["schemas"]["GameState"]) | null;
+            /** Format: int64 */
+            readonly revision: number;
+            /** Format: uuid */
+            series_id: string;
+        };
+        /** @enum {string} */
+        PresenceState: "connected" | "disconnected";
+        Presence: {
+            /** Format: date-time */
+            readonly connected_at: string;
+            /** Format: date-time */
+            readonly disconnected_at: string | null;
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            participant_id: string;
+            /** Format: int64 */
+            readonly presence_epoch: number;
+            /** Format: int64 */
+            readonly revision: number;
+            /** Format: uuid */
+            roster_id: string;
+            /** Format: uuid */
+            series_id: string;
+            state: components["schemas"]["PresenceState"];
+            /** Format: uuid */
+            tournament_id: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+        };
+        /** @enum {string} */
+        ReconnectState: "open" | "reconnected" | "expired" | "cancelled";
+        /** @description Durable reconnect interval. Continued intervals preserve their lineage across a tournament pause. */
+        ReconnectInterval: {
+            /** Format: date-time */
+            readonly closed_at: string | null;
+            /** Format: int32 */
+            readonly continuation_number: number;
+            /** Format: uuid */
+            readonly continued_from_id: string | null;
+            /** Format: date-time */
+            readonly deadline: string;
+            /** Format: uuid */
+            game_id: string;
+            /** Format: uuid */
+            id: string;
+            /** Format: int32 */
+            readonly number: number;
+            /** Format: date-time */
+            readonly opened_at: string;
+            /** Format: uuid */
+            participant_id: string;
+            /** Format: uuid */
+            pause_id: string;
+            /** Format: int64 */
+            readonly presence_epoch: number;
+            /** Format: int64 */
+            readonly revision: number;
+            /** Format: uuid */
+            roster_id: string;
+            /** Format: uuid */
+            series_id: string;
+            state: components["schemas"]["ReconnectState"];
+            /** Format: uuid */
+            readonly suspended_by_pause_id: string | null;
+            /** Format: date-time */
+            readonly updated_at: string;
+        };
+        SeriesScore: {
+            /** Format: int32 */
+            first_participant_wins: number;
+            /** Format: int32 */
+            second_participant_wins: number;
+        };
+        GameSlot: {
+            attempts: components["schemas"]["Game"][];
+            category: components["schemas"]["Category"];
+            /** Format: uuid */
+            id: string;
+            /** Format: int32 */
+            position: number;
+            score_before: components["schemas"]["SeriesScore"];
+            /** Format: uuid */
+            series_id: string;
+        };
+        Series: {
+            /** Format: uuid */
+            readonly current_result_revision_id: string | null;
+            /** Format: uuid */
+            readonly current_score_revision_id: string | null;
+            /** Format: uuid */
+            first_participant_id: string;
+            format: components["schemas"]["SeriesFormat"];
+            /** Format: uuid */
+            id: string;
+            score: components["schemas"]["SeriesScore"];
+            /** Format: uuid */
+            second_participant_id: string;
+            slots: components["schemas"]["GameSlot"][];
+            state: components["schemas"]["SeriesState"];
             /** Format: uuid */
             tournament_id: string;
             /** Format: uuid */
-            roster_id: string;
-            wave: components["schemas"]["ArenaWave"];
-            series: components["schemas"]["ArenaPauseSeries"][];
-            games: components["schemas"]["ArenaPauseGame"][];
-            draft: components["schemas"]["ArenaDraft"] | null;
-            presence: components["schemas"]["ArenaPresence"][];
-            reconnect: components["schemas"]["ArenaReconnectInterval"][];
-            counters: components["schemas"]["ArenaPauseReconnectCounter"][];
-            frozen_deadlines: components["schemas"]["ArenaFrozenDeadline"][];
+            winner_id: string | null;
+        };
+        PauseSeries: {
+            /** Format: uuid */
+            readonly current_game_id: string | null;
+            resume_state: (string & components["schemas"]["SeriesState"]) | null;
+            /** Format: int64 */
+            readonly revision: number;
+            series: components["schemas"]["Series"];
+        };
+        /** @description Durable pause snapshot. Runtime timers and process-local pause authority are excluded. */
+        PauseGraph: {
             /** Format: uuid */
             active_pause_id: string | null;
-            /** Format: date-time */
-            readonly paused_at: string | null;
+            counters: components["schemas"]["PauseReconnectCounter"][];
             readonly deadlines_suppressed: boolean;
+            draft: components["schemas"]["Draft"] | null;
+            frozen_deadlines: components["schemas"]["FrozenDeadline"][];
+            games: components["schemas"]["PauseGame"][];
             /** Format: int64 */
             readonly graph_revision: number;
+            /** Format: date-time */
+            readonly paused_at: string | null;
+            presence: components["schemas"]["Presence"][];
+            reconnect: components["schemas"]["ReconnectInterval"][];
+            /** Format: uuid */
+            roster_id: string;
+            series: components["schemas"]["PauseSeries"][];
             /** Format: int64 */
             readonly terminal_action_revision: number;
+            /** Format: uuid */
+            tournament_id: string;
+            wave: components["schemas"]["Wave"];
         };
-        ArenaOperatorRecoverySnapshot: {
-            tournament: components["schemas"]["ArenaTournament"];
-            roster: components["schemas"]["ArenaRoster"];
-            waves: components["schemas"]["ArenaWave"][];
-            series: components["schemas"]["ArenaSeries"][];
-            pause_graph: components["schemas"]["ArenaPauseGraph"] | null;
-            next_cursor: components["schemas"]["ArenaOperatorRecoveryCursor"];
+        OperatorRecoverySnapshot: {
+            next_cursor: components["schemas"]["OperatorRecoveryCursor"];
+            pause_graph: components["schemas"]["PauseGraph"] | null;
+            roster: components["schemas"]["Roster"];
+            series: components["schemas"]["Series"][];
+            tournament: components["schemas"]["Tournament"];
+            waves: components["schemas"]["Wave"][];
         };
-        ArenaParticipantLobbySeries: {
+        ParticipantLobbySeries: {
+            format: components["schemas"]["SeriesFormat"];
+            opponent_display_name: string;
             /** Format: uuid */
             series_id: string;
-            state: components["schemas"]["ArenaSeriesState"];
-            format: components["schemas"]["ArenaSeriesFormat"];
-            opponent_display_name: string;
+            state: components["schemas"]["SeriesState"];
             /** Format: uuid */
             wave_id: string;
         };
-        ArenaParticipantLobbyResponse: {
-            /** Format: uuid */
-            tournament_id: string;
-            state: components["schemas"]["ArenaTournamentState"];
+        ParticipantLobbyResponse: {
             /** Format: int64 */
             projection_revision: number;
             roster_locked: boolean;
-            series: components["schemas"]["ArenaParticipantLobbySeries"][];
+            series: components["schemas"]["ParticipantLobbySeries"][];
+            state: components["schemas"]["TournamentState"];
+            /** Format: uuid */
+            tournament_id: string;
         };
         /** @enum {string} */
-        ArenaTaskKind: "normal" | "golden";
-        /** @enum {string} */
-        ArenaDifficulty: "easy" | "medium" | "hard";
+        Difficulty: "easy" | "medium" | "hard";
         /** @description Public immutable task snapshot. Private flag material and undisclosed reserves are excluded. */
-        ArenaTaskSnapshot: {
+        TaskSnapshot: {
+            category: components["schemas"]["Category"];
+            description: string;
+            difficulty: components["schemas"]["Difficulty"];
+            hints: string[];
+            kind: components["schemas"]["TaskKind"];
             /** Format: uuid */
             snapshot_id: string;
-            /** Format: uuid */
-            task_id: string;
-            /** Format: int32 */
-            version: number;
-            kind: components["schemas"]["ArenaTaskKind"];
-            title: string;
-            description: string;
-            category: components["schemas"]["ArenaCategory"];
-            difficulty: components["schemas"]["ArenaDifficulty"];
-            /** Format: int32 */
-            time_limit: number;
-            hints: string[];
-            task_url?: string | null;
             /** Format: uri */
             source_file_url?: string | null;
-        };
-        ArenaDeliveryReceipt: {
             /** Format: uuid */
-            id: string;
+            task_id: string;
+            task_url?: string | null;
+            /** Format: int32 */
+            time_limit: number;
+            title: string;
+            /** Format: int32 */
+            version: number;
+        };
+        DeliveryReceipt: {
             /** Format: uuid */
             assignment_id: string;
             /** Format: uuid */
             attempt_id: string;
+            /** Format: date-time */
+            readonly delivered_at: string;
+            /** Format: uuid */
+            id: string;
             /** Format: uuid */
             participant_id: string;
             /** Format: uuid */
             snapshot_id: string;
             /** Format: uuid */
             task_id: string;
-            /** Format: date-time */
-            readonly delivered_at: string;
         };
-        ArenaParticipantAssignment: {
-            /** Format: uuid */
-            id: string;
+        ParticipantAssignment: {
+            active_snapshot: components["schemas"]["TaskSnapshot"];
             /** Format: uuid */
             attempt_id: string;
-            active_snapshot: components["schemas"]["ArenaTaskSnapshot"];
+            /** Format: uuid */
+            id: string;
+            receipt: components["schemas"]["DeliveryReceipt"];
             /** Format: int32 */
             undisclosed_reserve_count: number;
-            receipt: components["schemas"]["ArenaDeliveryReceipt"];
         };
-        ArenaParticipantAssignmentResponse: {
-            /** Format: uuid */
-            tournament_id: string;
+        ParticipantAssignmentResponse: {
+            assignment: components["schemas"]["ParticipantAssignment"];
             /** Format: int64 */
             projection_revision: number;
-            assignment: components["schemas"]["ArenaParticipantAssignment"];
+            /** Format: uuid */
+            tournament_id: string;
         };
-        ArenaParticipantReadyRequest: {
+        ParticipantReadyRequest: {
             /** Format: int64 */
             expected_projection_revision: number;
             ready: boolean;
         };
         /** @enum {string} */
-        ArenaReadinessEventType: "ready" | "cleared";
-        ArenaReadinessEvent: {
+        ReadinessEventType: "ready" | "cleared";
+        ReadinessEvent: {
             /** Format: uuid */
             command_id: string;
+            /** Format: date-time */
+            readonly occurred_at: string;
+            /** Format: uuid */
+            participant_id: string;
+            type: components["schemas"]["ReadinessEventType"];
             /** Format: uuid */
             wave_id: string;
             /** Format: uuid */
             window_id: string;
-            /** Format: uuid */
-            participant_id: string;
-            type: components["schemas"]["ArenaReadinessEventType"];
-            /** Format: date-time */
-            readonly occurred_at: string;
         };
-        ArenaParticipantDraftActionRequest: {
-            /** Format: int64 */
-            expected_projection_revision: number;
+        ParticipantDraftActionRequest: {
+            action: components["schemas"]["DraftActionType"];
+            category: components["schemas"]["Category"];
             /** Format: int64 */
             expected_draft_revision: number;
+            /** Format: int64 */
+            expected_projection_revision: number;
             /** Format: int32 */
             expected_turn: number;
-            action: components["schemas"]["ArenaDraftActionType"];
-            category: components["schemas"]["ArenaCategory"];
         };
-        ArenaParticipantSubmissionRequest: {
+        ParticipantSubmissionRequest: {
             /** Format: int64 */
             expected_projection_revision: number;
             submitted_flag: string;
         };
-        ArenaSubmissionScope: {
+        SubmissionScope: {
             /** Format: uuid */
-            wave_id: string;
+            assignment_id: string;
             /** Format: uuid */
-            tournament_id: string;
+            game_id: string;
             /** Format: uuid */
             series_id: string;
             /** Format: uuid */
             slot_id: string;
             /** Format: uuid */
-            game_id: string;
+            tournament_id: string;
             /** Format: uuid */
-            assignment_id: string;
+            wave_id: string;
         };
-        ArenaSubmissionRecord: {
-            scope: components["schemas"]["ArenaSubmissionScope"];
+        SubmissionRecord: {
             /** Format: uuid */
             command_id: string;
-            /** Format: uuid */
-            participant_id: string;
-            /** Format: int64 */
-            sequence: number;
             /** Format: date-time */
             readonly committed_at: string;
+            readonly content_digest: string;
             readonly correct: boolean;
+            /** Format: uuid */
+            participant_id: string;
+            scope: components["schemas"]["SubmissionScope"];
+            /** Format: int64 */
+            sequence: number;
             /** Format: uuid */
             snapshot_id: string;
             /** Format: uuid */
             task_id: string;
-            readonly content_digest: string;
         };
-        ArenaParticipantSubmissionResponse: {
+        ParticipantSubmissionResponse: {
             /** Format: int64 */
             projection_revision: number;
-            submission: components["schemas"]["ArenaSubmissionRecord"];
+            submission: components["schemas"]["SubmissionRecord"];
         };
-        ArenaParticipantSurrenderRequest: {
+        ParticipantSurrenderRequest: {
+            confirmed: boolean;
             /** Format: int64 */
             expected_projection_revision: number;
-            confirmed: boolean;
             reason?: string;
         };
         /** @enum {string} */
-        ArenaOfficialResultSubjectKind: "game" | "series";
+        SeriesResultReason: "score_complete" | "operator_correction" | "series_cancelled" | "tournament_cancelled";
         /** @enum {string} */
-        ArenaSeriesResultReason: "score_complete" | "operator_correction" | "series_cancelled" | "tournament_cancelled";
+        OfficialResultSubjectKind: "game" | "series";
         /** @description Immutable official result revision for one Game or Series. */
-        ArenaOfficialResultRevision: {
+        OfficialResultRevision: {
+            /** Format: uuid */
+            actor_id: string | null;
+            actor_kind: components["schemas"]["ResultActorKind"];
+            /** Format: uuid */
+            readonly command_id: string;
+            /** Format: uuid */
+            game_id: string | null;
+            game_reason: (string & components["schemas"]["GameResultReason"]) | null;
+            game_state: (string & components["schemas"]["GameState"]) | null;
             /** Format: uuid */
             readonly id: string;
-            /** Format: uuid */
-            readonly previous_revision_id: string | null;
             /** Format: int32 */
             readonly ordinal: number;
             /** Format: uuid */
-            readonly command_id: string;
-            subject_kind: components["schemas"]["ArenaOfficialResultSubjectKind"];
-            /** Format: uuid */
-            tournament_id: string;
-            /** Format: uuid */
-            series_id: string;
-            /** Format: uuid */
-            game_id: string | null;
-            actor_kind: components["schemas"]["ArenaResultActorKind"];
-            /** Format: uuid */
-            actor_id: string | null;
-            game_state: components["schemas"]["ArenaGameState"] | null;
-            game_reason: components["schemas"]["ArenaGameResultReason"] | null;
-            series_state: components["schemas"]["ArenaSeriesState"] | null;
-            series_reason: components["schemas"]["ArenaSeriesResultReason"] | null;
-            /** Format: uuid */
-            winner_id: string | null;
+            readonly previous_revision_id: string | null;
+            /** Format: date-time */
+            readonly recorded_at: string;
             /** Format: uuid */
             score_revision_id: string | null;
             /** Format: uuid */
+            series_id: string;
+            series_reason: (string & components["schemas"]["SeriesResultReason"]) | null;
+            series_state: (string & components["schemas"]["SeriesState"]) | null;
+            /** Format: uuid */
             readonly source_projection_revision_id: string;
-            /** Format: date-time */
-            readonly recorded_at: string;
+            subject_kind: components["schemas"]["OfficialResultSubjectKind"];
+            /** Format: uuid */
+            tournament_id: string;
+            /** Format: uuid */
+            winner_id: string | null;
         };
-        ArenaParticipantPostSeriesRequest: {
-            /** Format: int64 */
-            expected_projection_revision: number;
+        ParticipantPostSeriesRequest: {
             /** @enum {string} */
             action: "acknowledge_result" | "request_next_assignment" | "leave_lobby";
-        };
-        ArenaParticipantPostSeriesResponse: {
-            /** Format: uuid */
-            series_id: string;
             /** Format: int64 */
-            projection_revision: number;
+            expected_projection_revision: number;
+        };
+        ParticipantPostSeriesResponse: {
             /** @enum {string} */
             accepted_action: "acknowledge_result" | "request_next_assignment" | "leave_lobby";
-        };
-        ArenaParticipantRecoveryCursor: {
             /** Format: int64 */
             projection_revision: number;
+            /** Format: uuid */
+            series_id: string;
+        };
+        ParticipantRecoveryCursor: {
+            /** Format: int64 */
+            event_sequence: number;
             /** Format: int64 */
             participant_view_revision: number;
             /** Format: int64 */
-            event_sequence: number;
+            projection_revision: number;
         };
-        ArenaParticipantRecoverySnapshot: {
-            /** Format: uuid */
-            tournament_id: string;
+        ParticipantRecoverySnapshot: {
+            assignment: components["schemas"]["ParticipantAssignment"] | null;
+            draft: components["schemas"]["Draft"] | null;
+            lobby: components["schemas"]["ParticipantLobbyResponse"];
+            next_cursor: components["schemas"]["ParticipantRecoveryCursor"];
             /** Format: int64 */
             projection_revision: number;
-            lobby: components["schemas"]["ArenaParticipantLobbyResponse"];
-            series: components["schemas"]["ArenaSeries"] | null;
-            wave: components["schemas"]["ArenaWave"] | null;
-            draft: components["schemas"]["ArenaDraft"] | null;
-            assignment: components["schemas"]["ArenaParticipantAssignment"] | null;
-            next_cursor: components["schemas"]["ArenaParticipantRecoveryCursor"];
-        };
-        ArenaPublicTournamentResponse: {
+            series: components["schemas"]["Series"] | null;
             /** Format: uuid */
             tournament_id: string;
-            preset: components["schemas"]["ArenaPreset"];
-            state: components["schemas"]["ArenaTournamentState"];
+            wave: components["schemas"]["Wave"] | null;
+        };
+        PublicTournamentResponse: {
+            /** Format: date-time */
+            finished_at: string | null;
+            preset: components["schemas"]["TournamentPreset"];
+            /** Format: int64 */
+            projection_revision: number;
             /** Format: int32 */
             roster_size: number;
             /** Format: date-time */
             started_at: string | null;
-            /** Format: date-time */
-            finished_at: string | null;
-            /** Format: int64 */
-            projection_revision: number;
+            state: components["schemas"]["TournamentState"];
+            /** Format: uuid */
+            tournament_id: string;
         };
-        ArenaPublicScoreboardEntry: {
+        PublicScoreboardEntry: {
             /** Format: int32 */
-            rank: number;
+            buchholz: number;
             display_name: string;
+            /** Format: int64 */
+            effective_time_ms: number;
             /** Format: int32 */
             points: number;
             /** Format: int32 */
-            buchholz: number;
-            /** Format: int64 */
-            effective_time_ms: number;
+            rank: number;
         };
-        ArenaPublicScoreboardResponse: {
-            /** Format: uuid */
-            tournament_id: string;
+        PublicScoreboardResponse: {
+            entries: components["schemas"]["PublicScoreboardEntry"][];
             /** Format: int64 */
             projection_revision: number;
-            entries: components["schemas"]["ArenaPublicScoreboardEntry"][];
+            /** Format: uuid */
+            tournament_id: string;
         };
-        ArenaPublicBracketMatch: {
-            /** @enum {string} */
-            stage: "semifinal" | "final";
+        PublicBracketMatch: {
+            first_display_name: string;
             /** Format: int32 */
             position: number;
-            first_display_name: string;
+            score: components["schemas"]["SeriesScore"];
             second_display_name: string;
-            score: components["schemas"]["ArenaSeriesScore"];
-            state: components["schemas"]["ArenaSeriesState"];
+            /** @enum {string} */
+            stage: "semifinal" | "final";
+            state: components["schemas"]["SeriesState"];
         };
-        ArenaPublicBracketResponse: {
-            /** Format: uuid */
-            tournament_id: string;
+        PublicBracketResponse: {
+            matches: components["schemas"]["PublicBracketMatch"][];
             /** Format: int64 */
             projection_revision: number;
-            matches: components["schemas"]["ArenaPublicBracketMatch"][];
+            /** Format: uuid */
+            tournament_id: string;
         };
-        ArenaPublicDraftAction: {
-            /** Format: int32 */
-            turn: number;
+        PublicDraftAction: {
+            action: components["schemas"]["DraftActionType"];
             actor_display_name: string;
-            action: components["schemas"]["ArenaDraftActionType"];
-            category: components["schemas"]["ArenaCategory"];
+            category: components["schemas"]["Category"];
             /** Format: date-time */
             occurred_at: string;
+            /** Format: int32 */
+            turn: number;
         };
-        ArenaPublicLiveDraftResponse: {
-            /** Format: uuid */
-            tournament_id: string;
+        PublicLiveDraftResponse: {
+            actions: components["schemas"]["PublicDraftAction"][];
+            format: components["schemas"]["SeriesFormat"];
+            pool: components["schemas"]["Category"][];
+            /** Format: int64 */
+            projection_revision: number;
+            selected_categories: components["schemas"]["Category"][];
             /** Format: uuid */
             series_id: string;
-            /** Format: int64 */
-            projection_revision: number;
-            format: components["schemas"]["ArenaSeriesFormat"];
-            state: components["schemas"]["ArenaDraftState"];
-            pool: components["schemas"]["ArenaCategory"][];
-            actions: components["schemas"]["ArenaPublicDraftAction"][];
-            selected_categories: components["schemas"]["ArenaCategory"][];
+            state: components["schemas"]["DraftState"];
+            /** Format: uuid */
+            tournament_id: string;
         };
-        ArenaPublicRecoveryCursor: {
-            /** Format: int64 */
-            projection_revision: number;
+        PublicRecoveryCursor: {
             /** Format: int64 */
             event_sequence: number;
+            /** Format: int64 */
+            projection_revision: number;
         };
-        ArenaPublicRecoverySnapshot: {
-            tournament: components["schemas"]["ArenaPublicTournamentResponse"];
-            scoreboard: components["schemas"]["ArenaPublicScoreboardResponse"];
-            bracket: components["schemas"]["ArenaPublicBracketResponse"];
-            live_draft: components["schemas"]["ArenaPublicLiveDraftResponse"] | null;
-            next_cursor: components["schemas"]["ArenaPublicRecoveryCursor"];
+        PublicRecoverySnapshot: {
+            bracket: components["schemas"]["PublicBracketResponse"];
+            live_draft: components["schemas"]["PublicLiveDraftResponse"] | null;
+            next_cursor: components["schemas"]["PublicRecoveryCursor"];
+            scoreboard: components["schemas"]["PublicScoreboardResponse"];
+            tournament: components["schemas"]["PublicTournamentResponse"];
         };
     };
     responses: {
+        /** @description Internal server failure or request timeout not otherwise documented. */
+        UnexpectedServerProblem: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["ProblemDetails"];
+            };
+        };
         /** @description The authenticated session is missing, invalid, or expired. */
-        ArenaUnauthorizedResponse: {
+        UnauthorizedProblem: {
             headers: {
                 [name: string]: unknown;
             };
@@ -2449,8 +2408,8 @@ export interface components {
                 "application/problem+json": components["schemas"]["ProblemDetails"];
             };
         };
-        /** @description The authenticated actor lacks access to this tournament or role. */
-        ArenaForbiddenResponse: {
+        /** @description The authenticated identity lacks access. Mutations can also fail when the CSRF token, origin, or referer is invalid. */
+        ForbiddenProblem: {
             headers: {
                 [name: string]: unknown;
             };
@@ -2458,17 +2417,8 @@ export interface components {
                 "application/problem+json": components["schemas"]["ProblemDetails"];
             };
         };
-        /** @description The expected Arena projection revision is stale. */
-        ArenaRevisionConflictResponse: {
-            headers: {
-                [name: string]: unknown;
-            };
-            content: {
-                "application/json": components["schemas"]["ArenaRevisionConflict"];
-            };
-        };
-        /** @description The requested Arena resource was not found. */
-        ArenaNotFoundResponse: {
+        /** @description The command payload violates a semantic request rule. */
+        InvalidRequestProblem: {
             headers: {
                 [name: string]: unknown;
             };
@@ -2476,8 +2426,17 @@ export interface components {
                 "application/problem+json": components["schemas"]["ProblemDetails"];
             };
         };
-        /** @description The Arena command payload violates a semantic request rule. */
-        ArenaInvalidRequestResponse: {
+        /** @description The expected tournament revision is stale. */
+        TournamentRevisionConflictProblem: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["TournamentRevisionProblem"];
+            };
+        };
+        /** @description The request body exceeds the configured JSON size limit. */
+        RequestEntityTooLargeProblem: {
             headers: {
                 [name: string]: unknown;
             };
@@ -2485,8 +2444,35 @@ export interface components {
                 "application/problem+json": components["schemas"]["ProblemDetails"];
             };
         };
-        /** @description The authenticated participant exceeded the Arena command rate limit. */
-        ArenaRateLimitedResponse: {
+        /** @description The request content type must be application/json. */
+        UnsupportedMediaTypeProblem: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["ProblemDetails"];
+            };
+        };
+        /** @description The requested tournament resource was not found. */
+        NotFoundProblem: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["ProblemDetails"];
+            };
+        };
+        /** @description The expected tournament projection revision is stale. */
+        ProjectionRevisionConflictProblem: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["ProjectionRevisionProblem"];
+            };
+        };
+        /** @description The authenticated participant exceeded the command rate limit. */
+        RateLimitedProblem: {
             headers: {
                 /** @description Seconds until the participant may retry the command. */
                 "Retry-After"?: number;
@@ -2498,32 +2484,36 @@ export interface components {
         };
     };
     parameters: {
-        ArenaOperatorTournamentState: components["schemas"]["ArenaTournamentState"];
-        ArenaOperatorListCursor: string;
-        ArenaOperatorListPageSize: number;
-        ArenaIdempotencyKey: string;
-        /** @description Required only for cookie-authenticated browser admin requests. */
-        ArenaAdminCSRFToken: string;
-        ArenaTournamentId: string;
-        ArenaWaveId: string;
-        ArenaSeriesId: string;
-        ArenaAssignmentId: string;
-        ArenaGameId: string;
-        ArenaAuditTournamentId: string;
-        ArenaAuditEntityKind: components["schemas"]["ArenaAuditEntityKind"];
-        ArenaAuditEntityId: string;
-        ArenaAuditEventType: string;
-        ArenaAuditActorKind: components["schemas"]["ArenaResultActorKind"];
-        ArenaAuditActorId: string;
-        ArenaAuditResultReason: string;
-        ArenaAuditOccurredFrom: string;
-        ArenaAuditOccurredTo: string;
-        ArenaAuditCursor: components["schemas"]["ArenaAuditCursor"];
-        ArenaAuditPageSize: number;
-        ArenaOperatorCursor: components["schemas"]["ArenaOperatorRecoveryCursor"];
-        ArenaCSRFToken: string;
-        ArenaParticipantCursor: components["schemas"]["ArenaParticipantRecoveryCursor"];
-        ArenaPublicCursor: components["schemas"]["ArenaPublicRecoveryCursor"];
+        /** @description Required when the request carries an existing player session cookie. */
+        PlayerCSRFToken: string;
+        /** @description Cookie-bound CSRF token required for this admin mutation. */
+        AdminCSRFToken: string;
+        TournamentStateFilter: components["schemas"]["TournamentState"];
+        TournamentListCursor: string;
+        TournamentPageSize: number;
+        IdempotencyKey: string;
+        TournamentId: string;
+        WaveId: string;
+        SeriesId: string;
+        AssignmentId: string;
+        GameId: string;
+        AuditTournamentId: string;
+        AuditEntityKind: components["schemas"]["AuditEntityKind"];
+        AuditEntityId: string;
+        AuditEventType: string;
+        AuditActorKind: components["schemas"]["ResultActorKind"];
+        AuditActorId: string;
+        AuditResultReason: string;
+        AuditOccurredFrom: string;
+        AuditOccurredTo: string;
+        AuditCursor: components["schemas"]["AuditCursor"];
+        AuditPageSize: number;
+        /** @description Last operator recovery watermark held by the client. Older or equal values return a fresh full snapshot; a value ahead of the authoritative snapshot is rejected as a revision conflict. */
+        OperatorRecoveryCursor: components["schemas"]["OperatorRecoveryCursor"];
+        /** @description Session-bound CSRF token required for this player mutation. */
+        RequiredPlayerCSRFToken: string;
+        ParticipantRecoveryCursor: components["schemas"]["ParticipantRecoveryCursor"];
+        PublicRecoveryCursor: components["schemas"]["PublicRecoveryCursor"];
     };
     requestBodies: never;
     headers: never;
@@ -2540,17 +2530,19 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["JoinRequest"];
+                "application/json": components["schemas"]["JoinPlayerRequest"];
             };
         };
         responses: {
             /** @description Player session created or refreshed. */
             200: {
                 headers: {
+                    /** @description CSRF token bound to the issued HttpOnly player session cookie. */
+                    "X-CSRF-Token"?: string;
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["JoinResponse"];
+                    "application/json": components["schemas"]["JoinPlayerResponse"];
                 };
             };
             /** @description Validation error. */
@@ -2562,7 +2554,16 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Player is currently in_duel; cannot rejoin. */
+            /** @description Request origin or referer is not allowed. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Username already has an active session. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -2589,9 +2590,21 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
+            /** @description Too many join attempts from the same client IP. */
+            429: {
+                headers: {
+                    /** @description Seconds until the join rate window resets. */
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            default: components["responses"]["UnexpectedServerProblem"];
         };
     };
-    getMe: {
+    getCurrentPlayer: {
         parameters: {
             query?: never;
             header?: never;
@@ -2603,10 +2616,12 @@ export interface operations {
             /** @description Resolved player. */
             200: {
                 headers: {
+                    /** @description CSRF token bound to the current HttpOnly player session cookie. */
+                    "X-CSRF-Token"?: string;
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PlayerMeResponse"];
+                    "application/json": components["schemas"]["CurrentPlayerResponse"];
                 };
             };
             /** @description Missing or invalid session token. */
@@ -2618,12 +2633,16 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
+            default: components["responses"]["UnexpectedServerProblem"];
         };
     };
     logoutPlayer: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Required when the request carries an existing player session cookie. */
+                "X-CSRF-Token"?: components["parameters"]["PlayerCSRFToken"];
+            };
             path?: never;
             cookie?: never;
         };
@@ -2636,7 +2655,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description CSRF token missing or invalid for an existing player session. */
+            /** @description CSRF token is invalid for an existing session, or the request origin or referer is not allowed. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -2645,6 +2664,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
+            default: components["responses"]["UnexpectedServerProblem"];
         };
     };
     getLeaderboard: {
@@ -2656,7 +2676,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Top 50 players by wins. */
+            /** @description Top 50 players by tournament wins. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2676,55 +2696,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
-        };
-    };
-    getDuel: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Full duel detail. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DuelDetailResponse"];
-                };
-            };
-            /** @description Missing or invalid session token. */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetails"];
-                };
-            };
-            /** @description Caller is not a participant of this duel. */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetails"];
-                };
-            };
-            /** @description Duel not found. */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetails"];
-                };
-            };
+            default: components["responses"]["UnexpectedServerProblem"];
         };
     };
     healthCheck: {
@@ -2745,18 +2717,29 @@ export interface operations {
                     "application/json": components["schemas"]["HealthResponse"];
                 };
             };
-            /** @description One or more dependencies are unhealthy. */
+            /** @description Request metadata is malformed. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description One or more dependencies are unhealthy, or the request timed out. */
             503: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": components["schemas"]["HealthResponse"];
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
+            default: components["responses"]["UnexpectedServerProblem"];
         };
     };
-    adminLogin: {
+    loginAdmin: {
         parameters: {
             query?: never;
             header?: never;
@@ -2779,7 +2762,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AdminTokenResponse"];
+                    "application/json": components["schemas"]["AdminSessionResponse"];
+                };
+            };
+            /** @description Invalid request body. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
             /** @description Invalid password. */
@@ -2791,6 +2783,15 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
+            /** @description Request origin or referer is not allowed. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
             /** @description Request body exceeds the JSON size limit. */
             413: {
                 headers: {
@@ -2809,22 +2810,33 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
+            /** @description Too many login attempts from the same client IP. */
+            429: {
+                headers: {
+                    /** @description Seconds until the login rate window resets. */
+                    "Retry-After"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            default: components["responses"]["UnexpectedServerProblem"];
         };
     };
-    adminRefresh: {
+    refreshAdminSession: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Cookie-bound CSRF token required for this admin mutation. */
+                "X-CSRF-Token": components["parameters"]["AdminCSRFToken"];
+            };
             path?: never;
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["AdminRefreshRequest"];
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description New token pair. */
+            /** @description Session rotated. */
             200: {
                 headers: {
                     /** @description CSRF token bound to the refreshed HttpOnly tpm_admin_access cookie. */
@@ -2834,10 +2846,19 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AdminTokenResponse"];
+                    "application/json": components["schemas"]["AdminSessionResponse"];
                 };
             };
-            /** @description Refresh token invalid, expired, or revoked. */
+            /** @description Missing or invalid CSRF header. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Refresh session missing, invalid, expired, or revoked. */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -2846,8 +2867,8 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Request body exceeds the JSON size limit. */
-            413: {
+            /** @description CSRF token does not match the refresh session, or the request origin or referer is not allowed. */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2855,38 +2876,49 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Request content type must be application/json. */
-            415: {
+            /** @description Too many refresh attempts from the same client IP. */
+            429: {
                 headers: {
+                    /** @description Seconds until the refresh rate window resets. */
+                    "Retry-After"?: string;
                     [name: string]: unknown;
                 };
                 content: {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
+            default: components["responses"]["UnexpectedServerProblem"];
         };
     };
-    adminLogout: {
+    logoutAdmin: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Cookie-bound CSRF token required for this admin mutation. */
+                "X-CSRF-Token": components["parameters"]["AdminCSRFToken"];
+            };
             path?: never;
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["AdminLogoutRequest"];
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Refresh token revoked. */
+            /** @description Session revoked. */
             204: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
             };
-            /** @description Missing, invalid, expired, or revoked refresh token. */
+            /** @description Missing or invalid CSRF header. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Refresh session missing, invalid, expired, or revoked. */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -2895,8 +2927,8 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Request body exceeds the JSON size limit. */
-            413: {
+            /** @description CSRF token does not match the refresh session, or the request origin or referer is not allowed. */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2904,18 +2936,10 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Request content type must be application/json. */
-            415: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetails"];
-                };
-            };
+            default: components["responses"]["UnexpectedServerProblem"];
         };
     };
-    listAdminPlayers: {
+    listPlayers: {
         parameters: {
             query?: {
                 include_deleted?: boolean;
@@ -2926,13 +2950,22 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description All non-deleted players. */
+            /** @description Active players, or all players when include_deleted is true. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AdminPlayerResponse"][];
+                    "application/json": components["schemas"]["PlayerManagementView"][];
+                };
+            };
+            /** @description Invalid include_deleted query parameter. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
             /** @description Missing or invalid admin session. */
@@ -2944,9 +2977,10 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
+            default: components["responses"]["UnexpectedServerProblem"];
         };
     };
-    streamAdminPlayerEvents: {
+    streamPlayerEvents: {
         parameters: {
             query?: never;
             header?: never;
@@ -2973,9 +3007,10 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
+            default: components["responses"]["UnexpectedServerProblem"];
         };
     };
-    listAdminPlayerAudit: {
+    listPlayerAuditEvents: {
         parameters: {
             query?: {
                 limit?: number;
@@ -2994,10 +3029,10 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AdminPlayerAuditEventResponse"][];
+                    "application/json": components["schemas"]["PlayerAuditEvent"][];
                 };
             };
-            /** @description Invalid query parameter. */
+            /** @description Invalid player id or query parameter. */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -3024,12 +3059,16 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
+            default: components["responses"]["UnexpectedServerProblem"];
         };
     };
-    updateAdminPlayer: {
+    updatePlayer: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Cookie-bound CSRF token required for this admin mutation. */
+                "X-CSRF-Token": components["parameters"]["AdminCSRFToken"];
+            };
             path: {
                 id: string;
             };
@@ -3037,7 +3076,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["UpdateAdminPlayerRequest"];
+                "application/json": components["schemas"]["UpdatePlayerRequest"];
             };
         };
         responses: {
@@ -3047,7 +3086,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AdminPlayerResponse"];
+                    "application/json": components["schemas"]["PlayerManagementView"];
                 };
             };
             /** @description Validation error. */
@@ -3061,6 +3100,15 @@ export interface operations {
             };
             /** @description Missing or invalid admin session. */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description CSRF token does not match the admin access session, or the request origin or referer is not allowed. */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3104,12 +3152,16 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
+            default: components["responses"]["UnexpectedServerProblem"];
         };
     };
-    deleteAdminPlayer: {
+    deletePlayer: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Cookie-bound CSRF token required for this admin mutation. */
+                "X-CSRF-Token": components["parameters"]["AdminCSRFToken"];
+            };
             path: {
                 id: string;
             };
@@ -3124,8 +3176,26 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description Invalid player id or CSRF header. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
             /** @description Missing or invalid admin session. */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description CSRF token does not match the admin access session, or the request origin or referer is not allowed. */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3142,8 +3212,93 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Player is queued or in a duel. */
+            /** @description Player is referenced by tournament records. */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            default: components["responses"]["UnexpectedServerProblem"];
+        };
+    };
+    listTasks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description All tasks. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskDetails"][];
+                };
+            };
+            /** @description Missing or invalid admin session. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            default: components["responses"]["UnexpectedServerProblem"];
+        };
+    };
+    createTask: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Cookie-bound CSRF token required for this admin mutation. */
+                "X-CSRF-Token": components["parameters"]["AdminCSRFToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateTaskRequest"];
+            };
+        };
+        responses: {
+            /** @description Created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskDetails"];
+                };
+            };
+            /** @description Validation error. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Missing or invalid admin session. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description CSRF token does not match the admin access session, or the request origin or referer is not allowed. */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3169,77 +3324,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
-        };
-    };
-    listTasks: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description All tasks. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TaskResponse"][];
-                };
-            };
-            /** @description Missing or invalid admin session. */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetails"];
-                };
-            };
-        };
-    };
-    createTask: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateTaskRequest"];
-            };
-        };
-        responses: {
-            /** @description Created. */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TaskResponse"];
-                };
-            };
-            /** @description Validation error. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetails"];
-                };
-            };
-            /** @description Missing or invalid admin session. */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetails"];
-                };
-            };
+            default: components["responses"]["UnexpectedServerProblem"];
         };
     };
     getTask: {
@@ -3259,11 +3344,86 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["TaskResponse"];
+                    "application/json": components["schemas"]["TaskDetails"];
+                };
+            };
+            /** @description Invalid task id. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
             /** @description Missing or invalid admin session. */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Task not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            default: components["responses"]["UnexpectedServerProblem"];
+        };
+    };
+    updateTask: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Cookie-bound CSRF token required for this admin mutation. */
+                "X-CSRF-Token": components["parameters"]["AdminCSRFToken"];
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateTaskRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated task. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskDetails"];
+                };
+            };
+            /** @description Validation error. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Missing or invalid admin session. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description CSRF token does not match the admin access session, or the request origin or referer is not allowed. */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3298,33 +3458,31 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
+            default: components["responses"]["UnexpectedServerProblem"];
         };
     };
-    updateTask: {
+    deleteTask: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Cookie-bound CSRF token required for this admin mutation. */
+                "X-CSRF-Token": components["parameters"]["AdminCSRFToken"];
+            };
             path: {
                 id: string;
             };
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateTaskRequest"];
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Updated task. */
-            200: {
+            /** @description Deleted. */
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": components["schemas"]["TaskResponse"];
-                };
+                content?: never;
             };
-            /** @description Validation error. */
+            /** @description Invalid task id or CSRF header. */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -3342,37 +3500,8 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Task not found. */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetails"];
-                };
-            };
-        };
-    };
-    deleteTask: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Deleted. */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Missing or invalid admin session. */
-            401: {
+            /** @description CSRF token does not match the admin access session, or the request origin or referer is not allowed. */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3389,7 +3518,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Task is referenced by an active duel. */
+            /** @description Task is referenced by tournament records. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -3398,6 +3527,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
+            default: components["responses"]["UnexpectedServerProblem"];
         };
     };
     downloadTaskSource: {
@@ -3419,6 +3549,15 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description Invalid task id. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
             /** @description Missing or invalid admin session. */
             401: {
                 headers: {
@@ -3437,12 +3576,16 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
+            default: components["responses"]["UnexpectedServerProblem"];
         };
     };
     uploadTaskSource: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Cookie-bound CSRF token required for this admin mutation. */
+                "X-CSRF-Token": components["parameters"]["AdminCSRFToken"];
+            };
             path: {
                 id: string;
             };
@@ -3457,13 +3600,13 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Stored. Returns the URL to be embedded in task_assigned WS event. */
+            /** @description Stored. Returns the canonical source-file URL. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["UploadSourceResponse"];
+                    "application/json": components["schemas"]["TaskSourceUploadResponse"];
                 };
             };
             /** @description Not a ZIP, missing field, or other validation error. */
@@ -3477,6 +3620,15 @@ export interface operations {
             };
             /** @description Missing or invalid admin session. */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description CSRF token does not match the admin access session, or the request origin or referer is not allowed. */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3502,14 +3654,15 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
+            default: components["responses"]["UnexpectedServerProblem"];
         };
     };
-    listArenaOperatorTournaments: {
+    listTournaments: {
         parameters: {
             query?: {
-                state?: components["parameters"]["ArenaOperatorTournamentState"];
-                cursor?: components["parameters"]["ArenaOperatorListCursor"];
-                page_size?: components["parameters"]["ArenaOperatorListPageSize"];
+                state?: components["parameters"]["TournamentStateFilter"];
+                cursor?: components["parameters"]["TournamentListCursor"];
+                page_size?: components["parameters"]["TournamentPageSize"];
             };
             header?: never;
             path?: never;
@@ -3523,27 +3676,28 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ArenaOperatorTournamentList"];
+                    "application/json": components["schemas"]["TournamentListResponse"];
                 };
             };
-            401: components["responses"]["ArenaUnauthorizedResponse"];
-            403: components["responses"]["ArenaForbiddenResponse"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            default: components["responses"]["UnexpectedServerProblem"];
         };
     };
-    createArenaTournament: {
+    createTournament: {
         parameters: {
             query?: never;
             header: {
-                "Idempotency-Key": components["parameters"]["ArenaIdempotencyKey"];
-                /** @description Required only for cookie-authenticated browser admin requests. */
-                "X-CSRF-Token"?: components["parameters"]["ArenaAdminCSRFToken"];
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description Cookie-bound CSRF token required for this admin mutation. */
+                "X-CSRF-Token": components["parameters"]["AdminCSRFToken"];
             };
             path?: never;
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ArenaCreateTournamentRequest"];
+                "application/json": components["schemas"]["CreateTournamentRequest"];
             };
         };
         responses: {
@@ -3553,20 +3707,24 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ArenaTournament"];
+                    "application/json": components["schemas"]["Tournament"];
                 };
             };
-            401: components["responses"]["ArenaUnauthorizedResponse"];
-            403: components["responses"]["ArenaForbiddenResponse"];
-            409: components["responses"]["ArenaRevisionConflictResponse"];
+            400: components["responses"]["InvalidRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            409: components["responses"]["TournamentRevisionConflictProblem"];
+            413: components["responses"]["RequestEntityTooLargeProblem"];
+            415: components["responses"]["UnsupportedMediaTypeProblem"];
+            default: components["responses"]["UnexpectedServerProblem"];
         };
     };
-    getArenaOperatorRoster: {
+    getTournamentRoster: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                tournament_id: components["parameters"]["ArenaTournamentId"];
+                tournament_id: components["parameters"]["TournamentId"];
             };
             cookie?: never;
         };
@@ -3578,30 +3736,31 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ArenaRoster"];
+                    "application/json": components["schemas"]["Roster"];
                 };
             };
-            401: components["responses"]["ArenaUnauthorizedResponse"];
-            403: components["responses"]["ArenaForbiddenResponse"];
-            404: components["responses"]["ArenaNotFoundResponse"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            default: components["responses"]["UnexpectedServerProblem"];
         };
     };
-    replaceArenaTournamentRoster: {
+    replaceTournamentRoster: {
         parameters: {
             query?: never;
             header: {
-                "Idempotency-Key": components["parameters"]["ArenaIdempotencyKey"];
-                /** @description Required only for cookie-authenticated browser admin requests. */
-                "X-CSRF-Token"?: components["parameters"]["ArenaAdminCSRFToken"];
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description Cookie-bound CSRF token required for this admin mutation. */
+                "X-CSRF-Token": components["parameters"]["AdminCSRFToken"];
             };
             path: {
-                tournament_id: components["parameters"]["ArenaTournamentId"];
+                tournament_id: components["parameters"]["TournamentId"];
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ArenaReplaceRosterRequest"];
+                "application/json": components["schemas"]["ReplaceRosterRequest"];
             };
         };
         responses: {
@@ -3611,31 +3770,35 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ArenaRoster"];
+                    "application/json": components["schemas"]["Roster"];
                 };
             };
-            401: components["responses"]["ArenaUnauthorizedResponse"];
-            403: components["responses"]["ArenaForbiddenResponse"];
-            404: components["responses"]["ArenaNotFoundResponse"];
-            409: components["responses"]["ArenaRevisionConflictResponse"];
+            400: components["responses"]["InvalidRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            409: components["responses"]["ProjectionRevisionConflictProblem"];
+            413: components["responses"]["RequestEntityTooLargeProblem"];
+            415: components["responses"]["UnsupportedMediaTypeProblem"];
+            default: components["responses"]["UnexpectedServerProblem"];
         };
     };
-    runArenaRosterPreflight: {
+    runTournamentRosterPreflight: {
         parameters: {
             query?: never;
             header: {
-                "Idempotency-Key": components["parameters"]["ArenaIdempotencyKey"];
-                /** @description Required only for cookie-authenticated browser admin requests. */
-                "X-CSRF-Token"?: components["parameters"]["ArenaAdminCSRFToken"];
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description Cookie-bound CSRF token required for this admin mutation. */
+                "X-CSRF-Token": components["parameters"]["AdminCSRFToken"];
             };
             path: {
-                tournament_id: components["parameters"]["ArenaTournamentId"];
+                tournament_id: components["parameters"]["TournamentId"];
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ArenaPreflightRequest"];
+                "application/json": components["schemas"]["PreflightRequest"];
             };
         };
         responses: {
@@ -3645,31 +3808,35 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ArenaPreflightReport"];
+                    "application/json": components["schemas"]["PreflightReport"];
                 };
             };
-            401: components["responses"]["ArenaUnauthorizedResponse"];
-            403: components["responses"]["ArenaForbiddenResponse"];
-            404: components["responses"]["ArenaNotFoundResponse"];
-            409: components["responses"]["ArenaRevisionConflictResponse"];
+            400: components["responses"]["InvalidRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            409: components["responses"]["ProjectionRevisionConflictProblem"];
+            413: components["responses"]["RequestEntityTooLargeProblem"];
+            415: components["responses"]["UnsupportedMediaTypeProblem"];
+            default: components["responses"]["UnexpectedServerProblem"];
         };
     };
-    lockArenaTournamentRoster: {
+    lockTournamentRoster: {
         parameters: {
             query?: never;
             header: {
-                "Idempotency-Key": components["parameters"]["ArenaIdempotencyKey"];
-                /** @description Required only for cookie-authenticated browser admin requests. */
-                "X-CSRF-Token"?: components["parameters"]["ArenaAdminCSRFToken"];
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description Cookie-bound CSRF token required for this admin mutation. */
+                "X-CSRF-Token": components["parameters"]["AdminCSRFToken"];
             };
             path: {
-                tournament_id: components["parameters"]["ArenaTournamentId"];
+                tournament_id: components["parameters"]["TournamentId"];
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ArenaLockRosterRequest"];
+                "application/json": components["schemas"]["LockRosterRequest"];
             };
         };
         responses: {
@@ -3679,31 +3846,35 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ArenaRoster"];
+                    "application/json": components["schemas"]["Roster"];
                 };
             };
-            401: components["responses"]["ArenaUnauthorizedResponse"];
-            403: components["responses"]["ArenaForbiddenResponse"];
-            404: components["responses"]["ArenaNotFoundResponse"];
-            409: components["responses"]["ArenaRevisionConflictResponse"];
+            400: components["responses"]["InvalidRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            409: components["responses"]["ProjectionRevisionConflictProblem"];
+            413: components["responses"]["RequestEntityTooLargeProblem"];
+            415: components["responses"]["UnsupportedMediaTypeProblem"];
+            default: components["responses"]["UnexpectedServerProblem"];
         };
     };
-    unlockArenaTournamentRoster: {
+    unlockTournamentRoster: {
         parameters: {
             query?: never;
             header: {
-                "Idempotency-Key": components["parameters"]["ArenaIdempotencyKey"];
-                /** @description Required only for cookie-authenticated browser admin requests. */
-                "X-CSRF-Token"?: components["parameters"]["ArenaAdminCSRFToken"];
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description Cookie-bound CSRF token required for this admin mutation. */
+                "X-CSRF-Token": components["parameters"]["AdminCSRFToken"];
             };
             path: {
-                tournament_id: components["parameters"]["ArenaTournamentId"];
+                tournament_id: components["parameters"]["TournamentId"];
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ArenaUnlockRosterRequest"];
+                "application/json": components["schemas"]["UnlockRosterRequest"];
             };
         };
         responses: {
@@ -3713,31 +3884,35 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ArenaRoster"];
+                    "application/json": components["schemas"]["Roster"];
                 };
             };
-            401: components["responses"]["ArenaUnauthorizedResponse"];
-            403: components["responses"]["ArenaForbiddenResponse"];
-            404: components["responses"]["ArenaNotFoundResponse"];
-            409: components["responses"]["ArenaRevisionConflictResponse"];
+            400: components["responses"]["InvalidRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            409: components["responses"]["ProjectionRevisionConflictProblem"];
+            413: components["responses"]["RequestEntityTooLargeProblem"];
+            415: components["responses"]["UnsupportedMediaTypeProblem"];
+            default: components["responses"]["UnexpectedServerProblem"];
         };
     };
-    configureArenaTournamentPairings: {
+    configureTournamentPairings: {
         parameters: {
             query?: never;
             header: {
-                "Idempotency-Key": components["parameters"]["ArenaIdempotencyKey"];
-                /** @description Required only for cookie-authenticated browser admin requests. */
-                "X-CSRF-Token"?: components["parameters"]["ArenaAdminCSRFToken"];
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description Cookie-bound CSRF token required for this admin mutation. */
+                "X-CSRF-Token": components["parameters"]["AdminCSRFToken"];
             };
             path: {
-                tournament_id: components["parameters"]["ArenaTournamentId"];
+                tournament_id: components["parameters"]["TournamentId"];
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ArenaPairingConfigurationRequest"];
+                "application/json": components["schemas"]["PairingConfigurationRequest"];
             };
         };
         responses: {
@@ -3747,32 +3922,35 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ArenaSwissRound"];
+                    "application/json": components["schemas"]["SwissRound"];
                 };
             };
-            400: components["responses"]["ArenaInvalidRequestResponse"];
-            401: components["responses"]["ArenaUnauthorizedResponse"];
-            403: components["responses"]["ArenaForbiddenResponse"];
-            404: components["responses"]["ArenaNotFoundResponse"];
-            409: components["responses"]["ArenaRevisionConflictResponse"];
+            400: components["responses"]["InvalidRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            409: components["responses"]["ProjectionRevisionConflictProblem"];
+            413: components["responses"]["RequestEntityTooLargeProblem"];
+            415: components["responses"]["UnsupportedMediaTypeProblem"];
+            default: components["responses"]["UnexpectedServerProblem"];
         };
     };
-    applyArenaTournamentAction: {
+    applyTournamentAction: {
         parameters: {
             query?: never;
             header: {
-                "Idempotency-Key": components["parameters"]["ArenaIdempotencyKey"];
-                /** @description Required only for cookie-authenticated browser admin requests. */
-                "X-CSRF-Token"?: components["parameters"]["ArenaAdminCSRFToken"];
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description Cookie-bound CSRF token required for this admin mutation. */
+                "X-CSRF-Token": components["parameters"]["AdminCSRFToken"];
             };
             path: {
-                tournament_id: components["parameters"]["ArenaTournamentId"];
+                tournament_id: components["parameters"]["TournamentId"];
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ArenaTournamentActionRequest"];
+                "application/json": components["schemas"]["TournamentActionRequest"];
             };
         };
         responses: {
@@ -3782,33 +3960,36 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ArenaTournament"];
+                    "application/json": components["schemas"]["Tournament"];
                 };
             };
-            400: components["responses"]["ArenaInvalidRequestResponse"];
-            401: components["responses"]["ArenaUnauthorizedResponse"];
-            403: components["responses"]["ArenaForbiddenResponse"];
-            404: components["responses"]["ArenaNotFoundResponse"];
-            409: components["responses"]["ArenaRevisionConflictResponse"];
+            400: components["responses"]["InvalidRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            409: components["responses"]["ProjectionRevisionConflictProblem"];
+            413: components["responses"]["RequestEntityTooLargeProblem"];
+            415: components["responses"]["UnsupportedMediaTypeProblem"];
+            default: components["responses"]["UnexpectedServerProblem"];
         };
     };
-    controlArenaTournamentWave: {
+    controlTournamentWave: {
         parameters: {
             query?: never;
             header: {
-                "Idempotency-Key": components["parameters"]["ArenaIdempotencyKey"];
-                /** @description Required only for cookie-authenticated browser admin requests. */
-                "X-CSRF-Token"?: components["parameters"]["ArenaAdminCSRFToken"];
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description Cookie-bound CSRF token required for this admin mutation. */
+                "X-CSRF-Token": components["parameters"]["AdminCSRFToken"];
             };
             path: {
-                tournament_id: components["parameters"]["ArenaTournamentId"];
-                wave_id: components["parameters"]["ArenaWaveId"];
+                tournament_id: components["parameters"]["TournamentId"];
+                wave_id: components["parameters"]["WaveId"];
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ArenaWaveControlRequest"];
+                "application/json": components["schemas"]["WaveControlRequest"];
             };
         };
         responses: {
@@ -3818,32 +3999,36 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ArenaWave"];
+                    "application/json": components["schemas"]["Wave"];
                 };
             };
-            401: components["responses"]["ArenaUnauthorizedResponse"];
-            403: components["responses"]["ArenaForbiddenResponse"];
-            404: components["responses"]["ArenaNotFoundResponse"];
-            409: components["responses"]["ArenaRevisionConflictResponse"];
+            400: components["responses"]["InvalidRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            409: components["responses"]["ProjectionRevisionConflictProblem"];
+            413: components["responses"]["RequestEntityTooLargeProblem"];
+            415: components["responses"]["UnsupportedMediaTypeProblem"];
+            default: components["responses"]["UnexpectedServerProblem"];
         };
     };
-    resolveArenaNoShow: {
+    resolveTournamentNoShow: {
         parameters: {
             query?: never;
             header: {
-                "Idempotency-Key": components["parameters"]["ArenaIdempotencyKey"];
-                /** @description Required only for cookie-authenticated browser admin requests. */
-                "X-CSRF-Token"?: components["parameters"]["ArenaAdminCSRFToken"];
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description Cookie-bound CSRF token required for this admin mutation. */
+                "X-CSRF-Token": components["parameters"]["AdminCSRFToken"];
             };
             path: {
-                tournament_id: components["parameters"]["ArenaTournamentId"];
-                wave_id: components["parameters"]["ArenaWaveId"];
+                tournament_id: components["parameters"]["TournamentId"];
+                wave_id: components["parameters"]["WaveId"];
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ArenaOperatorNoShowRequest"];
+                "application/json": components["schemas"]["OperatorNoShowRequest"];
             };
         };
         responses: {
@@ -3854,31 +4039,34 @@ export interface operations {
                 };
                 content?: never;
             };
-            400: components["responses"]["ArenaInvalidRequestResponse"];
-            401: components["responses"]["ArenaUnauthorizedResponse"];
-            403: components["responses"]["ArenaForbiddenResponse"];
-            404: components["responses"]["ArenaNotFoundResponse"];
-            409: components["responses"]["ArenaRevisionConflictResponse"];
+            400: components["responses"]["InvalidRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            409: components["responses"]["ProjectionRevisionConflictProblem"];
+            413: components["responses"]["RequestEntityTooLargeProblem"];
+            415: components["responses"]["UnsupportedMediaTypeProblem"];
+            default: components["responses"]["UnexpectedServerProblem"];
         };
     };
-    assignArenaOperatorReserve: {
+    assignOperatorReserve: {
         parameters: {
             query?: never;
             header: {
-                "Idempotency-Key": components["parameters"]["ArenaIdempotencyKey"];
-                /** @description Required only for cookie-authenticated browser admin requests. */
-                "X-CSRF-Token"?: components["parameters"]["ArenaAdminCSRFToken"];
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description Cookie-bound CSRF token required for this admin mutation. */
+                "X-CSRF-Token": components["parameters"]["AdminCSRFToken"];
             };
             path: {
-                tournament_id: components["parameters"]["ArenaTournamentId"];
-                series_id: components["parameters"]["ArenaSeriesId"];
-                assignment_id: components["parameters"]["ArenaAssignmentId"];
+                tournament_id: components["parameters"]["TournamentId"];
+                series_id: components["parameters"]["SeriesId"];
+                assignment_id: components["parameters"]["AssignmentId"];
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ArenaOperatorReserveRequest"];
+                "application/json": components["schemas"]["OperatorReserveRequest"];
             };
         };
         responses: {
@@ -3889,30 +4077,33 @@ export interface operations {
                 };
                 content?: never;
             };
-            400: components["responses"]["ArenaInvalidRequestResponse"];
-            401: components["responses"]["ArenaUnauthorizedResponse"];
-            403: components["responses"]["ArenaForbiddenResponse"];
-            404: components["responses"]["ArenaNotFoundResponse"];
-            409: components["responses"]["ArenaRevisionConflictResponse"];
+            400: components["responses"]["InvalidRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            409: components["responses"]["ProjectionRevisionConflictProblem"];
+            413: components["responses"]["RequestEntityTooLargeProblem"];
+            415: components["responses"]["UnsupportedMediaTypeProblem"];
+            default: components["responses"]["UnexpectedServerProblem"];
         };
     };
-    recordArenaOperatorForfeit: {
+    recordTournamentForfeit: {
         parameters: {
             query?: never;
             header: {
-                "Idempotency-Key": components["parameters"]["ArenaIdempotencyKey"];
-                /** @description Required only for cookie-authenticated browser admin requests. */
-                "X-CSRF-Token"?: components["parameters"]["ArenaAdminCSRFToken"];
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description Cookie-bound CSRF token required for this admin mutation. */
+                "X-CSRF-Token": components["parameters"]["AdminCSRFToken"];
             };
             path: {
-                tournament_id: components["parameters"]["ArenaTournamentId"];
-                series_id: components["parameters"]["ArenaSeriesId"];
+                tournament_id: components["parameters"]["TournamentId"];
+                series_id: components["parameters"]["SeriesId"];
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ArenaOperatorForfeitRequest"];
+                "application/json": components["schemas"]["OperatorForfeitRequest"];
             };
         };
         responses: {
@@ -3923,31 +4114,34 @@ export interface operations {
                 };
                 content?: never;
             };
-            400: components["responses"]["ArenaInvalidRequestResponse"];
-            401: components["responses"]["ArenaUnauthorizedResponse"];
-            403: components["responses"]["ArenaForbiddenResponse"];
-            404: components["responses"]["ArenaNotFoundResponse"];
-            409: components["responses"]["ArenaRevisionConflictResponse"];
+            400: components["responses"]["InvalidRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            409: components["responses"]["ProjectionRevisionConflictProblem"];
+            413: components["responses"]["RequestEntityTooLargeProblem"];
+            415: components["responses"]["UnsupportedMediaTypeProblem"];
+            default: components["responses"]["UnexpectedServerProblem"];
         };
     };
-    replayArenaOperatorGame: {
+    replayTournamentGame: {
         parameters: {
             query?: never;
             header: {
-                "Idempotency-Key": components["parameters"]["ArenaIdempotencyKey"];
-                /** @description Required only for cookie-authenticated browser admin requests. */
-                "X-CSRF-Token"?: components["parameters"]["ArenaAdminCSRFToken"];
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description Cookie-bound CSRF token required for this admin mutation. */
+                "X-CSRF-Token": components["parameters"]["AdminCSRFToken"];
             };
             path: {
-                tournament_id: components["parameters"]["ArenaTournamentId"];
-                series_id: components["parameters"]["ArenaSeriesId"];
-                game_id: components["parameters"]["ArenaGameId"];
+                tournament_id: components["parameters"]["TournamentId"];
+                series_id: components["parameters"]["SeriesId"];
+                game_id: components["parameters"]["GameId"];
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ArenaOperatorReplayRequest"];
+                "application/json": components["schemas"]["OperatorReplayRequest"];
             };
         };
         responses: {
@@ -3958,31 +4152,34 @@ export interface operations {
                 };
                 content?: never;
             };
-            400: components["responses"]["ArenaInvalidRequestResponse"];
-            401: components["responses"]["ArenaUnauthorizedResponse"];
-            403: components["responses"]["ArenaForbiddenResponse"];
-            404: components["responses"]["ArenaNotFoundResponse"];
-            409: components["responses"]["ArenaRevisionConflictResponse"];
+            400: components["responses"]["InvalidRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            409: components["responses"]["ProjectionRevisionConflictProblem"];
+            413: components["responses"]["RequestEntityTooLargeProblem"];
+            415: components["responses"]["UnsupportedMediaTypeProblem"];
+            default: components["responses"]["UnexpectedServerProblem"];
         };
     };
-    correctArenaGameResult: {
+    correctTournamentGameResult: {
         parameters: {
             query?: never;
             header: {
-                "Idempotency-Key": components["parameters"]["ArenaIdempotencyKey"];
-                /** @description Required only for cookie-authenticated browser admin requests. */
-                "X-CSRF-Token"?: components["parameters"]["ArenaAdminCSRFToken"];
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description Cookie-bound CSRF token required for this admin mutation. */
+                "X-CSRF-Token": components["parameters"]["AdminCSRFToken"];
             };
             path: {
-                tournament_id: components["parameters"]["ArenaTournamentId"];
-                series_id: components["parameters"]["ArenaSeriesId"];
-                game_id: components["parameters"]["ArenaGameId"];
+                tournament_id: components["parameters"]["TournamentId"];
+                series_id: components["parameters"]["SeriesId"];
+                game_id: components["parameters"]["GameId"];
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ArenaOperatorCorrectionRequest"];
+                "application/json": components["schemas"]["OperatorCorrectionRequest"];
             };
         };
         responses: {
@@ -3992,29 +4189,33 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ArenaCorrectionEvidence"];
+                    "application/json": components["schemas"]["CorrectionEvidence"];
                 };
             };
-            401: components["responses"]["ArenaUnauthorizedResponse"];
-            403: components["responses"]["ArenaForbiddenResponse"];
-            404: components["responses"]["ArenaNotFoundResponse"];
-            409: components["responses"]["ArenaRevisionConflictResponse"];
+            400: components["responses"]["InvalidRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            409: components["responses"]["ProjectionRevisionConflictProblem"];
+            413: components["responses"]["RequestEntityTooLargeProblem"];
+            415: components["responses"]["UnsupportedMediaTypeProblem"];
+            default: components["responses"]["UnexpectedServerProblem"];
         };
     };
-    listArenaOperatorAudit: {
+    listTournamentAudit: {
         parameters: {
             query: {
-                tournament_id: components["parameters"]["ArenaAuditTournamentId"];
-                entity_kind?: components["parameters"]["ArenaAuditEntityKind"];
-                entity_id?: components["parameters"]["ArenaAuditEntityId"];
-                event_type?: components["parameters"]["ArenaAuditEventType"];
-                actor_kind?: components["parameters"]["ArenaAuditActorKind"];
-                actor_id?: components["parameters"]["ArenaAuditActorId"];
-                result_reason?: components["parameters"]["ArenaAuditResultReason"];
-                occurred_from?: components["parameters"]["ArenaAuditOccurredFrom"];
-                occurred_to?: components["parameters"]["ArenaAuditOccurredTo"];
-                cursor?: components["parameters"]["ArenaAuditCursor"];
-                page_size?: components["parameters"]["ArenaAuditPageSize"];
+                tournament_id: components["parameters"]["AuditTournamentId"];
+                entity_kind?: components["parameters"]["AuditEntityKind"];
+                entity_id?: components["parameters"]["AuditEntityId"];
+                event_type?: components["parameters"]["AuditEventType"];
+                actor_kind?: components["parameters"]["AuditActorKind"];
+                actor_id?: components["parameters"]["AuditActorId"];
+                result_reason?: components["parameters"]["AuditResultReason"];
+                occurred_from?: components["parameters"]["AuditOccurredFrom"];
+                occurred_to?: components["parameters"]["AuditOccurredTo"];
+                cursor?: components["parameters"]["AuditCursor"];
+                page_size?: components["parameters"]["AuditPageSize"];
             };
             header?: never;
             path?: never;
@@ -4028,47 +4229,50 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ArenaAuditPage"];
+                    "application/json": components["schemas"]["AuditPage"];
                 };
             };
-            401: components["responses"]["ArenaUnauthorizedResponse"];
-            403: components["responses"]["ArenaForbiddenResponse"];
-            404: components["responses"]["ArenaNotFoundResponse"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            default: components["responses"]["UnexpectedServerProblem"];
         };
     };
-    exportArenaOperatorIncident: {
+    exportTournamentIncident: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                tournament_id: components["parameters"]["ArenaTournamentId"];
+                tournament_id: components["parameters"]["TournamentId"];
             };
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description Incident bundle with generation time and SHA-256 metadata. */
+            /** @description Incident bundle with generation time, SHA-256 checksum, and HMAC authenticity envelope. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ArenaIncidentBundle"];
+                    "application/json": components["schemas"]["IncidentBundle"];
                 };
             };
-            401: components["responses"]["ArenaUnauthorizedResponse"];
-            403: components["responses"]["ArenaForbiddenResponse"];
-            404: components["responses"]["ArenaNotFoundResponse"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            default: components["responses"]["UnexpectedServerProblem"];
         };
     };
-    getArenaOperatorSnapshot: {
+    getOperatorSnapshot: {
         parameters: {
             query?: {
-                cursor?: components["parameters"]["ArenaOperatorCursor"];
+                /** @description Last operator recovery watermark held by the client. Older or equal values return a fresh full snapshot; a value ahead of the authoritative snapshot is rejected as a revision conflict. */
+                cursor?: components["parameters"]["OperatorRecoveryCursor"];
             };
             header?: never;
             path: {
-                tournament_id: components["parameters"]["ArenaTournamentId"];
+                tournament_id: components["parameters"]["TournamentId"];
             };
             cookie?: never;
         };
@@ -4080,21 +4284,22 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ArenaOperatorRecoverySnapshot"];
+                    "application/json": components["schemas"]["OperatorRecoverySnapshot"];
                 };
             };
-            401: components["responses"]["ArenaUnauthorizedResponse"];
-            403: components["responses"]["ArenaForbiddenResponse"];
-            404: components["responses"]["ArenaNotFoundResponse"];
-            409: components["responses"]["ArenaRevisionConflictResponse"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            409: components["responses"]["ProjectionRevisionConflictProblem"];
+            default: components["responses"]["UnexpectedServerProblem"];
         };
     };
-    getArenaParticipantLobby: {
+    getParticipantLobby: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                tournament_id: components["parameters"]["ArenaTournamentId"];
+                tournament_id: components["parameters"]["TournamentId"];
             };
             cookie?: never;
         };
@@ -4106,21 +4311,22 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ArenaParticipantLobbyResponse"];
+                    "application/json": components["schemas"]["ParticipantLobbyResponse"];
                 };
             };
-            401: components["responses"]["ArenaUnauthorizedResponse"];
-            403: components["responses"]["ArenaForbiddenResponse"];
-            404: components["responses"]["ArenaNotFoundResponse"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            default: components["responses"]["UnexpectedServerProblem"];
         };
     };
-    getArenaParticipantAssignment: {
+    getParticipantAssignment: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                tournament_id: components["parameters"]["ArenaTournamentId"];
-                assignment_id: components["parameters"]["ArenaAssignmentId"];
+                tournament_id: components["parameters"]["TournamentId"];
+                assignment_id: components["parameters"]["AssignmentId"];
             };
             cookie?: never;
         };
@@ -4132,30 +4338,32 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ArenaParticipantAssignmentResponse"];
+                    "application/json": components["schemas"]["ParticipantAssignmentResponse"];
                 };
             };
-            401: components["responses"]["ArenaUnauthorizedResponse"];
-            403: components["responses"]["ArenaForbiddenResponse"];
-            404: components["responses"]["ArenaNotFoundResponse"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            default: components["responses"]["UnexpectedServerProblem"];
         };
     };
-    setArenaParticipantReady: {
+    setParticipantReady: {
         parameters: {
             query?: never;
             header: {
-                "Idempotency-Key": components["parameters"]["ArenaIdempotencyKey"];
-                "X-CSRF-Token": components["parameters"]["ArenaCSRFToken"];
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description Session-bound CSRF token required for this player mutation. */
+                "X-CSRF-Token": components["parameters"]["RequiredPlayerCSRFToken"];
             };
             path: {
-                tournament_id: components["parameters"]["ArenaTournamentId"];
-                wave_id: components["parameters"]["ArenaWaveId"];
+                tournament_id: components["parameters"]["TournamentId"];
+                wave_id: components["parameters"]["WaveId"];
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ArenaParticipantReadyRequest"];
+                "application/json": components["schemas"]["ParticipantReadyRequest"];
             };
         };
         responses: {
@@ -4165,31 +4373,37 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ArenaReadinessEvent"];
+                    "application/json": components["schemas"]["ReadinessEvent"];
                 };
             };
-            401: components["responses"]["ArenaUnauthorizedResponse"];
-            403: components["responses"]["ArenaForbiddenResponse"];
-            404: components["responses"]["ArenaNotFoundResponse"];
-            409: components["responses"]["ArenaRevisionConflictResponse"];
+            400: components["responses"]["InvalidRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            409: components["responses"]["ProjectionRevisionConflictProblem"];
+            413: components["responses"]["RequestEntityTooLargeProblem"];
+            415: components["responses"]["UnsupportedMediaTypeProblem"];
+            429: components["responses"]["RateLimitedProblem"];
+            default: components["responses"]["UnexpectedServerProblem"];
         };
     };
-    submitArenaParticipantDraftAction: {
+    submitParticipantDraftAction: {
         parameters: {
             query?: never;
             header: {
-                "Idempotency-Key": components["parameters"]["ArenaIdempotencyKey"];
-                "X-CSRF-Token": components["parameters"]["ArenaCSRFToken"];
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description Session-bound CSRF token required for this player mutation. */
+                "X-CSRF-Token": components["parameters"]["RequiredPlayerCSRFToken"];
             };
             path: {
-                tournament_id: components["parameters"]["ArenaTournamentId"];
-                series_id: components["parameters"]["ArenaSeriesId"];
+                tournament_id: components["parameters"]["TournamentId"];
+                series_id: components["parameters"]["SeriesId"];
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ArenaParticipantDraftActionRequest"];
+                "application/json": components["schemas"]["ParticipantDraftActionRequest"];
             };
         };
         responses: {
@@ -4199,33 +4413,38 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ArenaDraft"];
+                    "application/json": components["schemas"]["Draft"];
                 };
             };
-            400: components["responses"]["ArenaInvalidRequestResponse"];
-            401: components["responses"]["ArenaUnauthorizedResponse"];
-            403: components["responses"]["ArenaForbiddenResponse"];
-            404: components["responses"]["ArenaNotFoundResponse"];
-            409: components["responses"]["ArenaRevisionConflictResponse"];
+            400: components["responses"]["InvalidRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            409: components["responses"]["ProjectionRevisionConflictProblem"];
+            413: components["responses"]["RequestEntityTooLargeProblem"];
+            415: components["responses"]["UnsupportedMediaTypeProblem"];
+            429: components["responses"]["RateLimitedProblem"];
+            default: components["responses"]["UnexpectedServerProblem"];
         };
     };
-    submitArenaParticipantFlag: {
+    submitParticipantFlag: {
         parameters: {
             query?: never;
             header: {
-                "Idempotency-Key": components["parameters"]["ArenaIdempotencyKey"];
-                "X-CSRF-Token": components["parameters"]["ArenaCSRFToken"];
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description Session-bound CSRF token required for this player mutation. */
+                "X-CSRF-Token": components["parameters"]["RequiredPlayerCSRFToken"];
             };
             path: {
-                tournament_id: components["parameters"]["ArenaTournamentId"];
-                series_id: components["parameters"]["ArenaSeriesId"];
-                game_id: components["parameters"]["ArenaGameId"];
+                tournament_id: components["parameters"]["TournamentId"];
+                series_id: components["parameters"]["SeriesId"];
+                game_id: components["parameters"]["GameId"];
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ArenaParticipantSubmissionRequest"];
+                "application/json": components["schemas"]["ParticipantSubmissionRequest"];
             };
         };
         responses: {
@@ -4235,33 +4454,37 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ArenaParticipantSubmissionResponse"];
+                    "application/json": components["schemas"]["ParticipantSubmissionResponse"];
                 };
             };
-            400: components["responses"]["ArenaInvalidRequestResponse"];
-            401: components["responses"]["ArenaUnauthorizedResponse"];
-            403: components["responses"]["ArenaForbiddenResponse"];
-            404: components["responses"]["ArenaNotFoundResponse"];
-            409: components["responses"]["ArenaRevisionConflictResponse"];
-            429: components["responses"]["ArenaRateLimitedResponse"];
+            400: components["responses"]["InvalidRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            409: components["responses"]["ProjectionRevisionConflictProblem"];
+            413: components["responses"]["RequestEntityTooLargeProblem"];
+            415: components["responses"]["UnsupportedMediaTypeProblem"];
+            429: components["responses"]["RateLimitedProblem"];
+            default: components["responses"]["UnexpectedServerProblem"];
         };
     };
-    surrenderArenaParticipantSeries: {
+    surrenderParticipantSeries: {
         parameters: {
             query?: never;
             header: {
-                "Idempotency-Key": components["parameters"]["ArenaIdempotencyKey"];
-                "X-CSRF-Token": components["parameters"]["ArenaCSRFToken"];
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description Session-bound CSRF token required for this player mutation. */
+                "X-CSRF-Token": components["parameters"]["RequiredPlayerCSRFToken"];
             };
             path: {
-                tournament_id: components["parameters"]["ArenaTournamentId"];
-                series_id: components["parameters"]["ArenaSeriesId"];
+                tournament_id: components["parameters"]["TournamentId"];
+                series_id: components["parameters"]["SeriesId"];
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ArenaParticipantSurrenderRequest"];
+                "application/json": components["schemas"]["ParticipantSurrenderRequest"];
             };
         };
         responses: {
@@ -4271,33 +4494,37 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ArenaOfficialResultRevision"];
+                    "application/json": components["schemas"]["OfficialResultRevision"];
                 };
             };
-            400: components["responses"]["ArenaInvalidRequestResponse"];
-            401: components["responses"]["ArenaUnauthorizedResponse"];
-            403: components["responses"]["ArenaForbiddenResponse"];
-            404: components["responses"]["ArenaNotFoundResponse"];
-            409: components["responses"]["ArenaRevisionConflictResponse"];
-            429: components["responses"]["ArenaRateLimitedResponse"];
+            400: components["responses"]["InvalidRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            409: components["responses"]["ProjectionRevisionConflictProblem"];
+            413: components["responses"]["RequestEntityTooLargeProblem"];
+            415: components["responses"]["UnsupportedMediaTypeProblem"];
+            429: components["responses"]["RateLimitedProblem"];
+            default: components["responses"]["UnexpectedServerProblem"];
         };
     };
-    applyArenaParticipantPostSeriesAction: {
+    applyParticipantPostSeriesAction: {
         parameters: {
             query?: never;
             header: {
-                "Idempotency-Key": components["parameters"]["ArenaIdempotencyKey"];
-                "X-CSRF-Token": components["parameters"]["ArenaCSRFToken"];
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description Session-bound CSRF token required for this player mutation. */
+                "X-CSRF-Token": components["parameters"]["RequiredPlayerCSRFToken"];
             };
             path: {
-                tournament_id: components["parameters"]["ArenaTournamentId"];
-                series_id: components["parameters"]["ArenaSeriesId"];
+                tournament_id: components["parameters"]["TournamentId"];
+                series_id: components["parameters"]["SeriesId"];
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ArenaParticipantPostSeriesRequest"];
+                "application/json": components["schemas"]["ParticipantPostSeriesRequest"];
             };
         };
         responses: {
@@ -4307,23 +4534,28 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ArenaParticipantPostSeriesResponse"];
+                    "application/json": components["schemas"]["ParticipantPostSeriesResponse"];
                 };
             };
-            401: components["responses"]["ArenaUnauthorizedResponse"];
-            403: components["responses"]["ArenaForbiddenResponse"];
-            404: components["responses"]["ArenaNotFoundResponse"];
-            409: components["responses"]["ArenaRevisionConflictResponse"];
+            400: components["responses"]["InvalidRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            409: components["responses"]["ProjectionRevisionConflictProblem"];
+            413: components["responses"]["RequestEntityTooLargeProblem"];
+            415: components["responses"]["UnsupportedMediaTypeProblem"];
+            429: components["responses"]["RateLimitedProblem"];
+            default: components["responses"]["UnexpectedServerProblem"];
         };
     };
-    getArenaParticipantSnapshot: {
+    getParticipantSnapshot: {
         parameters: {
             query?: {
-                cursor?: components["parameters"]["ArenaParticipantCursor"];
+                cursor?: components["parameters"]["ParticipantRecoveryCursor"];
             };
             header?: never;
             path: {
-                tournament_id: components["parameters"]["ArenaTournamentId"];
+                tournament_id: components["parameters"]["TournamentId"];
             };
             cookie?: never;
         };
@@ -4335,21 +4567,22 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ArenaParticipantRecoverySnapshot"];
+                    "application/json": components["schemas"]["ParticipantRecoverySnapshot"];
                 };
             };
-            401: components["responses"]["ArenaUnauthorizedResponse"];
-            403: components["responses"]["ArenaForbiddenResponse"];
-            404: components["responses"]["ArenaNotFoundResponse"];
-            409: components["responses"]["ArenaRevisionConflictResponse"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            409: components["responses"]["ProjectionRevisionConflictProblem"];
+            default: components["responses"]["UnexpectedServerProblem"];
         };
     };
-    getArenaPublicTournament: {
+    getPublicTournament: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                tournament_id: components["parameters"]["ArenaTournamentId"];
+                tournament_id: components["parameters"]["TournamentId"];
             };
             cookie?: never;
         };
@@ -4361,18 +4594,19 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ArenaPublicTournamentResponse"];
+                    "application/json": components["schemas"]["PublicTournamentResponse"];
                 };
             };
-            404: components["responses"]["ArenaNotFoundResponse"];
+            404: components["responses"]["NotFoundProblem"];
+            default: components["responses"]["UnexpectedServerProblem"];
         };
     };
-    getArenaPublicScoreboard: {
+    getPublicScoreboard: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                tournament_id: components["parameters"]["ArenaTournamentId"];
+                tournament_id: components["parameters"]["TournamentId"];
             };
             cookie?: never;
         };
@@ -4384,18 +4618,19 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ArenaPublicScoreboardResponse"];
+                    "application/json": components["schemas"]["PublicScoreboardResponse"];
                 };
             };
-            404: components["responses"]["ArenaNotFoundResponse"];
+            404: components["responses"]["NotFoundProblem"];
+            default: components["responses"]["UnexpectedServerProblem"];
         };
     };
-    getArenaPublicBracket: {
+    getPublicBracket: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                tournament_id: components["parameters"]["ArenaTournamentId"];
+                tournament_id: components["parameters"]["TournamentId"];
             };
             cookie?: never;
         };
@@ -4407,18 +4642,19 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ArenaPublicBracketResponse"];
+                    "application/json": components["schemas"]["PublicBracketResponse"];
                 };
             };
-            404: components["responses"]["ArenaNotFoundResponse"];
+            404: components["responses"]["NotFoundProblem"];
+            default: components["responses"]["UnexpectedServerProblem"];
         };
     };
-    getArenaPublicLiveDraft: {
+    getPublicLiveDraft: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                tournament_id: components["parameters"]["ArenaTournamentId"];
+                tournament_id: components["parameters"]["TournamentId"];
             };
             cookie?: never;
         };
@@ -4430,20 +4666,21 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ArenaPublicLiveDraftResponse"];
+                    "application/json": components["schemas"]["PublicLiveDraftResponse"];
                 };
             };
-            404: components["responses"]["ArenaNotFoundResponse"];
+            404: components["responses"]["NotFoundProblem"];
+            default: components["responses"]["UnexpectedServerProblem"];
         };
     };
-    getArenaPublicSnapshot: {
+    getPublicSnapshot: {
         parameters: {
             query?: {
-                cursor?: components["parameters"]["ArenaPublicCursor"];
+                cursor?: components["parameters"]["PublicRecoveryCursor"];
             };
             header?: never;
             path: {
-                tournament_id: components["parameters"]["ArenaTournamentId"];
+                tournament_id: components["parameters"]["TournamentId"];
             };
             cookie?: never;
         };
@@ -4455,11 +4692,12 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ArenaPublicRecoverySnapshot"];
+                    "application/json": components["schemas"]["PublicRecoverySnapshot"];
                 };
             };
-            404: components["responses"]["ArenaNotFoundResponse"];
-            409: components["responses"]["ArenaRevisionConflictResponse"];
+            404: components["responses"]["NotFoundProblem"];
+            409: components["responses"]["ProjectionRevisionConflictProblem"];
+            default: components["responses"]["UnexpectedServerProblem"];
         };
     };
 }

@@ -5,8 +5,11 @@ package integration_test
 import (
 	"context"
 	"errors"
+	"runtime"
 	"testing"
+	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
@@ -111,9 +114,121 @@ func TestTxManager_NestedDoReusesOuterTx(t *testing.T) {
 func TestTxManager_QuerierOutsideTx_UsesPool(t *testing.T) {
 	t.Parallel()
 	mgr := postgres.NewTxManager(sharedPool)
+	username := uniq("querier")
+	require.NoError(t, insertPlayer(context.Background(), mgr, username))
 
-	got, err := mgr.Querier(context.Background()).CountTasksByDifficulty(context.Background(), "easy")
+	got, err := mgr.Querier(context.Background()).GetPlayerByUsername(context.Background(), username)
 	require.NoError(t, err, "Querier(ctx) without tx must execute against the pool")
-	require.GreaterOrEqual(t, got, int64(0),
-		"smoke check: pool-bound Querier reaches the DB and returns a valid count")
+	require.Equal(t, username, got.Username)
+}
+
+func TestTxManager_ReadSnapshotIsRepeatableAndReadOnly(t *testing.T) {
+	t.Parallel()
+	mgr := postgres.NewTxManager(sharedPool)
+	username := uniq("snapshot")
+
+	var observedAt time.Time
+	err := mgr.ReadSnapshot(context.Background(), func(ctx context.Context) error {
+		var isolation string
+		var readOnly string
+		if err := mgr.Conn(ctx).QueryRow(ctx, `
+			SELECT current_setting('transaction_isolation'),
+				current_setting('transaction_read_only'),
+				transaction_timestamp()
+		`).Scan(&isolation, &readOnly, &observedAt); err != nil {
+			return err
+		}
+		require.Equal(t, "repeatable read", isolation)
+		require.Equal(t, "on", readOnly)
+
+		var before int
+		if err := mgr.Conn(ctx).QueryRow(ctx,
+			"SELECT COUNT(*) FROM players WHERE username = $1", username,
+		).Scan(&before); err != nil {
+			return err
+		}
+		require.Zero(t, before)
+
+		if _, err := sharedPool.Exec(ctx,
+			"INSERT INTO players (username) VALUES ($1)", username,
+		); err != nil {
+			return err
+		}
+
+		var during int
+		if err := mgr.Conn(ctx).QueryRow(ctx,
+			"SELECT COUNT(*) FROM players WHERE username = $1", username,
+		).Scan(&during); err != nil {
+			return err
+		}
+		require.Zero(t, during, "repeatable read must not observe a later commit")
+
+		return mgr.ReadSnapshot(ctx, func(nestedCtx context.Context) error {
+			var nestedObservedAt time.Time
+			if err := mgr.Conn(nestedCtx).QueryRow(nestedCtx,
+				"SELECT transaction_timestamp()",
+			).Scan(&nestedObservedAt); err != nil {
+				return err
+			}
+			require.Equal(t, observedAt, nestedObservedAt)
+			require.ErrorIs(t, mgr.Do(nestedCtx, func(context.Context) error { return nil }),
+				postgres.ErrReadOnlySnapshotWrite)
+			return nil
+		})
+	})
+	require.NoError(t, err)
+	require.True(t, playerExists(t, sharedPool, username))
+}
+
+func TestTxManager_ReadSnapshotRejectsWriteTransactionNesting(t *testing.T) {
+	t.Parallel()
+	mgr := postgres.NewTxManager(sharedPool)
+
+	err := mgr.Do(context.Background(), func(ctx context.Context) error {
+		return mgr.ReadSnapshot(ctx, func(context.Context) error { return nil })
+	})
+	require.ErrorIs(t, err, postgres.ErrSnapshotInsideTransaction)
+}
+
+func TestTxManagerGoexitReleasesTransactionAndConnection(t *testing.T) {
+	ctx := context.Background()
+	config := sharedPool.Config().Copy()
+	config.MaxConns = 1
+	pool, err := pgxpool.NewWithConfig(ctx, config)
+	require.NoError(t, err)
+	defer pool.Close()
+	mgr := postgres.NewTxManager(pool)
+	started := make(chan pgx.Tx, 1)
+	done := make(chan struct{})
+	const lockID int64 = 7839421
+	go func() {
+		defer close(done)
+		_ = mgr.Do(ctx, func(txCtx context.Context) error {
+			tx := mgr.Conn(txCtx).(pgx.Tx)
+			if _, err := tx.Exec(txCtx, "SELECT pg_advisory_xact_lock($1)", lockID); err != nil {
+				return err
+			}
+			started <- tx
+			runtime.Goexit()
+			return nil
+		})
+	}()
+	<-done
+	var tx pgx.Tx
+	select {
+	case tx = <-started:
+	default:
+		t.Fatal("callback did not acquire its transaction lock")
+	}
+	// Clean up even on the RED implementation, without leaving a borrowed
+	// connection to hang the pool's Close operation.
+	defer func() { _ = tx.Rollback(context.Background()) }()
+	var unlocked bool
+	require.NoError(t, sharedPool.QueryRow(ctx, "SELECT pg_try_advisory_xact_lock($1)", lockID).Scan(&unlocked))
+	require.True(t, unlocked, "Goexit must release the transaction lock")
+	probe, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	var one int
+	require.NoError(t, pool.QueryRow(probe, "SELECT 1").Scan(&one))
+	require.Equal(t, 1, one)
 }

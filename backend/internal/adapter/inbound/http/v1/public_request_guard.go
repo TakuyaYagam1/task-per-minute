@@ -9,10 +9,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
-type requestRateLimiter interface {
-	Allow(key string) bool
-	RetryAfter() string
-}
+type requestRateLimiter = middleware.RateLimiter
 
 type publicRequestPolicy struct {
 	event          string
@@ -35,8 +32,8 @@ func (s *Server) publicRequestGuard() func(http.Handler) http.Handler {
 				return
 			}
 
-			if !policy.limiter.Allow(middleware.ClientIPFromRequest(r)) {
-				w.Header().Set("Retry-After", policy.limiter.RetryAfter())
+			if !requestAllowed(policy.limiter, middleware.ClientIPFromRequest(r)) {
+				setRetryAfter(w, policy.limiter)
 				s.logSecurityEvent(r, policy.event, securityOutcomeRateLimited, nil)
 				errmap.HandleError(w, r, domain.ErrRateLimited)
 				return
@@ -63,14 +60,27 @@ func (s *Server) enterPublicRequest(w http.ResponseWriter, r *http.Request, poli
 		return true
 	}
 
-	if policy.limiter.Allow(middleware.ClientIPFromRequest(r)) {
+	if requestAllowed(policy.limiter, middleware.ClientIPFromRequest(r)) {
 		return true
 	}
 
-	w.Header().Set("Retry-After", policy.limiter.RetryAfter())
+	setRetryAfter(w, policy.limiter)
 	s.logSecurityEvent(r, policy.event, securityOutcomeRateLimited, nil)
 	errmap.HandleError(w, r, domain.ErrRateLimited)
 	return false
+}
+
+func requestAllowed(limiter requestRateLimiter, scope string) bool {
+	return limiter == nil || limiter.Allow(scope)
+}
+
+func setRetryAfter(w http.ResponseWriter, limiter requestRateLimiter) {
+	if limiter == nil {
+		return
+	}
+	if retryAfter := limiter.RetryAfter(); retryAfter != "" {
+		w.Header().Set("Retry-After", retryAfter)
+	}
 }
 
 func (s *Server) publicRequestPolicy(r *http.Request) (publicRequestPolicy, bool) {

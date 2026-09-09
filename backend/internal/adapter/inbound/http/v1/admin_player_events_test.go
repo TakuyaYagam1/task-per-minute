@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/middleware"
@@ -16,21 +17,20 @@ func TestStreamAdminPlayerEventsWritesReadyAndChangeEvents(t *testing.T) {
 	t.Parallel()
 
 	events := make(chan struct{}, 1)
-	subscriber := &adminPlayerEventsFake{
-		events:       events,
-		subscribed:   make(chan struct{}),
-		unsubscribed: make(chan struct{}),
-	}
+	subscribed := make(chan struct{})
+	unsubscribed := make(chan struct{})
+	subscriber := NewMockAdminPlayerEventSubscriber(t)
+	subscriber.EXPECT().SubscribeAdminPlayerChanges(mock.Anything).
+		Run(func(context.Context) { close(subscribed) }).
+		Return(events, func() { close(unsubscribed) }, nil)
 	server := New(Dependencies{AdminPlayerEvents: subscriber})
-	auth := newAdminCookieAuthUsecase(t)
-	pair, err := auth.Login(t.Context(), "admin-password")
-	require.NoError(t, err)
+	verifier := newAdminAccessVerifier(t)
 
-	handler := middleware.AdminJWT(auth)(http.HandlerFunc(server.StreamAdminPlayerEvents))
+	handler := middleware.AdminSession(verifier)(http.HandlerFunc(server.StreamPlayerEvents))
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/players/events", nil).WithContext(ctx)
-	req.AddCookie(&http.Cookie{Name: middleware.AdminAccessCookieName, Value: pair.AccessToken})
+	req.AddCookie(&http.Cookie{Name: middleware.AdminAccessCookieName, Value: adminAccessTestToken})
 	rr := httptest.NewRecorder()
 
 	done := make(chan struct{})
@@ -41,7 +41,7 @@ func TestStreamAdminPlayerEventsWritesReadyAndChangeEvents(t *testing.T) {
 
 	require.Eventually(t, func() bool {
 		select {
-		case <-subscriber.subscribed:
+		case <-subscribed:
 			return true
 		default:
 			return false
@@ -61,7 +61,7 @@ func TestStreamAdminPlayerEventsWritesReadyAndChangeEvents(t *testing.T) {
 	}, time.Second, 10*time.Millisecond)
 	require.Eventually(t, func() bool {
 		select {
-		case <-subscriber.unsubscribed:
+		case <-unsubscribed:
 			return true
 		default:
 			return false
@@ -78,8 +78,8 @@ func TestStreamAdminPlayerEventsWritesReadyAndChangeEvents(t *testing.T) {
 func TestStreamAdminPlayerEventsRequiresAdmin(t *testing.T) {
 	t.Parallel()
 
-	server := New(Dependencies{AdminPlayerEvents: &adminPlayerEventsFake{}})
-	handler := http.HandlerFunc(server.StreamAdminPlayerEvents)
+	server := New(Dependencies{AdminPlayerEvents: NewMockAdminPlayerEventSubscriber(t)})
+	handler := http.HandlerFunc(server.StreamPlayerEvents)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/players/events", nil)
 	rr := httptest.NewRecorder()
 
@@ -87,26 +87,4 @@ func TestStreamAdminPlayerEventsRequiresAdmin(t *testing.T) {
 
 	require.Equal(t, http.StatusUnauthorized, rr.Code)
 	require.Contains(t, rr.Body.String(), `"status":401`)
-}
-
-type adminPlayerEventsFake struct {
-	events       <-chan struct{}
-	subscribed   chan struct{}
-	unsubscribed chan struct{}
-	err          error
-}
-
-func (f *adminPlayerEventsFake) SubscribeAdminPlayerChanges(context.Context) (<-chan struct{}, func(), error) {
-	if f.subscribed != nil {
-		close(f.subscribed)
-	}
-	if f.err != nil {
-		return nil, nil, f.err
-	}
-	unsubscribe := func() {
-		if f.unsubscribed != nil {
-			close(f.unsubscribed)
-		}
-	}
-	return f.events, unsubscribe, nil
 }

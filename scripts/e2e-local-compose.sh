@@ -36,11 +36,9 @@ export WS_ALLOWED_ORIGINS="${WS_ALLOWED_ORIGINS:-http://127.0.0.1:${FRONTEND_POR
 if [[ "${E2E_DIRECT_BROWSER_API:-0}" != "1" ]]; then
   export NEXT_PUBLIC_API_URL=""
   export NEXT_PUBLIC_ADMIN_API_URL=""
-  export NEXT_PUBLIC_WS_URL=""
 else
   export NEXT_PUBLIC_API_URL="${NEXT_PUBLIC_API_URL:-http://127.0.0.1:${BACKEND_PORT}}"
   export NEXT_PUBLIC_ADMIN_API_URL="${NEXT_PUBLIC_ADMIN_API_URL:-http://127.0.0.1:${BACKEND_PORT}}"
-  export NEXT_PUBLIC_WS_URL="${NEXT_PUBLIC_WS_URL:-ws://127.0.0.1:${BACKEND_PORT}/ws}"
 fi
 
 read_env_value() {

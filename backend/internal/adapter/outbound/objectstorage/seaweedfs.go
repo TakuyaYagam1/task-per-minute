@@ -4,17 +4,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
-	"time"
-
+	taskusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/task"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
-
-	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/admin"
-	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/duel"
+	"io"
+	"time"
 )
 
-var ErrNilClient = errors.New("seaweedfs: nil client")
+var (
+	ErrNilClient         = errors.New("seaweedfs: nil client")
+	ErrBucketUnavailable = errors.New("seaweedfs: configured bucket unavailable")
+)
 
 const defaultPresignRegion = "us-east-1"
 
@@ -36,10 +36,7 @@ type SeaweedStorage struct {
 	bucket        string
 }
 
-var (
-	_ admin.SourceFileStorage  = (*SeaweedStorage)(nil)
-	_ duel.SourceFileURLSigner = (*SeaweedStorage)(nil)
-)
+var _ taskusecase.SourceFileStorage = (*SeaweedStorage)(nil)
 
 func New(cfg Config) (*SeaweedStorage, error) {
 	client, err := minio.New(cfg.Endpoint, &minio.Options{
@@ -86,9 +83,26 @@ func (s *SeaweedStorage) EnsureBucket(ctx context.Context) error {
 	return nil
 }
 
+// Health verifies that the configured bucket already exists and is readable by
+// the configured credentials. Unlike EnsureBucket, it never changes storage
+// state and is safe for readiness and preflight probes.
+func (s *SeaweedStorage) Health(ctx context.Context) error {
+	if s == nil || s.client == nil {
+		return ErrNilClient
+	}
+	exists, err := s.client.BucketExists(ctx, s.bucket)
+	if err != nil {
+		return fmt.Errorf("SeaweedStorage - Health - Client.BucketExists: %w", err)
+	}
+	if !exists {
+		return ErrBucketUnavailable
+	}
+	return nil
+}
+
 // Upload streams r (size bytes) into <bucket>/<key> and returns the canonical
-// object URL (<scheme>://<endpoint>/<bucket>/<key>). The 100 MB cap is enforced
-// in the usecase layer (TASK-021); this method does not validate size.
+// object URL (<scheme>://<endpoint>/<bucket>/<key>). The source-file application
+// service enforces the size cap; this adapter only streams bytes.
 func (s *SeaweedStorage) Upload(ctx context.Context, key string, r io.Reader, size int64) (string, error) {
 	if s == nil || s.client == nil {
 		return "", ErrNilClient

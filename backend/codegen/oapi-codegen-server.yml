@@ -3,5 +3,7 @@ output: internal/adapter/inbound/http/api/server.gen.go
 generate:
   chi-server: true
   strict-server: true
+compatibility:
+  enable-auth-scopes-on-context: true
 output-options:
   skip-prune: false

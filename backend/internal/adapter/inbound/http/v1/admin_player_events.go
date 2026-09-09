@@ -11,7 +11,7 @@ import (
 
 const adminPlayerEventsHeartbeat = 25 * time.Second
 
-func (s *Server) StreamAdminPlayerEvents(w http.ResponseWriter, r *http.Request) {
+func (s *Server) StreamPlayerEvents(w http.ResponseWriter, r *http.Request) {
 	if !requireAdmin(w, r) {
 		return
 	}

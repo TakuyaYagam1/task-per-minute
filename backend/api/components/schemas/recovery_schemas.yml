@@ -1,0 +1,568 @@
+PresenceState:
+  type: string
+  enum: [connected, disconnected]
+
+ReconnectState:
+  type: string
+  enum: [open, reconnected, expired, cancelled]
+
+ReconnectMutationKind:
+  type: string
+  enum: [reconnect, timeout, disconnect]
+
+PauseReason:
+  type: string
+  enum: [operator, disconnect, platform, execution_epoch]
+
+PauseState:
+  type: string
+  enum: [active, resumed, cancelled]
+
+PauseDeadlineKind:
+  type: string
+  enum: [ready_window, game, draft]
+
+DraftRecoveryPolicy:
+  type: string
+  enum: [shift_remaining, fresh_on_resume]
+
+DraftRecoveryReason:
+  type: string
+  enum: [operator_pause, epoch_mismatch, service_restart, correction]
+
+Presence:
+  type: object
+  required: [id, tournament_id, roster_id, series_id, participant_id, state, presence_epoch, revision, connected_at, disconnected_at, updated_at]
+  properties:
+    id:
+      type: string
+      format: uuid
+    tournament_id:
+      type: string
+      format: uuid
+    roster_id:
+      type: string
+      format: uuid
+    series_id:
+      type: string
+      format: uuid
+    participant_id:
+      type: string
+      format: uuid
+    state:
+      $ref: '#/PresenceState'
+    presence_epoch:
+      type: integer
+      format: int64
+      minimum: 1
+      readOnly: true
+    revision:
+      type: integer
+      format: int64
+      minimum: 1
+      readOnly: true
+    connected_at:
+      type: string
+      format: date-time
+      readOnly: true
+    disconnected_at:
+      type: string
+      format: date-time
+      nullable: true
+      readOnly: true
+    updated_at:
+      type: string
+      format: date-time
+      readOnly: true
+
+ReconnectInterval:
+  type: object
+  description: Durable reconnect interval. Continued intervals preserve their lineage across a tournament pause.
+  required: [id, pause_id, roster_id, series_id, game_id, participant_id, presence_epoch, number, continuation_number, continued_from_id, suspended_by_pause_id, state, opened_at, deadline, closed_at, revision, updated_at]
+  properties:
+    id:
+      type: string
+      format: uuid
+    pause_id:
+      type: string
+      format: uuid
+    roster_id:
+      type: string
+      format: uuid
+    series_id:
+      type: string
+      format: uuid
+    game_id:
+      type: string
+      format: uuid
+    participant_id:
+      type: string
+      format: uuid
+    presence_epoch:
+      type: integer
+      format: int64
+      minimum: 1
+      readOnly: true
+    number:
+      type: integer
+      format: int32
+      minimum: 1
+      readOnly: true
+    continuation_number:
+      type: integer
+      format: int32
+      minimum: 0
+      readOnly: true
+    continued_from_id:
+      type: string
+      format: uuid
+      nullable: true
+      readOnly: true
+    suspended_by_pause_id:
+      type: string
+      format: uuid
+      nullable: true
+      readOnly: true
+    state:
+      $ref: '#/ReconnectState'
+    opened_at:
+      type: string
+      format: date-time
+      readOnly: true
+    deadline:
+      type: string
+      format: date-time
+      readOnly: true
+    closed_at:
+      type: string
+      format: date-time
+      nullable: true
+      readOnly: true
+    revision:
+      type: integer
+      format: int64
+      minimum: 1
+      readOnly: true
+    updated_at:
+      type: string
+      format: date-time
+      readOnly: true
+
+FrozenDeadline:
+  type: object
+  required: [kind, owner_id, original_deadline, frozen_at, remaining_ms, resumed_at, resumed_deadline, revision]
+  properties:
+    kind:
+      $ref: '#/PauseDeadlineKind'
+    owner_id:
+      type: string
+      format: uuid
+    original_deadline:
+      type: string
+      format: date-time
+      readOnly: true
+    frozen_at:
+      type: string
+      format: date-time
+      readOnly: true
+    remaining_ms:
+      type: integer
+      format: int64
+      minimum: 0
+      readOnly: true
+    resumed_at:
+      type: string
+      format: date-time
+      nullable: true
+      readOnly: true
+    resumed_deadline:
+      type: string
+      format: date-time
+      nullable: true
+      readOnly: true
+    revision:
+      type: integer
+      format: int64
+      minimum: 1
+      readOnly: true
+
+PauseGame:
+  type: object
+  required: [series_id, game, revision, deadline, resume_state]
+  properties:
+    series_id:
+      type: string
+      format: uuid
+    game:
+      $ref: '#/Game'
+    revision:
+      type: integer
+      format: int64
+      minimum: 1
+      readOnly: true
+    deadline:
+      type: string
+      format: date-time
+      nullable: true
+      readOnly: true
+    resume_state:
+      type: string
+      nullable: true
+      allOf:
+        - $ref: '#/GameState'
+
+PauseSeries:
+  type: object
+  required: [series, revision, current_game_id, resume_state]
+  properties:
+    series:
+      $ref: '#/Series'
+    revision:
+      type: integer
+      format: int64
+      minimum: 1
+      readOnly: true
+    current_game_id:
+      type: string
+      format: uuid
+      nullable: true
+      readOnly: true
+    resume_state:
+      type: string
+      nullable: true
+      allOf:
+        - $ref: '#/SeriesState'
+
+PauseReconnectCounter:
+  type: object
+  required: [pause_id, roster_id, participant_id, limit, used, revision]
+  properties:
+    pause_id:
+      type: string
+      format: uuid
+    roster_id:
+      type: string
+      format: uuid
+    participant_id:
+      type: string
+      format: uuid
+    limit:
+      type: integer
+      format: int32
+      minimum: 0
+      readOnly: true
+    used:
+      type: integer
+      format: int32
+      minimum: 0
+      readOnly: true
+    revision:
+      type: integer
+      format: int64
+      minimum: 1
+      readOnly: true
+
+PauseGraph:
+  type: object
+  description: Durable pause snapshot. Runtime timers and process-local pause authority are excluded.
+  required: [tournament_id, roster_id, wave, series, games, draft, presence, reconnect, counters, frozen_deadlines, active_pause_id, paused_at, deadlines_suppressed, graph_revision, terminal_action_revision]
+  properties:
+    tournament_id:
+      type: string
+      format: uuid
+    roster_id:
+      type: string
+      format: uuid
+    wave:
+      $ref: '#/Wave'
+    series:
+      type: array
+      items:
+        $ref: '#/PauseSeries'
+    games:
+      type: array
+      items:
+        $ref: '#/PauseGame'
+    draft:
+      type: object
+      nullable: true
+      allOf:
+        - $ref: '#/Draft'
+    presence:
+      type: array
+      items:
+        $ref: '#/Presence'
+    reconnect:
+      type: array
+      items:
+        $ref: '#/ReconnectInterval'
+    counters:
+      type: array
+      items:
+        $ref: '#/PauseReconnectCounter'
+    frozen_deadlines:
+      type: array
+      items:
+        $ref: '#/FrozenDeadline'
+    active_pause_id:
+      type: string
+      format: uuid
+      nullable: true
+    paused_at:
+      type: string
+      format: date-time
+      nullable: true
+      readOnly: true
+    deadlines_suppressed:
+      type: boolean
+      readOnly: true
+    graph_revision:
+      type: integer
+      format: int64
+      minimum: 1
+      readOnly: true
+    terminal_action_revision:
+      type: integer
+      format: int64
+      minimum: 0
+      readOnly: true
+
+PauseRecord:
+  type: object
+  required: [command_id, pause_id, actor_id, reason, state, revision, graph, paused_at, resolved_at]
+  properties:
+    command_id:
+      type: string
+      format: uuid
+    pause_id:
+      type: string
+      format: uuid
+    actor_id:
+      type: string
+      format: uuid
+    reason:
+      $ref: '#/PauseReason'
+    state:
+      $ref: '#/PauseState'
+    revision:
+      type: integer
+      format: int64
+      minimum: 1
+      readOnly: true
+    graph:
+      $ref: '#/PauseGraph'
+    paused_at:
+      type: string
+      format: date-time
+      readOnly: true
+    resolved_at:
+      type: string
+      format: date-time
+      nullable: true
+      readOnly: true
+
+ReconnectRecord:
+  type: object
+  required: [kind, expected_authority_revision, participant_id, interval_id, recorded_at, terminal_reason, result_revision_id, conflict]
+  properties:
+    kind:
+      $ref: '#/ReconnectMutationKind'
+    expected_authority_revision:
+      type: integer
+      format: int64
+      minimum: 1
+    participant_id:
+      type: string
+      format: uuid
+    interval_id:
+      type: string
+      format: uuid
+    recorded_at:
+      type: string
+      format: date-time
+      readOnly: true
+    terminal_reason:
+      type: string
+      nullable: true
+      allOf:
+        - $ref: '#/GameResultReason'
+    result_revision_id:
+      type: string
+      format: uuid
+      nullable: true
+      readOnly: true
+    conflict:
+      type: object
+      nullable: true
+      allOf:
+        - $ref: '#/AuthorityRevisionProblem'
+
+DraftRecoveryEvidence:
+  type: object
+  description: Persisted recovery evidence derived from server time and durable execution epochs.
+  required: [policy, reason, previous_state, previous_service_epoch, current_service_epoch, previous_deadline, recorded_at, actor_id, note]
+  properties:
+    policy:
+      $ref: '#/DraftRecoveryPolicy'
+    reason:
+      $ref: '#/DraftRecoveryReason'
+    previous_state:
+      $ref: '#/DraftState'
+    previous_service_epoch:
+      type: string
+      format: uuid
+    current_service_epoch:
+      type: string
+      format: uuid
+    previous_deadline:
+      type: string
+      format: date-time
+      nullable: true
+      readOnly: true
+    recorded_at:
+      type: string
+      format: date-time
+      readOnly: true
+    actor_id:
+      type: string
+      format: uuid
+    note:
+      type: string
+      maxLength: 500
+
+PublicRecoveryCursor:
+  type: object
+  additionalProperties: false
+  required: [projection_revision, event_sequence]
+  properties:
+    projection_revision:
+      type: integer
+      format: int64
+      minimum: 1
+    event_sequence:
+      type: integer
+      format: int64
+      minimum: 0
+
+ParticipantRecoveryCursor:
+  type: object
+  additionalProperties: false
+  required: [projection_revision, participant_view_revision, event_sequence]
+  properties:
+    projection_revision:
+      type: integer
+      format: int64
+      minimum: 1
+    participant_view_revision:
+      type: integer
+      format: int64
+      minimum: 1
+    event_sequence:
+      type: integer
+      format: int64
+      minimum: 0
+
+OperatorRecoveryCursor:
+  type: object
+  description: Watermark captured from one authoritative operator recovery snapshot.
+  additionalProperties: false
+  required: [projection_revision, authority_revision, audit_sequence]
+  properties:
+    projection_revision:
+      type: integer
+      format: int64
+      minimum: 1
+      description: Current durable tournament projection revision.
+    authority_revision:
+      type: integer
+      format: int64
+      minimum: 1
+      description: >-
+        Latest execution authority lease revision, or the tournament revision
+        before the first authority lease exists.
+    audit_sequence:
+      type: integer
+      format: int64
+      minimum: 0
+      description: Number of append-only tournament audit events visible in the snapshot.
+
+PublicRecoverySnapshot:
+  type: object
+  additionalProperties: false
+  required: [tournament, scoreboard, bracket, live_draft, next_cursor]
+  properties:
+    tournament:
+      $ref: '#/PublicTournamentResponse'
+    scoreboard:
+      $ref: '#/PublicScoreboardResponse'
+    bracket:
+      $ref: '#/PublicBracketResponse'
+    live_draft:
+      type: object
+      nullable: true
+      allOf:
+        - $ref: '#/PublicLiveDraftResponse'
+    next_cursor:
+      $ref: '#/PublicRecoveryCursor'
+
+ParticipantRecoverySnapshot:
+  type: object
+  additionalProperties: false
+  required: [tournament_id, projection_revision, lobby, series, wave, draft, assignment, next_cursor]
+  properties:
+    tournament_id:
+      type: string
+      format: uuid
+    projection_revision:
+      type: integer
+      format: int64
+      minimum: 1
+    lobby:
+      $ref: '#/ParticipantLobbyResponse'
+    series:
+      type: object
+      nullable: true
+      allOf:
+        - $ref: '#/Series'
+    wave:
+      type: object
+      nullable: true
+      allOf:
+        - $ref: '#/Wave'
+    draft:
+      type: object
+      nullable: true
+      allOf:
+        - $ref: '#/Draft'
+    assignment:
+      type: object
+      nullable: true
+      allOf:
+        - $ref: '#/ParticipantAssignment'
+    next_cursor:
+      $ref: '#/ParticipantRecoveryCursor'
+
+OperatorRecoverySnapshot:
+  type: object
+  additionalProperties: false
+  required: [tournament, roster, waves, series, pause_graph, next_cursor]
+  properties:
+    tournament:
+      $ref: '#/Tournament'
+    roster:
+      $ref: '#/Roster'
+    waves:
+      type: array
+      items:
+        $ref: '#/Wave'
+    series:
+      type: array
+      items:
+        $ref: '#/Series'
+    pause_graph:
+      type: object
+      nullable: true
+      allOf:
+        - $ref: '#/PauseGraph'
+    next_cursor:
+      $ref: '#/OperatorRecoveryCursor'

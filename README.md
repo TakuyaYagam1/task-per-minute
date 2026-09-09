@@ -2,9 +2,9 @@
 
 [English](README.en.md)
 
-Task Per Minute - соревновательная CTF-платформа для коротких дуэлей один на
-один. Игроки подключаются, получают web-задание, решают его на скорость и
-побеждают, если первыми отправляют правильный флаг.
+Task Per Minute - соревновательная CTF-платформа для турниров. Участники
+проходят Swiss-раунды, Golden-этап и playoffs, а backend остается источником
+истины для roster, заданий, результатов, recovery evidence и проекций.
 
 Проект создан для **RedShift**.
 
@@ -78,6 +78,10 @@ go test ./...
 go run ./cmd/app
 ```
 
+Join создает новую player session или переиспользует username только после
+истечения предыдущей session. Пока она активна, `POST /api/v1/players/join`
+возвращает `409`; знание публичного username не дает права заменить session.
+
 ## Сервер
 
 [scripts/server-bootstrap.sh](scripts/server-bootstrap.sh) - это скрипт
@@ -112,10 +116,7 @@ CI/CD deploy использует тот же стек с override-файлом
 - [Развертывание](docs/ru/deploy.md) - production-конфигурация, cookie-auth,
   CSRF и WebSocket origin policy.
 - [Runbook](docs/ru/runbook.md) - операционные проверки, rollback и runtime
-  механики дуэлей.
-
-Старый PRD удалён как устаревший: он больше не является источником истины для
-auth, WebSocket или reconnect-поведения.
+  механики турнира.
 
 ## Команда разработки
 

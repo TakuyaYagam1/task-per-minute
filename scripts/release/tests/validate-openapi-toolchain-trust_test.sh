@@ -76,7 +76,7 @@ sed -i 's/^redocly.scorecard_justification=.*/redocly.scorecard_justification=/'
 expect_reject missing-scorecard "$fixture"
 
 fixture="$(make_fixture wrong-lock-identity)"
-sed -i '0,/"@redocly\/cli": "1.34.0"/s//"@redocly\/cli": "1.34.1"/' "$fixture/package-lock.json"
+sed -i '0,/"@redocly\/cli": "2.51.2"/s//"@redocly\/cli": "2.51.3"/' "$fixture/package-lock.json"
 expect_reject wrong-lock-identity "$fixture"
 
 fixture="$(make_fixture checksum-mismatch)"
@@ -86,6 +86,10 @@ expect_reject checksum-mismatch "$fixture"
 fixture="$(make_fixture missing-yaml-compatibility)"
 sed -i 's/"yaml": "2.9.0"/"yaml": "2.8.4"/' "$fixture/package.json"
 expect_reject missing-yaml-compatibility "$fixture"
+
+fixture="$(make_fixture wrong-openapi-typescript-tarball)"
+sed -i 's#openapi-typescript/-/openapi-typescript-7.13.0.tgz#openapi-typescript/-/openapi-typescript-7.12.0.tgz#' "$fixture/package-lock.json"
+expect_reject wrong-openapi-typescript-tarball "$fixture"
 
 fixture="$(make_fixture unnamed-trust-decision)"
 sed -i 's/^oapi.trust_decision=.*/oapi.trust_decision=/' "$fixture/policy.md"

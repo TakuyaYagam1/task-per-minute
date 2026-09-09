@@ -14,8 +14,7 @@ import (
 )
 
 const (
-	defaultShutdownTimeout    = 30 * time.Second
-	revocationJanitorInterval = 5 * time.Minute
+	defaultShutdownTimeout = 30 * time.Second
 )
 
 type RuntimeContext struct {
@@ -53,13 +52,6 @@ type WebSocketShutdowner interface {
 	Shutdown(ctx context.Context)
 }
 
-// RevocationJanitor is implemented by stores that need periodic eviction of
-// expired entries (in-memory) and is a no-op for stores with native TTL
-// (Redis). The App runs Cleanup on a ticker bound to the runtime context.
-type RevocationJanitor interface {
-	Cleanup()
-}
-
 func (a *App) Run(ctx context.Context) error {
 	if ctx == nil {
 		return errors.New("app: nil context")
@@ -71,8 +63,14 @@ func (a *App) Run(ctx context.Context) error {
 	if err := a.bootstrap(ctx); err != nil {
 		return err
 	}
-
-	a.startRevocationJanitor(a.runtime.Context()) //nolint:contextcheck // The janitor must stop on runtime cancellation during shutdown.
+	workerErrors, err := a.workers.Start(a.runtime.Context())
+	if err != nil {
+		shutdownErr := a.Shutdown(context.WithoutCancel(ctx))
+		return errors.Join(
+			fmt.Errorf("App - Run - start runtime workers: %w", err),
+			wrapLifecycleError("App - Run - shutdown after runtime worker startup", shutdownErr),
+		)
+	}
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -90,9 +88,19 @@ func (a *App) Run(ctx context.Context) error {
 	defer stop()
 
 	select {
+	case err := <-workerErrors:
+		shutdownErr := a.Shutdown(context.WithoutCancel(ctx))
+		return errors.Join(
+			wrapLifecycleError("App - Run - runtime worker", err),
+			wrapLifecycleError("App - Run - shutdown after runtime worker exit", shutdownErr),
+		)
 	case err := <-errCh:
-		if err != nil {
-			return fmt.Errorf("App - Run - http server: %w", err)
+		shutdownErr := a.Shutdown(context.WithoutCancel(ctx))
+		if err != nil || shutdownErr != nil {
+			return errors.Join(
+				wrapLifecycleError("App - Run - http server", err),
+				wrapLifecycleError("App - Run - shutdown after http server exit", shutdownErr),
+			)
 		}
 		return nil
 	case <-signalCtx.Done():
@@ -110,6 +118,13 @@ func (a *App) Run(ctx context.Context) error {
 	}
 }
 
+func wrapLifecycleError(operation string, err error) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("%s: %w", operation, err)
+}
+
 func (a *App) Shutdown(ctx context.Context) error {
 	if ctx == nil {
 		return errors.New("app: nil context")
@@ -122,48 +137,25 @@ func (a *App) Shutdown(ctx context.Context) error {
 	shutdownCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
+	var shutdownErrors []error
+	if a.server != nil {
+		if err := a.server.Shutdown(shutdownCtx); err != nil {
+			shutdownErrors = append(shutdownErrors, fmt.Errorf("App - Shutdown - HTTPServer.Shutdown: %w", err))
+		}
+	}
 	if a.websocket != nil {
 		a.websocket.Shutdown(shutdownCtx)
 	}
 	if a.runtime != nil {
 		a.runtime.Cancel()
 	}
-	if a.server == nil {
-		return nil
-	}
-	if err := a.server.Shutdown(shutdownCtx); err != nil {
-		return fmt.Errorf("App - Shutdown - HTTPServer.Shutdown: %w", err)
+	if err := a.workers.Wait(shutdownCtx); err != nil {
+		shutdownErrors = append(shutdownErrors, fmt.Errorf("App - Shutdown - runtime workers: %w", err))
 	}
 	if a.log != nil {
 		a.log.Info("http server stopped")
 	}
-	return nil
-}
-
-// startRevocationJanitor launches a background goroutine that evicts
-// expired entries from the JWT revocation store on a fixed interval. The
-// goroutine exits cleanly when the supplied context is cancelled (the
-// caller passes the runtime context so Shutdown stops it). Without this,
-// an in-memory revocation store grows unbounded over time.
-func (a *App) startRevocationJanitor(ctx context.Context) {
-	if a == nil || a.revocation == nil || ctx == nil {
-		return
-	}
-	go func(cleaner RevocationJanitor, log logkit.Logger) {
-		ticker := time.NewTicker(revocationJanitorInterval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				if log != nil {
-					log.Info("revocation janitor stopped")
-				}
-				return
-			case <-ticker.C:
-				cleaner.Cleanup()
-			}
-		}
-	}(a.revocation, a.log)
+	return errors.Join(shutdownErrors...)
 }
 
 func (a *App) bootstrap(ctx context.Context) error {
@@ -175,11 +167,6 @@ func (a *App) bootstrap(ctx context.Context) error {
 	if a.migrator != nil {
 		if err := a.migrator.Up(ctx); err != nil {
 			return fmt.Errorf("App - bootstrap - Migrator.Up: %w", err)
-		}
-	}
-	if a.recovery != nil {
-		if err := a.recovery.Recover(ctx); err != nil {
-			return fmt.Errorf("App - bootstrap - StartupRecoverer.Recover: %w", err)
 		}
 	}
 	return nil

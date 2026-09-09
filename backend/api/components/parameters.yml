@@ -1,0 +1,224 @@
+AdminCSRFToken:
+  in: header
+  name: X-CSRF-Token
+  required: true
+  description: Cookie-bound CSRF token required for this admin mutation.
+  schema:
+    type: string
+    minLength: 1
+    maxLength: 512
+
+PlayerCSRFToken:
+  in: header
+  name: X-CSRF-Token
+  required: false
+  description: Required when the request carries an existing player session cookie.
+  schema:
+    type: string
+
+RequiredPlayerCSRFToken:
+  in: header
+  name: X-CSRF-Token
+  required: true
+  description: Session-bound CSRF token required for this player mutation.
+  schema:
+    type: string
+    minLength: 1
+    maxLength: 512
+
+IdempotencyKey:
+  in: header
+  name: Idempotency-Key
+  required: true
+  schema:
+    type: string
+    format: uuid
+
+TournamentStateFilter:
+  in: query
+  name: state
+  required: false
+  schema:
+    $ref: './schemas.yml#/TournamentState'
+
+TournamentListCursor:
+  in: query
+  name: cursor
+  required: false
+  schema:
+    type: string
+    minLength: 1
+    maxLength: 1024
+    pattern: '^[A-Za-z0-9_-]+$'
+
+TournamentPageSize:
+  in: query
+  name: page_size
+  required: false
+  schema:
+    type: integer
+    format: int32
+    minimum: 1
+    maximum: 200
+    default: 50
+
+TournamentId:
+  in: path
+  name: tournament_id
+  required: true
+  schema:
+    type: string
+    format: uuid
+
+WaveId:
+  in: path
+  name: wave_id
+  required: true
+  schema:
+    type: string
+    format: uuid
+
+SeriesId:
+  in: path
+  name: series_id
+  required: true
+  schema:
+    type: string
+    format: uuid
+
+GameId:
+  in: path
+  name: game_id
+  required: true
+  schema:
+    type: string
+    format: uuid
+
+AssignmentId:
+  in: path
+  name: assignment_id
+  required: true
+  schema:
+    type: string
+    format: uuid
+
+PublicRecoveryCursor:
+  in: query
+  name: cursor
+  required: false
+  style: deepObject
+  explode: true
+  schema:
+    $ref: './schemas.yml#/PublicRecoveryCursor'
+
+ParticipantRecoveryCursor:
+  in: query
+  name: cursor
+  required: false
+  style: deepObject
+  explode: true
+  schema:
+    $ref: './schemas.yml#/ParticipantRecoveryCursor'
+
+OperatorRecoveryCursor:
+  in: query
+  name: cursor
+  description: >-
+    Last operator recovery watermark held by the client. Older or equal values
+    return a fresh full snapshot; a value ahead of the authoritative snapshot
+    is rejected as a revision conflict.
+  required: false
+  style: deepObject
+  explode: true
+  schema:
+    $ref: './schemas.yml#/OperatorRecoveryCursor'
+
+AuditTournamentId:
+  in: query
+  name: tournament_id
+  required: true
+  schema:
+    type: string
+    format: uuid
+
+AuditEntityKind:
+  in: query
+  name: entity_kind
+  required: false
+  schema:
+    $ref: './schemas.yml#/AuditEntityKind'
+
+AuditEntityId:
+  in: query
+  name: entity_id
+  required: false
+  schema:
+    type: string
+    format: uuid
+
+AuditEventType:
+  in: query
+  name: event_type
+  required: false
+  schema:
+    type: string
+    maxLength: 64
+
+AuditActorKind:
+  in: query
+  name: actor_kind
+  required: false
+  schema:
+    $ref: './schemas.yml#/ResultActorKind'
+
+AuditActorId:
+  in: query
+  name: actor_id
+  required: false
+  schema:
+    type: string
+    format: uuid
+
+AuditResultReason:
+  in: query
+  name: result_reason
+  required: false
+  schema:
+    type: string
+    maxLength: 40
+
+AuditOccurredFrom:
+  in: query
+  name: occurred_from
+  required: false
+  schema:
+    type: string
+    format: date-time
+
+AuditOccurredTo:
+  in: query
+  name: occurred_to
+  required: false
+  schema:
+    type: string
+    format: date-time
+
+AuditCursor:
+  in: query
+  name: cursor
+  required: false
+  style: deepObject
+  explode: true
+  schema:
+    $ref: './schemas.yml#/AuditCursor'
+
+AuditPageSize:
+  in: query
+  name: page_size
+  required: false
+  schema:
+    type: integer
+    format: int32
+    minimum: 1
+    maximum: 200
+    default: 50

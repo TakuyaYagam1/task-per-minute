@@ -8,15 +8,17 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	logkit "github.com/wahrwelt-kit/go-logkit"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/middleware"
+	middlewaremocks "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/middleware/mocks"
+	inboundwebsocket "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	adminusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/admin"
+	authusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/auth"
 )
 
 func TestNewHandler_AuthenticatesBeforeOpenAPIBodyValidation(t *testing.T) {
@@ -26,7 +28,7 @@ func TestNewHandler_AuthenticatesBeforeOpenAPIBodyValidation(t *testing.T) {
 	require.NoError(t, err)
 
 	handler := NewHandler(New(Dependencies{}), HandlerOptions{
-		AdminAuth:        unusedAdminAccessVerifier{},
+		AdminAuth:        middlewaremocks.NewMockAdminAccessVerifier(t),
 		RequestValidator: validator,
 	})
 	req := httptest.NewRequest(
@@ -35,6 +37,7 @@ func TestNewHandler_AuthenticatesBeforeOpenAPIBodyValidation(t *testing.T) {
 		strings.NewReader(`{}`),
 	)
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(middleware.CSRFHeaderName, "contract-presence")
 	rr := httptest.NewRecorder()
 
 	handler.ServeHTTP(rr, req)
@@ -49,14 +52,14 @@ func TestNewHandler_LeavesManualRoutesOutsideOpenAPIValidation(t *testing.T) {
 	require.NoError(t, err)
 
 	router := chi.NewRouter()
-	router.Get("/ws", func(w http.ResponseWriter, _ *http.Request) {
+	router.Get(inboundwebsocket.TournamentPublicWebSocketPath, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusSwitchingProtocols)
 	})
 	handler := NewHandler(New(Dependencies{}), HandlerOptions{
 		Router:           router,
 		RequestValidator: validator,
 	})
-	req := httptest.NewRequest(http.MethodGet, "/ws", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tournaments/99fdf1b2-2397-485e-8b84-04f950cebe71/realtime", nil)
 	rr := httptest.NewRecorder()
 
 	handler.ServeHTTP(rr, req)
@@ -84,20 +87,8 @@ func TestNewHandler_RateLimitsInvalidPublicBodiesBeforeOpenAPIValidation(t *test
 			event: "admin.login",
 			deps: func(t *testing.T, log logkit.Logger) Dependencies {
 				return Dependencies{
-					LoginLimiter: middleware.NewLoginRateLimiter(t.Context(), 1, time.Hour, time.Hour),
+					LoginLimiter: newOneRequestRateLimiter(t, "3600"),
 					Log:          log,
-				}
-			},
-		},
-		{
-			name:  "admin refresh",
-			path:  "/api/v1/admin/refresh",
-			body:  `{}`,
-			event: "admin.refresh",
-			deps: func(t *testing.T, log logkit.Logger) Dependencies {
-				return Dependencies{
-					RefreshLimiter: middleware.NewLoginRateLimiter(t.Context(), 1, time.Hour, time.Hour),
-					Log:            log,
 				}
 			},
 		},
@@ -108,7 +99,7 @@ func TestNewHandler_RateLimitsInvalidPublicBodiesBeforeOpenAPIValidation(t *test
 			event: "player.join",
 			deps: func(t *testing.T, log logkit.Logger) Dependencies {
 				return Dependencies{
-					JoinLimiter: middleware.NewJoinRateLimiter(t.Context(), 1, time.Hour, time.Hour),
+					JoinLimiter: newOneRequestRateLimiter(t, "3600"),
 					Log:         log,
 				}
 			},
@@ -148,9 +139,11 @@ func TestNewHandler_DoesNotDoubleCountValidPublicRequest(t *testing.T) {
 	validator, err := middleware.OpenAPIRequestValidator(context.Background(), logkit.Noop())
 	require.NoError(t, err)
 
-	limiter := middleware.NewLoginRateLimiter(t.Context(), 1, time.Hour, time.Hour)
+	limiter := newOneRequestRateLimiter(t, "3600")
+	auth := NewMockAdminAuthService(t)
+	auth.EXPECT().Login(mock.Anything, "valid-password").Return(nil, domain.ErrInvalidCredentials).Once()
 	handler := NewHandler(New(Dependencies{
-		AdminAuth:    adminLoginLogStub{err: domain.ErrInvalidCredentials},
+		AdminAuth:    auth,
 		LoginLimiter: limiter,
 	}), HandlerOptions{RequestValidator: validator})
 	request := func() *httptest.ResponseRecorder {
@@ -168,6 +161,42 @@ func TestNewHandler_DoesNotDoubleCountValidPublicRequest(t *testing.T) {
 
 	require.Equal(t, http.StatusUnauthorized, request().Code)
 	require.Equal(t, http.StatusTooManyRequests, request().Code)
+}
+
+func TestNewHandlerRunsTournamentRateGuardAfterAuthentication(t *testing.T) {
+	t.Parallel()
+
+	validator, err := middleware.OpenAPIRequestValidator(context.Background(), logkit.Noop())
+	require.NoError(t, err)
+	limiter := middlewaremocks.NewMockRateLimiter(t)
+	limiter.EXPECT().Allow("operator:operator-42").Return(false).Once()
+	limiter.EXPECT().RetryAfter().Return("60").Once()
+	verifier := middlewaremocks.NewMockAdminAccessVerifier(t)
+	verifier.EXPECT().VerifyAccess(mock.Anything, "admin-token").Return(&authusecase.Claims{
+		Subject: "operator-42", JTI: "session-42", Kind: authusecase.TokenKindAccess,
+	}, nil).Once()
+	handler := NewHandler(New(Dependencies{
+		OperatorTournamentMutationLimiter: limiter,
+	}), HandlerOptions{
+		AdminAuth:        verifier,
+		RequestValidator: validator,
+	})
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/admin/tournaments/10000000-0000-0000-0000-000000000001/actions",
+		strings.NewReader(`{}`),
+	)
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set(middleware.CSRFHeaderName, "contract-presence")
+	request.Header.Set("Idempotency-Key", "20000000-0000-0000-0000-000000000002")
+	request.RemoteAddr = "198.51.100.42:1234"
+	request.AddCookie(&http.Cookie{Name: middleware.AdminAccessCookieName, Value: "admin-token"})
+	recorder := httptest.NewRecorder()
+
+	handler.ServeHTTP(recorder, request)
+
+	require.Equal(t, http.StatusTooManyRequests, recorder.Code)
+	require.Equal(t, "60", recorder.Header().Get("Retry-After"))
 }
 
 func decodeJSONLines(t *testing.T, raw string) []map[string]any {
@@ -190,10 +219,4 @@ func hasSecurityOutcome(entries []map[string]any, event, outcome string) bool {
 		}
 	}
 	return false
-}
-
-type unusedAdminAccessVerifier struct{}
-
-func (unusedAdminAccessVerifier) VerifyAccess(context.Context, string) (*adminusecase.Claims, error) {
-	panic("must not verify a missing token")
 }

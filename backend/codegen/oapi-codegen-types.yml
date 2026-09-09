@@ -2,5 +2,8 @@ package: api
 output: internal/adapter/inbound/http/api/types.gen.go
 generate:
   models: true
+compatibility:
+  disable-required-readonly-as-pointer: true
+  enable-auth-scopes-on-context: true
 output-options:
   skip-prune: false

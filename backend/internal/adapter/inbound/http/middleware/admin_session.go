@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	adminusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/admin"
+	authusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/auth"
 )
 
 const (
@@ -14,23 +14,34 @@ const (
 )
 
 func AdminAccessTokenFromRequest(r *http.Request) (string, bool) {
-	if r == nil {
-		return "", false
-	}
-	if token, ok := tokenCookieValue(r, AdminAccessCookieName); ok {
-		return token, true
-	}
-	if IsBrowserSourcedRequest(r) {
-		return "", false
-	}
-	return bearerToken(r.Header.Get("Authorization"))
+	return tokenCookieValue(r, AdminAccessCookieName)
 }
 
 func AdminRefreshTokenFromRequest(r *http.Request) (string, bool) {
 	return tokenCookieValue(r, AdminRefreshCookieName)
 }
 
-func SetAdminSessionCookies(w http.ResponseWriter, r *http.Request, pair *adminusecase.TokenPair) error {
+func AdminSession(auth AdminAccessVerifier) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			token, ok := AdminAccessTokenFromRequest(r)
+			if !ok {
+				writeUnauthorized(w, r, "missing admin session")
+				return
+			}
+
+			claims, err := auth.VerifyAccess(r.Context(), token)
+			if err != nil {
+				writeUnauthorized(w, r, "invalid admin session")
+				return
+			}
+
+			next.ServeHTTP(w, r.WithContext(withAdminClaims(r.Context(), claims)))
+		})
+	}
+}
+
+func SetAdminSessionCookies(w http.ResponseWriter, r *http.Request, pair *authusecase.TokenPair) error {
 	if pair == nil {
 		return nil
 	}
@@ -71,24 +82,6 @@ func tokenCookieValue(r *http.Request, name string) (string, bool) {
 		return "", false
 	}
 	return value, true
-}
-
-func IsBrowserSourcedRequest(r *http.Request) bool {
-	if r == nil {
-		return false
-	}
-	return strings.TrimSpace(r.Header.Get("Origin")) != "" ||
-		strings.TrimSpace(r.Header.Get("Referer")) != "" ||
-		hasFetchMetadata(r)
-}
-
-func hasFetchMetadata(r *http.Request) bool {
-	for _, name := range []string{"Sec-Fetch-Site", "Sec-Fetch-Mode", "Sec-Fetch-Dest", "Sec-Fetch-User"} {
-		if strings.TrimSpace(r.Header.Get(name)) != "" {
-			return true
-		}
-	}
-	return false
 }
 
 func adminSessionCookie(r *http.Request, name, value string, expires time.Time) *http.Cookie {

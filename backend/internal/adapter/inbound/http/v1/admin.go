@@ -3,7 +3,6 @@ package v1
 import (
 	"errors"
 	"net/http"
-	"time"
 
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
@@ -11,15 +10,12 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/errmap"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/middleware"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/v1/response"
-	"github.com/TakuyaYagam1/task-per-minute/internal/ctxutil"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	adminusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/admin"
+	playerusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/player"
 )
 
-const sourceFileDeleteCleanupTimeout = 10 * time.Second
-
 // (POST /api/v1/admin/login).
-func (s *Server) AdminLogin(w http.ResponseWriter, r *http.Request) {
+func (s *Server) LoginAdmin(w http.ResponseWriter, r *http.Request) {
 	if s.adminAuth == nil {
 		errmap.HandleError(w, r, domain.ErrInternal)
 		return
@@ -34,13 +30,13 @@ func (s *Server) AdminLogin(w http.ResponseWriter, r *http.Request) {
 		s.logSecurityEvent(r, "admin.login", securityOutcomeFailure, logkitFields("error_code", domain.ErrorCodeInvalidCredentials))
 		return
 	}
-	if body.Password == nil {
+	if body.Password == "" {
 		s.logSecurityEvent(r, "admin.login", securityOutcomeFailure, logkitFields("error_code", domain.ErrorCodeInvalidCredentials))
 		errmap.HandleError(w, r, domain.ErrInvalidCredentials)
 		return
 	}
 
-	pair, err := s.adminAuth.Login(r.Context(), *body.Password)
+	pair, err := s.adminAuth.Login(r.Context(), body.Password)
 	if err != nil {
 		s.logSecurityEvent(r, "admin.login", securityOutcomeFailure, logkitFields("error_code", securityErrorCode(err)))
 		errmap.HandleError(w, r, err)
@@ -52,29 +48,19 @@ func (s *Server) AdminLogin(w http.ResponseWriter, r *http.Request) {
 		errmap.HandleError(w, r, domain.ErrInternal)
 		return
 	}
-	response.WriteJSON(w, http.StatusOK, adminTokenResponse(r, pair, middleware.IsBrowserSourcedRequest(r), s.now()))
+	response.WriteJSON(w, http.StatusOK, response.AdminSession(pair, s.now()))
 }
 
 // (POST /api/v1/admin/logout).
-func (s *Server) AdminLogout(w http.ResponseWriter, r *http.Request) {
+func (s *Server) LogoutAdmin(w http.ResponseWriter, r *http.Request, _ api.LogoutAdminParams) {
 	actor, _ := adminActorFromRequest(r)
 	if s.adminAuth == nil {
 		errmap.HandleError(w, r, domain.ErrInternal)
 		return
 	}
 
-	var body api.AdminLogoutRequest
-	if !decodeJSONBody(w, r, &body, domain.ErrInvalidCredentials) {
-		s.logSecurityEvent(r, "admin.logout", securityOutcomeFailure, adminSecurityFields(actor, domain.ErrorCodeInvalidCredentials))
-		return
-	}
-	refreshToken := body.RefreshToken
-	if refreshToken == "" {
-		if cookieToken, ok := middleware.AdminRefreshTokenFromRequest(r); ok {
-			refreshToken = cookieToken
-		}
-	}
-	if refreshToken == "" {
+	refreshToken, ok := middleware.AdminRefreshTokenFromRequest(r)
+	if !ok {
 		s.logSecurityEvent(r, "admin.logout", securityOutcomeFailure, adminSecurityFields(actor, domain.ErrorCodeInvalidCredentials))
 		errmap.HandleError(w, r, domain.ErrInvalidCredentials)
 		return
@@ -96,7 +82,7 @@ func (s *Server) AdminLogout(w http.ResponseWriter, r *http.Request) {
 }
 
 // (POST /api/v1/admin/refresh).
-func (s *Server) AdminRefresh(w http.ResponseWriter, r *http.Request) {
+func (s *Server) RefreshAdminSession(w http.ResponseWriter, r *http.Request, _ api.RefreshAdminSessionParams) {
 	if s.adminAuth == nil {
 		errmap.HandleError(w, r, domain.ErrInternal)
 		return
@@ -106,20 +92,8 @@ func (s *Server) AdminRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var body api.AdminRefreshRequest
-	if !decodeJSONBody(w, r, &body, domain.ErrInvalidCredentials) {
-		s.logSecurityEvent(r, "admin.refresh", securityOutcomeFailure, logkitFields("error_code", domain.ErrorCodeInvalidCredentials))
-		return
-	}
-	refreshToken := body.RefreshToken
-	cookieRefresh := false
-	if refreshToken == "" {
-		if cookieToken, ok := middleware.AdminRefreshTokenFromRequest(r); ok {
-			refreshToken = cookieToken
-			cookieRefresh = true
-		}
-	}
-	if refreshToken == "" {
+	refreshToken, ok := middleware.AdminRefreshTokenFromRequest(r)
+	if !ok {
 		s.logSecurityEvent(r, "admin.refresh", securityOutcomeFailure, logkitFields("error_code", domain.ErrorCodeInvalidCredentials))
 		errmap.HandleError(w, r, domain.ErrInvalidCredentials)
 		return
@@ -137,18 +111,11 @@ func (s *Server) AdminRefresh(w http.ResponseWriter, r *http.Request) {
 		errmap.HandleError(w, r, domain.ErrInternal)
 		return
 	}
-	response.WriteJSON(w, http.StatusOK, adminTokenResponse(r, pair, cookieRefresh, s.now()))
-}
-
-func adminTokenResponse(r *http.Request, pair *adminusecase.TokenPair, cookieSession bool, now time.Time) api.AdminTokenResponse {
-	if cookieSession || middleware.IsBrowserSourcedRequest(r) {
-		return response.CookieSessionTokenPair(pair, now)
-	}
-	return response.TokenPair(pair, now)
+	response.WriteJSON(w, http.StatusOK, response.AdminSession(pair, s.now()))
 }
 
 // (GET /api/v1/admin/players).
-func (s *Server) ListAdminPlayers(w http.ResponseWriter, r *http.Request, params api.ListAdminPlayersParams) {
+func (s *Server) ListPlayers(w http.ResponseWriter, r *http.Request, params api.ListPlayersParams) {
 	if !requireAdmin(w, r) {
 		return
 	}
@@ -167,15 +134,15 @@ func (s *Server) ListAdminPlayers(w http.ResponseWriter, r *http.Request, params
 		return
 	}
 
-	response.WriteJSON(w, http.StatusOK, response.AdminPlayers(players))
+	response.WriteJSON(w, http.StatusOK, response.PlayerManagementList(players))
 }
 
 // (GET /api/v1/admin/players/{id}/audit).
-func (s *Server) ListAdminPlayerAudit(
+func (s *Server) ListPlayerAuditEvents(
 	w http.ResponseWriter,
 	r *http.Request,
 	id openapi_types.UUID,
-	params api.ListAdminPlayerAuditParams,
+	params api.ListPlayerAuditEventsParams,
 ) {
 	if !requireAdmin(w, r) {
 		return
@@ -202,11 +169,16 @@ func (s *Server) ListAdminPlayerAudit(
 		return
 	}
 
-	response.WriteJSON(w, http.StatusOK, response.AdminPlayerAuditEvents(events))
+	response.WriteJSON(w, http.StatusOK, response.PlayerAuditEvents(events))
 }
 
 // (PUT /api/v1/admin/players/{id}).
-func (s *Server) UpdateAdminPlayer(w http.ResponseWriter, r *http.Request, id openapi_types.UUID) {
+func (s *Server) UpdatePlayer(
+	w http.ResponseWriter,
+	r *http.Request,
+	id openapi_types.UUID,
+	_ api.UpdatePlayerParams,
+) {
 	if !requireAdmin(w, r) {
 		return
 	}
@@ -220,12 +192,12 @@ func (s *Server) UpdateAdminPlayer(w http.ResponseWriter, r *http.Request, id op
 		return
 	}
 
-	var body api.UpdateAdminPlayerRequest
+	var body api.UpdatePlayerRequest
 	if !decodeJSONBody(w, r, &body, domain.ErrValidation) {
 		return
 	}
 
-	player, err := s.adminPlayers.UpdatePlayer(r.Context(), id, adminusecase.PlayerInput{
+	player, err := s.adminPlayers.UpdatePlayer(r.Context(), id, playerusecase.PlayerInput{
 		Username:           body.Username,
 		Wins:               int(body.Wins),
 		AverageSolveTimeMs: body.AverageSolveTimeMs,
@@ -235,11 +207,16 @@ func (s *Server) UpdateAdminPlayer(w http.ResponseWriter, r *http.Request, id op
 		return
 	}
 
-	response.WriteJSON(w, http.StatusOK, response.AdminPlayer(*player))
+	response.WriteJSON(w, http.StatusOK, response.PlayerManagement(*player))
 }
 
 // (DELETE /api/v1/admin/players/{id}).
-func (s *Server) DeleteAdminPlayer(w http.ResponseWriter, r *http.Request, id openapi_types.UUID) {
+func (s *Server) DeletePlayer(
+	w http.ResponseWriter,
+	r *http.Request,
+	id openapi_types.UUID,
+	_ api.DeletePlayerParams,
+) {
 	if !requireAdmin(w, r) {
 		return
 	}
@@ -281,7 +258,7 @@ func (s *Server) ListTasks(w http.ResponseWriter, r *http.Request) {
 }
 
 // (POST /api/v1/admin/tasks).
-func (s *Server) CreateTask(w http.ResponseWriter, r *http.Request) {
+func (s *Server) CreateTask(w http.ResponseWriter, r *http.Request, _ api.CreateTaskParams) {
 	if !requireAdmin(w, r) {
 		return
 	}
@@ -324,7 +301,12 @@ func (s *Server) GetTask(w http.ResponseWriter, r *http.Request, id openapi_type
 }
 
 // (PUT /api/v1/admin/tasks/{id}).
-func (s *Server) UpdateTask(w http.ResponseWriter, r *http.Request, id openapi_types.UUID) {
+func (s *Server) UpdateTask(
+	w http.ResponseWriter,
+	r *http.Request,
+	id openapi_types.UUID,
+	_ api.UpdateTaskParams,
+) {
 	if !requireAdmin(w, r) {
 		return
 	}
@@ -343,14 +325,10 @@ func (s *Server) UpdateTask(w http.ResponseWriter, r *http.Request, id openapi_t
 	if !decodeJSONBody(w, r, &body, domain.ErrTaskValidation) {
 		return
 	}
-	if !isValidUpdateTaskRequest(body) {
-		errmap.HandleError(w, r, domain.ErrTaskValidation)
-		return
-	}
 
 	input := updateTaskInput(existing, body)
 	var updated *domain.Task
-	if body.SourceFileUrl.IsSet() {
+	if clearSourceFileRequested(body) {
 		if s.upload == nil {
 			errmap.HandleError(w, r, domain.ErrInternal)
 			return
@@ -368,7 +346,12 @@ func (s *Server) UpdateTask(w http.ResponseWriter, r *http.Request, id openapi_t
 }
 
 // (DELETE /api/v1/admin/tasks/{id}).
-func (s *Server) DeleteTask(w http.ResponseWriter, r *http.Request, id openapi_types.UUID) {
+func (s *Server) DeleteTask(
+	w http.ResponseWriter,
+	r *http.Request,
+	id openapi_types.UUID,
+	_ api.DeleteTaskParams,
+) {
 	if !requireAdmin(w, r) {
 		return
 	}
@@ -392,9 +375,7 @@ func (s *Server) DeleteTask(w http.ResponseWriter, r *http.Request, id openapi_t
 		return
 	}
 	if existing.SourceFileURL != nil {
-		cleanupCtx, cleanupCancel := ctxutil.DetachedWithTimeout(r.Context(), sourceFileDeleteCleanupTimeout)
-		defer cleanupCancel()
-		_ = s.upload.DeleteSourceFile(cleanupCtx, id, existing.SourceFileURL)
+		_ = s.upload.DeleteSourceFile(r.Context(), id, existing.SourceFileURL)
 	}
 
 	response.WriteJSON(w, http.StatusNoContent, nil)
@@ -420,7 +401,12 @@ func (s *Server) DownloadTaskSource(w http.ResponseWriter, r *http.Request, id o
 }
 
 // (POST /api/v1/admin/tasks/{id}/source).
-func (s *Server) UploadTaskSource(w http.ResponseWriter, r *http.Request, id openapi_types.UUID) {
+func (s *Server) UploadTaskSource(
+	w http.ResponseWriter,
+	r *http.Request,
+	id openapi_types.UUID,
+	_ api.UploadTaskSourceParams,
+) {
 	if !requireAdmin(w, r) {
 		return
 	}
@@ -459,7 +445,7 @@ func (s *Server) UploadTaskSource(w http.ResponseWriter, r *http.Request, id ope
 		return
 	}
 
-	response.WriteJSON(w, http.StatusOK, api.UploadSourceResponse{SourceFileUrl: sourceURL})
+	response.WriteJSON(w, http.StatusOK, api.TaskSourceUploadResponse{SourceFileUrl: sourceURL})
 }
 
 func requireAdmin(w http.ResponseWriter, r *http.Request) bool {
@@ -470,12 +456,12 @@ func requireAdmin(w http.ResponseWriter, r *http.Request) bool {
 	return false
 }
 
-func adminActorFromRequest(r *http.Request) (adminusecase.Actor, bool) {
+func adminActorFromRequest(r *http.Request) (playerusecase.Actor, bool) {
 	claims, ok := middleware.GetAdminClaimsFromCtx(r.Context())
 	if !ok || claims == nil || claims.Subject == "" || claims.JTI == "" {
-		return adminusecase.Actor{}, false
+		return playerusecase.Actor{}, false
 	}
-	return adminusecase.Actor{
+	return playerusecase.Actor{
 		Subject: claims.Subject,
 		JTI:     claims.JTI,
 	}, true

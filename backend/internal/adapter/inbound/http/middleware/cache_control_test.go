@@ -19,7 +19,7 @@ func TestNoStoreSensitiveResponses_AddsHeadersForSensitivePaths(t *testing.T) {
 	}{
 		{name: "admin", path: "/api/v1/admin/login"},
 		{name: "player", path: "/api/v1/players/me"},
-		{name: "duel", path: "/api/v1/duels/11111111-1111-1111-1111-111111111111"},
+		{name: "participant", path: "/api/v1/tournaments/11111111-1111-1111-1111-111111111111/participant/lobby"},
 	}
 
 	for _, tc := range tests {

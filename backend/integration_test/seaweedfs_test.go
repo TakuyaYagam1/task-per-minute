@@ -34,7 +34,9 @@ func newSeaweedStorage(t *testing.T) *objectstorage.SeaweedStorage {
 func httpGetWithTimeout(t *testing.T, url string) *http.Response {
 	t.Helper()
 	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Get(url) //nolint:noctx,bodyclose // caller closes body; timeout is on the client
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
+	require.NoError(t, err)
+	resp, err := client.Do(req)
 	require.NoError(t, err)
 	return resp
 }
@@ -94,7 +96,7 @@ func TestSeaweedStorage_Upload_LargerPayload(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	body, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
-	require.Equal(t, len(payload), len(body))
+	require.Len(t, body, len(payload))
 	require.Equal(t, payload, body)
 }
 

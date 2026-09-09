@@ -162,7 +162,7 @@ func hasUnsupportedOpenAPIMediaType(err error, r *http.Request) bool {
 }
 
 func shouldSkipOpenAPIValidation(r *http.Request) bool {
-	if r.URL.Path == "/ws" {
+	if isTournamentRealtimePath(r.URL.Path) {
 		return true
 	}
 	if r.Method != http.MethodPost {
@@ -180,4 +180,30 @@ func shouldSkipOpenAPIValidation(r *http.Request) bool {
 	}
 
 	return ok && endpoint == "source"
+}
+
+func isTournamentRealtimePath(requestPath string) bool {
+	prefixes := []string{
+		"/api/v1/tournaments/",
+		"/api/v1/admin/tournaments/",
+	}
+	for _, prefix := range prefixes {
+		tail, ok := strings.CutPrefix(requestPath, prefix)
+		if !ok {
+			continue
+		}
+		parts := strings.Split(strings.Trim(tail, "/"), "/")
+		if len(parts) < 2 {
+			return false
+		}
+		if _, err := uuid.Parse(parts[0]); err != nil {
+			return false
+		}
+		if len(parts) == 2 && parts[1] == "realtime" {
+			return true
+		}
+		return prefix == "/api/v1/tournaments/" && len(parts) == 3 &&
+			parts[1] == "participant" && parts[2] == "realtime"
+	}
+	return false
 }

@@ -41,7 +41,7 @@ docker compose --env-file ../../.env exec -T backend wget -qO- http://127.0.0.1:
   "db": "ok",
   "redis": "ok",
   "seaweedfs": "ok",
-  "schema_version": 2
+  "schema_version": 11
 }
 ```
 
@@ -61,28 +61,40 @@ docker compose --env-file ../../.env logs --tail=100 caddy
 
 Если WebSocket не подключается:
 
-- Проверьте browser DevTools: URL должен быть `/ws` или `wss://<api>/ws` без
-  `?token=...`.
+- Проверьте browser DevTools: URL должен быть одним из role-scoped tournament
+  endpoints и не должен содержать credentials в query string:
+  - public: `/api/v1/tournaments/{tournament_id}/realtime`;
+  - participant: `/api/v1/tournaments/{tournament_id}/participant/realtime`;
+  - operator: `/api/v1/admin/tournaments/{tournament_id}/realtime`.
 - Проверьте `WS_ALLOWED_ORIGINS`: origin player frontend должен совпадать
   точной строкой, включая punycode для IDN.
 - Если включен `WS_REQUIRE_ORIGIN=true`, убедитесь, что клиент действительно
   отправляет browser `Origin`; CLI/скриптовые клиенты без Origin будут получать
   `403`.
 - Проверьте, что player join/me выдают cookie `tpm_player_session`, а браузер
-  отправляет ее на `/ws`.
+  отправляет ее на participant endpoint. Operator endpoint требует cookie
+  `tpm_admin_access`. Public endpoint не требует аутентификации.
 - Backend должен вернуть `401/403/429` как `application/problem+json` до
   upgrade, если сессии нет, origin запрещен или handshake rate-limit исчерпан.
+- `503` до upgrade с detail `websocket capacity reached` означает, что общий
+  `WS_MAX_CONNECTIONS` исчерпан. `429` при валидной session также может
+  означать, что authenticated participant или operator достиг
+  `WS_MAX_CONNECTIONS_PER_PRINCIPAL`.
 
 Если unsafe REST запросы получают `403 csrf token invalid`:
 
 - Для player cookie-auth проверьте `tpm_player_csrf` и header `X-CSRF-Token`.
 - Для admin mutations проверьте access CSRF token в `X-CSRF-Token`.
 - Для admin refresh/logout проверьте refresh CSRF token из
-  `X-Admin-Refresh-CSRF-Token`; отправлять его можно в `X-CSRF-Token` или
-  `X-Admin-Refresh-CSRF-Token`. Access CSRF token для этих endpoints не
-  подходит.
-- После logout frontend должен очистить marker сессии и CSRF tokens; повторный
-  login должен получить новые CSRF headers.
+  response header `X-Admin-Refresh-CSRF-Token`, затем отправьте его значение в
+  `X-CSRF-Token`. `X-Admin-Refresh-CSRF-Token` не принимается как request
+  header. Access CSRF token для этих endpoints не подходит.
+- После logout frontend должен очистить CSRF tokens в памяти и сбросить
+  authenticated UI state; повторный login должен получить новые CSRF headers.
+
+Если player join возвращает `409`, username все еще связан с активной session.
+Используйте другой username или дождитесь истечения текущей session. Знания
+публичного username недостаточно для ее замены.
 
 Если все пользователи получают `429` за Caddy:
 
@@ -206,32 +218,15 @@ docker compose --env-file ../../.env -f docker-compose.yml -f docker-compose.ci.
 Повторяйте `/app/migrate down` только после отдельной проверки каждого шага. После
 отката схемы задеплойте совместимый backend image и проверьте `/health`.
 
-## Механика подсказок
+## Tournament realtime
 
-В каждой дуэли таск содержит ровно 3 подсказки. Бэкенд автоматически
-отправляет их обоим игрокам через WebSocket-событие `hint_unlocked` на
-25 %, 50 % и 75 % от `time_limit` таска (см. `domain.BuildHintSchedule`).
+Каждое подключение получает role-scoped snapshot, собранный из канонического
+состояния PostgreSQL. Public snapshot содержит только tournament, scoreboard,
+bracket, series, draft и official result projections. Participant snapshot
+добавляет только assignment, task и текущего opponent этого игрока. Operator
+snapshot содержит operational wave, readiness, presence, pause, replay и audit
+links.
 
-- Подсказки **не влияют на очки** и не «покупаются» вручную: разблокировка
-  происходит по таймеру, выровненному относительно `started_at`.
-- При паузе таймера (`opponent_disconnected`) расписание подсказок
-  замораживается вместе с дедлайном дуэли и продолжается после `duel_resume`.
-- При повторном подключении игрока бэкенд высылает уже разблокированные
-  подсказки в составе `duel_resume`, поэтому ни одна подсказка не теряется.
-- E2E покрытие: `TestE2EHintFlow_AutoUnlocksAt25_50_75` в
-  `backend/integration_test/e2e_test.go` поднимает реальный backend и
-  проверяет порядок и текст всех трёх событий.
-
-## Механика reconnect
-
-- Разрыв WebSocket во время активной дуэли переводит дуэль в reconnect-паузу:
-  дедлайн дуэли и расписание подсказок замораживаются, а соперник получает
-  `opponent_disconnected`.
-- Если игрок возвращается внутри reconnect-window, сервер отправляет ему
-  `duel_resume`, сопернику - `opponent_reconnected`, после чего дедлайн и
-  подсказки продолжаются с учётом времени паузы.
-- Если reconnect-window истёк, дуэль завершается ничьей. Превышение лимита
-  disconnect/reconnect для игрока тоже немедленно завершает дуэль ничьей.
-- Если оба участника отключились и оба reconnect-window истекли, результат
-  также остаётся ничьей.
-- При ничьей leaderboard не получает win; `winner_id` остаётся пустым.
+Текущий protocol основан на snapshot. При reconnect клиент снова открывает тот
+же role endpoint и получает свежий snapshot. Клиент не должен самостоятельно
+додумывать пропущенные events, identities, timers или results.

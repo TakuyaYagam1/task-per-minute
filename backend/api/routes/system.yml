@@ -1,0 +1,30 @@
+/health:
+  get:
+    operationId: healthCheck
+    tags: [system]
+    summary: Liveness + dependency readiness
+    security: []
+    responses:
+      '200':
+        description: All dependencies healthy.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/HealthResponse'
+      '400':
+        description: Request metadata is malformed.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '503':
+        description: One or more dependencies are unhealthy, or the request timed out.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/HealthResponse'
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'

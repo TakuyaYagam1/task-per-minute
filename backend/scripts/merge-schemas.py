@@ -3,7 +3,7 @@
 
 Inputs:  api/components/schemas/*.yml (any number of files,
          each providing a top-level mapping of schema names -> definitions).
-Output:  an explicit path, or api/components/schemas.yml for compatibility.
+Output:  the explicit path passed with --output.
 
 Duplicate schema names across files are a hard error: name collisions silently
 dropped by a "last writer wins" merge are exactly the bug class this script
@@ -24,14 +24,48 @@ except ImportError:
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-SRC_DIR = REPO_ROOT / "api" / "components" / "schemas"
-DEST_FILE = REPO_ROOT / "api" / "components" / "schemas.yml"
+
+
+class DuplicateKeyError(yaml.YAMLError):
+    """Raised when a YAML mapping repeats a key."""
+
+
+class UniqueKeyLoader(yaml.SafeLoader):
+    """Safe YAML loader that rejects ambiguous mappings."""
+
+
+def construct_unique_mapping(
+    loader: UniqueKeyLoader, node: yaml.nodes.MappingNode, deep: bool = False
+) -> dict[object, object]:
+    mapping: dict[object, object] = {}
+    for key_node, value_node in node.value:
+        key = loader.construct_object(key_node, deep=deep)
+        try:
+            duplicate = key in mapping
+        except TypeError as error:
+            raise yaml.constructor.ConstructorError(
+                "while constructing a mapping",
+                node.start_mark,
+                "found an unhashable key",
+                key_node.start_mark,
+            ) from error
+        if duplicate:
+            raise DuplicateKeyError(
+                f"duplicate key {key!r} at line {key_node.start_mark.line + 1}"
+            )
+        mapping[key] = loader.construct_object(value_node, deep=deep)
+    return mapping
+
+
+UniqueKeyLoader.add_constructor(
+    yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, construct_unique_mapping
+)
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--source-dir", type=Path, default=SRC_DIR)
-    parser.add_argument("--output", type=Path, default=DEST_FILE)
+    parser.add_argument("--source-dir", type=Path, required=True)
+    parser.add_argument("--output", type=Path, required=True)
     return parser.parse_args()
 
 
@@ -57,9 +91,16 @@ def main() -> int:
         return 1
 
     merged: dict[str, object] = {}
+    origins: dict[str, Path] = {}
     for path in sources:
-        with path.open("r", encoding="utf-8") as fh:
-            doc = yaml.safe_load(fh) or {}
+        try:
+            with path.open("r", encoding="utf-8") as fh:
+                doc = yaml.load(fh, Loader=UniqueKeyLoader) or {}
+        except yaml.YAMLError as error:
+            sys.stderr.write(
+                f"merge-schemas.py: invalid YAML in {display_path(path)}: {error}\n"
+            )
+            return 1
         if not isinstance(doc, dict):
             sys.stderr.write(
                 f"merge-schemas.py: {path} must be a mapping, got {type(doc).__name__}\n"
@@ -69,10 +110,11 @@ def main() -> int:
             if name in merged:
                 sys.stderr.write(
                     f"merge-schemas.py: duplicate schema '{name}' "
-                    f"(first in another file, also in {path.name})\n"
+                    f"(first in {origins[name].name}, also in {path.name})\n"
                 )
                 return 1
             merged[name] = schema
+            origins[name] = path
 
     destination.parent.mkdir(parents=True, exist_ok=True)
     with destination.open("w", encoding="utf-8") as fh:

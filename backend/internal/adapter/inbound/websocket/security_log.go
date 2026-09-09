@@ -16,8 +16,8 @@ const (
 	wsSecurityOutcomeRateLimited = "rate_limited"
 )
 
-func (s *Server) logRequestSecurityEvent(r *http.Request, event, outcome string, fields logkit.Fields) {
-	if s == nil || s.log == nil {
+func (server *Server) logRequestSecurityEvent(r *http.Request, event, outcome string, fields logkit.Fields) {
+	if server == nil || server.log == nil {
 		return
 	}
 
@@ -29,7 +29,7 @@ func (s *Server) logRequestSecurityEvent(r *http.Request, event, outcome string,
 		if requestID := requestmeta.RequestIDFromContext(r.Context()); requestID != "" {
 			merged["request_id"] = requestID
 		}
-		if clientIP := s.resolveClientIP(r); clientIP != "" {
+		if clientIP := server.resolveClientIP(r); clientIP != "" {
 			merged["client_ip"] = clientIP
 		}
 	}
@@ -41,40 +41,9 @@ func (s *Server) logRequestSecurityEvent(r *http.Request, event, outcome string,
 
 	switch outcome {
 	case wsSecurityOutcomeSuccess:
-		s.log.Info("security event", merged)
+		server.log.Info("security event", merged)
 	default:
-		s.log.Warn("security event", merged)
-	}
-}
-
-func (s *Server) logClientSecurityEvent(c *client, event, outcome string, fields logkit.Fields) {
-	if s == nil || s.log == nil {
-		return
-	}
-
-	merged := logkit.Fields{
-		"event":   event,
-		"outcome": outcome,
-	}
-	if c != nil {
-		if c.player != nil {
-			merged["player_id"] = c.player.ID.String()
-		}
-		if duelID, ok := c.currentDuel(); ok {
-			merged["duel_id"] = duelID.String()
-		}
-	}
-	for key, value := range fields {
-		if value != nil {
-			merged[key] = value
-		}
-	}
-
-	switch outcome {
-	case wsSecurityOutcomeSuccess:
-		s.log.Info("security event", merged)
-	default:
-		s.log.Warn("security event", merged)
+		server.log.Warn("security event", merged)
 	}
 }
 
@@ -95,7 +64,7 @@ func wsAuthFailureReason(r *http.Request) string {
 	if strings.TrimSpace(r.Header.Get("X-Session-Token")) != "" {
 		return "header_token_rejected"
 	}
-	if hasLegacyBearerSubprotocol(r.Header.Values("Sec-WebSocket-Protocol")) {
+	if hasBearerCredentialSubprotocol(r.Header.Values("Sec-WebSocket-Protocol")) {
 		return "subprotocol_token_rejected"
 	}
 	if _, err := r.Cookie(requestmeta.PlayerSessionCookieName); err == nil {
@@ -110,7 +79,7 @@ func hasUnsafeSessionTokenTransport(r *http.Request) bool {
 	}
 	return queryHasToken(r) ||
 		strings.TrimSpace(r.Header.Get("X-Session-Token")) != "" ||
-		hasLegacyBearerSubprotocol(r.Header.Values("Sec-WebSocket-Protocol"))
+		hasBearerCredentialSubprotocol(r.Header.Values("Sec-WebSocket-Protocol"))
 }
 
 func queryHasToken(r *http.Request) bool {
@@ -121,7 +90,7 @@ func queryHasToken(r *http.Request) bool {
 	return ok
 }
 
-func hasLegacyBearerSubprotocol(values []string) bool {
+func hasBearerCredentialSubprotocol(values []string) bool {
 	for _, value := range values {
 		for _, part := range strings.Split(value, ",") {
 			if strings.HasPrefix(strings.ToLower(strings.TrimSpace(part)), "tpm.bearer.") {

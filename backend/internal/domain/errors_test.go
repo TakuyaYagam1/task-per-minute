@@ -19,18 +19,12 @@ func TestApplicationErrorSentinels(t *testing.T) {
 		{"player_not_found", domain.ErrPlayerNotFound, domain.ErrorCodePlayerNotFound},
 		{"username_taken", domain.ErrUsernameTaken, domain.ErrorCodeUsernameTaken},
 		{"username_invalid", domain.ErrUsernameInvalid, domain.ErrorCodeUsernameInvalid},
-		{"player_in_duel", domain.ErrPlayerInDuel, domain.ErrorCodePlayerInDuel},
-		{"player_queued", domain.ErrPlayerQueued, domain.ErrorCodePlayerQueued},
-		{"player_reserved", domain.ErrPlayerReserved, domain.ErrorCodePlayerReserved},
 		{"invalid_session", domain.ErrInvalidSession, domain.ErrorCodeInvalidSession},
 		{"task_not_found", domain.ErrTaskNotFound, domain.ErrorCodeTaskNotFound},
 		{"task_in_use", domain.ErrTaskInUse, domain.ErrorCodeTaskInUse},
 		{"task_validation", domain.ErrTaskValidation, domain.ErrorCodeTaskValidation},
-		{"duel_not_found", domain.ErrDuelNotFound, domain.ErrorCodeDuelNotFound},
-		{"duel_finished", domain.ErrDuelFinished, domain.ErrorCodeDuelFinished},
-		{"duel_deadline_passed", domain.ErrDuelDeadlinePassed, domain.ErrorCodeDuelDeadlinePassed},
-		{"flag_incorrect", domain.ErrFlagIncorrect, domain.ErrorCodeFlagIncorrect},
-		{"not_duel_participant", domain.ErrNotDuelParticipant, domain.ErrorCodeNotDuelParticipant},
+		{"tournament_not_found", domain.ErrTournamentNotFound, domain.ErrorCodeTournamentNotFound},
+		{"tournament_projection_not_found", domain.ErrTournamentProjectionNotFound, domain.ErrorCodeTournamentProjectionNotFound},
 		{"invalid_credentials", domain.ErrInvalidCredentials, domain.ErrorCodeInvalidCredentials},
 		{"token_expired", domain.ErrTokenExpired, domain.ErrorCodeTokenExpired},
 		{"token_revoked", domain.ErrTokenRevoked, domain.ErrorCodeTokenRevoked},
@@ -78,14 +72,14 @@ func TestWrapErrorCanBeExtracted(t *testing.T) {
 	t.Parallel()
 
 	cause := errors.New("pgx: no rows")
-	wrapped := domain.WrapError(cause, domain.ErrDuelNotFound)
+	wrapped := domain.WrapError(cause, domain.ErrTaskNotFound)
 
 	var got *domain.Error
 	if !errors.As(wrapped, &got) {
 		t.Fatal("errors.As failed to extract *domain.Error")
 	}
-	if got.Code != domain.ErrorCodeDuelNotFound {
-		t.Errorf("got.Code = %q, want %q", got.Code, domain.ErrorCodeDuelNotFound)
+	if got.Code != domain.ErrorCodeTaskNotFound {
+		t.Errorf("got.Code = %q, want %q", got.Code, domain.ErrorCodeTaskNotFound)
 	}
 	if !errors.Is(got.Unwrap(), cause) {
 		t.Error("Unwrap did not return cause")
@@ -132,10 +126,10 @@ func TestApplicationErrorIdentitySurvivesWrapping(t *testing.T) {
 	t.Parallel()
 
 	cause := errors.New("low-level")
-	domainErr := domain.WrapError(cause, domain.ErrPlayerInDuel)
+	domainErr := domain.WrapError(cause, domain.ErrUsernameInvalid)
 	outer := fmt.Errorf("usecase failed: %w", domainErr)
 
-	if !errors.Is(outer, domain.ErrPlayerInDuel) {
+	if !errors.Is(outer, domain.ErrUsernameInvalid) {
 		t.Error("errors.Is through fmt.Errorf chain failed")
 	}
 	if !errors.Is(outer, cause) {

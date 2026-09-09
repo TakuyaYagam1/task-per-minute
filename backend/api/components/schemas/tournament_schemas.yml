@@ -1,0 +1,111 @@
+TournamentPreset:
+  type: string
+  enum: [tournament_v1]
+  x-enum-varnames: [TournamentPresetV1]
+
+TournamentState:
+  type: string
+  enum: [draft, registration, roster_locked, swiss, golden, playoffs, technical_pause, completed, cancelled]
+  x-enum-varnames:
+    - TournamentStateDraft
+    - TournamentStateRegistration
+    - TournamentStateRosterLocked
+    - TournamentStateSwiss
+    - TournamentStateGolden
+    - TournamentStatePlayoffs
+    - TournamentStateTechnicalPause
+    - TournamentStateCompleted
+    - TournamentStateCancelled
+
+Tournament:
+  type: object
+  required: [id, roster_id, preset, state, revision, roster_size, created_at, updated_at]
+  properties:
+    id:
+      type: string
+      format: uuid
+    roster_id:
+      type: string
+      format: uuid
+    preset:
+      $ref: '#/TournamentPreset'
+    state:
+      $ref: '#/TournamentState'
+    paused_from_state:
+      type: string
+      nullable: true
+      allOf:
+        - $ref: '#/TournamentState'
+    revision:
+      type: integer
+      format: int64
+      minimum: 1
+      readOnly: true
+    roster_size:
+      type: integer
+      format: int32
+      minimum: 0
+      maximum: 16
+    created_at:
+      type: string
+      format: date-time
+      readOnly: true
+    updated_at:
+      type: string
+      format: date-time
+      readOnly: true
+    started_at:
+      type: string
+      format: date-time
+      nullable: true
+      readOnly: true
+    finished_at:
+      type: string
+      format: date-time
+      nullable: true
+      readOnly: true
+
+CreateTournamentRequest:
+  type: object
+  additionalProperties: false
+  required: [expected_revision, preset]
+  properties:
+    expected_revision:
+      type: integer
+      format: int64
+      minimum: 0
+    preset:
+      $ref: '#/TournamentPreset'
+
+TournamentListResponse:
+  type: object
+  additionalProperties: false
+  required: [items, next_cursor]
+  properties:
+    items:
+      type: array
+      maxItems: 200
+      items:
+        $ref: '#/Tournament'
+    next_cursor:
+      type: string
+      maxLength: 1024
+      nullable: true
+
+TournamentRevisionProblem:
+  description: RFC 7807 optimistic-concurrency error with the current tournament revision.
+  allOf:
+    - $ref: './common_schemas.yml#/ProblemDetails'
+    - type: object
+      required: [expected_revision, current_revision]
+      properties:
+        expected_revision:
+          type: integer
+          format: int64
+          minimum: 0
+        current_revision:
+          type: integer
+          format: int64
+          minimum: 1
+        current_state:
+          $ref: '#/TournamentState'

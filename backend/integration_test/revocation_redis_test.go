@@ -37,7 +37,6 @@ func TestRevocationRedis_RevokePersistsAcrossRepositoryInstances(t *testing.T) {
 	revoked, err = store2.IsRevoked(ctx, jti)
 	require.NoError(t, err)
 	require.True(t, revoked)
-	store2.Cleanup()
 }
 
 func TestRevocationRedis_NilClient(t *testing.T) {

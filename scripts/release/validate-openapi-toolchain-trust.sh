@@ -83,7 +83,7 @@ require_policy_equal policy.format openapi-toolchain-trust-v1
 validate_fresh_date evidence.retrieved
 
 require_policy_equal redocly.package @redocly/cli
-require_policy_equal redocly.version 1.34.0
+require_policy_equal redocly.version 2.51.2
 require_policy_equal redocly.repository https://github.com/Redocly/redocly-cli
 require_policy_equal redocly.registry https://registry.npmjs.org/
 require_policy_equal redocly.license MIT
@@ -113,9 +113,21 @@ validate_fresh_date yaml.security_evidence_date
 require_policy_equal yaml.trust_decision accepted-compatibility
 require_policy_value yaml.residual_risk >/dev/null
 
+require_policy_equal openapi_typescript.package openapi-typescript
+require_policy_equal openapi_typescript.version 7.13.0
+require_policy_equal openapi_typescript.repository https://github.com/openapi-ts/openapi-typescript
+require_policy_equal openapi_typescript.registry https://registry.npmjs.org/
+require_policy_equal openapi_typescript.license MIT
+require_policy_value openapi_typescript.publisher >/dev/null
+OPENAPI_TYPESCRIPT_INTEGRITY="$(require_policy_value openapi_typescript.integrity)"
+require_policy_value openapi_typescript.tarball_sha1 >/dev/null
+validate_fresh_date openapi_typescript.security_evidence_date
+require_policy_equal openapi_typescript.trust_decision accepted-bounded
+require_policy_value openapi_typescript.residual_risk >/dev/null
+
 require_policy_equal oapi.module github.com/oapi-codegen/oapi-codegen/v2
 require_policy_equal oapi.command github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen
-require_policy_equal oapi.version v2.5.1
+require_policy_equal oapi.version v2.8.0
 require_policy_equal oapi.repository https://github.com/oapi-codegen/oapi-codegen
 require_policy_equal oapi.proxy https://proxy.golang.org
 require_policy_equal oapi.sumdb https://sum.golang.org
@@ -138,7 +150,7 @@ fi
 require_policy_equal oapi.trust_decision accepted-bounded
 require_policy_value oapi.residual_risk >/dev/null
 
-node - "$PACKAGE_JSON" "$PACKAGE_LOCK" "$REDOCLY_INTEGRITY" "$YAML_INTEGRITY" <<'NODE'
+node - "$PACKAGE_JSON" "$PACKAGE_LOCK" "$REDOCLY_INTEGRITY" "$YAML_INTEGRITY" "$OPENAPI_TYPESCRIPT_INTEGRITY" <<'NODE'
 const fs = require('node:fs');
 
 function fail(message) {
@@ -150,21 +162,22 @@ const packageJson = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 const packageLock = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'));
 const expectedIntegrity = process.argv[4];
 const expectedYamlIntegrity = process.argv[5];
+const expectedOpenapiTypescriptIntegrity = process.argv[6];
 const lifecycle = ['preinstall', 'install', 'postinstall', 'prepare'];
 
-if (packageJson.devDependencies?.['@redocly/cli'] !== '1.34.0') {
-  fail('package.json must pin @redocly/cli to 1.34.0');
+if (packageJson.devDependencies?.['@redocly/cli'] !== '2.51.2') {
+  fail('package.json must pin @redocly/cli to 2.51.2');
 }
 for (const name of lifecycle) {
   if (packageJson.scripts?.[name]) fail(`package.json lifecycle script is forbidden: ${name}`);
 }
 if (packageLock.lockfileVersion !== 3) fail('package-lock.json must use lockfileVersion 3');
-if (packageLock.packages?.['']?.devDependencies?.['@redocly/cli'] !== '1.34.0') {
+if (packageLock.packages?.['']?.devDependencies?.['@redocly/cli'] !== '2.51.2') {
   fail('package-lock root has the wrong @redocly/cli identity');
 }
 const cli = packageLock.packages?.['node_modules/@redocly/cli'];
-if (!cli || cli.version !== '1.34.0') fail('package-lock entry for @redocly/cli 1.34.0 is missing');
-if (cli.resolved !== 'https://registry.npmjs.org/@redocly/cli/-/cli-1.34.0.tgz') {
+if (!cli || cli.version !== '2.51.2') fail('package-lock entry for @redocly/cli 2.51.2 is missing');
+if (cli.resolved !== 'https://registry.npmjs.org/@redocly/cli/-/cli-2.51.2.tgz') {
   fail('package-lock has an unofficial @redocly/cli source');
 }
 if (cli.integrity !== expectedIntegrity) fail('package-lock @redocly/cli checksum does not match policy');
@@ -185,6 +198,28 @@ if (yaml.integrity !== expectedYamlIntegrity) fail('package-lock yaml checksum d
 if (yaml.license !== 'ISC') fail('package-lock yaml license is missing or wrong');
 if (yaml.hasInstallScript) fail('yaml must not declare a lifecycle install script');
 if (yaml.bin?.yaml !== 'bin.mjs') fail('yaml package binary identity is wrong');
+
+if (packageJson.devDependencies?.['openapi-typescript'] !== '7.13.0') {
+  fail('package.json must pin openapi-typescript to 7.13.0');
+}
+if (packageLock.packages?.['']?.devDependencies?.['openapi-typescript'] !== '7.13.0') {
+  fail('package-lock root has the wrong openapi-typescript identity');
+}
+const openapiTypescript = packageLock.packages?.['node_modules/openapi-typescript'];
+if (!openapiTypescript || openapiTypescript.version !== '7.13.0') {
+  fail('package-lock entry for openapi-typescript 7.13.0 is missing');
+}
+if (openapiTypescript.resolved !== 'https://registry.npmjs.org/openapi-typescript/-/openapi-typescript-7.13.0.tgz') {
+  fail('package-lock has an unofficial openapi-typescript source');
+}
+if (openapiTypescript.integrity !== expectedOpenapiTypescriptIntegrity) {
+  fail('package-lock openapi-typescript checksum does not match policy');
+}
+if (openapiTypescript.license !== 'MIT') fail('package-lock openapi-typescript license is missing or wrong');
+if (openapiTypescript.hasInstallScript) fail('openapi-typescript must not declare a lifecycle install script');
+if (openapiTypescript.bin?.['openapi-typescript'] !== 'bin/cli.js') {
+  fail('openapi-typescript binary identity is wrong');
+}
 
 for (const [name, entry] of Object.entries(packageLock.packages || {})) {
   if (!entry.resolved) continue;
@@ -209,14 +244,14 @@ for (const [name, entry] of Object.entries(packageLock.packages || {})) {
 NODE
 
 grep -Fxq 'module task-per-minute/tools/openapi' "$GO_MOD" || fail 'unexpected tools module identity'
-grep -Fxq 'go 1.22.5' "$GO_MOD" || fail 'unexpected tools module Go version'
-grep -Fxq 'require github.com/oapi-codegen/oapi-codegen/v2 v2.5.1' "$GO_MOD" || fail 'oapi-codegen requirement is missing or mutable'
+grep -Fxq 'go 1.25.0' "$GO_MOD" || fail 'unexpected tools module Go version'
+grep -Fxq 'require github.com/oapi-codegen/oapi-codegen/v2 v2.8.0' "$GO_MOD" || fail 'oapi-codegen requirement is missing or mutable'
 if grep -Eq '^(replace|exclude|retract|toolchain)[[:space:]]' "$GO_MOD"; then
   fail 'tools module contains a version or source override'
 fi
 
-grep -Fxq "github.com/oapi-codegen/oapi-codegen/v2 v2.5.1 $OAPI_MODULE_SUM" "$GO_SUM" || fail 'oapi-codegen module checksum mismatch'
-grep -Fxq "github.com/oapi-codegen/oapi-codegen/v2 v2.5.1/go.mod $OAPI_MOD_SUM" "$GO_SUM" || fail 'oapi-codegen go.mod checksum mismatch'
+grep -Fxq "github.com/oapi-codegen/oapi-codegen/v2 v2.8.0 $OAPI_MODULE_SUM" "$GO_SUM" || fail 'oapi-codegen module checksum mismatch'
+grep -Fxq "github.com/oapi-codegen/oapi-codegen/v2 v2.8.0/go.mod $OAPI_MOD_SUM" "$GO_SUM" || fail 'oapi-codegen go.mod checksum mismatch'
 
 while read -r module version; do
   [ -n "$module" ] || continue

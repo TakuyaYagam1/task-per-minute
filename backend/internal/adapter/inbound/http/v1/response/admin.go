@@ -5,21 +5,12 @@ import (
 	"time"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/api"
-	adminusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/admin"
+	authusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/auth"
+	playerusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/player"
 )
 
-const CookieAdminSessionToken = "__cookie_admin_session__"
-
-func TokenPair(pair *adminusecase.TokenPair, now time.Time) api.AdminTokenResponse {
-	return tokenPair(pair.AccessToken, pair.RefreshToken, pair.AccessExpiresAt, now)
-}
-
-func CookieSessionTokenPair(pair *adminusecase.TokenPair, now time.Time) api.AdminTokenResponse {
-	return tokenPair(CookieAdminSessionToken, CookieAdminSessionToken, pair.AccessExpiresAt, now)
-}
-
-func tokenPair(accessToken, refreshToken string, accessExpiresAt time.Time, now time.Time) api.AdminTokenResponse {
-	expiresIn := accessExpiresAt.Sub(now) / time.Second
+func AdminSession(pair *authusecase.TokenPair, now time.Time) api.AdminSessionResponse {
+	expiresIn := pair.AccessExpiresAt.Sub(now) / time.Second
 	if expiresIn < 0 {
 		expiresIn = 0
 	}
@@ -27,19 +18,15 @@ func tokenPair(accessToken, refreshToken string, accessExpiresAt time.Time, now 
 		expiresIn = math.MaxInt32
 	}
 
-	return api.AdminTokenResponse{
-		AccessToken:  accessToken,
-		RefreshToken: refreshToken,
-		TokenType:    api.Bearer,
-		ExpiresIn:    Int64ToInt32(int64(expiresIn)),
+	return api.AdminSessionResponse{
+		ExpiresIn: Int64ToInt32(int64(expiresIn)),
 	}
 }
 
-func AdminPlayer(player adminusecase.PlayerRecord) api.AdminPlayerResponse {
-	return api.AdminPlayerResponse{
+func PlayerManagement(player playerusecase.PlayerRecord) api.PlayerManagementView {
+	return api.PlayerManagementView{
 		Id:                 player.PlayerID,
 		Username:           player.Username,
-		Status:             api.PlayerStatus(player.Status),
 		CreatedAt:          player.CreatedAt,
 		DeletedAt:          player.DeletedAt,
 		Wins:               IntToInt32(player.Wins),
@@ -48,39 +35,38 @@ func AdminPlayer(player adminusecase.PlayerRecord) api.AdminPlayerResponse {
 	}
 }
 
-func AdminPlayers(players []adminusecase.PlayerRecord) []api.AdminPlayerResponse {
-	out := make([]api.AdminPlayerResponse, 0, len(players))
+func PlayerManagementList(players []playerusecase.PlayerRecord) []api.PlayerManagementView {
+	out := make([]api.PlayerManagementView, 0, len(players))
 	for _, player := range players {
-		out = append(out, AdminPlayer(player))
+		out = append(out, PlayerManagement(player))
 	}
 	return out
 }
 
-func AdminPlayerAuditEvent(event adminusecase.PlayerAuditEvent) api.AdminPlayerAuditEventResponse {
-	return api.AdminPlayerAuditEventResponse{
+func PlayerAuditEvent(event playerusecase.AuditEvent) api.PlayerAuditEvent {
+	return api.PlayerAuditEvent{
 		Id:           event.ID,
 		ActorSubject: event.Actor.Subject,
 		ActorJti:     event.Actor.JTI,
-		Action:       api.AdminPlayerAuditAction(event.Action),
+		Action:       api.PlayerAuditAction(event.Action),
 		PlayerId:     event.PlayerID,
-		BeforeState:  adminPlayerAuditState(event.BeforeState),
-		AfterState:   adminPlayerAuditState(event.AfterState),
+		BeforeState:  playerAuditState(event.BeforeState),
+		AfterState:   playerAuditState(event.AfterState),
 		CreatedAt:    event.CreatedAt,
 	}
 }
 
-func AdminPlayerAuditEvents(events []adminusecase.PlayerAuditEvent) []api.AdminPlayerAuditEventResponse {
-	out := make([]api.AdminPlayerAuditEventResponse, 0, len(events))
+func PlayerAuditEvents(events []playerusecase.AuditEvent) []api.PlayerAuditEvent {
+	out := make([]api.PlayerAuditEvent, 0, len(events))
 	for _, event := range events {
-		out = append(out, AdminPlayerAuditEvent(event))
+		out = append(out, PlayerAuditEvent(event))
 	}
 	return out
 }
 
-func adminPlayerAuditState(state adminusecase.PlayerAuditState) api.AdminPlayerAuditState {
-	return api.AdminPlayerAuditState{
+func playerAuditState(state playerusecase.AuditState) api.PlayerAuditState {
+	return api.PlayerAuditState{
 		Username:           state.Username,
-		Status:             api.PlayerStatus(state.Status),
 		Wins:               IntToInt32(state.Wins),
 		AverageSolveTimeMs: state.AverageSolveTimeMs,
 		StatsOverridden:    state.StatsOverridden,
