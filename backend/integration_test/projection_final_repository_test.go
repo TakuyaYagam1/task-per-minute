@@ -198,31 +198,37 @@ func assertFinalProjectionNotPersisted(
 	t.Helper()
 
 	var (
-		projectionCount int
-		artifactCount   int
-		outboxCount     int
-		tournamentState string
-		tournamentRev   int64
+		partialWriteCounts [7]int
+		tournamentState    string
+		tournamentRev      int64
 	)
 	require.NoError(t, sharedPool.QueryRow(ctx, `
-		SELECT COUNT(*)
-		FROM projection_revisions
-		WHERE id = $1`, publication.IDs.RevisionID).Scan(&projectionCount))
-	require.NoError(t, sharedPool.QueryRow(ctx, `
-		SELECT COUNT(*)
-		FROM projection_artifacts
-		WHERE produced_by_revision_id = $1`, publication.IDs.RevisionID).Scan(&artifactCount))
-	require.NoError(t, sharedPool.QueryRow(ctx, `
-		SELECT COUNT(*)
-		FROM outbox_events
-		WHERE projection_revision_id = $1`, publication.IDs.RevisionID).Scan(&outboxCount))
+		SELECT
+			(SELECT COUNT(*) FROM projection_cutoffs WHERE id = $2),
+			(SELECT COUNT(*) FROM projection_revisions WHERE id = $1),
+			(SELECT COUNT(*) FROM projection_artifacts WHERE produced_by_revision_id = $1),
+			(SELECT COUNT(*) FROM projection_artifact_members AS member
+				JOIN projection_artifacts AS artifact ON artifact.id = member.artifact_id
+				WHERE artifact.produced_by_revision_id = $1),
+			(SELECT COUNT(*) FROM projection_dependencies AS dependency
+				JOIN projection_artifacts AS artifact ON artifact.id = dependency.artifact_id
+				WHERE artifact.produced_by_revision_id = $1),
+			(SELECT COUNT(*) FROM projection_revision_artifacts WHERE revision_id = $1),
+			(SELECT COUNT(*) FROM outbox_events WHERE projection_revision_id = $1)
+		`, publication.IDs.RevisionID, publication.IDs.CutoffID).Scan(
+		&partialWriteCounts[0],
+		&partialWriteCounts[1],
+		&partialWriteCounts[2],
+		&partialWriteCounts[3],
+		&partialWriteCounts[4],
+		&partialWriteCounts[5],
+		&partialWriteCounts[6],
+	))
 	require.NoError(t, sharedPool.QueryRow(ctx, `
 		SELECT state, revision
 		FROM tournaments
 		WHERE id = $1`, publication.Scope.TournamentID).Scan(&tournamentState, &tournamentRev))
-	require.Zero(t, projectionCount)
-	require.Zero(t, artifactCount)
-	require.Zero(t, outboxCount)
+	require.Equal(t, [7]int{}, partialWriteCounts)
 	require.Equal(t, string(domain.TournamentStatePlayoffs), tournamentState)
 	require.Equal(t, expectedTournamentRevision, tournamentRev)
 }
