@@ -85,24 +85,27 @@ func TestSeriesCategoryMode(t *testing.T) {
 		}
 	})
 
-	t.Run("forces the final to BO3 draft", func(t *testing.T) {
+	t.Run("keeps the final at BO3 while allowing every mode", func(t *testing.T) {
 		t.Parallel()
 
 		configuration := task028Configuration(t)
-		command := task028CategoryRevisionCommand(configuration, domain.TournamentStageFinal, task028ID(105), createdAt)
-		revision, _, err := usecasedraft.DeriveCategoryRevision(nil, command)
-		if err != nil {
-			t.Fatalf("DeriveSeriesCategoryRevision(final) error = %v", err)
+		modes := []domain.CategoryMode{
+			domain.CategoryModeDraft,
+			domain.CategoryModeRandom,
+			domain.CategoryModeAdmin,
 		}
-		if revision.Format != domain.SeriesFormatBO3 || revision.Mode != domain.CategoryModeDraft {
-			t.Fatalf("final mode = %s/%s, want bo3/draft", revision.Format, revision.Mode)
-		}
-
-		adminMode := domain.CategoryModeAdmin
-		command.ID = task028ID(106)
-		command.ModeOverride = &adminMode
-		if _, changed, err := usecasedraft.DeriveCategoryRevision(nil, command); !errors.Is(err, usecasedraft.ErrInvalidCategoryRevision) || changed {
-			t.Fatalf("final override error = %v, changed = %v", err, changed)
+		for index, mode := range modes {
+			command := task028CategoryRevisionCommand(configuration, domain.TournamentStageFinal, task028ID(105+index), createdAt.Add(time.Duration(index)*time.Minute))
+			if mode != domain.CategoryModeDraft {
+				command.ModeOverride = &mode
+			}
+			revision, changed, err := usecasedraft.DeriveCategoryRevision(nil, command)
+			if err != nil || !changed {
+				t.Fatalf("DeriveSeriesCategoryRevision(final %s) error = %v, changed = %v", mode, err, changed)
+			}
+			if revision.Format != domain.SeriesFormatBO3 || revision.Mode != mode {
+				t.Fatalf("final mode = %s/%s, want bo3/%s", revision.Format, revision.Mode, mode)
+			}
 		}
 	})
 

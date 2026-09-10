@@ -19,9 +19,12 @@ type AdminSelectionCommand struct {
 	ActorID                    uuid.UUID
 	ExpectedCategoryRevisionID uuid.UUID
 	ExpectedCategoryRevision   int64
-	SelectedCategory           *domain.Category
-	Reason                     string
-	LockedAt                   time.Time
+	// SelectedCategory selects the only BO1 category. BO3 uses
+	// SelectedCategories to preserve the explicit game order.
+	SelectedCategory   *domain.Category
+	SelectedCategories []domain.Category
+	Reason             string
+	LockedAt           time.Time
 }
 
 func LockAdmin(
@@ -29,7 +32,8 @@ func LockAdmin(
 	revision CategoryRevision,
 	command AdminSelectionCommand,
 ) (CategoryLock, bool, error) {
-	if err := validateAdminCategorySelection(revision, command); err != nil {
+	selectedCategories, err := validateAdminCategorySelection(revision, command)
+	if err != nil {
 		return CategoryLock{}, false, err
 	}
 	if existing != nil {
@@ -45,13 +49,12 @@ func LockAdmin(
 	lock := newSeriesCategoryLock(
 		command.LockID,
 		revision,
-		[]domain.Category{*command.SelectedCategory},
+		selectedCategories,
 		&command.ActorID,
 		strings.TrimSpace(command.Reason),
 		nil,
 		command.LockedAt,
 	)
-	var err error
 	lock.ProofHash, err = seriesCategoryLockProofHash(lock)
 	if err != nil {
 		return CategoryLock{}, false, adminCategorySelectionError("build lock proof: %v", err)
@@ -65,20 +68,24 @@ func LockAdmin(
 func validateAdminCategorySelection(
 	revision CategoryRevision,
 	command AdminSelectionCommand,
-) error {
+) ([]domain.Category, error) {
 	if err := revision.Validate(); err != nil {
-		return adminCategorySelectionError("category revision: %v", err)
+		return nil, adminCategorySelectionError("category revision: %v", err)
 	}
-	if revision.Mode != domain.CategoryModeAdmin || revision.Format != domain.SeriesFormatBO1 {
-		return adminCategorySelectionError("category revision is not BO1 admin mode")
+	if revision.Mode != domain.CategoryModeAdmin {
+		return nil, adminCategorySelectionError("category revision is not admin mode")
 	}
 	if err := validateAdminCategorySelectionIdentity(revision, command); err != nil {
-		return err
+		return nil, err
 	}
-	if err := validateAdminCategorySelectionChoice(revision, command); err != nil {
-		return err
+	selectedCategories, err := validateAdminCategorySelectionChoice(revision, command)
+	if err != nil {
+		return nil, err
 	}
-	return validateAdminCategorySelectionTime(revision, command)
+	if err := validateAdminCategorySelectionTime(revision, command); err != nil {
+		return nil, err
+	}
+	return selectedCategories, nil
 }
 
 func validateAdminCategorySelectionIdentity(
@@ -98,15 +105,29 @@ func validateAdminCategorySelectionIdentity(
 func validateAdminCategorySelectionChoice(
 	revision CategoryRevision,
 	command AdminSelectionCommand,
-) error {
-	if command.SelectedCategory == nil || !command.SelectedCategory.IsValid() ||
-		!slices.Contains(revision.CategoryPool.Categories, *command.SelectedCategory) {
-		return adminCategorySelectionError("selected category is missing or ineligible")
+) ([]domain.Category, error) {
+	selectedCategories, err := adminCommandSelectedCategories(command)
+	if err != nil {
+		return nil, err
+	}
+	expected := revision.Format.WinsRequired()*2 - 1
+	if expected < 1 || len(selectedCategories) != expected {
+		return nil, adminCategorySelectionError("selected categories must contain exactly %d categories", expected)
+	}
+	seen := make(map[domain.Category]struct{}, len(selectedCategories))
+	for _, category := range selectedCategories {
+		if !category.IsValid() || !slices.Contains(revision.CategoryPool.Categories, category) {
+			return nil, adminCategorySelectionError("selected category is missing or ineligible")
+		}
+		if _, duplicate := seen[category]; duplicate {
+			return nil, adminCategorySelectionError("selected categories contain a duplicate")
+		}
+		seen[category] = struct{}{}
 	}
 	if strings.TrimSpace(command.Reason) == "" {
-		return adminCategorySelectionError("selection reason is blank")
+		return nil, adminCategorySelectionError("selection reason is blank")
 	}
-	return nil
+	return selectedCategories, nil
 }
 
 func validateAdminCategorySelectionTime(
@@ -124,12 +145,28 @@ func adminCategorySelectionMatches(
 	lock CategoryLock,
 	command AdminSelectionCommand,
 ) bool {
+	selectedCategories, err := adminCommandSelectedCategories(command)
+	if err != nil {
+		return false
+	}
 	return lock.ID == command.LockID && lock.SelectorActorID != nil && *lock.SelectorActorID == command.ActorID &&
 		lock.SelectionReason == strings.TrimSpace(command.Reason) &&
 		lock.CategoryRevisionID == command.ExpectedCategoryRevisionID &&
 		lock.CategoryRevision == command.ExpectedCategoryRevision &&
-		lock.LockedAt.Equal(command.LockedAt) && len(lock.SelectedCategories) == 1 &&
-		command.SelectedCategory != nil && lock.SelectedCategories[0] == *command.SelectedCategory
+		lock.LockedAt.Equal(command.LockedAt) && slices.Equal(lock.SelectedCategories, selectedCategories)
+}
+
+func adminCommandSelectedCategories(command AdminSelectionCommand) ([]domain.Category, error) {
+	if command.SelectedCategory != nil && command.SelectedCategories != nil {
+		return nil, adminCategorySelectionError("selected category fields are ambiguous")
+	}
+	if command.SelectedCategories != nil {
+		return append([]domain.Category(nil), command.SelectedCategories...), nil
+	}
+	if command.SelectedCategory != nil {
+		return []domain.Category{*command.SelectedCategory}, nil
+	}
+	return nil, adminCategorySelectionError("selected category is missing")
 }
 
 func adminCategorySelectionError(format string, arguments ...any) error {

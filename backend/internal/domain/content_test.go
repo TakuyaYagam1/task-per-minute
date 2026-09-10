@@ -126,13 +126,14 @@ func TestContentConfigurationRevision(t *testing.T) {
 		wrongFinal := task020ContentInput()
 		for i := range wrongFinal.StageDefaults {
 			if wrongFinal.StageDefaults[i].Stage == domain.TournamentStageFinal {
-				wrongFinal.StageDefaults[i].CategoryMode = domain.CategoryModeRandom
+				wrongFinal.StageDefaults[i].Format = domain.SeriesFormatBO1
+				wrongFinal.StageDefaults[i].CategoryPoolRevisionID = task020ID(21)
 			}
 		}
 		for name, input := range map[string]domain.ContentConfigurationInput{
 			"category shape": wrongShape,
 			"pool overlap":   overlap,
-			"final mode":     wrongFinal,
+			"final format":   wrongFinal,
 		} {
 			t.Run(name, func(t *testing.T) {
 				t.Parallel()
@@ -151,6 +152,97 @@ func TestContentConfigurationRevision(t *testing.T) {
 			t.Fatalf("ReviseContentConfiguration(stale) error = %v, changed = %v", reviseErr, changed)
 		}
 	})
+}
+
+func TestContentConfigurationStageDefaultModes(t *testing.T) {
+	t.Parallel()
+
+	stages := []struct {
+		name  string
+		stage domain.TournamentStage
+	}{
+		{name: "swiss", stage: domain.TournamentStageSwiss},
+		{name: "Golden", stage: domain.TournamentStageGolden},
+		{name: "semifinal", stage: domain.TournamentStageSemifinal},
+		{name: "final", stage: domain.TournamentStageFinal},
+	}
+	modes := []domain.CategoryMode{
+		domain.CategoryModeRandom,
+		domain.CategoryModeAdmin,
+		domain.CategoryModeDraft,
+	}
+	for _, stage := range stages {
+
+		for _, mode := range modes {
+
+			t.Run(stage.name+"/"+string(mode), func(t *testing.T) {
+				t.Parallel()
+
+				input := task020ContentInput()
+				for i := range input.StageDefaults {
+					if input.StageDefaults[i].Stage == stage.stage {
+						input.StageDefaults[i].CategoryMode = mode
+					}
+				}
+				if _, err := domain.CreateContentConfiguration(input); err != nil {
+					t.Fatalf("CreateContentConfiguration() error = %v", err)
+				}
+			})
+		}
+	}
+}
+
+func TestContentConfigurationStageFormatMatrix(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name                   string
+		stage                  domain.TournamentStage
+		format                 domain.SeriesFormat
+		categoryPoolRevisionID uuid.UUID
+	}{
+		{
+			name:                   "swiss BO3",
+			stage:                  domain.TournamentStageSwiss,
+			format:                 domain.SeriesFormatBO3,
+			categoryPoolRevisionID: task020ID(22),
+		},
+		{
+			name:                   "Golden BO3",
+			stage:                  domain.TournamentStageGolden,
+			format:                 domain.SeriesFormatBO3,
+			categoryPoolRevisionID: task020ID(22),
+		},
+		{
+			name:                   "semifinal BO3",
+			stage:                  domain.TournamentStageSemifinal,
+			format:                 domain.SeriesFormatBO3,
+			categoryPoolRevisionID: task020ID(22),
+		},
+		{
+			name:                   "final BO1",
+			stage:                  domain.TournamentStageFinal,
+			format:                 domain.SeriesFormatBO1,
+			categoryPoolRevisionID: task020ID(21),
+		},
+	}
+	for _, tc := range cases {
+
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			input := task020ContentInput()
+			for i := range input.StageDefaults {
+				if input.StageDefaults[i].Stage == tc.stage {
+					input.StageDefaults[i].Format = tc.format
+					input.StageDefaults[i].CategoryPoolRevisionID = tc.categoryPoolRevisionID
+				}
+			}
+			if _, err := domain.CreateContentConfiguration(input); !errors.Is(err, domain.ErrInvalidContentConfiguration) {
+				t.Fatalf("CreateContentConfiguration() error = %v, want ErrInvalidContentConfiguration", err)
+			}
+		})
+	}
 }
 
 func task020ContentInput() domain.ContentConfigurationInput {

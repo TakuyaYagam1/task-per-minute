@@ -321,9 +321,8 @@ func validateStageContentDefault(
 	if err := validateStageTaskPool(item); err != nil {
 		return err
 	}
-	if item.Stage == TournamentStageFinal &&
-		(item.Format != SeriesFormatBO3 || item.CategoryMode != CategoryModeDraft) {
-		return contentConfigurationError("final stage requires BO3 draft")
+	if item.Stage == TournamentStageFinal && item.Format != SeriesFormatBO3 {
+		return contentConfigurationError("final stage requires BO3")
 	}
 	if item.Stage != TournamentStageFinal && item.Format != SeriesFormatBO1 {
 		return contentConfigurationError("pre-final stages require BO1")

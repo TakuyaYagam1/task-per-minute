@@ -60,6 +60,39 @@ func TestRandomCategorySelection(t *testing.T) {
 		}
 	})
 
+	t.Run("selects three ordered categories for a BO3 revision", func(t *testing.T) {
+		t.Parallel()
+
+		randomMode := domain.CategoryModeRandom
+		bo3Command := task028CategoryRevisionCommand(task028Configuration(t), domain.TournamentStageFinal, task028ID(208), createdAt)
+		bo3Command.ModeOverride = &randomMode
+		bo3Revision, changed, err := usecasedraft.DeriveCategoryRevision(nil, bo3Command)
+		if err != nil || !changed {
+			t.Fatalf("DeriveSeriesCategoryRevision(BO3 random) error = %v, changed = %v", err, changed)
+		}
+		command := usecasedraft.RandomSelectionCommand{
+			LockID: bo3Revision.ID, EvidenceID: task028ID(209), LockedAt: createdAt.Add(time.Minute),
+		}
+		lock, changed, err := usecasedraft.LockRandom(nil, bo3Revision, command)
+		if err != nil || !changed {
+			t.Fatalf("LockRandomSeriesCategory(BO3) error = %v, changed = %v", err, changed)
+		}
+		if err := lock.Validate(bo3Revision); err != nil {
+			t.Fatalf("BO3 lock Validate() error = %v", err)
+		}
+		if len(lock.SelectedCategories) != 3 || lock.DecisionEvidence == nil || len(lock.DecisionEvidence.Result) != 5 {
+			t.Fatalf("BO3 random lock = %+v", lock)
+		}
+		for index, category := range lock.SelectedCategories {
+			if string(category) != lock.DecisionEvidence.Result[index] {
+				t.Fatalf("selected category %d = %s, evidence result = %s", index, category, lock.DecisionEvidence.Result[index])
+			}
+			if slices.Contains(lock.SelectedCategories[index+1:], category) {
+				t.Fatalf("selected categories contain duplicate %s: %v", category, lock.SelectedCategories)
+			}
+		}
+	})
+
 	t.Run("returns the stored decision for an exact retry", func(t *testing.T) {
 		t.Parallel()
 

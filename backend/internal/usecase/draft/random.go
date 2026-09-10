@@ -98,11 +98,18 @@ func LockRandom(
 	if err != nil {
 		return CategoryLock{}, false, randomCategorySelectionError("decision evidence: %v", err)
 	}
-	selected := domain.Category(evidence.Result[0])
+	expected := revision.Format.WinsRequired()*2 - 1
+	if expected < 1 || len(evidence.Result) < expected {
+		return CategoryLock{}, false, randomCategorySelectionError("decision evidence returned too few categories")
+	}
+	selected := make([]domain.Category, expected)
+	for index := range selected {
+		selected[index] = domain.Category(evidence.Result[index])
+	}
 	lock := newSeriesCategoryLock(
 		command.LockID,
 		revision,
-		[]domain.Category{selected},
+		selected,
 		nil,
 		"",
 		&evidence,
@@ -196,8 +203,8 @@ func validateRandomCategorySelection(
 	if err := revision.Validate(); err != nil {
 		return randomCategorySelectionError("category revision: %v", err)
 	}
-	if revision.Mode != domain.CategoryModeRandom || revision.Format != domain.SeriesFormatBO1 {
-		return randomCategorySelectionError("category revision is not BO1 random mode")
+	if revision.Mode != domain.CategoryModeRandom {
+		return randomCategorySelectionError("category revision is not random mode")
 	}
 	if command.LockID == uuid.Nil || command.LockID != revision.ID || command.EvidenceID == uuid.Nil ||
 		command.LockID == command.EvidenceID {
@@ -239,13 +246,26 @@ func validateRandomCategoryEvidence(
 	if err := evidence.Validate(); err != nil {
 		return seriesCategoryLockError("random decision evidence: %v", err)
 	}
+	expected := revision.Format.WinsRequired()*2 - 1
 	if evidence.Purpose != domain.DecisionPurposeCategory || evidence.OwnerID != lock.ID ||
 		evidence.DecidedAt != lock.LockedAt ||
 		!slices.Equal(evidence.NormalizedInputs, categoryDecisionInputs(revision.CategoryPool.Categories)) ||
-		len(evidence.Result) == 0 || domain.Category(evidence.Result[0]) != lock.SelectedCategories[0] {
+		len(evidence.Result) < expected || !randomEvidenceSelectionMatches(evidence.Result, lock.SelectedCategories, expected) {
 		return seriesCategoryLockError("random decision evidence does not match the lock")
 	}
 	return nil
+}
+
+func randomEvidenceSelectionMatches(result []string, selected []domain.Category, expected int) bool {
+	if expected < 1 || len(result) < expected || len(selected) != expected {
+		return false
+	}
+	for index := 0; index < expected; index++ {
+		if domain.Category(result[index]) != selected[index] {
+			return false
+		}
+	}
+	return true
 }
 
 func newSeriesCategoryLock(

@@ -176,9 +176,12 @@ func validateSeriesCategoryStage(
 	format domain.SeriesFormat,
 	mode domain.CategoryMode,
 ) error {
+	if !mode.IsValid() {
+		return seriesCategoryRevisionError("invalid category mode")
+	}
 	if stage == domain.TournamentStageFinal {
-		if format != domain.SeriesFormatBO3 || mode != domain.CategoryModeDraft {
-			return seriesCategoryRevisionError("final stage requires BO3 draft")
+		if format != domain.SeriesFormatBO3 {
+			return seriesCategoryRevisionError("final stage requires BO3")
 		}
 		return nil
 	}

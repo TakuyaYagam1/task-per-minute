@@ -3,6 +3,7 @@ package draft_test
 import (
 	"errors"
 	"reflect"
+	"slices"
 	"testing"
 	"time"
 
@@ -40,6 +41,70 @@ func TestAdminCategorySelection(t *testing.T) {
 			*lock.SelectorActorID != command.ActorID ||
 			lock.SelectionReason != "selected by match operator" || lock.DecisionEvidence != nil || lock.ProofHash == "" {
 			t.Fatalf("admin lock evidence = %+v", lock)
+		}
+	})
+
+	t.Run("locks three ordered categories for a BO3 revision", func(t *testing.T) {
+		t.Parallel()
+
+		adminMode := domain.CategoryModeAdmin
+		categoryCommand := task028CategoryRevisionCommand(task028Configuration(t), domain.TournamentStageFinal, task028ID(306), createdAt)
+		categoryCommand.ModeOverride = &adminMode
+		revision, changed, err := usecasedraft.DeriveCategoryRevision(nil, categoryCommand)
+		if err != nil || !changed {
+			t.Fatalf("DeriveSeriesCategoryRevision(BO3 admin) error = %v, changed = %v", err, changed)
+		}
+		selectedCategories := []domain.Category{domain.CategoryWeb, domain.CategoryCrypto, domain.CategoryReverse}
+		command := usecasedraft.AdminSelectionCommand{
+			LockID: revision.ID, ActorID: task028ID(307),
+			ExpectedCategoryRevisionID: revision.ID, ExpectedCategoryRevision: revision.Revision,
+			SelectedCategories: selectedCategories, Reason: " selected by match operator ", LockedAt: createdAt.Add(time.Minute),
+		}
+		lock, changed, err := usecasedraft.LockAdmin(nil, revision, command)
+		if err != nil || !changed {
+			t.Fatalf("LockAdminSeriesCategory(BO3) error = %v, changed = %v", err, changed)
+		}
+		if err := lock.Validate(revision); err != nil {
+			t.Fatalf("BO3 lock Validate() error = %v", err)
+		}
+		if !slices.Equal(lock.SelectedCategories, selectedCategories) {
+			t.Fatalf("selected categories = %v, want %v", lock.SelectedCategories, selectedCategories)
+		}
+	})
+
+	t.Run("rejects duplicate, insufficient, and ineligible BO3 selections", func(t *testing.T) {
+		t.Parallel()
+
+		adminMode := domain.CategoryModeAdmin
+		categoryCommand := task028CategoryRevisionCommand(task028Configuration(t), domain.TournamentStageFinal, task028ID(308), createdAt)
+		categoryCommand.ModeOverride = &adminMode
+		revision, changed, err := usecasedraft.DeriveCategoryRevision(nil, categoryCommand)
+		if err != nil || !changed {
+			t.Fatalf("DeriveSeriesCategoryRevision(BO3 admin) error = %v, changed = %v", err, changed)
+		}
+		base := usecasedraft.AdminSelectionCommand{
+			LockID: revision.ID, ActorID: task028ID(309),
+			ExpectedCategoryRevisionID: revision.ID, ExpectedCategoryRevision: revision.Revision,
+			SelectedCategories: []domain.Category{domain.CategoryWeb, domain.CategoryCrypto, domain.CategoryReverse},
+			Reason:             "operator choice", LockedAt: createdAt.Add(time.Minute),
+		}
+
+		duplicate := base
+		duplicate.SelectedCategories = []domain.Category{domain.CategoryWeb, domain.CategoryCrypto, domain.CategoryWeb}
+		if _, changed, err := usecasedraft.LockAdmin(nil, revision, duplicate); !errors.Is(err, usecasedraft.ErrInvalidAdminSelection) || changed {
+			t.Fatalf("duplicate selection error = %v, changed = %v", err, changed)
+		}
+
+		insufficient := base
+		insufficient.SelectedCategories = []domain.Category{domain.CategoryWeb, domain.CategoryCrypto}
+		if _, changed, err := usecasedraft.LockAdmin(nil, revision, insufficient); !errors.Is(err, usecasedraft.ErrInvalidAdminSelection) || changed {
+			t.Fatalf("insufficient selection error = %v, changed = %v", err, changed)
+		}
+
+		ineligible := base
+		ineligible.SelectedCategories = []domain.Category{domain.CategoryWeb, domain.CategoryCrypto, domain.CategoryMisc}
+		if _, changed, err := usecasedraft.LockAdmin(nil, revision, ineligible); !errors.Is(err, usecasedraft.ErrInvalidAdminSelection) || changed {
+			t.Fatalf("ineligible selection error = %v, changed = %v", err, changed)
 		}
 	})
 
@@ -96,6 +161,37 @@ func TestAdminCategorySelection(t *testing.T) {
 		changedCommand.LockedAt = command.LockedAt.Add(time.Minute)
 		if _, changed, err := usecasedraft.LockAdmin(&first, revision, changedCommand); !errors.Is(err, usecasedraft.ErrCategoryLocked) || changed {
 			t.Fatalf("locked change error = %v, changed = %v", err, changed)
+		}
+	})
+
+	t.Run("binds every BO3 category in an exact retry", func(t *testing.T) {
+		t.Parallel()
+
+		adminMode := domain.CategoryModeAdmin
+		categoryCommand := task028CategoryRevisionCommand(task028Configuration(t), domain.TournamentStageFinal, task028ID(310), createdAt)
+		categoryCommand.ModeOverride = &adminMode
+		revision, changed, err := usecasedraft.DeriveCategoryRevision(nil, categoryCommand)
+		if err != nil || !changed {
+			t.Fatalf("DeriveSeriesCategoryRevision(BO3 admin) error = %v, changed = %v", err, changed)
+		}
+		command := usecasedraft.AdminSelectionCommand{
+			LockID: revision.ID, ActorID: task028ID(311),
+			ExpectedCategoryRevisionID: revision.ID, ExpectedCategoryRevision: revision.Revision,
+			SelectedCategories: []domain.Category{domain.CategoryWeb, domain.CategoryCrypto, domain.CategoryReverse},
+			Reason:             "operator choice", LockedAt: createdAt.Add(time.Minute),
+		}
+		first, changed, err := usecasedraft.LockAdmin(nil, revision, command)
+		if err != nil || !changed {
+			t.Fatalf("LockAdminSeriesCategory(first BO3) error = %v, changed = %v", err, changed)
+		}
+		retried, changed, err := usecasedraft.LockAdmin(&first, revision, command)
+		if err != nil || changed || !reflect.DeepEqual(retried, first) {
+			t.Fatalf("BO3 retry error = %v, changed = %v, lock = %+v", err, changed, retried)
+		}
+		changedCommand := command
+		changedCommand.SelectedCategories = []domain.Category{domain.CategoryWeb, domain.CategoryReverse, domain.CategoryCrypto}
+		if _, changed, err := usecasedraft.LockAdmin(&first, revision, changedCommand); !errors.Is(err, usecasedraft.ErrCategoryLocked) || changed {
+			t.Fatalf("BO3 reordered change error = %v, changed = %v", err, changed)
 		}
 	})
 
