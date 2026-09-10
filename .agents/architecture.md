@@ -30,7 +30,7 @@ cmd
 
 - `backend/internal/domain/` contains models, statuses, pure validation, and stable error identities shared across application boundaries.
 - `backend/internal/usecase/` contains the application business logic used by REST, WebSocket, workers, and administrative flows. Packages may compose narrower usecases through explicit interfaces, but dependencies must remain acyclic and transport-neutral.
-- `backend/internal/port/` contains stable inbound and shared boundary contracts. Usecase-local outbound contracts stay beside the consumer that owns them.
+- `backend/internal/port/` contains stable inbound and shared boundary contracts. `backend/internal/port/inbound/` owns transport-neutral command, query, and view models when they are part of an inbound usecase contract or shared by multiple inbound adapters; adapter-only wire models stay with their adapter, usecase-local models stay with their owning usecase, and `internal/app` is not a DTO facade. Usecase-local outbound contracts stay beside the consumer that owns them.
 - `backend/internal/app/app.go` is only the process boot boundary. It builds the dependency graph through bootstrap and runs the assembled server. Business workflows, transport contracts, and persistence logic do not belong here.
 - `backend/internal/adapter/inbound/http/` and `backend/internal/adapter/inbound/websocket/` translate external protocols into consumer-owned inbound ports.
 - `backend/internal/adapter/outbound/postgres/`, `redis/`, `memory/`, and `objectstorage/` implement infrastructure-facing usecase ports.
