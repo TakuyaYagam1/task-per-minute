@@ -4,6 +4,7 @@ import (
 	"github.com/google/uuid"
 	goredis "github.com/redis/go-redis/v9"
 
+	"github.com/TakuyaYagam1/task-per-minute/config"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	redisadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/redis"
@@ -55,6 +56,19 @@ func provideOutboxBacklog(
 	return repository
 }
 
+func provideReceiptRetentionWorker(
+	repository *postgres.RealtimeOutboxPostgres,
+	cfg *config.Config,
+	clock clockFunc,
+) (*eventdelivery.ReceiptRetentionWorker, error) {
+	return eventdelivery.NewReceiptRetentionWorker(repository, eventdelivery.ReceiptRetentionWorkerConfig{
+		Retention: cfg.WS.DeliveryReceiptRetention,
+		Interval:  cfg.WS.DeliveryReceiptCleanupInterval,
+		BatchSize: cfg.WS.DeliveryReceiptCleanupBatchSize,
+		Now:       clock.Now,
+	})
+}
+
 func providePrivateTaskAvailabilityRepository(
 	tx *postgres.TxManager,
 ) *postgres.PrivateTaskAvailabilityPostgres {
@@ -85,6 +99,7 @@ func provideRuntimeWorkers(
 	dispatcher *observability.TournamentEventDispatcher,
 	outboxDelivery *eventdelivery.Worker,
 	sessionDelivery *websocket.RealtimeDelivery,
+	receiptRetention *eventdelivery.ReceiptRetentionWorker,
 	privateTaskAvailability *taskusecase.AvailabilityMonitor,
 	deadlineScheduler *recovery.DeadlineScheduler,
 	executionRecovery *gameusecase.RecoveryRunner,
@@ -135,6 +150,11 @@ func provideRuntimeWorkers(
 			name:   "realtime-session-delivery",
 			worker: sessionDelivery,
 			ready:  sessionDelivery.Ready,
+		},
+		{
+			name:   "realtime-receipt-retention",
+			worker: receiptRetention,
+			ready:  receiptRetention.Ready,
 		},
 	}
 	workers, err := newRuntimeWorkers(

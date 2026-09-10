@@ -500,7 +500,12 @@ func (delivery *RealtimeDelivery) deliverSessionEvent(
 		}
 		return delivery.resolveClaim(ctx, session, event)
 	}
-	frames, err := delivery.renderSessionFrames(ctx, session, event, initialTerminal)
+	attemptCtx, cancelAttempt := context.WithTimeout(
+		ctx,
+		realtimeDeliveryAttemptTimeout(delivery.config.LeaseDuration),
+	)
+	defer cancelAttempt()
+	frames, err := delivery.renderSessionFrames(attemptCtx, session, event, initialTerminal)
 	if err != nil {
 		return delivery.retryWrite(ctx, session, event, token, "render_failed", err)
 	}
@@ -508,11 +513,11 @@ func (delivery *RealtimeDelivery) deliverSessionEvent(
 		if err := validateRealtimeDeliveryFrame(session.scope, data, event); err != nil {
 			return delivery.retryWrite(ctx, session, event, token, "invalid_frame", err)
 		}
-		if err := session.write(ctx, data); err != nil {
+		if err := session.write(attemptCtx, data); err != nil {
 			return delivery.retryWrite(ctx, session, event, token, "write_failed", err)
 		}
 	}
-	acknowledged, err := delivery.repository.AcknowledgeDelivery(ctx, eventdelivery.DeliveryAcknowledgement{
+	acknowledged, err := delivery.repository.AcknowledgeDelivery(attemptCtx, eventdelivery.DeliveryAcknowledgement{
 		SubscriberID:         session.subscriber.ID,
 		InstanceID:           session.subscriber.InstanceID,
 		ConnectionID:         session.subscriber.ConnectionID,
@@ -877,6 +882,14 @@ func realtimeDeliveryDefaults(config RealtimeDeliveryConfig) RealtimeDeliveryCon
 		config.NewToken = uuid.New
 	}
 	return config
+}
+
+func realtimeDeliveryAttemptTimeout(leaseDuration time.Duration) time.Duration {
+	timeout := leaseDuration / 2
+	if timeout <= 0 {
+		return leaseDuration
+	}
+	return timeout
 }
 
 func validRealtimeDeliveryConfig(config RealtimeDeliveryConfig) bool {

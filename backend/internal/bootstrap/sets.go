@@ -309,6 +309,7 @@ var WebSocketSet = wire.NewSet(
 	provideObservedEventDeliveryWorker,
 	provideEventDeliveryHealth,
 	provideOutboxBacklog,
+	provideReceiptRetentionWorker,
 	provideRawWebSocketServer,
 	provideWebSocketServer,
 )

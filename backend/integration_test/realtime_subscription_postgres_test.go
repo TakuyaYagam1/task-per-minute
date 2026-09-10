@@ -213,6 +213,190 @@ func TestRealtimeSubscriptionPostgresSerializesConcurrentResume(t *testing.T) {
 	require.True(t, claimed)
 }
 
+func TestRealtimeTerminalReceiptsRetryAcrossRestartAndExpireInBoundedBatches(t *testing.T) {
+	ctx := context.Background()
+	fixture := createDraftMigrationFixture(ctx, t)
+	at := time.Now().UTC().Truncate(time.Microsecond)
+	terminal := createRealtimeCancellationTerminal(ctx, t, fixture.tournamentID, fixture.rosterID, at)
+
+	firstRepository := postgres.NewRealtimeOutboxPostgres(postgres.NewTxManager(sharedPool))
+	secondRepository := postgres.NewRealtimeOutboxPostgres(postgres.NewTxManager(sharedPool))
+	opened, err := firstRepository.OpenSubscription(
+		ctx,
+		realtimeSubscriptionRequest(fixture.tournamentID, uuid.New(), uuid.New(), uuid.Nil, at),
+	)
+	require.NoError(t, err)
+	require.Equal(t, delivery.TerminalReceiptPending, opened.TerminalState)
+
+	firstClaim := realtimeDeliveryClaim(opened.Subscriber, terminal, at.Add(time.Second), uuid.New())
+	claimed, err := firstRepository.ClaimDelivery(ctx, firstClaim)
+	require.NoError(t, err)
+	require.True(t, claimed)
+
+	duplicateClaim := realtimeDeliveryClaim(
+		opened.Subscriber,
+		terminal,
+		at.Add(1500*time.Millisecond),
+		uuid.New(),
+	)
+	claimed, err = secondRepository.ClaimDelivery(ctx, duplicateClaim)
+	require.NoError(t, err)
+	require.False(t, claimed, "another replica cannot claim an active delivery lease")
+
+	retried, err := firstRepository.RetryDelivery(
+		ctx,
+		realtimeDeliveryRetry(opened.Subscriber, terminal, firstClaim, at.Add(3*time.Second)),
+	)
+	require.NoError(t, err)
+	require.True(t, retried)
+
+	resumeRequest := realtimeSubscriptionRequest(
+		fixture.tournamentID,
+		uuid.New(),
+		uuid.New(),
+		opened.Subscriber.ID,
+		at.Add(3*time.Second),
+	)
+	resumed, err := secondRepository.OpenSubscription(ctx, resumeRequest)
+	require.NoError(t, err)
+	require.Equal(t, int64(2), resumed.Subscriber.ConnectionGeneration)
+	require.Equal(t, delivery.TerminalReceiptPending, resumed.TerminalState)
+	require.NotNil(t, resumed.PendingTerminal)
+	require.Equal(t, terminal.ID, resumed.PendingTerminal.ID)
+
+	claimed, err = firstRepository.ClaimDelivery(ctx, firstClaim)
+	require.NoError(t, err)
+	require.False(t, claimed, "the restarted connection fence rejects the prior replica")
+
+	restartClaim := realtimeDeliveryClaim(resumed.Subscriber, terminal, at.Add(3*time.Second), uuid.New())
+	claimed, err = secondRepository.ClaimDelivery(ctx, restartClaim)
+	require.NoError(t, err)
+	require.True(t, claimed)
+	acknowledged, err := secondRepository.AcknowledgeDelivery(
+		ctx,
+		realtimeDeliveryAcknowledgement(resumed.Subscriber, terminal, restartClaim),
+	)
+	require.NoError(t, err)
+	require.True(t, acknowledged)
+
+	receipt, err := secondRepository.DeliveryReceipt(ctx, resumed.Subscriber, terminal.ID)
+	require.NoError(t, err)
+	require.Equal(t, delivery.DeliveryWritten, receipt.Outcome)
+	require.Equal(t, terminal.Sequence, receipt.Sequence)
+	require.NotNil(t, receipt.TerminalAt)
+
+	var (
+		attemptCount int32
+		role         string
+		principalID  *uuid.UUID
+		hasPayload   bool
+	)
+	err = sharedPool.QueryRow(ctx, `
+		SELECT receipt.attempt_count,
+			receipt.role,
+			receipt.principal_id,
+			to_jsonb(receipt) ? 'payload'
+		FROM realtime_delivery_receipts AS receipt
+		WHERE receipt.subscriber_id = $1
+			AND receipt.event_id = $2`, resumed.Subscriber.ID, terminal.ID,
+	).Scan(&attemptCount, &role, &principalID, &hasPayload)
+	require.NoError(t, err)
+	require.Equal(t, int32(2), attemptCount)
+	require.Equal(t, string(delivery.AudiencePublic), role)
+	require.Nil(t, principalID)
+	require.False(t, hasPayload, "shared delivery receipts must not retain event payloads")
+
+	require.NoError(t, secondRepository.CloseSubscriber(
+		ctx,
+		realtimeSubscriberClose(resumed.Subscriber, at.Add(4*time.Second)),
+	))
+	writtenRequest := resumeRequest
+	writtenRequest.InstanceID = uuid.New()
+	writtenRequest.ConnectionID = uuid.New()
+	writtenRequest.OpenedAt = at.Add(5 * time.Second)
+	written, err := firstRepository.OpenSubscription(ctx, writtenRequest)
+	require.NoError(t, err)
+	require.Equal(t, delivery.TerminalReceiptWritten, written.TerminalState)
+	require.Nil(t, written.PendingTerminal)
+
+	disconnectedRequest := realtimeSubscriptionRequest(
+		fixture.tournamentID,
+		uuid.New(),
+		uuid.New(),
+		uuid.Nil,
+		at.Add(5*time.Second),
+	)
+	disconnected, err := firstRepository.OpenSubscription(ctx, disconnectedRequest)
+	require.NoError(t, err)
+	disconnectedClaim := realtimeDeliveryClaim(
+		disconnected.Subscriber,
+		terminal,
+		at.Add(5*time.Second),
+		uuid.New(),
+	)
+	claimed, err = firstRepository.ClaimDelivery(ctx, disconnectedClaim)
+	require.NoError(t, err)
+	require.True(t, claimed)
+	require.NoError(t, firstRepository.CloseSubscriber(
+		ctx,
+		realtimeSubscriberClose(disconnected.Subscriber, at.Add(6*time.Second)),
+	))
+
+	var disconnectedOutcome string
+	err = sharedPool.QueryRow(ctx, `
+		SELECT outcome
+		FROM realtime_delivery_receipts
+		WHERE subscriber_id = $1
+			AND event_id = $2`, disconnected.Subscriber.ID, terminal.ID,
+	).Scan(&disconnectedOutcome)
+	require.NoError(t, err)
+	require.Equal(t, string(delivery.DeliveryDisconnected), disconnectedOutcome)
+
+	retentionWorker, err := delivery.NewReceiptRetentionWorker(
+		secondRepository,
+		delivery.ReceiptRetentionWorkerConfig{
+			Retention: time.Hour,
+			Interval:  time.Minute,
+			BatchSize: 1,
+			Now:       func() time.Time { return at.Add(2 * time.Hour) },
+		},
+	)
+	require.NoError(t, err)
+
+	for attempt := 0; attempt < 16 && realtimeSubscriberCount(
+		ctx,
+		t,
+		resumed.Subscriber.ID,
+		disconnected.Subscriber.ID,
+	) > 0; attempt++ {
+		cleanup, cleanupErr := retentionWorker.Process(ctx)
+		require.NoError(t, cleanupErr)
+		require.LessOrEqual(t, cleanup.DeletedReceipts, int64(1))
+		require.LessOrEqual(t, cleanup.DeletedSubscribers, int64(1))
+	}
+	require.Zero(t, realtimeSubscriberCount(
+		ctx,
+		t,
+		resumed.Subscriber.ID,
+		disconnected.Subscriber.ID,
+	))
+	require.Zero(t, realtimeReceiptCount(
+		ctx,
+		t,
+		resumed.Subscriber.ID,
+		disconnected.Subscriber.ID,
+	))
+
+	var retainedOutboxEvents int
+	err = sharedPool.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM outbox_events
+		WHERE id = $1`, terminal.ID,
+	).Scan(&retainedOutboxEvents)
+	require.NoError(t, err)
+	require.Equal(t, 1, retainedOutboxEvents, "receipt cleanup must preserve immutable outbox evidence")
+}
+
 func TestRealtimeCancellationTerminalUsesExactProjectionSource(t *testing.T) {
 	ctx := context.Background()
 	fixture := createDraftMigrationFixture(ctx, t)
@@ -399,6 +583,30 @@ func assertRealtimeSubscriberOpen(ctx context.Context, t *testing.T, subscriberI
 		WHERE id = $1`, subscriberID).Scan(&closedAt)
 	require.NoError(t, err)
 	require.Nil(t, closedAt)
+}
+
+func realtimeSubscriberCount(ctx context.Context, t *testing.T, firstID, secondID uuid.UUID) int {
+	t.Helper()
+	var count int
+	err := sharedPool.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM realtime_subscribers
+		WHERE id IN ($1, $2)`, firstID, secondID,
+	).Scan(&count)
+	require.NoError(t, err)
+	return count
+}
+
+func realtimeReceiptCount(ctx context.Context, t *testing.T, firstID, secondID uuid.UUID) int {
+	t.Helper()
+	var count int
+	err := sharedPool.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM realtime_delivery_receipts
+		WHERE subscriber_id IN ($1, $2)`, firstID, secondID,
+	).Scan(&count)
+	require.NoError(t, err)
+	return count
 }
 
 func createRealtimeCancellationTerminal(

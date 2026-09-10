@@ -360,6 +360,43 @@ func (repository *RealtimeOutboxPostgres) SubscriberCursor(
 	return cursor, nil
 }
 
+func (repository *RealtimeOutboxPostgres) PruneClosedSubscribers(
+	ctx context.Context,
+	request delivery.ReceiptRetentionRequest,
+) (delivery.ReceiptRetentionResult, error) {
+	if ctx == nil || repository == nil || repository.tx == nil || request.Validate() != nil {
+		return delivery.ReceiptRetentionResult{}, delivery.ErrInvalidReceipt
+	}
+
+	result := delivery.ReceiptRetentionResult{}
+	err := repository.tx.Do(ctx, func(txCtx context.Context) error {
+		querier := repository.tx.Querier(txCtx)
+		params := sqlc.DeleteExpiredRealtimeDeliveryReceiptsParams{
+			CutoffAt:  requestTime(request.CutoffAt),
+			BatchSize: request.BatchSize,
+		}
+		receipts, err := querier.DeleteExpiredRealtimeDeliveryReceipts(txCtx, params)
+		if err != nil {
+			return fmt.Errorf("realtime delivery receipt retention: %w", err)
+		}
+		result.DeletedReceipts = int64(len(receipts))
+
+		subscribers, err := querier.DeleteExpiredRealtimeSubscribers(
+			txCtx,
+			sqlc.DeleteExpiredRealtimeSubscribersParams(params),
+		)
+		if err != nil {
+			return fmt.Errorf("realtime subscriber retention: %w", err)
+		}
+		result.DeletedSubscribers = int64(len(subscribers))
+		return nil
+	})
+	if err != nil {
+		return delivery.ReceiptRetentionResult{}, err
+	}
+	return result, nil
+}
+
 func mapClaimedRealtimeEvent(row sqlc.ClaimRealtimeOutboxEventsRow) (delivery.Event, error) {
 	return mapRealtimeEvent(realtimeEventRow{
 		ID: row.ID, TournamentID: row.TournamentID, ProjectionRevisionID: row.ProjectionRevisionID,
@@ -567,3 +604,4 @@ func mutationResult(operation string, err error) (bool, error) {
 var _ delivery.Repository = (*RealtimeOutboxPostgres)(nil)
 var _ delivery.SubscriptionRepository = (*RealtimeOutboxPostgres)(nil)
 var _ delivery.BacklogSource = (*RealtimeOutboxPostgres)(nil)
+var _ delivery.ReceiptRetentionStore = (*RealtimeOutboxPostgres)(nil)

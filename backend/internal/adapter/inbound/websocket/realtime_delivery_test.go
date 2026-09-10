@@ -436,7 +436,7 @@ func TestRealtimeDeliveryWritesTerminalEventAndClosesSession(t *testing.T) {
 	workerID := tournamentSourceID(995)
 	claimToken := tournamentSourceID(996)
 	at := tournamentSourceTime().Add(4 * time.Minute)
-	event := terminalRealtimeEvent(tournamentID, tournamentSourceID(997), 2, at)
+	event := terminalRealtimeEvent(tournamentID, tournamentSourceID(997), at)
 	subscriber := eventdelivery.Subscriber{
 		ID: subscriberID, InstanceID: instanceID, TournamentID: tournamentID,
 		Audience: eventdelivery.AudiencePublic, AfterSequence: 1, ConnectedAt: at,
@@ -908,6 +908,50 @@ func TestRealtimeDeliveryRetriesAfterPartialTerminalWriteWithoutAcknowledgement(
 	require.Equal(t, 2, connection.writeCount)
 }
 
+func TestRealtimeDeliveryBoundsTerminalWriteAttemptInsideLease(t *testing.T) {
+	tournamentID := tournamentSourceID(1034)
+	subscriberID := tournamentSourceID(1035)
+	instanceID := tournamentSourceID(1036)
+	workerID := tournamentSourceID(1037)
+	claimToken := tournamentSourceID(1038)
+	at := tournamentSourceTime().Add(13 * time.Minute)
+	event := terminalRealtimeEvent(tournamentID, tournamentSourceID(1039), at)
+	subscriber := eventdelivery.Subscriber{
+		ID: subscriberID, InstanceID: instanceID, ConnectionID: tournamentSourceID(1040), ConnectionGeneration: 1,
+		TournamentID: tournamentID,
+		Audience:     eventdelivery.AudiencePublic, AfterSequence: 1, ConnectedAt: at,
+	}
+	repository := newSubscriptionRepository(t, subscriberID)
+	repository.EXPECT().ClaimDelivery(mock.Anything, realtimeDeliveryClaim(eventdelivery.DeliveryClaim{
+		Subscriber: subscriber, Event: event, WorkerID: workerID, ClaimToken: claimToken,
+		ClaimedAt: at, LeaseEnds: at.Add(time.Second),
+	})).Return(true, nil).Once()
+	repository.EXPECT().RetryDelivery(mock.Anything, realtimeDeliveryRetry(eventdelivery.DeliveryRetry{
+		SubscriberID: subscriberID, EventID: event.ID, WorkerID: workerID, ClaimToken: claimToken,
+		AvailableAt: at.Add(time.Millisecond), Reason: "write_failed",
+	})).Return(true, nil).Once()
+	delivery, err := NewRealtimeDelivery(repository, RealtimeDeliveryConfig{
+		InstanceID: instanceID, WorkerID: workerID, LeaseDuration: time.Second, RetryDelay: time.Millisecond,
+		Now: func() time.Time { return at }, NewToken: func() uuid.UUID { return claimToken },
+	})
+	require.NoError(t, err)
+	connection := &deadlineRealtimeSocket{}
+	frame := terminalProjectionFrame(t, tournamentID, event)
+	session := &realtimeDeliverySession{
+		subscriber: subscriber, connection: connection,
+		scope:  tournamentWriteScope{Role: TournamentRolePublic, TournamentID: tournamentID},
+		render: func(context.Context, eventdelivery.Event) ([]byte, error) { return frame, nil },
+	}
+	session.lastSequence.Store(subscriber.AfterSequence)
+	delivery.sessions[subscriber.ID] = session
+
+	err = delivery.deliverSession(t.Context(), session, event)
+	require.ErrorIs(t, err, ErrRealtimeDeliveryWrite)
+	require.True(t, connection.hasDeadline)
+	require.Positive(t, connection.remaining)
+	require.LessOrEqual(t, connection.remaining, 500*time.Millisecond)
+}
+
 func TestRealtimeDeliveryDoesNotCloseTerminalBeforeAcknowledgement(t *testing.T) {
 	tournamentID := tournamentSourceID(1017)
 	subscriberID := tournamentSourceID(1018)
@@ -915,7 +959,7 @@ func TestRealtimeDeliveryDoesNotCloseTerminalBeforeAcknowledgement(t *testing.T)
 	workerID := tournamentSourceID(1020)
 	claimToken := tournamentSourceID(1021)
 	at := tournamentSourceTime().Add(11 * time.Minute)
-	event := terminalRealtimeEvent(tournamentID, tournamentSourceID(1022), 2, at)
+	event := terminalRealtimeEvent(tournamentID, tournamentSourceID(1022), at)
 	subscriber := eventdelivery.Subscriber{
 		ID: subscriberID, InstanceID: instanceID, ConnectionID: tournamentSourceID(1030), ConnectionGeneration: 1,
 		TournamentID: tournamentID,
@@ -959,7 +1003,7 @@ func TestRealtimeDeliveryClosesSocketWhenTerminalCloseFails(t *testing.T) {
 	workerID := tournamentSourceID(1026)
 	claimToken := tournamentSourceID(1027)
 	at := tournamentSourceTime().Add(12 * time.Minute)
-	event := terminalRealtimeEvent(tournamentID, tournamentSourceID(1028), 2, at)
+	event := terminalRealtimeEvent(tournamentID, tournamentSourceID(1028), at)
 	subscriber := eventdelivery.Subscriber{
 		ID: subscriberID, InstanceID: instanceID, ConnectionID: tournamentSourceID(1031), ConnectionGeneration: 1,
 		TournamentID: tournamentID,
@@ -1010,9 +1054,9 @@ func publicRealtimeEvent(tournamentID uuid.UUID, occurredAt time.Time) eventdeli
 	}
 }
 
-func terminalRealtimeEvent(tournamentID, eventID uuid.UUID, sequence int64, occurredAt time.Time) eventdelivery.Event {
+func terminalRealtimeEvent(tournamentID, eventID uuid.UUID, occurredAt time.Time) eventdelivery.Event {
 	return eventdelivery.Event{
-		ID: eventID, CorrelationID: tournamentSourceID(1033), TournamentID: tournamentID, ProjectionRevisionID: tournamentSourceID(1029), Sequence: sequence,
+		ID: eventID, CorrelationID: tournamentSourceID(1033), TournamentID: tournamentID, ProjectionRevisionID: tournamentSourceID(1029), Sequence: 2,
 		ProjectionRevision: 7, ProjectionOrdinal: 1, Terminal: true, Audience: eventdelivery.AudienceAll, Topic: "tournament.cancelled",
 		Payload: json.RawMessage(`{"state":"cancelled"}`), OccurredAt: occurredAt, AttemptCount: 1,
 	}
@@ -1119,6 +1163,30 @@ type recordingRealtimeSocket struct {
 	writeCount  int
 	failAtWrite int
 	closeCount  int
+}
+
+type deadlineRealtimeSocket struct {
+	hasDeadline bool
+	remaining   time.Duration
+}
+
+func (connection *deadlineRealtimeSocket) Write(
+	ctx context.Context,
+	_ coderws.MessageType,
+	_ []byte,
+) error {
+	deadline, ok := ctx.Deadline()
+	connection.hasDeadline = ok
+	connection.remaining = time.Until(deadline)
+	return errors.New("blocked websocket write")
+}
+
+func (connection *deadlineRealtimeSocket) Ping(context.Context) error {
+	return nil
+}
+
+func (connection *deadlineRealtimeSocket) CloseNow() error {
+	return nil
 }
 
 func (connection *recordingRealtimeSocket) Write(_ context.Context, _ coderws.MessageType, data []byte) error {

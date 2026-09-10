@@ -163,6 +163,8 @@ func TestRealtimeOutboxRepositoryRejectsMissingDependencies(t *testing.T) {
 	require.ErrorIs(t, err, delivery.ErrInvalidReceipt)
 	_, err = NewRealtimeOutboxPostgres(nil).Claim(context.Background(), delivery.ClaimRequest{})
 	require.ErrorIs(t, err, delivery.ErrInvalidReceipt)
+	_, err = repository.PruneClosedSubscribers(context.Background(), delivery.ReceiptRetentionRequest{})
+	require.ErrorIs(t, err, delivery.ErrInvalidReceipt)
 }
 
 func validClaimedRealtimeRow() sqlc.ClaimRealtimeOutboxEventsRow {

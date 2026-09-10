@@ -93,6 +93,12 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 		cleanup()
 		return nil, nil, err
 	}
+	receiptRetentionWorker, err := provideReceiptRetentionWorker(realtimeOutboxPostgres, cfg, bootstrapClockFunc)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
 	executionAuthorityPostgres := postgres.NewExecutionAuthorityPostgres(txManager)
 	recoveryTerminalPostgres := provideRecoveryTerminalStore(txManager, executionAuthorityPostgres, bootstrapClockFunc)
 	reconnectObserver := provideReconnectObserver(bootstrapEventTelemetry)
@@ -129,7 +135,7 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 		return nil, nil, err
 	}
 	runtimeWorkerHeartbeats := provideRuntimeWorkerHeartbeats(client)
-	bootstrapRuntimeWorkers, err := provideRuntimeWorkers(tournamentEventDispatcher, worker, realtimeDelivery, availabilityMonitor, deadlineScheduler, recoveryRunner, recoveryWorker, bootstrapClockFunc, runtimeWorkerHeartbeats)
+	bootstrapRuntimeWorkers, err := provideRuntimeWorkers(tournamentEventDispatcher, worker, realtimeDelivery, receiptRetentionWorker, availabilityMonitor, deadlineScheduler, recoveryRunner, recoveryWorker, bootstrapClockFunc, runtimeWorkerHeartbeats)
 	if err != nil {
 		cleanup2()
 		cleanup()
