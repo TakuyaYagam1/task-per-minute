@@ -99,7 +99,11 @@ func (s *Server) RefreshAdminSession(w http.ResponseWriter, r *http.Request, _ a
 		return
 	}
 
-	pair, err := s.adminAuth.Refresh(r.Context(), refreshToken)
+	accessTokens := make([]string, 0, 1)
+	if accessToken, ok := middleware.AdminAccessTokenFromRequest(r); ok {
+		accessTokens = append(accessTokens, accessToken)
+	}
+	pair, err := s.adminAuth.Refresh(r.Context(), refreshToken, accessTokens...)
 	if err != nil {
 		s.logSecurityEvent(r, "admin.refresh", securityOutcomeFailure, logkitFields("error_code", securityErrorCode(err)))
 		errmap.HandleError(w, r, err)

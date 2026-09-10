@@ -109,6 +109,30 @@ func TestProvideOperatorSessionResolverRevalidationFailsClosed(t *testing.T) {
 	}
 }
 
+func TestProvideOperatorSessionResolverRejectsRotatedAccessToken(t *testing.T) {
+	t.Parallel()
+
+	revocations := authmocks.NewMockRevocationStore(t)
+	revocations.EXPECT().IsRevoked(mock.Anything, mock.Anything).Return(false, nil).Twice()
+	revocations.EXPECT().Revoke(mock.Anything, mock.Anything, mock.Anything).Return(nil).Twice()
+	revocations.EXPECT().IsRevoked(mock.Anything, mock.Anything).Return(true, nil).Once()
+	auth := newOperatorTestAuth(revocations, newOperatorTestClock(t), "tournament-operator-test-secret")
+	pair, err := auth.Login(t.Context(), "operator-password")
+	require.NoError(t, err)
+
+	tournamentID := uuid.New()
+	session, ok := provideOperatorSessionResolver(auth)(
+		tournamentOperatorRequest(tournamentID, pair.AccessToken),
+		tournamentID,
+	)
+	require.True(t, ok)
+	require.True(t, session.Validate(t.Context()))
+
+	_, err = auth.Refresh(t.Context(), pair.RefreshToken, pair.AccessToken)
+	require.NoError(t, err)
+	require.False(t, session.Validate(t.Context()))
+}
+
 func tournamentOperatorRequest(tournamentID uuid.UUID, token string) *http.Request {
 	path := strings.ReplaceAll(websocket.TournamentOperatorWebSocketPath, "{tournament_id}", tournamentID.String())
 	request := httptest.NewRequest(http.MethodGet, path, nil)

@@ -179,8 +179,14 @@ func (_c *MockAdminAuthService_Logout_Call) RunAndReturn(run func(ctx context.Co
 }
 
 // Refresh provides a mock function for the type MockAdminAuthService
-func (_mock *MockAdminAuthService) Refresh(ctx context.Context, refreshToken string) (*auth.TokenPair, error) {
-	ret := _mock.Called(ctx, refreshToken)
+func (_mock *MockAdminAuthService) Refresh(ctx context.Context, refreshToken string, accessTokens ...string) (*auth.TokenPair, error) {
+	var tmpRet mock.Arguments
+	if len(accessTokens) > 0 {
+		tmpRet = _mock.Called(ctx, refreshToken, accessTokens)
+	} else {
+		tmpRet = _mock.Called(ctx, refreshToken)
+	}
+	ret := tmpRet
 
 	if len(ret) == 0 {
 		panic("no return value specified for Refresh")
@@ -188,18 +194,18 @@ func (_mock *MockAdminAuthService) Refresh(ctx context.Context, refreshToken str
 
 	var r0 *auth.TokenPair
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string) (*auth.TokenPair, error)); ok {
-		return returnFunc(ctx, refreshToken)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, ...string) (*auth.TokenPair, error)); ok {
+		return returnFunc(ctx, refreshToken, accessTokens...)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string) *auth.TokenPair); ok {
-		r0 = returnFunc(ctx, refreshToken)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, ...string) *auth.TokenPair); ok {
+		r0 = returnFunc(ctx, refreshToken, accessTokens...)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(*auth.TokenPair)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, string) error); ok {
-		r1 = returnFunc(ctx, refreshToken)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, ...string) error); ok {
+		r1 = returnFunc(ctx, refreshToken, accessTokens...)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -214,11 +220,13 @@ type MockAdminAuthService_Refresh_Call struct {
 // Refresh is a helper method to define mock.On call
 //   - ctx context.Context
 //   - refreshToken string
-func (_e *MockAdminAuthService_Expecter) Refresh(ctx interface{}, refreshToken interface{}) *MockAdminAuthService_Refresh_Call {
-	return &MockAdminAuthService_Refresh_Call{Call: _e.mock.On("Refresh", ctx, refreshToken)}
+//   - accessTokens ...string
+func (_e *MockAdminAuthService_Expecter) Refresh(ctx interface{}, refreshToken interface{}, accessTokens ...interface{}) *MockAdminAuthService_Refresh_Call {
+	return &MockAdminAuthService_Refresh_Call{Call: _e.mock.On("Refresh",
+		append([]interface{}{ctx, refreshToken}, accessTokens...)...)}
 }
 
-func (_c *MockAdminAuthService_Refresh_Call) Run(run func(ctx context.Context, refreshToken string)) *MockAdminAuthService_Refresh_Call {
+func (_c *MockAdminAuthService_Refresh_Call) Run(run func(ctx context.Context, refreshToken string, accessTokens ...string)) *MockAdminAuthService_Refresh_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -228,9 +236,16 @@ func (_c *MockAdminAuthService_Refresh_Call) Run(run func(ctx context.Context, r
 		if args[1] != nil {
 			arg1 = args[1].(string)
 		}
+		var arg2 []string
+		var variadicArgs []string
+		if len(args) > 2 {
+			variadicArgs = args[2].([]string)
+		}
+		arg2 = variadicArgs
 		run(
 			arg0,
 			arg1,
+			arg2...,
 		)
 	})
 	return _c
@@ -241,7 +256,7 @@ func (_c *MockAdminAuthService_Refresh_Call) Return(tokenPair *auth.TokenPair, e
 	return _c
 }
 
-func (_c *MockAdminAuthService_Refresh_Call) RunAndReturn(run func(ctx context.Context, refreshToken string) (*auth.TokenPair, error)) *MockAdminAuthService_Refresh_Call {
+func (_c *MockAdminAuthService_Refresh_Call) RunAndReturn(run func(ctx context.Context, refreshToken string, accessTokens ...string) (*auth.TokenPair, error)) *MockAdminAuthService_Refresh_Call {
 	_c.Call.Return(run)
 	return _c
 }

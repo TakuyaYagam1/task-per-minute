@@ -3,6 +3,7 @@ package auth_test
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -32,6 +33,28 @@ func TestAuthUseCase_Refresh_AfterLogin(t *testing.T) {
 	require.NotEmpty(t, rotated.RefreshToken)
 	require.NotEqual(t, pair.RefreshToken, rotated.RefreshToken,
 		"refresh rotation must mint a NEW refresh token (different jti)")
+}
+
+func TestAuthUseCase_Refresh_RevokesCurrentAccessToken(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 9, 10, 10, 0, 0, 0, time.UTC)
+	clock := newStubClock(t, now)
+	revocations := newMemoryRevocationStore()
+	useCase := newAuthUseCase(newAuthCfg(), clock, revocations)
+
+	pair, err := useCase.Login(t.Context(), testPass)
+	require.NoError(t, err)
+	_, err = useCase.VerifyAccess(t.Context(), pair.AccessToken)
+	require.NoError(t, err)
+
+	rotated, err := useCase.Refresh(t.Context(), pair.RefreshToken, pair.AccessToken)
+	require.NoError(t, err)
+	require.NotEmpty(t, rotated.AccessToken)
+	_, err = useCase.VerifyAccess(t.Context(), pair.AccessToken)
+	require.ErrorIs(t, err, domain.ErrTokenRevoked)
+	_, err = useCase.VerifyAccess(t.Context(), rotated.AccessToken)
+	require.NoError(t, err)
 }
 
 func TestAuthUseCase_Refresh_RevokedToken_ReturnsErrTokenRevoked(t *testing.T) {
@@ -127,4 +150,30 @@ func TestAuthUseCase_Refresh_RevocationStoreFailure_PropagatesError(t *testing.T
 	_, err = uc.Refresh(context.Background(), pair.RefreshToken)
 	require.ErrorIs(t, err, storeErr)
 	require.Contains(t, err.Error(), "auth refresh revoke token")
+}
+
+type memoryRevocationStore struct {
+	mu      sync.Mutex
+	revoked map[string]time.Time
+}
+
+func newMemoryRevocationStore() *memoryRevocationStore {
+	return &memoryRevocationStore{revoked: make(map[string]time.Time)}
+}
+
+func (store *memoryRevocationStore) Revoke(_ context.Context, jti string, expiresAt time.Time) error {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if _, exists := store.revoked[jti]; exists {
+		return domain.ErrTokenRevoked
+	}
+	store.revoked[jti] = expiresAt
+	return nil
+}
+
+func (store *memoryRevocationStore) IsRevoked(_ context.Context, jti string) (bool, error) {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	_, exists := store.revoked[jti]
+	return exists, nil
 }

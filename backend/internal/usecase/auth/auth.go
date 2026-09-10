@@ -58,7 +58,7 @@ func (u *UseCase) Login(_ context.Context, password string) (*TokenPair, error) 
 	return pair, nil
 }
 
-func (u *UseCase) Refresh(ctx context.Context, refreshToken string) (*TokenPair, error) {
+func (u *UseCase) Refresh(ctx context.Context, refreshToken string, accessTokens ...string) (*TokenPair, error) {
 	claims, err := u.parse(refreshToken)
 	if err != nil {
 		return nil, err
@@ -72,6 +72,11 @@ func (u *UseCase) Refresh(ctx context.Context, refreshToken string) (*TokenPair,
 			return nil, domain.ErrTokenRevoked
 		}
 		return nil, fmt.Errorf("auth refresh revoke token: %w", err)
+	}
+	for _, token := range accessTokens {
+		if err := u.revokeAccessToken(ctx, token); err != nil {
+			return nil, err
+		}
 	}
 
 	pair, err := u.issuePair(claims.Subject)
@@ -136,7 +141,7 @@ func (u *UseCase) revokeAccessToken(ctx context.Context, token string) error {
 		if errors.Is(err, domain.ErrTokenRevoked) {
 			return nil
 		}
-		return fmt.Errorf("auth logout revoke access token: %w", err)
+		return fmt.Errorf("auth revoke access token: %w", err)
 	}
 	return nil
 }

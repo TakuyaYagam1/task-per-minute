@@ -114,7 +114,7 @@ func TestAdminRefreshRateLimited(t *testing.T) {
 	require.Equal(t, "3600", second.Header().Get("Retry-After"))
 }
 
-func TestAdminRefreshUsesRefreshCookie(t *testing.T) {
+func TestAdminRefreshRotatesPresentedSessionCookies(t *testing.T) {
 	t.Parallel()
 
 	now := time.Unix(100, 0).UTC()
@@ -125,7 +125,7 @@ func TestAdminRefreshUsesRefreshCookie(t *testing.T) {
 		RefreshExpiresAt: now.Add(time.Hour),
 	}
 	auth := NewMockAdminAuthService(t)
-	auth.EXPECT().Refresh(mock.Anything, "cookie-refresh").Return(pair, nil)
+	auth.EXPECT().Refresh(mock.Anything, "cookie-refresh", []string{"current-access"}).Return(pair, nil)
 	server := New(Dependencies{
 		AdminAuth:      auth,
 		RefreshLimiter: newAllowingRateLimiter(t),
@@ -134,6 +134,7 @@ func TestAdminRefreshUsesRefreshCookie(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/refresh", nil)
 	req.AddCookie(&http.Cookie{Name: middleware.AdminRefreshCookieName, Value: "cookie-refresh"})
+	req.AddCookie(&http.Cookie{Name: middleware.AdminAccessCookieName, Value: "current-access"})
 	rr := httptest.NewRecorder()
 
 	server.RefreshAdminSession(rr, req, api.RefreshAdminSessionParams{})

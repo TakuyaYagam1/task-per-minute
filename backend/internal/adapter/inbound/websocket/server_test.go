@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -123,6 +124,73 @@ func TestServerShutdownClosesTournamentConnections(t *testing.T) {
 	require.NotNil(t, response)
 	require.Equal(t, http.StatusServiceUnavailable, response.StatusCode)
 	require.NoError(t, response.Body.Close())
+}
+
+func TestServerConcurrentShutdownClosesTournamentConnection(t *testing.T) {
+	t.Parallel()
+
+	tournamentID := tournamentSourceID(213)
+	server := tournamentWebSocketTestServer(t, tournamentID, tournamentSourceID(214))
+	httpServer := httptest.NewServer(server)
+	t.Cleanup(httpServer.Close)
+
+	connection, response, err := coderws.Dial(
+		t.Context(), tournamentWebSocketURL(httpServer.URL, TournamentRolePublic, tournamentID), nil,
+	)
+	require.NoError(t, err)
+	if response != nil && response.Body != nil {
+		require.NoError(t, response.Body.Close())
+	}
+	t.Cleanup(func() { _ = connection.CloseNow() })
+	_, _, err = connection.Read(t.Context())
+	require.NoError(t, err)
+
+	shutdownCtx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	var shutdowns sync.WaitGroup
+	for range 8 {
+		shutdowns.Go(func() { server.Shutdown(shutdownCtx) })
+	}
+	shutdowns.Wait()
+	require.NoError(t, shutdownCtx.Err())
+
+	readCtx, readCancel := context.WithTimeout(t.Context(), time.Second)
+	defer readCancel()
+	_, _, err = connection.Read(readCtx)
+	require.Error(t, err)
+}
+
+func TestServerDoesNotWriteCrossTournamentSnapshot(t *testing.T) {
+	t.Parallel()
+
+	tournamentID := tournamentSourceID(215)
+	foreignTournamentID := tournamentSourceID(216)
+	_, publicFrame, _ := tournamentWriteTestFrames(t, foreignTournamentID, tournamentSourceID(217))
+	message, err := DecodeTournamentPublicMessage(publicFrame)
+	require.NoError(t, err)
+	require.NotNil(t, message.Public)
+	server := tournamentWebSocketTestServer(
+		t,
+		tournamentID,
+		tournamentSourceID(218),
+		WithTournamentPublicFlow(staticTournamentPublicFlow{payload: *message.Public}),
+	)
+	httpServer := httptest.NewServer(server)
+	t.Cleanup(httpServer.Close)
+
+	connection, response, err := coderws.Dial(
+		t.Context(), tournamentWebSocketURL(httpServer.URL, TournamentRolePublic, tournamentID), nil,
+	)
+	require.NoError(t, err)
+	if response != nil && response.Body != nil {
+		require.NoError(t, response.Body.Close())
+	}
+	t.Cleanup(func() { _ = connection.CloseNow() })
+
+	readCtx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	_, _, err = connection.Read(readCtx)
+	require.Error(t, err)
 }
 
 func TestServerRejectsCredentialQueryParameters(t *testing.T) {
@@ -289,6 +357,9 @@ func TestServerClosesOperatorConnectionWhenSessionBecomesInvalid(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, message.Rejected)
 	require.Equal(t, TournamentRejectionUnauthenticated, message.Rejected.Code)
+	require.Equal(t, "authentication required", message.Rejected.Message)
+	_, _, err = connection.Read(readCtx)
+	require.Error(t, err)
 }
 
 func TestServerClosesOperatorConnectionAtSessionExpiry(t *testing.T) {
@@ -323,6 +394,9 @@ func TestServerClosesOperatorConnectionAtSessionExpiry(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, message.Rejected)
 	require.Equal(t, TournamentRejectionUnauthenticated, message.Rejected.Code)
+	require.Equal(t, "authentication required", message.Rejected.Message)
+	_, _, err = connection.Read(readCtx)
+	require.Error(t, err)
 }
 
 func TestServerKeepsParticipantConnectionAfterSuccessfulSessionCheck(t *testing.T) {
@@ -673,4 +747,15 @@ func tournamentWebSocketURL(baseURL string, role TournamentRole, tournamentID uu
 	}
 	endpoint = strings.ReplaceAll(endpoint, "{tournament_id}", tournamentID.String())
 	return "ws" + strings.TrimPrefix(baseURL, "http") + endpoint
+}
+
+type staticTournamentPublicFlow struct {
+	payload TournamentPublicPayload
+}
+
+func (flow staticTournamentPublicFlow) OpenTournamentPublic(
+	context.Context,
+	TournamentPublicConnectionRequest,
+) (TournamentPublicPayload, error) {
+	return flow.payload, nil
 }
