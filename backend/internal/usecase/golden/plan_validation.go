@@ -124,7 +124,7 @@ func validateGoldenExactPlanEdge(
 	candidate := authority.Candidates[matching[groupIndex][edgeIndex]]
 	wantSnapshot, buildErr := taskexec.BuildSnapshot(taskexec.SnapshotInput{
 		SnapshotID: edge.Snapshot.SnapshotID, Version: candidate.Version,
-		Kind: domain.AssignmentTaskKindGolden, Task: candidate.Task,
+		Kind: domain.AssignmentTaskKindGolden, Task: goldenExactSnapshotTask(candidate.Task),
 	})
 	if buildErr != nil || !reflect.DeepEqual(wantSnapshot, edge.Snapshot) {
 		return goldenExactPlanError("selected snapshot does not follow canonical matching")

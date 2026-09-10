@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -208,7 +209,8 @@ func BuildExactPlan(
 			candidate := canonical.Candidates[matching[groupIndex][edgeIndex]]
 			snapshot, buildErr := taskexec.BuildSnapshot(taskexec.SnapshotInput{
 				SnapshotID: commands[groupIndex].SnapshotIDs[edgeIndex],
-				Version:    candidate.Version, Kind: domain.AssignmentTaskKindGolden, Task: candidate.Task,
+				Version:    candidate.Version, Kind: domain.AssignmentTaskKindGolden,
+				Task: goldenExactSnapshotTask(candidate.Task),
 			})
 			if buildErr != nil {
 				return ExactPlan{}, goldenExactPlanError("snapshot: %v", buildErr)
@@ -233,6 +235,12 @@ func BuildExactPlan(
 		return ExactPlan{}, err
 	}
 	return plan.Snapshot(), nil
+}
+
+func goldenExactSnapshotTask(task domain.Task) domain.Task {
+	clone := taskexec.CloneTask(&task)
+	clone.TimeLimit = int(domain.TournamentTaskDuration / time.Second)
+	return *clone
 }
 
 func canonicalGoldenGroupCommands(

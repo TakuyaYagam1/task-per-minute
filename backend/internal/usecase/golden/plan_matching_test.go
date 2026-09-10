@@ -3,11 +3,13 @@ package golden_test
 import (
 	"crypto/sha256"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
+	"github.com/TakuyaYagam1/task-per-minute/internal/domain/taskexec"
 	assignmentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/assignment"
 	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
 )
@@ -19,6 +21,8 @@ func TestGoldenExactPlan(t *testing.T) {
 		t.Parallel()
 
 		authority, command := planGoldenPlanExact(t)
+		wantTaskDuration := int(domain.TournamentTaskDuration / time.Second)
+		require.NotEqual(t, wantTaskDuration, authority.Candidates[0].Task.TimeLimit)
 		repository := newGoldenExactPlanRepository(t, authority)
 		plan, changed, err := goldenusecase.NewUseCase(repository.mock).PlanAndCommit(t.Context(), command)
 		require.NoError(t, err)
@@ -34,6 +38,7 @@ func TestGoldenExactPlan(t *testing.T) {
 			for index, edge := range group.Edges {
 				require.Equal(t, index+1, edge.Position)
 				require.Equal(t, domain.AssignmentTaskKindGolden, edge.Snapshot.Kind)
+				require.Equal(t, wantTaskDuration, edge.Snapshot.TimeLimit)
 				ref := domain.TaskVersionRef{TaskID: edge.Snapshot.TaskID, Version: edge.Snapshot.Version}
 				require.NotContains(t, selected, ref)
 				selected[ref] = group.GroupID
@@ -44,6 +49,81 @@ func TestGoldenExactPlan(t *testing.T) {
 			require.Less(t, goldenTaskNumber(edge.Snapshot.TaskID), 503, "matching must reassign scarce tasks to the second group")
 		}
 		require.Equal(t, 1, repository.state.writeCount())
+	})
+
+	t.Run("selects only eligible Golden content when capacity remains", func(t *testing.T) {
+		t.Parallel()
+
+		authority, command := planGoldenPlanExact(t)
+		ineligible := authority.Candidates[0]
+		ineligibleRef := domain.TaskVersionRef{TaskID: ineligible.Task.ID, Version: ineligible.Version}
+		authority.Candidates[0].Health.Enabled = false
+
+		extraTask := planGoldenPlanTask(600)
+		extraTask.TimeLimit = 240
+		extraCandidate := goldenusecase.TaskVersion{
+			PoolRevisionID: authority.Pool.ID,
+			Version:        2,
+			Task:           extraTask,
+			Health: domain.TaskVersionHealth{
+				TaskID: extraTask.ID, Version: 2, PoolRevisionID: authority.Pool.ID,
+				PoolKind: domain.AssignmentTaskKindGolden, Exists: true, Enabled: true,
+				Healthy: true, MutationLocked: true,
+			},
+			ArtifactDigest: goldenusecase.TaskArtifactDigest(extraTask, 2),
+		}
+		authority.Pool.Versions = append(authority.Pool.Versions,
+			domain.TaskVersionRef{TaskID: extraTask.ID, Version: extraCandidate.Version})
+		authority.Candidates = append(authority.Candidates, extraCandidate)
+		authority, err := goldenusecase.BuildAuthority(authority)
+		require.NoError(t, err)
+		command.Expected = authority.Expectation()
+		repository := newGoldenExactPlanRepository(t, authority)
+		plan, changed, err := goldenusecase.NewUseCase(repository.mock).PlanAndCommit(t.Context(), command)
+		require.NoError(t, err)
+		require.True(t, changed)
+		require.NoError(t, plan.Validate())
+
+		eligible := make(map[domain.TaskVersionRef]struct{}, len(authority.Candidates))
+		for _, candidate := range authority.Candidates {
+			if candidate.Health.Exists && candidate.Health.Enabled && candidate.Health.Healthy &&
+				candidate.Health.MutationLocked && !candidate.Health.PubliclyExposed {
+				eligible[domain.TaskVersionRef{TaskID: candidate.Task.ID, Version: candidate.Version}] = struct{}{}
+			}
+		}
+		selected := make(map[domain.TaskVersionRef]struct{})
+		for _, group := range plan.Groups {
+			for _, edge := range group.Edges {
+				ref := domain.TaskVersionRef{TaskID: edge.Snapshot.TaskID, Version: edge.Snapshot.Version}
+				_, isEligible := eligible[ref]
+				require.True(t, isEligible, "selected content must be eligible: %v", ref)
+				require.NotEqual(t, ineligibleRef, ref)
+				selected[ref] = struct{}{}
+				require.Equal(t, int(domain.TournamentTaskDuration/time.Second), edge.Snapshot.TimeLimit)
+			}
+		}
+		require.Len(t, selected, 6)
+		require.Equal(t, 1, repository.state.writeCount())
+	})
+
+	t.Run("rejects a tampered Golden snapshot duration with a matching digest", func(t *testing.T) {
+		t.Parallel()
+
+		authority, command := planGoldenPlanExact(t)
+		repository := newGoldenExactPlanRepository(t, authority)
+		plan, changed, err := goldenusecase.NewUseCase(repository.mock).PlanAndCommit(t.Context(), command)
+		require.NoError(t, err)
+		require.True(t, changed)
+		wantTaskDuration := int(domain.TournamentTaskDuration / time.Second)
+		require.Equal(t, wantTaskDuration, plan.Groups[0].Edges[0].Snapshot.TimeLimit)
+
+		tampered := plan.Snapshot()
+		tampered.Groups[0].Edges[0].Snapshot.TimeLimit = wantTaskDuration + 1
+		require.NoError(t, tampered.Groups[0].Edges[0].Snapshot.Validate())
+		digest, err := taskexec.SnapshotDigest(tampered.Groups[0].Edges[0].Snapshot)
+		require.NoError(t, err)
+		tampered.Groups[0].Edges[0].ContentDigest = digest
+		require.ErrorIs(t, tampered.Validate(), goldenusecase.ErrInvalidExactPlan)
 	})
 
 	t.Run("plans the authoritative non-empty subset of active topology groups", func(t *testing.T) {
@@ -177,11 +257,13 @@ func TestGoldenExactPlan(t *testing.T) {
 		shortCommand := command
 		shortCommand.Expected = short.Expectation()
 		shortCommand.GroupCommands = cloneGoldenGroupCommands(command.GroupCommands)
-		plan, changed, err := goldenusecase.NewUseCase(newGoldenExactPlanRepository(t, short).mock).
+		shortRepository := newGoldenExactPlanRepository(t, short)
+		plan, changed, err := goldenusecase.NewUseCase(shortRepository.mock).
 			PlanAndCommit(t.Context(), shortCommand)
 		require.Nil(t, plan)
 		require.False(t, changed)
 		require.ErrorIs(t, err, goldenusecase.ErrExactPlanInsufficient)
+		require.Equal(t, 0, shortRepository.state.commitCount())
 
 		reserved := authority.Snapshot()
 		reserved.ExistingTaskReservations = []goldenusecase.TaskReservation{{
