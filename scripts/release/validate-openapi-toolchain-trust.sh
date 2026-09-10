@@ -113,6 +113,19 @@ validate_fresh_date yaml.security_evidence_date
 require_policy_equal yaml.trust_decision accepted-compatibility
 require_policy_value yaml.residual_risk >/dev/null
 
+require_policy_equal js_yaml.package js-yaml
+require_policy_equal js_yaml.version 4.3.2
+require_policy_equal js_yaml.repository https://github.com/nodeca/js-yaml
+require_policy_equal js_yaml.registry https://registry.npmjs.org/
+require_policy_equal js_yaml.license MIT
+require_policy_value js_yaml.publisher >/dev/null
+JS_YAML_INTEGRITY="$(require_policy_value js_yaml.integrity)"
+require_policy_value js_yaml.tarball_sha1 >/dev/null
+validate_fresh_date js_yaml.security_evidence_date
+require_policy_equal js_yaml.advisory https://github.com/advisories/GHSA-2883-xcg3-v3hh
+require_policy_equal js_yaml.trust_decision accepted-patched
+require_policy_value js_yaml.residual_risk >/dev/null
+
 require_policy_equal openapi_typescript.package openapi-typescript
 require_policy_equal openapi_typescript.version 7.13.0
 require_policy_equal openapi_typescript.repository https://github.com/openapi-ts/openapi-typescript
@@ -150,7 +163,7 @@ fi
 require_policy_equal oapi.trust_decision accepted-bounded
 require_policy_value oapi.residual_risk >/dev/null
 
-node - "$PACKAGE_JSON" "$PACKAGE_LOCK" "$REDOCLY_INTEGRITY" "$YAML_INTEGRITY" "$OPENAPI_TYPESCRIPT_INTEGRITY" <<'NODE'
+node - "$PACKAGE_JSON" "$PACKAGE_LOCK" "$REDOCLY_INTEGRITY" "$YAML_INTEGRITY" "$OPENAPI_TYPESCRIPT_INTEGRITY" "$JS_YAML_INTEGRITY" <<'NODE'
 const fs = require('node:fs');
 
 function fail(message) {
@@ -163,13 +176,18 @@ const packageLock = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'));
 const expectedIntegrity = process.argv[4];
 const expectedYamlIntegrity = process.argv[5];
 const expectedOpenapiTypescriptIntegrity = process.argv[6];
+const expectedJsYamlIntegrity = process.argv[7];
 const lifecycle = ['preinstall', 'install', 'postinstall', 'prepare'];
+const auditScript = 'node ../scripts/release/validate-dependency-advisories.mjs && bash ../scripts/release/validate-openapi-toolchain-trust.sh';
 
 if (packageJson.devDependencies?.['@redocly/cli'] !== '2.51.2') {
   fail('package.json must pin @redocly/cli to 2.51.2');
 }
 for (const name of lifecycle) {
   if (packageJson.scripts?.[name]) fail(`package.json lifecycle script is forbidden: ${name}`);
+}
+if (packageJson.scripts?.['audit:dependencies'] !== auditScript) {
+  fail('package.json dependency gate must include advisory and toolchain trust validation');
 }
 if (packageLock.lockfileVersion !== 3) fail('package-lock.json must use lockfileVersion 3');
 if (packageLock.packages?.['']?.devDependencies?.['@redocly/cli'] !== '2.51.2') {
@@ -198,6 +216,18 @@ if (yaml.integrity !== expectedYamlIntegrity) fail('package-lock yaml checksum d
 if (yaml.license !== 'ISC') fail('package-lock yaml license is missing or wrong');
 if (yaml.hasInstallScript) fail('yaml must not declare a lifecycle install script');
 if (yaml.bin?.yaml !== 'bin.mjs') fail('yaml package binary identity is wrong');
+
+if (packageJson.overrides?.['js-yaml'] !== '4.3.2') {
+  fail('package.json must override js-yaml to patched version 4.3.2');
+}
+const jsYaml = packageLock.packages?.['node_modules/js-yaml'];
+if (!jsYaml || jsYaml.version !== '4.3.2') fail('package-lock entry for js-yaml 4.3.2 is missing');
+if (jsYaml.resolved !== 'https://registry.npmjs.org/js-yaml/-/js-yaml-4.3.2.tgz') {
+  fail('package-lock has an unofficial js-yaml source');
+}
+if (jsYaml.integrity !== expectedJsYamlIntegrity) fail('package-lock js-yaml checksum does not match policy');
+if (jsYaml.license !== 'MIT') fail('package-lock js-yaml license is missing or wrong');
+if (jsYaml.hasInstallScript) fail('js-yaml must not declare a lifecycle install script');
 
 if (packageJson.devDependencies?.['openapi-typescript'] !== '7.13.0') {
   fail('package.json must pin openapi-typescript to 7.13.0');

@@ -35,7 +35,7 @@ OPENAPI_TS_ENTRY="$FRONTEND_ROOT/node_modules/openapi-typescript/bin/cli.js"
 [ -f "$OPENAPI_TS_ENTRY" ] || fail "local openapi-typescript entrypoint not found: $OPENAPI_TS_ENTRY"
 [ "$(readlink -f "$OPENAPI_TS_BIN")" = "$(readlink -f "$OPENAPI_TS_ENTRY")" ] || fail 'local openapi-typescript binary points outside the locked package'
 
-if ! node - "$FRONTEND_ROOT/package.json" "$FRONTEND_ROOT/package-lock.json" "$FRONTEND_ROOT/node_modules/@redocly/cli/package.json" "$FRONTEND_ROOT/node_modules/openapi-typescript/package.json" <<'NODE'
+if ! node - "$FRONTEND_ROOT/package.json" "$FRONTEND_ROOT/package-lock.json" "$FRONTEND_ROOT/node_modules/@redocly/cli/package.json" "$FRONTEND_ROOT/node_modules/openapi-typescript/package.json" "$FRONTEND_ROOT/node_modules/js-yaml/package.json" <<'NODE'
 const fs = require('node:fs');
 
 function fail(message) {
@@ -48,6 +48,7 @@ const packageLock = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'));
 const installedPackages = [
   JSON.parse(fs.readFileSync(process.argv[4], 'utf8')),
   JSON.parse(fs.readFileSync(process.argv[5], 'utf8')),
+  JSON.parse(fs.readFileSync(process.argv[6], 'utf8')),
 ];
 const requiredPackages = [
   {
@@ -68,16 +69,30 @@ const requiredPackages = [
     bin: 'openapi-typescript',
     entrypoint: 'bin/cli.js',
   },
+  {
+    name: 'js-yaml',
+    version: '4.3.2',
+    resolved: 'https://registry.npmjs.org/js-yaml/-/js-yaml-4.3.2.tgz',
+    integrity: 'sha512-SFNOvSJ+Dgf/9An904Yx+CgSlIPCkIpao4qo51lpee25TIRejdH3rhR4EZMGoNx3/TP3O+wzWuiTFl4sqbltzA==',
+    license: 'MIT',
+    override: true,
+  },
 ];
 
 for (const [index, required] of requiredPackages.entries()) {
-  const declared = packageJson.devDependencies?.[required.name];
-  const rootLock = packageLock.packages?.['']?.devDependencies?.[required.name];
   const locked = packageLock.packages?.[`node_modules/${required.name}`];
   const installed = installedPackages[index];
 
-  if (declared !== required.version || rootLock !== required.version) {
-    fail(`${required.name} must be exactly pinned to ${required.version}`);
+  if (required.override) {
+    if (packageJson.overrides?.[required.name] !== required.version) {
+      fail(`${required.name} must be exactly overridden to ${required.version}`);
+    }
+  } else {
+    const declared = packageJson.devDependencies?.[required.name];
+    const rootLock = packageLock.packages?.['']?.devDependencies?.[required.name];
+    if (declared !== required.version || rootLock !== required.version) {
+      fail(`${required.name} must be exactly pinned to ${required.version}`);
+    }
   }
   if (!locked || locked.version !== required.version || locked.resolved !== required.resolved) {
     fail(`${required.name} lock source does not match the approved package`);
@@ -85,13 +100,13 @@ for (const [index, required] of requiredPackages.entries()) {
   if (locked.integrity !== required.integrity || locked.license !== required.license) {
     fail(`${required.name} lock integrity or license does not match the approved package`);
   }
-  if (locked.hasInstallScript || locked.bin?.[required.bin] !== required.entrypoint) {
+  if (locked.hasInstallScript || (required.bin && locked.bin?.[required.bin] !== required.entrypoint)) {
     fail(`${required.name} lock binary identity is not approved`);
   }
   if (installed.name !== required.name || installed.version !== required.version) {
     fail(`${required.name} installed package identity does not match the lock`);
   }
-  if (installed.bin?.[required.bin] !== required.entrypoint) {
+  if (required.bin && installed.bin?.[required.bin] !== required.entrypoint) {
     fail(`${required.name} installed binary identity does not match the lock`);
   }
 }
@@ -192,7 +207,7 @@ done
 STAGED_TYPESCRIPT_OUTPUT="$STAGED_FRONTEND_ROOT/lib/shared/api/schema.ts"
 mkdir -p -- "$(dirname "$STAGED_TYPESCRIPT_OUTPUT")"
 printf 'openapi-generate.sh: generating frontend OpenAPI types\n'
-"$OPENAPI_TS_BIN" "$BUNDLE" -o "$STAGED_TYPESCRIPT_OUTPUT"
+"$OPENAPI_TS_BIN" "$BUNDLE" --default-non-nullable false -o "$STAGED_TYPESCRIPT_OUTPUT"
 [ -s "$STAGED_TYPESCRIPT_OUTPUT" ] || fail 'openapi-typescript produced no output'
 
 command -v gofmt >/dev/null 2>&1 || fail 'required command not found: gofmt'

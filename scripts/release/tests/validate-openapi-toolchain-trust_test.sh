@@ -87,9 +87,27 @@ fixture="$(make_fixture missing-yaml-compatibility)"
 sed -i 's/"yaml": "2.9.0"/"yaml": "2.8.4"/' "$fixture/package.json"
 expect_reject missing-yaml-compatibility "$fixture"
 
+fixture="$(make_fixture missing-js-yaml-patch)"
+sed -i 's/"js-yaml": "4.3.2"/"js-yaml": "4.3.1"/' "$fixture/package.json"
+expect_reject missing-js-yaml-patch "$fixture"
+
+fixture="$(make_fixture js-yaml-checksum-mismatch)"
+node - "$fixture/package-lock.json" <<'NODE'
+const fs = require('node:fs');
+const path = process.argv[2];
+const lock = JSON.parse(fs.readFileSync(path, 'utf8'));
+lock.packages['node_modules/js-yaml'].integrity = 'sha512-INVALID';
+fs.writeFileSync(path, `${JSON.stringify(lock, null, 2)}\n`);
+NODE
+expect_reject js-yaml-checksum-mismatch "$fixture"
+
 fixture="$(make_fixture wrong-openapi-typescript-tarball)"
 sed -i 's#openapi-typescript/-/openapi-typescript-7.13.0.tgz#openapi-typescript/-/openapi-typescript-7.12.0.tgz#' "$fixture/package-lock.json"
 expect_reject wrong-openapi-typescript-tarball "$fixture"
+
+fixture="$(make_fixture advisory-gate-bypass)"
+sed -i 's# && bash ../scripts/release/validate-openapi-toolchain-trust.sh##' "$fixture/package.json"
+expect_reject advisory-gate-bypass "$fixture"
 
 fixture="$(make_fixture unnamed-trust-decision)"
 sed -i 's/^oapi.trust_decision=.*/oapi.trust_decision=/' "$fixture/policy.md"

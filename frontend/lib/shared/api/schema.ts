@@ -1118,11 +1118,11 @@ export interface components {
             description: string;
             difficulty: components["schemas"]["TaskDifficulty"];
             /** @default true */
-            enabled: boolean;
+            enabled?: boolean;
             flag: string;
             hints?: (string | null)[];
             /** @default normal */
-            kind: components["schemas"]["TaskKind"];
+            kind?: components["schemas"]["TaskKind"];
             /** @description Task endpoint. Accepts http(s) URLs or host:port targets for pwn/nc tasks. */
             task_url?: string | null;
             /** Format: int32 */
@@ -1369,7 +1369,7 @@ export interface components {
             override_actor_id?: string | null;
             override_reason?: string | null;
             /** @default false */
-            repeated: boolean;
+            repeated?: boolean;
             /** Format: uuid */
             round_id: string;
             /** Format: uuid */

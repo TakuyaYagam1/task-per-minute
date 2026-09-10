@@ -142,6 +142,7 @@ mkdir -p \
   "$FIXTURE_FRONTEND/lib/shared/api" \
   "$FIXTURE_FRONTEND/node_modules/.bin" \
   "$FIXTURE_FRONTEND/node_modules/@redocly/cli/bin" \
+  "$FIXTURE_FRONTEND/node_modules/js-yaml" \
   "$FIXTURE_FRONTEND/node_modules/openapi-typescript/bin" \
   "$FAKE_BIN" \
   "$TEST_TMP/runtime"
@@ -165,9 +166,10 @@ TEST_OPENAPI
 
 printf '%s\n' 'openapi: 3.0.3' 'info: {title: Fixture, version: 1.0.0}' 'paths: {}' 'components:' '  schemas:' "    \$ref: ./components/schemas.yml" >"$FIXTURE_BACKEND/api/openapi.yml"
 printf '%s\n' 'Fixture:' '  type: object' >"$FIXTURE_BACKEND/api/components/schemas/fixture.yml"
-printf '%s\n' '{"name":"fixture","private":true,"devDependencies":{"@redocly/cli":"2.51.2","openapi-typescript":"7.13.0"}}' >"$FIXTURE_FRONTEND/package.json"
-printf '%s\n' '{"name":"fixture","lockfileVersion":3,"packages":{"":{"devDependencies":{"@redocly/cli":"2.51.2","openapi-typescript":"7.13.0"}},"node_modules/@redocly/cli":{"version":"2.51.2","resolved":"https://registry.npmjs.org/@redocly/cli/-/cli-2.51.2.tgz","integrity":"sha512-pviW1gfsjCAuIVutmQcihlhlgoivfNzisBIR61EwSSREHGZ08Sbtjp/h/HPDkVavWwdzR/gs2wgHrdXLd6qU1A==","license":"MIT","bin":{"redocly":"bin/cli.js"}},"node_modules/openapi-typescript":{"version":"7.13.0","resolved":"https://registry.npmjs.org/openapi-typescript/-/openapi-typescript-7.13.0.tgz","integrity":"sha512-EFP392gcqXS7ntPvbhBzbF8TyBA+baIYEm791Hy5YkjDYKTnk/Tn5OQeKm5BIZvJihpp8Zzr4hzx0Irde1LNGQ==","license":"MIT","bin":{"openapi-typescript":"bin/cli.js"}}}}' >"$FIXTURE_FRONTEND/package-lock.json"
+printf '%s\n' '{"name":"fixture","private":true,"devDependencies":{"@redocly/cli":"2.51.2","openapi-typescript":"7.13.0"},"overrides":{"js-yaml":"4.3.2"}}' >"$FIXTURE_FRONTEND/package.json"
+printf '%s\n' '{"name":"fixture","lockfileVersion":3,"packages":{"":{"devDependencies":{"@redocly/cli":"2.51.2","openapi-typescript":"7.13.0"}},"node_modules/@redocly/cli":{"version":"2.51.2","resolved":"https://registry.npmjs.org/@redocly/cli/-/cli-2.51.2.tgz","integrity":"sha512-pviW1gfsjCAuIVutmQcihlhlgoivfNzisBIR61EwSSREHGZ08Sbtjp/h/HPDkVavWwdzR/gs2wgHrdXLd6qU1A==","license":"MIT","bin":{"redocly":"bin/cli.js"}},"node_modules/js-yaml":{"version":"4.3.2","resolved":"https://registry.npmjs.org/js-yaml/-/js-yaml-4.3.2.tgz","integrity":"sha512-SFNOvSJ+Dgf/9An904Yx+CgSlIPCkIpao4qo51lpee25TIRejdH3rhR4EZMGoNx3/TP3O+wzWuiTFl4sqbltzA==","license":"MIT"},"node_modules/openapi-typescript":{"version":"7.13.0","resolved":"https://registry.npmjs.org/openapi-typescript/-/openapi-typescript-7.13.0.tgz","integrity":"sha512-EFP392gcqXS7ntPvbhBzbF8TyBA+baIYEm791Hy5YkjDYKTnk/Tn5OQeKm5BIZvJihpp8Zzr4hzx0Irde1LNGQ==","license":"MIT","bin":{"openapi-typescript":"bin/cli.js"}}}}' >"$FIXTURE_FRONTEND/package-lock.json"
 printf '%s\n' '{"name":"@redocly/cli","version":"2.51.2","bin":{"redocly":"bin/cli.js"}}' >"$FIXTURE_FRONTEND/node_modules/@redocly/cli/package.json"
+printf '%s\n' '{"name":"js-yaml","version":"4.3.2"}' >"$FIXTURE_FRONTEND/node_modules/js-yaml/package.json"
 printf '%s\n' '{"name":"openapi-typescript","version":"7.13.0","bin":{"openapi-typescript":"bin/cli.js"}}' >"$FIXTURE_FRONTEND/node_modules/openapi-typescript/package.json"
 
 cat >"$FIXTURE_FRONTEND/node_modules/@redocly/cli/bin/cli.js" <<'REDOCLY'
@@ -365,6 +367,8 @@ grep -Fq 'redocly bundle' "$TRACE" || fail 'generator did not use local Redocly'
 grep -Fq 'redocly lint' "$TRACE" || fail 'generator did not lint the bundled contract'
 grep -Fq 'oapi-codegen -config' "$TRACE" || fail 'generator did not invoke the pinned binary'
 grep -Fq 'openapi-typescript' "$TRACE" || fail 'generator did not invoke locked frontend type generation'
+grep -F 'openapi-typescript ' "$TRACE" | grep -Fq -- '--default-non-nullable false' ||
+  fail 'generator did not preserve OpenAPI required-field semantics'
 [ -s "$FIXTURE_FRONTEND/lib/shared/api/schema.ts" ] || fail 'generator did not create frontend API types'
 
 find "$FIXTURE_BACKEND/internal/adapter/inbound/http/api" "$FIXTURE_FRONTEND/lib/shared/api/schema.ts" -type f -print0 |
@@ -452,6 +456,10 @@ fs.writeFileSync(path, `${JSON.stringify(lock)}\n`);
 NODE
 expect_fixture_rejection 'a tampered openapi-typescript integrity'
 cp "$TEST_TMP/package-lock.clean.json" "$FIXTURE_FRONTEND/package-lock.json"
+
+sed -i 's/"version":"4.3.2"/"version":"4.3.1"/' "$FIXTURE_FRONTEND/node_modules/js-yaml/package.json"
+expect_fixture_rejection 'a stale installed js-yaml parser'
+sed -i 's/"version":"4.3.1"/"version":"4.3.2"/' "$FIXTURE_FRONTEND/node_modules/js-yaml/package.json"
 
 node - "$FIXTURE_BACKEND/tools/openapi/go.sum" <<'NODE'
 const fs = require('node:fs');

@@ -3,7 +3,7 @@
 This record covers the development-only executables used by the OpenAPI
 generator and the YAML compatibility library required by the frontend tool
 graph. It does not approve these packages for untrusted schemas, runtime use,
-or unrestricted network access. Evidence was refreshed on 2026-09-06 from the
+or unrestricted network access. Evidence was refreshed on 2026-09-10 from the
 official npm registry, Go module services, GitHub, and OpenSSF Scorecard.
 
 ## Machine-checked policy
@@ -13,7 +13,7 @@ security evidence within 120 days.
 
 ```text
 policy.format=openapi-toolchain-trust-v1
-evidence.retrieved=2026-09-06
+evidence.retrieved=2026-09-10
 redocly.package=@redocly/cli
 redocly.version=2.51.2
 redocly.publisher=Redocly npm scope; version published by npm account romanhotsiy
@@ -38,6 +38,18 @@ yaml.tarball_sha1=78274afd93598a1dfdd6130df6a566defcbf9aa4
 yaml.security_evidence_date=2026-09-06
 yaml.trust_decision=accepted-compatibility
 yaml.residual_risk=the package exposes an unused CLI; this project resolves only its library API for the locked development tool graph
+js_yaml.package=js-yaml
+js_yaml.version=4.3.2
+js_yaml.publisher=vitaly npm account
+js_yaml.repository=https://github.com/nodeca/js-yaml
+js_yaml.registry=https://registry.npmjs.org/
+js_yaml.license=MIT
+js_yaml.integrity=sha512-SFNOvSJ+Dgf/9An904Yx+CgSlIPCkIpao4qo51lpee25TIRejdH3rhR4EZMGoNx3/TP3O+wzWuiTFl4sqbltzA==
+js_yaml.tarball_sha1=8e44fb14a2643c59726bb15787b5f1512cb3d3fb
+js_yaml.security_evidence_date=2026-09-10
+js_yaml.advisory=https://github.com/advisories/GHSA-2883-xcg3-v3hh
+js_yaml.trust_decision=accepted-patched
+js_yaml.residual_risk=development parser shared by OpenAPI and lint tools; retain the exact root override until every direct owner accepts 4.3.2 or later
 openapi_typescript.package=openapi-typescript
 openapi_typescript.version=7.13.0
 openapi_typescript.publisher=npm maintainers drewpowers and gzm0
@@ -101,6 +113,29 @@ Official evidence:
 - https://registry.npmjs.org/yaml/2.9.0
 - https://github.com/eemeli/yaml
 
+## js-yaml 4.3.2 transitive patch
+
+The complete audit on 2026-09-10 reported two development-only findings and
+no production findings. Both entries had the same root cause:
+
+| Audit entry | Production reachable | Development reachable | Root owner | Transitive owner | Resolution |
+| --- | --- | --- | --- | --- | --- |
+| `js-yaml`, advisory 1193727 | No | Yes | `openapi-typescript`, `eslint`, and `eslint-config-next` | `@redocly/openapi-core`, `eslint`, and `@eslint/eslintrc` | Exact root override to 4.3.2 |
+| `@redocly/openapi-core` | No | Yes | `openapi-typescript` | `@redocly/openapi-core` -> `js-yaml` | Resolved by the same 4.3.2 override |
+
+The advisory affects js-yaml 4.x releases before 4.3.2 and permits excessive
+CPU use while parsing crafted merge sources. Version 4.3.2 contains the fix.
+The npm record maps that release to the official `nodeca/js-yaml` repository,
+the MIT license, source commit `79ca68d90f333fbe6d9e42827527e62636200191`,
+and the integrity values recorded above. The lockfile override is limited to a
+patch release and removes both audit findings without an exception.
+
+Official evidence:
+
+- https://registry.npmjs.org/js-yaml/4.3.2
+- https://github.com/nodeca/js-yaml/releases/tag/4.3.2
+- https://github.com/advisories/GHSA-2883-xcg3-v3hh
+
 ## openapi-typescript 7.13.0
 
 The npm version record identifies the official openapi-ts repository, MIT
@@ -109,10 +144,17 @@ signature, and SLSA provenance attestation. The package is pinned exactly in
 both the manifest and lockfile. The dependency advisory gate reported no
 findings and no reviewed exceptions after the toolchain update.
 
+Generation explicitly sets `--default-non-nullable false`. Version 7.13.0
+otherwise treats properties with a default value as required TypeScript
+fields, even when the OpenAPI schema omits them from `required`. The explicit
+compatibility option keeps generated request types aligned with the canonical
+OpenAPI required lists and with backend defaulting behavior.
+
 Official evidence:
 
 - https://registry.npmjs.org/openapi-typescript/7.13.0
 - https://github.com/openapi-ts/openapi-typescript
+- https://openapi-ts.dev/cli
 
 ## oapi-codegen v2.8.0
 
