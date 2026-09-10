@@ -4,36 +4,96 @@ package integration_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	redisadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/redis"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
+	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/idempotency"
 )
 
 func TestCommandReceiptCoordinatorsReplayDurableOutcomesAcrossReplicas(t *testing.T) {
+	ctx := context.Background()
+	TruncateTables(t, sharedPool)
+	t.Cleanup(func() { TruncateTables(t, sharedPool) })
+	prepareTournamentCreateReceiptContent(ctx, t)
+
 	redis := sharedRedis(t)
 	firstStore := redisadapter.NewCommandReceiptStore(redis.client, time.Second, time.Minute, time.Second)
 	secondStore := redisadapter.NewCommandReceiptStore(redis.client, time.Second, time.Minute, time.Second)
 	first := idempotency.NewCoordinator(firstStore)
 	second := idempotency.NewCoordinator(secondStore)
-	command := integrationCommandReceipt(t, "participant-ready")
+	durableCommand := tournamentCreateReceiptCommand(time.Now().UTC().Truncate(time.Microsecond))
+	command, err := idempotency.NewCommand(
+		"tournament-create",
+		durableCommand.IdempotencyKey,
+		durableCommand.PayloadDigest,
+	)
+	require.NoError(t, err)
 
-	committed, err := idempotency.Execute(context.Background(), first, command, func(context.Context) (string, error) {
-		return "committed-database-outcome", nil
+	committed, err := idempotency.Execute(ctx, first, command, func(ctx context.Context) (usecase.TournamentResult, error) {
+		return newTournamentCreateReceiptStore().Create(ctx, durableCommand)
 	})
 	require.NoError(t, err)
-	require.Equal(t, "committed-database-outcome", committed)
 
-	replayed, err := idempotency.Execute(context.Background(), second, command, func(context.Context) (string, error) {
-		return "authoritative-database-replay", nil
+	replayed, err := idempotency.Execute(ctx, second, command, func(ctx context.Context) (usecase.TournamentResult, error) {
+		return newTournamentCreateReceiptStore().Create(ctx, durableCommand)
 	})
 	require.NoError(t, err)
-	require.Equal(t, "authoritative-database-replay", replayed)
+	require.Equal(t, committed, replayed)
+	assertTournamentCreateReceiptCount(ctx, t, durableCommand.IdempotencyKey, 1)
+}
+
+func TestCommandReceiptCoordinatorRetriesAfterDurableRollback(t *testing.T) {
+	ctx := context.Background()
+	TruncateTables(t, sharedPool)
+	t.Cleanup(func() { TruncateTables(t, sharedPool) })
+	prepareTournamentCreateReceiptContent(ctx, t)
+
+	redis := sharedRedis(t)
+	first := idempotency.NewCoordinator(redisadapter.NewCommandReceiptStore(
+		redis.client, time.Second, time.Minute, time.Second,
+	))
+	second := idempotency.NewCoordinator(redisadapter.NewCommandReceiptStore(
+		redis.client, time.Second, time.Minute, time.Second,
+	))
+	durableCommand := tournamentCreateReceiptCommand(time.Now().UTC().Truncate(time.Microsecond))
+	command, err := idempotency.NewCommand(
+		"tournament-create",
+		durableCommand.IdempotencyKey,
+		durableCommand.PayloadDigest,
+	)
+	require.NoError(t, err)
+	rollback := errors.New("force durable transaction rollback")
+
+	_, err = idempotency.Execute(ctx, first, command, func(ctx context.Context) (usecase.TournamentResult, error) {
+		var result usecase.TournamentResult
+		tx := postgres.NewTxManager(sharedPool)
+		err := tx.Do(ctx, func(txCtx context.Context) error {
+			var createErr error
+			result, createErr = newTournamentCreateReceiptStore().Create(txCtx, durableCommand)
+			if createErr != nil {
+				return createErr
+			}
+			return rollback
+		})
+		return result, err
+	})
+	require.ErrorIs(t, err, rollback)
+	assertTournamentCreateReceiptCount(ctx, t, durableCommand.IdempotencyKey, 0)
+
+	committed, err := idempotency.Execute(ctx, second, command, func(ctx context.Context) (usecase.TournamentResult, error) {
+		return newTournamentCreateReceiptStore().Create(ctx, durableCommand)
+	})
+	require.NoError(t, err)
+	require.Equal(t, durableCommand.TournamentID, committed.Tournament.ID)
+	assertTournamentCreateReceiptCount(ctx, t, durableCommand.IdempotencyKey, 1)
 }
 
 func TestCommandReceiptCoordinatorReopensExpiredInFlightReceiptAfterRestart(t *testing.T) {

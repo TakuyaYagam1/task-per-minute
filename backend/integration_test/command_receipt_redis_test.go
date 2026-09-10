@@ -112,3 +112,33 @@ func TestCommandReceiptStoreExpiresInFlightAdmission(t *testing.T) {
 		return beginErr == nil && result.Disposition == idempotency.BeginAcquired && result.Lease == newLease
 	}, time.Second, 10*time.Millisecond)
 }
+
+func TestCommandReceiptStoreExpiresTerminalReceipts(t *testing.T) {
+	redis := sharedRedis(t)
+	store := redisadapter.NewCommandReceiptStore(redis.client, time.Second, 50*time.Millisecond, 50*time.Millisecond)
+
+	for _, succeeded := range []bool{true, false} {
+		command := idempotency.Command{
+			Namespace: "integration-command-terminal-expiry",
+			ID:        uuid.New(),
+			PayloadDigest: [32]byte{
+				1,
+			},
+		}
+		lease := integrationLease(t)
+		begin, err := store.Begin(context.Background(), command, lease)
+		require.NoError(t, err)
+		require.Equal(t, idempotency.BeginAcquired, begin.Disposition)
+
+		if succeeded {
+			require.NoError(t, store.MarkSucceeded(context.Background(), command, lease))
+		} else {
+			require.NoError(t, store.MarkFailed(context.Background(), command, lease))
+		}
+
+		key := "command-receipt:" + command.Namespace + ":" + command.ID.String()
+		require.Eventually(t, func() bool {
+			return redis.client.Exists(context.Background(), key).Val() == 0
+		}, 2*time.Second, 10*time.Millisecond)
+	}
+}
