@@ -178,7 +178,7 @@ func TestCombinedDependencyHealthKeepsTheLeastReadyState(t *testing.T) {
 	require.Equal(t, failed, combinedDependencyHealth(healthy, failed))
 }
 
-func TestWorkerBoundDependencyHealthUsesRuntimeStateWhenAvailable(t *testing.T) {
+func TestWorkerBoundDependencyHealthRequiresRuntimeState(t *testing.T) {
 	healthy := observability.TournamentDependencyStatus{
 		Health: observability.TournamentHealthStateHealthy, Readiness: observability.TournamentReadinessStateReady,
 	}
@@ -189,6 +189,6 @@ func TestWorkerBoundDependencyHealthUsesRuntimeStateWhenAvailable(t *testing.T) 
 		return runtimeWorkerHealth{State: runtimeWorkerStateFailed}
 	})
 
-	require.Equal(t, healthy, workerBoundDependencyHealth(healthy, nil, "worker"))
+	require.Equal(t, failed, workerBoundDependencyHealth(healthy, nil, "worker"))
 	require.Equal(t, failed, workerBoundDependencyHealth(healthy, failedWorker, "worker"))
 }

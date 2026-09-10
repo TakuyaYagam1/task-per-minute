@@ -79,8 +79,9 @@ func TestEventTelemetryProviders(t *testing.T) {
 				FreshInstances: 1,
 			}, nil
 		})
-		probe := provideHealthProbe(
-			runtime, realtime, nil, provideClock(), telemetry, nil, nil, nil, nil, nil, nil, heartbeats, nil,
+		probe := newHealthProbe(
+			runtime, realtime, nil, provideClock(), telemetry, nil, nil, nil, nil, nil,
+			healthyRuntimeWorkerHealthSource(), heartbeats, nil,
 		)
 
 		active := probe.TournamentHealth(t.Context())
@@ -197,6 +198,7 @@ func TestPreflightRuntimeHealthSourceSamplesBoundedProductionSignals(t *testing.
 		taskAvailability: healthyPrivateTaskAvailabilityHealth(now),
 		receiptBacklog:   healthyPrivateTaskReceiptBacklog(),
 		realtime:         realtime,
+		workers:          healthyRuntimeWorkerHealthSource(),
 		heartbeats:       healthyRuntimeWorkerHeartbeats(),
 		redis: preflightDependencyProbeFunc(func(ctx context.Context) error {
 			_, bounded := ctx.Deadline()
@@ -245,6 +247,7 @@ func TestPreflightRuntimeHealthSourceFailsClosedAndRecovers(t *testing.T) {
 		taskAvailability: healthyPrivateTaskAvailabilityHealth(now),
 		receiptBacklog:   healthyPrivateTaskReceiptBacklog(),
 		realtime:         realtime,
+		workers:          healthyRuntimeWorkerHealthSource(),
 		heartbeats:       healthyRuntimeWorkerHeartbeats(),
 		redis: preflightDependencyProbeFunc(func(context.Context) error {
 			if !available {
@@ -300,6 +303,7 @@ func TestPreflightRuntimeHealthSourceFailsClosedForStaleSharedWorkerHeartbeats(t
 		taskAvailability: healthyPrivateTaskAvailabilityHealth(now),
 		receiptBacklog:   healthyPrivateTaskReceiptBacklog(),
 		realtime:         realtime,
+		workers:          healthyRuntimeWorkerHealthSource(),
 		heartbeats: runtimeWorkerHeartbeatReaderFunc(func(
 			ctx context.Context,
 			worker string,
@@ -463,6 +467,17 @@ func healthyRuntimeWorkerHeartbeats() runtimeWorkerHeartbeatReaderFunc {
 		_ time.Time,
 	) (observability.RuntimeWorkerHeartbeatStatus, error) {
 		return observability.RuntimeWorkerHeartbeatStatus{Worker: worker, FreshInstances: 2}, nil
+	}
+}
+
+func healthyRuntimeWorkerHealthSource() runtimeWorkerHealthSourceFunc {
+	return func(name string) runtimeWorkerHealth {
+		switch name {
+		case "private-task-availability", "realtime-session-delivery":
+			return runtimeWorkerHealth{State: runtimeWorkerStateHealthy}
+		default:
+			return runtimeWorkerHealth{State: runtimeWorkerStateFailed}
+		}
 	}
 }
 

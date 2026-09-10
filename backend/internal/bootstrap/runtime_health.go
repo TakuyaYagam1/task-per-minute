@@ -149,7 +149,7 @@ func workerBoundDependencyHealth(
 	workerName string,
 ) observability.TournamentDependencyStatus {
 	if workers == nil {
-		return dependency
+		return failedRuntimeDependency()
 	}
 	return combinedDependencyHealth(dependency, runtimeWorkerHealthStatus(workers, workerName))
 }
