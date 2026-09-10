@@ -19,6 +19,7 @@ func TestValidateJSONRejectsUnsafeStructures(t *testing.T) {
 	}{
 		{name: "duplicate root key", body: `{"type":"public","type":"operator"}`},
 		{name: "case folded duplicate key", body: `{"type":"public","TYPE":"operator"}`},
+		{name: "unicode folded duplicate key", body: `{"state":"first","\u017ftate":"second"}`},
 		{name: "nested duplicate key", body: `{"payload":{"scope":"first","scope":"second"}}`},
 		{name: "too deep", body: deep},
 		{name: "string too long", body: `{"value":"` + strings.Repeat("a", MaxStringBytes+1) + `"}`},

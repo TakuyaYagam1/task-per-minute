@@ -75,7 +75,7 @@ func validateValue(decoder *json.Decoder, depth int) error {
 }
 
 func validateObject(decoder *json.Decoder, depth int) error {
-	seen := make(map[string]struct{})
+	seen := make([]string, 0, MaxCollectionItems)
 	fields := 0
 	for decoder.More() {
 		keyToken, err := decoder.Token()
@@ -86,11 +86,12 @@ func validateObject(decoder *json.Decoder, depth int) error {
 		if !ok || !StringWithinLimit(key) {
 			return errors.New("invalid object key")
 		}
-		canonical := strings.ToLower(key)
-		if _, duplicate := seen[canonical]; duplicate {
-			return fmt.Errorf("duplicate object key %q", key)
+		for _, existing := range seen {
+			if strings.EqualFold(existing, key) {
+				return fmt.Errorf("duplicate object key %q", key)
+			}
 		}
-		seen[canonical] = struct{}{}
+		seen = append(seen, key)
 		fields++
 		if !CollectionWithinLimit(fields) {
 			return errors.New("maximum object fields exceeded")
