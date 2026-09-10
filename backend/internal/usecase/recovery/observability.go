@@ -55,7 +55,7 @@ func (r *RecoveryReconciler) emitRecoveryEvent(
 	if revision < 0 {
 		revision = 0
 	}
-	r.observer.ObserveRecovery(ctx, RecoveryEvent{
+	observeRecoverySafely(ctx, r.observer, RecoveryEvent{
 		Outcome:       outcome,
 		CorrelationID: recoveryCorrelation(graph),
 		TournamentID:  graph.TournamentID,

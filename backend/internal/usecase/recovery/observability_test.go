@@ -153,6 +153,33 @@ func TestSubmissionAndRecoveryLogging(t *testing.T) {
 	})
 }
 
+func TestRecoveryReconcilerIsolatesObserverPanic(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)
+	graph, _, _ := recoveryFixture(t, now)
+	rearmer := newRecoveryRearmerHarness(t, nil)
+	observer := recoverymocks.NewMockRecoveryObserver(t)
+	observer.EXPECT().ObserveRecovery(mock.Anything, mock.Anything).
+		Run(func(context.Context, recovery.RecoveryEvent) { panic("observer failed") }).Once()
+	reconciler := recovery.NewRecoveryReconciler(
+		rearmer.rearmer,
+		newRecoveryClock(t, now),
+		observer,
+	)
+
+	var (
+		result recovery.RecoveryResult
+		err    error
+	)
+	require.NotPanics(t, func() {
+		result, err = reconciler.Reconcile(t.Context(), graph)
+	})
+	require.NoError(t, err)
+	require.Equal(t, 2, result.Rearmed)
+	require.Len(t, rearmer.plansSnapshot(), 1)
+}
+
 type recoveryEventHarness struct {
 	observer *recoverymocks.MockRecoveryObserver
 	mu       sync.Mutex
