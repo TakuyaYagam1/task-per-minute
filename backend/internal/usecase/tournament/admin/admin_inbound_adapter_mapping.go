@@ -29,7 +29,7 @@ func commandScope(value inbound.AdminCommandScope) CommandScope {
 }
 
 func rosterView(value RosterView) inbound.AdminRosterView {
-	mapped := inbound.AdminRosterView{ID: value.ID, TournamentID: value.TournamentID, Revision: value.Revision, Locked: value.Locked, ExecutionStarted: value.ExecutionStarted, LockedAt: copyTime(value.LockedAt), ExecutionStartedAt: copyTime(value.ExecutionStartedAt), CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt}
+	mapped := inbound.AdminRosterView{ID: value.ID, TournamentID: value.TournamentID, Revision: value.Revision, Locked: value.Locked, ExecutionStarted: value.ExecutionStarted, LockedAt: cloneTime(value.LockedAt), ExecutionStartedAt: cloneTime(value.ExecutionStartedAt), CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt}
 	if value.Participants != nil {
 		mapped.Participants = make([]inbound.AdminRosterParticipantView, len(value.Participants))
 	}
@@ -40,7 +40,7 @@ func rosterView(value RosterView) inbound.AdminRosterView {
 }
 
 func swissRoundView(value SwissRoundView) inbound.AdminSwissRoundView {
-	mapped := inbound.AdminSwissRoundView{ID: value.ID, TournamentID: value.TournamentID, RoundNumber: value.RoundNumber, Revision: value.Revision, RosterParticipantIDs: append([]uuid.UUID(nil), value.RosterParticipantIDs...), Locked: value.Locked, LockedAt: copyTime(value.LockedAt), StartedAt: copyTime(value.StartedAt), CompletedAt: copyTime(value.CompletedAt), CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt}
+	mapped := inbound.AdminSwissRoundView{ID: value.ID, TournamentID: value.TournamentID, RoundNumber: value.RoundNumber, Revision: value.Revision, RosterParticipantIDs: append([]uuid.UUID(nil), value.RosterParticipantIDs...), Locked: value.Locked, LockedAt: cloneTime(value.LockedAt), StartedAt: cloneTime(value.StartedAt), CompletedAt: cloneTime(value.CompletedAt), CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt}
 	if value.PairingEvidence != nil {
 		mapped.PairingEvidence = &inbound.AdminSwissPairingEvidenceView{ID: value.PairingEvidence.ID, Purpose: value.PairingEvidence.Purpose, AlgorithmVersion: value.PairingEvidence.AlgorithmVersion, NormalizedInputs: append([]string(nil), value.PairingEvidence.NormalizedInputs...), Result: append([]string(nil), value.PairingEvidence.Result...), ReplayDigest: value.PairingEvidence.ReplayDigest, OwnerID: value.PairingEvidence.OwnerID, DecidedAt: value.PairingEvidence.DecidedAt}
 	}
@@ -48,7 +48,7 @@ func swissRoundView(value SwissRoundView) inbound.AdminSwissRoundView {
 		mapped.Pairings = make([]inbound.AdminSwissPairingView, len(value.Pairings))
 	}
 	for i, pair := range value.Pairings {
-		mapped.Pairings[i] = inbound.AdminSwissPairingView{ID: pair.ID, RoundID: pair.RoundID, FirstParticipantID: pair.FirstParticipantID, SecondParticipantID: pair.SecondParticipantID, EvidenceID: pair.EvidenceID, Repeated: pair.Repeated, OverrideActorID: copyInboundUUID(pair.OverrideActorID), OverrideReason: copyString(pair.OverrideReason)}
+		mapped.Pairings[i] = inbound.AdminSwissPairingView{ID: pair.ID, RoundID: pair.RoundID, FirstParticipantID: pair.FirstParticipantID, SecondParticipantID: pair.SecondParticipantID, EvidenceID: pair.EvidenceID, Repeated: pair.Repeated, OverrideActorID: cloneUUID(pair.OverrideActorID), OverrideReason: copyString(pair.OverrideReason)}
 	}
 	if value.Bye != nil {
 		mapped.Bye = &inbound.AdminSwissByeView{ID: value.Bye.ID, RoundID: value.Bye.RoundID, ParticipantID: value.Bye.ParticipantID, PointsAwarded: value.Bye.PointsAwarded, RevisionID: value.Bye.RevisionID, EvidenceID: value.Bye.EvidenceID}
@@ -63,7 +63,7 @@ func swissRoundView(value SwissRoundView) inbound.AdminSwissRoundView {
 }
 
 func waveView(value WaveView) inbound.AdminWaveView {
-	mapped := inbound.AdminWaveView{Wave: cloneWave(value.Wave), Revision: value.Revision, ByeParticipantID: copyInboundUUID(value.ByeParticipantID)}
+	mapped := inbound.AdminWaveView{Wave: cloneWave(value.Wave), Revision: value.Revision, ByeParticipantID: cloneUUID(value.ByeParticipantID)}
 	if value.ReadinessRevisions != nil {
 		mapped.ReadinessRevisions = make(map[uuid.UUID]int64, len(value.ReadinessRevisions))
 		for id, revision := range value.ReadinessRevisions {
@@ -80,12 +80,12 @@ func waveView(value WaveView) inbound.AdminWaveView {
 }
 
 func correctionCommand(value inbound.AdminCorrectionCommand) CorrectionCommand {
-	mapped := CorrectionCommand{CommandScope: commandScope(value.AdminCommandScope), SeriesID: value.SeriesID, GameID: value.GameID, ExpectedProjectionRevision: value.ExpectedProjectionRevision, Confirmed: value.Confirmed, Reason: value.Reason, Explanation: value.Explanation, Fields: append([]string(nil), value.Fields...), Patch: CorrectionPatch{State: value.Patch.State, Reason: value.Patch.Reason, WinnerID: copyInboundUUID(value.Patch.WinnerID), SolvedAt: copyTime(value.Patch.SolvedAt), SubmissionID: copyInboundUUID(value.Patch.SubmissionID), EvidenceDigest: value.Patch.EvidenceDigest}}
+	mapped := CorrectionCommand{CommandScope: commandScope(value.AdminCommandScope), SeriesID: value.SeriesID, GameID: value.GameID, ExpectedProjectionRevision: value.ExpectedProjectionRevision, Confirmed: value.Confirmed, Reason: value.Reason, Explanation: value.Explanation, Fields: append([]string(nil), value.Fields...), Patch: CorrectionPatch{State: value.Patch.State, Reason: value.Patch.Reason, WinnerID: cloneUUID(value.Patch.WinnerID), SolvedAt: cloneTime(value.Patch.SolvedAt), SubmissionID: cloneUUID(value.Patch.SubmissionID), EvidenceDigest: value.Patch.EvidenceDigest}}
 	if value.ProjectionIntents != nil {
 		mapped.ProjectionIntents = make([]CorrectionProjectionIntent, len(value.ProjectionIntents))
 	}
 	for i, intent := range value.ProjectionIntents {
-		mapped.ProjectionIntents[i] = CorrectionProjectionIntent{ExpectedRevision: ProjectionRevisionExpectation{ID: intent.ExpectedRevision.ID, TournamentID: intent.ExpectedRevision.TournamentID, ArtifactKind: intent.ExpectedRevision.ArtifactKind, ArtifactID: intent.ExpectedRevision.ArtifactID, RevisionNo: intent.ExpectedRevision.RevisionNo, PreviousRevisionID: copyInboundUUID(intent.ExpectedRevision.PreviousRevisionID), PayloadDigest: intent.ExpectedRevision.PayloadDigest, CreatedAt: intent.ExpectedRevision.CreatedAt}, NextRevisionID: intent.NextRevisionID, DecisionID: intent.DecisionID, PayloadDigest: intent.PayloadDigest}
+		mapped.ProjectionIntents[i] = CorrectionProjectionIntent{ExpectedRevision: ProjectionRevisionExpectation{ID: intent.ExpectedRevision.ID, TournamentID: intent.ExpectedRevision.TournamentID, ArtifactKind: intent.ExpectedRevision.ArtifactKind, ArtifactID: intent.ExpectedRevision.ArtifactID, RevisionNo: intent.ExpectedRevision.RevisionNo, PreviousRevisionID: cloneUUID(intent.ExpectedRevision.PreviousRevisionID), PayloadDigest: intent.ExpectedRevision.PayloadDigest, CreatedAt: intent.ExpectedRevision.CreatedAt}, NextRevisionID: intent.NextRevisionID, DecisionID: intent.DecisionID, PayloadDigest: intent.PayloadDigest}
 	}
 	if value.UnlockIntents != nil {
 		mapped.UnlockIntents = make([]CorrectionUnlockIntent, len(value.UnlockIntents))
@@ -102,7 +102,7 @@ func inboundCorrectionEvidence(value CorrectionEvidence) inbound.AdminCorrection
 		mapped.Supersessions = make([]inbound.AdminProjectionSupersessionView, len(value.Supersessions))
 	}
 	for i, item := range value.Supersessions {
-		mapped.Supersessions[i] = inbound.AdminProjectionSupersessionView{ArtifactKind: item.ArtifactKind, ArtifactID: item.ArtifactID, PreviousRevisionID: item.PreviousRevisionID, SuccessorRevisionID: item.SuccessorRevisionID, PreviousDecisionID: copyInboundUUID(item.PreviousDecisionID), ReplacementDecisionID: item.ReplacementDecisionID}
+		mapped.Supersessions[i] = inbound.AdminProjectionSupersessionView{ArtifactKind: item.ArtifactKind, ArtifactID: item.ArtifactID, PreviousRevisionID: item.PreviousRevisionID, SuccessorRevisionID: item.SuccessorRevisionID, PreviousDecisionID: cloneUUID(item.PreviousDecisionID), ReplacementDecisionID: item.ReplacementDecisionID}
 	}
 	if value.UnlockIntents != nil {
 		mapped.UnlockIntents = make([]inbound.AdminCorrectionUnlockIntent, len(value.UnlockIntents))
@@ -118,15 +118,7 @@ func auditFilter(value inbound.AdminAuditFilter) audit.AuditFilter {
 	if value.Cursor != nil {
 		cursor = &audit.Cursor{OccurredAt: value.Cursor.OccurredAt, AuditEventID: value.Cursor.AuditEventID, RevisionID: value.Cursor.RevisionID, SnapshotBound: value.Cursor.SnapshotBound}
 	}
-	return audit.AuditFilter{TournamentID: value.TournamentID, EntityKind: audit.EntityKind(value.EntityKind), EntityID: copyInboundUUID(value.EntityID), EventType: value.EventType, ActorKind: value.ActorKind, ActorID: copyInboundUUID(value.ActorID), ResultReason: value.ResultReason, OccurredFrom: copyTime(value.OccurredFrom), OccurredTo: copyTime(value.OccurredTo), Cursor: cursor, PageSize: value.PageSize}
-}
-
-func copyTime(value *time.Time) *time.Time {
-	if value == nil {
-		return nil
-	}
-	copied := *value
-	return &copied
+	return audit.AuditFilter{TournamentID: value.TournamentID, EntityKind: audit.EntityKind(value.EntityKind), EntityID: cloneUUID(value.EntityID), EventType: value.EventType, ActorKind: value.ActorKind, ActorID: cloneUUID(value.ActorID), ResultReason: value.ResultReason, OccurredFrom: cloneTime(value.OccurredFrom), OccurredTo: cloneTime(value.OccurredTo), Cursor: cursor, PageSize: value.PageSize}
 }
 func copyString(value *string) *string {
 	if value == nil {
@@ -146,8 +138,8 @@ func copyInt64(value *int64) *int64 {
 func cloneWave(value domain.Wave) domain.Wave {
 	clone := value
 	clone.Members = append([]domain.WaveMember(nil), value.Members...)
-	clone.StartedAt = copyTime(value.StartedAt)
-	clone.PausedAt = copyTime(value.PausedAt)
+	clone.StartedAt = cloneTime(value.StartedAt)
+	clone.PausedAt = cloneTime(value.PausedAt)
 	clone.ReadyWindow = cloneReadyWindow(value.ReadyWindow)
 	return clone
 }
@@ -156,7 +148,7 @@ func cloneReadyWindow(value *domain.ReadyWindow) *domain.ReadyWindow {
 		return nil
 	}
 	clone := *value
-	clone.ConsumedAt = copyTime(value.ConsumedAt)
+	clone.ConsumedAt = cloneTime(value.ConsumedAt)
 	return &clone
 }
 
@@ -182,33 +174,33 @@ func operatorSnapshotView(value OperatorSnapshotView) inbound.AdminOperatorSnaps
 
 func pauseGraphView(value PauseGraphView) *inbound.AdminPauseGraphView {
 	graph := value.Graph
-	mapped := &inbound.AdminPauseGraphView{TournamentID: graph.Scope.TournamentID, RosterID: graph.Scope.RosterID, Revision: graph.Revision, Wave: waveView(value.Wave), ActivePauseID: nil, PausedAt: copyTime(graph.PausedAt), DeadlinesSuppressed: graph.DeadlinesSuppressed, TerminalActionRevision: graph.TerminalActionRevision}
+	mapped := &inbound.AdminPauseGraphView{TournamentID: graph.Scope.TournamentID, RosterID: graph.Scope.RosterID, Revision: graph.Revision, Wave: waveView(value.Wave), ActivePauseID: nil, PausedAt: cloneTime(graph.PausedAt), DeadlinesSuppressed: graph.DeadlinesSuppressed, TerminalActionRevision: graph.TerminalActionRevision}
 	if graph.ActivePauseID != uuid.Nil {
-		mapped.ActivePauseID = copyInboundUUID(&graph.ActivePauseID)
+		mapped.ActivePauseID = cloneUUID(&graph.ActivePauseID)
 	}
 	if graph.Series != nil {
 		mapped.Series = make([]inbound.AdminPauseSeriesView, len(graph.Series))
 		for i, item := range graph.Series {
-			mapped.Series[i] = inbound.AdminPauseSeriesView{Series: adminCloneSeries(item.Execution.Series), Revision: item.Revision, CurrentGameID: copyInboundUUID(item.CurrentGameID), ResumeState: copySeriesState(item.Execution.ResumeState)}
+			mapped.Series[i] = inbound.AdminPauseSeriesView{Series: adminCloneSeries(item.Execution.Series), Revision: item.Revision, CurrentGameID: cloneUUID(item.CurrentGameID), ResumeState: copySeriesState(item.Execution.ResumeState)}
 		}
 	}
 	if graph.Games != nil {
 		mapped.Games = make([]inbound.AdminPauseGameView, len(graph.Games))
 		for i, item := range graph.Games {
-			mapped.Games[i] = inbound.AdminPauseGameView{SeriesID: item.SeriesID, Game: cloneGame(item.Game), Revision: item.Revision, Deadline: copyTime(item.Deadline), ResumeState: copyGameState(item.ResumeState)}
+			mapped.Games[i] = inbound.AdminPauseGameView{SeriesID: item.SeriesID, Game: cloneGame(item.Game), Revision: item.Revision, Deadline: cloneTime(item.Deadline), ResumeState: copyGameState(item.ResumeState)}
 		}
 	}
 	mapped.Draft = inboundDraftView(graph.Draft)
 	if graph.Presence != nil {
 		mapped.Presence = make([]inbound.AdminPresenceView, len(graph.Presence))
 		for i, item := range graph.Presence {
-			mapped.Presence[i] = inbound.AdminPresenceView{ID: item.ID, TournamentID: item.TournamentID, RosterID: item.RosterID, SeriesID: item.SeriesID, ParticipantID: item.ParticipantID, State: string(item.State), PresenceEpoch: item.PresenceEpoch, Revision: item.Revision, ConnectedAt: item.ConnectedAt, DisconnectedAt: copyTime(item.DisconnectedAt), UpdatedAt: item.UpdatedAt}
+			mapped.Presence[i] = inbound.AdminPresenceView{ID: item.ID, TournamentID: item.TournamentID, RosterID: item.RosterID, SeriesID: item.SeriesID, ParticipantID: item.ParticipantID, State: string(item.State), PresenceEpoch: item.PresenceEpoch, Revision: item.Revision, ConnectedAt: item.ConnectedAt, DisconnectedAt: cloneTime(item.DisconnectedAt), UpdatedAt: item.UpdatedAt}
 		}
 	}
 	if graph.Reconnect != nil {
 		mapped.Reconnect = make([]inbound.AdminReconnectIntervalView, len(graph.Reconnect))
 		for i, item := range graph.Reconnect {
-			mapped.Reconnect[i] = inbound.AdminReconnectIntervalView{ID: item.ID, PauseID: item.PauseID, RosterID: item.RosterID, SeriesID: item.SeriesID, GameID: item.GameID, ParticipantID: item.ParticipantID, PresenceEpoch: item.PresenceEpoch, Number: item.Number, ContinuationNumber: item.ContinuationNumber, ContinuedFromID: copyInboundUUID(item.ContinuedFromID), SuspendedByPauseID: copyInboundUUID(item.SuspendedByPauseID), State: string(item.State), OpenedAt: item.OpenedAt, Deadline: item.Deadline, ClosedAt: copyTime(item.ClosedAt), Revision: item.Revision, UpdatedAt: item.UpdatedAt}
+			mapped.Reconnect[i] = inbound.AdminReconnectIntervalView{ID: item.ID, PauseID: item.PauseID, RosterID: item.RosterID, SeriesID: item.SeriesID, GameID: item.GameID, ParticipantID: item.ParticipantID, PresenceEpoch: item.PresenceEpoch, Number: item.Number, ContinuationNumber: item.ContinuationNumber, ContinuedFromID: cloneUUID(item.ContinuedFromID), SuspendedByPauseID: cloneUUID(item.SuspendedByPauseID), State: string(item.State), OpenedAt: item.OpenedAt, Deadline: item.Deadline, ClosedAt: cloneTime(item.ClosedAt), Revision: item.Revision, UpdatedAt: item.UpdatedAt}
 		}
 	}
 	if graph.Counters != nil {
@@ -220,7 +212,7 @@ func pauseGraphView(value PauseGraphView) *inbound.AdminPauseGraphView {
 	if graph.FrozenDeadlines != nil {
 		mapped.FrozenDeadlines = make([]inbound.AdminFrozenDeadlineView, len(graph.FrozenDeadlines))
 		for i, item := range graph.FrozenDeadlines {
-			mapped.FrozenDeadlines[i] = inbound.AdminFrozenDeadlineView{Kind: string(item.Kind), OwnerID: item.OwnerID, OriginalDeadline: item.OriginalDeadline, FrozenAt: item.FrozenAt, Remaining: item.Remaining, ResumedAt: copyTime(item.ResumedAt), ResumedDeadline: copyTime(item.ResumedDeadline), Revision: item.Revision}
+			mapped.FrozenDeadlines[i] = inbound.AdminFrozenDeadlineView{Kind: string(item.Kind), OwnerID: item.OwnerID, OriginalDeadline: item.OriginalDeadline, FrozenAt: item.FrozenAt, Remaining: item.Remaining, ResumedAt: cloneTime(item.ResumedAt), ResumedDeadline: cloneTime(item.ResumedDeadline), Revision: item.Revision}
 		}
 	}
 	return mapped
@@ -243,7 +235,7 @@ func copyDraftDeadline(value time.Time) *time.Time {
 	if value.IsZero() {
 		return nil
 	}
-	return copyTime(&value)
+	return cloneTime(&value)
 }
 func draftState(value draftusecase.ExecutionState) domain.DraftState {
 	if value == draftusecase.ExecutionStateCompleted {
@@ -267,7 +259,7 @@ func copyGameState(value *domain.GameState) *domain.GameState {
 }
 func adminCloneSeries(value domain.Series) domain.Series {
 	cloned := value
-	cloned.WinnerID = copyInboundUUID(value.WinnerID)
+	cloned.WinnerID = cloneUUID(value.WinnerID)
 	cloned.Slots = append([]domain.GameSlot(nil), value.Slots...)
 	for i := range cloned.Slots {
 		cloned.Slots[i].Attempts = append([]domain.Game(nil), value.Slots[i].Attempts...)
@@ -279,6 +271,6 @@ func adminCloneSeries(value domain.Series) domain.Series {
 }
 func cloneGame(value domain.Game) domain.Game {
 	cloned := value
-	cloned.WinnerID = copyInboundUUID(value.WinnerID)
+	cloned.WinnerID = cloneUUID(value.WinnerID)
 	return cloned
 }

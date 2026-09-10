@@ -170,10 +170,10 @@ func buildCorrectionCommand(
 		RequestedAt: requestedAt, Expected: expected,
 		Patch: correctionusecase.Patch{
 			State: command.Patch.State, Reason: command.Patch.Reason,
-			WinnerID: cloneCorrectionUUID(command.Patch.WinnerID),
+			WinnerID: cloneUUID(command.Patch.WinnerID),
 			SolveMetadata: correctionusecase.SolveMetadata{
-				SolvedAt:       cloneCorrectionTime(command.Patch.SolvedAt),
-				SubmissionID:   cloneCorrectionUUID(command.Patch.SubmissionID),
+				SolvedAt:       cloneTime(command.Patch.SolvedAt),
+				SubmissionID:   cloneUUID(command.Patch.SubmissionID),
 				EvidenceDigest: command.Patch.EvidenceDigest,
 			},
 		},
@@ -297,15 +297,15 @@ func marshalCorrectionProjectionDocument(
 			Kind: intent.ExpectedRevision.ArtifactKind, ID: intent.ExpectedRevision.ArtifactID,
 			ExpectedRevisionID:       intent.ExpectedRevision.ID,
 			ExpectedRevisionNo:       intent.ExpectedRevision.RevisionNo,
-			ExpectedPreviousRevision: cloneCorrectionUUID(intent.ExpectedRevision.PreviousRevisionID),
+			ExpectedPreviousRevision: cloneUUID(intent.ExpectedRevision.PreviousRevisionID),
 			ExpectedPayloadDigest:    hex.EncodeToString(intent.ExpectedRevision.PayloadDigest[:]),
 			NextRevisionID:           intent.NextRevisionID, DecisionID: intent.DecisionID,
 		},
 		Patch: correctionProjectionPatchDocument{
 			State: command.Patch.State, Reason: command.Patch.Reason,
-			WinnerID:       cloneCorrectionUUID(command.Patch.WinnerID),
-			SolvedAt:       cloneCorrectionTime(command.Patch.SolvedAt),
-			SubmissionID:   cloneCorrectionUUID(command.Patch.SubmissionID),
+			WinnerID:       cloneUUID(command.Patch.WinnerID),
+			SolvedAt:       cloneTime(command.Patch.SolvedAt),
+			SubmissionID:   cloneUUID(command.Patch.SubmissionID),
 			EvidenceDigest: hex.EncodeToString(command.Patch.EvidenceDigest[:]),
 		},
 	}
@@ -356,7 +356,7 @@ func correctionEvidence(
 			ArtifactKind: string(item.Artifact.Kind), ArtifactID: item.Artifact.EntityID,
 			PreviousRevisionID:    item.PreviousRevisionID.UUID(),
 			SuccessorRevisionID:   item.SuccessorRevisionID.UUID(),
-			PreviousDecisionID:    cloneCorrectionUUID(item.PreviousDecisionID),
+			PreviousDecisionID:    cloneUUID(item.PreviousDecisionID),
 			ReplacementDecisionID: item.ReplacementDecisionID,
 		}
 	}
@@ -484,26 +484,10 @@ func cloneCorrectionEvidence(value CorrectionEvidence) CorrectionEvidence {
 	clone.Supersessions = make([]ProjectionSupersessionView, len(value.Supersessions))
 	for index, item := range value.Supersessions {
 		clone.Supersessions[index] = item
-		clone.Supersessions[index].PreviousDecisionID = cloneCorrectionUUID(item.PreviousDecisionID)
+		clone.Supersessions[index].PreviousDecisionID = cloneUUID(item.PreviousDecisionID)
 	}
 	clone.UnlockIntents = append([]CorrectionUnlockIntent{}, value.UnlockIntents...)
 	return clone
-}
-
-func cloneCorrectionUUID(value *uuid.UUID) *uuid.UUID {
-	if value == nil {
-		return nil
-	}
-	clone := *value
-	return &clone
-}
-
-func cloneCorrectionTime(value *time.Time) *time.Time {
-	if value == nil {
-		return nil
-	}
-	clone := *value
-	return &clone
 }
 
 var _ CorrectionPort = (*CorrectionWorkflow)(nil)

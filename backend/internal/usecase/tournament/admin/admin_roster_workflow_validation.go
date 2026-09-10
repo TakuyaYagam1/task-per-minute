@@ -228,8 +228,8 @@ func (a RosterOperationAction) valid() bool {
 func cloneRosterView(view RosterView) RosterView {
 	cloned := view
 	cloned.Participants = append([]RosterParticipantView(nil), view.Participants...)
-	cloned.LockedAt = cloneTimeValue(view.LockedAt)
-	cloned.ExecutionStartedAt = cloneTimeValue(view.ExecutionStartedAt)
+	cloned.LockedAt = cloneTime(view.LockedAt)
+	cloned.ExecutionStartedAt = cloneTime(view.ExecutionStartedAt)
 	return cloned
 }
 

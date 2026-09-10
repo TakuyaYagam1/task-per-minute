@@ -56,7 +56,7 @@ func (a *inboundAdapter) ConfigurePairings(ctx context.Context, command inbound.
 	if command.RepeatOverride != nil {
 		override = &RepeatOverride{Confirmed: command.RepeatOverride.Confirmed, Reason: command.RepeatOverride.Reason}
 	}
-	view, err := a.next.ConfigurePairings(ctx, PairingCommand{CommandScope: commandScope(command.AdminCommandScope), ExpectedProjectionRevision: command.ExpectedProjectionRevision, RoundNumber: command.RoundNumber, PairingMode: PairingMode(command.PairingMode), CategoryMode: command.CategoryMode, Categories: append([]domain.Category(nil), command.Categories...), ManualPairings: pairs, ManualPairingsProvided: command.ManualPairingsProvided, ManualByeParticipantID: copyInboundUUID(command.ManualByeParticipantID), RepeatOverride: override})
+	view, err := a.next.ConfigurePairings(ctx, PairingCommand{CommandScope: commandScope(command.AdminCommandScope), ExpectedProjectionRevision: command.ExpectedProjectionRevision, RoundNumber: command.RoundNumber, PairingMode: PairingMode(command.PairingMode), CategoryMode: command.CategoryMode, Categories: append([]domain.Category(nil), command.Categories...), ManualPairings: pairs, ManualPairingsProvided: command.ManualPairingsProvided, ManualByeParticipantID: cloneUUID(command.ManualByeParticipantID), RepeatOverride: override})
 	return swissRoundView(view), adminInboundError(err)
 }
 
@@ -83,7 +83,7 @@ func (a *inboundAdapter) RecordForfeit(ctx context.Context, c inbound.AdminForfe
 	if c.ExpectedGame != nil {
 		game = &GameExpectation{SlotID: c.ExpectedGame.SlotID, GameID: c.ExpectedGame.GameID, AttemptNo: c.ExpectedGame.AttemptNo, State: c.ExpectedGame.State}
 	}
-	return a.next.RecordForfeit(ctx, ForfeitCommand{CommandScope: commandScope(c.AdminCommandScope), SeriesID: c.SeriesID, ForfeitingParticipantID: c.ForfeitingParticipantID, Confirmed: c.Confirmed, Reason: c.Reason, ExpectedAuthorityRevision: c.ExpectedAuthorityRevision, ExpectedGame: game, Basis: c.Basis, RuleID: c.RuleID, EvidenceIDs: append([]uuid.UUID(nil), c.EvidenceIDs...), GameResultRevisionID: copyInboundUUID(c.GameResultRevisionID), ScoreRevisionID: c.ScoreRevisionID, SeriesResultRevisionID: c.SeriesResultRevisionID, AuditEventID: c.AuditEventID, OutboxEventID: c.OutboxEventID, ProjectionRevisionID: c.ProjectionRevisionID})
+	return a.next.RecordForfeit(ctx, ForfeitCommand{CommandScope: commandScope(c.AdminCommandScope), SeriesID: c.SeriesID, ForfeitingParticipantID: c.ForfeitingParticipantID, Confirmed: c.Confirmed, Reason: c.Reason, ExpectedAuthorityRevision: c.ExpectedAuthorityRevision, ExpectedGame: game, Basis: c.Basis, RuleID: c.RuleID, EvidenceIDs: append([]uuid.UUID(nil), c.EvidenceIDs...), GameResultRevisionID: cloneUUID(c.GameResultRevisionID), ScoreRevisionID: c.ScoreRevisionID, SeriesResultRevisionID: c.SeriesResultRevisionID, AuditEventID: c.AuditEventID, OutboxEventID: c.OutboxEventID, ProjectionRevisionID: c.ProjectionRevisionID})
 }
 
 func (a *inboundAdapter) ReplayGame(ctx context.Context, c inbound.AdminReplayCommand) error {

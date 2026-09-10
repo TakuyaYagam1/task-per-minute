@@ -1,8 +1,6 @@
 package admin
 
 import (
-	"github.com/google/uuid"
-
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/audit"
 	tournamentpreflight "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/preflight"
@@ -44,10 +42,10 @@ func mapAuditPage(page audit.AuditPage) inbound.AdminAuditPage {
 		mapped.Events[index] = inbound.AdminAuditEvent{
 			AuditEventID: event.AuditEventID, TournamentID: event.TournamentID, RosterID: event.RosterID,
 			SeriesID: event.SeriesID, ResultEventID: event.ResultEventID, ActorKind: event.ActorKind,
-			ActorID: copyInboundUUID(event.ActorID), EventType: event.EventType,
+			ActorID: cloneUUID(event.ActorID), EventType: event.EventType,
 			RedactedPayload: append([]byte(nil), event.RedactedPayload...), OccurredAt: event.OccurredAt,
 			CreatedAt: event.CreatedAt, ResultState: event.ResultState, ResultReason: event.ResultReason,
-			WinnerID: copyInboundUUID(event.WinnerID), OfficialResultRevisionID: event.OfficialResultRevisionID,
+			WinnerID: cloneUUID(event.WinnerID), OfficialResultRevisionID: event.OfficialResultRevisionID,
 			EntityKind: string(event.EntityKind), EntityID: event.EntityID, RevisionNumber: event.RevisionNumber,
 			IsCurrent: event.IsCurrent, IsSuperseded: event.IsSuperseded,
 		}
@@ -59,14 +57,6 @@ func mapAuditPage(page audit.AuditPage) inbound.AdminAuditPage {
 		}
 	}
 	return mapped
-}
-
-func copyInboundUUID(value *uuid.UUID) *uuid.UUID {
-	if value == nil {
-		return nil
-	}
-	clone := *value
-	return &clone
 }
 
 func mapIncidentBundle(bundle audit.IncidentBundle) inbound.AdminIncidentBundle {

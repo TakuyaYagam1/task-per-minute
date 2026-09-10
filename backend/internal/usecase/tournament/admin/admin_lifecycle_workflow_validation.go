@@ -3,7 +3,6 @@ package admin
 import (
 	"bytes"
 	"encoding/json"
-	"time"
 
 	"github.com/google/uuid"
 
@@ -102,8 +101,8 @@ func lifecycleTournamentView(
 	view.PausedFromState = cloneTournamentState(record.PausedFromState)
 	view.Revision = record.Revision
 	view.UpdatedAt = record.UpdatedAt
-	view.StartedAt = cloneTimeValue(record.StartedAt)
-	view.FinishedAt = cloneTimeValue(record.FinishedAt)
+	view.StartedAt = cloneTime(record.StartedAt)
+	view.FinishedAt = cloneTime(record.FinishedAt)
 	if !validTournamentView(view, base.ID) {
 		return usecase.TournamentView{}, domain.ErrInternal
 	}
@@ -140,7 +139,7 @@ func cancelledTournamentView(
 	view.PausedFromState = cloneTournamentState(record.Tournament.PausedFromState)
 	view.Revision = record.Tournament.Revision
 	view.UpdatedAt = record.Tournament.UpdatedAt
-	view.FinishedAt = cloneTimeValue(record.Tournament.FinishedAt)
+	view.FinishedAt = cloneTime(record.Tournament.FinishedAt)
 	if !validTournamentView(view, base.ID) {
 		return usecase.TournamentView{}, domain.ErrInternal
 	}
@@ -150,20 +149,12 @@ func cancelledTournamentView(
 func adminCloneTournamentView(view usecase.TournamentView) usecase.TournamentView {
 	cloned := view
 	cloned.PausedFromState = cloneTournamentState(view.PausedFromState)
-	cloned.StartedAt = cloneTimeValue(view.StartedAt)
-	cloned.FinishedAt = cloneTimeValue(view.FinishedAt)
+	cloned.StartedAt = cloneTime(view.StartedAt)
+	cloned.FinishedAt = cloneTime(view.FinishedAt)
 	return cloned
 }
 
 func cloneTournamentState(value *domain.TournamentState) *domain.TournamentState {
-	if value == nil {
-		return nil
-	}
-	cloned := *value
-	return &cloned
-}
-
-func cloneTimeValue(value *time.Time) *time.Time {
 	if value == nil {
 		return nil
 	}
