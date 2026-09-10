@@ -98,7 +98,7 @@ FOR UPDATE OF proof, member, series;
 -- name: CreateWaveDisclosureOutboxEvent :one
 WITH locked_idempotency AS MATERIALIZED (
     SELECT pg_advisory_xact_lock(
-        hashtextextended(sqlc.arg(idempotency_key)::TEXT, 0)
+        hashtextextended(sqlc.arg(idempotency_key)::UUID::TEXT, 0)
     )
 ),
 existing AS MATERIALIZED (
@@ -125,7 +125,7 @@ existing AS MATERIALIZED (
         outbox_event.published_at
     FROM locked_idempotency
     CROSS JOIN outbox_events AS outbox_event
-    WHERE outbox_event.idempotency_key = sqlc.arg(idempotency_key)
+    WHERE outbox_event.idempotency_key = sqlc.arg(idempotency_key)::UUID
 ),
 locked_wave AS MATERIALIZED (
     SELECT wave.id,
@@ -220,7 +220,7 @@ inserted AS (
         allocated_sequence.sequence,
         allocated_ordinal.projection_ordinal,
         false,
-        sqlc.arg(idempotency_key),
+        sqlc.arg(idempotency_key)::UUID,
         sqlc.arg(audience),
         sqlc.arg(principal_id),
         'wave.disclosed',

@@ -838,7 +838,7 @@ func (q *Queries) CreateTerminalProjectionAuthority(ctx context.Context, arg Cre
 const createWaveDisclosureOutboxEvent = `-- name: CreateWaveDisclosureOutboxEvent :one
 WITH locked_idempotency AS MATERIALIZED (
     SELECT pg_advisory_xact_lock(
-        hashtextextended($6::TEXT, 0)
+        hashtextextended($6::UUID::TEXT, 0)
     )
 ),
 existing AS MATERIALIZED (
@@ -865,7 +865,7 @@ existing AS MATERIALIZED (
         outbox_event.published_at
     FROM locked_idempotency
     CROSS JOIN outbox_events AS outbox_event
-    WHERE outbox_event.idempotency_key = $6
+    WHERE outbox_event.idempotency_key = $6::UUID
 ),
 locked_wave AS MATERIALIZED (
     SELECT wave.id,
@@ -960,7 +960,7 @@ inserted AS (
         allocated_sequence.sequence,
         allocated_ordinal.projection_ordinal,
         false,
-        $6,
+        $6::UUID,
         $3,
         $4,
         'wave.disclosed',
@@ -1144,7 +1144,7 @@ type CreateWaveDisclosureOutboxEventParams struct {
 	Audience               string
 	PrincipalID            uuid.UUID
 	Payload                []byte
-	IdempotencyKey         string
+	IdempotencyKey         uuid.UUID
 	WaveID                 uuid.UUID
 	ExpectedWaveRevisionID uuid.UUID
 	ExpectedWaveRevision   int64
