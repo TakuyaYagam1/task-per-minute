@@ -432,6 +432,10 @@ DraftRecoveryEvidence:
 
 PublicRecoveryCursor:
   type: object
+  description: >-
+    Optional public recovery watermark. A missing, older, or equal watermark
+    returns one fresh full snapshot. A projection revision or durable event
+    sequence ahead of the server watermark is rejected with HTTP 409.
   additionalProperties: false
   required: [projection_revision, event_sequence]
   properties:
@@ -443,6 +447,86 @@ PublicRecoveryCursor:
       type: integer
       format: int64
       minimum: 0
+
+PublicRecoveryCursorConflictProblem:
+  description: The requested public recovery cursor is ahead of the durable snapshot watermark.
+  allOf:
+    - $ref: '#/ProblemDetails'
+    - type: object
+      required: [requested_cursor, current_cursor]
+      properties:
+        requested_cursor:
+          $ref: '#/PublicRecoveryCursor'
+        current_cursor:
+          $ref: '#/PublicRecoveryCursor'
+
+PublicSeriesScore:
+  type: object
+  description: Public score fields shared with the tournament WebSocket view.
+  additionalProperties: false
+  required: [first_wins, second_wins]
+  properties:
+    first_wins:
+      type: integer
+      format: int32
+      minimum: 0
+      maximum: 2
+    second_wins:
+      type: integer
+      format: int32
+      minimum: 0
+      maximum: 2
+
+PublicLiveSeries:
+  type: object
+  description: Allowlisted live series display data; participant and task data are excluded.
+  additionalProperties: false
+  required: [series_id, format, state, first_display_name, second_display_name, score]
+  properties:
+    series_id:
+      type: string
+      format: uuid
+    format:
+      $ref: '#/SeriesFormat'
+    state:
+      $ref: '#/SeriesState'
+    first_display_name:
+      type: string
+      maxLength: 64
+    second_display_name:
+      type: string
+      maxLength: 64
+    score:
+      $ref: '#/PublicSeriesScore'
+    current_game_position:
+      type: integer
+      format: int32
+      minimum: 0
+      maximum: 3
+
+PublicOfficialResult:
+  type: object
+  description: Allowlisted official series result display data without participant IDs or private material.
+  additionalProperties: false
+  required: [revision_id, series_id, state, score, recorded_at]
+  properties:
+    revision_id:
+      type: string
+      format: uuid
+    series_id:
+      type: string
+      format: uuid
+    state:
+      $ref: '#/SeriesState'
+    winner_display_name:
+      type: string
+      maxLength: 64
+    score:
+      $ref: '#/PublicSeriesScore'
+    recorded_at:
+      type: string
+      format: date-time
+      readOnly: true
 
 ParticipantRecoveryCursor:
   type: object
@@ -489,7 +573,7 @@ OperatorRecoveryCursor:
 PublicRecoverySnapshot:
   type: object
   additionalProperties: false
-  required: [tournament, scoreboard, bracket, live_draft, next_cursor]
+  required: [tournament, scoreboard, bracket, live_series, official_results, live_draft, next_cursor]
   properties:
     tournament:
       $ref: '#/PublicTournamentResponse'
@@ -497,6 +581,14 @@ PublicRecoverySnapshot:
       $ref: '#/PublicScoreboardResponse'
     bracket:
       $ref: '#/PublicBracketResponse'
+    live_series:
+      type: array
+      items:
+        $ref: '#/PublicLiveSeries'
+    official_results:
+      type: array
+      items:
+        $ref: '#/PublicOfficialResult'
     live_draft:
       type: object
       nullable: true

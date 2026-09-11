@@ -1,10 +1,16 @@
 package postgres
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+
+	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
+	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 )
 
 func TestTournamentScoreboardReadsCanonicalEntries(t *testing.T) {
@@ -126,4 +132,91 @@ func TestTournamentSnapshotHelpersPreserveEmptyAndNullableValues(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, int64(1), entry[0].EffectiveTimeMS)
+}
+
+func TestPublicSnapshotCursorConflictSemantics(t *testing.T) {
+	t.Parallel()
+
+	tournamentID := uuid.MustParse("10000000-0000-4000-8000-000000000010")
+	current := usecase.SnapshotCursor{ProjectionRevision: 7, EventSequence: 12}
+	tests := []struct {
+		name             string
+		requested        *usecase.SnapshotCursor
+		wantConflict     bool
+		wantProjection   int64
+		wantEvent        int64
+		wantCurrentProj  int64
+		wantCurrentEvent int64
+	}{
+		{name: "nil cursor"},
+		{
+			name:           "older cursor",
+			requested:      &usecase.SnapshotCursor{ProjectionRevision: 6, EventSequence: 11},
+			wantProjection: 6,
+			wantEvent:      11,
+		},
+		{
+			name:           "equal cursor",
+			requested:      &usecase.SnapshotCursor{ProjectionRevision: 7, EventSequence: 12},
+			wantProjection: 7,
+			wantEvent:      12,
+		},
+		{
+			name:             "future projection",
+			requested:        &usecase.SnapshotCursor{ProjectionRevision: 8, EventSequence: 12},
+			wantConflict:     true,
+			wantProjection:   8,
+			wantEvent:        12,
+			wantCurrentProj:  7,
+			wantCurrentEvent: 12,
+		},
+		{
+			name:             "future event sequence",
+			requested:        &usecase.SnapshotCursor{ProjectionRevision: 7, EventSequence: 13},
+			wantConflict:     true,
+			wantProjection:   7,
+			wantEvent:        13,
+			wantCurrentProj:  7,
+			wantCurrentEvent: 12,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if tt.requested == nil {
+				require.NoError(t, publicSnapshotCursorConflict(tournamentID, usecase.SnapshotCursor{}, current))
+				return
+			}
+			err := publicSnapshotCursorConflict(tournamentID, *tt.requested, current)
+			if !tt.wantConflict {
+				require.NoError(t, err)
+				return
+			}
+			var conflict *usecase.PublicSnapshotCursorConflictError
+			require.ErrorAs(t, err, &conflict)
+			require.ErrorIs(t, err, usecase.ErrPublicSnapshotCursorConflict)
+			require.ErrorIs(t, err, domain.ErrConflict)
+			require.Equal(t, tournamentID, conflict.TournamentID)
+			require.Equal(t, tt.wantProjection, conflict.RequestedProjectionRevision)
+			require.Equal(t, tt.wantEvent, conflict.RequestedEventSequence)
+			require.Equal(t, tt.wantCurrentProj, conflict.CurrentProjectionRevision)
+			require.Equal(t, tt.wantCurrentEvent, conflict.CurrentEventSequence)
+		})
+	}
+}
+
+func TestTournamentReadCursorSQLUsesDurableOutboxWatermark(t *testing.T) {
+	t.Parallel()
+
+	contents, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "queries", "tournament_read.sql"))
+	require.NoError(t, err)
+	query := string(contents)
+	projectionPayloads := strings.Index(query, "-- name: GetTournamentReadProjectionPayloads")
+	require.Positive(t, projectionPayloads)
+	cursorQuery := query[:projectionPayloads]
+	require.Contains(t, cursorQuery, "COALESCE(outbox_cursor.next_sequence - 1, 0)::BIGINT AS event_sequence")
+	require.Contains(t, cursorQuery, "LEFT JOIN tournament_outbox_cursors AS outbox_cursor")
+	require.Contains(t, cursorQuery, "outbox_cursor.tournament_id = revision.tournament_id")
+	require.NotContains(t, cursorQuery, "MAX(outbox_event.sequence)")
 }

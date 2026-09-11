@@ -1018,6 +1018,12 @@
     operationId: getPublicSnapshot
     tags: [tournament]
     summary: Recover the public tournament display view
+    description: >-
+      Returns a fresh, full allowlisted public snapshot including live series
+      and official results. A missing, older, or equal cursor is accepted. A
+      cursor ahead in projection revision or durable event sequence returns
+      HTTP 409. Public snapshot fields match the public WebSocket view and do
+      not include participant IDs, assignments, task contents, or audit data.
     x-auth-scope: tournament:read
     security: []
     parameters:
@@ -1032,7 +1038,11 @@
       '404':
         $ref: '../components/responses.yml#/NotFoundProblem'
       '409':
-        $ref: '../components/responses.yml#/ProjectionRevisionConflictProblem'
+        description: Requested public recovery cursor is ahead of the durable snapshot watermark.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/PublicRecoveryCursorConflictProblem'
 
       default:
         $ref: '../components/responses.yml#/UnexpectedServerProblem'

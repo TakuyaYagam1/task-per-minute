@@ -1,0 +1,154 @@
+package v1
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
+
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/api"
+	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
+	inboundmocks "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound/mocks"
+)
+
+func TestGetPublicSnapshotPropagatesCursorAndMapsAllowlistedCollections(t *testing.T) {
+	t.Parallel()
+
+	tournamentID := uuid.MustParse("20000000-0000-4000-8000-000000000001")
+	requested := &api.PublicRecoveryCursor{ProjectionRevision: 5, EventSequence: 8}
+	var gotQuery inbound.PublicSnapshotQuery
+	reader := inboundmocks.NewMockTournamentSnapshotUseCase(t)
+	reader.EXPECT().PublicSnapshot(mock.Anything, mock.Anything).
+		Run(func(_ context.Context, query inbound.PublicSnapshotQuery) { gotQuery = query }).
+		Return(publicSnapshotHTTPView(tournamentID), nil).
+		Once()
+
+	server := New(Dependencies{TournamentSnapshots: reader})
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/tournaments/"+tournamentID.String()+"/snapshot", nil)
+	server.GetPublicSnapshot(recorder, request, tournamentID, api.GetPublicSnapshotParams{Cursor: requested})
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.NotNil(t, gotQuery.Cursor)
+	require.Equal(t, int64(5), gotQuery.Cursor.ProjectionRevision)
+	require.Equal(t, int64(8), gotQuery.Cursor.EventSequence)
+
+	var payload api.PublicRecoverySnapshot
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &payload))
+	require.Equal(t, tournamentID, payload.Tournament.TournamentId)
+	require.Equal(t, int64(7), payload.NextCursor.ProjectionRevision)
+	require.Equal(t, int64(12), payload.NextCursor.EventSequence)
+	require.Len(t, payload.LiveSeries, 1)
+	require.Equal(t, "bo3", string(payload.LiveSeries[0].Format))
+	require.Equal(t, "alice", payload.LiveSeries[0].FirstDisplayName)
+	require.NotNil(t, payload.LiveSeries[0].CurrentGamePosition)
+	require.Equal(t, int32(2), *payload.LiveSeries[0].CurrentGamePosition)
+	require.Len(t, payload.OfficialResults, 1)
+	require.Equal(t, "completed", string(payload.OfficialResults[0].State))
+	require.NotNil(t, payload.OfficialResults[0].WinnerDisplayName)
+	require.Equal(t, "alice", *payload.OfficialResults[0].WinnerDisplayName)
+	require.Equal(t, int32(2), payload.OfficialResults[0].Score.FirstWins)
+
+	for _, privateField := range []string{
+		"\"participant_id\"", "\"player_id\"", "\"assignment_id\"", "\"attempt_id\"",
+		"\"task_id\"", "\"snapshot_id\"", "\"audit_event_id\"", "\"category_pool\"",
+	} {
+		require.NotContains(t, recorder.Body.String(), privateField)
+	}
+}
+
+func TestGetPublicSnapshotWithoutCursorRequestsFreshSnapshot(t *testing.T) {
+	t.Parallel()
+
+	tournamentID := uuid.MustParse("20000000-0000-4000-8000-000000000002")
+	reader := inboundmocks.NewMockTournamentSnapshotUseCase(t)
+	reader.EXPECT().PublicSnapshot(mock.Anything, mock.MatchedBy(func(query inbound.PublicSnapshotQuery) bool {
+		return query.TournamentID == tournamentID && query.Cursor == nil
+	})).Return(publicSnapshotHTTPView(tournamentID), nil).Once()
+
+	server := New(Dependencies{TournamentSnapshots: reader})
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/tournaments/"+tournamentID.String()+"/snapshot", nil)
+	server.GetPublicSnapshot(recorder, request, tournamentID, api.GetPublicSnapshotParams{})
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	var payload api.PublicRecoverySnapshot
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &payload))
+	require.Len(t, payload.LiveSeries, 1)
+	require.Len(t, payload.OfficialResults, 1)
+}
+
+func TestGetPublicSnapshotMapsFutureCursorConflictToHTTP409(t *testing.T) {
+	t.Parallel()
+
+	tournamentID := uuid.MustParse("20000000-0000-4000-8000-000000000003")
+	reader := inboundmocks.NewMockTournamentSnapshotUseCase(t)
+	reader.EXPECT().PublicSnapshot(mock.Anything, mock.Anything).
+		Return(inbound.PublicSnapshotView{}, &inbound.PublicSnapshotCursorConflictError{
+			TournamentID:                tournamentID,
+			RequestedProjectionRevision: 8,
+			RequestedEventSequence:      13,
+			CurrentProjectionRevision:   7,
+			CurrentEventSequence:        12,
+		}).
+		Once()
+
+	server := New(Dependencies{TournamentSnapshots: reader})
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/tournaments/"+tournamentID.String()+"/snapshot", nil)
+	server.GetPublicSnapshot(recorder, request, tournamentID, api.GetPublicSnapshotParams{
+		Cursor: &api.PublicRecoveryCursor{ProjectionRevision: 8, EventSequence: 13},
+	})
+
+	require.Equal(t, http.StatusConflict, recorder.Code)
+	require.Equal(t, "application/problem+json", recorder.Header().Get("Content-Type"))
+	var payload api.PublicRecoveryCursorConflictProblem
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &payload))
+	require.Equal(t, int32(http.StatusConflict), payload.Status)
+	require.Equal(t, int64(8), payload.RequestedCursor.ProjectionRevision)
+	require.Equal(t, int64(13), payload.RequestedCursor.EventSequence)
+	require.Equal(t, int64(7), payload.CurrentCursor.ProjectionRevision)
+	require.Equal(t, int64(12), payload.CurrentCursor.EventSequence)
+	require.NotContains(t, recorder.Body.String(), "\"participant_id\"")
+}
+
+func publicSnapshotHTTPView(tournamentID uuid.UUID) inbound.PublicSnapshotView {
+	recordedAt := time.Date(2026, 9, 11, 12, 0, 0, 0, time.UTC)
+	seriesID := uuid.MustParse("20000000-0000-4000-8000-000000000010")
+	return inbound.PublicSnapshotView{
+		Cursor: inbound.SnapshotCursor{ProjectionRevision: 7, EventSequence: 12, ObservedAt: recordedAt},
+		Tournament: inbound.PublicTournamentView{
+			TournamentID: tournamentID,
+			Preset:       "tournament_v1",
+			State:        "swiss",
+			RosterSize:   2,
+		},
+		Scoreboard: []inbound.PublicScoreboardEntryView{},
+		Bracket:    []inbound.PublicBracketMatchView{},
+		LiveSeries: []inbound.PublicSeriesView{{
+			SeriesID:            seriesID,
+			Format:              "bo3",
+			State:               "active",
+			FirstDisplayName:    "alice",
+			SecondDisplayName:   "bob",
+			FirstWins:           1,
+			SecondWins:          0,
+			CurrentGamePosition: 2,
+		}},
+		OfficialResults: []inbound.PublicOfficialResultView{{
+			RevisionID:        uuid.MustParse("20000000-0000-4000-8000-000000000011"),
+			SeriesID:          seriesID,
+			State:             "completed",
+			WinnerDisplayName: "alice",
+			FirstWins:         2,
+			SecondWins:        0,
+			RecordedAt:        recordedAt,
+		}},
+	}
+}

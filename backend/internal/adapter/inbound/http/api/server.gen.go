@@ -10690,9 +10690,7 @@ func (response GetPublicSnapshot404ApplicationProblemPlusJSONResponse) VisitGetP
 	return err
 }
 
-type GetPublicSnapshot409ApplicationProblemPlusJSONResponse struct {
-	ProjectionRevisionConflictProblemApplicationProblemPlusJSONResponse
-}
+type GetPublicSnapshot409ApplicationProblemPlusJSONResponse PublicRecoveryCursorConflictProblem
 
 func (response GetPublicSnapshot409ApplicationProblemPlusJSONResponse) VisitGetPublicSnapshotResponse(w http.ResponseWriter) error {
 

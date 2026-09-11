@@ -1,6 +1,7 @@
 package v1
 
 import (
+	"errors"
 	"math"
 	"net/http"
 	"strings"
@@ -74,9 +75,9 @@ func (s *Server) GetPublicSnapshot(
 	w http.ResponseWriter,
 	r *http.Request,
 	tournamentID api.TournamentId,
-	_ api.GetPublicSnapshotParams,
+	params api.GetPublicSnapshotParams,
 ) {
-	view, ok := s.readPublicTournamentSnapshot(w, r, tournamentID)
+	view, ok := s.readPublicTournamentSnapshotWithCursor(w, r, tournamentID, params.Cursor)
 	if !ok {
 		return
 	}
@@ -107,6 +108,65 @@ func (s *Server) readPublicTournamentSnapshot(
 	return view, true
 }
 
+func (s *Server) readPublicTournamentSnapshotWithCursor(
+	w http.ResponseWriter,
+	r *http.Request,
+	tournamentID uuid.UUID,
+	requestedCursor *api.PublicRecoveryCursor,
+) (tournamentsnapshot.PublicSnapshotView, bool) {
+	if s == nil || s.tournamentSnapshots == nil {
+		writePublicSnapshotError(w, r, domain.ErrInternal)
+		return tournamentsnapshot.PublicSnapshotView{}, false
+	}
+	view, err := s.tournamentSnapshots.PublicSnapshot(r.Context(), tournamentsnapshot.PublicSnapshotQuery{
+		TournamentID: tournamentID,
+		Cursor:       publicSnapshotCursor(requestedCursor),
+	})
+	if err != nil {
+		writePublicSnapshotError(w, r, err)
+		return tournamentsnapshot.PublicSnapshotView{}, false
+	}
+	return view, true
+}
+
+func writePublicSnapshotError(w http.ResponseWriter, r *http.Request, err error) {
+	var conflict *tournamentsnapshot.PublicSnapshotCursorConflictError
+	if errors.As(err, &conflict) {
+		if conflict == nil || conflict.TournamentID == uuid.Nil ||
+			conflict.RequestedProjectionRevision < 1 || conflict.RequestedEventSequence < 0 ||
+			conflict.CurrentProjectionRevision < 1 || conflict.CurrentEventSequence < 0 {
+			errmap.HandleError(w, r, domain.ErrInternal)
+			return
+		}
+		detail, instance, requestID := tournamentProblemContext(r, "public recovery cursor conflict")
+		payload := api.PublicRecoveryCursorConflictProblem{
+			Type: "about:blank", Title: http.StatusText(http.StatusConflict),
+			Status: int32(http.StatusConflict), Detail: &detail, Instance: &instance, RequestId: &requestID,
+			RequestedCursor: api.PublicRecoveryCursor{
+				ProjectionRevision: conflict.RequestedProjectionRevision,
+				EventSequence:      conflict.RequestedEventSequence,
+			},
+			CurrentCursor: api.PublicRecoveryCursor{
+				ProjectionRevision: conflict.CurrentProjectionRevision,
+				EventSequence:      conflict.CurrentEventSequence,
+			},
+		}
+		response.WriteProblem(w, http.StatusConflict, payload)
+		return
+	}
+	errmap.HandleError(w, r, err)
+}
+
+func publicSnapshotCursor(cursor *api.PublicRecoveryCursor) *tournamentsnapshot.SnapshotCursor {
+	if cursor == nil {
+		return nil
+	}
+	return &tournamentsnapshot.SnapshotCursor{
+		ProjectionRevision: cursor.ProjectionRevision,
+		EventSequence:      cursor.EventSequence,
+	}
+}
+
 func publicRecoverySnapshotResponse(
 	view tournamentsnapshot.PublicSnapshotView,
 ) (api.PublicRecoverySnapshot, error) {
@@ -122,6 +182,14 @@ func publicRecoverySnapshotResponse(
 	if err != nil {
 		return api.PublicRecoverySnapshot{}, err
 	}
+	liveSeries, err := publicLiveSeriesResponse(view)
+	if err != nil {
+		return api.PublicRecoverySnapshot{}, err
+	}
+	officialResults, err := publicOfficialResultsResponse(view)
+	if err != nil {
+		return api.PublicRecoverySnapshot{}, err
+	}
 	draft, err := publicLiveDraftResponse(view)
 	if err != nil {
 		return api.PublicRecoverySnapshot{}, err
@@ -130,10 +198,12 @@ func publicRecoverySnapshotResponse(
 		return api.PublicRecoverySnapshot{}, domain.ErrInternal
 	}
 	return api.PublicRecoverySnapshot{
-		Tournament: tournament,
-		Scoreboard: scoreboard,
-		Bracket:    bracket,
-		LiveDraft:  draft,
+		Tournament:      tournament,
+		Scoreboard:      scoreboard,
+		Bracket:         bracket,
+		LiveSeries:      liveSeries,
+		OfficialResults: officialResults,
+		LiveDraft:       draft,
 		NextCursor: api.PublicRecoveryCursor{
 			ProjectionRevision: view.Cursor.ProjectionRevision,
 			EventSequence:      view.Cursor.EventSequence,
@@ -217,6 +287,65 @@ func publicBracketResponse(
 		ProjectionRevision: view.Cursor.ProjectionRevision,
 		Matches:            matches,
 	}, nil
+}
+
+func publicLiveSeriesResponse(
+	view tournamentsnapshot.PublicSnapshotView,
+) ([]api.PublicLiveSeries, error) {
+	series := make([]api.PublicLiveSeries, len(view.LiveSeries))
+	for index, item := range view.LiveSeries {
+		format := api.SeriesFormat(item.Format)
+		state := api.SeriesState(item.State)
+		if item.SeriesID == uuid.Nil || !format.Valid() || !state.Valid() ||
+			strings.TrimSpace(item.FirstDisplayName) == "" || strings.TrimSpace(item.SecondDisplayName) == "" ||
+			item.FirstWins < 0 || item.FirstWins > 2 || item.SecondWins < 0 || item.SecondWins > 2 ||
+			item.CurrentGamePosition < 0 || item.CurrentGamePosition > 3 {
+			return nil, domain.ErrInternal
+		}
+		var currentGamePosition *int32
+		if item.CurrentGamePosition > 0 {
+			value := int32(item.CurrentGamePosition)
+			currentGamePosition = &value
+		}
+		series[index] = api.PublicLiveSeries{
+			SeriesId:            item.SeriesID,
+			Format:              format,
+			State:               state,
+			FirstDisplayName:    item.FirstDisplayName,
+			SecondDisplayName:   item.SecondDisplayName,
+			Score:               api.PublicSeriesScore{FirstWins: int32(item.FirstWins), SecondWins: int32(item.SecondWins)},
+			CurrentGamePosition: currentGamePosition,
+		}
+	}
+	return series, nil
+}
+
+func publicOfficialResultsResponse(
+	view tournamentsnapshot.PublicSnapshotView,
+) ([]api.PublicOfficialResult, error) {
+	results := make([]api.PublicOfficialResult, len(view.OfficialResults))
+	for index, item := range view.OfficialResults {
+		state := api.SeriesState(item.State)
+		if item.RevisionID == uuid.Nil || item.SeriesID == uuid.Nil || !state.Valid() ||
+			item.FirstWins < 0 || item.FirstWins > 2 || item.SecondWins < 0 || item.SecondWins > 2 ||
+			!domain.IsValidServerTime(item.RecordedAt) {
+			return nil, domain.ErrInternal
+		}
+		var winnerDisplayName *string
+		if strings.TrimSpace(item.WinnerDisplayName) != "" {
+			value := item.WinnerDisplayName
+			winnerDisplayName = &value
+		}
+		results[index] = api.PublicOfficialResult{
+			RevisionId:        item.RevisionID,
+			SeriesId:          item.SeriesID,
+			State:             state,
+			WinnerDisplayName: winnerDisplayName,
+			Score:             api.PublicSeriesScore{FirstWins: int32(item.FirstWins), SecondWins: int32(item.SecondWins)},
+			RecordedAt:        item.RecordedAt,
+		}
+	}
+	return results, nil
 }
 
 //nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.

@@ -1051,7 +1051,10 @@ export interface paths {
             };
             cookie?: never;
         };
-        /** Recover the public tournament display view */
+        /**
+         * Recover the public tournament display view
+         * @description Returns a fresh, full allowlisted public snapshot including live series and official results. A missing, older, or equal cursor is accepted. A cursor ahead in projection revision or durable event sequence returns HTTP 409. Public snapshot fields match the public WebSocket view and do not include participant IDs, assignments, task contents, or audit data.
+         */
         get: operations["getPublicSnapshot"];
         put?: never;
         post?: never;
@@ -1071,24 +1074,24 @@ export interface components {
         };
         /** @description RFC 7807 error envelope used by REST validation and operation errors. */
         ProblemDetails: {
-            /**
-             * Format: uri
-             * @example about:blank
-             */
-            type: string;
-            /** @example Validation Failed */
-            title: string;
-            /**
-             * Format: int32
-             * @example 400
-             */
-            status: number;
             /** @example username must be 2..50 characters */
             detail?: string;
             /** @example /api/v1/players/join */
             instance?: string;
             /** @example 01HXC2K9F4ZG6YV1AAB7TBQ7AP */
             request_id?: string;
+            /**
+             * Format: int32
+             * @example 400
+             */
+            status: number;
+            /** @example Validation Failed */
+            title: string;
+            /**
+             * Format: uri
+             * @example about:blank
+             */
+            type: string;
         };
         JoinPlayerResponse: {
             /** Format: uuid */
@@ -2630,18 +2633,57 @@ export interface components {
             /** Format: uuid */
             tournament_id: string;
         };
+        /** @description Optional public recovery watermark. A missing, older, or equal watermark returns one fresh full snapshot. A projection revision or durable event sequence ahead of the server watermark is rejected with HTTP 409. */
         PublicRecoveryCursor: {
             /** Format: int64 */
             event_sequence: number;
             /** Format: int64 */
             projection_revision: number;
         };
+        /** @description Public score fields shared with the tournament WebSocket view. */
+        PublicSeriesScore: {
+            /** Format: int32 */
+            first_wins: number;
+            /** Format: int32 */
+            second_wins: number;
+        };
+        /** @description Allowlisted live series display data; participant and task data are excluded. */
+        PublicLiveSeries: {
+            /** Format: int32 */
+            current_game_position?: number;
+            first_display_name: string;
+            format: components["schemas"]["SeriesFormat"];
+            score: components["schemas"]["PublicSeriesScore"];
+            second_display_name: string;
+            /** Format: uuid */
+            series_id: string;
+            state: components["schemas"]["SeriesState"];
+        };
+        /** @description Allowlisted official series result display data without participant IDs or private material. */
+        PublicOfficialResult: {
+            /** Format: date-time */
+            readonly recorded_at: string;
+            /** Format: uuid */
+            revision_id: string;
+            score: components["schemas"]["PublicSeriesScore"];
+            /** Format: uuid */
+            series_id: string;
+            state: components["schemas"]["SeriesState"];
+            winner_display_name?: string;
+        };
         PublicRecoverySnapshot: {
             bracket: components["schemas"]["PublicBracketResponse"];
             live_draft: components["schemas"]["PublicLiveDraftResponse"] | null;
+            live_series: components["schemas"]["PublicLiveSeries"][];
             next_cursor: components["schemas"]["PublicRecoveryCursor"];
+            official_results: components["schemas"]["PublicOfficialResult"][];
             scoreboard: components["schemas"]["PublicScoreboardResponse"];
             tournament: components["schemas"]["PublicTournamentResponse"];
+        };
+        /** @description The requested public recovery cursor is ahead of the durable snapshot watermark. */
+        PublicRecoveryCursorConflictProblem: components["schemas"]["ProblemDetails"] & {
+            current_cursor: components["schemas"]["PublicRecoveryCursor"];
+            requested_cursor: components["schemas"]["PublicRecoveryCursor"];
         };
     };
     responses: {
@@ -2778,6 +2820,7 @@ export interface components {
         /** @description Session-bound CSRF token required for this player mutation. */
         RequiredPlayerCSRFToken: string;
         ParticipantRecoveryCursor: components["schemas"]["ParticipantRecoveryCursor"];
+        /** @description Optional public recovery watermark with projection_revision and event_sequence. Missing, older, or equal values return one fresh full snapshot. If either value is ahead of the durable server watermark, the request returns HTTP 409. This REST cursor is separate from WebSocket resume_id. */
         PublicRecoveryCursor: components["schemas"]["PublicRecoveryCursor"];
     };
     requestBodies: never;
@@ -5148,6 +5191,7 @@ export interface operations {
     getPublicSnapshot: {
         parameters: {
             query?: {
+                /** @description Optional public recovery watermark with projection_revision and event_sequence. Missing, older, or equal values return one fresh full snapshot. If either value is ahead of the durable server watermark, the request returns HTTP 409. This REST cursor is separate from WebSocket resume_id. */
                 cursor?: components["parameters"]["PublicRecoveryCursor"];
             };
             header?: never;
@@ -5168,7 +5212,15 @@ export interface operations {
                 };
             };
             404: components["responses"]["NotFoundProblem"];
-            409: components["responses"]["ProjectionRevisionConflictProblem"];
+            /** @description Requested public recovery cursor is ahead of the durable snapshot watermark. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["PublicRecoveryCursorConflictProblem"];
+                };
+            };
             default: components["responses"]["UnexpectedServerProblem"];
         };
     };

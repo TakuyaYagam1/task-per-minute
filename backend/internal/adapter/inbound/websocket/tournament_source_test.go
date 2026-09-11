@@ -75,6 +75,8 @@ func TestTournamentProductionSnapshotSourceUsesCompleteRoleReaders(t *testing.T)
 
 	public, err := source.PublicRealtimeRead(context.Background(), tournamentID)
 	require.NoError(t, err)
+	require.Equal(t, tournamentSourceCursor().EventSequence, public.Snapshot.LastSequence)
+	require.Equal(t, tournamentSourceCursor().EventSequence, public.SnapshotMetadata.Sequence)
 	require.Len(t, public.Snapshot.Scoreboard, 1)
 	require.Len(t, public.Snapshot.Bracket, 1)
 	require.Len(t, public.Snapshot.LiveSeries, 1)
@@ -258,6 +260,7 @@ func tournamentSourceOperatorView(tournamentID uuid.UUID) tournamentsnapshot.Ope
 func tournamentSourceCursor() tournamentsnapshot.SnapshotCursor {
 	return tournamentsnapshot.SnapshotCursor{
 		ProjectionRevision: 7,
+		EventSequence:      12,
 		ObservedAt:         tournamentSourceTime(),
 	}
 }

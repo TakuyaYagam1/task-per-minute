@@ -318,21 +318,25 @@ func (q *Queries) GetPublicTournamentReadSummary(ctx context.Context, tournament
 
 const getTournamentReadCursor = `-- name: GetTournamentReadCursor :one
 SELECT revision.revision_number AS projection_revision,
+    COALESCE(outbox_cursor.next_sequence - 1, 0)::BIGINT AS event_sequence,
     transaction_timestamp()::TIMESTAMPTZ AS observed_at
 FROM projection_revisions AS revision
+LEFT JOIN tournament_outbox_cursors AS outbox_cursor
+    ON outbox_cursor.tournament_id = revision.tournament_id
 WHERE revision.tournament_id = $1
     AND revision.state = 'published'
 `
 
 type GetTournamentReadCursorRow struct {
 	ProjectionRevision int64
+	EventSequence      int64
 	ObservedAt         pgtype.Timestamptz
 }
 
 func (q *Queries) GetTournamentReadCursor(ctx context.Context, tournamentID uuid.UUID) (GetTournamentReadCursorRow, error) {
 	row := q.db.QueryRow(ctx, getTournamentReadCursor, tournamentID)
 	var i GetTournamentReadCursorRow
-	err := row.Scan(&i.ProjectionRevision, &i.ObservedAt)
+	err := row.Scan(&i.ProjectionRevision, &i.EventSequence, &i.ObservedAt)
 	return i, err
 }
 

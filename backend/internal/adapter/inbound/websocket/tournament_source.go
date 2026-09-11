@@ -19,7 +19,6 @@ const (
 	tournamentSnapshotRoleParticipant = "participant"
 	tournamentSnapshotRolePublic      = "public"
 	tournamentSnapshotRoleOperator    = "operator"
-	tournamentInitialSnapshotSequence = int64(1)
 )
 
 type TournamentProductionSnapshotSource struct {
@@ -182,7 +181,7 @@ func participantSnapshotInput(view usecase.ParticipantSnapshotView, golden *usec
 		TournamentID: view.TournamentID,
 		PlayerID:     view.PlayerID,
 		Revision:     view.Cursor.ProjectionRevision,
-		LastSequence: tournamentInitialSnapshotSequence,
+		LastSequence: view.Cursor.EventSequence,
 	}
 	if golden != nil {
 		input.Golden = participantGoldenInput(*golden)
@@ -243,7 +242,7 @@ func publicSnapshotInput(view usecase.PublicSnapshotView) tournamentws.PublicSna
 	tournamentID := view.Tournament.TournamentID
 	input := tournamentws.PublicSnapshotInput{
 		Revision:     view.Cursor.ProjectionRevision,
-		LastSequence: tournamentInitialSnapshotSequence,
+		LastSequence: view.Cursor.EventSequence,
 		Tournament: tournamentws.PublicTournamentInput{
 			TournamentID: tournamentID,
 			Preset:       view.Tournament.Preset,
@@ -332,7 +331,7 @@ func operatorSnapshotInput(view usecase.OperatorSnapshotView, golden []usecase.G
 	input := tournamentws.OperatorSnapshotInput{
 		TournamentID: view.TournamentID,
 		Revision:     view.Cursor.ProjectionRevision,
-		LastSequence: tournamentInitialSnapshotSequence,
+		LastSequence: view.Cursor.EventSequence,
 		Waves:        make([]tournamentws.OperatorWaveInput, len(view.Waves)),
 		Presence:     make([]tournamentws.OperatorPresenceInput, len(view.Presence)),
 		Replays:      make([]tournamentws.OperatorReplayInput, len(view.Replays)),
@@ -423,7 +422,7 @@ func tournamentSnapshotMetadata(
 	sequence int64,
 	occurredAt time.Time,
 ) (tournamentws.RealtimeEnvelopeMetadata, error) {
-	if tournamentID == uuid.Nil || revision < 1 || sequence < 1 || occurredAt.IsZero() {
+	if tournamentID == uuid.Nil || revision < 1 || sequence < 0 || occurredAt.IsZero() {
 		return tournamentws.RealtimeEnvelopeMetadata{}, ErrTournamentSnapshotSource
 	}
 	occurredAt = occurredAt.Round(0).UTC()

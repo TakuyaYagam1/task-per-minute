@@ -7,6 +7,13 @@ info:
     endpoints use the public, participant, and operator tournament paths and
     are intentionally outside this OpenAPI spec.
 
+    Tournament realtime ordering is backed by the durable per-tournament
+    outbox sequence. Outbox events are immutable and are not pruned. Each
+    connection receives its consistent initial snapshot before new events are
+    delivered. A reconnect may provide resume_id while its durable subscriber
+    record is retained; otherwise the client falls back to a fresh REST or
+    WebSocket snapshot before accepting new events.
+
     Authentication:
       - Players use the HttpOnly `tpm_player_session` cookie issued by POST /api/v1/players/join.
       - Admins use the HttpOnly `tpm_admin_access` and `tpm_admin_refresh` cookies issued by

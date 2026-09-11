@@ -2,10 +2,15 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
+
+var ErrPublicSnapshotCursorConflict = errors.New("public tournament snapshot cursor conflict")
 
 // TournamentSnapshotUseCase provides role-scoped tournament read models.
 // Implementations assemble each response from one consistent durable snapshot.
@@ -21,12 +26,38 @@ type SnapshotCursor struct {
 	ObservedAt         time.Time
 }
 
+// PublicSnapshotCursorConflictError reports a client watermark that is ahead
+// of the durable public snapshot while retaining transport-neutral cursor
+// details for an inbound adapter.
+type PublicSnapshotCursorConflictError struct {
+	TournamentID                uuid.UUID
+	RequestedProjectionRevision int64
+	RequestedEventSequence      int64
+	CurrentProjectionRevision   int64
+	CurrentEventSequence        int64
+}
+
+func (e *PublicSnapshotCursorConflictError) Error() string {
+	return ErrPublicSnapshotCursorConflict.Error()
+}
+
+func (e *PublicSnapshotCursorConflictError) Unwrap() error {
+	return domain.ErrConflict
+}
+
+func (e *PublicSnapshotCursorConflictError) Is(target error) bool {
+	return target == ErrPublicSnapshotCursorConflict || target == domain.ErrConflict
+}
+
 type ParticipantSnapshotQuery struct {
 	TournamentID uuid.UUID
 	PlayerID     uuid.UUID
 }
 
-type PublicSnapshotQuery struct{ TournamentID uuid.UUID }
+type PublicSnapshotQuery struct {
+	TournamentID uuid.UUID
+	Cursor       *SnapshotCursor
+}
 
 type OperatorSnapshotQuery struct {
 	TournamentID uuid.UUID

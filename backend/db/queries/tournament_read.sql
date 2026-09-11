@@ -1,7 +1,10 @@
 -- name: GetTournamentReadCursor :one
 SELECT revision.revision_number AS projection_revision,
+    COALESCE(outbox_cursor.next_sequence - 1, 0)::BIGINT AS event_sequence,
     transaction_timestamp()::TIMESTAMPTZ AS observed_at
 FROM projection_revisions AS revision
+LEFT JOIN tournament_outbox_cursors AS outbox_cursor
+    ON outbox_cursor.tournament_id = revision.tournament_id
 WHERE revision.tournament_id = sqlc.arg(tournament_id)
     AND revision.state = 'published';
 

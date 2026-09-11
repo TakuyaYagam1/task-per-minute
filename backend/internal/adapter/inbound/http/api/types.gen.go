@@ -2347,19 +2347,75 @@ type PublicLiveDraftResponse struct {
 	TournamentId       openapi_types.UUID  `json:"tournament_id"`
 }
 
-// PublicRecoveryCursor defines model for PublicRecoveryCursor.
+// PublicLiveSeries Allowlisted live series display data; participant and task data are excluded.
+type PublicLiveSeries struct {
+	CurrentGamePosition *int32       `json:"current_game_position,omitempty"`
+	FirstDisplayName    string       `json:"first_display_name"`
+	Format              SeriesFormat `json:"format"`
+
+	// Score Public score fields shared with the tournament WebSocket view.
+	Score             PublicSeriesScore  `json:"score"`
+	SecondDisplayName string             `json:"second_display_name"`
+	SeriesId          openapi_types.UUID `json:"series_id"`
+	State             SeriesState        `json:"state"`
+}
+
+// PublicOfficialResult Allowlisted official series result display data without participant IDs or private material.
+type PublicOfficialResult struct {
+	RecordedAt time.Time          `json:"recorded_at"`
+	RevisionId openapi_types.UUID `json:"revision_id"`
+
+	// Score Public score fields shared with the tournament WebSocket view.
+	Score             PublicSeriesScore  `json:"score"`
+	SeriesId          openapi_types.UUID `json:"series_id"`
+	State             SeriesState        `json:"state"`
+	WinnerDisplayName *string            `json:"winner_display_name,omitempty"`
+}
+
+// PublicRecoveryCursor Optional public recovery watermark. A missing, older, or equal watermark returns one fresh full snapshot. A projection revision or durable event sequence ahead of the server watermark is rejected with HTTP 409.
 type PublicRecoveryCursor struct {
 	EventSequence      int64 `json:"event_sequence"`
 	ProjectionRevision int64 `json:"projection_revision"`
+}
+
+// PublicRecoveryCursorConflictProblem The requested public recovery cursor is ahead of the durable snapshot watermark.
+type PublicRecoveryCursorConflictProblem struct {
+	// CurrentCursor Optional public recovery watermark. A missing, older, or equal watermark returns one fresh full snapshot. A projection revision or durable event sequence ahead of the server watermark is rejected with HTTP 409.
+	CurrentCursor PublicRecoveryCursor `json:"current_cursor"`
+
+	// Detail Example: username must be 2..50 characters
+	Detail *string `json:"detail,omitempty"`
+
+	// Instance Example: /api/v1/players/join
+	Instance *string `json:"instance,omitempty"`
+
+	// RequestId Example: 01HXC2K9F4ZG6YV1AAB7TBQ7AP
+	RequestId *string `json:"request_id,omitempty"`
+
+	// RequestedCursor Optional public recovery watermark. A missing, older, or equal watermark returns one fresh full snapshot. A projection revision or durable event sequence ahead of the server watermark is rejected with HTTP 409.
+	RequestedCursor PublicRecoveryCursor `json:"requested_cursor"`
+
+	// Status Example: 400
+	Status int32 `json:"status"`
+
+	// Title Example: Validation Failed
+	Title string `json:"title"`
+
+	// Type Example: about:blank
+	Type string `json:"type"`
 }
 
 // PublicRecoverySnapshot defines model for PublicRecoverySnapshot.
 type PublicRecoverySnapshot struct {
 	Bracket    PublicBracketResponse    `json:"bracket"`
 	LiveDraft  *PublicLiveDraftResponse `json:"live_draft"`
-	NextCursor PublicRecoveryCursor     `json:"next_cursor"`
-	Scoreboard PublicScoreboardResponse `json:"scoreboard"`
-	Tournament PublicTournamentResponse `json:"tournament"`
+	LiveSeries []PublicLiveSeries       `json:"live_series"`
+
+	// NextCursor Optional public recovery watermark. A missing, older, or equal watermark returns one fresh full snapshot. A projection revision or durable event sequence ahead of the server watermark is rejected with HTTP 409.
+	NextCursor      PublicRecoveryCursor     `json:"next_cursor"`
+	OfficialResults []PublicOfficialResult   `json:"official_results"`
+	Scoreboard      PublicScoreboardResponse `json:"scoreboard"`
+	Tournament      PublicTournamentResponse `json:"tournament"`
 }
 
 // PublicScoreboardEntry defines model for PublicScoreboardEntry.
@@ -2376,6 +2432,12 @@ type PublicScoreboardResponse struct {
 	Entries            []PublicScoreboardEntry `json:"entries"`
 	ProjectionRevision int64                   `json:"projection_revision"`
 	TournamentId       openapi_types.UUID      `json:"tournament_id"`
+}
+
+// PublicSeriesScore Public score fields shared with the tournament WebSocket view.
+type PublicSeriesScore struct {
+	FirstWins  int32 `json:"first_wins"`
+	SecondWins int32 `json:"second_wins"`
 }
 
 // PublicTournamentResponse defines model for PublicTournamentResponse.
@@ -3180,6 +3242,7 @@ type SetParticipantReadyParams struct {
 
 // GetPublicSnapshotParams defines parameters for GetPublicSnapshot.
 type GetPublicSnapshotParams struct {
+	// Cursor Optional public recovery watermark with projection_revision and event_sequence. Missing, older, or equal values return one fresh full snapshot. If either value is ahead of the durable server watermark, the request returns HTTP 409. This REST cursor is separate from WebSocket resume_id.
 	Cursor *PublicRecoveryCursor `json:"cursor,omitempty"`
 }
 

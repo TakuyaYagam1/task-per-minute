@@ -116,6 +116,12 @@ PublicRecoveryCursor:
   required: false
   style: deepObject
   explode: true
+  description: >-
+    Optional public recovery watermark with projection_revision and
+    event_sequence. Missing, older, or equal values return one fresh full
+    snapshot. If either value is ahead of the durable server watermark, the
+    request returns HTTP 409. This REST cursor is separate from WebSocket
+    resume_id.
   schema:
     $ref: './schemas.yml#/PublicRecoveryCursor'
 

@@ -105,6 +105,9 @@ func (r *TournamentSnapshotPostgres) PublicSnapshot(
 	if ctx == nil || r == nil || r.tx == nil || query.TournamentID == uuid.Nil {
 		return usecase.PublicSnapshotView{}, domain.ErrValidation
 	}
+	if query.Cursor != nil && (query.Cursor.ProjectionRevision < 1 || query.Cursor.EventSequence < 0) {
+		return usecase.PublicSnapshotView{}, domain.ErrValidation
+	}
 
 	view := usecase.PublicSnapshotView{
 		Scoreboard:      []usecase.PublicScoreboardEntryView{},
@@ -113,7 +116,7 @@ func (r *TournamentSnapshotPostgres) PublicSnapshot(
 		OfficialResults: []usecase.PublicOfficialResultView{},
 	}
 	err := r.tx.ReadSnapshot(ctx, func(txCtx context.Context) error {
-		return r.loadPublicSnapshot(txCtx, query.TournamentID, &view)
+		return r.loadPublicSnapshot(txCtx, query.TournamentID, query.Cursor, &view)
 	})
 	if err != nil {
 		return usecase.PublicSnapshotView{}, err
@@ -148,12 +151,18 @@ func (r *TournamentSnapshotPostgres) OperatorSnapshot(
 func (r *TournamentSnapshotPostgres) loadPublicSnapshot(
 	ctx context.Context,
 	tournamentID uuid.UUID,
+	requestedCursor *usecase.SnapshotCursor,
 	view *usecase.PublicSnapshotView,
 ) error {
 	querier := r.tx.Querier(ctx)
 	cursor, err := tournamentReadCursor(ctx, querier, tournamentID)
 	if err != nil {
 		return err
+	}
+	if requestedCursor != nil {
+		if err := publicSnapshotCursorConflict(tournamentID, *requestedCursor, cursor); err != nil {
+			return err
+		}
 	}
 	view.Cursor = cursor
 
@@ -197,6 +206,23 @@ func (r *TournamentSnapshotPostgres) loadPublicSnapshot(
 	return err
 }
 
+func publicSnapshotCursorConflict(
+	tournamentID uuid.UUID,
+	requested usecase.SnapshotCursor,
+	current usecase.SnapshotCursor,
+) error {
+	if requested.ProjectionRevision <= current.ProjectionRevision && requested.EventSequence <= current.EventSequence {
+		return nil
+	}
+	return &usecase.PublicSnapshotCursorConflictError{
+		TournamentID:                tournamentID,
+		RequestedProjectionRevision: requested.ProjectionRevision,
+		RequestedEventSequence:      requested.EventSequence,
+		CurrentProjectionRevision:   current.ProjectionRevision,
+		CurrentEventSequence:        current.EventSequence,
+	}
+}
+
 func (r *TournamentSnapshotPostgres) loadOperatorSnapshot(
 	ctx context.Context,
 	tournamentID uuid.UUID,
@@ -234,11 +260,12 @@ func tournamentReadCursor(
 	if err != nil {
 		return usecase.SnapshotCursor{}, tournamentSnapshotLookupError("cursor", err)
 	}
-	if row.ProjectionRevision < 1 || !row.ObservedAt.Valid {
+	if row.ProjectionRevision < 1 || row.EventSequence < 0 || !row.ObservedAt.Valid {
 		return usecase.SnapshotCursor{}, tournamentSnapshotInvalidError("cursor")
 	}
 	return usecase.SnapshotCursor{
 		ProjectionRevision: row.ProjectionRevision,
+		EventSequence:      row.EventSequence,
 		ObservedAt:         row.ObservedAt.Time.UTC(),
 	}, nil
 }
