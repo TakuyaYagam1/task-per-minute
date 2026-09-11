@@ -131,7 +131,7 @@ WHERE id = sqlc.arg(id)
     AND attempt_id = sqlc.arg(attempt_id)
     AND tournament_id = sqlc.arg(tournament_id)
     AND roster_id = sqlc.arg(roster_id)
-    AND selection_kind = 'direct'
+    AND selection_kind IN ('direct', 'reserve')
     AND ready_at IS NULL
     AND no_show_at IS NULL
 RETURNING id,
@@ -380,6 +380,18 @@ SELECT id,
     created_at
 FROM golden_provisional_submissions
 WHERE idempotency_key = sqlc.arg(idempotency_key);
+
+-- name: NextGoldenAttemptSubmissionRevision :one
+SELECT COALESCE(latest.revision_number + 1, 1)::bigint AS revision_number,
+    latest.revision_id AS previous_revision_id
+FROM (VALUES (sqlc.arg(attempt_id)::uuid)) AS scope(id)
+LEFT JOIN LATERAL (
+    SELECT revision_id, revision_number
+    FROM golden_attempt_submission_revisions
+    WHERE attempt_id = scope.id
+    ORDER BY revision_number DESC
+    LIMIT 1
+) AS latest ON true;
 
 -- name: CreateGoldenPositionCommit :one
 INSERT INTO golden_position_commits (
@@ -1578,97 +1590,142 @@ WHERE group_revision.tournament_id = sqlc.arg(tournament_id)
 ORDER BY group_revision.position_from, member.standing_position;
 
 -- name: SelectGoldenRuntimeTask :one
-WITH candidates AS (
-    SELECT version.task_id,
-        version.version,
-        version.title,
-        version.category,
-        version.difficulty,
-        version.flag,
-        version.content_digest,
-        edge.edge_id,
-        edge.reservation_id,
-        edge.snapshot_id,
-        0 AS source_priority,
-        plan.created_at,
-        edge.position
-    FROM golden_exact_plan_snapshots AS plan
-    INNER JOIN golden_exact_plan_snapshot_seals AS seal
-        ON seal.plan_id = plan.plan_id
-        AND seal.tournament_id = plan.tournament_id
-        AND seal.roster_id = plan.roster_id
-    INNER JOIN golden_exact_plan_snapshot_edges AS edge
-        ON edge.plan_id = plan.plan_id
-        AND edge.tournament_id = plan.tournament_id
-        AND edge.roster_id = plan.roster_id
-    INNER JOIN task_versions AS version
-        ON version.task_id = edge.task_id
-        AND version.version = edge.task_version
-    WHERE plan.tournament_id = sqlc.arg(tournament_id)
-        AND edge.group_revision_id = sqlc.arg(group_revision_id)
-
-    UNION ALL
-
-    SELECT version.task_id,
-        version.version,
-        version.title,
-        version.category,
-        version.difficulty,
-        version.flag,
-        version.content_digest,
-        gen_random_uuid() AS edge_id,
-        gen_random_uuid() AS reservation_id,
-        gen_random_uuid() AS snapshot_id,
-        1 AS source_priority,
-        configuration.created_at,
-        1 AS position
-    FROM tournament_content_configurations AS configuration
-    INNER JOIN task_pool_version_memberships AS membership
-        ON membership.task_pool_revision_id = configuration.golden_pool_revision_id
-    INNER JOIN task_versions AS version
-        ON version.task_id = membership.task_id
-        AND version.version = membership.task_version
-    INNER JOIN tasks AS task ON task.id = version.task_id
-    LEFT JOIN LATERAL (
-        SELECT attestation.healthy
-        FROM task_version_health_attestations AS attestation
-        WHERE attestation.task_id = version.task_id
-            AND attestation.task_version = version.version
-        ORDER BY attestation.revision DESC
-        LIMIT 1
-    ) AS health ON true
-    WHERE configuration.tournament_id = sqlc.arg(tournament_id)
-        AND configuration.state = 'published'
-        AND task.kind = 'golden'
-        AND task.enabled
-        AND task.deleted_at IS NULL
-        AND COALESCE(health.healthy, false)
-        AND NOT EXISTS (
-            SELECT 1
-            FROM golden_runtime_assignments AS runtime
-            WHERE runtime.tournament_id = configuration.tournament_id
-                AND runtime.task_id = version.task_id
-                AND runtime.task_version = version.version
-        )
-)
-SELECT task_id, version, title, category, difficulty, flag, content_digest,
-    edge_id, reservation_id, snapshot_id
-FROM candidates
-ORDER BY source_priority, created_at DESC, position, task_id, version
+SELECT plan.plan_id,
+    edge.position,
+    version.task_id,
+    version.version,
+    version.title,
+    version.category,
+    version.difficulty,
+    version.flag,
+    version.content_digest,
+    edge.edge_id,
+    edge.reservation_id,
+    edge.snapshot_id
+FROM golden_exact_plan_snapshots AS plan
+INNER JOIN golden_exact_plan_snapshot_seals AS seal
+    ON seal.plan_id = plan.plan_id
+    AND seal.tournament_id = plan.tournament_id
+    AND seal.roster_id = plan.roster_id
+INNER JOIN golden_exact_plan_snapshot_edges AS edge
+    ON edge.plan_id = plan.plan_id
+    AND edge.tournament_id = plan.tournament_id
+    AND edge.roster_id = plan.roster_id
+INNER JOIN task_versions AS version
+    ON version.task_id = edge.task_id
+    AND version.version = edge.task_version
+INNER JOIN task_snapshots AS snapshot
+    ON snapshot.id = edge.snapshot_id
+    AND snapshot.reservation_id = edge.reservation_id
+    AND snapshot.task_id = edge.task_id
+    AND snapshot.task_version = edge.task_version
+INNER JOIN golden_exact_plan_snapshot_candidates AS candidate
+    ON candidate.plan_id = plan.plan_id
+    AND candidate.tournament_id = plan.tournament_id
+    AND candidate.roster_id = plan.roster_id
+    AND candidate.pool_revision_id = plan.pool_revision_id
+    AND candidate.task_id = edge.task_id
+    AND candidate.task_version = edge.task_version
+INNER JOIN golden_exact_plan_snapshot_reservations AS reservation
+    ON reservation.plan_id = plan.plan_id
+    AND reservation.tournament_id = plan.tournament_id
+    AND reservation.roster_id = plan.roster_id
+    AND reservation.task_id = edge.task_id
+    AND reservation.task_version = edge.task_version
+    AND reservation.reservation_id = edge.reservation_id
+INNER JOIN task_version_reservations AS live_reservation
+    ON live_reservation.id = reservation.reservation_id
+    AND live_reservation.task_id = reservation.task_id
+    AND live_reservation.task_version = reservation.task_version
+    AND live_reservation.plan_id = reservation.owner_plan_id
+INNER JOIN assignment_plans AS owner_plan
+    ON owner_plan.id = reservation.owner_plan_id
+    AND owner_plan.revision_id = reservation.owner_plan_revision_id
+    AND owner_plan.tournament_id = plan.tournament_id
+    AND owner_plan.roster_id = plan.roster_id
+INNER JOIN tournament_content_configurations AS content
+    ON content.tournament_id = plan.tournament_id
+    AND content.state = 'published'
+    AND content.golden_pool_revision_id = plan.pool_revision_id
+INNER JOIN tasks AS task
+    ON task.id = version.task_id
+    AND task.current_version = version.version
+    AND task.enabled
+    AND task.deleted_at IS NULL
+    AND task.kind = 'golden'
+WHERE plan.tournament_id = sqlc.arg(tournament_id)
+    AND edge.group_revision_id = sqlc.arg(group_revision_id)
+    AND edge.position = sqlc.arg(edge_position)
+    AND version.time_limit = 180
+    AND candidate.exists_in_source
+    AND candidate.enabled
+    AND candidate.healthy
+    AND NOT candidate.mutation_locked
+    AND NOT candidate.publicly_exposed
+    AND candidate.artifact_digest = edge.content_digest
+    AND edge.content_digest = version.content_digest
+    AND live_reservation.state = 'reserved'
+    AND snapshot.kind = 'golden'
+    AND snapshot.title = version.title
+    AND snapshot.description = version.description
+    AND snapshot.category = version.category
+    AND snapshot.difficulty = version.difficulty
+    AND snapshot.time_limit = 180
+    AND snapshot.flag = version.flag
+    AND snapshot.content_digest = edge.content_digest
+    AND NOT EXISTS (
+        SELECT 1
+        FROM golden_runtime_assignments AS used
+        WHERE used.plan_id = plan.plan_id
+            AND (
+                used.wave_id = edge.edge_id
+                OR used.assignment_id = edge.reservation_id
+                OR used.snapshot_id = edge.snapshot_id
+                OR (
+                    used.task_id = edge.task_id
+                    AND used.task_version = edge.task_version
+                )
+            )
+    )
+    AND NOT EXISTS (
+        SELECT 1
+        FROM golden_exact_plan_snapshot_members AS member
+        LEFT JOIN golden_exact_plan_snapshot_participant_reservations AS snap
+            ON snap.plan_id = member.plan_id
+            AND snap.tournament_id = member.tournament_id
+            AND snap.roster_id = member.roster_id
+            AND snap.participant_id = member.participant_id
+        LEFT JOIN participant_reservations AS live
+            ON live.player_id = snap.player_id
+            AND live.tournament_id = snap.tournament_id
+        WHERE member.plan_id = plan.plan_id
+            AND member.group_revision_id = edge.group_revision_id
+            AND (
+                snap.participant_id IS NULL
+                OR live.reservation_id IS DISTINCT FROM snap.reservation_id
+                OR live.revision IS DISTINCT FROM snap.revision
+                OR live.acquired_at IS DISTINCT FROM snap.acquired_at
+                OR live.updated_at IS DISTINCT FROM snap.updated_at
+            )
+    )
+ORDER BY plan.created_at DESC, plan.plan_id, edge.edge_id
 LIMIT 1;
 
 -- name: CreateGoldenRuntimeAssignment :one
 INSERT INTO golden_runtime_assignments (
     attempt_id, tournament_id, roster_id, group_revision_id,
-    wave_id, assignment_id, snapshot_id, task_id, task_version,
-    title, category, difficulty, time_limit_seconds, source_digest, created_at
+    plan_id, edge_position, wave_id, assignment_id, snapshot_id, task_id, task_version,
+    title, category, difficulty, time_limit_seconds, source_digest,
+    ready_window_id, ready_window_opened_at, ready_window_deadline, created_at
 )
 VALUES (
     sqlc.arg(attempt_id), sqlc.arg(tournament_id), sqlc.arg(roster_id),
-    sqlc.arg(group_revision_id), sqlc.arg(wave_id), sqlc.arg(assignment_id),
+    sqlc.arg(group_revision_id), sqlc.arg(plan_id), sqlc.arg(edge_position),
+    sqlc.arg(wave_id), sqlc.arg(assignment_id),
     sqlc.arg(snapshot_id), sqlc.arg(task_id), sqlc.arg(task_version),
     sqlc.arg(title), sqlc.arg(category), sqlc.arg(difficulty), 180,
-    sqlc.arg(source_digest), sqlc.arg(created_at)
+    sqlc.arg(source_digest), sqlc.arg(ready_window_id), sqlc.arg(created_at),
+    sqlc.arg(created_at)::timestamptz + interval '30 seconds', sqlc.arg(created_at)
 )
 RETURNING attempt_id;
 
@@ -1681,12 +1738,14 @@ WHERE attempt_id = sqlc.arg(attempt_id)
     AND started_at IS NULL
 RETURNING attempt_id;
 
--- name: FinalizeGoldenRuntimeAssignment :one
+-- name: ResetGoldenRuntimeReadyWindow :one
 UPDATE golden_runtime_assignments
-SET settlement_revision_id = sqlc.arg(settlement_revision_id),
-    finalized_at = sqlc.arg(finalized_at)
+SET ready_window_id = sqlc.arg(ready_window_id),
+    ready_window_opened_at = sqlc.arg(opened_at),
+    ready_window_deadline = sqlc.arg(opened_at)::timestamptz + interval '30 seconds'
 WHERE attempt_id = sqlc.arg(attempt_id)
     AND tournament_id = sqlc.arg(tournament_id)
+    AND started_at IS NULL
     AND settlement_revision_id IS NULL
 RETURNING attempt_id;
 
@@ -1701,6 +1760,8 @@ SELECT runtime.tournament_id,
     group_revision.position_to,
     runtime.started_at,
     runtime.deadline,
+    runtime.ready_window_id,
+    runtime.ready_window_deadline,
     membership.id AS membership_id,
     membership.participant_id,
     participant.player_id,
@@ -1729,6 +1790,12 @@ LEFT JOIN golden_provisional_submissions AS submission
 LEFT JOIN golden_position_commits AS position_commit
     ON position_commit.provisional_submission_id = submission.id
 WHERE runtime.tournament_id = sqlc.arg(tournament_id)
+    AND NOT EXISTS (
+        SELECT 1
+        FROM golden_runtime_assignments AS newer
+        WHERE newer.group_revision_id = runtime.group_revision_id
+            AND newer.edge_position > runtime.edge_position
+    )
 ORDER BY group_revision.position_from, membership.participant_id;
 
 -- name: LockGoldenRuntimeParticipant :one
@@ -1738,6 +1805,9 @@ SELECT runtime.tournament_id,
     runtime.attempt_id,
     runtime.started_at,
     runtime.deadline,
+    runtime.ready_window_id,
+    runtime.ready_window_deadline,
+    runtime.edge_position,
     runtime.task_id,
     runtime.task_version,
     version.flag,
@@ -1760,7 +1830,7 @@ INNER JOIN task_versions AS version
     AND version.version = runtime.task_version
 WHERE runtime.tournament_id = sqlc.arg(tournament_id)
     AND participant.player_id = sqlc.arg(player_id)
-ORDER BY group_revision.position_from
+ORDER BY runtime.edge_position DESC, group_revision.position_from
 LIMIT 1
 FOR UPDATE OF attempt, membership;
 
@@ -1768,6 +1838,8 @@ FOR UPDATE OF attempt, membership;
 SELECT membership.id AS membership_id,
     membership.participant_id,
     membership.ready_at,
+    membership.no_show_at,
+    membership.excluded_at,
     membership.participation_established_at,
     submission.id AS submission_id,
     submission.server_sequence,
@@ -1791,6 +1863,137 @@ WHERE membership.attempt_id = sqlc.arg(attempt_id)
 ORDER BY submission.server_sequence NULLS LAST, membership.participant_id
 FOR UPDATE OF membership;
 
+-- name: ClearGoldenMembershipReady :one
+UPDATE golden_memberships
+SET ready_at = NULL
+WHERE id = sqlc.arg(id)
+    AND attempt_id = sqlc.arg(attempt_id)
+    AND tournament_id = sqlc.arg(tournament_id)
+    AND roster_id = sqlc.arg(roster_id)
+    AND participation_established_at IS NULL
+    AND no_show_at IS NULL
+    AND ready_at IS NOT NULL
+RETURNING id;
+
+-- name: NextGoldenReadyDisconnectSequence :one
+SELECT COALESCE(MAX(sequence_number), 0)::integer + 1 AS sequence_number
+FROM golden_ready_disconnects
+WHERE membership_id = sqlc.arg(membership_id);
+
+-- name: LockOpenGoldenReadyDisconnect :one
+SELECT id, disconnected_at
+FROM golden_ready_disconnects
+WHERE membership_id = sqlc.arg(membership_id)
+    AND attempt_id = sqlc.arg(attempt_id)
+    AND tournament_id = sqlc.arg(tournament_id)
+    AND roster_id = sqlc.arg(roster_id)
+    AND state = 'open'
+ORDER BY sequence_number DESC
+LIMIT 1
+FOR UPDATE;
+
+-- name: ListGoldenRuntimeGroupAttempts :many
+SELECT runtime.attempt_id,
+    attempt.attempt_number,
+    attempt.state,
+    runtime.tournament_id,
+    runtime.roster_id,
+    runtime.group_revision_id,
+    runtime.wave_id,
+    runtime.assignment_id,
+    runtime.snapshot_id,
+    runtime.task_id,
+    runtime.edge_position,
+    runtime.started_at,
+    runtime.deadline
+FROM golden_runtime_assignments AS runtime
+INNER JOIN golden_attempts AS attempt ON attempt.id = runtime.attempt_id
+WHERE runtime.tournament_id = sqlc.arg(tournament_id)
+    AND runtime.group_revision_id = sqlc.arg(group_revision_id)
+ORDER BY runtime.edge_position
+FOR UPDATE OF attempt;
+
+-- name: ListGoldenRuntimeGroupEvidence :many
+SELECT runtime.attempt_id,
+    attempt.attempt_number,
+    runtime.roster_id,
+    runtime.wave_id,
+    runtime.assignment_id,
+    runtime.snapshot_id,
+    runtime.task_id,
+    membership.id AS membership_id,
+    membership.participant_id,
+    source.position AS source_position,
+    membership.no_show_at,
+    submission.id AS submission_id,
+    submission.server_sequence,
+    submission.payload_digest,
+    revision.revision_id AS submission_revision_id,
+    revision.revision_number AS submission_revision,
+    position_commit.id AS position_commit_id,
+    position_commit.position
+FROM golden_runtime_assignments AS runtime
+INNER JOIN golden_attempts AS attempt ON attempt.id = runtime.attempt_id
+INNER JOIN golden_memberships AS membership ON membership.attempt_id = runtime.attempt_id
+INNER JOIN golden_exact_plan_snapshot_members AS source
+    ON source.plan_id = runtime.plan_id
+    AND source.group_revision_id = runtime.group_revision_id
+    AND source.participant_id = membership.participant_id
+LEFT JOIN golden_provisional_submissions AS submission
+    ON submission.attempt_id = runtime.attempt_id
+    AND submission.membership_id = membership.id
+LEFT JOIN golden_attempt_submission_revisions AS revision
+    ON revision.provisional_submission_id = submission.id
+LEFT JOIN golden_position_commits AS position_commit
+    ON position_commit.provisional_submission_id = submission.id
+WHERE runtime.tournament_id = sqlc.arg(tournament_id)
+    AND runtime.group_revision_id = sqlc.arg(group_revision_id)
+ORDER BY attempt.attempt_number, submission.server_sequence NULLS LAST, membership.participant_id
+FOR UPDATE OF membership;
+
+-- name: CountGoldenRuntimeGroupCommits :one
+SELECT COUNT(*)::integer
+FROM golden_attempt_stage_groups AS attempt_group
+INNER JOIN golden_position_commits AS position_commit
+    ON position_commit.attempt_id = attempt_group.attempt_id
+WHERE attempt_group.tournament_id = sqlc.arg(tournament_id)
+    AND attempt_group.group_revision_id = sqlc.arg(group_revision_id);
+
+-- name: ListGoldenRuntimeUnresolvedMembers :many
+SELECT source.participant_id
+FROM golden_exact_plan_snapshot_members AS source
+INNER JOIN golden_exact_plan_snapshot_seals AS seal ON seal.plan_id = source.plan_id
+WHERE source.tournament_id = sqlc.arg(tournament_id)
+    AND source.group_revision_id = sqlc.arg(group_revision_id)
+    AND NOT EXISTS (
+        SELECT 1
+        FROM golden_attempt_stage_groups AS attempt_group
+        INNER JOIN golden_position_commits AS position_commit
+            ON position_commit.attempt_id = attempt_group.attempt_id
+            AND position_commit.participant_id = source.participant_id
+        WHERE attempt_group.tournament_id = source.tournament_id
+            AND attempt_group.group_revision_id = source.group_revision_id
+    )
+    AND NOT EXISTS (
+        SELECT 1
+        FROM golden_attempt_stage_groups AS attempt_group
+        INNER JOIN golden_memberships AS membership
+            ON membership.attempt_id = attempt_group.attempt_id
+            AND membership.participant_id = source.participant_id
+        WHERE attempt_group.tournament_id = source.tournament_id
+            AND attempt_group.group_revision_id = source.group_revision_id
+            AND membership.no_show_at IS NOT NULL
+    )
+ORDER BY source.position;
+
+-- name: FinalizeGoldenRuntimeGroupAssignments :execrows
+UPDATE golden_runtime_assignments
+SET settlement_revision_id = sqlc.arg(settlement_revision_id),
+    finalized_at = sqlc.arg(finalized_at)
+WHERE tournament_id = sqlc.arg(tournament_id)
+    AND group_revision_id = sqlc.arg(group_revision_id)
+    AND settlement_revision_id IS NULL;
+
 -- name: GetGoldenRuntimeAssignment :one
 SELECT runtime.tournament_id,
     runtime.roster_id,
@@ -1800,6 +2003,11 @@ SELECT runtime.tournament_id,
     runtime.assignment_id,
     runtime.snapshot_id,
     runtime.task_id,
+    runtime.plan_id,
+    runtime.edge_position,
+    runtime.ready_window_id,
+    runtime.ready_window_opened_at,
+    runtime.ready_window_deadline,
     runtime.started_at,
     runtime.deadline,
     attempt.attempt_number,
@@ -1819,13 +2027,16 @@ SELECT runtime.attempt_id,
     runtime.tournament_id,
     runtime.roster_id,
     attempt.state,
+    runtime.group_revision_id,
+    runtime.edge_position,
+    runtime.ready_window_deadline,
     runtime.started_at,
     runtime.deadline
 FROM golden_runtime_assignments AS runtime
 INNER JOIN golden_attempts AS attempt ON attempt.id = runtime.attempt_id
 WHERE runtime.tournament_id = sqlc.arg(tournament_id)
-    AND attempt.state IN ('active', 'technical_pause')
-ORDER BY runtime.attempt_id;
+    AND attempt.state IN ('prepared', 'ready', 'active', 'technical_pause')
+ORDER BY runtime.group_revision_id, runtime.edge_position;
 
 -- Golden repository durable store. Normalized Golden evidence remains the
 -- authority; this store retains validated aggregate state and replay receipts

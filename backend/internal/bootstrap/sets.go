@@ -285,6 +285,7 @@ var UseCasesSet = wire.NewSet(
 	provideGoldenRuntimeRepository,
 	provideGoldenRuntimeApplication,
 	wire.Bind(new(inbound.GoldenUseCase), new(*goldenusecase.RuntimeApplication)),
+	wire.Bind(new(inbound.GoldenConnectionUseCase), new(*goldenusecase.RuntimeApplication)),
 	provideExecutionRecoveryRunner,
 	wire.Bind(new(recovery.WorkerHealthSource), new(*recovery.Worker)),
 )

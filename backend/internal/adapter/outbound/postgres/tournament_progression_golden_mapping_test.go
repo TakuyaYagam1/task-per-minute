@@ -32,7 +32,7 @@ func TestProgressionGoldenReceiptRebuildsImpactfulTieBeforePlanning(t *testing.T
 	require.NoError(t, err)
 	digest := sha256.Sum256(identityFree.Projection().Payload())
 	receipt := sqlc.LockTournamentProgressionFinalSwissReceiptChainRow{ProjectionRevisionID: input.RevisionID.UUID(), PhysicalProjectionRevision: int64(input.PhysicalProjectionRevision), CanonicalPayloadDigest: digest[:]}
-	groups := []sqlc.LockTournamentProgressionGoldenSettlementsRow{{GroupID: identity.GroupID, GroupRevisionID: identity.RevisionID.UUID(), PositionFrom: 1, PositionTo: 3, SourceProjectionRevisionID: input.RevisionID.UUID(), SourceProjectionRevision: int64(input.PhysicalProjectionRevision)}}
+	groups := []sqlc.LockTournamentProgressionGoldenSettlementsRow{{GroupID: identity.GroupID, GroupRevisionID: identity.RevisionID.UUID(), GroupRevisionNumber: 1, PositionFrom: 1, PositionTo: 3, SourceProjectionRevisionID: input.RevisionID.UUID(), SourceProjectionRevision: int64(input.PhysicalProjectionRevision)}}
 	rebuilt, mapped, err := progressionPlanSwissReceipt(
 		input, receipt, groups, input.RevisionID.UUID(), int64(input.PhysicalProjectionRevision), true,
 	)

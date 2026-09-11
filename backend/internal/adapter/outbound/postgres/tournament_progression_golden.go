@@ -18,6 +18,7 @@ import (
 
 type progressionGoldenGroup struct {
 	revisionID           uuid.UUID
+	revisionNo           int
 	id                   uuid.UUID
 	settlementRevisionID uuid.UUID
 	finalizedAt          time.Time
@@ -134,6 +135,7 @@ func progressionGoldenGroups(
 		if row.GroupRevisionID == uuid.Nil || row.GroupID == uuid.Nil ||
 			row.SourceProjectionRevisionID != authority.ProjectionRevisionID ||
 			row.SourceProjectionRevision != authority.ProjectionRevision ||
+			row.GroupRevisionNumber < 1 ||
 			row.PositionFrom < 1 || row.PositionTo < row.PositionFrom ||
 			int(row.PositionTo) > domain.TournamentMaxParticipants ||
 			!row.AttemptID.Valid || row.AttemptID.UUID == uuid.Nil || row.AttemptState == nil ||
@@ -147,13 +149,15 @@ func progressionGoldenGroups(
 		if !found {
 			group = progressionGoldenGroup{
 				revisionID: row.GroupRevisionID, id: row.GroupID,
+				revisionNo:           int(row.GroupRevisionNumber),
 				settlementRevisionID: row.SettlementRevisionID.UUID,
 				finalizedAt:          row.RuntimeFinalizedAt.Time,
 				from:                 int(row.PositionFrom), to: int(row.PositionTo),
 				attempts: make(map[uuid.UUID]progressionGoldenAttempt),
 				commits:  make(map[uuid.UUID]progressionGoldenCommit),
 			}
-		} else if group.id != row.GroupID || group.from != int(row.PositionFrom) || group.to != int(row.PositionTo) ||
+		} else if group.id != row.GroupID || group.revisionNo != int(row.GroupRevisionNumber) ||
+			group.from != int(row.PositionFrom) || group.to != int(row.PositionTo) ||
 			group.settlementRevisionID != row.SettlementRevisionID.UUID ||
 			!group.finalizedAt.Equal(row.RuntimeFinalizedAt.Time) {
 			return nil, domain.ErrConflict
@@ -523,7 +527,7 @@ func progressionGoldenSettlement(
 		return playoff.Top4GoldenSettlement{}, domain.ErrConflict
 	}
 	return playoff.Top4GoldenSettlement{
-		RevisionID: domain.DerivedRevisionID(settlementRevisionID), RevisionNo: int(final.revision), Positions: &evidence,
+		RevisionID: domain.DerivedRevisionID(settlementRevisionID), RevisionNo: group.revisionNo + 1, Positions: &evidence,
 		FinalizedAt: finalizedAt,
 	}, nil
 }

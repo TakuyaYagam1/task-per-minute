@@ -175,7 +175,8 @@ func newProgressionGoldenEvidenceFixture() progressionGoldenEvidenceFixture {
 			ProjectionRevision:   5,
 		},
 		settlementRows: []sqlc.LockTournamentProgressionGoldenSettlementsRow{{
-			GroupRevisionID: groupRevisionID, GroupID: groupID,
+			GroupRevisionNumber: 1,
+			GroupRevisionID:     groupRevisionID, GroupID: groupID,
 			SourceProjectionRevisionID: projectionID, SourceProjectionRevision: 5,
 			PositionFrom: 1, PositionTo: 1,
 			AttemptID:        uuid.NullUUID{UUID: attemptID, Valid: true},

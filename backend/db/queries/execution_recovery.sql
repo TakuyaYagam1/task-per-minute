@@ -1,19 +1,31 @@
 -- name: ListExecutionRecoveryTournaments :many
-SELECT DISTINCT epoch.tournament_id
-FROM execution_game_epochs AS epoch
-JOIN game_attempts AS attempt
-    ON attempt.id = epoch.game_attempt_id
-    AND attempt.series_id = epoch.series_id
-    AND attempt.roster_id = epoch.roster_id
-JOIN waves AS wave
-    ON wave.id = epoch.wave_id
-    AND wave.tournament_id = epoch.tournament_id
-    AND wave.roster_id = epoch.roster_id
-JOIN tournaments AS tournament ON tournament.id = epoch.tournament_id
-WHERE attempt.state IN ('active', 'paused')
-    AND wave.state IN ('active', 'paused')
-    AND tournament.state = 'swiss'
-ORDER BY epoch.tournament_id;
+WITH recovery_tournaments AS (
+    SELECT epoch.tournament_id
+    FROM execution_game_epochs AS epoch
+    JOIN game_attempts AS attempt
+        ON attempt.id = epoch.game_attempt_id
+        AND attempt.series_id = epoch.series_id
+        AND attempt.roster_id = epoch.roster_id
+    JOIN waves AS wave
+        ON wave.id = epoch.wave_id
+        AND wave.tournament_id = epoch.tournament_id
+        AND wave.roster_id = epoch.roster_id
+    JOIN tournaments AS tournament ON tournament.id = epoch.tournament_id
+    WHERE attempt.state IN ('active', 'paused')
+        AND wave.state IN ('active', 'paused')
+        AND tournament.state = 'swiss'
+
+    UNION
+
+    SELECT attempt.tournament_id
+    FROM golden_attempts AS attempt
+    JOIN tournaments AS tournament ON tournament.id = attempt.tournament_id
+    WHERE attempt.state IN ('active', 'technical_pause')
+        AND tournament.state = 'golden'
+)
+SELECT tournament_id
+FROM recovery_tournaments
+ORDER BY tournament_id;
 
 -- name: ListExecutionRecoveryGames :many
 WITH current_authority AS (

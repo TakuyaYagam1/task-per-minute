@@ -14,6 +14,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket/wirelimits"
 	appobservability "github.com/TakuyaYagam1/task-per-minute/internal/observability"
+	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 )
 
 const (
@@ -37,6 +38,10 @@ type HandshakeRateLimiter interface {
 
 type ClientIPResolver func(r *http.Request) string
 
+type GoldenConnectionFlow interface {
+	SetConnected(ctx context.Context, command usecase.GoldenConnectionCommand) error
+}
+
 type Server struct {
 	ctx                  context.Context
 	cancel               context.CancelFunc
@@ -48,6 +53,7 @@ type Server struct {
 	public               TournamentPublicConnectionFlow
 	operator             TournamentOperatorConnectionFlow
 	operatorResolve      TournamentOperatorSessionResolver
+	goldenConnection     GoldenConnectionFlow
 	realtimeDelivery     *RealtimeDelivery
 	tournamentObserver   appobservability.TournamentEventObserver
 	sessionCheckInterval time.Duration
@@ -128,6 +134,12 @@ func WithTournamentPublicFlow(flow TournamentPublicConnectionFlow) Option {
 func WithTournamentOperatorFlow(flow TournamentOperatorConnectionFlow) Option {
 	return func(server *Server) {
 		server.operator = flow
+	}
+}
+
+func WithGoldenConnectionFlow(flow GoldenConnectionFlow) Option {
+	return func(server *Server) {
+		server.goldenConnection = flow
 	}
 }
 

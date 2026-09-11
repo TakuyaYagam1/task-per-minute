@@ -66,7 +66,10 @@ func (repository *GoldenRuntimePostgres) Open(
 			if err != nil {
 				return goldenRuntimeReadError("allocate attempt number", err)
 			}
-			if err := repository.createGoldenRuntimeGroup(txCtx, q, group, attempt.AttemptNumber, attempt.PreviousAttemptID, now); err != nil {
+			if err := repository.createGoldenRuntimeAttempt(
+				txCtx, q, group, attempt.AttemptNumber, attempt.PreviousAttemptID,
+				1, now,
+			); err != nil {
 				return err
 			}
 		}
@@ -118,16 +121,18 @@ func goldenRuntimeGroups(rows []sqlc.ListGoldenRuntimeGroupsRow, expectedRevisio
 	return groups, nil
 }
 
-func (repository *GoldenRuntimePostgres) createGoldenRuntimeGroup(
+func (repository *GoldenRuntimePostgres) createGoldenRuntimeAttempt(
 	ctx context.Context,
 	q *sqlc.Queries,
 	group goldenRuntimeGroup,
 	attemptNumber int32,
 	previousAttemptID uuid.UUID,
+	edgePosition int16,
 	now time.Time,
 ) error {
 	task, err := q.SelectGoldenRuntimeTask(ctx, sqlc.SelectGoldenRuntimeTaskParams{
 		TournamentID: group.tournamentID, GroupRevisionID: group.groupRevisionID,
+		EdgePosition: edgePosition,
 	})
 	if err != nil {
 		return goldenRuntimeReadError("select task", err)
@@ -149,17 +154,20 @@ func (repository *GoldenRuntimePostgres) createGoldenRuntimeGroup(
 	}
 	if _, err = q.CreateGoldenRuntimeAssignment(ctx, sqlc.CreateGoldenRuntimeAssignmentParams{
 		AttemptID: attemptID, TournamentID: group.tournamentID, RosterID: group.rosterID,
-		GroupRevisionID: group.groupRevisionID, WaveID: task.EdgeID,
+		GroupRevisionID: group.groupRevisionID, PlanID: task.PlanID, EdgePosition: task.Position,
+		WaveID:       task.EdgeID,
 		AssignmentID: task.ReservationID, SnapshotID: task.SnapshotID,
 		TaskID: task.TaskID, TaskVersion: task.Version, Title: task.Title, Category: task.Category,
-		Difficulty: task.Difficulty, SourceDigest: task.ContentDigest, CreatedAt: tstz(now),
+		Difficulty: task.Difficulty, SourceDigest: task.ContentDigest,
+		ReadyWindowID: uuid.New(), CreatedAt: tstz(now),
 	}); err != nil {
 		return goldenRuntimeWriteError("create assignment", err)
 	}
 	for _, participantID := range group.participantIDs {
 		if _, err = q.CreateGoldenMembership(ctx, sqlc.CreateGoldenMembershipParams{
 			ID: uuid.New(), AttemptID: attemptID, TournamentID: group.tournamentID, RosterID: group.rosterID,
-			ParticipantID: participantID, SelectionKind: "direct", SelectedAt: tstz(now), CreatedAt: tstz(now),
+			ParticipantID: participantID, SelectionKind: "direct",
+			SelectedAt: tstz(now), CreatedAt: tstz(now),
 		}); err != nil {
 			return goldenRuntimeWriteError("create membership", err)
 		}
@@ -167,6 +175,7 @@ func (repository *GoldenRuntimePostgres) createGoldenRuntimeGroup(
 	return nil
 }
 
+//nolint:gocyclo // Readiness and disconnect evidence must be checked and committed atomically.
 func (repository *GoldenRuntimePostgres) SetReady(
 	ctx context.Context,
 	command usecase.GoldenReadyCommand,
@@ -183,6 +192,17 @@ func (repository *GoldenRuntimePostgres) SetReady(
 		if participant.State != "prepared" && participant.State != "ready" {
 			return domain.ErrConflict
 		}
+		if _, disconnectErr := q.LockOpenGoldenReadyDisconnect(txCtx, sqlc.LockOpenGoldenReadyDisconnectParams{
+			MembershipID: participant.MembershipID, AttemptID: participant.AttemptID,
+			TournamentID: command.TournamentID, RosterID: participant.RosterID,
+		}); disconnectErr == nil {
+			return domain.ErrConflict
+		} else if !errors.Is(disconnectErr, pgx.ErrNoRows) {
+			return goldenRuntimeReadError("load Golden connection", disconnectErr)
+		}
+		if participant.State == "prepared" && !now.Before(participant.ReadyWindowDeadline.Time) {
+			return domain.ErrConflict
+		}
 		if !participant.ReadyAt.Valid {
 			if _, err = q.MarkGoldenMembershipReady(txCtx, sqlc.MarkGoldenMembershipReadyParams{
 				ReadyAt: tstz(now), ID: participant.MembershipID, AttemptID: participant.AttemptID,
@@ -197,11 +217,19 @@ func (repository *GoldenRuntimePostgres) SetReady(
 		if err != nil {
 			return goldenRuntimeReadError("load readiness", err)
 		}
-		allReady := len(members) >= 2
+		allReady := false
+		eligible := 0
 		for _, member := range members {
+			if member.NoShowAt.Valid || member.ExcludedAt.Valid {
+				continue
+			}
+			eligible++
+			if eligible == 1 {
+				allReady = true
+			}
 			allReady = allReady && member.ReadyAt.Valid
 		}
-		if allReady && participant.State == "prepared" {
+		if eligible > 0 && allReady && participant.State == "prepared" {
 			_, err = q.UpdateGoldenAttemptCAS(txCtx, goldenAttemptUpdate(participant.AttemptID, command.TournamentID, participant.RosterID, "prepared", "ready", now, now, time.Time{}, time.Time{}))
 			if err != nil {
 				return goldenRuntimeWriteError("ready attempt", err)
@@ -215,6 +243,7 @@ func (repository *GoldenRuntimePostgres) SetReady(
 	return repository.ParticipantView(ctx, usecase.GoldenParticipantQuery{TournamentID: command.TournamentID, PlayerID: command.PlayerID})
 }
 
+//nolint:gocyclo // Start validates the full ready window and connection set in one transaction.
 func (repository *GoldenRuntimePostgres) Start(
 	ctx context.Context,
 	command usecase.GoldenStartCommand,
@@ -233,16 +262,35 @@ func (repository *GoldenRuntimePostgres) Start(
 		if attempt.State == "active" {
 			return nil
 		}
+		if attempt.State == "technical_pause" {
+			return repository.resumeGoldenRuntimeAfterTechnicalPause(txCtx, q, assignment, now)
+		}
 		if attempt.State != "ready" {
+			return domain.ErrConflict
+		}
+		if !assignment.ReadyWindowDeadline.Valid || !now.Before(assignment.ReadyWindowDeadline.Time) {
 			return domain.ErrConflict
 		}
 		members, err := q.ListGoldenRuntimeAttemptMembers(txCtx, sqlc.ListGoldenRuntimeAttemptMembersParams{AttemptID: command.AttemptID, TournamentID: command.TournamentID})
 		if err != nil {
 			return goldenRuntimeReadError("load members", err)
 		}
+		activeMembers := 0
 		for _, member := range members {
+			if member.NoShowAt.Valid || member.ExcludedAt.Valid {
+				continue
+			}
+			activeMembers++
 			if !member.ReadyAt.Valid {
 				return domain.ErrConflict
+			}
+			if _, disconnectErr := q.LockOpenGoldenReadyDisconnect(txCtx, sqlc.LockOpenGoldenReadyDisconnectParams{
+				MembershipID: member.MembershipID, AttemptID: command.AttemptID,
+				TournamentID: command.TournamentID, RosterID: assignment.RosterID,
+			}); disconnectErr == nil {
+				return domain.ErrConflict
+			} else if !errors.Is(disconnectErr, pgx.ErrNoRows) {
+				return goldenRuntimeReadError("load Golden connection", disconnectErr)
 			}
 			if _, err = q.EstablishGoldenParticipation(txCtx, sqlc.EstablishGoldenParticipationParams{
 				EstablishedAt: tstz(now), ID: member.MembershipID, AttemptID: command.AttemptID,
@@ -250,6 +298,9 @@ func (repository *GoldenRuntimePostgres) Start(
 			}); err != nil {
 				return goldenRuntimeWriteError("establish participation", err)
 			}
+		}
+		if activeMembers == 0 {
+			return domain.ErrConflict
 		}
 		if _, err = q.StartGoldenRuntimeAssignment(txCtx, sqlc.StartGoldenRuntimeAssignmentParams{StartedAt: tstz(now), AttemptID: command.AttemptID, TournamentID: command.TournamentID}); err != nil {
 			return goldenRuntimeWriteError("start assignment", err)

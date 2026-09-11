@@ -41,6 +41,14 @@ func (repository *GoldenRuntimePostgres) Submit(
 			!participant.Deadline.Valid || now.After(participant.Deadline.Time) {
 			return domain.ErrConflict
 		}
+		if _, disconnectErr := q.LockOpenGoldenReadyDisconnect(txCtx, sqlc.LockOpenGoldenReadyDisconnectParams{
+			MembershipID: participant.MembershipID, AttemptID: participant.AttemptID,
+			TournamentID: command.TournamentID, RosterID: participant.RosterID,
+		}); disconnectErr == nil {
+			return domain.ErrConflict
+		} else if !errors.Is(disconnectErr, pgx.ErrNoRows) {
+			return goldenRuntimeReadError("load Golden connection", disconnectErr)
+		}
 		if !validGoldenFlag(command.SubmittedFlag, participant.Flag) {
 			return domain.ErrValidation
 		}
@@ -52,7 +60,12 @@ func (repository *GoldenRuntimePostgres) Submit(
 		}
 		var previousRevision uuid.NullUUID
 		accepted := 0
+		eligible := 0
 		for _, member := range members {
+			if member.NoShowAt.Valid || member.ExcludedAt.Valid {
+				continue
+			}
+			eligible++
 			if member.ParticipantID == participant.ParticipantID && member.SubmissionID.Valid {
 				return nil
 			}
@@ -64,7 +77,16 @@ func (repository *GoldenRuntimePostgres) Submit(
 			}
 		}
 		sequence := int64(accepted + 1)
-		position := participant.PositionFrom + int16(accepted)
+		committed, err := q.CountGoldenRuntimeGroupCommits(txCtx, sqlc.CountGoldenRuntimeGroupCommitsParams{
+			TournamentID: command.TournamentID, GroupRevisionID: participant.GroupRevisionID,
+		})
+		if err != nil {
+			return goldenRuntimeReadError("count committed Golden positions", err)
+		}
+		position := participant.PositionFrom + int16(committed) //nolint:gosec // Golden groups are bounded to 16 members.
+		if position > participant.PositionTo {
+			return domain.ErrConflict
+		}
 		digest := goldenRuntimeDigest(struct {
 			AttemptID     uuid.UUID `json:"attempt_id"`
 			ParticipantID uuid.UUID `json:"participant_id"`
@@ -101,7 +123,7 @@ func (repository *GoldenRuntimePostgres) Submit(
 		}); err != nil {
 			return goldenRuntimeWriteError("create position commit", err)
 		}
-		if accepted+1 == len(members) {
+		if accepted+1 == eligible {
 			return repository.completeGoldenRuntimeAttempt(txCtx, q, participant, now)
 		}
 		return nil
@@ -118,23 +140,9 @@ func (repository *GoldenRuntimePostgres) completeGoldenRuntimeAttempt(
 	participant sqlc.LockGoldenRuntimeParticipantRow,
 	now time.Time,
 ) error {
-	members, err := q.ListGoldenRuntimeAttemptMembers(ctx, sqlc.ListGoldenRuntimeAttemptMembersParams{
+	return repository.continueOrFinalizeGoldenRuntime(ctx, q, sqlc.ListGoldenRuntimeRecoveryAttemptsRow{
 		AttemptID: participant.AttemptID, TournamentID: participant.TournamentID,
-	})
-	if err != nil {
-		return goldenRuntimeReadError("reload completed submissions", err)
-	}
-	return repository.persistGoldenRuntimeLedger(ctx, q, participant, members, now)
-}
-
-func (repository *GoldenRuntimePostgres) persistGoldenRuntimeLedger(
-	ctx context.Context,
-	q *sqlc.Queries,
-	participant sqlc.LockGoldenRuntimeParticipantRow,
-	members []sqlc.ListGoldenRuntimeAttemptMembersRow,
-	now time.Time,
-) error {
-	// Implemented in golden_runtime_view.go, where the tournament-scoped view
-	// and terminal ledger share one normalized mapper.
-	return repository.persistGoldenRuntimeLedgerRows(ctx, q, participant, members, now)
+		RosterID: participant.RosterID, GroupRevisionID: participant.GroupRevisionID,
+		EdgePosition: participant.EdgePosition,
+	}, now)
 }

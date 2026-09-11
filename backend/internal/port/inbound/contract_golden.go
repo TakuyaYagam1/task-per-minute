@@ -19,6 +19,13 @@ type GoldenUseCase interface {
 	Recover(ctx context.Context, tournamentID uuid.UUID) error
 }
 
+// GoldenConnectionUseCase is the authenticated realtime lifecycle boundary.
+// It is kept separate from GoldenUseCase so read-only snapshot adapters do not
+// gain mutation authority accidentally.
+type GoldenConnectionUseCase interface {
+	SetConnected(ctx context.Context, command GoldenConnectionCommand) error
+}
+
 type GoldenOpenCommand struct {
 	TournamentID               uuid.UUID
 	CommandID                  uuid.UUID
@@ -43,6 +50,13 @@ type GoldenSubmissionCommand struct {
 	PlayerID      uuid.UUID
 	CommandID     uuid.UUID
 	SubmittedFlag string
+}
+
+type GoldenConnectionCommand struct {
+	TournamentID uuid.UUID
+	PlayerID     uuid.UUID
+	CommandID    uuid.UUID
+	Connected    bool
 }
 
 type GoldenOperatorQuery struct {

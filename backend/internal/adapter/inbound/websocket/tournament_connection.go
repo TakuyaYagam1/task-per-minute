@@ -10,11 +10,13 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/requestmeta"
 	tournamentws "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket/tournament"
 	appobservability "github.com/TakuyaYagam1/task-per-minute/internal/observability"
+	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/eventdelivery"
 )
 
 type tournamentConnectionObserver func(action, outcome, reason string, revision int64)
 
+//nolint:gocyclo // Connection lifecycle keeps transport, delivery, and Golden presence cleanup in one scope.
 func (server *Server) serveTournamentConnection(
 	ctx context.Context,
 	connection *coderws.Conn,
@@ -26,6 +28,10 @@ func (server *Server) serveTournamentConnection(
 	if err != nil {
 		return
 	}
+	if err := server.setGoldenParticipantConnection(ctx, scope, principal, true); err != nil {
+		return
+	}
+	defer server.closeGoldenParticipantConnection(ctx, scope, principal)
 	startedAt := time.Now()
 	observe := func(action, outcome, reason string, revision int64) {
 		requestID := requestmeta.RequestIDFromContext(ctx)
@@ -121,6 +127,47 @@ func (server *Server) serveTournamentConnection(
 	}
 	observe(tournamentws.TournamentTransportConnect, appobservability.TournamentOutcomeSuccess, "opened", revision)
 	server.streamTournamentConnection(ctx, connection, writeScope, principal, deliverySession, revision, observe)
+}
+
+func (server *Server) setGoldenParticipantConnection(
+	ctx context.Context,
+	scope tournamentConnectionScope,
+	principal tournamentConnectionPrincipal,
+	connected bool,
+) error {
+	if server.goldenConnection == nil || scope.Role != TournamentRoleParticipant || principal.Player == nil {
+		return nil
+	}
+	if !server.isGoldenConnectionBoundary(scope, principal) {
+		return nil
+	}
+	return server.goldenConnection.SetConnected(ctx, usecase.GoldenConnectionCommand{
+		TournamentID: scope.TournamentID, PlayerID: principal.Player.ID,
+		CommandID: uuid.New(), Connected: connected,
+	})
+}
+
+func (server *Server) isGoldenConnectionBoundary(
+	scope tournamentConnectionScope,
+	principal tournamentConnectionPrincipal,
+) bool {
+	key := connectionPrincipalKey(scope, principal)
+	if key == "" {
+		return false
+	}
+	server.lifecycleMu.Lock()
+	defer server.lifecycleMu.Unlock()
+	return server.byPrincipal[key] <= 1
+}
+
+func (server *Server) closeGoldenParticipantConnection(
+	ctx context.Context,
+	scope tournamentConnectionScope,
+	principal tournamentConnectionPrincipal,
+) {
+	closeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), defaultSessionCheckTimeout)
+	defer cancel()
+	_ = server.setGoldenParticipantConnection(closeCtx, scope, principal, false)
 }
 
 func writeTournamentInitial(

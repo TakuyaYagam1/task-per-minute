@@ -5421,6 +5421,7 @@ SELECT group_revision.revision_id AS group_revision_id,
     group_revision.group_id,
     group_revision.source_projection_revision_id,
     group_revision.source_projection_revision,
+    (group_revision.definition ->> 'revision_no')::integer AS group_revision_number,
     group_revision.position_from,
     group_revision.position_to,
     attempt_group.attempt_id,
@@ -5471,6 +5472,7 @@ type LockTournamentProgressionGoldenSettlementsRow struct {
 	GroupID                    uuid.UUID
 	SourceProjectionRevisionID uuid.UUID
 	SourceProjectionRevision   int64
+	GroupRevisionNumber        int32
 	PositionFrom               int16
 	PositionTo                 int16
 	AttemptID                  uuid.NullUUID
@@ -5501,6 +5503,7 @@ func (q *Queries) LockTournamentProgressionGoldenSettlements(ctx context.Context
 			&i.GroupID,
 			&i.SourceProjectionRevisionID,
 			&i.SourceProjectionRevision,
+			&i.GroupRevisionNumber,
 			&i.PositionFrom,
 			&i.PositionTo,
 			&i.AttemptID,

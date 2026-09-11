@@ -43,9 +43,12 @@ func TestRuntimeApplicationRoutesGoldenLifecycleAndRecovery(t *testing.T) {
 		SubmittedFlag: "TPM{correct}",
 	})
 	require.NoError(t, err)
+	require.NoError(t, application.SetConnected(context.Background(), usecase.GoldenConnectionCommand{
+		TournamentID: repository.view.TournamentID, PlayerID: uuid.New(), CommandID: uuid.New(), Connected: true,
+	}))
 
 	require.NoError(t, application.Recover(context.Background(), repository.view.TournamentID))
-	require.Equal(t, []string{"open", "ready", "start", "submit", "recover"}, repository.calls)
+	require.Equal(t, []string{"open", "ready", "start", "submit", "connect", "recover"}, repository.calls)
 }
 
 type runtimeClock struct{ now time.Time }
@@ -116,6 +119,15 @@ func (repository *runtimeRepositoryStub) Recover(
 	_ time.Time,
 ) error {
 	repository.calls = append(repository.calls, "recover")
+	return nil
+}
+
+func (repository *runtimeRepositoryStub) SetConnected(
+	_ context.Context,
+	_ usecase.GoldenConnectionCommand,
+	_ time.Time,
+) error {
+	repository.calls = append(repository.calls, "connect")
 	return nil
 }
 

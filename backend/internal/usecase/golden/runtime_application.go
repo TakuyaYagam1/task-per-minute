@@ -21,6 +21,7 @@ type RuntimeRepository interface {
 	Submit(ctx context.Context, command usecase.GoldenSubmissionCommand, now time.Time) (usecase.GoldenParticipantView, error)
 	OperatorView(ctx context.Context, query usecase.GoldenOperatorQuery) (usecase.GoldenOperatorView, error)
 	ParticipantView(ctx context.Context, query usecase.GoldenParticipantQuery) (usecase.GoldenParticipantView, error)
+	SetConnected(ctx context.Context, command usecase.GoldenConnectionCommand, now time.Time) error
 	Recover(ctx context.Context, tournamentID uuid.UUID, now time.Time) error
 }
 
@@ -30,6 +31,7 @@ type RuntimeApplication struct {
 }
 
 var _ usecase.GoldenUseCase = (*RuntimeApplication)(nil)
+var _ usecase.GoldenConnectionUseCase = (*RuntimeApplication)(nil)
 
 func NewRuntimeApplication(repository RuntimeRepository, clock ConnectionClock) *RuntimeApplication {
 	return &RuntimeApplication{repository: repository, clock: clock}
@@ -95,6 +97,18 @@ func (application *RuntimeApplication) ParticipantView(ctx context.Context, quer
 		return usecase.GoldenParticipantView{}, ErrInvalidGoldenRuntime
 	}
 	return application.repository.ParticipantView(ctx, query)
+}
+
+func (application *RuntimeApplication) SetConnected(ctx context.Context, command usecase.GoldenConnectionCommand) error {
+	if !application.valid() || ctx == nil || command.TournamentID == uuid.Nil ||
+		command.PlayerID == uuid.Nil || command.CommandID == uuid.Nil {
+		return ErrInvalidGoldenRuntime
+	}
+	now, err := application.now()
+	if err != nil {
+		return err
+	}
+	return application.repository.SetConnected(ctx, command, now)
 }
 
 func (application *RuntimeApplication) Recover(ctx context.Context, tournamentID uuid.UUID) error {

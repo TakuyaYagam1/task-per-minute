@@ -991,6 +991,11 @@ type GoldenRuntimeAssignment struct {
 	SettlementRevisionID uuid.NullUUID
 	FinalizedAt          pgtype.Timestamptz
 	CreatedAt            pgtype.Timestamptz
+	PlanID               uuid.UUID
+	EdgePosition         int16
+	ReadyWindowID        uuid.UUID
+	ReadyWindowOpenedAt  pgtype.Timestamptz
+	ReadyWindowDeadline  pgtype.Timestamptz
 }
 
 type GoldenStateAllocation struct {

@@ -254,7 +254,7 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 		return nil, nil, err
 	}
 	tournamentOperatorSessionResolver := provideOperatorSessionResolver(useCase)
-	bootstrapTournamentRealtimeOptions := provideTournamentRealtimeOptions(tournamentParticipantFlow, tournamentPublicFlow, tournamentOperatorFlow, tournamentOperatorSessionResolver)
+	bootstrapTournamentRealtimeOptions := provideTournamentRealtimeOptions(tournamentParticipantFlow, tournamentPublicFlow, tournamentOperatorFlow, tournamentOperatorSessionResolver, runtimeApplication)
 	bootstrapRawWebSocketServer := provideRawWebSocketServer(context, cfg, log, playerPostgres, bootstrapWsHandshakeRateLimiter, bootstrapTournamentRealtimeOptions, realtimeDelivery, bootstrapEventTelemetry)
 	websocketServer := provideWebSocketServer(bootstrapRawWebSocketServer)
 	bootstrapRestMiddlewareStack, err := provideRESTMiddlewares(context, log, cfg, bootstrapEventTelemetry)

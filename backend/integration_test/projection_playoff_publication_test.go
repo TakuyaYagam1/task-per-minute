@@ -22,9 +22,14 @@ import (
 	progression "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/progression"
 )
 
-type playoffPublicationClock struct{}
+type playoffPublicationClock struct{ now time.Time }
 
-func (playoffPublicationClock) Now() time.Time { return time.Now().UTC().Truncate(time.Microsecond) }
+func (clock playoffPublicationClock) Now() time.Time {
+	if !clock.now.IsZero() {
+		return clock.now.UTC().Truncate(time.Microsecond)
+	}
+	return time.Now().UTC().Truncate(time.Microsecond)
+}
 
 func TestPlayoffStagePublicationFromSwissReceipt(t *testing.T) {
 	ctx := context.Background()
@@ -217,6 +222,15 @@ func TestPlayoffStageOutboxRejectsInvalidAndMultipleSources(t *testing.T) {
 // progression workflow owns stage planning/persistence, and the lifecycle
 // repository seals its command before the deferred constraints are checked.
 func publishSwissPlayoffs(ctx context.Context, fixture tournamentAdminSwissProofFixture, command progression.Command) (inbound.TournamentView, error) {
+	return publishSwissPlayoffsWithClock(ctx, fixture, command, playoffPublicationClock{})
+}
+
+func publishSwissPlayoffsWithClock(
+	ctx context.Context,
+	fixture tournamentAdminSwissProofFixture,
+	command progression.Command,
+	clock playoffPublicationClock,
+) (inbound.TournamentView, error) {
 	var result inbound.TournamentView
 	err := fixture.tx.Do(ctx, func(txCtx context.Context) error {
 		lifecycle := postgres.NewTournamentAdminLifecyclePostgres(fixture.tx)
@@ -229,7 +243,7 @@ func publishSwissPlayoffs(ctx context.Context, fixture tournamentAdminSwissProof
 		}
 		repository := observedPlayoffPublication{postgres.NewTournamentProgressionPostgres(fixture.tx)}
 		workflow := progression.NewWorkflow(progression.ProgressionDependencies{
-			Repository: repository, TerminalEvidence: repository, Transitioner: repository, Publisher: repository, ProgressionClock: playoffPublicationClock{},
+			Repository: repository, TerminalEvidence: repository, Transitioner: repository, Publisher: repository, ProgressionClock: clock,
 		})
 		receipt, err := workflow.Advance(txCtx, command, progression.Authority{
 			Tournament: authority.Tournament, ProjectionRevisionID: authority.ProjectionRevisionID, ProjectionRevision: authority.ProjectionRevision,

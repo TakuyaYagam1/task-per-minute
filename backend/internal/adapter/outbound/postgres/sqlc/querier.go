@@ -48,6 +48,7 @@ type Querier interface {
 	ClaimPlayerSessionByUsername(ctx context.Context, arg ClaimPlayerSessionByUsernameParams) (Player, error)
 	ClaimRealtimeDelivery(ctx context.Context, arg ClaimRealtimeDeliveryParams) (uuid.UUID, error)
 	ClaimRealtimeOutboxEvents(ctx context.Context, arg ClaimRealtimeOutboxEventsParams) ([]ClaimRealtimeOutboxEventsRow, error)
+	ClearGoldenMembershipReady(ctx context.Context, arg ClearGoldenMembershipReadyParams) (uuid.UUID, error)
 	ClearWaveReadinessHeads(ctx context.Context, arg ClearWaveReadinessHeadsParams) ([]WaveReadiness, error)
 	CloseGoldenReadyDisconnectCAS(ctx context.Context, arg CloseGoldenReadyDisconnectCASParams) (GoldenReadyDisconnect, error)
 	CloseReadyWindowCAS(ctx context.Context, arg CloseReadyWindowCASParams) (ReadyWindow, error)
@@ -64,6 +65,7 @@ type Querier interface {
 	ConsumeReadyWindowCAS(ctx context.Context, arg ConsumeReadyWindowCASParams) (ReadyWindow, error)
 	CorrectGameAttemptCAS(ctx context.Context, arg CorrectGameAttemptCASParams) (CorrectGameAttemptCASRow, error)
 	CorrectSeriesCAS(ctx context.Context, arg CorrectSeriesCASParams) (Series, error)
+	CountGoldenRuntimeGroupCommits(ctx context.Context, arg CountGoldenRuntimeGroupCommitsParams) (int32, error)
 	CountWaveMembers(ctx context.Context, waveID uuid.UUID) (int64, error)
 	CountWaveReadiness(ctx context.Context, readyWindowID uuid.NullUUID) (int64, error)
 	CreateAdminPlayerAuditEvent(ctx context.Context, arg CreateAdminPlayerAuditEventParams) error
@@ -303,7 +305,7 @@ type Querier interface {
 	ExpireRecoveryReadyWindowCAS(ctx context.Context, arg ExpireRecoveryReadyWindowCASParams) (ReadyWindow, error)
 	ExpireRecoveryReconnectIntervalCAS(ctx context.Context, arg ExpireRecoveryReconnectIntervalCASParams) (ReconnectInterval, error)
 	ExpireRecoveryWaveCAS(ctx context.Context, arg ExpireRecoveryWaveCASParams) (Wave, error)
-	FinalizeGoldenRuntimeAssignment(ctx context.Context, arg FinalizeGoldenRuntimeAssignmentParams) (uuid.UUID, error)
+	FinalizeGoldenRuntimeGroupAssignments(ctx context.Context, arg FinalizeGoldenRuntimeGroupAssignmentsParams) (int64, error)
 	FindExecutionAuthorityCommand(ctx context.Context, arg FindExecutionAuthorityCommandParams) (ExecutionAuthorityLease, error)
 	FindExecutionEpochReplayByCommand(ctx context.Context, commandID uuid.UUID) (ExecutionEpochReplay, error)
 	FindExecutionEpochReplayByGame(ctx context.Context, gameAttemptID uuid.UUID) (ExecutionEpochReplay, error)
@@ -453,8 +455,11 @@ type Querier interface {
 	ListGoldenRecoveryRevisions(ctx context.Context, arg ListGoldenRecoveryRevisionsParams) ([]GoldenRecoveryRevision, error)
 	ListGoldenReservePromotions(ctx context.Context, arg ListGoldenReservePromotionsParams) ([]GoldenReservePromotion, error)
 	ListGoldenRuntimeAttemptMembers(ctx context.Context, arg ListGoldenRuntimeAttemptMembersParams) ([]ListGoldenRuntimeAttemptMembersRow, error)
+	ListGoldenRuntimeGroupAttempts(ctx context.Context, arg ListGoldenRuntimeGroupAttemptsParams) ([]ListGoldenRuntimeGroupAttemptsRow, error)
+	ListGoldenRuntimeGroupEvidence(ctx context.Context, arg ListGoldenRuntimeGroupEvidenceParams) ([]ListGoldenRuntimeGroupEvidenceRow, error)
 	ListGoldenRuntimeGroups(ctx context.Context, tournamentID uuid.UUID) ([]ListGoldenRuntimeGroupsRow, error)
 	ListGoldenRuntimeRecoveryAttempts(ctx context.Context, tournamentID uuid.UUID) ([]ListGoldenRuntimeRecoveryAttemptsRow, error)
+	ListGoldenRuntimeUnresolvedMembers(ctx context.Context, arg ListGoldenRuntimeUnresolvedMembersParams) ([]uuid.UUID, error)
 	ListGoldenRuntimeView(ctx context.Context, tournamentID uuid.UUID) ([]ListGoldenRuntimeViewRow, error)
 	ListOperatorTournamentReadAuditLinks(ctx context.Context, tournamentID uuid.UUID) ([]ListOperatorTournamentReadAuditLinksRow, error)
 	ListOperatorTournamentReadPresence(ctx context.Context, tournamentID uuid.UUID) ([]ListOperatorTournamentReadPresenceRow, error)
@@ -598,6 +603,7 @@ type Querier interface {
 	// Production Golden runtime.
 	LockGoldenRuntimeTournament(ctx context.Context, tournamentID uuid.UUID) (LockGoldenRuntimeTournamentRow, error)
 	LockLatestFinalSwissReceipt(ctx context.Context, arg LockLatestFinalSwissReceiptParams) (LockLatestFinalSwissReceiptRow, error)
+	LockOpenGoldenReadyDisconnect(ctx context.Context, arg LockOpenGoldenReadyDisconnectParams) (LockOpenGoldenReadyDisconnectRow, error)
 	// A pre-start operator forfeit may omit an expected Game. In that case the
 	// latest planned or ready attempt is the only legal sequence anchor.
 	LockOperatorForfeitAttempt(ctx context.Context, arg LockOperatorForfeitAttemptParams) (uuid.UUID, error)
@@ -836,6 +842,8 @@ type Querier interface {
 	MarkTournamentRosterExecutionStartedCAS(ctx context.Context, arg MarkTournamentRosterExecutionStartedCASParams) (Roster, error)
 	MarkWaveMemberReadyCAS(ctx context.Context, arg MarkWaveMemberReadyCASParams) (WaveReadiness, error)
 	MarkWaveReadinessCAS(ctx context.Context, arg MarkWaveReadinessCASParams) (Wave, error)
+	NextGoldenAttemptSubmissionRevision(ctx context.Context, attemptID uuid.UUID) (NextGoldenAttemptSubmissionRevisionRow, error)
+	NextGoldenReadyDisconnectSequence(ctx context.Context, membershipID uuid.UUID) (int32, error)
 	NextGoldenRuntimeAttempt(ctx context.Context, tournamentID uuid.UUID) (NextGoldenRuntimeAttemptRow, error)
 	OpenRealtimeSubscription(ctx context.Context, arg OpenRealtimeSubscriptionParams) (OpenRealtimeSubscriptionRow, error)
 	OpenReplayReplacementWaveCAS(ctx context.Context, arg OpenReplayReplacementWaveCASParams) (uuid.UUID, error)
@@ -863,6 +871,7 @@ type Querier interface {
 	ReleaseTournamentReservations(ctx context.Context, tournamentID uuid.UUID) (int64, error)
 	ReplaceWithdrawnTournamentParticipant(ctx context.Context, arg ReplaceWithdrawnTournamentParticipantParams) (Participant, error)
 	ReserveCheckedInTournamentParticipants(ctx context.Context, arg ReserveCheckedInTournamentParticipantsParams) ([]uuid.UUID, error)
+	ResetGoldenRuntimeReadyWindow(ctx context.Context, arg ResetGoldenRuntimeReadyWindowParams) (uuid.UUID, error)
 	// An unchanged correction publishes a new projection without rewriting the
 	// immutable Golden group revisions. Follow correction predecessors until the
 	// nearest projection that owns the active Golden authority is found.

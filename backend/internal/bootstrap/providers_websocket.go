@@ -30,6 +30,7 @@ type tournamentRealtimeOptions struct {
 	public           websocket.TournamentPublicConnectionFlow
 	operator         websocket.TournamentOperatorConnectionFlow
 	operatorResolver websocket.TournamentOperatorSessionResolver
+	goldenConnection websocket.GoldenConnectionFlow
 }
 
 func providePublicRealtimeConfig() *tournamentws.PublicRealtimeConfig {
@@ -41,12 +42,14 @@ func provideTournamentRealtimeOptions(
 	public websocket.TournamentPublicConnectionFlow,
 	operator websocket.TournamentOperatorConnectionFlow,
 	operatorResolver websocket.TournamentOperatorSessionResolver,
+	goldenConnection inbound.GoldenConnectionUseCase,
 ) tournamentRealtimeOptions {
 	return tournamentRealtimeOptions{
 		participant:      participant,
 		public:           public,
 		operator:         operator,
 		operatorResolver: operatorResolver,
+		goldenConnection: goldenConnection,
 	}
 }
 
@@ -162,6 +165,9 @@ func provideRawWebSocketServer(
 	}
 	if realtime.operatorResolver != nil {
 		options = append(options, websocket.WithTournamentOperatorSessionResolver(realtime.operatorResolver))
+	}
+	if realtime.goldenConnection != nil {
+		options = append(options, websocket.WithGoldenConnectionFlow(realtime.goldenConnection))
 	}
 	return rawWebSocketServer{Server: websocket.NewServer(players, options...)}
 }
