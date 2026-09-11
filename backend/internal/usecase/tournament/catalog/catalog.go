@@ -85,7 +85,8 @@ func (a *UseCase) CreateTournament(ctx context.Context, command usecase.Tourname
 	}
 	result, err := a.createStore.Create(ctx, CreateReceiptCommand{
 		ActorID: command.Operator.ActorID, IdempotencyKey: receipt.ID, PayloadDigest: receipt.PayloadDigest,
-		TournamentID: tournamentID, RosterID: rosterID, CreatedAt: createdAt,
+		TournamentID: tournamentID, RosterID: rosterID, Name: command.Name, PublicID: command.PublicID,
+		PlannedRosterSize: command.PlannedRosterSize, ContentRevision: command.ContentRevision, CreatedAt: createdAt,
 	})
 	if err != nil {
 		if errors.Is(err, idempotency.ErrPayloadConflict) {
@@ -93,7 +94,7 @@ func (a *UseCase) CreateTournament(ctx context.Context, command usecase.Tourname
 		}
 		return usecase.TournamentResult{}, err
 	}
-	if err := validateCreateResult(result, tournamentID, rosterID, command.Preset); err != nil {
+	if err := validateCreateResult(result, tournamentID, rosterID, command); err != nil {
 		return usecase.TournamentResult{}, domain.ErrInternal
 	}
 	durableSuccess = true

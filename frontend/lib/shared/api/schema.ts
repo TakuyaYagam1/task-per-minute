@@ -1154,14 +1154,20 @@ export interface components {
         /** @enum {string} */
         TournamentPreset: "tournament_v1";
         Tournament: {
+            /** Format: int64 */
+            content_revision: number;
             /** Format: date-time */
             readonly created_at: string;
             /** Format: date-time */
             readonly finished_at?: string | null;
             /** Format: uuid */
             id: string;
+            name: string;
             paused_from_state?: (string & components["schemas"]["TournamentState"]) | null;
+            /** Format: int32 */
+            planned_roster_size: number;
             preset: components["schemas"]["TournamentPreset"];
+            public_id: string;
             /** Format: int64 */
             readonly revision: number;
             /** Format: uuid */
@@ -1180,8 +1186,14 @@ export interface components {
         };
         CreateTournamentRequest: {
             /** Format: int64 */
+            content_revision: number;
+            /** Format: int64 */
             expected_revision: number;
+            name: string;
+            /** Format: int32 */
+            planned_roster_size: number;
             preset: components["schemas"]["TournamentPreset"];
+            public_id: string;
         };
         /** @description RFC 7807 optimistic-concurrency error with the current tournament revision. */
         TournamentRevisionProblem: components["schemas"]["ProblemDetails"] & {

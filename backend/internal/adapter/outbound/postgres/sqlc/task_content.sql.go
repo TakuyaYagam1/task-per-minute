@@ -498,11 +498,12 @@ func (q *Queries) ListTournamentContentStageDefaults(ctx context.Context, config
 	return items, nil
 }
 
-const lockCurrentTaskPoolPublication = `-- name: LockCurrentTaskPoolPublication :many
-WITH current_publication AS (
+const lockTaskPoolPublicationRevision = `-- name: LockTaskPoolPublicationRevision :many
+WITH selected_publication AS (
     SELECT publication.id, publication.revision, publication.published_at
     FROM task_pool_publications AS publication
-    ORDER BY publication.revision DESC, publication.id DESC
+    WHERE publication.revision = $1
+    ORDER BY publication.id
     LIMIT 1
     FOR KEY SHARE OF publication
 )
@@ -512,13 +513,13 @@ SELECT publication.id AS publication_id,
     pool.id AS pool_revision_id,
     pool.kind,
     pool.revision AS pool_revision
-FROM current_publication AS publication
+FROM selected_publication AS publication
 JOIN task_pool_revisions AS pool ON pool.publication_id = publication.id
 ORDER BY pool.kind
 FOR KEY SHARE OF pool
 `
 
-type LockCurrentTaskPoolPublicationRow struct {
+type LockTaskPoolPublicationRevisionRow struct {
 	PublicationID       uuid.UUID
 	PublicationRevision int64
 	PublishedAt         pgtype.Timestamptz
@@ -527,15 +528,15 @@ type LockCurrentTaskPoolPublicationRow struct {
 	PoolRevision        int64
 }
 
-func (q *Queries) LockCurrentTaskPoolPublication(ctx context.Context) ([]LockCurrentTaskPoolPublicationRow, error) {
-	rows, err := q.db.Query(ctx, lockCurrentTaskPoolPublication)
+func (q *Queries) LockTaskPoolPublicationRevision(ctx context.Context, contentRevision int64) ([]LockTaskPoolPublicationRevisionRow, error) {
+	rows, err := q.db.Query(ctx, lockTaskPoolPublicationRevision, contentRevision)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []LockCurrentTaskPoolPublicationRow{}
+	items := []LockTaskPoolPublicationRevisionRow{}
 	for rows.Next() {
-		var i LockCurrentTaskPoolPublicationRow
+		var i LockTaskPoolPublicationRevisionRow
 		if err := rows.Scan(
 			&i.PublicationID,
 			&i.PublicationRevision,

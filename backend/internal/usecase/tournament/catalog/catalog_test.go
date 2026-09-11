@@ -92,11 +92,7 @@ func TestUseCase_CreateTournament(t *testing.T) {
 		createdAt,
 	)).Return(tournamentResultFixture(tournamentID, rosterID, createdAt), nil).Once()
 
-	result, err := application.CreateTournament(t.Context(), inbound.TournamentCreateCommand{
-		Operator:       inbound.OperatorIdentity{ActorID: uuid.New()},
-		IdempotencyKey: commandID,
-		Preset:         domain.TournamentPresetV1,
-	})
+	result, err := application.CreateTournament(t.Context(), tournamentCreateCommand(commandID))
 
 	require.NoError(t, err)
 	require.True(t, result.Changed)
@@ -140,11 +136,7 @@ func TestUseCase_CreateTournamentPanicBeforeDurableResultMarksReceiptFailed(t *t
 	}).Return(inbound.TournamentResult{}, nil).Once()
 
 	require.PanicsWithValue(t, panicValue, func() {
-		_, _ = application.CreateTournament(t.Context(), inbound.TournamentCreateCommand{
-			Operator:       inbound.OperatorIdentity{ActorID: uuid.New()},
-			IdempotencyKey: commandID,
-			Preset:         domain.TournamentPresetV1,
-		})
+		_, _ = application.CreateTournament(t.Context(), tournamentCreateCommand(commandID))
 	})
 }
 
@@ -180,11 +172,7 @@ func TestUseCase_CreateTournamentReadsDurableReceiptAfterCacheSuccess(t *testing
 		createdAt,
 	)).Return(durable, nil).Once()
 
-	result, err := application.CreateTournament(t.Context(), inbound.TournamentCreateCommand{
-		Operator:       inbound.OperatorIdentity{ActorID: uuid.New()},
-		IdempotencyKey: commandID,
-		Preset:         domain.TournamentPresetV1,
-	})
+	result, err := application.CreateTournament(t.Context(), tournamentCreateCommand(commandID))
 
 	require.NoError(t, err)
 	require.Equal(t, durable, result)
@@ -204,11 +192,7 @@ func TestUseCase_CreateTournamentRejectsInFlightCommand(t *testing.T) {
 	receipts.EXPECT().Begin(mock.Anything, createReceiptMatcher(commandID), mock.Anything).
 		RunAndReturn(createBeginResult(idempotency.BeginInFlight)).Once()
 
-	_, err := application.CreateTournament(t.Context(), inbound.TournamentCreateCommand{
-		Operator:       inbound.OperatorIdentity{ActorID: uuid.New()},
-		IdempotencyKey: commandID,
-		Preset:         domain.TournamentPresetV1,
-	})
+	_, err := application.CreateTournament(t.Context(), tournamentCreateCommand(commandID))
 
 	require.ErrorIs(t, err, domain.ErrConflict)
 }
@@ -245,11 +229,7 @@ func TestUseCase_CreateTournamentMarksCacheFailedOnDurablePayloadConflict(t *tes
 		createdAt,
 	)).Return(inbound.TournamentResult{}, idempotency.ErrPayloadConflict).Once()
 
-	_, err := application.CreateTournament(t.Context(), inbound.TournamentCreateCommand{
-		Operator:       inbound.OperatorIdentity{ActorID: uuid.New()},
-		IdempotencyKey: commandID,
-		Preset:         domain.TournamentPresetV1,
-	})
+	_, err := application.CreateTournament(t.Context(), tournamentCreateCommand(commandID))
 
 	require.ErrorIs(t, err, domain.ErrConflict)
 }
@@ -287,11 +267,7 @@ func TestUseCase_CreateTournamentMarksCacheFailedOnTransientDurableFailure(t *te
 		createdAt,
 	)).Return(inbound.TournamentResult{}, transient).Once()
 
-	_, err := application.CreateTournament(t.Context(), inbound.TournamentCreateCommand{
-		Operator:       inbound.OperatorIdentity{ActorID: uuid.New()},
-		IdempotencyKey: commandID,
-		Preset:         domain.TournamentPresetV1,
-	})
+	_, err := application.CreateTournament(t.Context(), tournamentCreateCommand(commandID))
 
 	require.ErrorIs(t, err, transient)
 }
@@ -330,11 +306,7 @@ func TestUseCase_CreateTournamentKeepsDurableSuccessWhenCacheFinalizationFails(t
 		createdAt,
 	)).Return(durable, nil).Once()
 
-	result, err := application.CreateTournament(t.Context(), inbound.TournamentCreateCommand{
-		Operator:       inbound.OperatorIdentity{ActorID: uuid.New()},
-		IdempotencyKey: commandID,
-		Preset:         domain.TournamentPresetV1,
-	})
+	result, err := application.CreateTournament(t.Context(), tournamentCreateCommand(commandID))
 
 	require.NoError(t, err)
 	require.Equal(t, durable, result)
@@ -345,6 +317,14 @@ func createReceiptMatcher(commandID uuid.UUID) interface{} {
 		return command.Namespace == "tournament-create" && command.ID == commandID &&
 			command.PayloadDigest != [32]byte{}
 	})
+}
+
+func tournamentCreateCommand(commandID uuid.UUID) inbound.TournamentCreateCommand {
+	return inbound.TournamentCreateCommand{
+		Operator: inbound.OperatorIdentity{ActorID: uuid.New()}, IdempotencyKey: commandID,
+		Preset: domain.TournamentPresetV1, Name: "September Invitational", PublicID: "september-invitational",
+		PlannedRosterSize: 8, ContentRevision: 1,
+	}
 }
 
 func createBeginResult(
@@ -368,6 +348,8 @@ func createReceiptCommandMatcher(
 	return mock.MatchedBy(func(command catalogusecase.CreateReceiptCommand) bool {
 		return command.IdempotencyKey == commandID && command.TournamentID == tournamentID &&
 			command.RosterID == rosterID && command.ActorID != uuid.Nil &&
+			command.Name == "September Invitational" && command.PublicID == "september-invitational" &&
+			command.PlannedRosterSize == 8 && command.ContentRevision == 1 &&
 			command.PayloadDigest != [32]byte{} && command.CreatedAt.Equal(createdAt)
 	})
 }
@@ -380,6 +362,8 @@ func tournamentResultFixture(
 	return inbound.TournamentResult{
 		Tournament: inbound.TournamentView{
 			ID: tournamentID, RosterID: rosterID, Preset: domain.TournamentPresetV1,
+			Name: "September Invitational", PublicID: "september-invitational",
+			PlannedRosterSize: 8, ContentRevision: 1,
 			State: domain.TournamentStateDraft, Revision: 1, CreatedAt: createdAt, UpdatedAt: createdAt,
 		},
 		Changed: true,
@@ -389,6 +373,8 @@ func tournamentResultFixture(
 func tournamentRecordFixture(id uuid.UUID, createdAt time.Time) catalogusecase.CatalogTournamentRecord {
 	return catalogusecase.CatalogTournamentRecord{
 		ID: id, RosterID: uuid.New(), Preset: domain.TournamentPresetV1,
+		Name: "September Invitational", PublicID: "september-invitational",
+		PlannedRosterSize: 8, ContentRevision: 1,
 		State: domain.TournamentStateDraft, Revision: 1,
 		CreatedAt: createdAt, UpdatedAt: createdAt,
 	}

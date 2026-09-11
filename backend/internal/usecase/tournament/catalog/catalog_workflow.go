@@ -42,7 +42,7 @@ func (u *TournamentUseCase) CreateTournament(
 	if !catalogValidServerTime(createdAt) {
 		return nil, false, domain.ErrValidation
 	}
-	created, roster, err := u.repository.CreateTournamentDraft(ctx, command.TournamentID, command.RosterID, createdAt)
+	created, roster, err := u.repository.CreateTournamentDraft(ctx, command, createdAt)
 	if err != nil {
 		existing, getErr := u.repository.GetTournament(ctx, command.TournamentID)
 		if getErr == nil {
@@ -66,7 +66,11 @@ func (u *TournamentUseCase) isAvailable() bool {
 }
 
 func validTournamentCreateCommand(command TournamentCreateCommand) bool {
-	return command.TournamentID != uuid.Nil && command.RosterID != uuid.Nil
+	return command.TournamentID != uuid.Nil && command.RosterID != uuid.Nil &&
+		(domain.TournamentMetadata{Name: command.Name, PublicID: command.PublicID,
+			PlannedRosterSize: command.PlannedRosterSize, ContentRevision: command.ContentRevision}).Validate(
+			domain.TournamentPresetV1,
+		) == nil
 }
 
 func (u *TournamentUseCase) ListTournaments(
@@ -108,7 +112,9 @@ func reconcileTournamentCreate(
 	command TournamentCreateCommand,
 ) (*CatalogTournamentRecord, bool, error) {
 	if existing == nil || existing.ID != command.TournamentID || existing.RosterID != command.RosterID ||
-		existing.Preset != domain.TournamentPresetV1 {
+		existing.Preset != domain.TournamentPresetV1 || existing.Name != command.Name ||
+		existing.PublicID != command.PublicID || existing.PlannedRosterSize != command.PlannedRosterSize ||
+		existing.ContentRevision != command.ContentRevision {
 		return nil, false, domain.ErrConflict
 	}
 	if err := catalogValidateTournamentRecord(*existing); err != nil {
@@ -122,6 +128,10 @@ func catalogValidateTournamentRecord(record CatalogTournamentRecord) error {
 		record.Revision < 1 || record.RosterSize < 0 || record.RosterSize > domain.TournamentMaxParticipants ||
 		!catalogValidServerTime(record.CreatedAt) || !catalogValidServerTime(record.UpdatedAt) ||
 		record.UpdatedAt.Before(record.CreatedAt) {
+		return domain.ErrInternal
+	}
+	if err := (domain.TournamentMetadata{Name: record.Name, PublicID: record.PublicID,
+		PlannedRosterSize: record.PlannedRosterSize, ContentRevision: record.ContentRevision}).Validate(record.Preset); err != nil {
 		return domain.ErrInternal
 	}
 	if err := (domain.Tournament{

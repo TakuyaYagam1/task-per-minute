@@ -55,10 +55,14 @@ type TournamentPage struct {
 }
 
 type TournamentCreateCommand struct {
-	Operator         OperatorIdentity
-	IdempotencyKey   uuid.UUID
-	ExpectedRevision int64
-	Preset           domain.TournamentPreset
+	Operator          OperatorIdentity
+	IdempotencyKey    uuid.UUID
+	ExpectedRevision  int64
+	Preset            domain.TournamentPreset
+	Name              string
+	PublicID          string
+	PlannedRosterSize int
+	ContentRevision   int64
 }
 
 type TournamentResult struct {
@@ -67,17 +71,21 @@ type TournamentResult struct {
 }
 
 type TournamentView struct {
-	ID              uuid.UUID
-	RosterID        uuid.UUID
-	Preset          domain.TournamentPreset
-	State           domain.TournamentState
-	PausedFromState *domain.TournamentState
-	Revision        int64
-	RosterSize      int
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
-	StartedAt       *time.Time
-	FinishedAt      *time.Time
+	ID                uuid.UUID
+	RosterID          uuid.UUID
+	Preset            domain.TournamentPreset
+	Name              string
+	PublicID          string
+	PlannedRosterSize int
+	ContentRevision   int64
+	State             domain.TournamentState
+	PausedFromState   *domain.TournamentState
+	Revision          int64
+	RosterSize        int
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+	StartedAt         *time.Time
+	FinishedAt        *time.Time
 }
 
 // TournamentRevisionConflictError carries current aggregate evidence without

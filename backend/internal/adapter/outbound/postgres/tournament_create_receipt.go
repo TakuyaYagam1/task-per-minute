@@ -20,7 +20,7 @@ import (
 	catalogusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/catalog"
 )
 
-const tournamentCreateReceiptSchemaVersion int16 = 1
+const tournamentCreateReceiptSchemaVersion int16 = 2
 
 var errInvalidTournamentCreateReceipt = errors.New("invalid tournament create receipt")
 
@@ -29,16 +29,20 @@ type TournamentCreatePostgres struct {
 }
 
 type tournamentCreateReceiptDocument struct {
-	SchemaVersion int16     `json:"schema_version"`
-	TournamentID  uuid.UUID `json:"tournament_id"`
-	RosterID      uuid.UUID `json:"roster_id"`
-	Preset        string    `json:"preset"`
-	State         string    `json:"state"`
-	Revision      int64     `json:"revision"`
-	RosterSize    int       `json:"roster_size"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
-	Changed       bool      `json:"changed"`
+	SchemaVersion     int16     `json:"schema_version"`
+	TournamentID      uuid.UUID `json:"tournament_id"`
+	RosterID          uuid.UUID `json:"roster_id"`
+	Preset            string    `json:"preset"`
+	State             string    `json:"state"`
+	Revision          int64     `json:"revision"`
+	RosterSize        int       `json:"roster_size"`
+	Name              string    `json:"name"`
+	PublicID          string    `json:"public_id"`
+	PlannedRosterSize int       `json:"planned_roster_size"`
+	ContentRevision   int64     `json:"content_revision"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
+	Changed           bool      `json:"changed"`
 }
 
 func NewTournamentCreatePostgres(tournaments *TournamentPostgres) *TournamentCreatePostgres {
@@ -75,18 +79,19 @@ func (r *TournamentCreatePostgres) Create(
 			return fmt.Errorf("TournamentCreatePostgres - Create - get receipt: %w", err)
 		}
 
-		created, roster, err := r.tournaments.Create(
-			txCtx,
-			command.TournamentID,
-			command.RosterID,
-			command.CreatedAt,
-		)
+		created, roster, err := r.tournaments.Create(txCtx, TournamentCreateInput{
+			ID: command.TournamentID, RosterID: command.RosterID, Name: command.Name, PublicID: command.PublicID,
+			PlannedRosterSize: command.PlannedRosterSize, ContentRevision: command.ContentRevision,
+			CreatedAt: command.CreatedAt,
+		})
 		if err != nil {
 			return fmt.Errorf("TournamentCreatePostgres - Create - tournament: %w", err)
 		}
 		if created == nil || roster == nil || created.ID != command.TournamentID || roster.ID != command.RosterID ||
 			roster.TournamentID != command.TournamentID || created.Preset != string(domain.TournamentPresetV1) ||
 			created.State != domain.TournamentStateDraft || created.Revision != 1 ||
+			created.Name != command.Name || created.PublicID != command.PublicID ||
+			created.PlannedRosterSize != command.PlannedRosterSize || created.ContentRevision != command.ContentRevision ||
 			!created.CreatedAt.Equal(created.UpdatedAt) {
 			return errInvalidTournamentCreateReceipt
 		}
@@ -103,10 +108,15 @@ func (r *TournamentCreatePostgres) Create(
 			ResultState:            string(domain.TournamentStateDraft),
 			ResultRevision:         1,
 			ResultRosterSize:       0,
-			ResultCreatedAt:        tstz(created.CreatedAt.UTC()),
-			ResultUpdatedAt:        tstz(created.UpdatedAt.UTC()),
-			ResultChanged:          true,
-			CreatedAt:              tstz(created.CreatedAt.UTC()),
+			ResultName:             command.Name,
+			ResultPublicID:         command.PublicID,
+			//nolint:gosec // Command validation bounds planned roster size to 4..16.
+			ResultPlannedRosterSize: int32(command.PlannedRosterSize),
+			ResultContentRevision:   command.ContentRevision,
+			ResultCreatedAt:         tstz(created.CreatedAt.UTC()),
+			ResultUpdatedAt:         tstz(created.UpdatedAt.UTC()),
+			ResultChanged:           true,
+			CreatedAt:               tstz(created.CreatedAt.UTC()),
 		})
 		if err != nil {
 			return fmt.Errorf("TournamentCreatePostgres - Create - insert receipt: %w", err)
@@ -128,7 +138,10 @@ func validTournamentCreateReceiptCommand(command catalogusecase.CreateReceiptCom
 	return command.ActorID != uuid.Nil && command.IdempotencyKey != uuid.Nil &&
 		command.TournamentID != uuid.Nil && command.RosterID != uuid.Nil &&
 		command.TournamentID != command.RosterID && command.PayloadDigest != [32]byte{} &&
-		validServerTime(command.CreatedAt)
+		validServerTime(command.CreatedAt) && (domain.TournamentMetadata{Name: command.Name, PublicID: command.PublicID,
+		PlannedRosterSize: command.PlannedRosterSize, ContentRevision: command.ContentRevision}).Validate(
+		domain.TournamentPresetV1,
+	) == nil
 }
 
 //nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
@@ -173,13 +186,17 @@ func tournamentCreateReceiptResult(
 		document.Preset != receipt.ResultPreset || document.State != receipt.ResultState ||
 		document.Revision != receipt.ResultRevision || document.RosterSize != int(receipt.ResultRosterSize) ||
 		!document.CreatedAt.Equal(createdAt) || !document.UpdatedAt.Equal(updatedAt) ||
+		document.Name != command.Name || document.PublicID != command.PublicID ||
+		document.PlannedRosterSize != command.PlannedRosterSize || document.ContentRevision != command.ContentRevision ||
 		!document.Changed {
 		return usecase.TournamentResult{}, errInvalidTournamentCreateReceipt
 	}
 	return usecase.TournamentResult{
 		Tournament: usecase.TournamentView{
 			ID: receipt.TournamentID, RosterID: receipt.RosterID, Preset: domain.TournamentPreset(receipt.ResultPreset),
-			State: domain.TournamentState(receipt.ResultState), Revision: receipt.ResultRevision,
+			Name: document.Name, PublicID: document.PublicID, PlannedRosterSize: document.PlannedRosterSize,
+			ContentRevision: document.ContentRevision,
+			State:           domain.TournamentState(receipt.ResultState), Revision: receipt.ResultRevision,
 			RosterSize: int(receipt.ResultRosterSize), CreatedAt: createdAt, UpdatedAt: updatedAt,
 		},
 		Changed: receipt.ResultChanged,

@@ -2369,15 +2369,19 @@ type TaskVersionReservation struct {
 }
 
 type Tournament struct {
-	ID              uuid.UUID
-	Preset          string
-	State           string
-	PausedFromState *string
-	Revision        int64
-	CreatedAt       pgtype.Timestamptz
-	UpdatedAt       pgtype.Timestamptz
-	StartedAt       pgtype.Timestamptz
-	FinishedAt      pgtype.Timestamptz
+	ID                uuid.UUID
+	Preset            string
+	State             string
+	PausedFromState   *string
+	Revision          int64
+	CreatedAt         pgtype.Timestamptz
+	UpdatedAt         pgtype.Timestamptz
+	StartedAt         pgtype.Timestamptz
+	FinishedAt        pgtype.Timestamptz
+	Name              string
+	PublicID          string
+	PlannedRosterSize int32
+	ContentRevision   int64
 }
 
 type TournamentCancellation struct {

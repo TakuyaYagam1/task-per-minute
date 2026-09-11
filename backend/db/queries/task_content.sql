@@ -18,11 +18,12 @@ FROM task_versions AS task_version
 WHERE task_version.task_id = sqlc.arg(task_id)
     AND task_version.version = sqlc.arg(version);
 
--- name: LockCurrentTaskPoolPublication :many
-WITH current_publication AS (
+-- name: LockTaskPoolPublicationRevision :many
+WITH selected_publication AS (
     SELECT publication.id, publication.revision, publication.published_at
     FROM task_pool_publications AS publication
-    ORDER BY publication.revision DESC, publication.id DESC
+    WHERE publication.revision = sqlc.arg(content_revision)
+    ORDER BY publication.id
     LIMIT 1
     FOR KEY SHARE OF publication
 )
@@ -32,7 +33,7 @@ SELECT publication.id AS publication_id,
     pool.id AS pool_revision_id,
     pool.kind,
     pool.revision AS pool_revision
-FROM current_publication AS publication
+FROM selected_publication AS publication
 JOIN task_pool_revisions AS pool ON pool.publication_id = publication.id
 ORDER BY pool.kind
 FOR KEY SHARE OF pool;

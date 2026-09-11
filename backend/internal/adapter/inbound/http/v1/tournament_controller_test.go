@@ -79,6 +79,10 @@ func TestTournamentController_ListTournaments(t *testing.T) {
 		require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &payload))
 		require.Len(t, payload.Items, 1)
 		require.Equal(t, int64(7), payload.Items[0].Revision)
+		require.Equal(t, "September Invitational", payload.Items[0].Name)
+		require.Equal(t, "september-invitational", payload.Items[0].PublicId)
+		require.Equal(t, int32(8), payload.Items[0].PlannedRosterSize)
+		require.Equal(t, int64(3), payload.Items[0].ContentRevision)
 		require.NotNil(t, payload.NextCursor)
 		decoded, err := decodeTournamentCursor(*payload.NextCursor)
 		require.NoError(t, err)
@@ -121,7 +125,7 @@ func TestTournamentController_CreateTournament(t *testing.T) {
 		controller := newTournamentController(service, nil)
 		recorder := authenticatedOperatorRequest(
 			t, http.MethodPost,
-			`{"expected_revision":0,"preset":"tournament_v1"}`,
+			`{"expected_revision":0,"preset":"tournament_v1","name":"September Invitational","public_id":"september-invitational","planned_roster_size":8,"content_revision":3}`,
 			func(w http.ResponseWriter, r *http.Request) {
 				controller.CreateTournament(w, r, api.CreateTournamentParams{IdempotencyKey: commandID})
 			},
@@ -131,7 +135,17 @@ func TestTournamentController_CreateTournament(t *testing.T) {
 		require.Equal(t, commandID, command.IdempotencyKey)
 		require.Zero(t, command.ExpectedRevision)
 		require.Equal(t, domain.TournamentPresetV1, command.Preset)
+		require.Equal(t, "September Invitational", command.Name)
+		require.Equal(t, "september-invitational", command.PublicID)
+		require.Equal(t, 8, command.PlannedRosterSize)
+		require.Equal(t, int64(3), command.ContentRevision)
 		require.Equal(t, testOperatorIdentity(t), command.Operator)
+		var payload api.Tournament
+		require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &payload))
+		require.Equal(t, command.Name, payload.Name)
+		require.Equal(t, command.PublicID, payload.PublicId)
+		require.Equal(t, int32(command.PlannedRosterSize), payload.PlannedRosterSize)
+		require.Equal(t, command.ContentRevision, payload.ContentRevision)
 	})
 
 	t.Run("maps current revision on conflict", func(t *testing.T) {
@@ -146,7 +160,7 @@ func TestTournamentController_CreateTournament(t *testing.T) {
 		controller := newTournamentController(service, nil)
 		recorder := authenticatedOperatorRequest(
 			t, http.MethodPost,
-			`{"expected_revision":0,"preset":"tournament_v1"}`,
+			`{"expected_revision":0,"preset":"tournament_v1","name":"September Invitational","public_id":"september-invitational","planned_roster_size":8,"content_revision":3}`,
 			func(w http.ResponseWriter, r *http.Request) {
 				controller.CreateTournament(w, r, api.CreateTournamentParams{IdempotencyKey: commandID})
 			},
@@ -181,6 +195,8 @@ func tournamentViewFixture(
 ) inbound.TournamentView {
 	return inbound.TournamentView{
 		ID: tournamentID, RosterID: rosterID, Preset: domain.TournamentPresetV1,
+		Name: "September Invitational", PublicID: "september-invitational",
+		PlannedRosterSize: 8, ContentRevision: 3,
 		State: state, Revision: revision, RosterSize: 8,
 		CreatedAt: createdAt, UpdatedAt: createdAt,
 	}

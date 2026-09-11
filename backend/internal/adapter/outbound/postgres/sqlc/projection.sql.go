@@ -39,9 +39,21 @@ type CompleteTournamentFromFinalProjectionCASParams struct {
 	ExpectedRevision int64
 }
 
-func (q *Queries) CompleteTournamentFromFinalProjectionCAS(ctx context.Context, arg CompleteTournamentFromFinalProjectionCASParams) (Tournament, error) {
+type CompleteTournamentFromFinalProjectionCASRow struct {
+	ID              uuid.UUID
+	Preset          string
+	State           string
+	PausedFromState *string
+	Revision        int64
+	CreatedAt       pgtype.Timestamptz
+	UpdatedAt       pgtype.Timestamptz
+	StartedAt       pgtype.Timestamptz
+	FinishedAt      pgtype.Timestamptz
+}
+
+func (q *Queries) CompleteTournamentFromFinalProjectionCAS(ctx context.Context, arg CompleteTournamentFromFinalProjectionCASParams) (CompleteTournamentFromFinalProjectionCASRow, error) {
 	row := q.db.QueryRow(ctx, completeTournamentFromFinalProjectionCAS, arg.CompletedAt, arg.TournamentID, arg.ExpectedRevision)
-	var i Tournament
+	var i CompleteTournamentFromFinalProjectionCASRow
 	err := row.Scan(
 		&i.ID,
 		&i.Preset,

@@ -9,16 +9,20 @@ func tournamentView(record CatalogTournamentRecord) (usecase.TournamentView, err
 		return usecase.TournamentView{}, err
 	}
 	return usecase.TournamentView{
-		ID:              record.ID,
-		RosterID:        record.RosterID,
-		Preset:          record.Preset,
-		State:           record.State,
-		PausedFromState: cloneState(record.PausedFromState),
-		Revision:        record.Revision,
-		RosterSize:      record.RosterSize,
-		CreatedAt:       record.CreatedAt,
-		UpdatedAt:       record.UpdatedAt,
-		StartedAt:       cloneTime(record.StartedAt),
-		FinishedAt:      cloneTime(record.FinishedAt),
+		ID:                record.ID,
+		RosterID:          record.RosterID,
+		Preset:            record.Preset,
+		Name:              record.Name,
+		PublicID:          record.PublicID,
+		PlannedRosterSize: record.PlannedRosterSize,
+		ContentRevision:   record.ContentRevision,
+		State:             record.State,
+		PausedFromState:   cloneState(record.PausedFromState),
+		Revision:          record.Revision,
+		RosterSize:        record.RosterSize,
+		CreatedAt:         record.CreatedAt,
+		UpdatedAt:         record.UpdatedAt,
+		StartedAt:         cloneTime(record.StartedAt),
+		FinishedAt:        cloneTime(record.FinishedAt),
 	}, nil
 }

@@ -15,17 +15,21 @@ type CatalogClock interface {
 }
 
 type CatalogTournamentRecord struct {
-	ID              uuid.UUID
-	RosterID        uuid.UUID
-	Preset          domain.TournamentPreset
-	State           domain.TournamentState
-	PausedFromState *domain.TournamentState
-	Revision        int64
-	RosterSize      int
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
-	StartedAt       *time.Time
-	FinishedAt      *time.Time
+	ID                uuid.UUID
+	RosterID          uuid.UUID
+	Preset            domain.TournamentPreset
+	Name              string
+	PublicID          string
+	PlannedRosterSize int
+	ContentRevision   int64
+	State             domain.TournamentState
+	PausedFromState   *domain.TournamentState
+	Revision          int64
+	RosterSize        int
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+	StartedAt         *time.Time
+	FinishedAt        *time.Time
 }
 
 type CatalogRosterRecord struct {
@@ -34,8 +38,12 @@ type CatalogRosterRecord struct {
 }
 
 type TournamentCreateCommand struct {
-	TournamentID uuid.UUID
-	RosterID     uuid.UUID
+	TournamentID      uuid.UUID
+	RosterID          uuid.UUID
+	Name              string
+	PublicID          string
+	PlannedRosterSize int
+	ContentRevision   int64
 }
 
 type TournamentListFilter struct {
@@ -45,8 +53,7 @@ type TournamentListFilter struct {
 type TournamentRepository interface {
 	CreateTournamentDraft(
 		ctx context.Context,
-		tournamentID uuid.UUID,
-		rosterID uuid.UUID,
+		command TournamentCreateCommand,
 		createdAt time.Time,
 	) (*CatalogTournamentRecord, *CatalogRosterRecord, error)
 	GetTournament(ctx context.Context, id uuid.UUID) (*CatalogTournamentRecord, error)
@@ -83,12 +90,16 @@ type IDGenerator interface {
 }
 
 type CreateReceiptCommand struct {
-	ActorID        uuid.UUID
-	IdempotencyKey uuid.UUID
-	PayloadDigest  [32]byte
-	TournamentID   uuid.UUID
-	RosterID       uuid.UUID
-	CreatedAt      time.Time
+	ActorID           uuid.UUID
+	IdempotencyKey    uuid.UUID
+	PayloadDigest     [32]byte
+	TournamentID      uuid.UUID
+	RosterID          uuid.UUID
+	Name              string
+	PublicID          string
+	PlannedRosterSize int
+	ContentRevision   int64
+	CreatedAt         time.Time
 }
 
 type Clock interface {

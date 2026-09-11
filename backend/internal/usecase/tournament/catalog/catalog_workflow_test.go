@@ -24,8 +24,12 @@ func TestTournamentCreateAndList(t *testing.T) {
 		catalogNewFixedTournamentClock(t, createdAt, 1),
 	)
 	command := catalogusecase.TournamentCreateCommand{
-		TournamentID: uuid.MustParse("10000000-0000-0000-0000-000000000001"),
-		RosterID:     uuid.MustParse("10000000-0000-0000-0000-000000000002"),
+		TournamentID:      uuid.MustParse("10000000-0000-0000-0000-000000000001"),
+		RosterID:          uuid.MustParse("10000000-0000-0000-0000-000000000002"),
+		Name:              "September Invitational",
+		PublicID:          "september-invitational",
+		PlannedRosterSize: 8,
+		ContentRevision:   3,
 	}
 
 	created, changed, err := useCase.CreateTournament(t.Context(), command)
@@ -36,14 +40,18 @@ func TestTournamentCreateAndList(t *testing.T) {
 		t.Fatal("CreateTournament() changed = false, want true")
 	}
 	assertTournamentRecord(t, created, catalogusecase.CatalogTournamentRecord{
-		ID:         command.TournamentID,
-		RosterID:   command.RosterID,
-		Preset:     domain.TournamentPresetV1,
-		State:      domain.TournamentStateDraft,
-		Revision:   1,
-		RosterSize: 0,
-		CreatedAt:  createdAt,
-		UpdatedAt:  createdAt,
+		ID:                command.TournamentID,
+		RosterID:          command.RosterID,
+		Name:              command.Name,
+		PublicID:          command.PublicID,
+		PlannedRosterSize: command.PlannedRosterSize,
+		ContentRevision:   command.ContentRevision,
+		Preset:            domain.TournamentPresetV1,
+		State:             domain.TournamentStateDraft,
+		Revision:          1,
+		RosterSize:        0,
+		CreatedAt:         createdAt,
+		UpdatedAt:         createdAt,
 	})
 
 	retried, changed, err := useCase.CreateTournament(t.Context(), command)
@@ -58,19 +66,20 @@ func TestTournamentCreateAndList(t *testing.T) {
 		t.Fatalf("repository create calls = %d, want 1", state.createCalls)
 	}
 
-	_, changed, err = useCase.CreateTournament(t.Context(), catalogusecase.TournamentCreateCommand{
-		TournamentID: command.TournamentID,
-		RosterID:     uuid.MustParse("10000000-0000-0000-0000-000000000099"),
-	})
+	conflicting := command
+	conflicting.RosterID = uuid.MustParse("10000000-0000-0000-0000-000000000099")
+	_, changed, err = useCase.CreateTournament(t.Context(), conflicting)
 	if !errors.Is(err, domain.ErrConflict) || changed {
 		t.Fatalf("CreateTournament(conflicting retry) error = %v, changed = %v, want conflict", err, changed)
 	}
 
 	registrationID := uuid.MustParse("10000000-0000-0000-0000-000000000003")
 	state.records[registrationID] = catalogusecase.CatalogTournamentRecord{
-		ID:         registrationID,
-		RosterID:   uuid.MustParse("10000000-0000-0000-0000-000000000004"),
-		Preset:     domain.TournamentPresetV1,
+		ID:       registrationID,
+		RosterID: uuid.MustParse("10000000-0000-0000-0000-000000000004"),
+		Preset:   domain.TournamentPresetV1,
+		Name:     "Registration Tournament", PublicID: "registration-tournament",
+		PlannedRosterSize: 8, ContentRevision: 3,
 		State:      domain.TournamentStateRegistration,
 		Revision:   4,
 		RosterSize: 8,
@@ -123,25 +132,26 @@ func newTournamentCatalogRepository(
 		}).
 		Times(4)
 	repository.EXPECT().
-		CreateTournamentDraft(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		CreateTournamentDraft(mock.Anything, mock.Anything, mock.Anything).
 		RunAndReturn(func(
 			_ context.Context,
-			tournamentID uuid.UUID,
-			rosterID uuid.UUID,
+			command catalogusecase.TournamentCreateCommand,
 			createdAt time.Time,
 		) (*catalogusecase.CatalogTournamentRecord, *catalogusecase.CatalogRosterRecord, error) {
 			state.createCalls++
-			if _, exists := state.records[tournamentID]; exists {
+			if _, exists := state.records[command.TournamentID]; exists {
 				return nil, nil, domain.ErrConflict
 			}
 			record := catalogusecase.CatalogTournamentRecord{
-				ID: tournamentID, RosterID: rosterID, Preset: domain.TournamentPresetV1,
-				State: domain.TournamentStateDraft, Revision: 1,
+				ID: command.TournamentID, RosterID: command.RosterID, Preset: domain.TournamentPresetV1,
+				Name: command.Name, PublicID: command.PublicID, PlannedRosterSize: command.PlannedRosterSize,
+				ContentRevision: command.ContentRevision,
+				State:           domain.TournamentStateDraft, Revision: 1,
 				CreatedAt: createdAt, UpdatedAt: createdAt,
 			}
-			state.records[tournamentID] = record
+			state.records[command.TournamentID] = record
 			roster := catalogusecase.CatalogRosterRecord{
-				ID: rosterID, TournamentID: tournamentID,
+				ID: command.RosterID, TournamentID: command.TournamentID,
 			}
 			return catalogCloneTournamentRecord(record), &roster, nil
 		}).

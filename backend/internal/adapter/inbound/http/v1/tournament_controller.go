@@ -95,10 +95,14 @@ func (c *tournamentController) CreateTournament(
 		return
 	}
 	result, err := c.catalog.CreateTournament(r.Context(), inbound.TournamentCreateCommand{
-		Operator:         operator,
-		IdempotencyKey:   params.IdempotencyKey,
-		ExpectedRevision: body.ExpectedRevision,
-		Preset:           domain.TournamentPreset(body.Preset),
+		Operator:          operator,
+		IdempotencyKey:    params.IdempotencyKey,
+		ExpectedRevision:  body.ExpectedRevision,
+		Preset:            domain.TournamentPreset(body.Preset),
+		Name:              body.Name,
+		PublicID:          body.PublicId,
+		PlannedRosterSize: int(body.PlannedRosterSize),
+		ContentRevision:   body.ContentRevision,
 	})
 	if err != nil {
 		writeTournamentError(w, r, err)
@@ -195,7 +199,8 @@ func tournamentListResponse(page inbound.TournamentPage) (api.TournamentListResp
 }
 
 func tournamentResponse(view inbound.TournamentView) (api.Tournament, error) {
-	if view.RosterSize < 0 || view.RosterSize > math.MaxInt32 {
+	if view.RosterSize < 0 || view.RosterSize > math.MaxInt32 ||
+		view.PlannedRosterSize < 0 || view.PlannedRosterSize > math.MaxInt32 {
 		return api.Tournament{}, domain.ErrInternal
 	}
 	var pausedFromState *api.TournamentState
@@ -204,17 +209,22 @@ func tournamentResponse(view inbound.TournamentView) (api.Tournament, error) {
 		pausedFromState = &state
 	}
 	return api.Tournament{
-		Id:              view.ID,
-		RosterId:        view.RosterID,
-		Preset:          api.TournamentPreset(view.Preset),
-		State:           api.TournamentState(view.State),
-		PausedFromState: pausedFromState,
-		Revision:        view.Revision,
-		RosterSize:      int32(view.RosterSize),
-		CreatedAt:       view.CreatedAt,
-		UpdatedAt:       view.UpdatedAt,
-		StartedAt:       cloneTimePointer(view.StartedAt),
-		FinishedAt:      cloneTimePointer(view.FinishedAt),
+		Id:       view.ID,
+		RosterId: view.RosterID,
+		Preset:   api.TournamentPreset(view.Preset),
+		Name:     view.Name,
+		PublicId: view.PublicID,
+
+		PlannedRosterSize: int32(view.PlannedRosterSize),
+		ContentRevision:   view.ContentRevision,
+		State:             api.TournamentState(view.State),
+		PausedFromState:   pausedFromState,
+		Revision:          view.Revision,
+		RosterSize:        int32(view.RosterSize),
+		CreatedAt:         view.CreatedAt,
+		UpdatedAt:         view.UpdatedAt,
+		StartedAt:         cloneTimePointer(view.StartedAt),
+		FinishedAt:        cloneTimePointer(view.FinishedAt),
 	}, nil
 }
 

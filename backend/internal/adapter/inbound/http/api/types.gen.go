@@ -1392,8 +1392,12 @@ type CreateTaskRequest struct {
 
 // CreateTournamentRequest defines model for CreateTournamentRequest.
 type CreateTournamentRequest struct {
-	ExpectedRevision int64            `json:"expected_revision"`
-	Preset           TournamentPreset `json:"preset"`
+	ContentRevision   int64            `json:"content_revision"`
+	ExpectedRevision  int64            `json:"expected_revision"`
+	Name              string           `json:"name"`
+	PlannedRosterSize int32            `json:"planned_roster_size"`
+	Preset            TournamentPreset `json:"preset"`
+	PublicId          string           `json:"public_id"`
 }
 
 // CurrentPlayerResponse defines model for CurrentPlayerResponse.
@@ -2469,17 +2473,21 @@ type TaskSourceUploadResponse struct {
 
 // Tournament defines model for Tournament.
 type Tournament struct {
-	CreatedAt       time.Time          `json:"created_at"`
-	FinishedAt      *time.Time         `json:"finished_at,omitempty"`
-	Id              openapi_types.UUID `json:"id"`
-	PausedFromState *TournamentState   `json:"paused_from_state,omitempty"`
-	Preset          TournamentPreset   `json:"preset"`
-	Revision        int64              `json:"revision"`
-	RosterId        openapi_types.UUID `json:"roster_id"`
-	RosterSize      int32              `json:"roster_size"`
-	StartedAt       *time.Time         `json:"started_at,omitempty"`
-	State           TournamentState    `json:"state"`
-	UpdatedAt       time.Time          `json:"updated_at"`
+	ContentRevision   int64              `json:"content_revision"`
+	CreatedAt         time.Time          `json:"created_at"`
+	FinishedAt        *time.Time         `json:"finished_at,omitempty"`
+	Id                openapi_types.UUID `json:"id"`
+	Name              string             `json:"name"`
+	PausedFromState   *TournamentState   `json:"paused_from_state,omitempty"`
+	PlannedRosterSize int32              `json:"planned_roster_size"`
+	Preset            TournamentPreset   `json:"preset"`
+	PublicId          string             `json:"public_id"`
+	Revision          int64              `json:"revision"`
+	RosterId          openapi_types.UUID `json:"roster_id"`
+	RosterSize        int32              `json:"roster_size"`
+	StartedAt         *time.Time         `json:"started_at,omitempty"`
+	State             TournamentState    `json:"state"`
+	UpdatedAt         time.Time          `json:"updated_at"`
 }
 
 // TournamentActionRequest defines model for TournamentActionRequest.

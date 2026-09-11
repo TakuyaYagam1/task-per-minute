@@ -31,7 +31,11 @@ RETURNING id,
     created_at,
     updated_at,
     started_at,
-    finished_at
+    finished_at,
+    name,
+    public_id,
+    planned_roster_size,
+    content_revision
 `
 
 type CancelTournamentForCancellationCASParams struct {
@@ -59,6 +63,10 @@ func (q *Queries) CancelTournamentForCancellationCAS(ctx context.Context, arg Ca
 		&i.UpdatedAt,
 		&i.StartedAt,
 		&i.FinishedAt,
+		&i.Name,
+		&i.PublicID,
+		&i.PlannedRosterSize,
+		&i.ContentRevision,
 	)
 	return i, err
 }

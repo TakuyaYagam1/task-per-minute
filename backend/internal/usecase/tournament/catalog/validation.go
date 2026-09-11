@@ -26,28 +26,35 @@ func validListCommand(command usecase.TournamentListCommand) bool {
 
 func validCreateCommand(command usecase.TournamentCreateCommand) bool {
 	return command.IdempotencyKey != uuid.Nil && command.ExpectedRevision == 0 &&
-		command.Preset.IsValid()
+		command.Preset.IsValid() && (domain.TournamentMetadata{Name: command.Name, PublicID: command.PublicID,
+		PlannedRosterSize: command.PlannedRosterSize, ContentRevision: command.ContentRevision}).Validate(command.Preset) == nil
 }
 
 func validateCreateResult(
 	result usecase.TournamentResult,
 	tournamentID uuid.UUID,
 	rosterID uuid.UUID,
-	preset domain.TournamentPreset,
+	command usecase.TournamentCreateCommand,
 ) error {
 	view := result.Tournament
-	if !result.Changed || view.ID != tournamentID || view.RosterID != rosterID || view.Preset != preset ||
+	if !result.Changed || view.ID != tournamentID || view.RosterID != rosterID || !matchesCreateMetadata(view, command) ||
 		view.State != domain.TournamentStateDraft || view.PausedFromState != nil || view.Revision != 1 ||
 		view.RosterSize != 0 || view.StartedAt != nil || view.FinishedAt != nil ||
 		!view.UpdatedAt.Equal(view.CreatedAt) {
 		return domain.ErrInternal
 	}
 	record := CatalogTournamentRecord{
-		ID: view.ID, RosterID: view.RosterID, Preset: view.Preset, State: view.State,
+		ID: view.ID, RosterID: view.RosterID, Preset: view.Preset, Name: view.Name, PublicID: view.PublicID,
+		PlannedRosterSize: view.PlannedRosterSize, ContentRevision: view.ContentRevision, State: view.State,
 		PausedFromState: view.PausedFromState, Revision: view.Revision, RosterSize: view.RosterSize,
 		CreatedAt: view.CreatedAt, UpdatedAt: view.UpdatedAt, StartedAt: view.StartedAt, FinishedAt: view.FinishedAt,
 	}
 	return validateTournamentRecord(record)
+}
+
+func matchesCreateMetadata(view usecase.TournamentView, command usecase.TournamentCreateCommand) bool {
+	return view.Preset == command.Preset && view.Name == command.Name && view.PublicID == command.PublicID &&
+		view.PlannedRosterSize == command.PlannedRosterSize && view.ContentRevision == command.ContentRevision
 }
 
 func validateTournamentRecord(record CatalogTournamentRecord) error {
@@ -55,6 +62,10 @@ func validateTournamentRecord(record CatalogTournamentRecord) error {
 		record.Revision < 1 || record.RosterSize < 0 || record.RosterSize > domain.TournamentMaxParticipants ||
 		!validServerTime(record.CreatedAt) || !validServerTime(record.UpdatedAt) ||
 		record.UpdatedAt.Before(record.CreatedAt) {
+		return domain.ErrInternal
+	}
+	if err := (domain.TournamentMetadata{Name: record.Name, PublicID: record.PublicID,
+		PlannedRosterSize: record.PlannedRosterSize, ContentRevision: record.ContentRevision}).Validate(record.Preset); err != nil {
 		return domain.ErrInternal
 	}
 	if err := (domain.Tournament{

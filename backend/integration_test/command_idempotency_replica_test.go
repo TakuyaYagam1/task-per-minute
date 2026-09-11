@@ -22,14 +22,14 @@ func TestCommandReceiptCoordinatorsReplayDurableOutcomesAcrossReplicas(t *testin
 	ctx := context.Background()
 	TruncateTables(t, sharedPool)
 	t.Cleanup(func() { TruncateTables(t, sharedPool) })
-	prepareTournamentCreateReceiptContent(ctx, t)
+	contentRevision := prepareTournamentCreateReceiptContent(ctx, t)
 
 	redis := sharedRedis(t)
 	firstStore := redisadapter.NewCommandReceiptStore(redis.client, time.Second, time.Minute, time.Second)
 	secondStore := redisadapter.NewCommandReceiptStore(redis.client, time.Second, time.Minute, time.Second)
 	first := idempotency.NewCoordinator(firstStore)
 	second := idempotency.NewCoordinator(secondStore)
-	durableCommand := tournamentCreateReceiptCommand(time.Now().UTC().Truncate(time.Microsecond))
+	durableCommand := tournamentCreateReceiptCommand(time.Now().UTC().Truncate(time.Microsecond), contentRevision)
 	command, err := idempotency.NewCommand(
 		"tournament-create",
 		durableCommand.IdempotencyKey,
@@ -54,7 +54,7 @@ func TestCommandReceiptCoordinatorRetriesAfterDurableRollback(t *testing.T) {
 	ctx := context.Background()
 	TruncateTables(t, sharedPool)
 	t.Cleanup(func() { TruncateTables(t, sharedPool) })
-	prepareTournamentCreateReceiptContent(ctx, t)
+	contentRevision := prepareTournamentCreateReceiptContent(ctx, t)
 
 	redis := sharedRedis(t)
 	first := idempotency.NewCoordinator(redisadapter.NewCommandReceiptStore(
@@ -63,7 +63,7 @@ func TestCommandReceiptCoordinatorRetriesAfterDurableRollback(t *testing.T) {
 	second := idempotency.NewCoordinator(redisadapter.NewCommandReceiptStore(
 		redis.client, time.Second, time.Minute, time.Second,
 	))
-	durableCommand := tournamentCreateReceiptCommand(time.Now().UTC().Truncate(time.Microsecond))
+	durableCommand := tournamentCreateReceiptCommand(time.Now().UTC().Truncate(time.Microsecond), contentRevision)
 	command, err := idempotency.NewCommand(
 		"tournament-create",
 		durableCommand.IdempotencyKey,

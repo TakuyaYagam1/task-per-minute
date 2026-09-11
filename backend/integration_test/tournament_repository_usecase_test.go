@@ -23,20 +23,43 @@ func TestTournamentUseCases(t *testing.T) {
 	ctx := context.Background()
 	resetMigrationTables(ctx, t)
 	t.Cleanup(func() { resetMigrationTables(ctx, t) })
-	prepareTournamentCreateReceiptContent(ctx, t)
+	contentRevision := prepareTournamentCreateReceiptContent(ctx, t)
 	fixture := newRepositoryFixture()
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	clock := newTournamentClock(t, now)
 	catalog := catalogusecase.NewTournamentUseCase(postgres.NewTournamentCatalogPostgres(fixture.tournaments), clock)
 	attendance := attendanceusecase.NewAttendanceUseCase(postgres.NewTournamentAttendancePostgres(fixture.tournaments), clock)
 	rosterLock := rosterusecase.NewRosterLockUseCase(postgres.NewTournamentRosterPostgres(fixture.tournaments), clock)
-	command := catalogusecase.TournamentCreateCommand{TournamentID: uuid.New(), RosterID: uuid.New()}
+	command := catalogusecase.TournamentCreateCommand{
+		TournamentID: uuid.New(), RosterID: uuid.New(), Name: "Repository Tournament",
+		PublicID: uuid.NewString(), PlannedRosterSize: 4, ContentRevision: contentRevision,
+	}
 
 	created, changed, err := catalog.CreateTournament(ctx, command)
 	require.NoError(t, err)
 	require.True(t, changed)
 	require.Equal(t, domain.TournamentPresetV1, created.Preset)
 	require.Equal(t, command.RosterID, created.RosterID)
+	require.Equal(t, command.Name, created.Name)
+	require.Equal(t, command.PublicID, created.PublicID)
+	require.Equal(t, command.PlannedRosterSize, created.PlannedRosterSize)
+	require.Equal(t, command.ContentRevision, created.ContentRevision)
+
+	duplicatePublicID := command
+	duplicatePublicID.TournamentID = uuid.New()
+	duplicatePublicID.RosterID = uuid.New()
+	_, changed, err = catalog.CreateTournament(ctx, duplicatePublicID)
+	require.ErrorIs(t, err, domain.ErrConflict)
+	require.False(t, changed)
+
+	unknownContent := command
+	unknownContent.TournamentID = uuid.New()
+	unknownContent.RosterID = uuid.New()
+	unknownContent.PublicID = uuid.NewString()
+	unknownContent.ContentRevision++
+	_, changed, err = catalog.CreateTournament(ctx, unknownContent)
+	require.ErrorIs(t, err, domain.ErrInvalidContentConfiguration)
+	require.False(t, changed)
 	retried, changed, err := catalog.CreateTournament(ctx, command)
 	require.NoError(t, err)
 	require.False(t, changed)

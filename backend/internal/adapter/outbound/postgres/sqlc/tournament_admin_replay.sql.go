@@ -2217,7 +2217,7 @@ func (q *Queries) LockReplayWorkflowSeriesGraph(ctx context.Context, arg LockRep
 }
 
 const lockReplayWorkflowSource = `-- name: LockReplayWorkflowSource :one
-SELECT tournament.id, tournament.preset, tournament.state, tournament.paused_from_state, tournament.revision, tournament.created_at, tournament.updated_at, tournament.started_at, tournament.finished_at,
+SELECT tournament.id, tournament.preset, tournament.state, tournament.paused_from_state, tournament.revision, tournament.created_at, tournament.updated_at, tournament.started_at, tournament.finished_at, tournament.name, tournament.public_id, tournament.planned_roster_size, tournament.content_revision,
     roster.id, roster.tournament_id, roster.revision, roster.locked_at, roster.execution_started_at, roster.created_at, roster.updated_at,
     old_wave.id, old_wave.tournament_id, old_wave.roster_id, old_wave.revision_id, old_wave.revision, old_wave.state, old_wave.replaces_wave_id, old_wave.created_at, old_wave.updated_at, old_wave.started_at, old_wave.paused_at, old_wave.closed_at,
     series.id, series.tournament_id, series.roster_id, series.first_participant_id, series.second_participant_id, series.format, series.state, series.first_participant_wins, series.second_participant_wins, series.winner_id, series.current_score_revision_id, series.current_result_revision_id, series.revision, series.created_at, series.updated_at, series.started_at, series.finished_at,
@@ -2320,6 +2320,10 @@ func (q *Queries) LockReplayWorkflowSource(ctx context.Context, arg LockReplayWo
 		&i.Tournament.UpdatedAt,
 		&i.Tournament.StartedAt,
 		&i.Tournament.FinishedAt,
+		&i.Tournament.Name,
+		&i.Tournament.PublicID,
+		&i.Tournament.PlannedRosterSize,
+		&i.Tournament.ContentRevision,
 		&i.Roster.ID,
 		&i.Roster.TournamentID,
 		&i.Roster.Revision,

@@ -19,14 +19,16 @@ import (
 
 func (r *TournamentCatalogPostgres) CreateTournamentDraft(
 	ctx context.Context,
-	tournamentID uuid.UUID,
-	rosterID uuid.UUID,
+	command catalogusecase.TournamentCreateCommand,
 	createdAt time.Time,
 ) (*catalogusecase.CatalogTournamentRecord, *catalogusecase.CatalogRosterRecord, error) {
 	if r == nil || r.tournaments == nil || r.tournaments.tx == nil {
 		return nil, nil, domain.ErrValidation
 	}
-	tournament, roster, err := r.tournaments.Create(ctx, tournamentID, rosterID, createdAt)
+	tournament, roster, err := r.tournaments.Create(ctx, TournamentCreateInput{
+		ID: command.TournamentID, RosterID: command.RosterID, Name: command.Name, PublicID: command.PublicID,
+		PlannedRosterSize: command.PlannedRosterSize, ContentRevision: command.ContentRevision, CreatedAt: createdAt,
+	})
 	if err != nil {
 		return nil, nil, err
 	}

@@ -28,7 +28,11 @@ func createRepositoryTournament(
 	createdAt time.Time,
 ) (*postgres.TournamentRecord, *postgres.RosterRecord) {
 	tb.Helper()
-	tournament, roster, err := fixture.tournaments.Create(ctx, uuid.New(), uuid.New(), createdAt)
+	tournamentID := uuid.New()
+	tournament, roster, err := fixture.tournaments.Create(ctx, postgres.TournamentCreateInput{
+		ID: tournamentID, RosterID: uuid.New(), Name: "Repository Tournament", PublicID: tournamentID.String(),
+		PlannedRosterSize: 4, ContentRevision: currentTaskPoolPublicationRevision(ctx, tb), CreatedAt: createdAt,
+	})
 	require.NoError(tb, err)
 	require.Equal(tb, domain.TournamentStateDraft, tournament.State)
 	require.EqualValues(tb, 1, tournament.Revision)

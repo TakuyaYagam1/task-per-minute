@@ -59,7 +59,11 @@ RETURNING id,
     created_at,
     updated_at,
     started_at,
-    finished_at;
+    finished_at,
+    name,
+    public_id,
+    planned_roster_size,
+    content_revision;
 
 -- name: CreateTournamentCancellationAuditEvent :one
 INSERT INTO audit_events (

@@ -24,10 +24,10 @@ func TestTournamentCreateReceiptPersistsAcrossReplicaRestart(t *testing.T) {
 	ctx := context.Background()
 	TruncateTables(t, sharedPool)
 	t.Cleanup(func() { TruncateTables(t, sharedPool) })
-	prepareTournamentCreateReceiptContent(ctx, t)
+	contentRevision := prepareTournamentCreateReceiptContent(ctx, t)
 
 	createdAt := time.Now().UTC().Truncate(time.Microsecond)
-	command := tournamentCreateReceiptCommand(createdAt)
+	command := tournamentCreateReceiptCommand(createdAt, contentRevision)
 	initial := createTournamentReceiptConcurrently(ctx, t, command)
 	assertTournamentCreateReceiptCount(ctx, t, command.IdempotencyKey, 1)
 
@@ -72,14 +72,19 @@ func newTournamentCreateReceiptStore() *postgres.TournamentCreatePostgres {
 	return postgres.NewTournamentCreatePostgres(postgres.NewTournamentPostgres(tx))
 }
 
-func tournamentCreateReceiptCommand(createdAt time.Time) catalogusecase.CreateReceiptCommand {
+func tournamentCreateReceiptCommand(createdAt time.Time, contentRevision int64) catalogusecase.CreateReceiptCommand {
+	tournamentID := uuid.New()
 	return catalogusecase.CreateReceiptCommand{
-		ActorID:        uuid.New(),
-		IdempotencyKey: uuid.New(),
-		PayloadDigest:  sha256.Sum256([]byte(uuid.NewString())),
-		TournamentID:   uuid.New(),
-		RosterID:       uuid.New(),
-		CreatedAt:      createdAt,
+		ActorID:           uuid.New(),
+		IdempotencyKey:    uuid.New(),
+		PayloadDigest:     sha256.Sum256([]byte(uuid.NewString())),
+		TournamentID:      tournamentID,
+		RosterID:          uuid.New(),
+		Name:              "Receipt Tournament",
+		PublicID:          tournamentID.String(),
+		PlannedRosterSize: 8,
+		ContentRevision:   contentRevision,
+		CreatedAt:         createdAt,
 	}
 }
 
@@ -148,7 +153,7 @@ func assertTournamentCreateReceiptRollback(ctx context.Context, t *testing.T, cr
 
 	tx := postgres.NewTxManager(sharedPool)
 	store := postgres.NewTournamentCreatePostgres(postgres.NewTournamentPostgres(tx))
-	command := tournamentCreateReceiptCommand(createdAt)
+	command := tournamentCreateReceiptCommand(createdAt, currentTaskPoolPublicationRevision(ctx, t))
 	rollback := errors.New("force outer transaction rollback")
 	err := tx.Do(ctx, func(txCtx context.Context) error {
 		_, createErr := store.Create(txCtx, command)
@@ -175,7 +180,7 @@ func assertTournamentCreateReceiptRollback(ctx context.Context, t *testing.T, cr
 	require.Equal(t, 0, configurationCount)
 }
 
-func prepareTournamentCreateReceiptContent(ctx context.Context, t *testing.T) {
+func prepareTournamentCreateReceiptContent(ctx context.Context, t *testing.T) int64 {
 	t.Helper()
 
 	for _, kind := range []string{"normal", "golden"} {
@@ -201,4 +206,17 @@ func prepareTournamentCreateReceiptContent(ctx context.Context, t *testing.T) {
 	require.NoError(t, err)
 	_, err = sharedPool.Exec(ctx, `SELECT publish_task_pool_heads()`)
 	require.NoError(t, err)
+	return currentTaskPoolPublicationRevision(ctx, t)
+}
+
+func currentTaskPoolPublicationRevision(ctx context.Context, t testing.TB) int64 {
+	t.Helper()
+	var revision int64
+	err := sharedPool.QueryRow(ctx, `
+		SELECT revision
+		FROM task_pool_publications
+		ORDER BY revision DESC
+		LIMIT 1`).Scan(&revision)
+	require.NoError(t, err)
+	return revision
 }

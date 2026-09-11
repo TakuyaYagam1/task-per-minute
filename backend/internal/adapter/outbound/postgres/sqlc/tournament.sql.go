@@ -15,6 +15,10 @@ import (
 const createTournament = `-- name: CreateTournament :one
 INSERT INTO tournaments (
     id,
+    name,
+    public_id,
+    planned_roster_size,
+    content_revision,
     preset,
     state,
     revision,
@@ -23,11 +27,15 @@ INSERT INTO tournaments (
 )
 VALUES (
     $1,
+    $2,
+    $3,
+    $4,
+    $5,
     'tournament_v1',
     'draft',
     1,
-    $2,
-    $2
+    $6,
+    $6
 )
 RETURNING id,
     preset,
@@ -37,16 +45,31 @@ RETURNING id,
     created_at,
     updated_at,
     started_at,
-    finished_at
+    finished_at,
+    name,
+    public_id,
+    planned_roster_size,
+    content_revision
 `
 
 type CreateTournamentParams struct {
-	ID        uuid.UUID
-	CreatedAt pgtype.Timestamptz
+	ID                uuid.UUID
+	Name              string
+	PublicID          string
+	PlannedRosterSize int32
+	ContentRevision   int64
+	CreatedAt         pgtype.Timestamptz
 }
 
 func (q *Queries) CreateTournament(ctx context.Context, arg CreateTournamentParams) (Tournament, error) {
-	row := q.db.QueryRow(ctx, createTournament, arg.ID, arg.CreatedAt)
+	row := q.db.QueryRow(ctx, createTournament,
+		arg.ID,
+		arg.Name,
+		arg.PublicID,
+		arg.PlannedRosterSize,
+		arg.ContentRevision,
+		arg.CreatedAt,
+	)
 	var i Tournament
 	err := row.Scan(
 		&i.ID,
@@ -58,6 +81,10 @@ func (q *Queries) CreateTournament(ctx context.Context, arg CreateTournamentPara
 		&i.UpdatedAt,
 		&i.StartedAt,
 		&i.FinishedAt,
+		&i.Name,
+		&i.PublicID,
+		&i.PlannedRosterSize,
+		&i.ContentRevision,
 	)
 	return i, err
 }
@@ -116,7 +143,11 @@ SELECT id,
     created_at,
     updated_at,
     started_at,
-    finished_at
+    finished_at,
+    name,
+    public_id,
+    planned_roster_size,
+    content_revision
 FROM tournaments
 WHERE state IN ('swiss', 'golden', 'playoffs', 'technical_pause')
 `
@@ -134,6 +165,10 @@ func (q *Queries) GetActiveTournament(ctx context.Context) (Tournament, error) {
 		&i.UpdatedAt,
 		&i.StartedAt,
 		&i.FinishedAt,
+		&i.Name,
+		&i.PublicID,
+		&i.PlannedRosterSize,
+		&i.ContentRevision,
 	)
 	return i, err
 }
@@ -147,7 +182,11 @@ SELECT id,
     created_at,
     updated_at,
     started_at,
-    finished_at
+    finished_at,
+    name,
+    public_id,
+    planned_roster_size,
+    content_revision
 FROM tournaments
 WHERE id = $1
 `
@@ -165,6 +204,10 @@ func (q *Queries) GetTournament(ctx context.Context, id uuid.UUID) (Tournament, 
 		&i.UpdatedAt,
 		&i.StartedAt,
 		&i.FinishedAt,
+		&i.Name,
+		&i.PublicID,
+		&i.PlannedRosterSize,
+		&i.ContentRevision,
 	)
 	return i, err
 }
@@ -243,6 +286,10 @@ func (q *Queries) GetTournamentRoster(ctx context.Context, id uuid.UUID) (Roster
 
 const getTournamentSummary = `-- name: GetTournamentSummary :one
 SELECT tournament.id,
+    tournament.name,
+    tournament.public_id,
+    tournament.planned_roster_size,
+    tournament.content_revision,
     tournament.preset,
     tournament.state,
     tournament.paused_from_state,
@@ -262,17 +309,21 @@ GROUP BY tournament.id,
 `
 
 type GetTournamentSummaryRow struct {
-	ID              uuid.UUID
-	Preset          string
-	State           string
-	PausedFromState *string
-	Revision        int64
-	CreatedAt       pgtype.Timestamptz
-	UpdatedAt       pgtype.Timestamptz
-	StartedAt       pgtype.Timestamptz
-	FinishedAt      pgtype.Timestamptz
-	RosterID        uuid.UUID
-	RosterSize      int64
+	ID                uuid.UUID
+	Name              string
+	PublicID          string
+	PlannedRosterSize int32
+	ContentRevision   int64
+	Preset            string
+	State             string
+	PausedFromState   *string
+	Revision          int64
+	CreatedAt         pgtype.Timestamptz
+	UpdatedAt         pgtype.Timestamptz
+	StartedAt         pgtype.Timestamptz
+	FinishedAt        pgtype.Timestamptz
+	RosterID          uuid.UUID
+	RosterSize        int64
 }
 
 func (q *Queries) GetTournamentSummary(ctx context.Context, id uuid.UUID) (GetTournamentSummaryRow, error) {
@@ -280,6 +331,10 @@ func (q *Queries) GetTournamentSummary(ctx context.Context, id uuid.UUID) (GetTo
 	var i GetTournamentSummaryRow
 	err := row.Scan(
 		&i.ID,
+		&i.Name,
+		&i.PublicID,
+		&i.PlannedRosterSize,
+		&i.ContentRevision,
 		&i.Preset,
 		&i.State,
 		&i.PausedFromState,
@@ -336,11 +391,15 @@ VALUES (
         'state', $9::varchar,
         'revision', $10::bigint,
         'roster_size', $11::integer,
+        'name', $15::varchar,
+        'public_id', $16::varchar,
+        'planned_roster_size', $17::integer,
+        'content_revision', $18::bigint,
         'created_at', $12::timestamptz,
         'updated_at', $13::timestamptz,
         'changed', $14::boolean
     ),
-    $15::timestamptz
+    $19::timestamptz
 )
 RETURNING command_id,
     actor_id,
@@ -361,21 +420,25 @@ RETURNING command_id,
 `
 
 type InsertTournamentCreateReceiptParams struct {
-	CommandID              uuid.UUID
-	ActorID                uuid.UUID
-	RequestDigest          []byte
-	TournamentID           uuid.UUID
-	RosterID               uuid.UUID
-	ContentConfigurationID uuid.UUID
-	ResultSchemaVersion    int16
-	ResultPreset           string
-	ResultState            string
-	ResultRevision         int64
-	ResultRosterSize       int32
-	ResultCreatedAt        pgtype.Timestamptz
-	ResultUpdatedAt        pgtype.Timestamptz
-	ResultChanged          bool
-	CreatedAt              pgtype.Timestamptz
+	CommandID               uuid.UUID
+	ActorID                 uuid.UUID
+	RequestDigest           []byte
+	TournamentID            uuid.UUID
+	RosterID                uuid.UUID
+	ContentConfigurationID  uuid.UUID
+	ResultSchemaVersion     int16
+	ResultPreset            string
+	ResultState             string
+	ResultRevision          int64
+	ResultRosterSize        int32
+	ResultCreatedAt         pgtype.Timestamptz
+	ResultUpdatedAt         pgtype.Timestamptz
+	ResultChanged           bool
+	ResultName              string
+	ResultPublicID          string
+	ResultPlannedRosterSize int32
+	ResultContentRevision   int64
+	CreatedAt               pgtype.Timestamptz
 }
 
 func (q *Queries) InsertTournamentCreateReceipt(ctx context.Context, arg InsertTournamentCreateReceiptParams) (TournamentCreateCommandReceipt, error) {
@@ -394,6 +457,10 @@ func (q *Queries) InsertTournamentCreateReceipt(ctx context.Context, arg InsertT
 		arg.ResultCreatedAt,
 		arg.ResultUpdatedAt,
 		arg.ResultChanged,
+		arg.ResultName,
+		arg.ResultPublicID,
+		arg.ResultPlannedRosterSize,
+		arg.ResultContentRevision,
 		arg.CreatedAt,
 	)
 	var i TournamentCreateCommandReceipt
@@ -614,6 +681,10 @@ func (q *Queries) ListTournamentReservations(ctx context.Context, tournamentID u
 
 const listTournamentSummaries = `-- name: ListTournamentSummaries :many
 SELECT tournament.id,
+    tournament.name,
+    tournament.public_id,
+    tournament.planned_roster_size,
+    tournament.content_revision,
     tournament.preset,
     tournament.state,
     tournament.paused_from_state,
@@ -634,17 +705,21 @@ ORDER BY tournament.created_at DESC,
 `
 
 type ListTournamentSummariesRow struct {
-	ID              uuid.UUID
-	Preset          string
-	State           string
-	PausedFromState *string
-	Revision        int64
-	CreatedAt       pgtype.Timestamptz
-	UpdatedAt       pgtype.Timestamptz
-	StartedAt       pgtype.Timestamptz
-	FinishedAt      pgtype.Timestamptz
-	RosterID        uuid.UUID
-	RosterSize      int64
+	ID                uuid.UUID
+	Name              string
+	PublicID          string
+	PlannedRosterSize int32
+	ContentRevision   int64
+	Preset            string
+	State             string
+	PausedFromState   *string
+	Revision          int64
+	CreatedAt         pgtype.Timestamptz
+	UpdatedAt         pgtype.Timestamptz
+	StartedAt         pgtype.Timestamptz
+	FinishedAt        pgtype.Timestamptz
+	RosterID          uuid.UUID
+	RosterSize        int64
 }
 
 func (q *Queries) ListTournamentSummaries(ctx context.Context) ([]ListTournamentSummariesRow, error) {
@@ -658,6 +733,10 @@ func (q *Queries) ListTournamentSummaries(ctx context.Context) ([]ListTournament
 		var i ListTournamentSummariesRow
 		if err := rows.Scan(
 			&i.ID,
+			&i.Name,
+			&i.PublicID,
+			&i.PlannedRosterSize,
+			&i.ContentRevision,
 			&i.Preset,
 			&i.State,
 			&i.PausedFromState,
@@ -688,7 +767,11 @@ SELECT id,
     created_at,
     updated_at,
     started_at,
-    finished_at
+    finished_at,
+    name,
+    public_id,
+    planned_roster_size,
+    content_revision
 FROM tournaments
 ORDER BY created_at DESC,
     id
@@ -713,6 +796,10 @@ func (q *Queries) ListTournaments(ctx context.Context) ([]Tournament, error) {
 			&i.UpdatedAt,
 			&i.StartedAt,
 			&i.FinishedAt,
+			&i.Name,
+			&i.PublicID,
+			&i.PlannedRosterSize,
+			&i.ContentRevision,
 		); err != nil {
 			return nil, err
 		}
@@ -1014,7 +1101,11 @@ RETURNING id,
     created_at,
     updated_at,
     started_at,
-    finished_at
+    finished_at,
+    name,
+    public_id,
+    planned_roster_size,
+    content_revision
 `
 
 type UpdateTournamentCASParams struct {
@@ -1050,6 +1141,10 @@ func (q *Queries) UpdateTournamentCAS(ctx context.Context, arg UpdateTournamentC
 		&i.UpdatedAt,
 		&i.StartedAt,
 		&i.FinishedAt,
+		&i.Name,
+		&i.PublicID,
+		&i.PlannedRosterSize,
+		&i.ContentRevision,
 	)
 	return i, err
 }

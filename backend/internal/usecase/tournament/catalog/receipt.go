@@ -89,8 +89,8 @@ func (a *UseCase) finalizeCreateReceiptTransition(
 }
 
 func createTournamentPayloadDigest(command usecase.TournamentCreateCommand) [sha256.Size]byte {
-	payload := make([]byte, 0, 64)
-	payload = append(payload, "tournament-create:v1\x00"...)
+	payload := make([]byte, 0, 256)
+	payload = append(payload, "tournament-create:v2\x00"...)
 	payload = append(payload, command.Operator.ActorID[:]...)
 	revision := [8]byte{}
 	//nolint:gosec // Signed timestamp bits are intentionally encoded as unsigned digest input.
@@ -98,5 +98,16 @@ func createTournamentPayloadDigest(command usecase.TournamentCreateCommand) [sha
 	payload = append(payload, revision[:]...)
 	payload = append(payload, 0)
 	payload = append(payload, command.Preset.String()...)
+	payload = append(payload, 0)
+	payload = append(payload, command.Name...)
+	payload = append(payload, 0)
+	payload = append(payload, command.PublicID...)
+	payload = append(payload, 0)
+	//nolint:gosec // Command validation requires a non-negative planned roster size.
+	binary.BigEndian.PutUint64(revision[:], uint64(command.PlannedRosterSize))
+	payload = append(payload, revision[:]...)
+	//nolint:gosec // Command validation requires a positive content revision.
+	binary.BigEndian.PutUint64(revision[:], uint64(command.ContentRevision))
+	payload = append(payload, revision[:]...)
 	return sha256.Sum256(payload)
 }

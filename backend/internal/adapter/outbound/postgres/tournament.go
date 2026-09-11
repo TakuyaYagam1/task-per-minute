@@ -18,7 +18,10 @@ import (
 	rosterusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/roster"
 )
 
-const tournamentActiveConstraint = "tournaments_single_active_idx"
+const (
+	tournamentActiveConstraint   = "tournaments_single_active_idx"
+	tournamentPublicIDConstraint = "tournaments_public_id_unique"
+)
 
 var (
 	ErrTournamentNotFound = errors.New("tournament repository: tournament not found")
@@ -54,15 +57,19 @@ var (
 )
 
 type TournamentRecord struct {
-	ID              uuid.UUID
-	Preset          string
-	State           domain.TournamentState
-	PausedFromState *domain.TournamentState
-	Revision        int64
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
-	StartedAt       *time.Time
-	FinishedAt      *time.Time
+	ID                uuid.UUID
+	Preset            string
+	Name              string
+	PublicID          string
+	PlannedRosterSize int
+	ContentRevision   int64
+	State             domain.TournamentState
+	PausedFromState   *domain.TournamentState
+	Revision          int64
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+	StartedAt         *time.Time
+	FinishedAt        *time.Time
 }
 
 type RosterRecord struct {
@@ -106,6 +113,16 @@ type TournamentTransitionInput struct {
 	FinishedAt       *time.Time
 }
 
+type TournamentCreateInput struct {
+	ID                uuid.UUID
+	RosterID          uuid.UUID
+	Name              string
+	PublicID          string
+	PlannedRosterSize int
+	ContentRevision   int64
+	CreatedAt         time.Time
+}
+
 type ParticipantInput struct {
 	ID         uuid.UUID
 	RosterID   uuid.UUID
@@ -137,11 +154,12 @@ func NewTournamentRosterPostgres(tournaments *TournamentPostgres) *TournamentRos
 
 func (r *TournamentPostgres) Create(
 	ctx context.Context,
-	tournamentID uuid.UUID,
-	rosterID uuid.UUID,
-	createdAt time.Time,
+	in TournamentCreateInput,
 ) (*TournamentRecord, *RosterRecord, error) {
-	if r == nil || r.tx == nil || tournamentID == uuid.Nil || rosterID == uuid.Nil || !validServerTime(createdAt) {
+	metadata := domain.TournamentMetadata{Name: in.Name, PublicID: in.PublicID,
+		PlannedRosterSize: in.PlannedRosterSize, ContentRevision: in.ContentRevision}
+	if r == nil || r.tx == nil || in.ID == uuid.Nil || in.RosterID == uuid.Nil ||
+		metadata.Validate(domain.TournamentPresetV1) != nil || !validServerTime(in.CreatedAt) {
 		return nil, nil, domain.ErrValidation
 	}
 
@@ -149,7 +167,7 @@ func (r *TournamentPostgres) Create(
 	var roster sqlc.Roster
 	err := r.tx.Do(ctx, func(txCtx context.Context) error {
 		querier := r.tx.Querier(txCtx)
-		binding, bindErr := loadTournamentV1ContentBinding(txCtx, querier, tournamentID, rosterID)
+		binding, bindErr := loadTournamentV1ContentBinding(txCtx, querier, in.ID, in.RosterID, in.ContentRevision)
 		if bindErr != nil {
 			return bindErr
 		}
@@ -159,26 +177,28 @@ func (r *TournamentPostgres) Create(
 
 		var createErr error
 		tournament, createErr = querier.CreateTournament(txCtx, sqlc.CreateTournamentParams{
-			ID:        tournamentID,
-			CreatedAt: tstz(createdAt),
+			//nolint:gosec // Metadata validation bounds planned roster size to 4..16.
+			ID: in.ID, Name: in.Name, PublicID: in.PublicID, PlannedRosterSize: int32(in.PlannedRosterSize),
+			ContentRevision: in.ContentRevision, CreatedAt: tstz(in.CreatedAt),
 		})
 		if createErr != nil {
 			return fmt.Errorf("TournamentPostgres - Create - Querier.CreateTournament: %w", createErr)
 		}
 		roster, createErr = querier.CreateTournamentRoster(txCtx, sqlc.CreateTournamentRosterParams{
-			ID:           rosterID,
-			TournamentID: tournamentID,
-			CreatedAt:    tstz(createdAt),
+			ID: in.RosterID, TournamentID: in.ID, CreatedAt: tstz(in.CreatedAt),
 		})
 		if createErr != nil {
 			return fmt.Errorf("TournamentPostgres - Create - Querier.CreateTournamentRoster: %w", createErr)
 		}
-		if createErr = persistTournamentV1ContentBinding(txCtx, querier, binding, createdAt); createErr != nil {
+		if createErr = persistTournamentV1ContentBinding(txCtx, querier, binding, in.CreatedAt); createErr != nil {
 			return createErr
 		}
 		return nil
 	})
 	if err != nil {
+		if isUniqueViolation(err, tournamentPublicIDConstraint) {
+			return nil, nil, domain.WrapError(err, domain.ErrConflict)
+		}
 		return nil, nil, err
 	}
 	return tournamentRecord(tournament), rosterRecord(roster), nil
@@ -278,8 +298,9 @@ func loadTournamentV1ContentBinding(
 	querier *sqlc.Queries,
 	tournamentID uuid.UUID,
 	rosterID uuid.UUID,
+	contentRevision int64,
 ) (tournamentV1ContentBinding, error) {
-	publication, err := querier.LockCurrentTaskPoolPublication(ctx)
+	publication, err := querier.LockTaskPoolPublicationRevision(ctx, contentRevision)
 	if err != nil {
 		return tournamentV1ContentBinding{}, fmt.Errorf(
 			"TournamentPostgres - Create - lock current task pools: %w", err,

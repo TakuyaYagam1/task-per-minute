@@ -54,14 +54,16 @@ func nullableState(value *domain.TournamentState) *string {
 
 func tournamentRecord(row sqlc.Tournament) *TournamentRecord {
 	out := &TournamentRecord{
-		ID:         row.ID,
-		Preset:     row.Preset,
-		State:      domain.TournamentState(row.State),
-		Revision:   row.Revision,
-		CreatedAt:  row.CreatedAt.Time,
-		UpdatedAt:  row.UpdatedAt.Time,
-		StartedAt:  nullableTime(row.StartedAt),
-		FinishedAt: nullableTime(row.FinishedAt),
+		ID:     row.ID,
+		Preset: row.Preset,
+		Name:   row.Name, PublicID: row.PublicID, PlannedRosterSize: int(row.PlannedRosterSize),
+		ContentRevision: row.ContentRevision,
+		State:           domain.TournamentState(row.State),
+		Revision:        row.Revision,
+		CreatedAt:       row.CreatedAt.Time,
+		UpdatedAt:       row.UpdatedAt.Time,
+		StartedAt:       nullableTime(row.StartedAt),
+		FinishedAt:      nullableTime(row.FinishedAt),
 	}
 	if row.PausedFromState != nil {
 		state := domain.TournamentState(*row.PausedFromState)
@@ -79,7 +81,9 @@ func tournamentUseCaseRecord(
 		return nil
 	}
 	return &catalogusecase.CatalogTournamentRecord{
-		ID: record.ID, RosterID: rosterID, Preset: domain.TournamentPreset(record.Preset), State: record.State,
+		ID: record.ID, RosterID: rosterID, Preset: domain.TournamentPreset(record.Preset),
+		Name: record.Name, PublicID: record.PublicID, PlannedRosterSize: record.PlannedRosterSize,
+		ContentRevision: record.ContentRevision, State: record.State,
 		PausedFromState: record.PausedFromState, Revision: record.Revision, RosterSize: rosterSize,
 		CreatedAt: record.CreatedAt.UTC(), UpdatedAt: record.UpdatedAt.UTC(),
 		StartedAt: utcTimePointer(record.StartedAt), FinishedAt: utcTimePointer(record.FinishedAt),
@@ -93,7 +97,9 @@ func tournamentSummaryRecord(row sqlc.GetTournamentSummaryRow) (*catalogusecase.
 	}
 	record := &catalogusecase.CatalogTournamentRecord{
 		ID: row.ID, RosterID: row.RosterID, Preset: domain.TournamentPreset(row.Preset),
-		State: domain.TournamentState(row.State), Revision: row.Revision, RosterSize: rosterSize,
+		Name: row.Name, PublicID: row.PublicID, PlannedRosterSize: int(row.PlannedRosterSize),
+		ContentRevision: row.ContentRevision,
+		State:           domain.TournamentState(row.State), Revision: row.Revision, RosterSize: rosterSize,
 		CreatedAt: row.CreatedAt.Time.UTC(), UpdatedAt: row.UpdatedAt.Time.UTC(),
 		StartedAt: utcTimePointer(nullableTime(row.StartedAt)), FinishedAt: utcTimePointer(nullableTime(row.FinishedAt)),
 	}
@@ -126,7 +132,9 @@ func tournamentListSummaryRecord(row sqlc.ListTournamentSummariesRow) (*catalogu
 	}
 	record := &catalogusecase.CatalogTournamentRecord{
 		ID: row.ID, RosterID: row.RosterID, Preset: domain.TournamentPreset(row.Preset),
-		State: domain.TournamentState(row.State), Revision: row.Revision, RosterSize: rosterSize,
+		Name: row.Name, PublicID: row.PublicID, PlannedRosterSize: int(row.PlannedRosterSize),
+		ContentRevision: row.ContentRevision,
+		State:           domain.TournamentState(row.State), Revision: row.Revision, RosterSize: rosterSize,
 		CreatedAt: row.CreatedAt.Time.UTC(), UpdatedAt: row.UpdatedAt.Time.UTC(),
 		StartedAt: utcTimePointer(nullableTime(row.StartedAt)), FinishedAt: utcTimePointer(nullableTime(row.FinishedAt)),
 	}

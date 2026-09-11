@@ -1,6 +1,10 @@
 -- name: CreateTournament :one
 INSERT INTO tournaments (
     id,
+    name,
+    public_id,
+    planned_roster_size,
+    content_revision,
     preset,
     state,
     revision,
@@ -9,6 +13,10 @@ INSERT INTO tournaments (
 )
 VALUES (
     sqlc.arg(id),
+    sqlc.arg(name),
+    sqlc.arg(public_id),
+    sqlc.arg(planned_roster_size),
+    sqlc.arg(content_revision),
     'tournament_v1',
     'draft',
     1,
@@ -23,7 +31,11 @@ RETURNING id,
     created_at,
     updated_at,
     started_at,
-    finished_at;
+    finished_at,
+    name,
+    public_id,
+    planned_roster_size,
+    content_revision;
 
 -- name: CreateTournamentRoster :one
 INSERT INTO rosters (
@@ -114,6 +126,10 @@ VALUES (
         'state', sqlc.arg(result_state)::varchar,
         'revision', sqlc.arg(result_revision)::bigint,
         'roster_size', sqlc.arg(result_roster_size)::integer,
+        'name', sqlc.arg(result_name)::varchar,
+        'public_id', sqlc.arg(result_public_id)::varchar,
+        'planned_roster_size', sqlc.arg(result_planned_roster_size)::integer,
+        'content_revision', sqlc.arg(result_content_revision)::bigint,
         'created_at', sqlc.arg(result_created_at)::timestamptz,
         'updated_at', sqlc.arg(result_updated_at)::timestamptz,
         'changed', sqlc.arg(result_changed)::boolean
@@ -146,12 +162,20 @@ SELECT id,
     created_at,
     updated_at,
     started_at,
-    finished_at
+    finished_at,
+    name,
+    public_id,
+    planned_roster_size,
+    content_revision
 FROM tournaments
 WHERE id = sqlc.arg(id);
 
 -- name: GetTournamentSummary :one
 SELECT tournament.id,
+    tournament.name,
+    tournament.public_id,
+    tournament.planned_roster_size,
+    tournament.content_revision,
     tournament.preset,
     tournament.state,
     tournament.paused_from_state,
@@ -178,7 +202,11 @@ SELECT id,
     created_at,
     updated_at,
     started_at,
-    finished_at
+    finished_at,
+    name,
+    public_id,
+    planned_roster_size,
+    content_revision
 FROM tournaments
 WHERE state IN ('swiss', 'golden', 'playoffs', 'technical_pause');
 
@@ -191,13 +219,21 @@ SELECT id,
     created_at,
     updated_at,
     started_at,
-    finished_at
+    finished_at,
+    name,
+    public_id,
+    planned_roster_size,
+    content_revision
 FROM tournaments
 ORDER BY created_at DESC,
     id;
 
 -- name: ListTournamentSummaries :many
 SELECT tournament.id,
+    tournament.name,
+    tournament.public_id,
+    tournament.planned_roster_size,
+    tournament.content_revision,
     tournament.preset,
     tournament.state,
     tournament.paused_from_state,
@@ -235,7 +271,11 @@ RETURNING id,
     created_at,
     updated_at,
     started_at,
-    finished_at;
+    finished_at,
+    name,
+    public_id,
+    planned_roster_size,
+    content_revision;
 
 -- name: GetTournamentRoster :one
 SELECT id,
