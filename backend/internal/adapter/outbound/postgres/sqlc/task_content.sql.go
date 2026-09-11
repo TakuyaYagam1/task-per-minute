@@ -318,6 +318,7 @@ func (q *Queries) GetTaskVersion(ctx context.Context, arg GetTaskVersionParams) 
 const listTaskPoolVersionHealth = `-- name: ListTaskPoolVersionHealth :many
 SELECT membership.task_id,
     membership.task_version,
+    task_version.category,
     pool.id AS pool_revision_id,
     pool.kind AS pool_kind,
     true AS task_exists,
@@ -351,6 +352,7 @@ ORDER BY membership.task_id, membership.task_version, pool.id
 type ListTaskPoolVersionHealthRow struct {
 	TaskID              uuid.UUID
 	TaskVersion         int32
+	Category            string
 	PoolRevisionID      uuid.UUID
 	PoolKind            string
 	TaskExists          bool
@@ -372,6 +374,7 @@ func (q *Queries) ListTaskPoolVersionHealth(ctx context.Context, taskPoolRevisio
 		if err := rows.Scan(
 			&i.TaskID,
 			&i.TaskVersion,
+			&i.Category,
 			&i.PoolRevisionID,
 			&i.PoolKind,
 			&i.TaskExists,

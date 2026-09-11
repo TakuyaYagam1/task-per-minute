@@ -121,6 +121,32 @@ func TestPreflightRuntime(t *testing.T) {
 		}
 	})
 
+	t.Run("accepts a capacity certification sampled within clock skew", func(t *testing.T) {
+		t.Parallel()
+
+		input := task021RuntimePreflightInput(t)
+		input.Clock.ObservedAt = input.Capacity.CertifiedAt.Add(-500 * time.Millisecond)
+		input.Clock.ReferenceAt = input.Clock.ObservedAt
+		input.Clock.MaxSkew = time.Second
+		report := tournamentusecase.EvaluateRuntime(input)
+		if !report.Passed() {
+			t.Fatalf("within-skew capacity report failed: %+v", report)
+		}
+	})
+
+	t.Run("rejects a capacity certification ahead of clock skew", func(t *testing.T) {
+		t.Parallel()
+
+		input := task021RuntimePreflightInput(t)
+		input.Clock.ObservedAt = input.Capacity.CertifiedAt.Add(-2 * time.Second)
+		input.Clock.ReferenceAt = input.Clock.ObservedAt
+		input.Clock.MaxSkew = time.Second
+		report := tournamentusecase.EvaluateRuntime(input)
+		if !slices.Contains(task021FailedPreflightCodes(report), tournamentusecase.CodeRuntimeCapacity) {
+			t.Fatalf("future capacity report = %+v", report)
+		}
+	})
+
 	t.Run("rejects control characters in public revision evidence", func(t *testing.T) {
 		t.Parallel()
 

@@ -15,7 +15,8 @@ import (
 func validRosterAuthority(authority RosterAuthority, tournamentID uuid.UUID) bool {
 	return authority.ProjectionRevisionID != uuid.Nil && authority.ProjectionRevision >= 1 &&
 		authority.TournamentPreset.IsValid() && authority.TournamentState.IsValid() &&
-		authority.TournamentRevision >= 1 &&
+		authority.TournamentPreset.ValidRosterSize(authority.PlannedRosterSize) &&
+		authority.ContentRevision >= 1 && authority.TournamentRevision >= 1 &&
 		validRosterView(authority.Roster, tournamentID)
 }
 
@@ -45,8 +46,9 @@ func validPreflightInputAuthority(input tournamentpreflight.ReportInput, authori
 	return input.RosterRevision == authority.Roster.Revision && input.PairingRevision >= 1 &&
 		input.Structural.TournamentID == authority.Roster.TournamentID &&
 		input.Runtime.TournamentID == authority.Roster.TournamentID &&
-		input.Structural.Preset == input.Runtime.Preset &&
-		input.Structural.ExpectedRosterSize == len(input.Structural.Participants) &&
+		input.Structural.Preset == authority.TournamentPreset && input.Runtime.Preset == authority.TournamentPreset &&
+		input.Structural.ExpectedRosterSize == authority.PlannedRosterSize &&
+		input.Runtime.ContentRevision == authority.ContentRevision &&
 		input.Runtime.RosterSize == len(input.Structural.Participants)
 }
 

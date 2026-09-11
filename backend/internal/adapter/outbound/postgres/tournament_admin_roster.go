@@ -79,6 +79,8 @@ func (r *TournamentAdminRosterPostgres) LockRosterAuthority(
 	}
 	return tournamentadmin.RosterAuthority{
 		Roster: view, TournamentPreset: domain.TournamentPreset(row.TournamentPreset),
+		PlannedRosterSize:    int(row.PlannedRosterSize),
+		ContentRevision:      row.ContentRevision,
 		TournamentState:      domain.TournamentState(row.TournamentState),
 		TournamentRevision:   row.TournamentRevision,
 		ProjectionRevisionID: row.ProjectionRevisionID, ProjectionRevision: row.ProjectionRevision,

@@ -383,6 +383,8 @@ type RosterTransactionManager interface {
 type RosterAuthority struct {
 	Roster               RosterView
 	TournamentPreset     domain.TournamentPreset
+	PlannedRosterSize    int
+	ContentRevision      int64
 	TournamentState      domain.TournamentState
 	TournamentRevision   int64
 	ProjectionRevisionID uuid.UUID

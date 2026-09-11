@@ -53,10 +53,11 @@ func (repository *PlayoffTerminalPostgres) semifinalStageAuthority(
 		first.PublishedProjectionRevision < 1 {
 		return nil, domain.ErrConflict
 	}
-	configuration, _, err := loadTournamentPreflightContent(ctx, repository.tx.Querier(ctx), first.TournamentID)
+	loadedContent, err := loadTournamentPreflightContent(ctx, repository.tx.Querier(ctx), first.TournamentID)
 	if err != nil {
 		return nil, err
 	}
+	configuration := loadedContent.configuration
 	semifinals := make([]playoff.SemifinalMatch, 0, len(rows))
 	series := make([]domain.Series, 0, len(rows))
 	var recordedAt time.Time

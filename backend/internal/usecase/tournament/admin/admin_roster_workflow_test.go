@@ -224,6 +224,7 @@ func rosterAuthorityFixture() tournamentadmin.RosterAuthority {
 	view.Revision = 4
 	return tournamentadmin.RosterAuthority{
 		Roster: view, TournamentPreset: domain.TournamentPresetV1,
+		PlannedRosterSize: len(inputs), ContentRevision: 1,
 		TournamentState: domain.TournamentStateRegistration, TournamentRevision: 3,
 		ProjectionRevisionID: rosterTestID(3), ProjectionRevision: 9,
 	}
@@ -280,8 +281,8 @@ func failedRosterPreflightInput(
 		},
 		Runtime: tournamentpreflight.RuntimeInput{
 			TournamentID: authority.Roster.TournamentID, Preset: authority.TournamentPreset,
-			RosterSize: len(participants),
-			Clock:      tournamentpreflight.ClockHealth{ObservedAt: evaluatedAt, MaxSkew: time.Second},
+			RosterSize: len(participants), ContentRevision: authority.ContentRevision,
+			Clock: tournamentpreflight.ClockHealth{ObservedAt: evaluatedAt, MaxSkew: time.Second},
 		},
 	}
 }

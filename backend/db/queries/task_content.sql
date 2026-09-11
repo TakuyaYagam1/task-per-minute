@@ -41,6 +41,7 @@ FOR KEY SHARE OF pool;
 -- name: ListTaskPoolVersionHealth :many
 SELECT membership.task_id,
     membership.task_version,
+    task_version.category,
     pool.id AS pool_revision_id,
     pool.kind AS pool_kind,
     true AS task_exists,

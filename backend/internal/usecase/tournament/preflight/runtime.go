@@ -271,9 +271,10 @@ func checkRuntimeCapacity(in RuntimeInput) Check {
 		issues = append(issues, "capacity_certification:missing")
 	} else {
 		capacity := *in.Capacity
+		certificationLead := capacity.CertifiedAt.Sub(in.Clock.ObservedAt)
 		if capacity.Validate() != nil || capacity.TournamentID != in.TournamentID ||
 			capacity.ContentRevision != in.ContentRevision || capacity.RosterSize != in.RosterSize ||
-			(validRuntimeTime(in.Clock.ObservedAt) && capacity.CertifiedAt.After(in.Clock.ObservedAt)) {
+			(validRuntimeTime(in.Clock.ObservedAt) && certificationLead > in.Clock.MaxSkew) {
 			issues = append(issues, "capacity_certification:stale_or_invalid")
 		} else {
 			evidence = append(evidence,

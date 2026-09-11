@@ -57,7 +57,8 @@ func TestPreflightAuthorizesLockFailsClosedForStructurallyValidFailedReport(t *t
 			GoldenPool: domain.TaskPoolRevision{Kind: domain.AssignmentTaskKindGolden},
 		},
 		Runtime: tournamentpreflight.RuntimeInput{
-			TournamentID: tournamentID, Preset: domain.TournamentPresetV1, RosterSize: len(participants),
+			TournamentID: tournamentID, Preset: domain.TournamentPresetV1,
+			RosterSize: len(participants), ContentRevision: 1,
 			Clock: tournamentpreflight.ClockHealth{ObservedAt: evaluatedAt, ReferenceAt: evaluatedAt, MaxSkew: time.Second},
 		},
 	}
@@ -69,6 +70,8 @@ func TestPreflightAuthorizesLockFailsClosedForStructurallyValidFailedReport(t *t
 	authority := RosterAuthority{
 		Roster:               RosterView{ID: rosterID, TournamentID: tournamentID, Revision: 5},
 		TournamentPreset:     domain.TournamentPresetV1,
+		PlannedRosterSize:    len(participants),
+		ContentRevision:      1,
 		TournamentState:      domain.TournamentStateRegistration,
 		TournamentRevision:   2,
 		ProjectionRevisionID: projectionID,

@@ -27,6 +27,8 @@ ORDER BY participant.seed, participant.id;
 SELECT tournament.state AS tournament_state,
     tournament.preset AS tournament_preset,
     tournament.revision AS tournament_revision,
+    tournament.planned_roster_size,
+    tournament.content_revision,
     roster.id AS roster_id,
     roster.tournament_id,
     roster.revision AS roster_revision,

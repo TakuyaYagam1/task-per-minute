@@ -170,7 +170,7 @@ func TestTournamentPreflightReadsPublishedContentAuthority(t *testing.T) {
 		"ListTournamentContentStageDefaults",
 		"ListTaskPoolVersionHealth",
 		"domain.CreateContentConfiguration",
-		"TaskHealth: taskHealth",
+		"TaskHealth: loadedContent.taskHealth",
 	} {
 		require.Contains(t, string(adapter), fragment)
 	}

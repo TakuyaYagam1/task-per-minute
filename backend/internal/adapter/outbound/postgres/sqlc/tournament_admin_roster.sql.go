@@ -467,6 +467,8 @@ const lockTournamentRosterAuthority = `-- name: LockTournamentRosterAuthority :o
 SELECT tournament.state AS tournament_state,
     tournament.preset AS tournament_preset,
     tournament.revision AS tournament_revision,
+    tournament.planned_roster_size,
+    tournament.content_revision,
     roster.id AS roster_id,
     roster.tournament_id,
     roster.revision AS roster_revision,
@@ -496,6 +498,8 @@ type LockTournamentRosterAuthorityRow struct {
 	TournamentState      string
 	TournamentPreset     string
 	TournamentRevision   int64
+	PlannedRosterSize    int32
+	ContentRevision      int64
 	RosterID             uuid.UUID
 	TournamentID         uuid.UUID
 	RosterRevision       int64
@@ -514,6 +518,8 @@ func (q *Queries) LockTournamentRosterAuthority(ctx context.Context, tournamentI
 		&i.TournamentState,
 		&i.TournamentPreset,
 		&i.TournamentRevision,
+		&i.PlannedRosterSize,
+		&i.ContentRevision,
 		&i.RosterID,
 		&i.TournamentID,
 		&i.RosterRevision,
