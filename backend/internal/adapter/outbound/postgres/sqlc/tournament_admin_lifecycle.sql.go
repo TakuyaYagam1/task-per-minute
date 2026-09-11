@@ -541,6 +541,10 @@ const lockTournamentLifecycleAuthority = `-- name: LockTournamentLifecycleAuthor
 SELECT tournament.id,
     roster.id AS roster_id,
     tournament.preset,
+    tournament.name,
+    tournament.public_id,
+    tournament.planned_roster_size,
+    tournament.content_revision,
     tournament.state,
     tournament.paused_from_state,
     tournament.revision AS tournament_revision,
@@ -576,6 +580,10 @@ type LockTournamentLifecycleAuthorityRow struct {
 	ID                   uuid.UUID
 	RosterID             uuid.UUID
 	Preset               string
+	Name                 string
+	PublicID             string
+	PlannedRosterSize    int32
+	ContentRevision      int64
 	State                string
 	PausedFromState      *string
 	TournamentRevision   int64
@@ -595,6 +603,10 @@ func (q *Queries) LockTournamentLifecycleAuthority(ctx context.Context, tourname
 		&i.ID,
 		&i.RosterID,
 		&i.Preset,
+		&i.Name,
+		&i.PublicID,
+		&i.PlannedRosterSize,
+		&i.ContentRevision,
 		&i.State,
 		&i.PausedFromState,
 		&i.TournamentRevision,

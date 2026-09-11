@@ -1425,6 +1425,16 @@ func prepareNativeGoldenFinalSwiss(
 		}
 	}
 	fixture := createTournamentAdminSwissProofFixture(ctx, t)
+	return finishNativeGoldenFinalSwiss(ctx, t, fixture)
+}
+
+func finishNativeGoldenFinalSwiss(
+	ctx context.Context,
+	t *testing.T,
+	fixture tournamentAdminSwissProofFixture,
+) tournamentAdminSwissProofFixture {
+	t.Helper()
+
 	for round := 1; round <= 3; round++ {
 		if round > 1 {
 			fixture = nextSwissReceiptWave(ctx, t, fixture, round, false, false)

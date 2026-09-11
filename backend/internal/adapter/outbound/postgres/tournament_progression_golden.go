@@ -96,6 +96,12 @@ func progressionGoldenSettlements(
 		groupIDs = append(groupIDs, groupID)
 	}
 	slices.SortFunc(groupIDs, func(left, right uuid.UUID) int {
+		if order := cmp.Compare(groups[left].from, groups[right].from); order != 0 {
+			return order
+		}
+		if order := cmp.Compare(groups[left].to, groups[right].to); order != 0 {
+			return order
+		}
 		return cmp.Compare(left.String(), right.String())
 	})
 	for _, groupID := range groupIDs {

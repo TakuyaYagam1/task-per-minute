@@ -38,6 +38,59 @@ func TestProgressionGoldenEvidenceBuildsOnlySealedCompleteSettlement(t *testing.
 	require.Equal(t, fixture.participantID, settlements[0].Positions.Positions()[0].ParticipantID)
 }
 
+func TestProgressionGoldenEvidenceOrdersSettlementsByPosition(t *testing.T) {
+	t.Parallel()
+
+	first := newProgressionGoldenEvidenceFixture()
+	second := newProgressionGoldenEvidenceFixture()
+	firstRevisionID := uuid.MustParse("ffffffff-ffff-ffff-ffff-ffffffffffff")
+	secondRevisionID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	remapProgressionGoldenFixture(&first, first.authority, firstRevisionID, 1)
+	remapProgressionGoldenFixture(&second, first.authority, secondRevisionID, 3)
+
+	settlements, err := progressionGoldenSettlements(
+		first.authority,
+		append(first.settlementRows, second.settlementRows...),
+		append(first.attemptRows, second.attemptRows...),
+		append(first.commitRows, second.commitRows...),
+		append(first.ledgerRows, second.ledgerRows...),
+		append(first.seals, second.seals...),
+	)
+
+	require.NoError(t, err)
+	require.Len(t, settlements, 2)
+	require.Equal(t, 1, settlements[0].Positions.Positions()[0].Position)
+	require.Equal(t, 3, settlements[1].Positions.Positions()[0].Position)
+}
+
+func remapProgressionGoldenFixture(
+	fixture *progressionGoldenEvidenceFixture,
+	authority tournamentprogression.Authority,
+	groupRevisionID uuid.UUID,
+	position int16,
+) {
+	fixture.authority = authority
+	fixture.settlementRows[0].SourceProjectionRevisionID = authority.ProjectionRevisionID
+	fixture.settlementRows[0].SourceProjectionRevision = authority.ProjectionRevision
+	fixture.settlementRows[0].GroupRevisionID = groupRevisionID
+	fixture.settlementRows[0].PositionFrom = position
+	fixture.settlementRows[0].PositionTo = position
+	fixture.settlementRows[0].Position = &position
+	fixture.attemptRows[0].GroupRevisionID = groupRevisionID
+	fixture.commitRows[0].GroupRevisionID = groupRevisionID
+	fixture.commitRows[0].Position = position
+	for index := range fixture.ledgerRows {
+		fixture.ledgerRows[index].GroupRevisionID = groupRevisionID
+		if fixture.ledgerRows[index].Position != nil {
+			fixture.ledgerRows[index].Position = &position
+		}
+	}
+	for index := range fixture.seals {
+		fixture.seals[index].TournamentID = authority.Tournament.ID
+		fixture.seals[index].RosterID = authority.Tournament.RosterID
+	}
+}
+
 func TestProgressionGoldenEvidenceRejectsMissingOrTamperedSettlementAuthority(t *testing.T) {
 	t.Parallel()
 

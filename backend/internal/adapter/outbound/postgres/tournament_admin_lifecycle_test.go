@@ -22,6 +22,7 @@ func TestTournamentAdminLifecycleAuthorityMapsFullView(t *testing.T) {
 	origin := string(domain.TournamentStateSwiss)
 	row := sqlc.LockTournamentLifecycleAuthorityRow{
 		ID: uuid.New(), RosterID: uuid.New(), Preset: string(domain.TournamentPresetV1),
+		Name: "Lifecycle Tournament", PublicID: "lifecycle-tournament", PlannedRosterSize: 8, ContentRevision: 3,
 		State: string(domain.TournamentStateTechnicalPause), PausedFromState: &origin,
 		TournamentRevision: 7, TournamentCreatedAt: lifecycleTestTSTZ(createdAt),
 		TournamentUpdatedAt: lifecycleTestTSTZ(updatedAt), TournamentStartedAt: lifecycleTestTSTZ(startedAt),
@@ -32,6 +33,10 @@ func TestTournamentAdminLifecycleAuthorityMapsFullView(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, row.ID, authority.Tournament.ID)
 	require.Equal(t, row.RosterID, authority.Tournament.RosterID)
+	require.Equal(t, row.Name, authority.Tournament.Name)
+	require.Equal(t, row.PublicID, authority.Tournament.PublicID)
+	require.Equal(t, int(row.PlannedRosterSize), authority.Tournament.PlannedRosterSize)
+	require.Equal(t, row.ContentRevision, authority.Tournament.ContentRevision)
 	require.Equal(t, domain.TournamentStateTechnicalPause, authority.Tournament.State)
 	require.NotNil(t, authority.Tournament.PausedFromState)
 	require.Equal(t, domain.TournamentStateSwiss, *authority.Tournament.PausedFromState)

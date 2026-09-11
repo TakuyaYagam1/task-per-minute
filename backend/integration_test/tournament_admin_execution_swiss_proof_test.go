@@ -149,11 +149,28 @@ func createTournamentAdminSwissProofFixture(
 	tournamentID := createMigrationTournament(ctx, t)
 	rosterID := createMigrationRoster(ctx, t, tournamentID)
 	playerIDs := createMigrationPlayers(ctx, t, 4)
-	participants := createSwissMigrationParticipants(ctx, t, rosterID, playerIDs)
 	createdAt := time.Now().UTC().Truncate(time.Microsecond)
+	normalPoolRevisionID, normalPoolRevision := createRoundProofContentConfiguration(ctx, t, tournamentID, createdAt)
+	return createTournamentAdminSwissProofFixtureForAggregate(
+		ctx, t, tournamentID, rosterID, playerIDs, normalPoolRevisionID, normalPoolRevision, createdAt,
+	)
+}
+
+func createTournamentAdminSwissProofFixtureForAggregate(
+	ctx context.Context,
+	t *testing.T,
+	tournamentID uuid.UUID,
+	rosterID uuid.UUID,
+	playerIDs []uuid.UUID,
+	normalPoolRevisionID uuid.UUID,
+	normalPoolRevision int64,
+	createdAt time.Time,
+) tournamentAdminSwissProofFixture {
+	t.Helper()
+
+	participants := createSwissMigrationParticipants(ctx, t, rosterID, playerIDs)
 	projectionRevisionID, projectionRevision := createRoundProofProjection(ctx, t, tournamentID, rosterID, participants[0], createdAt)
 	transitionTournamentToSwissForRoundProof(ctx, t, tournamentID, rosterID, createdAt)
-	normalPoolRevisionID, normalPoolRevision := createRoundProofContentConfiguration(ctx, t, tournamentID, createdAt)
 	preflightRevisionID := createRoundProofRosterLock(
 		ctx, t, tournamentID, rosterID, playerIDs, projectionRevisionID, projectionRevision, createdAt,
 	)

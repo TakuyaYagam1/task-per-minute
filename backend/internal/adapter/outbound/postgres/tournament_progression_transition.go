@@ -83,7 +83,9 @@ func tournamentProgressionTournamentView(
 		return usecase.TournamentView{}, err
 	}
 	view := usecase.TournamentView{
-		ID: record.ID, RosterID: record.RosterID, Preset: record.Preset, State: record.State,
+		ID: record.ID, RosterID: record.RosterID, Preset: record.Preset,
+		Name: record.Name, PublicID: record.PublicID, PlannedRosterSize: record.PlannedRosterSize,
+		ContentRevision: record.ContentRevision, State: record.State,
 		Revision: record.Revision, RosterSize: record.RosterSize, CreatedAt: record.CreatedAt,
 		UpdatedAt: record.UpdatedAt, StartedAt: record.StartedAt, FinishedAt: record.FinishedAt,
 	}

@@ -21,7 +21,9 @@ func tournamentAdminLifecycleAuthority(
 ) (tournamentadmin.LifecycleAuthority, error) {
 	view := usecase.TournamentView{
 		ID: row.ID, RosterID: row.RosterID, Preset: domain.TournamentPreset(row.Preset),
-		State: domain.TournamentState(row.State), Revision: row.TournamentRevision,
+		Name: row.Name, PublicID: row.PublicID, PlannedRosterSize: int(row.PlannedRosterSize),
+		ContentRevision: row.ContentRevision,
+		State:           domain.TournamentState(row.State), Revision: row.TournamentRevision,
 		RosterSize: int(row.RosterSize),
 	}
 	view.PausedFromState = lifecycleTournamentState(row.PausedFromState)
