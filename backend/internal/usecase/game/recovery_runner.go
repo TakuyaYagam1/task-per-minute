@@ -24,6 +24,11 @@ var (
 type RecoveryRunnerConfig struct {
 	Interval time.Duration
 	Observer RecoveryObserver
+	Golden   GoldenRecovery
+}
+
+type GoldenRecovery interface {
+	Recover(ctx context.Context, tournamentID uuid.UUID) error
 }
 
 // RecoveryRunner is lifecycle-owned. Its initial scan finishes before Ready
@@ -167,6 +172,13 @@ func (runner *RecoveryRunner) runScan(ctx context.Context) error {
 			)
 			runner.recordFailure(attemptedAt)
 			return fmt.Errorf("execution recovery runner - recover: %w", recoverErr)
+		}
+		if runner.config.Golden != nil {
+			if goldenErr := runner.config.Golden.Recover(ctx, tournamentID); goldenErr != nil {
+				runner.emitRecoveryEvent(ctx, tournamentID, identity.Epoch, RecoveryOutcomeFailure, "scan_failed", "golden_recovery_failed")
+				runner.recordFailure(attemptedAt)
+				return fmt.Errorf("execution recovery runner - recover Golden: %w", goldenErr)
+			}
 		}
 		if reason, observed := executionRecoverySuccessReason(report); observed {
 			runner.emitRecoveryEvent(

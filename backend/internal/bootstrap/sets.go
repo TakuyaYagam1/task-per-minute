@@ -18,6 +18,7 @@ import (
 	authusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/auth"
 	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/idempotency"
 	leaderboardusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/leaderboard"
 	playerusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/player"
@@ -281,6 +282,9 @@ var UseCasesSet = wire.NewSet(
 	provideExecutionRecoveryRepository,
 	provideExecutionEpochReplay,
 	provideExecutionRecoverer,
+	provideGoldenRuntimeRepository,
+	provideGoldenRuntimeApplication,
+	wire.Bind(new(inbound.GoldenUseCase), new(*goldenusecase.RuntimeApplication)),
 	provideExecutionRecoveryRunner,
 	wire.Bind(new(recovery.WorkerHealthSource), new(*recovery.Worker)),
 )
@@ -291,7 +295,7 @@ var MiddlewareSet = wire.NewSet(
 
 var WebSocketSet = wire.NewSet(
 	provideHandshakeRateLimiter,
-	websocket.NewTournamentProductionSnapshotSource,
+	provideTournamentProductionSnapshotSource,
 	wire.Bind(new(tournamentws.ParticipantRealtimeReadSource), new(*websocket.TournamentProductionSnapshotSource)),
 	wire.Bind(new(tournamentws.PublicRealtimeReadSource), new(*websocket.TournamentProductionSnapshotSource)),
 	wire.Bind(new(tournamentws.OperatorRealtimeReadSource), new(*websocket.TournamentProductionSnapshotSource)),

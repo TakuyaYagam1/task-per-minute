@@ -17,12 +17,14 @@ import (
 )
 
 type progressionGoldenGroup struct {
-	revisionID uuid.UUID
-	id         uuid.UUID
-	from       int
-	to         int
-	attempts   map[uuid.UUID]progressionGoldenAttempt
-	commits    map[uuid.UUID]progressionGoldenCommit
+	revisionID           uuid.UUID
+	id                   uuid.UUID
+	settlementRevisionID uuid.UUID
+	finalizedAt          time.Time
+	from                 int
+	to                   int
+	attempts             map[uuid.UUID]progressionGoldenAttempt
+	commits              map[uuid.UUID]progressionGoldenCommit
 }
 
 type progressionGoldenAttempt struct {
@@ -139,11 +141,15 @@ func progressionGoldenGroups(
 		if !found {
 			group = progressionGoldenGroup{
 				revisionID: row.GroupRevisionID, id: row.GroupID,
-				from: int(row.PositionFrom), to: int(row.PositionTo),
+				settlementRevisionID: row.SettlementRevisionID.UUID,
+				finalizedAt:          row.RuntimeFinalizedAt.Time,
+				from:                 int(row.PositionFrom), to: int(row.PositionTo),
 				attempts: make(map[uuid.UUID]progressionGoldenAttempt),
 				commits:  make(map[uuid.UUID]progressionGoldenCommit),
 			}
-		} else if group.id != row.GroupID || group.from != int(row.PositionFrom) || group.to != int(row.PositionTo) {
+		} else if group.id != row.GroupID || group.from != int(row.PositionFrom) || group.to != int(row.PositionTo) ||
+			group.settlementRevisionID != row.SettlementRevisionID.UUID ||
+			!group.finalizedAt.Equal(row.RuntimeFinalizedAt.Time) {
 			return nil, domain.ErrConflict
 		}
 		if previous, exists := group.attempts[row.AttemptID.UUID]; exists && previous.id != row.AttemptID.UUID {
@@ -305,7 +311,7 @@ func progressionGoldenLedgerRow(
 	}
 	if !row.AttemptID.Valid {
 		if row.SubmissionRevisionID.Valid || row.SubmissionRevision != nil || row.AttemptNumber != nil ||
-			row.OrderCount != nil || row.WaveID.Valid || row.AssignmentID.Valid || row.SnapshotID.Valid || row.TaskID.Valid ||
+			row.OrderCount != nil || row.WaveID != uuid.Nil || row.AssignmentID != uuid.Nil || row.SnapshotID != uuid.Nil || row.TaskID != uuid.Nil ||
 			row.PositionCommitID.Valid || row.ParticipantID.Valid || row.Position != nil || len(row.EvidenceDigest) != 0 ||
 			row.SubmissionID != nil {
 			return progressionGoldenLedgerRevision{}, domain.ErrConflict
@@ -331,22 +337,20 @@ func progressionGoldenLedgerRow(
 	return revision, nil
 }
 
-//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func progressionGoldenLedgerAttemptFromRow(
 	row sqlc.LockTournamentProgressionGoldenPositionLedgerRow,
 ) (progressionGoldenLedgerAttempt, error) {
 	if !row.AttemptID.Valid || row.AttemptID.UUID == uuid.Nil || !row.SubmissionRevisionID.Valid ||
 		row.SubmissionRevisionID.UUID == uuid.Nil || row.SubmissionRevision == nil || *row.SubmissionRevision < 1 ||
 		row.AttemptNumber == nil || *row.AttemptNumber < 1 || row.OrderCount == nil || *row.OrderCount < 0 ||
-		!row.WaveID.Valid || row.WaveID.UUID == uuid.Nil || !row.AssignmentID.Valid || row.AssignmentID.UUID == uuid.Nil ||
-		!row.SnapshotID.Valid || row.SnapshotID.UUID == uuid.Nil || !row.TaskID.Valid || row.TaskID.UUID == uuid.Nil {
+		row.WaveID == uuid.Nil || row.AssignmentID == uuid.Nil || row.SnapshotID == uuid.Nil || row.TaskID == uuid.Nil {
 		return progressionGoldenLedgerAttempt{}, domain.ErrConflict
 	}
 	return progressionGoldenLedgerAttempt{
 		id: row.AttemptID.UUID, submissionRevisionID: row.SubmissionRevisionID.UUID,
 		submissionRevision: *row.SubmissionRevision, attemptNo: int(*row.AttemptNumber),
-		orderCount: int(*row.OrderCount), waveID: row.WaveID.UUID, assignmentID: row.AssignmentID.UUID,
-		snapshotID: row.SnapshotID.UUID, taskID: row.TaskID.UUID,
+		orderCount: int(*row.OrderCount), waveID: row.WaveID, assignmentID: row.AssignmentID,
+		snapshotID: row.SnapshotID, taskID: row.TaskID,
 	}, nil
 }
 
@@ -493,6 +497,13 @@ func progressionGoldenSettlement(
 		positions[index].AttemptNo = attempt.AttemptNo
 	}
 	finalizedAt := final.finalizedAt.UTC()
+	settlementRevisionID := final.id
+	if group.settlementRevisionID != uuid.Nil {
+		if !domain.IsValidServerTime(group.finalizedAt.UTC()) || group.finalizedAt.UTC() != finalizedAt {
+			return playoff.Top4GoldenSettlement{}, domain.ErrConflict
+		}
+		settlementRevisionID = group.settlementRevisionID
+	}
 	evidence, err := playoff.NewGoldenPositionEvidence(playoff.GoldenPositionEvidenceInput{
 		Scope: goldenusecase.GoldenStateScope{
 			TournamentID: authority.Tournament.ID, GroupID: group.id,
@@ -506,7 +517,7 @@ func progressionGoldenSettlement(
 		return playoff.Top4GoldenSettlement{}, domain.ErrConflict
 	}
 	return playoff.Top4GoldenSettlement{
-		RevisionID: domain.DerivedRevisionID(final.id), RevisionNo: int(final.revision), Positions: &evidence,
+		RevisionID: domain.DerivedRevisionID(settlementRevisionID), RevisionNo: int(final.revision), Positions: &evidence,
 		FinalizedAt: finalizedAt,
 	}, nil
 }

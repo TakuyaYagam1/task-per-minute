@@ -3,6 +3,7 @@ package tournament
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -21,6 +22,7 @@ type ParticipantSnapshotInput struct {
 	LastSequence int64
 	Assignment   *ParticipantAssignmentInput
 	Opponent     *OpponentCompetitionInput
+	Golden       *ParticipantGoldenInput
 }
 
 type ParticipantAssignmentInput struct {
@@ -53,6 +55,29 @@ type OpponentCompetitionInput struct {
 	Score        int
 }
 
+type ParticipantGoldenInput struct {
+	GroupID         uuid.UUID
+	GroupRevisionID uuid.UUID
+	AttemptID       uuid.UUID
+	State           string
+	Ready           bool
+	Submitted       bool
+	Position        *int
+	StartedAt       *time.Time
+	Deadline        *time.Time
+	Task            *ParticipantGoldenTaskInput
+}
+
+type ParticipantGoldenTaskInput struct {
+	AssignmentID     uuid.UUID
+	SnapshotID       uuid.UUID
+	TaskID           uuid.UUID
+	Title            string
+	Category         string
+	Difficulty       string
+	TimeLimitSeconds int
+}
+
 type ParticipantSnapshot struct {
 	TournamentID uuid.UUID                 `json:"tournament_id"`
 	PlayerID     uuid.UUID                 `json:"player_id"`
@@ -60,6 +85,7 @@ type ParticipantSnapshot struct {
 	LastSequence int64                     `json:"last_sequence"`
 	Assignment   *ParticipantAssignment    `json:"assignment,omitempty"`
 	Opponent     *OpponentCompetitionState `json:"opponent,omitempty"`
+	Golden       *ParticipantGolden        `json:"golden,omitempty"`
 }
 
 type ParticipantAssignment struct {
@@ -85,6 +111,29 @@ type OpponentCompetitionState struct {
 	Ready       bool   `json:"ready"`
 	SeriesState string `json:"series_state"`
 	Score       int    `json:"score"`
+}
+
+type ParticipantGolden struct {
+	GroupID         uuid.UUID              `json:"group_id"`
+	GroupRevisionID uuid.UUID              `json:"group_revision_id"`
+	AttemptID       uuid.UUID              `json:"attempt_id"`
+	State           string                 `json:"state"`
+	Ready           bool                   `json:"ready"`
+	Submitted       bool                   `json:"submitted"`
+	Position        *int                   `json:"position,omitempty"`
+	StartedAt       *time.Time             `json:"started_at,omitempty"`
+	Deadline        *time.Time             `json:"deadline,omitempty"`
+	Task            *ParticipantGoldenTask `json:"task,omitempty"`
+}
+
+type ParticipantGoldenTask struct {
+	AssignmentID     uuid.UUID `json:"assignment_id"`
+	SnapshotID       uuid.UUID `json:"snapshot_id"`
+	TaskID           uuid.UUID `json:"task_id"`
+	Title            string    `json:"title"`
+	Category         string    `json:"category"`
+	Difficulty       string    `json:"difficulty"`
+	TimeLimitSeconds int       `json:"time_limit_seconds"`
 }
 
 func NewParticipantSnapshot(scope ParticipantSnapshotScope, input ParticipantSnapshotInput) (ParticipantSnapshot, error) {
@@ -115,6 +164,13 @@ func NewParticipantSnapshot(scope ParticipantSnapshotScope, input ParticipantSna
 		}
 		snapshot.Opponent = &opponent
 	}
+	if input.Golden != nil {
+		golden, err := participantGolden(*input.Golden)
+		if err != nil {
+			return ParticipantSnapshot{}, err
+		}
+		snapshot.Golden = &golden
+	}
 	if err := snapshot.Validate(); err != nil {
 		return ParticipantSnapshot{}, err
 	}
@@ -135,6 +191,9 @@ func (s ParticipantSnapshot) Validate() error {
 			return fmt.Errorf("%w: invalid opponent competition state", ErrInvalidParticipantSnapshot)
 		}
 	}
+	if s.Golden != nil && !validParticipantGolden(*s.Golden) {
+		return fmt.Errorf("%w: invalid Golden state", ErrInvalidParticipantSnapshot)
+	}
 	if !valueWithinWireLimits(s) {
 		return fmt.Errorf("%w: snapshot exceeds wire limits", ErrInvalidParticipantSnapshot)
 	}
@@ -151,7 +210,66 @@ func (s ParticipantSnapshot) clone() ParticipantSnapshot {
 		opponent := *s.Opponent
 		clone.Opponent = &opponent
 	}
+	if s.Golden != nil {
+		golden := *s.Golden
+		golden.Position = cloneInt(s.Golden.Position)
+		golden.StartedAt = cloneTime(s.Golden.StartedAt)
+		golden.Deadline = cloneTime(s.Golden.Deadline)
+		if s.Golden.Task != nil {
+			task := *s.Golden.Task
+			golden.Task = &task
+		}
+		clone.Golden = &golden
+	}
 	return clone
+}
+
+func participantGolden(input ParticipantGoldenInput) (ParticipantGolden, error) {
+	golden := ParticipantGolden{
+		GroupID: input.GroupID, GroupRevisionID: input.GroupRevisionID, AttemptID: input.AttemptID,
+		State: input.State, Ready: input.Ready, Submitted: input.Submitted,
+		Position: cloneInt(input.Position), StartedAt: cloneTime(input.StartedAt), Deadline: cloneTime(input.Deadline),
+	}
+	if input.Task != nil {
+		golden.Task = &ParticipantGoldenTask{
+			AssignmentID: input.Task.AssignmentID, SnapshotID: input.Task.SnapshotID, TaskID: input.Task.TaskID,
+			Title: input.Task.Title, Category: input.Task.Category, Difficulty: input.Task.Difficulty,
+			TimeLimitSeconds: input.Task.TimeLimitSeconds,
+		}
+	}
+	if !validParticipantGolden(golden) {
+		return ParticipantGolden{}, fmt.Errorf("%w: invalid Golden state", ErrInvalidParticipantSnapshot)
+	}
+	return golden, nil
+}
+
+func validParticipantGolden(golden ParticipantGolden) bool {
+	if !validParticipantGoldenIdentity(golden) {
+		return false
+	}
+	if golden.Task == nil {
+		return golden.State == "prepared"
+	}
+	return golden.Task.AssignmentID != uuid.Nil && golden.Task.SnapshotID != uuid.Nil && golden.Task.TaskID != uuid.Nil &&
+		validRealtimeString(golden.Task.Title) && validRealtimeString(golden.Task.Category) &&
+		validRealtimeString(golden.Task.Difficulty) && golden.Task.TimeLimitSeconds == 180
+}
+
+func validParticipantGoldenIdentity(golden ParticipantGolden) bool {
+	if golden.GroupID == uuid.Nil || golden.GroupRevisionID == uuid.Nil || golden.AttemptID == uuid.Nil ||
+		!validRealtimeString(golden.State) || (golden.Position != nil && (*golden.Position < 1 || *golden.Position > 16)) ||
+		!validOptionalUTC(golden.StartedAt) || !validOptionalUTC(golden.Deadline) {
+		return false
+	}
+	return true
+}
+
+func cloneInt(value *int) *int {
+	if value == nil {
+		return nil
+	}
+	clone := *value
+	return &clone
 }
 
 func participantAssignment(scope ParticipantSnapshotScope, input ParticipantAssignmentInput) (ParticipantAssignment, error) {

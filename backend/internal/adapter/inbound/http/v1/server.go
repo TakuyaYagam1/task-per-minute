@@ -37,6 +37,7 @@ type Dependencies struct {
 	TournamentAdmin                      usecase.TournamentAdminUseCase
 	TournamentParticipant                usecase.TournamentParticipantUseCase
 	TournamentSnapshots                  usecase.TournamentSnapshotUseCase
+	Golden                               usecase.GoldenUseCase
 	Health                               HealthChecks
 	LoginLimiter                         middleware.RateLimiter
 	RefreshLimiter                       middleware.RateLimiter
@@ -63,6 +64,7 @@ type Server struct {
 	leaderboard                          LeaderboardService
 	tournamentParticipant                usecase.TournamentParticipantUseCase
 	tournamentSnapshots                  usecase.TournamentSnapshotUseCase
+	golden                               usecase.GoldenUseCase
 	health                               HealthChecks
 	healthCache                          healthCache
 	loginLimiter                         middleware.RateLimiter
@@ -94,6 +96,7 @@ func New(deps Dependencies) *Server {
 		leaderboard:                          deps.Leaderboard,
 		tournamentParticipant:                deps.TournamentParticipant,
 		tournamentSnapshots:                  deps.TournamentSnapshots,
+		golden:                               deps.Golden,
 		health:                               deps.Health,
 		loginLimiter:                         deps.LoginLimiter,
 		refreshLimiter:                       deps.RefreshLimiter,

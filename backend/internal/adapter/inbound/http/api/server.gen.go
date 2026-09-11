@@ -77,6 +77,15 @@ type ServerInterface interface {
 	// ApplyTournamentAction Apply a tournament lifecycle operator action
 	// (POST /api/v1/admin/tournaments/{tournament_id}/actions)
 	ApplyTournamentAction(w http.ResponseWriter, r *http.Request, tournamentId TournamentId, params ApplyTournamentActionParams)
+	// GetGoldenOperatorState Read the production Golden execution state
+	// (GET /api/v1/admin/tournaments/{tournament_id}/golden)
+	GetGoldenOperatorState(w http.ResponseWriter, r *http.Request, tournamentId TournamentId)
+	// StartGoldenAttempt Start one ready Golden attempt
+	// (POST /api/v1/admin/tournaments/{tournament_id}/golden/attempts/{attempt_id}/start)
+	StartGoldenAttempt(w http.ResponseWriter, r *http.Request, tournamentId TournamentId, attemptId GoldenAttemptId, params StartGoldenAttemptParams)
+	// OpenGoldenExecution Materialize the production Golden attempts
+	// (POST /api/v1/admin/tournaments/{tournament_id}/golden/open)
+	OpenGoldenExecution(w http.ResponseWriter, r *http.Request, tournamentId TournamentId, params OpenGoldenExecutionParams)
 	// ExportTournamentIncident Export a canonical redacted tournament incident bundle
 	// (GET /api/v1/admin/tournaments/{tournament_id}/incident-export)
 	ExportTournamentIncident(w http.ResponseWriter, r *http.Request, tournamentId TournamentId)
@@ -143,6 +152,15 @@ type ServerInterface interface {
 	// GetParticipantAssignment Read a private task assignment for the authenticated participant
 	// (GET /api/v1/tournaments/{tournament_id}/participant/assignments/{assignment_id})
 	GetParticipantAssignment(w http.ResponseWriter, r *http.Request, tournamentId TournamentId, assignmentId AssignmentId)
+	// GetGoldenParticipantState Read the authenticated participant Golden assignment
+	// (GET /api/v1/tournaments/{tournament_id}/participant/golden)
+	GetGoldenParticipantState(w http.ResponseWriter, r *http.Request, tournamentId TournamentId)
+	// SetGoldenParticipantReady Mark the authenticated Golden participant ready
+	// (POST /api/v1/tournaments/{tournament_id}/participant/golden/ready)
+	SetGoldenParticipantReady(w http.ResponseWriter, r *http.Request, tournamentId TournamentId, params SetGoldenParticipantReadyParams)
+	// SubmitGoldenFlag Submit a flag for the authenticated Golden assignment
+	// (POST /api/v1/tournaments/{tournament_id}/participant/golden/submissions)
+	SubmitGoldenFlag(w http.ResponseWriter, r *http.Request, tournamentId TournamentId, params SubmitGoldenFlagParams)
 	// GetParticipantLobby Read the authenticated participant tournament lobby
 	// (GET /api/v1/tournaments/{tournament_id}/participant/lobby)
 	GetParticipantLobby(w http.ResponseWriter, r *http.Request, tournamentId TournamentId)
@@ -293,6 +311,24 @@ func (_ Unimplemented) ApplyTournamentAction(w http.ResponseWriter, r *http.Requ
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// GetGoldenOperatorState Read the production Golden execution state
+// (GET /api/v1/admin/tournaments/{tournament_id}/golden)
+func (_ Unimplemented) GetGoldenOperatorState(w http.ResponseWriter, r *http.Request, tournamentId TournamentId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// StartGoldenAttempt Start one ready Golden attempt
+// (POST /api/v1/admin/tournaments/{tournament_id}/golden/attempts/{attempt_id}/start)
+func (_ Unimplemented) StartGoldenAttempt(w http.ResponseWriter, r *http.Request, tournamentId TournamentId, attemptId GoldenAttemptId, params StartGoldenAttemptParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// OpenGoldenExecution Materialize the production Golden attempts
+// (POST /api/v1/admin/tournaments/{tournament_id}/golden/open)
+func (_ Unimplemented) OpenGoldenExecution(w http.ResponseWriter, r *http.Request, tournamentId TournamentId, params OpenGoldenExecutionParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // ExportTournamentIncident Export a canonical redacted tournament incident bundle
 // (GET /api/v1/admin/tournaments/{tournament_id}/incident-export)
 func (_ Unimplemented) ExportTournamentIncident(w http.ResponseWriter, r *http.Request, tournamentId TournamentId) {
@@ -422,6 +458,24 @@ func (_ Unimplemented) GetPublicLiveDraft(w http.ResponseWriter, r *http.Request
 // GetParticipantAssignment Read a private task assignment for the authenticated participant
 // (GET /api/v1/tournaments/{tournament_id}/participant/assignments/{assignment_id})
 func (_ Unimplemented) GetParticipantAssignment(w http.ResponseWriter, r *http.Request, tournamentId TournamentId, assignmentId AssignmentId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetGoldenParticipantState Read the authenticated participant Golden assignment
+// (GET /api/v1/tournaments/{tournament_id}/participant/golden)
+func (_ Unimplemented) GetGoldenParticipantState(w http.ResponseWriter, r *http.Request, tournamentId TournamentId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// SetGoldenParticipantReady Mark the authenticated Golden participant ready
+// (POST /api/v1/tournaments/{tournament_id}/participant/golden/ready)
+func (_ Unimplemented) SetGoldenParticipantReady(w http.ResponseWriter, r *http.Request, tournamentId TournamentId, params SetGoldenParticipantReadyParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// SubmitGoldenFlag Submit a flag for the authenticated Golden assignment
+// (POST /api/v1/tournaments/{tournament_id}/participant/golden/submissions)
+func (_ Unimplemented) SubmitGoldenFlag(w http.ResponseWriter, r *http.Request, tournamentId TournamentId, params SubmitGoldenFlagParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1534,6 +1588,213 @@ func (siw *ServerInterfaceWrapper) ApplyTournamentAction(w http.ResponseWriter, 
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ApplyTournamentAction(w, r, tournamentId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetGoldenOperatorState operation middleware
+func (siw *ServerInterfaceWrapper) GetGoldenOperatorState(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "tournament_id" -------------
+	var tournamentId TournamentId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "tournament_id", chi.URLParam(r, "tournament_id"), &tournamentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tournament_id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, AdminSessionAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetGoldenOperatorState(w, r, tournamentId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// StartGoldenAttempt operation middleware
+func (siw *ServerInterfaceWrapper) StartGoldenAttempt(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "tournament_id" -------------
+	var tournamentId TournamentId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "tournament_id", chi.URLParam(r, "tournament_id"), &tournamentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tournament_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "attempt_id" -------------
+	var attemptId GoldenAttemptId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "attempt_id", chi.URLParam(r, "attempt_id"), &attemptId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "attempt_id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, AdminSessionAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params StartGoldenAttemptParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken AdminCSRFToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.StartGoldenAttempt(w, r, tournamentId, attemptId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// OpenGoldenExecution operation middleware
+func (siw *ServerInterfaceWrapper) OpenGoldenExecution(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "tournament_id" -------------
+	var tournamentId TournamentId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "tournament_id", chi.URLParam(r, "tournament_id"), &tournamentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tournament_id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, AdminSessionAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params OpenGoldenExecutionParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken AdminCSRFToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.OpenGoldenExecution(w, r, tournamentId, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2857,6 +3118,204 @@ func (siw *ServerInterfaceWrapper) GetParticipantAssignment(w http.ResponseWrite
 	handler.ServeHTTP(w, r)
 }
 
+// GetGoldenParticipantState operation middleware
+func (siw *ServerInterfaceWrapper) GetGoldenParticipantState(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "tournament_id" -------------
+	var tournamentId TournamentId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "tournament_id", chi.URLParam(r, "tournament_id"), &tournamentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tournament_id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, PlayerSessionAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetGoldenParticipantState(w, r, tournamentId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SetGoldenParticipantReady operation middleware
+func (siw *ServerInterfaceWrapper) SetGoldenParticipantReady(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "tournament_id" -------------
+	var tournamentId TournamentId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "tournament_id", chi.URLParam(r, "tournament_id"), &tournamentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tournament_id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, PlayerSessionAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params SetGoldenParticipantReadyParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken RequiredPlayerCSRFToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SetGoldenParticipantReady(w, r, tournamentId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SubmitGoldenFlag operation middleware
+func (siw *ServerInterfaceWrapper) SubmitGoldenFlag(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "tournament_id" -------------
+	var tournamentId TournamentId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "tournament_id", chi.URLParam(r, "tournament_id"), &tournamentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tournament_id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, PlayerSessionAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params SubmitGoldenFlagParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	// ------------- Required header parameter "X-CSRF-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-CSRF-Token")]; found {
+		var XCSRFToken RequiredPlayerCSRFToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-CSRF-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-CSRF-Token", valueList[0], &XCSRFToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-CSRF-Token", Err: err})
+			return
+		}
+
+		params.XCSRFToken = XCSRFToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-CSRF-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-CSRF-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SubmitGoldenFlag(w, r, tournamentId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetParticipantLobby operation middleware
 func (siw *ServerInterfaceWrapper) GetParticipantLobby(w http.ResponseWriter, r *http.Request) {
 
@@ -3716,6 +4175,15 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/api/v1/admin/tournaments/{tournament_id}/snapshot", wrapper.GetOperatorSnapshot)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/admin/tournaments/{tournament_id}/golden", wrapper.GetGoldenOperatorState)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/admin/tournaments/{tournament_id}/golden/open", wrapper.OpenGoldenExecution)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/admin/tournaments/{tournament_id}/golden/attempts/{attempt_id}/start", wrapper.StartGoldenAttempt)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/tournaments/{tournament_id}/participant/lobby", wrapper.GetParticipantLobby)
 	})
 	r.Group(func(r chi.Router) {
@@ -3738,6 +4206,15 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/tournaments/{tournament_id}/participant/snapshot", wrapper.GetParticipantSnapshot)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/tournaments/{tournament_id}/participant/golden", wrapper.GetGoldenParticipantState)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/tournaments/{tournament_id}/participant/golden/ready", wrapper.SetGoldenParticipantReady)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/tournaments/{tournament_id}/participant/golden/submissions", wrapper.SubmitGoldenFlag)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/tournaments/{tournament_id}", wrapper.GetPublicTournament)
@@ -5699,6 +6176,335 @@ type ApplyTournamentActiondefaultApplicationProblemPlusJSONResponse struct {
 }
 
 func (response ApplyTournamentActiondefaultApplicationProblemPlusJSONResponse) VisitApplyTournamentActionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetGoldenOperatorStateRequestObject struct {
+	TournamentId TournamentId `json:"tournament_id"`
+}
+
+type GetGoldenOperatorStateResponseObject interface {
+	VisitGetGoldenOperatorStateResponse(w http.ResponseWriter) error
+}
+
+type GetGoldenOperatorState200JSONResponse GoldenOperatorResponse
+
+func (response GetGoldenOperatorState200JSONResponse) VisitGetGoldenOperatorStateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetGoldenOperatorState401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedProblemApplicationProblemPlusJSONResponse
+}
+
+func (response GetGoldenOperatorState401ApplicationProblemPlusJSONResponse) VisitGetGoldenOperatorStateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetGoldenOperatorState403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenProblemApplicationProblemPlusJSONResponse
+}
+
+func (response GetGoldenOperatorState403ApplicationProblemPlusJSONResponse) VisitGetGoldenOperatorStateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetGoldenOperatorState404ApplicationProblemPlusJSONResponse struct {
+	NotFoundProblemApplicationProblemPlusJSONResponse
+}
+
+func (response GetGoldenOperatorState404ApplicationProblemPlusJSONResponse) VisitGetGoldenOperatorStateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetGoldenOperatorStatedefaultApplicationProblemPlusJSONResponse struct {
+	Body       ProblemDetails
+	StatusCode int
+}
+
+func (response GetGoldenOperatorStatedefaultApplicationProblemPlusJSONResponse) VisitGetGoldenOperatorStateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StartGoldenAttemptRequestObject struct {
+	TournamentId TournamentId    `json:"tournament_id"`
+	AttemptId    GoldenAttemptId `json:"attempt_id"`
+	Params       StartGoldenAttemptParams
+}
+
+type StartGoldenAttemptResponseObject interface {
+	VisitStartGoldenAttemptResponse(w http.ResponseWriter) error
+}
+
+type StartGoldenAttempt200JSONResponse GoldenOperatorResponse
+
+func (response StartGoldenAttempt200JSONResponse) VisitStartGoldenAttemptResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StartGoldenAttempt400ApplicationProblemPlusJSONResponse struct {
+	InvalidRequestProblemApplicationProblemPlusJSONResponse
+}
+
+func (response StartGoldenAttempt400ApplicationProblemPlusJSONResponse) VisitStartGoldenAttemptResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StartGoldenAttempt401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedProblemApplicationProblemPlusJSONResponse
+}
+
+func (response StartGoldenAttempt401ApplicationProblemPlusJSONResponse) VisitStartGoldenAttemptResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StartGoldenAttempt403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenProblemApplicationProblemPlusJSONResponse
+}
+
+func (response StartGoldenAttempt403ApplicationProblemPlusJSONResponse) VisitStartGoldenAttemptResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StartGoldenAttempt404ApplicationProblemPlusJSONResponse struct {
+	NotFoundProblemApplicationProblemPlusJSONResponse
+}
+
+func (response StartGoldenAttempt404ApplicationProblemPlusJSONResponse) VisitStartGoldenAttemptResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StartGoldenAttempt409ApplicationProblemPlusJSONResponse struct {
+	ProjectionRevisionConflictProblemApplicationProblemPlusJSONResponse
+}
+
+func (response StartGoldenAttempt409ApplicationProblemPlusJSONResponse) VisitStartGoldenAttemptResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StartGoldenAttemptdefaultApplicationProblemPlusJSONResponse struct {
+	Body       ProblemDetails
+	StatusCode int
+}
+
+func (response StartGoldenAttemptdefaultApplicationProblemPlusJSONResponse) VisitStartGoldenAttemptResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type OpenGoldenExecutionRequestObject struct {
+	TournamentId TournamentId `json:"tournament_id"`
+	Params       OpenGoldenExecutionParams
+	Body         *OpenGoldenExecutionJSONRequestBody
+}
+
+type OpenGoldenExecutionResponseObject interface {
+	VisitOpenGoldenExecutionResponse(w http.ResponseWriter) error
+}
+
+type OpenGoldenExecution200JSONResponse GoldenOperatorResponse
+
+func (response OpenGoldenExecution200JSONResponse) VisitOpenGoldenExecutionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type OpenGoldenExecution400ApplicationProblemPlusJSONResponse struct {
+	InvalidRequestProblemApplicationProblemPlusJSONResponse
+}
+
+func (response OpenGoldenExecution400ApplicationProblemPlusJSONResponse) VisitOpenGoldenExecutionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type OpenGoldenExecution401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedProblemApplicationProblemPlusJSONResponse
+}
+
+func (response OpenGoldenExecution401ApplicationProblemPlusJSONResponse) VisitOpenGoldenExecutionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type OpenGoldenExecution403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenProblemApplicationProblemPlusJSONResponse
+}
+
+func (response OpenGoldenExecution403ApplicationProblemPlusJSONResponse) VisitOpenGoldenExecutionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type OpenGoldenExecution404ApplicationProblemPlusJSONResponse struct {
+	NotFoundProblemApplicationProblemPlusJSONResponse
+}
+
+func (response OpenGoldenExecution404ApplicationProblemPlusJSONResponse) VisitOpenGoldenExecutionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type OpenGoldenExecution409ApplicationProblemPlusJSONResponse struct {
+	ProjectionRevisionConflictProblemApplicationProblemPlusJSONResponse
+}
+
+func (response OpenGoldenExecution409ApplicationProblemPlusJSONResponse) VisitOpenGoldenExecutionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type OpenGoldenExecutiondefaultApplicationProblemPlusJSONResponse struct {
+	Body       ProblemDetails
+	StatusCode int
+}
+
+func (response OpenGoldenExecutiondefaultApplicationProblemPlusJSONResponse) VisitOpenGoldenExecutionResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -8223,6 +9029,303 @@ func (response GetParticipantAssignmentdefaultApplicationProblemPlusJSONResponse
 	return err
 }
 
+type GetGoldenParticipantStateRequestObject struct {
+	TournamentId TournamentId `json:"tournament_id"`
+}
+
+type GetGoldenParticipantStateResponseObject interface {
+	VisitGetGoldenParticipantStateResponse(w http.ResponseWriter) error
+}
+
+type GetGoldenParticipantState200JSONResponse GoldenParticipantResponse
+
+func (response GetGoldenParticipantState200JSONResponse) VisitGetGoldenParticipantStateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetGoldenParticipantState401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedProblemApplicationProblemPlusJSONResponse
+}
+
+func (response GetGoldenParticipantState401ApplicationProblemPlusJSONResponse) VisitGetGoldenParticipantStateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetGoldenParticipantState403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenProblemApplicationProblemPlusJSONResponse
+}
+
+func (response GetGoldenParticipantState403ApplicationProblemPlusJSONResponse) VisitGetGoldenParticipantStateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetGoldenParticipantState404ApplicationProblemPlusJSONResponse struct {
+	NotFoundProblemApplicationProblemPlusJSONResponse
+}
+
+func (response GetGoldenParticipantState404ApplicationProblemPlusJSONResponse) VisitGetGoldenParticipantStateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetGoldenParticipantStatedefaultApplicationProblemPlusJSONResponse struct {
+	Body       ProblemDetails
+	StatusCode int
+}
+
+func (response GetGoldenParticipantStatedefaultApplicationProblemPlusJSONResponse) VisitGetGoldenParticipantStateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetGoldenParticipantReadyRequestObject struct {
+	TournamentId TournamentId `json:"tournament_id"`
+	Params       SetGoldenParticipantReadyParams
+	Body         *SetGoldenParticipantReadyJSONRequestBody
+}
+
+type SetGoldenParticipantReadyResponseObject interface {
+	VisitSetGoldenParticipantReadyResponse(w http.ResponseWriter) error
+}
+
+type SetGoldenParticipantReady200JSONResponse GoldenParticipantResponse
+
+func (response SetGoldenParticipantReady200JSONResponse) VisitSetGoldenParticipantReadyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetGoldenParticipantReady400ApplicationProblemPlusJSONResponse struct {
+	InvalidRequestProblemApplicationProblemPlusJSONResponse
+}
+
+func (response SetGoldenParticipantReady400ApplicationProblemPlusJSONResponse) VisitSetGoldenParticipantReadyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetGoldenParticipantReady401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedProblemApplicationProblemPlusJSONResponse
+}
+
+func (response SetGoldenParticipantReady401ApplicationProblemPlusJSONResponse) VisitSetGoldenParticipantReadyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetGoldenParticipantReady403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenProblemApplicationProblemPlusJSONResponse
+}
+
+func (response SetGoldenParticipantReady403ApplicationProblemPlusJSONResponse) VisitSetGoldenParticipantReadyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetGoldenParticipantReady409ApplicationProblemPlusJSONResponse struct {
+	ProjectionRevisionConflictProblemApplicationProblemPlusJSONResponse
+}
+
+func (response SetGoldenParticipantReady409ApplicationProblemPlusJSONResponse) VisitSetGoldenParticipantReadyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetGoldenParticipantReadydefaultApplicationProblemPlusJSONResponse struct {
+	Body       ProblemDetails
+	StatusCode int
+}
+
+func (response SetGoldenParticipantReadydefaultApplicationProblemPlusJSONResponse) VisitSetGoldenParticipantReadyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SubmitGoldenFlagRequestObject struct {
+	TournamentId TournamentId `json:"tournament_id"`
+	Params       SubmitGoldenFlagParams
+	Body         *SubmitGoldenFlagJSONRequestBody
+}
+
+type SubmitGoldenFlagResponseObject interface {
+	VisitSubmitGoldenFlagResponse(w http.ResponseWriter) error
+}
+
+type SubmitGoldenFlag200JSONResponse GoldenParticipantResponse
+
+func (response SubmitGoldenFlag200JSONResponse) VisitSubmitGoldenFlagResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SubmitGoldenFlag400ApplicationProblemPlusJSONResponse struct {
+	InvalidRequestProblemApplicationProblemPlusJSONResponse
+}
+
+func (response SubmitGoldenFlag400ApplicationProblemPlusJSONResponse) VisitSubmitGoldenFlagResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SubmitGoldenFlag401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedProblemApplicationProblemPlusJSONResponse
+}
+
+func (response SubmitGoldenFlag401ApplicationProblemPlusJSONResponse) VisitSubmitGoldenFlagResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SubmitGoldenFlag403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenProblemApplicationProblemPlusJSONResponse
+}
+
+func (response SubmitGoldenFlag403ApplicationProblemPlusJSONResponse) VisitSubmitGoldenFlagResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SubmitGoldenFlag409ApplicationProblemPlusJSONResponse struct {
+	ProjectionRevisionConflictProblemApplicationProblemPlusJSONResponse
+}
+
+func (response SubmitGoldenFlag409ApplicationProblemPlusJSONResponse) VisitSubmitGoldenFlagResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SubmitGoldenFlagdefaultApplicationProblemPlusJSONResponse struct {
+	Body       ProblemDetails
+	StatusCode int
+}
+
+func (response SubmitGoldenFlagdefaultApplicationProblemPlusJSONResponse) VisitSubmitGoldenFlagResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetParticipantLobbyRequestObject struct {
 	TournamentId TournamentId `json:"tournament_id"`
 }
@@ -9546,6 +10649,15 @@ type StrictServerInterface interface {
 	// ApplyTournamentAction Apply a tournament lifecycle operator action
 	// (POST /api/v1/admin/tournaments/{tournament_id}/actions)
 	ApplyTournamentAction(ctx context.Context, request ApplyTournamentActionRequestObject) (ApplyTournamentActionResponseObject, error)
+	// GetGoldenOperatorState Read the production Golden execution state
+	// (GET /api/v1/admin/tournaments/{tournament_id}/golden)
+	GetGoldenOperatorState(ctx context.Context, request GetGoldenOperatorStateRequestObject) (GetGoldenOperatorStateResponseObject, error)
+	// StartGoldenAttempt Start one ready Golden attempt
+	// (POST /api/v1/admin/tournaments/{tournament_id}/golden/attempts/{attempt_id}/start)
+	StartGoldenAttempt(ctx context.Context, request StartGoldenAttemptRequestObject) (StartGoldenAttemptResponseObject, error)
+	// OpenGoldenExecution Materialize the production Golden attempts
+	// (POST /api/v1/admin/tournaments/{tournament_id}/golden/open)
+	OpenGoldenExecution(ctx context.Context, request OpenGoldenExecutionRequestObject) (OpenGoldenExecutionResponseObject, error)
 	// ExportTournamentIncident Export a canonical redacted tournament incident bundle
 	// (GET /api/v1/admin/tournaments/{tournament_id}/incident-export)
 	ExportTournamentIncident(ctx context.Context, request ExportTournamentIncidentRequestObject) (ExportTournamentIncidentResponseObject, error)
@@ -9612,6 +10724,15 @@ type StrictServerInterface interface {
 	// GetParticipantAssignment Read a private task assignment for the authenticated participant
 	// (GET /api/v1/tournaments/{tournament_id}/participant/assignments/{assignment_id})
 	GetParticipantAssignment(ctx context.Context, request GetParticipantAssignmentRequestObject) (GetParticipantAssignmentResponseObject, error)
+	// GetGoldenParticipantState Read the authenticated participant Golden assignment
+	// (GET /api/v1/tournaments/{tournament_id}/participant/golden)
+	GetGoldenParticipantState(ctx context.Context, request GetGoldenParticipantStateRequestObject) (GetGoldenParticipantStateResponseObject, error)
+	// SetGoldenParticipantReady Mark the authenticated Golden participant ready
+	// (POST /api/v1/tournaments/{tournament_id}/participant/golden/ready)
+	SetGoldenParticipantReady(ctx context.Context, request SetGoldenParticipantReadyRequestObject) (SetGoldenParticipantReadyResponseObject, error)
+	// SubmitGoldenFlag Submit a flag for the authenticated Golden assignment
+	// (POST /api/v1/tournaments/{tournament_id}/participant/golden/submissions)
+	SubmitGoldenFlag(ctx context.Context, request SubmitGoldenFlagRequestObject) (SubmitGoldenFlagResponseObject, error)
 	// GetParticipantLobby Read the authenticated participant tournament lobby
 	// (GET /api/v1/tournaments/{tournament_id}/participant/lobby)
 	GetParticipantLobby(ctx context.Context, request GetParticipantLobbyRequestObject) (GetParticipantLobbyResponseObject, error)
@@ -10220,6 +11341,94 @@ func (sh *strictHandler) ApplyTournamentAction(w http.ResponseWriter, r *http.Re
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ApplyTournamentActionResponseObject); ok {
 		if err := validResponse.VisitApplyTournamentActionResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetGoldenOperatorState operation middleware
+func (sh *strictHandler) GetGoldenOperatorState(w http.ResponseWriter, r *http.Request, tournamentId TournamentId) {
+	var request GetGoldenOperatorStateRequestObject
+
+	request.TournamentId = tournamentId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetGoldenOperatorState(ctx, request.(GetGoldenOperatorStateRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetGoldenOperatorState")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetGoldenOperatorStateResponseObject); ok {
+		if err := validResponse.VisitGetGoldenOperatorStateResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// StartGoldenAttempt operation middleware
+func (sh *strictHandler) StartGoldenAttempt(w http.ResponseWriter, r *http.Request, tournamentId TournamentId, attemptId GoldenAttemptId, params StartGoldenAttemptParams) {
+	var request StartGoldenAttemptRequestObject
+
+	request.TournamentId = tournamentId
+	request.AttemptId = attemptId
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.StartGoldenAttempt(ctx, request.(StartGoldenAttemptRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "StartGoldenAttempt")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(StartGoldenAttemptResponseObject); ok {
+		if err := validResponse.VisitStartGoldenAttemptResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// OpenGoldenExecution operation middleware
+func (sh *strictHandler) OpenGoldenExecution(w http.ResponseWriter, r *http.Request, tournamentId TournamentId, params OpenGoldenExecutionParams) {
+	var request OpenGoldenExecutionRequestObject
+
+	request.TournamentId = tournamentId
+	request.Params = params
+
+	var body OpenGoldenExecutionJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.OpenGoldenExecution(ctx, request.(OpenGoldenExecutionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "OpenGoldenExecution")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(OpenGoldenExecutionResponseObject); ok {
+		if err := validResponse.VisitOpenGoldenExecutionResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -10892,6 +12101,100 @@ func (sh *strictHandler) GetParticipantAssignment(w http.ResponseWriter, r *http
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetParticipantAssignmentResponseObject); ok {
 		if err := validResponse.VisitGetParticipantAssignmentResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetGoldenParticipantState operation middleware
+func (sh *strictHandler) GetGoldenParticipantState(w http.ResponseWriter, r *http.Request, tournamentId TournamentId) {
+	var request GetGoldenParticipantStateRequestObject
+
+	request.TournamentId = tournamentId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetGoldenParticipantState(ctx, request.(GetGoldenParticipantStateRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetGoldenParticipantState")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetGoldenParticipantStateResponseObject); ok {
+		if err := validResponse.VisitGetGoldenParticipantStateResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SetGoldenParticipantReady operation middleware
+func (sh *strictHandler) SetGoldenParticipantReady(w http.ResponseWriter, r *http.Request, tournamentId TournamentId, params SetGoldenParticipantReadyParams) {
+	var request SetGoldenParticipantReadyRequestObject
+
+	request.TournamentId = tournamentId
+	request.Params = params
+
+	var body SetGoldenParticipantReadyJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SetGoldenParticipantReady(ctx, request.(SetGoldenParticipantReadyRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SetGoldenParticipantReady")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SetGoldenParticipantReadyResponseObject); ok {
+		if err := validResponse.VisitSetGoldenParticipantReadyResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SubmitGoldenFlag operation middleware
+func (sh *strictHandler) SubmitGoldenFlag(w http.ResponseWriter, r *http.Request, tournamentId TournamentId, params SubmitGoldenFlagParams) {
+	var request SubmitGoldenFlagRequestObject
+
+	request.TournamentId = tournamentId
+	request.Params = params
+
+	var body SubmitGoldenFlagJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SubmitGoldenFlag(ctx, request.(SubmitGoldenFlagRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SubmitGoldenFlag")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SubmitGoldenFlagResponseObject); ok {
+		if err := validResponse.VisitSubmitGoldenFlagResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

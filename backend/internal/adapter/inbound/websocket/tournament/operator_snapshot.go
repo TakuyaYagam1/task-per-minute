@@ -25,6 +25,7 @@ type OperatorSnapshotInput struct {
 	Replays      []OperatorReplayInput
 	Pause        *OperatorPauseInput
 	AuditLinks   []OperatorAuditLinkInput
+	Golden       []OperatorGoldenGroupInput
 }
 
 type OperatorWaveInput struct {
@@ -79,15 +80,35 @@ type OperatorAuditLinkInput struct {
 	OfficialResultRevisionID uuid.UUID
 }
 
+type OperatorGoldenGroupInput struct {
+	GroupID         uuid.UUID
+	GroupRevisionID uuid.UUID
+	AttemptID       uuid.UUID
+	State           string
+	PositionFrom    int
+	PositionTo      int
+	StartedAt       *time.Time
+	Deadline        *time.Time
+	Members         []OperatorGoldenMemberInput
+}
+
+type OperatorGoldenMemberInput struct {
+	ParticipantID uuid.UUID
+	Ready         bool
+	Submitted     bool
+	Position      *int
+}
+
 type OperatorSnapshot struct {
-	TournamentID uuid.UUID           `json:"tournament_id"`
-	Revision     int64               `json:"revision"`
-	LastSequence int64               `json:"last_sequence"`
-	Waves        []OperatorWave      `json:"waves"`
-	Presence     []OperatorPresence  `json:"presence"`
-	Replays      []OperatorReplay    `json:"replays"`
-	Pause        *OperatorPause      `json:"pause,omitempty"`
-	AuditLinks   []OperatorAuditLink `json:"audit_links"`
+	TournamentID uuid.UUID             `json:"tournament_id"`
+	Revision     int64                 `json:"revision"`
+	LastSequence int64                 `json:"last_sequence"`
+	Waves        []OperatorWave        `json:"waves"`
+	Presence     []OperatorPresence    `json:"presence"`
+	Replays      []OperatorReplay      `json:"replays"`
+	Pause        *OperatorPause        `json:"pause,omitempty"`
+	AuditLinks   []OperatorAuditLink   `json:"audit_links"`
+	Golden       []OperatorGoldenGroup `json:"golden"`
 }
 
 type OperatorWave struct {
@@ -137,6 +158,25 @@ type OperatorAuditLink struct {
 	OfficialResultRevisionID uuid.UUID `json:"official_result_revision_id"`
 }
 
+type OperatorGoldenGroup struct {
+	GroupID         uuid.UUID              `json:"group_id"`
+	GroupRevisionID uuid.UUID              `json:"group_revision_id"`
+	AttemptID       uuid.UUID              `json:"attempt_id"`
+	State           string                 `json:"state"`
+	PositionFrom    int                    `json:"position_from"`
+	PositionTo      int                    `json:"position_to"`
+	StartedAt       *time.Time             `json:"started_at,omitempty"`
+	Deadline        *time.Time             `json:"deadline,omitempty"`
+	Members         []OperatorGoldenMember `json:"members"`
+}
+
+type OperatorGoldenMember struct {
+	ParticipantID uuid.UUID `json:"participant_id"`
+	Ready         bool      `json:"ready"`
+	Submitted     bool      `json:"submitted"`
+	Position      *int      `json:"position,omitempty"`
+}
+
 //nolint:gocyclo // The constructor copies each operator view while enforcing authenticated tournament scope.
 func NewOperatorSnapshot(access OperatorSnapshotAccess, input OperatorSnapshotInput) (OperatorSnapshot, error) {
 	if !access.Authenticated || access.TournamentID == uuid.Nil || access.OperatorID == uuid.Nil || input.TournamentID != access.TournamentID {
@@ -153,6 +193,7 @@ func NewOperatorSnapshot(access OperatorSnapshotAccess, input OperatorSnapshotIn
 		Presence:     make([]OperatorPresence, len(input.Presence)),
 		Replays:      make([]OperatorReplay, len(input.Replays)),
 		AuditLinks:   make([]OperatorAuditLink, len(input.AuditLinks)),
+		Golden:       make([]OperatorGoldenGroup, len(input.Golden)),
 	}
 	for index, wave := range input.Waves {
 		if wave.TournamentID != access.TournamentID {
@@ -193,6 +234,30 @@ func NewOperatorSnapshot(access OperatorSnapshotAccess, input OperatorSnapshotIn
 		}
 		snapshot.AuditLinks[index] = OperatorAuditLink{AuditEventID: link.AuditEventID, EntityKind: link.EntityKind, EntityID: link.EntityID, OfficialResultRevisionID: link.OfficialResultRevisionID}
 	}
+	for index, group := range input.Golden {
+		if group.GroupID == uuid.Nil || group.GroupRevisionID == uuid.Nil || group.AttemptID == uuid.Nil ||
+			!validRealtimeString(group.State) || group.PositionFrom < 1 || group.PositionTo < group.PositionFrom ||
+			group.PositionTo > 16 || group.Members == nil || len(group.Members) < 2 ||
+			!validOptionalUTC(group.StartedAt) || !validOptionalUTC(group.Deadline) {
+			return OperatorSnapshot{}, fmt.Errorf("%w: invalid Golden group", ErrInvalidOperatorSnapshot)
+		}
+		view := OperatorGoldenGroup{
+			GroupID: group.GroupID, GroupRevisionID: group.GroupRevisionID, AttemptID: group.AttemptID,
+			State: group.State, PositionFrom: group.PositionFrom, PositionTo: group.PositionTo,
+			StartedAt: cloneTime(group.StartedAt), Deadline: cloneTime(group.Deadline),
+			Members: make([]OperatorGoldenMember, len(group.Members)),
+		}
+		for memberIndex, member := range group.Members {
+			if member.ParticipantID == uuid.Nil || (member.Position != nil && (*member.Position < 1 || *member.Position > 16)) {
+				return OperatorSnapshot{}, fmt.Errorf("%w: invalid Golden member", ErrInvalidOperatorSnapshot)
+			}
+			view.Members[memberIndex] = OperatorGoldenMember{
+				ParticipantID: member.ParticipantID, Ready: member.Ready, Submitted: member.Submitted,
+				Position: cloneInt(member.Position),
+			}
+		}
+		snapshot.Golden[index] = view
+	}
 	if err := snapshot.Validate(); err != nil {
 		return OperatorSnapshot{}, err
 	}
@@ -204,8 +269,8 @@ func (s OperatorSnapshot) Validate() error {
 	if s.TournamentID == uuid.Nil || s.Revision < 1 || s.LastSequence < 0 {
 		return fmt.Errorf("%w: invalid identity or cursor", ErrInvalidOperatorSnapshot)
 	}
-	if s.Waves == nil || s.Presence == nil || s.Replays == nil || s.AuditLinks == nil ||
-		!validRealtimeCollections(len(s.Waves), len(s.Presence), len(s.Replays), len(s.AuditLinks)) {
+	if s.Waves == nil || s.Presence == nil || s.Replays == nil || s.AuditLinks == nil || s.Golden == nil ||
+		!validRealtimeCollections(len(s.Waves), len(s.Presence), len(s.Replays), len(s.AuditLinks), len(s.Golden)) {
 		return fmt.Errorf("%w: operator collections must be arrays", ErrInvalidOperatorSnapshot)
 	}
 	for _, wave := range s.Waves {
@@ -239,6 +304,14 @@ func (s OperatorSnapshot) Validate() error {
 			return fmt.Errorf("%w: invalid audit link", ErrInvalidOperatorSnapshot)
 		}
 	}
+	for _, group := range s.Golden {
+		if group.GroupID == uuid.Nil || group.GroupRevisionID == uuid.Nil || group.AttemptID == uuid.Nil ||
+			!validRealtimeString(group.State) || group.PositionFrom < 1 || group.PositionTo < group.PositionFrom ||
+			group.PositionTo > 16 || len(group.Members) < 2 || !validOptionalUTC(group.StartedAt) ||
+			!validOptionalUTC(group.Deadline) {
+			return fmt.Errorf("%w: invalid Golden group", ErrInvalidOperatorSnapshot)
+		}
+	}
 	if !valueWithinWireLimits(s) {
 		return fmt.Errorf("%w: snapshot exceeds wire limits", ErrInvalidOperatorSnapshot)
 	}
@@ -260,6 +333,17 @@ func (s OperatorSnapshot) clone() OperatorSnapshot {
 	clone.Presence = append([]OperatorPresence{}, s.Presence...)
 	clone.Replays = append([]OperatorReplay{}, s.Replays...)
 	clone.AuditLinks = append([]OperatorAuditLink{}, s.AuditLinks...)
+	clone.Golden = make([]OperatorGoldenGroup, len(s.Golden))
+	for index, group := range s.Golden {
+		clone.Golden[index] = group
+		clone.Golden[index].StartedAt = cloneTime(group.StartedAt)
+		clone.Golden[index].Deadline = cloneTime(group.Deadline)
+		clone.Golden[index].Members = make([]OperatorGoldenMember, len(group.Members))
+		for memberIndex, member := range group.Members {
+			clone.Golden[index].Members[memberIndex] = member
+			clone.Golden[index].Members[memberIndex].Position = cloneInt(member.Position)
+		}
+	}
 	if s.Pause != nil {
 		pause := *s.Pause
 		clone.Pause = &pause

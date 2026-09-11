@@ -971,6 +971,28 @@ type GoldenReservePromotion struct {
 	CreatedAt             pgtype.Timestamptz
 }
 
+type GoldenRuntimeAssignment struct {
+	AttemptID            uuid.UUID
+	TournamentID         uuid.UUID
+	RosterID             uuid.UUID
+	GroupRevisionID      uuid.UUID
+	WaveID               uuid.UUID
+	AssignmentID         uuid.UUID
+	SnapshotID           uuid.UUID
+	TaskID               uuid.UUID
+	TaskVersion          int32
+	Title                string
+	Category             string
+	Difficulty           string
+	TimeLimitSeconds     int32
+	SourceDigest         []byte
+	StartedAt            pgtype.Timestamptz
+	Deadline             pgtype.Timestamptz
+	SettlementRevisionID uuid.NullUUID
+	FinalizedAt          pgtype.Timestamptz
+	CreatedAt            pgtype.Timestamptz
+}
+
 type GoldenStateAllocation struct {
 	AllocationID               uuid.UUID
 	CommandID                  uuid.UUID

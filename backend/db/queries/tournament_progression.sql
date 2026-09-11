@@ -2222,7 +2222,9 @@ SELECT group_revision.revision_id AS group_revision_id,
     attempt.state AS attempt_state,
     position_commit.id AS position_commit_id,
     position_commit.participant_id,
-    position_commit.position
+    position_commit.position,
+    runtime.settlement_revision_id,
+    runtime.finalized_at AS runtime_finalized_at
 FROM golden_group_revisions AS group_revision
 LEFT JOIN golden_attempt_stage_groups AS attempt_group
     ON attempt_group.group_revision_id = group_revision.revision_id
@@ -2236,6 +2238,11 @@ LEFT JOIN golden_position_commits AS position_commit
     ON position_commit.attempt_id = attempt.id
     AND position_commit.tournament_id = attempt.tournament_id
     AND position_commit.roster_id = attempt.roster_id
+LEFT JOIN golden_runtime_assignments AS runtime
+    ON runtime.attempt_id = attempt_group.attempt_id
+    AND runtime.tournament_id = attempt_group.tournament_id
+    AND runtime.roster_id = attempt_group.roster_id
+    AND runtime.group_revision_id = group_revision.revision_id
 WHERE group_revision.tournament_id = sqlc.arg(tournament_id)
     AND group_revision.roster_id = sqlc.arg(roster_id)
     AND group_revision.source_projection_revision_id = sqlc.arg(source_projection_revision_id)
@@ -3161,10 +3168,14 @@ SELECT ledger.revision_id AS ledger_revision_id,
     submission.revision_number AS submission_revision,
     attempt.attempt_number,
     attempt.order_count,
-    attempt_authority.wave_id,
-    attempt_authority.assignment_id,
-    attempt_authority.snapshot_id,
-    attempt_authority.task_id,
+    COALESCE(attempt_authority.wave_id, runtime_authority.wave_id,
+        '00000000-0000-0000-0000-000000000000'::uuid) AS wave_id,
+    COALESCE(attempt_authority.assignment_id, runtime_authority.assignment_id,
+        '00000000-0000-0000-0000-000000000000'::uuid) AS assignment_id,
+    COALESCE(attempt_authority.snapshot_id, runtime_authority.snapshot_id,
+        '00000000-0000-0000-0000-000000000000'::uuid) AS snapshot_id,
+    COALESCE(attempt_authority.task_id, runtime_authority.task_id,
+        '00000000-0000-0000-0000-000000000000'::uuid) AS task_id,
     binding.position_commit_id,
     binding.participant_id,
     binding.position,
@@ -3185,6 +3196,11 @@ LEFT JOIN golden_attempt_authorities AS attempt_authority
     AND attempt_authority.tournament_id = ledger.tournament_id
     AND attempt_authority.roster_id = ledger.roster_id
     AND attempt_authority.group_revision_id = ledger.group_revision_id
+LEFT JOIN golden_runtime_assignments AS runtime_authority
+    ON runtime_authority.attempt_id = attempt.attempt_id
+    AND runtime_authority.tournament_id = ledger.tournament_id
+    AND runtime_authority.roster_id = ledger.roster_id
+    AND runtime_authority.group_revision_id = ledger.group_revision_id
 LEFT JOIN golden_position_ledger_commit_bindings AS binding
     ON binding.ledger_revision_id = ledger.revision_id
     AND binding.attempt_id = attempt.attempt_id

@@ -1128,3 +1128,202 @@
         $ref: '../components/responses.yml#/ProjectionRevisionConflictProblem'
       default:
         $ref: '../components/responses.yml#/UnexpectedServerProblem'
+
+/api/v1/admin/tournaments/{tournament_id}/golden:
+  parameters:
+    - $ref: '../components/parameters.yml#/TournamentId'
+  get:
+    operationId: getGoldenOperatorState
+    tags: [tournament]
+    summary: Read the production Golden execution state
+    x-auth-scope: tournament:manage
+    security:
+      - AdminSessionAuth: []
+    responses:
+      '200':
+        description: Operator Golden state.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/GoldenOperatorResponse'
+      '401':
+        $ref: '../components/responses.yml#/UnauthorizedProblem'
+      '403':
+        $ref: '../components/responses.yml#/ForbiddenProblem'
+      '404':
+        $ref: '../components/responses.yml#/NotFoundProblem'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+
+/api/v1/admin/tournaments/{tournament_id}/golden/open:
+  parameters:
+    - $ref: '../components/parameters.yml#/TournamentId'
+  post:
+    operationId: openGoldenExecution
+    tags: [tournament]
+    summary: Materialize the production Golden attempts
+    x-auth-scope: tournament:manage
+    security:
+      - AdminSessionAuth: []
+    parameters:
+      - $ref: '../components/parameters.yml#/IdempotencyKey'
+      - $ref: '../components/parameters.yml#/AdminCSRFToken'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../components/schemas.yml#/GoldenOpenRequest'
+    responses:
+      '200':
+        description: Materialized Golden state.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/GoldenOperatorResponse'
+      '400':
+        $ref: '../components/responses.yml#/InvalidRequestProblem'
+      '401':
+        $ref: '../components/responses.yml#/UnauthorizedProblem'
+      '403':
+        $ref: '../components/responses.yml#/ForbiddenProblem'
+      '404':
+        $ref: '../components/responses.yml#/NotFoundProblem'
+      '409':
+        $ref: '../components/responses.yml#/ProjectionRevisionConflictProblem'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+
+/api/v1/admin/tournaments/{tournament_id}/golden/attempts/{attempt_id}/start:
+  parameters:
+    - $ref: '../components/parameters.yml#/TournamentId'
+    - $ref: '../components/parameters.yml#/GoldenAttemptId'
+  post:
+    operationId: startGoldenAttempt
+    tags: [tournament]
+    summary: Start one ready Golden attempt
+    x-auth-scope: tournament:manage
+    security:
+      - AdminSessionAuth: []
+    parameters:
+      - $ref: '../components/parameters.yml#/IdempotencyKey'
+      - $ref: '../components/parameters.yml#/AdminCSRFToken'
+    responses:
+      '200':
+        description: Started Golden state.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/GoldenOperatorResponse'
+      '400':
+        $ref: '../components/responses.yml#/InvalidRequestProblem'
+      '401':
+        $ref: '../components/responses.yml#/UnauthorizedProblem'
+      '403':
+        $ref: '../components/responses.yml#/ForbiddenProblem'
+      '404':
+        $ref: '../components/responses.yml#/NotFoundProblem'
+      '409':
+        $ref: '../components/responses.yml#/ProjectionRevisionConflictProblem'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+
+/api/v1/tournaments/{tournament_id}/participant/golden:
+  parameters:
+    - $ref: '../components/parameters.yml#/TournamentId'
+  get:
+    operationId: getGoldenParticipantState
+    tags: [tournament]
+    summary: Read the authenticated participant Golden assignment
+    x-auth-scope: tournament:participate
+    security:
+      - PlayerSessionAuth: []
+    responses:
+      '200':
+        description: Participant-safe Golden state.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/GoldenParticipantResponse'
+      '401':
+        $ref: '../components/responses.yml#/UnauthorizedProblem'
+      '403':
+        $ref: '../components/responses.yml#/ForbiddenProblem'
+      '404':
+        $ref: '../components/responses.yml#/NotFoundProblem'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+
+/api/v1/tournaments/{tournament_id}/participant/golden/ready:
+  parameters:
+    - $ref: '../components/parameters.yml#/TournamentId'
+  post:
+    operationId: setGoldenParticipantReady
+    tags: [tournament]
+    summary: Mark the authenticated Golden participant ready
+    x-auth-scope: tournament:participate
+    security:
+      - PlayerSessionAuth: []
+    parameters:
+      - $ref: '../components/parameters.yml#/IdempotencyKey'
+      - $ref: '../components/parameters.yml#/RequiredPlayerCSRFToken'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../components/schemas.yml#/GoldenReadyRequest'
+    responses:
+      '200':
+        description: Updated participant Golden state.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/GoldenParticipantResponse'
+      '400':
+        $ref: '../components/responses.yml#/InvalidRequestProblem'
+      '401':
+        $ref: '../components/responses.yml#/UnauthorizedProblem'
+      '403':
+        $ref: '../components/responses.yml#/ForbiddenProblem'
+      '409':
+        $ref: '../components/responses.yml#/ProjectionRevisionConflictProblem'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+
+/api/v1/tournaments/{tournament_id}/participant/golden/submissions:
+  parameters:
+    - $ref: '../components/parameters.yml#/TournamentId'
+  post:
+    operationId: submitGoldenFlag
+    tags: [tournament]
+    summary: Submit a flag for the authenticated Golden assignment
+    x-auth-scope: tournament:participate
+    security:
+      - PlayerSessionAuth: []
+    parameters:
+      - $ref: '../components/parameters.yml#/IdempotencyKey'
+      - $ref: '../components/parameters.yml#/RequiredPlayerCSRFToken'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../components/schemas.yml#/GoldenSubmissionRequest'
+    responses:
+      '200':
+        description: Updated participant Golden state.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/GoldenParticipantResponse'
+      '400':
+        $ref: '../components/responses.yml#/InvalidRequestProblem'
+      '401':
+        $ref: '../components/responses.yml#/UnauthorizedProblem'
+      '403':
+        $ref: '../components/responses.yml#/ForbiddenProblem'
+      '409':
+        $ref: '../components/responses.yml#/ProjectionRevisionConflictProblem'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'

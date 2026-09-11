@@ -668,6 +668,64 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/tournaments/{tournament_id}/golden": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tournament_id: components["parameters"]["TournamentId"];
+            };
+            cookie?: never;
+        };
+        /** Read the production Golden execution state */
+        get: operations["getGoldenOperatorState"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/tournaments/{tournament_id}/golden/open": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tournament_id: components["parameters"]["TournamentId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Materialize the production Golden attempts */
+        post: operations["openGoldenExecution"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/tournaments/{tournament_id}/golden/attempts/{attempt_id}/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tournament_id: components["parameters"]["TournamentId"];
+                attempt_id: components["parameters"]["GoldenAttemptId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start one ready Golden attempt */
+        post: operations["startGoldenAttempt"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tournaments/{tournament_id}/participant/lobby": {
         parameters: {
             query?: never;
@@ -845,6 +903,63 @@ export interface paths {
         get: operations["getParticipantSnapshot"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tournaments/{tournament_id}/participant/golden": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tournament_id: components["parameters"]["TournamentId"];
+            };
+            cookie?: never;
+        };
+        /** Read the authenticated participant Golden assignment */
+        get: operations["getGoldenParticipantState"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tournaments/{tournament_id}/participant/golden/ready": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tournament_id: components["parameters"]["TournamentId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark the authenticated Golden participant ready */
+        post: operations["setGoldenParticipantReady"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tournaments/{tournament_id}/participant/golden/submissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tournament_id: components["parameters"]["TournamentId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Submit a flag for the authenticated Golden assignment */
+        post: operations["submitGoldenFlag"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2095,6 +2210,45 @@ export interface components {
             tournament: components["schemas"]["Tournament"];
             waves: components["schemas"]["Wave"][];
         };
+        GoldenRuntimeMember: {
+            /** Format: uuid */
+            participant_id: string;
+            /** Format: int32 */
+            readonly position: number | null;
+            readonly ready: boolean;
+            readonly submitted: boolean;
+        };
+        /** @enum {string} */
+        GoldenRuntimeState: "prepared" | "ready" | "active" | "technical_pause" | "completed" | "cancelled" | "superseded";
+        GoldenOperatorGroup: {
+            /** Format: uuid */
+            attempt_id: string;
+            /** Format: date-time */
+            readonly deadline: string | null;
+            /** Format: uuid */
+            group_id: string;
+            /** Format: uuid */
+            readonly group_revision_id: string;
+            members: components["schemas"]["GoldenRuntimeMember"][];
+            /** Format: int32 */
+            position_from: number;
+            /** Format: int32 */
+            position_to: number;
+            /** Format: date-time */
+            readonly started_at: string | null;
+            state: components["schemas"]["GoldenRuntimeState"];
+        };
+        GoldenOperatorResponse: {
+            groups: components["schemas"]["GoldenOperatorGroup"][];
+            /** Format: date-time */
+            readonly observed_at: string;
+            /** Format: uuid */
+            tournament_id: string;
+        };
+        GoldenOpenRequest: {
+            /** Format: int64 */
+            expected_projection_revision: number;
+        };
         ParticipantLobbySeries: {
             format: components["schemas"]["SeriesFormat"];
             opponent_display_name: string;
@@ -2316,6 +2470,52 @@ export interface components {
             tournament_id: string;
             wave: components["schemas"]["Wave"] | null;
         };
+        /** @description Participant-safe immutable Golden assignment. Flag material is never serialized. */
+        GoldenRuntimeTask: {
+            /** Format: uuid */
+            assignment_id: string;
+            category: string;
+            difficulty: string;
+            /** Format: uuid */
+            snapshot_id: string;
+            /** Format: uuid */
+            task_id: string;
+            /**
+             * Format: int32
+             * @enum {integer}
+             */
+            time_limit_seconds: 180;
+            title: string;
+        };
+        GoldenParticipantResponse: {
+            /** Format: uuid */
+            attempt_id: string;
+            /** Format: date-time */
+            deadline: string | null;
+            /** Format: uuid */
+            group_id: string;
+            /** Format: uuid */
+            group_revision_id: string;
+            /** Format: uuid */
+            participant_id: string;
+            /** Format: int32 */
+            position: number | null;
+            ready: boolean;
+            /** Format: date-time */
+            started_at: string | null;
+            state: components["schemas"]["GoldenRuntimeState"];
+            submitted: boolean;
+            task: components["schemas"]["GoldenRuntimeTask"] | null;
+            /** Format: uuid */
+            tournament_id: string;
+        };
+        GoldenReadyRequest: {
+            /** @enum {boolean} */
+            ready: true;
+        };
+        GoldenSubmissionRequest: {
+            submitted_flag: string;
+        };
         PublicTournamentResponse: {
             /** Format: date-time */
             finished_at: string | null;
@@ -2522,6 +2722,7 @@ export interface components {
         AuditPageSize: number;
         /** @description Last operator recovery watermark held by the client. Older or equal values return a fresh full snapshot; a value ahead of the authoritative snapshot is rejected as a revision conflict. */
         OperatorRecoveryCursor: components["schemas"]["OperatorRecoveryCursor"];
+        GoldenAttemptId: string;
         /** @description Session-bound CSRF token required for this player mutation. */
         RequiredPlayerCSRFToken: string;
         ParticipantRecoveryCursor: components["schemas"]["ParticipantRecoveryCursor"];
@@ -4306,6 +4507,101 @@ export interface operations {
             default: components["responses"]["UnexpectedServerProblem"];
         };
     };
+    getGoldenOperatorState: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tournament_id: components["parameters"]["TournamentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Operator Golden state. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoldenOperatorResponse"];
+                };
+            };
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            default: components["responses"]["UnexpectedServerProblem"];
+        };
+    };
+    openGoldenExecution: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description Cookie-bound CSRF token required for this admin mutation. */
+                "X-CSRF-Token": components["parameters"]["AdminCSRFToken"];
+            };
+            path: {
+                tournament_id: components["parameters"]["TournamentId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GoldenOpenRequest"];
+            };
+        };
+        responses: {
+            /** @description Materialized Golden state. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoldenOperatorResponse"];
+                };
+            };
+            400: components["responses"]["InvalidRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            409: components["responses"]["ProjectionRevisionConflictProblem"];
+            default: components["responses"]["UnexpectedServerProblem"];
+        };
+    };
+    startGoldenAttempt: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description Cookie-bound CSRF token required for this admin mutation. */
+                "X-CSRF-Token": components["parameters"]["AdminCSRFToken"];
+            };
+            path: {
+                tournament_id: components["parameters"]["TournamentId"];
+                attempt_id: components["parameters"]["GoldenAttemptId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Started Golden state. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoldenOperatorResponse"];
+                };
+            };
+            400: components["responses"]["InvalidRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            409: components["responses"]["ProjectionRevisionConflictProblem"];
+            default: components["responses"]["UnexpectedServerProblem"];
+        };
+    };
     getParticipantLobby: {
         parameters: {
             query?: never;
@@ -4585,6 +4881,102 @@ export interface operations {
             401: components["responses"]["UnauthorizedProblem"];
             403: components["responses"]["ForbiddenProblem"];
             404: components["responses"]["NotFoundProblem"];
+            409: components["responses"]["ProjectionRevisionConflictProblem"];
+            default: components["responses"]["UnexpectedServerProblem"];
+        };
+    };
+    getGoldenParticipantState: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tournament_id: components["parameters"]["TournamentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Participant-safe Golden state. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoldenParticipantResponse"];
+                };
+            };
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            default: components["responses"]["UnexpectedServerProblem"];
+        };
+    };
+    setGoldenParticipantReady: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description Session-bound CSRF token required for this player mutation. */
+                "X-CSRF-Token": components["parameters"]["RequiredPlayerCSRFToken"];
+            };
+            path: {
+                tournament_id: components["parameters"]["TournamentId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GoldenReadyRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated participant Golden state. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoldenParticipantResponse"];
+                };
+            };
+            400: components["responses"]["InvalidRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            409: components["responses"]["ProjectionRevisionConflictProblem"];
+            default: components["responses"]["UnexpectedServerProblem"];
+        };
+    };
+    submitGoldenFlag: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description Session-bound CSRF token required for this player mutation. */
+                "X-CSRF-Token": components["parameters"]["RequiredPlayerCSRFToken"];
+            };
+            path: {
+                tournament_id: components["parameters"]["TournamentId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GoldenSubmissionRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated participant Golden state. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoldenParticipantResponse"];
+                };
+            };
+            400: components["responses"]["InvalidRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
             409: components["responses"]["ProjectionRevisionConflictProblem"];
             default: components["responses"]["UnexpectedServerProblem"];
         };

@@ -5,6 +5,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	telemetryadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/telemetry"
+	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	authorityusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/authority"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/recovery"
@@ -99,8 +100,10 @@ func provideExecutionRecoveryRunner(
 	recoverer *gameusecase.Recoverer,
 	clock clockFunc,
 	observer *telemetryadapter.ExecutionRecoveryObserver,
+	golden inbound.GoldenUseCase,
 ) (*gameusecase.RecoveryRunner, error) {
 	return gameusecase.NewRecoveryRunner(repository, authority, recoverer, clock, gameusecase.RecoveryRunnerConfig{
 		Observer: observer,
+		Golden:   golden,
 	})
 }

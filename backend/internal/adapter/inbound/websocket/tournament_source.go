@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	tournamentws "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket/tournament"
+	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 )
 
@@ -23,15 +24,24 @@ const (
 
 type TournamentProductionSnapshotSource struct {
 	snapshots usecase.TournamentSnapshotUseCase
+	golden    usecase.GoldenUseCase
 }
 
 func NewTournamentProductionSnapshotSource(
 	snapshots usecase.TournamentSnapshotUseCase,
+	golden ...usecase.GoldenUseCase,
 ) (*TournamentProductionSnapshotSource, error) {
 	if snapshots == nil {
 		return nil, fmt.Errorf("%w: snapshot reader is required", ErrTournamentSnapshotSource)
 	}
-	return &TournamentProductionSnapshotSource{snapshots: snapshots}, nil
+	source := &TournamentProductionSnapshotSource{snapshots: snapshots}
+	if len(golden) > 1 {
+		return nil, fmt.Errorf("%w: multiple Golden readers", ErrTournamentSnapshotSource)
+	}
+	if len(golden) == 1 {
+		source.golden = golden[0]
+	}
+	return source, nil
 }
 
 func (source *TournamentProductionSnapshotSource) ReadParticipantRealtime(
@@ -49,9 +59,21 @@ func (source *TournamentProductionSnapshotSource) ReadParticipantRealtime(
 	if err != nil {
 		return tournamentws.ParticipantRealtimeSnapshot{}, fmt.Errorf("%w: participant read: %w", ErrTournamentSnapshotSource, err)
 	}
+	var golden *usecase.GoldenParticipantView
+	if source.golden != nil {
+		current, goldenErr := source.golden.ParticipantView(ctx, usecase.GoldenParticipantQuery{
+			TournamentID: query.TournamentID, PlayerID: query.PlayerID,
+		})
+		if goldenErr != nil && !errors.Is(goldenErr, domain.ErrTournamentNotFound) {
+			return tournamentws.ParticipantRealtimeSnapshot{}, fmt.Errorf("%w: Golden participant read: %w", ErrTournamentSnapshotSource, goldenErr)
+		}
+		if goldenErr == nil {
+			golden = &current
+		}
+	}
 	snapshot, err := tournamentws.NewParticipantSnapshot(
 		tournamentws.ParticipantSnapshotScope(query),
-		participantSnapshotInput(view),
+		participantSnapshotInput(view, golden),
 	)
 	if err != nil {
 		return tournamentws.ParticipantRealtimeSnapshot{}, fmt.Errorf("%w: participant snapshot: %w", ErrTournamentSnapshotSource, err)
@@ -114,13 +136,25 @@ func (source *TournamentProductionSnapshotSource) ReadOperatorRealtime(
 	if err != nil {
 		return tournamentws.RealtimeEnvelope{}, fmt.Errorf("%w: operator read: %w", ErrTournamentSnapshotSource, err)
 	}
+	var golden []usecase.GoldenOperatorGroupView
+	if source.golden != nil {
+		current, goldenErr := source.golden.OperatorView(ctx, usecase.GoldenOperatorQuery{
+			TournamentID: query.TournamentID, OperatorID: query.OperatorID,
+		})
+		if goldenErr != nil && !errors.Is(goldenErr, domain.ErrTournamentNotFound) {
+			return tournamentws.RealtimeEnvelope{}, fmt.Errorf("%w: Golden operator read: %w", ErrTournamentSnapshotSource, goldenErr)
+		}
+		if goldenErr == nil {
+			golden = current.Groups
+		}
+	}
 	snapshot, err := tournamentws.NewOperatorSnapshot(
 		tournamentws.OperatorSnapshotAccess{
 			Authenticated: true,
 			TournamentID:  query.TournamentID,
 			OperatorID:    query.OperatorID,
 		},
-		operatorSnapshotInput(view),
+		operatorSnapshotInput(view, golden),
 	)
 	if err != nil {
 		return tournamentws.RealtimeEnvelope{}, fmt.Errorf("%w: operator snapshot: %w", ErrTournamentSnapshotSource, err)
@@ -143,12 +177,15 @@ func (source *TournamentProductionSnapshotSource) ReadOperatorRealtime(
 	return envelope, nil
 }
 
-func participantSnapshotInput(view usecase.ParticipantSnapshotView) tournamentws.ParticipantSnapshotInput {
+func participantSnapshotInput(view usecase.ParticipantSnapshotView, golden *usecase.GoldenParticipantView) tournamentws.ParticipantSnapshotInput {
 	input := tournamentws.ParticipantSnapshotInput{
 		TournamentID: view.TournamentID,
 		PlayerID:     view.PlayerID,
 		Revision:     view.Cursor.ProjectionRevision,
 		LastSequence: tournamentInitialSnapshotSequence,
+	}
+	if golden != nil {
+		input.Golden = participantGoldenInput(*golden)
 	}
 	if view.Assignment != nil {
 		assignment := view.Assignment
@@ -180,6 +217,22 @@ func participantSnapshotInput(view usecase.ParticipantSnapshotView) tournamentws
 			Ready:        opponent.Ready,
 			SeriesState:  opponent.SeriesState,
 			Score:        opponent.Score,
+		}
+	}
+	return input
+}
+
+func participantGoldenInput(view usecase.GoldenParticipantView) *tournamentws.ParticipantGoldenInput {
+	input := &tournamentws.ParticipantGoldenInput{
+		GroupID: view.GroupID, GroupRevisionID: view.GroupRevisionID, AttemptID: view.AttemptID,
+		State: view.State, Ready: view.Ready, Submitted: view.Submitted, Position: view.Position,
+		StartedAt: view.StartedAt, Deadline: view.Deadline,
+	}
+	if view.Task != nil {
+		input.Task = &tournamentws.ParticipantGoldenTaskInput{
+			AssignmentID: view.Task.AssignmentID, SnapshotID: view.Task.SnapshotID, TaskID: view.Task.TaskID,
+			Title: view.Task.Title, Category: view.Task.Category, Difficulty: view.Task.Difficulty,
+			TimeLimitSeconds: view.Task.TimeLimitSeconds,
 		}
 	}
 	return input
@@ -274,7 +327,7 @@ func publicSnapshotInput(view usecase.PublicSnapshotView) tournamentws.PublicSna
 	return input
 }
 
-func operatorSnapshotInput(view usecase.OperatorSnapshotView) tournamentws.OperatorSnapshotInput {
+func operatorSnapshotInput(view usecase.OperatorSnapshotView, golden []usecase.GoldenOperatorGroupView) tournamentws.OperatorSnapshotInput {
 	input := tournamentws.OperatorSnapshotInput{
 		TournamentID: view.TournamentID,
 		Revision:     view.Cursor.ProjectionRevision,
@@ -283,6 +336,21 @@ func operatorSnapshotInput(view usecase.OperatorSnapshotView) tournamentws.Opera
 		Presence:     make([]tournamentws.OperatorPresenceInput, len(view.Presence)),
 		Replays:      make([]tournamentws.OperatorReplayInput, len(view.Replays)),
 		AuditLinks:   make([]tournamentws.OperatorAuditLinkInput, len(view.AuditLinks)),
+		Golden:       make([]tournamentws.OperatorGoldenGroupInput, len(golden)),
+	}
+	for index, group := range golden {
+		members := make([]tournamentws.OperatorGoldenMemberInput, len(group.Members))
+		for memberIndex, member := range group.Members {
+			members[memberIndex] = tournamentws.OperatorGoldenMemberInput{
+				ParticipantID: member.ParticipantID, Ready: member.Ready,
+				Submitted: member.Submitted, Position: member.Position,
+			}
+		}
+		input.Golden[index] = tournamentws.OperatorGoldenGroupInput{
+			GroupID: group.GroupID, GroupRevisionID: group.GroupRevisionID, AttemptID: group.AttemptID,
+			State: group.State, PositionFrom: group.PositionFrom, PositionTo: group.PositionTo,
+			StartedAt: group.StartedAt, Deadline: group.Deadline, Members: members,
+		}
 	}
 	for index, wave := range view.Waves {
 		input.Waves[index] = tournamentws.OperatorWaveInput{

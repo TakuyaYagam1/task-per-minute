@@ -396,3 +396,189 @@ GoldenCommittedOrder:
       maxLength: 64
       pattern: '^[0-9a-f]{64}$'
       readOnly: true
+
+GoldenRuntimeState:
+  type: string
+  enum: [prepared, ready, active, technical_pause, completed, cancelled, superseded]
+
+GoldenRuntimeMember:
+  type: object
+  additionalProperties: false
+  required: [participant_id, ready, submitted, position]
+  properties:
+    participant_id:
+      type: string
+      format: uuid
+    ready:
+      type: boolean
+      readOnly: true
+    submitted:
+      type: boolean
+      readOnly: true
+    position:
+      type: integer
+      format: int32
+      minimum: 1
+      maximum: 16
+      nullable: true
+      readOnly: true
+
+GoldenOperatorGroup:
+  type: object
+  additionalProperties: false
+  required: [group_id, group_revision_id, attempt_id, state, position_from, position_to, started_at, deadline, members]
+  properties:
+    group_id:
+      type: string
+      format: uuid
+    group_revision_id:
+      type: string
+      format: uuid
+      readOnly: true
+    attempt_id:
+      type: string
+      format: uuid
+    state:
+      $ref: '#/GoldenRuntimeState'
+    position_from:
+      type: integer
+      format: int32
+      minimum: 1
+    position_to:
+      type: integer
+      format: int32
+      minimum: 1
+    started_at:
+      type: string
+      format: date-time
+      nullable: true
+      readOnly: true
+    deadline:
+      type: string
+      format: date-time
+      nullable: true
+      readOnly: true
+    members:
+      type: array
+      minItems: 2
+      maxItems: 16
+      items:
+        $ref: '#/GoldenRuntimeMember'
+
+GoldenOperatorResponse:
+  type: object
+  additionalProperties: false
+  required: [tournament_id, groups, observed_at]
+  properties:
+    tournament_id:
+      type: string
+      format: uuid
+    groups:
+      type: array
+      items:
+        $ref: '#/GoldenOperatorGroup'
+    observed_at:
+      type: string
+      format: date-time
+      readOnly: true
+
+GoldenRuntimeTask:
+  type: object
+  description: Participant-safe immutable Golden assignment. Flag material is never serialized.
+  additionalProperties: false
+  required: [assignment_id, snapshot_id, task_id, title, category, difficulty, time_limit_seconds]
+  properties:
+    assignment_id:
+      type: string
+      format: uuid
+    snapshot_id:
+      type: string
+      format: uuid
+    task_id:
+      type: string
+      format: uuid
+    title:
+      type: string
+    category:
+      type: string
+    difficulty:
+      type: string
+    time_limit_seconds:
+      type: integer
+      format: int32
+      enum: [180]
+
+GoldenParticipantResponse:
+  type: object
+  additionalProperties: false
+  required: [tournament_id, participant_id, group_id, group_revision_id, attempt_id, state, ready, submitted, position, started_at, deadline, task]
+  properties:
+    tournament_id:
+      type: string
+      format: uuid
+    participant_id:
+      type: string
+      format: uuid
+    group_id:
+      type: string
+      format: uuid
+    group_revision_id:
+      type: string
+      format: uuid
+    attempt_id:
+      type: string
+      format: uuid
+    state:
+      $ref: '#/GoldenRuntimeState'
+    ready:
+      type: boolean
+    submitted:
+      type: boolean
+    position:
+      type: integer
+      format: int32
+      minimum: 1
+      maximum: 16
+      nullable: true
+    started_at:
+      type: string
+      format: date-time
+      nullable: true
+    deadline:
+      type: string
+      format: date-time
+      nullable: true
+    task:
+      type: object
+      allOf:
+        - $ref: '#/GoldenRuntimeTask'
+      nullable: true
+
+GoldenOpenRequest:
+  type: object
+  additionalProperties: false
+  required: [expected_projection_revision]
+  properties:
+    expected_projection_revision:
+      type: integer
+      format: int64
+      minimum: 1
+
+GoldenReadyRequest:
+  type: object
+  additionalProperties: false
+  required: [ready]
+  properties:
+    ready:
+      type: boolean
+      enum: [true]
+
+GoldenSubmissionRequest:
+  type: object
+  additionalProperties: false
+  required: [submitted_flag]
+  properties:
+    submitted_flag:
+      type: string
+      minLength: 1
+      maxLength: 255

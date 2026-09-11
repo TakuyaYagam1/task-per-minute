@@ -384,6 +384,69 @@ func (e GameState) Valid() bool {
 	}
 }
 
+// Defines values for GoldenReadyRequestReady.
+const (
+	True GoldenReadyRequestReady = true
+)
+
+// Valid indicates whether the value is a known member of the GoldenReadyRequestReady enum.
+func (e GoldenReadyRequestReady) Valid() bool {
+	switch e {
+	case True:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GoldenRuntimeState.
+const (
+	GoldenRuntimeStateActive         GoldenRuntimeState = "active"
+	GoldenRuntimeStateCancelled      GoldenRuntimeState = "cancelled"
+	GoldenRuntimeStateCompleted      GoldenRuntimeState = "completed"
+	GoldenRuntimeStatePrepared       GoldenRuntimeState = "prepared"
+	GoldenRuntimeStateReady          GoldenRuntimeState = "ready"
+	GoldenRuntimeStateSuperseded     GoldenRuntimeState = "superseded"
+	GoldenRuntimeStateTechnicalPause GoldenRuntimeState = "technical_pause"
+)
+
+// Valid indicates whether the value is a known member of the GoldenRuntimeState enum.
+func (e GoldenRuntimeState) Valid() bool {
+	switch e {
+	case GoldenRuntimeStateActive:
+		return true
+	case GoldenRuntimeStateCancelled:
+		return true
+	case GoldenRuntimeStateCompleted:
+		return true
+	case GoldenRuntimeStatePrepared:
+		return true
+	case GoldenRuntimeStateReady:
+		return true
+	case GoldenRuntimeStateSuperseded:
+		return true
+	case GoldenRuntimeStateTechnicalPause:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GoldenRuntimeTaskTimeLimitSeconds.
+const (
+	N180 GoldenRuntimeTaskTimeLimitSeconds = 180
+)
+
+// Valid indicates whether the value is a known member of the GoldenRuntimeTaskTimeLimitSeconds enum.
+func (e GoldenRuntimeTaskTimeLimitSeconds) Valid() bool {
+	switch e {
+	case N180:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for HealthResponseDb.
 const (
 	HealthResponseDbError HealthResponseDb = "error"
@@ -1501,6 +1564,85 @@ type GameSlot struct {
 
 // GameState defines model for GameState.
 type GameState string
+
+// GoldenOpenRequest defines model for GoldenOpenRequest.
+type GoldenOpenRequest struct {
+	ExpectedProjectionRevision int64 `json:"expected_projection_revision"`
+}
+
+// GoldenOperatorGroup defines model for GoldenOperatorGroup.
+type GoldenOperatorGroup struct {
+	AttemptId       openapi_types.UUID    `json:"attempt_id"`
+	Deadline        *time.Time            `json:"deadline"`
+	GroupId         openapi_types.UUID    `json:"group_id"`
+	GroupRevisionId openapi_types.UUID    `json:"group_revision_id"`
+	Members         []GoldenRuntimeMember `json:"members"`
+	PositionFrom    int32                 `json:"position_from"`
+	PositionTo      int32                 `json:"position_to"`
+	StartedAt       *time.Time            `json:"started_at"`
+	State           GoldenRuntimeState    `json:"state"`
+}
+
+// GoldenOperatorResponse defines model for GoldenOperatorResponse.
+type GoldenOperatorResponse struct {
+	Groups       []GoldenOperatorGroup `json:"groups"`
+	ObservedAt   time.Time             `json:"observed_at"`
+	TournamentId openapi_types.UUID    `json:"tournament_id"`
+}
+
+// GoldenParticipantResponse defines model for GoldenParticipantResponse.
+type GoldenParticipantResponse struct {
+	AttemptId       openapi_types.UUID `json:"attempt_id"`
+	Deadline        *time.Time         `json:"deadline"`
+	GroupId         openapi_types.UUID `json:"group_id"`
+	GroupRevisionId openapi_types.UUID `json:"group_revision_id"`
+	ParticipantId   openapi_types.UUID `json:"participant_id"`
+	Position        *int32             `json:"position"`
+	Ready           bool               `json:"ready"`
+	StartedAt       *time.Time         `json:"started_at"`
+	State           GoldenRuntimeState `json:"state"`
+	Submitted       bool               `json:"submitted"`
+	Task            *GoldenRuntimeTask `json:"task"`
+	TournamentId    openapi_types.UUID `json:"tournament_id"`
+}
+
+// GoldenReadyRequest defines model for GoldenReadyRequest.
+type GoldenReadyRequest struct {
+	Ready GoldenReadyRequestReady `json:"ready"`
+}
+
+// GoldenReadyRequestReady defines model for GoldenReadyRequest.Ready.
+type GoldenReadyRequestReady bool
+
+// GoldenRuntimeMember defines model for GoldenRuntimeMember.
+type GoldenRuntimeMember struct {
+	ParticipantId openapi_types.UUID `json:"participant_id"`
+	Position      *int32             `json:"position"`
+	Ready         bool               `json:"ready"`
+	Submitted     bool               `json:"submitted"`
+}
+
+// GoldenRuntimeState defines model for GoldenRuntimeState.
+type GoldenRuntimeState string
+
+// GoldenRuntimeTask Participant-safe immutable Golden assignment. Flag material is never serialized.
+type GoldenRuntimeTask struct {
+	AssignmentId     openapi_types.UUID                `json:"assignment_id"`
+	Category         string                            `json:"category"`
+	Difficulty       string                            `json:"difficulty"`
+	SnapshotId       openapi_types.UUID                `json:"snapshot_id"`
+	TaskId           openapi_types.UUID                `json:"task_id"`
+	TimeLimitSeconds GoldenRuntimeTaskTimeLimitSeconds `json:"time_limit_seconds"`
+	Title            string                            `json:"title"`
+}
+
+// GoldenRuntimeTaskTimeLimitSeconds defines model for GoldenRuntimeTask.TimeLimitSeconds.
+type GoldenRuntimeTaskTimeLimitSeconds int32
+
+// GoldenSubmissionRequest defines model for GoldenSubmissionRequest.
+type GoldenSubmissionRequest struct {
+	SubmittedFlag string `json:"submitted_flag"`
+}
 
 // HealthResponse defines model for HealthResponse.
 type HealthResponse struct {
@@ -2644,6 +2786,9 @@ type AuditTournamentId = openapi_types.UUID
 // GameId defines model for GameId.
 type GameId = openapi_types.UUID
 
+// GoldenAttemptId defines model for GoldenAttemptId.
+type GoldenAttemptId = openapi_types.UUID
+
 // IdempotencyKey defines model for IdempotencyKey.
 type IdempotencyKey = openapi_types.UUID
 
@@ -2811,6 +2956,22 @@ type ApplyTournamentActionParams struct {
 	XCSRFToken AdminCSRFToken `json:"X-CSRF-Token"`
 }
 
+// StartGoldenAttemptParams defines parameters for StartGoldenAttempt.
+type StartGoldenAttemptParams struct {
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+
+	// XCSRFToken Cookie-bound CSRF token required for this admin mutation.
+	XCSRFToken AdminCSRFToken `json:"X-CSRF-Token"`
+}
+
+// OpenGoldenExecutionParams defines parameters for OpenGoldenExecution.
+type OpenGoldenExecutionParams struct {
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+
+	// XCSRFToken Cookie-bound CSRF token required for this admin mutation.
+	XCSRFToken AdminCSRFToken `json:"X-CSRF-Token"`
+}
+
 // ConfigureTournamentPairingsParams defines parameters for ConfigureTournamentPairings.
 type ConfigureTournamentPairingsParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
@@ -2911,6 +3072,22 @@ type LogoutPlayerParams struct {
 	XCSRFToken *PlayerCSRFToken `json:"X-CSRF-Token,omitempty"`
 }
 
+// SetGoldenParticipantReadyParams defines parameters for SetGoldenParticipantReady.
+type SetGoldenParticipantReadyParams struct {
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+
+	// XCSRFToken Session-bound CSRF token required for this player mutation.
+	XCSRFToken RequiredPlayerCSRFToken `json:"X-CSRF-Token"`
+}
+
+// SubmitGoldenFlagParams defines parameters for SubmitGoldenFlag.
+type SubmitGoldenFlagParams struct {
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+
+	// XCSRFToken Session-bound CSRF token required for this player mutation.
+	XCSRFToken RequiredPlayerCSRFToken `json:"X-CSRF-Token"`
+}
+
 // SubmitParticipantDraftActionParams defines parameters for SubmitParticipantDraftAction.
 type SubmitParticipantDraftActionParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
@@ -2982,6 +3159,9 @@ type CreateTournamentJSONRequestBody = CreateTournamentRequest
 // ApplyTournamentActionJSONRequestBody defines body for ApplyTournamentAction for application/json ContentType.
 type ApplyTournamentActionJSONRequestBody = TournamentActionRequest
 
+// OpenGoldenExecutionJSONRequestBody defines body for OpenGoldenExecution for application/json ContentType.
+type OpenGoldenExecutionJSONRequestBody = GoldenOpenRequest
+
 // ConfigureTournamentPairingsJSONRequestBody defines body for ConfigureTournamentPairings for application/json ContentType.
 type ConfigureTournamentPairingsJSONRequestBody = PairingConfigurationRequest
 
@@ -3017,6 +3197,12 @@ type ResolveTournamentNoShowJSONRequestBody = OperatorNoShowRequest
 
 // JoinPlayerJSONRequestBody defines body for JoinPlayer for application/json ContentType.
 type JoinPlayerJSONRequestBody = JoinPlayerRequest
+
+// SetGoldenParticipantReadyJSONRequestBody defines body for SetGoldenParticipantReady for application/json ContentType.
+type SetGoldenParticipantReadyJSONRequestBody = GoldenReadyRequest
+
+// SubmitGoldenFlagJSONRequestBody defines body for SubmitGoldenFlag for application/json ContentType.
+type SubmitGoldenFlagJSONRequestBody = GoldenSubmissionRequest
 
 // SubmitParticipantDraftActionJSONRequestBody defines body for SubmitParticipantDraftAction for application/json ContentType.
 type SubmitParticipantDraftActionJSONRequestBody = ParticipantDraftActionRequest

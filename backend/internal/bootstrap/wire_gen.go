@@ -120,7 +120,9 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 	epochReplayUseCase := provideExecutionEpochReplay(executionRecoveryPostgres, executionAuthorityPostgres)
 	recoverer := provideExecutionRecoverer(executionAuthorityPostgres, executionRecoveryPostgres, epochReplayUseCase)
 	executionRecoveryObserver := provideExecutionRecoveryObserver(bootstrapEventTelemetry)
-	recoveryRunner, err := provideExecutionRecoveryRunner(executionRecoveryPostgres, controller, recoverer, bootstrapClockFunc, executionRecoveryObserver)
+	goldenRuntimePostgres := provideGoldenRuntimeRepository(txManager)
+	runtimeApplication := provideGoldenRuntimeApplication(goldenRuntimePostgres, bootstrapClockFunc)
+	recoveryRunner, err := provideExecutionRecoveryRunner(executionRecoveryPostgres, controller, recoverer, bootstrapClockFunc, executionRecoveryObserver, runtimeApplication)
 	if err != nil {
 		cleanup2()
 		cleanup()
@@ -224,9 +226,9 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 	bootstrapOperatorTournamentMutationRateLimiter := provideOperatorTournamentMutationRateLimiter(client, cfg)
 	bootstrapParticipantTournamentReadRateLimiter := provideParticipantTournamentReadRateLimiter(client, cfg)
 	bootstrapParticipantTournamentMutationRateLimiter := provideParticipantTournamentMutationRateLimiter(client, cfg)
-	server := provideRESTServerWithClock(sessionUseCase, useCase, taskUseCase, managementUseCase, adminPlayerEventsPostgres, sourceFiles, cache, catalogUseCase, tournamentAdminUseCase, participantObservedService, tournamentSnapshotPostgres, healthChecks, bootstrapClockFunc, bootstrapLoginRateLimiter, bootstrapAdminRefreshRateLimiter, bootstrapJoinRateLimiter, bootstrapLeaderboardRateLimiter, bootstrapPublicTournamentReadRateLimiter, bootstrapOperatorTournamentReadRateLimiter, bootstrapOperatorTournamentMutationRateLimiter, bootstrapParticipantTournamentReadRateLimiter, bootstrapParticipantTournamentMutationRateLimiter, log)
+	server := provideRESTServerWithClock(sessionUseCase, useCase, taskUseCase, managementUseCase, adminPlayerEventsPostgres, sourceFiles, cache, catalogUseCase, tournamentAdminUseCase, participantObservedService, tournamentSnapshotPostgres, runtimeApplication, healthChecks, bootstrapClockFunc, bootstrapLoginRateLimiter, bootstrapAdminRefreshRateLimiter, bootstrapJoinRateLimiter, bootstrapLeaderboardRateLimiter, bootstrapPublicTournamentReadRateLimiter, bootstrapOperatorTournamentReadRateLimiter, bootstrapOperatorTournamentMutationRateLimiter, bootstrapParticipantTournamentReadRateLimiter, bootstrapParticipantTournamentMutationRateLimiter, log)
 	bootstrapWsHandshakeRateLimiter := provideHandshakeRateLimiter(client, cfg)
-	tournamentProductionSnapshotSource, err := websocket.NewTournamentProductionSnapshotSource(tournamentSnapshotPostgres)
+	tournamentProductionSnapshotSource, err := provideTournamentProductionSnapshotSource(tournamentSnapshotPostgres, runtimeApplication)
 	if err != nil {
 		cleanup2()
 		cleanup()

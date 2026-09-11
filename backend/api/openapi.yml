@@ -101,6 +101,12 @@ paths:
     $ref: 'routes/tournament.yml#/~1api~1v1~1admin~1tournaments~1{tournament_id}~1incident-export'
   /api/v1/admin/tournaments/{tournament_id}/snapshot:
     $ref: 'routes/tournament.yml#/~1api~1v1~1admin~1tournaments~1{tournament_id}~1snapshot'
+  /api/v1/admin/tournaments/{tournament_id}/golden:
+    $ref: 'routes/tournament.yml#/~1api~1v1~1admin~1tournaments~1{tournament_id}~1golden'
+  /api/v1/admin/tournaments/{tournament_id}/golden/open:
+    $ref: 'routes/tournament.yml#/~1api~1v1~1admin~1tournaments~1{tournament_id}~1golden~1open'
+  /api/v1/admin/tournaments/{tournament_id}/golden/attempts/{attempt_id}/start:
+    $ref: 'routes/tournament.yml#/~1api~1v1~1admin~1tournaments~1{tournament_id}~1golden~1attempts~1{attempt_id}~1start'
 
   /api/v1/tournaments/{tournament_id}/participant/lobby:
     $ref: 'routes/tournament.yml#/~1api~1v1~1tournaments~1{tournament_id}~1participant~1lobby'
@@ -118,6 +124,12 @@ paths:
     $ref: 'routes/tournament.yml#/~1api~1v1~1tournaments~1{tournament_id}~1participant~1series~1{series_id}~1post-series'
   /api/v1/tournaments/{tournament_id}/participant/snapshot:
     $ref: 'routes/tournament.yml#/~1api~1v1~1tournaments~1{tournament_id}~1participant~1snapshot'
+  /api/v1/tournaments/{tournament_id}/participant/golden:
+    $ref: 'routes/tournament.yml#/~1api~1v1~1tournaments~1{tournament_id}~1participant~1golden'
+  /api/v1/tournaments/{tournament_id}/participant/golden/ready:
+    $ref: 'routes/tournament.yml#/~1api~1v1~1tournaments~1{tournament_id}~1participant~1golden~1ready'
+  /api/v1/tournaments/{tournament_id}/participant/golden/submissions:
+    $ref: 'routes/tournament.yml#/~1api~1v1~1tournaments~1{tournament_id}~1participant~1golden~1submissions'
 
   /api/v1/tournaments/{tournament_id}:
     $ref: 'routes/tournament.yml#/~1api~1v1~1tournaments~1{tournament_id}'

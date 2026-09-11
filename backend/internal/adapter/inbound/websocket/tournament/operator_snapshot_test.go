@@ -27,7 +27,7 @@ func TestTournamentOperatorSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("json.Marshal() error = %v", err)
 	}
-	requireJSONKeys(t, encoded, "tournament_id", "revision", "last_sequence", "waves", "presence", "replays", "pause", "audit_links")
+	requireJSONKeys(t, encoded, "tournament_id", "revision", "last_sequence", "waves", "presence", "replays", "pause", "audit_links", "golden")
 	requireNoSecretNames(t, encoded)
 	if containsJSONText(encoded, "mutated") {
 		t.Fatalf("snapshot retained mutable source slices: %s", encoded)
@@ -59,7 +59,7 @@ func TestTournamentOperatorSnapshot(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		requireJSONKeys(t, body, "tournament_id", "revision", "last_sequence", "waves", "presence", "replays", "audit_links")
+		requireJSONKeys(t, body, "tournament_id", "revision", "last_sequence", "waves", "presence", "replays", "audit_links", "golden")
 	})
 }
 

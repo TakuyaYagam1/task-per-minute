@@ -33,6 +33,7 @@ func TestProvideRESTServerWithClockUsesSharedClock(t *testing.T) {
 		nil,
 		nil,
 		nil,
+		nil,
 		restv1.HealthChecks{},
 		clockFunc(clock.Now),
 		loginRateLimiter{},

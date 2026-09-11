@@ -63,6 +63,51 @@ func TestRecoveryRunnerReadinessRequiresCompletedInitialScan(t *testing.T) {
 	require.NoError(t, <-errs)
 }
 
+func TestRecoveryRunnerGoldenFailureGatesInitialReadiness(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 9, 6, 10, 1, 0, 0, time.UTC)
+	lease := recoveryLease(now, 1)
+	tournaments := gamemocks.NewMockRecoveryTournamentSource(t)
+	tournaments.EXPECT().ListRecoveryTournaments(mock.Anything).
+		Return([]uuid.UUID{lease.TournamentID}, nil).Once()
+	authority := gamemocks.NewMockRecoveryAuthorityProvider(t)
+	authority.EXPECT().RecoveryAuthorityFor(mock.Anything, lease.TournamentID).
+		Return(lease.Identity(), true, nil).Once()
+	recoverer := gameusecase.NewRecoverer(
+		newAuthorityReaderMock(t, &lease, nil),
+		newExecutionRecoverySourceHarness(t, nil, nil).source,
+		newDeadlineRearmerHarness(t, lease, now).rearmer,
+		newEpochReplayerHarness(t, nil).replayer,
+		newRecoveryAuthorityTime(t, now, 1),
+	)
+	goldenFailure := errors.New("Golden recovery unavailable")
+	golden := &goldenRecoveryStub{err: goldenFailure}
+	runner, err := gameusecase.NewRecoveryRunner(
+		tournaments,
+		authority,
+		recoverer,
+		newRecoveryClock(t, now, 1),
+		gameusecase.RecoveryRunnerConfig{Interval: time.Hour, Golden: golden},
+	)
+	require.NoError(t, err)
+
+	err = runner.Run(t.Context())
+	require.ErrorIs(t, err, goldenFailure)
+	require.False(t, runner.Ready())
+	require.Equal(t, int32(1), golden.calls.Load())
+}
+
+type goldenRecoveryStub struct {
+	calls atomic.Int32
+	err   error
+}
+
+func (stub *goldenRecoveryStub) Recover(context.Context, uuid.UUID) error {
+	stub.calls.Add(1)
+	return stub.err
+}
+
 func TestRecoveryRunnerCompletesInitialScanForPausedStaleEpoch(t *testing.T) {
 	t.Parallel()
 
