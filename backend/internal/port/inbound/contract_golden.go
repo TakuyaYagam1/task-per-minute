@@ -2,9 +2,13 @@ package usecase
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
 // GoldenUseCase is the production boundary for the individual Golden stage.
@@ -27,18 +31,24 @@ type GoldenConnectionUseCase interface {
 }
 
 type GoldenOpenCommand struct {
+	GoldenMutationScope
+
 	TournamentID               uuid.UUID
 	CommandID                  uuid.UUID
 	ExpectedProjectionRevision int64
 }
 
 type GoldenStartCommand struct {
+	GoldenMutationScope
+
 	TournamentID uuid.UUID
 	AttemptID    uuid.UUID
 	CommandID    uuid.UUID
 }
 
 type GoldenReadyCommand struct {
+	GoldenMutationScope
+
 	TournamentID uuid.UUID
 	PlayerID     uuid.UUID
 	CommandID    uuid.UUID
@@ -46,6 +56,8 @@ type GoldenReadyCommand struct {
 }
 
 type GoldenSubmissionCommand struct {
+	GoldenMutationScope
+
 	TournamentID  uuid.UUID
 	PlayerID      uuid.UUID
 	CommandID     uuid.UUID
@@ -53,11 +65,53 @@ type GoldenSubmissionCommand struct {
 }
 
 type GoldenConnectionCommand struct {
+	GoldenMutationScope
+
 	TournamentID uuid.UUID
 	PlayerID     uuid.UUID
 	CommandID    uuid.UUID
 	Connected    bool
 }
+
+// GoldenMutationScope is populated by the authenticated transport adapter.
+// Expected values are part of the command identity and are checked again by
+// the transactional repository while it holds the authoritative runtime lock.
+type GoldenMutationScope struct {
+	ActorID                 uuid.UUID
+	ExpectedRuntimeRevision int64
+	ExpectedAttemptID       uuid.UUID
+	ExpectedReadyWindowID   uuid.UUID
+}
+
+var (
+	ErrGoldenCommandReuseConflict = errors.New("golden command identifier was reused")
+	ErrGoldenAuthorityConflict    = errors.New("golden runtime authority is stale")
+)
+
+type GoldenCommandReuseConflictError struct {
+	CommandID uuid.UUID
+}
+
+func (e *GoldenCommandReuseConflictError) Error() string {
+	if e == nil || e.CommandID == uuid.Nil {
+		return ErrGoldenCommandReuseConflict.Error()
+	}
+	return fmt.Sprintf("%s: %s", ErrGoldenCommandReuseConflict, e.CommandID)
+}
+
+func (e *GoldenCommandReuseConflictError) Unwrap() error { return domain.ErrConflict }
+
+type GoldenAuthorityConflictError struct {
+	ExpectedRevision int64
+	CurrentRevision  int64
+	ExpectedWindow   uuid.UUID
+	CurrentWindow    uuid.UUID
+	ExpectedAttempt  uuid.UUID
+	CurrentAttempt   uuid.UUID
+}
+
+func (e *GoldenAuthorityConflictError) Error() string { return ErrGoldenAuthorityConflict.Error() }
+func (e *GoldenAuthorityConflictError) Unwrap() error { return domain.ErrConflict }
 
 type GoldenOperatorQuery struct {
 	TournamentID uuid.UUID
@@ -81,6 +135,8 @@ type GoldenOperatorGroupView struct {
 	GroupRevisionID uuid.UUID
 	AttemptID       uuid.UUID
 	State           string
+	RuntimeRevision int64
+	ReadyWindowID   uuid.UUID
 	PositionFrom    int
 	PositionTo      int
 	StartedAt       *time.Time
@@ -111,6 +167,8 @@ type GoldenParticipantView struct {
 	GroupRevisionID uuid.UUID
 	AttemptID       uuid.UUID
 	State           string
+	RuntimeRevision int64
+	ReadyWindowID   uuid.UUID
 	Ready           bool
 	Submitted       bool
 	Position        *int

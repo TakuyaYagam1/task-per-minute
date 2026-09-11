@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
@@ -24,6 +25,21 @@ func (repository *GoldenRuntimePostgres) SetConnected(
 	}
 	err := repository.tx.Do(ctx, func(txCtx context.Context) error {
 		q := repository.tx.Querier(txCtx)
+		scope, err := q.SelectGoldenRuntimeParticipantScope(txCtx, sqlc.SelectGoldenRuntimeParticipantScopeParams{
+			TournamentID: command.TournamentID, PlayerID: command.PlayerID,
+		})
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return goldenRuntimeReadError("load Golden connection scope", err)
+		}
+		head, err := q.LockGoldenRuntimeHead(txCtx, sqlc.LockGoldenRuntimeHeadParams{
+			TournamentID: command.TournamentID, RosterID: scope.RosterID,
+		})
+		if err != nil {
+			return goldenRuntimeReadError("lock Golden runtime head", err)
+		}
 		participant, err := q.LockGoldenRuntimeParticipant(txCtx, sqlc.LockGoldenRuntimeParticipantParams{
 			TournamentID: command.TournamentID, PlayerID: command.PlayerID,
 		})
@@ -32,6 +48,30 @@ func (repository *GoldenRuntimePostgres) SetConnected(
 		}
 		if err != nil {
 			return goldenRuntimeReadError("load Golden connection participant", err)
+		}
+		spec := goldenRuntimeCommandSpec{
+			CommandID: command.CommandID, TournamentID: command.TournamentID, RosterID: participant.RosterID,
+			ActorKind: goldenRuntimeCommandActorKind(false), ActorID: command.ActorID,
+			Scope: "participant", Kind: "connect", AttemptID: command.ExpectedAttemptID,
+			ParticipantID: participant.ParticipantID, ExpectedRuntimeRevision: command.ExpectedRuntimeRevision,
+			ExpectedReadyWindowID: command.ExpectedReadyWindowID,
+			Payload: struct {
+				Connected bool `json:"connected"`
+			}{Connected: command.Connected},
+		}
+		_, replayed, replayErr := goldenRuntimeReplay(txCtx, q, spec)
+		if replayErr != nil {
+			return replayErr
+		}
+		if replayed {
+			return nil
+		}
+		if authorityErr := goldenRuntimeAuthorityConflictForTarget(
+			command.ExpectedRuntimeRevision, head.Revision,
+			command.ExpectedReadyWindowID, participant.ReadyWindowID,
+			command.ExpectedAttemptID, participant.AttemptID,
+		); authorityErr != nil {
+			return authorityErr
 		}
 		open, err := q.LockOpenGoldenReadyDisconnect(txCtx, sqlc.LockOpenGoldenReadyDisconnectParams{
 			MembershipID: participant.MembershipID, AttemptID: participant.AttemptID,
@@ -56,7 +96,10 @@ func (repository *GoldenRuntimePostgres) SetConnected(
 				AttemptID: participant.AttemptID, TournamentID: participant.TournamentID,
 				RosterID: participant.RosterID,
 			})
-			return goldenRuntimeWriteError("reconnect Golden participant", err)
+			if err != nil {
+				return goldenRuntimeWriteError("reconnect Golden participant", err)
+			}
+			return repository.appendGoldenRuntimeConnectionEvidence(txCtx, q, spec, head, command.PlayerID, now)
 		}
 		if err == nil {
 			return nil
@@ -85,10 +128,39 @@ func (repository *GoldenRuntimePostgres) SetConnected(
 			RosterID: participant.RosterID, ParticipantID: participant.ParticipantID,
 			SequenceNumber: sequence, DisconnectedAt: tstz(now), CreatedAt: tstz(now),
 		})
-		return goldenRuntimeWriteError("disconnect Golden participant", err)
+		if err != nil {
+			return goldenRuntimeWriteError("disconnect Golden participant", err)
+		}
+		return repository.appendGoldenRuntimeConnectionEvidence(txCtx, q, spec, head, command.PlayerID, now)
 	})
 	if err != nil {
 		return fmt.Errorf("GoldenRuntimePostgres - SetConnected: %w", err)
 	}
 	return nil
+}
+
+func (repository *GoldenRuntimePostgres) appendGoldenRuntimeConnectionEvidence(
+	ctx context.Context,
+	q *sqlc.Queries,
+	spec goldenRuntimeCommandSpec,
+	head sqlc.GoldenRuntimeHead,
+	playerID uuid.UUID,
+	now time.Time,
+) error {
+	advanced, err := q.AdvanceGoldenRuntimeHead(ctx, sqlc.AdvanceGoldenRuntimeHeadParams{
+		TournamentID: spec.TournamentID, RosterID: head.RosterID,
+		ExpectedRevision: head.Revision, NextRevision: head.Revision + 1, UpdatedAt: tstz(now),
+	})
+	if err != nil {
+		return goldenRuntimeWriteError("advance Golden runtime head", err)
+	}
+	result, err := goldenParticipantRuntimeViewWithin(ctx, q, spec.TournamentID, playerID)
+	if err != nil {
+		return err
+	}
+	resultPayload, err := goldenRuntimeResultPayload(result)
+	if err != nil {
+		return err
+	}
+	return repository.appendGoldenRuntimeEvidence(ctx, q, spec, advanced, "participant", resultPayload, now)
 }

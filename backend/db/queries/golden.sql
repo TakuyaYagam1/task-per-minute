@@ -1552,6 +1552,272 @@ RETURNING ledger_revision_id;
 
 -- Production Golden runtime.
 
+-- Runtime fencing and durable command evidence.
+
+-- name: LockGoldenRuntimeHead :one
+SELECT tournament_id,
+    roster_id,
+    revision,
+    source_projection_revision_id,
+    source_projection_revision,
+    updated_at
+FROM golden_runtime_heads
+WHERE tournament_id = sqlc.arg(tournament_id)
+    AND roster_id = sqlc.arg(roster_id)
+FOR UPDATE;
+
+-- name: CreateGoldenRuntimeHead :one
+INSERT INTO golden_runtime_heads (
+    tournament_id,
+    roster_id,
+    revision,
+    source_projection_revision_id,
+    source_projection_revision,
+    updated_at
+)
+VALUES (
+    sqlc.arg(tournament_id),
+    sqlc.arg(roster_id),
+    sqlc.arg(revision),
+    sqlc.arg(source_projection_revision_id),
+    sqlc.arg(source_projection_revision),
+    sqlc.arg(updated_at)
+)
+RETURNING tournament_id,
+    roster_id,
+    revision,
+    source_projection_revision_id,
+    source_projection_revision,
+    updated_at;
+
+-- name: AdvanceGoldenRuntimeHead :one
+UPDATE golden_runtime_heads
+SET revision = sqlc.arg(next_revision),
+    updated_at = sqlc.arg(updated_at)
+WHERE tournament_id = sqlc.arg(tournament_id)
+    AND roster_id = sqlc.arg(roster_id)
+    AND revision = sqlc.arg(expected_revision)
+RETURNING tournament_id,
+    roster_id,
+    revision,
+    source_projection_revision_id,
+    source_projection_revision,
+    updated_at;
+
+-- name: GetGoldenRuntimeCommand :one
+SELECT command_id,
+    tournament_id,
+    roster_id,
+    actor_kind,
+    actor_id,
+    command_scope,
+    command_kind,
+    attempt_id,
+    participant_id,
+    expected_runtime_revision,
+    expected_ready_window_id,
+    command_digest,
+    resulting_runtime_revision,
+    result_kind,
+    result_payload,
+    occurred_at,
+    created_at
+FROM golden_runtime_commands
+WHERE command_id = sqlc.arg(command_id);
+
+-- name: CreateGoldenRuntimeCommand :one
+INSERT INTO golden_runtime_commands (
+    command_id,
+    tournament_id,
+    roster_id,
+    actor_kind,
+    actor_id,
+    command_scope,
+    command_kind,
+    attempt_id,
+    participant_id,
+    expected_runtime_revision,
+    expected_ready_window_id,
+    command_digest,
+    resulting_runtime_revision,
+    result_kind,
+    result_payload,
+    occurred_at,
+    created_at
+)
+VALUES (
+    sqlc.arg(command_id),
+    sqlc.arg(tournament_id),
+    sqlc.arg(roster_id),
+    sqlc.arg(actor_kind),
+    sqlc.narg(actor_id),
+    sqlc.arg(command_scope),
+    sqlc.arg(command_kind),
+    sqlc.narg(attempt_id),
+    sqlc.narg(participant_id),
+    sqlc.arg(expected_runtime_revision),
+    sqlc.narg(expected_ready_window_id),
+    sqlc.arg(command_digest),
+    sqlc.arg(resulting_runtime_revision),
+    sqlc.arg(result_kind),
+    sqlc.arg(result_payload),
+    sqlc.arg(occurred_at),
+    sqlc.arg(created_at)
+)
+RETURNING command_id,
+    tournament_id,
+    roster_id,
+    actor_kind,
+    actor_id,
+    command_scope,
+    command_kind,
+    attempt_id,
+    participant_id,
+    expected_runtime_revision,
+    expected_ready_window_id,
+    command_digest,
+    resulting_runtime_revision,
+    result_kind,
+    result_payload,
+    occurred_at,
+    created_at;
+
+-- name: CreateGoldenRuntimeAuditEvent :one
+INSERT INTO audit_events (
+    id,
+    tournament_id,
+    roster_id,
+    series_id,
+    result_event_id,
+    actor_kind,
+    actor_id,
+    action,
+    payload,
+    occurred_at,
+    created_at
+)
+VALUES (
+    sqlc.arg(id),
+    sqlc.arg(tournament_id),
+    sqlc.arg(roster_id),
+    NULL,
+    NULL,
+    sqlc.arg(actor_kind),
+    sqlc.narg(actor_id),
+    sqlc.arg(action),
+    sqlc.arg(payload),
+    sqlc.arg(occurred_at),
+    sqlc.arg(created_at)
+)
+RETURNING id;
+
+-- name: AllocateGoldenRuntimeOutboxSequence :one
+INSERT INTO tournament_outbox_cursors (tournament_id, next_sequence, updated_at)
+VALUES (sqlc.arg(tournament_id), 2, sqlc.arg(updated_at))
+ON CONFLICT (tournament_id) DO UPDATE
+SET next_sequence = tournament_outbox_cursors.next_sequence + 1,
+    updated_at = EXCLUDED.updated_at
+RETURNING next_sequence - 1 AS sequence;
+
+-- name: AllocateGoldenRuntimeProjectionOrdinal :one
+INSERT INTO projection_outbox_cursors (
+    projection_revision_id,
+    tournament_id,
+    roster_id,
+    next_ordinal,
+    updated_at
+)
+VALUES (
+    sqlc.arg(projection_revision_id),
+    sqlc.arg(tournament_id),
+    sqlc.arg(roster_id),
+    2,
+    sqlc.arg(updated_at)
+)
+ON CONFLICT (projection_revision_id) DO UPDATE
+SET next_ordinal = projection_outbox_cursors.next_ordinal + 1,
+    updated_at = EXCLUDED.updated_at
+WHERE projection_outbox_cursors.tournament_id = EXCLUDED.tournament_id
+    AND projection_outbox_cursors.roster_id = EXCLUDED.roster_id
+    AND projection_outbox_cursors.next_ordinal < 32768
+RETURNING next_ordinal - 1 AS projection_ordinal;
+
+-- name: CreateGoldenRuntimeOutboxEvent :one
+INSERT INTO outbox_events (
+    id,
+    tournament_id,
+    roster_id,
+    projection_revision_id,
+    projection_revision,
+    sequence,
+    projection_ordinal,
+    terminal,
+    idempotency_key,
+    audience,
+    principal_id,
+    topic,
+    payload,
+    created_at,
+    available_at
+)
+VALUES (
+    sqlc.arg(id),
+    sqlc.arg(tournament_id),
+    sqlc.arg(roster_id),
+    sqlc.arg(projection_revision_id),
+    sqlc.arg(projection_revision),
+    sqlc.arg(sequence),
+    sqlc.arg(projection_ordinal),
+    false,
+    sqlc.arg(command_id),
+    'all',
+    NULL,
+    'golden.runtime',
+    sqlc.arg(payload),
+    sqlc.arg(created_at),
+    sqlc.arg(created_at)
+)
+RETURNING id,
+    tournament_id,
+    roster_id,
+    projection_revision_id,
+    projection_revision,
+    sequence,
+    projection_ordinal,
+    terminal,
+    idempotency_key,
+    audience,
+    principal_id,
+    topic,
+    payload,
+    created_at,
+    available_at;
+
+-- name: CreateGoldenRuntimeOutboxSource :one
+INSERT INTO outbox_golden_runtime_sources (
+    outbox_event_id,
+    tournament_id,
+    roster_id,
+    command_id,
+    runtime_revision,
+    projection_revision_id,
+    projection_revision,
+    projection_ordinal,
+    created_at
+)
+VALUES (
+    sqlc.arg(outbox_event_id),
+    sqlc.arg(tournament_id),
+    sqlc.arg(roster_id),
+    sqlc.arg(command_id),
+    sqlc.arg(runtime_revision),
+    sqlc.arg(projection_revision_id),
+    sqlc.arg(projection_revision),
+    sqlc.arg(projection_ordinal),
+    sqlc.arg(created_at)
+)
+RETURNING outbox_event_id;
+
 -- name: LockGoldenRuntimeTournament :one
 SELECT id, state
 FROM tournaments
@@ -1578,6 +1844,7 @@ SELECT group_revision.revision_id AS group_revision_id,
     group_revision.position_from,
     group_revision.position_to,
     group_revision.source_projection_revision,
+    group_revision.source_projection_revision_id,
     member.participant_id,
     member.standing_position
 FROM golden_group_revisions AS group_revision
@@ -1762,6 +2029,7 @@ SELECT runtime.tournament_id,
     runtime.deadline,
     runtime.ready_window_id,
     runtime.ready_window_deadline,
+    runtime_head.revision AS runtime_revision,
     membership.id AS membership_id,
     membership.participant_id,
     participant.player_id,
@@ -1776,6 +2044,9 @@ SELECT runtime.tournament_id,
     runtime.difficulty,
     runtime.time_limit_seconds
 FROM golden_runtime_assignments AS runtime
+INNER JOIN golden_runtime_heads AS runtime_head
+    ON runtime_head.tournament_id = runtime.tournament_id
+    AND runtime_head.roster_id = runtime.roster_id
 INNER JOIN golden_group_revisions AS group_revision
     ON group_revision.revision_id = runtime.group_revision_id
 INNER JOIN golden_attempts AS attempt ON attempt.id = runtime.attempt_id
@@ -1807,6 +2078,7 @@ SELECT runtime.tournament_id,
     runtime.deadline,
     runtime.ready_window_id,
     runtime.ready_window_deadline,
+    runtime_head.revision AS runtime_revision,
     runtime.edge_position,
     runtime.task_id,
     runtime.task_version,
@@ -1818,6 +2090,9 @@ SELECT runtime.tournament_id,
     group_revision.position_from,
     group_revision.position_to
 FROM golden_runtime_assignments AS runtime
+INNER JOIN golden_runtime_heads AS runtime_head
+    ON runtime_head.tournament_id = runtime.tournament_id
+    AND runtime_head.roster_id = runtime.roster_id
 INNER JOIN golden_attempts AS attempt ON attempt.id = runtime.attempt_id
 INNER JOIN golden_group_revisions AS group_revision
     ON group_revision.revision_id = runtime.group_revision_id
@@ -1833,6 +2108,31 @@ WHERE runtime.tournament_id = sqlc.arg(tournament_id)
 ORDER BY runtime.edge_position DESC, group_revision.position_from
 LIMIT 1
 FOR UPDATE OF attempt, membership;
+
+-- name: SelectGoldenRuntimeParticipantScope :one
+SELECT runtime.tournament_id,
+    runtime.roster_id,
+    runtime.group_revision_id,
+    runtime.attempt_id,
+    runtime.ready_window_id,
+    runtime.ready_window_deadline,
+    runtime.started_at,
+    runtime.deadline,
+    runtime_head.revision AS runtime_revision,
+    membership.participant_id
+FROM golden_runtime_assignments AS runtime
+INNER JOIN golden_runtime_heads AS runtime_head
+    ON runtime_head.tournament_id = runtime.tournament_id
+    AND runtime_head.roster_id = runtime.roster_id
+INNER JOIN golden_attempts AS attempt ON attempt.id = runtime.attempt_id
+INNER JOIN golden_memberships AS membership ON membership.attempt_id = runtime.attempt_id
+INNER JOIN participants AS participant
+    ON participant.id = membership.participant_id
+    AND participant.roster_id = runtime.roster_id
+WHERE runtime.tournament_id = sqlc.arg(tournament_id)
+    AND participant.player_id = sqlc.arg(player_id)
+ORDER BY runtime.edge_position DESC, runtime.group_revision_id
+LIMIT 1;
 
 -- name: ListGoldenRuntimeAttemptMembers :many
 SELECT membership.id AS membership_id,
@@ -2029,6 +2329,7 @@ SELECT runtime.attempt_id,
     attempt.state,
     runtime.group_revision_id,
     runtime.edge_position,
+    runtime.ready_window_id,
     runtime.ready_window_deadline,
     runtime.started_at,
     runtime.deadline

@@ -998,6 +998,35 @@ type GoldenRuntimeAssignment struct {
 	ReadyWindowDeadline  pgtype.Timestamptz
 }
 
+type GoldenRuntimeCommand struct {
+	CommandID                uuid.UUID
+	TournamentID             uuid.UUID
+	RosterID                 uuid.UUID
+	ActorKind                string
+	ActorID                  uuid.NullUUID
+	CommandScope             string
+	CommandKind              string
+	AttemptID                uuid.NullUUID
+	ParticipantID            uuid.NullUUID
+	ExpectedRuntimeRevision  int64
+	ExpectedReadyWindowID    uuid.NullUUID
+	CommandDigest            []byte
+	ResultingRuntimeRevision int64
+	ResultKind               string
+	ResultPayload            []byte
+	OccurredAt               pgtype.Timestamptz
+	CreatedAt                pgtype.Timestamptz
+}
+
+type GoldenRuntimeHead struct {
+	TournamentID               uuid.UUID
+	RosterID                   uuid.UUID
+	Revision                   int64
+	SourceProjectionRevisionID uuid.UUID
+	SourceProjectionRevision   int64
+	UpdatedAt                  pgtype.Timestamptz
+}
+
 type GoldenStateAllocation struct {
 	AllocationID               uuid.UUID
 	CommandID                  uuid.UUID
@@ -1409,6 +1438,18 @@ type OutboxEvent struct {
 	AttemptCount         int32
 	LastError            *string
 	PublishedAt          pgtype.Timestamptz
+}
+
+type OutboxGoldenRuntimeSource struct {
+	OutboxEventID        uuid.UUID
+	TournamentID         uuid.UUID
+	RosterID             uuid.UUID
+	CommandID            uuid.UUID
+	RuntimeRevision      int64
+	ProjectionRevisionID uuid.UUID
+	ProjectionRevision   int64
+	ProjectionOrdinal    int16
+	CreatedAt            pgtype.Timestamptz
 }
 
 type OutboxResultSource struct {

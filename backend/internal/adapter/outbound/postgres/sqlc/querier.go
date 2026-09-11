@@ -23,9 +23,12 @@ type Querier interface {
 	AdvanceCorrectionOfficialHeadCAS(ctx context.Context, arg AdvanceCorrectionOfficialHeadCASParams) (OfficialResultHead, error)
 	AdvanceCorrectionTournamentStageCAS(ctx context.Context, arg AdvanceCorrectionTournamentStageCASParams) (AdvanceCorrectionTournamentStageCASRow, error)
 	AdvanceGoldenRepositoryHeadCAS(ctx context.Context, arg AdvanceGoldenRepositoryHeadCASParams) (GoldenRepositoryHead, error)
+	AdvanceGoldenRuntimeHead(ctx context.Context, arg AdvanceGoldenRuntimeHeadParams) (GoldenRuntimeHead, error)
 	AdvanceReplayReserveAuthorityCAS(ctx context.Context, arg AdvanceReplayReserveAuthorityCASParams) (int64, error)
 	AdvanceSeriesScoreHeadCAS(ctx context.Context, arg AdvanceSeriesScoreHeadCASParams) (SeriesScoreHead, error)
 	AdvanceTournamentAdminRosterRevision(ctx context.Context, arg AdvanceTournamentAdminRosterRevisionParams) (Roster, error)
+	AllocateGoldenRuntimeOutboxSequence(ctx context.Context, arg AllocateGoldenRuntimeOutboxSequenceParams) (int32, error)
+	AllocateGoldenRuntimeProjectionOrdinal(ctx context.Context, arg AllocateGoldenRuntimeProjectionOrdinalParams) (int32, error)
 	// AllocateResultEventSequence advances the durable event cursor only after the
 	// caller has locked the exact attempt. A separate UPDATE statement avoids a
 	// stale READ COMMITTED snapshot over result_events.
@@ -149,6 +152,11 @@ type Querier interface {
 	CreateGoldenRepositoryScope(ctx context.Context, arg CreateGoldenRepositoryScopeParams) (uuid.UUID, error)
 	CreateGoldenReservePromotion(ctx context.Context, arg CreateGoldenReservePromotionParams) (GoldenReservePromotion, error)
 	CreateGoldenRuntimeAssignment(ctx context.Context, arg CreateGoldenRuntimeAssignmentParams) (uuid.UUID, error)
+	CreateGoldenRuntimeAuditEvent(ctx context.Context, arg CreateGoldenRuntimeAuditEventParams) (uuid.UUID, error)
+	CreateGoldenRuntimeCommand(ctx context.Context, arg CreateGoldenRuntimeCommandParams) (GoldenRuntimeCommand, error)
+	CreateGoldenRuntimeHead(ctx context.Context, arg CreateGoldenRuntimeHeadParams) (GoldenRuntimeHead, error)
+	CreateGoldenRuntimeOutboxEvent(ctx context.Context, arg CreateGoldenRuntimeOutboxEventParams) (CreateGoldenRuntimeOutboxEventRow, error)
+	CreateGoldenRuntimeOutboxSource(ctx context.Context, arg CreateGoldenRuntimeOutboxSourceParams) (uuid.UUID, error)
 	CreateGoldenStateAllocation(ctx context.Context, arg CreateGoldenStateAllocationParams) (uuid.UUID, error)
 	CreateGoldenStateAllocationInput(ctx context.Context, arg CreateGoldenStateAllocationInputParams) (uuid.UUID, error)
 	CreateGoldenStateAllocationPosition(ctx context.Context, arg CreateGoldenStateAllocationPositionParams) (int16, error)
@@ -350,6 +358,7 @@ type Querier interface {
 	GetGameSlot(ctx context.Context, arg GetGameSlotParams) (GameSlot, error)
 	GetGoldenAttemptScoped(ctx context.Context, arg GetGoldenAttemptScopedParams) (GoldenAttempt, error)
 	GetGoldenRuntimeAssignment(ctx context.Context, arg GetGoldenRuntimeAssignmentParams) (GetGoldenRuntimeAssignmentRow, error)
+	GetGoldenRuntimeCommand(ctx context.Context, commandID uuid.UUID) (GoldenRuntimeCommand, error)
 	GetGoldenSubmissionByIdempotencyKey(ctx context.Context, idempotencyKey uuid.UUID) (GoldenProvisionalSubmission, error)
 	GetLatestGoldenRecoveryRevision(ctx context.Context, arg GetLatestGoldenRecoveryRevisionParams) (GoldenRecoveryRevision, error)
 	GetLatestProjectionCutoff(ctx context.Context, arg GetLatestProjectionCutoffParams) (ProjectionCutoff, error)
@@ -599,8 +608,10 @@ type Querier interface {
 	LockGoldenAttempt(ctx context.Context, arg LockGoldenAttemptParams) (GoldenAttempt, error)
 	LockGoldenRepositoryHead(ctx context.Context, scopeID uuid.UUID) (LockGoldenRepositoryHeadRow, error)
 	LockGoldenRepositoryScope(ctx context.Context, arg LockGoldenRepositoryScopeParams) (GoldenRepositoryScope, error)
-	LockGoldenRuntimeParticipant(ctx context.Context, arg LockGoldenRuntimeParticipantParams) (LockGoldenRuntimeParticipantRow, error)
 	// Production Golden runtime.
+	// Runtime fencing and durable command evidence.
+	LockGoldenRuntimeHead(ctx context.Context, arg LockGoldenRuntimeHeadParams) (GoldenRuntimeHead, error)
+	LockGoldenRuntimeParticipant(ctx context.Context, arg LockGoldenRuntimeParticipantParams) (LockGoldenRuntimeParticipantRow, error)
 	LockGoldenRuntimeTournament(ctx context.Context, tournamentID uuid.UUID) (LockGoldenRuntimeTournamentRow, error)
 	LockLatestFinalSwissReceipt(ctx context.Context, arg LockLatestFinalSwissReceiptParams) (LockLatestFinalSwissReceiptRow, error)
 	LockOpenGoldenReadyDisconnect(ctx context.Context, arg LockOpenGoldenReadyDisconnectParams) (LockOpenGoldenReadyDisconnectRow, error)
@@ -885,6 +896,7 @@ type Querier interface {
 	SealGoldenExactPlanSnapshot(ctx context.Context, arg SealGoldenExactPlanSnapshotParams) (uuid.UUID, error)
 	SealGoldenPositionLedgerRevision(ctx context.Context, arg SealGoldenPositionLedgerRevisionParams) (uuid.UUID, error)
 	SealGoldenStateRevision(ctx context.Context, arg SealGoldenStateRevisionParams) (uuid.UUID, error)
+	SelectGoldenRuntimeParticipantScope(ctx context.Context, arg SelectGoldenRuntimeParticipantScopeParams) (SelectGoldenRuntimeParticipantScopeRow, error)
 	SelectGoldenRuntimeTask(ctx context.Context, arg SelectGoldenRuntimeTaskParams) (SelectGoldenRuntimeTaskRow, error)
 	SetParticipantReadinessHead(ctx context.Context, arg SetParticipantReadinessHeadParams) (WaveReadiness, error)
 	SetParticipantWaveReadiness(ctx context.Context, arg SetParticipantWaveReadinessParams) (Wave, error)

@@ -20,25 +20,54 @@ func (repository *GoldenRuntimePostgres) Submit(
 	command usecase.GoldenSubmissionCommand,
 	now time.Time,
 ) (usecase.GoldenParticipantView, error) {
+	var result usecase.GoldenParticipantView
 	err := repository.tx.Do(ctx, func(txCtx context.Context) error {
 		q := repository.tx.Querier(txCtx)
+		scope, err := q.SelectGoldenRuntimeParticipantScope(txCtx, sqlc.SelectGoldenRuntimeParticipantScopeParams{
+			TournamentID: command.TournamentID, PlayerID: command.PlayerID,
+		})
+		if err != nil {
+			return goldenRuntimeReadError("load participant scope", err)
+		}
+		head, err := q.LockGoldenRuntimeHead(txCtx, sqlc.LockGoldenRuntimeHeadParams{
+			TournamentID: command.TournamentID, RosterID: scope.RosterID,
+		})
+		if err != nil {
+			return goldenRuntimeReadError("lock Golden runtime head", err)
+		}
 		participant, err := q.LockGoldenRuntimeParticipant(txCtx, sqlc.LockGoldenRuntimeParticipantParams{
 			TournamentID: command.TournamentID, PlayerID: command.PlayerID,
 		})
 		if err != nil {
 			return goldenRuntimeReadError("load participant", err)
 		}
-		if replay, err := q.GetGoldenSubmissionByIdempotencyKey(txCtx, command.CommandID); err == nil {
-			if replay.TournamentID != command.TournamentID || replay.ParticipantID != participant.ParticipantID ||
-				replay.AttemptID != participant.AttemptID {
-				return domain.ErrConflict
-			}
-			return nil
-		} else if !errors.Is(err, pgx.ErrNoRows) {
-			return goldenRuntimeReadError("load submission replay", err)
+		spec := goldenRuntimeCommandSpec{
+			CommandID: command.CommandID, TournamentID: command.TournamentID, RosterID: participant.RosterID,
+			ActorKind: goldenRuntimeCommandActorKind(false), ActorID: command.ActorID,
+			Scope: "participant", Kind: "submit", AttemptID: command.ExpectedAttemptID,
+			ParticipantID: participant.ParticipantID, ExpectedRuntimeRevision: command.ExpectedRuntimeRevision,
+			ExpectedReadyWindowID: command.ExpectedReadyWindowID,
+			Payload: struct {
+				SubmittedFlag string `json:"submitted_flag"`
+			}{SubmittedFlag: command.SubmittedFlag},
+		}
+		replay, replayed, replayErr := goldenRuntimeReplay(txCtx, q, spec)
+		if replayErr != nil {
+			return replayErr
+		}
+		if replayed {
+			result, replayErr = goldenRuntimeDecodeResult[usecase.GoldenParticipantView](replay.ResultPayload)
+			return replayErr
+		}
+		if authorityErr := goldenRuntimeAuthorityConflictForTarget(
+			command.ExpectedRuntimeRevision, head.Revision,
+			command.ExpectedReadyWindowID, participant.ReadyWindowID,
+			command.ExpectedAttemptID, participant.AttemptID,
+		); authorityErr != nil {
+			return authorityErr
 		}
 		if participant.State != "active" || !participant.ReadyAt.Valid || !participant.StartedAt.Valid ||
-			!participant.Deadline.Valid || now.After(participant.Deadline.Time) {
+			!participant.Deadline.Valid || !now.Before(participant.Deadline.Time) {
 			return domain.ErrConflict
 		}
 		if _, disconnectErr := q.LockOpenGoldenReadyDisconnect(txCtx, sqlc.LockOpenGoldenReadyDisconnectParams{
@@ -67,7 +96,7 @@ func (repository *GoldenRuntimePostgres) Submit(
 			}
 			eligible++
 			if member.ParticipantID == participant.ParticipantID && member.SubmissionID.Valid {
-				return nil
+				return domain.ErrConflict
 			}
 			if member.SubmissionID.Valid {
 				accepted++
@@ -92,7 +121,8 @@ func (repository *GoldenRuntimePostgres) Submit(
 			ParticipantID uuid.UUID `json:"participant_id"`
 			Sequence      int64     `json:"sequence"`
 			ReceivedAt    time.Time `json:"received_at"`
-		}{participant.AttemptID, participant.ParticipantID, sequence, now})
+			Flag          string    `json:"flag"`
+		}{participant.AttemptID, participant.ParticipantID, sequence, now, command.SubmittedFlag})
 		submissionID := uuid.New()
 		if _, err = q.CreateGoldenProvisionalSubmission(txCtx, sqlc.CreateGoldenProvisionalSubmissionParams{
 			ID: submissionID, AttemptID: participant.AttemptID, TournamentID: command.TournamentID,
@@ -124,14 +154,31 @@ func (repository *GoldenRuntimePostgres) Submit(
 			return goldenRuntimeWriteError("create position commit", err)
 		}
 		if accepted+1 == eligible {
-			return repository.completeGoldenRuntimeAttempt(txCtx, q, participant, now)
+			if err := repository.completeGoldenRuntimeAttempt(txCtx, q, participant, now); err != nil {
+				return err
+			}
 		}
-		return nil
+		advanced, err := q.AdvanceGoldenRuntimeHead(txCtx, sqlc.AdvanceGoldenRuntimeHeadParams{
+			TournamentID: command.TournamentID, RosterID: participant.RosterID,
+			ExpectedRevision: head.Revision, NextRevision: head.Revision + 1, UpdatedAt: tstz(now),
+		})
+		if err != nil {
+			return goldenRuntimeWriteError("advance Golden runtime head", err)
+		}
+		result, err = goldenParticipantRuntimeViewWithin(txCtx, q, command.TournamentID, command.PlayerID)
+		if err != nil {
+			return err
+		}
+		resultPayload, err := goldenRuntimeResultPayload(result)
+		if err != nil {
+			return err
+		}
+		return repository.appendGoldenRuntimeEvidence(txCtx, q, spec, advanced, "participant", resultPayload, now)
 	})
 	if err != nil {
 		return usecase.GoldenParticipantView{}, fmt.Errorf("GoldenRuntimePostgres - Submit: %w", err)
 	}
-	return repository.ParticipantView(ctx, usecase.GoldenParticipantQuery{TournamentID: command.TournamentID, PlayerID: command.PlayerID})
+	return result, nil
 }
 
 func (repository *GoldenRuntimePostgres) completeGoldenRuntimeAttempt(

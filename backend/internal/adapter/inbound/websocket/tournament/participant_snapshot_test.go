@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket/wirelimits"
 )
@@ -48,6 +50,137 @@ func TestTournamentParticipantSnapshot(t *testing.T) {
 			t.Fatal(err)
 		}
 		requireJSONKeys(t, body, "tournament_id", "player_id", "revision", "last_sequence")
+	})
+
+	t.Run("Golden ready state is taskless until started timestamps are committed", func(t *testing.T) {
+		ready := input
+		ready.Assignment = nil
+		ready.Opponent = nil
+		ready.Golden = &ParticipantGoldenInput{
+			GroupID:         testUUID("00000000-0000-4000-8000-000000000040"),
+			GroupRevisionID: testUUID("00000000-0000-4000-8000-000000000041"),
+			AttemptID:       testUUID("00000000-0000-4000-8000-000000000042"),
+			RuntimeRevision: 3,
+			ReadyWindowID:   testUUID("00000000-0000-4000-8000-000000000043"),
+			State:           "ready", Ready: true,
+		}
+		got, err := NewParticipantSnapshot(ParticipantSnapshotScope{TournamentID: tournamentID, PlayerID: playerID}, ready)
+		require.NoError(t, err)
+		require.NotNil(t, got.Golden)
+		require.Nil(t, got.Golden.Task)
+		body, err := json.Marshal(got)
+		require.NoError(t, err)
+		var object map[string]json.RawMessage
+		require.NoError(t, json.Unmarshal(body, &object))
+		var golden map[string]json.RawMessage
+		require.NoError(t, json.Unmarshal(object["golden"], &golden))
+		require.NotContains(t, golden, "task")
+	})
+
+	t.Run("Golden task requires committed start and exact deadline", func(t *testing.T) {
+		started := time.Date(2026, time.September, 11, 12, 0, 0, 0, time.UTC)
+		active := input
+		active.Assignment = nil
+		active.Opponent = nil
+		active.Golden = &ParticipantGoldenInput{
+			GroupID:         testUUID("00000000-0000-4000-8000-000000000050"),
+			GroupRevisionID: testUUID("00000000-0000-4000-8000-000000000051"),
+			AttemptID:       testUUID("00000000-0000-4000-8000-000000000052"),
+			RuntimeRevision: 4,
+			ReadyWindowID:   testUUID("00000000-0000-4000-8000-000000000053"),
+			State:           "active", Ready: true,
+			StartedAt: &started,
+			Deadline:  func() *time.Time { value := started.Add(180 * time.Second); return &value }(),
+			Task: &ParticipantGoldenTaskInput{
+				AssignmentID: testUUID("00000000-0000-4000-8000-000000000054"),
+				SnapshotID:   testUUID("00000000-0000-4000-8000-000000000055"),
+				TaskID:       testUUID("00000000-0000-4000-8000-000000000056"),
+				Title:        "Golden task", Category: "web", Difficulty: "medium", TimeLimitSeconds: 180,
+			},
+		}
+		got, err := NewParticipantSnapshot(ParticipantSnapshotScope{TournamentID: tournamentID, PlayerID: playerID}, active)
+		require.NoError(t, err)
+		require.NotNil(t, got.Golden)
+		require.NotNil(t, got.Golden.Task)
+	})
+
+	t.Run("Golden runtime fence is consecutive on the wire", func(t *testing.T) {
+		firstInput := input
+		firstInput.Assignment = nil
+		firstInput.Opponent = nil
+		firstInput.Golden = &ParticipantGoldenInput{
+			GroupID:         testUUID("00000000-0000-4000-8000-000000000080"),
+			GroupRevisionID: testUUID("00000000-0000-4000-8000-000000000081"),
+			AttemptID:       testUUID("00000000-0000-4000-8000-000000000082"),
+			RuntimeRevision: 1,
+			ReadyWindowID:   testUUID("00000000-0000-4000-8000-000000000083"),
+			State:           "ready", Ready: true,
+		}
+		first, err := NewParticipantSnapshot(ParticipantSnapshotScope{TournamentID: tournamentID, PlayerID: playerID}, firstInput)
+		require.NoError(t, err)
+		secondInput := firstInput
+		secondInput.Golden = &ParticipantGoldenInput{}
+		*secondInput.Golden = *firstInput.Golden
+		secondInput.Golden.RuntimeRevision = first.Golden.RuntimeRevision + 1
+		second, err := NewParticipantSnapshot(ParticipantSnapshotScope{TournamentID: tournamentID, PlayerID: playerID}, secondInput)
+		require.NoError(t, err)
+		require.Equal(t, first.Revision, second.Revision)
+		require.Equal(t, first.Golden.RuntimeRevision+1, second.Golden.RuntimeRevision)
+
+		for index, snapshot := range []ParticipantSnapshot{first, second} {
+			body, marshalErr := json.Marshal(snapshot)
+			require.NoError(t, marshalErr)
+			var envelope struct {
+				Golden struct {
+					RuntimeRevision int64 `json:"runtime_revision"`
+				} `json:"golden"`
+			}
+			require.NoError(t, json.Unmarshal(body, &envelope))
+			require.Equal(t, first.Golden.RuntimeRevision+int64(index), envelope.Golden.RuntimeRevision)
+		}
+	})
+
+	t.Run("rejects active Golden state without a task", func(t *testing.T) {
+		started := time.Date(2026, time.September, 11, 12, 0, 0, 0, time.UTC)
+		activeWithoutTask := input
+		activeWithoutTask.Assignment = nil
+		activeWithoutTask.Opponent = nil
+		activeWithoutTask.Golden = &ParticipantGoldenInput{
+			GroupID:         testUUID("00000000-0000-4000-8000-000000000060"),
+			GroupRevisionID: testUUID("00000000-0000-4000-8000-000000000061"),
+			AttemptID:       testUUID("00000000-0000-4000-8000-000000000062"),
+			RuntimeRevision: 5,
+			ReadyWindowID:   testUUID("00000000-0000-4000-8000-000000000063"),
+			State:           "active", Ready: true, StartedAt: &started,
+			Deadline: func() *time.Time {
+				value := started.Add(180 * time.Second)
+				return &value
+			}(),
+		}
+		_, err := NewParticipantSnapshot(ParticipantSnapshotScope{TournamentID: tournamentID, PlayerID: playerID}, activeWithoutTask)
+		require.Error(t, err)
+	})
+
+	t.Run("rejects pre-start Golden state with a task", func(t *testing.T) {
+		preStartWithTask := input
+		preStartWithTask.Assignment = nil
+		preStartWithTask.Opponent = nil
+		preStartWithTask.Golden = &ParticipantGoldenInput{
+			GroupID:         testUUID("00000000-0000-4000-8000-000000000070"),
+			GroupRevisionID: testUUID("00000000-0000-4000-8000-000000000071"),
+			AttemptID:       testUUID("00000000-0000-4000-8000-000000000072"),
+			RuntimeRevision: 6,
+			ReadyWindowID:   testUUID("00000000-0000-4000-8000-000000000073"),
+			State:           "ready", Ready: true,
+			Task: &ParticipantGoldenTaskInput{
+				AssignmentID: testUUID("00000000-0000-4000-8000-000000000074"),
+				SnapshotID:   testUUID("00000000-0000-4000-8000-000000000075"),
+				TaskID:       testUUID("00000000-0000-4000-8000-000000000076"),
+				Title:        "Golden task", Category: "web", Difficulty: "medium", TimeLimitSeconds: 180,
+			},
+		}
+		_, err := NewParticipantSnapshot(ParticipantSnapshotScope{TournamentID: tournamentID, PlayerID: playerID}, preStartWithTask)
+		require.Error(t, err)
 	})
 
 	tests := []struct {

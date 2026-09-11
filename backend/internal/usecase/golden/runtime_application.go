@@ -38,7 +38,8 @@ func NewRuntimeApplication(repository RuntimeRepository, clock ConnectionClock) 
 }
 
 func (application *RuntimeApplication) Open(ctx context.Context, command usecase.GoldenOpenCommand) (usecase.GoldenOperatorView, error) {
-	if !application.valid() || ctx == nil || command.TournamentID == uuid.Nil || command.CommandID == uuid.Nil || command.ExpectedProjectionRevision < 1 {
+	if !application.valid() || ctx == nil || command.TournamentID == uuid.Nil || command.CommandID == uuid.Nil ||
+		command.ActorID == uuid.Nil || command.ExpectedProjectionRevision < 1 || command.ExpectedRuntimeRevision < 0 {
 		return usecase.GoldenOperatorView{}, ErrInvalidGoldenRuntime
 	}
 	now, err := application.now()
@@ -49,7 +50,9 @@ func (application *RuntimeApplication) Open(ctx context.Context, command usecase
 }
 
 func (application *RuntimeApplication) Start(ctx context.Context, command usecase.GoldenStartCommand) (usecase.GoldenOperatorView, error) {
-	if !application.valid() || ctx == nil || command.TournamentID == uuid.Nil || command.AttemptID == uuid.Nil || command.CommandID == uuid.Nil {
+	if !application.valid() || ctx == nil || command.TournamentID == uuid.Nil || command.AttemptID == uuid.Nil || command.CommandID == uuid.Nil ||
+		command.ActorID == uuid.Nil || command.ExpectedRuntimeRevision < 1 || command.ExpectedAttemptID != command.AttemptID ||
+		command.ExpectedReadyWindowID == uuid.Nil {
 		return usecase.GoldenOperatorView{}, ErrInvalidGoldenRuntime
 	}
 	now, err := application.now()
@@ -60,7 +63,9 @@ func (application *RuntimeApplication) Start(ctx context.Context, command usecas
 }
 
 func (application *RuntimeApplication) SetReady(ctx context.Context, command usecase.GoldenReadyCommand) (usecase.GoldenParticipantView, error) {
-	if !application.valid() || ctx == nil || command.TournamentID == uuid.Nil || command.PlayerID == uuid.Nil || command.CommandID == uuid.Nil || !command.Ready {
+	if !application.valid() || ctx == nil || command.TournamentID == uuid.Nil || command.PlayerID == uuid.Nil || command.CommandID == uuid.Nil ||
+		command.ActorID == uuid.Nil || command.ActorID != command.PlayerID || !command.Ready || command.ExpectedRuntimeRevision < 1 ||
+		command.ExpectedAttemptID == uuid.Nil || command.ExpectedReadyWindowID == uuid.Nil {
 		return usecase.GoldenParticipantView{}, ErrInvalidGoldenRuntime
 	}
 	now, err := application.now()
@@ -75,7 +80,10 @@ func (application *RuntimeApplication) SetReady(ctx context.Context, command use
 //
 
 func (application *RuntimeApplication) Submit(ctx context.Context, command usecase.GoldenSubmissionCommand) (usecase.GoldenParticipantView, error) {
-	if !application.valid() || ctx == nil || command.TournamentID == uuid.Nil || command.PlayerID == uuid.Nil || command.CommandID == uuid.Nil || strings.TrimSpace(command.SubmittedFlag) == "" || len(command.SubmittedFlag) > 255 {
+	if !application.valid() || ctx == nil || command.TournamentID == uuid.Nil || command.PlayerID == uuid.Nil || command.CommandID == uuid.Nil ||
+		command.ActorID == uuid.Nil || command.ActorID != command.PlayerID || command.ExpectedRuntimeRevision < 1 ||
+		command.ExpectedAttemptID == uuid.Nil || command.ExpectedReadyWindowID == uuid.Nil ||
+		strings.TrimSpace(command.SubmittedFlag) == "" || len(command.SubmittedFlag) > 255 {
 		return usecase.GoldenParticipantView{}, ErrInvalidGoldenRuntime
 	}
 	now, err := application.now()
@@ -101,7 +109,9 @@ func (application *RuntimeApplication) ParticipantView(ctx context.Context, quer
 
 func (application *RuntimeApplication) SetConnected(ctx context.Context, command usecase.GoldenConnectionCommand) error {
 	if !application.valid() || ctx == nil || command.TournamentID == uuid.Nil ||
-		command.PlayerID == uuid.Nil || command.CommandID == uuid.Nil {
+		command.PlayerID == uuid.Nil || command.CommandID == uuid.Nil || command.ActorID == uuid.Nil ||
+		command.ActorID != command.PlayerID || command.ExpectedRuntimeRevision < 1 ||
+		command.ExpectedAttemptID == uuid.Nil || command.ExpectedReadyWindowID == uuid.Nil {
 		return ErrInvalidGoldenRuntime
 	}
 	now, err := application.now()

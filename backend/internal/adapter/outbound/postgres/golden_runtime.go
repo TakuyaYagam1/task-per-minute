@@ -29,6 +29,7 @@ func NewGoldenRuntimePostgres(tx *TxManager) *GoldenRuntimePostgres {
 	return &GoldenRuntimePostgres{tx: tx}
 }
 
+//nolint:gocyclo // Initialization, replay, fencing, materialization, and evidence share one transaction.
 func (repository *GoldenRuntimePostgres) Open(
 	ctx context.Context,
 	command usecase.GoldenOpenCommand,
@@ -37,6 +38,7 @@ func (repository *GoldenRuntimePostgres) Open(
 	if repository == nil || repository.tx == nil {
 		return usecase.GoldenOperatorView{}, domain.ErrInternal
 	}
+	var result usecase.GoldenOperatorView
 	err := repository.tx.Do(ctx, func(txCtx context.Context) error {
 		q := repository.tx.Querier(txCtx)
 		tournament, err := q.LockGoldenRuntimeTournament(txCtx, command.TournamentID)
@@ -51,7 +53,45 @@ func (repository *GoldenRuntimePostgres) Open(
 			return goldenRuntimeReadError("load existing runtime", err)
 		}
 		if len(existing) != 0 {
-			return nil
+			head, headErr := q.LockGoldenRuntimeHead(txCtx, sqlc.LockGoldenRuntimeHeadParams{
+				TournamentID: command.TournamentID, RosterID: existing[0].RosterID,
+			})
+			if errors.Is(headErr, pgx.ErrNoRows) {
+				return domain.ErrConflict
+			}
+			if headErr != nil {
+				return goldenRuntimeReadError("load Golden runtime head", headErr)
+			}
+			spec := goldenRuntimeCommandSpec{
+				CommandID: command.CommandID, TournamentID: command.TournamentID, RosterID: head.RosterID,
+				ActorKind: goldenRuntimeCommandActorKind(true), ActorID: command.ActorID,
+				Scope: "operator", Kind: "open", ExpectedRuntimeRevision: command.ExpectedRuntimeRevision,
+				Payload: struct {
+					ExpectedProjectionRevision int64 `json:"expected_projection_revision"`
+				}{command.ExpectedProjectionRevision},
+			}
+			replay, replayed, replayErr := goldenRuntimeReplay(txCtx, q, spec)
+			if replayErr != nil {
+				return replayErr
+			}
+			if replayed {
+				result, replayErr = goldenRuntimeDecodeResult[usecase.GoldenOperatorView](replay.ResultPayload)
+				return replayErr
+			}
+			if authorityErr := goldenRuntimeAuthorityConflict(command.ExpectedRuntimeRevision, head.Revision, uuid.Nil, uuid.Nil); authorityErr != nil {
+				return authorityErr
+			}
+			return domain.ErrConflict
+		}
+		if command.ExpectedRuntimeRevision != 0 {
+			return &usecase.GoldenAuthorityConflictError{ExpectedRevision: command.ExpectedRuntimeRevision, CurrentRevision: 0}
+		}
+		// A command identifier that was previously committed to another Golden
+		// scope must never be silently accepted by a fresh tournament open.
+		if _, priorErr := q.GetGoldenRuntimeCommand(txCtx, command.CommandID); priorErr == nil {
+			return &usecase.GoldenCommandReuseConflictError{CommandID: command.CommandID}
+		} else if !errors.Is(priorErr, pgx.ErrNoRows) {
+			return goldenRuntimeReadError("load Golden command identity", priorErr)
 		}
 		rows, err := q.ListGoldenRuntimeGroups(txCtx, command.TournamentID)
 		if err != nil {
@@ -60,6 +100,15 @@ func (repository *GoldenRuntimePostgres) Open(
 		groups, err := goldenRuntimeGroups(rows, command.ExpectedProjectionRevision)
 		if err != nil {
 			return err
+		}
+		if len(groups) == 0 || groups[0].sourceProjectionRevisionID == uuid.Nil || groups[0].sourceProjectionRevision < 1 {
+			return domain.ErrConflict
+		}
+		for _, group := range groups {
+			if group.sourceProjectionRevisionID != groups[0].sourceProjectionRevisionID ||
+				group.sourceProjectionRevision != groups[0].sourceProjectionRevision {
+				return domain.ErrConflict
+			}
 		}
 		for _, group := range groups {
 			attempt, err := q.NextGoldenRuntimeAttempt(txCtx, command.TournamentID)
@@ -73,24 +122,51 @@ func (repository *GoldenRuntimePostgres) Open(
 				return err
 			}
 		}
-		return nil
+		head, err := q.CreateGoldenRuntimeHead(txCtx, sqlc.CreateGoldenRuntimeHeadParams{
+			TournamentID: command.TournamentID, RosterID: groups[0].rosterID,
+			Revision: 1, SourceProjectionRevisionID: groups[0].sourceProjectionRevisionID,
+			SourceProjectionRevision: groups[0].sourceProjectionRevision, UpdatedAt: tstz(now),
+		})
+		if err != nil {
+			return goldenRuntimeWriteError("create Golden runtime head", err)
+		}
+		spec := goldenRuntimeCommandSpec{
+			CommandID: command.CommandID, TournamentID: command.TournamentID, RosterID: head.RosterID,
+			ActorKind: goldenRuntimeCommandActorKind(true), ActorID: command.ActorID,
+			Scope: "operator", Kind: "open", ExpectedRuntimeRevision: command.ExpectedRuntimeRevision,
+			Payload: struct {
+				ExpectedProjectionRevision int64 `json:"expected_projection_revision"`
+			}{command.ExpectedProjectionRevision},
+		}
+		result, err = goldenOperatorRuntimeViewWithin(txCtx, q, command.TournamentID, now)
+		if err != nil {
+			return err
+		}
+		payload, err := goldenRuntimeResultPayload(result)
+		if err != nil {
+			return err
+		}
+		return repository.appendGoldenRuntimeEvidence(txCtx, q, spec, head, "operator", payload, now)
 	})
 	if err != nil {
 		return usecase.GoldenOperatorView{}, fmt.Errorf("GoldenRuntimePostgres - Open: %w", err)
 	}
-	return repository.OperatorView(ctx, usecase.GoldenOperatorQuery{TournamentID: command.TournamentID, OperatorID: command.CommandID})
+	return result, nil
 }
 
 type goldenRuntimeGroup struct {
-	tournamentID    uuid.UUID
-	rosterID        uuid.UUID
-	groupID         uuid.UUID
-	groupRevisionID uuid.UUID
-	positionFrom    int16
-	positionTo      int16
-	participantIDs  []uuid.UUID
+	tournamentID               uuid.UUID
+	rosterID                   uuid.UUID
+	groupID                    uuid.UUID
+	groupRevisionID            uuid.UUID
+	sourceProjectionRevisionID uuid.UUID
+	sourceProjectionRevision   int64
+	positionFrom               int16
+	positionTo                 int16
+	participantIDs             []uuid.UUID
 }
 
+//nolint:gocyclo // Every denormalized row must be checked against the same source authority.
 func goldenRuntimeGroups(rows []sqlc.ListGoldenRuntimeGroupsRow, expectedRevision int64) ([]goldenRuntimeGroup, error) {
 	if len(rows) == 0 {
 		return nil, domain.ErrConflict
@@ -103,12 +179,17 @@ func goldenRuntimeGroups(rows []sqlc.ListGoldenRuntimeGroupsRow, expectedRevisio
 		if len(groups) == 0 || groups[len(groups)-1].groupRevisionID != row.GroupRevisionID {
 			groups = append(groups, goldenRuntimeGroup{
 				tournamentID: row.TournamentID, rosterID: row.RosterID, groupID: row.GroupID,
-				groupRevisionID: row.GroupRevisionID, positionFrom: row.PositionFrom, positionTo: row.PositionTo,
+				groupRevisionID:            row.GroupRevisionID,
+				sourceProjectionRevisionID: row.SourceProjectionRevisionID,
+				sourceProjectionRevision:   row.SourceProjectionRevision,
+				positionFrom:               row.PositionFrom, positionTo: row.PositionTo,
 			})
 		}
 		group := &groups[len(groups)-1]
 		if group.tournamentID != row.TournamentID || group.rosterID != row.RosterID || group.groupID != row.GroupID ||
-			group.positionFrom != row.PositionFrom || group.positionTo != row.PositionTo {
+			group.positionFrom != row.PositionFrom || group.positionTo != row.PositionTo ||
+			group.sourceProjectionRevisionID != row.SourceProjectionRevisionID ||
+			group.sourceProjectionRevision != row.SourceProjectionRevision {
 			return nil, domain.ErrConflict
 		}
 		group.participantIDs = append(group.participantIDs, row.ParticipantID)
@@ -181,15 +262,53 @@ func (repository *GoldenRuntimePostgres) SetReady(
 	command usecase.GoldenReadyCommand,
 	now time.Time,
 ) (usecase.GoldenParticipantView, error) {
+	var result usecase.GoldenParticipantView
 	err := repository.tx.Do(ctx, func(txCtx context.Context) error {
 		q := repository.tx.Querier(txCtx)
+		scope, err := q.SelectGoldenRuntimeParticipantScope(txCtx, sqlc.SelectGoldenRuntimeParticipantScopeParams{
+			TournamentID: command.TournamentID, PlayerID: command.PlayerID,
+		})
+		if err != nil {
+			return goldenRuntimeReadError("load participant scope", err)
+		}
+		head, err := q.LockGoldenRuntimeHead(txCtx, sqlc.LockGoldenRuntimeHeadParams{
+			TournamentID: command.TournamentID, RosterID: scope.RosterID,
+		})
+		if err != nil {
+			return goldenRuntimeReadError("lock Golden runtime head", err)
+		}
 		participant, err := q.LockGoldenRuntimeParticipant(txCtx, sqlc.LockGoldenRuntimeParticipantParams{
 			TournamentID: command.TournamentID, PlayerID: command.PlayerID,
 		})
 		if err != nil {
 			return goldenRuntimeReadError("load participant", err)
 		}
-		if participant.State != "prepared" && participant.State != "ready" {
+		spec := goldenRuntimeCommandSpec{
+			CommandID: command.CommandID, TournamentID: command.TournamentID, RosterID: participant.RosterID,
+			ActorKind: goldenRuntimeCommandActorKind(false), ActorID: command.ActorID,
+			Scope: "participant", Kind: "ready", AttemptID: command.ExpectedAttemptID,
+			ParticipantID: participant.ParticipantID, ExpectedRuntimeRevision: command.ExpectedRuntimeRevision,
+			ExpectedReadyWindowID: command.ExpectedReadyWindowID,
+			Payload: struct {
+				Ready bool `json:"ready"`
+			}{Ready: command.Ready},
+		}
+		replay, replayed, replayErr := goldenRuntimeReplay(txCtx, q, spec)
+		if replayErr != nil {
+			return replayErr
+		}
+		if replayed {
+			result, replayErr = goldenRuntimeDecodeResult[usecase.GoldenParticipantView](replay.ResultPayload)
+			return replayErr
+		}
+		if authorityErr := goldenRuntimeAuthorityConflictForTarget(
+			command.ExpectedRuntimeRevision, head.Revision,
+			command.ExpectedReadyWindowID, participant.ReadyWindowID,
+			command.ExpectedAttemptID, participant.AttemptID,
+		); authorityErr != nil {
+			return authorityErr
+		}
+		if participant.State != "prepared" {
 			return domain.ErrConflict
 		}
 		if _, disconnectErr := q.LockOpenGoldenReadyDisconnect(txCtx, sqlc.LockOpenGoldenReadyDisconnectParams{
@@ -235,12 +354,27 @@ func (repository *GoldenRuntimePostgres) SetReady(
 				return goldenRuntimeWriteError("ready attempt", err)
 			}
 		}
-		return nil
+		advanced, err := q.AdvanceGoldenRuntimeHead(txCtx, sqlc.AdvanceGoldenRuntimeHeadParams{
+			TournamentID: command.TournamentID, RosterID: participant.RosterID,
+			ExpectedRevision: head.Revision, NextRevision: head.Revision + 1, UpdatedAt: tstz(now),
+		})
+		if err != nil {
+			return goldenRuntimeWriteError("advance Golden runtime head", err)
+		}
+		result, err = goldenParticipantRuntimeViewWithin(txCtx, q, command.TournamentID, command.PlayerID)
+		if err != nil {
+			return err
+		}
+		payload, err := goldenRuntimeResultPayload(result)
+		if err != nil {
+			return err
+		}
+		return repository.appendGoldenRuntimeEvidence(txCtx, q, spec, advanced, "participant", payload, now)
 	})
 	if err != nil {
 		return usecase.GoldenParticipantView{}, fmt.Errorf("GoldenRuntimePostgres - SetReady: %w", err)
 	}
-	return repository.ParticipantView(ctx, usecase.GoldenParticipantQuery{TournamentID: command.TournamentID, PlayerID: command.PlayerID})
+	return result, nil
 }
 
 //nolint:gocyclo // Start validates the full ready window and connection set in one transaction.
@@ -249,69 +383,117 @@ func (repository *GoldenRuntimePostgres) Start(
 	command usecase.GoldenStartCommand,
 	now time.Time,
 ) (usecase.GoldenOperatorView, error) {
+	var result usecase.GoldenOperatorView
 	err := repository.tx.Do(ctx, func(txCtx context.Context) error {
 		q := repository.tx.Querier(txCtx)
 		assignment, err := q.GetGoldenRuntimeAssignment(txCtx, sqlc.GetGoldenRuntimeAssignmentParams{AttemptID: command.AttemptID, TournamentID: command.TournamentID})
 		if err != nil {
 			return goldenRuntimeReadError("load assignment", err)
 		}
+		head, err := q.LockGoldenRuntimeHead(txCtx, sqlc.LockGoldenRuntimeHeadParams{
+			TournamentID: command.TournamentID, RosterID: assignment.RosterID,
+		})
+		if err != nil {
+			return goldenRuntimeReadError("lock Golden runtime head", err)
+		}
+		spec := goldenRuntimeCommandSpec{
+			CommandID: command.CommandID, TournamentID: command.TournamentID, RosterID: assignment.RosterID,
+			ActorKind: goldenRuntimeCommandActorKind(true), ActorID: command.ActorID,
+			Scope: "operator", Kind: "start", AttemptID: command.AttemptID,
+			ExpectedRuntimeRevision: command.ExpectedRuntimeRevision,
+			ExpectedReadyWindowID:   command.ExpectedReadyWindowID, Payload: struct{}{},
+		}
+		replay, replayed, replayErr := goldenRuntimeReplay(txCtx, q, spec)
+		if replayErr != nil {
+			return replayErr
+		}
+		if replayed {
+			result, replayErr = goldenRuntimeDecodeResult[usecase.GoldenOperatorView](replay.ResultPayload)
+			return replayErr
+		}
+		if authorityErr := goldenRuntimeAuthorityConflict(
+			command.ExpectedRuntimeRevision, head.Revision,
+			command.ExpectedReadyWindowID, assignment.ReadyWindowID,
+		); authorityErr != nil {
+			return authorityErr
+		}
 		attempt, err := q.LockGoldenAttempt(txCtx, sqlc.LockGoldenAttemptParams{ID: command.AttemptID, TournamentID: command.TournamentID, RosterID: assignment.RosterID})
 		if err != nil {
 			return goldenRuntimeReadError("lock attempt", err)
 		}
 		if attempt.State == "active" {
-			return nil
+			return domain.ErrConflict
 		}
 		if attempt.State == "technical_pause" {
-			return repository.resumeGoldenRuntimeAfterTechnicalPause(txCtx, q, assignment, now)
+			if err := repository.resumeGoldenRuntimeAfterTechnicalPause(txCtx, q, assignment, now); err != nil {
+				return err
+			}
+		} else {
+			if attempt.State != "ready" {
+				return domain.ErrConflict
+			}
+			if !assignment.ReadyWindowDeadline.Valid || !now.Before(assignment.ReadyWindowDeadline.Time) {
+				return domain.ErrConflict
+			}
+			members, err := q.ListGoldenRuntimeAttemptMembers(txCtx, sqlc.ListGoldenRuntimeAttemptMembersParams{AttemptID: command.AttemptID, TournamentID: command.TournamentID})
+			if err != nil {
+				return goldenRuntimeReadError("load members", err)
+			}
+			activeMembers := 0
+			for _, member := range members {
+				if member.NoShowAt.Valid || member.ExcludedAt.Valid {
+					continue
+				}
+				activeMembers++
+				if !member.ReadyAt.Valid {
+					return domain.ErrConflict
+				}
+				if _, disconnectErr := q.LockOpenGoldenReadyDisconnect(txCtx, sqlc.LockOpenGoldenReadyDisconnectParams{
+					MembershipID: member.MembershipID, AttemptID: command.AttemptID,
+					TournamentID: command.TournamentID, RosterID: assignment.RosterID,
+				}); disconnectErr == nil {
+					return domain.ErrConflict
+				} else if !errors.Is(disconnectErr, pgx.ErrNoRows) {
+					return goldenRuntimeReadError("load Golden connection", disconnectErr)
+				}
+				if _, err = q.EstablishGoldenParticipation(txCtx, sqlc.EstablishGoldenParticipationParams{
+					EstablishedAt: tstz(now), ID: member.MembershipID, AttemptID: command.AttemptID,
+					TournamentID: command.TournamentID, RosterID: assignment.RosterID,
+				}); err != nil {
+					return goldenRuntimeWriteError("establish participation", err)
+				}
+			}
+			if activeMembers == 0 {
+				return domain.ErrConflict
+			}
+			if _, err = q.StartGoldenRuntimeAssignment(txCtx, sqlc.StartGoldenRuntimeAssignmentParams{StartedAt: tstz(now), AttemptID: command.AttemptID, TournamentID: command.TournamentID}); err != nil {
+				return goldenRuntimeWriteError("start assignment", err)
+			}
+			if _, err = q.UpdateGoldenAttemptCAS(txCtx, goldenAttemptUpdate(command.AttemptID, command.TournamentID, assignment.RosterID, "ready", "active", attempt.DisclosedAt.Time, attempt.ReadyAt.Time, now, time.Time{})); err != nil {
+				return goldenRuntimeWriteError("start attempt", err)
+			}
 		}
-		if attempt.State != "ready" {
-			return domain.ErrConflict
-		}
-		if !assignment.ReadyWindowDeadline.Valid || !now.Before(assignment.ReadyWindowDeadline.Time) {
-			return domain.ErrConflict
-		}
-		members, err := q.ListGoldenRuntimeAttemptMembers(txCtx, sqlc.ListGoldenRuntimeAttemptMembersParams{AttemptID: command.AttemptID, TournamentID: command.TournamentID})
+		advanced, err := q.AdvanceGoldenRuntimeHead(txCtx, sqlc.AdvanceGoldenRuntimeHeadParams{
+			TournamentID: command.TournamentID, RosterID: assignment.RosterID,
+			ExpectedRevision: head.Revision, NextRevision: head.Revision + 1, UpdatedAt: tstz(now),
+		})
 		if err != nil {
-			return goldenRuntimeReadError("load members", err)
+			return goldenRuntimeWriteError("advance Golden runtime head", err)
 		}
-		activeMembers := 0
-		for _, member := range members {
-			if member.NoShowAt.Valid || member.ExcludedAt.Valid {
-				continue
-			}
-			activeMembers++
-			if !member.ReadyAt.Valid {
-				return domain.ErrConflict
-			}
-			if _, disconnectErr := q.LockOpenGoldenReadyDisconnect(txCtx, sqlc.LockOpenGoldenReadyDisconnectParams{
-				MembershipID: member.MembershipID, AttemptID: command.AttemptID,
-				TournamentID: command.TournamentID, RosterID: assignment.RosterID,
-			}); disconnectErr == nil {
-				return domain.ErrConflict
-			} else if !errors.Is(disconnectErr, pgx.ErrNoRows) {
-				return goldenRuntimeReadError("load Golden connection", disconnectErr)
-			}
-			if _, err = q.EstablishGoldenParticipation(txCtx, sqlc.EstablishGoldenParticipationParams{
-				EstablishedAt: tstz(now), ID: member.MembershipID, AttemptID: command.AttemptID,
-				TournamentID: command.TournamentID, RosterID: assignment.RosterID,
-			}); err != nil {
-				return goldenRuntimeWriteError("establish participation", err)
-			}
+		result, err = goldenOperatorRuntimeViewWithin(txCtx, q, command.TournamentID, now)
+		if err != nil {
+			return err
 		}
-		if activeMembers == 0 {
-			return domain.ErrConflict
+		payload, err := goldenRuntimeResultPayload(result)
+		if err != nil {
+			return err
 		}
-		if _, err = q.StartGoldenRuntimeAssignment(txCtx, sqlc.StartGoldenRuntimeAssignmentParams{StartedAt: tstz(now), AttemptID: command.AttemptID, TournamentID: command.TournamentID}); err != nil {
-			return goldenRuntimeWriteError("start assignment", err)
-		}
-		_, err = q.UpdateGoldenAttemptCAS(txCtx, goldenAttemptUpdate(command.AttemptID, command.TournamentID, assignment.RosterID, "ready", "active", attempt.DisclosedAt.Time, attempt.ReadyAt.Time, now, time.Time{}))
-		return goldenRuntimeWriteError("start attempt", err)
+		return repository.appendGoldenRuntimeEvidence(txCtx, q, spec, advanced, "operator", payload, now)
 	})
 	if err != nil {
 		return usecase.GoldenOperatorView{}, fmt.Errorf("GoldenRuntimePostgres - Start: %w", err)
 	}
-	return repository.OperatorView(ctx, usecase.GoldenOperatorQuery{TournamentID: command.TournamentID, OperatorID: command.CommandID})
+	return result, nil
 }
 
 func goldenAttemptUpdate(attemptID, tournamentID, rosterID uuid.UUID, expected, next string, disclosedAt, readyAt, startedAt, completedAt time.Time) sqlc.UpdateGoldenAttemptCASParams {

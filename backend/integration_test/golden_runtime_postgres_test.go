@@ -44,6 +44,7 @@ func TestGoldenRuntimeSurvivesRestartAndProducesPlayoffEvidence(t *testing.T) {
 		TournamentID:               fixture.tournamentID,
 		CommandID:                  uuid.New(),
 		ExpectedProjectionRevision: sourceProjectionRevision,
+		GoldenMutationScope:        usecase.GoldenMutationScope{ActorID: uuid.New()},
 	})
 	require.NoError(t, err)
 	require.NotEmpty(t, operator.Groups)
@@ -55,14 +56,10 @@ func TestGoldenRuntimeSurvivesRestartAndProducesPlayoffEvidence(t *testing.T) {
 			require.NoError(t, sharedPool.QueryRow(ctx, `
 				SELECT player_id FROM participants WHERE id = $1`, member.ParticipantID).Scan(&playerID))
 			playersByParticipant[member.ParticipantID] = playerID
-			participant, readyErr := application.SetReady(ctx, usecase.GoldenReadyCommand{
-				TournamentID: fixture.tournamentID, PlayerID: playerID,
-				CommandID: uuid.New(), Ready: true,
-			})
+			participant, readyErr := application.SetReady(ctx, goldenRuntimeReadyCommand(ctx, t, application, fixture.tournamentID, playerID, uuid.New()))
 			require.NoError(t, readyErr)
 			if participant.State == "ready" {
-				require.NotNil(t, participant.Task)
-				require.Equal(t, 180, participant.Task.TimeLimitSeconds)
+				require.Nil(t, participant.Task, "ready snapshots must not disclose the task before start commits")
 			}
 		}
 	}
@@ -72,10 +69,17 @@ func TestGoldenRuntimeSurvivesRestartAndProducesPlayoffEvidence(t *testing.T) {
 		goldenRuntimeClock{now: startedAt},
 	)
 	for _, group := range operator.Groups {
-		_, err = application.Start(ctx, usecase.GoldenStartCommand{
-			TournamentID: fixture.tournamentID, AttemptID: group.AttemptID, CommandID: uuid.New(),
-		})
+		_, err = application.Start(ctx, goldenRuntimeStartCommand(ctx, t, application, fixture.tournamentID, group.AttemptID, uuid.New()))
 		require.NoError(t, err)
+		for _, member := range group.Members {
+			participant, viewErr := application.ParticipantView(ctx, usecase.GoldenParticipantQuery{
+				TournamentID: fixture.tournamentID,
+				PlayerID:     playersByParticipant[member.ParticipantID],
+			})
+			require.NoError(t, viewErr)
+			require.NotNil(t, participant.Task, "start must disclose the task after deadline commits")
+			require.Equal(t, 180, participant.Task.TimeLimitSeconds)
+		}
 	}
 
 	recoveryRepository := postgres.NewExecutionRecoveryPostgres(
@@ -97,7 +101,7 @@ func TestGoldenRuntimeSurvivesRestartAndProducesPlayoffEvidence(t *testing.T) {
 	var recoveryCount int
 	require.NoError(t, sharedPool.QueryRow(ctx, `
 		SELECT COUNT(*) FROM golden_recovery_revisions WHERE tournament_id = $1`, fixture.tournamentID).Scan(&recoveryCount))
-	require.Equal(t, len(operator.Groups), recoveryCount)
+	require.Zero(t, recoveryCount, "a recovery before any elapsed boundary is a no-op")
 
 	for groupIndex, group := range operator.Groups {
 		var flag string
@@ -109,24 +113,35 @@ func TestGoldenRuntimeSurvivesRestartAndProducesPlayoffEvidence(t *testing.T) {
 			WHERE runtime.attempt_id = $1`, group.AttemptID).Scan(&flag))
 		for memberIndex, member := range group.Members {
 			commandID := uuid.New()
-			finalView, submitErr := restarted.Submit(ctx, usecase.GoldenSubmissionCommand{
-				TournamentID: fixture.tournamentID, PlayerID: playersByParticipant[member.ParticipantID],
-				CommandID: commandID, SubmittedFlag: flag,
-			})
+			submitCommand := goldenRuntimeSubmitCommand(ctx, t, restarted, fixture.tournamentID, playersByParticipant[member.ParticipantID], commandID, flag)
+			finalView, submitErr := restarted.Submit(ctx, submitCommand)
 			require.NoError(t, submitErr)
+			replayedView, replayErr := restarted.Submit(ctx, submitCommand)
+			require.NoError(t, replayErr)
+			require.Equal(t, finalView, replayedView)
 			if groupIndex == 0 && memberIndex == 0 && len(group.Members) > 1 {
-				_, replayErr := restarted.Submit(ctx, usecase.GoldenSubmissionCommand{
-					TournamentID: fixture.tournamentID,
-					PlayerID:     playersByParticipant[group.Members[1].ParticipantID],
-					CommandID:    commandID, SubmittedFlag: flag,
-				})
-				require.True(t, errors.Is(replayErr, domain.ErrConflict))
+				replayCommand := goldenRuntimeSubmitCommand(ctx, t, restarted, fixture.tournamentID, playersByParticipant[group.Members[1].ParticipantID], commandID, flag)
+				_, reuseErr := restarted.Submit(ctx, replayCommand)
+				require.True(t, errors.Is(reuseErr, domain.ErrConflict))
 			}
 			if memberIndex == len(group.Members)-1 {
 				require.Equal(t, "completed", finalView.State)
 			}
 		}
 	}
+	var headRevision, commandCount, auditCount, outboxCount int64
+	require.NoError(t, sharedPool.QueryRow(ctx, `
+		SELECT head.revision,
+			(SELECT COUNT(*) FROM golden_runtime_commands WHERE tournament_id = head.tournament_id),
+			(SELECT COUNT(*) FROM audit_events WHERE tournament_id = head.tournament_id AND action LIKE 'golden.runtime.%'),
+			(SELECT COUNT(*) FROM outbox_golden_runtime_sources WHERE tournament_id = head.tournament_id)
+		FROM golden_runtime_heads AS head
+		WHERE head.tournament_id = $1`, fixture.tournamentID,
+	).Scan(&headRevision, &commandCount, &auditCount, &outboxCount))
+	require.Positive(t, headRevision)
+	require.Equal(t, headRevision, commandCount)
+	require.Equal(t, commandCount, auditCount)
+	require.Equal(t, commandCount, outboxCount)
 
 	playoffs, err := publishSwissPlayoffs(ctx, fixture, tournamentprogression.Command{
 		CommandID: uuid.New(), TournamentID: fixture.tournamentID, RosterID: fixture.rosterID,
@@ -159,6 +174,7 @@ func TestGoldenRuntimeDeadlineReserveAndConnectionStateMachine(t *testing.T) {
 	_, err := withoutPlan.Open(ctx, usecase.GoldenOpenCommand{
 		TournamentID: fixture.tournamentID, CommandID: uuid.New(),
 		ExpectedProjectionRevision: sourceProjectionRevision,
+		GoldenMutationScope:        usecase.GoldenMutationScope{ActorID: uuid.New()},
 	})
 	require.Error(t, err)
 	var attemptCount int
@@ -177,49 +193,46 @@ func TestGoldenRuntimeDeadlineReserveAndConnectionStateMachine(t *testing.T) {
 	operator, err := application.Open(ctx, usecase.GoldenOpenCommand{
 		TournamentID: fixture.tournamentID, CommandID: uuid.New(),
 		ExpectedProjectionRevision: sourceProjectionRevision,
+		GoldenMutationScope:        usecase.GoldenMutationScope{ActorID: uuid.New()},
 	})
 	require.NoError(t, err)
 	require.NotEmpty(t, operator.Groups)
 	primary := operator.Groups[0]
 	players := goldenRuntimePlayers(ctx, t, primary)
 	for _, member := range primary.Members {
-		_, err = application.SetReady(ctx, usecase.GoldenReadyCommand{
-			TournamentID: fixture.tournamentID, PlayerID: players[member.ParticipantID],
-			CommandID: uuid.New(), Ready: true,
-		})
+		_, err = application.SetReady(ctx, goldenRuntimeReadyCommand(ctx, t, application, fixture.tournamentID, players[member.ParticipantID], uuid.New()))
 		require.NoError(t, err)
 	}
-	_, err = application.Start(ctx, usecase.GoldenStartCommand{
-		TournamentID: fixture.tournamentID, AttemptID: primary.AttemptID, CommandID: uuid.New(),
-	})
+	_, err = application.Start(ctx, goldenRuntimeStartCommand(ctx, t, application, fixture.tournamentID, primary.AttemptID, uuid.New()))
 	require.NoError(t, err)
 
 	first := primary.Members[0]
 	require.NoError(t, application.SetConnected(ctx, usecase.GoldenConnectionCommand{
 		TournamentID: fixture.tournamentID, PlayerID: players[first.ParticipantID],
 		CommandID: uuid.New(), Connected: false,
+		GoldenMutationScope: goldenRuntimeParticipantScope(ctx, t, application, fixture.tournamentID, players[first.ParticipantID]),
 	}))
 	flag := goldenRuntimeAttemptFlag(ctx, t, primary.AttemptID)
-	_, err = application.Submit(ctx, usecase.GoldenSubmissionCommand{
-		TournamentID: fixture.tournamentID, PlayerID: players[first.ParticipantID],
-		CommandID: uuid.New(), SubmittedFlag: flag,
-	})
+	_, err = application.Submit(ctx, goldenRuntimeSubmitCommand(ctx, t, application, fixture.tournamentID, players[first.ParticipantID], uuid.New(), flag))
 	require.ErrorIs(t, err, domain.ErrConflict)
 	require.NoError(t, application.SetConnected(ctx, usecase.GoldenConnectionCommand{
 		TournamentID: fixture.tournamentID, PlayerID: players[first.ParticipantID],
 		CommandID: uuid.New(), Connected: true,
+		GoldenMutationScope: goldenRuntimeParticipantScope(ctx, t, application, fixture.tournamentID, players[first.ParticipantID]),
 	}))
-	_, err = application.Submit(ctx, usecase.GoldenSubmissionCommand{
-		TournamentID: fixture.tournamentID, PlayerID: players[first.ParticipantID],
-		CommandID: uuid.New(), SubmittedFlag: flag,
-	})
+	_, err = application.Submit(ctx, goldenRuntimeSubmitCommand(ctx, t, application, fixture.tournamentID, players[first.ParticipantID], uuid.New(), flag))
 	require.NoError(t, err)
 
-	deadline := now.Add(goldenRuntimeDurationForTest + time.Second)
+	deadline := now.Add(goldenRuntimeDurationForTest)
 	recovered := goldenusecase.NewRuntimeApplication(
 		postgres.NewGoldenRuntimePostgres(postgres.NewTxManager(sharedPool)),
 		goldenRuntimeClock{now: deadline},
 	)
+	late := primary.Members[1]
+	_, err = recovered.Submit(ctx, goldenRuntimeSubmitCommand(
+		ctx, t, recovered, fixture.tournamentID, players[late.ParticipantID], uuid.New(), flag,
+	))
+	require.ErrorIs(t, err, domain.ErrConflict, "submission at the exact deadline must lose to closure")
 	require.NoError(t, recovered.Recover(ctx, fixture.tournamentID))
 	view, err := recovered.OperatorView(ctx, usecase.GoldenOperatorQuery{
 		TournamentID: fixture.tournamentID, OperatorID: uuid.New(),
@@ -237,22 +250,14 @@ func TestGoldenRuntimeDeadlineReserveAndConnectionStateMachine(t *testing.T) {
 	require.EqualValues(t, 2, reservePosition)
 
 	for _, member := range reserve.Members {
-		_, err = recovered.SetReady(ctx, usecase.GoldenReadyCommand{
-			TournamentID: fixture.tournamentID, PlayerID: players[member.ParticipantID],
-			CommandID: uuid.New(), Ready: true,
-		})
+		_, err = recovered.SetReady(ctx, goldenRuntimeReadyCommand(ctx, t, recovered, fixture.tournamentID, players[member.ParticipantID], uuid.New()))
 		require.NoError(t, err)
 	}
-	_, err = recovered.Start(ctx, usecase.GoldenStartCommand{
-		TournamentID: fixture.tournamentID, AttemptID: reserve.AttemptID, CommandID: uuid.New(),
-	})
+	_, err = recovered.Start(ctx, goldenRuntimeStartCommand(ctx, t, recovered, fixture.tournamentID, reserve.AttemptID, uuid.New()))
 	require.NoError(t, err)
 	reserveFlag := goldenRuntimeAttemptFlag(ctx, t, reserve.AttemptID)
 	for _, member := range reserve.Members {
-		_, err = recovered.Submit(ctx, usecase.GoldenSubmissionCommand{
-			TournamentID: fixture.tournamentID, PlayerID: players[member.ParticipantID],
-			CommandID: uuid.New(), SubmittedFlag: reserveFlag,
-		})
+		_, err = recovered.Submit(ctx, goldenRuntimeSubmitCommand(ctx, t, recovered, fixture.tournamentID, players[member.ParticipantID], uuid.New(), reserveFlag))
 		require.NoError(t, err)
 	}
 	var ledgerRevisionCount int
@@ -300,19 +305,16 @@ func TestGoldenRuntimeCommonFailureRequiresOperatorReserve(t *testing.T) {
 	)
 	operator, err := application.Open(ctx, usecase.GoldenOpenCommand{
 		TournamentID: fixture.tournamentID, CommandID: uuid.New(), ExpectedProjectionRevision: sourceProjectionRevision,
+		GoldenMutationScope: usecase.GoldenMutationScope{ActorID: uuid.New()},
 	})
 	require.NoError(t, err)
 	primary := operator.Groups[0]
 	players := goldenRuntimePlayers(ctx, t, primary)
 	for _, member := range primary.Members {
-		_, err = application.SetReady(ctx, usecase.GoldenReadyCommand{
-			TournamentID: fixture.tournamentID, PlayerID: players[member.ParticipantID], CommandID: uuid.New(), Ready: true,
-		})
+		_, err = application.SetReady(ctx, goldenRuntimeReadyCommand(ctx, t, application, fixture.tournamentID, players[member.ParticipantID], uuid.New()))
 		require.NoError(t, err)
 	}
-	_, err = application.Start(ctx, usecase.GoldenStartCommand{
-		TournamentID: fixture.tournamentID, AttemptID: primary.AttemptID, CommandID: uuid.New(),
-	})
+	_, err = application.Start(ctx, goldenRuntimeStartCommand(ctx, t, application, fixture.tournamentID, primary.AttemptID, uuid.New()))
 	require.NoError(t, err)
 
 	afterDeadline := now.Add(goldenRuntimeDurationForTest + time.Second)
@@ -351,9 +353,7 @@ func TestGoldenRuntimeCommonFailureRequiresOperatorReserve(t *testing.T) {
 		postgres.NewGoldenRuntimePostgres(postgres.NewTxManager(sharedPool)),
 		goldenRuntimeClock{now: afterDeadline.Add(time.Second)},
 	)
-	_, err = operatorResume.Start(ctx, usecase.GoldenStartCommand{
-		TournamentID: fixture.tournamentID, AttemptID: primary.AttemptID, CommandID: uuid.New(),
-	})
+	_, err = operatorResume.Start(ctx, goldenRuntimeStartCommand(ctx, t, operatorResume, fixture.tournamentID, primary.AttemptID, uuid.New()))
 	require.NoError(t, err)
 	view, err = operatorResume.OperatorView(ctx, usecase.GoldenOperatorQuery{
 		TournamentID: fixture.tournamentID, OperatorID: uuid.New(),
@@ -371,6 +371,77 @@ func TestGoldenRuntimeCommonFailureRequiresOperatorReserve(t *testing.T) {
 }
 
 const goldenRuntimeDurationForTest = 180 * time.Second
+
+func goldenRuntimeParticipantScope(
+	ctx context.Context,
+	t testing.TB,
+	application usecase.GoldenUseCase,
+	tournamentID, playerID uuid.UUID,
+) usecase.GoldenMutationScope {
+	t.Helper()
+	view, err := application.ParticipantView(ctx, usecase.GoldenParticipantQuery{
+		TournamentID: tournamentID, PlayerID: playerID,
+	})
+	require.NoError(t, err)
+	return usecase.GoldenMutationScope{
+		ActorID: playerID, ExpectedRuntimeRevision: view.RuntimeRevision,
+		ExpectedAttemptID: view.AttemptID, ExpectedReadyWindowID: view.ReadyWindowID,
+	}
+}
+
+func goldenRuntimeReadyCommand(
+	ctx context.Context,
+	t testing.TB,
+	application usecase.GoldenUseCase,
+	tournamentID, playerID, commandID uuid.UUID,
+) usecase.GoldenReadyCommand {
+	t.Helper()
+	return usecase.GoldenReadyCommand{
+		TournamentID: tournamentID, PlayerID: playerID, CommandID: commandID, Ready: true,
+		GoldenMutationScope: goldenRuntimeParticipantScope(ctx, t, application, tournamentID, playerID),
+	}
+}
+
+func goldenRuntimeSubmitCommand(
+	ctx context.Context,
+	t testing.TB,
+	application usecase.GoldenUseCase,
+	tournamentID, playerID, commandID uuid.UUID,
+	flag string,
+) usecase.GoldenSubmissionCommand {
+	t.Helper()
+	return usecase.GoldenSubmissionCommand{
+		TournamentID: tournamentID, PlayerID: playerID, CommandID: commandID, SubmittedFlag: flag,
+		GoldenMutationScope: goldenRuntimeParticipantScope(ctx, t, application, tournamentID, playerID),
+	}
+}
+
+func goldenRuntimeStartCommand(
+	ctx context.Context,
+	t testing.TB,
+	application usecase.GoldenUseCase,
+	tournamentID, attemptID, commandID uuid.UUID,
+) usecase.GoldenStartCommand {
+	t.Helper()
+	actorID := uuid.New()
+	view, err := application.OperatorView(ctx, usecase.GoldenOperatorQuery{
+		TournamentID: tournamentID, OperatorID: actorID,
+	})
+	require.NoError(t, err)
+	for _, group := range view.Groups {
+		if group.AttemptID == attemptID {
+			return usecase.GoldenStartCommand{
+				TournamentID: tournamentID, AttemptID: attemptID, CommandID: commandID,
+				GoldenMutationScope: usecase.GoldenMutationScope{
+					ActorID: actorID, ExpectedRuntimeRevision: group.RuntimeRevision,
+					ExpectedAttemptID: attemptID, ExpectedReadyWindowID: group.ReadyWindowID,
+				},
+			}
+		}
+	}
+	require.FailNow(t, "Golden attempt not found", attemptID)
+	return usecase.GoldenStartCommand{}
+}
 
 func goldenRuntimePlayers(
 	ctx context.Context,

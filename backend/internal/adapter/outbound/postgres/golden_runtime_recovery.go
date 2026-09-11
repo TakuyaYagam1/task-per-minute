@@ -18,6 +18,8 @@ import (
 // transaction that records recovery evidence. It is intentionally the only
 // worker entry point for ready-window expiry, deadline closure, and reserve
 // continuation.
+//
+//nolint:gocyclo // Boundary selection, replay, state change, and evidence must remain in one transaction.
 func (repository *GoldenRuntimePostgres) Recover(ctx context.Context, tournamentID uuid.UUID, now time.Time) error {
 	return repository.tx.Do(ctx, func(txCtx context.Context) error {
 		q := repository.tx.Querier(txCtx)
@@ -26,7 +28,66 @@ func (repository *GoldenRuntimePostgres) Recover(ctx context.Context, tournament
 			return goldenRuntimeReadError("list recovery attempts", err)
 		}
 		for _, attempt := range attempts {
-			if err := repository.recoverGoldenRuntimeAttempt(txCtx, q, attempt, now); err != nil {
+			// User commands lock the runtime head before the attempt and its
+			// memberships. The worker follows the same order so an exact-deadline
+			// submission cannot pass while recovery is deciding the boundary.
+			head, err := q.LockGoldenRuntimeHead(txCtx, sqlc.LockGoldenRuntimeHeadParams{
+				TournamentID: attempt.TournamentID, RosterID: attempt.RosterID,
+			})
+			if err != nil {
+				return goldenRuntimeReadError("lock Golden runtime head for recovery", err)
+			}
+			if _, err := q.LockGoldenAttempt(txCtx, sqlc.LockGoldenAttemptParams{
+				ID: attempt.AttemptID, TournamentID: attempt.TournamentID, RosterID: attempt.RosterID,
+			}); err != nil {
+				return goldenRuntimeReadError("lock Golden attempt for recovery", err)
+			}
+			boundary, err := repository.goldenRuntimeRecoveryBoundary(txCtx, q, attempt, now)
+			if err != nil {
+				return err
+			}
+			if boundary == "" {
+				continue
+			}
+			spec := goldenRuntimeRecoverySpec(attempt, boundary, head.Revision)
+			replay, replayed, replayErr := goldenRuntimeRecoveryReplay(txCtx, q, spec)
+			if replayErr != nil {
+				return replayErr
+			}
+			if replayed {
+				if replay.ResultingRuntimeRevision != head.Revision {
+					return domain.ErrConflict
+				}
+				continue
+			}
+			if err := repository.applyGoldenRuntimeRecoveryBoundary(txCtx, q, attempt, boundary, now); err != nil {
+				return err
+			}
+			if err := ensureGoldenRuntimeRecoveryStable(txCtx, q, attempt, now); err != nil {
+				return err
+			}
+			assignment, err := q.GetGoldenRuntimeAssignment(txCtx, sqlc.GetGoldenRuntimeAssignmentParams{
+				AttemptID: attempt.AttemptID, TournamentID: attempt.TournamentID,
+			})
+			if err != nil {
+				return goldenRuntimeReadError("load recovered Golden assignment", err)
+			}
+			advanced, err := q.AdvanceGoldenRuntimeHead(txCtx, sqlc.AdvanceGoldenRuntimeHeadParams{
+				TournamentID: attempt.TournamentID, RosterID: attempt.RosterID,
+				ExpectedRevision: head.Revision, NextRevision: head.Revision + 1, UpdatedAt: tstz(now),
+			})
+			if err != nil {
+				return goldenRuntimeWriteError("advance recovered Golden runtime head", err)
+			}
+			resultPayload, err := goldenRuntimeRecoveryResultPayload(
+				attempt, boundary, assignment.State, advanced.Revision,
+			)
+			if err != nil {
+				return err
+			}
+			if err := repository.appendGoldenRuntimeEvidence(
+				txCtx, q, spec, advanced, "recovery", resultPayload, now,
+			); err != nil {
 				return err
 			}
 		}
@@ -34,36 +95,94 @@ func (repository *GoldenRuntimePostgres) Recover(ctx context.Context, tournament
 	})
 }
 
-func (repository *GoldenRuntimePostgres) recoverGoldenRuntimeAttempt(
+//nolint:gocyclo // The state machine enumerates every elapsed production boundary explicitly.
+func (repository *GoldenRuntimePostgres) goldenRuntimeRecoveryBoundary(
 	ctx context.Context,
 	q *sqlc.Queries,
 	attempt sqlc.ListGoldenRuntimeRecoveryAttemptsRow,
 	now time.Time,
-) error {
+) (string, error) {
 	switch attempt.State {
 	case "prepared", "ready":
 		if !attempt.ReadyWindowDeadline.Valid {
-			return domain.ErrConflict
+			return "", domain.ErrConflict
 		}
-		if !now.Before(attempt.ReadyWindowDeadline.Time) {
-			return repository.expireGoldenRuntimeReadyWindow(ctx, q, attempt, now)
+		if now.Before(attempt.ReadyWindowDeadline.Time) {
+			return "", nil
 		}
+		members, err := q.ListGoldenRuntimeAttemptMembers(ctx, sqlc.ListGoldenRuntimeAttemptMembersParams{
+			AttemptID: attempt.AttemptID, TournamentID: attempt.TournamentID,
+		})
+		if err != nil {
+			return "", goldenRuntimeReadError("load Golden recovery readiness", err)
+		}
+		for _, member := range members {
+			if member.ReadyAt.Valid && !member.NoShowAt.Valid && !member.ExcludedAt.Valid {
+				return "ready_timeout", nil
+			}
+		}
+		return "no_show", nil
 	case "active":
 		if !attempt.StartedAt.Valid || !attempt.Deadline.Valid ||
 			!attempt.Deadline.Time.Equal(attempt.StartedAt.Time.Add(goldenRuntimeDuration)) {
-			return domain.ErrConflict
+			return "", domain.ErrConflict
 		}
-		if !now.Before(attempt.Deadline.Time) {
-			return repository.closeGoldenRuntimeDeadline(ctx, q, attempt, now)
+		if now.Before(attempt.Deadline.Time) {
+			return "", nil
 		}
+		members, err := q.ListGoldenRuntimeAttemptMembers(ctx, sqlc.ListGoldenRuntimeAttemptMembersParams{
+			AttemptID: attempt.AttemptID, TournamentID: attempt.TournamentID,
+		})
+		if err != nil {
+			return "", goldenRuntimeReadError("load Golden deadline recovery", err)
+		}
+		accepted := 0
+		for _, member := range members {
+			if member.SubmissionID.Valid && member.PositionCommitID.Valid {
+				accepted++
+			}
+		}
+		if accepted == 0 {
+			return "technical_pause", nil
+		}
+		unresolved, err := q.ListGoldenRuntimeUnresolvedMembers(ctx, sqlc.ListGoldenRuntimeUnresolvedMembersParams{
+			TournamentID: attempt.TournamentID, GroupRevisionID: attempt.GroupRevisionID,
+		})
+		if err != nil {
+			return "", goldenRuntimeReadError("load Golden deadline survivors", err)
+		}
+		if len(unresolved) == 0 {
+			return "completion", nil
+		}
+		if attempt.EdgePosition >= 3 {
+			return "technical_pause", nil
+		}
+		return "reserve_creation", nil
 	case "technical_pause":
 		if !attempt.StartedAt.Valid || !attempt.Deadline.Valid {
-			return domain.ErrConflict
+			return "", domain.ErrConflict
 		}
+	default:
+		return "", domain.ErrConflict
+	}
+	return "", nil
+}
+
+func (repository *GoldenRuntimePostgres) applyGoldenRuntimeRecoveryBoundary(
+	ctx context.Context,
+	q *sqlc.Queries,
+	attempt sqlc.ListGoldenRuntimeRecoveryAttemptsRow,
+	boundary string,
+	now time.Time,
+) error {
+	switch boundary {
+	case "ready_timeout", "no_show":
+		return repository.expireGoldenRuntimeReadyWindow(ctx, q, attempt, now)
+	case "technical_pause", "completion", "reserve_creation":
+		return repository.closeGoldenRuntimeDeadline(ctx, q, attempt, now)
 	default:
 		return domain.ErrConflict
 	}
-	return recordGoldenRuntimeRecovery(ctx, q, attempt, now)
 }
 
 func (repository *GoldenRuntimePostgres) expireGoldenRuntimeReadyWindow(
@@ -610,6 +729,27 @@ func recordGoldenRuntimeRecovery(
 	now time.Time,
 ) error {
 	return appendGoldenRuntimeRecoveryState(ctx, q, attempt, "stable", now)
+}
+
+func ensureGoldenRuntimeRecoveryStable(
+	ctx context.Context,
+	q *sqlc.Queries,
+	attempt sqlc.ListGoldenRuntimeRecoveryAttemptsRow,
+	now time.Time,
+) error {
+	latest, err := q.GetLatestGoldenRecoveryRevision(ctx, sqlc.GetLatestGoldenRecoveryRevisionParams{
+		AttemptID: attempt.AttemptID, TournamentID: attempt.TournamentID, RosterID: attempt.RosterID,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return recordGoldenRuntimeRecovery(ctx, q, attempt, now)
+	}
+	if err != nil {
+		return goldenRuntimeReadError("load recovery state after boundary", err)
+	}
+	if latest.State == "technical_pause" {
+		return nil
+	}
+	return recordGoldenRuntimeRecovery(ctx, q, attempt, now)
 }
 
 func appendGoldenRuntimeRecoveryState(

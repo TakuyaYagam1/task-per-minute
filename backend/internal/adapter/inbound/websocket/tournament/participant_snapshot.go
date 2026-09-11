@@ -59,6 +59,8 @@ type ParticipantGoldenInput struct {
 	GroupID         uuid.UUID
 	GroupRevisionID uuid.UUID
 	AttemptID       uuid.UUID
+	RuntimeRevision int64
+	ReadyWindowID   uuid.UUID
 	State           string
 	Ready           bool
 	Submitted       bool
@@ -117,6 +119,8 @@ type ParticipantGolden struct {
 	GroupID         uuid.UUID              `json:"group_id"`
 	GroupRevisionID uuid.UUID              `json:"group_revision_id"`
 	AttemptID       uuid.UUID              `json:"attempt_id"`
+	RuntimeRevision int64                  `json:"runtime_revision"`
+	ReadyWindowID   uuid.UUID              `json:"ready_window_id"`
 	State           string                 `json:"state"`
 	Ready           bool                   `json:"ready"`
 	Submitted       bool                   `json:"submitted"`
@@ -227,6 +231,7 @@ func (s ParticipantSnapshot) clone() ParticipantSnapshot {
 func participantGolden(input ParticipantGoldenInput) (ParticipantGolden, error) {
 	golden := ParticipantGolden{
 		GroupID: input.GroupID, GroupRevisionID: input.GroupRevisionID, AttemptID: input.AttemptID,
+		RuntimeRevision: input.RuntimeRevision, ReadyWindowID: input.ReadyWindowID,
 		State: input.State, Ready: input.Ready, Submitted: input.Submitted,
 		Position: cloneInt(input.Position), StartedAt: cloneTime(input.StartedAt), Deadline: cloneTime(input.Deadline),
 	}
@@ -248,17 +253,29 @@ func validParticipantGolden(golden ParticipantGolden) bool {
 		return false
 	}
 	if golden.Task == nil {
-		return golden.State == "prepared"
+		return golden.StartedAt == nil && golden.Deadline == nil
 	}
-	return golden.Task.AssignmentID != uuid.Nil && golden.Task.SnapshotID != uuid.Nil && golden.Task.TaskID != uuid.Nil &&
+	if golden.StartedAt == nil || golden.Deadline == nil {
+		return false
+	}
+	return golden.Deadline.Equal(golden.StartedAt.Add(180*time.Second)) &&
+		golden.Task.AssignmentID != uuid.Nil && golden.Task.SnapshotID != uuid.Nil && golden.Task.TaskID != uuid.Nil &&
 		validRealtimeString(golden.Task.Title) && validRealtimeString(golden.Task.Category) &&
 		validRealtimeString(golden.Task.Difficulty) && golden.Task.TimeLimitSeconds == 180
 }
 
+//nolint:gocyclo // Wire validation keeps the full Golden identity invariant visible in one guard.
 func validParticipantGoldenIdentity(golden ParticipantGolden) bool {
 	if golden.GroupID == uuid.Nil || golden.GroupRevisionID == uuid.Nil || golden.AttemptID == uuid.Nil ||
+		golden.RuntimeRevision < 1 || golden.ReadyWindowID == uuid.Nil ||
 		!validRealtimeString(golden.State) || (golden.Position != nil && (*golden.Position < 1 || *golden.Position > 16)) ||
 		!validOptionalUTC(golden.StartedAt) || !validOptionalUTC(golden.Deadline) {
+		return false
+	}
+	if (golden.StartedAt == nil) != (golden.Deadline == nil) {
+		return false
+	}
+	if golden.StartedAt == nil && golden.State != "prepared" && golden.State != "ready" {
 		return false
 	}
 	return true

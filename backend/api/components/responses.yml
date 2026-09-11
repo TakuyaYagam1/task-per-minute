@@ -61,6 +61,13 @@ ProjectionRevisionConflictProblem:
       schema:
         $ref: './schemas.yml#/ProjectionRevisionProblem'
 
+GoldenRuntimeConflictProblem:
+  description: The Golden runtime revision, ready window, target, or command identity is stale or conflicting.
+  content:
+    application/problem+json:
+      schema:
+        $ref: './schemas.yml#/GoldenRuntimeConflictProblem'
+
 RateLimitedProblem:
   description: The authenticated participant exceeded the command rate limit.
   headers:

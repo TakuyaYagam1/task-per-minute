@@ -225,6 +225,7 @@ func participantSnapshotInput(view usecase.ParticipantSnapshotView, golden *usec
 func participantGoldenInput(view usecase.GoldenParticipantView) *tournamentws.ParticipantGoldenInput {
 	input := &tournamentws.ParticipantGoldenInput{
 		GroupID: view.GroupID, GroupRevisionID: view.GroupRevisionID, AttemptID: view.AttemptID,
+		RuntimeRevision: view.RuntimeRevision, ReadyWindowID: view.ReadyWindowID,
 		State: view.State, Ready: view.Ready, Submitted: view.Submitted, Position: view.Position,
 		StartedAt: view.StartedAt, Deadline: view.Deadline,
 	}
@@ -348,6 +349,7 @@ func operatorSnapshotInput(view usecase.OperatorSnapshotView, golden []usecase.G
 		}
 		input.Golden[index] = tournamentws.OperatorGoldenGroupInput{
 			GroupID: group.GroupID, GroupRevisionID: group.GroupRevisionID, AttemptID: group.AttemptID,
+			RuntimeRevision: group.RuntimeRevision, ReadyWindowID: group.ReadyWindowID,
 			State: group.State, PositionFrom: group.PositionFrom, PositionTo: group.PositionTo,
 			StartedAt: group.StartedAt, Deadline: group.Deadline, Members: members,
 		}

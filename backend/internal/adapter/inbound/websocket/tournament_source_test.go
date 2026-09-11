@@ -102,6 +102,51 @@ func TestTournamentProductionSnapshotSourceRequiresReader(t *testing.T) {
 	require.Nil(t, source)
 }
 
+func TestOperatorSnapshotInputMapsGoldenRuntimeProjectionFence(t *testing.T) {
+	t.Parallel()
+
+	tournamentID := tournamentSourceID(40)
+	group := tournamentsnapshot.GoldenOperatorGroupView{
+		GroupID:         tournamentSourceID(41),
+		GroupRevisionID: tournamentSourceID(42),
+		AttemptID:       tournamentSourceID(43),
+		State:           "ready",
+		RuntimeRevision: 1,
+		ReadyWindowID:   tournamentSourceID(44),
+		PositionFrom:    1,
+		PositionTo:      2,
+		Members: []tournamentsnapshot.GoldenMemberView{
+			{ParticipantID: tournamentSourceID(45), Ready: true},
+			{ParticipantID: tournamentSourceID(46)},
+		},
+	}
+	view := usecaseOperatorSnapshotView(tournamentID)
+	firstInput := operatorSnapshotInput(view, []tournamentsnapshot.GoldenOperatorGroupView{group})
+	first, err := tournamentws.NewOperatorSnapshot(
+		tournamentws.OperatorSnapshotAccess{Authenticated: true, TournamentID: tournamentID, OperatorID: tournamentSourceID(47)},
+		firstInput,
+	)
+	require.NoError(t, err)
+	require.Len(t, first.Golden, 1)
+	require.Equal(t, int64(1), first.Golden[0].RuntimeRevision)
+	require.Equal(t, tournamentSourceID(44), first.Golden[0].ReadyWindowID)
+
+	group.RuntimeRevision = 2
+	secondInput := operatorSnapshotInput(view, []tournamentsnapshot.GoldenOperatorGroupView{group})
+	second, err := tournamentws.NewOperatorSnapshot(
+		tournamentws.OperatorSnapshotAccess{Authenticated: true, TournamentID: tournamentID, OperatorID: tournamentSourceID(47)},
+		secondInput,
+	)
+	require.NoError(t, err)
+	require.Equal(t, first.Revision, second.Revision)
+	require.Equal(t, first.Golden[0].RuntimeRevision+1, second.Golden[0].RuntimeRevision)
+	require.Equal(t, first.Golden[0].ReadyWindowID, second.Golden[0].ReadyWindowID)
+}
+
+func usecaseOperatorSnapshotView(tournamentID uuid.UUID) tournamentsnapshot.OperatorSnapshotView {
+	return tournamentsnapshot.OperatorSnapshotView{TournamentID: tournamentID, Cursor: tournamentSourceCursor()}
+}
+
 func tournamentSourcePublicView(tournamentID uuid.UUID) tournamentsnapshot.PublicSnapshotView {
 	seriesID := tournamentSourceID(20)
 	return tournamentsnapshot.PublicSnapshotView{

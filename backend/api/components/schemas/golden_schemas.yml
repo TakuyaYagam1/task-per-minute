@@ -401,6 +401,37 @@ GoldenRuntimeState:
   type: string
   enum: [prepared, ready, active, technical_pause, completed, cancelled, superseded]
 
+GoldenRuntimeConflictProblem:
+  description: The Golden runtime command is stale or reuses an idempotency key with a different command identity.
+  allOf:
+    - $ref: '#/ProblemDetails'
+    - type: object
+      properties:
+        expected_runtime_revision:
+          type: integer
+          format: int64
+          minimum: 0
+        current_runtime_revision:
+          type: integer
+          format: int64
+          minimum: 0
+        expected_attempt_id:
+          type: string
+          format: uuid
+          nullable: true
+        current_attempt_id:
+          type: string
+          format: uuid
+          nullable: true
+        expected_ready_window_id:
+          type: string
+          format: uuid
+          nullable: true
+        current_ready_window_id:
+          type: string
+          format: uuid
+          nullable: true
+
 GoldenRuntimeMember:
   type: object
   additionalProperties: false
@@ -426,7 +457,7 @@ GoldenRuntimeMember:
 GoldenOperatorGroup:
   type: object
   additionalProperties: false
-  required: [group_id, group_revision_id, attempt_id, state, position_from, position_to, started_at, deadline, members]
+  required: [group_id, group_revision_id, attempt_id, state, runtime_revision, ready_window_id, position_from, position_to, started_at, deadline, members]
   properties:
     group_id:
       type: string
@@ -440,6 +471,15 @@ GoldenOperatorGroup:
       format: uuid
     state:
       $ref: '#/GoldenRuntimeState'
+    runtime_revision:
+      type: integer
+      format: int64
+      minimum: 1
+      readOnly: true
+    ready_window_id:
+      type: string
+      format: uuid
+      readOnly: true
     position_from:
       type: integer
       format: int32
@@ -511,7 +551,7 @@ GoldenRuntimeTask:
 GoldenParticipantResponse:
   type: object
   additionalProperties: false
-  required: [tournament_id, participant_id, group_id, group_revision_id, attempt_id, state, ready, submitted, position, started_at, deadline, task]
+  required: [tournament_id, participant_id, group_id, group_revision_id, attempt_id, state, runtime_revision, ready_window_id, ready, submitted, position, started_at, deadline, task]
   properties:
     tournament_id:
       type: string
@@ -530,6 +570,15 @@ GoldenParticipantResponse:
       format: uuid
     state:
       $ref: '#/GoldenRuntimeState'
+    runtime_revision:
+      type: integer
+      format: int64
+      minimum: 1
+      readOnly: true
+    ready_window_id:
+      type: string
+      format: uuid
+      readOnly: true
     ready:
       type: boolean
     submitted:
@@ -557,28 +606,65 @@ GoldenParticipantResponse:
 GoldenOpenRequest:
   type: object
   additionalProperties: false
-  required: [expected_projection_revision]
+  required: [expected_projection_revision, expected_runtime_revision]
   properties:
     expected_projection_revision:
       type: integer
       format: int64
       minimum: 1
+    expected_runtime_revision:
+      type: integer
+      format: int64
+      minimum: 0
+
+GoldenStartRequest:
+  type: object
+  additionalProperties: false
+  required: [expected_runtime_revision, ready_window_id]
+  properties:
+    expected_runtime_revision:
+      type: integer
+      format: int64
+      minimum: 1
+    ready_window_id:
+      type: string
+      format: uuid
 
 GoldenReadyRequest:
   type: object
   additionalProperties: false
-  required: [ready]
+  required: [ready, expected_runtime_revision, attempt_id, ready_window_id]
   properties:
     ready:
       type: boolean
       enum: [true]
+    expected_runtime_revision:
+      type: integer
+      format: int64
+      minimum: 1
+    attempt_id:
+      type: string
+      format: uuid
+    ready_window_id:
+      type: string
+      format: uuid
 
 GoldenSubmissionRequest:
   type: object
   additionalProperties: false
-  required: [submitted_flag]
+  required: [submitted_flag, expected_runtime_revision, attempt_id, ready_window_id]
   properties:
     submitted_flag:
       type: string
       minLength: 1
       maxLength: 255
+    expected_runtime_revision:
+      type: integer
+      format: int64
+      minimum: 1
+    attempt_id:
+      type: string
+      format: uuid
+    ready_window_id:
+      type: string
+      format: uuid

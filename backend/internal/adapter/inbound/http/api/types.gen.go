@@ -1568,6 +1568,7 @@ type GameState string
 // GoldenOpenRequest defines model for GoldenOpenRequest.
 type GoldenOpenRequest struct {
 	ExpectedProjectionRevision int64 `json:"expected_projection_revision"`
+	ExpectedRuntimeRevision    int64 `json:"expected_runtime_revision"`
 }
 
 // GoldenOperatorGroup defines model for GoldenOperatorGroup.
@@ -1579,6 +1580,8 @@ type GoldenOperatorGroup struct {
 	Members         []GoldenRuntimeMember `json:"members"`
 	PositionFrom    int32                 `json:"position_from"`
 	PositionTo      int32                 `json:"position_to"`
+	ReadyWindowId   openapi_types.UUID    `json:"ready_window_id"`
+	RuntimeRevision int64                 `json:"runtime_revision"`
 	StartedAt       *time.Time            `json:"started_at"`
 	State           GoldenRuntimeState    `json:"state"`
 }
@@ -1599,6 +1602,8 @@ type GoldenParticipantResponse struct {
 	ParticipantId   openapi_types.UUID `json:"participant_id"`
 	Position        *int32             `json:"position"`
 	Ready           bool               `json:"ready"`
+	ReadyWindowId   openapi_types.UUID `json:"ready_window_id"`
+	RuntimeRevision int64              `json:"runtime_revision"`
 	StartedAt       *time.Time         `json:"started_at"`
 	State           GoldenRuntimeState `json:"state"`
 	Submitted       bool               `json:"submitted"`
@@ -1608,11 +1613,42 @@ type GoldenParticipantResponse struct {
 
 // GoldenReadyRequest defines model for GoldenReadyRequest.
 type GoldenReadyRequest struct {
-	Ready GoldenReadyRequestReady `json:"ready"`
+	AttemptId               openapi_types.UUID      `json:"attempt_id"`
+	ExpectedRuntimeRevision int64                   `json:"expected_runtime_revision"`
+	Ready                   GoldenReadyRequestReady `json:"ready"`
+	ReadyWindowId           openapi_types.UUID      `json:"ready_window_id"`
 }
 
 // GoldenReadyRequestReady defines model for GoldenReadyRequest.Ready.
 type GoldenReadyRequestReady bool
+
+// GoldenRuntimeConflictProblem The Golden runtime command is stale or reuses an idempotency key with a different command identity.
+type GoldenRuntimeConflictProblem struct {
+	CurrentAttemptId       *openapi_types.UUID `json:"current_attempt_id,omitempty"`
+	CurrentReadyWindowId   *openapi_types.UUID `json:"current_ready_window_id,omitempty"`
+	CurrentRuntimeRevision *int64              `json:"current_runtime_revision,omitempty"`
+
+	// Detail Example: username must be 2..50 characters
+	Detail                  *string             `json:"detail,omitempty"`
+	ExpectedAttemptId       *openapi_types.UUID `json:"expected_attempt_id,omitempty"`
+	ExpectedReadyWindowId   *openapi_types.UUID `json:"expected_ready_window_id,omitempty"`
+	ExpectedRuntimeRevision *int64              `json:"expected_runtime_revision,omitempty"`
+
+	// Instance Example: /api/v1/players/join
+	Instance *string `json:"instance,omitempty"`
+
+	// RequestId Example: 01HXC2K9F4ZG6YV1AAB7TBQ7AP
+	RequestId *string `json:"request_id,omitempty"`
+
+	// Status Example: 400
+	Status int32 `json:"status"`
+
+	// Title Example: Validation Failed
+	Title string `json:"title"`
+
+	// Type Example: about:blank
+	Type string `json:"type"`
+}
 
 // GoldenRuntimeMember defines model for GoldenRuntimeMember.
 type GoldenRuntimeMember struct {
@@ -1639,9 +1675,18 @@ type GoldenRuntimeTask struct {
 // GoldenRuntimeTaskTimeLimitSeconds defines model for GoldenRuntimeTask.TimeLimitSeconds.
 type GoldenRuntimeTaskTimeLimitSeconds int32
 
+// GoldenStartRequest defines model for GoldenStartRequest.
+type GoldenStartRequest struct {
+	ExpectedRuntimeRevision int64              `json:"expected_runtime_revision"`
+	ReadyWindowId           openapi_types.UUID `json:"ready_window_id"`
+}
+
 // GoldenSubmissionRequest defines model for GoldenSubmissionRequest.
 type GoldenSubmissionRequest struct {
-	SubmittedFlag string `json:"submitted_flag"`
+	AttemptId               openapi_types.UUID `json:"attempt_id"`
+	ExpectedRuntimeRevision int64              `json:"expected_runtime_revision"`
+	ReadyWindowId           openapi_types.UUID `json:"ready_window_id"`
+	SubmittedFlag           string             `json:"submitted_flag"`
 }
 
 // HealthResponse defines model for HealthResponse.
@@ -3158,6 +3203,9 @@ type CreateTournamentJSONRequestBody = CreateTournamentRequest
 
 // ApplyTournamentActionJSONRequestBody defines body for ApplyTournamentAction for application/json ContentType.
 type ApplyTournamentActionJSONRequestBody = TournamentActionRequest
+
+// StartGoldenAttemptJSONRequestBody defines body for StartGoldenAttempt for application/json ContentType.
+type StartGoldenAttemptJSONRequestBody = GoldenStartRequest
 
 // OpenGoldenExecutionJSONRequestBody defines body for OpenGoldenExecution for application/json ContentType.
 type OpenGoldenExecutionJSONRequestBody = GoldenOpenRequest

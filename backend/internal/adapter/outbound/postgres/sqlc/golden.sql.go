@@ -62,6 +62,113 @@ func (q *Queries) AdvanceGoldenRepositoryHeadCAS(ctx context.Context, arg Advanc
 	return i, err
 }
 
+const advanceGoldenRuntimeHead = `-- name: AdvanceGoldenRuntimeHead :one
+UPDATE golden_runtime_heads
+SET revision = $1,
+    updated_at = $2
+WHERE tournament_id = $3
+    AND roster_id = $4
+    AND revision = $5
+RETURNING tournament_id,
+    roster_id,
+    revision,
+    source_projection_revision_id,
+    source_projection_revision,
+    updated_at
+`
+
+type AdvanceGoldenRuntimeHeadParams struct {
+	NextRevision     int64
+	UpdatedAt        pgtype.Timestamptz
+	TournamentID     uuid.UUID
+	RosterID         uuid.UUID
+	ExpectedRevision int64
+}
+
+func (q *Queries) AdvanceGoldenRuntimeHead(ctx context.Context, arg AdvanceGoldenRuntimeHeadParams) (GoldenRuntimeHead, error) {
+	row := q.db.QueryRow(ctx, advanceGoldenRuntimeHead,
+		arg.NextRevision,
+		arg.UpdatedAt,
+		arg.TournamentID,
+		arg.RosterID,
+		arg.ExpectedRevision,
+	)
+	var i GoldenRuntimeHead
+	err := row.Scan(
+		&i.TournamentID,
+		&i.RosterID,
+		&i.Revision,
+		&i.SourceProjectionRevisionID,
+		&i.SourceProjectionRevision,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const allocateGoldenRuntimeOutboxSequence = `-- name: AllocateGoldenRuntimeOutboxSequence :one
+INSERT INTO tournament_outbox_cursors (tournament_id, next_sequence, updated_at)
+VALUES ($1, 2, $2)
+ON CONFLICT (tournament_id) DO UPDATE
+SET next_sequence = tournament_outbox_cursors.next_sequence + 1,
+    updated_at = EXCLUDED.updated_at
+RETURNING next_sequence - 1 AS sequence
+`
+
+type AllocateGoldenRuntimeOutboxSequenceParams struct {
+	TournamentID uuid.UUID
+	UpdatedAt    pgtype.Timestamptz
+}
+
+func (q *Queries) AllocateGoldenRuntimeOutboxSequence(ctx context.Context, arg AllocateGoldenRuntimeOutboxSequenceParams) (int32, error) {
+	row := q.db.QueryRow(ctx, allocateGoldenRuntimeOutboxSequence, arg.TournamentID, arg.UpdatedAt)
+	var sequence int32
+	err := row.Scan(&sequence)
+	return sequence, err
+}
+
+const allocateGoldenRuntimeProjectionOrdinal = `-- name: AllocateGoldenRuntimeProjectionOrdinal :one
+INSERT INTO projection_outbox_cursors (
+    projection_revision_id,
+    tournament_id,
+    roster_id,
+    next_ordinal,
+    updated_at
+)
+VALUES (
+    $1,
+    $2,
+    $3,
+    2,
+    $4
+)
+ON CONFLICT (projection_revision_id) DO UPDATE
+SET next_ordinal = projection_outbox_cursors.next_ordinal + 1,
+    updated_at = EXCLUDED.updated_at
+WHERE projection_outbox_cursors.tournament_id = EXCLUDED.tournament_id
+    AND projection_outbox_cursors.roster_id = EXCLUDED.roster_id
+    AND projection_outbox_cursors.next_ordinal < 32768
+RETURNING next_ordinal - 1 AS projection_ordinal
+`
+
+type AllocateGoldenRuntimeProjectionOrdinalParams struct {
+	ProjectionRevisionID uuid.UUID
+	TournamentID         uuid.UUID
+	RosterID             uuid.UUID
+	UpdatedAt            pgtype.Timestamptz
+}
+
+func (q *Queries) AllocateGoldenRuntimeProjectionOrdinal(ctx context.Context, arg AllocateGoldenRuntimeProjectionOrdinalParams) (int32, error) {
+	row := q.db.QueryRow(ctx, allocateGoldenRuntimeProjectionOrdinal,
+		arg.ProjectionRevisionID,
+		arg.TournamentID,
+		arg.RosterID,
+		arg.UpdatedAt,
+	)
+	var projection_ordinal int32
+	err := row.Scan(&projection_ordinal)
+	return projection_ordinal, err
+}
+
 const clearGoldenMembershipReady = `-- name: ClearGoldenMembershipReady :one
 UPDATE golden_memberships
 SET ready_at = NULL
@@ -1979,6 +2086,413 @@ func (q *Queries) CreateGoldenRuntimeAssignment(ctx context.Context, arg CreateG
 	return attempt_id, err
 }
 
+const createGoldenRuntimeAuditEvent = `-- name: CreateGoldenRuntimeAuditEvent :one
+INSERT INTO audit_events (
+    id,
+    tournament_id,
+    roster_id,
+    series_id,
+    result_event_id,
+    actor_kind,
+    actor_id,
+    action,
+    payload,
+    occurred_at,
+    created_at
+)
+VALUES (
+    $1,
+    $2,
+    $3,
+    NULL,
+    NULL,
+    $4,
+    $5,
+    $6,
+    $7,
+    $8,
+    $9
+)
+RETURNING id
+`
+
+type CreateGoldenRuntimeAuditEventParams struct {
+	ID           uuid.UUID
+	TournamentID uuid.UUID
+	RosterID     uuid.UUID
+	ActorKind    string
+	ActorID      uuid.NullUUID
+	Action       string
+	Payload      []byte
+	OccurredAt   pgtype.Timestamptz
+	CreatedAt    pgtype.Timestamptz
+}
+
+func (q *Queries) CreateGoldenRuntimeAuditEvent(ctx context.Context, arg CreateGoldenRuntimeAuditEventParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, createGoldenRuntimeAuditEvent,
+		arg.ID,
+		arg.TournamentID,
+		arg.RosterID,
+		arg.ActorKind,
+		arg.ActorID,
+		arg.Action,
+		arg.Payload,
+		arg.OccurredAt,
+		arg.CreatedAt,
+	)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
+const createGoldenRuntimeCommand = `-- name: CreateGoldenRuntimeCommand :one
+INSERT INTO golden_runtime_commands (
+    command_id,
+    tournament_id,
+    roster_id,
+    actor_kind,
+    actor_id,
+    command_scope,
+    command_kind,
+    attempt_id,
+    participant_id,
+    expected_runtime_revision,
+    expected_ready_window_id,
+    command_digest,
+    resulting_runtime_revision,
+    result_kind,
+    result_payload,
+    occurred_at,
+    created_at
+)
+VALUES (
+    $1,
+    $2,
+    $3,
+    $4,
+    $5,
+    $6,
+    $7,
+    $8,
+    $9,
+    $10,
+    $11,
+    $12,
+    $13,
+    $14,
+    $15,
+    $16,
+    $17
+)
+RETURNING command_id,
+    tournament_id,
+    roster_id,
+    actor_kind,
+    actor_id,
+    command_scope,
+    command_kind,
+    attempt_id,
+    participant_id,
+    expected_runtime_revision,
+    expected_ready_window_id,
+    command_digest,
+    resulting_runtime_revision,
+    result_kind,
+    result_payload,
+    occurred_at,
+    created_at
+`
+
+type CreateGoldenRuntimeCommandParams struct {
+	CommandID                uuid.UUID
+	TournamentID             uuid.UUID
+	RosterID                 uuid.UUID
+	ActorKind                string
+	ActorID                  uuid.NullUUID
+	CommandScope             string
+	CommandKind              string
+	AttemptID                uuid.NullUUID
+	ParticipantID            uuid.NullUUID
+	ExpectedRuntimeRevision  int64
+	ExpectedReadyWindowID    uuid.NullUUID
+	CommandDigest            []byte
+	ResultingRuntimeRevision int64
+	ResultKind               string
+	ResultPayload            []byte
+	OccurredAt               pgtype.Timestamptz
+	CreatedAt                pgtype.Timestamptz
+}
+
+func (q *Queries) CreateGoldenRuntimeCommand(ctx context.Context, arg CreateGoldenRuntimeCommandParams) (GoldenRuntimeCommand, error) {
+	row := q.db.QueryRow(ctx, createGoldenRuntimeCommand,
+		arg.CommandID,
+		arg.TournamentID,
+		arg.RosterID,
+		arg.ActorKind,
+		arg.ActorID,
+		arg.CommandScope,
+		arg.CommandKind,
+		arg.AttemptID,
+		arg.ParticipantID,
+		arg.ExpectedRuntimeRevision,
+		arg.ExpectedReadyWindowID,
+		arg.CommandDigest,
+		arg.ResultingRuntimeRevision,
+		arg.ResultKind,
+		arg.ResultPayload,
+		arg.OccurredAt,
+		arg.CreatedAt,
+	)
+	var i GoldenRuntimeCommand
+	err := row.Scan(
+		&i.CommandID,
+		&i.TournamentID,
+		&i.RosterID,
+		&i.ActorKind,
+		&i.ActorID,
+		&i.CommandScope,
+		&i.CommandKind,
+		&i.AttemptID,
+		&i.ParticipantID,
+		&i.ExpectedRuntimeRevision,
+		&i.ExpectedReadyWindowID,
+		&i.CommandDigest,
+		&i.ResultingRuntimeRevision,
+		&i.ResultKind,
+		&i.ResultPayload,
+		&i.OccurredAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const createGoldenRuntimeHead = `-- name: CreateGoldenRuntimeHead :one
+INSERT INTO golden_runtime_heads (
+    tournament_id,
+    roster_id,
+    revision,
+    source_projection_revision_id,
+    source_projection_revision,
+    updated_at
+)
+VALUES (
+    $1,
+    $2,
+    $3,
+    $4,
+    $5,
+    $6
+)
+RETURNING tournament_id,
+    roster_id,
+    revision,
+    source_projection_revision_id,
+    source_projection_revision,
+    updated_at
+`
+
+type CreateGoldenRuntimeHeadParams struct {
+	TournamentID               uuid.UUID
+	RosterID                   uuid.UUID
+	Revision                   int64
+	SourceProjectionRevisionID uuid.UUID
+	SourceProjectionRevision   int64
+	UpdatedAt                  pgtype.Timestamptz
+}
+
+func (q *Queries) CreateGoldenRuntimeHead(ctx context.Context, arg CreateGoldenRuntimeHeadParams) (GoldenRuntimeHead, error) {
+	row := q.db.QueryRow(ctx, createGoldenRuntimeHead,
+		arg.TournamentID,
+		arg.RosterID,
+		arg.Revision,
+		arg.SourceProjectionRevisionID,
+		arg.SourceProjectionRevision,
+		arg.UpdatedAt,
+	)
+	var i GoldenRuntimeHead
+	err := row.Scan(
+		&i.TournamentID,
+		&i.RosterID,
+		&i.Revision,
+		&i.SourceProjectionRevisionID,
+		&i.SourceProjectionRevision,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const createGoldenRuntimeOutboxEvent = `-- name: CreateGoldenRuntimeOutboxEvent :one
+INSERT INTO outbox_events (
+    id,
+    tournament_id,
+    roster_id,
+    projection_revision_id,
+    projection_revision,
+    sequence,
+    projection_ordinal,
+    terminal,
+    idempotency_key,
+    audience,
+    principal_id,
+    topic,
+    payload,
+    created_at,
+    available_at
+)
+VALUES (
+    $1,
+    $2,
+    $3,
+    $4,
+    $5,
+    $6,
+    $7,
+    false,
+    $8,
+    'all',
+    NULL,
+    'golden.runtime',
+    $9,
+    $10,
+    $10
+)
+RETURNING id,
+    tournament_id,
+    roster_id,
+    projection_revision_id,
+    projection_revision,
+    sequence,
+    projection_ordinal,
+    terminal,
+    idempotency_key,
+    audience,
+    principal_id,
+    topic,
+    payload,
+    created_at,
+    available_at
+`
+
+type CreateGoldenRuntimeOutboxEventParams struct {
+	ID                   uuid.UUID
+	TournamentID         uuid.UUID
+	RosterID             uuid.UUID
+	ProjectionRevisionID uuid.UUID
+	ProjectionRevision   int64
+	Sequence             int64
+	ProjectionOrdinal    int16
+	CommandID            uuid.UUID
+	Payload              []byte
+	CreatedAt            pgtype.Timestamptz
+}
+
+type CreateGoldenRuntimeOutboxEventRow struct {
+	ID                   uuid.UUID
+	TournamentID         uuid.UUID
+	RosterID             uuid.UUID
+	ProjectionRevisionID uuid.UUID
+	ProjectionRevision   int64
+	Sequence             int64
+	ProjectionOrdinal    int16
+	Terminal             bool
+	IdempotencyKey       uuid.UUID
+	Audience             string
+	PrincipalID          uuid.NullUUID
+	Topic                string
+	Payload              []byte
+	CreatedAt            pgtype.Timestamptz
+	AvailableAt          pgtype.Timestamptz
+}
+
+func (q *Queries) CreateGoldenRuntimeOutboxEvent(ctx context.Context, arg CreateGoldenRuntimeOutboxEventParams) (CreateGoldenRuntimeOutboxEventRow, error) {
+	row := q.db.QueryRow(ctx, createGoldenRuntimeOutboxEvent,
+		arg.ID,
+		arg.TournamentID,
+		arg.RosterID,
+		arg.ProjectionRevisionID,
+		arg.ProjectionRevision,
+		arg.Sequence,
+		arg.ProjectionOrdinal,
+		arg.CommandID,
+		arg.Payload,
+		arg.CreatedAt,
+	)
+	var i CreateGoldenRuntimeOutboxEventRow
+	err := row.Scan(
+		&i.ID,
+		&i.TournamentID,
+		&i.RosterID,
+		&i.ProjectionRevisionID,
+		&i.ProjectionRevision,
+		&i.Sequence,
+		&i.ProjectionOrdinal,
+		&i.Terminal,
+		&i.IdempotencyKey,
+		&i.Audience,
+		&i.PrincipalID,
+		&i.Topic,
+		&i.Payload,
+		&i.CreatedAt,
+		&i.AvailableAt,
+	)
+	return i, err
+}
+
+const createGoldenRuntimeOutboxSource = `-- name: CreateGoldenRuntimeOutboxSource :one
+INSERT INTO outbox_golden_runtime_sources (
+    outbox_event_id,
+    tournament_id,
+    roster_id,
+    command_id,
+    runtime_revision,
+    projection_revision_id,
+    projection_revision,
+    projection_ordinal,
+    created_at
+)
+VALUES (
+    $1,
+    $2,
+    $3,
+    $4,
+    $5,
+    $6,
+    $7,
+    $8,
+    $9
+)
+RETURNING outbox_event_id
+`
+
+type CreateGoldenRuntimeOutboxSourceParams struct {
+	OutboxEventID        uuid.UUID
+	TournamentID         uuid.UUID
+	RosterID             uuid.UUID
+	CommandID            uuid.UUID
+	RuntimeRevision      int64
+	ProjectionRevisionID uuid.UUID
+	ProjectionRevision   int64
+	ProjectionOrdinal    int16
+	CreatedAt            pgtype.Timestamptz
+}
+
+func (q *Queries) CreateGoldenRuntimeOutboxSource(ctx context.Context, arg CreateGoldenRuntimeOutboxSourceParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, createGoldenRuntimeOutboxSource,
+		arg.OutboxEventID,
+		arg.TournamentID,
+		arg.RosterID,
+		arg.CommandID,
+		arg.RuntimeRevision,
+		arg.ProjectionRevisionID,
+		arg.ProjectionRevision,
+		arg.ProjectionOrdinal,
+		arg.CreatedAt,
+	)
+	var outbox_event_id uuid.UUID
+	err := row.Scan(&outbox_event_id)
+	return outbox_event_id, err
+}
+
 const createGoldenStateAllocation = `-- name: CreateGoldenStateAllocation :one
 INSERT INTO golden_state_allocations (
     allocation_id,
@@ -3239,6 +3753,53 @@ func (q *Queries) GetGoldenRuntimeAssignment(ctx context.Context, arg GetGoldenR
 	return i, err
 }
 
+const getGoldenRuntimeCommand = `-- name: GetGoldenRuntimeCommand :one
+SELECT command_id,
+    tournament_id,
+    roster_id,
+    actor_kind,
+    actor_id,
+    command_scope,
+    command_kind,
+    attempt_id,
+    participant_id,
+    expected_runtime_revision,
+    expected_ready_window_id,
+    command_digest,
+    resulting_runtime_revision,
+    result_kind,
+    result_payload,
+    occurred_at,
+    created_at
+FROM golden_runtime_commands
+WHERE command_id = $1
+`
+
+func (q *Queries) GetGoldenRuntimeCommand(ctx context.Context, commandID uuid.UUID) (GoldenRuntimeCommand, error) {
+	row := q.db.QueryRow(ctx, getGoldenRuntimeCommand, commandID)
+	var i GoldenRuntimeCommand
+	err := row.Scan(
+		&i.CommandID,
+		&i.TournamentID,
+		&i.RosterID,
+		&i.ActorKind,
+		&i.ActorID,
+		&i.CommandScope,
+		&i.CommandKind,
+		&i.AttemptID,
+		&i.ParticipantID,
+		&i.ExpectedRuntimeRevision,
+		&i.ExpectedReadyWindowID,
+		&i.CommandDigest,
+		&i.ResultingRuntimeRevision,
+		&i.ResultKind,
+		&i.ResultPayload,
+		&i.OccurredAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getGoldenSubmissionByIdempotencyKey = `-- name: GetGoldenSubmissionByIdempotencyKey :one
 SELECT id,
     attempt_id,
@@ -4026,6 +4587,7 @@ SELECT group_revision.revision_id AS group_revision_id,
     group_revision.position_from,
     group_revision.position_to,
     group_revision.source_projection_revision,
+    group_revision.source_projection_revision_id,
     member.participant_id,
     member.standing_position
 FROM golden_group_revisions AS group_revision
@@ -4039,15 +4601,16 @@ ORDER BY group_revision.position_from, member.standing_position
 `
 
 type ListGoldenRuntimeGroupsRow struct {
-	GroupRevisionID          uuid.UUID
-	GroupID                  uuid.UUID
-	TournamentID             uuid.UUID
-	RosterID                 uuid.UUID
-	PositionFrom             int16
-	PositionTo               int16
-	SourceProjectionRevision int64
-	ParticipantID            uuid.UUID
-	StandingPosition         int16
+	GroupRevisionID            uuid.UUID
+	GroupID                    uuid.UUID
+	TournamentID               uuid.UUID
+	RosterID                   uuid.UUID
+	PositionFrom               int16
+	PositionTo                 int16
+	SourceProjectionRevision   int64
+	SourceProjectionRevisionID uuid.UUID
+	ParticipantID              uuid.UUID
+	StandingPosition           int16
 }
 
 func (q *Queries) ListGoldenRuntimeGroups(ctx context.Context, tournamentID uuid.UUID) ([]ListGoldenRuntimeGroupsRow, error) {
@@ -4067,6 +4630,7 @@ func (q *Queries) ListGoldenRuntimeGroups(ctx context.Context, tournamentID uuid
 			&i.PositionFrom,
 			&i.PositionTo,
 			&i.SourceProjectionRevision,
+			&i.SourceProjectionRevisionID,
 			&i.ParticipantID,
 			&i.StandingPosition,
 		); err != nil {
@@ -4087,6 +4651,7 @@ SELECT runtime.attempt_id,
     attempt.state,
     runtime.group_revision_id,
     runtime.edge_position,
+    runtime.ready_window_id,
     runtime.ready_window_deadline,
     runtime.started_at,
     runtime.deadline
@@ -4104,6 +4669,7 @@ type ListGoldenRuntimeRecoveryAttemptsRow struct {
 	State               string
 	GroupRevisionID     uuid.UUID
 	EdgePosition        int16
+	ReadyWindowID       uuid.UUID
 	ReadyWindowDeadline pgtype.Timestamptz
 	StartedAt           pgtype.Timestamptz
 	Deadline            pgtype.Timestamptz
@@ -4125,6 +4691,7 @@ func (q *Queries) ListGoldenRuntimeRecoveryAttempts(ctx context.Context, tournam
 			&i.State,
 			&i.GroupRevisionID,
 			&i.EdgePosition,
+			&i.ReadyWindowID,
 			&i.ReadyWindowDeadline,
 			&i.StartedAt,
 			&i.Deadline,
@@ -4205,6 +4772,7 @@ SELECT runtime.tournament_id,
     runtime.deadline,
     runtime.ready_window_id,
     runtime.ready_window_deadline,
+    runtime_head.revision AS runtime_revision,
     membership.id AS membership_id,
     membership.participant_id,
     participant.player_id,
@@ -4219,6 +4787,9 @@ SELECT runtime.tournament_id,
     runtime.difficulty,
     runtime.time_limit_seconds
 FROM golden_runtime_assignments AS runtime
+INNER JOIN golden_runtime_heads AS runtime_head
+    ON runtime_head.tournament_id = runtime.tournament_id
+    AND runtime_head.roster_id = runtime.roster_id
 INNER JOIN golden_group_revisions AS group_revision
     ON group_revision.revision_id = runtime.group_revision_id
 INNER JOIN golden_attempts AS attempt ON attempt.id = runtime.attempt_id
@@ -4255,6 +4826,7 @@ type ListGoldenRuntimeViewRow struct {
 	Deadline            pgtype.Timestamptz
 	ReadyWindowID       uuid.UUID
 	ReadyWindowDeadline pgtype.Timestamptz
+	RuntimeRevision     int64
 	MembershipID        uuid.UUID
 	ParticipantID       uuid.UUID
 	PlayerID            uuid.UUID
@@ -4292,6 +4864,7 @@ func (q *Queries) ListGoldenRuntimeView(ctx context.Context, tournamentID uuid.U
 			&i.Deadline,
 			&i.ReadyWindowID,
 			&i.ReadyWindowDeadline,
+			&i.RuntimeRevision,
 			&i.MembershipID,
 			&i.ParticipantID,
 			&i.PlayerID,
@@ -4578,6 +5151,42 @@ func (q *Queries) LockGoldenRepositoryScope(ctx context.Context, arg LockGoldenR
 	return i, err
 }
 
+const lockGoldenRuntimeHead = `-- name: LockGoldenRuntimeHead :one
+
+
+SELECT tournament_id,
+    roster_id,
+    revision,
+    source_projection_revision_id,
+    source_projection_revision,
+    updated_at
+FROM golden_runtime_heads
+WHERE tournament_id = $1
+    AND roster_id = $2
+FOR UPDATE
+`
+
+type LockGoldenRuntimeHeadParams struct {
+	TournamentID uuid.UUID
+	RosterID     uuid.UUID
+}
+
+// Production Golden runtime.
+// Runtime fencing and durable command evidence.
+func (q *Queries) LockGoldenRuntimeHead(ctx context.Context, arg LockGoldenRuntimeHeadParams) (GoldenRuntimeHead, error) {
+	row := q.db.QueryRow(ctx, lockGoldenRuntimeHead, arg.TournamentID, arg.RosterID)
+	var i GoldenRuntimeHead
+	err := row.Scan(
+		&i.TournamentID,
+		&i.RosterID,
+		&i.Revision,
+		&i.SourceProjectionRevisionID,
+		&i.SourceProjectionRevision,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const lockGoldenRuntimeParticipant = `-- name: LockGoldenRuntimeParticipant :one
 SELECT runtime.tournament_id,
     runtime.roster_id,
@@ -4587,6 +5196,7 @@ SELECT runtime.tournament_id,
     runtime.deadline,
     runtime.ready_window_id,
     runtime.ready_window_deadline,
+    runtime_head.revision AS runtime_revision,
     runtime.edge_position,
     runtime.task_id,
     runtime.task_version,
@@ -4598,6 +5208,9 @@ SELECT runtime.tournament_id,
     group_revision.position_from,
     group_revision.position_to
 FROM golden_runtime_assignments AS runtime
+INNER JOIN golden_runtime_heads AS runtime_head
+    ON runtime_head.tournament_id = runtime.tournament_id
+    AND runtime_head.roster_id = runtime.roster_id
 INNER JOIN golden_attempts AS attempt ON attempt.id = runtime.attempt_id
 INNER JOIN golden_group_revisions AS group_revision
     ON group_revision.revision_id = runtime.group_revision_id
@@ -4629,6 +5242,7 @@ type LockGoldenRuntimeParticipantRow struct {
 	Deadline            pgtype.Timestamptz
 	ReadyWindowID       uuid.UUID
 	ReadyWindowDeadline pgtype.Timestamptz
+	RuntimeRevision     int64
 	EdgePosition        int16
 	TaskID              uuid.UUID
 	TaskVersion         int32
@@ -4653,6 +5267,7 @@ func (q *Queries) LockGoldenRuntimeParticipant(ctx context.Context, arg LockGold
 		&i.Deadline,
 		&i.ReadyWindowID,
 		&i.ReadyWindowDeadline,
+		&i.RuntimeRevision,
 		&i.EdgePosition,
 		&i.TaskID,
 		&i.TaskVersion,
@@ -4668,7 +5283,6 @@ func (q *Queries) LockGoldenRuntimeParticipant(ctx context.Context, arg LockGold
 }
 
 const lockGoldenRuntimeTournament = `-- name: LockGoldenRuntimeTournament :one
-
 SELECT id, state
 FROM tournaments
 WHERE id = $1
@@ -4680,7 +5294,6 @@ type LockGoldenRuntimeTournamentRow struct {
 	State string
 }
 
-// Production Golden runtime.
 func (q *Queries) LockGoldenRuntimeTournament(ctx context.Context, tournamentID uuid.UUID) (LockGoldenRuntimeTournamentRow, error) {
 	row := q.db.QueryRow(ctx, lockGoldenRuntimeTournament, tournamentID)
 	var i LockGoldenRuntimeTournamentRow
@@ -5058,6 +5671,68 @@ func (q *Queries) SealGoldenStateRevision(ctx context.Context, arg SealGoldenSta
 	var state_revision_id uuid.UUID
 	err := row.Scan(&state_revision_id)
 	return state_revision_id, err
+}
+
+const selectGoldenRuntimeParticipantScope = `-- name: SelectGoldenRuntimeParticipantScope :one
+SELECT runtime.tournament_id,
+    runtime.roster_id,
+    runtime.group_revision_id,
+    runtime.attempt_id,
+    runtime.ready_window_id,
+    runtime.ready_window_deadline,
+    runtime.started_at,
+    runtime.deadline,
+    runtime_head.revision AS runtime_revision,
+    membership.participant_id
+FROM golden_runtime_assignments AS runtime
+INNER JOIN golden_runtime_heads AS runtime_head
+    ON runtime_head.tournament_id = runtime.tournament_id
+    AND runtime_head.roster_id = runtime.roster_id
+INNER JOIN golden_attempts AS attempt ON attempt.id = runtime.attempt_id
+INNER JOIN golden_memberships AS membership ON membership.attempt_id = runtime.attempt_id
+INNER JOIN participants AS participant
+    ON participant.id = membership.participant_id
+    AND participant.roster_id = runtime.roster_id
+WHERE runtime.tournament_id = $1
+    AND participant.player_id = $2
+ORDER BY runtime.edge_position DESC, runtime.group_revision_id
+LIMIT 1
+`
+
+type SelectGoldenRuntimeParticipantScopeParams struct {
+	TournamentID uuid.UUID
+	PlayerID     uuid.UUID
+}
+
+type SelectGoldenRuntimeParticipantScopeRow struct {
+	TournamentID        uuid.UUID
+	RosterID            uuid.UUID
+	GroupRevisionID     uuid.UUID
+	AttemptID           uuid.UUID
+	ReadyWindowID       uuid.UUID
+	ReadyWindowDeadline pgtype.Timestamptz
+	StartedAt           pgtype.Timestamptz
+	Deadline            pgtype.Timestamptz
+	RuntimeRevision     int64
+	ParticipantID       uuid.UUID
+}
+
+func (q *Queries) SelectGoldenRuntimeParticipantScope(ctx context.Context, arg SelectGoldenRuntimeParticipantScopeParams) (SelectGoldenRuntimeParticipantScopeRow, error) {
+	row := q.db.QueryRow(ctx, selectGoldenRuntimeParticipantScope, arg.TournamentID, arg.PlayerID)
+	var i SelectGoldenRuntimeParticipantScopeRow
+	err := row.Scan(
+		&i.TournamentID,
+		&i.RosterID,
+		&i.GroupRevisionID,
+		&i.AttemptID,
+		&i.ReadyWindowID,
+		&i.ReadyWindowDeadline,
+		&i.StartedAt,
+		&i.Deadline,
+		&i.RuntimeRevision,
+		&i.ParticipantID,
+	)
+	return i, err
 }
 
 const selectGoldenRuntimeTask = `-- name: SelectGoldenRuntimeTask :one

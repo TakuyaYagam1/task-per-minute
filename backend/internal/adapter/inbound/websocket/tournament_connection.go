@@ -2,6 +2,7 @@ package websocket
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	coderws "github.com/coder/websocket"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/requestmeta"
 	tournamentws "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket/tournament"
+	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	appobservability "github.com/TakuyaYagam1/task-per-minute/internal/observability"
 	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/eventdelivery"
@@ -141,9 +143,28 @@ func (server *Server) setGoldenParticipantConnection(
 	if !server.isGoldenConnectionBoundary(scope, principal) {
 		return nil
 	}
+	reader, ok := server.goldenConnection.(interface {
+		ParticipantView(ctx context.Context, query usecase.GoldenParticipantQuery) (usecase.GoldenParticipantView, error)
+	})
+	if !ok {
+		return nil
+	}
+	view, err := reader.ParticipantView(ctx, usecase.GoldenParticipantQuery{
+		TournamentID: scope.TournamentID, PlayerID: principal.Player.ID,
+	})
+	if errors.Is(err, domain.ErrTournamentNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
 	return server.goldenConnection.SetConnected(ctx, usecase.GoldenConnectionCommand{
 		TournamentID: scope.TournamentID, PlayerID: principal.Player.ID,
 		CommandID: uuid.New(), Connected: connected,
+		GoldenMutationScope: usecase.GoldenMutationScope{
+			ActorID: principal.Player.ID, ExpectedRuntimeRevision: view.RuntimeRevision,
+			ExpectedAttemptID: view.AttemptID, ExpectedReadyWindowID: view.ReadyWindowID,
+		},
 	})
 }
 

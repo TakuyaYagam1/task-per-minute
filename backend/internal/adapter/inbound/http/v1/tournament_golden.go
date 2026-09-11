@@ -27,7 +27,8 @@ func (s *Server) OpenGoldenExecution(
 	tournamentID api.TournamentId,
 	params api.OpenGoldenExecutionParams,
 ) {
-	if _, _, ok := s.requireAdminService(w, r); !ok || !s.requireGolden(w, r) {
+	operator, _, ok := s.requireAdminService(w, r)
+	if !ok || !s.requireGolden(w, r) {
 		return
 	}
 	var body api.GoldenOpenRequest
@@ -37,6 +38,9 @@ func (s *Server) OpenGoldenExecution(
 	view, err := s.golden.Open(r.Context(), usecase.GoldenOpenCommand{
 		TournamentID: tournamentID, CommandID: params.IdempotencyKey,
 		ExpectedProjectionRevision: body.ExpectedProjectionRevision,
+		GoldenMutationScope: usecase.GoldenMutationScope{
+			ActorID: operator.ActorID, ExpectedRuntimeRevision: body.ExpectedRuntimeRevision,
+		},
 	})
 	s.writeGoldenOperator(w, r, view, err)
 }
@@ -48,11 +52,20 @@ func (s *Server) StartGoldenAttempt(
 	attemptID api.GoldenAttemptId,
 	params api.StartGoldenAttemptParams,
 ) {
-	if _, _, ok := s.requireAdminService(w, r); !ok || !s.requireGolden(w, r) {
+	operator, _, ok := s.requireAdminService(w, r)
+	if !ok || !s.requireGolden(w, r) {
+		return
+	}
+	var body api.GoldenStartRequest
+	if !decodeJSONBody(w, r, &body, domain.ErrValidation) {
 		return
 	}
 	view, err := s.golden.Start(r.Context(), usecase.GoldenStartCommand{
 		TournamentID: tournamentID, AttemptID: attemptID, CommandID: params.IdempotencyKey,
+		GoldenMutationScope: usecase.GoldenMutationScope{
+			ActorID: operator.ActorID, ExpectedRuntimeRevision: body.ExpectedRuntimeRevision,
+			ExpectedAttemptID: attemptID, ExpectedReadyWindowID: body.ReadyWindowId,
+		},
 	})
 	s.writeGoldenOperator(w, r, view, err)
 }
@@ -89,6 +102,10 @@ func (s *Server) SetGoldenParticipantReady(
 	view, err := s.golden.SetReady(r.Context(), usecase.GoldenReadyCommand{
 		TournamentID: tournamentID, PlayerID: actor.PlayerID,
 		CommandID: params.IdempotencyKey, Ready: true,
+		GoldenMutationScope: usecase.GoldenMutationScope{
+			ActorID: actor.PlayerID, ExpectedRuntimeRevision: body.ExpectedRuntimeRevision,
+			ExpectedAttemptID: body.AttemptId, ExpectedReadyWindowID: body.ReadyWindowId,
+		},
 	})
 	s.writeGoldenParticipant(w, r, view, err)
 }
@@ -110,6 +127,10 @@ func (s *Server) SubmitGoldenFlag(
 	view, err := s.golden.Submit(r.Context(), usecase.GoldenSubmissionCommand{
 		TournamentID: tournamentID, PlayerID: actor.PlayerID,
 		CommandID: params.IdempotencyKey, SubmittedFlag: body.SubmittedFlag,
+		GoldenMutationScope: usecase.GoldenMutationScope{
+			ActorID: actor.PlayerID, ExpectedRuntimeRevision: body.ExpectedRuntimeRevision,
+			ExpectedAttemptID: body.AttemptId, ExpectedReadyWindowID: body.ReadyWindowId,
+		},
 	})
 	s.writeGoldenParticipant(w, r, view, err)
 }
@@ -162,7 +183,8 @@ func goldenOperatorResponse(view usecase.GoldenOperatorView) (api.GoldenOperator
 		}
 		payload.Groups[index] = api.GoldenOperatorGroup{
 			GroupId: group.GroupID, GroupRevisionId: group.GroupRevisionID, AttemptId: group.AttemptID,
-			State: state,
+			State:           state,
+			RuntimeRevision: group.RuntimeRevision, ReadyWindowId: group.ReadyWindowID,
 			//nolint:gosec // Positions were validated against the tournament domain bound above.
 			PositionFrom: int32(group.PositionFrom), PositionTo: int32(group.PositionTo),
 			StartedAt: group.StartedAt, Deadline: group.Deadline, Members: members,
@@ -179,6 +201,7 @@ func goldenParticipantResponse(view usecase.GoldenParticipantView) (api.GoldenPa
 	payload := api.GoldenParticipantResponse{
 		TournamentId: view.TournamentID, ParticipantId: view.ParticipantID, GroupId: view.GroupID,
 		GroupRevisionId: view.GroupRevisionID, AttemptId: view.AttemptID, State: state,
+		RuntimeRevision: view.RuntimeRevision, ReadyWindowId: view.ReadyWindowID,
 		Ready: view.Ready, Submitted: view.Submitted, Position: int32Pointer(view.Position),
 		StartedAt: view.StartedAt, Deadline: view.Deadline,
 	}

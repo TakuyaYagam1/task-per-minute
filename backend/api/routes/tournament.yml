@@ -1146,12 +1146,18 @@
           application/json:
             schema:
               $ref: '../components/schemas.yml#/GoldenOperatorResponse'
+      '400':
+        $ref: '../components/responses.yml#/InvalidRequestProblem'
       '401':
         $ref: '../components/responses.yml#/UnauthorizedProblem'
       '403':
         $ref: '../components/responses.yml#/ForbiddenProblem'
       '404':
         $ref: '../components/responses.yml#/NotFoundProblem'
+      '409':
+        $ref: '../components/responses.yml#/GoldenRuntimeConflictProblem'
+      '429':
+        $ref: '../components/responses.yml#/RateLimitedProblem'
       default:
         $ref: '../components/responses.yml#/UnexpectedServerProblem'
 
@@ -1190,7 +1196,9 @@
       '404':
         $ref: '../components/responses.yml#/NotFoundProblem'
       '409':
-        $ref: '../components/responses.yml#/ProjectionRevisionConflictProblem'
+        $ref: '../components/responses.yml#/GoldenRuntimeConflictProblem'
+      '429':
+        $ref: '../components/responses.yml#/RateLimitedProblem'
       default:
         $ref: '../components/responses.yml#/UnexpectedServerProblem'
 
@@ -1208,6 +1216,12 @@
     parameters:
       - $ref: '../components/parameters.yml#/IdempotencyKey'
       - $ref: '../components/parameters.yml#/AdminCSRFToken'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../components/schemas.yml#/GoldenStartRequest'
     responses:
       '200':
         description: Started Golden state.
@@ -1224,7 +1238,9 @@
       '404':
         $ref: '../components/responses.yml#/NotFoundProblem'
       '409':
-        $ref: '../components/responses.yml#/ProjectionRevisionConflictProblem'
+        $ref: '../components/responses.yml#/GoldenRuntimeConflictProblem'
+      '429':
+        $ref: '../components/responses.yml#/RateLimitedProblem'
       default:
         $ref: '../components/responses.yml#/UnexpectedServerProblem'
 
@@ -1245,12 +1261,18 @@
           application/json:
             schema:
               $ref: '../components/schemas.yml#/GoldenParticipantResponse'
+      '400':
+        $ref: '../components/responses.yml#/InvalidRequestProblem'
       '401':
         $ref: '../components/responses.yml#/UnauthorizedProblem'
       '403':
         $ref: '../components/responses.yml#/ForbiddenProblem'
       '404':
         $ref: '../components/responses.yml#/NotFoundProblem'
+      '409':
+        $ref: '../components/responses.yml#/GoldenRuntimeConflictProblem'
+      '429':
+        $ref: '../components/responses.yml#/RateLimitedProblem'
       default:
         $ref: '../components/responses.yml#/UnexpectedServerProblem'
 
@@ -1286,8 +1308,12 @@
         $ref: '../components/responses.yml#/UnauthorizedProblem'
       '403':
         $ref: '../components/responses.yml#/ForbiddenProblem'
+      '404':
+        $ref: '../components/responses.yml#/NotFoundProblem'
       '409':
-        $ref: '../components/responses.yml#/ProjectionRevisionConflictProblem'
+        $ref: '../components/responses.yml#/GoldenRuntimeConflictProblem'
+      '429':
+        $ref: '../components/responses.yml#/RateLimitedProblem'
       default:
         $ref: '../components/responses.yml#/UnexpectedServerProblem'
 
@@ -1323,7 +1349,11 @@
         $ref: '../components/responses.yml#/UnauthorizedProblem'
       '403':
         $ref: '../components/responses.yml#/ForbiddenProblem'
+      '404':
+        $ref: '../components/responses.yml#/NotFoundProblem'
       '409':
-        $ref: '../components/responses.yml#/ProjectionRevisionConflictProblem'
+        $ref: '../components/responses.yml#/GoldenRuntimeConflictProblem'
+      '429':
+        $ref: '../components/responses.yml#/RateLimitedProblem'
       default:
         $ref: '../components/responses.yml#/UnexpectedServerProblem'

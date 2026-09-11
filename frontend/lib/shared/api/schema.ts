@@ -2234,6 +2234,10 @@ export interface components {
             position_from: number;
             /** Format: int32 */
             position_to: number;
+            /** Format: uuid */
+            readonly ready_window_id: string;
+            /** Format: int64 */
+            readonly runtime_revision: number;
             /** Format: date-time */
             readonly started_at: string | null;
             state: components["schemas"]["GoldenRuntimeState"];
@@ -2245,9 +2249,32 @@ export interface components {
             /** Format: uuid */
             tournament_id: string;
         };
+        /** @description The Golden runtime command is stale or reuses an idempotency key with a different command identity. */
+        GoldenRuntimeConflictProblem: components["schemas"]["ProblemDetails"] & {
+            /** Format: uuid */
+            current_attempt_id?: string | null;
+            /** Format: uuid */
+            current_ready_window_id?: string | null;
+            /** Format: int64 */
+            current_runtime_revision?: number;
+            /** Format: uuid */
+            expected_attempt_id?: string | null;
+            /** Format: uuid */
+            expected_ready_window_id?: string | null;
+            /** Format: int64 */
+            expected_runtime_revision?: number;
+        };
         GoldenOpenRequest: {
             /** Format: int64 */
             expected_projection_revision: number;
+            /** Format: int64 */
+            expected_runtime_revision: number;
+        };
+        GoldenStartRequest: {
+            /** Format: int64 */
+            expected_runtime_revision: number;
+            /** Format: uuid */
+            ready_window_id: string;
         };
         ParticipantLobbySeries: {
             format: components["schemas"]["SeriesFormat"];
@@ -2501,6 +2528,10 @@ export interface components {
             /** Format: int32 */
             position: number | null;
             ready: boolean;
+            /** Format: uuid */
+            readonly ready_window_id: string;
+            /** Format: int64 */
+            readonly runtime_revision: number;
             /** Format: date-time */
             started_at: string | null;
             state: components["schemas"]["GoldenRuntimeState"];
@@ -2510,10 +2541,22 @@ export interface components {
             tournament_id: string;
         };
         GoldenReadyRequest: {
+            /** Format: uuid */
+            attempt_id: string;
+            /** Format: int64 */
+            expected_runtime_revision: number;
             /** @enum {boolean} */
             ready: true;
+            /** Format: uuid */
+            ready_window_id: string;
         };
         GoldenSubmissionRequest: {
+            /** Format: uuid */
+            attempt_id: string;
+            /** Format: int64 */
+            expected_runtime_revision: number;
+            /** Format: uuid */
+            ready_window_id: string;
             submitted_flag: string;
         };
         PublicTournamentResponse: {
@@ -2681,6 +2724,15 @@ export interface components {
             };
             content: {
                 "application/problem+json": components["schemas"]["ProjectionRevisionProblem"];
+            };
+        };
+        /** @description The Golden runtime revision, ready window, target, or command identity is stale or conflicting. */
+        GoldenRuntimeConflictProblem: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["GoldenRuntimeConflictProblem"];
             };
         };
         /** @description The authenticated participant exceeded the command rate limit. */
@@ -4527,9 +4579,12 @@ export interface operations {
                     "application/json": components["schemas"]["GoldenOperatorResponse"];
                 };
             };
+            400: components["responses"]["InvalidRequestProblem"];
             401: components["responses"]["UnauthorizedProblem"];
             403: components["responses"]["ForbiddenProblem"];
             404: components["responses"]["NotFoundProblem"];
+            409: components["responses"]["GoldenRuntimeConflictProblem"];
+            429: components["responses"]["RateLimitedProblem"];
             default: components["responses"]["UnexpectedServerProblem"];
         };
     };
@@ -4565,7 +4620,8 @@ export interface operations {
             401: components["responses"]["UnauthorizedProblem"];
             403: components["responses"]["ForbiddenProblem"];
             404: components["responses"]["NotFoundProblem"];
-            409: components["responses"]["ProjectionRevisionConflictProblem"];
+            409: components["responses"]["GoldenRuntimeConflictProblem"];
+            429: components["responses"]["RateLimitedProblem"];
             default: components["responses"]["UnexpectedServerProblem"];
         };
     };
@@ -4583,7 +4639,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GoldenStartRequest"];
+            };
+        };
         responses: {
             /** @description Started Golden state. */
             200: {
@@ -4598,7 +4658,8 @@ export interface operations {
             401: components["responses"]["UnauthorizedProblem"];
             403: components["responses"]["ForbiddenProblem"];
             404: components["responses"]["NotFoundProblem"];
-            409: components["responses"]["ProjectionRevisionConflictProblem"];
+            409: components["responses"]["GoldenRuntimeConflictProblem"];
+            429: components["responses"]["RateLimitedProblem"];
             default: components["responses"]["UnexpectedServerProblem"];
         };
     };
@@ -4905,9 +4966,12 @@ export interface operations {
                     "application/json": components["schemas"]["GoldenParticipantResponse"];
                 };
             };
+            400: components["responses"]["InvalidRequestProblem"];
             401: components["responses"]["UnauthorizedProblem"];
             403: components["responses"]["ForbiddenProblem"];
             404: components["responses"]["NotFoundProblem"];
+            409: components["responses"]["GoldenRuntimeConflictProblem"];
+            429: components["responses"]["RateLimitedProblem"];
             default: components["responses"]["UnexpectedServerProblem"];
         };
     };
@@ -4942,7 +5006,9 @@ export interface operations {
             400: components["responses"]["InvalidRequestProblem"];
             401: components["responses"]["UnauthorizedProblem"];
             403: components["responses"]["ForbiddenProblem"];
-            409: components["responses"]["ProjectionRevisionConflictProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            409: components["responses"]["GoldenRuntimeConflictProblem"];
+            429: components["responses"]["RateLimitedProblem"];
             default: components["responses"]["UnexpectedServerProblem"];
         };
     };
@@ -4977,7 +5043,9 @@ export interface operations {
             400: components["responses"]["InvalidRequestProblem"];
             401: components["responses"]["UnauthorizedProblem"];
             403: components["responses"]["ForbiddenProblem"];
-            409: components["responses"]["ProjectionRevisionConflictProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            409: components["responses"]["GoldenRuntimeConflictProblem"];
+            429: components["responses"]["RateLimitedProblem"];
             default: components["responses"]["UnexpectedServerProblem"];
         };
     };

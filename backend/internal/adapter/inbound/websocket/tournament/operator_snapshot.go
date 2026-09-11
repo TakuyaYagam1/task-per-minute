@@ -84,6 +84,10 @@ type OperatorGoldenGroupInput struct {
 	GroupID         uuid.UUID
 	GroupRevisionID uuid.UUID
 	AttemptID       uuid.UUID
+	// RuntimeRevision is the authoritative Golden projection fence. The generic
+	// standings projection revision may remain unchanged while this advances.
+	RuntimeRevision int64
+	ReadyWindowID   uuid.UUID
 	State           string
 	PositionFrom    int
 	PositionTo      int
@@ -159,9 +163,12 @@ type OperatorAuditLink struct {
 }
 
 type OperatorGoldenGroup struct {
-	GroupID         uuid.UUID              `json:"group_id"`
-	GroupRevisionID uuid.UUID              `json:"group_revision_id"`
-	AttemptID       uuid.UUID              `json:"attempt_id"`
+	GroupID         uuid.UUID `json:"group_id"`
+	GroupRevisionID uuid.UUID `json:"group_revision_id"`
+	AttemptID       uuid.UUID `json:"attempt_id"`
+	// RuntimeRevision is the wire-visible Golden projection fence.
+	RuntimeRevision int64                  `json:"runtime_revision"`
+	ReadyWindowID   uuid.UUID              `json:"ready_window_id"`
 	State           string                 `json:"state"`
 	PositionFrom    int                    `json:"position_from"`
 	PositionTo      int                    `json:"position_to"`
@@ -236,6 +243,7 @@ func NewOperatorSnapshot(access OperatorSnapshotAccess, input OperatorSnapshotIn
 	}
 	for index, group := range input.Golden {
 		if group.GroupID == uuid.Nil || group.GroupRevisionID == uuid.Nil || group.AttemptID == uuid.Nil ||
+			group.RuntimeRevision < 1 || group.ReadyWindowID == uuid.Nil ||
 			!validRealtimeString(group.State) || group.PositionFrom < 1 || group.PositionTo < group.PositionFrom ||
 			group.PositionTo > 16 || group.Members == nil || len(group.Members) < 2 ||
 			!validOptionalUTC(group.StartedAt) || !validOptionalUTC(group.Deadline) {
@@ -243,6 +251,7 @@ func NewOperatorSnapshot(access OperatorSnapshotAccess, input OperatorSnapshotIn
 		}
 		view := OperatorGoldenGroup{
 			GroupID: group.GroupID, GroupRevisionID: group.GroupRevisionID, AttemptID: group.AttemptID,
+			RuntimeRevision: group.RuntimeRevision, ReadyWindowID: group.ReadyWindowID,
 			State: group.State, PositionFrom: group.PositionFrom, PositionTo: group.PositionTo,
 			StartedAt: cloneTime(group.StartedAt), Deadline: cloneTime(group.Deadline),
 			Members: make([]OperatorGoldenMember, len(group.Members)),
@@ -306,6 +315,7 @@ func (s OperatorSnapshot) Validate() error {
 	}
 	for _, group := range s.Golden {
 		if group.GroupID == uuid.Nil || group.GroupRevisionID == uuid.Nil || group.AttemptID == uuid.Nil ||
+			group.RuntimeRevision < 1 || group.ReadyWindowID == uuid.Nil ||
 			!validRealtimeString(group.State) || group.PositionFrom < 1 || group.PositionTo < group.PositionFrom ||
 			group.PositionTo > 16 || len(group.Members) < 2 || !validOptionalUTC(group.StartedAt) ||
 			!validOptionalUTC(group.Deadline) {

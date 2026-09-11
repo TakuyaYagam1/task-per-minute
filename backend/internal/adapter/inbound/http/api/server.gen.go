@@ -4237,6 +4237,8 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 
 type ForbiddenProblemApplicationProblemPlusJSONResponse ProblemDetails
 
+type GoldenRuntimeConflictProblemApplicationProblemPlusJSONResponse GoldenRuntimeConflictProblem
+
 type InvalidRequestProblemApplicationProblemPlusJSONResponse ProblemDetails
 
 type NotFoundProblemApplicationProblemPlusJSONResponse ProblemDetails
@@ -6209,6 +6211,22 @@ func (response GetGoldenOperatorState200JSONResponse) VisitGetGoldenOperatorStat
 	return err
 }
 
+type GetGoldenOperatorState400ApplicationProblemPlusJSONResponse struct {
+	InvalidRequestProblemApplicationProblemPlusJSONResponse
+}
+
+func (response GetGoldenOperatorState400ApplicationProblemPlusJSONResponse) VisitGetGoldenOperatorStateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetGoldenOperatorState401ApplicationProblemPlusJSONResponse struct {
 	UnauthorizedProblemApplicationProblemPlusJSONResponse
 }
@@ -6257,6 +6275,41 @@ func (response GetGoldenOperatorState404ApplicationProblemPlusJSONResponse) Visi
 	return err
 }
 
+type GetGoldenOperatorState409ApplicationProblemPlusJSONResponse struct {
+	GoldenRuntimeConflictProblemApplicationProblemPlusJSONResponse
+}
+
+func (response GetGoldenOperatorState409ApplicationProblemPlusJSONResponse) VisitGetGoldenOperatorStateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetGoldenOperatorState429ApplicationProblemPlusJSONResponse struct {
+	RateLimitedProblemApplicationProblemPlusJSONResponse
+}
+
+func (response GetGoldenOperatorState429ApplicationProblemPlusJSONResponse) VisitGetGoldenOperatorStateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetGoldenOperatorStatedefaultApplicationProblemPlusJSONResponse struct {
 	Body       ProblemDetails
 	StatusCode int
@@ -6278,6 +6331,7 @@ type StartGoldenAttemptRequestObject struct {
 	TournamentId TournamentId    `json:"tournament_id"`
 	AttemptId    GoldenAttemptId `json:"attempt_id"`
 	Params       StartGoldenAttemptParams
+	Body         *StartGoldenAttemptJSONRequestBody
 }
 
 type StartGoldenAttemptResponseObject interface {
@@ -6363,7 +6417,7 @@ func (response StartGoldenAttempt404ApplicationProblemPlusJSONResponse) VisitSta
 }
 
 type StartGoldenAttempt409ApplicationProblemPlusJSONResponse struct {
-	ProjectionRevisionConflictProblemApplicationProblemPlusJSONResponse
+	GoldenRuntimeConflictProblemApplicationProblemPlusJSONResponse
 }
 
 func (response StartGoldenAttempt409ApplicationProblemPlusJSONResponse) VisitStartGoldenAttemptResponse(w http.ResponseWriter) error {
@@ -6374,6 +6428,25 @@ func (response StartGoldenAttempt409ApplicationProblemPlusJSONResponse) VisitSta
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StartGoldenAttempt429ApplicationProblemPlusJSONResponse struct {
+	RateLimitedProblemApplicationProblemPlusJSONResponse
+}
+
+func (response StartGoldenAttempt429ApplicationProblemPlusJSONResponse) VisitStartGoldenAttemptResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(429)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -6484,7 +6557,7 @@ func (response OpenGoldenExecution404ApplicationProblemPlusJSONResponse) VisitOp
 }
 
 type OpenGoldenExecution409ApplicationProblemPlusJSONResponse struct {
-	ProjectionRevisionConflictProblemApplicationProblemPlusJSONResponse
+	GoldenRuntimeConflictProblemApplicationProblemPlusJSONResponse
 }
 
 func (response OpenGoldenExecution409ApplicationProblemPlusJSONResponse) VisitOpenGoldenExecutionResponse(w http.ResponseWriter) error {
@@ -6495,6 +6568,25 @@ func (response OpenGoldenExecution409ApplicationProblemPlusJSONResponse) VisitOp
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type OpenGoldenExecution429ApplicationProblemPlusJSONResponse struct {
+	RateLimitedProblemApplicationProblemPlusJSONResponse
+}
+
+func (response OpenGoldenExecution429ApplicationProblemPlusJSONResponse) VisitOpenGoldenExecutionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(429)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -9051,6 +9143,22 @@ func (response GetGoldenParticipantState200JSONResponse) VisitGetGoldenParticipa
 	return err
 }
 
+type GetGoldenParticipantState400ApplicationProblemPlusJSONResponse struct {
+	InvalidRequestProblemApplicationProblemPlusJSONResponse
+}
+
+func (response GetGoldenParticipantState400ApplicationProblemPlusJSONResponse) VisitGetGoldenParticipantStateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetGoldenParticipantState401ApplicationProblemPlusJSONResponse struct {
 	UnauthorizedProblemApplicationProblemPlusJSONResponse
 }
@@ -9095,6 +9203,41 @@ func (response GetGoldenParticipantState404ApplicationProblemPlusJSONResponse) V
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetGoldenParticipantState409ApplicationProblemPlusJSONResponse struct {
+	GoldenRuntimeConflictProblemApplicationProblemPlusJSONResponse
+}
+
+func (response GetGoldenParticipantState409ApplicationProblemPlusJSONResponse) VisitGetGoldenParticipantStateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetGoldenParticipantState429ApplicationProblemPlusJSONResponse struct {
+	RateLimitedProblemApplicationProblemPlusJSONResponse
+}
+
+func (response GetGoldenParticipantState429ApplicationProblemPlusJSONResponse) VisitGetGoldenParticipantStateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(429)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -9188,8 +9331,24 @@ func (response SetGoldenParticipantReady403ApplicationProblemPlusJSONResponse) V
 	return err
 }
 
+type SetGoldenParticipantReady404ApplicationProblemPlusJSONResponse struct {
+	NotFoundProblemApplicationProblemPlusJSONResponse
+}
+
+func (response SetGoldenParticipantReady404ApplicationProblemPlusJSONResponse) VisitSetGoldenParticipantReadyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type SetGoldenParticipantReady409ApplicationProblemPlusJSONResponse struct {
-	ProjectionRevisionConflictProblemApplicationProblemPlusJSONResponse
+	GoldenRuntimeConflictProblemApplicationProblemPlusJSONResponse
 }
 
 func (response SetGoldenParticipantReady409ApplicationProblemPlusJSONResponse) VisitSetGoldenParticipantReadyResponse(w http.ResponseWriter) error {
@@ -9200,6 +9359,25 @@ func (response SetGoldenParticipantReady409ApplicationProblemPlusJSONResponse) V
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetGoldenParticipantReady429ApplicationProblemPlusJSONResponse struct {
+	RateLimitedProblemApplicationProblemPlusJSONResponse
+}
+
+func (response SetGoldenParticipantReady429ApplicationProblemPlusJSONResponse) VisitSetGoldenParticipantReadyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(429)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -9293,8 +9471,24 @@ func (response SubmitGoldenFlag403ApplicationProblemPlusJSONResponse) VisitSubmi
 	return err
 }
 
+type SubmitGoldenFlag404ApplicationProblemPlusJSONResponse struct {
+	NotFoundProblemApplicationProblemPlusJSONResponse
+}
+
+func (response SubmitGoldenFlag404ApplicationProblemPlusJSONResponse) VisitSubmitGoldenFlagResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type SubmitGoldenFlag409ApplicationProblemPlusJSONResponse struct {
-	ProjectionRevisionConflictProblemApplicationProblemPlusJSONResponse
+	GoldenRuntimeConflictProblemApplicationProblemPlusJSONResponse
 }
 
 func (response SubmitGoldenFlag409ApplicationProblemPlusJSONResponse) VisitSubmitGoldenFlagResponse(w http.ResponseWriter) error {
@@ -9305,6 +9499,25 @@ func (response SubmitGoldenFlag409ApplicationProblemPlusJSONResponse) VisitSubmi
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SubmitGoldenFlag429ApplicationProblemPlusJSONResponse struct {
+	RateLimitedProblemApplicationProblemPlusJSONResponse
+}
+
+func (response SubmitGoldenFlag429ApplicationProblemPlusJSONResponse) VisitSubmitGoldenFlagResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(429)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -11381,6 +11594,13 @@ func (sh *strictHandler) StartGoldenAttempt(w http.ResponseWriter, r *http.Reque
 	request.TournamentId = tournamentId
 	request.AttemptId = attemptId
 	request.Params = params
+
+	var body StartGoldenAttemptJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
 		return sh.ssi.StartGoldenAttempt(ctx, request.(StartGoldenAttemptRequestObject))

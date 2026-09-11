@@ -18,16 +18,25 @@ func TestRuntimeApplicationRoutesGoldenLifecycleAndRecovery(t *testing.T) {
 	now := time.Date(2026, time.September, 11, 12, 0, 0, 0, time.UTC)
 	repository := &runtimeRepositoryStub{view: goldenRuntimeView(now)}
 	application := goldenusecase.NewRuntimeApplication(repository, runtimeClock{now: now})
+	operatorID := uuid.New()
+	playerID := uuid.New()
+	attemptID := repository.view.Groups[0].AttemptID
+	readyWindowID := uuid.New()
 
 	operator, err := application.Open(context.Background(), usecase.GoldenOpenCommand{
 		TournamentID: uuid.New(), CommandID: uuid.New(), ExpectedProjectionRevision: 7,
+		GoldenMutationScope: usecase.GoldenMutationScope{ActorID: operatorID},
 	})
 	require.NoError(t, err)
 	require.Equal(t, repository.view, operator)
 	require.Equal(t, 1, repository.openCalls)
 
 	participant, err := application.SetReady(context.Background(), usecase.GoldenReadyCommand{
-		TournamentID: repository.view.TournamentID, PlayerID: uuid.New(), CommandID: uuid.New(), Ready: true,
+		TournamentID: repository.view.TournamentID, PlayerID: playerID, CommandID: uuid.New(), Ready: true,
+		GoldenMutationScope: usecase.GoldenMutationScope{
+			ActorID: playerID, ExpectedRuntimeRevision: 1, ExpectedAttemptID: attemptID,
+			ExpectedReadyWindowID: readyWindowID,
+		},
 	})
 	require.NoError(t, err)
 	require.Equal(t, repository.participant, participant)
@@ -35,16 +44,28 @@ func TestRuntimeApplicationRoutesGoldenLifecycleAndRecovery(t *testing.T) {
 	_, err = application.Start(context.Background(), usecase.GoldenStartCommand{
 		TournamentID: repository.view.TournamentID, AttemptID: repository.view.Groups[0].AttemptID,
 		CommandID: uuid.New(),
+		GoldenMutationScope: usecase.GoldenMutationScope{
+			ActorID: operatorID, ExpectedRuntimeRevision: 1, ExpectedAttemptID: attemptID,
+			ExpectedReadyWindowID: readyWindowID,
+		},
 	})
 	require.NoError(t, err)
 
 	_, err = application.Submit(context.Background(), usecase.GoldenSubmissionCommand{
-		TournamentID: repository.view.TournamentID, PlayerID: uuid.New(), CommandID: uuid.New(),
+		TournamentID: repository.view.TournamentID, PlayerID: playerID, CommandID: uuid.New(),
 		SubmittedFlag: "TPM{correct}",
+		GoldenMutationScope: usecase.GoldenMutationScope{
+			ActorID: playerID, ExpectedRuntimeRevision: 1, ExpectedAttemptID: attemptID,
+			ExpectedReadyWindowID: readyWindowID,
+		},
 	})
 	require.NoError(t, err)
 	require.NoError(t, application.SetConnected(context.Background(), usecase.GoldenConnectionCommand{
-		TournamentID: repository.view.TournamentID, PlayerID: uuid.New(), CommandID: uuid.New(), Connected: true,
+		TournamentID: repository.view.TournamentID, PlayerID: playerID, CommandID: uuid.New(), Connected: true,
+		GoldenMutationScope: usecase.GoldenMutationScope{
+			ActorID: playerID, ExpectedRuntimeRevision: 1, ExpectedAttemptID: attemptID,
+			ExpectedReadyWindowID: readyWindowID,
+		},
 	}))
 
 	require.NoError(t, application.Recover(context.Background(), repository.view.TournamentID))
