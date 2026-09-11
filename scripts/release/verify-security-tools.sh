@@ -117,7 +117,7 @@ class StrictJsonError(ValueError):
 CANONICAL_SCHEMA_ID = "https://task-per-minute.local/schemas/release-tools.schema.json"
 CANONICAL_LOCK_SCHEMA = "security/tools/release-tools.schema.json"
 CANONICAL_LOCK_SCHEMA_VERSION = 1
-CANONICAL_LOCK_SHA256 = "0ceda6e8a98edf7c651d4d7bf3a7b4cf6c3db59aa8c0b56848ff0f1ac1bdd007"
+CANONICAL_LOCK_SHA256 = "3fd7094c94ec2bd53732a11930f27adc83383c11c6008bd8e27ede1f97b7df2c"
 CANONICAL_SCHEMA_SHA256 = "e88e299e4eaf307ce59b7f1f9ddeaa4074384e183a05aac6cb627a8381aedc86"
 CANONICAL_ROOT_FIELDS = frozenset(
     {
@@ -135,11 +135,11 @@ CANONICAL_ROOT_FIELDS = frozenset(
 
 TOOL_POLICY: dict[str, tuple[str, str, set[str], tuple[str, ...], str]] = {
     "go": (
-        "1.26.5",
+        "1.26.8",
         "https://go.googlesource.com/go",
         {"BSD-3-Clause"},
         ("version",),
-        "go version go1.26.5 linux/amd64",
+        "go version go1.26.8 linux/amd64",
     ),
     "node": ("24.18.1", "https://github.com/nodejs/node", {"MIT"}, ("--version",), "v24.18.1"),
     "npm": ("11.16.0", "https://github.com/npm/cli", {"Artistic-2.0"}, ("--version",), "11.16.0"),

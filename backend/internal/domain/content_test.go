@@ -172,9 +172,7 @@ func TestContentConfigurationStageDefaultModes(t *testing.T) {
 		domain.CategoryModeDraft,
 	}
 	for _, stage := range stages {
-
 		for _, mode := range modes {
-
 			t.Run(stage.name+"/"+string(mode), func(t *testing.T) {
 				t.Parallel()
 
@@ -227,7 +225,6 @@ func TestContentConfigurationStageFormatMatrix(t *testing.T) {
 		},
 	}
 	for _, tc := range cases {
-
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 

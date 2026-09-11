@@ -62,7 +62,7 @@ archive_root.mkdir(parents=True)
 (project_root / "frontend/node_modules/playwright-core").mkdir(parents=True)
 
 versions = {
-    "go": "1.26.5",
+    "go": "1.26.8",
     "node": "24.18.1",
     "npm": "11.16.0",
     "playwright": "1.59.1",
@@ -99,7 +99,7 @@ def sha256(path: pathlib.Path) -> str:
 
 
 runtime_identities = {
-    "go": ("version", "go version go1.26.5 linux/amd64"),
+    "go": ("version", "go version go1.26.8 linux/amd64"),
     "node": ("--version", "v24.18.1"),
     "npm": ("--version", "11.16.0"),
     "playwright": ("--version", "Version 1.59.1"),

@@ -107,9 +107,9 @@ PINNED_PYTHON = pathlib.Path(
 )
 PINNED_PYTHON_SHA256 = "465d82f95e8e1069347b0ebf288d14d37802a1ae6cb831c15953cba0859ff766"
 PINNED_GO = pathlib.Path(
-    "/nix/store/pwj3x44pp735yb038fnmqckyyra9k29x-go-1.26.5/share/go/bin/go"
+    "/nix/store/dv8vg7k21fdi9v79g5x4b87kwqhl8ykv-go-1.26.8/bin/go"
 )
-PINNED_GO_SHA256 = "abe5a36e95186f29453f3e1d1840d436445e208417191e10c83998b6a7d8e652"
+PINNED_GO_SHA256 = "d9a2fa19c7ef8b57f420012c21f49f235c46f08a68c12077d9c753dbb6ccdc34"
 PINNED_GIT = pathlib.Path(
     "/nix/store/6f0qqak4qbcrbw4f750phr88c9yhpf5s-git-2.55.0/bin/git"
 )
@@ -379,13 +379,22 @@ def artifact_digest_records(
                 "backend/integration_test/tournament_roster_migration_test.go",
                 "backend/integration_test/swiss_migration_test.go",
                 "backend/integration_test/game_migration_test.go",
-                "backend/integration_test/draft_migration_test.go",
-                "backend/integration_test/reconnect_migration_test.go",
+                "backend/integration_test/draft_migration_action_test.go",
+                "backend/integration_test/draft_migration_fixture_test.go",
+                "backend/integration_test/draft_migration_flow_test.go",
+                "backend/integration_test/reconnect_migration_assertion_fixture_test.go",
+                "backend/integration_test/reconnect_migration_presence_test.go",
+                "backend/integration_test/reconnect_migration_setup_test.go",
                 "backend/integration_test/tournament_capacity_nominal_test.go",
                 "backend/integration_test/tournament_capacity_peak_test.go",
-                "backend/integration_test/tournament_capacity_report_test.go",
-                "backend/testdata/capacity/tournament60-report.schema.json",
-                "backend/testdata/capacity/tournament60-nominal.json",
+                "backend/integration_test/tournament_capacity_reconnect_test.go",
+                "backend/integration_test/tournament_capacity_report_assertion_test.go",
+                "backend/integration_test/tournament_capacity_report_build_test.go",
+                "backend/integration_test/tournament_capacity_report_postgres_test.go",
+                "backend/integration_test/tournament_capacity_report_types_test.go",
+                "backend/integration_test/tournament_capacity_report_validation_test.go",
+                "backend/integration_test/testdata/capacity/tournament60-report.schema.json",
+                "backend/integration_test/testdata/capacity/tournament60-nominal.json",
             ]
         )
         migrations_dir = repo_root / "backend/db/migrations"
@@ -1494,7 +1503,9 @@ def retain_record(
 
 repo_root = pathlib.Path(sys.argv[1])
 schema_path = pathlib.Path(sys.argv[2])
-capacity_schema_path = repo_root / "backend/testdata/capacity/tournament60-report.schema.json"
+capacity_schema_path = (
+    repo_root / "backend/integration_test/testdata/capacity/tournament60-report.schema.json"
+)
 gate_name = sys.argv[3]
 evidence_text = sys.argv[4]
 command = sys.argv[5:]

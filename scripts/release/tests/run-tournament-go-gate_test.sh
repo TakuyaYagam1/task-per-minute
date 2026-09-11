@@ -35,7 +35,7 @@ fixture_child() {
       child_parent="${child_source%/*}"
       [[ "$child_parent" != "$child_source" ]] || child_parent='.'
       child_root="$(cd -- "$child_parent/../../.." && pwd -P)"
-      report_fixture="$child_root/backend/testdata/capacity/tournament60-nominal.json"
+      report_fixture="$child_root/backend/integration_test/testdata/capacity/tournament60-nominal.json"
       python3 - "$report_fixture" <<'PY'
 import copy
 import json
@@ -127,8 +127,8 @@ import sys
 repo_root = pathlib.Path(sys.argv[1])
 expected_profile = sys.argv[2]
 scenario = sys.argv[3]
-fixture_path = repo_root / "backend/testdata/capacity/tournament60-nominal.json"
-schema_path = repo_root / "backend/testdata/capacity/tournament60-report.schema.json"
+fixture_path = repo_root / "backend/integration_test/testdata/capacity/tournament60-nominal.json"
+schema_path = repo_root / "backend/integration_test/testdata/capacity/tournament60-report.schema.json"
 value = copy.deepcopy(json.loads(fixture_path.read_text(encoding="utf-8")))
 
 revision = subprocess.check_output(
@@ -267,7 +267,7 @@ event("pass", Elapsed=1.25)
 PY
       ;;
     environment)
-      expected_path='/nix/store/pwj3x44pp735yb038fnmqckyyra9k29x-go-1.26.5/share/go/bin:/nix/store/6f0qqak4qbcrbw4f750phr88c9yhpf5s-git-2.55.0/bin:/nix/store/5y8jchf95jisr09cjx2q7lgz3qwnfi5j-coreutils-full-9.11/bin:/nix/store/bwry105g7v5jspr41bx9x3fcfqsmfkq2-bash-interactive-5.3p15/bin:/nix/store/gxzhl7aaiid7zp3y47jqqiq7zg5mqpwp-python3-3.14.6/bin'
+      expected_path='/nix/store/dv8vg7k21fdi9v79g5x4b87kwqhl8ykv-go-1.26.8/bin:/nix/store/6f0qqak4qbcrbw4f750phr88c9yhpf5s-git-2.55.0/bin:/nix/store/5y8jchf95jisr09cjx2q7lgz3qwnfi5j-coreutils-full-9.11/bin:/nix/store/bwry105g7v5jspr41bx9x3fcfqsmfkq2-bash-interactive-5.3p15/bin:/nix/store/gxzhl7aaiid7zp3y47jqqiq7zg5mqpwp-python3-3.14.6/bin'
       [[ "$PATH" == "$expected_path" ]]
       [[ -z "${GOROOT+x}" ]]
       [[ -z "${TMPDIR+x}" ]]
@@ -275,7 +275,7 @@ PY
       [[ "$GOCACHE" == '/home/takuya/.cache/go-build' ]]
       [[ "$GOMODCACHE" == '/home/takuya/go/pkg/mod' ]]
       [[ "$GOPATH" == '/home/takuya/go' ]]
-      [[ "$(command -v go)" == '/nix/store/pwj3x44pp735yb038fnmqckyyra9k29x-go-1.26.5/share/go/bin/go' ]]
+      [[ "$(command -v go)" == '/nix/store/dv8vg7k21fdi9v79g5x4b87kwqhl8ykv-go-1.26.8/bin/go' ]]
       [[ "$(command -v git)" == '/nix/store/6f0qqak4qbcrbw4f750phr88c9yhpf5s-git-2.55.0/bin/git' ]]
       [[ "$(command -v env)" == '/nix/store/5y8jchf95jisr09cjx2q7lgz3qwnfi5j-coreutils-full-9.11/bin/env' ]]
       [[ "$(command -v bash)" == '/nix/store/bwry105g7v5jspr41bx9x3fcfqsmfkq2-bash-interactive-5.3p15/bin/bash' ]]
@@ -723,7 +723,8 @@ capacity_report_dir="$(new_evidence_dir capacity-report)"
 run_fixture "$capacity_report_dir" capacity-report
 capacity_report_record="$(record_path "$capacity_report_dir")"
 verify_record "$capacity_report_record" pass 0
-python3 - "$capacity_report_record" "$repo_root/backend/testdata/capacity/tournament60-nominal.json" <<'PY'
+python3 - "$capacity_report_record" \
+  "$repo_root/backend/integration_test/testdata/capacity/tournament60-nominal.json" <<'PY'
 import copy
 import json
 import pathlib
@@ -948,7 +949,7 @@ if expected_outcome == "pass":
     report = json.loads(marker.removeprefix("TOURNAMENT_CAPACITY_REPORT "))
     assert report["workload"] == {
         "name": expected_name,
-        "operation": "tournament_game_repository_get",
+        "operation": "game_repository_get",
         "profile": expected_profile,
     }
     assert report["identity"]["revision"]["commit"] == record["source_revision"]
@@ -1006,8 +1007,12 @@ for refactored_artifact in \
   backend/integration_test/tournament_roster_migration_test.go \
   backend/integration_test/swiss_migration_test.go \
   backend/integration_test/game_migration_test.go \
-  backend/integration_test/draft_migration_test.go \
-  backend/integration_test/reconnect_migration_test.go; do
+  backend/integration_test/draft_migration_action_test.go \
+  backend/integration_test/draft_migration_fixture_test.go \
+  backend/integration_test/draft_migration_flow_test.go \
+  backend/integration_test/reconnect_migration_assertion_fixture_test.go \
+  backend/integration_test/reconnect_migration_presence_test.go \
+  backend/integration_test/reconnect_migration_setup_test.go; do
   cp -- "$repo_root/$refactored_artifact" "$deleted_migration_repo/$refactored_artifact"
 done
 

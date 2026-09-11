@@ -1,6 +1,6 @@
 module github.com/TakuyaYagam1/task-per-minute
 
-go 1.26.2
+go 1.26.8
 
 require (
 	github.com/coder/websocket v1.8.15

@@ -7,9 +7,9 @@
       "dirty": false
     },
     "build": {
-      "go_version": "go1.26.2",
+      "go_version": "go1.26.8",
       "target": "linux/amd64",
-      "digest": "sha256:ca00474290e5fb5cf53b5fb3849fc0c73b08ca913fc94700dc36d3b2fa850200"
+      "digest": "sha256:f996575f19d0d137f6053769982775edbf10c0ea32e0c8594bfd79aaabe58eab"
     }
   },
   "workload": {
@@ -164,11 +164,11 @@
     "artifacts": [
       {
         "name": "tournament60-report.schema.json",
-        "digest": "sha256:1318ccc3ce3a6734c558237a5adbf935287a3af4873de7e14d0a872606b1e4c6"
+        "digest": "sha256:0de274efd14c783848137f6b7896f63a9de774d279958474ef10fcdc3a1847b8"
       },
       {
         "name": "tournament60-workload",
-        "digest": "sha256:5073d76f5987192526a739c52d0bb34ed36e2fb5932af013ed7e46a9391450e9"
+        "digest": "sha256:84154045473af8ca0fd99b67299c7e8a2a88c56050fbea98652a0a7ffdceb0ed"
       }
     ],
     "images": [

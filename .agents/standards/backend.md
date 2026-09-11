@@ -3,7 +3,7 @@
 ## Scope
 
 - Treat the backend as a hexagonal monolith following Clean Architecture. Keep business policy inward and infrastructure at the edges.
-- The Go module root is `backend/` and the module requires Go 1.26.2.
+- The Go module root is `backend/` and the module requires Go 1.26.8.
 - Keep the import direction: process boot -> bootstrap -> adapters -> ports and transport-neutral usecases -> `internal/domain`.
 - `internal/domain` owns business types, validation, and stable application error identities without transport or infrastructure dependencies.
 - `internal/usecase/` owns application business logic, command/query services, cross-workflow coordination, and narrow consumer-owned outbound contracts. Dependencies between usecase packages must be explicit, acyclic, and transport-neutral.

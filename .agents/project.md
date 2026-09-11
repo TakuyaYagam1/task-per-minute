@@ -49,7 +49,7 @@ Do not assume an unimplemented feature exists merely because a private PRD menti
 
 ## Technology Baseline
 
-- Backend: Go 1.26.2, Chi, pgx, sqlc, oapi-codegen, Wire, Redis, Goose, WebSocket.
+- Backend: Go 1.26.8, Chi, pgx, sqlc, oapi-codegen, Wire, Redis, Goose, WebSocket.
 - Frontend: Next.js 15, React 19, TypeScript, generated OpenAPI types, Playwright.
 - Data: PostgreSQL is durable authority, Redis is ephemeral coordination and cache, SeaweedFS stores task source assets.
 - Runtime: Docker Compose, Caddy, GitHub Actions.

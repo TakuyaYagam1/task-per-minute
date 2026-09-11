@@ -1,7 +1,7 @@
 {
   "schema": "security/tools/release-tools.schema.json",
   "schema_version": 1,
-  "reviewed_at": "2026-09-02",
+  "reviewed_at": "2026-09-11",
   "platform": {
     "os": "linux",
     "arch": "amd64"
@@ -9,15 +9,15 @@
   "tools": [
     {
       "name": "go",
-      "version": "1.26.5",
+      "version": "1.26.8",
       "source": {
         "repository_url": "https://go.googlesource.com/go",
-        "release_url": "https://go.dev/dl/go1.26.5.linux-amd64.tar.gz",
-        "license": {"spdx": "BSD-3-Clause", "reviewed_at": "2026-09-02", "status": "accepted", "evidence_url": "https://go.dev/LICENSE"}
+        "release_url": "https://go.dev/dl/go1.26.8.linux-amd64.tar.gz",
+        "license": {"spdx": "BSD-3-Clause", "reviewed_at": "2026-09-11", "status": "accepted", "evidence_url": "https://go.dev/LICENSE"}
       },
-      "runtime_identity": {"arguments": ["version"], "expected_output": "go version go1.26.5 linux/amd64", "timeout_seconds": 5},
-      "provisioning": {"kind": "nix_store", "immutable_root": "/nix/store/pwj3x44pp735yb038fnmqckyyra9k29x-go-1.26.5", "relative_path": "share/go/bin/go", "executable_sha256": "abe5a36e95186f29453f3e1d1840d436445e208417191e10c83998b6a7d8e652", "nar_hash": "sha256:0bx5lffp8mchxrqvar3f4xdm0dnlsj3v9lsx9f85mwg38ff01yim"},
-      "trust_decision": {"status": "accepted", "rationale": "Exact local Nix store root, NAR identity, executable digest, and runtime version are locked."}
+      "runtime_identity": {"arguments": ["version"], "expected_output": "go version go1.26.8 linux/amd64", "timeout_seconds": 5},
+      "provisioning": {"kind": "nix_store", "immutable_root": "/nix/store/dv8vg7k21fdi9v79g5x4b87kwqhl8ykv-go-1.26.8", "relative_path": "bin/go", "executable_sha256": "d9a2fa19c7ef8b57f420012c21f49f235c46f08a68c12077d9c753dbb6ccdc34", "nar_hash": "sha256:1s8nf1a8q1hqkimvhyk044r105dzwrplk19kxg6mwpbkjd24hlxx"},
+      "trust_decision": {"status": "accepted", "rationale": "Official linux-amd64 archive d0f743b33e8d8945e6b1f432edd15785c70507121d6e2a723b21285eddf8b57b is locked by exact Nix root, NAR identity, executable digest, and runtime version."}
     },
     {
       "name": "node",
