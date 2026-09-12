@@ -12,6 +12,7 @@ type LeaderboardResponse = components["schemas"]["LeaderboardResponse"];
 type CurrentPlayerResponse = components["schemas"]["CurrentPlayerResponse"];
 type PlayerResponse = components["schemas"]["PlayerResponse"];
 type UploadSourceResponse = components["schemas"]["TaskSourceUploadResponse"];
+export type TournamentContentSelection = components["schemas"]["TournamentContentSelection"];
 
 type Guard<T> = (value: unknown) => value is T;
 
@@ -54,6 +55,9 @@ const isInteger = (value: unknown): value is number =>
 
 const isPositiveInteger = (value: unknown): value is number => isInteger(value) && value > 0;
 
+const isSafePositiveInteger = (value: unknown): value is number =>
+  typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+
 const isNonNegativeInteger = (value: unknown): value is number =>
   isInteger(value) && value >= 0;
 
@@ -79,6 +83,24 @@ const isPositionalHintArray = (value: unknown): value is (string | null)[] =>
   Array.isArray(value) &&
   value.length <= 3 &&
   value.every((item) => item === null || (isString(item) && item.trim().length > 0));
+
+const NIL_UUID = "00000000-0000-0000-0000-000000000000";
+const DATE_TIME_PATTERN =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
+
+const isNonNilUUID = (value: unknown): value is string =>
+  isUUID(value) && value.toLowerCase() !== NIL_UUID;
+
+const isDateTimeString = (value: unknown): value is string =>
+  isDateString(value) && DATE_TIME_PATTERN.test(value);
+
+const hasExactKeys = (
+  value: Record<string, unknown>,
+  allowedKeys: readonly string[],
+): boolean => {
+  const keys = Object.keys(value);
+  return keys.length === allowedKeys.length && keys.every((key) => allowedKeys.includes(key));
+};
 
 export class ApiContractError extends Error {
   constructor(contract: string) {
@@ -180,3 +202,27 @@ export const isAdminPlayerAuditEventArray = (value: unknown): value is AdminPlay
 
 export const isUploadSourceResponse = (value: unknown): value is UploadSourceResponse =>
   isRecord(value) && isHttpURL(value.source_file_url);
+
+export const isTournamentContentSelection = (
+  value: unknown,
+): value is TournamentContentSelection => {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, [
+      "content_revision",
+      "publication_id",
+      "published_at",
+      "normal_pool_revision_id",
+      "golden_pool_revision_id",
+    ]) ||
+    !isSafePositiveInteger(value.content_revision) ||
+    !isNonNilUUID(value.publication_id) ||
+    !isDateTimeString(value.published_at) ||
+    !isNonNilUUID(value.normal_pool_revision_id) ||
+    !isNonNilUUID(value.golden_pool_revision_id)
+  ) {
+    return false;
+  }
+
+  return value.normal_pool_revision_id.toLowerCase() !== value.golden_pool_revision_id.toLowerCase();
+};

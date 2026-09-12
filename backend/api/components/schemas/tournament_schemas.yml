@@ -128,6 +128,38 @@ TournamentListResponse:
       maxLength: 1024
       nullable: true
 
+TournamentContentSelection:
+  type: object
+  additionalProperties: false
+  description: |
+    The currently published content selection that can be bound to a new
+    tournament. The selected pool revision identifiers are immutable once a
+    tournament is created. A later catalog publication does not rewrite prior
+    tournament bindings.
+  required: [content_revision, publication_id, published_at, normal_pool_revision_id, golden_pool_revision_id]
+  properties:
+    content_revision:
+      type: integer
+      format: int64
+      minimum: 1
+      description: Monotonic published content revision to send unchanged when creating a tournament.
+    publication_id:
+      type: string
+      format: uuid
+      description: Immutable publication identity for this content revision.
+    published_at:
+      type: string
+      format: date-time
+      description: Server timestamp at which this publication became current.
+    normal_pool_revision_id:
+      type: string
+      format: uuid
+      description: Selected normal task pool revision bound to a new tournament.
+    golden_pool_revision_id:
+      type: string
+      format: uuid
+      description: Selected Golden task pool revision bound to a new tournament.
+
 TournamentRevisionProblem:
   description: RFC 7807 optimistic-concurrency error with the current tournament revision.
   allOf:

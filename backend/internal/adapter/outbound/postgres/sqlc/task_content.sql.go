@@ -266,6 +266,63 @@ func (q *Queries) GetCurrentTournamentContentConfiguration(ctx context.Context, 
 	return i, err
 }
 
+const getLatestTaskPoolPublication = `-- name: GetLatestTaskPoolPublication :many
+WITH latest_publication AS (
+    SELECT publication.id, publication.revision, publication.published_at
+    FROM task_pool_publications AS publication
+    ORDER BY publication.revision DESC, publication.id DESC
+    LIMIT 1
+)
+SELECT publication.id AS publication_id,
+    publication.revision AS publication_revision,
+    publication.published_at,
+    pool.id AS pool_revision_id,
+    pool.kind,
+    pool.revision AS pool_revision
+FROM latest_publication AS publication
+JOIN task_pool_revisions AS pool ON pool.publication_id = publication.id
+ORDER BY pool.kind, pool.id
+`
+
+type GetLatestTaskPoolPublicationRow struct {
+	PublicationID       uuid.UUID
+	PublicationRevision int64
+	PublishedAt         pgtype.Timestamptz
+	PoolRevisionID      uuid.UUID
+	Kind                string
+	PoolRevision        int64
+}
+
+// Read by the catalog discovery adapter inside a repeatable-read snapshot. The
+// query intentionally returns publication and pool identities only; task
+// bodies remain behind the private task delivery boundary.
+func (q *Queries) GetLatestTaskPoolPublication(ctx context.Context) ([]GetLatestTaskPoolPublicationRow, error) {
+	rows, err := q.db.Query(ctx, getLatestTaskPoolPublication)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetLatestTaskPoolPublicationRow{}
+	for rows.Next() {
+		var i GetLatestTaskPoolPublicationRow
+		if err := rows.Scan(
+			&i.PublicationID,
+			&i.PublicationRevision,
+			&i.PublishedAt,
+			&i.PoolRevisionID,
+			&i.Kind,
+			&i.PoolRevision,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getTaskVersion = `-- name: GetTaskVersion :one
 SELECT task_version.task_id,
     task_version.version,

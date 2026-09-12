@@ -21,6 +21,7 @@ const operatorIdentityScope = "task-per-minute:tournament-operator:"
 type TournamentUseCase interface {
 	ListTournaments(ctx context.Context, command TournamentListCommand) (TournamentPage, error)
 	CreateTournament(ctx context.Context, command TournamentCreateCommand) (TournamentResult, error)
+	GetTournamentContent(ctx context.Context, operator OperatorIdentity) (TournamentContentView, error)
 }
 
 type OperatorIdentity struct{ ActorID uuid.UUID }
@@ -68,6 +69,14 @@ type TournamentCreateCommand struct {
 type TournamentResult struct {
 	Tournament TournamentView
 	Changed    bool
+}
+
+type TournamentContentView struct {
+	ContentRevision      int64
+	PublicationID        uuid.UUID
+	PublishedAt          time.Time
+	NormalPoolRevisionID uuid.UUID
+	GoldenPoolRevisionID uuid.UUID
 }
 
 type TournamentView struct {

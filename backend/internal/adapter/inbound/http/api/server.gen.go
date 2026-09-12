@@ -68,6 +68,9 @@ type ServerInterface interface {
 	// ListTournamentAudit Search the redacted tournament audit projection
 	// (GET /api/v1/admin/tournament-audit)
 	ListTournamentAudit(w http.ResponseWriter, r *http.Request, params ListTournamentAuditParams)
+	// GetTournamentContent Discover the current published tournament content selection
+	// (GET /api/v1/admin/tournament-content)
+	GetTournamentContent(w http.ResponseWriter, r *http.Request)
 	// ListTournaments List tournaments for the authenticated operator
 	// (GET /api/v1/admin/tournaments)
 	ListTournaments(w http.ResponseWriter, r *http.Request, params ListTournamentsParams)
@@ -290,6 +293,12 @@ func (_ Unimplemented) UploadTaskSource(w http.ResponseWriter, r *http.Request, 
 // ListTournamentAudit Search the redacted tournament audit projection
 // (GET /api/v1/admin/tournament-audit)
 func (_ Unimplemented) ListTournamentAudit(w http.ResponseWriter, r *http.Request, params ListTournamentAuditParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetTournamentContent Discover the current published tournament content selection
+// (GET /api/v1/admin/tournament-content)
+func (_ Unimplemented) GetTournamentContent(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1366,6 +1375,26 @@ func (siw *ServerInterfaceWrapper) ListTournamentAudit(w http.ResponseWriter, r 
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListTournamentAudit(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetTournamentContent operation middleware
+func (siw *ServerInterfaceWrapper) GetTournamentContent(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, AdminSessionAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetTournamentContent(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -4127,6 +4156,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Post(options.BaseURL+"/api/v1/admin/tournaments", wrapper.CreateTournament)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/admin/tournament-content", wrapper.GetTournamentContent)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/admin/tournaments/{tournament_id}/roster", wrapper.GetTournamentRoster)
 	})
 	r.Group(func(r chi.Router) {
@@ -5829,6 +5861,119 @@ func (response ListTournamentAuditdefaultApplicationProblemPlusJSONResponse) Vis
 	return err
 }
 
+type GetTournamentContentRequestObject struct {
+}
+
+type GetTournamentContentResponseObject interface {
+	VisitGetTournamentContentResponse(w http.ResponseWriter) error
+}
+
+type GetTournamentContent200ResponseHeaders struct {
+	CacheControl *string
+}
+
+type GetTournamentContent200JSONResponse struct {
+	Body    TournamentContentSelection
+	Headers GetTournamentContent200ResponseHeaders
+}
+
+func (response GetTournamentContent200JSONResponse) VisitGetTournamentContentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.CacheControl != nil {
+		w.Header().Set("Cache-Control", fmt.Sprint(*response.Headers.CacheControl))
+	}
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTournamentContent401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedProblemApplicationProblemPlusJSONResponse
+}
+
+func (response GetTournamentContent401ApplicationProblemPlusJSONResponse) VisitGetTournamentContentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTournamentContent403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenProblemApplicationProblemPlusJSONResponse
+}
+
+func (response GetTournamentContent403ApplicationProblemPlusJSONResponse) VisitGetTournamentContentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTournamentContent422ApplicationProblemPlusJSONResponse ProblemDetails
+
+func (response GetTournamentContent422ApplicationProblemPlusJSONResponse) VisitGetTournamentContentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTournamentContent429ApplicationProblemPlusJSONResponse struct {
+	RateLimitedProblemApplicationProblemPlusJSONResponse
+}
+
+func (response GetTournamentContent429ApplicationProblemPlusJSONResponse) VisitGetTournamentContentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTournamentContentdefaultApplicationProblemPlusJSONResponse struct {
+	Body       ProblemDetails
+	StatusCode int
+}
+
+func (response GetTournamentContentdefaultApplicationProblemPlusJSONResponse) VisitGetTournamentContentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListTournamentsRequestObject struct {
 	Params ListTournamentsParams
 }
@@ -6015,6 +6160,20 @@ func (response CreateTournament415ApplicationProblemPlusJSONResponse) VisitCreat
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(415)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateTournament422ApplicationProblemPlusJSONResponse ProblemDetails
+
+func (response CreateTournament422ApplicationProblemPlusJSONResponse) VisitCreateTournamentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(422)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -10851,6 +11010,9 @@ type StrictServerInterface interface {
 	// ListTournamentAudit Search the redacted tournament audit projection
 	// (GET /api/v1/admin/tournament-audit)
 	ListTournamentAudit(ctx context.Context, request ListTournamentAuditRequestObject) (ListTournamentAuditResponseObject, error)
+	// GetTournamentContent Discover the current published tournament content selection
+	// (GET /api/v1/admin/tournament-content)
+	GetTournamentContent(ctx context.Context, request GetTournamentContentRequestObject) (GetTournamentContentResponseObject, error)
 	// ListTournaments List tournaments for the authenticated operator
 	// (GET /api/v1/admin/tournaments)
 	ListTournaments(ctx context.Context, request ListTournamentsRequestObject) (ListTournamentsResponseObject, error)
@@ -11459,6 +11621,30 @@ func (sh *strictHandler) ListTournamentAudit(w http.ResponseWriter, r *http.Requ
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ListTournamentAuditResponseObject); ok {
 		if err := validResponse.VisitListTournamentAuditResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetTournamentContent operation middleware
+func (sh *strictHandler) GetTournamentContent(w http.ResponseWriter, r *http.Request) {
+	var request GetTournamentContentRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetTournamentContent(ctx, request.(GetTournamentContentRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetTournamentContent")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetTournamentContentResponseObject); ok {
+		if err := validResponse.VisitGetTournamentContentResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

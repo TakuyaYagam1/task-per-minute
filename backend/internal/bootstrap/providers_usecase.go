@@ -154,14 +154,16 @@ func provideTournamentApplication(
 	clock catalogusecase.Clock,
 	lister catalogusecase.TournamentLister,
 	createStore catalogusecase.TournamentCreateStore,
+	contentReader catalogusecase.ContentReader,
 	receipts idempotency.Store,
 ) *catalogusecase.UseCase {
 	return catalogusecase.NewUseCase(catalogusecase.Dependencies{
-		IDs:         ids,
-		Clock:       clock,
-		Lister:      lister,
-		CreateStore: createStore,
-		Receipts:    receipts,
+		IDs:           ids,
+		Clock:         clock,
+		Lister:        lister,
+		CreateStore:   createStore,
+		ContentReader: contentReader,
+		Receipts:      receipts,
 	})
 }
 

@@ -38,6 +38,7 @@ func TestHandleError_MapsAllSentinels(t *testing.T) {
 		{"username_taken", domain.ErrUsernameTaken, http.StatusConflict, domain.ErrUsernameTaken.Message},
 		{"task_in_use", domain.ErrTaskInUse, http.StatusConflict, domain.ErrTaskInUse.Message},
 		{"conflict", domain.ErrConflict, http.StatusConflict, domain.ErrConflict.Message},
+		{"invalid_content_configuration", domain.ErrInvalidContentConfiguration, http.StatusUnprocessableEntity, domain.ErrInvalidContentConfiguration.Error()},
 		{"validation", domain.ErrValidation, http.StatusBadRequest, domain.ErrValidation.Message},
 		{"username_invalid", domain.ErrUsernameInvalid, http.StatusBadRequest, domain.ErrUsernameInvalid.Message},
 		{"task_validation", domain.ErrTaskValidation, http.StatusBadRequest, domain.ErrTaskValidation.Message},

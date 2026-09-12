@@ -100,6 +100,19 @@ func (a *AdminUseCase) CreateTournament(
 	return result, nil
 }
 
+func (a *AdminUseCase) GetTournamentContent(
+	ctx context.Context,
+	operator usecase.OperatorIdentity,
+) (usecase.TournamentContentView, error) {
+	if ctx == nil || operator.ActorID == uuid.Nil {
+		return usecase.TournamentContentView{}, domain.ErrValidation
+	}
+	if a == nil || a.catalog == nil {
+		return usecase.TournamentContentView{}, domain.ErrInternal
+	}
+	return a.catalog.GetTournamentContent(ctx, operator)
+}
+
 func validTournamentPage(page usecase.TournamentPage) bool {
 	if page.Items == nil {
 		return false

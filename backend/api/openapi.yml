@@ -82,6 +82,8 @@ paths:
 
   /api/v1/admin/tournaments:
     $ref: 'routes/tournament.yml#/~1api~1v1~1admin~1tournaments'
+  /api/v1/admin/tournament-content:
+    $ref: 'routes/tournament.yml#/~1api~1v1~1admin~1tournament-content'
   /api/v1/admin/tournaments/{tournament_id}/roster:
     $ref: 'routes/tournament.yml#/~1api~1v1~1admin~1tournaments~1{tournament_id}~1roster'
   /api/v1/admin/tournaments/{tournament_id}/roster/preflight:

@@ -18,6 +18,7 @@ import (
 	middlewaremocks "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/middleware/mocks"
 	inboundwebsocket "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
+	inboundmocks "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound/mocks"
 	authusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/auth"
 )
 
@@ -43,6 +44,49 @@ func TestNewHandler_AuthenticatesBeforeOpenAPIBodyValidation(t *testing.T) {
 	handler.ServeHTTP(rr, req)
 
 	require.Equal(t, http.StatusUnauthorized, rr.Code)
+}
+
+func TestNewHandler_RejectsMissingOrMalformedTournamentContentRevision(t *testing.T) {
+	t.Parallel()
+
+	validator, err := middleware.OpenAPIRequestValidator(context.Background(), logkit.Noop())
+	require.NoError(t, err)
+
+	validPrefix := `{"expected_revision":0,"preset":"tournament_v1","name":"September Invitational","public_id":"september-invitational","planned_roster_size":8`
+	for _, test := range []struct {
+		name      string
+		content   string
+		wantError string
+	}{
+		{name: "missing", content: `}`, wantError: "missing"},
+		{name: "malformed", content: `,"content_revision":"latest"}`, wantError: "malformed"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			service := inboundmocks.NewMockTournamentUseCase(t)
+			server := New(Dependencies{
+				Tournaments:                       service,
+				OperatorTournamentMutationLimiter: newAllowingRateLimiter(t),
+			})
+			handler := NewHandler(server, HandlerOptions{
+				RequestValidator: validator,
+			})
+			request := httptest.NewRequest(
+				http.MethodPost,
+				"/api/v1/admin/tournaments",
+				strings.NewReader(validPrefix+test.content),
+			)
+			request.Header.Set("Content-Type", "application/json")
+			request.Header.Set("Idempotency-Key", "7524f043-40d5-40a5-a549-344c4640401f")
+			recorder := httptest.NewRecorder()
+
+			handler.ServeHTTP(recorder, request)
+
+			require.Equal(t, http.StatusBadRequest, recorder.Code, test.wantError)
+			service.AssertNotCalled(t, "CreateTournament", mock.Anything, mock.Anything)
+		})
+	}
 }
 
 func TestNewHandler_LeavesManualRoutesOutsideOpenAPIValidation(t *testing.T) {

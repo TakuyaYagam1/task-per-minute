@@ -89,6 +89,8 @@ var ReposSet = wire.NewSet(
 	postgres.NewTournamentPostgres,
 	postgres.NewTournamentCreatePostgres,
 	wire.Bind(new(catalogusecase.TournamentCreateStore), new(*postgres.TournamentCreatePostgres)),
+	postgres.NewTournamentContentPostgres,
+	wire.Bind(new(catalogusecase.ContentReader), new(*postgres.TournamentContentPostgres)),
 	postgres.NewTournamentLifecyclePostgres,
 	wire.Bind(new(lifecycleusecase.TournamentLifecycleRepository), new(*postgres.TournamentLifecyclePostgres)),
 	postgres.NewTournamentCancellationPostgres,

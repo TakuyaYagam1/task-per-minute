@@ -27,7 +27,15 @@
     operationId: createTournament
     tags: [tournament]
     summary: Create a tournament
-    description: Operator identity comes from the authenticated session.
+    description: |
+      Operator identity comes from the authenticated session. The
+      content_revision is bound exactly to the selected published content
+      revision returned by GET /api/v1/admin/tournament-content and is never
+      silently upgraded. If a previously selected revision is no longer usable,
+      refresh that GET and retry with the returned selection. Publishing a new
+      catalog publication does not change the content bound to existing
+      tournaments. A previously selected healthy and enabled published
+      revision remains acceptable after a newer publication is available.
     x-auth-scope: tournament:manage
     security:
       - AdminSessionAuth: []
@@ -54,12 +62,64 @@
       '409':
         $ref: '../components/responses.yml#/TournamentRevisionConflictProblem'
 
+      '422':
+        description: The selected content revision is missing or no longer usable.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+
       '400':
         $ref: '../components/responses.yml#/InvalidRequestProblem'
       '413':
         $ref: '../components/responses.yml#/RequestEntityTooLargeProblem'
       '415':
         $ref: '../components/responses.yml#/UnsupportedMediaTypeProblem'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+/api/v1/admin/tournament-content:
+  get:
+    operationId: getTournamentContent
+    tags: [tournament]
+    summary: Discover the current published tournament content selection
+    description: |
+      Returns the published content selection currently usable for creating a
+      tournament. This selection confirms the publication and pool revisions
+      that CreateTournament will bind exactly. It does not replace tournament
+      preflight checks for roster capacity or launch readiness.
+
+      If an older selection is no longer usable, refresh this GET and use the
+      returned selection for the create request. Publishing a new catalog
+      publication does not invalidate or rewrite the immutable content binding
+      of an existing tournament.
+    x-auth-scope: tournament:manage
+    security:
+      - AdminSessionAuth: []
+    responses:
+      '200':
+        description: Current published content selection.
+        headers:
+          Cache-Control:
+            description: The current selection must not be stored by browsers or intermediary caches.
+            schema:
+              type: string
+              enum: [no-store]
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/TournamentContentSelection'
+      '401':
+        $ref: '../components/responses.yml#/UnauthorizedProblem'
+      '403':
+        $ref: '../components/responses.yml#/ForbiddenProblem'
+      '422':
+        description: No currently usable published content selection exists.
+        content:
+          application/problem+json:
+            schema:
+              $ref: '../components/schemas.yml#/ProblemDetails'
+      '429':
+        $ref: '../components/responses.yml#/RateLimitedProblem'
       default:
         $ref: '../components/responses.yml#/UnexpectedServerProblem'
 /api/v1/admin/tournaments/{tournament_id}/roster:

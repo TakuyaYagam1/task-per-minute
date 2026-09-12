@@ -33,6 +33,7 @@ type tournamentRateRoute struct {
 var tournamentRateRoutes = []tournamentRateRoute{
 	{http.MethodGet, tournamentOperatorRead, []string{"api", "v1", "admin", "tournament-audit"}},
 	{http.MethodGet, tournamentOperatorRead, []string{"api", "v1", "admin", "tournaments"}},
+	{http.MethodGet, tournamentOperatorRead, []string{"api", "v1", "admin", "tournament-content"}},
 	{http.MethodPost, tournamentOperatorMutation, []string{"api", "v1", "admin", "tournaments"}},
 	{http.MethodGet, tournamentOperatorRead, []string{"api", "v1", "admin", "tournaments", "*", "roster"}},
 	{http.MethodPut, tournamentOperatorMutation, []string{"api", "v1", "admin", "tournaments", "*", "roster"}},

@@ -292,7 +292,76 @@ type tournamentV1ContentBinding struct {
 	bo3CategoryPoolID    uuid.UUID
 }
 
-//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
+type tournamentV1ContentPublicationPool struct {
+	publicationID       uuid.UUID
+	publicationRevision int64
+	publishedAt         time.Time
+	publishedAtValid    bool
+	poolRevisionID      uuid.UUID
+	kind                string
+	poolRevision        int64
+}
+
+//nolint:gocyclo // One fail-closed validator keeps publication identity and pool-kind checks together.
+func tournamentV1ContentBindingFromPools(
+	tournamentID uuid.UUID,
+	rosterID uuid.UUID,
+	pools []tournamentV1ContentPublicationPool,
+) (tournamentV1ContentBinding, error) {
+	if len(pools) != 2 {
+		return tournamentV1ContentBinding{}, fmt.Errorf(
+			"TournamentPostgres - content pools: %w", domain.ErrInvalidContentConfiguration,
+		)
+	}
+
+	binding := tournamentV1ContentBinding{
+		tournamentID:      tournamentID,
+		configurationID:   tournamentV1ContentID(tournamentID, rosterID, "configuration"),
+		bo1CategoryPoolID: tournamentV1ContentID(tournamentID, rosterID, "category-pool:bo1"),
+		bo3CategoryPoolID: tournamentV1ContentID(tournamentID, rosterID, "category-pool:bo3"),
+	}
+	first := pools[0]
+	for _, pool := range pools {
+		if pool.publicationID == uuid.Nil || pool.poolRevisionID == uuid.Nil ||
+			pool.publicationID != first.publicationID ||
+			pool.publicationRevision != first.publicationRevision ||
+			pool.publicationRevision < 1 || pool.poolRevision != pool.publicationRevision ||
+			!pool.publishedAtValid {
+			return tournamentV1ContentBinding{}, fmt.Errorf(
+				"TournamentPostgres - invalid task pools: %w", domain.ErrInvalidContentConfiguration,
+			)
+		}
+		binding.publicationID = pool.publicationID
+		switch domain.AssignmentTaskKind(pool.kind) {
+		case domain.AssignmentTaskKindNormal:
+			if binding.normalPoolRevisionID != uuid.Nil {
+				return tournamentV1ContentBinding{}, fmt.Errorf(
+					"TournamentPostgres - duplicate normal task pool: %w", domain.ErrInvalidContentConfiguration,
+				)
+			}
+			binding.normalPoolRevisionID = pool.poolRevisionID
+		case domain.AssignmentTaskKindGolden:
+			if binding.goldenPoolRevisionID != uuid.Nil {
+				return tournamentV1ContentBinding{}, fmt.Errorf(
+					"TournamentPostgres - duplicate golden task pool: %w", domain.ErrInvalidContentConfiguration,
+				)
+			}
+			binding.goldenPoolRevisionID = pool.poolRevisionID
+		default:
+			return tournamentV1ContentBinding{}, fmt.Errorf(
+				"TournamentPostgres - unknown task pool: %w", domain.ErrInvalidContentConfiguration,
+			)
+		}
+	}
+	if binding.normalPoolRevisionID == uuid.Nil || binding.goldenPoolRevisionID == uuid.Nil ||
+		binding.normalPoolRevisionID == binding.goldenPoolRevisionID {
+		return tournamentV1ContentBinding{}, fmt.Errorf(
+			"TournamentPostgres - incomplete task pools: %w", domain.ErrInvalidContentConfiguration,
+		)
+	}
+	return binding, nil
+}
+
 func loadTournamentV1ContentBinding(
 	ctx context.Context,
 	querier *sqlc.Queries,
@@ -312,51 +381,19 @@ func loadTournamentV1ContentBinding(
 		)
 	}
 
-	binding := tournamentV1ContentBinding{
-		tournamentID:      tournamentID,
-		configurationID:   tournamentV1ContentID(tournamentID, rosterID, "configuration"),
-		bo1CategoryPoolID: tournamentV1ContentID(tournamentID, rosterID, "category-pool:bo1"),
-		bo3CategoryPoolID: tournamentV1ContentID(tournamentID, rosterID, "category-pool:bo3"),
-	}
-	for _, pool := range publication {
-		if pool.PublicationID == uuid.Nil || pool.PoolRevisionID == uuid.Nil ||
-			pool.PublicationID != publication[0].PublicationID ||
-			pool.PublicationRevision != publication[0].PublicationRevision ||
-			pool.PublicationRevision < 1 || pool.PoolRevision != pool.PublicationRevision ||
-			!pool.PublishedAt.Valid {
-			return tournamentV1ContentBinding{}, fmt.Errorf(
-				"TournamentPostgres - Create - invalid current task pools: %w", domain.ErrInvalidContentConfiguration,
-			)
-		}
-		binding.publicationID = pool.PublicationID
-		switch domain.AssignmentTaskKind(pool.Kind) {
-		case domain.AssignmentTaskKindNormal:
-			if binding.normalPoolRevisionID != uuid.Nil {
-				return tournamentV1ContentBinding{}, fmt.Errorf(
-					"TournamentPostgres - Create - duplicate normal task pool: %w", domain.ErrInvalidContentConfiguration,
-				)
-			}
-			binding.normalPoolRevisionID = pool.PoolRevisionID
-		case domain.AssignmentTaskKindGolden:
-			if binding.goldenPoolRevisionID != uuid.Nil {
-				return tournamentV1ContentBinding{}, fmt.Errorf(
-					"TournamentPostgres - Create - duplicate golden task pool: %w", domain.ErrInvalidContentConfiguration,
-				)
-			}
-			binding.goldenPoolRevisionID = pool.PoolRevisionID
-		default:
-			return tournamentV1ContentBinding{}, fmt.Errorf(
-				"TournamentPostgres - Create - unknown task pool: %w", domain.ErrInvalidContentConfiguration,
-			)
+	pools := make([]tournamentV1ContentPublicationPool, len(publication))
+	for index, pool := range publication {
+		pools[index] = tournamentV1ContentPublicationPool{
+			publicationID:       pool.PublicationID,
+			publicationRevision: pool.PublicationRevision,
+			publishedAt:         pool.PublishedAt.Time,
+			publishedAtValid:    pool.PublishedAt.Valid,
+			poolRevisionID:      pool.PoolRevisionID,
+			kind:                pool.Kind,
+			poolRevision:        pool.PoolRevision,
 		}
 	}
-	if binding.normalPoolRevisionID == uuid.Nil || binding.goldenPoolRevisionID == uuid.Nil ||
-		binding.normalPoolRevisionID == binding.goldenPoolRevisionID {
-		return tournamentV1ContentBinding{}, fmt.Errorf(
-			"TournamentPostgres - Create - incomplete task pools: %w", domain.ErrInvalidContentConfiguration,
-		)
-	}
-	return binding, nil
+	return tournamentV1ContentBindingFromPools(tournamentID, rosterID, pools)
 }
 
 //nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.

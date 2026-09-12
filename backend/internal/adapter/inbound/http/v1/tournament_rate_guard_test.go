@@ -32,6 +32,7 @@ func TestTournamentRatePolicyClassifiesCurrentHTTPRoutes(t *testing.T) {
 		{"public head", http.MethodHead, "/api/v1/tournaments/10000000-0000-0000-0000-000000000001/scoreboard", tournamentPublicRead, true},
 		{"operator list", http.MethodGet, "/api/v1/admin/tournaments", tournamentOperatorRead, true},
 		{"operator audit", http.MethodGet, "/api/v1/admin/tournament-audit", tournamentOperatorRead, true},
+		{"operator content", http.MethodGet, "/api/v1/admin/tournament-content", tournamentOperatorRead, true},
 		{"operator mutation", http.MethodPost, "/api/v1/admin/tournaments/10000000-0000-0000-0000-000000000001/actions", tournamentOperatorMutation, true},
 		{"participant read", http.MethodGet, "/api/v1/tournaments/10000000-0000-0000-0000-000000000001/participant/lobby", tournamentParticipantRead, true},
 		{"participant mutation", http.MethodPost, "/api/v1/tournaments/10000000-0000-0000-0000-000000000001/participant/waves/20000000-0000-0000-0000-000000000002/ready", tournamentParticipantMutation, true},
@@ -59,6 +60,7 @@ func TestTournamentRatePolicyMatchesCanonicalOpenAPISpec(t *testing.T) {
 	expected := map[string]tournamentRequestClass{
 		"listTournamentAudit":              tournamentOperatorRead,
 		"listTournaments":                  tournamentOperatorRead,
+		"getTournamentContent":             tournamentOperatorRead,
 		"createTournament":                 tournamentOperatorMutation,
 		"getTournamentRoster":              tournamentOperatorRead,
 		"replaceTournamentRoster":          tournamentOperatorMutation,
@@ -167,6 +169,7 @@ func openAPITournamentHTTPRegistrations(t *testing.T) []openAPITournamentHTTPReg
 
 func isTournamentHTTPRoute(path string) bool {
 	return path == "/api/v1/admin/tournament-audit" ||
+		path == "/api/v1/admin/tournament-content" ||
 		strings.HasPrefix(path, "/api/v1/admin/tournaments") ||
 		strings.HasPrefix(path, "/api/v1/tournaments/")
 }

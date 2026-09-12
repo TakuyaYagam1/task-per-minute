@@ -163,6 +163,7 @@ func TestOpenAPIOperationIDsAndTagsUseDomainNaming(t *testing.T) {
 		{http.MethodDelete, "/api/v1/admin/players/{id}", "deletePlayer", "player"},
 		{http.MethodGet, "/api/v1/admin/tasks", "listTasks", "task"},
 		{http.MethodGet, "/api/v1/admin/tournaments", "listTournaments", "tournament"},
+		{http.MethodGet, "/api/v1/admin/tournament-content", "getTournamentContent", "tournament"},
 	}
 	for _, candidate := range expected {
 		operation := requireOperation(t, spec, candidate.method, candidate.path)
@@ -195,6 +196,7 @@ func TestOpenAPIPublicSchemasUseResourceNames(t *testing.T) {
 		"UpdatePlayerRequest",
 		"TaskDetails",
 		"TaskSourceUploadResponse",
+		"TournamentContentSelection",
 		"TournamentRevisionProblem",
 	} {
 		_, exists := spec.Components.Schemas[name]
@@ -213,6 +215,47 @@ func TestOpenAPIPublicSchemasUseResourceNames(t *testing.T) {
 		_, exists := spec.Components.Schemas[name]
 		require.False(t, exists, name)
 	}
+}
+
+func TestOpenAPITournamentContentSelectionContract(t *testing.T) {
+	t.Parallel()
+
+	spec := loadSpec(t)
+	selection, exists := spec.Components.Schemas["TournamentContentSelection"]
+	require.True(t, exists)
+	require.NotNil(t, selection.Value)
+	require.NotNil(t, selection.Value.AdditionalProperties.Has)
+	require.False(t, *selection.Value.AdditionalProperties.Has)
+	for _, field := range []string{
+		"content_revision", "publication_id", "published_at", "normal_pool_revision_id", "golden_pool_revision_id",
+	} {
+		require.Contains(t, selection.Value.Required, field)
+		require.Contains(t, selection.Value.Properties, field)
+	}
+
+	contentRevision := selection.Value.Properties["content_revision"].Value
+	require.Equal(t, "int64", contentRevision.Format)
+	require.NotNil(t, contentRevision.Min)
+	require.InDelta(t, 1, *contentRevision.Min, 0)
+	for _, field := range []string{"publication_id", "normal_pool_revision_id", "golden_pool_revision_id"} {
+		require.Equal(t, "uuid", selection.Value.Properties[field].Value.Format, field)
+	}
+	require.Equal(t, "date-time", selection.Value.Properties["published_at"].Value.Format)
+
+	operation := requireOperation(t, spec, http.MethodGet, "/api/v1/admin/tournament-content")
+	require.Equal(t, "tournament:manage", operation.Extensions["x-auth-scope"])
+	require.Contains(t, operation.Description, "refresh")
+	require.Contains(t, operation.Description, "preflight")
+	requireResponseHeader(t, operation, http.StatusOK, "Cache-Control", "get tournament content")
+	requireResponseHeader(t, operation, http.StatusTooManyRequests, "Retry-After", "get tournament content")
+	requireResponse(t, operation, http.StatusUnprocessableEntity, "get tournament content")
+
+	create := requireOperation(t, spec, http.MethodPost, "/api/v1/admin/tournaments")
+	createRequest := spec.Components.Schemas["CreateTournamentRequest"].Value
+	require.Contains(t, createRequest.Required, "content_revision")
+	require.NotNil(t, createRequest.Properties["content_revision"].Value.Min)
+	require.InDelta(t, 1, *createRequest.Properties["content_revision"].Value.Min, 0)
+	requireResponse(t, create, http.StatusUnprocessableEntity, "create tournament")
 }
 
 func TestOpenAPITournamentRevisionProblemContract(t *testing.T) {

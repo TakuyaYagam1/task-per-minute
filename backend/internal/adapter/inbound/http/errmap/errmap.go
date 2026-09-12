@@ -12,6 +12,11 @@ import (
 
 const problemContentType = "application/problem+json"
 
+var errInvalidContentConfigurationProblem = &domain.Error{
+	Code:    domain.ErrorCodeValidation,
+	Message: domain.ErrInvalidContentConfiguration.Error(),
+}
+
 // HandleError writes an RFC 7807 response for a domain/application error.
 func HandleError(w http.ResponseWriter, r *http.Request, err error) {
 	if err == nil {
@@ -53,6 +58,8 @@ func classify(err error) (int, *domain.Error) {
 		return http.StatusForbidden, appError(err, domain.ErrForbidden)
 	case isAny(err, domain.ErrUsernameTaken, domain.ErrTaskInUse, domain.ErrConflict):
 		return http.StatusConflict, appError(err, domain.ErrInternal)
+	case errors.Is(err, domain.ErrInvalidContentConfiguration):
+		return http.StatusUnprocessableEntity, errInvalidContentConfigurationProblem
 	case isAny(err, domain.ErrValidation, domain.ErrUsernameInvalid, domain.ErrTaskValidation):
 		return http.StatusBadRequest, appError(err, domain.ErrInternal)
 	case errors.Is(err, domain.ErrRateLimited):

@@ -26,3 +26,16 @@ func tournamentView(record CatalogTournamentRecord) (usecase.TournamentView, err
 		FinishedAt:        cloneTime(record.FinishedAt),
 	}, nil
 }
+
+func tournamentContentView(record TournamentContentRecord) (usecase.TournamentContentView, error) {
+	if err := validateTournamentContentRecord(record); err != nil {
+		return usecase.TournamentContentView{}, err
+	}
+	return usecase.TournamentContentView{
+		ContentRevision:      record.ContentRevision,
+		PublicationID:        record.PublicationID,
+		PublishedAt:          record.PublishedAt,
+		NormalPoolRevisionID: record.NormalPoolRevisionID,
+		GoldenPoolRevisionID: record.GoldenPoolRevisionID,
+	}, nil
+}

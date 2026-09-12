@@ -71,6 +71,18 @@ type TournamentCreateStore interface {
 	Create(ctx context.Context, command CreateReceiptCommand) (usecase.TournamentResult, error)
 }
 
+type TournamentContentRecord struct {
+	ContentRevision      int64
+	PublicationID        uuid.UUID
+	PublishedAt          time.Time
+	NormalPoolRevisionID uuid.UUID
+	GoldenPoolRevisionID uuid.UUID
+}
+
+type ContentReader interface {
+	GetTournamentContent(ctx context.Context) (TournamentContentRecord, error)
+}
+
 var _ TournamentLister = (*TournamentUseCase)(nil)
 
 type IDScope string

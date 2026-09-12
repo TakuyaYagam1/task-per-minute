@@ -76,6 +76,32 @@ func (c *tournamentController) ListTournaments(
 	response.WriteJSON(w, http.StatusOK, payload)
 }
 
+func (c *tournamentController) GetTournamentContent(
+	w http.ResponseWriter,
+	r *http.Request,
+) {
+	operator, ok := operatorFromRequest(w, r)
+	if !ok {
+		return
+	}
+	if c == nil || c.catalog == nil {
+		errmap.HandleError(w, r, domain.ErrInternal)
+		return
+	}
+
+	view, err := c.catalog.GetTournamentContent(r.Context(), operator)
+	if err != nil {
+		writeTournamentError(w, r, err)
+		return
+	}
+	payload, err := tournamentContentResponse(view)
+	if err != nil {
+		errmap.HandleError(w, r, domain.ErrInternal)
+		return
+	}
+	response.WriteJSON(w, http.StatusOK, payload)
+}
+
 func (c *tournamentController) CreateTournament(
 	w http.ResponseWriter,
 	r *http.Request,
@@ -225,6 +251,25 @@ func tournamentResponse(view inbound.TournamentView) (api.Tournament, error) {
 		UpdatedAt:         view.UpdatedAt,
 		StartedAt:         cloneTimePointer(view.StartedAt),
 		FinishedAt:        cloneTimePointer(view.FinishedAt),
+	}, nil
+}
+
+// tournamentContentResponse is an explicit allowlist. Content discovery must
+// never serialize task payloads or internal publication metadata that may be
+// added to the usecase view later.
+func tournamentContentResponse(view inbound.TournamentContentView) (api.TournamentContentSelection, error) {
+	if view.ContentRevision < 1 || view.PublicationID == uuid.Nil ||
+		view.NormalPoolRevisionID == uuid.Nil || view.GoldenPoolRevisionID == uuid.Nil ||
+		view.NormalPoolRevisionID == view.GoldenPoolRevisionID ||
+		!domain.IsValidServerTime(view.PublishedAt) {
+		return api.TournamentContentSelection{}, domain.ErrInternal
+	}
+	return api.TournamentContentSelection{
+		ContentRevision:      view.ContentRevision,
+		PublicationId:        view.PublicationID,
+		PublishedAt:          view.PublishedAt,
+		NormalPoolRevisionId: view.NormalPoolRevisionID,
+		GoldenPoolRevisionId: view.GoldenPoolRevisionID,
 	}, nil
 }
 

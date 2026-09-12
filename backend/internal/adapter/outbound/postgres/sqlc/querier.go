@@ -383,6 +383,10 @@ type Querier interface {
 	GetGoldenSubmissionByIdempotencyKey(ctx context.Context, idempotencyKey uuid.UUID) (GoldenProvisionalSubmission, error)
 	GetLatestGoldenRecoveryRevision(ctx context.Context, arg GetLatestGoldenRecoveryRevisionParams) (GoldenRecoveryRevision, error)
 	GetLatestProjectionCutoff(ctx context.Context, arg GetLatestProjectionCutoffParams) (ProjectionCutoff, error)
+	// Read by the catalog discovery adapter inside a repeatable-read snapshot. The
+	// query intentionally returns publication and pool identities only; task
+	// bodies remain behind the private task delivery boundary.
+	GetLatestTaskPoolPublication(ctx context.Context) ([]GetLatestTaskPoolPublicationRow, error)
 	GetOfficialResultRevisionByID(ctx context.Context, id uuid.UUID) (OfficialResultRevision, error)
 	GetOperatorResultCommand(ctx context.Context, commandID uuid.UUID) (OperatorResultCommand, error)
 	GetOperatorResultTime(ctx context.Context) (pgtype.Timestamptz, error)

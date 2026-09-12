@@ -327,9 +327,44 @@ export interface paths {
         put?: never;
         /**
          * Create a tournament
-         * @description Operator identity comes from the authenticated session.
+         * @description Operator identity comes from the authenticated session. The
+         *     content_revision is bound exactly to the selected published content
+         *     revision returned by GET /api/v1/admin/tournament-content and is never
+         *     silently upgraded. If a previously selected revision is no longer usable,
+         *     refresh that GET and retry with the returned selection. Publishing a new
+         *     catalog publication does not change the content bound to existing
+         *     tournaments. A previously selected healthy and enabled published
+         *     revision remains acceptable after a newer publication is available.
          */
         post: operations["createTournament"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/tournament-content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Discover the current published tournament content selection
+         * @description Returns the published content selection currently usable for creating a
+         *     tournament. This selection confirms the publication and pool revisions
+         *     that CreateTournament will bind exactly. It does not replace tournament
+         *     preflight checks for roster capacity or launch readiness.
+         *
+         *     If an older selection is no longer usable, refresh this GET and use the
+         *     returned selection for the create request. Publishing a new catalog
+         *     publication does not invalidate or rewrite the immutable content binding
+         *     of an existing tournament.
+         */
+        get: operations["getTournamentContent"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1320,6 +1355,39 @@ export interface components {
             /** Format: int64 */
             current_revision: number;
             current_state?: components["schemas"]["TournamentState"];
+        };
+        /**
+         * @description The currently published content selection that can be bound to a new
+         *     tournament. The selected pool revision identifiers are immutable once a
+         *     tournament is created. A later catalog publication does not rewrite prior
+         *     tournament bindings.
+         */
+        TournamentContentSelection: {
+            /**
+             * Format: int64
+             * @description Monotonic published content revision to send unchanged when creating a tournament.
+             */
+            content_revision: number;
+            /**
+             * Format: uuid
+             * @description Selected Golden task pool revision bound to a new tournament.
+             */
+            golden_pool_revision_id: string;
+            /**
+             * Format: uuid
+             * @description Selected normal task pool revision bound to a new tournament.
+             */
+            normal_pool_revision_id: string;
+            /**
+             * Format: uuid
+             * @description Immutable publication identity for this content revision.
+             */
+            publication_id: string;
+            /**
+             * Format: date-time
+             * @description Server timestamp at which this publication became current.
+             */
+            published_at: string;
         };
         /** @enum {string} */
         AttendanceState: "invited" | "registered" | "checked_in" | "withdrawn";
@@ -2750,6 +2818,17 @@ export interface components {
                 "application/problem+json": components["schemas"]["ProblemDetails"];
             };
         };
+        /** @description The authenticated participant exceeded the command rate limit. */
+        RateLimitedProblem: {
+            headers: {
+                /** @description Seconds until the participant may retry the command. */
+                "Retry-After"?: number;
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["ProblemDetails"];
+            };
+        };
         /** @description The requested tournament resource was not found. */
         NotFoundProblem: {
             headers: {
@@ -2775,17 +2854,6 @@ export interface components {
             };
             content: {
                 "application/problem+json": components["schemas"]["GoldenRuntimeConflictProblem"];
-            };
-        };
-        /** @description The authenticated participant exceeded the command rate limit. */
-        RateLimitedProblem: {
-            headers: {
-                /** @description Seconds until the participant may retry the command. */
-                "Retry-After"?: number;
-                [name: string]: unknown;
-            };
-            content: {
-                "application/problem+json": components["schemas"]["ProblemDetails"];
             };
         };
     };
@@ -4024,6 +4092,50 @@ export interface operations {
             409: components["responses"]["TournamentRevisionConflictProblem"];
             413: components["responses"]["RequestEntityTooLargeProblem"];
             415: components["responses"]["UnsupportedMediaTypeProblem"];
+            /** @description The selected content revision is missing or no longer usable. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            default: components["responses"]["UnexpectedServerProblem"];
+        };
+    };
+    getTournamentContent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current published content selection. */
+            200: {
+                headers: {
+                    /** @description The current selection must not be stored by browsers or intermediary caches. */
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TournamentContentSelection"];
+                };
+            };
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            /** @description No currently usable published content selection exists. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            429: components["responses"]["RateLimitedProblem"];
             default: components["responses"]["UnexpectedServerProblem"];
         };
     };

@@ -129,8 +129,9 @@ func TestTournamentCreateToChampionThroughProductionHandlers(t *testing.T) {
 			catalog := prepareCreateToChampionContent(ctx, t)
 			fixture := newTournamentFlowRESTFixture(t)
 			adminToken := fixture.adminAccessToken(t)
+			content := getTournamentContentThroughREST(t, fixture, adminToken)
 			players := joinTournamentFlowPlayers(t, fixture, 4)
-			created := createTournamentThroughREST(t, fixture, adminToken, catalog.revision, name)
+			created := createTournamentThroughREST(t, fixture, adminToken, content.ContentRevision, name)
 			openRegistrationThroughREST(t, fixture, adminToken, created.Id, created.Revision)
 			roster := replaceTournamentRosterThroughREST(t, fixture, adminToken, created.Id, players)
 			preflight := runTournamentRosterPreflightThroughREST(t, fixture, adminToken, created.Id)
@@ -243,6 +244,7 @@ func newTournamentFlowRESTFixture(t *testing.T) *restFixture {
 	catalog := catalogusecase.NewUseCase(catalogusecase.Dependencies{
 		IDs: ids, Clock: clock, Lister: legacyCatalog,
 		CreateStore: postgres.NewTournamentCreatePostgres(tournaments), Receipts: receipts,
+		ContentReader: postgres.NewTournamentContentPostgres(tx),
 	})
 	rosterRepository := postgres.NewTournamentAdminRosterPostgres(tx)
 	roster := tournamentadmin.NewRosterWorkflow(tournamentadmin.RosterWorkflowDependencies{
@@ -363,8 +365,10 @@ func newTournamentFlowRESTFixture(t *testing.T) *restFixture {
 	})
 	fixture := &restFixture{
 		databaseFixture: database,
-		handler:         restv1.NewHandler(server, restv1.HandlerOptions{AdminAuth: auth, PlayerRepo: database.players}),
-		auth:            auth, validator: newOpenAPIResponseValidator(t),
+		handler: middleware.NoStoreSensitiveResponses()(
+			restv1.NewHandler(server, restv1.HandlerOptions{AdminAuth: auth, PlayerRepo: database.players}),
+		),
+		auth: auth, validator: newOpenAPIResponseValidator(t),
 	}
 	snapshotSource, err := inboundws.NewTournamentProductionSnapshotSource(
 		postgres.NewTournamentSnapshotPostgres(tx), golden,

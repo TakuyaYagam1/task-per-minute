@@ -58,6 +58,26 @@ func (a *UseCase) ListTournaments(ctx context.Context, command usecase.Tournamen
 	return page, nil
 }
 
+func (a *UseCase) GetTournamentContent(
+	ctx context.Context,
+	operator usecase.OperatorIdentity,
+) (usecase.TournamentContentView, error) {
+	if ctx == nil {
+		return usecase.TournamentContentView{}, domain.ErrValidation
+	}
+	if !a.isContentAvailable() {
+		return usecase.TournamentContentView{}, domain.ErrInternal
+	}
+	if !validOperatorIdentity(operator) {
+		return usecase.TournamentContentView{}, domain.ErrValidation
+	}
+	record, err := a.contentReader.GetTournamentContent(ctx)
+	if err != nil {
+		return usecase.TournamentContentView{}, err
+	}
+	return tournamentContentView(record)
+}
+
 func (a *UseCase) CreateTournament(ctx context.Context, command usecase.TournamentCreateCommand) (usecase.TournamentResult, error) {
 	if !a.isCreateAvailable() {
 		return usecase.TournamentResult{}, domain.ErrInternal

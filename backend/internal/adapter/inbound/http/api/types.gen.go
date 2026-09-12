@@ -2750,6 +2750,27 @@ type TournamentActionRequest struct {
 // TournamentActionRequestAction defines model for TournamentActionRequest.Action.
 type TournamentActionRequestAction string
 
+// TournamentContentSelection The currently published content selection that can be bound to a new
+// tournament. The selected pool revision identifiers are immutable once a
+// tournament is created. A later catalog publication does not rewrite prior
+// tournament bindings.
+type TournamentContentSelection struct {
+	// ContentRevision Monotonic published content revision to send unchanged when creating a tournament.
+	ContentRevision int64 `json:"content_revision"`
+
+	// GoldenPoolRevisionId Selected Golden task pool revision bound to a new tournament.
+	GoldenPoolRevisionId openapi_types.UUID `json:"golden_pool_revision_id"`
+
+	// NormalPoolRevisionId Selected normal task pool revision bound to a new tournament.
+	NormalPoolRevisionId openapi_types.UUID `json:"normal_pool_revision_id"`
+
+	// PublicationId Immutable publication identity for this content revision.
+	PublicationId openapi_types.UUID `json:"publication_id"`
+
+	// PublishedAt Server timestamp at which this publication became current.
+	PublishedAt time.Time `json:"published_at"`
+}
+
 // TournamentListResponse defines model for TournamentListResponse.
 type TournamentListResponse struct {
 	Items      []Tournament `json:"items"`

@@ -13,6 +13,16 @@ func validOperatorIdentity(identity usecase.OperatorIdentity) bool {
 	return identity.ActorID != uuid.Nil
 }
 
+func validateTournamentContentRecord(record TournamentContentRecord) error {
+	if record.ContentRevision < 1 || record.PublicationID == uuid.Nil ||
+		record.NormalPoolRevisionID == uuid.Nil || record.GoldenPoolRevisionID == uuid.Nil ||
+		record.NormalPoolRevisionID == record.GoldenPoolRevisionID ||
+		!validServerTime(record.PublishedAt) {
+		return domain.ErrInvalidContentConfiguration
+	}
+	return nil
+}
+
 func validListCommand(command usecase.TournamentListCommand) bool {
 	if command.State != "" && !command.State.IsValid() {
 		return false

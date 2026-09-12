@@ -218,6 +218,16 @@ func (service *AdminIdempotentService) CreateTournament(
 	return service.catalog.CreateTournament(ctx, command)
 }
 
+func (service *AdminIdempotentService) GetTournamentContent(
+	ctx context.Context,
+	operator usecase.OperatorIdentity,
+) (usecase.TournamentContentView, error) {
+	if service == nil || service.catalog == nil {
+		return usecase.TournamentContentView{}, domain.ErrInternal
+	}
+	return service.catalog.GetTournamentContent(ctx, operator)
+}
+
 func executeAdminMutation[T any](
 	ctx context.Context,
 	service *AdminIdempotentService,
