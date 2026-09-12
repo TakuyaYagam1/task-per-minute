@@ -27,7 +27,7 @@ are implemented and validated.
 | ---------------------------- | -------------------------------------------------------------------------- | -------------------------------------------------------- |
 | Target product behavior      | Active user instruction and exact private requirements it authorizes       | Authorized task or traceability records when present     |
 | REST API                     | `backend/api/openapi.yml`, `routes/`, `components/`                        | Generated Go and `frontend/lib/shared/api/schema.ts`     |
-| WebSocket protocol           | `backend/internal/adapter/inbound/websocket/event.go`, role handlers, protocol tests | No current frontend consumer; a future client must add a runtime parser |
+| WebSocket protocol           | `backend/internal/adapter/inbound/websocket/event.go`, role handlers, protocol tests | Public recovery parser and reducer in `frontend/lib/shared/api/tournament-recovery.ts`; no mounted socket transport yet |
 | Tournament snapshot views    | `backend/internal/port/inbound/`                                  | PostgreSQL snapshot adapter and role-scoped WebSocket source mappings   |
 | Official result projections  | `backend/internal/usecase/resultprojection/`                                | Result persistence adapters and playoff/correction usecases              |
 | Database schema              | Ordered `backend/db/migrations/*.sql`                                      | sqlc generated models                                    |

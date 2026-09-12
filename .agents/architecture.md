@@ -65,9 +65,11 @@ app -> pages -> widgets -> features -> entities -> shared
 - `frontend/lib/shared/` contains API, configuration, runtime parsing, utilities, types, and UI primitives.
 - `frontend/e2e/` contains browser contract and gated full-stack tests.
 
-REST consumers use shared API adapters. A future tournament realtime client must
-keep transport lifecycle separate from business reducers. Browser storage is a
-recoverable display cache, not an authority or credential store.
+REST consumers use shared API adapters. Public tournament recovery parsing and
+state application live in `frontend/lib/shared/api/tournament-recovery.ts`.
+No page currently mounts a tournament socket transport. A mounted transport
+must keep its lifecycle separate from the recovery reducer. Browser storage is
+a recoverable display cache, not an authority or credential store.
 
 ## Data Authority
 
@@ -83,7 +85,7 @@ recoverable display cache, not an authority or credential store.
 ## Current Reliability Boundaries
 
 - Tournament, roster, wave, game, result, pause, and correction writes use database compare-and-set transactions.
-- WebSocket connections are role-scoped read boundaries. Durable tournament state remains in PostgreSQL.
+- WebSocket connections are process-local, role-scoped read boundaries. PostgreSQL owns tournament snapshots, durable outbox events, subscriber identities, delivery receipts, and connection-generation fences used for ordered resume across instances.
 - WebSocket delivery is not a substitute for a durable read model or event log.
 - Redis updates can occur after PostgreSQL commit; PostgreSQL remains canonical.
 - Automatic migrations run during backend startup, so schema changes must be deploy-compatible.

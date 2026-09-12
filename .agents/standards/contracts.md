@@ -35,9 +35,14 @@ adapter, primarily:
 - `backend/internal/adapter/inbound/websocket/tournament/protocol.go`
 - the associated role-scoped snapshot and handshake tests
 
-OpenAPI intentionally does not describe the WebSocket protocol. The current
-frontend has no tournament realtime consumer. A future consumer must define
-runtime validation beside its transport adapter before it handles snapshots.
+OpenAPI intentionally does not describe WebSocket payload schemas. The
+frontend public recovery parser and reducer live in
+`frontend/lib/shared/api/tournament-recovery.ts`, with browser contract tests
+in `frontend/e2e/tournament-recovery-contract.spec.ts`. No page currently
+mounts a tournament socket transport. A mounted public transport must pass
+every snapshot through this runtime boundary before it updates display state.
+Participant and operator transports must add their own role-specific runtime
+validators before they are mounted.
 
 ### Browser Storage
 
@@ -110,10 +115,36 @@ Preserve these invariants:
 - Client commands must include only fields accepted by the server. Never trust
   a client-supplied player identity when it can be derived from the session.
 
-Tournament realtime is snapshot-only. It uses the public, participant, and
-operator `/api/v1/.../realtime` paths. Every connection starts at sequence 1;
-there is no durable resume cursor or replay stream. A reconnect obtains a fresh
-consistent snapshot and starts a new connection-local sequence.
+Tournament recovery uses a snapshot-first durable resume model across the
+public, participant, and operator `/api/v1/.../realtime` paths:
+
+- The REST public recovery cursor is the pair `projection_revision` and
+  `event_sequence`. It is a consistency watermark, not a WebSocket resume
+  credential. A missing, older, or equal cursor returns a fresh full public
+  snapshot. A cursor ahead in either dimension returns HTTP 409.
+- WebSocket sequence is the durable per-tournament outbox sequence. A new
+  connection receives a full role-scoped snapshot at the current watermark,
+  which may be zero, before it receives any later event. Sequence does not
+  restart per connection.
+- `resume_id` is an opaque durable subscriber ID. The server binds it to the
+  exact tournament and audience, plus the authenticated principal for
+  participant and operator roles. A new connection ID and connection
+  generation fence the previous socket when that subscriber resumes on
+  another process.
+- A resumed connection also receives a fresh full snapshot. That snapshot
+  supersedes missed non-terminal events through its watermark, so replay starts
+  only after the snapshot sequence. A pending terminal receipt is the sole
+  exception and is delivered after the snapshot even when its event sequence
+  is at or below that watermark.
+- Non-terminal subscriber records remain resumable. Terminal subscribers and
+  their receipts are retained for `WS_DELIVERY_RECEIPT_RETENTION`, which
+  defaults to 720 hours, then bounded cleanup may remove them. Outbox events
+  and their source evidence are immutable and are not pruned.
+- A client that cannot resume must reconnect without `resume_id` and accept
+  the new full snapshot before later snapshot envelopes. It must separately
+  validate the pending terminal receipt exception described above, which may
+  arrive at or below the snapshot watermark. Client snapshot reducers reject
+  malformed, wrong-tournament, duplicate, and out-of-order envelopes.
 
 ## SSE And New Event Feeds
 
