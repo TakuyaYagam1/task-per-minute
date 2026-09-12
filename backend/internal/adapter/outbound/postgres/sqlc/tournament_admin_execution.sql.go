@@ -854,9 +854,19 @@ SELECT series.id AS series_id,
     plan.revision_id AS plan_revision_id
 FROM wave_series AS membership
 JOIN series ON series.id = membership.series_id
+LEFT JOIN tournament_stage_playoff_final_initializations AS final_initialization
+    ON final_initialization.first_wave_id = membership.wave_id
+    AND final_initialization.final_series_id = series.id
+LEFT JOIN tournament_stage_playoff_final_progressions AS final_progression
+    ON final_progression.next_wave_id = membership.wave_id
+    AND final_progression.final_series_id = series.id
 JOIN game_slots AS game_slot
     ON game_slot.series_id = series.id
     AND game_slot.roster_id = series.roster_id
+    AND (
+        (final_initialization.first_slot_id IS NULL AND final_progression.next_slot_id IS NULL)
+        OR game_slot.id = COALESCE(final_initialization.first_slot_id, final_progression.next_slot_id)
+    )
 JOIN LATERAL (
     SELECT game.id,
         game.state,
@@ -874,14 +884,24 @@ JOIN assignments AS assignment
     AND assignment.series_id = series.id
     AND assignment.roster_id = series.roster_id
     AND assignment.state = 'active'
+JOIN assignment_branches AS assignment_branch
+    ON assignment_branch.id = assignment.branch_id
+    AND assignment_branch.plan_id = assignment.plan_id
+    AND assignment_branch.state = 'active'
 JOIN assignment_plans AS plan
     ON plan.id = assignment.plan_id
     AND plan.roster_id = series.roster_id
     AND plan.state = 'committed'
-    AND plan.active_branch_id = assignment.branch_id
+    AND (
+        plan.active_branch_id = assignment.branch_id
+        OR (
+            plan.kind = 'exact_draft'
+            AND plan.active_draft_branch_id = assignment_branch.exact_draft_branch_id
+        )
+    )
 WHERE membership.wave_id = $1
 ORDER BY series.id, game_slot.slot_number, attempt.id
-FOR UPDATE OF membership, series, game_slot, assignment, plan
+FOR UPDATE OF membership, series, game_slot, assignment, assignment_branch, plan
 `
 
 type LockTournamentAdminWaveAssignmentsRow struct {
@@ -1048,7 +1068,18 @@ SELECT receipt.id,
 FROM task_delivery_receipts AS receipt
 JOIN game_attempts AS attempt ON attempt.id = receipt.attempt_id
 JOIN wave_series AS membership ON membership.series_id = attempt.series_id
+JOIN series ON series.id = membership.series_id
+LEFT JOIN tournament_stage_playoff_final_initializations AS final_initialization
+    ON final_initialization.first_wave_id = membership.wave_id
+    AND final_initialization.final_series_id = series.id
+LEFT JOIN tournament_stage_playoff_final_progressions AS final_progression
+    ON final_progression.next_wave_id = membership.wave_id
+    AND final_progression.final_series_id = series.id
 WHERE membership.wave_id = $1
+    AND (
+        (final_initialization.first_game_id IS NULL AND final_progression.next_game_id IS NULL)
+        OR attempt.id = COALESCE(final_initialization.first_game_id, final_progression.next_game_id)
+    )
 ORDER BY receipt.id
 FOR UPDATE OF receipt
 `
@@ -1086,7 +1117,18 @@ SELECT series.id AS series_id,
     attempt.revision
 FROM wave_series AS membership
 JOIN series ON series.id = membership.series_id
-JOIN game_slots AS slot ON slot.series_id = series.id
+LEFT JOIN tournament_stage_playoff_final_initializations AS final_initialization
+    ON final_initialization.first_wave_id = membership.wave_id
+    AND final_initialization.final_series_id = series.id
+LEFT JOIN tournament_stage_playoff_final_progressions AS final_progression
+    ON final_progression.next_wave_id = membership.wave_id
+    AND final_progression.final_series_id = series.id
+JOIN game_slots AS slot
+    ON slot.series_id = series.id
+    AND (
+        (final_initialization.first_slot_id IS NULL AND final_progression.next_slot_id IS NULL)
+        OR slot.id = COALESCE(final_initialization.first_slot_id, final_progression.next_slot_id)
+    )
 JOIN LATERAL (
     SELECT game.id, game.state, game.revision
     FROM game_attempts AS game
@@ -1181,6 +1223,7 @@ const lockTournamentAdminWaveSeries = `-- name: LockTournamentAdminWaveSeries :m
 SELECT series.id,
     series.first_participant_id,
     series.second_participant_id,
+    series.format,
     series.state,
     series.revision
 FROM wave_series AS membership
@@ -1194,6 +1237,7 @@ type LockTournamentAdminWaveSeriesRow struct {
 	ID                  uuid.UUID
 	FirstParticipantID  uuid.UUID
 	SecondParticipantID uuid.UUID
+	Format              string
 	State               string
 	Revision            int64
 }
@@ -1211,6 +1255,7 @@ func (q *Queries) LockTournamentAdminWaveSeries(ctx context.Context, waveID uuid
 			&i.ID,
 			&i.FirstParticipantID,
 			&i.SecondParticipantID,
+			&i.Format,
 			&i.State,
 			&i.Revision,
 		); err != nil {
@@ -1663,9 +1708,19 @@ SELECT series.id AS series_id,
     snapshot.time_limit
 FROM wave_series AS membership
 JOIN series ON series.id = membership.series_id
+LEFT JOIN tournament_stage_playoff_final_initializations AS final_initialization
+    ON final_initialization.first_wave_id = membership.wave_id
+    AND final_initialization.final_series_id = series.id
+LEFT JOIN tournament_stage_playoff_final_progressions AS final_progression
+    ON final_progression.next_wave_id = membership.wave_id
+    AND final_progression.final_series_id = series.id
 JOIN game_slots AS game_slot
     ON game_slot.series_id = series.id
     AND game_slot.roster_id = series.roster_id
+    AND (
+        (final_initialization.first_slot_id IS NULL AND final_progression.next_slot_id IS NULL)
+        OR game_slot.id = COALESCE(final_initialization.first_slot_id, final_progression.next_slot_id)
+    )
 JOIN LATERAL (
     SELECT game.id,
         game.attempt_number,
@@ -1684,18 +1739,52 @@ JOIN assignments AS assignment
     AND assignment.series_id = series.id
     AND assignment.roster_id = series.roster_id
     AND assignment.state = 'active'
+JOIN assignment_branches AS assignment_branch
+    ON assignment_branch.id = assignment.branch_id
+    AND assignment_branch.plan_id = assignment.plan_id
+    AND assignment_branch.state = 'active'
 JOIN assignment_plans AS plan
     ON plan.id = assignment.plan_id
     AND plan.roster_id = series.roster_id
     AND plan.state = 'committed'
-    AND plan.active_branch_id = assignment.branch_id
+    AND (
+        plan.active_branch_id = assignment.branch_id
+        OR (
+            plan.kind = 'exact_draft'
+            AND plan.active_draft_branch_id = assignment_branch.exact_draft_branch_id
+        )
+    )
 JOIN LATERAL (
     SELECT revision.id,
         revision.revision
     FROM category_revisions AS revision
     WHERE revision.series_id = series.id
         AND revision.roster_id = series.roster_id
-        AND revision.selected_categories @> jsonb_build_array(game_slot.category)
+        AND (
+            revision.selected_categories @> jsonb_build_array(game_slot.category)
+            OR (
+                revision.mode = 'draft'
+                AND EXISTS (
+                    SELECT 1
+                    FROM drafts AS draft
+                    JOIN LATERAL (
+                        SELECT current_revision.state,
+                            current_revision.selected_categories
+                        FROM draft_revisions AS current_revision
+                        WHERE current_revision.draft_id = draft.id
+                        ORDER BY current_revision.revision DESC,
+                            current_revision.id DESC
+                        LIMIT 1
+                    ) AS current_draft_revision ON TRUE
+                    WHERE draft.category_revision_id = revision.id
+                        AND draft.series_id = series.id
+                        AND draft.roster_id = series.roster_id
+                        AND current_draft_revision.state = 'completed'
+                        AND current_draft_revision.selected_categories @>
+                            jsonb_build_array(game_slot.category)
+                )
+            )
+        )
     ORDER BY revision.revision DESC, revision.id DESC
     LIMIT 1
     FOR UPDATE
@@ -1735,7 +1824,7 @@ LEFT JOIN LATERAL (
 ) AS swiss_pairing ON TRUE
 WHERE membership.wave_id = $1
 ORDER BY series.id, game_slot.slot_number, attempt.id
-FOR UPDATE OF membership, series, game_slot, assignment, plan, reservation, snapshot
+FOR UPDATE OF membership, series, game_slot, assignment, assignment_branch, plan, reservation, snapshot
 `
 
 type LockWaveStartGamesRow struct {

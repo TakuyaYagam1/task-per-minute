@@ -326,11 +326,15 @@ func (r *TournamentProgressionPostgres) publishPlayoffStage(txCtx context.Contex
 	if err := progressionPublishedRecord(plan, input, record); err != nil {
 		return tournamentprogression.PlayoffPublication{}, err
 	}
-	return tournamentprogression.PlayoffPublication{
+	publication := tournamentprogression.PlayoffPublication{
 		PublishedProjectionID: record.Revision.ID, PublishedRevision: record.Revision.RevisionNumber,
 		Top4ArtifactID: plan.PublicationIDs.Top4ArtifactID, BracketArtifactID: plan.PublicationIDs.BracketArtifactID,
 		SemifinalSeriesIDs: [2]uuid.UUID{matches[0].Series.ID, matches[1].Series.ID},
-	}, nil
+	}
+	if err := r.materializePlayoffSemifinals(txCtx, plan, publication, now); err != nil {
+		return tournamentprogression.PlayoffPublication{}, err
+	}
+	return publication, nil
 }
 
 func (r *TournamentProgressionPostgres) validateProgressionPublicationAuthority(txCtx context.Context, q *sqlc.Queries, plan tournamentprogression.Plan, now time.Time) error {

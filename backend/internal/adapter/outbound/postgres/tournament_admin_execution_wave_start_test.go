@@ -44,6 +44,75 @@ func TestWaveStartGameAuthorityAllowsDistinctPerGamePlans(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestWaveStartAuthorityAllowsOnlySwissAndPlayoffs(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		state      domain.TournamentState
+		wantReject bool
+	}{
+		{name: "swiss", state: domain.TournamentStateSwiss},
+		{name: "playoffs", state: domain.TournamentStatePlayoffs},
+		{name: "golden", state: domain.TournamentStateGolden, wantReject: true},
+		{name: "completed", state: domain.TournamentStateCompleted, wantReject: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			header, scope := waveStartAuthorityRow()
+			header.TournamentState = string(tt.state)
+			_, _, err := waveStartAuthorityHeader(header, scope)
+			if tt.wantReject {
+				require.ErrorIs(t, err, gameusecase.ErrWaveStartAuthorityConflict)
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestWaveStartGameAuthorityAcceptsOneSeriesPlayoff(t *testing.T) {
+	t.Parallel()
+
+	header, scope := waveStartAuthorityRow()
+	header.TournamentState = string(domain.TournamentStatePlayoffs)
+	authority, rosterID, err := waveStartAuthorityHeader(header, scope)
+	require.NoError(t, err)
+	require.NoError(t, applyWaveStartReadiness(&authority, []sqlc.LockWaveStartReadinessRow{
+		{ParticipantID: tournamentExecutionID(101), Ready: true, ReadinessRevision: 2},
+		{ParticipantID: tournamentExecutionID(102), Ready: true, ReadinessRevision: 2},
+	}))
+
+	_, err = waveStartGameAuthorities(authority, rosterID, []sqlc.LockWaveStartGamesRow{waveStartGameRow(authority, rosterID)})
+	require.NoError(t, err)
+}
+
+func TestWaveStartGameAuthorityNormalizesLaterBO3Slot(t *testing.T) {
+	t.Parallel()
+
+	header, scope := waveStartAuthorityRow()
+	header.TournamentState = string(domain.TournamentStatePlayoffs)
+	authority, rosterID, err := waveStartAuthorityHeader(header, scope)
+	require.NoError(t, err)
+	require.NoError(t, applyWaveStartReadiness(&authority, []sqlc.LockWaveStartReadinessRow{
+		{ParticipantID: tournamentExecutionID(101), Ready: true, ReadinessRevision: 2},
+		{ParticipantID: tournamentExecutionID(102), Ready: true, ReadinessRevision: 2},
+	}))
+	row := waveStartGameRow(authority, rosterID)
+	row.SeriesFormat = string(domain.SeriesFormatBO3)
+	row.SeriesState = string(domain.SeriesStateActive)
+	row.FirstParticipantWins = 1
+	row.SlotNumber = 2
+	row.FirstParticipantWinsBefore = 1
+
+	games, err := waveStartGameAuthorities(authority, rosterID, []sqlc.LockWaveStartGamesRow{row})
+	require.NoError(t, err)
+	require.Len(t, games, 1)
+	require.Equal(t, 1, games[0].Series.Series.Slots[0].Position)
+	require.Equal(t, row.SlotID, games[0].Series.Series.Slots[0].ID)
+}
+
 func TestWaveStartSQLContractLocksCurrentCommittedPlan(t *testing.T) {
 	t.Parallel()
 
@@ -54,7 +123,8 @@ func TestWaveStartSQLContractLocksCurrentCommittedPlan(t *testing.T) {
 		"-- name: LockWaveStartAuthority :one",
 		"-- name: LockWaveStartGames :many",
 		"AND plan.state = 'committed'",
-		"AND plan.active_branch_id = assignment.branch_id",
+		"plan.active_branch_id = assignment.branch_id",
+		"plan.active_draft_branch_id = assignment_branch.exact_draft_branch_id",
 		"-- name: StartWaveSeriesCAS :one",
 		"-- name: StartWaveGameCAS :one",
 		"-- name: DiscloseWaveStartReservationCAS :one",

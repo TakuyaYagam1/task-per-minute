@@ -286,8 +286,8 @@ func (r *AssignmentPostgres) CreateExactPlan(
 				sqlc.CreateAssignmentBranchParams{
 					ID:               branch.ID,
 					PlanID:           in.ID,
-					DraftID:          branch.DraftID,
-					DraftRevisionID:  branch.DraftRevisionID,
+					DraftID:          uuid.NullUUID{UUID: branch.DraftID, Valid: branch.DraftID != uuid.Nil},
+					DraftRevisionID:  uuid.NullUUID{UUID: branch.DraftRevisionID, Valid: branch.DraftRevisionID != uuid.Nil},
 					BranchKey:        branch.Key,
 					CategorySequence: categories,
 					CreatedAt:        tstz(in.CreatedAt),

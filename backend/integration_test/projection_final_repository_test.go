@@ -287,10 +287,10 @@ func finalProjectionSettlementInput(
 		seriesResultReason = string(domain.SeriesResultReasonScoreComplete)
 		seriesWinnerID = &winnerID
 		artifactKinds = []domain.ArtifactKind{
+			domain.ArtifactKindGameResult,
+			domain.ArtifactKindSeriesScore,
 			domain.ArtifactKindStandings,
-			domain.ArtifactKindBracket,
-			domain.ArtifactKindTopFour,
-			domain.ArtifactKindChampion,
+			domain.ArtifactKindSeriesResult,
 		}
 	}
 	return postgres.ResultSettlementInput{

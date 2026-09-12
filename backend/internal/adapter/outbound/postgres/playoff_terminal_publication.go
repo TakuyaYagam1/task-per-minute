@@ -23,6 +23,8 @@ func (repository *PlayoffTerminalPostgres) finalPublication(
 	stage sqlc.LockPostseasonFinalStageRow,
 	aggregate sqlc.LockFinalProjectionAggregateRow,
 	progression playoff.FinalProgressionCommand,
+	semifinalBracket playoff.SemifinalAdvancementAuthority,
+	advancement []playoff.SemifinalAdvancementResult,
 ) (*projection.FinalPublication, error) {
 	if progression.Progression.Game.ResultRevisionID == nil ||
 		progression.Progression.TerminalResultRevisionID == nil || progression.ChampionRevisionID.IsZero() ||
@@ -157,7 +159,15 @@ func (repository *PlayoffTerminalPostgres) finalPublication(
 	if err != nil {
 		return nil, err
 	}
-	artifacts, err := finalPublicationArtifacts(ids, *record, stage, aggregate.WinnerID.UUID, memberships)
+	artifacts, err := finalPublicationArtifacts(
+		ids,
+		*record,
+		stage,
+		aggregate,
+		semifinalBracket,
+		advancement,
+		memberships,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("final publication artifacts: %w", err)
 	}
@@ -205,9 +215,12 @@ func finalPublicationArtifacts(
 	ids playoff.FinalPublicationIDs,
 	record ProjectionRecord,
 	stage sqlc.LockPostseasonFinalStageRow,
-	winnerID uuid.UUID,
+	aggregate sqlc.LockFinalProjectionAggregateRow,
+	semifinalBracket playoff.SemifinalAdvancementAuthority,
+	advancement []playoff.SemifinalAdvancementResult,
 	memberships []sqlc.LockFinalPublicationArtifactMembershipRow,
 ) ([]projection.PublicationArtifact, error) {
+	winnerID := aggregate.WinnerID.UUID
 	if len(record.Artifacts) != 3 || len(memberships) != 3 || winnerID == uuid.Nil ||
 		record.Revision.TournamentID != stage.TournamentID || record.Revision.RosterID != stage.RosterID ||
 		record.Revision.ID == uuid.Nil || record.Revision.RevisionNumber < 1 {
@@ -260,10 +273,13 @@ func finalPublicationArtifacts(
 	if err != nil {
 		return nil, err
 	}
-	bracketArtifact, err := cloneFinalPublicationArtifact(
+	bracketArtifact, err := finalBracketPublicationArtifact(
 		bracket,
 		ids.BracketArtifactID,
-		"bracket-final",
+		stage,
+		aggregate,
+		semifinalBracket,
+		advancement,
 		[]projection.PublicationDependency{{
 			ID: ids.BracketDependencyID, Kind: projection.DependencyArtifact,
 			DependsOnArtifactID: &ids.StandingsArtifactID,
@@ -315,6 +331,87 @@ func finalPublicationArtifacts(
 		topFourArtifact,
 		champion,
 	}, nil
+}
+
+type finalBracketPayloadDocument struct {
+	Rounds []finalBracketPayloadMatch `json:"rounds"`
+}
+
+type finalBracketPayloadMatch struct {
+	Stage               string             `json:"stage"`
+	Position            int                `json:"position"`
+	SeriesID            uuid.UUID          `json:"series_id"`
+	FirstParticipantID  uuid.UUID          `json:"first_participant_id"`
+	SecondParticipantID uuid.UUID          `json:"second_participant_id"`
+	State               domain.SeriesState `json:"state"`
+	FirstWins           int                `json:"first_wins"`
+	SecondWins          int                `json:"second_wins"`
+}
+
+//nolint:gocyclo // Final publication validates the complete semifinal-to-final evidence chain as one artifact boundary.
+func finalBracketPublicationArtifact(
+	source ProjectionArtifactRecord,
+	id uuid.UUID,
+	stage sqlc.LockPostseasonFinalStageRow,
+	aggregate sqlc.LockFinalProjectionAggregateRow,
+	semifinalBracket playoff.SemifinalAdvancementAuthority,
+	advancement []playoff.SemifinalAdvancementResult,
+	dependencies []projection.PublicationDependency,
+) (projection.PublicationArtifact, error) {
+	artifact, err := cloneFinalPublicationArtifact(source, id, "bracket-final", dependencies)
+	if err != nil {
+		return projection.PublicationArtifact{}, err
+	}
+	if stage.TournamentID == uuid.Nil || stage.FinalSeriesID == uuid.Nil ||
+		semifinalBracket.TournamentID != stage.TournamentID || len(semifinalBracket.Semifinals) != 2 ||
+		len(advancement) != 2 || aggregate.SeriesState != string(domain.SeriesStateCompleted) ||
+		aggregate.SeriesFormat != string(domain.SeriesFormatBO3) || !aggregate.WinnerID.Valid ||
+		aggregate.FirstParticipantID != stage.FirstParticipantID ||
+		aggregate.SecondParticipantID != stage.SecondParticipantID ||
+		aggregate.WinnerID.UUID != aggregate.FirstParticipantID &&
+			aggregate.WinnerID.UUID != aggregate.SecondParticipantID {
+		return projection.PublicationArtifact{}, domain.ErrConflict
+	}
+
+	rounds := make([]finalBracketPayloadMatch, 0, 3)
+	for index, match := range semifinalBracket.Semifinals {
+		result := advancement[index]
+		if match.Position != index+1 || match.Series.ID == uuid.Nil ||
+			match.Series.TournamentID != stage.TournamentID ||
+			match.Series.FirstParticipantID == uuid.Nil || match.Series.SecondParticipantID == uuid.Nil ||
+			match.Series.FirstParticipantID == match.Series.SecondParticipantID ||
+			result.Position != match.Position || result.SeriesID != match.Series.ID ||
+			result.WinnerID == uuid.Nil || result.LoserID == uuid.Nil || result.WinnerID == result.LoserID {
+			return projection.PublicationArtifact{}, domain.ErrConflict
+		}
+		firstWins, secondWins := 0, 0
+		switch {
+		case result.WinnerID == match.Series.FirstParticipantID && result.LoserID == match.Series.SecondParticipantID:
+			firstWins = 1
+		case result.WinnerID == match.Series.SecondParticipantID && result.LoserID == match.Series.FirstParticipantID:
+			secondWins = 1
+		default:
+			return projection.PublicationArtifact{}, domain.ErrConflict
+		}
+		rounds = append(rounds, finalBracketPayloadMatch{
+			Stage: "semifinal", Position: match.Position, SeriesID: match.Series.ID,
+			FirstParticipantID: match.Series.FirstParticipantID, SecondParticipantID: match.Series.SecondParticipantID,
+			State: domain.SeriesStateCompleted, FirstWins: firstWins, SecondWins: secondWins,
+		})
+	}
+	rounds = append(rounds, finalBracketPayloadMatch{
+		Stage: "final", Position: 1, SeriesID: stage.FinalSeriesID,
+		FirstParticipantID: aggregate.FirstParticipantID, SecondParticipantID: aggregate.SecondParticipantID,
+		State: domain.SeriesStateCompleted, FirstWins: int(aggregate.FirstParticipantWins),
+		SecondWins: int(aggregate.SecondParticipantWins),
+	})
+	payload, err := json.Marshal(finalBracketPayloadDocument{Rounds: rounds})
+	if err != nil {
+		return projection.PublicationArtifact{}, domain.ErrConflict
+	}
+	artifact.Payload = payload
+	artifact.PayloadDigest = sha256.Sum256(payload)
+	return artifact, nil
 }
 
 func cloneFinalPublicationArtifact(

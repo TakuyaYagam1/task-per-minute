@@ -96,6 +96,19 @@ func (r *TournamentCreatePostgres) Create(
 			return errInvalidTournamentCreateReceipt
 		}
 
+		initialProjection, err := publishInitialTournamentProjection(
+			txCtx, r.tournaments.tx, command.TournamentID, command.RosterID, command.CreatedAt,
+		)
+		if err != nil {
+			return fmt.Errorf("TournamentCreatePostgres - Create - initial projection: %w", err)
+		}
+		if initialProjection == nil || initialProjection.Revision.TournamentID != command.TournamentID ||
+			initialProjection.Revision.RosterID != command.RosterID ||
+			initialProjection.Revision.RevisionNumber != 1 || initialProjection.Revision.State != "published" ||
+			len(initialProjection.Artifacts) != 3 {
+			return errInvalidTournamentCreateReceipt
+		}
+
 		receipt, err = querier.InsertTournamentCreateReceipt(txCtx, sqlc.InsertTournamentCreateReceiptParams{
 			CommandID:              command.IdempotencyKey,
 			ActorID:                command.ActorID,

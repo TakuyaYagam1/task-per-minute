@@ -136,30 +136,37 @@ func tournamentScoreboard(
 	return view, nil
 }
 
+//nolint:gocyclo // Public bracket decoding validates all participant, stage, score, and uniqueness invariants together.
 func tournamentBracket(
 	payload []byte,
 	names map[uuid.UUID]string,
 ) ([]usecase.PublicBracketMatchView, error) {
 	var document bracketPayloadDocument
-	if err := json.Unmarshal(payload, &document); err != nil || len(document.Rounds) == 0 {
+	if err := json.Unmarshal(payload, &document); err != nil || document.Rounds == nil {
 		return nil, tournamentSnapshotInvalidError("bracket payload")
 	}
 	view := make([]usecase.PublicBracketMatchView, len(document.Rounds))
-	seenPositions := make(map[int]struct{}, len(document.Rounds))
+	seenPositions := make(map[string]struct{}, len(document.Rounds))
 	for index, match := range document.Rounds {
+		stage := match.Stage
+		if stage == "" {
+			stage = tournamentBracketStageSemifinal
+		}
 		firstName, firstOK := names[match.FirstParticipantID]
 		secondName, secondOK := names[match.SecondParticipantID]
 		if !firstOK || !secondOK || match.FirstParticipantID == match.SecondParticipantID ||
 			match.Position < 1 || strings.TrimSpace(firstName) == "" || strings.TrimSpace(secondName) == "" ||
+			(stage != tournamentBracketStageSemifinal && stage != tournamentBracketStageFinal) ||
 			strings.TrimSpace(match.State) == "" || match.FirstWins < 0 || match.SecondWins < 0 {
 			return nil, tournamentSnapshotInvalidError("bracket match")
 		}
-		if _, duplicate := seenPositions[match.Position]; duplicate {
+		positionKey := fmt.Sprintf("%s:%d", stage, match.Position)
+		if _, duplicate := seenPositions[positionKey]; duplicate {
 			return nil, tournamentSnapshotInvalidError("duplicate bracket position")
 		}
-		seenPositions[match.Position] = struct{}{}
+		seenPositions[positionKey] = struct{}{}
 		view[index] = usecase.PublicBracketMatchView{
-			Stage:             tournamentBracketStageSemifinal,
+			Stage:             stage,
 			Position:          match.Position,
 			FirstDisplayName:  firstName,
 			SecondDisplayName: secondName,

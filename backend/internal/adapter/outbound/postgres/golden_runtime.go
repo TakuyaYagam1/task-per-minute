@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -110,6 +111,9 @@ func (repository *GoldenRuntimePostgres) Open(
 				return domain.ErrConflict
 			}
 		}
+		if err := repository.materializeGoldenRuntimePlan(txCtx, q, groups, now); err != nil {
+			return err
+		}
 		for _, group := range groups {
 			attempt, err := q.NextGoldenRuntimeAttempt(txCtx, command.TournamentID)
 			if err != nil {
@@ -163,6 +167,7 @@ type goldenRuntimeGroup struct {
 	sourceProjectionRevision   int64
 	positionFrom               int16
 	positionTo                 int16
+	definitionDigest           [sha256.Size]byte
 	participantIDs             []uuid.UUID
 }
 
@@ -177,19 +182,26 @@ func goldenRuntimeGroups(rows []sqlc.ListGoldenRuntimeGroupsRow, expectedRevisio
 			return nil, domain.ErrConflict
 		}
 		if len(groups) == 0 || groups[len(groups)-1].groupRevisionID != row.GroupRevisionID {
+			if len(row.DefinitionDigest) != sha256.Size {
+				return nil, domain.ErrConflict
+			}
+			var definitionDigest [sha256.Size]byte
+			copy(definitionDigest[:], row.DefinitionDigest)
 			groups = append(groups, goldenRuntimeGroup{
 				tournamentID: row.TournamentID, rosterID: row.RosterID, groupID: row.GroupID,
 				groupRevisionID:            row.GroupRevisionID,
 				sourceProjectionRevisionID: row.SourceProjectionRevisionID,
 				sourceProjectionRevision:   row.SourceProjectionRevision,
 				positionFrom:               row.PositionFrom, positionTo: row.PositionTo,
+				definitionDigest: definitionDigest,
 			})
 		}
 		group := &groups[len(groups)-1]
 		if group.tournamentID != row.TournamentID || group.rosterID != row.RosterID || group.groupID != row.GroupID ||
 			group.positionFrom != row.PositionFrom || group.positionTo != row.PositionTo ||
 			group.sourceProjectionRevisionID != row.SourceProjectionRevisionID ||
-			group.sourceProjectionRevision != row.SourceProjectionRevision {
+			group.sourceProjectionRevision != row.SourceProjectionRevision ||
+			!bytes.Equal(group.definitionDigest[:], row.DefinitionDigest) {
 			return nil, domain.ErrConflict
 		}
 		group.participantIDs = append(group.participantIDs, row.ParticipantID)

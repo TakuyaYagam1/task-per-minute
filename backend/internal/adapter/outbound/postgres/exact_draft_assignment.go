@@ -602,8 +602,8 @@ func (r *ExactDraftBranchPlanPostgres) insertExactDraftBranchTx(
 			return resultErr
 		}
 		if err := querier.CreateExactDraftAssignmentChild(ctx, sqlc.CreateExactDraftAssignmentChildParams{
-			ID: childID, PlanID: plan.ID, DraftID: plan.SourceDraft.ID,
-			DraftRevisionID: plan.SourceDraft.RevisionID,
+			ID: childID, PlanID: plan.ID, DraftID: nullableUUID(&plan.SourceDraft.ID),
+			DraftRevisionID: nullableUUID(&plan.SourceDraft.RevisionID),
 			BranchKey:       exactDraftChildKey(branch.Path.Key, position), CategorySequence: childCategories,
 			ExactDraftBranchID:       nullableUUIDValue(branch.ID),
 			ExactDraftPosition:       &positionValue,
@@ -1175,8 +1175,8 @@ func rehydrateExactDraftBranchPlan(
 			return nil, domain.ErrConflict
 		}
 		key := exactDraftChildPosition{groupID: child.ExactDraftBranchID.UUID, position: int(*child.ExactDraftPosition)}
-		if child.ID == uuid.Nil || child.PlanID != planRow.ID || child.DraftID != sourceDraft.ID ||
-			child.DraftRevisionID != sourceDraft.RevisionID || *child.ExactDraftPosition < 1 || *child.ExactDraftPosition > 3 ||
+		if child.ID == uuid.Nil || child.PlanID != planRow.ID || !child.DraftID.Valid || child.DraftID.UUID != sourceDraft.ID ||
+			!child.DraftRevisionID.Valid || child.DraftRevisionID.UUID != sourceDraft.RevisionID || *child.ExactDraftPosition < 1 || *child.ExactDraftPosition > 3 ||
 			!child.DecisionEvidenceID.Valid || child.DecisionAlgorithmVersion == nil ||
 			!child.DecisionOwnerID.Valid || child.DecisionOwnerID.UUID != planRow.ID || !child.DecidedAt.Valid {
 			return nil, domain.ErrConflict

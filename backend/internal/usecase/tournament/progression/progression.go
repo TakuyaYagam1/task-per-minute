@@ -9,6 +9,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -248,7 +249,7 @@ func (w *Workflow) Advance(ctx context.Context, command Command, authority Autho
 
 	recorded, err := w.repository.FindStageProgression(ctx, command.TournamentID, command.CommandID)
 	if err != nil {
-		return Receipt{}, err
+		return Receipt{}, fmt.Errorf("find stage progression: %w", err)
 	}
 	if recorded != nil {
 		if recorded.CommandID != command.CommandID || !validTournamentResult(recorded.Result, authority, command.Action) {
@@ -270,24 +271,24 @@ func (w *Workflow) Advance(ctx context.Context, command Command, authority Autho
 	case ActionStartGolden:
 		evidence, loadErr := w.loadSwissEvidence(ctx, command, authority)
 		if loadErr != nil {
-			return Receipt{}, loadErr
+			return Receipt{}, fmt.Errorf("load Swiss progression evidence: %w", loadErr)
 		}
 		plan, err = planStartGolden(command, authority, evidence, now)
 	case ActionStartPlayoffs:
 		if authority.Tournament.State == domain.TournamentStateSwiss {
 			evidence, loadErr := w.loadSwissEvidence(ctx, command, authority)
 			if loadErr != nil {
-				return Receipt{}, loadErr
+				return Receipt{}, fmt.Errorf("load Swiss playoff evidence: %w", loadErr)
 			}
 			plan, err = planStartPlayoffsFromSwiss(command, authority, evidence, now)
 		} else {
 			evidence, loadErr := w.repository.LoadGoldenEvidence(ctx, authority)
 			if loadErr != nil {
-				return Receipt{}, loadErr
+				return Receipt{}, fmt.Errorf("load Golden playoff evidence: %w", loadErr)
 			}
 			evidence.Swiss, loadErr = w.hydrateSwissEvidence(ctx, command, authority, evidence.Swiss)
 			if loadErr != nil {
-				return Receipt{}, loadErr
+				return Receipt{}, fmt.Errorf("hydrate Golden Swiss evidence: %w", loadErr)
 			}
 			plan, err = planStartPlayoffsFromGolden(command, authority, evidence, now)
 		}
@@ -304,19 +305,19 @@ func (w *Workflow) Advance(ctx context.Context, command Command, authority Autho
 		}
 		published, publishErr := w.publisher.PublishPlayoffStage(ctx, plan)
 		if publishErr != nil {
-			return Receipt{}, publishErr
+			return Receipt{}, fmt.Errorf("publish playoff stage: %w", publishErr)
 		}
 		if !matchesPlayoffPublication(plan, published) {
-			return Receipt{}, domain.ErrConflict
+			return Receipt{}, progressionConflict("published playoff stage differs from plan")
 		}
 		publication = &published
 	}
 	persisted, err := w.repository.PersistStageProgression(ctx, plan, publication)
 	if err != nil {
-		return Receipt{}, err
+		return Receipt{}, fmt.Errorf("persist stage progression: %w", err)
 	}
 	if !matchesPersistence(plan, publication, persisted) {
-		return Receipt{}, domain.ErrConflict
+		return Receipt{}, progressionConflict("persisted stage progression differs from plan")
 	}
 
 	next, _ := actionState(command.Action)
@@ -324,10 +325,10 @@ func (w *Workflow) Advance(ctx context.Context, command Command, authority Autho
 		TournamentID: command.TournamentID, ExpectedRevision: authority.Tournament.Revision, NextState: next,
 	})
 	if err != nil {
-		return Receipt{}, err
+		return Receipt{}, fmt.Errorf("transition tournament stage: %w", err)
 	}
 	if !changed || !validTournamentResult(result, authority, command.Action) {
-		return Receipt{}, domain.ErrConflict
+		return Receipt{}, progressionConflict("tournament stage transition result is invalid")
 	}
 	return Receipt{CommandID: command.CommandID, Result: progressionCloneTournamentView(result)}, nil
 }

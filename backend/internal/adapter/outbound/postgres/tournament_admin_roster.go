@@ -145,7 +145,7 @@ func (r *TournamentAdminRosterPostgres) SaveRosterOperation(
 			SourceRosterRevision:        record.SourceRosterRevision,
 			ResultingRosterRevision:     record.ResultingRosterRevision,
 			RequestDigest:               append([]byte(nil), record.RequestDigest[:]...),
-			CheckedInPlayerIds:          append([]uuid.UUID(nil), record.CheckedInPlayerIDs...),
+			CheckedInPlayerIds:          append([]uuid.UUID{}, record.CheckedInPlayerIDs...),
 			ResultDocument:              append([]byte(nil), record.ResultDocument...), ExecutedAt: tstz(record.ExecutedAt),
 		},
 	)

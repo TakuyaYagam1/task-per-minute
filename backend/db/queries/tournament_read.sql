@@ -41,6 +41,9 @@ JOIN task_snapshots AS snapshot
     AND snapshot.task_id = receipt.task_id
     AND snapshot.task_version = receipt.task_version
 JOIN game_attempts AS attempt ON attempt.id = assignment.attempt_id
+JOIN series AS assignment_series
+    ON assignment_series.id = assignment.series_id
+    AND assignment_series.roster_id = assignment.roster_id
 LEFT JOIN LATERAL (
     SELECT wave_series.wave_id
     FROM wave_series
@@ -54,6 +57,7 @@ LEFT JOIN LATERAL (
 WHERE roster.tournament_id = sqlc.arg(tournament_id)
     AND participant.player_id = sqlc.arg(player_id)
     AND assignment.state = 'active'
+    AND assignment_series.state NOT IN ('completed', 'cancelled')
 ORDER BY receipt.delivered_at DESC,
     receipt.id DESC
 LIMIT 1;

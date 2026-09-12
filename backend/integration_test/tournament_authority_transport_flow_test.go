@@ -131,7 +131,7 @@ func testTournamentRealtimeRecovery(t *testing.T) {
 		TournamentID: fixture.tournamentID,
 	})
 	require.NoError(t, err)
-	require.Equal(t, int64(1), participantPayload.Envelope.Sequence)
+	require.Equal(t, int64(0), participantPayload.Envelope.Sequence)
 	require.Equal(t, published.Revision.RevisionNumber, participantPayload.Envelope.ProjectionRevision)
 	require.Equal(t, playerID, participantPayload.Envelope.Participant.PlayerID)
 	require.Equal(t, fixture.tournamentID, participantPayload.Envelope.TournamentID)
@@ -146,7 +146,7 @@ func testTournamentRealtimeRecovery(t *testing.T) {
 	})
 	require.NoError(t, err)
 	cancelPublic()
-	require.Equal(t, int64(1), publicPayload.Envelope.Sequence)
+	require.Equal(t, int64(0), publicPayload.Envelope.Sequence)
 	require.Equal(t, published.Revision.RevisionNumber, publicPayload.Envelope.ProjectionRevision)
 	require.Equal(t, fixture.tournamentID, publicPayload.Envelope.Public.Tournament.TournamentID)
 	encoded, err := json.Marshal(publicPayload)

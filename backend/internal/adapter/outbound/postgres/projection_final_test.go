@@ -55,6 +55,22 @@ func TestFinalChampionOutboxReadbackAcceptsJSONBFormatting(t *testing.T) {
 	}
 }
 
+func TestFinalProjectionArtifactKindsRequireTerminalResultSet(t *testing.T) {
+	t.Parallel()
+
+	require.True(t, validFinalProjectionArtifactKinds([]byte(
+		`["game_result","series_score","standings","series_result"]`,
+	)))
+	for _, invalid := range [][]byte{
+		[]byte(`["standings","bracket","top_four","champion"]`),
+		[]byte(`["game_result","series_score","standings"]`),
+		[]byte(`["game_result","series_score","standings","standings"]`),
+		[]byte(`not-json`),
+	} {
+		require.False(t, validFinalProjectionArtifactKinds(invalid))
+	}
+}
+
 func TestFinalProjectionSourceConflictReturnsLockedAuthority(t *testing.T) {
 	t.Parallel()
 	publication := projection.FinalPublication{

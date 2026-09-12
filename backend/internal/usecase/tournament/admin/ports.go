@@ -155,19 +155,20 @@ type PairingCommandRecord struct {
 }
 
 type WaveGraph struct {
-	SeriesCount         int
-	PlayableMemberCount int
-	CurrentGameCount    int
-	ReadySeriesCount    int
-	ActiveSeriesCount   int
-	PausedSeriesCount   int
-	TerminalSeriesCount int
-	ReadyGameCount      int
-	ActiveGameCount     int
-	PausedGameCount     int
-	TerminalGameCount   int
-	AssignmentCount     int
-	DeliveryMemberCount int
+	SeriesCount           int
+	PlayableMemberCount   int
+	CurrentGameCount      int
+	ReadySeriesCount      int
+	ActiveSeriesCount     int
+	ContinuingSeriesCount int
+	PausedSeriesCount     int
+	TerminalSeriesCount   int
+	ReadyGameCount        int
+	ActiveGameCount       int
+	PausedGameCount       int
+	TerminalGameCount     int
+	AssignmentCount       int
+	DeliveryMemberCount   int
 }
 
 type WaveAuthority struct {

@@ -78,7 +78,7 @@ func (w *ExecutionWorkflow) configurePairingsLocked(
 		return SwissRoundView{}, err
 	}
 	if !validPairingAuthority(authority, command.TournamentID) {
-		return SwissRoundView{}, domain.ErrInternal
+		return SwissRoundView{}, fmt.Errorf("validate pairing authority: %w", domain.ErrInternal)
 	}
 	recorded, err := w.repository.FindPairingCommand(ctx, command.TournamentID, command.CommandID)
 	if err != nil {
@@ -129,10 +129,10 @@ func (w *ExecutionWorkflow) createPairingsLocked(
 	}
 	view, err := w.repository.CommitPairing(ctx, plan)
 	if err != nil {
-		return SwissRoundView{}, err
+		return SwissRoundView{}, fmt.Errorf("commit pairing graph: %w", err)
 	}
 	if !validSwissRoundView(view, command.TournamentID, command.RoundNumber) {
-		return SwissRoundView{}, domain.ErrInternal
+		return SwissRoundView{}, fmt.Errorf("validate committed pairing: %w", domain.ErrInternal)
 	}
 	record, err := newPairingCommandRecord(command, authority, digest, view, decidedAt)
 	if err != nil {
@@ -160,7 +160,7 @@ func (w *ExecutionWorkflow) ControlWave(ctx context.Context, command WaveCommand
 	// The lease is commit evidence, never part of request identity.
 	recorded, err := w.repository.FindWaveCommand(ctx, command.TournamentID, command.CommandID)
 	if err != nil {
-		return WaveView{}, err
+		return WaveView{}, fmt.Errorf("load Wave command: %w", err)
 	}
 	if recorded != nil {
 		return replayWaveCommand(*recorded, command, digest)
@@ -212,17 +212,17 @@ func (w *ExecutionWorkflow) controlWaveLocked(
 	}
 	authority, err := w.repository.LockWaveAuthority(ctx, command.TournamentID, command.WaveID)
 	if err != nil {
-		return WaveView{}, err
+		return WaveView{}, fmt.Errorf("lock Wave authority: %w", err)
 	}
 	if !validWaveAuthority(authority, command.TournamentID, command.WaveID) {
-		return WaveView{}, domain.ErrInternal
+		return WaveView{}, fmt.Errorf("validate Wave authority: %w", domain.ErrInternal)
 	}
 	if command.Action == WaveActionStart {
 		return w.startWaveLocked(ctx, command, digest, authority, executionAuthority)
 	}
 	recorded, err = w.repository.FindWaveCommand(ctx, command.TournamentID, command.CommandID)
 	if err != nil {
-		return WaveView{}, err
+		return WaveView{}, fmt.Errorf("reload Wave command: %w", err)
 	}
 	if recorded != nil {
 		view, replayErr := replayWaveCommand(*recorded, command, digest)
@@ -235,33 +235,33 @@ func (w *ExecutionWorkflow) controlWaveLocked(
 		return view, nil
 	}
 	if authority.ProjectionRevision != command.ExpectedProjectionRevision ||
-		authority.TournamentState != domain.TournamentStateSwiss {
+		!waveExecutionStateAllowed(authority.TournamentState) {
 		return WaveView{}, waveExecutionConflict(command.ExpectedProjectionRevision, authority)
 	}
 	mutatedAt, err := w.repository.ReadExecutionTime(ctx)
 	if err != nil {
-		return WaveView{}, err
+		return WaveView{}, fmt.Errorf("read Wave mutation time: %w", err)
 	}
 	next, err := planWaveMutation(command, authority, mutatedAt)
 	if err != nil {
-		return WaveView{}, err
+		return WaveView{}, fmt.Errorf("plan Wave mutation: %w", err)
 	}
 	view, err := w.repository.CommitWave(ctx, WaveMutation{
 		Command: command, Authority: authority, ExecutionAuthority: executionAuthority,
 		Next: next, MutatedAt: mutatedAt,
 	})
 	if err != nil {
-		return WaveView{}, err
+		return WaveView{}, fmt.Errorf("commit Wave mutation: %w", err)
 	}
 	if !validWaveView(view, command.TournamentID, command.WaveID) {
-		return WaveView{}, domain.ErrInternal
+		return WaveView{}, fmt.Errorf("validate committed Wave: %w", domain.ErrInternal)
 	}
 	record, err := newWaveCommandRecord(command, authority, digest, view, mutatedAt)
 	if err != nil {
-		return WaveView{}, err
+		return WaveView{}, fmt.Errorf("build Wave command record: %w", err)
 	}
 	if err := w.repository.SaveWaveCommand(ctx, record); err != nil {
-		return WaveView{}, err
+		return WaveView{}, fmt.Errorf("save Wave command record: %w", err)
 	}
 	return view, nil
 }
@@ -273,7 +273,8 @@ func (w *ExecutionWorkflow) startWaveLocked(
 	authority WaveAuthority,
 	executionAuthority authoritydomain.Identity,
 ) (WaveView, error) {
-	if w.waveStart == nil || authority.View.Wave.ReadyWindow == nil ||
+	if !waveExecutionStateAllowed(authority.TournamentState) ||
+		w.waveStart == nil || authority.View.Wave.ReadyWindow == nil ||
 		executionAuthority.Validate() != nil || executionAuthority.TournamentID != command.TournamentID {
 		return WaveView{}, domain.ErrInternal
 	}
@@ -602,34 +603,43 @@ func planCancelWave(command WaveCommand, authority WaveAuthority, wave *domain.W
 }
 
 func waveGraphPlanned(authority WaveAuthority) bool {
-	return authority.Graph.SeriesCount >= 2 &&
+	return waveExecutionStateAllowed(authority.TournamentState) && authority.Graph.SeriesCount >= 1 &&
 		authority.Graph.PlayableMemberCount == authority.Graph.SeriesCount*2
 }
 
 func waveGraphStartable(authority WaveAuthority) bool {
 	graph := authority.Graph
-	return graph.SeriesCount >= 2 && graph.PlayableMemberCount == graph.SeriesCount*2 &&
-		graph.ReadySeriesCount == graph.SeriesCount && graph.CurrentGameCount == graph.SeriesCount &&
+	return waveExecutionStateAllowed(authority.TournamentState) && graph.SeriesCount >= 1 &&
+		graph.PlayableMemberCount == graph.SeriesCount*2 &&
+		graph.ReadySeriesCount+graph.ContinuingSeriesCount == graph.SeriesCount &&
+		graph.CurrentGameCount == graph.SeriesCount &&
 		graph.ReadyGameCount == graph.CurrentGameCount && graph.AssignmentCount == graph.CurrentGameCount &&
 		graph.DeliveryMemberCount == graph.PlayableMemberCount
 }
 
 func waveGraphActive(authority WaveAuthority) bool {
 	graph := authority.Graph
-	return graph.SeriesCount >= 2 && graph.ActiveSeriesCount == graph.SeriesCount &&
+	return waveExecutionStateAllowed(authority.TournamentState) && graph.SeriesCount >= 1 &&
+		graph.ActiveSeriesCount == graph.SeriesCount &&
 		graph.CurrentGameCount == graph.SeriesCount && graph.ActiveGameCount == graph.CurrentGameCount
 }
 
 func waveGraphPaused(authority WaveAuthority) bool {
 	graph := authority.Graph
-	return graph.SeriesCount >= 2 && graph.PausedSeriesCount == graph.SeriesCount &&
+	return waveExecutionStateAllowed(authority.TournamentState) && graph.SeriesCount >= 1 &&
+		graph.PausedSeriesCount == graph.SeriesCount &&
 		graph.CurrentGameCount == graph.SeriesCount && graph.PausedGameCount == graph.CurrentGameCount
 }
 
 func waveGraphTerminal(authority WaveAuthority) bool {
 	graph := authority.Graph
-	return graph.SeriesCount >= 2 && graph.TerminalSeriesCount == graph.SeriesCount &&
+	return waveExecutionStateAllowed(authority.TournamentState) && graph.SeriesCount >= 1 &&
+		graph.TerminalSeriesCount+graph.ContinuingSeriesCount == graph.SeriesCount &&
 		graph.CurrentGameCount >= graph.SeriesCount && graph.TerminalGameCount == graph.CurrentGameCount
+}
+
+func waveExecutionStateAllowed(state domain.TournamentState) bool {
+	return state == domain.TournamentStateSwiss || state == domain.TournamentStatePlayoffs
 }
 
 func validPairingAuthority(authority PairingAuthority, tournamentID uuid.UUID) bool {

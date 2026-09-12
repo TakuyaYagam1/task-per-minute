@@ -45,11 +45,12 @@ func (r *TournamentAdminRosterPostgres) ReplaceRosterParticipants(
 		return first.Seed - second.Seed
 	})
 	for _, participant := range ordered {
-		_, err = querier.InsertTournamentParticipant(ctx, sqlc.InsertTournamentParticipantParams{
+		_, err = querier.InsertTournamentAdminRosterParticipant(ctx, sqlc.InsertTournamentAdminRosterParticipantParams{
 			ID:       tournamentRosterParticipantID(authority.Roster.ID, participant.PlayerID),
 			PlayerID: participant.PlayerID, Seed: int32(participant.Seed), //nolint:gosec // Application validation caps seeds at 16.
 			Attendance: string(participant.Attendance), CreatedAt: tstz(updatedAt),
-			RosterID: authority.Roster.ID,
+			RosterID: authority.Roster.ID, TournamentID: authority.Roster.TournamentID,
+			ExpectedRosterRevision: authority.Roster.Revision,
 		})
 		if err != nil {
 			return tournamentadmin.RosterView{}, tournamentAdminRosterMutationError("ReplaceRoster - insert", err)

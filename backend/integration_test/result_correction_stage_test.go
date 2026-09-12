@@ -2611,9 +2611,19 @@ func seedCorrectionRetainedGoldenState(
 			SELECT player_id FROM participants WHERE roster_id = $1 AND id = $2`,
 			fixture.rosterID, participantID).Scan(&playerID))
 		require.NoError(t, tx.QueryRow(ctx, `
-			INSERT INTO participant_reservations (player_id, tournament_id)
-			VALUES ($1, $2)
-			RETURNING reservation_id, revision, acquired_at, updated_at`,
+			WITH inserted AS (
+				INSERT INTO participant_reservations (player_id, tournament_id)
+				VALUES ($1, $2)
+				ON CONFLICT (player_id) DO NOTHING
+				RETURNING reservation_id, revision, acquired_at, updated_at
+			)
+			SELECT reservation_id, revision, acquired_at, updated_at FROM inserted
+			UNION ALL
+			SELECT reservation_id, revision, acquired_at, updated_at
+			FROM participant_reservations
+			WHERE player_id = $1 AND tournament_id = $2
+				AND NOT EXISTS (SELECT 1 FROM inserted)
+			LIMIT 1`,
 			playerID, fixture.tournamentID).Scan(
 			&reservationID, &revision, &acquiredAt, &updatedAt,
 		))

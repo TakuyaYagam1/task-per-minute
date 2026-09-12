@@ -80,7 +80,9 @@ func tournamentAdminSnapshotTournament(
 	}
 	view := usecase.TournamentView{
 		ID: row.ID, RosterID: row.RosterID.UUID, Preset: domain.TournamentPreset(row.Preset),
-		State: domain.TournamentState(row.State), Revision: row.TournamentRevision, RosterSize: int(row.RosterSize),
+		Name: row.Name, PublicID: row.PublicID, PlannedRosterSize: int(row.PlannedRosterSize),
+		ContentRevision: row.ContentRevision,
+		State:           domain.TournamentState(row.State), Revision: row.TournamentRevision, RosterSize: int(row.RosterSize),
 		PausedFromState: lifecycleTournamentState(row.PausedFromState),
 	}
 	var valid bool

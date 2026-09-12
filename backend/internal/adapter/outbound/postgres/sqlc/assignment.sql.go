@@ -44,8 +44,8 @@ type ActivateAssignmentBranchParams struct {
 type ActivateAssignmentBranchRow struct {
 	ID                 uuid.UUID
 	PlanID             uuid.UUID
-	DraftID            uuid.UUID
-	DraftRevisionID    uuid.UUID
+	DraftID            uuid.NullUUID
+	DraftRevisionID    uuid.NullUUID
 	BranchKey          string
 	CategorySequence   []byte
 	State              string
@@ -283,6 +283,54 @@ func (q *Queries) CommitAssignmentPlanCAS(ctx context.Context, arg CommitAssignm
 	return i, err
 }
 
+const commitExactNormalAssignmentPlanCAS = `-- name: CommitExactNormalAssignmentPlanCAS :one
+UPDATE assignment_plans
+SET state = 'committed',
+    active_branch_id = $1,
+    committed_at = $2
+WHERE id = $3
+    AND kind = 'exact_normal'
+    AND state = 'planned'
+    AND revision_id = $4
+    AND source_roster_revision = $5
+RETURNING id, revision_id, state, active_branch_id, committed_at
+`
+
+type CommitExactNormalAssignmentPlanCASParams struct {
+	ActiveBranchID         uuid.NullUUID
+	CommittedAt            pgtype.Timestamptz
+	ID                     uuid.UUID
+	ExpectedRevisionID     uuid.UUID
+	ExpectedRosterRevision int64
+}
+
+type CommitExactNormalAssignmentPlanCASRow struct {
+	ID             uuid.UUID
+	RevisionID     uuid.UUID
+	State          string
+	ActiveBranchID uuid.NullUUID
+	CommittedAt    pgtype.Timestamptz
+}
+
+func (q *Queries) CommitExactNormalAssignmentPlanCAS(ctx context.Context, arg CommitExactNormalAssignmentPlanCASParams) (CommitExactNormalAssignmentPlanCASRow, error) {
+	row := q.db.QueryRow(ctx, commitExactNormalAssignmentPlanCAS,
+		arg.ActiveBranchID,
+		arg.CommittedAt,
+		arg.ID,
+		arg.ExpectedRevisionID,
+		arg.ExpectedRosterRevision,
+	)
+	var i CommitExactNormalAssignmentPlanCASRow
+	err := row.Scan(
+		&i.ID,
+		&i.RevisionID,
+		&i.State,
+		&i.ActiveBranchID,
+		&i.CommittedAt,
+	)
+	return i, err
+}
+
 const createAssignment = `-- name: CreateAssignment :one
 INSERT INTO assignments (
     id,
@@ -432,8 +480,8 @@ RETURNING id,
 type CreateAssignmentBranchParams struct {
 	ID               uuid.UUID
 	PlanID           uuid.UUID
-	DraftID          uuid.UUID
-	DraftRevisionID  uuid.UUID
+	DraftID          uuid.NullUUID
+	DraftRevisionID  uuid.NullUUID
 	BranchKey        string
 	CategorySequence []byte
 	CreatedAt        pgtype.Timestamptz
@@ -442,8 +490,8 @@ type CreateAssignmentBranchParams struct {
 type CreateAssignmentBranchRow struct {
 	ID                 uuid.UUID
 	PlanID             uuid.UUID
-	DraftID            uuid.UUID
-	DraftRevisionID    uuid.UUID
+	DraftID            uuid.NullUUID
+	DraftRevisionID    uuid.NullUUID
 	BranchKey          string
 	CategorySequence   []byte
 	State              string
@@ -1196,6 +1244,191 @@ func (q *Queries) CreateExactAssignmentPlan(ctx context.Context, arg CreateExact
 	return i, err
 }
 
+const createExactNormalAssignmentBranch = `-- name: CreateExactNormalAssignmentBranch :exec
+INSERT INTO assignment_branches (
+    id, plan_id, draft_id, draft_revision_id, branch_key, category_sequence,
+    state, created_at
+)
+VALUES (
+    $1, $2, $3::uuid,
+    $4::uuid, $5,
+    $6, 'reserved', $7
+)
+`
+
+type CreateExactNormalAssignmentBranchParams struct {
+	ID               uuid.UUID
+	PlanID           uuid.UUID
+	DraftID          uuid.NullUUID
+	DraftRevisionID  uuid.NullUUID
+	BranchKey        string
+	CategorySequence []byte
+	CreatedAt        pgtype.Timestamptz
+}
+
+func (q *Queries) CreateExactNormalAssignmentBranch(ctx context.Context, arg CreateExactNormalAssignmentBranchParams) error {
+	_, err := q.db.Exec(ctx, createExactNormalAssignmentBranch,
+		arg.ID,
+		arg.PlanID,
+		arg.DraftID,
+		arg.DraftRevisionID,
+		arg.BranchKey,
+		arg.CategorySequence,
+		arg.CreatedAt,
+	)
+	return err
+}
+
+const createExactNormalAssignmentPlan = `-- name: CreateExactNormalAssignmentPlan :exec
+INSERT INTO assignment_plans (
+    id, tournament_id, roster_id, kind, parent_plan_id, revision_id,
+    source_roster_revision, source_pool_revision_id, reachable_branch_count,
+    constraint_graph, proof_evidence, proof_hash, decision_evidence_id,
+    decision_algorithm_version, decision_inputs, decision_seed,
+    decision_result, decision_replay_digest, decision_owner_id, decided_at,
+    state, created_at
+)
+VALUES (
+    $1, $2, $3, 'exact_normal',
+    NULL, $4, $5,
+    $6, 1, $7,
+    $8, $9, $10,
+    $11, $12,
+    $13, $14,
+    $15, $16,
+    $17, 'planned', $18
+)
+`
+
+type CreateExactNormalAssignmentPlanParams struct {
+	ID                       uuid.UUID
+	TournamentID             uuid.UUID
+	RosterID                 uuid.UUID
+	RevisionID               uuid.UUID
+	SourceRosterRevision     int64
+	SourcePoolRevisionID     uuid.UUID
+	ConstraintGraph          []byte
+	ProofEvidence            []byte
+	ProofHash                *string
+	DecisionEvidenceID       uuid.NullUUID
+	DecisionAlgorithmVersion *string
+	DecisionInputs           []byte
+	DecisionSeed             []byte
+	DecisionResult           []byte
+	DecisionReplayDigest     []byte
+	DecisionOwnerID          uuid.NullUUID
+	DecidedAt                pgtype.Timestamptz
+	CreatedAt                pgtype.Timestamptz
+}
+
+func (q *Queries) CreateExactNormalAssignmentPlan(ctx context.Context, arg CreateExactNormalAssignmentPlanParams) error {
+	_, err := q.db.Exec(ctx, createExactNormalAssignmentPlan,
+		arg.ID,
+		arg.TournamentID,
+		arg.RosterID,
+		arg.RevisionID,
+		arg.SourceRosterRevision,
+		arg.SourcePoolRevisionID,
+		arg.ConstraintGraph,
+		arg.ProofEvidence,
+		arg.ProofHash,
+		arg.DecisionEvidenceID,
+		arg.DecisionAlgorithmVersion,
+		arg.DecisionInputs,
+		arg.DecisionSeed,
+		arg.DecisionResult,
+		arg.DecisionReplayDigest,
+		arg.DecisionOwnerID,
+		arg.DecidedAt,
+		arg.CreatedAt,
+	)
+	return err
+}
+
+const createExactNormalAssignmentSource = `-- name: CreateExactNormalAssignmentSource :exec
+INSERT INTO exact_normal_assignment_sources (
+    plan_id, tournament_id, roster_id, series_id, slot_id, category_lock_id,
+    category, series_revision, pool_revision_id, pool_revision,
+    history_revision_id, history_revision, roster_revision,
+    artifact_revision_id, artifact_revision, category_revision_id,
+    category_revision, pool, participant_ids, participant_reservations,
+    history, candidates, graph_digest, artifact_digest, proof_hash, created_at
+)
+VALUES (
+    $1, $2, $3,
+    $4, $5, $6,
+    $7, $8, $9,
+    $10, $11,
+    $12, $13,
+    $14, $15,
+    $16, $17,
+    $18, $19, $20,
+    $21, $22, $23,
+    $24, $25, $26
+)
+`
+
+type CreateExactNormalAssignmentSourceParams struct {
+	PlanID                  uuid.UUID
+	TournamentID            uuid.UUID
+	RosterID                uuid.UUID
+	SeriesID                uuid.UUID
+	SlotID                  uuid.UUID
+	CategoryLockID          uuid.UUID
+	Category                string
+	SeriesRevision          int64
+	PoolRevisionID          uuid.UUID
+	PoolRevision            int64
+	HistoryRevisionID       uuid.UUID
+	HistoryRevision         int64
+	RosterRevision          int64
+	ArtifactRevisionID      uuid.UUID
+	ArtifactRevision        int64
+	CategoryRevisionID      uuid.UUID
+	CategoryRevision        int64
+	Pool                    []byte
+	ParticipantIds          []byte
+	ParticipantReservations []byte
+	History                 []byte
+	Candidates              []byte
+	GraphDigest             []byte
+	ArtifactDigest          []byte
+	ProofHash               string
+	CreatedAt               pgtype.Timestamptz
+}
+
+func (q *Queries) CreateExactNormalAssignmentSource(ctx context.Context, arg CreateExactNormalAssignmentSourceParams) error {
+	_, err := q.db.Exec(ctx, createExactNormalAssignmentSource,
+		arg.PlanID,
+		arg.TournamentID,
+		arg.RosterID,
+		arg.SeriesID,
+		arg.SlotID,
+		arg.CategoryLockID,
+		arg.Category,
+		arg.SeriesRevision,
+		arg.PoolRevisionID,
+		arg.PoolRevision,
+		arg.HistoryRevisionID,
+		arg.HistoryRevision,
+		arg.RosterRevision,
+		arg.ArtifactRevisionID,
+		arg.ArtifactRevision,
+		arg.CategoryRevisionID,
+		arg.CategoryRevision,
+		arg.Pool,
+		arg.ParticipantIds,
+		arg.ParticipantReservations,
+		arg.History,
+		arg.Candidates,
+		arg.GraphDigest,
+		arg.ArtifactDigest,
+		arg.ProofHash,
+		arg.CreatedAt,
+	)
+	return err
+}
+
 const discloseAssignmentTaskReservationCAS = `-- name: DiscloseAssignmentTaskReservationCAS :one
 UPDATE task_version_reservations
 SET disclosed_at = $1,
@@ -1261,6 +1494,84 @@ func (q *Queries) DiscloseAssignmentTaskReservationCAS(ctx context.Context, arg 
 		&i.ReleaseReason,
 		&i.SupersededAt,
 		&i.SupersessionReason,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const ensureExactNormalAssignmentHistoryHead = `-- name: EnsureExactNormalAssignmentHistoryHead :exec
+INSERT INTO exact_normal_assignment_history_heads (
+    tournament_id, roster_id, series_id, slot_id
+)
+VALUES (
+    $1, $2, $3, $4
+)
+ON CONFLICT (tournament_id, roster_id, series_id, slot_id) DO NOTHING
+`
+
+type EnsureExactNormalAssignmentHistoryHeadParams struct {
+	TournamentID uuid.UUID
+	RosterID     uuid.UUID
+	SeriesID     uuid.UUID
+	SlotID       uuid.UUID
+}
+
+func (q *Queries) EnsureExactNormalAssignmentHistoryHead(ctx context.Context, arg EnsureExactNormalAssignmentHistoryHeadParams) error {
+	_, err := q.db.Exec(ctx, ensureExactNormalAssignmentHistoryHead,
+		arg.TournamentID,
+		arg.RosterID,
+		arg.SeriesID,
+		arg.SlotID,
+	)
+	return err
+}
+
+const findExactNormalAssignmentSourceByScope = `-- name: FindExactNormalAssignmentSourceByScope :one
+SELECT source.plan_id,
+    plan.revision_id AS plan_revision_id,
+    plan.state,
+    source.proof_hash,
+    source.created_at
+FROM exact_normal_assignment_sources AS source
+INNER JOIN assignment_plans AS plan ON plan.id = source.plan_id
+WHERE source.tournament_id = $1
+    AND source.roster_id = $2
+    AND source.series_id = $3
+    AND source.slot_id = $4
+    AND source.category_lock_id = $5
+FOR UPDATE OF source, plan
+`
+
+type FindExactNormalAssignmentSourceByScopeParams struct {
+	TournamentID   uuid.UUID
+	RosterID       uuid.UUID
+	SeriesID       uuid.UUID
+	SlotID         uuid.UUID
+	CategoryLockID uuid.UUID
+}
+
+type FindExactNormalAssignmentSourceByScopeRow struct {
+	PlanID         uuid.UUID
+	PlanRevisionID uuid.UUID
+	State          string
+	ProofHash      string
+	CreatedAt      pgtype.Timestamptz
+}
+
+func (q *Queries) FindExactNormalAssignmentSourceByScope(ctx context.Context, arg FindExactNormalAssignmentSourceByScopeParams) (FindExactNormalAssignmentSourceByScopeRow, error) {
+	row := q.db.QueryRow(ctx, findExactNormalAssignmentSourceByScope,
+		arg.TournamentID,
+		arg.RosterID,
+		arg.SeriesID,
+		arg.SlotID,
+		arg.CategoryLockID,
+	)
+	var i FindExactNormalAssignmentSourceByScopeRow
+	err := row.Scan(
+		&i.PlanID,
+		&i.PlanRevisionID,
+		&i.State,
+		&i.ProofHash,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -1478,8 +1789,8 @@ ORDER BY branch_key,
 type ListAssignmentBranchesRow struct {
 	ID                 uuid.UUID
 	PlanID             uuid.UUID
-	DraftID            uuid.UUID
-	DraftRevisionID    uuid.UUID
+	DraftID            uuid.NullUUID
+	DraftRevisionID    uuid.NullUUID
 	BranchKey          string
 	CategorySequence   []byte
 	State              string
@@ -1983,6 +2294,680 @@ func (q *Queries) LockAssignmentPlan(ctx context.Context, id uuid.UUID) (LockAss
 		&i.CommittedAt,
 		&i.SupersededAt,
 		&i.SupersessionReason,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const lockExactNormalAssignmentCandidates = `-- name: LockExactNormalAssignmentCandidates :many
+SELECT membership.task_id,
+    membership.task_version,
+    pool.id AS pool_revision_id,
+    pool.revision AS pool_revision,
+    task_version.title,
+    task_version.description,
+    task_version.category,
+    task_version.difficulty,
+    task_version.time_limit,
+    task_version.flag,
+    task_version.hint_1,
+    task_version.hint_2,
+    task_version.hint_3,
+    task_version.task_url,
+    task_version.source_file_url,
+    task.created_at AS task_created_at,
+    EXISTS (
+        SELECT 1
+        FROM task_version_reservations AS reservation
+        WHERE reservation.task_id = membership.task_id
+            AND reservation.task_version = membership.task_version
+            AND reservation.state IN ('reserved', 'committed')
+    ) AS unavailable
+FROM category_revisions AS category
+INNER JOIN task_pool_revisions AS pool
+    ON pool.id = category.source_pool_revision_id
+    AND pool.kind = 'normal'
+INNER JOIN task_pool_version_memberships AS membership
+    ON membership.task_pool_revision_id = pool.id
+INNER JOIN task_versions AS task_version
+    ON task_version.task_id = membership.task_id
+    AND task_version.version = membership.task_version
+INNER JOIN tasks AS task
+    ON task.id = membership.task_id
+    AND task.kind = 'normal'
+    AND task.enabled
+    AND task.deleted_at IS NULL
+LEFT JOIN LATERAL (
+    SELECT attestation.healthy
+    FROM task_version_health_attestations AS attestation
+    WHERE attestation.task_id = membership.task_id
+        AND attestation.task_version = membership.task_version
+    ORDER BY attestation.revision DESC
+    LIMIT 1
+) AS health ON true
+WHERE category.id = $1
+    AND category.series_id = $2
+    AND category.roster_id = $3
+    AND COALESCE(health.healthy, false)
+    AND NOT EXISTS (
+        SELECT 1
+        FROM task_version_reservations AS live_reservation
+        WHERE live_reservation.task_id = membership.task_id
+            AND live_reservation.task_version = membership.task_version
+            AND live_reservation.state IN ('reserved', 'committed')
+    )
+ORDER BY membership.task_id, membership.task_version
+FOR UPDATE OF membership, task_version, task
+`
+
+type LockExactNormalAssignmentCandidatesParams struct {
+	CategoryLockID uuid.UUID
+	SeriesID       uuid.UUID
+	RosterID       uuid.UUID
+}
+
+type LockExactNormalAssignmentCandidatesRow struct {
+	TaskID         uuid.UUID
+	TaskVersion    int32
+	PoolRevisionID uuid.UUID
+	PoolRevision   int64
+	Title          string
+	Description    string
+	Category       string
+	Difficulty     string
+	TimeLimit      int32
+	Flag           string
+	Hint1          *string
+	Hint2          *string
+	Hint3          *string
+	TaskUrl        *string
+	SourceFileUrl  *string
+	TaskCreatedAt  pgtype.Timestamptz
+	Unavailable    bool
+}
+
+func (q *Queries) LockExactNormalAssignmentCandidates(ctx context.Context, arg LockExactNormalAssignmentCandidatesParams) ([]LockExactNormalAssignmentCandidatesRow, error) {
+	rows, err := q.db.Query(ctx, lockExactNormalAssignmentCandidates, arg.CategoryLockID, arg.SeriesID, arg.RosterID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []LockExactNormalAssignmentCandidatesRow{}
+	for rows.Next() {
+		var i LockExactNormalAssignmentCandidatesRow
+		if err := rows.Scan(
+			&i.TaskID,
+			&i.TaskVersion,
+			&i.PoolRevisionID,
+			&i.PoolRevision,
+			&i.Title,
+			&i.Description,
+			&i.Category,
+			&i.Difficulty,
+			&i.TimeLimit,
+			&i.Flag,
+			&i.Hint1,
+			&i.Hint2,
+			&i.Hint3,
+			&i.TaskUrl,
+			&i.SourceFileUrl,
+			&i.TaskCreatedAt,
+			&i.Unavailable,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockExactNormalAssignmentHistory = `-- name: LockExactNormalAssignmentHistory :many
+SELECT receipt.participant_id, receipt.task_id
+FROM task_delivery_receipts AS receipt
+INNER JOIN assignments AS assignment ON assignment.id = receipt.assignment_id
+INNER JOIN series AS series
+    ON series.id = assignment.series_id
+    AND series.roster_id = assignment.roster_id
+WHERE series.tournament_id = $1
+    AND series.roster_id = $2
+    AND series.id = $3
+    AND receipt.participant_id IN (series.first_participant_id, series.second_participant_id)
+ORDER BY receipt.participant_id, receipt.task_id
+FOR KEY SHARE OF receipt
+`
+
+type LockExactNormalAssignmentHistoryParams struct {
+	TournamentID uuid.UUID
+	RosterID     uuid.UUID
+	SeriesID     uuid.UUID
+}
+
+type LockExactNormalAssignmentHistoryRow struct {
+	ParticipantID uuid.UUID
+	TaskID        uuid.UUID
+}
+
+func (q *Queries) LockExactNormalAssignmentHistory(ctx context.Context, arg LockExactNormalAssignmentHistoryParams) ([]LockExactNormalAssignmentHistoryRow, error) {
+	rows, err := q.db.Query(ctx, lockExactNormalAssignmentHistory, arg.TournamentID, arg.RosterID, arg.SeriesID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []LockExactNormalAssignmentHistoryRow{}
+	for rows.Next() {
+		var i LockExactNormalAssignmentHistoryRow
+		if err := rows.Scan(&i.ParticipantID, &i.TaskID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockExactNormalAssignmentHistoryHead = `-- name: LockExactNormalAssignmentHistoryHead :one
+SELECT revision_id, revision, created_at, updated_at
+FROM exact_normal_assignment_history_heads
+WHERE tournament_id = $1
+    AND roster_id = $2
+    AND series_id = $3
+    AND slot_id = $4
+FOR UPDATE
+`
+
+type LockExactNormalAssignmentHistoryHeadParams struct {
+	TournamentID uuid.UUID
+	RosterID     uuid.UUID
+	SeriesID     uuid.UUID
+	SlotID       uuid.UUID
+}
+
+type LockExactNormalAssignmentHistoryHeadRow struct {
+	RevisionID uuid.UUID
+	Revision   int64
+	CreatedAt  pgtype.Timestamptz
+	UpdatedAt  pgtype.Timestamptz
+}
+
+func (q *Queries) LockExactNormalAssignmentHistoryHead(ctx context.Context, arg LockExactNormalAssignmentHistoryHeadParams) (LockExactNormalAssignmentHistoryHeadRow, error) {
+	row := q.db.QueryRow(ctx, lockExactNormalAssignmentHistoryHead,
+		arg.TournamentID,
+		arg.RosterID,
+		arg.SeriesID,
+		arg.SlotID,
+	)
+	var i LockExactNormalAssignmentHistoryHeadRow
+	err := row.Scan(
+		&i.RevisionID,
+		&i.Revision,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const lockExactNormalAssignmentParticipants = `-- name: LockExactNormalAssignmentParticipants :many
+SELECT participant.id AS participant_id,
+    participant.player_id,
+    reservation.reservation_id,
+    reservation.tournament_id,
+    reservation.revision AS reservation_revision,
+    reservation.acquired_at,
+    reservation.updated_at
+FROM series AS series
+INNER JOIN participants AS participant
+    ON participant.id IN (series.first_participant_id, series.second_participant_id)
+    AND participant.roster_id = series.roster_id
+INNER JOIN participant_reservations AS reservation
+    ON reservation.player_id = participant.player_id
+    AND reservation.tournament_id = series.tournament_id
+WHERE series.tournament_id = $1
+    AND series.roster_id = $2
+    AND series.id = $3
+ORDER BY participant.id
+FOR UPDATE OF participant, reservation
+`
+
+type LockExactNormalAssignmentParticipantsParams struct {
+	TournamentID uuid.UUID
+	RosterID     uuid.UUID
+	SeriesID     uuid.UUID
+}
+
+type LockExactNormalAssignmentParticipantsRow struct {
+	ParticipantID       uuid.UUID
+	PlayerID            uuid.UUID
+	ReservationID       uuid.UUID
+	TournamentID        uuid.UUID
+	ReservationRevision int64
+	AcquiredAt          pgtype.Timestamptz
+	UpdatedAt           pgtype.Timestamptz
+}
+
+func (q *Queries) LockExactNormalAssignmentParticipants(ctx context.Context, arg LockExactNormalAssignmentParticipantsParams) ([]LockExactNormalAssignmentParticipantsRow, error) {
+	rows, err := q.db.Query(ctx, lockExactNormalAssignmentParticipants, arg.TournamentID, arg.RosterID, arg.SeriesID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []LockExactNormalAssignmentParticipantsRow{}
+	for rows.Next() {
+		var i LockExactNormalAssignmentParticipantsRow
+		if err := rows.Scan(
+			&i.ParticipantID,
+			&i.PlayerID,
+			&i.ReservationID,
+			&i.TournamentID,
+			&i.ReservationRevision,
+			&i.AcquiredAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockExactNormalAssignmentSource = `-- name: LockExactNormalAssignmentSource :one
+SELECT source.plan_id,
+    plan.revision_id AS plan_revision_id,
+    plan.state,
+    source.tournament_id,
+    source.roster_id,
+    source.series_id,
+    source.slot_id,
+    source.category_lock_id,
+    source.category,
+    source.series_revision,
+    source.pool_revision_id,
+    source.pool_revision,
+    source.history_revision_id,
+    source.history_revision,
+    source.roster_revision,
+    source.artifact_revision_id,
+    source.artifact_revision,
+    source.category_revision_id,
+    source.category_revision,
+    source.pool,
+    source.participant_ids,
+    source.participant_reservations,
+    source.history,
+    source.candidates,
+    source.graph_digest,
+    source.artifact_digest,
+    source.proof_hash,
+    source.created_at
+FROM exact_normal_assignment_sources AS source
+INNER JOIN assignment_plans AS plan ON plan.id = source.plan_id
+WHERE source.plan_id = $1
+FOR UPDATE OF source, plan
+`
+
+type LockExactNormalAssignmentSourceRow struct {
+	PlanID                  uuid.UUID
+	PlanRevisionID          uuid.UUID
+	State                   string
+	TournamentID            uuid.UUID
+	RosterID                uuid.UUID
+	SeriesID                uuid.UUID
+	SlotID                  uuid.UUID
+	CategoryLockID          uuid.UUID
+	Category                string
+	SeriesRevision          int64
+	PoolRevisionID          uuid.UUID
+	PoolRevision            int64
+	HistoryRevisionID       uuid.UUID
+	HistoryRevision         int64
+	RosterRevision          int64
+	ArtifactRevisionID      uuid.UUID
+	ArtifactRevision        int64
+	CategoryRevisionID      uuid.UUID
+	CategoryRevision        int64
+	Pool                    []byte
+	ParticipantIds          []byte
+	ParticipantReservations []byte
+	History                 []byte
+	Candidates              []byte
+	GraphDigest             []byte
+	ArtifactDigest          []byte
+	ProofHash               string
+	CreatedAt               pgtype.Timestamptz
+}
+
+func (q *Queries) LockExactNormalAssignmentSource(ctx context.Context, planID uuid.UUID) (LockExactNormalAssignmentSourceRow, error) {
+	row := q.db.QueryRow(ctx, lockExactNormalAssignmentSource, planID)
+	var i LockExactNormalAssignmentSourceRow
+	err := row.Scan(
+		&i.PlanID,
+		&i.PlanRevisionID,
+		&i.State,
+		&i.TournamentID,
+		&i.RosterID,
+		&i.SeriesID,
+		&i.SlotID,
+		&i.CategoryLockID,
+		&i.Category,
+		&i.SeriesRevision,
+		&i.PoolRevisionID,
+		&i.PoolRevision,
+		&i.HistoryRevisionID,
+		&i.HistoryRevision,
+		&i.RosterRevision,
+		&i.ArtifactRevisionID,
+		&i.ArtifactRevision,
+		&i.CategoryRevisionID,
+		&i.CategoryRevision,
+		&i.Pool,
+		&i.ParticipantIds,
+		&i.ParticipantReservations,
+		&i.History,
+		&i.Candidates,
+		&i.GraphDigest,
+		&i.ArtifactDigest,
+		&i.ProofHash,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const lockExactNormalAssignmentStage = `-- name: LockExactNormalAssignmentStage :one
+
+SELECT stage.command_id,
+    target.tournament_id,
+    target.roster_id,
+    target.id AS series_id,
+    target.first_participant_id,
+    target.second_participant_id,
+    target.revision AS series_revision,
+    roster.revision AS roster_revision,
+    category.id AS category_revision_id,
+    category.revision AS category_revision,
+    category.source_pool_revision_id,
+    pool.revision AS pool_revision,
+    slot.category,
+    evidence.published_projection_revision_id,
+    evidence.published_projection_revision,
+    evidence.proof_digest AS graph_digest,
+    bracket.payload_digest AS artifact_digest,
+    stage.created_at
+FROM tournament_stage_playoff_semifinals AS stage
+INNER JOIN tournament_stage_playoff_evidence AS evidence
+    ON evidence.command_id = stage.command_id
+    AND evidence.tournament_id = stage.tournament_id
+    AND evidence.roster_id = stage.roster_id
+    AND evidence.bracket_artifact_id = stage.bracket_artifact_id
+INNER JOIN series AS target
+    ON target.id = stage.series_id
+    AND target.tournament_id = stage.tournament_id
+    AND target.roster_id = stage.roster_id
+INNER JOIN rosters AS roster
+    ON roster.id = stage.roster_id
+    AND roster.tournament_id = stage.tournament_id
+INNER JOIN game_slots AS slot
+    ON slot.id = $1
+    AND slot.series_id = target.id
+    AND slot.roster_id = target.roster_id
+INNER JOIN category_revisions AS category
+    ON category.id = $2
+    AND category.series_id = target.id
+    AND category.roster_id = target.roster_id
+INNER JOIN task_pool_revisions AS pool
+    ON pool.id = category.source_pool_revision_id
+    AND pool.kind = 'normal'
+INNER JOIN projection_revisions AS projection
+    ON projection.id = evidence.published_projection_revision_id
+    AND projection.tournament_id = stage.tournament_id
+    AND projection.roster_id = stage.roster_id
+    AND projection.revision_number = evidence.published_projection_revision
+    AND projection.state IN ('published', 'superseded')
+INNER JOIN projection_artifacts AS bracket
+    ON bracket.id = evidence.bracket_artifact_id
+    AND bracket.tournament_id = stage.tournament_id
+    AND bracket.roster_id = stage.roster_id
+    AND bracket.produced_by_revision_id = projection.id
+    AND bracket.artifact_kind = 'bracket'
+WHERE stage.tournament_id = $3
+    AND stage.roster_id = $4
+    AND target.id = $5
+    AND target.format = 'bo1'
+    AND target.state = 'locked'
+FOR UPDATE OF stage, evidence, target, roster, slot, category, pool, projection, bracket
+`
+
+type LockExactNormalAssignmentStageParams struct {
+	SlotID         uuid.UUID
+	CategoryLockID uuid.UUID
+	TournamentID   uuid.UUID
+	RosterID       uuid.UUID
+	SeriesID       uuid.UUID
+}
+
+type LockExactNormalAssignmentStageRow struct {
+	CommandID                     uuid.UUID
+	TournamentID                  uuid.UUID
+	RosterID                      uuid.UUID
+	SeriesID                      uuid.UUID
+	FirstParticipantID            uuid.UUID
+	SecondParticipantID           uuid.UUID
+	SeriesRevision                int64
+	RosterRevision                int64
+	CategoryRevisionID            uuid.UUID
+	CategoryRevision              int64
+	SourcePoolRevisionID          uuid.UUID
+	PoolRevision                  int64
+	Category                      string
+	PublishedProjectionRevisionID uuid.UUID
+	PublishedProjectionRevision   int64
+	GraphDigest                   []byte
+	ArtifactDigest                []byte
+	CreatedAt                     pgtype.Timestamptz
+}
+
+// Standalone exact-normal planning locks the published playoff authority and
+// snapshots every source document before it attempts a reservation.
+func (q *Queries) LockExactNormalAssignmentStage(ctx context.Context, arg LockExactNormalAssignmentStageParams) (LockExactNormalAssignmentStageRow, error) {
+	row := q.db.QueryRow(ctx, lockExactNormalAssignmentStage,
+		arg.SlotID,
+		arg.CategoryLockID,
+		arg.TournamentID,
+		arg.RosterID,
+		arg.SeriesID,
+	)
+	var i LockExactNormalAssignmentStageRow
+	err := row.Scan(
+		&i.CommandID,
+		&i.TournamentID,
+		&i.RosterID,
+		&i.SeriesID,
+		&i.FirstParticipantID,
+		&i.SecondParticipantID,
+		&i.SeriesRevision,
+		&i.RosterRevision,
+		&i.CategoryRevisionID,
+		&i.CategoryRevision,
+		&i.SourcePoolRevisionID,
+		&i.PoolRevision,
+		&i.Category,
+		&i.PublishedProjectionRevisionID,
+		&i.PublishedProjectionRevision,
+		&i.GraphDigest,
+		&i.ArtifactDigest,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const lockExactNormalAssignmentSwissStage = `-- name: LockExactNormalAssignmentSwissStage :one
+SELECT score.command_id,
+    target.tournament_id,
+    target.roster_id,
+    target.id AS series_id,
+    first_member.participant_id AS first_participant_id,
+    second_member.participant_id AS second_participant_id,
+    target.revision AS series_revision,
+    roster.revision AS roster_revision,
+    category.id AS category_revision_id,
+    category.revision AS category_revision,
+    category.source_pool_revision_id,
+    pool.revision AS pool_revision,
+    slot.category,
+    projection.id AS published_projection_revision_id,
+    projection.revision_number AS published_projection_revision,
+    round.decision_replay_digest AS graph_digest,
+    standings.payload_digest AS artifact_digest,
+    score.created_at
+FROM series_score_revisions AS score
+INNER JOIN wave_series AS wave_series
+    ON wave_series.series_id = score.series_id
+    AND wave_series.tournament_id = score.tournament_id
+    AND wave_series.roster_id = score.roster_id
+INNER JOIN waves AS wave
+    ON wave.id = wave_series.wave_id
+    AND wave.tournament_id = score.tournament_id
+    AND wave.roster_id = score.roster_id
+INNER JOIN rosters AS roster
+    ON roster.id = score.roster_id
+    AND roster.tournament_id = score.tournament_id
+INNER JOIN swiss_wave_links AS wave_link
+    ON wave_link.wave_id = wave.id
+    AND wave_link.tournament_id = wave.tournament_id
+    AND wave_link.roster_id = wave.roster_id
+INNER JOIN swiss_rounds AS round
+    ON round.id = wave_link.round_id
+    AND round.roster_id = wave_link.roster_id
+    AND round.source_roster_revision = roster.revision
+    AND round.generation_kind = 'automatic'
+    AND round.decision_replay_digest IS NOT NULL
+    AND octet_length(round.decision_replay_digest) = 32
+INNER JOIN swiss_pairings AS pairing
+    ON pairing.round_id = round.id
+    AND pairing.roster_id = round.roster_id
+INNER JOIN swiss_pairing_members AS first_member
+    ON first_member.pairing_id = pairing.id
+    AND first_member.round_id = pairing.round_id
+    AND first_member.roster_id = pairing.roster_id
+    AND first_member.seat = 1
+INNER JOIN swiss_pairing_members AS second_member
+    ON second_member.pairing_id = pairing.id
+    AND second_member.round_id = pairing.round_id
+    AND second_member.roster_id = pairing.roster_id
+    AND second_member.seat = 2
+INNER JOIN series AS target
+    ON target.tournament_id = score.tournament_id
+    AND target.roster_id = score.roster_id
+    AND target.first_participant_id = first_member.participant_id
+    AND target.second_participant_id = second_member.participant_id
+INNER JOIN game_slots AS slot
+    ON slot.id = $1
+    AND slot.series_id = target.id
+    AND slot.roster_id = target.roster_id
+    AND slot.slot_number = 1
+INNER JOIN category_revisions AS category
+    ON category.id = $2
+    AND category.series_id = target.id
+    AND category.roster_id = target.roster_id
+    AND category.selected_categories @> jsonb_build_array(slot.category)
+INNER JOIN task_pool_revisions AS pool
+    ON pool.id = category.source_pool_revision_id
+    AND pool.kind = 'normal'
+INNER JOIN projection_revisions AS projection
+    ON projection.id = score.source_projection_revision_id
+    AND projection.tournament_id = score.tournament_id
+    AND projection.roster_id = score.roster_id
+    AND projection.revision_number = score.source_projection_revision
+    AND projection.state IN ('published', 'superseded')
+INNER JOIN projection_revision_artifacts AS revision_artifact
+    ON revision_artifact.revision_id = projection.id
+    AND revision_artifact.tournament_id = projection.tournament_id
+    AND revision_artifact.roster_id = projection.roster_id
+    AND revision_artifact.artifact_kind = 'standings'
+INNER JOIN projection_artifacts AS standings
+    ON standings.id = revision_artifact.artifact_id
+    AND standings.tournament_id = projection.tournament_id
+    AND standings.roster_id = projection.roster_id
+    AND standings.artifact_kind = 'standings'
+WHERE score.tournament_id = $3
+    AND score.roster_id = $4
+    AND score.series_id = $5
+    AND score.revision_number = 1
+    AND score.operation = 'initialize'
+    AND target.id = $5
+    AND target.format = 'bo1'
+    AND target.state = 'locked'
+    AND category.mode = 'random'
+FOR UPDATE OF score, wave_series, wave, wave_link, round, pairing, first_member, second_member,
+    target, roster, slot, category, pool, projection, revision_artifact, standings
+`
+
+type LockExactNormalAssignmentSwissStageParams struct {
+	SlotID         uuid.UUID
+	CategoryLockID uuid.UUID
+	TournamentID   uuid.UUID
+	RosterID       uuid.UUID
+	SeriesID       uuid.UUID
+}
+
+type LockExactNormalAssignmentSwissStageRow struct {
+	CommandID                     uuid.UUID
+	TournamentID                  uuid.UUID
+	RosterID                      uuid.UUID
+	SeriesID                      uuid.UUID
+	FirstParticipantID            uuid.UUID
+	SecondParticipantID           uuid.UUID
+	SeriesRevision                int64
+	RosterRevision                int64
+	CategoryRevisionID            uuid.UUID
+	CategoryRevision              int64
+	SourcePoolRevisionID          uuid.UUID
+	PoolRevision                  int64
+	Category                      string
+	PublishedProjectionRevisionID uuid.UUID
+	PublishedProjectionRevision   int64
+	GraphDigest                   []byte
+	ArtifactDigest                []byte
+	CreatedAt                     pgtype.Timestamptz
+}
+
+// Swiss random materialization runs before the pairing command ledger and
+// wave-start proof are written.  The initial score revision carries the real
+// command and projection lineage, while the automatic round carries the
+// immutable pairing decision; later ledgers revalidate both.
+func (q *Queries) LockExactNormalAssignmentSwissStage(ctx context.Context, arg LockExactNormalAssignmentSwissStageParams) (LockExactNormalAssignmentSwissStageRow, error) {
+	row := q.db.QueryRow(ctx, lockExactNormalAssignmentSwissStage,
+		arg.SlotID,
+		arg.CategoryLockID,
+		arg.TournamentID,
+		arg.RosterID,
+		arg.SeriesID,
+	)
+	var i LockExactNormalAssignmentSwissStageRow
+	err := row.Scan(
+		&i.CommandID,
+		&i.TournamentID,
+		&i.RosterID,
+		&i.SeriesID,
+		&i.FirstParticipantID,
+		&i.SecondParticipantID,
+		&i.SeriesRevision,
+		&i.RosterRevision,
+		&i.CategoryRevisionID,
+		&i.CategoryRevision,
+		&i.SourcePoolRevisionID,
+		&i.PoolRevision,
+		&i.Category,
+		&i.PublishedProjectionRevisionID,
+		&i.PublishedProjectionRevision,
+		&i.GraphDigest,
+		&i.ArtifactDigest,
 		&i.CreatedAt,
 	)
 	return i, err

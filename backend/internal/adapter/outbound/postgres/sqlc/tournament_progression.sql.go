@@ -427,6 +427,188 @@ func (q *Queries) CreateGoldenGroupRevision(ctx context.Context, arg CreateGolde
 	return revision_id, err
 }
 
+const createPlayoffSemifinalCategoryRevision = `-- name: CreatePlayoffSemifinalCategoryRevision :one
+INSERT INTO category_revisions (
+    id,
+    series_id,
+    roster_id,
+    revision,
+    source_pool_revision_id,
+    mode,
+    category_pool,
+    selected_categories,
+    selector_actor_id,
+    selection_reason,
+    decision_evidence_id,
+    decision_algorithm_version,
+    decision_inputs,
+    decision_seed,
+    decision_result,
+    decision_replay_digest,
+    decision_owner_id,
+    decided_at,
+    created_at
+)
+VALUES (
+    $1,
+    $2,
+    $3,
+    $4,
+    $5,
+    $6,
+    $7,
+    $8,
+    $9::UUID,
+    $10::TEXT,
+    $11::UUID,
+    $12::VARCHAR,
+    $13::JSONB,
+    $14::BYTEA,
+    $15::JSONB,
+    $16::BYTEA,
+    $17::UUID,
+    $18::TIMESTAMPTZ,
+    $19
+)
+RETURNING id,
+    series_id,
+    roster_id,
+    revision,
+    source_pool_revision_id,
+    mode,
+    category_pool,
+    selected_categories,
+    selector_actor_id,
+    selection_reason,
+    decision_evidence_id,
+    decision_algorithm_version,
+    decision_inputs,
+    decision_seed,
+    decision_result,
+    decision_replay_digest,
+    decision_owner_id,
+    decided_at,
+    created_at
+`
+
+type CreatePlayoffSemifinalCategoryRevisionParams struct {
+	ID                       uuid.UUID
+	SeriesID                 uuid.UUID
+	RosterID                 uuid.UUID
+	Revision                 int64
+	SourcePoolRevisionID     uuid.UUID
+	Mode                     string
+	CategoryPool             []byte
+	SelectedCategories       []byte
+	SelectorActorID          uuid.NullUUID
+	SelectionReason          *string
+	DecisionEvidenceID       uuid.NullUUID
+	DecisionAlgorithmVersion *string
+	DecisionInputs           []byte
+	DecisionSeed             []byte
+	DecisionResult           []byte
+	DecisionReplayDigest     []byte
+	DecisionOwnerID          uuid.NullUUID
+	DecidedAt                pgtype.Timestamptz
+	CreatedAt                pgtype.Timestamptz
+}
+
+// Semifinal category authority is persisted separately from the Swiss
+// materializer, while retaining the same immutable random decision shape.
+func (q *Queries) CreatePlayoffSemifinalCategoryRevision(ctx context.Context, arg CreatePlayoffSemifinalCategoryRevisionParams) (CategoryRevision, error) {
+	row := q.db.QueryRow(ctx, createPlayoffSemifinalCategoryRevision,
+		arg.ID,
+		arg.SeriesID,
+		arg.RosterID,
+		arg.Revision,
+		arg.SourcePoolRevisionID,
+		arg.Mode,
+		arg.CategoryPool,
+		arg.SelectedCategories,
+		arg.SelectorActorID,
+		arg.SelectionReason,
+		arg.DecisionEvidenceID,
+		arg.DecisionAlgorithmVersion,
+		arg.DecisionInputs,
+		arg.DecisionSeed,
+		arg.DecisionResult,
+		arg.DecisionReplayDigest,
+		arg.DecisionOwnerID,
+		arg.DecidedAt,
+		arg.CreatedAt,
+	)
+	var i CategoryRevision
+	err := row.Scan(
+		&i.ID,
+		&i.SeriesID,
+		&i.RosterID,
+		&i.Revision,
+		&i.SourcePoolRevisionID,
+		&i.Mode,
+		&i.CategoryPool,
+		&i.SelectedCategories,
+		&i.SelectorActorID,
+		&i.SelectionReason,
+		&i.DecisionEvidenceID,
+		&i.DecisionAlgorithmVersion,
+		&i.DecisionInputs,
+		&i.DecisionSeed,
+		&i.DecisionResult,
+		&i.DecisionReplayDigest,
+		&i.DecisionOwnerID,
+		&i.DecidedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const createPlayoffSemifinalWave = `-- name: CreatePlayoffSemifinalWave :exec
+INSERT INTO waves (
+    id,
+    tournament_id,
+    roster_id,
+    revision_id,
+    revision,
+    state,
+    replaces_wave_id,
+    created_at,
+    updated_at
+)
+VALUES (
+    $1,
+    $2,
+    $3,
+    $4,
+    1,
+    'planned',
+    NULL,
+    $5,
+    $5
+)
+`
+
+type CreatePlayoffSemifinalWaveParams struct {
+	ID           uuid.UUID
+	TournamentID uuid.UUID
+	RosterID     uuid.UUID
+	RevisionID   uuid.UUID
+	CreatedAt    pgtype.Timestamptz
+}
+
+// A semifinal has one independent planned execution Wave. It is linked to
+// its Series before the ready state transition and before a ready window is
+// opened by the existing wave control workflow.
+func (q *Queries) CreatePlayoffSemifinalWave(ctx context.Context, arg CreatePlayoffSemifinalWaveParams) error {
+	_, err := q.db.Exec(ctx, createPlayoffSemifinalWave,
+		arg.ID,
+		arg.TournamentID,
+		arg.RosterID,
+		arg.RevisionID,
+		arg.CreatedAt,
+	)
+	return err
+}
+
 const createStageProjectionOutboxEvent = `-- name: CreateStageProjectionOutboxEvent :one
 WITH target AS MATERIALIZED (
     SELECT stage.command_id, stage.tournament_id, stage.roster_id,
@@ -784,7 +966,7 @@ type CreateTournamentProgressionStageProjectionNodeAuthorityParams struct {
 
 // The stage evidence row is written before this authority. Its node foreign
 // keys are deferred so the ensuing four-node graph can prove the exact Top4,
-// bracket, and locked semifinal score genesis at transaction commit.
+// bracket, and semifinal score genesis at transaction commit.
 func (q *Queries) CreateTournamentProgressionStageProjectionNodeAuthority(ctx context.Context, arg CreateTournamentProgressionStageProjectionNodeAuthorityParams) (uuid.UUID, error) {
 	row := q.db.QueryRow(ctx, createTournamentProgressionStageProjectionNodeAuthority,
 		arg.ID,
@@ -799,41 +981,71 @@ func (q *Queries) CreateTournamentProgressionStageProjectionNodeAuthority(ctx co
 }
 
 const createTournamentStagePlayoffEvidence = `-- name: CreateTournamentStagePlayoffEvidence :one
-INSERT INTO tournament_stage_playoff_evidence (
-    command_id,
-    tournament_id,
-    roster_id,
-    source_projection_revision_id,
-    source_projection_revision,
-    published_projection_revision_id,
-    published_projection_revision,
-    top4_artifact_id,
-    bracket_artifact_id,
-    top4_node_id,
-    bracket_node_id,
-    first_semifinal_series_id,
-    second_semifinal_series_id,
-    proof_digest,
-    created_at
+WITH inserted AS (
+    INSERT INTO tournament_stage_playoff_evidence (
+        command_id,
+        tournament_id,
+        roster_id,
+        source_projection_revision_id,
+        source_projection_revision,
+        published_projection_revision_id,
+        published_projection_revision,
+        top4_artifact_id,
+        bracket_artifact_id,
+        top4_node_id,
+        bracket_node_id,
+        first_semifinal_series_id,
+        second_semifinal_series_id,
+        proof_digest,
+        created_at
+    )
+    SELECT
+        $1,
+        $2,
+        $3,
+        $4,
+        $5,
+        $6,
+        $7,
+        $8,
+        $9,
+        $10,
+        $11,
+        $12,
+        $13,
+        $14,
+        $15
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM tournament_stage_playoff_evidence
+        WHERE command_id = $1
+            AND tournament_id = $2
+    )
+    ON CONFLICT (command_id, tournament_id) DO NOTHING
+    RETURNING command_id
 )
-VALUES (
-    $1,
-    $2,
-    $3,
-    $4,
-    $5,
-    $6,
-    $7,
-    $8,
-    $9,
-    $10,
-    $11,
-    $12,
-    $13,
-    $14,
-    $15
-)
-RETURNING command_id
+SELECT command_id
+FROM inserted
+UNION ALL
+SELECT command_id
+FROM tournament_stage_playoff_evidence
+WHERE command_id = $1
+    AND tournament_id = $2
+    AND roster_id = $3
+    AND source_projection_revision_id = $4
+    AND source_projection_revision = $5
+    AND published_projection_revision_id = $6
+    AND published_projection_revision = $7
+    AND top4_artifact_id = $8
+    AND bracket_artifact_id = $9
+    AND top4_node_id = $10
+    AND bracket_node_id = $11
+    AND first_semifinal_series_id = $12
+    AND second_semifinal_series_id = $13
+    AND proof_digest = $14
+    AND created_at = $15
+    AND NOT EXISTS (SELECT 1 FROM inserted)
+LIMIT 1
 `
 
 type CreateTournamentStagePlayoffEvidenceParams struct {
@@ -933,25 +1145,48 @@ func (q *Queries) CreateTournamentStagePlayoffGoldenSettlement(ctx context.Conte
 }
 
 const createTournamentStagePlayoffSemifinal = `-- name: CreateTournamentStagePlayoffSemifinal :one
-INSERT INTO tournament_stage_playoff_semifinals (
-    command_id,
-    tournament_id,
-    roster_id,
-    bracket_artifact_id,
-    position,
-    series_id,
-    created_at
+WITH inserted AS (
+    INSERT INTO tournament_stage_playoff_semifinals (
+        command_id,
+        tournament_id,
+        roster_id,
+        bracket_artifact_id,
+        position,
+        series_id,
+        created_at
+    )
+    SELECT
+        $1,
+        $2,
+        $3,
+        $4,
+        $5,
+        $6,
+        $7
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM tournament_stage_playoff_semifinals
+        WHERE command_id = $1
+            AND tournament_id = $2
+            AND position = $5
+    )
+    ON CONFLICT DO NOTHING
+    RETURNING series_id
 )
-VALUES (
-    $1,
-    $2,
-    $3,
-    $4,
-    $5,
-    $6,
-    $7
-)
-RETURNING series_id
+SELECT series_id
+FROM inserted
+UNION ALL
+SELECT series_id
+FROM tournament_stage_playoff_semifinals
+WHERE command_id = $1
+    AND tournament_id = $2
+    AND roster_id = $3
+    AND bracket_artifact_id = $4
+    AND position = $5
+    AND series_id = $6
+    AND created_at = $7
+    AND NOT EXISTS (SELECT 1 FROM inserted)
+LIMIT 1
 `
 
 type CreateTournamentStagePlayoffSemifinalParams struct {
@@ -1962,6 +2197,82 @@ func (q *Queries) LockLatestFinalSwissReceipt(ctx context.Context, arg LockLates
 	row := q.db.QueryRow(ctx, lockLatestFinalSwissReceipt, arg.TournamentID, arg.RosterID)
 	var i LockLatestFinalSwissReceiptRow
 	err := row.Scan(&i.ProjectionRevisionID, &i.RevisionNumber)
+	return i, err
+}
+
+const lockPlayoffSemifinalSeriesForMaterialization = `-- name: LockPlayoffSemifinalSeriesForMaterialization :one
+SELECT id,
+    tournament_id,
+    roster_id,
+    first_participant_id,
+    second_participant_id,
+    format,
+    state,
+    current_score_revision_id,
+    current_result_revision_id,
+    revision,
+    created_at,
+    updated_at,
+    started_at,
+    finished_at
+FROM series
+WHERE id = $1
+    AND tournament_id = $2
+    AND roster_id = $3
+    AND format = 'bo1'
+    AND state = 'locked'
+    AND current_score_revision_id IS NOT NULL
+    AND current_result_revision_id IS NULL
+    AND started_at IS NULL
+    AND finished_at IS NULL
+FOR UPDATE
+`
+
+type LockPlayoffSemifinalSeriesForMaterializationParams struct {
+	SeriesID     uuid.UUID
+	TournamentID uuid.UUID
+	RosterID     uuid.UUID
+}
+
+type LockPlayoffSemifinalSeriesForMaterializationRow struct {
+	ID                      uuid.UUID
+	TournamentID            uuid.UUID
+	RosterID                uuid.UUID
+	FirstParticipantID      uuid.UUID
+	SecondParticipantID     uuid.UUID
+	Format                  string
+	State                   string
+	CurrentScoreRevisionID  uuid.NullUUID
+	CurrentResultRevisionID uuid.NullUUID
+	Revision                int64
+	CreatedAt               pgtype.Timestamptz
+	UpdatedAt               pgtype.Timestamptz
+	StartedAt               pgtype.Timestamptz
+	FinishedAt              pgtype.Timestamptz
+}
+
+// A published bracket creates locked, empty BO1 Series. The materializer
+// locks each row again before reading it so category, assignment, and graph
+// writes all use one current database authority.
+func (q *Queries) LockPlayoffSemifinalSeriesForMaterialization(ctx context.Context, arg LockPlayoffSemifinalSeriesForMaterializationParams) (LockPlayoffSemifinalSeriesForMaterializationRow, error) {
+	row := q.db.QueryRow(ctx, lockPlayoffSemifinalSeriesForMaterialization, arg.SeriesID, arg.TournamentID, arg.RosterID)
+	var i LockPlayoffSemifinalSeriesForMaterializationRow
+	err := row.Scan(
+		&i.ID,
+		&i.TournamentID,
+		&i.RosterID,
+		&i.FirstParticipantID,
+		&i.SecondParticipantID,
+		&i.Format,
+		&i.State,
+		&i.CurrentScoreRevisionID,
+		&i.CurrentResultRevisionID,
+		&i.Revision,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.StartedAt,
+		&i.FinishedAt,
+	)
 	return i, err
 }
 
@@ -5421,7 +5732,7 @@ SELECT group_revision.revision_id AS group_revision_id,
     group_revision.group_id,
     group_revision.source_projection_revision_id,
     group_revision.source_projection_revision,
-    (group_revision.definition ->> 'revision_no')::integer AS group_revision_number,
+    COALESCE((group_revision.definition ->> 'revision_no')::integer, 1)::integer AS group_revision_number,
     group_revision.position_from,
     group_revision.position_to,
     attempt_group.attempt_id,
@@ -8027,6 +8338,108 @@ func (q *Queries) LockTournamentProgressionSwissSeries(ctx context.Context, arg 
 		return nil, err
 	}
 	return items, nil
+}
+
+const readyPlayoffSemifinalGameForMaterialization = `-- name: ReadyPlayoffSemifinalGameForMaterialization :one
+UPDATE game_attempts
+SET state = 'ready',
+    revision = revision + 1,
+    updated_at = $1
+WHERE id = $2
+    AND slot_id = $3
+    AND series_id = $4
+    AND roster_id = $5
+    AND state = 'planned'
+    AND started_at IS NULL
+    AND finished_at IS NULL
+RETURNING id,
+    slot_id,
+    series_id,
+    roster_id,
+    attempt_number,
+    revision,
+    state
+`
+
+type ReadyPlayoffSemifinalGameForMaterializationParams struct {
+	UpdatedAt pgtype.Timestamptz
+	GameID    uuid.UUID
+	SlotID    uuid.UUID
+	SeriesID  uuid.UUID
+	RosterID  uuid.UUID
+}
+
+type ReadyPlayoffSemifinalGameForMaterializationRow struct {
+	ID            uuid.UUID
+	SlotID        uuid.UUID
+	SeriesID      uuid.UUID
+	RosterID      uuid.UUID
+	AttemptNumber int32
+	Revision      int64
+	State         string
+}
+
+func (q *Queries) ReadyPlayoffSemifinalGameForMaterialization(ctx context.Context, arg ReadyPlayoffSemifinalGameForMaterializationParams) (ReadyPlayoffSemifinalGameForMaterializationRow, error) {
+	row := q.db.QueryRow(ctx, readyPlayoffSemifinalGameForMaterialization,
+		arg.UpdatedAt,
+		arg.GameID,
+		arg.SlotID,
+		arg.SeriesID,
+		arg.RosterID,
+	)
+	var i ReadyPlayoffSemifinalGameForMaterializationRow
+	err := row.Scan(
+		&i.ID,
+		&i.SlotID,
+		&i.SeriesID,
+		&i.RosterID,
+		&i.AttemptNumber,
+		&i.Revision,
+		&i.State,
+	)
+	return i, err
+}
+
+const readyPlayoffSemifinalSeriesForMaterialization = `-- name: ReadyPlayoffSemifinalSeriesForMaterialization :one
+UPDATE series
+SET state = 'ready',
+    revision = revision + 1,
+    updated_at = $1
+WHERE id = $2
+    AND tournament_id = $3
+    AND roster_id = $4
+    AND state = 'locked'
+    AND started_at IS NULL
+    AND finished_at IS NULL
+    AND current_result_revision_id IS NULL
+RETURNING id,
+    revision,
+    state
+`
+
+type ReadyPlayoffSemifinalSeriesForMaterializationParams struct {
+	UpdatedAt    pgtype.Timestamptz
+	SeriesID     uuid.UUID
+	TournamentID uuid.UUID
+	RosterID     uuid.UUID
+}
+
+type ReadyPlayoffSemifinalSeriesForMaterializationRow struct {
+	ID       uuid.UUID
+	Revision int64
+	State    string
+}
+
+func (q *Queries) ReadyPlayoffSemifinalSeriesForMaterialization(ctx context.Context, arg ReadyPlayoffSemifinalSeriesForMaterializationParams) (ReadyPlayoffSemifinalSeriesForMaterializationRow, error) {
+	row := q.db.QueryRow(ctx, readyPlayoffSemifinalSeriesForMaterialization,
+		arg.UpdatedAt,
+		arg.SeriesID,
+		arg.TournamentID,
+		arg.RosterID,
+	)
+	var i ReadyPlayoffSemifinalSeriesForMaterializationRow
+	err := row.Scan(&i.ID, &i.Revision, &i.State)
+	return i, err
 }
 
 const resolveTournamentProgressionGoldenSource = `-- name: ResolveTournamentProgressionGoldenSource :one

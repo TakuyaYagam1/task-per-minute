@@ -269,8 +269,8 @@ VALUES (
 type CreateExactDraftAssignmentChildParams struct {
 	ID                       uuid.UUID
 	PlanID                   uuid.UUID
-	DraftID                  uuid.UUID
-	DraftRevisionID          uuid.UUID
+	DraftID                  uuid.NullUUID
+	DraftRevisionID          uuid.NullUUID
 	BranchKey                string
 	CategorySequence         []byte
 	ExactDraftBranchID       uuid.NullUUID
@@ -934,8 +934,8 @@ FOR UPDATE
 type LockExactDraftAssignmentChildrenRow struct {
 	ID                       uuid.UUID
 	PlanID                   uuid.UUID
-	DraftID                  uuid.UUID
-	DraftRevisionID          uuid.UUID
+	DraftID                  uuid.NullUUID
+	DraftRevisionID          uuid.NullUUID
 	BranchKey                string
 	CategorySequence         []byte
 	ExactDraftBranchID       uuid.NullUUID

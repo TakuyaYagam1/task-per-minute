@@ -189,7 +189,7 @@ func (r *TournamentAdminExecutionPostgres) lockWaveStartSnapshot(
 	querier := r.tx.Querier(ctx)
 	if err := lockTournamentResultScope(ctx, querier, scope.TournamentID, uuid.Nil); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return waveStartSnapshot{}, gameusecase.ErrWaveStartAuthorityConflict
+			return waveStartSnapshot{}, fmt.Errorf("lock Wave start result scope: %w", gameusecase.ErrWaveStartAuthorityConflict)
 		}
 		return waveStartSnapshot{}, fmt.Errorf("lock Wave start result scope: %w", err)
 	}
@@ -198,14 +198,14 @@ func (r *TournamentAdminExecutionPostgres) lockWaveStartSnapshot(
 		WaveID:       scope.WaveID,
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
-		return waveStartSnapshot{}, gameusecase.ErrWaveStartAuthorityConflict
+		return waveStartSnapshot{}, fmt.Errorf("lock Wave start header: %w", gameusecase.ErrWaveStartAuthorityConflict)
 	}
 	if err != nil {
 		return waveStartSnapshot{}, fmt.Errorf("lock Wave start authority: %w", err)
 	}
 	authority, rosterID, err := waveStartAuthorityHeader(header, scope)
 	if err != nil {
-		return waveStartSnapshot{}, err
+		return waveStartSnapshot{}, fmt.Errorf("map Wave start header: %w", err)
 	}
 	var swissProof *waveStartSwissRoundProof
 	if header.SwissRoundID.Valid {
@@ -216,18 +216,18 @@ func (r *TournamentAdminExecutionPostgres) lockWaveStartSnapshot(
 			RoundID:      header.SwissRoundID.UUID,
 		})
 		if errors.Is(err, pgx.ErrNoRows) {
-			return waveStartSnapshot{}, gameusecase.ErrWaveStartAuthorityConflict
+			return waveStartSnapshot{}, fmt.Errorf("lock Swiss round proof: %w", gameusecase.ErrWaveStartAuthorityConflict)
 		}
 		if err != nil {
 			return waveStartSnapshot{}, fmt.Errorf("lock Swiss round proof authority: %w", err)
 		}
 		mappedProof, err := waveStartSwissRoundProofFromRow(lockedProof)
 		if err != nil {
-			return waveStartSnapshot{}, err
+			return waveStartSnapshot{}, fmt.Errorf("map Swiss round proof: %w", err)
 		}
 		mappedProof.retained, err = loadRetainedSwissRoundProof(ctx, querier, scope.TournamentID, rosterID, mappedProof)
 		if err != nil {
-			return waveStartSnapshot{}, err
+			return waveStartSnapshot{}, fmt.Errorf("load retained Swiss round proof: %w", err)
 		}
 		swissProof = &mappedProof
 	}
@@ -255,10 +255,10 @@ func (r *TournamentAdminExecutionPostgres) lockWaveStartSnapshot(
 	}
 	authority.Games, err = waveStartGameAuthorities(authority, rosterID, games)
 	if err != nil {
-		return waveStartSnapshot{}, err
+		return waveStartSnapshot{}, fmt.Errorf("map Wave start Games: %w", err)
 	}
 	if !waveStartGamesCoverSeries(authority.Games, seriesIDs) {
-		return waveStartSnapshot{}, gameusecase.ErrWaveStartAuthorityConflict
+		return waveStartSnapshot{}, fmt.Errorf("validate Wave start graph coverage: %w", gameusecase.ErrWaveStartAuthorityConflict)
 	}
 	byeParticipantID := nullableWaveStartUUID(header.ByeParticipantID)
 	return waveStartSnapshot{
@@ -274,12 +274,18 @@ func waveStartAuthorityHeader(
 	scope gameusecase.StartScope,
 ) (gameusecase.StartAuthority, uuid.UUID, error) {
 	if header.TournamentID != scope.TournamentID || header.ID != scope.WaveID ||
-		header.TournamentState != string(domain.TournamentStateSwiss) || header.RosterID == uuid.Nil ||
+		!waveStartTournamentStateAllowed(header.TournamentState) || header.RosterID == uuid.Nil ||
 		header.RosterRevision < 1 || header.TournamentRevision < 1 || header.ProjectionRevisionID == uuid.Nil ||
 		header.ProjectionRevision < 1 || header.RevisionID == uuid.Nil || header.Revision < 1 ||
 		header.ArtifactRevisionID == uuid.Nil ||
 		header.ArtifactRevision < 1 || header.StartedAt.Valid || header.PausedAt.Valid || header.ClosedAt.Valid {
-		return gameusecase.StartAuthority{}, uuid.Nil, gameusecase.ErrWaveStartAuthorityConflict
+		return gameusecase.StartAuthority{}, uuid.Nil, fmt.Errorf(
+			"invalid Wave header tournament=%s wave=%s state=%s tournament_state=%s roster=%s revisions=%d/%d/%d/%d artifact=%s:%d started=%t paused=%t closed=%t: %w",
+			header.TournamentID, header.ID, header.State, header.TournamentState, header.RosterID,
+			header.RosterRevision, header.TournamentRevision, header.ProjectionRevision, header.Revision,
+			header.ArtifactRevisionID, header.ArtifactRevision, header.StartedAt.Valid, header.PausedAt.Valid,
+			header.ClosedAt.Valid, gameusecase.ErrWaveStartAuthorityConflict,
+		)
 	}
 	createdAt, err := requiredWaveStartTime(header.CreatedAt)
 	if err != nil {
@@ -300,7 +306,11 @@ func waveStartAuthorityHeader(
 	if header.ReadyWindowID != scope.WindowID || header.ReadyWindowRevisionID == uuid.Nil ||
 		header.ReadyWindowState != string(domain.ReadyWindowStateOpen) || header.ConsumedAt.Valid ||
 		!domain.IsValidReadyWindowInterval(openedAt, deadline) {
-		return gameusecase.StartAuthority{}, uuid.Nil, gameusecase.ErrWaveStartAuthorityConflict
+		return gameusecase.StartAuthority{}, uuid.Nil, fmt.Errorf(
+			"invalid ready window id=%s expected=%s revision=%s state=%s consumed=%t opened=%s deadline=%s: %w",
+			header.ReadyWindowID, scope.WindowID, header.ReadyWindowRevisionID, header.ReadyWindowState,
+			header.ConsumedAt.Valid, openedAt, deadline, gameusecase.ErrWaveStartAuthorityConflict,
+		)
 	}
 	wave := domain.Wave{
 		ID: header.ID, TournamentID: header.TournamentID,
@@ -312,7 +322,9 @@ func waveStartAuthorityHeader(
 		},
 	}
 	if wave.State != domain.WaveStateReady {
-		return gameusecase.StartAuthority{}, uuid.Nil, gameusecase.ErrWaveStartAuthorityConflict
+		return gameusecase.StartAuthority{}, uuid.Nil, fmt.Errorf(
+			"wave state %s is not ready: %w", wave.State, gameusecase.ErrWaveStartAuthorityConflict,
+		)
 	}
 	return gameusecase.StartAuthority{
 		Scope: scope, WaveRevision: header.Revision,
@@ -323,6 +335,10 @@ func waveStartAuthorityHeader(
 		},
 		Wave: wave,
 	}, header.RosterID, nil
+}
+
+func waveStartTournamentStateAllowed(state string) bool {
+	return state == string(domain.TournamentStateSwiss) || state == string(domain.TournamentStatePlayoffs)
 }
 
 func requiredWaveStartTime(value pgtype.Timestamptz) (time.Time, error) {
@@ -469,22 +485,27 @@ func waveStartGameAuthorities(
 			row.ReservationRevision < 1 || row.ReservationState != "committed" || row.DisclosedAt.Valid ||
 			row.SnapshotID == uuid.Nil || row.TaskID == uuid.Nil || row.TaskVersion < 1 ||
 			row.PlanRevisionID == uuid.Nil || row.TimeLimit <= 0 {
-			return nil, gameusecase.ErrWaveStartAuthorityConflict
+			return nil, fmt.Errorf(
+				"invalid playable Game row series=%s game=%s assignment=%s reservation_state=%s reservation_revision=%d disclosed=%t snapshot=%s task=%s version=%d plan_revision=%s limit=%d: %w",
+				row.SeriesID, row.GameID, row.AssignmentID, row.ReservationState, row.ReservationRevision,
+				row.DisclosedAt.Valid, row.SnapshotID, row.TaskID, row.TaskVersion, row.PlanRevisionID, row.TimeLimit,
+				gameusecase.ErrWaveStartAuthorityConflict,
+			)
 		}
 		if _, duplicate := seenGames[row.GameID]; duplicate {
 			return nil, domain.ErrInternal
 		}
 		if _, duplicate := seenSeries[row.SeriesID]; duplicate {
-			return nil, gameusecase.ErrWaveStartAuthorityConflict
+			return nil, fmt.Errorf("duplicate playable Series %s: %w", row.SeriesID, gameusecase.ErrWaveStartAuthorityConflict)
 		}
 		seenGames[row.GameID] = struct{}{}
 		seenSeries[row.SeriesID] = struct{}{}
 		if _, firstMember := members[row.FirstParticipantID]; !firstMember {
-			return nil, gameusecase.ErrWaveStartAuthorityConflict
+			return nil, fmt.Errorf("missing first playable member %s: %w", row.FirstParticipantID, gameusecase.ErrWaveStartAuthorityConflict)
 		}
 		if _, secondMember := members[row.SecondParticipantID]; !secondMember ||
 			row.FirstParticipantID == row.SecondParticipantID {
-			return nil, gameusecase.ErrWaveStartAuthorityConflict
+			return nil, fmt.Errorf("invalid second playable member %s: %w", row.SecondParticipantID, gameusecase.ErrWaveStartAuthorityConflict)
 		}
 		digest, err := waveStartDigest(row.ContentDigest)
 		if err != nil {
@@ -499,7 +520,8 @@ func waveStartGameAuthorities(
 				SecondParticipantWins: int(row.SecondParticipantWins),
 			},
 			Slots: []domain.GameSlot{{
-				ID: row.SlotID, SeriesID: row.SeriesID, Position: int(row.SlotNumber),
+				// Wave start validates one game at a time, including later BO3 slots.
+				ID: row.SlotID, SeriesID: row.SeriesID, Position: 1,
 				Category: domain.Category(row.Category),
 				ScoreBefore: domain.SeriesScore{
 					FirstParticipantWins:  int(row.FirstParticipantWinsBefore),
@@ -512,7 +534,7 @@ func waveStartGameAuthorities(
 			}},
 		}}
 		if err := series.Validate(); err != nil {
-			return nil, domain.ErrInternal
+			return nil, fmt.Errorf("validate playable Series %s: %w", row.SeriesID, err)
 		}
 		result[index] = gameusecase.GameAuthority{
 			Scope: gamedomain.Scope{
@@ -856,6 +878,12 @@ func startWaveSeries(
 			return domain.ErrConflict
 		}
 		seen[row.SeriesID] = struct{}{}
+		if row.SeriesState == string(domain.SeriesStateActive) {
+			continue
+		}
+		if row.SeriesState != string(domain.SeriesStateReady) {
+			return domain.ErrConflict
+		}
 		started, err := querier.StartWaveSeriesCAS(ctx, sqlc.StartWaveSeriesCASParams{
 			StartedAt: tstz(startedAt), ID: row.SeriesID, RosterID: row.RosterID,
 			ExpectedRevision: row.SeriesRevision,

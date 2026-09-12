@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
@@ -104,6 +105,80 @@ type ProjectionRecord struct {
 
 func NewProjectionPostgres(tx *TxManager) *ProjectionPostgres {
 	return &ProjectionPostgres{tx: tx}
+}
+
+func publishInitialTournamentProjection(
+	ctx context.Context,
+	tx *TxManager,
+	tournamentID uuid.UUID,
+	rosterID uuid.UUID,
+	createdAt time.Time,
+) (*ProjectionRecord, error) {
+	input, err := initialTournamentProjectionInput(tournamentID, rosterID, createdAt)
+	if err != nil {
+		return nil, err
+	}
+	return NewProjectionPostgres(tx).Publish(ctx, input)
+}
+
+func initialTournamentProjectionInput(
+	tournamentID uuid.UUID,
+	rosterID uuid.UUID,
+	createdAt time.Time,
+) (ProjectionPublishInput, error) {
+	scope := ProjectionScope{TournamentID: tournamentID, RosterID: rosterID}
+	if !validProjectionScope(scope) || !validServerTime(createdAt) {
+		return ProjectionPublishInput{}, domain.ErrValidation
+	}
+
+	identity := initialTournamentProjectionIdentity(scope)
+	input := ProjectionPublishInput{
+		IDs: ProjectionIDs{
+			RevisionID: uuid.NewSHA1(identity, []byte("revision:1")),
+			CutoffID:   uuid.NewSHA1(identity, []byte("cutoff:1")),
+		},
+		Scope: scope,
+		Source: ProjectionSource{
+			Kind:   projectionSourceInitial,
+			Reason: "tournament_created",
+		},
+		Artifacts: []ProjectionArtifactInput{
+			initialProjectionArtifact(identity, domain.ArtifactKindStandings, "standings", "entries"),
+			initialProjectionArtifact(identity, domain.ArtifactKindTopFour, "top_four", "participants"),
+			initialProjectionArtifact(identity, domain.ArtifactKindBracket, "bracket", "rounds"),
+		},
+		SupersessionReason: "initial",
+		CutoffAt:           createdAt,
+		CreatedAt:          createdAt,
+		PublishedAt:        createdAt,
+	}
+	if !validProjectionPublishInput(input) {
+		return ProjectionPublishInput{}, domain.ErrValidation
+	}
+	return input, nil
+}
+
+func initialTournamentProjectionIdentity(scope ProjectionScope) uuid.UUID {
+	return uuid.NewSHA1(
+		scope.TournamentID,
+		[]byte("tournament_v1:projection:initial:"+scope.RosterID.String()),
+	)
+}
+
+func initialProjectionArtifact(
+	identity uuid.UUID,
+	kind domain.ArtifactKind,
+	key string,
+	collection string,
+) ProjectionArtifactInput {
+	payload := []byte(`{"` + collection + `":[]}`)
+	return ProjectionArtifactInput{
+		ID:            uuid.NewSHA1(identity, []byte("artifact:"+string(kind))),
+		Kind:          kind,
+		Key:           key,
+		Payload:       payload,
+		PayloadDigest: sha256.Sum256(payload),
+	}
 }
 
 func (r *ProjectionPostgres) Publish(
@@ -281,7 +356,7 @@ func validProjectionPublishInput(in ProjectionPublishInput) bool {
 	if !validTrimmedText(in.SupersessionReason) {
 		return false
 	}
-	return validProjectionArtifactSet(in.Artifacts)
+	return validProjectionArtifactSetForSource(in.Source.Kind == projectionSourceInitial, in.Artifacts)
 }
 
 func validProjectionTimes(in ProjectionPublishInput) bool {
@@ -289,7 +364,7 @@ func validProjectionTimes(in ProjectionPublishInput) bool {
 		!in.CutoffAt.After(in.CreatedAt) && !in.CreatedAt.After(in.PublishedAt)
 }
 
-func validProjectionArtifactSet(artifacts []ProjectionArtifactInput) bool {
+func validProjectionArtifactSetForSource(allowEmpty bool, artifacts []ProjectionArtifactInput) bool {
 	if len(artifacts) != 3 {
 		return false
 	}
@@ -299,7 +374,7 @@ func validProjectionArtifactSet(artifacts []ProjectionArtifactInput) bool {
 		domain.ArtifactKindTopFour:   false,
 	}
 	for _, artifact := range artifacts {
-		if _, ok := wanted[artifact.Kind]; !ok || wanted[artifact.Kind] || !validProjectionArtifact(artifact) {
+		if _, ok := wanted[artifact.Kind]; !ok || wanted[artifact.Kind] || !validProjectionArtifactForSource(artifact, allowEmpty) {
 			return false
 		}
 		wanted[artifact.Kind] = true
@@ -327,14 +402,24 @@ func validProjectionSource(source ProjectionSource) bool {
 }
 
 func validProjectionArtifact(artifact ProjectionArtifactInput) bool {
+	return validProjectionArtifactForSource(artifact, false)
+}
+
+//nolint:gocyclo // Artifact validation keeps the signed payload and its relational evidence in one fail-closed boundary.
+func validProjectionArtifactForSource(artifact ProjectionArtifactInput, allowEmpty bool) bool {
 	if artifact.ID == uuid.Nil || !validTrimmedText(artifact.Key) ||
 		len(artifact.Key) > 128 || !json.Valid(artifact.Payload) || zeroDigest(artifact.PayloadDigest[:]) ||
-		sha256.Sum256(artifact.Payload) != artifact.PayloadDigest ||
-		len(artifact.Members) == 0 || len(artifact.Dependencies) == 0 {
+		sha256.Sum256(artifact.Payload) != artifact.PayloadDigest {
 		return false
 	}
 	var payload map[string]json.RawMessage
 	if err := json.Unmarshal(artifact.Payload, &payload); err != nil {
+		return false
+	}
+	if allowEmpty && validInitialEmptyProjectionArtifact(artifact, payload) {
+		return true
+	}
+	if len(artifact.Members) == 0 || len(artifact.Dependencies) == 0 {
 		return false
 	}
 	if !validProjectionMembers(artifact) || !validProjectionPayloadShape(artifact, payload) {
@@ -346,6 +431,37 @@ func validProjectionArtifact(artifact ProjectionArtifactInput) bool {
 		}
 	}
 	return true
+}
+
+func validInitialEmptyProjectionArtifact(
+	artifact ProjectionArtifactInput,
+	payload map[string]json.RawMessage,
+) bool {
+	if len(artifact.Members) != 0 || len(artifact.Dependencies) != 0 || len(payload) != 1 {
+		return false
+	}
+
+	var collection, key string
+	switch artifact.Kind {
+	case domain.ArtifactKindStandings:
+		collection, key = "entries", "standings"
+	case domain.ArtifactKindTopFour:
+		collection, key = "participants", "top_four"
+	case domain.ArtifactKindBracket:
+		collection, key = "rounds", "bracket"
+	case domain.ArtifactKindGameResult, domain.ArtifactKindSeriesScore, domain.ArtifactKindSeriesResult,
+		domain.ArtifactKindGoldenGroup, domain.ArtifactKindChampion:
+		return false
+	}
+	if artifact.Key != key {
+		return false
+	}
+	raw, ok := payload[collection]
+	if !ok {
+		return false
+	}
+	return string(bytes.TrimSpace(raw)) == "[]" &&
+		bytes.Equal(bytes.TrimSpace(artifact.Payload), []byte(`{"`+collection+`":[]}`))
 }
 
 func validProjectionMembers(artifact ProjectionArtifactInput) bool {

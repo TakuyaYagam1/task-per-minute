@@ -78,6 +78,14 @@ func TestTournamentBracketReadsCanonicalRounds(t *testing.T) {
 	require.Equal(t, "bob", view[0].SecondDisplayName)
 }
 
+func TestTournamentBracketAllowsCanonicalEmptyRoundsBeforePlayoffs(t *testing.T) {
+	view, err := tournamentBracket([]byte(`{"rounds":[]}`), nil)
+
+	require.NoError(t, err)
+	require.NotNil(t, view)
+	require.Empty(t, view)
+}
+
 func TestTournamentProjectionPayloadsRejectDuplicatePositions(t *testing.T) {
 	firstID := uuid.MustParse("10000000-0000-4000-8000-000000000001")
 	secondID := uuid.MustParse("10000000-0000-4000-8000-000000000002")

@@ -293,6 +293,81 @@ func (q *Queries) GetTournamentPreflightRound(ctx context.Context, rosterID uuid
 	return i, err
 }
 
+const insertTournamentAdminRosterParticipant = `-- name: InsertTournamentAdminRosterParticipant :one
+INSERT INTO participants (
+    id,
+    roster_id,
+    player_id,
+    seed,
+    attendance,
+    created_at,
+    updated_at
+)
+SELECT $1::uuid AS participant_id,
+    roster.id AS roster_id,
+    player.id AS player_id,
+    $2,
+    $3,
+    $4,
+    $4
+FROM rosters AS roster
+JOIN players AS player
+    ON player.id = $5
+    AND player.deleted_at IS NULL
+WHERE roster.id = $6
+    AND roster.tournament_id = $7
+    AND roster.revision = $8
+    AND roster.locked_at IS NULL
+    AND roster.execution_started_at IS NULL
+    AND NOT EXISTS (
+        SELECT 1
+        FROM swiss_rounds AS round
+        WHERE round.roster_id = roster.id
+    )
+RETURNING participants.id,
+    participants.roster_id,
+    participants.player_id,
+    participants.seed,
+    participants.attendance,
+    participants.created_at,
+    participants.updated_at
+`
+
+type InsertTournamentAdminRosterParticipantParams struct {
+	ID                     uuid.UUID
+	Seed                   int32
+	Attendance             string
+	CreatedAt              pgtype.Timestamptz
+	PlayerID               uuid.UUID
+	RosterID               uuid.UUID
+	TournamentID           uuid.UUID
+	ExpectedRosterRevision int64
+}
+
+func (q *Queries) InsertTournamentAdminRosterParticipant(ctx context.Context, arg InsertTournamentAdminRosterParticipantParams) (Participant, error) {
+	row := q.db.QueryRow(ctx, insertTournamentAdminRosterParticipant,
+		arg.ID,
+		arg.Seed,
+		arg.Attendance,
+		arg.CreatedAt,
+		arg.PlayerID,
+		arg.RosterID,
+		arg.TournamentID,
+		arg.ExpectedRosterRevision,
+	)
+	var i Participant
+	err := row.Scan(
+		&i.ID,
+		&i.RosterID,
+		&i.PlayerID,
+		&i.Seed,
+		&i.Attendance,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const listTournamentAdminRosterParticipants = `-- name: ListTournamentAdminRosterParticipants :many
 SELECT participant.id,
     participant.roster_id,

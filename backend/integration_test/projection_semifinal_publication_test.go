@@ -80,15 +80,51 @@ func TestSemifinalSettlementProjectsFromStage(t *testing.T) {
 func semifinalSettlementInput(ctx context.Context, t *testing.T, fixture tournamentAdminSwissProofFixture, commandID uuid.UUID, position int) postgres.ResultSettlementInput {
 	t.Helper()
 	var seriesID, winnerID uuid.UUID
-	require.NoError(t, sharedPool.QueryRow(ctx, `SELECT semifinal.series_id, series.first_participant_id
-		FROM tournament_stage_playoff_semifinals AS semifinal JOIN series ON series.id = semifinal.series_id
-		WHERE semifinal.command_id = $1 AND semifinal.position = $2`, commandID, position).Scan(&seriesID, &winnerID))
-	slotID := createMigrationGameSlot(ctx, t, seriesID, fixture.rosterID, 1, "web")
+	var seriesRevision int64
+	require.NoError(t, sharedPool.QueryRow(ctx, `SELECT semifinal.series_id,
+		series.first_participant_id, series.revision
+		FROM tournament_stage_playoff_semifinals AS semifinal
+		INNER JOIN series ON series.id = semifinal.series_id
+		WHERE semifinal.command_id = $1 AND semifinal.position = $2`, commandID, position).
+		Scan(&seriesID, &winnerID, &seriesRevision))
+	var attemptID uuid.UUID
+	var attemptRevision int64
+	var attemptState string
+	err := sharedPool.QueryRow(ctx, `SELECT attempt.id, attempt.revision, attempt.state
+		FROM series
+		INNER JOIN game_slots AS slot ON slot.series_id = series.id AND slot.slot_number = 1
+		INNER JOIN game_attempts AS attempt ON attempt.slot_id = slot.id AND attempt.attempt_number = 1
+		WHERE series.id = $1`, seriesID).Scan(&attemptID, &attemptRevision, &attemptState)
 	startedAt := time.Now().UTC().Truncate(time.Microsecond)
-	attemptID := createActiveMigrationAttempt(ctx, t, slotID, seriesID, fixture.rosterID, startedAt)
-	return finalProjectionSettlementInput(goldenMigrationFixture{tournamentID: fixture.tournamentID, rosterID: fixture.rosterID},
+	if errors.Is(err, pgx.ErrNoRows) {
+		slotID := createMigrationGameSlot(ctx, t, seriesID, fixture.rosterID, 1, "web")
+		attemptID = createActiveMigrationAttempt(ctx, t, slotID, seriesID, fixture.rosterID, startedAt)
+		return finalProjectionSettlementInput(
+			goldenMigrationFixture{tournamentID: fixture.tournamentID, rosterID: fixture.rosterID},
+			seriesID, attemptID, winnerID, uuid.New(), domain.SeriesScore{FirstParticipantWins: 1},
+			domain.SeriesStateLocked, domain.SeriesStateCompleted, seriesRevision,
+			sha256.Sum256([]byte("semifinal settlement")), startedAt.Add(time.Second),
+		)
+	}
+	require.NoError(t, err)
+	querier := fixture.tx.Querier(ctx)
+	series, err := querier.StartWaveSeriesCAS(ctx, sqlc.StartWaveSeriesCASParams{
+		StartedAt: pgtype.Timestamptz{Time: startedAt, Valid: true}, ID: seriesID,
+		RosterID: fixture.rosterID, ExpectedRevision: seriesRevision,
+	})
+	require.NoError(t, err)
+	attempt, err := querier.StartWaveGameCAS(ctx, sqlc.StartWaveGameCASParams{
+		StartedAt: pgtype.Timestamptz{Time: startedAt, Valid: true}, ID: attemptID,
+		SeriesID: seriesID, RosterID: fixture.rosterID,
+		ExpectedRevision: attemptRevision, ExpectedState: attemptState,
+	})
+	require.NoError(t, err)
+	input := finalProjectionSettlementInput(goldenMigrationFixture{tournamentID: fixture.tournamentID, rosterID: fixture.rosterID},
 		seriesID, attemptID, winnerID, uuid.New(), domain.SeriesScore{FirstParticipantWins: 1},
-		domain.SeriesStateLocked, domain.SeriesStateCompleted, 1, sha256.Sum256([]byte("semifinal settlement")), startedAt.Add(time.Second))
+		domain.SeriesStateActive, domain.SeriesStateCompleted, series.Revision,
+		sha256.Sum256([]byte("semifinal settlement")), startedAt.Add(time.Second))
+	input.ExpectedAttemptRevision = attempt.Revision
+	return input
 }
 
 func TestSemifinalConcurrentSettlementPublishesOnce(t *testing.T) {

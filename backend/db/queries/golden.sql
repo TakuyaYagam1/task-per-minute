@@ -1841,6 +1841,7 @@ SELECT group_revision.revision_id AS group_revision_id,
     group_revision.group_id,
     group_revision.tournament_id,
     group_revision.roster_id,
+    group_revision.definition_digest,
     group_revision.position_from,
     group_revision.position_to,
     group_revision.source_projection_revision,
@@ -1855,6 +1856,121 @@ INNER JOIN tournament_stage_tie_group_members AS member
     AND member.group_id = group_revision.group_id
 WHERE group_revision.tournament_id = sqlc.arg(tournament_id)
 ORDER BY group_revision.position_from, member.standing_position;
+
+-- name: LoadGoldenRuntimePlanRoster :one
+SELECT roster.id AS roster_id,
+    roster.revision AS roster_revision
+FROM rosters AS roster
+WHERE roster.tournament_id = sqlc.arg(tournament_id)
+    AND roster.locked_at IS NOT NULL
+FOR KEY SHARE OF roster;
+
+-- name: CreateGoldenRuntimeAssignmentPlan :exec
+INSERT INTO assignment_plans (
+    id,
+    tournament_id,
+    roster_id,
+    kind,
+    revision_id,
+    source_roster_revision,
+    source_pool_revision_id,
+    reachable_branch_count,
+    constraint_graph,
+    proof_evidence,
+    proof_hash,
+    decision_evidence_id,
+    decision_algorithm_version,
+    decision_inputs,
+    decision_seed,
+    decision_result,
+    decision_replay_digest,
+    decision_owner_id,
+    decided_at,
+    state,
+    created_at
+)
+VALUES (
+    sqlc.arg(id),
+    sqlc.arg(tournament_id),
+    sqlc.arg(roster_id),
+    'exact_golden',
+    sqlc.arg(revision_id),
+    sqlc.arg(source_roster_revision),
+    sqlc.arg(source_pool_revision_id),
+    sqlc.arg(reachable_branch_count),
+    sqlc.arg(constraint_graph),
+    sqlc.arg(proof_evidence),
+    sqlc.arg(proof_hash),
+    sqlc.arg(decision_evidence_id),
+    sqlc.arg(decision_algorithm_version),
+    sqlc.arg(decision_inputs),
+    sqlc.arg(decision_seed),
+    sqlc.arg(decision_result),
+    sqlc.arg(decision_replay_digest),
+    sqlc.arg(decision_owner_id),
+    sqlc.arg(decided_at),
+    'planned',
+    sqlc.arg(created_at)
+);
+
+-- name: CreateGoldenRuntimeAssignmentBranch :exec
+INSERT INTO assignment_branches (
+    id,
+    plan_id,
+    draft_id,
+    draft_revision_id,
+    branch_key,
+    category_sequence,
+    state,
+    created_at
+)
+VALUES (
+    sqlc.arg(id),
+    sqlc.arg(plan_id),
+    NULL,
+    NULL,
+    sqlc.arg(branch_key),
+    sqlc.arg(category_sequence),
+    'reserved',
+    sqlc.arg(created_at)
+);
+
+-- name: ListGoldenRuntimePlanParticipantReservations :many
+SELECT member.participant_id,
+    participant.player_id,
+    reservation.reservation_id,
+    reservation.revision,
+    reservation.acquired_at,
+    reservation.updated_at
+FROM golden_group_revisions AS group_revision
+INNER JOIN tournament_stage_tie_group_members AS member
+    ON member.command_id = group_revision.stage_progression_command_id
+    AND member.tournament_id = group_revision.tournament_id
+    AND member.roster_id = group_revision.roster_id
+    AND member.group_id = group_revision.group_id
+INNER JOIN participants AS participant
+    ON participant.id = member.participant_id
+    AND participant.roster_id = group_revision.roster_id
+INNER JOIN participant_reservations AS reservation
+    ON reservation.player_id = participant.player_id
+    AND reservation.tournament_id = group_revision.tournament_id
+WHERE group_revision.tournament_id = sqlc.arg(tournament_id)
+ORDER BY member.participant_id
+FOR KEY SHARE OF participant, reservation;
+
+-- name: HasGoldenRuntimePlanSnapshot :one
+SELECT EXISTS (
+    SELECT 1
+    FROM golden_exact_plan_snapshots AS plan
+    INNER JOIN golden_exact_plan_snapshot_seals AS seal
+        ON seal.plan_id = plan.plan_id
+        AND seal.tournament_id = plan.tournament_id
+        AND seal.roster_id = plan.roster_id
+    WHERE plan.tournament_id = sqlc.arg(tournament_id)
+        AND plan.roster_id = sqlc.arg(roster_id)
+        AND plan.source_projection_revision_id = sqlc.arg(source_projection_revision_id)
+        AND plan.source_projection_revision = sqlc.arg(source_projection_revision)
+) AS plan_exists;
 
 -- name: SelectGoldenRuntimeTask :one
 SELECT plan.plan_id,

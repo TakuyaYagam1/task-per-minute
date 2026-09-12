@@ -160,6 +160,7 @@ LEFT JOIN LATERAL (
 ) AS current_wave ON TRUE
 WHERE roster.tournament_id = sqlc.arg(tournament_id)
     AND participant.player_id = sqlc.arg(player_id)
+    AND current_wave.wave_id IS NOT NULL
 ORDER BY series.created_at,
     series.id;
 
@@ -241,6 +242,7 @@ LEFT JOIN LATERAL (
 ) AS reserve_count ON TRUE
 WHERE roster.tournament_id = sqlc.arg(tournament_id)
     AND participant.player_id = sqlc.arg(player_id)
+    AND assignment_series.state NOT IN ('completed', 'cancelled')
 ORDER BY receipt.delivered_at DESC,
     receipt.id DESC
 LIMIT 1;
@@ -269,6 +271,10 @@ LEFT JOIN LATERAL (
 WHERE roster.tournament_id = sqlc.arg(tournament_id)
     AND participant.player_id = sqlc.arg(player_id)
 ORDER BY (
+        current_draft.id IS NOT NULL
+        AND series.state NOT IN ('completed', 'cancelled')
+    ) DESC,
+    (
         series.id IS NOT DISTINCT FROM sqlc.narg(preferred_series_id)::UUID
     ) DESC,
     (series.state NOT IN ('completed', 'cancelled')) DESC,

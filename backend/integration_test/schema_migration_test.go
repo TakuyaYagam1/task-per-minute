@@ -20,7 +20,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/bootstrap"
 )
 
-const schemaHeadVersion int64 = 11
+const schemaHeadVersion int64 = 16
 
 func TestSchemaMigration(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
@@ -229,11 +229,11 @@ func TestSchemaMigration(t *testing.T) {
 					AND column_name IN ('owner_kind', 'owner_id')
 			))::INT`,
 	).Scan(&removedLegacy))
-	require.Equal(t, 182, applicationTables)
-	require.Equal(t, 174, applicationFunctions)
-	require.Equal(t, 265, triggers)
-	require.Equal(t, 81, explicitIndexes)
-	require.Equal(t, 563, foreignKeys)
+	require.Equal(t, 188, applicationTables)
+	require.Equal(t, 178, applicationFunctions)
+	require.Equal(t, 270, triggers)
+	require.Equal(t, 86, explicitIndexes)
+	require.Equal(t, 577, foreignKeys)
 	require.Zero(t, legacyIdentifiers,
 		"domain baseline must not expose legacy-prefixed schema identifiers")
 	require.Zero(t, removedLegacy,

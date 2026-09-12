@@ -117,6 +117,45 @@ RETURNING rosters.id,
     rosters.created_at,
     rosters.updated_at;
 
+-- name: InsertTournamentAdminRosterParticipant :one
+INSERT INTO participants (
+    id,
+    roster_id,
+    player_id,
+    seed,
+    attendance,
+    created_at,
+    updated_at
+)
+SELECT sqlc.arg(id)::uuid AS participant_id,
+    roster.id AS roster_id,
+    player.id AS player_id,
+    sqlc.arg(seed),
+    sqlc.arg(attendance),
+    sqlc.arg(created_at),
+    sqlc.arg(created_at)
+FROM rosters AS roster
+JOIN players AS player
+    ON player.id = sqlc.arg(player_id)
+    AND player.deleted_at IS NULL
+WHERE roster.id = sqlc.arg(roster_id)
+    AND roster.tournament_id = sqlc.arg(tournament_id)
+    AND roster.revision = sqlc.arg(expected_roster_revision)
+    AND roster.locked_at IS NULL
+    AND roster.execution_started_at IS NULL
+    AND NOT EXISTS (
+        SELECT 1
+        FROM swiss_rounds AS round
+        WHERE round.roster_id = roster.id
+    )
+RETURNING participants.id,
+    participants.roster_id,
+    participants.player_id,
+    participants.seed,
+    participants.attendance,
+    participants.created_at,
+    participants.updated_at;
+
 -- name: TransitionTournamentForRosterCAS :one
 UPDATE tournaments
 SET state = sqlc.arg(next_state),

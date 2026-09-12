@@ -140,6 +140,8 @@ func (repository *PlayoffTerminalPostgres) LoadFinalSettlement(
 				stage,
 				aggregate,
 				progression,
+				bracket,
+				advancement,
 			)
 			if publicationErr != nil {
 				return fmt.Errorf("final publication authority: %w", publicationErr)

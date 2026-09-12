@@ -328,7 +328,7 @@ func newRosterOperationRecord(
 		ResultingRosterRevision:     resultingRosterRevision,
 		RequestDigest:               digest,
 		PreflightRevisionID:         evidence.preflightRevisionID,
-		CheckedInPlayerIDs:          append([]uuid.UUID(nil), evidence.checkedInPlayerIDs...),
+		CheckedInPlayerIDs:          append([]uuid.UUID{}, evidence.checkedInPlayerIDs...),
 		ResultDocument:              document,
 		ExecutedAt:                  executedAt,
 	}

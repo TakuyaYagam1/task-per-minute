@@ -108,7 +108,12 @@ func (controller *Controller) AuthorityFor(
 	if err != nil {
 		return authoritydomain.Identity{}, err
 	}
-	if lease == nil || !lease.Proves(lease.Identity(), now) {
+	proofAt, err := controller.timeSource.AuthorityTime(ctx)
+	if err != nil {
+		return authoritydomain.Identity{}, err
+	}
+	proofAt = proofAt.Round(0).UTC()
+	if lease == nil || !domain.IsValidServerTime(proofAt) || !lease.Proves(lease.Identity(), proofAt) {
 		return authoritydomain.Identity{}, domain.ErrConflict
 	}
 	stored := lease.Clone()

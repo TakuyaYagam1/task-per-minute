@@ -13,9 +13,11 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	admin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
@@ -233,6 +235,21 @@ func publishSwissPlayoffsWithClock(
 ) (inbound.TournamentView, error) {
 	var result inbound.TournamentView
 	err := fixture.tx.Do(ctx, func(txCtx context.Context) error {
+		var reservedAt time.Time
+		if err := fixture.tx.Conn(txCtx).QueryRow(txCtx,
+			`SELECT locked_at FROM rosters WHERE id = $1`, fixture.rosterID,
+		).Scan(&reservedAt); err != nil {
+			return err
+		}
+		if _, err := fixture.tx.Querier(txCtx).ReserveCheckedInTournamentParticipants(
+			txCtx,
+			sqlc.ReserveCheckedInTournamentParticipantsParams{
+				RosterID:   fixture.rosterID,
+				AcquiredAt: pgtype.Timestamptz{Time: reservedAt, Valid: true},
+			},
+		); err != nil {
+			return err
+		}
 		lifecycle := postgres.NewTournamentAdminLifecyclePostgres(fixture.tx)
 		authority, err := lifecycle.LockLifecycleAuthority(txCtx, fixture.tournamentID)
 		if err != nil {

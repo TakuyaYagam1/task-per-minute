@@ -2216,7 +2216,7 @@ SELECT group_revision.revision_id AS group_revision_id,
     group_revision.group_id,
     group_revision.source_projection_revision_id,
     group_revision.source_projection_revision,
-    (group_revision.definition ->> 'revision_no')::integer AS group_revision_number,
+    COALESCE((group_revision.definition ->> 'revision_no')::integer, 1)::integer AS group_revision_number,
     group_revision.position_from,
     group_revision.position_to,
     attempt_group.attempt_id,
@@ -3455,45 +3455,75 @@ VALUES (
 RETURNING attempt_id;
 
 -- name: CreateTournamentStagePlayoffEvidence :one
-INSERT INTO tournament_stage_playoff_evidence (
-    command_id,
-    tournament_id,
-    roster_id,
-    source_projection_revision_id,
-    source_projection_revision,
-    published_projection_revision_id,
-    published_projection_revision,
-    top4_artifact_id,
-    bracket_artifact_id,
-    top4_node_id,
-    bracket_node_id,
-    first_semifinal_series_id,
-    second_semifinal_series_id,
-    proof_digest,
-    created_at
+WITH inserted AS (
+    INSERT INTO tournament_stage_playoff_evidence (
+        command_id,
+        tournament_id,
+        roster_id,
+        source_projection_revision_id,
+        source_projection_revision,
+        published_projection_revision_id,
+        published_projection_revision,
+        top4_artifact_id,
+        bracket_artifact_id,
+        top4_node_id,
+        bracket_node_id,
+        first_semifinal_series_id,
+        second_semifinal_series_id,
+        proof_digest,
+        created_at
+    )
+    SELECT
+        sqlc.arg(command_id),
+        sqlc.arg(tournament_id),
+        sqlc.arg(roster_id),
+        sqlc.arg(source_projection_revision_id),
+        sqlc.arg(source_projection_revision),
+        sqlc.arg(published_projection_revision_id),
+        sqlc.arg(published_projection_revision),
+        sqlc.arg(top4_artifact_id),
+        sqlc.arg(bracket_artifact_id),
+        sqlc.arg(top4_node_id),
+        sqlc.arg(bracket_node_id),
+        sqlc.arg(first_semifinal_series_id),
+        sqlc.arg(second_semifinal_series_id),
+        sqlc.arg(proof_digest),
+        sqlc.arg(created_at)
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM tournament_stage_playoff_evidence
+        WHERE command_id = sqlc.arg(command_id)
+            AND tournament_id = sqlc.arg(tournament_id)
+    )
+    ON CONFLICT (command_id, tournament_id) DO NOTHING
+    RETURNING command_id
 )
-VALUES (
-    sqlc.arg(command_id),
-    sqlc.arg(tournament_id),
-    sqlc.arg(roster_id),
-    sqlc.arg(source_projection_revision_id),
-    sqlc.arg(source_projection_revision),
-    sqlc.arg(published_projection_revision_id),
-    sqlc.arg(published_projection_revision),
-    sqlc.arg(top4_artifact_id),
-    sqlc.arg(bracket_artifact_id),
-    sqlc.arg(top4_node_id),
-    sqlc.arg(bracket_node_id),
-    sqlc.arg(first_semifinal_series_id),
-    sqlc.arg(second_semifinal_series_id),
-    sqlc.arg(proof_digest),
-    sqlc.arg(created_at)
-)
-RETURNING command_id;
+SELECT command_id
+FROM inserted
+UNION ALL
+SELECT command_id
+FROM tournament_stage_playoff_evidence
+WHERE command_id = sqlc.arg(command_id)
+    AND tournament_id = sqlc.arg(tournament_id)
+    AND roster_id = sqlc.arg(roster_id)
+    AND source_projection_revision_id = sqlc.arg(source_projection_revision_id)
+    AND source_projection_revision = sqlc.arg(source_projection_revision)
+    AND published_projection_revision_id = sqlc.arg(published_projection_revision_id)
+    AND published_projection_revision = sqlc.arg(published_projection_revision)
+    AND top4_artifact_id = sqlc.arg(top4_artifact_id)
+    AND bracket_artifact_id = sqlc.arg(bracket_artifact_id)
+    AND top4_node_id = sqlc.arg(top4_node_id)
+    AND bracket_node_id = sqlc.arg(bracket_node_id)
+    AND first_semifinal_series_id = sqlc.arg(first_semifinal_series_id)
+    AND second_semifinal_series_id = sqlc.arg(second_semifinal_series_id)
+    AND proof_digest = sqlc.arg(proof_digest)
+    AND created_at = sqlc.arg(created_at)
+    AND NOT EXISTS (SELECT 1 FROM inserted)
+LIMIT 1;
 
 -- The stage evidence row is written before this authority. Its node foreign
 -- keys are deferred so the ensuing four-node graph can prove the exact Top4,
--- bracket, and locked semifinal score genesis at transaction commit.
+-- bracket, and semifinal score genesis at transaction commit.
 -- name: CreateTournamentProgressionStageProjectionNodeAuthority :one
 INSERT INTO result_projection_node_authorities (
     id,
@@ -3589,22 +3619,203 @@ VALUES (
 RETURNING position_commit_id;
 
 -- name: CreateTournamentStagePlayoffSemifinal :one
-INSERT INTO tournament_stage_playoff_semifinals (
-    command_id,
+WITH inserted AS (
+    INSERT INTO tournament_stage_playoff_semifinals (
+        command_id,
+        tournament_id,
+        roster_id,
+        bracket_artifact_id,
+        position,
+        series_id,
+        created_at
+    )
+    SELECT
+        sqlc.arg(command_id),
+        sqlc.arg(tournament_id),
+        sqlc.arg(roster_id),
+        sqlc.arg(bracket_artifact_id),
+        sqlc.arg(position),
+        sqlc.arg(series_id),
+        sqlc.arg(created_at)
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM tournament_stage_playoff_semifinals
+        WHERE command_id = sqlc.arg(command_id)
+            AND tournament_id = sqlc.arg(tournament_id)
+            AND position = sqlc.arg(position)
+    )
+    ON CONFLICT DO NOTHING
+    RETURNING series_id
+)
+SELECT series_id
+FROM inserted
+UNION ALL
+SELECT series_id
+FROM tournament_stage_playoff_semifinals
+WHERE command_id = sqlc.arg(command_id)
+    AND tournament_id = sqlc.arg(tournament_id)
+    AND roster_id = sqlc.arg(roster_id)
+    AND bracket_artifact_id = sqlc.arg(bracket_artifact_id)
+    AND position = sqlc.arg(position)
+    AND series_id = sqlc.arg(series_id)
+    AND created_at = sqlc.arg(created_at)
+    AND NOT EXISTS (SELECT 1 FROM inserted)
+LIMIT 1;
+
+-- A published bracket creates locked, empty BO1 Series. The materializer
+-- locks each row again before reading it so category, assignment, and graph
+-- writes all use one current database authority.
+-- name: LockPlayoffSemifinalSeriesForMaterialization :one
+SELECT id,
     tournament_id,
     roster_id,
-    bracket_artifact_id,
-    position,
+    first_participant_id,
+    second_participant_id,
+    format,
+    state,
+    current_score_revision_id,
+    current_result_revision_id,
+    revision,
+    created_at,
+    updated_at,
+    started_at,
+    finished_at
+FROM series
+WHERE id = sqlc.arg(series_id)
+    AND tournament_id = sqlc.arg(tournament_id)
+    AND roster_id = sqlc.arg(roster_id)
+    AND format = 'bo1'
+    AND state = 'locked'
+    AND current_score_revision_id IS NOT NULL
+    AND current_result_revision_id IS NULL
+    AND started_at IS NULL
+    AND finished_at IS NULL
+FOR UPDATE;
+
+-- Semifinal category authority is persisted separately from the Swiss
+-- materializer, while retaining the same immutable random decision shape.
+-- name: CreatePlayoffSemifinalCategoryRevision :one
+INSERT INTO category_revisions (
+    id,
     series_id,
+    roster_id,
+    revision,
+    source_pool_revision_id,
+    mode,
+    category_pool,
+    selected_categories,
+    selector_actor_id,
+    selection_reason,
+    decision_evidence_id,
+    decision_algorithm_version,
+    decision_inputs,
+    decision_seed,
+    decision_result,
+    decision_replay_digest,
+    decision_owner_id,
+    decided_at,
     created_at
 )
 VALUES (
-    sqlc.arg(command_id),
-    sqlc.arg(tournament_id),
-    sqlc.arg(roster_id),
-    sqlc.arg(bracket_artifact_id),
-    sqlc.arg(position),
+    sqlc.arg(id),
     sqlc.arg(series_id),
+    sqlc.arg(roster_id),
+    sqlc.arg(revision),
+    sqlc.arg(source_pool_revision_id),
+    sqlc.arg(mode),
+    sqlc.arg(category_pool),
+    sqlc.arg(selected_categories),
+    sqlc.narg(selector_actor_id)::UUID,
+    sqlc.narg(selection_reason)::TEXT,
+    sqlc.narg(decision_evidence_id)::UUID,
+    sqlc.narg(decision_algorithm_version)::VARCHAR,
+    sqlc.narg(decision_inputs)::JSONB,
+    sqlc.narg(decision_seed)::BYTEA,
+    sqlc.narg(decision_result)::JSONB,
+    sqlc.narg(decision_replay_digest)::BYTEA,
+    sqlc.narg(decision_owner_id)::UUID,
+    sqlc.narg(decided_at)::TIMESTAMPTZ,
     sqlc.arg(created_at)
 )
-RETURNING series_id;
+RETURNING id,
+    series_id,
+    roster_id,
+    revision,
+    source_pool_revision_id,
+    mode,
+    category_pool,
+    selected_categories,
+    selector_actor_id,
+    selection_reason,
+    decision_evidence_id,
+    decision_algorithm_version,
+    decision_inputs,
+    decision_seed,
+    decision_result,
+    decision_replay_digest,
+    decision_owner_id,
+    decided_at,
+    created_at;
+
+-- A semifinal has one independent planned execution Wave. It is linked to
+-- its Series before the ready state transition and before a ready window is
+-- opened by the existing wave control workflow.
+-- name: CreatePlayoffSemifinalWave :exec
+INSERT INTO waves (
+    id,
+    tournament_id,
+    roster_id,
+    revision_id,
+    revision,
+    state,
+    replaces_wave_id,
+    created_at,
+    updated_at
+)
+VALUES (
+    sqlc.arg(id),
+    sqlc.arg(tournament_id),
+    sqlc.arg(roster_id),
+    sqlc.arg(revision_id),
+    1,
+    'planned',
+    NULL,
+    sqlc.arg(created_at),
+    sqlc.arg(created_at)
+);
+
+-- name: ReadyPlayoffSemifinalGameForMaterialization :one
+UPDATE game_attempts
+SET state = 'ready',
+    revision = revision + 1,
+    updated_at = sqlc.arg(updated_at)
+WHERE id = sqlc.arg(game_id)
+    AND slot_id = sqlc.arg(slot_id)
+    AND series_id = sqlc.arg(series_id)
+    AND roster_id = sqlc.arg(roster_id)
+    AND state = 'planned'
+    AND started_at IS NULL
+    AND finished_at IS NULL
+RETURNING id,
+    slot_id,
+    series_id,
+    roster_id,
+    attempt_number,
+    revision,
+    state;
+
+-- name: ReadyPlayoffSemifinalSeriesForMaterialization :one
+UPDATE series
+SET state = 'ready',
+    revision = revision + 1,
+    updated_at = sqlc.arg(updated_at)
+WHERE id = sqlc.arg(series_id)
+    AND tournament_id = sqlc.arg(tournament_id)
+    AND roster_id = sqlc.arg(roster_id)
+    AND state = 'locked'
+    AND started_at IS NULL
+    AND finished_at IS NULL
+    AND current_result_revision_id IS NULL
+RETURNING id,
+    revision,
+    state;

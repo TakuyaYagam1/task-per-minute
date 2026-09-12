@@ -713,10 +713,10 @@ func validFinalProjectionArtifactKinds(raw []byte) bool {
 		return false
 	}
 	wanted := map[string]bool{
-		string(domain.ArtifactKindStandings): false,
-		string(domain.ArtifactKindBracket):   false,
-		string(domain.ArtifactKindTopFour):   false,
-		string(domain.ArtifactKindChampion):  false,
+		string(domain.ArtifactKindGameResult):   false,
+		string(domain.ArtifactKindSeriesScore):  false,
+		string(domain.ArtifactKindStandings):    false,
+		string(domain.ArtifactKindSeriesResult): false,
 	}
 	for _, kind := range kinds {
 		if _, exists := wanted[kind]; !exists || wanted[kind] {

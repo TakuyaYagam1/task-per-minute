@@ -162,6 +162,12 @@ func (repository *PlayoffTerminalPostgres) createFinalGameGraph(
 		return err
 	}
 	if genesis {
+		if err := createMaterializedSeriesPresence(
+			ctx, querier, stage.TournamentID, stage.RosterID, series.ID,
+			[2]uuid.UUID{series.FirstParticipantID, series.SecondParticipantID}, createdAt,
+		); err != nil {
+			return err
+		}
 		if err := createWaveGenesisProjectionNode(ctx, querier, WaveCreateInput{
 			ID: wave.ID, TournamentID: stage.TournamentID, RosterID: stage.RosterID,
 			RevisionID: wave.RevisionID, CommandID: stage.CommandID,

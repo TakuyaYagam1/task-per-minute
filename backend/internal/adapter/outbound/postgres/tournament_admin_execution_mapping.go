@@ -93,7 +93,13 @@ func tournamentAdminStandings(
 	participants []tournamentadmin.PairingParticipant,
 ) ([]tournamentadmin.SwissStandingView, error) {
 	var document tournamentAdminStandingsDocument
-	if err := json.Unmarshal(payload, &document); err != nil || len(document.Entries) != len(participants) {
+	if err := json.Unmarshal(payload, &document); err != nil || document.Entries == nil {
+		return nil, domain.ErrInternal
+	}
+	if len(document.Entries) == 0 && len(participants) > 0 {
+		return tournamentAdminInitialStandings(participants), nil
+	}
+	if len(document.Entries) != len(participants) {
 		return nil, domain.ErrInternal
 	}
 	seeds := make(map[uuid.UUID]int, len(participants))
@@ -130,6 +136,27 @@ func tournamentAdminStandings(
 		}
 	}
 	return result, nil
+}
+
+func tournamentAdminInitialStandings(
+	participants []tournamentadmin.PairingParticipant,
+) []tournamentadmin.SwissStandingView {
+	ordered := append([]tournamentadmin.PairingParticipant(nil), participants...)
+	sort.Slice(ordered, func(i, j int) bool {
+		if ordered[i].StableSeed != ordered[j].StableSeed {
+			return ordered[i].StableSeed < ordered[j].StableSeed
+		}
+		return ordered[i].ID.String() < ordered[j].ID.String()
+	})
+	standings := make([]tournamentadmin.SwissStandingView, len(ordered))
+	for index, participant := range ordered {
+		standings[index] = tournamentadmin.SwissStandingView{
+			ParticipantID: participant.ID, Position: index + 1,
+			PointsLabel: "provisional", BuchholzStatus: "provisional",
+			StableSeed: participant.StableSeed,
+		}
+	}
+	return standings
 }
 
 func validTournamentAdminStanding(entry tournamentAdminStanding) bool {
@@ -237,7 +264,7 @@ func tournamentAdminSwissRoundView(
 	plan tournamentadmin.PairingPlan,
 	saved *SwissRoundRecord,
 ) (tournamentadmin.SwissRoundView, error) {
-	if saved == nil || saved.ID != plan.RoundID || saved.LockedAt == nil {
+	if saved == nil || saved.ID != plan.RoundID {
 		return tournamentadmin.SwissRoundView{}, domain.ErrInternal
 	}
 	view := tournamentadmin.SwissRoundView{
@@ -245,8 +272,8 @@ func tournamentAdminSwissRoundView(
 		Revision: saved.Revision, RosterParticipantIDs: pairingAuthorityParticipantIDs(plan.Authority),
 		Pairings:  make([]tournamentadmin.SwissPairingView, len(plan.Pairs)),
 		Standings: append([]tournamentadmin.SwissStandingView(nil), plan.Authority.Standings...),
-		Locked:    true, LockedAt: cloneTimePointer(saved.LockedAt), CreatedAt: saved.CreatedAt,
-		UpdatedAt: saved.UpdatedAt,
+		Locked:    saved.LockedAt != nil, LockedAt: utcTimePointer(saved.LockedAt), CreatedAt: saved.CreatedAt.UTC(),
+		UpdatedAt: saved.UpdatedAt.UTC(),
 	}
 	if plan.Automatic != nil {
 		evidence := tournamentAdminPairingEvidence(plan.Automatic.Evidence)
@@ -486,8 +513,9 @@ func tournamentAdminSeriesGraph(
 ) (map[uuid.UUID]map[uuid.UUID]struct{}, error) {
 	seriesMembers := make(map[uuid.UUID]map[uuid.UUID]struct{}, len(rows))
 	for _, row := range rows {
+		format := domain.SeriesFormat(row.Format)
 		if row.ID == uuid.Nil || row.FirstParticipantID == uuid.Nil || row.SecondParticipantID == uuid.Nil ||
-			row.FirstParticipantID == row.SecondParticipantID || row.Revision < 1 {
+			row.FirstParticipantID == row.SecondParticipantID || row.Revision < 1 || !format.IsValid() {
 			return nil, domain.ErrInternal
 		}
 		if _, duplicate := seriesMembers[row.ID]; duplicate {
@@ -501,6 +529,9 @@ func tournamentAdminSeriesGraph(
 			graph.ReadySeriesCount++
 		case domain.SeriesStateActive:
 			graph.ActiveSeriesCount++
+			if format == domain.SeriesFormatBO3 {
+				graph.ContinuingSeriesCount++
+			}
 		case domain.SeriesStateTechnicalPause:
 			graph.PausedSeriesCount++
 		case domain.SeriesStateCompleted, domain.SeriesStateCancelled:

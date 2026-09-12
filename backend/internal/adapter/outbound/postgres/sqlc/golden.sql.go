@@ -2086,6 +2086,144 @@ func (q *Queries) CreateGoldenRuntimeAssignment(ctx context.Context, arg CreateG
 	return attempt_id, err
 }
 
+const createGoldenRuntimeAssignmentBranch = `-- name: CreateGoldenRuntimeAssignmentBranch :exec
+INSERT INTO assignment_branches (
+    id,
+    plan_id,
+    draft_id,
+    draft_revision_id,
+    branch_key,
+    category_sequence,
+    state,
+    created_at
+)
+VALUES (
+    $1,
+    $2,
+    NULL,
+    NULL,
+    $3,
+    $4,
+    'reserved',
+    $5
+)
+`
+
+type CreateGoldenRuntimeAssignmentBranchParams struct {
+	ID               uuid.UUID
+	PlanID           uuid.UUID
+	BranchKey        string
+	CategorySequence []byte
+	CreatedAt        pgtype.Timestamptz
+}
+
+func (q *Queries) CreateGoldenRuntimeAssignmentBranch(ctx context.Context, arg CreateGoldenRuntimeAssignmentBranchParams) error {
+	_, err := q.db.Exec(ctx, createGoldenRuntimeAssignmentBranch,
+		arg.ID,
+		arg.PlanID,
+		arg.BranchKey,
+		arg.CategorySequence,
+		arg.CreatedAt,
+	)
+	return err
+}
+
+const createGoldenRuntimeAssignmentPlan = `-- name: CreateGoldenRuntimeAssignmentPlan :exec
+INSERT INTO assignment_plans (
+    id,
+    tournament_id,
+    roster_id,
+    kind,
+    revision_id,
+    source_roster_revision,
+    source_pool_revision_id,
+    reachable_branch_count,
+    constraint_graph,
+    proof_evidence,
+    proof_hash,
+    decision_evidence_id,
+    decision_algorithm_version,
+    decision_inputs,
+    decision_seed,
+    decision_result,
+    decision_replay_digest,
+    decision_owner_id,
+    decided_at,
+    state,
+    created_at
+)
+VALUES (
+    $1,
+    $2,
+    $3,
+    'exact_golden',
+    $4,
+    $5,
+    $6,
+    $7,
+    $8,
+    $9,
+    $10,
+    $11,
+    $12,
+    $13,
+    $14,
+    $15,
+    $16,
+    $17,
+    $18,
+    'planned',
+    $19
+)
+`
+
+type CreateGoldenRuntimeAssignmentPlanParams struct {
+	ID                       uuid.UUID
+	TournamentID             uuid.UUID
+	RosterID                 uuid.UUID
+	RevisionID               uuid.UUID
+	SourceRosterRevision     int64
+	SourcePoolRevisionID     uuid.UUID
+	ReachableBranchCount     int32
+	ConstraintGraph          []byte
+	ProofEvidence            []byte
+	ProofHash                *string
+	DecisionEvidenceID       uuid.NullUUID
+	DecisionAlgorithmVersion *string
+	DecisionInputs           []byte
+	DecisionSeed             []byte
+	DecisionResult           []byte
+	DecisionReplayDigest     []byte
+	DecisionOwnerID          uuid.NullUUID
+	DecidedAt                pgtype.Timestamptz
+	CreatedAt                pgtype.Timestamptz
+}
+
+func (q *Queries) CreateGoldenRuntimeAssignmentPlan(ctx context.Context, arg CreateGoldenRuntimeAssignmentPlanParams) error {
+	_, err := q.db.Exec(ctx, createGoldenRuntimeAssignmentPlan,
+		arg.ID,
+		arg.TournamentID,
+		arg.RosterID,
+		arg.RevisionID,
+		arg.SourceRosterRevision,
+		arg.SourcePoolRevisionID,
+		arg.ReachableBranchCount,
+		arg.ConstraintGraph,
+		arg.ProofEvidence,
+		arg.ProofHash,
+		arg.DecisionEvidenceID,
+		arg.DecisionAlgorithmVersion,
+		arg.DecisionInputs,
+		arg.DecisionSeed,
+		arg.DecisionResult,
+		arg.DecisionReplayDigest,
+		arg.DecisionOwnerID,
+		arg.DecidedAt,
+		arg.CreatedAt,
+	)
+	return err
+}
+
 const createGoldenRuntimeAuditEvent = `-- name: CreateGoldenRuntimeAuditEvent :one
 INSERT INTO audit_events (
     id,
@@ -3888,6 +4026,40 @@ func (q *Queries) GetLatestGoldenRecoveryRevision(ctx context.Context, arg GetLa
 	return i, err
 }
 
+const hasGoldenRuntimePlanSnapshot = `-- name: HasGoldenRuntimePlanSnapshot :one
+SELECT EXISTS (
+    SELECT 1
+    FROM golden_exact_plan_snapshots AS plan
+    INNER JOIN golden_exact_plan_snapshot_seals AS seal
+        ON seal.plan_id = plan.plan_id
+        AND seal.tournament_id = plan.tournament_id
+        AND seal.roster_id = plan.roster_id
+    WHERE plan.tournament_id = $1
+        AND plan.roster_id = $2
+        AND plan.source_projection_revision_id = $3
+        AND plan.source_projection_revision = $4
+) AS plan_exists
+`
+
+type HasGoldenRuntimePlanSnapshotParams struct {
+	TournamentID               uuid.UUID
+	RosterID                   uuid.UUID
+	SourceProjectionRevisionID uuid.UUID
+	SourceProjectionRevision   int64
+}
+
+func (q *Queries) HasGoldenRuntimePlanSnapshot(ctx context.Context, arg HasGoldenRuntimePlanSnapshotParams) (bool, error) {
+	row := q.db.QueryRow(ctx, hasGoldenRuntimePlanSnapshot,
+		arg.TournamentID,
+		arg.RosterID,
+		arg.SourceProjectionRevisionID,
+		arg.SourceProjectionRevision,
+	)
+	var plan_exists bool
+	err := row.Scan(&plan_exists)
+	return plan_exists, err
+}
+
 const listGoldenAttempts = `-- name: ListGoldenAttempts :many
 SELECT id,
     tournament_id,
@@ -4584,6 +4756,7 @@ SELECT group_revision.revision_id AS group_revision_id,
     group_revision.group_id,
     group_revision.tournament_id,
     group_revision.roster_id,
+    group_revision.definition_digest,
     group_revision.position_from,
     group_revision.position_to,
     group_revision.source_projection_revision,
@@ -4605,6 +4778,7 @@ type ListGoldenRuntimeGroupsRow struct {
 	GroupID                    uuid.UUID
 	TournamentID               uuid.UUID
 	RosterID                   uuid.UUID
+	DefinitionDigest           []byte
 	PositionFrom               int16
 	PositionTo                 int16
 	SourceProjectionRevision   int64
@@ -4627,12 +4801,73 @@ func (q *Queries) ListGoldenRuntimeGroups(ctx context.Context, tournamentID uuid
 			&i.GroupID,
 			&i.TournamentID,
 			&i.RosterID,
+			&i.DefinitionDigest,
 			&i.PositionFrom,
 			&i.PositionTo,
 			&i.SourceProjectionRevision,
 			&i.SourceProjectionRevisionID,
 			&i.ParticipantID,
 			&i.StandingPosition,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listGoldenRuntimePlanParticipantReservations = `-- name: ListGoldenRuntimePlanParticipantReservations :many
+SELECT member.participant_id,
+    participant.player_id,
+    reservation.reservation_id,
+    reservation.revision,
+    reservation.acquired_at,
+    reservation.updated_at
+FROM golden_group_revisions AS group_revision
+INNER JOIN tournament_stage_tie_group_members AS member
+    ON member.command_id = group_revision.stage_progression_command_id
+    AND member.tournament_id = group_revision.tournament_id
+    AND member.roster_id = group_revision.roster_id
+    AND member.group_id = group_revision.group_id
+INNER JOIN participants AS participant
+    ON participant.id = member.participant_id
+    AND participant.roster_id = group_revision.roster_id
+INNER JOIN participant_reservations AS reservation
+    ON reservation.player_id = participant.player_id
+    AND reservation.tournament_id = group_revision.tournament_id
+WHERE group_revision.tournament_id = $1
+ORDER BY member.participant_id
+FOR KEY SHARE OF participant, reservation
+`
+
+type ListGoldenRuntimePlanParticipantReservationsRow struct {
+	ParticipantID uuid.UUID
+	PlayerID      uuid.UUID
+	ReservationID uuid.UUID
+	Revision      int64
+	AcquiredAt    pgtype.Timestamptz
+	UpdatedAt     pgtype.Timestamptz
+}
+
+func (q *Queries) ListGoldenRuntimePlanParticipantReservations(ctx context.Context, tournamentID uuid.UUID) ([]ListGoldenRuntimePlanParticipantReservationsRow, error) {
+	rows, err := q.db.Query(ctx, listGoldenRuntimePlanParticipantReservations, tournamentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListGoldenRuntimePlanParticipantReservationsRow{}
+	for rows.Next() {
+		var i ListGoldenRuntimePlanParticipantReservationsRow
+		if err := rows.Scan(
+			&i.ParticipantID,
+			&i.PlayerID,
+			&i.ReservationID,
+			&i.Revision,
+			&i.AcquiredAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -4971,6 +5206,27 @@ func (q *Queries) LoadGoldenRepositoryScope(ctx context.Context, id uuid.UUID) (
 		&i.TaskID,
 		&i.CreatedAt,
 	)
+	return i, err
+}
+
+const loadGoldenRuntimePlanRoster = `-- name: LoadGoldenRuntimePlanRoster :one
+SELECT roster.id AS roster_id,
+    roster.revision AS roster_revision
+FROM rosters AS roster
+WHERE roster.tournament_id = $1
+    AND roster.locked_at IS NOT NULL
+FOR KEY SHARE OF roster
+`
+
+type LoadGoldenRuntimePlanRosterRow struct {
+	RosterID       uuid.UUID
+	RosterRevision int64
+}
+
+func (q *Queries) LoadGoldenRuntimePlanRoster(ctx context.Context, tournamentID uuid.UUID) (LoadGoldenRuntimePlanRosterRow, error) {
+	row := q.db.QueryRow(ctx, loadGoldenRuntimePlanRoster, tournamentID)
+	var i LoadGoldenRuntimePlanRosterRow
+	err := row.Scan(&i.RosterID, &i.RosterRevision)
 	return i, err
 }
 

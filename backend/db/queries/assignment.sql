@@ -826,3 +826,400 @@ RETURNING id,
     completed_at,
     superseded_at,
     supersession_reason;
+
+-- Standalone exact-normal planning locks the published playoff authority and
+-- snapshots every source document before it attempts a reservation.
+
+-- name: LockExactNormalAssignmentStage :one
+SELECT stage.command_id,
+    target.tournament_id,
+    target.roster_id,
+    target.id AS series_id,
+    target.first_participant_id,
+    target.second_participant_id,
+    target.revision AS series_revision,
+    roster.revision AS roster_revision,
+    category.id AS category_revision_id,
+    category.revision AS category_revision,
+    category.source_pool_revision_id,
+    pool.revision AS pool_revision,
+    slot.category,
+    evidence.published_projection_revision_id,
+    evidence.published_projection_revision,
+    evidence.proof_digest AS graph_digest,
+    bracket.payload_digest AS artifact_digest,
+    stage.created_at
+FROM tournament_stage_playoff_semifinals AS stage
+INNER JOIN tournament_stage_playoff_evidence AS evidence
+    ON evidence.command_id = stage.command_id
+    AND evidence.tournament_id = stage.tournament_id
+    AND evidence.roster_id = stage.roster_id
+    AND evidence.bracket_artifact_id = stage.bracket_artifact_id
+INNER JOIN series AS target
+    ON target.id = stage.series_id
+    AND target.tournament_id = stage.tournament_id
+    AND target.roster_id = stage.roster_id
+INNER JOIN rosters AS roster
+    ON roster.id = stage.roster_id
+    AND roster.tournament_id = stage.tournament_id
+INNER JOIN game_slots AS slot
+    ON slot.id = sqlc.arg(slot_id)
+    AND slot.series_id = target.id
+    AND slot.roster_id = target.roster_id
+INNER JOIN category_revisions AS category
+    ON category.id = sqlc.arg(category_lock_id)
+    AND category.series_id = target.id
+    AND category.roster_id = target.roster_id
+INNER JOIN task_pool_revisions AS pool
+    ON pool.id = category.source_pool_revision_id
+    AND pool.kind = 'normal'
+INNER JOIN projection_revisions AS projection
+    ON projection.id = evidence.published_projection_revision_id
+    AND projection.tournament_id = stage.tournament_id
+    AND projection.roster_id = stage.roster_id
+    AND projection.revision_number = evidence.published_projection_revision
+    AND projection.state IN ('published', 'superseded')
+INNER JOIN projection_artifacts AS bracket
+    ON bracket.id = evidence.bracket_artifact_id
+    AND bracket.tournament_id = stage.tournament_id
+    AND bracket.roster_id = stage.roster_id
+    AND bracket.produced_by_revision_id = projection.id
+    AND bracket.artifact_kind = 'bracket'
+WHERE stage.tournament_id = sqlc.arg(tournament_id)
+    AND stage.roster_id = sqlc.arg(roster_id)
+    AND target.id = sqlc.arg(series_id)
+    AND target.format = 'bo1'
+    AND target.state = 'locked'
+FOR UPDATE OF stage, evidence, target, roster, slot, category, pool, projection, bracket;
+
+-- Swiss random materialization runs before the pairing command ledger and
+-- wave-start proof are written.  The initial score revision carries the real
+-- command and projection lineage, while the automatic round carries the
+-- immutable pairing decision; later ledgers revalidate both.
+-- name: LockExactNormalAssignmentSwissStage :one
+SELECT score.command_id,
+    target.tournament_id,
+    target.roster_id,
+    target.id AS series_id,
+    first_member.participant_id AS first_participant_id,
+    second_member.participant_id AS second_participant_id,
+    target.revision AS series_revision,
+    roster.revision AS roster_revision,
+    category.id AS category_revision_id,
+    category.revision AS category_revision,
+    category.source_pool_revision_id,
+    pool.revision AS pool_revision,
+    slot.category,
+    projection.id AS published_projection_revision_id,
+    projection.revision_number AS published_projection_revision,
+    round.decision_replay_digest AS graph_digest,
+    standings.payload_digest AS artifact_digest,
+    score.created_at
+FROM series_score_revisions AS score
+INNER JOIN wave_series AS wave_series
+    ON wave_series.series_id = score.series_id
+    AND wave_series.tournament_id = score.tournament_id
+    AND wave_series.roster_id = score.roster_id
+INNER JOIN waves AS wave
+    ON wave.id = wave_series.wave_id
+    AND wave.tournament_id = score.tournament_id
+    AND wave.roster_id = score.roster_id
+INNER JOIN rosters AS roster
+    ON roster.id = score.roster_id
+    AND roster.tournament_id = score.tournament_id
+INNER JOIN swiss_wave_links AS wave_link
+    ON wave_link.wave_id = wave.id
+    AND wave_link.tournament_id = wave.tournament_id
+    AND wave_link.roster_id = wave.roster_id
+INNER JOIN swiss_rounds AS round
+    ON round.id = wave_link.round_id
+    AND round.roster_id = wave_link.roster_id
+    AND round.source_roster_revision = roster.revision
+    AND round.generation_kind = 'automatic'
+    AND round.decision_replay_digest IS NOT NULL
+    AND octet_length(round.decision_replay_digest) = 32
+INNER JOIN swiss_pairings AS pairing
+    ON pairing.round_id = round.id
+    AND pairing.roster_id = round.roster_id
+INNER JOIN swiss_pairing_members AS first_member
+    ON first_member.pairing_id = pairing.id
+    AND first_member.round_id = pairing.round_id
+    AND first_member.roster_id = pairing.roster_id
+    AND first_member.seat = 1
+INNER JOIN swiss_pairing_members AS second_member
+    ON second_member.pairing_id = pairing.id
+    AND second_member.round_id = pairing.round_id
+    AND second_member.roster_id = pairing.roster_id
+    AND second_member.seat = 2
+INNER JOIN series AS target
+    ON target.tournament_id = score.tournament_id
+    AND target.roster_id = score.roster_id
+    AND target.first_participant_id = first_member.participant_id
+    AND target.second_participant_id = second_member.participant_id
+INNER JOIN game_slots AS slot
+    ON slot.id = sqlc.arg(slot_id)
+    AND slot.series_id = target.id
+    AND slot.roster_id = target.roster_id
+    AND slot.slot_number = 1
+INNER JOIN category_revisions AS category
+    ON category.id = sqlc.arg(category_lock_id)
+    AND category.series_id = target.id
+    AND category.roster_id = target.roster_id
+    AND category.selected_categories @> jsonb_build_array(slot.category)
+INNER JOIN task_pool_revisions AS pool
+    ON pool.id = category.source_pool_revision_id
+    AND pool.kind = 'normal'
+INNER JOIN projection_revisions AS projection
+    ON projection.id = score.source_projection_revision_id
+    AND projection.tournament_id = score.tournament_id
+    AND projection.roster_id = score.roster_id
+    AND projection.revision_number = score.source_projection_revision
+    AND projection.state IN ('published', 'superseded')
+INNER JOIN projection_revision_artifacts AS revision_artifact
+    ON revision_artifact.revision_id = projection.id
+    AND revision_artifact.tournament_id = projection.tournament_id
+    AND revision_artifact.roster_id = projection.roster_id
+    AND revision_artifact.artifact_kind = 'standings'
+INNER JOIN projection_artifacts AS standings
+    ON standings.id = revision_artifact.artifact_id
+    AND standings.tournament_id = projection.tournament_id
+    AND standings.roster_id = projection.roster_id
+    AND standings.artifact_kind = 'standings'
+WHERE score.tournament_id = sqlc.arg(tournament_id)
+    AND score.roster_id = sqlc.arg(roster_id)
+    AND score.series_id = sqlc.arg(series_id)
+    AND score.revision_number = 1
+    AND score.operation = 'initialize'
+    AND target.id = sqlc.arg(series_id)
+    AND target.format = 'bo1'
+    AND target.state = 'locked'
+    AND category.mode = 'random'
+FOR UPDATE OF score, wave_series, wave, wave_link, round, pairing, first_member, second_member,
+    target, roster, slot, category, pool, projection, revision_artifact, standings;
+
+-- name: EnsureExactNormalAssignmentHistoryHead :exec
+INSERT INTO exact_normal_assignment_history_heads (
+    tournament_id, roster_id, series_id, slot_id
+)
+VALUES (
+    sqlc.arg(tournament_id), sqlc.arg(roster_id), sqlc.arg(series_id), sqlc.arg(slot_id)
+)
+ON CONFLICT (tournament_id, roster_id, series_id, slot_id) DO NOTHING;
+
+-- name: LockExactNormalAssignmentHistoryHead :one
+SELECT revision_id, revision, created_at, updated_at
+FROM exact_normal_assignment_history_heads
+WHERE tournament_id = sqlc.arg(tournament_id)
+    AND roster_id = sqlc.arg(roster_id)
+    AND series_id = sqlc.arg(series_id)
+    AND slot_id = sqlc.arg(slot_id)
+FOR UPDATE;
+
+-- name: LockExactNormalAssignmentParticipants :many
+SELECT participant.id AS participant_id,
+    participant.player_id,
+    reservation.reservation_id,
+    reservation.tournament_id,
+    reservation.revision AS reservation_revision,
+    reservation.acquired_at,
+    reservation.updated_at
+FROM series AS series
+INNER JOIN participants AS participant
+    ON participant.id IN (series.first_participant_id, series.second_participant_id)
+    AND participant.roster_id = series.roster_id
+INNER JOIN participant_reservations AS reservation
+    ON reservation.player_id = participant.player_id
+    AND reservation.tournament_id = series.tournament_id
+WHERE series.tournament_id = sqlc.arg(tournament_id)
+    AND series.roster_id = sqlc.arg(roster_id)
+    AND series.id = sqlc.arg(series_id)
+ORDER BY participant.id
+FOR UPDATE OF participant, reservation;
+
+-- name: LockExactNormalAssignmentHistory :many
+SELECT receipt.participant_id, receipt.task_id
+FROM task_delivery_receipts AS receipt
+INNER JOIN assignments AS assignment ON assignment.id = receipt.assignment_id
+INNER JOIN series AS series
+    ON series.id = assignment.series_id
+    AND series.roster_id = assignment.roster_id
+WHERE series.tournament_id = sqlc.arg(tournament_id)
+    AND series.roster_id = sqlc.arg(roster_id)
+    AND series.id = sqlc.arg(series_id)
+    AND receipt.participant_id IN (series.first_participant_id, series.second_participant_id)
+ORDER BY receipt.participant_id, receipt.task_id
+FOR KEY SHARE OF receipt;
+
+-- name: LockExactNormalAssignmentCandidates :many
+SELECT membership.task_id,
+    membership.task_version,
+    pool.id AS pool_revision_id,
+    pool.revision AS pool_revision,
+    task_version.title,
+    task_version.description,
+    task_version.category,
+    task_version.difficulty,
+    task_version.time_limit,
+    task_version.flag,
+    task_version.hint_1,
+    task_version.hint_2,
+    task_version.hint_3,
+    task_version.task_url,
+    task_version.source_file_url,
+    task.created_at AS task_created_at,
+    EXISTS (
+        SELECT 1
+        FROM task_version_reservations AS reservation
+        WHERE reservation.task_id = membership.task_id
+            AND reservation.task_version = membership.task_version
+            AND reservation.state IN ('reserved', 'committed')
+    ) AS unavailable
+FROM category_revisions AS category
+INNER JOIN task_pool_revisions AS pool
+    ON pool.id = category.source_pool_revision_id
+    AND pool.kind = 'normal'
+INNER JOIN task_pool_version_memberships AS membership
+    ON membership.task_pool_revision_id = pool.id
+INNER JOIN task_versions AS task_version
+    ON task_version.task_id = membership.task_id
+    AND task_version.version = membership.task_version
+INNER JOIN tasks AS task
+    ON task.id = membership.task_id
+    AND task.kind = 'normal'
+    AND task.enabled
+    AND task.deleted_at IS NULL
+LEFT JOIN LATERAL (
+    SELECT attestation.healthy
+    FROM task_version_health_attestations AS attestation
+    WHERE attestation.task_id = membership.task_id
+        AND attestation.task_version = membership.task_version
+    ORDER BY attestation.revision DESC
+    LIMIT 1
+) AS health ON true
+WHERE category.id = sqlc.arg(category_lock_id)
+    AND category.series_id = sqlc.arg(series_id)
+    AND category.roster_id = sqlc.arg(roster_id)
+    AND COALESCE(health.healthy, false)
+    AND NOT EXISTS (
+        SELECT 1
+        FROM task_version_reservations AS live_reservation
+        WHERE live_reservation.task_id = membership.task_id
+            AND live_reservation.task_version = membership.task_version
+            AND live_reservation.state IN ('reserved', 'committed')
+    )
+ORDER BY membership.task_id, membership.task_version
+FOR UPDATE OF membership, task_version, task;
+
+-- name: CreateExactNormalAssignmentPlan :exec
+INSERT INTO assignment_plans (
+    id, tournament_id, roster_id, kind, parent_plan_id, revision_id,
+    source_roster_revision, source_pool_revision_id, reachable_branch_count,
+    constraint_graph, proof_evidence, proof_hash, decision_evidence_id,
+    decision_algorithm_version, decision_inputs, decision_seed,
+    decision_result, decision_replay_digest, decision_owner_id, decided_at,
+    state, created_at
+)
+VALUES (
+    sqlc.arg(id), sqlc.arg(tournament_id), sqlc.arg(roster_id), 'exact_normal',
+    NULL, sqlc.arg(revision_id), sqlc.arg(source_roster_revision),
+    sqlc.arg(source_pool_revision_id), 1, sqlc.arg(constraint_graph),
+    sqlc.arg(proof_evidence), sqlc.arg(proof_hash), sqlc.arg(decision_evidence_id),
+    sqlc.arg(decision_algorithm_version), sqlc.arg(decision_inputs),
+    sqlc.arg(decision_seed), sqlc.arg(decision_result),
+    sqlc.arg(decision_replay_digest), sqlc.arg(decision_owner_id),
+    sqlc.arg(decided_at), 'planned', sqlc.arg(created_at)
+);
+
+-- name: CreateExactNormalAssignmentBranch :exec
+INSERT INTO assignment_branches (
+    id, plan_id, draft_id, draft_revision_id, branch_key, category_sequence,
+    state, created_at
+)
+VALUES (
+    sqlc.arg(id), sqlc.arg(plan_id), sqlc.narg(draft_id)::uuid,
+    sqlc.narg(draft_revision_id)::uuid, sqlc.arg(branch_key),
+    sqlc.arg(category_sequence), 'reserved', sqlc.arg(created_at)
+);
+
+-- name: CreateExactNormalAssignmentSource :exec
+INSERT INTO exact_normal_assignment_sources (
+    plan_id, tournament_id, roster_id, series_id, slot_id, category_lock_id,
+    category, series_revision, pool_revision_id, pool_revision,
+    history_revision_id, history_revision, roster_revision,
+    artifact_revision_id, artifact_revision, category_revision_id,
+    category_revision, pool, participant_ids, participant_reservations,
+    history, candidates, graph_digest, artifact_digest, proof_hash, created_at
+)
+VALUES (
+    sqlc.arg(plan_id), sqlc.arg(tournament_id), sqlc.arg(roster_id),
+    sqlc.arg(series_id), sqlc.arg(slot_id), sqlc.arg(category_lock_id),
+    sqlc.arg(category), sqlc.arg(series_revision), sqlc.arg(pool_revision_id),
+    sqlc.arg(pool_revision), sqlc.arg(history_revision_id),
+    sqlc.arg(history_revision), sqlc.arg(roster_revision),
+    sqlc.arg(artifact_revision_id), sqlc.arg(artifact_revision),
+    sqlc.arg(category_revision_id), sqlc.arg(category_revision),
+    sqlc.arg(pool), sqlc.arg(participant_ids), sqlc.arg(participant_reservations),
+    sqlc.arg(history), sqlc.arg(candidates), sqlc.arg(graph_digest),
+    sqlc.arg(artifact_digest), sqlc.arg(proof_hash), sqlc.arg(created_at)
+);
+
+-- name: LockExactNormalAssignmentSource :one
+SELECT source.plan_id,
+    plan.revision_id AS plan_revision_id,
+    plan.state,
+    source.tournament_id,
+    source.roster_id,
+    source.series_id,
+    source.slot_id,
+    source.category_lock_id,
+    source.category,
+    source.series_revision,
+    source.pool_revision_id,
+    source.pool_revision,
+    source.history_revision_id,
+    source.history_revision,
+    source.roster_revision,
+    source.artifact_revision_id,
+    source.artifact_revision,
+    source.category_revision_id,
+    source.category_revision,
+    source.pool,
+    source.participant_ids,
+    source.participant_reservations,
+    source.history,
+    source.candidates,
+    source.graph_digest,
+    source.artifact_digest,
+    source.proof_hash,
+    source.created_at
+FROM exact_normal_assignment_sources AS source
+INNER JOIN assignment_plans AS plan ON plan.id = source.plan_id
+WHERE source.plan_id = sqlc.arg(plan_id)
+FOR UPDATE OF source, plan;
+
+-- name: FindExactNormalAssignmentSourceByScope :one
+SELECT source.plan_id,
+    plan.revision_id AS plan_revision_id,
+    plan.state,
+    source.proof_hash,
+    source.created_at
+FROM exact_normal_assignment_sources AS source
+INNER JOIN assignment_plans AS plan ON plan.id = source.plan_id
+WHERE source.tournament_id = sqlc.arg(tournament_id)
+    AND source.roster_id = sqlc.arg(roster_id)
+    AND source.series_id = sqlc.arg(series_id)
+    AND source.slot_id = sqlc.arg(slot_id)
+    AND source.category_lock_id = sqlc.arg(category_lock_id)
+FOR UPDATE OF source, plan;
+
+-- name: CommitExactNormalAssignmentPlanCAS :one
+UPDATE assignment_plans
+SET state = 'committed',
+    active_branch_id = sqlc.arg(active_branch_id),
+    committed_at = sqlc.arg(committed_at)
+WHERE id = sqlc.arg(id)
+    AND kind = 'exact_normal'
+    AND state = 'planned'
+    AND revision_id = sqlc.arg(expected_revision_id)
+    AND source_roster_revision = sqlc.arg(expected_roster_revision)
+RETURNING id, revision_id, state, active_branch_id, committed_at;

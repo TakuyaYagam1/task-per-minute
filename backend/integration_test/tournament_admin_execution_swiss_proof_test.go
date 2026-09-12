@@ -253,14 +253,16 @@ func prepareRoundProofContent(ctx context.Context, t *testing.T) {
 	t.Helper()
 
 	prepareTournamentCreateReceiptContent(ctx, t)
-	for range 5 {
-		_, err := sharedPool.Exec(ctx, `
-			INSERT INTO tasks (title, description, category, difficulty, time_limit, flag, kind)
-			VALUES ($1, 'round proof fixture', 'web', 'easy', 60, $2, 'normal')`,
-			"round_proof_normal_"+uuid.NewString()[:8],
-			"round-proof-"+uuid.NewString()[:8],
-		)
-		require.NoError(t, err)
+	for category, count := range map[string]int{"web": 11, "crypto": 6, "forensics": 6} {
+		for range count {
+			_, err := sharedPool.Exec(ctx, `
+				INSERT INTO tasks (title, description, category, difficulty, time_limit, flag, kind)
+				VALUES ($1, 'round proof fixture', $2, 'easy', 60, $3, 'normal')`,
+				"round_proof_normal_"+uuid.NewString()[:8], category,
+				"round-proof-"+uuid.NewString()[:8],
+			)
+			require.NoError(t, err)
+		}
 	}
 	_, err := sharedPool.Exec(ctx, `
 		INSERT INTO task_version_health_attestations (task_id, task_version, revision, healthy, source)

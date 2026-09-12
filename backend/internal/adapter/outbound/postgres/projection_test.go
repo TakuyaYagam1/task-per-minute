@@ -3,7 +3,9 @@ package postgres
 import (
 	"encoding/json"
 	"testing"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
@@ -37,4 +39,44 @@ func TestProjectionPayloadShapeUsesCanonicalCollectionKeys(t *testing.T) {
 			))
 		})
 	}
+}
+
+func TestInitialProjectionInputAcceptsCanonicalEmptyArtifacts(t *testing.T) {
+	t.Parallel()
+
+	tournamentID := uuid.New()
+	rosterID := uuid.New()
+	createdAt := time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC)
+	input, err := initialTournamentProjectionInput(tournamentID, rosterID, createdAt)
+	require.NoError(t, err)
+	require.True(t, validProjectionPublishInput(input))
+	require.Equal(t, projectionSourceInitial, input.Source.Kind)
+	require.Equal(t, tournamentID, input.Scope.TournamentID)
+	require.Equal(t, rosterID, input.Scope.RosterID)
+	require.Len(t, input.Artifacts, 3)
+	for _, artifact := range input.Artifacts {
+		require.Empty(t, artifact.Members)
+		require.Empty(t, artifact.Dependencies)
+	}
+
+	replayed, err := initialTournamentProjectionInput(tournamentID, rosterID, createdAt)
+	require.NoError(t, err)
+	require.Equal(t, input.IDs, replayed.IDs)
+	for index := range input.Artifacts {
+		require.Equal(t, input.Artifacts[index].ID, replayed.Artifacts[index].ID)
+		require.Equal(t, input.Artifacts[index].Payload, replayed.Artifacts[index].Payload)
+	}
+}
+
+func TestNonInitialProjectionRejectsCanonicalEmptyArtifacts(t *testing.T) {
+	t.Parallel()
+
+	input, err := initialTournamentProjectionInput(
+		uuid.New(), uuid.New(), time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC),
+	)
+	require.NoError(t, err)
+	input.Source = ProjectionSource{Kind: projectionSourceOperatorRebuild, Reason: "operator_rebuild"}
+	input.SupersessionReason = "operator_rebuild"
+
+	require.False(t, validProjectionPublishInput(input))
 }

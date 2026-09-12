@@ -130,6 +130,147 @@ func TestPlanWaveStartFailsClosedOnIncompleteDeliveryGraph(t *testing.T) {
 	}
 }
 
+func TestPlanWavePlayoffSingleSeriesLifecycle(t *testing.T) {
+	t.Parallel()
+
+	openedAt := executionTestTime()
+	authority := executionPlayoffWaveAuthority(t, openedAt)
+	command := WaveCommand{
+		CommandScope: CommandScope{
+			Operator:     OperatorIdentity{ActorID: executionTestID(230)},
+			TournamentID: authority.View.Wave.TournamentID, CommandID: executionTestID(231),
+		},
+		WaveID: authority.View.Wave.ID, ExpectedProjectionRevision: authority.ProjectionRevision,
+		Action: WaveActionOpenReadyWindow, Confirmed: true,
+	}
+
+	opened, err := planWaveMutation(command, authority, openedAt)
+	if err != nil {
+		t.Fatalf("open ready window error = %v", err)
+	}
+	if opened.State != domain.WaveStateReadyWindowOpen || opened.ReadyWindow == nil {
+		t.Fatalf("opened Wave = %+v, want open ready window", opened)
+	}
+
+	for index := range opened.Members {
+		opened.Members[index].Ready = true
+	}
+	opened.State = domain.WaveStateReady
+	authority.View.Wave = opened
+	authority.Graph = WaveGraph{
+		SeriesCount: 1, PlayableMemberCount: 2, CurrentGameCount: 1,
+		ReadySeriesCount: 1, ReadyGameCount: 1, AssignmentCount: 1, DeliveryMemberCount: 2,
+	}
+	command.Action = WaveActionStart
+	started, err := planWaveMutation(command, authority, openedAt.Add(time.Second))
+	if err != nil {
+		t.Fatalf("start playoff wave error = %v", err)
+	}
+	if started.State != domain.WaveStateActive || started.ReadyWindow == nil ||
+		started.ReadyWindow.State != domain.ReadyWindowStateConsumed {
+		t.Fatalf("started Wave = %+v, want active consumed Wave", started)
+	}
+
+	authority.View.Wave = started
+	authority.Graph = WaveGraph{
+		SeriesCount: 1, CurrentGameCount: 1, TerminalSeriesCount: 1, TerminalGameCount: 1,
+	}
+	command.Action = WaveActionComplete
+	completed, err := planWaveMutation(command, authority, openedAt.Add(2*time.Second))
+	if err != nil {
+		t.Fatalf("complete playoff wave error = %v", err)
+	}
+	if completed.State != domain.WaveStateCompleted || completed.RevisionID == started.RevisionID {
+		t.Fatalf("completed Wave = %+v, want completed fresh revision", completed)
+	}
+}
+
+func TestWaveGraphRequiresAllowedTournamentStateAndShape(t *testing.T) {
+	t.Parallel()
+
+	graphFor := func(seriesCount int) WaveGraph {
+		return WaveGraph{
+			SeriesCount: seriesCount, PlayableMemberCount: seriesCount * 2,
+			CurrentGameCount: seriesCount, ReadySeriesCount: seriesCount, ReadyGameCount: seriesCount,
+			ActiveSeriesCount: seriesCount, ActiveGameCount: seriesCount,
+			PausedSeriesCount: seriesCount, PausedGameCount: seriesCount,
+			TerminalSeriesCount: seriesCount, TerminalGameCount: seriesCount,
+			AssignmentCount: seriesCount, DeliveryMemberCount: seriesCount * 2,
+		}
+	}
+	tests := []struct {
+		name         string
+		state        domain.TournamentState
+		seriesCount  int
+		wantAccepted bool
+	}{
+		{name: "swiss multi series", state: domain.TournamentStateSwiss, seriesCount: 2, wantAccepted: true},
+		{name: "playoffs single series", state: domain.TournamentStatePlayoffs, seriesCount: 1, wantAccepted: true},
+		{name: "swiss single series", state: domain.TournamentStateSwiss, seriesCount: 1, wantAccepted: true},
+		{name: "golden rejected", state: domain.TournamentStateGolden, seriesCount: 1},
+		{name: "completed rejected", state: domain.TournamentStateCompleted, seriesCount: 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			authority := WaveAuthority{TournamentState: tt.state, Graph: graphFor(tt.seriesCount)}
+			checks := []struct {
+				name string
+				got  bool
+			}{
+				{name: "planned", got: waveGraphPlanned(authority)},
+				{name: "startable", got: waveGraphStartable(authority)},
+				{name: "active", got: waveGraphActive(authority)},
+				{name: "paused", got: waveGraphPaused(authority)},
+				{name: "terminal", got: waveGraphTerminal(authority)},
+			}
+			for _, check := range checks {
+				if check.got != tt.wantAccepted {
+					t.Errorf("%s graph accepted = %t, want %t", check.name, check.got, tt.wantAccepted)
+				}
+			}
+		})
+	}
+}
+
+func TestWaveGraphTerminalAcceptsContinuingBO3SeriesOnly(t *testing.T) {
+	t.Parallel()
+
+	authority := WaveAuthority{
+		TournamentState: domain.TournamentStatePlayoffs,
+		Graph: WaveGraph{
+			SeriesCount: 1, ContinuingSeriesCount: 1,
+			CurrentGameCount: 1, TerminalGameCount: 1,
+		},
+	}
+	if !waveGraphTerminal(authority) {
+		t.Fatal("terminal Game in a continuing BO3 Series must close its Wave")
+	}
+	authority.Graph.ContinuingSeriesCount = 0
+	if waveGraphTerminal(authority) {
+		t.Fatal("active Series without BO3 continuation evidence must not close its Wave")
+	}
+}
+
+func TestWaveGraphStartableAcceptsContinuingBO3SeriesOnly(t *testing.T) {
+	t.Parallel()
+
+	authority := WaveAuthority{
+		TournamentState: domain.TournamentStatePlayoffs,
+		Graph: WaveGraph{
+			SeriesCount: 1, PlayableMemberCount: 2, ContinuingSeriesCount: 1,
+			CurrentGameCount: 1, ReadyGameCount: 1, AssignmentCount: 1, DeliveryMemberCount: 2,
+		},
+	}
+	if !waveGraphStartable(authority) {
+		t.Fatal("ready Game in a continuing BO3 Series must start its Wave")
+	}
+	authority.Graph.ContinuingSeriesCount = 0
+	if waveGraphStartable(authority) {
+		t.Fatal("non-ready Series without BO3 continuation evidence must not start its Wave")
+	}
+}
+
 func TestPlanWaveCompleteCreatesDeterministicClosureRevision(t *testing.T) {
 	t.Parallel()
 
@@ -183,6 +324,7 @@ func TestStartWaveReplayReturnsRecordedResultAfterLaterWaveTransition(t *testing
 	later := record.Wave
 	later.State = domain.WaveStateCompleted
 	authority := WaveAuthority{
+		TournamentState: domain.TournamentStateSwiss,
 		SourceRevisions: record.Revisions,
 		View:            WaveView{Wave: later, Revision: record.ExpectedWaveRevision + 2},
 	}
@@ -384,6 +526,41 @@ func executionWaveAuthority(t *testing.T, openedAt time.Time) WaveAuthority {
 			SeriesCount: 2, PlayableMemberCount: 4, CurrentGameCount: 2,
 			ReadySeriesCount: 2, ReadyGameCount: 2, AssignmentCount: 2, DeliveryMemberCount: 4,
 		},
+	}
+}
+
+func executionPlayoffWaveAuthority(t *testing.T, _ time.Time) WaveAuthority {
+	t.Helper()
+	tournamentID := executionTestID(240)
+	waveID := executionTestID(241)
+	revisionID := domain.WaveRevisionID(executionTestID(242))
+	firstParticipantID := executionTestID(243)
+	secondParticipantID := executionTestID(244)
+	seriesID := executionTestID(245)
+	return WaveAuthority{
+		TournamentState: domain.TournamentStatePlayoffs, TournamentRevision: 4,
+		RosterID: executionTestID(247), RosterRevision: 2,
+		ProjectionRevisionID: executionTestID(248), ProjectionRevision: 8,
+		SourceRevisions: domain.ReadyWindowSourceRevisions{
+			WaveRevisionID: revisionID, WaveRevision: 7,
+			ProjectionRevisionID: executionTestID(248), ProjectionRevision: 8,
+			ArtifactRevisionID: executionTestID(249), ArtifactRevision: 8,
+		},
+		View: WaveView{
+			Wave: domain.Wave{
+				ID: waveID, TournamentID: tournamentID, RevisionID: revisionID,
+				State: domain.WaveStatePlanned,
+				Members: []domain.WaveMember{
+					{ParticipantID: firstParticipantID}, {ParticipantID: secondParticipantID},
+				},
+			},
+			Revision:           7,
+			ReadinessRevisions: map[uuid.UUID]int64{firstParticipantID: 3, secondParticipantID: 3},
+			SeriesIDs: map[uuid.UUID]uuid.UUID{
+				firstParticipantID: seriesID, secondParticipantID: seriesID,
+			},
+		},
+		Graph: WaveGraph{SeriesCount: 1, PlayableMemberCount: 2},
 	}
 }
 

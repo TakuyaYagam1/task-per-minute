@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"crypto/sha256"
+	"encoding/json"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -157,8 +158,10 @@ func TestFinalPublicationArtifactsCloneExactBaseAndAddChampion(t *testing.T) {
 	tournamentID := uuid.New()
 	rosterID := uuid.New()
 	seriesID := uuid.New()
-	winnerID := uuid.New()
 	baseRevisionID := uuid.New()
+	participants := [4]uuid.UUID{uuid.New(), uuid.New(), uuid.New(), uuid.New()}
+	semifinalSeries := [2]uuid.UUID{uuid.New(), uuid.New()}
+	winnerID := participants[0]
 
 	standings := terminalPublicationSourceArtifact(
 		domain.ArtifactKindStandings,
@@ -175,7 +178,7 @@ func TestFinalPublicationArtifactsCloneExactBaseAndAddChampion(t *testing.T) {
 	bracket := terminalPublicationSourceArtifact(
 		domain.ArtifactKindBracket,
 		`{"rounds":[{"position":1}]}`,
-		[]sqlc.ProjectionArtifactMember{{ParticipantID: uuid.New(), Position: 1}},
+		[]sqlc.ProjectionArtifactMember{{ParticipantID: participants[0], Position: 1}},
 		baseRevisionID,
 		tournamentID,
 		rosterID,
@@ -183,7 +186,7 @@ func TestFinalPublicationArtifactsCloneExactBaseAndAddChampion(t *testing.T) {
 	topFourMembers := make([]sqlc.ProjectionArtifactMember, 4)
 	for index := range topFourMembers {
 		topFourMembers[index] = sqlc.ProjectionArtifactMember{
-			ParticipantID: uuid.New(),
+			ParticipantID: participants[index],
 			Position:      int32(index + 1),
 		}
 	}
@@ -199,7 +202,33 @@ func TestFinalPublicationArtifactsCloneExactBaseAndAddChampion(t *testing.T) {
 		TournamentID:            tournamentID,
 		RosterID:                rosterID,
 		FinalSeriesID:           seriesID,
+		FirstParticipantID:      participants[0],
+		SecondParticipantID:     participants[2],
 		CurrentResultRevisionID: uuid.NullUUID{UUID: resultID.UUID(), Valid: true},
+	}
+	aggregate := sqlc.LockFinalProjectionAggregateRow{
+		SeriesFormat: string(domain.SeriesFormatBO3), SeriesState: string(domain.SeriesStateCompleted),
+		FirstParticipantID: participants[0], SecondParticipantID: participants[2],
+		FirstParticipantWins: 2, WinnerID: uuid.NullUUID{UUID: winnerID, Valid: true},
+	}
+	semifinals := playoff.SemifinalAdvancementAuthority{
+		TournamentID: tournamentID,
+		Semifinals: []playoff.SemifinalMatch{
+			{Position: 1, Series: domain.Series{
+				ID: semifinalSeries[0], TournamentID: tournamentID,
+				FirstParticipantID: participants[0], SecondParticipantID: participants[1],
+				Format: domain.SeriesFormatBO1, State: domain.SeriesStateLocked,
+			}},
+			{Position: 2, Series: domain.Series{
+				ID: semifinalSeries[1], TournamentID: tournamentID,
+				FirstParticipantID: participants[2], SecondParticipantID: participants[3],
+				Format: domain.SeriesFormatBO1, State: domain.SeriesStateLocked,
+			}},
+		},
+	}
+	advancement := []playoff.SemifinalAdvancementResult{
+		{Position: 1, SeriesID: semifinalSeries[0], WinnerID: participants[0], LoserID: participants[1]},
+		{Position: 2, SeriesID: semifinalSeries[1], WinnerID: participants[2], LoserID: participants[3]},
 	}
 	record := ProjectionRecord{
 		Revision:  sqlc.ProjectionRevision{ID: uuid.New(), TournamentID: tournamentID, RosterID: rosterID, RevisionNumber: 2},
@@ -213,7 +242,7 @@ func TestFinalPublicationArtifactsCloneExactBaseAndAddChampion(t *testing.T) {
 			ProducedByRevisionID: baseRevisionID, ProducerRevision: 1, PayloadDigest: item.Artifact.PayloadDigest,
 		}
 	}
-	artifacts, err := finalPublicationArtifacts(ids, record, stage, winnerID, memberships)
+	artifacts, err := finalPublicationArtifacts(ids, record, stage, aggregate, semifinals, advancement, memberships)
 	require.NoError(t, err)
 	require.Len(t, artifacts, 4)
 	require.Equal(t, ids.StandingsArtifactID, artifacts[0].ID)
@@ -224,6 +253,11 @@ func TestFinalPublicationArtifactsCloneExactBaseAndAddChampion(t *testing.T) {
 	require.Equal(t, projection.DependencyOfficialResult, artifacts[0].Dependencies[0].Kind)
 	require.Equal(t, projection.DependencyArtifact, artifacts[3].Dependencies[0].Kind)
 	require.Equal(t, projection.DependencyOfficialResult, artifacts[3].Dependencies[1].Kind)
+	var finalBracket finalBracketPayloadDocument
+	require.NoError(t, json.Unmarshal(artifacts[1].Payload, &finalBracket))
+	require.Len(t, finalBracket.Rounds, 3)
+	require.Equal(t, "final", finalBracket.Rounds[2].Stage)
+	require.Equal(t, domain.SeriesStateCompleted, finalBracket.Rounds[2].State)
 	for _, field := range []string{"missing", "duplicate", "revision", "tournament", "roster", "kind", "artifact", "digest", "producer", "future producer", "change kind"} {
 		t.Run(field, func(t *testing.T) {
 			changed := append([]sqlc.LockFinalPublicationArtifactMembershipRow(nil), memberships...)
@@ -251,7 +285,7 @@ func TestFinalPublicationArtifactsCloneExactBaseAndAddChampion(t *testing.T) {
 			case "change kind":
 				changed[0].ChangeKind = "produced"
 			}
-			_, err := finalPublicationArtifacts(ids, record, stage, winnerID, changed)
+			_, err := finalPublicationArtifacts(ids, record, stage, aggregate, semifinals, advancement, changed)
 			require.ErrorIs(t, err, domain.ErrConflict)
 		})
 	}

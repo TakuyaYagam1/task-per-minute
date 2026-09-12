@@ -63,6 +63,7 @@ type Querier interface {
 	CommitAssignmentPlanCAS(ctx context.Context, arg CommitAssignmentPlanCASParams) (CommitAssignmentPlanCASRow, error)
 	CommitExactDraftAssignmentPlan(ctx context.Context, arg CommitExactDraftAssignmentPlanParams) (int64, error)
 	CommitExactDraftChildReservations(ctx context.Context, arg CommitExactDraftChildReservationsParams) ([]uuid.UUID, error)
+	CommitExactNormalAssignmentPlanCAS(ctx context.Context, arg CommitExactNormalAssignmentPlanCASParams) (CommitExactNormalAssignmentPlanCASRow, error)
 	CompleteTournamentAdminWaveCAS(ctx context.Context, arg CompleteTournamentAdminWaveCASParams) (CompleteTournamentAdminWaveCASRow, error)
 	CompleteTournamentFromFinalProjectionCAS(ctx context.Context, arg CompleteTournamentFromFinalProjectionCASParams) (CompleteTournamentFromFinalProjectionCASRow, error)
 	ConsumeReadyWindowCAS(ctx context.Context, arg ConsumeReadyWindowCASParams) (ReadyWindow, error)
@@ -101,6 +102,9 @@ type Querier interface {
 	CreateExactDraftAssignmentChildParticipant(ctx context.Context, arg CreateExactDraftAssignmentChildParticipantParams) error
 	CreateExactDraftAssignmentChildSource(ctx context.Context, arg CreateExactDraftAssignmentChildSourceParams) error
 	CreateExactDraftAssignmentPlan(ctx context.Context, arg CreateExactDraftAssignmentPlanParams) error
+	CreateExactNormalAssignmentBranch(ctx context.Context, arg CreateExactNormalAssignmentBranchParams) error
+	CreateExactNormalAssignmentPlan(ctx context.Context, arg CreateExactNormalAssignmentPlanParams) error
+	CreateExactNormalAssignmentSource(ctx context.Context, arg CreateExactNormalAssignmentSourceParams) error
 	CreateExecutionAuthorityLease(ctx context.Context, arg CreateExecutionAuthorityLeaseParams) (ExecutionAuthorityLease, error)
 	CreateExecutionEpochReplay(ctx context.Context, arg CreateExecutionEpochReplayParams) (uuid.UUID, error)
 	CreateFinalChampionOutboxEvent(ctx context.Context, arg CreateFinalChampionOutboxEventParams) (CreateFinalChampionOutboxEventRow, error)
@@ -152,6 +156,8 @@ type Querier interface {
 	CreateGoldenRepositoryScope(ctx context.Context, arg CreateGoldenRepositoryScopeParams) (uuid.UUID, error)
 	CreateGoldenReservePromotion(ctx context.Context, arg CreateGoldenReservePromotionParams) (GoldenReservePromotion, error)
 	CreateGoldenRuntimeAssignment(ctx context.Context, arg CreateGoldenRuntimeAssignmentParams) (uuid.UUID, error)
+	CreateGoldenRuntimeAssignmentBranch(ctx context.Context, arg CreateGoldenRuntimeAssignmentBranchParams) error
+	CreateGoldenRuntimeAssignmentPlan(ctx context.Context, arg CreateGoldenRuntimeAssignmentPlanParams) error
 	CreateGoldenRuntimeAuditEvent(ctx context.Context, arg CreateGoldenRuntimeAuditEventParams) (uuid.UUID, error)
 	CreateGoldenRuntimeCommand(ctx context.Context, arg CreateGoldenRuntimeCommandParams) (GoldenRuntimeCommand, error)
 	CreateGoldenRuntimeHead(ctx context.Context, arg CreateGoldenRuntimeHeadParams) (GoldenRuntimeHead, error)
@@ -190,6 +196,13 @@ type Querier interface {
 	CreateParticipantPostSeriesAction(ctx context.Context, arg CreateParticipantPostSeriesActionParams) (ParticipantPostSeriesAction, error)
 	CreateParticipantReadinessEvent(ctx context.Context, arg CreateParticipantReadinessEventParams) (ReadinessEvent, error)
 	CreatePlayer(ctx context.Context, username string) (Player, error)
+	// Semifinal category authority is persisted separately from the Swiss
+	// materializer, while retaining the same immutable random decision shape.
+	CreatePlayoffSemifinalCategoryRevision(ctx context.Context, arg CreatePlayoffSemifinalCategoryRevisionParams) (CategoryRevision, error)
+	// A semifinal has one independent planned execution Wave. It is linked to
+	// its Series before the ready state transition and before a ready window is
+	// opened by the existing wave control workflow.
+	CreatePlayoffSemifinalWave(ctx context.Context, arg CreatePlayoffSemifinalWaveParams) error
 	CreatePostseasonFinalAdvancement(ctx context.Context, arg CreatePostseasonFinalAdvancementParams) error
 	CreatePostseasonFinalInitialization(ctx context.Context, arg CreatePostseasonFinalInitializationParams) error
 	CreatePostseasonFinalProgression(ctx context.Context, arg CreatePostseasonFinalProgressionParams) error
@@ -231,6 +244,10 @@ type Querier interface {
 	CreateResultProjectionNodeAuthority(ctx context.Context, arg CreateResultProjectionNodeAuthorityParams) error
 	CreateResultSubmissionEvent(ctx context.Context, arg CreateResultSubmissionEventParams) (SubmissionEvent, error)
 	CreateSeries(ctx context.Context, arg CreateSeriesParams) (Series, error)
+	// Materialized Swiss categories are immutable executable authority.  The
+	// selected categories and their lock evidence live on the category revision so
+	// exact-normal assignment planning can bind to the same row in one tx.
+	CreateSeriesPresence(ctx context.Context, arg CreateSeriesPresenceParams) (PresenceState, error)
 	CreateSeriesScoreRevision(ctx context.Context, arg CreateSeriesScoreRevisionParams) (SeriesScoreRevision, error)
 	CreateSeriesScoreRevisionAdjudication(ctx context.Context, arg CreateSeriesScoreRevisionAdjudicationParams) error
 	CreateSeriesScoreRevisionAttempt(ctx context.Context, arg CreateSeriesScoreRevisionAttemptParams) error
@@ -242,6 +259,7 @@ type Querier interface {
 	// immutable receipt. Physical revisions may have gaps between receipts.
 	CreateStageProjectionOutboxEvent(ctx context.Context, arg CreateStageProjectionOutboxEventParams) (uuid.UUID, error)
 	CreateSwissBye(ctx context.Context, arg CreateSwissByeParams) error
+	CreateSwissCategoryRevision(ctx context.Context, arg CreateSwissCategoryRevisionParams) (CategoryRevision, error)
 	CreateSwissOpponentHistory(ctx context.Context, arg CreateSwissOpponentHistoryParams) error
 	CreateSwissPairing(ctx context.Context, arg CreateSwissPairingParams) error
 	CreateSwissPairingCommand(ctx context.Context, arg CreateSwissPairingCommandParams) (uuid.UUID, error)
@@ -278,7 +296,7 @@ type Querier interface {
 	CreateTournamentProgressionStageProjectionNode(ctx context.Context, arg CreateTournamentProgressionStageProjectionNodeParams) (uuid.UUID, error)
 	// The stage evidence row is written before this authority. Its node foreign
 	// keys are deferred so the ensuing four-node graph can prove the exact Top4,
-	// bracket, and locked semifinal score genesis at transaction commit.
+	// bracket, and semifinal score genesis at transaction commit.
 	CreateTournamentProgressionStageProjectionNodeAuthority(ctx context.Context, arg CreateTournamentProgressionStageProjectionNodeAuthorityParams) (uuid.UUID, error)
 	CreateTournamentRoster(ctx context.Context, arg CreateTournamentRosterParams) (Roster, error)
 	CreateTournamentRosterOperation(ctx context.Context, arg CreateTournamentRosterOperationParams) (uuid.UUID, error)
@@ -308,12 +326,14 @@ type Querier interface {
 	DiscloseAssignmentTaskReservationCAS(ctx context.Context, arg DiscloseAssignmentTaskReservationCASParams) (DiscloseAssignmentTaskReservationCASRow, error)
 	DiscloseWaveStartReservationCAS(ctx context.Context, arg DiscloseWaveStartReservationCASParams) (DiscloseWaveStartReservationCASRow, error)
 	EnsureExactDraftPlanningHistoryHead(ctx context.Context, draftID uuid.UUID) error
+	EnsureExactNormalAssignmentHistoryHead(ctx context.Context, arg EnsureExactNormalAssignmentHistoryHeadParams) error
 	EnterTournamentTechnicalPause(ctx context.Context, arg EnterTournamentTechnicalPauseParams) (EnterTournamentTechnicalPauseRow, error)
 	EstablishGoldenParticipation(ctx context.Context, arg EstablishGoldenParticipationParams) (GoldenMembership, error)
 	ExpireRecoveryReadyWindowCAS(ctx context.Context, arg ExpireRecoveryReadyWindowCASParams) (ReadyWindow, error)
 	ExpireRecoveryReconnectIntervalCAS(ctx context.Context, arg ExpireRecoveryReconnectIntervalCASParams) (ReconnectInterval, error)
 	ExpireRecoveryWaveCAS(ctx context.Context, arg ExpireRecoveryWaveCASParams) (Wave, error)
 	FinalizeGoldenRuntimeGroupAssignments(ctx context.Context, arg FinalizeGoldenRuntimeGroupAssignmentsParams) (int64, error)
+	FindExactNormalAssignmentSourceByScope(ctx context.Context, arg FindExactNormalAssignmentSourceByScopeParams) (FindExactNormalAssignmentSourceByScopeRow, error)
 	FindExecutionAuthorityCommand(ctx context.Context, arg FindExecutionAuthorityCommandParams) (ExecutionAuthorityLease, error)
 	FindExecutionEpochReplayByCommand(ctx context.Context, commandID uuid.UUID) (ExecutionEpochReplay, error)
 	FindExecutionEpochReplayByGame(ctx context.Context, gameAttemptID uuid.UUID) (ExecutionEpochReplay, error)
@@ -438,6 +458,8 @@ type Querier interface {
 	GetTournamentSummary(ctx context.Context, id uuid.UUID) (GetTournamentSummaryRow, error)
 	GetWave(ctx context.Context, arg GetWaveParams) (Wave, error)
 	GetWaveReadinessHead(ctx context.Context, arg GetWaveReadinessHeadParams) (WaveReadiness, error)
+	HasGoldenRuntimePlanSnapshot(ctx context.Context, arg HasGoldenRuntimePlanSnapshotParams) (bool, error)
+	InsertTournamentAdminRosterParticipant(ctx context.Context, arg InsertTournamentAdminRosterParticipantParams) (Participant, error)
 	InsertTournamentCreateReceipt(ctx context.Context, arg InsertTournamentCreateReceiptParams) (TournamentCreateCommandReceipt, error)
 	InsertTournamentParticipant(ctx context.Context, arg InsertTournamentParticipantParams) (Participant, error)
 	LinkProjectionArtifact(ctx context.Context, arg LinkProjectionArtifactParams) (ProjectionRevisionArtifact, error)
@@ -467,6 +489,7 @@ type Querier interface {
 	ListGoldenRuntimeGroupAttempts(ctx context.Context, arg ListGoldenRuntimeGroupAttemptsParams) ([]ListGoldenRuntimeGroupAttemptsRow, error)
 	ListGoldenRuntimeGroupEvidence(ctx context.Context, arg ListGoldenRuntimeGroupEvidenceParams) ([]ListGoldenRuntimeGroupEvidenceRow, error)
 	ListGoldenRuntimeGroups(ctx context.Context, tournamentID uuid.UUID) ([]ListGoldenRuntimeGroupsRow, error)
+	ListGoldenRuntimePlanParticipantReservations(ctx context.Context, tournamentID uuid.UUID) ([]ListGoldenRuntimePlanParticipantReservationsRow, error)
 	ListGoldenRuntimeRecoveryAttempts(ctx context.Context, tournamentID uuid.UUID) ([]ListGoldenRuntimeRecoveryAttemptsRow, error)
 	ListGoldenRuntimeUnresolvedMembers(ctx context.Context, arg ListGoldenRuntimeUnresolvedMembersParams) ([]uuid.UUID, error)
 	ListGoldenRuntimeView(ctx context.Context, tournamentID uuid.UUID) ([]ListGoldenRuntimeViewRow, error)
@@ -553,6 +576,7 @@ type Querier interface {
 	LoadExecutionAuthority(ctx context.Context, tournamentID uuid.UUID) (ExecutionAuthorityLease, error)
 	LoadGoldenRepositoryHead(ctx context.Context, scopeID uuid.UUID) (LoadGoldenRepositoryHeadRow, error)
 	LoadGoldenRepositoryScope(ctx context.Context, id uuid.UUID) (GoldenRepositoryScope, error)
+	LoadGoldenRuntimePlanRoster(ctx context.Context, tournamentID uuid.UUID) (LoadGoldenRuntimePlanRosterRow, error)
 	LockAssignment(ctx context.Context, id uuid.UUID) (Assignment, error)
 	LockAssignmentDraftChildScope(ctx context.Context, arg LockAssignmentDraftChildScopeParams) ([]LockAssignmentDraftChildScopeRow, error)
 	LockAssignmentPlan(ctx context.Context, id uuid.UUID) (LockAssignmentPlanRow, error)
@@ -594,6 +618,19 @@ type Querier interface {
 	// separate from assignment.sql because one draft branch owns three ordinary
 	// assignment branches, not one collapsed JSON payload.
 	LockExactDraftPlanningStage(ctx context.Context, draftID uuid.UUID) (LockExactDraftPlanningStageRow, error)
+	LockExactNormalAssignmentCandidates(ctx context.Context, arg LockExactNormalAssignmentCandidatesParams) ([]LockExactNormalAssignmentCandidatesRow, error)
+	LockExactNormalAssignmentHistory(ctx context.Context, arg LockExactNormalAssignmentHistoryParams) ([]LockExactNormalAssignmentHistoryRow, error)
+	LockExactNormalAssignmentHistoryHead(ctx context.Context, arg LockExactNormalAssignmentHistoryHeadParams) (LockExactNormalAssignmentHistoryHeadRow, error)
+	LockExactNormalAssignmentParticipants(ctx context.Context, arg LockExactNormalAssignmentParticipantsParams) ([]LockExactNormalAssignmentParticipantsRow, error)
+	LockExactNormalAssignmentSource(ctx context.Context, planID uuid.UUID) (LockExactNormalAssignmentSourceRow, error)
+	// Standalone exact-normal planning locks the published playoff authority and
+	// snapshots every source document before it attempts a reservation.
+	LockExactNormalAssignmentStage(ctx context.Context, arg LockExactNormalAssignmentStageParams) (LockExactNormalAssignmentStageRow, error)
+	// Swiss random materialization runs before the pairing command ledger and
+	// wave-start proof are written.  The initial score revision carries the real
+	// command and projection lineage, while the automatic round carries the
+	// immutable pairing decision; later ledgers revalidate both.
+	LockExactNormalAssignmentSwissStage(ctx context.Context, arg LockExactNormalAssignmentSwissStageParams) (LockExactNormalAssignmentSwissStageRow, error)
 	LockExecutionAuthorityScope(ctx context.Context, tournamentID uuid.UUID) (uuid.UUID, error)
 	LockExecutionEpochReplayFence(ctx context.Context, arg LockExecutionEpochReplayFenceParams) (LockExecutionEpochReplayFenceRow, error)
 	LockFinalProjectionAggregate(ctx context.Context, arg LockFinalProjectionAggregateParams) (LockFinalProjectionAggregateRow, error)
@@ -639,6 +676,10 @@ type Querier interface {
 	// active-assignment checks and before projection revision comparison.
 	LockParticipantSubmissionReplayScope(ctx context.Context, arg LockParticipantSubmissionReplayScopeParams) (LockParticipantSubmissionReplayScopeRow, error)
 	LockParticipantSurrenderAuthority(ctx context.Context, arg LockParticipantSurrenderAuthorityParams) (LockParticipantSurrenderAuthorityRow, error)
+	// A published bracket creates locked, empty BO1 Series. The materializer
+	// locks each row again before reading it so category, assignment, and graph
+	// writes all use one current database authority.
+	LockPlayoffSemifinalSeriesForMaterialization(ctx context.Context, arg LockPlayoffSemifinalSeriesForMaterializationParams) (LockPlayoffSemifinalSeriesForMaterializationRow, error)
 	LockPostseasonFinalAdvancements(ctx context.Context, arg LockPostseasonFinalAdvancementsParams) ([]LockPostseasonFinalAdvancementsRow, error)
 	LockPostseasonFinalGenesis(ctx context.Context, arg LockPostseasonFinalGenesisParams) (uuid.UUID, error)
 	LockPostseasonFinalInitialization(ctx context.Context, arg LockPostseasonFinalInitializationParams) (TournamentStagePlayoffFinalInitialization, error)
@@ -680,6 +721,10 @@ type Querier interface {
 	LockStageScoreGenesisNodes(ctx context.Context, arg LockStageScoreGenesisNodesParams) ([]LockStageScoreGenesisNodesRow, error)
 	LockSwissRoundCAS(ctx context.Context, arg LockSwissRoundCASParams) (SwissRound, error)
 	LockSwissRoundForUpdate(ctx context.Context, id uuid.UUID) (SwissRound, error)
+	// A Swiss Series is locked only after its category revision is persisted. The
+	// transition is kept separate from Wave creation so an incomplete graph can
+	// never become executable.
+	LockSwissSeriesForMaterialization(ctx context.Context, arg LockSwissSeriesForMaterializationParams) (LockSwissSeriesForMaterializationRow, error)
 	LockTaskForContentMutation(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	LockTaskPoolPublicationRevision(ctx context.Context, contentRevision int64) ([]LockTaskPoolPublicationRevisionRow, error)
 	LockTerminalProjectionCommit(ctx context.Context, arg LockTerminalProjectionCommitParams) ([]LockTerminalProjectionCommitRow, error)
@@ -866,6 +911,14 @@ type Querier interface {
 	ReadExecutionAuthorityTime(ctx context.Context) (pgtype.Timestamptz, error)
 	ReadTournamentExecutionTime(ctx context.Context) (pgtype.Timestamptz, error)
 	ReadTournamentRosterTime(ctx context.Context) (pgtype.Timestamptz, error)
+	ReadyPlayoffSemifinalGameForMaterialization(ctx context.Context, arg ReadyPlayoffSemifinalGameForMaterializationParams) (ReadyPlayoffSemifinalGameForMaterializationRow, error)
+	ReadyPlayoffSemifinalSeriesForMaterialization(ctx context.Context, arg ReadyPlayoffSemifinalSeriesForMaterializationParams) (ReadyPlayoffSemifinalSeriesForMaterializationRow, error)
+	// The initial executable attempt follows the Series lock and is made ready
+	// only after its assignment and participant deliveries are committed.
+	ReadySwissGameForMaterialization(ctx context.Context, arg ReadySwissGameForMaterializationParams) (ReadySwissGameForMaterializationRow, error)
+	// Exact-normal planning and delivery complete the authority needed by the
+	// start workflow. Only that same locked Series may become ready.
+	ReadySwissSeriesForMaterialization(ctx context.Context, arg ReadySwissSeriesForMaterializationParams) (ReadySwissSeriesForMaterializationRow, error)
 	// RebindPausedExecutionGameEpochs appends successor authority evidence before
 	// any paused Game becomes active. The supplied service-owned identity must be
 	// the exact latest live PostgreSQL lease; prior epoch rows are never updated.

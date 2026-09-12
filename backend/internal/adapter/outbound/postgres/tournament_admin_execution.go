@@ -102,11 +102,16 @@ func (r *TournamentAdminExecutionPostgres) ReadExecutionTime(ctx context.Context
 	return observed.Time.UTC(), nil
 }
 
+//nolint:gocyclo // Pairing mode dispatch and its transactional persistence intentionally share one boundary.
 func (r *TournamentAdminExecutionPostgres) CommitPairing(
 	ctx context.Context,
 	plan tournamentadmin.PairingPlan,
 ) (tournamentadmin.SwissRoundView, error) {
 	if !validTournamentAdminExecutionRepository(ctx, r) {
+		return tournamentadmin.SwissRoundView{}, domain.ErrValidation
+	}
+	if len(plan.Pairs) == 0 || len(plan.PairingIDs) != len(plan.Pairs) ||
+		len(plan.SeriesIDs) != len(plan.Pairs) || len(plan.InitialScoreRevisionIDs) != len(plan.Pairs) {
 		return tournamentadmin.SwissRoundView{}, domain.ErrValidation
 	}
 	meta, err := tournamentAdminSwissRoundMeta(plan)
@@ -164,6 +169,11 @@ func (r *TournamentAdminExecutionPostgres) CommitPairing(
 	}
 	if linkID != plan.WaveID {
 		return tournamentadmin.SwissRoundView{}, domain.ErrInternal
+	}
+	if plan.Command.CategoryMode == domain.CategoryModeRandom {
+		if err := r.materializeSwissRandomBO1(ctx, plan); err != nil {
+			return tournamentadmin.SwissRoundView{}, err
+		}
 	}
 	return tournamentAdminSwissRoundView(plan, saved)
 }
@@ -283,7 +293,7 @@ func (r *TournamentAdminExecutionPostgres) CommitWave(
 		(mutation.Command.Action == tournamentadmin.WaveActionResume &&
 			(mutation.ExecutionAuthority.Validate() != nil ||
 				mutation.ExecutionAuthority.TournamentID != mutation.Command.TournamentID)) {
-		return tournamentadmin.WaveView{}, domain.ErrValidation
+		return tournamentadmin.WaveView{}, fmt.Errorf("validate Wave mutation: %w", domain.ErrValidation)
 	}
 	var err error
 	switch mutation.Command.Action {
@@ -311,7 +321,7 @@ func (r *TournamentAdminExecutionPostgres) CommitWave(
 	}
 	if current.View.Revision != mutation.Authority.View.Revision+1 ||
 		current.View.Wave.State != mutation.Next.State {
-		return tournamentadmin.WaveView{}, domain.ErrInternal
+		return tournamentadmin.WaveView{}, fmt.Errorf("validate persisted Wave mutation: %w", domain.ErrInternal)
 	}
 	return current.View, nil
 }

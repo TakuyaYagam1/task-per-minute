@@ -12,7 +12,10 @@ import (
 	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 )
 
-const tournamentBracketStageSemifinal = "semifinal"
+const (
+	tournamentBracketStageSemifinal = "semifinal"
+	tournamentBracketStageFinal     = "final"
+)
 
 var (
 	ErrTournamentSnapshotInvalid = errors.New("tournament snapshot: persisted read model is invalid")
@@ -41,6 +44,7 @@ type bracketPayloadDocument struct {
 }
 
 type bracketPayloadMatch struct {
+	Stage               string    `json:"stage"`
 	Position            int       `json:"position"`
 	FirstParticipantID  uuid.UUID `json:"first_participant_id"`
 	SecondParticipantID uuid.UUID `json:"second_participant_id"`

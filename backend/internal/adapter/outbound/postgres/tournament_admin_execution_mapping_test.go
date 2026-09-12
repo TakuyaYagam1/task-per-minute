@@ -45,6 +45,40 @@ func TestTournamentAdminStandingsMapsExactPublishedRoster(t *testing.T) {
 	require.Equal(t, participants[1].ID, standings[1].ParticipantID)
 }
 
+func TestTournamentAdminStandingsSeedsInitialRoster(t *testing.T) {
+	t.Parallel()
+
+	participants := []tournamentadmin.PairingParticipant{
+		{ID: tournamentExecutionID(2), StableSeed: 20},
+		{ID: tournamentExecutionID(1), StableSeed: 10},
+	}
+	document, err := json.Marshal(tournamentAdminStandingsDocument{Entries: []tournamentAdminStanding{}})
+	require.NoError(t, err)
+
+	standings, err := tournamentAdminStandings(document, participants)
+	require.NoError(t, err)
+	require.Equal(t, []tournamentadmin.SwissStandingView{
+		{
+			ParticipantID: participants[1].ID, Position: 1, PointsLabel: "provisional",
+			BuchholzStatus: "provisional", StableSeed: participants[1].StableSeed,
+		},
+		{
+			ParticipantID: participants[0].ID, Position: 2, PointsLabel: "provisional",
+			BuchholzStatus: "provisional", StableSeed: participants[0].StableSeed,
+		},
+	}, standings)
+}
+
+func TestTournamentAdminStandingsRejectsMissingEntries(t *testing.T) {
+	t.Parallel()
+
+	_, err := tournamentAdminStandings(
+		[]byte(`{}`),
+		[]tournamentadmin.PairingParticipant{{ID: tournamentExecutionID(1), StableSeed: 1}},
+	)
+	require.ErrorIs(t, err, domain.ErrInternal)
+}
+
 func TestTournamentAdminStandingsRejectsForeignParticipant(t *testing.T) {
 	t.Parallel()
 
@@ -167,11 +201,13 @@ func tournamentExecutionWaveRows() (
 	series := []sqlc.LockTournamentAdminWaveSeriesRow{
 		{
 			ID: tournamentExecutionID(31), FirstParticipantID: participants[0],
-			SecondParticipantID: participants[1], State: string(domain.SeriesStateReady), Revision: 1,
+			SecondParticipantID: participants[1], Format: string(domain.SeriesFormatBO1),
+			State: string(domain.SeriesStateReady), Revision: 1,
 		},
 		{
 			ID: tournamentExecutionID(32), FirstParticipantID: participants[2],
-			SecondParticipantID: participants[3], State: string(domain.SeriesStateReady), Revision: 1,
+			SecondParticipantID: participants[3], Format: string(domain.SeriesFormatBO1),
+			State: string(domain.SeriesStateReady), Revision: 1,
 		},
 	}
 	return header, members, series, participants[4]

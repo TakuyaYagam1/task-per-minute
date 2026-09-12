@@ -44,8 +44,8 @@ type Assignment struct {
 type AssignmentBranch struct {
 	ID                       uuid.UUID
 	PlanID                   uuid.UUID
-	DraftID                  uuid.UUID
-	DraftRevisionID          uuid.UUID
+	DraftID                  uuid.NullUUID
+	DraftRevisionID          uuid.NullUUID
 	BranchKey                string
 	CategorySequence         []byte
 	ExactDraftBranchID       uuid.NullUUID
@@ -319,6 +319,46 @@ type ExactDraftAssignmentChildSource struct {
 	ArtifactDigest     []byte
 	ProofHash          string
 	CreatedAt          pgtype.Timestamptz
+}
+
+type ExactNormalAssignmentHistoryHead struct {
+	TournamentID uuid.UUID
+	RosterID     uuid.UUID
+	SeriesID     uuid.UUID
+	SlotID       uuid.UUID
+	RevisionID   uuid.UUID
+	Revision     int64
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
+}
+
+type ExactNormalAssignmentSource struct {
+	PlanID                  uuid.UUID
+	TournamentID            uuid.UUID
+	RosterID                uuid.UUID
+	SeriesID                uuid.UUID
+	SlotID                  uuid.UUID
+	CategoryLockID          uuid.UUID
+	Category                string
+	SeriesRevision          int64
+	PoolRevisionID          uuid.UUID
+	PoolRevision            int64
+	HistoryRevisionID       uuid.UUID
+	HistoryRevision         int64
+	RosterRevision          int64
+	ArtifactRevisionID      uuid.UUID
+	ArtifactRevision        int64
+	CategoryRevisionID      uuid.UUID
+	CategoryRevision        int64
+	Pool                    []byte
+	ParticipantIds          []byte
+	ParticipantReservations []byte
+	History                 []byte
+	Candidates              []byte
+	GraphDigest             []byte
+	ArtifactDigest          []byte
+	ProofHash               string
+	CreatedAt               pgtype.Timestamptz
 }
 
 type ExecutionAuthorityLease struct {

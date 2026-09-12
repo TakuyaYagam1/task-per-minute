@@ -1,13 +1,40 @@
 package authority_test
 
 import (
+	"context"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
 	authorityusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/authority"
+	authoritymocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/authority/mocks"
 )
+
+func TestControllerProvesNewLeaseAtFreshAuthoritativeTime(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 9, 11, 20, 0, 0, 0, time.UTC)
+	repository := newAuthorityRepositoryHarness(t, authorityRepositoryOptions{})
+	source := authoritymocks.NewMockTimeSource(t)
+	call := 0
+	source.EXPECT().AuthorityTime(mock.Anything).RunAndReturn(func(context.Context) (time.Time, error) {
+		call++
+		return now.Add(time.Duration(call) * time.Microsecond), nil
+	}).Times(3)
+	controller, err := authorityusecase.NewController(
+		repository,
+		source,
+		authorityusecase.ControllerConfig{HolderID: task042ID(139)},
+	)
+	require.NoError(t, err)
+
+	identity, err := controller.AuthorityFor(t.Context(), task042ID(138))
+	require.NoError(t, err)
+	require.Equal(t, task042ID(138), identity.TournamentID)
+	require.Equal(t, 1, repository.writeCount())
+}
 
 func TestControllerRenewsAndFencesExpiredLocalAuthority(t *testing.T) {
 	t.Parallel()

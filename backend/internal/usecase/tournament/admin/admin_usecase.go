@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
@@ -147,7 +148,7 @@ func (a *AdminUseCase) ConfigurePairings(
 		return SwissRoundView{}, normalizeAdminError(err)
 	}
 	if !validSwissRoundView(view, command.TournamentID, command.RoundNumber) {
-		return SwissRoundView{}, domain.ErrInternal
+		return SwissRoundView{}, fmt.Errorf("validate pairing response: %w", domain.ErrInternal)
 	}
 	return view, nil
 }

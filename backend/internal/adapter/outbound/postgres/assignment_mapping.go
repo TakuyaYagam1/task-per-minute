@@ -59,8 +59,8 @@ func assignmentPlanAggregate(
 			return nil, decodeErr
 		}
 		aggregate.Branches[index] = AssignmentBranchRecord{
-			ID: branch.ID, PlanID: branch.PlanID, DraftID: branch.DraftID,
-			DraftRevisionID: branch.DraftRevisionID, Key: branch.BranchKey, Categories: categories,
+			ID: branch.ID, PlanID: branch.PlanID, DraftID: branch.DraftID.UUID,
+			DraftRevisionID: branch.DraftRevisionID.UUID, Key: branch.BranchKey, Categories: categories,
 			State: branch.State, ActivatedAt: nullableTime(branch.ActivatedAt), ReleasedAt: nullableTime(branch.ReleasedAt),
 			ReleaseReason: branch.ReleaseReason, SupersededAt: nullableTime(branch.SupersededAt),
 			SupersessionReason: branch.SupersessionReason, CreatedAt: branch.CreatedAt.Time,
