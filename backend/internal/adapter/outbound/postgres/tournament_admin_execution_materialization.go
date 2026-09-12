@@ -45,12 +45,42 @@ func (r *TournamentAdminExecutionPostgres) materializeSwissRandomBO1(
 	return nil
 }
 
+// materializeSwissAdminBO1 persists the executable graph after the operator's
+// category selection has been locked with actor and reason evidence.
+func (r *TournamentAdminExecutionPostgres) materializeSwissAdminBO1(
+	ctx context.Context,
+	plan tournamentadmin.PairingPlan,
+) error {
+	if !validSwissAdminMaterializationPlan(plan) {
+		return domain.ErrValidation
+	}
+	content, err := loadTournamentPreflightContent(ctx, r.tx.Querier(ctx), plan.Command.TournamentID)
+	if err != nil {
+		return fmt.Errorf("load Swiss admin materialization content: %w", err)
+	}
+	if content.configuration.Validate() != nil || content.configuration.NormalPool.ID == uuid.Nil {
+		return domain.ErrInvalidContentConfiguration
+	}
+	for index, pair := range plan.Pairs {
+		if err := r.materializeSwissAdminSeries(
+			ctx, plan, pair, plan.SeriesIDs[index], content.configuration,
+		); err != nil {
+			return fmt.Errorf("materialize Swiss admin Series %d: %w", index+1, err)
+		}
+	}
+	return nil
+}
+
 func validSwissRandomMaterializationPlan(plan tournamentadmin.PairingPlan) bool {
 	if plan.Command.CategoryMode != domain.CategoryModeRandom || plan.Command.TournamentID == uuid.Nil ||
 		plan.Authority.RosterID == uuid.Nil || !validServerTime(plan.DecidedAt) || len(plan.Pairs) == 0 ||
 		len(plan.SeriesIDs) != len(plan.Pairs) {
 		return false
 	}
+	return validSwissMaterializationPairs(plan)
+}
+
+func validSwissMaterializationPairs(plan tournamentadmin.PairingPlan) bool {
 	seenSeries := make(map[uuid.UUID]struct{}, len(plan.SeriesIDs))
 	for index, pair := range plan.Pairs {
 		if pair.FirstParticipantID == uuid.Nil || pair.SecondParticipantID == uuid.Nil ||
@@ -65,6 +95,17 @@ func validSwissRandomMaterializationPlan(plan tournamentadmin.PairingPlan) bool 
 	return true
 }
 
+func validSwissAdminMaterializationPlan(plan tournamentadmin.PairingPlan) bool {
+	if plan.Command.CategoryMode != domain.CategoryModeAdmin || plan.Command.TournamentID == uuid.Nil ||
+		plan.Command.Operator.ActorID == uuid.Nil || len(plan.Command.Categories) != 1 ||
+		!plan.Command.Categories[0].IsValid() || plan.Authority.RosterID == uuid.Nil ||
+		!validServerTime(plan.DecidedAt) || len(plan.Pairs) == 0 ||
+		len(plan.SeriesIDs) != len(plan.Pairs) {
+		return false
+	}
+	return validSwissMaterializationPairs(plan)
+}
+
 func (r *TournamentAdminExecutionPostgres) materializeSwissRandomSeries(
 	ctx context.Context,
 	plan tournamentadmin.PairingPlan,
@@ -77,13 +118,55 @@ func (r *TournamentAdminExecutionPostgres) materializeSwissRandomSeries(
 	)
 }
 
+func (r *TournamentAdminExecutionPostgres) materializeSwissAdminSeries(
+	ctx context.Context,
+	plan tournamentadmin.PairingPlan,
+	pair swissusecase.Pair,
+	seriesID uuid.UUID,
+	configuration domain.ContentConfiguration,
+) error {
+	createdAt := plan.DecidedAt.Round(0).UTC()
+	mode := domain.CategoryModeAdmin
+	revisionID := tournamentAdminExecutionID(seriesID, "swiss-category-revision")
+	revision, changed, err := draftusecase.DeriveCategoryRevision(nil, draftusecase.CategoryRevisionCommand{
+		ID: revisionID, SeriesID: seriesID, RosterID: plan.Authority.RosterID,
+		SeriesState: domain.SeriesStatePlanned, Stage: domain.TournamentStageSwiss,
+		Configuration: configuration, ModeOverride: &mode, CategoryLocked: false, CreatedAt: createdAt,
+	})
+	if err != nil {
+		return fmt.Errorf("derive admin category revision: %w", err)
+	}
+	if !changed {
+		return fmt.Errorf("derive Swiss admin category revision: %w", domain.ErrInternal)
+	}
+	selected := plan.Command.Categories[0]
+	lock, changed, err := draftusecase.LockAdmin(nil, revision, draftusecase.AdminSelectionCommand{
+		LockID: revision.ID, ActorID: plan.Command.Operator.ActorID,
+		ExpectedCategoryRevisionID: revision.ID, ExpectedCategoryRevision: revision.Revision,
+		SelectedCategory: &selected, Reason: "Swiss pairing category selection", LockedAt: createdAt,
+	})
+	if err != nil {
+		if errors.Is(err, draftusecase.ErrInvalidAdminSelection) {
+			return fmt.Errorf("lock admin category: %w", domain.ErrValidation)
+		}
+		return fmt.Errorf("lock admin category: %w", err)
+	}
+	if !changed || len(lock.SelectedCategories) != 1 || lock.SelectedCategories[0] != selected {
+		return fmt.Errorf("validate Swiss admin category lock: %w", domain.ErrInternal)
+	}
+	return r.materializeSwissLockedSeriesConcrete(
+		ctx, plan, pair.FirstParticipantID, pair.SecondParticipantID, seriesID, configuration, revision, lock,
+	)
+}
+
 func swissCategoryRevisionParams(
 	revision draftusecase.CategoryRevision,
 	lock draftusecase.CategoryLock,
 	normalPoolID uuid.UUID,
 ) (sqlc.CreateSwissCategoryRevisionParams, error) {
 	if normalPoolID == uuid.Nil || revision.Validate() != nil || lock.Validate(revision) != nil ||
-		lock.Mode != domain.CategoryModeRandom || lock.DecisionEvidence == nil {
+		lock.Mode != revision.Mode || (lock.Mode == domain.CategoryModeRandom && lock.DecisionEvidence == nil) ||
+		(lock.Mode == domain.CategoryModeAdmin && (lock.SelectorActorID == nil || lock.SelectionReason == "")) {
 		return sqlc.CreateSwissCategoryRevisionParams{}, domain.ErrValidation
 	}
 	categoryPool, err := categoryJSON(revision.CategoryPool.Categories)
@@ -94,7 +177,27 @@ func swissCategoryRevisionParams(
 	if err != nil {
 		return sqlc.CreateSwissCategoryRevisionParams{}, err
 	}
-	evidence := *lock.DecisionEvidence
+	params := sqlc.CreateSwissCategoryRevisionParams{
+		ID: revision.ID, SeriesID: revision.SeriesID, RosterID: revision.RosterID,
+		Revision: revision.Revision, SourcePoolRevisionID: normalPoolID,
+		Mode: string(revision.Mode), CategoryPool: categoryPool, SelectedCategories: selectedCategories,
+		CreatedAt: tstz(revision.CreatedAt),
+	}
+	if lock.SelectorActorID != nil {
+		params.SelectorActorID = uuid.NullUUID{UUID: *lock.SelectorActorID, Valid: true}
+	}
+	if lock.SelectionReason != "" {
+		reason := lock.SelectionReason
+		params.SelectionReason = &reason
+	}
+	if lock.DecisionEvidence == nil {
+		params.DecidedAt = tstz(lock.LockedAt)
+		return params, nil
+	}
+	return swissRandomCategoryEvidenceParams(params, *lock.DecisionEvidence)
+}
+
+func swissRandomCategoryEvidenceParams(params sqlc.CreateSwissCategoryRevisionParams, evidence domain.DecisionEvidence) (sqlc.CreateSwissCategoryRevisionParams, error) {
 	decisionInputs, err := marshalJSON("Swiss category decision inputs", evidence.NormalizedInputs)
 	if err != nil {
 		return sqlc.CreateSwissCategoryRevisionParams{}, err
@@ -103,17 +206,15 @@ func swissCategoryRevisionParams(
 	if err != nil {
 		return sqlc.CreateSwissCategoryRevisionParams{}, err
 	}
-	return sqlc.CreateSwissCategoryRevisionParams{
-		ID: revision.ID, SeriesID: revision.SeriesID, RosterID: revision.RosterID,
-		Revision: revision.Revision, SourcePoolRevisionID: normalPoolID,
-		Mode: string(revision.Mode), CategoryPool: categoryPool, SelectedCategories: selectedCategories,
-		DecisionEvidenceID:       uuid.NullUUID{UUID: evidence.ID, Valid: true},
-		DecisionAlgorithmVersion: &evidence.AlgorithmVersion, DecisionInputs: decisionInputs,
-		DecisionSeed: append([]byte(nil), evidence.Seed[:]...), DecisionResult: decisionResult,
-		DecisionReplayDigest: append([]byte(nil), evidence.ReplayDigest[:]...),
-		DecisionOwnerID:      uuid.NullUUID{UUID: evidence.OwnerID, Valid: true},
-		DecidedAt:            tstz(evidence.DecidedAt), CreatedAt: tstz(revision.CreatedAt),
-	}, nil
+	params.DecisionEvidenceID = uuid.NullUUID{UUID: evidence.ID, Valid: true}
+	params.DecisionAlgorithmVersion = &evidence.AlgorithmVersion
+	params.DecisionInputs = decisionInputs
+	params.DecisionSeed = append([]byte(nil), evidence.Seed[:]...)
+	params.DecisionResult = decisionResult
+	params.DecisionReplayDigest = append([]byte(nil), evidence.ReplayDigest[:]...)
+	params.DecisionOwnerID = uuid.NullUUID{UUID: evidence.OwnerID, Valid: true}
+	params.DecidedAt = tstz(evidence.DecidedAt)
+	return params, nil
 }
 
 func (r *TournamentAdminExecutionPostgres) persistSwissCategoryRevision(
@@ -163,7 +264,6 @@ func createMaterializedSeriesPresence(
 	return nil
 }
 
-//nolint:gocyclo // Random Series materialization persists the executable graph atomically with its exact assignment.
 func (r *TournamentAdminExecutionPostgres) materializeSwissRandomSeriesConcrete(
 	ctx context.Context,
 	plan tournamentadmin.PairingPlan,
@@ -173,7 +273,6 @@ func (r *TournamentAdminExecutionPostgres) materializeSwissRandomSeriesConcrete(
 	configuration domain.ContentConfiguration,
 ) error {
 	createdAt := plan.DecidedAt.Round(0).UTC()
-	readyAt := createdAt.Add(time.Microsecond)
 	mode := domain.CategoryModeRandom
 	revisionID := tournamentAdminExecutionID(seriesID, "swiss-category-revision")
 	revision, changed, err := draftusecase.DeriveCategoryRevision(nil, draftusecase.CategoryRevisionCommand{
@@ -197,6 +296,24 @@ func (r *TournamentAdminExecutionPostgres) materializeSwissRandomSeriesConcrete(
 	if !changed || len(lock.SelectedCategories) != 1 {
 		return fmt.Errorf("validate Swiss category lock: %w", domain.ErrInternal)
 	}
+	return r.materializeSwissLockedSeriesConcrete(
+		ctx, plan, firstParticipantID, secondParticipantID, seriesID, configuration, revision, lock,
+	)
+}
+
+//nolint:gocyclo // Swiss Series materialization persists the executable graph atomically with its exact assignment.
+func (r *TournamentAdminExecutionPostgres) materializeSwissLockedSeriesConcrete(
+	ctx context.Context,
+	plan tournamentadmin.PairingPlan,
+	firstParticipantID uuid.UUID,
+	secondParticipantID uuid.UUID,
+	seriesID uuid.UUID,
+	configuration domain.ContentConfiguration,
+	revision draftusecase.CategoryRevision,
+	lock draftusecase.CategoryLock,
+) error {
+	createdAt := plan.DecidedAt.Round(0).UTC()
+	readyAt := createdAt.Add(time.Microsecond)
 	if err := r.persistSwissCategoryRevision(ctx, revision, lock, configuration.NormalPool.ID); err != nil {
 		return err
 	}

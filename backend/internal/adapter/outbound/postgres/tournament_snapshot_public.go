@@ -105,7 +105,7 @@ func tournamentScoreboard(
 	names map[uuid.UUID]string,
 ) ([]usecase.PublicScoreboardEntryView, error) {
 	var document standingsPayloadDocument
-	if err := json.Unmarshal(payload, &document); err != nil || len(document.Entries) == 0 {
+	if err := json.Unmarshal(payload, &document); err != nil || document.Entries == nil {
 		return nil, tournamentSnapshotInvalidError("standings payload")
 	}
 	view := make([]usecase.PublicScoreboardEntryView, len(document.Entries))

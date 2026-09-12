@@ -34,6 +34,31 @@ func TestSwissRandomMaterializationPlanRequiresOneSeriesPerPair(t *testing.T) {
 	require.False(t, validSwissRandomMaterializationPlan(plan))
 }
 
+func TestSwissAdminMaterializationPlanRequiresOneCategoryAndActor(t *testing.T) {
+	t.Parallel()
+
+	plan := tournamentadmin.PairingPlan{
+		Command: tournamentadmin.PairingCommand{
+			CommandScope: tournamentadmin.CommandScope{
+				Operator:     tournamentadmin.OperatorIdentity{ActorID: uuid.New()},
+				TournamentID: uuid.New(),
+			},
+			CategoryMode: domain.CategoryModeAdmin,
+			Categories:   []domain.Category{domain.CategoryWeb},
+		},
+		Authority: tournamentadmin.PairingAuthority{RosterID: uuid.New()},
+		Pairs:     []swissusecase.Pair{{FirstParticipantID: uuid.New(), SecondParticipantID: uuid.New()}},
+		SeriesIDs: []uuid.UUID{uuid.New()}, DecidedAt: time.Date(2026, 9, 11, 12, 0, 0, 0, time.UTC),
+	}
+	require.True(t, validSwissAdminMaterializationPlan(plan))
+
+	plan.Command.Categories = []domain.Category{domain.CategoryWeb, domain.CategoryCrypto}
+	require.False(t, validSwissAdminMaterializationPlan(plan))
+	plan.Command.Categories = []domain.Category{domain.CategoryWeb}
+	plan.Command.Operator.ActorID = uuid.Nil
+	require.False(t, validSwissAdminMaterializationPlan(plan))
+}
+
 func TestSwissCategoryRevisionParamsRejectsUnprovenLock(t *testing.T) {
 	t.Parallel()
 
@@ -73,6 +98,41 @@ func TestSwissCategoryRevisionParamsCarriesRandomDecisionEvidence(t *testing.T) 
 	require.Equal(t, lock.ID, params.DecisionOwnerID.UUID)
 	require.Len(t, params.DecisionSeed, domain.DecisionSeedSize)
 	require.Len(t, params.DecisionReplayDigest, domain.DecisionSeedSize)
+}
+
+func TestSwissCategoryRevisionParamsCarriesAdminSelectionEvidence(t *testing.T) {
+	t.Parallel()
+
+	createdAt := time.Date(2026, 9, 11, 12, 0, 0, 0, time.UTC)
+	configuration := swissMaterializationContentConfiguration(t)
+	actorID := uuid.New()
+	revision, changed, err := draftusecase.DeriveCategoryRevision(nil, draftusecase.CategoryRevisionCommand{
+		ID: uuid.New(), SeriesID: uuid.New(), RosterID: uuid.New(), SeriesState: domain.SeriesStatePlanned,
+		Stage: domain.TournamentStageSwiss, Configuration: configuration,
+		ModeOverride: func() *domain.CategoryMode { mode := domain.CategoryModeAdmin; return &mode }(), CreatedAt: createdAt,
+	})
+	require.NoError(t, err)
+	require.True(t, changed)
+	selected := domain.CategoryWeb
+	lock, changed, err := draftusecase.LockAdmin(nil, revision, draftusecase.AdminSelectionCommand{
+		LockID: revision.ID, ActorID: actorID, ExpectedCategoryRevisionID: revision.ID,
+		ExpectedCategoryRevision: revision.Revision, SelectedCategory: &selected,
+		Reason: "operator selection", LockedAt: createdAt,
+	})
+	require.NoError(t, err)
+	require.True(t, changed)
+
+	params, err := swissCategoryRevisionParams(revision, lock, configuration.NormalPool.ID)
+	require.NoError(t, err)
+	require.Equal(t, string(domain.CategoryModeAdmin), params.Mode)
+	require.Equal(t, actorID, params.SelectorActorID.UUID)
+	require.True(t, params.SelectorActorID.Valid)
+	require.NotNil(t, params.SelectionReason)
+	require.Equal(t, "operator selection", *params.SelectionReason)
+	require.True(t, params.DecidedAt.Valid)
+	require.Equal(t, lock.LockedAt, params.DecidedAt.Time)
+	require.False(t, params.DecisionEvidenceID.Valid)
+	require.Nil(t, params.DecisionAlgorithmVersion)
 }
 
 func TestSwissMaterializationSQLContractKeepsGraphAtomic(t *testing.T) {

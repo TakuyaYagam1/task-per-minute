@@ -327,6 +327,7 @@ type Querier interface {
 	DiscloseWaveStartReservationCAS(ctx context.Context, arg DiscloseWaveStartReservationCASParams) (DiscloseWaveStartReservationCASRow, error)
 	EnsureExactDraftPlanningHistoryHead(ctx context.Context, draftID uuid.UUID) error
 	EnsureExactNormalAssignmentHistoryHead(ctx context.Context, arg EnsureExactNormalAssignmentHistoryHeadParams) error
+	EnsureSwissDraftPlanningHistoryHead(ctx context.Context, draftID uuid.UUID) error
 	EnterTournamentTechnicalPause(ctx context.Context, arg EnterTournamentTechnicalPauseParams) (EnterTournamentTechnicalPauseRow, error)
 	EstablishGoldenParticipation(ctx context.Context, arg EstablishGoldenParticipationParams) (GoldenMembership, error)
 	ExpireRecoveryReadyWindowCAS(ctx context.Context, arg ExpireRecoveryReadyWindowCASParams) (ReadyWindow, error)
@@ -433,6 +434,11 @@ type Querier interface {
 	GetResultSubmissionEventByIdempotencyKey(ctx context.Context, idempotencyKey uuid.UUID) (SubmissionEvent, error)
 	GetSeriesScoreRevisionByID(ctx context.Context, id uuid.UUID) (SeriesScoreRevision, error)
 	GetSwissBye(ctx context.Context, roundID uuid.UUID) (SwissBye, error)
+	// Swiss BO1 draft deadlines are scanned from the immutable current draft
+	// revision.  The Swiss Wave link excludes playoff drafts, while the
+	// tournament and Series predicates keep paused, cancelled, and already
+	// materialized rows out of the automatic-action path.
+	GetSwissDraftDeadlineIdentity(ctx context.Context, draftID uuid.UUID) (GetSwissDraftDeadlineIdentityRow, error)
 	GetSwissRepeatOverride(ctx context.Context, roundID uuid.UUID) (SwissRepeatOverride, error)
 	GetSwissRound(ctx context.Context, id uuid.UUID) (SwissRound, error)
 	GetSwissRoundProofForUpdate(ctx context.Context, arg GetSwissRoundProofForUpdateParams) (SwissRoundLockProof, error)
@@ -459,6 +465,7 @@ type Querier interface {
 	GetWave(ctx context.Context, arg GetWaveParams) (Wave, error)
 	GetWaveReadinessHead(ctx context.Context, arg GetWaveReadinessHeadParams) (WaveReadiness, error)
 	HasGoldenRuntimePlanSnapshot(ctx context.Context, arg HasGoldenRuntimePlanSnapshotParams) (bool, error)
+	HasWavePendingDrafts(ctx context.Context, waveID uuid.UUID) (bool, error)
 	InsertTournamentAdminRosterParticipant(ctx context.Context, arg InsertTournamentAdminRosterParticipantParams) (Participant, error)
 	InsertTournamentCreateReceipt(ctx context.Context, arg InsertTournamentCreateReceiptParams) (TournamentCreateCommandReceipt, error)
 	InsertTournamentParticipant(ctx context.Context, arg InsertTournamentParticipantParams) (Participant, error)
@@ -475,6 +482,7 @@ type Querier interface {
 	ListCorrectionProjectionDecisions(ctx context.Context, arg ListCorrectionProjectionDecisionsParams) ([]CorrectionProjectionDecision, error)
 	ListDraftActions(ctx context.Context, draftID uuid.UUID) ([]DraftAction, error)
 	ListDraftRevisions(ctx context.Context, draftID uuid.UUID) ([]DraftRevision, error)
+	ListDueSwissDraftDeadlines(ctx context.Context, arg ListDueSwissDraftDeadlinesParams) ([]ListDueSwissDraftDeadlinesRow, error)
 	ListExecutionRecoveryGames(ctx context.Context, arg ListExecutionRecoveryGamesParams) ([]ListExecutionRecoveryGamesRow, error)
 	ListExecutionRecoveryTournaments(ctx context.Context) ([]uuid.UUID, error)
 	ListGameAttempts(ctx context.Context, slotID uuid.UUID) ([]ListGameAttemptsRow, error)
@@ -626,10 +634,10 @@ type Querier interface {
 	// Standalone exact-normal planning locks the published playoff authority and
 	// snapshots every source document before it attempts a reservation.
 	LockExactNormalAssignmentStage(ctx context.Context, arg LockExactNormalAssignmentStageParams) (LockExactNormalAssignmentStageRow, error)
-	// Swiss random materialization runs before the pairing command ledger and
-	// wave-start proof are written.  The initial score revision carries the real
-	// command and projection lineage, while the automatic round carries the
-	// immutable pairing decision; later ledgers revalidate both.
+	// Swiss exact-normal materialization runs before the pairing command ledger and
+	// wave-start proof are written. The initial score revision carries the real
+	// command and projection lineage. Automatic rounds carry decision evidence;
+	// manual rounds bind their immutable identity, revisions and canonical pairs.
 	LockExactNormalAssignmentSwissStage(ctx context.Context, arg LockExactNormalAssignmentSwissStageParams) (LockExactNormalAssignmentSwissStageRow, error)
 	LockExecutionAuthorityScope(ctx context.Context, tournamentID uuid.UUID) (uuid.UUID, error)
 	LockExecutionEpochReplayFence(ctx context.Context, arg LockExecutionEpochReplayFenceParams) (LockExecutionEpochReplayFenceRow, error)
@@ -719,6 +727,21 @@ type Querier interface {
 	// Stage genesis separates the logical node ID from the score revision ID.
 	// Resolve only immutable, exact command/Series evidence, never mutable heads.
 	LockStageScoreGenesisNodes(ctx context.Context, arg LockStageScoreGenesisNodesParams) ([]LockStageScoreGenesisNodesRow, error)
+	LockSwissDraftAssignmentSource(ctx context.Context, planID uuid.UUID) (LockSwissDraftAssignmentSourceRow, error)
+	LockSwissDraftCompletion(ctx context.Context, draftID uuid.UUID) (LockSwissDraftCompletionRow, error)
+	// The caller takes the Tournament -> Roster/Projection prefix first. This
+	// query then locks only the Swiss draft scope and its current immutable
+	// revision, so pause/cancel and participant actions serialize before CAS.
+	LockSwissDraftDeadlineCommit(ctx context.Context, arg LockSwissDraftDeadlineCommitParams) (LockSwissDraftDeadlineCommitRow, error)
+	LockSwissDraftPlanningCandidates(ctx context.Context, arg LockSwissDraftPlanningCandidatesParams) ([]LockSwissDraftPlanningCandidatesRow, error)
+	LockSwissDraftPlanningHistory(ctx context.Context, draftID uuid.UUID) ([]LockSwissDraftPlanningHistoryRow, error)
+	LockSwissDraftPlanningHistoryHead(ctx context.Context, draftID uuid.UUID) (LockSwissDraftPlanningHistoryHeadRow, error)
+	LockSwissDraftPlanningParticipants(ctx context.Context, draftID uuid.UUID) ([]LockSwissDraftPlanningParticipantsRow, error)
+	LockSwissDraftPlanningReservationKeys(ctx context.Context, draftID uuid.UUID) error
+	// Swiss draft authority uses the same exact-draft reservation graph as the
+	// playoff final path, but resolves its immutable stage evidence from the
+	// persisted Swiss wave, round, pairing, and standings rows.
+	LockSwissDraftPlanningStage(ctx context.Context, draftID uuid.UUID) (LockSwissDraftPlanningStageRow, error)
 	LockSwissRoundCAS(ctx context.Context, arg LockSwissRoundCASParams) (SwissRound, error)
 	LockSwissRoundForUpdate(ctx context.Context, id uuid.UUID) (SwissRound, error)
 	// A Swiss Series is locked only after its category revision is persisted. The

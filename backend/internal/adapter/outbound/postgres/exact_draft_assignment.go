@@ -23,7 +23,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 )
 
-// ExactDraftBranchPlanPostgres persists every reachable final-draft branch.
+// ExactDraftBranchPlanPostgres persists every reachable BO1 or BO3 draft branch.
 // The generic assignment tables retain the selected task chain for each
 // category child, while the exact-draft tables preserve the parent path and
 // its immutable source authority.
@@ -71,8 +71,7 @@ func (r *ExactDraftBranchPlanPostgres) loadExactDraftBranchPlanAuthorityTx(
 	ctx context.Context,
 	draftID uuid.UUID,
 ) (assignmentusecase.ExactDraftBranchPlanAuthority, error) {
-	querier := r.tx.Querier(ctx)
-	stage, err := querier.LockExactDraftPlanningStage(ctx, draftID)
+	stage, err := r.lockExactDraftPlanningStage(ctx, draftID)
 	if err != nil {
 		return assignmentusecase.ExactDraftBranchPlanAuthority{}, err
 	}
@@ -92,29 +91,29 @@ func (r *ExactDraftBranchPlanPostgres) loadExactDraftBranchPlanAuthorityTx(
 		draft.State != draftusecase.ExecutionStateActive {
 		return assignmentusecase.ExactDraftBranchPlanAuthority{}, domain.ErrConflict
 	}
-	participants, err := querier.LockExactDraftPlanningParticipants(ctx, draftID)
+	participants, err := r.lockExactDraftPlanningParticipants(ctx, draftID)
 	if err != nil {
 		return assignmentusecase.ExactDraftBranchPlanAuthority{}, err
 	}
-	if err := querier.EnsureExactDraftPlanningHistoryHead(ctx, draftID); err != nil {
+	if err := r.ensureExactDraftPlanningHistoryHead(ctx, draftID); err != nil {
 		return assignmentusecase.ExactDraftBranchPlanAuthority{}, err
 	}
-	historyHead, err := querier.LockExactDraftPlanningHistoryHead(ctx, draftID)
+	historyHead, err := r.lockExactDraftPlanningHistoryHead(ctx, draftID)
 	if err != nil {
 		return assignmentusecase.ExactDraftBranchPlanAuthority{}, err
 	}
-	history, err := querier.LockExactDraftPlanningHistory(ctx, draftID)
+	history, err := r.lockExactDraftPlanningHistory(ctx, draftID)
 	if err != nil {
 		return assignmentusecase.ExactDraftBranchPlanAuthority{}, err
 	}
-	ids, err := playoff.FinalStageIdentity(stage.CommandID)
+	ids, err := exactDraftIdentity(stage.CommandID, stage.FinalSeriesID, domain.SeriesFormat(stage.SeriesFormat))
 	if err != nil {
 		return assignmentusecase.ExactDraftBranchPlanAuthority{}, err
 	}
-	if err := querier.LockExactDraftPlanningReservationKeys(ctx, draftID); err != nil {
+	if err := r.lockExactDraftPlanningReservationKeys(ctx, draftID); err != nil {
 		return assignmentusecase.ExactDraftBranchPlanAuthority{}, err
 	}
-	candidates, err := querier.LockExactDraftPlanningCandidates(ctx, sqlc.LockExactDraftPlanningCandidatesParams{DraftID: draftID, PlanID: ids.DraftAssignmentPlanID})
+	candidates, err := r.lockExactDraftPlanningCandidates(ctx, sqlc.LockExactDraftPlanningCandidatesParams{DraftID: draftID, PlanID: ids.DraftAssignmentPlanID})
 	if err != nil {
 		return assignmentusecase.ExactDraftBranchPlanAuthority{}, err
 	}
@@ -139,7 +138,7 @@ func exactDraftPlanningAuthority(
 		historyHead.RevisionID == uuid.Nil || historyHead.Revision < 1 {
 		return assignmentusecase.ExactDraftBranchPlanAuthority{}, domain.ErrConflict
 	}
-	ids, err := playoff.FinalStageIdentity(stage.CommandID)
+	ids, err := exactDraftIdentity(stage.CommandID, stage.FinalSeriesID, domain.SeriesFormat(stage.SeriesFormat))
 	if err != nil || ids.DraftID != draft.ID || ids.FinalSeriesID != stage.FinalSeriesID ||
 		ids.CategoryRevisionID != stage.CategoryRevisionID {
 		return assignmentusecase.ExactDraftBranchPlanAuthority{}, domain.ErrConflict
@@ -427,7 +426,7 @@ func (r *ExactDraftBranchPlanPostgres) commitExactDraftBranchPlanTx(
 		return nil, false, err
 	}
 
-	stage, err := querier.LockExactDraftPlanningStage(ctx, plan.SourceDraft.ID)
+	stage, err := r.lockExactDraftPlanningStage(ctx, plan.SourceDraft.ID)
 	if err != nil {
 		return nil, false, err
 	}
@@ -445,7 +444,7 @@ func exactDraftPlanMatchesStage(
 	plan assignmentusecase.ExactDraftBranchPlan,
 	stage sqlc.LockExactDraftPlanningStageRow,
 ) error {
-	ids, err := playoff.FinalStageIdentity(stage.CommandID)
+	ids, err := exactDraftIdentity(stage.CommandID, stage.FinalSeriesID, domain.SeriesFormat(stage.SeriesFormat))
 	if err != nil || stage.FinalSeriesID != plan.SourceDraft.SeriesID || stage.DraftID != plan.SourceDraft.ID ||
 		stage.CurrentDraftRevisionID != plan.SourceDraft.RevisionID ||
 		stage.CurrentDraftRevision != plan.SourceDraft.Revision ||
@@ -484,7 +483,7 @@ func (r *ExactDraftBranchPlanPostgres) insertExactDraftBranchPlanTx(
 	}); err != nil {
 		return err
 	}
-	participants, err := querier.LockExactDraftPlanningParticipants(ctx, plan.SourceDraft.ID)
+	participants, err := r.lockExactDraftPlanningParticipants(ctx, plan.SourceDraft.ID)
 	if err != nil {
 		return err
 	}
@@ -492,14 +491,14 @@ func (r *ExactDraftBranchPlanPostgres) insertExactDraftBranchPlanTx(
 	if err != nil || !exactDraftPlanHasParticipants(plan, currentParticipants) {
 		return domain.ErrConflict
 	}
-	if err := querier.EnsureExactDraftPlanningHistoryHead(ctx, plan.SourceDraft.ID); err != nil {
+	if err := r.ensureExactDraftPlanningHistoryHead(ctx, plan.SourceDraft.ID); err != nil {
 		return err
 	}
-	historyHead, err := querier.LockExactDraftPlanningHistoryHead(ctx, plan.SourceDraft.ID)
+	historyHead, err := r.lockExactDraftPlanningHistoryHead(ctx, plan.SourceDraft.ID)
 	if err != nil || !exactDraftPlanHasHistoryHead(plan, historyHead) {
 		return domain.ErrConflict
 	}
-	history, err := querier.LockExactDraftPlanningHistory(ctx, plan.SourceDraft.ID)
+	history, err := r.lockExactDraftPlanningHistory(ctx, plan.SourceDraft.ID)
 	if err != nil {
 		return err
 	}
@@ -507,10 +506,10 @@ func (r *ExactDraftBranchPlanPostgres) insertExactDraftBranchPlanTx(
 	if err != nil || !exactDraftPlanHasHistory(plan, currentHistory) {
 		return domain.ErrConflict
 	}
-	if err := querier.LockExactDraftPlanningReservationKeys(ctx, plan.SourceDraft.ID); err != nil {
+	if err := r.lockExactDraftPlanningReservationKeys(ctx, plan.SourceDraft.ID); err != nil {
 		return err
 	}
-	candidates, err := querier.LockExactDraftPlanningCandidates(ctx, sqlc.LockExactDraftPlanningCandidatesParams{DraftID: plan.SourceDraft.ID, PlanID: plan.ID})
+	candidates, err := r.lockExactDraftPlanningCandidates(ctx, sqlc.LockExactDraftPlanningCandidatesParams{DraftID: plan.SourceDraft.ID, PlanID: plan.ID})
 	if err != nil {
 		return err
 	}
@@ -567,11 +566,11 @@ func (r *ExactDraftBranchPlanPostgres) insertExactDraftBranchTx(
 	}); err != nil {
 		return err
 	}
-	ids, err := playoff.FinalStageIdentity(stage.CommandID)
+	ids, err := exactDraftIdentity(stage.CommandID, stage.FinalSeriesID, domain.SeriesFormat(stage.SeriesFormat))
 	if err != nil {
 		return err
 	}
-	if len(branch.Assignments) != 3 {
+	if len(branch.Assignments) != exactDraftCategoryCount(plan.SourceDraft.Format) {
 		return domain.ErrConflict
 	}
 	for assignmentIndex, assignment := range branch.Assignments {
@@ -933,14 +932,14 @@ func (r *ExactDraftBranchPlanPostgres) commitExactDraftBranchActivationTx(
 		ReleasedAt: tstz(next.CommittedAt), ReleaseReason: &releaseReason,
 		PlanID: next.ID, ExactDraftBranchID: activeGroupID,
 	})
-	if err != nil || len(releasedReservations) != (len(next.Branches)-1)*3*(domain.AssignmentReserveCount+1) {
+	if err != nil || len(releasedReservations) != (len(next.Branches)-1)*exactDraftCategoryCount(next.SourceDraft.Format)*(domain.AssignmentReserveCount+1) {
 		return nil, false, exactDraftRowsError(err)
 	}
 	releasedChildren, err := querier.ReleaseLosingExactDraftChildren(ctx, sqlc.ReleaseLosingExactDraftChildrenParams{
 		ReleasedAt: tstz(next.CommittedAt), ReleaseReason: &releaseReason,
 		PlanID: next.ID, ExactDraftBranchID: activeGroupID,
 	})
-	if err != nil || len(releasedChildren) != (len(next.Branches)-1)*3 {
+	if err != nil || len(releasedChildren) != (len(next.Branches)-1)*exactDraftCategoryCount(next.SourceDraft.Format) {
 		return nil, false, exactDraftRowsError(err)
 	}
 	releasedGroups, err := querier.ReleaseLosingExactDraftBranches(ctx, sqlc.ReleaseLosingExactDraftBranchesParams{
@@ -953,13 +952,13 @@ func (r *ExactDraftBranchPlanPostgres) commitExactDraftBranchActivationTx(
 	committedReservations, err := querier.CommitExactDraftChildReservations(ctx, sqlc.CommitExactDraftChildReservationsParams{
 		CommittedAt: tstz(next.CommittedAt), PlanID: next.ID, ExactDraftBranchID: activeGroupID,
 	})
-	if err != nil || len(committedReservations) != 3*(domain.AssignmentReserveCount+1) {
+	if err != nil || len(committedReservations) != exactDraftCategoryCount(next.SourceDraft.Format)*(domain.AssignmentReserveCount+1) {
 		return nil, false, exactDraftRowsError(err)
 	}
 	activatedChildren, err := querier.ActivateExactDraftChildren(ctx, sqlc.ActivateExactDraftChildrenParams{
 		ActivatedAt: tstz(next.CommittedAt), PlanID: next.ID, ExactDraftBranchID: activeGroupID,
 	})
-	if err != nil || len(activatedChildren) != 3 {
+	if err != nil || len(activatedChildren) != exactDraftCategoryCount(next.SourceDraft.Format) {
 		return nil, false, exactDraftRowsError(err)
 	}
 	changedGroups, err := querier.ActivateExactDraftBranch(ctx, sqlc.ActivateExactDraftBranchParams{
@@ -1045,7 +1044,7 @@ func (r *ExactDraftBranchPlanPostgres) loadExactDraftBranchActivationTx(
 	if !planRow.SourceDraftRevisionID.Valid {
 		return nil, nil, domain.ErrConflict
 	}
-	source, err := querier.LockExactDraftAssignmentSource(ctx, planID)
+	source, err := r.lockExactDraftAssignmentSource(ctx, planID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1053,7 +1052,7 @@ func (r *ExactDraftBranchPlanPostgres) loadExactDraftBranchActivationTx(
 		source.SourceDraftRevisionID != planRow.SourceDraftRevisionID {
 		return nil, nil, domain.ErrConflict
 	}
-	ids, err := playoff.FinalStageIdentity(source.StageCommandID)
+	ids, err := exactDraftIdentity(source.StageCommandID, source.FinalSeriesID, domain.SeriesFormat(source.SeriesFormat))
 	if err != nil || ids.DraftAssignmentPlanID != planID || ids.DraftAssignmentRevisionID != planRow.RevisionID {
 		return nil, nil, domain.ErrConflict
 	}
@@ -1160,7 +1159,7 @@ func rehydrateExactDraftBranchPlan(
 		categories, categoryErr := exactDraftCategories(group.CategorySequence)
 		if categoryErr != nil || group.ID == uuid.Nil || group.PlanID != planRow.ID ||
 			group.DraftID != sourceDraft.ID || group.DraftRevisionID != sourceDraft.RevisionID ||
-			len(categories) != 3 || group.BranchKey == "" {
+			len(categories) != exactDraftCategoryCount(sourceDraft.Format) || group.BranchKey == "" {
 			return nil, domain.ErrConflict
 		}
 		if _, duplicate := groupsByKey[group.BranchKey]; duplicate {
@@ -1176,7 +1175,7 @@ func rehydrateExactDraftBranchPlan(
 		}
 		key := exactDraftChildPosition{groupID: child.ExactDraftBranchID.UUID, position: int(*child.ExactDraftPosition)}
 		if child.ID == uuid.Nil || child.PlanID != planRow.ID || !child.DraftID.Valid || child.DraftID.UUID != sourceDraft.ID ||
-			!child.DraftRevisionID.Valid || child.DraftRevisionID.UUID != sourceDraft.RevisionID || *child.ExactDraftPosition < 1 || *child.ExactDraftPosition > 3 ||
+			!child.DraftRevisionID.Valid || child.DraftRevisionID.UUID != sourceDraft.RevisionID || *child.ExactDraftPosition < 1 || int(*child.ExactDraftPosition) > exactDraftCategoryCount(sourceDraft.Format) ||
 			!child.DecisionEvidenceID.Valid || child.DecisionAlgorithmVersion == nil ||
 			!child.DecisionOwnerID.Valid || child.DecisionOwnerID.UUID != planRow.ID || !child.DecidedAt.Valid {
 			return nil, domain.ErrConflict
@@ -1326,7 +1325,7 @@ func hydrateExactDraftPlanCompletion(
 			return domain.ErrConflict
 		}
 		categories, err := exactDraftCategories(row.CompletedCategories)
-		if err != nil || len(categories) != 3 {
+		if err != nil || len(categories) != exactDraftCategoryCount(plan.SourceDraft.Format) {
 			return domain.ErrConflict
 		}
 		plan.ActiveBranchID = row.ActiveDraftBranchID.UUID

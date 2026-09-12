@@ -80,7 +80,7 @@ func buildExactNormalAssignment(
 	}
 	eligible = exactNormalAvailableCandidates(eligible, unavailable)
 	if len(eligible) < domain.AssignmentReserveCount+1 {
-		return ExactNormalAssignmentPlan{}, exactNormalAssignmentError("fewer than three unreserved task versions")
+		return ExactNormalAssignmentPlan{}, exactNormalCapacityError("fewer than three unreserved task versions")
 	}
 
 	inputs := make([]string, len(eligible))

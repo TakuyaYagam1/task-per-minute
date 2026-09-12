@@ -61,7 +61,7 @@ type ExactDraftBranchPath struct {
 
 type ExactDraftBranchCommand struct {
 	// BranchID identifies the reachable draft outcome. ChildBranchIDs identify
-	// its three persisted normal-assignment branches, one per final Game.
+	// its persisted normal-assignment branches: one for BO1 or three for BO3.
 	BranchID       uuid.UUID
 	ChildBranchIDs [3]uuid.UUID
 	Key            string

@@ -892,10 +892,10 @@ WHERE stage.tournament_id = sqlc.arg(tournament_id)
     AND target.state = 'locked'
 FOR UPDATE OF stage, evidence, target, roster, slot, category, pool, projection, bracket;
 
--- Swiss random materialization runs before the pairing command ledger and
--- wave-start proof are written.  The initial score revision carries the real
--- command and projection lineage, while the automatic round carries the
--- immutable pairing decision; later ledgers revalidate both.
+-- Swiss exact-normal materialization runs before the pairing command ledger and
+-- wave-start proof are written. The initial score revision carries the real
+-- command and projection lineage. Automatic rounds carry decision evidence;
+-- manual rounds bind their immutable identity, revisions and canonical pairs.
 -- name: LockExactNormalAssignmentSwissStage :one
 SELECT score.command_id,
     target.tournament_id,
@@ -912,7 +912,11 @@ SELECT score.command_id,
     slot.category,
     projection.id AS published_projection_revision_id,
     projection.revision_number AS published_projection_revision,
-    round.decision_replay_digest AS graph_digest,
+    (CASE
+        WHEN round.generation_kind = 'automatic' THEN round.decision_replay_digest
+        ELSE sha256(convert_to(round.id::TEXT || ':' || round.revision::TEXT || ':'
+            || round.source_roster_revision::TEXT || ':' || round.pairing_inputs::TEXT, 'UTF8'))
+    END)::BYTEA AS graph_digest,
     standings.payload_digest AS artifact_digest,
     score.created_at
 FROM series_score_revisions AS score
@@ -935,9 +939,10 @@ INNER JOIN swiss_rounds AS round
     ON round.id = wave_link.round_id
     AND round.roster_id = wave_link.roster_id
     AND round.source_roster_revision = roster.revision
-    AND round.generation_kind = 'automatic'
-    AND round.decision_replay_digest IS NOT NULL
-    AND octet_length(round.decision_replay_digest) = 32
+    AND (
+        (round.generation_kind = 'automatic' AND octet_length(round.decision_replay_digest) = 32)
+        OR (round.generation_kind = 'manual' AND jsonb_array_length(round.pairing_inputs) > 0)
+    )
 INNER JOIN swiss_pairings AS pairing
     ON pairing.round_id = round.id
     AND pairing.roster_id = round.roster_id
@@ -993,7 +998,7 @@ WHERE score.tournament_id = sqlc.arg(tournament_id)
     AND target.id = sqlc.arg(series_id)
     AND target.format = 'bo1'
     AND target.state = 'locked'
-    AND category.mode = 'random'
+    AND category.mode IN ('random', 'admin')
 FOR UPDATE OF score, wave_series, wave, wave_link, round, pairing, first_member, second_member,
     target, roster, slot, category, pool, projection, revision_artifact, standings;
 

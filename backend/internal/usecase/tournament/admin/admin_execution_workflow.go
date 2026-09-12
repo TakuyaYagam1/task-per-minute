@@ -129,6 +129,9 @@ func (w *ExecutionWorkflow) createPairingsLocked(
 	}
 	view, err := w.repository.CommitPairing(ctx, plan)
 	if err != nil {
+		if errors.Is(err, domain.ErrConflict) {
+			return SwissRoundView{}, executionConflict(command.ExpectedProjectionRevision, authority)
+		}
 		return SwissRoundView{}, fmt.Errorf("commit pairing graph: %w", err)
 	}
 	if !validSwissRoundView(view, command.TournamentID, command.RoundNumber) {
@@ -603,13 +606,13 @@ func planCancelWave(command WaveCommand, authority WaveAuthority, wave *domain.W
 }
 
 func waveGraphPlanned(authority WaveAuthority) bool {
-	return waveExecutionStateAllowed(authority.TournamentState) && authority.Graph.SeriesCount >= 1 &&
+	return !authority.Graph.PendingDrafts && waveExecutionStateAllowed(authority.TournamentState) && authority.Graph.SeriesCount >= 1 &&
 		authority.Graph.PlayableMemberCount == authority.Graph.SeriesCount*2
 }
 
 func waveGraphStartable(authority WaveAuthority) bool {
 	graph := authority.Graph
-	return waveExecutionStateAllowed(authority.TournamentState) && graph.SeriesCount >= 1 &&
+	return !graph.PendingDrafts && waveExecutionStateAllowed(authority.TournamentState) && graph.SeriesCount >= 1 &&
 		graph.PlayableMemberCount == graph.SeriesCount*2 &&
 		graph.ReadySeriesCount+graph.ContinuingSeriesCount == graph.SeriesCount &&
 		graph.CurrentGameCount == graph.SeriesCount &&

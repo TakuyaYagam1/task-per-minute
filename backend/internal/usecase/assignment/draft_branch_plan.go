@@ -160,8 +160,8 @@ func BuildExactDraftBranchPlan(
 				unavailable,
 			)
 			if buildErr != nil {
-				return ExactDraftBranchPlan{}, exactDraftBranchPlanError(
-					"branch %q position %d: %v", path.Key, position+1, buildErr,
+				return ExactDraftBranchPlan{}, fmt.Errorf(
+					"%w: branch %q position %d: %w", ErrInvalidExactDraftBranchPlan, path.Key, position+1, buildErr,
 				)
 			}
 			for _, edge := range exact.SelectedEdges {

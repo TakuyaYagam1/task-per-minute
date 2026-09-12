@@ -217,11 +217,14 @@ func tournamentAdminCompletedRoundCount(
 	}
 	completed := 0
 	for index, row := range rounds {
-		if row.ID == uuid.Nil || row.RoundNumber != int16(index+1) || row.Revision < 1 || !row.LockedAt.Valid {
+		if row.ID == uuid.Nil || row.RoundNumber != int16(index+1) || row.Revision < 1 {
 			return 0, domain.ErrInternal
 		}
 		state, exists := waveByRound[row.ID]
 		if !exists || !state.IsValid() {
+			return 0, domain.ErrInternal
+		}
+		if !validTournamentAdminPlannedCurrentRound(index, len(rounds), row.LockedAt.Valid, state) {
 			return 0, domain.ErrInternal
 		}
 		if state == domain.WaveStateCompleted {
@@ -232,6 +235,14 @@ func tournamentAdminCompletedRoundCount(
 		return 0, domain.ErrInternal
 	}
 	return completed, nil
+}
+
+func validTournamentAdminPlannedCurrentRound(
+	index, roundCount int,
+	locked bool,
+	state domain.WaveState,
+) bool {
+	return locked || (index == roundCount-1 && state == domain.WaveStatePlanned)
 }
 
 func tournamentAdminPairingCommand(

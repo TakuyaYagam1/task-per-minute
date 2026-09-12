@@ -2181,6 +2181,19 @@ type SwissBye struct {
 	CreatedAt                pgtype.Timestamptz
 }
 
+type SwissDraftDeliveryHistoryHead struct {
+	DraftID             uuid.UUID
+	SeriesID            uuid.UUID
+	TournamentID        uuid.UUID
+	RosterID            uuid.UUID
+	FirstParticipantID  uuid.UUID
+	SecondParticipantID uuid.UUID
+	RevisionID          uuid.UUID
+	Revision            int64
+	CreatedAt           pgtype.Timestamptz
+	UpdatedAt           pgtype.Timestamptz
+}
+
 type SwissOpponentHistory struct {
 	PairingID         uuid.UUID
 	RoundID           uuid.UUID

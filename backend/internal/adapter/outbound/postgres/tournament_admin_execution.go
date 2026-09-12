@@ -170,10 +170,21 @@ func (r *TournamentAdminExecutionPostgres) CommitPairing(
 	if linkID != plan.WaveID {
 		return tournamentadmin.SwissRoundView{}, domain.ErrInternal
 	}
-	if plan.Command.CategoryMode == domain.CategoryModeRandom {
+	switch plan.Command.CategoryMode {
+	case domain.CategoryModeRandom:
 		if err := r.materializeSwissRandomBO1(ctx, plan); err != nil {
 			return tournamentadmin.SwissRoundView{}, err
 		}
+	case domain.CategoryModeAdmin:
+		if err := r.materializeSwissAdminBO1(ctx, plan); err != nil {
+			return tournamentadmin.SwissRoundView{}, err
+		}
+	case domain.CategoryModeDraft:
+		if err := r.materializeSwissDraftBO1(ctx, plan); err != nil {
+			return tournamentadmin.SwissRoundView{}, err
+		}
+	default:
+		return tournamentadmin.SwissRoundView{}, domain.ErrValidation
 	}
 	return tournamentAdminSwissRoundView(plan, saved)
 }
@@ -260,6 +271,10 @@ func (r *TournamentAdminExecutionPostgres) LockWaveAuthority(
 	authority, err := tournamentAdminWaveAuthority(header, members, series, games, assignments, deliveries)
 	if err != nil {
 		return tournamentadmin.WaveAuthority{}, fmt.Errorf("map Wave authority: %w", err)
+	}
+	authority.Graph.PendingDrafts, err = querier.HasWavePendingDrafts(ctx, waveID)
+	if err != nil {
+		return tournamentadmin.WaveAuthority{}, fmt.Errorf("load Wave draft readiness: %w", err)
 	}
 	return authority, nil
 }

@@ -88,7 +88,7 @@ func TestExactNormalSwissStageUsesPersistedRoundAndProjectionEvidence(t *testing
 	}, got)
 }
 
-func TestExactNormalSwissStageSQLUsesAutomaticRoundAuthority(t *testing.T) {
+func TestExactNormalSwissStageSQLUsesPersistedRoundAuthority(t *testing.T) {
 	t.Parallel()
 
 	query, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "queries", "assignment.sql"))
@@ -102,11 +102,13 @@ func TestExactNormalSwissStageSQLUsesAutomaticRoundAuthority(t *testing.T) {
 		"INNER JOIN wave_series AS wave_series",
 		"INNER JOIN swiss_wave_links AS wave_link",
 		"round.generation_kind = 'automatic'",
-		"round.decision_replay_digest AS graph_digest",
+		"THEN round.decision_replay_digest",
+		"round.generation_kind = 'manual'",
+		"round.pairing_inputs::TEXT",
 		"standings.payload_digest AS artifact_digest",
 		"projection.id = score.source_projection_revision_id",
 		"score.operation = 'initialize'",
-		"category.mode = 'random'",
+		"category.mode IN ('random', 'admin')",
 		"FOR UPDATE OF score, wave_series, wave, wave_link, round, pairing",
 		"FROM tournament_stage_playoff_semifinals AS stage",
 	} {

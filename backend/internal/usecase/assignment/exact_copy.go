@@ -80,3 +80,7 @@ func exactNormalTaskVersionEvidence(taskID uuid.UUID, version int) string {
 func exactNormalAssignmentError(format string, arguments ...any) error {
 	return fmt.Errorf("%w: %s", ErrInvalidExactNormalAssignment, fmt.Sprintf(format, arguments...))
 }
+
+func exactNormalCapacityError(message string) error {
+	return fmt.Errorf("%w: %w", exactNormalAssignmentError("%s", message), domain.ErrConflict)
+}

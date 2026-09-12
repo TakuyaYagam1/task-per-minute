@@ -92,6 +92,31 @@ func TestTournamentAdminStandingsRejectsForeignParticipant(t *testing.T) {
 	require.ErrorIs(t, err, domain.ErrInternal)
 }
 
+func TestTournamentAdminCompletedRoundCountAllowsUnstartedCurrentRound(t *testing.T) {
+	t.Parallel()
+
+	roundID := tournamentExecutionID(70)
+	completedRoundID := tournamentExecutionID(71)
+	completedAt := time.Date(2026, time.September, 6, 12, 1, 0, 0, time.UTC)
+	startedRound := sqlc.LockTournamentPairingRoundsRow{
+		ID: completedRoundID, RoundNumber: 1, Revision: 2,
+		LockedAt: pgtype.Timestamptz{Time: completedAt, Valid: true},
+	}
+	currentRound := sqlc.LockTournamentPairingRoundsRow{
+		ID: roundID, RoundNumber: 2, Revision: 1,
+	}
+
+	completed, err := tournamentAdminCompletedRoundCount(
+		[]sqlc.LockTournamentPairingRoundsRow{startedRound, currentRound},
+		[]sqlc.LockTournamentPairingWavesRow{
+			{RoundID: completedRoundID, WaveID: tournamentExecutionID(72), State: string(domain.WaveStateCompleted)},
+			{RoundID: roundID, WaveID: tournamentExecutionID(73), State: string(domain.WaveStatePlanned)},
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(t, 1, completed)
+}
+
 func TestTournamentAdminWaveViewKeepsByeOutsideSeries(t *testing.T) {
 	t.Parallel()
 

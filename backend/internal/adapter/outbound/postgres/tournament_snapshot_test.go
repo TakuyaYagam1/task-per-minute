@@ -52,6 +52,18 @@ func TestTournamentScoreboardRejectsLegacyOrUnknownMembers(t *testing.T) {
 	require.ErrorIs(t, err, ErrTournamentSnapshotInvalid)
 }
 
+func TestTournamentScoreboardBeforeFirstSwissResult(t *testing.T) {
+	view, err := tournamentScoreboard([]byte(`{"entries":[]}`), nil)
+	require.NoError(t, err)
+	require.NotNil(t, view)
+	require.Empty(t, view)
+
+	for _, payload := range []string{`{}`, `{"entries":null}`} {
+		_, err = tournamentScoreboard([]byte(payload), nil)
+		require.ErrorIs(t, err, ErrTournamentSnapshotInvalid)
+	}
+}
+
 func TestTournamentBracketReadsCanonicalRounds(t *testing.T) {
 	firstID := uuid.MustParse("10000000-0000-4000-8000-000000000001")
 	secondID := uuid.MustParse("10000000-0000-4000-8000-000000000002")

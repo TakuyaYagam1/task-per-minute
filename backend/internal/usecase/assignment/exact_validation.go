@@ -75,7 +75,7 @@ func normalizeExactNormalAssignmentAuthority(
 	}
 	eligible := exactNormalEligibleTaskVersions(candidates, authority.Category, participants, history)
 	if len(eligible) < domain.AssignmentReserveCount+1 {
-		return ExactNormalAssignmentAuthority{}, nil, exactNormalAssignmentError("fewer than three eligible task versions")
+		return ExactNormalAssignmentAuthority{}, nil, exactNormalCapacityError("fewer than three eligible task versions")
 	}
 	canonical := authority
 	canonical.Pool = pool

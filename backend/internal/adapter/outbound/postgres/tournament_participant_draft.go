@@ -112,7 +112,14 @@ func (r *ParticipantDraftRepository) appendParticipantDraftRevisions(
 			ID: row.ID, Revision: row.Revision, ServiceEpoch: row.ServiceEpoch,
 		}
 	}
-	return r.LoadDraft(ctx, revisions[len(revisions)-1].ID)
+	execution, err := r.LoadDraft(ctx, revisions[len(revisions)-1].ID)
+	if err != nil {
+		return nil, err
+	}
+	if err := r.completeSwissDraft(ctx, *execution); err != nil {
+		return nil, err
+	}
+	return execution, nil
 }
 
 func (r *ParticipantDraftRepository) loadAggregate(

@@ -10,6 +10,7 @@ import (
 	redisadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/redis"
 	telemetryadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/telemetry"
 	"github.com/TakuyaYagam1/task-per-minute/internal/observability"
+	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/eventdelivery"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/recovery"
@@ -102,6 +103,7 @@ func provideRuntimeWorkers(
 	receiptRetention *eventdelivery.ReceiptRetentionWorker,
 	privateTaskAvailability *taskusecase.AvailabilityMonitor,
 	deadlineScheduler *recovery.DeadlineScheduler,
+	swissDraftDeadlines *draftusecase.DeadlineWorker,
 	executionRecovery *gameusecase.RecoveryRunner,
 	recoveryWorker *recovery.Worker,
 	clock clockFunc,
@@ -119,6 +121,11 @@ func provideRuntimeWorkers(
 			ready: func() bool {
 				return deadlineScheduler.ExecutionHealth().Running
 			},
+		},
+		{
+			name:   "swiss-draft-deadlines",
+			worker: swissDraftDeadlines,
+			ready:  swissDraftDeadlines.Ready,
 		},
 		{
 			name:   "private-task-availability",

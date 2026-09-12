@@ -155,6 +155,7 @@ type PairingCommandRecord struct {
 }
 
 type WaveGraph struct {
+	PendingDrafts         bool
 	SeriesCount           int
 	PlayableMemberCount   int
 	CurrentGameCount      int

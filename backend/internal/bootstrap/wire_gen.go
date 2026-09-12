@@ -109,6 +109,15 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 		cleanup()
 		return nil, nil, err
 	}
+	draftPostgres := postgres.NewDraftPostgres(txManager)
+	participantDraftRepository := postgres.NewParticipantDraftRepository(txManager, draftPostgres)
+	swissDraftDeadlinePostgres := postgres.NewSwissDraftDeadlinePostgres(txManager, participantDraftRepository)
+	deadlineWorker, err := provideSwissDraftDeadlineWorker(swissDraftDeadlinePostgres, bootstrapClockFunc)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
 	recoveryPostgres := provideRecoveryRepository(txManager, deadlineScheduler)
 	executionRecoveryPostgres := provideExecutionRecoveryRepository(txManager, recoveryPostgres, recoveryTerminalPostgres)
 	controller, err := provideExecutionAuthorityController(executionAuthorityPostgres)
@@ -137,7 +146,7 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 		return nil, nil, err
 	}
 	runtimeWorkerHeartbeats := provideRuntimeWorkerHeartbeats(client)
-	bootstrapRuntimeWorkers, err := provideRuntimeWorkers(tournamentEventDispatcher, worker, realtimeDelivery, receiptRetentionWorker, availabilityMonitor, deadlineScheduler, recoveryRunner, recoveryWorker, bootstrapClockFunc, runtimeWorkerHeartbeats)
+	bootstrapRuntimeWorkers, err := provideRuntimeWorkers(tournamentEventDispatcher, worker, realtimeDelivery, receiptRetentionWorker, availabilityMonitor, deadlineScheduler, deadlineWorker, recoveryRunner, recoveryWorker, bootstrapClockFunc, runtimeWorkerHeartbeats)
 	if err != nil {
 		cleanup2()
 		cleanup()
@@ -158,7 +167,6 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 	lifecycleWorkflow := provideTournamentAdminLifecycle(txManager, tournamentAdminLifecyclePostgres, tournamentLifecycleUseCase, tournamentPauseUseCase, tournamentCancellationUseCase, workflow, bootstrapClockFunc)
 	resultPostgres := postgres.NewResultPostgres(txManager)
 	tournamentAdminResultPostgres := postgres.NewTournamentAdminResultPostgres(txManager, resultPostgres)
-	draftPostgres := postgres.NewDraftPostgres(txManager)
 	assignmentPostgres := postgres.NewAssignmentPostgres(txManager)
 	playoffTerminalPostgres := postgres.NewPlayoffTerminalPostgres(txManager, draftPostgres, assignmentPostgres)
 	projectionPostgres := postgres.NewProjectionPostgres(txManager)
@@ -196,7 +204,6 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 	wavePostgres := postgres.NewWavePostgres(txManager)
 	participantReadinessRepository := postgres.NewParticipantReadinessRepository(txManager, wavePostgres)
 	readinessUseCase := provideParticipantReadiness(participantReadinessRepository, bootstrapClockFunc)
-	participantDraftRepository := postgres.NewParticipantDraftRepository(txManager, draftPostgres)
 	actionUseCase := provideParticipantDraft(participantDraftRepository, bootstrapClockFunc)
 	participantSubmissionRepository := postgres.NewParticipantSubmissionRepository(txManager, resultPostgres)
 	submissionUseCase := provideParticipantSubmission(participantSubmissionRepository)

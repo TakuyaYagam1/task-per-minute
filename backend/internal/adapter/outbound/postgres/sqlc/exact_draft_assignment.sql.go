@@ -1088,6 +1088,7 @@ SELECT plan.id AS plan_id,
     draft.id AS draft_id,
     stage.command_id AS stage_command_id,
     stage.final_series_id,
+    final_series.format AS series_format,
     final_series.revision AS final_series_revision,
     roster.revision AS roster_revision,
     current_revision.id AS current_draft_revision_id,
@@ -1141,6 +1142,7 @@ type LockExactDraftAssignmentSourceRow struct {
 	DraftID                uuid.UUID
 	StageCommandID         uuid.UUID
 	FinalSeriesID          uuid.UUID
+	SeriesFormat           string
 	FinalSeriesRevision    int64
 	RosterRevision         int64
 	CurrentDraftRevisionID uuid.UUID
@@ -1165,6 +1167,7 @@ func (q *Queries) LockExactDraftAssignmentSource(ctx context.Context, planID uui
 		&i.DraftID,
 		&i.StageCommandID,
 		&i.FinalSeriesID,
+		&i.SeriesFormat,
 		&i.FinalSeriesRevision,
 		&i.RosterRevision,
 		&i.CurrentDraftRevisionID,
@@ -1444,6 +1447,7 @@ SELECT stage.command_id,
     stage.draft_initial_revision_id,
     stage.first_participant_id,
     stage.second_participant_id,
+    final_series.format AS series_format,
     final_series.revision AS series_revision,
     roster.revision AS roster_revision,
     category.revision AS category_revision,
@@ -1533,6 +1537,7 @@ type LockExactDraftPlanningStageRow struct {
 	DraftInitialRevisionID        uuid.UUID
 	FirstParticipantID            uuid.UUID
 	SecondParticipantID           uuid.UUID
+	SeriesFormat                  string
 	SeriesRevision                int64
 	RosterRevision                int64
 	CategoryRevision              int64
@@ -1565,6 +1570,7 @@ func (q *Queries) LockExactDraftPlanningStage(ctx context.Context, draftID uuid.
 		&i.DraftInitialRevisionID,
 		&i.FirstParticipantID,
 		&i.SecondParticipantID,
+		&i.SeriesFormat,
 		&i.SeriesRevision,
 		&i.RosterRevision,
 		&i.CategoryRevision,

@@ -20,7 +20,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/bootstrap"
 )
 
-const schemaHeadVersion int64 = 16
+const schemaHeadVersion int64 = 17
 
 func TestSchemaMigration(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
@@ -229,11 +229,11 @@ func TestSchemaMigration(t *testing.T) {
 					AND column_name IN ('owner_kind', 'owner_id')
 			))::INT`,
 	).Scan(&removedLegacy))
-	require.Equal(t, 188, applicationTables)
-	require.Equal(t, 178, applicationFunctions)
-	require.Equal(t, 270, triggers)
+	require.Equal(t, 189, applicationTables)
+	require.Equal(t, 182, applicationFunctions)
+	require.Equal(t, 272, triggers)
 	require.Equal(t, 86, explicitIndexes)
-	require.Equal(t, 577, foreignKeys)
+	require.Equal(t, 581, foreignKeys)
 	require.Zero(t, legacyIdentifiers,
 		"domain baseline must not expose legacy-prefixed schema identifiers")
 	require.Zero(t, removedLegacy,
@@ -254,6 +254,7 @@ func TestSchemaMigration(t *testing.T) {
 		"pauses",
 		"reconnect_intervals",
 		"projection_revisions",
+		"swiss_draft_delivery_history_heads",
 	}
 	requiredConstraints := []string{
 		"tournaments_state_check",
