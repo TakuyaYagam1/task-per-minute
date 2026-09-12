@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
@@ -15,8 +16,12 @@ import (
 	taskusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/task"
 )
 
-func newTaskRepo() *postgres.TaskPostgres {
-	return postgres.NewTaskPostgres(postgres.NewTxManager(sharedPool))
+func newTaskRepo(pools ...*pgxpool.Pool) *postgres.TaskPostgres {
+	pool := sharedPool
+	if len(pools) > 0 && pools[0] != nil {
+		pool = pools[0]
+	}
+	return postgres.NewTaskPostgres(postgres.NewTxManager(pool))
 }
 
 // hasTaskID is a parallel-safe replacement for asserting list length: it only
@@ -33,7 +38,8 @@ func hasTaskID(list []*domain.Task, id uuid.UUID) bool {
 
 func TestTaskRepo_Create_HappyPath(t *testing.T) {
 	t.Parallel()
-	repo := newTaskRepo()
+	pool := newParallelTestDB(t)
+	repo := newTaskRepo(pool)
 	ctx := context.Background()
 	taskURL := "https://example.com/" + uniq("task")
 
@@ -61,7 +67,8 @@ func TestTaskRepo_Create_HappyPath(t *testing.T) {
 
 func TestTaskRepo_Create_AllowsHostPortTaskURL(t *testing.T) {
 	t.Parallel()
-	repo := newTaskRepo()
+	pool := newParallelTestDB(t)
+	repo := newTaskRepo(pool)
 	ctx := context.Background()
 	taskURL := "pwn.example.com:31337"
 
@@ -84,7 +91,8 @@ func TestTaskRepo_Create_AllowsHostPortTaskURL(t *testing.T) {
 
 func TestTaskRepo_Create_RejectsInvalidEnums(t *testing.T) {
 	t.Parallel()
-	repo := newTaskRepo()
+	pool := newParallelTestDB(t)
+	repo := newTaskRepo(pool)
 	ctx := context.Background()
 	base := taskusecase.UpdateInput{
 		Title:       uniq("X"),
@@ -123,7 +131,8 @@ func TestTaskRepo_Create_RejectsInvalidEnums(t *testing.T) {
 
 func TestTaskRepo_GetByID(t *testing.T) {
 	t.Parallel()
-	repo := newTaskRepo()
+	pool := newParallelTestDB(t)
+	repo := newTaskRepo(pool)
 	ctx := context.Background()
 	created := mustCreateTask(t, repo, uniq("t"), domain.DifficultyEasy)
 
@@ -135,13 +144,15 @@ func TestTaskRepo_GetByID(t *testing.T) {
 
 func TestTaskRepo_GetByID_NotFound(t *testing.T) {
 	t.Parallel()
-	_, err := newTaskRepo().GetByID(context.Background(), uuid.New())
+	pool := newParallelTestDB(t)
+	_, err := newTaskRepo(pool).GetByID(context.Background(), uuid.New())
 	require.ErrorIs(t, err, domain.ErrTaskNotFound)
 }
 
 func TestTaskRepo_List_ContainsCreated(t *testing.T) {
 	t.Parallel()
-	repo := newTaskRepo()
+	pool := newParallelTestDB(t)
+	repo := newTaskRepo(pool)
 	ctx := context.Background()
 
 	t1 := mustCreateTask(t, repo, uniq("t"), domain.DifficultyEasy)
@@ -157,7 +168,8 @@ func TestTaskRepo_List_ContainsCreated(t *testing.T) {
 
 func TestTaskRepo_Update(t *testing.T) {
 	t.Parallel()
-	repo := newTaskRepo()
+	pool := newParallelTestDB(t)
+	repo := newTaskRepo(pool)
 	ctx := context.Background()
 	created := mustCreateTask(t, repo, uniq("t"), domain.DifficultyEasy)
 
@@ -186,7 +198,8 @@ func TestTaskRepo_Update(t *testing.T) {
 
 func TestTaskRepo_Update_NotFound(t *testing.T) {
 	t.Parallel()
-	_, err := newTaskRepo().Update(context.Background(), uuid.New(), taskusecase.UpdateInput{
+	pool := newParallelTestDB(t)
+	_, err := newTaskRepo(pool).Update(context.Background(), uuid.New(), taskusecase.UpdateInput{
 		Title: "x", Description: "x",
 		Category: domain.CategoryWeb, Difficulty: domain.DifficultyEasy,
 		TimeLimit: 60, Flag: "x", Kind: domain.TaskKindNormal, Enabled: true, Hints: defaultTaskHints("x"),
@@ -196,7 +209,8 @@ func TestTaskRepo_Update_NotFound(t *testing.T) {
 
 func TestTaskRepo_Update_RejectsInvalidInput(t *testing.T) {
 	t.Parallel()
-	repo := newTaskRepo()
+	pool := newParallelTestDB(t)
+	repo := newTaskRepo(pool)
 	ctx := context.Background()
 	created := mustCreateTask(t, repo, uniq("t"), domain.DifficultyEasy)
 
@@ -216,7 +230,8 @@ func TestTaskRepo_Update_RejectsInvalidInput(t *testing.T) {
 
 func TestTaskRepo_Update_RejectsInvalidTaskAssetURLs(t *testing.T) {
 	t.Parallel()
-	repo := newTaskRepo()
+	pool := newParallelTestDB(t)
+	repo := newTaskRepo(pool)
 	ctx := context.Background()
 	created := mustCreateTask(t, repo, uniq("t"), domain.DifficultyEasy)
 
@@ -253,7 +268,8 @@ func TestTaskRepo_Update_RejectsInvalidTaskAssetURLs(t *testing.T) {
 
 func TestTaskRepo_Delete(t *testing.T) {
 	t.Parallel()
-	repo := newTaskRepo()
+	pool := newParallelTestDB(t)
+	repo := newTaskRepo(pool)
 	ctx := context.Background()
 	created := mustCreateTask(t, repo, uniq("t"), domain.DifficultyEasy)
 
@@ -264,7 +280,8 @@ func TestTaskRepo_Delete(t *testing.T) {
 
 func TestTaskRepo_Delete_MissingReturnsTaskNotFound(t *testing.T) {
 	t.Parallel()
-	require.ErrorIs(t, newTaskRepo().Delete(context.Background(), uuid.New()), domain.ErrTaskNotFound)
+	pool := newParallelTestDB(t)
+	require.ErrorIs(t, newTaskRepo(pool).Delete(context.Background(), uuid.New()), domain.ErrTaskNotFound)
 }
 
 func TestTaskRepo_TournamentReferenceProtectsTask(t *testing.T) {

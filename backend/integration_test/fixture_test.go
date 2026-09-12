@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
@@ -21,8 +22,12 @@ type databaseFixture struct {
 	board   *postgres.LeaderboardPostgres
 }
 
-func newDatabaseFixture() *databaseFixture {
-	mgr := postgres.NewTxManager(sharedPool)
+func newDatabaseFixture(pools ...*pgxpool.Pool) *databaseFixture {
+	pool := sharedPool
+	if len(pools) > 0 && pools[0] != nil {
+		pool = pools[0]
+	}
+	mgr := postgres.NewTxManager(pool)
 	return &databaseFixture{
 		mgr:     mgr,
 		players: postgres.NewPlayerPostgres(mgr),

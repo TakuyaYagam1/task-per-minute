@@ -10,20 +10,26 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
-func newPlayerRepo() (*postgres.PlayerPostgres, *postgres.TxManager) {
-	mgr := postgres.NewTxManager(sharedPool)
+func newPlayerRepo(pools ...*pgxpool.Pool) (*postgres.PlayerPostgres, *postgres.TxManager) {
+	pool := sharedPool
+	if len(pools) > 0 && pools[0] != nil {
+		pool = pools[0]
+	}
+	mgr := postgres.NewTxManager(pool)
 	return postgres.NewPlayerPostgres(mgr), mgr
 }
 
 func TestPlayerRepo_Create_HappyPath(t *testing.T) {
 	t.Parallel()
-	repo, _ := newPlayerRepo()
+	pool := newParallelTestDB(t)
+	repo, _ := newPlayerRepo(pool)
 	ctx := context.Background()
 	name := uniq("alice")
 
@@ -37,7 +43,8 @@ func TestPlayerRepo_Create_HappyPath(t *testing.T) {
 
 func TestPlayerRepo_Create_DuplicateUsername_ReturnsErrUsernameTaken(t *testing.T) {
 	t.Parallel()
-	repo, _ := newPlayerRepo()
+	pool := newParallelTestDB(t)
+	repo, _ := newPlayerRepo(pool)
 	ctx := context.Background()
 	name := uniq("alice")
 
@@ -52,7 +59,8 @@ func TestPlayerRepo_Create_DuplicateUsername_ReturnsErrUsernameTaken(t *testing.
 
 func TestPlayerRepo_GetByID(t *testing.T) {
 	t.Parallel()
-	repo, _ := newPlayerRepo()
+	pool := newParallelTestDB(t)
+	repo, _ := newPlayerRepo(pool)
 	ctx := context.Background()
 
 	created, err := repo.Create(ctx, uniq("alice"))
@@ -66,14 +74,16 @@ func TestPlayerRepo_GetByID(t *testing.T) {
 
 func TestPlayerRepo_GetByID_NotFound(t *testing.T) {
 	t.Parallel()
-	repo, _ := newPlayerRepo()
+	pool := newParallelTestDB(t)
+	repo, _ := newPlayerRepo(pool)
 	_, err := repo.GetByID(context.Background(), uuid.New())
 	require.ErrorIs(t, err, domain.ErrPlayerNotFound)
 }
 
 func TestPlayerRepo_GetByUsername(t *testing.T) {
 	t.Parallel()
-	repo, _ := newPlayerRepo()
+	pool := newParallelTestDB(t)
+	repo, _ := newPlayerRepo(pool)
 	ctx := context.Background()
 	name := uniq("alice")
 
@@ -87,14 +97,16 @@ func TestPlayerRepo_GetByUsername(t *testing.T) {
 
 func TestPlayerRepo_GetByUsername_NotFound(t *testing.T) {
 	t.Parallel()
-	repo, _ := newPlayerRepo()
+	pool := newParallelTestDB(t)
+	repo, _ := newPlayerRepo(pool)
 	_, err := repo.GetByUsername(context.Background(), uniq("ghost"))
 	require.ErrorIs(t, err, domain.ErrPlayerNotFound)
 }
 
 func TestPlayerRepo_UpdateSessionToken_SetThenClear(t *testing.T) {
 	t.Parallel()
-	repo, _ := newPlayerRepo()
+	pool := newParallelTestDB(t)
+	repo, _ := newPlayerRepo(pool)
 	ctx := context.Background()
 
 	p, err := repo.Create(ctx, uniq("alice"))
@@ -125,7 +137,8 @@ func TestPlayerRepo_UpdateSessionToken_SetThenClear(t *testing.T) {
 
 func TestPlayerRepo_GetBySessionToken_ExpiredSessionClearsToken(t *testing.T) {
 	t.Parallel()
-	repo, _ := newPlayerRepo()
+	pool := newParallelTestDB(t)
+	repo, _ := newPlayerRepo(pool)
 	ctx := context.Background()
 
 	p, err := repo.Create(ctx, uniq("alice"))
@@ -147,7 +160,8 @@ func TestPlayerRepo_GetBySessionToken_ExpiredSessionClearsToken(t *testing.T) {
 
 func TestPlayerRepo_GetBySessionToken_NullExpiryIsExpired(t *testing.T) {
 	t.Parallel()
-	repo, _ := newPlayerRepo()
+	pool := newParallelTestDB(t)
+	repo, _ := newPlayerRepo(pool)
 	ctx := context.Background()
 
 	p, err := repo.Create(ctx, uniq("alice"))
@@ -163,7 +177,8 @@ func TestPlayerRepo_GetBySessionToken_NullExpiryIsExpired(t *testing.T) {
 
 func TestPlayerRepo_UpdateSessionToken_NotFound(t *testing.T) {
 	t.Parallel()
-	repo, _ := newPlayerRepo()
+	pool := newParallelTestDB(t)
+	repo, _ := newPlayerRepo(pool)
 	token := uuid.New()
 	expiresAt := time.Now().Add(time.Hour).UTC()
 	_, err := repo.UpdateSessionToken(context.Background(), uuid.New(), &token, &expiresAt)
@@ -173,7 +188,8 @@ func TestPlayerRepo_UpdateSessionToken_NotFound(t *testing.T) {
 func TestPlayerRepo_JoinByUsername_RejectsActiveSession(t *testing.T) {
 	t.Parallel()
 
-	repo, _ := newPlayerRepo()
+	pool := newParallelTestDB(t)
+	repo, _ := newPlayerRepo(pool)
 	ctx := context.Background()
 	username := uniq("active_session")
 	firstToken := uuid.New()
@@ -196,7 +212,8 @@ func TestPlayerRepo_JoinByUsername_RejectsActiveSession(t *testing.T) {
 func TestPlayerRepo_JoinByUsername_ReclaimsExpiredSession(t *testing.T) {
 	t.Parallel()
 
-	repo, _ := newPlayerRepo()
+	pool := newParallelTestDB(t)
+	repo, _ := newPlayerRepo(pool)
 	ctx := context.Background()
 	username := uniq("expired_session")
 	expiredToken := uuid.New()
@@ -218,7 +235,8 @@ func TestPlayerRepo_JoinByUsername_ReclaimsExpiredSession(t *testing.T) {
 func TestPlayerRepo_JoinByUsername_AllowsOnlyOneConcurrentClaim(t *testing.T) {
 	t.Parallel()
 
-	repo, _ := newPlayerRepo()
+	pool := newParallelTestDB(t)
+	repo, _ := newPlayerRepo(pool)
 	ctx := context.Background()
 	username := uniq("concurrent_session")
 	_, err := repo.Create(ctx, username)
@@ -304,7 +322,8 @@ func TestPlayerRepo_TournamentReservationAllowsInitialSessionClaimAndBlocksAdmin
 
 func TestPlayerRepo_InsideTx_RollsBackOnError(t *testing.T) {
 	t.Parallel()
-	repo, mgr := newPlayerRepo()
+	pool := newParallelTestDB(t)
+	repo, mgr := newPlayerRepo(pool)
 	ctx := context.Background()
 	a, b := uniq("alice"), uniq("bob")
 

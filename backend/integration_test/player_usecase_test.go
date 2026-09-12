@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
@@ -20,8 +21,8 @@ type playerUsecaseFixture struct {
 	uc *playerusecase.SessionUseCase
 }
 
-func newPlayerUsecaseFixture() *playerUsecaseFixture {
-	f := newDatabaseFixture()
+func newPlayerUsecaseFixture(pools ...*pgxpool.Pool) *playerUsecaseFixture {
+	f := newDatabaseFixture(pools...)
 	return &playerUsecaseFixture{
 		databaseFixture: f,
 		uc:              playerusecase.SessionNewUseCase(f.mgr, f.players, realIntegrationClock()),
@@ -31,7 +32,8 @@ func newPlayerUsecaseFixture() *playerUsecaseFixture {
 func TestPlayerUsecase_Join_CreateAndRejectActiveSession(t *testing.T) {
 	t.Parallel()
 
-	f := newPlayerUsecaseFixture()
+	pool := newParallelTestDB(t)
+	f := newPlayerUsecaseFixture(pool)
 	ctx := context.Background()
 	username := uniq("alice")
 
@@ -55,7 +57,8 @@ func TestPlayerUsecase_Join_CreateAndRejectActiveSession(t *testing.T) {
 func TestPlayerUsecase_Join_ConcurrentSameUsernameUsesSingleCurrentSessionToken(t *testing.T) {
 	t.Parallel()
 
-	f := newPlayerUsecaseFixture()
+	pool := newParallelTestDB(t)
+	f := newPlayerUsecaseFixture(pool)
 	ctx := context.Background()
 	username := uniq("alice")
 
@@ -96,7 +99,8 @@ func TestPlayerUsecase_Join_ConcurrentSameUsernameUsesSingleCurrentSessionToken(
 func TestPlayerUsecase_GetCurrentPlayer_ReturnsCurrentPlayer(t *testing.T) {
 	t.Parallel()
 
-	f := newPlayerUsecaseFixture()
+	pool := newParallelTestDB(t)
+	f := newPlayerUsecaseFixture(pool)
 	ctx := context.Background()
 
 	alice, err := f.uc.Join(ctx, uniq("alice"))
@@ -113,7 +117,8 @@ func TestPlayerUsecase_GetCurrentPlayer_ReturnsCurrentPlayer(t *testing.T) {
 func TestPlayerUsecase_GetCurrentPlayer_InvalidSession(t *testing.T) {
 	t.Parallel()
 
-	f := newPlayerUsecaseFixture()
+	pool := newParallelTestDB(t)
+	f := newPlayerUsecaseFixture(pool)
 	ctx := context.Background()
 
 	player, err := f.uc.Join(ctx, uniq("alice"))

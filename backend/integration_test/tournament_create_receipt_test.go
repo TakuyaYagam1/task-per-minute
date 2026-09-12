@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
@@ -180,7 +181,17 @@ func assertTournamentCreateReceiptRollback(ctx context.Context, t *testing.T, cr
 	require.Equal(t, 0, configurationCount)
 }
 
-func prepareTournamentCreateReceiptContent(ctx context.Context, t *testing.T) int64 {
+var taskPoolPublicationFixtureMu sync.Mutex
+
+func prepareTournamentCreateReceiptContent(ctx context.Context, t testing.TB) int64 {
+	t.Helper()
+	taskPoolPublicationFixtureMu.Lock()
+	defer taskPoolPublicationFixtureMu.Unlock()
+
+	return prepareTournamentCreateReceiptContentLocked(ctx, t)
+}
+
+func prepareTournamentCreateReceiptContentLocked(ctx context.Context, t testing.TB) int64 {
 	t.Helper()
 
 	for _, kind := range []string{"normal", "golden"} {
@@ -207,6 +218,48 @@ func prepareTournamentCreateReceiptContent(ctx context.Context, t *testing.T) in
 	_, err = sharedPool.Exec(ctx, `SELECT publish_task_pool_heads()`)
 	require.NoError(t, err)
 	return currentTaskPoolPublicationRevision(ctx, t)
+}
+
+// Repository fixtures need a published head in both pools; migrations seed an empty revision.
+func ensureTaskPoolPublicationRevision(ctx context.Context, t testing.TB) int64 {
+	t.Helper()
+	taskPoolPublicationFixtureMu.Lock()
+	defer taskPoolPublicationFixtureMu.Unlock()
+
+	var revision int64
+	err := sharedPool.QueryRow(ctx, `
+		SELECT publication.revision
+		FROM task_pool_publications AS publication
+		JOIN task_pool_revisions AS pool
+			ON pool.publication_id = publication.id
+		JOIN task_pool_version_memberships AS membership
+			ON membership.task_pool_revision_id = pool.id
+		JOIN task_versions AS task_version
+			ON task_version.task_id = membership.task_id
+			AND task_version.version = membership.task_version
+		JOIN tasks AS task
+			ON task.id = membership.task_id
+		LEFT JOIN LATERAL (
+			SELECT attestation.healthy
+			FROM task_version_health_attestations AS attestation
+			WHERE attestation.task_id = membership.task_id
+				AND attestation.task_version = membership.task_version
+			ORDER BY attestation.revision DESC
+			LIMIT 1
+		) AS health ON true
+		WHERE pool.revision = publication.revision
+		GROUP BY publication.id, publication.revision
+		HAVING COUNT(DISTINCT pool.kind) = 2
+			AND COUNT(*) FILTER (
+				WHERE task.enabled AND COALESCE(health.healthy, false)
+			) = COUNT(*)
+		ORDER BY publication.revision DESC
+		LIMIT 1`).Scan(&revision)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return prepareTournamentCreateReceiptContentLocked(ctx, t)
+	}
+	require.NoError(t, err)
+	return revision
 }
 
 func currentTaskPoolPublicationRevision(ctx context.Context, t testing.TB) int64 {

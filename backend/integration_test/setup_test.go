@@ -11,6 +11,28 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var parallelDatabaseMigrationMu sync.Mutex
+
+// newParallelTestDB provisions a disposable database for one parallel test.
+// Goose keeps its dialect process-global, so migrations are serialized while
+// the test databases themselves remain independent and can be used in
+// parallel afterwards.
+func newParallelTestDB(tb testing.TB) *pgxpool.Pool {
+	tb.Helper()
+
+	ctx, cancel := context.WithTimeout(context.Background(), containerStartupTimeout)
+	defer cancel()
+
+	pool, _ := createMigrationIsolatedDatabase(ctx, tb, "parallel")
+	parallelDatabaseMigrationMu.Lock()
+	err := func() error {
+		defer parallelDatabaseMigrationMu.Unlock()
+		return runMigrations(ctx, migrationDSN(tb, pool, "public"))
+	}()
+	require.NoError(tb, err)
+	return pool
+}
+
 // SetupTestDB starts an isolated Postgres testcontainer, applies migrations,
 // truncates all domain tables, and returns the pool with an idempotent cleanup.
 func SetupTestDB(tb testing.TB) (*pgxpool.Pool, func()) {

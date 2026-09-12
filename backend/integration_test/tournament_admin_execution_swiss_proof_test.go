@@ -369,20 +369,29 @@ func createRoundProofContentConfiguration(
 	t testing.TB,
 	tournamentID uuid.UUID,
 	at time.Time,
+	publishedTaskIDs ...[]uuid.UUID,
 ) (uuid.UUID, int64) {
 	t.Helper()
 	var publicationID, normalPoolID, goldenPoolID uuid.UUID
 	var normalPoolRevision int64
-	err := sharedPool.QueryRow(ctx, `
-		SELECT publication.id, normal_pool.id, normal_pool.revision, golden_pool.id
-		FROM task_pool_publications AS publication
-		INNER JOIN task_pool_revisions AS normal_pool
-			ON normal_pool.publication_id = publication.id AND normal_pool.kind = 'normal'
-		INNER JOIN task_pool_revisions AS golden_pool
-			ON golden_pool.publication_id = publication.id AND golden_pool.kind = 'golden'
-		ORDER BY publication.revision DESC
-		LIMIT 1`).Scan(&publicationID, &normalPoolID, &normalPoolRevision, &goldenPoolID)
-	require.NoError(t, err)
+	var err error
+	if len(publishedTaskIDs) > 0 {
+		require.Len(t, publishedTaskIDs, 1)
+		publicationID, normalPoolID, normalPoolRevision, goldenPoolID = findTaskPoolPublicationForTaskIDs(
+			ctx, t, publishedTaskIDs[0],
+		)
+	} else {
+		err = sharedPool.QueryRow(ctx, `
+			SELECT publication.id, normal_pool.id, normal_pool.revision, golden_pool.id
+			FROM task_pool_publications AS publication
+			INNER JOIN task_pool_revisions AS normal_pool
+				ON normal_pool.publication_id = publication.id AND normal_pool.kind = 'normal'
+			INNER JOIN task_pool_revisions AS golden_pool
+				ON golden_pool.publication_id = publication.id AND golden_pool.kind = 'golden'
+			ORDER BY publication.revision DESC
+			LIMIT 1`).Scan(&publicationID, &normalPoolID, &normalPoolRevision, &goldenPoolID)
+		require.NoError(t, err)
+	}
 	configurationID := uuid.New()
 	_, err = sharedPool.Exec(ctx, `
 		INSERT INTO tournament_content_configurations (
@@ -426,6 +435,59 @@ func createRoundProofContentConfiguration(
 		WHERE id = $1`, configurationID, at)
 	require.NoError(t, err)
 	return normalPoolID, normalPoolRevision
+}
+
+func findTaskPoolPublicationForTaskIDs(
+	ctx context.Context,
+	t testing.TB,
+	taskIDs []uuid.UUID,
+) (uuid.UUID, uuid.UUID, int64, uuid.UUID) {
+	t.Helper()
+	require.NotEmpty(t, taskIDs)
+
+	var publicationID, normalPoolID, goldenPoolID uuid.UUID
+	var normalPoolRevision int64
+	err := sharedPool.QueryRow(ctx, `
+		SELECT publication.id, normal_pool.id, normal_pool.revision, golden_pool.id
+		FROM task_pool_publications AS publication
+		INNER JOIN task_pool_revisions AS normal_pool
+			ON normal_pool.publication_id = publication.id AND normal_pool.kind = 'normal'
+		INNER JOIN task_pool_revisions AS golden_pool
+			ON golden_pool.publication_id = publication.id AND golden_pool.kind = 'golden'
+		WHERE (
+			SELECT COUNT(DISTINCT membership.task_id)
+			FROM task_pool_version_memberships AS membership
+			WHERE membership.task_pool_revision_id = normal_pool.id
+				AND membership.task_id = ANY($1::UUID[])
+		) = cardinality($1::UUID[])
+		AND EXISTS (
+			SELECT 1
+			FROM task_pool_version_memberships AS membership
+			INNER JOIN tasks AS task
+				ON task.id = membership.task_id
+			INNER JOIN task_versions AS version
+				ON version.task_id = membership.task_id
+				AND version.version = membership.task_version
+			LEFT JOIN LATERAL (
+				SELECT attestation.healthy
+				FROM task_version_health_attestations AS attestation
+				WHERE attestation.task_id = membership.task_id
+					AND attestation.task_version = membership.task_version
+				ORDER BY attestation.revision DESC
+				LIMIT 1
+			) AS health ON true
+			WHERE membership.task_pool_revision_id = golden_pool.id
+				AND task.kind = 'golden'
+				AND task.enabled
+				AND task.deleted_at IS NULL
+				AND health.healthy
+		)
+		ORDER BY publication.revision ASC
+		LIMIT 1`, taskIDs).Scan(
+		&publicationID, &normalPoolID, &normalPoolRevision, &goldenPoolID,
+	)
+	require.NoError(t, err)
+	return publicationID, normalPoolID, normalPoolRevision, goldenPoolID
 }
 
 func createRoundProofRosterLock(

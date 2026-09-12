@@ -94,7 +94,7 @@ func TestExactDraftContingencyReservationGuards(t *testing.T) {
 		)
 		err = insertExactDraftReservation(ctx, sharedPool, second)
 		require.Error(t, err)
-			require.NoError(t, releaseExactDraftReservation(ctx, sharedPool, first.id, fixture.createdAt.Add(2*time.Minute)))
+		require.NoError(t, releaseExactDraftReservation(ctx, sharedPool, first.id, fixture.createdAt.Add(2*time.Minute)))
 	})
 
 	t.Run("ordinary and contingent writers serialize", func(t *testing.T) {
@@ -217,6 +217,7 @@ func createExactDraftReservationFixture(ctx context.Context, t *testing.T) exact
 		{name: "reverse", count: 3},
 		{name: "pwn", count: 3},
 	}
+	normalTaskIDs := make([]uuid.UUID, 0, 16)
 	for _, category := range categories {
 		for ordinal := 1; ordinal <= category.count; ordinal++ {
 			var taskID uuid.UUID
@@ -229,6 +230,7 @@ func createExactDraftReservationFixture(ctx context.Context, t *testing.T) exact
 				fmt.Sprintf("FLAG{%s_%d}", category.name, ordinal),
 			).Scan(&taskID)
 			require.NoError(t, err)
+			normalTaskIDs = append(normalTaskIDs, taskID)
 			fixture.taskIDsByCategory[category.name] = append(fixture.taskIDsByCategory[category.name], taskID)
 		}
 	}
@@ -251,17 +253,10 @@ func createExactDraftReservationFixture(ctx context.Context, t *testing.T) exact
 	_, err = sharedPool.Exec(ctx, `SELECT publish_task_pool_heads()`)
 	require.NoError(t, err)
 
-	var publicationID, goldenPoolID uuid.UUID
-	err = sharedPool.QueryRow(ctx, `
-		SELECT publication.id, normal_pool.id, golden_pool.id
-		FROM task_pool_publications AS publication
-		INNER JOIN task_pool_revisions AS normal_pool
-			ON normal_pool.publication_id = publication.id AND normal_pool.kind = 'normal'
-		INNER JOIN task_pool_revisions AS golden_pool
-			ON golden_pool.publication_id = publication.id AND golden_pool.kind = 'golden'
-		ORDER BY publication.revision DESC
-		LIMIT 1`).Scan(&publicationID, &fixture.normalPoolID, &goldenPoolID)
-	require.NoError(t, err)
+	publicationID, normalPoolID, _, goldenPoolID := findTaskPoolPublicationForTaskIDs(
+		ctx, t, normalTaskIDs,
+	)
+	fixture.normalPoolID = normalPoolID
 
 	configurationID := uuid.New()
 	bo1PoolID := uuid.New()

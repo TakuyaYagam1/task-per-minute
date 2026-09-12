@@ -331,9 +331,9 @@ func migrationsDirAbs() string {
 	return filepath.Join(filepath.Dir(thisFile), "..", "db", "migrations")
 }
 
-// uniq builds a unique-per-call identifier suffixed with 8 hex chars.
+// uniq builds a unique-per-call identifier suffixed with 16 hex chars.
 // Tests use it to scope their entities (usernames, task titles, file keys) so
 // parallel tests do not collide on UNIQUE constraints or shared bucket counts.
 func uniq(prefix string) string {
-	return prefix + "_" + uuid.NewString()[:8]
+	return prefix + "_" + uuid.NewString()[:16]
 }

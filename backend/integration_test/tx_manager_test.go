@@ -33,7 +33,8 @@ func insertPlayer(ctx context.Context, mgr *postgres.TxManager, username string)
 
 func TestTxManager_Commit_PersistsRows(t *testing.T) {
 	t.Parallel()
-	mgr := postgres.NewTxManager(sharedPool)
+	pool := newParallelTestDB(t)
+	mgr := postgres.NewTxManager(pool)
 	a, b := uniq("alice"), uniq("bob")
 
 	err := mgr.Do(context.Background(), func(ctx context.Context) error {
@@ -43,13 +44,14 @@ func TestTxManager_Commit_PersistsRows(t *testing.T) {
 		return insertPlayer(ctx, mgr, b)
 	})
 	require.NoError(t, err)
-	require.True(t, playerExists(t, sharedPool, a), "%s missing after commit", a)
-	require.True(t, playerExists(t, sharedPool, b), "%s missing after commit", b)
+	require.True(t, playerExists(t, pool, a), "%s missing after commit", a)
+	require.True(t, playerExists(t, pool, b), "%s missing after commit", b)
 }
 
 func TestTxManager_ErrorRollsBackBothInserts(t *testing.T) {
 	t.Parallel()
-	mgr := postgres.NewTxManager(sharedPool)
+	pool := newParallelTestDB(t)
+	mgr := postgres.NewTxManager(pool)
 	a, b := uniq("alice"), uniq("bob")
 	bust := errors.New("bust")
 
@@ -63,13 +65,14 @@ func TestTxManager_ErrorRollsBackBothInserts(t *testing.T) {
 		return bust
 	})
 	require.ErrorIs(t, err, bust)
-	require.False(t, playerExists(t, sharedPool, a), "%s must be rolled back", a)
-	require.False(t, playerExists(t, sharedPool, b), "%s must be rolled back", b)
+	require.False(t, playerExists(t, pool, a), "%s must be rolled back", a)
+	require.False(t, playerExists(t, pool, b), "%s must be rolled back", b)
 }
 
 func TestTxManager_PanicRollsBackAndRepanics(t *testing.T) {
 	t.Parallel()
-	mgr := postgres.NewTxManager(sharedPool)
+	pool := newParallelTestDB(t)
+	mgr := postgres.NewTxManager(pool)
 	a := uniq("alice")
 
 	func() {
@@ -86,12 +89,13 @@ func TestTxManager_PanicRollsBackAndRepanics(t *testing.T) {
 		})
 	}()
 
-	require.False(t, playerExists(t, sharedPool, a), "panic path must roll back %s", a)
+	require.False(t, playerExists(t, pool, a), "panic path must roll back %s", a)
 }
 
 func TestTxManager_NestedDoReusesOuterTx(t *testing.T) {
 	t.Parallel()
-	mgr := postgres.NewTxManager(sharedPool)
+	pool := newParallelTestDB(t)
+	mgr := postgres.NewTxManager(pool)
 	a, b := uniq("alice"), uniq("bob")
 	bust := errors.New("inner bust")
 
@@ -107,13 +111,14 @@ func TestTxManager_NestedDoReusesOuterTx(t *testing.T) {
 		})
 	})
 	require.ErrorIs(t, err, bust)
-	require.False(t, playerExists(t, sharedPool, a), "outer tx must roll back %s", a)
-	require.False(t, playerExists(t, sharedPool, b), "outer tx must roll back %s", b)
+	require.False(t, playerExists(t, pool, a), "outer tx must roll back %s", a)
+	require.False(t, playerExists(t, pool, b), "outer tx must roll back %s", b)
 }
 
 func TestTxManager_QuerierOutsideTx_UsesPool(t *testing.T) {
 	t.Parallel()
-	mgr := postgres.NewTxManager(sharedPool)
+	pool := newParallelTestDB(t)
+	mgr := postgres.NewTxManager(pool)
 	username := uniq("querier")
 	require.NoError(t, insertPlayer(context.Background(), mgr, username))
 
@@ -124,7 +129,8 @@ func TestTxManager_QuerierOutsideTx_UsesPool(t *testing.T) {
 
 func TestTxManager_ReadSnapshotIsRepeatableAndReadOnly(t *testing.T) {
 	t.Parallel()
-	mgr := postgres.NewTxManager(sharedPool)
+	pool := newParallelTestDB(t)
+	mgr := postgres.NewTxManager(pool)
 	username := uniq("snapshot")
 
 	var observedAt time.Time
@@ -149,7 +155,7 @@ func TestTxManager_ReadSnapshotIsRepeatableAndReadOnly(t *testing.T) {
 		}
 		require.Zero(t, before)
 
-		if _, err := sharedPool.Exec(ctx,
+		if _, err := pool.Exec(ctx,
 			"INSERT INTO players (username) VALUES ($1)", username,
 		); err != nil {
 			return err
@@ -177,12 +183,13 @@ func TestTxManager_ReadSnapshotIsRepeatableAndReadOnly(t *testing.T) {
 		})
 	})
 	require.NoError(t, err)
-	require.True(t, playerExists(t, sharedPool, username))
+	require.True(t, playerExists(t, pool, username))
 }
 
 func TestTxManager_ReadSnapshotRejectsWriteTransactionNesting(t *testing.T) {
 	t.Parallel()
-	mgr := postgres.NewTxManager(sharedPool)
+	pool := newParallelTestDB(t)
+	mgr := postgres.NewTxManager(pool)
 
 	err := mgr.Do(context.Background(), func(ctx context.Context) error {
 		return mgr.ReadSnapshot(ctx, func(context.Context) error { return nil })

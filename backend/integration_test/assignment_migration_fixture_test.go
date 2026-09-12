@@ -128,17 +128,16 @@ func createAssignmentMigrationTask(
 
 	var taskID uuid.UUID
 	err := sharedPool.QueryRow(ctx, `
-		WITH current_normal_pool AS (
+		WITH pinned_normal_pool AS (
 			SELECT pool.id
-			FROM task_pool_publications AS publication
+			FROM assignment_plans AS plan
 			INNER JOIN task_pool_revisions AS pool
-				ON pool.publication_id = publication.id
+				ON pool.id = plan.source_pool_revision_id
 				AND pool.kind = 'normal'
-			ORDER BY publication.revision DESC
-			LIMIT 1
+			WHERE plan.id = $3::UUID
 		)
 		SELECT task.id
-		FROM current_normal_pool AS pool
+		FROM pinned_normal_pool AS pool
 		INNER JOIN task_pool_version_memberships AS membership
 			ON membership.task_pool_revision_id = pool.id
 		INNER JOIN tasks AS task

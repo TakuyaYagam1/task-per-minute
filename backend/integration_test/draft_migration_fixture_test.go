@@ -97,8 +97,10 @@ func createDraftMigrationFixture(
 		sourceProjectionRevision,
 		createdAt,
 	)
-	prepareDraftMigrationContent(ctx, tb)
-	normalPoolRevisionID, _ := createRoundProofContentConfiguration(ctx, tb, tournamentID, createdAt)
+	normalTaskIDs := prepareDraftMigrationContent(ctx, tb)
+	normalPoolRevisionID, _ := createRoundProofContentConfiguration(
+		ctx, tb, tournamentID, createdAt, normalTaskIDs,
+	)
 
 	categoryRevisionID := uuid.New()
 	_, err := sharedPool.Exec(
@@ -227,19 +229,23 @@ func createDraftMigrationWaveSeries(
 	return seriesID
 }
 
-func prepareDraftMigrationContent(ctx context.Context, tb testing.TB) {
+func prepareDraftMigrationContent(ctx context.Context, tb testing.TB) []uuid.UUID {
 	tb.Helper()
 
+	normalTaskIDs := make([]uuid.UUID, 0, 24)
 	for _, category := range []string{"web", "crypto", "pwn"} {
 		for ordinal := 1; ordinal <= 8; ordinal++ {
-			_, err := sharedPool.Exec(ctx, `
+			var taskID uuid.UUID
+			err := sharedPool.QueryRow(ctx, `
 				INSERT INTO tasks (title, description, category, difficulty, time_limit, flag, kind)
-				VALUES ($1, 'draft fixture task', $2, 'easy', 60, $3, 'normal')`,
+				VALUES ($1, 'draft fixture task', $2, 'easy', 60, $3, 'normal')
+				RETURNING id`,
 				"draft_fixture_"+category+"_"+uuid.NewString()[:8],
 				category,
 				"FLAG{draft-"+category+"-"+uuid.NewString()[:8]+"}",
-			)
+			).Scan(&taskID)
 			require.NoError(tb, err)
+			normalTaskIDs = append(normalTaskIDs, taskID)
 		}
 	}
 	_, err := sharedPool.Exec(ctx, `
@@ -262,4 +268,5 @@ func prepareDraftMigrationContent(ctx context.Context, tb testing.TB) {
 	require.NoError(tb, err)
 	_, err = sharedPool.Exec(ctx, `SELECT publish_task_pool_heads()`)
 	require.NoError(tb, err)
+	return normalTaskIDs
 }

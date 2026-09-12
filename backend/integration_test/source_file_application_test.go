@@ -20,7 +20,8 @@ func TestSourceFiles_UploadSourceFile_HappyPath(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	tasks := postgres.NewTaskPostgres(postgres.NewTxManager(sharedPool))
+	pool := newParallelTestDB(t)
+	tasks := postgres.NewTaskPostgres(postgres.NewTxManager(pool))
 	st := newSeaweedStorage(t)
 	uc := taskusecase.NewSourceFiles(taskusecase.NewUseCase(tasks), st, nil)
 	task := mustCreateTask(t, tasks, uniq("forensics"), domain.DifficultyEasy)

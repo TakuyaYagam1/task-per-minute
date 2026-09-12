@@ -146,8 +146,8 @@ test: test-migration-create ## Unit tests with race detector (skips integration_
 test-plugin-race: test ## Run the unit race gate used by plugin validation
 
 .PHONY: test-int
-test-int: ## Integration tests (testcontainers - requires Docker, fully sequential)
-	go test -race -count=1 -p=1 -parallel=1 -timeout=20m -tags=integration ./integration_test/...
+test-int: ## Integration tests (testcontainers - one package, up to 5 parallel tests)
+	go test -race -count=1 -p=1 -parallel=5 -timeout=20m -tags=integration ./integration_test/...
 
 .PHONY: test-race
 test-race: ## Unit + integration tests with race detector (full suite, requires Docker)

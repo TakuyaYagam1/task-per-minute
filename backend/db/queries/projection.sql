@@ -127,6 +127,17 @@ existing AS MATERIALIZED (
     CROSS JOIN outbox_events AS outbox_event
     WHERE outbox_event.idempotency_key = sqlc.arg(idempotency_key)::UUID
 ),
+published_projection AS MATERIALIZED (
+    SELECT projection_revision.id,
+        projection_revision.tournament_id,
+        projection_revision.roster_id,
+        projection_revision.revision_number
+    FROM projection_revisions AS projection_revision
+    WHERE projection_revision.tournament_id = sqlc.arg(tournament_id)
+        AND projection_revision.roster_id = sqlc.arg(roster_id)
+        AND projection_revision.state = 'published'
+    FOR SHARE
+),
 locked_wave AS MATERIALIZED (
     SELECT wave.id,
         wave.tournament_id,
@@ -140,19 +151,13 @@ locked_wave AS MATERIALIZED (
         AND wave.revision_id = sqlc.arg(expected_wave_revision_id)
         AND wave.revision = sqlc.arg(expected_wave_revision)
         AND wave.state = 'active'
+        AND EXISTS (
+            SELECT 1
+            FROM published_projection
+            WHERE published_projection.tournament_id = wave.tournament_id
+                AND published_projection.roster_id = wave.roster_id
+        )
     FOR UPDATE
-),
-published_projection AS MATERIALIZED (
-    SELECT projection_revision.id,
-        projection_revision.tournament_id,
-        projection_revision.roster_id,
-        projection_revision.revision_number
-    FROM projection_revisions AS projection_revision
-    INNER JOIN locked_wave
-        ON locked_wave.tournament_id = projection_revision.tournament_id
-        AND locked_wave.roster_id = projection_revision.roster_id
-    WHERE projection_revision.state = 'published'
-    FOR SHARE
 ),
 allocated_sequence AS (
     INSERT INTO tournament_outbox_cursors (

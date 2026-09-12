@@ -10,13 +10,15 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	taskusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/task"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 )
 
 func TestTaskUseCase_TaskLifecycle(t *testing.T) {
 	t.Parallel()
 
-	uc := newTaskUseCaseFixture()
+	pool := newParallelTestDB(t)
+	uc := newTaskUseCaseFixture(pool)
 	ctx := context.Background()
 
 	created, err := uc.CreateTask(ctx, taskusecase.CreateInput{
@@ -62,7 +64,8 @@ func TestTaskUseCase_TaskLifecycle(t *testing.T) {
 func TestTaskUseCase_CreateTask_InvalidDifficulty(t *testing.T) {
 	t.Parallel()
 
-	uc := newTaskUseCaseFixture()
+	pool := newParallelTestDB(t)
+	uc := newTaskUseCaseFixture(pool)
 	_, err := uc.CreateTask(context.Background(), taskusecase.CreateInput{
 		Title:       uniq("task"),
 		Description: "description",
@@ -78,13 +81,18 @@ func TestTaskUseCase_CreateTask_InvalidDifficulty(t *testing.T) {
 func TestTaskUseCase_DeleteTask_MissingReturnsTaskNotFound(t *testing.T) {
 	t.Parallel()
 
-	uc := newTaskUseCaseFixture()
+	pool := newParallelTestDB(t)
+	uc := newTaskUseCaseFixture(pool)
 	err := uc.DeleteTask(context.Background(), uuid.New())
 	require.ErrorIs(t, err, domain.ErrTaskNotFound)
 }
 
-func newTaskUseCaseFixture() *taskusecase.UseCase {
-	tasks := postgres.NewTaskPostgres(postgres.NewTxManager(sharedPool))
+func newTaskUseCaseFixture(pools ...*pgxpool.Pool) *taskusecase.UseCase {
+	pool := sharedPool
+	if len(pools) > 0 && pools[0] != nil {
+		pool = pools[0]
+	}
+	tasks := postgres.NewTaskPostgres(postgres.NewTxManager(pool))
 	return taskusecase.NewUseCase(tasks)
 }
 
