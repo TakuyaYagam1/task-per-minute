@@ -84,6 +84,9 @@ func (r *TournamentAdminRosterPostgres) LockRosterWithPreflight(
 		return tournamentadmin.RosterView{}, domain.ErrConflict
 	}
 	querier := r.tx.Querier(ctx)
+	if err := lockRosterTaskExposure(ctx, querier, authority.Roster.TournamentID); err != nil {
+		return tournamentadmin.RosterView{}, err
+	}
 	reserved, err := querier.ReserveCheckedInTournamentParticipants(
 		ctx,
 		sqlc.ReserveCheckedInTournamentParticipantsParams{
@@ -107,6 +110,30 @@ func (r *TournamentAdminRosterPostgres) LockRosterWithPreflight(
 		return tournamentadmin.RosterView{}, err
 	}
 	return r.GetRoster(ctx, authority.Roster.TournamentID)
+}
+
+// The saved preflight cannot authorize content disclosed after the report was
+// recorded. Lock the exact bound versions before reading exposure in a fresh
+// statement so a concurrent disclosure either precedes or follows roster lock.
+func lockRosterTaskExposure(ctx context.Context, querier *sqlc.Queries, tournamentID uuid.UUID) error {
+	content, err := querier.GetCurrentTournamentContentConfiguration(ctx, tournamentID)
+	if err != nil {
+		return tournamentAdminRosterMutationError("LockRoster - content", err)
+	}
+	pools := []uuid.UUID{content.NormalPoolRevisionID, content.GoldenPoolRevisionID}
+	if err := querier.LockTaskPoolVersionsForExposureCheck(ctx, pools); err != nil {
+		return tournamentAdminRosterMutationError("LockRoster - lock content", err)
+	}
+	health, err := querier.ListTaskPoolVersionHealth(ctx, pools)
+	if err != nil {
+		return tournamentAdminRosterMutationError("LockRoster - content exposure", err)
+	}
+	for _, version := range health {
+		if version.TaskPubliclyExposed {
+			return domain.ErrConflict
+		}
+	}
+	return nil
 }
 
 func (r *TournamentAdminRosterPostgres) UnlockRoster(

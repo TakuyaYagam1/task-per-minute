@@ -60,7 +60,7 @@ func (repository *GoldenRuntimePostgres) materializeGoldenRuntimePlan(
 		return nil
 	}
 
-	candidates, err := repository.goldenRuntimePlanCandidates(ctx, querier, content.GoldenPoolRevisionID)
+	candidates, err := repository.goldenRuntimePlanCandidates(ctx, querier, first.tournamentID, content.GoldenPoolRevisionID)
 	if err != nil {
 		return err
 	}
@@ -104,7 +104,7 @@ func (repository *GoldenRuntimePostgres) materializeGoldenRuntimePlan(
 					"group_id":  group.groupID.String(),
 				},
 			}
-			decisionInputs = append(decisionInputs, candidate.snapshot.TaskID.String())
+			decisionInputs = append(decisionInputs, fmt.Sprintf("%s@%d", candidate.snapshot.TaskID, candidate.snapshot.Version))
 		}
 		branches[groupIndex] = branch
 	}
@@ -126,11 +126,35 @@ func (repository *GoldenRuntimePostgres) materializeGoldenRuntimePlan(
 	)
 }
 
+func goldenRuntimeReservedTaskVersions(
+	ctx context.Context,
+	querier *sqlc.Queries,
+	tournamentID uuid.UUID,
+) (map[domain.TaskVersionRef]struct{}, error) {
+	reservedRows, err := querier.ListTournamentReservedTaskVersions(ctx, tournamentID)
+	if err != nil {
+		return nil, goldenRuntimeReadError("load Golden reservations", err)
+	}
+	reserved := make(map[domain.TaskVersionRef]struct{}, len(reservedRows))
+	for _, row := range reservedRows {
+		if row.TaskID == uuid.Nil || row.TaskVersion < 1 {
+			return nil, domain.ErrConflict
+		}
+		reserved[domain.TaskVersionRef{TaskID: row.TaskID, Version: int(row.TaskVersion)}] = struct{}{}
+	}
+	return reserved, nil
+}
+
 func (repository *GoldenRuntimePostgres) goldenRuntimePlanCandidates(
 	ctx context.Context,
 	querier *sqlc.Queries,
+	tournamentID uuid.UUID,
 	poolRevisionID uuid.UUID,
 ) ([]goldenRuntimePlanCandidate, error) {
+	reserved, err := goldenRuntimeReservedTaskVersions(ctx, querier, tournamentID)
+	if err != nil {
+		return nil, err
+	}
 	health, err := querier.ListTaskPoolVersionHealth(ctx, []uuid.UUID{poolRevisionID})
 	if err != nil {
 		return nil, goldenRuntimeReadError("load Golden candidates", err)
@@ -139,6 +163,9 @@ func (repository *GoldenRuntimePostgres) goldenRuntimePlanCandidates(
 	for _, item := range health {
 		if item.PoolRevisionID != poolRevisionID || item.PoolKind != string(domain.TaskKindGolden) ||
 			!item.TaskExists || !item.TaskEnabled || !item.TaskHealthy || item.TaskPubliclyExposed {
+			continue
+		}
+		if _, unavailable := reserved[domain.TaskVersionRef{TaskID: item.TaskID, Version: int(item.TaskVersion)}]; unavailable {
 			continue
 		}
 		version, loadErr := querier.GetTaskVersion(ctx, sqlc.GetTaskVersionParams{

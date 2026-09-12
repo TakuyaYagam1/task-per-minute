@@ -197,6 +197,12 @@ WITH locked_task_version AS (
         AND task.enabled
         AND task.deleted_at IS NULL
         AND COALESCE(health.healthy, false)
+        AND NOT EXISTS (
+            SELECT 1
+            FROM task_public_exposures AS exposure
+            WHERE exposure.task_id = membership.task_id
+                AND exposure.task_version = membership.task_version
+        )
     FOR NO KEY UPDATE OF task
 )
 INSERT INTO assignment_plan_edges (
@@ -236,6 +242,7 @@ INSERT INTO task_version_reservations (
     plan_id,
     branch_id,
     contingency_draft_branch_id,
+    tournament_id,
     task_id,
     task_version,
     state,
@@ -247,11 +254,13 @@ SELECT
     sqlc.arg(plan_id),
     sqlc.arg(branch_id),
     branch.exact_draft_branch_id,
+    plan.tournament_id,
     sqlc.arg(task_id),
     sqlc.arg(task_version),
     'reserved',
     sqlc.arg(created_at)
 FROM assignment_branches AS branch
+INNER JOIN assignment_plans AS plan ON plan.id = branch.plan_id
 WHERE branch.id = sqlc.arg(branch_id)
     AND branch.plan_id = sqlc.arg(plan_id)
 RETURNING id,
@@ -259,6 +268,7 @@ RETURNING id,
     plan_id,
     branch_id,
     contingency_draft_branch_id,
+    tournament_id,
     task_id,
     task_version,
     revision,
@@ -1041,18 +1051,27 @@ WHERE series.tournament_id = sqlc.arg(tournament_id)
 ORDER BY participant.id
 FOR UPDATE OF participant, reservation;
 
+-- Receipts are scoped to the target participants across every series in the
+-- same tournament and roster. A history row includes the exact task version.
 -- name: LockExactNormalAssignmentHistory :many
-SELECT receipt.participant_id, receipt.task_id
+WITH target AS (
+    SELECT public.series.first_participant_id, public.series.second_participant_id
+    FROM public.series
+    WHERE public.series.tournament_id = sqlc.arg(tournament_id)
+        AND public.series.roster_id = sqlc.arg(roster_id)
+        AND public.series.id = sqlc.arg(series_id)
+)
+SELECT receipt.participant_id, receipt.task_id, receipt.task_version
 FROM task_delivery_receipts AS receipt
 INNER JOIN assignments AS assignment ON assignment.id = receipt.assignment_id
 INNER JOIN series AS series
     ON series.id = assignment.series_id
     AND series.roster_id = assignment.roster_id
+CROSS JOIN target
 WHERE series.tournament_id = sqlc.arg(tournament_id)
     AND series.roster_id = sqlc.arg(roster_id)
-    AND series.id = sqlc.arg(series_id)
-    AND receipt.participant_id IN (series.first_participant_id, series.second_participant_id)
-ORDER BY receipt.participant_id, receipt.task_id
+    AND receipt.participant_id IN (target.first_participant_id, target.second_participant_id)
+ORDER BY receipt.participant_id, receipt.task_id, receipt.task_version
 FOR KEY SHARE OF receipt;
 
 -- name: LockExactNormalAssignmentCandidates :many
@@ -1075,11 +1094,15 @@ SELECT membership.task_id,
     EXISTS (
         SELECT 1
         FROM task_version_reservations AS reservation
-        WHERE reservation.task_id = membership.task_id
+        WHERE reservation.tournament_id = target_series.tournament_id
+            AND reservation.task_id = membership.task_id
             AND reservation.task_version = membership.task_version
             AND reservation.state IN ('reserved', 'committed')
     ) AS unavailable
 FROM category_revisions AS category
+INNER JOIN series AS target_series
+    ON target_series.id = category.series_id
+    AND target_series.roster_id = category.roster_id
 INNER JOIN task_pool_revisions AS pool
     ON pool.id = category.source_pool_revision_id
     AND pool.kind = 'normal'
@@ -1107,8 +1130,15 @@ WHERE category.id = sqlc.arg(category_lock_id)
     AND COALESCE(health.healthy, false)
     AND NOT EXISTS (
         SELECT 1
+        FROM task_public_exposures AS exposure
+        WHERE exposure.task_id = membership.task_id
+            AND exposure.task_version = membership.task_version
+    )
+    AND NOT EXISTS (
+        SELECT 1
         FROM task_version_reservations AS live_reservation
-        WHERE live_reservation.task_id = membership.task_id
+        WHERE live_reservation.tournament_id = target_series.tournament_id
+            AND live_reservation.task_id = membership.task_id
             AND live_reservation.task_version = membership.task_version
             AND live_reservation.state IN ('reserved', 'committed')
     )
@@ -1228,3 +1258,10 @@ WHERE id = sqlc.arg(id)
     AND revision_id = sqlc.arg(expected_revision_id)
     AND source_roster_revision = sqlc.arg(expected_roster_revision)
 RETURNING id, revision_id, state, active_branch_id, committed_at;
+
+-- name: ListTournamentReservedTaskVersions :many
+SELECT DISTINCT reservation.task_id, reservation.task_version
+FROM task_version_reservations AS reservation
+WHERE reservation.tournament_id = sqlc.arg(tournament_id)
+    AND reservation.state IN ('reserved', 'committed')
+ORDER BY reservation.task_id, reservation.task_version;

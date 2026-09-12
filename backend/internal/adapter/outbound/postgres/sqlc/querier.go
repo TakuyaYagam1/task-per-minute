@@ -81,7 +81,7 @@ type Querier interface {
 	CreateAssignmentPlanEdge(ctx context.Context, arg CreateAssignmentPlanEdgeParams) (AssignmentPlanEdge, error)
 	CreateAssignmentTaskDeliveryReceipt(ctx context.Context, arg CreateAssignmentTaskDeliveryReceiptParams) (TaskDeliveryReceipt, error)
 	CreateAssignmentTaskSnapshot(ctx context.Context, arg CreateAssignmentTaskSnapshotParams) (TaskSnapshot, error)
-	CreateAssignmentTaskVersionReservation(ctx context.Context, arg CreateAssignmentTaskVersionReservationParams) (TaskVersionReservation, error)
+	CreateAssignmentTaskVersionReservation(ctx context.Context, arg CreateAssignmentTaskVersionReservationParams) (CreateAssignmentTaskVersionReservationRow, error)
 	CreateAutomaticSwissRound(ctx context.Context, arg CreateAutomaticSwissRoundParams) (SwissRound, error)
 	CreateConservativeAssignmentPlan(ctx context.Context, arg CreateConservativeAssignmentPlanParams) (CreateConservativeAssignmentPlanRow, error)
 	CreateCorrectionGoldenGroupRevision(ctx context.Context, arg CreateCorrectionGoldenGroupRevisionParams) (uuid.UUID, error)
@@ -580,6 +580,7 @@ type Querier interface {
 	ListTournamentPreflightParticipants(ctx context.Context, arg ListTournamentPreflightParticipantsParams) ([]ListTournamentPreflightParticipantsRow, error)
 	ListTournamentReadParticipants(ctx context.Context, tournamentID uuid.UUID) ([]ListTournamentReadParticipantsRow, error)
 	ListTournamentReservations(ctx context.Context, tournamentID uuid.UUID) ([]ParticipantReservation, error)
+	ListTournamentReservedTaskVersions(ctx context.Context, tournamentID uuid.UUID) ([]ListTournamentReservedTaskVersionsRow, error)
 	ListTournamentSummaries(ctx context.Context) ([]ListTournamentSummariesRow, error)
 	ListTournaments(ctx context.Context) ([]Tournament, error)
 	ListWaveMembers(ctx context.Context, waveID uuid.UUID) ([]WaveMember, error)
@@ -631,6 +632,8 @@ type Querier interface {
 	// assignment branches, not one collapsed JSON payload.
 	LockExactDraftPlanningStage(ctx context.Context, draftID uuid.UUID) (LockExactDraftPlanningStageRow, error)
 	LockExactNormalAssignmentCandidates(ctx context.Context, arg LockExactNormalAssignmentCandidatesParams) ([]LockExactNormalAssignmentCandidatesRow, error)
+	// Receipts are scoped to the target participants across every series in the
+	// same tournament and roster. A history row includes the exact task version.
 	LockExactNormalAssignmentHistory(ctx context.Context, arg LockExactNormalAssignmentHistoryParams) ([]LockExactNormalAssignmentHistoryRow, error)
 	LockExactNormalAssignmentHistoryHead(ctx context.Context, arg LockExactNormalAssignmentHistoryHeadParams) (LockExactNormalAssignmentHistoryHeadRow, error)
 	LockExactNormalAssignmentParticipants(ctx context.Context, arg LockExactNormalAssignmentParticipantsParams) ([]LockExactNormalAssignmentParticipantsRow, error)
@@ -754,6 +757,10 @@ type Querier interface {
 	LockSwissSeriesForMaterialization(ctx context.Context, arg LockSwissSeriesForMaterializationParams) (LockSwissSeriesForMaterializationRow, error)
 	LockTaskForContentMutation(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	LockTaskPoolPublicationRevision(ctx context.Context, contentRevision int64) ([]LockTaskPoolPublicationRevisionRow, error)
+	// The roster mutation path takes this lock in a separate statement immediately
+	// before it re-reads ListTaskPoolVersionHealth. A public exposure writer takes
+	// the conflicting FOR UPDATE lock on the same task-version row.
+	LockTaskPoolVersionsForExposureCheck(ctx context.Context, taskPoolRevisionIds []uuid.UUID) error
 	LockTerminalProjectionCommit(ctx context.Context, arg LockTerminalProjectionCommitParams) ([]LockTerminalProjectionCommitRow, error)
 	LockTerminalProjectionRevisions(ctx context.Context, arg LockTerminalProjectionRevisionsParams) ([]LockTerminalProjectionRevisionsRow, error)
 	LockTerminalSwissPointSource(ctx context.Context, arg LockTerminalSwissPointSourceParams) ([]LockTerminalSwissPointSourceRow, error)
@@ -951,6 +958,10 @@ type Querier interface {
 	// the exact latest live PostgreSQL lease; prior epoch rows are never updated.
 	RebindPausedExecutionGameEpochs(ctx context.Context, arg RebindPausedExecutionGameEpochsParams) ([]uuid.UUID, error)
 	RecordHealthyTaskVersionProbeAttestation(ctx context.Context, arg RecordHealthyTaskVersionProbeAttestationParams) (TaskVersionHealthAttestation, error)
+	// This is the persistence boundary for a real public or spectator disclosure
+	// writer. It records an exact task version and never derives exposure from a
+	// private participant delivery receipt.
+	RecordTaskPublicExposure(ctx context.Context, arg RecordTaskPublicExposureParams) (TaskPublicExposure, error)
 	RecordUnhealthyTaskVersionProbeAttestation(ctx context.Context, arg RecordUnhealthyTaskVersionProbeAttestationParams) (TaskVersionHealthAttestation, error)
 	ReleaseLosingExactDraftBranches(ctx context.Context, arg ReleaseLosingExactDraftBranchesParams) (int64, error)
 	ReleaseLosingExactDraftChildReservations(ctx context.Context, arg ReleaseLosingExactDraftChildReservationsParams) ([]uuid.UUID, error)

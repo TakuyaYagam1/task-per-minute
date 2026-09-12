@@ -113,13 +113,14 @@ FOR UPDATE OF participant, reservation;
 
 -- name: LockExactDraftPlanningHistory :many
 SELECT receipt.participant_id,
-    receipt.task_id
+    receipt.task_id,
+    receipt.task_version
 FROM tournament_stage_playoff_finals AS stage
 INNER JOIN task_delivery_receipts AS receipt
     ON receipt.roster_id = stage.roster_id
     AND receipt.participant_id IN (stage.first_participant_id, stage.second_participant_id)
 WHERE stage.draft_id = sqlc.arg(draft_id)
-ORDER BY receipt.participant_id, receipt.task_id
+ORDER BY receipt.participant_id, receipt.task_id, receipt.task_version
 FOR KEY SHARE OF receipt;
 
 -- name: EnsureExactDraftPlanningHistoryHead :exec
@@ -161,7 +162,10 @@ WHERE head.draft_id = sqlc.arg(draft_id)
 FOR UPDATE OF head;
 
 -- name: LockExactDraftPlanningReservationKeys :exec
-SELECT pg_advisory_xact_lock(hashtextextended(membership.task_id::TEXT || ':' || membership.task_version::TEXT, 0))
+SELECT pg_advisory_xact_lock(hashtextextended(
+    stage.tournament_id::TEXT || ':' || membership.task_id::TEXT || ':' || membership.task_version::TEXT,
+    0
+))
 FROM tournament_stage_playoff_finals AS stage
 JOIN category_revisions AS category ON category.id = stage.category_revision_id
     AND category.series_id = stage.final_series_id AND category.roster_id = stage.roster_id
@@ -188,7 +192,8 @@ SELECT membership.task_id,
     task.created_at AS task_created_at,
     EXISTS (
         SELECT 1 FROM task_version_reservations AS reservation
-        WHERE reservation.task_id = membership.task_id
+        WHERE reservation.tournament_id = stage.tournament_id
+            AND reservation.task_id = membership.task_id
             AND reservation.task_version = membership.task_version
             AND reservation.state IN ('reserved', 'committed')
             AND reservation.plan_id <> sqlc.arg(plan_id)
@@ -221,6 +226,12 @@ LEFT JOIN LATERAL (
 ) AS health ON true
 WHERE stage.draft_id = sqlc.arg(draft_id)
     AND COALESCE(health.healthy, false)
+    AND NOT EXISTS (
+        SELECT 1
+        FROM task_public_exposures AS exposure
+        WHERE exposure.task_id = membership.task_id
+            AND exposure.task_version = membership.task_version
+    )
 ORDER BY membership.task_id, membership.task_version
 -- The health-attestation guard takes FOR UPDATE on task_version. This exact
 -- planning lock therefore serializes the candidate snapshot with every
@@ -407,6 +418,7 @@ INSERT INTO exact_draft_assignment_child_history (
     plan_id,
     participant_id,
     task_id,
+    task_version,
     created_at
 )
 VALUES (
@@ -414,6 +426,7 @@ VALUES (
     sqlc.arg(plan_id),
     sqlc.arg(participant_id),
     sqlc.arg(task_id),
+    sqlc.arg(task_version),
     sqlc.arg(created_at)
 );
 
@@ -607,10 +620,11 @@ SELECT history.child_branch_id,
     history.plan_id,
     history.participant_id,
     history.task_id,
-    history.created_at
+    history.created_at,
+    history.task_version
 FROM exact_draft_assignment_child_history AS history
 WHERE history.plan_id = sqlc.arg(plan_id)
-ORDER BY history.child_branch_id, history.participant_id, history.task_id
+ORDER BY history.child_branch_id, history.participant_id, history.task_id, history.task_version
 FOR UPDATE;
 
 -- name: LockExactDraftAssignmentChildCandidates :many

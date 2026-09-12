@@ -282,6 +282,7 @@ type ExactDraftAssignmentChildHistory struct {
 	ParticipantID uuid.UUID
 	TaskID        uuid.UUID
 	CreatedAt     pgtype.Timestamptz
+	TaskVersion   int32
 }
 
 type ExactDraftAssignmentChildParticipant struct {
@@ -2422,6 +2423,16 @@ type TaskPoolVersionMembership struct {
 	CreatedAt          pgtype.Timestamptz
 }
 
+type TaskPublicExposure struct {
+	ID          uuid.UUID
+	TaskID      uuid.UUID
+	TaskVersion int32
+	Audience    string
+	EvidenceID  uuid.UUID
+	DisclosedAt pgtype.Timestamptz
+	CreatedAt   pgtype.Timestamptz
+}
+
 type TaskSnapshot struct {
 	ID            uuid.UUID
 	ReservationID uuid.UUID
@@ -2487,6 +2498,7 @@ type TaskVersionReservation struct {
 	SupersededAt             pgtype.Timestamptz
 	SupersessionReason       *string
 	CreatedAt                pgtype.Timestamptz
+	TournamentID             uuid.UUID
 }
 
 type Tournament struct {

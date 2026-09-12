@@ -179,12 +179,12 @@ func TestMigrationSources(t *testing.T) {
 	}
 }
 
-func TestMigrationSourcesHaveSeventeenDomainVersions(t *testing.T) {
+func TestMigrationSourcesHaveEighteenDomainVersions(t *testing.T) {
 	t.Parallel()
 	provider, err := newMigrationProvider(new(sql.DB), os.DirFS(ResolveMigrationsDir(migrationsDir)))
 	require.NoError(t, err)
 	sources := provider.ListSources()
-	require.Len(t, sources, 17)
+	require.Len(t, sources, 18)
 	for index, source := range sources {
 		require.Equal(t, int64(index+1), source.Version)
 		require.Equal(t, goose.TypeSQL, source.Type)
@@ -265,7 +265,7 @@ func TestMigrationRunWaitsBeforeCreatingMetadata(t *testing.T) {
 }
 
 func TestMigrationRunChecksCurrentHeadUnderLock(t *testing.T) {
-	state := &migrationTestState{history: currentMigrationHistory(17)}
+	state := &migrationTestState{history: currentMigrationHistory(18)}
 	db, provider := migrationTestProvider(t, state)
 
 	require.NoError(t, runMigration(t.Context(), db, provider, "up"))

@@ -53,15 +53,16 @@ func ProveGolden(in GoldenInput) GoldenProof {
 		})
 	}
 
-	usedByAny := make(map[uuid.UUID]struct{})
+	usedByAny := make(map[domain.TaskVersionRef]struct{})
 	conflictingParticipantID := uuid.Nil
 	poolTaskIDs := taskIDSet(versions)
+	poolTaskVersions := taskVersionSet(versions)
 	for _, participantID := range participants {
-		for taskID := range history[participantID] {
-			if _, belongsToPool := poolTaskIDs[taskID]; !belongsToPool {
+		for ref := range history[participantID] {
+			if !historyRefInPool(ref, poolTaskVersions, poolTaskIDs) {
 				continue
 			}
-			usedByAny[taskID] = struct{}{}
+			usedByAny[ref] = struct{}{}
 			if conflictingParticipantID == uuid.Nil {
 				conflictingParticipantID = participantID
 			}
@@ -109,7 +110,7 @@ func ProveGolden(in GoldenInput) GoldenProof {
 
 func normalizeGoldenInput(
 	in GoldenInput,
-) ([]uuid.UUID, domain.TaskPoolRevision, domain.TaskPoolRevision, []TaskVersion, map[uuid.UUID]map[uuid.UUID]struct{}, *Failure) {
+) ([]uuid.UUID, domain.TaskPoolRevision, domain.TaskPoolRevision, []TaskVersion, map[uuid.UUID]map[domain.TaskVersionRef]struct{}, *Failure) {
 	participants, ok := normalizedParticipants(in.Preset, in.ParticipantIDs)
 	if !ok {
 		return nil, domain.TaskPoolRevision{}, domain.TaskPoolRevision{}, nil, nil, &Failure{Code: FailureGoldenInvalidInput}

@@ -3,6 +3,7 @@ package assignment_test
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
@@ -41,6 +42,35 @@ func TestExactNormalAssignmentCommitsPrimaryAndTwoReserves(t *testing.T) {
 	}
 	require.Equal(t, 1, state.loadCount())
 	require.Equal(t, 1, state.commitCount())
+}
+
+func TestExactNormalLegacyHistoryProofSurvivesVersionlessJSON(t *testing.T) {
+	t.Parallel()
+
+	authority, command := exactNormalAssignmentFixture()
+	_, err := assignmentusecase.BuildExactNormalAssignment(command, authority)
+	require.NoError(t, err)
+
+	serialized, err := json.Marshal(authority.History)
+	require.NoError(t, err)
+	var decoded []capacity.TaskUse
+	require.NoError(t, json.Unmarshal(serialized, &decoded))
+	require.Equal(t, authority.History, decoded)
+	reserialized, err := json.Marshal(decoded)
+	require.NoError(t, err)
+	require.Equal(t, serialized, reserialized)
+
+	decodedAuthority := cloneExactNormalAuthority(authority)
+	decodedAuthority.History = decoded
+	decodedPlan, err := assignmentusecase.BuildExactNormalAssignment(command, decodedAuthority)
+	require.NoError(t, err)
+	require.NoError(t, decodedPlan.Validate())
+
+	versionedAuthority := cloneExactNormalAuthority(authority)
+	versionedAuthority.History[0].Version = 1
+	versionedPlan, err := assignmentusecase.BuildExactNormalAssignment(command, versionedAuthority)
+	require.NoError(t, err)
+	require.NoError(t, versionedPlan.Validate())
 }
 
 func TestExactNormalAssignmentRetriesEveryAuthorityConflict(t *testing.T) {

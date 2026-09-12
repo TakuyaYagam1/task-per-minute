@@ -30,7 +30,7 @@ func TestTaskContentHealthAuthoritySQLContract(t *testing.T) {
 		"-- name: ListTaskPoolVersionHealth :many",
 		"LEFT JOIN LATERAL",
 		"COALESCE(health.healthy, false)",
-		"FROM task_delivery_receipts AS receipt",
+		"FROM task_public_exposures AS exposure",
 		"-- name: CreateTaskVersionContentValidationAttestation :one",
 		"-- name: RecordUnhealthyTaskVersionProbeAttestation :one",
 		"-- name: RecordHealthyTaskVersionProbeAttestation :one",

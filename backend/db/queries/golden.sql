@@ -2018,6 +2018,7 @@ INNER JOIN golden_exact_plan_snapshot_reservations AS reservation
     AND reservation.reservation_id = edge.reservation_id
 INNER JOIN task_version_reservations AS live_reservation
     ON live_reservation.id = reservation.reservation_id
+    AND live_reservation.tournament_id = plan.tournament_id
     AND live_reservation.task_id = reservation.task_id
     AND live_reservation.task_version = reservation.task_version
     AND live_reservation.plan_id = reservation.owner_plan_id
@@ -2045,6 +2046,12 @@ WHERE plan.tournament_id = sqlc.arg(tournament_id)
     AND candidate.healthy
     AND NOT candidate.mutation_locked
     AND NOT candidate.publicly_exposed
+    AND NOT EXISTS (
+        SELECT 1
+        FROM task_public_exposures AS exposure
+        WHERE exposure.task_id = version.task_id
+            AND exposure.task_version = version.version
+    )
     AND candidate.artifact_digest = edge.content_digest
     AND edge.content_digest = version.content_digest
     AND live_reservation.state = 'reserved'

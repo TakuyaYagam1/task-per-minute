@@ -21,6 +21,18 @@ func TestTaskEligibilityAcceptsExactPrivateHealthyVersion(t *testing.T) {
 	require.Empty(t, decision.Reasons)
 }
 
+func TestTaskEligibilityIgnoresReceiptForAnotherTaskVersion(t *testing.T) {
+	t.Parallel()
+
+	input := taskEligibilityFixture()
+	input.ReceiptHistory = []assignmentusecase.TaskReceiptRef{{
+		ParticipantID: input.ParticipantIDs[0], TaskID: input.Candidate.Task.ID, Version: input.Candidate.Version - 1,
+	}}
+	decision, err := assignmentusecase.EvaluateTaskEligibility(input)
+	require.NoError(t, err)
+	require.True(t, decision.Eligible)
+}
+
 func TestTaskEligibilityRejectsEveryExclusionReason(t *testing.T) {
 	t.Parallel()
 

@@ -304,22 +304,36 @@ func exactNormalHistory(
 	for _, participantID := range participantIDs {
 		allowed[participantID] = struct{}{}
 	}
-	seen := make(map[[2]uuid.UUID]struct{}, len(rows))
+	type historyKey struct {
+		participantID uuid.UUID
+		ref           domain.TaskVersionRef
+	}
+	seen := make(map[historyKey]struct{}, len(rows))
 	result := make([]capacity.TaskUse, len(rows))
 	for index, row := range rows {
-		if row.ParticipantID == uuid.Nil || row.TaskID == uuid.Nil {
+		if row.ParticipantID == uuid.Nil || row.TaskID == uuid.Nil || row.TaskVersion < 1 {
 			return nil, domain.ErrConflict
 		}
 		if _, ok := allowed[row.ParticipantID]; !ok {
 			return nil, domain.ErrConflict
 		}
-		key := [2]uuid.UUID{row.ParticipantID, row.TaskID}
+		ref := domain.TaskVersionRef{TaskID: row.TaskID, Version: int(row.TaskVersion)}
+		key := historyKey{participantID: row.ParticipantID, ref: ref}
 		if _, ok := seen[key]; ok {
 			return nil, domain.ErrConflict
 		}
 		seen[key] = struct{}{}
-		result[index] = capacity.TaskUse{ParticipantID: row.ParticipantID, TaskID: row.TaskID}
+		result[index] = capacity.TaskUse{ParticipantID: row.ParticipantID, TaskID: row.TaskID, Version: int(row.TaskVersion)}
 	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].ParticipantID != result[j].ParticipantID {
+			return result[i].ParticipantID.String() < result[j].ParticipantID.String()
+		}
+		return domain.CompareTaskVersionRefs(
+			domain.TaskVersionRef{TaskID: result[i].TaskID, Version: result[i].Version},
+			domain.TaskVersionRef{TaskID: result[j].TaskID, Version: result[j].Version},
+		) < 0
+	})
 	return result, nil
 }
 
@@ -620,7 +634,6 @@ func exactNormalAuthorityFromSource(
 	if err := json.Unmarshal(row.ParticipantReservations, &authority.ParticipantReservations); err != nil {
 		return authority, domain.ErrConflict
 	}
-	//nolint:musttag // Domain validation below verifies this versioned application-owned document.
 	if err := json.Unmarshal(row.History, &authority.History); err != nil {
 		return authority, domain.ErrConflict
 	}

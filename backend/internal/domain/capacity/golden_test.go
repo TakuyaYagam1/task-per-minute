@@ -70,6 +70,35 @@ func TestGoldenAssignmentSolver(t *testing.T) {
 		proof := capacity.ProveGolden(input)
 		assertCapacityFailure(t, proof.Certified, proof.Failure, capacity.FailureGoldenReuseConflict, "", input.ParticipantIDs[0], 24, 23)
 	})
+
+	t.Run("matches a prior receipt by exact version and keeps legacy task history broad", func(t *testing.T) {
+		t.Parallel()
+
+		input := task021GoldenCapacityInput(4)
+		input.History = []capacity.TaskUse{{
+			ParticipantID: input.ParticipantIDs[0], TaskID: input.Versions[0].TaskID, Version: input.Versions[0].Version - 1,
+		}}
+		proof := capacity.ProveGolden(input)
+		if !proof.Certified {
+			t.Fatalf("exact-version history rejected a distinct version: %+v", proof.Failure)
+		}
+
+		input.History[0].Version = 0
+		proof = capacity.ProveGolden(input)
+		assertCapacityFailure(t, proof.Certified, proof.Failure, capacity.FailureGoldenReuseConflict, "", input.ParticipantIDs[0], 6, 5)
+	})
+
+	t.Run("attributes exact-version conflict to the matching participant", func(t *testing.T) {
+		t.Parallel()
+
+		input := task021GoldenCapacityInput(4)
+		input.History = []capacity.TaskUse{
+			{ParticipantID: input.ParticipantIDs[0], TaskID: input.Versions[0].TaskID, Version: input.Versions[0].Version - 1},
+			{ParticipantID: input.ParticipantIDs[1], TaskID: input.Versions[1].TaskID, Version: input.Versions[1].Version},
+		}
+		proof := capacity.ProveGolden(input)
+		assertCapacityFailure(t, proof.Certified, proof.Failure, capacity.FailureGoldenReuseConflict, "", input.ParticipantIDs[1], 6, 5)
+	})
 }
 
 func task021GoldenCapacityInput(rosterSize int) capacity.GoldenInput {

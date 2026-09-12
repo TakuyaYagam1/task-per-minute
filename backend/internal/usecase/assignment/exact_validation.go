@@ -160,7 +160,7 @@ func exactNormalEligibleTaskVersions(
 	candidates []ExactNormalTaskVersion,
 	category domain.Category,
 	participants []uuid.UUID,
-	history map[uuid.UUID]map[uuid.UUID]struct{},
+	history map[uuid.UUID]map[domain.TaskVersionRef]struct{},
 ) []ExactNormalTaskVersion {
 	result := make([]ExactNormalTaskVersion, 0, len(candidates))
 	for _, candidate := range candidates {
@@ -169,7 +169,12 @@ func exactNormalEligibleTaskVersions(
 		}
 		used := false
 		for _, participantID := range participants {
-			if _, exists := history[participantID][candidate.Task.ID]; exists {
+			ref := domain.TaskVersionRef{TaskID: candidate.Task.ID, Version: candidate.Version}
+			if _, exists := history[participantID][ref]; exists {
+				used = true
+				break
+			}
+			if _, exists := history[participantID][domain.TaskVersionRef{TaskID: candidate.Task.ID}]; exists {
 				used = true
 				break
 			}

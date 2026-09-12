@@ -107,9 +107,9 @@ SELECT authority.assignment_id,
     true AS task_mutation_locked,
     EXISTS (
         SELECT 1
-        FROM task_delivery_receipts AS receipt
-        WHERE receipt.task_id = candidate_version.task_id
-            AND receipt.task_version = candidate_version.version
+        FROM task_public_exposures AS exposure
+        WHERE exposure.task_id = candidate_version.task_id
+            AND exposure.task_version = candidate_version.version
     ) AS task_publicly_exposed,
     authority.revision,
     authority.created_at,
@@ -132,6 +132,10 @@ SELECT authority.assignment_id,
     candidate_version.created_at AS candidate_created_at
 FROM replay_reserve_authorities AS authority
 JOIN assignments AS assignment ON assignment.id = authority.assignment_id
+JOIN series AS target_series
+    ON target_series.id = authority.series_id
+    AND target_series.tournament_id = authority.tournament_id
+    AND target_series.roster_id = authority.roster_id
 JOIN replay_reserve_authority_pool_versions AS authority_pool
     ON authority_pool.assignment_id = authority.assignment_id
     AND authority_pool.task_id = sqlc.arg(proposed_task_id)
@@ -173,14 +177,32 @@ WHERE authority.tournament_id = sqlc.arg(tournament_id)
     AND COALESCE(health.healthy, false)
     AND NOT EXISTS (
         SELECT 1
+        FROM task_public_exposures AS exposure
+        WHERE exposure.task_id = candidate_version.task_id
+            AND exposure.task_version = candidate_version.version
+    )
+    AND NOT EXISTS (
+        SELECT 1
         FROM task_delivery_receipts AS receipt
+        INNER JOIN assignments AS receipt_assignment
+            ON receipt_assignment.id = receipt.assignment_id
+        INNER JOIN series AS receipt_series
+            ON receipt_series.id = receipt_assignment.series_id
+            AND receipt_series.roster_id = receipt_assignment.roster_id
         WHERE receipt.task_id = candidate_version.task_id
             AND receipt.task_version = candidate_version.version
+            AND receipt.participant_id IN (
+                target_series.first_participant_id,
+                target_series.second_participant_id
+            )
+            AND receipt_series.tournament_id = authority.tournament_id
+            AND receipt_series.roster_id = authority.roster_id
     )
     AND NOT EXISTS (
         SELECT 1
         FROM task_version_reservations AS used_reservation
-        WHERE used_reservation.plan_id = assignment.plan_id
+        WHERE used_reservation.tournament_id = authority.tournament_id
+            AND used_reservation.plan_id = assignment.plan_id
             AND used_reservation.branch_id = assignment.branch_id
             AND used_reservation.task_id = candidate_version.task_id
             AND used_reservation.task_version = candidate_version.version

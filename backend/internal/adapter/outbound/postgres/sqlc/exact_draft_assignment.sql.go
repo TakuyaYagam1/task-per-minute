@@ -355,6 +355,7 @@ INSERT INTO exact_draft_assignment_child_history (
     plan_id,
     participant_id,
     task_id,
+    task_version,
     created_at
 )
 VALUES (
@@ -362,7 +363,8 @@ VALUES (
     $2,
     $3,
     $4,
-    $5
+    $5,
+    $6
 )
 `
 
@@ -371,6 +373,7 @@ type CreateExactDraftAssignmentChildHistoryParams struct {
 	PlanID        uuid.UUID
 	ParticipantID uuid.UUID
 	TaskID        uuid.UUID
+	TaskVersion   int32
 	CreatedAt     pgtype.Timestamptz
 }
 
@@ -380,6 +383,7 @@ func (q *Queries) CreateExactDraftAssignmentChildHistory(ctx context.Context, ar
 		arg.PlanID,
 		arg.ParticipantID,
 		arg.TaskID,
+		arg.TaskVersion,
 		arg.CreatedAt,
 	)
 	return err
@@ -751,10 +755,11 @@ SELECT history.child_branch_id,
     history.plan_id,
     history.participant_id,
     history.task_id,
-    history.created_at
+    history.created_at,
+    history.task_version
 FROM exact_draft_assignment_child_history AS history
 WHERE history.plan_id = $1
-ORDER BY history.child_branch_id, history.participant_id, history.task_id
+ORDER BY history.child_branch_id, history.participant_id, history.task_id, history.task_version
 FOR UPDATE
 `
 
@@ -773,6 +778,7 @@ func (q *Queries) LockExactDraftAssignmentChildHistory(ctx context.Context, plan
 			&i.ParticipantID,
 			&i.TaskID,
 			&i.CreatedAt,
+			&i.TaskVersion,
 		); err != nil {
 			return nil, err
 		}
@@ -1197,7 +1203,8 @@ SELECT membership.task_id,
     task.created_at AS task_created_at,
     EXISTS (
         SELECT 1 FROM task_version_reservations AS reservation
-        WHERE reservation.task_id = membership.task_id
+        WHERE reservation.tournament_id = stage.tournament_id
+            AND reservation.task_id = membership.task_id
             AND reservation.task_version = membership.task_version
             AND reservation.state IN ('reserved', 'committed')
             AND reservation.plan_id <> $1
@@ -1230,6 +1237,12 @@ LEFT JOIN LATERAL (
 ) AS health ON true
 WHERE stage.draft_id = $2
     AND COALESCE(health.healthy, false)
+    AND NOT EXISTS (
+        SELECT 1
+        FROM task_public_exposures AS exposure
+        WHERE exposure.task_id = membership.task_id
+            AND exposure.task_version = membership.task_version
+    )
 ORDER BY membership.task_id, membership.task_version
 FOR UPDATE OF membership, task_version, task
 `
@@ -1302,19 +1315,21 @@ func (q *Queries) LockExactDraftPlanningCandidates(ctx context.Context, arg Lock
 
 const lockExactDraftPlanningHistory = `-- name: LockExactDraftPlanningHistory :many
 SELECT receipt.participant_id,
-    receipt.task_id
+    receipt.task_id,
+    receipt.task_version
 FROM tournament_stage_playoff_finals AS stage
 INNER JOIN task_delivery_receipts AS receipt
     ON receipt.roster_id = stage.roster_id
     AND receipt.participant_id IN (stage.first_participant_id, stage.second_participant_id)
 WHERE stage.draft_id = $1
-ORDER BY receipt.participant_id, receipt.task_id
+ORDER BY receipt.participant_id, receipt.task_id, receipt.task_version
 FOR KEY SHARE OF receipt
 `
 
 type LockExactDraftPlanningHistoryRow struct {
 	ParticipantID uuid.UUID
 	TaskID        uuid.UUID
+	TaskVersion   int32
 }
 
 func (q *Queries) LockExactDraftPlanningHistory(ctx context.Context, draftID uuid.UUID) ([]LockExactDraftPlanningHistoryRow, error) {
@@ -1326,7 +1341,7 @@ func (q *Queries) LockExactDraftPlanningHistory(ctx context.Context, draftID uui
 	items := []LockExactDraftPlanningHistoryRow{}
 	for rows.Next() {
 		var i LockExactDraftPlanningHistoryRow
-		if err := rows.Scan(&i.ParticipantID, &i.TaskID); err != nil {
+		if err := rows.Scan(&i.ParticipantID, &i.TaskID, &i.TaskVersion); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -1422,7 +1437,10 @@ func (q *Queries) LockExactDraftPlanningParticipants(ctx context.Context, draftI
 }
 
 const lockExactDraftPlanningReservationKeys = `-- name: LockExactDraftPlanningReservationKeys :exec
-SELECT pg_advisory_xact_lock(hashtextextended(membership.task_id::TEXT || ':' || membership.task_version::TEXT, 0))
+SELECT pg_advisory_xact_lock(hashtextextended(
+    stage.tournament_id::TEXT || ':' || membership.task_id::TEXT || ':' || membership.task_version::TEXT,
+    0
+))
 FROM tournament_stage_playoff_finals AS stage
 JOIN category_revisions AS category ON category.id = stage.category_revision_id
     AND category.series_id = stage.final_series_id AND category.roster_id = stage.roster_id

@@ -65,6 +65,7 @@ type exactNormalParticipantReservationProofDocument struct {
 type exactNormalHistoryProofDocument struct {
 	ParticipantID string `json:"participant_id"`
 	TaskID        string `json:"task_id"`
+	Version       int    `json:"version,omitempty"`
 }
 
 type exactNormalTaskVersionProofDocument struct {
@@ -163,6 +164,7 @@ func exactNormalHistoryDocuments(history []capacity.TaskUse) []exactNormalHistor
 	for index, item := range history {
 		documents[index] = exactNormalHistoryProofDocument{
 			ParticipantID: item.ParticipantID.String(), TaskID: item.TaskID.String(),
+			Version: item.Version,
 		}
 	}
 	return documents

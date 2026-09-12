@@ -1340,9 +1340,9 @@ SELECT authority.assignment_id,
     true AS task_mutation_locked,
     EXISTS (
         SELECT 1
-        FROM task_delivery_receipts AS receipt
-        WHERE receipt.task_id = candidate_version.task_id
-            AND receipt.task_version = candidate_version.version
+        FROM task_public_exposures AS exposure
+        WHERE exposure.task_id = candidate_version.task_id
+            AND exposure.task_version = candidate_version.version
     ) AS task_publicly_exposed,
     authority.revision,
     authority.created_at,
@@ -1365,6 +1365,10 @@ SELECT authority.assignment_id,
     candidate_version.created_at AS candidate_created_at
 FROM replay_reserve_authorities AS authority
 JOIN assignments AS assignment ON assignment.id = authority.assignment_id
+JOIN series AS target_series
+    ON target_series.id = authority.series_id
+    AND target_series.tournament_id = authority.tournament_id
+    AND target_series.roster_id = authority.roster_id
 JOIN replay_reserve_authority_pool_versions AS authority_pool
     ON authority_pool.assignment_id = authority.assignment_id
     AND authority_pool.task_id = $1
@@ -1406,14 +1410,32 @@ WHERE authority.tournament_id = $3
     AND COALESCE(health.healthy, false)
     AND NOT EXISTS (
         SELECT 1
+        FROM task_public_exposures AS exposure
+        WHERE exposure.task_id = candidate_version.task_id
+            AND exposure.task_version = candidate_version.version
+    )
+    AND NOT EXISTS (
+        SELECT 1
         FROM task_delivery_receipts AS receipt
+        INNER JOIN assignments AS receipt_assignment
+            ON receipt_assignment.id = receipt.assignment_id
+        INNER JOIN series AS receipt_series
+            ON receipt_series.id = receipt_assignment.series_id
+            AND receipt_series.roster_id = receipt_assignment.roster_id
         WHERE receipt.task_id = candidate_version.task_id
             AND receipt.task_version = candidate_version.version
+            AND receipt.participant_id IN (
+                target_series.first_participant_id,
+                target_series.second_participant_id
+            )
+            AND receipt_series.tournament_id = authority.tournament_id
+            AND receipt_series.roster_id = authority.roster_id
     )
     AND NOT EXISTS (
         SELECT 1
         FROM task_version_reservations AS used_reservation
-        WHERE used_reservation.plan_id = assignment.plan_id
+        WHERE used_reservation.tournament_id = authority.tournament_id
+            AND used_reservation.plan_id = assignment.plan_id
             AND used_reservation.branch_id = assignment.branch_id
             AND used_reservation.task_id = candidate_version.task_id
             AND used_reservation.task_version = candidate_version.version
@@ -1945,7 +1967,7 @@ func (q *Queries) LockReplayWorkflowReceipts(ctx context.Context, assignmentID u
 
 const lockReplayWorkflowReserveChain = `-- name: LockReplayWorkflowReserveChain :many
 SELECT edge.id, edge.plan_id, edge.branch_id, edge.position, edge.task_id, edge.task_version, edge.operator_reserve_command_id, edge.selection_evidence, edge.created_at,
-    reservation.id, reservation.edge_id, reservation.plan_id, reservation.branch_id, reservation.contingency_draft_branch_id, reservation.task_id, reservation.task_version, reservation.revision, reservation.state, reservation.disclosed_at, reservation.committed_at, reservation.released_at, reservation.release_reason, reservation.superseded_at, reservation.supersession_reason, reservation.created_at,
+    reservation.id, reservation.edge_id, reservation.plan_id, reservation.branch_id, reservation.contingency_draft_branch_id, reservation.task_id, reservation.task_version, reservation.revision, reservation.state, reservation.disclosed_at, reservation.committed_at, reservation.released_at, reservation.release_reason, reservation.superseded_at, reservation.supersession_reason, reservation.created_at, reservation.tournament_id,
     snapshot.id, snapshot.reservation_id, snapshot.task_id, snapshot.task_version, snapshot.kind, snapshot.title, snapshot.description, snapshot.category, snapshot.difficulty, snapshot.time_limit, snapshot.flag, snapshot.hints, snapshot.task_url, snapshot.source_file_url, snapshot.content_digest, snapshot.created_at
 FROM assignment_plan_edges AS edge
 JOIN task_version_reservations AS reservation
@@ -2010,6 +2032,7 @@ func (q *Queries) LockReplayWorkflowReserveChain(ctx context.Context, arg LockRe
 			&i.TaskVersionReservation.SupersededAt,
 			&i.TaskVersionReservation.SupersessionReason,
 			&i.TaskVersionReservation.CreatedAt,
+			&i.TaskVersionReservation.TournamentID,
 			&i.TaskSnapshot.ID,
 			&i.TaskSnapshot.ReservationID,
 			&i.TaskSnapshot.TaskID,

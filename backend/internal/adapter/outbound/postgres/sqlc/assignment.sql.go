@@ -562,6 +562,12 @@ WITH locked_task_version AS (
         AND task.enabled
         AND task.deleted_at IS NULL
         AND COALESCE(health.healthy, false)
+        AND NOT EXISTS (
+            SELECT 1
+            FROM task_public_exposures AS exposure
+            WHERE exposure.task_id = membership.task_id
+                AND exposure.task_version = membership.task_version
+        )
     FOR NO KEY UPDATE OF task
 )
 INSERT INTO assignment_plan_edges (
@@ -840,6 +846,7 @@ INSERT INTO task_version_reservations (
     plan_id,
     branch_id,
     contingency_draft_branch_id,
+    tournament_id,
     task_id,
     task_version,
     state,
@@ -851,11 +858,13 @@ SELECT
     $3,
     $4,
     branch.exact_draft_branch_id,
+    plan.tournament_id,
     $5,
     $6,
     'reserved',
     $7
 FROM assignment_branches AS branch
+INNER JOIN assignment_plans AS plan ON plan.id = branch.plan_id
 WHERE branch.id = $4
     AND branch.plan_id = $3
 RETURNING id,
@@ -863,6 +872,7 @@ RETURNING id,
     plan_id,
     branch_id,
     contingency_draft_branch_id,
+    tournament_id,
     task_id,
     task_version,
     revision,
@@ -886,7 +896,27 @@ type CreateAssignmentTaskVersionReservationParams struct {
 	CreatedAt   pgtype.Timestamptz
 }
 
-func (q *Queries) CreateAssignmentTaskVersionReservation(ctx context.Context, arg CreateAssignmentTaskVersionReservationParams) (TaskVersionReservation, error) {
+type CreateAssignmentTaskVersionReservationRow struct {
+	ID                       uuid.UUID
+	EdgeID                   uuid.UUID
+	PlanID                   uuid.UUID
+	BranchID                 uuid.UUID
+	ContingencyDraftBranchID uuid.NullUUID
+	TournamentID             uuid.UUID
+	TaskID                   uuid.UUID
+	TaskVersion              int32
+	Revision                 int64
+	State                    string
+	DisclosedAt              pgtype.Timestamptz
+	CommittedAt              pgtype.Timestamptz
+	ReleasedAt               pgtype.Timestamptz
+	ReleaseReason            *string
+	SupersededAt             pgtype.Timestamptz
+	SupersessionReason       *string
+	CreatedAt                pgtype.Timestamptz
+}
+
+func (q *Queries) CreateAssignmentTaskVersionReservation(ctx context.Context, arg CreateAssignmentTaskVersionReservationParams) (CreateAssignmentTaskVersionReservationRow, error) {
 	row := q.db.QueryRow(ctx, createAssignmentTaskVersionReservation,
 		arg.ID,
 		arg.EdgeID,
@@ -896,13 +926,14 @@ func (q *Queries) CreateAssignmentTaskVersionReservation(ctx context.Context, ar
 		arg.TaskVersion,
 		arg.CreatedAt,
 	)
-	var i TaskVersionReservation
+	var i CreateAssignmentTaskVersionReservationRow
 	err := row.Scan(
 		&i.ID,
 		&i.EdgeID,
 		&i.PlanID,
 		&i.BranchID,
 		&i.ContingencyDraftBranchID,
+		&i.TournamentID,
 		&i.TaskID,
 		&i.TaskVersion,
 		&i.Revision,
@@ -2075,6 +2106,39 @@ func (q *Queries) ListAssignmentTaskVersionReservations(ctx context.Context, pla
 	return items, nil
 }
 
+const listTournamentReservedTaskVersions = `-- name: ListTournamentReservedTaskVersions :many
+SELECT DISTINCT reservation.task_id, reservation.task_version
+FROM task_version_reservations AS reservation
+WHERE reservation.tournament_id = $1
+    AND reservation.state IN ('reserved', 'committed')
+ORDER BY reservation.task_id, reservation.task_version
+`
+
+type ListTournamentReservedTaskVersionsRow struct {
+	TaskID      uuid.UUID
+	TaskVersion int32
+}
+
+func (q *Queries) ListTournamentReservedTaskVersions(ctx context.Context, tournamentID uuid.UUID) ([]ListTournamentReservedTaskVersionsRow, error) {
+	rows, err := q.db.Query(ctx, listTournamentReservedTaskVersions, tournamentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListTournamentReservedTaskVersionsRow{}
+	for rows.Next() {
+		var i ListTournamentReservedTaskVersionsRow
+		if err := rows.Scan(&i.TaskID, &i.TaskVersion); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockAssignment = `-- name: LockAssignment :one
 SELECT id,
     attempt_id,
@@ -2319,11 +2383,15 @@ SELECT membership.task_id,
     EXISTS (
         SELECT 1
         FROM task_version_reservations AS reservation
-        WHERE reservation.task_id = membership.task_id
+        WHERE reservation.tournament_id = target_series.tournament_id
+            AND reservation.task_id = membership.task_id
             AND reservation.task_version = membership.task_version
             AND reservation.state IN ('reserved', 'committed')
     ) AS unavailable
 FROM category_revisions AS category
+INNER JOIN series AS target_series
+    ON target_series.id = category.series_id
+    AND target_series.roster_id = category.roster_id
 INNER JOIN task_pool_revisions AS pool
     ON pool.id = category.source_pool_revision_id
     AND pool.kind = 'normal'
@@ -2351,8 +2419,15 @@ WHERE category.id = $1
     AND COALESCE(health.healthy, false)
     AND NOT EXISTS (
         SELECT 1
+        FROM task_public_exposures AS exposure
+        WHERE exposure.task_id = membership.task_id
+            AND exposure.task_version = membership.task_version
+    )
+    AND NOT EXISTS (
+        SELECT 1
         FROM task_version_reservations AS live_reservation
-        WHERE live_reservation.task_id = membership.task_id
+        WHERE live_reservation.tournament_id = target_series.tournament_id
+            AND live_reservation.task_id = membership.task_id
             AND live_reservation.task_version = membership.task_version
             AND live_reservation.state IN ('reserved', 'committed')
     )
@@ -2425,17 +2500,24 @@ func (q *Queries) LockExactNormalAssignmentCandidates(ctx context.Context, arg L
 }
 
 const lockExactNormalAssignmentHistory = `-- name: LockExactNormalAssignmentHistory :many
-SELECT receipt.participant_id, receipt.task_id
+WITH target AS (
+    SELECT public.series.first_participant_id, public.series.second_participant_id
+    FROM public.series
+    WHERE public.series.tournament_id = $1
+        AND public.series.roster_id = $2
+        AND public.series.id = $3
+)
+SELECT receipt.participant_id, receipt.task_id, receipt.task_version
 FROM task_delivery_receipts AS receipt
 INNER JOIN assignments AS assignment ON assignment.id = receipt.assignment_id
 INNER JOIN series AS series
     ON series.id = assignment.series_id
     AND series.roster_id = assignment.roster_id
+CROSS JOIN target
 WHERE series.tournament_id = $1
     AND series.roster_id = $2
-    AND series.id = $3
-    AND receipt.participant_id IN (series.first_participant_id, series.second_participant_id)
-ORDER BY receipt.participant_id, receipt.task_id
+    AND receipt.participant_id IN (target.first_participant_id, target.second_participant_id)
+ORDER BY receipt.participant_id, receipt.task_id, receipt.task_version
 FOR KEY SHARE OF receipt
 `
 
@@ -2448,8 +2530,11 @@ type LockExactNormalAssignmentHistoryParams struct {
 type LockExactNormalAssignmentHistoryRow struct {
 	ParticipantID uuid.UUID
 	TaskID        uuid.UUID
+	TaskVersion   int32
 }
 
+// Receipts are scoped to the target participants across every series in the
+// same tournament and roster. A history row includes the exact task version.
 func (q *Queries) LockExactNormalAssignmentHistory(ctx context.Context, arg LockExactNormalAssignmentHistoryParams) ([]LockExactNormalAssignmentHistoryRow, error) {
 	rows, err := q.db.Query(ctx, lockExactNormalAssignmentHistory, arg.TournamentID, arg.RosterID, arg.SeriesID)
 	if err != nil {
@@ -2459,7 +2544,7 @@ func (q *Queries) LockExactNormalAssignmentHistory(ctx context.Context, arg Lock
 	items := []LockExactNormalAssignmentHistoryRow{}
 	for rows.Next() {
 		var i LockExactNormalAssignmentHistoryRow
-		if err := rows.Scan(&i.ParticipantID, &i.TaskID); err != nil {
+		if err := rows.Scan(&i.ParticipantID, &i.TaskID, &i.TaskVersion); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

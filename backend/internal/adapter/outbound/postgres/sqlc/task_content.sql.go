@@ -384,9 +384,9 @@ SELECT membership.task_id,
     true AS task_mutation_locked,
     EXISTS (
         SELECT 1
-        FROM task_delivery_receipts AS receipt
-        WHERE receipt.task_id = membership.task_id
-            AND receipt.task_version = membership.task_version
+        FROM task_public_exposures AS exposure
+        WHERE exposure.task_id = membership.task_id
+            AND exposure.task_version = membership.task_version
     ) AS task_publicly_exposed
 FROM task_pool_version_memberships AS membership
 JOIN task_pool_revisions AS pool ON pool.id = membership.task_pool_revision_id
@@ -615,6 +615,26 @@ func (q *Queries) LockTaskPoolPublicationRevision(ctx context.Context, contentRe
 	return items, nil
 }
 
+const lockTaskPoolVersionsForExposureCheck = `-- name: LockTaskPoolVersionsForExposureCheck :exec
+SELECT task_version.task_id,
+    task_version.version
+FROM task_pool_version_memberships AS membership
+INNER JOIN task_versions AS task_version
+    ON task_version.task_id = membership.task_id
+    AND task_version.version = membership.task_version
+WHERE membership.task_pool_revision_id = ANY($1::UUID[])
+ORDER BY task_version.task_id, task_version.version
+FOR SHARE OF task_version
+`
+
+// The roster mutation path takes this lock in a separate statement immediately
+// before it re-reads ListTaskPoolVersionHealth. A public exposure writer takes
+// the conflicting FOR UPDATE lock on the same task-version row.
+func (q *Queries) LockTaskPoolVersionsForExposureCheck(ctx context.Context, taskPoolRevisionIds []uuid.UUID) error {
+	_, err := q.db.Exec(ctx, lockTaskPoolVersionsForExposureCheck, taskPoolRevisionIds)
+	return err
+}
+
 const publishTournamentContentConfiguration = `-- name: PublishTournamentContentConfiguration :one
 UPDATE tournament_content_configurations
 SET state = 'published',
@@ -683,6 +703,67 @@ func (q *Queries) RecordHealthyTaskVersionProbeAttestation(ctx context.Context, 
 		&i.Healthy,
 		&i.Source,
 		&i.AttestedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const recordTaskPublicExposure = `-- name: RecordTaskPublicExposure :one
+WITH locked_version AS (
+    SELECT task_version.task_id,
+        task_version.version
+    FROM task_versions AS task_version
+    WHERE task_version.task_id = $5
+        AND task_version.version = $6
+    FOR UPDATE
+)
+INSERT INTO task_public_exposures (
+    id,
+    task_id,
+    task_version,
+    audience,
+    evidence_id,
+    disclosed_at
+)
+SELECT $1,
+    locked_version.task_id,
+    locked_version.version,
+    $2,
+    $3,
+    $4
+FROM locked_version
+RETURNING id, task_id, task_version, audience, evidence_id, disclosed_at, created_at
+`
+
+type RecordTaskPublicExposureParams struct {
+	ID          uuid.UUID
+	Audience    string
+	EvidenceID  uuid.UUID
+	DisclosedAt pgtype.Timestamptz
+	TaskID      uuid.UUID
+	TaskVersion int32
+}
+
+// This is the persistence boundary for a real public or spectator disclosure
+// writer. It records an exact task version and never derives exposure from a
+// private participant delivery receipt.
+func (q *Queries) RecordTaskPublicExposure(ctx context.Context, arg RecordTaskPublicExposureParams) (TaskPublicExposure, error) {
+	row := q.db.QueryRow(ctx, recordTaskPublicExposure,
+		arg.ID,
+		arg.Audience,
+		arg.EvidenceID,
+		arg.DisclosedAt,
+		arg.TaskID,
+		arg.TaskVersion,
+	)
+	var i TaskPublicExposure
+	err := row.Scan(
+		&i.ID,
+		&i.TaskID,
+		&i.TaskVersion,
+		&i.Audience,
+		&i.EvidenceID,
+		&i.DisclosedAt,
 		&i.CreatedAt,
 	)
 	return i, err

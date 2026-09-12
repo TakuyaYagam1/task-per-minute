@@ -57,7 +57,7 @@ func EvaluateTaskEligibility(input TaskEligibilityInput) (TaskEligibilityDecisio
 	}
 
 	reasons := make([]TaskIneligibilityReason, 0, 8)
-	if hasPriorReceipt(participants, input.Candidate.Task.ID, input.ReceiptHistory) {
+	if hasPriorReceipt(participants, input.Candidate.Task.ID, input.Candidate.Version, input.ReceiptHistory) {
 		reasons = append(reasons, TaskIneligibilityPriorReceipt)
 	}
 	if !poolContainsTaskVersion(pool, input.Candidate.Task.ID, input.Candidate.Version) ||
@@ -126,10 +126,11 @@ func validTaskEligibilityContent(task domain.Task) bool {
 func hasPriorReceipt(
 	participants []uuid.UUID,
 	taskID uuid.UUID,
+	version int,
 	history []TaskReceiptRef,
 ) bool {
 	for _, receipt := range history {
-		if receipt.TaskID == taskID && slices.Contains(participants, receipt.ParticipantID) {
+		if receipt.TaskID == taskID && receipt.Version == version && slices.Contains(participants, receipt.ParticipantID) {
 			return true
 		}
 	}

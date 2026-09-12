@@ -169,13 +169,14 @@ FOR UPDATE OF participant, reservation;
 
 -- name: LockSwissDraftPlanningHistory :many
 SELECT receipt.participant_id,
-    receipt.task_id
+    receipt.task_id,
+    receipt.task_version
 FROM drafts AS draft
 INNER JOIN task_delivery_receipts AS receipt
     ON receipt.roster_id = draft.roster_id
     AND receipt.participant_id IN (draft.first_participant_id, draft.second_participant_id)
 WHERE draft.id = sqlc.arg(draft_id)
-ORDER BY receipt.participant_id, receipt.task_id
+ORDER BY receipt.participant_id, receipt.task_id, receipt.task_version
 FOR KEY SHARE OF receipt;
 
 -- name: EnsureSwissDraftPlanningHistoryHead :exec
@@ -227,8 +228,14 @@ WHERE head.draft_id = sqlc.arg(draft_id)
 FOR UPDATE OF head;
 
 -- name: LockSwissDraftPlanningReservationKeys :exec
-SELECT pg_advisory_xact_lock(hashtextextended(membership.task_id::TEXT || ':' || membership.task_version::TEXT, 0))
+SELECT pg_advisory_xact_lock(hashtextextended(
+    series.tournament_id::TEXT || ':' || membership.task_id::TEXT || ':' || membership.task_version::TEXT,
+    0
+))
 FROM drafts AS draft
+INNER JOIN series
+    ON series.id = draft.series_id
+    AND series.roster_id = draft.roster_id
 INNER JOIN category_revisions AS category
     ON category.id = draft.category_revision_id
     AND category.series_id = draft.series_id
@@ -258,12 +265,16 @@ SELECT membership.task_id,
     EXISTS (
         SELECT 1
         FROM task_version_reservations AS reservation
-        WHERE reservation.task_id = membership.task_id
+        WHERE reservation.tournament_id = series.tournament_id
+            AND reservation.task_id = membership.task_id
             AND reservation.task_version = membership.task_version
             AND reservation.state IN ('reserved', 'committed')
             AND reservation.plan_id <> sqlc.arg(plan_id)
     ) AS unavailable
 FROM drafts AS draft
+INNER JOIN series
+    ON series.id = draft.series_id
+    AND series.roster_id = draft.roster_id
 INNER JOIN category_revisions AS category
     ON category.id = draft.category_revision_id
     AND category.series_id = draft.series_id
@@ -291,6 +302,12 @@ LEFT JOIN LATERAL (
 ) AS health ON true
 WHERE draft.id = sqlc.arg(draft_id)
     AND COALESCE(health.healthy, false)
+    AND NOT EXISTS (
+        SELECT 1
+        FROM task_public_exposures AS exposure
+        WHERE exposure.task_id = membership.task_id
+            AND exposure.task_version = membership.task_version
+    )
 ORDER BY membership.task_id, membership.task_version
 FOR UPDATE OF membership, task_version, task;
 

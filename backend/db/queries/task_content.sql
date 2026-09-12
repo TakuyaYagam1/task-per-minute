@@ -70,9 +70,9 @@ SELECT membership.task_id,
     true AS task_mutation_locked,
     EXISTS (
         SELECT 1
-        FROM task_delivery_receipts AS receipt
-        WHERE receipt.task_id = membership.task_id
-            AND receipt.task_version = membership.task_version
+        FROM task_public_exposures AS exposure
+        WHERE exposure.task_id = membership.task_id
+            AND exposure.task_version = membership.task_version
     ) AS task_publicly_exposed
 FROM task_pool_version_memberships AS membership
 JOIN task_pool_revisions AS pool ON pool.id = membership.task_pool_revision_id
@@ -90,6 +90,49 @@ LEFT JOIN LATERAL (
 ) AS health ON true
 WHERE membership.task_pool_revision_id = ANY(sqlc.arg(task_pool_revision_ids)::UUID[])
 ORDER BY membership.task_id, membership.task_version, pool.id;
+
+-- The roster mutation path takes this lock in a separate statement immediately
+-- before it re-reads ListTaskPoolVersionHealth. A public exposure writer takes
+-- the conflicting FOR UPDATE lock on the same task-version row.
+-- name: LockTaskPoolVersionsForExposureCheck :exec
+SELECT task_version.task_id,
+    task_version.version
+FROM task_pool_version_memberships AS membership
+INNER JOIN task_versions AS task_version
+    ON task_version.task_id = membership.task_id
+    AND task_version.version = membership.task_version
+WHERE membership.task_pool_revision_id = ANY(sqlc.arg(task_pool_revision_ids)::UUID[])
+ORDER BY task_version.task_id, task_version.version
+FOR SHARE OF task_version;
+
+-- This is the persistence boundary for a real public or spectator disclosure
+-- writer. It records an exact task version and never derives exposure from a
+-- private participant delivery receipt.
+-- name: RecordTaskPublicExposure :one
+WITH locked_version AS (
+    SELECT task_version.task_id,
+        task_version.version
+    FROM task_versions AS task_version
+    WHERE task_version.task_id = sqlc.arg(task_id)
+        AND task_version.version = sqlc.arg(task_version)
+    FOR UPDATE
+)
+INSERT INTO task_public_exposures (
+    id,
+    task_id,
+    task_version,
+    audience,
+    evidence_id,
+    disclosed_at
+)
+SELECT sqlc.arg(id),
+    locked_version.task_id,
+    locked_version.version,
+    sqlc.arg(audience),
+    sqlc.arg(evidence_id),
+    sqlc.arg(disclosed_at)
+FROM locked_version
+RETURNING id, task_id, task_version, audience, evidence_id, disclosed_at, created_at;
 
 -- name: CreateTaskVersionContentValidationAttestation :one
 WITH locked_version AS (

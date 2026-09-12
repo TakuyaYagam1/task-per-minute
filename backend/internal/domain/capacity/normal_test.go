@@ -123,6 +123,59 @@ func TestNormalAssignmentSolver(t *testing.T) {
 		proof := capacity.ProveNormal(input)
 		assertCapacityFailure(t, proof.Certified, proof.Failure, capacity.FailureNormalReuseConflict, domain.CategoryWeb, participantID, 24, 17)
 	})
+
+	t.Run("attributes exact-version roster conflict to the matching participant", func(t *testing.T) {
+		t.Parallel()
+
+		input := task021NormalCapacityInput(16)
+		web := capacityVersionsForCategory(input.Versions, domain.CategoryWeb)
+		for index := range input.Versions {
+			if input.Versions[index].TaskID != web[0].TaskID {
+				continue
+			}
+			input.Versions[index].Version = 2
+			for poolIndex := range input.NormalPool.Versions {
+				if input.NormalPool.Versions[poolIndex].TaskID == web[0].TaskID {
+					input.NormalPool.Versions[poolIndex].Version = 2
+				}
+			}
+			break
+		}
+		web = capacityVersionsForCategory(input.Versions, domain.CategoryWeb)
+		input.History = []capacity.TaskUse{
+			{ParticipantID: input.ParticipantIDs[0], TaskID: web[0].TaskID, Version: web[0].Version - 1},
+			{ParticipantID: input.ParticipantIDs[1], TaskID: web[1].TaskID, Version: web[1].Version},
+		}
+		proof := capacity.ProveNormal(input)
+		assertCapacityFailure(t, proof.Certified, proof.Failure, capacity.FailureNormalReuseConflict, domain.CategoryWeb, input.ParticipantIDs[1], 24, 23)
+	})
+}
+
+func TestNormalizeHistoryKeepsTaskVersionsDistinctAndLegacyEntriesWildcard(t *testing.T) {
+	t.Parallel()
+
+	participantID := task021ID(900)
+	taskID := task021ID(901)
+	history, ok := capacity.NormalizeHistory([]uuid.UUID{participantID}, []capacity.TaskUse{
+		{ParticipantID: participantID, TaskID: taskID, Version: 1},
+		{ParticipantID: participantID, TaskID: taskID, Version: 2},
+	})
+	if !ok {
+		t.Fatal("distinct task versions were rejected")
+	}
+	if _, exists := history[participantID][domain.TaskVersionRef{TaskID: taskID, Version: 1}]; !exists {
+		t.Fatal("version 1 history was not retained")
+	}
+	if _, exists := history[participantID][domain.TaskVersionRef{TaskID: taskID, Version: 2}]; !exists {
+		t.Fatal("version 2 history was not retained")
+	}
+
+	if _, ok := capacity.NormalizeHistory([]uuid.UUID{participantID}, []capacity.TaskUse{
+		{ParticipantID: participantID, TaskID: taskID, Version: 1},
+		{ParticipantID: participantID, TaskID: taskID, Version: 1},
+	}); ok {
+		t.Fatal("duplicate participant and task version was accepted")
+	}
 }
 
 func task021NormalCapacityInput(rosterSize int) capacity.NormalInput {

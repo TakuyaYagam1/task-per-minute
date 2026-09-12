@@ -44,8 +44,9 @@ type TaskVersion struct {
 }
 
 type TaskUse struct {
-	ParticipantID uuid.UUID
-	TaskID        uuid.UUID
+	ParticipantID uuid.UUID `json:"ParticipantID"`
+	TaskID        uuid.UUID `json:"TaskID"`
+	Version       int       `json:",omitempty"`
 }
 
 type SelectedEdge struct {
@@ -191,7 +192,7 @@ func ProveNormal(in NormalInput) NormalProof {
 
 func normalizeNormalInput(
 	in NormalInput,
-) ([]uuid.UUID, []domain.CategoryPoolRevision, domain.TaskPoolRevision, []TaskVersion, map[uuid.UUID]map[uuid.UUID]struct{}, bool) {
+) ([]uuid.UUID, []domain.CategoryPoolRevision, domain.TaskPoolRevision, []TaskVersion, map[uuid.UUID]map[domain.TaskVersionRef]struct{}, bool) {
 	participants, ok := normalizedParticipants(in.Preset, in.ParticipantIDs)
 	if !ok {
 		return nil, nil, domain.TaskPoolRevision{}, nil, nil, false
@@ -249,24 +250,25 @@ func normalizedVersions(pool domain.TaskPoolRevision, input []TaskVersion) ([]Ta
 func NormalizeHistory(
 	participants []uuid.UUID,
 	input []TaskUse,
-) (map[uuid.UUID]map[uuid.UUID]struct{}, bool) {
+) (map[uuid.UUID]map[domain.TaskVersionRef]struct{}, bool) {
 	participantSet := make(map[uuid.UUID]struct{}, len(participants))
-	history := make(map[uuid.UUID]map[uuid.UUID]struct{}, len(participants))
+	history := make(map[uuid.UUID]map[domain.TaskVersionRef]struct{}, len(participants))
 	for _, participantID := range participants {
 		participantSet[participantID] = struct{}{}
-		history[participantID] = make(map[uuid.UUID]struct{})
+		history[participantID] = make(map[domain.TaskVersionRef]struct{})
 	}
 	for _, use := range input {
-		if use.TaskID == uuid.Nil {
+		if use.TaskID == uuid.Nil || use.Version < 0 {
 			return nil, false
 		}
 		if _, exists := participantSet[use.ParticipantID]; !exists {
 			return nil, false
 		}
-		if _, duplicate := history[use.ParticipantID][use.TaskID]; duplicate {
+		ref := domain.TaskVersionRef{TaskID: use.TaskID, Version: use.Version}
+		if _, duplicate := history[use.ParticipantID][ref]; duplicate {
 			return nil, false
 		}
-		history[use.ParticipantID][use.TaskID] = struct{}{}
+		history[use.ParticipantID][ref] = struct{}{}
 	}
 	return history, true
 }
@@ -329,33 +331,42 @@ func normalCategoryDemands(
 	return demands
 }
 
-func filterVersions(versions []TaskVersion, used map[uuid.UUID]struct{}) []TaskVersion {
+func filterVersions(versions []TaskVersion, used map[domain.TaskVersionRef]struct{}) []TaskVersion {
 	if len(used) == 0 {
 		return append([]TaskVersion(nil), versions...)
 	}
 	result := make([]TaskVersion, 0, len(versions))
 	for _, version := range versions {
-		if _, exists := used[version.TaskID]; !exists {
+		if !historyContains(used, version.TaskVersionRef) {
 			result = append(result, version)
 		}
 	}
 	return result
 }
 
+func historyContains(used map[domain.TaskVersionRef]struct{}, candidate domain.TaskVersionRef) bool {
+	if _, exists := used[candidate]; exists {
+		return true
+	}
+	_, legacy := used[domain.TaskVersionRef{TaskID: candidate.TaskID}]
+	return legacy
+}
+
 func rosterSafeVersions(
 	participants []uuid.UUID,
 	versions []TaskVersion,
-	history map[uuid.UUID]map[uuid.UUID]struct{},
+	history map[uuid.UUID]map[domain.TaskVersionRef]struct{},
 ) ([]TaskVersion, uuid.UUID) {
 	poolTaskIDs := taskIDSet(versions)
-	usedByAny := make(map[uuid.UUID]struct{})
+	poolTaskVersions := taskVersionSet(versions)
+	usedByAny := make(map[domain.TaskVersionRef]struct{})
 	firstConflictParticipantID := uuid.Nil
 	for _, participantID := range participants {
-		for taskID := range history[participantID] {
-			if _, belongsToPool := poolTaskIDs[taskID]; !belongsToPool {
+		for ref := range history[participantID] {
+			if !historyRefInPool(ref, poolTaskVersions, poolTaskIDs) {
 				continue
 			}
-			usedByAny[taskID] = struct{}{}
+			usedByAny[ref] = struct{}{}
 			if firstConflictParticipantID == uuid.Nil {
 				firstConflictParticipantID = participantID
 			}
@@ -443,6 +454,27 @@ func taskIDSet(versions []TaskVersion) map[uuid.UUID]struct{} {
 		result[version.TaskID] = struct{}{}
 	}
 	return result
+}
+
+func taskVersionSet(versions []TaskVersion) map[domain.TaskVersionRef]struct{} {
+	result := make(map[domain.TaskVersionRef]struct{}, len(versions))
+	for _, version := range versions {
+		result[version.TaskVersionRef] = struct{}{}
+	}
+	return result
+}
+
+func historyRefInPool(
+	ref domain.TaskVersionRef,
+	poolTaskVersions map[domain.TaskVersionRef]struct{},
+	poolTaskIDs map[uuid.UUID]struct{},
+) bool {
+	if ref.Version == 0 {
+		_, exists := poolTaskIDs[ref.TaskID]
+		return exists
+	}
+	_, exists := poolTaskVersions[ref]
+	return exists
 }
 
 func failedNormal(failure Failure) NormalProof {

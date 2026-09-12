@@ -26,7 +26,10 @@ func canonicalExactNormalHistory(history []capacity.TaskUse) []capacity.TaskUse 
 		if comparison := bytes.Compare(result[i].ParticipantID[:], result[j].ParticipantID[:]); comparison != 0 {
 			return comparison < 0
 		}
-		return bytes.Compare(result[i].TaskID[:], result[j].TaskID[:]) < 0
+		if comparison := bytes.Compare(result[i].TaskID[:], result[j].TaskID[:]); comparison != 0 {
+			return comparison < 0
+		}
+		return result[i].Version < result[j].Version
 	})
 	return result
 }
