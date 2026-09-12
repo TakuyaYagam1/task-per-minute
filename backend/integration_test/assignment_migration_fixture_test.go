@@ -54,7 +54,7 @@ func createAssignmentBranchReservations(
 
 	reservations := make([]assignmentReservationFixture, 3)
 	for i := range reservations {
-		taskID := createAssignmentMigrationTask(ctx, tb, category, i, &planID)
+		taskID, taskVersion := createAssignmentMigrationTask(ctx, tb, category, i, &planID)
 		edgeID := uuid.New()
 		_, err := sharedPool.Exec(ctx, `
 			INSERT INTO assignment_plan_edges (
@@ -63,8 +63,8 @@ func createAssignmentBranchReservations(
 			)
 			VALUES (
 				$1, $2, $3, $4,
-				$5, 1, '{"eligible":true}'::JSONB, $6
-			)`, edgeID, planID, branchID, i+1, taskID, createdAt)
+				$5, $6, '{"eligible":true}'::JSONB, $7
+			)`, edgeID, planID, branchID, i+1, taskID, taskVersion, createdAt)
 		require.NoError(tb, err)
 
 		reservationID := uuid.New()
@@ -74,12 +74,13 @@ func createAssignmentBranchReservations(
 				id, edge_id, plan_id, branch_id,
 				task_id, task_version, created_at
 			)
-			VALUES ($1, $2, $3, $4, $5, 1, $6)`,
+			VALUES ($1, $2, $3, $4, $5, $6, $7)`,
 			reservationID,
 			edgeID,
 			planID,
 			branchID,
 			taskID,
+			taskVersion,
 			createdAt,
 		)
 		require.NoError(tb, err)
@@ -94,13 +95,14 @@ func createAssignmentBranchReservations(
 				time_limit, flag, hints, content_digest, created_at
 			)
 			VALUES (
-				$1, $2, $3, 1, 'normal',
-				$4, 'immutable description', $5, 'medium',
-				180, 'FLAG{snapshot}', '["hint"]'::JSONB, $6, $7
+				$1, $2, $3, $4, 'normal',
+				$5, 'immutable description', $6, 'medium',
+				180, 'FLAG{snapshot}', '["hint"]'::JSONB, $7, $8
 			)`,
 			snapshotID,
 			reservationID,
 			taskID,
+			taskVersion,
 			fmt.Sprintf("snapshot %d", i+1),
 			category,
 			digest,
@@ -112,7 +114,7 @@ func createAssignmentBranchReservations(
 			reservationID: reservationID,
 			snapshotID:    snapshotID,
 			taskID:        taskID,
-			taskVersion:   1,
+			taskVersion:   taskVersion,
 		}
 	}
 	return reservations
@@ -123,10 +125,11 @@ func createAssignmentMigrationTask(
 	category string,
 	position int,
 	excludedPlanID *uuid.UUID,
-) uuid.UUID {
+) (uuid.UUID, int) {
 	tb.Helper()
 
 	var taskID uuid.UUID
+	var taskVersion int
 	err := sharedPool.QueryRow(ctx, `
 		WITH pinned_normal_pool AS (
 			SELECT pool.id
@@ -136,7 +139,7 @@ func createAssignmentMigrationTask(
 				AND pool.kind = 'normal'
 			WHERE plan.id = $3::UUID
 		)
-		SELECT task.id
+		SELECT task.id, membership.task_version
 		FROM pinned_normal_pool AS pool
 		INNER JOIN task_pool_version_memberships AS membership
 			ON membership.task_pool_revision_id = pool.id
@@ -170,9 +173,9 @@ func createAssignmentMigrationTask(
 			)
 		ORDER BY task.id
 		OFFSET $2
-		LIMIT 1`, category, position, excludedPlanID).Scan(&taskID)
+		LIMIT 1`, category, position, excludedPlanID).Scan(&taskID, &taskVersion)
 	require.NoError(tb, err)
-	return taskID
+	return taskID, taskVersion
 }
 
 func createActiveMigrationAssignment(
