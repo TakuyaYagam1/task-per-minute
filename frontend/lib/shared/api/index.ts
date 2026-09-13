@@ -5,6 +5,7 @@ export * from './leaderboard';
 export * from './tournament-recovery';
 export * from './tournament-content';
 export * from './tournament-admin-configuration';
+export * from './tournament-operator';
 export * from './arena';
 export * from './participant';
 export { ApiContractError } from './guards';

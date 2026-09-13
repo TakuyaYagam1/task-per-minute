@@ -1,0 +1,328 @@
+import { adminClient, unwrapApi } from "./client";
+import {
+  assertApiResponse,
+  isAuditPage,
+  isIncidentBundle,
+  isOperatorRecoverySnapshot,
+  isPreflightReport,
+  isRoster,
+  isTournamentListResponse,
+  isTournamentResponse,
+  type OperatorAuditEvent,
+  type OperatorAuditPage,
+  type OperatorAuditRedactedPayload,
+} from "./guards";
+import type { components } from "./schema";
+
+export type Tournament = components["schemas"]["Tournament"];
+export type TournamentListResponse = components["schemas"]["TournamentListResponse"];
+export type CreateTournamentRequest = components["schemas"]["CreateTournamentRequest"];
+export type TournamentStateFilter = components["parameters"]["TournamentStateFilter"];
+export type TournamentListCursor = components["parameters"]["TournamentListCursor"];
+export type TournamentPageSize = components["parameters"]["TournamentPageSize"];
+export type Roster = components["schemas"]["Roster"];
+export type ReplaceRosterRequest = components["schemas"]["ReplaceRosterRequest"];
+export type PreflightRequest = components["schemas"]["PreflightRequest"];
+export type PreflightReport = components["schemas"]["PreflightReport"];
+export type LockRosterRequest = components["schemas"]["LockRosterRequest"];
+export type UnlockRosterRequest = components["schemas"]["UnlockRosterRequest"];
+export type AuditCursor = components["schemas"]["AuditCursor"];
+export type AuditRedactedPayload = OperatorAuditRedactedPayload;
+export type AuditEvent = OperatorAuditEvent;
+export type AuditPage = OperatorAuditPage;
+export type IncidentBundle = components["schemas"]["IncidentBundle"];
+export type OperatorRecoveryCursor = components["schemas"]["OperatorRecoveryCursor"];
+export type OperatorRecoverySnapshot = components["schemas"]["OperatorRecoverySnapshot"];
+export type AuditEntityKind = components["parameters"]["AuditEntityKind"];
+export type AuditActorKind = components["parameters"]["AuditActorKind"];
+
+export type TournamentListQuery = {
+  state?: TournamentStateFilter;
+  cursor?: TournamentListCursor;
+  page_size?: TournamentPageSize;
+};
+
+export type TournamentAuditQuery = {
+  tournament_id: components["parameters"]["AuditTournamentId"];
+  entity_kind?: AuditEntityKind;
+  entity_id?: components["parameters"]["AuditEntityId"];
+  event_type?: components["parameters"]["AuditEventType"];
+  actor_kind?: AuditActorKind;
+  actor_id?: components["parameters"]["AuditActorId"];
+  result_reason?: components["parameters"]["AuditResultReason"];
+  occurred_from?: components["parameters"]["AuditOccurredFrom"];
+  occurred_to?: components["parameters"]["AuditOccurredTo"];
+  cursor?: components["parameters"]["AuditCursor"];
+  page_size?: components["parameters"]["AuditPageSize"];
+};
+
+/** One in-memory intent. The key is never persisted or copied to a URL. */
+export type OperatorCommandIntent = Readonly<{
+  idempotencyKey: string;
+}>;
+
+export type OperatorIdempotencyKey = string | OperatorCommandIntent;
+
+/** The common evidence required by future operator live commands. */
+export type OperatorMutationEvidence = Readonly<{
+  expectedProjectionRevision: number;
+  reason: string;
+}>;
+
+export type OperatorMutationContext = OperatorMutationEvidence & Readonly<{
+  idempotencyKey: OperatorIdempotencyKey;
+}>;
+
+type OperatorMutationHeaders = {
+  "Idempotency-Key": string;
+  "X-CSRF-Token": "";
+};
+
+const UUID_VERSION_MASK = 0x0f;
+const UUID_VARIANT_MASK = 0x3f;
+
+const createRandomUUID = (): string => {
+  const bytes = new Uint8Array(16);
+  const cryptoSource = globalThis.crypto;
+  if (cryptoSource?.getRandomValues) {
+    cryptoSource.getRandomValues(bytes);
+  } else {
+    for (let index = 0; index < bytes.length; index += 1) {
+      bytes[index] = Math.floor(Math.random() * 256);
+    }
+  }
+  bytes[6] = (bytes[6] & UUID_VERSION_MASK) | 0x40;
+  bytes[8] = (bytes[8] & UUID_VARIANT_MASK) | 0x80;
+  const hex = Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+};
+
+export const createOperatorCommandIntent = (): OperatorCommandIntent =>
+  Object.freeze({ idempotencyKey: createRandomUUID() });
+
+const idempotencyKeyFrom = (value: OperatorIdempotencyKey): string => {
+  const key = typeof value === "string" ? value : value.idempotencyKey;
+  if (typeof key !== "string" || key.trim().length === 0) {
+    throw new TypeError("Operator command requires a non-empty idempotency key");
+  }
+  return key;
+};
+
+const mutationHeaders = (value: OperatorIdempotencyKey): OperatorMutationHeaders => ({
+  "Idempotency-Key": idempotencyKeyFrom(value),
+  "X-CSRF-Token": "",
+});
+
+/** Keep revision and reason together when a future live command is assembled. */
+export const operatorMutationEvidence = (
+  evidence: OperatorMutationEvidence,
+): { expected_projection_revision: number; reason: string } => {
+  if (!Number.isSafeInteger(evidence.expectedProjectionRevision) || evidence.expectedProjectionRevision <= 0) {
+    throw new TypeError("Operator mutation requires a valid expected projection revision");
+  }
+  if (evidence.reason.trim().length === 0) {
+    throw new TypeError("Operator mutation requires a non-empty reason");
+  }
+  return {
+    expected_projection_revision: evidence.expectedProjectionRevision,
+    reason: evidence.reason,
+  };
+};
+
+const readOperatorResponse = async <T>(
+  result: ReturnType<typeof adminClient.GET> | ReturnType<typeof adminClient.POST>,
+  guard: (value: unknown) => value is T,
+  contract: string,
+): Promise<T> => {
+  const data = await unwrapApi(await result, contract);
+  return assertApiResponse(data, guard, contract);
+};
+
+const readOperatorGetResponse = async <T>(
+  result: ReturnType<typeof adminClient.GET>,
+  guard: (value: unknown) => value is T,
+  contract: string,
+): Promise<T> => {
+  const data = await unwrapApi(await result, contract);
+  return assertApiResponse(data, guard, contract);
+};
+
+export const operatorApi = {
+  async listTournaments(
+    query?: TournamentListQuery,
+    signal?: AbortSignal,
+  ): Promise<TournamentListResponse> {
+    return readOperatorGetResponse(
+      adminClient.GET("/api/v1/admin/tournaments", {
+        params: query === undefined ? undefined : { query },
+        signal,
+      }),
+      isTournamentListResponse,
+      "admin/tournaments list",
+    );
+  },
+
+  async createTournament(
+    body: CreateTournamentRequest,
+    intent: OperatorIdempotencyKey,
+    signal?: AbortSignal,
+  ): Promise<Tournament> {
+    return readOperatorResponse(
+      adminClient.POST("/api/v1/admin/tournaments", {
+        params: { header: mutationHeaders(intent) },
+        body,
+        signal,
+      }),
+      isTournamentResponse,
+      "admin/tournament create",
+    );
+  },
+
+  async getRoster(tournamentId: string, signal?: AbortSignal): Promise<Roster> {
+    return readOperatorGetResponse(
+      adminClient.GET("/api/v1/admin/tournaments/{tournament_id}/roster", {
+        params: { path: { tournament_id: tournamentId } },
+        signal,
+      }),
+      isRoster,
+      "admin/tournament roster",
+    );
+  },
+
+  async replaceRoster(
+    tournamentId: string,
+    body: ReplaceRosterRequest,
+    intent: OperatorIdempotencyKey,
+    signal?: AbortSignal,
+  ): Promise<Roster> {
+    return readOperatorResponse(
+      adminClient.PUT("/api/v1/admin/tournaments/{tournament_id}/roster", {
+        params: {
+          path: { tournament_id: tournamentId },
+          header: mutationHeaders(intent),
+        },
+        body,
+        signal,
+      }),
+      isRoster,
+      "admin/tournament roster replace",
+    );
+  },
+
+  async runRosterPreflight(
+    tournamentId: string,
+    body: PreflightRequest,
+    intent: OperatorIdempotencyKey,
+    signal?: AbortSignal,
+  ): Promise<PreflightReport> {
+    return readOperatorResponse(
+      adminClient.POST("/api/v1/admin/tournaments/{tournament_id}/roster/preflight", {
+        params: {
+          path: { tournament_id: tournamentId },
+          header: mutationHeaders(intent),
+        },
+        body,
+        signal,
+      }),
+      isPreflightReport,
+      "admin/tournament roster preflight",
+    );
+  },
+
+  async lockRoster(
+    tournamentId: string,
+    body: LockRosterRequest,
+    intent: OperatorIdempotencyKey,
+    signal?: AbortSignal,
+  ): Promise<Roster> {
+    return readOperatorResponse(
+      adminClient.POST("/api/v1/admin/tournaments/{tournament_id}/roster/lock", {
+        params: {
+          path: { tournament_id: tournamentId },
+          header: mutationHeaders(intent),
+        },
+        body,
+        signal,
+      }),
+      isRoster,
+      "admin/tournament roster lock",
+    );
+  },
+
+  async unlockRoster(
+    tournamentId: string,
+    body: UnlockRosterRequest,
+    intent: OperatorIdempotencyKey,
+    signal?: AbortSignal,
+  ): Promise<Roster> {
+    return readOperatorResponse(
+      adminClient.POST("/api/v1/admin/tournaments/{tournament_id}/roster/unlock", {
+        params: {
+          path: { tournament_id: tournamentId },
+          header: mutationHeaders(intent),
+        },
+        body,
+        signal,
+      }),
+      isRoster,
+      "admin/tournament roster unlock",
+    );
+  },
+
+  async getSnapshot(
+    tournamentId: string,
+    cursor?: OperatorRecoveryCursor,
+    signal?: AbortSignal,
+  ): Promise<OperatorRecoverySnapshot> {
+    const params = cursor === undefined
+      ? { path: { tournament_id: tournamentId } }
+      : { path: { tournament_id: tournamentId }, query: { cursor } };
+    return readOperatorGetResponse(
+      adminClient.GET("/api/v1/admin/tournaments/{tournament_id}/snapshot", {
+        params,
+        signal,
+      }),
+      isOperatorRecoverySnapshot,
+      "admin/operator snapshot",
+    );
+  },
+
+  async listAudit(
+    query: TournamentAuditQuery,
+    signal?: AbortSignal,
+  ): Promise<AuditPage> {
+    return readOperatorGetResponse(
+      adminClient.GET("/api/v1/admin/tournament-audit", {
+        params: { query },
+        signal,
+      }),
+      isAuditPage,
+      "admin/tournament audit",
+    );
+  },
+
+  async exportIncident(
+    tournamentId: string,
+    signal?: AbortSignal,
+  ): Promise<IncidentBundle> {
+    return readOperatorGetResponse(
+      adminClient.GET("/api/v1/admin/tournaments/{tournament_id}/incident-export", {
+        params: { path: { tournament_id: tournamentId } },
+        signal,
+      }),
+      isIncidentBundle,
+      "admin/tournament incident export",
+    );
+  },
+} as const;
+
+export const listTournaments = operatorApi.listTournaments;
+export const createTournament = operatorApi.createTournament;
+export const getTournamentRoster = operatorApi.getRoster;
+export const replaceTournamentRoster = operatorApi.replaceRoster;
+export const runTournamentRosterPreflight = operatorApi.runRosterPreflight;
+export const lockTournamentRoster = operatorApi.lockRoster;
+export const unlockTournamentRoster = operatorApi.unlockRoster;
+export const getOperatorSnapshot = operatorApi.getSnapshot;
+export const listTournamentAudit = operatorApi.listAudit;
+export const exportTournamentIncident = operatorApi.exportIncident;

@@ -727,3 +727,812 @@ export const isParticipantRecoverySnapshot = (
   (value.draft === null || isParticipantDraftValue(value.draft)) &&
   (value.assignment === null || isParticipantAssignment(value.assignment)) &&
   isParticipantRecoveryCursor(value.next_cursor);
+
+type Tournament = components["schemas"]["Tournament"];
+type TournamentListResponse = components["schemas"]["TournamentListResponse"];
+type Roster = components["schemas"]["Roster"];
+type PreflightReport = components["schemas"]["PreflightReport"];
+type AuditCursor = components["schemas"]["AuditCursor"];
+export type OperatorAuditRedactedPayload = Readonly<Partial<{
+  attempt_id: string;
+  entity_id: string;
+  entity_kind: string;
+  previous_revision_id: string;
+  projection_revision_id: string;
+  reason: string;
+  result_reason: string;
+  revision_number: number;
+  series_id: string;
+  source_projection_revision_id: string;
+  state: string;
+  tournament_id: string;
+  winner_id: string;
+}>>;
+export type OperatorAuditEvent = Omit<components["schemas"]["AuditEvent"], "redacted_payload"> & {
+  readonly redacted_payload: OperatorAuditRedactedPayload;
+};
+export type OperatorAuditPage = Omit<components["schemas"]["AuditPage"], "events"> & {
+  readonly events: OperatorAuditEvent[];
+};
+type AuditEvent = OperatorAuditEvent;
+type AuditPage = OperatorAuditPage;
+type IncidentBundle = components["schemas"]["IncidentBundle"];
+type OperatorRecoveryCursor = components["schemas"]["OperatorRecoveryCursor"];
+type OperatorRecoverySnapshot = components["schemas"]["OperatorRecoverySnapshot"];
+
+const operatorTournamentStates = new Set<string>([
+  "draft",
+  "registration",
+  "roster_locked",
+  "swiss",
+  "golden",
+  "playoffs",
+  "technical_pause",
+  "completed",
+  "cancelled",
+]);
+const operatorSeriesStates = new Set<string>([
+  "planned",
+  "locked",
+  "draft",
+  "ready",
+  "active",
+  "replay_required",
+  "technical_pause",
+  "completed",
+  "cancelled",
+]);
+const operatorWaveStates = new Set<string>([
+  "planned",
+  "ready_window_open",
+  "ready",
+  "active",
+  "paused",
+  "completed",
+  "ready_window_expired",
+  "superseded",
+]);
+const operatorGameStates = new Set<string>([
+  "planned",
+  "ready",
+  "active",
+  "paused",
+  "completed",
+  "void",
+  "cancelled",
+  "superseded",
+]);
+const operatorGameResultReasons = new Set<string>([
+  "solved",
+  "surrender",
+  "operator_forfeit",
+  "no_solve",
+  "task_failure",
+  "common_platform_failure",
+  "disconnect",
+  "execution_epoch_break",
+  "no_show",
+  "series_cancelled",
+  "tournament_cancelled",
+  "derived_revision_superseded",
+]);
+const operatorSeriesResultReasons = new Set<string>([
+  "score_complete",
+  "operator_correction",
+  "series_cancelled",
+  "tournament_cancelled",
+]);
+const operatorCategories = new Set<string>([
+  "web",
+  "crypto",
+  "forensics",
+  "reverse",
+  "pwn",
+  "steganography",
+  "ppc",
+  "osint",
+  "mobile",
+  "hardware",
+  "misc",
+]);
+const operatorAuditEntityKinds = new Set<string>(["game_attempt", "series"]);
+const operatorActorKinds = new Set<string>(["server", "operator"]);
+
+const isOperatorNonBlank = (value: unknown): value is string =>
+  isString(value) && value.trim().length > 0;
+
+const isOperatorOptionalDateTime = (value: unknown): value is string | null | undefined =>
+  value === undefined || value === null || isDateTimeString(value);
+
+const isOperatorUUIDOrNull = (value: unknown): value is string | null =>
+  value === null || isNonNilUUID(value);
+
+const isOperatorCategory = (value: unknown): boolean =>
+  isString(value) && operatorCategories.has(value);
+
+const isOperatorSeriesScore = (value: unknown): boolean =>
+  isRecord(value) &&
+  hasExactKeys(value, ["first_participant_wins", "second_participant_wins"]) &&
+  isNonNegativeInteger(value.first_participant_wins) &&
+  value.first_participant_wins <= 2 &&
+  isNonNegativeInteger(value.second_participant_wins) &&
+  value.second_participant_wins <= 2;
+
+const isOperatorGame = (value: unknown): boolean =>
+  isRecord(value) &&
+  hasExactKeys(value, [
+    "attempt_no",
+    "id",
+    "result_reason",
+    "result_revision_id",
+    "slot_id",
+    "state",
+    "winner_id",
+  ]) &&
+  isSafePositiveInteger(value.attempt_no) &&
+  isNonNilUUID(value.id) &&
+  (value.result_reason === null ||
+    (isString(value.result_reason) && operatorGameResultReasons.has(value.result_reason))) &&
+  isOperatorUUIDOrNull(value.result_revision_id) &&
+  isNonNilUUID(value.slot_id) &&
+  isString(value.state) &&
+  operatorGameStates.has(value.state) &&
+  isOperatorUUIDOrNull(value.winner_id);
+
+const isOperatorGameSlot = (value: unknown): boolean =>
+  isRecord(value) &&
+  hasExactKeys(value, ["attempts", "category", "id", "position", "score_before", "series_id"]) &&
+  Array.isArray(value.attempts) &&
+  value.attempts.every(isOperatorGame) &&
+  isOperatorCategory(value.category) &&
+  isNonNilUUID(value.id) &&
+  isSafePositiveInteger(value.position) &&
+  value.position <= 3 &&
+  isOperatorSeriesScore(value.score_before) &&
+  isNonNilUUID(value.series_id);
+
+const isOperatorSeries = (value: unknown): boolean =>
+  isRecord(value) &&
+  hasExactKeys(value, [
+    "current_result_revision_id",
+    "current_score_revision_id",
+    "first_participant_id",
+    "format",
+    "id",
+    "score",
+    "second_participant_id",
+    "slots",
+    "state",
+    "tournament_id",
+    "winner_id",
+  ]) &&
+  isOperatorUUIDOrNull(value.current_result_revision_id) &&
+  isOperatorUUIDOrNull(value.current_score_revision_id) &&
+  isNonNilUUID(value.first_participant_id) &&
+  (value.format === "bo1" || value.format === "bo3") &&
+  isNonNilUUID(value.id) &&
+  isOperatorSeriesScore(value.score) &&
+  isNonNilUUID(value.second_participant_id) &&
+  value.first_participant_id !== value.second_participant_id &&
+  Array.isArray(value.slots) &&
+  value.slots.length <= 3 &&
+  value.slots.every(isOperatorGameSlot) &&
+  isString(value.state) &&
+  operatorSeriesStates.has(value.state) &&
+  isNonNilUUID(value.tournament_id) &&
+  isOperatorUUIDOrNull(value.winner_id);
+
+const isOperatorWaveMember = (value: unknown): boolean =>
+  isRecord(value) &&
+  hasOnlyParticipantKeys(value, ["participant_id", "readiness_revision", "ready", "series_id"]) &&
+  isNonNilUUID(value.participant_id) &&
+  isSafePositiveInteger(value.readiness_revision) &&
+  typeof value.ready === "boolean" &&
+  (value.series_id === undefined || isOperatorUUIDOrNull(value.series_id));
+
+const isOperatorReadyWindow = (value: unknown): boolean =>
+  isRecord(value) &&
+  hasExactKeys(value, ["consumed_at", "deadline", "id", "opened_at", "revision_id", "state", "wave_id"]) &&
+  isOperatorOptionalDateTime(value.consumed_at) &&
+  isDateTimeString(value.deadline) &&
+  isNonNilUUID(value.id) &&
+  isDateTimeString(value.opened_at) &&
+  isNonNilUUID(value.revision_id) &&
+  isString(value.state) &&
+  new Set(["open", "consumed", "expired", "superseded"]).has(value.state) &&
+  isNonNilUUID(value.wave_id);
+
+const isOperatorWave = (value: unknown): boolean =>
+  isRecord(value) &&
+  hasExactKeys(value, [
+    "id",
+    "members",
+    "paused_at",
+    "ready_window",
+    "revision",
+    "revision_id",
+    "started_at",
+    "state",
+    "tournament_id",
+  ]) &&
+  isNonNilUUID(value.id) &&
+  Array.isArray(value.members) &&
+  value.members.length >= 2 &&
+  value.members.every(isOperatorWaveMember) &&
+  isOperatorOptionalDateTime(value.paused_at) &&
+  (value.ready_window === null || isOperatorReadyWindow(value.ready_window)) &&
+  isSafePositiveInteger(value.revision) &&
+  isNonNilUUID(value.revision_id) &&
+  isOperatorOptionalDateTime(value.started_at) &&
+  isString(value.state) &&
+  operatorWaveStates.has(value.state) &&
+  isNonNilUUID(value.tournament_id);
+
+const isOperatorParticipant = (value: unknown): boolean =>
+  isRecord(value) &&
+  hasExactKeys(value, [
+    "attendance",
+    "created_at",
+    "id",
+    "player_id",
+    "roster_id",
+    "seed",
+    "tournament_id",
+    "updated_at",
+  ]) &&
+  new Set(["invited", "registered", "checked_in", "withdrawn"]).has(String(value.attendance)) &&
+  isDateTimeString(value.created_at) &&
+  isNonNilUUID(value.id) &&
+  isNonNilUUID(value.player_id) &&
+  isNonNilUUID(value.roster_id) &&
+  isSafePositiveInteger(value.seed) &&
+  value.seed <= 16 &&
+  isNonNilUUID(value.tournament_id) &&
+  isDateTimeString(value.updated_at);
+
+const isOperatorTournament = (value: unknown): value is Tournament =>
+  isRecord(value) &&
+  hasOnlyParticipantKeys(value, [
+    "content_revision",
+    "created_at",
+    "finished_at",
+    "id",
+    "name",
+    "paused_from_state",
+    "planned_roster_size",
+    "preset",
+    "public_id",
+    "revision",
+    "roster_id",
+    "roster_size",
+    "started_at",
+    "state",
+    "updated_at",
+  ]) &&
+  [
+    "content_revision",
+    "created_at",
+    "id",
+    "name",
+    "planned_roster_size",
+    "preset",
+    "public_id",
+    "revision",
+    "roster_id",
+    "roster_size",
+    "state",
+    "updated_at",
+  ].every((key) => key in value) &&
+  isSafePositiveInteger(value.content_revision) &&
+  isDateTimeString(value.created_at) &&
+  isOperatorOptionalDateTime(value.finished_at) &&
+  isNonNilUUID(value.id) &&
+  isOperatorNonBlank(value.name) &&
+  value.name.length <= 120 &&
+  (value.paused_from_state === undefined ||
+    value.paused_from_state === null ||
+    (isString(value.paused_from_state) && operatorTournamentStates.has(value.paused_from_state))) &&
+  isSafePositiveInteger(value.planned_roster_size) &&
+  value.planned_roster_size >= 4 &&
+  value.planned_roster_size <= 16 &&
+  value.preset === "tournament_v1" &&
+  isString(value.public_id) &&
+  /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value.public_id) &&
+  value.public_id.length <= 64 &&
+  isSafePositiveInteger(value.revision) &&
+  isNonNilUUID(value.roster_id) &&
+  isNonNegativeInteger(value.roster_size) &&
+  value.roster_size <= 16 &&
+  isOperatorOptionalDateTime(value.started_at) &&
+  isString(value.state) &&
+  operatorTournamentStates.has(value.state) &&
+  isDateTimeString(value.updated_at);
+
+export const isTournamentListResponse = (value: unknown): value is TournamentListResponse =>
+  isRecord(value) &&
+  hasExactKeys(value, ["items", "next_cursor"]) &&
+  Array.isArray(value.items) &&
+  value.items.length <= 200 &&
+  value.items.every(isOperatorTournament) &&
+  (value.next_cursor === null || isOperatorNonBlank(value.next_cursor));
+
+export const isTournamentResponse = (value: unknown): value is Tournament =>
+  isOperatorTournament(value);
+
+export const isRoster = (value: unknown): value is Roster =>
+  isRecord(value) &&
+  hasOnlyParticipantKeys(value, [
+    "created_at",
+    "execution_started",
+    "execution_started_at",
+    "id",
+    "locked",
+    "locked_at",
+    "participants",
+    "revision",
+    "tournament_id",
+    "updated_at",
+  ]) &&
+  [
+    "created_at",
+    "execution_started",
+    "id",
+    "locked",
+    "participants",
+    "revision",
+    "tournament_id",
+    "updated_at",
+  ].every((key) => key in value) &&
+  isDateTimeString(value.created_at) &&
+  typeof value.execution_started === "boolean" &&
+  isOperatorOptionalDateTime(value.execution_started_at) &&
+  isNonNilUUID(value.id) &&
+  typeof value.locked === "boolean" &&
+  isOperatorOptionalDateTime(value.locked_at) &&
+  Array.isArray(value.participants) &&
+  value.participants.length <= 16 &&
+  value.participants.every(isOperatorParticipant) &&
+  isSafePositiveInteger(value.revision) &&
+  isNonNilUUID(value.tournament_id) &&
+  isDateTimeString(value.updated_at);
+
+const operatorPreflightCodes = new Set<string>([
+  "tournament.preflight.structure.roster_complete",
+  "tournament.preflight.structure.attendance",
+  "tournament.preflight.structure.participant_exclusive",
+  "tournament.preflight.structure.preset",
+  "tournament.preflight.structure.categories",
+  "tournament.preflight.structure.pairings",
+  "tournament.preflight.structure.byes",
+  "tournament.preflight.structure.overrides",
+  "tournament.preflight.tasks.pool_configuration",
+  "tournament.preflight.tasks.inventory",
+  "tournament.preflight.tasks.missing",
+  "tournament.preflight.tasks.disabled",
+  "tournament.preflight.tasks.unhealthy",
+  "tournament.preflight.tasks.mutable",
+  "tournament.preflight.tasks.publicly_exposed",
+  "tournament.preflight.tasks.wrong_pool",
+  "tournament.preflight.runtime.configuration",
+  "tournament.preflight.runtime.authoritative_storage",
+  "tournament.preflight.runtime.submission",
+  "tournament.preflight.runtime.task_delivery",
+  "tournament.preflight.runtime.realtime",
+  "tournament.preflight.runtime.capacity",
+  "tournament.preflight.runtime.clock",
+  "tournament.preflight.runtime.dependencies",
+  "tournament.preflight.runtime.schedule",
+]);
+
+const isOperatorPreflightCheck = (value: unknown): boolean =>
+  isRecord(value) &&
+  hasExactKeys(value, ["code", "evidence", "explanation", "passed"]) &&
+  isString(value.code) &&
+  operatorPreflightCodes.has(value.code) &&
+  Array.isArray(value.evidence) &&
+  value.evidence.every(isString) &&
+  isString(value.explanation) &&
+  typeof value.passed === "boolean";
+
+const isOperatorPreflightSourceRevision = (value: unknown): boolean =>
+  isRecord(value) &&
+  hasExactKeys(value, ["source", "value"]) &&
+  isOperatorNonBlank(value.source) &&
+  isOperatorNonBlank(value.value);
+
+export const isPreflightReport = (value: unknown): value is PreflightReport =>
+  isRecord(value) &&
+  hasExactKeys(value, [
+    "algorithm_version",
+    "checks",
+    "evaluated_at",
+    "id",
+    "normalized_inputs",
+    "passed",
+    "proof_hash",
+    "revisions",
+    "tournament_id",
+  ]) &&
+  (value.algorithm_version === "tournament-preflight-report-v1" ||
+    value.algorithm_version === "tournament-preflight-report-v2") &&
+  Array.isArray(value.checks) &&
+  value.checks.length > 0 &&
+  value.checks.every(isOperatorPreflightCheck) &&
+  isDateTimeString(value.evaluated_at) &&
+  isNonNilUUID(value.id) &&
+  Array.isArray(value.normalized_inputs) &&
+  value.normalized_inputs.every(isString) &&
+  typeof value.passed === "boolean" &&
+  isString(value.proof_hash) &&
+  /^[0-9a-f]{64}$/.test(value.proof_hash) &&
+  Array.isArray(value.revisions) &&
+  value.revisions.length > 0 &&
+  value.revisions.every(isOperatorPreflightSourceRevision) &&
+  isNonNilUUID(value.tournament_id);
+
+const isOperatorDraftAction = (value: unknown): boolean =>
+  isRecord(value) &&
+  hasExactKeys(value, ["action", "actor_id", "category", "occurred_at", "turn", "turn_deadline"]) &&
+  (value.action === "ban" || value.action === "pick") &&
+  isNonNilUUID(value.actor_id) &&
+  isOperatorCategory(value.category) &&
+  isDateTimeString(value.occurred_at) &&
+  isSafePositiveInteger(value.turn) &&
+  isDateTimeString(value.turn_deadline);
+
+const isOperatorDraft = (value: unknown): boolean =>
+  isRecord(value) &&
+  hasExactKeys(value, [
+    "actions",
+    "first_participant_id",
+    "format",
+    "id",
+    "pool",
+    "revision",
+    "second_participant_id",
+    "selected_categories",
+    "series_id",
+    "state",
+    "turn",
+    "turn_deadline",
+  ]) &&
+  Array.isArray(value.actions) &&
+  value.actions.every(isOperatorDraftAction) &&
+  isNonNilUUID(value.first_participant_id) &&
+  (value.format === "bo1" || value.format === "bo3") &&
+  isNonNilUUID(value.id) &&
+  Array.isArray(value.pool) &&
+  value.pool.every(isOperatorCategory) &&
+  isSafePositiveInteger(value.revision) &&
+  isNonNilUUID(value.second_participant_id) &&
+  Array.isArray(value.selected_categories) &&
+  value.selected_categories.every(isOperatorCategory) &&
+  isNonNilUUID(value.series_id) &&
+  (value.state === "active" || value.state === "completed") &&
+  isSafePositiveInteger(value.turn) &&
+  isOperatorOptionalDateTime(value.turn_deadline);
+
+const isOperatorPauseGame = (value: unknown): boolean =>
+  isRecord(value) &&
+  hasExactKeys(value, ["deadline", "game", "resume_state", "revision", "series_id"]) &&
+  isOperatorOptionalDateTime(value.deadline) &&
+  isOperatorGame(value.game) &&
+  (value.resume_state === null ||
+    (isString(value.resume_state) && operatorGameStates.has(value.resume_state))) &&
+  isNonNegativeInteger(value.revision) &&
+  isNonNilUUID(value.series_id);
+
+const isOperatorPauseSeries = (value: unknown): boolean =>
+  isRecord(value) &&
+  hasExactKeys(value, ["current_game_id", "resume_state", "revision", "series"]) &&
+  isOperatorUUIDOrNull(value.current_game_id) &&
+  (value.resume_state === null ||
+    (isString(value.resume_state) && operatorSeriesStates.has(value.resume_state))) &&
+  isNonNegativeInteger(value.revision) &&
+  isOperatorSeries(value.series);
+
+const isOperatorFrozenDeadline = (value: unknown): boolean =>
+  isRecord(value) &&
+  hasExactKeys(value, [
+    "frozen_at",
+    "kind",
+    "original_deadline",
+    "owner_id",
+    "remaining_ms",
+    "resumed_at",
+    "resumed_deadline",
+    "revision",
+  ]) &&
+  isDateTimeString(value.frozen_at) &&
+  new Set(["ready_window", "game", "draft"]).has(String(value.kind)) &&
+  isDateTimeString(value.original_deadline) &&
+  isNonNilUUID(value.owner_id) &&
+  isNonNegativeInteger(value.remaining_ms) &&
+  isOperatorOptionalDateTime(value.resumed_at) &&
+  isOperatorOptionalDateTime(value.resumed_deadline) &&
+  isNonNegativeInteger(value.revision);
+
+const isOperatorPresence = (value: unknown): boolean =>
+  isRecord(value) &&
+  hasExactKeys(value, [
+    "connected_at",
+    "disconnected_at",
+    "id",
+    "participant_id",
+    "presence_epoch",
+    "revision",
+    "roster_id",
+    "series_id",
+    "state",
+    "tournament_id",
+    "updated_at",
+  ]) &&
+  isDateTimeString(value.connected_at) &&
+  isOperatorOptionalDateTime(value.disconnected_at) &&
+  isNonNilUUID(value.id) &&
+  isNonNilUUID(value.participant_id) &&
+  isNonNegativeInteger(value.presence_epoch) &&
+  isNonNegativeInteger(value.revision) &&
+  isNonNilUUID(value.roster_id) &&
+  isNonNilUUID(value.series_id) &&
+  (value.state === "connected" || value.state === "disconnected") &&
+  isNonNilUUID(value.tournament_id) &&
+  isDateTimeString(value.updated_at);
+
+const isOperatorReconnectInterval = (value: unknown): boolean =>
+  isRecord(value) &&
+  hasExactKeys(value, [
+    "closed_at",
+    "continuation_number",
+    "continued_from_id",
+    "deadline",
+    "game_id",
+    "id",
+    "number",
+    "opened_at",
+    "participant_id",
+    "pause_id",
+    "presence_epoch",
+    "revision",
+    "roster_id",
+    "series_id",
+    "state",
+    "suspended_by_pause_id",
+    "updated_at",
+  ]) &&
+  isOperatorOptionalDateTime(value.closed_at) &&
+  isNonNegativeInteger(value.continuation_number) &&
+  isOperatorUUIDOrNull(value.continued_from_id) &&
+  isDateTimeString(value.deadline) &&
+  isNonNilUUID(value.game_id) &&
+  isNonNilUUID(value.id) &&
+  isNonNegativeInteger(value.number) &&
+  isDateTimeString(value.opened_at) &&
+  isNonNilUUID(value.participant_id) &&
+  isNonNilUUID(value.pause_id) &&
+  isNonNegativeInteger(value.presence_epoch) &&
+  isNonNegativeInteger(value.revision) &&
+  isNonNilUUID(value.roster_id) &&
+  isNonNilUUID(value.series_id) &&
+  new Set(["open", "reconnected", "expired", "cancelled"]).has(String(value.state)) &&
+  isOperatorUUIDOrNull(value.suspended_by_pause_id) &&
+  isDateTimeString(value.updated_at);
+
+const isOperatorPauseReconnectCounter = (value: unknown): boolean =>
+  isRecord(value) &&
+  hasExactKeys(value, ["limit", "participant_id", "pause_id", "revision", "roster_id", "used"]) &&
+  isNonNegativeInteger(value.limit) &&
+  isNonNilUUID(value.participant_id) &&
+  isNonNilUUID(value.pause_id) &&
+  isNonNegativeInteger(value.revision) &&
+  isNonNilUUID(value.roster_id) &&
+  isNonNegativeInteger(value.used);
+
+const isOperatorPauseGraph = (value: unknown): boolean =>
+  isRecord(value) &&
+  hasExactKeys(value, [
+    "active_pause_id",
+    "counters",
+    "deadlines_suppressed",
+    "draft",
+    "frozen_deadlines",
+    "games",
+    "graph_revision",
+    "paused_at",
+    "presence",
+    "reconnect",
+    "roster_id",
+    "series",
+    "terminal_action_revision",
+    "tournament_id",
+    "wave",
+  ]) &&
+  isOperatorUUIDOrNull(value.active_pause_id) &&
+  Array.isArray(value.counters) &&
+  value.counters.every(isOperatorPauseReconnectCounter) &&
+  typeof value.deadlines_suppressed === "boolean" &&
+  (value.draft === null || isOperatorDraft(value.draft)) &&
+  Array.isArray(value.frozen_deadlines) &&
+  value.frozen_deadlines.every(isOperatorFrozenDeadline) &&
+  Array.isArray(value.games) &&
+  value.games.every(isOperatorPauseGame) &&
+  isNonNegativeInteger(value.graph_revision) &&
+  isOperatorOptionalDateTime(value.paused_at) &&
+  Array.isArray(value.presence) &&
+  value.presence.every(isOperatorPresence) &&
+  Array.isArray(value.reconnect) &&
+  value.reconnect.every(isOperatorReconnectInterval) &&
+  isNonNilUUID(value.roster_id) &&
+  Array.isArray(value.series) &&
+  value.series.every(isOperatorPauseSeries) &&
+  isNonNegativeInteger(value.terminal_action_revision) &&
+  isNonNilUUID(value.tournament_id) &&
+  isOperatorWave(value.wave);
+
+export const isOperatorRecoveryCursor = (
+  value: unknown,
+): value is OperatorRecoveryCursor =>
+  isRecord(value) &&
+  hasExactKeys(value, ["audit_sequence", "authority_revision", "projection_revision"]) &&
+  isNonNegativeInteger(value.audit_sequence) &&
+  isSafePositiveInteger(value.authority_revision) &&
+  isSafePositiveInteger(value.projection_revision);
+
+export const isOperatorRecoverySnapshot = (
+  value: unknown,
+): value is OperatorRecoverySnapshot =>
+  isRecord(value) &&
+  hasExactKeys(value, ["next_cursor", "pause_graph", "roster", "series", "tournament", "waves"]) &&
+  isOperatorRecoveryCursor(value.next_cursor) &&
+  (value.pause_graph === null || isOperatorPauseGraph(value.pause_graph)) &&
+  isRoster(value.roster) &&
+  Array.isArray(value.series) &&
+  value.series.every(isOperatorSeries) &&
+  isOperatorTournament(value.tournament) &&
+  Array.isArray(value.waves) &&
+  value.waves.every(isOperatorWave);
+
+export const isAuditCursor = (value: unknown): value is AuditCursor =>
+  isRecord(value) &&
+  hasExactKeys(value, ["audit_event_id", "occurred_at", "revision_id", "snapshot_bound"]) &&
+  isNonNilUUID(value.audit_event_id) &&
+  isDateTimeString(value.occurred_at) &&
+  isNonNilUUID(value.revision_id) &&
+  isOperatorNonBlank(value.snapshot_bound);
+
+const operatorRedactedPayloadKeys = new Set([
+  "attempt_id",
+  "entity_id",
+  "entity_kind",
+  "previous_revision_id",
+  "projection_revision_id",
+  "reason",
+  "result_reason",
+  "revision_number",
+  "series_id",
+  "source_projection_revision_id",
+  "state",
+  "tournament_id",
+  "winner_id",
+]);
+const operatorRedactedUUIDKeys = new Set([
+  "attempt_id",
+  "entity_id",
+  "previous_revision_id",
+  "projection_revision_id",
+  "series_id",
+  "source_projection_revision_id",
+  "tournament_id",
+  "winner_id",
+]);
+const operatorRedactedStringKeys = new Set([
+  "entity_kind",
+  "reason",
+  "result_reason",
+  "state",
+]);
+
+const isOperatorRedactedPayload = (value: unknown): value is OperatorAuditRedactedPayload =>
+  isRecord(value) &&
+  Object.entries(value).every(([key, child]) => {
+    if (!operatorRedactedPayloadKeys.has(key)) {
+      return false;
+    }
+    if (operatorRedactedUUIDKeys.has(key)) {
+      return isNonNilUUID(child);
+    }
+    if (operatorRedactedStringKeys.has(key)) {
+      return isOperatorNonBlank(child) && child.length <= 512;
+    }
+    return key === "revision_number" && isSafePositiveInteger(child);
+  });
+
+export const isAuditEvent = (value: unknown): value is AuditEvent =>
+  isRecord(value) &&
+  hasExactKeys(value, [
+    "actor_id",
+    "actor_kind",
+    "audit_event_id",
+    "created_at",
+    "entity_id",
+    "entity_kind",
+    "event_type",
+    "is_current",
+    "is_superseded",
+    "occurred_at",
+    "official_result_revision_id",
+    "redacted_payload",
+    "result_event_id",
+    "result_reason",
+    "result_state",
+    "revision_number",
+    "roster_id",
+    "series_id",
+    "tournament_id",
+    "winner_id",
+  ]) &&
+  isOperatorUUIDOrNull(value.actor_id) &&
+  isString(value.actor_kind) &&
+  operatorActorKinds.has(value.actor_kind) &&
+  isNonNilUUID(value.audit_event_id) &&
+  isDateTimeString(value.created_at) &&
+  isNonNilUUID(value.entity_id) &&
+  isString(value.entity_kind) &&
+  operatorAuditEntityKinds.has(value.entity_kind) &&
+  isOperatorNonBlank(value.event_type) &&
+  typeof value.is_current === "boolean" &&
+  typeof value.is_superseded === "boolean" &&
+  isDateTimeString(value.occurred_at) &&
+  isNonNilUUID(value.official_result_revision_id) &&
+  isOperatorRedactedPayload(value.redacted_payload) &&
+  isNonNilUUID(value.result_event_id) &&
+  isOperatorNonBlank(value.result_reason) &&
+  isOperatorNonBlank(value.result_state) &&
+  isSafePositiveInteger(value.revision_number) &&
+  isNonNilUUID(value.roster_id) &&
+  isNonNilUUID(value.series_id) &&
+  isNonNilUUID(value.tournament_id) &&
+  isOperatorUUIDOrNull(value.winner_id);
+
+export const isAuditPage = (value: unknown): value is AuditPage =>
+  isRecord(value) &&
+  hasExactKeys(value, ["events", "next_cursor"]) &&
+  Array.isArray(value.events) &&
+  value.events.length <= 200 &&
+  value.events.every(isAuditEvent) &&
+  (value.next_cursor === null || isAuditCursor(value.next_cursor));
+
+const HEX_64 = /^[0-9a-f]{64}$/;
+const BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+const INCIDENT_KEY_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+export const isIncidentBundle = (value: unknown): value is IncidentBundle =>
+  isRecord(value) &&
+  hasExactKeys(value, [
+    "algorithm",
+    "canonical_content",
+    "canonical_content_encoding",
+    "canonical_content_length",
+    "canonical_content_type",
+    "generated_at",
+    "key_id",
+    "mac",
+    "projection_revision",
+    "sha256",
+    "tournament_id",
+  ]) &&
+  value.algorithm === "hmac-sha256-v1" &&
+  isString(value.canonical_content) &&
+  value.canonical_content.length > 0 &&
+  BASE64.test(value.canonical_content) &&
+  value.canonical_content_encoding === "base64" &&
+  isSafePositiveInteger(value.canonical_content_length) &&
+  value.canonical_content_type === "application/json" &&
+  isDateTimeString(value.generated_at) &&
+  isString(value.key_id) &&
+  INCIDENT_KEY_ID.test(value.key_id) &&
+  value.key_id.length <= 64 &&
+  HEX_64.test(String(value.mac)) &&
+  isSafePositiveInteger(value.projection_revision) &&
+  HEX_64.test(String(value.sha256)) &&
+  isNonNilUUID(value.tournament_id);
