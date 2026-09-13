@@ -96,6 +96,7 @@ func ProveGolden(in GoldenInput) GoldenProof {
 			GroupSize:           groupSize,
 			MaxConcurrentGroups: concurrent,
 			Graph: newConstraintGraph(
+				GraphAlgorithmV1,
 				fmt.Sprintf("golden:group_size:%02d", groupSize),
 				"",
 				uuid.Nil,

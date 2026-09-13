@@ -81,6 +81,12 @@ type tournamentFlowCatalog struct {
 	goldenTasks map[uuid.UUID]tournamentFlowGoldenTask
 }
 
+const (
+	createToChampionNormalTaskCount        = 27
+	createToChampionGoldenTaskCount        = domain.TournamentMinParticipants / 2 * (domain.AssignmentReserveCount + 1)
+	createToChampionBO3OnlyNormalTaskCount = domain.AssignmentReserveCount + 1
+)
+
 type tournamentFlowGoldenTask struct {
 	description string
 	taskURL     *string
@@ -186,29 +192,68 @@ func TestTournamentCreateToChampionThroughProductionHandlers(t *testing.T) {
 }
 
 func prepareCreateToChampionContent(ctx context.Context, t *testing.T) tournamentFlowCatalog {
+	return prepareCreateToChampionContentWithNormalCount(ctx, t, createToChampionNormalTaskCount)
+}
+
+func prepareCreateToChampionContentWithNormalCount(
+	ctx context.Context,
+	t *testing.T,
+	normalTaskCount int,
+) tournamentFlowCatalog {
+	return prepareCreateToChampionContentWithCounts(ctx, t, normalTaskCount, createToChampionGoldenTaskCount)
+}
+
+func prepareCreateToChampionContentForRosterSize(
+	ctx context.Context,
+	t *testing.T,
+	normalTaskCount int,
+	rosterSize int,
+) tournamentFlowCatalog {
+	return prepareCreateToChampionContentWithCounts(
+		ctx, t, normalTaskCount, rosterSize/2*(domain.AssignmentReserveCount+1),
+	)
+}
+
+func prepareCreateToChampionContentWithCounts(
+	ctx context.Context,
+	t *testing.T,
+	normalTaskCount int,
+	goldenTaskCount int,
+) tournamentFlowCatalog {
 	t.Helper()
+	require.GreaterOrEqual(t, normalTaskCount, domain.AssignmentReserveCount+1)
+	require.GreaterOrEqual(t, goldenTaskCount, domain.AssignmentReserveCount+1)
 	catalog := tournamentFlowCatalog{
 		flags:       make(map[uuid.UUID]string),
 		goldenTasks: make(map[uuid.UUID]tournamentFlowGoldenTask),
 	}
-	for _, category := range []string{"web", "crypto", "forensics", "reverse", "pwn"} {
-		// A single category can supply all six Swiss and both semifinal
+	for _, category := range []struct {
+		name  string
+		count int
+	}{
+		{name: "web", count: normalTaskCount},
+		{name: "crypto", count: normalTaskCount},
+		{name: "forensics", count: createToChampionBO3OnlyNormalTaskCount},
+		{name: "reverse", count: normalTaskCount},
+		{name: "pwn", count: createToChampionBO3OnlyNormalTaskCount},
+	} {
+		// Shared BO1+BO3 categories supply all six Swiss and both semifinal
 		// exact-normal plans before the final draft reserves its reachable
-		// branch. Each plan owns a primary plus two reserves, so keep the
-		// fixture above that 27-version worst case.
-		for range 32 {
+		// branch. Each plan owns a primary plus two reserves. BO3-only
+		// categories need one chain for the final draft.
+		for range category.count {
 			title := "create_to_champion_" + uuid.NewString()[:8]
 			flag := "champion-" + uuid.NewString()[:8]
 			var taskID uuid.UUID
 			err := sharedPool.QueryRow(ctx, `
 				INSERT INTO tasks (title, description, category, difficulty, time_limit, flag, kind)
 				VALUES ($1, 'create to champion fixture', $2, 'easy', 180, $3, 'normal')
-				RETURNING id`, title, category, flag).Scan(&taskID)
+				RETURNING id`, title, category.name, flag).Scan(&taskID)
 			require.NoError(t, err)
 			catalog.flags[taskID] = flag
 		}
 	}
-	for range (domain.TournamentMinParticipants / 2) * (domain.AssignmentReserveCount + 1) {
+	for range goldenTaskCount {
 		title := "create_to_champion_golden_" + uuid.NewString()[:8]
 		flag := "golden-champion-" + uuid.NewString()[:8]
 		description := "create to champion Golden fixture"
@@ -510,15 +555,26 @@ func createTournamentThroughREST(
 	contentRevision int64,
 	name string,
 ) api.Tournament {
+	return createTournamentWithRosterSizeThroughREST(t, fixture, adminToken, contentRevision, name, 4)
+}
+
+func createTournamentWithRosterSizeThroughREST(
+	t *testing.T,
+	fixture *restFixture,
+	adminToken string,
+	contentRevision int64,
+	name string,
+	rosterSize int,
+) api.Tournament {
 	t.Helper()
 	body := fmt.Sprintf(`{
 		"preset":"tournament_v1",
 		"expected_revision":0,
 		"name":%q,
 		"public_id":%q,
-		"planned_roster_size":4,
+		"planned_roster_size":%d,
 		"content_revision":%d
-	}`, "Create to champion "+name, "create-to-champion-"+uuid.NewString()[:8], contentRevision)
+	}`, "Create to champion "+name, "create-to-champion-"+uuid.NewString()[:8], rosterSize, contentRevision)
 	req, resp := doTournamentFlowJSON(
 		t, fixture, http.MethodPost, "/api/v1/admin/tournaments", body, adminSession(adminToken), uuid.New(), "",
 	)
@@ -526,7 +582,7 @@ func createTournamentThroughREST(
 	fixture.validateResponse(t, req, resp)
 	created := decodeJSON[api.Tournament](t, resp)
 	require.Equal(t, api.TournamentState(domain.TournamentStateDraft), created.State)
-	require.EqualValues(t, 4, created.PlannedRosterSize)
+	require.EqualValues(t, rosterSize, created.PlannedRosterSize)
 	return created
 }
 
@@ -1385,10 +1441,35 @@ func completeTournamentPlayoffsThroughREST(
 	runtime := tournamentFlowRuntimeForFixture(t, fixture)
 	runtime.clock.FreezeAt(draft.TurnDeadline.Add(-time.Second))
 	completeProductionFinalDraftThroughREST(t, fixture, tournamentID, draft, playersByParticipant)
+	finalWave := productionPlayoffWaveBySeries(
+		t, tournamentAdminSnapshotThroughREST(t, fixture, adminToken, tournamentID), draft.SeriesId,
+	)
 	runtime.clock.Resume()
+	waitForTournamentFlowDatabaseClock(t, finalWave.Id)
 	runProductionPlayoffSeriesThroughREST(
 		t, fixture, adminToken, tournamentID, draft.SeriesId, playersByParticipant, flags,
 	)
+}
+
+func waitForTournamentFlowDatabaseClock(t *testing.T, waveID uuid.UUID) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		var databaseNow, readinessCreatedAt time.Time
+		err := sharedPool.QueryRow(context.Background(), `
+			SELECT clock_timestamp(), max(created_at)
+			FROM wave_readiness
+			WHERE wave_id = $1`, waveID).Scan(&databaseNow, &readinessCreatedAt)
+		require.NoError(t, err)
+		if !databaseNow.Before(readinessCreatedAt) {
+			return
+		}
+		if !time.Now().Before(deadline) {
+			require.FailNowf(t, "database clock did not reach final Wave readiness timestamp",
+				"database=%s readiness=%s", databaseNow, readinessCreatedAt)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 func productionPlayoffSemifinals(t *testing.T, snapshot api.OperatorRecoverySnapshot) []api.Series {
@@ -1577,6 +1658,17 @@ func productionNextDraftCategory(t *testing.T, draft api.Draft) api.Category {
 	used := make(map[api.Category]struct{}, len(draft.Actions))
 	for _, action := range draft.Actions {
 		used[action.Category] = struct{}{}
+	}
+	if draft.Turn <= 2 {
+		// Keep the BO3-only categories in the two ban turns. The exact fixture
+		// carries one chain for each of them, while the accepted final path
+		// exercises the shared BO1+BO3 categories.
+		for _, category := range []api.Category{api.CategoryPwn, api.CategoryForensics} {
+			if _, ok := used[category]; ok || !slices.Contains(draft.Pool, category) {
+				continue
+			}
+			return category
+		}
 	}
 	for _, category := range draft.Pool {
 		if _, ok := used[category]; !ok {

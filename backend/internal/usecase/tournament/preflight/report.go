@@ -9,7 +9,10 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain/capacity"
 )
 
-const ReportAlgorithmV1 = "tournament-preflight-report-v1"
+const (
+	ReportAlgorithmV1 = "tournament-preflight-report-v1"
+	ReportAlgorithmV2 = "tournament-preflight-report-v2"
+)
 
 var ErrInvalidReport = errors.New("invalid preflight report")
 
@@ -220,7 +223,7 @@ func NewReportRevision(
 		return ReportRevision{}, preflightReportError("missing identity, UTC timestamp, or source revision")
 	}
 
-	report, err := composePreflightReportRevision(id, evaluatedAt, in)
+	report, err := composePreflightReportRevision(ReportAlgorithmV2, id, evaluatedAt, in)
 	if err != nil {
 		return ReportRevision{}, err
 	}
@@ -238,13 +241,13 @@ func (r ReportRevision) InvalidatedBy(in ReportInput) bool {
 	if r.Validate() != nil {
 		return true
 	}
-	candidate, err := composePreflightReportRevision(r.ID, r.EvaluatedAt, in)
+	candidate, err := composePreflightReportRevision(r.AlgorithmVersion, r.ID, r.EvaluatedAt, in)
 	return err != nil || candidate.ProofHash != r.ProofHash
 }
 
 func (r ReportRevision) Validate() error {
 	if r.ID == uuid.Nil || r.TournamentID == uuid.Nil || !validRuntimeTime(r.EvaluatedAt) ||
-		r.AlgorithmVersion != ReportAlgorithmV1 || !capacity.ValidProofDigest(r.ProofHash) {
+		!validReportAlgorithmVersion(r.AlgorithmVersion) || !capacity.ValidProofDigest(r.ProofHash) {
 		return preflightReportError("invalid revision identity, algorithm, timestamp, or proof hash")
 	}
 	if !sortedUniqueOperatorStrings(r.NormalizedInputs, false) {
@@ -271,10 +274,14 @@ func (r ReportRevision) Validate() error {
 }
 
 func composePreflightReportRevision(
+	algorithmVersion string,
 	id uuid.UUID,
 	evaluatedAt time.Time,
 	in ReportInput,
 ) (ReportRevision, error) {
+	if !validReportAlgorithmVersion(algorithmVersion) {
+		return ReportRevision{}, preflightReportError("unsupported report algorithm version")
+	}
 	if in.RosterRevision < 1 || in.PairingRevision < 1 {
 		return ReportRevision{}, preflightReportError("source revisions must be positive")
 	}
@@ -306,7 +313,7 @@ func composePreflightReportRevision(
 	}
 	revisions := preflightSourceRevisions(normalized)
 	document := newPreflightProofDocument(
-		ReportAlgorithmV1,
+		algorithmVersion,
 		tournamentID,
 		normalizedInputs,
 		revisions,
@@ -319,13 +326,17 @@ func composePreflightReportRevision(
 	return ReportRevision{
 		ID:               id,
 		TournamentID:     tournamentID,
-		AlgorithmVersion: ReportAlgorithmV1,
+		AlgorithmVersion: algorithmVersion,
 		EvaluatedAt:      evaluatedAt,
 		NormalizedInputs: normalizedInputs,
 		Revisions:        revisions,
 		ProofHash:        proofHash,
 		Checks:           checks,
 	}, nil
+}
+
+func validReportAlgorithmVersion(version string) bool {
+	return version == ReportAlgorithmV1 || version == ReportAlgorithmV2
 }
 
 func preflightSourcesAligned(in ReportInput) bool {

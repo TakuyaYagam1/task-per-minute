@@ -23,9 +23,10 @@ func TestNormalAssignmentSolver(t *testing.T) {
 			rounds     int
 			required   int
 		}{
-			{rosterSize: 4, rounds: 3, required: 15},
-			{rosterSize: 8, rounds: 3, required: 15},
-			{rosterSize: 16, rounds: 4, required: 24},
+			{rosterSize: 4, rounds: 3, required: 27},
+			{rosterSize: 8, rounds: 3, required: 45},
+			{rosterSize: 9, rounds: 4, required: 57},
+			{rosterSize: 16, rounds: 4, required: 105},
 		} {
 			proof := capacity.ProveNormal(task021NormalCapacityInput(test.rosterSize))
 			if !proof.Certified || proof.Failure != nil || proof.SwissRounds != test.rounds {
@@ -50,15 +51,22 @@ func TestNormalAssignmentSolver(t *testing.T) {
 		if proof.RosterSize != 16 || proof.SwissRounds != 4 || proof.Digest == "" {
 			t.Fatalf("proof identity = roster %d rounds %d digest %q", proof.RosterSize, proof.SwissRounds, proof.Digest)
 		}
+		for _, category := range proof.Categories {
+			for _, graph := range category.Graphs {
+				if graph.AlgorithmVersion != capacity.NormalGraphAlgorithmV2 {
+					t.Fatalf("normal graph algorithm = %q, want %q", graph.AlgorithmVersion, capacity.NormalGraphAlgorithmV2)
+				}
+			}
+		}
 
 		want := map[domain.Category]struct {
 			peak           int
 			perParticipant int
 			required       int
 		}{
-			domain.CategoryWeb:       {peak: 24, perParticipant: 18, required: 24},
-			domain.CategoryCrypto:    {peak: 24, perParticipant: 18, required: 24},
-			domain.CategoryReverse:   {peak: 24, perParticipant: 18, required: 24},
+			domain.CategoryWeb:       {peak: 105, perParticipant: 18, required: 105},
+			domain.CategoryCrypto:    {peak: 105, perParticipant: 18, required: 105},
+			domain.CategoryReverse:   {peak: 105, perParticipant: 18, required: 105},
 			domain.CategoryPwn:       {peak: 3, perParticipant: 3, required: 3},
 			domain.CategoryForensics: {peak: 3, perParticipant: 3, required: 3},
 		}
@@ -80,7 +88,7 @@ func TestNormalAssignmentSolver(t *testing.T) {
 				t.Fatalf("category %s graphs = %d, want %d", category.Category, len(category.Graphs), len(input.ParticipantIDs)+1)
 			}
 			for _, graph := range category.Graphs {
-				if graph.AlgorithmVersion != capacity.GraphAlgorithmV1 || graph.Digest == "" || len(graph.SelectedEdges) != graph.Required {
+				if graph.AlgorithmVersion != capacity.NormalGraphAlgorithmV2 || graph.Digest == "" || len(graph.SelectedEdges) != graph.Required {
 					t.Fatalf("invalid graph proof: %+v", graph)
 				}
 			}
@@ -99,10 +107,12 @@ func TestNormalAssignmentSolver(t *testing.T) {
 	t.Run("returns a stable reserve shortage before producing a partial proof", func(t *testing.T) {
 		t.Parallel()
 
-		input := task021NormalCapacityInput(16)
-		input = removeCapacityVersion(input, domain.CategoryWeb)
+		input := task021NormalCapacityInput(4)
+		for len(webCapacityVersions(input.Versions)) > 15 {
+			input = removeCapacityVersion(input, domain.CategoryWeb)
+		}
 		proof := capacity.ProveNormal(input)
-		assertCapacityFailure(t, proof.Certified, proof.Failure, capacity.FailureNormalReserveShortage, domain.CategoryWeb, uuid.Nil, 24, 23)
+		assertCapacityFailure(t, proof.Certified, proof.Failure, capacity.FailureNormalReserveShortage, domain.CategoryWeb, uuid.Nil, 27, 15)
 		if len(proof.Categories) != 0 || proof.Digest != "" {
 			t.Fatalf("shortage leaked a partial proof: %+v", proof)
 		}
@@ -113,22 +123,20 @@ func TestNormalAssignmentSolver(t *testing.T) {
 
 		input := task021NormalCapacityInput(16)
 		participantID := input.ParticipantIDs[0]
-		used := capacityVersionsForCategory(input.Versions, domain.CategoryWeb)[:7]
-		for _, version := range used {
-			input.History = append(input.History, capacity.TaskUse{
-				ParticipantID: participantID,
-				TaskID:        version.TaskID,
-			})
-		}
+		web := webCapacityVersions(input.Versions)
+		input.History = []capacity.TaskUse{{
+			ParticipantID: participantID,
+			TaskID:        web[0].TaskID,
+		}}
 		proof := capacity.ProveNormal(input)
-		assertCapacityFailure(t, proof.Certified, proof.Failure, capacity.FailureNormalReuseConflict, domain.CategoryWeb, participantID, 24, 17)
+		assertCapacityFailure(t, proof.Certified, proof.Failure, capacity.FailureNormalReuseConflict, domain.CategoryWeb, participantID, 105, 104)
 	})
 
 	t.Run("attributes exact-version roster conflict to the matching participant", func(t *testing.T) {
 		t.Parallel()
 
 		input := task021NormalCapacityInput(16)
-		web := capacityVersionsForCategory(input.Versions, domain.CategoryWeb)
+		web := webCapacityVersions(input.Versions)
 		for index := range input.Versions {
 			if input.Versions[index].TaskID != web[0].TaskID {
 				continue
@@ -141,13 +149,15 @@ func TestNormalAssignmentSolver(t *testing.T) {
 			}
 			break
 		}
-		web = capacityVersionsForCategory(input.Versions, domain.CategoryWeb)
-		input.History = []capacity.TaskUse{
-			{ParticipantID: input.ParticipantIDs[0], TaskID: web[0].TaskID, Version: web[0].Version - 1},
-			{ParticipantID: input.ParticipantIDs[1], TaskID: web[1].TaskID, Version: web[1].Version},
-		}
+		web = webCapacityVersions(input.Versions)
+		input.History = []capacity.TaskUse{{
+			ParticipantID: input.ParticipantIDs[0], TaskID: web[0].TaskID, Version: web[0].Version - 1,
+		}}
+		input.History = append(input.History, capacity.TaskUse{
+			ParticipantID: input.ParticipantIDs[1], TaskID: web[1].TaskID, Version: web[1].Version,
+		})
 		proof := capacity.ProveNormal(input)
-		assertCapacityFailure(t, proof.Certified, proof.Failure, capacity.FailureNormalReuseConflict, domain.CategoryWeb, input.ParticipantIDs[1], 24, 23)
+		assertCapacityFailure(t, proof.Certified, proof.Failure, capacity.FailureNormalReuseConflict, domain.CategoryWeb, input.ParticipantIDs[1], 105, 104)
 	})
 }
 
@@ -208,7 +218,7 @@ func task021NormalCapacityInput(rosterSize int) capacity.NormalInput {
 	if err != nil {
 		panic(err)
 	}
-	sharedCategoryCount := max(rosterSize/2*(domain.AssignmentReserveCount+1), (swissRounds+2)*(domain.AssignmentReserveCount+1))
+	sharedCategoryCount := (rosterSize/2*swissRounds + 3) * (domain.AssignmentReserveCount + 1)
 	versions := make([]capacity.TaskVersion, 0, sharedCategoryCount*3+6)
 	for _, category := range []struct {
 		category domain.Category
@@ -275,10 +285,10 @@ func removeCapacityVersion(input capacity.NormalInput, category domain.Category)
 	return input
 }
 
-func capacityVersionsForCategory(versions []capacity.TaskVersion, category domain.Category) []capacity.TaskVersion {
+func webCapacityVersions(versions []capacity.TaskVersion) []capacity.TaskVersion {
 	result := make([]capacity.TaskVersion, 0)
 	for _, version := range versions {
-		if version.Category == category {
+		if version.Category == domain.CategoryWeb {
 			result = append(result, version)
 		}
 	}

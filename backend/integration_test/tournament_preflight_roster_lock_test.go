@@ -97,7 +97,8 @@ func preparePreflightCapacityContent(ctx context.Context, t *testing.T, rosterSi
 
 	rounds, err := domain.TournamentPresetV1.SwissRounds(rosterSize)
 	require.NoError(t, err)
-	sharedCount := max(rosterSize/2*(domain.AssignmentReserveCount+1), (rounds+2)*(domain.AssignmentReserveCount+1))
+	chainSize := domain.AssignmentReserveCount + 1
+	sharedCount := (rosterSize/2*rounds + 3) * chainSize
 	for _, fixture := range []struct {
 		kind     string
 		category string
@@ -106,9 +107,9 @@ func preparePreflightCapacityContent(ctx context.Context, t *testing.T, rosterSi
 		{kind: "normal", category: "web", count: sharedCount},
 		{kind: "normal", category: "crypto", count: sharedCount},
 		{kind: "normal", category: "reverse", count: sharedCount},
-		{kind: "normal", category: "pwn", count: domain.AssignmentReserveCount + 1},
-		{kind: "normal", category: "forensics", count: domain.AssignmentReserveCount + 1},
-		{kind: "golden", category: "misc", count: rosterSize / 2 * (domain.AssignmentReserveCount + 1)},
+		{kind: "normal", category: "pwn", count: chainSize},
+		{kind: "normal", category: "forensics", count: chainSize},
+		{kind: "golden", category: "misc", count: rosterSize / 2 * chainSize},
 	} {
 		for index := range fixture.count {
 			_, err = sharedPool.Exec(ctx, `

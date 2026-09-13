@@ -1744,7 +1744,7 @@ export interface components {
         /** @description Immutable preflight result used as roster-lock evidence. */
         PreflightReport: {
             /** @enum {string} */
-            readonly algorithm_version: "tournament-preflight-report-v1";
+            readonly algorithm_version: "tournament-preflight-report-v1" | "tournament-preflight-report-v2";
             readonly checks: components["schemas"]["PreflightCheck"][];
             /** Format: date-time */
             readonly evaluated_at: string;

@@ -1,6 +1,9 @@
 package admin
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
@@ -93,6 +96,30 @@ func TestPreflightAuthorizesLockFailsClosedForStructurallyValidFailedReport(t *t
 	require.False(t, preflightAuthorizesLock(&record, command, authority))
 }
 
+func TestPreflightAuthorizesLockRejectsHistoricalV1Report(t *testing.T) {
+	t.Parallel()
+
+	authority := validationRosterAuthorityFixture()
+	report := validPreflightReportForLock(t, tournamentpreflight.ReportAlgorithmV1, rosterWorkflowID(80), authority.Roster.TournamentID)
+	record, command := preflightLockEvidence(t, authority, report)
+
+	require.NoError(t, report.Validate())
+	require.True(t, report.Passed())
+	require.False(t, preflightAuthorizesLock(&record, command, authority))
+}
+
+func TestPreflightAuthorizesLockAcceptsV2Report(t *testing.T) {
+	t.Parallel()
+
+	authority := validationRosterAuthorityFixture()
+	report := validPreflightReportForLock(t, tournamentpreflight.ReportAlgorithmV2, rosterWorkflowID(81), authority.Roster.TournamentID)
+	record, command := preflightLockEvidence(t, authority, report)
+
+	require.NoError(t, report.Validate())
+	require.True(t, report.Passed())
+	require.True(t, preflightAuthorizesLock(&record, command, authority))
+}
+
 func TestNewRosterOperationRecordRetainsLockEvidence(t *testing.T) {
 	t.Parallel()
 
@@ -137,4 +164,129 @@ func validRosterWorkflowReplaceCommand() ReplaceRosterCommand {
 
 func rosterWorkflowID(value int) uuid.UUID {
 	return uuid.MustParse(fmt.Sprintf("f1000000-0000-0000-0000-%012d", value))
+}
+
+func validPreflightReportForLock(
+	t *testing.T,
+	algorithmVersion string,
+	reportID uuid.UUID,
+	tournamentID uuid.UUID,
+) tournamentpreflight.ReportRevision {
+	t.Helper()
+	checks := []tournamentpreflight.Check{
+		{Code: tournamentpreflight.CodeRosterComplete, Passed: true, Explanation: "ok", Evidence: []string{"ok"}},
+		{Code: tournamentpreflight.CodeAttendance, Passed: true, Explanation: "ok", Evidence: []string{"ok"}},
+		{Code: tournamentpreflight.CodeParticipantExclusive, Passed: true, Explanation: "ok", Evidence: []string{"ok"}},
+		{Code: tournamentpreflight.CodePreset, Passed: true, Explanation: "ok", Evidence: []string{"ok"}},
+		{Code: tournamentpreflight.CodeCategories, Passed: true, Explanation: "ok", Evidence: []string{"ok"}},
+		{Code: tournamentpreflight.CodePairings, Passed: true, Explanation: "ok", Evidence: []string{"ok"}},
+		{Code: tournamentpreflight.CodeByes, Passed: true, Explanation: "ok", Evidence: []string{"ok"}},
+		{Code: tournamentpreflight.CodeOverrides, Passed: true, Explanation: "ok", Evidence: []string{"ok"}},
+		{Code: tournamentpreflight.CodeTaskPoolsValid, Passed: true, Explanation: "ok", Evidence: []string{"ok"}},
+		{Code: tournamentpreflight.CodeTaskInventory, Passed: true, Explanation: "ok", Evidence: []string{"ok"}},
+		{Code: tournamentpreflight.CodeTaskMissing, Passed: true, Explanation: "ok", Evidence: []string{"ok"}},
+		{Code: tournamentpreflight.CodeTaskDisabled, Passed: true, Explanation: "ok", Evidence: []string{"ok"}},
+		{Code: tournamentpreflight.CodeTaskUnhealthy, Passed: true, Explanation: "ok", Evidence: []string{"ok"}},
+		{Code: tournamentpreflight.CodeTaskMutable, Passed: true, Explanation: "ok", Evidence: []string{"ok"}},
+		{Code: tournamentpreflight.CodeTaskExposed, Passed: true, Explanation: "ok", Evidence: []string{"ok"}},
+		{Code: tournamentpreflight.CodeTaskWrongPool, Passed: true, Explanation: "ok", Evidence: []string{"ok"}},
+		{Code: tournamentpreflight.CodeRuntimeConfiguration, Passed: true, Explanation: "ok", Evidence: []string{"ok"}},
+		{Code: tournamentpreflight.CodeRuntimeStorage, Passed: true, Explanation: "ok", Evidence: []string{"ok"}},
+		{Code: tournamentpreflight.CodeRuntimeSubmission, Passed: true, Explanation: "ok", Evidence: []string{"ok"}},
+		{Code: tournamentpreflight.CodeRuntimeTaskDelivery, Passed: true, Explanation: "ok", Evidence: []string{"ok"}},
+		{Code: tournamentpreflight.CodeRuntimeRealtime, Passed: true, Explanation: "ok", Evidence: []string{"ok"}},
+		{Code: tournamentpreflight.CodeRuntimeCapacity, Passed: true, Explanation: "ok", Evidence: []string{"ok"}},
+		{Code: tournamentpreflight.CodeRuntimeClock, Passed: true, Explanation: "ok", Evidence: []string{"ok"}},
+		{Code: tournamentpreflight.CodeRuntimeDependencies, Passed: true, Explanation: "ok", Evidence: []string{"ok"}},
+		{Code: tournamentpreflight.CodeRuntimeSchedule, Passed: true, Explanation: "ok", Evidence: []string{"ok"}},
+	}
+	report := tournamentpreflight.ReportRevision{
+		ID: reportID, TournamentID: tournamentID, AlgorithmVersion: algorithmVersion,
+		EvaluatedAt:      time.Date(2026, time.January, 2, 5, 6, 7, 0, time.UTC),
+		NormalizedInputs: []string{"input:stable"},
+		Revisions:        []tournamentpreflight.SourceRevision{{Source: "roster", Value: "1"}},
+		Checks:           checks,
+	}
+	report.ProofHash = preflightReportProofHash(report)
+	if err := report.Validate(); err != nil {
+		t.Fatalf("valid %s report: %v", algorithmVersion, err)
+	}
+	return report
+}
+
+func preflightLockEvidence(
+	t *testing.T,
+	authority RosterAuthority,
+	report tournamentpreflight.ReportRevision,
+) (RosterOperationRecord, LockRosterCommand) {
+	t.Helper()
+	checkedIn := []uuid.UUID{
+		rosterWorkflowID(85), rosterWorkflowID(86), rosterWorkflowID(87), rosterWorkflowID(88),
+	}
+	record, err := newRosterOperationRecord(
+		CommandScope{
+			Operator:     OperatorIdentity{ActorID: rosterWorkflowID(82)},
+			TournamentID: authority.Roster.TournamentID, CommandID: report.ID,
+		},
+		RosterOperationPreflight, authority, authority.Roster.Revision, [32]byte{1},
+		rosterOperationEvidence{checkedInPlayerIDs: checkedIn}, report, report.EvaluatedAt,
+	)
+	if err != nil {
+		t.Fatalf("newRosterOperationRecord() error = %v", err)
+	}
+	command := LockRosterCommand{
+		CommandScope: CommandScope{
+			Operator:     OperatorIdentity{ActorID: rosterWorkflowID(83)},
+			TournamentID: authority.Roster.TournamentID, CommandID: rosterWorkflowID(84),
+		},
+		ExpectedProjectionRevision: authority.ProjectionRevision,
+		PreflightRevisionID:        report.ID,
+		CheckedInPlayerIDs:         checkedIn,
+	}
+	return record, command
+}
+
+func preflightReportProofHash(report tournamentpreflight.ReportRevision) string {
+	type proofCheck struct {
+		Code        string   `json:"code"`
+		Passed      bool     `json:"passed"`
+		Explanation string   `json:"explanation"`
+		Evidence    []string `json:"evidence"`
+	}
+	type proofDocument struct {
+		AlgorithmVersion string                               `json:"algorithm_version"`
+		TournamentID     string                               `json:"tournament_id"`
+		NormalizedInputs []string                             `json:"normalized_inputs"`
+		Revisions        []tournamentpreflight.SourceRevision `json:"revisions"`
+		Checks           []proofCheck                         `json:"checks"`
+	}
+	checks := make([]proofCheck, len(report.Checks))
+	for index, check := range report.Checks {
+		checks[index] = proofCheck{
+			Code: string(check.Code), Passed: check.Passed, Explanation: check.Explanation,
+			Evidence: append([]string(nil), check.Evidence...),
+		}
+	}
+	document := proofDocument{
+		AlgorithmVersion: report.AlgorithmVersion,
+		TournamentID:     report.TournamentID.String(),
+		NormalizedInputs: append([]string(nil), report.NormalizedInputs...),
+		Revisions:        append([]tournamentpreflight.SourceRevision(nil), report.Revisions...),
+		Checks:           checks,
+	}
+	encoded, err := json.Marshal(document)
+	if err != nil {
+		panic(err)
+	}
+	digest := sha256.Sum256(encoded)
+	return hex.EncodeToString(digest[:])
+}
+
+func validationRosterAuthorityFixture() RosterAuthority {
+	tournamentID := rosterWorkflowID(1)
+	return RosterAuthority{
+		Roster:           RosterView{ID: rosterWorkflowID(2), TournamentID: tournamentID, Revision: 4},
+		TournamentPreset: domain.TournamentPresetV1, TournamentState: domain.TournamentStateRegistration,
+		TournamentRevision: 3, ProjectionRevisionID: rosterWorkflowID(3), ProjectionRevision: 9,
+	}
 }

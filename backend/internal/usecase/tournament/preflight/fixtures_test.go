@@ -96,10 +96,8 @@ func preflightNormalCapacityInput(rosterSize int) capacity.NormalInput {
 	if err != nil {
 		panic(err)
 	}
-	sharedCategoryCount := max(
-		rosterSize/2*(domain.AssignmentReserveCount+1),
-		(swissRounds+2)*(domain.AssignmentReserveCount+1),
-	)
+	chainSize := domain.AssignmentReserveCount + 1
+	sharedCategoryCount := (rosterSize/2*swissRounds + 3) * chainSize
 	versions := make([]capacity.TaskVersion, 0, sharedCategoryCount*3+6)
 	for _, category := range []struct {
 		category domain.Category
@@ -108,8 +106,8 @@ func preflightNormalCapacityInput(rosterSize int) capacity.NormalInput {
 		{domain.CategoryWeb, sharedCategoryCount},
 		{domain.CategoryCrypto, sharedCategoryCount},
 		{domain.CategoryReverse, sharedCategoryCount},
-		{domain.CategoryPwn, 3},
-		{domain.CategoryForensics, 3},
+		{domain.CategoryPwn, chainSize},
+		{domain.CategoryForensics, chainSize},
 	} {
 		for range category.count {
 			versions = append(versions, capacity.TaskVersion{

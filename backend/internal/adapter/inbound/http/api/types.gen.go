@@ -810,12 +810,15 @@ func (e PreflightCode) Valid() bool {
 // Defines values for PreflightReportAlgorithmVersion.
 const (
 	TournamentPreflightReportV1 PreflightReportAlgorithmVersion = "tournament-preflight-report-v1"
+	TournamentPreflightReportV2 PreflightReportAlgorithmVersion = "tournament-preflight-report-v2"
 )
 
 // Valid indicates whether the value is a known member of the PreflightReportAlgorithmVersion enum.
 func (e PreflightReportAlgorithmVersion) Valid() bool {
 	switch e {
 	case TournamentPreflightReportV1:
+		return true
+	case TournamentPreflightReportV2:
 		return true
 	default:
 		return false

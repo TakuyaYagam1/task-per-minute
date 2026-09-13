@@ -1,6 +1,9 @@
 package preflight_test
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"reflect"
 	"slices"
@@ -35,7 +38,7 @@ func TestPreflightReport(t *testing.T) {
 		if !report.Passed() {
 			t.Fatalf("valid composed report failed: %+v", report)
 		}
-		if report.AlgorithmVersion != tournamentusecase.ReportAlgorithmV1 ||
+		if report.AlgorithmVersion != tournamentusecase.ReportAlgorithmV2 ||
 			len(report.ProofHash) != 64 || len(report.Checks) != 25 ||
 			len(report.NormalizedInputs) == 0 || len(report.Revisions) == 0 {
 			t.Fatalf("incomplete report revision: %+v", report)
@@ -203,6 +206,65 @@ func TestPreflightReport(t *testing.T) {
 			t.Fatalf("normalized revisions differ: %s != %s", report.ProofHash, other.ProofHash)
 		}
 	})
+
+	t.Run("continues to validate historical V1 evidence", func(t *testing.T) {
+		t.Parallel()
+
+		input := task022PreflightInput(t)
+		report, err := tournamentusecase.NewReportRevision(
+			preflightCapacityID(90),
+			time.Date(2026, time.August, 29, 1, 6, 0, 0, time.UTC),
+			input,
+		)
+		if err != nil {
+			t.Fatalf("NewReportRevision() error = %v", err)
+		}
+		report.AlgorithmVersion = tournamentusecase.ReportAlgorithmV1
+		report.ProofHash = reportProofHash(report)
+
+		if err := report.Validate(); err != nil {
+			t.Fatalf("historical V1 Validate() error = %v", err)
+		}
+		if !report.Passed() || report.InvalidatedBy(input) {
+			t.Fatalf("historical V1 report lost replay semantics: passed=%v invalidated=%v", report.Passed(), report.InvalidatedBy(input))
+		}
+	})
+}
+
+func reportProofHash(report tournamentusecase.ReportRevision) string {
+	type proofCheck struct {
+		Code        string   `json:"code"`
+		Passed      bool     `json:"passed"`
+		Explanation string   `json:"explanation"`
+		Evidence    []string `json:"evidence"`
+	}
+	type proofDocument struct {
+		AlgorithmVersion string                             `json:"algorithm_version"`
+		TournamentID     string                             `json:"tournament_id"`
+		NormalizedInputs []string                           `json:"normalized_inputs"`
+		Revisions        []tournamentusecase.SourceRevision `json:"revisions"`
+		Checks           []proofCheck                       `json:"checks"`
+	}
+	checks := make([]proofCheck, len(report.Checks))
+	for index, check := range report.Checks {
+		checks[index] = proofCheck{
+			Code: string(check.Code), Passed: check.Passed, Explanation: check.Explanation,
+			Evidence: append([]string(nil), check.Evidence...),
+		}
+	}
+	document := proofDocument{
+		AlgorithmVersion: report.AlgorithmVersion,
+		TournamentID:     report.TournamentID.String(),
+		NormalizedInputs: append([]string(nil), report.NormalizedInputs...),
+		Revisions:        append([]tournamentusecase.SourceRevision(nil), report.Revisions...),
+		Checks:           checks,
+	}
+	encoded, err := json.Marshal(document)
+	if err != nil {
+		panic(err)
+	}
+	digest := sha256.Sum256(encoded)
+	return hex.EncodeToString(digest[:])
 }
 
 func task022PreflightInput(t *testing.T) tournamentusecase.ReportInput {

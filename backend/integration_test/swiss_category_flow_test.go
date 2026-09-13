@@ -282,120 +282,48 @@ func TestSwissCategoryValidationRollsBackWithoutMaterialization(t *testing.T) {
 	require.Equal(t, commandsBefore, swissPairingCommandCount(t, flow.tournamentID))
 }
 
-func TestSwissCategoryInsufficientCandidatesRollsBackPairing(t *testing.T) {
+func TestSwissCategoryInsufficientCandidatesRejectPreflightBeforePairing(t *testing.T) {
 	ctx := context.Background()
 	truncateRoundProofTables(ctx, t)
 	t.Cleanup(func() { truncateRoundProofTables(context.Background(), t) })
 
-	catalog := prepareSwissCategoryShortageContent(ctx, t)
+	prepareCreateToChampionContentWithNormalCount(ctx, t, 15)
 	fixture := newTournamentFlowRESTFixture(t)
 	adminToken := fixture.adminAccessToken(t)
 	players := joinTournamentFlowPlayers(t, fixture, 4)
-	created := createTournamentThroughREST(t, fixture, adminToken, catalog.revision, "insufficient-candidates")
+	content := getTournamentContentThroughREST(t, fixture, adminToken)
+	created := createTournamentThroughREST(t, fixture, adminToken, content.ContentRevision, "insufficient-candidates")
 	openRegistrationThroughREST(t, fixture, adminToken, created.Id, created.Revision)
 	roster := replaceTournamentRosterThroughREST(t, fixture, adminToken, created.Id, players)
-	preflight := runTournamentRosterPreflightThroughREST(t, fixture, adminToken, created.Id)
-	lockTournamentRosterThroughREST(t, fixture, adminToken, created.Id, roster, preflight)
-	startSwissThroughREST(t, fixture, adminToken, created.Id)
-	connectTournamentParticipantsThroughProduction(t, fixture, created.Id, players)
+	before := tournamentAdminSnapshotThroughREST(t, fixture, adminToken, created.Id)
+	commandsBefore := swissPairingCommandCount(t, created.Id)
+	ledgerBefore := swissReservationLedgerForTournament(t, created.Id)
+	scopeBefore := readSwissMaterializationCounts(t, created.Id, roster.Id)
+	require.Empty(t, before.Series)
+	require.Empty(t, before.Waves)
+	require.Zero(t, commandsBefore)
+	require.Zero(t, ledgerBefore.plans)
+	require.Zero(t, ledgerBefore.total)
+	require.Equal(t, swissCategoryMaterializationScopeCounts{}, scopeBefore)
 
-	playersByID := make(map[uuid.UUID]tournamentFlowPlayer, len(players))
-	for _, player := range players {
-		playersByID[player.id] = player
-	}
-	flow := swissCategoryFlow{
-		fixture:              fixture,
-		adminToken:           adminToken,
-		tournamentID:         created.Id,
-		playersByParticipant: productionPlayersByParticipant(t, roster, playersByID),
-		catalog:              catalog,
-	}
+	commandID := uuid.New()
+	report := runSharedCategoryPreflightThroughREST(t, fixture, adminToken, created.Id, commandID)
+	require.False(t, report.Passed)
+	capacityCheck := requireSharedCategoryCapacityCheck(t, report)
+	require.False(t, capacityCheck.Passed)
+	require.Equal(t, []string{"capacity_certification:missing"}, capacityCheck.Evidence)
+	require.NotEmpty(t, report.ProofHash)
+	replayed := runSharedCategoryPreflightThroughREST(t, fixture, adminToken, created.Id, commandID)
+	require.Equal(t, report, replayed)
 
-	for roundNumber := 1; roundNumber <= 2; roundNumber++ {
-		snapshot := tournamentAdminSnapshotThroughREST(t, fixture, adminToken, created.Id)
-		round := configureSwissCategoryPairingsThroughREST(
-			t, fixture, adminToken, created.Id, snapshot.NextCursor.ProjectionRevision,
-			int32(roundNumber), api.CategoryModeAdmin, []api.Category{api.CategoryWeb}, uuid.New(),
-		)
-		wave := findProductionSwissWave(t, tournamentAdminSnapshotThroughREST(t, fixture, adminToken, created.Id), round)
-		started := openAndStartSwissWaveThroughREST(t, flow, wave)
-		assertSwissAssignmentsCategory(t, flow, started, api.CategoryModeAdmin, []api.Category{api.CategoryWeb})
-		orderedParticipants := make([]uuid.UUID, 0, len(flow.playersByParticipant))
-		for participantID := range flow.playersByParticipant {
-			orderedParticipants = append(orderedParticipants, participantID)
-		}
-		slices.SortFunc(orderedParticipants, func(first, second uuid.UUID) int {
-			return strings.Compare(first.String(), second.String())
-		})
-		settleProductionSwissWaveThroughREST(
-			t, fixture, created.Id, started, flow.playersByParticipant, catalog.flags,
-			func(series api.Series) uuid.UUID {
-				return productionSwissWinner(t, series, orderedParticipants, false)
-			},
-		)
-		completeSwissWaveThroughREST(t, &flow, started)
-	}
-
-	for _, tc := range []struct {
-		name       string
-		mode       api.CategoryMode
-		categories []api.Category
-	}{
-		{
-			name:       "admin-web",
-			mode:       api.CategoryModeAdmin,
-			categories: []api.Category{api.CategoryWeb},
-		},
-		{
-			name:       "draft-full-pool",
-			mode:       api.CategoryModeDraft,
-			categories: []api.Category{api.CategoryCrypto, api.CategoryReverse, api.CategoryWeb},
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			assertSwissInsufficientPairingRollback(t, flow, 3, tc.mode, tc.categories)
-		})
-	}
-}
-
-func assertSwissInsufficientPairingRollback(
-	t *testing.T,
-	flow swissCategoryFlow,
-	roundNumber int32,
-	mode api.CategoryMode,
-	categories []api.Category,
-) {
-	t.Helper()
-	before := tournamentAdminSnapshotThroughREST(t, flow.fixture, flow.adminToken, flow.tournamentID)
-	commandsBefore := swissPairingCommandCount(t, flow.tournamentID)
-	branchesBefore := swissAssignmentBranchStates(t, flow.tournamentID)
-	ledgerBefore := swissReservationLedgerForTournament(t, flow.tournamentID)
-	scopeBefore := readSwissMaterializationCounts(t, flow.tournamentID, before.Roster.Id)
-
-	body, err := json.Marshal(api.PairingConfigurationRequest{
-		Categories:                 append([]api.Category(nil), categories...),
-		CategoryMode:               mode,
-		ExpectedProjectionRevision: before.NextCursor.ProjectionRevision,
-		PairingMode:                api.Automatic,
-		RoundNumber:                roundNumber,
-	})
-	require.NoError(t, err)
-	req, resp := doTournamentFlowJSON(
-		t, flow.fixture, http.MethodPost,
-		"/api/v1/admin/tournaments/"+flow.tournamentID.String()+"/pairings", string(body),
-		adminSession(flow.adminToken), uuid.New(), "",
-	)
-	require.Equal(t, http.StatusConflict, resp.Code, resp.Body.String())
-	flow.fixture.validateResponse(t, req, resp)
-
-	after := tournamentAdminSnapshotThroughREST(t, flow.fixture, flow.adminToken, flow.tournamentID)
-	require.Equal(t, before.NextCursor, after.NextCursor)
-	require.Equal(t, before.Series, after.Series)
-	require.Equal(t, before.Waves, after.Waves)
-	require.Equal(t, commandsBefore, swissPairingCommandCount(t, flow.tournamentID))
-	require.Equal(t, branchesBefore, swissAssignmentBranchStates(t, flow.tournamentID))
-	require.Equal(t, ledgerBefore, swissReservationLedgerForTournament(t, flow.tournamentID))
-	require.Equal(t, scopeBefore, readSwissMaterializationCounts(t, flow.tournamentID, after.Roster.Id))
+	lockSharedCategoryRosterExpectingRejectionThroughREST(t, fixture, adminToken, created.Id, roster, report)
+	after := tournamentAdminSnapshotThroughREST(t, fixture, adminToken, created.Id)
+	require.False(t, after.Roster.Locked)
+	require.Empty(t, after.Series)
+	require.Empty(t, after.Waves)
+	require.Equal(t, commandsBefore, swissPairingCommandCount(t, created.Id))
+	require.Equal(t, ledgerBefore, swissReservationLedgerForTournament(t, created.Id))
+	require.Equal(t, scopeBefore, readSwissMaterializationCounts(t, created.Id, roster.Id))
 }
 
 func newSwissCategoryFlow(t *testing.T, name string) swissCategoryFlow {
@@ -998,27 +926,6 @@ func assertExactlyOneSwissOfficialResult(t *testing.T, flow swissCategoryFlow, r
 	for seriesID := range seriesIDs {
 		require.Equal(t, 1, counts[seriesID], "series %s must have exactly one official result", seriesID)
 	}
-}
-
-func prepareSwissCategoryShortageContent(ctx context.Context, t *testing.T) tournamentFlowCatalog {
-	t.Helper()
-	catalog := prepareCreateToChampionContent(ctx, t)
-	_, err := sharedPool.Exec(ctx, `
-		WITH retired AS (
-			SELECT id
-			FROM tasks
-			WHERE kind = 'normal' AND category = 'web' AND deleted_at IS NULL
-			ORDER BY id
-			OFFSET 15
-		)
-		UPDATE tasks
-		SET enabled = false, deleted_at = clock_timestamp()
-		WHERE id IN (SELECT id FROM retired)`)
-	require.NoError(t, err)
-	_, err = sharedPool.Exec(ctx, `SELECT publish_task_pool_heads()`)
-	require.NoError(t, err)
-	catalog.revision = currentTaskPoolPublicationRevision(ctx, t)
-	return catalog
 }
 
 func swissPairingCommandCount(t *testing.T, tournamentID uuid.UUID) int {

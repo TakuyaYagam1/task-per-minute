@@ -72,7 +72,9 @@ func preflightAuthorizesLock(
 	}
 	var report tournamentpreflight.ReportRevision
 	//nolint:musttag // ResultDocument is a versioned usecase-owned evidence snapshot validated below.
-	return json.Unmarshal(record.ResultDocument, &report) == nil && report.Validate() == nil && report.Passed() &&
+	return json.Unmarshal(record.ResultDocument, &report) == nil &&
+		report.AlgorithmVersion == tournamentpreflight.ReportAlgorithmV2 &&
+		report.Validate() == nil && report.Passed() &&
 		report.ID == record.CommandID && report.TournamentID == command.TournamentID
 }
 

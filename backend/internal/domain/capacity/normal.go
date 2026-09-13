@@ -13,7 +13,13 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
-const GraphAlgorithmV1 = "complete-bipartite-capacity-v1"
+const (
+	// GraphAlgorithmV1 is retained for the Golden proof. Normal capacity has a
+	// separate algorithm version because its retained-reservation demand is
+	// stage-aware.
+	GraphAlgorithmV1       = "complete-bipartite-capacity-v1"
+	NormalGraphAlgorithmV2 = "complete-bipartite-capacity-normal-v2"
+)
 
 type FailureCode string
 
@@ -162,6 +168,7 @@ func ProveNormal(in NormalInput) NormalProof {
 	for _, demand := range demands {
 		graphs := make([]ConstraintGraph, 0, len(participants)+1)
 		graphs = append(graphs, newConstraintGraph(
+			NormalGraphAlgorithmV2,
 			"normal:"+demand.category.String()+":peak",
 			demand.category,
 			uuid.Nil,
@@ -170,6 +177,7 @@ func ProveNormal(in NormalInput) NormalProof {
 		))
 		for _, participantID := range participants {
 			graphs = append(graphs, newConstraintGraph(
+				NormalGraphAlgorithmV2,
 				"normal:"+demand.category.String()+":participant:"+participantID.String(),
 				demand.category,
 				participantID,
@@ -310,15 +318,24 @@ func normalCategoryDemands(
 	chainSize := domain.AssignmentReserveCount + 1
 	demands := make([]normalCategoryDemand, 0, len(categories))
 	for _, category := range categories {
-		peak, occurrences := 0, 0
+		occurrences, retainedChains := 0, 0
 		if _, exists := bo1[category]; exists {
-			peak = rosterSize / 2 * chainSize
 			occurrences += swissRounds + 1
+			// Every Swiss pairing and both semifinal series retain one complete
+			// primary-plus-reserves chain. Normal reservations are tournament
+			// scoped and remain unavailable after they are committed.
+			retainedChains += rosterSize/2*swissRounds + 2
 		}
 		if _, exists := bo3[category]; exists {
-			peak = max(peak, chainSize)
 			occurrences++
+			// A BO3 draft retains one chain for the selected category in each
+			// reachable final path. Alternative paths may share these versions.
+			retainedChains++
 		}
+		// Peak is the complete set of tournament-scoped live reservations. It
+		// is intentionally larger than one-wave concurrency because committed
+		// normal reservations are not reusable by later stages.
+		peak := retainedChains * chainSize
 		perParticipant := occurrences * chainSize
 		demands = append(demands, normalCategoryDemand{
 			category:       category,
@@ -376,6 +393,7 @@ func rosterSafeVersions(
 }
 
 func newConstraintGraph(
+	algorithmVersion string,
 	key string,
 	category domain.Category,
 	participantID uuid.UUID,
@@ -384,7 +402,7 @@ func newConstraintGraph(
 ) ConstraintGraph {
 	graph := ConstraintGraph{
 		Key:              key,
-		AlgorithmVersion: GraphAlgorithmV1,
+		AlgorithmVersion: algorithmVersion,
 		Category:         category,
 		ParticipantID:    participantID,
 		Required:         required,
@@ -423,7 +441,7 @@ func graphDigest(graph ConstraintGraph) string {
 
 func normalDigest(proof NormalProof) string {
 	hash := sha256.New()
-	writeField(hash, GraphAlgorithmV1)
+	writeField(hash, NormalGraphAlgorithmV2)
 	writeField(hash, proof.PoolRevisionID.String())
 	writeField(hash, fmt.Sprintf("pool_revision:%d", proof.PoolRevision))
 	writeField(hash, fmt.Sprintf("roster:%d", proof.RosterSize))
@@ -432,6 +450,7 @@ func normalDigest(proof NormalProof) string {
 		writeField(hash, category.Category.String())
 		writeField(hash, fmt.Sprintf("peak:%d", category.PeakReservations))
 		writeField(hash, fmt.Sprintf("participant:%d", category.PerParticipantReservations))
+		writeField(hash, fmt.Sprintf("required:%d", category.RequiredTaskVersions))
 		for _, graph := range category.Graphs {
 			writeField(hash, graph.Digest)
 		}

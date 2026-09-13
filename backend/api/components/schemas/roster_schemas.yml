@@ -162,7 +162,7 @@ PreflightReport:
       readOnly: true
     algorithm_version:
       type: string
-      enum: [tournament-preflight-report-v1]
+      enum: [tournament-preflight-report-v1, tournament-preflight-report-v2]
       readOnly: true
     evaluated_at:
       type: string
