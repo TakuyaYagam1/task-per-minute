@@ -151,13 +151,17 @@ type GoldenOperatorView struct {
 }
 
 type GoldenTaskView struct {
-	AssignmentID     uuid.UUID
-	SnapshotID       uuid.UUID
-	TaskID           uuid.UUID
-	Title            string
-	Category         string
-	Difficulty       string
-	TimeLimitSeconds int
+	AssignmentID        uuid.UUID
+	SnapshotID          uuid.UUID
+	TaskID              uuid.UUID
+	Version             int
+	Title               string
+	Description         string
+	Category            string
+	Difficulty          string
+	TimeLimitSeconds    int
+	TaskURL             *string
+	SourceFileAvailable bool
 }
 
 type GoldenParticipantView struct {

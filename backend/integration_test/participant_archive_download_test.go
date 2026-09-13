@@ -125,12 +125,14 @@ func TestParticipantArchiveDownloadGoldenAssignment(t *testing.T) {
 	ensureGoldenRuntimeTestCapacity(ctx, t, fixture.tournamentID)
 	uploadGoldenRuntimeArchives(ctx, t, archive, fixture.tournamentID, payload)
 	now := time.Now().UTC().Truncate(time.Microsecond)
+	clock := newTournamentFlowClock(now)
+	clock.FreezeAt(now)
 	createGoldenRuntimeTestPlan(
 		ctx, t, fixture.tournamentID, fixture.rosterID,
 		sourceProjectionID, sourceProjectionRevision, now.Add(-time.Second),
 	)
 	application := goldenusecase.NewRuntimeApplication(
-		postgres.NewGoldenRuntimePostgres(archive.rest.mgr), goldenRuntimeClock{now: now},
+		postgres.NewGoldenRuntimePostgres(archive.rest.mgr), clock,
 	)
 	operator, err := application.Open(ctx, inbound.GoldenOpenCommand{
 		TournamentID: fixture.tournamentID, CommandID: uuid.New(),
@@ -140,7 +142,7 @@ func TestParticipantArchiveDownloadGoldenAssignment(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, operator.Groups)
 	group := operator.Groups[0]
-	require.NotEmpty(t, group.Members)
+	require.Greater(t, len(group.Members), 1, "Golden archive continuation needs an unresolved reserve member")
 
 	players := goldenRuntimePlayers(ctx, t, group)
 	ownerPlayerID := players[group.Members[0].ParticipantID]
@@ -185,9 +187,70 @@ func TestParticipantArchiveDownloadGoldenAssignment(t *testing.T) {
 	before := loadParticipantArchiveGoldenState(ctx, t, group.AttemptID)
 	download := requestParticipantArchive(t, archive.rest, downloadPath, owner.session)
 	assertParticipantArchiveBytes(t, archive, download.SourceFileUrl, payload)
-	reconnected := requestParticipantArchive(t, archive.rest, downloadPath, owner.session)
-	assertParticipantArchiveBytes(t, archive, reconnected.SourceFileUrl, payload)
+	refreshed := requestParticipantArchive(t, archive.rest, downloadPath, owner.session)
+	assertParticipantArchiveBytes(t, archive, refreshed.SourceFileUrl, payload)
+	waitForParticipantArchiveExpiry(t, download.SourceFileUrl)
+	renewed := requestParticipantArchive(t, archive.rest, downloadPath, owner.session)
+	assertParticipantArchiveBytes(t, archive, renewed.SourceFileUrl, payload)
+	require.True(t, renewed.ExpiresAt.After(download.ExpiresAt))
 	require.Equal(t, before, loadParticipantArchiveGoldenState(ctx, t, group.AttemptID))
+
+	flag := goldenRuntimeAttemptFlag(ctx, t, group.AttemptID)
+	submitted := submitGoldenParticipantThroughREST(t, archive.rest, fixture.tournamentID, owner, participant, flag)
+	require.True(t, submitted.Submitted)
+
+	require.NotNil(t, participant.Deadline)
+	clock.AdvanceTo(participant.Deadline.Add(time.Nanosecond))
+	require.NoError(t, application.Recover(ctx, fixture.tournamentID))
+	reserveOperator, err := application.OperatorView(ctx, inbound.GoldenOperatorQuery{
+		TournamentID: fixture.tournamentID, OperatorID: uuid.New(),
+	})
+	require.NoError(t, err)
+	var reserve *inbound.GoldenOperatorGroupView
+	for index := range reserveOperator.Groups {
+		candidate := &reserveOperator.Groups[index]
+		if candidate.GroupID == group.GroupID {
+			reserve = candidate
+			break
+		}
+	}
+	require.NotNil(t, reserve)
+	require.Equal(t, "prepared", reserve.State)
+	require.NotEqual(t, group.AttemptID, reserve.AttemptID)
+	require.Len(t, reserve.Members, len(group.Members)-1)
+
+	reservePlayers := make(map[uuid.UUID]tournamentFlowPlayer, len(reserve.Members))
+	for _, member := range reserve.Members {
+		player := participantArchiveSessionForPlayer(t, players[member.ParticipantID])
+		reservePlayers[member.ParticipantID] = player
+		preStart := goldenParticipantThroughREST(t, archive.rest, fixture.tournamentID, player)
+		require.Equal(t, reserve.AttemptID, preStart.AttemptId)
+		require.Nil(t, preStart.Task)
+		ready := setGoldenParticipantReadyThroughREST(t, archive.rest, fixture.tournamentID, player, preStart)
+		require.True(t, ready.Ready)
+		require.Nil(t, ready.Task)
+	}
+	_, err = application.Start(ctx, goldenRuntimeStartCommand(
+		ctx, t, application, fixture.tournamentID, reserve.AttemptID, uuid.New(),
+	))
+	require.NoError(t, err)
+
+	for index, member := range reserve.Members {
+		player := reservePlayers[member.ParticipantID]
+		active := goldenParticipantThroughREST(t, archive.rest, fixture.tournamentID, player)
+		require.NotNil(t, active.Task)
+		require.Equal(t, reserve.AttemptID, active.AttemptId)
+		reservePath := "/api/v1/tournaments/" + fixture.tournamentID.String() +
+			"/participant/assignments/" + active.Task.AssignmentId.String() + "/source-file"
+		reserveDownload := requestParticipantArchive(t, archive.rest, reservePath, player.session)
+		assertParticipantArchiveBytes(t, archive, reserveDownload.SourceFileUrl, payload)
+		reserveFlag := goldenRuntimeAttemptFlag(ctx, t, reserve.AttemptID)
+		finished := submitGoldenParticipantThroughREST(t, archive.rest, fixture.tournamentID, player, active, reserveFlag)
+		require.True(t, finished.Submitted)
+		if index == len(reserve.Members)-1 {
+			require.Equal(t, api.GoldenRuntimeState("completed"), finished.State)
+		}
+	}
 }
 
 func newParticipantArchiveFixture(
@@ -286,16 +349,18 @@ func participantArchiveHandler(
 		participantarchive.WithDownloadTTL(participantArchiveTestTTL),
 	)
 	require.NoError(t, err)
+	limiter := redisadapter.NewRateLimiter(
+		sharedRedis(t).client,
+		"participant-archive-"+uniq("limiter"),
+		100,
+		time.Minute,
+	)
 	server := restv1.New(restv1.Dependencies{
-		TournamentParticipant: participant,
-		ParticipantArchive:    archive,
-		Golden:                golden,
-		ParticipantTournamentReadLimiter: redisadapter.NewRateLimiter(
-			sharedRedis(t).client,
-			"participant-archive-"+uniq("limiter"),
-			100,
-			time.Minute,
-		),
+		TournamentParticipant:                participant,
+		ParticipantArchive:                   archive,
+		Golden:                               golden,
+		ParticipantTournamentReadLimiter:     limiter,
+		ParticipantTournamentMutationLimiter: limiter,
 	})
 	return middleware.NoStoreSensitiveResponses()(
 		restv1.NewHandler(server, restv1.HandlerOptions{PlayerRepo: fixture.players}),
@@ -319,7 +384,9 @@ func participantArchiveSessionForPlayer(t *testing.T, playerID uuid.UUID) tourna
 		SET session_token = $2, session_expires_at = $3
 		WHERE id = $1`, playerID, token, expiresAt)
 	require.NoError(t, err)
-	return tournamentFlowPlayer{id: playerID, session: token}
+	csrfToken, err := middleware.NewPlayerCSRFToken(token)
+	require.NoError(t, err)
+	return tournamentFlowPlayer{id: playerID, session: token, csrf: csrfToken}
 }
 
 func requestParticipantArchive(

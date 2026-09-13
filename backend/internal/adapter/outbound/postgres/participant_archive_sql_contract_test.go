@@ -28,6 +28,11 @@ func TestParticipantArchiveQueryAuthorizesStartedImmutableSnapshots(t *testing.T
 		"participant.player_id = sqlc.arg(player_id)",
 		"task_snapshots AS snapshot",
 		"snapshot.id = runtime.snapshot_id",
+		"snapshot.reservation_id = runtime.assignment_id",
+		"snapshot.task_id = runtime.task_id",
+		"snapshot.task_version = runtime.task_version",
+		"snapshot.kind = 'golden'",
+		"snapshot.content_digest = runtime.source_digest",
 		"snapshot.source_file_url",
 		"UNION ALL",
 	} {

@@ -50,8 +50,11 @@ WITH authorized_source AS (
         AND participant.roster_id = runtime.roster_id
     INNER JOIN task_snapshots AS snapshot
         ON snapshot.id = runtime.snapshot_id
+        AND snapshot.reservation_id = runtime.assignment_id
         AND snapshot.task_id = runtime.task_id
         AND snapshot.task_version = runtime.task_version
+        AND snapshot.kind = 'golden'
+        AND snapshot.content_digest = runtime.source_digest
     WHERE runtime.tournament_id = $1
         AND participant.player_id = $2
         AND runtime.assignment_id = $3

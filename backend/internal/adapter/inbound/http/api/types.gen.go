@@ -1803,14 +1803,17 @@ type GoldenRuntimeState string
 type GoldenRuntimeTask struct {
 	AssignmentId openapi_types.UUID `json:"assignment_id"`
 	Category     string             `json:"category"`
+	Description  string             `json:"description"`
 	Difficulty   string             `json:"difficulty"`
 	SnapshotId   openapi_types.UUID `json:"snapshot_id"`
 
 	// SourceFileAvailable Whether the immutable Golden assignment has a source archive available through the participant download endpoint.
 	SourceFileAvailable bool                              `json:"source_file_available"`
 	TaskId              openapi_types.UUID                `json:"task_id"`
+	TaskUrl             *string                           `json:"task_url,omitempty"`
 	TimeLimitSeconds    GoldenRuntimeTaskTimeLimitSeconds `json:"time_limit_seconds"`
 	Title               string                            `json:"title"`
+	Version             int32                             `json:"version"`
 }
 
 // GoldenRuntimeTaskTimeLimitSeconds defines model for GoldenRuntimeTask.TimeLimitSeconds.

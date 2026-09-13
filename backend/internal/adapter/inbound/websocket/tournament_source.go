@@ -231,8 +231,10 @@ func participantGoldenInput(view usecase.GoldenParticipantView) *tournamentws.Pa
 	if view.Task != nil {
 		input.Task = &tournamentws.ParticipantGoldenTaskInput{
 			AssignmentID: view.Task.AssignmentID, SnapshotID: view.Task.SnapshotID, TaskID: view.Task.TaskID,
-			Title: view.Task.Title, Category: view.Task.Category, Difficulty: view.Task.Difficulty,
-			TimeLimitSeconds: view.Task.TimeLimitSeconds,
+			Version: view.Task.Version, Title: view.Task.Title, Description: view.Task.Description,
+			Category: view.Task.Category, Difficulty: view.Task.Difficulty,
+			TimeLimitSeconds: view.Task.TimeLimitSeconds, TaskURL: view.Task.TaskURL,
+			SourceFileAvailable: view.Task.SourceFileAvailable,
 		}
 	}
 	return input

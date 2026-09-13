@@ -99,13 +99,15 @@ func goldenParticipantRuntimeView(
 			Deadline: goldenRuntimeTime(row.Deadline),
 		}
 		// Task metadata is disclosed only after the transaction that writes both
-		// started_at and deadline has committed. A ready snapshot is therefore
-		// intentionally taskless even though the assignment is already bound.
-		if row.StartedAt.Valid && row.Deadline.Valid {
+		// started_at and deadline has committed. The participant must also have
+		// established participation, so no-show and excluded rows stay taskless.
+		if row.StartedAt.Valid && row.Deadline.Valid && row.ParticipantEligible {
 			view.Task = &usecase.GoldenTaskView{
 				AssignmentID: row.AssignmentID, SnapshotID: row.SnapshotID, TaskID: row.TaskID,
-				Title: row.Title, Category: row.Category, Difficulty: row.Difficulty,
-				TimeLimitSeconds: int(row.TimeLimitSeconds),
+				Version: int(row.TaskVersion), Title: row.Title, Description: row.Description,
+				Category: row.Category, Difficulty: row.Difficulty,
+				TimeLimitSeconds: int(row.TimeLimit), TaskURL: cloneParticipantStateString(row.TaskUrl),
+				SourceFileAvailable: row.SourceFileAvailable,
 			}
 		}
 		return view, nil

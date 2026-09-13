@@ -2,6 +2,7 @@ package websocket
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
@@ -143,6 +144,55 @@ func TestOperatorSnapshotInputMapsGoldenRuntimeProjectionFence(t *testing.T) {
 	require.Equal(t, first.Revision, second.Revision)
 	require.Equal(t, first.Golden[0].RuntimeRevision+1, second.Golden[0].RuntimeRevision)
 	require.Equal(t, first.Golden[0].ReadyWindowID, second.Golden[0].ReadyWindowID)
+}
+
+func TestParticipantGoldenInputMapsCompleteParticipantTask(t *testing.T) {
+	t.Parallel()
+
+	tournamentID := tournamentSourceID(50)
+	playerID := tournamentSourceID(51)
+	startedAt := tournamentSourceTime()
+	deadline := startedAt.Add(180 * time.Second)
+	taskURL := "https://golden.example/tasks/immutable"
+	view := tournamentsnapshot.GoldenParticipantView{
+		TournamentID: tournamentID, ParticipantID: playerID,
+		GroupID: tournamentSourceID(52), GroupRevisionID: tournamentSourceID(53), AttemptID: tournamentSourceID(54),
+		State: "active", RuntimeRevision: 2, ReadyWindowID: tournamentSourceID(55), Ready: true,
+		StartedAt: &startedAt, Deadline: &deadline,
+		Task: &tournamentsnapshot.GoldenTaskView{
+			AssignmentID: tournamentSourceID(56), SnapshotID: tournamentSourceID(57), TaskID: tournamentSourceID(58),
+			Version: 3, Title: "Immutable task", Description: "Inspect the immutable task",
+			Category: "web", Difficulty: "medium", TimeLimitSeconds: 180,
+			TaskURL: &taskURL, SourceFileAvailable: true,
+		},
+	}
+
+	input := participantGoldenInput(view)
+	require.NotNil(t, input)
+	require.NotNil(t, input.Task)
+	require.Equal(t, 3, input.Task.Version)
+	require.Equal(t, "Inspect the immutable task", input.Task.Description)
+	require.Equal(t, &taskURL, input.Task.TaskURL)
+	require.True(t, input.Task.SourceFileAvailable)
+
+	snapshot, err := tournamentws.NewParticipantSnapshot(
+		tournamentws.ParticipantSnapshotScope{TournamentID: tournamentID, PlayerID: playerID},
+		tournamentws.ParticipantSnapshotInput{
+			TournamentID: tournamentID, PlayerID: playerID, Revision: 1, LastSequence: 1, Golden: input,
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(t, 3, snapshot.Golden.Task.Version)
+	require.Equal(t, "Inspect the immutable task", snapshot.Golden.Task.Description)
+	require.Equal(t, &taskURL, snapshot.Golden.Task.TaskURL)
+	require.True(t, snapshot.Golden.Task.SourceFileAvailable)
+
+	encoded, err := json.Marshal(snapshot)
+	require.NoError(t, err)
+	require.NotContains(t, string(encoded), "flag")
+	require.NotContains(t, string(encoded), "hints")
+	require.NotContains(t, string(encoded), "source_file_url")
+	require.NotContains(t, string(encoded), "content_digest")
 }
 
 func usecaseOperatorSnapshotView(tournamentID uuid.UUID) tournamentsnapshot.OperatorSnapshotView {

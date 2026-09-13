@@ -95,13 +95,66 @@ func TestTournamentParticipantSnapshot(t *testing.T) {
 				AssignmentID: testUUID("00000000-0000-4000-8000-000000000054"),
 				SnapshotID:   testUUID("00000000-0000-4000-8000-000000000055"),
 				TaskID:       testUUID("00000000-0000-4000-8000-000000000056"),
-				Title:        "Golden task", Category: "web", Difficulty: "medium", TimeLimitSeconds: 180,
+				Version:      2, Title: "Golden task", Description: "Inspect the immutable task",
+				Category: "web", Difficulty: "medium", TimeLimitSeconds: 180,
+				TaskURL:             func() *string { value := "https://golden.example/tasks/56"; return &value }(),
+				SourceFileAvailable: true,
 			},
 		}
 		got, err := NewParticipantSnapshot(ParticipantSnapshotScope{TournamentID: tournamentID, PlayerID: playerID}, active)
 		require.NoError(t, err)
 		require.NotNil(t, got.Golden)
 		require.NotNil(t, got.Golden.Task)
+		body, err := json.Marshal(got)
+		require.NoError(t, err)
+		var object map[string]json.RawMessage
+		require.NoError(t, json.Unmarshal(body, &object))
+		var golden map[string]json.RawMessage
+		require.NoError(t, json.Unmarshal(object["golden"], &golden))
+		requireJSONKeys(t, golden["task"], "assignment_id", "snapshot_id", "task_id", "version", "title", "description", "category", "difficulty", "time_limit_seconds", "task_url", "source_file_available")
+		requireNoSecretNames(t, golden["task"])
+
+		t.Run("optional task URL may be omitted", func(t *testing.T) {
+			candidate := active
+			goldenCopy := *active.Golden
+			taskCopy := *active.Golden.Task
+			taskCopy.TaskURL = nil
+			goldenCopy.Task = &taskCopy
+			candidate.Golden = &goldenCopy
+			got, err := NewParticipantSnapshot(ParticipantSnapshotScope{TournamentID: tournamentID, PlayerID: playerID}, candidate)
+			require.NoError(t, err)
+			body, err := json.Marshal(got)
+			require.NoError(t, err)
+			require.NotContains(t, string(body), `"task_url"`)
+		})
+
+		invalidTasks := []struct {
+			name   string
+			mutate func(*ParticipantSnapshotInput)
+		}{
+			{name: "non-positive version", mutate: func(input *ParticipantSnapshotInput) { input.Golden.Task.Version = 0 }},
+			{name: "blank description", mutate: func(input *ParticipantSnapshotInput) { input.Golden.Task.Description = "   " }},
+			{name: "blank task URL", mutate: func(input *ParticipantSnapshotInput) {
+				input.Golden.Task.TaskURL = func() *string { value := "  "; return &value }()
+			}},
+			{name: "deadline is not exactly 180 seconds", mutate: func(input *ParticipantSnapshotInput) {
+				value := input.Golden.Deadline.Add(time.Second)
+				input.Golden.Deadline = &value
+			}},
+		}
+		for _, test := range invalidTasks {
+			t.Run("rejects "+test.name, func(t *testing.T) {
+				candidate := active
+				golden := *active.Golden
+				goldenTask := *active.Golden.Task
+				candidate.Golden = &golden
+				candidate.Golden.Task = &goldenTask
+				test.mutate(&candidate)
+				if _, err := NewParticipantSnapshot(ParticipantSnapshotScope{TournamentID: tournamentID, PlayerID: playerID}, candidate); err == nil {
+					t.Fatalf("NewParticipantSnapshot() accepted invalid Golden task: %s", test.name)
+				}
+			})
+		}
 	})
 
 	t.Run("Golden runtime fence is consecutive on the wire", func(t *testing.T) {
@@ -176,7 +229,8 @@ func TestTournamentParticipantSnapshot(t *testing.T) {
 				AssignmentID: testUUID("00000000-0000-4000-8000-000000000074"),
 				SnapshotID:   testUUID("00000000-0000-4000-8000-000000000075"),
 				TaskID:       testUUID("00000000-0000-4000-8000-000000000076"),
-				Title:        "Golden task", Category: "web", Difficulty: "medium", TimeLimitSeconds: 180,
+				Version:      1, Title: "Golden task", Description: "Inspect the immutable task",
+				Category: "web", Difficulty: "medium", TimeLimitSeconds: 180,
 			},
 		}
 		_, err := NewParticipantSnapshot(ParticipantSnapshotScope{TournamentID: tournamentID, PlayerID: playerID}, preStartWithTask)

@@ -53,6 +53,22 @@ type tournamentFlowLimiter struct{}
 func (tournamentFlowLimiter) Allow(string) bool  { return true }
 func (tournamentFlowLimiter) RetryAfter() string { return "" }
 
+type tournamentFlowParticipantArchive struct{}
+
+func (tournamentFlowParticipantArchive) GetSourceFile(
+	context.Context,
+	inbound.ParticipantArchiveQuery,
+) (inbound.ParticipantArchiveDownload, error) {
+	return inbound.ParticipantArchiveDownload{}, domain.ErrTaskNotFound
+}
+
+func (tournamentFlowParticipantArchive) SourceFileAvailable(
+	context.Context,
+	inbound.ParticipantArchiveQuery,
+) (bool, error) {
+	return false, nil
+}
+
 type tournamentFlowPlayer struct {
 	id      uuid.UUID
 	session uuid.UUID
@@ -60,8 +76,15 @@ type tournamentFlowPlayer struct {
 }
 
 type tournamentFlowCatalog struct {
-	revision int64
-	flags    map[uuid.UUID]string
+	revision    int64
+	flags       map[uuid.UUID]string
+	goldenTasks map[uuid.UUID]tournamentFlowGoldenTask
+}
+
+type tournamentFlowGoldenTask struct {
+	description string
+	taskURL     *string
+	version     int
 }
 
 type tournamentFlowClock struct {
@@ -164,7 +187,10 @@ func TestTournamentCreateToChampionThroughProductionHandlers(t *testing.T) {
 
 func prepareCreateToChampionContent(ctx context.Context, t *testing.T) tournamentFlowCatalog {
 	t.Helper()
-	catalog := tournamentFlowCatalog{flags: make(map[uuid.UUID]string)}
+	catalog := tournamentFlowCatalog{
+		flags:       make(map[uuid.UUID]string),
+		goldenTasks: make(map[uuid.UUID]tournamentFlowGoldenTask),
+	}
 	for _, category := range []string{"web", "crypto", "forensics", "reverse", "pwn"} {
 		// A single category can supply all six Swiss and both semifinal
 		// exact-normal plans before the final draft reserves its reachable
@@ -185,13 +211,21 @@ func prepareCreateToChampionContent(ctx context.Context, t *testing.T) tournamen
 	for range (domain.TournamentMinParticipants / 2) * (domain.AssignmentReserveCount + 1) {
 		title := "create_to_champion_golden_" + uuid.NewString()[:8]
 		flag := "golden-champion-" + uuid.NewString()[:8]
+		description := "create to champion Golden fixture"
+		taskURLValue := "https://tasks.example.test/" + title
 		var taskID uuid.UUID
+		var taskVersion int
 		err := sharedPool.QueryRow(ctx, `
-			INSERT INTO tasks (title, description, category, difficulty, time_limit, flag, kind)
-			VALUES ($1, 'create to champion Golden fixture', 'web', 'easy', 180, $2, 'golden')
-			RETURNING id`, title, flag).Scan(&taskID)
+			INSERT INTO tasks (title, description, category, difficulty, time_limit, flag, kind, task_url)
+			VALUES ($1, $2, 'web', 'easy', 180, $3, 'golden', $4)
+			RETURNING id, current_version`, title, description, flag, taskURLValue).Scan(&taskID, &taskVersion)
 		require.NoError(t, err)
 		catalog.flags[taskID] = flag
+		catalog.goldenTasks[taskID] = tournamentFlowGoldenTask{
+			description: description,
+			taskURL:     &taskURLValue,
+			version:     taskVersion,
+		}
 	}
 	_, err := sharedPool.Exec(ctx, `
 		INSERT INTO task_version_health_attestations (task_id, task_version, revision, healthy, source)
@@ -362,7 +396,8 @@ func newTournamentFlowRESTFixture(t *testing.T) *restFixture {
 		Players: playerusecase.SessionNewUseCase(database.mgr, database.players, clock), AdminAuth: auth,
 		Tournaments: catalog, TournamentAdmin: admin, TournamentConfiguration: configuration,
 		TournamentSnapshots:   postgres.NewTournamentSnapshotPostgres(tx),
-		TournamentParticipant: participantObserved, Golden: golden, LoginLimiter: limiter, JoinLimiter: limiter,
+		TournamentParticipant: participantObserved, ParticipantArchive: tournamentFlowParticipantArchive{}, Golden: golden,
+		LoginLimiter: limiter, JoinLimiter: limiter,
 		PublicTournamentReadLimiter: limiter, OperatorTournamentReadLimiter: limiter,
 		OperatorTournamentMutationLimiter: limiter, ParticipantTournamentReadLimiter: limiter,
 		ParticipantTournamentMutationLimiter: limiter,
@@ -1054,6 +1089,9 @@ func runGoldenThroughREST(
 		participant := goldenParticipantThroughREST(t, fixture, tournamentID, player)
 		require.NotNil(t, participant.Task)
 		require.EqualValues(t, 180, participant.Task.TimeLimitSeconds)
+		expected, ok := catalog.goldenTasks[participant.Task.TaskId]
+		require.True(t, ok, "missing immutable Golden task fixture %s", participant.Task.TaskId)
+		assertGoldenParticipantTaskContentThroughREST(t, fixture, tournamentID, player, expected)
 		flag, ok := catalog.flags[participant.Task.TaskId]
 		require.True(t, ok, "missing catalog flag for Golden task %s", participant.Task.TaskId)
 		submitted := submitGoldenParticipantThroughREST(t, fixture, tournamentID, player, participant, flag)
@@ -1124,6 +1162,9 @@ func runGoldenThroughREST(
 			player := playersByParticipant[member.ParticipantId]
 			participant := goldenParticipantThroughREST(t, fixture, tournamentID, player)
 			require.NotNil(t, participant.Task)
+			expected, ok := catalog.goldenTasks[participant.Task.TaskId]
+			require.True(t, ok, "missing immutable reserve Golden task fixture %s", participant.Task.TaskId)
+			assertGoldenParticipantTaskContentThroughREST(t, fixture, tournamentID, player, expected)
 			flag, ok := catalog.flags[participant.Task.TaskId]
 			require.True(t, ok, "missing catalog flag for reserve Golden task %s", participant.Task.TaskId)
 			finished := submitGoldenParticipantThroughREST(t, fixture, tournamentID, player, participant, flag)
@@ -1197,6 +1238,41 @@ func goldenParticipantThroughREST(
 	require.Equal(t, http.StatusOK, resp.Code, resp.Body.String())
 	fixture.validateResponse(t, req, resp)
 	return decodeJSON[api.GoldenParticipantResponse](t, resp)
+}
+
+type goldenParticipantTaskWire struct {
+	Description string  `json:"description"`
+	TaskURL     *string `json:"task_url"`
+	Version     int     `json:"version"`
+}
+
+type goldenParticipantWire struct {
+	Task *goldenParticipantTaskWire `json:"task"`
+}
+
+func assertGoldenParticipantTaskContentThroughREST(
+	t *testing.T,
+	fixture *restFixture,
+	tournamentID uuid.UUID,
+	player tournamentFlowPlayer,
+	expected tournamentFlowGoldenTask,
+) {
+	t.Helper()
+	path := "/api/v1/tournaments/" + tournamentID.String() + "/participant/golden"
+	req, resp := doTournamentFlowJSON(t, fixture, http.MethodGet, path, "", cookieSession(player.session.String()), uuid.New(), "")
+	require.Equal(t, http.StatusOK, resp.Code, resp.Body.String())
+	fixture.validateResponse(t, req, resp)
+	var payload goldenParticipantWire
+	require.NoError(t, json.Unmarshal(resp.Body.Bytes(), &payload))
+	require.NotNil(t, payload.Task)
+	require.Equal(t, expected.description, payload.Task.Description)
+	require.Equal(t, expected.version, payload.Task.Version)
+	if expected.taskURL == nil {
+		require.Nil(t, payload.Task.TaskURL)
+		return
+	}
+	require.NotNil(t, payload.Task.TaskURL)
+	require.Equal(t, *expected.taskURL, *payload.Task.TaskURL)
 }
 
 func setGoldenParticipantReadyThroughREST(

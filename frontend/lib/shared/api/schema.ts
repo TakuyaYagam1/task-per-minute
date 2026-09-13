@@ -2852,6 +2852,7 @@ export interface components {
             /** Format: uuid */
             assignment_id: string;
             category: string;
+            description: string;
             difficulty: string;
             /** Format: uuid */
             snapshot_id: string;
@@ -2859,12 +2860,15 @@ export interface components {
             source_file_available: boolean;
             /** Format: uuid */
             task_id: string;
+            task_url?: string | null;
             /**
              * Format: int32
              * @enum {integer}
              */
             time_limit_seconds: 180;
             title: string;
+            /** Format: int32 */
+            version: number;
         };
         GoldenParticipantResponse: {
             /** Format: uuid */

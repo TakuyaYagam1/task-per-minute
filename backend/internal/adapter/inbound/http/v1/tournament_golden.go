@@ -2,6 +2,7 @@ package v1
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/api"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/errmap"
@@ -232,12 +233,15 @@ func goldenParticipantResponse(
 		StartedAt: view.StartedAt, Deadline: view.Deadline,
 	}
 	if view.Task != nil {
-		if view.Task.TimeLimitSeconds != 180 {
+		if view.Task.TimeLimitSeconds != 180 || view.Task.Version < 1 || int64(view.Task.Version) > 1<<31-1 ||
+			strings.TrimSpace(view.Task.Description) == "" ||
+			(view.Task.TaskURL != nil && strings.TrimSpace(*view.Task.TaskURL) == "") {
 			return api.GoldenParticipantResponse{}, domain.ErrInternal
 		}
 		payload.Task = &api.GoldenRuntimeTask{
 			AssignmentId: view.Task.AssignmentID, SnapshotId: view.Task.SnapshotID, TaskId: view.Task.TaskID,
-			Title: view.Task.Title, Category: view.Task.Category, Difficulty: view.Task.Difficulty,
+			Version: int32(view.Task.Version), Title: view.Task.Title, Description: view.Task.Description,
+			Category: view.Task.Category, Difficulty: view.Task.Difficulty, TaskUrl: view.Task.TaskURL,
 			TimeLimitSeconds:    api.GoldenRuntimeTaskTimeLimitSeconds(view.Task.TimeLimitSeconds),
 			SourceFileAvailable: sourceFileAvailable,
 		}

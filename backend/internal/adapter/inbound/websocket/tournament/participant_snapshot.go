@@ -71,13 +71,17 @@ type ParticipantGoldenInput struct {
 }
 
 type ParticipantGoldenTaskInput struct {
-	AssignmentID     uuid.UUID
-	SnapshotID       uuid.UUID
-	TaskID           uuid.UUID
-	Title            string
-	Category         string
-	Difficulty       string
-	TimeLimitSeconds int
+	AssignmentID        uuid.UUID
+	SnapshotID          uuid.UUID
+	TaskID              uuid.UUID
+	Version             int
+	Title               string
+	Description         string
+	Category            string
+	Difficulty          string
+	TimeLimitSeconds    int
+	TaskURL             *string
+	SourceFileAvailable bool
 }
 
 type ParticipantSnapshot struct {
@@ -131,13 +135,17 @@ type ParticipantGolden struct {
 }
 
 type ParticipantGoldenTask struct {
-	AssignmentID     uuid.UUID `json:"assignment_id"`
-	SnapshotID       uuid.UUID `json:"snapshot_id"`
-	TaskID           uuid.UUID `json:"task_id"`
-	Title            string    `json:"title"`
-	Category         string    `json:"category"`
-	Difficulty       string    `json:"difficulty"`
-	TimeLimitSeconds int       `json:"time_limit_seconds"`
+	AssignmentID        uuid.UUID `json:"assignment_id"`
+	SnapshotID          uuid.UUID `json:"snapshot_id"`
+	TaskID              uuid.UUID `json:"task_id"`
+	Version             int       `json:"version"`
+	Title               string    `json:"title"`
+	Description         string    `json:"description"`
+	Category            string    `json:"category"`
+	Difficulty          string    `json:"difficulty"`
+	TimeLimitSeconds    int       `json:"time_limit_seconds"`
+	TaskURL             *string   `json:"task_url,omitempty"`
+	SourceFileAvailable bool      `json:"source_file_available"`
 }
 
 func NewParticipantSnapshot(scope ParticipantSnapshotScope, input ParticipantSnapshotInput) (ParticipantSnapshot, error) {
@@ -221,6 +229,7 @@ func (s ParticipantSnapshot) clone() ParticipantSnapshot {
 		golden.Deadline = cloneTime(s.Golden.Deadline)
 		if s.Golden.Task != nil {
 			task := *s.Golden.Task
+			task.TaskURL = cloneString(s.Golden.Task.TaskURL)
 			golden.Task = &task
 		}
 		clone.Golden = &golden
@@ -238,8 +247,10 @@ func participantGolden(input ParticipantGoldenInput) (ParticipantGolden, error) 
 	if input.Task != nil {
 		golden.Task = &ParticipantGoldenTask{
 			AssignmentID: input.Task.AssignmentID, SnapshotID: input.Task.SnapshotID, TaskID: input.Task.TaskID,
-			Title: input.Task.Title, Category: input.Task.Category, Difficulty: input.Task.Difficulty,
-			TimeLimitSeconds: input.Task.TimeLimitSeconds,
+			Version: input.Task.Version, Title: input.Task.Title, Description: input.Task.Description,
+			Category: input.Task.Category, Difficulty: input.Task.Difficulty,
+			TimeLimitSeconds: input.Task.TimeLimitSeconds, TaskURL: cloneString(input.Task.TaskURL),
+			SourceFileAvailable: input.Task.SourceFileAvailable,
 		}
 	}
 	if !validParticipantGolden(golden) {
@@ -258,10 +269,14 @@ func validParticipantGolden(golden ParticipantGolden) bool {
 	if golden.StartedAt == nil || golden.Deadline == nil {
 		return false
 	}
-	return golden.Deadline.Equal(golden.StartedAt.Add(180*time.Second)) &&
-		golden.Task.AssignmentID != uuid.Nil && golden.Task.SnapshotID != uuid.Nil && golden.Task.TaskID != uuid.Nil &&
-		validRealtimeString(golden.Task.Title) && validRealtimeString(golden.Task.Category) &&
-		validRealtimeString(golden.Task.Difficulty) && golden.Task.TimeLimitSeconds == 180
+	return golden.Deadline.Equal(golden.StartedAt.Add(180*time.Second)) && validParticipantGoldenTask(*golden.Task)
+}
+
+func validParticipantGoldenTask(task ParticipantGoldenTask) bool {
+	return task.AssignmentID != uuid.Nil && task.SnapshotID != uuid.Nil && task.TaskID != uuid.Nil &&
+		task.Version >= 1 && validRealtimeString(task.Title) && validRealtimeString(task.Description) &&
+		validRealtimeString(task.Category) && validRealtimeString(task.Difficulty) && task.TimeLimitSeconds == 180 &&
+		(task.TaskURL == nil || validRealtimeString(*task.TaskURL))
 }
 
 //nolint:gocyclo // Wire validation keeps the full Golden identity invariant visible in one guard.
@@ -282,6 +297,14 @@ func validParticipantGoldenIdentity(golden ParticipantGolden) bool {
 }
 
 func cloneInt(value *int) *int {
+	if value == nil {
+		return nil
+	}
+	clone := *value
+	return &clone
+}
+
+func cloneString(value *string) *string {
 	if value == nil {
 		return nil
 	}

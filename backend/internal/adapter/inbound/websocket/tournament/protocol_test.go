@@ -170,7 +170,7 @@ func sortedKeys(object map[string]json.RawMessage) []string {
 
 func requireNoSecretNames(t *testing.T, encoded []byte) {
 	t.Helper()
-	for _, forbidden := range []string{"flag", "credential", "password", "secret", "hidden_hint", "task_url", "source_file_url", "submission", "raw_connection", "audit_actor", "command"} {
+	for _, forbidden := range []string{"flag", "credential", "password", "secret", "hidden_hint", "hints", "source_file_url", "content_digest", "submission", "raw_connection", "audit_actor", "command"} {
 		if bytes.Contains(bytes.ToLower(encoded), []byte(forbidden)) {
 			t.Fatalf("JSON contains forbidden field name %q: %s", forbidden, encoded)
 		}

@@ -5012,15 +5012,24 @@ SELECT runtime.tournament_id,
     membership.participant_id,
     participant.player_id,
     membership.ready_at,
+    COALESCE(membership.participation_established_at IS NOT NULL, false)::boolean AS participant_eligible,
     submission.id AS submission_id,
     position_commit.position,
     runtime.assignment_id,
     runtime.snapshot_id,
-    runtime.task_id,
-    runtime.title,
-    runtime.category,
-    runtime.difficulty,
-    runtime.time_limit_seconds
+    snapshot.task_id,
+    snapshot.task_version,
+    snapshot.title,
+    snapshot.description,
+    snapshot.category,
+    snapshot.difficulty,
+    snapshot.time_limit,
+    snapshot.task_url,
+    COALESCE(
+        snapshot.source_file_url IS NOT NULL
+            AND btrim(snapshot.source_file_url) <> '',
+        false
+    )::boolean AS source_file_available
 FROM golden_runtime_assignments AS runtime
 INNER JOIN golden_runtime_heads AS runtime_head
     ON runtime_head.tournament_id = runtime.tournament_id
@@ -5032,6 +5041,13 @@ INNER JOIN golden_memberships AS membership ON membership.attempt_id = runtime.a
 INNER JOIN participants AS participant
     ON participant.id = membership.participant_id
     AND participant.roster_id = runtime.roster_id
+INNER JOIN task_snapshots AS snapshot
+    ON snapshot.id = runtime.snapshot_id
+    AND snapshot.reservation_id = runtime.assignment_id
+    AND snapshot.task_id = runtime.task_id
+    AND snapshot.task_version = runtime.task_version
+    AND snapshot.kind = 'golden'
+    AND snapshot.content_digest = runtime.source_digest
 LEFT JOIN golden_provisional_submissions AS submission
     ON submission.attempt_id = runtime.attempt_id
     AND submission.membership_id = membership.id
@@ -5066,15 +5082,20 @@ type ListGoldenRuntimeViewRow struct {
 	ParticipantID       uuid.UUID
 	PlayerID            uuid.UUID
 	ReadyAt             pgtype.Timestamptz
+	ParticipantEligible bool
 	SubmissionID        uuid.NullUUID
 	Position            *int16
 	AssignmentID        uuid.UUID
 	SnapshotID          uuid.UUID
 	TaskID              uuid.UUID
+	TaskVersion         int32
 	Title               string
+	Description         string
 	Category            string
 	Difficulty          string
-	TimeLimitSeconds    int32
+	TimeLimit           int32
+	TaskUrl             *string
+	SourceFileAvailable bool
 }
 
 func (q *Queries) ListGoldenRuntimeView(ctx context.Context, tournamentID uuid.UUID) ([]ListGoldenRuntimeViewRow, error) {
@@ -5104,15 +5125,20 @@ func (q *Queries) ListGoldenRuntimeView(ctx context.Context, tournamentID uuid.U
 			&i.ParticipantID,
 			&i.PlayerID,
 			&i.ReadyAt,
+			&i.ParticipantEligible,
 			&i.SubmissionID,
 			&i.Position,
 			&i.AssignmentID,
 			&i.SnapshotID,
 			&i.TaskID,
+			&i.TaskVersion,
 			&i.Title,
+			&i.Description,
 			&i.Category,
 			&i.Difficulty,
-			&i.TimeLimitSeconds,
+			&i.TimeLimit,
+			&i.TaskUrl,
+			&i.SourceFileAvailable,
 		); err != nil {
 			return nil, err
 		}
