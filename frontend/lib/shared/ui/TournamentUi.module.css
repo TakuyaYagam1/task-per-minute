@@ -1,0 +1,650 @@
+.panel {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
+.panel-muted {
+  background: var(--panel-muted);
+}
+
+.panel-accent {
+  border-color: var(--accent);
+}
+
+.panel-success {
+  border-color: var(--success);
+}
+
+.panel-error {
+  border-color: var(--error);
+}
+
+.panel[data-interactive="true"] {
+  cursor: pointer;
+  transition:
+    border-color var(--motion),
+    box-shadow var(--motion),
+    transform var(--motion);
+}
+
+.panel[data-interactive="true"]:hover {
+  border-color: var(--accent);
+  box-shadow: var(--shadow);
+  transform: translateY(-2px);
+}
+
+.panel[data-interactive="true"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 5px var(--accent-ring);
+}
+
+.panelHeader,
+.panelFooter {
+  padding: 18px 20px;
+}
+
+.panelHeader {
+  border-bottom: 1px solid var(--border);
+}
+
+.panelFooter {
+  border-top: 1px solid var(--border);
+}
+
+.panelBody {
+  min-width: 0;
+  padding: 20px;
+}
+
+.panelTitle {
+  margin: 0;
+  color: var(--text);
+  font-size: 1.05rem;
+  font-weight: 780;
+  letter-spacing: -0.018em;
+  line-height: 1.3;
+}
+
+.panelDescription {
+  margin: 5px 0 0;
+  color: var(--secondary);
+  font-size: 0.82rem;
+}
+
+.status {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 10px;
+  background: var(--surface-muted);
+  color: var(--secondary);
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.status-small {
+  min-height: 24px;
+  padding: 3px 8px;
+  font-size: 0.7rem;
+}
+
+.statusMark {
+  display: inline-grid;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  font-size: 0.68rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.status-success,
+.status-live {
+  border-color: var(--success);
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.status-warning {
+  border-color: var(--warning);
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.status-error {
+  border-color: var(--error);
+  background: var(--error-soft);
+  color: var(--error);
+}
+
+.status-info {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.status-loading {
+  border-style: dashed;
+  color: var(--accent-strong);
+}
+
+.status-empty {
+  border-style: dashed;
+  color: var(--secondary);
+}
+
+.status-disabled {
+  border-style: dashed;
+  color: var(--subtle);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+.statusSpinner,
+.stateSpinner {
+  display: block;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 700ms linear infinite;
+}
+
+.statusSpinner {
+  width: 12px;
+  height: 12px;
+}
+
+.stateSpinner {
+  width: 16px;
+  height: 16px;
+  margin: 0 auto 8px;
+}
+
+.message {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  padding: 14px 16px;
+  background: var(--surface-muted);
+  color: var(--text);
+}
+
+.messageMark {
+  display: inline-grid;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  font-size: 0.78rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.message-info {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.message-info .messageMark {
+  color: var(--accent-strong);
+}
+
+.message-success {
+  border-color: var(--success);
+  background: var(--success-soft);
+}
+
+.message-success .messageMark {
+  color: var(--success);
+}
+
+.message-warning {
+  border-color: var(--warning);
+  background: var(--warning-soft);
+}
+
+.message-warning .messageMark {
+  color: var(--warning);
+}
+
+.message-error {
+  border-color: var(--error);
+  background: var(--error-soft);
+}
+
+.message-error .messageMark {
+  color: var(--error);
+}
+
+.message-loading {
+  border-style: dashed;
+}
+
+.message-loading .messageMark {
+  color: var(--accent-strong);
+}
+
+.message-empty {
+  border-style: dashed;
+  color: var(--secondary);
+}
+
+.message-neutral .messageMark {
+  color: var(--secondary);
+}
+
+.messageContent {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.messageTitle {
+  display: block;
+  color: inherit;
+  font-size: 0.86rem;
+  line-height: 1.35;
+}
+
+.messageBody {
+  margin-top: 3px;
+  color: var(--secondary);
+  font-size: 0.82rem;
+}
+
+.messageDismiss,
+.dialogClose {
+  display: inline-grid;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-small);
+  background: transparent;
+  color: var(--secondary);
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background-color var(--motion),
+    border-color var(--motion),
+    color var(--motion);
+}
+
+.messageDismiss {
+  width: 28px;
+  height: 28px;
+  margin: -2px -4px 0 0;
+}
+
+.messageDismiss:hover,
+.dialogClose:hover {
+  border-color: var(--accent);
+  background: var(--surface-strong);
+  color: var(--text);
+}
+
+.messageDismiss:focus-visible,
+.dialogClose:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px var(--accent-ring);
+}
+
+.tabs {
+  min-width: 0;
+  color: var(--text);
+}
+
+.tabList {
+  display: flex;
+  min-width: 0;
+  gap: 2px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border);
+  scrollbar-width: thin;
+}
+
+.tabsVertical .tabList {
+  width: max-content;
+  max-width: 100%;
+  flex-direction: column;
+  overflow-x: visible;
+  border-right: 1px solid var(--border);
+  border-bottom: 0;
+}
+
+.tab {
+  position: relative;
+  min-height: 40px;
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: var(--radius-small) var(--radius-small) 0 0;
+  padding: 0 14px;
+  background: transparent;
+  color: var(--secondary);
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 720;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color var(--motion),
+    color var(--motion);
+}
+
+.tab:hover:not(:disabled) {
+  background: var(--surface-muted);
+  color: var(--text);
+}
+
+.tab[aria-selected="true"] {
+  background: var(--surface-strong);
+  color: var(--text);
+}
+
+.tab[aria-selected="true"]::after {
+  position: absolute;
+  right: 10px;
+  bottom: -1px;
+  left: 10px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+  content: "";
+}
+
+.tab:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+  text-decoration: line-through;
+}
+
+.tab:focus-visible {
+  z-index: 1;
+  outline: 2px solid var(--accent);
+  outline-offset: -3px;
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+
+.tabPanel {
+  min-width: 0;
+  padding: 18px 0 0;
+}
+
+.tabPanel:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.tableWrapper {
+  width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  background: var(--panel);
+  scrollbar-color: var(--border-strong) var(--surface-muted);
+}
+
+.table {
+  width: 100%;
+  min-width: 560px;
+  border-collapse: collapse;
+  color: var(--text);
+  font-size: 0.84rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.tableCaption {
+  padding: 12px 14px;
+  color: var(--secondary);
+  font-size: 0.78rem;
+  text-align: left;
+}
+
+.table th,
+.table td {
+  border-bottom: 1px solid var(--border);
+  padding: 11px 14px;
+  vertical-align: middle;
+}
+
+.table th {
+  background: var(--surface-muted);
+  color: var(--secondary);
+  font-size: 0.72rem;
+  font-weight: 760;
+  letter-spacing: 0.035em;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.tableSticky thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.tableRow {
+  transition: background-color var(--motion), box-shadow var(--motion);
+}
+
+.tableRow:hover {
+  background: var(--surface-muted);
+}
+
+.tableCell {
+  min-width: 0;
+}
+
+.align-left {
+  text-align: left;
+}
+
+.align-center {
+  text-align: center;
+}
+
+.align-right {
+  text-align: right;
+}
+
+.tableState {
+  padding: 28px 14px !important;
+  color: var(--secondary);
+  text-align: center;
+}
+
+.tableStateError {
+  background: var(--error-soft);
+  color: var(--error);
+}
+
+.stateMark {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--secondary);
+  font-size: 1.15rem;
+  font-weight: 800;
+}
+
+.dialog {
+  width: min(calc(100vw - 32px), 640px);
+  max-width: calc(100vw - 32px);
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  overflow: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 0;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
+.dialog::backdrop {
+  background: var(--overlay-bg);
+  backdrop-filter: blur(2px);
+}
+
+.dialog[open] {
+  animation: dialogEnter 160ms ease-out both;
+}
+
+.dialog-small {
+  width: min(calc(100vw - 32px), 420px);
+}
+
+.dialog-large {
+  width: min(calc(100vw - 32px), 860px);
+}
+
+.dialogHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--border);
+  padding: 18px 20px;
+}
+
+.dialogTitle {
+  margin: 0;
+  color: var(--text);
+  font-size: 1.1rem;
+  font-weight: 780;
+  line-height: 1.3;
+}
+
+.dialogDescription {
+  margin: 16px 20px 0;
+  color: var(--secondary);
+  font-size: 0.84rem;
+}
+
+.dialogBody {
+  min-width: 0;
+  padding: 20px;
+}
+
+.dialogFooter {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  border-top: 1px solid var(--border);
+  padding: 14px 20px;
+}
+
+.dialogClose {
+  width: 32px;
+  height: 32px;
+  font-size: 1.15rem;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes dialogEnter {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (max-width: 479px) {
+  .panelHeader,
+  .panelBody,
+  .panelFooter {
+    padding: 15px;
+  }
+
+  .tab {
+    min-height: 44px;
+    padding: 0 12px;
+  }
+
+  .table {
+    min-width: 500px;
+  }
+
+  .dialog {
+    width: calc(100vw - 20px);
+    max-width: calc(100vw - 20px);
+    max-height: calc(100dvh - 20px);
+  }
+
+  .dialogHeader,
+  .dialogBody,
+  .dialogFooter {
+    padding-right: 15px;
+    padding-left: 15px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel[data-interactive="true"],
+  .messageDismiss,
+  .dialogClose,
+  .tab,
+  .tableRow {
+    transition: none;
+  }
+
+  .panel[data-interactive="true"]:hover {
+    transform: none;
+  }
+
+  .statusSpinner,
+  .stateSpinner {
+    animation: none;
+    border-right-color: currentColor;
+  }
+
+  .dialog[open] {
+    animation: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .button,
+  .status,
+  .message,
+  .tableWrapper,
+  .dialog {
+    border-color: CanvasText;
+  }
+
+  .tab[aria-selected="true"]::after {
+    background: Highlight;
+  }
+}

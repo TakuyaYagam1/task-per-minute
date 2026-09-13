@@ -1,56 +1,87 @@
-import React from "react";
+import {
+  forwardRef,
+  type ButtonHTMLAttributes,
+  type ReactNode,
+} from "react";
 
-interface ButtonProps {
-  children: React.ReactNode;
-  onClick?: () => void;
-  disabled?: boolean;
-  variant?: "primary" | "secondary" | "success" | "danger";
-  size?: "small" | "medium" | "large";
-  className?: string;
-  style?: React.CSSProperties;
+import styles from "./Button.module.css";
+
+export type ButtonVariant =
+  | "primary"
+  | "secondary"
+  | "success"
+  | "danger"
+  | "ghost";
+
+export type ButtonSize = "small" | "medium" | "large";
+
+export interface ButtonProps
+  extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children"> {
+  children: ReactNode;
+  /** Shows an explicit in-progress state and prevents duplicate activation. */
+  loading?: boolean;
+  /** Accessible text announced while loading. */
+  loadingLabel?: string;
+  variant?: ButtonVariant;
+  size?: ButtonSize;
 }
-export const Button: React.FC<ButtonProps> = ({
-  children,
-  onClick,
-  disabled = false,
-  variant = "primary",
-  size = "medium",
-  className = "",
-  style = {},
-}) => {
-  const baseClasses = "btn will-change-transform";
 
-  const variantClasses = {
-    primary: "btn-primary",
-    secondary: "btn-secondary",
-    success: "bg-green-500 hover:bg-green-600 text-white",
-    danger: "bg-red-500 hover:bg-red-600 text-white",
-  };
+const joinClasses = (...classes: Array<string | false | null | undefined>) =>
+  classes.filter(Boolean).join(" ");
 
-  const sizeClasses = {
-    small: "px-3 py-1.5 text-sm",
-    medium: "px-4 py-2 text-base",
-    large: "px-6 py-3 text-lg",
-  };
+/**
+ * Shared action button used throughout tournament surfaces.
+ *
+ * The old `primary`, `secondary`, `success`, `danger` and size values remain
+ * valid. Native button attributes are forwarded so forms and keyboard users
+ * keep their expected browser behaviour.
+ */
+export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
+  (
+    {
+      children,
+      className,
+      disabled = false,
+      loading = false,
+      loadingLabel = "Загрузка",
+      size = "medium",
+      type = "button",
+      variant = "primary",
+      "aria-busy": ariaBusy,
+      ...buttonProps
+    },
+    ref,
+  ) => {
+    const isDisabled = disabled || loading;
 
-  const combinedClasses = `
-    ${baseClasses}
-    ${variantClasses[variant]}
-    ${sizeClasses[size]}
-    ${disabled ? "opacity-50 cursor-not-allowed" : "animate-on-hover"}
-    ${className}
-  `
-    .trim()
-    .replace(/\s+/g, " ");
+    return (
+      <button
+        {...buttonProps}
+        ref={ref}
+        type={type}
+        disabled={isDisabled}
+        aria-busy={loading || ariaBusy ? true : undefined}
+        className={joinClasses(
+          styles.button,
+          styles[`variant-${variant}`],
+          styles[`size-${size}`],
+          loading && styles.loading,
+          isDisabled && styles.disabled,
+          className,
+        )}
+      >
+        {loading ? (
+          <>
+            <span className={styles.spinner} aria-hidden="true" />
+            <span>{loadingLabel}</span>
+            <span className={styles.srOnly}>{children}</span>
+          </>
+        ) : (
+          children
+        )}
+      </button>
+    );
+  },
+);
 
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      className={combinedClasses}
-      style={style}
-    >
-      {children}
-    </button>
-  );
-};
+Button.displayName = "Button";

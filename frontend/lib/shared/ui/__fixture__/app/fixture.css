@@ -1,0 +1,65 @@
+@import "../../../../../app/globals.css";
+
+.fixture-shell {
+  width: min(calc(100% - 2rem), 70rem);
+  margin: 0 auto;
+  padding: 2rem 0 4rem;
+}
+
+.fixture-shell h1 {
+  margin: 0 0 0.4rem;
+  font-size: clamp(1.8rem, 5vw, 3rem);
+}
+
+.fixture-lede {
+  margin: 0 0 1.5rem;
+  color: var(--secondary);
+}
+
+.fixture-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.fixture-card {
+  min-width: 0;
+}
+
+.fixture-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+.fixture-stack {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.fixture-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.fixture-table-wrap table {
+  min-width: 26rem;
+}
+
+.fixture-dialog {
+  width: min(32rem, calc(100vw - 2rem));
+  max-width: calc(100vw - 2rem);
+}
+
+@media (max-width: 700px) {
+  .fixture-shell {
+    width: min(calc(100% - 1.5rem), 70rem);
+    padding-top: 1.25rem;
+  }
+
+  .fixture-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
