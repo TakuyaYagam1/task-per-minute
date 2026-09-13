@@ -59,6 +59,7 @@ var tournamentRateRoutes = []tournamentRateRoute{
 	{http.MethodPost, tournamentOperatorMutation, []string{"api", "v1", "admin", "tournaments", "*", "golden", "attempts", "*", "start"}},
 	{http.MethodGet, tournamentParticipantRead, []string{"api", "v1", "tournaments", "*", "participant", "lobby"}},
 	{http.MethodGet, tournamentParticipantRead, []string{"api", "v1", "tournaments", "*", "participant", "assignments", "*"}},
+	{http.MethodGet, tournamentParticipantRead, []string{"api", "v1", "tournaments", "*", "participant", "assignments", "*", "source-file"}},
 	{http.MethodPost, tournamentParticipantMutation, []string{"api", "v1", "tournaments", "*", "participant", "waves", "*", "ready"}},
 	{http.MethodPost, tournamentParticipantMutation, []string{"api", "v1", "tournaments", "*", "participant", "series", "*", "draft", "actions"}},
 	{http.MethodPost, tournamentParticipantMutation, []string{"api", "v1", "tournaments", "*", "participant", "series", "*", "games", "*", "submissions"}},

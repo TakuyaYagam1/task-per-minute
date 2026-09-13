@@ -29,7 +29,8 @@ func sourceFileKeyFromURL(taskID uuid.UUID, rawURL string) (string, error) {
 }
 
 func validSourceFileLocation(parsed *url.URL) bool {
-	if parsed == nil || parsed.Scheme == "" || parsed.Host == "" || parsed.User != nil || parsed.Fragment != "" {
+	if parsed == nil || parsed.Scheme == "" || parsed.Host == "" || parsed.User != nil ||
+		parsed.RawQuery != "" || parsed.Fragment != "" {
 		return false
 	}
 	return parsed.Scheme == "http" || parsed.Scheme == "https"

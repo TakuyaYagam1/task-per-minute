@@ -131,6 +131,8 @@ paths:
     $ref: 'routes/tournament.yml#/~1api~1v1~1tournaments~1{tournament_id}~1participant~1lobby'
   /api/v1/tournaments/{tournament_id}/participant/assignments/{assignment_id}:
     $ref: 'routes/tournament.yml#/~1api~1v1~1tournaments~1{tournament_id}~1participant~1assignments~1{assignment_id}'
+  /api/v1/tournaments/{tournament_id}/participant/assignments/{assignment_id}/source-file:
+    $ref: 'routes/tournament.yml#/~1api~1v1~1tournaments~1{tournament_id}~1participant~1assignments~1{assignment_id}~1source-file'
   /api/v1/tournaments/{tournament_id}/participant/waves/{wave_id}/ready:
     $ref: 'routes/tournament.yml#/~1api~1v1~1tournaments~1{tournament_id}~1participant~1waves~1{wave_id}~1ready'
   /api/v1/tournaments/{tournament_id}/participant/series/{series_id}/draft/actions:

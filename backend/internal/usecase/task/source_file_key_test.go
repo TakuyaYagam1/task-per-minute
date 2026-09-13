@@ -62,6 +62,7 @@ func TestSourceFileKeyFromURLRejectsLegacyAndForeignObjects(t *testing.T) {
 		{name: "non canonical upload ID", raw: "http://seaweed/bucket/tasks/" + taskID.String() + "/sources/" + strings.ToUpper(uploadID.String()) + ".zip"},
 		{name: "nested object", raw: "http://seaweed/bucket/" + sourceFileUploadKey(taskID, uploadID) + "/extra"},
 		{name: "encoded separator", raw: "http://seaweed/bucket/tasks/" + taskID.String() + "/sources%2F" + uploadID.String() + ".zip"},
+		{name: "temporary signed URL", raw: "http://seaweed/bucket/" + sourceFileUploadKey(taskID, uploadID) + "?X-Amz-Signature=secret"},
 	}
 
 	for _, tt := range tests {

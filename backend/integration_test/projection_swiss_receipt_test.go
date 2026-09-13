@@ -367,11 +367,11 @@ func nextSwissReceiptWave(ctx context.Context, t *testing.T, previous tournament
 	fixture.waveRevisionID = domain.WaveRevisionID(uuid.New())
 	at := time.Now().UTC().Truncate(time.Microsecond)
 	_, err := sharedPool.Exec(ctx, `
-		INSERT INTO swiss_rounds (id, roster_id, round_number, source_roster_revision, source_history_revision,
+		INSERT INTO swiss_rounds (id, tournament_id, roster_id, round_number, source_roster_revision, source_history_revision,
 		generation_kind, pairing_inputs, decision_evidence_id, decision_algorithm_version, decision_seed,
 		decision_result, decision_replay_digest, decision_owner_id, generated_at, created_at, updated_at)
-		VALUES ($1, $2, $3, 2, 0, 'automatic', '["receipt"]'::jsonb, $4, 'hmac-sha256-order-v1', $5,
-		'["receipt"]'::jsonb, $6, $1, $7, $7, $7)`, fixture.roundID, fixture.rosterID, round, uuid.New(), bytes.Repeat([]byte{1}, 32), bytes.Repeat([]byte{2}, 32), at)
+		VALUES ($1, $2, $3, $4, 2, 0, 'automatic', '["receipt"]'::jsonb, $5, 'hmac-sha256-order-v1', $6,
+		'["receipt"]'::jsonb, $7, $1, $8, $8, $8)`, fixture.roundID, fixture.tournamentID, fixture.rosterID, round, uuid.New(), bytes.Repeat([]byte{1}, 32), bytes.Repeat([]byte{2}, 32), at)
 	require.NoError(t, err)
 	pairs := [][2]int{{0, 2}, {1, 3}}
 	if round == 3 {

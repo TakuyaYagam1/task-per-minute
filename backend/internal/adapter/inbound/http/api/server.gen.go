@@ -167,6 +167,9 @@ type ServerInterface interface {
 	// GetParticipantAssignment Read a private task assignment for the authenticated participant
 	// (GET /api/v1/tournaments/{tournament_id}/participant/assignments/{assignment_id})
 	GetParticipantAssignment(w http.ResponseWriter, r *http.Request, tournamentId TournamentId, assignmentId AssignmentId)
+	// GetParticipantAssignmentSourceFile Create temporary source archive access for an authorized participant assignment
+	// (GET /api/v1/tournaments/{tournament_id}/participant/assignments/{assignment_id}/source-file)
+	GetParticipantAssignmentSourceFile(w http.ResponseWriter, r *http.Request, tournamentId TournamentId, assignmentId AssignmentId)
 	// GetGoldenParticipantState Read the authenticated participant Golden assignment
 	// (GET /api/v1/tournaments/{tournament_id}/participant/golden)
 	GetGoldenParticipantState(w http.ResponseWriter, r *http.Request, tournamentId TournamentId)
@@ -503,6 +506,12 @@ func (_ Unimplemented) GetPublicLiveDraft(w http.ResponseWriter, r *http.Request
 // GetParticipantAssignment Read a private task assignment for the authenticated participant
 // (GET /api/v1/tournaments/{tournament_id}/participant/assignments/{assignment_id})
 func (_ Unimplemented) GetParticipantAssignment(w http.ResponseWriter, r *http.Request, tournamentId TournamentId, assignmentId AssignmentId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetParticipantAssignmentSourceFile Create temporary source archive access for an authorized participant assignment
+// (GET /api/v1/tournaments/{tournament_id}/participant/assignments/{assignment_id}/source-file)
+func (_ Unimplemented) GetParticipantAssignmentSourceFile(w http.ResponseWriter, r *http.Request, tournamentId TournamentId, assignmentId AssignmentId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -3482,6 +3491,47 @@ func (siw *ServerInterfaceWrapper) GetParticipantAssignment(w http.ResponseWrite
 	handler.ServeHTTP(w, r)
 }
 
+// GetParticipantAssignmentSourceFile operation middleware
+func (siw *ServerInterfaceWrapper) GetParticipantAssignmentSourceFile(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "tournament_id" -------------
+	var tournamentId TournamentId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "tournament_id", chi.URLParam(r, "tournament_id"), &tournamentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tournament_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "assignment_id" -------------
+	var assignmentId AssignmentId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "assignment_id", chi.URLParam(r, "assignment_id"), &assignmentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "assignment_id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, PlayerSessionAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetParticipantAssignmentSourceFile(w, r, tournamentId, assignmentId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetGoldenParticipantState operation middleware
 func (siw *ServerInterfaceWrapper) GetGoldenParticipantState(w http.ResponseWriter, r *http.Request) {
 
@@ -4567,6 +4617,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/tournaments/{tournament_id}/participant/assignments/{assignment_id}", wrapper.GetParticipantAssignment)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/tournaments/{tournament_id}/participant/assignments/{assignment_id}/source-file", wrapper.GetParticipantAssignmentSourceFile)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/tournaments/{tournament_id}/participant/waves/{wave_id}/ready", wrapper.SetParticipantReady)
@@ -10223,6 +10276,94 @@ func (response GetParticipantAssignmentdefaultApplicationProblemPlusJSONResponse
 	return err
 }
 
+type GetParticipantAssignmentSourceFileRequestObject struct {
+	TournamentId TournamentId `json:"tournament_id"`
+	AssignmentId AssignmentId `json:"assignment_id"`
+}
+
+type GetParticipantAssignmentSourceFileResponseObject interface {
+	VisitGetParticipantAssignmentSourceFileResponse(w http.ResponseWriter) error
+}
+
+type GetParticipantAssignmentSourceFile200JSONResponse ParticipantSourceFileResponse
+
+func (response GetParticipantAssignmentSourceFile200JSONResponse) VisitGetParticipantAssignmentSourceFileResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetParticipantAssignmentSourceFile401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedProblemApplicationProblemPlusJSONResponse
+}
+
+func (response GetParticipantAssignmentSourceFile401ApplicationProblemPlusJSONResponse) VisitGetParticipantAssignmentSourceFileResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetParticipantAssignmentSourceFile403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenProblemApplicationProblemPlusJSONResponse
+}
+
+func (response GetParticipantAssignmentSourceFile403ApplicationProblemPlusJSONResponse) VisitGetParticipantAssignmentSourceFileResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetParticipantAssignmentSourceFile404ApplicationProblemPlusJSONResponse struct {
+	NotFoundProblemApplicationProblemPlusJSONResponse
+}
+
+func (response GetParticipantAssignmentSourceFile404ApplicationProblemPlusJSONResponse) VisitGetParticipantAssignmentSourceFileResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetParticipantAssignmentSourceFiledefaultApplicationProblemPlusJSONResponse struct {
+	Body       ProblemDetails
+	StatusCode int
+}
+
+func (response GetParticipantAssignmentSourceFiledefaultApplicationProblemPlusJSONResponse) VisitGetParticipantAssignmentSourceFileResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetGoldenParticipantStateRequestObject struct {
 	TournamentId TournamentId `json:"tournament_id"`
 }
@@ -12052,6 +12193,9 @@ type StrictServerInterface interface {
 	// GetParticipantAssignment Read a private task assignment for the authenticated participant
 	// (GET /api/v1/tournaments/{tournament_id}/participant/assignments/{assignment_id})
 	GetParticipantAssignment(ctx context.Context, request GetParticipantAssignmentRequestObject) (GetParticipantAssignmentResponseObject, error)
+	// GetParticipantAssignmentSourceFile Create temporary source archive access for an authorized participant assignment
+	// (GET /api/v1/tournaments/{tournament_id}/participant/assignments/{assignment_id}/source-file)
+	GetParticipantAssignmentSourceFile(ctx context.Context, request GetParticipantAssignmentSourceFileRequestObject) (GetParticipantAssignmentSourceFileResponseObject, error)
 	// GetGoldenParticipantState Read the authenticated participant Golden assignment
 	// (GET /api/v1/tournaments/{tournament_id}/participant/golden)
 	GetGoldenParticipantState(ctx context.Context, request GetGoldenParticipantStateRequestObject) (GetGoldenParticipantStateResponseObject, error)
@@ -13590,6 +13734,33 @@ func (sh *strictHandler) GetParticipantAssignment(w http.ResponseWriter, r *http
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetParticipantAssignmentResponseObject); ok {
 		if err := validResponse.VisitGetParticipantAssignmentResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetParticipantAssignmentSourceFile operation middleware
+func (sh *strictHandler) GetParticipantAssignmentSourceFile(w http.ResponseWriter, r *http.Request, tournamentId TournamentId, assignmentId AssignmentId) {
+	var request GetParticipantAssignmentSourceFileRequestObject
+
+	request.TournamentId = tournamentId
+	request.AssignmentId = assignmentId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetParticipantAssignmentSourceFile(ctx, request.(GetParticipantAssignmentSourceFileRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetParticipantAssignmentSourceFile")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetParticipantAssignmentSourceFileResponseObject); ok {
+		if err := validResponse.VisitGetParticipantAssignmentSourceFileResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

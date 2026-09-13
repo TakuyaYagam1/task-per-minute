@@ -406,6 +406,7 @@ type Querier interface {
 	GetOperatorResultCommand(ctx context.Context, commandID uuid.UUID) (OperatorResultCommand, error)
 	GetOperatorResultTime(ctx context.Context) (pgtype.Timestamptz, error)
 	GetOperatorTournamentReadPause(ctx context.Context, tournamentID uuid.UUID) (GetOperatorTournamentReadPauseRow, error)
+	GetParticipantArchiveSource(ctx context.Context, arg GetParticipantArchiveSourceParams) (GetParticipantArchiveSourceRow, error)
 	// Membership is checked without locks before acquiring the result scope prefix.
 	// The locked command authority below revalidates the same identity afterward.
 	GetParticipantCommandRoster(ctx context.Context, arg GetParticipantCommandRosterParams) (uuid.UUID, error)

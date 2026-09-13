@@ -73,6 +73,38 @@ func (s *Server) GetParticipantAssignment(
 	response.WriteJSON(w, http.StatusOK, payload)
 }
 
+func (s *Server) GetParticipantAssignmentSourceFile(
+	w http.ResponseWriter,
+	r *http.Request,
+	tournamentID api.TournamentId,
+	assignmentID api.AssignmentId,
+) {
+	actor, ok := participantIdentityFromRequest(w, r)
+	if !ok {
+		return
+	}
+	if s == nil || s.participantArchive == nil {
+		errmap.HandleError(w, r, domain.ErrInternal)
+		return
+	}
+
+	download, err := s.participantArchive.GetSourceFile(r.Context(), usecase.ParticipantArchiveQuery{
+		Actor: actor, TournamentID: tournamentID, AssignmentID: assignmentID,
+	})
+	if err != nil {
+		writeParticipantError(w, r, err)
+		return
+	}
+	if download.URL == "" || download.ExpiresAt.IsZero() {
+		errmap.HandleError(w, r, domain.ErrInternal)
+		return
+	}
+	response.WriteJSON(w, http.StatusOK, api.ParticipantSourceFileResponse{
+		SourceFileUrl: download.URL,
+		ExpiresAt:     download.ExpiresAt.UTC(),
+	})
+}
+
 func (s *Server) GetParticipantSnapshot(
 	w http.ResponseWriter,
 	r *http.Request,

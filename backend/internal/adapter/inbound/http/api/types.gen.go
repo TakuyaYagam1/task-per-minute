@@ -1801,13 +1801,16 @@ type GoldenRuntimeState string
 
 // GoldenRuntimeTask Participant-safe immutable Golden assignment. Flag material is never serialized.
 type GoldenRuntimeTask struct {
-	AssignmentId     openapi_types.UUID                `json:"assignment_id"`
-	Category         string                            `json:"category"`
-	Difficulty       string                            `json:"difficulty"`
-	SnapshotId       openapi_types.UUID                `json:"snapshot_id"`
-	TaskId           openapi_types.UUID                `json:"task_id"`
-	TimeLimitSeconds GoldenRuntimeTaskTimeLimitSeconds `json:"time_limit_seconds"`
-	Title            string                            `json:"title"`
+	AssignmentId openapi_types.UUID `json:"assignment_id"`
+	Category     string             `json:"category"`
+	Difficulty   string             `json:"difficulty"`
+	SnapshotId   openapi_types.UUID `json:"snapshot_id"`
+
+	// SourceFileAvailable Whether the immutable Golden assignment has a source archive available through the participant download endpoint.
+	SourceFileAvailable bool                              `json:"source_file_available"`
+	TaskId              openapi_types.UUID                `json:"task_id"`
+	TimeLimitSeconds    GoldenRuntimeTaskTimeLimitSeconds `json:"time_limit_seconds"`
+	Title               string                            `json:"title"`
 }
 
 // GoldenRuntimeTaskTimeLimitSeconds defines model for GoldenRuntimeTask.TimeLimitSeconds.
@@ -2132,12 +2135,12 @@ type Participant struct {
 
 // ParticipantAssignment defines model for ParticipantAssignment.
 type ParticipantAssignment struct {
-	// ActiveSnapshot Public immutable task snapshot. Private flag material and undisclosed reserves are excluded.
-	ActiveSnapshot          TaskSnapshot       `json:"active_snapshot"`
-	AttemptId               openapi_types.UUID `json:"attempt_id"`
-	Id                      openapi_types.UUID `json:"id"`
-	Receipt                 DeliveryReceipt    `json:"receipt"`
-	UndisclosedReserveCount int32              `json:"undisclosed_reserve_count"`
+	// ActiveSnapshot Participant-safe immutable task snapshot. Internal archive locations, flag material, and undisclosed reserves are excluded.
+	ActiveSnapshot          ParticipantTaskSnapshot `json:"active_snapshot"`
+	AttemptId               openapi_types.UUID      `json:"attempt_id"`
+	Id                      openapi_types.UUID      `json:"id"`
+	Receipt                 DeliveryReceipt         `json:"receipt"`
+	UndisclosedReserveCount int32                   `json:"undisclosed_reserve_count"`
 }
 
 // ParticipantAssignmentResponse defines model for ParticipantAssignmentResponse.
@@ -2218,6 +2221,14 @@ type ParticipantRecoverySnapshot struct {
 	Wave               *Wave                     `json:"wave"`
 }
 
+// ParticipantSourceFileResponse defines model for ParticipantSourceFileResponse.
+type ParticipantSourceFileResponse struct {
+	ExpiresAt time.Time `json:"expires_at"`
+
+	// SourceFileUrl Fresh temporary URL signed against the configured public storage origin.
+	SourceFileUrl string `json:"source_file_url"`
+}
+
 // ParticipantSubmissionRequest defines model for ParticipantSubmissionRequest.
 type ParticipantSubmissionRequest struct {
 	ExpectedProjectionRevision int64   `json:"expected_projection_revision"`
@@ -2235,6 +2246,24 @@ type ParticipantSurrenderRequest struct {
 	Confirmed                  bool    `json:"confirmed"`
 	ExpectedProjectionRevision int64   `json:"expected_projection_revision"`
 	Reason                     *string `json:"reason,omitempty"`
+}
+
+// ParticipantTaskSnapshot Participant-safe immutable task snapshot. Internal archive locations, flag material, and undisclosed reserves are excluded.
+type ParticipantTaskSnapshot struct {
+	Category    Category           `json:"category"`
+	Description string             `json:"description"`
+	Difficulty  Difficulty         `json:"difficulty"`
+	Hints       []string           `json:"hints"`
+	Kind        TaskKind           `json:"kind"`
+	SnapshotId  openapi_types.UUID `json:"snapshot_id"`
+
+	// SourceFileAvailable Whether the immutable snapshot has a source archive available through the participant download endpoint.
+	SourceFileAvailable bool               `json:"source_file_available"`
+	TaskId              openapi_types.UUID `json:"task_id"`
+	TaskUrl             *string            `json:"task_url,omitempty"`
+	TimeLimit           int32              `json:"time_limit"`
+	Title               string             `json:"title"`
+	Version             int32              `json:"version"`
 }
 
 // PauseDeadlineKind defines model for PauseDeadlineKind.
@@ -2852,22 +2881,6 @@ type TaskDifficulty string
 
 // TaskKind defines model for TaskKind.
 type TaskKind string
-
-// TaskSnapshot Public immutable task snapshot. Private flag material and undisclosed reserves are excluded.
-type TaskSnapshot struct {
-	Category      Category           `json:"category"`
-	Description   string             `json:"description"`
-	Difficulty    Difficulty         `json:"difficulty"`
-	Hints         []string           `json:"hints"`
-	Kind          TaskKind           `json:"kind"`
-	SnapshotId    openapi_types.UUID `json:"snapshot_id"`
-	SourceFileUrl *string            `json:"source_file_url,omitempty"`
-	TaskId        openapi_types.UUID `json:"task_id"`
-	TaskUrl       *string            `json:"task_url,omitempty"`
-	TimeLimit     int32              `json:"time_limit"`
-	Title         string             `json:"title"`
-	Version       int32              `json:"version"`
-}
 
 // TaskSourceUploadResponse defines model for TaskSourceUploadResponse.
 type TaskSourceUploadResponse struct {

@@ -120,6 +120,28 @@ func (s *SourceFiles) PresignedSourceFileURL(ctx context.Context, taskID uuid.UU
 	return presignedURL, nil
 }
 
+// PresignCanonicalSourceFileURL signs an already authorized immutable archive
+// URL without consulting or updating the mutable task head.
+func (s *SourceFiles) PresignCanonicalSourceFileURL(
+	ctx context.Context,
+	taskID uuid.UUID,
+	canonicalURL string,
+	ttl time.Duration,
+) (string, error) {
+	if ctx == nil || s == nil || s.storage == nil || taskID == uuid.Nil || ttl <= 0 {
+		return "", domain.ErrValidation
+	}
+	key, err := sourceFileKeyFromURL(taskID, canonicalURL)
+	if err != nil {
+		return "", fmt.Errorf("SourceFiles - PresignCanonicalSourceFileURL - sourceFileKeyFromURL: %w", err)
+	}
+	presignedURL, err := s.storage.PresignedGetURL(ctx, key, ttl)
+	if err != nil {
+		return "", fmt.Errorf("SourceFiles - PresignCanonicalSourceFileURL - SourceFileStorage.PresignedGetURL: %w", err)
+	}
+	return presignedURL, nil
+}
+
 func (s *SourceFiles) cleanupKey(ctx context.Context, operation string, taskID uuid.UUID, key string) {
 	if err := s.runCleanup(ctx, func(cleanupCtx context.Context) error {
 		return s.storage.Delete(cleanupCtx, key)

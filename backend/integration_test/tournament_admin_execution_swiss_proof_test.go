@@ -174,7 +174,7 @@ func createTournamentAdminSwissProofFixtureForAggregate(
 	preflightRevisionID := createRoundProofRosterLock(
 		ctx, t, tournamentID, rosterID, playerIDs, projectionRevisionID, projectionRevision, createdAt,
 	)
-	roundID := createRoundProofSwissRound(ctx, t, rosterID, createdAt)
+	roundID := createRoundProofSwissRound(ctx, t, tournamentID, rosterID, createdAt)
 
 	tx := postgres.NewTxManager(sharedPool)
 	waveID := uuid.New()
@@ -551,6 +551,7 @@ func createRoundProofRosterLock(
 func createRoundProofSwissRound(
 	ctx context.Context,
 	t *testing.T,
+	tournamentID uuid.UUID,
 	rosterID uuid.UUID,
 	at time.Time,
 ) uuid.UUID {
@@ -560,17 +561,17 @@ func createRoundProofSwissRound(
 	digest := bytes.Repeat([]byte{2}, sha256.Size)
 	_, err := sharedPool.Exec(ctx, `
 		INSERT INTO swiss_rounds (
-			id, roster_id, round_number, source_roster_revision, source_history_revision,
+			id, tournament_id, roster_id, round_number, source_roster_revision, source_history_revision,
 			generation_kind, pairing_inputs, decision_evidence_id,
 			decision_algorithm_version, decision_seed, decision_result,
 			decision_replay_digest, decision_owner_id, generated_at, created_at, updated_at
 		)
 		VALUES (
-			$1, $2, 1, 2, 0,
-			'automatic', '["round-proof"]'::jsonb, $3,
-			'hmac-sha256-order-v1', $4, '["round-proof"]'::jsonb,
-			$5, $1, $6, $6, $6
-		)`, roundID, rosterID, uuid.New(), seed, digest, at)
+			$1, $2, $3, 1, 2, 0,
+			'automatic', '["round-proof"]'::jsonb, $4,
+			'hmac-sha256-order-v1', $5, '["round-proof"]'::jsonb,
+			$6, $1, $7, $7, $7
+		)`, roundID, tournamentID, rosterID, uuid.New(), seed, digest, at)
 	require.NoError(t, err)
 	return roundID
 }

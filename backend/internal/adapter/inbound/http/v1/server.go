@@ -37,6 +37,7 @@ type Dependencies struct {
 	TournamentAdmin                      usecase.TournamentAdminUseCase
 	TournamentConfiguration              usecase.TournamentConfigurationUseCase
 	TournamentParticipant                usecase.TournamentParticipantUseCase
+	ParticipantArchive                   usecase.ParticipantArchiveUseCase
 	TournamentSnapshots                  usecase.TournamentSnapshotUseCase
 	Golden                               usecase.GoldenUseCase
 	Health                               HealthChecks
@@ -64,6 +65,7 @@ type Server struct {
 	upload                               UploadService
 	leaderboard                          LeaderboardService
 	tournamentParticipant                usecase.TournamentParticipantUseCase
+	participantArchive                   usecase.ParticipantArchiveUseCase
 	tournamentSnapshots                  usecase.TournamentSnapshotUseCase
 	golden                               usecase.GoldenUseCase
 	health                               HealthChecks
@@ -96,6 +98,7 @@ func New(deps Dependencies) *Server {
 		upload:                               deps.Upload,
 		leaderboard:                          deps.Leaderboard,
 		tournamentParticipant:                deps.TournamentParticipant,
+		participantArchive:                   deps.ParticipantArchive,
 		tournamentSnapshots:                  deps.TournamentSnapshots,
 		golden:                               deps.Golden,
 		health:                               deps.Health,

@@ -39,6 +39,47 @@ TaskSnapshot:
       format: uri
       nullable: true
 
+ParticipantTaskSnapshot:
+  type: object
+  description: Participant-safe immutable task snapshot. Internal archive locations, flag material, and undisclosed reserves are excluded.
+  additionalProperties: false
+  required: [snapshot_id, task_id, version, kind, title, description, category, difficulty, time_limit, hints, source_file_available]
+  properties:
+    snapshot_id:
+      type: string
+      format: uuid
+    task_id:
+      type: string
+      format: uuid
+    version:
+      type: integer
+      format: int32
+      minimum: 1
+    kind:
+      $ref: '#/TaskKind'
+    title:
+      type: string
+    description:
+      type: string
+    category:
+      $ref: '#/Category'
+    difficulty:
+      $ref: '#/Difficulty'
+    time_limit:
+      type: integer
+      format: int32
+      minimum: 1
+    hints:
+      type: array
+      items:
+        type: string
+    task_url:
+      type: string
+      nullable: true
+    source_file_available:
+      type: boolean
+      description: Whether the immutable snapshot has a source archive available through the participant download endpoint.
+
 DeliveryReceipt:
   type: object
   required: [id, assignment_id, attempt_id, participant_id, snapshot_id, task_id, delivered_at]
@@ -229,6 +270,20 @@ ParticipantAssignmentResponse:
     assignment:
       $ref: '#/ParticipantAssignment'
 
+ParticipantSourceFileResponse:
+  type: object
+  additionalProperties: false
+  required: [source_file_url, expires_at]
+  properties:
+    source_file_url:
+      type: string
+      format: uri
+      description: Fresh temporary URL signed against the configured public storage origin.
+    expires_at:
+      type: string
+      format: date-time
+      readOnly: true
+
 ParticipantAssignment:
   type: object
   additionalProperties: false
@@ -241,7 +296,7 @@ ParticipantAssignment:
       type: string
       format: uuid
     active_snapshot:
-      $ref: '#/TaskSnapshot'
+      $ref: '#/ParticipantTaskSnapshot'
     undisclosed_reserve_count:
       type: integer
       format: int32

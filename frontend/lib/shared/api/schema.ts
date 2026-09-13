@@ -878,6 +878,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tournaments/{tournament_id}/participant/assignments/{assignment_id}/source-file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tournament_id: components["parameters"]["TournamentId"];
+                assignment_id: components["parameters"]["AssignmentId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Create temporary source archive access for an authorized participant assignment
+         * @description Returns a fresh public signed URL for the immutable task snapshot after authoritative assignment start.
+         */
+        get: operations["getParticipantAssignmentSourceFile"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tournaments/{tournament_id}/participant/waves/{wave_id}/ready": {
         parameters: {
             query?: never;
@@ -2614,8 +2637,8 @@ export interface components {
         };
         /** @enum {string} */
         Difficulty: "easy" | "medium" | "hard";
-        /** @description Public immutable task snapshot. Private flag material and undisclosed reserves are excluded. */
-        TaskSnapshot: {
+        /** @description Participant-safe immutable task snapshot. Internal archive locations, flag material, and undisclosed reserves are excluded. */
+        ParticipantTaskSnapshot: {
             category: components["schemas"]["Category"];
             description: string;
             difficulty: components["schemas"]["Difficulty"];
@@ -2623,8 +2646,8 @@ export interface components {
             kind: components["schemas"]["TaskKind"];
             /** Format: uuid */
             snapshot_id: string;
-            /** Format: uri */
-            source_file_url?: string | null;
+            /** @description Whether the immutable snapshot has a source archive available through the participant download endpoint. */
+            source_file_available: boolean;
             /** Format: uuid */
             task_id: string;
             task_url?: string | null;
@@ -2651,7 +2674,7 @@ export interface components {
             task_id: string;
         };
         ParticipantAssignment: {
-            active_snapshot: components["schemas"]["TaskSnapshot"];
+            active_snapshot: components["schemas"]["ParticipantTaskSnapshot"];
             /** Format: uuid */
             attempt_id: string;
             /** Format: uuid */
@@ -2666,6 +2689,15 @@ export interface components {
             projection_revision: number;
             /** Format: uuid */
             tournament_id: string;
+        };
+        ParticipantSourceFileResponse: {
+            /** Format: date-time */
+            readonly expires_at: string;
+            /**
+             * Format: uri
+             * @description Fresh temporary URL signed against the configured public storage origin.
+             */
+            source_file_url: string;
         };
         ParticipantReadyRequest: {
             /** Format: int64 */
@@ -2823,6 +2855,8 @@ export interface components {
             difficulty: string;
             /** Format: uuid */
             snapshot_id: string;
+            /** @description Whether the immutable Golden assignment has a source archive available through the participant download endpoint. */
+            source_file_available: boolean;
             /** Format: uuid */
             task_id: string;
             /**
@@ -5256,6 +5290,33 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ParticipantAssignmentResponse"];
+                };
+            };
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            default: components["responses"]["UnexpectedServerProblem"];
+        };
+    };
+    getParticipantAssignmentSourceFile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tournament_id: components["parameters"]["TournamentId"];
+                assignment_id: components["parameters"]["AssignmentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Temporary participant source archive access. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ParticipantSourceFileResponse"];
                 };
             };
             401: components["responses"]["UnauthorizedProblem"];

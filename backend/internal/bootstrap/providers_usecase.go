@@ -23,6 +23,7 @@ import (
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/idempotency"
 	leaderboardusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/leaderboard"
+	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/participantarchive"
 	playerusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/player"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/readiness"
@@ -119,6 +120,14 @@ func provideSourceFiles(
 	log logkit.Logger,
 ) *taskusecase.SourceFiles {
 	return taskusecase.NewSourceFiles(tasks, storage, cleanup, tasktelemetry.NewSourceFileCleanupLogger(log))
+}
+
+func provideParticipantArchive(
+	repository participantarchive.Repository,
+	signer participantarchive.Signer,
+	clock participantarchive.Clock,
+) (*participantarchive.Service, error) {
+	return participantarchive.New(repository, signer, clock)
 }
 
 type detachedCleanupRunner struct{}

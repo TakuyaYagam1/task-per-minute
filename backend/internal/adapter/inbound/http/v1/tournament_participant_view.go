@@ -91,7 +91,7 @@ func participantAssignment(
 
 func participantTaskSnapshot(
 	view usecase.TaskSnapshotView,
-) (api.TaskSnapshot, error) {
+) (api.ParticipantTaskSnapshot, error) {
 	category := api.Category(view.Category)
 	difficulty := api.Difficulty(view.Difficulty)
 	kind := api.TaskKind(view.Kind)
@@ -99,21 +99,21 @@ func participantTaskSnapshot(
 		view.Version < 1 || view.Version > math.MaxInt32 ||
 		view.TimeLimit < 1 || view.TimeLimit > math.MaxInt32 ||
 		!category.Valid() || !difficulty.Valid() || !kind.Valid() {
-		return api.TaskSnapshot{}, domain.ErrInternal
+		return api.ParticipantTaskSnapshot{}, domain.ErrInternal
 	}
-	return api.TaskSnapshot{
-		SnapshotId:    view.SnapshotID,
-		TaskId:        view.TaskID,
-		Version:       int32(view.Version),
-		Kind:          kind,
-		Title:         view.Title,
-		Description:   view.Description,
-		Category:      category,
-		Difficulty:    difficulty,
-		TimeLimit:     int32(view.TimeLimit),
-		Hints:         append([]string(nil), view.Hints...),
-		TaskUrl:       participantStringPointer(view.TaskURL),
-		SourceFileUrl: participantStringPointer(view.SourceFileURL),
+	return api.ParticipantTaskSnapshot{
+		SnapshotId:          view.SnapshotID,
+		TaskId:              view.TaskID,
+		Version:             int32(view.Version),
+		Kind:                kind,
+		Title:               view.Title,
+		Description:         view.Description,
+		Category:            category,
+		Difficulty:          difficulty,
+		TimeLimit:           int32(view.TimeLimit),
+		Hints:               append([]string(nil), view.Hints...),
+		TaskUrl:             participantStringPointer(view.TaskURL),
+		SourceFileAvailable: view.SourceFileURL != nil,
 	}, nil
 }
 

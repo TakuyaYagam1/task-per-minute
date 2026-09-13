@@ -282,6 +282,58 @@ ORDER BY (
     series.id DESC
 LIMIT 1;
 
+-- name: GetParticipantArchiveSource :one
+WITH authorized_source AS (
+    SELECT snapshot.task_id,
+        snapshot.source_file_url,
+        0 AS source_rank
+    FROM participants AS participant
+    INNER JOIN rosters AS roster ON roster.id = participant.roster_id
+    INNER JOIN task_delivery_receipts AS receipt
+        ON receipt.roster_id = roster.id
+        AND receipt.participant_id = participant.id
+    INNER JOIN assignments AS assignment
+        ON assignment.id = receipt.assignment_id
+        AND assignment.attempt_id = receipt.attempt_id
+        AND assignment.roster_id = receipt.roster_id
+    INNER JOIN task_snapshots AS snapshot
+        ON snapshot.id = assignment.snapshot_id
+        AND snapshot.id = receipt.snapshot_id
+        AND snapshot.task_id = assignment.task_id
+        AND snapshot.task_id = receipt.task_id
+        AND snapshot.task_version = assignment.task_version
+        AND snapshot.task_version = receipt.task_version
+    WHERE roster.tournament_id = sqlc.arg(tournament_id)
+        AND participant.player_id = sqlc.arg(player_id)
+        AND assignment.id = sqlc.arg(assignment_id)
+
+    UNION ALL
+
+    SELECT snapshot.task_id,
+        snapshot.source_file_url,
+        1 AS source_rank
+    FROM golden_runtime_assignments AS runtime
+    INNER JOIN golden_memberships AS membership
+        ON membership.attempt_id = runtime.attempt_id
+    INNER JOIN participants AS participant
+        ON participant.id = membership.participant_id
+        AND participant.roster_id = runtime.roster_id
+    INNER JOIN task_snapshots AS snapshot
+        ON snapshot.id = runtime.snapshot_id
+        AND snapshot.task_id = runtime.task_id
+        AND snapshot.task_version = runtime.task_version
+    WHERE runtime.tournament_id = sqlc.arg(tournament_id)
+        AND participant.player_id = sqlc.arg(player_id)
+        AND runtime.assignment_id = sqlc.arg(assignment_id)
+        AND runtime.started_at IS NOT NULL
+        AND membership.participation_established_at IS NOT NULL
+)
+SELECT task_id,
+    source_file_url
+FROM authorized_source
+ORDER BY source_rank
+LIMIT 1;
+
 -- name: ListParticipantStateSeriesGraph :many
 SELECT sqlc.embed(game_slot),
     sqlc.embed(game_attempt)

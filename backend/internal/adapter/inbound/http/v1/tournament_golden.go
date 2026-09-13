@@ -78,7 +78,7 @@ func (s *Server) GetGoldenParticipantState(w http.ResponseWriter, r *http.Reques
 	view, err := s.golden.ParticipantView(r.Context(), usecase.GoldenParticipantQuery{
 		TournamentID: tournamentID, PlayerID: actor.PlayerID,
 	})
-	s.writeGoldenParticipant(w, r, view, err)
+	s.writeGoldenParticipant(w, r, actor, view, err)
 }
 
 func (s *Server) SetGoldenParticipantReady(
@@ -107,7 +107,7 @@ func (s *Server) SetGoldenParticipantReady(
 			ExpectedAttemptID: body.AttemptId, ExpectedReadyWindowID: body.ReadyWindowId,
 		},
 	})
-	s.writeGoldenParticipant(w, r, view, err)
+	s.writeGoldenParticipant(w, r, actor, view, err)
 }
 
 func (s *Server) SubmitGoldenFlag(
@@ -132,7 +132,7 @@ func (s *Server) SubmitGoldenFlag(
 			ExpectedAttemptID: body.AttemptId, ExpectedReadyWindowID: body.ReadyWindowId,
 		},
 	})
-	s.writeGoldenParticipant(w, r, view, err)
+	s.writeGoldenParticipant(w, r, actor, view, err)
 }
 
 func (s *Server) requireGolden(w http.ResponseWriter, r *http.Request) bool {
@@ -156,12 +156,35 @@ func (s *Server) writeGoldenOperator(w http.ResponseWriter, r *http.Request, vie
 	response.WriteJSON(w, http.StatusOK, payload)
 }
 
-func (s *Server) writeGoldenParticipant(w http.ResponseWriter, r *http.Request, view usecase.GoldenParticipantView, err error) {
+func (s *Server) writeGoldenParticipant(
+	w http.ResponseWriter,
+	r *http.Request,
+	actor usecase.Identity,
+	view usecase.GoldenParticipantView,
+	err error,
+) {
 	if err != nil {
 		writeParticipantError(w, r, err)
 		return
 	}
-	payload, err := goldenParticipantResponse(view)
+	sourceFileAvailable := false
+	if view.Task != nil {
+		if s == nil || s.participantArchive == nil {
+			errmap.HandleError(w, r, domain.ErrInternal)
+			return
+		}
+		sourceFileAvailable, err = s.participantArchive.SourceFileAvailable(
+			r.Context(),
+			usecase.ParticipantArchiveQuery{
+				Actor: actor, TournamentID: view.TournamentID, AssignmentID: view.Task.AssignmentID,
+			},
+		)
+		if err != nil {
+			writeParticipantError(w, r, err)
+			return
+		}
+	}
+	payload, err := goldenParticipantResponse(view, sourceFileAvailable)
 	if err != nil {
 		errmap.HandleError(w, r, err)
 		return
@@ -193,7 +216,10 @@ func goldenOperatorResponse(view usecase.GoldenOperatorView) (api.GoldenOperator
 	return payload, nil
 }
 
-func goldenParticipantResponse(view usecase.GoldenParticipantView) (api.GoldenParticipantResponse, error) {
+func goldenParticipantResponse(
+	view usecase.GoldenParticipantView,
+	sourceFileAvailable bool,
+) (api.GoldenParticipantResponse, error) {
 	state := api.GoldenRuntimeState(view.State)
 	if !state.Valid() {
 		return api.GoldenParticipantResponse{}, domain.ErrInternal
@@ -212,7 +238,8 @@ func goldenParticipantResponse(view usecase.GoldenParticipantView) (api.GoldenPa
 		payload.Task = &api.GoldenRuntimeTask{
 			AssignmentId: view.Task.AssignmentID, SnapshotId: view.Task.SnapshotID, TaskId: view.Task.TaskID,
 			Title: view.Task.Title, Category: view.Task.Category, Difficulty: view.Task.Difficulty,
-			TimeLimitSeconds: api.GoldenRuntimeTaskTimeLimitSeconds(view.Task.TimeLimitSeconds),
+			TimeLimitSeconds:    api.GoldenRuntimeTaskTimeLimitSeconds(view.Task.TimeLimitSeconds),
+			SourceFileAvailable: sourceFileAvailable,
 		}
 	}
 	return payload, nil

@@ -21,6 +21,7 @@ import (
 	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/idempotency"
 	leaderboardusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/leaderboard"
+	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/participantarchive"
 	playerusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/player"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/readiness"
@@ -143,6 +144,8 @@ var ReposSet = wire.NewSet(
 	wire.Bind(new(tournamentparticipant.CommandAuthority), new(*postgres.TournamentParticipantPostgres)),
 	postgres.NewParticipantStatePostgres,
 	wire.Bind(new(tournamentparticipant.StateReader), new(*postgres.ParticipantStatePostgres)),
+	postgres.NewParticipantArchivePostgres,
+	wire.Bind(new(participantarchive.Repository), new(*postgres.ParticipantArchivePostgres)),
 	postgres.NewParticipantReadinessRepository,
 	postgres.NewParticipantDraftRepository,
 	postgres.NewSwissDraftDeadlinePostgres,
@@ -173,6 +176,7 @@ var UseCasesSet = wire.NewSet(
 	wire.Bind(new(leaderboardusecase.Clock), new(clockFunc)),
 	wire.Bind(new(playerusecase.ManagementClock), new(clockFunc)),
 	wire.Bind(new(playerusecase.SessionClock), new(clockFunc)),
+	wire.Bind(new(participantarchive.Clock), new(clockFunc)),
 	wire.Bind(new(catalogusecase.Clock), new(clockFunc)),
 	wire.Bind(new(catalogusecase.CatalogClock), new(clockFunc)),
 	wire.Bind(new(lifecycleusecase.LifecycleClock), new(clockFunc)),
@@ -202,6 +206,9 @@ var UseCasesSet = wire.NewSet(
 	provideCleanupRunner,
 	provideSourceFiles,
 	wire.Bind(new(restv1.UploadService), new(*taskusecase.SourceFiles)),
+	wire.Bind(new(participantarchive.Signer), new(*taskusecase.SourceFiles)),
+	provideParticipantArchive,
+	wire.Bind(new(inbound.ParticipantArchiveUseCase), new(*participantarchive.Service)),
 
 	providePlayerSessionUseCase,
 	wire.Bind(new(restv1.PlayerService), new(*playerusecase.SessionUseCase)),

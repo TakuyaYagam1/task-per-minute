@@ -904,6 +904,34 @@
 
       default:
         $ref: '../components/responses.yml#/UnexpectedServerProblem'
+/api/v1/tournaments/{tournament_id}/participant/assignments/{assignment_id}/source-file:
+  parameters:
+    - $ref: '../components/parameters.yml#/TournamentId'
+    - $ref: '../components/parameters.yml#/AssignmentId'
+  get:
+    operationId: getParticipantAssignmentSourceFile
+    tags: [tournament]
+    summary: Create temporary source archive access for an authorized participant assignment
+    description: Returns a fresh public signed URL for the immutable task snapshot after authoritative assignment start.
+    x-auth-scope: tournament:participate
+    security:
+      - PlayerSessionAuth: []
+    responses:
+      '200':
+        description: Temporary participant source archive access.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/ParticipantSourceFileResponse'
+      '401':
+        $ref: '../components/responses.yml#/UnauthorizedProblem'
+      '403':
+        $ref: '../components/responses.yml#/ForbiddenProblem'
+      '404':
+        $ref: '../components/responses.yml#/NotFoundProblem'
+
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
 /api/v1/tournaments/{tournament_id}/participant/waves/{wave_id}/ready:
   parameters:
     - $ref: '../components/parameters.yml#/TournamentId'

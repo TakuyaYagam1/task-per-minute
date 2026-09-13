@@ -526,7 +526,7 @@ GoldenRuntimeTask:
   type: object
   description: Participant-safe immutable Golden assignment. Flag material is never serialized.
   additionalProperties: false
-  required: [assignment_id, snapshot_id, task_id, title, category, difficulty, time_limit_seconds]
+  required: [assignment_id, snapshot_id, task_id, title, category, difficulty, time_limit_seconds, source_file_available]
   properties:
     assignment_id:
       type: string
@@ -547,6 +547,9 @@ GoldenRuntimeTask:
       type: integer
       format: int32
       enum: [180]
+    source_file_available:
+      type: boolean
+      description: Whether the immutable Golden assignment has a source archive available through the participant download endpoint.
 
 GoldenParticipantResponse:
   type: object

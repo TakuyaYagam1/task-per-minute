@@ -12,6 +12,77 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const getParticipantArchiveSource = `-- name: GetParticipantArchiveSource :one
+WITH authorized_source AS (
+    SELECT snapshot.task_id,
+        snapshot.source_file_url,
+        0 AS source_rank
+    FROM participants AS participant
+    INNER JOIN rosters AS roster ON roster.id = participant.roster_id
+    INNER JOIN task_delivery_receipts AS receipt
+        ON receipt.roster_id = roster.id
+        AND receipt.participant_id = participant.id
+    INNER JOIN assignments AS assignment
+        ON assignment.id = receipt.assignment_id
+        AND assignment.attempt_id = receipt.attempt_id
+        AND assignment.roster_id = receipt.roster_id
+    INNER JOIN task_snapshots AS snapshot
+        ON snapshot.id = assignment.snapshot_id
+        AND snapshot.id = receipt.snapshot_id
+        AND snapshot.task_id = assignment.task_id
+        AND snapshot.task_id = receipt.task_id
+        AND snapshot.task_version = assignment.task_version
+        AND snapshot.task_version = receipt.task_version
+    WHERE roster.tournament_id = $1
+        AND participant.player_id = $2
+        AND assignment.id = $3
+
+    UNION ALL
+
+    SELECT snapshot.task_id,
+        snapshot.source_file_url,
+        1 AS source_rank
+    FROM golden_runtime_assignments AS runtime
+    INNER JOIN golden_memberships AS membership
+        ON membership.attempt_id = runtime.attempt_id
+    INNER JOIN participants AS participant
+        ON participant.id = membership.participant_id
+        AND participant.roster_id = runtime.roster_id
+    INNER JOIN task_snapshots AS snapshot
+        ON snapshot.id = runtime.snapshot_id
+        AND snapshot.task_id = runtime.task_id
+        AND snapshot.task_version = runtime.task_version
+    WHERE runtime.tournament_id = $1
+        AND participant.player_id = $2
+        AND runtime.assignment_id = $3
+        AND runtime.started_at IS NOT NULL
+        AND membership.participation_established_at IS NOT NULL
+)
+SELECT task_id,
+    source_file_url
+FROM authorized_source
+ORDER BY source_rank
+LIMIT 1
+`
+
+type GetParticipantArchiveSourceParams struct {
+	TournamentID uuid.UUID
+	PlayerID     uuid.UUID
+	AssignmentID uuid.UUID
+}
+
+type GetParticipantArchiveSourceRow struct {
+	TaskID        uuid.UUID
+	SourceFileUrl *string
+}
+
+func (q *Queries) GetParticipantArchiveSource(ctx context.Context, arg GetParticipantArchiveSourceParams) (GetParticipantArchiveSourceRow, error) {
+	row := q.db.QueryRow(ctx, getParticipantArchiveSource, arg.TournamentID, arg.PlayerID, arg.AssignmentID)
+	var i GetParticipantArchiveSourceRow
+	err := row.Scan(&i.TaskID, &i.SourceFileUrl)
+	return i, err
+}
+
 const getParticipantStateAssignment = `-- name: GetParticipantStateAssignment :one
 SELECT assignment.id AS assignment_id,
     assignment.attempt_id,

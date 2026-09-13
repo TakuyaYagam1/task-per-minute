@@ -91,7 +91,7 @@ func foreignSwissByeLedger(ctx context.Context, t *testing.T, fixture tournament
 		ParticipantIDs: participants[:2], CreatedAt: at, Series: []postgres.WaveSeriesInput{{ID: uuid.New(), FirstParticipantID: participants[0], SecondParticipantID: participants[1],
 			Format: domain.SeriesFormatBO1, InitialScoreRevisionID: domain.SeriesScoreRevisionID(uuid.New())}}})
 	require.NoError(t, err)
-	roundID := createRoundProofSwissRound(ctx, t, rosterID, at)
+	roundID := createRoundProofSwissRound(ctx, t, tournamentID, rosterID, at)
 	_, err = sharedPool.Exec(ctx, `INSERT INTO swiss_wave_links (wave_id, tournament_id, roster_id, round_id, bye_participant_id, bye_revision_id, created_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)`, waveID, tournamentID, rosterID, roundID, participants[2], byeID, at)
 	require.NoError(t, err)
