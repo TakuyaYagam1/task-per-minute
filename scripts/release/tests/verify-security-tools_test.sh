@@ -335,6 +335,8 @@ elif mutation == "runtime_output_tamper":
     tools_by_name["docker"]["runtime_identity"]["expected_output"] = "manifest chosen output"
 elif mutation == "missing_tool":
     tool_paths["node"].unlink()
+elif mutation == "missing_backend_tool":
+    tool_paths["go"].unlink()
 elif mutation == "executable_tamper":
     tool_paths["yq"].chmod(0o755)
     with tool_paths["yq"].open("ab") as output:
@@ -367,6 +369,15 @@ elif mutation == "playwright_package_type":
     lock["playwright_chromium"]["package_lock_sha256"] = sha256(package_lock)
 elif mutation == "playwright_browsers_type":
     browsers_json.write_text(json.dumps({"browsers": ["invalid"]}), encoding="utf-8")
+    lock["playwright_chromium"]["browsers_json_sha256"] = sha256(browsers_json)
+elif mutation == "playwright_package_browser_version":
+    browsers_json.write_text(json.dumps({
+        "browsers": [{
+            "name": "chromium",
+            "revision": "1217",
+            "browserVersion": "148.0.0.0",
+        }],
+    }, sort_keys=True), encoding="utf-8")
     lock["playwright_chromium"]["browsers_json_sha256"] = sha256(browsers_json)
 elif mutation == "image_tag":
     lock["validation_images"][0]["reference"] = "caddy:2-alpine"
@@ -425,6 +436,7 @@ run_fixture() {
   local mutation="$2"
   local expected_status="$3"
   local expected_text="$4"
+  local scope="${5:-all}"
   local case_root="$fixture_root/$name"
   local output="$case_root/output.txt"
   mkdir -p -- "$case_root"
@@ -444,8 +456,11 @@ pathlib.Path(sys.argv[2]).write_text(json.dumps(schema), encoding="utf-8")
 PY
   fi
 
-  local -a command=(
-    bash "$verifier"
+  local -a command=(bash "$verifier")
+  if [[ "$scope" != "all" ]]; then
+    command+=(--scope "$scope")
+  fi
+  command+=(
     --lock "$case_root/lock.json"
     --schema "$schema_path"
     --project-root "$case_root/project"
@@ -534,7 +549,14 @@ run_canonical_digest_reject() {
   }
 }
 
-run_fixture pass pass pass "release security fixture: PASS"
+run_fixture pass-default pass pass "release security fixture: PASS"
+run_fixture pass-frontend pass pass "release security fixture: PASS" frontend
+run_fixture pass-backend pass pass "release security fixture: PASS" backend
+run_fixture pass-all pass pass "release security fixture: PASS" all
+run_fixture frontend-ignores-backend-missing missing_backend_tool pass "release security fixture: PASS" frontend
+run_fixture backend-ignores-frontend-missing missing_tool pass "release security fixture: PASS" backend
+run_fixture frontend-missing-frontend missing_tool fail "node executable is missing" frontend
+run_fixture backend-missing-backend missing_backend_tool fail "go executable is missing" backend
 run_fixture version-mismatch version_mismatch fail "go runtime/version identity mismatch"
 run_fixture runtime-args-tamper runtime_args_tamper fail "docker runtime probe arguments policy mismatch"
 run_fixture runtime-output-tamper runtime_output_tamper fail "docker runtime probe output policy mismatch"
@@ -552,6 +574,7 @@ run_fixture playwright-revision playwright_revision fail "Playwright Chromium re
 run_fixture playwright-executable-digest playwright_executable_digest fail "Playwright/Chromium executable digest mismatch"
 run_fixture playwright-package-type playwright_package_type fail "Playwright package-lock has invalid structure"
 run_fixture playwright-browsers-type playwright_browsers_type fail "Playwright browsers.json has invalid structure"
+run_fixture playwright-package-browser-version playwright_package_browser_version fail "Playwright Chromium browser version mismatch"
 run_fixture duplicate-lock duplicate_lock fail "duplicate JSON key: schema_version"
 run_fixture nonfinite-lock nonfinite_lock fail "non-finite JSON value: NaN"
 run_fixture symlink-lock symlink_lock fail "release tool lock contains a symlink path component"

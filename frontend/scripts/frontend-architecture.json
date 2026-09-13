@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "layer_order": [
+    "app",
+    "pages",
+    "widgets",
+    "features",
+    "entities",
+    "shared"
+  ],
+  "routes": [
+    {
+      "route": "/",
+      "entry": "app/page.tsx",
+      "owner": "lib/pages/home/exports.ts"
+    },
+    {
+      "route": "/admin",
+      "entry": "app/admin/page.tsx",
+      "owner": "app/admin/page.tsx"
+    },
+    {
+      "route": "/leaderboard",
+      "entry": "app/leaderboard/page.tsx",
+      "owner": "app/leaderboard/page.tsx"
+    },
+    {
+      "route": "/health",
+      "entry": "app/health/route.ts",
+      "owner": "app/health/route.ts"
+    },
+    {
+      "route": "/csp-report",
+      "entry": "app/csp-report/route.ts",
+      "owner": "app/csp-report/route.ts"
+    }
+  ],
+  "legacy_entrypoints": [
+    {
+      "path": "app/admin/page.tsx",
+      "replacement_layer": "lib/pages",
+      "preserve_until_replaced": true
+    },
+    {
+      "path": "app/leaderboard/page.tsx",
+      "replacement_layer": "lib/pages",
+      "preserve_until_replaced": true
+    }
+  ],
+  "preserved_public_surfaces": [
+    "lib/entities/player/index.ts",
+    "lib/pages/home/exports.ts",
+    "lib/shared/api/index.ts",
+    "lib/shared/config/index.ts",
+    "lib/shared/lib/index.ts",
+    "lib/shared/ui/index.ts",
+    "lib/widgets/error-page/index.ts"
+  ]
+}

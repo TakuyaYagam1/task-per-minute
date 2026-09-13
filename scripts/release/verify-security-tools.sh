@@ -18,57 +18,101 @@ image_inventory=""
 now_override=""
 canonical=1
 report_label='release security preflight'
+scope='all'
 
 if (($# > 0)); then
   if [[ "${TPM_SECURITY_PREFLIGHT_TEST_MODE:-}" != "1" ]]; then
-    echo "release security preflight: ERROR: canonical mode accepts no arguments" >&2
-    exit 2
+    if (($# != 2)) || [[ "$1" != "--scope" ]]; then
+      echo "release security preflight: ERROR: canonical mode accepts only --scope frontend|backend|all" >&2
+      exit 2
+    fi
+  else
+    canonical=0
+    report_label='release security fixture'
   fi
-  canonical=0
-  report_label='release security fixture'
   while (($# > 0)); do
     case "$1" in
+      --scope)
+        (($# >= 2)) || { echo "$report_label: ERROR: --scope requires frontend, backend, or all" >&2; exit 2; }
+        case "$2" in
+          frontend|backend|all) scope="$2" ;;
+          *) echo "$report_label: ERROR: --scope must be frontend, backend, or all" >&2; exit 2 ;;
+        esac
+        shift 2
+        ;;
       --lock)
+        if ((canonical)); then
+          echo "$report_label: ERROR: canonical mode accepts only --scope frontend|backend|all" >&2
+          exit 2
+        fi
         (($# >= 2)) || { echo "$report_label: ERROR: --lock requires a path" >&2; exit 2; }
         lock_path="$2"
         shift 2
         ;;
       --schema)
+        if ((canonical)); then
+          echo "$report_label: ERROR: canonical mode accepts only --scope frontend|backend|all" >&2
+          exit 2
+        fi
         (($# >= 2)) || { echo "$report_label: ERROR: --schema requires a path" >&2; exit 2; }
         schema_path="$2"
         shift 2
         ;;
       --project-root)
+        if ((canonical)); then
+          echo "$report_label: ERROR: canonical mode accepts only --scope frontend|backend|all" >&2
+          exit 2
+        fi
         (($# >= 2)) || { echo "$report_label: ERROR: --project-root requires a path" >&2; exit 2; }
         project_root="$2"
         shift 2
         ;;
       --test-root)
+        if ((canonical)); then
+          echo "$report_label: ERROR: canonical mode accepts only --scope frontend|backend|all" >&2
+          exit 2
+        fi
         (($# >= 2)) || { echo "$report_label: ERROR: --test-root requires a path" >&2; exit 2; }
         test_root="$2"
         shift 2
         ;;
       --archive-root)
+        if ((canonical)); then
+          echo "$report_label: ERROR: canonical mode accepts only --scope frontend|backend|all" >&2
+          exit 2
+        fi
         (($# >= 2)) || { echo "$report_label: ERROR: --archive-root requires a path" >&2; exit 2; }
         archive_root="$2"
         shift 2
         ;;
       --image-inventory)
+        if ((canonical)); then
+          echo "$report_label: ERROR: canonical mode accepts only --scope frontend|backend|all" >&2
+          exit 2
+        fi
         (($# >= 2)) || { echo "$report_label: ERROR: --image-inventory requires a path" >&2; exit 2; }
         image_inventory="$2"
         shift 2
         ;;
       --now)
+        if ((canonical)); then
+          echo "$report_label: ERROR: canonical mode accepts only --scope frontend|backend|all" >&2
+          exit 2
+        fi
         (($# >= 2)) || { echo "$report_label: ERROR: --now requires a value" >&2; exit 2; }
         now_override="$2"
         shift 2
         ;;
       *)
-        echo "$report_label: ERROR: unknown test argument: $1" >&2
+        echo "$report_label: ERROR: unknown argument: $1" >&2
         exit 2
         ;;
     esac
   done
+fi
+
+if ((canonical == 0)); then
+  report_label='release security fixture'
 fi
 
 python_bin='/nix/store/gxzhl7aaiid7zp3y47jqqiq7zg5mqpwp-python3-3.14.6/bin/python3.14'
@@ -85,6 +129,7 @@ exec "$python_bin" -I - \
   "$archive_root" \
   "$image_inventory" \
   "$now_override" \
+  "$scope" \
   "$canonical" <<'PY'
 from __future__ import annotations
 
@@ -117,7 +162,7 @@ class StrictJsonError(ValueError):
 CANONICAL_SCHEMA_ID = "https://task-per-minute.local/schemas/release-tools.schema.json"
 CANONICAL_LOCK_SCHEMA = "security/tools/release-tools.schema.json"
 CANONICAL_LOCK_SCHEMA_VERSION = 1
-CANONICAL_LOCK_SHA256 = "3fd7094c94ec2bd53732a11930f27adc83383c11c6008bd8e27ede1f97b7df2c"
+CANONICAL_LOCK_SHA256 = "1737eb54cbb74f5a7df99f5460524a1d8b337c6968285c0014970f32ef388d72"
 CANONICAL_SCHEMA_SHA256 = "e88e299e4eaf307ce59b7f1f9ddeaa4074384e183a05aac6cb627a8381aedc86"
 CANONICAL_ROOT_FIELDS = frozenset(
     {
@@ -208,6 +253,20 @@ TOOL_POLICY: dict[str, tuple[str, str, set[str], tuple[str, ...], str]] = {
         "Version: 0.72.0",
     ),
 }
+
+FRONTEND_TOOLS = frozenset({"node", "npm", "playwright", "chromium"})
+BACKEND_TOOLS = frozenset(TOOL_POLICY) - FRONTEND_TOOLS
+SCOPES = frozenset({"frontend", "backend", "all"})
+
+# Playwright 1.59.1's browsers.json records revision 1217 as browser
+# 147.0.7727.15. The reviewed Nix browser is provisioned separately at
+# 149.0.7827.55. Keep this exact tuple allowlisted so a different separately
+# provisioned browser cannot silently bypass the package metadata decision.
+SEPARATELY_PROVISIONED_PLAYWRIGHT_BINDINGS = frozenset(
+    {
+        ("1.59.1", "1217", "147.0.7727.15", "149.0.7827.55"),
+    }
+)
 
 IMAGE_POLICY = {
     "caddy": (
@@ -522,6 +581,7 @@ def verify_tool(
     canonical: bool,
     test_root: pathlib.Path | None,
     archive_root: pathlib.Path | None,
+    project_root: pathlib.Path | None,
 ) -> tuple[pathlib.Path, str]:
     name = tool["name"]
     provisioning = tool["provisioning"]
@@ -571,8 +631,20 @@ def verify_tool(
         verify_archive(archive_root, tool, digest)
 
     identity = tool["runtime_identity"]
+    command = [str(executable), *identity["arguments"]]
+    if name == "playwright" and provisioning["kind"] == "nix_store":
+        if project_root is None:
+            raise VerificationError("Playwright project root is required for its Node binding")
+        playwright_cli = project_member(
+            project_root,
+            "frontend/node_modules/playwright/cli.js",
+            "Playwright CLI",
+        )
+        if not playwright_cli.is_file():
+            raise VerificationError("Playwright CLI is not a regular file")
+        command = [str(executable), str(playwright_cli), *identity["arguments"]]
     output = run_exact(
-        [str(executable), *identity["arguments"]],
+        command,
         identity["timeout_seconds"],
         f"{name} runtime identity probe",
     )
@@ -633,7 +705,15 @@ def verify_playwright_binding(
     chromium_record = chromium_records[0]
     if chromium_record.get("revision") != binding["chromium_revision"]:
         raise VerificationError("Playwright Chromium revision mismatch")
-    if chromium_record.get("browserVersion") != binding["chromium_browser_version"]:
+    package_browser_version = chromium_record.get("browserVersion")
+    declared_browser_version = binding["chromium_browser_version"]
+    compatibility_tuple = (
+        binding["playwright_package_version"],
+        binding["chromium_revision"],
+        package_browser_version,
+        declared_browser_version,
+    )
+    if package_browser_version != declared_browser_version and compatibility_tuple not in SEPARATELY_PROVISIONED_PLAYWRIGHT_BINDINGS:
         raise VerificationError("Playwright Chromium browser version mismatch")
     if tools["playwright"]["version"] != binding["playwright_package_version"]:
         raise VerificationError("Playwright runtime/package-lock mismatch")
@@ -782,12 +862,24 @@ def verify_trivy_database(
         raise VerificationError("Trivy vulnerability DB is stale")
 
 
-schema_path, lock_path, project_root_text, test_root_text, archive_root_text, inventory_path, now_text, canonical_text = sys.argv[1:]
+(
+    schema_path,
+    lock_path,
+    project_root_text,
+    test_root_text,
+    archive_root_text,
+    inventory_path,
+    now_text,
+    scope,
+    canonical_text,
+) = sys.argv[1:]
 canonical = canonical_text == "1"
 report_label = "release security preflight" if canonical else "release security fixture"
 rejection_label = "NO-GO" if canonical else "REJECTED"
 
 try:
+    if scope not in SCOPES:
+        raise VerificationError("scope must be frontend, backend, or all")
     schema = load_json(
         schema_path,
         "release tool schema",
@@ -803,9 +895,17 @@ try:
     validate_canonical_contract(schema, lock)
     validate_schema(lock, schema, schema, "lock")
 
-    project_root = safe_root(project_root_text, "project root")
+    project_root = (
+        safe_root(project_root_text, "project root")
+        if scope in {"frontend", "all"}
+        else None
+    )
     test_root = safe_root(test_root_text, "test root") if test_root_text else None
-    archive_root = safe_root(archive_root_text, "archive root") if archive_root_text else None
+    archive_root = (
+        safe_root(archive_root_text, "archive root")
+        if archive_root_text and scope in {"backend", "all"}
+        else None
+    )
     if canonical and any((test_root_text, archive_root_text, inventory_path, now_text)):
         raise VerificationError("canonical mode cannot use fixture overrides")
 
@@ -818,7 +918,15 @@ try:
     if lock["platform"] != {"os": platform.system().lower(), "arch": host_arch}:
         errors.append("host platform does not match the release tool lock")
 
+    selected_tools = {
+        "frontend": FRONTEND_TOOLS,
+        "backend": BACKEND_TOOLS,
+        "all": frozenset(TOOL_POLICY),
+    }[scope]
+
     for name, tool in tools.items():
+        if name not in selected_tools:
+            continue
         (
             expected_version,
             expected_source,
@@ -847,28 +955,37 @@ try:
 
     verified: dict[str, tuple[pathlib.Path, str]] = {}
     for name in sorted(tools):
+        if name not in selected_tools:
+            continue
         try:
-            verified[name] = verify_tool(tools[name], canonical, test_root, archive_root)
+            verified[name] = verify_tool(
+                tools[name],
+                canonical,
+                test_root,
+                archive_root,
+                project_root,
+            )
             print(f"verified tool {name} {tools[name]['version']}")
         except VerificationError as exc:
             errors.append(str(exc))
 
-    if {"playwright", "chromium"}.issubset(tools):
+    if scope in {"frontend", "all"} and {"playwright", "chromium"}.issubset(tools):
         try:
             verify_playwright_binding(lock["playwright_chromium"], tools, verified, project_root)
         except VerificationError as exc:
             errors.append(str(exc))
 
-    image_names = [image["name"] for image in lock["validation_images"]]
-    if len(set(image_names)) != len(image_names) or set(image_names) != set(IMAGE_POLICY):
-        errors.append("validation image lock must contain the exact image set once")
-    errors.extend(verify_images(lock["validation_images"], verified, inventory_path))
+    if scope in {"backend", "all"}:
+        image_names = [image["name"] for image in lock["validation_images"]]
+        if len(set(image_names)) != len(image_names) or set(image_names) != set(IMAGE_POLICY):
+            errors.append("validation image lock must contain the exact image set once")
+        errors.extend(verify_images(lock["validation_images"], verified, inventory_path))
 
-    now = parse_timestamp(now_text, "--now") if now_text else dt.datetime.now(dt.timezone.utc)
-    try:
-        verify_trivy_database(lock["trivy_database"], test_root, now)
-    except VerificationError as exc:
-        errors.append(str(exc))
+        now = parse_timestamp(now_text, "--now") if now_text else dt.datetime.now(dt.timezone.utc)
+        try:
+            verify_trivy_database(lock["trivy_database"], test_root, now)
+        except VerificationError as exc:
+            errors.append(str(exc))
 
     if errors:
         for error in errors:

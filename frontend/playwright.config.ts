@@ -1,6 +1,9 @@
 import os from 'node:os';
+import path from 'node:path';
 
 import { defineConfig, devices } from '@playwright/test';
+
+import releaseTools from '../security/tools/release-tools.lock.json';
 
 const port = process.env.E2E_FRONTEND_PORT || '3101';
 const baseURL = process.env.E2E_FRONTEND_URL || `http://127.0.0.1:${port}`;
@@ -8,6 +11,21 @@ const backendURL = process.env.E2E_BACKEND_URL || 'http://127.0.0.1:8080';
 const defaultWorkerCount = Math.max(1, Math.min(4, os.availableParallelism?.() ?? os.cpus().length));
 const workerCount = Number(process.env.E2E_WORKERS || defaultWorkerCount);
 const reuseExistingServer = process.env.E2E_REUSE_EXISTING_SERVER === '1';
+const chromiumTool = releaseTools.tools.find((tool) => tool.name === 'chromium');
+const chromiumProvisioning = chromiumTool?.provisioning;
+
+if (
+  chromiumProvisioning?.kind !== 'nix_store'
+  || typeof chromiumProvisioning.immutable_root !== 'string'
+  || typeof chromiumProvisioning.relative_path !== 'string'
+) {
+  throw new Error('The verified Chromium runtime is missing from the release tool manifest');
+}
+
+const chromiumExecutable = path.join(
+  chromiumProvisioning.immutable_root,
+  chromiumProvisioning.relative_path,
+);
 
 export default defineConfig({
   testDir: './e2e',
@@ -40,7 +58,12 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      use: {
+        ...devices['Desktop Chrome'],
+        launchOptions: {
+          executablePath: chromiumExecutable,
+        },
+      },
     },
   ],
 });

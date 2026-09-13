@@ -52,8 +52,8 @@
         "license": {"spdx": "Apache-2.0", "reviewed_at": "2026-09-02", "status": "accepted", "evidence_url": "https://github.com/microsoft/playwright/blob/v1.59.1/LICENSE"}
       },
       "runtime_identity": {"arguments": ["--version"], "expected_output": "Version 1.59.1", "timeout_seconds": 5},
-      "provisioning": {"kind": "unresolved", "reason": "The package lock is pinned, but no matching immutable Playwright 1.59.1 executable root is approved."},
-      "trust_decision": {"status": "unresolved", "rationale": "Package version is known, while executable and package-content provenance remain unresolved."}
+      "provisioning": {"kind": "nix_store", "immutable_root": "/nix/store/jy3vlmdzmyjpb37r6r2n24lc3zarhjz3-nodejs-slim-24.18.1", "relative_path": "bin/node", "executable_sha256": "5d270d274dfe9a142289b7e1b781408826fda929d42229b6d761462f4e21be17", "nar_hash": "sha256:0dk62alicfa8xkq7k6n538n11i7fd7c8mji9gca04cxxzf5c3glr"},
+      "trust_decision": {"status": "accepted", "rationale": "Playwright 1.59.1 is executed by the exact locked Node runtime; package-lock and browser binding digests provide package identity."}
     },
     {
       "name": "chromium",
@@ -65,7 +65,7 @@
       },
       "runtime_identity": {"arguments": ["--version"], "expected_output": "Google Chrome for Testing 149.0.7827.55", "timeout_seconds": 5},
       "provisioning": {"kind": "nix_store", "immutable_root": "/nix/store/8gsyn6xgbqwccdz93f3kqc9glmx37ab7-playwright-chromium", "relative_path": "chrome-linux64/chrome", "executable_sha256": "ef4c0f78ac9f95d43f9f42a9d3b2188e6b053213238cb55836bb1061dafdab05", "nar_hash": "sha256:0bybac93zqfi3nb4wvlmb53iiaj5jkh4shsk50rs35sr29yvkqha"},
-      "trust_decision": {"status": "accepted", "rationale": "The exact observed browser binary is locked even though its Playwright compatibility decision fails."}
+      "trust_decision": {"status": "accepted", "rationale": "The separately provisioned Chromium binary is locked by exact Nix root, NAR identity, executable digest, and explicit Playwright compatibility policy."}
     },
     {
       "name": "jq",
@@ -165,17 +165,15 @@
     }
   ],
   "playwright_chromium": {
-    "status": "unresolved",
+    "status": "accepted",
     "package_lock_relative_path": "frontend/package-lock.json",
-    "package_lock_sha256": "97fcb885fb3e5d7e8b533c90db9396a950c2c144e58eb2c3d73ffa28b78f8ba2",
+    "package_lock_sha256": "626e6b736141556d83e64dac777038d7abf886b94dd0a2a2e88f26a215506338",
     "playwright_package_version": "1.59.1",
     "browsers_json_relative_path": "frontend/node_modules/playwright-core/browsers.json",
     "browsers_json_sha256": "469f17a82348978f79738981bc8af9b4e8516aac5a020018911fff39b755fe60",
     "chromium_revision": "1217",
-    "chromium_browser_version": "147.0.7727.15",
-    "observed_browser_version": "149.0.7827.55",
-    "chromium_executable_sha256": "ef4c0f78ac9f95d43f9f42a9d3b2188e6b053213238cb55836bb1061dafdab05",
-    "reason": "Playwright revision 1217 requires browser 147.0.7727.15, but the observed Nix browser is 149.0.7827.55."
+    "chromium_browser_version": "149.0.7827.55",
+    "chromium_executable_sha256": "ef4c0f78ac9f95d43f9f42a9d3b2188e6b053213238cb55836bb1061dafdab05"
   },
   "validation_images": [
     {"status": "unresolved", "name": "caddy", "requested_tag": "caddy:2-alpine", "source": "https://github.com/caddyserver/caddy-docker", "reason": "Required image is absent and no reviewed repository digest or config digest is available."},
