@@ -6,6 +6,7 @@ import {
   advanceAdminSessionEpoch,
   canResumeAdminSession,
   clearAdminCSRFTokens,
+  isCurrentAdminSessionEpoch,
   setAdminRefreshFailureHandler,
   type ProblemDetails,
   unwrapApi,
@@ -102,27 +103,40 @@ const isAbortLikeError = (error: unknown): boolean =>
   error instanceof DOMException &&
   (error.name === "AbortError" || error.name === "TimeoutError");
 
+const adminEventSources = new Set<EventSource>();
+
+const closeAdminEventSources = (): void => {
+  for (const source of adminEventSources) {
+    source.close();
+  }
+  adminEventSources.clear();
+};
+
 type ClearAdminSessionOptions = {
   preserveCSRF?: boolean;
 };
 
 export { canResumeAdminSession };
 
-export const activateAdminSession = (): void => {
-  advanceAdminSessionEpoch();
+export const activateAdminSession = (): number => {
+  closeAdminEventSources();
+  return advanceAdminSessionEpoch();
 };
 
 export const clearAdminSession = (options: ClearAdminSessionOptions = {}): void => {
+  closeAdminEventSources();
   if (!options.preserveCSRF) {
     clearAdminCSRFTokens();
   }
   advanceAdminSessionEpoch();
 };
 
-setAdminRefreshFailureHandler(clearAdminCSRFTokens);
+setAdminRefreshFailureHandler(() => clearAdminSession());
 
 export const adminApi = {
   async login(password: string, signal?: AbortSignal): Promise<AdminSessionResponse> {
+    activateAdminSession();
+    clearAdminCSRFTokens();
     const data = await unwrapApi(
       await adminClient.POST("/api/v1/admin/login", {
         body: { password },
@@ -147,12 +161,21 @@ export const adminApi = {
   },
 
   async logout(signal?: AbortSignal): Promise<void> {
-    await unwrapApiVoid(
-      await adminClient.POST("/api/v1/admin/logout", {
-        params: { header: requiredCSRFHeader },
-        signal,
-      }),
-    );
+    // Advance the session before dispatch while preserving the refresh CSRF
+    // token that the logout request must carry.
+    const logoutEpoch = activateAdminSession();
+    try {
+      await unwrapApiVoid(
+        await adminClient.POST("/api/v1/admin/logout", {
+          params: { header: requiredCSRFHeader },
+          signal,
+        }),
+      );
+    } finally {
+      if (isCurrentAdminSessionEpoch(logoutEpoch)) {
+        clearAdminSession();
+      }
+    }
   },
 
   async listTasks(signal?: AbortSignal): Promise<AdminTask[]> {
@@ -254,9 +277,11 @@ export const adminApi = {
   },
 
   openPlayerEvents(): EventSource {
-    return new EventSource(adminURL("/api/v1/admin/players/events"), {
+    const source = new EventSource(adminURL("/api/v1/admin/players/events"), {
       withCredentials: true,
     });
+    adminEventSources.add(source);
+    return source;
   },
 
   sourceDownloadURL(id: string): string {

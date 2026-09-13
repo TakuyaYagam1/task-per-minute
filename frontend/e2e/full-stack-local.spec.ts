@@ -22,6 +22,9 @@ type UploadSourceResponse = {
 type BrowserAuthStorage = {
   sessionToken: string | null;
   localSessionToken: string | null;
+  playerCSRFToken: string | null;
+  adminAccessCSRFToken: string | null;
+  adminRefreshCSRFToken: string | null;
 };
 
 type FullStackTaskInput = {
@@ -168,9 +171,15 @@ const expectNoSensitiveAuthStorage = async (page: Page): Promise<void> => {
   const storage = await page.evaluate((): BrowserAuthStorage => ({
     sessionToken: window.sessionStorage.getItem('session_token'),
     localSessionToken: window.localStorage.getItem('session_token'),
+    playerCSRFToken: window.sessionStorage.getItem('player_csrf_token'),
+    adminAccessCSRFToken: window.sessionStorage.getItem('admin_access_csrf_token'),
+    adminRefreshCSRFToken: window.sessionStorage.getItem('admin_refresh_csrf_token'),
   }));
   expect(storage.sessionToken, 'player session token must stay out of sessionStorage').toBeNull();
   expect(storage.localSessionToken, 'player session token must stay out of localStorage').toBeNull();
+  expect(storage.playerCSRFToken, 'player CSRF token must stay out of sessionStorage').toBeNull();
+  expect(storage.adminAccessCSRFToken, 'admin access CSRF token must stay out of sessionStorage').toBeNull();
+  expect(storage.adminRefreshCSRFToken, 'admin refresh CSRF token must stay out of sessionStorage').toBeNull();
 };
 
 test.describe('local compose full stack e2e', () => {

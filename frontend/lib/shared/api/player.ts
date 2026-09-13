@@ -1,4 +1,11 @@
-import { publicClient, unwrapApi, unwrapApiVoid } from "./client";
+import {
+  advancePlayerSessionEpoch,
+  clearPlayerCSRFTokens,
+  isCurrentPlayerSessionEpoch,
+  publicClient,
+  unwrapApi,
+  unwrapApiVoid,
+} from "./client";
 import {
   assertApiResponse,
   isCurrentPlayerResponse,
@@ -11,13 +18,22 @@ export type CurrentPlayerResponse = components["schemas"]["CurrentPlayerResponse
 
 export const playerApi = {
   async join(username: string, signal?: AbortSignal): Promise<JoinPlayerResponse> {
-    const data = await unwrapApi(
-      await publicClient.POST("/api/v1/players/join", {
-        body: { username },
-        signal,
-      }),
-    );
-    return assertApiResponse(data, isJoinPlayerResponse, "players/join");
+    const sessionEpoch = advancePlayerSessionEpoch();
+    clearPlayerCSRFTokens();
+    try {
+      const data = await unwrapApi(
+        await publicClient.POST("/api/v1/players/join", {
+          body: { username },
+          signal,
+        }),
+      );
+      return assertApiResponse(data, isJoinPlayerResponse, "players/join");
+    } catch (error) {
+      if (isCurrentPlayerSessionEpoch(sessionEpoch)) {
+        clearPlayerCSRFTokens();
+      }
+      throw error;
+    }
   },
 
   async me(signal?: AbortSignal): Promise<CurrentPlayerResponse> {
@@ -30,10 +46,17 @@ export const playerApi = {
   },
 
   async logout(signal?: AbortSignal): Promise<void> {
-    await unwrapApiVoid(
-      await publicClient.POST("/api/v1/players/logout", {
-        signal,
-      }),
-    );
+    const logoutEpoch = advancePlayerSessionEpoch();
+    try {
+      await unwrapApiVoid(
+        await publicClient.POST("/api/v1/players/logout", {
+          signal,
+        }),
+      );
+    } finally {
+      if (isCurrentPlayerSessionEpoch(logoutEpoch)) {
+        clearPlayerCSRFTokens();
+      }
+    }
   },
 };

@@ -12,9 +12,11 @@ import { toPublicArenaView } from "../../../../lib/entities/tournament";
 
 const tournamentId = "00000000-0000-4000-8000-000000000001";
 const seriesId = "00000000-0000-4000-8000-000000000010";
+const waveId = "00000000-0000-4000-8000-000000000015";
 
 type PublicSnapshot = components["schemas"]["PublicRecoverySnapshot"];
 type NoShowRequest = components["schemas"]["OperatorNoShowRequest"];
+type ParticipantReadyRequest = components["schemas"]["ParticipantReadyRequest"];
 type PublicArenaView = ReturnType<typeof toPublicArenaView>;
 
 type FixtureResult =
@@ -55,6 +57,8 @@ const serializeError = (value: unknown): SerializedError => {
 };
 
 const publicSnapshotPath = `/api/v1/tournaments/${tournamentId}/snapshot`;
+const participantReadyPath = `/api/v1/tournaments/${tournamentId}/participant/waves/${waveId}/ready`;
+const adminTasksPath = "/api/v1/admin/tasks";
 
 const readPublicSnapshot = (): Promise<PublicSnapshot> =>
   readArenaResponse(
@@ -112,6 +116,66 @@ const runNoShow = async (): Promise<FixtureResult> => {
   }
 };
 
+const participantReadyBody = (): ParticipantReadyRequest => ({
+  expected_projection_revision: 4,
+  ready: true,
+});
+
+const runParticipantReady = async (): Promise<FixtureResult> => {
+  const body = participantReadyBody();
+  try {
+    await readArenaResponse(
+      arenaApi.clients.participant.POST(
+        "/api/v1/tournaments/{tournament_id}/participant/waves/{wave_id}/ready",
+        {
+          params: {
+            path: {
+              tournament_id: tournamentId,
+              wave_id: waveId,
+            },
+            header: { "Idempotency-Key": "contract-ready", "X-CSRF-Token": "" },
+          },
+          body,
+        },
+      ),
+      "participant readiness",
+    );
+    return { state: "success", value: null };
+  } catch (error) {
+    return { state: "error", error: serializeError(error) };
+  }
+};
+
+const runConcurrentAdminTasks = async (): Promise<FixtureResult> => {
+  try {
+    await Promise.all([
+      readArenaResponse(
+        arenaApi.clients.operator.GET("/api/v1/admin/tasks"),
+        "operator tasks first",
+      ),
+      readArenaResponse(
+        arenaApi.clients.operator.GET("/api/v1/admin/tasks"),
+        "operator tasks second",
+      ),
+    ]);
+    return { state: "success", value: null };
+  } catch (error) {
+    return { state: "error", error: serializeError(error) };
+  }
+};
+
+const runOperatorTask = async (): Promise<FixtureResult> => {
+  try {
+    await readArenaResponse(
+      arenaApi.clients.operator.GET("/api/v1/admin/tasks"),
+      "operator tasks",
+    );
+    return { state: "success", value: null };
+  } catch (error) {
+    return { state: "error", error: serializeError(error) };
+  }
+};
+
 export default function ArenaApiFixture() {
   const [hydrated, setHydrated] = useState(false);
   const [result, setResult] = useState<FixtureResult>({ state: "idle" });
@@ -135,7 +199,18 @@ export default function ArenaApiFixture() {
       <button type="button" disabled={!hydrated} onClick={() => { void invoke(runNoShow); }}>
         Выполнить no-show
       </button>
+      <button type="button" disabled={!hydrated} onClick={() => { void invoke(runParticipantReady); }}>
+        Отметить готовность участника
+      </button>
+      <button type="button" disabled={!hydrated} onClick={() => { void invoke(runConcurrentAdminTasks); }}>
+        Проверить параллельный admin refresh
+      </button>
+      <button type="button" disabled={!hydrated} onClick={() => { void invoke(runOperatorTask); }}>
+        Проверить admin 403
+      </button>
       <p>Snapshot endpoint: {publicSnapshotPath}</p>
+      <p>Participant ready endpoint: {participantReadyPath}</p>
+      <p>Admin tasks endpoint: {adminTasksPath}</p>
       <output aria-label="Результат вызова API" aria-live="polite">
         {result.state === "idle" && "Ожидание"}
         {result.state === "loading" && "Загрузка"}

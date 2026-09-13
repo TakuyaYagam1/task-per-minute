@@ -15,8 +15,10 @@ test('restores a cookie-backed player session without opening a websocket', asyn
     window.sessionStorage.setItem('player_id', playerID);
     window.sessionStorage.setItem('username', 'alice');
   }, { playerID });
-  page.on('websocket', () => {
-    websocketCalls += 1;
+  page.on('websocket', (socket) => {
+    if (!new URL(socket.url()).pathname.startsWith('/_next/')) {
+      websocketCalls += 1;
+    }
   });
   await page.route('**/api/v1/players/me', async (route) => {
     meCalls += 1;
@@ -72,7 +74,7 @@ test('valid join stores only the player restore cache', async ({ page }) => {
     expect(route.request().headers().authorization).toBeUndefined();
     await route.fulfill({
       status: 200,
-      headers: jsonHeaders,
+      headers: { ...jsonHeaders, 'X-CSRF-Token': 'join-player-csrf' },
       body: JSON.stringify({ player_id: playerID }),
     });
   });
@@ -149,10 +151,12 @@ test('join form rejects invalid usernames before sending a request', async ({ pa
 
 test('changing player clears the restore cache and calls logout', async ({ page }) => {
   const playerID = '7b7b7b7b-7b7b-7b7b-7b7b-7b7b7b7b7b7b';
+  const playerCSRFToken = 'player-logout-csrf';
   let logoutCalls = 0;
   await page.addInitScript(({ playerID }) => {
     window.sessionStorage.setItem('player_id', playerID);
     window.sessionStorage.setItem('username', 'alice');
+    document.cookie = 'tpm_player_csrf=player-logout-csrf; Path=/';
   }, { playerID });
   await page.route('**/api/v1/players/me', async (route) => {
     await route.fulfill({
@@ -166,6 +170,7 @@ test('changing player clears the restore cache and calls logout', async ({ page 
   await page.unroute('**/api/v1/players/logout');
   await page.route('**/api/v1/players/logout', async (route) => {
     logoutCalls += 1;
+    expect(route.request().headers()['x-csrf-token']).toBe(playerCSRFToken);
     await route.fulfill({ status: 204, body: '' });
   });
 
@@ -176,6 +181,12 @@ test('changing player clears the restore cache and calls logout', async ({ page 
   await expect.poll(() => logoutCalls).toBe(1);
   await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('player_id'))).toBeNull();
   await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('username'))).toBeNull();
+  await expect
+    .poll(() => page.evaluate(() => document.cookie.includes('tpm_player_csrf=')))
+    .toBe(false);
+  await expect
+    .poll(() => page.evaluate(() => window.sessionStorage.getItem('player_csrf_token')))
+    .toBeNull();
 });
 
 test('leaderboard remains the only public navigation from home', async ({ page }) => {

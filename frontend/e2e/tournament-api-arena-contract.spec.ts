@@ -14,9 +14,14 @@ const readinessTimeoutMs = 60_000;
 const tournamentId = '00000000-0000-4000-8000-000000000001';
 const seriesId = '00000000-0000-4000-8000-000000000010';
 const snapshotPath = `/api/v1/tournaments/${tournamentId}/snapshot`;
+const participantReadyPath = `/api/v1/tournaments/${tournamentId}/participant/waves/00000000-0000-4000-8000-000000000015/ready`;
 const noShowPath = `/api/v1/admin/tournaments/${tournamentId}/waves/00000000-0000-4000-8000-000000000015/no-shows`;
+const adminTasksPath = '/api/v1/admin/tasks';
 const snapshotPattern = `**${snapshotPath}`;
+const participantReadyPattern = `**${participantReadyPath}`;
 const noShowPattern = `**${noShowPath}`;
+const adminTasksPattern = `**${adminTasksPath}`;
+const adminRefreshPattern = '**/api/v1/admin/refresh';
 
 type PublicSnapshot = components['schemas']['PublicRecoverySnapshot'];
 type NoShowRequest = components['schemas']['OperatorNoShowRequest'];
@@ -390,6 +395,95 @@ test.describe('Arena browser API contract', () => {
       method: 'POST',
       idempotencyKey: 'contract-no-show',
     });
+  });
+
+  test('sends player CSRF for participant Arena mutations', async ({ page }) => {
+    const playerCSRFToken = 'participant-ready-csrf';
+    const requests: { method: string; csrf: string | undefined; authorization: string | undefined }[] = [];
+
+    await page.addInitScript((token) => {
+      document.cookie = `tpm_player_csrf=${encodeURIComponent(token)}; Path=/`;
+    }, playerCSRFToken);
+    await page.route(participantReadyPattern, async (route) => {
+      const request = route.request();
+      requests.push({
+        method: request.method(),
+        csrf: request.headers()['x-csrf-token'],
+        authorization: request.headers().authorization,
+      });
+      expect(request.postDataJSON()).toEqual({
+        expected_projection_revision: 4,
+        ready: true,
+      });
+      await fulfillJSON(route, 200, { type: 'ready' });
+    });
+
+    await openFixture(page);
+    await page.getByRole('button', { name: 'Отметить готовность участника' }).click();
+    const result = await readResult(page, 'success');
+
+    expect(result).toEqual({ state: 'success', value: null });
+    expect(requests).toEqual([{
+      method: 'POST',
+      csrf: playerCSRFToken,
+      authorization: undefined,
+    }]);
+  });
+
+  test('preserves admin 403 without starting a refresh', async ({ page }) => {
+    let refreshCalls = 0;
+    await page.addInitScript(() => {
+      document.cookie = 'tpm_admin_refresh_csrf=operator-refresh-csrf; Path=/';
+    });
+    await page.route(adminRefreshPattern, async (route) => {
+      refreshCalls += 1;
+      await fulfillJSON(route, 200, { expires_in: 900 });
+    });
+    await page.route(adminTasksPattern, async (route) => {
+      await fulfillJSON(route, 403, problemBody(403, 'Forbidden operator request'));
+    });
+
+    await openFixture(page);
+    await page.getByRole('button', { name: 'Проверить admin 403' }).click();
+    const result = await readResult(page, 'error');
+
+    expect(result).toMatchObject({
+      state: 'error',
+      error: {
+        name: 'ApiError',
+        status: 403,
+        kind: 'forbidden',
+      },
+    });
+    expect(refreshCalls).toBe(0);
+  });
+
+  test('shares one admin refresh across concurrent 401 responses', async ({ page }) => {
+    let refreshCalls = 0;
+    let taskCalls = 0;
+    await page.addInitScript(() => {
+      document.cookie = 'tpm_admin_refresh_csrf=operator-refresh-csrf; Path=/';
+    });
+    await page.route(adminRefreshPattern, async (route) => {
+      refreshCalls += 1;
+      await fulfillJSON(route, 200, { expires_in: 900 });
+    });
+    await page.route(adminTasksPattern, async (route) => {
+      taskCalls += 1;
+      if (taskCalls <= 2) {
+        await fulfillJSON(route, 401, problemBody(401, 'Expired operator session'));
+        return;
+      }
+      await fulfillJSON(route, 200, []);
+    });
+
+    await openFixture(page);
+    await page.getByRole('button', { name: 'Проверить параллельный admin refresh' }).click();
+    const result = await readResult(page, 'success');
+
+    expect(result).toEqual({ state: 'success', value: null });
+    expect(refreshCalls).toBe(1);
+    expect(taskCalls).toBe(4);
   });
 
   test('turns malformed successful JSON into a contract error in the browser', async ({ page }) => {

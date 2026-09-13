@@ -74,9 +74,30 @@ const ADMIN_ACCESS_CSRF_COOKIE_NAME = "tpm_admin_access_csrf";
 const ADMIN_REFRESH_CSRF_COOKIE_NAME = "tpm_admin_refresh_csrf";
 const CSRF_HEADER_NAME = "X-CSRF-Token";
 const ADMIN_REFRESH_CSRF_HEADER_NAME = "X-Admin-Refresh-CSRF-Token";
-const CSRF_STORAGE_KEY = "player_csrf_token";
-const ADMIN_ACCESS_CSRF_STORAGE_KEY = "admin_access_csrf_token";
-const ADMIN_REFRESH_CSRF_STORAGE_KEY = "admin_refresh_csrf_token";
+
+type SessionRole = "player" | "admin";
+
+type LinkedAbortSignal = {
+  signal: AbortSignal;
+  cleanup: () => void;
+};
+
+let playerCSRFToken: string | null = null;
+let adminAccessCSRFToken: string | null = null;
+let adminRefreshCSRFToken: string | null = null;
+
+let playerSessionEpoch = 0;
+let playerSessionController = new AbortController();
+
+type AdminRefreshFlight = {
+  epoch: number;
+  controller: AbortController;
+  promise: Promise<boolean>;
+};
+
+let adminRefreshFlight: AdminRefreshFlight | null = null;
+let adminSessionEpoch = 0;
+let adminSessionController = new AbortController();
 
 const problemFromUnknown = (value: unknown): ProblemDetails | undefined => {
   if (!value || typeof value !== "object") {
@@ -103,34 +124,55 @@ const readCookie = (name: string): string | null => {
   for (const part of parts) {
     const trimmed = part.trim();
     if (trimmed.startsWith(prefix)) {
-      return decodeURIComponent(trimmed.slice(prefix.length));
+      try {
+        return decodeURIComponent(trimmed.slice(prefix.length));
+      } catch {
+        return null;
+      }
     }
   }
   return null;
 };
 
-const readStoredToken = (key: string): string | null => {
+const clearReadableCookie = (name: string): void => {
+  if (typeof document === "undefined") {
+    return;
+  }
   try {
-    return window.sessionStorage.getItem(key);
+    document.cookie = `${encodeURIComponent(name)}=; Max-Age=0; Path=/`;
   } catch {
-    return null;
+    // A cross-origin API cookie is cleared by the backend response instead.
   }
 };
 
-const saveStoredToken = (key: string, token: string): void => {
-  try {
-    window.sessionStorage.setItem(key, token);
-  } catch {
-    // sessionStorage can be unavailable in restricted browser contexts.
-  }
-};
+const tokenFromMemoryOrCookie = (
+  memoryToken: string | null,
+  cookieName: string,
+): string | null => memoryToken || readCookie(cookieName);
 
-const clearStoredToken = (key: string): void => {
-  try {
-    window.sessionStorage.removeItem(key);
-  } catch {
-    // sessionStorage can be unavailable in restricted browser contexts.
+const linkSignals = (signals: Array<AbortSignal | undefined>): LinkedAbortSignal => {
+  const controller = new AbortController();
+  const cleanups: Array<() => void> = [];
+  const cleanup = (): void => {
+    for (const remove of cleanups.splice(0)) {
+      remove();
+    }
+  };
+
+  for (const signal of signals) {
+    if (!signal) {
+      continue;
+    }
+    if (signal.aborted) {
+      controller.abort(signal.reason);
+      cleanup();
+      return { signal: controller.signal, cleanup };
+    }
+    const onAbort = (): void => controller.abort(signal.reason);
+    signal.addEventListener("abort", onAbort, { once: true });
+    cleanups.push(() => signal.removeEventListener("abort", onAbort));
   }
+  return { signal: controller.signal, cleanup };
 };
 
 const isAbortLikeError = (value: unknown): boolean =>
@@ -144,14 +186,19 @@ const normalizeTransportError = (error: unknown): unknown => {
   return new ApiError(null, undefined, error);
 };
 
-export const clearAdminCSRFTokens = (): void => {
-  clearStoredToken(ADMIN_ACCESS_CSRF_STORAGE_KEY);
-  clearStoredToken(ADMIN_REFRESH_CSRF_STORAGE_KEY);
+export const clearPlayerCSRFTokens = (): void => {
+  playerCSRFToken = null;
+  clearReadableCookie(CSRF_COOKIE_NAME);
 };
 
-let adminRefreshPromise: Promise<boolean> | null = null;
+export const clearAdminCSRFTokens = (): void => {
+  adminAccessCSRFToken = null;
+  adminRefreshCSRFToken = null;
+  clearReadableCookie(ADMIN_ACCESS_CSRF_COOKIE_NAME);
+  clearReadableCookie(ADMIN_REFRESH_CSRF_COOKIE_NAME);
+};
+
 let adminRefreshFailureHandler: (() => void) | null = null;
-let adminSessionEpoch = 0;
 
 export const setAdminRefreshFailureHandler = (
   handler: (() => void) | null,
@@ -159,21 +206,78 @@ export const setAdminRefreshFailureHandler = (
   adminRefreshFailureHandler = handler;
 };
 
-export const advanceAdminSessionEpoch = (): void => {
+export const advanceAdminSessionEpoch = (): number => {
   adminSessionEpoch += 1;
+  adminSessionController.abort();
+  adminSessionController = new AbortController();
+
+  const refreshFlight = adminRefreshFlight;
+  adminRefreshFlight = null;
+  refreshFlight?.controller.abort();
+  return adminSessionEpoch;
 };
 
+export const advancePlayerSessionEpoch = (): number => {
+  playerSessionEpoch += 1;
+  playerSessionController.abort();
+  playerSessionController = new AbortController();
+  return playerSessionEpoch;
+};
+
+export const isCurrentAdminSessionEpoch = (epoch: number): boolean =>
+  epoch === adminSessionEpoch;
+
+export const isCurrentPlayerSessionEpoch = (epoch: number): boolean =>
+  epoch === playerSessionEpoch;
+
 const readPlayerCSRFToken = (): string | null =>
-  readCookie(CSRF_COOKIE_NAME) || readStoredToken(CSRF_STORAGE_KEY);
+  tokenFromMemoryOrCookie(playerCSRFToken, CSRF_COOKIE_NAME);
 
 const readAdminAccessCSRFToken = (): string | null =>
-  readCookie(ADMIN_ACCESS_CSRF_COOKIE_NAME) || readStoredToken(ADMIN_ACCESS_CSRF_STORAGE_KEY);
+  tokenFromMemoryOrCookie(adminAccessCSRFToken, ADMIN_ACCESS_CSRF_COOKIE_NAME);
 
 const readAdminRefreshCSRFToken = (): string | null =>
-  readCookie(ADMIN_REFRESH_CSRF_COOKIE_NAME) || readStoredToken(ADMIN_REFRESH_CSRF_STORAGE_KEY);
+  tokenFromMemoryOrCookie(adminRefreshCSRFToken, ADMIN_REFRESH_CSRF_COOKIE_NAME);
 
 export const canResumeAdminSession = (): boolean =>
   readAdminRefreshCSRFToken() !== null;
+
+const isPlayerScopedPath = (pathname: string): boolean =>
+  pathname.startsWith("/api/v1/players/")
+  || /^\/api\/v1\/tournaments\/[^/]+\/participant(?:\/|$)/.test(pathname);
+
+const sessionRoleForPath = (pathname: string): SessionRole | null => {
+  if (pathname.startsWith("/api/v1/admin/")) {
+    return "admin";
+  }
+  if (isPlayerScopedPath(pathname)) {
+    return "player";
+  }
+  return null;
+};
+
+const isSessionTerminationPath = (pathname: string): boolean =>
+  pathname === "/api/v1/admin/logout" || pathname === "/api/v1/players/logout";
+
+const sessionEpochForRole = (role: SessionRole | null): number => {
+  if (role === "admin") {
+    return adminSessionEpoch;
+  }
+  if (role === "player") {
+    return playerSessionEpoch;
+  }
+  return 0;
+};
+
+const sessionSignalForRole = (role: SessionRole | null): AbortSignal | undefined => {
+  if (role === "admin") {
+    return adminSessionController.signal;
+  }
+  if (role === "player") {
+    return playerSessionController.signal;
+  }
+  return undefined;
+};
 
 const csrfTokenForRequest = (request: Request): string | null => {
   const pathname = new URL(request.url).pathname;
@@ -183,36 +287,67 @@ const csrfTokenForRequest = (request: Request): string | null => {
   if (pathname.startsWith("/api/v1/admin/") && pathname !== "/api/v1/admin/login") {
     return readAdminAccessCSRFToken();
   }
-  if (pathname.startsWith("/api/v1/players/")) {
+  if (isPlayerScopedPath(pathname)) {
     return readPlayerCSRFToken();
   }
   return null;
 };
 
-const syncCSRFTokenFromResponse = (request: Request, response: Response): void => {
+const isCurrentSessionEpoch = (role: SessionRole | null, epoch: number): boolean => {
+  if (role === "admin") {
+    return epoch === adminSessionEpoch;
+  }
+  if (role === "player") {
+    return epoch === playerSessionEpoch;
+  }
+  return true;
+};
+
+const syncCSRFTokenFromResponse = (
+  request: Request,
+  response: Response,
+  role: SessionRole | null,
+  epoch: number,
+): void => {
+  if (!isCurrentSessionEpoch(role, epoch)) {
+    return;
+  }
+
   const pathname = new URL(request.url).pathname;
   if (pathname === "/api/v1/admin/login" || pathname === "/api/v1/admin/refresh") {
+    if (!response.ok) {
+      return;
+    }
     const adminAccessToken = response.headers.get(CSRF_HEADER_NAME);
     if (adminAccessToken) {
-      saveStoredToken(ADMIN_ACCESS_CSRF_STORAGE_KEY, adminAccessToken);
+      adminAccessCSRFToken = adminAccessToken;
     }
     const adminRefreshToken = response.headers.get(ADMIN_REFRESH_CSRF_HEADER_NAME);
     if (adminRefreshToken) {
-      saveStoredToken(ADMIN_REFRESH_CSRF_STORAGE_KEY, adminRefreshToken);
+      adminRefreshCSRFToken = adminRefreshToken;
     }
     return;
   }
-  if (response.ok && pathname === "/api/v1/admin/logout") {
-    clearAdminCSRFTokens();
+  if (pathname === "/api/v1/admin/logout") {
+    if (response.ok) {
+      clearAdminCSRFTokens();
+    }
     return;
   }
-  const token = response.headers.get(CSRF_HEADER_NAME);
-  if (token) {
-    saveStoredToken(CSRF_STORAGE_KEY, token);
+  if (role !== "player") {
     return;
   }
-  if (response.ok && pathname === "/api/v1/players/logout") {
-    clearStoredToken(CSRF_STORAGE_KEY);
+  if (pathname === "/api/v1/players/logout") {
+    if (response.ok) {
+      clearPlayerCSRFTokens();
+    }
+    return;
+  }
+  if (response.ok) {
+    const token = response.headers.get(CSRF_HEADER_NAME);
+    if (token) {
+      playerCSRFToken = token;
+    }
   }
 };
 
@@ -232,6 +367,9 @@ const requestFromInput = (input: RequestInfo | URL, init?: RequestInit): Request
 
 export const credentialedFetch: typeof fetch = async (input, init) => {
   const request = requestFromInput(input, init);
+  const pathname = new URL(request.url).pathname;
+  const role = sessionRoleForPath(pathname);
+  const epoch = sessionEpochForRole(role);
   const headers = new Headers(request.headers);
   if (isUnsafeMethod(request.method)) {
     const csrfToken = csrfTokenForRequest(request);
@@ -239,13 +377,23 @@ export const credentialedFetch: typeof fetch = async (input, init) => {
       headers.set(CSRF_HEADER_NAME, csrfToken);
     }
   }
-  const credentialedRequest = new Request(request, { credentials: "include", headers });
+  const shouldFence = role !== null && !isSessionTerminationPath(pathname);
+  const linkedSignal = shouldFence
+    ? linkSignals([request.signal, sessionSignalForRole(role)])
+    : { signal: request.signal, cleanup: () => {} };
+  const credentialedRequest = new Request(request, {
+    credentials: "include",
+    headers,
+    signal: linkedSignal.signal,
+  });
   try {
     const response = await fetch(credentialedRequest);
-    syncCSRFTokenFromResponse(credentialedRequest, response);
+    syncCSRFTokenFromResponse(credentialedRequest, response, role, epoch);
     return response;
   } catch (error) {
     throw normalizeTransportError(error);
+  } finally {
+    linkedSignal.cleanup();
   }
 };
 
@@ -261,30 +409,54 @@ const isAdminRefreshableRequest = (request: Request): boolean => {
   ].includes(pathname);
 };
 
-const refreshAdminSession = async (): Promise<boolean> => {
+const refreshAdminSession = async (
+  epoch: number,
+  signal: AbortSignal,
+): Promise<boolean> => {
+  if (epoch !== adminSessionEpoch) {
+    return false;
+  }
+
   try {
     const response = await credentialedFetch(`${CONFIG.adminApiUrl}/api/v1/admin/refresh`, {
       method: "POST",
+      signal,
     });
     const body: unknown = await response.clone().json().catch(() => null);
-    if (response.ok && isAdminSessionResponse(body)) {
+    if (epoch === adminSessionEpoch && response.ok && isAdminSessionResponse(body)) {
       return true;
     }
   } catch {
     // The original 401 is the response the caller should see.
   }
-  clearAdminCSRFTokens();
-  adminRefreshFailureHandler?.();
+
+  if (epoch === adminSessionEpoch) {
+    clearAdminCSRFTokens();
+    adminRefreshFailureHandler?.();
+  }
   return false;
 };
 
-const ensureAdminSessionFresh = (): Promise<boolean> => {
-  if (adminRefreshPromise === null) {
-    adminRefreshPromise = refreshAdminSession().finally(() => {
-      adminRefreshPromise = null;
-    });
+const ensureAdminSessionFresh = (epoch: number): Promise<boolean> => {
+  if (epoch !== adminSessionEpoch) {
+    return Promise.resolve(false);
   }
-  return adminRefreshPromise;
+  if (adminRefreshFlight?.epoch === epoch) {
+    return adminRefreshFlight.promise;
+  }
+
+  const controller = new AbortController();
+  const promise = refreshAdminSession(epoch, controller.signal).finally(() => {
+    if (adminRefreshFlight?.promise === promise) {
+      adminRefreshFlight = null;
+    }
+  });
+  adminRefreshFlight = {
+    epoch,
+    controller,
+    promise,
+  };
+  return promise;
 };
 
 export const adminCredentialedFetch: typeof fetch = async (input, init) => {
@@ -296,7 +468,11 @@ export const adminCredentialedFetch: typeof fetch = async (input, init) => {
     return response;
   }
 
-  const refreshed = await ensureAdminSessionFresh();
+  if (request.signal.aborted || adminSessionEpoch !== requestSessionEpoch) {
+    return response;
+  }
+
+  const refreshed = await ensureAdminSessionFresh(requestSessionEpoch);
   if (!refreshed || adminSessionEpoch !== requestSessionEpoch) {
     return response;
   }

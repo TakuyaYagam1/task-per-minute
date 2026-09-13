@@ -1622,7 +1622,7 @@ test('malformed admin bootstrap refresh rejects the session without a protected 
   const authorizationHeaders: string[] = [];
 
   await page.addInitScript(() => {
-    window.sessionStorage.setItem('admin_refresh_csrf_token', 'resume-refresh-csrf-token');
+    document.cookie = 'tpm_admin_refresh_csrf=resume-refresh-csrf-token; Path=/';
   });
 
   await page.route('**/api/v1/admin/refresh', async (route) => {
@@ -1736,7 +1736,7 @@ test('admin logout ignores delayed refresh and prevents stale retry', async ({ p
   });
 
   await page.addInitScript(() => {
-    window.sessionStorage.setItem('admin_refresh_csrf_token', 'resume-refresh-csrf-token');
+    document.cookie = 'tpm_admin_refresh_csrf=resume-refresh-csrf-token; Path=/';
   });
 
   await page.route('**/api/v1/admin/refresh', async (route) => {
@@ -1816,8 +1816,8 @@ test('admin logout sends stored refresh csrf before clearing local admin session
   let logoutRefreshCSRFHeader: string | undefined;
 
   await page.addInitScript((token) => {
-    window.sessionStorage.setItem('admin_access_csrf_token', 'stored-access-csrf-token');
-    window.sessionStorage.setItem('admin_refresh_csrf_token', token);
+    document.cookie = 'tpm_admin_access_csrf=stored-access-csrf-token; Path=/';
+    document.cookie = `tpm_admin_refresh_csrf=${encodeURIComponent(token)}; Path=/`;
   }, refreshCSRFToken);
 
   await page.route('**/api/v1/admin/logout', async (route) => {
@@ -1853,11 +1853,11 @@ test('admin logout sends stored refresh csrf before clearing local admin session
   expect(logoutCSRFHeader).toBe(refreshCSRFToken);
   expect(logoutRefreshCSRFHeader).toBeUndefined();
   await expect
-    .poll(() => page.evaluate(() => window.sessionStorage.getItem('admin_access_csrf_token')))
-    .toBeNull();
+    .poll(() => page.evaluate(() => document.cookie.includes('tpm_admin_access_csrf=')))
+    .toBe(false);
   await expect
-    .poll(() => page.evaluate(() => window.sessionStorage.getItem('admin_refresh_csrf_token')))
-    .toBeNull();
+    .poll(() => page.evaluate(() => document.cookie.includes('tpm_admin_refresh_csrf=')))
+    .toBe(false);
 });
 
 test('admin waits for delayed logout before accepting a new login', async ({ page }) => {
@@ -1868,7 +1868,7 @@ test('admin waits for delayed logout before accepting a new login', async ({ pag
   });
 
   await page.addInitScript(() => {
-    window.sessionStorage.setItem('admin_refresh_csrf_token', 'stored-refresh-csrf-token');
+    document.cookie = 'tpm_admin_refresh_csrf=stored-refresh-csrf-token; Path=/';
   });
 
   await page.route('**/api/v1/admin/logout', async (route) => {
@@ -1932,7 +1932,7 @@ test('admin new login ignores delayed refresh from previous session', async ({ p
   });
 
   await page.addInitScript(() => {
-    window.sessionStorage.setItem('admin_refresh_csrf_token', 'resume-refresh-csrf-token');
+    document.cookie = 'tpm_admin_refresh_csrf=resume-refresh-csrf-token; Path=/';
   });
 
   await page.route('**/api/v1/admin/login', async (route) => {
@@ -2028,12 +2028,13 @@ test('admin new login ignores delayed refresh from previous session', async ({ p
 test('admin logout ignores delayed task list response', async ({ page }) => {
   let releaseList: () => void = () => {};
   let listCalls = 0;
+  let listRequestFailed = false;
   const listGate = new Promise<void>((resolve) => {
     releaseList = resolve;
   });
 
   await page.addInitScript(() => {
-    window.sessionStorage.setItem('admin_refresh_csrf_token', 'resume-refresh-csrf-token');
+    document.cookie = 'tpm_admin_refresh_csrf=resume-refresh-csrf-token; Path=/';
   });
 
   await page.route('**/api/v1/admin/logout', async (route) => {
@@ -2067,12 +2068,19 @@ test('admin logout ignores delayed task list response', async ({ page }) => {
     await route.fulfill({ status: 404, headers: jsonHeaders, body: '{}' });
   });
 
+  page.on('requestfailed', (request) => {
+    if (new URL(request.url()).pathname === '/api/v1/admin/tasks') {
+      listRequestFailed = true;
+    }
+  });
+
   await page.goto('/admin');
   await expect(page.getByRole('button', { name: 'Выйти' })).toBeVisible();
   await expect.poll(() => listCalls).toBe(1);
 
   await page.getByRole('button', { name: 'Выйти' }).click();
   await expect(page.getByText('Авторизация')).toBeVisible();
+  await expect.poll(() => listRequestFailed).toBe(true);
 
   releaseList();
   await page.waitForTimeout(150);
@@ -2090,7 +2098,7 @@ test('admin new login is not overwritten by old delayed task list', async ({ pag
   });
 
   await page.addInitScript(() => {
-    window.sessionStorage.setItem('admin_refresh_csrf_token', 'resume-refresh-csrf-token');
+    document.cookie = 'tpm_admin_refresh_csrf=resume-refresh-csrf-token; Path=/';
   });
 
   await page.route('**/api/v1/admin/login', async (route) => {
