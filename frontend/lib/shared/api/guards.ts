@@ -9,6 +9,11 @@ type AdminSessionResponse = components["schemas"]["AdminSessionResponse"];
 type JoinPlayerResponse = components["schemas"]["JoinPlayerResponse"];
 type LeaderboardEntry = components["schemas"]["LeaderboardEntry"];
 type LeaderboardResponse = components["schemas"]["LeaderboardResponse"];
+type PublicTournamentResponse = components["schemas"]["PublicTournamentResponse"];
+type PublicScoreboardEntry = components["schemas"]["PublicScoreboardEntry"];
+type PublicScoreboardResponse = components["schemas"]["PublicScoreboardResponse"];
+type PublicBracketMatch = components["schemas"]["PublicBracketMatch"];
+type PublicBracketResponse = components["schemas"]["PublicBracketResponse"];
 type CurrentPlayerResponse = components["schemas"]["CurrentPlayerResponse"];
 type PlayerResponse = components["schemas"]["PlayerResponse"];
 type UploadSourceResponse = components["schemas"]["TaskSourceUploadResponse"];
@@ -57,6 +62,9 @@ const isPositiveInteger = (value: unknown): value is number => isInteger(value) 
 
 const isSafePositiveInteger = (value: unknown): value is number =>
   typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+
+const isSafeInteger = (value: unknown): value is number =>
+  typeof value === "number" && Number.isSafeInteger(value);
 
 const isNonNegativeInteger = (value: unknown): value is number =>
   isInteger(value) && value >= 0;
@@ -142,6 +150,129 @@ const isLeaderboardEntry = (value: unknown): value is LeaderboardEntry =>
 
 export const isLeaderboardResponse = (value: unknown): value is LeaderboardResponse =>
   isRecord(value) && Array.isArray(value.entries) && value.entries.every(isLeaderboardEntry);
+
+const PUBLIC_TOURNAMENT_STATES = new Set<string>([
+  "draft",
+  "registration",
+  "roster_locked",
+  "swiss",
+  "golden",
+  "playoffs",
+  "technical_pause",
+  "completed",
+  "cancelled",
+]);
+
+const PUBLIC_SERIES_STATES = new Set<string>([
+  "planned",
+  "locked",
+  "draft",
+  "ready",
+  "active",
+  "replay_required",
+  "technical_pause",
+  "completed",
+  "cancelled",
+]);
+
+const INT32_MAX = 2_147_483_647;
+
+const isNonNegativeInt32 = (value: unknown): value is number =>
+  isSafeInteger(value) && value >= 0 && value <= INT32_MAX;
+
+const isBoundedDisplayName = (value: unknown): value is string =>
+  isString(value) && value.trim().length > 0 && value.length <= 64;
+
+const isPublicOptionalDateTime = (value: unknown): value is string | null =>
+  value === null || isDateTimeString(value);
+
+export const isPublicTournamentResponse = (
+  value: unknown,
+): value is PublicTournamentResponse =>
+  isRecord(value) &&
+  hasExactKeys(value, [
+    "tournament_id",
+    "preset",
+    "state",
+    "roster_size",
+    "started_at",
+    "finished_at",
+    "projection_revision",
+  ]) &&
+  isNonNilUUID(value.tournament_id) &&
+  value.preset === "tournament_v1" &&
+  isString(value.state) &&
+  PUBLIC_TOURNAMENT_STATES.has(value.state) &&
+  isNonNegativeInteger(value.roster_size) &&
+  value.roster_size <= 16 &&
+  isPublicOptionalDateTime(value.started_at) &&
+  isPublicOptionalDateTime(value.finished_at) &&
+  isSafePositiveInteger(value.projection_revision);
+
+export const isPublicScoreboardEntry = (
+  value: unknown,
+): value is PublicScoreboardEntry =>
+  isRecord(value) &&
+  hasExactKeys(value, [
+    "rank",
+    "display_name",
+    "points",
+    "buchholz",
+    "effective_time_ms",
+  ]) &&
+  isPositiveInteger(value.rank) &&
+  value.rank <= INT32_MAX &&
+  isBoundedDisplayName(value.display_name) &&
+  isNonNegativeInt32(value.points) &&
+  isNonNegativeInt32(value.buchholz) &&
+  isSafeInteger(value.effective_time_ms) &&
+  value.effective_time_ms >= 0;
+
+export const isPublicScoreboardResponse = (
+  value: unknown,
+): value is PublicScoreboardResponse =>
+  isRecord(value) &&
+  hasExactKeys(value, ["tournament_id", "projection_revision", "entries"]) &&
+  isNonNilUUID(value.tournament_id) &&
+  isSafePositiveInteger(value.projection_revision) &&
+  Array.isArray(value.entries) &&
+  value.entries.length <= 16 &&
+  value.entries.every(isPublicScoreboardEntry);
+
+export const isPublicBracketMatch = (value: unknown): value is PublicBracketMatch =>
+  isRecord(value) &&
+  hasExactKeys(value, [
+    "stage",
+    "position",
+    "first_display_name",
+    "second_display_name",
+    "score",
+    "state",
+  ]) &&
+  (value.stage === "semifinal" || value.stage === "final") &&
+  isPositiveInteger(value.position) &&
+  value.position <= INT32_MAX &&
+  isBoundedDisplayName(value.first_display_name) &&
+  isBoundedDisplayName(value.second_display_name) &&
+  isRecord(value.score) &&
+  hasExactKeys(value.score, ["first_participant_wins", "second_participant_wins"]) &&
+  isNonNegativeInt32(value.score.first_participant_wins) &&
+  value.score.first_participant_wins <= 2 &&
+  isNonNegativeInt32(value.score.second_participant_wins) &&
+  value.score.second_participant_wins <= 2 &&
+  isString(value.state) &&
+  PUBLIC_SERIES_STATES.has(value.state);
+
+export const isPublicBracketResponse = (
+  value: unknown,
+): value is PublicBracketResponse =>
+  isRecord(value) &&
+  hasExactKeys(value, ["tournament_id", "projection_revision", "matches"]) &&
+  isNonNilUUID(value.tournament_id) &&
+  isSafePositiveInteger(value.projection_revision) &&
+  Array.isArray(value.matches) &&
+  value.matches.length <= 3 &&
+  value.matches.every(isPublicBracketMatch);
 
 export const isAdminSessionResponse = (value: unknown): value is AdminSessionResponse =>
   isRecord(value) && isNonNegativeInteger(value.expires_in);
