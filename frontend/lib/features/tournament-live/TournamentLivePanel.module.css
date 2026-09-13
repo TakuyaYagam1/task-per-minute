@@ -1,0 +1,145 @@
+.panel {
+  display: grid;
+  gap: 1.25rem;
+  width: min(100%, 62rem);
+  padding: clamp(1rem, 3vw, 1.75rem);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-small);
+}
+
+.headingRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.title {
+  margin: 0;
+  font-size: clamp(1.2rem, 2vw, 1.55rem);
+  line-height: 1.25;
+}
+
+.role {
+  margin: 0.35rem 0 0;
+  color: var(--secondary);
+  font-size: 0.9rem;
+}
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2rem;
+  padding: 0.25rem 0.7rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  color: var(--text);
+  background: var(--surface-strong);
+  font-size: 0.875rem;
+  font-weight: 650;
+}
+
+.status[data-state="live"] {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+}
+
+.status[data-state="awaiting_server"],
+.status[data-state="recovering"],
+.status[data-state="stale"] {
+  border-color: var(--warning);
+  color: var(--warning);
+  background: var(--warning-soft);
+}
+
+.status[data-state="rejected"] {
+  border-color: var(--error);
+  color: var(--error);
+  background: var(--error-soft);
+}
+
+.statusMessage {
+  margin: 0;
+  color: var(--secondary);
+}
+
+.countdown {
+  display: grid;
+  gap: 0.35rem;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  background: var(--surface-muted);
+}
+
+.countdownLabel {
+  color: var(--secondary);
+  font-size: 0.9rem;
+}
+
+.countdownValue {
+  font-size: clamp(1.8rem, 7vw, 3rem);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  letter-spacing: 0.02em;
+}
+
+.waiting {
+  margin: 0;
+  color: var(--warning);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.action {
+  min-height: 2.7rem;
+  padding: 0.55rem 0.9rem;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-small);
+  color: var(--text);
+  background: var(--accent-soft);
+  font: inherit;
+  cursor: pointer;
+}
+
+.action:hover:not(:disabled) {
+  border-color: var(--accent-strong);
+  background: var(--surface-strong);
+}
+
+.action:focus-visible {
+  outline: 3px solid var(--accent-ring);
+  outline-offset: 2px;
+}
+
+.action:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+@media (max-width: 32rem) {
+  .panel {
+    border-radius: var(--radius-small);
+  }
+
+  .headingRow {
+    display: grid;
+  }
+
+  .status {
+    width: fit-content;
+  }
+
+  .action {
+    width: 100%;
+  }
+}

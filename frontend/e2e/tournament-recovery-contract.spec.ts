@@ -1,13 +1,123 @@
+import { spawn, type ChildProcessByStdio } from "node:child_process";
+import { createServer } from "node:net";
+import { resolve } from "node:path";
+import { type Readable } from "node:stream";
+
 import { expect, test } from "@playwright/test";
 
 import {
   ApiError,
+  applyRoleRecoverySnapshot,
   applyPublicRealtime,
+  classifyRoleRecoveryError,
   isPublicRecoveryCursorConflict,
   isPublicRecoverySnapshot,
   openPublicRealtime,
+  recoverRoleSnapshot,
   recoverPublicTournament,
 } from "../lib/shared/api";
+import {
+  createServerCountdown,
+  viewServerCountdown,
+} from "../lib/features/tournament-live";
+import {
+  operatorSnapshot,
+  participantRecovery,
+  tournamentFixtureIds,
+} from "./tournament/fixtures";
+
+const frontendRoot = process.cwd();
+const fixtureRoot = resolve(frontendRoot, "e2e/fixtures/tournament-live");
+const nextBinary = resolve(frontendRoot, "node_modules/.bin/next");
+const fixtureHost = "127.0.0.1";
+
+let fixtureProcess: ChildProcessByStdio<null, Readable, Readable> | undefined;
+let fixtureURL = "";
+let fixtureOutput = "";
+
+const wait = (durationMs: number) => new Promise<void>((resolveWait) => {
+  setTimeout(resolveWait, durationMs);
+});
+
+const reservePort = async (): Promise<number> => new Promise((resolvePort, reject) => {
+  const server = createServer();
+  server.once("error", reject);
+  server.listen(0, fixtureHost, () => {
+    const address = server.address();
+    if (!address || typeof address === "string") {
+      server.close();
+      reject(new Error("Не удалось зарезервировать порт live fixture"));
+      return;
+    }
+    const port = address.port;
+    server.close((error) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolvePort(port);
+    });
+  });
+});
+
+const startFixture = async (): Promise<void> => {
+  const port = await reservePort();
+  fixtureURL = `http://${fixtureHost}:${port}`;
+  fixtureOutput = "";
+  const fixtureChild = spawn(
+    nextBinary,
+    ["dev", "--hostname", fixtureHost, "--port", String(port)],
+    {
+      cwd: fixtureRoot,
+      detached: true,
+      env: {
+        NEXT_TELEMETRY_DISABLED: "1",
+        NODE_ENV: "development",
+        PATH: process.env.PATH ?? "/usr/bin:/bin",
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
+  fixtureProcess = fixtureChild;
+  fixtureChild.stdout.on("data", (chunk) => {
+    fixtureOutput = `${fixtureOutput}${chunk.toString()}`.slice(-6_000);
+  });
+  fixtureChild.stderr.on("data", (chunk) => {
+    fixtureOutput = `${fixtureOutput}${chunk.toString()}`.slice(-6_000);
+  });
+
+  const deadline = Date.now() + 60_000;
+  while (Date.now() < deadline) {
+    if (fixtureChild.exitCode !== null) {
+      throw new Error(`Live fixture завершился до запуска.\n${fixtureOutput}`);
+    }
+    try {
+      if ((await fetch(fixtureURL)).ok) {
+        return;
+      }
+    } catch {
+      // Next.js еще не занял loopback-порт.
+    }
+    await wait(250);
+  }
+  throw new Error(`Live fixture не запустился.\n${fixtureOutput}`);
+};
+
+const stopFixture = async (): Promise<void> => {
+  const processToStop = fixtureProcess;
+  fixtureProcess = undefined;
+  if (!processToStop?.pid) {
+    return;
+  }
+  try {
+    process.kill(-processToStop.pid, "SIGTERM");
+  } catch {
+    processToStop.kill("SIGTERM");
+  }
+};
+
+test.beforeAll(startFixture);
+test.afterAll(stopFixture);
 
 const tournamentId = "00000000-0000-4000-8000-000000000001";
 const otherTournamentId = "00000000-0000-4000-8000-000000000002";
@@ -221,4 +331,242 @@ test("public recovery rejects private and cross-tournament fields", () => {
   expect(
     applyPublicRealtime(state, realtimeEnvelope(8, 4, firstEventId, otherTournamentId)).outcome,
   ).toBe("wrong_tournament");
+});
+
+test("one role-aware REST boundary recovers public, participant, and operator snapshots", () => {
+  const timestamp = "2026-09-13T10:00:00Z";
+  const publicState = recoverRoleSnapshot({
+    role: "public",
+    tournamentId,
+    snapshot: restSnapshot(4, 7),
+    serverTimestamp: timestamp,
+  });
+  const participantState = recoverRoleSnapshot({
+    role: "participant",
+    tournamentId: tournamentFixtureIds.tournament,
+    snapshot: participantRecovery(4),
+    serverTimestamp: timestamp,
+  });
+  const operatorState = recoverRoleSnapshot({
+    role: "operator",
+    tournamentId: tournamentFixtureIds.tournament,
+    snapshot: operatorSnapshot(4),
+    serverTimestamp: timestamp,
+  });
+
+  expect(publicState.outcome).toBe("initialized");
+  expect(participantState.outcome).toBe("initialized");
+  expect(operatorState.outcome).toBe("initialized");
+  expect(participantState.state?.cursor).toEqual({
+    projection_revision: 4,
+    participant_view_revision: 5,
+    event_sequence: 14,
+  });
+  expect(operatorState.state?.cursor).toEqual({
+    projection_revision: 4,
+    authority_revision: 4,
+    audit_sequence: 14,
+  });
+});
+
+test("an authoritative newer snapshot closes a recovery gap without rolling back", () => {
+  const initial = recoverRoleSnapshot({
+    role: "public",
+    tournamentId,
+    snapshot: restSnapshot(4, 7),
+    serverTimestamp: "2026-09-13T10:00:00Z",
+  });
+  expect(initial.state).not.toBeNull();
+
+  const newer = applyRoleRecoverySnapshot(initial.state, {
+    role: "public",
+    tournamentId,
+    snapshot: restSnapshot(6, 12),
+    serverTimestamp: "2026-09-13T10:00:01Z",
+  });
+  const stale = applyRoleRecoverySnapshot(newer.state, {
+    role: "public",
+    tournamentId,
+    snapshot: restSnapshot(5, 9),
+    serverTimestamp: "2026-09-13T10:00:02Z",
+  });
+
+  expect(newer.outcome).toBe("replaced");
+  expect(newer.state?.cursor).toEqual({ projection_revision: 6, event_sequence: 12 });
+  expect(stale.outcome).toBe("stale");
+  expect(stale.state).toBe(newer.state);
+});
+
+test("role, tournament, unknown schema, malformed, duplicate, and future cursor stay explicit", () => {
+  const initial = recoverRoleSnapshot({
+    role: "public",
+    tournamentId,
+    snapshot: restSnapshot(4, 7),
+    serverTimestamp: "2026-09-13T10:00:00Z",
+  });
+  expect(initial.state).not.toBeNull();
+  const state = initial.state;
+
+  const wrongRole = applyRoleRecoverySnapshot(state, {
+    role: "participant",
+    tournamentId,
+    snapshot: participantRecovery(4),
+    serverTimestamp: "2026-09-13T10:00:00Z",
+  });
+  const wrongTournament = applyRoleRecoverySnapshot(state, {
+    role: "public",
+    tournamentId: otherTournamentId,
+    snapshot: restSnapshot(4, 7),
+    serverTimestamp: "2026-09-13T10:00:00Z",
+  });
+  const unknownSchema = applyRoleRecoverySnapshot(state, {
+    role: "public",
+    tournamentId,
+    snapshot: { schema_version: 99 },
+    serverTimestamp: "2026-09-13T10:00:00Z",
+  });
+  const malformed = applyRoleRecoverySnapshot(state, {
+    role: "public",
+    tournamentId,
+    snapshot: {},
+    serverTimestamp: "not-a-time",
+  });
+  const duplicate = applyRoleRecoverySnapshot(state, {
+    role: "public",
+    tournamentId,
+    snapshot: restSnapshot(4, 7),
+    serverTimestamp: "2026-09-13T10:00:00Z",
+  });
+  const future = classifyRoleRecoveryError(
+    state,
+    new ApiError(new Response(null, { status: 409 })),
+  );
+
+  expect(wrongRole.outcome).toBe("wrong_role");
+  expect(wrongTournament.outcome).toBe("wrong_tournament");
+  expect(unknownSchema.outcome).toBe("unknown_schema");
+  expect(malformed.outcome).toBe("malformed");
+  expect(duplicate.outcome).toBe("duplicate");
+  expect(duplicate.changed).toBe(false);
+  expect(duplicate.state).toBe(state);
+  expect(future.outcome).toBe("future_cursor");
+});
+
+test("server countdown ignores system time changes and awaits server at zero", async ({ page }) => {
+  const countdown = createServerCountdown(
+    {
+      serverTimestamp: "2026-09-13T10:00:00Z",
+      deadline: "2026-09-13T10:00:05Z",
+    },
+    () => 1000,
+  );
+  expect(viewServerCountdown(countdown, 3000)).toEqual({
+    remainingMs: 3000,
+    status: "running",
+    commandsEnabled: true,
+  });
+  expect(viewServerCountdown(countdown, 6000)).toEqual({
+    remainingMs: 0,
+    status: "awaiting_server",
+    commandsEnabled: false,
+  });
+
+  await page.setContent(`<main><p id="status">running</p></main>`);
+  const result = await page.evaluate(() => {
+    let monotonic = 1000;
+    const deadline = 5000;
+    const receipt = monotonic;
+    let remaining = deadline - monotonic;
+    let visibilityRefreshes = 0;
+    const refresh = (): void => {
+      visibilityRefreshes += 1;
+      remaining = Math.max(0, deadline - monotonic);
+    };
+    document.addEventListener("visibilitychange", refresh);
+    const originalNow = Date.now;
+    Date.now = () => originalNow() + 86_400_000;
+    monotonic = 6000;
+    document.dispatchEvent(new Event("visibilitychange"));
+    Date.now = originalNow;
+    return { remaining, receipt, visibilityRefreshes };
+  });
+
+  expect(result.receipt).toBe(1000);
+  expect(result.remaining).toBe(0);
+  expect(result.visibilityRefreshes).toBe(1);
+});
+
+test("countdown zero never creates an official result locally", () => {
+  const countdown = createServerCountdown(
+    {
+      serverTimestamp: "2026-09-13T10:00:00Z",
+      deadline: "2026-09-13T10:00:00Z",
+    },
+    () => 1000,
+  );
+  const view = viewServerCountdown(countdown, 1000);
+
+  expect(view.status).toBe("awaiting_server");
+  expect(view.commandsEnabled).toBe(false);
+  expect("winner" in view).toBe(false);
+});
+
+test("a refreshed server timestamp cannot extend the original deadline", () => {
+  const beforeRefresh = createServerCountdown(
+    {
+      serverTimestamp: "2026-09-13T10:00:00Z",
+      deadline: "2026-09-13T10:00:05Z",
+    },
+    () => 1000,
+  );
+  const afterRefresh = createServerCountdown(
+    {
+      serverTimestamp: "2026-09-13T10:00:03Z",
+      deadline: "2026-09-13T10:00:05Z",
+    },
+    () => 2000,
+  );
+
+  expect(viewServerCountdown(beforeRefresh, 1000).remainingMs).toBe(5000);
+  expect(viewServerCountdown(afterRefresh, 2000).remainingMs).toBe(2000);
+});
+
+test("mounted live panel stays server-authoritative in both themes and mobile width", async ({ page }) => {
+  await page.goto(fixtureURL, { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("heading", { name: "Живой турнир" })).toBeVisible();
+  await expect(page.getByRole("status")).toHaveText("Сервер на связи");
+
+  const darkBackground = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+  expect(darkBackground).toBe("rgb(16, 20, 25)");
+
+  await page.evaluate(() => {
+    const shiftedNow = Date.now() + 86_400_000;
+    Date.now = () => shiftedNow;
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await expect(page.getByTestId("server-countdown")).not.toHaveText("0:00");
+
+  const command = page.getByRole("button", { name: "Отправить команду" });
+  await expect(command).toBeEnabled();
+  await command.click();
+  await expect(page.getByTestId("action-count")).toHaveText("Команд отправлено: 1");
+
+  await page.getByRole("button", { name: "Показать устаревшее состояние" }).click();
+  await expect(page.getByRole("status")).toHaveText("Данные устарели");
+  await expect(command).toBeDisabled();
+  await expect(page.getByText("Команды временно недоступны.")).toBeVisible();
+
+  await page.getByRole("button", { name: "Светлая" }).click();
+  const lightBackground = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+  expect(lightBackground).toBe("rgb(245, 247, 250)");
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  const commandBox = await command.boundingBox();
+  expect(commandBox?.width).toBeGreaterThan(300);
+
+  await page.getByRole("button", { name: "Завершить отсчет" }).click();
+  await expect(page.getByRole("status")).toHaveText("Ждем сервер");
+  await expect(command).toBeDisabled();
+  await expect(page.getByText("Локальное время не объявляет результат.")).toBeVisible();
+  await expect(page.getByText(/побед|техническое поражение/i)).toHaveCount(0);
 });

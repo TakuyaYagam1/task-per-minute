@@ -1,8 +1,12 @@
 import { ApiError } from "./client";
+import {
+  isOperatorRecoverySnapshot,
+  isParticipantRecoverySnapshot,
+} from "./guards";
 import type { components } from "./schema";
 
-type PublicRecoveryCursor = components["schemas"]["PublicRecoveryCursor"];
-type PublicRecoverySnapshot = components["schemas"]["PublicRecoverySnapshot"];
+export type PublicRecoveryCursor = components["schemas"]["PublicRecoveryCursor"];
+export type PublicRecoverySnapshot = components["schemas"]["PublicRecoverySnapshot"];
 type PublicRecoveryCursorConflictProblem =
   components["schemas"]["PublicRecoveryCursorConflictProblem"];
 
@@ -28,7 +32,7 @@ export type PublicRealtimeApplyResult = {
   outcome: "applied" | "duplicate" | "out_of_order" | "wrong_tournament";
 };
 
-type PublicRealtimeEnvelope = {
+export type PublicRealtimeEnvelope = {
   schema_version: 1;
   tournament_id: string;
   sequence: number;
@@ -473,3 +477,276 @@ export const isPublicRecoveryCursorConflict = (
     isCursor(problem.current_cursor)
   );
 };
+
+/** Role-aware REST recovery keeps each generated cursor shape intact. */
+export type TournamentLiveRole = "public" | "participant" | "operator";
+
+type ParticipantRecoverySnapshot = components["schemas"]["ParticipantRecoverySnapshot"];
+type OperatorRecoverySnapshot = components["schemas"]["OperatorRecoverySnapshot"];
+
+export type RoleAwareRecoverySnapshot =
+  | PublicRecoverySnapshot
+  | ParticipantRecoverySnapshot
+  | OperatorRecoverySnapshot;
+
+export type RoleAwareRecoveryCursor =
+  | PublicRecoveryCursor
+  | components["schemas"]["ParticipantRecoveryCursor"]
+  | components["schemas"]["OperatorRecoveryCursor"];
+
+export type RoleAwareRecoveryState = {
+  role: TournamentLiveRole;
+  tournamentId: string;
+  cursor: RoleAwareRecoveryCursor;
+  snapshot: RoleAwareRecoverySnapshot;
+  serverTimestamp: string;
+  resumeId: string | null;
+};
+
+export type RoleRecoverySnapshotInput = {
+  role: TournamentLiveRole;
+  tournamentId: string;
+  snapshot: unknown;
+  serverTimestamp: string;
+  resumeId?: string | null;
+};
+
+export type RoleRecoveryOutcome =
+  | "initialized"
+  | "replaced"
+  | "duplicate"
+  | "stale"
+  | "wrong_role"
+  | "wrong_tournament"
+  | "malformed"
+  | "unknown_schema"
+  | "future_cursor";
+
+export type RoleRecoveryTransition = {
+  state: RoleAwareRecoveryState | null;
+  outcome: RoleRecoveryOutcome;
+  changed: boolean;
+};
+
+const hasSnapshotScope = (
+  role: TournamentLiveRole,
+  value: unknown,
+): value is RoleAwareRecoverySnapshot => {
+  switch (role) {
+    case "public":
+      return isPublicRecoverySnapshot(value);
+    case "participant":
+      if (!isParticipantRecoverySnapshot(value)) {
+        return false;
+      }
+      return value.lobby.tournament_id === value.tournament_id &&
+        value.lobby.projection_revision === value.projection_revision &&
+        (value.series === null || value.series.tournament_id === value.tournament_id) &&
+        (value.wave === null || value.wave.tournament_id === value.tournament_id) &&
+        value.next_cursor.projection_revision === value.projection_revision;
+    case "operator":
+      if (!isOperatorRecoverySnapshot(value)) {
+        return false;
+      }
+      return value.tournament.id === value.roster.tournament_id &&
+        value.series.every((series) => series.tournament_id === value.tournament.id) &&
+        value.waves.every((wave) => wave.tournament_id === value.tournament.id) &&
+        (value.pause_graph === null || (
+          value.pause_graph.tournament_id === value.tournament.id &&
+          value.pause_graph.roster_id === value.roster.id
+        )) &&
+        value.next_cursor.projection_revision === value.tournament.revision;
+  }
+};
+
+const snapshotTournamentId = (
+  role: TournamentLiveRole,
+  snapshot: RoleAwareRecoverySnapshot,
+): string => {
+  if (role === "public" && isPublicRecoverySnapshot(snapshot)) {
+    return snapshot.tournament.tournament_id;
+  }
+  if (role === "participant" && isParticipantRecoverySnapshot(snapshot)) {
+    return snapshot.tournament_id;
+  }
+  if (role === "operator" && isOperatorRecoverySnapshot(snapshot)) {
+    return snapshot.tournament.id;
+  }
+  throw new Error("recovery role does not match snapshot");
+};
+
+const snapshotCursor = (
+  role: TournamentLiveRole,
+  snapshot: RoleAwareRecoverySnapshot,
+): RoleAwareRecoveryCursor => {
+  if (role === "public" && isPublicRecoverySnapshot(snapshot)) {
+    return snapshot.next_cursor;
+  }
+  if (role === "participant" && isParticipantRecoverySnapshot(snapshot)) {
+    return snapshot.next_cursor;
+  }
+  if (role === "operator" && isOperatorRecoverySnapshot(snapshot)) {
+    return snapshot.next_cursor;
+  }
+  throw new Error("recovery role does not match snapshot");
+};
+
+const compareRoleCursor = (
+  role: TournamentLiveRole,
+  left: RoleAwareRecoveryCursor,
+  right: RoleAwareRecoveryCursor,
+): number => {
+  const values: ReadonlyArray<readonly [number, number]> = (() => {
+    switch (role) {
+      case "public": {
+        if (
+          "participant_view_revision" in left ||
+          "authority_revision" in left ||
+          "audit_sequence" in left ||
+          "participant_view_revision" in right ||
+          "authority_revision" in right ||
+          "audit_sequence" in right
+        ) {
+          return [];
+        }
+        return [
+          [left.projection_revision, right.projection_revision],
+          [left.event_sequence, right.event_sequence],
+        ];
+      }
+      case "participant": {
+        if (
+          !("participant_view_revision" in left) ||
+          !("participant_view_revision" in right)
+        ) {
+          return [];
+        }
+        return [
+          [left.projection_revision, right.projection_revision],
+          [left.participant_view_revision, right.participant_view_revision],
+          [left.event_sequence, right.event_sequence],
+        ];
+      }
+      case "operator": {
+        if (
+          !("authority_revision" in left) ||
+          !("authority_revision" in right) ||
+          !("audit_sequence" in left) ||
+          !("audit_sequence" in right)
+        ) {
+          return [];
+        }
+        return [
+          [left.projection_revision, right.projection_revision],
+          [left.authority_revision, right.authority_revision],
+          [left.audit_sequence, right.audit_sequence],
+        ];
+      }
+    }
+  })();
+  for (const [current, previous] of values) {
+    if (current > previous) {
+      return 1;
+    }
+    if (current < previous) {
+      return -1;
+    }
+  }
+  return 0;
+};
+
+export const applyRoleRecoverySnapshot = (
+  previous: RoleAwareRecoveryState | null,
+  input: RoleRecoverySnapshotInput,
+): RoleRecoveryTransition => {
+  if (previous !== null && previous.role !== input.role) {
+    return {
+      state: previous,
+      outcome: "wrong_role",
+      changed: false,
+    };
+  }
+  if (
+    isRecord(input.snapshot) &&
+    "schema_version" in input.snapshot &&
+    input.snapshot.schema_version !== 1
+  ) {
+    return {
+      state: previous,
+      outcome: "unknown_schema",
+      changed: false,
+    };
+  }
+  if (!isDateTime(input.serverTimestamp) || !hasSnapshotScope(input.role, input.snapshot)) {
+    return {
+      state: previous,
+      outcome: "malformed",
+      changed: false,
+    };
+  }
+  const tournamentId = snapshotTournamentId(input.role, input.snapshot);
+  if (tournamentId !== input.tournamentId) {
+    return {
+      state: previous,
+      outcome: "wrong_tournament",
+      changed: false,
+    };
+  }
+  const cursor = snapshotCursor(input.role, input.snapshot);
+  if (previous === null) {
+    return {
+      state: {
+        role: input.role,
+        tournamentId,
+        cursor,
+        snapshot: input.snapshot,
+        serverTimestamp: input.serverTimestamp,
+        resumeId: input.resumeId ?? null,
+      },
+      outcome: "initialized",
+      changed: true,
+    };
+  }
+  const comparison = compareRoleCursor(input.role, cursor, previous.cursor);
+  if (comparison < 0) {
+    return {
+      state: previous,
+      outcome: "stale",
+      changed: false,
+    };
+  }
+  if (comparison === 0) {
+    return {
+      state: previous,
+      outcome: "duplicate",
+      changed: false,
+    };
+  }
+  const nextState: RoleAwareRecoveryState = {
+    role: input.role,
+    tournamentId,
+    cursor,
+    snapshot: input.snapshot,
+    serverTimestamp: input.serverTimestamp,
+    resumeId: input.resumeId ?? previous.resumeId,
+  };
+  return {
+    state: nextState,
+    outcome: "replaced",
+    changed: true,
+  };
+};
+
+export const recoverRoleSnapshot = (
+  input: RoleRecoverySnapshotInput,
+  previous: RoleAwareRecoveryState | null = null,
+): RoleRecoveryTransition => applyRoleRecoverySnapshot(previous, input);
+
+export const classifyRoleRecoveryError = (
+  previous: RoleAwareRecoveryState | null,
+  error: unknown,
+): RoleRecoveryTransition => ({
+  state: previous,
+  outcome: error instanceof ApiError && error.status === 409 ? "future_cursor" : "malformed",
+  changed: false,
+});
