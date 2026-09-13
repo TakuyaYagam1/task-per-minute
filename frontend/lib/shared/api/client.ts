@@ -1,29 +1,69 @@
 import createClient from "openapi-fetch";
 
 import { CONFIG } from "../config";
-import { isAdminSessionResponse } from "./guards";
+import { ApiContractError, isAdminSessionResponse } from "./guards";
 import type { components, paths } from "./schema";
 
 export type ProblemDetails = components["schemas"]["ProblemDetails"];
 
+export type ApiErrorKind =
+  | "transport"
+  | "unauthorized"
+  | "forbidden"
+  | "not_found"
+  | "conflict"
+  | "validation"
+  | "rate_limited"
+  | "http";
+
+const apiErrorKindForStatus = (status: number): ApiErrorKind => {
+  switch (status) {
+    case 401:
+      return "unauthorized";
+    case 403:
+      return "forbidden";
+    case 404:
+      return "not_found";
+    case 409:
+      return "conflict";
+    case 422:
+      return "validation";
+    case 429:
+      return "rate_limited";
+    case 0:
+      return "transport";
+    default:
+      return "http";
+  }
+};
+
 export class ApiError extends Error {
   readonly status: number;
+  readonly kind: ApiErrorKind;
   readonly problem?: ProblemDetails;
   readonly retryAfter?: string | null;
 
-  constructor(response: Response | null | undefined, problem?: ProblemDetails) {
+  constructor(
+    response: Response | null | undefined,
+    problem?: ProblemDetails,
+    cause?: unknown,
+  ) {
     const status = response?.status ?? 0;
     super(
       problem?.detail || problem?.title || (status > 0 ? `HTTP ${status}` : "Network error"),
     );
     this.name = "ApiError";
     this.status = status;
+    this.kind = apiErrorKindForStatus(status);
     this.problem = problem;
     this.retryAfter = response?.headers.get("Retry-After") ?? null;
+    if (cause !== undefined) {
+      this.cause = cause;
+    }
   }
 }
 
-type ApiResult<T> = {
+export type ApiResult<T> = {
   data?: T;
   error?: unknown;
   response: Response;
@@ -91,6 +131,17 @@ const clearStoredToken = (key: string): void => {
   } catch {
     // sessionStorage can be unavailable in restricted browser contexts.
   }
+};
+
+const isAbortLikeError = (value: unknown): boolean =>
+  value instanceof DOMException &&
+  (value.name === "AbortError" || value.name === "TimeoutError");
+
+const normalizeTransportError = (error: unknown): unknown => {
+  if (isAbortLikeError(error) || error instanceof ApiError) {
+    return error;
+  }
+  return new ApiError(null, undefined, error);
 };
 
 export const clearAdminCSRFTokens = (): void => {
@@ -189,9 +240,13 @@ export const credentialedFetch: typeof fetch = async (input, init) => {
     }
   }
   const credentialedRequest = new Request(request, { credentials: "include", headers });
-  const response = await fetch(credentialedRequest);
-  syncCSRFTokenFromResponse(credentialedRequest, response);
-  return response;
+  try {
+    const response = await fetch(credentialedRequest);
+    syncCSRFTokenFromResponse(credentialedRequest, response);
+    return response;
+  } catch (error) {
+    throw normalizeTransportError(error);
+  }
 };
 
 const isAdminRefreshableRequest = (request: Request): boolean => {
@@ -258,33 +313,64 @@ export const adminClient = createClient<paths>({
   fetch: adminCredentialedFetch,
 });
 
-const isAbortLikeError = (value: unknown): boolean =>
-  value instanceof DOMException &&
-  (value.name === "AbortError" || value.name === "TimeoutError");
+const emptyResponseProblem = (response: Response): ProblemDetails => ({
+  type: "about:blank",
+  status: response.status,
+  title: "Empty response body",
+  detail: "Server returned a successful status without expected response data.",
+});
 
-export const unwrapApi = async <T>(result: ApiResult<T>): Promise<T> => {
-  if (isAbortLikeError(result.error)) {
-    throw result.error;
+const normalizeRequestError = (error: unknown, contract?: string): unknown => {
+  if (isAbortLikeError(error) || error instanceof ApiError || error instanceof ApiContractError) {
+    return error;
   }
-  if (result.error || !result.response?.ok) {
-    throw new ApiError(result.response, problemFromUnknown(result.error));
+  if (error instanceof SyntaxError) {
+    return new ApiContractError(contract || "JSON response");
   }
-  if (result.data === undefined) {
-    throw new ApiError(result.response, {
-      type: "about:blank",
-      status: result.response.status,
-      title: "Empty response body",
-      detail: "Server returned a successful status without expected response data.",
-    });
-  }
-  return result.data;
+  return normalizeTransportError(error);
 };
 
-export const unwrapApiVoid = async (result: ApiResult<unknown>): Promise<void> => {
-  if (isAbortLikeError(result.error)) {
-    throw result.error;
+export const unwrapApi = async <T>(
+  result: ApiResult<T> | Promise<ApiResult<T>>,
+  contract?: string,
+): Promise<T> => {
+  let resolved: ApiResult<T>;
+  try {
+    resolved = await result;
+  } catch (error) {
+    throw normalizeRequestError(error, contract);
   }
-  if (result.error || !result.response?.ok) {
-    throw new ApiError(result.response, problemFromUnknown(result.error));
+
+  if (isAbortLikeError(resolved.error)) {
+    throw resolved.error;
+  }
+  if (resolved.error || !resolved.response?.ok) {
+    throw new ApiError(resolved.response, problemFromUnknown(resolved.error));
+  }
+  if (resolved.data === undefined) {
+    throw new ApiError(resolved.response, emptyResponseProblem(resolved.response));
+  }
+  return resolved.data;
+};
+
+export const unwrapApiVoid = async (
+  result: ApiResult<unknown> | Promise<ApiResult<unknown>>,
+  contract?: string,
+): Promise<void> => {
+  let resolved: ApiResult<unknown>;
+  try {
+    resolved = await result;
+  } catch (error) {
+    throw normalizeRequestError(error, contract);
+  }
+
+  if (isAbortLikeError(resolved.error)) {
+    throw resolved.error;
+  }
+  if (resolved.error || !resolved.response?.ok) {
+    throw new ApiError(resolved.response, problemFromUnknown(resolved.error));
+  }
+  if (resolved.response.status !== 204) {
+    throw new ApiError(resolved.response, emptyResponseProblem(resolved.response));
   }
 };
