@@ -10,14 +10,17 @@ import (
 )
 
 var (
-	ErrInvalidManualPairing                = errors.New("invalid manual swiss pairing")
-	ErrManualPairingMissingParticipant     = errors.New("manual swiss pairing has missing participant")
-	ErrManualPairingSelfPair               = errors.New("manual swiss pairing has self-pair")
-	ErrManualPairingForeignParticipant     = errors.New("manual swiss pairing has foreign participant")
-	ErrManualPairingDuplicateParticipant   = errors.New("manual swiss pairing uses a participant more than once")
-	ErrManualPairingIncomplete             = errors.New("manual swiss pairing is incomplete")
-	ErrManualPairingInvalidBye             = errors.New("manual swiss pairing has invalid bye")
-	ErrManualPairingRepeatRequiresOverride = errors.New("manual swiss pairing repeat requires override")
+	ErrInvalidManualPairing              = errors.New("invalid manual swiss pairing")
+	ErrManualPairingMissingParticipant   = errors.New("manual swiss pairing has missing participant")
+	ErrManualPairingSelfPair             = errors.New("manual swiss pairing has self-pair")
+	ErrManualPairingForeignParticipant   = errors.New("manual swiss pairing has foreign participant")
+	ErrManualPairingDuplicateParticipant = errors.New("manual swiss pairing uses a participant more than once")
+	ErrManualPairingIncomplete           = errors.New("manual swiss pairing is incomplete")
+	ErrManualPairingInvalidBye           = errors.New("manual swiss pairing has invalid bye")
+	ErrManualPairingRepeat               = errors.New("manual swiss pairing repeat is not allowed")
+	// ErrManualPairingRepeatRequiresOverride is retained as an alias for
+	// callers that used the former repeat policy sentinel.
+	ErrManualPairingRepeatRequiresOverride = ErrManualPairingRepeat
 	ErrManualPairingOverrideMismatch       = errors.New("manual swiss pairing override does not match round evidence")
 )
 
@@ -28,6 +31,28 @@ type ManualRound struct {
 }
 
 func ValidateManualPairing(
+	rosterParticipantIDs []uuid.UUID,
+	round ManualRound,
+	previousMeetings []Pair,
+) error {
+	if err := validateManualRoundShape(rosterParticipantIDs, round); err != nil {
+		return err
+	}
+	blocked, err := PreviousMeetingSet(previousMeetings)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalidManualPairing, err)
+	}
+	repeated := repeatedPairings(round.Pairings, blocked)
+	if len(repeated) > 0 {
+		return ErrManualPairingRepeat
+	}
+	return nil
+}
+
+// ValidateManualPairingWithOverride validates a legacy persisted manual round
+// that carries repeat-override evidence. New pairing commands must use
+// ValidateManualPairing, which rejects every repeated opponent pair.
+func ValidateManualPairingWithOverride(
 	rosterParticipantIDs []uuid.UUID,
 	round ManualRound,
 	previousMeetings []Pair,
@@ -48,7 +73,7 @@ func ValidateManualPairing(
 		return nil
 	}
 	if override == nil {
-		return ErrManualPairingRepeatRequiresOverride
+		return ErrManualPairingRepeat
 	}
 	if err := override.Validate(); err != nil {
 		return fmt.Errorf("%w: %w", ErrManualPairingOverrideMismatch, err)

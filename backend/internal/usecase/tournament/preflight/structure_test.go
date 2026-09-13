@@ -105,7 +105,13 @@ func TestPreflightStructure(t *testing.T) {
 			},
 			{
 				name: "override", code: tournamentusecase.CodeOverrides,
-				mutate: func(in *tournamentusecase.StructuralInput) { in.Overrides[0].Confirmed = false },
+				mutate: func(in *tournamentusecase.StructuralInput) {
+					repeated := in.Pairings[0]
+					in.RepeatedPairings = []swissusecase.Pair{repeated}
+					in.Overrides = []tournamentusecase.OverrideEvidence{{
+						Pair: repeated, ActorID: preflightContentID(80), Confirmed: false, Reason: "legacy evidence",
+					}}
+				},
 			},
 		}
 		for _, test := range tests {
@@ -119,6 +125,27 @@ func TestPreflightStructure(t *testing.T) {
 					t.Fatalf("check = %+v, report passed = %v", check, report.Passed())
 				}
 			})
+		}
+	})
+
+	t.Run("rejects repeated pairings even with confirmed legacy override evidence", func(t *testing.T) {
+		t.Parallel()
+
+		input := validStructuralPreflightInput()
+		repeated := input.Pairings[0]
+		input.RepeatedPairings = []swissusecase.Pair{repeated}
+		input.Overrides = []tournamentusecase.OverrideEvidence{{
+			Pair: repeated, ActorID: preflightContentID(81), Confirmed: true, Reason: "legacy override evidence",
+		}}
+
+		report := tournamentusecase.EvaluateStructure(input)
+		check := preflightCheck(t, report, tournamentusecase.CodeOverrides)
+		if check.Passed || report.Passed() {
+			t.Fatalf("repeated pairing passed with legacy override: %+v", check)
+		}
+		if !slices.Contains(check.Evidence, "pair:"+repeated.FirstParticipantID.String()+":"+repeated.SecondParticipantID.String()+":repeat_forbidden") &&
+			!slices.Contains(check.Evidence, "pair:"+repeated.SecondParticipantID.String()+":"+repeated.FirstParticipantID.String()+":repeat_forbidden") {
+			t.Fatalf("repeat rejection evidence = %v", check.Evidence)
 		}
 	})
 }
@@ -135,10 +162,6 @@ func validStructuralPreflightInput() tournamentusecase.StructuralInput {
 			ReservedTournamentID: content.TournamentID,
 		}
 	}
-	repeated := swissusecase.Pair{
-		FirstParticipantID:  participants[0].ParticipantID,
-		SecondParticipantID: participants[1].ParticipantID,
-	}
 	return tournamentusecase.StructuralInput{
 		TournamentID:       content.TournamentID,
 		Preset:             domain.TournamentPresetV1,
@@ -146,14 +169,10 @@ func validStructuralPreflightInput() tournamentusecase.StructuralInput {
 		Participants:       participants,
 		CategoryPools:      content.CategoryPools,
 		Pairings: []swissusecase.Pair{
-			repeated,
+			{FirstParticipantID: participants[0].ParticipantID, SecondParticipantID: participants[1].ParticipantID},
 			{FirstParticipantID: participants[2].ParticipantID, SecondParticipantID: participants[3].ParticipantID},
 		},
 		ByeParticipantID: participants[4].ParticipantID,
-		RepeatedPairings: []swissusecase.Pair{repeated},
-		Overrides: []tournamentusecase.OverrideEvidence{
-			{Pair: repeated, ActorID: preflightContentID(80), Confirmed: true, Reason: "No complete alternative exists"},
-		},
 	}
 }
 

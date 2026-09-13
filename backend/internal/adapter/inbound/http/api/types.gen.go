@@ -2104,7 +2104,7 @@ type OperatorReserveRequest struct {
 	TournamentId                  openapi_types.UUID `json:"tournament_id"`
 }
 
-// PairingConfigurationRequest Manual mode requires complete manual_pairings and an explicit nullable bye. Repeated pairs require repeat_override evidence.
+// PairingConfigurationRequest Manual mode requires complete manual_pairings and an explicit nullable bye. Repeated pairs are rejected.
 type PairingConfigurationRequest struct {
 	Categories                 []Category   `json:"categories"`
 	CategoryMode               CategoryMode `json:"category_mode"`
@@ -2114,18 +2114,11 @@ type PairingConfigurationRequest struct {
 	ManualByeParticipantId *openapi_types.UUID                    `json:"manual_bye_participant_id,omitempty"`
 	ManualPairings         *[]ManualPairInput                     `json:"manual_pairings,omitempty"`
 	PairingMode            PairingConfigurationRequestPairingMode `json:"pairing_mode"`
-	RepeatOverride         *PairingRepeatOverrideRequest          `json:"repeat_override,omitempty"`
 	RoundNumber            int32                                  `json:"round_number"`
 }
 
 // PairingConfigurationRequestPairingMode defines model for PairingConfigurationRequest.PairingMode.
 type PairingConfigurationRequestPairingMode string
-
-// PairingRepeatOverrideRequest defines model for PairingRepeatOverrideRequest.
-type PairingRepeatOverrideRequest struct {
-	Confirmed bool   `json:"confirmed"`
-	Reason    string `json:"reason"`
-}
 
 // Participant defines model for Participant.
 type Participant struct {

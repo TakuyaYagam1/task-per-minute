@@ -133,7 +133,6 @@ type PairingPlan struct {
 	Pairs                   []swissusecase.Pair
 	Automatic               *swissusecase.AutomaticPairing
 	Bye                     *swissusecase.ByeSelection
-	Override                *swissusecase.RepeatOverride
 	DecidedAt               time.Time
 }
 

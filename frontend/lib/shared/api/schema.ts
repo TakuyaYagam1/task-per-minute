@@ -1776,11 +1776,7 @@ export interface components {
             /** Format: uuid */
             second_participant_id: string;
         };
-        PairingRepeatOverrideRequest: {
-            confirmed: boolean;
-            reason: string;
-        };
-        /** @description Manual mode requires complete manual_pairings and an explicit nullable bye. Repeated pairs require repeat_override evidence. */
+        /** @description Manual mode requires complete manual_pairings and an explicit nullable bye. Repeated pairs are rejected. */
         PairingConfigurationRequest: {
             categories: components["schemas"]["Category"][];
             category_mode: components["schemas"]["CategoryMode"];
@@ -1794,7 +1790,6 @@ export interface components {
             manual_pairings?: components["schemas"]["ManualPairInput"][];
             /** @enum {string} */
             pairing_mode: "automatic" | "manual";
-            repeat_override?: components["schemas"]["PairingRepeatOverrideRequest"];
             /** Format: int32 */
             round_number: number;
         };

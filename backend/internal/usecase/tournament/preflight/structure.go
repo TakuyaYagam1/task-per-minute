@@ -294,6 +294,10 @@ func checkOverrides(in StructuralInput) Check {
 		overrides[key] = override
 	}
 	for key := range repeated {
+		// A preflight report is an admission gate for the round that is about
+		// to start. Legacy override evidence remains useful historical data,
+		// but it cannot turn a repeated pairing back into an admissible one.
+		issues = append(issues, pairKeyEvidence(key)+":repeat_forbidden")
 		override, exists := overrides[key]
 		if !exists {
 			issues = append(issues, pairKeyEvidence(key)+":override_missing")
@@ -310,7 +314,7 @@ func checkOverrides(in StructuralInput) Check {
 	}
 	return newPreflightCheck(
 		CodeOverrides,
-		"Every repeated pairing has one confirmed reasoned override and no extra override.",
+		"Repeated Swiss pairings are forbidden; legacy override evidence cannot make preflight pass.",
 		issues,
 		[]string{fmt.Sprintf("required:%d", len(repeated)), fmt.Sprintf("recorded:%d", len(overrides))},
 	)

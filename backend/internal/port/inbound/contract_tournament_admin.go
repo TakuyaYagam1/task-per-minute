@@ -144,10 +144,6 @@ const (
 )
 
 type AdminParticipantPair struct{ FirstParticipantID, SecondParticipantID uuid.UUID }
-type AdminRepeatOverride struct {
-	Confirmed bool
-	Reason    string
-}
 
 type AdminPairingCommand struct {
 	AdminCommandScope
@@ -160,7 +156,6 @@ type AdminPairingCommand struct {
 	ManualPairings             []AdminParticipantPair
 	ManualPairingsProvided     bool
 	ManualByeParticipantID     *uuid.UUID
-	RepeatOverride             *AdminRepeatOverride
 }
 
 type AdminWaveAction string

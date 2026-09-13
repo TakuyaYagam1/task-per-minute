@@ -298,13 +298,7 @@ func tournamentAdminSwissRoundView(
 			Repeated:   tournamentAdminPairingRepeated(pair, plan.Authority.PriorMeetingCounts),
 		}
 		if pairing.Repeated {
-			if plan.Override == nil {
-				return tournamentadmin.SwissRoundView{}, domain.ErrInternal
-			}
-			actorID := plan.Override.ActorID
-			reason := plan.Override.Reason
-			pairing.OverrideActorID = &actorID
-			pairing.OverrideReason = &reason
+			return tournamentadmin.SwissRoundView{}, domain.ErrInternal
 		}
 		view.Pairings[index] = pairing
 	}

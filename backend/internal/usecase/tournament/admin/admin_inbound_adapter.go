@@ -52,11 +52,7 @@ func (a *inboundAdapter) ConfigurePairings(ctx context.Context, command inbound.
 	for i, pair := range command.ManualPairings {
 		pairs[i] = ParticipantPair{FirstParticipantID: pair.FirstParticipantID, SecondParticipantID: pair.SecondParticipantID}
 	}
-	var override *RepeatOverride
-	if command.RepeatOverride != nil {
-		override = &RepeatOverride{Confirmed: command.RepeatOverride.Confirmed, Reason: command.RepeatOverride.Reason}
-	}
-	view, err := a.next.ConfigurePairings(ctx, PairingCommand{CommandScope: commandScope(command.AdminCommandScope), ExpectedProjectionRevision: command.ExpectedProjectionRevision, RoundNumber: command.RoundNumber, PairingMode: PairingMode(command.PairingMode), CategoryMode: command.CategoryMode, Categories: append([]domain.Category(nil), command.Categories...), ManualPairings: pairs, ManualPairingsProvided: command.ManualPairingsProvided, ManualByeParticipantID: cloneUUID(command.ManualByeParticipantID), RepeatOverride: override})
+	view, err := a.next.ConfigurePairings(ctx, PairingCommand{CommandScope: commandScope(command.AdminCommandScope), ExpectedProjectionRevision: command.ExpectedProjectionRevision, RoundNumber: command.RoundNumber, PairingMode: PairingMode(command.PairingMode), CategoryMode: command.CategoryMode, Categories: append([]domain.Category(nil), command.Categories...), ManualPairings: pairs, ManualPairingsProvided: command.ManualPairingsProvided, ManualByeParticipantID: cloneUUID(command.ManualByeParticipantID)})
 	return swissRoundView(view), adminInboundError(err)
 }
 

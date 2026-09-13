@@ -29,11 +29,6 @@ type ParticipantPair struct {
 	SecondParticipantID uuid.UUID
 }
 
-type RepeatOverride struct {
-	Confirmed bool
-	Reason    string
-}
-
 type PairingCommand struct {
 	CommandScope
 
@@ -45,7 +40,6 @@ type PairingCommand struct {
 	ManualPairings             []ParticipantPair
 	ManualPairingsProvided     bool
 	ManualByeParticipantID     *uuid.UUID
-	RepeatOverride             *RepeatOverride
 }
 
 type WaveAction string
@@ -149,7 +143,7 @@ type WavePort interface {
 }
 
 func validPairingCommand(command PairingCommand) bool {
-	if !validPairingCommandHeader(command) || !validRepeatOverride(command.RepeatOverride) {
+	if !validPairingCommandHeader(command) {
 		return false
 	}
 	if command.PairingMode == PairingModeAutomatic {
@@ -162,10 +156,6 @@ func validPairingCommandHeader(command PairingCommand) bool {
 	return validCommandScope(command.CommandScope) && command.ExpectedProjectionRevision >= 1 &&
 		command.RoundNumber >= 1 && command.RoundNumber <= 4 && command.PairingMode.valid() &&
 		command.CategoryMode.IsValid() && validCategories(command.Categories)
-}
-
-func validRepeatOverride(override *RepeatOverride) bool {
-	return override == nil || (override.Confirmed && validText(override.Reason, maxReasonRunes))
 }
 
 func validManualPairingCommand(command PairingCommand) bool {

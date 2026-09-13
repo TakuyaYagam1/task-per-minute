@@ -473,22 +473,10 @@ ChampionProjection:
       items:
         $ref: '#/ProjectionDependency'
 
-PairingRepeatOverrideRequest:
-  type: object
-  additionalProperties: false
-  required: [confirmed, reason]
-  properties:
-    confirmed:
-      type: boolean
-    reason:
-      type: string
-      minLength: 1
-      maxLength: 512
-
 PairingConfigurationRequest:
   type: object
   additionalProperties: false
-  description: Manual mode requires complete manual_pairings and an explicit nullable bye. Repeated pairs require repeat_override evidence.
+  description: Manual mode requires complete manual_pairings and an explicit nullable bye. Repeated pairs are rejected.
   required: [expected_projection_revision, round_number, pairing_mode, category_mode, categories]
   properties:
     expected_projection_revision:
@@ -522,9 +510,6 @@ PairingConfigurationRequest:
       format: uuid
       nullable: true
       description: Required for an odd roster and must confirm the deterministic fair-bye selection from current standings.
-    repeat_override:
-      $ref: '#/PairingRepeatOverrideRequest'
-
 PublicScoreboardEntry:
   type: object
   additionalProperties: false

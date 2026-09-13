@@ -17,6 +17,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
+	swissusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/swiss"
 )
 
 const (
@@ -217,9 +218,10 @@ type ConfigurationSeriesChange struct {
 }
 
 type ConfigurationRoundChange struct {
-	Previous ConfigurationRound
-	Next     ConfigurationRound
-	Series   []ConfigurationSeriesChange
+	Previous           ConfigurationRound
+	Next               ConfigurationRound
+	Series             []ConfigurationSeriesChange
+	PriorMeetingCounts map[swissusecase.PairKey]int
 }
 
 type ConfigurationMutationResult struct {
@@ -465,6 +467,13 @@ func (w *TournamentConfigurationWorkflow) reviseSwissRoundInternal(
 	if err := validateManualRound(command, round); err != nil {
 		return inbound.AdminConfigurationMutationEvidence{}, err
 	}
+	priorMeetingCounts, err := authority.PriorMeetingCountsBeforeRound(round.Number)
+	if err != nil {
+		return inbound.AdminConfigurationMutationEvidence{}, err
+	}
+	if err := validateNoPriorSwissMeetings(command.ManualPairings, priorMeetingCounts); err != nil {
+		return inbound.AdminConfigurationMutationEvidence{}, err
+	}
 	if err := authority.validateStageSelection(domain.TournamentStageSwiss, inbound.AdminConfigurationStageDefault{Mode: command.CategoryMode, Categories: command.Categories}); err != nil {
 		return inbound.AdminConfigurationMutationEvidence{}, err
 	}
@@ -494,7 +503,7 @@ func (w *TournamentConfigurationWorkflow) reviseSwissRoundInternal(
 		Operation: configurationOperationSwissRound, CommandID: command.CommandID, Authority: authority, RequestDigest: digest,
 		NextConfiguration: cloneContentConfiguration(authority.Configuration), Affected: cloneArtifacts(affected),
 		Superseded: cloneArtifactViews(superseded), Rebuilt: cloneArtifacts(rebuilt), UnlockIntents: cloneUnlockIntents(command.UnlockIntents),
-		RoundChange: &ConfigurationRoundChange{Previous: cloneConfigurationRound(round), Next: nextRound}, Evidence: evidence,
+		RoundChange: &ConfigurationRoundChange{Previous: cloneConfigurationRound(round), Next: nextRound, PriorMeetingCounts: clonePriorMeetingCounts(priorMeetingCounts)}, Evidence: evidence,
 	}
 	if len(round.SeriesIDs) != len(command.ManualPairings) {
 		return inbound.AdminConfigurationMutationEvidence{}, domain.ErrConflict
@@ -804,6 +813,71 @@ func validateUnlockIntents(tournamentID uuid.UUID, artifacts []ConfigurationArti
 		return domain.ErrConflict
 	}
 	return nil
+}
+
+// PriorMeetingCountsBeforeRound returns the authoritative meeting counts for
+// all Swiss pairs in rounds before roundNumber. The map is deliberately built
+// from the retained round pairings, rather than from the round being revised,
+// so a pre-start edit cannot erase history by replacing that round's children.
+func (a ConfigurationAuthority) PriorMeetingCountsBeforeRound(roundNumber int) (map[swissusecase.PairKey]int, error) {
+	if roundNumber < 1 {
+		return nil, domain.ErrValidation
+	}
+	counts := make(map[swissusecase.PairKey]int)
+	seenRoundNumbers := make(map[int]struct{})
+	for _, round := range a.Rounds {
+		if round.Stage != domain.TournamentStageSwiss || round.Number >= roundNumber {
+			continue
+		}
+		if _, duplicate := seenRoundNumbers[round.Number]; duplicate {
+			return nil, fmt.Errorf("duplicate earlier Swiss round %d: %w", round.Number, domain.ErrInternal)
+		}
+		seenRoundNumbers[round.Number] = struct{}{}
+		pairings := round.Pairings
+		if len(pairings) == 0 && len(round.SeriesIDs) > 0 {
+			pairings = make([]inbound.AdminConfigurationParticipantPair, 0, len(round.SeriesIDs))
+			for _, seriesID := range round.SeriesIDs {
+				series, ok := findSeries(a.Series, seriesID)
+				if !ok {
+					return nil, fmt.Errorf("missing Series %s for earlier Swiss round %d: %w", seriesID, round.Number, domain.ErrInternal)
+				}
+				pairings = append(pairings, inbound.AdminConfigurationParticipantPair{
+					FirstParticipantID: series.FirstParticipantID, SecondParticipantID: series.SecondParticipantID,
+				})
+			}
+		}
+		for _, pairing := range pairings {
+			key, err := configurationPairKey(pairing.FirstParticipantID, pairing.SecondParticipantID)
+			if err != nil {
+				return nil, fmt.Errorf("invalid pairing in earlier Swiss round %d: %w", round.Number, domain.ErrInternal)
+			}
+			counts[key]++
+		}
+	}
+	return counts, nil
+}
+
+func validateNoPriorSwissMeetings(
+	pairings []inbound.AdminConfigurationParticipantPair,
+	priorMeetingCounts map[swissusecase.PairKey]int,
+) error {
+	for _, pairing := range pairings {
+		key, err := configurationPairKey(pairing.FirstParticipantID, pairing.SecondParticipantID)
+		if err != nil {
+			return domain.ErrValidation
+		}
+		if priorMeetingCounts[key] > 0 {
+			return fmt.Errorf("swiss pairing occurred in an earlier round: %w", domain.ErrValidation)
+		}
+	}
+	return nil
+}
+
+func configurationPairKey(first, second uuid.UUID) (swissusecase.PairKey, error) {
+	if first == uuid.Nil || second == uuid.Nil || first == second {
+		return swissusecase.PairKey{}, domain.ErrValidation
+	}
+	return swissusecase.NewPairKey(first, second), nil
 }
 
 //nolint:gocyclo // Manual pairing validation keeps participant coverage and bye rules in one pass.
@@ -1149,6 +1223,17 @@ func cloneConfigurationRound(value ConfigurationRound) ConfigurationRound {
 	value.ByeParticipantID = cloneUUID(value.ByeParticipantID)
 	value.Reservations = cloneReservations(value.Reservations)
 	return value
+}
+
+func clonePriorMeetingCounts(value map[swissusecase.PairKey]int) map[swissusecase.PairKey]int {
+	if value == nil {
+		return nil
+	}
+	cloned := make(map[swissusecase.PairKey]int, len(value))
+	for key, count := range value {
+		cloned[key] = count
+	}
+	return cloned
 }
 
 func cloneArtifactViews(values []inbound.AdminConfigurationArtifactView) []inbound.AdminConfigurationArtifactView {

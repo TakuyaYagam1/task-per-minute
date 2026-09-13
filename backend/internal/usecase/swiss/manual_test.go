@@ -19,7 +19,7 @@ func TestManualSwissPairing(t *testing.T) {
 			{FirstParticipantID: participants[2], SecondParticipantID: participants[3]},
 		},
 	}
-	if err := swissusecase.ValidateManualPairing(participants, round, nil, nil); err != nil {
+	if err := swissusecase.ValidateManualPairing(participants, round, nil); err != nil {
 		t.Fatalf("ValidateManualPairing(valid even round) error = %v", err)
 	}
 
@@ -32,7 +32,7 @@ func TestManualSwissPairing(t *testing.T) {
 		},
 		ByeParticipantID: oddParticipants[4],
 	}
-	if err := swissusecase.ValidateManualPairing(oddParticipants, oddRound, nil, nil); err != nil {
+	if err := swissusecase.ValidateManualPairing(oddParticipants, oddRound, nil); err != nil {
 		t.Fatalf("ValidateManualPairing(valid odd round) error = %v", err)
 	}
 
@@ -106,11 +106,11 @@ func TestManualSwissPairing(t *testing.T) {
 			want: swissusecase.ErrManualPairingInvalidBye,
 		},
 		{
-			name:             "repeat without override",
+			name:             "repeat is rejected",
 			roster:           participants,
 			round:            round,
 			previousMeetings: round.Pairings[:1],
-			want:             swissusecase.ErrManualPairingRepeatRequiresOverride,
+			want:             swissusecase.ErrManualPairingRepeat,
 		},
 	}
 
@@ -118,7 +118,7 @@ func TestManualSwissPairing(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			err := swissusecase.ValidateManualPairing(tt.roster, tt.round, tt.previousMeetings, nil)
+			err := swissusecase.ValidateManualPairing(tt.roster, tt.round, tt.previousMeetings)
 			if !errors.Is(err, tt.want) {
 				t.Fatalf("ValidateManualPairing() error = %v, want %v", err, tt.want)
 			}

@@ -48,11 +48,6 @@ func (c *tournamentController) ConfigureTournamentPairings(
 			}
 		}
 	}
-	if body.RepeatOverride != nil {
-		command.RepeatOverride = &inbound.AdminRepeatOverride{
-			Confirmed: body.RepeatOverride.Confirmed, Reason: body.RepeatOverride.Reason,
-		}
-	}
 	view, err := service.ConfigurePairings(r.Context(), command)
 	if err != nil {
 		writeTournamentAdminError(w, r, err)

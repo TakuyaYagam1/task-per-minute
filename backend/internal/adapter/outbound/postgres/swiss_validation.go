@@ -72,7 +72,7 @@ func validateLoadedManualRound(
 	if aggregate.Bye != nil {
 		byeID = aggregate.Bye.ParticipantID
 	}
-	return swissusecase.ValidateManualPairing(
+	return swissusecase.ValidateManualPairingWithOverride(
 		participants,
 		swissusecase.ManualRound{ID: aggregate.Round.ID, Pairings: pairs, ByeParticipantID: byeID},
 		overridePreviousMeetings(aggregate.Override),
@@ -108,7 +108,7 @@ func validateManualSwissRoundInput(in ManualSwissRoundInput, participants []uuid
 	if in.Round.ID != in.Meta.ID || len(in.PairingInputs) == 0 {
 		return domain.ErrValidation
 	}
-	if err := swissusecase.ValidateManualPairing(
+	if err := swissusecase.ValidateManualPairingWithOverride(
 		participants,
 		in.Round,
 		overridePreviousMeetings(in.Override),

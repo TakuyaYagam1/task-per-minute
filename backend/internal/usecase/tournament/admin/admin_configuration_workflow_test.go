@@ -12,6 +12,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
+	swissusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/swiss"
 )
 
 func TestConfigurationUnlockIntentBindsReservationEvidence(t *testing.T) {
@@ -244,6 +245,76 @@ func TestTournamentConfigurationWorkflowUpdatesSeriesAndSwissRound(t *testing.T)
 	}
 	if len(roundEvidence.AffectedArtifactIDs) != 3 || repository.calls != 2 {
 		t.Fatalf("round evidence/calls = %#v/%d, want round plus two series and two mutations", roundEvidence.AffectedArtifactIDs, repository.calls)
+	}
+}
+
+func TestTournamentConfigurationWorkflowRejectsSwissPairingFromEarlierRound(t *testing.T) {
+	t.Parallel()
+
+	authority := configurationAuthorityFixture(t)
+	participants := []uuid.UUID{uuid.New(), uuid.New(), uuid.New(), uuid.New()}
+	seriesIDs := []uuid.UUID{uuid.New(), uuid.New()}
+	authority.Series = []ConfigurationSeries{
+		{ID: seriesIDs[0], Stage: domain.TournamentStageSwiss, RoundNumber: 2, Revision: 1, Mode: domain.CategoryModeRandom, Categories: []domain.Category{domain.CategoryWeb}, State: domain.SeriesStatePlanned},
+		{ID: seriesIDs[1], Stage: domain.TournamentStageSwiss, RoundNumber: 2, Revision: 1, Mode: domain.CategoryModeRandom, Categories: []domain.Category{domain.CategoryWeb}, State: domain.SeriesStatePlanned},
+	}
+	authority.Rounds = []ConfigurationRound{
+		{ID: uuid.New(), Stage: domain.TournamentStageSwiss, Number: 1, Revision: 1, ParticipantIDs: participants, Pairings: []inbound.AdminConfigurationParticipantPair{{FirstParticipantID: participants[0], SecondParticipantID: participants[1]}, {FirstParticipantID: participants[2], SecondParticipantID: participants[3]}}},
+		{ID: uuid.New(), Stage: domain.TournamentStageSwiss, Number: 2, Revision: 4, ParticipantIDs: participants, SeriesIDs: seriesIDs},
+	}
+	repository := &configurationRepositoryStub{authority: authority}
+	workflow := NewTournamentConfigurationWorkflow(repository)
+	_, err := workflow.ReviseSwissRound(t.Context(), inbound.AdminReviseSwissRoundCommand{
+		Operator: inbound.AdminOperatorIdentity{ActorID: authorityOperatorID}, TournamentID: authority.TournamentID, CommandID: uuid.New(), RoundNumber: 2,
+		ExpectedProjectionRevision: authority.ProjectionRevision, ExpectedRoundRevision: 4, Confirmed: true, Reason: "replace a repeated pre-start pairing",
+		CategoryMode: domain.CategoryModeAdmin, Categories: []domain.Category{domain.CategoryWeb},
+		ManualPairings: []inbound.AdminConfigurationParticipantPair{{FirstParticipantID: participants[0], SecondParticipantID: participants[1]}, {FirstParticipantID: participants[2], SecondParticipantID: participants[3]}},
+	})
+	if !errors.Is(err, domain.ErrValidation) {
+		t.Fatalf("ReviseSwissRound() error = %v, want validation error", err)
+	}
+	if repository.calls != 0 {
+		t.Fatalf("ExecuteMutation calls = %d, want 0", repository.calls)
+	}
+}
+
+func TestTournamentConfigurationWorkflowCarriesAuthoritativeSwissMeetingCounts(t *testing.T) {
+	t.Parallel()
+
+	authority := configurationAuthorityFixture(t)
+	participants := []uuid.UUID{uuid.New(), uuid.New(), uuid.New(), uuid.New()}
+	seriesIDs := []uuid.UUID{uuid.New(), uuid.New()}
+	authority.Series = []ConfigurationSeries{
+		{ID: seriesIDs[0], Stage: domain.TournamentStageSwiss, RoundNumber: 2, Revision: 1, Mode: domain.CategoryModeRandom, Categories: []domain.Category{domain.CategoryWeb}, State: domain.SeriesStatePlanned},
+		{ID: seriesIDs[1], Stage: domain.TournamentStageSwiss, RoundNumber: 2, Revision: 1, Mode: domain.CategoryModeRandom, Categories: []domain.Category{domain.CategoryWeb}, State: domain.SeriesStatePlanned},
+	}
+	previousPair := inbound.AdminConfigurationParticipantPair{FirstParticipantID: participants[0], SecondParticipantID: participants[1]}
+	authority.Rounds = []ConfigurationRound{
+		{ID: uuid.New(), Stage: domain.TournamentStageSwiss, Number: 1, Revision: 1, ParticipantIDs: participants, Pairings: []inbound.AdminConfigurationParticipantPair{previousPair, {FirstParticipantID: participants[2], SecondParticipantID: participants[3]}}},
+		{ID: uuid.New(), Stage: domain.TournamentStageSwiss, Number: 2, Revision: 4, ParticipantIDs: participants, SeriesIDs: seriesIDs},
+	}
+	repository := &configurationRepositoryStub{authority: authority}
+	workflow := NewTournamentConfigurationWorkflow(repository)
+	_, err := workflow.ReviseSwissRound(t.Context(), inbound.AdminReviseSwissRoundCommand{
+		Operator: inbound.AdminOperatorIdentity{ActorID: authorityOperatorID}, TournamentID: authority.TournamentID, CommandID: uuid.New(), RoundNumber: 2,
+		ExpectedProjectionRevision: authority.ProjectionRevision, ExpectedRoundRevision: 4, Confirmed: true, Reason: "replace unstarted pairings",
+		CategoryMode: domain.CategoryModeAdmin, Categories: []domain.Category{domain.CategoryWeb},
+		ManualPairings: []inbound.AdminConfigurationParticipantPair{{FirstParticipantID: participants[0], SecondParticipantID: participants[2]}, {FirstParticipantID: participants[1], SecondParticipantID: participants[3]}},
+	})
+	if err != nil {
+		t.Fatalf("ReviseSwissRound() error = %v", err)
+	}
+	if repository.calls != 1 || repository.last.RoundChange == nil {
+		t.Fatalf("mutation calls/change = %d/%#v, want one round mutation", repository.calls, repository.last.RoundChange)
+	}
+	counts := repository.last.RoundChange.PriorMeetingCounts
+	if counts[swissusecase.NewPairKey(previousPair.FirstParticipantID, previousPair.SecondParticipantID)] != 1 {
+		t.Fatalf("prior count for historical pairing = %d, want 1", counts[swissusecase.NewPairKey(previousPair.FirstParticipantID, previousPair.SecondParticipantID)])
+	}
+	for _, pairing := range repository.last.RoundChange.Next.Pairings {
+		if counts[swissusecase.NewPairKey(pairing.FirstParticipantID, pairing.SecondParticipantID)] != 0 {
+			t.Fatalf("proposed pairing %v has a non-zero prior count", pairing)
+		}
 	}
 }
 

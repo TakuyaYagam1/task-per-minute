@@ -97,12 +97,15 @@ func TestPairingRepeatOverride(t *testing.T) {
 		t.Fatalf("ConfirmRepeatOverride(conflict) error = %v, want ErrRepeatOverrideConflict", err)
 	}
 
-	if err := swissusecase.ValidateManualPairing(participants, round, command.PreviousMeetings, &record); err != nil {
-		t.Fatalf("ValidateManualPairing(confirmed repeat) error = %v", err)
+	if err := swissusecase.ValidateManualPairingWithOverride(participants, round, command.PreviousMeetings, &record); err != nil {
+		t.Fatalf("ValidateManualPairingWithOverride(confirmed repeat) error = %v", err)
+	}
+	if err := swissusecase.ValidateManualPairing(participants, round, command.PreviousMeetings); !errors.Is(err, swissusecase.ErrManualPairingRepeat) {
+		t.Fatalf("ValidateManualPairing(repeat) error = %v, want ErrManualPairingRepeat", err)
 	}
 	mismatchedRound := round
 	mismatchedRound.ID = uuid.MustParse("00000000-0000-0000-0000-000000000399")
-	if err := swissusecase.ValidateManualPairing(participants, mismatchedRound, command.PreviousMeetings, &record); !errors.Is(err, swissusecase.ErrManualPairingOverrideMismatch) {
-		t.Fatalf("ValidateManualPairing(mismatched override) error = %v, want ErrManualPairingOverrideMismatch", err)
+	if err := swissusecase.ValidateManualPairingWithOverride(participants, mismatchedRound, command.PreviousMeetings, &record); !errors.Is(err, swissusecase.ErrManualPairingOverrideMismatch) {
+		t.Fatalf("ValidateManualPairingWithOverride(mismatched override) error = %v, want ErrManualPairingOverrideMismatch", err)
 	}
 }

@@ -134,7 +134,7 @@ func (r *TournamentAdminExecutionPostgres) CommitPairing(
 		}
 		saved, err = r.swiss.SaveManualRound(ctx, ManualSwissRoundInput{
 			Meta: meta, Round: manual, PairingInputs: tournamentAdminManualPairingInputs(plan.Pairs),
-			Override: plan.Override,
+			Override: nil,
 		}, nil)
 	default:
 		return tournamentadmin.SwissRoundView{}, domain.ErrValidation

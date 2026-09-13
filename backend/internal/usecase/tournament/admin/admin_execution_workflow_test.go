@@ -1,6 +1,8 @@
 package admin
 
 import (
+	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -82,6 +84,93 @@ func TestBuildAutomaticPairingPlanPreservesByeEvidence(t *testing.T) {
 	}
 	if _, err := plan.Automatic.Evidence.Replay(); err != nil {
 		t.Fatalf("pairing evidence replay error = %v", err)
+	}
+}
+
+func TestBuildManualPairingPlanRejectsOpponentRepeat(t *testing.T) {
+	t.Parallel()
+
+	authority := executionPairingAuthority(t, 4)
+	authority.PreviousMeetings = []swissusecase.Pair{{
+		FirstParticipantID:  authority.Participants[0].ID,
+		SecondParticipantID: authority.Participants[1].ID,
+	}}
+	command := PairingCommand{
+		CommandScope: CommandScope{
+			Operator:     OperatorIdentity{ActorID: executionTestID(95)},
+			TournamentID: authority.TournamentID, CommandID: executionTestID(96),
+		},
+		ExpectedProjectionRevision: authority.ProjectionRevision,
+		RoundNumber:                1, PairingMode: PairingModeManual,
+		CategoryMode: domain.CategoryModeAdmin, Categories: []domain.Category{domain.CategoryWeb},
+		ManualPairingsProvided: true,
+		ManualPairings: []ParticipantPair{
+			{FirstParticipantID: authority.Participants[0].ID, SecondParticipantID: authority.Participants[1].ID},
+			{FirstParticipantID: authority.Participants[2].ID, SecondParticipantID: authority.Participants[3].ID},
+		},
+	}
+
+	plan, err := buildPairingPlan(command, authority, executionTestTime())
+	if !errors.Is(err, swissusecase.ErrManualPairingRepeat) {
+		t.Fatalf("buildPairingPlan() error = %v, want ErrManualPairingRepeat", err)
+	}
+	if len(plan.Pairs) != 0 {
+		t.Fatalf("buildPairingPlan() returned a plan on repeat: %#v", plan)
+	}
+}
+
+func TestPairingRequestDigestRetainsLegacyNullOverride(t *testing.T) {
+	t.Parallel()
+
+	command := PairingCommand{
+		CommandScope: CommandScope{
+			Operator:     OperatorIdentity{ActorID: executionTestID(97)},
+			TournamentID: executionTestID(98), CommandID: executionTestID(99),
+		},
+		ExpectedProjectionRevision: 4, RoundNumber: 2,
+		PairingMode: PairingModeManual, CategoryMode: domain.CategoryModeAdmin,
+		Categories: []domain.Category{domain.CategoryWeb},
+		ManualPairings: []ParticipantPair{{
+			FirstParticipantID: executionTestID(100), SecondParticipantID: executionTestID(101),
+		}},
+		ManualPairingsProvided: true,
+	}
+
+	got, err := executionRequestDigest(command)
+	if err != nil {
+		t.Fatalf("executionRequestDigest() error = %v", err)
+	}
+	legacy := struct {
+		CommandScope
+
+		ExpectedProjectionRevision int64
+		RoundNumber                int
+		PairingMode                PairingMode
+		CategoryMode               domain.CategoryMode
+		Categories                 []domain.Category
+		ManualPairings             []ParticipantPair
+		ManualPairingsProvided     bool
+		ManualByeParticipantID     *uuid.UUID
+		RepeatOverride             *struct{}
+	}{
+		CommandScope:               command.CommandScope,
+		ExpectedProjectionRevision: command.ExpectedProjectionRevision,
+		RoundNumber:                command.RoundNumber,
+		PairingMode:                command.PairingMode,
+		CategoryMode:               command.CategoryMode,
+		Categories:                 command.Categories,
+		ManualPairings:             command.ManualPairings,
+		ManualPairingsProvided:     command.ManualPairingsProvided,
+		ManualByeParticipantID:     command.ManualByeParticipantID,
+	}
+	//nolint:musttag // This fixture reproduces the exact pre-removal default JSON field names used by the command digest.
+	document, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatalf("json.Marshal(legacy pairing command) error = %v", err)
+	}
+	want := sha256.Sum256(document)
+	if got != want {
+		t.Fatalf("pairing request digest = %x, want legacy digest %x", got, want)
 	}
 }
 

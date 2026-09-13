@@ -142,6 +142,32 @@ func TestPreflightReport(t *testing.T) {
 		}
 	})
 
+	t.Run("fails a repeated round despite legacy override evidence", func(t *testing.T) {
+		t.Parallel()
+
+		input := task022PreflightInput(t)
+		repeated := input.Structural.Pairings[0]
+		input.Structural.RepeatedPairings = []swissusecase.Pair{repeated}
+		input.Structural.Overrides = []tournamentusecase.OverrideEvidence{{
+			Pair: repeated, ActorID: preflightCapacityID(91), Confirmed: true, Reason: "legacy override evidence",
+		}}
+
+		report, err := tournamentusecase.NewReportRevision(
+			preflightCapacityID(92),
+			time.Date(2026, time.August, 29, 1, 4, 30, 0, time.UTC),
+			input,
+		)
+		if err != nil {
+			t.Fatalf("NewReportRevision() error = %v", err)
+		}
+		if report.Passed() {
+			t.Fatal("repeated round passed with legacy override evidence")
+		}
+		if preflightCheck(t, tournamentusecase.Report{Checks: report.Checks}, tournamentusecase.CodeOverrides).Passed {
+			t.Fatal("override check passed for repeated round")
+		}
+	})
+
 	t.Run("blocks a report composed from different source revisions", func(t *testing.T) {
 		t.Parallel()
 

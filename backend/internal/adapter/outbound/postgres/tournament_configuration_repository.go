@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"math"
 	"slices"
 	"sort"
 	"time"
@@ -517,6 +519,7 @@ func (r *TournamentConfigurationPostgres) createConfigurationSeriesGenesis(
 	return nil
 }
 
+//nolint:gocyclo // One transaction keeps historical pairing checks and the rebuilt round graph atomic.
 func (r *TournamentConfigurationPostgres) applyRoundChange(
 	ctx context.Context,
 	q *sqlc.Queries,
@@ -527,6 +530,13 @@ func (r *TournamentConfigurationPostgres) applyRoundChange(
 ) error {
 	if mutation.RoundChange == nil {
 		return nil
+	}
+	priorMeetingCounts, err := mutation.Authority.PriorMeetingCountsBeforeRound(mutation.RoundChange.Previous.Number)
+	if err != nil {
+		return err
+	}
+	if !maps.Equal(priorMeetingCounts, mutation.RoundChange.PriorMeetingCounts) {
+		return fmt.Errorf("swiss prior meeting evidence does not match authority: %w", domain.ErrValidation)
 	}
 	if err := q.DeleteSwissOpponentHistory(ctx, mutation.RoundChange.Previous.ID); err != nil {
 		return configurationQueryError("delete superseded Swiss opponent history", err)
@@ -541,6 +551,14 @@ func (r *TournamentConfigurationPostgres) applyRoundChange(
 		return configurationQueryError("delete superseded Swiss repeat override", err)
 	}
 	for index, pair := range mutation.RoundChange.Next.Pairings {
+		key := swissusecase.NewPairKey(pair.FirstParticipantID, pair.SecondParticipantID)
+		priorMeetingCount := priorMeetingCounts[key]
+		if priorMeetingCount < 0 || priorMeetingCount > math.MaxInt16 {
+			return fmt.Errorf("invalid prior Swiss meeting count for pairing %d: %w", index+1, domain.ErrValidation)
+		}
+		if priorMeetingCount > 0 {
+			return fmt.Errorf("repeated Swiss pairing cannot be persisted by configuration edit: %w", domain.ErrValidation)
+		}
 		pairingID := uuid.NewSHA1(mutation.CommandID, []byte(fmt.Sprintf("configuration-round-pairing:%d", index+1)))
 		if err := q.CreateSwissPairing(ctx, sqlc.CreateSwissPairingParams{ID: pairingID, RoundID: mutation.RoundChange.Previous.ID,
 			RosterID: rosterID, SlotNumber: int16(index + 1), CreatedAt: validTimestamp(mutation.Evidence.RequestedAt)}); err != nil {
@@ -554,7 +572,7 @@ func (r *TournamentConfigurationPostgres) applyRoundChange(
 			}
 		}
 		if err := q.CreateSwissOpponentHistory(ctx, sqlc.CreateSwissOpponentHistoryParams{PairingID: pairingID,
-			RoundID: mutation.RoundChange.Previous.ID, RosterID: rosterID, PriorMeetingCount: 0,
+			RoundID: mutation.RoundChange.Previous.ID, RosterID: rosterID, PriorMeetingCount: int16(priorMeetingCount),
 			RecordedAt: validTimestamp(mutation.Evidence.RequestedAt)}); err != nil {
 			return configurationQueryError("create revised Swiss opponent history", err)
 		}

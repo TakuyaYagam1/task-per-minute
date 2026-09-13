@@ -46,9 +46,6 @@ func (w *ExecutionWorkflow) ConfigurePairings(
 	if ctx == nil || !validPairingCommand(command) {
 		return SwissRoundView{}, domain.ErrValidation
 	}
-	if command.PairingMode == PairingModeAutomatic && command.RepeatOverride != nil {
-		return SwissRoundView{}, domain.ErrValidation
-	}
 	if !w.available() {
 		return SwissRoundView{}, domain.ErrInternal
 	}
@@ -107,6 +104,7 @@ func replayPairingAgainstAuthority(
 	return view, err
 }
 
+//nolint:gocyclo // One locked workflow owns replay, strict pairing policy, persistence, and receipt publication.
 func (w *ExecutionWorkflow) createPairingsLocked(
 	ctx context.Context,
 	command PairingCommand,
@@ -129,6 +127,9 @@ func (w *ExecutionWorkflow) createPairingsLocked(
 	}
 	plan, err := buildPairingPlan(command, authority, decidedAt)
 	if err != nil {
+		if errors.Is(err, swissusecase.ErrManualPairingRepeat) || errors.Is(err, swissusecase.ErrMatchingImpossible) {
+			return SwissRoundView{}, fmt.Errorf("invalid Swiss pairing: %w: %w", domain.ErrValidation, err)
+		}
 		return SwissRoundView{}, err
 	}
 	view, err := w.repository.CommitPairing(ctx, plan)
@@ -762,15 +763,10 @@ func buildPairingPlan(
 			ID: roundID, Pairings: manualPairs(command.ManualPairings),
 			ByeParticipantID: byeParticipantID(bye),
 		}
-		override, overrideErr := buildRepeatOverride(command, authority, manual, decidedAt)
-		if overrideErr != nil {
-			return PairingPlan{}, overrideErr
-		}
-		if err := swissusecase.ValidateManualPairing(rosterIDs, manual, authority.PreviousMeetings, override); err != nil {
+		if err := swissusecase.ValidateManualPairing(rosterIDs, manual, authority.PreviousMeetings); err != nil {
 			return PairingPlan{}, err
 		}
 		plan.Pairs = append([]swissusecase.Pair(nil), manual.Pairings...)
-		plan.Override = override
 	default:
 		return PairingPlan{}, domain.ErrValidation
 	}
@@ -828,27 +824,6 @@ func selectPairingBye(
 		}
 	}
 	return &selection, nil
-}
-
-func buildRepeatOverride(
-	command PairingCommand,
-	authority PairingAuthority,
-	round swissusecase.ManualRound,
-	decidedAt time.Time,
-) (*swissusecase.RepeatOverride, error) {
-	if command.RepeatOverride == nil {
-		return nil, nil
-	}
-	override, _, err := swissusecase.ConfirmRepeatOverride(nil, swissusecase.RepeatOverrideCommand{
-		ID: command.CommandID, ActorID: command.Operator.ActorID,
-		Confirmed: command.RepeatOverride.Confirmed, Reason: command.RepeatOverride.Reason,
-		ConfirmedAt: decidedAt, RosterParticipantIDs: pairingParticipantIDs(authority.Participants),
-		Round: round, PreviousMeetings: authority.PreviousMeetings,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return &override, nil
 }
 
 func planWaveMutation(command WaveCommand, authority WaveAuthority, mutatedAt time.Time) (domain.Wave, error) {
@@ -1152,11 +1127,61 @@ func replayWaveCommand(
 }
 
 func executionRequestDigest(value any) ([sha256.Size]byte, error) {
-	document, err := json.Marshal(value)
+	var (
+		document []byte
+		err      error
+	)
+	switch command := value.(type) {
+	case PairingCommand:
+		//nolint:musttag // The legacy command digest intentionally preserves Go's original exported field names.
+		document, err = json.Marshal(newPairingRequestDigestDocument(command))
+	case *PairingCommand:
+		if command == nil {
+			document, err = json.Marshal(value)
+		} else {
+			//nolint:musttag // The legacy command digest intentionally preserves Go's original exported field names.
+			document, err = json.Marshal(newPairingRequestDigestDocument(*command))
+		}
+	default:
+		document, err = json.Marshal(value)
+	}
 	if err != nil {
 		return [sha256.Size]byte{}, fmt.Errorf("ExecutionWorkflow - encode request digest: %w", err)
 	}
 	return sha256.Sum256(document), nil
+}
+
+// pairingRequestDigestDocument retains the pre-removal JSON shape for the
+// command ledger. Older commands submitted without an override encoded a nil
+// RepeatOverride field, so exact replays must continue hashing that field as
+// null even though active commands no longer expose an override input.
+type pairingRequestDigestDocument struct {
+	CommandScope
+
+	ExpectedProjectionRevision int64
+	RoundNumber                int
+	PairingMode                PairingMode
+	CategoryMode               domain.CategoryMode
+	Categories                 []domain.Category
+	ManualPairings             []ParticipantPair
+	ManualPairingsProvided     bool
+	ManualByeParticipantID     *uuid.UUID
+	RepeatOverride             *struct{}
+}
+
+func newPairingRequestDigestDocument(command PairingCommand) pairingRequestDigestDocument {
+	return pairingRequestDigestDocument{
+		CommandScope:               command.CommandScope,
+		ExpectedProjectionRevision: command.ExpectedProjectionRevision,
+		RoundNumber:                command.RoundNumber,
+		PairingMode:                command.PairingMode,
+		CategoryMode:               command.CategoryMode,
+		Categories:                 command.Categories,
+		ManualPairings:             command.ManualPairings,
+		ManualPairingsProvided:     command.ManualPairingsProvided,
+		ManualByeParticipantID:     command.ManualByeParticipantID,
+		RepeatOverride:             nil,
+	}
 }
 
 func executionConflict(expected int64, authority PairingAuthority) error {
