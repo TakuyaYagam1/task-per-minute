@@ -11,6 +11,7 @@ const backendURL = process.env.E2E_BACKEND_URL || 'http://127.0.0.1:8080';
 const defaultWorkerCount = Math.max(1, Math.min(4, os.availableParallelism?.() ?? os.cpus().length));
 const workerCount = Number(process.env.E2E_WORKERS || defaultWorkerCount);
 const reuseExistingServer = process.env.E2E_REUSE_EXISTING_SERVER === '1';
+const fullStackMode = process.env.E2E_FULL_STACK === '1';
 const chromiumTool = releaseTools.tools.find((tool) => tool.name === 'chromium');
 const chromiumProvisioning = chromiumTool?.provisioning;
 
@@ -29,7 +30,8 @@ const chromiumExecutable = path.join(
 
 export default defineConfig({
   testDir: './e2e',
-  testIgnore: process.env.E2E_FULL_STACK === '1' ? [] : ['**/full-stack-local.spec.ts'],
+  testMatch: fullStackMode ? '**/full-stack-local.spec.ts' : '**/*.spec.ts',
+  testIgnore: fullStackMode ? [] : ['**/full-stack-local.spec.ts'],
   timeout: 60_000,
   expect: {
     timeout: 10_000,
