@@ -25,7 +25,7 @@ func (u *DisconnectUseCase) Disconnect(ctx context.Context, command DisconnectCo
 	if u == nil || u.repository == nil || u.clock == nil || !validDisconnectCommand(command) {
 		return nil, false, domain.ErrValidation
 	}
-	return runClockedReconnectMutation(ctx, u.repository, u.clock, command.Scope, command.CommandID,
+	return runClockedReconnectMutation(ctx, u.repository, u.clock, command.Scope, command.CommandID, command.ParticipantID,
 		func(record ReconnectRecord) bool {
 			return record.Kind == MutationDisconnect && record.DisconnectCommand != nil && disconnectCommandsEqual(*record.DisconnectCommand, command)
 		}, disconnectMutationBuilder(command))

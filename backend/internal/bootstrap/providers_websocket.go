@@ -27,6 +27,7 @@ const publicRealtimeMaxConnections = 128
 
 type tournamentRealtimeOptions struct {
 	participant      websocket.TournamentParticipantConnectionFlow
+	participantState websocket.TournamentParticipantLifecycleFlow
 	public           websocket.TournamentPublicConnectionFlow
 	operator         websocket.TournamentOperatorConnectionFlow
 	operatorResolver websocket.TournamentOperatorSessionResolver
@@ -39,6 +40,7 @@ func providePublicRealtimeConfig() *tournamentws.PublicRealtimeConfig {
 
 func provideTournamentRealtimeOptions(
 	participant websocket.TournamentParticipantConnectionFlow,
+	participantState inbound.TournamentParticipantConnectionUseCase,
 	public websocket.TournamentPublicConnectionFlow,
 	operator websocket.TournamentOperatorConnectionFlow,
 	operatorResolver websocket.TournamentOperatorSessionResolver,
@@ -46,6 +48,7 @@ func provideTournamentRealtimeOptions(
 ) tournamentRealtimeOptions {
 	return tournamentRealtimeOptions{
 		participant:      participant,
+		participantState: participantState,
 		public:           public,
 		operator:         operator,
 		operatorResolver: operatorResolver,
@@ -156,6 +159,9 @@ func provideRawWebSocketServer(
 	}
 	if realtime.participant != nil {
 		options = append(options, websocket.WithTournamentParticipantFlow(realtime.participant))
+	}
+	if realtime.participantState != nil {
+		options = append(options, websocket.WithTournamentParticipantLifecycleFlow(realtime.participantState))
 	}
 	if realtime.public != nil {
 		options = append(options, websocket.WithTournamentPublicFlow(realtime.public))

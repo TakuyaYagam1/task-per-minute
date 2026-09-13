@@ -134,7 +134,7 @@ func (u *ReconnectUseCase) Reconnect(ctx context.Context, command ReconnectComma
 		return nil, false, domain.ErrValidation
 	}
 	measurement := newReconnectEventMeasurement(u.clock, u.observer)
-	record, changed, err := runClockedReconnectMutation(ctx, u.repository, u.clock, command.Scope, command.CommandID,
+	record, changed, err := runClockedReconnectMutation(ctx, u.repository, u.clock, command.Scope, command.CommandID, command.ParticipantID,
 		func(record ReconnectRecord) bool {
 			return record.Kind == MutationReconnect && record.ReconnectCommand != nil && reconnectCommandsEqual(*record.ReconnectCommand, command)
 		}, reconnectMutationBuilder(command))

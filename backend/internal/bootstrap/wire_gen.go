@@ -258,6 +258,14 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 		cleanup()
 		return nil, nil, err
 	}
+	participantConnectionPostgres := provideParticipantConnectionRepository(txManager, controller)
+	tournamentPausedPresencePostgres := postgres.NewTournamentPausedPresencePostgres(txManager)
+	connectionCoordinator, err := provideParticipantConnectionCoordinator(txManager, participantConnectionPostgres, tournamentPausedPresencePostgres, tournamentAdminExecutionPostgres, readinessUseCase, bootstrapClockFunc, reconnectObserver)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
 	publicRealtimeConfig := providePublicRealtimeConfig()
 	tournamentPublicFlow, err := websocket.NewTournamentPublicFlow(tournamentProductionSnapshotSource, publicRealtimeConfig)
 	if err != nil {
@@ -272,7 +280,7 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 		return nil, nil, err
 	}
 	tournamentOperatorSessionResolver := provideOperatorSessionResolver(useCase)
-	bootstrapTournamentRealtimeOptions := provideTournamentRealtimeOptions(tournamentParticipantFlow, tournamentPublicFlow, tournamentOperatorFlow, tournamentOperatorSessionResolver, runtimeApplication)
+	bootstrapTournamentRealtimeOptions := provideTournamentRealtimeOptions(tournamentParticipantFlow, connectionCoordinator, tournamentPublicFlow, tournamentOperatorFlow, tournamentOperatorSessionResolver, runtimeApplication)
 	bootstrapRawWebSocketServer := provideRawWebSocketServer(context, cfg, log, playerPostgres, bootstrapWsHandshakeRateLimiter, bootstrapTournamentRealtimeOptions, realtimeDelivery, bootstrapEventTelemetry)
 	websocketServer := provideWebSocketServer(bootstrapRawWebSocketServer)
 	bootstrapRestMiddlewareStack, err := provideRESTMiddlewares(context, log, cfg, bootstrapEventTelemetry)

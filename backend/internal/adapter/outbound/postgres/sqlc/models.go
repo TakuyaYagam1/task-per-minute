@@ -1556,6 +1556,24 @@ type Participant struct {
 	UpdatedAt  pgtype.Timestamptz
 }
 
+type ParticipantConnectionLease struct {
+	ID                   uuid.UUID
+	TournamentID         uuid.UUID
+	RosterID             uuid.UUID
+	ParticipantID        uuid.UUID
+	PlayerID             uuid.UUID
+	ConnectionID         uuid.UUID
+	ConnectionGeneration int64
+	AssignmentID         uuid.NullUUID
+	SeriesID             uuid.NullUUID
+	GameAttemptID        uuid.NullUUID
+	State                string
+	Revision             int64
+	ConnectedAt          pgtype.Timestamptz
+	DisconnectedAt       pgtype.Timestamptz
+	UpdatedAt            pgtype.Timestamptz
+}
+
 type ParticipantPostSeriesAction struct {
 	CommandID                     uuid.UUID
 	TournamentID                  uuid.UUID
@@ -1824,6 +1842,22 @@ type RealtimeSubscriber struct {
 	ConnectedAt              pgtype.Timestamptz
 	ClosedAt                 pgtype.Timestamptz
 	CloseReason              *string
+}
+
+type ReconnectCommandReceipt struct {
+	CommandID                 uuid.UUID
+	TournamentID              uuid.UUID
+	RosterID                  uuid.UUID
+	WaveID                    uuid.UUID
+	MutationKind              string
+	ParticipantID             uuid.UUID
+	IntervalID                uuid.NullUUID
+	ExpectedAuthorityRevision int64
+	ResultAuthorityRevision   int64
+	SchemaVersion             int16
+	RecordDocument            []byte
+	RecordedAt                pgtype.Timestamptz
+	CreatedAt                 pgtype.Timestamptz
 }
 
 type ReconnectInterval struct {

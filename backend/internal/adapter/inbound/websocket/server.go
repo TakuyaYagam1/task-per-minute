@@ -50,6 +50,7 @@ type Server struct {
 	handshakeLimiter     HandshakeRateLimiter
 	clientIP             ClientIPResolver
 	participant          TournamentParticipantConnectionFlow
+	participantLifecycle TournamentParticipantLifecycleFlow
 	public               TournamentPublicConnectionFlow
 	operator             TournamentOperatorConnectionFlow
 	operatorResolve      TournamentOperatorSessionResolver
@@ -122,6 +123,12 @@ func WithConnectionLimits(maxConnections, maxPerPrincipal int) Option {
 func WithTournamentParticipantFlow(flow TournamentParticipantConnectionFlow) Option {
 	return func(server *Server) {
 		server.participant = flow
+	}
+}
+
+func WithTournamentParticipantLifecycleFlow(flow TournamentParticipantLifecycleFlow) Option {
+	return func(server *Server) {
+		server.participantLifecycle = flow
 	}
 }
 

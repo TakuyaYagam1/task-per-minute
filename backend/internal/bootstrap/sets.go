@@ -31,6 +31,7 @@ import (
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
 	tournamentcancellation "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/cancellation"
 	catalogusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/catalog"
+	participantconnection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/connection"
 	lifecycleusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/lifecycle"
 	tournamentparticipant "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/participant"
 	tournamentpause "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/pause"
@@ -105,6 +106,7 @@ var ReposSet = wire.NewSet(
 	wire.Bind(new(tournamentadmin.ExecutionWorkflowRepository), new(*postgres.TournamentAdminExecutionPostgres)),
 	wire.Bind(new(tournamentadmin.NormalPauseExecutionRepository), new(*postgres.TournamentAdminExecutionPostgres)),
 	wire.Bind(new(gameusecase.StartRepository), new(*postgres.TournamentAdminExecutionPostgres)),
+	postgres.NewTournamentPausedPresencePostgres,
 	postgres.NewTournamentConfigurationPostgres,
 	wire.Bind(new(tournamentadmin.TournamentConfigurationRepository), new(*postgres.TournamentConfigurationPostgres)),
 	postgres.NewExecutionAuthorityPostgres,
@@ -270,6 +272,9 @@ var UseCasesSet = wire.NewSet(
 	provideTournamentAdminInbound,
 	provideParticipantReadiness,
 	wire.Bind(new(tournamentparticipant.ReadinessWorkflow), new(*readiness.ReadinessUseCase)),
+	provideParticipantConnectionRepository,
+	provideParticipantConnectionCoordinator,
+	wire.Bind(new(inbound.TournamentParticipantConnectionUseCase), new(*participantconnection.Coordinator)),
 	provideParticipantDraft,
 	wire.Bind(new(tournamentparticipant.DraftActionWorkflow), new(*draftusecase.ActionUseCase)),
 	provideSwissDraftDeadlineWorker,

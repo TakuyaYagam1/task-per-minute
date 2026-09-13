@@ -750,6 +750,13 @@ func (session *realtimeDeliverySession) resumeID() uuid.UUID {
 	return session.subscriber.ID
 }
 
+func (session *realtimeDeliverySession) connectionFence() (uuid.UUID, int64, bool) {
+	if session == nil || session.subscriber.ConnectionID == uuid.Nil || session.subscriber.ConnectionGeneration < 1 {
+		return uuid.Nil, 0, false
+	}
+	return session.subscriber.ConnectionID, session.subscriber.ConnectionGeneration, true
+}
+
 func (session *realtimeDeliverySession) write(ctx context.Context, data []byte) error {
 	session.writeMu.Lock()
 	defer session.writeMu.Unlock()

@@ -438,7 +438,7 @@ type Observer interface {
 // CommitMutation stores every state change and the receipt atomically.
 type ReconnectRepository interface {
 	FindCommand(ctx context.Context, tournamentID, commandID uuid.UUID) (*ReconnectRecord, error)
-	LoadAuthority(ctx context.Context, scope pausedomain.GraphScope) (ReconnectAuthority, error)
+	LoadAuthority(ctx context.Context, scope pausedomain.GraphScope, participantID uuid.UUID) (ReconnectAuthority, error)
 	CommitMutation(ctx context.Context, expectedRevision int64, record ReconnectRecord) (*ReconnectRecord, bool, error)
 }
 type ReplayClock interface {

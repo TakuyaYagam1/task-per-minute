@@ -45,7 +45,7 @@ func newTask045RepositoryHarness(
 		RunAndReturn(harness.findReconnectCommand).
 		Maybe()
 	repository.EXPECT().
-		LoadAuthority(mock.Anything, mock.Anything).
+		LoadAuthority(mock.Anything, mock.Anything, mock.Anything).
 		RunAndReturn(harness.loadReconnectAuthority).
 		Maybe()
 	repository.EXPECT().
@@ -70,7 +70,7 @@ func (f *task045RepositoryHarness) findReconnectCommand(_ context.Context, tourn
 	return &clone, nil
 }
 
-func (f *task045RepositoryHarness) loadReconnectAuthority(ctx context.Context, _ pause.GraphScope) (gameusecase.ReconnectAuthority, error) {
+func (f *task045RepositoryHarness) loadReconnectAuthority(ctx context.Context, _ pause.GraphScope, _ uuid.UUID) (gameusecase.ReconnectAuthority, error) {
 	f.mu.Lock()
 	f.loads++
 	load := f.loads

@@ -23,6 +23,7 @@ func runClockedReconnectMutation(
 	clock ReconnectClock,
 	scope pause.GraphScope,
 	commandID uuid.UUID,
+	participantID uuid.UUID,
 	match func(ReconnectRecord) bool,
 	build reconnectRecordBuilder,
 ) (*ReconnectRecord, bool, error) {
@@ -31,7 +32,7 @@ func runClockedReconnectMutation(
 		if err != nil || found {
 			return receipt, false, err
 		}
-		authority, err := loadReconnectMutationAuthority(ctx, repository, scope)
+		authority, err := loadReconnectMutationAuthority(ctx, repository, scope, participantID)
 		if err != nil {
 			return nil, false, err
 		}
@@ -81,8 +82,9 @@ func loadReconnectMutationAuthority(
 	ctx context.Context,
 	repository ReconnectRepository,
 	scope pause.GraphScope,
+	participantID uuid.UUID,
 ) (ReconnectAuthority, error) {
-	authority, err := repository.LoadAuthority(ctx, scope)
+	authority, err := repository.LoadAuthority(ctx, scope, participantID)
 	if err != nil {
 		return ReconnectAuthority{}, fmt.Errorf("reconnect - load authority: %w", err)
 	}

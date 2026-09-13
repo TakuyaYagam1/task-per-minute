@@ -28,6 +28,9 @@ type Querier interface {
 	AdvanceSeriesScoreHeadCAS(ctx context.Context, arg AdvanceSeriesScoreHeadCASParams) (SeriesScoreHead, error)
 	AdvanceTournamentAdminNormalPauseCounterCAS(ctx context.Context, arg AdvanceTournamentAdminNormalPauseCounterCASParams) (uuid.UUID, error)
 	AdvanceTournamentAdminRosterRevision(ctx context.Context, arg AdvanceTournamentAdminRosterRevisionParams) (Roster, error)
+	// Series is part of the reconnect authority graph.  Every state-preserving
+	// reconnect mutation still advances its revision when its game advances.
+	AdvanceTournamentReconnectSeriesCAS(ctx context.Context, arg AdvanceTournamentReconnectSeriesCASParams) (uuid.UUID, error)
 	AllocateGoldenRuntimeOutboxSequence(ctx context.Context, arg AllocateGoldenRuntimeOutboxSequenceParams) (int32, error)
 	AllocateGoldenRuntimeProjectionOrdinal(ctx context.Context, arg AllocateGoldenRuntimeProjectionOrdinalParams) (int32, error)
 	// AllocateResultEventSequence advances the durable event cursor only after the
@@ -48,6 +51,10 @@ type Querier interface {
 	CancelCorrectionGoldenAttempt(ctx context.Context, arg CancelCorrectionGoldenAttemptParams) (CancelCorrectionGoldenAttemptRow, error)
 	CancelRecoveryPauseCAS(ctx context.Context, arg CancelRecoveryPauseCASParams) (Pause, error)
 	CancelTournamentForCancellationCAS(ctx context.Context, arg CancelTournamentForCancellationCASParams) (Tournament, error)
+	// Terminal cancellation is separate so a continuation predecessor can never
+	// accidentally gain suspension provenance from this game-level writer.
+	// Normal Wave pause suspension remains owned by the normal-pause adapter.
+	CancelTournamentReconnectIntervalCAS(ctx context.Context, arg CancelTournamentReconnectIntervalCASParams) (ReconnectInterval, error)
 	CancelTournamentTechnicalPause(ctx context.Context, arg CancelTournamentTechnicalPauseParams) (uuid.UUID, error)
 	ClaimPlayerSessionByUsername(ctx context.Context, arg ClaimPlayerSessionByUsernameParams) (Player, error)
 	ClaimRealtimeDelivery(ctx context.Context, arg ClaimRealtimeDeliveryParams) (uuid.UUID, error)
@@ -59,8 +66,14 @@ type Querier interface {
 	ClearTournamentConfigurationEditUnboundReadinessCAS(ctx context.Context, arg ClearTournamentConfigurationEditUnboundReadinessCASParams) ([]ClearTournamentConfigurationEditUnboundReadinessCASRow, error)
 	ClearWaveReadinessHeads(ctx context.Context, arg ClearWaveReadinessHeadsParams) ([]WaveReadiness, error)
 	CloseGoldenReadyDisconnectCAS(ctx context.Context, arg CloseGoldenReadyDisconnectCASParams) (GoldenReadyDisconnect, error)
+	// The update is deliberately fenced by the complete server-resolved
+	// identity.  A stale generation or wrong participant updates no row.
+	CloseParticipantConnectionLease(ctx context.Context, arg CloseParticipantConnectionLeaseParams) (ParticipantConnectionLease, error)
 	CloseReadyWindowCAS(ctx context.Context, arg CloseReadyWindowCASParams) (ReadyWindow, error)
 	CloseRealtimeSubscriber(ctx context.Context, arg CloseRealtimeSubscriberParams) (uuid.UUID, error)
+	// Close an open interval as reconnected or expired.  The live presence CAS is
+	// performed before this statement, satisfying the deferred interval guard.
+	CloseTournamentReconnectIntervalCAS(ctx context.Context, arg CloseTournamentReconnectIntervalCASParams) (ReconnectInterval, error)
 	// Closing a Wave is a new immutable result authority identity. Keep this CAS
 	// separate from transitions which intentionally retain the running identity.
 	CloseWaveCAS(ctx context.Context, arg CloseWaveCASParams) (Wave, error)
@@ -75,6 +88,7 @@ type Querier interface {
 	CorrectGameAttemptCAS(ctx context.Context, arg CorrectGameAttemptCASParams) (CorrectGameAttemptCASRow, error)
 	CorrectSeriesCAS(ctx context.Context, arg CorrectSeriesCASParams) (CorrectSeriesCASRow, error)
 	CountGoldenRuntimeGroupCommits(ctx context.Context, arg CountGoldenRuntimeGroupCommitsParams) (int32, error)
+	CountParticipantConnectionLeases(ctx context.Context, arg CountParticipantConnectionLeasesParams) (int64, error)
 	CountWaveMembers(ctx context.Context, waveID uuid.UUID) (int64, error)
 	CountWaveReadiness(ctx context.Context, readyWindowID uuid.NullUUID) (int64, error)
 	CreateAdminPlayerAuditEvent(ctx context.Context, arg CreateAdminPlayerAuditEventParams) error
@@ -322,6 +336,11 @@ type Querier interface {
 	// keys are deferred so the ensuing four-node graph can prove the exact Top4,
 	// bracket, and semifinal score genesis at transaction commit.
 	CreateTournamentProgressionStageProjectionNodeAuthority(ctx context.Context, arg CreateTournamentProgressionStageProjectionNodeAuthorityParams) (uuid.UUID, error)
+	// Read the frozen clock belonging to an active game pause.
+	// Reconnect freeze advances the domain clock revision together with the game
+	// authority.  Keep that revision in the durable clock instead of using the
+	// normal pause helper's fixed initial revision.
+	CreateTournamentReconnectPauseClock(ctx context.Context, arg CreateTournamentReconnectPauseClockParams) (uuid.UUID, error)
 	CreateTournamentRoster(ctx context.Context, arg CreateTournamentRosterParams) (Roster, error)
 	CreateTournamentRosterOperation(ctx context.Context, arg CreateTournamentRosterOperationParams) (uuid.UUID, error)
 	CreateTournamentStagePlayoffEvidence(ctx context.Context, arg CreateTournamentStagePlayoffEvidenceParams) (uuid.UUID, error)
@@ -365,6 +384,7 @@ type Querier interface {
 	FindGoldenRepositoryCommand(ctx context.Context, arg FindGoldenRepositoryCommandParams) (FindGoldenRepositoryCommandRow, error)
 	FindLatestWaveStartCommand(ctx context.Context, arg FindLatestWaveStartCommandParams) (WaveControlCommand, error)
 	FindOperatorReplayReserveCommand(ctx context.Context, commandID uuid.UUID) (OperatorReplayReserve, error)
+	FindParticipantConnectionLeaseByFence(ctx context.Context, arg FindParticipantConnectionLeaseByFenceParams) (ParticipantConnectionLease, error)
 	FindParticipantPostSeriesAction(ctx context.Context, commandID uuid.UUID) (ParticipantPostSeriesAction, error)
 	// An exact submission replay is visible only after the caller has locked and
 	// authenticated this participant's tournament scope. The caller compares the
@@ -411,6 +431,15 @@ type Querier interface {
 	// query intentionally returns publication and pool identities only; task
 	// bodies remain behind the private task delivery boundary.
 	GetLatestTaskPoolPublication(ctx context.Context) ([]GetLatestTaskPoolPublicationRow, error)
+	// The latest receipt supplies the durable aggregate revision for this
+	// participant when the current game has already resumed.  The command id is
+	// a deterministic tie breaker for timestamps supplied by one authoritative
+	// transaction.
+	GetLatestTournamentReconnectCommandReceipt(ctx context.Context, arg GetLatestTournamentReconnectCommandReceiptParams) (ReconnectCommandReceipt, error)
+	// After a prior reconnect/resume, the current game clock is the most recent
+	// resumed clock.  The query is also used as a consistency check for an active
+	// game that has no currently active pause.
+	GetLatestTournamentReconnectResumedClock(ctx context.Context, arg GetLatestTournamentReconnectResumedClockParams) (GetLatestTournamentReconnectResumedClockRow, error)
 	GetOfficialResultRevisionByID(ctx context.Context, id uuid.UUID) (OfficialResultRevision, error)
 	GetOperatorResultCommand(ctx context.Context, commandID uuid.UUID) (OperatorResultCommand, error)
 	GetOperatorResultTime(ctx context.Context) (pgtype.Timestamptz, error)
@@ -497,6 +526,10 @@ type Querier interface {
 	GetTournamentPreflightRound(ctx context.Context, rosterID uuid.UUID) (GetTournamentPreflightRoundRow, error)
 	GetTournamentReadCursor(ctx context.Context, tournamentID uuid.UUID) (GetTournamentReadCursorRow, error)
 	GetTournamentReadProjectionPayloads(ctx context.Context, tournamentID uuid.UUID) (GetTournamentReadProjectionPayloadsRow, error)
+	// Reconnect command receipts are the domain idempotency boundary.  The
+	// complete record is retained in record_document so a retry can return the
+	// exact result without re-running a settlement or selecting a lease.
+	GetTournamentReconnectCommandReceipt(ctx context.Context, arg GetTournamentReconnectCommandReceiptParams) (ReconnectCommandReceipt, error)
 	GetTournamentRoster(ctx context.Context, id uuid.UUID) (Roster, error)
 	// Read our own stage proof before the outer coordinator writes its deferred
 	// lifecycle receipt. Replay lookup remains bound to the lifecycle receipt.
@@ -506,9 +539,14 @@ type Querier interface {
 	GetWaveReadinessHead(ctx context.Context, arg GetWaveReadinessHeadParams) (WaveReadiness, error)
 	HasGoldenRuntimePlanSnapshot(ctx context.Context, arg HasGoldenRuntimePlanSnapshotParams) (bool, error)
 	HasWavePendingDrafts(ctx context.Context, waveID uuid.UUID) (bool, error)
+	InsertParticipantConnectionLease(ctx context.Context, arg InsertParticipantConnectionLeaseParams) (ParticipantConnectionLease, error)
 	InsertTournamentAdminRosterParticipant(ctx context.Context, arg InsertTournamentAdminRosterParticipantParams) (Participant, error)
 	InsertTournamentCreateReceipt(ctx context.Context, arg InsertTournamentCreateReceiptParams) (TournamentCreateCommandReceipt, error)
 	InsertTournamentParticipant(ctx context.Context, arg InsertTournamentParticipantParams) (Participant, error)
+	// Receipt persistence is intentionally last in CommitMutation.  The primary
+	// key makes a concurrent command with the same identity fail atomically; the
+	// caller maps that unique violation to a retry conflict.
+	InsertTournamentReconnectCommandReceipt(ctx context.Context, arg InsertTournamentReconnectCommandReceiptParams) (uuid.UUID, error)
 	LinkProjectionArtifact(ctx context.Context, arg LinkProjectionArtifactParams) (ProjectionRevisionArtifact, error)
 	// The read surface intentionally filters superseded Series identities.  The
 	// old rows remain queryable through the edit ledger and lineage tables.
@@ -634,6 +672,10 @@ type Querier interface {
 	ListTournamentPreflightPairings(ctx context.Context, arg ListTournamentPreflightPairingsParams) ([]ListTournamentPreflightPairingsRow, error)
 	ListTournamentPreflightParticipants(ctx context.Context, arg ListTournamentPreflightParticipantsParams) ([]ListTournamentPreflightParticipantsRow, error)
 	ListTournamentReadParticipants(ctx context.Context, tournamentID uuid.UUID) ([]ListTournamentReadParticipantsRow, error)
+	// Receipt persistence is intentionally last in CommitMutation.  The primary
+	// key makes a concurrent command with the same identity fail atomically; the
+	// caller maps that unique violation to a retry conflict.
+	ListTournamentReconnectCommandReceipts(ctx context.Context, arg ListTournamentReconnectCommandReceiptsParams) ([]ReconnectCommandReceipt, error)
 	ListTournamentReservations(ctx context.Context, tournamentID uuid.UUID) ([]ParticipantReservation, error)
 	ListTournamentReservedTaskVersions(ctx context.Context, tournamentID uuid.UUID) ([]ListTournamentReservedTaskVersionsRow, error)
 	ListTournamentSummaries(ctx context.Context) ([]ListTournamentSummariesRow, error)
@@ -736,6 +778,31 @@ type Querier interface {
 	LockOperatorReplayReserveForReplacement(ctx context.Context, arg LockOperatorReplayReserveForReplacementParams) (OperatorReplayReserve, error)
 	LockOperatorResultAuthority(ctx context.Context, arg LockOperatorResultAuthorityParams) (LockOperatorResultAuthorityRow, error)
 	LockParticipantCommandAuthority(ctx context.Context, arg LockParticipantCommandAuthorityParams) (LockParticipantCommandAuthorityRow, error)
+	// Only a delivered, normal task in an active game can produce ordinary game
+	// disconnect.  All joins are identity-bound and locked in graph order.
+	LockParticipantConnectionActiveGame(ctx context.Context, arg LockParticipantConnectionActiveGameParams) ([]LockParticipantConnectionActiveGameRow, error)
+	// The connection lifecycle always locks the participant identity first.  Every
+	// subsequent query is scoped by that identity so a socket can never select a
+	// different roster, wave, assignment, or game by accident.
+	LockParticipantConnectionIdentity(ctx context.Context, arg LockParticipantConnectionIdentityParams) (LockParticipantConnectionIdentityRow, error)
+	// Locks are ordered by the immutable connection fence.  The participant row
+	// is already locked by the identity query, making this lock set the stable
+	// serialization point for multi-tab open/close and active-count decisions.
+	LockParticipantConnectionLeases(ctx context.Context, arg LockParticipantConnectionLeasesParams) ([]ParticipantConnectionLease, error)
+	// The operator pause is wave-scoped and joins the exact participant presence
+	// row.  Returning more than one row is a repository conflict, never a reason
+	// to choose one pause or one series arbitrarily.
+	LockParticipantConnectionOperatorPause(ctx context.Context, arg LockParticipantConnectionOperatorPauseParams) ([]LockParticipantConnectionOperatorPauseRow, error)
+	LockParticipantConnectionReadiness(ctx context.Context, arg LockParticipantConnectionReadinessParams) (LockParticipantConnectionReadinessRow, error)
+	LockParticipantConnectionReadyWindow(ctx context.Context, arg LockParticipantConnectionReadyWindowParams) (LockParticipantConnectionReadyWindowRow, error)
+	// A paused attempt with one open reconnect interval is the only ordinary
+	// reconnect action.  The deadline is returned so the coordinator can fence it
+	// against its injected clock before entering the nested game usecase.
+	LockParticipantConnectionReconnect(ctx context.Context, arg LockParticipantConnectionReconnectParams) ([]LockParticipantConnectionReconnectRow, error)
+	// A participant can have completed historical waves.  Prefer the one current
+	// execution states use, then fall back to the latest immutable wave so Golden
+	// and terminal participants still have a durable scope for their lease.
+	LockParticipantConnectionWave(ctx context.Context, arg LockParticipantConnectionWaveParams) (LockParticipantConnectionWaveRow, error)
 	LockParticipantDraftAuthority(ctx context.Context, arg LockParticipantDraftAuthorityParams) (LockParticipantDraftAuthorityRow, error)
 	LockParticipantPostSeriesAuthority(ctx context.Context, arg LockParticipantPostSeriesAuthorityParams) (LockParticipantPostSeriesAuthorityRow, error)
 	LockParticipantReadinessState(ctx context.Context, arg LockParticipantReadinessStateParams) (LockParticipantReadinessStateRow, error)
@@ -858,6 +925,14 @@ type Querier interface {
 	LockTournamentPairingParticipants(ctx context.Context, rosterID uuid.UUID) ([]LockTournamentPairingParticipantsRow, error)
 	LockTournamentPairingRounds(ctx context.Context, rosterID uuid.UUID) ([]LockTournamentPairingRoundsRow, error)
 	LockTournamentPairingWaves(ctx context.Context, rosterID uuid.UUID) ([]LockTournamentPairingWavesRow, error)
+	// Resolve exactly one current normal assignment and its selected participant
+	// Presence.  A participant in multiple matching Series is an ambiguity, not
+	// a reason to pick one row.
+	LockTournamentPausedPresenceParticipant(ctx context.Context, arg LockTournamentPausedPresenceParticipantParams) ([]PresenceState, error)
+	// Paused participant presence is a child mutation of one active normal
+	// operator Wave pause.  The root and command receipt are locked before the
+	// existing normal-pause graph loader reads its immutable evidence.
+	LockTournamentPausedPresenceRoot(ctx context.Context, arg LockTournamentPausedPresenceRootParams) ([]LockTournamentPausedPresenceRootRow, error)
 	// The Final Swiss receipt is an immutable incident snapshot. Unlike canonical
 	// materialization above, it must retain historical ledger pairs after a
 	// correction moves the Series head to its successor result revision.
@@ -971,6 +1046,16 @@ type Querier interface {
 	// identifiers by the progression reader.
 	LockTournamentProgressionSwissScoreRevisionAttempts(ctx context.Context, arg LockTournamentProgressionSwissScoreRevisionAttemptsParams) ([]LockTournamentProgressionSwissScoreRevisionAttemptsRow, error)
 	LockTournamentProgressionSwissSeries(ctx context.Context, arg LockTournamentProgressionSwissSeriesParams) ([]LockTournamentProgressionSwissSeriesRow, error)
+	// Load the one game pause that can own reconnect intervals.  A graph scope
+	// may contain several games; the adapter rejects that ambiguity before using
+	// this row, so no arbitrary active pause is ever selected.
+	LockTournamentReconnectGamePause(ctx context.Context, arg LockTournamentReconnectGamePauseParams) (LockTournamentReconnectGamePauseRow, error)
+	// Read the frozen clock belonging to an active game pause.
+	LockTournamentReconnectPauseClock(ctx context.Context, arg LockTournamentReconnectPauseClockParams) (LockTournamentReconnectPauseClockRow, error)
+	// Resume decisions must cite immutable pre-mutation presence evidence.  The
+	// live rows have already advanced to the reconnecting state by the time the
+	// decision is appended.
+	LockTournamentReconnectPausePresenceSnapshots(ctx context.Context, arg LockTournamentReconnectPausePresenceSnapshotsParams) ([]PausePresenceSnapshot, error)
 	// Result/execution writers acquire this prefix before any projection or child
 	// lock. Materialized dependencies enforce Tournament -> Roster -> published
 	// Projection independently of join planning. Before initial publication, the
@@ -1113,6 +1198,14 @@ type Querier interface {
 	// no immutable start proof exists. Its identity remains stable.
 	UpdateTournamentConfigurationEditSwissRoundCAS(ctx context.Context, arg UpdateTournamentConfigurationEditSwissRoundCASParams) (UpdateTournamentConfigurationEditSwissRoundCASRow, error)
 	UpdateTournamentParticipantAttendanceCAS(ctx context.Context, arg UpdateTournamentParticipantAttendanceCASParams) (Participant, error)
+	// The usecase has already locked and validated the immutable pause graph. This
+	// statement performs the selected Presence-only CAS and rechecks the active
+	// operator Wave pause identity in the same caller transaction.
+	UpdateTournamentPausedPresenceCAS(ctx context.Context, arg UpdateTournamentPausedPresenceCASParams) (PresenceState, error)
+	// Presence updates are guarded by the identity, epoch, revision, and prior
+	// state.  The trigger on presence_states enforces the same transition shape;
+	// this predicate is the application-visible CAS result.
+	UpdateTournamentReconnectPresenceCAS(ctx context.Context, arg UpdateTournamentReconnectPresenceCASParams) (PresenceState, error)
 	UpsertPlayerLeaderboardOverride(ctx context.Context, arg UpsertPlayerLeaderboardOverrideParams) (PlayerLeaderboardOverride, error)
 }
 

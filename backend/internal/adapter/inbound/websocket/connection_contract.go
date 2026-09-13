@@ -6,6 +6,7 @@ import (
 	"github.com/google/uuid"
 
 	tournamentws "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket/tournament"
+	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 )
 
 type TournamentParticipantConnectionRequest struct {
@@ -28,6 +29,10 @@ type TournamentParticipantConnectionFlow interface {
 		request TournamentParticipantConnectionRequest,
 	) (TournamentParticipantPayload, error)
 }
+
+// TournamentParticipantLifecycleFlow aliases the transport-neutral lifecycle
+// contract. It is intentionally separate from the read-only participant flow.
+type TournamentParticipantLifecycleFlow = usecase.TournamentParticipantConnectionUseCase
 
 type TournamentPublicConnectionFlow interface {
 	OpenTournamentPublic(

@@ -36,7 +36,7 @@ func (u *TimeoutUseCase) Expire(ctx context.Context, command TimeoutCommand) (*R
 		return nil, false, domain.ErrValidation
 	}
 	measurement := newReconnectEventMeasurement(u.clock, u.observer)
-	record, changed, err := runClockedReconnectMutation(ctx, u.repository, u.clock, command.Scope, command.CommandID,
+	record, changed, err := runClockedReconnectMutation(ctx, u.repository, u.clock, command.Scope, command.CommandID, command.ParticipantID,
 		func(record ReconnectRecord) bool {
 			return record.Kind == MutationTimeout && record.TimeoutCommand != nil && *record.TimeoutCommand == command
 		}, reconnectTimeoutMutationBuilder(command))

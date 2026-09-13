@@ -18,7 +18,7 @@ import (
 
 type tournamentConnectionObserver func(action, outcome, reason string, revision int64)
 
-//nolint:gocyclo // Connection lifecycle keeps transport, delivery, and Golden presence cleanup in one scope.
+//nolint:gocyclo // Connection lifecycle keeps transport, delivery, and presence cleanup in one scope.
 func (server *Server) serveTournamentConnection(
 	ctx context.Context,
 	connection *coderws.Conn,
@@ -105,6 +105,16 @@ func (server *Server) serveTournamentConnection(
 		observe(tournamentws.TournamentTransportDelivery, appobservability.TournamentOutcomeFailure, "write_failed", revision)
 		return
 	}
+	participantCommand, participantLifecycle, participantErr := server.connectParticipantConnection(
+		ctx, scope, principal, deliverySession,
+	)
+	if participantLifecycle {
+		defer server.closeParticipantConnection(ctx, participantCommand)
+	}
+	if participantErr != nil {
+		observe(tournamentws.TournamentTransportDelivery, appobservability.TournamentOutcomeFailure, "participant_connection_open_failed", revision)
+		return
+	}
 	if server.realtimeDelivery != nil {
 		if server.realtimeDelivery.hasWrittenTerminal(deliverySession) {
 			if deliveryErr := server.realtimeDelivery.closeWrittenTerminal(ctx, deliverySession); deliveryErr != nil {
@@ -129,6 +139,44 @@ func (server *Server) serveTournamentConnection(
 	}
 	observe(tournamentws.TournamentTransportConnect, appobservability.TournamentOutcomeSuccess, "opened", revision)
 	server.streamTournamentConnection(ctx, connection, writeScope, principal, deliverySession, revision, observe)
+}
+
+func (server *Server) connectParticipantConnection(
+	ctx context.Context,
+	scope tournamentConnectionScope,
+	principal tournamentConnectionPrincipal,
+	session *realtimeDeliverySession,
+) (usecase.TournamentParticipantConnectionCommand, bool, error) {
+	if server == nil || server.participantLifecycle == nil || scope.Role != TournamentRoleParticipant ||
+		principal.Player == nil || session == nil {
+		return usecase.TournamentParticipantConnectionCommand{}, false, nil
+	}
+	connectionID, connectionGeneration, ok := session.connectionFence()
+	if !ok {
+		return usecase.TournamentParticipantConnectionCommand{}, false, usecase.ErrInvalidTournamentParticipantConnectionCommand
+	}
+	command := usecase.TournamentParticipantConnectionCommand{
+		TournamentID:         scope.TournamentID,
+		PlayerID:             principal.Player.ID,
+		ConnectionID:         connectionID,
+		ConnectionGeneration: connectionGeneration,
+	}
+	if err := command.Validate(); err != nil {
+		return command, false, err
+	}
+	return command, true, server.participantLifecycle.Connect(ctx, command)
+}
+
+func (server *Server) closeParticipantConnection(
+	ctx context.Context,
+	command usecase.TournamentParticipantConnectionCommand,
+) {
+	if server == nil || server.participantLifecycle == nil {
+		return
+	}
+	closeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), defaultSessionCheckTimeout)
+	defer cancel()
+	_ = server.participantLifecycle.Disconnect(closeCtx, command)
 }
 
 func (server *Server) setGoldenParticipantConnection(

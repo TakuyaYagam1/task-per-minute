@@ -631,10 +631,19 @@ func (planner *reconnectTimeoutPlanner) FindCommand(
 }
 
 func (planner *reconnectTimeoutPlanner) LoadAuthority(
-	context.Context,
-	pause.GraphScope,
+	_ context.Context,
+	_ pause.GraphScope,
+	participantID uuid.UUID,
 ) (gameusecase.ReconnectAuthority, error) {
-	return planner.authority, nil
+	if participantID == uuid.Nil {
+		return gameusecase.ReconnectAuthority{}, domain.ErrValidation
+	}
+	for _, interval := range planner.authority.Reconnect {
+		if interval.ParticipantID == participantID {
+			return planner.authority, nil
+		}
+	}
+	return gameusecase.ReconnectAuthority{}, domain.ErrConflict
 }
 
 func (planner *reconnectTimeoutPlanner) CommitMutation(
