@@ -51,3 +51,23 @@ func TaskHintText(hints []string, idx int) (string, bool) {
 	text := normalized[idx]
 	return text, text != ""
 }
+
+// UnlockedTaskHints returns the non-empty hints whose schedule has elapsed at
+// observedAt. The returned slice intentionally omits locked and empty slots so
+// a participant cannot infer undisclosed hint content from placeholders.
+func UnlockedTaskHints(hints []string, schedule []HintScheduleEntry, observedAt time.Time) ([]string, bool) {
+	normalized, ok := NormalizeTaskHints(hints)
+	if !ok || len(schedule) != TaskHintCount || !IsValidServerTime(observedAt) {
+		return nil, false
+	}
+	visible := make([]string, 0, TaskHintCount)
+	for index, entry := range schedule {
+		if entry.Index != index+1 || !IsValidServerTime(entry.UnlockAt) {
+			return nil, false
+		}
+		if normalized[index] != "" && !observedAt.Before(entry.UnlockAt) {
+			visible = append(visible, normalized[index])
+		}
+	}
+	return visible, true
+}

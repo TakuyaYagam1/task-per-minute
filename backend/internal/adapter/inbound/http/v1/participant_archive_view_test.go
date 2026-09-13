@@ -28,6 +28,7 @@ func TestParticipantTaskSnapshotSerializesAvailabilityWithoutInternalURL(t *test
 
 	encoded, err := json.Marshal(payload)
 	require.NoError(t, err)
+	require.Contains(t, string(encoded), `"hints":[]`)
 	require.NotContains(t, string(encoded), internalURL)
 	require.NotContains(t, string(encoded), "source_file_url")
 	require.Contains(t, string(encoded), "source_file_available")

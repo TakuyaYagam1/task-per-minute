@@ -91,6 +91,8 @@ SELECT assignment.id AS assignment_id,
     assignment.attempt_id,
     assignment.series_id,
     attempt.id AS game_id,
+    attempt.state AS attempt_state,
+    attempt.started_at AS attempt_started_at,
     COALESCE(current_wave.wave_id::TEXT, '')::TEXT AS wave_id,
     participant.id AS participant_id,
     snapshot.id AS snapshot_id,
@@ -108,7 +110,17 @@ SELECT assignment.id AS assignment_id,
     receipt.id AS receipt_id,
     receipt.instance_id,
     receipt.delivered_at,
-    COALESCE(reserve_count.value, 0)::BIGINT AS undisclosed_reserve_count
+    COALESCE(reserve_count.value, 0)::BIGINT AS undisclosed_reserve_count,
+    COALESCE(game_pause.pause_id, '00000000-0000-0000-0000-000000000000'::UUID) AS game_pause_id,
+    game_pause.game_attempt_id AS game_pause_game_attempt_id,
+    COALESCE(game_pause.state, '')::TEXT AS game_pause_state,
+    game_pause.started_at AS game_pause_started_at,
+    game_pause.original_deadline AS game_pause_original_deadline,
+    game_pause.frozen_at AS game_pause_frozen_at,
+    game_pause.frozen_remaining_ms AS game_pause_frozen_remaining_ms,
+    game_pause.resumed_at AS game_pause_resumed_at,
+    game_pause.resumed_deadline AS game_pause_resumed_deadline,
+    transaction_timestamp()::TIMESTAMPTZ AS observed_at
 FROM participants AS participant
 JOIN rosters AS roster ON roster.id = participant.roster_id
 JOIN task_delivery_receipts AS receipt
@@ -162,6 +174,26 @@ LEFT JOIN LATERAL (
         AND reserve.disclosed_at IS NULL
         AND reserve_edge.position > active_edge.position
 ) AS reserve_count ON TRUE
+LEFT JOIN LATERAL (
+    SELECT pause.id AS pause_id,
+        pause.game_attempt_id,
+        pause.state,
+        pause.started_at,
+        clock.original_deadline,
+        clock.frozen_at,
+        clock.frozen_remaining_ms,
+        clock.resumed_at,
+        clock.resumed_deadline
+    FROM pauses AS pause
+    LEFT JOIN pause_clocks AS clock
+        ON clock.pause_id = pause.id
+        AND clock.game_attempt_id = attempt.id
+    WHERE pause.scope_kind = 'game_attempt'
+        AND pause.game_attempt_id = attempt.id
+    ORDER BY pause.created_at DESC,
+        pause.id DESC
+    LIMIT 1
+) AS game_pause ON TRUE
 WHERE roster.tournament_id = $1
     AND participant.player_id = $2
     AND assignment_series.state NOT IN ('completed', 'cancelled')
@@ -176,28 +208,40 @@ type GetParticipantStateAssignmentParams struct {
 }
 
 type GetParticipantStateAssignmentRow struct {
-	AssignmentID            uuid.UUID
-	AttemptID               uuid.UUID
-	SeriesID                uuid.UUID
-	GameID                  uuid.UUID
-	WaveID                  string
-	ParticipantID           uuid.UUID
-	SnapshotID              uuid.UUID
-	TaskID                  uuid.UUID
-	TaskVersion             int32
-	Kind                    string
-	Title                   string
-	Description             string
-	Category                string
-	Difficulty              string
-	TimeLimit               int32
-	Hints                   []byte
-	TaskUrl                 *string
-	SourceFileUrl           *string
-	ReceiptID               uuid.UUID
-	InstanceID              uuid.UUID
-	DeliveredAt             pgtype.Timestamptz
-	UndisclosedReserveCount int64
+	AssignmentID               uuid.UUID
+	AttemptID                  uuid.UUID
+	SeriesID                   uuid.UUID
+	GameID                     uuid.UUID
+	AttemptState               string
+	AttemptStartedAt           pgtype.Timestamptz
+	WaveID                     string
+	ParticipantID              uuid.UUID
+	SnapshotID                 uuid.UUID
+	TaskID                     uuid.UUID
+	TaskVersion                int32
+	Kind                       string
+	Title                      string
+	Description                string
+	Category                   string
+	Difficulty                 string
+	TimeLimit                  int32
+	Hints                      []byte
+	TaskUrl                    *string
+	SourceFileUrl              *string
+	ReceiptID                  uuid.UUID
+	InstanceID                 uuid.UUID
+	DeliveredAt                pgtype.Timestamptz
+	UndisclosedReserveCount    int64
+	GamePauseID                uuid.UUID
+	GamePauseGameAttemptID     uuid.NullUUID
+	GamePauseState             string
+	GamePauseStartedAt         pgtype.Timestamptz
+	GamePauseOriginalDeadline  pgtype.Timestamptz
+	GamePauseFrozenAt          pgtype.Timestamptz
+	GamePauseFrozenRemainingMs *int64
+	GamePauseResumedAt         pgtype.Timestamptz
+	GamePauseResumedDeadline   pgtype.Timestamptz
+	ObservedAt                 pgtype.Timestamptz
 }
 
 func (q *Queries) GetParticipantStateAssignment(ctx context.Context, arg GetParticipantStateAssignmentParams) (GetParticipantStateAssignmentRow, error) {
@@ -208,6 +252,8 @@ func (q *Queries) GetParticipantStateAssignment(ctx context.Context, arg GetPart
 		&i.AttemptID,
 		&i.SeriesID,
 		&i.GameID,
+		&i.AttemptState,
+		&i.AttemptStartedAt,
 		&i.WaveID,
 		&i.ParticipantID,
 		&i.SnapshotID,
@@ -226,6 +272,16 @@ func (q *Queries) GetParticipantStateAssignment(ctx context.Context, arg GetPart
 		&i.InstanceID,
 		&i.DeliveredAt,
 		&i.UndisclosedReserveCount,
+		&i.GamePauseID,
+		&i.GamePauseGameAttemptID,
+		&i.GamePauseState,
+		&i.GamePauseStartedAt,
+		&i.GamePauseOriginalDeadline,
+		&i.GamePauseFrozenAt,
+		&i.GamePauseFrozenRemainingMs,
+		&i.GamePauseResumedAt,
+		&i.GamePauseResumedDeadline,
+		&i.ObservedAt,
 	)
 	return i, err
 }

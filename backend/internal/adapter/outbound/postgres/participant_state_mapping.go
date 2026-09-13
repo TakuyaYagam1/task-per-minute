@@ -99,6 +99,10 @@ func participantAssignmentFromRow(
 	if err := json.Unmarshal(row.Hints, &hints); err != nil || !domain.IsValidTaskHints(hints) {
 		return usecase.TournamentParticipantAssignmentView{}, participantStateInvalid("assignment hints")
 	}
+	visibleHints, err := participantAssignmentVisibleHints(row, hints)
+	if err != nil {
+		return usecase.TournamentParticipantAssignmentView{}, err
+	}
 	deliveredAt, ok := participantStateRequiredTime(row.DeliveredAt)
 	if !ok {
 		return usecase.TournamentParticipantAssignmentView{}, participantStateInvalid("assignment receipt time")
@@ -114,7 +118,7 @@ func participantAssignmentFromRow(
 			SnapshotID: row.SnapshotID, TaskID: row.TaskID, Version: int(row.TaskVersion),
 			Kind: domain.AssignmentTaskKind(row.Kind), Title: row.Title, Description: row.Description,
 			Category: domain.Category(row.Category), Difficulty: domain.Difficulty(row.Difficulty),
-			TimeLimit: int(row.TimeLimit), Hints: append([]string(nil), hints...),
+			TimeLimit: int(row.TimeLimit), Hints: append([]string{}, visibleHints...),
 			TaskURL: cloneParticipantStateString(row.TaskUrl), SourceFileURL: cloneParticipantStateString(row.SourceFileUrl),
 		},
 		Receipt: domain.TaskDeliveryReceipt{
@@ -128,6 +132,180 @@ func participantAssignmentFromRow(
 		return usecase.TournamentParticipantAssignmentView{}, err
 	}
 	return assignment, nil
+}
+
+func participantAssignmentVisibleHints(
+	row sqlc.GetParticipantStateAssignmentRow,
+	hints []string,
+) ([]string, error) {
+	if domain.AssignmentTaskKind(row.Kind) == domain.AssignmentTaskKindGolden {
+		return append([]string(nil), hints...), nil
+	}
+
+	state := domain.GameState(row.AttemptState)
+	observedAt, observed := participantStateRequiredTime(row.ObservedAt)
+	if !observed || !domain.IsValidTaskTimeLimit(int(row.TimeLimit)) {
+		return nil, participantStateInvalid("assignment hint timing")
+	}
+
+	switch state {
+	case domain.GameStatePlanned, domain.GameStateReady:
+		if row.AttemptStartedAt.Valid || participantAssignmentPausePresent(row) {
+			return nil, participantStateInvalid("assignment hint timing")
+		}
+		return []string{}, nil
+	case domain.GameStateActive, domain.GameStatePaused:
+		startedAt, ok := participantStateRequiredTime(row.AttemptStartedAt)
+		if !ok || startedAt.After(observedAt) {
+			return nil, participantStateInvalid("assignment hint timing")
+		}
+		if !participantAssignmentPausePresent(row) {
+			if state != domain.GameStateActive {
+				return nil, participantStateInvalid("assignment hint timing")
+			}
+			return participantUnlockedAssignmentHints(hints, startedAt, observedAt, int(row.TimeLimit))
+		}
+		return participantUnlockedPausedAssignmentHints(row, hints, startedAt, observedAt)
+	case domain.GameStateCompleted, domain.GameStateVoid, domain.GameStateCancelled, domain.GameStateSuperseded:
+		return nil, participantStateInvalid("assignment hint timing")
+	default:
+		return nil, participantStateInvalid("assignment hint timing")
+	}
+}
+
+func participantUnlockedAssignmentHints(
+	hints []string,
+	startedAt, observedAt time.Time,
+	timeLimitSeconds int,
+) ([]string, error) {
+	schedule := domain.BuildHintSchedule(startedAt, timeLimitSeconds)
+	visible, ok := domain.UnlockedTaskHints(hints, schedule, observedAt)
+	if !ok {
+		return nil, participantStateInvalid("assignment hint timing")
+	}
+	return visible, nil
+}
+
+func participantUnlockedPausedAssignmentHints(
+	row sqlc.GetParticipantStateAssignmentRow,
+	hints []string,
+	startedAt, observedAt time.Time,
+) ([]string, error) {
+	baseStart, remaining, err := participantValidatedPauseClock(row, startedAt, observedAt)
+	if err != nil {
+		return nil, err
+	}
+
+	switch row.GamePauseState {
+	case "active":
+		if row.AttemptState != string(domain.GameStatePaused) || row.GamePauseResumedAt.Valid || row.GamePauseResumedDeadline.Valid {
+			return nil, participantStateInvalid("assignment hint timing")
+		}
+		return participantUnlockedAssignmentHints(hints, baseStart, row.GamePauseFrozenAt.Time, int(row.TimeLimit))
+	case "resumed", "cancelled":
+		resumedStart, err := participantValidatedResumedHintStart(row, baseStart, remaining, observedAt)
+		if err != nil {
+			return nil, err
+		}
+		return participantUnlockedAssignmentHints(hints, resumedStart, observedAt, int(row.TimeLimit))
+	default:
+		return nil, participantStateInvalid("assignment hint timing")
+	}
+}
+
+func participantValidatedPauseClock(
+	row sqlc.GetParticipantStateAssignmentRow,
+	startedAt, observedAt time.Time,
+) (time.Time, time.Duration, error) {
+	if row.GamePauseID == uuid.Nil || !row.GamePauseGameAttemptID.Valid ||
+		row.GamePauseGameAttemptID.UUID != row.AttemptID {
+		return time.Time{}, 0, participantStateInvalid("assignment hint timing")
+	}
+	frozenAt, originalDeadline, validTimes := participantPauseClockTimes(row, startedAt, observedAt)
+	if !validTimes {
+		return time.Time{}, 0, participantStateInvalid("assignment hint timing")
+	}
+	remaining, ok := participantHintRemaining(row.GamePauseFrozenRemainingMs)
+	if !ok {
+		return time.Time{}, 0, participantStateInvalid("assignment hint timing")
+	}
+	timeLimit, ok := participantHintDuration(int(row.TimeLimit))
+	if !ok || remaining > timeLimit || originalDeadline.Sub(frozenAt) != remaining {
+		return time.Time{}, 0, participantStateInvalid("assignment hint timing")
+	}
+
+	baseStart, ok := participantHintTimeSub(originalDeadline, timeLimit)
+	if !ok || baseStart.Before(startedAt) || baseStart.After(frozenAt) {
+		return time.Time{}, 0, participantStateInvalid("assignment hint timing")
+	}
+	return baseStart, remaining, nil
+}
+
+func participantPauseClockTimes(
+	row sqlc.GetParticipantStateAssignmentRow,
+	startedAt, observedAt time.Time,
+) (time.Time, time.Time, bool) {
+	pauseStartedAt, pauseStarted := participantStateRequiredTime(row.GamePauseStartedAt)
+	originalDeadline, original := participantStateRequiredTime(row.GamePauseOriginalDeadline)
+	frozenAt, frozen := participantStateRequiredTime(row.GamePauseFrozenAt)
+	valid := pauseStarted && original && frozen && pauseStartedAt.Equal(frozenAt) &&
+		!frozenAt.Before(startedAt) && !frozenAt.After(observedAt) && originalDeadline.After(frozenAt)
+	return frozenAt, originalDeadline, valid
+}
+
+func participantValidatedResumedHintStart(
+	row sqlc.GetParticipantStateAssignmentRow,
+	baseStart time.Time,
+	remaining time.Duration,
+	observedAt time.Time,
+) (time.Time, error) {
+	if row.AttemptState != string(domain.GameStateActive) || !row.GamePauseResumedAt.Valid || !row.GamePauseResumedDeadline.Valid {
+		return time.Time{}, participantStateInvalid("assignment hint timing")
+	}
+	resumedAt, resumed := participantStateRequiredTime(row.GamePauseResumedAt)
+	resumedDeadline, resumedDeadlineOK := participantStateRequiredTime(row.GamePauseResumedDeadline)
+	if !resumed || !resumedDeadlineOK || resumedAt.Before(row.GamePauseFrozenAt.Time) || resumedAt.After(observedAt) ||
+		resumedDeadline.Sub(resumedAt) != remaining {
+		return time.Time{}, participantStateInvalid("assignment hint timing")
+	}
+	timeLimit, ok := participantHintDuration(int(row.TimeLimit))
+	if !ok {
+		return time.Time{}, participantStateInvalid("assignment hint timing")
+	}
+	resumedStart, ok := participantHintTimeSub(resumedDeadline, timeLimit)
+	if !ok || resumedStart.Before(baseStart) || resumedStart.After(resumedAt) {
+		return time.Time{}, participantStateInvalid("assignment hint timing")
+	}
+	return resumedStart, nil
+}
+
+func participantAssignmentPausePresent(row sqlc.GetParticipantStateAssignmentRow) bool {
+	return row.GamePauseID != uuid.Nil || row.GamePauseGameAttemptID.Valid || row.GamePauseState != "" ||
+		row.GamePauseStartedAt.Valid || row.GamePauseOriginalDeadline.Valid || row.GamePauseFrozenAt.Valid ||
+		row.GamePauseFrozenRemainingMs != nil || row.GamePauseResumedAt.Valid || row.GamePauseResumedDeadline.Valid
+}
+
+func participantHintDuration(timeLimitSeconds int) (time.Duration, bool) {
+	if !domain.IsValidTaskTimeLimit(timeLimitSeconds) {
+		return 0, false
+	}
+	duration := time.Duration(timeLimitSeconds) * time.Second
+	return duration, duration > 0
+}
+
+func participantHintRemaining(value *int64) (time.Duration, bool) {
+	if value == nil || *value < 1 || *value > math.MaxInt64/int64(time.Millisecond) {
+		return 0, false
+	}
+	return time.Duration(*value) * time.Millisecond, true
+}
+
+func participantHintTimeSub(value time.Time, duration time.Duration) (time.Time, bool) {
+	if !domain.IsValidServerTime(value) || duration <= 0 {
+		return time.Time{}, false
+	}
+	result := value.Add(-duration)
+	return result, domain.IsValidServerTime(result) && value.Sub(result) == duration
 }
 
 func validateParticipantStateAssignment(assignment usecase.TournamentParticipantAssignmentView) error {

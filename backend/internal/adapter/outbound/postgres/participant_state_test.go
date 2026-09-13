@@ -46,7 +46,9 @@ func TestParticipantAssignmentMapsOnlyDisclosedSnapshot(t *testing.T) {
 	row := sqlc.GetParticipantStateAssignmentRow{
 		AssignmentID: assignmentID, AttemptID: participantStateTestID(12),
 		SeriesID: participantStateTestID(13), GameID: participantStateTestID(14),
-		WaveID: participantStateTestID(15).String(), ParticipantID: participantID,
+		AttemptState:     string(domain.GameStateActive),
+		AttemptStartedAt: participantStateTimestamp(participantStateTestTime().Add(-120 * time.Second)),
+		WaveID:           participantStateTestID(15).String(), ParticipantID: participantID,
 		SnapshotID: participantStateTestID(16), TaskID: participantStateTestID(17),
 		TaskVersion: 3, Kind: string(domain.AssignmentTaskKindNormal),
 		Title: "web task", Description: "solve the disclosed service",
@@ -57,6 +59,7 @@ func TestParticipantAssignmentMapsOnlyDisclosedSnapshot(t *testing.T) {
 		InstanceID:              domain.ParticipantTaskInstanceID(assignmentID, participantID),
 		DeliveredAt:             participantStateTimestamp(participantStateTestTime()),
 		UndisclosedReserveCount: 2,
+		ObservedAt:              participantStateTimestamp(participantStateTestTime()),
 	}
 
 	assignment, err := participantAssignmentFromRow(row)
@@ -69,6 +72,213 @@ func TestParticipantAssignmentMapsOnlyDisclosedSnapshot(t *testing.T) {
 	row.Hints = []byte(`["one","two","three","private reserve"]`)
 	_, err = participantAssignmentFromRow(row)
 	require.ErrorIs(t, err, ErrParticipantStateInvalid)
+}
+
+func TestParticipantAssignmentUnlocksAtActiveBoundaries(t *testing.T) {
+	t.Parallel()
+
+	startedAt := participantStateTestTime()
+	tests := []struct {
+		name   string
+		offset time.Duration
+		want   []string
+	}{
+		{name: "before quarter", offset: 9 * time.Second, want: []string{}},
+		{name: "at quarter", offset: 10 * time.Second, want: []string{"first"}},
+		{name: "at half", offset: 20 * time.Second, want: []string{"first", "second"}},
+		{name: "at three quarters", offset: 30 * time.Second, want: []string{"first", "second", "third"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			row := participantHintAssignmentRow()
+			row.AttemptState = string(domain.GameStateActive)
+			row.AttemptStartedAt = participantStateTimestamp(startedAt)
+			row.ObservedAt = participantStateTimestamp(startedAt.Add(tt.offset))
+
+			assignment, err := participantAssignmentFromRow(row)
+
+			require.NoError(t, err)
+			require.Equal(t, tt.want, assignment.ActiveSnapshot.Hints)
+		})
+	}
+}
+
+func TestParticipantAssignmentStartsWithNoHints(t *testing.T) {
+	t.Parallel()
+
+	row := participantHintAssignmentRow()
+	row.AttemptState = string(domain.GameStateReady)
+	row.AttemptStartedAt = pgtype.Timestamptz{}
+
+	assignment, err := participantAssignmentFromRow(row)
+
+	require.NoError(t, err)
+	require.NotNil(t, assignment.ActiveSnapshot.Hints)
+	require.Empty(t, assignment.ActiveSnapshot.Hints)
+}
+
+func TestParticipantAssignmentFreezesHintsDuringPause(t *testing.T) {
+	t.Parallel()
+
+	startedAt := participantStateTestTime()
+	pauseAt := startedAt.Add(12 * time.Second)
+	row := participantHintAssignmentRow()
+	row.AttemptState = string(domain.GameStatePaused)
+	row.AttemptStartedAt = participantStateTimestamp(startedAt)
+	row.ObservedAt = participantStateTimestamp(startedAt.Add(5 * time.Minute))
+	participantHintActiveClock(&row, pauseAt, startedAt.Add(40*time.Second), 28_000)
+
+	assignment, err := participantAssignmentFromRow(row)
+
+	require.NoError(t, err)
+	require.Equal(t, []string{"first"}, assignment.ActiveSnapshot.Hints)
+}
+
+func TestParticipantAssignmentNestedOperatorPauseAndDuplicateResume(t *testing.T) {
+	t.Parallel()
+
+	startedAt := participantStateTestTime()
+	pauseAt := startedAt.Add(12 * time.Second)
+	row := participantHintAssignmentRow()
+	row.AttemptState = string(domain.GameStatePaused)
+	row.AttemptStartedAt = participantStateTimestamp(startedAt)
+	row.ObservedAt = participantStateTimestamp(startedAt.Add(10 * time.Minute))
+	participantHintActiveClock(&row, pauseAt, startedAt.Add(40*time.Second), 28_000)
+
+	// A nested Wave/Series operator pause has no independent Game clock. The
+	// direct Game pause remains the authority even when the read happens later.
+	first, err := participantAssignmentFromRow(row)
+	require.NoError(t, err)
+	require.Equal(t, []string{"first"}, first.ActiveSnapshot.Hints)
+
+	row.ObservedAt = participantStateTimestamp(startedAt.Add(20 * time.Minute))
+	nested, err := participantAssignmentFromRow(row)
+	require.NoError(t, err)
+	require.Equal(t, first.ActiveSnapshot.Hints, nested.ActiveSnapshot.Hints)
+
+	resumedAt := startedAt.Add(50 * time.Second)
+	row.AttemptState = string(domain.GameStateActive)
+	row.ObservedAt = participantStateTimestamp(startedAt.Add(58 * time.Second))
+	participantHintResumedClock(&row, pauseAt, startedAt.Add(40*time.Second), resumedAt)
+	resumed, err := participantAssignmentFromRow(row)
+	require.NoError(t, err)
+	require.Equal(t, []string{"first", "second"}, resumed.ActiveSnapshot.Hints)
+
+	row.ObservedAt = participantStateTimestamp(startedAt.Add(59 * time.Second))
+	repeated, err := participantAssignmentFromRow(row)
+	require.NoError(t, err)
+	require.Equal(t, resumed.ActiveSnapshot.Hints, repeated.ActiveSnapshot.Hints)
+}
+
+func TestParticipantAssignmentShiftsHintsOnceAfterResumeAndReconstructs(t *testing.T) {
+	t.Parallel()
+
+	startedAt := participantStateTestTime()
+	pauseAt := startedAt.Add(12 * time.Second)
+	resumedAt := startedAt.Add(50 * time.Second)
+	row := participantHintAssignmentRow()
+	row.AttemptState = string(domain.GameStateActive)
+	row.AttemptStartedAt = participantStateTimestamp(startedAt)
+	row.ObservedAt = participantStateTimestamp(startedAt.Add(58 * time.Second))
+	participantHintResumedClock(&row, pauseAt, startedAt.Add(40*time.Second), resumedAt)
+
+	first, err := participantAssignmentFromRow(row)
+	require.NoError(t, err)
+	require.Equal(t, []string{"first", "second"}, first.ActiveSnapshot.Hints)
+
+	second, err := participantAssignmentFromRow(row)
+	require.NoError(t, err)
+	require.Equal(t, first.ActiveSnapshot.Hints, second.ActiveSnapshot.Hints)
+}
+
+func TestParticipantAssignmentReplayAttemptDoesNotInheritHints(t *testing.T) {
+	t.Parallel()
+
+	startedAt := participantStateTestTime()
+	row := participantHintAssignmentRow()
+	row.AttemptState = string(domain.GameStateActive)
+	row.AttemptStartedAt = participantStateTimestamp(startedAt)
+	row.ObservedAt = participantStateTimestamp(startedAt.Add(30 * time.Second))
+	completed, err := participantAssignmentFromRow(row)
+	require.NoError(t, err)
+	require.Equal(t, []string{"first", "second", "third"}, completed.ActiveSnapshot.Hints)
+
+	row.AttemptID = participantStateTestID(120)
+	row.GameID = row.AttemptID
+	row.AttemptStartedAt = participantStateTimestamp(startedAt.Add(25 * time.Second))
+	row.ObservedAt = participantStateTimestamp(startedAt.Add(26 * time.Second))
+	row.GamePauseID = uuid.Nil
+	row.GamePauseGameAttemptID = uuid.NullUUID{}
+	row.GamePauseState = ""
+	row.GamePauseStartedAt = pgtype.Timestamptz{}
+	row.GamePauseOriginalDeadline = pgtype.Timestamptz{}
+	row.GamePauseFrozenAt = pgtype.Timestamptz{}
+	row.GamePauseFrozenRemainingMs = nil
+	row.GamePauseResumedAt = pgtype.Timestamptz{}
+	row.GamePauseResumedDeadline = pgtype.Timestamptz{}
+
+	replay, err := participantAssignmentFromRow(row)
+	require.NoError(t, err)
+	require.Empty(t, replay.ActiveSnapshot.Hints)
+}
+
+func TestParticipantAssignmentRejectsMalformedHintClock(t *testing.T) {
+	t.Parallel()
+
+	startedAt := participantStateTestTime()
+	valid := participantHintAssignmentRow()
+	valid.AttemptState = string(domain.GameStateActive)
+	valid.AttemptStartedAt = participantStateTimestamp(startedAt)
+	valid.ObservedAt = participantStateTimestamp(startedAt.Add(30 * time.Second))
+
+	tests := []struct {
+		name   string
+		mutate func(*sqlc.GetParticipantStateAssignmentRow)
+	}{
+		{name: "unknown attempt state", mutate: func(row *sqlc.GetParticipantStateAssignmentRow) {
+			row.AttemptState = "broken"
+		}},
+		{name: "missing active start", mutate: func(row *sqlc.GetParticipantStateAssignmentRow) {
+			row.AttemptStartedAt = pgtype.Timestamptz{}
+		}},
+		{name: "paused without clock", mutate: func(row *sqlc.GetParticipantStateAssignmentRow) {
+			row.AttemptState = string(domain.GameStatePaused)
+		}},
+		{name: "clock belongs to another attempt", mutate: func(row *sqlc.GetParticipantStateAssignmentRow) {
+			row.AttemptState = string(domain.GameStatePaused)
+			participantHintActiveClock(row, startedAt.Add(12*time.Second), startedAt.Add(40*time.Second), 28_000)
+			row.GamePauseGameAttemptID = uuid.NullUUID{UUID: participantStateTestID(113), Valid: true}
+		}},
+		{name: "clock duration mismatch", mutate: func(row *sqlc.GetParticipantStateAssignmentRow) {
+			row.AttemptState = string(domain.GameStatePaused)
+			participantHintActiveClock(row, startedAt.Add(12*time.Second), startedAt.Add(40*time.Second), 27_000)
+		}},
+		{name: "active clock with resumed evidence", mutate: func(row *sqlc.GetParticipantStateAssignmentRow) {
+			row.AttemptState = string(domain.GameStatePaused)
+			participantHintResumedClock(row, startedAt.Add(12*time.Second), startedAt.Add(40*time.Second), startedAt.Add(50*time.Second))
+			row.GamePauseState = "active"
+		}},
+		{name: "resumed clock with duplicate shift", mutate: func(row *sqlc.GetParticipantStateAssignmentRow) {
+			row.AttemptState = string(domain.GameStateActive)
+			participantHintResumedClock(row, startedAt.Add(12*time.Second), startedAt.Add(40*time.Second), startedAt.Add(50*time.Second))
+			row.GamePauseResumedDeadline = participantStateTimestamp(startedAt.Add(79 * time.Second))
+		}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			row := valid
+			tt.mutate(&row)
+
+			_, err := participantAssignmentFromRow(row)
+
+			require.ErrorIs(t, err, ErrParticipantStateInvalid)
+		})
+	}
 }
 
 func TestParticipantSeriesMapsOrderedGameGraph(t *testing.T) {
@@ -161,4 +371,55 @@ func participantStateTimestamp(value time.Time) pgtype.Timestamptz {
 
 func participantStateString(value string) *string {
 	return &value
+}
+
+func participantHintAssignmentRow() sqlc.GetParticipantStateAssignmentRow {
+	assignmentID := participantStateTestID(110)
+	participantID := participantStateTestID(111)
+	return sqlc.GetParticipantStateAssignmentRow{
+		AssignmentID: assignmentID, AttemptID: participantStateTestID(112),
+		SeriesID: participantStateTestID(113), GameID: participantStateTestID(114),
+		WaveID: participantStateTestID(115).String(), ParticipantID: participantID,
+		SnapshotID: participantStateTestID(116), TaskID: participantStateTestID(117),
+		TaskVersion: 3, Kind: string(domain.AssignmentTaskKindNormal),
+		Title: "web task", Description: "solve the disclosed service",
+		Category: string(domain.CategoryWeb), Difficulty: string(domain.DifficultyMedium),
+		TimeLimit: 40, Hints: []byte(`[
+    "first",
+    "second",
+    "third"
+]`),
+		TaskUrl:                 participantStateString("challenge.internal:8080"),
+		ReceiptID:               participantStateTestID(118),
+		InstanceID:              domain.ParticipantTaskInstanceID(assignmentID, participantID),
+		DeliveredAt:             participantStateTimestamp(participantStateTestTime()),
+		UndisclosedReserveCount: 2,
+		ObservedAt:              participantStateTimestamp(participantStateTestTime()),
+	}
+}
+
+func participantHintActiveClock(
+	row *sqlc.GetParticipantStateAssignmentRow,
+	frozenAt, originalDeadline time.Time,
+	remainingMS int64,
+) {
+	row.GamePauseID = participantStateTestID(119)
+	row.GamePauseGameAttemptID = uuid.NullUUID{UUID: row.AttemptID, Valid: true}
+	row.GamePauseState = "active"
+	row.GamePauseStartedAt = participantStateTimestamp(frozenAt)
+	row.GamePauseOriginalDeadline = participantStateTimestamp(originalDeadline)
+	row.GamePauseFrozenAt = participantStateTimestamp(frozenAt)
+	row.GamePauseFrozenRemainingMs = &remainingMS
+}
+
+func participantHintResumedClock(
+	row *sqlc.GetParticipantStateAssignmentRow,
+	frozenAt, originalDeadline time.Time,
+	resumedAt time.Time,
+) {
+	const remainingMS int64 = 28_000
+	participantHintActiveClock(row, frozenAt, originalDeadline, remainingMS)
+	row.GamePauseState = "resumed"
+	row.GamePauseResumedAt = participantStateTimestamp(resumedAt)
+	row.GamePauseResumedDeadline = participantStateTimestamp(resumedAt.Add(time.Duration(remainingMS) * time.Millisecond))
 }

@@ -111,7 +111,7 @@ func participantTaskSnapshot(
 		Category:            category,
 		Difficulty:          difficulty,
 		TimeLimit:           int32(view.TimeLimit),
-		Hints:               append([]string(nil), view.Hints...),
+		Hints:               append([]string{}, view.Hints...),
 		TaskUrl:             participantStringPointer(view.TaskURL),
 		SourceFileAvailable: view.SourceFileURL != nil,
 	}, nil

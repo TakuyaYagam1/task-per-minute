@@ -48,3 +48,51 @@ func TestNormalizeTaskHints(t *testing.T) {
 		})
 	}
 }
+
+func TestUnlockedTaskHints(t *testing.T) {
+	t.Parallel()
+
+	startedAt := time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
+	schedule := domain.BuildHintSchedule(startedAt, 40)
+	hints := []string{" first ", "", " third "}
+
+	tests := []struct {
+		name string
+		now  time.Time
+		want []string
+	}{
+		{name: "before first boundary", now: startedAt.Add(9 * time.Second), want: []string{}},
+		{name: "at first boundary", now: startedAt.Add(10 * time.Second), want: []string{"first"}},
+		{name: "at second boundary skips empty slot", now: startedAt.Add(20 * time.Second), want: []string{"first"}},
+		{name: "at third boundary", now: startedAt.Add(30 * time.Second), want: []string{"first", "third"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, ok := domain.UnlockedTaskHints(hints, schedule, tt.now)
+
+			require.True(t, ok)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestUnlockedTaskHintsRejectsMalformedTiming(t *testing.T) {
+	t.Parallel()
+
+	startedAt := time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
+	schedule := domain.BuildHintSchedule(startedAt, 40)
+
+	_, ok := domain.UnlockedTaskHints([]string{"one"}, schedule[:2], startedAt)
+	require.False(t, ok)
+
+	_, ok = domain.UnlockedTaskHints([]string{"one"}, schedule, time.Time{})
+	require.False(t, ok)
+
+	malformed := append([]domain.HintScheduleEntry(nil), schedule...)
+	malformed[0].Index = 2
+	_, ok = domain.UnlockedTaskHints([]string{"one"}, malformed, startedAt)
+	require.False(t, ok)
+}
