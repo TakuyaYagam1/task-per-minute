@@ -28,5 +28,4 @@ type UploadService interface {
 	) (string, error)
 	ClearSourceFile(ctx context.Context, taskID uuid.UUID, in taskusecase.UpdateInput) (*domain.Task, error)
 	PresignedSourceFileURL(ctx context.Context, taskID uuid.UUID) (string, error)
-	DeleteSourceFile(ctx context.Context, taskID uuid.UUID, sourceFileURL *string) error
 }

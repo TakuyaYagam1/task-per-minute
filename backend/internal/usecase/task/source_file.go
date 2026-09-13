@@ -79,17 +79,11 @@ func (s *SourceFiles) UploadSourceFile(
 		return "", fmt.Errorf("SourceFiles - UploadSourceFile - SourceFileStorage.PresignedGetURL: %w", err)
 	}
 	if _, err := s.tasks.UpdateTask(ctx, taskID, inputWithSourceFileURL(existing, storedURL)); err != nil {
-		s.cleanupKey(ctx, "upload_update_failed", taskID, key)
+		// The update may have committed before its result became unavailable.
+		// Retaining the unique key keeps an appended task version readable.
 		return "", fmt.Errorf("SourceFiles - UploadSourceFile - Catalog.UpdateTask: %w", err)
 	}
-	if existing.SourceFileURL != nil {
-		oldKey, parseErr := sourceFileKeyFromURL(taskID, *existing.SourceFileURL)
-		if parseErr != nil {
-			s.observeCleanupFailure(ctx, "upload_replace_old", taskID, "", parseErr)
-		} else if oldKey != key {
-			s.cleanupKey(ctx, "upload_replace_old", taskID, oldKey)
-		}
-	}
+	// Older keys remain immutable task-version and assignment-snapshot evidence.
 	return presignedURL, nil
 }
 
@@ -98,18 +92,12 @@ func (s *SourceFiles) ClearSourceFile(
 	taskID uuid.UUID,
 	input UpdateInput,
 ) (*domain.Task, error) {
-	existing, err := s.tasks.GetTask(ctx, taskID)
-	if err != nil {
-		return nil, fmt.Errorf("SourceFiles - ClearSourceFile - Catalog.GetTask: %w", err)
-	}
 	input.SourceFileURL = nil
 	updated, err := s.tasks.UpdateTask(ctx, taskID, input)
 	if err != nil {
 		return nil, fmt.Errorf("SourceFiles - ClearSourceFile - Catalog.UpdateTask: %w", err)
 	}
-	if existing.SourceFileURL != nil {
-		_ = s.DeleteSourceFile(ctx, taskID, existing.SourceFileURL)
-	}
+	// Clearing the mutable task head must not remove archived object bytes.
 	return updated, nil
 }
 
@@ -130,24 +118,6 @@ func (s *SourceFiles) PresignedSourceFileURL(ctx context.Context, taskID uuid.UU
 		return "", fmt.Errorf("SourceFiles - PresignedSourceFileURL - SourceFileStorage.PresignedGetURL: %w", err)
 	}
 	return presignedURL, nil
-}
-
-func (s *SourceFiles) DeleteSourceFile(ctx context.Context, taskID uuid.UUID, sourceFileURL *string) error {
-	if sourceFileURL == nil {
-		return nil
-	}
-	key, err := sourceFileKeyFromURL(taskID, *sourceFileURL)
-	if err != nil {
-		s.observeCleanupFailure(ctx, "delete_source_file", taskID, "", err)
-		return fmt.Errorf("SourceFiles - DeleteSourceFile - sourceFileKeyFromURL: %w", err)
-	}
-	if err := s.runCleanup(ctx, func(cleanupCtx context.Context) error {
-		return s.storage.Delete(cleanupCtx, key)
-	}); err != nil {
-		s.observeCleanupFailure(ctx, "delete_source_file", taskID, key, err)
-		return fmt.Errorf("SourceFiles - DeleteSourceFile - SourceFileStorage.Delete: %w", err)
-	}
-	return nil
 }
 
 func (s *SourceFiles) cleanupKey(ctx context.Context, operation string, taskID uuid.UUID, key string) {

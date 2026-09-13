@@ -156,8 +156,26 @@ func createResultAuditMigrationFixture(
 	ctx context.Context, tb testing.TB,
 ) resultAuditMigrationFixture {
 	tb.Helper()
+	return createResultAuditMigrationFixtureFromDraftMode(ctx, tb, createDraftMigrationFixture(ctx, tb), false)
+}
 
-	draft := createDraftMigrationFixture(ctx, tb)
+func createResultAuditMigrationFixtureFromDraft(
+	ctx context.Context,
+	tb testing.TB,
+	draft draftMigrationFixture,
+) resultAuditMigrationFixture {
+	tb.Helper()
+	return createResultAuditMigrationFixtureFromDraftMode(ctx, tb, draft, true)
+}
+
+func createResultAuditMigrationFixtureFromDraftMode(
+	ctx context.Context,
+	tb testing.TB,
+	draft draftMigrationFixture,
+	copyVersionedSource bool,
+) resultAuditMigrationFixture {
+	tb.Helper()
+
 	createdAt := draft.createdAt.Add(5 * time.Second)
 	conservativePlanID := createConservativeAssignmentPlan(ctx, tb, draft, createdAt)
 	exactPlanID := createExactAssignmentPlan(
@@ -182,19 +200,13 @@ func createResultAuditMigrationFixture(
 		`["web"]`,
 		createdAt.Add(2*time.Second),
 	)
-	reservations := createAssignmentBranchReservations(
-		ctx, tb,
-		exactPlanID,
-		branchID,
-		"web",
-		createdAt.Add(3*time.Second),
-	)
-	releasedReservations := createAssignmentBranchReservations(
-		ctx, tb,
-		exactPlanID,
-		releasedBranchID,
-		"web",
-		createdAt.Add(3*time.Second),
+	reservationBuilder := createAssignmentBranchReservations
+	if copyVersionedSource {
+		reservationBuilder = createResultAuditVersionedReservations
+	}
+	reservations := reservationBuilder(ctx, tb, exactPlanID, branchID, "web", createdAt.Add(3*time.Second))
+	releasedReservations := reservationBuilder(
+		ctx, tb, exactPlanID, releasedBranchID, "web", createdAt.Add(3*time.Second),
 	)
 	committedAt := createdAt.Add(4 * time.Second)
 	for _, reservation := range reservations {
@@ -264,6 +276,67 @@ func createResultAuditMigrationFixture(
 		initialScoreRevisionID: initialScoreRevisionID,
 		lockedAt:               lockedAt,
 	}
+}
+
+func createResultAuditVersionedReservations(
+	ctx context.Context,
+	tb testing.TB,
+	planID uuid.UUID,
+	branchID uuid.UUID,
+	category string,
+	createdAt time.Time,
+) []assignmentReservationFixture {
+	tb.Helper()
+
+	reservations := make([]assignmentReservationFixture, 3)
+	for i := range reservations {
+		taskID, taskVersion := createAssignmentMigrationTask(ctx, tb, category, i, &planID)
+		edgeID := uuid.New()
+		_, err := sharedPool.Exec(ctx, `
+			INSERT INTO assignment_plan_edges (
+				id, plan_id, branch_id, position,
+				task_id, task_version, selection_evidence, created_at
+			)
+			VALUES ($1, $2, $3, $4, $5, $6, '{"eligible":true}'::JSONB, $7)`,
+			edgeID, planID, branchID, i+1, taskID, taskVersion, createdAt)
+		require.NoError(tb, err)
+
+		reservationID := uuid.New()
+		_, err = sharedPool.Exec(ctx, `
+			INSERT INTO task_version_reservations (
+				id, edge_id, plan_id, branch_id,
+				task_id, task_version, created_at
+			)
+			VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+			reservationID, edgeID, planID, branchID, taskID, taskVersion, createdAt)
+		require.NoError(tb, err)
+
+		snapshotID := uuid.New()
+		_, err = sharedPool.Exec(ctx, `
+			INSERT INTO task_snapshots (
+				id, reservation_id, task_id, task_version, kind,
+				title, description, category, difficulty,
+				time_limit, flag, hints, task_url, source_file_url,
+				content_digest, created_at
+			)
+			SELECT
+				$1, $2, version.task_id, version.version, 'normal',
+				version.title, version.description, version.category, version.difficulty,
+				version.time_limit, version.flag, '[]'::JSONB, version.task_url, version.source_file_url,
+				version.content_digest, $5
+			FROM task_versions AS version
+			WHERE version.task_id = $3 AND version.version = $4`,
+			snapshotID, reservationID, taskID, taskVersion, createdAt)
+		require.NoError(tb, err)
+
+		reservations[i] = assignmentReservationFixture{
+			reservationID: reservationID,
+			snapshotID:    snapshotID,
+			taskID:        taskID,
+			taskVersion:   taskVersion,
+		}
+	}
+	return reservations
 }
 
 func lockMigrationSeries(

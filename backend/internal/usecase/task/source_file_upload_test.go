@@ -109,12 +109,11 @@ func TestSourceFiles_UploadSourceFile_AcceptsCommonZIPContentTypes(t *testing.T)
 	}
 }
 
-func TestSourceFiles_UploadSourceFile_ReuploadUsesVersionedKeyAndDeletesOldObject(t *testing.T) {
+func TestSourceFiles_UploadSourceFile_ReuploadRetainsOldObject(t *testing.T) {
 	t.Parallel()
 
 	taskID := uuid.New()
-	oldKey := sourceFileTestKey(taskID)
-	oldURL := sourceFileURLForKey(oldKey)
+	oldURL := sourceFileURLForKey(sourceFileTestKey(taskID))
 	payload := zipPayload("new")
 	task := uploadTask(taskID, &oldURL)
 	var uploadedKey string
@@ -137,10 +136,7 @@ func TestSourceFiles_UploadSourceFile_ReuploadUsesVersionedKeyAndDeletesOldObjec
 			require.Equal(t, uploadedKey, key)
 			return sourceFileURLForKey(key) + "?X-Amz-Signature=test", nil
 		},
-		func(_ context.Context, key string) error {
-			require.Equal(t, oldKey, key)
-			return nil
-		},
+		nil,
 	)
 
 	_, err := taskusecase.NewSourceFiles(tasks, storage, nil).UploadSourceFile(
@@ -183,15 +179,13 @@ func TestSourceFiles_UploadSourceFile_DoesNotDeleteLegacyObject(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestSourceFiles_UploadSourceFile_OldDeleteErrorDoesNotFailCommittedUpload(t *testing.T) {
+func TestSourceFiles_UploadSourceFile_ReuploadDoesNotRunCleanup(t *testing.T) {
 	t.Parallel()
 
 	taskID := uuid.New()
-	oldKey := sourceFileTestKey(taskID)
-	oldURL := sourceFileURLForKey(oldKey)
+	oldURL := sourceFileURLForKey(sourceFileTestKey(taskID))
 	payload := zipPayload("new")
 	task := uploadTask(taskID, &oldURL)
-	cleanupErr := errors.New("cleanup failed")
 	var uploadedKey string
 
 	tasks := newCatalogMock(t)
@@ -212,19 +206,10 @@ func TestSourceFiles_UploadSourceFile_OldDeleteErrorDoesNotFailCommittedUpload(t
 			require.Equal(t, uploadedKey, key)
 			return sourceFileURLForKey(key) + "?X-Amz-Signature=test", nil
 		},
-		func(_ context.Context, key string) error {
-			require.Equal(t, oldKey, key)
-			return cleanupErr
-		},
+		nil,
 	)
 
 	observer := taskmocks.NewMockSourceFileCleanupObserver(t)
-	observer.EXPECT().ObserveSourceFileCleanup(mock.Anything, taskusecase.SourceFileCleanupFailure{
-		Operation: "upload_replace_old",
-		TaskID:    taskID,
-		ObjectKey: oldKey,
-		Err:       cleanupErr,
-	}).Once()
 
 	got, err := taskusecase.NewSourceFiles(tasks, storage, nil, observer).UploadSourceFile(
 		t.Context(), taskID, bytes.NewReader(payload), int64(len(payload)), "application/zip",
@@ -263,12 +248,14 @@ func TestSourceFiles_UploadSourceFile_ReuploadUploadErrorDoesNotDeleteOldFile(t 
 	require.ErrorIs(t, err, lowLevelErr)
 }
 
-func TestSourceFiles_UploadSourceFile_UpdateErrorDeletesNewObject(t *testing.T) {
+func TestSourceFiles_UploadSourceFile_AmbiguousUpdateErrorRetainsNewObject(t *testing.T) {
 	t.Parallel()
 
 	taskID := uuid.New()
 	payload := zipPayload("new")
-	task := uploadTask(taskID, nil)
+	oldKey := sourceFileTestKey(taskID)
+	oldURL := sourceFileURLForKey(oldKey)
+	task := uploadTask(taskID, &oldURL)
 	lowLevelErr := errors.New("db down")
 	var uploadedKey string
 
@@ -288,10 +275,7 @@ func TestSourceFiles_UploadSourceFile_UpdateErrorDeletesNewObject(t *testing.T) 
 			require.Equal(t, uploadedKey, key)
 			return sourceFileURLForKey(key) + "?X-Amz-Signature=test", nil
 		},
-		func(_ context.Context, key string) error {
-			require.Equal(t, uploadedKey, key)
-			return nil
-		},
+		nil,
 	)
 
 	_, err := taskusecase.NewSourceFiles(tasks, storage, nil).UploadSourceFile(
@@ -306,7 +290,9 @@ func TestSourceFiles_UploadSourceFile_PresignErrorDeletesNewObjectAndSkipsUpdate
 
 	taskID := uuid.New()
 	payload := zipPayload("new")
-	task := uploadTask(taskID, nil)
+	oldKey := sourceFileTestKey(taskID)
+	oldURL := sourceFileURLForKey(oldKey)
+	task := uploadTask(taskID, &oldURL)
 	lowLevelErr := errors.New("presign down")
 	var uploadedKey string
 
@@ -326,6 +312,7 @@ func TestSourceFiles_UploadSourceFile_PresignErrorDeletesNewObjectAndSkipsUpdate
 		},
 		func(_ context.Context, key string) error {
 			require.Equal(t, uploadedKey, key)
+			require.NotEqual(t, oldKey, key)
 			return nil
 		},
 	)

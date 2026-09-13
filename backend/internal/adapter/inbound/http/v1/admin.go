@@ -364,22 +364,9 @@ func (s *Server) DeleteTask(
 		return
 	}
 
-	existing, err := s.tasks.GetTask(r.Context(), id)
-	if err != nil {
-		errmap.HandleError(w, r, err)
-		return
-	}
-	if existing.SourceFileURL != nil && s.upload == nil {
-		errmap.HandleError(w, r, domain.ErrInternal)
-		return
-	}
-
 	if err := s.tasks.DeleteTask(r.Context(), id); err != nil {
 		errmap.HandleError(w, r, err)
 		return
-	}
-	if existing.SourceFileURL != nil {
-		_ = s.upload.DeleteSourceFile(r.Context(), id, existing.SourceFileURL)
 	}
 
 	response.WriteJSON(w, http.StatusNoContent, nil)

@@ -115,69 +115,6 @@ func (_c *MockUploadService_ClearSourceFile_Call) RunAndReturn(run func(ctx cont
 	return _c
 }
 
-// DeleteSourceFile provides a mock function for the type MockUploadService
-func (_mock *MockUploadService) DeleteSourceFile(ctx context.Context, taskID uuid.UUID, sourceFileURL *string) error {
-	ret := _mock.Called(ctx, taskID, sourceFileURL)
-
-	if len(ret) == 0 {
-		panic("no return value specified for DeleteSourceFile")
-	}
-
-	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, uuid.UUID, *string) error); ok {
-		r0 = returnFunc(ctx, taskID, sourceFileURL)
-	} else {
-		r0 = ret.Error(0)
-	}
-	return r0
-}
-
-// MockUploadService_DeleteSourceFile_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DeleteSourceFile'
-type MockUploadService_DeleteSourceFile_Call struct {
-	*mock.Call
-}
-
-// DeleteSourceFile is a helper method to define mock.On call
-//   - ctx context.Context
-//   - taskID uuid.UUID
-//   - sourceFileURL *string
-func (_e *MockUploadService_Expecter) DeleteSourceFile(ctx interface{}, taskID interface{}, sourceFileURL interface{}) *MockUploadService_DeleteSourceFile_Call {
-	return &MockUploadService_DeleteSourceFile_Call{Call: _e.mock.On("DeleteSourceFile", ctx, taskID, sourceFileURL)}
-}
-
-func (_c *MockUploadService_DeleteSourceFile_Call) Run(run func(ctx context.Context, taskID uuid.UUID, sourceFileURL *string)) *MockUploadService_DeleteSourceFile_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 context.Context
-		if args[0] != nil {
-			arg0 = args[0].(context.Context)
-		}
-		var arg1 uuid.UUID
-		if args[1] != nil {
-			arg1 = args[1].(uuid.UUID)
-		}
-		var arg2 *string
-		if args[2] != nil {
-			arg2 = args[2].(*string)
-		}
-		run(
-			arg0,
-			arg1,
-			arg2,
-		)
-	})
-	return _c
-}
-
-func (_c *MockUploadService_DeleteSourceFile_Call) Return(err error) *MockUploadService_DeleteSourceFile_Call {
-	_c.Call.Return(err)
-	return _c
-}
-
-func (_c *MockUploadService_DeleteSourceFile_Call) RunAndReturn(run func(ctx context.Context, taskID uuid.UUID, sourceFileURL *string) error) *MockUploadService_DeleteSourceFile_Call {
-	_c.Call.Return(run)
-	return _c
-}
-
 // PresignedSourceFileURL provides a mock function for the type MockUploadService
 func (_mock *MockUploadService) PresignedSourceFileURL(ctx context.Context, taskID uuid.UUID) (string, error) {
 	ret := _mock.Called(ctx, taskID)

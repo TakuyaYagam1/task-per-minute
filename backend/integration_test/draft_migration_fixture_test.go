@@ -72,6 +72,15 @@ func createDraftMigrationFixture(
 	ctx context.Context, tb testing.TB,
 ) draftMigrationFixture {
 	tb.Helper()
+	return createDraftMigrationFixtureWithContentHook(ctx, tb, nil)
+}
+
+func createDraftMigrationFixtureWithContentHook(
+	ctx context.Context,
+	tb testing.TB,
+	afterContentPrepared func([]uuid.UUID),
+) draftMigrationFixture {
+	tb.Helper()
 
 	tournamentID := createMigrationTournament(ctx, tb)
 	rosterID := createMigrationRoster(ctx, tb, tournamentID)
@@ -98,9 +107,17 @@ func createDraftMigrationFixture(
 		createdAt,
 	)
 	normalTaskIDs := prepareDraftMigrationContent(ctx, tb)
-	normalPoolRevisionID, _ := createRoundProofContentConfiguration(
-		ctx, tb, tournamentID, createdAt, normalTaskIDs,
-	)
+	var normalPoolRevisionID uuid.UUID
+	if afterContentPrepared == nil {
+		normalPoolRevisionID, _ = createRoundProofContentConfiguration(
+			ctx, tb, tournamentID, createdAt, normalTaskIDs,
+		)
+	} else {
+		afterContentPrepared(normalTaskIDs)
+		normalPoolRevisionID = createDraftContentConfigurationFromCurrentTasks(
+			ctx, tb, tournamentID, createdAt, normalTaskIDs,
+		)
+	}
 
 	categoryRevisionID := uuid.New()
 	_, err := sharedPool.Exec(
@@ -192,6 +209,101 @@ func createDraftMigrationFixture(
 		initialServiceEpoch:  initialServiceEpoch,
 		createdAt:            createdAt,
 	}
+}
+
+func createDraftContentConfigurationFromCurrentTasks(
+	ctx context.Context,
+	tb testing.TB,
+	tournamentID uuid.UUID,
+	at time.Time,
+	taskIDs []uuid.UUID,
+) uuid.UUID {
+	tb.Helper()
+
+	var publicationID, normalPoolID, goldenPoolID uuid.UUID
+	err := sharedPool.QueryRow(ctx, `
+		SELECT publication.id, normal_pool.id, golden_pool.id
+		FROM task_pool_publications AS publication
+		INNER JOIN task_pool_revisions AS normal_pool
+			ON normal_pool.publication_id = publication.id AND normal_pool.kind = 'normal'
+		INNER JOIN task_pool_revisions AS golden_pool
+			ON golden_pool.publication_id = publication.id AND golden_pool.kind = 'golden'
+		WHERE (
+			SELECT COUNT(*)
+			FROM task_pool_version_memberships AS membership
+			INNER JOIN tasks AS task
+				ON task.id = membership.task_id
+				AND task.current_version = membership.task_version
+			WHERE membership.task_pool_revision_id = normal_pool.id
+				AND membership.task_id = ANY($1::UUID[])
+		) = cardinality($1::UUID[])
+		AND EXISTS (
+			SELECT 1
+			FROM task_pool_version_memberships AS membership
+			INNER JOIN tasks AS task ON task.id = membership.task_id
+			LEFT JOIN LATERAL (
+				SELECT attestation.healthy
+				FROM task_version_health_attestations AS attestation
+				WHERE attestation.task_id = membership.task_id
+					AND attestation.task_version = membership.task_version
+				ORDER BY attestation.revision DESC
+				LIMIT 1
+			) AS health ON true
+			WHERE membership.task_pool_revision_id = golden_pool.id
+				AND task.kind = 'golden'
+				AND task.enabled
+				AND task.deleted_at IS NULL
+				AND health.healthy
+		)
+		ORDER BY publication.revision DESC
+		LIMIT 1`, taskIDs).Scan(&publicationID, &normalPoolID, &goldenPoolID)
+	require.NoError(tb, err)
+
+	configurationID := uuid.New()
+	_, err = sharedPool.Exec(ctx, `
+		INSERT INTO tournament_content_configurations (
+			id, tournament_id, revision, state, pool_publication_id,
+			normal_pool_revision_id, golden_pool_revision_id, created_at
+		)
+		VALUES ($1, $2, 1, 'draft', $3, $4, $5, $6)`,
+		configurationID, tournamentID, publicationID, normalPoolID, goldenPoolID, at)
+	require.NoError(tb, err)
+
+	bo1PoolID := uuid.New()
+	bo3PoolID := uuid.New()
+	_, err = sharedPool.Exec(ctx, `
+		INSERT INTO tournament_category_pool_revisions (
+			id, configuration_id, format, revision, created_at
+		)
+		VALUES ($1, $2, 'bo1', 1, $3), ($4, $2, 'bo3', 1, $3)`,
+		bo1PoolID, configurationID, at, bo3PoolID)
+	require.NoError(tb, err)
+	_, err = sharedPool.Exec(ctx, `
+		INSERT INTO tournament_category_pool_memberships (category_pool_revision_id, category, created_at)
+		VALUES
+			($1, 'web', $3), ($1, 'crypto', $3), ($1, 'forensics', $3),
+			($2, 'web', $3), ($2, 'crypto', $3), ($2, 'forensics', $3),
+			($2, 'reverse', $3), ($2, 'pwn', $3)`,
+		bo1PoolID, bo3PoolID, at)
+	require.NoError(tb, err)
+	_, err = sharedPool.Exec(ctx, `
+		INSERT INTO tournament_content_stage_defaults (
+			configuration_id, stage, format, category_mode, categories,
+			category_pool_revision_id, task_pool_kind, created_at
+		)
+		VALUES
+			($1, 'swiss', 'bo1', 'random', '["web"]', $2, 'normal', $4),
+			($1, 'golden', 'bo1', 'random', '["web"]', $2, 'golden', $4),
+			($1, 'semifinal', 'bo1', 'draft', '["web","crypto","forensics"]', $2, 'normal', $4),
+			($1, 'final', 'bo3', 'draft', '["web","crypto","forensics","reverse","pwn"]', $3, 'normal', $4)`,
+		configurationID, bo1PoolID, bo3PoolID, at)
+	require.NoError(tb, err)
+	_, err = sharedPool.Exec(ctx, `
+		UPDATE tournament_content_configurations
+		SET state = 'published', published_at = $2
+		WHERE id = $1`, configurationID, at)
+	require.NoError(tb, err)
+	return normalPoolID
 }
 
 func createDraftMigrationWaveSeries(
