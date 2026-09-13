@@ -311,6 +311,9 @@ func newTournamentFlowRESTFixture(t *testing.T) *restFixture {
 		Audit:     postgres.NewTournamentAdminAuditPostgres(tx),
 		Snapshots: postgres.NewTournamentAdminSnapshotPostgres(tx),
 	}))
+	configuration := tournamentadmin.NewTournamentConfigurationWorkflow(
+		postgres.NewTournamentConfigurationPostgres(tx),
+	)
 	golden := goldenusecase.NewRuntimeApplication(postgres.NewGoldenRuntimePostgres(tx), clock)
 	participantDrafts := postgres.NewDraftPostgres(tx)
 	participantWave := postgres.NewWavePostgres(tx)
@@ -357,7 +360,8 @@ func newTournamentFlowRESTFixture(t *testing.T) *restFixture {
 	limiter := tournamentFlowLimiter{}
 	server := restv1.New(restv1.Dependencies{
 		Players: playerusecase.SessionNewUseCase(database.mgr, database.players, clock), AdminAuth: auth,
-		Tournaments: catalog, TournamentAdmin: admin, TournamentSnapshots: postgres.NewTournamentSnapshotPostgres(tx),
+		Tournaments: catalog, TournamentAdmin: admin, TournamentConfiguration: configuration,
+		TournamentSnapshots:   postgres.NewTournamentSnapshotPostgres(tx),
 		TournamentParticipant: participantObserved, Golden: golden, LoginLimiter: limiter, JoinLimiter: limiter,
 		PublicTournamentReadLimiter: limiter, OperatorTournamentReadLimiter: limiter,
 		OperatorTournamentMutationLimiter: limiter, ParticipantTournamentReadLimiter: limiter,

@@ -122,6 +122,190 @@
         $ref: '../components/responses.yml#/RateLimitedProblem'
       default:
         $ref: '../components/responses.yml#/UnexpectedServerProblem'
+/api/v1/admin/tournaments/{tournament_id}/configuration:
+  parameters:
+    - $ref: '../components/parameters.yml#/TournamentId'
+  get:
+    operationId: getTournamentConfiguration
+    tags: [tournament]
+    summary: Read the operator tournament configuration
+    description: >-
+      Returns the authoritative tournament category pools and stage defaults.
+      The final configuration is immutable BO3 with a five-category draft. The
+      response is never stored by browsers or intermediary caches.
+    x-auth-scope: tournament:manage
+    security:
+      - AdminSessionAuth: []
+    responses:
+      '200':
+        description: Operator tournament configuration.
+        headers:
+          Cache-Control:
+            description: Configuration must not be stored by browsers or intermediary caches.
+            schema:
+              type: string
+              enum: [no-store]
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/TournamentConfiguration'
+      '401':
+        $ref: '../components/responses.yml#/UnauthorizedProblem'
+      '403':
+        $ref: '../components/responses.yml#/ForbiddenProblem'
+      '404':
+        $ref: '../components/responses.yml#/NotFoundProblem'
+      '422':
+        $ref: '../components/responses.yml#/InvalidRequestProblem'
+      '429':
+        $ref: '../components/responses.yml#/RateLimitedProblem'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+  patch:
+    operationId: updateTournamentConfiguration
+    tags: [tournament]
+    summary: Update Swiss and semifinal tournament defaults
+    description: >-
+      Updates only the mutable Swiss and semifinal defaults and category pools.
+      The final BO3 five-category draft is immutable. The command requires both
+      the tournament projection and configuration revisions plus explicit
+      confirmation and unlock evidence.
+    x-auth-scope: tournament:manage
+    security:
+      - AdminSessionAuth: []
+    parameters:
+      - $ref: '../components/parameters.yml#/IdempotencyKey'
+      - $ref: '../components/parameters.yml#/AdminCSRFToken'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../components/schemas.yml#/UpdateTournamentConfigurationRequest'
+    responses:
+      '200':
+        description: Immutable evidence for the tournament configuration mutation.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/TournamentConfigurationMutationEvidence'
+      '400':
+        $ref: '../components/responses.yml#/InvalidRequestProblem'
+      '401':
+        $ref: '../components/responses.yml#/UnauthorizedProblem'
+      '403':
+        $ref: '../components/responses.yml#/ForbiddenProblem'
+      '404':
+        $ref: '../components/responses.yml#/NotFoundProblem'
+      '409':
+        $ref: '../components/responses.yml#/ProjectionRevisionConflictProblem'
+      '422':
+        $ref: '../components/responses.yml#/InvalidRequestProblem'
+      '429':
+        $ref: '../components/responses.yml#/RateLimitedProblem'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+/api/v1/admin/tournaments/{tournament_id}/series/{series_id}/configuration:
+  parameters:
+    - $ref: '../components/parameters.yml#/TournamentId'
+    - $ref: '../components/parameters.yml#/SeriesId'
+  patch:
+    operationId: updateTournamentSeriesConfiguration
+    tags: [tournament]
+    summary: Update an unstarted Series configuration
+    description: >-
+      Updates the effective category mode and categories for an unstarted
+      Series. The command is rejected after the Series starts and requires both
+      the tournament projection revision and the Series revision.
+    x-auth-scope: tournament:manage
+    security:
+      - AdminSessionAuth: []
+    parameters:
+      - $ref: '../components/parameters.yml#/IdempotencyKey'
+      - $ref: '../components/parameters.yml#/AdminCSRFToken'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../components/schemas.yml#/UpdateTournamentSeriesConfigurationRequest'
+    responses:
+      '200':
+        description: Immutable evidence for the Series configuration mutation.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/TournamentConfigurationMutationEvidence'
+      '400':
+        $ref: '../components/responses.yml#/InvalidRequestProblem'
+      '401':
+        $ref: '../components/responses.yml#/UnauthorizedProblem'
+      '403':
+        $ref: '../components/responses.yml#/ForbiddenProblem'
+      '404':
+        $ref: '../components/responses.yml#/NotFoundProblem'
+      '409':
+        $ref: '../components/responses.yml#/ProjectionRevisionConflictProblem'
+      '422':
+        $ref: '../components/responses.yml#/InvalidRequestProblem'
+      '429':
+        $ref: '../components/responses.yml#/RateLimitedProblem'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
+/api/v1/admin/tournaments/{tournament_id}/swiss/rounds/{round_number}:
+  parameters:
+    - $ref: '../components/parameters.yml#/TournamentId'
+    - name: round_number
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int32
+        minimum: 1
+        maximum: 4
+  put:
+    operationId: replaceTournamentSwissRoundConfiguration
+    tags: [tournament]
+    summary: Replace one Swiss round configuration
+    description: >-
+      Replaces the category mode and category set for one Swiss round. The
+      command is revision-aware and requires explicit confirmation and unlock
+      evidence.
+    x-auth-scope: tournament:manage
+    security:
+      - AdminSessionAuth: []
+    parameters:
+      - $ref: '../components/parameters.yml#/IdempotencyKey'
+      - $ref: '../components/parameters.yml#/AdminCSRFToken'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../components/schemas.yml#/ReplaceTournamentSwissRoundConfigurationRequest'
+    responses:
+      '200':
+        description: Immutable evidence for the Swiss round configuration mutation.
+        content:
+          application/json:
+            schema:
+              $ref: '../components/schemas.yml#/TournamentConfigurationMutationEvidence'
+      '400':
+        $ref: '../components/responses.yml#/InvalidRequestProblem'
+      '401':
+        $ref: '../components/responses.yml#/UnauthorizedProblem'
+      '403':
+        $ref: '../components/responses.yml#/ForbiddenProblem'
+      '404':
+        $ref: '../components/responses.yml#/NotFoundProblem'
+      '409':
+        $ref: '../components/responses.yml#/ProjectionRevisionConflictProblem'
+      '422':
+        $ref: '../components/responses.yml#/InvalidRequestProblem'
+      '429':
+        $ref: '../components/responses.yml#/RateLimitedProblem'
+      default:
+        $ref: '../components/responses.yml#/UnexpectedServerProblem'
 /api/v1/admin/tournaments/{tournament_id}/roster:
   parameters:
     - $ref: '../components/parameters.yml#/TournamentId'

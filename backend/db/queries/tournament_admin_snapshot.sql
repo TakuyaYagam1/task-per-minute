@@ -130,7 +130,15 @@ SELECT id,
     created_at,
     updated_at,
     started_at,
-    finished_at
+    finished_at,
+    supersedes_series_id,
+    superseded_by_series_id,
+    superseded_at,
+    supersession_reason,
+    content_configuration_id,
+    content_configuration_revision,
+    category_mode,
+    effective_categories
 FROM series
 WHERE tournament_id = sqlc.arg(tournament_id)
     AND roster_id = sqlc.arg(roster_id)

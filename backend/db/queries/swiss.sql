@@ -1,6 +1,7 @@
 -- name: CreateAutomaticSwissRound :one
 INSERT INTO swiss_rounds (
     id,
+    tournament_id,
     roster_id,
     round_number,
     revision,
@@ -22,6 +23,7 @@ INSERT INTO swiss_rounds (
 )
 VALUES (
     sqlc.arg(id),
+    sqlc.arg(tournament_id),
     sqlc.arg(roster_id),
     sqlc.arg(round_number),
     1,
@@ -41,29 +43,12 @@ VALUES (
     sqlc.arg(created_at),
     sqlc.arg(created_at)
 )
-RETURNING id,
-    roster_id,
-    round_number,
-    revision,
-    source_roster_revision,
-    source_history_revision,
-    generation_kind,
-    pairing_inputs,
-    decision_evidence_id,
-    decision_algorithm_version,
-    decision_seed,
-    decision_result,
-    decision_replay_digest,
-    decision_owner_id,
-    generated_at,
-    lock_revision,
-    locked_at,
-    created_at,
-    updated_at;
+RETURNING *;
 
 -- name: CreateManualSwissRound :one
 INSERT INTO swiss_rounds (
     id,
+    tournament_id,
     roster_id,
     round_number,
     revision,
@@ -79,6 +64,7 @@ INSERT INTO swiss_rounds (
 )
 VALUES (
     sqlc.arg(id),
+    sqlc.arg(tournament_id),
     sqlc.arg(roster_id),
     sqlc.arg(round_number),
     1,
@@ -92,25 +78,7 @@ VALUES (
     sqlc.arg(created_at),
     sqlc.arg(created_at)
 )
-RETURNING id,
-    roster_id,
-    round_number,
-    revision,
-    source_roster_revision,
-    source_history_revision,
-    generation_kind,
-    pairing_inputs,
-    decision_evidence_id,
-    decision_algorithm_version,
-    decision_seed,
-    decision_result,
-    decision_replay_digest,
-    decision_owner_id,
-    generated_at,
-    lock_revision,
-    locked_at,
-    created_at,
-    updated_at;
+RETURNING *;
 
 -- name: LockSwissRoundForUpdate :one
 SELECT id,
@@ -131,7 +99,12 @@ SELECT id,
     lock_revision,
     locked_at,
     created_at,
-    updated_at
+    updated_at,
+    tournament_id,
+    content_configuration_id,
+    content_configuration_revision,
+    category_mode,
+    effective_categories
 FROM swiss_rounds
 WHERE id = sqlc.arg(id)
 FOR UPDATE;
@@ -154,25 +127,7 @@ SET revision = revision + 1,
 WHERE id = sqlc.arg(id)
     AND revision = sqlc.arg(expected_revision)
     AND locked_at IS NULL
-RETURNING id,
-    roster_id,
-    round_number,
-    revision,
-    source_roster_revision,
-    source_history_revision,
-    generation_kind,
-    pairing_inputs,
-    decision_evidence_id,
-    decision_algorithm_version,
-    decision_seed,
-    decision_result,
-    decision_replay_digest,
-    decision_owner_id,
-    generated_at,
-    lock_revision,
-    locked_at,
-    created_at,
-    updated_at;
+RETURNING *;
 
 -- name: UpdateManualSwissRoundCAS :one
 UPDATE swiss_rounds
@@ -192,25 +147,7 @@ SET revision = revision + 1,
 WHERE id = sqlc.arg(id)
     AND revision = sqlc.arg(expected_revision)
     AND locked_at IS NULL
-RETURNING id,
-    roster_id,
-    round_number,
-    revision,
-    source_roster_revision,
-    source_history_revision,
-    generation_kind,
-    pairing_inputs,
-    decision_evidence_id,
-    decision_algorithm_version,
-    decision_seed,
-    decision_result,
-    decision_replay_digest,
-    decision_owner_id,
-    generated_at,
-    lock_revision,
-    locked_at,
-    created_at,
-    updated_at;
+RETURNING *;
 
 -- name: CreateSwissRepeatOverride :exec
 INSERT INTO swiss_repeat_overrides (
@@ -362,25 +299,7 @@ SET lock_revision = revision,
 WHERE id = sqlc.arg(id)
     AND revision = sqlc.arg(expected_revision)
     AND locked_at IS NULL
-RETURNING id,
-    roster_id,
-    round_number,
-    revision,
-    source_roster_revision,
-    source_history_revision,
-    generation_kind,
-    pairing_inputs,
-    decision_evidence_id,
-    decision_algorithm_version,
-    decision_seed,
-    decision_result,
-    decision_replay_digest,
-    decision_owner_id,
-    generated_at,
-    lock_revision,
-    locked_at,
-    created_at,
-    updated_at;
+RETURNING *;
 
 -- name: CreateSwissRoundLockProof :exec
 INSERT INTO swiss_round_lock_proofs (
@@ -501,7 +420,12 @@ SELECT id,
     lock_revision,
     locked_at,
     created_at,
-    updated_at
+    updated_at,
+    tournament_id,
+    content_configuration_id,
+    content_configuration_revision,
+    category_mode,
+    effective_categories
 FROM swiss_rounds
 WHERE id = sqlc.arg(id);
 
@@ -524,7 +448,12 @@ SELECT id,
     lock_revision,
     locked_at,
     created_at,
-    updated_at
+    updated_at,
+    tournament_id,
+    content_configuration_id,
+    content_configuration_revision,
+    category_mode,
+    effective_categories
 FROM swiss_rounds
 WHERE roster_id = sqlc.arg(roster_id)
 ORDER BY round_number;

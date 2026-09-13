@@ -363,7 +363,27 @@ type CorrectSeriesCASParams struct {
 	ExpectedResultRevisionID uuid.NullUUID
 }
 
-func (q *Queries) CorrectSeriesCAS(ctx context.Context, arg CorrectSeriesCASParams) (Series, error) {
+type CorrectSeriesCASRow struct {
+	ID                      uuid.UUID
+	TournamentID            uuid.UUID
+	RosterID                uuid.UUID
+	FirstParticipantID      uuid.UUID
+	SecondParticipantID     uuid.UUID
+	Format                  string
+	State                   string
+	FirstParticipantWins    int16
+	SecondParticipantWins   int16
+	WinnerID                uuid.NullUUID
+	CurrentScoreRevisionID  uuid.NullUUID
+	CurrentResultRevisionID uuid.NullUUID
+	Revision                int64
+	CreatedAt               pgtype.Timestamptz
+	UpdatedAt               pgtype.Timestamptz
+	StartedAt               pgtype.Timestamptz
+	FinishedAt              pgtype.Timestamptz
+}
+
+func (q *Queries) CorrectSeriesCAS(ctx context.Context, arg CorrectSeriesCASParams) (CorrectSeriesCASRow, error) {
 	row := q.db.QueryRow(ctx, correctSeriesCAS,
 		arg.NextState,
 		arg.FirstParticipantWins,
@@ -380,7 +400,7 @@ func (q *Queries) CorrectSeriesCAS(ctx context.Context, arg CorrectSeriesCASPara
 		arg.ExpectedScoreRevisionID,
 		arg.ExpectedResultRevisionID,
 	)
-	var i Series
+	var i CorrectSeriesCASRow
 	err := row.Scan(
 		&i.ID,
 		&i.TournamentID,

@@ -458,6 +458,14 @@ func persistTournamentV1ContentBinding(
 	binding tournamentV1ContentBinding,
 	createdAt time.Time,
 ) error {
+	bo1Categories := []domain.Category{domain.CategoryCrypto, domain.CategoryReverse, domain.CategoryWeb}
+	bo3Categories := []domain.Category{
+		domain.CategoryCrypto,
+		domain.CategoryForensics,
+		domain.CategoryPwn,
+		domain.CategoryReverse,
+		domain.CategoryWeb,
+	}
 	if _, err := querier.CreateTournamentContentConfiguration(
 		ctx,
 		sqlc.CreateTournamentContentConfigurationParams{
@@ -479,17 +487,11 @@ func persistTournamentV1ContentBinding(
 	}{
 		{
 			id: binding.bo1CategoryPoolID, format: domain.SeriesFormatBO1,
-			categories: []domain.Category{domain.CategoryCrypto, domain.CategoryReverse, domain.CategoryWeb},
+			categories: bo1Categories,
 		},
 		{
 			id: binding.bo3CategoryPoolID, format: domain.SeriesFormatBO3,
-			categories: []domain.Category{
-				domain.CategoryCrypto,
-				domain.CategoryForensics,
-				domain.CategoryPwn,
-				domain.CategoryReverse,
-				domain.CategoryWeb,
-			},
+			categories: bo3Categories,
 		},
 	} {
 		if _, err := querier.CreateTournamentCategoryPoolRevision(
@@ -523,26 +525,27 @@ func persistTournamentV1ContentBinding(
 		mode           domain.CategoryMode
 		categoryPoolID uuid.UUID
 		taskPoolKind   domain.AssignmentTaskKind
+		categories     []domain.Category
 	}{
 		{
 			stage: domain.TournamentStageSwiss, format: domain.SeriesFormatBO1,
 			mode: domain.CategoryModeRandom, categoryPoolID: binding.bo1CategoryPoolID,
-			taskPoolKind: domain.AssignmentTaskKindNormal,
+			taskPoolKind: domain.AssignmentTaskKindNormal, categories: bo1Categories[:1],
 		},
 		{
 			stage: domain.TournamentStageGolden, format: domain.SeriesFormatBO1,
 			mode: domain.CategoryModeRandom, categoryPoolID: binding.bo1CategoryPoolID,
-			taskPoolKind: domain.AssignmentTaskKindGolden,
+			taskPoolKind: domain.AssignmentTaskKindGolden, categories: bo1Categories[:1],
 		},
 		{
 			stage: domain.TournamentStageSemifinal, format: domain.SeriesFormatBO1,
 			mode: domain.CategoryModeDraft, categoryPoolID: binding.bo1CategoryPoolID,
-			taskPoolKind: domain.AssignmentTaskKindNormal,
+			taskPoolKind: domain.AssignmentTaskKindNormal, categories: bo1Categories,
 		},
 		{
 			stage: domain.TournamentStageFinal, format: domain.SeriesFormatBO3,
 			mode: domain.CategoryModeDraft, categoryPoolID: binding.bo3CategoryPoolID,
-			taskPoolKind: domain.AssignmentTaskKindNormal,
+			taskPoolKind: domain.AssignmentTaskKindNormal, categories: bo3Categories,
 		},
 	} {
 		if err := querier.CreateTournamentContentStageDefault(
@@ -554,6 +557,7 @@ func persistTournamentV1ContentBinding(
 				CategoryMode:           string(stageDefault.mode),
 				CategoryPoolRevisionID: stageDefault.categoryPoolID,
 				TaskPoolKind:           string(stageDefault.taskPoolKind),
+				Categories:             categoriesJSON(stageDefault.categories),
 				CreatedAt:              tstz(createdAt),
 			},
 		); err != nil {

@@ -15,6 +15,7 @@ import (
 const createAutomaticSwissRound = `-- name: CreateAutomaticSwissRound :one
 INSERT INTO swiss_rounds (
     id,
+    tournament_id,
     roster_id,
     round_number,
     revision,
@@ -38,11 +39,11 @@ VALUES (
     $1,
     $2,
     $3,
-    1,
     $4,
+    1,
     $5,
-    'automatic',
     $6,
+    'automatic',
     $7,
     $8,
     $9,
@@ -50,34 +51,18 @@ VALUES (
     $11,
     $12,
     $13,
-    $14::BIGINT,
-    $15::TIMESTAMPTZ,
-    $16,
-    $16
+    $14,
+    $15::BIGINT,
+    $16::TIMESTAMPTZ,
+    $17,
+    $17
 )
-RETURNING id,
-    roster_id,
-    round_number,
-    revision,
-    source_roster_revision,
-    source_history_revision,
-    generation_kind,
-    pairing_inputs,
-    decision_evidence_id,
-    decision_algorithm_version,
-    decision_seed,
-    decision_result,
-    decision_replay_digest,
-    decision_owner_id,
-    generated_at,
-    lock_revision,
-    locked_at,
-    created_at,
-    updated_at
+RETURNING id, roster_id, round_number, revision, source_roster_revision, source_history_revision, generation_kind, pairing_inputs, decision_evidence_id, decision_algorithm_version, decision_seed, decision_result, decision_replay_digest, decision_owner_id, generated_at, lock_revision, locked_at, created_at, updated_at, tournament_id, content_configuration_id, content_configuration_revision, category_mode, effective_categories
 `
 
 type CreateAutomaticSwissRoundParams struct {
 	ID                       uuid.UUID
+	TournamentID             uuid.UUID
 	RosterID                 uuid.UUID
 	RoundNumber              int16
 	SourceRosterRevision     int64
@@ -98,6 +83,7 @@ type CreateAutomaticSwissRoundParams struct {
 func (q *Queries) CreateAutomaticSwissRound(ctx context.Context, arg CreateAutomaticSwissRoundParams) (SwissRound, error) {
 	row := q.db.QueryRow(ctx, createAutomaticSwissRound,
 		arg.ID,
+		arg.TournamentID,
 		arg.RosterID,
 		arg.RoundNumber,
 		arg.SourceRosterRevision,
@@ -135,6 +121,11 @@ func (q *Queries) CreateAutomaticSwissRound(ctx context.Context, arg CreateAutom
 		&i.LockedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TournamentID,
+		&i.ContentConfigurationID,
+		&i.ContentConfigurationRevision,
+		&i.CategoryMode,
+		&i.EffectiveCategories,
 	)
 	return i, err
 }
@@ -142,6 +133,7 @@ func (q *Queries) CreateAutomaticSwissRound(ctx context.Context, arg CreateAutom
 const createManualSwissRound = `-- name: CreateManualSwissRound :one
 INSERT INTO swiss_rounds (
     id,
+    tournament_id,
     roster_id,
     round_number,
     revision,
@@ -159,40 +151,24 @@ VALUES (
     $1,
     $2,
     $3,
-    1,
     $4,
+    1,
     $5,
-    'manual',
     $6,
+    'manual',
     $7,
-    $8::BIGINT,
-    $9::TIMESTAMPTZ,
-    $10,
-    $10
+    $8,
+    $9::BIGINT,
+    $10::TIMESTAMPTZ,
+    $11,
+    $11
 )
-RETURNING id,
-    roster_id,
-    round_number,
-    revision,
-    source_roster_revision,
-    source_history_revision,
-    generation_kind,
-    pairing_inputs,
-    decision_evidence_id,
-    decision_algorithm_version,
-    decision_seed,
-    decision_result,
-    decision_replay_digest,
-    decision_owner_id,
-    generated_at,
-    lock_revision,
-    locked_at,
-    created_at,
-    updated_at
+RETURNING id, roster_id, round_number, revision, source_roster_revision, source_history_revision, generation_kind, pairing_inputs, decision_evidence_id, decision_algorithm_version, decision_seed, decision_result, decision_replay_digest, decision_owner_id, generated_at, lock_revision, locked_at, created_at, updated_at, tournament_id, content_configuration_id, content_configuration_revision, category_mode, effective_categories
 `
 
 type CreateManualSwissRoundParams struct {
 	ID                    uuid.UUID
+	TournamentID          uuid.UUID
 	RosterID              uuid.UUID
 	RoundNumber           int16
 	SourceRosterRevision  int64
@@ -207,6 +183,7 @@ type CreateManualSwissRoundParams struct {
 func (q *Queries) CreateManualSwissRound(ctx context.Context, arg CreateManualSwissRoundParams) (SwissRound, error) {
 	row := q.db.QueryRow(ctx, createManualSwissRound,
 		arg.ID,
+		arg.TournamentID,
 		arg.RosterID,
 		arg.RoundNumber,
 		arg.SourceRosterRevision,
@@ -238,6 +215,11 @@ func (q *Queries) CreateManualSwissRound(ctx context.Context, arg CreateManualSw
 		&i.LockedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TournamentID,
+		&i.ContentConfigurationID,
+		&i.ContentConfigurationRevision,
+		&i.CategoryMode,
+		&i.EffectiveCategories,
 	)
 	return i, err
 }
@@ -869,7 +851,12 @@ SELECT id,
     lock_revision,
     locked_at,
     created_at,
-    updated_at
+    updated_at,
+    tournament_id,
+    content_configuration_id,
+    content_configuration_revision,
+    category_mode,
+    effective_categories
 FROM swiss_rounds
 WHERE id = $1
 `
@@ -897,6 +884,11 @@ func (q *Queries) GetSwissRound(ctx context.Context, id uuid.UUID) (SwissRound, 
 		&i.LockedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TournamentID,
+		&i.ContentConfigurationID,
+		&i.ContentConfigurationRevision,
+		&i.CategoryMode,
+		&i.EffectiveCategories,
 	)
 	return i, err
 }
@@ -986,7 +978,12 @@ SELECT id,
     lock_revision,
     locked_at,
     created_at,
-    updated_at
+    updated_at,
+    tournament_id,
+    content_configuration_id,
+    content_configuration_revision,
+    category_mode,
+    effective_categories
 FROM swiss_rounds
 WHERE roster_id = $1
 ORDER BY round_number
@@ -1021,6 +1018,11 @@ func (q *Queries) ListSwissRounds(ctx context.Context, rosterID uuid.UUID) ([]Sw
 			&i.LockedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.TournamentID,
+			&i.ContentConfigurationID,
+			&i.ContentConfigurationRevision,
+			&i.CategoryMode,
+			&i.EffectiveCategories,
 		); err != nil {
 			return nil, err
 		}
@@ -1040,25 +1042,7 @@ SET lock_revision = revision,
 WHERE id = $2
     AND revision = $3
     AND locked_at IS NULL
-RETURNING id,
-    roster_id,
-    round_number,
-    revision,
-    source_roster_revision,
-    source_history_revision,
-    generation_kind,
-    pairing_inputs,
-    decision_evidence_id,
-    decision_algorithm_version,
-    decision_seed,
-    decision_result,
-    decision_replay_digest,
-    decision_owner_id,
-    generated_at,
-    lock_revision,
-    locked_at,
-    created_at,
-    updated_at
+RETURNING id, roster_id, round_number, revision, source_roster_revision, source_history_revision, generation_kind, pairing_inputs, decision_evidence_id, decision_algorithm_version, decision_seed, decision_result, decision_replay_digest, decision_owner_id, generated_at, lock_revision, locked_at, created_at, updated_at, tournament_id, content_configuration_id, content_configuration_revision, category_mode, effective_categories
 `
 
 type LockSwissRoundCASParams struct {
@@ -1090,6 +1074,11 @@ func (q *Queries) LockSwissRoundCAS(ctx context.Context, arg LockSwissRoundCASPa
 		&i.LockedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TournamentID,
+		&i.ContentConfigurationID,
+		&i.ContentConfigurationRevision,
+		&i.CategoryMode,
+		&i.EffectiveCategories,
 	)
 	return i, err
 }
@@ -1113,7 +1102,12 @@ SELECT id,
     lock_revision,
     locked_at,
     created_at,
-    updated_at
+    updated_at,
+    tournament_id,
+    content_configuration_id,
+    content_configuration_revision,
+    category_mode,
+    effective_categories
 FROM swiss_rounds
 WHERE id = $1
 FOR UPDATE
@@ -1142,6 +1136,11 @@ func (q *Queries) LockSwissRoundForUpdate(ctx context.Context, id uuid.UUID) (Sw
 		&i.LockedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TournamentID,
+		&i.ContentConfigurationID,
+		&i.ContentConfigurationRevision,
+		&i.CategoryMode,
+		&i.EffectiveCategories,
 	)
 	return i, err
 }
@@ -1164,25 +1163,7 @@ SET revision = revision + 1,
 WHERE id = $12
     AND revision = $13
     AND locked_at IS NULL
-RETURNING id,
-    roster_id,
-    round_number,
-    revision,
-    source_roster_revision,
-    source_history_revision,
-    generation_kind,
-    pairing_inputs,
-    decision_evidence_id,
-    decision_algorithm_version,
-    decision_seed,
-    decision_result,
-    decision_replay_digest,
-    decision_owner_id,
-    generated_at,
-    lock_revision,
-    locked_at,
-    created_at,
-    updated_at
+RETURNING id, roster_id, round_number, revision, source_roster_revision, source_history_revision, generation_kind, pairing_inputs, decision_evidence_id, decision_algorithm_version, decision_seed, decision_result, decision_replay_digest, decision_owner_id, generated_at, lock_revision, locked_at, created_at, updated_at, tournament_id, content_configuration_id, content_configuration_revision, category_mode, effective_categories
 `
 
 type UpdateAutomaticSwissRoundCASParams struct {
@@ -1238,6 +1219,11 @@ func (q *Queries) UpdateAutomaticSwissRoundCAS(ctx context.Context, arg UpdateAu
 		&i.LockedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TournamentID,
+		&i.ContentConfigurationID,
+		&i.ContentConfigurationRevision,
+		&i.CategoryMode,
+		&i.EffectiveCategories,
 	)
 	return i, err
 }
@@ -1260,25 +1246,7 @@ SET revision = revision + 1,
 WHERE id = $6
     AND revision = $7
     AND locked_at IS NULL
-RETURNING id,
-    roster_id,
-    round_number,
-    revision,
-    source_roster_revision,
-    source_history_revision,
-    generation_kind,
-    pairing_inputs,
-    decision_evidence_id,
-    decision_algorithm_version,
-    decision_seed,
-    decision_result,
-    decision_replay_digest,
-    decision_owner_id,
-    generated_at,
-    lock_revision,
-    locked_at,
-    created_at,
-    updated_at
+RETURNING id, roster_id, round_number, revision, source_roster_revision, source_history_revision, generation_kind, pairing_inputs, decision_evidence_id, decision_algorithm_version, decision_seed, decision_result, decision_replay_digest, decision_owner_id, generated_at, lock_revision, locked_at, created_at, updated_at, tournament_id, content_configuration_id, content_configuration_revision, category_mode, effective_categories
 `
 
 type UpdateManualSwissRoundCASParams struct {
@@ -1322,6 +1290,11 @@ func (q *Queries) UpdateManualSwissRoundCAS(ctx context.Context, arg UpdateManua
 		&i.LockedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TournamentID,
+		&i.ContentConfigurationID,
+		&i.ContentConfigurationRevision,
+		&i.CategoryMode,
+		&i.EffectiveCategories,
 	)
 	return i, err
 }

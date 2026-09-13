@@ -526,10 +526,19 @@ SELECT series.id,
     series.created_at,
     series.updated_at,
     series.started_at,
-    series.finished_at
+    series.finished_at,
+    series.supersedes_series_id,
+    series.superseded_by_series_id,
+    series.superseded_at,
+    series.supersession_reason,
+    series.content_configuration_id,
+    series.content_configuration_revision,
+    series.category_mode,
+    series.effective_categories
 FROM wave_series AS wave_series
 JOIN series AS series ON series.id = wave_series.series_id
 WHERE wave_series.wave_id = sqlc.arg(wave_id)
+    AND series.state <> 'superseded'
 ORDER BY series.id;
 
 -- name: GetReadyWindow :one

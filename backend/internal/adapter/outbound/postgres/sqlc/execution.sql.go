@@ -544,7 +544,27 @@ type CreateSeriesParams struct {
 	CreatedAt           pgtype.Timestamptz
 }
 
-func (q *Queries) CreateSeries(ctx context.Context, arg CreateSeriesParams) (Series, error) {
+type CreateSeriesRow struct {
+	ID                      uuid.UUID
+	TournamentID            uuid.UUID
+	RosterID                uuid.UUID
+	FirstParticipantID      uuid.UUID
+	SecondParticipantID     uuid.UUID
+	Format                  string
+	State                   string
+	FirstParticipantWins    int16
+	SecondParticipantWins   int16
+	WinnerID                uuid.NullUUID
+	CurrentScoreRevisionID  uuid.NullUUID
+	CurrentResultRevisionID uuid.NullUUID
+	Revision                int64
+	CreatedAt               pgtype.Timestamptz
+	UpdatedAt               pgtype.Timestamptz
+	StartedAt               pgtype.Timestamptz
+	FinishedAt              pgtype.Timestamptz
+}
+
+func (q *Queries) CreateSeries(ctx context.Context, arg CreateSeriesParams) (CreateSeriesRow, error) {
 	row := q.db.QueryRow(ctx, createSeries,
 		arg.ID,
 		arg.TournamentID,
@@ -554,7 +574,7 @@ func (q *Queries) CreateSeries(ctx context.Context, arg CreateSeriesParams) (Ser
 		arg.Format,
 		arg.CreatedAt,
 	)
-	var i Series
+	var i CreateSeriesRow
 	err := row.Scan(
 		&i.ID,
 		&i.TournamentID,
@@ -985,10 +1005,19 @@ SELECT series.id,
     series.created_at,
     series.updated_at,
     series.started_at,
-    series.finished_at
+    series.finished_at,
+    series.supersedes_series_id,
+    series.superseded_by_series_id,
+    series.superseded_at,
+    series.supersession_reason,
+    series.content_configuration_id,
+    series.content_configuration_revision,
+    series.category_mode,
+    series.effective_categories
 FROM wave_series AS wave_series
 JOIN series AS series ON series.id = wave_series.series_id
 WHERE wave_series.wave_id = $1
+    AND series.state <> 'superseded'
 ORDER BY series.id
 `
 
@@ -1019,6 +1048,14 @@ func (q *Queries) ListWaveSeries(ctx context.Context, waveID uuid.UUID) ([]Serie
 			&i.UpdatedAt,
 			&i.StartedAt,
 			&i.FinishedAt,
+			&i.SupersedesSeriesID,
+			&i.SupersededBySeriesID,
+			&i.SupersededAt,
+			&i.SupersessionReason,
+			&i.ContentConfigurationID,
+			&i.ContentConfigurationRevision,
+			&i.CategoryMode,
+			&i.EffectiveCategories,
 		); err != nil {
 			return nil, err
 		}

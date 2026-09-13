@@ -21,7 +21,7 @@ func TestSwissRepository(t *testing.T) {
 	t.Cleanup(func() { resetMigrationTables(ctx, t) })
 	fixture := newRepositoryFixture()
 	baseTime := time.Now().UTC().Truncate(time.Microsecond)
-	_, roster := createRepositoryTournament(ctx, t, fixture, baseTime)
+	tournament, roster := createRepositoryTournament(ctx, t, fixture, baseTime)
 	playerIDs := createMigrationPlayers(ctx, t, 5)
 	participantIDs := make([]uuid.UUID, len(playerIDs))
 	seed := int32(1)
@@ -60,6 +60,7 @@ func TestSwissRepository(t *testing.T) {
 	automaticInput := postgres.AutomaticSwissRoundInput{
 		Meta: postgres.SwissRoundMeta{
 			ID:                    roundOneID,
+			TournamentID:          tournament.ID,
 			RosterID:              roster.ID,
 			RoundNumber:           1,
 			SourceRosterRevision:  roster.Revision,
@@ -149,6 +150,7 @@ func TestSwissRepository(t *testing.T) {
 	manualInput := postgres.ManualSwissRoundInput{
 		Meta: postgres.SwissRoundMeta{
 			ID:                    roundTwoID,
+			TournamentID:          tournament.ID,
 			RosterID:              roster.ID,
 			RoundNumber:           2,
 			SourceRosterRevision:  roster.Revision,
@@ -222,6 +224,7 @@ func TestSwissRepository(t *testing.T) {
 	_, err = fixture.swiss.SaveAutomaticRound(ctx, postgres.AutomaticSwissRoundInput{
 		Meta: postgres.SwissRoundMeta{
 			ID:                    roundThreeID,
+			TournamentID:          tournament.ID,
 			RosterID:              roster.ID,
 			RoundNumber:           3,
 			SourceRosterRevision:  roster.Revision,

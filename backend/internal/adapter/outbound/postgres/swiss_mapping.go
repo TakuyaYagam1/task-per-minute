@@ -59,6 +59,7 @@ func automaticRoundCreateParams(in AutomaticSwissRoundInput) (sqlc.CreateAutomat
 	}
 	return sqlc.CreateAutomaticSwissRoundParams{
 		ID:                       in.Meta.ID,
+		TournamentID:             in.Meta.TournamentID,
 		RosterID:                 in.Meta.RosterID,
 		RoundNumber:              in.Meta.RoundNumber,
 		SourceRosterRevision:     in.Meta.SourceRosterRevision,
@@ -107,6 +108,7 @@ func manualRoundCreateParams(in ManualSwissRoundInput) (sqlc.CreateManualSwissRo
 	}
 	return sqlc.CreateManualSwissRoundParams{
 		ID:                    in.Meta.ID,
+		TournamentID:          in.Meta.TournamentID,
 		RosterID:              in.Meta.RosterID,
 		RoundNumber:           in.Meta.RoundNumber,
 		SourceRosterRevision:  in.Meta.SourceRosterRevision,

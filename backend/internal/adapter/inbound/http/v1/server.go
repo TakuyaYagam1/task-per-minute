@@ -35,6 +35,7 @@ type Dependencies struct {
 	Leaderboard                          LeaderboardService
 	Tournaments                          usecase.TournamentUseCase
 	TournamentAdmin                      usecase.TournamentAdminUseCase
+	TournamentConfiguration              usecase.TournamentConfigurationUseCase
 	TournamentParticipant                usecase.TournamentParticipantUseCase
 	TournamentSnapshots                  usecase.TournamentSnapshotUseCase
 	Golden                               usecase.GoldenUseCase
@@ -86,7 +87,7 @@ func New(deps Dependencies) *Server {
 		now = func() time.Time { return time.Now().UTC() }
 	}
 	return &Server{
-		tournamentController:                 newTournamentController(deps.Tournaments, deps.TournamentAdmin),
+		tournamentController:                 newTournamentController(deps.Tournaments, deps.TournamentAdmin, deps.TournamentConfiguration),
 		players:                              deps.Players,
 		adminAuth:                            deps.AdminAuth,
 		tasks:                                deps.Tasks,

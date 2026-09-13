@@ -1,0 +1,494 @@
+TournamentConfigurationCategoryPool:
+  type: object
+  additionalProperties: false
+  description: Immutable category pool revision available to tournament stages.
+  required: [id, revision, format, categories]
+  properties:
+    id:
+      type: string
+      format: uuid
+      readOnly: true
+    revision:
+      type: integer
+      format: int64
+      minimum: 1
+      readOnly: true
+    format:
+      $ref: '#/SeriesFormat'
+    categories:
+      type: array
+      minItems: 3
+      maxItems: 5
+      uniqueItems: true
+      readOnly: true
+      items:
+        $ref: '#/Category'
+
+TournamentConfigurationStageDefault:
+  type: object
+  additionalProperties: false
+  required: [mode, categories]
+  properties:
+    mode:
+      $ref: '#/CategoryMode'
+    categories:
+      type: array
+      minItems: 1
+      maxItems: 5
+      uniqueItems: true
+      items:
+        $ref: '#/Category'
+
+TournamentConfigurationStageDefaultInput:
+  type: object
+  additionalProperties: false
+  required: [mode, categories]
+  properties:
+    mode:
+      $ref: '#/CategoryMode'
+    categories:
+      type: array
+      minItems: 1
+      maxItems: 5
+      uniqueItems: true
+      items:
+        $ref: '#/Category'
+
+TournamentConfigurationFinalDefault:
+  type: object
+  additionalProperties: false
+  description: Immutable final BO3 five-category draft default.
+  required: [mode, categories]
+  properties:
+    mode:
+      type: string
+      enum: [draft]
+      readOnly: true
+    categories:
+      type: array
+      minItems: 5
+      maxItems: 5
+      uniqueItems: true
+      readOnly: true
+      items:
+        $ref: '#/Category'
+
+TournamentConfigurationSeries:
+  type: object
+  additionalProperties: false
+  description: Effective operator-visible category configuration for one Series.
+  required: [id, stage, round_number, revision, mode, categories, category_pool_revision_id, category_pool_revision, locked, started, consumed, disclosed, unlock_intents]
+  properties:
+    id:
+      type: string
+      format: uuid
+      readOnly: true
+    stage:
+      type: string
+      enum: [swiss, golden, semifinal, final]
+      readOnly: true
+    round_number:
+      type: integer
+      format: int32
+      minimum: 0
+      maximum: 4
+      readOnly: true
+    revision:
+      type: integer
+      format: int64
+      minimum: 1
+      readOnly: true
+    mode:
+      $ref: '#/CategoryMode'
+    categories:
+      type: array
+      minItems: 1
+      maxItems: 5
+      uniqueItems: true
+      items:
+        $ref: '#/Category'
+    category_pool_revision_id:
+      type: string
+      format: uuid
+      readOnly: true
+    category_pool_revision:
+      type: integer
+      format: int64
+      minimum: 1
+      readOnly: true
+    locked:
+      type: boolean
+      readOnly: true
+    started:
+      type: boolean
+      readOnly: true
+    consumed:
+      type: boolean
+      readOnly: true
+    disclosed:
+      type: boolean
+      readOnly: true
+    unlock_intents:
+      type: array
+      readOnly: true
+      items:
+        $ref: '#/ConfigurationUnlockIntent'
+
+TournamentConfigurationRound:
+  type: object
+  additionalProperties: false
+  description: Current operator authority for one editable Swiss round.
+  required: [id, round_number, revision, mode, categories, pairings, bye_participant_id, locked, started, consumed, disclosed, unlock_intents]
+  properties:
+    id:
+      type: string
+      format: uuid
+      readOnly: true
+    round_number:
+      type: integer
+      format: int32
+      minimum: 1
+      maximum: 4
+      readOnly: true
+    revision:
+      type: integer
+      format: int64
+      minimum: 1
+      readOnly: true
+    mode:
+      $ref: '#/CategoryMode'
+    categories:
+      type: array
+      minItems: 1
+      maxItems: 5
+      uniqueItems: true
+      items:
+        $ref: '#/Category'
+    pairings:
+      type: array
+      items:
+        $ref: '#/ConfigurationParticipantPair'
+    bye_participant_id:
+      type: string
+      format: uuid
+      nullable: true
+      readOnly: true
+    locked:
+      type: boolean
+      readOnly: true
+    started:
+      type: boolean
+      readOnly: true
+    consumed:
+      type: boolean
+      readOnly: true
+    disclosed:
+      type: boolean
+      readOnly: true
+    unlock_intents:
+      type: array
+      readOnly: true
+      items:
+        $ref: '#/ConfigurationUnlockIntent'
+
+TournamentConfiguration:
+  type: object
+  additionalProperties: false
+  required: [tournament_id, projection_revision_id, projection_revision, configuration_revision, category_pools, swiss_default, golden_default, semifinal_default, final_default, series, rounds, updated_at]
+  properties:
+    tournament_id:
+      type: string
+      format: uuid
+      readOnly: true
+    projection_revision_id:
+      type: string
+      format: uuid
+      readOnly: true
+    projection_revision:
+      type: integer
+      format: int64
+      minimum: 1
+      readOnly: true
+    configuration_revision:
+      type: integer
+      format: int64
+      minimum: 1
+      readOnly: true
+    category_pools:
+      type: array
+      minItems: 2
+      maxItems: 2
+      items:
+        $ref: '#/TournamentConfigurationCategoryPool'
+    swiss_default:
+      $ref: '#/TournamentConfigurationStageDefault'
+    golden_default:
+      $ref: '#/TournamentConfigurationStageDefault'
+    semifinal_default:
+      $ref: '#/TournamentConfigurationStageDefault'
+    final_default:
+      $ref: '#/TournamentConfigurationFinalDefault'
+    series:
+      type: array
+      items:
+        $ref: '#/TournamentConfigurationSeries'
+    rounds:
+      type: array
+      items:
+        $ref: '#/TournamentConfigurationRound'
+    updated_at:
+      type: string
+      format: date-time
+      readOnly: true
+
+ConfigurationUnlockIntent:
+  type: object
+  additionalProperties: false
+  description: Exact compare-and-set evidence for releasing an affected reservation.
+  required: [reservation_id, owner_id, source_revision_id, expected_revision, expected_used, expected_disclosed, evidence_digest, binding_digest]
+  properties:
+    reservation_id:
+      type: string
+      format: uuid
+    owner_id:
+      type: string
+      format: uuid
+    source_revision_id:
+      type: string
+      format: uuid
+    expected_revision:
+      type: integer
+      format: int64
+      minimum: 1
+    expected_used:
+      type: boolean
+    expected_disclosed:
+      type: boolean
+    evidence_digest:
+      type: string
+      minLength: 64
+      maxLength: 64
+      pattern: '^[0-9a-f]{64}$'
+    binding_digest:
+      type: string
+      minLength: 64
+      maxLength: 64
+      pattern: '^[0-9a-f]{64}$'
+
+ConfigurationArtifact:
+  type: object
+  additionalProperties: false
+  required: [kind, id, stage, previous_revision_id, successor_revision_id]
+  properties:
+    kind:
+      type: string
+      maxLength: 64
+    id:
+      type: string
+      format: uuid
+    stage:
+      type: string
+      enum: [swiss, golden, semifinal, final]
+    previous_revision_id:
+      type: string
+      format: uuid
+    successor_revision_id:
+      type: string
+      format: uuid
+
+TournamentConfigurationMutationEvidence:
+  type: object
+  additionalProperties: false
+  required: [command_id, tournament_id, operator_id, reason, requested_at, validation_digest, previous_configuration_revision, next_configuration_revision, affected_artifact_ids, superseded_artifact_ids, rebuilt_artifact_ids, affected_artifacts, unlock_intents]
+  properties:
+    command_id:
+      type: string
+      format: uuid
+      readOnly: true
+    tournament_id:
+      type: string
+      format: uuid
+      readOnly: true
+    operator_id:
+      type: string
+      format: uuid
+      readOnly: true
+    reason:
+      type: string
+      minLength: 1
+      maxLength: 512
+      readOnly: true
+    requested_at:
+      type: string
+      format: date-time
+      readOnly: true
+    validation_digest:
+      type: string
+      minLength: 64
+      maxLength: 64
+      pattern: '^[0-9a-f]{64}$'
+      readOnly: true
+    previous_configuration_revision:
+      type: integer
+      format: int64
+      minimum: 1
+      readOnly: true
+    next_configuration_revision:
+      type: integer
+      format: int64
+      minimum: 1
+      readOnly: true
+    affected_artifact_ids:
+      type: array
+      uniqueItems: true
+      readOnly: true
+      items:
+        type: string
+        format: uuid
+    superseded_artifact_ids:
+      type: array
+      uniqueItems: true
+      readOnly: true
+      items:
+        type: string
+        format: uuid
+    rebuilt_artifact_ids:
+      type: array
+      uniqueItems: true
+      readOnly: true
+      items:
+        type: string
+        format: uuid
+    affected_artifacts:
+      type: array
+      readOnly: true
+      items:
+        $ref: '#/ConfigurationArtifact'
+    unlock_intents:
+      type: array
+      maxItems: 4096
+      readOnly: true
+      items:
+        $ref: '#/ConfigurationUnlockIntent'
+
+UpdateTournamentConfigurationRequest:
+  type: object
+  additionalProperties: false
+  required: [expected_projection_revision, expected_configuration_revision, confirmed, reason, unlock_intents, swiss_default, semifinal_default]
+  properties:
+    expected_projection_revision:
+      type: integer
+      format: int64
+      minimum: 1
+    expected_configuration_revision:
+      type: integer
+      format: int64
+      minimum: 1
+    confirmed:
+      type: boolean
+      enum: [true]
+    reason:
+      type: string
+      minLength: 1
+      maxLength: 512
+    unlock_intents:
+      type: array
+      maxItems: 4096
+      items:
+        $ref: '#/ConfigurationUnlockIntent'
+    swiss_default:
+      $ref: '#/TournamentConfigurationStageDefaultInput'
+    semifinal_default:
+      $ref: '#/TournamentConfigurationStageDefaultInput'
+
+UpdateTournamentSeriesConfigurationRequest:
+  type: object
+  additionalProperties: false
+  required: [expected_projection_revision, expected_series_revision, confirmed, reason, unlock_intents, mode, categories]
+  properties:
+    expected_projection_revision:
+      type: integer
+      format: int64
+      minimum: 1
+    expected_series_revision:
+      type: integer
+      format: int64
+      minimum: 1
+    confirmed:
+      type: boolean
+      enum: [true]
+    reason:
+      type: string
+      minLength: 1
+      maxLength: 512
+    unlock_intents:
+      type: array
+      maxItems: 4096
+      items:
+        $ref: '#/ConfigurationUnlockIntent'
+    mode:
+      $ref: '#/CategoryMode'
+    categories:
+      type: array
+      minItems: 1
+      maxItems: 5
+      uniqueItems: true
+      items:
+        $ref: '#/Category'
+
+ConfigurationParticipantPair:
+  type: object
+  additionalProperties: false
+  required: [first_participant_id, second_participant_id]
+  properties:
+    first_participant_id:
+      type: string
+      format: uuid
+    second_participant_id:
+      type: string
+      format: uuid
+
+ReplaceTournamentSwissRoundConfigurationRequest:
+  type: object
+  additionalProperties: false
+  required: [expected_projection_revision, expected_round_revision, confirmed, reason, unlock_intents, mode, categories]
+  properties:
+    expected_projection_revision:
+      type: integer
+      format: int64
+      minimum: 1
+    expected_round_revision:
+      type: integer
+      format: int64
+      minimum: 1
+    confirmed:
+      type: boolean
+      enum: [true]
+    reason:
+      type: string
+      minLength: 1
+      maxLength: 512
+    unlock_intents:
+      type: array
+      maxItems: 4096
+      items:
+        $ref: '#/ConfigurationUnlockIntent'
+    mode:
+      $ref: '#/CategoryMode'
+    categories:
+      type: array
+      minItems: 1
+      maxItems: 5
+      uniqueItems: true
+      items:
+        $ref: '#/Category'
+    manual_pairings:
+      type: array
+      minItems: 2
+      maxItems: 8
+      items:
+        $ref: '#/ConfigurationParticipantPair'
+    manual_bye_participant_id:
+      type: string
+      format: uuid
+      nullable: true

@@ -437,7 +437,8 @@ func tournamentAdminSwissRoundMeta(plan tournamentadmin.PairingPlan) (SwissRound
 		counts[index] = int16(count)
 	}
 	return SwissRoundMeta{
-		ID: plan.RoundID, RosterID: plan.Authority.RosterID, RoundNumber: int16(plan.Command.RoundNumber),
+		ID: plan.RoundID, TournamentID: plan.Command.TournamentID,
+		RosterID: plan.Authority.RosterID, RoundNumber: int16(plan.Command.RoundNumber),
 		SourceRosterRevision:  plan.Authority.RosterRevision,
 		SourceHistoryRevision: plan.Authority.HistoryRevision,
 		PairingIDs:            append([]uuid.UUID(nil), plan.PairingIDs...), PriorMeetingCounts: counts,

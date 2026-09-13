@@ -159,6 +159,30 @@ func (e CategoryMode) Valid() bool {
 	}
 }
 
+// Defines values for ConfigurationArtifactStage.
+const (
+	ConfigurationArtifactStageFinal     ConfigurationArtifactStage = "final"
+	ConfigurationArtifactStageGolden    ConfigurationArtifactStage = "golden"
+	ConfigurationArtifactStageSemifinal ConfigurationArtifactStage = "semifinal"
+	ConfigurationArtifactStageSwiss     ConfigurationArtifactStage = "swiss"
+)
+
+// Valid indicates whether the value is a known member of the ConfigurationArtifactStage enum.
+func (e ConfigurationArtifactStage) Valid() bool {
+	switch e {
+	case ConfigurationArtifactStageFinal:
+		return true
+	case ConfigurationArtifactStageGolden:
+		return true
+	case ConfigurationArtifactStageSemifinal:
+		return true
+	case ConfigurationArtifactStageSwiss:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CorrectionField.
 const (
 	ResultReason  CorrectionField = "result_reason"
@@ -386,13 +410,13 @@ func (e GameState) Valid() bool {
 
 // Defines values for GoldenReadyRequestReady.
 const (
-	True GoldenReadyRequestReady = true
+	GoldenReadyRequestReadyTrue GoldenReadyRequestReady = true
 )
 
 // Valid indicates whether the value is a known member of the GoldenReadyRequestReady enum.
 func (e GoldenReadyRequestReady) Valid() bool {
 	switch e {
-	case True:
+	case GoldenReadyRequestReadyTrue:
 		return true
 	default:
 		return false
@@ -900,6 +924,21 @@ func (e ReconnectState) Valid() bool {
 	}
 }
 
+// Defines values for ReplaceTournamentSwissRoundConfigurationRequestConfirmed.
+const (
+	ReplaceTournamentSwissRoundConfigurationRequestConfirmedTrue ReplaceTournamentSwissRoundConfigurationRequestConfirmed = true
+)
+
+// Valid indicates whether the value is a known member of the ReplaceTournamentSwissRoundConfigurationRequestConfirmed enum.
+func (e ReplaceTournamentSwissRoundConfigurationRequestConfirmed) Valid() bool {
+	switch e {
+	case ReplaceTournamentSwissRoundConfigurationRequestConfirmedTrue:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ResultActorKind.
 const (
 	Operator ResultActorKind = "operator"
@@ -1182,6 +1221,45 @@ func (e TournamentActionRequestAction) Valid() bool {
 	}
 }
 
+// Defines values for TournamentConfigurationFinalDefaultMode.
+const (
+	TournamentConfigurationFinalDefaultModeDraft TournamentConfigurationFinalDefaultMode = "draft"
+)
+
+// Valid indicates whether the value is a known member of the TournamentConfigurationFinalDefaultMode enum.
+func (e TournamentConfigurationFinalDefaultMode) Valid() bool {
+	switch e {
+	case TournamentConfigurationFinalDefaultModeDraft:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TournamentConfigurationSeriesStage.
+const (
+	TournamentConfigurationSeriesStageFinal     TournamentConfigurationSeriesStage = "final"
+	TournamentConfigurationSeriesStageGolden    TournamentConfigurationSeriesStage = "golden"
+	TournamentConfigurationSeriesStageSemifinal TournamentConfigurationSeriesStage = "semifinal"
+	TournamentConfigurationSeriesStageSwiss     TournamentConfigurationSeriesStage = "swiss"
+)
+
+// Valid indicates whether the value is a known member of the TournamentConfigurationSeriesStage enum.
+func (e TournamentConfigurationSeriesStage) Valid() bool {
+	switch e {
+	case TournamentConfigurationSeriesStageFinal:
+		return true
+	case TournamentConfigurationSeriesStageGolden:
+		return true
+	case TournamentConfigurationSeriesStageSemifinal:
+		return true
+	case TournamentConfigurationSeriesStageSwiss:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for TournamentPreset.
 const (
 	TournamentPresetV1 TournamentPreset = "tournament_v1"
@@ -1230,6 +1308,36 @@ func (e TournamentState) Valid() bool {
 	case TournamentStateSwiss:
 		return true
 	case TournamentStateTechnicalPause:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for UpdateTournamentConfigurationRequestConfirmed.
+const (
+	UpdateTournamentConfigurationRequestConfirmedTrue UpdateTournamentConfigurationRequestConfirmed = true
+)
+
+// Valid indicates whether the value is a known member of the UpdateTournamentConfigurationRequestConfirmed enum.
+func (e UpdateTournamentConfigurationRequestConfirmed) Valid() bool {
+	switch e {
+	case UpdateTournamentConfigurationRequestConfirmedTrue:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for UpdateTournamentSeriesConfigurationRequestConfirmed.
+const (
+	UpdateTournamentSeriesConfigurationRequestConfirmedTrue UpdateTournamentSeriesConfigurationRequestConfirmed = true
+)
+
+// Valid indicates whether the value is a known member of the UpdateTournamentSeriesConfigurationRequestConfirmed enum.
+func (e UpdateTournamentSeriesConfigurationRequestConfirmed) Valid() bool {
+	switch e {
+	case UpdateTournamentSeriesConfigurationRequestConfirmedTrue:
 		return true
 	default:
 		return false
@@ -1367,6 +1475,36 @@ type Category string
 
 // CategoryMode defines model for CategoryMode.
 type CategoryMode string
+
+// ConfigurationArtifact defines model for ConfigurationArtifact.
+type ConfigurationArtifact struct {
+	Id                  openapi_types.UUID         `json:"id"`
+	Kind                string                     `json:"kind"`
+	PreviousRevisionId  openapi_types.UUID         `json:"previous_revision_id"`
+	Stage               ConfigurationArtifactStage `json:"stage"`
+	SuccessorRevisionId openapi_types.UUID         `json:"successor_revision_id"`
+}
+
+// ConfigurationArtifactStage defines model for ConfigurationArtifact.Stage.
+type ConfigurationArtifactStage string
+
+// ConfigurationParticipantPair defines model for ConfigurationParticipantPair.
+type ConfigurationParticipantPair struct {
+	FirstParticipantId  openapi_types.UUID `json:"first_participant_id"`
+	SecondParticipantId openapi_types.UUID `json:"second_participant_id"`
+}
+
+// ConfigurationUnlockIntent Exact compare-and-set evidence for releasing an affected reservation.
+type ConfigurationUnlockIntent struct {
+	BindingDigest     string             `json:"binding_digest"`
+	EvidenceDigest    string             `json:"evidence_digest"`
+	ExpectedDisclosed bool               `json:"expected_disclosed"`
+	ExpectedRevision  int64              `json:"expected_revision"`
+	ExpectedUsed      bool               `json:"expected_used"`
+	OwnerId           openapi_types.UUID `json:"owner_id"`
+	ReservationId     openapi_types.UUID `json:"reservation_id"`
+	SourceRevisionId  openapi_types.UUID `json:"source_revision_id"`
+}
 
 // CorrectionEvidence Immutable correction record. All projection and unlock evidence is retained by value.
 type CorrectionEvidence struct {
@@ -2508,6 +2646,22 @@ type ReplaceRosterRequest struct {
 	Participants               []RosterParticipantInput `json:"participants"`
 }
 
+// ReplaceTournamentSwissRoundConfigurationRequest defines model for ReplaceTournamentSwissRoundConfigurationRequest.
+type ReplaceTournamentSwissRoundConfigurationRequest struct {
+	Categories                 []Category                                               `json:"categories"`
+	Confirmed                  ReplaceTournamentSwissRoundConfigurationRequestConfirmed `json:"confirmed"`
+	ExpectedProjectionRevision int64                                                    `json:"expected_projection_revision"`
+	ExpectedRoundRevision      int64                                                    `json:"expected_round_revision"`
+	ManualByeParticipantId     *openapi_types.UUID                                      `json:"manual_bye_participant_id,omitempty"`
+	ManualPairings             *[]ConfigurationParticipantPair                          `json:"manual_pairings,omitempty"`
+	Mode                       CategoryMode                                             `json:"mode"`
+	Reason                     string                                                   `json:"reason"`
+	UnlockIntents              []ConfigurationUnlockIntent                              `json:"unlock_intents"`
+}
+
+// ReplaceTournamentSwissRoundConfigurationRequestConfirmed defines model for ReplaceTournamentSwissRoundConfigurationRequest.Confirmed.
+type ReplaceTournamentSwissRoundConfigurationRequestConfirmed bool
+
 // ResultActorKind defines model for ResultActorKind.
 type ResultActorKind string
 
@@ -2750,6 +2904,106 @@ type TournamentActionRequest struct {
 // TournamentActionRequestAction defines model for TournamentActionRequest.Action.
 type TournamentActionRequestAction string
 
+// TournamentConfiguration defines model for TournamentConfiguration.
+type TournamentConfiguration struct {
+	CategoryPools         []TournamentConfigurationCategoryPool `json:"category_pools"`
+	ConfigurationRevision int64                                 `json:"configuration_revision"`
+
+	// FinalDefault Immutable final BO3 five-category draft default.
+	FinalDefault         TournamentConfigurationFinalDefault `json:"final_default"`
+	GoldenDefault        TournamentConfigurationStageDefault `json:"golden_default"`
+	ProjectionRevision   int64                               `json:"projection_revision"`
+	ProjectionRevisionId openapi_types.UUID                  `json:"projection_revision_id"`
+	Rounds               []TournamentConfigurationRound      `json:"rounds"`
+	SemifinalDefault     TournamentConfigurationStageDefault `json:"semifinal_default"`
+	Series               []TournamentConfigurationSeries     `json:"series"`
+	SwissDefault         TournamentConfigurationStageDefault `json:"swiss_default"`
+	TournamentId         openapi_types.UUID                  `json:"tournament_id"`
+	UpdatedAt            time.Time                           `json:"updated_at"`
+}
+
+// TournamentConfigurationCategoryPool Immutable category pool revision available to tournament stages.
+type TournamentConfigurationCategoryPool struct {
+	Categories []Category         `json:"categories"`
+	Format     SeriesFormat       `json:"format"`
+	Id         openapi_types.UUID `json:"id"`
+	Revision   int64              `json:"revision"`
+}
+
+// TournamentConfigurationFinalDefault Immutable final BO3 five-category draft default.
+type TournamentConfigurationFinalDefault struct {
+	Categories []Category                              `json:"categories"`
+	Mode       TournamentConfigurationFinalDefaultMode `json:"mode"`
+}
+
+// TournamentConfigurationFinalDefaultMode defines model for TournamentConfigurationFinalDefault.Mode.
+type TournamentConfigurationFinalDefaultMode string
+
+// TournamentConfigurationMutationEvidence defines model for TournamentConfigurationMutationEvidence.
+type TournamentConfigurationMutationEvidence struct {
+	AffectedArtifactIds           []openapi_types.UUID        `json:"affected_artifact_ids"`
+	AffectedArtifacts             []ConfigurationArtifact     `json:"affected_artifacts"`
+	CommandId                     openapi_types.UUID          `json:"command_id"`
+	NextConfigurationRevision     int64                       `json:"next_configuration_revision"`
+	OperatorId                    openapi_types.UUID          `json:"operator_id"`
+	PreviousConfigurationRevision int64                       `json:"previous_configuration_revision"`
+	Reason                        string                      `json:"reason"`
+	RebuiltArtifactIds            []openapi_types.UUID        `json:"rebuilt_artifact_ids"`
+	RequestedAt                   time.Time                   `json:"requested_at"`
+	SupersededArtifactIds         []openapi_types.UUID        `json:"superseded_artifact_ids"`
+	TournamentId                  openapi_types.UUID          `json:"tournament_id"`
+	UnlockIntents                 []ConfigurationUnlockIntent `json:"unlock_intents"`
+	ValidationDigest              string                      `json:"validation_digest"`
+}
+
+// TournamentConfigurationRound Current operator authority for one editable Swiss round.
+type TournamentConfigurationRound struct {
+	ByeParticipantId *openapi_types.UUID            `json:"bye_participant_id"`
+	Categories       []Category                     `json:"categories"`
+	Consumed         bool                           `json:"consumed"`
+	Disclosed        bool                           `json:"disclosed"`
+	Id               openapi_types.UUID             `json:"id"`
+	Locked           bool                           `json:"locked"`
+	Mode             CategoryMode                   `json:"mode"`
+	Pairings         []ConfigurationParticipantPair `json:"pairings"`
+	Revision         int64                          `json:"revision"`
+	RoundNumber      int32                          `json:"round_number"`
+	Started          bool                           `json:"started"`
+	UnlockIntents    []ConfigurationUnlockIntent    `json:"unlock_intents"`
+}
+
+// TournamentConfigurationSeries Effective operator-visible category configuration for one Series.
+type TournamentConfigurationSeries struct {
+	Categories             []Category                         `json:"categories"`
+	CategoryPoolRevision   int64                              `json:"category_pool_revision"`
+	CategoryPoolRevisionId openapi_types.UUID                 `json:"category_pool_revision_id"`
+	Consumed               bool                               `json:"consumed"`
+	Disclosed              bool                               `json:"disclosed"`
+	Id                     openapi_types.UUID                 `json:"id"`
+	Locked                 bool                               `json:"locked"`
+	Mode                   CategoryMode                       `json:"mode"`
+	Revision               int64                              `json:"revision"`
+	RoundNumber            int32                              `json:"round_number"`
+	Stage                  TournamentConfigurationSeriesStage `json:"stage"`
+	Started                bool                               `json:"started"`
+	UnlockIntents          []ConfigurationUnlockIntent        `json:"unlock_intents"`
+}
+
+// TournamentConfigurationSeriesStage defines model for TournamentConfigurationSeries.Stage.
+type TournamentConfigurationSeriesStage string
+
+// TournamentConfigurationStageDefault defines model for TournamentConfigurationStageDefault.
+type TournamentConfigurationStageDefault struct {
+	Categories []Category   `json:"categories"`
+	Mode       CategoryMode `json:"mode"`
+}
+
+// TournamentConfigurationStageDefaultInput defines model for TournamentConfigurationStageDefaultInput.
+type TournamentConfigurationStageDefaultInput struct {
+	Categories []Category   `json:"categories"`
+	Mode       CategoryMode `json:"mode"`
+}
+
 // TournamentContentSelection The currently published content selection that can be bound to a new
 // tournament. The selected pool revision identifiers are immutable once a
 // tournament is created. A later catalog publication does not rewrite prior
@@ -2840,6 +3094,34 @@ type UpdateTaskRequest struct {
 	TimeLimit *int32         `json:"time_limit,omitempty"`
 	Title     *string        `json:"title,omitempty"`
 }
+
+// UpdateTournamentConfigurationRequest defines model for UpdateTournamentConfigurationRequest.
+type UpdateTournamentConfigurationRequest struct {
+	Confirmed                     UpdateTournamentConfigurationRequestConfirmed `json:"confirmed"`
+	ExpectedConfigurationRevision int64                                         `json:"expected_configuration_revision"`
+	ExpectedProjectionRevision    int64                                         `json:"expected_projection_revision"`
+	Reason                        string                                        `json:"reason"`
+	SemifinalDefault              TournamentConfigurationStageDefaultInput      `json:"semifinal_default"`
+	SwissDefault                  TournamentConfigurationStageDefaultInput      `json:"swiss_default"`
+	UnlockIntents                 []ConfigurationUnlockIntent                   `json:"unlock_intents"`
+}
+
+// UpdateTournamentConfigurationRequestConfirmed defines model for UpdateTournamentConfigurationRequest.Confirmed.
+type UpdateTournamentConfigurationRequestConfirmed bool
+
+// UpdateTournamentSeriesConfigurationRequest defines model for UpdateTournamentSeriesConfigurationRequest.
+type UpdateTournamentSeriesConfigurationRequest struct {
+	Categories                 []Category                                          `json:"categories"`
+	Confirmed                  UpdateTournamentSeriesConfigurationRequestConfirmed `json:"confirmed"`
+	ExpectedProjectionRevision int64                                               `json:"expected_projection_revision"`
+	ExpectedSeriesRevision     int64                                               `json:"expected_series_revision"`
+	Mode                       CategoryMode                                        `json:"mode"`
+	Reason                     string                                              `json:"reason"`
+	UnlockIntents              []ConfigurationUnlockIntent                         `json:"unlock_intents"`
+}
+
+// UpdateTournamentSeriesConfigurationRequestConfirmed defines model for UpdateTournamentSeriesConfigurationRequest.Confirmed.
+type UpdateTournamentSeriesConfigurationRequestConfirmed bool
 
 // Wave defines model for Wave.
 type Wave struct {
@@ -3084,6 +3366,14 @@ type ApplyTournamentActionParams struct {
 	XCSRFToken AdminCSRFToken `json:"X-CSRF-Token"`
 }
 
+// UpdateTournamentConfigurationParams defines parameters for UpdateTournamentConfiguration.
+type UpdateTournamentConfigurationParams struct {
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+
+	// XCSRFToken Cookie-bound CSRF token required for this admin mutation.
+	XCSRFToken AdminCSRFToken `json:"X-CSRF-Token"`
+}
+
 // StartGoldenAttemptParams defines parameters for StartGoldenAttempt.
 type StartGoldenAttemptParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
@@ -3148,6 +3438,14 @@ type AssignOperatorReserveParams struct {
 	XCSRFToken AdminCSRFToken `json:"X-CSRF-Token"`
 }
 
+// UpdateTournamentSeriesConfigurationParams defines parameters for UpdateTournamentSeriesConfiguration.
+type UpdateTournamentSeriesConfigurationParams struct {
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+
+	// XCSRFToken Cookie-bound CSRF token required for this admin mutation.
+	XCSRFToken AdminCSRFToken `json:"X-CSRF-Token"`
+}
+
 // CorrectTournamentGameResultParams defines parameters for CorrectTournamentGameResult.
 type CorrectTournamentGameResultParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
@@ -3176,6 +3474,14 @@ type RecordTournamentForfeitParams struct {
 type GetOperatorSnapshotParams struct {
 	// Cursor Last operator recovery watermark held by the client. Older or equal values return a fresh full snapshot; a value ahead of the authoritative snapshot is rejected as a revision conflict.
 	Cursor *OperatorRecoveryCursor `json:"cursor,omitempty"`
+}
+
+// ReplaceTournamentSwissRoundConfigurationParams defines parameters for ReplaceTournamentSwissRoundConfiguration.
+type ReplaceTournamentSwissRoundConfigurationParams struct {
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+
+	// XCSRFToken Cookie-bound CSRF token required for this admin mutation.
+	XCSRFToken AdminCSRFToken `json:"X-CSRF-Token"`
 }
 
 // ControlTournamentWaveParams defines parameters for ControlTournamentWave.
@@ -3288,6 +3594,9 @@ type CreateTournamentJSONRequestBody = CreateTournamentRequest
 // ApplyTournamentActionJSONRequestBody defines body for ApplyTournamentAction for application/json ContentType.
 type ApplyTournamentActionJSONRequestBody = TournamentActionRequest
 
+// UpdateTournamentConfigurationJSONRequestBody defines body for UpdateTournamentConfiguration for application/json ContentType.
+type UpdateTournamentConfigurationJSONRequestBody = UpdateTournamentConfigurationRequest
+
 // StartGoldenAttemptJSONRequestBody defines body for StartGoldenAttempt for application/json ContentType.
 type StartGoldenAttemptJSONRequestBody = GoldenStartRequest
 
@@ -3312,6 +3621,9 @@ type UnlockTournamentRosterJSONRequestBody = UnlockRosterRequest
 // AssignOperatorReserveJSONRequestBody defines body for AssignOperatorReserve for application/json ContentType.
 type AssignOperatorReserveJSONRequestBody = OperatorReserveRequest
 
+// UpdateTournamentSeriesConfigurationJSONRequestBody defines body for UpdateTournamentSeriesConfiguration for application/json ContentType.
+type UpdateTournamentSeriesConfigurationJSONRequestBody = UpdateTournamentSeriesConfigurationRequest
+
 // CorrectTournamentGameResultJSONRequestBody defines body for CorrectTournamentGameResult for application/json ContentType.
 type CorrectTournamentGameResultJSONRequestBody = OperatorCorrectionRequest
 
@@ -3320,6 +3632,9 @@ type ReplayTournamentGameJSONRequestBody = OperatorReplayRequest
 
 // RecordTournamentForfeitJSONRequestBody defines body for RecordTournamentForfeit for application/json ContentType.
 type RecordTournamentForfeitJSONRequestBody = OperatorForfeitRequest
+
+// ReplaceTournamentSwissRoundConfigurationJSONRequestBody defines body for ReplaceTournamentSwissRoundConfiguration for application/json ContentType.
+type ReplaceTournamentSwissRoundConfigurationJSONRequestBody = ReplaceTournamentSwissRoundConfigurationRequest
 
 // ControlTournamentWaveJSONRequestBody defines body for ControlTournamentWave for application/json ContentType.
 type ControlTournamentWaveJSONRequestBody = WaveControlRequest

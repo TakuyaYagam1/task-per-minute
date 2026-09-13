@@ -847,7 +847,7 @@ func (q *Queries) ListRecoveryPresence(ctx context.Context, arg ListRecoveryPres
 }
 
 const listRecoveryReadyWindowSeries = `-- name: ListRecoveryReadyWindowSeries :many
-SELECT series.id, series.tournament_id, series.roster_id, series.first_participant_id, series.second_participant_id, series.format, series.state, series.first_participant_wins, series.second_participant_wins, series.winner_id, series.current_score_revision_id, series.current_result_revision_id, series.revision, series.created_at, series.updated_at, series.started_at, series.finished_at,
+SELECT series.id, series.tournament_id, series.roster_id, series.first_participant_id, series.second_participant_id, series.format, series.state, series.first_participant_wins, series.second_participant_wins, series.winner_id, series.current_score_revision_id, series.current_result_revision_id, series.revision, series.created_at, series.updated_at, series.started_at, series.finished_at, series.supersedes_series_id, series.superseded_by_series_id, series.superseded_at, series.supersession_reason, series.content_configuration_id, series.content_configuration_revision, series.category_mode, series.effective_categories,
     score_head.series_id, score_head.roster_id, score_head.current_revision_id, score_head.revision, score_head.updated_at
 FROM wave_series
 JOIN series
@@ -911,6 +911,14 @@ func (q *Queries) ListRecoveryReadyWindowSeries(ctx context.Context, arg ListRec
 			&i.Series.UpdatedAt,
 			&i.Series.StartedAt,
 			&i.Series.FinishedAt,
+			&i.Series.SupersedesSeriesID,
+			&i.Series.SupersededBySeriesID,
+			&i.Series.SupersededAt,
+			&i.Series.SupersessionReason,
+			&i.Series.ContentConfigurationID,
+			&i.Series.ContentConfigurationRevision,
+			&i.Series.CategoryMode,
+			&i.Series.EffectiveCategories,
 			&i.SeriesScoreHead.SeriesID,
 			&i.SeriesScoreHead.RosterID,
 			&i.SeriesScoreHead.CurrentRevisionID,
@@ -1122,7 +1130,7 @@ const lockRecoveryGameTimeout = `-- name: LockRecoveryGameTimeout :one
 SELECT game_attempt.id, game_attempt.slot_id, game_attempt.series_id, game_attempt.roster_id, game_attempt.attempt_number, game_attempt.state, game_attempt.result_reason, game_attempt.winner_id, game_attempt.result_revision_id, game_attempt.revision, game_attempt.created_at, game_attempt.updated_at, game_attempt.started_at, game_attempt.finished_at, game_attempt.result_event_sequence, game_attempt.submission_event_sequence,
     game_slot.id, game_slot.series_id, game_slot.roster_id, game_slot.slot_number, game_slot.category, game_slot.first_participant_wins_before, game_slot.second_participant_wins_before, game_slot.revision, game_slot.created_at, game_slot.updated_at,
     assignment.id, assignment.attempt_id, assignment.series_id, assignment.roster_id, assignment.plan_id, assignment.branch_id, assignment.reservation_id, assignment.snapshot_id, assignment.task_id, assignment.task_version, assignment.supersedes_assignment_id, assignment.state, assignment.revision, assignment.created_at, assignment.updated_at, assignment.completed_at, assignment.superseded_at, assignment.supersession_reason,
-    series.id, series.tournament_id, series.roster_id, series.first_participant_id, series.second_participant_id, series.format, series.state, series.first_participant_wins, series.second_participant_wins, series.winner_id, series.current_score_revision_id, series.current_result_revision_id, series.revision, series.created_at, series.updated_at, series.started_at, series.finished_at,
+    series.id, series.tournament_id, series.roster_id, series.first_participant_id, series.second_participant_id, series.format, series.state, series.first_participant_wins, series.second_participant_wins, series.winner_id, series.current_score_revision_id, series.current_result_revision_id, series.revision, series.created_at, series.updated_at, series.started_at, series.finished_at, series.supersedes_series_id, series.superseded_by_series_id, series.superseded_at, series.supersession_reason, series.content_configuration_id, series.content_configuration_revision, series.category_mode, series.effective_categories,
     wave.id, wave.tournament_id, wave.roster_id, wave.revision_id, wave.revision, wave.state, wave.replaces_wave_id, wave.created_at, wave.updated_at, wave.started_at, wave.paused_at, wave.closed_at,
     score_head.series_id, score_head.roster_id, score_head.current_revision_id, score_head.revision, score_head.updated_at
 FROM game_attempts AS game_attempt
@@ -1264,6 +1272,14 @@ func (q *Queries) LockRecoveryGameTimeout(ctx context.Context, arg LockRecoveryG
 		&i.Series.UpdatedAt,
 		&i.Series.StartedAt,
 		&i.Series.FinishedAt,
+		&i.Series.SupersedesSeriesID,
+		&i.Series.SupersededBySeriesID,
+		&i.Series.SupersededAt,
+		&i.Series.SupersessionReason,
+		&i.Series.ContentConfigurationID,
+		&i.Series.ContentConfigurationRevision,
+		&i.Series.CategoryMode,
+		&i.Series.EffectiveCategories,
 		&i.Wave.ID,
 		&i.Wave.TournamentID,
 		&i.Wave.RosterID,
@@ -1361,7 +1377,7 @@ SELECT reconnect_interval.id, reconnect_interval.pause_id, reconnect_interval.ro
     pause.id, pause.tournament_id, pause.roster_id, pause.scope_kind, pause.scope_id, pause.wave_id, pause.series_id, pause.game_attempt_id, pause.parent_pause_id, pause.depth, pause.reason, pause.paused_from_state, pause.state, pause.current_revision_id, pause.revision, pause.started_at, pause.resolved_at, pause.created_at, pause.updated_at,
     pause_clock.pause_id, pause_clock.game_attempt_id, pause_clock.original_deadline, pause_clock.frozen_at, pause_clock.frozen_remaining_ms, pause_clock.resumed_at, pause_clock.resumed_deadline, pause_clock.revision, pause_clock.created_at, pause_clock.updated_at,
     game_attempt.id, game_attempt.slot_id, game_attempt.series_id, game_attempt.roster_id, game_attempt.attempt_number, game_attempt.state, game_attempt.result_reason, game_attempt.winner_id, game_attempt.result_revision_id, game_attempt.revision, game_attempt.created_at, game_attempt.updated_at, game_attempt.started_at, game_attempt.finished_at, game_attempt.result_event_sequence, game_attempt.submission_event_sequence,
-    series.id, series.tournament_id, series.roster_id, series.first_participant_id, series.second_participant_id, series.format, series.state, series.first_participant_wins, series.second_participant_wins, series.winner_id, series.current_score_revision_id, series.current_result_revision_id, series.revision, series.created_at, series.updated_at, series.started_at, series.finished_at,
+    series.id, series.tournament_id, series.roster_id, series.first_participant_id, series.second_participant_id, series.format, series.state, series.first_participant_wins, series.second_participant_wins, series.winner_id, series.current_score_revision_id, series.current_result_revision_id, series.revision, series.created_at, series.updated_at, series.started_at, series.finished_at, series.supersedes_series_id, series.superseded_by_series_id, series.superseded_at, series.supersession_reason, series.content_configuration_id, series.content_configuration_revision, series.category_mode, series.effective_categories,
     score_head.series_id, score_head.roster_id, score_head.current_revision_id, score_head.revision, score_head.updated_at
 FROM reconnect_intervals AS reconnect_interval
 JOIN pauses AS pause
@@ -1518,6 +1534,14 @@ func (q *Queries) LockRecoveryReconnectTimeout(ctx context.Context, arg LockReco
 		&i.Series.UpdatedAt,
 		&i.Series.StartedAt,
 		&i.Series.FinishedAt,
+		&i.Series.SupersedesSeriesID,
+		&i.Series.SupersededBySeriesID,
+		&i.Series.SupersededAt,
+		&i.Series.SupersessionReason,
+		&i.Series.ContentConfigurationID,
+		&i.Series.ContentConfigurationRevision,
+		&i.Series.CategoryMode,
+		&i.Series.EffectiveCategories,
 		&i.SeriesScoreHead.SeriesID,
 		&i.SeriesScoreHead.RosterID,
 		&i.SeriesScoreHead.CurrentRevisionID,

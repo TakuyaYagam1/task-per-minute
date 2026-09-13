@@ -331,6 +331,7 @@ INSERT INTO tournament_content_stage_defaults (
     category_mode,
     category_pool_revision_id,
     task_pool_kind,
+    categories,
     created_at
 )
 VALUES (
@@ -340,6 +341,7 @@ VALUES (
     sqlc.arg(category_mode),
     sqlc.arg(category_pool_revision_id),
     sqlc.arg(task_pool_kind),
+    sqlc.arg(categories)::JSONB,
     sqlc.arg(created_at)
 );
 

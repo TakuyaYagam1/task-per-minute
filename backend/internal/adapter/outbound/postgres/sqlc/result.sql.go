@@ -2390,7 +2390,27 @@ type SettleSeriesCASParams struct {
 	ExpectedScoreRevisionID uuid.NullUUID
 }
 
-func (q *Queries) SettleSeriesCAS(ctx context.Context, arg SettleSeriesCASParams) (Series, error) {
+type SettleSeriesCASRow struct {
+	ID                      uuid.UUID
+	TournamentID            uuid.UUID
+	RosterID                uuid.UUID
+	FirstParticipantID      uuid.UUID
+	SecondParticipantID     uuid.UUID
+	Format                  string
+	State                   string
+	FirstParticipantWins    int16
+	SecondParticipantWins   int16
+	WinnerID                uuid.NullUUID
+	CurrentScoreRevisionID  uuid.NullUUID
+	CurrentResultRevisionID uuid.NullUUID
+	Revision                int64
+	CreatedAt               pgtype.Timestamptz
+	UpdatedAt               pgtype.Timestamptz
+	StartedAt               pgtype.Timestamptz
+	FinishedAt              pgtype.Timestamptz
+}
+
+func (q *Queries) SettleSeriesCAS(ctx context.Context, arg SettleSeriesCASParams) (SettleSeriesCASRow, error) {
 	row := q.db.QueryRow(ctx, settleSeriesCAS,
 		arg.NextState,
 		arg.FirstParticipantWins,
@@ -2406,7 +2426,7 @@ func (q *Queries) SettleSeriesCAS(ctx context.Context, arg SettleSeriesCASParams
 		arg.ExpectedState,
 		arg.ExpectedScoreRevisionID,
 	)
-	var i Series
+	var i SettleSeriesCASRow
 	err := row.Scan(
 		&i.ID,
 		&i.TournamentID,

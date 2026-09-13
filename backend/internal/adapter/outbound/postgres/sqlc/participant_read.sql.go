@@ -322,7 +322,7 @@ func (q *Queries) GetParticipantStateRoot(ctx context.Context, arg GetParticipan
 }
 
 const getParticipantStateSeries = `-- name: GetParticipantStateSeries :one
-SELECT series.id, series.tournament_id, series.roster_id, series.first_participant_id, series.second_participant_id, series.format, series.state, series.first_participant_wins, series.second_participant_wins, series.winner_id, series.current_score_revision_id, series.current_result_revision_id, series.revision, series.created_at, series.updated_at, series.started_at, series.finished_at,
+SELECT series.id, series.tournament_id, series.roster_id, series.first_participant_id, series.second_participant_id, series.format, series.state, series.first_participant_wins, series.second_participant_wins, series.winner_id, series.current_score_revision_id, series.current_result_revision_id, series.revision, series.created_at, series.updated_at, series.started_at, series.finished_at, series.supersedes_series_id, series.superseded_by_series_id, series.superseded_at, series.supersession_reason, series.content_configuration_id, series.content_configuration_revision, series.category_mode, series.effective_categories,
     COALESCE(current_draft.id::TEXT, '')::TEXT AS draft_id
 FROM participants AS participant
 JOIN rosters AS roster ON roster.id = participant.roster_id
@@ -389,6 +389,14 @@ func (q *Queries) GetParticipantStateSeries(ctx context.Context, arg GetParticip
 		&i.Series.UpdatedAt,
 		&i.Series.StartedAt,
 		&i.Series.FinishedAt,
+		&i.Series.SupersedesSeriesID,
+		&i.Series.SupersededBySeriesID,
+		&i.Series.SupersededAt,
+		&i.Series.SupersessionReason,
+		&i.Series.ContentConfigurationID,
+		&i.Series.ContentConfigurationRevision,
+		&i.Series.CategoryMode,
+		&i.Series.EffectiveCategories,
 		&i.DraftID,
 	)
 	return i, err

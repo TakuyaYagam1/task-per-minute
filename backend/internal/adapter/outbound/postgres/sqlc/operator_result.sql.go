@@ -541,7 +541,7 @@ func (q *Queries) LockOperatorForfeitAttempt(ctx context.Context, arg LockOperat
 }
 
 const lockOperatorForfeitSnapshot = `-- name: LockOperatorForfeitSnapshot :one
-SELECT series.id, series.tournament_id, series.roster_id, series.first_participant_id, series.second_participant_id, series.format, series.state, series.first_participant_wins, series.second_participant_wins, series.winner_id, series.current_score_revision_id, series.current_result_revision_id, series.revision, series.created_at, series.updated_at, series.started_at, series.finished_at,
+SELECT series.id, series.tournament_id, series.roster_id, series.first_participant_id, series.second_participant_id, series.format, series.state, series.first_participant_wins, series.second_participant_wins, series.winner_id, series.current_score_revision_id, series.current_result_revision_id, series.revision, series.created_at, series.updated_at, series.started_at, series.finished_at, series.supersedes_series_id, series.superseded_by_series_id, series.superseded_at, series.supersession_reason, series.content_configuration_id, series.content_configuration_revision, series.category_mode, series.effective_categories,
     score_head.series_id, score_head.roster_id, score_head.current_revision_id, score_head.revision, score_head.updated_at,
     COALESCE(series_revision.revision_number, 0)::BIGINT AS series_result_revision,
     COALESCE(active_pause.paused_from_state, '')::TEXT AS series_resume_state
@@ -604,6 +604,14 @@ func (q *Queries) LockOperatorForfeitSnapshot(ctx context.Context, arg LockOpera
 		&i.Series.UpdatedAt,
 		&i.Series.StartedAt,
 		&i.Series.FinishedAt,
+		&i.Series.SupersedesSeriesID,
+		&i.Series.SupersededBySeriesID,
+		&i.Series.SupersededAt,
+		&i.Series.SupersessionReason,
+		&i.Series.ContentConfigurationID,
+		&i.Series.ContentConfigurationRevision,
+		&i.Series.CategoryMode,
+		&i.Series.EffectiveCategories,
 		&i.SeriesScoreHead.SeriesID,
 		&i.SeriesScoreHead.RosterID,
 		&i.SeriesScoreHead.CurrentRevisionID,
@@ -739,7 +747,7 @@ func (q *Queries) LockOperatorNoShowReadiness(ctx context.Context, arg LockOpera
 }
 
 const lockOperatorNoShowSnapshot = `-- name: LockOperatorNoShowSnapshot :one
-SELECT series.id, series.tournament_id, series.roster_id, series.first_participant_id, series.second_participant_id, series.format, series.state, series.first_participant_wins, series.second_participant_wins, series.winner_id, series.current_score_revision_id, series.current_result_revision_id, series.revision, series.created_at, series.updated_at, series.started_at, series.finished_at,
+SELECT series.id, series.tournament_id, series.roster_id, series.first_participant_id, series.second_participant_id, series.format, series.state, series.first_participant_wins, series.second_participant_wins, series.winner_id, series.current_score_revision_id, series.current_result_revision_id, series.revision, series.created_at, series.updated_at, series.started_at, series.finished_at, series.supersedes_series_id, series.superseded_by_series_id, series.superseded_at, series.supersession_reason, series.content_configuration_id, series.content_configuration_revision, series.category_mode, series.effective_categories,
     score_head.series_id, score_head.roster_id, score_head.current_revision_id, score_head.revision, score_head.updated_at,
     wave.id, wave.tournament_id, wave.roster_id, wave.revision_id, wave.revision, wave.state, wave.replaces_wave_id, wave.created_at, wave.updated_at, wave.started_at, wave.paused_at, wave.closed_at,
     ready_window.id, ready_window.wave_id, ready_window.roster_id, ready_window.revision_id, ready_window.state, ready_window.opened_at, ready_window.deadline, ready_window.consumed_at, ready_window.created_at
@@ -819,6 +827,14 @@ func (q *Queries) LockOperatorNoShowSnapshot(ctx context.Context, arg LockOperat
 		&i.Series.UpdatedAt,
 		&i.Series.StartedAt,
 		&i.Series.FinishedAt,
+		&i.Series.SupersedesSeriesID,
+		&i.Series.SupersededBySeriesID,
+		&i.Series.SupersededAt,
+		&i.Series.SupersessionReason,
+		&i.Series.ContentConfigurationID,
+		&i.Series.ContentConfigurationRevision,
+		&i.Series.CategoryMode,
+		&i.Series.EffectiveCategories,
 		&i.SeriesScoreHead.SeriesID,
 		&i.SeriesScoreHead.RosterID,
 		&i.SeriesScoreHead.CurrentRevisionID,

@@ -371,6 +371,78 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/tournaments/{tournament_id}/configuration": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tournament_id: components["parameters"]["TournamentId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Read the operator tournament configuration
+         * @description Returns the authoritative tournament category pools and stage defaults. The final configuration is immutable BO3 with a five-category draft. The response is never stored by browsers or intermediary caches.
+         */
+        get: operations["getTournamentConfiguration"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Swiss and semifinal tournament defaults
+         * @description Updates only the mutable Swiss and semifinal defaults and category pools. The final BO3 five-category draft is immutable. The command requires both the tournament projection and configuration revisions plus explicit confirmation and unlock evidence.
+         */
+        patch: operations["updateTournamentConfiguration"];
+        trace?: never;
+    };
+    "/api/v1/admin/tournaments/{tournament_id}/series/{series_id}/configuration": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tournament_id: components["parameters"]["TournamentId"];
+                series_id: components["parameters"]["SeriesId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update an unstarted Series configuration
+         * @description Updates the effective category mode and categories for an unstarted Series. The command is rejected after the Series starts and requires both the tournament projection revision and the Series revision.
+         */
+        patch: operations["updateTournamentSeriesConfiguration"];
+        trace?: never;
+    };
+    "/api/v1/admin/tournaments/{tournament_id}/swiss/rounds/{round_number}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tournament_id: components["parameters"]["TournamentId"];
+                round_number: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Replace one Swiss round configuration
+         * @description Replaces the category mode and category set for one Swiss round. The command is revision-aware and requires explicit confirmation and unlock evidence.
+         */
+        put: operations["replaceTournamentSwissRoundConfiguration"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/tournaments/{tournament_id}/roster": {
         parameters: {
             query?: never;
@@ -1390,6 +1462,195 @@ export interface components {
             published_at: string;
         };
         /** @enum {string} */
+        Category: "web" | "crypto" | "forensics" | "reverse" | "pwn" | "steganography" | "ppc" | "osint" | "mobile" | "hardware" | "misc";
+        /** @enum {string} */
+        SeriesFormat: "bo1" | "bo3";
+        /** @description Immutable category pool revision available to tournament stages. */
+        TournamentConfigurationCategoryPool: {
+            readonly categories: components["schemas"]["Category"][];
+            format: components["schemas"]["SeriesFormat"];
+            /** Format: uuid */
+            readonly id: string;
+            /** Format: int64 */
+            readonly revision: number;
+        };
+        /** @description Immutable final BO3 five-category draft default. */
+        TournamentConfigurationFinalDefault: {
+            readonly categories: components["schemas"]["Category"][];
+            /** @enum {string} */
+            readonly mode: "draft";
+        };
+        /** @enum {string} */
+        CategoryMode: "random" | "admin" | "draft";
+        TournamentConfigurationStageDefault: {
+            categories: components["schemas"]["Category"][];
+            mode: components["schemas"]["CategoryMode"];
+        };
+        ConfigurationParticipantPair: {
+            /** Format: uuid */
+            first_participant_id: string;
+            /** Format: uuid */
+            second_participant_id: string;
+        };
+        /** @description Exact compare-and-set evidence for releasing an affected reservation. */
+        ConfigurationUnlockIntent: {
+            binding_digest: string;
+            evidence_digest: string;
+            expected_disclosed: boolean;
+            /** Format: int64 */
+            expected_revision: number;
+            expected_used: boolean;
+            /** Format: uuid */
+            owner_id: string;
+            /** Format: uuid */
+            reservation_id: string;
+            /** Format: uuid */
+            source_revision_id: string;
+        };
+        /** @description Current operator authority for one editable Swiss round. */
+        TournamentConfigurationRound: {
+            /** Format: uuid */
+            readonly bye_participant_id: string | null;
+            categories: components["schemas"]["Category"][];
+            readonly consumed: boolean;
+            readonly disclosed: boolean;
+            /** Format: uuid */
+            readonly id: string;
+            readonly locked: boolean;
+            mode: components["schemas"]["CategoryMode"];
+            pairings: components["schemas"]["ConfigurationParticipantPair"][];
+            /** Format: int64 */
+            readonly revision: number;
+            /** Format: int32 */
+            readonly round_number: number;
+            readonly started: boolean;
+            readonly unlock_intents: components["schemas"]["ConfigurationUnlockIntent"][];
+        };
+        /** @description Effective operator-visible category configuration for one Series. */
+        TournamentConfigurationSeries: {
+            categories: components["schemas"]["Category"][];
+            /** Format: int64 */
+            readonly category_pool_revision: number;
+            /** Format: uuid */
+            readonly category_pool_revision_id: string;
+            readonly consumed: boolean;
+            readonly disclosed: boolean;
+            /** Format: uuid */
+            readonly id: string;
+            readonly locked: boolean;
+            mode: components["schemas"]["CategoryMode"];
+            /** Format: int64 */
+            readonly revision: number;
+            /** Format: int32 */
+            readonly round_number: number;
+            /** @enum {string} */
+            readonly stage: "swiss" | "golden" | "semifinal" | "final";
+            readonly started: boolean;
+            readonly unlock_intents: components["schemas"]["ConfigurationUnlockIntent"][];
+        };
+        TournamentConfiguration: {
+            category_pools: components["schemas"]["TournamentConfigurationCategoryPool"][];
+            /** Format: int64 */
+            readonly configuration_revision: number;
+            final_default: components["schemas"]["TournamentConfigurationFinalDefault"];
+            golden_default: components["schemas"]["TournamentConfigurationStageDefault"];
+            /** Format: int64 */
+            readonly projection_revision: number;
+            /** Format: uuid */
+            readonly projection_revision_id: string;
+            rounds: components["schemas"]["TournamentConfigurationRound"][];
+            semifinal_default: components["schemas"]["TournamentConfigurationStageDefault"];
+            series: components["schemas"]["TournamentConfigurationSeries"][];
+            swiss_default: components["schemas"]["TournamentConfigurationStageDefault"];
+            /** Format: uuid */
+            readonly tournament_id: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+        };
+        TournamentConfigurationStageDefaultInput: {
+            categories: components["schemas"]["Category"][];
+            mode: components["schemas"]["CategoryMode"];
+        };
+        UpdateTournamentConfigurationRequest: {
+            /** @enum {boolean} */
+            confirmed: true;
+            /** Format: int64 */
+            expected_configuration_revision: number;
+            /** Format: int64 */
+            expected_projection_revision: number;
+            reason: string;
+            semifinal_default: components["schemas"]["TournamentConfigurationStageDefaultInput"];
+            swiss_default: components["schemas"]["TournamentConfigurationStageDefaultInput"];
+            unlock_intents: components["schemas"]["ConfigurationUnlockIntent"][];
+        };
+        ConfigurationArtifact: {
+            /** Format: uuid */
+            id: string;
+            kind: string;
+            /** Format: uuid */
+            previous_revision_id: string;
+            /** @enum {string} */
+            stage: "swiss" | "golden" | "semifinal" | "final";
+            /** Format: uuid */
+            successor_revision_id: string;
+        };
+        TournamentConfigurationMutationEvidence: {
+            readonly affected_artifact_ids: string[];
+            readonly affected_artifacts: components["schemas"]["ConfigurationArtifact"][];
+            /** Format: uuid */
+            readonly command_id: string;
+            /** Format: int64 */
+            readonly next_configuration_revision: number;
+            /** Format: uuid */
+            readonly operator_id: string;
+            /** Format: int64 */
+            readonly previous_configuration_revision: number;
+            readonly reason: string;
+            readonly rebuilt_artifact_ids: string[];
+            /** Format: date-time */
+            readonly requested_at: string;
+            readonly superseded_artifact_ids: string[];
+            /** Format: uuid */
+            readonly tournament_id: string;
+            readonly unlock_intents: components["schemas"]["ConfigurationUnlockIntent"][];
+            readonly validation_digest: string;
+        };
+        /** @description Stable optimistic-concurrency details that can accompany a 409 response. */
+        ProjectionRevisionProblem: components["schemas"]["ProblemDetails"] & {
+            /** Format: int64 */
+            current_revision: number;
+            current_state?: components["schemas"]["TournamentState"];
+            /** Format: int64 */
+            expected_revision: number;
+        };
+        UpdateTournamentSeriesConfigurationRequest: {
+            categories: components["schemas"]["Category"][];
+            /** @enum {boolean} */
+            confirmed: true;
+            /** Format: int64 */
+            expected_projection_revision: number;
+            /** Format: int64 */
+            expected_series_revision: number;
+            mode: components["schemas"]["CategoryMode"];
+            reason: string;
+            unlock_intents: components["schemas"]["ConfigurationUnlockIntent"][];
+        };
+        ReplaceTournamentSwissRoundConfigurationRequest: {
+            categories: components["schemas"]["Category"][];
+            /** @enum {boolean} */
+            confirmed: true;
+            /** Format: int64 */
+            expected_projection_revision: number;
+            /** Format: int64 */
+            expected_round_revision: number;
+            /** Format: uuid */
+            manual_bye_participant_id?: string | null;
+            manual_pairings?: components["schemas"]["ConfigurationParticipantPair"][];
+            mode: components["schemas"]["CategoryMode"];
+            reason: string;
+            unlock_intents: components["schemas"]["ConfigurationUnlockIntent"][];
+        };
+        /** @enum {string} */
         AttendanceState: "invited" | "registered" | "checked_in" | "withdrawn";
         Participant: {
             attendance: components["schemas"]["AttendanceState"];
@@ -1441,14 +1702,6 @@ export interface components {
             expected_projection_revision: number;
             participants: components["schemas"]["RosterParticipantInput"][];
         };
-        /** @description Stable optimistic-concurrency details that can accompany a 409 response. */
-        ProjectionRevisionProblem: components["schemas"]["ProblemDetails"] & {
-            /** Format: int64 */
-            current_revision: number;
-            current_state?: components["schemas"]["TournamentState"];
-            /** Format: int64 */
-            expected_revision: number;
-        };
         PreflightRequest: {
             /** Format: int64 */
             expected_projection_revision: number;
@@ -1494,10 +1747,6 @@ export interface components {
             expected_projection_revision: number;
             reason: string;
         };
-        /** @enum {string} */
-        Category: "web" | "crypto" | "forensics" | "reverse" | "pwn" | "steganography" | "ppc" | "osint" | "mobile" | "hardware" | "misc";
-        /** @enum {string} */
-        CategoryMode: "random" | "admin" | "draft";
         ManualPairInput: {
             /** Format: uuid */
             first_participant_id: string;
@@ -2072,8 +2321,6 @@ export interface components {
             /** Format: date-time */
             readonly turn_deadline: string;
         };
-        /** @enum {string} */
-        SeriesFormat: "bo1" | "bo3";
         /** @enum {string} */
         DraftState: "active" | "completed";
         Draft: {
@@ -2867,8 +3114,8 @@ export interface components {
         TournamentPageSize: number;
         IdempotencyKey: string;
         TournamentId: string;
-        WaveId: string;
         SeriesId: string;
+        WaveId: string;
         AssignmentId: string;
         GameId: string;
         AuditTournamentId: string;
@@ -4135,6 +4382,152 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
+            429: components["responses"]["RateLimitedProblem"];
+            default: components["responses"]["UnexpectedServerProblem"];
+        };
+    };
+    getTournamentConfiguration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tournament_id: components["parameters"]["TournamentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Operator tournament configuration. */
+            200: {
+                headers: {
+                    /** @description Configuration must not be stored by browsers or intermediary caches. */
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TournamentConfiguration"];
+                };
+            };
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            422: components["responses"]["InvalidRequestProblem"];
+            429: components["responses"]["RateLimitedProblem"];
+            default: components["responses"]["UnexpectedServerProblem"];
+        };
+    };
+    updateTournamentConfiguration: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description Cookie-bound CSRF token required for this admin mutation. */
+                "X-CSRF-Token": components["parameters"]["AdminCSRFToken"];
+            };
+            path: {
+                tournament_id: components["parameters"]["TournamentId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateTournamentConfigurationRequest"];
+            };
+        };
+        responses: {
+            /** @description Immutable evidence for the tournament configuration mutation. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TournamentConfigurationMutationEvidence"];
+                };
+            };
+            400: components["responses"]["InvalidRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            409: components["responses"]["ProjectionRevisionConflictProblem"];
+            422: components["responses"]["InvalidRequestProblem"];
+            429: components["responses"]["RateLimitedProblem"];
+            default: components["responses"]["UnexpectedServerProblem"];
+        };
+    };
+    updateTournamentSeriesConfiguration: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description Cookie-bound CSRF token required for this admin mutation. */
+                "X-CSRF-Token": components["parameters"]["AdminCSRFToken"];
+            };
+            path: {
+                tournament_id: components["parameters"]["TournamentId"];
+                series_id: components["parameters"]["SeriesId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateTournamentSeriesConfigurationRequest"];
+            };
+        };
+        responses: {
+            /** @description Immutable evidence for the Series configuration mutation. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TournamentConfigurationMutationEvidence"];
+                };
+            };
+            400: components["responses"]["InvalidRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            409: components["responses"]["ProjectionRevisionConflictProblem"];
+            422: components["responses"]["InvalidRequestProblem"];
+            429: components["responses"]["RateLimitedProblem"];
+            default: components["responses"]["UnexpectedServerProblem"];
+        };
+    };
+    replaceTournamentSwissRoundConfiguration: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description Cookie-bound CSRF token required for this admin mutation. */
+                "X-CSRF-Token": components["parameters"]["AdminCSRFToken"];
+            };
+            path: {
+                tournament_id: components["parameters"]["TournamentId"];
+                round_number: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReplaceTournamentSwissRoundConfigurationRequest"];
+            };
+        };
+        responses: {
+            /** @description Immutable evidence for the Swiss round configuration mutation. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TournamentConfigurationMutationEvidence"];
+                };
+            };
+            400: components["responses"]["InvalidRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            409: components["responses"]["ProjectionRevisionConflictProblem"];
+            422: components["responses"]["InvalidRequestProblem"];
             429: components["responses"]["RateLimitedProblem"];
             default: components["responses"]["UnexpectedServerProblem"];
         };

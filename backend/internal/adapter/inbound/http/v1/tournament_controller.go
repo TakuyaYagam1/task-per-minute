@@ -22,15 +22,21 @@ import (
 )
 
 type tournamentController struct {
-	catalog inbound.TournamentUseCase
-	admin   inbound.TournamentAdminUseCase
+	catalog       inbound.TournamentUseCase
+	admin         inbound.TournamentAdminUseCase
+	configuration inbound.TournamentConfigurationUseCase
 }
 
 func newTournamentController(
 	catalog inbound.TournamentUseCase,
 	admin inbound.TournamentAdminUseCase,
+	configuration ...inbound.TournamentConfigurationUseCase,
 ) *tournamentController {
-	return &tournamentController{catalog: catalog, admin: admin}
+	controller := &tournamentController{catalog: catalog, admin: admin}
+	if len(configuration) > 0 {
+		controller.configuration = configuration[0]
+	}
+	return controller
 }
 
 func (c *tournamentController) ListTournaments(

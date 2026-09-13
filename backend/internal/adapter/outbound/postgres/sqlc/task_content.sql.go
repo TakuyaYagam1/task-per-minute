@@ -182,6 +182,7 @@ INSERT INTO tournament_content_stage_defaults (
     category_mode,
     category_pool_revision_id,
     task_pool_kind,
+    categories,
     created_at
 )
 VALUES (
@@ -191,7 +192,8 @@ VALUES (
     $4,
     $5,
     $6,
-    $7
+    $7::JSONB,
+    $8
 )
 `
 
@@ -202,6 +204,7 @@ type CreateTournamentContentStageDefaultParams struct {
 	CategoryMode           string
 	CategoryPoolRevisionID uuid.UUID
 	TaskPoolKind           string
+	Categories             []byte
 	CreatedAt              pgtype.Timestamptz
 }
 
@@ -213,6 +216,7 @@ func (q *Queries) CreateTournamentContentStageDefault(ctx context.Context, arg C
 		arg.CategoryMode,
 		arg.CategoryPoolRevisionID,
 		arg.TaskPoolKind,
+		arg.Categories,
 		arg.CreatedAt,
 	)
 	return err
@@ -530,15 +534,25 @@ WHERE stage_default.configuration_id = $1
 ORDER BY stage_default.stage
 `
 
-func (q *Queries) ListTournamentContentStageDefaults(ctx context.Context, configurationID uuid.UUID) ([]TournamentContentStageDefault, error) {
+type ListTournamentContentStageDefaultsRow struct {
+	ConfigurationID        uuid.UUID
+	Stage                  string
+	Format                 string
+	CategoryMode           string
+	CategoryPoolRevisionID uuid.UUID
+	TaskPoolKind           string
+	CreatedAt              pgtype.Timestamptz
+}
+
+func (q *Queries) ListTournamentContentStageDefaults(ctx context.Context, configurationID uuid.UUID) ([]ListTournamentContentStageDefaultsRow, error) {
 	rows, err := q.db.Query(ctx, listTournamentContentStageDefaults, configurationID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []TournamentContentStageDefault{}
+	items := []ListTournamentContentStageDefaultsRow{}
 	for rows.Next() {
-		var i TournamentContentStageDefault
+		var i ListTournamentContentStageDefaultsRow
 		if err := rows.Scan(
 			&i.ConfigurationID,
 			&i.Stage,

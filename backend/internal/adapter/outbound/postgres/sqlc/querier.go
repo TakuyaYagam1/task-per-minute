@@ -52,6 +52,10 @@ type Querier interface {
 	ClaimRealtimeDelivery(ctx context.Context, arg ClaimRealtimeDeliveryParams) (uuid.UUID, error)
 	ClaimRealtimeOutboxEvents(ctx context.Context, arg ClaimRealtimeOutboxEventsParams) ([]ClaimRealtimeOutboxEventsRow, error)
 	ClearGoldenMembershipReady(ctx context.Context, arg ClearGoldenMembershipReadyParams) (uuid.UUID, error)
+	// An unbound readiness head can be cleared under its normal revision guard.
+	// A bound head remains retained evidence and is invalidated by the immutable
+	// edit record plus supersession of its ready window.
+	ClearTournamentConfigurationEditUnboundReadinessCAS(ctx context.Context, arg ClearTournamentConfigurationEditUnboundReadinessCASParams) ([]ClearTournamentConfigurationEditUnboundReadinessCASRow, error)
 	ClearWaveReadinessHeads(ctx context.Context, arg ClearWaveReadinessHeadsParams) ([]WaveReadiness, error)
 	CloseGoldenReadyDisconnectCAS(ctx context.Context, arg CloseGoldenReadyDisconnectCASParams) (GoldenReadyDisconnect, error)
 	CloseReadyWindowCAS(ctx context.Context, arg CloseReadyWindowCASParams) (ReadyWindow, error)
@@ -68,7 +72,7 @@ type Querier interface {
 	CompleteTournamentFromFinalProjectionCAS(ctx context.Context, arg CompleteTournamentFromFinalProjectionCASParams) (CompleteTournamentFromFinalProjectionCASRow, error)
 	ConsumeReadyWindowCAS(ctx context.Context, arg ConsumeReadyWindowCASParams) (ReadyWindow, error)
 	CorrectGameAttemptCAS(ctx context.Context, arg CorrectGameAttemptCASParams) (CorrectGameAttemptCASRow, error)
-	CorrectSeriesCAS(ctx context.Context, arg CorrectSeriesCASParams) (Series, error)
+	CorrectSeriesCAS(ctx context.Context, arg CorrectSeriesCASParams) (CorrectSeriesCASRow, error)
 	CountGoldenRuntimeGroupCommits(ctx context.Context, arg CountGoldenRuntimeGroupCommitsParams) (int32, error)
 	CountWaveMembers(ctx context.Context, waveID uuid.UUID) (int64, error)
 	CountWaveReadiness(ctx context.Context, readyWindowID uuid.NullUUID) (int64, error)
@@ -243,7 +247,7 @@ type Querier interface {
 	CreateResultProjectionNode(ctx context.Context, arg CreateResultProjectionNodeParams) error
 	CreateResultProjectionNodeAuthority(ctx context.Context, arg CreateResultProjectionNodeAuthorityParams) error
 	CreateResultSubmissionEvent(ctx context.Context, arg CreateResultSubmissionEventParams) (SubmissionEvent, error)
-	CreateSeries(ctx context.Context, arg CreateSeriesParams) (Series, error)
+	CreateSeries(ctx context.Context, arg CreateSeriesParams) (CreateSeriesRow, error)
 	// Materialized Swiss categories are immutable executable authority.  The
 	// selected categories and their lock evidence live on the category revision so
 	// exact-normal assignment planning can bind to the same row in one tx.
@@ -280,6 +284,17 @@ type Querier interface {
 	CreateTournamentCancellationOutboxEvent(ctx context.Context, arg CreateTournamentCancellationOutboxEventParams) (CreateTournamentCancellationOutboxEventRow, error)
 	CreateTournamentCategoryPoolMembership(ctx context.Context, arg CreateTournamentCategoryPoolMembershipParams) error
 	CreateTournamentCategoryPoolRevision(ctx context.Context, arg CreateTournamentCategoryPoolRevisionParams) (uuid.UUID, error)
+	CreateTournamentConfigurationEditArtifactLineage(ctx context.Context, arg CreateTournamentConfigurationEditArtifactLineageParams) (CreateTournamentConfigurationEditArtifactLineageRow, error)
+	CreateTournamentConfigurationEditCommand(ctx context.Context, arg CreateTournamentConfigurationEditCommandParams) (CreateTournamentConfigurationEditCommandRow, error)
+	// The draft revision is derived from the locked active head.  Existing
+	// published configurations are never updated or deleted.
+	CreateTournamentConfigurationEditDraft(ctx context.Context, arg CreateTournamentConfigurationEditDraftParams) (TournamentContentConfiguration, error)
+	CreateTournamentConfigurationEditInvalidation(ctx context.Context, arg CreateTournamentConfigurationEditInvalidationParams) (CreateTournamentConfigurationEditInvalidationRow, error)
+	CreateTournamentConfigurationEditPoolMembership(ctx context.Context, arg CreateTournamentConfigurationEditPoolMembershipParams) (TournamentCategoryPoolMembership, error)
+	CreateTournamentConfigurationEditPoolRevision(ctx context.Context, arg CreateTournamentConfigurationEditPoolRevisionParams) (TournamentCategoryPoolRevision, error)
+	CreateTournamentConfigurationEditSeriesSuccessor(ctx context.Context, arg CreateTournamentConfigurationEditSeriesSuccessorParams) (CreateTournamentConfigurationEditSeriesSuccessorRow, error)
+	CreateTournamentConfigurationEditStageDefault(ctx context.Context, arg CreateTournamentConfigurationEditStageDefaultParams) (CreateTournamentConfigurationEditStageDefaultRow, error)
+	CreateTournamentConfigurationEditUnlockIntent(ctx context.Context, arg CreateTournamentConfigurationEditUnlockIntentParams) (TournamentConfigurationEditUnlockIntent, error)
 	CreateTournamentContentConfiguration(ctx context.Context, arg CreateTournamentContentConfigurationParams) (uuid.UUID, error)
 	CreateTournamentContentStageDefault(ctx context.Context, arg CreateTournamentContentStageDefaultParams) error
 	CreateTournamentLifecycleCommand(ctx context.Context, arg CreateTournamentLifecycleCommandParams) (uuid.UUID, error)
@@ -456,6 +471,14 @@ type Querier interface {
 	GetTournamentAdminReplayTime(ctx context.Context) (pgtype.Timestamptz, error)
 	GetTournamentAdminRoster(ctx context.Context, tournamentID uuid.UUID) (Roster, error)
 	GetTournamentAdminSnapshotHeader(ctx context.Context, tournamentID uuid.UUID) (GetTournamentAdminSnapshotHeaderRow, error)
+	GetTournamentConfigurationEditAuthority(ctx context.Context, arg GetTournamentConfigurationEditAuthorityParams) (GetTournamentConfigurationEditAuthorityRow, error)
+	GetTournamentConfigurationEditCommand(ctx context.Context, arg GetTournamentConfigurationEditCommandParams) (TournamentConfigurationEditCommand, error)
+	GetTournamentConfigurationEditConfiguration(ctx context.Context, arg GetTournamentConfigurationEditConfigurationParams) (GetTournamentConfigurationEditConfigurationRow, error)
+	// POST-MVP-031 configuration edits are fenced by one projection/cutoff
+	// snapshot.  The write queries repeat the fence so a caller cannot turn a
+	// stale read into a published configuration by omitting the outer lock.
+	GetTournamentConfigurationEditRoster(ctx context.Context, tournamentID uuid.UUID) (GetTournamentConfigurationEditRosterRow, error)
+	GetTournamentConfigurationEditSeriesWave(ctx context.Context, arg GetTournamentConfigurationEditSeriesWaveParams) (GetTournamentConfigurationEditSeriesWaveRow, error)
 	GetTournamentCreateReceipt(ctx context.Context, commandID uuid.UUID) (TournamentCreateCommandReceipt, error)
 	GetTournamentExecutionRevisionSnapshot(ctx context.Context, arg GetTournamentExecutionRevisionSnapshotParams) ([]byte, error)
 	GetTournamentPreflightRound(ctx context.Context, rosterID uuid.UUID) (GetTournamentPreflightRoundRow, error)
@@ -474,6 +497,9 @@ type Querier interface {
 	InsertTournamentCreateReceipt(ctx context.Context, arg InsertTournamentCreateReceiptParams) (TournamentCreateCommandReceipt, error)
 	InsertTournamentParticipant(ctx context.Context, arg InsertTournamentParticipantParams) (Participant, error)
 	LinkProjectionArtifact(ctx context.Context, arg LinkProjectionArtifactParams) (ProjectionRevisionArtifact, error)
+	// The read surface intentionally filters superseded Series identities.  The
+	// old rows remain queryable through the edit ledger and lineage tables.
+	ListActiveTournamentConfigurationEditSeries(ctx context.Context, arg ListActiveTournamentConfigurationEditSeriesParams) ([]ListActiveTournamentConfigurationEditSeriesRow, error)
 	ListAdminPlayerAuditEventsByPlayer(ctx context.Context, arg ListAdminPlayerAuditEventsByPlayerParams) ([]AdminPlayerAuditEvent, error)
 	ListAdminPlayers(ctx context.Context, dollar_1 bool) ([]ListAdminPlayersRow, error)
 	ListAssignmentBranches(ctx context.Context, planID uuid.UUID) ([]ListAssignmentBranchesRow, error)
@@ -572,9 +598,24 @@ type Querier interface {
 	ListTournamentAdminSnapshotSeries(ctx context.Context, arg ListTournamentAdminSnapshotSeriesParams) ([]Series, error)
 	ListTournamentAdminSnapshotWaveMembers(ctx context.Context, arg ListTournamentAdminSnapshotWaveMembersParams) ([]ListTournamentAdminSnapshotWaveMembersRow, error)
 	ListTournamentAdminSnapshotWaves(ctx context.Context, arg ListTournamentAdminSnapshotWavesParams) ([]ListTournamentAdminSnapshotWavesRow, error)
+	ListTournamentConfigurationEditInvalidations(ctx context.Context, arg ListTournamentConfigurationEditInvalidationsParams) ([]TournamentConfigurationEditInvalidation, error)
+	ListTournamentConfigurationEditLineage(ctx context.Context, arg ListTournamentConfigurationEditLineageParams) ([]TournamentConfigurationEditArtifact, error)
+	ListTournamentConfigurationEditPoolMemberships(ctx context.Context, configurationID uuid.UUID) ([]TournamentCategoryPoolMembership, error)
+	ListTournamentConfigurationEditPoolRevisions(ctx context.Context, configurationID uuid.UUID) ([]TournamentCategoryPoolRevision, error)
+	// Reservation ownership is resolved through the immutable assignment plan
+	// source draft. The caller still supplies exact reservation IDs when it
+	// mutates; this read is only for cutoff and unlock-intent validation.
+	ListTournamentConfigurationEditReservations(ctx context.Context, arg ListTournamentConfigurationEditReservationsParams) ([]ListTournamentConfigurationEditReservationsRow, error)
+	// Series does not duplicate its stage identity. Resolve it from the retained
+	// Swiss Wave and playoff evidence instead of adding a mutable stage column.
+	// A remaining unstarted Series belongs to the Golden stage in the tournament
+	// lifecycle and is therefore the safe fallback here.
+	ListTournamentConfigurationEditSeriesStageBindings(ctx context.Context, arg ListTournamentConfigurationEditSeriesStageBindingsParams) ([]ListTournamentConfigurationEditSeriesStageBindingsRow, error)
+	ListTournamentConfigurationEditStageDefaults(ctx context.Context, configurationID uuid.UUID) ([]ListTournamentConfigurationEditStageDefaultsRow, error)
+	ListTournamentConfigurationEditSwissRounds(ctx context.Context, arg ListTournamentConfigurationEditSwissRoundsParams) ([]ListTournamentConfigurationEditSwissRoundsRow, error)
 	ListTournamentContentCategoryPoolMemberships(ctx context.Context, configurationID uuid.UUID) ([]TournamentCategoryPoolMembership, error)
 	ListTournamentContentCategoryPoolRevisions(ctx context.Context, configurationID uuid.UUID) ([]TournamentCategoryPoolRevision, error)
-	ListTournamentContentStageDefaults(ctx context.Context, configurationID uuid.UUID) ([]TournamentContentStageDefault, error)
+	ListTournamentContentStageDefaults(ctx context.Context, configurationID uuid.UUID) ([]ListTournamentContentStageDefaultsRow, error)
 	ListTournamentParticipants(ctx context.Context, rosterID uuid.UUID) ([]ListTournamentParticipantsRow, error)
 	ListTournamentPreflightPairings(ctx context.Context, arg ListTournamentPreflightPairingsParams) ([]ListTournamentPreflightPairingsRow, error)
 	ListTournamentPreflightParticipants(ctx context.Context, arg ListTournamentPreflightParticipantsParams) ([]ListTournamentPreflightParticipantsRow, error)
@@ -775,6 +816,8 @@ type Querier interface {
 	LockTournamentAdminWaveSeries(ctx context.Context, waveID uuid.UUID) ([]LockTournamentAdminWaveSeriesRow, error)
 	LockTournamentCancellationAuthority(ctx context.Context, tournamentID uuid.UUID) (LockTournamentCancellationAuthorityRow, error)
 	LockTournamentCancellationOutboxIdempotency(ctx context.Context, idempotencyKey string) error
+	LockTournamentConfigurationEditAuthority(ctx context.Context, arg LockTournamentConfigurationEditAuthorityParams) (LockTournamentConfigurationEditAuthorityRow, error)
+	LockTournamentConfigurationEditReservations(ctx context.Context, arg LockTournamentConfigurationEditReservationsParams) ([]LockTournamentConfigurationEditReservationsRow, error)
 	LockTournamentCreateCommand(ctx context.Context, commandID string) (int32, error)
 	LockTournamentLifecycleAssignments(ctx context.Context, arg LockTournamentLifecycleAssignmentsParams) ([]uuid.UUID, error)
 	LockTournamentLifecycleAuthority(ctx context.Context, tournamentID uuid.UUID) (LockTournamentLifecycleAuthorityRow, error)
@@ -941,6 +984,7 @@ type Querier interface {
 	PauseTournamentAdminWaveGames(ctx context.Context, arg PauseTournamentAdminWaveGamesParams) ([]uuid.UUID, error)
 	PauseTournamentAdminWaveSeries(ctx context.Context, arg PauseTournamentAdminWaveSeriesParams) ([]uuid.UUID, error)
 	PublishProjectionRevisionCAS(ctx context.Context, arg PublishProjectionRevisionCASParams) (ProjectionRevision, error)
+	PublishTournamentConfigurationEditDraftCAS(ctx context.Context, arg PublishTournamentConfigurationEditDraftCASParams) (PublishTournamentConfigurationEditDraftCASRow, error)
 	PublishTournamentContentConfiguration(ctx context.Context, arg PublishTournamentContentConfigurationParams) (uuid.UUID, error)
 	ReadExecutionAuthorityTime(ctx context.Context) (pgtype.Timestamptz, error)
 	ReadTournamentExecutionTime(ctx context.Context) (pgtype.Timestamptz, error)
@@ -970,6 +1014,10 @@ type Querier interface {
 	ReleaseOtherAssignmentBranches(ctx context.Context, arg ReleaseOtherAssignmentBranchesParams) ([]uuid.UUID, error)
 	ReleaseRealtimeOutboxClaims(ctx context.Context, workerID uuid.NullUUID) (int64, error)
 	ReleaseTournamentAdminCorrectionReservationCAS(ctx context.Context, arg ReleaseTournamentAdminCorrectionReservationCASParams) (ReleaseTournamentAdminCorrectionReservationCASRow, error)
+	// Reserved undisclosed rows may be released. Committed undisclosed rows must
+	// remain committed evidence and are superseded instead. Disclosed rows cannot
+	// match this mutation and therefore cannot be made available again.
+	ReleaseTournamentConfigurationEditReservations(ctx context.Context, arg ReleaseTournamentConfigurationEditReservationsParams) ([]ReleaseTournamentConfigurationEditReservationsRow, error)
 	ReleaseTournamentReservations(ctx context.Context, tournamentID uuid.UUID) (int64, error)
 	ReplaceWithdrawnTournamentParticipant(ctx context.Context, arg ReplaceWithdrawnTournamentParticipantParams) (Participant, error)
 	ReserveCheckedInTournamentParticipants(ctx context.Context, arg ReserveCheckedInTournamentParticipantsParams) ([]uuid.UUID, error)
@@ -992,7 +1040,7 @@ type Querier interface {
 	SetParticipantReadinessHead(ctx context.Context, arg SetParticipantReadinessHeadParams) (WaveReadiness, error)
 	SetParticipantWaveReadiness(ctx context.Context, arg SetParticipantWaveReadinessParams) (Wave, error)
 	SettleGameAttemptCAS(ctx context.Context, arg SettleGameAttemptCASParams) (SettleGameAttemptCASRow, error)
-	SettleSeriesCAS(ctx context.Context, arg SettleSeriesCASParams) (Series, error)
+	SettleSeriesCAS(ctx context.Context, arg SettleSeriesCASParams) (SettleSeriesCASRow, error)
 	SoftDeletePlayer(ctx context.Context, arg SoftDeletePlayerParams) (Player, error)
 	StartGoldenRuntimeAssignment(ctx context.Context, arg StartGoldenRuntimeAssignmentParams) (uuid.UUID, error)
 	StartTournamentAdminWaveGames(ctx context.Context, arg StartTournamentAdminWaveGamesParams) ([]uuid.UUID, error)
@@ -1002,6 +1050,14 @@ type Querier interface {
 	StartWaveSeriesCAS(ctx context.Context, arg StartWaveSeriesCASParams) (StartWaveSeriesCASRow, error)
 	SupersedeAssignmentCAS(ctx context.Context, arg SupersedeAssignmentCASParams) (Assignment, error)
 	SupersedeProjectionRevisionCAS(ctx context.Context, arg SupersedeProjectionRevisionCASParams) (ProjectionRevision, error)
+	// Wave/readiness evidence cannot be deleted. These mutations close an
+	// undisclosed unstarted execution lineage so a new graph can be created.
+	SupersedeTournamentConfigurationEditReadyWindowCAS(ctx context.Context, arg SupersedeTournamentConfigurationEditReadyWindowCASParams) (SupersedeTournamentConfigurationEditReadyWindowCASRow, error)
+	// The successor is inserted first because the Series superseded_by FK is
+	// restrictive and immediate. This update then closes the old identity at
+	// revision + 1 while retaining all result and assignment references.
+	SupersedeTournamentConfigurationEditSeriesCAS(ctx context.Context, arg SupersedeTournamentConfigurationEditSeriesCASParams) (SupersedeTournamentConfigurationEditSeriesCASRow, error)
+	SupersedeTournamentConfigurationEditWaveCAS(ctx context.Context, arg SupersedeTournamentConfigurationEditWaveCASParams) (SupersedeTournamentConfigurationEditWaveCASRow, error)
 	TaskReferencedByTournament(ctx context.Context, taskID uuid.UUID) (bool, error)
 	TopLeaderboardStats(ctx context.Context, limit int32) ([]TopLeaderboardStatsRow, error)
 	TransitionReplaySeriesCAS(ctx context.Context, arg TransitionReplaySeriesCASParams) (TransitionReplaySeriesCASRow, error)
@@ -1016,6 +1072,9 @@ type Querier interface {
 	UpdatePlayerUsername(ctx context.Context, arg UpdatePlayerUsernameParams) (Player, error)
 	UpdateTask(ctx context.Context, arg UpdateTaskParams) (UpdateTaskRow, error)
 	UpdateTournamentCAS(ctx context.Context, arg UpdateTournamentCASParams) (Tournament, error)
+	// A manual Swiss round can be retargeted while its Wave is still planned and
+	// no immutable start proof exists. Its identity remains stable.
+	UpdateTournamentConfigurationEditSwissRoundCAS(ctx context.Context, arg UpdateTournamentConfigurationEditSwissRoundCASParams) (UpdateTournamentConfigurationEditSwissRoundCASRow, error)
 	UpdateTournamentParticipantAttendanceCAS(ctx context.Context, arg UpdateTournamentParticipantAttendanceCASParams) (Participant, error)
 	UpsertPlayerLeaderboardOverride(ctx context.Context, arg UpsertPlayerLeaderboardOverrideParams) (PlayerLeaderboardOverride, error)
 }

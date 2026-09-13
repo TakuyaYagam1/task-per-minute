@@ -22,6 +22,7 @@ type SwissPostgres struct {
 
 type SwissRoundMeta struct {
 	ID                    uuid.UUID
+	TournamentID          uuid.UUID
 	RosterID              uuid.UUID
 	RoundNumber           int16
 	SourceRosterRevision  int64

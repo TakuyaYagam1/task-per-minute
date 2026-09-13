@@ -1790,7 +1790,7 @@ func (q *Queries) LockFinalSwissPublicationGames(ctx context.Context, arg LockFi
 
 const lockFinalSwissPublicationNodes = `-- name: LockFinalSwissPublicationNodes :many
 WITH selected_series AS (
-    SELECT series.id, series.tournament_id, series.roster_id, series.first_participant_id, series.second_participant_id, series.format, series.state, series.first_participant_wins, series.second_participant_wins, series.winner_id, series.current_score_revision_id, series.current_result_revision_id, series.revision, series.created_at, series.updated_at, series.started_at, series.finished_at
+    SELECT series.id, series.tournament_id, series.roster_id, series.first_participant_id, series.second_participant_id, series.format, series.state, series.first_participant_wins, series.second_participant_wins, series.winner_id, series.current_score_revision_id, series.current_result_revision_id, series.revision, series.created_at, series.updated_at, series.started_at, series.finished_at, series.supersedes_series_id, series.superseded_by_series_id, series.superseded_at, series.supersession_reason, series.content_configuration_id, series.content_configuration_revision, series.category_mode, series.effective_categories
     FROM swiss_round_lock_proof_series AS proof
     INNER JOIN series ON series.id = proof.series_id AND series.roster_id = proof.roster_id
     WHERE series.tournament_id = $2 AND series.roster_id = $3

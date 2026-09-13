@@ -633,7 +633,15 @@ SELECT id,
     created_at,
     updated_at,
     started_at,
-    finished_at
+    finished_at,
+    supersedes_series_id,
+    superseded_by_series_id,
+    superseded_at,
+    supersession_reason,
+    content_configuration_id,
+    content_configuration_revision,
+    category_mode,
+    effective_categories
 FROM series
 WHERE tournament_id = $1
     AND roster_id = $2
@@ -672,6 +680,14 @@ func (q *Queries) ListTournamentAdminSnapshotSeries(ctx context.Context, arg Lis
 			&i.UpdatedAt,
 			&i.StartedAt,
 			&i.FinishedAt,
+			&i.SupersedesSeriesID,
+			&i.SupersededBySeriesID,
+			&i.SupersededAt,
+			&i.SupersessionReason,
+			&i.ContentConfigurationID,
+			&i.ContentConfigurationRevision,
+			&i.CategoryMode,
+			&i.EffectiveCategories,
 		); err != nil {
 			return nil, err
 		}
