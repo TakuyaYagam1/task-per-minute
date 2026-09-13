@@ -4,8 +4,11 @@ import { useEffect, useState } from "react";
 
 import {
   arenaApi,
+  createParticipantCommandIntent,
+  participantApi,
   readArenaResponse,
   readArenaVoidResponse,
+  type ParticipantMutationResult,
 } from "../../../../lib/shared/api/index";
 import type { components } from "../../../../lib/shared/api/schema";
 import { toPublicArenaView } from "../../../../lib/entities/tournament";
@@ -13,15 +16,26 @@ import { toPublicArenaView } from "../../../../lib/entities/tournament";
 const tournamentId = "00000000-0000-4000-8000-000000000001";
 const seriesId = "00000000-0000-4000-8000-000000000010";
 const waveId = "00000000-0000-4000-8000-000000000015";
+const assignmentId = "00000000-0000-4000-8000-000000000017";
+const attemptId = "00000000-0000-4000-8000-000000000018";
+const participantId = "00000000-0000-4000-8000-000000000019";
+const taskId = "00000000-0000-4000-8000-000000000020";
+const taskSnapshotId = "00000000-0000-4000-8000-000000000021";
+const receiptId = "00000000-0000-4000-8000-000000000022";
+const readyWindowId = "00000000-0000-4000-8000-000000000023";
 
 type PublicSnapshot = components["schemas"]["PublicRecoverySnapshot"];
 type NoShowRequest = components["schemas"]["OperatorNoShowRequest"];
 type ParticipantReadyRequest = components["schemas"]["ParticipantReadyRequest"];
+type ParticipantLobbyResponse = components["schemas"]["ParticipantLobbyResponse"];
+type ParticipantAssignmentResponse = components["schemas"]["ParticipantAssignmentResponse"];
+type ParticipantRecoverySnapshot = components["schemas"]["ParticipantRecoverySnapshot"];
+type ParticipantReadyEvent = components["schemas"]["ReadinessEvent"];
 type PublicArenaView = ReturnType<typeof toPublicArenaView>;
 
 type FixtureResult =
   | { state: "idle" | "loading" }
-  | { state: "success"; value: PublicArenaView | null }
+  | { state: "success"; value: unknown }
   | { state: "error"; error: SerializedError };
 
 type SerializedError = {
@@ -57,6 +71,9 @@ const serializeError = (value: unknown): SerializedError => {
 };
 
 const publicSnapshotPath = `/api/v1/tournaments/${tournamentId}/snapshot`;
+const participantLobbyPath = `/api/v1/tournaments/${tournamentId}/participant/lobby`;
+const participantAssignmentPath = `/api/v1/tournaments/${tournamentId}/participant/assignments/${assignmentId}`;
+const participantSnapshotPath = `/api/v1/tournaments/${tournamentId}/participant/snapshot`;
 const participantReadyPath = `/api/v1/tournaments/${tournamentId}/participant/waves/${waveId}/ready`;
 const adminTasksPath = "/api/v1/admin/tasks";
 
@@ -121,26 +138,200 @@ const participantReadyBody = (): ParticipantReadyRequest => ({
   ready: true,
 });
 
+const participantLobby = (): ParticipantLobbyResponse => ({
+  tournament_id: tournamentId,
+  state: "swiss",
+  projection_revision: 4,
+  roster_locked: true,
+  series: [{
+    series_id: seriesId,
+    state: "active",
+    format: "bo3",
+    opponent_display_name: "Боб",
+    wave_id: waveId,
+  }],
+});
+
+const participantAssignment = (): ParticipantAssignmentResponse => ({
+  tournament_id: tournamentId,
+  projection_revision: 4,
+  assignment: {
+    id: assignmentId,
+    attempt_id: attemptId,
+    active_snapshot: {
+      snapshot_id: taskSnapshotId,
+      task_id: taskId,
+      version: 2,
+      kind: "normal",
+      title: "Проверка контракта",
+      description: "Стабильное описание задания",
+      category: "web",
+      difficulty: "medium",
+      time_limit: 900,
+      hints: ["Проверьте URL"],
+      task_url: null,
+      source_file_available: false,
+    },
+    undisclosed_reserve_count: 1,
+    receipt: {
+      id: receiptId,
+      assignment_id: assignmentId,
+      attempt_id: attemptId,
+      participant_id: participantId,
+      snapshot_id: taskSnapshotId,
+      task_id: taskId,
+      delivered_at: "2026-09-08T10:01:00Z",
+    },
+  },
+});
+
+const participantRecoverySnapshot = (): ParticipantRecoverySnapshot => ({
+  tournament_id: tournamentId,
+  projection_revision: 5,
+  lobby: {
+    ...participantLobby(),
+    projection_revision: 5,
+  },
+  series: null,
+  wave: null,
+  draft: null,
+  assignment: null,
+  next_cursor: {
+    projection_revision: 5,
+    participant_view_revision: 3,
+    event_sequence: 8,
+  },
+});
+
+const participantReadyEvent = (commandId: string): ParticipantReadyEvent => ({
+  command_id: commandId,
+  wave_id: waveId,
+  window_id: readyWindowId,
+  participant_id: participantId,
+  type: "ready",
+  occurred_at: "2026-09-08T10:02:00Z",
+});
+
+const participantResultForFixture = <T,>(
+  result: ParticipantMutationResult<T>,
+): unknown => {
+  if (result.status === "success") {
+    return result.value;
+  }
+  if (result.status === "conflict") {
+    return {
+      status: result.status,
+      recovered: result.recovered,
+      snapshot: result.snapshot,
+    };
+  }
+  return {
+    status: result.status,
+    retryAfter: result.retryAfter,
+  };
+};
+
+const runParticipantLobbyAndAssignment = async (): Promise<FixtureResult> => {
+  try {
+    const lobby = await participantApi.getLobby(tournamentId);
+    const assignment = await participantApi.getAssignment(tournamentId, assignmentId);
+    return { state: "success", value: { lobby, assignment } };
+  } catch (error) {
+    return { state: "error", error: serializeError(error) };
+  }
+};
+
+const runParticipantLobby = async (): Promise<FixtureResult> => {
+  try {
+    return { state: "success", value: await participantApi.getLobby(tournamentId) };
+  } catch (error) {
+    return { state: "error", error: serializeError(error) };
+  }
+};
+
 const runParticipantReady = async (): Promise<FixtureResult> => {
   const body = participantReadyBody();
   try {
-    await readArenaResponse(
-      arenaApi.clients.participant.POST(
-        "/api/v1/tournaments/{tournament_id}/participant/waves/{wave_id}/ready",
-        {
-          params: {
-            path: {
-              tournament_id: tournamentId,
-              wave_id: waveId,
-            },
-            header: { "Idempotency-Key": "contract-ready", "X-CSRF-Token": "" },
-          },
-          body,
-        },
-      ),
-      "participant readiness",
+    const result = await participantApi.ready(
+      tournamentId,
+      waveId,
+      body,
+      createParticipantCommandIntent(),
     );
-    return { state: "success", value: null };
+    return { state: "success", value: result.status === "success" ? null : participantResultForFixture(result) };
+  } catch (error) {
+    return { state: "error", error: serializeError(error) };
+  }
+};
+
+const runParticipantReadyTwice = async (): Promise<FixtureResult> => {
+  const body = participantReadyBody();
+  const intent = createParticipantCommandIntent();
+  try {
+    const first = await participantApi.ready(tournamentId, waveId, body, intent);
+    const second = await participantApi.ready(tournamentId, waveId, body, intent);
+    return {
+      state: "success",
+      value: {
+        first: participantResultForFixture(first),
+        second: participantResultForFixture(second),
+      },
+    };
+  } catch (error) {
+    return { state: "error", error: serializeError(error) };
+  }
+};
+
+const runParticipantReadyWithNewIntent = async (): Promise<FixtureResult> => {
+  const body = participantReadyBody();
+  try {
+    const first = await participantApi.ready(
+      tournamentId,
+      waveId,
+      body,
+      createParticipantCommandIntent(),
+    );
+    const second = await participantApi.ready(
+      tournamentId,
+      waveId,
+      body,
+      createParticipantCommandIntent(),
+    );
+    return {
+      state: "success",
+      value: {
+        first: participantResultForFixture(first),
+        second: participantResultForFixture(second),
+      },
+    };
+  } catch (error) {
+    return { state: "error", error: serializeError(error) };
+  }
+};
+
+const runParticipantConflict = async (): Promise<FixtureResult> => {
+  try {
+    const result = await participantApi.ready(
+      tournamentId,
+      waveId,
+      participantReadyBody(),
+      createParticipantCommandIntent(),
+    );
+    return { state: "success", value: participantResultForFixture(result) };
+  } catch (error) {
+    return { state: "error", error: serializeError(error) };
+  }
+};
+
+const runParticipantRateLimited = async (): Promise<FixtureResult> => {
+  try {
+    const result = await participantApi.ready(
+      tournamentId,
+      waveId,
+      participantReadyBody(),
+      createParticipantCommandIntent(),
+    );
+    return { state: "success", value: participantResultForFixture(result) };
   } catch (error) {
     return { state: "error", error: serializeError(error) };
   }
@@ -202,6 +393,24 @@ export default function ArenaApiFixture() {
       <button type="button" disabled={!hydrated} onClick={() => { void invoke(runParticipantReady); }}>
         Отметить готовность участника
       </button>
+      <button type="button" disabled={!hydrated} onClick={() => { void invoke(runParticipantLobbyAndAssignment); }}>
+        Получить лобби и назначение
+      </button>
+      <button type="button" disabled={!hydrated} onClick={() => { void invoke(runParticipantLobby); }}>
+        Получить лобби участника
+      </button>
+      <button type="button" disabled={!hydrated} onClick={() => { void invoke(runParticipantReadyTwice); }}>
+        Повторить ready intent
+      </button>
+      <button type="button" disabled={!hydrated} onClick={() => { void invoke(runParticipantReadyWithNewIntent); }}>
+        Создать новый ready intent
+      </button>
+      <button type="button" disabled={!hydrated} onClick={() => { void invoke(runParticipantConflict); }}>
+        Проверить конфликт участника
+      </button>
+      <button type="button" disabled={!hydrated} onClick={() => { void invoke(runParticipantRateLimited); }}>
+        Проверить rate limit участника
+      </button>
       <button type="button" disabled={!hydrated} onClick={() => { void invoke(runConcurrentAdminTasks); }}>
         Проверить параллельный admin refresh
       </button>
@@ -209,6 +418,9 @@ export default function ArenaApiFixture() {
         Проверить admin 403
       </button>
       <p>Snapshot endpoint: {publicSnapshotPath}</p>
+      <p>Participant lobby endpoint: {participantLobbyPath}</p>
+      <p>Participant assignment endpoint: {participantAssignmentPath}</p>
+      <p>Participant recovery endpoint: {participantSnapshotPath}</p>
       <p>Participant ready endpoint: {participantReadyPath}</p>
       <p>Admin tasks endpoint: {adminTasksPath}</p>
       <output aria-label="Результат вызова API" aria-live="polite">

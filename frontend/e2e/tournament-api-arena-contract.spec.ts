@@ -13,11 +13,25 @@ const fixtureHost = '127.0.0.1';
 const readinessTimeoutMs = 60_000;
 const tournamentId = '00000000-0000-4000-8000-000000000001';
 const seriesId = '00000000-0000-4000-8000-000000000010';
+const waveId = '00000000-0000-4000-8000-000000000015';
+const assignmentId = '00000000-0000-4000-8000-000000000017';
+const attemptId = '00000000-0000-4000-8000-000000000018';
+const participantId = '00000000-0000-4000-8000-000000000019';
+const taskId = '00000000-0000-4000-8000-000000000020';
+const taskSnapshotId = '00000000-0000-4000-8000-000000000021';
+const receiptId = '00000000-0000-4000-8000-000000000022';
+const readyWindowId = '00000000-0000-4000-8000-000000000023';
 const snapshotPath = `/api/v1/tournaments/${tournamentId}/snapshot`;
-const participantReadyPath = `/api/v1/tournaments/${tournamentId}/participant/waves/00000000-0000-4000-8000-000000000015/ready`;
+const participantLobbyPath = `/api/v1/tournaments/${tournamentId}/participant/lobby`;
+const participantAssignmentPath = `/api/v1/tournaments/${tournamentId}/participant/assignments/${assignmentId}`;
+const participantSnapshotPath = `/api/v1/tournaments/${tournamentId}/participant/snapshot`;
+const participantReadyPath = `/api/v1/tournaments/${tournamentId}/participant/waves/${waveId}/ready`;
 const noShowPath = `/api/v1/admin/tournaments/${tournamentId}/waves/00000000-0000-4000-8000-000000000015/no-shows`;
 const adminTasksPath = '/api/v1/admin/tasks';
 const snapshotPattern = `**${snapshotPath}`;
+const participantLobbyPattern = `**${participantLobbyPath}`;
+const participantAssignmentPattern = `**${participantAssignmentPath}`;
+const participantSnapshotPattern = `**${participantSnapshotPath}`;
 const participantReadyPattern = `**${participantReadyPath}`;
 const noShowPattern = `**${noShowPath}`;
 const adminTasksPattern = `**${adminTasksPath}`;
@@ -25,9 +39,13 @@ const adminRefreshPattern = '**/api/v1/admin/refresh';
 
 type PublicSnapshot = components['schemas']['PublicRecoverySnapshot'];
 type NoShowRequest = components['schemas']['OperatorNoShowRequest'];
+type ParticipantLobbyResponse = components['schemas']['ParticipantLobbyResponse'];
+type ParticipantAssignmentResponse = components['schemas']['ParticipantAssignmentResponse'];
+type ParticipantRecoverySnapshot = components['schemas']['ParticipantRecoverySnapshot'];
+type ParticipantReadyEvent = components['schemas']['ReadinessEvent'];
 type FixtureSuccess = {
   state: 'success';
-  value: Record<string, unknown> | null;
+  value: unknown;
 };
 type FixtureError = {
   state: 'error';
@@ -104,6 +122,80 @@ const publicSnapshot = (): PublicSnapshot => ({
   official_results: [],
   live_draft: null,
   next_cursor: { projection_revision: 4, event_sequence: 7 },
+});
+
+const participantLobby = (): ParticipantLobbyResponse => ({
+  tournament_id: tournamentId,
+  state: 'swiss',
+  projection_revision: 4,
+  roster_locked: true,
+  series: [{
+    series_id: seriesId,
+    state: 'active',
+    format: 'bo3',
+    opponent_display_name: 'Боб',
+    wave_id: waveId,
+  }],
+});
+
+const participantAssignment = (): ParticipantAssignmentResponse => ({
+  tournament_id: tournamentId,
+  projection_revision: 4,
+  assignment: {
+    id: assignmentId,
+    attempt_id: attemptId,
+    active_snapshot: {
+      snapshot_id: taskSnapshotId,
+      task_id: taskId,
+      version: 2,
+      kind: 'normal',
+      title: 'Проверка контракта',
+      description: 'Стабильное описание задания',
+      category: 'web',
+      difficulty: 'medium',
+      time_limit: 900,
+      hints: ['Проверьте URL'],
+      task_url: null,
+      source_file_available: false,
+    },
+    undisclosed_reserve_count: 1,
+    receipt: {
+      id: receiptId,
+      assignment_id: assignmentId,
+      attempt_id: attemptId,
+      participant_id: participantId,
+      snapshot_id: taskSnapshotId,
+      task_id: taskId,
+      delivered_at: '2026-09-08T10:01:00Z',
+    },
+  },
+});
+
+const participantRecoverySnapshot = (): ParticipantRecoverySnapshot => ({
+  tournament_id: tournamentId,
+  projection_revision: 5,
+  lobby: {
+    ...participantLobby(),
+    projection_revision: 5,
+  },
+  series: null,
+  wave: null,
+  draft: null,
+  assignment: null,
+  next_cursor: {
+    projection_revision: 5,
+    participant_view_revision: 3,
+    event_sequence: 8,
+  },
+});
+
+const participantReadyEvent = (commandId: string): ParticipantReadyEvent => ({
+  command_id: commandId,
+  wave_id: waveId,
+  window_id: readyWindowId,
+  participant_id: participantId,
+  type: 'ready',
+  occurred_at: '2026-09-08T10:02:00Z',
 });
 
 const noShowBody = (): NoShowRequest => ({
@@ -315,6 +407,199 @@ test.describe('Arena browser API contract', () => {
     expect(requests).toEqual([`${fixtureURL}${snapshotPath}`]);
   });
 
+  test('preserves participant lobby and assignment URLs and identities', async ({ page }) => {
+    const requests: string[] = [];
+    await page.route(participantLobbyPattern, async (route) => {
+      const request = route.request();
+      requests.push(request.url());
+      expect(request.method()).toBe('GET');
+      await fulfillJSON(route, 200, participantLobby());
+    });
+    await page.route(participantAssignmentPattern, async (route) => {
+      const request = route.request();
+      requests.push(request.url());
+      expect(request.method()).toBe('GET');
+      await fulfillJSON(route, 200, participantAssignment());
+    });
+
+    await openFixture(page);
+    await page.getByRole('button', { name: 'Получить лобби и назначение' }).click();
+    const result = await readResult(page, 'success');
+
+    expect(result).toMatchObject({
+      state: 'success',
+      value: {
+        lobby: {
+          tournament_id: tournamentId,
+          projection_revision: 4,
+          series: [{ series_id: seriesId, wave_id: waveId }],
+        },
+        assignment: {
+          tournament_id: tournamentId,
+          projection_revision: 4,
+          assignment: {
+            id: assignmentId,
+            attempt_id: attemptId,
+            active_snapshot: { snapshot_id: taskSnapshotId, task_id: taskId },
+            receipt: {
+              id: receiptId,
+              assignment_id: assignmentId,
+              attempt_id: attemptId,
+              participant_id: participantId,
+            },
+          },
+        },
+      },
+    });
+    expect(requests).toEqual([
+      `${fixtureURL}${participantLobbyPath}`,
+      `${fixtureURL}${participantAssignmentPath}`,
+    ]);
+  });
+
+  test('reuses one idempotency key for the same participant ready intent', async ({ page }) => {
+    const playerCSRFToken = 'participant-ready-intent-csrf';
+    const requests: { key: string | undefined; body: unknown }[] = [];
+    await page.addInitScript((token) => {
+      document.cookie = `tpm_player_csrf=${encodeURIComponent(token)}; Path=/`;
+    }, playerCSRFToken);
+    await page.route(participantReadyPattern, async (route) => {
+      const request = route.request();
+      requests.push({ key: request.headers()['idempotency-key'], body: request.postDataJSON() });
+      expect(request.method()).toBe('POST');
+      expect(request.headers()['x-csrf-token']).toBe(playerCSRFToken);
+      await fulfillJSON(route, 200, participantReadyEvent(request.headers()['idempotency-key'] ?? ''));
+    });
+
+    await openFixture(page);
+    await page.getByRole('button', { name: 'Повторить ready intent' }).click();
+    const result = await readResult(page, 'success');
+
+    expect(requests).toHaveLength(2);
+    expect(requests[0].key).toBeTruthy();
+    expect(requests[0].key).toBe(requests[1].key);
+    expect(requests[0].body).toEqual({ expected_projection_revision: 4, ready: true });
+    expect(requests[1].body).toEqual(requests[0].body);
+    expect(result).toMatchObject({
+      state: 'success',
+      value: {
+        first: { command_id: requests[0].key, type: 'ready' },
+        second: { command_id: requests[1].key, type: 'ready' },
+      },
+    });
+  });
+
+  test('creates a different idempotency key for a new participant ready intent', async ({ page }) => {
+    const playerCSRFToken = 'participant-new-intent-csrf';
+    const keys: (string | undefined)[] = [];
+    await page.addInitScript((token) => {
+      document.cookie = `tpm_player_csrf=${encodeURIComponent(token)}; Path=/`;
+    }, playerCSRFToken);
+    await page.route(participantReadyPattern, async (route) => {
+      const request = route.request();
+      keys.push(request.headers()['idempotency-key']);
+      expect(request.headers()['x-csrf-token']).toBe(playerCSRFToken);
+      await fulfillJSON(route, 200, participantReadyEvent(request.headers()['idempotency-key'] ?? ''));
+    });
+
+    await openFixture(page);
+    await page.getByRole('button', { name: 'Создать новый ready intent' }).click();
+    await readResult(page, 'success');
+
+    expect(keys).toHaveLength(2);
+    expect(keys[0]).toBeTruthy();
+    expect(keys[1]).toBeTruthy();
+    expect(keys[0]).not.toBe(keys[1]);
+  });
+
+  test('recovers a participant conflict with one snapshot read and no mutation retry', async ({ page }) => {
+    const playerCSRFToken = 'participant-conflict-csrf';
+    let mutationCalls = 0;
+    let snapshotCalls = 0;
+    await page.addInitScript((token) => {
+      document.cookie = `tpm_player_csrf=${encodeURIComponent(token)}; Path=/`;
+    }, playerCSRFToken);
+    await page.route(participantReadyPattern, async (route) => {
+      mutationCalls += 1;
+      expect(route.request().method()).toBe('POST');
+      await fulfillJSON(route, 409, problemBody(409, 'Projection revision conflict'));
+    });
+    await page.route(participantSnapshotPattern, async (route) => {
+      snapshotCalls += 1;
+      expect(route.request().method()).toBe('GET');
+      await fulfillJSON(route, 200, participantRecoverySnapshot());
+    });
+
+    await openFixture(page);
+    await page.getByRole('button', { name: 'Проверить конфликт участника' }).click();
+    const result = await readResult(page, 'success');
+
+    expect(mutationCalls).toBe(1);
+    expect(snapshotCalls).toBe(1);
+    expect(result).toMatchObject({
+      state: 'success',
+      value: {
+        status: 'conflict',
+        recovered: true,
+        snapshot: {
+          tournament_id: tournamentId,
+          projection_revision: 5,
+          next_cursor: { projection_revision: 5, participant_view_revision: 3, event_sequence: 8 },
+        },
+      },
+    });
+  });
+
+  test('returns participant rate limit without snapshot recovery or mutation retry', async ({ page }) => {
+    const playerCSRFToken = 'participant-rate-limit-csrf';
+    let mutationCalls = 0;
+    let snapshotCalls = 0;
+    await page.addInitScript((token) => {
+      document.cookie = `tpm_player_csrf=${encodeURIComponent(token)}; Path=/`;
+    }, playerCSRFToken);
+    await page.route(participantReadyPattern, async (route) => {
+      mutationCalls += 1;
+      await route.fulfill({
+        status: 429,
+        headers: { 'content-type': 'application/problem+json', 'retry-after': '17' },
+        body: JSON.stringify(problemBody(429, 'Participant rate limit')),
+      });
+    });
+    await page.route(participantSnapshotPattern, async (route) => {
+      snapshotCalls += 1;
+      await fulfillJSON(route, 200, participantRecoverySnapshot());
+    });
+
+    await openFixture(page);
+    await page.getByRole('button', { name: 'Проверить rate limit участника' }).click();
+    const result = await readResult(page, 'success');
+
+    expect(mutationCalls).toBe(1);
+    expect(snapshotCalls).toBe(0);
+    expect(result).toMatchObject({
+      state: 'success',
+      value: { status: 'rate_limited', retryAfter: '17' },
+    });
+  });
+
+  test('turns malformed successful participant JSON into a contract error', async ({ page }) => {
+    await page.route(participantLobbyPattern, async (route) => {
+      await fulfillJSON(route, 200, {});
+    });
+
+    await openFixture(page);
+    await page.getByRole('button', { name: 'Получить лобби участника' }).click();
+    const result = await readResult(page, 'error');
+
+    expect(result).toMatchObject({
+      state: 'error',
+      error: {
+        name: 'ApiContractError',
+        message: 'Invalid API response: participant lobby',
+      },
+    });
+  });
+
   for (const [status, kind] of [
     [401, 'unauthorized'],
     [403, 'forbidden'],
@@ -415,7 +700,7 @@ test.describe('Arena browser API contract', () => {
         expected_projection_revision: 4,
         ready: true,
       });
-      await fulfillJSON(route, 200, { type: 'ready' });
+      await fulfillJSON(route, 200, participantReadyEvent(request.headers()['idempotency-key'] ?? ''));
     });
 
     await openFixture(page);
