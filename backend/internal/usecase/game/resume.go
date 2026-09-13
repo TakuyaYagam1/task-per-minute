@@ -141,7 +141,7 @@ func (u *PauseResumeUseCase) resumeLocked(ctx context.Context, command PauseResu
 		return pauseResumeAttemptOutcome{}, domain.ErrValidation
 	}
 	if err := validatePauseResumeAuthority(authority); err != nil {
-		return pauseResumeAttemptOutcome{}, err
+		return pauseResumeAttemptOutcome{}, fmt.Errorf("pause resume - validate authority: %w", err)
 	}
 	if authority.Pause.Scope != command.Scope || authority.Pause.PauseID != command.PauseID ||
 		!pauseResumeExpectationEqual(PauseResumeExpectationFrom(authority), command.Expected) {
@@ -149,7 +149,7 @@ func (u *PauseResumeUseCase) resumeLocked(ctx context.Context, command PauseResu
 	}
 	built, err := buildPauseResumeRecord(authority, command, resumedAt)
 	if err != nil {
-		return pauseResumeAttemptOutcome{}, err
+		return pauseResumeAttemptOutcome{}, fmt.Errorf("pause resume - build record: %w", err)
 	}
 	return u.commitPauseResume(ctx, command, built)
 }

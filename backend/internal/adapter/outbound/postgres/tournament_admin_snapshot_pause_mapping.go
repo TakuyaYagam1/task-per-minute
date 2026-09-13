@@ -308,8 +308,7 @@ func tournamentAdminSnapshotPauseExecutions(
 		}]
 		execution := seriesdomain.Execution{Series: series}
 		if series.State == domain.SeriesStateTechnicalPause {
-			if !hasSeriesPause || !seriesPause.ParentPauseID.Valid || seriesPause.ParentPauseID.UUID != root.ID ||
-				seriesPause.Depth != 1 || !tournamentAdminSnapshotNormalPauseReason(seriesPause.Reason) {
+			if !hasSeriesPause || !tournamentAdminSnapshotParallelSeriesPause(seriesPause, root) {
 				return nil, nil, nil, domain.ErrInternal
 			}
 			resumeState := domain.SeriesState(seriesPause.PausedFromState)
@@ -352,6 +351,7 @@ func tournamentAdminSnapshotPauseExecutions(
 	return seriesValues, games, seriesIDs, nil
 }
 
+//nolint:gocyclo // Snapshot recovery validates Game state, pause ancestry, and clock evidence together.
 func tournamentAdminSnapshotPauseGame(
 	game domain.Game,
 	seriesID uuid.UUID,
@@ -366,16 +366,18 @@ func tournamentAdminSnapshotPauseGame(
 		Revision: seriesGraph.gameRevisionByID[game.ID],
 	}
 	gamePause, paused := pauseIndex.activeByScope[tournamentAdminSnapshotPauseScope{kind: "game_attempt", id: game.ID}]
+	belongsToNormalPause := paused && (pauseIndex.descendsFrom(gamePause.ID, root.ID) ||
+		tournamentAdminSnapshotParallelGamePause(gamePause, root, pauseIndex))
 	if game.State == domain.GameStatePaused {
 		if !paused || execution.ResumeState == nil || *execution.ResumeState != domain.SeriesStateActive ||
 			gamePause.PausedFromState != string(domain.GameStateActive) ||
-			(!pauseIndex.descendsFrom(gamePause.ID, root.ID) && gamePause.Reason != string(gameusecase.PauseReasonDisconnect)) {
+			(!belongsToNormalPause && gamePause.Reason != string(gameusecase.PauseReasonDisconnect)) {
 			return gameusecase.PauseGame{}, domain.ErrInternal
 		}
 		resumeState := domain.GameStateActive
 		value.ResumeState = &resumeState
 	} else {
-		if paused && pauseIndex.descendsFrom(gamePause.ID, root.ID) {
+		if belongsToNormalPause {
 			return gameusecase.PauseGame{}, domain.ErrInternal
 		}
 		if game.State == domain.GameStateActive ||
@@ -387,6 +389,32 @@ func tournamentAdminSnapshotPauseGame(
 		return gameusecase.PauseGame{}, domain.ErrInternal
 	}
 	return value, nil
+}
+
+func tournamentAdminSnapshotParallelSeriesPause(seriesPause, root sqlc.Pause) bool {
+	seriesStartedAt, seriesStarted := tournamentAdminSnapshotRequiredTime(seriesPause.StartedAt)
+	rootStartedAt, rootStarted := tournamentAdminSnapshotRequiredTime(root.StartedAt)
+	return seriesStarted && rootStarted && !seriesPause.ParentPauseID.Valid && seriesPause.Depth == 0 &&
+		seriesPause.Reason == root.Reason && tournamentAdminSnapshotNormalPauseReason(seriesPause.Reason) &&
+		seriesStartedAt.Equal(rootStartedAt)
+}
+
+func tournamentAdminSnapshotParallelGamePause(
+	gamePause, root sqlc.Pause,
+	pauseIndex tournamentAdminSnapshotPauseIndex,
+) bool {
+	if !gamePause.ParentPauseID.Valid || gamePause.Depth != 1 || gamePause.Reason != root.Reason {
+		return false
+	}
+	seriesPause, exists := pauseIndex.byID[gamePause.ParentPauseID.UUID]
+	if !exists || seriesPause.ScopeKind != "series" || !seriesPause.SeriesID.Valid ||
+		!gamePause.SeriesID.Valid || seriesPause.SeriesID.UUID != gamePause.SeriesID.UUID ||
+		!tournamentAdminSnapshotParallelSeriesPause(seriesPause, root) {
+		return false
+	}
+	gameStartedAt, gameStarted := tournamentAdminSnapshotRequiredTime(gamePause.StartedAt)
+	seriesStartedAt, seriesStarted := tournamentAdminSnapshotRequiredTime(seriesPause.StartedAt)
+	return gameStarted && seriesStarted && gameStartedAt.Equal(seriesStartedAt)
 }
 
 func (index tournamentAdminSnapshotPauseIndex) descendsFrom(id, rootID uuid.UUID) bool {
@@ -436,6 +464,7 @@ func tournamentAdminSnapshotSeriesNeedsDraft(values []gameusecase.PauseSeries) b
 	return false
 }
 
+//nolint:gocyclo // Draft recovery accepts both persisted pre-start topologies and participant orderings.
 func tournamentAdminSnapshotDraftMatchesSeries(
 	draft draftusecase.Execution,
 	values []gameusecase.PauseSeries,
@@ -450,9 +479,14 @@ func tournamentAdminSnapshotDraftMatchesSeries(
 		if series.ID != draft.SeriesID {
 			continue
 		}
-		return value.Execution.ResumeState != nil && *value.Execution.ResumeState == domain.SeriesStateDraft &&
-			series.FirstParticipantID == draft.FirstParticipantID &&
-			series.SecondParticipantID == draft.SecondParticipantID && series.Format == draft.Format
+		participantsMatch := series.FirstParticipantID == draft.FirstParticipantID &&
+			series.SecondParticipantID == draft.SecondParticipantID ||
+			series.FirstParticipantID == draft.SecondParticipantID &&
+				series.SecondParticipantID == draft.FirstParticipantID
+		seriesStateMatches := series.State == domain.SeriesStatePlanned ||
+			series.State == domain.SeriesStateTechnicalPause && value.Execution.ResumeState != nil &&
+				*value.Execution.ResumeState == domain.SeriesStateDraft
+		return participantsMatch && seriesStateMatches && series.Format == draft.Format
 	}
 	return false
 }

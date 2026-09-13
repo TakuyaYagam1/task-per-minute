@@ -134,6 +134,7 @@ func participantAssignmentFromRow(
 	return assignment, nil
 }
 
+//nolint:gocyclo // Hint visibility is a fail-closed state and pause-clock matrix.
 func participantAssignmentVisibleHints(
 	row sqlc.GetParticipantStateAssignmentRow,
 	hints []string,
@@ -166,7 +167,12 @@ func participantAssignmentVisibleHints(
 			return participantUnlockedAssignmentHints(hints, startedAt, observedAt, int(row.TimeLimit))
 		}
 		return participantUnlockedPausedAssignmentHints(row, hints, startedAt, observedAt)
-	case domain.GameStateCompleted, domain.GameStateVoid, domain.GameStateCancelled, domain.GameStateSuperseded:
+	case domain.GameStateCompleted:
+		if !row.AttemptStartedAt.Valid || participantAssignmentPausePresent(row) {
+			return nil, participantStateInvalid("assignment hint timing")
+		}
+		return append([]string(nil), hints...), nil
+	case domain.GameStateVoid, domain.GameStateCancelled, domain.GameStateSuperseded:
 		return nil, participantStateInvalid("assignment hint timing")
 	default:
 		return nil, participantStateInvalid("assignment hint timing")
@@ -201,7 +207,11 @@ func participantUnlockedPausedAssignmentHints(
 		if row.AttemptState != string(domain.GameStatePaused) || row.GamePauseResumedAt.Valid || row.GamePauseResumedDeadline.Valid {
 			return nil, participantStateInvalid("assignment hint timing")
 		}
-		return participantUnlockedAssignmentHints(hints, baseStart, row.GamePauseFrozenAt.Time, int(row.TimeLimit))
+		frozenAt, ok := participantStateRequiredTime(row.GamePauseFrozenAt)
+		if !ok {
+			return nil, participantStateInvalid("assignment hint timing")
+		}
+		return participantUnlockedAssignmentHints(hints, baseStart, frozenAt, int(row.TimeLimit))
 	case "resumed", "cancelled":
 		resumedStart, err := participantValidatedResumedHintStart(row, baseStart, remaining, observedAt)
 		if err != nil {

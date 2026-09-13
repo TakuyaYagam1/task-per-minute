@@ -11,6 +11,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
+	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
 	correctionusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/correction"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
@@ -209,7 +210,19 @@ type WaveCommandRecord struct {
 	RequestDigest              [32]byte
 	Reason                     string
 	ResultDocument             json.RawMessage
+	NormalPause                *gameusecase.NormalPauseRecord
 	ExecutedAt                 time.Time
+}
+
+// NormalPauseExecutionRepository is the transaction-participating durable
+// boundary used by the operator Wave pause and resume actions. The game
+// policies own graph planning; this boundary only adds active-root discovery
+// and execution-epoch rebinding required by the admin workflow.
+type NormalPauseExecutionRepository interface {
+	gameusecase.NormalPauseRepository
+	gameusecase.PauseResumeRepository
+	gameusecase.PauseResumePresenceRepository
+	ActiveNormalPauseID(ctx context.Context, scope pausedomain.GraphScope) (uuid.UUID, error)
 }
 
 type ExecutionWorkflowRepository interface {
@@ -228,6 +241,7 @@ type ExecutionWorkflowRepository interface {
 type ExecutionWorkflowDependencies struct {
 	Transactions ExecutionTransactionManager
 	Repository   ExecutionWorkflowRepository
+	NormalPause  NormalPauseExecutionRepository
 	WaveStart    *gameusecase.StartUseCase
 	Authority    ExecutionAuthorityProvider
 }

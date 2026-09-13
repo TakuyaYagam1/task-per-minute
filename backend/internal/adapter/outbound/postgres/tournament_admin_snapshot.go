@@ -73,13 +73,13 @@ func (r *TournamentAdminSnapshotPostgres) loadOperatorSnapshot(
 	roster, err := r.roster.GetRoster(ctx, query.TournamentID)
 	if err != nil {
 		if errors.Is(err, domain.ErrTournamentNotFound) {
-			return tournamentadmin.OperatorSnapshotView{}, domain.ErrInternal
+			return tournamentadmin.OperatorSnapshotView{}, fmt.Errorf("operator snapshot roster disappeared: %w", domain.ErrInternal)
 		}
 		return tournamentadmin.OperatorSnapshotView{}, err
 	}
 	if roster.ID != header.tournament.RosterID || roster.TournamentID != query.TournamentID ||
 		len(roster.Participants) != header.tournament.RosterSize {
-		return tournamentadmin.OperatorSnapshotView{}, domain.ErrInternal
+		return tournamentadmin.OperatorSnapshotView{}, fmt.Errorf("operator snapshot roster mismatch: %w", domain.ErrInternal)
 	}
 
 	waves, err := tournamentAdminSnapshotLoadWaves(ctx, querier, query.TournamentID, roster)
@@ -91,7 +91,7 @@ func (r *TournamentAdminSnapshotPostgres) loadOperatorSnapshot(
 		return tournamentadmin.OperatorSnapshotView{}, err
 	}
 	if !tournamentAdminSnapshotWaveSeriesMatch(waves, seriesGraph) {
-		return tournamentadmin.OperatorSnapshotView{}, domain.ErrInternal
+		return tournamentadmin.OperatorSnapshotView{}, fmt.Errorf("operator snapshot Wave and Series mismatch: %w", domain.ErrInternal)
 	}
 
 	pauseRows, err := querier.ListTournamentAdminSnapshotPauses(
@@ -106,7 +106,7 @@ func (r *TournamentAdminSnapshotPostgres) loadOperatorSnapshot(
 	}
 	pauseGraph, err := r.loadPauseGraph(ctx, querier, header, roster, waves, seriesGraph, pauseRows)
 	if err != nil {
-		return tournamentadmin.OperatorSnapshotView{}, err
+		return tournamentadmin.OperatorSnapshotView{}, fmt.Errorf("operator snapshot pause graph: %w", err)
 	}
 
 	return tournamentadmin.OperatorSnapshotView{

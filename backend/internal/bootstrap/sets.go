@@ -103,6 +103,7 @@ var ReposSet = wire.NewSet(
 	wire.Bind(new(tournamentadmin.RosterWorkflowRepository), new(*postgres.TournamentAdminRosterPostgres)),
 	postgres.NewTournamentAdminExecutionPostgres,
 	wire.Bind(new(tournamentadmin.ExecutionWorkflowRepository), new(*postgres.TournamentAdminExecutionPostgres)),
+	wire.Bind(new(tournamentadmin.NormalPauseExecutionRepository), new(*postgres.TournamentAdminExecutionPostgres)),
 	wire.Bind(new(gameusecase.StartRepository), new(*postgres.TournamentAdminExecutionPostgres)),
 	postgres.NewTournamentConfigurationPostgres,
 	wire.Bind(new(tournamentadmin.TournamentConfigurationRepository), new(*postgres.TournamentConfigurationPostgres)),

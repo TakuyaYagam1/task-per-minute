@@ -356,6 +356,7 @@ func newTournamentFlowRESTFixture(t *testing.T) *restFixture {
 	execution := tournamentadmin.NewExecutionWorkflow(tournamentadmin.ExecutionWorkflowDependencies{
 		Transactions: tx,
 		Repository:   executionRepository,
+		NormalPause:  executionRepository,
 		WaveStart:    gameusecase.NewStartUseCase(executionRepository, clock),
 		Authority:    authorityController,
 	})

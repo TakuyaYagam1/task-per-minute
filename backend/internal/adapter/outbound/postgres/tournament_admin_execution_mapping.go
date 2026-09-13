@@ -661,6 +661,7 @@ func tournamentAdminWaveCommand(row sqlc.WaveControlCommand) (*tournamentadmin.W
 	if err := json.Unmarshal(row.SourceGraph, &graph); err != nil {
 		return nil, domain.ErrInternal
 	}
+	resultDocument, normalPause := decodeTournamentAdminWaveResult(row.Action, row.ResultDocument)
 	return &tournamentadmin.WaveCommandRecord{
 		CommandScope: tournamentadmin.CommandScope{
 			Operator:     tournamentadmin.OperatorIdentity{ActorID: row.ActorID},
@@ -672,7 +673,7 @@ func tournamentAdminWaveCommand(row sqlc.WaveControlCommand) (*tournamentadmin.W
 		SourceTournamentRevision:   row.SourceTournamentRevision, SourceRosterRevision: row.SourceRosterRevision,
 		SourceWaveRevision: row.SourceWaveRevision, ResultingWaveRevision: row.ResultingWaveRevision,
 		SourceRevisions: revisions, SourceGraph: graph, RequestDigest: digest,
-		Reason: stringPointerValue(row.Reason), ResultDocument: append([]byte(nil), row.ResultDocument...),
+		Reason: stringPointerValue(row.Reason), ResultDocument: resultDocument, NormalPause: normalPause,
 		ExecutedAt: row.ExecutedAt.Time.UTC(),
 	}, nil
 }

@@ -358,6 +358,10 @@ func (r *TournamentAdminExecutionPostgres) SaveWaveCommand(
 	if err != nil {
 		return fmt.Errorf("encode Wave source graph: %w", err)
 	}
+	resultDocument, err := encodeTournamentAdminWaveResult(record)
+	if err != nil {
+		return err
+	}
 	created, err := r.tx.Querier(ctx).CreateWaveControlCommand(ctx, sqlc.CreateWaveControlCommandParams{
 		CommandID: record.CommandID, TournamentID: record.TournamentID, RosterID: record.RosterID,
 		WaveID: record.WaveID, ActorID: record.Operator.ActorID, Action: string(record.Action),
@@ -367,7 +371,7 @@ func (r *TournamentAdminExecutionPostgres) SaveWaveCommand(
 		SourceRosterRevision:       record.SourceRosterRevision, SourceWaveRevision: record.SourceWaveRevision,
 		ResultingWaveRevision: record.ResultingWaveRevision, SourceRevisions: sourceRevisions,
 		SourceGraph: sourceGraph, RequestDigest: append([]byte(nil), record.RequestDigest[:]...),
-		Reason: optionalExecutionReason(record.Reason), ResultDocument: append([]byte(nil), record.ResultDocument...),
+		Reason: optionalExecutionReason(record.Reason), ResultDocument: resultDocument,
 		ExecutedAt: tstz(record.ExecutedAt),
 	})
 	if err != nil {

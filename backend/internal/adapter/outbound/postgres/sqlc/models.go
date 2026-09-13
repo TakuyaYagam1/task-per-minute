@@ -1776,6 +1776,21 @@ type ReadyWindow struct {
 	CreatedAt  pgtype.Timestamptz
 }
 
+type ReadyWindowPauseClock struct {
+	PauseID          uuid.UUID
+	ReadyWindowID    uuid.UUID
+	WaveID           uuid.UUID
+	RosterID         uuid.UUID
+	OriginalDeadline pgtype.Timestamptz
+	FrozenAt         pgtype.Timestamptz
+	FrozenRemaining  pgtype.Interval
+	ResumedAt        pgtype.Timestamptz
+	ResumedDeadline  pgtype.Timestamptz
+	Revision         int64
+	CreatedAt        pgtype.Timestamptz
+	UpdatedAt        pgtype.Timestamptz
+}
+
 type RealtimeDeliveryReceipt struct {
 	SubscriberID        uuid.UUID
 	EventID             uuid.UUID

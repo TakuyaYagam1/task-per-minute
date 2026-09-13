@@ -244,8 +244,14 @@ func validatePauseDraftDescendant(graph PauseGraph, index pauseGraphIndex) error
 		return normalPauseError("invalid Draft descendant")
 	}
 	series, exists := index.seriesByID[graph.Draft.SeriesID]
-	if !exists || series.Execution.Series.FirstParticipantID != graph.Draft.FirstParticipantID ||
-		series.Execution.Series.SecondParticipantID != graph.Draft.SecondParticipantID {
+	if !exists {
+		return ErrNormalPauseGraphIncomplete
+	}
+	participantsMatch := series.Execution.Series.FirstParticipantID == graph.Draft.FirstParticipantID &&
+		series.Execution.Series.SecondParticipantID == graph.Draft.SecondParticipantID ||
+		series.Execution.Series.FirstParticipantID == graph.Draft.SecondParticipantID &&
+			series.Execution.Series.SecondParticipantID == graph.Draft.FirstParticipantID
+	if !participantsMatch {
 		return ErrNormalPauseGraphIncomplete
 	}
 	if !pauseDraftStateMatchesSeries(*graph.Draft, series) {
@@ -267,12 +273,13 @@ func validateMissingPauseDraft(seriesValues []PauseSeries) error {
 func pauseDraftStateMatchesSeries(draft draftusecase.Execution, series PauseSeries) bool {
 	switch draft.State {
 	case draftusecase.ExecutionStateActive:
-		return series.Execution.Series.State == domain.SeriesStateDraft
+		return series.Execution.Series.State == domain.SeriesStatePlanned || series.Execution.Series.State == domain.SeriesStateDraft
 	case draftusecase.ExecutionStatePaused:
-		return series.Execution.Series.State == domain.SeriesStateTechnicalPause && series.Execution.ResumeState != nil &&
-			*series.Execution.ResumeState == domain.SeriesStateDraft
+		return series.Execution.Series.State == domain.SeriesStatePlanned ||
+			series.Execution.Series.State == domain.SeriesStateTechnicalPause && series.Execution.ResumeState != nil &&
+				*series.Execution.ResumeState == domain.SeriesStateDraft
 	case draftusecase.ExecutionStateRecoveryRequired:
-		return series.Execution.Series.State == domain.SeriesStateDraft
+		return series.Execution.Series.State == domain.SeriesStatePlanned || series.Execution.Series.State == domain.SeriesStateDraft
 	case draftusecase.ExecutionStateCompleted, draftusecase.ExecutionStateSuperseded:
 		return true
 	default:

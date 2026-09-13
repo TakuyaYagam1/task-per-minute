@@ -136,6 +136,29 @@ func TestParticipantAssignmentFreezesHintsDuringPause(t *testing.T) {
 	require.Equal(t, []string{"first"}, assignment.ActiveSnapshot.Hints)
 }
 
+func TestParticipantAssignmentFreezesHintsWhenPostgresReturnsLocalTime(t *testing.T) {
+	t.Parallel()
+
+	location := time.FixedZone("MSK", 3*60*60)
+	startedAt := participantStateTestTime()
+	pauseAt := startedAt.Add(12 * time.Second)
+	row := participantHintAssignmentRow()
+	row.AttemptState = string(domain.GameStatePaused)
+	row.AttemptStartedAt = participantStateTimestamp(startedAt.In(location))
+	row.ObservedAt = participantStateTimestamp(startedAt.Add(5 * time.Minute).In(location))
+	participantHintActiveClock(
+		&row,
+		pauseAt.In(location),
+		startedAt.Add(40*time.Second).In(location),
+		28_000,
+	)
+
+	assignment, err := participantAssignmentFromRow(row)
+
+	require.NoError(t, err)
+	require.Equal(t, []string{"first"}, assignment.ActiveSnapshot.Hints)
+}
+
 func TestParticipantAssignmentNestedOperatorPauseAndDuplicateResume(t *testing.T) {
 	t.Parallel()
 
@@ -222,6 +245,20 @@ func TestParticipantAssignmentReplayAttemptDoesNotInheritHints(t *testing.T) {
 	replay, err := participantAssignmentFromRow(row)
 	require.NoError(t, err)
 	require.Empty(t, replay.ActiveSnapshot.Hints)
+}
+
+func TestParticipantAssignmentCompletedAttemptExposesUnlockedHints(t *testing.T) {
+	t.Parallel()
+
+	row := participantHintAssignmentRow()
+	row.AttemptState = string(domain.GameStateCompleted)
+	row.AttemptStartedAt = participantStateTimestamp(participantStateTestTime())
+	row.ObservedAt = participantStateTimestamp(participantStateTestTime().Add(time.Minute))
+
+	assignment, err := participantAssignmentFromRow(row)
+
+	require.NoError(t, err)
+	require.Equal(t, []string{"first", "second", "third"}, assignment.ActiveSnapshot.Hints)
 }
 
 func TestParticipantAssignmentRejectsMalformedHintClock(t *testing.T) {

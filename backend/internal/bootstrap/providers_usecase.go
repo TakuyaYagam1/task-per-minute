@@ -320,6 +320,7 @@ func provideTournamentAdminRoster(
 func provideTournamentAdminExecution(
 	transactions tournamentadmin.ExecutionTransactionManager,
 	repository tournamentadmin.ExecutionWorkflowRepository,
+	normalPause tournamentadmin.NormalPauseExecutionRepository,
 	waveRepository gameusecase.StartRepository,
 	authority *authorityusecase.Controller,
 	clock clockFunc,
@@ -327,6 +328,7 @@ func provideTournamentAdminExecution(
 	return tournamentadmin.NewExecutionWorkflow(tournamentadmin.ExecutionWorkflowDependencies{
 		Transactions: transactions,
 		Repository:   repository,
+		NormalPause:  normalPause,
 		Authority:    authority,
 		WaveStart:    gameusecase.NewStartUseCase(waveRepository, clock),
 	})
