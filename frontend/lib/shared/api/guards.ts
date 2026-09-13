@@ -1667,3 +1667,213 @@ export const isIncidentBundle = (value: unknown): value is IncidentBundle =>
   isSafePositiveInteger(value.projection_revision) &&
   HEX_64.test(String(value.sha256)) &&
   isNonNilUUID(value.tournament_id);
+
+type GoldenRuntimeMember = components["schemas"]["GoldenRuntimeMember"];
+type GoldenRuntimeState = components["schemas"]["GoldenRuntimeState"];
+type GoldenOperatorGroup = components["schemas"]["GoldenOperatorGroup"];
+type GoldenOperatorResponse = components["schemas"]["GoldenOperatorResponse"];
+type GoldenRuntimeTask = components["schemas"]["GoldenRuntimeTask"];
+type GoldenParticipantResponse = components["schemas"]["GoldenParticipantResponse"];
+export type GoldenRuntimeConflictProblem = components["schemas"]["GoldenRuntimeConflictProblem"];
+
+const GOLDEN_RUNTIME_STATES = new Set<GoldenRuntimeState>([
+  "prepared",
+  "ready",
+  "active",
+  "technical_pause",
+  "completed",
+  "cancelled",
+  "superseded",
+]);
+
+const hasExactRequiredKeys = (
+  value: Record<string, unknown>,
+  requiredKeys: readonly string[],
+  optionalKeys: readonly string[] = [],
+): boolean => {
+  const keys = Object.keys(value);
+  const allowedKeys = [...requiredKeys, ...optionalKeys];
+  return requiredKeys.every((key) => keys.includes(key)) &&
+    keys.every((key) => allowedKeys.includes(key));
+};
+
+export const isGoldenRuntimeState = (value: unknown): value is GoldenRuntimeState =>
+  isString(value) && GOLDEN_RUNTIME_STATES.has(value as GoldenRuntimeState);
+
+const isGoldenPosition = (value: unknown): value is number | null =>
+  value === null || (isSafeInteger(value) && value >= 1 && value <= 16);
+
+export const isGoldenRuntimeMember = (value: unknown): value is GoldenRuntimeMember =>
+  isRecord(value) &&
+  hasExactKeys(value, ["participant_id", "ready", "submitted", "position"]) &&
+  isNonNilUUID(value.participant_id) &&
+  typeof value.ready === "boolean" &&
+  typeof value.submitted === "boolean" &&
+  isGoldenPosition(value.position);
+
+const isGoldenOperatorGroupValue = (value: unknown): value is GoldenOperatorGroup =>
+  isRecord(value) &&
+  hasExactKeys(value, [
+    "attempt_id",
+    "deadline",
+    "group_id",
+    "group_revision_id",
+    "members",
+    "position_from",
+    "position_to",
+    "ready_window_id",
+    "runtime_revision",
+    "started_at",
+    "state",
+  ]) &&
+  isNonNilUUID(value.attempt_id) &&
+  isParticipantDateOrNull(value.deadline) &&
+  isNonNilUUID(value.group_id) &&
+  isNonNilUUID(value.group_revision_id) &&
+  Array.isArray(value.members) &&
+  value.members.length >= 2 &&
+  value.members.length <= 16 &&
+  value.members.every(isGoldenRuntimeMember) &&
+  new Set(value.members.map((member) => member.participant_id)).size === value.members.length &&
+  isSafeInteger(value.position_from) &&
+  value.position_from >= 1 &&
+  value.position_from <= 16 &&
+  isSafeInteger(value.position_to) &&
+  value.position_to >= value.position_from &&
+  value.position_to <= 16 &&
+  isNonNilUUID(value.ready_window_id) &&
+  isSafePositiveInteger(value.runtime_revision) &&
+  isParticipantDateOrNull(value.started_at) &&
+  isGoldenRuntimeState(value.state);
+
+export const isGoldenOperatorGroup = (value: unknown): value is GoldenOperatorGroup =>
+  isGoldenOperatorGroupValue(value);
+
+export const isGoldenOperatorResponse = (
+  value: unknown,
+): value is GoldenOperatorResponse =>
+  isRecord(value) &&
+  hasExactKeys(value, ["groups", "observed_at", "tournament_id"]) &&
+  Array.isArray(value.groups) &&
+  value.groups.every(isGoldenOperatorGroupValue) &&
+  isDateTimeString(value.observed_at) &&
+  isNonNilUUID(value.tournament_id);
+
+export const isGoldenRuntimeTask = (value: unknown): value is GoldenRuntimeTask =>
+  isRecord(value) &&
+  hasExactRequiredKeys(
+    value,
+    [
+      "assignment_id",
+      "category",
+      "description",
+      "difficulty",
+      "snapshot_id",
+      "source_file_available",
+      "task_id",
+      "time_limit_seconds",
+      "title",
+      "version",
+    ],
+    ["task_url"],
+  ) &&
+  isNonNilUUID(value.assignment_id) &&
+  isString(value.category) &&
+  value.category.trim().length > 0 &&
+  isString(value.description) &&
+  value.description.trim().length > 0 &&
+  isString(value.difficulty) &&
+  value.difficulty.trim().length > 0 &&
+  isNonNilUUID(value.snapshot_id) &&
+  typeof value.source_file_available === "boolean" &&
+  isNonNilUUID(value.task_id) &&
+  isOptionalStringOrNull(value.task_url) &&
+  (value.task_url === undefined || value.task_url === null || value.task_url.trim().length > 0) &&
+  value.time_limit_seconds === 180 &&
+  isString(value.title) &&
+  value.title.trim().length > 0 &&
+  isSafePositiveInteger(value.version) &&
+  value.version <= INT32_MAX;
+
+export const isGoldenParticipantResponse = (
+  value: unknown,
+): value is GoldenParticipantResponse => {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, [
+      "attempt_id",
+      "deadline",
+      "group_id",
+      "group_revision_id",
+      "participant_id",
+      "position",
+      "ready",
+      "ready_window_id",
+      "runtime_revision",
+      "started_at",
+      "state",
+      "submitted",
+      "task",
+      "tournament_id",
+    ]) ||
+    !isNonNilUUID(value.attempt_id) ||
+    !isParticipantDateOrNull(value.deadline) ||
+    !isNonNilUUID(value.group_id) ||
+    !isNonNilUUID(value.group_revision_id) ||
+    !isNonNilUUID(value.participant_id) ||
+    !isGoldenPosition(value.position) ||
+    typeof value.ready !== "boolean" ||
+    !isNonNilUUID(value.ready_window_id) ||
+    !isSafePositiveInteger(value.runtime_revision) ||
+    !isParticipantDateOrNull(value.started_at) ||
+    !isGoldenRuntimeState(value.state) ||
+    typeof value.submitted !== "boolean" ||
+    !(value.task === null || isGoldenRuntimeTask(value.task)) ||
+    !isNonNilUUID(value.tournament_id)
+  ) {
+    return false;
+  }
+
+  if (value.task === null) {
+    // The backend also keeps no-show or excluded members taskless after a
+    // window has started. A null task must stay null; the client never fills
+    // it from surrounding metadata.
+    return true;
+  }
+  return value.started_at !== null && value.deadline !== null;
+};
+
+const isOptionalGoldenConflictUUID = (value: unknown): boolean =>
+  value === undefined || value === null || isNonNilUUID(value);
+
+export const isGoldenRuntimeConflictProblem = (
+  value: unknown,
+): value is GoldenRuntimeConflictProblem =>
+  isRecord(value) &&
+  hasExactRequiredKeys(
+    value,
+    ["status", "title", "type"],
+    [
+      "current_attempt_id",
+      "current_ready_window_id",
+      "current_runtime_revision",
+      "detail",
+      "expected_attempt_id",
+      "expected_ready_window_id",
+      "expected_runtime_revision",
+      "instance",
+      "request_id",
+    ],
+  ) &&
+  value.status === 409 &&
+  isString(value.title) &&
+  isString(value.type) &&
+  (value.detail === undefined || isString(value.detail)) &&
+  (value.instance === undefined || isString(value.instance)) &&
+  (value.request_id === undefined || isString(value.request_id)) &&
+  isOptionalGoldenConflictUUID(value.current_attempt_id) &&
+  isOptionalGoldenConflictUUID(value.current_ready_window_id) &&
+  (value.current_runtime_revision === undefined || isNonNegativeInteger(value.current_runtime_revision)) &&
+  isOptionalGoldenConflictUUID(value.expected_attempt_id) &&
+  isOptionalGoldenConflictUUID(value.expected_ready_window_id) &&
+  (value.expected_runtime_revision === undefined || isNonNegativeInteger(value.expected_runtime_revision));

@@ -9,4 +9,5 @@ export * from './tournament-operator';
 export * from './tournament-public';
 export * from './arena';
 export * from './participant';
+export * from './golden';
 export { ApiContractError } from './guards';
