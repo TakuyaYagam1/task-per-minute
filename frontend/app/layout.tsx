@@ -1,7 +1,23 @@
 import "./globals.css";
-import { Inter } from "next/font/google";
+import { ThemeToggle } from "@/shared/ui";
 
-const inter = Inter({ subsets: ["latin"], weight: ["700"] });
+const themeStorageKey = "task-per-minute-theme";
+const themeBootstrapScript = `
+(function () {
+  var root = document.documentElement;
+  var theme = "dark";
+
+  try {
+    var storedTheme = window.localStorage.getItem(${JSON.stringify(themeStorageKey)});
+    if (storedTheme === "dark" || storedTheme === "light") {
+      theme = storedTheme;
+    }
+  } catch {}
+
+  root.dataset.theme = theme;
+  root.style.colorScheme = theme;
+})();
+`;
 
 export const metadata = {
   title: "Task Per Minute",
@@ -14,8 +30,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="ru">
-      <body className={inter.className}>{children}</body>
+    <html lang="ru" data-theme="dark" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeBootstrapScript }} />
+      </head>
+      <body>
+        <ThemeToggle storageKey={themeStorageKey} />
+        {children}
+      </body>
     </html>
   );
 }

@@ -1,30 +1,63 @@
 @tailwind utilities;
 
 :root {
-  --primary-blue: #3e7284;
-  --light-blue: #72d1eb;
-  --success-green: #4ade80;
-  --error-red: #ef4444;
-  --warning-yellow: #fbbf24;
-  --text-white: #ffffff;
-  --text-gray: rgba(255, 255, 255, 0.8);
+  color-scheme: dark;
+
+  --bg: #101419;
+  --surface: #1a2027;
+  --surface-strong: #202832;
+  --surface-muted: #151b21;
+  --text: #f2f5f7;
+  --secondary: #a8b3be;
+  --subtle: #9aa9b7;
+  --border: #303a44;
+  --border-strong: #455362;
+  --accent: #70b5e8;
+  --accent-strong: #9bd2f5;
+  --accent-soft: #23394b;
+  --success: #76c893;
+  --success-soft: #20352d;
+  --warning: #e4b56c;
+  --warning-soft: #3b3022;
+  --error: #ef4444;
+  --error-soft: #451f25;
+  --accent-ring: rgba(112, 181, 232, 0.3);
+
+  --panel: var(--surface);
+  --panel-strong: var(--surface-strong);
+  --panel-muted: var(--surface-muted);
+  --muted: var(--secondary);
+
+  --shadow: 0 14px 34px rgba(0, 0, 0, 0.2);
+  --shadow-small: 0 5px 15px rgba(0, 0, 0, 0.16);
+  --radius: 12px;
+  --radius-small: 8px;
+  --motion: 160ms ease-out;
+
+  /* Compatibility aliases for existing components. */
+  --primary-blue: var(--accent);
+  --light-blue: var(--accent-strong);
+  --success-green: var(--success);
+  --error-red: var(--error);
+  --warning-yellow: var(--warning);
+  --text-white: var(--text);
+  --text-gray: var(--secondary);
   --overlay-bg: rgba(0, 0, 0, 0.5);
 
   --container-max-width: 1200px;
-  --border-radius: 0.5rem;
-  --border-radius-lg: 1rem;
-  --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+  --border-radius: var(--radius-small);
+  --border-radius-lg: var(--radius);
+  --shadow-lg: var(--shadow);
 
-  --transition-fast: 0.15s ease-in-out;
-  --transition-normal: 0.3s ease-in-out;
-  --transition-slow: 0.5s ease-in-out;
+  --transition-fast: var(--motion);
+  --transition-normal: 260ms ease-out;
+  --transition-slow: 420ms ease-out;
   --motion-fast: 160ms;
   --motion-normal: 260ms;
   --motion-slow: 420ms;
   --motion-ease: cubic-bezier(0.22, 1, 0.36, 1);
   --motion-ease-emphasis: cubic-bezier(0.34, 1.56, 0.64, 1);
-  --motion-lift-shadow: 0 18px 35px rgba(0, 0, 0, 0.16);
+  --motion-lift-shadow: var(--shadow);
 
   --mobile: 480px;
   --tablet: 768px;
@@ -32,11 +65,42 @@
   --desktop-lg: 1280px;
 }
 
+html[data-theme="light"] {
+  color-scheme: light;
+
+  --bg: #f5f7fa;
+  --surface: #ffffff;
+  --surface-strong: #f0f4f8;
+  --surface-muted: #f7f9fb;
+  --text: #18212b;
+  --secondary: #526173;
+  --subtle: #607084;
+  --border: #d7e0e8;
+  --border-strong: #b9c7d4;
+  --accent: #175cd3;
+  --accent-strong: #124bb0;
+  --accent-soft: #e6efff;
+  --success: #1d7a46;
+  --success-soft: #e4f3eb;
+  --warning: #9a5f0a;
+  --warning-soft: #fff2d8;
+  --error: #b42318;
+  --error-soft: #fef3f2;
+  --accent-ring: rgba(23, 92, 211, 0.28);
+
+  --shadow: 0 14px 34px rgba(24, 33, 43, 0.1);
+  --shadow-small: 0 5px 15px rgba(24, 33, 43, 0.08);
+  --shadow-lg: var(--shadow);
+  --overlay-bg: rgba(24, 33, 43, 0.4);
+}
+
 * {
   box-sizing: border-box;
 }
 
 html {
+  min-width: 320px;
+  background: var(--bg);
   scroll-behavior: smooth;
   font-size: clamp(14px, 2.5vw, 16px);
 }
@@ -44,18 +108,23 @@ html {
 body {
   margin: 0;
   padding: 0;
-  background: linear-gradient(135deg, var(--primary-blue) 0%, #2a5a6b 100%);
+  background: var(--bg);
   min-height: 100vh;
   font-family:
-    "Inter",
+    ui-sans-serif,
+    system-ui,
     -apple-system,
     BlinkMacSystemFont,
     "Segoe UI",
     "Roboto",
+    "Noto Sans",
+    "Arial",
     sans-serif;
   line-height: 1.6;
   color: var(--text-white);
   overflow-x: hidden;
+  font-variant-numeric: tabular-nums;
+  transition: background-color var(--motion), color var(--motion);
 }
 
 @keyframes fadeIn {
@@ -262,6 +331,16 @@ body {
   }
 }
 
+button {
+  color: inherit;
+  font: inherit;
+}
+
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
 button:hover:not(:disabled) {
   transform: translateY(-2px);
   filter: brightness(1.1);
@@ -273,12 +352,12 @@ button:active {
 
 input:focus {
   outline: none;
-  border-color: #72d1eb;
-  box-shadow: 0 0 0 3px rgba(114, 209, 235, 0.3);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-ring);
 }
 
 input::placeholder {
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--subtle);
 }
 
 @media (max-width: 768px) {
@@ -405,13 +484,6 @@ input::placeholder {
   }
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --primary-blue: #2a4a5a;
-    --text-gray: rgba(255, 255, 255, 0.9);
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -532,18 +604,6 @@ input::placeholder {
   }
 }
 
-.theme-dark {
-  --primary-blue: #1a2e3a;
-  --text-white: #f0f9ff;
-  --text-gray: rgba(240, 249, 255, 0.8);
-}
-
-.theme-light {
-  --primary-blue: #e0f2fe;
-  --text-white: #0f172a;
-  --text-gray: rgba(15, 23, 42, 0.8);
-}
-
 .will-change-transform {
   will-change: transform;
 }
@@ -632,17 +692,17 @@ input::placeholder {
 }
 
 .card {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--surface);
   backdrop-filter: blur(10px);
   border-radius: var(--border-radius-lg);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  box-shadow: var(--shadow-lg);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
   transition: all var(--transition-normal);
 }
 
 .card:hover {
   transform: translateY(-4px);
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow-lg);
 }
 
 .btn {
@@ -683,23 +743,23 @@ input::placeholder {
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, var(--light-blue), #5db3d3);
-  color: white;
+  background: var(--accent);
+  color: var(--bg);
 }
 
 .btn-primary:hover:not(:disabled) {
   transform: translateY(-2px) scale(1.05);
-  box-shadow: 0 8px 15px rgba(114, 209, 235, 0.4);
+  box-shadow: 0 8px 15px var(--accent-ring);
 }
 
 .btn-secondary {
-  background: rgba(255, 255, 255, 0.1);
-  color: var(--text-white);
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: var(--surface-muted);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
 }
 
 .btn-secondary:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--surface-strong);
   transform: translateY(-2px);
 }
 
@@ -712,23 +772,56 @@ input::placeholder {
 .input {
   width: 100%;
   padding: 0.75rem 1rem;
-  border: 2px solid rgba(255, 255, 255, 0.2);
+  border: 2px solid var(--border);
   border-radius: var(--border-radius);
-  background: rgba(255, 255, 255, 0.1);
-  color: var(--text-white);
+  background: var(--surface-muted);
+  color: var(--text);
   font-family: inherit;
   transition: all var(--transition-fast);
 }
 
 .input:focus {
   outline: none;
-  border-color: var(--light-blue);
-  box-shadow: 0 0 0 3px rgba(114, 209, 235, 0.3);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-ring);
   transform: scale(1.02);
 }
 
 .input::placeholder {
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--subtle);
+}
+
+/* Keep legacy utility-marked content readable on tokenized surfaces. */
+.card .text-blue-200 {
+  color: var(--accent);
+}
+
+.card .text-gray-300,
+.card .text-gray-400 {
+  color: var(--secondary);
+}
+
+.card .text-white:not(.btn) {
+  color: var(--text);
+}
+
+.card input {
+  border-color: var(--border);
+  background: var(--surface-muted);
+  color: var(--text);
+}
+
+.card input::placeholder {
+  color: var(--subtle);
+}
+
+.card .bg-white\/10 {
+  background: var(--surface-muted);
+}
+
+.card .border-white\/15,
+.card .border-white\/20 {
+  border-color: var(--border);
 }
 
 .animate-fadeIn {

@@ -1,0 +1,61 @@
+.toggle {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 1000;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface-muted);
+  box-shadow: var(--shadow-small);
+}
+
+.button {
+  min-height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--secondary);
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1;
+  transition:
+    background-color var(--motion),
+    color var(--motion),
+    box-shadow var(--motion);
+}
+
+.button:hover:not(:disabled) {
+  transform: none;
+  filter: none;
+  color: var(--text);
+}
+
+:global(html[data-theme="dark"]) .button[data-theme-choice="dark"],
+:global(html[data-theme="light"]) .button[data-theme-choice="light"] {
+  background: var(--surface-strong);
+  color: var(--text);
+  box-shadow: var(--shadow-small);
+}
+
+.button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (max-width: 479px) {
+  .toggle {
+    top: 12px;
+    right: 12px;
+  }
+
+  .button {
+    min-height: 36px;
+    padding: 0 9px;
+  }
+}
