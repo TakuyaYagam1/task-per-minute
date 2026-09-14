@@ -23,10 +23,15 @@ import {
 } from "../../shared/ui";
 
 import { RosterEditor } from "./RosterEditor";
+import {
+  TournamentContentManager,
+  type AdminRequestRunner,
+} from "./TournamentContentManager";
 import styles from "./TournamentAdminPanel.module.css";
 
 type TournamentAdminPanelProps = Readonly<{
   onSessionExpired?: () => void;
+  runAdminRequest?: AdminRequestRunner;
 }>;
 
 type LoadState = "loading" | "ready" | "error";
@@ -146,6 +151,7 @@ const readAllTournaments = async (signal: AbortSignal): Promise<Tournament[]> =>
 
 export const TournamentAdminPanel = ({
   onSessionExpired,
+  runAdminRequest,
 }: TournamentAdminPanelProps) => {
   const router = useRouter();
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
@@ -385,6 +391,14 @@ export const TournamentAdminPanel = ({
 
   return (
     <div className={styles.root}>
+      <TournamentContentManager
+        content={content}
+        contentState={contentState}
+        contentError={contentError}
+        onReloadContent={() => void loadContent()}
+        onSessionExpired={onSessionExpired}
+        runAdminRequest={runAdminRequest}
+      />
       <div className={styles.layout}>
         <Panel
           title="Новый турнир"

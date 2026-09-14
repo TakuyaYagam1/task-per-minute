@@ -146,7 +146,7 @@ const loginThroughAdminUI = async (page: Page): Promise<void> => {
   await page.goto('/admin');
   await page.getByPlaceholder('Введите пароль...').fill(adminPassword);
   await page.getByRole('button', { name: 'Войти' }).click();
-  await expect(page.getByText('Список задач')).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole('button', { name: 'Турниры' })).toBeVisible({ timeout: 15_000 });
 
   const cookies = await page.context().cookies();
   expect(cookies.some((cookie) => cookie.name === 'tpm_admin_access')).toBe(true);
@@ -154,16 +154,17 @@ const loginThroughAdminUI = async (page: Page): Promise<void> => {
 };
 
 const fillAdminTaskForm = async (page: Page, input: FullStackTaskInput): Promise<void> => {
-  await page.getByPlaceholder('Введите название...').fill(input.title);
-  await page.getByPlaceholder('Опишите задачу...').fill(input.description);
-  await page.locator('select').first().selectOption(input.category);
-  await page.locator('select').nth(1).selectOption(input.difficulty);
-  await page.getByPlaceholder('60').fill(String(input.time_limit));
-  await page.getByPlaceholder('flag{...}').fill(input.flag);
-  await page.getByPlaceholder('https://example.com/task').fill(input.task_url ?? '');
-  await page.getByPlaceholder('Подсказка 1').fill(input.hints[0]);
-  await page.getByPlaceholder('Подсказка 2').fill(input.hints[1]);
-  await page.getByPlaceholder('Подсказка 3').fill(input.hints[2]);
+  const form = page.locator('form').filter({ has: page.getByPlaceholder('Введите название...') }).first();
+  await form.getByPlaceholder('Введите название...').fill(input.title);
+  await form.getByPlaceholder('Опишите задачу...').fill(input.description);
+  await form.locator('select').first().selectOption(input.category);
+  await form.locator('select').nth(1).selectOption(input.difficulty);
+  await form.getByPlaceholder('60').fill(String(input.time_limit));
+  await form.getByPlaceholder('flag{...}').fill(input.flag);
+  await form.getByPlaceholder('https://example.com/task').fill(input.task_url ?? '');
+  await form.getByPlaceholder('Подсказка 1').fill(input.hints[0]);
+  await form.getByPlaceholder('Подсказка 2').fill(input.hints[1]);
+  await form.getByPlaceholder('Подсказка 3').fill(input.hints[2]);
 };
 
 const createTaskViaApi = async (
@@ -364,6 +365,8 @@ test.describe('local compose full stack e2e', () => {
     try {
       await loginThroughAdminUI(page);
       cleanupSession = await adminLogin(request);
+      await page.getByRole('button', { name: 'Турниры' }).click();
+      await expect(page.getByPlaceholder('Введите название...')).toBeVisible();
       await fillAdminTaskForm(page, taskInput);
       await page.getByRole('button', { name: /Создать задачу/ }).click();
       await expect(page.getByText(title)).toBeVisible({ timeout: 15_000 });
@@ -429,7 +432,13 @@ test.describe('local compose full stack e2e', () => {
 
     await page.getByRole('button', { name: 'Турниры' }).click();
     await expect(page.getByRole('heading', { name: 'Новый турнир' })).toBeVisible();
-    await expect(page.getByText(`Ревизия ${contentRevision}`)).toBeVisible();
+    const reloadPublication = page.getByRole('button', { name: 'Обновить публикацию' });
+    if (await reloadPublication.isVisible().catch(() => false)) {
+      await reloadPublication.click();
+    }
+    await expect(
+      page.getByRole('region', { name: 'Каталог контента' }).getByText(`Ревизия ${contentRevision}`),
+    ).toBeVisible();
     await page.getByLabel('Название турнира').fill(tournamentName);
     await page.getByLabel('Плановый размер состава').selectOption('4');
 
@@ -462,6 +471,99 @@ test.describe('local compose full stack e2e', () => {
     expect(listResponse.ok(), `tournament list failed with ${listResponse.status()}`).toBeTruthy();
     const list = (await listResponse.json()) as { items: AdminTournament[] };
     expect(list.items.some((item) => item.id === tournament.id && item.name === tournamentName)).toBe(true);
+  });
+
+  test('FE-028 admin UI creates, uploads, downloads, and updates a task through the relocated catalog', async ({ page, request }) => {
+    test.setTimeout(120_000);
+
+    const title = uniqueName('fullstack-fe028');
+    const updatedTitle = `${title}-updated`;
+    const taskInput: FullStackTaskInput = {
+      title,
+      description: 'FE-028 task created through the tournament admin catalog.',
+      category: 'forensics',
+      difficulty: 'easy',
+      time_limit: 120,
+      flag: `flag{${title.replaceAll('-', '_')}}`,
+      hints: ['fe028 hint one', 'fe028 hint two', 'fe028 hint three'],
+      task_url: null,
+    };
+    let cleanupSession: AdminSession | null = null;
+
+    try {
+      await loginThroughAdminUI(page);
+      await page.getByRole('button', { name: 'Турниры' }).click();
+      await expect(page.getByPlaceholder('Введите название...')).toBeVisible({ timeout: 15_000 });
+
+      await fillAdminTaskForm(page, taskInput);
+      await page.locator('input[type="file"]').setInputFiles({
+        name: 'fe028-source.zip',
+        mimeType: 'application/zip',
+        buffer: Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x66, 0x65, 0x30, 0x32, 0x38]),
+      });
+
+      const createResponsePromise = page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname === '/api/v1/admin/tasks' &&
+          response.request().method() === 'POST',
+      );
+      const uploadResponsePromise = page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname.endsWith('/source') &&
+          response.request().method() === 'POST',
+      );
+      await page.getByRole('button', { name: /Создать задачу/ }).click();
+
+      const createResponse = await createResponsePromise;
+      expect(createResponse.status()).toBe(201);
+      const createdTask = (await createResponse.json()) as AdminTask;
+      expect(createdTask.id).toMatch(/^[0-9a-f-]{36}$/i);
+      expect(createdTask.title).toBe(title);
+
+      const uploadResponse = await uploadResponsePromise;
+      expect(uploadResponse.status()).toBe(200);
+      const upload = (await uploadResponse.json()) as UploadSourceResponse;
+      expect(upload.source_file_url).toMatch(/^https?:\/\//);
+      await expect(page.getByText('Исходники загружены в SeaweedFS')).toBeVisible({ timeout: 15_000 });
+      const downloadLink = page.getByRole('link', { name: /Скачать.*ZIP/ });
+      await expect(downloadLink).toHaveAttribute('href', upload.source_file_url);
+
+      const download = await page.context().request.get(upload.source_file_url, { timeout: 15_000 });
+      expect(download.ok(), `source download failed with ${download.status()}`).toBeTruthy();
+      expect((await download.body()).subarray(0, 2).toString()).toBe('PK');
+
+      await expect(page.getByText(title, { exact: true })).toBeVisible();
+      await page.getByRole('button', { name: `Редактировать задачу ${title}` }).click();
+      await page.getByPlaceholder('Введите название...').fill(updatedTitle);
+      const updateResponsePromise = page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname === `/api/v1/admin/tasks/${createdTask.id}` &&
+          response.request().method() === 'PUT',
+      );
+      await page.getByRole('button', { name: /Сохранить задачу/ }).click();
+      const updateResponse = await updateResponsePromise;
+      expect(updateResponse.status()).toBe(200);
+      await expect(page.getByText('Задача успешно обновлена!')).toBeVisible();
+      await expect(page.getByText(updatedTitle, { exact: true })).toBeVisible();
+
+      cleanupSession = await adminLogin(request);
+      const refreshedTasks = await request.get(`${backendURL}/api/v1/admin/tasks`);
+      expect(refreshedTasks.ok(), `admin task list failed with ${refreshedTasks.status()}`).toBeTruthy();
+      const taskList = (await refreshedTasks.json()) as AdminTask[];
+      expect(taskList.some((task) => task.id === createdTask.id && task.title === updatedTitle)).toBe(true);
+    } finally {
+      if (!cleanupSession) {
+        try {
+          cleanupSession = await adminLogin(request);
+        } catch {
+          cleanupSession = null;
+        }
+      }
+      if (cleanupSession) {
+        await cleanupTaskByTitle(request, cleanupSession, title);
+        await cleanupTaskByTitle(request, cleanupSession, updatedTitle);
+      }
+    }
   });
 
   test('FE-027 composes, checks in, replaces, and protects a real backend roster', async ({ page, browser }) => {

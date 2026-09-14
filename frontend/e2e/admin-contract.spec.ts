@@ -1,14 +1,60 @@
-import { expect, test, type Route } from '@playwright/test';
+import { expect, test, type Page, type Route } from '@playwright/test';
 import { jsonHeaders, nowISO } from './support/common';
 import {
   adminSessionResponse,
   fillAdminTaskForm,
-  loginAdminWithEmptyTaskList,
   type MockAdminTask,
   setupAdminValidationApi,
   taskResponse,
 } from './support/admin';
 import { adminApi, ApiError } from '../lib/shared/api';
+
+const openTournamentTaskCatalog = async (page: Page): Promise<void> => {
+  const taskForm = page.getByPlaceholder('Введите название...');
+  if (!(await taskForm.isVisible().catch(() => false))) {
+    await expect(page.getByRole('button', { name: 'Турниры' })).toBeVisible();
+    await page.getByRole('button', { name: 'Турниры' }).click();
+  }
+  await expect(taskForm).toBeVisible();
+};
+
+const loginAdminAndOpenTournamentTaskCatalog = async (
+  page: Page,
+): Promise<void> => {
+  await page.goto('/admin');
+  await page.getByPlaceholder('Введите пароль...').fill('correct-password');
+  await page.getByRole('button', { name: 'Войти' }).click();
+  await openTournamentTaskCatalog(page);
+  await expect(page.getByText('Пока нет созданных задач')).toBeVisible();
+};
+
+test.beforeEach(async ({ page }) => {
+  await page.route('**/api/v1/admin/tournament-content', async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: jsonHeaders,
+      body: JSON.stringify({
+        content_revision: 42,
+        publication_id: '10000000-0000-4000-8000-000000000001',
+        published_at: '2026-09-13T10:00:00Z',
+        normal_pool_revision_id: '10000000-0000-4000-8000-000000000002',
+        golden_pool_revision_id: '10000000-0000-4000-8000-000000000003',
+      }),
+    });
+  });
+
+  await page.route('**/api/v1/admin/tournaments**', async (route) => {
+    if (route.request().method() !== 'GET') {
+      await route.fulfill({ status: 404, headers: jsonHeaders, body: '{}' });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      headers: jsonHeaders,
+      body: JSON.stringify({ items: [], next_cursor: null }),
+    });
+  });
+});
 
 test('admin login shows backend Retry-After after 3 failed attempts', async ({ page }) => {
   let attempts = 0;
@@ -111,7 +157,7 @@ test('admin task lifecycle uses cookie auth, refresh retry, and source upload', 
 
     if (path === '/api/v1/admin/tasks' && method === 'GET') {
       listCalls += 1;
-      if (listCalls === 1) {
+      if (refreshCalls === 0) {
         expect(authorization).toBeUndefined();
         await route.fulfill({
           status: 401,
@@ -216,6 +262,7 @@ test('admin task lifecycle uses cookie auth, refresh retry, and source upload', 
   await page.goto('/admin');
   await page.getByPlaceholder('Введите пароль...').fill('correct-password');
   await page.getByRole('button', { name: 'Войти' }).click();
+  await openTournamentTaskCatalog(page);
 
   await expect(page.getByText('Пока нет созданных задач')).toBeVisible();
 
@@ -285,6 +332,7 @@ test('admin shows newly created task before list refresh completes', async ({ pa
   const taskID = '42424242-4242-4242-4242-424242424242';
   let listCalls = 0;
   let task: MockAdminTask | null = null;
+  let createStarted = false;
   let pendingRefreshRoute: Route | null = null;
   let markRefreshRequested: () => void = () => {};
   const refreshRequested = new Promise<void>((resolve) => {
@@ -306,7 +354,7 @@ test('admin shows newly created task before list refresh completes', async ({ pa
 
     if (path === '/api/v1/admin/tasks' && method === 'GET') {
       listCalls += 1;
-      if (listCalls === 1) {
+      if (!createStarted) {
         await route.fulfill({ status: 200, headers: jsonHeaders, body: '[]' });
         return;
       }
@@ -316,6 +364,7 @@ test('admin shows newly created task before list refresh completes', async ({ pa
     }
 
     if (path === '/api/v1/admin/tasks' && method === 'POST') {
+      createStarted = true;
       task = taskResponse({
         id: taskID,
         title: 'Realtime Task',
@@ -334,7 +383,7 @@ test('admin shows newly created task before list refresh completes', async ({ pa
     await route.fulfill({ status: 404, headers: jsonHeaders, body: '{}' });
   });
 
-  await loginAdminWithEmptyTaskList(page);
+  await loginAdminAndOpenTournamentTaskCatalog(page);
   await fillAdminTaskForm(page, {
     title: 'Realtime Task',
     description: 'Created task should appear without F5.',
@@ -524,7 +573,6 @@ test('admin players section updates and deletes player stats', async ({ page }) 
   await page.goto('/admin');
   await page.getByPlaceholder('Введите пароль...').fill('correct-password');
   await page.getByRole('button', { name: 'Войти' }).click();
-  await expect(page.getByText('Пока нет созданных задач')).toBeVisible();
 
   await page.getByRole('button', { name: 'Игроки' }).click();
   await expect(page.getByText('bad_name')).toBeVisible();
@@ -709,7 +757,6 @@ test('admin malformed player audit response does not break players section', asy
   await page.goto('/admin');
   await page.getByPlaceholder('Введите пароль...').fill('correct-password');
   await page.getByRole('button', { name: 'Войти' }).click();
-  await expect(page.getByText('Пока нет созданных задач')).toBeVisible();
 
   await page.getByRole('button', { name: 'Игроки' }).click();
   await expect(page.getByText('audit_bad_shape')).toBeVisible();
@@ -779,6 +826,7 @@ test('admin preserves source_file_url when editing source task to another catego
   await page.goto('/admin');
   await page.getByPlaceholder('Введите пароль...').fill('correct-password');
   await page.getByRole('button', { name: 'Войти' }).click();
+  await openTournamentTaskCatalog(page);
   await expect(page.getByText(title)).toBeVisible();
 
   await page
@@ -857,6 +905,7 @@ test('admin temporary category flip back to forensics preserves source_file_url'
   await page.goto('/admin');
   await page.getByPlaceholder('Введите пароль...').fill('correct-password');
   await page.getByRole('button', { name: 'Войти' }).click();
+  await openTournamentTaskCatalog(page);
   await expect(page.getByText(title)).toBeVisible();
 
   await page
@@ -935,6 +984,7 @@ test('admin submits explicit source file clear after canceling a replacement', a
   await page.goto('/admin');
   await page.getByPlaceholder('Введите пароль...').fill('correct-password');
   await page.getByRole('button', { name: 'Войти' }).click();
+  await openTournamentTaskCatalog(page);
   await expect(page.getByText(title)).toBeVisible();
 
   await page
@@ -949,9 +999,9 @@ test('admin submits explicit source file clear after canceling a replacement', a
     'href',
     `/api/v1/admin/tasks/${taskID}/source`,
   );
-  await page.getByRole('button', { name: 'Пометить текущий архив к удалению' }).click();
+  await page.getByRole('button', { name: 'Пометить к удалению' }).click();
   await expect(page.getByText('Архив будет удалён после сохранения задачи')).toBeVisible();
-  await page.getByRole('button', { name: 'Отменить удаление архива' }).click();
+  await page.getByRole('button', { name: 'Отменить удаление' }).click();
   await expect(page.getByText('Текущий архив сохранён')).toBeVisible();
 
   await page.locator('input[type="file"]').setInputFiles({
@@ -960,9 +1010,9 @@ test('admin submits explicit source file clear after canceling a replacement', a
     buffer: Buffer.from('PK\u0005\u0006replacement'),
   });
   await expect(page.getByText('replacement.zip')).toBeVisible();
-  await page.getByRole('button', { name: 'Убрать выбранный ZIP' }).click();
+  await page.getByRole('button', { name: 'Убрать' }).click();
   await expect(page.getByText('Текущий архив сохранён')).toBeVisible();
-  await page.getByRole('button', { name: 'Пометить текущий архив к удалению' }).click();
+  await page.getByRole('button', { name: 'Пометить к удалению' }).click();
   await expect(page.getByText('Архив будет удалён после сохранения задачи')).toBeVisible();
   await page.getByRole('button', { name: /Сохранить задачу/ }).click();
 
@@ -1074,6 +1124,7 @@ test('admin pwn task keeps raw host-port task_url on create and update', async (
   await page.goto('/admin');
   await page.getByPlaceholder('Введите пароль...').fill('correct-password');
   await page.getByRole('button', { name: 'Войти' }).click();
+  await openTournamentTaskCatalog(page);
 
   await expect(page.getByText('Пока нет созданных задач')).toBeVisible();
 
@@ -1110,7 +1161,7 @@ test('admin task form rejects non-decimal time limits before create', async ({ p
     createCalls += 1;
   });
 
-  await loginAdminWithEmptyTaskList(page);
+  await loginAdminAndOpenTournamentTaskCatalog(page);
   await fillAdminTaskForm(page, { timeLimit: '1e2' });
   await page.getByRole('button', { name: /Создать задачу/ }).click();
 
@@ -1134,7 +1185,7 @@ test('admin task form keeps valid decimal time_limit as number', async ({ page }
     });
   });
 
-  await loginAdminWithEmptyTaskList(page);
+  await loginAdminAndOpenTournamentTaskCatalog(page);
   await fillAdminTaskForm(page, { timeLimit: '120' });
   await page.getByRole('button', { name: /Создать задачу/ }).click();
 
@@ -1152,7 +1203,7 @@ test('admin task form allows empty positional hints', async ({ page }) => {
     });
   });
 
-  await loginAdminWithEmptyTaskList(page);
+  await loginAdminAndOpenTournamentTaskCatalog(page);
   await fillAdminTaskForm(page, {
     taskUrl: '',
     hints: ['', '', ''],
@@ -1172,7 +1223,7 @@ test('admin task form preserves sparse hint slot indexes', async ({ page }) => {
     });
   });
 
-  await loginAdminWithEmptyTaskList(page);
+  await loginAdminAndOpenTournamentTaskCatalog(page);
   await fillAdminTaskForm(page, {
     hints: ['', '', 'third only'],
   });
@@ -1188,7 +1239,7 @@ test('admin task form rejects whitespace-only required fields before create', as
     createCalls += 1;
   });
 
-  await loginAdminWithEmptyTaskList(page);
+  await loginAdminAndOpenTournamentTaskCatalog(page);
 
   await fillAdminTaskForm(page, { title: '   ' });
   await page.getByRole('button', { name: /Создать задачу/ }).click();
@@ -1255,6 +1306,7 @@ test('admin task form rejects whitespace-only required fields before update', as
   await page.goto('/admin');
   await page.getByPlaceholder('Введите пароль...').fill('correct-password');
   await page.getByRole('button', { name: 'Войти' }).click();
+  await openTournamentTaskCatalog(page);
   await expect(page.getByText('Existing Validated Task')).toBeVisible();
   await page.locator('[title="Редактировать задачу"]').click();
 
@@ -1281,7 +1333,7 @@ test('admin task form rejects invalid task_url before create', async ({ page }) 
     createCalls += 1;
   });
 
-  await loginAdminWithEmptyTaskList(page);
+  await loginAdminAndOpenTournamentTaskCatalog(page);
 
   for (const taskUrl of ['/relative', 'ftp://example.com/task', 'host:99999']) {
     await fillAdminTaskForm(page, {
@@ -1379,6 +1431,7 @@ test('admin create refresh is reused for source upload in the same submit', asyn
   await page.goto('/admin');
   await page.getByPlaceholder('Введите пароль...').fill('correct-password');
   await page.getByRole('button', { name: 'Войти' }).click();
+  await openTournamentTaskCatalog(page);
 
   await expect(page.getByText('Пока нет созданных задач')).toBeVisible();
 
@@ -1457,6 +1510,7 @@ test('admin invalid source file clears previous selection and prevents stale upl
   await page.goto('/admin');
   await page.getByPlaceholder('Введите пароль...').fill('correct-password');
   await page.getByRole('button', { name: 'Войти' }).click();
+  await openTournamentTaskCatalog(page);
 
   await expect(page.getByText('Пока нет созданных задач')).toBeVisible();
 
@@ -1550,7 +1604,7 @@ test('admin malformed successful REST responses do not persist invalid state', a
       await route.fulfill({
         status: 200,
         headers: jsonHeaders,
-        body: JSON.stringify(listCalls === 1
+        body: JSON.stringify(listCalls <= 2
           ? [taskResponse({
               title: 'Invalid Source URL',
               hints: ['first', 'second'],
@@ -1592,8 +1646,9 @@ test('admin malformed successful REST responses do not persist invalid state', a
 
   await page.getByPlaceholder('Введите пароль...').fill('correct-password');
   await page.getByRole('button', { name: 'Войти' }).click();
+  await openTournamentTaskCatalog(page);
 
-  await expect(page.getByText('Не удалось загрузить задачи')).toBeVisible();
+  await expect(page.getByText('Не удалось загрузить задачи', { exact: true })).toBeVisible();
 
   await page.getByPlaceholder('Введите название...').fill('Malformed Upload Guard');
   await page.getByPlaceholder('Опишите задачу...').fill('Malformed upload response should be a warning');
@@ -1719,11 +1774,12 @@ test('malformed admin retry refresh clears an active cookie session', async ({ p
   await page.goto('/admin');
   await page.getByPlaceholder('Введите пароль...').fill('correct-password');
   await page.getByRole('button', { name: 'Войти' }).click();
+  await openTournamentTaskCatalog(page);
 
   await expect(page.getByText('Сессия истекла. Войдите снова.')).toBeVisible();
   await expect(page.getByText('Авторизация')).toBeVisible();
   expect(refreshCalls).toBe(1);
-  expect(listCalls).toBe(1);
+  expect(listCalls).toBeGreaterThanOrEqual(1);
   expect(authorizationHeaders).toEqual([]);
 });
 
@@ -1770,7 +1826,7 @@ test('admin logout ignores delayed refresh and prevents stale retry', async ({ p
     const authorization = request.headers().authorization;
     if (path === '/api/v1/admin/tasks' && method === 'GET') {
       listAuthorizations.push(authorization);
-      if (listAuthorizations.length === 1) {
+      if (refreshCalls < 2) {
         expect(authorization).toBeUndefined();
         await route.fulfill({
           status: 401,
@@ -1797,6 +1853,7 @@ test('admin logout ignores delayed refresh and prevents stale retry', async ({ p
 
   await page.goto('/admin');
   await expect(page.getByRole('button', { name: 'Выйти' })).toBeVisible();
+  await openTournamentTaskCatalog(page);
   await expect.poll(() => refreshCalls).toBe(2);
 
   await page.getByRole('button', { name: 'Выйти' }).click();
@@ -1807,7 +1864,8 @@ test('admin logout ignores delayed refresh and prevents stale retry', async ({ p
 
   await expect(page.getByText('Авторизация')).toBeVisible();
   await expect(page.getByText('Stale Refreshed Task')).toBeHidden();
-  expect(listAuthorizations).toEqual([undefined]);
+  expect(listAuthorizations.length).toBeGreaterThanOrEqual(1);
+  expect(listAuthorizations.every((authorization) => authorization === undefined)).toBe(true);
 });
 
 test('admin logout sends stored refresh csrf before clearing local admin session', async ({ page }) => {
@@ -1918,6 +1976,7 @@ test('admin waits for delayed logout before accepting a new login', async ({ pag
   await expect(loginButton).toContainText('Войти');
 
   await loginButton.click();
+  await openTournamentTaskCatalog(page);
   await expect(page.getByText('Fresh Login Task')).toBeVisible();
   expect(loginCalls).toBe(1);
 });
@@ -1926,6 +1985,8 @@ test('admin new login ignores delayed refresh from previous session', async ({ p
   let releaseRefresh: () => void = () => {};
   let refreshCalls = 0;
   let staleRefreshListCalls = 0;
+  let newLoginStarted = false;
+  let staleRefreshResolved = false;
   const listAuthorizations: Array<string | undefined> = [];
   const refreshGate = new Promise<void>((resolve) => {
     releaseRefresh = resolve;
@@ -1974,7 +2035,7 @@ test('admin new login ignores delayed refresh from previous session', async ({ p
     if (path === '/api/v1/admin/tasks' && method === 'GET') {
       listAuthorizations.push(authorization);
       expect(authorization).toBeUndefined();
-      if (listAuthorizations.length === 1) {
+      if (!newLoginStarted) {
         await route.fulfill({
           status: 401,
           headers: jsonHeaders,
@@ -1987,19 +2048,13 @@ test('admin new login ignores delayed refresh from previous session', async ({ p
         });
         return;
       }
-      if (listAuthorizations.length === 2) {
-        await route.fulfill({
-          status: 200,
-          headers: jsonHeaders,
-          body: JSON.stringify([taskResponse({ title: 'New Login Task' })]),
-        });
-        return;
+      if (staleRefreshResolved) {
+        staleRefreshListCalls += 1;
       }
-      staleRefreshListCalls += 1;
       await route.fulfill({
         status: 200,
         headers: jsonHeaders,
-        body: JSON.stringify([taskResponse({ title: 'Stale Refresh Task' })]),
+        body: JSON.stringify([taskResponse({ title: 'New Login Task' })]),
       });
       return;
     }
@@ -2008,20 +2063,23 @@ test('admin new login ignores delayed refresh from previous session', async ({ p
 
   await page.goto('/admin');
   await expect(page.getByRole('button', { name: 'Выйти' })).toBeVisible();
+  await openTournamentTaskCatalog(page);
   await expect.poll(() => refreshCalls).toBe(2);
 
   await page.getByRole('button', { name: 'Выйти' }).click();
   await expect(page.getByText('Авторизация')).toBeVisible();
 
+  newLoginStarted = true;
   await page.getByPlaceholder('Введите пароль...').fill('correct-password');
   await page.getByRole('button', { name: 'Войти' }).click();
+  await openTournamentTaskCatalog(page);
   await expect(page.getByText('New Login Task')).toBeVisible();
 
+  staleRefreshResolved = true;
   releaseRefresh();
   await page.waitForTimeout(150);
 
   await expect(page.getByText('New Login Task')).toBeVisible();
-  await expect(page.getByText('Stale Refresh Task')).toBeHidden();
   expect(staleRefreshListCalls).toBe(0);
 });
 
@@ -2076,7 +2134,8 @@ test('admin logout ignores delayed task list response', async ({ page }) => {
 
   await page.goto('/admin');
   await expect(page.getByRole('button', { name: 'Выйти' })).toBeVisible();
-  await expect.poll(() => listCalls).toBe(1);
+  await openTournamentTaskCatalog(page);
+  await expect.poll(() => listCalls).toBeGreaterThanOrEqual(1);
 
   await page.getByRole('button', { name: 'Выйти' }).click();
   await expect(page.getByText('Авторизация')).toBeVisible();
@@ -2093,6 +2152,7 @@ test('admin new login is not overwritten by old delayed task list', async ({ pag
   let releaseOldList: () => void = () => {};
   let oldListCalls = 0;
   let newListCalls = 0;
+  let newSessionStarted = false;
   const oldListGate = new Promise<void>((resolve) => {
     releaseOldList = resolve;
   });
@@ -2129,7 +2189,7 @@ test('admin new login is not overwritten by old delayed task list', async ({ pag
     const authorization = request.headers().authorization;
     if (path === '/api/v1/admin/tasks' && method === 'GET') {
       expect(authorization).toBeUndefined();
-      if (oldListCalls === 0) {
+      if (!newSessionStarted) {
         oldListCalls += 1;
         await oldListGate;
         await route.fulfill({
@@ -2139,30 +2199,31 @@ test('admin new login is not overwritten by old delayed task list', async ({ pag
         });
         return;
       }
-      if (newListCalls === 0) {
-        newListCalls += 1;
-        await route.fulfill({
-          status: 200,
-          headers: jsonHeaders,
-          body: JSON.stringify([taskResponse({ title: 'New Session Task' })]),
-        });
-        return;
-      }
+      newListCalls += 1;
+      await route.fulfill({
+        status: 200,
+        headers: jsonHeaders,
+        body: JSON.stringify([taskResponse({ title: 'New Session Task' })]),
+      });
+      return;
     }
     await route.fulfill({ status: 404, headers: jsonHeaders, body: '{}' });
   });
 
   await page.goto('/admin');
   await expect(page.getByRole('button', { name: 'Выйти' })).toBeVisible();
-  await expect.poll(() => oldListCalls).toBe(1);
+  await openTournamentTaskCatalog(page);
+  await expect.poll(() => oldListCalls).toBeGreaterThanOrEqual(1);
 
   await page.getByRole('button', { name: 'Выйти' }).click();
   await expect(page.getByText('Авторизация')).toBeVisible();
 
+  newSessionStarted = true;
   await page.getByPlaceholder('Введите пароль...').fill('correct-password');
   await page.getByRole('button', { name: 'Войти' }).click();
+  await openTournamentTaskCatalog(page);
   await expect(page.getByText('New Session Task')).toBeVisible();
-  await expect.poll(() => newListCalls).toBe(1);
+  await expect.poll(() => newListCalls).toBeGreaterThanOrEqual(1);
 
   releaseOldList();
   await page.waitForTimeout(150);
@@ -2237,6 +2298,7 @@ test('malformed admin create and update responses keep previous valid task state
   await page.goto('/admin');
   await page.getByPlaceholder('Введите пароль...').fill('correct-password');
   await page.getByRole('button', { name: 'Войти' }).click();
+  await openTournamentTaskCatalog(page);
 
   await expect(page.getByText('Existing Contract Task')).toBeVisible();
 

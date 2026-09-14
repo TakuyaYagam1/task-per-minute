@@ -10,10 +10,7 @@ import {
   type AdminPlayer,
   type AdminPlayerAuditEvent,
   type AdminSessionResponse,
-  type AdminTask,
-  type CreateTaskRequest,
   type UpdateAdminPlayerRequest,
-  type UpdateTaskRequest,
 } from "../../lib/shared/api";
 import {
   getSafeArenaReturnPath,
@@ -24,25 +21,10 @@ import { ViewportPortal } from "../../lib/shared/ui";
 import { TournamentAdminPanel } from "../../lib/widgets/tournament-admin";
 import styles from "./admin.module.css";
 
-type Task = AdminTask;
 type Player = AdminPlayer;
 type PlayerAuditEvent = AdminPlayerAuditEvent;
-type TaskCategory = Task["category"];
-type TaskDifficulty = Task["difficulty"];
-type AdminSection = "tasks" | "players" | "tournaments";
-type TaskFormErrorField =
-  | "title"
-  | "description"
-  | "timeLimit"
-  | "flag"
-  | "taskUrl"
-  | "sourceFile"
-  | "hint0"
-  | "hint1"
-  | "hint2"
-  | "form";
+type AdminSection = "players" | "tournaments";
 type PlayerFormErrorField = "username" | "wins" | "averageMs" | "form";
-type TaskFormErrors = Partial<Record<TaskFormErrorField, string>>;
 type PlayerFormErrors = Partial<Record<PlayerFormErrorField, string>>;
 
 interface Notification {
@@ -50,43 +32,8 @@ interface Notification {
   message: string;
 }
 
-interface LastUploadedSource {
-  taskTitle: string;
-  fileName: string;
-  url: string;
-  expiresInSeconds: number;
-}
-
-const CATEGORY_CONFIG: Record<
-  TaskCategory,
-  { label: string; icon: string; color: string }
-> = {
-  web: { label: "Web", icon: "🌐", color: "#72d1eb" },
-  crypto: { label: "Crypto", icon: "🔐", color: "#fbbf24" },
-  forensics: { label: "Forensics", icon: "🔍", color: "#a78bfa" },
-  reverse: { label: "Reverse", icon: "⚙️", color: "#f472b6" },
-  pwn: { label: "Pwn", icon: "💥", color: "#ef4444" },
-  steganography: { label: "Steganography", icon: "🖼️", color: "#38bdf8" },
-  ppc: { label: "PPC", icon: "🧮", color: "#fb7185" },
-  osint: { label: "OSINT", icon: "🛰️", color: "#22c55e" },
-  mobile: { label: "Mobile", icon: "📱", color: "#60a5fa" },
-  hardware: { label: "Hardware", icon: "🔧", color: "#f97316" },
-  misc: { label: "Misc", icon: "🧩", color: "#34d399" },
-};
-
-const DIFFICULTY_CONFIG: Record<
-  TaskDifficulty,
-  { label: string; badgeClass: string }
-> = {
-  easy: { label: "Easy", badgeClass: styles.taskBadgeEasy },
-  medium: { label: "Medium", badgeClass: styles.taskBadgeMedium },
-  hard: { label: "Hard", badgeClass: styles.taskBadgeHard },
-};
-
-const MAX_INT32 = 2147483647;
-const MAX_TASK_TITLE_LENGTH = 255;
-const MAX_TASK_FLAG_LENGTH = 255;
 const USERNAME_RE = /^[a-zA-Z0-9_-]{2,50}$/;
+const MAX_INT32 = 2_147_483_647;
 const LOGOUT_TIMEOUT_MS = 8_000;
 const PLAYERS_EVENTS_RETRY_BASE_MS = 1_000;
 const PLAYERS_EVENTS_RETRY_MAX_MS = 30_000;
@@ -98,28 +45,6 @@ const operatorReturnPath = (): string | null =>
     new URLSearchParams(window.location.search).get("next"),
     "operator",
   );
-
-const emptyHintInputs = (): string[] => ["", "", ""];
-
-const hintInputsFromTask = (task: Task): string[] =>
-  emptyHintInputs().map((_, index) => task.hints[index] ?? "");
-
-const hintInputsToRequest = (values: string[]): NonNullable<CreateTaskRequest["hints"]> =>
-  values.slice(0, 3).map((hint) => {
-    const trimmed = hint.trim();
-    return trimmed ? trimmed : null;
-  });
-
-const countChars = (value: string): number => Array.from(value).length;
-
-const parsePositiveInt32 = (value: string): number | null => {
-  const trimmed = value.trim();
-  if (!/^[1-9]\d*$/.test(trimmed)) {
-    return null;
-  }
-  const parsed = Number(trimmed);
-  return Number.isSafeInteger(parsed) && parsed <= MAX_INT32 ? parsed : null;
-};
 
 const parseNonNegativeInt32 = (value: string): number | null => {
   const trimmed = value.trim();
@@ -138,45 +63,6 @@ const parseNonNegativeInt64 = (value: string): number | null => {
   const parsed = Number(trimmed);
   return Number.isSafeInteger(parsed) ? parsed : null;
 };
-
-const parsePortNumber = (value: string): number | null => {
-  if (!/^\d+$/.test(value)) {
-    return null;
-  }
-  const parsed = Number(value);
-  return Number.isSafeInteger(parsed) && parsed > 0 && parsed <= 65535
-    ? parsed
-    : null;
-};
-
-const isValidHttpTaskUrl = (value: string): boolean => {
-  try {
-    const url = new URL(value);
-    return (
-      (url.protocol === "http:" || url.protocol === "https:") &&
-      Boolean(url.host)
-    );
-  } catch {
-    return false;
-  }
-};
-
-const isValidHostPortTaskUrl = (value: string): boolean => {
-  if (value.includes("://")) {
-    return false;
-  }
-  const portSeparator = value.lastIndexOf(":");
-  if (portSeparator <= 0 || portSeparator === value.length - 1) {
-    return false;
-  }
-  const host = value.slice(0, portSeparator).trim();
-  const port = value.slice(portSeparator + 1);
-  const portNumber = parsePortNumber(port);
-  return host.length > 0 && portNumber !== null && portNumber <= 65535;
-};
-
-const isValidTaskUrl = (value: string): boolean =>
-  isValidHostPortTaskUrl(value) || isValidHttpTaskUrl(value);
 
 const formatRetryAfter = (value: string | null | undefined): string => {
   if (!value) return "несколько минут";
@@ -282,31 +168,11 @@ const apiErrorMessage = (error: unknown, fallback: string): string => {
 export default function AdminPanel() {
   const [session, setSession] = useState<AdminSessionResponse | null>(null);
   const [sessionChecking, setSessionChecking] = useState(true);
-  const [activeSection, setActiveSection] = useState<AdminSection>("tasks");
+  const [activeSection, setActiveSection] = useState<AdminSection>("tournaments");
   const [password, setPassword] = useState("");
   const [loginFormError, setLoginFormError] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
   const [logoutPending, setLogoutPending] = useState(false);
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [category, setCategory] = useState<TaskCategory>("web");
-  const [difficulty, setDifficulty] = useState<TaskDifficulty>("easy");
-  const [timeLimit, setTimeLimit] = useState("60");
-  const [flag, setFlag] = useState("");
-  const [hints, setHints] = useState<string[]>(emptyHintInputs);
-  const [taskUrl, setTaskUrl] = useState("");
-  const [sourceFile, setSourceFile] = useState<File | null>(null);
-  const [existingSourceFileURL, setExistingSourceFileURL] = useState<
-    string | null
-  >(null);
-  const [sourceFileCleared, setSourceFileCleared] = useState(false);
-  const [lastUploadedSource, setLastUploadedSource] =
-    useState<LastUploadedSource | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-  const [taskFormErrors, setTaskFormErrors] = useState<TaskFormErrors>({});
-  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [tasksLoading, setTasksLoading] = useState(false);
   const [players, setPlayers] = useState<Player[]>([]);
   const [playersLoading, setPlayersLoading] = useState(false);
   const [editingPlayerId, setEditingPlayerId] = useState<string | null>(null);
@@ -328,14 +194,12 @@ export default function AdminPanel() {
   const logoutAbortRef = useRef<AbortController | null>(null);
   const isMountedRef = useRef(false);
   const authSessionVersionRef = useRef(0);
-  const tasksRequestIDRef = useRef(0);
   const playersRequestIDRef = useRef(0);
   const playersEventsRef = useRef<EventSource | null>(null);
   const playersRealtimeRefreshTimerRef = useRef<number | null>(null);
   const playersEventsRetryTimerRef = useRef<number | null>(null);
   const playersEventsFallbackPollTimerRef = useRef<number | null>(null);
   const playerAuditRequestIDRef = useRef(0);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const passwordInputRef = useRef<HTMLInputElement>(null);
   const { notification, showNotification: showTimedNotification } =
     useTimedNotification<Notification>();
@@ -408,15 +272,6 @@ export default function AdminPanel() {
     [showTimedNotification],
   );
 
-  const clearTaskFormError = useCallback((field: TaskFormErrorField) => {
-    setTaskFormErrors((current) => {
-      if (!current[field]) return current;
-      const next = { ...current };
-      delete next[field];
-      return next;
-    });
-  }, []);
-
   const clearPlayerFormError = useCallback((field: PlayerFormErrorField) => {
     setPlayerFormErrors((current) => {
       if (!current[field]) return current;
@@ -451,7 +306,6 @@ export default function AdminPanel() {
     (options: { preserveAdminCSRF?: boolean } = {}) => {
       const nextSessionVersion = authSessionVersionRef.current + 1;
       authSessionVersionRef.current = nextSessionVersion;
-      tasksRequestIDRef.current += 1;
       playersRequestIDRef.current += 1;
       playerAuditRequestIDRef.current += 1;
       playersEventsRef.current?.close();
@@ -471,12 +325,9 @@ export default function AdminPanel() {
       clearAdminSession({ preserveCSRF: options.preserveAdminCSRF });
       sessionRef.current = null;
       setSession(null);
-      setActiveSection("tasks");
-      setTasks([]);
+      setActiveSection("tournaments");
       setPlayers([]);
-      setTasksLoading(false);
       setPlayersLoading(false);
-      setSubmitting(false);
       setPlayerSubmitting(false);
       setEditingPlayerId(null);
       setShowDeletedPlayers(false);
@@ -599,60 +450,6 @@ export default function AdminPanel() {
     }
   };
 
-  const fetchTasks = useCallback(async (options: { silent?: boolean } = {}) => {
-    if (!session) return;
-    const sessionVersion = authSessionVersionRef.current;
-    const requestID = tasksRequestIDRef.current + 1;
-    tasksRequestIDRef.current = requestID;
-    const canApplyTasksRequest = () =>
-      isCurrentAuthSession(sessionVersion) &&
-      tasksRequestIDRef.current === requestID;
-    if (!options.silent) {
-      setTasksLoading(true);
-    }
-    try {
-      const data = await runAdminRequest(() => adminApi.listTasks());
-      if (canApplyTasksRequest()) {
-        setTasks(data);
-      }
-    } catch (error) {
-      if (
-        !canApplyTasksRequest() ||
-        (error instanceof Error && error.message === "Unauthorized")
-      ) {
-        return;
-      }
-      if (options.silent) {
-        log.warn("admin tasks realtime refresh failed", error);
-        return;
-      }
-      showNotification(
-        "error",
-        apiErrorMessage(error, "Не удалось загрузить задачи"),
-      );
-    } finally {
-      if (canApplyTasksRequest() && !options.silent) {
-        setTasksLoading(false);
-      }
-    }
-  }, [isCurrentAuthSession, runAdminRequest, session, showNotification]);
-
-  const upsertTaskInList = useCallback((task: Task) => {
-    setTasks((current) => {
-      const index = current.findIndex((item) => item.id === task.id);
-      if (index === -1) {
-        return [task, ...current];
-      }
-      const next = [...current];
-      next[index] = task;
-      return next;
-    });
-  }, []);
-
-  const removeTaskFromList = useCallback((taskId: string) => {
-    setTasks((current) => current.filter((task) => task.id !== taskId));
-  }, []);
-
   const fetchPlayers = useCallback(
     async (options: { silent?: boolean } = {}) => {
       if (!session) return;
@@ -715,12 +512,10 @@ export default function AdminPanel() {
 
   useEffect(() => {
     if (!session) return;
-    if (activeSection === "tasks") {
-      fetchTasks();
-    } else if (activeSection === "players") {
+    if (activeSection === "players") {
       fetchPlayers();
     }
-  }, [activeSection, fetchPlayers, fetchTasks, session]);
+  }, [activeSection, fetchPlayers, session]);
 
   useEffect(() => {
     if (!session || activeSection !== "players") {
@@ -868,221 +663,6 @@ export default function AdminPanel() {
     schedulePlayersRealtimeRefresh,
     session,
   ]);
-
-  const resetForm = useCallback(() => {
-    setEditingTaskId(null);
-    setTitle("");
-    setDescription("");
-    setCategory("web");
-    setDifficulty("easy");
-    setTimeLimit("60");
-    setFlag("");
-    setHints(emptyHintInputs());
-    setTaskUrl("");
-    setSourceFile(null);
-    setExistingSourceFileURL(null);
-    setSourceFileCleared(false);
-    setTaskFormErrors({});
-    if (fileInputRef.current) fileInputRef.current.value = "";
-  }, []);
-
-  const startEditing = (task: Task) => {
-    setEditingTaskId(task.id);
-    setTitle(task.title);
-    setDescription(task.description);
-    setCategory(task.category);
-    setDifficulty(task.difficulty);
-    setTimeLimit(String(task.time_limit));
-    setFlag(task.flag);
-    setHints(hintInputsFromTask(task));
-    setTaskUrl(task.task_url ?? "");
-    setSourceFile(null);
-    setExistingSourceFileURL(task.source_file_url ?? null);
-    setSourceFileCleared(false);
-    setTaskFormErrors({});
-    if (fileInputRef.current) fileInputRef.current.value = "";
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const trimmedTitle = title.trim();
-    const trimmedDescription = description.trim();
-    const trimmedFlag = flag.trim();
-    const validHints = hintInputsToRequest(hints);
-    const parsedTimeLimit = parsePositiveInt32(timeLimit);
-    const taskUrlValue = taskUrl.trim() || null;
-    const nextErrors: TaskFormErrors = {};
-
-    if (!trimmedTitle) {
-      nextErrors.title = "Название должно быть от 1 до 255 символов";
-    } else if (countChars(trimmedTitle) > MAX_TASK_TITLE_LENGTH) {
-      nextErrors.title = "Название должно быть от 1 до 255 символов";
-    }
-
-    if (!trimmedDescription) {
-      nextErrors.description = "Описание не должно быть пустым";
-    }
-
-    if (parsedTimeLimit === null) {
-      nextErrors.timeLimit =
-        "Лимит времени должен быть целым числом от 1 до 2147483647";
-    }
-
-    if (!trimmedFlag) {
-      nextErrors.flag = "Флаг должен быть от 1 до 255 символов";
-    } else if (countChars(trimmedFlag) > MAX_TASK_FLAG_LENGTH) {
-      nextErrors.flag = "Флаг должен быть от 1 до 255 символов";
-    }
-
-    if (taskUrlValue && !isValidTaskUrl(taskUrlValue)) {
-      nextErrors.taskUrl =
-        "URL задания должен быть http(s) ссылкой или host:port";
-    }
-
-    if (Object.keys(nextErrors).length > 0) {
-      setTaskFormErrors(nextErrors);
-      return;
-    }
-
-    if (parsedTimeLimit === null) {
-      return;
-    }
-
-    setTaskFormErrors({});
-    setSubmitting(true);
-    const sessionVersion = authSessionVersionRef.current;
-    try {
-      const body: CreateTaskRequest = {
-        title: trimmedTitle,
-        description: trimmedDescription,
-        category,
-        difficulty,
-        time_limit: parsedTimeLimit,
-        flag: trimmedFlag,
-        hints: validHints,
-        task_url: taskUrlValue,
-      };
-
-      let savedTask: AdminTask;
-      if (editingTaskId) {
-        const updateBody: UpdateTaskRequest = { ...body };
-        if (sourceFileCleared) {
-          updateBody.clear_source_file = true;
-        }
-        savedTask = await runAdminRequest(() =>
-          adminApi.updateTask(editingTaskId, updateBody),
-        );
-      } else {
-        savedTask = await runAdminRequest(() => adminApi.createTask(body));
-      }
-
-      let uploadFailed = false;
-      let uploadedSource: LastUploadedSource | null = null;
-      if (sourceFile) {
-        try {
-          const upload = await runAdminRequest(() =>
-            adminApi.uploadSource(savedTask.id, sourceFile),
-          );
-          uploadedSource = {
-            taskTitle: savedTask.title,
-            fileName: sourceFile.name,
-            url: upload.source_file_url,
-            expiresInSeconds: parsedTimeLimit,
-          };
-          savedTask = {
-            ...savedTask,
-            source_file_url: upload.source_file_url,
-          };
-        } catch (uploadError) {
-          if (
-            uploadError instanceof Error &&
-            uploadError.message === "Unauthorized"
-          ) {
-            throw uploadError;
-          }
-          log.error("admin uploadSource failed", uploadError);
-          uploadFailed = true;
-        }
-      }
-      if (!isCurrentAuthSession(sessionVersion)) {
-        return;
-      }
-
-      if (uploadFailed) {
-        if (sourceFile) {
-          setLastUploadedSource(null);
-        }
-        showNotification(
-          "warning",
-          `${editingTaskId ? "Задача обновлена" : "Задача создана"}, но файл не загрузился`,
-        );
-      } else {
-        if (uploadedSource) {
-          setLastUploadedSource(uploadedSource);
-        }
-        showNotification(
-          "success",
-          editingTaskId
-            ? "Задача успешно обновлена!"
-            : "Задача успешно создана!",
-        );
-      }
-      upsertTaskInList(savedTask);
-      resetForm();
-      void fetchTasks({ silent: true });
-    } catch (err) {
-      if (
-        !isCurrentAuthSession(sessionVersion) ||
-        (err instanceof Error && err.message === "Unauthorized")
-      )
-        return;
-      setTaskFormErrors({
-        form: apiErrorMessage(
-          err,
-          editingTaskId
-            ? "Ошибка при обновлении задачи"
-            : "Ошибка при создании задачи",
-        ),
-      });
-    } finally {
-      if (isCurrentAuthSession(sessionVersion)) {
-        setSubmitting(false);
-      }
-    }
-  };
-
-  const handleDeleteTask = async (taskId: string) => {
-    if (!confirm("Вы уверены, что хотите удалить эту задачу?")) return;
-    const sessionVersion = authSessionVersionRef.current;
-    try {
-      await runAdminRequest(() => adminApi.deleteTask(taskId));
-      if (!isCurrentAuthSession(sessionVersion)) {
-        return;
-      }
-      showNotification("success", "Задача удалена");
-      removeTaskFromList(taskId);
-      void fetchTasks({ silent: true });
-    } catch (error) {
-      if (
-        !isCurrentAuthSession(sessionVersion) ||
-        (error instanceof Error && error.message === "Unauthorized")
-      ) {
-        return;
-      }
-      if (error instanceof ApiError && error.status === 409) {
-        showNotification(
-          "error",
-          "Нельзя удалить: задача используется в дуэлях",
-        );
-      } else {
-        showNotification(
-          "error",
-          apiErrorMessage(error, "Ошибка при удалении задачи"),
-        );
-      }
-    }
-  };
 
   const resetPlayerForm = useCallback(() => {
     setEditingPlayerId(null);
@@ -1257,194 +837,6 @@ export default function AdminPanel() {
         setPlayerAuditLoading(false);
       }
     }
-  };
-
-  const updateHint = (index: number, value: string) => {
-    const newHints = [...hints];
-    newHints[index] = value;
-    setHints(newHints);
-    clearTaskFormError(`hint${index}` as TaskFormErrorField);
-  };
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0] || null;
-    if (file && !file.name.toLowerCase().endsWith(".zip")) {
-      setSourceFile(null);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-      setTaskFormErrors((current) => ({
-        ...current,
-        sourceFile: "Можно загружать только ZIP-архивы",
-      }));
-      return;
-    }
-    if (file && file.size > 100 * 1024 * 1024) {
-      setSourceFile(null);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-      setTaskFormErrors((current) => ({
-        ...current,
-        sourceFile: "Файл превышает 100 MB",
-      }));
-      return;
-    }
-    setSourceFile(file);
-    clearTaskFormError("sourceFile");
-    if (file) {
-      setSourceFileCleared(false);
-    }
-  };
-
-  const removeFile = () => {
-    setSourceFile(null);
-    clearTaskFormError("sourceFile");
-    if (fileInputRef.current) fileInputRef.current.value = "";
-  };
-
-  const removeExistingSourceFile = () => {
-    setSourceFile(null);
-    setSourceFileCleared(true);
-    clearTaskFormError("sourceFile");
-    if (fileInputRef.current) fileInputRef.current.value = "";
-  };
-
-  const restoreExistingSourceFile = () => {
-    setSourceFileCleared(false);
-    clearTaskFormError("sourceFile");
-  };
-
-  const renderCategoryFields = () => {
-    const taskURLPlaceholder =
-      category === "pwn" ? "host:port" : "https://example.com/task";
-
-    return (
-      <>
-        <div className={styles.categoryField}>
-          <div className={styles.categoryFieldLabel}>
-            {CATEGORY_CONFIG[category].icon} {CATEGORY_CONFIG[category].label}{" "}
-            URL
-          </div>
-          <div className={styles.inputGroup}>
-            <input
-              type="text"
-              value={taskUrl}
-              onChange={(e) => {
-                setTaskUrl(e.target.value);
-                clearTaskFormError("taskUrl");
-                clearTaskFormError("form");
-              }}
-              placeholder={taskURLPlaceholder}
-              className={taskFormErrors.taskUrl ? styles.inputError : undefined}
-              aria-invalid={Boolean(taskFormErrors.taskUrl)}
-              aria-describedby={
-                taskFormErrors.taskUrl ? "admin-task-url-error" : undefined
-              }
-            />
-            {taskFormErrors.taskUrl && (
-              <p id="admin-task-url-error" className={styles.fieldError}>
-                {taskFormErrors.taskUrl}
-              </p>
-            )}
-          </div>
-        </div>
-
-        <div className={styles.categoryField}>
-          <div className={styles.categoryFieldLabel}>
-            {CATEGORY_CONFIG[category].icon} ZIP-архив с исходниками
-          </div>
-          <div className={styles.fileUpload}>
-            <div
-              className={`${styles.fileUploadZone} ${taskFormErrors.sourceFile ? styles.fileUploadZoneError : ""}`}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <div className={styles.fileUploadIcon}>📁</div>
-              <div className={styles.fileUploadText}>
-                <strong>Нажмите для выбора</strong> или перетащите ZIP-архив
-              </div>
-            </div>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".zip"
-              onChange={handleFileChange}
-              style={{ display: "none" }}
-            />
-            {sourceFile && (
-              <div className={styles.fileInfo}>
-                <span aria-hidden="true">📦</span>
-                <span className={styles.fileInfoName}>
-                  <strong>{sourceFile.name}</strong>
-                  <span className={styles.fileInfoMeta}>
-                    {(sourceFile.size / 1024 / 1024).toFixed(1)} MB ·{" "}
-                    {existingSourceFileURL && !sourceFileCleared
-                      ? "заменит текущий архив после сохранения"
-                      : "загрузится после сохранения"}
-                  </span>
-                </span>
-                <button
-                  type="button"
-                  className={`${styles.fileInfoAction} ${styles.fileInfoActionDanger}`}
-                  onClick={removeFile}
-                  aria-label="Убрать выбранный ZIP"
-                >
-                  Убрать
-                </button>
-              </div>
-            )}
-            {!sourceFile && existingSourceFileURL && !sourceFileCleared && (
-              <div className={styles.fileInfo}>
-                <span aria-hidden="true">📦</span>
-                <span className={styles.fileInfoName}>
-                  <strong>Текущий архив сохранён</strong>
-                  <span className={styles.fileInfoMeta}>
-                    Удаление применится только после сохранения задачи
-                  </span>
-                </span>
-                {editingTaskId && (
-                  <a
-                    className={styles.fileInfoAction}
-                    href={adminApi.sourceDownloadURL(editingTaskId)}
-                    download="source.zip"
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Скачать текущий ZIP
-                  </a>
-                )}
-                <button
-                  type="button"
-                  className={`${styles.fileInfoAction} ${styles.fileInfoActionDanger}`}
-                  onClick={removeExistingSourceFile}
-                  aria-label="Пометить текущий архив к удалению"
-                >
-                  Пометить к удалению
-                </button>
-              </div>
-            )}
-            {!sourceFile && existingSourceFileURL && sourceFileCleared && (
-              <div className={styles.fileInfo}>
-                <span aria-hidden="true">🗑</span>
-                <span className={styles.fileInfoName}>
-                  <strong>Архив будет удалён после сохранения задачи</strong>
-                  <span className={styles.fileInfoMeta}>
-                    До сохранения можно отменить это действие
-                  </span>
-                </span>
-                <button
-                  type="button"
-                  className={styles.fileInfoAction}
-                  onClick={restoreExistingSourceFile}
-                  aria-label="Отменить удаление архива"
-                >
-                  Отменить удаление
-                </button>
-              </div>
-            )}
-            {taskFormErrors.sourceFile && (
-              <p className={styles.fieldError}>{taskFormErrors.sourceFile}</p>
-            )}
-          </div>
-        </div>
-      </>
-    );
   };
 
   const renderPlayersSection = () => (
@@ -1901,20 +1293,11 @@ export default function AdminPanel() {
           <h1 className={styles.title}>Admin</h1>
         </div>
         <p className={styles.subtitle}>
-          {activeSection === "tasks"
-            ? "Панель управления задачами"
-            : activeSection === "players"
-              ? "Панель управления игроками"
-              : "Панель управления турнирами"}
+          {activeSection === "players"
+            ? "Панель управления игроками"
+            : "Панель управления турнирами и контентом"}
         </p>
         <div className={styles.sectionTabs}>
-          <button
-            type="button"
-            className={`${styles.sectionTab} ${activeSection === "tasks" ? styles.sectionTabActive : ""} motion-button`}
-            onClick={() => setActiveSection("tasks")}
-          >
-            Задания
-          </button>
           <button
             type="button"
             className={`${styles.sectionTab} ${activeSection === "players" ? styles.sectionTabActive : ""} motion-button`}
@@ -1935,362 +1318,13 @@ export default function AdminPanel() {
         key={activeSection}
         className={`${styles.sectionPanel} ${styles.sectionPanelEnter}`}
       >
-        {activeSection === "tasks" ? (
-          <>
-            <div className={`${styles.card} motion-panel`}>
-              <h2 className={styles.cardTitle}>
-                {editingTaskId
-                  ? "✏️ Редактировать задачу"
-                  : "➕ Создать задачу"}
-              </h2>
-              <form onSubmit={handleSubmit} className={styles.form} noValidate>
-                <div className={styles.inputGroup}>
-                  <label>Название задачи</label>
-                  <input
-                    type="text"
-                    required
-                    value={title}
-                    onChange={(e) => {
-                      setTitle(e.target.value);
-                      clearTaskFormError("title");
-                      clearTaskFormError("form");
-                    }}
-                    placeholder="Введите название..."
-                    maxLength={255}
-                    className={
-                      taskFormErrors.title ? styles.inputError : undefined
-                    }
-                    aria-invalid={Boolean(taskFormErrors.title)}
-                    aria-describedby={
-                      taskFormErrors.title
-                        ? "admin-task-title-error"
-                        : undefined
-                    }
-                  />
-                  {taskFormErrors.title && (
-                    <p
-                      id="admin-task-title-error"
-                      className={styles.fieldError}
-                    >
-                      {taskFormErrors.title}
-                    </p>
-                  )}
-                </div>
-                <div className={styles.inputGroup}>
-                  <label>Описание</label>
-                  <textarea
-                    required
-                    value={description}
-                    onChange={(e) => {
-                      setDescription(e.target.value);
-                      clearTaskFormError("description");
-                      clearTaskFormError("form");
-                    }}
-                    placeholder="Опишите задачу..."
-                    rows={3}
-                    className={
-                      taskFormErrors.description ? styles.inputError : undefined
-                    }
-                    aria-invalid={Boolean(taskFormErrors.description)}
-                    aria-describedby={
-                      taskFormErrors.description
-                        ? "admin-task-description-error"
-                        : undefined
-                    }
-                  />
-                  {taskFormErrors.description && (
-                    <p
-                      id="admin-task-description-error"
-                      className={styles.fieldError}
-                    >
-                      {taskFormErrors.description}
-                    </p>
-                  )}
-                </div>
-                <div className={styles.formRow}>
-                  <div className={styles.inputGroup}>
-                    <label>Категория</label>
-                    <select
-                      value={category}
-                      onChange={(e) => {
-                        const nextCategory = e.target.value as TaskCategory;
-                        setCategory(nextCategory);
-                      }}
-                      className={styles.select}
-                    >
-                      <option value="web">🌐 Web</option>
-                      <option value="crypto">🔐 Crypto</option>
-                      <option value="forensics">🔍 Forensics</option>
-                      <option value="reverse">⚙️ Reverse</option>
-                      <option value="pwn">💥 Pwn</option>
-                      <option value="steganography">🖼️ Steganography</option>
-                      <option value="ppc">🧮 PPC</option>
-                      <option value="osint">🛰️ OSINT</option>
-                      <option value="mobile">📱 Mobile</option>
-                      <option value="hardware">🔧 Hardware</option>
-                      <option value="misc">🧩 Misc</option>
-                    </select>
-                  </div>
-
-                  <div className={styles.inputGroup}>
-                    <label>Сложность</label>
-                    <select
-                      value={difficulty}
-                      onChange={(e) =>
-                        setDifficulty(e.target.value as TaskDifficulty)
-                      }
-                      className={styles.select}
-                    >
-                      <option value="easy">🟢 Лёгкая</option>
-                      <option value="medium">🟡 Средняя</option>
-                      <option value="hard">🔴 Сложная</option>
-                    </select>
-                  </div>
-                </div>
-                <div className={styles.formRow}>
-                  <div className={styles.inputGroup}>
-                    <label>Лимит времени (сек)</label>
-                    <input
-                      type="number"
-                      required
-                      min="1"
-                      value={timeLimit}
-                      onChange={(e) => {
-                        setTimeLimit(e.target.value);
-                        clearTaskFormError("timeLimit");
-                        clearTaskFormError("form");
-                      }}
-                      placeholder="60"
-                      className={
-                        taskFormErrors.timeLimit ? styles.inputError : undefined
-                      }
-                      aria-invalid={Boolean(taskFormErrors.timeLimit)}
-                      aria-describedby={
-                        taskFormErrors.timeLimit
-                          ? "admin-task-time-limit-error"
-                          : undefined
-                      }
-                    />
-                    {taskFormErrors.timeLimit && (
-                      <p
-                        id="admin-task-time-limit-error"
-                        className={styles.fieldError}
-                      >
-                        {taskFormErrors.timeLimit}
-                      </p>
-                    )}
-                  </div>
-
-                  <div className={styles.inputGroup}>
-                    <label>Флаг</label>
-                    <input
-                      type="text"
-                      required
-                      value={flag}
-                      onChange={(e) => {
-                        setFlag(e.target.value);
-                        clearTaskFormError("flag");
-                        clearTaskFormError("form");
-                      }}
-                      placeholder="flag{...}"
-                      className={
-                        taskFormErrors.flag ? styles.inputError : undefined
-                      }
-                      aria-invalid={Boolean(taskFormErrors.flag)}
-                      aria-describedby={
-                        taskFormErrors.flag
-                          ? "admin-task-flag-error"
-                          : undefined
-                      }
-                    />
-                    {taskFormErrors.flag && (
-                      <p
-                        id="admin-task-flag-error"
-                        className={styles.fieldError}
-                      >
-                        {taskFormErrors.flag}
-                      </p>
-                    )}
-                  </div>
-                </div>
-                {renderCategoryFields()}
-                <div className={styles.inputGroup}>
-                  <label>Подсказки (до 3, необязательно)</label>
-                  <div className={styles.hintsGrid}>
-                    {hints.map((hint, i) => (
-                      <div key={i}>
-                        <input
-                          type="text"
-                          value={hint}
-                          onChange={(e) => updateHint(i, e.target.value)}
-                          placeholder={`Подсказка ${i + 1}`}
-                          className={
-                            taskFormErrors[`hint${i}` as TaskFormErrorField]
-                              ? styles.inputError
-                              : undefined
-                          }
-                          aria-invalid={Boolean(
-                            taskFormErrors[`hint${i}` as TaskFormErrorField],
-                          )}
-                          aria-describedby={
-                            taskFormErrors[`hint${i}` as TaskFormErrorField]
-                              ? `admin-task-hint-${i}-error`
-                              : undefined
-                          }
-                        />
-                        {taskFormErrors[`hint${i}` as TaskFormErrorField] && (
-                          <p
-                            id={`admin-task-hint-${i}-error`}
-                            className={styles.fieldError}
-                          >
-                            {taskFormErrors[`hint${i}` as TaskFormErrorField]}
-                          </p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <div className={styles.btnGroup}>
-                  <button
-                    type="submit"
-                    className={`${styles.btn} ${styles.btnPrimary} motion-button`}
-                    disabled={submitting}
-                  >
-                    {submitting ? (
-                      <>
-                        <div
-                          className={styles.spinner}
-                          style={{ width: 18, height: 18 }}
-                        ></div>
-                        {editingTaskId ? "Сохранение..." : "Создание..."}
-                      </>
-                    ) : editingTaskId ? (
-                      "💾 Сохранить задачу"
-                    ) : (
-                      "🚀 Создать задачу"
-                    )}
-                  </button>
-                  <button
-                    type="button"
-                    className={`${styles.btn} ${styles.btnSecondary} motion-button`}
-                    onClick={resetForm}
-                  >
-                    {editingTaskId ? "Отменить" : "Очистить"}
-                  </button>
-                </div>
-                {taskFormErrors.form && (
-                  <p
-                    className={`${styles.fieldError} ${styles.formLevelError}`}
-                  >
-                    {taskFormErrors.form}
-                  </p>
-                )}
-              </form>
-            </div>
-            {lastUploadedSource && (
-              <div className={styles.sourceDownloadNotice} role="status">
-                <div className={styles.sourceDownloadText}>
-                  <strong>Исходники загружены в SeaweedFS</strong>
-                  <span>
-                    {lastUploadedSource.fileName} для задачи «
-                    {lastUploadedSource.taskTitle}». Ссылка временная:{" "}
-                    {lastUploadedSource.expiresInSeconds} сек.
-                  </span>
-                </div>
-                <a
-                  className={`${styles.btn} ${styles.btnSecondary} ${styles.sourceDownloadButton} motion-button`}
-                  href={lastUploadedSource.url}
-                  download={lastUploadedSource.fileName}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Скачать загруженный ZIP
-                </a>
-              </div>
-            )}
-            <div className={styles.taskList}>
-              <h2 className={styles.taskListTitle}>📋 Список задач</h2>
-
-              {tasksLoading ? (
-                <div className={styles.loading}>
-                  <div className={styles.spinner}></div>
-                  <p
-                    style={{
-                      color: "rgba(255,255,255,0.5)",
-                      fontSize: "0.9rem",
-                    }}
-                  >
-                    Загрузка задач...
-                  </p>
-                </div>
-              ) : tasks.length === 0 ? (
-                <div className={styles.empty}>
-                  <div className={styles.emptyIcon}>📭</div>
-                  <p className={styles.emptyText}>Пока нет созданных задач</p>
-                </div>
-              ) : (
-                tasks.map((task) => (
-                  <div
-                    key={task.id}
-                    className={`${styles.taskItem} motion-list-item`}
-                  >
-                    <div className={styles.taskItemInfo}>
-                      <div className={styles.taskItemTitle}>{task.title}</div>
-                      <div className={styles.taskItemMeta}>
-                        <span
-                          className={`${styles.taskBadge} ${
-                            task.category === "web"
-                              ? styles.taskBadgeWeb
-                              : task.category === "crypto"
-                                ? styles.taskBadgeCrypto
-                                : styles.taskBadgeFile
-                          }`}
-                        >
-                          {CATEGORY_CONFIG[task.category]?.icon || "📦"}{" "}
-                          {CATEGORY_CONFIG[task.category]?.label ||
-                            task.category}
-                        </span>
-                        <span
-                          className={`${styles.taskBadge} ${DIFFICULTY_CONFIG[task.difficulty]?.badgeClass || ""}`}
-                        >
-                          {DIFFICULTY_CONFIG[task.difficulty]?.label ||
-                            task.difficulty}
-                        </span>
-                        <span
-                          style={{
-                            fontSize: "0.65rem",
-                            color: "rgba(255,255,255,0.3)",
-                          }}
-                        >
-                          ⏱ {task.time_limit}с
-                        </span>
-                      </div>
-                    </div>
-                    <div className={styles.taskItemActions}>
-                      <button
-                        className={`${styles.taskItemBtn} motion-button`}
-                        onClick={() => startEditing(task)}
-                        title="Редактировать задачу"
-                      >
-                        ✏️
-                      </button>
-                      <button
-                        className={`${styles.taskItemBtn} ${styles.taskItemBtnDanger} motion-button`}
-                        onClick={() => handleDeleteTask(task.id)}
-                        title="Удалить задачу"
-                      >
-                        🗑️
-                      </button>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </>
-        ) : activeSection === "players" ? (
+        {activeSection === "players" ? (
           renderPlayersSection()
         ) : (
-          <TournamentAdminPanel onSessionExpired={clearSession} />
+          <TournamentAdminPanel
+            onSessionExpired={clearSession}
+            runAdminRequest={runAdminRequest}
+          />
         )}
       </div>
       {renderPlayerAuditModal()}

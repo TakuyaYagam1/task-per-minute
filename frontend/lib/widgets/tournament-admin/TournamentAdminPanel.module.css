@@ -1,4 +1,6 @@
 .root {
+  display: grid;
+  gap: 1.25rem;
   width: min(100%, 1120px);
   min-width: 0;
   margin: 0 auto;

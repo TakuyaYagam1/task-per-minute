@@ -1,0 +1,560 @@
+.root {
+  display: grid;
+  min-width: 0;
+  gap: 1rem;
+  width: 100%;
+  color: var(--text);
+}
+
+.catalogPanel {
+  min-width: 0;
+}
+
+.contentSummary {
+  display: grid;
+  min-width: 0;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 1.25rem;
+}
+
+.summaryHeading {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.sectionTitle {
+  margin: 0;
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 780;
+}
+
+.summaryDescription {
+  max-width: 65ch;
+  margin: 0.3rem 0 0;
+  color: var(--secondary);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.revisionGrid {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.7rem;
+  margin: 0;
+}
+
+.revisionGrid div {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  padding: 0.75rem;
+  background: var(--surface-muted);
+}
+
+.revisionGrid dt {
+  color: var(--secondary);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.revisionGrid dd {
+  min-width: 0;
+  margin: 0.25rem 0 0;
+  color: var(--text);
+  font-size: 0.9rem;
+  font-weight: 780;
+}
+
+.revisionGrid code {
+  display: block;
+  overflow-wrap: anywhere;
+  color: var(--accent-strong);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.72rem;
+  font-weight: 650;
+}
+
+.managerLayout {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(300px, 0.85fr) minmax(0, 1.15fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.formPanel,
+.listPanel {
+  min-width: 0;
+  height: 100%;
+}
+
+.form {
+  display: grid;
+  min-width: 0;
+  gap: 1rem;
+}
+
+.field {
+  display: grid;
+  min-width: 0;
+  gap: 0.4rem;
+}
+
+.field label,
+.label,
+.categoryFieldLabel {
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 760;
+}
+
+.field input,
+.field textarea,
+.field select,
+.categoryField input {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-small);
+  padding: 0.65rem 0.75rem;
+  background: var(--surface-muted);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.88rem;
+  transition:
+    border-color var(--motion),
+    box-shadow var(--motion),
+    background-color var(--motion);
+}
+
+.field textarea {
+  min-height: 96px;
+  resize: vertical;
+}
+
+.field input::placeholder,
+.field textarea::placeholder,
+.categoryField input::placeholder {
+  color: var(--subtle);
+}
+
+.field input:focus,
+.field textarea:focus,
+.field select:focus,
+.categoryField input:focus,
+.fileUploadZone:focus-visible,
+.taskItemButton:focus-visible,
+.fileInfoAction:focus-visible,
+.fileInfoActionDanger:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--panel);
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+
+.inputError {
+  border-color: var(--error) !important;
+  background: var(--error-soft) !important;
+}
+
+.formRow {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.categoryField {
+  display: grid;
+  min-width: 0;
+  gap: 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  padding: 0.85rem;
+  background: var(--surface-muted);
+}
+
+.categoryFieldLabel {
+  color: var(--accent-strong);
+}
+
+.fileUploadZone {
+  display: grid;
+  min-height: 92px;
+  place-items: center;
+  gap: 0.35rem;
+  border: 2px dashed var(--border-strong);
+  border-radius: var(--radius-small);
+  padding: 1rem;
+  background: var(--surface);
+  color: var(--secondary);
+  text-align: center;
+  cursor: pointer;
+  transition:
+    border-color var(--motion),
+    background-color var(--motion);
+}
+
+.fileUploadZone:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.fileUploadText {
+  font-size: 0.78rem;
+}
+
+.fileUploadText strong {
+  color: var(--accent-strong);
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.fileInfo {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  padding: 0.55rem 0.65rem;
+  background: var(--surface);
+  color: var(--secondary);
+  font-size: 0.78rem;
+}
+
+.fileInfoName {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.12rem;
+}
+
+.fileInfoName strong {
+  overflow: hidden;
+  color: var(--text);
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fileInfoMeta {
+  color: var(--secondary);
+  font-size: 0.7rem;
+  line-height: 1.35;
+}
+
+.fileInfoAction,
+.fileInfoActionDanger {
+  flex: 0 0 auto;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-small);
+  padding: 0.35rem 0.5rem;
+  background: var(--surface-muted);
+  color: var(--accent-strong);
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.2;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.fileInfoActionDanger {
+  border-color: var(--error);
+  color: var(--error);
+}
+
+.fileInfoAction:hover,
+.fileInfoActionDanger:hover {
+  border-color: var(--accent);
+  background: var(--surface-strong);
+  color: var(--text);
+}
+
+.hintsGrid {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.hintsGrid input {
+  min-width: 0;
+  min-height: 40px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-small);
+  padding: 0.55rem 0.65rem;
+  background: var(--surface-muted);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.8rem;
+}
+
+.hintsGrid input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+
+.buttonGroup {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.buttonGroup > button {
+  flex: 1 1 10rem;
+}
+
+.fieldError {
+  margin: 0.1rem 0 0;
+  color: var(--error);
+  font-size: 0.76rem;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.formLevelError {
+  margin: 0;
+}
+
+.inlineButton {
+  margin-top: 0.65rem;
+}
+
+.taskList {
+  display: grid;
+  min-width: 0;
+  gap: 0.65rem;
+}
+
+.taskItem {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  padding: 0.8rem;
+  background: var(--surface-muted);
+  transition:
+    border-color var(--motion),
+    background-color var(--motion),
+    transform var(--motion);
+}
+
+.taskItem:hover {
+  border-color: var(--accent);
+  background: var(--surface-strong);
+  transform: translateY(-1px);
+}
+
+.taskItemInfo {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 0.35rem;
+}
+
+.taskItemTitle {
+  overflow: hidden;
+  margin: 0;
+  color: var(--text);
+  font-size: 0.9rem;
+  font-weight: 780;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.taskItemMeta {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.taskMetaText {
+  color: var(--secondary);
+  font-size: 0.7rem;
+}
+
+.taskItemActions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.taskItemButton {
+  min-height: 34px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-small);
+  padding: 0.35rem 0.55rem;
+  background: var(--surface);
+  color: var(--accent-strong);
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 750;
+  cursor: pointer;
+  transition:
+    border-color var(--motion),
+    background-color var(--motion),
+    color var(--motion);
+}
+
+.taskItemButton:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.taskItemButtonDanger {
+  border-color: var(--error);
+  color: var(--error);
+}
+
+.taskItemButtonDanger:hover {
+  border-color: var(--error);
+  background: var(--error-soft);
+  color: var(--error);
+}
+
+.sourceDownloadNotice {
+  display: grid;
+  min-width: 0;
+  gap: 0.25rem;
+  margin-bottom: 0.85rem;
+  border: 1px solid var(--success);
+  border-radius: var(--radius-small);
+  padding: 0.75rem;
+  background: var(--success-soft);
+  color: var(--secondary);
+  font-size: 0.76rem;
+}
+
+.sourceDownloadNotice strong {
+  color: var(--text);
+  font-size: 0.82rem;
+}
+
+.sourceDownloadNotice span {
+  overflow-wrap: anywhere;
+}
+
+.sourceDownloadNotice a {
+  width: fit-content;
+  margin-top: 0.25rem;
+  color: var(--accent-strong);
+  font-weight: 750;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.notification {
+  position: fixed;
+  z-index: 1000;
+  top: 1rem;
+  right: 1rem;
+  width: min(28rem, calc(100vw - 2rem));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  padding: 0.75rem 1rem;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: var(--shadow);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.notificationSuccess {
+  border-color: var(--success);
+}
+
+.notificationWarning {
+  border-color: var(--warning);
+}
+
+.notificationError {
+  border-color: var(--error);
+}
+
+@media (max-width: 940px) {
+  .managerLayout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .summaryHeading {
+    flex-direction: column;
+  }
+
+  .summaryHeading > .status {
+    width: fit-content;
+  }
+
+  .revisionGrid,
+  .formRow {
+    grid-template-columns: 1fr;
+  }
+
+  .taskItem {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .taskItemActions {
+    width: 100%;
+  }
+
+  .taskItemButton {
+    flex: 1;
+  }
+
+  .fileInfo {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .fileInfoAction,
+  .fileInfoActionDanger {
+    margin-left: auto;
+  }
+}
+
+@media (max-width: 480px) {
+  .hintsGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .field input,
+  .field textarea,
+  .field select,
+  .categoryField input,
+  .fileUploadZone,
+  .taskItem,
+  .taskItemButton {
+    transition: none;
+  }
+}
