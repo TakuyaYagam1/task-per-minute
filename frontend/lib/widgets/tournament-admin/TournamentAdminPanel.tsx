@@ -22,6 +22,7 @@ import {
   type TableColumn,
 } from "../../shared/ui";
 
+import { RosterEditor } from "./RosterEditor";
 import styles from "./TournamentAdminPanel.module.css";
 
 type TournamentAdminPanelProps = Readonly<{
@@ -159,11 +160,12 @@ export const TournamentAdminPanel = ({
   );
   const [formError, setFormError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [selectedTournamentId, setSelectedTournamentId] = useState("");
   const creatingRef = useRef(false);
   const tournamentsControllerRef = useRef<AbortController | null>(null);
   const contentControllerRef = useRef<AbortController | null>(null);
 
-  const loadTournaments = useCallback(async () => {
+  const loadTournaments = useCallback(async (): Promise<void> => {
     tournamentsControllerRef.current?.abort();
     const controller = new AbortController();
     tournamentsControllerRef.current = controller;
@@ -193,7 +195,7 @@ export const TournamentAdminPanel = ({
     }
   }, [onSessionExpired]);
 
-  const loadContent = useCallback(async () => {
+  const loadContent = useCallback(async (): Promise<void> => {
     contentControllerRef.current?.abort();
     const controller = new AbortController();
     contentControllerRef.current = controller;
@@ -226,10 +228,7 @@ export const TournamentAdminPanel = ({
   }, [onSessionExpired]);
 
   useEffect(() => {
-    void Promise.all([
-      loadTournaments(),
-      loadContent(),
-    ]);
+    void Promise.all([loadTournaments(), loadContent()]);
     return () => {
       tournamentsControllerRef.current?.abort();
       contentControllerRef.current?.abort();
@@ -237,6 +236,10 @@ export const TournamentAdminPanel = ({
   }, [loadContent, loadTournaments]);
 
   const publicIdPreview = useMemo(() => publicIdSlugFromName(name), [name]);
+  const selectedTournament = useMemo(
+    () => tournaments.find((tournament) => tournament.id === selectedTournamentId) ?? null,
+    [selectedTournamentId, tournaments],
+  );
 
   const handleCreate = async (): Promise<void> => {
     if (creatingRef.current) {
@@ -359,12 +362,21 @@ export const TournamentAdminPanel = ({
         key: "open",
         header: "Действие",
         cell: (tournament) => (
-          <a
-            className={styles.openLink}
-            href={`/arena/operator/${encodeURIComponent(tournament.id)}`}
-          >
-            Открыть
-          </a>
+          <div className={styles.rowActions}>
+            <a
+              className={styles.openLink}
+              href={`/arena/operator/${encodeURIComponent(tournament.id)}`}
+            >
+              Открыть
+            </a>
+            <button
+              className={styles.inlineAction}
+              type="button"
+              onClick={() => setSelectedTournamentId(tournament.id)}
+            >
+              Редактировать состав
+            </button>
+          </div>
         ),
       },
     ],
@@ -526,6 +538,15 @@ export const TournamentAdminPanel = ({
           />
         </Panel>
       </div>
+
+      <RosterEditor
+        tournaments={tournaments}
+        selectedTournament={selectedTournament}
+        selectedTournamentId={selectedTournamentId}
+        onSelectTournament={setSelectedTournamentId}
+        onReloadTournaments={loadTournaments}
+        onSessionExpired={onSessionExpired}
+      />
     </div>
   );
 };

@@ -1,0 +1,407 @@
+import { expect, test, type Page, type Route } from "@playwright/test";
+
+import { adminSessionResponse } from "./support/admin";
+import { jsonHeaders } from "./support/common";
+
+const adminAccessCSRF = "fe027-admin-access-csrf";
+const adminRefreshCSRF = "fe027-admin-refresh-csrf";
+const contentRevision = 73;
+const tournamentID = "20000000-0000-4000-8000-000000000001";
+const rosterID = "20000000-0000-4000-8000-000000000002";
+const rosterPath = `/api/v1/admin/tournaments/${tournamentID}/roster`;
+const baseDate = "2026-09-14T08:00:00Z";
+
+type Attendance = "invited" | "registered" | "checked_in" | "withdrawn";
+
+type Player = {
+  id: string;
+  username: string;
+  created_at: string;
+  deleted_at: string | null;
+  wins: number;
+  average_solve_time_ms: number;
+  stats_overridden: boolean;
+};
+
+type Participant = {
+  attendance: Attendance;
+  created_at: string;
+  id: string;
+  player_id: string;
+  roster_id: string;
+  seed: number;
+  tournament_id: string;
+  updated_at: string;
+};
+
+type Roster = {
+  created_at: string;
+  execution_started: boolean;
+  execution_started_at: string | null;
+  id: string;
+  locked: boolean;
+  locked_at: string | null;
+  participants: Participant[];
+  revision: number;
+  tournament_id: string;
+  updated_at: string;
+};
+
+type RosterInput = {
+  attendance: Attendance;
+  player_id: string;
+  seed: number;
+};
+
+const playerIDs = [
+  "30000000-0000-4000-8000-000000000001",
+  "30000000-0000-4000-8000-000000000002",
+  "30000000-0000-4000-8000-000000000003",
+];
+
+const player = (index: number, username = `player-${index + 1}`): Player => ({
+  id: playerIDs[index] ?? `30000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+  username,
+  created_at: baseDate,
+  deleted_at: null,
+  wins: index,
+  average_solve_time_ms: 1200 + index,
+  stats_overridden: false,
+});
+
+const participant = (
+  index: number,
+  playerID = player(index).id,
+  attendance: Attendance = "registered",
+  seed = index + 1,
+): Participant => ({
+  attendance,
+  created_at: baseDate,
+  id: `40000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+  player_id: playerID,
+  roster_id: rosterID,
+  seed,
+  tournament_id: tournamentID,
+  updated_at: baseDate,
+});
+
+const roster = (
+  participants: Participant[],
+  overrides: Partial<Pick<Roster, "locked" | "locked_at" | "revision">> = {},
+): Roster => ({
+  created_at: baseDate,
+  execution_started: false,
+  execution_started_at: null,
+  id: rosterID,
+  locked: false,
+  locked_at: null,
+  participants,
+  revision: 7,
+  tournament_id: tournamentID,
+  updated_at: baseDate,
+  ...overrides,
+});
+
+const tournament = (rosterSize: number) => ({
+  content_revision: contentRevision,
+  created_at: baseDate,
+  finished_at: null,
+  id: tournamentID,
+  name: "Турнир состава",
+  paused_from_state: null,
+  planned_roster_size: Math.max(4, rosterSize),
+  preset: "tournament_v1",
+  public_id: "fe027-roster",
+  revision: 1,
+  roster_id: rosterID,
+  roster_size: rosterSize,
+  started_at: null,
+  state: "draft",
+  updated_at: baseDate,
+});
+
+const problem = (detail: string) => ({
+  type: "about:blank",
+  title: "conflict",
+  status: 409,
+  detail,
+});
+
+const fulfillJSON = async (
+  route: Route,
+  status: number,
+  body: unknown,
+  headers: Record<string, string> = {},
+): Promise<void> => {
+  await route.fulfill({
+    status,
+    headers: { ...jsonHeaders, ...headers },
+    body: JSON.stringify(body),
+  });
+};
+
+const setupRosterRoutes = async (
+  page: Page,
+  initialRoster: Roster,
+  options: {
+    players?: Player[];
+    onReplace?: (route: Route, body: RosterInput[]) => Promise<void>;
+  } = {},
+): Promise<{ replaceRequests: Array<{ body: Record<string, unknown>; key: string }> }> => {
+  const replaceRequests: Array<{ body: Record<string, unknown>; key: string }> = [];
+  const players = options.players ?? [player(0, "Алиса"), player(1, "Боб"), player(2, "Вера")];
+
+  await page.route("**/api/v1/admin/**", async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    const method = request.method();
+
+    if (path === "/api/v1/admin/login" && method === "POST") {
+      await fulfillJSON(route, 200, adminSessionResponse(), {
+        "X-CSRF-Token": adminAccessCSRF,
+        "X-Admin-Refresh-CSRF-Token": adminRefreshCSRF,
+      });
+      return;
+    }
+    if (path === "/api/v1/admin/tasks" && method === "GET") {
+      await fulfillJSON(route, 200, []);
+      return;
+    }
+    if (path === "/api/v1/admin/players" && method === "GET") {
+      await fulfillJSON(route, 200, players);
+      return;
+    }
+    if (path === "/api/v1/admin/tournament-content" && method === "GET") {
+      await fulfillJSON(route, 200, {
+        content_revision: contentRevision,
+        publication_id: "50000000-0000-4000-8000-000000000001",
+        published_at: baseDate,
+        normal_pool_revision_id: "50000000-0000-4000-8000-000000000002",
+        golden_pool_revision_id: "50000000-0000-4000-8000-000000000003",
+      });
+      return;
+    }
+    if (path === "/api/v1/admin/tournaments" && method === "GET") {
+      await fulfillJSON(route, 200, {
+        items: [tournament(initialRoster.participants.length)],
+        next_cursor: null,
+      });
+      return;
+    }
+    if (path === rosterPath && method === "GET") {
+      await fulfillJSON(route, 200, initialRoster);
+      return;
+    }
+    if (path === rosterPath && method === "PUT") {
+      const body = request.postDataJSON() as Record<string, unknown>;
+      const bodyParticipants = body.participants as RosterInput[];
+      replaceRequests.push({
+        body,
+        key: request.headers()["idempotency-key"] ?? "",
+      });
+      if (options.onReplace) {
+        await options.onReplace(route, bodyParticipants);
+        return;
+      }
+      await fulfillJSON(route, 200, roster(
+        bodyParticipants.map((item, index) => participant(
+          index,
+          item.player_id,
+          item.attendance,
+          item.seed,
+        )),
+        { revision: initialRoster.revision + 1 },
+      ));
+      return;
+    }
+    if (path === "/api/v1/admin/players/events" && method === "GET") {
+      await route.fulfill({
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+        body: "event: ready\ndata: {}\n\n",
+      });
+      return;
+    }
+    await fulfillJSON(route, 404, {});
+  });
+
+  return { replaceRequests };
+};
+
+const openRoster = async (page: Page): Promise<void> => {
+  await page.goto("/admin");
+  await page.getByPlaceholder("Введите пароль...").fill("correct-password");
+  await page.getByRole("button", { name: "Войти" }).click();
+  await page.getByRole("button", { name: "Турниры" }).click();
+  const row = page.getByRole("row").filter({ hasText: "Турнир состава" });
+  const open = row.getByRole("button", { name: "Редактировать состав" });
+  await expect(open).toBeVisible();
+  await open.click();
+  await expect(page.getByText(/Состав турнира|Участники турнира|Участники/i).first()).toBeVisible();
+  await expect(rosterRegion(page).getByRole("group").first()).toBeVisible();
+};
+
+const rosterRegion = (page: Page) =>
+  page.getByRole("region", { name: /Состав турнира|Участники турнира/i }).first();
+
+const rosterGroup = (page: Page, index: number) =>
+  rosterRegion(page).getByRole("group", { name: `Участник ${index}` });
+
+const attendanceControl = (group: ReturnType<Page["getByRole"]>) =>
+  group.getByRole("combobox", { name: "Посещаемость" });
+
+test("загружает игроков и roster, отображает русскую посещаемость, id и серверный порядок", async ({ page }) => {
+  await setupRosterRoutes(page, roster([
+    participant(0, player(0, "Алиса").id, "registered", 2),
+    participant(1, player(1, "Боб").id, "checked_in", 1),
+  ]));
+  await openRoster(page);
+
+  const region = rosterRegion(page);
+  await expect(region).toContainText("Алиса");
+  await expect(region).toContainText(player(0, "Алиса").id);
+  await expect(region).toContainText("Зарегистрирован");
+  await expect(region).toContainText("Боб");
+  await expect(region).toContainText(player(1, "Боб").id);
+  await expect(region).toContainText("На месте");
+  await expect(rosterGroup(page, 1)).toContainText("2");
+  await expect(rosterGroup(page, 2)).toContainText("1");
+});
+
+test("добавляет участника и отклоняет duplicate игрока", async ({ page }) => {
+  const players = [
+    player(0, "Алиса"),
+    player(1, "Боб"),
+    player(2, "Вера"),
+  ];
+  await setupRosterRoutes(page, roster([
+    participant(0, players[0].id),
+    participant(1, players[1].id),
+  ]), { players });
+  await openRoster(page);
+
+  const region = rosterRegion(page);
+  await region.getByRole("button", { name: /Добавить участника/i }).click();
+  await expect(region).toContainText("Вера");
+
+  await rosterGroup(page, 3).getByRole("combobox", { name: "Игрок" }).selectOption(players[0].id);
+  await expect(region.getByRole("alert")).toContainText(/уже добавлен|дубликат|повтор/i);
+});
+
+test("явно ограничивает 17-го участника", async ({ page }) => {
+  const fullPlayers = Array.from({ length: 16 }, (_, index) => player(index, `Участник ${index + 1}`));
+  await setupRosterRoutes(page, roster(
+    fullPlayers.map((candidate, index) => participant(index, candidate.id, "registered", index + 1)),
+  ), { players: fullPlayers });
+  await openRoster(page);
+  const fullRegion = rosterRegion(page);
+  await fullRegion.getByRole("button", { name: /Добавить участника/i }).click();
+  await expect(fullRegion.getByRole("alert")).toContainText(/16|максим|переполн/i);
+});
+
+test("изменяет attendance, заменяет и удаляет участника, отправляет полный roster с revision и принимает серверный порядок", async ({ page }) => {
+  const players = [player(0, "Алиса"), player(1, "Боб"), player(2, "Вера"), player(3, "Глеб")];
+  const returnedRoster = roster([
+    participant(0, players[2].id, "checked_in", 8),
+    participant(1, players[0].id, "checked_in", 4),
+  ], { revision: 8 });
+  const { replaceRequests } = await setupRosterRoutes(page, roster([
+    participant(0, players[0].id, "registered", 1),
+    participant(1, players[1].id, "registered", 2),
+    participant(2, players[3].id, "registered", 3),
+  ]), {
+    players,
+    onReplace: async (route, bodyParticipants) => {
+      expect(bodyParticipants).toEqual([
+        { player_id: players[0].id, seed: 4, attendance: "checked_in" },
+        { player_id: players[2].id, seed: 3, attendance: "registered" },
+      ]);
+      await fulfillJSON(route, 200, returnedRoster);
+    },
+  });
+  await openRoster(page);
+
+  const region = rosterRegion(page);
+  await rosterGroup(page, 2).getByRole("combobox", { name: "Игрок" }).selectOption(players[2].id);
+  await rosterGroup(page, 2).getByRole("spinbutton", { name: "Seed / позиция" }).fill("3");
+  await rosterGroup(page, 1).getByRole("spinbutton", { name: "Seed / позиция" }).fill("4");
+  await attendanceControl(rosterGroup(page, 1)).selectOption("checked_in");
+  await rosterGroup(page, 3).getByRole("button", { name: "Удалить" }).click();
+
+  await region.getByRole("button", { name: /Сохранить состав/i }).click();
+  await expect.poll(() => replaceRequests.length).toBe(1);
+  expect(replaceRequests[0].body).toMatchObject({ expected_projection_revision: 1 });
+  expect(replaceRequests[0].key).toMatch(/^[0-9a-f-]{36}$/i);
+  await expect(rosterGroup(page, 1)).toContainText("Вера");
+  await expect(rosterGroup(page, 1)).toContainText("8");
+  await expect(attendanceControl(rosterGroup(page, 1))).toHaveValue("checked_in");
+  await expect(rosterGroup(page, 2)).toContainText("Алиса");
+  await expect(rosterGroup(page, 2)).toContainText("4");
+  await expect(
+    rosterGroup(page, 1).getByRole("combobox", { name: "Игрок" }),
+  ).toHaveValue(players[2].id);
+  await expect(
+    rosterGroup(page, 2).getByRole("combobox", { name: "Игрок" }),
+  ).toHaveValue(players[0].id);
+});
+
+test("сохраняет draft при русском 409 reservation conflict и блокирует редактирование locked roster", async ({ page }) => {
+  const players = [player(0, "Алиса"), player(1, "Боб")];
+  let replaceCalls = 0;
+  await setupRosterRoutes(page, roster([
+    participant(0, players[0].id, "registered", 1),
+    participant(1, players[1].id, "registered", 2),
+  ]), {
+    players,
+    onReplace: async (route) => {
+      replaceCalls += 1;
+      await fulfillJSON(route, 409, problem("Игрок уже зарезервирован в другом турнире"));
+    },
+  });
+  await openRoster(page);
+  const region = rosterRegion(page);
+  await attendanceControl(rosterGroup(page, 1)).selectOption("checked_in");
+  await region.getByRole("button", { name: /Сохранить состав/i }).click();
+  await expect(region.getByRole("alert")).toContainText("Игрок уже зарезервирован в другом турнире");
+  await expect(attendanceControl(rosterGroup(page, 1))).toHaveValue("checked_in");
+  expect(replaceCalls).toBe(1);
+
+  await page.reload();
+  await setupRosterRoutes(page, roster([
+    participant(0, players[0].id, "checked_in", 1),
+    participant(1, players[1].id, "registered", 2),
+  ], { locked: true, locked_at: baseDate }), { players });
+  await openRoster(page);
+  const lockedRegion = rosterRegion(page);
+  await expect(lockedRegion.getByRole("button", { name: /Добавить участника/i })).toBeDisabled();
+  await expect(lockedRegion.getByRole("button", { name: /Сохранить состав/i })).toBeDisabled();
+  await expect(lockedRegion.getByRole("button", { name: "Удалить" }).first()).toBeDisabled();
+  await expect(attendanceControl(rosterGroup(page, 1))).toBeDisabled();
+});
+
+test("сохраняет читаемый roster editor в обеих темах и на мобильной ширине", async ({ page }) => {
+  const players = [player(0, "Алиса"), player(1, "Боб")];
+  await setupRosterRoutes(page, roster([
+    participant(0, players[0].id, "registered", 1),
+    participant(1, players[1].id, "checked_in", 2),
+  ]), { players });
+  await openRoster(page);
+
+  const region = rosterRegion(page);
+  const surfaces: string[] = [];
+  for (const theme of ["Темная тема", "Светлая тема"]) {
+    await page.getByRole("button", { name: theme }).click();
+    await expect(page.locator("html")).toHaveAttribute(
+      "data-theme",
+      theme === "Темная тема" ? "dark" : "light",
+    );
+    surfaces.push(await region.evaluate((element) => getComputedStyle(element).backgroundColor));
+    await expect(region.getByRole("button", { name: "Сохранить состав" })).toBeVisible();
+  }
+  expect(surfaces[0]).not.toBe(surfaces[1]);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(region).toBeVisible();
+  await expect(rosterGroup(page, 1).getByRole("combobox", { name: "Игрок" })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});

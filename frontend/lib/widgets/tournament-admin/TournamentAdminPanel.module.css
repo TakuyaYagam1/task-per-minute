@@ -179,6 +179,13 @@
   color: var(--text);
 }
 
+.rowActions {
+  display: grid;
+  min-width: 9rem;
+  justify-items: start;
+  gap: 0.45rem;
+}
+
 @media (max-width: 940px) {
   .layout {
     grid-template-columns: 1fr;

@@ -1,6 +1,13 @@
 import { randomUUID } from 'node:crypto';
 
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import {
+  expect,
+  test,
+  type APIRequestContext,
+  type APIResponse,
+  type BrowserContext,
+  type Page,
+} from '@playwright/test';
 
 const frontendURL = (process.env.E2E_FRONTEND_URL || 'http://127.0.0.1:3000').replace(/\/+$/, '');
 const backendURL = (process.env.E2E_BACKEND_URL || 'http://127.0.0.1:8080').replace(/\/+$/, '');
@@ -22,7 +29,26 @@ type AdminTournament = {
   id: string;
   name: string;
   public_id: string;
+  revision: number;
   state: string;
+};
+
+type FullStackPlayer = {
+  id: string;
+  username: string;
+};
+
+type FullStackRosterParticipant = {
+  attendance: 'invited' | 'registered' | 'checked_in' | 'withdrawn';
+  player_id: string;
+  seed: number;
+};
+
+type FullStackRoster = {
+  locked: boolean;
+  participants: FullStackRosterParticipant[];
+  revision: number;
+  tournament_id: string;
 };
 
 type UploadSourceResponse = {
@@ -196,6 +222,38 @@ const createTournamentViaApi = async (
   expect(tournament.state).toBe('draft');
   return tournament;
 };
+
+const getRosterViaApi = async (
+  request: APIRequestContext,
+  tournamentID: string,
+): Promise<FullStackRoster> => {
+  const response = await request.get(`${backendURL}/api/v1/admin/tournaments/${tournamentID}/roster`, {
+    headers: { Origin: frontendURL },
+  });
+  expect(response.ok(), `roster GET failed with ${response.status()}`).toBeTruthy();
+  return (await response.json()) as FullStackRoster;
+};
+
+const replaceRosterViaApi = async (
+  request: APIRequestContext,
+  tournamentID: string,
+  csrfToken: string,
+  expectedProjectionRevision: number,
+  participants: FullStackRosterParticipant[],
+): Promise<APIResponse> => request.put(
+  `${backendURL}/api/v1/admin/tournaments/${tournamentID}/roster`,
+  {
+    headers: {
+      'X-CSRF-Token': csrfToken,
+      'Idempotency-Key': randomUUID(),
+      Origin: frontendURL,
+    },
+    data: {
+      expected_projection_revision: expectedProjectionRevision,
+      participants,
+    },
+  },
+);
 
 const uploadSourceViaApi = async (
   request: APIRequestContext,
@@ -404,6 +462,198 @@ test.describe('local compose full stack e2e', () => {
     expect(listResponse.ok(), `tournament list failed with ${listResponse.status()}`).toBeTruthy();
     const list = (await listResponse.json()) as { items: AdminTournament[] };
     expect(list.items.some((item) => item.id === tournament.id && item.name === tournamentName)).toBe(true);
+  });
+
+  test('FE-027 composes, checks in, replaces, and protects a real backend roster', async ({ page, browser }) => {
+    test.setTimeout(180_000);
+
+    const tournamentName = uniqueName('fullstack-roster');
+    const tournamentPublicID = uniqueName('roster-public');
+    const playerNames = [
+      uniqueName('roster-player-a'),
+      uniqueName('roster-player-b'),
+      uniqueName('roster-player-c'),
+      uniqueName('roster-player-d'),
+    ];
+    const playerContexts: BrowserContext[] = [];
+
+    try {
+      await loginThroughAdminUI(page);
+      const adminRequest = page.context().request;
+      const adminAccessCSRF = (await page.context().cookies()).find(
+        (cookie) => cookie.name === 'tpm_admin_access_csrf',
+      );
+      const adminAccessCSRFToken = adminAccessCSRF?.value ?? '';
+      expect(adminAccessCSRFToken, 'admin login did not issue an access CSRF cookie').toBeTruthy();
+
+      const normalTaskName = uniqueName('roster-normal');
+      const goldenTaskName = uniqueName('roster-golden');
+      await createTaskViaApi(adminRequest, { access_csrf_token: adminAccessCSRFToken }, {
+        title: normalTaskName,
+        description: 'Healthy normal task for the roster flow.',
+        kind: 'normal',
+        category: 'web',
+        difficulty: 'easy',
+        time_limit: 90,
+        flag: `flag{${normalTaskName.replaceAll('-', '_')}}`,
+        hints: ['normal hint one', 'normal hint two', 'normal hint three'],
+        task_url: 'https://example.com/roster-normal',
+      });
+      await createTaskViaApi(adminRequest, { access_csrf_token: adminAccessCSRFToken }, {
+        title: goldenTaskName,
+        description: 'Healthy golden task for the roster flow.',
+        kind: 'golden',
+        category: 'web',
+        difficulty: 'easy',
+        time_limit: 90,
+        flag: `flag{${goldenTaskName.replaceAll('-', '_')}}`,
+        hints: ['golden hint one', 'golden hint two', 'golden hint three'],
+        task_url: 'https://example.com/roster-golden',
+      });
+
+      const contentRevision = await getTournamentContentRevision(adminRequest);
+      const tournament = await createTournamentViaApi(
+        adminRequest,
+        { access_csrf_token: adminAccessCSRFToken },
+        {
+          name: tournamentName,
+          content_revision: contentRevision,
+          planned_roster_size: 4,
+          public_id: tournamentPublicID,
+          preset: 'tournament_v1',
+          expected_revision: 0,
+        },
+      );
+
+      const players: FullStackPlayer[] = [];
+      for (const username of playerNames) {
+        const context = await browser.newContext({ baseURL: frontendURL });
+        playerContexts.push(context);
+        const playerPage = await context.newPage();
+        await joinAsPlayer(playerPage, username);
+        const meResponse = await context.request.get(`${backendURL}/api/v1/players/me`, {
+          headers: {
+            Cookie: await cookieHeaderForPage(playerPage),
+            Origin: frontendURL,
+          },
+        });
+        expect(meResponse.ok(), `players/me failed with ${meResponse.status()}`).toBeTruthy();
+        const me = (await meResponse.json()) as { player: FullStackPlayer };
+        expect(me.player.username).toBe(username);
+        players.push(me.player);
+      }
+
+      await page.getByRole('button', { name: 'Турниры' }).click();
+      const tournamentRow = page.getByRole('row').filter({ hasText: tournamentName });
+      const editRosterButton = tournamentRow.getByRole('button', { name: 'Редактировать состав' });
+      await expect(editRosterButton).toBeVisible({ timeout: 15_000 });
+      const playersResponse = page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname === '/api/v1/admin/players' &&
+          response.request().method() === 'GET',
+      );
+      const rosterResponse = page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname === `/api/v1/admin/tournaments/${tournament.id}/roster` &&
+          response.request().method() === 'GET',
+      );
+      await editRosterButton.click();
+      expect((await playersResponse).status()).toBe(200);
+      expect((await rosterResponse).status()).toBe(200);
+
+      const rosterRegion = page.getByRole('region', { name: 'Состав турнира' });
+      await expect(rosterRegion).toBeVisible();
+      await expect(rosterRegion.getByText('Состав пуст')).toBeVisible();
+      await expect(rosterRegion.getByRole('button', { name: 'Добавить участника' })).toBeEnabled();
+      await rosterRegion.getByRole('button', { name: 'Добавить участника' }).click({ clickCount: 3 });
+      await expect(rosterRegion.getByRole('group')).toHaveCount(3);
+
+      for (const [index, player] of players.slice(0, 3).entries()) {
+        const group = rosterRegion.getByRole('group', { name: `Участник ${index + 1}` });
+        await group.getByRole('combobox', { name: 'Игрок' }).selectOption(player.id);
+        await group.getByRole('spinbutton', { name: 'Seed / позиция' }).fill(String(index + 1));
+      }
+
+      const firstTournamentRefresh = page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname === '/api/v1/admin/tournaments' &&
+          response.request().method() === 'GET',
+      );
+      const firstSave = page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname === `/api/v1/admin/tournaments/${tournament.id}/roster` &&
+          response.request().method() === 'PUT',
+      );
+      await rosterRegion.getByRole('button', { name: 'Сохранить состав' }).click();
+      expect((await firstSave).status()).toBe(200);
+      const refreshedTournaments = await firstTournamentRefresh;
+      expect(refreshedTournaments.status()).toBe(200);
+      const refreshedTournamentList = (await refreshedTournaments.json()) as {
+        items: Array<{ id: string; revision: number }>;
+      };
+      const refreshedTournament = refreshedTournamentList.items.find(
+        (item) => item.id === tournament.id,
+      );
+      expect(refreshedTournament?.revision).toBeGreaterThanOrEqual(tournament.revision);
+
+      const savedRoster = await getRosterViaApi(adminRequest, tournament.id);
+      expect(savedRoster.participants.map((item) => item.player_id)).toEqual(
+        players.slice(0, 3).map((player) => player.id),
+      );
+      expect(savedRoster.participants.map((item) => item.seed)).toEqual([1, 2, 3]);
+
+      await rosterRegion.getByRole('group', { name: 'Участник 1' })
+        .getByRole('combobox', { name: 'Посещаемость' })
+        .selectOption('checked_in');
+      await rosterRegion.getByRole('group', { name: 'Участник 2' })
+        .getByRole('combobox', { name: 'Игрок' })
+        .selectOption(players[3].id);
+      await rosterRegion.getByRole('group', { name: 'Участник 3' })
+        .getByRole('button', { name: 'Удалить' })
+        .click();
+
+      const secondSave = page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname === `/api/v1/admin/tournaments/${tournament.id}/roster` &&
+          response.request().method() === 'PUT',
+      );
+      await rosterRegion.getByRole('button', { name: 'Сохранить состав' }).click();
+      expect((await secondSave).status()).toBe(200);
+
+      const replacedRoster = await getRosterViaApi(adminRequest, tournament.id);
+      expect(replacedRoster.participants.map((item) => item.player_id)).toEqual([
+        players[0].id,
+        players[3].id,
+      ]);
+      expect(replacedRoster.participants[0]?.attendance).toBe('checked_in');
+
+      const secondTournament = await createTournamentViaApi(
+        adminRequest,
+        { access_csrf_token: adminAccessCSRFToken },
+        {
+          name: `${tournamentName}-conflict`,
+          content_revision: contentRevision,
+          planned_roster_size: 4,
+          public_id: `${tournamentPublicID}-conflict`,
+          preset: 'tournament_v1',
+          expected_revision: 0,
+        },
+      );
+      const secondRoster = await getRosterViaApi(adminRequest, secondTournament.id);
+      expect(secondRoster.participants).toHaveLength(0);
+      const conflict = await replaceRosterViaApi(
+        adminRequest,
+        secondTournament.id,
+        adminAccessCSRFToken,
+        secondTournament.revision,
+        [{ player_id: players[0].id, seed: 1, attendance: 'registered' }],
+      );
+      expect(conflict.status(), 'a player reserved in another roster must return 409').toBe(409);
+    } finally {
+      for (const context of playerContexts) {
+        await context.close();
+      }
+    }
   });
 
   test('source upload returns a host-reachable presigned URL', async ({ request }) => {
