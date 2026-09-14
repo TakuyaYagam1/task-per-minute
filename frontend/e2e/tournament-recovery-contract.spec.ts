@@ -30,6 +30,10 @@ const frontendRoot = process.cwd();
 const fixtureRoot = resolve(frontendRoot, "e2e/fixtures/tournament-live");
 const nextBinary = resolve(frontendRoot, "node_modules/.bin/next");
 const fixtureHost = "127.0.0.1";
+const staleServerTimestamp = "2026-09-13T09:59:59Z";
+const staleDeadline = "2026-09-13T10:01:30Z";
+const newerServerTimestamp = "2026-09-13T10:00:01Z";
+const newerDeadline = "2026-09-13T10:01:00Z";
 
 let fixtureProcess: ChildProcessByStdio<null, Readable, Readable> | undefined;
 let fixtureURL = "";
@@ -610,21 +614,43 @@ test("a refreshed server timestamp cannot extend the original deadline", () => {
 test("a hook re-render cannot extend countdown from an older server timestamp", async ({ page }) => {
   await page.goto(fixtureURL, { waitUntil: "domcontentloaded" });
   const countdown = page.getByTestId("server-countdown");
+  const countdownState = page.getByTestId("countdown-state");
+  const readRemainingSeconds = async (): Promise<number> => {
+    const text = await countdown.textContent();
+    const [minutes, seconds] = (text ?? "0:00").split(":").map(Number);
+    return (minutes * 60) + seconds;
+  };
 
   await expect.poll(async () => {
-    const text = await countdown.textContent();
-    return Number.parseInt(text?.split(":").at(-1) ?? "0", 10);
+    return readRemainingSeconds();
   }).toBeLessThan(30);
-  const beforeRefresh = await countdown.textContent();
-  const beforeSeconds = Number.parseInt(beforeRefresh?.split(":").at(-1) ?? "0", 10);
+  const beforeSeconds = await readRemainingSeconds();
 
   await page.getByRole("button", { name: "Повторить устаревший ответ" }).click();
-  await page.waitForTimeout(350);
+  await expect(countdownState).toHaveAttribute("data-server-timestamp", staleServerTimestamp);
+  await expect(countdownState).toHaveAttribute("data-deadline", staleDeadline);
+  await expect.poll(readRemainingSeconds).toBeLessThanOrEqual(beforeSeconds);
+});
+
+test("a newer server timestamp accepts a changed deadline", async ({ page }) => {
+  await page.goto(fixtureURL, { waitUntil: "domcontentloaded" });
+  const countdown = page.getByTestId("server-countdown");
+  const countdownState = page.getByTestId("countdown-state");
+
   await expect.poll(async () => {
     const text = await countdown.textContent();
-    return Number.parseInt(text?.split(":").at(-1) ?? "0", 10);
-  }).toBeLessThanOrEqual(beforeSeconds);
-  await expect(countdown).not.toHaveText("0:31");
+    const [minutes, seconds] = (text ?? "0:00").split(":").map(Number);
+    return (minutes * 60) + seconds;
+  }).toBeLessThan(30);
+
+  await page.getByRole("button", { name: "Повторить новый ответ" }).click();
+  await expect(countdownState).toHaveAttribute("data-server-timestamp", newerServerTimestamp);
+  await expect(countdownState).toHaveAttribute("data-deadline", newerDeadline);
+  await expect.poll(async () => {
+    const text = await countdown.textContent();
+    const [minutes, seconds] = (text ?? "0:00").split(":").map(Number);
+    return (minutes * 60) + seconds;
+  }).toBeGreaterThan(30);
 });
 
 test("mounted live panel stays server-authoritative in both themes and mobile width", async ({ page }) => {

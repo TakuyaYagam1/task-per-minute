@@ -35,6 +35,9 @@ const keepCurrentCountdownUnlessCandidateIsShorter = (
   candidate: ServerCountdown,
   monotonicTime: number,
 ): ServerCountdown => {
+  if (candidate.serverTimestampMs < current.serverTimestampMs) {
+    return current;
+  }
   const currentRemainingMs = remainingMsAt(current, monotonicTime);
   const candidateRemainingMs = remainingMsAt(candidate, monotonicTime);
   if (candidate.deadlineMs !== current.deadlineMs) {

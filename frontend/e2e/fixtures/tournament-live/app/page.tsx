@@ -11,6 +11,9 @@ import {
 const initialServerTimestamp = "2026-09-13T10:00:00Z";
 const initialDeadline = "2026-09-13T10:00:30Z";
 const staleServerTimestamp = "2026-09-13T09:59:59Z";
+const staleDeadline = "2026-09-13T10:01:30Z";
+const newerServerTimestamp = "2026-09-13T10:00:01Z";
+const newerDeadline = "2026-09-13T10:01:00Z";
 
 export default function Page() {
   const [serverTimestamp, setServerTimestamp] = useState(initialServerTimestamp);
@@ -27,7 +30,11 @@ export default function Page() {
   };
 
   return (
-    <main>
+    <main
+      data-deadline={deadline}
+      data-server-timestamp={serverTimestamp}
+      data-testid="countdown-state"
+    >
       <div className="theme-switch" role="group" aria-label="Тема интерфейса">
         <button
           aria-pressed={theme === "dark"}
@@ -68,10 +75,20 @@ export default function Page() {
           type="button"
           onClick={() => {
             setServerTimestamp(staleServerTimestamp);
-            setDeadline(initialDeadline);
+            setDeadline(staleDeadline);
           }}
         >
           Повторить устаревший ответ
+        </button>
+        <button
+          className="fixture-button"
+          type="button"
+          onClick={() => {
+            setServerTimestamp(newerServerTimestamp);
+            setDeadline(newerDeadline);
+          }}
+        >
+          Повторить новый ответ
         </button>
         <button className="fixture-button" type="button" onClick={() => setConnectionStatus("stale")}>
           Показать устаревшее состояние
