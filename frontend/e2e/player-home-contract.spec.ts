@@ -189,9 +189,10 @@ test('changing player clears the restore cache and calls logout', async ({ page 
     .toBeNull();
 });
 
-test('leaderboard remains the only public navigation from home', async ({ page }) => {
+test('home exposes leaderboard and Arena navigation', async ({ page }) => {
   await page.goto('/');
 
   await expect(page.getByRole('link', { name: 'Лидерборд' })).toHaveAttribute('href', '/leaderboard');
-  await expect(page.getByRole('link')).toHaveCount(1);
+  await expect(page.getByRole('link', { name: 'Открыть Arena' })).toHaveAttribute('href', '/arena');
+  await expect(page.getByRole('link')).toHaveCount(2);
 });

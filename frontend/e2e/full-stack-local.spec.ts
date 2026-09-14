@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 
 const frontendURL = (process.env.E2E_FRONTEND_URL || 'http://127.0.0.1:3000').replace(/\/+$/, '');
@@ -15,6 +17,13 @@ type AdminTask = {
   title: string;
 };
 
+type AdminTournament = {
+  id: string;
+  name: string;
+  public_id: string;
+  state: string;
+};
+
 type UploadSourceResponse = {
   source_file_url: string;
 };
@@ -30,6 +39,7 @@ type BrowserAuthStorage = {
 type FullStackTaskInput = {
   title: string;
   description: string;
+  kind?: 'normal' | 'golden';
   category: 'web' | 'forensics';
   difficulty: 'easy';
   time_limit: number;
@@ -37,6 +47,17 @@ type FullStackTaskInput = {
   hints: [string, string, string];
   task_url?: string | null;
 };
+
+type FullStackTournamentInput = {
+  content_revision: number;
+  name: string;
+  planned_roster_size: number;
+  public_id: string;
+  preset: 'tournament_v1';
+  expected_revision: number;
+};
+
+type AdminCSRFSession = Pick<AdminSession, 'access_csrf_token'>;
 
 const uniqueName = (prefix: string) =>
   `${prefix}-${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 8)}`;
@@ -120,7 +141,7 @@ const fillAdminTaskForm = async (page: Page, input: FullStackTaskInput): Promise
 
 const createTaskViaApi = async (
   request: APIRequestContext,
-  session: AdminSession,
+  session: AdminCSRFSession,
   input: FullStackTaskInput,
 ): Promise<AdminTask> => {
   const response = await request.post(`${backendURL}/api/v1/admin/tasks`, {
@@ -131,6 +152,48 @@ const createTaskViaApi = async (
   });
   expect(response.ok(), `task create failed with ${response.status()}`).toBeTruthy();
   return (await response.json()) as AdminTask;
+};
+
+const getTournamentContentRevision = async (
+  request: APIRequestContext,
+): Promise<number> => {
+  const contentURL = `${backendURL}/api/v1/admin/tournament-content`;
+  const response = await request.get(contentURL);
+  expect(response.ok(), `tournament content GET failed at ${contentURL} with ${response.status()}`).toBeTruthy();
+  const content = (await response.json()) as { content_revision?: unknown };
+  const contentRevision = content.content_revision;
+  expect(contentRevision, 'tournament content did not return content_revision').toEqual(
+    expect.any(Number),
+  );
+  if (typeof contentRevision !== 'number') {
+    throw new Error(`tournament content returned an invalid content_revision at ${contentURL}`);
+  }
+  return contentRevision;
+};
+
+const createTournamentViaApi = async (
+  request: APIRequestContext,
+  session: AdminCSRFSession,
+  input: FullStackTournamentInput,
+): Promise<AdminTournament> => {
+  const idempotencyKey = randomUUID();
+  const response = await request.post(`${backendURL}/api/v1/admin/tournaments`, {
+    headers: {
+      'X-CSRF-Token': session.access_csrf_token,
+      'Idempotency-Key': idempotencyKey,
+      Origin: frontendURL,
+    },
+    data: input,
+  });
+  expect(response.status(), `tournament create failed with ${response.status()}`).toBe(201);
+  const tournament = (await response.json()) as AdminTournament;
+  expect(tournament.id, 'tournament create did not return an id').toMatch(
+    /^[0-9a-f-]{36}$/i,
+  );
+  expect(tournament.name).toBe(input.name);
+  expect(tournament.public_id).toBe(input.public_id);
+  expect(tournament.state).toBe('draft');
+  return tournament;
 };
 
 const uploadSourceViaApi = async (
@@ -303,6 +366,112 @@ test.describe('local compose full stack e2e', () => {
         await cleanupTaskByTitle(request, session, title);
       }
     }
+  });
+
+  test('real backend preserves Arena entry context across roles', async ({ page, browser }) => {
+    test.setTimeout(120_000);
+
+    const tournamentName = uniqueName('fullstack-arena');
+    const tournamentPublicID = uniqueName('arena-public');
+    const playerName = uniqueName('arena-player');
+    await loginThroughAdminUI(page);
+    const adminAccessCSRF = (await page.context().cookies()).find(
+      (cookie) => cookie.name === 'tpm_admin_access_csrf',
+    );
+    const adminAccessCSRFToken = adminAccessCSRF?.value ?? '';
+    expect(adminAccessCSRFToken, 'admin login did not issue an access CSRF cookie').toBeTruthy();
+    const adminRequest = page.context().request;
+    const normalTaskName = uniqueName('arena-normal');
+    const goldenTaskName = uniqueName('arena-golden');
+    await createTaskViaApi(adminRequest, { access_csrf_token: adminAccessCSRFToken }, {
+      title: normalTaskName,
+      description: 'Healthy normal Arena content task.',
+      kind: 'normal',
+      category: 'web',
+      difficulty: 'easy',
+      time_limit: 90,
+      flag: `flag{${normalTaskName.replaceAll('-', '_')}}`,
+      hints: ['normal hint one', 'normal hint two', 'normal hint three'],
+      task_url: 'https://example.com/arena-normal',
+    });
+    await createTaskViaApi(adminRequest, { access_csrf_token: adminAccessCSRFToken }, {
+      title: goldenTaskName,
+      description: 'Healthy golden Arena content task.',
+      kind: 'golden',
+      category: 'web',
+      difficulty: 'easy',
+      time_limit: 90,
+      flag: `flag{${goldenTaskName.replaceAll('-', '_')}}`,
+      hints: ['golden hint one', 'golden hint two', 'golden hint three'],
+      task_url: 'https://example.com/arena-golden',
+    });
+    const contentRevision = await getTournamentContentRevision(adminRequest);
+    const tournament = await createTournamentViaApi(
+      adminRequest,
+      { access_csrf_token: adminAccessCSRFToken },
+      {
+        name: tournamentName,
+        content_revision: contentRevision,
+        planned_roster_size: 4,
+        public_id: tournamentPublicID,
+        preset: 'tournament_v1',
+        expected_revision: 0,
+      },
+    );
+    const spectatorPath = `/arena/spectator/${tournament.id}`;
+    const operatorPath = `/arena/operator/${tournament.id}`;
+    const participantPath = `/arena/participant/${tournament.id}`;
+    const spectatorURL = `${spectatorPath}?source=e2e`;
+
+    const adminCookies = await page.context().cookies();
+    expect(adminCookies.some((cookie) => cookie.name === 'tpm_admin_access')).toBe(true);
+    expect(adminCookies.some((cookie) => cookie.name === 'tpm_admin_refresh')).toBe(true);
+
+    await page.goto(spectatorURL);
+    await expect(page).toHaveURL(new URL(spectatorURL, frontendURL).toString());
+    await expect(page.getByRole('main')).toBeVisible();
+    await expect(page.getByText(tournament.id, { exact: false }).first()).toBeVisible();
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await expect(page).toHaveURL(new URL(spectatorURL, frontendURL).toString());
+    await expect(page.getByText(tournament.id, { exact: false }).first()).toBeVisible();
+
+    await page.goto(operatorPath);
+    await expect(page).toHaveURL(new URL(operatorPath, frontendURL).toString());
+    await expect(page.getByRole('main')).toBeVisible();
+    await expect(page.getByRole('heading').filter({ hasText: tournamentName })).toBeVisible();
+
+    const playerContext = await browser.newContext({ baseURL: frontendURL });
+    try {
+      const playerPage = await playerContext.newPage();
+      await joinAsPlayer(playerPage, playerName);
+      await playerPage.goto(participantPath);
+      await expect(playerPage).toHaveURL(new URL(participantPath, frontendURL).toString());
+      await expect(playerPage.getByRole('main')).toBeVisible();
+      await expect(
+        playerPage.getByText(
+          /forbidden|access denied|нет доступа|доступ запрещ|запрещен|запрещён|недоступ|403/i,
+        ).first(),
+      ).toBeVisible();
+      await expect(
+        playerPage.getByRole('heading').filter({ hasText: /spectator|operator|наблюдател|оператор/i }),
+      ).toHaveCount(0);
+    } finally {
+      await playerContext.close();
+    }
+
+    const logoutButton = page.getByRole('button', { name: /log ?out|выйти/i });
+    await expect(logoutButton).toHaveCount(1);
+    const logoutResponse = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === '/api/v1/admin/logout' &&
+        response.request().method() === 'POST',
+    );
+    await logoutButton.click();
+    expect((await logoutResponse).status()).toBe(204);
+    await expect(page).toHaveURL(new URL(operatorPath, frontendURL).toString());
+    await expect(page.getByRole('link', { name: 'Войти как оператор' })).toBeVisible({
+      timeout: 15_000,
+    });
   });
 
 });

@@ -15,7 +15,11 @@ import {
   type UpdateAdminPlayerRequest,
   type UpdateTaskRequest,
 } from "../../lib/shared/api";
-import { log, useTimedNotification } from "../../lib/shared/lib";
+import {
+  getSafeArenaReturnPath,
+  log,
+  useTimedNotification,
+} from "../../lib/shared/lib";
 import { ViewportPortal } from "../../lib/shared/ui";
 import styles from "./admin.module.css";
 
@@ -87,6 +91,12 @@ const PLAYERS_EVENTS_RETRY_BASE_MS = 1_000;
 const PLAYERS_EVENTS_RETRY_MAX_MS = 30_000;
 const PLAYERS_EVENTS_REFRESH_COOLDOWN_MS = 60_000;
 const PLAYERS_EVENTS_FALLBACK_POLL_MS = 5_000;
+
+const operatorReturnPath = (): string | null =>
+  getSafeArenaReturnPath(
+    new URLSearchParams(window.location.search).get("next"),
+    "operator",
+  );
 
 const emptyHintInputs = (): string[] => ["", "", ""];
 
@@ -349,6 +359,10 @@ export default function AdminPanel() {
           activateAdminSession();
           sessionRef.current = nextSession;
           setSession(nextSession);
+          const returnPath = operatorReturnPath();
+          if (returnPath) {
+            window.location.replace(returnPath);
+          }
         })
         .catch(() => {
           if (!isMountedRef.current) {
@@ -521,6 +535,11 @@ export default function AdminPanel() {
       saveSession(nextSession, sessionVersion);
       setPassword("");
       setLoginFormError(null);
+      const returnPath = operatorReturnPath();
+      if (returnPath) {
+        window.location.replace(returnPath);
+        return;
+      }
       showNotification("success", "Успешный вход в админ-панель");
     } catch (error) {
       if (!isMountedRef.current) {

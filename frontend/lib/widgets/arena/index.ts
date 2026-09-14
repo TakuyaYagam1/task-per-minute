@@ -1,16 +1,15 @@
-export {};
-export * from './error-page';
+export { ArenaLanding } from "./ArenaLanding";
 export {
-  ArenaLanding,
   ArenaShell,
   buildArenaLoginHref,
   buildArenaRolePath,
   isSafeTournamentId,
-} from './arena';
+} from "./ArenaShell";
 export type {
   ArenaAccessMessage,
   ArenaAccessStatus,
   ArenaMessageTone,
   ArenaMetric,
+  ArenaRole,
   ArenaRoleSummary,
-} from './arena';
+} from "./types";

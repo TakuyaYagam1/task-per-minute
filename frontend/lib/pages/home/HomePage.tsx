@@ -5,7 +5,12 @@ import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 
 import { playerModel } from "../../entities/player";
-import { isValidUsername, log, useTimedNotification } from "../../shared/lib";
+import {
+  getSafeArenaReturnPath,
+  isValidUsername,
+  log,
+  useTimedNotification,
+} from "../../shared/lib";
 import type { Player } from "../../shared/types";
 import { ViewportPortal } from "../../shared/ui";
 
@@ -20,6 +25,12 @@ const buildRateLimitMessage = (retryAfter?: string | null): string => {
   }
   return "Слишком много попыток. Повторите позже.";
 };
+
+const participantReturnPath = (): string | null =>
+  getSafeArenaReturnPath(
+    new URLSearchParams(window.location.search).get("next"),
+    "participant",
+  );
 
 export default function HomePage() {
   const [nickname, setNickname] = useState("");
@@ -50,6 +61,10 @@ export default function HomePage() {
       if (result.kind === "ok") {
         setCurrentPlayer(result.state.player);
         setNickname(result.state.player.username);
+        const returnPath = participantReturnPath();
+        if (returnPath) {
+          window.location.replace(returnPath);
+        }
         return;
       }
       if (result.kind === "expired") {
@@ -87,6 +102,10 @@ export default function HomePage() {
     if (result.kind === "ok") {
       setCurrentPlayer(result.player);
       setNickname(result.player.username);
+      const returnPath = participantReturnPath();
+      if (returnPath) {
+        window.location.replace(returnPath);
+      }
       return;
     }
     if (result.kind === "rate_limited") {
@@ -209,6 +228,13 @@ export default function HomePage() {
                     {currentPlayer ? "Игрок готов" : "Введите никнейм"}
                   </div>
                 </div>
+
+                <Link
+                  href="/arena"
+                  className="mt-4 text-center text-sm font-semibold text-blue-200 underline decoration-blue-200/60 underline-offset-4 transition-colors hover:text-white"
+                >
+                  Открыть Arena
+                </Link>
               </div>
             </div>
           </div>
