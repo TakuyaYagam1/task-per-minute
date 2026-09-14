@@ -244,6 +244,16 @@ WHERE lease.tournament_id = $1
     AND lease.roster_id = $2
     AND lease.participant_id = $3
     AND lease.state = 'active'
+    AND EXISTS (
+        SELECT 1
+        FROM realtime_subscribers AS subscriber
+        WHERE subscriber.tournament_id = lease.tournament_id
+            AND subscriber.role = 'participant'
+            AND subscriber.principal_id = lease.player_id
+            AND subscriber.connection_id = lease.connection_id
+            AND subscriber.connection_generation = lease.connection_generation
+            AND subscriber.closed_at IS NULL
+    )
 `
 
 type CountParticipantConnectionLeasesParams struct {
@@ -660,6 +670,56 @@ func (q *Queries) LockParticipantConnectionActiveGame(ctx context.Context, arg L
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockParticipantConnectionCurrentSubscriber = `-- name: LockParticipantConnectionCurrentSubscriber :many
+SELECT subscriber.id
+FROM realtime_subscribers AS subscriber
+WHERE subscriber.tournament_id = $1
+    AND subscriber.role = 'participant'
+    AND subscriber.principal_id = $2
+    AND subscriber.connection_id = $3
+    AND subscriber.connection_generation = $4
+    AND subscriber.closed_at IS NULL
+FOR UPDATE OF subscriber
+`
+
+type LockParticipantConnectionCurrentSubscriberParams struct {
+	TournamentID         uuid.UUID
+	PlayerID             uuid.NullUUID
+	ConnectionID         uuid.UUID
+	ConnectionGeneration int64
+}
+
+// A realtime subscriber row is the mutable head of one participant socket
+// fence.  Locking the exact open row before a lease close prevents a resume
+// takeover from changing the fence between the stale check and the action
+// decision.  The durable lease is still closed even when this query returns
+// no row, preserving historical close evidence without allowing a superseded
+// socket to mutate current tournament state.
+func (q *Queries) LockParticipantConnectionCurrentSubscriber(ctx context.Context, arg LockParticipantConnectionCurrentSubscriberParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, lockParticipantConnectionCurrentSubscriber,
+		arg.TournamentID,
+		arg.PlayerID,
+		arg.ConnectionID,
+		arg.ConnectionGeneration,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

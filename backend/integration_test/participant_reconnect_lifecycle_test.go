@@ -127,6 +127,8 @@ func TestParticipantReconnectLifecycle(t *testing.T) {
 
 		tabOne := participantReconnectConnectionCommand(started, uuid.New())
 		tabTwo := participantReconnectConnectionCommand(started, uuid.New())
+		participantReconnectCreateSubscriber(ctx, t, started, tabOne)
+		participantReconnectCreateSubscriber(ctx, t, started, tabTwo)
 		require.NoError(t, coordinator.Connect(ctx, tabOne))
 		require.Equal(t, 1, participantReconnectActiveLeaseCount(ctx, t, started.fixture, started.playerID))
 		require.NoError(t, coordinator.Connect(ctx, tabTwo))
@@ -151,6 +153,7 @@ func TestParticipantReconnectLifecycle(t *testing.T) {
 
 		clock.at = reconnectAt
 		tabThree := participantReconnectConnectionCommand(started, uuid.New())
+		participantReconnectCreateSubscriber(ctx, t, started, tabThree)
 		require.NoError(t, coordinator.Connect(ctx, tabThree))
 		require.Equal(t, 1, participantReconnectActiveLeaseCount(ctx, t, started.fixture, started.playerID))
 		resumed, err := started.fixture.adapter.LoadAuthority(ctx, started.scope, started.playerID)
@@ -522,6 +525,26 @@ func participantReconnectConnectionCommand(
 		ConnectionID:         connectionID,
 		ConnectionGeneration: 1,
 	}
+}
+
+func participantReconnectCreateSubscriber(
+	ctx context.Context,
+	t *testing.T,
+	started participantReconnectStartedFixture,
+	command inbound.TournamentParticipantConnectionCommand,
+) {
+	t.Helper()
+	connectedAt := time.Now().UTC().Truncate(time.Microsecond)
+	_, err := sharedPool.Exec(ctx, `
+		INSERT INTO realtime_subscribers (
+			id, instance_id, connection_id, connection_generation,
+			tournament_id, role, principal_id, initial_sequence,
+			last_acknowledged_sequence, snapshot_sequence, connected_at
+		)
+		VALUES ($1, $2, $3, $4, $5, 'participant', $6, 0, 0, 0, $7)`,
+		uuid.New(), uuid.New(), command.ConnectionID, command.ConnectionGeneration,
+		started.fixture.tournamentID, command.PlayerID, connectedAt)
+	require.NoError(t, err)
 }
 
 func participantReconnectActiveLeaseCount(

@@ -794,6 +794,13 @@ type Querier interface {
 	// Only a delivered, normal task in an active game can produce ordinary game
 	// disconnect.  All joins are identity-bound and locked in graph order.
 	LockParticipantConnectionActiveGame(ctx context.Context, arg LockParticipantConnectionActiveGameParams) ([]LockParticipantConnectionActiveGameRow, error)
+	// A realtime subscriber row is the mutable head of one participant socket
+	// fence.  Locking the exact open row before a lease close prevents a resume
+	// takeover from changing the fence between the stale check and the action
+	// decision.  The durable lease is still closed even when this query returns
+	// no row, preserving historical close evidence without allowing a superseded
+	// socket to mutate current tournament state.
+	LockParticipantConnectionCurrentSubscriber(ctx context.Context, arg LockParticipantConnectionCurrentSubscriberParams) ([]uuid.UUID, error)
 	// The connection lifecycle always locks the participant identity first.  Every
 	// subsequent query is scoped by that identity so a socket can never select a
 	// different roster, wave, assignment, or game by accident.

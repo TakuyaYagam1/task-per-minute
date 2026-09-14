@@ -381,7 +381,34 @@ FROM participant_connection_leases AS lease
 WHERE lease.tournament_id = sqlc.arg(tournament_id)
     AND lease.roster_id = sqlc.arg(roster_id)
     AND lease.participant_id = sqlc.arg(participant_id)
-    AND lease.state = 'active';
+    AND lease.state = 'active'
+    AND EXISTS (
+        SELECT 1
+        FROM realtime_subscribers AS subscriber
+        WHERE subscriber.tournament_id = lease.tournament_id
+            AND subscriber.role = 'participant'
+            AND subscriber.principal_id = lease.player_id
+            AND subscriber.connection_id = lease.connection_id
+            AND subscriber.connection_generation = lease.connection_generation
+            AND subscriber.closed_at IS NULL
+    );
+
+-- A realtime subscriber row is the mutable head of one participant socket
+-- fence.  Locking the exact open row before a lease close prevents a resume
+-- takeover from changing the fence between the stale check and the action
+-- decision.  The durable lease is still closed even when this query returns
+-- no row, preserving historical close evidence without allowing a superseded
+-- socket to mutate current tournament state.
+-- name: LockParticipantConnectionCurrentSubscriber :many
+SELECT subscriber.id
+FROM realtime_subscribers AS subscriber
+WHERE subscriber.tournament_id = sqlc.arg(tournament_id)
+    AND subscriber.role = 'participant'
+    AND subscriber.principal_id = sqlc.arg(player_id)
+    AND subscriber.connection_id = sqlc.arg(connection_id)
+    AND subscriber.connection_generation = sqlc.arg(connection_generation)
+    AND subscriber.closed_at IS NULL
+FOR UPDATE OF subscriber;
 
 -- The operator pause is wave-scoped and joins the exact participant presence
 -- row.  Returning more than one row is a repository conflict, never a reason

@@ -302,22 +302,32 @@ func (repository *ParticipantConnectionPostgres) closeConnectionLocked(
 	if row.State != "disconnected" || !row.DisconnectedAt.Valid {
 		return connection.CloseConnectionResult{}, fmt.Errorf("closed participant connection lease did not persist disconnected state: %w", domain.ErrInternal)
 	}
+	currentSubscriber, err := repository.lockParticipantConnectionCurrentSubscriber(ctx, q, command)
+	if err != nil {
+		return connection.CloseConnectionResult{}, err
+	}
 	activeCount, err := repository.countParticipantConnectionLeases(ctx, q, command.TournamentID, command.RosterID, command.ParticipantID)
 	if err != nil {
 		return connection.CloseConnectionResult{}, err
 	}
-	action, actionBinding, err := repository.resolveParticipantConnectionAction(ctx, q, state, connectionOperationDisconnect)
+	if !currentSubscriber {
+		return connection.CloseConnectionResult{
+			Lease:            lease,
+			Closed:           true,
+			ActiveLeaseCount: activeCount,
+			Action:           connection.ResolvedAction{Kind: connection.ActionNone},
+		}, nil
+	}
+	action, _, err := repository.resolveParticipantConnectionAction(ctx, q, state, connectionOperationDisconnect)
 	if err != nil {
 		return connection.CloseConnectionResult{}, err
 	}
-	// A socket lease carries the exact assignment/series/attempt it observed
-	// when it connected.  The current action is resolved again after the CAS
-	// close, so an old socket can never disconnect or pause a newer attempt.
-	if matches, matchErr := participantConnectionActionBindingMatchesLease(row, action.Kind, actionBinding); matchErr != nil {
-		return connection.CloseConnectionResult{}, matchErr
-	} else if !matches {
-		action = connection.ResolvedAction{Kind: connection.ActionNone}
-	}
+	action = participantConnectionActionForSubscriberFence(currentSubscriber, action)
+	// The lease binding remains immutable historical evidence.  Once the exact
+	// subscriber fence is locked, however, the socket is still the current
+	// participant connection and the action must follow the graph it closes
+	// against.  A superseded fence returned above with ActionNone and can only
+	// close its own durable lease.
 	return connection.CloseConnectionResult{
 		Lease:            lease,
 		Closed:           true,
@@ -378,21 +388,36 @@ func (repository *ParticipantConnectionPostgres) closeOrphanedConnectionLocked(
 	if err != nil {
 		return connection.CloseConnectionResult{}, err
 	}
+	currentSubscriber, err := repository.lockParticipantConnectionCurrentSubscriber(ctx, q, connection.CloseConnectionCommand{
+		TournamentID:         candidate.Lease.TournamentID,
+		RosterID:             candidate.Lease.RosterID,
+		ParticipantID:        candidate.Lease.ParticipantID,
+		PlayerID:             candidate.Lease.PlayerID,
+		ConnectionID:         candidate.Lease.ConnectionID,
+		ConnectionGeneration: candidate.Lease.ConnectionGeneration,
+	})
+	if err != nil {
+		return connection.CloseConnectionResult{}, err
+	}
 	activeCount, err := repository.countParticipantConnectionLeases(
 		ctx, q, candidate.Lease.TournamentID, candidate.Lease.RosterID, candidate.Lease.ParticipantID,
 	)
 	if err != nil {
 		return connection.CloseConnectionResult{}, err
 	}
-	action, actionBinding, err := repository.resolveParticipantConnectionAction(ctx, q, state, connectionOperationRecovery)
+	if !currentSubscriber {
+		return connection.CloseConnectionResult{
+			Lease:            lease,
+			Closed:           true,
+			ActiveLeaseCount: activeCount,
+			Action:           connection.ResolvedAction{Kind: connection.ActionNone},
+		}, nil
+	}
+	action, _, err := repository.resolveParticipantConnectionAction(ctx, q, state, connectionOperationRecovery)
 	if err != nil {
 		return connection.CloseConnectionResult{}, err
 	}
-	if matches, matchErr := participantConnectionActionBindingMatchesLease(row, action.Kind, actionBinding); matchErr != nil {
-		return connection.CloseConnectionResult{}, matchErr
-	} else if !matches {
-		action = connection.ResolvedAction{Kind: connection.ActionNone}
-	}
+	action = participantConnectionActionForSubscriberFence(currentSubscriber, action)
 	return connection.CloseConnectionResult{
 		Lease:            lease,
 		Closed:           true,
@@ -601,6 +626,42 @@ func (repository *ParticipantConnectionPostgres) countParticipantConnectionLease
 		return 0, fmt.Errorf("invalid participant connection lease count: %w", domain.ErrInternal)
 	}
 	return int(count), nil
+}
+
+func (repository *ParticipantConnectionPostgres) lockParticipantConnectionCurrentSubscriber(
+	ctx context.Context,
+	q *sqlc.Queries,
+	command connection.CloseConnectionCommand,
+) (bool, error) {
+	rows, err := q.LockParticipantConnectionCurrentSubscriber(ctx, sqlc.LockParticipantConnectionCurrentSubscriberParams{
+		TournamentID:         command.TournamentID,
+		PlayerID:             nullableConnectionUUID(command.PlayerID),
+		ConnectionID:         command.ConnectionID,
+		ConnectionGeneration: command.ConnectionGeneration,
+	})
+	if err != nil {
+		return false, fmt.Errorf("lock current participant connection subscriber: %w", err)
+	}
+	if len(rows) > 1 {
+		return false, fmt.Errorf("multiple current participant connection subscribers: %w", domain.ErrConflict)
+	}
+	if len(rows) == 0 {
+		return false, nil
+	}
+	if rows[0] == uuid.Nil {
+		return false, fmt.Errorf("current participant connection subscriber identity is invalid: %w", domain.ErrInternal)
+	}
+	return true, nil
+}
+
+func participantConnectionActionForSubscriberFence(
+	currentSubscriber bool,
+	action connection.ResolvedAction,
+) connection.ResolvedAction {
+	if !currentSubscriber {
+		return connection.ResolvedAction{Kind: connection.ActionNone}
+	}
+	return action
 }
 
 //nolint:gocyclo // The action selector is a fail-closed policy boundary over mutually exclusive game states.

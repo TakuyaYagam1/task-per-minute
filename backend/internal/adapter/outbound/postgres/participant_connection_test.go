@@ -13,6 +13,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
+	game "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
 	connection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/connection"
 )
 
@@ -132,6 +133,29 @@ func TestParticipantConnectionCloseBindingFenceRejectsStaleOldAttempt(t *testing
 	matches, err := participantConnectionActionBindingMatchesLease(row, connection.ActionGameDisconnect, oldBinding)
 	require.NoError(t, err)
 	require.True(t, matches)
+}
+
+func TestParticipantConnectionCurrentFenceUsesCloseTimeActionBinding(t *testing.T) {
+	t.Parallel()
+
+	currentAction := connection.ResolvedAction{
+		Kind: connection.ActionGameDisconnect,
+		Disconnect: &game.DisconnectCommand{
+			Scope:         pausedomain.GraphScope{TournamentID: uuid.New(), RosterID: uuid.New(), WaveID: uuid.New()},
+			ParticipantID: uuid.New(),
+		},
+	}
+	// The immutable lease binding remains historical evidence.  A still-current
+	// realtime subscriber fence authorizes the action resolved from the graph at
+	// close time, even when that graph has advanced since the socket opened.
+	rebound := participantConnectionActionForSubscriberFence(true, currentAction)
+	require.Equal(t, currentAction, rebound)
+
+	// A replaced generation may close its own lease but cannot carry an action
+	// into the current game.
+	superseded := participantConnectionActionForSubscriberFence(false, currentAction)
+	require.Equal(t, connection.ActionNone, superseded.Kind)
+	require.Nil(t, superseded.Disconnect)
 }
 
 func TestParticipantConnectionActiveGameConnectKeepsBindingForLastClose(t *testing.T) {
