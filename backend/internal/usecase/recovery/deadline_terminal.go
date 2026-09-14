@@ -14,6 +14,7 @@ import (
 	gamedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/game"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 )
 
 var (
@@ -102,8 +103,10 @@ func (plan DeadlineTerminalPlan) Validate() error {
 }
 
 type TerminalDeadlineHandler struct {
+	transactions      TransactionManager
 	store             DeadlineTerminalStore
 	clock             Clock
+	terminalAdvancer  TerminalAdvancer
 	reconnectObserver gameusecase.Observer
 }
 
@@ -114,8 +117,26 @@ func NewTerminalDeadlineHandler(
 	clock Clock,
 	reconnectObservers ...gameusecase.Observer,
 ) *TerminalDeadlineHandler {
+	return NewTerminalDeadlineHandlerWithDependencies(
+		nil, store, clock, nil, reconnectObservers...,
+	)
+}
+
+// NewTerminalDeadlineHandlerWithDependencies builds the production deadline
+// boundary. The store commit and any playoff advancement run inside the same
+// transaction supplied here. The legacy constructor above remains useful for
+// read-only planning tests and callers that do not provide terminal progress.
+func NewTerminalDeadlineHandlerWithDependencies(
+	transactions TransactionManager,
+	store DeadlineTerminalStore,
+	clock Clock,
+	terminalAdvancer TerminalAdvancer,
+	reconnectObservers ...gameusecase.Observer,
+) *TerminalDeadlineHandler {
 	return &TerminalDeadlineHandler{
-		store: store, clock: clock, reconnectObserver: firstDeadlineReconnectObserver(reconnectObservers...),
+		transactions: transactions, store: store, clock: clock,
+		terminalAdvancer:  terminalAdvancer,
+		reconnectObserver: firstDeadlineReconnectObserver(reconnectObservers...),
 	}
 }
 
@@ -134,28 +155,101 @@ func (handler *TerminalDeadlineHandler) HandleDeadline(
 	if now.Before(deadline.DueAt) {
 		return false, ErrDeadlineNotDue
 	}
-	authority, pending, err := handler.store.LoadDeadlineAuthority(ctx, deadline)
-	if err != nil {
-		return false, deadlineError("load terminal authority", err)
+	var (
+		plan    DeadlineTerminalPlan
+		changed bool
+	)
+	commit := func(txCtx context.Context) error {
+		var err error
+		plan, changed, err = handler.commitDeadline(txCtx, deadline, now)
+		return err
 	}
-	if !pending {
-		return false, nil
+	var err error
+	if handler.transactions == nil {
+		err = commit(ctx)
+	} else {
+		err = handler.transactions.Do(ctx, commit)
 	}
-	if !pendingDeadlinesEqual(authority.Deadline, deadline) {
-		return false, ErrInvalidDeadlineAuthority
-	}
-	plan, err := buildDeadlineTerminalPlan(ctx, authority, now)
 	if err != nil {
 		return false, err
-	}
-	changed, err := handler.store.CommitDeadlinePlan(ctx, plan)
-	if err != nil {
-		return false, deadlineError("commit terminal plan", err)
 	}
 	if changed {
 		handler.observeReconnectTimeout(ctx, plan)
 	}
 	return changed, nil
+}
+
+func (handler *TerminalDeadlineHandler) commitDeadline(
+	ctx context.Context,
+	deadline PendingDeadline,
+	now time.Time,
+) (DeadlineTerminalPlan, bool, error) {
+	if ctx == nil {
+		return DeadlineTerminalPlan{}, false, domain.ErrValidation
+	}
+	authority, pending, err := handler.store.LoadDeadlineAuthority(ctx, deadline)
+	if err != nil {
+		return DeadlineTerminalPlan{}, false, deadlineError("load terminal authority", err)
+	}
+	if !pending {
+		return DeadlineTerminalPlan{}, false, nil
+	}
+	if !pendingDeadlinesEqual(authority.Deadline, deadline) {
+		return DeadlineTerminalPlan{}, false, ErrInvalidDeadlineAuthority
+	}
+	plan, err := buildDeadlineTerminalPlan(ctx, authority, now)
+	if err != nil {
+		return DeadlineTerminalPlan{}, false, err
+	}
+	changed, err := handler.store.CommitDeadlinePlan(ctx, plan)
+	if err != nil {
+		return DeadlineTerminalPlan{}, false, deadlineError("commit terminal plan", err)
+	}
+	if changed {
+		if err := handler.advanceTerminalPlan(ctx, plan); err != nil {
+			return DeadlineTerminalPlan{}, false, deadlineError("advance terminal plan", err)
+		}
+	}
+	return plan, changed, nil
+}
+
+func (handler *TerminalDeadlineHandler) advanceTerminalPlan(
+	ctx context.Context,
+	plan DeadlineTerminalPlan,
+) error {
+	if handler == nil || handler.terminalAdvancer == nil {
+		return nil
+	}
+	if plan.ReconnectTimeout != nil && reconnectSettlementAdvancementEligible(plan.ReconnectTimeout) {
+		if _, err := handler.terminalAdvancer.AdvanceAfterSeriesSettlement(ctx, playoff.TerminalSeriesCommand{
+			TournamentID: plan.Deadline.TournamentID,
+			SeriesID:     plan.Deadline.SeriesID,
+		}); err != nil {
+			return err
+		}
+	}
+	for index := range plan.ReadyWindow {
+		resolution := plan.ReadyWindow[index]
+		if resolution.Series.Series.State != domain.SeriesStateCompleted {
+			continue
+		}
+		if _, err := handler.terminalAdvancer.AdvanceAfterSeriesSettlement(ctx, playoff.TerminalSeriesCommand{
+			TournamentID: resolution.Scope.TournamentID,
+			SeriesID:     resolution.Scope.SeriesID,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func reconnectSettlementAdvancementEligible(record *gameusecase.ReconnectRecord) bool {
+	if record == nil || record.ReplayRoute != nil || record.VoidGameResultRevision != nil ||
+		record.GameResultRevision == nil || record.ScoreRevision == nil || record.Evidence == nil {
+		return false
+	}
+	state := record.ReconnectAuthority.Series.State
+	return state == domain.SeriesStateActive || state == domain.SeriesStateCompleted
 }
 
 func buildDeadlineTerminalPlan(

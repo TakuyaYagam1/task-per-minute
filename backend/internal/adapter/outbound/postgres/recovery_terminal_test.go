@@ -6,10 +6,47 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
+	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
+	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/recovery"
 )
+
+func TestRecoveryReconnectArtifactKindsMatchSettlementStage(t *testing.T) {
+	t.Parallel()
+
+	record := &gameusecase.ReconnectRecord{}
+	require.ElementsMatch(t, []domain.ArtifactKind{
+		domain.ArtifactKindGameResult,
+		domain.ArtifactKindSeriesScore,
+	}, recoveryReconnectArtifactKinds(record))
+
+	record.SeriesResultRevision = &gameusecase.SeriesRevision{}
+	require.ElementsMatch(t, []domain.ArtifactKind{
+		domain.ArtifactKindGameResult,
+		domain.ArtifactKindSeriesScore,
+		domain.ArtifactKindStandings,
+		domain.ArtifactKindSeriesResult,
+	}, recoveryReconnectArtifactKinds(record))
+}
+
+func TestRecoveryNoShowArtifactKindsIncludeStandingsOnlyForCompletedSeries(t *testing.T) {
+	t.Parallel()
+
+	require.ElementsMatch(t, []domain.ArtifactKind{
+		domain.ArtifactKindGameResult,
+		domain.ArtifactKindSeriesScore,
+		domain.ArtifactKindSeriesResult,
+	}, recoveryNoShowArtifactKinds(domain.SeriesStateCancelled))
+	require.ElementsMatch(t, []domain.ArtifactKind{
+		domain.ArtifactKindGameResult,
+		domain.ArtifactKindSeriesScore,
+		domain.ArtifactKindStandings,
+		domain.ArtifactKindSeriesResult,
+	}, recoveryNoShowArtifactKinds(domain.SeriesStateCompleted))
+}
 
 func TestRecoveryReceiptRejectsUnexpectedIdentityForDeadlineKind(t *testing.T) {
 	t.Parallel()

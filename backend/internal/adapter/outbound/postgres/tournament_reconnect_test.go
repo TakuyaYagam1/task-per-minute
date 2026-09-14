@@ -91,6 +91,69 @@ func TestTournamentReconnectReceiptComparisonIncludesFullRecord(t *testing.T) {
 	require.False(t, reconnectRecordsEqual(record, changed))
 }
 
+func TestReconnectSettlementInputIncludesStandingsForTerminalSeries(t *testing.T) {
+	t.Parallel()
+	require.ElementsMatch(t, []domain.ArtifactKind{
+		domain.ArtifactKindGameResult,
+		domain.ArtifactKindSeriesScore,
+	}, reconnectSettlementArtifactKinds(gameusecase.ReconnectRecord{}))
+
+	now := time.Date(2026, time.September, 14, 10, 0, 0, 0, time.UTC)
+	scope := tournamentReconnectTestScope()
+	commandID := uuid.New()
+	gameID, seriesID := uuid.New(), uuid.New()
+	firstParticipantID, secondParticipantID := uuid.New(), uuid.New()
+	gameResultID := domain.OfficialResultRevisionID(uuid.New())
+	scoreRevisionID := domain.SeriesScoreRevisionID(uuid.New())
+	seriesResultID := domain.OfficialResultRevisionID(uuid.New())
+
+	current := gameusecase.ReconnectAuthority{
+		Scope: scope, Revision: 1, GameRevision: 1, SeriesRevision: 1,
+		Game:   domain.Game{ID: gameID, State: domain.GameStateActive},
+		Series: domain.Series{ID: seriesID, State: domain.SeriesStateActive},
+	}
+	record := gameusecase.ReconnectRecord{
+		Kind: gameusecase.MutationTimeout,
+		TimeoutCommand: &gameusecase.TimeoutCommand{
+			Scope: scope, CommandID: commandID, ParticipantID: firstParticipantID,
+			IntervalID: uuid.New(),
+		},
+		ExpectedAuthorityRevision: 1,
+		ReconnectAuthority: gameusecase.ReconnectAuthority{
+			Scope: scope, Revision: 2,
+			Game: domain.Game{ID: gameID, State: domain.GameStateCompleted, WinnerID: &secondParticipantID},
+			Series: domain.Series{
+				ID: seriesID, State: domain.SeriesStateCompleted,
+				FirstParticipantID: firstParticipantID, SecondParticipantID: secondParticipantID,
+				WinnerID: &secondParticipantID,
+			},
+			Current: &gameusecase.TerminalOutcome{},
+		},
+		GameResultRevision: &gameusecase.GameRevision{ID: gameResultID, GameID: gameID},
+		ScoreRevision: &seriesdomain.ScoreRevision{
+			ID: scoreRevisionID, SeriesID: seriesID,
+			GameResultRevisionIDs: []domain.OfficialResultRevisionID{gameResultID},
+		},
+		SeriesResultRevision: &gameusecase.SeriesRevision{
+			ID: seriesResultID, SeriesID: seriesID, State: domain.SeriesStateCompleted,
+			WinnerID: &secondParticipantID, ScoreRevisionID: scoreRevisionID,
+		},
+		Evidence: &seriesdomain.SettlementEvidence{
+			AuditEventID: uuid.New(), OutboxEventID: uuid.New(), ProjectionRevisionID: uuid.New(),
+		},
+		RecordedAt: now,
+	}
+
+	input, err := reconnectSettlementInput(current, record)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []domain.ArtifactKind{
+		domain.ArtifactKindGameResult,
+		domain.ArtifactKindSeriesScore,
+		domain.ArtifactKindStandings,
+		domain.ArtifactKindSeriesResult,
+	}, input.ProjectionArtifactKinds)
+}
+
 func TestReconnectSyntheticPauseIDIsStablePerAuthorityRevision(t *testing.T) {
 	t.Parallel()
 

@@ -20,14 +20,18 @@ func provideRecoveryTerminalStore(
 }
 
 func provideRecoveryDeadlineHandler(
+	transactions *postgres.TxManager,
 	store *postgres.RecoveryTerminalPostgres,
 	clock clockFunc,
+	terminalAdvancer recovery.TerminalAdvancer,
 	observer *telemetryadapter.ReconnectObserver,
 ) *recovery.TerminalDeadlineHandler {
 	// DeadlineSweep observes the rearm operation. The reconnect observer is
 	// passed only to the reconnect timeout mutation, which emits its own single
 	// terminal outcome after the authoritative plan commits.
-	return recovery.NewTerminalDeadlineHandler(store, clock, observer)
+	return recovery.NewTerminalDeadlineHandlerWithDependencies(
+		transactions, store, clock, terminalAdvancer, observer,
+	)
 }
 
 func provideRecoveryDeadlineScheduler(

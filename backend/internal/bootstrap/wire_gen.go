@@ -103,15 +103,22 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 	}
 	executionAuthorityPostgres := postgres.NewExecutionAuthorityPostgres(txManager)
 	recoveryTerminalPostgres := provideRecoveryTerminalStore(txManager, executionAuthorityPostgres, bootstrapClockFunc)
+	draftPostgres := postgres.NewDraftPostgres(txManager)
+	assignmentPostgres := postgres.NewAssignmentPostgres(txManager)
+	playoffTerminalPostgres := postgres.NewPlayoffTerminalPostgres(txManager, draftPostgres, assignmentPostgres)
+	projectionPostgres := postgres.NewProjectionPostgres(txManager)
+	exactDraftBranchPlanPostgres := postgres.NewExactDraftBranchPlanPostgres(txManager, draftPostgres)
+	exactDraftBranchPlanUseCase := assignment.NewExactDraftBranchPlanUseCase(exactDraftBranchPlanPostgres)
+	finalDraftAssignmentService := provideFinalDraftAssignmentPlanner(exactDraftBranchPlanUseCase, exactDraftBranchPlanPostgres, exactDraftBranchPlanPostgres)
+	terminalCoordinator := providePlayoffTerminal(playoffTerminalPostgres, projectionPostgres, finalDraftAssignmentService, finalDraftAssignmentService)
 	reconnectObserver := provideReconnectObserver(bootstrapEventTelemetry)
-	terminalDeadlineHandler := provideRecoveryDeadlineHandler(recoveryTerminalPostgres, bootstrapClockFunc, reconnectObserver)
+	terminalDeadlineHandler := provideRecoveryDeadlineHandler(txManager, recoveryTerminalPostgres, bootstrapClockFunc, terminalCoordinator, reconnectObserver)
 	deadlineScheduler, err := provideRecoveryDeadlineScheduler(terminalDeadlineHandler)
 	if err != nil {
 		cleanup2()
 		cleanup()
 		return nil, nil, err
 	}
-	draftPostgres := postgres.NewDraftPostgres(txManager)
 	participantDraftRepository := postgres.NewParticipantDraftRepository(txManager, draftPostgres)
 	swissDraftDeadlinePostgres := postgres.NewSwissDraftDeadlinePostgres(txManager, participantDraftRepository)
 	deadlineWorker, err := provideSwissDraftDeadlineWorker(swissDraftDeadlinePostgres, bootstrapClockFunc)
@@ -169,13 +176,6 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 	lifecycleWorkflow := provideTournamentAdminLifecycle(txManager, tournamentAdminLifecyclePostgres, tournamentLifecycleUseCase, tournamentPauseUseCase, tournamentCancellationUseCase, workflow, bootstrapClockFunc)
 	resultPostgres := postgres.NewResultPostgres(txManager)
 	tournamentAdminResultPostgres := postgres.NewTournamentAdminResultPostgres(txManager, resultPostgres)
-	assignmentPostgres := postgres.NewAssignmentPostgres(txManager)
-	playoffTerminalPostgres := postgres.NewPlayoffTerminalPostgres(txManager, draftPostgres, assignmentPostgres)
-	projectionPostgres := postgres.NewProjectionPostgres(txManager)
-	exactDraftBranchPlanPostgres := postgres.NewExactDraftBranchPlanPostgres(txManager, draftPostgres)
-	exactDraftBranchPlanUseCase := assignment.NewExactDraftBranchPlanUseCase(exactDraftBranchPlanPostgres)
-	finalDraftAssignmentService := provideFinalDraftAssignmentPlanner(exactDraftBranchPlanUseCase, exactDraftBranchPlanPostgres, exactDraftBranchPlanPostgres)
-	terminalCoordinator := providePlayoffTerminal(playoffTerminalPostgres, projectionPostgres, finalDraftAssignmentService, finalDraftAssignmentService)
 	operatorResultWorkflow := provideTournamentAdminResults(txManager, tournamentAdminResultPostgres, terminalCoordinator)
 	tournamentAdminReplayPostgres := postgres.NewTournamentAdminReplayPostgres(txManager)
 	replayWorkflow := provideTournamentAdminReplay(txManager, tournamentAdminReplayPostgres)
@@ -260,7 +260,7 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 	}
 	participantConnectionPostgres := provideParticipantConnectionRepository(txManager, controller)
 	tournamentPausedPresencePostgres := postgres.NewTournamentPausedPresencePostgres(txManager)
-	connectionCoordinator, err := provideParticipantConnectionCoordinator(txManager, participantConnectionPostgres, tournamentPausedPresencePostgres, tournamentAdminExecutionPostgres, readinessUseCase, bootstrapClockFunc, reconnectObserver)
+	connectionCoordinator, err := provideParticipantConnectionCoordinator(txManager, participantConnectionPostgres, tournamentPausedPresencePostgres, tournamentAdminExecutionPostgres, readinessUseCase, terminalCoordinator, bootstrapClockFunc, reconnectObserver)
 	if err != nil {
 		cleanup2()
 		cleanup()

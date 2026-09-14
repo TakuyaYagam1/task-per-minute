@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
+	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 )
 
 type Clock interface {
@@ -169,6 +170,22 @@ type DeadlineArmSink interface {
 // a registered deadline becomes due. A false result is a safe stale replay.
 type DeadlineHandler interface {
 	HandleDeadline(ctx context.Context, deadline PendingDeadline) (bool, error)
+}
+
+// TransactionManager lets deadline handling keep the durable commit and any
+// terminal playoff progression in one caller-owned transaction.
+type TransactionManager interface {
+	Do(ctx context.Context, fn func(context.Context) error) error
+}
+
+// TerminalAdvancer consumes a fresh terminal Game settlement while the
+// deadline handler's transaction is still open. It is intentionally narrower
+// than the full playoff workflow.
+type TerminalAdvancer interface {
+	AdvanceAfterSeriesSettlement(
+		ctx context.Context,
+		command playoff.TerminalSeriesCommand,
+	) (playoff.TerminalReceipt, error)
 }
 
 func deadlineError(operation string, err error) error {

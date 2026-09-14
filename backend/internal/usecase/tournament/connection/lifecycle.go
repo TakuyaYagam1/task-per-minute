@@ -12,6 +12,7 @@ import (
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 )
 
 var (
@@ -30,30 +31,32 @@ const (
 )
 
 type Dependencies struct {
-	Transactions   game.TransactionManager
-	Authority      AuthorityProvider
-	Repository     Repository
-	Readiness      ReadinessWorkflow
-	PausedPresence PausedPresenceWorkflow
-	Disconnect     DisconnectWorkflow
-	Reconnect      ReconnectWorkflow
-	Clock          Clock
-	Config         Config
+	Transactions     game.TransactionManager
+	Authority        AuthorityProvider
+	Repository       Repository
+	Readiness        ReadinessWorkflow
+	PausedPresence   PausedPresenceWorkflow
+	Disconnect       DisconnectWorkflow
+	Reconnect        ReconnectWorkflow
+	TerminalAdvancer TerminalAdvancer
+	Clock            Clock
+	Config           Config
 }
 
 // Coordinator owns the transport-neutral participant connection lifecycle.
 // The repository lease operation and the selected nested usecase all execute
 // with the context passed to one outer game transaction.
 type Coordinator struct {
-	transactions   game.TransactionManager
-	authority      AuthorityProvider
-	repository     Repository
-	readiness      ReadinessWorkflow
-	pausedPresence PausedPresenceWorkflow
-	disconnect     DisconnectWorkflow
-	reconnect      ReconnectWorkflow
-	clock          Clock
-	config         Config
+	transactions     game.TransactionManager
+	authority        AuthorityProvider
+	repository       Repository
+	readiness        ReadinessWorkflow
+	pausedPresence   PausedPresenceWorkflow
+	disconnect       DisconnectWorkflow
+	reconnect        ReconnectWorkflow
+	terminalAdvancer TerminalAdvancer
+	clock            Clock
+	config           Config
 }
 
 var _ inbound.TournamentParticipantConnectionUseCase = (*Coordinator)(nil)
@@ -65,15 +68,16 @@ func NewCoordinator(dependencies Dependencies) (*Coordinator, error) {
 		return nil, ErrInvalidConfiguration
 	}
 	return &Coordinator{
-		transactions:   dependencies.Transactions,
-		authority:      dependencies.Authority,
-		repository:     dependencies.Repository,
-		readiness:      dependencies.Readiness,
-		pausedPresence: dependencies.PausedPresence,
-		disconnect:     dependencies.Disconnect,
-		reconnect:      dependencies.Reconnect,
-		clock:          dependencies.Clock,
-		config:         dependencies.Config,
+		transactions:     dependencies.Transactions,
+		authority:        dependencies.Authority,
+		repository:       dependencies.Repository,
+		readiness:        dependencies.Readiness,
+		pausedPresence:   dependencies.PausedPresence,
+		disconnect:       dependencies.Disconnect,
+		reconnect:        dependencies.Reconnect,
+		terminalAdvancer: dependencies.TerminalAdvancer,
+		clock:            dependencies.Clock,
+		config:           dependencies.Config,
 	}, nil
 }
 
@@ -231,10 +235,11 @@ func (coordinator *Coordinator) applyAction(
 		if err != nil {
 			return err
 		}
-		if _, _, err := coordinator.disconnect.Disconnect(ctx, command); err != nil {
+		record, changed, err := coordinator.disconnect.Disconnect(ctx, command)
+		if err != nil {
 			return fmt.Errorf("disconnect participant game presence: %w", err)
 		}
-		return nil
+		return coordinator.advanceAfterSettlement(ctx, record, changed)
 	case ActionGameReconnect:
 		if coordinator.reconnect == nil || op != operationConnect || action.Reconnect == nil {
 			return ErrWorkflowUnavailable
@@ -243,13 +248,43 @@ func (coordinator *Coordinator) applyAction(
 		if err != nil {
 			return err
 		}
-		if _, _, err := coordinator.reconnect.Reconnect(ctx, command); err != nil {
+		record, changed, err := coordinator.reconnect.Reconnect(ctx, command)
+		if err != nil {
 			return fmt.Errorf("reconnect participant game presence: %w", err)
 		}
-		return nil
+		return coordinator.advanceAfterSettlement(ctx, record, changed)
 	default:
 		return ErrInvalidAction
 	}
+}
+
+func (coordinator *Coordinator) advanceAfterSettlement(
+	ctx context.Context,
+	record *game.ReconnectRecord,
+	changed bool,
+) error {
+	if !reconnectSettlementAdvancementEligible(record, changed) {
+		return nil
+	}
+	if coordinator.terminalAdvancer == nil {
+		return ErrWorkflowUnavailable
+	}
+	if _, err := coordinator.terminalAdvancer.AdvanceAfterSeriesSettlement(ctx, playoff.TerminalSeriesCommand{
+		TournamentID: record.ReconnectAuthority.Scope.TournamentID,
+		SeriesID:     record.ReconnectAuthority.Series.ID,
+	}); err != nil {
+		return fmt.Errorf("advance playoff after terminal reconnect settlement: %w", err)
+	}
+	return nil
+}
+
+func reconnectSettlementAdvancementEligible(record *game.ReconnectRecord, changed bool) bool {
+	if !changed || record == nil || record.ReplayRoute != nil || record.VoidGameResultRevision != nil ||
+		record.GameResultRevision == nil || record.ScoreRevision == nil || record.Evidence == nil {
+		return false
+	}
+	state := record.ReconnectAuthority.Series.State
+	return state == domain.SeriesStateActive || state == domain.SeriesStateCompleted
 }
 
 func (coordinator *Coordinator) disconnectCommand(

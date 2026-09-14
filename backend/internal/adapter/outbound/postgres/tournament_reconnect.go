@@ -1794,11 +1794,10 @@ func reconnectSettlementInput(
 	}
 	seriesResultID := uuid.Nil
 	seriesResultReason := ""
-	artifactKinds := []domain.ArtifactKind{domain.ArtifactKindGameResult, domain.ArtifactKindSeriesScore}
+	artifactKinds := reconnectSettlementArtifactKinds(record)
 	if record.SeriesResultRevision != nil {
 		seriesResultID = record.SeriesResultRevision.ID.UUID()
 		seriesResultReason = "score_complete"
-		artifactKinds = append(artifactKinds, domain.ArtifactKindSeriesResult)
 	}
 	digest, err := recoveryPayloadDigest("reconnect", map[string]any{
 		"command_id": commandID.String(), "game_id": current.Game.ID.String(),
@@ -1828,6 +1827,14 @@ func reconnectSettlementInput(
 		ExpectedAttemptRevision: current.GameRevision, ExpectedAttemptState: current.Game.State,
 		ExpectedSeriesRevision: current.SeriesRevision, ExpectedSeriesState: current.Series.State,
 	}, nil
+}
+
+func reconnectSettlementArtifactKinds(record gameusecase.ReconnectRecord) []domain.ArtifactKind {
+	kinds := []domain.ArtifactKind{domain.ArtifactKindGameResult, domain.ArtifactKindSeriesScore}
+	if record.SeriesResultRevision != nil {
+		kinds = append(kinds, domain.ArtifactKindStandings, domain.ArtifactKindSeriesResult)
+	}
+	return kinds
 }
 
 func derivedReconnectResultID(commandID uuid.UUID, label string) uuid.UUID {

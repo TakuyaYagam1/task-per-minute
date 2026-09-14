@@ -445,10 +445,11 @@ func createRecoveryNoShowSideEvidence(
 	if err != nil {
 		return err
 	}
-	artifactKinds := []domain.ArtifactKind{
-		domain.ArtifactKindGameResult, domain.ArtifactKindSeriesScore, domain.ArtifactKindSeriesResult,
+	artifactKinds := recoveryNoShowArtifactKinds(resolution.Series.Series.State)
+	artifactPayload := make([]string, len(artifactKinds))
+	for index, kind := range artifactKinds {
+		artifactPayload[index] = string(kind)
 	}
-	artifactPayload := []string{string(artifactKinds[0]), string(artifactKinds[1]), string(artifactKinds[2])}
 	artifactJSON, err := marshalJSON("RecoveryTerminalPostgres - no-show artifacts", artifactPayload)
 	if err != nil {
 		return err
@@ -670,11 +671,10 @@ func recoveryReconnectSettlementInput(
 	}
 	seriesResultID := uuid.Nil
 	seriesResultReason := ""
-	artifactKinds := []domain.ArtifactKind{domain.ArtifactKindGameResult, domain.ArtifactKindSeriesScore}
+	artifactKinds := recoveryReconnectArtifactKinds(record)
 	if record.SeriesResultRevision != nil {
 		seriesResultID = record.SeriesResultRevision.ID.UUID()
 		seriesResultReason = "score_complete"
-		artifactKinds = append(artifactKinds, domain.ArtifactKindSeriesResult)
 	}
 	return ResultSettlementInput{
 		IDs: ResultSettlementIDs{
@@ -702,6 +702,22 @@ func recoveryReconnectSettlementInput(
 		ExpectedSeriesRevision:  snapshot.series[0].row.Revision,
 		ExpectedSeriesState:     domain.SeriesState(snapshot.series[0].row.State),
 	}, nil
+}
+
+func recoveryReconnectArtifactKinds(record *gameusecase.ReconnectRecord) []domain.ArtifactKind {
+	kinds := []domain.ArtifactKind{domain.ArtifactKindGameResult, domain.ArtifactKindSeriesScore}
+	if record != nil && record.SeriesResultRevision != nil {
+		kinds = append(kinds, domain.ArtifactKindStandings, domain.ArtifactKindSeriesResult)
+	}
+	return kinds
+}
+
+func recoveryNoShowArtifactKinds(state domain.SeriesState) []domain.ArtifactKind {
+	kinds := []domain.ArtifactKind{domain.ArtifactKindGameResult, domain.ArtifactKindSeriesScore}
+	if state == domain.SeriesStateCompleted {
+		kinds = append(kinds, domain.ArtifactKindStandings)
+	}
+	return append(kinds, domain.ArtifactKindSeriesResult)
 }
 
 func createRecoveryRoute(

@@ -73,6 +73,7 @@ var ReposSet = wire.NewSet(
 	wire.Bind(new(tournamentadmin.CorrectionTransactionManager), new(*postgres.TxManager)),
 	wire.Bind(new(tournamentparticipant.ParticipantTransactionManager), new(*postgres.TxManager)),
 	wire.Bind(new(tournamentpause.PauseTransactionManager), new(*postgres.TxManager)),
+	wire.Bind(new(recovery.TransactionManager), new(*postgres.TxManager)),
 
 	postgres.NewSchemaVersionPostgres,
 	wire.Bind(new(restv1.SchemaVersionReader), new(*postgres.SchemaVersionPostgres)),
@@ -245,6 +246,8 @@ var UseCasesSet = wire.NewSet(
 	wire.Bind(new(playoff.FinalDraftAssignmentPlanner), new(*playoff.FinalDraftAssignmentService)),
 	wire.Bind(new(playoff.FinalBindingRehydrator), new(*playoff.FinalDraftAssignmentService)),
 	providePlayoffTerminal,
+	wire.Bind(new(participantconnection.TerminalAdvancer), new(*playoff.TerminalCoordinator)),
+	wire.Bind(new(recovery.TerminalAdvancer), new(*playoff.TerminalCoordinator)),
 	wire.Bind(new(tournamentparticipant.ParticipantPostseasonWorkflow), new(*playoff.TerminalCoordinator)),
 	wire.Bind(new(tournamentadmin.AdminPostseasonWorkflow), new(*playoff.TerminalCoordinator)),
 	provideTournamentAdminLifecycle,

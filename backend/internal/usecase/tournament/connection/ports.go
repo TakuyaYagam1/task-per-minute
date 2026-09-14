@@ -9,6 +9,7 @@ import (
 	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/readiness"
 )
 
@@ -96,6 +97,16 @@ type CloseConnectionResult struct {
 type Repository interface {
 	OpenConnection(ctx context.Context, command OpenConnectionCommand) (OpenConnectionResult, error)
 	CloseConnection(ctx context.Context, command CloseConnectionCommand) (CloseConnectionResult, error)
+}
+
+// TerminalAdvancer consumes a fresh terminal Game settlement while the caller
+// still owns the surrounding settlement transaction. It deliberately exposes
+// only the terminal progression operation needed by this lifecycle.
+type TerminalAdvancer interface {
+	AdvanceAfterSeriesSettlement(
+		ctx context.Context,
+		command playoff.TerminalSeriesCommand,
+	) (playoff.TerminalReceipt, error)
 }
 
 type ActionKind string

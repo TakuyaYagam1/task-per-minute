@@ -2,6 +2,7 @@ package connection
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
@@ -13,8 +14,10 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
+	seriesdomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/series"
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/readiness"
 )
 
@@ -30,6 +33,7 @@ type lifecycleHarness struct {
 	paused     *recordingPausedPresence
 	disconnect *recordingDisconnect
 	reconnect  *recordingReconnect
+	terminal   *recordingTerminalAdvancer
 }
 
 func newLifecycleHarness(t *testing.T) lifecycleHarness {
@@ -81,6 +85,7 @@ func newLifecycleHarness(t *testing.T) lifecycleHarness {
 		repo:     &recordingRepository{}, tx: &recordingTransactions{},
 		readiness: &recordingReadiness{}, paused: &recordingPausedPresence{},
 		disconnect: &recordingDisconnect{}, reconnect: &recordingReconnect{},
+		terminal: &recordingTerminalAdvancer{},
 	}
 }
 
@@ -90,7 +95,8 @@ func (h lifecycleHarness) coordinator(t *testing.T) *Coordinator {
 		Transactions: h.tx, Authority: h.provider, Repository: h.repo,
 		Readiness: h.readiness, PausedPresence: h.paused,
 		Disconnect: h.disconnect, Reconnect: h.reconnect,
-		Clock: h.clock, Config: Config{ReconnectDuration: 30 * time.Second},
+		TerminalAdvancer: h.terminal,
+		Clock:            h.clock, Config: Config{ReconnectDuration: 30 * time.Second},
 	})
 	require.NoError(t, err)
 	return coordinator
@@ -192,6 +198,134 @@ func TestCoordinatorReconnectsBeforeResolvedDeadlineWithDeterministicIDs(t *test
 	err := h.coordinator(t).Connect(context.Background(), h.command)
 	require.ErrorIs(t, err, game.ErrDeadline)
 	require.Len(t, h.reconnect.commands(), 1)
+}
+
+func TestCoordinatorAdvancesCompletedReconnectInOuterTransaction(t *testing.T) {
+	h := newLifecycleHarness(t)
+	seriesID := uuid.New()
+	h.reconnect.record = terminalReconnectRecord(h.resolved.Scope, seriesID, domain.SeriesStateCompleted)
+	intervalID := uuid.New()
+	h.repo.openResult = OpenConnectionResult{
+		Lease: h.lease, Opened: true, ActiveLeaseCount: 1,
+		Action: ResolvedAction{
+			Kind:     ActionGameReconnect,
+			Deadline: h.clock.value.Add(time.Minute),
+			Reconnect: &game.ReconnectCommand{
+				Scope: h.resolved.Scope, ParticipantID: h.resolved.ParticipantID, IntervalID: intervalID,
+			},
+		},
+	}
+
+	require.NoError(t, h.coordinator(t).Connect(context.Background(), h.command))
+	require.Equal(t, []playoff.TerminalSeriesCommand{{TournamentID: h.resolved.TournamentID, SeriesID: seriesID}}, h.terminal.commands())
+	require.Equal(t, 1, h.tx.count())
+}
+
+func TestCoordinatorAdvancesActiveReconnectInOuterTransaction(t *testing.T) {
+	h := newLifecycleHarness(t)
+	seriesID := uuid.New()
+	h.reconnect.record = terminalReconnectRecord(h.resolved.Scope, seriesID, domain.SeriesStateActive)
+	h.repo.openResult = OpenConnectionResult{
+		Lease: h.lease, Opened: true, ActiveLeaseCount: 1,
+		Action: ResolvedAction{Kind: ActionGameReconnect, Deadline: h.clock.value.Add(time.Minute), Reconnect: &game.ReconnectCommand{
+			Scope: h.resolved.Scope, ParticipantID: h.resolved.ParticipantID, IntervalID: uuid.New(),
+		}},
+	}
+
+	require.NoError(t, h.coordinator(t).Connect(context.Background(), h.command))
+	require.Equal(t, []playoff.TerminalSeriesCommand{{
+		TournamentID: h.resolved.TournamentID,
+		SeriesID:     seriesID,
+	}}, h.terminal.commands())
+}
+
+func TestCoordinatorAdvancesCompletedDisconnectInOuterTransaction(t *testing.T) {
+	h := newLifecycleHarness(t)
+	seriesID := uuid.New()
+	h.disconnect.record = terminalReconnectRecord(h.resolved.Scope, seriesID, domain.SeriesStateCompleted)
+	h.repo.closeResult = CloseConnectionResult{
+		Lease: h.lease, Closed: true, ActiveLeaseCount: 0,
+		Action: ResolvedAction{
+			Kind: ActionGameDisconnect,
+			Disconnect: &game.DisconnectCommand{
+				Scope: h.resolved.Scope, ParticipantID: h.resolved.ParticipantID,
+			},
+		},
+	}
+
+	require.NoError(t, h.coordinator(t).Disconnect(context.Background(), h.command))
+	require.Equal(t, []playoff.TerminalSeriesCommand{{
+		TournamentID: h.resolved.TournamentID,
+		SeriesID:     seriesID,
+	}}, h.terminal.commands())
+	require.Equal(t, 1, h.tx.count())
+}
+
+func TestCoordinatorDoesNotAdvanceReplayOrUnchangedReconnect(t *testing.T) {
+	tests := []struct {
+		name        string
+		changed     *bool
+		route       bool
+		void        bool
+		noResult    bool
+		seriesState domain.SeriesState
+	}{
+		{name: "replay required", route: true, seriesState: domain.SeriesStateReplayRequired},
+		{name: "void result", void: true},
+		{name: "cancelled Series", seriesState: domain.SeriesStateCancelled},
+		{name: "no result", noResult: true},
+		{name: "unchanged", changed: boolPointer(false)},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			h := newLifecycleHarness(t)
+			seriesID := uuid.New()
+			seriesState := test.seriesState
+			if seriesState == "" {
+				seriesState = domain.SeriesStateCompleted
+			}
+			route := (*game.WaveMemberRoute)(nil)
+			if test.route {
+				route = &game.WaveMemberRoute{ID: uuid.New()}
+			}
+			h.reconnect.record = terminalReconnectRecord(h.resolved.Scope, seriesID, seriesState)
+			h.reconnect.record.ReplayRoute = route
+			if test.void {
+				h.reconnect.record.VoidGameResultRevision = &game.AttemptGameResultRevision{ID: domain.OfficialResultRevisionID(uuid.New())}
+			}
+			if test.noResult {
+				h.reconnect.record.GameResultRevision = nil
+			}
+			h.reconnect.changed = test.changed
+			h.repo.openResult = OpenConnectionResult{
+				Lease: h.lease, Opened: true, ActiveLeaseCount: 1,
+				Action: ResolvedAction{Kind: ActionGameReconnect, Deadline: h.clock.value.Add(time.Minute), Reconnect: &game.ReconnectCommand{
+					Scope: h.resolved.Scope, ParticipantID: h.resolved.ParticipantID, IntervalID: uuid.New(),
+				}},
+			}
+
+			require.NoError(t, h.coordinator(t).Connect(context.Background(), h.command))
+			require.Empty(t, h.terminal.commands())
+		})
+	}
+}
+
+func TestCoordinatorRollsBackWhenTerminalAdvancementFails(t *testing.T) {
+	h := newLifecycleHarness(t)
+	seriesID := uuid.New()
+	h.reconnect.record = terminalReconnectRecord(h.resolved.Scope, seriesID, domain.SeriesStateCompleted)
+	h.terminal.err = errors.New("terminal advancement failed")
+	h.repo.openResult = OpenConnectionResult{
+		Lease: h.lease, Opened: true, ActiveLeaseCount: 1,
+		Action: ResolvedAction{Kind: ActionGameReconnect, Deadline: h.clock.value.Add(time.Minute), Reconnect: &game.ReconnectCommand{
+			Scope: h.resolved.Scope, ParticipantID: h.resolved.ParticipantID, IntervalID: uuid.New(),
+		}},
+	}
+
+	err := h.coordinator(t).Connect(context.Background(), h.command)
+	require.ErrorIs(t, err, h.terminal.err)
+	require.Len(t, h.terminal.commands(), 1)
+	require.Equal(t, 1, h.tx.count())
 }
 
 func TestCoordinatorClearsReadinessOnLastPreStartDisconnect(t *testing.T) {
@@ -446,9 +580,11 @@ func (workflow *recordingPausedPresence) commands() []game.PausedPresenceCommand
 }
 
 type recordingDisconnect struct {
-	mu     sync.Mutex
-	values []game.DisconnectCommand
-	err    error
+	mu      sync.Mutex
+	values  []game.DisconnectCommand
+	err     error
+	record  *game.ReconnectRecord
+	changed *bool
 }
 
 func (workflow *recordingDisconnect) Disconnect(
@@ -460,8 +596,13 @@ func (workflow *recordingDisconnect) Disconnect(
 	workflow.mu.Lock()
 	workflow.values = append(workflow.values, command)
 	err := workflow.err
+	record := workflow.record
+	changed := true
+	if workflow.changed != nil {
+		changed = *workflow.changed
+	}
 	workflow.mu.Unlock()
-	return nil, true, err
+	return record, changed, err
 }
 
 func (workflow *recordingDisconnect) commands() []game.DisconnectCommand {
@@ -471,9 +612,11 @@ func (workflow *recordingDisconnect) commands() []game.DisconnectCommand {
 }
 
 type recordingReconnect struct {
-	mu     sync.Mutex
-	values []game.ReconnectCommand
-	err    error
+	mu      sync.Mutex
+	values  []game.ReconnectCommand
+	err     error
+	record  *game.ReconnectRecord
+	changed *bool
 }
 
 func (workflow *recordingReconnect) Reconnect(
@@ -485,12 +628,96 @@ func (workflow *recordingReconnect) Reconnect(
 	workflow.mu.Lock()
 	workflow.values = append(workflow.values, command)
 	err := workflow.err
+	record := workflow.record
+	changed := true
+	if workflow.changed != nil {
+		changed = *workflow.changed
+	}
 	workflow.mu.Unlock()
-	return nil, true, err
+	return record, changed, err
 }
 
 func (workflow *recordingReconnect) commands() []game.ReconnectCommand {
 	workflow.mu.Lock()
 	defer workflow.mu.Unlock()
 	return append([]game.ReconnectCommand(nil), workflow.values...)
+}
+
+type recordingTerminalAdvancer struct {
+	mu     sync.Mutex
+	values []playoff.TerminalSeriesCommand
+	err    error
+}
+
+func (advancer *recordingTerminalAdvancer) AdvanceAfterSeriesSettlement(
+	ctx context.Context,
+	command playoff.TerminalSeriesCommand,
+) (playoff.TerminalReceipt, error) {
+	if _, ok := ctx.Value(contextMarker{}).(bool); !ok {
+		return playoff.TerminalReceipt{}, fmt.Errorf("terminal advancement did not receive transaction context")
+	}
+	advancer.mu.Lock()
+	advancer.values = append(advancer.values, command)
+	err := advancer.err
+	advancer.mu.Unlock()
+	return playoff.TerminalReceipt{}, err
+}
+
+func (advancer *recordingTerminalAdvancer) commands() []playoff.TerminalSeriesCommand {
+	advancer.mu.Lock()
+	defer advancer.mu.Unlock()
+	return append([]playoff.TerminalSeriesCommand(nil), advancer.values...)
+}
+
+func boolPointer(value bool) *bool {
+	return &value
+}
+
+func terminalReconnectRecord(
+	scope pausedomain.GraphScope,
+	seriesID uuid.UUID,
+	seriesState domain.SeriesState,
+) *game.ReconnectRecord {
+	gameID := uuid.New()
+	winnerID := uuid.New()
+	gameResultID := domain.OfficialResultRevisionID(uuid.New())
+	scoreRevisionID := domain.SeriesScoreRevisionID(uuid.New())
+	firstParticipantID := winnerID
+	secondParticipantID := uuid.New()
+	score := domain.SeriesScore{FirstParticipantWins: 1}
+	seriesResultID := domain.OfficialResultRevisionID(uuid.New())
+	if seriesState == domain.SeriesStateCompleted {
+		score.FirstParticipantWins = 2
+	}
+	series := domain.Series{
+		ID: seriesID, TournamentID: scope.TournamentID,
+		FirstParticipantID: firstParticipantID, SecondParticipantID: secondParticipantID,
+		Format: domain.SeriesFormatBO3, State: seriesState, Score: score,
+		CurrentScoreRevisionID: &scoreRevisionID,
+	}
+	result := (*game.SeriesRevision)(nil)
+	if seriesState == domain.SeriesStateCompleted {
+		series.WinnerID = &winnerID
+		series.CurrentResultRevisionID = &seriesResultID
+		result = &game.SeriesRevision{ID: seriesResultID, SeriesID: seriesID, State: seriesState, WinnerID: &winnerID, ScoreRevisionID: scoreRevisionID}
+	}
+	return &game.ReconnectRecord{
+		ReconnectAuthority: game.ReconnectAuthority{
+			Scope:  scope,
+			Game:   domain.Game{ID: gameID, State: domain.GameStateCompleted, WinnerID: &winnerID, ResultRevisionID: &gameResultID},
+			Series: series,
+		},
+		GameResultRevision: &game.GameRevision{ID: gameResultID, GameID: gameID, WinnerID: winnerID, Reason: domain.GameResultReasonOperatorForfeit},
+		ScoreRevision: &seriesdomain.ScoreRevision{
+			ID: scoreRevisionID, SeriesID: seriesID,
+			FirstParticipantID: firstParticipantID, SecondParticipantID: secondParticipantID,
+			Format: domain.SeriesFormatBO3, ScoreAfter: score,
+			GameResultRevisionIDs: []domain.OfficialResultRevisionID{gameResultID},
+		},
+		SeriesResultRevision: result,
+		Evidence: &seriesdomain.SettlementEvidence{
+			AuditEventID: uuid.New(), OutboxEventID: uuid.New(), ProjectionRevisionID: uuid.New(),
+			SourceProjectionRevision: 1, ProjectionRevision: 2,
+		},
+	}
 }
