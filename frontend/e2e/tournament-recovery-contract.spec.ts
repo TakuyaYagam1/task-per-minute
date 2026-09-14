@@ -127,9 +127,13 @@ const firstEventId = "00000000-0000-4000-8000-000000000020";
 const secondEventId = "00000000-0000-4000-8000-000000000021";
 const resumeId = "00000000-0000-4000-8000-000000000030";
 
-const restSnapshot = (projectionRevision = 4, eventSequence = 7) => ({
+const restSnapshot = (
+  projectionRevision = 4,
+  eventSequence = 7,
+  snapshotTournamentId = tournamentId,
+) => ({
   tournament: {
-    tournament_id: tournamentId,
+    tournament_id: snapshotTournamentId,
     projection_revision: projectionRevision,
     preset: "tournament_v1",
     state: "swiss",
@@ -138,7 +142,7 @@ const restSnapshot = (projectionRevision = 4, eventSequence = 7) => ({
     finished_at: null,
   },
   scoreboard: {
-    tournament_id: tournamentId,
+    tournament_id: snapshotTournamentId,
     projection_revision: projectionRevision,
     entries: [
       {
@@ -151,7 +155,7 @@ const restSnapshot = (projectionRevision = 4, eventSequence = 7) => ({
     ],
   },
   bracket: {
-    tournament_id: tournamentId,
+    tournament_id: snapshotTournamentId,
     projection_revision: projectionRevision,
     matches: [
       {
@@ -452,6 +456,34 @@ test("role, tournament, unknown schema, malformed, duplicate, and future cursor 
   expect(future.outcome).toBe("future_cursor");
 });
 
+test("role-aware recovery rejects a valid other-tournament snapshot without carrying resume identity", () => {
+  const initial = recoverRoleSnapshot({
+    role: "public",
+    tournamentId,
+    snapshot: restSnapshot(4, 7),
+    serverTimestamp: "2026-09-13T10:00:00Z",
+    resumeId,
+  });
+  const state = initial.state;
+  expect(state).not.toBeNull();
+
+  const foreignSnapshot = restSnapshot(5, 9, otherTournamentId);
+  expect(isPublicRecoverySnapshot(foreignSnapshot)).toBe(true);
+
+  const foreign = applyRoleRecoverySnapshot(state, {
+    role: "public",
+    tournamentId: otherTournamentId,
+    snapshot: foreignSnapshot,
+    serverTimestamp: "2026-09-13T10:00:01Z",
+  });
+
+  expect(foreign.outcome).toBe("wrong_tournament");
+  expect(foreign.changed).toBe(false);
+  expect(foreign.state).toBe(state);
+  expect(foreign.state?.tournamentId).toBe(tournamentId);
+  expect(foreign.state?.resumeId).toBe(resumeId);
+});
+
 test("server countdown ignores system time changes and awaits server at zero", async ({ page }) => {
   const countdown = createServerCountdown(
     {
@@ -540,9 +572,14 @@ test("mounted live panel stays server-authoritative in both themes and mobile wi
   expect(darkBackground).toBe("rgb(16, 20, 25)");
 
   await page.evaluate(() => {
+    const originalNow = Date.now;
     const shiftedNow = Date.now() + 86_400_000;
     Date.now = () => shiftedNow;
-    document.dispatchEvent(new Event("visibilitychange"));
+    try {
+      document.dispatchEvent(new Event("visibilitychange"));
+    } finally {
+      Date.now = originalNow;
+    }
   });
   await expect(page.getByTestId("server-countdown")).not.toHaveText("0:00");
 

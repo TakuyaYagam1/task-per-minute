@@ -692,6 +692,16 @@ export const applyRoleRecoverySnapshot = (
       changed: false,
     };
   }
+  if (
+    previous !== null &&
+    (previous.tournamentId !== input.tournamentId || previous.tournamentId !== tournamentId)
+  ) {
+    return {
+      state: previous,
+      outcome: "wrong_tournament",
+      changed: false,
+    };
+  }
   const cursor = snapshotCursor(input.role, input.snapshot);
   if (previous === null) {
     return {
