@@ -1,0 +1,156 @@
+@import "../../../../app/globals.css";
+
+.fixture-shell {
+  width: min(calc(100% - 2rem), 76rem);
+  margin: 0 auto;
+  padding: 5.5rem 0 4rem;
+}
+
+.fixture-header {
+  margin-bottom: 1.25rem;
+}
+
+.fixture-kicker {
+  margin: 0 0 0.4rem;
+  color: var(--accent);
+  font-size: 0.76rem;
+  font-weight: 780;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.fixture-shell h1 {
+  max-width: 56rem;
+  margin: 0 0 0.4rem;
+  font-size: clamp(1.8rem, 5vw, 3rem);
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
+.fixture-lede {
+  max-width: 52rem;
+  margin: 0;
+  color: var(--secondary);
+}
+
+.fixture-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.fixture-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.fixture-metrics > div {
+  min-width: 0;
+  padding: 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  background: var(--surface-muted);
+}
+
+.fixture-metrics dt {
+  color: var(--secondary);
+  font-size: 0.76rem;
+}
+
+.fixture-metrics dd {
+  margin: 0.3rem 0 0;
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 780;
+  overflow-wrap: anywhere;
+}
+
+.participant-list,
+.category-list,
+.action-list,
+.option-list,
+.current-values {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.participant-count,
+.category,
+.action-label {
+  display: inline-flex;
+  min-height: 2rem;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.25rem 0.75rem;
+  background: var(--surface-muted);
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.category {
+  color: var(--accent-strong);
+}
+
+.action-label {
+  border-radius: var(--radius-small);
+  color: var(--secondary);
+}
+
+.control-section {
+  display: grid;
+  gap: 1rem;
+}
+
+.option-group {
+  min-width: 0;
+  margin: 0;
+  padding: 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+}
+
+.option-group legend {
+  padding: 0 0.35rem;
+  color: var(--secondary);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.option-list {
+  min-width: 0;
+}
+
+@media (max-width: 900px) {
+  .fixture-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 700px) {
+  .fixture-shell {
+    width: min(calc(100% - 1.5rem), 76rem);
+    padding-top: 5rem;
+  }
+
+  .fixture-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 479px) {
+  .fixture-shell {
+    width: min(calc(100% - 1rem), 76rem);
+  }
+
+  .fixture-metrics {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

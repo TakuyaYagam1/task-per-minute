@@ -21,7 +21,7 @@ const themeBootstrapScript = `
 
 export const metadata = {
   title: "Task Per Minute",
-  description: "CTF tournament platform",
+  description: "Платформа турниров CTF",
 };
 
 export default function RootLayout({
