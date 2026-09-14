@@ -18,6 +18,7 @@ type AdminTask = {
 };
 
 type AdminTournament = {
+  content_revision: number;
   id: string;
   name: string;
   public_id: string;
@@ -329,6 +330,80 @@ test.describe('local compose full stack e2e', () => {
         await cleanupTaskByTitle(request, cleanupSession, title);
       }
     }
+  });
+
+  test('admin UI creates a tournament from the current content revision', async ({ page }) => {
+    test.setTimeout(90_000);
+
+    const tournamentName = uniqueName('fullstack-admin-tournament');
+    await loginThroughAdminUI(page);
+    const adminRequest = page.context().request;
+    const adminAccessCSRF = (await page.context().cookies()).find(
+      (cookie) => cookie.name === 'tpm_admin_access_csrf',
+    );
+    const adminAccessCSRFToken = adminAccessCSRF?.value ?? '';
+    expect(adminAccessCSRFToken, 'admin login did not issue an access CSRF cookie').toBeTruthy();
+    const normalTaskName = uniqueName('admin-tournament-normal');
+    const goldenTaskName = uniqueName('admin-tournament-golden');
+    await createTaskViaApi(adminRequest, { access_csrf_token: adminAccessCSRFToken }, {
+      title: normalTaskName,
+      description: 'Healthy normal task for the admin tournament flow.',
+      kind: 'normal',
+      category: 'web',
+      difficulty: 'easy',
+      time_limit: 90,
+      flag: `flag{${normalTaskName.replaceAll('-', '_')}}`,
+      hints: ['normal hint one', 'normal hint two', 'normal hint three'],
+      task_url: 'https://example.com/admin-tournament-normal',
+    });
+    await createTaskViaApi(adminRequest, { access_csrf_token: adminAccessCSRFToken }, {
+      title: goldenTaskName,
+      description: 'Healthy golden task for the admin tournament flow.',
+      kind: 'golden',
+      category: 'web',
+      difficulty: 'easy',
+      time_limit: 90,
+      flag: `flag{${goldenTaskName.replaceAll('-', '_')}}`,
+      hints: ['golden hint one', 'golden hint two', 'golden hint three'],
+      task_url: 'https://example.com/admin-tournament-golden',
+    });
+    const contentRevision = await getTournamentContentRevision(adminRequest);
+
+    await page.getByRole('button', { name: 'Турниры' }).click();
+    await expect(page.getByRole('heading', { name: 'Новый турнир' })).toBeVisible();
+    await expect(page.getByText(`Ревизия ${contentRevision}`)).toBeVisible();
+    await page.getByLabel('Название турнира').fill(tournamentName);
+    await page.getByLabel('Плановый размер состава').selectOption('4');
+
+    const createResponse = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === '/api/v1/admin/tournaments' &&
+        response.request().method() === 'POST',
+    );
+    await page.getByRole('button', { name: 'Создать демо-турнир' }).click();
+
+    const response = await createResponse;
+    expect(response.status()).toBe(201);
+
+    const tournament = (await response.json()) as AdminTournament;
+    expect(tournament.content_revision).toBe(contentRevision);
+    expect(tournament.name).toBe(tournamentName);
+    expect(tournament.state).toBe('draft');
+    await expect(page).toHaveURL(
+      new URL(`/arena/operator/${tournament.id}`, frontendURL).toString(),
+    );
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await expect(page).toHaveURL(
+      new URL(`/arena/operator/${tournament.id}`, frontendURL).toString(),
+    );
+    await expect(page.getByRole('heading').filter({ hasText: tournamentName })).toBeVisible({
+      timeout: 15_000,
+    });
+
+    const listResponse = await adminRequest.get(`${backendURL}/api/v1/admin/tournaments`);
+    expect(listResponse.ok(), `tournament list failed with ${listResponse.status()}`).toBeTruthy();
+    const list = (await listResponse.json()) as { items: AdminTournament[] };
+    expect(list.items.some((item) => item.id === tournament.id && item.name === tournamentName)).toBe(true);
   });
 
   test('source upload returns a host-reachable presigned URL', async ({ request }) => {

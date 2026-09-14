@@ -1,0 +1,204 @@
+.root {
+  width: min(100%, 1120px);
+  min-width: 0;
+  margin: 0 auto;
+}
+
+.layout {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(280px, 0.36fr) minmax(0, 0.64fr);
+  gap: 1.25rem;
+  align-items: start;
+}
+
+.panel {
+  min-width: 0;
+}
+
+.listPanel {
+  min-width: 0;
+}
+
+.form {
+  display: grid;
+  gap: 1rem;
+}
+
+.field {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.field label,
+.revisionHeading {
+  color: var(--text);
+  font-size: 0.83rem;
+  font-weight: 760;
+}
+
+.field input,
+.field select {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-small);
+  padding: 0.65rem 0.8rem;
+  background: var(--surface-muted);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.9rem;
+  transition:
+    border-color var(--motion),
+    box-shadow var(--motion),
+    background-color var(--motion);
+}
+
+.field input::placeholder {
+  color: var(--subtle);
+}
+
+.field input:focus,
+.field select:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--panel);
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+
+.revisionBlock {
+  display: grid;
+  gap: 0.55rem;
+  border-top: 1px solid var(--border);
+  padding-top: 1rem;
+}
+
+.revisionHeading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+}
+
+.revisionDescription,
+.publicIdHint {
+  margin: 0;
+  color: var(--secondary);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.publicIdHint {
+  overflow-wrap: anywhere;
+}
+
+.publicIdHint code {
+  display: inline-block;
+  margin-left: 0.35rem;
+  color: var(--accent-strong);
+  font-size: 0.78rem;
+}
+
+.inlineAction {
+  display: block;
+  margin-top: 0.55rem;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--accent-strong);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 760;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.inlineAction:hover {
+  color: var(--text);
+}
+
+.submitButton {
+  width: 100%;
+}
+
+.listToolbar {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.9rem;
+}
+
+.listCount {
+  min-height: 1.4rem;
+  color: var(--secondary);
+  font-size: 0.8rem;
+}
+
+.tableRegion {
+  min-width: 0;
+}
+
+.tournamentNameCell {
+  display: grid;
+  min-width: 12rem;
+  gap: 0.15rem;
+}
+
+.tournamentNameCell strong {
+  color: var(--text);
+  font-size: 0.87rem;
+  font-weight: 760;
+}
+
+.publicId,
+.tournamentId {
+  overflow-wrap: anywhere;
+  color: var(--secondary);
+  font-size: 0.72rem;
+}
+
+.tournamentId {
+  color: var(--subtle);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.openLink {
+  color: var(--accent-strong);
+  font-size: 0.8rem;
+  font-weight: 760;
+  text-underline-offset: 3px;
+  white-space: nowrap;
+}
+
+.openLink:hover,
+.openLink:focus-visible {
+  color: var(--text);
+}
+
+@media (max-width: 940px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .listToolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .listToolbar button {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .field input,
+  .field select {
+    transition: none;
+  }
+}

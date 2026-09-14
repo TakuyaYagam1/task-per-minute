@@ -21,6 +21,7 @@ import {
   useTimedNotification,
 } from "../../lib/shared/lib";
 import { ViewportPortal } from "../../lib/shared/ui";
+import { TournamentAdminPanel } from "../../lib/widgets/tournament-admin";
 import styles from "./admin.module.css";
 
 type Task = AdminTask;
@@ -28,7 +29,7 @@ type Player = AdminPlayer;
 type PlayerAuditEvent = AdminPlayerAuditEvent;
 type TaskCategory = Task["category"];
 type TaskDifficulty = Task["difficulty"];
-type AdminSection = "tasks" | "players";
+type AdminSection = "tasks" | "players" | "tournaments";
 type TaskFormErrorField =
   | "title"
   | "description"
@@ -716,7 +717,7 @@ export default function AdminPanel() {
     if (!session) return;
     if (activeSection === "tasks") {
       fetchTasks();
-    } else {
+    } else if (activeSection === "players") {
       fetchPlayers();
     }
   }, [activeSection, fetchPlayers, fetchTasks, session]);
@@ -1902,7 +1903,9 @@ export default function AdminPanel() {
         <p className={styles.subtitle}>
           {activeSection === "tasks"
             ? "Панель управления задачами"
-            : "Панель управления игроками"}
+            : activeSection === "players"
+              ? "Панель управления игроками"
+              : "Панель управления турнирами"}
         </p>
         <div className={styles.sectionTabs}>
           <button
@@ -1918,6 +1921,13 @@ export default function AdminPanel() {
             onClick={() => setActiveSection("players")}
           >
             Игроки
+          </button>
+          <button
+            type="button"
+            className={`${styles.sectionTab} ${activeSection === "tournaments" ? styles.sectionTabActive : ""} motion-button`}
+            onClick={() => setActiveSection("tournaments")}
+          >
+            Турниры
           </button>
         </div>
       </div>
@@ -2277,8 +2287,10 @@ export default function AdminPanel() {
               )}
             </div>
           </>
-        ) : (
+        ) : activeSection === "players" ? (
           renderPlayersSection()
+        ) : (
+          <TournamentAdminPanel onSessionExpired={clearSession} />
         )}
       </div>
       {renderPlayerAuditModal()}

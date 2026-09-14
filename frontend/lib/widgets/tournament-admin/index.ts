@@ -1,0 +1,1 @@
+export { TournamentAdminPanel } from "./TournamentAdminPanel";
