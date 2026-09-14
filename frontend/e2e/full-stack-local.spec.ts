@@ -7,6 +7,7 @@ import {
   type APIResponse,
   type BrowserContext,
   type Page,
+  type Response as BrowserResponse,
 } from '@playwright/test';
 
 const frontendURL = (process.env.E2E_FRONTEND_URL || 'http://127.0.0.1:3000').replace(/\/+$/, '');
@@ -40,11 +41,20 @@ type FullStackPlayer = {
 
 type FullStackRosterParticipant = {
   attendance: 'invited' | 'registered' | 'checked_in' | 'withdrawn';
+  id: string;
   player_id: string;
+  roster_id: string;
   seed: number;
+  tournament_id: string;
 };
 
+type FullStackRosterParticipantInput = Pick<
+  FullStackRosterParticipant,
+  'attendance' | 'player_id' | 'seed'
+>;
+
 type FullStackRoster = {
+  id: string;
   locked: boolean;
   participants: FullStackRosterParticipant[];
   revision: number;
@@ -227,12 +237,64 @@ const createTournamentViaApi = async (
 const getRosterViaApi = async (
   request: APIRequestContext,
   tournamentID: string,
+  expectedRosterID?: string,
 ): Promise<FullStackRoster> => {
   const response = await request.get(`${backendURL}/api/v1/admin/tournaments/${tournamentID}/roster`, {
     headers: { Origin: frontendURL },
   });
   expect(response.ok(), `roster GET failed with ${response.status()}`).toBeTruthy();
-  return (await response.json()) as FullStackRoster;
+  const roster = (await response.json()) as FullStackRoster;
+  expect(roster.id, 'roster response did not return a roster id').toMatch(
+    /^[0-9a-f-]{36}$/i,
+  );
+  expect(roster.tournament_id, 'roster response returned the wrong tournament id').toBe(
+    tournamentID,
+  );
+  if (expectedRosterID) {
+    expect(roster.id, 'roster id changed between server responses').toBe(expectedRosterID);
+  }
+  for (const participant of roster.participants) {
+    expect(participant.id, 'roster participant did not return an id').toMatch(
+      /^[0-9a-f-]{36}$/i,
+    );
+    expect(participant.tournament_id, 'roster participant returned the wrong tournament id').toBe(
+      tournamentID,
+    );
+    expect(participant.roster_id, 'roster participant returned the wrong roster id').toBe(
+      roster.id,
+    );
+  }
+  return roster;
+};
+
+const readRosterResponse = async (
+  response: APIResponse | BrowserResponse,
+  tournamentID: string,
+  expectedRosterID?: string,
+): Promise<FullStackRoster> => {
+  expect(response.status(), `roster response failed with ${response.status()}`).toBe(200);
+  const roster = (await response.json()) as FullStackRoster;
+  expect(roster.id, 'roster replace did not return a roster id').toMatch(
+    /^[0-9a-f-]{36}$/i,
+  );
+  expect(roster.tournament_id, 'roster replace returned the wrong tournament id').toBe(
+    tournamentID,
+  );
+  if (expectedRosterID) {
+    expect(roster.id, 'roster replace changed the roster id').toBe(expectedRosterID);
+  }
+  for (const participant of roster.participants) {
+    expect(participant.id, 'roster replace participant did not return an id').toMatch(
+      /^[0-9a-f-]{36}$/i,
+    );
+    expect(participant.tournament_id, 'roster replace participant returned the wrong tournament id').toBe(
+      tournamentID,
+    );
+    expect(participant.roster_id, 'roster replace participant returned the wrong roster id').toBe(
+      roster.id,
+    );
+  }
+  return roster;
 };
 
 const replaceRosterViaApi = async (
@@ -240,7 +302,7 @@ const replaceRosterViaApi = async (
   tournamentID: string,
   csrfToken: string,
   expectedProjectionRevision: number,
-  participants: FullStackRosterParticipant[],
+  participants: FullStackRosterParticipantInput[],
 ): Promise<APIResponse> => request.put(
   `${backendURL}/api/v1/admin/tournaments/${tournamentID}/roster`,
   {
@@ -646,6 +708,25 @@ test.describe('local compose full stack e2e', () => {
       }
 
       await page.getByRole('button', { name: 'Турниры' }).click();
+      const tournamentListRefresh = page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname === '/api/v1/admin/tournaments' &&
+          response.request().method() === 'GET',
+      );
+      await page
+        .getByRole('region', { name: 'Турниры' })
+        .getByRole('button', { name: 'Обновить список' })
+        .click();
+      const refreshedTournamentListResponse = await tournamentListRefresh;
+      expect(refreshedTournamentListResponse.status()).toBe(200);
+      const loadedTournamentList = (await refreshedTournamentListResponse.json()) as {
+        items: Array<{ id: string; name: string }>;
+      };
+      expect(
+        loadedTournamentList.items.some(
+          (item) => item.id === tournament.id && item.name === tournamentName,
+        ),
+      ).toBe(true);
       const tournamentRow = page.getByRole('row').filter({ hasText: tournamentName });
       const editRosterButton = tournamentRow.getByRole('button', { name: 'Редактировать состав' });
       await expect(editRosterButton).toBeVisible({ timeout: 15_000 });
@@ -661,10 +742,11 @@ test.describe('local compose full stack e2e', () => {
       );
       await editRosterButton.click();
       expect((await playersResponse).status()).toBe(200);
-      expect((await rosterResponse).status()).toBe(200);
+      const initialRoster = await readRosterResponse(await rosterResponse, tournament.id);
 
       const rosterRegion = page.getByRole('region', { name: 'Состав турнира' });
       await expect(rosterRegion).toBeVisible();
+      expect(initialRoster.participants).toHaveLength(0);
       await expect(rosterRegion.getByText('Состав пуст')).toBeVisible();
       await expect(rosterRegion.getByRole('button', { name: 'Добавить участника' })).toBeEnabled();
       await rosterRegion.getByRole('button', { name: 'Добавить участника' }).click({ clickCount: 3 });
@@ -687,7 +769,7 @@ test.describe('local compose full stack e2e', () => {
           response.request().method() === 'PUT',
       );
       await rosterRegion.getByRole('button', { name: 'Сохранить состав' }).click();
-      expect((await firstSave).status()).toBe(200);
+      const savedRosterResponse = await readRosterResponse(await firstSave, tournament.id);
       const refreshedTournaments = await firstTournamentRefresh;
       expect(refreshedTournaments.status()).toBe(200);
       const refreshedTournamentList = (await refreshedTournaments.json()) as {
@@ -699,10 +781,30 @@ test.describe('local compose full stack e2e', () => {
       expect(refreshedTournament?.revision).toBeGreaterThanOrEqual(tournament.revision);
 
       const savedRoster = await getRosterViaApi(adminRequest, tournament.id);
+      expect(savedRoster.id).toBe(savedRosterResponse.id);
       expect(savedRoster.participants.map((item) => item.player_id)).toEqual(
         players.slice(0, 3).map((player) => player.id),
       );
       expect(savedRoster.participants.map((item) => item.seed)).toEqual([1, 2, 3]);
+
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await expect(page.getByRole('button', { name: 'Турниры' })).toBeVisible({ timeout: 15_000 });
+      await page.getByRole('button', { name: 'Турниры' }).click();
+      const reopenedTournamentRow = page.getByRole('row').filter({ hasText: tournamentName });
+      const reopenedEditRosterButton = reopenedTournamentRow.getByRole('button', {
+        name: 'Редактировать состав',
+      });
+      await expect(reopenedEditRosterButton).toBeVisible({ timeout: 15_000 });
+      await reopenedEditRosterButton.click();
+      await expect(rosterRegion).toBeVisible({ timeout: 15_000 });
+      await expect(rosterRegion.getByRole('group')).toHaveCount(3);
+      for (const [index, player] of players.slice(0, 3).entries()) {
+        const group = rosterRegion.getByRole('group', { name: `Участник ${index + 1}` });
+        await expect(group.getByRole('combobox', { name: 'Игрок' })).toHaveValue(player.id);
+        await expect(group.getByRole('spinbutton', { name: 'Seed / позиция' })).toHaveValue(
+          String(index + 1),
+        );
+      }
 
       await rosterRegion.getByRole('group', { name: 'Участник 1' })
         .getByRole('combobox', { name: 'Посещаемость' })
@@ -720,9 +822,14 @@ test.describe('local compose full stack e2e', () => {
           response.request().method() === 'PUT',
       );
       await rosterRegion.getByRole('button', { name: 'Сохранить состав' }).click();
-      expect((await secondSave).status()).toBe(200);
+      const replacedRosterResponse = await readRosterResponse(
+        await secondSave,
+        tournament.id,
+        savedRoster.id,
+      );
 
-      const replacedRoster = await getRosterViaApi(adminRequest, tournament.id);
+      const replacedRoster = await getRosterViaApi(adminRequest, tournament.id, savedRoster.id);
+      expect(replacedRoster.id).toBe(replacedRosterResponse.id);
       expect(replacedRoster.participants.map((item) => item.player_id)).toEqual([
         players[0].id,
         players[3].id,
