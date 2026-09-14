@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   createServerCountdown,
   readMonotonicNow,
+  remainingMsAt,
   viewServerCountdown,
   type CountdownView,
   type MonotonicClock,
@@ -29,6 +30,19 @@ const safeIntervalMs = (value: number | undefined): number => {
   return value;
 };
 
+const keepCurrentCountdownUnlessCandidateIsShorter = (
+  current: ServerCountdown,
+  candidate: ServerCountdown,
+  monotonicTime: number,
+): ServerCountdown => {
+  const currentRemainingMs = remainingMsAt(current, monotonicTime);
+  const candidateRemainingMs = remainingMsAt(candidate, monotonicTime);
+  if (candidate.deadlineMs !== current.deadlineMs) {
+    return candidate;
+  }
+  return candidateRemainingMs <= currentRemainingMs ? candidate : current;
+};
+
 export const useServerCountdown = (
   options: UseServerCountdownOptions,
 ): CountdownView => {
@@ -41,15 +55,25 @@ export const useServerCountdown = (
     () => createServerCountdown({ deadline, receivedAtMonotonicMs, serverTimestamp }, monotonicNow),
     [deadline, receivedAtMonotonicMs, serverTimestamp, monotonicNow],
   );
+  const [effectiveCountdown, setEffectiveCountdown] = useState<ServerCountdown>(countdown);
   const [view, setView] = useState<CountdownView>(() =>
-    viewServerCountdown(countdown, monotonicNow()),
+    viewServerCountdown(effectiveCountdown, monotonicNow()),
   );
+
+  useEffect(() => {
+    const monotonicTime = monotonicNow();
+    setEffectiveCountdown((current) => keepCurrentCountdownUnlessCandidateIsShorter(
+      current,
+      countdown,
+      monotonicTime,
+    ));
+  }, [countdown, monotonicNow]);
 
   useEffect(() => {
     let mounted = true;
     const update = (): void => {
       if (mounted) {
-        setView(viewServerCountdown(countdown, monotonicNow()));
+        setView(viewServerCountdown(effectiveCountdown, monotonicNow()));
       }
     };
     const onVisibilityChange = (): void => {
@@ -66,7 +90,7 @@ export const useServerCountdown = (
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, [countdown, intervalMs, monotonicNow]);
+  }, [effectiveCountdown, intervalMs, monotonicNow]);
 
   return view;
 };

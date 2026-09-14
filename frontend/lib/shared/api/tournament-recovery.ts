@@ -520,7 +520,8 @@ export type RoleRecoveryOutcome =
   | "wrong_tournament"
   | "malformed"
   | "unknown_schema"
-  | "future_cursor";
+  | "future_cursor"
+  | "invalid_cursor";
 
 export type RoleRecoveryTransition = {
   state: RoleAwareRecoveryState | null;
@@ -752,11 +753,28 @@ export const recoverRoleSnapshot = (
   previous: RoleAwareRecoveryState | null = null,
 ): RoleRecoveryTransition => applyRoleRecoverySnapshot(previous, input);
 
+const isFutureRecoveryCursor = (
+  previous: RoleAwareRecoveryState | null,
+  error: ApiError,
+): boolean =>
+  (previous === null || previous.role === "public") && isPublicRecoveryCursorConflict(error);
+
 export const classifyRoleRecoveryError = (
   previous: RoleAwareRecoveryState | null,
   error: unknown,
-): RoleRecoveryTransition => ({
-  state: previous,
-  outcome: error instanceof ApiError && error.status === 409 ? "future_cursor" : "malformed",
-  changed: false,
-});
+): RoleRecoveryTransition => {
+  if (!(error instanceof ApiError)) {
+    return { state: previous, outcome: "malformed", changed: false };
+  }
+  if (isFutureRecoveryCursor(previous, error)) {
+    return { state: previous, outcome: "future_cursor", changed: false };
+  }
+  if (error.status === 400 || error.status === 409 || error.status === 422) {
+    return { state: previous, outcome: "invalid_cursor", changed: false };
+  }
+  return {
+    state: previous,
+    outcome: "malformed",
+    changed: false,
+  };
+};

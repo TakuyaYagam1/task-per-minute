@@ -131,6 +131,7 @@ const restSnapshot = (
   projectionRevision = 4,
   eventSequence = 7,
   snapshotTournamentId = tournamentId,
+  displayName = "alice",
 ) => ({
   tournament: {
     tournament_id: snapshotTournamentId,
@@ -147,7 +148,7 @@ const restSnapshot = (
     entries: [
       {
         rank: 1,
-        display_name: "alice",
+        display_name: displayName,
         points: 3,
         buchholz: 2,
         effective_time_ms: 42000,
@@ -385,20 +386,25 @@ test("an authoritative newer snapshot closes a recovery gap without rolling back
   const newer = applyRoleRecoverySnapshot(initial.state, {
     role: "public",
     tournamentId,
-    snapshot: restSnapshot(6, 12),
+    snapshot: restSnapshot(6, 12, tournamentId, "carol"),
     serverTimestamp: "2026-09-13T10:00:01Z",
   });
   const stale = applyRoleRecoverySnapshot(newer.state, {
     role: "public",
     tournamentId,
-    snapshot: restSnapshot(5, 9),
+    snapshot: restSnapshot(5, 9, tournamentId, "bob"),
     serverTimestamp: "2026-09-13T10:00:02Z",
   });
 
   expect(newer.outcome).toBe("replaced");
   expect(newer.state?.cursor).toEqual({ projection_revision: 6, event_sequence: 12 });
+  if (newer.state === null || !isPublicRecoverySnapshot(newer.state.snapshot)) {
+    throw new Error("Expected a public recovery snapshot after replacement");
+  }
+  expect(newer.state.snapshot.scoreboard.entries[0]?.display_name).toBe("carol");
   expect(stale.outcome).toBe("stale");
   expect(stale.state).toBe(newer.state);
+  expect(newer.state.snapshot.scoreboard.entries[0]?.display_name).toBe("carol");
 });
 
 test("role, tournament, unknown schema, malformed, duplicate, and future cursor stay explicit", () => {
@@ -441,9 +447,16 @@ test("role, tournament, unknown schema, malformed, duplicate, and future cursor 
     snapshot: restSnapshot(4, 7),
     serverTimestamp: "2026-09-13T10:00:00Z",
   });
+  const futureProblem = {
+    type: "about:blank",
+    title: "Conflict",
+    status: 409,
+    requested_cursor: { projection_revision: 6, event_sequence: 12 },
+    current_cursor: { projection_revision: 5, event_sequence: 10 },
+  };
   const future = classifyRoleRecoveryError(
     state,
-    new ApiError(new Response(null, { status: 409 })),
+    new ApiError(new Response(null, { status: 409 }), futureProblem),
   );
 
   expect(wrongRole.outcome).toBe("wrong_role");
@@ -454,6 +467,37 @@ test("role, tournament, unknown schema, malformed, duplicate, and future cursor 
   expect(duplicate.changed).toBe(false);
   expect(duplicate.state).toBe(state);
   expect(future.outcome).toBe("future_cursor");
+});
+
+test("invalid cursor responses stay distinct from a future public cursor", () => {
+  const initial = recoverRoleSnapshot({
+    role: "participant",
+    tournamentId: tournamentFixtureIds.tournament,
+    snapshot: participantRecovery(4),
+    serverTimestamp: "2026-09-13T10:00:00Z",
+  });
+  const revisionProblem = {
+    type: "about:blank",
+    title: "Conflict",
+    status: 409,
+    expected_revision: 3,
+    current_revision: 4,
+  };
+  const error = new ApiError(new Response(null, { status: 409 }), revisionProblem);
+  const invalidQuery = new ApiError(new Response(null, { status: 400 }), {
+    type: "about:blank",
+    title: "Bad Request",
+    status: 400,
+  });
+
+  const classified = classifyRoleRecoveryError(initial.state, error);
+  const invalidQueryClassified = classifyRoleRecoveryError(initial.state, invalidQuery);
+
+  expect(classified.outcome).toBe("invalid_cursor");
+  expect(classified.changed).toBe(false);
+  expect(classified.state).toBe(initial.state);
+  expect(invalidQueryClassified.outcome).toBe("invalid_cursor");
+  expect(invalidQueryClassified.state).toBe(initial.state);
 });
 
 test("role-aware recovery rejects a valid other-tournament snapshot without carrying resume identity", () => {
@@ -563,10 +607,35 @@ test("a refreshed server timestamp cannot extend the original deadline", () => {
   expect(viewServerCountdown(afterRefresh, 2000).remainingMs).toBe(2000);
 });
 
+test("a hook re-render cannot extend countdown from an older server timestamp", async ({ page }) => {
+  await page.goto(fixtureURL, { waitUntil: "domcontentloaded" });
+  const countdown = page.getByTestId("server-countdown");
+
+  await expect.poll(async () => {
+    const text = await countdown.textContent();
+    return Number.parseInt(text?.split(":").at(-1) ?? "0", 10);
+  }).toBeLessThan(30);
+  const beforeRefresh = await countdown.textContent();
+  const beforeSeconds = Number.parseInt(beforeRefresh?.split(":").at(-1) ?? "0", 10);
+
+  await page.getByRole("button", { name: "Повторить устаревший ответ" }).click();
+  await page.waitForTimeout(350);
+  await expect.poll(async () => {
+    const text = await countdown.textContent();
+    return Number.parseInt(text?.split(":").at(-1) ?? "0", 10);
+  }).toBeLessThanOrEqual(beforeSeconds);
+  await expect(countdown).not.toHaveText("0:31");
+});
+
 test("mounted live panel stays server-authoritative in both themes and mobile width", async ({ page }) => {
   await page.goto(fixtureURL, { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: "Живой турнир" })).toBeVisible();
   await expect(page.getByRole("status")).toHaveText("Сервер на связи");
+
+  await expect.poll(async () => {
+    const text = await page.getByTestId("server-countdown").textContent();
+    return Number.parseInt(text?.split(":").at(-1) ?? "0", 10);
+  }).toBeLessThan(30);
 
   const darkBackground = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
   expect(darkBackground).toBe("rgb(16, 20, 25)");
