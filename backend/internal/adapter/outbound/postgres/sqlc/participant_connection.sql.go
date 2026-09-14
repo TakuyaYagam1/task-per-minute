@@ -12,18 +12,61 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const closeParticipantConnectionLease = `-- name: CloseParticipantConnectionLease :one
+const closeExpiredParticipantConnectionLease = `-- name: CloseExpiredParticipantConnectionLease :one
 UPDATE participant_connection_leases AS lease
 SET state = 'disconnected',
-    disconnected_at = GREATEST(transaction_timestamp(), lease.connected_at),
-    updated_at = GREATEST(transaction_timestamp(), lease.connected_at),
+    disconnected_at = GREATEST(clock_timestamp(), lease.connected_at),
+    updated_at = GREATEST(clock_timestamp(), lease.updated_at + INTERVAL '1 microsecond'),
     revision = lease.revision + 1
 WHERE lease.tournament_id = $1
     AND lease.roster_id = $2
     AND lease.participant_id = $3
     AND lease.player_id = $4
-    AND lease.connection_id = $5
-    AND lease.connection_generation = $6
+    AND lease.id = $5
+    AND lease.revision = $6
+    AND lease.connection_id = $7
+    AND lease.connection_generation = $8
+    AND EXISTS (
+        SELECT 1
+        FROM execution_authority_leases AS candidate
+        WHERE candidate.tournament_id = lease.tournament_id
+            AND candidate.holder_id = $9
+            AND candidate.lease_id = $10
+            AND candidate.epoch = $11
+            AND candidate.process_kind = 'authority'
+            AND candidate.expires_at <= clock_timestamp()
+            AND NOT EXISTS (
+                SELECT 1
+                FROM execution_authority_leases AS newer_candidate
+                WHERE newer_candidate.tournament_id = candidate.tournament_id
+                    AND newer_candidate.holder_id = candidate.holder_id
+                    AND newer_candidate.lease_id = candidate.lease_id
+                    AND newer_candidate.epoch = candidate.epoch
+                    AND newer_candidate.revision > candidate.revision
+            )
+    )
+    AND EXISTS (
+        SELECT 1
+        FROM execution_authority_leases AS current_auth
+        WHERE current_auth.tournament_id = lease.tournament_id
+            AND current_auth.holder_id = $12
+            AND current_auth.lease_id = $13
+            AND current_auth.epoch = $14
+            AND current_auth.process_kind = 'authority'
+            AND current_auth.renewed_at <= clock_timestamp()
+            AND clock_timestamp() < current_auth.expires_at
+            AND (
+                current_auth.holder_id IS DISTINCT FROM $9
+                OR current_auth.lease_id IS DISTINCT FROM $10
+                OR current_auth.epoch IS DISTINCT FROM $11
+            )
+            AND NOT EXISTS (
+                SELECT 1
+                FROM execution_authority_leases AS newer_current
+                WHERE newer_current.tournament_id = current_auth.tournament_id
+                    AND newer_current.revision > current_auth.revision
+            )
+    )
     AND lease.state = 'active'
 RETURNING lease.id,
     lease.tournament_id,
@@ -39,28 +82,50 @@ RETURNING lease.id,
     lease.revision,
     lease.connected_at,
     lease.disconnected_at,
-    lease.updated_at
+    lease.updated_at,
+    lease.authority_holder_id,
+    lease.authority_lease_id,
+    lease.authority_epoch
 `
 
-type CloseParticipantConnectionLeaseParams struct {
-	TournamentID         uuid.UUID
-	RosterID             uuid.UUID
-	ParticipantID        uuid.UUID
-	PlayerID             uuid.UUID
-	ConnectionID         uuid.UUID
-	ConnectionGeneration int64
+type CloseExpiredParticipantConnectionLeaseParams struct {
+	TournamentID             uuid.UUID
+	RosterID                 uuid.UUID
+	ParticipantID            uuid.UUID
+	PlayerID                 uuid.UUID
+	ID                       uuid.UUID
+	ExpectedRevision         int64
+	ConnectionID             uuid.UUID
+	ConnectionGeneration     int64
+	AuthorityHolderID        uuid.UUID
+	AuthorityLeaseID         uuid.UUID
+	AuthorityEpoch           int64
+	CurrentAuthorityHolderID uuid.UUID
+	CurrentAuthorityLeaseID  uuid.UUID
+	CurrentAuthorityEpoch    int64
 }
 
-// The update is deliberately fenced by the complete server-resolved
-// identity.  A stale generation or wrong participant updates no row.
-func (q *Queries) CloseParticipantConnectionLease(ctx context.Context, arg CloseParticipantConnectionLeaseParams) (ParticipantConnectionLease, error) {
-	row := q.db.QueryRow(ctx, closeParticipantConnectionLease,
+// A recovery close is a second CAS fence: the exact candidate revision and
+// socket fence must still be active, its stamped authority must have expired,
+// and the caller must now own a different live execution authority.  The
+// participant identity and active lease set are locked by the adapter before
+// this statement is executed.
+func (q *Queries) CloseExpiredParticipantConnectionLease(ctx context.Context, arg CloseExpiredParticipantConnectionLeaseParams) (ParticipantConnectionLease, error) {
+	row := q.db.QueryRow(ctx, closeExpiredParticipantConnectionLease,
 		arg.TournamentID,
 		arg.RosterID,
 		arg.ParticipantID,
 		arg.PlayerID,
+		arg.ID,
+		arg.ExpectedRevision,
 		arg.ConnectionID,
 		arg.ConnectionGeneration,
+		arg.AuthorityHolderID,
+		arg.AuthorityLeaseID,
+		arg.AuthorityEpoch,
+		arg.CurrentAuthorityHolderID,
+		arg.CurrentAuthorityLeaseID,
+		arg.CurrentAuthorityEpoch,
 	)
 	var i ParticipantConnectionLease
 	err := row.Scan(
@@ -79,6 +144,95 @@ func (q *Queries) CloseParticipantConnectionLease(ctx context.Context, arg Close
 		&i.ConnectedAt,
 		&i.DisconnectedAt,
 		&i.UpdatedAt,
+		&i.AuthorityHolderID,
+		&i.AuthorityLeaseID,
+		&i.AuthorityEpoch,
+	)
+	return i, err
+}
+
+const closeParticipantConnectionLease = `-- name: CloseParticipantConnectionLease :one
+UPDATE participant_connection_leases AS lease
+SET state = 'disconnected',
+    disconnected_at = GREATEST(clock_timestamp(), lease.connected_at),
+    updated_at = GREATEST(clock_timestamp(), lease.updated_at + INTERVAL '1 microsecond'),
+    revision = lease.revision + 1
+WHERE lease.tournament_id = $1
+    AND lease.roster_id = $2
+    AND lease.participant_id = $3
+    AND lease.player_id = $4
+    AND lease.connection_id = $5
+    AND lease.connection_generation = $6
+    AND lease.authority_holder_id = $7
+    AND lease.authority_lease_id = $8
+    AND lease.authority_epoch = $9
+    AND lease.state = 'active'
+RETURNING lease.id,
+    lease.tournament_id,
+    lease.roster_id,
+    lease.participant_id,
+    lease.player_id,
+    lease.connection_id,
+    lease.connection_generation,
+    lease.assignment_id,
+    lease.series_id,
+    lease.game_attempt_id,
+    lease.state,
+    lease.revision,
+    lease.connected_at,
+    lease.disconnected_at,
+    lease.updated_at,
+    lease.authority_holder_id,
+    lease.authority_lease_id,
+    lease.authority_epoch
+`
+
+type CloseParticipantConnectionLeaseParams struct {
+	TournamentID         uuid.UUID
+	RosterID             uuid.UUID
+	ParticipantID        uuid.UUID
+	PlayerID             uuid.UUID
+	ConnectionID         uuid.UUID
+	ConnectionGeneration int64
+	AuthorityHolderID    uuid.NullUUID
+	AuthorityLeaseID     uuid.NullUUID
+	AuthorityEpoch       *int64
+}
+
+// The update is deliberately fenced by the complete server-resolved
+// identity.  A stale generation or wrong participant updates no row.
+func (q *Queries) CloseParticipantConnectionLease(ctx context.Context, arg CloseParticipantConnectionLeaseParams) (ParticipantConnectionLease, error) {
+	row := q.db.QueryRow(ctx, closeParticipantConnectionLease,
+		arg.TournamentID,
+		arg.RosterID,
+		arg.ParticipantID,
+		arg.PlayerID,
+		arg.ConnectionID,
+		arg.ConnectionGeneration,
+		arg.AuthorityHolderID,
+		arg.AuthorityLeaseID,
+		arg.AuthorityEpoch,
+	)
+	var i ParticipantConnectionLease
+	err := row.Scan(
+		&i.ID,
+		&i.TournamentID,
+		&i.RosterID,
+		&i.ParticipantID,
+		&i.PlayerID,
+		&i.ConnectionID,
+		&i.ConnectionGeneration,
+		&i.AssignmentID,
+		&i.SeriesID,
+		&i.GameAttemptID,
+		&i.State,
+		&i.Revision,
+		&i.ConnectedAt,
+		&i.DisconnectedAt,
+		&i.UpdatedAt,
+		&i.AuthorityHolderID,
+		&i.AuthorityLeaseID,
+		&i.AuthorityEpoch,
 	)
 	return i, err
 }
@@ -120,7 +274,10 @@ SELECT lease.id,
     lease.revision,
     lease.connected_at,
     lease.disconnected_at,
-    lease.updated_at
+    lease.updated_at,
+    lease.authority_holder_id,
+    lease.authority_lease_id,
+    lease.authority_epoch
 FROM participant_connection_leases AS lease
 WHERE lease.connection_id = $1
     AND lease.connection_generation = $2
@@ -151,6 +308,9 @@ func (q *Queries) FindParticipantConnectionLeaseByFence(ctx context.Context, arg
 		&i.ConnectedAt,
 		&i.DisconnectedAt,
 		&i.UpdatedAt,
+		&i.AuthorityHolderID,
+		&i.AuthorityLeaseID,
+		&i.AuthorityEpoch,
 	)
 	return i, err
 }
@@ -167,6 +327,9 @@ INSERT INTO participant_connection_leases (
     assignment_id,
     series_id,
     game_attempt_id,
+    authority_holder_id,
+    authority_lease_id,
+    authority_epoch,
     state,
     revision,
     connected_at,
@@ -183,6 +346,9 @@ VALUES (
     $8::UUID,
     $9::UUID,
     $10::UUID,
+    $11,
+    $12,
+    $13,
     'active',
     1,
     transaction_timestamp(),
@@ -203,7 +369,10 @@ RETURNING id,
     revision,
     connected_at,
     disconnected_at,
-    updated_at
+    updated_at,
+    authority_holder_id,
+    authority_lease_id,
+    authority_epoch
 `
 
 type InsertParticipantConnectionLeaseParams struct {
@@ -217,6 +386,9 @@ type InsertParticipantConnectionLeaseParams struct {
 	AssignmentID         uuid.NullUUID
 	SeriesID             uuid.NullUUID
 	GameAttemptID        uuid.NullUUID
+	AuthorityHolderID    uuid.NullUUID
+	AuthorityLeaseID     uuid.NullUUID
+	AuthorityEpoch       *int64
 }
 
 func (q *Queries) InsertParticipantConnectionLease(ctx context.Context, arg InsertParticipantConnectionLeaseParams) (ParticipantConnectionLease, error) {
@@ -231,6 +403,9 @@ func (q *Queries) InsertParticipantConnectionLease(ctx context.Context, arg Inse
 		arg.AssignmentID,
 		arg.SeriesID,
 		arg.GameAttemptID,
+		arg.AuthorityHolderID,
+		arg.AuthorityLeaseID,
+		arg.AuthorityEpoch,
 	)
 	var i ParticipantConnectionLease
 	err := row.Scan(
@@ -249,8 +424,137 @@ func (q *Queries) InsertParticipantConnectionLease(ctx context.Context, arg Inse
 		&i.ConnectedAt,
 		&i.DisconnectedAt,
 		&i.UpdatedAt,
+		&i.AuthorityHolderID,
+		&i.AuthorityLeaseID,
+		&i.AuthorityEpoch,
 	)
 	return i, err
+}
+
+const listParticipantConnectionLeaseTournaments = `-- name: ListParticipantConnectionLeaseTournaments :many
+SELECT DISTINCT lease.tournament_id
+FROM participant_connection_leases AS lease
+WHERE lease.state = 'active'
+    AND lease.authority_holder_id IS NOT NULL
+    AND lease.authority_lease_id IS NOT NULL
+    AND lease.authority_epoch IS NOT NULL
+ORDER BY lease.tournament_id
+`
+
+// The reaper renews locally owned authorities before checking expiry.  This
+// keeps a quiet but live process from orphaning its own long-lived sockets.
+func (q *Queries) ListParticipantConnectionLeaseTournaments(ctx context.Context) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, listParticipantConnectionLeaseTournaments)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var tournament_id uuid.UUID
+		if err := rows.Scan(&tournament_id); err != nil {
+			return nil, err
+		}
+		items = append(items, tournament_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listParticipantConnectionRecoveryCandidates = `-- name: ListParticipantConnectionRecoveryCandidates :many
+WITH owner_authority AS (
+    SELECT DISTINCT ON (authority.tournament_id, authority.holder_id, authority.lease_id, authority.epoch)
+        authority.tournament_id,
+        authority.holder_id,
+        authority.lease_id,
+        authority.epoch,
+        authority.expires_at
+    FROM execution_authority_leases AS authority
+    WHERE authority.process_kind = 'authority'
+    ORDER BY authority.tournament_id,
+        authority.holder_id,
+        authority.lease_id,
+        authority.epoch,
+        authority.revision DESC
+)
+SELECT lease.id,
+    lease.tournament_id,
+    lease.roster_id,
+    lease.participant_id,
+    lease.player_id,
+    lease.connection_id,
+    lease.connection_generation,
+    lease.assignment_id,
+    lease.series_id,
+    lease.game_attempt_id,
+    lease.state,
+    lease.revision,
+    lease.connected_at,
+    lease.disconnected_at,
+    lease.updated_at,
+    lease.authority_holder_id,
+    lease.authority_lease_id,
+    lease.authority_epoch
+FROM participant_connection_leases AS lease
+JOIN owner_authority
+    ON owner_authority.tournament_id = lease.tournament_id
+    AND owner_authority.holder_id = lease.authority_holder_id
+    AND owner_authority.lease_id = lease.authority_lease_id
+    AND owner_authority.epoch = lease.authority_epoch
+WHERE lease.state = 'active'
+    AND lease.authority_holder_id IS NOT NULL
+    AND lease.authority_lease_id IS NOT NULL
+    AND lease.authority_epoch IS NOT NULL
+    AND owner_authority.expires_at <= clock_timestamp()
+ORDER BY lease.tournament_id,
+    lease.roster_id,
+    lease.participant_id,
+    lease.id
+LIMIT $1::INT
+`
+
+// Recovery discovery is deliberately owner-bound.  The migration backfills
+// v21 rows and rejects future ownerless writes, while these predicates keep
+// the query fail-closed if storage invariants are ever violated.
+func (q *Queries) ListParticipantConnectionRecoveryCandidates(ctx context.Context, limitCount int32) ([]ParticipantConnectionLease, error) {
+	rows, err := q.db.Query(ctx, listParticipantConnectionRecoveryCandidates, limitCount)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ParticipantConnectionLease{}
+	for rows.Next() {
+		var i ParticipantConnectionLease
+		if err := rows.Scan(
+			&i.ID,
+			&i.TournamentID,
+			&i.RosterID,
+			&i.ParticipantID,
+			&i.PlayerID,
+			&i.ConnectionID,
+			&i.ConnectionGeneration,
+			&i.AssignmentID,
+			&i.SeriesID,
+			&i.GameAttemptID,
+			&i.State,
+			&i.Revision,
+			&i.ConnectedAt,
+			&i.DisconnectedAt,
+			&i.UpdatedAt,
+			&i.AuthorityHolderID,
+			&i.AuthorityLeaseID,
+			&i.AuthorityEpoch,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const lockParticipantConnectionActiveGame = `-- name: LockParticipantConnectionActiveGame :many
@@ -424,7 +728,10 @@ SELECT lease.id,
     lease.revision,
     lease.connected_at,
     lease.disconnected_at,
-    lease.updated_at
+    lease.updated_at,
+    lease.authority_holder_id,
+    lease.authority_lease_id,
+    lease.authority_epoch
 FROM participant_connection_leases AS lease
 WHERE lease.tournament_id = $1
     AND lease.roster_id = $2
@@ -468,6 +775,9 @@ func (q *Queries) LockParticipantConnectionLeases(ctx context.Context, arg LockP
 			&i.ConnectedAt,
 			&i.DisconnectedAt,
 			&i.UpdatedAt,
+			&i.AuthorityHolderID,
+			&i.AuthorityLeaseID,
+			&i.AuthorityEpoch,
 		); err != nil {
 			return nil, err
 		}

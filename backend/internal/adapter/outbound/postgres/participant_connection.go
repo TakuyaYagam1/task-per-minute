@@ -40,8 +40,9 @@ func NewParticipantConnectionPostgres(
 }
 
 var (
-	_ connection.AuthorityProvider = (*ParticipantConnectionPostgres)(nil)
-	_ connection.Repository        = (*ParticipantConnectionPostgres)(nil)
+	_ connection.AuthorityProvider  = (*ParticipantConnectionPostgres)(nil)
+	_ connection.Repository         = (*ParticipantConnectionPostgres)(nil)
+	_ connection.RecoveryRepository = (*ParticipantConnectionPostgres)(nil)
 )
 
 func (repository *ParticipantConnectionPostgres) ResolveParticipantConnection(
@@ -106,6 +107,78 @@ func (repository *ParticipantConnectionPostgres) CloseConnection(
 	return result, nil
 }
 
+func (repository *ParticipantConnectionPostgres) ListParticipantConnectionRecoveryCandidates(
+	ctx context.Context,
+	limit int32,
+) ([]connection.OrphanedConnectionLease, error) {
+	if !validParticipantConnectionRepository(ctx, repository) || limit < 1 {
+		return nil, domain.ErrValidation
+	}
+	var rows []sqlc.ParticipantConnectionLease
+	err := repository.tx.Do(ctx, func(txCtx context.Context) error {
+		var err error
+		rows, err = repository.tx.Querier(txCtx).ListParticipantConnectionRecoveryCandidates(txCtx, limit)
+		return err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list participant connection recovery candidates: %w", err)
+	}
+	candidates := make([]connection.OrphanedConnectionLease, 0, len(rows))
+	for _, row := range rows {
+		candidate, err := mapParticipantConnectionRecoveryCandidate(row)
+		if err != nil {
+			return nil, err
+		}
+		candidates = append(candidates, candidate)
+	}
+	return candidates, nil
+}
+
+func (repository *ParticipantConnectionPostgres) ListParticipantConnectionLeaseTournaments(
+	ctx context.Context,
+) ([]uuid.UUID, error) {
+	if !validParticipantConnectionRepository(ctx, repository) {
+		return nil, domain.ErrValidation
+	}
+	var tournamentIDs []uuid.UUID
+	err := repository.tx.Do(ctx, func(txCtx context.Context) error {
+		var err error
+		tournamentIDs, err = repository.tx.Querier(txCtx).ListParticipantConnectionLeaseTournaments(txCtx)
+		return err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list participant connection lease tournaments: %w", err)
+	}
+	for _, tournamentID := range tournamentIDs {
+		if tournamentID == uuid.Nil {
+			return nil, fmt.Errorf("invalid participant connection lease tournament: %w", domain.ErrInternal)
+		}
+	}
+	return tournamentIDs, nil
+}
+
+func (repository *ParticipantConnectionPostgres) CloseOrphanedConnection(
+	ctx context.Context,
+	resolved connection.ParticipantConnectionAuthority,
+	candidate connection.OrphanedConnectionLease,
+) (connection.CloseConnectionResult, error) {
+	if !validParticipantConnectionRepository(ctx, repository) ||
+		!validParticipantConnectionAuthority(resolved) ||
+		candidate.Authority.Validate() != nil || validateOrphanedConnectionCandidate(candidate) != nil {
+		return connection.CloseConnectionResult{}, domain.ErrValidation
+	}
+	var result connection.CloseConnectionResult
+	err := repository.tx.Do(ctx, func(txCtx context.Context) error {
+		var err error
+		result, err = repository.closeOrphanedConnectionLocked(txCtx, resolved, candidate)
+		return err
+	})
+	if err != nil {
+		return connection.CloseConnectionResult{}, fmt.Errorf("close orphaned participant connection: %w", err)
+	}
+	return result, nil
+}
+
 func (repository *ParticipantConnectionPostgres) openConnectionLocked(
 	ctx context.Context,
 	command connection.OpenConnectionCommand,
@@ -136,6 +209,9 @@ func (repository *ParticipantConnectionPostgres) openConnectionLocked(
 		AssignmentID:         nullableConnectionUUID(binding.AssignmentID),
 		SeriesID:             nullableConnectionUUID(binding.SeriesID),
 		GameAttemptID:        nullableConnectionUUID(binding.GameAttemptID),
+		AuthorityHolderID:    nullableConnectionUUID(state.Authority.Authority.HolderID),
+		AuthorityLeaseID:     nullableConnectionUUID(state.Authority.Authority.LeaseID),
+		AuthorityEpoch:       authorityEpochPointer(state.Authority.Authority.Epoch),
 	})
 	opened := true
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -150,6 +226,9 @@ func (repository *ParticipantConnectionPostgres) openConnectionLocked(
 	}
 	if err != nil {
 		return connection.OpenConnectionResult{}, fmt.Errorf("insert participant connection lease: %w", err)
+	}
+	if err := validateOpenedParticipantConnectionAuthority(row, state.Authority.Authority, opened); err != nil {
+		return connection.OpenConnectionResult{}, err
 	}
 	lease, err := mapParticipantConnectionLease(row)
 	if err != nil {
@@ -199,6 +278,9 @@ func (repository *ParticipantConnectionPostgres) closeConnectionLocked(
 		PlayerID:             command.PlayerID,
 		ConnectionID:         command.ConnectionID,
 		ConnectionGeneration: command.ConnectionGeneration,
+		AuthorityHolderID:    nullableConnectionUUID(state.Authority.Authority.HolderID),
+		AuthorityLeaseID:     nullableConnectionUUID(state.Authority.Authority.LeaseID),
+		AuthorityEpoch:       authorityEpochPointer(state.Authority.Authority.Epoch),
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		activeCount, countErr := repository.countParticipantConnectionLeases(ctx, q, command.TournamentID, command.RosterID, command.ParticipantID)
@@ -244,11 +326,87 @@ func (repository *ParticipantConnectionPostgres) closeConnectionLocked(
 	}, nil
 }
 
+func (repository *ParticipantConnectionPostgres) closeOrphanedConnectionLocked(
+	ctx context.Context,
+	resolved connection.ParticipantConnectionAuthority,
+	candidate connection.OrphanedConnectionLease,
+) (connection.CloseConnectionResult, error) {
+	q := repository.tx.Querier(ctx)
+	state, err := repository.lockParticipantConnectionState(
+		ctx, q, candidate.Lease.TournamentID, candidate.Lease.RosterID,
+		candidate.Lease.ParticipantID, candidate.Lease.PlayerID,
+	)
+	if err != nil {
+		return connection.CloseConnectionResult{}, err
+	}
+	if state.Authority.Authority != resolved.Authority {
+		return connection.CloseConnectionResult{}, fmt.Errorf("participant connection recovery authority changed: %w", domain.ErrConflict)
+	}
+	if err := repository.lockParticipantConnectionLeases(ctx, q, state); err != nil {
+		return connection.CloseConnectionResult{}, err
+	}
+
+	row, err := q.CloseExpiredParticipantConnectionLease(ctx, sqlc.CloseExpiredParticipantConnectionLeaseParams{
+		TournamentID:             candidate.Lease.TournamentID,
+		RosterID:                 candidate.Lease.RosterID,
+		ParticipantID:            candidate.Lease.ParticipantID,
+		PlayerID:                 candidate.Lease.PlayerID,
+		ID:                       candidate.Lease.ID,
+		ExpectedRevision:         candidate.Revision,
+		ConnectionID:             candidate.Lease.ConnectionID,
+		ConnectionGeneration:     candidate.Lease.ConnectionGeneration,
+		AuthorityHolderID:        candidate.Authority.HolderID,
+		AuthorityLeaseID:         candidate.Authority.LeaseID,
+		AuthorityEpoch:           candidate.Authority.Epoch,
+		CurrentAuthorityHolderID: state.Authority.Authority.HolderID,
+		CurrentAuthorityLeaseID:  state.Authority.Authority.LeaseID,
+		CurrentAuthorityEpoch:    state.Authority.Authority.Epoch,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		activeCount, countErr := repository.countParticipantConnectionLeases(
+			ctx, q, candidate.Lease.TournamentID, candidate.Lease.RosterID, candidate.Lease.ParticipantID,
+		)
+		if countErr != nil {
+			return connection.CloseConnectionResult{}, countErr
+		}
+		return connection.CloseConnectionResult{ActiveLeaseCount: activeCount}, nil
+	}
+	if err != nil {
+		return connection.CloseConnectionResult{}, fmt.Errorf("close expired participant connection lease: %w", err)
+	}
+	lease, err := validateRecoveredParticipantConnectionLease(row, candidate)
+	if err != nil {
+		return connection.CloseConnectionResult{}, err
+	}
+	activeCount, err := repository.countParticipantConnectionLeases(
+		ctx, q, candidate.Lease.TournamentID, candidate.Lease.RosterID, candidate.Lease.ParticipantID,
+	)
+	if err != nil {
+		return connection.CloseConnectionResult{}, err
+	}
+	action, actionBinding, err := repository.resolveParticipantConnectionAction(ctx, q, state, connectionOperationRecovery)
+	if err != nil {
+		return connection.CloseConnectionResult{}, err
+	}
+	if matches, matchErr := participantConnectionActionBindingMatchesLease(row, action.Kind, actionBinding); matchErr != nil {
+		return connection.CloseConnectionResult{}, matchErr
+	} else if !matches {
+		action = connection.ResolvedAction{Kind: connection.ActionNone}
+	}
+	return connection.CloseConnectionResult{
+		Lease:            lease,
+		Closed:           true,
+		ActiveLeaseCount: activeCount,
+		Action:           action,
+	}, nil
+}
+
 type participantConnectionOperation string
 
 const (
 	connectionOperationConnect    participantConnectionOperation = "connect"
 	connectionOperationDisconnect participantConnectionOperation = "disconnect"
+	connectionOperationRecovery   participantConnectionOperation = "recover"
 )
 
 type participantConnectionState struct {
@@ -532,7 +690,7 @@ func (repository *ParticipantConnectionPostgres) resolveParticipantConnectionAct
 		}, binding, nil
 	}
 
-	if op == connectionOperationDisconnect && participantConnectionReadinessActionAvailable(state) {
+	if (op == connectionOperationDisconnect || op == connectionOperationRecovery) && participantConnectionReadinessActionAvailable(state) {
 		return connection.ResolvedAction{
 			Kind: connection.ActionClearReadiness,
 			Readiness: &readiness.DisconnectReadinessCommand{
@@ -599,9 +757,10 @@ func participantConnectionActiveGameAction(
 	if err != nil {
 		return connection.ResolvedAction{Kind: connection.ActionNone}, participantConnectionBinding{}, err
 	}
-	if op == connectionOperationConnect {
+	if op == connectionOperationConnect || op == connectionOperationRecovery {
 		// A duplicate tab has no game mutation, but its durable lease must
-		// retain the binding for a later exact close fence.
+		// retain the binding for a later exact close fence.  Recovery also
+		// leaves active-game technical replay to execution recovery.
 		return connection.ResolvedAction{Kind: connection.ActionNone}, binding, nil
 	}
 	return connection.ResolvedAction{
@@ -652,11 +811,95 @@ func mapParticipantConnectionLease(row sqlc.ParticipantConnectionLease) (connect
 	if anyConnectionBindingNull(row) && anyConnectionBindingValid(row) {
 		return connection.DurableLease{}, fmt.Errorf("partial participant connection binding: %w", domain.ErrInternal)
 	}
+	if _, err := participantConnectionLeaseAuthorityStamp(row); err != nil {
+		return connection.DurableLease{}, err
+	}
 	return connection.DurableLease{
 		ID: row.ID, TournamentID: row.TournamentID, RosterID: row.RosterID,
 		ParticipantID: row.ParticipantID, PlayerID: row.PlayerID,
 		ConnectionID: row.ConnectionID, ConnectionGeneration: row.ConnectionGeneration,
 	}, nil
+}
+
+func mapParticipantConnectionRecoveryCandidate(row sqlc.ParticipantConnectionLease) (connection.OrphanedConnectionLease, error) {
+	lease, err := mapParticipantConnectionLease(row)
+	if err != nil {
+		return connection.OrphanedConnectionLease{}, err
+	}
+	if row.State != "active" || row.Revision < 1 {
+		return connection.OrphanedConnectionLease{}, fmt.Errorf("invalid participant connection recovery candidate: %w", domain.ErrInternal)
+	}
+	authority, err := participantConnectionLeaseAuthorityStamp(row)
+	if err != nil || authority.Validate() != nil {
+		return connection.OrphanedConnectionLease{}, fmt.Errorf("invalid participant connection recovery authority stamp: %w", domain.ErrInternal)
+	}
+	return connection.OrphanedConnectionLease{Lease: lease, Revision: row.Revision, Authority: authority}, nil
+}
+
+func participantConnectionLeaseAuthorityStamp(row sqlc.ParticipantConnectionLease) (authoritydomain.Identity, error) {
+	if !row.AuthorityHolderID.Valid && !row.AuthorityLeaseID.Valid && row.AuthorityEpoch == nil {
+		// Ownerless rows are legacy evidence.  They are valid to read but are
+		// intentionally not eligible for orphan recovery.
+		return authoritydomain.Identity{}, nil
+	}
+	if !row.AuthorityHolderID.Valid || !row.AuthorityLeaseID.Valid || row.AuthorityEpoch == nil || *row.AuthorityEpoch < 1 {
+		return authoritydomain.Identity{}, fmt.Errorf("partial participant connection authority stamp: %w", domain.ErrInternal)
+	}
+	authority := authoritydomain.Identity{
+		TournamentID: row.TournamentID,
+		HolderID:     row.AuthorityHolderID.UUID,
+		LeaseID:      row.AuthorityLeaseID.UUID,
+		Epoch:        *row.AuthorityEpoch,
+		ProcessKind:  authoritydomain.ProcessAuthority,
+	}
+	if authority.Validate() != nil {
+		return authoritydomain.Identity{}, fmt.Errorf("invalid participant connection authority stamp: %w", domain.ErrInternal)
+	}
+	return authority, nil
+}
+
+func participantConnectionRecoveryLeaseMatchesCandidate(
+	lease connection.DurableLease,
+	candidate connection.OrphanedConnectionLease,
+) bool {
+	return lease.ID == candidate.Lease.ID && lease.TournamentID == candidate.Lease.TournamentID &&
+		lease.RosterID == candidate.Lease.RosterID && lease.ParticipantID == candidate.Lease.ParticipantID &&
+		lease.PlayerID == candidate.Lease.PlayerID && lease.ConnectionID == candidate.Lease.ConnectionID &&
+		lease.ConnectionGeneration == candidate.Lease.ConnectionGeneration
+}
+
+func validateOpenedParticipantConnectionAuthority(
+	row sqlc.ParticipantConnectionLease,
+	want authoritydomain.Identity,
+	opened bool,
+) error {
+	if !opened {
+		return nil
+	}
+	stamp, err := participantConnectionLeaseAuthorityStamp(row)
+	if err != nil || stamp != want {
+		return fmt.Errorf("participant connection lease authority stamp mismatch: %w", domain.ErrConflict)
+	}
+	return nil
+}
+
+func validateRecoveredParticipantConnectionLease(
+	row sqlc.ParticipantConnectionLease,
+	candidate connection.OrphanedConnectionLease,
+) (connection.DurableLease, error) {
+	lease, err := mapParticipantConnectionLease(row)
+	if err != nil {
+		return connection.DurableLease{}, err
+	}
+	stamp, stampErr := participantConnectionLeaseAuthorityStamp(row)
+	if stampErr != nil || stamp != candidate.Authority ||
+		!participantConnectionRecoveryLeaseMatchesCandidate(lease, candidate) {
+		return connection.DurableLease{}, fmt.Errorf("recovered participant connection lease identity mismatch: %w", domain.ErrConflict)
+	}
+	if row.State != "disconnected" || !row.DisconnectedAt.Valid || row.Revision != candidate.Revision+1 {
+		return connection.DurableLease{}, fmt.Errorf("recovered participant connection lease did not persist CAS transition: %w", domain.ErrInternal)
+	}
+	return lease, nil
 }
 
 func validateParticipantConnectionLease(
@@ -727,6 +970,26 @@ func nullableConnectionEqual(value uuid.NullUUID, want uuid.UUID) bool {
 
 func nullableConnectionUUID(value uuid.UUID) uuid.NullUUID {
 	return uuid.NullUUID{UUID: value, Valid: value != uuid.Nil}
+}
+
+func authorityEpochPointer(value int64) *int64 {
+	return &value
+}
+
+func validParticipantConnectionAuthority(value connection.ParticipantConnectionAuthority) bool {
+	return value.TournamentID != uuid.Nil && value.RosterID != uuid.Nil && value.ParticipantID != uuid.Nil &&
+		value.PlayerID != uuid.Nil && value.Scope.Validate() == nil && value.Authority.Validate() == nil &&
+		value.Scope.Authority == value.Authority
+}
+
+func validateOrphanedConnectionCandidate(candidate connection.OrphanedConnectionLease) error {
+	lease := candidate.Lease
+	if lease.ID == uuid.Nil || lease.TournamentID == uuid.Nil || lease.RosterID == uuid.Nil ||
+		lease.ParticipantID == uuid.Nil || lease.PlayerID == uuid.Nil || lease.ConnectionID == uuid.Nil ||
+		lease.ConnectionGeneration < 1 || candidate.Revision < 1 || candidate.Authority.TournamentID != lease.TournamentID {
+		return domain.ErrValidation
+	}
+	return nil
 }
 
 func validParticipantConnectionRepository(ctx context.Context, repository *ParticipantConnectionPostgres) bool {

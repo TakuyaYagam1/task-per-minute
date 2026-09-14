@@ -146,6 +146,24 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 		cleanup()
 		return nil, nil, err
 	}
+	participantConnectionPostgres := provideParticipantConnectionRepository(txManager, controller)
+	tournamentPausedPresencePostgres := postgres.NewTournamentPausedPresencePostgres(txManager)
+	tournamentAdminExecutionPostgres := postgres.NewTournamentAdminExecutionPostgres(txManager)
+	wavePostgres := postgres.NewWavePostgres(txManager)
+	participantReadinessRepository := postgres.NewParticipantReadinessRepository(txManager, wavePostgres)
+	readinessUseCase := provideParticipantReadiness(participantReadinessRepository, bootstrapClockFunc)
+	coordinator, err := provideParticipantConnectionCoordinator(txManager, participantConnectionPostgres, tournamentPausedPresencePostgres, tournamentAdminExecutionPostgres, readinessUseCase, terminalCoordinator, bootstrapClockFunc, reconnectObserver)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	reaper, err := provideParticipantConnectionReaper(coordinator, participantConnectionPostgres, controller)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
 	recoveryObserver := provideRecoveryObserver(bootstrapEventTelemetry)
 	deadlineSweep := provideRecoveryDeadlineSweep(recoveryPostgres, recoveryObserver)
 	recoveryWorker, err := provideRecoveryWorker(deadlineSweep, bootstrapClockFunc, deadlineScheduler)
@@ -155,7 +173,7 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 		return nil, nil, err
 	}
 	runtimeWorkerHeartbeats := provideRuntimeWorkerHeartbeats(client)
-	bootstrapRuntimeWorkers, err := provideRuntimeWorkers(tournamentEventDispatcher, worker, realtimeDelivery, receiptRetentionWorker, availabilityMonitor, deadlineScheduler, deadlineWorker, recoveryRunner, recoveryWorker, bootstrapClockFunc, runtimeWorkerHeartbeats)
+	bootstrapRuntimeWorkers, err := provideRuntimeWorkers(tournamentEventDispatcher, worker, realtimeDelivery, receiptRetentionWorker, availabilityMonitor, deadlineScheduler, deadlineWorker, recoveryRunner, reaper, recoveryWorker, bootstrapClockFunc, runtimeWorkerHeartbeats)
 	if err != nil {
 		cleanup2()
 		cleanup()
@@ -163,7 +181,6 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 	}
 	adminPreflightRuntimeHealthSource := providePreflightRuntimeHealthSource(bootstrapClockFunc, availabilityMonitor, privateTaskAvailabilityPostgres, realtimeDelivery, bootstrapRuntimeWorkers, runtimeWorkerHeartbeats, client, seaweedStorage, pool)
 	rosterWorkflow := provideTournamentAdminRoster(txManager, tournamentAdminRosterPostgres, adminPreflightRuntimeHealthSource)
-	tournamentAdminExecutionPostgres := postgres.NewTournamentAdminExecutionPostgres(txManager)
 	executionWorkflow := provideTournamentAdminExecution(txManager, tournamentAdminExecutionPostgres, tournamentAdminExecutionPostgres, tournamentAdminExecutionPostgres, controller, bootstrapClockFunc)
 	tournamentAdminLifecyclePostgres := postgres.NewTournamentAdminLifecyclePostgres(txManager)
 	tournamentLifecyclePostgres := postgres.NewTournamentLifecyclePostgres(tournamentPostgres)
@@ -190,8 +207,8 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 	}
 	tournamentAdminSnapshotPostgres := postgres.NewTournamentAdminSnapshotPostgres(txManager)
 	adminUseCase := provideTournamentAdminApplication(catalogUseCase, rosterWorkflow, rosterWorkflow, executionWorkflow, lifecycleWorkflow, executionWorkflow, operatorResultWorkflow, replayWorkflow, operatorResultWorkflow, replayWorkflow, correctionWorkflow, tournamentAdminAuditPostgres, tournamentAdminAuditPostgres, hmacAuthenticator, tournamentAdminSnapshotPostgres)
-	coordinator := provideDistributedCommandCoordinator(commandReceiptStore)
-	adminIdempotentService, err := provideIdempotentTournamentAdminApplication(adminUseCase, catalogUseCase, coordinator)
+	idempotencyCoordinator := provideDistributedCommandCoordinator(commandReceiptStore)
+	adminIdempotentService, err := provideIdempotentTournamentAdminApplication(adminUseCase, catalogUseCase, idempotencyCoordinator)
 	if err != nil {
 		cleanup2()
 		cleanup()
@@ -205,9 +222,6 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 	tournamentSnapshotPostgres := postgres.NewTournamentSnapshotPostgres(txManager)
 	participantStatePostgres := postgres.NewParticipantStatePostgres(txManager)
 	tournamentParticipantPostgres := postgres.NewTournamentParticipantPostgres(txManager)
-	wavePostgres := postgres.NewWavePostgres(txManager)
-	participantReadinessRepository := postgres.NewParticipantReadinessRepository(txManager, wavePostgres)
-	readinessUseCase := provideParticipantReadiness(participantReadinessRepository, bootstrapClockFunc)
 	actionUseCase := provideParticipantDraft(participantDraftRepository, bootstrapClockFunc)
 	participantSubmissionRepository := postgres.NewParticipantSubmissionRepository(txManager, resultPostgres)
 	submissionUseCase := provideParticipantSubmission(participantSubmissionRepository)
@@ -219,7 +233,7 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 	postSeriesUseCase := provideParticipantPostSeries(participantPostSeriesRepository, bootstrapClockFunc)
 	commandCoordinator := provideParticipantCommands(txManager, tournamentParticipantPostgres, readinessUseCase, actionUseCase, submissionUseCase, participantSettlementWorkflow, participantSurrenderWorkflow, postSeriesUseCase, terminalCoordinator)
 	participantUseCase := provideTournamentParticipantApplication(tournamentSnapshotPostgres, participantStatePostgres, commandCoordinator)
-	participantIdempotentService := provideIdempotentTournamentParticipantApplication(participantUseCase, coordinator)
+	participantIdempotentService := provideIdempotentTournamentParticipantApplication(participantUseCase, idempotencyCoordinator)
 	tournamentParticipantObserver := provideTournamentParticipantObserver(bootstrapEventTelemetry)
 	participantObservedService := provideObservedTournamentParticipantApplication(participantIdempotentService, bootstrapClockFunc, tournamentParticipantObserver)
 	participantArchivePostgres := postgres.NewParticipantArchivePostgres(txManager)
@@ -258,14 +272,6 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 		cleanup()
 		return nil, nil, err
 	}
-	participantConnectionPostgres := provideParticipantConnectionRepository(txManager, controller)
-	tournamentPausedPresencePostgres := postgres.NewTournamentPausedPresencePostgres(txManager)
-	connectionCoordinator, err := provideParticipantConnectionCoordinator(txManager, participantConnectionPostgres, tournamentPausedPresencePostgres, tournamentAdminExecutionPostgres, readinessUseCase, terminalCoordinator, bootstrapClockFunc, reconnectObserver)
-	if err != nil {
-		cleanup2()
-		cleanup()
-		return nil, nil, err
-	}
 	publicRealtimeConfig := providePublicRealtimeConfig()
 	tournamentPublicFlow, err := websocket.NewTournamentPublicFlow(tournamentProductionSnapshotSource, publicRealtimeConfig)
 	if err != nil {
@@ -280,7 +286,7 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 		return nil, nil, err
 	}
 	tournamentOperatorSessionResolver := provideOperatorSessionResolver(useCase)
-	bootstrapTournamentRealtimeOptions := provideTournamentRealtimeOptions(tournamentParticipantFlow, connectionCoordinator, tournamentPublicFlow, tournamentOperatorFlow, tournamentOperatorSessionResolver, runtimeApplication)
+	bootstrapTournamentRealtimeOptions := provideTournamentRealtimeOptions(tournamentParticipantFlow, coordinator, tournamentPublicFlow, tournamentOperatorFlow, tournamentOperatorSessionResolver, runtimeApplication)
 	bootstrapRawWebSocketServer := provideRawWebSocketServer(context, cfg, log, playerPostgres, bootstrapWsHandshakeRateLimiter, bootstrapTournamentRealtimeOptions, realtimeDelivery, bootstrapEventTelemetry)
 	websocketServer := provideWebSocketServer(bootstrapRawWebSocketServer)
 	bootstrapRestMiddlewareStack, err := provideRESTMiddlewares(context, log, cfg, bootstrapEventTelemetry)

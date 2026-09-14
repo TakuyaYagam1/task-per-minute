@@ -54,6 +54,15 @@ type DurableLease struct {
 	ConnectionGeneration int64
 }
 
+// OrphanedConnectionLease is a recovery candidate read from durable evidence.
+// Its authority stamp is immutable and is never used as the caller's current
+// authority.  The recovery repository rechecks both identities in its CAS.
+type OrphanedConnectionLease struct {
+	Lease     DurableLease
+	Revision  int64
+	Authority authoritydomain.Identity
+}
+
 // OpenConnectionCommand identifies the server-resolved lease to create. The
 // repository must atomically persist it and return the post-operation active
 // lease count.
@@ -89,6 +98,29 @@ type CloseConnectionResult struct {
 	Closed           bool
 	ActiveLeaseCount int
 	Action           ResolvedAction
+}
+
+// RecoveryRepository exposes only the owner-bound recovery surface.  Listing
+// is read-only; closing must join the coordinator transaction so the lease CAS
+// and its one last-lease action commit together.
+type RecoveryRepository interface {
+	ListParticipantConnectionLeaseTournaments(ctx context.Context) ([]uuid.UUID, error)
+	ListParticipantConnectionRecoveryCandidates(ctx context.Context, limit int32) ([]OrphanedConnectionLease, error)
+	CloseOrphanedConnection(
+		ctx context.Context,
+		resolved ParticipantConnectionAuthority,
+		candidate OrphanedConnectionLease,
+	) (CloseConnectionResult, error)
+}
+
+// RecoveryAuthorityProvider renews authority owned by this process and takes
+// it over only after a foreign owner expires. This distinguishes a quiet live
+// socket from a socket orphaned by process loss.
+type RecoveryAuthorityProvider interface {
+	RecoveryAuthorityFor(
+		ctx context.Context,
+		tournamentID uuid.UUID,
+	) (authoritydomain.Identity, bool, error)
 }
 
 // Repository is the durable lease and server-side action boundary. Open and

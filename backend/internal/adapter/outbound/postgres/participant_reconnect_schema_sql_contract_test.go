@@ -118,6 +118,31 @@ func TestParticipantReconnectMigrationHasUniqueGooseID(t *testing.T) {
 	}
 
 	require.Equal(t, "000021_participant_reconnect_lifecycle.sql", seen["000021"])
+	require.Equal(t, "000022_participant_connection_authority_recovery.sql", seen["000022"])
+}
+
+func TestParticipantConnectionAuthorityRecoveryMigrationContract(t *testing.T) {
+	t.Parallel()
+
+	contents, err := os.ReadFile(filepath.Join(
+		"..", "..", "..", "..", "db", "migrations",
+		"000022_participant_connection_authority_recovery.sql",
+	))
+	require.NoError(t, err)
+	schema := string(contents)
+	for _, fragment := range []string{
+		"DROP TRIGGER participant_connection_leases_guard",
+		"WITH inferred_authority AS",
+		"evidence.renewed_at <= lease.connected_at",
+		"lease.connected_at < evidence.expires_at",
+		"CREATE TRIGGER participant_connection_leases_guard",
+		"participant_connection_leases_authority_required_check",
+		"authority_holder_id IS NOT NULL",
+		"participant_connection_leases_authority_guard",
+		"Participant connection lease authority stamp is required",
+	} {
+		require.Contains(t, schema, fragment)
+	}
 }
 
 func readParticipantReconnectMigration(t *testing.T) []byte {

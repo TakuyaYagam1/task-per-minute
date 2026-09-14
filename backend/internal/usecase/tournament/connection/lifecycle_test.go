@@ -16,6 +16,7 @@ import (
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
 	seriesdomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/series"
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
+	authorityusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/authority"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/readiness"
@@ -28,6 +29,7 @@ type lifecycleHarness struct {
 	clock      *fixedClock
 	provider   *recordingAuthority
 	repo       *recordingRepository
+	recovery   *recordingRecoveryRepository
 	tx         *recordingTransactions
 	readiness  *recordingReadiness
 	paused     *recordingPausedPresence
@@ -126,6 +128,97 @@ func TestCoordinatorDisconnectsLastTabWithOperatorPresenceEvidenceOnly(t *testin
 	require.Empty(t, h.reconnect.commands())
 	require.Equal(t, 1, h.tx.count())
 	require.Equal(t, h.resolved.ParticipantID, h.repo.closeCommands()[0].ParticipantID)
+}
+
+func TestCoordinatorRecoversExpiredLeaseWithLastLeaseAction(t *testing.T) {
+	h := newLifecycleHarness(t)
+	h.recovery = &recordingRecoveryRepository{
+		result: CloseConnectionResult{
+			Lease:            h.lease,
+			Closed:           true,
+			ActiveLeaseCount: 0,
+			Action: ResolvedAction{
+				Kind: ActionPausedPresence,
+				PausedPresence: &game.PausedPresenceCommand{
+					Scope: h.resolved.Scope, PauseID: uuid.New(), ParticipantID: h.resolved.ParticipantID,
+					ExpectedGraphRevision: 2, ExpectedPauseRevision: 1,
+					ExpectedPresenceEpoch: 3, ExpectedPresenceRevision: 3,
+				},
+			},
+		},
+	}
+	coordinator, err := NewCoordinator(Dependencies{
+		Transactions: h.tx, Authority: h.provider, Repository: h.repo, Recovery: h.recovery,
+		Readiness: h.readiness, PausedPresence: h.paused,
+		Disconnect: h.disconnect, Reconnect: h.reconnect,
+		TerminalAdvancer: h.terminal, Clock: h.clock,
+		Config: Config{ReconnectDuration: 30 * time.Second},
+	})
+	require.NoError(t, err)
+
+	candidate := OrphanedConnectionLease{Lease: h.lease, Revision: 1, Authority: h.resolved.Authority}
+	require.NoError(t, coordinator.recoverOrphanedConnection(context.Background(), candidate))
+	require.Len(t, h.recovery.candidates, 1)
+	require.Len(t, h.paused.commands(), 1)
+	require.Equal(t, pausedomain.PresenceStateDisconnected, h.paused.commands()[0].NextState)
+	require.Equal(t, 1, h.tx.count())
+}
+
+func TestCoordinatorRejectsOwnerlessRecoveryCandidate(t *testing.T) {
+	h := newLifecycleHarness(t)
+	h.recovery = &recordingRecoveryRepository{}
+	coordinator, err := NewCoordinator(Dependencies{
+		Transactions: h.tx, Authority: h.provider, Repository: h.repo, Recovery: h.recovery,
+		Clock: h.clock, Config: Config{ReconnectDuration: time.Second},
+	})
+	require.NoError(t, err)
+
+	err = coordinator.recoverOrphanedConnection(context.Background(), OrphanedConnectionLease{
+		Lease: h.lease, Revision: 1,
+	})
+	require.ErrorIs(t, err, ErrInvalidLease)
+	require.Zero(t, h.tx.count())
+}
+
+func TestCoordinatorRecoveryRaceAppliesLastLeaseActionOnce(t *testing.T) {
+	h := newLifecycleHarness(t)
+	h.recovery = &recordingRecoveryRepository{}
+	remaining := 1
+	h.recovery.closeFn = func() CloseConnectionResult {
+		h.recovery.mu.Lock()
+		defer h.recovery.mu.Unlock()
+		if remaining == 0 {
+			return CloseConnectionResult{Closed: false, ActiveLeaseCount: 0, Action: ResolvedAction{Kind: ActionNone}}
+		}
+		remaining--
+		return CloseConnectionResult{
+			Lease: h.lease, Closed: true, ActiveLeaseCount: 0,
+			Action: ResolvedAction{Kind: ActionPausedPresence, PausedPresence: &game.PausedPresenceCommand{
+				Scope: h.resolved.Scope, PauseID: uuid.New(), ParticipantID: h.resolved.ParticipantID,
+				ExpectedGraphRevision: 2, ExpectedPauseRevision: 1,
+				ExpectedPresenceEpoch: 3, ExpectedPresenceRevision: 3,
+			}},
+		}
+	}
+	coordinator, err := NewCoordinator(Dependencies{
+		Transactions: h.tx, Authority: h.provider, Repository: h.repo, Recovery: h.recovery,
+		PausedPresence: h.paused, Clock: h.clock,
+		Config: Config{ReconnectDuration: time.Second},
+	})
+	require.NoError(t, err)
+	candidate := OrphanedConnectionLease{Lease: h.lease, Revision: 1, Authority: h.resolved.Authority}
+
+	const callers = 32
+	var wait sync.WaitGroup
+	wait.Add(callers)
+	for range callers {
+		go func() {
+			defer wait.Done()
+			_ = coordinator.recoverOrphanedConnection(context.Background(), candidate)
+		}()
+	}
+	wait.Wait()
+	require.Len(t, h.paused.commands(), 1)
 }
 
 func TestCoordinatorDoesNotPauseWhenAnotherTabRemains(t *testing.T) {
@@ -457,9 +550,26 @@ func (transactions *recordingTransactions) count() int {
 }
 
 type recordingAuthority struct {
-	mu    sync.Mutex
-	value ParticipantConnectionAuthority
-	err   error
+	mu            sync.Mutex
+	value         ParticipantConnectionAuthority
+	err           error
+	recoveryCalls []uuid.UUID
+}
+
+func (authority *recordingAuthority) RecoveryAuthorityFor(
+	_ context.Context,
+	tournamentID uuid.UUID,
+) (authoritydomain.Identity, bool, error) {
+	authority.mu.Lock()
+	defer authority.mu.Unlock()
+	authority.recoveryCalls = append(authority.recoveryCalls, tournamentID)
+	if errors.Is(authority.err, authorityusecase.ErrNotOwner) {
+		return authoritydomain.Identity{}, false, nil
+	}
+	if authority.err != nil {
+		return authoritydomain.Identity{}, false, authority.err
+	}
+	return authority.value.Authority, true, nil
 }
 
 func (authority *recordingAuthority) ResolveParticipantConnection(
@@ -481,6 +591,50 @@ type recordingRepository struct {
 	closeFn     func() CloseConnectionResult
 	openCalls   []OpenConnectionCommand
 	closeCalls  []CloseConnectionCommand
+}
+
+type recordingRecoveryRepository struct {
+	mu          sync.Mutex
+	tournaments []uuid.UUID
+	candidates  []OrphanedConnectionLease
+	result      CloseConnectionResult
+	closeFn     func() CloseConnectionResult
+}
+
+func (repository *recordingRecoveryRepository) ListParticipantConnectionLeaseTournaments(
+	context.Context,
+) ([]uuid.UUID, error) {
+	repository.mu.Lock()
+	defer repository.mu.Unlock()
+	return append([]uuid.UUID(nil), repository.tournaments...), nil
+}
+
+func (repository *recordingRecoveryRepository) ListParticipantConnectionRecoveryCandidates(
+	context.Context,
+	int32,
+) ([]OrphanedConnectionLease, error) {
+	repository.mu.Lock()
+	defer repository.mu.Unlock()
+	return append([]OrphanedConnectionLease(nil), repository.candidates...), nil
+}
+
+func (repository *recordingRecoveryRepository) CloseOrphanedConnection(
+	ctx context.Context,
+	_ ParticipantConnectionAuthority,
+	candidate OrphanedConnectionLease,
+) (CloseConnectionResult, error) {
+	if _, ok := ctx.Value(contextMarker{}).(bool); !ok {
+		return CloseConnectionResult{}, fmt.Errorf("recovery repository did not receive transaction context")
+	}
+	repository.mu.Lock()
+	repository.candidates = append(repository.candidates, candidate)
+	result := repository.result
+	closeFn := repository.closeFn
+	repository.mu.Unlock()
+	if closeFn != nil {
+		result = closeFn()
+	}
+	return result, nil
 }
 
 func (repository *recordingRepository) OpenConnection(

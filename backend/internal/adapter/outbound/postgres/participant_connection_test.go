@@ -170,6 +170,51 @@ func TestParticipantConnectionActiveGameConnectKeepsBindingForLastClose(t *testi
 	require.True(t, matches, "the last tab must carry the same current-game fence")
 }
 
+func TestParticipantConnectionRecoveryLeavesActiveGameToExecutionRecovery(t *testing.T) {
+	t.Parallel()
+
+	state := participantConnectionState{
+		Authority: connection.ParticipantConnectionAuthority{
+			Scope: pausedomain.GraphScope{TournamentID: uuid.New(), RosterID: uuid.New(), WaveID: uuid.New()},
+		},
+		Root: sqlc.LockParticipantConnectionIdentityRow{ParticipantID: uuid.New()},
+	}
+	row := sqlc.LockParticipantConnectionActiveGameRow{
+		AssignmentID: uuid.New(), GameAttemptID: uuid.New(), SeriesID: uuid.New(),
+		SeriesState: string(domain.SeriesStateActive), GameState: string(domain.GameStateActive),
+		TaskKind: "normal", PresenceID: uuid.New(), PresenceState: string(pausedomain.PresenceStateConnected),
+		PresenceEpoch: 1, PresenceRevision: 2,
+	}
+
+	action, binding, err := participantConnectionActiveGameAction(row, state, connectionOperationRecovery)
+	require.NoError(t, err)
+	require.Equal(t, connection.ActionNone, action.Kind)
+	require.NotEqual(t, uuid.Nil, binding.GameAttemptID)
+}
+
+func TestParticipantConnectionRecoveryMapsAuthorityStampAndRejectsPartialStamp(t *testing.T) {
+	t.Parallel()
+
+	row := participantConnectionLeaseRow(participantConnectionBinding{})
+	authority := authoritydomain.Identity{
+		TournamentID: row.TournamentID,
+		HolderID:     uuid.New(), LeaseID: uuid.New(), Epoch: 3,
+		ProcessKind: authoritydomain.ProcessAuthority,
+	}
+	row.AuthorityHolderID = nullableConnectionUUID(authority.HolderID)
+	row.AuthorityLeaseID = nullableConnectionUUID(authority.LeaseID)
+	row.AuthorityEpoch = authorityEpochPointer(authority.Epoch)
+
+	candidate, err := mapParticipantConnectionRecoveryCandidate(row)
+	require.NoError(t, err)
+	require.Equal(t, authority, candidate.Authority)
+	require.Equal(t, row.Revision, candidate.Revision)
+
+	row.AuthorityLeaseID = uuid.NullUUID{}
+	_, err = mapParticipantConnectionRecoveryCandidate(row)
+	require.ErrorIs(t, err, domain.ErrInternal)
+}
+
 func TestParticipantConnectionSecondTabRetainsSameCurrentGameBinding(t *testing.T) {
 	t.Parallel()
 

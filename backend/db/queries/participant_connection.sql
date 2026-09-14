@@ -98,7 +98,10 @@ SELECT lease.id,
     lease.revision,
     lease.connected_at,
     lease.disconnected_at,
-    lease.updated_at
+    lease.updated_at,
+    lease.authority_holder_id,
+    lease.authority_lease_id,
+    lease.authority_epoch
 FROM participant_connection_leases AS lease
 WHERE lease.tournament_id = sqlc.arg(tournament_id)
     AND lease.roster_id = sqlc.arg(roster_id)
@@ -122,7 +125,10 @@ SELECT lease.id,
     lease.revision,
     lease.connected_at,
     lease.disconnected_at,
-    lease.updated_at
+    lease.updated_at,
+    lease.authority_holder_id,
+    lease.authority_lease_id,
+    lease.authority_epoch
 FROM participant_connection_leases AS lease
 WHERE lease.connection_id = sqlc.arg(connection_id)
     AND lease.connection_generation = sqlc.arg(connection_generation)
@@ -140,6 +146,9 @@ INSERT INTO participant_connection_leases (
     assignment_id,
     series_id,
     game_attempt_id,
+    authority_holder_id,
+    authority_lease_id,
+    authority_epoch,
     state,
     revision,
     connected_at,
@@ -156,6 +165,9 @@ VALUES (
     sqlc.narg(assignment_id)::UUID,
     sqlc.narg(series_id)::UUID,
     sqlc.narg(game_attempt_id)::UUID,
+    sqlc.arg(authority_holder_id),
+    sqlc.arg(authority_lease_id),
+    sqlc.arg(authority_epoch),
     'active',
     1,
     transaction_timestamp(),
@@ -176,15 +188,18 @@ RETURNING id,
     revision,
     connected_at,
     disconnected_at,
-    updated_at;
+    updated_at,
+    authority_holder_id,
+    authority_lease_id,
+    authority_epoch;
 
 -- The update is deliberately fenced by the complete server-resolved
 -- identity.  A stale generation or wrong participant updates no row.
 -- name: CloseParticipantConnectionLease :one
 UPDATE participant_connection_leases AS lease
 SET state = 'disconnected',
-    disconnected_at = GREATEST(transaction_timestamp(), lease.connected_at),
-    updated_at = GREATEST(transaction_timestamp(), lease.connected_at),
+    disconnected_at = GREATEST(clock_timestamp(), lease.connected_at),
+    updated_at = GREATEST(clock_timestamp(), lease.updated_at + INTERVAL '1 microsecond'),
     revision = lease.revision + 1
 WHERE lease.tournament_id = sqlc.arg(tournament_id)
     AND lease.roster_id = sqlc.arg(roster_id)
@@ -192,6 +207,9 @@ WHERE lease.tournament_id = sqlc.arg(tournament_id)
     AND lease.player_id = sqlc.arg(player_id)
     AND lease.connection_id = sqlc.arg(connection_id)
     AND lease.connection_generation = sqlc.arg(connection_generation)
+    AND lease.authority_holder_id = sqlc.arg(authority_holder_id)
+    AND lease.authority_lease_id = sqlc.arg(authority_lease_id)
+    AND lease.authority_epoch = sqlc.arg(authority_epoch)
     AND lease.state = 'active'
 RETURNING lease.id,
     lease.tournament_id,
@@ -207,7 +225,155 @@ RETURNING lease.id,
     lease.revision,
     lease.connected_at,
     lease.disconnected_at,
-    lease.updated_at;
+    lease.updated_at,
+    lease.authority_holder_id,
+    lease.authority_lease_id,
+    lease.authority_epoch;
+
+-- A recovery close is a second CAS fence: the exact candidate revision and
+-- socket fence must still be active, its stamped authority must have expired,
+-- and the caller must now own a different live execution authority.  The
+-- participant identity and active lease set are locked by the adapter before
+-- this statement is executed.
+-- name: CloseExpiredParticipantConnectionLease :one
+UPDATE participant_connection_leases AS lease
+SET state = 'disconnected',
+    disconnected_at = GREATEST(clock_timestamp(), lease.connected_at),
+    updated_at = GREATEST(clock_timestamp(), lease.updated_at + INTERVAL '1 microsecond'),
+    revision = lease.revision + 1
+WHERE lease.tournament_id = sqlc.arg(tournament_id)
+    AND lease.roster_id = sqlc.arg(roster_id)
+    AND lease.participant_id = sqlc.arg(participant_id)
+    AND lease.player_id = sqlc.arg(player_id)
+    AND lease.id = sqlc.arg(id)
+    AND lease.revision = sqlc.arg(expected_revision)
+    AND lease.connection_id = sqlc.arg(connection_id)
+    AND lease.connection_generation = sqlc.arg(connection_generation)
+    AND EXISTS (
+        SELECT 1
+        FROM execution_authority_leases AS candidate
+        WHERE candidate.tournament_id = lease.tournament_id
+            AND candidate.holder_id = sqlc.arg(authority_holder_id)
+            AND candidate.lease_id = sqlc.arg(authority_lease_id)
+            AND candidate.epoch = sqlc.arg(authority_epoch)
+            AND candidate.process_kind = 'authority'
+            AND candidate.expires_at <= clock_timestamp()
+            AND NOT EXISTS (
+                SELECT 1
+                FROM execution_authority_leases AS newer_candidate
+                WHERE newer_candidate.tournament_id = candidate.tournament_id
+                    AND newer_candidate.holder_id = candidate.holder_id
+                    AND newer_candidate.lease_id = candidate.lease_id
+                    AND newer_candidate.epoch = candidate.epoch
+                    AND newer_candidate.revision > candidate.revision
+            )
+    )
+    AND EXISTS (
+        SELECT 1
+        FROM execution_authority_leases AS current_auth
+        WHERE current_auth.tournament_id = lease.tournament_id
+            AND current_auth.holder_id = sqlc.arg(current_authority_holder_id)
+            AND current_auth.lease_id = sqlc.arg(current_authority_lease_id)
+            AND current_auth.epoch = sqlc.arg(current_authority_epoch)
+            AND current_auth.process_kind = 'authority'
+            AND current_auth.renewed_at <= clock_timestamp()
+            AND clock_timestamp() < current_auth.expires_at
+            AND (
+                current_auth.holder_id IS DISTINCT FROM sqlc.arg(authority_holder_id)
+                OR current_auth.lease_id IS DISTINCT FROM sqlc.arg(authority_lease_id)
+                OR current_auth.epoch IS DISTINCT FROM sqlc.arg(authority_epoch)
+            )
+            AND NOT EXISTS (
+                SELECT 1
+                FROM execution_authority_leases AS newer_current
+                WHERE newer_current.tournament_id = current_auth.tournament_id
+                    AND newer_current.revision > current_auth.revision
+            )
+    )
+    AND lease.state = 'active'
+RETURNING lease.id,
+    lease.tournament_id,
+    lease.roster_id,
+    lease.participant_id,
+    lease.player_id,
+    lease.connection_id,
+    lease.connection_generation,
+    lease.assignment_id,
+    lease.series_id,
+    lease.game_attempt_id,
+    lease.state,
+    lease.revision,
+    lease.connected_at,
+    lease.disconnected_at,
+    lease.updated_at,
+    lease.authority_holder_id,
+    lease.authority_lease_id,
+    lease.authority_epoch;
+
+-- The reaper renews locally owned authorities before checking expiry.  This
+-- keeps a quiet but live process from orphaning its own long-lived sockets.
+-- name: ListParticipantConnectionLeaseTournaments :many
+SELECT DISTINCT lease.tournament_id
+FROM participant_connection_leases AS lease
+WHERE lease.state = 'active'
+    AND lease.authority_holder_id IS NOT NULL
+    AND lease.authority_lease_id IS NOT NULL
+    AND lease.authority_epoch IS NOT NULL
+ORDER BY lease.tournament_id;
+
+-- Recovery discovery is deliberately owner-bound.  The migration backfills
+-- v21 rows and rejects future ownerless writes, while these predicates keep
+-- the query fail-closed if storage invariants are ever violated.
+-- name: ListParticipantConnectionRecoveryCandidates :many
+WITH owner_authority AS (
+    SELECT DISTINCT ON (authority.tournament_id, authority.holder_id, authority.lease_id, authority.epoch)
+        authority.tournament_id,
+        authority.holder_id,
+        authority.lease_id,
+        authority.epoch,
+        authority.expires_at
+    FROM execution_authority_leases AS authority
+    WHERE authority.process_kind = 'authority'
+    ORDER BY authority.tournament_id,
+        authority.holder_id,
+        authority.lease_id,
+        authority.epoch,
+        authority.revision DESC
+)
+SELECT lease.id,
+    lease.tournament_id,
+    lease.roster_id,
+    lease.participant_id,
+    lease.player_id,
+    lease.connection_id,
+    lease.connection_generation,
+    lease.assignment_id,
+    lease.series_id,
+    lease.game_attempt_id,
+    lease.state,
+    lease.revision,
+    lease.connected_at,
+    lease.disconnected_at,
+    lease.updated_at,
+    lease.authority_holder_id,
+    lease.authority_lease_id,
+    lease.authority_epoch
+FROM participant_connection_leases AS lease
+JOIN owner_authority
+    ON owner_authority.tournament_id = lease.tournament_id
+    AND owner_authority.holder_id = lease.authority_holder_id
+    AND owner_authority.lease_id = lease.authority_lease_id
+    AND owner_authority.epoch = lease.authority_epoch
+WHERE lease.state = 'active'
+    AND lease.authority_holder_id IS NOT NULL
+    AND lease.authority_lease_id IS NOT NULL
+    AND lease.authority_epoch IS NOT NULL
+    AND owner_authority.expires_at <= clock_timestamp()
+ORDER BY lease.tournament_id,
+    lease.roster_id,
+    lease.participant_id,
+    lease.id
+LIMIT sqlc.arg(limit_count)::INT;
 
 -- name: CountParticipantConnectionLeases :one
 SELECT COUNT(*)::BIGINT AS active_lease_count

@@ -34,6 +34,7 @@ func provideParticipantConnectionCoordinator(
 		Transactions:     transactions,
 		Authority:        repository,
 		Repository:       repository,
+		Recovery:         repository,
 		Readiness:        readinessUseCase,
 		PausedPresence:   gameusecase.NewPausedPresenceUseCase(transactions, pausedPresenceRepository, clock),
 		Disconnect:       gameusecase.NewDisconnectUseCase(reconnectRepository, clock),
@@ -44,4 +45,12 @@ func provideParticipantConnectionCoordinator(
 			ReconnectDuration: participantReconnectDuration,
 		},
 	})
+}
+
+func provideParticipantConnectionReaper(
+	coordinator *participantconnection.Coordinator,
+	repository *postgres.ParticipantConnectionPostgres,
+	authority *authorityusecase.Controller,
+) (*participantconnection.Reaper, error) {
+	return participantconnection.NewReaper(coordinator, repository, authority)
 }

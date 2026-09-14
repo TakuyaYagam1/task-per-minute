@@ -28,12 +28,14 @@ type operation string
 const (
 	operationConnect    operation = "connect"
 	operationDisconnect operation = "disconnect"
+	operationRecovery   operation = "recover"
 )
 
 type Dependencies struct {
 	Transactions     game.TransactionManager
 	Authority        AuthorityProvider
 	Repository       Repository
+	Recovery         RecoveryRepository
 	Readiness        ReadinessWorkflow
 	PausedPresence   PausedPresenceWorkflow
 	Disconnect       DisconnectWorkflow
@@ -50,6 +52,7 @@ type Coordinator struct {
 	transactions     game.TransactionManager
 	authority        AuthorityProvider
 	repository       Repository
+	recovery         RecoveryRepository
 	readiness        ReadinessWorkflow
 	pausedPresence   PausedPresenceWorkflow
 	disconnect       DisconnectWorkflow
@@ -71,6 +74,7 @@ func NewCoordinator(dependencies Dependencies) (*Coordinator, error) {
 		transactions:     dependencies.Transactions,
 		authority:        dependencies.Authority,
 		repository:       dependencies.Repository,
+		recovery:         dependencies.Recovery,
 		readiness:        dependencies.Readiness,
 		pausedPresence:   dependencies.PausedPresence,
 		disconnect:       dependencies.Disconnect,
@@ -93,6 +97,45 @@ func (coordinator *Coordinator) Disconnect(
 	command inbound.TournamentParticipantConnectionCommand,
 ) error {
 	return coordinator.execute(ctx, operationDisconnect, command)
+}
+
+// recoverOrphanedConnection closes one owner-bound candidate and applies at
+// most the action for the final active lease.  The repository CAS and nested
+// action deliberately share this transaction; a retry after a lost process is
+// therefore either a complete recovery or an idempotent no-op.
+func (coordinator *Coordinator) recoverOrphanedConnection(
+	ctx context.Context,
+	candidate OrphanedConnectionLease,
+) error {
+	if ctx == nil || coordinator == nil || coordinator.recovery == nil {
+		return ErrInvalidConfiguration
+	}
+	if candidate.Authority.Validate() != nil || validateOrphanedCandidate(candidate) != nil {
+		return ErrInvalidLease
+	}
+	return coordinator.transactions.Do(ctx, func(txCtx context.Context) error {
+		resolved, err := coordinator.authority.ResolveParticipantConnection(
+			txCtx, candidate.Lease.TournamentID, candidate.Lease.PlayerID,
+		)
+		if err != nil {
+			return fmt.Errorf("resolve participant connection recovery authority: %w", err)
+		}
+		if resolved.TournamentID != candidate.Lease.TournamentID || resolved.RosterID != candidate.Lease.RosterID ||
+			resolved.ParticipantID != candidate.Lease.ParticipantID || resolved.PlayerID != candidate.Lease.PlayerID {
+			return ErrInvalidAuthority
+		}
+		result, err := coordinator.recovery.CloseOrphanedConnection(txCtx, resolved, candidate)
+		if err != nil {
+			return fmt.Errorf("close orphaned participant connection lease: %w", err)
+		}
+		if err := validateRecoveryResult(result, resolved, candidate); err != nil {
+			return err
+		}
+		if !result.Closed || result.ActiveLeaseCount != 0 {
+			return nil
+		}
+		return coordinator.applyAction(txCtx, operationRecovery, resolved, result.Lease, result.Action)
+	})
 }
 
 func (coordinator *Coordinator) execute(
@@ -130,6 +173,8 @@ func (coordinator *Coordinator) execute(
 			return coordinator.connectLocked(txCtx, resolved, command)
 		case operationDisconnect:
 			return coordinator.disconnectLocked(txCtx, resolved, command)
+		case operationRecovery:
+			return ErrInvalidConfiguration
 		default:
 			return ErrInvalidConfiguration
 		}
@@ -198,7 +243,7 @@ func (coordinator *Coordinator) applyAction(
 	case ActionNone:
 		return nil
 	case ActionClearReadiness:
-		if coordinator.readiness == nil || op != operationDisconnect || action.Readiness == nil {
+		if coordinator.readiness == nil || !operationDisconnectLike(op) || action.Readiness == nil {
 			return ErrWorkflowUnavailable
 		}
 		command := *action.Readiness
@@ -214,7 +259,7 @@ func (coordinator *Coordinator) applyAction(
 		}
 		command := *action.PausedPresence
 		want := pausedomain.PresenceStateConnected
-		if op == operationDisconnect {
+		if operationDisconnectLike(op) {
 			want = pausedomain.PresenceStateDisconnected
 		}
 		if command.NextState != "" && command.NextState != want {
@@ -415,6 +460,45 @@ func validateCloseResult(
 	return validateAction(result.Action, operationDisconnect, resolved)
 }
 
+func validateRecoveryResult(
+	result CloseConnectionResult,
+	resolved ParticipantConnectionAuthority,
+	candidate OrphanedConnectionLease,
+) error {
+	if result.ActiveLeaseCount < 0 {
+		return ErrInvalidLease
+	}
+	if result.Closed {
+		if !recoveryLeaseMatchesCandidate(result.Lease, candidate) {
+			return ErrInvalidLease
+		}
+	} else if !isZeroLease(result.Lease) && !recoveryLeaseMatchesCandidate(result.Lease, candidate) {
+		return ErrInvalidLease
+	}
+	return validateAction(result.Action, operationRecovery, resolved)
+}
+
+func validateOrphanedCandidate(candidate OrphanedConnectionLease) error {
+	lease := candidate.Lease
+	if lease.ID == uuid.Nil || lease.TournamentID == uuid.Nil || lease.RosterID == uuid.Nil ||
+		lease.ParticipantID == uuid.Nil || lease.PlayerID == uuid.Nil || lease.ConnectionID == uuid.Nil ||
+		lease.ConnectionGeneration < 1 || candidate.Revision < 1 {
+		return ErrInvalidLease
+	}
+	return nil
+}
+
+func recoveryLeaseMatchesCandidate(lease DurableLease, candidate OrphanedConnectionLease) bool {
+	return lease.ID == candidate.Lease.ID && lease.TournamentID == candidate.Lease.TournamentID &&
+		lease.RosterID == candidate.Lease.RosterID && lease.ParticipantID == candidate.Lease.ParticipantID &&
+		lease.PlayerID == candidate.Lease.PlayerID && lease.ConnectionID == candidate.Lease.ConnectionID &&
+		lease.ConnectionGeneration == candidate.Lease.ConnectionGeneration
+}
+
+func operationDisconnectLike(op operation) bool {
+	return op == operationDisconnect || op == operationRecovery
+}
+
 func validateLease(
 	lease DurableLease,
 	resolved ParticipantConnectionAuthority,
@@ -469,7 +553,7 @@ func validateAction(
 	case ActionNone:
 		return ErrInvalidAction
 	case ActionClearReadiness:
-		if op != operationDisconnect || action.Readiness == nil ||
+		if !operationDisconnectLike(op) || action.Readiness == nil ||
 			action.Readiness.ParticipantID != resolved.ParticipantID ||
 			action.Readiness.Scope.WaveID != resolved.Scope.WaveID ||
 			action.Readiness.Scope.WaveID == uuid.Nil || action.Readiness.Scope.WindowID == uuid.Nil ||

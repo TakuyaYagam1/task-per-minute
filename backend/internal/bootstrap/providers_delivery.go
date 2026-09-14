@@ -15,6 +15,7 @@ import (
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/recovery"
 	taskusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/task"
+	participantconnection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/connection"
 )
 
 func provideRealtimeOutbox(
@@ -105,6 +106,7 @@ func provideRuntimeWorkers(
 	deadlineScheduler *recovery.DeadlineScheduler,
 	swissDraftDeadlines *draftusecase.DeadlineWorker,
 	executionRecovery *gameusecase.RecoveryRunner,
+	participantConnectionReaper *participantconnection.Reaper,
 	recoveryWorker *recovery.Worker,
 	clock clockFunc,
 	heartbeats *redisadapter.RuntimeWorkerHeartbeats,
@@ -136,6 +138,11 @@ func provideRuntimeWorkers(
 			name:   "execution-recovery",
 			worker: executionRecovery,
 			ready:  executionRecovery.Ready,
+		},
+		{
+			name:   "participant-connection-recovery",
+			worker: participantConnectionReaper,
+			ready:  participantConnectionReaper.Ready,
 		},
 		{
 			name:   "deadline-recovery",

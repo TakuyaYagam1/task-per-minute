@@ -277,6 +277,7 @@ var UseCasesSet = wire.NewSet(
 	wire.Bind(new(tournamentparticipant.ReadinessWorkflow), new(*readiness.ReadinessUseCase)),
 	provideParticipantConnectionRepository,
 	provideParticipantConnectionCoordinator,
+	provideParticipantConnectionReaper,
 	wire.Bind(new(inbound.TournamentParticipantConnectionUseCase), new(*participantconnection.Coordinator)),
 	provideParticipantDraft,
 	wire.Bind(new(tournamentparticipant.DraftActionWorkflow), new(*draftusecase.ActionUseCase)),

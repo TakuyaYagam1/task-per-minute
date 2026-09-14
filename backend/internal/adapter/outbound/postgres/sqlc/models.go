@@ -1572,6 +1572,9 @@ type ParticipantConnectionLease struct {
 	ConnectedAt          pgtype.Timestamptz
 	DisconnectedAt       pgtype.Timestamptz
 	UpdatedAt            pgtype.Timestamptz
+	AuthorityHolderID    uuid.NullUUID
+	AuthorityLeaseID     uuid.NullUUID
+	AuthorityEpoch       *int64
 }
 
 type ParticipantPostSeriesAction struct {

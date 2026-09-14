@@ -65,6 +65,12 @@ type Querier interface {
 	// edit record plus supersession of its ready window.
 	ClearTournamentConfigurationEditUnboundReadinessCAS(ctx context.Context, arg ClearTournamentConfigurationEditUnboundReadinessCASParams) ([]ClearTournamentConfigurationEditUnboundReadinessCASRow, error)
 	ClearWaveReadinessHeads(ctx context.Context, arg ClearWaveReadinessHeadsParams) ([]WaveReadiness, error)
+	// A recovery close is a second CAS fence: the exact candidate revision and
+	// socket fence must still be active, its stamped authority must have expired,
+	// and the caller must now own a different live execution authority.  The
+	// participant identity and active lease set are locked by the adapter before
+	// this statement is executed.
+	CloseExpiredParticipantConnectionLease(ctx context.Context, arg CloseExpiredParticipantConnectionLeaseParams) (ParticipantConnectionLease, error)
 	CloseGoldenReadyDisconnectCAS(ctx context.Context, arg CloseGoldenReadyDisconnectCASParams) (GoldenReadyDisconnect, error)
 	// The update is deliberately fenced by the complete server-resolved
 	// identity.  A stale generation or wrong participant updates no row.
@@ -587,6 +593,13 @@ type Querier interface {
 	ListOperatorTournamentReadReplays(ctx context.Context, tournamentID uuid.UUID) ([]ListOperatorTournamentReadReplaysRow, error)
 	ListOperatorTournamentReadWaveMembers(ctx context.Context, tournamentID uuid.UUID) ([]ListOperatorTournamentReadWaveMembersRow, error)
 	ListOperatorTournamentReadWaves(ctx context.Context, tournamentID uuid.UUID) ([]ListOperatorTournamentReadWavesRow, error)
+	// The reaper renews locally owned authorities before checking expiry.  This
+	// keeps a quiet but live process from orphaning its own long-lived sockets.
+	ListParticipantConnectionLeaseTournaments(ctx context.Context) ([]uuid.UUID, error)
+	// Recovery discovery is deliberately owner-bound.  The migration backfills
+	// v21 rows and rejects future ownerless writes, while these predicates keep
+	// the query fail-closed if storage invariants are ever violated.
+	ListParticipantConnectionRecoveryCandidates(ctx context.Context, limitCount int32) ([]ParticipantConnectionLease, error)
 	ListParticipantForfeitPresence(ctx context.Context, arg ListParticipantForfeitPresenceParams) ([]uuid.UUID, error)
 	ListParticipantGameResultRevisionIDs(ctx context.Context, arg ListParticipantGameResultRevisionIDsParams) ([]uuid.UUID, error)
 	ListParticipantLobbySeries(ctx context.Context, arg ListParticipantLobbySeriesParams) ([]ListParticipantLobbySeriesRow, error)
