@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -93,6 +94,12 @@ func (r *TournamentSnapshotPostgres) ParticipantSnapshot(
 			return err
 		}
 		view.Assignment = assignment
+		if assignment != nil {
+			view.Game, err = participantReadGame(txCtx, querier, query.TournamentID, assignment)
+			if err != nil {
+				return err
+			}
+		}
 		view.Opponent, err = participantReadOpponent(txCtx, querier, query, assignment)
 		return err
 	})
@@ -251,8 +258,105 @@ func (r *TournamentSnapshotPostgres) loadOperatorSnapshot(
 	if view.Pause, err = operatorTournamentReadPause(ctx, querier, tournamentID); err != nil {
 		return err
 	}
+	if view.Pause != nil {
+		if err := operatorTournamentReadPauseGame(ctx, querier, view.Pause); err != nil {
+			return err
+		}
+	}
 	view.AuditLinks, err = operatorTournamentReadAuditLinks(ctx, querier, tournamentID)
 	return err
+}
+
+//nolint:gocyclo // Snapshot hydration validates every nullable pause-clock combination fail-closed.
+func participantReadGame(
+	ctx context.Context,
+	querier *sqlc.Queries,
+	tournamentID uuid.UUID,
+	assignment *usecase.ParticipantAssignmentView,
+) (*usecase.ParticipantGameView, error) {
+	if assignment == nil || assignment.GameID == uuid.Nil || assignment.SeriesID == uuid.Nil {
+		return nil, tournamentSnapshotInvalidError("game assignment")
+	}
+	row, err := querier.GetParticipantReadGame(ctx, sqlc.GetParticipantReadGameParams{
+		TournamentID: tournamentID,
+		SeriesID:     assignment.SeriesID,
+		GameID:       assignment.GameID,
+	})
+	if err != nil {
+		return nil, tournamentSnapshotLookupError("ParticipantSnapshot - game", err)
+	}
+	if row.GameID != assignment.GameID || row.Revision < 1 || !domain.GameState(row.State).IsValid() ||
+		strings.TrimSpace(row.State) != row.State {
+		return nil, tournamentSnapshotInvalidError("game")
+	}
+	game := &usecase.ParticipantGameView{
+		GameID:   row.GameID,
+		State:    row.State,
+		Revision: row.Revision,
+	}
+	if row.PauseID == uuid.Nil {
+		if row.PauseState != "" || row.FrozenAt.Valid || row.FrozenRemainingMs != nil ||
+			row.ResumedAt.Valid || row.ResumedDeadline.Valid || row.ReconnectDeadline.Valid {
+			return nil, tournamentSnapshotInvalidError("game pause")
+		}
+		return game, nil
+	}
+	if row.PauseState != "active" && row.PauseState != "resumed" && row.PauseState != "cancelled" ||
+		strings.TrimSpace(row.PauseState) != row.PauseState || !row.FrozenAt.Valid ||
+		!validServerTime(row.FrozenAt.Time.UTC()) || row.FrozenRemainingMs == nil || *row.FrozenRemainingMs <= 0 {
+		return nil, tournamentSnapshotInvalidError("game pause")
+	}
+	resumedAt := utcNullableTime(row.ResumedAt)
+	resumedDeadline := utcNullableTime(row.ResumedDeadline)
+	if (resumedAt == nil) != (resumedDeadline == nil) ||
+		(resumedAt != nil && (!validServerTime(*resumedAt) || !validServerTime(*resumedDeadline))) {
+		return nil, tournamentSnapshotInvalidError("game pause resume")
+	}
+	reconnectDeadline := utcNullableTime(row.ReconnectDeadline)
+	if reconnectDeadline != nil && !validServerTime(*reconnectDeadline) {
+		return nil, tournamentSnapshotInvalidError("reconnect deadline")
+	}
+	game.Pause = &usecase.ParticipantGamePauseView{
+		PauseID:           row.PauseID,
+		State:             row.PauseState,
+		FrozenAt:          row.FrozenAt.Time.UTC(),
+		FrozenRemainingMS: *row.FrozenRemainingMs,
+		ResumedAt:         resumedAt,
+		ResumedDeadline:   resumedDeadline,
+		ReconnectDeadline: reconnectDeadline,
+	}
+	return game, nil
+}
+
+func operatorTournamentReadPauseGame(
+	ctx context.Context,
+	querier *sqlc.Queries,
+	pause *usecase.OperatorPauseView,
+) error {
+	if pause == nil || pause.PauseID == uuid.Nil {
+		return tournamentSnapshotInvalidError("operator pause")
+	}
+	row, err := querier.GetOperatorTournamentReadPauseGame(ctx, pause.PauseID)
+	if err != nil {
+		return tournamentSnapshotLookupError("OperatorSnapshot - pause game", err)
+	}
+	if row.GameID.Valid {
+		if row.GameID.UUID == uuid.Nil || row.FrozenRemainingMs == nil || *row.FrozenRemainingMs <= 0 {
+			return tournamentSnapshotInvalidError("operator pause game clock")
+		}
+		gameID := row.GameID.UUID
+		remaining := *row.FrozenRemainingMs
+		pause.GameID = &gameID
+		pause.FrozenRemainingMS = &remaining
+	} else if row.FrozenRemainingMs != nil || row.ReconnectDeadline.Valid {
+		return tournamentSnapshotInvalidError("operator pause fields")
+	}
+	deadline := utcNullableTime(row.ReconnectDeadline)
+	if deadline != nil && !validServerTime(*deadline) {
+		return tournamentSnapshotInvalidError("operator reconnect deadline")
+	}
+	pause.ReconnectDeadline = deadline
+	return nil
 }
 
 func tournamentReadCursor(

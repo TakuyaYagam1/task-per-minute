@@ -1493,6 +1493,24 @@ type OutboxGoldenRuntimeSource struct {
 	CreatedAt            pgtype.Timestamptz
 }
 
+type OutboxReconnectSource struct {
+	OutboxEventID             uuid.UUID
+	TournamentID              uuid.UUID
+	RosterID                  uuid.UUID
+	WaveID                    uuid.UUID
+	SeriesID                  uuid.UUID
+	GameAttemptID             uuid.UUID
+	GameRevision              int64
+	CommandID                 uuid.UUID
+	MutationKind              string
+	ExpectedAuthorityRevision int64
+	ResultAuthorityRevision   int64
+	ProjectionRevisionID      uuid.UUID
+	ProjectionRevision        int64
+	ProjectionOrdinal         int16
+	CreatedAt                 pgtype.Timestamptz
+}
+
 type OutboxResultSource struct {
 	OutboxEventID        uuid.UUID
 	TournamentID         uuid.UUID

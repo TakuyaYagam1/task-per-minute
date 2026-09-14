@@ -71,6 +71,7 @@ type ParticipantSnapshotView struct {
 	Cursor        SnapshotCursor
 	Assignment    *ParticipantAssignmentView
 	Opponent      *ParticipantOpponentView
+	Game          *ParticipantGameView
 }
 
 type ParticipantAssignmentView struct {
@@ -98,6 +99,23 @@ type ParticipantOpponentView struct {
 	Ready       bool
 	SeriesState string
 	Score       int
+}
+
+type ParticipantGameView struct {
+	GameID   uuid.UUID
+	State    string
+	Revision int64
+	Pause    *ParticipantGamePauseView
+}
+
+type ParticipantGamePauseView struct {
+	PauseID           uuid.UUID
+	State             string
+	FrozenAt          time.Time
+	FrozenRemainingMS int64
+	ResumedAt         *time.Time
+	ResumedDeadline   *time.Time
+	ReconnectDeadline *time.Time
 }
 
 type PublicSnapshotView struct {
@@ -218,11 +236,14 @@ type OperatorReplayView struct {
 }
 
 type OperatorPauseView struct {
-	PauseID       uuid.UUID
-	State         string
-	Reason        string
-	PausedAt      time.Time
-	GraphRevision int64
+	PauseID           uuid.UUID
+	State             string
+	Reason            string
+	PausedAt          time.Time
+	GraphRevision     int64
+	GameID            *uuid.UUID
+	FrozenRemainingMS *int64
+	ReconnectDeadline *time.Time
 }
 
 type OperatorAuditLinkView struct {

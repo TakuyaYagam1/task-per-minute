@@ -32,6 +32,7 @@ func TestTournamentOperatorSnapshot(t *testing.T) {
 	if err := json.Unmarshal(encoded, &object); err != nil {
 		t.Fatal(err)
 	}
+	requireJSONKeys(t, object["pause"], "pause_id", "state", "reason", "paused_at", "graph_revision", "game_id", "frozen_remaining_ms", "reconnect_deadline")
 	var golden []json.RawMessage
 	if err := json.Unmarshal(object["golden"], &golden); err != nil {
 		t.Fatal(err)
@@ -72,6 +73,24 @@ func TestTournamentOperatorSnapshot(t *testing.T) {
 			t.Fatal(err)
 		}
 		requireJSONKeys(t, body, "tournament_id", "revision", "last_sequence", "waves", "presence", "replays", "audit_links", "golden")
+	})
+	t.Run("game pause clock fields stay consistent", func(t *testing.T) {
+		for _, test := range []struct {
+			name   string
+			mutate func(*OperatorPauseInput)
+		}{
+			{name: "missing game", mutate: func(pause *OperatorPauseInput) { pause.GameID = nil }},
+			{name: "missing frozen duration", mutate: func(pause *OperatorPauseInput) { pause.FrozenRemainingMS = nil }},
+			{name: "zero frozen duration", mutate: func(pause *OperatorPauseInput) { *pause.FrozenRemainingMS = 0 }},
+		} {
+			t.Run(test.name, func(t *testing.T) {
+				candidate := testOperatorSnapshotInput(tournamentID)
+				test.mutate(candidate.Pause)
+				if _, err := NewOperatorSnapshot(access, candidate); err == nil {
+					t.Fatalf("NewOperatorSnapshot() accepted %s", test.name)
+				}
+			})
+		}
 	})
 	t.Run("Golden runtime fence is consecutive on the wire", func(t *testing.T) {
 		firstInput := testOperatorSnapshotInput(tournamentID)
@@ -152,9 +171,15 @@ func testOperatorSnapshotInput(tournamentID uuid.UUID) OperatorSnapshotInput {
 				{ParticipantID: testUUID("00000000-0000-4000-8000-000000000063"), Ready: true, ReadinessRevision: 1},
 			},
 		}},
-		Presence:   []OperatorPresenceInput{{TournamentID: tournamentID, ParticipantID: testUUID("00000000-0000-4000-8000-000000000061"), SeriesID: testUUID("00000000-0000-4000-8000-000000000022"), State: "connected", PresenceEpoch: 2, UpdatedAt: time.Date(2026, 9, 2, 8, 30, 0, 0, time.UTC)}},
-		Replays:    []OperatorReplayInput{{TournamentID: tournamentID, SeriesID: testUUID("00000000-0000-4000-8000-000000000022"), SlotID: testUUID("00000000-0000-4000-8000-000000000063"), FailedGameID: testUUID("00000000-0000-4000-8000-000000000064"), ReplacementGameID: testUUID("00000000-0000-4000-8000-000000000065"), ReplacementWaveID: testUUID("00000000-0000-4000-8000-000000000066"), State: "planned", Revision: 2}},
-		Pause:      &OperatorPauseInput{TournamentID: tournamentID, PauseID: testUUID("00000000-0000-4000-8000-000000000067"), State: "active", Reason: "network maintenance", PausedAt: time.Date(2026, 9, 2, 8, 25, 0, 0, time.UTC), GraphRevision: 5},
+		Presence: []OperatorPresenceInput{{TournamentID: tournamentID, ParticipantID: testUUID("00000000-0000-4000-8000-000000000061"), SeriesID: testUUID("00000000-0000-4000-8000-000000000022"), State: "connected", PresenceEpoch: 2, UpdatedAt: time.Date(2026, 9, 2, 8, 30, 0, 0, time.UTC)}},
+		Replays:  []OperatorReplayInput{{TournamentID: tournamentID, SeriesID: testUUID("00000000-0000-4000-8000-000000000022"), SlotID: testUUID("00000000-0000-4000-8000-000000000063"), FailedGameID: testUUID("00000000-0000-4000-8000-000000000064"), ReplacementGameID: testUUID("00000000-0000-4000-8000-000000000065"), ReplacementWaveID: testUUID("00000000-0000-4000-8000-000000000066"), State: "planned", Revision: 2}},
+		Pause: &OperatorPauseInput{
+			TournamentID: tournamentID, PauseID: testUUID("00000000-0000-4000-8000-000000000067"), State: "active",
+			Reason: "network maintenance", PausedAt: time.Date(2026, 9, 2, 8, 25, 0, 0, time.UTC), GraphRevision: 5,
+			GameID:            func() *uuid.UUID { value := testUUID("00000000-0000-4000-8000-000000000076"); return &value }(),
+			FrozenRemainingMS: func() *int64 { value := int64(120000); return &value }(),
+			ReconnectDeadline: func() *time.Time { value := time.Date(2026, 9, 2, 8, 27, 0, 0, time.UTC); return &value }(),
+		},
 		AuditLinks: []OperatorAuditLinkInput{{TournamentID: tournamentID, AuditEventID: testUUID("00000000-0000-4000-8000-000000000068"), EntityKind: "series", EntityID: testUUID("00000000-0000-4000-8000-000000000022"), OfficialResultRevisionID: testUUID("00000000-0000-4000-8000-000000000069")}},
 		Golden: []OperatorGoldenGroupInput{{
 			GroupID:         testUUID("00000000-0000-4000-8000-000000000070"),

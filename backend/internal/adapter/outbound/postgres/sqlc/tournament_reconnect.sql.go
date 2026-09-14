@@ -231,6 +231,395 @@ func (q *Queries) CloseTournamentReconnectIntervalCAS(ctx context.Context, arg C
 	return i, err
 }
 
+const createTournamentReconnectOutboxEvent = `-- name: CreateTournamentReconnectOutboxEvent :one
+WITH locked_idempotency AS MATERIALIZED (
+    SELECT pg_advisory_xact_lock(
+        hashtextextended($7::UUID::TEXT, 0)
+    )
+),
+existing AS MATERIALIZED (
+    SELECT outbox_event.id,
+        outbox_event.tournament_id,
+        outbox_event.roster_id,
+        outbox_event.projection_revision_id,
+        outbox_event.projection_revision,
+        outbox_event.sequence,
+        outbox_event.projection_ordinal,
+        outbox_event.terminal,
+        outbox_event.idempotency_key,
+        outbox_event.audience,
+        outbox_event.principal_id,
+        outbox_event.topic,
+        outbox_event.payload,
+        outbox_event.created_at,
+        outbox_event.available_at,
+        outbox_event.claimed_by,
+        outbox_event.claim_token,
+        outbox_event.claimed_until,
+        outbox_event.attempt_count,
+        outbox_event.last_error,
+        outbox_event.published_at
+    FROM locked_idempotency
+    CROSS JOIN outbox_events AS outbox_event
+    WHERE outbox_event.idempotency_key = $7::UUID
+),
+allocated_sequence AS (
+    INSERT INTO tournament_outbox_cursors (
+        tournament_id,
+        next_sequence,
+        updated_at
+    )
+    SELECT tournament.id,
+        2,
+        $8
+    FROM tournaments AS tournament
+    WHERE tournament.id = $1
+        AND NOT EXISTS (SELECT 1 FROM existing)
+    ON CONFLICT (tournament_id) DO UPDATE
+    SET next_sequence = tournament_outbox_cursors.next_sequence + 1,
+        updated_at = EXCLUDED.updated_at
+    RETURNING next_sequence - 1 AS sequence
+),
+allocated_ordinal AS (
+    INSERT INTO projection_outbox_cursors (
+        projection_revision_id,
+        tournament_id,
+        roster_id,
+        next_ordinal,
+        updated_at
+    )
+    SELECT $3::UUID,
+        $1,
+        $2,
+        2,
+        $8
+    FROM allocated_sequence
+    ON CONFLICT (projection_revision_id) DO UPDATE
+    SET next_ordinal = projection_outbox_cursors.next_ordinal + 1,
+        updated_at = EXCLUDED.updated_at
+    WHERE projection_outbox_cursors.tournament_id = EXCLUDED.tournament_id
+        AND projection_outbox_cursors.roster_id = EXCLUDED.roster_id
+        AND projection_outbox_cursors.next_ordinal < 32768
+    RETURNING next_ordinal - 1 AS projection_ordinal
+),
+inserted AS (
+    INSERT INTO outbox_events (
+        id,
+        tournament_id,
+        roster_id,
+        projection_revision_id,
+        projection_revision,
+        sequence,
+        projection_ordinal,
+        idempotency_key,
+        topic,
+        payload,
+        created_at,
+        available_at
+    )
+    SELECT $9,
+        $1,
+        $2,
+        $3::UUID,
+        $4::BIGINT,
+        allocated_sequence.sequence,
+        allocated_ordinal.projection_ordinal::SMALLINT,
+        $7::UUID,
+        $5,
+        $6::JSONB,
+        $8,
+        $8
+    FROM allocated_sequence
+    INNER JOIN allocated_ordinal ON true
+    ON CONFLICT (idempotency_key) DO NOTHING
+    RETURNING id,
+        tournament_id,
+        roster_id,
+        projection_revision_id,
+        projection_revision,
+        sequence,
+        projection_ordinal,
+        terminal,
+        idempotency_key,
+        audience,
+        principal_id,
+        topic,
+        payload,
+        created_at,
+        available_at,
+        claimed_by,
+        claim_token,
+        claimed_until,
+        attempt_count,
+        last_error,
+        published_at
+),
+resolved AS MATERIALIZED (
+    SELECT inserted.id,
+        inserted.tournament_id,
+        inserted.roster_id,
+        inserted.projection_revision_id,
+        inserted.projection_revision,
+        inserted.sequence,
+        inserted.projection_ordinal,
+        inserted.terminal,
+        inserted.idempotency_key,
+        inserted.audience,
+        inserted.principal_id,
+        inserted.topic,
+        inserted.payload,
+        inserted.created_at,
+        inserted.available_at,
+        inserted.claimed_by,
+        inserted.claim_token,
+        inserted.claimed_until,
+        inserted.attempt_count,
+        inserted.last_error,
+        inserted.published_at
+    FROM inserted
+    UNION ALL
+    SELECT existing.id,
+        existing.tournament_id,
+        existing.roster_id,
+        existing.projection_revision_id,
+        existing.projection_revision,
+        existing.sequence,
+        existing.projection_ordinal,
+        existing.terminal,
+        existing.idempotency_key,
+        existing.audience,
+        existing.principal_id,
+        existing.topic,
+        existing.payload,
+        existing.created_at,
+        existing.available_at,
+        existing.claimed_by,
+        existing.claim_token,
+        existing.claimed_until,
+        existing.attempt_count,
+        existing.last_error,
+        existing.published_at
+    FROM existing
+),
+source AS (
+    INSERT INTO outbox_reconnect_sources (
+        outbox_event_id,
+        tournament_id,
+        roster_id,
+        wave_id,
+        series_id,
+        game_attempt_id,
+        game_revision,
+        command_id,
+        mutation_kind,
+        expected_authority_revision,
+        result_authority_revision,
+        projection_revision_id,
+        projection_revision,
+        projection_ordinal,
+        created_at
+    )
+    SELECT resolved.id,
+        resolved.tournament_id,
+        resolved.roster_id,
+        $10,
+        $11,
+        $12,
+        $13::BIGINT,
+        $14,
+        $15,
+        $16::BIGINT,
+        $17::BIGINT,
+        resolved.projection_revision_id,
+        resolved.projection_revision,
+        resolved.projection_ordinal,
+        resolved.created_at
+    FROM resolved
+    ON CONFLICT (outbox_event_id) DO NOTHING
+    RETURNING outbox_event_id,
+        tournament_id,
+        roster_id,
+        wave_id,
+        series_id,
+        game_attempt_id,
+        game_revision,
+        command_id,
+        mutation_kind,
+        expected_authority_revision,
+        result_authority_revision,
+        projection_revision_id,
+        projection_revision,
+        projection_ordinal
+),
+verified_source AS (
+    SELECT source.outbox_event_id,
+        source.projection_ordinal
+    FROM source
+    WHERE source.tournament_id = $1
+        AND source.roster_id = $2
+        AND source.wave_id = $10
+        AND source.series_id = $11
+        AND source.game_attempt_id = $12
+        AND source.game_revision = $13::BIGINT
+        AND source.command_id = $14
+        AND source.mutation_kind = $15
+        AND source.expected_authority_revision = $16::BIGINT
+        AND source.result_authority_revision = $17::BIGINT
+        AND source.projection_revision_id = $3::UUID
+        AND source.projection_revision = $4::BIGINT
+    UNION ALL
+    SELECT outbox_source.outbox_event_id,
+        outbox_source.projection_ordinal
+    FROM outbox_reconnect_sources AS outbox_source
+    WHERE NOT EXISTS (
+            SELECT 1
+            FROM source
+            WHERE source.outbox_event_id = outbox_source.outbox_event_id
+        )
+        AND outbox_source.tournament_id = $1
+        AND outbox_source.roster_id = $2
+        AND outbox_source.wave_id = $10
+        AND outbox_source.series_id = $11
+        AND outbox_source.game_attempt_id = $12
+        AND outbox_source.game_revision = $13::BIGINT
+        AND outbox_source.command_id = $14
+        AND outbox_source.mutation_kind = $15
+        AND outbox_source.expected_authority_revision = $16::BIGINT
+        AND outbox_source.result_authority_revision = $17::BIGINT
+        AND outbox_source.projection_revision_id = $3::UUID
+        AND outbox_source.projection_revision = $4::BIGINT
+)
+SELECT outbox_event.id,
+    outbox_event.tournament_id,
+    outbox_event.roster_id,
+    outbox_event.projection_revision_id,
+    outbox_event.projection_revision,
+    outbox_event.sequence,
+    outbox_event.projection_ordinal,
+    outbox_event.terminal,
+    outbox_event.idempotency_key,
+    outbox_event.audience,
+    outbox_event.principal_id,
+    outbox_event.topic,
+    outbox_event.payload,
+    outbox_event.created_at,
+    outbox_event.available_at,
+    outbox_event.claimed_by,
+    outbox_event.claim_token,
+    outbox_event.claimed_until,
+    outbox_event.attempt_count,
+    outbox_event.last_error,
+    outbox_event.published_at
+FROM resolved AS outbox_event
+INNER JOIN verified_source
+    ON verified_source.outbox_event_id = outbox_event.id
+    AND verified_source.projection_ordinal = outbox_event.projection_ordinal
+WHERE outbox_event.tournament_id = $1
+    AND outbox_event.roster_id = $2
+    AND outbox_event.projection_revision_id = $3::UUID
+    AND outbox_event.projection_revision = $4::BIGINT
+    AND NOT outbox_event.terminal
+    AND outbox_event.audience = 'all'
+    AND outbox_event.principal_id IS NULL
+    AND outbox_event.topic = $5
+    AND outbox_event.payload = $6::JSONB
+`
+
+type CreateTournamentReconnectOutboxEventParams struct {
+	TournamentID              uuid.UUID
+	RosterID                  uuid.UUID
+	ProjectionRevisionID      uuid.UUID
+	ProjectionRevision        int64
+	Topic                     string
+	Payload                   []byte
+	IdempotencyKey            uuid.UUID
+	CreatedAt                 pgtype.Timestamptz
+	ID                        uuid.UUID
+	WaveID                    uuid.UUID
+	SeriesID                  uuid.UUID
+	GameAttemptID             uuid.UUID
+	GameRevision              int64
+	CommandID                 uuid.UUID
+	MutationKind              string
+	ExpectedAuthorityRevision int64
+	ResultAuthorityRevision   int64
+}
+
+type CreateTournamentReconnectOutboxEventRow struct {
+	ID                   uuid.UUID
+	TournamentID         uuid.UUID
+	RosterID             uuid.UUID
+	ProjectionRevisionID uuid.UUID
+	ProjectionRevision   int64
+	Sequence             int64
+	ProjectionOrdinal    int16
+	Terminal             bool
+	IdempotencyKey       uuid.UUID
+	Audience             string
+	PrincipalID          uuid.NullUUID
+	Topic                string
+	Payload              []byte
+	CreatedAt            pgtype.Timestamptz
+	AvailableAt          pgtype.Timestamptz
+	ClaimedBy            uuid.NullUUID
+	ClaimToken           uuid.NullUUID
+	ClaimedUntil         pgtype.Timestamptz
+	AttemptCount         int32
+	LastError            *string
+	PublishedAt          pgtype.Timestamptz
+}
+
+// A nonterminal reconnect mutation publishes one generic event after its
+// immutable receipt.  The source row is inserted from the resolved event so
+// command replay can verify the exact event and source without allocating a
+// new sequence or projection ordinal.
+func (q *Queries) CreateTournamentReconnectOutboxEvent(ctx context.Context, arg CreateTournamentReconnectOutboxEventParams) (CreateTournamentReconnectOutboxEventRow, error) {
+	row := q.db.QueryRow(ctx, createTournamentReconnectOutboxEvent,
+		arg.TournamentID,
+		arg.RosterID,
+		arg.ProjectionRevisionID,
+		arg.ProjectionRevision,
+		arg.Topic,
+		arg.Payload,
+		arg.IdempotencyKey,
+		arg.CreatedAt,
+		arg.ID,
+		arg.WaveID,
+		arg.SeriesID,
+		arg.GameAttemptID,
+		arg.GameRevision,
+		arg.CommandID,
+		arg.MutationKind,
+		arg.ExpectedAuthorityRevision,
+		arg.ResultAuthorityRevision,
+	)
+	var i CreateTournamentReconnectOutboxEventRow
+	err := row.Scan(
+		&i.ID,
+		&i.TournamentID,
+		&i.RosterID,
+		&i.ProjectionRevisionID,
+		&i.ProjectionRevision,
+		&i.Sequence,
+		&i.ProjectionOrdinal,
+		&i.Terminal,
+		&i.IdempotencyKey,
+		&i.Audience,
+		&i.PrincipalID,
+		&i.Topic,
+		&i.Payload,
+		&i.CreatedAt,
+		&i.AvailableAt,
+		&i.ClaimedBy,
+		&i.ClaimToken,
+		&i.ClaimedUntil,
+		&i.AttemptCount,
+		&i.LastError,
+		&i.PublishedAt,
+	)
+	return i, err
+}
+
 const createTournamentReconnectPauseClock = `-- name: CreateTournamentReconnectPauseClock :one
 INSERT INTO pause_clocks (pause_id, game_attempt_id, original_deadline, frozen_at,
     frozen_remaining_ms, revision, created_at, updated_at)

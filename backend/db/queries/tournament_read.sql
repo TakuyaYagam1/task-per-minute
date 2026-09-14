@@ -62,6 +62,61 @@ ORDER BY receipt.delivered_at DESC,
     receipt.id DESC
 LIMIT 1;
 
+-- Read the current assignment's game together with the latest disconnect
+-- pause clock.  The pause remains visible after resume so clients can
+-- reconcile the frozen and resumed deadlines; an open reconnect interval is
+-- joined independently because a game may have more than one interval over
+-- its lifetime.
+-- name: GetParticipantReadGame :one
+SELECT attempt.id AS game_id,
+    attempt.state,
+    attempt.revision,
+    COALESCE(latest_pause.pause_id, '00000000-0000-0000-0000-000000000000'::UUID) AS pause_id,
+    COALESCE(latest_pause.pause_state, '')::TEXT AS pause_state,
+    latest_pause.frozen_at,
+    latest_pause.frozen_remaining_ms,
+    latest_pause.resumed_at,
+    latest_pause.resumed_deadline,
+    open_reconnect.deadline_at AS reconnect_deadline
+FROM game_attempts AS attempt
+JOIN series
+    ON series.id = attempt.series_id
+    AND series.roster_id = attempt.roster_id
+LEFT JOIN LATERAL (
+    SELECT pause.id AS pause_id,
+        pause.state AS pause_state,
+        clock.frozen_at,
+        clock.frozen_remaining_ms,
+        clock.resumed_at,
+        clock.resumed_deadline
+    FROM pauses AS pause
+    LEFT JOIN pause_clocks AS clock
+        ON clock.pause_id = pause.id
+        AND clock.game_attempt_id = attempt.id
+    WHERE pause.scope_kind = 'game_attempt'
+        AND pause.game_attempt_id = attempt.id
+        AND pause.series_id = attempt.series_id
+        AND pause.roster_id = attempt.roster_id
+        AND pause.reason = 'disconnect'
+    ORDER BY pause.started_at DESC,
+        pause.id DESC
+    LIMIT 1
+) AS latest_pause ON TRUE
+LEFT JOIN LATERAL (
+    SELECT reconnect.deadline_at
+    FROM reconnect_intervals AS reconnect
+    WHERE reconnect.game_attempt_id = attempt.id
+        AND reconnect.series_id = attempt.series_id
+        AND reconnect.roster_id = attempt.roster_id
+        AND reconnect.state = 'open'
+    ORDER BY reconnect.opened_at DESC,
+        reconnect.id DESC
+    LIMIT 1
+) AS open_reconnect ON TRUE
+WHERE series.tournament_id = sqlc.arg(tournament_id)
+    AND attempt.series_id = sqlc.arg(series_id)
+    AND attempt.id = sqlc.arg(game_id);
+
 -- name: GetParticipantReadOpponent :one
 SELECT opponent_player.id AS player_id,
     opponent_player.username AS display_name,
@@ -335,6 +390,29 @@ ORDER BY pause.depth DESC,
     pause.started_at DESC,
     pause.id DESC
 LIMIT 1;
+
+-- Nullable game fields keep operator snapshots backward compatible for
+-- tournament, wave, and series pauses.  The adapter validates that a game
+-- pause always has a frozen clock before exposing the optional values.
+-- name: GetOperatorTournamentReadPauseGame :one
+SELECT pause.game_attempt_id AS game_id,
+    clock.frozen_remaining_ms,
+    open_reconnect.deadline_at AS reconnect_deadline
+FROM pauses AS pause
+LEFT JOIN pause_clocks AS clock
+    ON clock.pause_id = pause.id
+    AND clock.game_attempt_id = pause.game_attempt_id
+LEFT JOIN LATERAL (
+    SELECT reconnect.deadline_at
+    FROM reconnect_intervals AS reconnect
+    WHERE reconnect.pause_id = pause.id
+        AND reconnect.game_attempt_id = pause.game_attempt_id
+        AND reconnect.state = 'open'
+    ORDER BY reconnect.opened_at DESC,
+        reconnect.id DESC
+    LIMIT 1
+) AS open_reconnect ON TRUE
+WHERE pause.id = sqlc.arg(pause_id);
 
 -- name: ListOperatorTournamentReadAuditLinks :many
 SELECT event.id AS audit_event_id,

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http/httptest"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -19,7 +20,7 @@ import (
 	eventdeliverymocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/eventdelivery/mocks"
 )
 
-func TestParticipantLifecycleConnectsAfterInitialSnapshotAndDisconnects(t *testing.T) {
+func TestParticipantLifecycleConnectsBeforeInitialSnapshotAndDisconnects(t *testing.T) {
 	t.Parallel()
 
 	tournamentID := tournamentSourceID(1201)
@@ -35,6 +36,11 @@ func TestParticipantLifecycleConnectsAfterInitialSnapshotAndDisconnects(t *testi
 	participantMessage, err := DecodeTournamentParticipantMessage(participantFrame)
 	require.NoError(t, err)
 	require.NotNil(t, participantMessage.Participant)
+	before := *participantMessage.Participant
+	after := before
+	after.Envelope.ProjectionRevision++
+	after.Envelope.Participant.Revision++
+	connected := new(atomic.Bool)
 
 	repository := participantConnectionRepository(t, tournamentID, playerID, subscriberID, connectionGeneration)
 	repository.EXPECT().Cursor(mock.Anything, tournamentID).Return(int64(0), nil).Once()
@@ -46,24 +52,21 @@ func TestParticipantLifecycleConnectsAfterInitialSnapshotAndDisconnects(t *testi
 	delivery, err := NewRealtimeDelivery(repository, RealtimeDeliveryConfig{InstanceID: instanceID, WorkerID: tournamentSourceID(1206)})
 	require.NoError(t, err)
 	lifecycle := newRecordingParticipantLifecycle()
+	lifecycle.connectHook = func() { connected.Store(true) }
 	server := tournamentWebSocketTestServerWithPlayerReader(
 		t,
 		players,
 		tournamentID,
 		playerID,
 		WithRealtimeDelivery(delivery),
-		WithTournamentParticipantFlow(staticTournamentParticipantFlow{payload: *participantMessage.Participant}),
+		WithTournamentParticipantFlow(statefulTournamentParticipantFlow{
+			before: before, after: after, connected: connected,
+		}),
 		WithTournamentParticipantLifecycleFlow(lifecycle),
 	)
 	httpServer := httptestServer(t, server)
 	connection := dialTournamentParticipant(t, httpServer.URL, tournamentID, token)
 	t.Cleanup(func() { _ = connection.CloseNow() })
-
-	_, data, err := connection.Read(t.Context())
-	require.NoError(t, err)
-	message, err := DecodeTournamentParticipantMessage(data)
-	require.NoError(t, err)
-	require.NotNil(t, message.Participant)
 
 	connect := lifecycle.waitConnect(t)
 	require.Equal(t, usecase.TournamentParticipantConnectionCommand{
@@ -73,12 +76,21 @@ func TestParticipantLifecycleConnectsAfterInitialSnapshotAndDisconnects(t *testi
 		ConnectionGeneration: connectionGeneration,
 	}, connect)
 
+	_, data, err := connection.Read(t.Context())
+	require.NoError(t, err)
+	message, err := DecodeTournamentParticipantMessage(data)
+	require.NoError(t, err)
+	require.NotNil(t, message.Participant)
+	require.True(t, connected.Load())
+	require.Equal(t, after.Envelope.ProjectionRevision, message.Participant.Envelope.ProjectionRevision)
+	require.Equal(t, after.Envelope.Participant.Revision, message.Participant.Envelope.Participant.Revision)
+
 	require.NoError(t, connection.CloseNow())
 	disconnect := lifecycle.waitDisconnect(t)
 	require.Equal(t, connect, disconnect)
 }
 
-func TestParticipantLifecycleDoesNotConnectWhenInitialSnapshotFails(t *testing.T) {
+func TestParticipantLifecycleDisconnectsWhenInitialSnapshotFailsAfterConnect(t *testing.T) {
 	t.Parallel()
 
 	tournamentID := tournamentSourceID(1211)
@@ -112,8 +124,11 @@ func TestParticipantLifecycleDoesNotConnectWhenInitialSnapshotFails(t *testing.T
 	message, err := DecodeTournamentParticipantMessage(data)
 	require.NoError(t, err)
 	require.NotNil(t, message.Rejected)
-	require.Zero(t, lifecycle.connectCount())
-	require.Zero(t, lifecycle.disconnectCount())
+	connect := lifecycle.waitConnect(t)
+	disconnect := lifecycle.waitDisconnect(t)
+	require.Equal(t, connect, disconnect)
+	require.Equal(t, 1, lifecycle.connectCount())
+	require.Equal(t, 1, lifecycle.disconnectCount())
 }
 
 func TestParticipantLifecyclePropagatesDurableConnectionGeneration(t *testing.T) {
@@ -227,12 +242,17 @@ func (flow failingParticipantFlow) OpenTournamentParticipant(context.Context, To
 	return TournamentParticipantPayload{}, flow.err
 }
 
-type staticTournamentParticipantFlow struct {
-	payload TournamentParticipantPayload
+type statefulTournamentParticipantFlow struct {
+	before    TournamentParticipantPayload
+	after     TournamentParticipantPayload
+	connected *atomic.Bool
 }
 
-func (flow staticTournamentParticipantFlow) OpenTournamentParticipant(context.Context, TournamentParticipantConnectionRequest) (TournamentParticipantPayload, error) {
-	return flow.payload, nil
+func (flow statefulTournamentParticipantFlow) OpenTournamentParticipant(context.Context, TournamentParticipantConnectionRequest) (TournamentParticipantPayload, error) {
+	if flow.connected != nil && flow.connected.Load() {
+		return flow.after, nil
+	}
+	return flow.before, nil
 }
 
 type recordingParticipantLifecycle struct {
@@ -241,6 +261,7 @@ type recordingParticipantLifecycle struct {
 	disconnects         []usecase.TournamentParticipantConnectionCommand
 	connectSignal       chan struct{}
 	disconnectSignal    chan struct{}
+	connectHook         func()
 	connectOnce         sync.Once
 	disconnectOnce      sync.Once
 	disconnectErrValue  error
@@ -259,6 +280,9 @@ func (flow *recordingParticipantLifecycle) Connect(_ context.Context, command us
 	flow.mu.Lock()
 	flow.connects = append(flow.connects, command)
 	flow.mu.Unlock()
+	if flow.connectHook != nil {
+		flow.connectHook()
+	}
 	flow.connectOnce.Do(func() { close(flow.connectSignal) })
 	return nil
 }

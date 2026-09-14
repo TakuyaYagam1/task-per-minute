@@ -19,7 +19,18 @@ import (
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
 )
 
-const reconnectReceiptSchemaVersion int16 = 1
+const (
+	reconnectReceiptSchemaVersion = 1
+	reconnectOutboxSchema         = "game-reconnect-changed-v1"
+	reconnectOutboxTopic          = "game.reconnect.changed"
+)
+
+type reconnectOutboxPayload struct {
+	Schema       string    `json:"schema"`
+	GameID       uuid.UUID `json:"game_id"`
+	GameRevision int64     `json:"game_revision"`
+	MutationKind string    `json:"mutation_kind"`
+}
 
 // tournamentReconnectReceiptDocument is deliberately an application-owned
 // envelope.  The database columns provide queryable idempotency metadata while
@@ -204,6 +215,12 @@ func (r *TournamentAdminExecutionPostgres) CommitMutation(
 		if created != meta.CommandID {
 			return domain.ErrInternal
 		}
+		if record.ReconnectAuthority.Current == nil &&
+			(record.Kind == gameusecase.MutationDisconnect || record.Kind == gameusecase.MutationReconnect) {
+			if err := r.persistReconnectLiveOutbox(txCtx, q, record); err != nil {
+				return err
+			}
+		}
 		clone := record
 		committed = &clone
 		changed = true
@@ -216,6 +233,89 @@ func (r *TournamentAdminExecutionPostgres) CommitMutation(
 		return nil, false, domain.ErrInternal
 	}
 	return committed, changed, nil
+}
+
+// persistReconnectLiveOutbox appends the generic notification only after the
+// receipt exists.  It deliberately runs in CommitMutation's transaction: a
+// projection race, source mismatch, or deferred source-guard failure rolls
+// back the graph mutation and receipt together with the event.
+//
+//nolint:gocyclo // One transactional boundary validates and binds the full normalized outbox source.
+func (r *TournamentAdminExecutionPostgres) persistReconnectLiveOutbox(
+	ctx context.Context,
+	q *sqlc.Queries,
+	record gameusecase.ReconnectRecord,
+) error {
+	if record.ReconnectAuthority.Current != nil ||
+		(record.Kind != gameusecase.MutationDisconnect && record.Kind != gameusecase.MutationReconnect) {
+		return domain.ErrValidation
+	}
+	commandID := commandIDOfReconnectRecord(record)
+	scope := record.ReconnectAuthority.Scope
+	if commandID == uuid.Nil || scope.Validate() != nil || record.ReconnectAuthority.Game.ID == uuid.Nil ||
+		record.ReconnectAuthority.Series.ID == uuid.Nil || record.ReconnectAuthority.GameRevision < 1 ||
+		record.ExpectedAuthorityRevision < 1 || record.ReconnectAuthority.Revision < 1 || record.RecordedAt.IsZero() {
+		return domain.ErrValidation
+	}
+	projection, err := q.GetCurrentProjectionRevision(ctx, sqlc.GetCurrentProjectionRevisionParams{
+		TournamentID: scope.TournamentID,
+		RosterID:     scope.RosterID,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("load reconnect outbox projection: %w", domain.ErrConflict)
+	}
+	if err != nil {
+		return fmt.Errorf("load reconnect outbox projection: %w", err)
+	}
+	if projection.ID == uuid.Nil || projection.State != "published" || projection.RevisionNumber < 1 ||
+		projection.RevisionNumber != record.ReconnectAuthority.CurrentProjectionRevision {
+		return fmt.Errorf("reconnect outbox projection changed: %w", domain.ErrConflict)
+	}
+	payload, err := marshalJSON("TournamentAdminExecutionPostgres - CommitMutation - reconnect outbox payload", reconnectOutboxPayload{
+		Schema:       reconnectOutboxSchema,
+		GameID:       record.ReconnectAuthority.Game.ID,
+		GameRevision: record.ReconnectAuthority.GameRevision,
+		MutationKind: string(record.Kind),
+	})
+	if err != nil {
+		return err
+	}
+	eventID := derivedReconnectOutboxID(commandID, "event")
+	idempotencyKey := derivedReconnectOutboxID(commandID, "idempotency")
+	row, err := q.CreateTournamentReconnectOutboxEvent(ctx, sqlc.CreateTournamentReconnectOutboxEventParams{
+		ID:                        eventID,
+		TournamentID:              scope.TournamentID,
+		RosterID:                  scope.RosterID,
+		WaveID:                    scope.WaveID,
+		SeriesID:                  record.ReconnectAuthority.Series.ID,
+		GameAttemptID:             record.ReconnectAuthority.Game.ID,
+		GameRevision:              record.ReconnectAuthority.GameRevision,
+		CommandID:                 commandID,
+		MutationKind:              string(record.Kind),
+		ExpectedAuthorityRevision: record.ExpectedAuthorityRevision,
+		ResultAuthorityRevision:   record.ReconnectAuthority.Revision,
+		ProjectionRevisionID:      projection.ID,
+		ProjectionRevision:        projection.RevisionNumber,
+		IdempotencyKey:            idempotencyKey,
+		Topic:                     reconnectOutboxTopic,
+		Payload:                   payload,
+		CreatedAt:                 tstz(record.RecordedAt),
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.ErrInternal
+	}
+	if err != nil {
+		return mapRepositoryWriteError("save reconnect outbox event", err)
+	}
+	if row.ID != eventID || row.TournamentID != scope.TournamentID || row.RosterID != scope.RosterID ||
+		row.ProjectionRevisionID != projection.ID || row.ProjectionRevision != projection.RevisionNumber ||
+		row.IdempotencyKey != idempotencyKey || row.Terminal || row.Audience != "all" || row.PrincipalID.Valid ||
+		row.Topic != reconnectOutboxTopic || !row.CreatedAt.Valid ||
+		!row.CreatedAt.Time.UTC().Equal(record.RecordedAt.UTC().Truncate(time.Microsecond)) ||
+		len(row.Payload) == 0 {
+		return domain.ErrInternal
+	}
+	return nil
 }
 
 func (r *TournamentAdminExecutionPostgres) findTournamentReconnectReceipt(
@@ -1839,4 +1939,8 @@ func reconnectSettlementArtifactKinds(record gameusecase.ReconnectRecord) []doma
 
 func derivedReconnectResultID(commandID uuid.UUID, label string) uuid.UUID {
 	return uuid.NewSHA1(commandID, []byte("reconnect-result:"+label))
+}
+
+func derivedReconnectOutboxID(commandID uuid.UUID, label string) uuid.UUID {
+	return uuid.NewSHA1(commandID, []byte("reconnect-outbox:"+label))
 }

@@ -76,6 +76,14 @@ type realtimeDeliverySession struct {
 	lastSequence atomic.Int64
 	deliveryMu   sync.Mutex
 	writeMu      sync.Mutex
+
+	// initializationDone gates a newly accepted socket until its initial
+	// role-scoped snapshot has been written. The session is registered before
+	// that write so the durable subscriber fence is already authoritative, but
+	// live delivery must wait for the snapshot-first boundary.
+	initializationDone    chan struct{}
+	initializationOnce    sync.Once
+	initializationAborted atomic.Bool
 }
 
 func NewRealtimeDelivery(
@@ -253,7 +261,6 @@ func waitRealtimeDeliveryPoll(ctx context.Context, interval time.Duration) bool 
 	}
 }
 
-//nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func (delivery *RealtimeDelivery) openSession(
 	ctx context.Context,
 	tournamentID uuid.UUID,
@@ -264,6 +271,50 @@ func (delivery *RealtimeDelivery) openSession(
 	connection realtimeSocket,
 	scope tournamentWriteScope,
 	render realtimeEventRenderer,
+) (*realtimeDeliverySession, error) {
+	return delivery.openSessionWithInitialization(
+		ctx, tournamentID, audience, principalID, afterSequence, resumeID,
+		connection, scope, render, false,
+	)
+}
+
+// openSessionForConnection opens and registers a session before the initial
+// snapshot is available, while preventing the delivery worker from writing a
+// live event ahead of that snapshot.
+func (delivery *RealtimeDelivery) openSessionForConnection(
+	ctx context.Context,
+	tournamentID uuid.UUID,
+	audience eventdelivery.Audience,
+	principalID uuid.UUID,
+	afterSequence int64,
+	resumeID uuid.UUID,
+	connection realtimeSocket,
+	scope tournamentWriteScope,
+	render realtimeEventRenderer,
+) (*realtimeDeliverySession, error) {
+	return delivery.openSessionWithInitialization(
+		ctx, tournamentID, audience, principalID, afterSequence, resumeID,
+		connection, scope, render, true,
+	)
+}
+
+// openSessionWithInitialization is the single durable subscriber opening
+// path. The initialization gate is intentionally process-local; durable
+// fencing is still established by OpenSubscription before the session enters
+// the local registry.
+//
+//nolint:gocyclo // One subscriber-open boundary keeps durable fencing and initialization ordering explicit.
+func (delivery *RealtimeDelivery) openSessionWithInitialization(
+	ctx context.Context,
+	tournamentID uuid.UUID,
+	audience eventdelivery.Audience,
+	principalID uuid.UUID,
+	afterSequence int64,
+	resumeID uuid.UUID,
+	connection realtimeSocket,
+	scope tournamentWriteScope,
+	render realtimeEventRenderer,
+	initializing bool,
 ) (*realtimeDeliverySession, error) {
 	if ctx == nil || delivery == nil || delivery.repository == nil || connection == nil || render == nil ||
 		tournamentID == uuid.Nil || afterSequence < 0 || scope.validate() != nil {
@@ -309,12 +360,16 @@ func (delivery *RealtimeDelivery) openSession(
 		pendingTerminal: pendingTerminal,
 		terminalState:   subscription.TerminalState,
 	}
+	if initializing {
+		session.initializationDone = make(chan struct{})
+	}
 	session.lastSequence.Store(subscriber.AfterSequence)
 	delivery.mu.Lock()
 	previous := delivery.sessions[subscriber.ID]
 	delivery.sessions[subscriber.ID] = session
 	delivery.mu.Unlock()
 	if previous != nil && previous != session {
+		previous.finishInitialization(true)
 		_ = previous.connection.CloseNow()
 	}
 	return session, nil
@@ -464,6 +519,7 @@ func (delivery *RealtimeDelivery) deliverPendingTerminal(
 	return delivery.deliverSessionEvent(ctx, session, terminal, true, true)
 }
 
+//nolint:gocyclo // Claim, render, write, retry, and acknowledgement form one ordered delivery boundary.
 func (delivery *RealtimeDelivery) deliverSessionEvent(
 	ctx context.Context,
 	session *realtimeDeliverySession,
@@ -471,6 +527,12 @@ func (delivery *RealtimeDelivery) deliverSessionEvent(
 	allowTerminalAtCursor bool,
 	initialTerminal bool,
 ) error {
+	if ctx == nil || session == nil {
+		return ErrRealtimeDeliverySession
+	}
+	if err := session.waitForInitialization(ctx); err != nil {
+		return err
+	}
 	session.deliveryMu.Lock()
 	defer session.deliveryMu.Unlock()
 	if (event.Sequence <= session.lastSequence.Load() && (!allowTerminalAtCursor || !event.Terminal)) ||
@@ -755,6 +817,36 @@ func (session *realtimeDeliverySession) connectionFence() (uuid.UUID, int64, boo
 		return uuid.Nil, 0, false
 	}
 	return session.subscriber.ConnectionID, session.subscriber.ConnectionGeneration, true
+}
+
+func (session *realtimeDeliverySession) finishInitialization(aborted bool) {
+	if session == nil || session.initializationDone == nil {
+		return
+	}
+	if aborted {
+		session.initializationAborted.Store(true)
+	}
+	session.initializationOnce.Do(func() {
+		close(session.initializationDone)
+	})
+}
+
+func (session *realtimeDeliverySession) waitForInitialization(ctx context.Context) error {
+	if session == nil {
+		return ErrRealtimeDeliverySession
+	}
+	if session.initializationDone == nil {
+		return nil
+	}
+	select {
+	case <-session.initializationDone:
+		if session.initializationAborted.Load() {
+			return ErrRealtimeDeliverySession
+		}
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (session *realtimeDeliverySession) write(ctx context.Context, data []byte) error {

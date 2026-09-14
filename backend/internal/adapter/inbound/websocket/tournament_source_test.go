@@ -29,6 +29,15 @@ func TestTournamentProductionSnapshotSourceUsesCompleteRoleReaders(t *testing.T)
 		TournamentID: tournamentID,
 		PlayerID:     playerID,
 		Cursor:       tournamentSourceCursor(),
+		Game: &tournamentsnapshot.ParticipantGameView{
+			GameID: tournamentSourceID(12), State: "paused", Revision: 4,
+			Pause: &tournamentsnapshot.ParticipantGamePauseView{
+				PauseID: tournamentSourceID(13), State: "active", FrozenAt: tournamentSourceTime(), FrozenRemainingMS: 60000,
+				ResumedAt:         func() *time.Time { value := tournamentSourceTime().Add(time.Second); return &value }(),
+				ResumedDeadline:   func() *time.Time { value := tournamentSourceTime().Add(time.Minute); return &value }(),
+				ReconnectDeadline: func() *time.Time { value := tournamentSourceTime().Add(30 * time.Second); return &value }(),
+			},
+		},
 		Assignment: &tournamentsnapshot.ParticipantAssignmentView{
 			AssignmentID: tournamentSourceID(4),
 			AttemptID:    tournamentSourceID(5),
@@ -72,6 +81,16 @@ func TestTournamentProductionSnapshotSourceUsesCompleteRoleReaders(t *testing.T)
 	require.NoError(t, err)
 	require.NotNil(t, participant.Payload.Assignment)
 	require.NotNil(t, participant.Payload.Opponent)
+	require.NotNil(t, participant.Payload.Game)
+	require.Equal(t, tournamentSourceID(12), participant.Payload.Game.GameID)
+	require.Equal(t, "paused", participant.Payload.Game.State)
+	require.Equal(t, int64(4), participant.Payload.Game.Revision)
+	require.NotNil(t, participant.Payload.Game.Pause)
+	require.Equal(t, tournamentSourceID(13), participant.Payload.Game.Pause.PauseID)
+	require.Equal(t, int64(60000), participant.Payload.Game.Pause.FrozenRemainingMS)
+	require.NotNil(t, participant.Payload.Game.Pause.ResumedAt)
+	require.NotNil(t, participant.Payload.Game.Pause.ResumedDeadline)
+	require.NotNil(t, participant.Payload.Game.Pause.ReconnectDeadline)
 	require.Equal(t, "Web", participant.Payload.Assignment.Task.Title)
 
 	public, err := source.PublicRealtimeRead(context.Background(), tournamentID)
@@ -95,6 +114,11 @@ func TestTournamentProductionSnapshotSourceUsesCompleteRoleReaders(t *testing.T)
 	require.Len(t, operator.Operator.Replays, 1)
 	require.Len(t, operator.Operator.AuditLinks, 1)
 	require.NotNil(t, operator.Operator.Pause)
+	require.NotNil(t, operator.Operator.Pause.GameID)
+	require.Equal(t, tournamentSourceID(40), *operator.Operator.Pause.GameID)
+	require.NotNil(t, operator.Operator.Pause.FrozenRemainingMS)
+	require.Equal(t, int64(60000), *operator.Operator.Pause.FrozenRemainingMS)
+	require.NotNil(t, operator.Operator.Pause.ReconnectDeadline)
 }
 
 func TestTournamentProductionSnapshotSourceRequiresReader(t *testing.T) {
@@ -292,11 +316,14 @@ func tournamentSourceOperatorView(tournamentID uuid.UUID) tournamentsnapshot.Ope
 			Revision:          1,
 		}},
 		Pause: &tournamentsnapshot.OperatorPauseView{
-			PauseID:       tournamentSourceID(37),
-			State:         "paused",
-			Reason:        "operator pause",
-			PausedAt:      tournamentSourceTime(),
-			GraphRevision: 3,
+			PauseID:           tournamentSourceID(37),
+			State:             "paused",
+			Reason:            "operator pause",
+			PausedAt:          tournamentSourceTime(),
+			GraphRevision:     3,
+			GameID:            func() *uuid.UUID { value := tournamentSourceID(40); return &value }(),
+			FrozenRemainingMS: func() *int64 { value := int64(60000); return &value }(),
+			ReconnectDeadline: func() *time.Time { value := tournamentSourceTime().Add(time.Minute); return &value }(),
 		},
 		AuditLinks: []tournamentsnapshot.OperatorAuditLinkView{{
 			AuditEventID:             tournamentSourceID(38),

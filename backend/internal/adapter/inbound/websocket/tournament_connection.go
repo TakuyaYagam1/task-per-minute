@@ -57,6 +57,7 @@ func (server *Server) serveTournamentConnection(
 
 	initialSequence := int64(0)
 	var deliverySession *realtimeDeliverySession
+	initializationReleased := false
 	if server.realtimeDelivery != nil {
 		cursor, cursorErr := server.realtimeDelivery.Cursor(ctx, scope.TournamentID)
 		if cursorErr != nil {
@@ -70,7 +71,7 @@ func (server *Server) serveTournamentConnection(
 			observe(tournamentws.TournamentTransportDelivery, appobservability.TournamentOutcomeFailure, "subscriber_scope", 0)
 			return
 		}
-		deliverySession, deliveryErr = server.realtimeDelivery.openSession(
+		deliverySession, deliveryErr = server.realtimeDelivery.openSessionForConnection(
 			ctx,
 			scope.TournamentID,
 			audience,
@@ -88,12 +89,27 @@ func (server *Server) serveTournamentConnection(
 			observe(tournamentws.TournamentTransportDelivery, appobservability.TournamentOutcomeFailure, "subscriber_open", 0)
 			return
 		}
-		defer server.closeRealtimeDeliverySession(ctx, deliverySession)
+		defer func() {
+			if !initializationReleased {
+				deliverySession.finishInitialization(true)
+			}
+			server.closeRealtimeDeliverySession(ctx, deliverySession)
+		}()
 	}
 	resumeID := uuid.Nil
 	if deliverySession != nil {
 		resumeID = deliverySession.resumeID()
 		initialSequence = deliverySession.lastSequence.Load()
+	}
+	participantCommand, participantLifecycle, participantErr := server.connectParticipantConnection(
+		ctx, scope, principal, deliverySession,
+	)
+	if participantLifecycle {
+		defer server.closeParticipantConnection(ctx, participantCommand)
+	}
+	if participantErr != nil {
+		observe(tournamentws.TournamentTransportDelivery, appobservability.TournamentOutcomeFailure, "participant_connection_open_failed", 0)
+		return
 	}
 	initial, revision, err := server.openTournamentConnection(ctx, scope, principal, initialSequence, nil, resumeID)
 	if err != nil {
@@ -105,15 +121,9 @@ func (server *Server) serveTournamentConnection(
 		observe(tournamentws.TournamentTransportDelivery, appobservability.TournamentOutcomeFailure, "write_failed", revision)
 		return
 	}
-	participantCommand, participantLifecycle, participantErr := server.connectParticipantConnection(
-		ctx, scope, principal, deliverySession,
-	)
-	if participantLifecycle {
-		defer server.closeParticipantConnection(ctx, participantCommand)
-	}
-	if participantErr != nil {
-		observe(tournamentws.TournamentTransportDelivery, appobservability.TournamentOutcomeFailure, "participant_connection_open_failed", revision)
-		return
+	if deliverySession != nil {
+		deliverySession.finishInitialization(false)
+		initializationReleased = true
 	}
 	if server.realtimeDelivery != nil {
 		if server.realtimeDelivery.hasWrittenTerminal(deliverySession) {

@@ -64,12 +64,15 @@ type OperatorReplayInput struct {
 }
 
 type OperatorPauseInput struct {
-	TournamentID  uuid.UUID
-	PauseID       uuid.UUID
-	State         string
-	Reason        string
-	PausedAt      time.Time
-	GraphRevision int64
+	TournamentID      uuid.UUID
+	PauseID           uuid.UUID
+	State             string
+	Reason            string
+	PausedAt          time.Time
+	GraphRevision     int64
+	GameID            *uuid.UUID
+	FrozenRemainingMS *int64
+	ReconnectDeadline *time.Time
 }
 
 type OperatorAuditLinkInput struct {
@@ -148,11 +151,14 @@ type OperatorReplay struct {
 }
 
 type OperatorPause struct {
-	PauseID       uuid.UUID `json:"pause_id"`
-	State         string    `json:"state"`
-	Reason        string    `json:"reason"`
-	PausedAt      time.Time `json:"paused_at"`
-	GraphRevision int64     `json:"graph_revision"`
+	PauseID           uuid.UUID  `json:"pause_id"`
+	State             string     `json:"state"`
+	Reason            string     `json:"reason"`
+	PausedAt          time.Time  `json:"paused_at"`
+	GraphRevision     int64      `json:"graph_revision"`
+	GameID            *uuid.UUID `json:"game_id,omitempty"`
+	FrozenRemainingMS *int64     `json:"frozen_remaining_ms,omitempty"`
+	ReconnectDeadline *time.Time `json:"reconnect_deadline,omitempty"`
 }
 
 type OperatorAuditLink struct {
@@ -233,7 +239,16 @@ func NewOperatorSnapshot(access OperatorSnapshotAccess, input OperatorSnapshotIn
 		if input.Pause.TournamentID != access.TournamentID {
 			return OperatorSnapshot{}, fmt.Errorf("%w: pause crosses tournament", ErrInvalidOperatorSnapshot)
 		}
-		snapshot.Pause = &OperatorPause{PauseID: input.Pause.PauseID, State: input.Pause.State, Reason: input.Pause.Reason, PausedAt: input.Pause.PausedAt, GraphRevision: input.Pause.GraphRevision}
+		snapshot.Pause = &OperatorPause{
+			PauseID:           input.Pause.PauseID,
+			State:             input.Pause.State,
+			Reason:            input.Pause.Reason,
+			PausedAt:          input.Pause.PausedAt,
+			GraphRevision:     input.Pause.GraphRevision,
+			GameID:            cloneUUID(input.Pause.GameID),
+			FrozenRemainingMS: cloneInt64(input.Pause.FrozenRemainingMS),
+			ReconnectDeadline: cloneTime(input.Pause.ReconnectDeadline),
+		}
 	}
 	for index, link := range input.AuditLinks {
 		if link.TournamentID != access.TournamentID {
@@ -304,7 +319,11 @@ func (s OperatorSnapshot) Validate() error {
 		}
 	}
 	if s.Pause != nil {
-		if s.Pause.PauseID == uuid.Nil || !validRealtimeString(s.Pause.State) || !validRealtimeString(s.Pause.Reason) || !isServerUTC(s.Pause.PausedAt) || s.Pause.GraphRevision < 1 {
+		if s.Pause.PauseID == uuid.Nil || !validRealtimeString(s.Pause.State) || !validRealtimeString(s.Pause.Reason) || !isServerUTC(s.Pause.PausedAt) || s.Pause.GraphRevision < 1 ||
+			(s.Pause.GameID == nil) != (s.Pause.FrozenRemainingMS == nil) ||
+			(s.Pause.GameID != nil && *s.Pause.GameID == uuid.Nil) ||
+			(s.Pause.FrozenRemainingMS != nil && *s.Pause.FrozenRemainingMS <= 0) ||
+			(s.Pause.ReconnectDeadline != nil && s.Pause.GameID == nil) || !validOptionalUTC(s.Pause.ReconnectDeadline) {
 			return fmt.Errorf("%w: invalid pause", ErrInvalidOperatorSnapshot)
 		}
 	}
@@ -356,12 +375,23 @@ func (s OperatorSnapshot) clone() OperatorSnapshot {
 	}
 	if s.Pause != nil {
 		pause := *s.Pause
+		pause.GameID = cloneUUID(s.Pause.GameID)
+		pause.FrozenRemainingMS = cloneInt64(s.Pause.FrozenRemainingMS)
+		pause.ReconnectDeadline = cloneTime(s.Pause.ReconnectDeadline)
 		clone.Pause = &pause
 	}
 	return clone
 }
 
 func cloneUUID(value *uuid.UUID) *uuid.UUID {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
+}
+
+func cloneInt64(value *int64) *int64 {
 	if value == nil {
 		return nil
 	}

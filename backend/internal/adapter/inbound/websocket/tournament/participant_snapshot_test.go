@@ -37,6 +37,76 @@ func TestTournamentParticipantSnapshot(t *testing.T) {
 	requireJSONKeys(t, object["assignment"], "assignment_id", "attempt_id", "series_id", "game_id", "wave_id", "task")
 	requireJSONKeys(t, object["opponent"], "display_name", "ready", "series_state", "score")
 
+	t.Run("participant game contains only reconnect-safe state", func(t *testing.T) {
+		frozenAt := time.Date(2026, time.September, 11, 12, 0, 0, 0, time.UTC)
+		resumedAt := frozenAt.Add(5 * time.Second)
+		resumedDeadline := resumedAt.Add(45 * time.Second)
+		reconnectDeadline := frozenAt.Add(30 * time.Second)
+		withGame := input
+		withGame.Game = &ParticipantGameInput{
+			GameID: testUUID("00000000-0000-4000-8000-000000000080"), State: "paused", Revision: 4,
+			Pause: &ParticipantGamePauseInput{
+				PauseID: testUUID("00000000-0000-4000-8000-000000000081"), State: "active",
+				FrozenAt: frozenAt, FrozenRemainingMS: 120000,
+				ResumedAt: &resumedAt, ResumedDeadline: &resumedDeadline, ReconnectDeadline: &reconnectDeadline,
+			},
+		}
+		got, err := NewParticipantSnapshot(ParticipantSnapshotScope{TournamentID: tournamentID, PlayerID: playerID}, withGame)
+		require.NoError(t, err)
+		require.NotNil(t, got.Game)
+		require.NotNil(t, got.Game.Pause)
+		body, err := json.Marshal(got)
+		require.NoError(t, err)
+		requireJSONKeys(t, body, "tournament_id", "player_id", "revision", "last_sequence", "game", "assignment", "opponent")
+		var encodedGame map[string]json.RawMessage
+		require.NoError(t, json.Unmarshal(mustJSONField(t, body, "game"), &encodedGame))
+		requireJSONKeys(t, mustJSONField(t, body, "game"), "game_id", "state", "revision", "pause")
+		requireJSONKeys(t, encodedGame["pause"], "pause_id", "state", "frozen_at", "frozen_remaining_ms", "resumed_at", "resumed_deadline", "reconnect_deadline")
+		requireNoSecretNames(t, body)
+
+		*withGame.Game.Pause.ResumedAt = resumedAt.Add(time.Minute)
+		require.NotEqual(t, *withGame.Game.Pause.ResumedAt, *got.Game.Pause.ResumedAt)
+	})
+
+	t.Run("participant game rejects incomplete reconnect clocks", func(t *testing.T) {
+		frozenAt := time.Date(2026, time.September, 11, 12, 0, 0, 0, time.UTC)
+		valid := func() *ParticipantGameInput {
+			return &ParticipantGameInput{
+				GameID: testUUID("00000000-0000-4000-8000-000000000082"), State: "paused", Revision: 1,
+				Pause: &ParticipantGamePauseInput{
+					PauseID: testUUID("00000000-0000-4000-8000-000000000083"), State: "active",
+					FrozenAt: frozenAt, FrozenRemainingMS: 1,
+				},
+			}
+		}
+		cases := []struct {
+			name   string
+			mutate func(*ParticipantGameInput)
+		}{
+			{name: "missing game identity", mutate: func(game *ParticipantGameInput) { game.GameID = uuid.Nil }},
+			{name: "missing game revision", mutate: func(game *ParticipantGameInput) { game.Revision = 0 }},
+			{name: "zero frozen duration", mutate: func(game *ParticipantGameInput) { game.Pause.FrozenRemainingMS = 0 }},
+			{name: "missing pause identity", mutate: func(game *ParticipantGameInput) { game.Pause.PauseID = uuid.Nil }},
+			{name: "partial resumed clock", mutate: func(game *ParticipantGameInput) {
+				resumed := frozenAt.Add(time.Second)
+				game.Pause.ResumedAt = &resumed
+			}},
+			{name: "reconnect deadline before freeze", mutate: func(game *ParticipantGameInput) {
+				deadline := frozenAt
+				game.Pause.ReconnectDeadline = &deadline
+			}},
+		}
+		for _, test := range cases {
+			t.Run(test.name, func(t *testing.T) {
+				candidate := input
+				candidate.Game = valid()
+				test.mutate(candidate.Game)
+				_, err := NewParticipantSnapshot(ParticipantSnapshotScope{TournamentID: tournamentID, PlayerID: playerID}, candidate)
+				require.Error(t, err)
+			})
+		}
+	})
+
 	t.Run("optional assignment and opponent are omitted", func(t *testing.T) {
 		minimal := input
 		minimal.Assignment = nil
@@ -315,4 +385,13 @@ func testParticipantSnapshotInput(tournamentID, playerID uuid.UUID) ParticipantS
 			Score:        0,
 		},
 	}
+}
+
+func mustJSONField(t *testing.T, encoded []byte, key string) json.RawMessage {
+	t.Helper()
+	var object map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(encoded, &object))
+	value, ok := object[key]
+	require.True(t, ok, "JSON is missing key %q: %s", key, encoded)
+	return value
 }

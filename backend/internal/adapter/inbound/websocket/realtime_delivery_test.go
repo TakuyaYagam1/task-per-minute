@@ -857,6 +857,64 @@ func TestRealtimeDeliveryKeepsOpaqueSubscriberAcrossRestart(t *testing.T) {
 	require.NotEqual(t, requests[0].ConnectionID, requests[1].ConnectionID)
 }
 
+func TestRealtimeDeliveryInitializationBarrierBlocksLiveDelivery(t *testing.T) {
+	t.Parallel()
+
+	tournamentID := tournamentSourceID(997)
+	subscriberID := tournamentSourceID(998)
+	instanceID := tournamentSourceID(999)
+	workerID := tournamentSourceID(1000)
+	claimToken := tournamentSourceID(1001)
+	at := tournamentSourceTime().Add(8 * time.Minute)
+	event := publicRealtimeEvent(tournamentID, at)
+	event.Sequence = 2
+
+	repository := newSubscriptionRepository(t, subscriberID)
+	repository.EXPECT().ClaimDelivery(mock.Anything, mock.Anything).Return(true, nil).Once()
+	repository.EXPECT().AcknowledgeDelivery(mock.Anything, mock.Anything).Return(true, nil).Once()
+	delivery, err := NewRealtimeDelivery(repository, RealtimeDeliveryConfig{
+		InstanceID: instanceID, WorkerID: workerID, LeaseDuration: time.Second,
+		Now: func() time.Time { return at }, NewToken: func() uuid.UUID { return claimToken },
+	})
+	require.NoError(t, err)
+
+	_, snapshotFrame, _ := tournamentWriteTestFrames(t, tournamentID, tournamentSourceID(1002))
+	message, err := DecodeTournamentPublicMessage(snapshotFrame)
+	require.NoError(t, err)
+	require.NotNil(t, message.Public)
+	payload := *message.Public
+	applyPublicDeliveryMetadata(&payload, event.Sequence, &event, uuid.Nil)
+	frame, err := MarshalTournamentPublic(payload)
+	require.NoError(t, err)
+
+	renderStarted := make(chan struct{})
+	session, err := delivery.openSessionForConnection(
+		t.Context(), tournamentID, eventdelivery.AudiencePublic, uuid.Nil, 0, uuid.Nil,
+		&recordingRealtimeSocket{}, tournamentWriteScope{Role: TournamentRolePublic, TournamentID: tournamentID},
+		func(context.Context, eventdelivery.Event) ([]byte, error) {
+			close(renderStarted)
+			return frame, nil
+		},
+	)
+	require.NoError(t, err)
+
+	delivered := make(chan error, 1)
+	go func() { delivered <- delivery.Deliver(t.Context(), event) }()
+	select {
+	case <-renderStarted:
+		t.Fatal("live delivery crossed the initial snapshot barrier")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	session.finishInitialization(false)
+	select {
+	case <-renderStarted:
+	case <-time.After(time.Second):
+		t.Fatal("live delivery did not resume after the initial snapshot barrier")
+	}
+	require.NoError(t, <-delivered)
+}
+
 func TestRealtimeDeliveryRetriesAfterPartialTerminalWriteWithoutAcknowledgement(t *testing.T) {
 	tournamentID := tournamentSourceID(998)
 	subscriberID := tournamentSourceID(999)

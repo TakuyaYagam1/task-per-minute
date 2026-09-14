@@ -20,9 +20,30 @@ type ParticipantSnapshotInput struct {
 	PlayerID     uuid.UUID
 	Revision     int64
 	LastSequence int64
+	Game         *ParticipantGameInput
 	Assignment   *ParticipantAssignmentInput
 	Opponent     *OpponentCompetitionInput
 	Golden       *ParticipantGoldenInput
+}
+
+// ParticipantGameInput is the participant-safe game projection. It contains
+// only the game identity, lifecycle state, and revision; pause details are
+// limited to the reconnect clock needed by that participant.
+type ParticipantGameInput struct {
+	GameID   uuid.UUID
+	State    string
+	Revision int64
+	Pause    *ParticipantGamePauseInput
+}
+
+type ParticipantGamePauseInput struct {
+	PauseID           uuid.UUID
+	State             string
+	FrozenAt          time.Time
+	FrozenRemainingMS int64
+	ResumedAt         *time.Time
+	ResumedDeadline   *time.Time
+	ReconnectDeadline *time.Time
 }
 
 type ParticipantAssignmentInput struct {
@@ -89,9 +110,27 @@ type ParticipantSnapshot struct {
 	PlayerID     uuid.UUID                 `json:"player_id"`
 	Revision     int64                     `json:"revision"`
 	LastSequence int64                     `json:"last_sequence"`
+	Game         *ParticipantGame          `json:"game,omitempty"`
 	Assignment   *ParticipantAssignment    `json:"assignment,omitempty"`
 	Opponent     *OpponentCompetitionState `json:"opponent,omitempty"`
 	Golden       *ParticipantGolden        `json:"golden,omitempty"`
+}
+
+type ParticipantGame struct {
+	GameID   uuid.UUID             `json:"game_id"`
+	State    string                `json:"state"`
+	Revision int64                 `json:"revision"`
+	Pause    *ParticipantGamePause `json:"pause,omitempty"`
+}
+
+type ParticipantGamePause struct {
+	PauseID           uuid.UUID  `json:"pause_id"`
+	State             string     `json:"state"`
+	FrozenAt          time.Time  `json:"frozen_at"`
+	FrozenRemainingMS int64      `json:"frozen_remaining_ms"`
+	ResumedAt         *time.Time `json:"resumed_at,omitempty"`
+	ResumedDeadline   *time.Time `json:"resumed_deadline,omitempty"`
+	ReconnectDeadline *time.Time `json:"reconnect_deadline,omitempty"`
 }
 
 type ParticipantAssignment struct {
@@ -162,6 +201,9 @@ func NewParticipantSnapshot(scope ParticipantSnapshotScope, input ParticipantSna
 		Revision:     input.Revision,
 		LastSequence: input.LastSequence,
 	}
+	if err := setParticipantGame(&snapshot, input.Game); err != nil {
+		return ParticipantSnapshot{}, err
+	}
 	if input.Assignment != nil {
 		assignment, err := participantAssignment(scope, *input.Assignment)
 		if err != nil {
@@ -193,6 +235,9 @@ func (s ParticipantSnapshot) Validate() error {
 	if s.TournamentID == uuid.Nil || s.PlayerID == uuid.Nil || s.Revision < 1 || s.LastSequence < 0 {
 		return fmt.Errorf("%w: invalid identity or cursor", ErrInvalidParticipantSnapshot)
 	}
+	if err := validateParticipantGame(s.Game); err != nil {
+		return err
+	}
 	if s.Assignment != nil {
 		if err := s.Assignment.validate(); err != nil {
 			return err
@@ -214,6 +259,17 @@ func (s ParticipantSnapshot) Validate() error {
 
 func (s ParticipantSnapshot) clone() ParticipantSnapshot {
 	clone := s
+	if s.Game != nil {
+		game := *s.Game
+		if s.Game.Pause != nil {
+			pause := *s.Game.Pause
+			pause.ResumedAt = cloneTime(s.Game.Pause.ResumedAt)
+			pause.ResumedDeadline = cloneTime(s.Game.Pause.ResumedDeadline)
+			pause.ReconnectDeadline = cloneTime(s.Game.Pause.ReconnectDeadline)
+			game.Pause = &pause
+		}
+		clone.Game = &game
+	}
 	if s.Assignment != nil {
 		assignment := *s.Assignment
 		clone.Assignment = &assignment
@@ -235,6 +291,74 @@ func (s ParticipantSnapshot) clone() ParticipantSnapshot {
 		clone.Golden = &golden
 	}
 	return clone
+}
+
+func participantGame(input ParticipantGameInput) (ParticipantGame, error) {
+	game := ParticipantGame{
+		GameID:   input.GameID,
+		State:    input.State,
+		Revision: input.Revision,
+	}
+	if input.Pause != nil {
+		game.Pause = &ParticipantGamePause{
+			PauseID:           input.Pause.PauseID,
+			State:             input.Pause.State,
+			FrozenAt:          input.Pause.FrozenAt,
+			FrozenRemainingMS: input.Pause.FrozenRemainingMS,
+			ResumedAt:         cloneTime(input.Pause.ResumedAt),
+			ResumedDeadline:   cloneTime(input.Pause.ResumedDeadline),
+			ReconnectDeadline: cloneTime(input.Pause.ReconnectDeadline),
+		}
+	}
+	if err := game.validate(); err != nil {
+		return ParticipantGame{}, err
+	}
+	return game, nil
+}
+
+func setParticipantGame(snapshot *ParticipantSnapshot, input *ParticipantGameInput) error {
+	if input == nil {
+		return nil
+	}
+	game, err := participantGame(*input)
+	if err != nil {
+		return err
+	}
+	snapshot.Game = &game
+	return nil
+}
+
+func validateParticipantGame(game *ParticipantGame) error {
+	if game == nil {
+		return nil
+	}
+	return game.validate()
+}
+
+//nolint:gocyclo // The wire boundary validates all clock-field combinations fail-closed.
+func (game ParticipantGame) validate() error {
+	if game.GameID == uuid.Nil || !validRealtimeString(game.State) || game.Revision < 1 {
+		return fmt.Errorf("%w: invalid game state", ErrInvalidParticipantSnapshot)
+	}
+	if game.Pause == nil {
+		return nil
+	}
+	if game.Pause.PauseID == uuid.Nil || !validRealtimeString(game.Pause.State) ||
+		!isServerUTC(game.Pause.FrozenAt) || game.Pause.FrozenRemainingMS <= 0 ||
+		!validOptionalUTC(game.Pause.ResumedAt) || !validOptionalUTC(game.Pause.ResumedDeadline) ||
+		!validOptionalUTC(game.Pause.ReconnectDeadline) {
+		return fmt.Errorf("%w: invalid game pause", ErrInvalidParticipantSnapshot)
+	}
+	if (game.Pause.ResumedAt == nil) != (game.Pause.ResumedDeadline == nil) {
+		return fmt.Errorf("%w: resumed game pause clock is incomplete", ErrInvalidParticipantSnapshot)
+	}
+	if game.Pause.ResumedAt != nil && !game.Pause.ResumedDeadline.After(*game.Pause.ResumedAt) {
+		return fmt.Errorf("%w: resumed game pause deadline is invalid", ErrInvalidParticipantSnapshot)
+	}
+	if game.Pause.ReconnectDeadline != nil && !game.Pause.ReconnectDeadline.After(game.Pause.FrozenAt) {
+		return fmt.Errorf("%w: reconnect deadline is invalid", ErrInvalidParticipantSnapshot)
+	}
+	return nil
 }
 
 func participantGolden(input ParticipantGoldenInput) (ParticipantGolden, error) {

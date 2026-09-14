@@ -119,6 +119,7 @@ func TestParticipantReconnectMigrationHasUniqueGooseID(t *testing.T) {
 
 	require.Equal(t, "000021_participant_reconnect_lifecycle.sql", seen["000021"])
 	require.Equal(t, "000022_participant_connection_authority_recovery.sql", seen["000022"])
+	require.Equal(t, "000023_reconnect_outbox_source.sql", seen["000023"])
 }
 
 func TestParticipantConnectionAuthorityRecoveryMigrationContract(t *testing.T) {

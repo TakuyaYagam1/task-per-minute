@@ -183,6 +183,25 @@ func participantSnapshotInput(view usecase.ParticipantSnapshotView, golden *usec
 		Revision:     view.Cursor.ProjectionRevision,
 		LastSequence: view.Cursor.EventSequence,
 	}
+	if view.Game != nil {
+		game := view.Game
+		input.Game = &tournamentws.ParticipantGameInput{
+			GameID:   game.GameID,
+			State:    game.State,
+			Revision: game.Revision,
+		}
+		if game.Pause != nil {
+			input.Game.Pause = &tournamentws.ParticipantGamePauseInput{
+				PauseID:           game.Pause.PauseID,
+				State:             game.Pause.State,
+				FrozenAt:          game.Pause.FrozenAt,
+				FrozenRemainingMS: game.Pause.FrozenRemainingMS,
+				ResumedAt:         game.Pause.ResumedAt,
+				ResumedDeadline:   game.Pause.ResumedDeadline,
+				ReconnectDeadline: game.Pause.ReconnectDeadline,
+			}
+		}
+	}
 	if golden != nil {
 		input.Golden = participantGoldenInput(*golden)
 	}
@@ -396,12 +415,15 @@ func operatorSnapshotInput(view usecase.OperatorSnapshotView, golden []usecase.G
 	}
 	if view.Pause != nil {
 		input.Pause = &tournamentws.OperatorPauseInput{
-			TournamentID:  view.TournamentID,
-			PauseID:       view.Pause.PauseID,
-			State:         view.Pause.State,
-			Reason:        view.Pause.Reason,
-			PausedAt:      view.Pause.PausedAt,
-			GraphRevision: view.Pause.GraphRevision,
+			TournamentID:      view.TournamentID,
+			PauseID:           view.Pause.PauseID,
+			State:             view.Pause.State,
+			Reason:            view.Pause.Reason,
+			PausedAt:          view.Pause.PausedAt,
+			GraphRevision:     view.Pause.GraphRevision,
+			GameID:            view.Pause.GameID,
+			FrozenRemainingMS: view.Pause.FrozenRemainingMS,
+			ReconnectDeadline: view.Pause.ReconnectDeadline,
 		}
 	}
 	for index, link := range view.AuditLinks {

@@ -342,6 +342,11 @@ type Querier interface {
 	// keys are deferred so the ensuing four-node graph can prove the exact Top4,
 	// bracket, and semifinal score genesis at transaction commit.
 	CreateTournamentProgressionStageProjectionNodeAuthority(ctx context.Context, arg CreateTournamentProgressionStageProjectionNodeAuthorityParams) (uuid.UUID, error)
+	// A nonterminal reconnect mutation publishes one generic event after its
+	// immutable receipt.  The source row is inserted from the resolved event so
+	// command replay can verify the exact event and source without allocating a
+	// new sequence or projection ordinal.
+	CreateTournamentReconnectOutboxEvent(ctx context.Context, arg CreateTournamentReconnectOutboxEventParams) (CreateTournamentReconnectOutboxEventRow, error)
 	// Read the frozen clock belonging to an active game pause.
 	// Reconnect freeze advances the domain clock revision together with the game
 	// authority.  Keep that revision in the durable clock instead of using the
@@ -450,11 +455,21 @@ type Querier interface {
 	GetOperatorResultCommand(ctx context.Context, commandID uuid.UUID) (OperatorResultCommand, error)
 	GetOperatorResultTime(ctx context.Context) (pgtype.Timestamptz, error)
 	GetOperatorTournamentReadPause(ctx context.Context, tournamentID uuid.UUID) (GetOperatorTournamentReadPauseRow, error)
+	// Nullable game fields keep operator snapshots backward compatible for
+	// tournament, wave, and series pauses.  The adapter validates that a game
+	// pause always has a frozen clock before exposing the optional values.
+	GetOperatorTournamentReadPauseGame(ctx context.Context, pauseID uuid.UUID) (GetOperatorTournamentReadPauseGameRow, error)
 	GetParticipantArchiveSource(ctx context.Context, arg GetParticipantArchiveSourceParams) (GetParticipantArchiveSourceRow, error)
 	// Membership is checked without locks before acquiring the result scope prefix.
 	// The locked command authority below revalidates the same identity afterward.
 	GetParticipantCommandRoster(ctx context.Context, arg GetParticipantCommandRosterParams) (uuid.UUID, error)
 	GetParticipantReadAssignment(ctx context.Context, arg GetParticipantReadAssignmentParams) (GetParticipantReadAssignmentRow, error)
+	// Read the current assignment's game together with the latest disconnect
+	// pause clock.  The pause remains visible after resume so clients can
+	// reconcile the frozen and resumed deadlines; an open reconnect interval is
+	// joined independently because a game may have more than one interval over
+	// its lifetime.
+	GetParticipantReadGame(ctx context.Context, arg GetParticipantReadGameParams) (GetParticipantReadGameRow, error)
 	GetParticipantReadIdentity(ctx context.Context, arg GetParticipantReadIdentityParams) (uuid.UUID, error)
 	GetParticipantReadOpponent(ctx context.Context, arg GetParticipantReadOpponentParams) (GetParticipantReadOpponentRow, error)
 	GetParticipantSeriesExecution(ctx context.Context, arg GetParticipantSeriesExecutionParams) ([]GetParticipantSeriesExecutionRow, error)
