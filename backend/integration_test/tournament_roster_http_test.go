@@ -80,6 +80,82 @@ func TestTournamentRosterPersistsThroughProductionHTTP(t *testing.T) {
 	require.Equal(t, putRoster, got)
 }
 
+func TestTournamentRosterRejectsForeignReservationWithoutPartialMutation(t *testing.T) {
+	ctx := context.Background()
+	truncateRoundProofTables(ctx, t)
+	t.Cleanup(func() { truncateRoundProofTables(context.Background(), t) })
+
+	catalog := prepareCreateToChampionContentForRosterSize(ctx, t, createToChampionNormalTaskCount, 4)
+	fixture := newTournamentFlowRESTFixture(t)
+	adminToken := fixture.adminAccessToken(t)
+	source := createTournamentWithRosterSizeThroughREST(
+		t, fixture, adminToken, catalog.revision, "roster-reservation-source", 4,
+	)
+	target := createTournamentWithRosterSizeThroughREST(
+		t, fixture, adminToken, catalog.revision, "roster-reservation-target", 4,
+	)
+	players := joinTournamentFlowPlayers(t, fixture, 5)
+	openRegistrationThroughREST(t, fixture, adminToken, source.Id, source.Revision)
+	openRegistrationThroughREST(t, fixture, adminToken, target.Id, target.Revision)
+
+	sourceRoster := replaceTournamentRosterThroughREST(t, fixture, adminToken, source.Id, players[:4])
+	var reservationID uuid.UUID
+	err := sharedPool.QueryRow(ctx, `
+		INSERT INTO participant_reservations (player_id, tournament_id)
+		VALUES ($1, $2)
+		RETURNING reservation_id`, players[0].id, source.Id).Scan(&reservationID)
+	require.NoError(t, err)
+	require.NotEqual(t, uuid.Nil, reservationID)
+
+	// A tournament may continue editing its own roster while it owns the reservation.
+	sourceRoster = replaceTournamentRosterThroughREST(t, fixture, adminToken, source.Id, players[:4])
+	targetRoster := replaceTournamentRosterThroughREST(t, fixture, adminToken, target.Id, players[1:])
+
+	conflictSnapshot := tournamentAdminSnapshotThroughREST(t, fixture, adminToken, target.Id)
+	conflictInputs := make([]api.RosterParticipantInput, 4)
+	for index, player := range players[:4] {
+		conflictInputs[index] = api.RosterParticipantInput{
+			PlayerId: player.id, Seed: int32(index + 1), Attendance: api.CheckedIn,
+		}
+	}
+	body, err := json.Marshal(api.ReplaceRosterRequest{
+		ExpectedProjectionRevision: conflictSnapshot.NextCursor.ProjectionRevision,
+		Participants:               conflictInputs,
+	})
+	require.NoError(t, err)
+	targetPath := "/api/v1/admin/tournaments/" + target.Id.String() + "/roster"
+	request, response := doTournamentFlowJSON(
+		t, fixture, http.MethodPut, targetPath, string(body), adminSession(adminToken), uuid.New(), "",
+	)
+	require.Equal(t, http.StatusConflict, response.Code, response.Body.String())
+	fixture.validateResponse(t, request, response)
+
+	request, response = doTournamentFlowJSON(
+		t, fixture, http.MethodGet, targetPath, "", adminSession(adminToken), uuid.New(), "",
+	)
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	fixture.validateResponse(t, request, response)
+	require.Equal(t, targetRoster, decodeJSON[api.Roster](t, response))
+
+	sourcePath := "/api/v1/admin/tournaments/" + source.Id.String() + "/roster"
+	request, response = doTournamentFlowJSON(
+		t, fixture, http.MethodGet, sourcePath, "", adminSession(adminToken), uuid.New(), "",
+	)
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	fixture.validateResponse(t, request, response)
+	require.Equal(t, sourceRoster, decodeJSON[api.Roster](t, response))
+
+	var afterReservationID uuid.UUID
+	var afterReservationTournamentID uuid.UUID
+	err = sharedPool.QueryRow(ctx, `
+		SELECT reservation_id, tournament_id
+		FROM participant_reservations
+		WHERE player_id = $1`, players[0].id).Scan(&afterReservationID, &afterReservationTournamentID)
+	require.NoError(t, err)
+	require.Equal(t, reservationID, afterReservationID)
+	require.Equal(t, source.Id, afterReservationTournamentID)
+}
+
 func assertTournamentRoster(
 	t *testing.T,
 	roster api.Roster,

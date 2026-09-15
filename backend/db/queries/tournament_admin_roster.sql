@@ -148,6 +148,12 @@ WHERE roster.id = sqlc.arg(roster_id)
         FROM swiss_rounds AS round
         WHERE round.roster_id = roster.id
     )
+    AND NOT EXISTS (
+        SELECT 1
+        FROM participant_reservations AS reservation
+        WHERE reservation.player_id = player.id
+            AND reservation.tournament_id <> roster.tournament_id
+    )
 RETURNING participants.id,
     participants.roster_id,
     participants.player_id,

@@ -49,7 +49,7 @@ func (u *TournamentLifecycleUseCase) Transition(
 	if err != nil {
 		return nil, false, err
 	}
-	transitionedAt := u.clock.Now()
+	transitionedAt := u.clock.Now().Truncate(time.Microsecond)
 	if !lifecycleValidServerTime(transitionedAt) {
 		return nil, false, domain.ErrValidation
 	}

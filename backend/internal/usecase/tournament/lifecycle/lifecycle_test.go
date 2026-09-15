@@ -62,6 +62,30 @@ func TestLifecycleActiveSlot(t *testing.T) {
 		}
 	})
 
+	t.Run("normalizes transition time to postgres precision", func(t *testing.T) {
+		t.Parallel()
+
+		id := uuid.MustParse("41000000-0000-0000-0000-000000000109")
+		nanosecondTime := time.Date(2026, time.August, 28, 21, 0, 0, 123456789, time.UTC)
+		record := lifecycleLifecycleTournamentRecord(id, domain.TournamentStateDraft, 1, nanosecondTime)
+		repository := newLifecycleRepository(t, 1, 1, record)
+		useCase := lifecycleusecase.NewTournamentLifecycleUseCase(
+			repository,
+			lifecycleNewFixedTournamentClock(t, nanosecondTime, 1),
+		)
+
+		updated, changed, err := useCase.Transition(t.Context(), lifecycleusecase.TournamentLifecycleCommand{
+			TournamentID: id, ExpectedRevision: 1, NextState: domain.TournamentStateRegistration,
+		})
+		if err != nil || !changed {
+			t.Fatalf("Transition() error = %v, changed = %v", err, changed)
+		}
+		wantUpdatedAt := time.Date(2026, time.August, 28, 21, 0, 0, 123456000, time.UTC)
+		if !updated.UpdatedAt.Equal(wantUpdatedAt) {
+			t.Fatalf("Transition() updated_at = %s, want %s", updated.UpdatedAt, wantUpdatedAt)
+		}
+	})
+
 	t.Run("one concurrent owner and release", func(t *testing.T) {
 		t.Parallel()
 

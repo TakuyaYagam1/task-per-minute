@@ -54,10 +54,17 @@ type FullStackRosterParticipantInput = Pick<
 >;
 
 type FullStackRoster = {
+  execution_started: boolean;
   id: string;
   locked: boolean;
   participants: FullStackRosterParticipant[];
   revision: number;
+  tournament_id: string;
+};
+
+type FullStackPreflightReport = {
+  id: string;
+  passed: boolean;
   tournament_id: string;
 };
 
@@ -77,7 +84,7 @@ type FullStackTaskInput = {
   title: string;
   description: string;
   kind?: 'normal' | 'golden';
-  category: 'web' | 'forensics';
+  category: 'web' | 'crypto' | 'forensics' | 'reverse' | 'pwn';
   difficulty: 'easy';
   time_limit: number;
   flag: string;
@@ -265,6 +272,98 @@ const getRosterViaApi = async (
     );
   }
   return roster;
+};
+
+const sortRosterParticipantsBySeed = (
+  participants: FullStackRoster['participants'],
+): FullStackRoster['participants'] => [...participants].sort((first, second) => first.seed - second.seed);
+
+const getOperatorProjectionRevisionViaApi = async (
+  request: APIRequestContext,
+  tournamentID: string,
+): Promise<number> => {
+  const response = await request.get(
+    `${backendURL}/api/v1/admin/tournaments/${tournamentID}/snapshot`,
+    { headers: { Origin: frontendURL } },
+  );
+  expect(response.ok(), `operator snapshot GET failed with ${response.status()}`).toBeTruthy();
+  const snapshot = (await response.json()) as {
+    next_cursor?: { projection_revision?: unknown };
+    tournament?: { id?: unknown };
+  };
+  expect(snapshot.tournament?.id, 'operator snapshot returned the wrong tournament id').toBe(
+    tournamentID,
+  );
+  const projectionRevision = snapshot.next_cursor?.projection_revision;
+  expect(projectionRevision, 'operator snapshot did not return projection_revision').toEqual(
+    expect.any(Number),
+  );
+  if (
+    typeof projectionRevision !== 'number' ||
+    !Number.isSafeInteger(projectionRevision) ||
+    projectionRevision < 1
+  ) {
+    throw new Error(`operator snapshot returned an invalid projection_revision for ${tournamentID}`);
+  }
+  return projectionRevision;
+};
+
+const applyOpenRegistrationViaApi = async (
+  request: APIRequestContext,
+  tournamentID: string,
+  csrfToken: string,
+): Promise<APIResponse> => {
+  const projectionRevision = await getOperatorProjectionRevisionViaApi(request, tournamentID);
+  return request.post(`${backendURL}/api/v1/admin/tournaments/${tournamentID}/actions`, {
+    headers: {
+      'X-CSRF-Token': csrfToken,
+      'Idempotency-Key': randomUUID(),
+      Origin: frontendURL,
+    },
+    data: {
+      expected_projection_revision: projectionRevision,
+      action: 'open_registration',
+      confirmed: true,
+    },
+  });
+};
+
+const runRosterPreflightViaApi = async (
+  request: APIRequestContext,
+  tournamentID: string,
+  csrfToken: string,
+): Promise<APIResponse> => {
+  const projectionRevision = await getOperatorProjectionRevisionViaApi(request, tournamentID);
+  return request.post(`${backendURL}/api/v1/admin/tournaments/${tournamentID}/roster/preflight`, {
+    headers: {
+      'X-CSRF-Token': csrfToken,
+      'Idempotency-Key': randomUUID(),
+      Origin: frontendURL,
+    },
+    data: { expected_projection_revision: projectionRevision },
+  });
+};
+
+const lockRosterViaApi = async (
+  request: APIRequestContext,
+  tournamentID: string,
+  csrfToken: string,
+  preflightRevisionID: string,
+  checkedInPlayerIDs: string[],
+): Promise<APIResponse> => {
+  const projectionRevision = await getOperatorProjectionRevisionViaApi(request, tournamentID);
+  return request.post(`${backendURL}/api/v1/admin/tournaments/${tournamentID}/roster/lock`, {
+    headers: {
+      'X-CSRF-Token': csrfToken,
+      'Idempotency-Key': randomUUID(),
+      Origin: frontendURL,
+    },
+    data: {
+      expected_projection_revision: projectionRevision,
+      preflight_revision_id: preflightRevisionID,
+      checked_in_player_ids: checkedInPlayerIDs,
+    },
+  });
 };
 
 const readRosterResponse = async (
@@ -648,33 +747,49 @@ test.describe('local compose full stack e2e', () => {
       const adminAccessCSRF = (await page.context().cookies()).find(
         (cookie) => cookie.name === 'tpm_admin_access_csrf',
       );
-      const adminAccessCSRFToken = adminAccessCSRF?.value ?? '';
+      let adminAccessCSRFToken = adminAccessCSRF?.value ?? '';
       expect(adminAccessCSRFToken, 'admin login did not issue an access CSRF cookie').toBeTruthy();
 
-      const normalTaskName = uniqueName('roster-normal');
-      const goldenTaskName = uniqueName('roster-golden');
-      await createTaskViaApi(adminRequest, { access_csrf_token: adminAccessCSRFToken }, {
-        title: normalTaskName,
-        description: 'Healthy normal task for the roster flow.',
-        kind: 'normal',
-        category: 'web',
-        difficulty: 'easy',
-        time_limit: 90,
-        flag: `flag{${normalTaskName.replaceAll('-', '_')}}`,
-        hints: ['normal hint one', 'normal hint two', 'normal hint three'],
-        task_url: 'https://example.com/roster-normal',
-      });
-      await createTaskViaApi(adminRequest, { access_csrf_token: adminAccessCSRFToken }, {
-        title: goldenTaskName,
-        description: 'Healthy golden task for the roster flow.',
-        kind: 'golden',
-        category: 'web',
-        difficulty: 'easy',
-        time_limit: 90,
-        flag: `flag{${goldenTaskName.replaceAll('-', '_')}}`,
-        hints: ['golden hint one', 'golden hint two', 'golden hint three'],
-        task_url: 'https://example.com/roster-golden',
-      });
+      const normalTaskGroups: Array<{
+        category: FullStackTaskInput['category'];
+        count: number;
+      }> = [
+        { category: 'web', count: 27 },
+        { category: 'crypto', count: 27 },
+        { category: 'reverse', count: 27 },
+        { category: 'forensics', count: 3 },
+        { category: 'pwn', count: 3 },
+      ];
+      for (const group of normalTaskGroups) {
+        for (let index = 0; index < group.count; index += 1) {
+          const normalTaskName = uniqueName(`roster-${group.category}-${index + 1}`);
+          await createTaskViaApi(adminRequest, { access_csrf_token: adminAccessCSRFToken }, {
+            title: normalTaskName,
+            description: 'Healthy normal task for the roster flow.',
+            kind: 'normal',
+            category: group.category,
+            difficulty: 'easy',
+            time_limit: 90,
+            flag: `flag{${normalTaskName.replaceAll('-', '_')}}`,
+            hints: ['normal hint one', 'normal hint two', 'normal hint three'],
+            task_url: 'https://example.com/roster-normal',
+          });
+        }
+      }
+      for (let index = 0; index < 6; index += 1) {
+        const goldenTaskName = uniqueName(`roster-golden-${index + 1}`);
+        await createTaskViaApi(adminRequest, { access_csrf_token: adminAccessCSRFToken }, {
+          title: goldenTaskName,
+          description: 'Healthy golden task for the roster flow.',
+          kind: 'golden',
+          category: 'web',
+          difficulty: 'easy',
+          time_limit: 90,
+          flag: `flag{${goldenTaskName.replaceAll('-', '_')}}`,
+          hints: ['golden hint one', 'golden hint two', 'golden hint three'],
+          task_url: 'https://example.com/roster-golden',
+        });
+      }
 
       const contentRevision = await getTournamentContentRevision(adminRequest);
       const tournament = await createTournamentViaApi(
@@ -689,7 +804,6 @@ test.describe('local compose full stack e2e', () => {
           expected_revision: 0,
         },
       );
-
       const players: FullStackPlayer[] = [];
       for (const username of playerNames) {
         const context = await browser.newContext({ baseURL: frontendURL });
@@ -783,13 +897,32 @@ test.describe('local compose full stack e2e', () => {
 
       const savedRoster = await getRosterViaApi(adminRequest, tournament.id);
       expect(savedRoster.id).toBe(savedRosterResponse.id);
-      expect(savedRoster.participants.map((item) => item.player_id)).toEqual(
-        players.slice(0, 4).map((player) => player.id),
+      const savedParticipants = sortRosterParticipantsBySeed(savedRoster.participants);
+      expect(savedParticipants).toHaveLength(4);
+      expect(new Set(savedParticipants.map((item) => item.player_id)).size).toBe(4);
+      expect(savedParticipants.map((item) => item.player_id).sort()).toEqual(
+        players.slice(0, 4).map((player) => player.id).sort(),
       );
-      expect(savedRoster.participants.map((item) => item.seed)).toEqual([1, 2, 3, 4]);
+      expect(savedParticipants.map((item) => item.seed)).toEqual([1, 2, 3, 4]);
+      expect(savedParticipants.map((item) => item.attendance)).toEqual([
+        'invited',
+        'invited',
+        'invited',
+        'invited',
+      ]);
+      const savedSeedTwoParticipant = savedParticipants.find((item) => item.seed === 2);
+      expect(savedSeedTwoParticipant).toBeDefined();
+      if (!savedSeedTwoParticipant) {
+        throw new Error('saved roster did not return a participant at seed 2');
+      }
 
       await page.reload({ waitUntil: 'domcontentloaded' });
-      await expect(page.getByRole('button', { name: 'Турниры' })).toBeVisible({ timeout: 15_000 });
+      await loginThroughAdminUI(page);
+      const refreshedAdminAccessCSRF = (await page.context().cookies()).find(
+        (cookie) => cookie.name === 'tpm_admin_access_csrf',
+      );
+      adminAccessCSRFToken = refreshedAdminAccessCSRF?.value ?? '';
+      expect(adminAccessCSRFToken, 'admin relogin did not issue an access CSRF cookie').toBeTruthy();
       await page.getByRole('button', { name: 'Турниры' }).click();
       const reopenedTournamentRow = page.getByRole('row').filter({ hasText: tournamentName });
       const reopenedEditRosterButton = reopenedTournamentRow.getByRole('button', {
@@ -799,9 +932,11 @@ test.describe('local compose full stack e2e', () => {
       await reopenedEditRosterButton.click();
       await expect(rosterRegion).toBeVisible({ timeout: 15_000 });
       await expect(rosterRegion.getByRole('group')).toHaveCount(4);
-      for (const [index, player] of players.slice(0, 4).entries()) {
+      for (const [index, participant] of savedParticipants.entries()) {
         const group = rosterRegion.getByRole('group', { name: `Участник ${index + 1}` });
-        await expect(group.getByRole('combobox', { name: 'Игрок' })).toHaveValue(player.id);
+        await expect(group.getByRole('combobox', { name: 'Игрок' })).toHaveValue(
+          participant.player_id,
+        );
         await expect(group.getByRole('spinbutton', { name: 'Seed / позиция' })).toHaveValue(
           String(index + 1),
         );
@@ -828,13 +963,96 @@ test.describe('local compose full stack e2e', () => {
 
       const replacedRoster = await getRosterViaApi(adminRequest, tournament.id, savedRoster.id);
       expect(replacedRoster.id).toBe(replacedRosterResponse.id);
-      expect(replacedRoster.participants.map((item) => item.player_id)).toEqual([
-        players[0].id,
-        players[4].id,
-        players[2].id,
-        players[3].id,
+      const replacedParticipants = sortRosterParticipantsBySeed(replacedRoster.participants);
+      expect(replacedParticipants).toHaveLength(4);
+      expect(new Set(replacedParticipants.map((item) => item.player_id)).size).toBe(4);
+      expect(replacedParticipants.map((item) => item.player_id)).toEqual(
+        savedParticipants.map((item) =>
+          item.seed === savedSeedTwoParticipant.seed ? players[4].id : item.player_id,
+        ),
+      );
+      expect(replacedParticipants.map((item) => item.seed)).toEqual([1, 2, 3, 4]);
+      expect(replacedParticipants.map((item) => item.attendance)).toEqual([
+        'checked_in',
+        'invited',
+        'invited',
+        'invited',
       ]);
-      expect(replacedRoster.participants[0]?.attendance).toBe('checked_in');
+
+      const openRegistrationResponse = await applyOpenRegistrationViaApi(
+        adminRequest,
+        tournament.id,
+        adminAccessCSRFToken,
+      );
+      expect(openRegistrationResponse.status()).toBe(200);
+      const openedTournament = (await openRegistrationResponse.json()) as AdminTournament;
+      expect(openedTournament.id).toBe(tournament.id);
+      expect(openedTournament.state).toBe('registration');
+
+      const checkedInSourceParticipants: FullStackRosterParticipantInput[] =
+        replacedParticipants.map((participant) => ({
+          player_id: participant.player_id,
+          seed: participant.seed,
+          attendance: 'checked_in',
+        }));
+      const checkedInSourceProjectionRevision = await getOperatorProjectionRevisionViaApi(
+        adminRequest,
+        tournament.id,
+      );
+      const checkedInSourceResponse = await replaceRosterViaApi(
+        adminRequest,
+        tournament.id,
+        adminAccessCSRFToken,
+        checkedInSourceProjectionRevision,
+        checkedInSourceParticipants,
+      );
+      expect(checkedInSourceResponse.status()).toBe(200);
+      const checkedInSourceRoster = await readRosterResponse(
+        checkedInSourceResponse,
+        tournament.id,
+        replacedRoster.id,
+      );
+      expect(checkedInSourceRoster.locked).toBe(false);
+      const checkedInSourceRosterParticipants = sortRosterParticipantsBySeed(
+        checkedInSourceRoster.participants,
+      );
+      expect(checkedInSourceRosterParticipants.map((item) => item.player_id)).toEqual(
+        replacedParticipants.map((item) => item.player_id),
+      );
+      expect(checkedInSourceRosterParticipants.map((item) => item.seed)).toEqual([1, 2, 3, 4]);
+      expect(checkedInSourceRosterParticipants.map((item) => item.attendance)).toEqual([
+        'checked_in',
+        'checked_in',
+        'checked_in',
+        'checked_in',
+      ]);
+
+      const preflightResponse = await runRosterPreflightViaApi(
+        adminRequest,
+        tournament.id,
+        adminAccessCSRFToken,
+      );
+      expect(preflightResponse.status()).toBe(200);
+      const preflightReport = (await preflightResponse.json()) as FullStackPreflightReport;
+      expect(preflightReport.id).toMatch(/^[0-9a-f-]{36}$/i);
+      expect(preflightReport.tournament_id).toBe(tournament.id);
+      expect(preflightReport.passed).toBe(true);
+
+      const lockedSourceResponse = await lockRosterViaApi(
+        adminRequest,
+        tournament.id,
+        adminAccessCSRFToken,
+        preflightReport.id,
+        checkedInSourceRosterParticipants.map((item) => item.player_id),
+      );
+      expect(lockedSourceResponse.status()).toBe(200);
+      const lockedSourceRoster = await readRosterResponse(
+        lockedSourceResponse,
+        tournament.id,
+        checkedInSourceRoster.id,
+      );
+      expect(lockedSourceRoster.locked).toBe(true);
+      expect(lockedSourceRoster.execution_started).toBe(false);
 
       const secondTournament = await createTournamentViaApi(
         adminRequest,
@@ -850,14 +1068,69 @@ test.describe('local compose full stack e2e', () => {
       );
       const secondRoster = await getRosterViaApi(adminRequest, secondTournament.id);
       expect(secondRoster.participants).toHaveLength(0);
+      const firstRosterBeforeConflict = await getRosterViaApi(
+        adminRequest,
+        tournament.id,
+        replacedRoster.id,
+      );
+      const firstParticipantsBeforeConflict = sortRosterParticipantsBySeed(
+        firstRosterBeforeConflict.participants,
+      );
+      const reservedParticipant =
+        firstParticipantsBeforeConflict.find((item) => item.seed === 1) ??
+        firstParticipantsBeforeConflict[0];
+      expect(reservedParticipant).toBeDefined();
+      if (!reservedParticipant) {
+        throw new Error('replaced roster did not return a reserved participant');
+      }
+      expect(players.map((player) => player.id)).toContain(reservedParticipant.player_id);
+      const conflictPlayerIDs = [
+        reservedParticipant.player_id,
+        ...players
+          .map((player) => player.id)
+          .filter((playerID) => playerID !== reservedParticipant.player_id)
+          .slice(0, 3),
+      ];
+      expect(conflictPlayerIDs).toHaveLength(4);
+      expect(new Set(conflictPlayerIDs).size).toBe(4);
+      const secondRosterBeforeConflict = await getRosterViaApi(
+        adminRequest,
+        secondTournament.id,
+        secondRoster.id,
+      );
+      const conflictParticipants: FullStackRosterParticipantInput[] = conflictPlayerIDs.map(
+        (playerID, index) => ({
+          player_id: playerID,
+          seed: index + 1,
+          attendance: 'registered',
+        }),
+      );
+      expect(conflictParticipants.map((item) => item.seed)).toEqual([1, 2, 3, 4]);
+      expect(new Set(conflictParticipants.map((item) => item.player_id)).size).toBe(4);
+      const conflictProjectionRevision = await getOperatorProjectionRevisionViaApi(
+        adminRequest,
+        secondTournament.id,
+      );
       const conflict = await replaceRosterViaApi(
         adminRequest,
         secondTournament.id,
         adminAccessCSRFToken,
-        secondTournament.revision,
-        [{ player_id: players[0].id, seed: 1, attendance: 'registered' }],
+        conflictProjectionRevision,
+        conflictParticipants,
       );
       expect(conflict.status(), 'a player reserved in another roster must return 409').toBe(409);
+      const firstRosterAfterConflict = await getRosterViaApi(
+        adminRequest,
+        tournament.id,
+        firstRosterBeforeConflict.id,
+      );
+      const secondRosterAfterConflict = await getRosterViaApi(
+        adminRequest,
+        secondTournament.id,
+        secondRosterBeforeConflict.id,
+      );
+      expect(firstRosterAfterConflict).toEqual(firstRosterBeforeConflict);
+      expect(secondRosterAfterConflict).toEqual(secondRosterBeforeConflict);
     } finally {
       for (const context of playerContexts) {
         await context.close();

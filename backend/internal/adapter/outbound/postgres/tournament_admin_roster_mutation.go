@@ -53,6 +53,13 @@ func (r *TournamentAdminRosterPostgres) ReplaceRosterParticipants(
 			ExpectedRosterRevision: authority.Roster.Revision,
 		})
 		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return tournamentadmin.RosterView{}, &tournamentadmin.RevisionConflictError{
+					ExpectedRevision: authority.ProjectionRevision,
+					CurrentRevision:  authority.ProjectionRevision,
+					CurrentState:     authority.TournamentState,
+				}
+			}
 			return tournamentadmin.RosterView{}, tournamentAdminRosterMutationError("ReplaceRoster - insert", err)
 		}
 	}
