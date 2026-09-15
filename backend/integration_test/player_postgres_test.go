@@ -5,6 +5,7 @@ package integration_test
 import (
 	"context"
 	"errors"
+	"math"
 	"sync"
 	"testing"
 	"time"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
+	playerusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/player"
 )
 
 func newPlayerRepo(pools ...*pgxpool.Pool) (*postgres.PlayerPostgres, *postgres.TxManager) {
@@ -80,6 +82,15 @@ func TestPlayerRepo_GetByID_NotFound(t *testing.T) {
 	require.ErrorIs(t, err, domain.ErrPlayerNotFound)
 }
 
+func TestPlayerRepo_GetPlayer_NotFound(t *testing.T) {
+	t.Parallel()
+	pool := newParallelTestDB(t)
+	repo, _ := newPlayerRepo(pool)
+
+	_, err := repo.GetPlayer(context.Background(), uuid.New())
+	require.ErrorIs(t, err, domain.ErrPlayerNotFound)
+}
+
 func TestPlayerRepo_GetByUsername(t *testing.T) {
 	t.Parallel()
 	pool := newParallelTestDB(t)
@@ -101,6 +112,33 @@ func TestPlayerRepo_GetByUsername_NotFound(t *testing.T) {
 	repo, _ := newPlayerRepo(pool)
 	_, err := repo.GetByUsername(context.Background(), uniq("ghost"))
 	require.ErrorIs(t, err, domain.ErrPlayerNotFound)
+}
+
+func TestPlayerRepo_UpdateUsername_SuccessNotFoundAndDuplicate(t *testing.T) {
+	t.Parallel()
+	pool := newParallelTestDB(t)
+	repo, _ := newPlayerRepo(pool)
+	ctx := context.Background()
+
+	alice, err := repo.Create(ctx, uniq("alice"))
+	require.NoError(t, err)
+	bob, err := repo.Create(ctx, uniq("bob"))
+	require.NoError(t, err)
+
+	renamed := uniq("renamed")
+	require.NoError(t, repo.UpdateUsername(ctx, alice.ID, renamed))
+	updated, err := repo.GetPlayer(ctx, alice.ID)
+	require.NoError(t, err)
+	require.Equal(t, renamed, updated.Username)
+
+	err = repo.UpdateUsername(ctx, uuid.New(), uniq("missing"))
+	require.ErrorIs(t, err, domain.ErrPlayerNotFound)
+
+	err = repo.UpdateUsername(ctx, bob.ID, renamed)
+	require.ErrorIs(t, err, domain.ErrUsernameTaken)
+	retained, err := repo.GetByID(ctx, bob.ID)
+	require.NoError(t, err)
+	require.Equal(t, bob.Username, retained.Username)
 }
 
 func TestPlayerRepo_UpdateSessionToken_SetThenClear(t *testing.T) {
@@ -182,6 +220,38 @@ func TestPlayerRepo_UpdateSessionToken_NotFound(t *testing.T) {
 	token := uuid.New()
 	expiresAt := time.Now().Add(time.Hour).UTC()
 	_, err := repo.UpdateSessionToken(context.Background(), uuid.New(), &token, &expiresAt)
+	require.ErrorIs(t, err, domain.ErrPlayerNotFound)
+}
+
+func TestPlayerRepo_UpsertStats_SuccessInvalidWinsAndForeignKey(t *testing.T) {
+	t.Parallel()
+	pool := newParallelTestDB(t)
+	repo, _ := newPlayerRepo(pool)
+	ctx := context.Background()
+
+	player, err := repo.Create(ctx, uniq("stats_player"))
+	require.NoError(t, err)
+
+	err = repo.UpsertStats(ctx, player.ID, playerusecase.StatsInput{
+		Wins:               3,
+		AverageSolveTimeMs: 90000,
+	}, time.Now().UTC())
+	require.NoError(t, err)
+	stats, err := repo.GetPlayer(ctx, player.ID)
+	require.NoError(t, err)
+	require.Equal(t, 3, stats.Wins)
+	require.Equal(t, int64(90000), stats.AverageSolveTimeMs)
+	require.True(t, stats.StatsOverridden)
+
+	err = repo.UpsertStats(ctx, player.ID, playerusecase.StatsInput{Wins: -1}, time.Now().UTC())
+	require.ErrorIs(t, err, domain.ErrValidation)
+	err = repo.UpsertStats(ctx, player.ID, playerusecase.StatsInput{Wins: int(math.MaxInt32) + 1}, time.Now().UTC())
+	require.ErrorIs(t, err, domain.ErrValidation)
+
+	err = repo.UpsertStats(ctx, uuid.New(), playerusecase.StatsInput{
+		Wins:               1,
+		AverageSolveTimeMs: 1,
+	}, time.Now().UTC())
 	require.ErrorIs(t, err, domain.ErrPlayerNotFound)
 }
 
@@ -318,6 +388,97 @@ func TestPlayerRepo_TournamentReservationAllowsInitialSessionClaimAndBlocksAdmin
 	retained, err := repo.GetByID(ctx, player.ID)
 	require.NoError(t, err)
 	require.Equal(t, player.Username, retained.Username)
+}
+
+func TestPlayerRepo_SoftDelete_SuccessNotFoundAndDuplicate(t *testing.T) {
+	t.Parallel()
+	pool := newParallelTestDB(t)
+	repo, _ := newPlayerRepo(pool)
+	ctx := context.Background()
+
+	deleted, err := repo.Create(ctx, uniq("soft_delete"))
+	require.NoError(t, err)
+	deletedUsername := uniq("deleted")
+	deletedAt := time.Now().UTC()
+	require.NoError(t, repo.SoftDeletePlayer(ctx, deleted.ID, deletedUsername, deletedAt))
+
+	_, err = repo.GetPlayer(ctx, deleted.ID)
+	require.ErrorIs(t, err, domain.ErrPlayerNotFound)
+	deletedRecord, err := repo.GetPlayerIncludingDeleted(ctx, deleted.ID)
+	require.NoError(t, err)
+	require.Equal(t, deletedUsername, deletedRecord.Username)
+	require.NotNil(t, deletedRecord.DeletedAt)
+
+	err = repo.SoftDeletePlayer(ctx, uuid.New(), uniq("deleted_missing"), time.Now().UTC())
+	require.ErrorIs(t, err, domain.ErrPlayerNotFound)
+
+	collision, err := repo.Create(ctx, uniq("collision"))
+	require.NoError(t, err)
+	target, err := repo.Create(ctx, uniq("target"))
+	require.NoError(t, err)
+	err = repo.SoftDeletePlayer(ctx, target.ID, collision.Username, time.Now().UTC())
+	require.ErrorIs(t, err, domain.ErrUsernameTaken)
+}
+
+func TestPlayerRepo_PlayerAuditRoundTripAndInvalidStoredJSON(t *testing.T) {
+	t.Parallel()
+	pool := newParallelTestDB(t)
+	repo, _ := newPlayerRepo(pool)
+	ctx := context.Background()
+
+	player, err := repo.Create(ctx, uniq("audit_player"))
+	require.NoError(t, err)
+	createdAt := time.Now().UTC().Truncate(time.Microsecond)
+	input := playerusecase.AuditInput{
+		Actor:    playerusecase.Actor{Subject: "admin", JTI: uuid.NewString()},
+		Action:   playerusecase.AuditActionUpdate,
+		PlayerID: player.ID,
+		BeforeState: playerusecase.AuditState{
+			Username:           player.Username,
+			Wins:               0,
+			AverageSolveTimeMs: 0,
+			StatsOverridden:    false,
+			Deleted:            false,
+		},
+		AfterState: playerusecase.AuditState{
+			Username:           "renamed_audit_player",
+			Wins:               2,
+			AverageSolveTimeMs: 45000,
+			StatsOverridden:    true,
+			Deleted:            false,
+		},
+		CreatedAt: createdAt,
+	}
+	require.NoError(t, repo.CreatePlayerAudit(ctx, input))
+
+	events, err := repo.ListPlayerAudit(ctx, player.ID, 10)
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+	require.Equal(t, input.Actor, events[0].Actor)
+	require.Equal(t, input.Action, events[0].Action)
+	require.Equal(t, input.PlayerID, events[0].PlayerID)
+	require.Equal(t, input.BeforeState, events[0].BeforeState)
+	require.Equal(t, input.AfterState, events[0].AfterState)
+	require.WithinDuration(t, input.CreatedAt, events[0].CreatedAt, time.Microsecond)
+
+	insertAudit := func(beforeState, afterState string, at time.Time) {
+		_, err := pool.Exec(ctx, `
+			INSERT INTO admin_player_audit_events (
+				actor_subject, actor_jti, action, player_id, before_state, after_state, created_at
+			)
+			VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7)`,
+			"tester", uuid.NewString(), "update", player.ID, beforeState, afterState, at,
+		)
+		require.NoError(t, err)
+	}
+
+	insertAudit(`"invalid"`, `{}`, createdAt.Add(time.Minute))
+	_, err = repo.ListPlayerAudit(ctx, player.ID, 10)
+	require.ErrorContains(t, err, "before_state")
+
+	insertAudit(`{}`, `"invalid"`, createdAt.Add(2*time.Minute))
+	_, err = repo.ListPlayerAudit(ctx, player.ID, 10)
+	require.ErrorContains(t, err, "after_state")
 }
 
 func TestPlayerRepo_InsideTx_RollsBackOnError(t *testing.T) {
