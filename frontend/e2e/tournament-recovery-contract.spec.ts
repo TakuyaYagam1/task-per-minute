@@ -25,6 +25,7 @@ import {
   createTournamentFixtureSet,
   operatorSnapshot,
   participantRecovery,
+  publicRecovery,
   tournamentFixtureIds,
 } from "./tournament/fixtures";
 
@@ -135,8 +136,10 @@ const resumeId = "00000000-0000-4000-8000-000000000030";
 
 const arenaTournamentId = tournamentFixtureIds.tournament;
 const arenaPublicPath = `/api/v1/tournaments/${arenaTournamentId}`;
+const arenaPublicSnapshotPath = `${arenaPublicPath}/snapshot`;
 const arenaParticipantLobbyPath = `${arenaPublicPath}/participant/lobby`;
 const arenaParticipantSnapshotPath = `${arenaPublicPath}/participant/snapshot`;
+const arenaOperatorSnapshotPath = `/api/v1/admin/tournaments/${arenaTournamentId}/snapshot`;
 
 const fulfillJSON = async (
   route: Route,
@@ -1031,6 +1034,108 @@ test("FE-013 mounted participant recovery exposes stale status while its deadlin
   await expect(page.getByText("Данные устарели", { exact: true })).toBeVisible();
   await expect(page.getByText("Команды временно недоступны.")).toBeVisible();
   await expect(page.getByTestId("server-countdown")).not.toHaveText("0:00");
+});
+
+test("FE-013 spectator route mounts public recovery and keeps only the public cursor", async ({ page }) => {
+  const fixtureSet = createTournamentFixtureSet();
+  const serverTimestamp = "2026-09-15T10:00:00Z";
+  const snapshotRequests: URL[] = [];
+
+  await page.clock.install({ time: serverTimestamp });
+  await installArenaAccessRoutes(page, fixtureSet);
+  await page.route(`**${arenaPublicSnapshotPath}*`, async (route) => {
+    expect(route.request().method()).toBe("GET");
+    const requestURL = new URL(route.request().url());
+    snapshotRequests.push(requestURL);
+    await fulfillJSON(
+      route,
+      publicRecovery(requestURL.search === "" ? 9 : 10),
+      { date: new Date(serverTimestamp).toUTCString() },
+    );
+  });
+
+  await page.goto(`/arena/spectator/${arenaTournamentId}`, { waitUntil: "domcontentloaded" });
+
+  const livePanel = page.getByRole("region", { name: "Состояние турнира" });
+  await expect(livePanel.getByText("Публичный просмотр", { exact: true })).toBeVisible();
+  await expect(livePanel.getByText(/Ревизия сервера: 9/)).toBeVisible();
+  await expect.poll(() => snapshotRequests.length).toBeGreaterThan(0);
+  const initialRequestCount = snapshotRequests.length;
+  expect(snapshotRequests.every((requestURL) => requestURL.search === "")).toBe(true);
+
+  await page.getByRole("button", { name: "Темная тема" }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await page.getByRole("button", { name: "Светлая тема" }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await page.setViewportSize({ width: 390, height: 844 });
+  const headingBox = await livePanel.boundingBox();
+  expect(headingBox).not.toBeNull();
+  if (headingBox === null) {
+    throw new Error("Public recovery panel heading is missing from the mobile Arena route");
+  }
+  expect(headingBox.x).toBeGreaterThanOrEqual(0);
+  expect(headingBox.x + headingBox.width).toBeLessThanOrEqual(390);
+
+  await page.getByRole("button", { name: "Повторить синхронизацию" }).click();
+  await expect.poll(() => snapshotRequests.length).toBe(initialRequestCount + 1);
+  const retryURL = snapshotRequests.at(-1);
+  expect(retryURL?.searchParams.get("cursor[projection_revision]")).toBe("9");
+  expect(retryURL?.searchParams.get("cursor[event_sequence]")).toBe("14");
+  expect(retryURL?.searchParams.get("cursor[participant_view_revision]")).toBeNull();
+  expect(retryURL?.searchParams.get("cursor[authority_revision]")).toBeNull();
+  expect(retryURL?.searchParams.get("cursor[audit_sequence]")).toBeNull();
+  await expect(livePanel.getByText(/Ревизия сервера: 10/)).toBeVisible();
+});
+
+test("FE-013 operator route mounts operator recovery and keeps only the operator cursor", async ({ page }) => {
+  const fixtureSet = createTournamentFixtureSet();
+  const serverTimestamp = "2026-09-15T10:00:00Z";
+  const snapshotRequests: URL[] = [];
+
+  await page.clock.install({ time: serverTimestamp });
+  await installArenaAccessRoutes(page, fixtureSet);
+  await page.route(`**${arenaOperatorSnapshotPath}*`, async (route) => {
+    expect(route.request().method()).toBe("GET");
+    const requestURL = new URL(route.request().url());
+    snapshotRequests.push(requestURL);
+    await fulfillJSON(
+      route,
+      operatorSnapshot(requestURL.search === "" ? 9 : 10),
+      { date: new Date(serverTimestamp).toUTCString() },
+    );
+  });
+
+  await page.goto(`/arena/operator/${arenaTournamentId}`, { waitUntil: "domcontentloaded" });
+
+  const livePanel = page.getByRole("region", { name: "Состояние турнира" });
+  await expect(livePanel.getByText("Оператор", { exact: true })).toBeVisible();
+  await expect(livePanel.getByText(/Ревизия сервера: 9/)).toBeVisible();
+  await expect.poll(() => snapshotRequests.length).toBeGreaterThan(0);
+  const initialRequestCount = snapshotRequests.length;
+  expect(snapshotRequests.every((requestURL) => requestURL.search === "")).toBe(true);
+
+  await page.getByRole("button", { name: "Темная тема" }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await page.getByRole("button", { name: "Светлая тема" }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await page.setViewportSize({ width: 390, height: 844 });
+  const headingBox = await livePanel.boundingBox();
+  expect(headingBox).not.toBeNull();
+  if (headingBox === null) {
+    throw new Error("Operator recovery panel heading is missing from the mobile Arena route");
+  }
+  expect(headingBox.x).toBeGreaterThanOrEqual(0);
+  expect(headingBox.x + headingBox.width).toBeLessThanOrEqual(390);
+
+  await page.getByRole("button", { name: "Повторить синхронизацию" }).click();
+  await expect.poll(() => snapshotRequests.length).toBe(initialRequestCount + 1);
+  const retryURL = snapshotRequests.at(-1);
+  expect(retryURL?.searchParams.get("cursor[projection_revision]")).toBe("9");
+  expect(retryURL?.searchParams.get("cursor[authority_revision]")).toBe("9");
+  expect(retryURL?.searchParams.get("cursor[audit_sequence]")).toBe("14");
+  expect(retryURL?.searchParams.get("cursor[event_sequence]")).toBeNull();
+  expect(retryURL?.searchParams.get("cursor[participant_view_revision]")).toBeNull();
+  await expect(livePanel.getByText(/Ревизия сервера: 10/)).toBeVisible();
 });
 
 test("FE-013 route awaits the server at zero without local result, including light mobile view", async ({ page }) => {
