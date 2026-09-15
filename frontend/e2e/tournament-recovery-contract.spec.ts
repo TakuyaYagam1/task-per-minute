@@ -3,7 +3,7 @@ import { createServer } from "node:net";
 import { resolve } from "node:path";
 import { type Readable } from "node:stream";
 
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page, type Route } from "@playwright/test";
 
 import {
   ApiError,
@@ -21,6 +21,7 @@ import {
   viewServerCountdown,
 } from "../lib/features/tournament-live";
 import {
+  createTournamentFixtureSet,
   operatorSnapshot,
   participantRecovery,
   tournamentFixtureIds,
@@ -130,6 +131,97 @@ const revisionId = "00000000-0000-4000-8000-000000000011";
 const firstEventId = "00000000-0000-4000-8000-000000000020";
 const secondEventId = "00000000-0000-4000-8000-000000000021";
 const resumeId = "00000000-0000-4000-8000-000000000030";
+
+const arenaTournamentId = tournamentFixtureIds.tournament;
+const arenaPublicPath = `/api/v1/tournaments/${arenaTournamentId}`;
+const arenaParticipantLobbyPath = `${arenaPublicPath}/participant/lobby`;
+const arenaParticipantSnapshotPath = `${arenaPublicPath}/participant/snapshot`;
+
+const fulfillJSON = async (
+  route: Route,
+  body: unknown,
+  headers: Record<string, string> = {},
+  status = 200,
+): Promise<void> => {
+  await route.fulfill({
+    status,
+    headers: {
+      "content-type": "application/json",
+      ...headers,
+    },
+    body: JSON.stringify(body),
+  });
+};
+
+const fulfillProblem = async (
+  route: Route,
+  status: number,
+): Promise<void> => {
+  await route.fulfill({
+    status,
+    headers: { "content-type": "application/problem+json" },
+    body: JSON.stringify({
+      detail: `Курсор отклонен с кодом ${status}`,
+      status,
+      title: "Курсор отклонен",
+      type: "about:blank",
+    }),
+  });
+};
+
+const installArenaAccessRoutes = async (
+  page: Page,
+  fixtureSet: ReturnType<typeof createTournamentFixtureSet>,
+): Promise<void> => {
+  await page.route(`**${arenaPublicPath}`, async (route) => {
+    expect(route.request().method()).toBe("GET");
+    await fulfillJSON(route, fixtureSet.public.tournament);
+  });
+  await page.route(`**${arenaParticipantLobbyPath}`, async (route) => {
+    expect(route.request().method()).toBe("GET");
+    await fulfillJSON(route, fixtureSet.participant.lobby);
+  });
+};
+
+const participantRecoveryWithDeadline = (
+  projectionRevision: number,
+  serverTimestamp: string,
+  deadline: string,
+) => {
+  const recovery = participantRecovery(projectionRevision);
+  if (recovery.wave === null) {
+    throw new Error("Participant fixture must include a wave");
+  }
+  return {
+    ...recovery,
+    draft: {
+      actions: [],
+      first_participant_id: tournamentFixtureIds.firstParticipant,
+      format: "bo3",
+      id: tournamentFixtureIds.groupRevision,
+      pool: ["web", "crypto", "forensics"],
+      revision: 1,
+      second_participant_id: tournamentFixtureIds.secondParticipant,
+      selected_categories: [],
+      series_id: tournamentFixtureIds.bo3Series,
+      state: "active",
+      turn: 1,
+      turn_deadline: deadline,
+    },
+    wave: {
+      ...recovery.wave,
+      ready_window: {
+        consumed_at: null,
+        deadline,
+        id: tournamentFixtureIds.readyWindow,
+        opened_at: serverTimestamp,
+        revision_id: tournamentFixtureIds.pauseRevision,
+        state: "open",
+        wave_id: tournamentFixtureIds.bo3Wave,
+      },
+    },
+  };
+};
 
 const restSnapshot = (
   projectionRevision = 4,
@@ -701,4 +793,127 @@ test("mounted live panel stays server-authoritative in both themes and mobile wi
   await expect(command).toBeDisabled();
   await expect(page.getByText("Локальное время не объявляет результат.")).toBeVisible();
   await expect(page.getByText(/побед|техническое поражение/i)).toHaveCount(0);
+});
+
+test("FE-013 participant route anchors its countdown to snapshot HTTP Date and deadline", async ({ page }) => {
+  const fixtureSet = createTournamentFixtureSet();
+  const serverTimestamp = "2026-09-13T10:00:00Z";
+  const deadline = "2026-09-13T10:01:00Z";
+  let snapshotURL = "";
+
+  await page.clock.install({ time: "2026-09-14T10:00:00Z" });
+  await installArenaAccessRoutes(page, fixtureSet);
+  await page.route(`**${arenaParticipantSnapshotPath}*`, async (route) => {
+    expect(route.request().method()).toBe("GET");
+    snapshotURL = route.request().url();
+    await fulfillJSON(
+      route,
+      participantRecoveryWithDeadline(9, serverTimestamp, deadline),
+      { date: new Date(serverTimestamp).toUTCString() },
+    );
+  });
+
+  await page.goto(`/arena/participant/${arenaTournamentId}`, { waitUntil: "domcontentloaded" });
+
+  const countdown = page.getByTestId("server-countdown");
+  await expect(countdown).toBeVisible();
+  await expect(page.getByText("Сервер на связи", { exact: true })).toBeVisible();
+
+  const [minutes, seconds] = (await countdown.textContent() ?? "0:00").split(":").map(Number);
+  const remainingSeconds = (minutes * 60) + seconds;
+  expect(remainingSeconds).toBeGreaterThan(0);
+  expect(remainingSeconds).toBeLessThanOrEqual(60);
+  expect(new URL(snapshotURL).search).toBe("");
+});
+
+test("FE-013 participant route retries with no cursor after a cursor conflict", async ({ page }) => {
+  const fixtureSet = createTournamentFixtureSet();
+  const serverTimestamp = "2026-09-15T10:00:00Z";
+  const deadline = "2026-09-15T10:01:00Z";
+  let cursorRejected = false;
+  const snapshotRequests: URL[] = [];
+
+  await page.clock.install({ time: serverTimestamp });
+  await installArenaAccessRoutes(page, fixtureSet);
+  await page.route(`**${arenaParticipantSnapshotPath}*`, async (route) => {
+    expect(route.request().method()).toBe("GET");
+    const requestURL = new URL(route.request().url());
+    snapshotRequests.push(requestURL);
+
+    if (requestURL.search === "") {
+      await fulfillJSON(
+        route,
+        participantRecoveryWithDeadline(cursorRejected ? 10 : 9, serverTimestamp, deadline),
+        { date: new Date(serverTimestamp).toUTCString() },
+      );
+      return;
+    }
+
+    cursorRejected = true;
+    await fulfillProblem(route, 409);
+  });
+
+  await page.goto(`/arena/participant/${arenaTournamentId}`, {
+    waitUntil: "domcontentloaded",
+  });
+  await expect(page.getByTestId("server-countdown")).toBeVisible();
+  snapshotRequests.length = 0;
+  await page.getByRole("button", { name: "Повторить синхронизацию" }).click();
+
+  await expect.poll(() => snapshotRequests.length).toBe(2);
+  await expect(page.getByText(/Ревизия сервера: 10/)).toBeVisible();
+  expect(cursorRejected).toBe(true);
+  expect(snapshotRequests[0]?.searchParams.get("cursor[projection_revision]")).toBe("9");
+  expect(snapshotRequests[0]?.searchParams.get("cursor[participant_view_revision]")).toBe("5");
+  expect(snapshotRequests[0]?.searchParams.get("cursor[event_sequence]")).toBe("14");
+  expect(snapshotRequests[1]?.search).toBe("");
+});
+
+test("FE-013 route awaits the server at zero without local result, including light mobile view", async ({ page }) => {
+  const fixtureSet = createTournamentFixtureSet();
+  const serverTimestamp = "2026-09-15T10:00:00Z";
+  const deadline = "2026-09-15T10:00:02Z";
+  const mutationRequests: string[] = [];
+
+  page.on("request", (request) => {
+    const requestURL = new URL(request.url());
+    if (requestURL.pathname.startsWith("/api/") && request.method() !== "GET") {
+      mutationRequests.push(`${request.method()} ${requestURL.pathname}`);
+    }
+  });
+
+  await page.clock.install({ time: serverTimestamp });
+  await installArenaAccessRoutes(page, fixtureSet);
+  await page.route(`**${arenaParticipantSnapshotPath}*`, async (route) => {
+    expect(route.request().method()).toBe("GET");
+    await fulfillJSON(
+      route,
+      participantRecoveryWithDeadline(9, serverTimestamp, deadline),
+      { date: new Date(serverTimestamp).toUTCString() },
+    );
+  });
+
+  await page.goto(`/arena/participant/${arenaTournamentId}`, { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("server-countdown")).toBeVisible();
+  await expect(page.getByText("Сервер на связи", { exact: true })).toBeVisible();
+
+  await page.clock.fastForward(3_000);
+  await expect(page.getByText("Ждем сервер", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("Локальное время не объявляет результат. Ждем подтверждение сервера."),
+  ).toBeVisible();
+  await expect(page.getByText(/Победитель|Победа|Поражение|Техническое поражение|Результат объявлен/i)).toHaveCount(0);
+  expect(mutationRequests).toEqual([]);
+
+  await page.getByRole("button", { name: "Светлая тема" }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByTestId("server-countdown")).toBeVisible();
+  const countdownBox = await page.getByTestId("server-countdown").boundingBox();
+  expect(countdownBox).not.toBeNull();
+  if (countdownBox === null) {
+    throw new Error("Server countdown is missing from the mobile Arena route");
+  }
+  expect(countdownBox.x).toBeGreaterThanOrEqual(0);
+  expect(countdownBox.x + countdownBox.width).toBeLessThanOrEqual(390);
 });

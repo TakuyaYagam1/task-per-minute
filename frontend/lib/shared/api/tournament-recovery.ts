@@ -1,5 +1,12 @@
-import { ApiError } from "./client";
 import {
+  adminClient,
+  ApiError,
+  publicClient,
+  unwrapApi,
+  type ApiResult,
+} from "./client";
+import {
+  ApiContractError,
   isOperatorRecoverySnapshot,
   isParticipantRecoverySnapshot,
 } from "./guards";
@@ -140,6 +147,9 @@ const isPositiveInteger = (value: unknown): value is number => isInteger(value) 
 
 const isDateTime = (value: unknown): value is string =>
   typeof value === "string" && value.endsWith("Z") && Number.isFinite(Date.parse(value));
+
+const isServerTimestamp = (value: unknown): value is string =>
+  typeof value === "string" && Number.isFinite(Date.parse(value));
 
 const isOptionalDateTime = (value: unknown): boolean =>
   value === null || value === undefined || isDateTime(value);
@@ -483,6 +493,8 @@ export type TournamentLiveRole = "public" | "participant" | "operator";
 
 type ParticipantRecoverySnapshot = components["schemas"]["ParticipantRecoverySnapshot"];
 type OperatorRecoverySnapshot = components["schemas"]["OperatorRecoverySnapshot"];
+type ParticipantRecoveryCursor = components["schemas"]["ParticipantRecoveryCursor"];
+type OperatorRecoveryCursor = components["schemas"]["OperatorRecoveryCursor"];
 
 export type RoleAwareRecoverySnapshot =
   | PublicRecoverySnapshot
@@ -491,8 +503,15 @@ export type RoleAwareRecoverySnapshot =
 
 export type RoleAwareRecoveryCursor =
   | PublicRecoveryCursor
-  | components["schemas"]["ParticipantRecoveryCursor"]
-  | components["schemas"]["OperatorRecoveryCursor"];
+  | ParticipantRecoveryCursor
+  | OperatorRecoveryCursor;
+
+export type RoleRecoveryResponse = Readonly<{
+  role: TournamentLiveRole;
+  snapshot: RoleAwareRecoverySnapshot;
+  /** The original HTTP Date header used as the server clock anchor. */
+  serverTimestamp: string;
+}>;
 
 export type RoleAwareRecoveryState = {
   role: TournamentLiveRole;
@@ -509,6 +528,8 @@ export type RoleRecoverySnapshotInput = {
   snapshot: unknown;
   serverTimestamp: string;
   resumeId?: string | null;
+  /** A no-cursor response is authoritative even when its cursor is lower or equal. */
+  fresh?: boolean;
 };
 
 export type RoleRecoveryOutcome =
@@ -527,6 +548,95 @@ export type RoleRecoveryTransition = {
   state: RoleAwareRecoveryState | null;
   outcome: RoleRecoveryOutcome;
   changed: boolean;
+};
+
+const readRoleRecoveryResponse = async <T>(
+  result: ApiResult<T> | Promise<ApiResult<T>>,
+  guard: (value: unknown) => value is T,
+  contract: string,
+): Promise<Readonly<{ snapshot: T; serverTimestamp: string }>> => {
+  const resolved = await result;
+  const snapshot = await unwrapApi(resolved, contract);
+  if (!guard(snapshot)) {
+    throw new ApiContractError(contract);
+  }
+  const serverTimestamp = resolved.response.headers.get("Date");
+  if (!isServerTimestamp(serverTimestamp)) {
+    throw new ApiContractError(`${contract} HTTP Date header`);
+  }
+  return { snapshot, serverTimestamp };
+};
+
+const isPublicCursorValue = (value: RoleAwareRecoveryCursor): value is PublicRecoveryCursor =>
+  "event_sequence" in value &&
+  !("participant_view_revision" in value) &&
+  !("authority_revision" in value);
+
+const isParticipantCursorValue = (
+  value: RoleAwareRecoveryCursor,
+): value is ParticipantRecoveryCursor => "participant_view_revision" in value;
+
+const isOperatorCursorValue = (value: RoleAwareRecoveryCursor): value is OperatorRecoveryCursor =>
+  "authority_revision" in value && "audit_sequence" in value;
+
+/** Fetch and validate the full recovery projection for one Arena role. */
+export const getRoleRecoverySnapshot = async (
+  role: TournamentLiveRole,
+  tournamentId: string,
+  cursor?: RoleAwareRecoveryCursor,
+  signal?: AbortSignal,
+): Promise<RoleRecoveryResponse> => {
+  if (role === "public") {
+    if (cursor !== undefined && !isPublicCursorValue(cursor)) {
+      throw new TypeError("Public recovery requires a public cursor");
+    }
+    const params = cursor === undefined
+      ? { path: { tournament_id: tournamentId } }
+      : { path: { tournament_id: tournamentId }, query: { cursor } };
+    const response = await readRoleRecoveryResponse(
+      publicClient.GET("/api/v1/tournaments/{tournament_id}/snapshot", {
+        params,
+        signal,
+      }),
+      (value): value is PublicRecoverySnapshot => isPublicRecoverySnapshot(value),
+      "public tournament recovery snapshot",
+    );
+    return { role, ...response };
+  }
+
+  if (role === "participant") {
+    if (cursor !== undefined && !isParticipantCursorValue(cursor)) {
+      throw new TypeError("Participant recovery requires a participant cursor");
+    }
+    const params = cursor === undefined
+      ? { path: { tournament_id: tournamentId } }
+      : { path: { tournament_id: tournamentId }, query: { cursor } };
+    const response = await readRoleRecoveryResponse(
+      publicClient.GET("/api/v1/tournaments/{tournament_id}/participant/snapshot", {
+        params,
+        signal,
+      }),
+      (value): value is ParticipantRecoverySnapshot => isParticipantRecoverySnapshot(value),
+      "participant tournament recovery snapshot",
+    );
+    return { role, ...response };
+  }
+
+  if (cursor !== undefined && !isOperatorCursorValue(cursor)) {
+    throw new TypeError("Operator recovery requires an operator cursor");
+  }
+  const params = cursor === undefined
+    ? { path: { tournament_id: tournamentId } }
+    : { path: { tournament_id: tournamentId }, query: { cursor } };
+  const response = await readRoleRecoveryResponse(
+    adminClient.GET("/api/v1/admin/tournaments/{tournament_id}/snapshot", {
+      params,
+      signal,
+    }),
+    (value): value is OperatorRecoverySnapshot => isOperatorRecoverySnapshot(value),
+    "operator tournament recovery snapshot",
+  );
+  return { role, ...response };
 };
 
 const hasSnapshotScope = (
@@ -678,7 +788,7 @@ export const applyRoleRecoverySnapshot = (
       changed: false,
     };
   }
-  if (!isDateTime(input.serverTimestamp) || !hasSnapshotScope(input.role, input.snapshot)) {
+  if (!isServerTimestamp(input.serverTimestamp) || !hasSnapshotScope(input.role, input.snapshot)) {
     return {
       state: previous,
       outcome: "malformed",
@@ -715,6 +825,20 @@ export const applyRoleRecoverySnapshot = (
         resumeId: input.resumeId ?? null,
       },
       outcome: "initialized",
+      changed: true,
+    };
+  }
+  if (input.fresh === true) {
+    return {
+      state: {
+        role: input.role,
+        tournamentId,
+        cursor,
+        snapshot: input.snapshot,
+        serverTimestamp: input.serverTimestamp,
+        resumeId: input.resumeId ?? previous.resumeId,
+      },
+      outcome: "replaced",
       changed: true,
     };
   }

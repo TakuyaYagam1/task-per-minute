@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { playerModel } from "../../entities/player";
+import { TournamentRecoveryPanel } from "../../features/tournament-live";
 import {
   adminApi,
   ApiError,
@@ -270,7 +271,11 @@ export const ArenaRolePage = ({ role, tournamentId }: ArenaRolePageProps) => {
           ? handleLogout
           : undefined
       }
-    />
+    >
+      {(state.accessStatus === "ready" || state.accessStatus === "completed") && (
+        <TournamentRecoveryPanel role={role} tournamentId={tournamentId} />
+      )}
+    </ArenaShell>
   );
 };
 
