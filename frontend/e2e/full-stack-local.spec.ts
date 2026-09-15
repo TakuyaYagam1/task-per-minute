@@ -1054,6 +1054,47 @@ test.describe('local compose full stack e2e', () => {
       expect(lockedSourceRoster.locked).toBe(true);
       expect(lockedSourceRoster.execution_started).toBe(false);
 
+      const lockedProjectionRevision = await getOperatorProjectionRevisionViaApi(
+        adminRequest,
+        tournament.id,
+      );
+      const lockedParticipants = sortRosterParticipantsBySeed(lockedSourceRoster.participants);
+      expect(lockedParticipants).toHaveLength(4);
+      const lockedReplacementParticipants: FullStackRosterParticipantInput[] =
+        lockedParticipants.map((participant, index) => ({
+          player_id: participant.player_id,
+          seed: index === 0 ? 2 : index === 1 ? 1 : participant.seed,
+          attendance: participant.attendance,
+        }));
+      expect(lockedReplacementParticipants.map((participant) => participant.seed)).toEqual([
+        2,
+        1,
+        3,
+        4,
+      ]);
+      expect(new Set(lockedReplacementParticipants.map((participant) => participant.player_id)).size).toBe(4);
+
+      const lockedReplacementResponse = await replaceRosterViaApi(
+        adminRequest,
+        tournament.id,
+        adminAccessCSRFToken,
+        lockedProjectionRevision,
+        lockedReplacementParticipants,
+      );
+      expect(lockedReplacementResponse.status()).toBe(409);
+
+      const rosterAfterLockedReplacement = await getRosterViaApi(
+        adminRequest,
+        tournament.id,
+        lockedSourceRoster.id,
+      );
+      expect(rosterAfterLockedReplacement).toEqual(lockedSourceRoster);
+      expect(rosterAfterLockedReplacement.id).toBe(lockedSourceRoster.id);
+      expect(rosterAfterLockedReplacement.revision).toBe(lockedSourceRoster.revision);
+      expect(rosterAfterLockedReplacement.participants).toEqual(lockedSourceRoster.participants);
+      expect(rosterAfterLockedReplacement.locked).toBe(true);
+      expect(rosterAfterLockedReplacement.execution_started).toBe(false);
+
       const secondTournament = await createTournamentViaApi(
         adminRequest,
         { access_csrf_token: adminAccessCSRFToken },
