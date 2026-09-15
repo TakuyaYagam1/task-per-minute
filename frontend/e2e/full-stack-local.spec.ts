@@ -638,6 +638,7 @@ test.describe('local compose full stack e2e', () => {
       uniqueName('roster-player-b'),
       uniqueName('roster-player-c'),
       uniqueName('roster-player-d'),
+      uniqueName('roster-player-e'),
     ];
     const playerContexts: BrowserContext[] = [];
 
@@ -749,10 +750,10 @@ test.describe('local compose full stack e2e', () => {
       expect(initialRoster.participants).toHaveLength(0);
       await expect(rosterRegion.getByText('Состав пуст')).toBeVisible();
       await expect(rosterRegion.getByRole('button', { name: 'Добавить участника' })).toBeEnabled();
-      await rosterRegion.getByRole('button', { name: 'Добавить участника' }).click({ clickCount: 3 });
-      await expect(rosterRegion.getByRole('group')).toHaveCount(3);
+      await rosterRegion.getByRole('button', { name: 'Добавить участника' }).click({ clickCount: 4 });
+      await expect(rosterRegion.getByRole('group')).toHaveCount(4);
 
-      for (const [index, player] of players.slice(0, 3).entries()) {
+      for (const [index, player] of players.slice(0, 4).entries()) {
         const group = rosterRegion.getByRole('group', { name: `Участник ${index + 1}` });
         await group.getByRole('combobox', { name: 'Игрок' }).selectOption(player.id);
         await group.getByRole('spinbutton', { name: 'Seed / позиция' }).fill(String(index + 1));
@@ -783,9 +784,9 @@ test.describe('local compose full stack e2e', () => {
       const savedRoster = await getRosterViaApi(adminRequest, tournament.id);
       expect(savedRoster.id).toBe(savedRosterResponse.id);
       expect(savedRoster.participants.map((item) => item.player_id)).toEqual(
-        players.slice(0, 3).map((player) => player.id),
+        players.slice(0, 4).map((player) => player.id),
       );
-      expect(savedRoster.participants.map((item) => item.seed)).toEqual([1, 2, 3]);
+      expect(savedRoster.participants.map((item) => item.seed)).toEqual([1, 2, 3, 4]);
 
       await page.reload({ waitUntil: 'domcontentloaded' });
       await expect(page.getByRole('button', { name: 'Турниры' })).toBeVisible({ timeout: 15_000 });
@@ -797,8 +798,8 @@ test.describe('local compose full stack e2e', () => {
       await expect(reopenedEditRosterButton).toBeVisible({ timeout: 15_000 });
       await reopenedEditRosterButton.click();
       await expect(rosterRegion).toBeVisible({ timeout: 15_000 });
-      await expect(rosterRegion.getByRole('group')).toHaveCount(3);
-      for (const [index, player] of players.slice(0, 3).entries()) {
+      await expect(rosterRegion.getByRole('group')).toHaveCount(4);
+      for (const [index, player] of players.slice(0, 4).entries()) {
         const group = rosterRegion.getByRole('group', { name: `Участник ${index + 1}` });
         await expect(group.getByRole('combobox', { name: 'Игрок' })).toHaveValue(player.id);
         await expect(group.getByRole('spinbutton', { name: 'Seed / позиция' })).toHaveValue(
@@ -811,10 +812,7 @@ test.describe('local compose full stack e2e', () => {
         .selectOption('checked_in');
       await rosterRegion.getByRole('group', { name: 'Участник 2' })
         .getByRole('combobox', { name: 'Игрок' })
-        .selectOption(players[3].id);
-      await rosterRegion.getByRole('group', { name: 'Участник 3' })
-        .getByRole('button', { name: 'Удалить' })
-        .click();
+        .selectOption(players[4].id);
 
       const secondSave = page.waitForResponse(
         (response) =>
@@ -832,6 +830,8 @@ test.describe('local compose full stack e2e', () => {
       expect(replacedRoster.id).toBe(replacedRosterResponse.id);
       expect(replacedRoster.participants.map((item) => item.player_id)).toEqual([
         players[0].id,
+        players[4].id,
+        players[2].id,
         players[3].id,
       ]);
       expect(replacedRoster.participants[0]?.attendance).toBe('checked_in');
