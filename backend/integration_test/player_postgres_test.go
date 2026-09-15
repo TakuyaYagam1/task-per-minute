@@ -481,6 +481,36 @@ func TestPlayerRepo_PlayerAuditRoundTripAndInvalidStoredJSON(t *testing.T) {
 	require.ErrorContains(t, err, "after_state")
 }
 
+func TestPlayerRepo_CreatePlayerAudit_NotFoundAndCanceledContext(t *testing.T) {
+	t.Parallel()
+	pool := newParallelTestDB(t)
+	repo, _ := newPlayerRepo(pool)
+	ctx := context.Background()
+
+	auditInput := func(playerID uuid.UUID) playerusecase.AuditInput {
+		return playerusecase.AuditInput{
+			Actor:       playerusecase.Actor{Subject: "admin", JTI: uuid.NewString()},
+			Action:      playerusecase.AuditActionUpdate,
+			PlayerID:    playerID,
+			BeforeState: playerusecase.AuditState{},
+			AfterState:  playerusecase.AuditState{Username: "after"},
+			CreatedAt:   time.Now().UTC(),
+		}
+	}
+
+	err := repo.CreatePlayerAudit(ctx, auditInput(uuid.New()))
+	require.ErrorIs(t, err, domain.ErrPlayerNotFound)
+
+	player, err := repo.Create(ctx, uniq("audit_context"))
+	require.NoError(t, err)
+	canceledCtx, cancel := context.WithCancel(ctx)
+	cancel()
+
+	err = repo.CreatePlayerAudit(canceledCtx, auditInput(player.ID))
+	require.ErrorIs(t, err, context.Canceled)
+	require.ErrorContains(t, err, "PlayerPostgres - CreatePlayerAudit - Querier.CreateAdminPlayerAuditEvent")
+}
+
 func TestPlayerRepo_InsideTx_RollsBackOnError(t *testing.T) {
 	t.Parallel()
 	pool := newParallelTestDB(t)
