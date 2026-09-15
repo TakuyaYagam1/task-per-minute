@@ -115,6 +115,62 @@ func TestTxManager_NestedDoReusesOuterTx(t *testing.T) {
 	require.False(t, playerExists(t, pool, b), "outer tx must roll back %s", b)
 }
 
+func TestTxManager_BeginFailureWrapsError(t *testing.T) {
+	t.Parallel()
+	pool := newParallelTestDB(t)
+	mgr := postgres.NewTxManager(pool)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	callbackCalled := false
+
+	err := mgr.Do(ctx, func(context.Context) error {
+		callbackCalled = true
+		return nil
+	})
+
+	require.ErrorIs(t, err, context.Canceled)
+	require.ErrorContains(t, err, "TxManager - Do - Pool.BeginTx:")
+	require.False(t, callbackCalled, "callback must not run when BeginTx fails")
+}
+
+func TestTxManager_RollbackFailureJoinsCallbackError(t *testing.T) {
+	t.Parallel()
+	pool := newParallelTestDB(t)
+	mgr := postgres.NewTxManager(pool)
+	callbackErr := errors.New("callback failed")
+	var closeErr error
+
+	err := mgr.Do(context.Background(), func(ctx context.Context) error {
+		tx, ok := mgr.Conn(ctx).(pgx.Tx)
+		if !ok {
+			return errors.New("transaction context did not contain pgx transaction")
+		}
+		closeErr = tx.Conn().Close(context.Background())
+		return callbackErr
+	})
+
+	require.NoError(t, closeErr)
+	require.ErrorIs(t, err, callbackErr)
+	require.ErrorContains(t, err, "TxManager - Do - Tx.Rollback:")
+	require.NotErrorIs(t, err, pgx.ErrTxClosed)
+}
+
+func TestTxManager_CommitFailureWrapsError(t *testing.T) {
+	t.Parallel()
+	pool := newParallelTestDB(t)
+	mgr := postgres.NewTxManager(pool)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	err := mgr.Do(ctx, func(context.Context) error {
+		cancel()
+		return nil
+	})
+
+	require.ErrorIs(t, err, context.Canceled)
+	require.ErrorContains(t, err, "TxManager - Do - Tx.Commit:")
+}
+
 func TestTxManager_QuerierOutsideTx_UsesPool(t *testing.T) {
 	t.Parallel()
 	pool := newParallelTestDB(t)
