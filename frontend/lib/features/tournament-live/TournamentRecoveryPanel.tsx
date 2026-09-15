@@ -3,7 +3,7 @@
 import type { RoleAwareRecoveryState, TournamentLiveRole } from "../../shared/api";
 import { useServerCountdown } from "./use-server-countdown";
 import { useTournamentRecovery } from "./use-tournament-recovery";
-import { TournamentLivePanel } from "./TournamentLivePanel";
+import { TournamentLivePanel, type TournamentLiveConnectionStatus } from "./TournamentLivePanel";
 
 type ArenaLiveRole = TournamentLiveRole | "spectator";
 
@@ -48,6 +48,7 @@ type CountdownPanelProps = Readonly<{
   receivedAtMonotonicMs?: number;
   recovery: RoleAwareRecoveryState;
   retry: () => void;
+  status: TournamentLiveConnectionStatus;
 }>;
 
 const CountdownPanel = ({
@@ -55,6 +56,7 @@ const CountdownPanel = ({
   receivedAtMonotonicMs,
   recovery,
   retry,
+  status,
 }: CountdownPanelProps) => {
   const countdown = useServerCountdown({
     deadline,
@@ -64,7 +66,7 @@ const CountdownPanel = ({
   return (
     <TournamentLivePanel
       role={recovery.role}
-      status="live"
+      status={status}
       tournamentId={recovery.tournamentId}
       revision={recovery.cursor.projection_revision}
       countdown={countdown}
@@ -91,6 +93,7 @@ export const TournamentRecoveryPanel = ({
         receivedAtMonotonicMs={receivedAtMonotonicMs}
         recovery={recovery}
         retry={retry}
+        status={status}
       />
     );
   }

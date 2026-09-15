@@ -18,6 +18,7 @@ import {
 } from "../lib/shared/api";
 import {
   createServerCountdown,
+  keepCurrentCountdownUnlessCandidateIsShorter,
   viewServerCountdown,
 } from "../lib/features/tournament-live";
 import {
@@ -703,6 +704,45 @@ test("a refreshed server timestamp cannot extend the original deadline", () => {
   expect(viewServerCountdown(afterRefresh, 2000).remainingMs).toBe(2000);
 });
 
+test("an equal server timestamp cannot extend a countdown but a newer timestamp may change its deadline", () => {
+  const current = createServerCountdown(
+    {
+      serverTimestamp: "2026-09-13T10:00:00Z",
+      deadline: "2026-09-13T10:00:05Z",
+    },
+    () => 0,
+  );
+  const equalTimestampWithLaterDeadline = createServerCountdown(
+    {
+      serverTimestamp: "2026-09-13T10:00:00Z",
+      deadline: "2026-09-13T10:01:00Z",
+    },
+    () => 4000,
+  );
+  const newerTimestampWithLaterDeadline = createServerCountdown(
+    {
+      serverTimestamp: "2026-09-13T10:00:01Z",
+      deadline: "2026-09-13T10:01:00Z",
+    },
+    () => 4000,
+  );
+
+  expect(
+    keepCurrentCountdownUnlessCandidateIsShorter(
+      current,
+      equalTimestampWithLaterDeadline,
+      4000,
+    ),
+  ).toBe(current);
+  expect(
+    keepCurrentCountdownUnlessCandidateIsShorter(
+      current,
+      newerTimestampWithLaterDeadline,
+      4000,
+    ),
+  ).toBe(newerTimestampWithLaterDeadline);
+});
+
 test("a hook re-render cannot extend countdown from an older server timestamp", async ({ page }) => {
   await page.goto(fixtureURL, { waitUntil: "domcontentloaded" });
   const countdown = page.getByTestId("server-countdown");
@@ -867,6 +907,130 @@ test("FE-013 participant route retries with no cursor after a cursor conflict", 
   expect(snapshotRequests[0]?.searchParams.get("cursor[participant_view_revision]")).toBe("5");
   expect(snapshotRequests[0]?.searchParams.get("cursor[event_sequence]")).toBe("14");
   expect(snapshotRequests[1]?.search).toBe("");
+});
+
+test("FE-013 participant route retries once without a cursor after an unknown schema", async ({ page }) => {
+  const fixtureSet = createTournamentFixtureSet();
+  const serverTimestamp = "2026-09-15T10:00:00Z";
+  const deadline = "2026-09-15T10:01:00Z";
+  let initialLoaded = false;
+  const snapshotRequests: URL[] = [];
+
+  await page.clock.install({ time: serverTimestamp });
+  await installArenaAccessRoutes(page, fixtureSet);
+  await page.route(`**${arenaParticipantSnapshotPath}*`, async (route) => {
+    expect(route.request().method()).toBe("GET");
+    const requestURL = new URL(route.request().url());
+    snapshotRequests.push(requestURL);
+
+    if (requestURL.search !== "") {
+      await fulfillJSON(
+        route,
+        { schema_version: 99 },
+        { date: new Date(serverTimestamp).toUTCString() },
+      );
+      return;
+    }
+
+    await fulfillJSON(
+      route,
+      participantRecoveryWithDeadline(initialLoaded ? 10 : 9, serverTimestamp, deadline),
+      { date: new Date(serverTimestamp).toUTCString() },
+    );
+    initialLoaded = true;
+  });
+
+  await page.goto(`/arena/participant/${arenaTournamentId}`, {
+    waitUntil: "domcontentloaded",
+  });
+  await expect(page.getByTestId("server-countdown")).toBeVisible();
+  snapshotRequests.length = 0;
+
+  await page.getByRole("button", { name: "Повторить синхронизацию" }).click();
+
+  await expect.poll(() => snapshotRequests.length).toBe(2);
+  await expect(page.getByText(/Ревизия сервера: 10/)).toBeVisible();
+  expect(snapshotRequests[0]?.searchParams.get("cursor[projection_revision]")).toBe("9");
+  expect(snapshotRequests[1]?.search).toBe("");
+});
+
+test("FE-013 unknown schema retry stops after one fresh response and keeps stale state", async ({ page }) => {
+  const fixtureSet = createTournamentFixtureSet();
+  const serverTimestamp = "2026-09-15T10:00:00Z";
+  const deadline = "2026-09-15T10:01:00Z";
+  let initialLoaded = false;
+  const snapshotRequests: URL[] = [];
+
+  await page.clock.install({ time: serverTimestamp });
+  await installArenaAccessRoutes(page, fixtureSet);
+  await page.route(`**${arenaParticipantSnapshotPath}*`, async (route) => {
+    expect(route.request().method()).toBe("GET");
+    const requestURL = new URL(route.request().url());
+    snapshotRequests.push(requestURL);
+
+    if (requestURL.search === "" && !initialLoaded) {
+      await fulfillJSON(
+        route,
+        participantRecoveryWithDeadline(9, serverTimestamp, deadline),
+        { date: new Date(serverTimestamp).toUTCString() },
+      );
+      initialLoaded = true;
+      return;
+    }
+
+    await fulfillJSON(
+      route,
+      { schema_version: 99 },
+      { date: new Date(serverTimestamp).toUTCString() },
+    );
+  });
+
+  await page.goto(`/arena/participant/${arenaTournamentId}`, {
+    waitUntil: "domcontentloaded",
+  });
+  await expect(page.getByTestId("server-countdown")).toBeVisible();
+  snapshotRequests.length = 0;
+
+  await page.getByRole("button", { name: "Повторить синхронизацию" }).click();
+
+  await expect.poll(() => snapshotRequests.length).toBe(2);
+  await expect(page.getByText("Данные устарели", { exact: true })).toBeVisible();
+  await expect(page.getByText(/Ревизия сервера: 9/)).toBeVisible();
+  expect(snapshotRequests[1]?.search).toBe("");
+});
+
+test("FE-013 mounted participant recovery exposes stale status while its deadline remains", async ({ page }) => {
+  const fixtureSet = createTournamentFixtureSet();
+  const serverTimestamp = "2026-09-15T10:00:00Z";
+  const deadline = "2026-09-15T10:01:00Z";
+  let initialLoaded = false;
+
+  await page.clock.install({ time: serverTimestamp });
+  await installArenaAccessRoutes(page, fixtureSet);
+  await page.route(`**${arenaParticipantSnapshotPath}*`, async (route) => {
+    expect(route.request().method()).toBe("GET");
+    const requestURL = new URL(route.request().url());
+    await fulfillJSON(
+      route,
+      participantRecoveryWithDeadline(initialLoaded ? 8 : 9, serverTimestamp, deadline),
+      { date: new Date(serverTimestamp).toUTCString() },
+    );
+    if (requestURL.search === "") {
+      initialLoaded = true;
+    }
+  });
+
+  await page.goto(`/arena/participant/${arenaTournamentId}`, {
+    waitUntil: "domcontentloaded",
+  });
+  await expect(page.getByTestId("server-countdown")).toBeVisible();
+  await expect(page.getByText("Сервер на связи", { exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "Повторить синхронизацию" }).click();
+
+  await expect(page.getByText("Данные устарели", { exact: true })).toBeVisible();
+  await expect(page.getByText("Команды временно недоступны.")).toBeVisible();
+  await expect(page.getByTestId("server-countdown")).not.toHaveText("0:00");
 });
 
 test("FE-013 route awaits the server at zero without local result, including light mobile view", async ({ page }) => {

@@ -17,6 +17,13 @@ export type PublicRecoverySnapshot = components["schemas"]["PublicRecoverySnapsh
 type PublicRecoveryCursorConflictProblem =
   components["schemas"]["PublicRecoveryCursorConflictProblem"];
 
+class UnknownRecoverySchemaError extends ApiContractError {
+  constructor(contract: string) {
+    super(contract);
+    this.name = "UnknownRecoverySchemaError";
+  }
+}
+
 type PublicDisplay = {
   tournament: Record<string, unknown>;
   scoreboard: readonly Record<string, unknown>[];
@@ -557,6 +564,13 @@ const readRoleRecoveryResponse = async <T>(
 ): Promise<Readonly<{ snapshot: T; serverTimestamp: string }>> => {
   const resolved = await result;
   const snapshot = await unwrapApi(resolved, contract);
+  if (
+    isRecord(snapshot) &&
+    "schema_version" in snapshot &&
+    snapshot.schema_version !== 1
+  ) {
+    throw new UnknownRecoverySchemaError(contract);
+  }
   if (!guard(snapshot)) {
     throw new ApiContractError(contract);
   }
@@ -887,6 +901,9 @@ export const classifyRoleRecoveryError = (
   previous: RoleAwareRecoveryState | null,
   error: unknown,
 ): RoleRecoveryTransition => {
+  if (error instanceof UnknownRecoverySchemaError) {
+    return { state: previous, outcome: "unknown_schema", changed: false };
+  }
   if (!(error instanceof ApiError)) {
     return { state: previous, outcome: "malformed", changed: false };
   }

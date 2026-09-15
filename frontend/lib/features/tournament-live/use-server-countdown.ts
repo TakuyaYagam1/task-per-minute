@@ -30,7 +30,7 @@ const safeIntervalMs = (value: number | undefined): number => {
   return value;
 };
 
-const keepCurrentCountdownUnlessCandidateIsShorter = (
+export const keepCurrentCountdownUnlessCandidateIsShorter = (
   current: ServerCountdown,
   candidate: ServerCountdown,
   monotonicTime: number,
@@ -40,6 +40,12 @@ const keepCurrentCountdownUnlessCandidateIsShorter = (
   }
   const currentRemainingMs = remainingMsAt(current, monotonicTime);
   const candidateRemainingMs = remainingMsAt(candidate, monotonicTime);
+  if (
+    candidate.serverTimestampMs === current.serverTimestampMs &&
+    candidateRemainingMs > currentRemainingMs
+  ) {
+    return current;
+  }
   if (candidate.deadlineMs !== current.deadlineMs) {
     return candidate;
   }

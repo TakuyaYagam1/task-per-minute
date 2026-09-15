@@ -81,10 +81,11 @@ export const useTournamentRecovery = (
         return;
       }
       const failure = classifyRoleRecoveryError(previous, error);
-      if (
+      const shouldRetryFresh = failure.outcome === "unknown_schema" || (
         withCursor &&
         (failure.outcome === "future_cursor" || failure.outcome === "invalid_cursor")
-      ) {
+      );
+      if (shouldRetryFresh) {
         setView((current) => ({ ...current, status: "recovering" }));
         try {
           await accept(true);
