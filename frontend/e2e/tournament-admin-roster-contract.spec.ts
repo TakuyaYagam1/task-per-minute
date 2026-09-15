@@ -228,7 +228,7 @@ const setupRosterRoutes = async (
   return { replaceRequests };
 };
 
-const openRoster = async (page: Page): Promise<void> => {
+const openRoster = async (page: Page, expectParticipant: boolean = true): Promise<void> => {
   await page.goto("/admin");
   await page.getByPlaceholder("Введите пароль...").fill("correct-password");
   await page.getByRole("button", { name: "Войти" }).click();
@@ -238,7 +238,9 @@ const openRoster = async (page: Page): Promise<void> => {
   await expect(open).toBeVisible();
   await open.click();
   await expect(page.getByText(/Состав турнира|Участники турнира|Участники/i).first()).toBeVisible();
-  await expect(rosterRegion(page).getByRole("group").first()).toBeVisible();
+  if (expectParticipant) {
+    await expect(rosterRegion(page).getByRole("group").first()).toBeVisible();
+  }
 };
 
 const rosterRegion = (page: Page) =>
@@ -288,6 +290,61 @@ test("добавляет участника и отклоняет duplicate иг
   await expect(region.getByRole("alert")).toContainText(/уже добавлен|дубликат|повтор/i);
 });
 
+test("показывает editable empty state и не отправляет PUT для состава меньше минимума", async ({ page }) => {
+  const players = [player(0, "Алиса"), player(1, "Боб"), player(2, "Вера"), player(3, "Глеб")];
+  const { replaceRequests } = await setupRosterRoutes(page, roster([]), { players });
+  await openRoster(page, false);
+
+  const region = rosterRegion(page);
+  await expect(region).toContainText("Состав пуст");
+  const save = region.getByRole("button", { name: /Сохранить состав/i });
+  const add = region.getByRole("button", { name: /Добавить участника/i });
+  await expect(add).toBeEnabled();
+
+  for (let count = 0; count <= 3; count += 1) {
+    await save.click();
+    await expect(region.getByRole("alert")).toContainText(/минимум 4|не менее 4|4 участник/i);
+    expect(replaceRequests).toHaveLength(0);
+    if (count < 3) {
+      await add.click();
+      await expect(rosterGroup(page, count + 1)).toBeVisible();
+    }
+  }
+});
+
+test("проверяет позиции в диапазоне 1..N и оставляет draft исправляемым после удаления строки", async ({ page }) => {
+  const players = [
+    player(0, "Алиса"),
+    player(1, "Боб"),
+    player(2, "Вера"),
+    player(3, "Глеб"),
+    player(4, "Дима"),
+  ];
+  const { replaceRequests } = await setupRosterRoutes(page, roster(
+    players.map((candidate, index) => participant(index, candidate.id, "registered", index + 1)),
+  ), { players });
+  await openRoster(page);
+
+  const region = rosterRegion(page);
+  await rosterGroup(page, 2).getByRole("button", { name: "Удалить" }).click();
+  await region.getByRole("button", { name: /Сохранить состав/i }).click();
+  await expect(region.getByRole("alert")).toContainText(/от 1 до 4|без пропусков|последовательн/i);
+  expect(replaceRequests).toHaveLength(0);
+  await expect(rosterGroup(page, 1).getByRole("spinbutton", { name: "Seed / позиция" })).toBeEditable();
+
+  await rosterGroup(page, 2).getByRole("spinbutton", { name: "Seed / позиция" }).fill("2");
+  await rosterGroup(page, 3).getByRole("spinbutton", { name: "Seed / позиция" }).fill("3");
+  await rosterGroup(page, 4).getByRole("spinbutton", { name: "Seed / позиция" }).fill("4");
+  await region.getByRole("button", { name: /Сохранить состав/i }).click();
+  await expect.poll(() => replaceRequests.length).toBe(1);
+  expect(replaceRequests[0].body.participants).toEqual([
+    { player_id: players[0].id, seed: 1, attendance: "registered" },
+    { player_id: players[2].id, seed: 2, attendance: "registered" },
+    { player_id: players[3].id, seed: 3, attendance: "registered" },
+    { player_id: players[4].id, seed: 4, attendance: "registered" },
+  ]);
+});
+
 test("явно ограничивает 17-го участника", async ({ page }) => {
   const fullPlayers = Array.from({ length: 16 }, (_, index) => player(index, `Участник ${index + 1}`));
   await setupRosterRoutes(page, roster(
@@ -300,21 +357,33 @@ test("явно ограничивает 17-го участника", async ({ pa
 });
 
 test("изменяет attendance, заменяет и удаляет участника, отправляет полный roster с revision и принимает серверный порядок", async ({ page }) => {
-  const players = [player(0, "Алиса"), player(1, "Боб"), player(2, "Вера"), player(3, "Глеб")];
+  const players = [
+    player(0, "Алиса"),
+    player(1, "Боб"),
+    player(2, "Вера"),
+    player(3, "Глеб"),
+    player(4, "Дима"),
+  ];
   const returnedRoster = roster([
-    participant(0, players[2].id, "checked_in", 8),
-    participant(1, players[0].id, "checked_in", 4),
+    participant(0, players[2].id, "checked_in", 4),
+    participant(1, players[0].id, "checked_in", 3),
+    participant(2, players[3].id, "registered", 2),
+    participant(3, players[1].id, "registered", 1),
   ], { revision: 8 });
   const { replaceRequests } = await setupRosterRoutes(page, roster([
     participant(0, players[0].id, "registered", 1),
     participant(1, players[1].id, "registered", 2),
     participant(2, players[3].id, "registered", 3),
+    participant(3, players[4].id, "registered", 4),
+    participant(4, players[2].id, "registered", 5),
   ]), {
     players,
     onReplace: async (route, bodyParticipants) => {
       expect(bodyParticipants).toEqual([
         { player_id: players[0].id, seed: 4, attendance: "checked_in" },
         { player_id: players[2].id, seed: 3, attendance: "registered" },
+        { player_id: players[3].id, seed: 2, attendance: "registered" },
+        { player_id: players[4].id, seed: 1, attendance: "registered" },
       ]);
       await fulfillJSON(route, 200, returnedRoster);
     },
@@ -322,21 +391,29 @@ test("изменяет attendance, заменяет и удаляет участ
   await openRoster(page);
 
   const region = rosterRegion(page);
+  await rosterGroup(page, 5).getByRole("button", { name: "Удалить" }).click();
   await rosterGroup(page, 2).getByRole("combobox", { name: "Игрок" }).selectOption(players[2].id);
   await rosterGroup(page, 2).getByRole("spinbutton", { name: "Seed / позиция" }).fill("3");
   await rosterGroup(page, 1).getByRole("spinbutton", { name: "Seed / позиция" }).fill("4");
+  await rosterGroup(page, 3).getByRole("spinbutton", { name: "Seed / позиция" }).fill("2");
+  await rosterGroup(page, 4).getByRole("spinbutton", { name: "Seed / позиция" }).fill("1");
   await attendanceControl(rosterGroup(page, 1)).selectOption("checked_in");
-  await rosterGroup(page, 3).getByRole("button", { name: "Удалить" }).click();
 
   await region.getByRole("button", { name: /Сохранить состав/i }).click();
   await expect.poll(() => replaceRequests.length).toBe(1);
   expect(replaceRequests[0].body).toMatchObject({ expected_projection_revision: 1 });
   expect(replaceRequests[0].key).toMatch(/^[0-9a-f-]{36}$/i);
   await expect(rosterGroup(page, 1)).toContainText("Вера");
-  await expect(rosterGroup(page, 1)).toContainText("8");
+  await expect(rosterGroup(page, 1)).toContainText("4");
+  await expect(rosterGroup(page, 1)).toContainText(participant(0, players[2].id).id);
   await expect(attendanceControl(rosterGroup(page, 1))).toHaveValue("checked_in");
   await expect(rosterGroup(page, 2)).toContainText("Алиса");
-  await expect(rosterGroup(page, 2)).toContainText("4");
+  await expect(rosterGroup(page, 2)).toContainText("3");
+  await expect(rosterGroup(page, 2)).toContainText(participant(1, players[0].id).id);
+  await expect(rosterGroup(page, 3)).toContainText("Глеб");
+  await expect(rosterGroup(page, 3)).toContainText(participant(2, players[3].id).id);
+  await expect(rosterGroup(page, 4)).toContainText("Боб");
+  await expect(rosterGroup(page, 4)).toContainText(participant(3, players[1].id).id);
   await expect(
     rosterGroup(page, 1).getByRole("combobox", { name: "Игрок" }),
   ).toHaveValue(players[2].id);
@@ -346,11 +423,18 @@ test("изменяет attendance, заменяет и удаляет участ
 });
 
 test("сохраняет draft при русском 409 reservation conflict и блокирует редактирование locked roster", async ({ page }) => {
-  const players = [player(0, "Алиса"), player(1, "Боб")];
+  const players = [
+    player(0, "Алиса"),
+    player(1, "Боб"),
+    player(2, "Вера"),
+    player(3, "Глеб"),
+  ];
   let replaceCalls = 0;
   await setupRosterRoutes(page, roster([
     participant(0, players[0].id, "registered", 1),
     participant(1, players[1].id, "registered", 2),
+    participant(2, players[2].id, "registered", 3),
+    participant(3, players[3].id, "registered", 4),
   ]), {
     players,
     onReplace: async (route) => {
@@ -370,6 +454,8 @@ test("сохраняет draft при русском 409 reservation conflict и
   await setupRosterRoutes(page, roster([
     participant(0, players[0].id, "checked_in", 1),
     participant(1, players[1].id, "registered", 2),
+    participant(2, players[2].id, "registered", 3),
+    participant(3, players[3].id, "registered", 4),
   ], { locked: true, locked_at: baseDate }), { players });
   await openRoster(page);
   const lockedRegion = rosterRegion(page);
@@ -380,10 +466,17 @@ test("сохраняет draft при русском 409 reservation conflict и
 });
 
 test("сохраняет читаемый roster editor в обеих темах и на мобильной ширине", async ({ page }) => {
-  const players = [player(0, "Алиса"), player(1, "Боб")];
+  const players = [
+    player(0, "Алиса"),
+    player(1, "Боб"),
+    player(2, "Вера"),
+    player(3, "Глеб"),
+  ];
   await setupRosterRoutes(page, roster([
     participant(0, players[0].id, "registered", 1),
     participant(1, players[1].id, "checked_in", 2),
+    participant(2, players[2].id, "registered", 3),
+    participant(3, players[3].id, "registered", 4),
   ]), { players });
   await openRoster(page);
 

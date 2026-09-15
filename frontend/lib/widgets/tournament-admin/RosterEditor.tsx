@@ -39,6 +39,7 @@ type DraftParticipant = Readonly<{
   attendance: AttendanceState;
 }>;
 
+const MIN_ROSTER_SIZE = 4;
 const MAX_ROSTER_SIZE = 16;
 
 const ATTENDANCE_LABELS: Readonly<Record<AttendanceState, string>> = {
@@ -182,6 +183,7 @@ export const RosterEditor = ({
     () => new Map(players.map((player) => [player.id, player])),
     [players],
   );
+  const participantCount = draftParticipants.length;
 
   const updateDraftParticipant = (
     participantId: string,
@@ -248,8 +250,11 @@ export const RosterEditor = ({
         .map((participant) => Number(participant.seed))
         .filter((seed) => Number.isSafeInteger(seed) && seed > 0),
     );
-    const nextSeed = Array.from({ length: MAX_ROSTER_SIZE }, (_, index) => index + 1)
-      .find((seed) => !selectedSeeds.has(seed)) ?? draftParticipants.length + 1;
+    const nextParticipantCount = draftParticipants.length + 1;
+    const nextSeed = Array.from(
+      { length: nextParticipantCount },
+      (_, index) => index + 1,
+    ).find((seed) => !selectedSeeds.has(seed)) ?? nextParticipantCount;
     draftIdRef.current += 1;
     setDraftParticipants((current) => [
       ...current,
@@ -289,6 +294,10 @@ export const RosterEditor = ({
       setRosterError("Нельзя сохранить больше 16 участников в одном составе.");
       return;
     }
+    if (draftParticipants.length < MIN_ROSTER_SIZE) {
+      setRosterError("В составе должно быть не менее 4 участников.");
+      return;
+    }
     if (draftParticipants.some((participant) => !participant.playerId)) {
       setRosterError("Выберите игрока для каждой строки состава.");
       return;
@@ -301,10 +310,15 @@ export const RosterEditor = ({
     const seeds = draftParticipants.map((participant) => Number(participant.seed));
     if (
       seeds.some(
-        (seed) => !Number.isSafeInteger(seed) || seed < 1 || seed > MAX_ROSTER_SIZE,
+        (seed) =>
+          !Number.isSafeInteger(seed) ||
+          seed < 1 ||
+          seed > participantCount,
       )
     ) {
-      setRosterError("Позиция должна быть целым числом от 1 до 16.");
+      setRosterError(
+        `Позиция должна быть целым числом от 1 до ${participantCount}.`,
+      );
       return;
     }
     if (new Set(seeds).size !== seeds.length) {
@@ -569,7 +583,7 @@ export const RosterEditor = ({
                           id={`roster-seed-${participant.id}`}
                           type="number"
                           min="1"
-                          max={MAX_ROSTER_SIZE}
+                          max={participantCount}
                           step="1"
                           value={participant.seed}
                           onChange={(event) =>
