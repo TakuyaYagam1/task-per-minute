@@ -32,9 +32,9 @@ Do not load every document by default. Read the smallest set that covers the tas
 
 ## Architecture Policy
 
-- Backend work follows Clean Architecture inside a hexagonal monolith. The canonical dependency and ownership rules live in `architecture.md` and `standards/backend.md`.
+- Backend work follows a capability-oriented modular monolith with Clean Architecture and hexagonal boundaries. The canonical dependency and package-shape rules live in `architecture.md` and `standards/backend.md`; parallel ownership and generated-file ownership remain canonical in `ownership.md` and `sources-of-truth.md`.
 - Frontend work follows Feature-Sliced Design. The canonical layer direction and public-surface rules live in `architecture.md` and `standards/frontend.md`.
-- Preserve these boundaries through design, code review, narrow interfaces, and behavior-focused tests. Do not add `architecture_test.go`, AST import scanners, or reflection-only tests whose sole purpose is policing directory or layer shape.
+- Preserve dependency direction, capability ownership, generated-file ownership, and transport or persistence boundaries through design, code review, narrow interfaces, and behavior-focused tests. Nested backend subpackages are allowed when a cohesive boundary reduces cognitive load and is supported by ownership or change coupling. Do not add `architecture_test.go`, AST import scanners, or reflection-only tests whose sole purpose is policing directory or layer shape.
 
 ## Routing Table
 
