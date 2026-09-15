@@ -49,6 +49,7 @@ type StartAuthority struct {
 	WaveRevision       int64
 	Revisions          domain.ReadyWindowSourceRevisions
 	ReadinessRevisions map[uuid.UUID]int64
+	ByeParticipantID   *uuid.UUID
 	Wave               domain.Wave
 	Games              []GameAuthority
 	Current            *StartRecord
@@ -73,6 +74,7 @@ type StartRecord struct {
 	ExpectedProjectionRevision int64
 	Revisions                  domain.ReadyWindowSourceRevisions
 	ReadinessRevisions         map[uuid.UUID]int64
+	ByeParticipantID           *uuid.UUID
 	RequestDigest              [sha256.Size]byte
 	Wave                       domain.Wave
 	Games                      []gamedomain.Started
@@ -241,6 +243,7 @@ func buildWaveStartRecord(
 		ExpectedProjectionRevision: command.ExpectedProjectionRevision,
 		Revisions:                  authority.Revisions,
 		ReadinessRevisions:         cloneWaveStartReadinessRevisions(authority.ReadinessRevisions),
+		ByeParticipantID:           cloneWaveStartUUID(authority.ByeParticipantID),
 		RequestDigest:              command.RequestDigest,
 		Wave:                       wave, Games: startedGames, StartedAt: startedAt,
 	}
@@ -370,11 +373,11 @@ func validateWaveStartGames(authority StartAuthority) error {
 		}
 	}
 	for participantID, covered := range members {
-		if !covered {
+		if !covered && !sameWaveStartUUID(authority.ByeParticipantID, participantID) {
 			return waveStartError("Wave member %s has no playable Game", participantID)
 		}
 	}
-	return nil
+	return validateWaveStartBye(authority.ByeParticipantID, members)
 }
 
 func validateWaveStartGameAuthority(scope StartScope, game GameAuthority) error {
@@ -411,6 +414,7 @@ func validateWaveStartGameSeries(scope StartScope, game GameAuthority) error {
 	return err
 }
 
+//nolint:gocyclo // One fail-closed pass validates Game coverage and the optional Swiss bye.
 func validateStartedWaveGames(record StartRecord) error {
 	members := make(map[uuid.UUID]bool, len(record.Wave.Members))
 	for _, member := range record.Wave.Members {
@@ -446,12 +450,29 @@ func validateStartedWaveGames(record StartRecord) error {
 			members[participantID] = true
 		}
 	}
-	for _, covered := range members {
-		if !covered {
+	for participantID, covered := range members {
+		if !covered && !sameWaveStartUUID(record.ByeParticipantID, participantID) {
 			return waveStartError("Wave start omitted a participant")
 		}
 	}
+	return validateWaveStartBye(record.ByeParticipantID, members)
+}
+
+func validateWaveStartBye(byeParticipantID *uuid.UUID, members map[uuid.UUID]bool) error {
+	if byeParticipantID == nil {
+		return nil
+	}
+	if *byeParticipantID == uuid.Nil || members[*byeParticipantID] {
+		return waveStartError("bye participant is invalid or has a playable Game")
+	}
+	if _, exists := members[*byeParticipantID]; !exists {
+		return waveStartError("bye participant is not a Wave member")
+	}
 	return nil
+}
+
+func sameWaveStartUUID(value *uuid.UUID, expected uuid.UUID) bool {
+	return value != nil && *value == expected
 }
 
 func waveStartSlotIndex(series domain.Series, scope gamedomain.Scope) (int, error) {

@@ -330,7 +330,7 @@ WHERE roster.tournament_id = $1
         $3::UUID IS NULL
         OR series.id = $3::UUID
     )
-    AND series.state NOT IN ('completed', 'cancelled')
+    AND series.state NOT IN ('completed', 'cancelled', 'superseded')
 ORDER BY series.updated_at DESC,
     series.id DESC
 LIMIT 1
@@ -686,6 +686,7 @@ LEFT JOIN LATERAL (
     FROM wave_series
     JOIN series ON series.id = wave_series.series_id
     WHERE wave_series.wave_id = member.wave_id
+        AND series.state <> 'superseded'
         AND member.participant_id IN (
             series.first_participant_id,
             series.second_participant_id
@@ -906,7 +907,7 @@ LEFT JOIN LATERAL (
     LIMIT 1
 ) AS current_slot ON TRUE
 WHERE series.tournament_id = $1
-    AND series.state NOT IN ('completed', 'cancelled')
+    AND series.state NOT IN ('completed', 'cancelled', 'superseded')
 ORDER BY series.created_at,
     series.id
 `

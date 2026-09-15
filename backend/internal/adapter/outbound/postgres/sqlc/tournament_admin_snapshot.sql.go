@@ -184,6 +184,7 @@ JOIN series ON series.id = attempt.series_id
     AND series.roster_id = attempt.roster_id
 WHERE series.tournament_id = $1
     AND attempt.roster_id = $2
+    AND series.state <> 'superseded'
 ORDER BY attempt.series_id, attempt.slot_id, attempt.attempt_number, attempt.id
 `
 
@@ -260,6 +261,7 @@ JOIN series ON series.id = slot.series_id
     AND series.roster_id = slot.roster_id
 WHERE series.tournament_id = $1
     AND slot.roster_id = $2
+    AND series.state <> 'superseded'
 ORDER BY slot.series_id, slot.slot_number, slot.id
 `
 
@@ -645,6 +647,7 @@ SELECT id,
 FROM series
 WHERE tournament_id = $1
     AND roster_id = $2
+    AND state <> 'superseded'
 ORDER BY created_at, id
 `
 
@@ -722,6 +725,7 @@ LEFT JOIN LATERAL (
         AND series.roster_id = membership.roster_id
     WHERE membership.wave_id = member.wave_id
         AND membership.roster_id = member.roster_id
+        AND series.state <> 'superseded'
         AND member.participant_id IN (
             series.first_participant_id,
             series.second_participant_id

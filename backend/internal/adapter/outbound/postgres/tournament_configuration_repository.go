@@ -77,6 +77,32 @@ func (r *TournamentConfigurationPostgres) loadConfiguration(
 	if err != nil {
 		return admin.ConfigurationAuthority{}, configurationQueryError("select authority", err)
 	}
+	standingsRow, err := q.GetTournamentConfigurationEditPublishedStandings(ctx, sqlc.GetTournamentConfigurationEditPublishedStandingsParams{
+		TournamentID: tournamentID, RosterID: roster.ID,
+		ProjectionRevisionID: authorityRow.ProjectionRevisionID, ExpectedProjectionRevision: authorityRow.ProjectionRevision,
+	})
+	if err != nil {
+		return admin.ConfigurationAuthority{}, configurationQueryError("select published standings", err)
+	}
+	participantRows, err := q.ListTournamentConfigurationEditParticipants(ctx, roster.ID)
+	if err != nil {
+		return admin.ConfigurationAuthority{}, configurationQueryError("select participants", err)
+	}
+	participants := make([]admin.PairingParticipant, 0, len(participantRows))
+	for _, row := range participantRows {
+		attendance := domain.AttendanceState(row.Attendance)
+		if !attendance.IsValid() {
+			return admin.ConfigurationAuthority{}, domain.ErrInternal
+		}
+		if attendance != domain.AttendanceStateCheckedIn {
+			continue
+		}
+		participants = append(participants, admin.PairingParticipant{ID: row.ID, StableSeed: int(row.Seed)})
+	}
+	standings, err := tournamentAdminStandings(standingsRow, participants)
+	if err != nil {
+		return admin.ConfigurationAuthority{}, fmt.Errorf("decode published standings: %w", err)
+	}
 	configuration, err := q.GetTournamentConfigurationEditConfiguration(ctx, sqlc.GetTournamentConfigurationEditConfigurationParams{
 		TournamentID: tournamentID, ConfigurationID: authorityRow.ConfigurationID,
 	})
@@ -215,8 +241,8 @@ func (r *TournamentConfigurationPostgres) loadConfiguration(
 		item := admin.ConfigurationRound{
 			ID: row.ID, Stage: domain.TournamentStageSwiss, Number: int(row.RoundNumber), Revision: row.Revision,
 			ParticipantIDs: participants, SeriesIDs: seriesIDs, Locked: row.LockedAt.Valid || row.LockRevision != nil,
-			ByeParticipantID: configurationUUIDPointer(row.ByeParticipantID),
-			Started:          row.LockedAt.Valid, Consumed: row.LockedAt.Valid, Disclosed: seriesDisclosed(reservations), Reservations: cloneConfigurationReservations(reservations),
+			ByeParticipantID: configurationUUIDPointer(row.ByeParticipantID), ByeRevisionID: configurationUUIDPointer(row.ByeRevisionID),
+			Started: row.LockedAt.Valid, Consumed: row.LockedAt.Valid, Disclosed: seriesDisclosed(reservations), Reservations: cloneConfigurationReservations(reservations),
 		}
 		for _, seriesID := range seriesIDs {
 			if bound, ok := seriesByID[seriesID]; ok {
@@ -234,7 +260,7 @@ func (r *TournamentConfigurationPostgres) loadConfiguration(
 		Configuration: content, TournamentState: domain.TournamentState(authorityRow.TournamentState), TournamentRevision: authorityRow.TournamentRevision,
 		SwissDefault: stageDefaults[domain.TournamentStageSwiss], GoldenDefault: stageDefaults[domain.TournamentStageGolden],
 		SemifinalDefault: stageDefaults[domain.TournamentStageSemifinal], FinalDefault: stageDefaults[domain.TournamentStageFinal],
-		Series: series, Rounds: rounds, Artifacts: artifacts, UpdatedAt: configurationTime(configuration.PublishedAt, configurationTime(configuration.CreatedAt, time.Unix(0, 0).UTC())),
+		Series: series, Rounds: rounds, Standings: standings, Artifacts: artifacts, UpdatedAt: configurationTime(configuration.PublishedAt, configurationTime(configuration.CreatedAt, time.Unix(0, 0).UTC())),
 	}
 	if commandID != uuid.Nil {
 		if command, commandErr := q.GetTournamentConfigurationEditCommand(ctx, sqlc.GetTournamentConfigurationEditCommandParams{
@@ -452,6 +478,15 @@ func (r *TournamentConfigurationPostgres) applySeriesChanges(
 		}); err != nil {
 			return configurationQueryError("supersede Series", err)
 		}
+		if _, err := q.DeleteTournamentConfigurationEditSupersededWaveSeriesCAS(
+			ctx,
+			sqlc.DeleteTournamentConfigurationEditSupersededWaveSeriesCASParams{
+				WaveID: wave.ID, SourceSeriesID: change.Previous.ID, SuccessorSeriesID: successorID,
+				TournamentID: mutation.Authority.TournamentID, RosterID: rosterID,
+			},
+		); err != nil {
+			return configurationQueryError("detach superseded Series from Wave", err)
+		}
 	}
 	return nil
 }
@@ -549,6 +584,43 @@ func (r *TournamentConfigurationPostgres) applyRoundChange(
 	}
 	if err := q.DeleteSwissRepeatOverride(ctx, mutation.RoundChange.Previous.ID); err != nil {
 		return configurationQueryError("delete superseded Swiss repeat override", err)
+	}
+	previousByeParticipantID := derefUUID(mutation.RoundChange.Previous.ByeParticipantID)
+	previousByeRevisionID := derefUUID(mutation.RoundChange.Previous.ByeRevisionID)
+	nextByeParticipantID := derefUUID(mutation.RoundChange.Next.ByeParticipantID)
+	nextByeRevisionID := derefUUID(mutation.RoundChange.Next.ByeRevisionID)
+	if (previousByeParticipantID == uuid.Nil) != (previousByeRevisionID == uuid.Nil) ||
+		(nextByeParticipantID == uuid.Nil) != (nextByeRevisionID == uuid.Nil) {
+		return fmt.Errorf("swiss bye participant and revision must be both present or both absent: %w", domain.ErrValidation)
+	}
+	if mutation.RoundChange.Bye == nil {
+		if nextByeParticipantID != uuid.Nil || nextByeRevisionID != uuid.Nil {
+			return fmt.Errorf("swiss bye selection is missing for a non-null bye link: %w", domain.ErrValidation)
+		}
+	} else if mutation.RoundChange.Bye.ParticipantID != nextByeParticipantID || mutation.RoundChange.Bye.Evidence.ID != nextByeRevisionID {
+		return fmt.Errorf("swiss bye link does not match selection evidence: %w", domain.ErrValidation)
+	}
+	if err := q.DeleteSwissBye(ctx, mutation.RoundChange.Previous.ID); err != nil {
+		return configurationQueryError("delete superseded Swiss bye", err)
+	}
+	if mutation.RoundChange.Bye != nil {
+		bye, err := byeParams(SwissRoundMeta{
+			ID: mutation.RoundChange.Previous.ID, RosterID: rosterID, RecordedAt: mutation.Evidence.RequestedAt,
+		}, *mutation.RoundChange.Bye)
+		if err != nil {
+			return fmt.Errorf("prepare revised Swiss bye: %w", err)
+		}
+		if err := q.CreateSwissBye(ctx, bye); err != nil {
+			return configurationQueryError("create revised Swiss bye", err)
+		}
+	}
+	if _, err := q.UpdateTournamentConfigurationEditSwissWaveLinkByeCAS(ctx, sqlc.UpdateTournamentConfigurationEditSwissWaveLinkByeCASParams{
+		TournamentID: mutation.Authority.TournamentID, RosterID: rosterID, RoundID: mutation.RoundChange.Previous.ID,
+		ExpectedRoundRevision:    mutation.RoundChange.Previous.Revision,
+		ExpectedByeParticipantID: nullUUID(previousByeParticipantID), ExpectedByeRevisionID: nullUUID(previousByeRevisionID),
+		NextByeParticipantID: nullUUID(nextByeParticipantID), NextByeRevisionID: nullUUID(nextByeRevisionID),
+	}); err != nil {
+		return configurationQueryError("update Swiss bye link", err)
 	}
 	for index, pair := range mutation.RoundChange.Next.Pairings {
 		key := swissusecase.NewPairKey(pair.FirstParticipantID, pair.SecondParticipantID)

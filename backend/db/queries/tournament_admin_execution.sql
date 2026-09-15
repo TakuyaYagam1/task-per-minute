@@ -515,9 +515,11 @@ SELECT tournament.state AS tournament_state,
     ready_window.opened_at,
     ready_window.deadline,
     ready_window.consumed_at,
-    link.round_id AS swiss_round_id,
-    link.bye_participant_id,
-    standings.id AS artifact_revision_id,
+	link.round_id AS swiss_round_id,
+	link.bye_participant_id,
+	link.bye_revision_id,
+	COALESCE(bye_participant.seed, 0)::INTEGER AS bye_stable_seed,
+	standings.id AS artifact_revision_id,
     producer.revision_number AS artifact_revision
 FROM tournaments AS tournament
 JOIN rosters AS roster ON roster.tournament_id = tournament.id
@@ -544,6 +546,9 @@ JOIN waves AS wave
     AND wave.roster_id = roster.id
 JOIN ready_windows AS ready_window ON ready_window.wave_id = wave.id
 LEFT JOIN swiss_wave_links AS link ON link.wave_id = wave.id
+LEFT JOIN participants AS bye_participant
+	ON bye_participant.roster_id = roster.id
+	AND bye_participant.id = link.bye_participant_id
 WHERE tournament.id = sqlc.arg(tournament_id)
     AND wave.id = sqlc.arg(wave_id)
 FOR UPDATE OF tournament, roster, revision_artifact, standings, producer, wave, ready_window;

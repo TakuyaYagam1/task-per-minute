@@ -103,6 +103,39 @@ JOIN projection_cutoffs AS cutoff
     AND cutoff.roster_id = roster.id
 WHERE tournament.id = sqlc.arg(tournament_id)::UUID;
 
+-- Configuration reads run in a repeatable-read snapshot.  Keep the standings
+-- payload read-only and bind it to the exact published projection selected by
+-- the authority query above.
+-- name: GetTournamentConfigurationEditPublishedStandings :one
+SELECT standings.payload AS standings_payload
+FROM projection_revisions AS projection
+JOIN projection_revision_artifacts AS revision_artifact
+    ON revision_artifact.revision_id = projection.id
+    AND revision_artifact.artifact_kind = 'standings'
+JOIN projection_artifacts AS standings
+    ON standings.id = revision_artifact.artifact_id
+    AND standings.artifact_kind = 'standings'
+    AND standings.tournament_id = projection.tournament_id
+    AND standings.roster_id = projection.roster_id
+JOIN projection_revisions AS producer
+    ON producer.id = standings.produced_by_revision_id
+WHERE projection.id = sqlc.arg(projection_revision_id)::UUID
+    AND projection.tournament_id = sqlc.arg(tournament_id)::UUID
+    AND projection.roster_id = sqlc.arg(roster_id)::UUID
+    AND projection.revision_number = sqlc.arg(expected_projection_revision)::BIGINT
+    AND projection.state = 'published';
+
+-- Keep all attendance states in the read surface so the adapter can retain
+-- the same fail-closed validation used by tournamentAdminStandings.  Only
+-- checked-in rows become pairing participants and receive stable seeds.
+-- name: ListTournamentConfigurationEditParticipants :many
+SELECT participant.id,
+    participant.seed,
+    participant.attendance
+FROM participants AS participant
+WHERE participant.roster_id = sqlc.arg(roster_id)::UUID
+ORDER BY participant.seed, participant.id;
+
 -- name: GetTournamentConfigurationEditConfiguration :one
 SELECT configuration.id,
     configuration.tournament_id,
@@ -267,10 +300,19 @@ SELECT round.id,
     round.category_mode,
     round.effective_categories,
     COALESCE((
-        SELECT jsonb_agg(DISTINCT member.participant_id ORDER BY member.participant_id)
-        FROM swiss_pairing_members AS member
-        WHERE member.round_id = round.id
-            AND member.roster_id = round.roster_id
+        SELECT jsonb_agg(DISTINCT round_participant.participant_id ORDER BY round_participant.participant_id)
+        FROM (
+            SELECT member.participant_id
+            FROM swiss_pairing_members AS member
+            WHERE member.round_id = round.id
+                AND member.roster_id = round.roster_id
+            UNION
+            SELECT link.bye_participant_id
+            FROM swiss_wave_links AS link
+            WHERE link.round_id = round.id
+                AND link.roster_id = round.roster_id
+                AND link.bye_participant_id IS NOT NULL
+        ) AS round_participant
     ), '[]'::jsonb) AS participant_ids,
     COALESCE((
         SELECT jsonb_agg(DISTINCT wave_series.series_id ORDER BY wave_series.series_id)
@@ -289,6 +331,14 @@ SELECT round.id,
         ORDER BY link.wave_id
         LIMIT 1
     ) AS bye_participant_id,
+    (
+        SELECT link.bye_revision_id
+        FROM swiss_wave_links AS link
+        WHERE link.round_id = round.id
+            AND link.roster_id = round.roster_id
+        ORDER BY link.wave_id
+        LIMIT 1
+    ) AS bye_revision_id,
     round.generated_at,
     round.created_at,
     round.updated_at
@@ -863,6 +913,89 @@ RETURNING round.id,
     round.category_mode,
     round.effective_categories,
     round.updated_at;
+
+-- A pre-start configuration edit changes the normalized bye pair together.
+-- The old pair is an exact CAS fence; both old and new values must be either
+-- NULL or non-NULL.  The round and wave predicates keep the link editable
+-- only while its planned execution has no lock or start proof.
+-- name: UpdateTournamentConfigurationEditSwissWaveLinkByeCAS :one
+UPDATE swiss_wave_links AS link
+SET bye_participant_id = sqlc.narg(next_bye_participant_id)::UUID,
+    bye_revision_id = sqlc.narg(next_bye_revision_id)::UUID
+FROM waves AS wave
+WHERE link.wave_id = wave.id
+    AND link.tournament_id = sqlc.arg(tournament_id)::UUID
+    AND link.roster_id = sqlc.arg(roster_id)::UUID
+    AND link.round_id = sqlc.arg(round_id)::UUID
+    AND wave.tournament_id = sqlc.arg(tournament_id)::UUID
+    AND wave.roster_id = sqlc.arg(roster_id)::UUID
+    AND link.bye_participant_id IS NOT DISTINCT FROM sqlc.narg(expected_bye_participant_id)::UUID
+    AND link.bye_revision_id IS NOT DISTINCT FROM sqlc.narg(expected_bye_revision_id)::UUID
+    AND (sqlc.narg(expected_bye_participant_id)::UUID IS NULL) = (sqlc.narg(expected_bye_revision_id)::UUID IS NULL)
+    AND (sqlc.narg(next_bye_participant_id)::UUID IS NULL) = (sqlc.narg(next_bye_revision_id)::UUID IS NULL)
+    AND wave.state = 'planned'
+    AND wave.started_at IS NULL
+    AND wave.paused_at IS NULL
+    AND wave.closed_at IS NULL
+    AND EXISTS (
+        SELECT 1
+        FROM swiss_rounds AS round
+        WHERE round.id = link.round_id
+            AND round.tournament_id = sqlc.arg(tournament_id)::UUID
+            AND round.roster_id = sqlc.arg(roster_id)::UUID
+            AND round.revision = sqlc.arg(expected_round_revision)::BIGINT
+            AND round.generation_kind = 'manual'
+            AND round.lock_revision IS NULL
+            AND round.locked_at IS NULL
+    )
+    AND NOT EXISTS (
+        SELECT 1
+        FROM swiss_round_lock_proofs AS proof
+        WHERE proof.round_id = link.round_id
+            AND proof.roster_id = link.roster_id
+    )
+RETURNING link.wave_id,
+    link.tournament_id,
+    link.roster_id,
+    link.round_id,
+    link.bye_participant_id,
+    link.bye_revision_id;
+
+-- Once an unstarted Series successor is attached, remove only the superseded
+-- execution membership.  The old Series and edit lineage remain retained, but
+-- runtime Wave reads cannot mistake both generations for active members.
+-- name: DeleteTournamentConfigurationEditSupersededWaveSeriesCAS :one
+DELETE FROM wave_series AS membership
+USING waves AS wave,
+    series AS source
+WHERE membership.wave_id = sqlc.arg(wave_id)::UUID
+    AND membership.series_id = sqlc.arg(source_series_id)::UUID
+    AND wave.id = membership.wave_id
+    AND wave.tournament_id = sqlc.arg(tournament_id)::UUID
+    AND wave.roster_id = sqlc.arg(roster_id)::UUID
+    AND wave.state = 'planned'
+    AND wave.started_at IS NULL
+    AND wave.paused_at IS NULL
+    AND wave.closed_at IS NULL
+    AND source.id = membership.series_id
+    AND source.tournament_id = sqlc.arg(tournament_id)::UUID
+    AND source.roster_id = sqlc.arg(roster_id)::UUID
+    AND source.state = 'superseded'
+    AND source.superseded_by_series_id = sqlc.arg(successor_series_id)::UUID
+    AND NOT EXISTS (
+        SELECT 1
+        FROM wave_member_routes AS route
+        WHERE route.wave_id = membership.wave_id
+            AND route.series_id = membership.series_id
+    )
+    AND NOT EXISTS (
+        SELECT 1
+        FROM swiss_round_lock_proof_series AS proof_series
+        WHERE proof_series.series_id = membership.series_id
+            AND proof_series.roster_id = sqlc.arg(roster_id)::UUID
+    )
+RETURNING membership.wave_id,
+    membership.series_id;
 
 -- Wave/readiness evidence cannot be deleted. These mutations close an
 -- undisclosed unstarted execution lineage so a new graph can be created.

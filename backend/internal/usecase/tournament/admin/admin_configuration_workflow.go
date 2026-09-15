@@ -150,6 +150,7 @@ type ConfigurationRound struct {
 	SeriesIDs        []uuid.UUID
 	Pairings         []inbound.AdminConfigurationParticipantPair
 	ByeParticipantID *uuid.UUID
+	ByeRevisionID    *uuid.UUID
 	Locked           bool
 	Started          bool
 	Consumed         bool
@@ -168,6 +169,7 @@ type ConfigurationAuthority struct {
 	GoldenDefault        ConfigurationStageDefault
 	SemifinalDefault     ConfigurationStageDefault
 	FinalDefault         ConfigurationStageDefault
+	Standings            []SwissStandingView
 	Series               []ConfigurationSeries
 	Rounds               []ConfigurationRound
 	Artifacts            []ConfigurationArtifact
@@ -222,6 +224,7 @@ type ConfigurationRoundChange struct {
 	Next               ConfigurationRound
 	Series             []ConfigurationSeriesChange
 	PriorMeetingCounts map[swissusecase.PairKey]int
+	Bye                *swissusecase.ByeSelection
 }
 
 type ConfigurationMutationResult struct {
@@ -462,9 +465,16 @@ func (w *TournamentConfigurationWorkflow) reviseSwissRoundInternal(
 		return inbound.AdminConfigurationMutationEvidence{}, authority.conflict(command.ExpectedProjectionRevision, authority.Configuration.Revision)
 	}
 	if round.Stage != domain.TournamentStageSwiss || !editableRound(round) {
-		return inbound.AdminConfigurationMutationEvidence{}, cutoffError("Swiss round is no longer editable")
+		return inbound.AdminConfigurationMutationEvidence{}, configurationCutoffConflict(
+			authority, command.ExpectedProjectionRevision, command.ExpectedRoundRevision,
+			"Swiss round is no longer editable",
+		)
 	}
 	if err := validateManualRound(command, round); err != nil {
+		return inbound.AdminConfigurationMutationEvidence{}, err
+	}
+	byeSelection, err := authority.selectSwissBye(command, round)
+	if err != nil {
 		return inbound.AdminConfigurationMutationEvidence{}, err
 	}
 	priorMeetingCounts, err := authority.PriorMeetingCountsBeforeRound(round.Number)
@@ -485,7 +495,10 @@ func (w *TournamentConfigurationWorkflow) reviseSwissRoundInternal(
 			return inbound.AdminConfigurationMutationEvidence{}, domain.ErrConflict
 		}
 		if !editableSeries(series) {
-			return inbound.AdminConfigurationMutationEvidence{}, cutoffError("Swiss series is no longer editable")
+			return inbound.AdminConfigurationMutationEvidence{}, configurationCutoffConflict(
+				authority, command.ExpectedProjectionRevision, command.ExpectedRoundRevision,
+				"Swiss series is no longer editable",
+			)
 		}
 		affected = append(affected, seriesArtifact(series))
 	}
@@ -495,7 +508,14 @@ func (w *TournamentConfigurationWorkflow) reviseSwissRoundInternal(
 	nextRound := cloneConfigurationRound(round)
 	nextRound.Revision++
 	nextRound.Pairings = canonicalPairings(command.ManualPairings)
-	nextRound.ByeParticipantID = cloneUUID(command.ManualByeParticipantID)
+	nextRound.ByeParticipantID = nil
+	nextRound.ByeRevisionID = nil
+	if byeSelection != nil {
+		participantID := byeSelection.ParticipantID
+		nextRound.ByeParticipantID = &participantID
+		evidenceID := byeSelection.Evidence.ID
+		nextRound.ByeRevisionID = &evidenceID
+	}
 	rebuilt, superseded := successorArtifacts(command.CommandID, affected)
 	evidence := configurationEvidence(command.CommandScope, digest, authority, authority.Configuration.Revision, affected, superseded, command.Reason, authority.UpdatedAt)
 	evidence.RebuiltArtifactIDs = artifactIDs(rebuilt)
@@ -503,7 +523,7 @@ func (w *TournamentConfigurationWorkflow) reviseSwissRoundInternal(
 		Operation: configurationOperationSwissRound, CommandID: command.CommandID, Authority: authority, RequestDigest: digest,
 		NextConfiguration: cloneContentConfiguration(authority.Configuration), Affected: cloneArtifacts(affected),
 		Superseded: cloneArtifactViews(superseded), Rebuilt: cloneArtifacts(rebuilt), UnlockIntents: cloneUnlockIntents(command.UnlockIntents),
-		RoundChange: &ConfigurationRoundChange{Previous: cloneConfigurationRound(round), Next: nextRound, PriorMeetingCounts: clonePriorMeetingCounts(priorMeetingCounts)}, Evidence: evidence,
+		RoundChange: &ConfigurationRoundChange{Previous: cloneConfigurationRound(round), Next: nextRound, PriorMeetingCounts: clonePriorMeetingCounts(priorMeetingCounts), Bye: cloneByeSelection(byeSelection)}, Evidence: evidence,
 	}
 	if len(round.SeriesIDs) != len(command.ManualPairings) {
 		return inbound.AdminConfigurationMutationEvidence{}, domain.ErrConflict
@@ -570,8 +590,34 @@ func (e *ConfigurationRevisionConflictError) Error() string {
 
 func (e *ConfigurationRevisionConflictError) Unwrap() error { return domain.ErrConflict }
 
+func (e *ConfigurationRevisionConflictError) As(target any) bool {
+	conflict, ok := target.(**inbound.AdminRevisionConflictError)
+	if !ok {
+		return false
+	}
+	*conflict = &inbound.AdminRevisionConflictError{
+		ExpectedRevision: e.ExpectedProjectionRevision,
+		CurrentRevision:  e.CurrentProjectionRevision,
+		CurrentState:     e.CurrentState,
+	}
+	return true
+}
+
 func cutoffError(reason string) error {
 	return fmt.Errorf("%w: %s", ErrCutoff, reason)
+}
+
+func configurationCutoffConflict(
+	authority ConfigurationAuthority,
+	expectedProjectionRevision int64,
+	expectedConfigurationRevision int64,
+	reason string,
+) error {
+	return fmt.Errorf(
+		"%w: %w",
+		authority.conflict(expectedProjectionRevision, expectedConfigurationRevision),
+		cutoffError(reason),
+	)
 }
 
 //nolint:gocyclo // Authority validation intentionally checks the complete cross-artifact snapshot.
@@ -613,6 +659,10 @@ func (a ConfigurationAuthority) Validate(tournamentID uuid.UUID) error {
 	for _, round := range a.Rounds {
 		if round.ID == uuid.Nil || round.Number < 1 || round.Revision < 1 || !round.Stage.IsValid() ||
 			!addConfigurationIdentity(roundSeen, round.ID) || !validUniqueIDs(round.ParticipantIDs, 1, len(round.ParticipantIDs)) {
+			return domain.ErrInternal
+		}
+		if (round.ByeParticipantID == nil) != (round.ByeRevisionID == nil) ||
+			(round.ByeParticipantID != nil && (*round.ByeParticipantID == uuid.Nil || *round.ByeRevisionID == uuid.Nil)) {
 			return domain.ErrInternal
 		}
 	}
@@ -813,6 +863,123 @@ func validateUnlockIntents(tournamentID uuid.UUID, artifacts []ConfigurationArti
 		return domain.ErrConflict
 	}
 	return nil
+}
+
+func (a ConfigurationAuthority) selectSwissBye(command SwissRoundRevisionCommand, round ConfigurationRound) (*swissusecase.ByeSelection, error) {
+	if len(round.ParticipantIDs)%2 == 0 {
+		return nil, nil
+	}
+	receivedByes, err := a.receivedSwissByesBeforeRound(round.Number)
+	if err != nil {
+		return nil, err
+	}
+	candidates, err := a.swissByeCandidates(round, receivedByes)
+	if err != nil {
+		return nil, err
+	}
+	requestedParticipantID := uuid.Nil
+	if command.ManualByeParticipantID != nil {
+		requestedParticipantID = *command.ManualByeParticipantID
+	}
+	evidenceID := configurationByeEvidenceID(command.CommandID, round.ID)
+	selection, err := swissusecase.SelectManualBye(evidenceID, round.ID, candidates, requestedParticipantID, a.UpdatedAt)
+	if err == nil {
+		return &selection, nil
+	}
+	if !errors.Is(err, swissusecase.ErrManualByeNotEligible) {
+		return nil, err
+	}
+	automatic, automaticErr := swissusecase.SelectBye(evidenceID, round.ID, candidates, a.UpdatedAt)
+	if automaticErr == nil {
+		return nil, &ManualByeMismatchError{
+			RequestedParticipantID: requestedParticipantID,
+			SelectedParticipantID:  automatic.ParticipantID,
+			ExpectedRevision:       command.ExpectedProjectionRevision,
+			CurrentRevision:        a.ProjectionRevision,
+			CurrentState:           a.TournamentState,
+		}
+	}
+	return nil, err
+}
+
+func (a ConfigurationAuthority) receivedSwissByesBeforeRound(roundNumber int) (map[uuid.UUID]bool, error) {
+	if roundNumber < 1 {
+		return nil, domain.ErrValidation
+	}
+	receivedByes := make(map[uuid.UUID]bool)
+	seenRoundNumbers := make(map[int]struct{})
+	for _, round := range a.Rounds {
+		if round.Stage != domain.TournamentStageSwiss || round.Number >= roundNumber {
+			continue
+		}
+		if _, duplicate := seenRoundNumbers[round.Number]; duplicate {
+			return nil, fmt.Errorf("duplicate earlier Swiss round %d: %w", round.Number, domain.ErrInternal)
+		}
+		seenRoundNumbers[round.Number] = struct{}{}
+		if round.ByeParticipantID == nil {
+			continue
+		}
+		byeParticipantID := *round.ByeParticipantID
+		if byeParticipantID == uuid.Nil {
+			return nil, fmt.Errorf("invalid bye participant in earlier Swiss round %d: %w", round.Number, domain.ErrInternal)
+		}
+		known := false
+		for _, participantID := range round.ParticipantIDs {
+			if participantID == byeParticipantID {
+				known = true
+				break
+			}
+		}
+		if !known {
+			return nil, fmt.Errorf("bye participant is absent from earlier Swiss round %d: %w", round.Number, domain.ErrInternal)
+		}
+		receivedByes[byeParticipantID] = true
+	}
+	return receivedByes, nil
+}
+
+func (a ConfigurationAuthority) swissByeCandidates(round ConfigurationRound, receivedByes map[uuid.UUID]bool) ([]swissusecase.ByeCandidate, error) {
+	participants := make(map[uuid.UUID]struct{}, len(round.ParticipantIDs))
+	for _, participantID := range round.ParticipantIDs {
+		if participantID == uuid.Nil {
+			return nil, domain.ErrInternal
+		}
+		if _, duplicate := participants[participantID]; duplicate {
+			return nil, domain.ErrInternal
+		}
+		participants[participantID] = struct{}{}
+	}
+	if len(a.Standings) != len(participants) {
+		return nil, fmt.Errorf("swiss standings do not cover the edited round: %w", domain.ErrInternal)
+	}
+	seen := make(map[uuid.UUID]struct{}, len(a.Standings))
+	candidates := make([]swissusecase.ByeCandidate, 0, len(a.Standings))
+	for _, standing := range a.Standings {
+		if standing.ParticipantID == uuid.Nil {
+			return nil, domain.ErrInternal
+		}
+		if _, exists := participants[standing.ParticipantID]; !exists {
+			return nil, fmt.Errorf("swiss standing is outside the edited round: %w", domain.ErrInternal)
+		}
+		if _, duplicate := seen[standing.ParticipantID]; duplicate {
+			return nil, fmt.Errorf("duplicate Swiss standing participant: %w", domain.ErrInternal)
+		}
+		seen[standing.ParticipantID] = struct{}{}
+		candidates = append(candidates, swissusecase.ByeCandidate{
+			ParticipantID:        standing.ParticipantID,
+			Points:               standing.Points,
+			ProvisionalBuchholz:  standing.Buchholz,
+			HeadToHeadPoints:     standing.HeadToHeadPoints,
+			HeadToHeadApplicable: standing.HeadToHeadApplied,
+			EffectiveTime:        time.Duration(standing.EffectiveTimeMS) * time.Millisecond,
+			ReceivedBye:          receivedByes[standing.ParticipantID],
+		})
+	}
+	return candidates, nil
+}
+
+func configurationByeEvidenceID(commandID, roundID uuid.UUID) uuid.UUID {
+	return uuid.NewSHA1(configurationMutationNamespace, []byte(commandID.String()+":swiss-bye:"+roundID.String()))
 }
 
 // PriorMeetingCountsBeforeRound returns the authoritative meeting counts for
@@ -1221,8 +1388,19 @@ func cloneConfigurationRound(value ConfigurationRound) ConfigurationRound {
 	value.SeriesIDs = append([]uuid.UUID(nil), value.SeriesIDs...)
 	value.Pairings = canonicalPairings(value.Pairings)
 	value.ByeParticipantID = cloneUUID(value.ByeParticipantID)
+	value.ByeRevisionID = cloneUUID(value.ByeRevisionID)
 	value.Reservations = cloneReservations(value.Reservations)
 	return value
+}
+
+func cloneByeSelection(value *swissusecase.ByeSelection) *swissusecase.ByeSelection {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	cloned.Evidence.NormalizedInputs = append([]string(nil), value.Evidence.NormalizedInputs...)
+	cloned.Evidence.Result = append([]string(nil), value.Evidence.Result...)
+	return &cloned
 }
 
 func clonePriorMeetingCounts(value map[swissusecase.PairKey]int) map[swissusecase.PairKey]int {

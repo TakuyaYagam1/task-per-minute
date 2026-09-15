@@ -105,6 +105,87 @@ func TestSwissByePolicy(t *testing.T) {
 		}
 	})
 
+	t.Run("records and replays an eligible manual bye", func(t *testing.T) {
+		t.Parallel()
+
+		candidates := swissByeCandidates(5)
+		for index := range candidates {
+			candidates[index].Points = index + 1
+		}
+		requested := candidates[0].ParticipantID
+		selection, err := swissusecase.SelectManualBye(
+			uuid.New(), uuid.New(), candidates, requested,
+			time.Date(2026, time.August, 27, 12, 15, 0, 0, time.UTC),
+		)
+		if err != nil {
+			t.Fatalf("SelectManualBye() error = %v", err)
+		}
+		if selection.ParticipantID != requested || len(selection.Evidence.NormalizedInputs) != len(candidates) {
+			t.Fatalf("selection = %#v, want requested participant and candidate evidence", selection)
+		}
+		if err := selection.Evidence.Validate(); err != nil {
+			t.Fatalf("manual evidence Validate() error = %v", err)
+		}
+		replayed, err := swissusecase.ReplayBye(selection)
+		if err != nil {
+			t.Fatalf("ReplayBye(manual) error = %v", err)
+		}
+		if replayed.ParticipantID != requested {
+			t.Fatalf("replayed participant = %s, want %s", replayed.ParticipantID, requested)
+		}
+	})
+
+	t.Run("rejects a manual non-contender", func(t *testing.T) {
+		t.Parallel()
+
+		candidates := swissByeCandidates(5)
+		for index := range candidates {
+			candidates[index].Points = index + 1
+		}
+		_, err := swissusecase.SelectManualBye(
+			uuid.New(), uuid.New(), candidates, candidates[1].ParticipantID,
+			time.Date(2026, time.August, 27, 12, 16, 0, 0, time.UTC),
+		)
+		if !errors.Is(err, swissusecase.ErrManualByeNotEligible) {
+			t.Fatalf("SelectManualBye(non-contender) error = %v, want ErrManualByeNotEligible", err)
+		}
+	})
+
+	t.Run("rejects a manual participant with a received bye", func(t *testing.T) {
+		t.Parallel()
+
+		candidates := swissByeCandidates(5)
+		candidates[0].ReceivedBye = true
+		_, err := swissusecase.SelectManualBye(
+			uuid.New(), uuid.New(), candidates, candidates[0].ParticipantID,
+			time.Date(2026, time.August, 27, 12, 17, 0, 0, time.UTC),
+		)
+		if !errors.Is(err, swissusecase.ErrManualByeNotEligible) {
+			t.Fatalf("SelectManualBye(received bye) error = %v, want ErrManualByeNotEligible", err)
+		}
+	})
+
+	t.Run("rejects tampered manual evidence", func(t *testing.T) {
+		t.Parallel()
+
+		candidates := swissByeCandidates(5)
+		for index := range candidates {
+			candidates[index].Points = index + 1
+		}
+		selection, err := swissusecase.SelectManualBye(
+			uuid.New(), uuid.New(), candidates, candidates[0].ParticipantID,
+			time.Date(2026, time.August, 27, 12, 18, 0, 0, time.UTC),
+		)
+		if err != nil {
+			t.Fatalf("SelectManualBye() error = %v", err)
+		}
+		tampered := selection
+		tampered.Evidence.Result[0], tampered.Evidence.Result[1] = tampered.Evidence.Result[1], tampered.Evidence.Result[0]
+		if _, err := swissusecase.ReplayBye(tampered); !errors.Is(err, domain.ErrDecisionReplayMismatch) {
+			t.Fatalf("ReplayBye(tampered manual) error = %v, want ErrDecisionReplayMismatch", err)
+		}
+	})
+
 	t.Run("rejects invalid rosters", func(t *testing.T) {
 		t.Parallel()
 

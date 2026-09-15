@@ -21,10 +21,14 @@ const (
 	swissByeHeadToHeadPrefix    = "head-to-head:"
 	swissByeEffectiveTimePrefix = "effective-time-ns:"
 	swissByeReceivedPrefix      = "received-bye:"
+	swissByeManualPrefix        = "manual-selected:"
 	swissByeNotApplicable       = "na"
 )
 
-var ErrInvalidBye = errors.New("invalid swiss bye selection")
+var (
+	ErrInvalidBye           = errors.New("invalid swiss bye selection")
+	ErrManualByeNotEligible = errors.New("manual swiss bye is not a policy contender")
+)
 
 type ByeCandidate struct {
 	ParticipantID        uuid.UUID
@@ -34,6 +38,8 @@ type ByeCandidate struct {
 	HeadToHeadApplicable bool
 	EffectiveTime        time.Duration
 	ReceivedBye          bool
+	manualMarkerPresent  bool
+	manualSelected       bool
 }
 
 type ByeSelection struct {
@@ -66,6 +72,45 @@ func SelectBye(
 	return selectSwissByeFromEvidence(evidence)
 }
 
+// SelectManualBye records an operator-selected bye only when the requested
+// participant remains among the deterministic policy contenders. The marker
+// is part of the evidence input so ReplayBye can verify the same choice
+// without relying on the random tie-break seed.
+func SelectManualBye(
+	evidenceID uuid.UUID,
+	roundID uuid.UUID,
+	candidates []ByeCandidate,
+	requestedParticipantID uuid.UUID,
+	decidedAt time.Time,
+) (ByeSelection, error) {
+	if requestedParticipantID == uuid.Nil {
+		return ByeSelection{}, fmt.Errorf("%w: missing requested participant", ErrManualByeNotEligible)
+	}
+	inputs, err := buildByeInputs(candidates, &requestedParticipantID)
+	if err != nil {
+		return ByeSelection{}, err
+	}
+	evidence, err := domain.NewDecisionEvidence(
+		evidenceID,
+		domain.DecisionPurposePairing,
+		domain.DecisionAlgorithmV1,
+		inputs,
+		roundID,
+		decidedAt,
+	)
+	if err != nil {
+		return ByeSelection{}, fmt.Errorf("%w: %w", ErrInvalidBye, err)
+	}
+	selection, err := selectSwissByeFromEvidence(evidence)
+	if err != nil {
+		return ByeSelection{}, err
+	}
+	if selection.ParticipantID != requestedParticipantID {
+		return ByeSelection{}, fmt.Errorf("%w: selected participant does not match request", ErrManualByeNotEligible)
+	}
+	return selection, nil
+}
+
 func ReplayBye(selection ByeSelection) (ByeSelection, error) {
 	replayed, err := selectSwissByeFromEvidence(selection.Evidence)
 	if err != nil {
@@ -78,8 +123,25 @@ func ReplayBye(selection ByeSelection) (ByeSelection, error) {
 }
 
 func BuildByeInputs(candidates []ByeCandidate) ([]string, error) {
+	return buildByeInputs(candidates, nil)
+}
+
+func buildByeInputs(candidates []ByeCandidate, requestedParticipantID *uuid.UUID) ([]string, error) {
 	if err := validateSwissByeCandidates(candidates); err != nil {
 		return nil, err
+	}
+	if requestedParticipantID != nil {
+		contenders := swissByePolicyContenders(candidates)
+		eligible := false
+		for _, candidate := range contenders {
+			if candidate.ParticipantID == *requestedParticipantID {
+				eligible = true
+				break
+			}
+		}
+		if !eligible {
+			return nil, fmt.Errorf("%w: participant %s is not an eligible policy contender", ErrManualByeNotEligible, *requestedParticipantID)
+		}
 	}
 	inputs := make([]string, len(candidates))
 	for i, candidate := range candidates {
@@ -87,14 +149,18 @@ func BuildByeInputs(candidates []ByeCandidate) ([]string, error) {
 		if candidate.HeadToHeadApplicable {
 			headToHead = strconv.Itoa(candidate.HeadToHeadPoints)
 		}
-		inputs[i] = strings.Join([]string{
+		fields := []string{
 			swissByeParticipantPrefix + candidate.ParticipantID.String(),
 			swissByePointsPrefix + strconv.Itoa(candidate.Points),
 			swissByeBuchholzPrefix + strconv.Itoa(candidate.ProvisionalBuchholz),
 			swissByeHeadToHeadPrefix + headToHead,
 			swissByeEffectiveTimePrefix + strconv.FormatInt(int64(candidate.EffectiveTime), 10),
 			swissByeReceivedPrefix + strconv.FormatBool(candidate.ReceivedBye),
-		}, "|")
+		}
+		if requestedParticipantID != nil {
+			fields = append(fields, swissByeManualPrefix+strconv.FormatBool(candidate.ParticipantID == *requestedParticipantID))
+		}
+		inputs[i] = strings.Join(fields, "|")
 	}
 	return inputs, nil
 }
@@ -142,35 +208,42 @@ func selectSwissByeFromEvidence(evidence domain.DecisionEvidence) (ByeSelection,
 		return ByeSelection{}, fmt.Errorf("%w: %w", ErrInvalidBye, err)
 	}
 	candidates := make([]ByeCandidate, len(orderedInputs))
+	manualMarkerCount := 0
+	manualSelectedCount := 0
 	for i, input := range orderedInputs {
 		candidate, parseErr := parseSwissByeInput(input)
 		if parseErr != nil {
 			return ByeSelection{}, parseErr
 		}
 		candidates[i] = candidate
+		if candidate.manualMarkerPresent {
+			manualMarkerCount++
+			if candidate.manualSelected {
+				manualSelectedCount++
+			}
+		}
 	}
 	if err := validateSwissByeCandidates(candidates); err != nil {
 		return ByeSelection{}, err
 	}
-
-	contenders := make([]ByeCandidate, 0, len(candidates))
-	for _, candidate := range candidates {
-		if !candidate.ReceivedBye {
-			contenders = append(contenders, candidate)
+	if manualMarkerCount != 0 {
+		if manualMarkerCount != len(candidates) || manualSelectedCount != 1 {
+			return ByeSelection{}, fmt.Errorf("%w: manual selection marker must identify exactly one candidate", ErrInvalidBye)
 		}
+		contenders := swissByePolicyContenders(candidates)
+		for _, candidate := range contenders {
+			if candidate.manualSelected {
+				return ByeSelection{
+					ParticipantID: candidate.ParticipantID,
+					PointsAwarded: PairingByePoints,
+					Evidence:      evidence,
+				}, nil
+			}
+		}
+		return ByeSelection{}, fmt.Errorf("%w: marked participant is not an eligible policy contender", ErrManualByeNotEligible)
 	}
-	contenders = keepLowestSwissByeMetric(contenders, func(candidate ByeCandidate) int {
-		return candidate.Points
-	})
-	contenders = keepLowestSwissByeMetric(contenders, func(candidate ByeCandidate) int {
-		return candidate.ProvisionalBuchholz
-	})
-	if swissByeHeadToHeadApplies(contenders) {
-		contenders = keepLowestSwissByeMetric(contenders, func(candidate ByeCandidate) int {
-			return candidate.HeadToHeadPoints
-		})
-	}
-	contenders = keepHighestSwissByeEffectiveTime(contenders)
+
+	contenders := swissByePolicyContenders(candidates)
 
 	return ByeSelection{
 		ParticipantID: contenders[0].ParticipantID,
@@ -179,9 +252,10 @@ func selectSwissByeFromEvidence(evidence domain.DecisionEvidence) (ByeSelection,
 	}, nil
 }
 
+//nolint:gocyclo // Evidence decoding intentionally validates every signed candidate field in one pass.
 func parseSwissByeInput(input string) (ByeCandidate, error) {
 	parts := strings.Split(input, "|")
-	if len(parts) != 6 {
+	if len(parts) != 6 && len(parts) != 7 {
 		return ByeCandidate{}, fmt.Errorf("%w: invalid recorded candidate", ErrInvalidBye)
 	}
 
@@ -227,6 +301,19 @@ func parseSwissByeInput(input string) (ByeCandidate, error) {
 	if err != nil {
 		return ByeCandidate{}, fmt.Errorf("%w: invalid recorded bye history", ErrInvalidBye)
 	}
+	manualMarkerPresent := false
+	manualSelected := false
+	if len(parts) == 7 {
+		manualValue, ok := strings.CutPrefix(parts[6], swissByeManualPrefix)
+		if !ok {
+			return ByeCandidate{}, fmt.Errorf("%w: invalid manual selection marker", ErrInvalidBye)
+		}
+		manualSelected, err = strconv.ParseBool(manualValue)
+		if err != nil {
+			return ByeCandidate{}, fmt.Errorf("%w: invalid manual selection marker", ErrInvalidBye)
+		}
+		manualMarkerPresent = true
+	}
 
 	return ByeCandidate{
 		ParticipantID:        participantID,
@@ -236,7 +323,30 @@ func parseSwissByeInput(input string) (ByeCandidate, error) {
 		HeadToHeadApplicable: headToHeadApplicable,
 		EffectiveTime:        time.Duration(effectiveTime),
 		ReceivedBye:          receivedBye,
+		manualMarkerPresent:  manualMarkerPresent,
+		manualSelected:       manualSelected,
 	}, nil
+}
+
+func swissByePolicyContenders(candidates []ByeCandidate) []ByeCandidate {
+	contenders := make([]ByeCandidate, 0, len(candidates))
+	for _, candidate := range candidates {
+		if !candidate.ReceivedBye {
+			contenders = append(contenders, candidate)
+		}
+	}
+	contenders = keepLowestSwissByeMetric(contenders, func(candidate ByeCandidate) int {
+		return candidate.Points
+	})
+	contenders = keepLowestSwissByeMetric(contenders, func(candidate ByeCandidate) int {
+		return candidate.ProvisionalBuchholz
+	})
+	if swissByeHeadToHeadApplies(contenders) {
+		contenders = keepLowestSwissByeMetric(contenders, func(candidate ByeCandidate) int {
+			return candidate.HeadToHeadPoints
+		})
+	}
+	return keepHighestSwissByeEffectiveTime(contenders)
 }
 
 func parseSwissByeInt(value, prefix string) (int, error) {

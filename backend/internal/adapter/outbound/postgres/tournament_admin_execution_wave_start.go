@@ -31,6 +31,8 @@ type waveStartSnapshot struct {
 	seriesIDs          []uuid.UUID
 	swissProof         *waveStartSwissRoundProof
 	byeParticipantID   *uuid.UUID
+	byeRevisionID      *uuid.UUID
+	byeStableSeed      int32
 }
 
 type waveStartSwissRoundProof struct {
@@ -159,7 +161,7 @@ func waveStartAuthorityFromCurrent(
 	}
 	return gameusecase.StartAuthority{
 		Scope: scope, WaveRevision: current.ExpectedWaveRevision + 1,
-		Revisions: current.Revisions, Current: current,
+		Revisions: current.Revisions, ByeParticipantID: cloneWaveStartUUID(current.ByeParticipantID), Current: current,
 	}, nil
 }
 
@@ -261,10 +263,17 @@ func (r *TournamentAdminExecutionPostgres) lockWaveStartSnapshot(
 		return waveStartSnapshot{}, fmt.Errorf("validate Wave start graph coverage: %w", gameusecase.ErrWaveStartAuthorityConflict)
 	}
 	byeParticipantID := nullableWaveStartUUID(header.ByeParticipantID)
+	byeRevisionID := nullableWaveStartUUID(header.ByeRevisionID)
+	if (byeParticipantID == nil) != (byeRevisionID == nil) ||
+		(byeParticipantID == nil && header.ByeStableSeed != 0) ||
+		(byeParticipantID != nil && header.ByeStableSeed < 1) {
+		return waveStartSnapshot{}, fmt.Errorf("validate Wave start bye authority: %w", gameusecase.ErrWaveStartAuthorityConflict)
+	}
+	authority.ByeParticipantID = cloneWaveStartUUID(byeParticipantID)
 	return waveStartSnapshot{
 		authority: authority, rosterID: rosterID, tournamentRevision: header.TournamentRevision,
 		rosterRevision: header.RosterRevision, games: games, seriesIDs: seriesIDs, swissProof: swissProof,
-		byeParticipantID: byeParticipantID,
+		byeParticipantID: byeParticipantID, byeRevisionID: byeRevisionID, byeStableSeed: header.ByeStableSeed,
 	}, nil
 }
 
@@ -568,6 +577,7 @@ func waveStartRecordMatchesSnapshot(record gameusecase.StartRecord, snapshot wav
 		authority.Revisions != record.Revisions ||
 		authority.Revisions.ProjectionRevision != record.ExpectedProjectionRevision ||
 		!maps.Equal(authority.ReadinessRevisions, record.ReadinessRevisions) ||
+		!waveStartUUIDsEqual(authority.ByeParticipantID, record.ByeParticipantID) ||
 		record.Wave.ID != authority.Wave.ID || record.Wave.TournamentID != authority.Wave.TournamentID ||
 		record.Wave.RevisionID != authority.Wave.RevisionID || record.Wave.State != domain.WaveStateActive ||
 		record.Wave.StartedAt == nil || !record.Wave.StartedAt.Equal(record.StartedAt) ||
@@ -628,6 +638,9 @@ func (r *TournamentAdminExecutionPostgres) persistWaveStart(
 	if err := persistWaveStartSwissRoundLockProof(ctx, querier, record, snapshot); err != nil {
 		return err
 	}
+	if err := persistWaveStartSwissByePoint(ctx, querier, record, snapshot); err != nil {
+		return err
+	}
 	startedAt := tstz(record.StartedAt)
 	if _, err := querier.StartWaveCAS(ctx, sqlc.StartWaveCASParams{
 		StartedAt: startedAt, ID: record.Scope.WaveID, TournamentID: record.Scope.TournamentID,
@@ -653,6 +666,40 @@ func (r *TournamentAdminExecutionPostgres) persistWaveStart(
 		return err
 	}
 	return saveWaveStartCommand(ctx, querier, record, snapshot)
+}
+
+func persistWaveStartSwissByePoint(
+	ctx context.Context,
+	querier *sqlc.Queries,
+	record gameusecase.StartRecord,
+	snapshot waveStartSnapshot,
+) error {
+	if snapshot.byeParticipantID == nil {
+		return nil
+	}
+	if snapshot.swissProof == nil || snapshot.byeRevisionID == nil || snapshot.byeStableSeed < 1 ||
+		record.ByeParticipantID == nil || *record.ByeParticipantID != *snapshot.byeParticipantID {
+		return gameusecase.ErrWaveStartAuthorityConflict
+	}
+	entryID := uuid.NewSHA1(*snapshot.byeRevisionID, []byte("wave-start-bye-point:"+snapshot.byeParticipantID.String()))
+	created, err := querier.CreateSwissPointLedgerEntry(ctx, sqlc.CreateSwissPointLedgerEntryParams{
+		ID: entryID, TournamentID: record.Scope.TournamentID, RosterID: snapshot.rosterID,
+		RoundID: snapshot.swissProof.roundID,
+		//nolint:gosec // Swiss round validation bounds the persisted round number.
+		RoundNumber: int16(snapshot.swissProof.roundNumber), SourceKind: "bye",
+		ByeRevisionID: nullableWaveStartUUIDValue(*snapshot.byeRevisionID),
+		ParticipantID: *snapshot.byeParticipantID, Points: int16(swissusecase.StandingsByePoints),
+		StableSeed: snapshot.byeStableSeed, CreatedAt: tstz(record.StartedAt),
+	})
+	if err != nil {
+		return mapRepositoryWriteError("TournamentAdminExecutionPostgres - append Swiss bye point", err)
+	}
+	if created.ID != entryID || created.ParticipantID != *snapshot.byeParticipantID ||
+		!created.ByeRevisionID.Valid || created.ByeRevisionID.UUID != *snapshot.byeRevisionID ||
+		created.Points != int16(swissusecase.StandingsByePoints) {
+		return domain.ErrInternal
+	}
+	return nil
 }
 
 func persistWaveStartSwissRoundLockProof(
@@ -1088,7 +1135,23 @@ func sameWaveStartRequest(first, second gameusecase.StartRecord) bool {
 	return first.Scope == second.Scope && first.CommandID == second.CommandID && first.ActorID == second.ActorID &&
 		first.ExpectedWaveRevision == second.ExpectedWaveRevision &&
 		first.ExpectedProjectionRevision == second.ExpectedProjectionRevision && first.Revisions == second.Revisions &&
-		maps.Equal(first.ReadinessRevisions, second.ReadinessRevisions) && first.RequestDigest == second.RequestDigest
+		maps.Equal(first.ReadinessRevisions, second.ReadinessRevisions) &&
+		waveStartUUIDsEqual(first.ByeParticipantID, second.ByeParticipantID) && first.RequestDigest == second.RequestDigest
+}
+
+func cloneWaveStartUUID(value *uuid.UUID) *uuid.UUID {
+	if value == nil {
+		return nil
+	}
+	clone := *value
+	return &clone
+}
+
+func waveStartUUIDsEqual(first, second *uuid.UUID) bool {
+	if first == nil || second == nil {
+		return first == nil && second == nil
+	}
+	return *first == *second
 }
 
 //nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.

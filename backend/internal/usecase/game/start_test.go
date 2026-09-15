@@ -76,6 +76,82 @@ func TestAtomicWaveStart(t *testing.T) {
 		require.Equal(t, 1, harness.commitCount())
 	})
 
+	t.Run("permits exactly one explicit Swiss bye without a Game", func(t *testing.T) {
+		t.Parallel()
+
+		authority, command := waveStartFixture(t, now)
+		byeParticipantID := waveStartID(514)
+		authority.Wave.Members = append(authority.Wave.Members, domain.WaveMember{
+			ParticipantID: byeParticipantID,
+			Ready:         true,
+		})
+		authority.ReadinessRevisions[byeParticipantID] = 1
+		authority.ByeParticipantID = &byeParticipantID
+		harness := newWaveStartRepositoryHarness(t, authority)
+
+		record, changed, err := gameusecase.NewStartUseCase(
+			harness.repository,
+			waveNewGameClock(t, now),
+		).Start(t.Context(), command)
+		require.NoError(t, err)
+		require.True(t, changed)
+		require.Equal(t, byeParticipantID, *record.ByeParticipantID)
+		require.Len(t, record.Games, 2)
+		require.NoError(t, record.Validate())
+
+		replayed, changed, err := gameusecase.NewStartUseCase(
+			harness.repository,
+			waveNewGameClock(t, now),
+		).Start(t.Context(), command)
+		require.NoError(t, err)
+		require.False(t, changed)
+		require.Equal(t, byeParticipantID, *replayed.ByeParticipantID)
+	})
+
+	for _, testCase := range []struct {
+		name   string
+		mutate func(*gameusecase.StartAuthority)
+	}{
+		{
+			name: "missing explicit bye",
+			mutate: func(authority *gameusecase.StartAuthority) {
+				participantID := waveStartID(514)
+				authority.Wave.Members = append(authority.Wave.Members, domain.WaveMember{ParticipantID: participantID, Ready: true})
+				authority.ReadinessRevisions[participantID] = 1
+			},
+		},
+		{
+			name: "bye also has a Game",
+			mutate: func(authority *gameusecase.StartAuthority) {
+				participantID := authority.Games[0].ParticipantIDs[0]
+				authority.ByeParticipantID = &participantID
+			},
+		},
+		{
+			name: "bye is outside the Wave",
+			mutate: func(authority *gameusecase.StartAuthority) {
+				participantID := waveStartID(599)
+				authority.ByeParticipantID = &participantID
+			},
+		},
+	} {
+		t.Run("rejects "+testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			authority, command := waveStartFixture(t, now)
+			testCase.mutate(&authority)
+			harness := newWaveStartRepositoryHarness(t, authority)
+			record, changed, err := gameusecase.NewStartUseCase(
+				harness.repository,
+				waveNewGameClock(t, now),
+			).Start(t.Context(), command)
+			require.Nil(t, record)
+			require.False(t, changed)
+			require.ErrorIs(t, err, gameusecase.ErrInvalidWaveStart)
+			require.Equal(t, 0, harness.commitCount())
+		})
+	}
+
 	t.Run("stale readiness and planning commit nothing", func(t *testing.T) {
 		t.Parallel()
 
@@ -430,6 +506,7 @@ func waveStartGame(
 
 func cloneWaveStartAuthority(value gameusecase.StartAuthority) gameusecase.StartAuthority {
 	clone := value
+	clone.ByeParticipantID = cloneWaveStartParticipantID(value.ByeParticipantID)
 	clone.Wave = cloneWaveStartWave(value.Wave)
 	clone.ReadinessRevisions = cloneWaveStartReadiness(value.ReadinessRevisions)
 	clone.Games = make([]gameusecase.GameAuthority, len(value.Games))
@@ -446,6 +523,7 @@ func cloneWaveStartAuthority(value gameusecase.StartAuthority) gameusecase.Start
 
 func cloneWaveStartRecord(value gameusecase.StartRecord) gameusecase.StartRecord {
 	clone := value
+	clone.ByeParticipantID = cloneWaveStartParticipantID(value.ByeParticipantID)
 	clone.Wave = cloneWaveStartWave(value.Wave)
 	clone.ReadinessRevisions = cloneWaveStartReadiness(value.ReadinessRevisions)
 	clone.Games = make([]gamedomain.Started, len(value.Games))
@@ -454,6 +532,14 @@ func cloneWaveStartRecord(value gameusecase.StartRecord) gameusecase.StartRecord
 		clone.Games[index].Series = cloneWaveStartSeriesExecution(startedGame.Series)
 	}
 	return clone
+}
+
+func cloneWaveStartParticipantID(value *uuid.UUID) *uuid.UUID {
+	if value == nil {
+		return nil
+	}
+	clone := *value
+	return &clone
 }
 
 func cloneWaveStartReadiness(source map[uuid.UUID]int64) map[uuid.UUID]int64 {

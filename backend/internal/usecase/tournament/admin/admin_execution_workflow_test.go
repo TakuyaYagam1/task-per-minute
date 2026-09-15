@@ -50,6 +50,83 @@ func TestBuildPairingPlanRejectsNonDeterministicManualBye(t *testing.T) {
 	}
 }
 
+func TestBuildManualPairingPlanAcceptsTiedPolicyBye(t *testing.T) {
+	t.Parallel()
+
+	authority := executionPairingAuthority(t, 5)
+	for _, index := range []int{3, 4} {
+		authority.Standings[index].Points = 1
+		authority.Standings[index].Buchholz = 1
+		authority.Standings[index].EffectiveTimeMS = 4
+	}
+	requested := authority.Participants[3].ID
+	command := PairingCommand{
+		CommandScope: CommandScope{
+			Operator:     OperatorIdentity{ActorID: executionTestID(82)},
+			TournamentID: authority.TournamentID, CommandID: executionTestID(83),
+		},
+		ExpectedProjectionRevision: authority.ProjectionRevision,
+		RoundNumber:                1, PairingMode: PairingModeManual,
+		CategoryMode: domain.CategoryModeAdmin, Categories: []domain.Category{domain.CategoryWeb},
+		ManualPairingsProvided: true, ManualByeParticipantID: &requested,
+		ManualPairings: []ParticipantPair{
+			{FirstParticipantID: authority.Participants[0].ID, SecondParticipantID: authority.Participants[1].ID},
+			{FirstParticipantID: authority.Participants[2].ID, SecondParticipantID: authority.Participants[4].ID},
+		},
+	}
+
+	plan, err := buildPairingPlan(command, authority, executionTestTime())
+	if err != nil {
+		t.Fatalf("buildPairingPlan() error = %v", err)
+	}
+	if plan.Bye == nil || plan.Bye.ParticipantID != requested {
+		t.Fatalf("manual bye = %#v, want tied requested participant %s", plan.Bye, requested)
+	}
+	if _, err := swissusecase.ReplayBye(*plan.Bye); err != nil {
+		t.Fatalf("ReplayBye(manual) error = %v", err)
+	}
+	for _, pair := range plan.Pairs {
+		if pair.FirstParticipantID == requested || pair.SecondParticipantID == requested {
+			t.Fatalf("bye participant %s appears in pair %+v", requested, pair)
+		}
+	}
+}
+
+func TestBuildManualPairingPlanRejectsReceivedBye(t *testing.T) {
+	t.Parallel()
+
+	authority := executionPairingAuthority(t, 5)
+	requested := authority.Participants[4].ID
+	authority.ReceivedBye[requested] = true
+	command := PairingCommand{
+		CommandScope: CommandScope{
+			Operator:     OperatorIdentity{ActorID: executionTestID(84)},
+			TournamentID: authority.TournamentID, CommandID: executionTestID(85),
+		},
+		ExpectedProjectionRevision: authority.ProjectionRevision,
+		RoundNumber:                1, PairingMode: PairingModeManual,
+		CategoryMode: domain.CategoryModeAdmin, Categories: []domain.Category{domain.CategoryWeb},
+		ManualPairingsProvided: true, ManualByeParticipantID: &requested,
+		ManualPairings: []ParticipantPair{
+			{FirstParticipantID: authority.Participants[0].ID, SecondParticipantID: authority.Participants[1].ID},
+			{FirstParticipantID: authority.Participants[2].ID, SecondParticipantID: authority.Participants[3].ID},
+		},
+	}
+
+	_, err := buildPairingPlan(command, authority, executionTestTime())
+	if !errors.Is(err, ErrManualByeMismatch) || !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("buildPairingPlan() error = %v, want repeated bye conflict", err)
+	}
+	var mismatch *ManualByeMismatchError
+	if !errors.As(err, &mismatch) {
+		t.Fatalf("buildPairingPlan() error type = %T, want *ManualByeMismatchError", err)
+	}
+	if mismatch.RequestedParticipantID != requested || mismatch.SelectedParticipantID != authority.Participants[3].ID {
+		t.Fatalf("manual bye mismatch = (%s, %s), want (%s, %s)",
+			mismatch.RequestedParticipantID, mismatch.SelectedParticipantID, requested, authority.Participants[3].ID)
+	}
+}
+
 func TestBuildAutomaticPairingPlanPreservesByeEvidence(t *testing.T) {
 	t.Parallel()
 

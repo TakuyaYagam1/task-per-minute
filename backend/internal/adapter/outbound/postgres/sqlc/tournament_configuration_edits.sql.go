@@ -880,6 +880,69 @@ func (q *Queries) CreateTournamentConfigurationEditUnlockIntent(ctx context.Cont
 	return i, err
 }
 
+const deleteTournamentConfigurationEditSupersededWaveSeriesCAS = `-- name: DeleteTournamentConfigurationEditSupersededWaveSeriesCAS :one
+DELETE FROM wave_series AS membership
+USING waves AS wave,
+    series AS source
+WHERE membership.wave_id = $1::UUID
+    AND membership.series_id = $2::UUID
+    AND wave.id = membership.wave_id
+    AND wave.tournament_id = $3::UUID
+    AND wave.roster_id = $4::UUID
+    AND wave.state = 'planned'
+    AND wave.started_at IS NULL
+    AND wave.paused_at IS NULL
+    AND wave.closed_at IS NULL
+    AND source.id = membership.series_id
+    AND source.tournament_id = $3::UUID
+    AND source.roster_id = $4::UUID
+    AND source.state = 'superseded'
+    AND source.superseded_by_series_id = $5::UUID
+    AND NOT EXISTS (
+        SELECT 1
+        FROM wave_member_routes AS route
+        WHERE route.wave_id = membership.wave_id
+            AND route.series_id = membership.series_id
+    )
+    AND NOT EXISTS (
+        SELECT 1
+        FROM swiss_round_lock_proof_series AS proof_series
+        WHERE proof_series.series_id = membership.series_id
+            AND proof_series.roster_id = $4::UUID
+    )
+RETURNING membership.wave_id,
+    membership.series_id
+`
+
+type DeleteTournamentConfigurationEditSupersededWaveSeriesCASParams struct {
+	WaveID            uuid.UUID
+	SourceSeriesID    uuid.UUID
+	TournamentID      uuid.UUID
+	RosterID          uuid.UUID
+	SuccessorSeriesID uuid.UUID
+}
+
+type DeleteTournamentConfigurationEditSupersededWaveSeriesCASRow struct {
+	WaveID   uuid.UUID
+	SeriesID uuid.UUID
+}
+
+// Once an unstarted Series successor is attached, remove only the superseded
+// execution membership.  The old Series and edit lineage remain retained, but
+// runtime Wave reads cannot mistake both generations for active members.
+func (q *Queries) DeleteTournamentConfigurationEditSupersededWaveSeriesCAS(ctx context.Context, arg DeleteTournamentConfigurationEditSupersededWaveSeriesCASParams) (DeleteTournamentConfigurationEditSupersededWaveSeriesCASRow, error) {
+	row := q.db.QueryRow(ctx, deleteTournamentConfigurationEditSupersededWaveSeriesCAS,
+		arg.WaveID,
+		arg.SourceSeriesID,
+		arg.TournamentID,
+		arg.RosterID,
+		arg.SuccessorSeriesID,
+	)
+	var i DeleteTournamentConfigurationEditSupersededWaveSeriesCASRow
+	err := row.Scan(&i.WaveID, &i.SeriesID)
+	return i, err
+}
+
 const getTournamentConfigurationEditAuthority = `-- name: GetTournamentConfigurationEditAuthority :one
 WITH published_projection AS (
     SELECT projection.id,
@@ -1097,6 +1160,48 @@ func (q *Queries) GetTournamentConfigurationEditConfiguration(ctx context.Contex
 		&i.PublishedAt,
 	)
 	return i, err
+}
+
+const getTournamentConfigurationEditPublishedStandings = `-- name: GetTournamentConfigurationEditPublishedStandings :one
+SELECT standings.payload AS standings_payload
+FROM projection_revisions AS projection
+JOIN projection_revision_artifacts AS revision_artifact
+    ON revision_artifact.revision_id = projection.id
+    AND revision_artifact.artifact_kind = 'standings'
+JOIN projection_artifacts AS standings
+    ON standings.id = revision_artifact.artifact_id
+    AND standings.artifact_kind = 'standings'
+    AND standings.tournament_id = projection.tournament_id
+    AND standings.roster_id = projection.roster_id
+JOIN projection_revisions AS producer
+    ON producer.id = standings.produced_by_revision_id
+WHERE projection.id = $1::UUID
+    AND projection.tournament_id = $2::UUID
+    AND projection.roster_id = $3::UUID
+    AND projection.revision_number = $4::BIGINT
+    AND projection.state = 'published'
+`
+
+type GetTournamentConfigurationEditPublishedStandingsParams struct {
+	ProjectionRevisionID       uuid.UUID
+	TournamentID               uuid.UUID
+	RosterID                   uuid.UUID
+	ExpectedProjectionRevision int64
+}
+
+// Configuration reads run in a repeatable-read snapshot.  Keep the standings
+// payload read-only and bind it to the exact published projection selected by
+// the authority query above.
+func (q *Queries) GetTournamentConfigurationEditPublishedStandings(ctx context.Context, arg GetTournamentConfigurationEditPublishedStandingsParams) ([]byte, error) {
+	row := q.db.QueryRow(ctx, getTournamentConfigurationEditPublishedStandings,
+		arg.ProjectionRevisionID,
+		arg.TournamentID,
+		arg.RosterID,
+		arg.ExpectedProjectionRevision,
+	)
+	var standings_payload []byte
+	err := row.Scan(&standings_payload)
+	return standings_payload, err
 }
 
 const getTournamentConfigurationEditRoster = `-- name: GetTournamentConfigurationEditRoster :one
@@ -1354,6 +1459,44 @@ func (q *Queries) ListTournamentConfigurationEditLineage(ctx context.Context, ar
 			&i.SupersededAt,
 			&i.CreatedAt,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTournamentConfigurationEditParticipants = `-- name: ListTournamentConfigurationEditParticipants :many
+SELECT participant.id,
+    participant.seed,
+    participant.attendance
+FROM participants AS participant
+WHERE participant.roster_id = $1::UUID
+ORDER BY participant.seed, participant.id
+`
+
+type ListTournamentConfigurationEditParticipantsRow struct {
+	ID         uuid.UUID
+	Seed       int32
+	Attendance string
+}
+
+// Keep all attendance states in the read surface so the adapter can retain
+// the same fail-closed validation used by tournamentAdminStandings.  Only
+// checked-in rows become pairing participants and receive stable seeds.
+func (q *Queries) ListTournamentConfigurationEditParticipants(ctx context.Context, rosterID uuid.UUID) ([]ListTournamentConfigurationEditParticipantsRow, error) {
+	rows, err := q.db.Query(ctx, listTournamentConfigurationEditParticipants, rosterID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListTournamentConfigurationEditParticipantsRow{}
+	for rows.Next() {
+		var i ListTournamentConfigurationEditParticipantsRow
+		if err := rows.Scan(&i.ID, &i.Seed, &i.Attendance); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -1660,10 +1803,19 @@ SELECT round.id,
     round.category_mode,
     round.effective_categories,
     COALESCE((
-        SELECT jsonb_agg(DISTINCT member.participant_id ORDER BY member.participant_id)
-        FROM swiss_pairing_members AS member
-        WHERE member.round_id = round.id
-            AND member.roster_id = round.roster_id
+        SELECT jsonb_agg(DISTINCT round_participant.participant_id ORDER BY round_participant.participant_id)
+        FROM (
+            SELECT member.participant_id
+            FROM swiss_pairing_members AS member
+            WHERE member.round_id = round.id
+                AND member.roster_id = round.roster_id
+            UNION
+            SELECT link.bye_participant_id
+            FROM swiss_wave_links AS link
+            WHERE link.round_id = round.id
+                AND link.roster_id = round.roster_id
+                AND link.bye_participant_id IS NOT NULL
+        ) AS round_participant
     ), '[]'::jsonb) AS participant_ids,
     COALESCE((
         SELECT jsonb_agg(DISTINCT wave_series.series_id ORDER BY wave_series.series_id)
@@ -1682,6 +1834,14 @@ SELECT round.id,
         ORDER BY link.wave_id
         LIMIT 1
     ) AS bye_participant_id,
+    (
+        SELECT link.bye_revision_id
+        FROM swiss_wave_links AS link
+        WHERE link.round_id = round.id
+            AND link.roster_id = round.roster_id
+        ORDER BY link.wave_id
+        LIMIT 1
+    ) AS bye_revision_id,
     round.generated_at,
     round.created_at,
     round.updated_at
@@ -1712,6 +1872,7 @@ type ListTournamentConfigurationEditSwissRoundsRow struct {
 	ParticipantIds               interface{}
 	SeriesIds                    interface{}
 	ByeParticipantID             uuid.NullUUID
+	ByeRevisionID                uuid.NullUUID
 	GeneratedAt                  pgtype.Timestamptz
 	CreatedAt                    pgtype.Timestamptz
 	UpdatedAt                    pgtype.Timestamptz
@@ -1742,6 +1903,7 @@ func (q *Queries) ListTournamentConfigurationEditSwissRounds(ctx context.Context
 			&i.ParticipantIds,
 			&i.SeriesIds,
 			&i.ByeParticipantID,
+			&i.ByeRevisionID,
 			&i.GeneratedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -2379,6 +2541,97 @@ func (q *Queries) UpdateTournamentConfigurationEditSwissRoundCAS(ctx context.Con
 		&i.CategoryMode,
 		&i.EffectiveCategories,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateTournamentConfigurationEditSwissWaveLinkByeCAS = `-- name: UpdateTournamentConfigurationEditSwissWaveLinkByeCAS :one
+UPDATE swiss_wave_links AS link
+SET bye_participant_id = $1::UUID,
+    bye_revision_id = $2::UUID
+FROM waves AS wave
+WHERE link.wave_id = wave.id
+    AND link.tournament_id = $3::UUID
+    AND link.roster_id = $4::UUID
+    AND link.round_id = $5::UUID
+    AND wave.tournament_id = $3::UUID
+    AND wave.roster_id = $4::UUID
+    AND link.bye_participant_id IS NOT DISTINCT FROM $6::UUID
+    AND link.bye_revision_id IS NOT DISTINCT FROM $7::UUID
+    AND ($6::UUID IS NULL) = ($7::UUID IS NULL)
+    AND ($1::UUID IS NULL) = ($2::UUID IS NULL)
+    AND wave.state = 'planned'
+    AND wave.started_at IS NULL
+    AND wave.paused_at IS NULL
+    AND wave.closed_at IS NULL
+    AND EXISTS (
+        SELECT 1
+        FROM swiss_rounds AS round
+        WHERE round.id = link.round_id
+            AND round.tournament_id = $3::UUID
+            AND round.roster_id = $4::UUID
+            AND round.revision = $8::BIGINT
+            AND round.generation_kind = 'manual'
+            AND round.lock_revision IS NULL
+            AND round.locked_at IS NULL
+    )
+    AND NOT EXISTS (
+        SELECT 1
+        FROM swiss_round_lock_proofs AS proof
+        WHERE proof.round_id = link.round_id
+            AND proof.roster_id = link.roster_id
+    )
+RETURNING link.wave_id,
+    link.tournament_id,
+    link.roster_id,
+    link.round_id,
+    link.bye_participant_id,
+    link.bye_revision_id
+`
+
+type UpdateTournamentConfigurationEditSwissWaveLinkByeCASParams struct {
+	NextByeParticipantID     uuid.NullUUID
+	NextByeRevisionID        uuid.NullUUID
+	TournamentID             uuid.UUID
+	RosterID                 uuid.UUID
+	RoundID                  uuid.UUID
+	ExpectedByeParticipantID uuid.NullUUID
+	ExpectedByeRevisionID    uuid.NullUUID
+	ExpectedRoundRevision    int64
+}
+
+type UpdateTournamentConfigurationEditSwissWaveLinkByeCASRow struct {
+	WaveID           uuid.UUID
+	TournamentID     uuid.UUID
+	RosterID         uuid.UUID
+	RoundID          uuid.UUID
+	ByeParticipantID uuid.NullUUID
+	ByeRevisionID    uuid.NullUUID
+}
+
+// A pre-start configuration edit changes the normalized bye pair together.
+// The old pair is an exact CAS fence; both old and new values must be either
+// NULL or non-NULL.  The round and wave predicates keep the link editable
+// only while its planned execution has no lock or start proof.
+func (q *Queries) UpdateTournamentConfigurationEditSwissWaveLinkByeCAS(ctx context.Context, arg UpdateTournamentConfigurationEditSwissWaveLinkByeCASParams) (UpdateTournamentConfigurationEditSwissWaveLinkByeCASRow, error) {
+	row := q.db.QueryRow(ctx, updateTournamentConfigurationEditSwissWaveLinkByeCAS,
+		arg.NextByeParticipantID,
+		arg.NextByeRevisionID,
+		arg.TournamentID,
+		arg.RosterID,
+		arg.RoundID,
+		arg.ExpectedByeParticipantID,
+		arg.ExpectedByeRevisionID,
+		arg.ExpectedRoundRevision,
+	)
+	var i UpdateTournamentConfigurationEditSwissWaveLinkByeCASRow
+	err := row.Scan(
+		&i.WaveID,
+		&i.TournamentID,
+		&i.RosterID,
+		&i.RoundID,
+		&i.ByeParticipantID,
+		&i.ByeRevisionID,
 	)
 	return i, err
 }

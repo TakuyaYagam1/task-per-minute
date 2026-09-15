@@ -377,6 +377,10 @@ type Querier interface {
 	DeleteSwissRepeatOverride(ctx context.Context, roundID uuid.UUID) error
 	DeleteTask(ctx context.Context, id uuid.UUID) error
 	DeleteTournamentAdminRosterParticipants(ctx context.Context, arg DeleteTournamentAdminRosterParticipantsParams) (int64, error)
+	// Once an unstarted Series successor is attached, remove only the superseded
+	// execution membership.  The old Series and edit lineage remain retained, but
+	// runtime Wave reads cannot mistake both generations for active members.
+	DeleteTournamentConfigurationEditSupersededWaveSeriesCAS(ctx context.Context, arg DeleteTournamentConfigurationEditSupersededWaveSeriesCASParams) (DeleteTournamentConfigurationEditSupersededWaveSeriesCASRow, error)
 	DiscloseAssignmentTaskReservationCAS(ctx context.Context, arg DiscloseAssignmentTaskReservationCASParams) (DiscloseAssignmentTaskReservationCASRow, error)
 	DiscloseWaveStartReservationCAS(ctx context.Context, arg DiscloseWaveStartReservationCASParams) (DiscloseWaveStartReservationCASRow, error)
 	EnsureExactDraftPlanningHistoryHead(ctx context.Context, draftID uuid.UUID) error
@@ -537,6 +541,10 @@ type Querier interface {
 	GetTournamentConfigurationEditAuthority(ctx context.Context, arg GetTournamentConfigurationEditAuthorityParams) (GetTournamentConfigurationEditAuthorityRow, error)
 	GetTournamentConfigurationEditCommand(ctx context.Context, arg GetTournamentConfigurationEditCommandParams) (TournamentConfigurationEditCommand, error)
 	GetTournamentConfigurationEditConfiguration(ctx context.Context, arg GetTournamentConfigurationEditConfigurationParams) (GetTournamentConfigurationEditConfigurationRow, error)
+	// Configuration reads run in a repeatable-read snapshot.  Keep the standings
+	// payload read-only and bind it to the exact published projection selected by
+	// the authority query above.
+	GetTournamentConfigurationEditPublishedStandings(ctx context.Context, arg GetTournamentConfigurationEditPublishedStandingsParams) ([]byte, error)
 	// POST-MVP-031 configuration edits are fenced by one projection/cutoff
 	// snapshot.  The write queries repeat the fence so a caller cannot turn a
 	// stale read into a published configuration by omitting the outer lock.
@@ -680,6 +688,10 @@ type Querier interface {
 	ListTournamentAdminSnapshotWaves(ctx context.Context, arg ListTournamentAdminSnapshotWavesParams) ([]ListTournamentAdminSnapshotWavesRow, error)
 	ListTournamentConfigurationEditInvalidations(ctx context.Context, arg ListTournamentConfigurationEditInvalidationsParams) ([]TournamentConfigurationEditInvalidation, error)
 	ListTournamentConfigurationEditLineage(ctx context.Context, arg ListTournamentConfigurationEditLineageParams) ([]TournamentConfigurationEditArtifact, error)
+	// Keep all attendance states in the read surface so the adapter can retain
+	// the same fail-closed validation used by tournamentAdminStandings.  Only
+	// checked-in rows become pairing participants and receive stable seeds.
+	ListTournamentConfigurationEditParticipants(ctx context.Context, rosterID uuid.UUID) ([]ListTournamentConfigurationEditParticipantsRow, error)
 	ListTournamentConfigurationEditPoolMemberships(ctx context.Context, configurationID uuid.UUID) ([]TournamentCategoryPoolMembership, error)
 	ListTournamentConfigurationEditPoolRevisions(ctx context.Context, configurationID uuid.UUID) ([]TournamentCategoryPoolRevision, error)
 	// Reservation ownership is resolved through the immutable assignment plan
@@ -1232,6 +1244,11 @@ type Querier interface {
 	// A manual Swiss round can be retargeted while its Wave is still planned and
 	// no immutable start proof exists. Its identity remains stable.
 	UpdateTournamentConfigurationEditSwissRoundCAS(ctx context.Context, arg UpdateTournamentConfigurationEditSwissRoundCASParams) (UpdateTournamentConfigurationEditSwissRoundCASRow, error)
+	// A pre-start configuration edit changes the normalized bye pair together.
+	// The old pair is an exact CAS fence; both old and new values must be either
+	// NULL or non-NULL.  The round and wave predicates keep the link editable
+	// only while its planned execution has no lock or start proof.
+	UpdateTournamentConfigurationEditSwissWaveLinkByeCAS(ctx context.Context, arg UpdateTournamentConfigurationEditSwissWaveLinkByeCASParams) (UpdateTournamentConfigurationEditSwissWaveLinkByeCASRow, error)
 	UpdateTournamentParticipantAttendanceCAS(ctx context.Context, arg UpdateTournamentParticipantAttendanceCASParams) (Participant, error)
 	// The usecase has already locked and validated the immutable pause graph. This
 	// statement performs the selected Presence-only CAS and rechecks the active

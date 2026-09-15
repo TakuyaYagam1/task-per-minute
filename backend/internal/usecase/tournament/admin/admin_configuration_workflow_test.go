@@ -166,8 +166,41 @@ func TestTournamentConfigurationWorkflowRejectsStaleRevisionBeforeMutation(t *te
 	if !errors.As(err, &conflict) || !errors.Is(err, domain.ErrConflict) {
 		t.Fatalf("error = %v, want configuration conflict", err)
 	}
+	var transportConflict *inbound.AdminRevisionConflictError
+	if !errors.As(err, &transportConflict) || transportConflict.ExpectedRevision != command.ExpectedProjectionRevision ||
+		transportConflict.CurrentRevision != authority.ProjectionRevision || transportConflict.CurrentState != authority.TournamentState {
+		t.Fatalf("transport conflict = %#v, want projection %d/%d state %s", transportConflict,
+			command.ExpectedProjectionRevision, authority.ProjectionRevision, authority.TournamentState)
+	}
 	if repository.calls != 0 {
 		t.Fatalf("ExecuteMutation calls = %d, want 0", repository.calls)
+	}
+}
+
+func TestConfigurationAuthorityRejectsHalfNullByeRevisionLink(t *testing.T) {
+	t.Parallel()
+
+	participantID := uuid.New()
+	revisionID := uuid.New()
+	for name, round := range map[string]ConfigurationRound{
+		"participant without revision": {
+			ID: uuid.New(), Stage: domain.TournamentStageSwiss, Number: 1, Revision: 1,
+			ParticipantIDs: []uuid.UUID{participantID}, ByeParticipantID: &participantID,
+		},
+		"revision without participant": {
+			ID: uuid.New(), Stage: domain.TournamentStageSwiss, Number: 1, Revision: 1,
+			ParticipantIDs: []uuid.UUID{participantID}, ByeRevisionID: &revisionID,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			authority := configurationAuthorityFixture(t)
+			authority.Rounds = []ConfigurationRound{round}
+			if err := authority.Validate(authority.TournamentID); !errors.Is(err, domain.ErrInternal) {
+				t.Fatalf("Validate() error = %v, want ErrInternal", err)
+			}
+		})
 	}
 }
 
@@ -245,6 +278,88 @@ func TestTournamentConfigurationWorkflowUpdatesSeriesAndSwissRound(t *testing.T)
 	}
 	if len(roundEvidence.AffectedArtifactIDs) != 3 || repository.calls != 2 {
 		t.Fatalf("round evidence/calls = %#v/%d, want round plus two series and two mutations", roundEvidence.AffectedArtifactIDs, repository.calls)
+	}
+	if repository.last.RoundChange == nil || repository.last.RoundChange.Bye != nil || repository.last.RoundChange.Next.ByeRevisionID != nil {
+		t.Fatalf("even Swiss round bye change = %#v, want nil selection and revision", repository.last.RoundChange)
+	}
+}
+
+func TestTournamentConfigurationWorkflowSelectsEligibleChangedBye(t *testing.T) {
+	t.Parallel()
+
+	authority, participants, roundID := configurationOddSwissAuthority(t, 1)
+	repository := &configurationRepositoryStub{authority: authority}
+	workflow := NewTournamentConfigurationWorkflow(repository)
+	commandID := uuid.New()
+	requested := participants[0]
+	_, err := workflow.ReviseSwissRound(t.Context(), inbound.AdminReviseSwissRoundCommand{
+		Operator: inbound.AdminOperatorIdentity{ActorID: authorityOperatorID}, TournamentID: authority.TournamentID, CommandID: commandID, RoundNumber: 1,
+		ExpectedProjectionRevision: authority.ProjectionRevision, ExpectedRoundRevision: 5, Confirmed: true, Reason: "select eligible Swiss bye",
+		CategoryMode: domain.CategoryModeAdmin, Categories: []domain.Category{domain.CategoryWeb},
+		ManualPairings:         []inbound.AdminConfigurationParticipantPair{{FirstParticipantID: participants[1], SecondParticipantID: participants[2]}, {FirstParticipantID: participants[3], SecondParticipantID: participants[4]}},
+		ManualByeParticipantID: &requested,
+	})
+	if err != nil {
+		t.Fatalf("ReviseSwissRound() error = %v", err)
+	}
+	if repository.calls != 1 || repository.last.RoundChange == nil || repository.last.RoundChange.Bye == nil {
+		t.Fatalf("mutation calls/bye = %d/%#v, want one mutation with bye selection", repository.calls, repository.last.RoundChange)
+	}
+	selection := repository.last.RoundChange.Bye
+	if selection.ParticipantID != requested || selection.Evidence.ID != configurationByeEvidenceID(commandID, roundID) || selection.Evidence.OwnerID != roundID {
+		t.Fatalf("bye selection = %#v, want requested participant and command-round evidence", selection)
+	}
+	if repository.last.RoundChange.Next.ByeParticipantID == nil || *repository.last.RoundChange.Next.ByeParticipantID != requested ||
+		repository.last.RoundChange.Next.ByeRevisionID == nil || *repository.last.RoundChange.Next.ByeRevisionID != selection.Evidence.ID {
+		t.Fatalf("next bye links = %v/%v, want participant and evidence links", repository.last.RoundChange.Next.ByeParticipantID, repository.last.RoundChange.Next.ByeRevisionID)
+	}
+	if err := selection.Evidence.Validate(); err != nil {
+		t.Fatalf("bye evidence Validate() error = %v", err)
+	}
+}
+
+func TestTournamentConfigurationWorkflowRejectsWrongByeBeforeMutation(t *testing.T) {
+	t.Parallel()
+
+	authority, participants, _ := configurationOddSwissAuthority(t, 1)
+	repository := &configurationRepositoryStub{authority: authority}
+	workflow := NewTournamentConfigurationWorkflow(repository)
+	requested := participants[1]
+	_, err := workflow.ReviseSwissRound(t.Context(), inbound.AdminReviseSwissRoundCommand{
+		Operator: inbound.AdminOperatorIdentity{ActorID: authorityOperatorID}, TournamentID: authority.TournamentID, CommandID: uuid.New(), RoundNumber: 1,
+		ExpectedProjectionRevision: authority.ProjectionRevision, ExpectedRoundRevision: 5, Confirmed: true, Reason: "request ineligible Swiss bye",
+		CategoryMode: domain.CategoryModeAdmin, Categories: []domain.Category{domain.CategoryWeb},
+		ManualPairings:         []inbound.AdminConfigurationParticipantPair{{FirstParticipantID: participants[0], SecondParticipantID: participants[2]}, {FirstParticipantID: participants[3], SecondParticipantID: participants[4]}},
+		ManualByeParticipantID: &requested,
+	})
+	var mismatch *ManualByeMismatchError
+	if !errors.As(err, &mismatch) || !errors.Is(err, ErrManualByeMismatch) || repository.calls != 0 {
+		t.Fatalf("ReviseSwissRound() error = %v, mismatch = %#v, calls = %d, want atomic manual bye rejection", err, mismatch, repository.calls)
+	}
+}
+
+func TestTournamentConfigurationWorkflowRejectsRepeatedByeBeforeMutation(t *testing.T) {
+	t.Parallel()
+
+	authority, participants, _ := configurationOddSwissAuthority(t, 2)
+	previousBye := participants[0]
+	previousByeRevision := uuid.New()
+	authority.Rounds = append([]ConfigurationRound{{
+		ID: uuid.New(), Stage: domain.TournamentStageSwiss, Number: 1, Revision: 1,
+		ParticipantIDs: participants, ByeParticipantID: &previousBye, ByeRevisionID: &previousByeRevision,
+	}}, authority.Rounds...)
+	repository := &configurationRepositoryStub{authority: authority}
+	workflow := NewTournamentConfigurationWorkflow(repository)
+	_, err := workflow.ReviseSwissRound(t.Context(), inbound.AdminReviseSwissRoundCommand{
+		Operator: inbound.AdminOperatorIdentity{ActorID: authorityOperatorID}, TournamentID: authority.TournamentID, CommandID: uuid.New(), RoundNumber: 2,
+		ExpectedProjectionRevision: authority.ProjectionRevision, ExpectedRoundRevision: 5, Confirmed: true, Reason: "request repeated Swiss bye",
+		CategoryMode: domain.CategoryModeAdmin, Categories: []domain.Category{domain.CategoryWeb},
+		ManualPairings:         []inbound.AdminConfigurationParticipantPair{{FirstParticipantID: participants[1], SecondParticipantID: participants[2]}, {FirstParticipantID: participants[3], SecondParticipantID: participants[4]}},
+		ManualByeParticipantID: &previousBye,
+	})
+	var mismatch *ManualByeMismatchError
+	if !errors.As(err, &mismatch) || !errors.Is(err, ErrManualByeMismatch) || repository.calls != 0 {
+		t.Fatalf("ReviseSwissRound() error = %v, mismatch = %#v, calls = %d, want repeated bye rejection", err, mismatch, repository.calls)
 	}
 }
 
@@ -342,6 +457,30 @@ func configurationUpdateCommand(authority ConfigurationAuthority, commandID uuid
 		SwissDefault:     inbound.AdminConfigurationStageDefault{Mode: domain.CategoryModeAdmin, Categories: []domain.Category{domain.CategoryCrypto}},
 		SemifinalDefault: authority.SemifinalDefault,
 	}
+}
+
+func configurationOddSwissAuthority(t *testing.T, roundNumber int) (ConfigurationAuthority, []uuid.UUID, uuid.UUID) {
+	t.Helper()
+	authority := configurationAuthorityFixture(t)
+	participants := []uuid.UUID{uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New()}
+	seriesIDs := []uuid.UUID{uuid.New(), uuid.New()}
+	authority.Series = []ConfigurationSeries{
+		{ID: seriesIDs[0], Stage: domain.TournamentStageSwiss, RoundNumber: roundNumber, Revision: 1, Mode: domain.CategoryModeRandom, Categories: []domain.Category{domain.CategoryWeb}, State: domain.SeriesStatePlanned},
+		{ID: seriesIDs[1], Stage: domain.TournamentStageSwiss, RoundNumber: roundNumber, Revision: 1, Mode: domain.CategoryModeRandom, Categories: []domain.Category{domain.CategoryWeb}, State: domain.SeriesStatePlanned},
+	}
+	roundID := uuid.New()
+	authority.Rounds = []ConfigurationRound{{
+		ID: roundID, Stage: domain.TournamentStageSwiss, Number: roundNumber, Revision: 5,
+		ParticipantIDs: participants, SeriesIDs: seriesIDs,
+	}}
+	authority.Standings = make([]SwissStandingView, len(participants))
+	for index, participantID := range participants {
+		authority.Standings[index] = SwissStandingView{
+			ParticipantID: participantID, Position: index + 1, Points: index + 1, Buchholz: index + 1,
+			EffectiveTimeMS: int64(index + 1),
+		}
+	}
+	return authority, participants, roundID
 }
 
 func configurationAuthorityFixture(t *testing.T) ConfigurationAuthority {

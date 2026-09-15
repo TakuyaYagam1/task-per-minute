@@ -805,23 +805,34 @@ func selectPairingBye(
 			ReceivedBye:          authority.ReceivedBye[standing.ParticipantID],
 		}
 	}
-	selection, err := swissusecase.SelectBye(
-		executionID(command.CommandID, "bye-evidence"), roundID, candidates, decidedAt,
-	)
-	if err != nil {
-		return nil, err
-	}
-	if command.PairingMode == PairingModeManual &&
-		(command.ManualByeParticipantID == nil || *command.ManualByeParticipantID != selection.ParticipantID) {
+	evidenceID := executionID(command.CommandID, "bye-evidence")
+	if command.PairingMode == PairingModeManual {
 		requested := uuid.Nil
 		if command.ManualByeParticipantID != nil {
 			requested = *command.ManualByeParticipantID
 		}
-		return nil, &ManualByeMismatchError{
-			RequestedParticipantID: requested, SelectedParticipantID: selection.ParticipantID,
-			ExpectedRevision: command.ExpectedProjectionRevision,
-			CurrentRevision:  authority.ProjectionRevision, CurrentState: authority.TournamentState,
+		selection, err := swissusecase.SelectManualBye(
+			evidenceID, roundID, candidates, requested, decidedAt,
+		)
+		if err == nil {
+			return &selection, nil
 		}
+		if !errors.Is(err, swissusecase.ErrManualByeNotEligible) {
+			return nil, err
+		}
+		automatic, automaticErr := swissusecase.SelectBye(evidenceID, roundID, candidates, decidedAt)
+		if automaticErr == nil {
+			return nil, &ManualByeMismatchError{
+				RequestedParticipantID: requested, SelectedParticipantID: automatic.ParticipantID,
+				ExpectedRevision: command.ExpectedProjectionRevision,
+				CurrentRevision:  authority.ProjectionRevision, CurrentState: authority.TournamentState,
+			}
+		}
+		return nil, err
+	}
+	selection, err := swissusecase.SelectBye(evidenceID, roundID, candidates, decidedAt)
+	if err != nil {
+		return nil, err
 	}
 	return &selection, nil
 }

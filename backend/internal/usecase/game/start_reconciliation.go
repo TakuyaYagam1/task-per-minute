@@ -33,6 +33,7 @@ func waveStartRecordsEqual(first, second StartRecord) bool {
 		first.ExpectedWaveRevision != second.ExpectedWaveRevision ||
 		first.ExpectedProjectionRevision != second.ExpectedProjectionRevision ||
 		first.Revisions != second.Revisions || first.RequestDigest != second.RequestDigest ||
+		!waveStartUUIDsEqual(first.ByeParticipantID, second.ByeParticipantID) ||
 		!maps.Equal(first.ReadinessRevisions, second.ReadinessRevisions) ||
 		!first.StartedAt.Equal(second.StartedAt) ||
 		!waveWavesEqual(first.Wave, second.Wave) || len(first.Games) != len(second.Games) {
@@ -52,12 +53,28 @@ func cloneWaveStartRecord(record StartRecord) StartRecord {
 	clone := record
 	clone.Wave = waveCloneWaveExecution(record.Wave)
 	clone.ReadinessRevisions = cloneWaveStartReadinessRevisions(record.ReadinessRevisions)
+	clone.ByeParticipantID = cloneWaveStartUUID(record.ByeParticipantID)
 	clone.Games = make([]gamedomain.Started, len(record.Games))
 	for index, game := range record.Games {
 		clone.Games[index] = game
 		clone.Games[index].Series = seriesdomain.CloneExecution(game.Series)
 	}
 	return clone
+}
+
+func cloneWaveStartUUID(value *uuid.UUID) *uuid.UUID {
+	if value == nil {
+		return nil
+	}
+	clone := *value
+	return &clone
+}
+
+func waveStartUUIDsEqual(first, second *uuid.UUID) bool {
+	if first == nil || second == nil {
+		return first == nil && second == nil
+	}
+	return *first == *second
 }
 
 func cloneWaveStartReadinessRevisions(source map[uuid.UUID]int64) map[uuid.UUID]int64 {
