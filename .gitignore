@@ -69,4 +69,5 @@ PRD/
 docs/engineering/
 docs/superpowers/
 .superpowers/
+/.worktrees/
 .cursor/
