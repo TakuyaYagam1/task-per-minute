@@ -231,7 +231,10 @@ func (a RosterOperationAction) valid() bool {
 
 func cloneRosterView(view RosterView) RosterView {
 	cloned := view
-	cloned.Participants = append([]RosterParticipantView(nil), view.Participants...)
+	if view.Participants != nil {
+		cloned.Participants = make([]RosterParticipantView, len(view.Participants))
+		copy(cloned.Participants, view.Participants)
+	}
 	cloned.LockedAt = cloneTime(view.LockedAt)
 	cloned.ExecutionStartedAt = cloneTime(view.ExecutionStartedAt)
 	return cloned
