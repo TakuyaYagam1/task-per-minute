@@ -4,7 +4,9 @@ import (
 	"time"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	executionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/execution"
 	participantrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant"
+	reconnectrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/reconnect"
 	telemetryadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/telemetry"
 	authorityusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/authority"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
@@ -21,10 +23,17 @@ func provideParticipantConnectionRepository(
 	return participantrepo.NewParticipantConnectionPostgres(transactions, authority)
 }
 
+func provideTournamentPausedPresenceRepository(
+	transactions *postgres.TxManager,
+	execution *executionrepo.Repository,
+) *reconnectrepo.TournamentPausedPresencePostgres {
+	return reconnectrepo.NewTournamentPausedPresencePostgres(transactions, execution)
+}
+
 func provideParticipantConnectionCoordinator(
 	transactions *postgres.TxManager,
 	repository *participantrepo.ParticipantConnectionPostgres,
-	pausedPresenceRepository *postgres.TournamentPausedPresencePostgres,
+	pausedPresenceRepository *reconnectrepo.TournamentPausedPresencePostgres,
 	reconnectRepository gameusecase.ReconnectRepository,
 	readinessUseCase *readiness.ReadinessUseCase,
 	terminalAdvancer participantconnection.TerminalAdvancer,

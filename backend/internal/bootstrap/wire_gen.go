@@ -21,11 +21,14 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/player"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/task"
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/correction"
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/lifecycle"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/replay"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/roster"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/snapshot"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/cancellation"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/configuration"
+	lifecycle2 "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/lifecycle"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant"
 	authority2 "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/authority"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/postseries"
@@ -33,6 +36,8 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/settlement"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/submission"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/surrender"
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/progression"
+	snapshot2 "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/snapshot"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/swiss/deadline"
 	assignment2 "github.com/TakuyaYagam1/task-per-minute/internal/usecase/assignment"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
@@ -171,8 +176,8 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 		return nil, nil, err
 	}
 	participantConnectionPostgres := provideParticipantConnectionRepository(txManager, controller)
-	tournamentPausedPresencePostgres := postgres.NewTournamentPausedPresencePostgres(txManager)
 	repository := provideTournamentExecutionRepository(txManager)
+	tournamentPausedPresencePostgres := provideTournamentPausedPresenceRepository(txManager, repository)
 	wavePostgres := wave.NewWavePostgres(txManager)
 	participantReadinessRepository := readiness.NewParticipantReadinessRepository(txManager, wavePostgres)
 	readinessUseCase := provideParticipantReadiness(participantReadinessRepository, bootstrapClockFunc)
@@ -206,13 +211,13 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 	adminPreflightRuntimeHealthSource := providePreflightRuntimeHealthSource(bootstrapClockFunc, availabilityMonitor, privateTaskAvailabilityPostgres, realtimeDelivery, bootstrapRuntimeWorkers, runtimeWorkerHeartbeats, client, seaweedStorage, pool)
 	rosterWorkflow := provideTournamentAdminRoster(txManager, tournamentAdminRosterPostgres, adminPreflightRuntimeHealthSource)
 	executionWorkflow := provideTournamentAdminExecution(txManager, repository, repository, repository, controller, bootstrapClockFunc)
-	tournamentAdminLifecyclePostgres := postgres.NewTournamentAdminLifecyclePostgres(txManager)
-	tournamentLifecyclePostgres := postgres.NewTournamentLifecyclePostgres(tournamentPostgres)
+	tournamentAdminLifecyclePostgres := lifecycle.NewTournamentAdminLifecyclePostgres(txManager)
+	tournamentLifecyclePostgres := lifecycle2.NewTournamentLifecyclePostgres(txManager)
 	tournamentLifecycleUseCase := provideTournamentLifecycle(tournamentLifecyclePostgres, bootstrapClockFunc)
 	tournamentPauseUseCase := provideTournamentPause(txManager, tournamentAdminLifecyclePostgres, bootstrapClockFunc)
 	tournamentCancellationPostgres := cancellation.NewTournamentCancellationPostgres(txManager)
 	tournamentCancellationUseCase := provideTournamentCancellation(tournamentCancellationPostgres, bootstrapClockFunc)
-	tournamentProgressionPostgres := postgres.NewTournamentProgressionPostgres(txManager)
+	tournamentProgressionPostgres := progression.NewTournamentProgressionPostgres(txManager)
 	workflow := provideTournamentProgression(tournamentProgressionPostgres, tournamentProgressionPostgres, tournamentProgressionPostgres, tournamentProgressionPostgres, bootstrapClockFunc)
 	lifecycleWorkflow := provideTournamentAdminLifecycle(txManager, tournamentAdminLifecyclePostgres, tournamentLifecycleUseCase, tournamentPauseUseCase, tournamentCancellationUseCase, workflow, bootstrapClockFunc)
 	resultPostgres := provideResultPostgres(txManager)
@@ -220,7 +225,7 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 	operatorResultWorkflow := provideTournamentAdminResults(txManager, tournamentAdminResultPostgres, terminalCoordinator)
 	tournamentAdminReplayPostgres := replay.NewTournamentAdminReplayPostgres(txManager)
 	replayWorkflow := provideTournamentAdminReplay(txManager, tournamentAdminReplayPostgres)
-	tournamentAdminCorrectionPostgres := postgres.NewTournamentAdminCorrectionPostgres(txManager)
+	tournamentAdminCorrectionPostgres := correction.NewTournamentAdminCorrectionPostgres(txManager)
 	correctionWorkflow := provideTournamentAdminCorrection(txManager, tournamentAdminCorrectionPostgres)
 	tournamentAdminAuditPostgres := audit.NewTournamentAdminAuditPostgres(txManager)
 	hmacAuthenticator, err := provideIncidentAuthenticator(cfg)
@@ -243,7 +248,7 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 	tournamentAdminUseCase := provideTournamentAdminInbound(adminObservedService)
 	tournamentConfigurationPostgres := configuration.NewProductionTournamentConfigurationPostgres(txManager)
 	tournamentConfigurationWorkflow := admin.NewTournamentConfigurationWorkflow(tournamentConfigurationPostgres)
-	tournamentSnapshotPostgres := postgres.NewTournamentSnapshotPostgres(txManager)
+	tournamentSnapshotPostgres := snapshot2.NewTournamentSnapshotPostgres(txManager)
 	participantStatePostgres := participant.NewParticipantStatePostgres(txManager)
 	tournamentParticipantPostgres := authority2.NewTournamentParticipantPostgres(txManager)
 	actionUseCase := provideParticipantDraft(participantDraftRepository, bootstrapClockFunc)
