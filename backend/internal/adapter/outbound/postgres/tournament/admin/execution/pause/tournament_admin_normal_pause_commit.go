@@ -16,7 +16,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
 	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause"
 )
 
 //nolint:gocyclo // One transaction keeps the full pause graph atomic and fail-closed.

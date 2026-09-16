@@ -14,6 +14,7 @@ import (
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
 	correctionusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/correction"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	pauseusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause"
 	gamestart "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/start"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 	swissusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/swiss"
@@ -210,7 +211,7 @@ type WaveCommandRecord struct {
 	RequestDigest              [32]byte
 	Reason                     string
 	ResultDocument             json.RawMessage
-	NormalPause                *gameusecase.NormalPauseRecord
+	NormalPause                *pauseusecase.NormalPauseRecord
 	ExecutedAt                 time.Time
 }
 
@@ -219,9 +220,9 @@ type WaveCommandRecord struct {
 // policies own graph planning; this boundary only adds active-root discovery
 // and execution-epoch rebinding required by the admin workflow.
 type NormalPauseExecutionRepository interface {
-	gameusecase.NormalPauseRepository
-	gameusecase.PauseResumeRepository
-	gameusecase.PauseResumePresenceRepository
+	pauseusecase.NormalPauseRepository
+	pauseusecase.PauseResumeRepository
+	pauseusecase.PauseResumePresenceRepository
 	ActiveNormalPauseID(ctx context.Context, scope pausedomain.GraphScope) (uuid.UUID, error)
 }
 

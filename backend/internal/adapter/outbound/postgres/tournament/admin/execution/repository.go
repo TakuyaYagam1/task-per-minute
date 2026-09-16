@@ -15,6 +15,7 @@ import (
 	swissdraft "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/swiss/draft"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	pauseusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause"
 	gamestart "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/start"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
 )
@@ -138,8 +139,8 @@ var (
 	_ tournamentadmin.ExecutionWorkflowRepository    = (*Repository)(nil)
 	_ tournamentadmin.NormalPauseExecutionRepository = (*Repository)(nil)
 	_ gamestart.StartRepository                      = (*Repository)(nil)
-	_ gameusecase.NormalPauseRepository              = (*Repository)(nil)
-	_ gameusecase.PauseResumeRepository              = (*Repository)(nil)
-	_ gameusecase.PauseResumePresenceRepository      = (*Repository)(nil)
+	_ pauseusecase.NormalPauseRepository             = (*Repository)(nil)
+	_ pauseusecase.PauseResumeRepository             = (*Repository)(nil)
+	_ pauseusecase.PauseResumePresenceRepository     = (*Repository)(nil)
 	_ gameusecase.ReconnectRepository                = (*Repository)(nil)
 )

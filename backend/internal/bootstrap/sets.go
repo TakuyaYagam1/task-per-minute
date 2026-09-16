@@ -53,6 +53,7 @@ import (
 	authusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/auth"
 	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gamepause "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause"
 	gamestart "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/start"
 	gamesubmission "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/submission"
 	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
@@ -144,9 +145,9 @@ var ReposSet = wire.NewSet(
 	wire.Bind(new(tournamentadmin.ExecutionWorkflowRepository), new(*executionrepo.Repository)),
 	wire.Bind(new(tournamentadmin.NormalPauseExecutionRepository), new(*executionrepo.Repository)),
 	wire.Bind(new(gamestart.StartRepository), new(*executionrepo.Repository)),
-	wire.Bind(new(gameusecase.NormalPauseRepository), new(*executionrepo.Repository)),
-	wire.Bind(new(gameusecase.PauseResumeRepository), new(*executionrepo.Repository)),
-	wire.Bind(new(gameusecase.PauseResumePresenceRepository), new(*executionrepo.Repository)),
+	wire.Bind(new(gamepause.NormalPauseRepository), new(*executionrepo.Repository)),
+	wire.Bind(new(gamepause.PauseResumeRepository), new(*executionrepo.Repository)),
+	wire.Bind(new(gamepause.PauseResumePresenceRepository), new(*executionrepo.Repository)),
 	provideTournamentPausedPresenceRepository,
 	contentrepo.NewProductionTournamentConfigurationPostgres,
 	wire.Bind(new(tournamentadmin.TournamentConfigurationRepository), new(*contentrepo.TournamentConfigurationPostgres)),

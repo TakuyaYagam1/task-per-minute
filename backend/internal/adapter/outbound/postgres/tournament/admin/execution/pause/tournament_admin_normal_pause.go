@@ -19,7 +19,7 @@ import (
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
 	seriesdomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/series"
 	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
 )
 

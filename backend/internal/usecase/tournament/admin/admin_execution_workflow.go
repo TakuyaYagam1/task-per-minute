@@ -17,7 +17,7 @@ import (
 	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
 	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	pauseusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause"
 	gamestart "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/start"
 	swissusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/swiss"
 )
@@ -290,7 +290,7 @@ type normalPauseMillisecondRepository struct {
 
 	pausedAt time.Time
 	pauseID  uuid.UUID
-	seed     *gameusecase.NormalPauseAuthority
+	seed     *pauseusecase.NormalPauseAuthority
 	seedUsed bool
 }
 
@@ -298,16 +298,16 @@ type normalPauseMillisecondRepository struct {
 func (repository *normalPauseMillisecondRepository) LoadNormalPauseAuthority(
 	ctx context.Context,
 	scope pausedomain.GraphScope,
-) (gameusecase.NormalPauseAuthority, error) {
+) (pauseusecase.NormalPauseAuthority, error) {
 	if repository.seed != nil && !repository.seedUsed {
 		repository.seedUsed = true
 		return *repository.seed, nil
 	}
 	authority, err := repository.NormalPauseExecutionRepository.LoadNormalPauseAuthority(ctx, scope)
 	if err != nil {
-		return gameusecase.NormalPauseAuthority{}, err
+		return pauseusecase.NormalPauseAuthority{}, err
 	}
-	authority.Graph.Games = append([]gameusecase.PauseGame(nil), authority.Graph.Games...)
+	authority.Graph.Games = append([]pauseusecase.PauseGame(nil), authority.Graph.Games...)
 	for index := range authority.Graph.Games {
 		game := &authority.Graph.Games[index]
 		if game.Game.State != domain.GameStateActive || game.Deadline == nil {
@@ -319,7 +319,7 @@ func (repository *normalPauseMillisecondRepository) LoadNormalPauseAuthority(
 			remainingMilliseconds++
 		}
 		if remainingMilliseconds < 1 {
-			return gameusecase.NormalPauseAuthority{}, gameusecase.ErrNormalPauseDeadline
+			return pauseusecase.NormalPauseAuthority{}, pauseusecase.ErrNormalPauseDeadline
 		}
 		deadline := repository.pausedAt.Add(time.Duration(remainingMilliseconds) * time.Millisecond)
 		game.Deadline = &deadline
@@ -333,7 +333,7 @@ func (repository *normalPauseMillisecondRepository) LoadNormalPauseAuthority(
 			remainingMilliseconds++
 		}
 		if remainingMilliseconds < 1 {
-			return gameusecase.NormalPauseAuthority{}, gameusecase.ErrNormalPauseDeadline
+			return pauseusecase.NormalPauseAuthority{}, pauseusecase.ErrNormalPauseDeadline
 		}
 		deadline := repository.pausedAt.Add(time.Duration(remainingMilliseconds) * time.Millisecond)
 		draft.TurnDeadline = deadline
@@ -347,7 +347,7 @@ func (repository *normalPauseMillisecondRepository) LoadNormalPauseAuthority(
 		}
 		series := normalPauseSeriesByID(authority.Graph.Series, game.SeriesID)
 		if series == nil {
-			return gameusecase.NormalPauseAuthority{}, gameusecase.ErrNormalPauseGraphIncomplete
+			return pauseusecase.NormalPauseAuthority{}, pauseusecase.ErrNormalPauseGraphIncomplete
 		}
 		gamePauseID := executionID(repository.pauseID, "game:"+game.Game.ID.String())
 		for _, participantID := range []uuid.UUID{
@@ -370,11 +370,11 @@ func (repository *normalPauseMillisecondRepository) LoadNormalPauseAuthority(
 		}
 		return left.ParticipantID.String() < right.ParticipantID.String()
 	})
-	authority.Revisions = gameusecase.PauseGraphRevisionsFrom(authority.Graph)
+	authority.Revisions = pauseusecase.PauseGraphRevisionsFrom(authority.Graph)
 	return authority, nil
 }
 
-func normalPauseSeriesByID(values []gameusecase.PauseSeries, id uuid.UUID) *gameusecase.PauseSeries {
+func normalPauseSeriesByID(values []pauseusecase.PauseSeries, id uuid.UUID) *pauseusecase.PauseSeries {
 	for index := range values {
 		if values[index].Execution.Series.ID == id {
 			return &values[index]
@@ -412,7 +412,7 @@ func (w *ExecutionWorkflow) controlNormalPauseLocked(
 		Authority:    executionAuthority,
 	}
 	clock := executionPauseClock{at: mutatedAt}
-	var pauseRecord *gameusecase.NormalPauseRecord
+	var pauseRecord *pauseusecase.NormalPauseRecord
 	expectedCommittedWaveRevision := authority.View.Revision
 	if command.Action == WaveActionPause {
 		pauseID := executionID(command.CommandID, "normal-wave-pause")
@@ -428,10 +428,10 @@ func (w *ExecutionWorkflow) controlNormalPauseLocked(
 			draftRevisionID = executionID(command.CommandID, "normal-pause-draft-revision")
 		}
 		repository.seed = &seed
-		record, changed, err := gameusecase.NewNormalPauseGraphUseCase(w.transactions, repository, clock).Enter(ctx, gameusecase.NormalPauseCommand{
+		record, changed, err := pauseusecase.NewNormalPauseGraphUseCase(w.transactions, repository, clock).Enter(ctx, pauseusecase.NormalPauseCommand{
 			Scope: scope, CommandID: command.CommandID, PauseID: pauseID,
 			ActorID: command.Operator.ActorID, DraftResultRevisionID: draftRevisionID,
-			Reason: gameusecase.PauseReasonOperator, Expected: seed.Revisions,
+			Reason: pauseusecase.PauseReasonOperator, Expected: seed.Revisions,
 		})
 		if err != nil {
 			return WaveView{}, normalizeNormalPauseError(command.ExpectedProjectionRevision, authority, err)
@@ -454,18 +454,18 @@ func (w *ExecutionWorkflow) controlNormalPauseLocked(
 		if seed.Pause.Graph.Draft != nil && seed.Pause.Graph.Draft.State == "paused" {
 			draftRevisionID = executionID(command.CommandID, "normal-resume-draft-revision")
 		}
-		resumeCommand := gameusecase.PauseResumeCommand{
+		resumeCommand := pauseusecase.PauseResumeCommand{
 			Scope: scope, PauseID: pauseID, CommandID: command.CommandID,
 			ActorID: command.Operator.ActorID, DraftResultRevisionID: draftRevisionID,
-			Expected: gameusecase.PauseResumeExpectationFrom(seed),
+			Expected: pauseusecase.PauseResumeExpectationFrom(seed),
 		}
 		var changed bool
 		if normalPauseHasDisconnectedPresence(seed.Presence) {
 			changed, err = w.resumeNormalPauseWithPresence(ctx, resumeCommand, seed, clock)
 			expectedCommittedWaveRevision = authority.View.Revision + 1
 		} else {
-			var record *gameusecase.PauseResumeRecord
-			record, changed, err = gameusecase.NewPauseResumeUseCase(w.transactions, w.normalPause, clock).Resume(ctx, resumeCommand)
+			var record *pauseusecase.PauseResumeRecord
+			record, changed, err = pauseusecase.NewPauseResumeUseCase(w.transactions, w.normalPause, clock).Resume(ctx, resumeCommand)
 			if err == nil && record == nil {
 				return WaveView{}, domain.ErrInternal
 			}
@@ -510,13 +510,13 @@ func normalPauseHasDisconnectedPresence(values []pausedomain.PausePresence) bool
 
 func (w *ExecutionWorkflow) resumeNormalPauseWithPresence(
 	ctx context.Context,
-	resume gameusecase.PauseResumeCommand,
-	seed gameusecase.PauseResumeAuthority,
+	resume pauseusecase.PauseResumeCommand,
+	seed pauseusecase.PauseResumeAuthority,
 	clock executionPauseClock,
 ) (bool, error) {
 	seriesID, gameID, ok := normalPauseDisconnectedExecution(seed)
 	if !ok {
-		return false, gameusecase.ErrPauseResumePresence
+		return false, pauseusecase.ErrPauseResumePresence
 	}
 	seriesPauseID := executionID(resume.PauseID, "series:"+seriesID.String())
 	gamePauseID := executionID(resume.PauseID, "game:"+gameID.String())
@@ -524,20 +524,20 @@ func (w *ExecutionWorkflow) resumeNormalPauseWithPresence(
 	if err != nil {
 		return false, err
 	}
-	resume.Expected = gameusecase.PauseResumeExpectationFrom(authority.Resume)
-	command := gameusecase.PauseResumePresenceCommand{
+	resume.Expected = pauseusecase.PauseResumeExpectationFrom(authority.Resume)
+	command := pauseusecase.PauseResumePresenceCommand{
 		Resume: resume, SeriesDecisionID: executionID(resume.CommandID, "resume-decision:"+seriesID.String()),
 		GameDecisionID:  executionID(resume.CommandID, "resume-game-decision:"+gameID.String()),
-		SeriesExpected:  gameusecase.PauseResumeDecisionExpectationFrom(authority.SeriesDecision),
-		GameExpected:    gameusecase.PauseResumeDecisionExpectationFrom(authority.GameDecision),
+		SeriesExpected:  pauseusecase.PauseResumeDecisionExpectationFrom(authority.SeriesDecision),
+		GameExpected:    pauseusecase.PauseResumeDecisionExpectationFrom(authority.GameDecision),
 		Presence:        append([]pausedomain.PausePresence(nil), authority.Resume.Presence...),
 		Reconnect:       append([]pausedomain.PauseReconnectInterval(nil), authority.Resume.Reconnect...),
 		Counters:        append([]pausedomain.PauseReconnectCounter(nil), authority.Resume.Counters...),
-		FrozenDeadlines: append([]gameusecase.PauseFrozenDeadline(nil), authority.Resume.FrozenDeadlines...),
+		FrozenDeadlines: append([]pauseusecase.PauseFrozenDeadline(nil), authority.Resume.FrozenDeadlines...),
 	}
 	series := normalPauseSeriesByID(authority.Resume.Pause.Graph.Series, seriesID)
 	if series == nil || authority.GameDecision.GameClock == nil {
-		return false, gameusecase.ErrPauseResumePresenceIncomplete
+		return false, pauseusecase.ErrPauseResumePresenceIncomplete
 	}
 	command.FirstInterval, err = normalPauseReconnectInput(authority, series.Execution.Series.FirstParticipantID, resume.CommandID)
 	if err != nil {
@@ -547,17 +547,17 @@ func (w *ExecutionWorkflow) resumeNormalPauseWithPresence(
 	if err != nil {
 		return false, err
 	}
-	record, changed, err := gameusecase.NewPauseResumePresenceUseCase(w.transactions, w.normalPause, clock).Resume(ctx, command)
+	record, changed, err := pauseusecase.NewPauseResumePresenceUseCase(w.transactions, w.normalPause, clock).Resume(ctx, command)
 	if err != nil {
 		return false, err
 	}
-	if record == nil || record.GameDecision.Action == gameusecase.PauseResumeActionResume {
+	if record == nil || record.GameDecision.Action == pauseusecase.PauseResumeActionResume {
 		return false, domain.ErrInternal
 	}
 	return changed, nil
 }
 
-func normalPauseDisconnectedExecution(seed gameusecase.PauseResumeAuthority) (uuid.UUID, uuid.UUID, bool) {
+func normalPauseDisconnectedExecution(seed pauseusecase.PauseResumeAuthority) (uuid.UUID, uuid.UUID, bool) {
 	seriesID := uuid.Nil
 	for _, presence := range seed.Presence {
 		if presence.State != pausedomain.PresenceStateDisconnected {
@@ -580,9 +580,9 @@ func normalPauseDisconnectedExecution(seed gameusecase.PauseResumeAuthority) (uu
 }
 
 func normalPauseReconnectInput(
-	authority gameusecase.PauseResumePresenceAuthority,
+	authority pauseusecase.PauseResumePresenceAuthority,
 	participantID, commandID uuid.UUID,
-) (*gameusecase.PauseResumeIntervalInput, error) {
+) (*pauseusecase.PauseResumeIntervalInput, error) {
 	var live *pausedomain.PausePresence
 	for index := range authority.Resume.Presence {
 		if authority.Resume.Presence[index].ParticipantID == participantID {
@@ -591,7 +591,7 @@ func normalPauseReconnectInput(
 		}
 	}
 	if live == nil {
-		return nil, gameusecase.ErrPauseResumePresenceIncomplete
+		return nil, pauseusecase.ErrPauseResumePresenceIncomplete
 	}
 	if live.State == pausedomain.PresenceStateConnected {
 		return nil, nil
@@ -606,9 +606,9 @@ func normalPauseReconnectInput(
 		}
 	}
 	if window < 0 {
-		return nil, gameusecase.ErrPauseResumePresenceIncomplete
+		return nil, pauseusecase.ErrPauseResumePresenceIncomplete
 	}
-	return &gameusecase.PauseResumeIntervalInput{
+	return &pauseusecase.PauseResumeIntervalInput{
 		ParticipantID: participantID,
 		IntervalID:    executionID(commandID, "reconnect:"+participantID.String()),
 		Window:        window,
@@ -616,11 +616,11 @@ func normalPauseReconnectInput(
 }
 
 func normalizeNormalPauseError(expected int64, authority WaveAuthority, err error) error {
-	if errors.Is(err, domain.ErrConflict) || errors.Is(err, gameusecase.ErrNormalPauseGraphConflict) ||
-		errors.Is(err, gameusecase.ErrPauseResumeConflict) || errors.Is(err, gameusecase.ErrPauseResumePresence) ||
-		errors.Is(err, gameusecase.ErrPauseResumePresenceConflict) || errors.Is(err, gameusecase.ErrPauseResumePresenceIncomplete) ||
-		errors.Is(err, gameusecase.ErrPauseResumePresenceIneligible) ||
-		errors.Is(err, gameusecase.ErrNormalPauseGoldenActive) || errors.Is(err, gameusecase.ErrNormalPauseDeadline) {
+	if errors.Is(err, domain.ErrConflict) || errors.Is(err, pauseusecase.ErrNormalPauseGraphConflict) ||
+		errors.Is(err, pauseusecase.ErrPauseResumeConflict) || errors.Is(err, pauseusecase.ErrPauseResumePresence) ||
+		errors.Is(err, pauseusecase.ErrPauseResumePresenceConflict) || errors.Is(err, pauseusecase.ErrPauseResumePresenceIncomplete) ||
+		errors.Is(err, pauseusecase.ErrPauseResumePresenceIneligible) ||
+		errors.Is(err, pauseusecase.ErrNormalPauseGoldenActive) || errors.Is(err, pauseusecase.ErrNormalPauseDeadline) {
 		return waveExecutionConflict(expected, authority)
 	}
 	return err

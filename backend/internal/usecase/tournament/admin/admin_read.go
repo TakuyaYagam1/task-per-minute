@@ -9,7 +9,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/audit"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	pauseusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause"
 )
 
 const maxAuditEvents = 200
@@ -32,7 +32,7 @@ type SnapshotQuery struct {
 }
 
 type PauseGraphView struct {
-	Graph gameusecase.PauseGraph
+	Graph pauseusecase.PauseGraph
 	Wave  WaveView
 }
 

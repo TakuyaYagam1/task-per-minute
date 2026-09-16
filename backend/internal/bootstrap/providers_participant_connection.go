@@ -10,6 +10,7 @@ import (
 	telemetryadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/telemetry"
 	authorityusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/authority"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gamepause "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/readiness"
 	participantconnection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/connection"
 )
@@ -46,7 +47,7 @@ func provideParticipantConnectionCoordinator(
 		Repository:       repository,
 		Recovery:         repository,
 		Readiness:        readinessUseCase,
-		PausedPresence:   gameusecase.NewPausedPresenceUseCase(transactions, pausedPresenceRepository, clock),
+		PausedPresence:   gamepause.NewPausedPresenceUseCase(transactions, pausedPresenceRepository, clock),
 		Disconnect:       gameusecase.NewDisconnectUseCase(reconnectRepository, clock),
 		Reconnect:        gameusecase.ReconnectNewUseCase(reconnectRepository, clock, observer),
 		TerminalAdvancer: terminalAdvancer,
