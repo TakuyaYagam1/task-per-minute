@@ -12,6 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	draftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment/draft"
+	waverepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/wave"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
 	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
@@ -252,7 +254,7 @@ func technicalStartWave(
 	participants []uuid.UUID,
 ) *gameusecase.StartRecord {
 	t.Helper()
-	waves := postgres.NewWavePostgres(fixture.tx)
+	waves := waverepo.NewWavePostgres(fixture.tx)
 	wave, err := waves.Get(ctx, fixture.tournamentID, waveID)
 	require.NoError(t, err)
 	require.Equal(t, domain.WaveStatePlanned, wave.Wave.State)
@@ -274,7 +276,7 @@ func technicalStartWave(
 		fixture.tournamentID,
 		waveID,
 		wave.Revision,
-		postgres.ReadyWindowInput{
+		waverepo.ReadyWindowInput{
 			ID:         windowID,
 			RevisionID: domain.ReadyWindowRevisionID(uuid.New()),
 			OpenedAt:   openedAt,
@@ -465,7 +467,7 @@ func activateTechnicalFinal(
 	ids playoff.FinalStageIDs,
 ) {
 	t.Helper()
-	drafts := postgres.NewParticipantDraftRepository(fixture.tx, postgres.NewDraftPostgres(fixture.tx))
+	drafts := postgres.NewParticipantDraftRepository(fixture.tx, draftrepo.NewDraftPostgres(fixture.tx))
 	current, err := drafts.LoadDraft(ctx, ids.DraftID)
 	require.NoError(t, err)
 	for current.State == draftusecase.ExecutionStateActive {

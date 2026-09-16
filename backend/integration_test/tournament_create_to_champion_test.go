@@ -25,7 +25,9 @@ import (
 	tournamentws "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket/tournament"
 	authadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/auth"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	draftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment/draft"
 	auditrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/audit"
+	waverepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/wave"
 	runtimepostgres "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/golden/runtime"
 	projectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
 	rosterrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/roster"
@@ -401,8 +403,8 @@ func newTournamentFlowRESTFixture(t *testing.T) *restFixture {
 		postgres.NewTournamentConfigurationPostgres(tx),
 	)
 	golden := goldenusecase.NewRuntimeApplication(runtimepostgres.NewGoldenRuntimePostgres(tx), clock)
-	participantDrafts := postgres.NewDraftPostgres(tx)
-	participantWave := postgres.NewWavePostgres(tx)
+	participantDrafts := draftrepo.NewDraftPostgres(tx)
+	participantWave := waverepo.NewWavePostgres(tx)
 	participantReadiness := readiness.NewReadinessUseCase(
 		postgres.NewParticipantReadinessRepository(tx, participantWave), clock,
 	)
@@ -1406,7 +1408,7 @@ func submitGoldenParticipantThroughREST(
 }
 
 func newTournamentFlowTerminalCoordinator(tx *postgres.TxManager) *playoff.TerminalCoordinator {
-	drafts := postgres.NewDraftPostgres(tx)
+	drafts := draftrepo.NewDraftPostgres(tx)
 	exactPlans := postgres.NewExactDraftBranchPlanPostgres(tx, drafts)
 	planner := playoff.NewFinalDraftAssignmentService(
 		assignmentusecase.NewExactDraftBranchPlanUseCase(exactPlans), exactPlans, exactPlans,

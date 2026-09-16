@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	draftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment/draft"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	gamedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/game"
@@ -65,7 +66,7 @@ func prepareActiveFinal(ctx context.Context, t *testing.T) (tournamentAdminSwiss
 		_, err := fixture.tx.Querier(ctx).LockPostseasonFinalGenesis(ctx, params)
 		require.ErrorIs(t, err, pgx.ErrNoRows, field)
 	}
-	drafts := postgres.NewParticipantDraftRepository(fixture.tx, postgres.NewDraftPostgres(fixture.tx))
+	drafts := postgres.NewParticipantDraftRepository(fixture.tx, draftrepo.NewDraftPostgres(fixture.tx))
 	current, err := drafts.LoadDraft(ctx, ids.DraftID)
 	require.NoError(t, err)
 	for current.State == draftusecase.ExecutionStateActive {

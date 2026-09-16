@@ -16,6 +16,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/api"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	draftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment/draft"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
 )
@@ -559,7 +560,7 @@ func completeSwissDraftsThroughREST(t *testing.T, flow swissCategoryFlow, wave a
 func newSwissDraftDeadlineWorker(t *testing.T, flow swissCategoryFlow) *draftusecase.DeadlineWorker {
 	t.Helper()
 	runtime := tournamentFlowRuntimeForFixture(t, flow.fixture)
-	drafts := postgres.NewDraftPostgres(flow.fixture.databaseFixture.mgr)
+	drafts := draftrepo.NewDraftPostgres(flow.fixture.databaseFixture.mgr)
 	participantDrafts := postgres.NewParticipantDraftRepository(flow.fixture.databaseFixture.mgr, drafts)
 	repository := postgres.NewSwissDraftDeadlinePostgres(flow.fixture.databaseFixture.mgr, participantDrafts)
 	worker, err := draftusecase.NewDeadlineWorker(

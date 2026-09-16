@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	waverepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/wave"
 	projectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
@@ -187,9 +188,9 @@ func TestFinalSwissReceiptRejectsCrossSeriesNodes(t *testing.T) {
 	foreignParticipants := createSwissMigrationParticipants(ctx, t, foreignRoster, createMigrationPlayers(ctx, t, 4))
 	at := time.Now().UTC().Truncate(time.Microsecond)
 	foreignSource, foreignRevision := createRoundProofProjection(ctx, t, foreignTournament, foreignRoster, foreignParticipants[0], at)
-	_, err := postgres.NewWavePostgres(fixture.tx).Create(ctx, postgres.WaveCreateInput{ID: uuid.New(), TournamentID: foreignTournament, RosterID: foreignRoster,
+	_, err := waverepo.NewWavePostgres(fixture.tx).Create(ctx, waverepo.WaveCreateInput{ID: uuid.New(), TournamentID: foreignTournament, RosterID: foreignRoster,
 		RevisionID: domain.WaveRevisionID(uuid.New()), CommandID: uuid.New(), SourceProjectionRevisionID: foreignSource, SourceProjectionRevision: foreignRevision,
-		ParticipantIDs: foreignParticipants[:2], CreatedAt: at, Series: []postgres.WaveSeriesInput{{ID: uuid.New(), FirstParticipantID: foreignParticipants[0], SecondParticipantID: foreignParticipants[1],
+		ParticipantIDs: foreignParticipants[:2], CreatedAt: at, Series: []waverepo.WaveSeriesInput{{ID: uuid.New(), FirstParticipantID: foreignParticipants[0], SecondParticipantID: foreignParticipants[1],
 			Format: domain.SeriesFormatBO1, InitialScoreRevisionID: domain.SeriesScoreRevisionID(uuid.New())}}})
 	require.NoError(t, err)
 	var foreignNode uuid.UUID

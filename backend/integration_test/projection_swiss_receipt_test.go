@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	waverepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/wave"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	gamedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/game"
@@ -96,7 +97,7 @@ func prepareFinalSwissBeforeStart(ctx context.Context, t *testing.T, stopBeforeS
 
 func closeSwissReceiptWave(ctx context.Context, t *testing.T, fixture tournamentAdminSwissProofFixture) {
 	t.Helper()
-	repository := postgres.NewWavePostgres(fixture.tx)
+	repository := waverepo.NewWavePostgres(fixture.tx)
 	wave, err := repository.Get(ctx, fixture.tournamentID, fixture.waveID)
 	require.NoError(t, err)
 	_, changed, err := repository.Close(ctx, fixture.tournamentID, fixture.waveID, wave.Revision, time.Now().UTC())
@@ -191,7 +192,7 @@ func TestSwissWaveCloseAdvancesRevisionIdentity(t *testing.T) {
 	for index := range fixture.binding {
 		settleSwissReceiptSeries(ctx, t, fixture, index)
 	}
-	repository := postgres.NewWavePostgres(fixture.tx)
+	repository := waverepo.NewWavePostgres(fixture.tx)
 	current, err := repository.Get(ctx, fixture.tournamentID, fixture.waveID)
 	require.NoError(t, err)
 	closed, changed, err := repository.Close(ctx, fixture.tournamentID, fixture.waveID, current.Revision, time.Now().UTC())
@@ -377,12 +378,12 @@ func nextSwissReceiptWave(ctx context.Context, t *testing.T, previous tournament
 	if round == 3 {
 		pairs = [][2]int{{0, 3}, {1, 2}}
 	}
-	series := make([]postgres.WaveSeriesInput, len(pairs))
+	series := make([]waverepo.WaveSeriesInput, len(pairs))
 	for i, pair := range pairs {
-		series[i] = postgres.WaveSeriesInput{ID: uuid.New(), FirstParticipantID: fixture.participants[pair[0]], SecondParticipantID: fixture.participants[pair[1]], Format: domain.SeriesFormatBO1, InitialScoreRevisionID: domain.SeriesScoreRevisionID(uuid.New())}
+		series[i] = waverepo.WaveSeriesInput{ID: uuid.New(), FirstParticipantID: fixture.participants[pair[0]], SecondParticipantID: fixture.participants[pair[1]], Format: domain.SeriesFormatBO1, InitialScoreRevisionID: domain.SeriesScoreRevisionID(uuid.New())}
 	}
-	waves := postgres.NewWavePostgres(fixture.tx)
-	wave, err := waves.Create(ctx, postgres.WaveCreateInput{ID: fixture.waveID, TournamentID: fixture.tournamentID, RosterID: fixture.rosterID, RevisionID: fixture.waveRevisionID,
+	waves := waverepo.NewWavePostgres(fixture.tx)
+	wave, err := waves.Create(ctx, waverepo.WaveCreateInput{ID: fixture.waveID, TournamentID: fixture.tournamentID, RosterID: fixture.rosterID, RevisionID: fixture.waveRevisionID,
 		ParticipantIDs: fixture.participants, Series: series, CommandID: uuid.New(), SourceProjectionRevisionID: fixture.projectionRevisionID, SourceProjectionRevision: fixture.sourceProjectionRevision, CreatedAt: at})
 	require.NoError(t, err)
 	fixture.binding = make([]swissusecase.LockedSeries, len(series))
@@ -395,7 +396,7 @@ func nextSwissReceiptWave(ctx context.Context, t *testing.T, previous tournament
 	_, err = sharedPool.Exec(ctx, `INSERT INTO swiss_wave_links (wave_id, tournament_id, roster_id, round_id, created_at) VALUES ($1, $2, $3, $4, $5)`, fixture.waveID, fixture.tournamentID, fixture.rosterID, fixture.roundID, at)
 	require.NoError(t, err)
 	openedAt := time.Now().UTC().Truncate(time.Microsecond)
-	wave, changed, err := waves.OpenReadyWindow(ctx, fixture.tournamentID, fixture.waveID, wave.Revision, postgres.ReadyWindowInput{ID: fixture.windowID, RevisionID: domain.ReadyWindowRevisionID(uuid.New()), OpenedAt: openedAt, Deadline: openedAt.Add(domain.ReadyWindowDuration)})
+	wave, changed, err := waves.OpenReadyWindow(ctx, fixture.tournamentID, fixture.waveID, wave.Revision, waverepo.ReadyWindowInput{ID: fixture.windowID, RevisionID: domain.ReadyWindowRevisionID(uuid.New()), OpenedAt: openedAt, Deadline: openedAt.Add(domain.ReadyWindowDuration)})
 	require.NoError(t, err)
 	require.True(t, changed)
 	for _, participantID := range fixture.participants {

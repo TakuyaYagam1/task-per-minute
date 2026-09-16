@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	waverepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/wave"
 	projectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
@@ -180,7 +181,7 @@ func createTournamentAdminSwissProofFixtureForAggregate(
 	tx := postgres.NewTxManager(sharedPool)
 	waveID := uuid.New()
 	waveRevisionID := domain.WaveRevisionID(uuid.New())
-	seriesInputs := []postgres.WaveSeriesInput{
+	seriesInputs := []waverepo.WaveSeriesInput{
 		{
 			ID: uuid.New(), FirstParticipantID: participants[0], SecondParticipantID: participants[1],
 			Format: domain.SeriesFormatBO1, InitialScoreRevisionID: domain.SeriesScoreRevisionID(uuid.New()),
@@ -190,8 +191,8 @@ func createTournamentAdminSwissProofFixtureForAggregate(
 			Format: domain.SeriesFormatBO1, InitialScoreRevisionID: domain.SeriesScoreRevisionID(uuid.New()),
 		},
 	}
-	waveRepository := postgres.NewWavePostgres(tx)
-	wave, err := waveRepository.Create(ctx, postgres.WaveCreateInput{
+	waveRepository := waverepo.NewWavePostgres(tx)
+	wave, err := waveRepository.Create(ctx, waverepo.WaveCreateInput{
 		ID: waveID, TournamentID: tournamentID, RosterID: rosterID, RevisionID: waveRevisionID,
 		ParticipantIDs: participants, Series: seriesInputs, CommandID: uuid.New(),
 		SourceProjectionRevisionID: projectionRevisionID, SourceProjectionRevision: projectionRevision,
@@ -218,7 +219,7 @@ func createTournamentAdminSwissProofFixtureForAggregate(
 
 	openedAt := time.Now().UTC().Truncate(time.Microsecond)
 	windowID := uuid.New()
-	wave, changed, err := waveRepository.OpenReadyWindow(ctx, tournamentID, waveID, wave.Revision, postgres.ReadyWindowInput{
+	wave, changed, err := waveRepository.OpenReadyWindow(ctx, tournamentID, waveID, wave.Revision, waverepo.ReadyWindowInput{
 		ID: windowID, RevisionID: domain.ReadyWindowRevisionID(uuid.New()),
 		OpenedAt: openedAt, Deadline: openedAt.Add(domain.ReadyWindowDuration),
 	})
@@ -583,7 +584,7 @@ func createRoundProofSeriesBinding(
 	tournamentID uuid.UUID,
 	rosterID uuid.UUID,
 	normalPoolRevisionID uuid.UUID,
-	series postgres.WaveSeriesInput,
+	series waverepo.WaveSeriesInput,
 	pairingID uuid.UUID,
 	at time.Time,
 ) swissusecase.LockedSeries {
@@ -805,7 +806,7 @@ func createRoundProofDraft(
 	tournamentID uuid.UUID,
 	rosterID uuid.UUID,
 	normalPoolRevisionID uuid.UUID,
-	series postgres.WaveSeriesInput,
+	series waverepo.WaveSeriesInput,
 	at time.Time,
 ) draftMigrationFixture {
 	t.Helper()

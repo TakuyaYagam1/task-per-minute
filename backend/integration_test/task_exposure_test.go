@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	waverepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/wave"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	rosterrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/roster"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
@@ -603,7 +604,7 @@ func insertTaskExposureReservationInTournament(
 		WHERE id = $1`, fixture.rosterID).Scan(&rosterRevision))
 	participantIDs := loadTaskExposureParticipants(ctx, t, fixture.rosterID)
 	seriesID := createMigrationSeries(ctx, t, fixture.tournamentID, fixture.rosterID, participantIDs, "bo1")
-	draft := createRoundProofDraft(ctx, t, fixture.tournamentID, fixture.rosterID, poolRevisionID, postgres.WaveSeriesInput{
+	draft := createRoundProofDraft(ctx, t, fixture.tournamentID, fixture.rosterID, poolRevisionID, waverepo.WaveSeriesInput{
 		ID:                     seriesID,
 		FirstParticipantID:     participantIDs[0],
 		SecondParticipantID:    participantIDs[1],

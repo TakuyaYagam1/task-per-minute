@@ -22,6 +22,7 @@ import (
 	middlewaremocks "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/middleware/mocks"
 	v1 "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/v1"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	draftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment/draft"
 	projectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
 	telemetryadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/telemetry"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
@@ -156,7 +157,7 @@ func newTournamentFlowHandler(
 	t.Helper()
 
 	tx := postgres.NewTxManager(sharedPool)
-	drafts := postgres.NewDraftPostgres(tx)
+	drafts := draftrepo.NewDraftPostgres(tx)
 	assignments := postgres.NewAssignmentPostgres(tx)
 	exactPlans := postgres.NewExactDraftBranchPlanPostgres(tx, drafts)
 	planner := playoff.NewFinalDraftAssignmentService(

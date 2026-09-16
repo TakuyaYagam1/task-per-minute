@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	waverepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/wave"
 	realtimerepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/realtime"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	cancellationrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/cancellation"
@@ -39,7 +40,7 @@ func TestRealtimeOutboxPostgresPreservesProjectionOrderAcrossRetryAndRestart(t *
 		WHERE tournament_id = $1
 			AND roster_id = $2`, fixture.tournamentID, fixture.rosterID,
 	).Scan(&waveID))
-	waveRepository := postgres.NewWavePostgres(postgres.NewTxManager(sharedPool))
+	waveRepository := waverepo.NewWavePostgres(postgres.NewTxManager(sharedPool))
 	wave, err := waveRepository.Get(ctx, fixture.tournamentID, waveID)
 	require.NoError(t, err)
 	openedAt := fixture.createdAt.Add(time.Second)
@@ -49,7 +50,7 @@ func TestRealtimeOutboxPostgresPreservesProjectionOrderAcrossRetryAndRestart(t *
 		fixture.tournamentID,
 		waveID,
 		wave.Revision,
-		postgres.ReadyWindowInput{
+		waverepo.ReadyWindowInput{
 			ID: windowID, RevisionID: domain.ReadyWindowRevisionID(uuid.New()),
 			OpenedAt: openedAt, Deadline: openedAt.Add(domain.ReadyWindowDuration),
 		},
