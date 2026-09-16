@@ -1,4 +1,4 @@
-package postgres
+package configuration
 
 import (
 	"os"
@@ -12,7 +12,7 @@ import (
 func TestTournamentConfigurationLoadUsesPublishedStandingsAndParticipantSeeds(t *testing.T) {
 	t.Parallel()
 
-	queries, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "queries", "tournament_configuration_edits.sql"))
+	queries, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "..", "db", "queries", "tournament_configuration_edits.sql"))
 	require.NoError(t, err)
 	source := string(queries)
 	standingsQuery := tournamentConfigurationQueryContract(t, source, "-- name: GetTournamentConfigurationEditPublishedStandings :one")
@@ -42,7 +42,7 @@ func TestTournamentConfigurationLoadUsesPublishedStandingsAndParticipantSeeds(t 
 func TestTournamentConfigurationSwissByeCASRequiresExactPreStartFence(t *testing.T) {
 	t.Parallel()
 
-	queries, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "queries", "tournament_configuration_edits.sql"))
+	queries, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "..", "db", "queries", "tournament_configuration_edits.sql"))
 	require.NoError(t, err)
 	query := tournamentConfigurationQueryContract(t, string(queries), "-- name: UpdateTournamentConfigurationEditSwissWaveLinkByeCAS :one")
 
@@ -77,7 +77,7 @@ func TestTournamentConfigurationSwissByeCASRequiresExactPreStartFence(t *testing
 func TestTournamentConfigurationDetachesOnlySupersededPreStartWaveSeries(t *testing.T) {
 	t.Parallel()
 
-	queries, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "queries", "tournament_configuration_edits.sql"))
+	queries, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "..", "db", "queries", "tournament_configuration_edits.sql"))
 	require.NoError(t, err)
 	query := tournamentConfigurationQueryContract(t, string(queries), "-- name: DeleteTournamentConfigurationEditSupersededWaveSeriesCAS :one")
 
