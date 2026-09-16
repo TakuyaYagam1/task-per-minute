@@ -1,4 +1,4 @@
-package postgres
+package runtime
 
 import (
 	"os"
@@ -12,7 +12,7 @@ import (
 func TestGoldenRuntimeViewUsesExactImmutableSnapshotAndParticipantGate(t *testing.T) {
 	t.Parallel()
 
-	payload, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "queries", "golden.sql"))
+	payload, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "..", "db", "queries", "golden.sql"))
 	require.NoError(t, err)
 	query := goldenRuntimeViewQueryContract(t, string(payload))
 

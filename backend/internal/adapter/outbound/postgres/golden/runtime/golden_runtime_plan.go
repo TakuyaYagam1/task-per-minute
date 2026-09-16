@@ -1,4 +1,4 @@
-package postgres
+package runtime
 
 import (
 	"context"
@@ -11,6 +11,8 @@ import (
 
 	"github.com/google/uuid"
 
+	assignmentrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment"
+	projectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
@@ -72,7 +74,7 @@ func (repository *GoldenRuntimePostgres) materializeGoldenRuntimePlan(
 
 	exactPlanID := goldenRuntimePlanID(first.sourceProjectionRevisionID, "exact")
 	exactRevisionID := goldenRuntimePlanID(exactPlanID, "revision")
-	branches := make([]AssignmentBranchInput, len(groups))
+	branches := make([]assignmentrepo.AssignmentBranchInput, len(groups))
 	decisionInputs := make([]string, 0, requiredCandidates)
 	for groupIndex, group := range groups {
 		if group.tournamentID != first.tournamentID || group.rosterID != first.rosterID ||
@@ -87,16 +89,16 @@ func (repository *GoldenRuntimePostgres) materializeGoldenRuntimePlan(
 				categories = append(categories, candidate.snapshot.Category)
 			}
 		}
-		branch := AssignmentBranchInput{
+		branch := assignmentrepo.AssignmentBranchInput{
 			ID: goldenRuntimePlanID(group.groupRevisionID, "branch"), Key: "golden-" + strconv.Itoa(groupIndex+1),
-			Categories: categories, Edges: make([]AssignmentEdgeInput, len(selected)),
+			Categories: categories, Edges: make([]assignmentrepo.AssignmentEdgeInput, len(selected)),
 		}
 		for edgeIndex, candidate := range selected {
 			edgeID := goldenRuntimePlanID(group.groupRevisionID, "edge-"+strconv.Itoa(edgeIndex+1))
 			reservationID := goldenRuntimePlanID(edgeID, "reservation")
 			snapshot := candidate.snapshot
 			snapshot.SnapshotID = goldenRuntimePlanID(edgeID, "snapshot")
-			branch.Edges[edgeIndex] = AssignmentEdgeInput{
+			branch.Edges[edgeIndex] = assignmentrepo.AssignmentEdgeInput{
 				ID: edgeID, ReservationID: reservationID, Position: edgeIndex + 1,
 				Snapshot: snapshot, ContentDigest: candidate.digest,
 				SelectionEvidence: map[string]any{
@@ -202,7 +204,7 @@ func (repository *GoldenRuntimePostgres) persistGoldenRuntimeAssignmentPlan(
 	planID uuid.UUID,
 	planRevisionID uuid.UUID,
 	decision domain.DecisionEvidence,
-	branches []AssignmentBranchInput,
+	branches []assignmentrepo.AssignmentBranchInput,
 	now time.Time,
 ) error {
 	constraintGraph, err := requiredJSONObject(map[string]any{
@@ -289,7 +291,7 @@ func (repository *GoldenRuntimePostgres) persistGoldenRuntimePlanSnapshot(
 	ctx context.Context,
 	querier *sqlc.Queries,
 	groups []goldenRuntimeGroup,
-	branches []AssignmentBranchInput,
+	branches []assignmentrepo.AssignmentBranchInput,
 	candidates []goldenRuntimePlanCandidate,
 	content sqlc.GetCurrentTournamentContentConfigurationRow,
 	planID uuid.UUID,
@@ -297,7 +299,7 @@ func (repository *GoldenRuntimePostgres) persistGoldenRuntimePlanSnapshot(
 	now time.Time,
 ) error {
 	first := groups[0]
-	record, err := loadProjectionRecord(ctx, querier, ProjectionScope{
+	record, err := projectionrepo.LoadProjectionRecord(ctx, querier, projectionrepo.ProjectionScope{
 		TournamentID: first.tournamentID, RosterID: first.rosterID,
 	}, first.sourceProjectionRevisionID)
 	if err != nil {
@@ -306,7 +308,7 @@ func (repository *GoldenRuntimePostgres) persistGoldenRuntimePlanSnapshot(
 	if record.Revision.RevisionNumber != first.sourceProjectionRevision {
 		return domain.ErrConflict
 	}
-	var standings ProjectionArtifactRecord
+	var standings projectionrepo.ProjectionArtifactRecord
 	foundStandings := false
 	for _, artifact := range record.Artifacts {
 		if artifact.Artifact.ArtifactKind == string(domain.ArtifactKindStandings) {

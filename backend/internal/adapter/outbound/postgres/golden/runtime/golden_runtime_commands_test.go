@@ -1,4 +1,4 @@
-package postgres
+package runtime
 
 import (
 	"encoding/json"
@@ -149,7 +149,7 @@ func TestGoldenRuntimeRecoveryCommandIdentityIsPersistedBoundaryDerived(t *testi
 }
 
 func TestGoldenRuntimeMigrationBackfillAndRollbackContracts(t *testing.T) {
-	root := filepath.Join("..", "..", "..", "..", "db", "migrations")
+	root := filepath.Join("..", "..", "..", "..", "..", "..", "db", "migrations")
 	migration, err := os.ReadFile(filepath.Join(root, "000015_golden_runtime_fencing.sql"))
 	require.NoError(t, err)
 	canonical, err := os.ReadFile(filepath.Join(root, "000011_projection_schema.sql"))
