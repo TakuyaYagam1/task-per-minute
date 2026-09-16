@@ -1,4 +1,4 @@
-package postgres
+package result
 
 import (
 	"crypto/sha256"

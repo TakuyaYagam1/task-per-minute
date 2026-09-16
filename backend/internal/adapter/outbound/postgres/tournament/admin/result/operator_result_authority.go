@@ -1,4 +1,4 @@
-package postgres
+package result
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
+	wavepostgres "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/wave"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	seriesdomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/series"
@@ -263,7 +264,7 @@ func (r *TournamentAdminResultPostgres) loadOperatorNoShowWave(
 	) {
 		return domain.Wave{}, domain.ErrConflict
 	}
-	record, err := waveRecord(row.Wave, members, nil, readiness, row.ReadyWindow, true)
+	record, err := wavepostgres.MapWaveRecord(row.Wave, members, nil, readiness, row.ReadyWindow, true)
 	if err != nil {
 		return domain.Wave{}, fmt.Errorf("TournamentAdminResultPostgres - map no-show Wave: %w", err)
 	}

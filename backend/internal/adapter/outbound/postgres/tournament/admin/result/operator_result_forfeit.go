@@ -1,4 +1,4 @@
-package postgres
+package result
 
 import (
 	"context"
@@ -202,7 +202,7 @@ func (r *TournamentAdminResultPostgres) commitPreStartOperatorForfeit(
 	ids operatorResultEvidenceIDs,
 	lockedAttemptID uuid.UUID,
 ) (*gameusecase.ForfeitResolution, error) {
-	if err := ensurePreStartSwissRoundProof(ctx, r.tx, command.TournamentID, command.SeriesID, resolution.ResolvedAt, swissRoundProofOrigin{mode: "pre_start_forfeit", commandID: command.CommandID}); err != nil {
+	if err := r.ensurePreStartSwissRoundProof(ctx, command.TournamentID, command.SeriesID, resolution.ResolvedAt, swissRoundProofOrigin{mode: "pre_start_forfeit", commandID: command.CommandID}); err != nil {
 		return nil, err
 	}
 	anchor, err := operatorForfeitAnchor(command, snapshot)
@@ -334,7 +334,7 @@ func (r *TournamentAdminResultPostgres) commitPreStartOperatorForfeit(
 	if err = advancePreStartOperatorForfeit(ctx, querier, resolution, row.Series, row.SeriesScoreHead); err != nil {
 		return nil, err
 	}
-	if err = publishOperatorResultProjection(ctx, r.tx,
+	if err = r.publishOperatorResultProjection(ctx, r.tx,
 		ResultScope{TournamentID: command.TournamentID, RosterID: snapshot.series.RosterID, SeriesID: command.SeriesID, AttemptID: anchor.ID},
 		snapshot, target, resolution.SeriesRevision.ID.UUID(), resolution.ResolvedAt); err != nil {
 		return nil, err

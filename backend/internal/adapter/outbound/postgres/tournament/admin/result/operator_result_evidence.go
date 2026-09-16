@@ -1,4 +1,4 @@
-package postgres
+package result
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 
+	resultrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
@@ -129,7 +130,7 @@ func operatorResultProjectionTarget(
 	return target, nil
 }
 
-func publishOperatorResultProjection(
+func (r *TournamentAdminResultPostgres) publishOperatorResultProjection(
 	ctx context.Context,
 	tx *TxManager,
 	scope ResultScope,
@@ -141,7 +142,7 @@ func publishOperatorResultProjection(
 	if target.ID == uuid.Nil || officialResultRevisionID == uuid.Nil {
 		return domain.ErrValidation
 	}
-	return publishResultProjection(ctx, tx, ResultSettlementInput{
+	return resultrepo.PublishResultProjectionWithFinalizer(ctx, tx, ResultSettlementInput{
 		IDs: ResultSettlementIDs{
 			GameResultRevisionID: officialResultRevisionID,
 			ProjectionEvidenceID: target.ID,
@@ -149,7 +150,7 @@ func publishOperatorResultProjection(
 		Scope: scope, SettledAt: createdAt,
 	}, sqlc.LockResultSourceProjectionRow{
 		ID: source.projection.ID, RevisionNumber: source.projection.RevisionNumber,
-	})
+	}, r.projectionFinalizer)
 }
 
 func (r *TournamentAdminResultPostgres) createOperatorResultCommand(

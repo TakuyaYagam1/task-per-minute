@@ -1,4 +1,4 @@
-package postgres
+package result
 
 import (
 	"context"
@@ -104,7 +104,7 @@ func (r *TournamentAdminResultPostgres) commitOperatorNoShow(
 		return nil, operatorResultLookupError("assert no-show projection", err)
 	}
 	ids := operatorNoShowEvidenceIDs(command.CommandID)
-	if err := ensurePreStartSwissRoundProof(ctx, r.tx, command.TournamentID, command.SeriesID, resolution.ResolvedAt, swissRoundProofOrigin{mode: "normal_no_show", commandID: command.CommandID}); err != nil {
+	if err := r.ensurePreStartSwissRoundProof(ctx, command.TournamentID, command.SeriesID, resolution.ResolvedAt, swissRoundProofOrigin{mode: "normal_no_show", commandID: command.CommandID}); err != nil {
 		return nil, err
 	}
 	target, err := operatorResultProjectionTarget(snapshot, ids.projectionEvidenceID)
@@ -185,7 +185,7 @@ func (r *TournamentAdminResultPostgres) commitOperatorNoShow(
 	); err != nil {
 		return nil, err
 	}
-	if err = publishOperatorResultProjection(ctx, r.tx,
+	if err = r.publishOperatorResultProjection(ctx, r.tx,
 		ResultScope{TournamentID: command.TournamentID, RosterID: snapshot.series.RosterID, SeriesID: command.SeriesID, AttemptID: resolution.GameRevisions[0].GameID},
 		snapshot, target, resolution.GameRevisions[0].ID.UUID(), resolution.ResolvedAt); err != nil {
 		return nil, err
