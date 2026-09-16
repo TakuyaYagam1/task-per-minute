@@ -1,4 +1,4 @@
-package game
+package pause
 
 import (
 	"context"
@@ -383,7 +383,7 @@ func pauseDraftInGraph(graph *PauseGraph, command NormalPauseCommand, pausedAt t
 	if graph.Draft == nil || graph.Draft.State != draftusecase.ExecutionStateActive {
 		return nil
 	}
-	draft := cloneDraftExecution(*graph.Draft)
+	draft := draftusecase.CloneExecution(*graph.Draft)
 	if draft.Revision == math.MaxInt64 || draft.AbsoluteDeadline == nil {
 		return ErrNormalPauseOverflow
 	}
@@ -396,7 +396,7 @@ func pauseDraftInGraph(graph *PauseGraph, command NormalPauseCommand, pausedAt t
 		command.DraftResultRevisionID == draft.PreviousRevisionID {
 		return normalPauseError("Draft result revision identity matches Draft")
 	}
-	advanceDraftRevision(&draft, command.DraftResultRevisionID, command.CommandID, draft.ServiceEpoch)
+	draftusecase.AdvanceRevision(&draft, command.DraftResultRevisionID, command.CommandID, draft.ServiceEpoch)
 	draft.State = draftusecase.ExecutionStatePaused
 	draft.AbsoluteDeadline = nil
 	draft.PausedRemaining = frozen.Remaining

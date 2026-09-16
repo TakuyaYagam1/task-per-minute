@@ -1,4 +1,4 @@
-package game
+package pause
 
 import (
 	"math"
@@ -276,7 +276,7 @@ func PauseResumeExpectationFrom(authority PauseResumeAuthority) PauseResumeExpec
 		expected.FrozenDeadlines[index] = PauseFrozenDeadlineRevision{Kind: frozen.Kind, OwnerID: frozen.OwnerID, Revision: frozen.Revision}
 	}
 	if authority.Pause.Graph.Draft != nil {
-		draft := draftExpectation(*authority.Pause.Graph.Draft)
+		draft := draftusecase.Expectation(*authority.Pause.Graph.Draft)
 		expected.Draft = &draft
 		expected.DraftPreviousRevisionID = authority.Pause.Graph.Draft.PreviousRevisionID
 	}

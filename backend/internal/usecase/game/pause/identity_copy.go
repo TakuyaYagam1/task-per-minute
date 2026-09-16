@@ -1,4 +1,4 @@
-package game
+package pause
 
 import "github.com/google/uuid"
 

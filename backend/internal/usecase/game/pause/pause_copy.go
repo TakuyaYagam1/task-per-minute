@@ -1,9 +1,10 @@
-package game
+package pause
 
 import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
 	seriesdomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/series"
+	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
 )
 
 func cloneTournamentRecord(record TournamentRecord) *TournamentRecord {
@@ -45,7 +46,7 @@ func clonePauseGraph(value PauseGraph) PauseGraph {
 		clone.Games[index].ResumeState = cloneGameStatePointer(value.Games[index].ResumeState)
 	}
 	if value.Draft != nil {
-		draft := cloneDraftExecution(*value.Draft)
+		draft := draftusecase.CloneExecution(*value.Draft)
 		clone.Draft = &draft
 	}
 	clone.Presence = clonePausePresenceSlice(value.Presence)

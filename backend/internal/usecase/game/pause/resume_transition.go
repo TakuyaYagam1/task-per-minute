@@ -1,4 +1,4 @@
-package game
+package pause
 
 import (
 	"math"
@@ -248,7 +248,7 @@ func restoreDraft(graph *PauseGraph, command PauseResumeCommand, resumedAt time.
 	if graph.Draft == nil || graph.Draft.State != draftusecase.ExecutionStatePaused {
 		return nil
 	}
-	draft := cloneDraftExecution(*graph.Draft)
+	draft := draftusecase.CloneExecution(*graph.Draft)
 	if draft.Revision == math.MaxInt64 || draft.AbsoluteDeadline == nil || draft.PausedRemaining <= 0 || draft.Recovery == nil {
 		return ErrPauseResumeOverflow
 	}
@@ -257,7 +257,7 @@ func restoreDraft(graph *PauseGraph, command PauseResumeCommand, resumedAt time.
 		command.DraftResultRevisionID == draft.PreviousRevisionID {
 		return pauseResumeError("Draft result revision identity matches Draft")
 	}
-	advanceDraftRevision(&draft, command.DraftResultRevisionID, command.CommandID, draft.ServiceEpoch)
+	draftusecase.AdvanceRevision(&draft, command.DraftResultRevisionID, command.CommandID, draft.ServiceEpoch)
 	draft.State = draftusecase.ExecutionStateActive
 	draft.PausedRemaining = 0
 	draft.Recovery = nil
