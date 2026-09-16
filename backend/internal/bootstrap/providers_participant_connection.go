@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	participantrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant"
 	telemetryadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/telemetry"
 	authorityusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/authority"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
@@ -16,13 +17,13 @@ const participantReconnectDuration = 30 * time.Second
 func provideParticipantConnectionRepository(
 	transactions *postgres.TxManager,
 	authority *authorityusecase.Controller,
-) *postgres.ParticipantConnectionPostgres {
-	return postgres.NewParticipantConnectionPostgres(transactions, authority)
+) *participantrepo.ParticipantConnectionPostgres {
+	return participantrepo.NewParticipantConnectionPostgres(transactions, authority)
 }
 
 func provideParticipantConnectionCoordinator(
 	transactions *postgres.TxManager,
-	repository *postgres.ParticipantConnectionPostgres,
+	repository *participantrepo.ParticipantConnectionPostgres,
 	pausedPresenceRepository *postgres.TournamentPausedPresencePostgres,
 	reconnectRepository gameusecase.ReconnectRepository,
 	readinessUseCase *readiness.ReadinessUseCase,
@@ -49,7 +50,7 @@ func provideParticipantConnectionCoordinator(
 
 func provideParticipantConnectionReaper(
 	coordinator *participantconnection.Coordinator,
-	repository *postgres.ParticipantConnectionPostgres,
+	repository *participantrepo.ParticipantConnectionPostgres,
 	authority *authorityusecase.Controller,
 ) (*participantconnection.Reaper, error) {
 	return participantconnection.NewReaper(coordinator, repository, authority)

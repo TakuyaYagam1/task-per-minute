@@ -26,7 +26,13 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/snapshot"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/cancellation"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/configuration"
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant"
+	authority2 "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/authority"
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/postseries"
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/readiness"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/settlement"
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/submission"
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/surrender"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/swiss/deadline"
 	assignment2 "github.com/TakuyaYagam1/task-per-minute/internal/usecase/assignment"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
@@ -168,7 +174,7 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 	tournamentPausedPresencePostgres := postgres.NewTournamentPausedPresencePostgres(txManager)
 	repository := provideTournamentExecutionRepository(txManager)
 	wavePostgres := wave.NewWavePostgres(txManager)
-	participantReadinessRepository := postgres.NewParticipantReadinessRepository(txManager, wavePostgres)
+	participantReadinessRepository := readiness.NewParticipantReadinessRepository(txManager, wavePostgres)
 	readinessUseCase := provideParticipantReadiness(participantReadinessRepository, bootstrapClockFunc)
 	coordinator, err := provideParticipantConnectionCoordinator(txManager, participantConnectionPostgres, tournamentPausedPresencePostgres, repository, readinessUseCase, terminalCoordinator, bootstrapClockFunc, reconnectObserver)
 	if err != nil {
@@ -235,19 +241,19 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 	tournamentAdminObserver := provideTournamentAdminObserver(bootstrapEventTelemetry)
 	adminObservedService := provideObservedTournamentAdminApplication(adminIdempotentService, bootstrapClockFunc, tournamentAdminObserver)
 	tournamentAdminUseCase := provideTournamentAdminInbound(adminObservedService)
-	tournamentConfigurationPostgres := postgres.NewTournamentConfigurationPostgres(txManager)
+	tournamentConfigurationPostgres := configuration.NewProductionTournamentConfigurationPostgres(txManager)
 	tournamentConfigurationWorkflow := admin.NewTournamentConfigurationWorkflow(tournamentConfigurationPostgres)
 	tournamentSnapshotPostgres := postgres.NewTournamentSnapshotPostgres(txManager)
-	participantStatePostgres := postgres.NewParticipantStatePostgres(txManager)
-	tournamentParticipantPostgres := postgres.NewTournamentParticipantPostgres(txManager)
+	participantStatePostgres := participant.NewParticipantStatePostgres(txManager)
+	tournamentParticipantPostgres := authority2.NewTournamentParticipantPostgres(txManager)
 	actionUseCase := provideParticipantDraft(participantDraftRepository, bootstrapClockFunc)
-	participantSubmissionRepository := postgres.NewParticipantSubmissionRepository(txManager, resultPostgres)
+	participantSubmissionRepository := submission.NewParticipantSubmissionRepository(txManager, resultPostgres)
 	submissionUseCase := provideParticipantSubmission(participantSubmissionRepository)
 	participantSettlementRepository := provideParticipantSettlementRepository(txManager, resultPostgres)
 	participantSettlementWorkflow := settlement.NewParticipantSettlementWorkflow(participantSettlementRepository)
-	participantForfeitRepository := postgres.NewParticipantForfeitRepository(txManager, resultPostgres)
+	participantForfeitRepository := surrender.NewParticipantForfeitRepository(txManager, resultPostgres)
 	participantSurrenderWorkflow := provideParticipantSurrender(participantForfeitRepository, bootstrapClockFunc)
-	participantPostSeriesRepository := postgres.NewParticipantPostSeriesRepository(txManager)
+	participantPostSeriesRepository := postseries.NewParticipantPostSeriesRepository(txManager)
 	postSeriesUseCase := provideParticipantPostSeries(participantPostSeriesRepository, bootstrapClockFunc)
 	commandCoordinator := provideParticipantCommands(txManager, tournamentParticipantPostgres, readinessUseCase, actionUseCase, submissionUseCase, participantSettlementWorkflow, participantSurrenderWorkflow, postSeriesUseCase, terminalCoordinator)
 	participantUseCase := provideTournamentParticipantApplication(tournamentSnapshotPostgres, participantStatePostgres, commandCoordinator)
@@ -264,8 +270,8 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 	schemaVersionPostgres := postgres.NewSchemaVersionPostgres(pool)
 	healthSource := provideEventDeliveryHealth(worker)
 	backlogSource := provideOutboxBacklog(realtimeOutboxPostgres)
-	projectionHealthSource := provideProjectionHealth(txManager)
-	bootstrapHealthProbe := provideHealthProbe(context, realtimeDelivery, pool, bootstrapClockFunc, bootstrapEventTelemetry, availabilityMonitor, privateTaskAvailabilityPostgres, healthSource, backlogSource, recoveryWorker, bootstrapRuntimeWorkers, runtimeWorkerHeartbeats, projectionHealthSource)
+	projectionHealthPostgres := provideProjectionHealth(txManager)
+	bootstrapHealthProbe := provideHealthProbe(context, realtimeDelivery, pool, bootstrapClockFunc, bootstrapEventTelemetry, availabilityMonitor, privateTaskAvailabilityPostgres, healthSource, backlogSource, recoveryWorker, bootstrapRuntimeWorkers, runtimeWorkerHeartbeats, projectionHealthPostgres)
 	healthChecks := provideHealthChecks(pool, client, seaweedStorage, schemaVersionPostgres, bootstrapHealthProbe)
 	bootstrapLoginRateLimiter := provideLoginRateLimiter(client, cfg)
 	bootstrapAdminRefreshRateLimiter := provideRefreshRateLimiter(client, cfg)

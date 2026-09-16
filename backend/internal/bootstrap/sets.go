@@ -30,8 +30,14 @@ import (
 	adminsnapshotrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/snapshot"
 	cancellationrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/cancellation"
 	contentrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/configuration"
+	participantrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant"
+	participantauthorityrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/authority"
 	participantdraftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/draft"
+	participantpostseriesrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/postseries"
+	participantreadinessrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/readiness"
 	settlementrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/settlement"
+	participantsubmissionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/submission"
+	participantsurrenderrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/surrender"
 	deadlinerepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/swiss/deadline"
 	redisadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/redis"
 	"github.com/TakuyaYagam1/task-per-minute/internal/observability"
@@ -133,8 +139,8 @@ var ReposSet = wire.NewSet(
 	wire.Bind(new(gameusecase.PauseResumeRepository), new(*executionrepo.Repository)),
 	wire.Bind(new(gameusecase.PauseResumePresenceRepository), new(*executionrepo.Repository)),
 	postgres.NewTournamentPausedPresencePostgres,
-	postgres.NewTournamentConfigurationPostgres,
-	wire.Bind(new(tournamentadmin.TournamentConfigurationRepository), new(*postgres.TournamentConfigurationPostgres)),
+	contentrepo.NewProductionTournamentConfigurationPostgres,
+	wire.Bind(new(tournamentadmin.TournamentConfigurationRepository), new(*contentrepo.TournamentConfigurationPostgres)),
 	authorityrepo.NewExecutionAuthorityPostgres,
 	postgres.NewTournamentSnapshotPostgres,
 	wire.Bind(new(inbound.TournamentSnapshotUseCase), new(*postgres.TournamentSnapshotPostgres)),
@@ -169,19 +175,19 @@ var ReposSet = wire.NewSet(
 	wire.Bind(new(tournamentprogression.SwissTerminalEvidenceReader), new(*postgres.TournamentProgressionPostgres)),
 	wire.Bind(new(tournamentprogression.Transitioner), new(*postgres.TournamentProgressionPostgres)),
 	wire.Bind(new(tournamentprogression.PlayoffProjectionPublisher), new(*postgres.TournamentProgressionPostgres)),
-	postgres.NewTournamentParticipantPostgres,
-	wire.Bind(new(tournamentparticipant.CommandAuthority), new(*postgres.TournamentParticipantPostgres)),
-	postgres.NewParticipantStatePostgres,
-	wire.Bind(new(tournamentparticipant.StateReader), new(*postgres.ParticipantStatePostgres)),
+	participantauthorityrepo.NewTournamentParticipantPostgres,
+	wire.Bind(new(tournamentparticipant.CommandAuthority), new(*participantauthorityrepo.TournamentParticipantPostgres)),
+	participantrepo.NewParticipantStatePostgres,
+	wire.Bind(new(tournamentparticipant.StateReader), new(*participantrepo.ParticipantStatePostgres)),
 	participantarchiverepo.NewParticipantArchivePostgres,
 	wire.Bind(new(participantarchive.Repository), new(*participantarchiverepo.ParticipantArchivePostgres)),
-	postgres.NewParticipantReadinessRepository,
+	participantreadinessrepo.NewParticipantReadinessRepository,
 	provideParticipantDraftRepository,
 	wire.Bind(new(deadlinerepo.ParticipantDraftRepository), new(*participantdraftrepo.ParticipantDraftRepository)),
 	deadlinerepo.NewSwissDraftDeadlinePostgres,
-	postgres.NewParticipantSubmissionRepository,
-	postgres.NewParticipantForfeitRepository,
-	postgres.NewParticipantPostSeriesRepository,
+	participantsubmissionrepo.NewParticipantSubmissionRepository,
+	participantsurrenderrepo.NewParticipantForfeitRepository,
+	participantpostseriesrepo.NewParticipantPostSeriesRepository,
 	wire.Bind(new(gameusecase.ReconnectRepository), new(*executionrepo.Repository)),
 	provideRealtimeOutbox,
 	taskrepo.NewPrivateTaskAvailabilityPostgres,
@@ -197,6 +203,7 @@ var UseCasesSet = wire.NewSet(
 	provideTournamentEventDispatcher,
 	providePrivateMetricsHandler,
 	provideProjectionHealth,
+	wire.Bind(new(observability.ProjectionHealthSource), new(*projectionrepo.ProjectionHealthPostgres)),
 	provideHealthProbe,
 	providePreflightRuntimeHealthSource,
 	provideEventDeliveryObserver,
@@ -312,7 +319,7 @@ var UseCasesSet = wire.NewSet(
 	provideParticipantSubmission,
 	wire.Bind(new(tournamentparticipant.SubmissionWorkflow), new(*gameusecase.SubmissionUseCase)),
 	provideParticipantSurrender,
-	wire.Bind(new(tournamentparticipant.SurrenderWorkflow), new(*postgres.ParticipantSurrenderWorkflow)),
+	wire.Bind(new(tournamentparticipant.SurrenderWorkflow), new(*participantsurrenderrepo.ParticipantSurrenderWorkflow)),
 	provideParticipantPostSeries,
 	wire.Bind(new(tournamentparticipant.PostSeriesWorkflow), new(*tournamentparticipant.PostSeriesUseCase)),
 	provideParticipantCommands,

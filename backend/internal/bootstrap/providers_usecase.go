@@ -16,6 +16,10 @@ import (
 	draftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment/draft"
 	playoffrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/playoff"
 	participantdraftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/draft"
+	participantpostseriesrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/postseries"
+	participantreadinessrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/readiness"
+	participantsubmissionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/submission"
+	participantsurrenderrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/surrender"
 	redisadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/redis"
 	telemetryadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/telemetry"
 	tasktelemetry "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/telemetry/task"
@@ -189,7 +193,7 @@ func provideDistributedCommandCoordinator(receipts idempotency.Store) *idempoten
 }
 
 func provideParticipantReadiness(
-	repository *postgres.ParticipantReadinessRepository,
+	repository *participantreadinessrepo.ParticipantReadinessRepository,
 	clock clockFunc,
 ) *readiness.ReadinessUseCase {
 	return readiness.NewReadinessUseCase(repository, clock)
@@ -203,13 +207,13 @@ func provideParticipantDraft(
 }
 
 func provideParticipantSubmission(
-	repository *postgres.ParticipantSubmissionRepository,
+	repository *participantsubmissionrepo.ParticipantSubmissionRepository,
 ) *gameusecase.SubmissionUseCase {
 	return gameusecase.NewSubmissionUseCase(repository)
 }
 
 func provideParticipantPostSeries(
-	repository *postgres.ParticipantPostSeriesRepository,
+	repository *participantpostseriesrepo.ParticipantPostSeriesRepository,
 	clock clockFunc,
 ) *tournamentparticipant.PostSeriesUseCase {
 	return tournamentparticipant.NewPostSeriesUseCase(repository, clock)
@@ -234,10 +238,10 @@ func provideParticipantCommands(
 }
 
 func provideParticipantSurrender(
-	repository *postgres.ParticipantForfeitRepository,
+	repository *participantsurrenderrepo.ParticipantForfeitRepository,
 	clock clockFunc,
-) *postgres.ParticipantSurrenderWorkflow {
-	return postgres.NewParticipantSurrenderWorkflow(repository, clock)
+) *participantsurrenderrepo.ParticipantSurrenderWorkflow {
+	return participantsurrenderrepo.NewParticipantSurrenderWorkflow(repository, clock)
 }
 
 func provideTournamentParticipantApplication(
