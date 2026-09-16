@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	attendancerepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/attendance"
+	lifecyclerepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/lifecycle"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	attendanceusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/attendance"
 	catalogusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/catalog"
@@ -78,58 +79,20 @@ func (r *TournamentLifecyclePostgres) GetTournament(
 	ctx context.Context,
 	id uuid.UUID,
 ) (*lifecycleusecase.LifecycleTournamentRecord, error) {
-	if r == nil || r.tournaments == nil || r.tournaments.tx == nil || id == uuid.Nil {
+	if r == nil || r.tournaments == nil {
 		return nil, domain.ErrValidation
 	}
-	row, err := r.tournaments.tx.Querier(ctx).GetTournamentSummary(ctx, id)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, lifecycleusecase.ErrTournamentNotFound
-		}
-		return nil, fmt.Errorf("TournamentLifecyclePostgres - GetTournament - Querier.GetTournamentSummary: %w", err)
-	}
-	return tournamentLifecycleSummaryRecord(row)
+	return lifecyclerepo.NewTournamentLifecyclePostgres(r.tournaments.tx).GetTournament(ctx, id)
 }
 
 func (r *TournamentLifecyclePostgres) TransitionTournament(
 	ctx context.Context,
 	in lifecycleusecase.TournamentLifecycleTransitionInput,
 ) (*lifecycleusecase.LifecycleTournamentRecord, bool, error) {
-	if r == nil || r.tournaments == nil || r.tournaments.tx == nil {
+	if r == nil || r.tournaments == nil {
 		return nil, false, domain.ErrValidation
 	}
-	transition := TournamentTransitionInput{
-		ID: in.TournamentID, ExpectedRevision: in.ExpectedRevision, ExpectedState: in.ExpectedState,
-		NextState: in.NextState, PausedFromState: in.PausedFromState, UpdatedAt: in.TransitionedAt,
-		StartedAt: in.StartedAt, FinishedAt: in.FinishedAt,
-	}
-	if err := validateTournamentTransitionInput(transition); err != nil {
-		return nil, false, err
-	}
-	current := domain.Tournament{State: in.ExpectedState}
-	if !current.CanTransitionTo(in.NextState) {
-		return nil, false, domain.ErrValidation
-	}
-
-	var record *lifecycleusecase.LifecycleTournamentRecord
-	changed := false
-	err := r.tournaments.tx.Do(ctx, func(txCtx context.Context) error {
-		_, transitionChanged, err := r.tournaments.Transition(txCtx, transition)
-		if err != nil || !transitionChanged {
-			return err
-		}
-		changed = true
-		row, err := r.tournaments.tx.Querier(txCtx).GetTournamentSummary(txCtx, in.TournamentID)
-		if err != nil {
-			return fmt.Errorf("load transitioned tournament: %w", err)
-		}
-		record, err = tournamentLifecycleSummaryRecord(row)
-		return err
-	})
-	if err != nil {
-		return nil, false, err
-	}
-	return record, changed, nil
+	return lifecyclerepo.NewTournamentLifecyclePostgres(r.tournaments.tx).TransitionTournament(ctx, in)
 }
 
 func (r *TournamentAttendancePostgres) InviteParticipant(
