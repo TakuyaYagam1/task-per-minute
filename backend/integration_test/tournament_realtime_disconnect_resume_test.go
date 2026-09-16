@@ -20,6 +20,7 @@ import (
 	inboundws "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket"
 	tournamentws "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket/tournament"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	participantrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
@@ -45,7 +46,7 @@ func TestTournamentRealtimeDisconnectResume(t *testing.T) {
 	reconnectDeadline := disconnectAt.Add(30 * time.Second)
 	clock := newParticipantConnectionClock(initialAt)
 
-	connectionRepository := postgres.NewParticipantConnectionPostgres(
+	connectionRepository := participantrepo.NewParticipantConnectionPostgres(
 		started.fixture.tx,
 		participantReconnectAuthorityProvider{identity: started.fixture.executionAuthority},
 	)

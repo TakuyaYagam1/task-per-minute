@@ -18,6 +18,7 @@ import (
 	inboundws "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket"
 	tournamentws "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket/tournament"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	participantrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
@@ -44,7 +45,7 @@ func TestParticipantConnectionBindingFollowsCurrentSubscriberFence(t *testing.T)
 	require.NoError(t, err)
 
 	clock := newParticipantConnectionClock(time.Now().UTC())
-	connectionRepository := postgres.NewParticipantConnectionPostgres(
+	connectionRepository := participantrepo.NewParticipantConnectionPostgres(
 		fixture.tx,
 		participantReconnectAuthorityProvider{identity: fixture.executionAuthority},
 	)
@@ -177,7 +178,7 @@ func TestParticipantConnectionBindingSurvivesFinalGameAdvance(t *testing.T) {
 	require.NoError(t, err)
 
 	clock := newParticipantConnectionClock(time.Now().UTC())
-	connectionRepository := postgres.NewParticipantConnectionPostgres(
+	connectionRepository := participantrepo.NewParticipantConnectionPostgres(
 		fixture.tx,
 		participantReconnectAuthorityProvider{identity: fixture.executionAuthority},
 	)
