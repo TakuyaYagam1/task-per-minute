@@ -23,6 +23,7 @@ import (
 	exactdraftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment/exactdraft"
 	playoffrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/playoff"
 	projectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
+	resultrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result"
 	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
@@ -83,7 +84,7 @@ func TestSemifinalSettlementProjectsFromStage(t *testing.T) {
 	require.Equal(t, genesis[0].ID, previousNodeID)
 }
 
-func semifinalSettlementInput(ctx context.Context, t *testing.T, fixture tournamentAdminSwissProofFixture, commandID uuid.UUID, position int) postgres.ResultSettlementInput {
+func semifinalSettlementInput(ctx context.Context, t *testing.T, fixture tournamentAdminSwissProofFixture, commandID uuid.UUID, position int) resultrepo.ResultSettlementInput {
 	t.Helper()
 	var seriesID, winnerID uuid.UUID
 	var seriesRevision int64
@@ -141,7 +142,7 @@ func TestSemifinalConcurrentSettlementPublishesOnce(t *testing.T) {
 	require.NoError(t, err)
 	input := semifinalSettlementInput(ctx, t, fixture, command.CommandID, 1)
 	before := playoffPublicationCounts(ctx, t, fixture.tournamentID)
-	var records [2]*postgres.ResultCommitRecord
+	var records [2]*resultrepo.ResultCommitRecord
 	var changed [2]bool
 	var failures [2]error
 	var ready, done sync.WaitGroup
@@ -215,7 +216,7 @@ func prepareFinalDraftWithCompletionDelay(ctx context.Context, t *testing.T, che
 	fixture, command := preparePlayoffPublication(ctx, t)
 	_, err := publishSwissPlayoffs(ctx, fixture, command)
 	require.NoError(t, err)
-	var last postgres.ResultSettlementInput
+	var last resultrepo.ResultSettlementInput
 	var reservedAt time.Time
 	require.NoError(t, sharedPool.QueryRow(ctx, `SELECT locked_at FROM rosters WHERE id = $1`, fixture.rosterID).Scan(&reservedAt))
 	_, err = fixture.tx.Querier(ctx).ReserveCheckedInTournamentParticipants(ctx, sqlc.ReserveCheckedInTournamentParticipantsParams{

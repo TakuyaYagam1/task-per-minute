@@ -13,6 +13,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	auditrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/audit"
+	resultrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result"
 	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
 	correctionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/correction"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
@@ -127,7 +128,7 @@ func settleCursorSafeAuditRecord(
 	draft.seriesID = seriesID
 	_ = lockMigrationSeries(ctx, tb, draft, lockedAt)
 
-	ids := postgres.ResultSettlementIDs{
+	ids := resultrepo.ResultSettlementIDs{
 		CommitID: uuid.New(), ResultEventID: uuid.New(), ResultEventIdempotencyKey: uuid.New(),
 		GameResultRevisionID: uuid.New(), SeriesScoreRevisionID: uuid.New(),
 		AuditEventID: auditEventID, OutboxEventID: uuid.New(), OutboxIdempotencyKey: uuid.New(),
@@ -137,9 +138,9 @@ func settleCursorSafeAuditRecord(
 	digest := sha256.Sum256([]byte("snapshot traversal concurrent result"))
 	result, changed, err := resultauthority.NewResultPostgres(postgres.NewTxManager(sharedPool)).Settle(
 		ctx,
-		postgres.ResultSettlementInput{
+		resultrepo.ResultSettlementInput{
 			IDs: ids,
-			Scope: postgres.ResultScope{
+			Scope: resultrepo.ResultScope{
 				TournamentID: fixture.resultFixture.draft.tournamentID,
 				RosterID:     fixture.resultFixture.draft.rosterID,
 				SeriesID:     seriesID,

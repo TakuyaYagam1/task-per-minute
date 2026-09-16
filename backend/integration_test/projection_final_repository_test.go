@@ -19,6 +19,7 @@ import (
 	draftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment/draft"
 	playoffrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/playoff"
 	projectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
+	resultrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result"
 	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
@@ -145,7 +146,7 @@ func TestFinalProjectionConcurrentPublication(t *testing.T) {
 	require.Zero(t, loserRows)
 }
 
-func createFinalPublicationFixture(t *testing.T) (projection.FinalPublication, *postgres.ResultCommitRecord, uuid.UUID) {
+func createFinalPublicationFixture(t *testing.T) (projection.FinalPublication, *resultrepo.ResultCommitRecord, uuid.UUID) {
 	t.Helper()
 	ctx := context.Background()
 	fixture, ids, coordinator := prepareActiveFinal(ctx, t)
@@ -281,7 +282,7 @@ func finalProjectionSettlementInput(
 	expectedSeriesRevision int64,
 	digest [sha256.Size]byte,
 	settledAt time.Time,
-) postgres.ResultSettlementInput {
+) resultrepo.ResultSettlementInput {
 	seriesResultRevisionID := uuid.Nil
 	seriesResultReason := ""
 	var seriesWinnerID *uuid.UUID
@@ -300,8 +301,8 @@ func finalProjectionSettlementInput(
 			domain.ArtifactKindSeriesResult,
 		}
 	}
-	return postgres.ResultSettlementInput{
-		IDs: postgres.ResultSettlementIDs{
+	return resultrepo.ResultSettlementInput{
+		IDs: resultrepo.ResultSettlementIDs{
 			CommitID:                  uuid.New(),
 			ResultEventID:             uuid.New(),
 			ResultEventIdempotencyKey: uuid.New(),
@@ -314,7 +315,7 @@ func finalProjectionSettlementInput(
 			ProjectionEvidenceID:      uuid.New(),
 			CommitIdempotencyKey:      uuid.New(),
 		},
-		Scope: postgres.ResultScope{
+		Scope: resultrepo.ResultScope{
 			TournamentID: fixture.tournamentID,
 			RosterID:     fixture.rosterID,
 			SeriesID:     seriesID,
@@ -345,7 +346,7 @@ func finalProjectionPublication(
 	seriesID uuid.UUID,
 	attemptID uuid.UUID,
 	winnerID uuid.UUID,
-	result *postgres.ResultCommitRecord,
+	result *resultrepo.ResultCommitRecord,
 	digest [sha256.Size]byte,
 	tournamentRevision int64,
 	seriesRevision int64,
@@ -486,7 +487,7 @@ func assertFinalProjectionCommit(
 	ctx context.Context,
 	t *testing.T,
 	publication projection.FinalPublication,
-	result *postgres.ResultCommitRecord,
+	result *resultrepo.ResultCommitRecord,
 	receipt projection.FinalPublicationReceipt,
 ) {
 	t.Helper()
