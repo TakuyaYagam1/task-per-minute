@@ -1,4 +1,4 @@
-package postgres
+package exactdraft
 
 import (
 	"os"
@@ -11,13 +11,13 @@ import (
 func TestExactDraftAssignmentStorageRetainsEveryBranchAndCategoryChild(t *testing.T) {
 	t.Parallel()
 
-	migration, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "migrations", "000007_assignment_schema.sql"))
+	migration, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "..", "db", "migrations", "000007_assignment_schema.sql"))
 	require.NoError(t, err)
-	projectionMigration, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "migrations", "000011_projection_schema.sql"))
+	projectionMigration, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "..", "db", "migrations", "000011_projection_schema.sql"))
 	require.NoError(t, err)
-	assignmentQueries, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "queries", "assignment.sql"))
+	assignmentQueries, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "..", "db", "queries", "assignment.sql"))
 	require.NoError(t, err)
-	queries, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "queries", "exact_draft_assignment.sql"))
+	queries, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "..", "db", "queries", "exact_draft_assignment.sql"))
 	require.NoError(t, err)
 
 	for _, fragment := range []string{
