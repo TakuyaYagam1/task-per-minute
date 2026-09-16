@@ -149,6 +149,10 @@ test-plugin-race: test ## Run the unit race gate used by plugin validation
 test-int: ## Integration tests (testcontainers - one package, up to 5 parallel tests)
 	go test -race -count=1 -p=1 -parallel=5 -timeout=20m -tags=integration ./integration_test/...
 
+.PHONY: test-int-compile
+test-int-compile: ## Compile the integration package with race instrumentation without starting fixtures
+	go test -race -c -tags=integration -o /dev/null ./integration_test
+
 .PHONY: test-race
 test-race: ## Unit + integration tests with race detector (full suite, requires Docker)
 	$(MAKE) test
