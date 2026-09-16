@@ -13,6 +13,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	rosterrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/roster"
+	catalogrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/catalog"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
 	tournamentpreflight "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/preflight"
@@ -28,15 +29,15 @@ func TestTournamentPreflightCertifiesCapacityAndLocksRoster(t *testing.T) {
 	tournamentID := uuid.New()
 	rosterID := uuid.New()
 	tx := postgres.NewTxManager(sharedPool)
-	tournaments := postgres.NewTournamentPostgres(tx)
-	_, _, err := tournaments.Create(ctx, postgres.TournamentCreateInput{
+	catalog := catalogrepo.NewTournamentCatalogPostgres(tx)
+	_, _, err := catalog.Create(ctx, catalogrepo.TournamentCreateInput{
 		ID: tournamentID, RosterID: rosterID, Name: "Preflight Tournament",
 		PublicID: tournamentID.String(), PlannedRosterSize: 4,
 		ContentRevision: contentRevision, CreatedAt: createdAt,
 	})
 	require.NoError(t, err)
 	projectionRevision := publishInitialPreflightProjection(ctx, t, tournamentID, rosterID, createdAt)
-	_, changed, err := tournaments.Transition(ctx, postgres.TournamentTransitionInput{
+	_, changed, err := catalog.Transition(ctx, catalogrepo.TournamentTransitionInput{
 		ID: tournamentID, ExpectedRevision: 1, ExpectedState: domain.TournamentStateDraft,
 		NextState: domain.TournamentStateRegistration, UpdatedAt: createdAt.Add(time.Millisecond),
 	})

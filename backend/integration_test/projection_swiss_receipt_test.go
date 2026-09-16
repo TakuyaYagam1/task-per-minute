@@ -18,6 +18,7 @@ import (
 	waverepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/wave"
 	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
+	catalogrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/catalog"
 	progressionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/progression"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	gamedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/game"
@@ -109,11 +110,11 @@ func closeSwissReceiptWave(ctx context.Context, t *testing.T, fixture tournament
 
 func swissReceiptAuthority(ctx context.Context, t *testing.T, fixture tournamentAdminSwissProofFixture) progression.Authority {
 	t.Helper()
-	record, err := postgres.NewTournamentPostgres(fixture.tx).Get(ctx, fixture.tournamentID)
+	record, err := catalogrepo.NewTournamentCatalogPostgres(fixture.tx).GetTournament(ctx, fixture.tournamentID)
 	require.NoError(t, err)
 	projectionID, revision := currentPublishedProjection(ctx, t, fixture.tournamentID, fixture.rosterID)
 	return progression.Authority{ProjectionRevisionID: projectionID, ProjectionRevision: revision, Tournament: inbound.TournamentView{
-		ID: record.ID, RosterID: fixture.rosterID, Preset: domain.TournamentPreset(record.Preset), State: record.State,
+		ID: record.ID, RosterID: fixture.rosterID, Preset: record.Preset, State: record.State,
 		Revision: record.Revision, RosterSize: len(fixture.participants), CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt, StartedAt: record.StartedAt,
 	}}
 }

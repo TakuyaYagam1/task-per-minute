@@ -16,6 +16,7 @@ import (
 	waverepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/wave"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	rosterrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/roster"
+	catalogrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/catalog"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	assignmentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/assignment"
 	taskusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/task"
@@ -369,14 +370,15 @@ func createTaskExposureRosterFixture(
 	tournamentID := uuid.New()
 	rosterID := uuid.New()
 	tx := postgres.NewTxManager(sharedPool)
-	_, _, err := postgres.NewTournamentPostgres(tx).Create(ctx, postgres.TournamentCreateInput{
+	catalog := catalogrepo.NewTournamentCatalogPostgres(tx)
+	_, _, err := catalog.Create(ctx, catalogrepo.TournamentCreateInput{
 		ID: tournamentID, RosterID: rosterID, Name: name,
 		PublicID: tournamentID.String(), PlannedRosterSize: 4,
 		ContentRevision: contentRevision, CreatedAt: createdAt,
 	})
 	require.NoError(t, err)
 	projectionRevision := publishInitialPreflightProjection(ctx, t, tournamentID, rosterID, createdAt)
-	_, changed, err := postgres.NewTournamentPostgres(tx).Transition(ctx, postgres.TournamentTransitionInput{
+	_, changed, err := catalog.Transition(ctx, catalogrepo.TournamentTransitionInput{
 		ID: tournamentID, ExpectedRevision: 1, ExpectedState: domain.TournamentStateDraft,
 		NextState: domain.TournamentStateRegistration, UpdatedAt: createdAt.Add(time.Millisecond),
 	})

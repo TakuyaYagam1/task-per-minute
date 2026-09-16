@@ -37,6 +37,9 @@ import (
 	rosterrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/roster"
 	snapshotrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/snapshot"
 	cancellationrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/cancellation"
+	catalogrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/catalog"
+	configurationrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/configuration"
+	creationrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/creation"
 	tournamentlifecyclerepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/lifecycle"
 	progressionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/progression"
 	tournamentsnapshotrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/snapshot"
@@ -328,8 +331,7 @@ func newTournamentFlowRESTFixture(t *testing.T) *restFixture {
 			Secret: []byte("01234567890123456789012345678901"), Now: clock.Now,
 		}), authadapter.NewPasswordVerifier([]byte(restAdminPassword)))
 
-	tournaments := postgres.NewTournamentPostgres(tx)
-	legacyCatalog := catalogusecase.NewTournamentUseCase(postgres.NewTournamentCatalogPostgres(tournaments), clock)
+	legacyCatalog := catalogusecase.NewTournamentUseCase(catalogrepo.NewTournamentCatalogPostgres(tx), clock)
 	ids, err := catalogusecase.NewDeterministicIDGenerator(
 		uuid.NewSHA1(uuid.NameSpaceOID, []byte("task-per-minute:tournament-commands")),
 	)
@@ -337,8 +339,8 @@ func newTournamentFlowRESTFixture(t *testing.T) *restFixture {
 	receipts := redisadapter.NewCommandReceiptStore(redis.client, 30*time.Second, 24*time.Hour, 30*time.Second)
 	catalog := catalogusecase.NewUseCase(catalogusecase.Dependencies{
 		IDs: ids, Clock: clock, Lister: legacyCatalog,
-		CreateStore: postgres.NewTournamentCreatePostgres(tournaments), Receipts: receipts,
-		ContentReader: postgres.NewTournamentContentPostgres(tx),
+		CreateStore: creationrepo.NewProductionTournamentCreatePostgres(tx), Receipts: receipts,
+		ContentReader: configurationrepo.NewTournamentContentPostgres(tx),
 	})
 	rosterRepository := rosterrepo.NewTournamentAdminRosterPostgres(tx)
 	roster := tournamentadmin.NewRosterWorkflow(tournamentadmin.RosterWorkflowDependencies{
