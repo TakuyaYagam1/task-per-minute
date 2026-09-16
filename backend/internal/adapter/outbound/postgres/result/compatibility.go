@@ -40,6 +40,20 @@ func PublishResultProjectionWithFinalizer(
 	return publishResultProjectionWithFinalizer(ctx, tx, in, source, finalizer)
 }
 
+// PublishCommittedResultProjection completes the publication boundary for a
+// result-owned projection revision inside the caller's transaction.
+func PublishCommittedResultProjection(
+	ctx context.Context,
+	tx *db.TxManager,
+	tournamentID uuid.UUID,
+	rosterID uuid.UUID,
+	revisionID uuid.UUID,
+	at time.Time,
+	finalizer ProjectionFinalizer,
+) error {
+	return publishCommittedResultProjection(ctx, tx, tournamentID, rosterID, revisionID, at, finalizer)
+}
+
 func LoadResultCommit(
 	ctx context.Context,
 	querier *sqlc.Queries,

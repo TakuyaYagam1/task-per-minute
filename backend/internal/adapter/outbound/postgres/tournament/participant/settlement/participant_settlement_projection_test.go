@@ -1,4 +1,4 @@
-package postgres
+package settlement
 
 import (
 	"os"
@@ -107,7 +107,7 @@ func TestParticipantSettlementPartialSwissWaveReusesStandingsArtifact(t *testing
 func TestParticipantSettlementProjectionLedgerQueryRequiresCompleteActiveWave(t *testing.T) {
 	t.Parallel()
 
-	query, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "queries", "participant_settlement.sql"))
+	query, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "..", "..", "db", "queries", "participant_settlement.sql"))
 	require.NoError(t, err)
 
 	for _, fragment := range []string{
