@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/internal/db"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	tournamentprogression "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/progression"
@@ -114,7 +115,7 @@ func TestProgressionLoadGoldenSettlementsUsesLockedSealedRows(t *testing.T) {
 			}
 			tx.results = append(tx.results, rows)
 		}
-		ctx := context.WithValue(context.Background(), ctxKey{}, transactionScope{tx: tx})
+		ctx := db.WithTransaction(context.Background(), tx)
 		got, err := NewTournamentProgressionPostgres(&TxManager{}).loadGoldenSettlements(ctx, fixture.authority)
 		if malformed {
 			require.ErrorIs(t, err, domain.ErrConflict)

@@ -198,7 +198,7 @@ func tournamentAdminSnapshotQueryValid(
 	repository *TournamentAdminSnapshotPostgres,
 	query tournamentadmin.SnapshotQuery,
 ) bool {
-	if ctx == nil || repository == nil || repository.tx == nil || repository.tx.pool == nil ||
+	if ctx == nil || repository == nil || repository.tx == nil || !repository.tx.HasPool() ||
 		repository.roster == nil || repository.drafts == nil || query.Operator.ActorID == uuid.Nil ||
 		query.TournamentID == uuid.Nil {
 		return false

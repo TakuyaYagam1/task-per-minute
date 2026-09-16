@@ -197,7 +197,7 @@ func (r *TournamentAdminRosterPostgres) rosterWriteReady(ctx context.Context) bo
 	if ctx == nil || r == nil || r.tx == nil {
 		return false
 	}
-	_, active := txFromCtx(ctx)
+	_, active := r.tx.Conn(ctx).(pgx.Tx)
 	return active
 }
 
