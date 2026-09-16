@@ -3,16 +3,11 @@
 package integration_test
 
 import (
-	"context"
-	"errors"
-	"fmt"
 	"sync"
 	"testing"
-	"time"
 
+	testkit "github.com/TakuyaYagam1/task-per-minute/integration_test/internal/testkit"
 	goredis "github.com/redis/go-redis/v9"
-	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/wait"
 )
 
 type redisFx struct {
@@ -38,41 +33,9 @@ func sharedRedis(t *testing.T) *redisFx {
 }
 
 func startRedis() (*redisFx, func(), error) {
-	ctx := context.Background()
-	req := testcontainers.ContainerRequest{
-		Image:        "redis:8-alpine",
-		ExposedPorts: []string{"6379/tcp"},
-		WaitingFor: wait.ForLog("Ready to accept connections").
-			WithStartupTimeout(containerStartupTimeout),
-	}
-	c, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-		ContainerRequest: req,
-		Started:          true,
-	})
+	fixture, teardown, err := testkit.StartRedis(containerStartupTimeout)
 	if err != nil {
-		return nil, nil, fmt.Errorf("start redis container: %w", err)
+		return nil, nil, err
 	}
-
-	host, err := c.Host(ctx)
-	if err != nil {
-		return nil, nil, errors.Join(err, c.Terminate(ctx))
-	}
-	port, err := c.MappedPort(ctx, "6379/tcp")
-	if err != nil {
-		return nil, nil, errors.Join(err, c.Terminate(ctx))
-	}
-
-	client := goredis.NewClient(&goredis.Options{Addr: fmt.Sprintf("%s:%s", host, port.Port())})
-	if err := client.Ping(ctx).Err(); err != nil {
-		_ = client.Close()
-		return nil, nil, errors.Join(err, c.Terminate(ctx))
-	}
-
-	teardown := func() {
-		_ = client.Close()
-		termCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		_ = c.Terminate(termCtx)
-	}
-	return &redisFx{client: client}, teardown, nil
+	return &redisFx{client: fixture.Client}, teardown, nil
 }
