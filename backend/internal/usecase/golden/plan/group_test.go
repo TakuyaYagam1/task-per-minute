@@ -1,9 +1,9 @@
-package golden_test
+package plan_test
 
 import (
 	"testing"
 
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
+	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/plan"
 	swissusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/swiss"
 	"github.com/stretchr/testify/require"
 )
