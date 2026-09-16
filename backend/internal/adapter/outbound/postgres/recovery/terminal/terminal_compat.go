@@ -11,7 +11,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	reconnectusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/reconnect"
 	recoveryusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/recovery"
 )
 
@@ -50,7 +50,7 @@ func CreateRecoveryRoute(
 	ctx context.Context,
 	querier *sqlc.Queries,
 	deadline recoveryusecase.PendingDeadline,
-	route gameusecase.WaveMemberRoute,
+	route reconnectusecase.WaveMemberRoute,
 ) error {
 	return createRecoveryRoute(ctx, querier, deadline, route)
 }

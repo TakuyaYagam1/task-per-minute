@@ -11,7 +11,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/reconnect"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 )
 

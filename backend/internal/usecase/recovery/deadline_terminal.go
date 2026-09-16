@@ -14,6 +14,7 @@ import (
 	gamedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/game"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	reconnectusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/reconnect"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 )
 
@@ -33,7 +34,7 @@ type DeadlineTerminalAuthority struct {
 	Deadline         PendingDeadline
 	GameTimeout      *gameusecase.AttemptAuthority
 	ReadyWindow      []gameusecase.NoShowAuthority
-	ReconnectTimeout *gameusecase.ReconnectAuthority
+	ReconnectTimeout *reconnectusecase.ReconnectAuthority
 }
 
 // DeadlineTerminalPlan is a domain-decided mutation. The store only persists
@@ -48,7 +49,7 @@ type DeadlineTerminalPlan struct {
 	ReadyWindowEvidence []DeadlineNoShowEvidenceIDs
 	PauseRevisionID     uuid.UUID
 	GameTimeout         *gameusecase.AttemptRecord
-	ReconnectTimeout    *gameusecase.ReconnectRecord
+	ReconnectTimeout    *reconnectusecase.ReconnectRecord
 }
 
 type DeadlineResultEvidenceIDs struct {
@@ -107,7 +108,7 @@ type TerminalDeadlineHandler struct {
 	store             DeadlineTerminalStore
 	clock             Clock
 	terminalAdvancer  TerminalAdvancer
-	reconnectObserver gameusecase.Observer
+	reconnectObserver reconnectusecase.Observer
 }
 
 var _ DeadlineHandler = (*TerminalDeadlineHandler)(nil)
@@ -115,7 +116,7 @@ var _ DeadlineHandler = (*TerminalDeadlineHandler)(nil)
 func NewTerminalDeadlineHandler(
 	store DeadlineTerminalStore,
 	clock Clock,
-	reconnectObservers ...gameusecase.Observer,
+	reconnectObservers ...reconnectusecase.Observer,
 ) *TerminalDeadlineHandler {
 	return NewTerminalDeadlineHandlerWithDependencies(
 		nil, store, clock, nil, reconnectObservers...,
@@ -131,7 +132,7 @@ func NewTerminalDeadlineHandlerWithDependencies(
 	store DeadlineTerminalStore,
 	clock Clock,
 	terminalAdvancer TerminalAdvancer,
-	reconnectObservers ...gameusecase.Observer,
+	reconnectObservers ...reconnectusecase.Observer,
 ) *TerminalDeadlineHandler {
 	return &TerminalDeadlineHandler{
 		transactions: transactions, store: store, clock: clock,
@@ -243,7 +244,7 @@ func (handler *TerminalDeadlineHandler) advanceTerminalPlan(
 	return nil
 }
 
-func reconnectSettlementAdvancementEligible(record *gameusecase.ReconnectRecord) bool {
+func reconnectSettlementAdvancementEligible(record *reconnectusecase.ReconnectRecord) bool {
 	if record == nil || record.ReplayRoute != nil || record.VoidGameResultRevision != nil ||
 		record.GameResultRevision == nil || record.ScoreRevision == nil || record.Evidence == nil {
 		return false
@@ -384,15 +385,15 @@ func planReadyWindowExpiry(
 
 func planReconnectTimeout(
 	ctx context.Context,
-	authority gameusecase.ReconnectAuthority,
+	authority reconnectusecase.ReconnectAuthority,
 	deadline PendingDeadline,
 	now time.Time,
-) (*gameusecase.ReconnectRecord, error) {
+) (*reconnectusecase.ReconnectRecord, error) {
 	planner := &reconnectTimeoutPlanner{authority: authority}
-	command := gameusecase.TimeoutCommand{
+	command := reconnectusecase.TimeoutCommand{
 		Scope: authority.Scope, CommandID: deadlineTerminalID(deadline, uuid.Nil, "command"),
 		ParticipantID: deadline.ParticipantID, IntervalID: deadline.ID,
-		Settlement: gameusecase.SettlementIDs{
+		Settlement: reconnectusecase.SettlementIDs{
 			GameResultRevisionID:   domain.OfficialResultRevisionID(deadlineTerminalID(deadline, deadline.GameID, "game-result")),
 			ScoreRevisionID:        domain.SeriesScoreRevisionID(deadlineTerminalID(deadline, deadline.SeriesID, "score")),
 			SeriesResultRevisionID: domain.OfficialResultRevisionID(deadlineTerminalID(deadline, deadline.SeriesID, "series-result")),
@@ -402,7 +403,7 @@ func planReconnectTimeout(
 			ProjectionRevisionID:   deadlineTerminalID(deadline, deadline.GameID, "projection"),
 		},
 	}
-	record, changed, err := gameusecase.NewTimeoutUseCase(
+	record, changed, err := reconnectusecase.NewTimeoutUseCase(
 		planner,
 		fixedRecoveryClock{at: now},
 	).Expire(
@@ -422,10 +423,10 @@ func (handler *TerminalDeadlineHandler) observeReconnectTimeout(ctx context.Cont
 	if handler == nil || plan.ReconnectTimeout == nil || plan.ReconnectTimeout.TimeoutCommand == nil {
 		return
 	}
-	gameusecase.ObserveEvent(
+	reconnectusecase.ObserveEvent(
 		ctx,
 		handler.reconnectObserver,
-		gameusecase.TimeoutTerminalEvent(
+		reconnectusecase.TimeoutTerminalEvent(
 			*plan.ReconnectTimeout.TimeoutCommand,
 			plan.ReconnectTimeout,
 			true,
@@ -434,7 +435,7 @@ func (handler *TerminalDeadlineHandler) observeReconnectTimeout(ctx context.Cont
 	)
 }
 
-func firstDeadlineReconnectObserver(observers ...gameusecase.Observer) gameusecase.Observer {
+func firstDeadlineReconnectObserver(observers ...reconnectusecase.Observer) reconnectusecase.Observer {
 	for _, observer := range observers {
 		if observer != nil {
 			return observer
@@ -487,7 +488,7 @@ func readyAuthoritiesMatchDeadline(authorities []gameusecase.NoShowAuthority, de
 	return true
 }
 
-func reconnectAuthorityMatchesDeadline(authority gameusecase.ReconnectAuthority, deadline PendingDeadline) bool {
+func reconnectAuthorityMatchesDeadline(authority reconnectusecase.ReconnectAuthority, deadline PendingDeadline) bool {
 	if authority.Scope.TournamentID != deadline.TournamentID ||
 		authority.Scope.RosterID != deadline.RosterID || authority.Scope.WaveID != deadline.WaveID ||
 		authority.PauseID != deadline.PauseID || authority.Game.ID != deadline.GameID ||
@@ -712,15 +713,15 @@ func (planner *readyWindowPlanner) CommitNormalNoShow(
 }
 
 type reconnectTimeoutPlanner struct {
-	authority gameusecase.ReconnectAuthority
-	record    *gameusecase.ReconnectRecord
+	authority reconnectusecase.ReconnectAuthority
+	record    *reconnectusecase.ReconnectRecord
 }
 
 func (planner *reconnectTimeoutPlanner) FindCommand(
 	context.Context,
 	uuid.UUID,
 	uuid.UUID,
-) (*gameusecase.ReconnectRecord, error) {
+) (*reconnectusecase.ReconnectRecord, error) {
 	return nil, nil
 }
 
@@ -728,23 +729,23 @@ func (planner *reconnectTimeoutPlanner) LoadAuthority(
 	_ context.Context,
 	_ pause.GraphScope,
 	participantID uuid.UUID,
-) (gameusecase.ReconnectAuthority, error) {
+) (reconnectusecase.ReconnectAuthority, error) {
 	if participantID == uuid.Nil {
-		return gameusecase.ReconnectAuthority{}, domain.ErrValidation
+		return reconnectusecase.ReconnectAuthority{}, domain.ErrValidation
 	}
 	for _, interval := range planner.authority.Reconnect {
 		if interval.ParticipantID == participantID {
 			return planner.authority, nil
 		}
 	}
-	return gameusecase.ReconnectAuthority{}, domain.ErrConflict
+	return reconnectusecase.ReconnectAuthority{}, domain.ErrConflict
 }
 
 func (planner *reconnectTimeoutPlanner) CommitMutation(
 	_ context.Context,
 	_ int64,
-	record gameusecase.ReconnectRecord,
-) (*gameusecase.ReconnectRecord, bool, error) {
+	record reconnectusecase.ReconnectRecord,
+) (*reconnectusecase.ReconnectRecord, bool, error) {
 	planner.record = &record
 	return &record, true, nil
 }

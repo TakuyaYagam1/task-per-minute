@@ -8,8 +8,8 @@ import (
 
 	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
 	pauseusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause"
+	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/reconnect"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/readiness"
 )

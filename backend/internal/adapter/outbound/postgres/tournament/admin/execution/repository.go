@@ -14,8 +14,8 @@ import (
 	reconnectrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/reconnect"
 	swissdraft "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/swiss/draft"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
 	pauseusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause"
+	reconnectusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/reconnect"
 	gamestart "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/start"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
 )
@@ -142,5 +142,5 @@ var (
 	_ pauseusecase.NormalPauseRepository             = (*Repository)(nil)
 	_ pauseusecase.PauseResumeRepository             = (*Repository)(nil)
 	_ pauseusecase.PauseResumePresenceRepository     = (*Repository)(nil)
-	_ gameusecase.ReconnectRepository                = (*Repository)(nil)
+	_ reconnectusecase.ReconnectRepository           = (*Repository)(nil)
 )

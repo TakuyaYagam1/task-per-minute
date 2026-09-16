@@ -19,6 +19,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
 	seriesdomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/series"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	reconnectusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/reconnect"
 
 	recoveryusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/recovery"
 )
@@ -340,7 +341,7 @@ func (repository *RecoveryTerminalPostgres) loadReconnectTimeout(
 	if err != nil {
 		return recoveryTerminalSnapshot{}, err
 	}
-	authorityValue := gameusecase.ReconnectAuthority{
+	authorityValue := reconnectusecase.ReconnectAuthority{
 		Scope: pause.GraphScope{
 			TournamentID: deadline.TournamentID, RosterID: deadline.RosterID,
 			WaveID: deadline.WaveID, Authority: lease.Identity(),

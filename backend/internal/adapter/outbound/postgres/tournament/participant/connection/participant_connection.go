@@ -13,8 +13,8 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
 	pauseusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause"
+	reconnectusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/reconnect"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/readiness"
 	connection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/connection"
 )
@@ -746,7 +746,7 @@ func (repository *ParticipantConnectionPostgres) resolveParticipantConnectionAct
 		}
 		return connection.ResolvedAction{
 			Kind: connection.ActionGameReconnect,
-			Reconnect: &gameusecase.ReconnectCommand{
+			Reconnect: &reconnectusecase.ReconnectCommand{
 				Scope: state.Authority.Scope, ParticipantID: state.Root.ParticipantID, IntervalID: row.IntervalID,
 			},
 			Deadline: deadline,
@@ -828,7 +828,7 @@ func participantConnectionActiveGameAction(
 	}
 	return connection.ResolvedAction{
 		Kind: connection.ActionGameDisconnect,
-		Disconnect: &gameusecase.DisconnectCommand{
+		Disconnect: &reconnectusecase.DisconnectCommand{
 			Scope: state.Authority.Scope, ParticipantID: state.Root.ParticipantID,
 		},
 	}, binding, nil

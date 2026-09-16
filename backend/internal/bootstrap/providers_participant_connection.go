@@ -9,8 +9,8 @@ import (
 	reconnectrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/reconnect"
 	telemetryadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/telemetry"
 	authorityusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/authority"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
 	gamepause "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause"
+	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/reconnect"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/readiness"
 	participantconnection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/connection"
 )

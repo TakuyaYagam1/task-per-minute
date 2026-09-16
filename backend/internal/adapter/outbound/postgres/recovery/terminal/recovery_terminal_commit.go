@@ -16,6 +16,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	reconnectusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/reconnect"
 
 	recoveryusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/recovery"
 )
@@ -710,7 +711,7 @@ func recoveryReconnectSettlementInput(
 	}, nil
 }
 
-func recoveryReconnectArtifactKinds(record *gameusecase.ReconnectRecord) []domain.ArtifactKind {
+func recoveryReconnectArtifactKinds(record *reconnectusecase.ReconnectRecord) []domain.ArtifactKind {
 	kinds := []domain.ArtifactKind{domain.ArtifactKindGameResult, domain.ArtifactKindSeriesScore}
 	if record != nil && record.SeriesResultRevision != nil {
 		kinds = append(kinds, domain.ArtifactKindStandings, domain.ArtifactKindSeriesResult)
@@ -730,7 +731,7 @@ func createRecoveryRoute(
 	ctx context.Context,
 	querier *sqlc.Queries,
 	deadline recoveryusecase.PendingDeadline,
-	route gameusecase.WaveMemberRoute,
+	route reconnectusecase.WaveMemberRoute,
 ) error {
 	_, err := querier.CreateRecoveryWaveMemberRoute(ctx, sqlc.CreateRecoveryWaveMemberRouteParams{
 		ID: route.ID, TournamentID: deadline.TournamentID, RosterID: deadline.RosterID,

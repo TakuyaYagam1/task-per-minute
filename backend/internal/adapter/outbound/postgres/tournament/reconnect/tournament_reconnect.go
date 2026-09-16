@@ -18,8 +18,8 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
 	pauseusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause"
+	reconnectusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/reconnect"
 )
 
 // TournamentReconnectPostgres owns the transactional reconnect persistence
@@ -59,18 +59,18 @@ type reconnectOutboxPayload struct {
 // the nested record retains the exact immutable domain result returned to a
 // retrying caller.
 type tournamentReconnectReceiptDocument struct {
-	SchemaVersion             int16                       `json:"schema_version"`
-	CommandID                 uuid.UUID                   `json:"command_id"`
-	TournamentID              uuid.UUID                   `json:"tournament_id"`
-	RosterID                  uuid.UUID                   `json:"roster_id"`
-	WaveID                    uuid.UUID                   `json:"wave_id"`
-	MutationKind              gameusecase.MutationKind    `json:"mutation_kind"`
-	ParticipantID             uuid.UUID                   `json:"participant_id"`
-	IntervalID                *uuid.UUID                  `json:"interval_id,omitempty"`
-	ExpectedAuthorityRevision int64                       `json:"expected_authority_revision"`
-	ResultAuthorityRevision   int64                       `json:"result_authority_revision"`
-	RecordedAt                time.Time                   `json:"recorded_at"`
-	Record                    gameusecase.ReconnectRecord `json:"record"`
+	SchemaVersion             int16                            `json:"schema_version"`
+	CommandID                 uuid.UUID                        `json:"command_id"`
+	TournamentID              uuid.UUID                        `json:"tournament_id"`
+	RosterID                  uuid.UUID                        `json:"roster_id"`
+	WaveID                    uuid.UUID                        `json:"wave_id"`
+	MutationKind              reconnectusecase.MutationKind    `json:"mutation_kind"`
+	ParticipantID             uuid.UUID                        `json:"participant_id"`
+	IntervalID                *uuid.UUID                       `json:"interval_id,omitempty"`
+	ExpectedAuthorityRevision int64                            `json:"expected_authority_revision"`
+	ResultAuthorityRevision   int64                            `json:"result_authority_revision"`
+	RecordedAt                time.Time                        `json:"recorded_at"`
+	Record                    reconnectusecase.ReconnectRecord `json:"record"`
 }
 
 type tournamentReconnectReceiptMeta struct {
@@ -78,7 +78,7 @@ type tournamentReconnectReceiptMeta struct {
 	TournamentID              uuid.UUID
 	RosterID                  uuid.UUID
 	WaveID                    uuid.UUID
-	MutationKind              gameusecase.MutationKind
+	MutationKind              reconnectusecase.MutationKind
 	ParticipantID             uuid.UUID
 	IntervalID                *uuid.UUID
 	ExpectedAuthorityRevision int64
@@ -87,7 +87,7 @@ type tournamentReconnectReceiptMeta struct {
 	RecordedAt                time.Time
 }
 
-var _ gameusecase.ReconnectRepository = (*TournamentReconnectPostgres)(nil)
+var _ reconnectusecase.ReconnectRepository = (*TournamentReconnectPostgres)(nil)
 
 // FindCommand loads only the immutable domain receipt.  Socket identity and
 // participant connection leases intentionally do not cross this boundary.
@@ -95,7 +95,7 @@ func (r *TournamentReconnectPostgres) FindCommand(
 	ctx context.Context,
 	tournamentID uuid.UUID,
 	commandID uuid.UUID,
-) (*gameusecase.ReconnectRecord, error) {
+) (*reconnectusecase.ReconnectRecord, error) {
 	if !validReconnectRepository(ctx, r) || tournamentID == uuid.Nil || commandID == uuid.Nil {
 		return nil, domain.ErrValidation
 	}
@@ -132,11 +132,11 @@ func (r *TournamentReconnectPostgres) LoadAuthority(
 	ctx context.Context,
 	scope pausedomain.GraphScope,
 	participantID uuid.UUID,
-) (gameusecase.ReconnectAuthority, error) {
+) (reconnectusecase.ReconnectAuthority, error) {
 	if !validReconnectRepository(ctx, r) || scope.Validate() != nil || participantID == uuid.Nil {
-		return gameusecase.ReconnectAuthority{}, domain.ErrValidation
+		return reconnectusecase.ReconnectAuthority{}, domain.ErrValidation
 	}
-	var authority gameusecase.ReconnectAuthority
+	var authority reconnectusecase.ReconnectAuthority
 	err := r.tx.Do(ctx, func(txCtx context.Context) error {
 		loaded, err := r.loadTournamentReconnectAuthority(txCtx, scope, participantID)
 		if err == nil {
@@ -145,7 +145,7 @@ func (r *TournamentReconnectPostgres) LoadAuthority(
 		return err
 	})
 	if err != nil {
-		return gameusecase.ReconnectAuthority{}, fmt.Errorf("TournamentAdminExecutionPostgres - LoadAuthority: %w", err)
+		return reconnectusecase.ReconnectAuthority{}, fmt.Errorf("TournamentAdminExecutionPostgres - LoadAuthority: %w", err)
 	}
 	return authority, nil
 }
@@ -159,8 +159,8 @@ func (r *TournamentReconnectPostgres) LoadAuthority(
 func (r *TournamentReconnectPostgres) CommitMutation(
 	ctx context.Context,
 	expectedRevision int64,
-	record gameusecase.ReconnectRecord,
-) (*gameusecase.ReconnectRecord, bool, error) {
+	record reconnectusecase.ReconnectRecord,
+) (*reconnectusecase.ReconnectRecord, bool, error) {
 	if !validReconnectRepository(ctx, r) || expectedRevision < 1 ||
 		record.ExpectedAuthorityRevision != expectedRevision {
 		return nil, false, domain.ErrValidation
@@ -172,7 +172,7 @@ func (r *TournamentReconnectPostgres) CommitMutation(
 	if participantID == uuid.Nil {
 		return nil, false, domain.ErrValidation
 	}
-	var committed *gameusecase.ReconnectRecord
+	var committed *reconnectusecase.ReconnectRecord
 	changed := false
 	err := r.tx.Do(ctx, func(txCtx context.Context) error {
 		q := r.tx.Querier(txCtx)
@@ -182,7 +182,7 @@ func (r *TournamentReconnectPostgres) CommitMutation(
 		}
 		if existing != nil {
 			if !reconnectRecordsEqual(*existing, record) {
-				return gameusecase.ErrCommandReuse
+				return reconnectusecase.ErrCommandReuse
 			}
 			committed = existing
 			return nil
@@ -238,7 +238,7 @@ func (r *TournamentReconnectPostgres) CommitMutation(
 			return domain.ErrInternal
 		}
 		if record.ReconnectAuthority.Current == nil &&
-			(record.Kind == gameusecase.MutationDisconnect || record.Kind == gameusecase.MutationReconnect) {
+			(record.Kind == reconnectusecase.MutationDisconnect || record.Kind == reconnectusecase.MutationReconnect) {
 			if err := r.persistReconnectLiveOutbox(txCtx, q, record); err != nil {
 				return err
 			}
@@ -266,10 +266,10 @@ func (r *TournamentReconnectPostgres) CommitMutation(
 func (r *TournamentReconnectPostgres) persistReconnectLiveOutbox(
 	ctx context.Context,
 	q *sqlc.Queries,
-	record gameusecase.ReconnectRecord,
+	record reconnectusecase.ReconnectRecord,
 ) error {
 	if record.ReconnectAuthority.Current != nil ||
-		(record.Kind != gameusecase.MutationDisconnect && record.Kind != gameusecase.MutationReconnect) {
+		(record.Kind != reconnectusecase.MutationDisconnect && record.Kind != reconnectusecase.MutationReconnect) {
 		return domain.ErrValidation
 	}
 	commandID := commandIDOfReconnectRecord(record)
@@ -344,7 +344,7 @@ func (r *TournamentReconnectPostgres) findTournamentReconnectReceipt(
 	ctx context.Context,
 	tournamentID uuid.UUID,
 	commandID uuid.UUID,
-) (*gameusecase.ReconnectRecord, error) {
+) (*reconnectusecase.ReconnectRecord, error) {
 	row, err := r.tx.Querier(ctx).GetTournamentReconnectCommandReceipt(ctx, sqlc.GetTournamentReconnectCommandReceiptParams{
 		TournamentID: tournamentID,
 		CommandID:    commandID,
@@ -374,96 +374,96 @@ func (r *TournamentReconnectPostgres) loadTournamentReconnectAuthority(
 	ctx context.Context,
 	scope pausedomain.GraphScope,
 	participantID uuid.UUID,
-) (gameusecase.ReconnectAuthority, error) {
+) (reconnectusecase.ReconnectAuthority, error) {
 	if participantID == uuid.Nil {
-		return gameusecase.ReconnectAuthority{}, domain.ErrValidation
+		return reconnectusecase.ReconnectAuthority{}, domain.ErrValidation
 	}
 	q := r.tx.Querier(ctx)
 	if err := lockTournamentResultScope(ctx, q, scope.TournamentID, scope.RosterID); err != nil {
-		return gameusecase.ReconnectAuthority{}, fmt.Errorf("lock reconnect result scope: %w", err)
+		return reconnectusecase.ReconnectAuthority{}, fmt.Errorf("lock reconnect result scope: %w", err)
 	}
 	header, err := q.LockTournamentAdminWaveAuthority(ctx, sqlc.LockTournamentAdminWaveAuthorityParams{
 		TournamentID: scope.TournamentID,
 		WaveID:       scope.WaveID,
 	})
 	if err != nil {
-		return gameusecase.ReconnectAuthority{}, fmt.Errorf("lock reconnect Wave: %w", err)
+		return reconnectusecase.ReconnectAuthority{}, fmt.Errorf("lock reconnect Wave: %w", err)
 	}
 	if header.RosterID != scope.RosterID || header.TournamentID != scope.TournamentID || header.ID != scope.WaveID ||
 		header.Revision < 1 || header.ProjectionRevision < 1 {
-		return gameusecase.ReconnectAuthority{}, domain.ErrConflict
+		return reconnectusecase.ReconnectAuthority{}, domain.ErrConflict
 	}
 	receipts, err := r.latestTournamentReconnectReceipts(ctx, scope)
 	if err != nil {
-		return gameusecase.ReconnectAuthority{}, err
+		return reconnectusecase.ReconnectAuthority{}, err
 	}
 	latestForParticipant := latestTournamentReconnectReceiptForParticipant(receipts, participantID)
 	games, err := q.LockWaveStartGames(ctx, scope.WaveID)
 	if err != nil {
-		return gameusecase.ReconnectAuthority{}, fmt.Errorf("lock reconnect games: %w", err)
+		return reconnectusecase.ReconnectAuthority{}, fmt.Errorf("lock reconnect games: %w", err)
 	}
 	candidate, err := selectTournamentReconnectGame(games, latestForParticipant, participantID)
 	if err != nil {
-		return gameusecase.ReconnectAuthority{}, err
+		return reconnectusecase.ReconnectAuthority{}, err
 	}
 	latest := latestTournamentReconnectReceiptForGame(receipts, candidate.SeriesID, candidate.GameID)
 	seriesRow, err := q.LockResultSeries(ctx, sqlc.LockResultSeriesParams{
 		SeriesID: candidate.SeriesID, TournamentID: scope.TournamentID, RosterID: scope.RosterID,
 	})
 	if err != nil {
-		return gameusecase.ReconnectAuthority{}, fmt.Errorf("lock reconnect Series: %w", err)
+		return reconnectusecase.ReconnectAuthority{}, fmt.Errorf("lock reconnect Series: %w", err)
 	}
 	if seriesRow.ID != candidate.SeriesID || seriesRow.TournamentID != scope.TournamentID ||
 		seriesRow.RosterID != scope.RosterID || seriesRow.Revision != candidate.SeriesRevision ||
 		seriesRow.ScoreHeadRevision < 1 || !seriesRow.CurrentScoreRevisionID.Valid ||
 		seriesRow.CurrentScoreRevisionID.UUID != seriesRow.ScoreHeadRevisionID {
-		return gameusecase.ReconnectAuthority{}, domain.ErrConflict
+		return reconnectusecase.ReconnectAuthority{}, domain.ErrConflict
 	}
 	graphRows, err := q.ListRecoverySeriesGraph(ctx, sqlc.ListRecoverySeriesGraphParams{
 		SeriesID: candidate.SeriesID, RosterID: scope.RosterID,
 	})
 	if err != nil {
-		return gameusecase.ReconnectAuthority{}, fmt.Errorf("load reconnect Series graph: %w", err)
+		return reconnectusecase.ReconnectAuthority{}, fmt.Errorf("load reconnect Series graph: %w", err)
 	}
 	series, err := recoverySeries(reconnectSeriesModel(seriesRow), graphRows)
 	if err != nil {
-		return gameusecase.ReconnectAuthority{}, fmt.Errorf("map reconnect Series: %w", err)
+		return reconnectusecase.ReconnectAuthority{}, fmt.Errorf("map reconnect Series: %w", err)
 	}
 	game, found := reconnectGameInSeries(series, candidate.GameID)
 	gameRevision, gameRevisionFound := reconnectGraphGameRevision(graphRows, candidate.GameID)
 	if !found || !gameRevisionFound || game.ID != candidate.GameID || gameRevision != candidate.GameRevision {
-		return gameusecase.ReconnectAuthority{}, domain.ErrConflict
+		return reconnectusecase.ReconnectAuthority{}, domain.ErrConflict
 	}
 	resultIDs, err := q.ListRecoveryGameResultRevisionIDs(ctx, sqlc.ListRecoveryGameResultRevisionIDsParams{
 		SeriesID: candidate.SeriesID, RosterID: scope.RosterID,
 	})
 	if err != nil {
-		return gameusecase.ReconnectAuthority{}, fmt.Errorf("load reconnect result revisions: %w", err)
+		return reconnectusecase.ReconnectAuthority{}, fmt.Errorf("load reconnect result revisions: %w", err)
 	}
 	currentGameResultIDs, err := recoveryResultRevisionIDs(resultIDs)
 	if err != nil {
-		return gameusecase.ReconnectAuthority{}, err
+		return reconnectusecase.ReconnectAuthority{}, err
 	}
 	projection, err := q.GetCurrentProjectionRevision(ctx, sqlc.GetCurrentProjectionRevisionParams{
 		TournamentID: scope.TournamentID, RosterID: scope.RosterID,
 	})
 	if err != nil {
-		return gameusecase.ReconnectAuthority{}, fmt.Errorf("load reconnect projection: %w", err)
+		return reconnectusecase.ReconnectAuthority{}, fmt.Errorf("load reconnect projection: %w", err)
 	}
 	if projection.RevisionNumber < 1 || projection.ID == uuid.Nil {
-		return gameusecase.ReconnectAuthority{}, domain.ErrConflict
+		return reconnectusecase.ReconnectAuthority{}, domain.ErrConflict
 	}
 	projectionRevision := projection.RevisionNumber
 	if latest != nil && latest.ReconnectAuthority.Game.ID == game.ID && latest.ReconnectAuthority.Series.ID == series.ID {
 		if latest.ReconnectAuthority.GameRevision != gameRevision ||
 			latest.ReconnectAuthority.SeriesRevision != seriesRow.Revision ||
 			latest.ReconnectAuthority.CurrentProjectionRevision != projectionRevision {
-			return gameusecase.ReconnectAuthority{}, domain.ErrConflict
+			return reconnectusecase.ReconnectAuthority{}, domain.ErrConflict
 		}
 		if latest.ReconnectAuthority.Current != nil {
 			if latest.ReconnectAuthority.Scope != scope || !game.State.IsTerminal() ||
 				!latest.ReconnectAuthority.Game.State.IsTerminal() {
-				return gameusecase.ReconnectAuthority{}, domain.ErrConflict
+				return reconnectusecase.ReconnectAuthority{}, domain.ErrConflict
 			}
 			return latest.ReconnectAuthority, nil
 		}
@@ -472,7 +472,7 @@ func (r *TournamentReconnectPostgres) loadTournamentReconnectAuthority(
 	if latest != nil && latest.ReconnectAuthority.Game.ID == game.ID && latest.ReconnectAuthority.Series.ID == series.ID {
 		currentRevision = latest.ReconnectAuthority.Revision
 		if currentRevision < 1 {
-			return gameusecase.ReconnectAuthority{}, domain.ErrInternal
+			return reconnectusecase.ReconnectAuthority{}, domain.ErrInternal
 		}
 	}
 	if currentRevision < 1 {
@@ -480,20 +480,20 @@ func (r *TournamentReconnectPostgres) loadTournamentReconnectAuthority(
 	}
 	currentOrdinal, err := reconnectCurrentOrdinal(seriesRow)
 	if err != nil {
-		return gameusecase.ReconnectAuthority{}, err
+		return reconnectusecase.ReconnectAuthority{}, err
 	}
 	activePause, pauseErr := q.LockTournamentReconnectGamePause(ctx, sqlc.LockTournamentReconnectGamePauseParams{
 		TournamentID: scope.TournamentID, RosterID: scope.RosterID, WaveID: scope.WaveID, GameAttemptID: nullableUUIDValue(game.ID),
 	})
 	hasActivePause := pauseErr == nil
 	if pauseErr != nil && !errors.Is(pauseErr, pgx.ErrNoRows) {
-		return gameusecase.ReconnectAuthority{}, fmt.Errorf("load active reconnect pause: %w", pauseErr)
+		return reconnectusecase.ReconnectAuthority{}, fmt.Errorf("load active reconnect pause: %w", pauseErr)
 	}
 	if game.State == domain.GameStatePaused && !hasActivePause {
-		return gameusecase.ReconnectAuthority{}, domain.ErrConflict
+		return reconnectusecase.ReconnectAuthority{}, domain.ErrConflict
 	}
 	if game.State != domain.GameStatePaused && hasActivePause {
-		return gameusecase.ReconnectAuthority{}, domain.ErrConflict
+		return reconnectusecase.ReconnectAuthority{}, domain.ErrConflict
 	}
 	var pauseID uuid.UUID
 	var clock pausedomain.PauseResumeGameClock
@@ -507,47 +507,47 @@ func (r *TournamentReconnectPostgres) loadTournamentReconnectAuthority(
 			GameAttemptID: nullableUUIDValue(game.ID), PauseID: pauseID,
 		})
 		if err != nil {
-			return gameusecase.ReconnectAuthority{}, fmt.Errorf("load reconnect clock: %w", err)
+			return reconnectusecase.ReconnectAuthority{}, fmt.Errorf("load reconnect clock: %w", err)
 		}
 		clock, err = recoveryGameClock(clockRow.PauseClock)
 		if err != nil {
-			return gameusecase.ReconnectAuthority{}, err
+			return reconnectusecase.ReconnectAuthority{}, err
 		}
 		presenceRows, err := q.ListRecoveryPresence(ctx, sqlc.ListRecoveryPresenceParams{SeriesID: series.ID, RosterID: scope.RosterID})
 		if err != nil {
-			return gameusecase.ReconnectAuthority{}, fmt.Errorf("load reconnect Presence: %w", err)
+			return reconnectusecase.ReconnectAuthority{}, fmt.Errorf("load reconnect Presence: %w", err)
 		}
 		presence, err = recoveryPresence(presenceRows)
 		if err != nil {
-			return gameusecase.ReconnectAuthority{}, err
+			return reconnectusecase.ReconnectAuthority{}, err
 		}
 		intervalRows, err := q.ListRecoveryReconnectIntervals(ctx, sqlc.ListRecoveryReconnectIntervalsParams{PauseID: pauseID, RosterID: scope.RosterID})
 		if err != nil {
-			return gameusecase.ReconnectAuthority{}, fmt.Errorf("load reconnect intervals: %w", err)
+			return reconnectusecase.ReconnectAuthority{}, fmt.Errorf("load reconnect intervals: %w", err)
 		}
 		intervals, err = recoveryIntervals(intervalRows)
 		if err != nil {
-			return gameusecase.ReconnectAuthority{}, err
+			return reconnectusecase.ReconnectAuthority{}, err
 		}
 		counterRows, err := q.ListRecoveryReconnectCounters(ctx, sqlc.ListRecoveryReconnectCountersParams{PauseID: pauseID, RosterID: scope.RosterID})
 		if err != nil {
-			return gameusecase.ReconnectAuthority{}, fmt.Errorf("load reconnect counters: %w", err)
+			return reconnectusecase.ReconnectAuthority{}, fmt.Errorf("load reconnect counters: %w", err)
 		}
 		counters, err = recoveryCounters(counterRows)
 		if err != nil {
-			return gameusecase.ReconnectAuthority{}, err
+			return reconnectusecase.ReconnectAuthority{}, err
 		}
 	} else {
 		pauseID = reconnectSyntheticPauseID(game.ID, currentRevision)
 		presenceRows, err := q.ListRecoveryPresence(ctx, sqlc.ListRecoveryPresenceParams{SeriesID: series.ID, RosterID: scope.RosterID})
 		if err != nil {
-			return gameusecase.ReconnectAuthority{}, fmt.Errorf("load reconnect Presence: %w", err)
+			return reconnectusecase.ReconnectAuthority{}, fmt.Errorf("load reconnect Presence: %w", err)
 		}
 		presence, err = recoveryPresence(presenceRows)
 		if err != nil {
-			return gameusecase.ReconnectAuthority{}, err
+			return reconnectusecase.ReconnectAuthority{}, err
 		}
-		if latest != nil && latest.Kind == gameusecase.MutationReconnect && latest.ReconnectAuthority.Game.ID == game.ID &&
+		if latest != nil && latest.Kind == reconnectusecase.MutationReconnect && latest.ReconnectAuthority.Game.ID == game.ID &&
 			latest.ReconnectAuthority.Series.ID == series.ID &&
 			latest.ReconnectAuthority.Game.State == domain.GameStateActive {
 			// The game graph no longer points at a pause after resume. Rebuild
@@ -559,15 +559,15 @@ func (r *TournamentReconnectPostgres) loadTournamentReconnectAuthority(
 			})
 			if resumedErr != nil {
 				if errors.Is(resumedErr, pgx.ErrNoRows) {
-					return gameusecase.ReconnectAuthority{}, fmt.Errorf("reconnect resumed clock is missing: %w", domain.ErrConflict)
+					return reconnectusecase.ReconnectAuthority{}, fmt.Errorf("reconnect resumed clock is missing: %w", domain.ErrConflict)
 				}
-				return gameusecase.ReconnectAuthority{}, fmt.Errorf("load reconnect resumed clock: %w", resumedErr)
+				return reconnectusecase.ReconnectAuthority{}, fmt.Errorf("load reconnect resumed clock: %w", resumedErr)
 			}
 			clock, counters, err = rehydrateTournamentReconnectActiveState(
 				latest.ReconnectAuthority, resumedRow.PauseClock, pauseID,
 			)
 			if err != nil {
-				return gameusecase.ReconnectAuthority{}, err
+				return reconnectusecase.ReconnectAuthority{}, err
 			}
 			// Closed intervals remain owned by the resumed pause. The next
 			// disconnect starts a new append-only pause lifecycle, so it must not
@@ -576,7 +576,7 @@ func (r *TournamentReconnectPostgres) loadTournamentReconnectAuthority(
 		} else {
 			deadline, deadlineErr := r.reconnectCurrentDeadline(ctx, q, scope, candidate, game)
 			if deadlineErr != nil {
-				return gameusecase.ReconnectAuthority{}, deadlineErr
+				return reconnectusecase.ReconnectAuthority{}, deadlineErr
 			}
 			clock = pausedomain.PauseResumeGameClock{PauseID: pauseID, GameID: game.ID, OriginalDeadline: deadline, Revision: 1}
 			counters = []pausedomain.PauseReconnectCounter{
@@ -586,7 +586,7 @@ func (r *TournamentReconnectPostgres) loadTournamentReconnectAuthority(
 			intervals = []pausedomain.PauseReconnectInterval{}
 		}
 	}
-	authority := gameusecase.ReconnectAuthority{
+	authority := reconnectusecase.ReconnectAuthority{
 		Scope: scope, Revision: currentRevision, PauseID: pauseID,
 		GameRevision: gameRevision, SeriesRevision: seriesRow.Revision,
 		CurrentOrdinal: currentOrdinal, CurrentProjectionRevision: projectionRevision,
@@ -594,7 +594,7 @@ func (r *TournamentReconnectPostgres) loadTournamentReconnectAuthority(
 		GameClock: clock, Presence: presence, Reconnect: intervals, Counters: counters,
 	}
 	if err := validateTournamentReconnectAuthorityShape(authority); err != nil {
-		return gameusecase.ReconnectAuthority{}, err
+		return reconnectusecase.ReconnectAuthority{}, err
 	}
 	return authority, nil
 }
@@ -602,14 +602,14 @@ func (r *TournamentReconnectPostgres) loadTournamentReconnectAuthority(
 func (r *TournamentReconnectPostgres) latestTournamentReconnectReceipts(
 	ctx context.Context,
 	scope pausedomain.GraphScope,
-) ([]*gameusecase.ReconnectRecord, error) {
+) ([]*reconnectusecase.ReconnectRecord, error) {
 	rows, err := r.tx.Querier(ctx).ListTournamentReconnectCommandReceipts(ctx, sqlc.ListTournamentReconnectCommandReceiptsParams{
 		TournamentID: scope.TournamentID, RosterID: scope.RosterID, WaveID: scope.WaveID,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("load reconnect receipts: %w", err)
 	}
-	result := make([]*gameusecase.ReconnectRecord, 0, len(rows))
+	result := make([]*reconnectusecase.ReconnectRecord, 0, len(rows))
 	for _, row := range rows {
 		record, meta, decodeErr := decodeTournamentReconnectReceipt(row.RecordDocument)
 		if decodeErr != nil {
@@ -630,9 +630,9 @@ func (r *TournamentReconnectPostgres) latestTournamentReconnectReceipts(
 }
 
 func latestTournamentReconnectReceiptForParticipant(
-	receipts []*gameusecase.ReconnectRecord,
+	receipts []*reconnectusecase.ReconnectRecord,
 	participantID uuid.UUID,
-) *gameusecase.ReconnectRecord {
+) *reconnectusecase.ReconnectRecord {
 	for _, record := range receipts {
 		if record == nil {
 			continue
@@ -646,9 +646,9 @@ func latestTournamentReconnectReceiptForParticipant(
 }
 
 func latestTournamentReconnectReceiptForGame(
-	receipts []*gameusecase.ReconnectRecord,
+	receipts []*reconnectusecase.ReconnectRecord,
 	seriesID, gameID uuid.UUID,
-) *gameusecase.ReconnectRecord {
+) *reconnectusecase.ReconnectRecord {
 	for _, record := range receipts {
 		if record != nil && record.ReconnectAuthority.Series.ID == seriesID && record.ReconnectAuthority.Game.ID == gameID {
 			return record
@@ -707,7 +707,7 @@ func (r *TournamentReconnectPostgres) reconnectCurrentDeadline(
 // keeps the next disconnect append-only and prevents it from mutating the old
 // resumed pause or its counters.
 func rehydrateTournamentReconnectActiveState(
-	receipt gameusecase.ReconnectAuthority,
+	receipt reconnectusecase.ReconnectAuthority,
 	row sqlc.PauseClock,
 	nextPauseID uuid.UUID,
 ) (pausedomain.PauseResumeGameClock, []pausedomain.PauseReconnectCounter, error) {
@@ -779,7 +779,7 @@ func reconnectTimePointerEqual(first, second *time.Time) bool {
 
 //nolint:gocyclo // Both participant counters must be validated and remapped as one restart invariant.
 func remapTournamentReconnectCounters(
-	receipt gameusecase.ReconnectAuthority,
+	receipt reconnectusecase.ReconnectAuthority,
 	nextPauseID uuid.UUID,
 ) ([]pausedomain.PauseReconnectCounter, error) {
 	if nextPauseID == uuid.Nil || receipt.PauseID == uuid.Nil || receipt.Scope.Validate() != nil ||
@@ -813,7 +813,7 @@ func remapTournamentReconnectCounters(
 //nolint:gocyclo // Game selection rejects ambiguous multi-series authority in one closed decision tree.
 func selectTournamentReconnectGame(
 	rows []sqlc.LockWaveStartGamesRow,
-	latest *gameusecase.ReconnectRecord,
+	latest *reconnectusecase.ReconnectRecord,
 	participantID uuid.UUID,
 ) (sqlc.LockWaveStartGamesRow, error) {
 	if participantID == uuid.Nil {
@@ -910,7 +910,7 @@ func reconnectSyntheticPauseID(gameID uuid.UUID, revision int64) uuid.UUID {
 	return uuid.NewSHA1(gameID, []byte(fmt.Sprintf("reconnect-pause:%d", revision)))
 }
 
-func validateTournamentReconnectAuthorityShape(authority gameusecase.ReconnectAuthority) error {
+func validateTournamentReconnectAuthorityShape(authority reconnectusecase.ReconnectAuthority) error {
 	if authority.Scope.Validate() != nil || authority.Revision < 1 || authority.PauseID == uuid.Nil ||
 		authority.GameRevision < 1 || authority.SeriesRevision < 1 || authority.Game.ID == uuid.Nil ||
 		authority.Series.ID == uuid.Nil || authority.GameClock.PauseID != authority.PauseID ||
@@ -922,7 +922,7 @@ func validateTournamentReconnectAuthorityShape(authority gameusecase.ReconnectAu
 }
 
 //nolint:gocyclo // Receipt shape validation covers the complete mutation union and authority proof.
-func validateTournamentReconnectRecordShape(record gameusecase.ReconnectRecord) error {
+func validateTournamentReconnectRecordShape(record reconnectusecase.ReconnectRecord) error {
 	if record.ExpectedAuthorityRevision < 1 || record.ReconnectAuthority.Revision != record.ExpectedAuthorityRevision+1 ||
 		record.ReconnectAuthority.Scope.Validate() != nil || record.RecordedAt.IsZero() {
 		return domain.ErrValidation
@@ -940,7 +940,7 @@ func validateTournamentReconnectRecordShape(record gameusecase.ReconnectRecord) 
 	return nil
 }
 
-func validateTournamentReconnectRecord(record gameusecase.ReconnectRecord, meta tournamentReconnectReceiptMeta) error {
+func validateTournamentReconnectRecord(record reconnectusecase.ReconnectRecord, meta tournamentReconnectReceiptMeta) error {
 	if err := validateTournamentReconnectRecordShape(record); err != nil {
 		return err
 	}
@@ -959,21 +959,21 @@ func validateTournamentReconnectRecord(record gameusecase.ReconnectRecord, meta 
 	return nil
 }
 
-func reconnectRecordCommand(record gameusecase.ReconnectRecord) (uuid.UUID, pausedomain.GraphScope, uuid.UUID, *uuid.UUID) {
+func reconnectRecordCommand(record reconnectusecase.ReconnectRecord) (uuid.UUID, pausedomain.GraphScope, uuid.UUID, *uuid.UUID) {
 	switch record.Kind {
-	case gameusecase.MutationReconnect:
+	case reconnectusecase.MutationReconnect:
 		if record.ReconnectCommand == nil {
 			return uuid.Nil, pausedomain.GraphScope{}, uuid.Nil, nil
 		}
 		id := record.ReconnectCommand.IntervalID
 		return record.ReconnectCommand.CommandID, record.ReconnectCommand.Scope, record.ReconnectCommand.ParticipantID, &id
-	case gameusecase.MutationTimeout:
+	case reconnectusecase.MutationTimeout:
 		if record.TimeoutCommand == nil {
 			return uuid.Nil, pausedomain.GraphScope{}, uuid.Nil, nil
 		}
 		id := record.TimeoutCommand.IntervalID
 		return record.TimeoutCommand.CommandID, record.TimeoutCommand.Scope, record.TimeoutCommand.ParticipantID, &id
-	case gameusecase.MutationDisconnect:
+	case reconnectusecase.MutationDisconnect:
 		if record.DisconnectCommand == nil {
 			return uuid.Nil, pausedomain.GraphScope{}, uuid.Nil, nil
 		}
@@ -984,12 +984,12 @@ func reconnectRecordCommand(record gameusecase.ReconnectRecord) (uuid.UUID, paus
 	}
 }
 
-func reconnectRecordCommandScope(record gameusecase.ReconnectRecord) pausedomain.GraphScope {
+func reconnectRecordCommandScope(record reconnectusecase.ReconnectRecord) pausedomain.GraphScope {
 	_, scope, _, _ := reconnectRecordCommand(record)
 	return scope
 }
 
-func commandIDOfReconnectRecord(record gameusecase.ReconnectRecord) uuid.UUID {
+func commandIDOfReconnectRecord(record reconnectusecase.ReconnectRecord) uuid.UUID {
 	id, _, _, _ := reconnectRecordCommand(record)
 	return id
 }
@@ -1001,7 +1001,7 @@ func sameReconnectOptionalUUID(first, second *uuid.UUID) bool {
 	return *first == *second
 }
 
-func reconnectRecordIntervalID(record gameusecase.ReconnectRecord) *uuid.UUID {
+func reconnectRecordIntervalID(record reconnectusecase.ReconnectRecord) *uuid.UUID {
 	_, _, _, commandInterval := reconnectRecordCommand(record)
 	if commandInterval == nil || *commandInterval == uuid.Nil {
 		return nil
@@ -1015,7 +1015,7 @@ func reconnectRecordIntervalID(record gameusecase.ReconnectRecord) *uuid.UUID {
 	return nil
 }
 
-func encodeTournamentReconnectReceipt(record gameusecase.ReconnectRecord) ([]byte, tournamentReconnectReceiptMeta, error) {
+func encodeTournamentReconnectReceipt(record reconnectusecase.ReconnectRecord) ([]byte, tournamentReconnectReceiptMeta, error) {
 	if err := validateTournamentReconnectRecordShape(record); err != nil {
 		return nil, tournamentReconnectReceiptMeta{}, err
 	}
@@ -1041,7 +1041,7 @@ func encodeTournamentReconnectReceipt(record gameusecase.ReconnectRecord) ([]byt
 	return document, meta, nil
 }
 
-func decodeTournamentReconnectReceipt(document []byte) (*gameusecase.ReconnectRecord, tournamentReconnectReceiptMeta, error) {
+func decodeTournamentReconnectReceipt(document []byte) (*reconnectusecase.ReconnectRecord, tournamentReconnectReceiptMeta, error) {
 	if len(document) == 0 || !json.Valid(document) {
 		return nil, tournamentReconnectReceiptMeta{}, domain.ErrInternal
 	}
@@ -1070,7 +1070,7 @@ func tournamentReconnectReceiptRowMeta(row sqlc.ReconnectCommandReceipt) (tourna
 	}
 	return tournamentReconnectReceiptMeta{
 		CommandID: row.CommandID, TournamentID: row.TournamentID, RosterID: row.RosterID, WaveID: row.WaveID,
-		MutationKind: gameusecase.MutationKind(row.MutationKind), ParticipantID: row.ParticipantID,
+		MutationKind: reconnectusecase.MutationKind(row.MutationKind), ParticipantID: row.ParticipantID,
 		IntervalID: optionalRecoveryUUID(row.IntervalID), ExpectedAuthorityRevision: row.ExpectedAuthorityRevision,
 		ResultAuthorityRevision: row.ResultAuthorityRevision, SchemaVersion: row.SchemaVersion, RecordedAt: recordedAt,
 	}, nil
@@ -1083,7 +1083,7 @@ func tournamentReconnectLatestReceiptRowMeta(row sqlc.ReconnectCommandReceipt) (
 	}
 	return tournamentReconnectReceiptMeta{
 		CommandID: row.CommandID, TournamentID: row.TournamentID, RosterID: row.RosterID, WaveID: row.WaveID,
-		MutationKind: gameusecase.MutationKind(row.MutationKind), ParticipantID: row.ParticipantID,
+		MutationKind: reconnectusecase.MutationKind(row.MutationKind), ParticipantID: row.ParticipantID,
 		IntervalID: optionalRecoveryUUID(row.IntervalID), ExpectedAuthorityRevision: row.ExpectedAuthorityRevision,
 		ResultAuthorityRevision: row.ResultAuthorityRevision, SchemaVersion: row.SchemaVersion, RecordedAt: recordedAt,
 	}, nil
@@ -1097,7 +1097,7 @@ func sameTournamentReconnectReceiptMeta(first, second tournamentReconnectReceipt
 		first.SchemaVersion == second.SchemaVersion && first.RecordedAt.Equal(second.RecordedAt)
 }
 
-func reconnectRecordsEqual(first, second gameusecase.ReconnectRecord) bool {
+func reconnectRecordsEqual(first, second reconnectusecase.ReconnectRecord) bool {
 	//nolint:musttag // Domain records are embedded in the tagged, versioned receipt document.
 	firstDocument, firstErr := json.Marshal(first)
 	//nolint:musttag // Domain records are embedded in the tagged, versioned receipt document.
@@ -1112,8 +1112,8 @@ func reconnectRecordsEqual(first, second gameusecase.ReconnectRecord) bool {
 //
 //nolint:gocyclo // The adapter CAS proof validates every allowed mutation delta in one boundary.
 func validateReconnectMutationDelta(
-	current gameusecase.ReconnectAuthority,
-	record gameusecase.ReconnectRecord,
+	current reconnectusecase.ReconnectAuthority,
+	record reconnectusecase.ReconnectRecord,
 ) error {
 	next := record.ReconnectAuthority
 	if current.Current != nil || record.ExpectedAuthorityRevision != current.Revision ||
@@ -1378,7 +1378,7 @@ func reconnectCounterPredecessorTime(at time.Time) (time.Time, bool) {
 }
 
 func reconnectResumeRequiresIntervalFirst(
-	current, next gameusecase.ReconnectAuthority,
+	current, next reconnectusecase.ReconnectAuthority,
 ) bool {
 	return current.Game.State == domain.GameStatePaused && next.Game.State == domain.GameStateActive
 }
@@ -1387,8 +1387,8 @@ func reconnectResumeRequiresIntervalFirst(
 func (r *TournamentReconnectPostgres) persistTournamentReconnectMutation(
 	ctx context.Context,
 	q *sqlc.Queries,
-	current gameusecase.ReconnectAuthority,
-	record gameusecase.ReconnectRecord,
+	current reconnectusecase.ReconnectAuthority,
+	record reconnectusecase.ReconnectRecord,
 ) error {
 	next := record.ReconnectAuthority
 	activePause, pauseErr := q.LockTournamentReconnectGamePause(ctx, sqlc.LockTournamentReconnectGamePauseParams{
@@ -1456,8 +1456,8 @@ func (r *TournamentReconnectPostgres) persistTournamentReconnectMutation(
 func createTournamentReconnectPause(
 	ctx context.Context,
 	q *sqlc.Queries,
-	current gameusecase.ReconnectAuthority,
-	next gameusecase.ReconnectAuthority,
+	current reconnectusecase.ReconnectAuthority,
+	next reconnectusecase.ReconnectAuthority,
 	startedAt time.Time,
 ) (sqlc.Pause, error) {
 	if current.Game.State != domain.GameStateActive || next.Game.State != domain.GameStatePaused ||
@@ -1592,7 +1592,7 @@ func persistReconnectCounterCAS(
 func persistReconnectIntervalsCAS(
 	ctx context.Context,
 	q *sqlc.Queries,
-	current, next gameusecase.ReconnectAuthority,
+	current, next reconnectusecase.ReconnectAuthority,
 	hasPause bool,
 	pauseID uuid.UUID,
 ) error {
@@ -1687,10 +1687,10 @@ func persistReconnectIntervalsCAS(
 func persistReconnectLiveState(
 	ctx context.Context,
 	q *sqlc.Queries,
-	current, next gameusecase.ReconnectAuthority,
+	current, next reconnectusecase.ReconnectAuthority,
 	activePause sqlc.LockTournamentReconnectGamePauseRow,
 	hasPause bool,
-	record gameusecase.ReconnectRecord,
+	record reconnectusecase.ReconnectRecord,
 ) error {
 	if current.Game.State == next.Game.State {
 		return nil
@@ -1723,9 +1723,9 @@ func persistReconnectLiveState(
 func resumeTournamentReconnectGame(
 	ctx context.Context,
 	q *sqlc.Queries,
-	current, next gameusecase.ReconnectAuthority,
+	current, next reconnectusecase.ReconnectAuthority,
 	pauseRow sqlc.Pause,
-	record gameusecase.ReconnectRecord,
+	record reconnectusecase.ReconnectRecord,
 ) error {
 	clockRow, err := q.LockTournamentReconnectPauseClock(ctx, sqlc.LockTournamentReconnectPauseClockParams{
 		TournamentID: current.Scope.TournamentID, RosterID: current.Scope.RosterID,
@@ -1818,7 +1818,7 @@ func resumeTournamentReconnectGame(
 	return nil
 }
 
-func advanceReconnectSeriesCAS(ctx context.Context, q *sqlc.Queries, current gameusecase.ReconnectAuthority, updatedAt time.Time) error {
+func advanceReconnectSeriesCAS(ctx context.Context, q *sqlc.Queries, current reconnectusecase.ReconnectAuthority, updatedAt time.Time) error {
 	if current.SeriesRevision == math.MaxInt64 {
 		return domain.ErrValidation
 	}
@@ -1863,8 +1863,8 @@ func cancelTournamentReconnectPause(
 func (r *TournamentReconnectPostgres) persistReconnectTerminalSettlement(
 	ctx context.Context,
 	q *sqlc.Queries,
-	current gameusecase.ReconnectAuthority,
-	record gameusecase.ReconnectRecord,
+	current reconnectusecase.ReconnectAuthority,
+	record reconnectusecase.ReconnectRecord,
 ) error {
 	input, err := reconnectSettlementInput(current, record)
 	if err != nil {
@@ -1891,8 +1891,8 @@ func (r *TournamentReconnectPostgres) persistReconnectTerminalSettlement(
 }
 
 func reconnectSettlementInput(
-	current gameusecase.ReconnectAuthority,
-	record gameusecase.ReconnectRecord,
+	current reconnectusecase.ReconnectAuthority,
+	record reconnectusecase.ReconnectRecord,
 ) (ResultSettlementInput, error) {
 	if record.ReconnectAuthority.Current == nil || record.ScoreRevision == nil || record.Evidence == nil ||
 		len(record.ScoreRevision.GameResultRevisionIDs) == 0 {
@@ -1951,7 +1951,7 @@ func reconnectSettlementInput(
 	}, nil
 }
 
-func reconnectSettlementArtifactKinds(record gameusecase.ReconnectRecord) []domain.ArtifactKind {
+func reconnectSettlementArtifactKinds(record reconnectusecase.ReconnectRecord) []domain.ArtifactKind {
 	kinds := []domain.ArtifactKind{domain.ArtifactKindGameResult, domain.ArtifactKindSeriesScore}
 	if record.SeriesResultRevision != nil {
 		kinds = append(kinds, domain.ArtifactKindStandings, domain.ArtifactKindSeriesResult)
