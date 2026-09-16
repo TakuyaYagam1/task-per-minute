@@ -65,6 +65,32 @@ type tournamentPreflightContent struct {
 	taskVersions  []capacity.TaskVersion
 }
 
+// PreflightContent is the published content authority consumed by execution
+// and terminal graph materializers.
+type PreflightContent struct {
+	Configuration domain.ContentConfiguration
+	TaskHealth    tournamentpreflight.TaskHealthInput
+	TaskVersions  []capacity.TaskVersion
+}
+
+// LoadPreflightContent exposes the narrow content-only bridge needed by
+// repositories that remain in the root postgres package.
+func LoadPreflightContent(
+	ctx context.Context,
+	querier *sqlc.Queries,
+	tournamentID uuid.UUID,
+) (PreflightContent, error) {
+	loaded, err := loadTournamentPreflightContent(ctx, querier, tournamentID)
+	if err != nil {
+		return PreflightContent{}, err
+	}
+	return PreflightContent{
+		Configuration: loaded.configuration,
+		TaskHealth:    loaded.taskHealth,
+		TaskVersions:  loaded.taskVersions,
+	}, nil
+}
+
 func loadTournamentPreflightContent(
 	ctx context.Context,
 	querier *sqlc.Queries,
