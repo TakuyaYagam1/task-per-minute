@@ -11,6 +11,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	gamedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/game"
 	seriesdomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/series"
+	reconnectusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/reconnect"
 )
 
 const failedAttemptCommitAttempts = 2
@@ -58,23 +59,8 @@ type AttemptAuthority struct {
 	Current                      *AttemptRecord
 }
 
-type AttemptGameResultRevision struct {
-	Ordinal    int
-	ID         domain.OfficialResultRevisionID
-	GameID     uuid.UUID
-	Reason     domain.GameResultReason
-	RecordedAt time.Time
-}
-
-type WaveMemberRoute struct {
-	ID       uuid.UUID
-	WaveID   uuid.UUID
-	SeriesID uuid.UUID
-	SlotID   uuid.UUID
-	GameID   uuid.UUID
-	Category domain.Category
-	RoutedAt time.Time
-}
+type AttemptGameResultRevision = reconnectusecase.AttemptGameResultRevision
+type WaveMemberRoute = reconnectusecase.WaveMemberRoute
 
 type AttemptRecord struct {
 	Scope                     domain.FailedAttemptScope

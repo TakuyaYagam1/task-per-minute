@@ -7,9 +7,9 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
-	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
 	seriesdomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/series"
 	assignmentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/assignment"
+	reconnectusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/reconnect"
 	"github.com/google/uuid"
 )
 
@@ -153,21 +153,9 @@ type AttemptRepository interface {
 		record AttemptRecord,
 	) (*AttemptRecord, bool, error)
 }
-type ReconnectClock interface {
-	Now() time.Time
-}
-
-type Observer interface {
-	Observe(ctx context.Context, event ReconnectEvent)
-}
-
-// ReconnectRepository owns command receipts and the aggregate compare-and-set.
-// CommitMutation stores every state change and the receipt atomically.
-type ReconnectRepository interface {
-	FindCommand(ctx context.Context, tournamentID, commandID uuid.UUID) (*ReconnectRecord, error)
-	LoadAuthority(ctx context.Context, scope pausedomain.GraphScope, participantID uuid.UUID) (ReconnectAuthority, error)
-	CommitMutation(ctx context.Context, expectedRevision int64, record ReconnectRecord) (*ReconnectRecord, bool, error)
-}
+type ReconnectClock = reconnectusecase.ReconnectClock
+type Observer = reconnectusecase.Observer
+type ReconnectRepository = reconnectusecase.ReconnectRepository
 type ReplayClock interface {
 	Now() time.Time
 }
