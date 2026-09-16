@@ -3,8 +3,6 @@ package postgres
 import (
 	"context"
 
-	"github.com/google/uuid"
-
 	assignmentrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment"
 	playoffrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/playoff"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
