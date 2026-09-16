@@ -1,4 +1,4 @@
-package postgres
+package draft
 
 import (
 	"context"
@@ -9,6 +9,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	assignmentrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment"
+	exactdraftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment/exactdraft"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	assignmentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/assignment"
@@ -71,7 +73,7 @@ func (r *ParticipantDraftRepository) activateSwissDraftBranch(ctx context.Contex
 	if err != nil || ids.DraftID != execution.ID || ids.CategoryRevisionID != scope.CategoryRevisionID {
 		return assignmentusecase.ExactNormalAssignmentPlan{}, domain.ErrConflict
 	}
-	repository := NewExactDraftBranchPlanPostgres(r.tx, r.drafts)
+	repository := exactdraftrepo.NewExactDraftBranchPlanPostgres(r.tx, r.drafts)
 	plan, _, err := assignmentusecase.NewExactDraftBranchPlanUseCase(repository).ActivateCompletedBranch(ctx,
 		assignmentusecase.ExactDraftBranchActivationCommand{
 			PlanID: ids.DraftAssignmentPlanID, DraftID: execution.ID,
@@ -86,7 +88,7 @@ func (r *ParticipantDraftRepository) activateSwissDraftBranch(ctx context.Contex
 	if plan == nil || plan.Validate() != nil {
 		return assignmentusecase.ExactNormalAssignmentPlan{}, domain.ErrInternal
 	}
-	active, found := activeExactDraftBranch(*plan)
+	active, found := exactdraftrepo.ActiveExactDraftBranch(*plan)
 	if !found || len(active.Assignments) != 1 || len(execution.SelectedCategories) != 1 {
 		return assignmentusecase.ExactNormalAssignmentPlan{}, domain.ErrConflict
 	}
@@ -94,7 +96,10 @@ func (r *ParticipantDraftRepository) activateSwissDraftBranch(ctx context.Contex
 }
 
 func (r *ParticipantDraftRepository) swissDraftCompletionCategory(ctx context.Context, scope sqlc.LockSwissDraftCompletionRow, execution draftusecase.Execution) (draftusecase.CategoryRevision, error) {
-	content, err := loadTournamentPreflightContent(ctx, r.tx.Querier(ctx), scope.TournamentID)
+	if r.contentLoader == nil {
+		return draftusecase.CategoryRevision{}, domain.ErrInternal
+	}
+	content, err := r.contentLoader(ctx, r.tx.Querier(ctx), scope.TournamentID)
 	if err != nil {
 		return draftusecase.CategoryRevision{}, err
 	}
@@ -102,13 +107,13 @@ func (r *ParticipantDraftRepository) swissDraftCompletionCategory(ctx context.Co
 	category, _, err := draftusecase.DeriveCategoryRevision(nil, draftusecase.CategoryRevisionCommand{
 		ID: scope.CategoryRevisionID, SeriesID: scope.SeriesID, RosterID: scope.RosterID,
 		SeriesState: domain.SeriesStatePlanned, Stage: domain.TournamentStageSwiss,
-		Configuration: content.configuration, ModeOverride: &mode, CreatedAt: scope.CategoryCreatedAt.Time.UTC(),
+		Configuration: content, ModeOverride: &mode, CreatedAt: scope.CategoryCreatedAt.Time.UTC(),
 	})
 	if err != nil {
 		return draftusecase.CategoryRevision{}, err
 	}
 	if category.Revision != scope.CategoryRevision || !slices.Equal(category.CategoryPool.Categories, execution.Pool) ||
-		content.configuration.NormalPool.ID != scope.SourcePoolRevisionID {
+		content.NormalPool.ID != scope.SourcePoolRevisionID {
 		return draftusecase.CategoryRevision{}, domain.ErrConflict
 	}
 	return category, nil
@@ -141,7 +146,7 @@ func (r *ParticipantDraftRepository) persistSwissDraftGraph(ctx context.Context,
 	}
 	aggregate := graph.Assignments[0]
 	primary := aggregate.Plan.SelectedEdges[0]
-	if err := NewAssignmentPostgres(r.tx).createAssignmentTx(ctx, AssignmentCreateInput{
+	if err := assignmentrepo.NewAssignmentPostgres(r.tx).CreateAssignmentTx(ctx, assignmentrepo.AssignmentCreateInput{
 		ID: aggregate.ID, AttemptID: attempt.ID, SeriesID: scope.SeriesID, RosterID: scope.RosterID,
 		PlanID: aggregate.Plan.PlanID, BranchID: aggregate.Plan.BranchID,
 		ReservationID: primary.ReservationID, SnapshotID: primary.Snapshot.SnapshotID, CreatedAt: now,
