@@ -22,6 +22,7 @@ import (
 	middlewaremocks "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/middleware/mocks"
 	v1 "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/v1"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	projectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
 	telemetryadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/telemetry"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/observability"
@@ -165,7 +166,7 @@ func newTournamentFlowHandler(
 	)
 	postseason := playoff.NewTerminalCoordinator(playoff.TerminalCoordinatorDependencies{
 		Repository:   postgres.NewPlayoffTerminalPostgres(tx, drafts, assignments),
-		Publisher:    postgres.NewProjectionPostgres(tx),
+		Publisher:    projectionrepo.NewProjectionPostgres(tx),
 		DraftPlanner: planner,
 		Rehydrator:   planner,
 	})

@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	projectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
 	resultrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result"
 	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
 	correctionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/correction"
@@ -49,7 +50,7 @@ func TestCorrectionRevisionRollback(t *testing.T) {
 	)
 	failedInput.ProjectionArtifacts[0].Dependencies = append(
 		failedInput.ProjectionArtifacts[0].Dependencies,
-		postgres.ProjectionDependencyInput{
+		projectionrepo.ProjectionDependencyInput{
 			ID: uuid.New(), Kind: "artifact",
 			DependsOnArtifactID: &failedInput.ProjectionArtifacts[0].ID,
 		},
@@ -61,7 +62,7 @@ func TestCorrectionRevisionRollback(t *testing.T) {
 	require.Equal(t, before, after)
 
 	restartedResults := resultauthority.NewResultPostgres(postgres.NewTxManager(sharedPool))
-	restartedProjections := postgres.NewProjectionPostgres(postgres.NewTxManager(sharedPool))
+	restartedProjections := projectionrepo.NewProjectionPostgres(postgres.NewTxManager(sharedPool))
 	scope := correctionRevisionResultScope(fixture)
 	currentResult, err := restartedResults.Current(ctx, scope)
 	require.NoError(t, err)
@@ -188,8 +189,8 @@ func correctionRevisionResultScope(fixture correctionRepositoryFixture) resultre
 	}
 }
 
-func correctionRevisionProjectionScope(fixture correctionRepositoryFixture) postgres.ProjectionScope {
-	return postgres.ProjectionScope{
+func correctionRevisionProjectionScope(fixture correctionRepositoryFixture) projectionrepo.ProjectionScope {
+	return projectionrepo.ProjectionScope{
 		TournamentID: fixture.resultFixture.draft.tournamentID,
 		RosterID:     fixture.resultFixture.draft.rosterID,
 	}

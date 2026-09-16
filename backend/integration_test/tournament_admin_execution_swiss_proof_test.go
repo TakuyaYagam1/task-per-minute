@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	projectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
@@ -319,11 +320,11 @@ func createRoundProofProjection(
 		createdAt:      at.Add(-10 * time.Minute),
 	}
 	goldenPositionCommitID := createProjectionGoldenSource(ctx, t, goldenSource)
-	repository := postgres.NewProjectionPostgres(postgres.NewTxManager(sharedPool))
-	record, err := repository.Publish(ctx, postgres.ProjectionPublishInput{
-		IDs:   postgres.ProjectionIDs{RevisionID: uuid.New(), CutoffID: uuid.New()},
-		Scope: postgres.ProjectionScope{TournamentID: tournamentID, RosterID: rosterID},
-		Source: postgres.ProjectionSource{
+	repository := projectionrepo.NewProjectionPostgres(postgres.NewTxManager(sharedPool))
+	record, err := repository.Publish(ctx, projectionrepo.ProjectionPublishInput{
+		IDs:   projectionrepo.ProjectionIDs{RevisionID: uuid.New(), CutoffID: uuid.New()},
+		Scope: projectionrepo.ProjectionScope{TournamentID: tournamentID, RosterID: rosterID},
+		Source: projectionrepo.ProjectionSource{
 			Kind:                   "golden_position",
 			GoldenPositionCommitID: &goldenPositionCommitID,
 			Reason:                 "publish round proof source projection",

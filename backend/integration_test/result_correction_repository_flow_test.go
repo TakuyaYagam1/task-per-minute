@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	projectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
 	resultrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result"
 	correctionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/correction"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
@@ -20,7 +21,7 @@ type correctionRepositoryFixture struct {
 	resultFixture      resultAuditMigrationFixture
 	participants       []uuid.UUID
 	result             *resultrepo.ResultCommitRecord
-	projection         *postgres.ProjectionRecord
+	projection         *projectionrepo.ProjectionRecord
 	waveID             uuid.UUID
 	windowID           uuid.UUID
 	waveRevision       int64
@@ -186,7 +187,7 @@ func TestResultCorrectionRepository(t *testing.T) {
 		)
 		failedInput.ProjectionArtifacts[0].Dependencies = append(
 			failedInput.ProjectionArtifacts[0].Dependencies,
-			postgres.ProjectionDependencyInput{
+			projectionrepo.ProjectionDependencyInput{
 				ID: uuid.New(), Kind: "artifact",
 				DependsOnArtifactID: &failedInput.ProjectionArtifacts[0].ID,
 			},

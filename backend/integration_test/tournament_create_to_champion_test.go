@@ -27,6 +27,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	auditrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/audit"
 	runtimepostgres "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/golden/runtime"
+	projectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
 	rosterrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/roster"
 	snapshotrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/snapshot"
 	cancellationrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/cancellation"
@@ -1412,7 +1413,7 @@ func newTournamentFlowTerminalCoordinator(tx *postgres.TxManager) *playoff.Termi
 	)
 	return playoff.NewTerminalCoordinator(playoff.TerminalCoordinatorDependencies{
 		Repository: postgres.NewPlayoffTerminalPostgres(tx, drafts, postgres.NewAssignmentPostgres(tx)),
-		Publisher:  postgres.NewProjectionPostgres(tx), DraftPlanner: planner, Rehydrator: planner,
+		Publisher:  projectionrepo.NewProjectionPostgres(tx), DraftPlanner: planner, Rehydrator: planner,
 	})
 }
 

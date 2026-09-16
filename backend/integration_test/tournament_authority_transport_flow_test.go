@@ -16,6 +16,7 @@ import (
 	tournamentws "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket/tournament"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	auditrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/audit"
+	projectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	audit "github.com/TakuyaYagam1/task-per-minute/internal/usecase/audit"
 )
@@ -92,15 +93,15 @@ func testTournamentRealtimeRecovery(t *testing.T) {
 
 	fixture := createGoldenMigrationFixture(ctx, t, 4)
 	goldenPositionCommitID := createProjectionGoldenSource(ctx, t, fixture)
-	projection := postgres.NewProjectionPostgres(postgres.NewTxManager(sharedPool))
+	projection := projectionrepo.NewProjectionPostgres(postgres.NewTxManager(sharedPool))
 	createdAt := fixture.createdAt.Add(8 * time.Second)
-	published, err := projection.Publish(ctx, postgres.ProjectionPublishInput{
-		IDs: postgres.ProjectionIDs{RevisionID: uuid.New(), CutoffID: uuid.New()},
-		Scope: postgres.ProjectionScope{
+	published, err := projection.Publish(ctx, projectionrepo.ProjectionPublishInput{
+		IDs: projectionrepo.ProjectionIDs{RevisionID: uuid.New(), CutoffID: uuid.New()},
+		Scope: projectionrepo.ProjectionScope{
 			TournamentID: fixture.tournamentID,
 			RosterID:     fixture.rosterID,
 		},
-		Source: postgres.ProjectionSource{
+		Source: projectionrepo.ProjectionSource{
 			Kind:                   "golden_position",
 			GoldenPositionCommitID: &goldenPositionCommitID,
 			Reason:                 "publish realtime recovery fixture",

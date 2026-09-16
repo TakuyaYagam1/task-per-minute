@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	projectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
 	resultrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result"
 	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
@@ -92,14 +93,14 @@ func createCorrectionRepositoryFixture(
 	require.NoError(tb, err)
 	require.True(tb, changed)
 
-	projectionRepository := postgres.NewProjectionPostgres(postgres.NewTxManager(sharedPool))
+	projectionRepository := projectionrepo.NewProjectionPostgres(postgres.NewTxManager(sharedPool))
 	projectionAt := settledAt.Add(time.Second)
-	projection, err := projectionRepository.Publish(ctx, postgres.ProjectionPublishInput{
-		IDs: postgres.ProjectionIDs{RevisionID: uuid.New(), CutoffID: uuid.New()},
-		Scope: postgres.ProjectionScope{
+	projection, err := projectionRepository.Publish(ctx, projectionrepo.ProjectionPublishInput{
+		IDs: projectionrepo.ProjectionIDs{RevisionID: uuid.New(), CutoffID: uuid.New()},
+		Scope: projectionrepo.ProjectionScope{
 			TournamentID: resultFixture.draft.tournamentID, RosterID: resultFixture.draft.rosterID,
 		},
-		Source: postgres.ProjectionSource{
+		Source: projectionrepo.ProjectionSource{
 			Kind: "official_result", OfficialResultRevisionID: &result.GameRevision.ID,
 			Reason: "initial result projection",
 		},

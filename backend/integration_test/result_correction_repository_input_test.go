@@ -12,7 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	projectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
 	resultrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result"
 	correctionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/correction"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
@@ -22,7 +22,7 @@ func newCorrectionInput(
 	ctx context.Context, tb testing.TB,
 	fixture correctionRepositoryFixture,
 	currentResult *resultrepo.ResultCommitRecord,
-	currentProjection *postgres.ProjectionRecord,
+	currentProjection *projectionrepo.ProjectionRecord,
 	winnerIndex int,
 	correctedAt time.Time,
 ) correctionrepo.CorrectionInput {
@@ -62,7 +62,7 @@ func newCorrectionInput(
 	digest := sha256.Sum256([]byte(reason))
 	seriesResultRevisionID := currentResult.SeriesRevision.ID
 	return correctionrepo.CorrectionInput{
-		IDs: ids, ProjectionIDs: postgres.ProjectionIDs{RevisionID: uuid.New(), CutoffID: uuid.New()},
+		IDs: ids, ProjectionIDs: projectionrepo.ProjectionIDs{RevisionID: uuid.New(), CutoffID: uuid.New()},
 		Scope: resultrepo.ResultScope{
 			TournamentID: fixture.resultFixture.draft.tournamentID, RosterID: fixture.resultFixture.draft.rosterID,
 			SeriesID: fixture.resultFixture.draft.seriesID, AttemptID: fixture.resultFixture.attemptID,
