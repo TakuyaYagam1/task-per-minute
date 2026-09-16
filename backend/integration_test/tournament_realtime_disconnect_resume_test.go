@@ -19,10 +19,10 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/middleware"
 	inboundws "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket"
 	tournamentws "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket/tournament"
-	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	playerrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/player"
 	realtimerepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/realtime"
 	participantrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant"
+	tournamentsnapshotrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/snapshot"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
@@ -68,7 +68,7 @@ func TestTournamentRealtimeDisconnectResume(t *testing.T) {
 	}
 
 	snapshotSource, err := inboundws.NewTournamentProductionSnapshotSource(
-		postgres.NewTournamentSnapshotPostgres(started.fixture.tx),
+		tournamentsnapshotrepo.NewTournamentSnapshotPostgres(started.fixture.tx),
 	)
 	require.NoError(t, err)
 	participantFlow, err := inboundws.NewTournamentParticipantFlow(snapshotSource)

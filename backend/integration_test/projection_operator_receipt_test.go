@@ -21,6 +21,7 @@ import (
 	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	wavestartrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/execution/wavestart"
+	progressionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/progression"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	assignmentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/assignment"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
@@ -212,7 +213,7 @@ func assertTerminalProofRequiresCommand(ctx context.Context, t *testing.T, fixtu
 func assertReceiptRejectsCrossSeriesTerminalCommit(ctx context.Context, t *testing.T, fixture tournamentAdminSwissProofFixture) {
 	t.Helper()
 	authority := swissReceiptAuthority(ctx, t, fixture)
-	input, err := postgres.NewTournamentProgressionPostgres(fixture.tx).LoadLockedSwissTerminalEvidence(ctx, progression.Command{
+	input, err := progressionrepo.NewTournamentProgressionPostgres(fixture.tx).LoadLockedSwissTerminalEvidence(ctx, progression.Command{
 		CommandID: uuid.New(), TournamentID: fixture.tournamentID, RosterID: fixture.rosterID, ActorID: uuid.New(),
 		Action: progression.ActionStartPlayoffs, ExpectedProjectionRevision: authority.ProjectionRevision}, authority)
 	require.NoError(t, err)

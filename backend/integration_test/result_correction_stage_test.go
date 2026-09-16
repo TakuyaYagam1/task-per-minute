@@ -21,6 +21,8 @@ import (
 	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	admincorrectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/correction"
+	adminlifecyclerepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/lifecycle"
+	progressionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/progression"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	gamedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/game"
 	correctionusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/correction"
@@ -1300,11 +1302,11 @@ func TestTournamentAdminCorrectionAuthorityHydratesNativeGoldenStage(t *testing.
 	var lifecycle tournamentadmin.LifecycleAuthority
 	require.NoError(t, fixture.tx.Do(ctx, func(txCtx context.Context) error {
 		var loadErr error
-		lifecycle, loadErr = postgres.NewTournamentAdminLifecyclePostgres(fixture.tx).
+		lifecycle, loadErr = adminlifecyclerepo.NewTournamentAdminLifecyclePostgres(fixture.tx).
 			LockLifecycleAuthority(txCtx, fixture.tournamentID)
 		return loadErr
 	}))
-	golden, err := postgres.NewTournamentProgressionPostgres(fixture.tx).LoadGoldenEvidence(
+	golden, err := progressionrepo.NewTournamentProgressionPostgres(fixture.tx).LoadGoldenEvidence(
 		ctx,
 		progression.Authority{
 			Tournament: lifecycle.Tournament, ProjectionRevisionID: successorProjectionID,
@@ -1379,11 +1381,11 @@ func TestTournamentAdminCorrectionCarriesNativeGoldenAuthorityAcrossUnchangedSta
 	var lifecycle tournamentadmin.LifecycleAuthority
 	require.NoError(t, fixture.tx.Do(ctx, func(txCtx context.Context) error {
 		var loadErr error
-		lifecycle, loadErr = postgres.NewTournamentAdminLifecyclePostgres(fixture.tx).
+		lifecycle, loadErr = adminlifecyclerepo.NewTournamentAdminLifecyclePostgres(fixture.tx).
 			LockLifecycleAuthority(txCtx, fixture.tournamentID)
 		return loadErr
 	}))
-	terminal, err := postgres.NewTournamentProgressionPostgres(fixture.tx).LoadLockedSwissTerminalEvidence(
+	terminal, err := progressionrepo.NewTournamentProgressionPostgres(fixture.tx).LoadLockedSwissTerminalEvidence(
 		ctx,
 		progression.Command{
 			CommandID: uuid.New(), TournamentID: fixture.tournamentID, RosterID: fixture.rosterID,
@@ -1518,7 +1520,7 @@ func publishSwissGolden(
 	command progression.Command,
 ) error {
 	return fixture.tx.Do(ctx, func(txCtx context.Context) error {
-		lifecycle := postgres.NewTournamentAdminLifecyclePostgres(fixture.tx)
+		lifecycle := adminlifecyclerepo.NewTournamentAdminLifecyclePostgres(fixture.tx)
 		authority, err := lifecycle.LockLifecycleAuthority(txCtx, fixture.tournamentID)
 		if err != nil {
 			return err
@@ -1526,7 +1528,7 @@ func publishSwissGolden(
 		if authority.ProjectionRevision != command.ExpectedProjectionRevision {
 			return domain.ErrConflict
 		}
-		repository := postgres.NewTournamentProgressionPostgres(fixture.tx)
+		repository := progressionrepo.NewTournamentProgressionPostgres(fixture.tx)
 		workflow := progression.NewWorkflow(progression.ProgressionDependencies{
 			Repository: repository, TerminalEvidence: repository, Transitioner: repository,
 			Publisher: repository, ProgressionClock: playoffPublicationClock{},

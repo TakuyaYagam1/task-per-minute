@@ -18,6 +18,7 @@ import (
 	waverepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/wave"
 	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
+	progressionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/progression"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	gamedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/game"
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
@@ -120,7 +121,7 @@ func swissReceiptAuthority(ctx context.Context, t *testing.T, fixture tournament
 func readFinalSwissReceipt(ctx context.Context, t *testing.T, fixture tournamentAdminSwissProofFixture) playoff.FinalSwissProjection {
 	t.Helper()
 	authority := swissReceiptAuthority(ctx, t, fixture)
-	input, err := postgres.NewTournamentProgressionPostgres(fixture.tx).LoadLockedSwissTerminalEvidence(ctx, progression.Command{
+	input, err := progressionrepo.NewTournamentProgressionPostgres(fixture.tx).LoadLockedSwissTerminalEvidence(ctx, progression.Command{
 		CommandID: uuid.New(), TournamentID: fixture.tournamentID, RosterID: fixture.rosterID, ActorID: uuid.New(),
 		Action: progression.ActionStartPlayoffs, ExpectedProjectionRevision: authority.ProjectionRevision,
 	}, authority)

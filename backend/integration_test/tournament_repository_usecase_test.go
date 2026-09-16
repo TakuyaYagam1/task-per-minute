@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	tournamentlifecyclerepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/lifecycle"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	attendanceusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/attendance"
 	catalogusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/catalog"
@@ -169,7 +170,7 @@ func TestTournamentLifecycleUseCase(t *testing.T) {
 	fixture := newRepositoryFixture()
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	useCase := lifecycleusecase.NewTournamentLifecycleUseCase(
-		postgres.NewTournamentLifecyclePostgres(fixture.tournaments),
+		tournamentlifecyclerepo.NewTournamentLifecyclePostgres(fixture.tx),
 		newTournamentClock(t, now),
 	)
 

@@ -15,6 +15,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	projectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
+	snapshotrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/snapshot"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 )
@@ -72,7 +73,7 @@ func TestProjectionRepositoryPublishesScopedStandingsAndBracketHistory(t *testin
 	require.Equal(t, "bracket", bracket.Artifact.ArtifactKind)
 	require.Contains(t, string(bracket.Artifact.Payload), "v2")
 
-	snapshot, err := postgres.NewTournamentSnapshotPostgres(postgres.NewTxManager(sharedPool)).PublicSnapshot(
+	snapshot, err := snapshotrepo.NewTournamentSnapshotPostgres(postgres.NewTxManager(sharedPool)).PublicSnapshot(
 		ctx,
 		usecase.PublicSnapshotQuery{TournamentID: fixture.tournamentID},
 	)

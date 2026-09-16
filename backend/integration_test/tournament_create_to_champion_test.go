@@ -33,9 +33,13 @@ import (
 	projectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
 	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
 	executionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/execution"
+	adminlifecyclerepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/lifecycle"
 	rosterrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/roster"
 	snapshotrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/snapshot"
 	cancellationrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/cancellation"
+	tournamentlifecyclerepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/lifecycle"
+	progressionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/progression"
+	tournamentsnapshotrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/snapshot"
 	redisadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/redis"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
@@ -372,16 +376,16 @@ func newTournamentFlowRESTFixture(t *testing.T) *restFixture {
 		Authority:    authorityController,
 	})
 
-	progressionRepository := postgres.NewTournamentProgressionPostgres(tx)
+	progressionRepository := progressionrepo.NewTournamentProgressionPostgres(tx)
 	progression := tournamentprogression.NewWorkflow(tournamentprogression.ProgressionDependencies{
 		Repository: progressionRepository, TerminalEvidence: progressionRepository,
 		Transitioner: progressionRepository, Publisher: progressionRepository, ProgressionClock: clock,
 	})
-	lifecycleRepository := postgres.NewTournamentAdminLifecyclePostgres(tx)
+	lifecycleRepository := adminlifecyclerepo.NewTournamentAdminLifecyclePostgres(tx)
 	lifecycle := tournamentadmin.NewLifecycleWorkflow(tournamentadmin.LifecycleWorkflowDependencies{
 		Transactions: tx, Repository: lifecycleRepository,
 		Transitions: tournamentlifecycle.NewTournamentLifecycleUseCase(
-			postgres.NewTournamentLifecyclePostgres(tournaments), clock,
+			tournamentlifecyclerepo.NewTournamentLifecyclePostgres(tx), clock,
 		),
 		Pauses: tournamentpause.NewTournamentPauseUseCase(tx, lifecycleRepository, clock),
 		Cancellations: tournamentcancellation.NewTournamentCancellationUseCase(
@@ -439,7 +443,7 @@ func newTournamentFlowRESTFixture(t *testing.T) *restFixture {
 	})
 	participantApplication := tournamentparticipant.ParticipantNewUseCase(
 		tournamentparticipant.ParticipantDependencies{
-			Snapshots: postgres.NewTournamentSnapshotPostgres(tx),
+			Snapshots: tournamentsnapshotrepo.NewTournamentSnapshotPostgres(tx),
 			States:    postgres.NewParticipantStatePostgres(tx),
 			Commands:  participantCommands,
 		},
@@ -452,7 +456,7 @@ func newTournamentFlowRESTFixture(t *testing.T) *restFixture {
 	server := restv1.New(restv1.Dependencies{
 		Players: playerusecase.SessionNewUseCase(database.mgr, database.players, clock), AdminAuth: auth,
 		Tournaments: catalog, TournamentAdmin: admin, TournamentConfiguration: configuration,
-		TournamentSnapshots:   postgres.NewTournamentSnapshotPostgres(tx),
+		TournamentSnapshots:   tournamentsnapshotrepo.NewTournamentSnapshotPostgres(tx),
 		TournamentParticipant: participantObserved, ParticipantArchive: tournamentFlowParticipantArchive{}, Golden: golden,
 		LoginLimiter: limiter, JoinLimiter: limiter,
 		PublicTournamentReadLimiter: limiter, OperatorTournamentReadLimiter: limiter,
@@ -467,7 +471,7 @@ func newTournamentFlowRESTFixture(t *testing.T) *restFixture {
 		auth: auth, validator: newOpenAPIResponseValidator(t),
 	}
 	snapshotSource, err := inboundws.NewTournamentProductionSnapshotSource(
-		postgres.NewTournamentSnapshotPostgres(tx), golden,
+		tournamentsnapshotrepo.NewTournamentSnapshotPostgres(tx), golden,
 	)
 	require.NoError(t, err)
 	participantFlow, err := inboundws.NewTournamentParticipantFlow(snapshotSource)

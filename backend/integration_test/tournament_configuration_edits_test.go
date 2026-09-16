@@ -16,6 +16,7 @@ import (
 	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
 	executionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/execution"
 	snapshotrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/snapshot"
+	tournamentsnapshotrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/snapshot"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
@@ -458,7 +459,7 @@ func TestTournamentOddSwissRoundRevisionRebuildsByeThroughProductionHTTPAndPostg
 		Operator: tournamentadmin.OperatorIdentity{ActorID: uuid.New()}, TournamentID: created.Id,
 	})
 	require.NoError(t, err, "revised odd Swiss graph must load through the production snapshot repository")
-	participantSnapshots := postgres.NewTournamentSnapshotPostgres(fixture.mgr)
+	participantSnapshots := tournamentsnapshotrepo.NewTournamentSnapshotPostgres(fixture.mgr)
 	for participantID, player := range flow.playersByParticipant {
 		_, snapshotErr := participantSnapshots.ParticipantSnapshot(ctx, inbound.ParticipantSnapshotQuery{
 			TournamentID: created.Id, PlayerID: player.id,
@@ -649,7 +650,7 @@ func openAndStartRevisedOddSwissWaveThroughREST(t *testing.T, flow swissCategory
 	)
 	require.Equal(t, api.WaveStateReadyWindowOpen, wave.State)
 
-	repository := postgres.NewTournamentSnapshotPostgres(flow.fixture.mgr)
+	repository := tournamentsnapshotrepo.NewTournamentSnapshotPostgres(flow.fixture.mgr)
 	for _, member := range wave.Members {
 		player, ok := flow.playersByParticipant[member.ParticipantId]
 		require.True(t, ok, "missing player for participant %s", member.ParticipantId)

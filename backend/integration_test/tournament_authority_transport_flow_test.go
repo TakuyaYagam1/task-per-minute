@@ -18,6 +18,7 @@ import (
 	auditrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/audit"
 	projectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
 	correctionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/correction"
+	snapshotrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/snapshot"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	audit "github.com/TakuyaYagam1/task-per-minute/internal/usecase/audit"
 )
@@ -120,7 +121,7 @@ func testTournamentRealtimeRecovery(t *testing.T) {
 		"SELECT player_id FROM participants WHERE id = $1",
 		fixture.participantIDs[0],
 	).Scan(&playerID))
-	reader := postgres.NewTournamentSnapshotPostgres(postgres.NewTxManager(sharedPool))
+	reader := snapshotrepo.NewTournamentSnapshotPostgres(postgres.NewTxManager(sharedPool))
 	source, err := rootws.NewTournamentProductionSnapshotSource(reader)
 	require.NoError(t, err)
 	participantFlow, err := rootws.NewTournamentParticipantFlow(source)

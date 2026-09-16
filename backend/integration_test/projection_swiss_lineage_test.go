@@ -13,10 +13,10 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/require"
 
-	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	waverepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/wave"
 	projectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
+	progressionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/progression"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 	progression "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/progression"
@@ -31,7 +31,7 @@ func TestFinalSwissReceiptSuccessorReadbackAndRollback(t *testing.T) {
 	settleSwissReceiptSeries(ctx, t, fixture, 1)
 	closeSwissReceiptWave(ctx, t, fixture)
 	authority := swissReceiptAuthority(ctx, t, fixture)
-	input, err := postgres.NewTournamentProgressionPostgres(fixture.tx).LoadLockedSwissTerminalEvidence(ctx, progression.Command{
+	input, err := progressionrepo.NewTournamentProgressionPostgres(fixture.tx).LoadLockedSwissTerminalEvidence(ctx, progression.Command{
 		CommandID: uuid.New(), TournamentID: fixture.tournamentID, RosterID: fixture.rosterID, ActorID: uuid.New(),
 		Action: progression.ActionStartPlayoffs, ExpectedProjectionRevision: authority.ProjectionRevision,
 	}, authority)
@@ -197,7 +197,7 @@ func TestFinalSwissReceiptRejectsCrossSeriesNodes(t *testing.T) {
 	require.NoError(t, sharedPool.QueryRow(ctx, `SELECT id FROM result_projection_nodes WHERE tournament_id = $1 AND artifact_kind = 'series_score' ORDER BY id LIMIT 1`, foreignTournament).Scan(&foreignNode))
 	authority := swissReceiptAuthority(ctx, t, fixture)
 	command := progression.Command{CommandID: uuid.New(), TournamentID: fixture.tournamentID, RosterID: fixture.rosterID, ActorID: uuid.New(), Action: progression.ActionStartPlayoffs, ExpectedProjectionRevision: authority.ProjectionRevision}
-	input, err := postgres.NewTournamentProgressionPostgres(fixture.tx).LoadLockedSwissTerminalEvidence(ctx, command, authority)
+	input, err := progressionrepo.NewTournamentProgressionPostgres(fixture.tx).LoadLockedSwissTerminalEvidence(ctx, command, authority)
 	require.NoError(t, err)
 	previous, err := playoff.PlanFinalSwissReceipt(input)
 	require.NoError(t, err)
