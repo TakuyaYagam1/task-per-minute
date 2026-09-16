@@ -31,11 +31,11 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/configuration"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/creation"
 	lifecycle2 "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/lifecycle"
-	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant"
 	authority2 "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/authority"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/postseries"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/readiness"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/settlement"
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/state"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/submission"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/surrender"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/progression"
@@ -251,7 +251,7 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 	tournamentConfigurationPostgres := configuration.NewProductionTournamentConfigurationPostgres(txManager)
 	tournamentConfigurationWorkflow := admin.NewTournamentConfigurationWorkflow(tournamentConfigurationPostgres)
 	tournamentSnapshotPostgres := snapshot2.NewTournamentSnapshotPostgres(txManager)
-	participantStatePostgres := participant.NewParticipantStatePostgres(txManager)
+	participantStatePostgres := state.NewParticipantStatePostgres(txManager)
 	tournamentParticipantPostgres := authority2.NewTournamentParticipantPostgres(txManager)
 	actionUseCase := provideParticipantDraft(participantDraftRepository, bootstrapClockFunc)
 	participantSubmissionRepository := submission.NewParticipantSubmissionRepository(txManager, resultPostgres)

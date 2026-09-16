@@ -35,12 +35,12 @@ import (
 	contentrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/configuration"
 	creationrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/creation"
 	lifecyclerepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/lifecycle"
-	participantrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant"
 	participantauthorityrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/authority"
 	participantdraftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/draft"
 	participantpostseriesrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/postseries"
 	participantreadinessrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/readiness"
 	settlementrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/settlement"
+	participantstaterepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/state"
 	participantsubmissionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/submission"
 	participantsurrenderrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/surrender"
 	progressionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/progression"
@@ -186,8 +186,8 @@ var ReposSet = wire.NewSet(
 	wire.Bind(new(tournamentprogression.PlayoffProjectionPublisher), new(*progressionrepo.TournamentProgressionPostgres)),
 	participantauthorityrepo.NewTournamentParticipantPostgres,
 	wire.Bind(new(tournamentparticipant.CommandAuthority), new(*participantauthorityrepo.TournamentParticipantPostgres)),
-	participantrepo.NewParticipantStatePostgres,
-	wire.Bind(new(tournamentparticipant.StateReader), new(*participantrepo.ParticipantStatePostgres)),
+	participantstaterepo.NewParticipantStatePostgres,
+	wire.Bind(new(tournamentparticipant.StateReader), new(*participantstaterepo.ParticipantStatePostgres)),
 	participantarchiverepo.NewParticipantArchivePostgres,
 	wire.Bind(new(participantarchive.Repository), new(*participantarchiverepo.ParticipantArchivePostgres)),
 	participantreadinessrepo.NewParticipantReadinessRepository,
