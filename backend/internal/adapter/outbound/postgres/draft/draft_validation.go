@@ -1,6 +1,8 @@
-package postgres
+package draft
 
 import (
+	"time"
+
 	"github.com/google/uuid"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
@@ -114,4 +116,21 @@ func validDraftRevisionDecision(draftID uuid.UUID, in DraftRevisionInput) bool {
 	}
 	return in.Action == nil || !in.Action.Automatic ||
 		(in.DecisionEvidence != nil && in.DecisionEvidence.Purpose == domain.DecisionPurposeCategory)
+}
+
+func (state DraftPersistenceState) IsValid() bool {
+	switch state {
+	case DraftPersistenceStateActive,
+		DraftPersistenceStatePaused,
+		DraftPersistenceStateRecoveryRequired,
+		DraftPersistenceStateCompleted,
+		DraftPersistenceStateSuperseded:
+		return true
+	default:
+		return false
+	}
+}
+
+func validServerTime(value time.Time) bool {
+	return !value.IsZero() && value.Location() == time.UTC
 }
