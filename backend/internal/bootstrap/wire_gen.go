@@ -10,6 +10,9 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/config"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/leaderboard"
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/player"
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/task"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/assignment"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
 	"github.com/wahrwelt-kit/go-logkit"
@@ -25,13 +28,13 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 	}
 	migrator := provideMigrator(cfg)
 	context := provideRuntimeContext(runtime)
-	postgresConfig := providePostgresConfig(cfg)
-	pool, cleanup, err := providePostgres(context, postgresConfig)
+	dbConfig := providePostgresConfig(cfg)
+	pool, cleanup, err := providePostgres(context, dbConfig)
 	if err != nil {
 		return nil, nil, err
 	}
 	txManager := postgres.NewTxManager(pool)
-	playerPostgres := postgres.NewPlayerPostgres(txManager)
+	playerPostgres := player.NewPlayerPostgres(txManager)
 	bootstrapClockFunc := provideClock()
 	sessionUseCase := providePlayerSessionUseCase(cfg, txManager, playerPostgres, bootstrapClockFunc)
 	authConfig := provideAuthConfig(cfg)
@@ -45,9 +48,9 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 	jwtCodec := provideJWTCodec(cfg, bootstrapClockFunc)
 	passwordVerifier := providePasswordVerifier(cfg)
 	useCase := provideAuthUseCase(authConfig, bootstrapClockFunc, revocationRedis, jwtCodec, passwordVerifier)
-	taskPostgres := postgres.NewTaskPostgres(txManager)
+	taskPostgres := task.NewTaskPostgres(txManager)
 	taskUseCase := provideTaskUseCase(taskPostgres)
-	leaderboardPostgres := postgres.NewLeaderboardPostgres(txManager)
+	leaderboardPostgres := leaderboard.NewLeaderboardPostgres(txManager)
 	ranking := provideLeaderboardRanking(leaderboardPostgres)
 	cache := provideLeaderboardCache(ranking, bootstrapClockFunc)
 	managementUseCase := providePlayerManagementUseCase(txManager, playerPostgres, cache, bootstrapClockFunc)
@@ -67,7 +70,7 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 	commandReceiptStore := provideTournamentCommandReceipts(client)
 	catalogUseCase := provideTournamentApplication(deterministicIDGenerator, bootstrapClockFunc, tournamentUseCase, tournamentCreatePostgres, tournamentContentPostgres, commandReceiptStore)
 	tournamentAdminRosterPostgres := postgres.NewTournamentAdminRosterPostgres(txManager)
-	privateTaskAvailabilityPostgres := providePrivateTaskAvailabilityRepository(txManager)
+	privateTaskAvailabilityPostgres := task.NewPrivateTaskAvailabilityPostgres(txManager)
 	availabilityMonitor, err := providePrivateTaskAvailabilityMonitor(privateTaskAvailabilityPostgres, bootstrapClockFunc)
 	if err != nil {
 		cleanup2()

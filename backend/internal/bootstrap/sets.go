@@ -11,6 +11,9 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/incidentauth"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/objectstorage"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	leaderboardrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/leaderboard"
+	playerrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/player"
+	taskrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/task"
 	redisadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/redis"
 	"github.com/TakuyaYagam1/task-per-minute/internal/observability"
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
@@ -80,14 +83,14 @@ var ReposSet = wire.NewSet(
 	postgres.NewAdminPlayerEventsPostgres,
 	wire.Bind(new(restv1.AdminPlayerEventSubscriber), new(*postgres.AdminPlayerEventsPostgres)),
 
-	postgres.NewPlayerPostgres,
-	wire.Bind(new(playerusecase.PlayerRepository), new(*postgres.PlayerPostgres)),
-	wire.Bind(new(playerusecase.Repository), new(*postgres.PlayerPostgres)),
-	wire.Bind(new(middleware.PlayerSessionReader), new(*postgres.PlayerPostgres)),
-	wire.Bind(new(websocket.PlayerSessionReader), new(*postgres.PlayerPostgres)),
+	playerrepo.NewPlayerPostgres,
+	wire.Bind(new(playerusecase.PlayerRepository), new(*playerrepo.PlayerPostgres)),
+	wire.Bind(new(playerusecase.Repository), new(*playerrepo.PlayerPostgres)),
+	wire.Bind(new(middleware.PlayerSessionReader), new(*playerrepo.PlayerPostgres)),
+	wire.Bind(new(websocket.PlayerSessionReader), new(*playerrepo.PlayerPostgres)),
 
-	postgres.NewTaskPostgres,
-	wire.Bind(new(taskusecase.Repository), new(*postgres.TaskPostgres)),
+	taskrepo.NewTaskPostgres,
+	wire.Bind(new(taskusecase.Repository), new(*taskrepo.TaskPostgres)),
 
 	postgres.NewTournamentPostgres,
 	postgres.NewTournamentCreatePostgres,
@@ -157,11 +160,11 @@ var ReposSet = wire.NewSet(
 	postgres.NewParticipantForfeitRepository,
 	postgres.NewParticipantPostSeriesRepository,
 	provideRealtimeOutbox,
-	providePrivateTaskAvailabilityRepository,
-	wire.Bind(new(taskusecase.BacklogSource), new(*postgres.PrivateTaskAvailabilityPostgres)),
+	taskrepo.NewPrivateTaskAvailabilityPostgres,
+	wire.Bind(new(taskusecase.BacklogSource), new(*taskrepo.PrivateTaskAvailabilityPostgres)),
 
-	postgres.NewLeaderboardPostgres,
-	wire.Bind(new(leaderboardusecase.StatsRepository), new(*postgres.LeaderboardPostgres)),
+	leaderboardrepo.NewLeaderboardPostgres,
+	wire.Bind(new(leaderboardusecase.StatsRepository), new(*leaderboardrepo.LeaderboardPostgres)),
 )
 
 var UseCasesSet = wire.NewSet(
