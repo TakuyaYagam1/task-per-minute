@@ -23,8 +23,8 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
 	gamedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/game"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
 	attemptusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/attempt"
+	gamerecovery "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/recovery"
 
 	recoveryusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/recovery"
 )
@@ -40,10 +40,10 @@ type ExecutionRecoveryPostgres struct {
 }
 
 var (
-	_ gameusecase.RecoverySource           = (*ExecutionRecoveryPostgres)(nil)
-	_ gameusecase.RecoveryTournamentSource = (*ExecutionRecoveryPostgres)(nil)
-	_ gameusecase.DeadlineRearmer          = (*ExecutionRecoveryPostgres)(nil)
-	_ gameusecase.EpochReplayRepository    = (*ExecutionRecoveryPostgres)(nil)
+	_ gamerecovery.RecoverySource           = (*ExecutionRecoveryPostgres)(nil)
+	_ gamerecovery.RecoveryTournamentSource = (*ExecutionRecoveryPostgres)(nil)
+	_ gamerecovery.DeadlineRearmer          = (*ExecutionRecoveryPostgres)(nil)
+	_ gamerecovery.EpochReplayRepository    = (*ExecutionRecoveryPostgres)(nil)
 )
 
 func NewExecutionRecoveryPostgres(
@@ -94,7 +94,7 @@ func (repository *ExecutionRecoveryPostgres) ListActiveGames(
 	ctx context.Context,
 	tournamentID uuid.UUID,
 	current authoritydomain.Identity,
-) ([]gameusecase.RecoveryCandidate, error) {
+) ([]gamerecovery.RecoveryCandidate, error) {
 	if !validExecutionRecoveryRepository(ctx, repository) || tournamentID == uuid.Nil ||
 		current.Validate() != nil || current.TournamentID != tournamentID {
 		return nil, domain.ErrValidation
@@ -111,7 +111,7 @@ func (repository *ExecutionRecoveryPostgres) ListActiveGames(
 	if err != nil {
 		return nil, fmt.Errorf("ExecutionRecoveryPostgres - list active Games: %w", err)
 	}
-	candidates := make([]gameusecase.RecoveryCandidate, len(rows))
+	candidates := make([]gamerecovery.RecoveryCandidate, len(rows))
 	seen := make(map[uuid.UUID]struct{}, len(rows))
 	for index, row := range rows {
 		candidate, mapErr := executionRecoveryCandidateFromRow(row, current)
@@ -130,7 +130,7 @@ func (repository *ExecutionRecoveryPostgres) ListActiveGames(
 //nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func (repository *ExecutionRecoveryPostgres) RearmDeadline(
 	ctx context.Context,
-	arm gameusecase.DeadlineArm,
+	arm gamerecovery.DeadlineArm,
 ) error {
 	if !validExecutionRecoveryRepository(ctx, repository) || repository.deadlines == nil ||
 		!arm.Scope.IsValid() || arm.AttemptNo < 1 || arm.Authority.Validate() != nil ||
@@ -173,7 +173,7 @@ func (repository *ExecutionRecoveryPostgres) RearmDeadline(
 func (repository *ExecutionRecoveryPostgres) FindEpochReplay(
 	ctx context.Context,
 	scope domain.FailedAttemptScope,
-) (*gameusecase.EpochReplayRecord, error) {
+) (*gamerecovery.EpochReplayRecord, error) {
 	if !validExecutionRecoveryRepository(ctx, repository) || !scope.IsValid() {
 		return nil, domain.ErrValidation
 	}
@@ -191,11 +191,11 @@ func (repository *ExecutionRecoveryPostgres) LoadEpochReplayAuthority(
 	ctx context.Context,
 	scope domain.FailedAttemptScope,
 	rosterID uuid.UUID,
-) (gameusecase.EpochReplayAuthority, error) {
+) (gamerecovery.EpochReplayAuthority, error) {
 	if !validExecutionRecoveryRepository(ctx, repository) || !scope.IsValid() || rosterID == uuid.Nil {
-		return gameusecase.EpochReplayAuthority{}, domain.ErrValidation
+		return gamerecovery.EpochReplayAuthority{}, domain.ErrValidation
 	}
-	var result gameusecase.EpochReplayAuthority
+	var result gamerecovery.EpochReplayAuthority
 	err := repository.tx.Do(ctx, func(txCtx context.Context) error {
 		fence, err := repository.lockEpochReplayFence(txCtx, scope, rosterID)
 		if err != nil {
@@ -220,7 +220,7 @@ func (repository *ExecutionRecoveryPostgres) LoadEpochReplayAuthority(
 		if snapshot.Authority.GameTimeout == nil {
 			return domain.ErrInternal
 		}
-		result = gameusecase.EpochReplayAuthority{
+		result = gamerecovery.EpochReplayAuthority{
 			Lease:          fence.current,
 			BoundAuthority: fence.bound,
 			RosterID:       fence.rosterID,
@@ -229,7 +229,7 @@ func (repository *ExecutionRecoveryPostgres) LoadEpochReplayAuthority(
 		return nil
 	})
 	if err != nil {
-		return gameusecase.EpochReplayAuthority{}, fmt.Errorf("ExecutionRecoveryPostgres - load replay authority: %w", err)
+		return gamerecovery.EpochReplayAuthority{}, fmt.Errorf("ExecutionRecoveryPostgres - load replay authority: %w", err)
 	}
 	return result, nil
 }
@@ -237,15 +237,15 @@ func (repository *ExecutionRecoveryPostgres) LoadEpochReplayAuthority(
 //nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func (repository *ExecutionRecoveryPostgres) CommitEpochReplay(
 	ctx context.Context,
-	condition gameusecase.EpochReplayCommitCondition,
-	record gameusecase.EpochReplayRecord,
-) (*gameusecase.EpochReplayRecord, bool, error) {
+	condition gamerecovery.EpochReplayCommitCondition,
+	record gamerecovery.EpochReplayRecord,
+) (*gamerecovery.EpochReplayRecord, bool, error) {
 	if !validExecutionRecoveryRepository(ctx, repository) || condition.Validate() != nil ||
 		record.Validate() != nil {
 		return nil, false, domain.ErrValidation
 	}
 	var (
-		committed *gameusecase.EpochReplayRecord
+		committed *gamerecovery.EpochReplayRecord
 		changed   bool
 	)
 	err := repository.tx.Do(ctx, func(txCtx context.Context) error {
@@ -349,8 +349,8 @@ type executionRecoveryFence struct {
 }
 
 func (fence executionRecoveryFence) matches(
-	condition gameusecase.EpochReplayCommitCondition,
-	record gameusecase.EpochReplayRecord,
+	condition gamerecovery.EpochReplayCommitCondition,
+	record gamerecovery.EpochReplayRecord,
 ) bool {
 	return condition.Validate() == nil && record.Validate() == nil &&
 		fence.current.Identity() == condition.CurrentAuthority &&
@@ -372,23 +372,23 @@ func validExecutionRecoveryRepository(
 func executionRecoveryCandidateFromRow(
 	row sqlc.ListExecutionRecoveryGamesRow,
 	current authoritydomain.Identity,
-) (gameusecase.RecoveryCandidate, error) {
+) (gamerecovery.RecoveryCandidate, error) {
 	if row.CurrentAuthorityRevision < 1 || !row.DueAt.Valid || row.GameAttemptID == uuid.Nil ||
 		row.TournamentID != current.TournamentID || row.RosterID == uuid.Nil || row.WaveID == uuid.Nil ||
 		row.SeriesID == uuid.Nil || row.SlotID == uuid.Nil || row.AssignmentID == uuid.Nil ||
 		row.AssignmentAttemptID == uuid.Nil || row.SnapshotID == uuid.Nil || row.AttemptNumber < 1 ||
 		row.AttemptRevision < 1 {
-		return gameusecase.RecoveryCandidate{}, domain.ErrInternal
+		return gamerecovery.RecoveryCandidate{}, domain.ErrInternal
 	}
 	dueAt := row.DueAt.Time.Round(0).UTC()
 	if !domain.IsValidServerTime(dueAt) {
-		return gameusecase.RecoveryCandidate{}, domain.ErrInternal
+		return gamerecovery.RecoveryCandidate{}, domain.ErrInternal
 	}
 	bound := authoritydomain.Stamp{LeaseID: row.BoundLeaseID, Epoch: row.BoundEpoch}
 	if bound.Validate() != nil {
-		return gameusecase.RecoveryCandidate{}, domain.ErrInternal
+		return gamerecovery.RecoveryCandidate{}, domain.ErrInternal
 	}
-	candidate := gameusecase.RecoveryCandidate{
+	candidate := gamerecovery.RecoveryCandidate{
 		Scope: domain.FailedAttemptScope{
 			TournamentID:        current.TournamentID,
 			WaveID:              row.WaveID,
@@ -407,7 +407,7 @@ func executionRecoveryCandidateFromRow(
 		Deadline:       dueAt,
 	}
 	if candidate.State != domain.GameStateActive && candidate.State != domain.GameStatePaused {
-		return gameusecase.RecoveryCandidate{}, domain.ErrInternal
+		return gamerecovery.RecoveryCandidate{}, domain.ErrInternal
 	}
 	if candidate.BoundAuthority != current.Stamp() && candidate.State == domain.GameStateActive {
 		candidate.EpochReplay = executionEpochReplayCommand(candidate, current)
@@ -416,11 +416,11 @@ func executionRecoveryCandidateFromRow(
 }
 
 func executionEpochReplayCommand(
-	candidate gameusecase.RecoveryCandidate,
+	candidate gamerecovery.RecoveryCandidate,
 	current authoritydomain.Identity,
-) *gameusecase.EpochReplayCommand {
+) *gamerecovery.EpochReplayCommand {
 	commandID := executionRecoveryID(candidate.Scope.GameID, candidate.BoundAuthority, "command")
-	return &gameusecase.EpochReplayCommand{
+	return &gamerecovery.EpochReplayCommand{
 		CurrentAuthority: current,
 		BrokenAuthority:  candidate.BoundAuthority,
 		RosterID:         candidate.RosterID,
@@ -457,7 +457,7 @@ func executionRecoveryID(
 }
 
 func executionEpochReplaySettlementInput(
-	record gameusecase.EpochReplayRecord,
+	record gamerecovery.EpochReplayRecord,
 	snapshot terminalrepo.GameTimeoutSnapshot,
 ) (resultrepo.ResultSettlementInput, error) {
 	if record.Validate() != nil || snapshot.Game == nil || len(snapshot.Series) != 1 {
@@ -513,7 +513,7 @@ func executionEpochReplaySettlementInput(
 func (repository *ExecutionRecoveryPostgres) findEpochReplayByGame(
 	ctx context.Context,
 	gameID uuid.UUID,
-) (*gameusecase.EpochReplayRecord, error) {
+) (*gamerecovery.EpochReplayRecord, error) {
 	row, err := repository.tx.Querier(ctx).FindExecutionEpochReplayByGame(ctx, gameID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
@@ -527,7 +527,7 @@ func (repository *ExecutionRecoveryPostgres) findEpochReplayByGame(
 func (repository *ExecutionRecoveryPostgres) findEpochReplayByCommand(
 	ctx context.Context,
 	commandID uuid.UUID,
-) (*gameusecase.EpochReplayRecord, error) {
+) (*gamerecovery.EpochReplayRecord, error) {
 	row, err := repository.tx.Querier(ctx).FindExecutionEpochReplayByCommand(ctx, commandID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
@@ -569,8 +569,8 @@ func (repository *ExecutionRecoveryPostgres) lockEpochReplayFence(
 
 func (repository *ExecutionRecoveryPostgres) createEpochReplay(
 	ctx context.Context,
-	condition gameusecase.EpochReplayCommitCondition,
-	record gameusecase.EpochReplayRecord,
+	condition gamerecovery.EpochReplayCommitCondition,
+	record gamerecovery.EpochReplayRecord,
 ) error {
 	//nolint:musttag // This versioned application-owned document is validated on both encode and decode.
 	document, err := json.Marshal(record)
@@ -632,7 +632,7 @@ type executionEpochReplayStoredRow struct {
 
 func executionEpochReplayRecordFromRow(
 	row sqlc.ExecutionEpochReplay,
-) (*gameusecase.EpochReplayRecord, error) {
+) (*gamerecovery.EpochReplayRecord, error) {
 	return mapExecutionEpochReplayRecord(executionEpochReplayStoredRow{
 		commandID: row.CommandID, gameAttemptID: row.GameAttemptID,
 		tournamentID: row.TournamentID, rosterID: row.RosterID, waveID: row.WaveID,
@@ -649,7 +649,7 @@ func executionEpochReplayRecordFromRow(
 //nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func mapExecutionEpochReplayRecord(
 	row executionEpochReplayStoredRow,
-) (*gameusecase.EpochReplayRecord, error) {
+) (*gamerecovery.EpochReplayRecord, error) {
 	if row.commandID == uuid.Nil || row.gameAttemptID == uuid.Nil || row.tournamentID == uuid.Nil ||
 		row.rosterID == uuid.Nil || row.waveID == uuid.Nil || row.seriesID == uuid.Nil ||
 		row.slotID == uuid.Nil || row.assignmentID == uuid.Nil || row.assignmentAttemptID == uuid.Nil ||
@@ -660,7 +660,7 @@ func mapExecutionEpochReplayRecord(
 		len(row.recordDocument) == 0 {
 		return nil, domain.ErrInternal
 	}
-	var record gameusecase.EpochReplayRecord
+	var record gamerecovery.EpochReplayRecord
 	//nolint:musttag // This versioned application-owned document is validated on both encode and decode.
 	if err := json.Unmarshal(row.recordDocument, &record); err != nil {
 		return nil, fmt.Errorf("decode immutable replay record: %w", err)

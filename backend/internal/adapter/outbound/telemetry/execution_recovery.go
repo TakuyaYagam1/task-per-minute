@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/observability"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gamerecovery "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/recovery"
 )
 
 const (
@@ -36,7 +36,7 @@ func NewExecutionRecoveryObserver(
 
 func (observer *ExecutionRecoveryObserver) ObserveExecutionRecovery(
 	ctx context.Context,
-	event gameusecase.RecoveryEvent,
+	event gamerecovery.RecoveryEvent,
 ) {
 	if observer == nil || observer.observer == nil || event.TournamentID == uuid.Nil ||
 		event.Revision < 0 {
@@ -57,10 +57,10 @@ func (observer *ExecutionRecoveryObserver) ObserveExecutionRecovery(
 	})
 }
 
-func executionRecoveryCorrelation(event gameusecase.RecoveryEvent) string {
+func executionRecoveryCorrelation(event gamerecovery.RecoveryEvent) string {
 	input := event.TournamentID.String() + ":" + strconv.FormatInt(event.Revision, 10)
 	digest := sha256.Sum256([]byte(input))
 	return "execution-recovery-" + hex.EncodeToString(digest[:12])
 }
 
-var _ gameusecase.RecoveryObserver = (*ExecutionRecoveryObserver)(nil)
+var _ gamerecovery.RecoveryObserver = (*ExecutionRecoveryObserver)(nil)

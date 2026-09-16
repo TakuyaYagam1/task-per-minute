@@ -13,7 +13,7 @@ import (
 	telemetryadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/telemetry"
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	authorityusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/authority"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gamerecovery "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/recovery"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/recovery"
 )
 
@@ -103,27 +103,27 @@ func provideExecutionRecoveryRepository(
 func provideExecutionEpochReplay(
 	repository *executionrecoveryrepo.ExecutionRecoveryPostgres,
 	timeSource *authorityrepo.ExecutionAuthorityPostgres,
-) *gameusecase.EpochReplayUseCase {
-	return gameusecase.NewEpochReplayUseCase(repository, timeSource)
+) *gamerecovery.EpochReplayUseCase {
+	return gamerecovery.NewEpochReplayUseCase(repository, timeSource)
 }
 
 func provideExecutionRecoverer(
 	authority *authorityrepo.ExecutionAuthorityPostgres,
 	repository *executionrecoveryrepo.ExecutionRecoveryPostgres,
-	replayer *gameusecase.EpochReplayUseCase,
-) *gameusecase.Recoverer {
-	return gameusecase.NewRecoverer(authority, repository, repository, replayer, authority)
+	replayer *gamerecovery.EpochReplayUseCase,
+) *gamerecovery.Recoverer {
+	return gamerecovery.NewRecoverer(authority, repository, repository, replayer, authority)
 }
 
 func provideExecutionRecoveryRunner(
 	repository *executionrecoveryrepo.ExecutionRecoveryPostgres,
 	authority *authorityusecase.Controller,
-	recoverer *gameusecase.Recoverer,
+	recoverer *gamerecovery.Recoverer,
 	clock clockFunc,
 	observer *telemetryadapter.ExecutionRecoveryObserver,
 	golden inbound.GoldenUseCase,
-) (*gameusecase.RecoveryRunner, error) {
-	return gameusecase.NewRecoveryRunner(repository, authority, recoverer, clock, gameusecase.RecoveryRunnerConfig{
+) (*gamerecovery.RecoveryRunner, error) {
+	return gamerecovery.NewRecoveryRunner(repository, authority, recoverer, clock, gamerecovery.RecoveryRunnerConfig{
 		Observer: observer,
 		Golden:   golden,
 	})

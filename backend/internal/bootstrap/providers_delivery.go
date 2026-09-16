@@ -13,7 +13,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/observability"
 	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/eventdelivery"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gamerecovery "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/recovery"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/recovery"
 	taskusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/task"
 	participantconnection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/connection"
@@ -100,7 +100,7 @@ func provideRuntimeWorkers(
 	privateTaskAvailability *taskusecase.AvailabilityMonitor,
 	deadlineScheduler *recovery.DeadlineScheduler,
 	swissDraftDeadlines *draftusecase.DeadlineWorker,
-	executionRecovery *gameusecase.RecoveryRunner,
+	executionRecovery *gamerecovery.RecoveryRunner,
 	participantConnectionReaper *participantconnection.Reaper,
 	recoveryWorker *recovery.Worker,
 	clock clockFunc,
