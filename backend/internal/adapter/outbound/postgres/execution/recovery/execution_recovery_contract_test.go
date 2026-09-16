@@ -1,4 +1,4 @@
-package postgres
+package recovery
 
 import (
 	"os"
@@ -11,9 +11,9 @@ import (
 func TestExecutionRecoveryRetainsImmutableEpochEvidenceAndLatestFence(t *testing.T) {
 	t.Parallel()
 
-	migration, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "migrations", "000005_game_schema.sql"))
+	migration, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "..", "db", "migrations", "000005_game_schema.sql"))
 	require.NoError(t, err)
-	queries, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "queries", "execution_recovery.sql"))
+	queries, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "..", "db", "queries", "execution_recovery.sql"))
 	require.NoError(t, err)
 
 	for _, fragment := range []string{
