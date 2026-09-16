@@ -1,4 +1,4 @@
-package postgres
+package wave
 
 import (
 	"github.com/google/uuid"
