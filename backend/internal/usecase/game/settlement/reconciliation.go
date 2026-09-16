@@ -1,4 +1,4 @@
-package game
+package settlement
 
 import (
 	"github.com/google/uuid"

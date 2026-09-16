@@ -8,7 +8,6 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
-	gamedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/game"
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
 	seriesdomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/series"
 	assignmentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/assignment"
@@ -660,16 +659,6 @@ type ReplayReplacementRepository interface {
 		ctx context.Context,
 		replacement ReplayReplacement,
 	) (*ReplayReplacement, bool, error)
-}
-type SettlementRepository interface {
-	LoadConcurrentWinnerAuthority(
-		ctx context.Context,
-		scope gamedomain.SubmissionScope,
-	) (SettlementAuthority, error)
-	CommitConcurrentWinnerSettlement(
-		ctx context.Context,
-		settlement SettlementRecord,
-	) (*SettlementRecord, bool, error)
 }
 type WaveClock interface {
 	Now() time.Time
