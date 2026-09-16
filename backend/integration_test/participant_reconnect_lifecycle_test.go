@@ -481,18 +481,7 @@ func createParticipantReconnectContentConfiguration(
 			($2, 'reverse', $3), ($2, 'pwn', $3)`,
 		bo1PoolID, bo3PoolID, at)
 	require.NoError(t, err)
-	_, err = sharedPool.Exec(ctx, `
-		INSERT INTO tournament_content_stage_defaults (
-			configuration_id, stage, format, category_mode,
-			category_pool_revision_id, task_pool_kind, categories, created_at
-		)
-		VALUES
-			($1, 'swiss', 'bo1', 'random', $2, 'normal', '["web"]'::jsonb, $4),
-			($1, 'golden', 'bo1', 'random', $2, 'golden', '["web"]'::jsonb, $4),
-			($1, 'semifinal', 'bo1', 'draft', $2, 'normal', '["web", "crypto", "forensics"]'::jsonb, $4),
-			($1, 'final', 'bo3', 'draft', $3, 'normal', '["web", "crypto", "forensics", "reverse", "pwn"]'::jsonb, $4)`,
-		configurationID, bo1PoolID, bo3PoolID, at)
-	require.NoError(t, err)
+	insertTournamentContentStageDefaults(ctx, t, configurationID, bo1PoolID, bo3PoolID, at)
 	_, err = sharedPool.Exec(ctx, `
 		UPDATE tournament_content_configurations
 		SET state = 'published', published_at = $2

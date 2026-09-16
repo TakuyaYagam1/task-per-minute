@@ -287,18 +287,7 @@ func createDraftContentConfigurationFromCurrentTasks(
 			($2, 'reverse', $3), ($2, 'pwn', $3)`,
 		bo1PoolID, bo3PoolID, at)
 	require.NoError(tb, err)
-	_, err = sharedPool.Exec(ctx, `
-		INSERT INTO tournament_content_stage_defaults (
-			configuration_id, stage, format, category_mode, categories,
-			category_pool_revision_id, task_pool_kind, created_at
-		)
-		VALUES
-			($1, 'swiss', 'bo1', 'random', '["web"]', $2, 'normal', $4),
-			($1, 'golden', 'bo1', 'random', '["web"]', $2, 'golden', $4),
-			($1, 'semifinal', 'bo1', 'draft', '["web","crypto","forensics"]', $2, 'normal', $4),
-			($1, 'final', 'bo3', 'draft', '["web","crypto","forensics","reverse","pwn"]', $3, 'normal', $4)`,
-		configurationID, bo1PoolID, bo3PoolID, at)
-	require.NoError(tb, err)
+	insertTournamentContentStageDefaults(ctx, tb, configurationID, bo1PoolID, bo3PoolID, at)
 	_, err = sharedPool.Exec(ctx, `
 		UPDATE tournament_content_configurations
 		SET state = 'published', published_at = $2
