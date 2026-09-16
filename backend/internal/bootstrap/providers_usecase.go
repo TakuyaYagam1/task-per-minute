@@ -30,6 +30,7 @@ import (
 	authorityusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/authority"
 	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gamesubmission "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/submission"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/idempotency"
 	leaderboardusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/leaderboard"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/participantarchive"
@@ -209,8 +210,8 @@ func provideParticipantDraft(
 
 func provideParticipantSubmission(
 	repository *participantsubmissionrepo.ParticipantSubmissionRepository,
-) *gameusecase.SubmissionUseCase {
-	return gameusecase.NewSubmissionUseCase(repository)
+) *gamesubmission.SubmissionUseCase {
+	return gamesubmission.NewSubmissionUseCase(repository)
 }
 
 func provideParticipantPostSeries(

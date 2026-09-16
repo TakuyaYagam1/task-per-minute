@@ -53,6 +53,7 @@ import (
 	authusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/auth"
 	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gamesubmission "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/submission"
 	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/idempotency"
 	leaderboardusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/leaderboard"
@@ -324,7 +325,7 @@ var UseCasesSet = wire.NewSet(
 	wire.Bind(new(tournamentparticipant.DraftActionWorkflow), new(*draftusecase.ActionUseCase)),
 	provideSwissDraftDeadlineWorker,
 	provideParticipantSubmission,
-	wire.Bind(new(tournamentparticipant.SubmissionWorkflow), new(*gameusecase.SubmissionUseCase)),
+	wire.Bind(new(tournamentparticipant.SubmissionWorkflow), new(*gamesubmission.SubmissionUseCase)),
 	provideParticipantSurrender,
 	wire.Bind(new(tournamentparticipant.SurrenderWorkflow), new(*participantsurrenderrepo.ParticipantSurrenderWorkflow)),
 	provideParticipantPostSeries,

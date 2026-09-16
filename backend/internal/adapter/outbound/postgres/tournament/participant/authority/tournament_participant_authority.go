@@ -17,6 +17,7 @@ import (
 	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gamesubmission "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/submission"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/readiness"
 	tournamentparticipant "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/participant"
@@ -168,7 +169,7 @@ func resolvedSubmissionCommand(
 ) tournamentparticipant.ResolvedSubmission {
 	return tournamentparticipant.ResolvedSubmission{
 		Authority: authority,
-		Command: gameusecase.SubmissionCommand{
+		Command: gamesubmission.SubmissionCommand{
 			Scope: gamedomain.SubmissionScope{
 				WaveID: row.WaveID,
 				Game: gamedomain.Scope{
@@ -193,16 +194,16 @@ func participantSubmissionReplay(
 	scope sqlc.LockParticipantSubmissionReplayScopeRow,
 	row sqlc.FindParticipantSubmissionReplayRow,
 ) (tournamentparticipant.ResolvedSubmission, error) {
-	intentDigest, err := gameusecase.SubmissionIntentDigest(command.SubmittedFlag)
+	intentDigest, err := gamesubmission.SubmissionIntentDigest(command.SubmittedFlag)
 	if err != nil {
 		return tournamentparticipant.ResolvedSubmission{}, domain.ErrValidation
 	}
 	if !bytes.Equal(row.IntentDigest, intentDigest[:]) {
-		return tournamentparticipant.ResolvedSubmission{}, gameusecase.ErrSubmissionCommandReuse
+		return tournamentparticipant.ResolvedSubmission{}, gamesubmission.ErrSubmissionCommandReuse
 	}
 	resolved := tournamentparticipant.ResolvedSubmission{
 		Authority: authority,
-		Command: gameusecase.SubmissionCommand{
+		Command: gamesubmission.SubmissionCommand{
 			Scope: gamedomain.SubmissionScope{
 				WaveID: scope.WaveID,
 				Game: gamedomain.Scope{
@@ -232,7 +233,7 @@ func participantSubmissionReplay(
 
 //nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func participantRecordedSubmissionReplay(
-	command gameusecase.SubmissionCommand,
+	command gamesubmission.SubmissionCommand,
 	row sqlc.FindParticipantSubmissionReplayRow,
 	authority tournamentparticipant.ParticipantCommandAuthority,
 ) (gamedomain.Submission, int64, error) {

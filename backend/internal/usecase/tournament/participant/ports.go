@@ -10,6 +10,7 @@ import (
 	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gamesubmission "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/submission"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/readiness"
 )
@@ -53,7 +54,7 @@ type ResolvedDraftAction struct {
 
 type ResolvedSubmission struct {
 	Authority ParticipantCommandAuthority
-	Command   gameusecase.SubmissionCommand
+	Command   gamesubmission.SubmissionCommand
 	Replay    *usecase.SubmissionResult
 }
 
@@ -86,7 +87,7 @@ type DraftActionWorkflow interface {
 type SubmissionWorkflow interface {
 	Submit(
 		ctx context.Context,
-		command gameusecase.SubmissionCommand,
+		command gamesubmission.SubmissionCommand,
 	) (record gamedomain.Submission, changed bool, err error)
 }
 

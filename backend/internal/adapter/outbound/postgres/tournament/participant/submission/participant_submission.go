@@ -18,7 +18,7 @@ import (
 	gamedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/game"
 	seriesdomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/series"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain/taskexec"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gamesubmission "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/submission"
 )
 
 const (
@@ -46,14 +46,14 @@ func NewParticipantSubmissionRepository(
 func (r *ParticipantSubmissionRepository) LoadSubmissionAuthority(
 	ctx context.Context,
 	scope gamedomain.SubmissionScope,
-) (gameusecase.SubmissionAuthority, error) {
+) (gamesubmission.SubmissionAuthority, error) {
 	if ctx == nil || r == nil || r.tx == nil || !scope.IsValid() {
-		return gameusecase.SubmissionAuthority{}, domain.ErrValidation
+		return gamesubmission.SubmissionAuthority{}, domain.ErrValidation
 	}
 	querier := r.tx.Querier(ctx)
 	attempt, series, metadata, err := loadParticipantSubmissionSeries(ctx, querier, scope)
 	if err != nil {
-		return gameusecase.SubmissionAuthority{}, err
+		return gamesubmission.SubmissionAuthority{}, err
 	}
 	binding, err := querier.GetParticipantSubmissionBinding(
 		ctx,
@@ -64,23 +64,23 @@ func (r *ParticipantSubmissionRepository) LoadSubmissionAuthority(
 		},
 	)
 	if err != nil {
-		return gameusecase.SubmissionAuthority{}, participantSubmissionLookupError("binding", err)
+		return gamesubmission.SubmissionAuthority{}, participantSubmissionLookupError("binding", err)
 	}
 	snapshot, digest, err := participantSubmissionSnapshotFromRow(binding)
 	if err != nil {
-		return gameusecase.SubmissionAuthority{}, err
+		return gamesubmission.SubmissionAuthority{}, err
 	}
 	startedAt, ok := participantSubmissionStartedAt(series, scope, binding)
 	if !ok {
-		return gameusecase.SubmissionAuthority{}, domain.ErrConflict
+		return gamesubmission.SubmissionAuthority{}, domain.ErrConflict
 	}
 	presence, err := loadParticipantSubmissionPresence(ctx, querier, scope, attempt.RosterID)
 	if err != nil {
-		return gameusecase.SubmissionAuthority{}, err
+		return gamesubmission.SubmissionAuthority{}, err
 	}
 	history, err := loadParticipantSubmissionHistory(ctx, querier, scope, attempt.RosterID, binding)
 	if err != nil {
-		return gameusecase.SubmissionAuthority{}, err
+		return gamesubmission.SubmissionAuthority{}, err
 	}
 	started := gamedomain.Started{
 		Scope: scope.Game,
@@ -95,9 +95,9 @@ func (r *ParticipantSubmissionRepository) LoadSubmissionAuthority(
 		DeliveryEnabled: true,
 	}
 	if gamedomain.ValidateStarted(scope, started) != nil || metadata.AttemptRevisions[scope.Game.GameID] != binding.AttemptRevision {
-		return gameusecase.SubmissionAuthority{}, domain.ErrInternal
+		return gamesubmission.SubmissionAuthority{}, domain.ErrInternal
 	}
-	return gameusecase.SubmissionAuthority{
+	return gamesubmission.SubmissionAuthority{
 		Scope: scope, Revision: binding.AttemptRevision, StartedGame: started,
 		Snapshot: participantSubmissionSnapshot{
 			value: snapshot, digest: digest, participantIDs: started.ParticipantIDs,
@@ -191,7 +191,7 @@ func loadParticipantSubmissionHistory(
 
 func (r *ParticipantSubmissionRepository) CommitSubmission(
 	ctx context.Context,
-	commit gameusecase.SubmissionCommit,
+	commit gamesubmission.SubmissionCommit,
 ) (*gamedomain.Submission, bool, error) {
 	if ctx == nil || r == nil || r.tx == nil || r.results == nil ||
 		!validParticipantSubmissionCommit(commit) {
@@ -216,7 +216,7 @@ func (r *ParticipantSubmissionRepository) CommitSubmission(
 
 func (r *ParticipantSubmissionRepository) commitParticipantSubmission(
 	ctx context.Context,
-	commit gameusecase.SubmissionCommit,
+	commit gamesubmission.SubmissionCommit,
 ) (*gamedomain.Submission, bool, error) {
 	querier := r.tx.Querier(ctx)
 	attemptRow, err := querier.GetGameAttemptScoped(ctx, sqlc.GetGameAttemptScopedParams{
@@ -247,7 +247,7 @@ func (r *ParticipantSubmissionRepository) commitParticipantSubmission(
 		return nil, false, domain.ErrConflict
 	}
 	if !domain.IsValidServerTime(committedAt) || !committedAt.Before(commit.ExpectedDeadline) {
-		return nil, false, gameusecase.ErrSubmissionNotOpen
+		return nil, false, gamesubmission.ErrSubmissionNotOpen
 	}
 	status, decisionReason := participantSubmissionDecision(commit.Correct)
 	record, inserted, err := r.results.RecordSubmission(ctx, resultpostgres.SubmissionInput{
@@ -388,7 +388,7 @@ func participantSubmissionHistory(
 	return records, nil
 }
 
-func validParticipantSubmissionCommit(commit gameusecase.SubmissionCommit) bool {
+func validParticipantSubmissionCommit(commit gamesubmission.SubmissionCommit) bool {
 	return commit.Scope.IsValid() && commit.ExpectedAuthorityRevision >= 1 &&
 		commit.ExpectedGameState.IsValid() && !commit.ExpectedGameState.IsTerminal() &&
 		domain.IsValidServerTime(commit.ExpectedDeadline) && commit.CommandID != uuid.Nil &&
@@ -397,7 +397,7 @@ func validParticipantSubmissionCommit(commit gameusecase.SubmissionCommit) bool 
 }
 
 func participantSubmissionFromRecord(
-	commit gameusecase.SubmissionCommit,
+	commit gamesubmission.SubmissionCommit,
 	record *resultpostgres.SubmissionRecord,
 ) (gamedomain.Submission, error) {
 	if record == nil || record.Scope.TournamentID != commit.Scope.Game.TournamentID ||
@@ -445,4 +445,4 @@ func nullableUUIDValue(value uuid.UUID) uuid.NullUUID {
 	return uuid.NullUUID{UUID: value, Valid: value != uuid.Nil}
 }
 
-var _ gameusecase.SubmissionRepository = (*ParticipantSubmissionRepository)(nil)
+var _ gamesubmission.SubmissionRepository = (*ParticipantSubmissionRepository)(nil)
