@@ -7,7 +7,6 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	rosterrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/roster"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
@@ -93,25 +92,6 @@ func (r *TournamentPostgres) LockRosterAndReserve(
 	return rosterRecordFromRoster(record), changed, err
 }
 
-func (r *TournamentPostgres) lockRosterAndReserve(
-	ctx context.Context,
-	rosterID uuid.UUID,
-	expectedRevision int64,
-	expectedPlayerIDs []uuid.UUID,
-	lockedAt time.Time,
-) (sqlc.Roster, error) {
-	if r == nil || r.tx == nil {
-		return sqlc.Roster{}, domain.ErrValidation
-	}
-	locked, err := rosterrepo.NewRosterPostgres(r.tx).LockRosterAndReserveInternal(
-		ctx, rosterID, expectedRevision, expectedPlayerIDs, lockedAt,
-	)
-	if errors.Is(err, rosterrepo.ErrRosterCAS) {
-		return locked, errRosterCAS
-	}
-	return locked, err
-}
-
 func (r *TournamentPostgres) UnlockRosterAndRelease(
 	ctx context.Context,
 	rosterID uuid.UUID,
@@ -188,5 +168,3 @@ func rosterRecordFromRoster(record *rosterrepo.RosterRecord) *RosterRecord {
 		CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt,
 	}
 }
-
-var errRosterCAS = errors.New("roster compare-and-set failed")
