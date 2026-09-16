@@ -1,6 +1,6 @@
 package postgres
 
-import "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/draft"
+import "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment/draft"
 
 type DraftPersistenceState = draft.DraftPersistenceState
 
