@@ -12,9 +12,9 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 
-	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
 	executionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/execution"
+	participantauthorityrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/authority"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
@@ -32,7 +32,7 @@ func TestParticipantOutsiderDoesNotWaitForTournamentLock(t *testing.T) {
 
 	lookupCtx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
-	_, err = postgres.NewTournamentParticipantPostgres(fixture.tx).ResolveSubmission(lookupCtx, usecase.SubmissionCommand{
+	_, err = participantauthorityrepo.NewTournamentParticipantPostgres(fixture.tx).ResolveSubmission(lookupCtx, usecase.SubmissionCommand{
 		Actor: usecase.Identity{PlayerID: uuid.New()}, TournamentID: fixture.tournamentID,
 	})
 	require.ErrorIs(t, err, domain.ErrAssignmentParticipant)

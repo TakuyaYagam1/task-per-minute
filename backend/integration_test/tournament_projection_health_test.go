@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	projectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
 	"github.com/TakuyaYagam1/task-per-minute/internal/observability"
 )
 
@@ -19,7 +20,7 @@ func TestTournamentProjectionHealthUsesDurableDraftLagAcrossRestart(t *testing.T
 	resetMigrationTables(ctx, t)
 	t.Cleanup(func() { resetMigrationTables(ctx, t) })
 
-	first := postgres.NewProjectionHealthPostgres(postgres.NewTxManager(sharedPool))
+	first := projectionrepo.NewProjectionHealthPostgres(postgres.NewTxManager(sharedPool))
 	empty, err := first.ProjectionHealth(ctx)
 	require.NoError(t, err)
 	require.Zero(t, empty.PendingCount)
@@ -31,7 +32,7 @@ func TestTournamentProjectionHealthUsesDurableDraftLagAcrossRestart(t *testing.T
 
 	// A newly constructed source observes durable state rather than process-local
 	// delivery or session state.
-	restarted := postgres.NewProjectionHealthPostgres(postgres.NewTxManager(sharedPool))
+	restarted := projectionrepo.NewProjectionHealthPostgres(postgres.NewTxManager(sharedPool))
 	lag, err := restarted.ProjectionHealth(ctx)
 	require.NoError(t, err)
 	require.EqualValues(t, 1, lag.PendingCount)
@@ -47,7 +48,7 @@ func TestTournamentProjectionHealthRejectsFutureDurableDraft(t *testing.T) {
 	t.Cleanup(func() { resetMigrationTables(ctx, t) })
 
 	insertProjectionHealthDraft(ctx, t, time.Now().UTC().Add(time.Minute).Truncate(time.Microsecond))
-	_, err := postgres.NewProjectionHealthPostgres(postgres.NewTxManager(sharedPool)).ProjectionHealth(ctx)
+	_, err := projectionrepo.NewProjectionHealthPostgres(postgres.NewTxManager(sharedPool)).ProjectionHealth(ctx)
 	require.ErrorIs(t, err, observability.ErrInvalidProjectionHealth)
 }
 

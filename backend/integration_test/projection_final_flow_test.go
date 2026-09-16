@@ -9,11 +9,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	draftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment/draft"
 	gamedb "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/game"
+	resultrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result"
 	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
+	participantdraftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/draft"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	gamedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/game"
 	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
@@ -68,7 +69,7 @@ func prepareActiveFinal(ctx context.Context, t *testing.T) (tournamentAdminSwiss
 		_, err := fixture.tx.Querier(ctx).LockPostseasonFinalGenesis(ctx, params)
 		require.ErrorIs(t, err, pgx.ErrNoRows, field)
 	}
-	drafts := postgres.NewParticipantDraftRepository(fixture.tx, draftrepo.NewDraftPostgres(fixture.tx))
+	drafts := participantdraftrepo.NewParticipantDraftRepository(fixture.tx, draftrepo.NewDraftPostgres(fixture.tx))
 	current, err := drafts.LoadDraft(ctx, ids.DraftID)
 	require.NoError(t, err)
 	for current.State == draftusecase.ExecutionStateActive {
@@ -138,7 +139,7 @@ func TestFinalSettlementPublishesChampion(t *testing.T) {
 	require.Equal(t, 1, events)
 }
 
-func activeFinalSettlementInput(ctx context.Context, t *testing.T, fixture tournamentAdminSwissProofFixture, ids playoff.FinalStageIDs, position int) postgres.ResultSettlementInput {
+func activeFinalSettlementInput(ctx context.Context, t *testing.T, fixture tournamentAdminSwissProofFixture, ids playoff.FinalStageIDs, position int) resultrepo.ResultSettlementInput {
 	t.Helper()
 	gameID, slotID := ids.FirstGameID, ids.FirstSlotID
 	if position == 2 {
