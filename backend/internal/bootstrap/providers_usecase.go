@@ -15,6 +15,7 @@ import (
 	assignmentrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment"
 	draftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment/draft"
 	playoffrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/playoff"
+	catalogrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/catalog"
 	participantdraftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/draft"
 	participantpostseriesrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/postseries"
 	participantreadinessrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/readiness"
@@ -160,10 +161,10 @@ func provideTournamentIDGenerator() (*catalogusecase.DeterministicIDGenerator, e
 }
 
 func provideTournamentCatalog(
-	repository *postgres.TournamentPostgres,
+	repository *catalogrepo.TournamentCatalogPostgres,
 	clk catalogusecase.CatalogClock,
 ) *catalogusecase.TournamentUseCase {
-	return catalogusecase.NewTournamentUseCase(postgres.NewTournamentCatalogPostgres(repository), clk)
+	return catalogusecase.NewTournamentUseCase(repository, clk)
 }
 
 func provideTournamentApplication(

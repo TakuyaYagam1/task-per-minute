@@ -27,7 +27,9 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/roster"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/snapshot"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/cancellation"
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/catalog"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/configuration"
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/creation"
 	lifecycle2 "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/lifecycle"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant"
 	authority2 "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/authority"
@@ -89,9 +91,9 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 		cleanup()
 		return nil, nil, err
 	}
-	tournamentPostgres := postgres.NewTournamentPostgres(txManager)
-	tournamentUseCase := provideTournamentCatalog(tournamentPostgres, bootstrapClockFunc)
-	tournamentCreatePostgres := postgres.NewTournamentCreatePostgres(tournamentPostgres)
+	tournamentCatalogPostgres := catalog.NewTournamentCatalogPostgres(txManager)
+	tournamentUseCase := provideTournamentCatalog(tournamentCatalogPostgres, bootstrapClockFunc)
+	tournamentCreatePostgres := creation.NewProductionTournamentCreatePostgres(txManager)
 	tournamentContentPostgres := configuration.NewTournamentContentPostgres(txManager)
 	commandReceiptStore := provideTournamentCommandReceipts(client)
 	catalogUseCase := provideTournamentApplication(deterministicIDGenerator, bootstrapClockFunc, tournamentUseCase, tournamentCreatePostgres, tournamentContentPostgres, commandReceiptStore)

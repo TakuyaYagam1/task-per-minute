@@ -31,7 +31,9 @@ import (
 	adminrosterrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/roster"
 	adminsnapshotrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/snapshot"
 	cancellationrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/cancellation"
+	catalogrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/catalog"
 	contentrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/configuration"
+	creationrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/creation"
 	lifecyclerepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/lifecycle"
 	participantrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant"
 	participantauthorityrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/authority"
@@ -122,9 +124,9 @@ var ReposSet = wire.NewSet(
 	taskrepo.NewTaskPostgres,
 	wire.Bind(new(taskusecase.Repository), new(*taskrepo.TaskPostgres)),
 
-	postgres.NewTournamentPostgres,
-	postgres.NewTournamentCreatePostgres,
-	wire.Bind(new(catalogusecase.TournamentCreateStore), new(*postgres.TournamentCreatePostgres)),
+	catalogrepo.NewTournamentCatalogPostgres,
+	creationrepo.NewProductionTournamentCreatePostgres,
+	wire.Bind(new(catalogusecase.TournamentCreateStore), new(*creationrepo.TournamentCreatePostgres)),
 	contentrepo.NewTournamentContentPostgres,
 	wire.Bind(new(catalogusecase.ContentReader), new(*contentrepo.TournamentContentPostgres)),
 	lifecyclerepo.NewTournamentLifecyclePostgres,
