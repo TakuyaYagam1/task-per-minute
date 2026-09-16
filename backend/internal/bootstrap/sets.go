@@ -11,16 +11,25 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/incidentauth"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/objectstorage"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	assignmentrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment"
+	draftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment/draft"
+	exactdraftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment/exactdraft"
 	auditrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/audit"
+	authorityrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/authority"
+	waverepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/wave"
 	leaderboardrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/leaderboard"
 	playerrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/player"
+	playoffrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/playoff"
 	projectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
 	taskrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/task"
+	executionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/execution"
 	adminreplayrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/replay"
 	adminrosterrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/roster"
 	adminsnapshotrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/snapshot"
 	cancellationrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/cancellation"
 	contentrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/configuration"
+	participantdraftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/draft"
+	deadlinerepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/swiss/deadline"
 	redisadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/redis"
 	"github.com/TakuyaYagam1/task-per-minute/internal/observability"
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
@@ -113,14 +122,17 @@ var ReposSet = wire.NewSet(
 	wire.Bind(new(tournamentpause.TournamentPauseRepository), new(*postgres.TournamentAdminLifecyclePostgres)),
 	adminrosterrepo.NewTournamentAdminRosterPostgres,
 	wire.Bind(new(tournamentadmin.RosterWorkflowRepository), new(*adminrosterrepo.TournamentAdminRosterPostgres)),
-	postgres.NewTournamentAdminExecutionPostgres,
-	wire.Bind(new(tournamentadmin.ExecutionWorkflowRepository), new(*postgres.TournamentAdminExecutionPostgres)),
-	wire.Bind(new(tournamentadmin.NormalPauseExecutionRepository), new(*postgres.TournamentAdminExecutionPostgres)),
-	wire.Bind(new(gameusecase.StartRepository), new(*postgres.TournamentAdminExecutionPostgres)),
+	provideTournamentExecutionRepository,
+	wire.Bind(new(tournamentadmin.ExecutionWorkflowRepository), new(*executionrepo.Repository)),
+	wire.Bind(new(tournamentadmin.NormalPauseExecutionRepository), new(*executionrepo.Repository)),
+	wire.Bind(new(gameusecase.StartRepository), new(*executionrepo.Repository)),
+	wire.Bind(new(gameusecase.NormalPauseRepository), new(*executionrepo.Repository)),
+	wire.Bind(new(gameusecase.PauseResumeRepository), new(*executionrepo.Repository)),
+	wire.Bind(new(gameusecase.PauseResumePresenceRepository), new(*executionrepo.Repository)),
 	postgres.NewTournamentPausedPresencePostgres,
 	postgres.NewTournamentConfigurationPostgres,
 	wire.Bind(new(tournamentadmin.TournamentConfigurationRepository), new(*postgres.TournamentConfigurationPostgres)),
-	postgres.NewExecutionAuthorityPostgres,
+	authorityrepo.NewExecutionAuthorityPostgres,
 	postgres.NewTournamentSnapshotPostgres,
 	wire.Bind(new(inbound.TournamentSnapshotUseCase), new(*postgres.TournamentSnapshotPostgres)),
 	auditrepo.NewTournamentAdminAuditPostgres,
@@ -128,18 +140,18 @@ var ReposSet = wire.NewSet(
 	wire.Bind(new(tournamentadmin.IncidentSnapshotPort), new(*auditrepo.TournamentAdminAuditPostgres)),
 	adminsnapshotrepo.NewTournamentAdminSnapshotPostgres,
 	wire.Bind(new(tournamentadmin.SnapshotPort), new(*adminsnapshotrepo.TournamentAdminSnapshotPostgres)),
-	postgres.NewWavePostgres,
-	postgres.NewDraftPostgres,
+	waverepo.NewWavePostgres,
+	draftrepo.NewDraftPostgres,
 	postgres.NewResultPostgres,
-	postgres.NewAssignmentPostgres,
-	postgres.NewExactDraftBranchPlanPostgres,
-	wire.Bind(new(assignmentusecase.ExactDraftBranchPlanRepository), new(*postgres.ExactDraftBranchPlanPostgres)),
-	wire.Bind(new(playoff.ExactDraftPlanAuthorityReader), new(*postgres.ExactDraftBranchPlanPostgres)),
-	wire.Bind(new(playoff.ExactDraftCommittedPlanReader), new(*postgres.ExactDraftBranchPlanPostgres)),
+	assignmentrepo.NewAssignmentPostgres,
+	exactdraftrepo.NewExactDraftBranchPlanPostgres,
+	wire.Bind(new(assignmentusecase.ExactDraftBranchPlanRepository), new(*exactdraftrepo.ExactDraftBranchPlanPostgres)),
+	wire.Bind(new(playoff.ExactDraftPlanAuthorityReader), new(*exactdraftrepo.ExactDraftBranchPlanPostgres)),
+	wire.Bind(new(playoff.ExactDraftCommittedPlanReader), new(*exactdraftrepo.ExactDraftBranchPlanPostgres)),
 	projectionrepo.NewProjectionPostgres,
 	wire.Bind(new(resultprojection.FinalPublicationRepository), new(*projectionrepo.ProjectionPostgres)),
-	postgres.NewPlayoffTerminalPostgres,
-	wire.Bind(new(playoff.TerminalRepository), new(*postgres.PlayoffTerminalPostgres)),
+	providePlayoffTerminalRepository,
+	wire.Bind(new(playoff.TerminalRepository), new(*playoffrepo.PlayoffTerminalPostgres)),
 	postgres.NewParticipantSettlementRepository,
 	postgres.NewParticipantSettlementWorkflow,
 	wire.Bind(new(tournamentparticipant.SettlementWorkflow), new(*postgres.ParticipantSettlementWorkflow)),
@@ -161,11 +173,13 @@ var ReposSet = wire.NewSet(
 	postgres.NewParticipantArchivePostgres,
 	wire.Bind(new(participantarchive.Repository), new(*postgres.ParticipantArchivePostgres)),
 	postgres.NewParticipantReadinessRepository,
-	postgres.NewParticipantDraftRepository,
-	postgres.NewSwissDraftDeadlinePostgres,
+	provideParticipantDraftRepository,
+	wire.Bind(new(deadlinerepo.ParticipantDraftRepository), new(*participantdraftrepo.ParticipantDraftRepository)),
+	deadlinerepo.NewSwissDraftDeadlinePostgres,
 	postgres.NewParticipantSubmissionRepository,
 	postgres.NewParticipantForfeitRepository,
 	postgres.NewParticipantPostSeriesRepository,
+	wire.Bind(new(gameusecase.ReconnectRepository), new(*executionrepo.Repository)),
 	provideRealtimeOutbox,
 	taskrepo.NewPrivateTaskAvailabilityPostgres,
 	wire.Bind(new(taskusecase.BacklogSource), new(*taskrepo.PrivateTaskAvailabilityPostgres)),

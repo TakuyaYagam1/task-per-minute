@@ -4,6 +4,12 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	authorityrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/authority"
+	executionrecoveryrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/recovery"
+	recoveryrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/recovery"
+	terminalrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/recovery/terminal"
+	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
+	wavestartrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/execution/wavestart"
 	telemetryadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/telemetry"
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	authorityusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/authority"
@@ -13,15 +19,21 @@ import (
 
 func provideRecoveryTerminalStore(
 	transactions *postgres.TxManager,
-	authority *postgres.ExecutionAuthorityPostgres,
+	authority *authorityrepo.ExecutionAuthorityPostgres,
 	clock clockFunc,
-) *postgres.RecoveryTerminalPostgres {
-	return postgres.NewRecoveryTerminalPostgres(transactions, authority, clock)
+) *terminalrepo.RecoveryTerminalPostgres {
+	return terminalrepo.NewRecoveryTerminalPostgresWithDependencies(
+		transactions,
+		authority,
+		clock,
+		wavestartrepo.EnsurePreStartSwissRoundProofForCommand,
+		resultauthority.FinalizeProjection,
+	)
 }
 
 func provideRecoveryDeadlineHandler(
 	transactions *postgres.TxManager,
-	store *postgres.RecoveryTerminalPostgres,
+	store *terminalrepo.RecoveryTerminalPostgres,
 	clock clockFunc,
 	terminalAdvancer recovery.TerminalAdvancer,
 	observer *telemetryadapter.ReconnectObserver,
@@ -43,12 +55,12 @@ func provideRecoveryDeadlineScheduler(
 func provideRecoveryRepository(
 	transactions *postgres.TxManager,
 	scheduler *recovery.DeadlineScheduler,
-) *postgres.RecoveryPostgres {
-	return postgres.NewRecoveryPostgres(transactions, scheduler)
+) *recoveryrepo.RecoveryPostgres {
+	return recoveryrepo.NewRecoveryPostgres(transactions, scheduler)
 }
 
 func provideRecoveryDeadlineSweep(
-	repository *postgres.RecoveryPostgres,
+	repository *recoveryrepo.RecoveryPostgres,
 	observer *telemetryadapter.RecoveryObserver,
 ) *recovery.DeadlineSweep {
 	return recovery.NewDeadlineSweep(repository, repository, observer)
@@ -68,7 +80,7 @@ func provideRecoveryWorker(
 // holder for this process. No inbound command can choose its holder, lease or
 // epoch, and the controller obtains lease time from PostgreSQL.
 func provideExecutionAuthorityController(
-	repository *postgres.ExecutionAuthorityPostgres,
+	repository *authorityrepo.ExecutionAuthorityPostgres,
 ) (*authorityusecase.Controller, error) {
 	return authorityusecase.NewController(repository, repository, authorityusecase.ControllerConfig{
 		HolderID: uuid.New(),
@@ -77,29 +89,34 @@ func provideExecutionAuthorityController(
 
 func provideExecutionRecoveryRepository(
 	transactions *postgres.TxManager,
-	deadlines *postgres.RecoveryPostgres,
-	terminal *postgres.RecoveryTerminalPostgres,
-) *postgres.ExecutionRecoveryPostgres {
-	return postgres.NewExecutionRecoveryPostgres(transactions, deadlines, terminal)
+	deadlines *recoveryrepo.RecoveryPostgres,
+	terminal *terminalrepo.RecoveryTerminalPostgres,
+) *executionrecoveryrepo.ExecutionRecoveryPostgres {
+	return executionrecoveryrepo.NewExecutionRecoveryPostgresWithDependencies(
+		transactions,
+		deadlines,
+		terminal,
+		resultauthority.FinalizeProjection,
+	)
 }
 
 func provideExecutionEpochReplay(
-	repository *postgres.ExecutionRecoveryPostgres,
-	timeSource *postgres.ExecutionAuthorityPostgres,
+	repository *executionrecoveryrepo.ExecutionRecoveryPostgres,
+	timeSource *authorityrepo.ExecutionAuthorityPostgres,
 ) *gameusecase.EpochReplayUseCase {
 	return gameusecase.NewEpochReplayUseCase(repository, timeSource)
 }
 
 func provideExecutionRecoverer(
-	authority *postgres.ExecutionAuthorityPostgres,
-	repository *postgres.ExecutionRecoveryPostgres,
+	authority *authorityrepo.ExecutionAuthorityPostgres,
+	repository *executionrecoveryrepo.ExecutionRecoveryPostgres,
 	replayer *gameusecase.EpochReplayUseCase,
 ) *gameusecase.Recoverer {
 	return gameusecase.NewRecoverer(authority, repository, repository, replayer, authority)
 }
 
 func provideExecutionRecoveryRunner(
-	repository *postgres.ExecutionRecoveryPostgres,
+	repository *executionrecoveryrepo.ExecutionRecoveryPostgres,
 	authority *authorityusecase.Controller,
 	recoverer *gameusecase.Recoverer,
 	clock clockFunc,

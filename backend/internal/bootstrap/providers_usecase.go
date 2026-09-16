@@ -12,6 +12,10 @@ import (
 	authadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/auth"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/incidentauth"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	assignmentrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment"
+	draftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment/draft"
+	playoffrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/playoff"
+	participantdraftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/draft"
 	redisadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/redis"
 	telemetryadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/telemetry"
 	tasktelemetry "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/telemetry/task"
@@ -192,7 +196,7 @@ func provideParticipantReadiness(
 }
 
 func provideParticipantDraft(
-	repository *postgres.ParticipantDraftRepository,
+	repository *participantdraftrepo.ParticipantDraftRepository,
 	clock clockFunc,
 ) *draftusecase.ActionUseCase {
 	return draftusecase.NewActionUseCase(repository, clock)
@@ -363,6 +367,22 @@ func providePlayoffTerminal(
 	return playoff.NewTerminalCoordinator(playoff.TerminalCoordinatorDependencies{
 		Repository: repository, Publisher: publisher, DraftPlanner: planner, Rehydrator: rehydrator,
 	})
+}
+
+func providePlayoffTerminalRepository(
+	tx *postgres.TxManager,
+	drafts *draftrepo.DraftPostgres,
+	assignments *assignmentrepo.AssignmentPostgres,
+) *playoffrepo.PlayoffTerminalPostgres {
+	var draftRepository playoffrepo.DraftRepository
+	if drafts != nil {
+		draftRepository = drafts
+	}
+	var createAssignmentTx playoffrepo.AssignmentWriter
+	if assignments != nil {
+		createAssignmentTx = assignments.CreateAssignmentTx
+	}
+	return playoffrepo.NewPlayoffTerminalPostgres(tx, draftRepository, createAssignmentTx)
 }
 
 func provideTournamentProgression(

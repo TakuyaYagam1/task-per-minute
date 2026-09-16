@@ -24,7 +24,7 @@ func provideParticipantConnectionCoordinator(
 	transactions *postgres.TxManager,
 	repository *postgres.ParticipantConnectionPostgres,
 	pausedPresenceRepository *postgres.TournamentPausedPresencePostgres,
-	reconnectRepository *postgres.TournamentAdminExecutionPostgres,
+	reconnectRepository gameusecase.ReconnectRepository,
 	readinessUseCase *readiness.ReadinessUseCase,
 	terminalAdvancer participantconnection.TerminalAdvancer,
 	clock clockFunc,
