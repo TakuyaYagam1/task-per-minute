@@ -194,10 +194,10 @@ func task042ReplayAuthority(
 	broken := authoritydomain.Stamp{LeaseID: task042ID(102), Epoch: 1}
 	rosterID := task042ID(120)
 	return gameusecase.EpochReplayAuthority{
-			Lease: lease, BoundAuthority: broken, RosterID: rosterID, Attempt: attemptAuthority,
-		}, gameusecase.EpochReplayCommand{
-			CurrentAuthority: lease.Identity(), BrokenAuthority: broken, RosterID: rosterID, Attempt: attemptCommand,
-		}
+		Lease: lease, BoundAuthority: broken, RosterID: rosterID, Attempt: attemptAuthority,
+	}, gameusecase.EpochReplayCommand{
+		CurrentAuthority: lease.Identity(), BrokenAuthority: broken, RosterID: rosterID, Attempt: attemptCommand,
+	}
 }
 
 func task042FailedAttemptFixture(

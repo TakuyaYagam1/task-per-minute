@@ -24,7 +24,7 @@ func ResultProjectionTarget(source sqlc.LockResultSourceProjectionRow, targetID 
 	if !ok {
 		return ResultProjectionTargetBinding{}, false
 	}
-	return ResultProjectionTargetBinding{ID: target.ID, Revision: target.Revision}, true
+	return ResultProjectionTargetBinding(target), true
 }
 
 // PublishResultProjectionWithFinalizer keeps the immutable projection

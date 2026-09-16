@@ -180,12 +180,12 @@ func readyWindowFixture() (readiness.ReadyWindowAuthority, readiness.OpenReadyWi
 		},
 	}
 	return readiness.ReadyWindowAuthority{
-			Scope: scope, Revision: 3, Revisions: revisions, Wave: wave,
-		}, readiness.OpenReadyWindowCommand{
-			Scope: scope, CommandID: task036ID(30), WindowID: task036ID(31),
-			WindowRevisionID:  domain.ReadyWindowRevisionID(task036ID(32)),
-			ExpectedRevisions: revisions,
-		}
+		Scope: scope, Revision: 3, Revisions: revisions, Wave: wave,
+	}, readiness.OpenReadyWindowCommand{
+		Scope: scope, CommandID: task036ID(30), WindowID: task036ID(31),
+		WindowRevisionID:  domain.ReadyWindowRevisionID(task036ID(32)),
+		ExpectedRevisions: revisions,
+	}
 }
 
 func cloneReadyWindowAuthority(value readiness.ReadyWindowAuthority) readiness.ReadyWindowAuthority {

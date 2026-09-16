@@ -64,7 +64,7 @@ func (repository *Repository) MaterializeSwissDraftBO1(
 	}
 	return swissdraft.MaterializeSwissDraftBO1(
 		ctx,
-		repository.TournamentAdminExecutionPostgres.tx,
+		repository.tx,
 		plan,
 		createMaterializedSeriesPresence,
 	)

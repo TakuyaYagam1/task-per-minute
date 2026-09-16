@@ -181,7 +181,7 @@ func persistTerminalSwissPoints(
 			SourceSeriesID:         nullableUUIDValue(in.Scope.SeriesID),
 			SeriesResultRevisionID: nullableUUIDValue(commit.SeriesResultRevisionID),
 			ResultLabel:            optionalTrimmedString(string(label)),
-			//nolint:gosec // Domain validation bounds this value before storage conversion.
+
 			ParticipantID: award.ParticipantID, OpponentID: nullableUUIDValue(award.OpponentID),
 			Points: int16(award.Points), StableSeed: seeds[award.ParticipantID], CreatedAt: tstz(in.SettledAt),
 		}); err != nil {
