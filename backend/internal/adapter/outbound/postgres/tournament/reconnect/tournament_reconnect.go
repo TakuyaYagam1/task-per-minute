@@ -19,6 +19,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	pauseusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause"
 )
 
 // TournamentReconnectPostgres owns the transactional reconnect persistence
@@ -1477,7 +1478,7 @@ func createTournamentReconnectPause(
 	}
 	if createdRevision, revisionErr := q.CreateTournamentAdminNormalPauseRevision(ctx, sqlc.CreateTournamentAdminNormalPauseRevisionParams{
 		ID: revisionID, PauseID: next.PauseID, PreviousRevisionID: uuid.NullUUID{}, RevisionNumber: 1,
-		State: string(gameusecase.PauseStateActive), CreatedAt: tstz(startedAt),
+		State: string(pauseusecase.PauseStateActive), CreatedAt: tstz(startedAt),
 	}); revisionErr != nil || createdRevision != revisionID {
 		return sqlc.Pause{}, normalPauseCAS("create reconnect pause revision", revisionErr)
 	}
@@ -1529,7 +1530,7 @@ func createTournamentReconnectPause(
 		ID: next.PauseID, TournamentID: current.Scope.TournamentID, RosterID: current.Scope.RosterID,
 		ScopeKind: "game_attempt", ScopeID: current.Game.ID, SeriesID: nullableUUIDValue(current.Series.ID),
 		GameAttemptID: nullableUUIDValue(current.Game.ID), CurrentRevisionID: revisionID, Revision: 1,
-		Reason: "disconnect", PausedFromState: string(current.Game.State), State: string(gameusecase.PauseStateActive),
+		Reason: "disconnect", PausedFromState: string(current.Game.State), State: string(pauseusecase.PauseStateActive),
 		StartedAt: tstz(startedAt), CreatedAt: tstz(startedAt), UpdatedAt: tstz(startedAt),
 	}, nil
 }
@@ -1774,7 +1775,7 @@ func resumeTournamentReconnectGame(
 		FirstPresenceEpoch: firstLive.PresenceEpoch, SecondPresenceEpoch: secondLive.PresenceEpoch,
 		FirstPresenceRevision: firstLive.Revision, SecondPresenceRevision: secondLive.Revision,
 		FirstReconnectIntervalID: uuid.NullUUID{}, SecondReconnectIntervalID: uuid.NullUUID{},
-		Action: string(gameusecase.PauseResumeActionResume), DecidedAt: tstz(record.RecordedAt),
+		Action: string(pauseusecase.PauseResumeActionResume), DecidedAt: tstz(record.RecordedAt),
 	})
 	if err != nil || created != decisionID {
 		return normalPauseCAS("create reconnect resume decision", err)
@@ -1801,7 +1802,7 @@ func resumeTournamentReconnectGame(
 	reason := "reconnect_resume"
 	createdRevision, err := q.CreateTournamentAdminNormalPauseRevision(ctx, sqlc.CreateTournamentAdminNormalPauseRevisionParams{
 		ID: newRevisionID, PauseID: pauseRow.ID, PreviousRevisionID: nullableUUIDValue(pauseRow.CurrentRevisionID),
-		RevisionNumber: pauseRow.Revision + 1, State: string(gameusecase.PauseStateResumed),
+		RevisionNumber: pauseRow.Revision + 1, State: string(pauseusecase.PauseStateResumed),
 		TransitionReason: &reason, CreatedAt: tstz(record.RecordedAt),
 	})
 	if err != nil || createdRevision != newRevisionID {

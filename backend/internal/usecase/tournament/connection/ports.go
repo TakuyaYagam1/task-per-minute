@@ -8,7 +8,8 @@ import (
 
 	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
-	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	pauseusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/readiness"
 )
@@ -17,6 +18,10 @@ import (
 // reconnect workflow. A process wall clock is not a valid fallback here.
 type Clock interface {
 	Now() time.Time
+}
+
+type TransactionManager interface {
+	Do(ctx context.Context, fn func(context.Context) error) error
 }
 
 // AuthorityProvider resolves the server-owned participant identity and the
@@ -158,9 +163,9 @@ const (
 type ResolvedAction struct {
 	Kind           ActionKind
 	Readiness      *readiness.DisconnectReadinessCommand
-	PausedPresence *game.PausedPresenceCommand
-	Disconnect     *game.DisconnectCommand
-	Reconnect      *game.ReconnectCommand
+	PausedPresence *pauseusecase.PausedPresenceCommand
+	Disconnect     *gameusecase.DisconnectCommand
+	Reconnect      *gameusecase.ReconnectCommand
 	Deadline       time.Time
 }
 
@@ -174,22 +179,22 @@ type ReadinessWorkflow interface {
 type PausedPresenceWorkflow interface {
 	Change(
 		ctx context.Context,
-		command game.PausedPresenceCommand,
-	) (*game.PausedPresenceRecord, bool, error)
+		command pauseusecase.PausedPresenceCommand,
+	) (*pauseusecase.PausedPresenceRecord, bool, error)
 }
 
 type DisconnectWorkflow interface {
 	Disconnect(
 		ctx context.Context,
-		command game.DisconnectCommand,
-	) (*game.ReconnectRecord, bool, error)
+		command gameusecase.DisconnectCommand,
+	) (*gameusecase.ReconnectRecord, bool, error)
 }
 
 type ReconnectWorkflow interface {
 	Reconnect(
 		ctx context.Context,
-		command game.ReconnectCommand,
-	) (*game.ReconnectRecord, bool, error)
+		command gameusecase.ReconnectCommand,
+	) (*gameusecase.ReconnectRecord, bool, error)
 }
 
 // Config intentionally has no implicit reconnect duration. The deadline for
