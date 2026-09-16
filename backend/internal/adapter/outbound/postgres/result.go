@@ -1,6 +1,9 @@
 package postgres
 
-import resultpostgres "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result"
+import (
+	resultpostgres "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result"
+	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
+)
 
 const (
 	submissionStatusAccepted = "accepted"
@@ -26,5 +29,5 @@ type ResultCommitRecord = resultpostgres.ResultCommitRecord
 type ResultHistoryRecord = resultpostgres.ResultHistoryRecord
 
 func NewResultPostgres(tx *TxManager) *ResultPostgres {
-	return resultpostgres.NewResultPostgresWithFinalizer(tx, resultProjectionFinalizer)
+	return resultauthority.NewResultPostgres(tx)
 }
