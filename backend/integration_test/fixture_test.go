@@ -3,13 +3,12 @@
 package integration_test
 
 import (
-	"context"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/stretchr/testify/require"
 
+	testkit "github.com/TakuyaYagam1/task-per-minute/integration_test/internal/testkit"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	authmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/auth/mocks"
@@ -27,20 +26,17 @@ func newDatabaseFixture(pools ...*pgxpool.Pool) *databaseFixture {
 	if len(pools) > 0 && pools[0] != nil {
 		pool = pools[0]
 	}
-	mgr := postgres.NewTxManager(pool)
+	fixture := testkit.NewDatabaseFixture(pool)
 	return &databaseFixture{
-		mgr:     mgr,
-		players: postgres.NewPlayerPostgres(mgr),
-		tasks:   postgres.NewTaskPostgres(mgr),
-		board:   postgres.NewLeaderboardPostgres(mgr),
+		mgr:     fixture.Manager,
+		players: fixture.Players,
+		tasks:   fixture.Tasks,
+		board:   fixture.Board,
 	}
 }
 
 func (f *databaseFixture) makePlayer(tb testing.TB, name string) *domain.Player {
-	tb.Helper()
-	player, err := f.players.Create(context.Background(), name)
-	require.NoError(tb, err)
-	return player
+	return testkit.MakePlayer(tb, f.players, name)
 }
 
 func realIntegrationClock() *authmocks.MockClock {
