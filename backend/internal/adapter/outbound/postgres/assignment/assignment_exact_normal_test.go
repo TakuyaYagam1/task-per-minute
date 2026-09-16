@@ -1,4 +1,4 @@
-package postgres
+package assignment
 
 import (
 	"crypto/sha256"
@@ -91,7 +91,7 @@ func TestExactNormalSwissStageUsesPersistedRoundAndProjectionEvidence(t *testing
 func TestExactNormalSwissStageSQLUsesPersistedRoundAuthority(t *testing.T) {
 	t.Parallel()
 
-	query, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "queries", "assignment.sql"))
+	query, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "db", "queries", "assignment.sql"))
 	require.NoError(t, err)
 	text := string(query)
 
