@@ -7,7 +7,6 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	catalogrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/catalog"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	attendanceusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/attendance"
@@ -223,101 +222,4 @@ func (r *TournamentPostgres) catalogRepository() *catalogrepo.TournamentCatalogP
 		return nil
 	}
 	return catalogrepo.NewTournamentCatalogPostgres(r.tx)
-}
-
-type tournamentV1ContentBinding struct {
-	tournamentID         uuid.UUID
-	configurationID      uuid.UUID
-	publicationID        uuid.UUID
-	normalPoolRevisionID uuid.UUID
-	goldenPoolRevisionID uuid.UUID
-	bo1CategoryPoolID    uuid.UUID
-	bo3CategoryPoolID    uuid.UUID
-}
-
-type tournamentV1ContentPublicationPool struct {
-	publicationID       uuid.UUID
-	publicationRevision int64
-	publishedAt         time.Time
-	publishedAtValid    bool
-	poolRevisionID      uuid.UUID
-	kind                string
-	poolRevision        int64
-}
-
-// The following private bridges preserve same-package callers while the
-// content binding implementation lives in tournament/catalog.
-func tournamentV1ContentBindingFromPools(
-	tournamentID uuid.UUID,
-	rosterID uuid.UUID,
-	pools []tournamentV1ContentPublicationPool,
-) (tournamentV1ContentBinding, error) {
-	childPools := make([]catalogrepo.ContentPublicationPool, len(pools))
-	for index, pool := range pools {
-		childPools[index] = catalogrepo.ContentPublicationPool{
-			PublicationID: pool.publicationID, PublicationRevision: pool.publicationRevision,
-			PublishedAt: pool.publishedAt, PublishedAtValid: pool.publishedAtValid,
-			PoolRevisionID: pool.poolRevisionID, Kind: pool.kind, PoolRevision: pool.poolRevision,
-		}
-	}
-	childBinding, err := catalogrepo.ContentBindingFromPools(tournamentID, rosterID, childPools)
-	if err != nil {
-		return tournamentV1ContentBinding{}, err
-	}
-	return tournamentV1ContentBinding{
-		tournamentID: childBinding.TournamentID, configurationID: childBinding.ConfigurationID,
-		publicationID: childBinding.PublicationID, normalPoolRevisionID: childBinding.NormalPoolRevisionID,
-		goldenPoolRevisionID: childBinding.GoldenPoolRevisionID,
-		bo1CategoryPoolID:    childBinding.BO1CategoryPoolID, bo3CategoryPoolID: childBinding.BO3CategoryPoolID,
-	}, nil
-}
-
-func loadTournamentV1ContentBinding(
-	ctx context.Context,
-	querier *sqlc.Queries,
-	tournamentID uuid.UUID,
-	rosterID uuid.UUID,
-	contentRevision int64,
-) (tournamentV1ContentBinding, error) {
-	childBinding, err := catalogrepo.LoadContentBinding(ctx, querier, tournamentID, rosterID, contentRevision)
-	if err != nil {
-		return tournamentV1ContentBinding{}, err
-	}
-	return tournamentV1ContentBinding{
-		tournamentID: childBinding.TournamentID, configurationID: childBinding.ConfigurationID,
-		publicationID: childBinding.PublicationID, normalPoolRevisionID: childBinding.NormalPoolRevisionID,
-		goldenPoolRevisionID: childBinding.GoldenPoolRevisionID,
-		bo1CategoryPoolID:    childBinding.BO1CategoryPoolID, bo3CategoryPoolID: childBinding.BO3CategoryPoolID,
-	}, nil
-}
-
-func revalidateTournamentV1ContentPools(
-	ctx context.Context,
-	querier *sqlc.Queries,
-	binding tournamentV1ContentBinding,
-) error {
-	return catalogrepo.RevalidateContentPools(ctx, querier, catalogrepo.ContentBinding{
-		TournamentID: binding.tournamentID, ConfigurationID: binding.configurationID,
-		PublicationID: binding.publicationID, NormalPoolRevisionID: binding.normalPoolRevisionID,
-		GoldenPoolRevisionID: binding.goldenPoolRevisionID,
-		BO1CategoryPoolID:    binding.bo1CategoryPoolID, BO3CategoryPoolID: binding.bo3CategoryPoolID,
-	})
-}
-
-func persistTournamentV1ContentBinding(
-	ctx context.Context,
-	querier *sqlc.Queries,
-	binding tournamentV1ContentBinding,
-	createdAt time.Time,
-) error {
-	return catalogrepo.PersistContentBinding(ctx, querier, catalogrepo.ContentBinding{
-		TournamentID: binding.tournamentID, ConfigurationID: binding.configurationID,
-		PublicationID: binding.publicationID, NormalPoolRevisionID: binding.normalPoolRevisionID,
-		GoldenPoolRevisionID: binding.goldenPoolRevisionID,
-		BO1CategoryPoolID:    binding.bo1CategoryPoolID, BO3CategoryPoolID: binding.bo3CategoryPoolID,
-	}, createdAt)
-}
-
-func tournamentV1ContentID(tournamentID, rosterID uuid.UUID, role string) uuid.UUID {
-	return catalogrepo.ContentID(tournamentID, rosterID, role)
 }
