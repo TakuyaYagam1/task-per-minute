@@ -26,6 +26,7 @@ import (
 	authadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/auth"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	auditrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/audit"
+	runtimepostgres "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/golden/runtime"
 	rosterrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/roster"
 	snapshotrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/snapshot"
 	cancellationrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/cancellation"
@@ -398,7 +399,7 @@ func newTournamentFlowRESTFixture(t *testing.T) *restFixture {
 	configuration := tournamentadmin.NewTournamentConfigurationWorkflow(
 		postgres.NewTournamentConfigurationPostgres(tx),
 	)
-	golden := goldenusecase.NewRuntimeApplication(postgres.NewGoldenRuntimePostgres(tx), clock)
+	golden := goldenusecase.NewRuntimeApplication(runtimepostgres.NewGoldenRuntimePostgres(tx), clock)
 	participantDrafts := postgres.NewDraftPostgres(tx)
 	participantWave := postgres.NewWavePostgres(tx)
 	participantReadiness := readiness.NewReadinessUseCase(

@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	runtimepostgres "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/golden/runtime"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
@@ -37,7 +38,7 @@ func TestGoldenRuntimeSurvivesRestartAndProducesPlayoffEvidence(t *testing.T) {
 	)
 
 	application := goldenusecase.NewRuntimeApplication(
-		postgres.NewGoldenRuntimePostgres(postgres.NewTxManager(sharedPool)),
+		runtimepostgres.NewGoldenRuntimePostgres(postgres.NewTxManager(sharedPool)),
 		goldenRuntimeClock{now: now},
 	)
 	operator, err := application.Open(ctx, usecase.GoldenOpenCommand{
@@ -65,7 +66,7 @@ func TestGoldenRuntimeSurvivesRestartAndProducesPlayoffEvidence(t *testing.T) {
 	}
 	startedAt := now
 	application = goldenusecase.NewRuntimeApplication(
-		postgres.NewGoldenRuntimePostgres(postgres.NewTxManager(sharedPool)),
+		runtimepostgres.NewGoldenRuntimePostgres(postgres.NewTxManager(sharedPool)),
 		goldenRuntimeClock{now: startedAt},
 	)
 	for _, group := range operator.Groups {
@@ -94,7 +95,7 @@ func TestGoldenRuntimeSurvivesRestartAndProducesPlayoffEvidence(t *testing.T) {
 	// A fresh repository instance represents process recovery. It reconstructs
 	// the active attempt from PostgreSQL and records durable recovery evidence.
 	restarted := goldenusecase.NewRuntimeApplication(
-		postgres.NewGoldenRuntimePostgres(postgres.NewTxManager(sharedPool)),
+		runtimepostgres.NewGoldenRuntimePostgres(postgres.NewTxManager(sharedPool)),
 		goldenRuntimeClock{now: startedAt},
 	)
 	require.NoError(t, restarted.Recover(ctx, fixture.tournamentID))
@@ -168,7 +169,7 @@ func TestGoldenRuntimeDeadlineReserveAndConnectionStateMachine(t *testing.T) {
 	ensureGoldenRuntimeTestCapacity(ctx, t, fixture.tournamentID)
 
 	withoutPlan := goldenusecase.NewRuntimeApplication(
-		postgres.NewGoldenRuntimePostgres(postgres.NewTxManager(sharedPool)),
+		runtimepostgres.NewGoldenRuntimePostgres(postgres.NewTxManager(sharedPool)),
 		goldenRuntimeClock{now: now},
 	)
 	_, err := withoutPlan.Open(ctx, usecase.GoldenOpenCommand{
@@ -187,7 +188,7 @@ func TestGoldenRuntimeDeadlineReserveAndConnectionStateMachine(t *testing.T) {
 		sourceProjectionID, sourceProjectionRevision, now.Add(-time.Second),
 	)
 	application := goldenusecase.NewRuntimeApplication(
-		postgres.NewGoldenRuntimePostgres(postgres.NewTxManager(sharedPool)),
+		runtimepostgres.NewGoldenRuntimePostgres(postgres.NewTxManager(sharedPool)),
 		goldenRuntimeClock{now: now},
 	)
 	operator, err := application.Open(ctx, usecase.GoldenOpenCommand{
@@ -225,7 +226,7 @@ func TestGoldenRuntimeDeadlineReserveAndConnectionStateMachine(t *testing.T) {
 
 	deadline := now.Add(goldenRuntimeDurationForTest)
 	recovered := goldenusecase.NewRuntimeApplication(
-		postgres.NewGoldenRuntimePostgres(postgres.NewTxManager(sharedPool)),
+		runtimepostgres.NewGoldenRuntimePostgres(postgres.NewTxManager(sharedPool)),
 		goldenRuntimeClock{now: deadline},
 	)
 	late := primary.Members[1]
@@ -301,7 +302,7 @@ func TestGoldenRuntimeCommonFailureRequiresOperatorReserve(t *testing.T) {
 	createGoldenRuntimeTestPlan(ctx, t, fixture.tournamentID, fixture.rosterID,
 		sourceProjectionID, sourceProjectionRevision, now.Add(-time.Second))
 	application := goldenusecase.NewRuntimeApplication(
-		postgres.NewGoldenRuntimePostgres(postgres.NewTxManager(sharedPool)), goldenRuntimeClock{now: now},
+		runtimepostgres.NewGoldenRuntimePostgres(postgres.NewTxManager(sharedPool)), goldenRuntimeClock{now: now},
 	)
 	operator, err := application.Open(ctx, usecase.GoldenOpenCommand{
 		TournamentID: fixture.tournamentID, CommandID: uuid.New(), ExpectedProjectionRevision: sourceProjectionRevision,
@@ -319,7 +320,7 @@ func TestGoldenRuntimeCommonFailureRequiresOperatorReserve(t *testing.T) {
 
 	afterDeadline := now.Add(goldenRuntimeDurationForTest + time.Second)
 	recovery := goldenusecase.NewRuntimeApplication(
-		postgres.NewGoldenRuntimePostgres(postgres.NewTxManager(sharedPool)), goldenRuntimeClock{now: afterDeadline},
+		runtimepostgres.NewGoldenRuntimePostgres(postgres.NewTxManager(sharedPool)), goldenRuntimeClock{now: afterDeadline},
 	)
 	require.NoError(t, recovery.Recover(ctx, fixture.tournamentID))
 	view, err := recovery.OperatorView(ctx, usecase.GoldenOperatorQuery{TournamentID: fixture.tournamentID, OperatorID: uuid.New()})
@@ -350,7 +351,7 @@ func TestGoldenRuntimeCommonFailureRequiresOperatorReserve(t *testing.T) {
 	require.Equal(t, recoveryRevisionCount, replayedRecoveryRevisionCount)
 
 	operatorResume := goldenusecase.NewRuntimeApplication(
-		postgres.NewGoldenRuntimePostgres(postgres.NewTxManager(sharedPool)),
+		runtimepostgres.NewGoldenRuntimePostgres(postgres.NewTxManager(sharedPool)),
 		goldenRuntimeClock{now: afterDeadline.Add(time.Second)},
 	)
 	_, err = operatorResume.Start(ctx, goldenRuntimeStartCommand(ctx, t, operatorResume, fixture.tournamentID, primary.AttemptID, uuid.New()))

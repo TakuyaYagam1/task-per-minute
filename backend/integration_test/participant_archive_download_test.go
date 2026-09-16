@@ -20,6 +20,7 @@ import (
 	restv1 "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/v1"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/objectstorage"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	runtimepostgres "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/golden/runtime"
 	redisadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/redis"
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
@@ -132,7 +133,7 @@ func TestParticipantArchiveDownloadGoldenAssignment(t *testing.T) {
 		sourceProjectionID, sourceProjectionRevision, now.Add(-time.Second),
 	)
 	application := goldenusecase.NewRuntimeApplication(
-		postgres.NewGoldenRuntimePostgres(archive.rest.mgr), clock,
+		runtimepostgres.NewGoldenRuntimePostgres(archive.rest.mgr), clock,
 	)
 	operator, err := application.Open(ctx, inbound.GoldenOpenCommand{
 		TournamentID: fixture.tournamentID, CommandID: uuid.New(),
