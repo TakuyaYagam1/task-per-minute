@@ -151,7 +151,11 @@ test-int: ## Integration tests (testcontainers - one package, up to 5 parallel t
 
 .PHONY: test-int-compile
 test-int-compile: ## Compile the integration package with race instrumentation without starting fixtures
-	go test -race -c -tags=integration -o /dev/null ./integration_test
+	@set -e; \
+	for package in $$(go list -tags=integration ./integration_test/...); do \
+		echo "compile $$package"; \
+		go test -race -c -tags=integration -o /dev/null "$$package"; \
+	done
 
 .PHONY: test-race
 test-race: ## Unit + integration tests with race detector (full suite, requires Docker)
