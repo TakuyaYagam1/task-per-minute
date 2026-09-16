@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	waverepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/wave"
 	projectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
 	resultrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result"
 	correctionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/correction"
@@ -261,7 +262,7 @@ func TestResultCorrectionRepository(t *testing.T) {
 		t.Cleanup(func() { resetMigrationTables(ctx, t) })
 
 		fixture := createCorrectionRepositoryFixture(ctx, t)
-		waveRepository := postgres.NewWavePostgres(postgres.NewTxManager(sharedPool))
+		waveRepository := waverepo.NewWavePostgres(postgres.NewTxManager(sharedPool))
 		waveRevision := fixture.waveRevision
 		for _, participantID := range fixture.participants[1:] {
 			record, _, err := waveRepository.MarkReady(

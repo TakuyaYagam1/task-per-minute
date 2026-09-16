@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	waverepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/wave"
 	projectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
 	resultrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result"
 	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
@@ -112,15 +113,15 @@ func createCorrectionRepositoryFixture(
 	})
 	require.NoError(tb, err)
 
-	waveRepository := postgres.NewWavePostgres(postgres.NewTxManager(sharedPool))
+	waveRepository := waverepo.NewWavePostgres(postgres.NewTxManager(sharedPool))
 	waveID := uuid.New()
 	waveAt := projectionAt.Add(time.Second)
-	_, err = waveRepository.Create(ctx, postgres.WaveCreateInput{
+	_, err = waveRepository.Create(ctx, waverepo.WaveCreateInput{
 		ID: waveID, TournamentID: resultFixture.draft.tournamentID, RosterID: resultFixture.draft.rosterID,
 		RevisionID: domain.WaveRevisionID(uuid.New()), ParticipantIDs: participants,
 		CommandID: uuid.New(), SourceProjectionRevisionID: projection.Revision.ID,
 		SourceProjectionRevision: projection.Revision.RevisionNumber,
-		Series: []postgres.WaveSeriesInput{
+		Series: []waverepo.WaveSeriesInput{
 			{
 				ID: uuid.New(), FirstParticipantID: participants[0], SecondParticipantID: participants[1],
 				Format: domain.SeriesFormatBO1, InitialScoreRevisionID: domain.SeriesScoreRevisionID(uuid.New()),
@@ -141,7 +142,7 @@ func createCorrectionRepositoryFixture(
 		resultFixture.draft.tournamentID,
 		waveID,
 		1,
-		postgres.ReadyWindowInput{
+		waverepo.ReadyWindowInput{
 			ID: windowID, RevisionID: domain.ReadyWindowRevisionID(uuid.New()),
 			OpenedAt: openedAt, Deadline: deadline,
 		},

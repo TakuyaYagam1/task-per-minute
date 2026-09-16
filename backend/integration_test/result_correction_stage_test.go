@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	waverepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/wave"
 	resultrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result"
 	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
@@ -2257,19 +2258,19 @@ func openCorrectionReadyWave(ctx context.Context, t *testing.T, fixture tourname
 	projectionID, projectionRevision := currentPublishedProjection(ctx, t, fixture.tournamentID, fixture.rosterID)
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	waveID := uuid.New()
-	repository := postgres.NewWavePostgres(fixture.tx)
-	wave, err := repository.Create(ctx, postgres.WaveCreateInput{
+	repository := waverepo.NewWavePostgres(fixture.tx)
+	wave, err := repository.Create(ctx, waverepo.WaveCreateInput{
 		ID: waveID, TournamentID: fixture.tournamentID, RosterID: fixture.rosterID,
 		RevisionID: domain.WaveRevisionID(uuid.New()), ParticipantIDs: fixture.participants,
 		CommandID: uuid.New(), SourceProjectionRevisionID: projectionID,
 		SourceProjectionRevision: projectionRevision, CreatedAt: now,
-		Series: []postgres.WaveSeriesInput{
+		Series: []waverepo.WaveSeriesInput{
 			{ID: uuid.New(), FirstParticipantID: fixture.participants[0], SecondParticipantID: fixture.participants[1], Format: domain.SeriesFormatBO1, InitialScoreRevisionID: domain.SeriesScoreRevisionID(uuid.New())},
 			{ID: uuid.New(), FirstParticipantID: fixture.participants[2], SecondParticipantID: fixture.participants[3], Format: domain.SeriesFormatBO1, InitialScoreRevisionID: domain.SeriesScoreRevisionID(uuid.New())},
 		},
 	})
 	require.NoError(t, err)
-	_, changed, err := repository.OpenReadyWindow(ctx, fixture.tournamentID, waveID, wave.Revision, postgres.ReadyWindowInput{
+	_, changed, err := repository.OpenReadyWindow(ctx, fixture.tournamentID, waveID, wave.Revision, waverepo.ReadyWindowInput{
 		ID: uuid.New(), RevisionID: domain.ReadyWindowRevisionID(uuid.New()),
 		OpenedAt: now.Add(time.Millisecond), Deadline: now.Add(time.Minute),
 	})
