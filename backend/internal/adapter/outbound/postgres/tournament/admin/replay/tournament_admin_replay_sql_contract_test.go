@@ -1,4 +1,4 @@
-package postgres
+package replay
 
 import (
 	"os"
@@ -11,9 +11,9 @@ import (
 func TestReplayReserveAuthoritySQLContract(t *testing.T) {
 	t.Parallel()
 
-	migration, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "migrations", "000007_assignment_schema.sql"))
+	migration, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "..", "..", "db", "migrations", "000007_assignment_schema.sql"))
 	require.NoError(t, err)
-	query, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "queries", "tournament_admin_replay.sql"))
+	query, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "..", "..", "db", "queries", "tournament_admin_replay.sql"))
 	require.NoError(t, err)
 
 	for _, fragment := range []string{
@@ -47,7 +47,7 @@ func TestReplayReserveAuthoritySQLContract(t *testing.T) {
 func TestReplayReserveAuthorityHasServerOwnedProducerContract(t *testing.T) {
 	t.Parallel()
 
-	query, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "queries", "tournament_admin_replay.sql"))
+	query, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "..", "..", "db", "queries", "tournament_admin_replay.sql"))
 	require.NoError(t, err)
 
 	for _, fragment := range []string{
@@ -66,7 +66,7 @@ func TestReplayReserveAuthorityHasServerOwnedProducerContract(t *testing.T) {
 func TestReplayWorkflowSourceLocksTerminalEvidenceWithDatabaseClock(t *testing.T) {
 	t.Parallel()
 
-	query, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "queries", "tournament_admin_replay.sql"))
+	query, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "..", "..", "db", "queries", "tournament_admin_replay.sql"))
 	require.NoError(t, err)
 
 	for _, fragment := range []string{

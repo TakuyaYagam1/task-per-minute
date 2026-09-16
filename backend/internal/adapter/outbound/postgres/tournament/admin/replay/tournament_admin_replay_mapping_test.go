@@ -1,4 +1,4 @@
-package postgres
+package replay
 
 import (
 	"testing"

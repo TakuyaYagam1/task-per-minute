@@ -1,4 +1,4 @@
-package postgres
+package replay
 
 import (
 	"errors"
@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 
+	assignmentpostgres "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
@@ -91,7 +92,7 @@ func replayWorkflowReserveChain(
 }
 
 func replayWorkflowSnapshot(row sqlc.TaskSnapshot) (domain.AssignmentTaskSnapshot, error) {
-	record, err := taskSnapshotRecord(row)
+	record, err := assignmentpostgres.MapTaskSnapshotRecord(row)
 	if err != nil {
 		return domain.AssignmentTaskSnapshot{}, fmt.Errorf("%w: snapshot: %w", errReplayWorkflowAuthority, err)
 	}
