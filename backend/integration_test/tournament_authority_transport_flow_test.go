@@ -15,6 +15,7 @@ import (
 	rootws "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket"
 	tournamentws "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket/tournament"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	auditrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/audit"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	audit "github.com/TakuyaYagam1/task-per-minute/internal/usecase/audit"
 )
@@ -45,8 +46,8 @@ func testTournamentDurableIncidentBundle(t *testing.T) {
 	rebuilt, err := corrections.Rebuild(ctx, input)
 	require.NoError(t, err)
 
-	auditRepository := postgres.NewAuditPostgres(postgres.NewTxManager(sharedPool))
-	records := listAuditRecords(ctx, t, auditRepository, postgres.AuditFilter{
+	auditRepository := auditrepo.NewAuditPostgres(postgres.NewTxManager(sharedPool))
+	records := listAuditRecords(ctx, t, auditRepository, auditrepo.AuditFilter{
 		TournamentID: fixture.resultFixture.draft.tournamentID,
 		PageSize:     1,
 	})
@@ -166,7 +167,7 @@ func testTournamentRealtimeRecovery(t *testing.T) {
 	require.ErrorIs(t, err, tournamentws.ErrParticipantRealtimeUnavailable)
 }
 
-func tournamentAuditUseCaseEvent(record postgres.AuditRecord) audit.AuditEvent {
+func tournamentAuditUseCaseEvent(record auditrepo.AuditRecord) audit.AuditEvent {
 	return audit.AuditEvent{
 		AuditEventID:             record.AuditEventID,
 		TournamentID:             record.TournamentID,

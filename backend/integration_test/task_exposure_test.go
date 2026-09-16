@@ -14,6 +14,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
+	rosterrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/roster"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	assignmentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/assignment"
 	taskusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/task"
@@ -387,7 +388,7 @@ func createTaskExposureRosterFixture(
 		projectionRevision: projectionRevision, playerIDs: playerIDs,
 		workflow: tournamentadmin.NewRosterWorkflow(tournamentadmin.RosterWorkflowDependencies{
 			Transactions:  tx,
-			Repository:    postgres.NewTournamentAdminRosterPostgres(tx),
+			Repository:    rosterrepo.NewTournamentAdminRosterPostgres(tx),
 			RuntimeHealth: taskExposureHealthyRuntime{},
 		}),
 	}

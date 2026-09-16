@@ -13,6 +13,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/incidentauth"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	auditrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/audit"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/audit"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
 )
@@ -44,7 +45,7 @@ func TestTournamentAdminIncidentSnapshotPinsConcurrentAuditWrites(t *testing.T) 
 		time.Sleep(delay + time.Millisecond)
 	}
 
-	repository := postgres.NewTournamentAdminAuditPostgres(postgres.NewTxManager(sharedPool))
+	repository := auditrepo.NewTournamentAdminAuditPostgres(postgres.NewTxManager(sharedPool))
 	query := tournamentadmin.IncidentQuery{
 		Operator:     tournamentadmin.OperatorIdentity{ActorID: firstInput.OperatorID},
 		TournamentID: fixture.resultFixture.draft.tournamentID,
@@ -108,7 +109,7 @@ func TestTournamentAdminIncidentExportSignsDurableSnapshot(t *testing.T) {
 	})
 	require.NoError(t, err)
 	application := tournamentadmin.AdminNewUseCase(tournamentadmin.AdminDependencies{
-		Incidents: postgres.NewTournamentAdminAuditPostgres(postgres.NewTxManager(sharedPool)),
+		Incidents: auditrepo.NewTournamentAdminAuditPostgres(postgres.NewTxManager(sharedPool)),
 		Signer:    authenticator,
 	})
 

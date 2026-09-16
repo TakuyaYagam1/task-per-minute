@@ -16,6 +16,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
+	cancellationrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/cancellation"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	eventdelivery "github.com/TakuyaYagam1/task-per-minute/internal/usecase/eventdelivery"
 )
@@ -122,7 +123,7 @@ func TestRealtimeOutboxPostgresPreservesProjectionOrderAcrossRetryAndRestart(t *
 	go func() {
 		defer publishers.Done()
 		<-start
-		_, changed, publishErr := postgres.NewTournamentCancellationPostgres(
+		_, changed, publishErr := cancellationrepo.NewTournamentCancellationPostgres(
 			postgres.NewTxManager(sharedPool),
 		).CancelTournament(ctx, cancellationInput)
 		published <- publishOutcome{changed: changed, err: publishErr}

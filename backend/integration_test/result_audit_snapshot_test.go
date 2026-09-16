@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	auditrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/audit"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
@@ -29,8 +30,8 @@ func TestResultAuditRepositoryPinsSnapshotAcrossPages(t *testing.T) {
 	first, err := corrections.Rebuild(ctx, firstInput)
 	require.NoError(t, err)
 
-	audit := postgres.NewAuditPostgres(postgres.NewTxManager(sharedPool))
-	filter := postgres.AuditFilter{
+	audit := auditrepo.NewAuditPostgres(postgres.NewTxManager(sharedPool))
+	filter := auditrepo.AuditFilter{
 		TournamentID: fixture.resultFixture.draft.tournamentID,
 		PageSize:     1,
 	}
@@ -69,7 +70,7 @@ func TestResultAuditRepositoryPinsSnapshotAcrossPages(t *testing.T) {
 	_, err = corrections.Rebuild(ctx, secondInput)
 	require.NoError(t, err)
 
-	records := append([]postgres.AuditRecord(nil), firstPage.Records...)
+	records := append([]auditrepo.AuditRecord(nil), firstPage.Records...)
 	filter.Cursor = firstPage.NextCursor
 	for filter.Cursor != nil {
 		require.Equal(t, snapshotBound, filter.Cursor.SnapshotBound)
@@ -96,7 +97,7 @@ func TestResultAuditRepositoryPinsSnapshotAcrossPages(t *testing.T) {
 	}
 	require.Equal(t, 2, currentCount)
 
-	fresh := listAuditRecords(ctx, t, audit, postgres.AuditFilter{
+	fresh := listAuditRecords(ctx, t, audit, auditrepo.AuditFilter{
 		TournamentID: fixture.resultFixture.draft.tournamentID,
 		PageSize:     1,
 	})

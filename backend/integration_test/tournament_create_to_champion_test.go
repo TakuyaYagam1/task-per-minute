@@ -25,6 +25,10 @@ import (
 	tournamentws "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket/tournament"
 	authadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/auth"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	auditrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/audit"
+	rosterrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/roster"
+	snapshotrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/snapshot"
+	cancellationrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/cancellation"
 	redisadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/redis"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
@@ -325,7 +329,7 @@ func newTournamentFlowRESTFixture(t *testing.T) *restFixture {
 		CreateStore: postgres.NewTournamentCreatePostgres(tournaments), Receipts: receipts,
 		ContentReader: postgres.NewTournamentContentPostgres(tx),
 	})
-	rosterRepository := postgres.NewTournamentAdminRosterPostgres(tx)
+	rosterRepository := rosterrepo.NewTournamentAdminRosterPostgres(tx)
 	roster := tournamentadmin.NewRosterWorkflow(tournamentadmin.RosterWorkflowDependencies{
 		Transactions: tx,
 		Repository:   rosterRepository,
@@ -374,7 +378,7 @@ func newTournamentFlowRESTFixture(t *testing.T) *restFixture {
 		),
 		Pauses: tournamentpause.NewTournamentPauseUseCase(tx, lifecycleRepository, clock),
 		Cancellations: tournamentcancellation.NewTournamentCancellationUseCase(
-			postgres.NewTournamentCancellationPostgres(tx), clock,
+			cancellationrepo.NewTournamentCancellationPostgres(tx), clock,
 		),
 		Progressions: progression, Clock: clock,
 	})
@@ -388,8 +392,8 @@ func newTournamentFlowRESTFixture(t *testing.T) *restFixture {
 	admin := tournamentadmin.NewInboundAdapter(tournamentadmin.AdminNewUseCase(tournamentadmin.AdminDependencies{
 		Catalog: catalog, Roster: roster, Preflight: roster, Pairing: execution,
 		Lifecycle: lifecycle, Wave: execution, Forfeit: results,
-		Audit:     postgres.NewTournamentAdminAuditPostgres(tx),
-		Snapshots: postgres.NewTournamentAdminSnapshotPostgres(tx),
+		Audit:     auditrepo.NewTournamentAdminAuditPostgres(tx),
+		Snapshots: snapshotrepo.NewTournamentAdminSnapshotPostgres(tx),
 	}))
 	configuration := tournamentadmin.NewTournamentConfigurationWorkflow(
 		postgres.NewTournamentConfigurationPostgres(tx),

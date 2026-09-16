@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	rosterrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/roster"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
 	tournamentpreflight "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/preflight"
@@ -44,7 +45,7 @@ func TestTournamentPreflightCertifiesCapacityAndLocksRoster(t *testing.T) {
 
 	playerIDs := createMigrationPlayers(ctx, t, 4)
 	createSwissMigrationParticipants(ctx, t, rosterID, playerIDs)
-	repository := postgres.NewTournamentAdminRosterPostgres(tx)
+	repository := rosterrepo.NewTournamentAdminRosterPostgres(tx)
 	workflow := tournamentadmin.NewRosterWorkflow(tournamentadmin.RosterWorkflowDependencies{
 		Transactions: tx,
 		Repository:   repository,

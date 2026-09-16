@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	auditrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/audit"
 )
 
 func TestResultAuditRepository(t *testing.T) {
@@ -34,8 +35,8 @@ func TestResultAuditRepository(t *testing.T) {
 	second, err := correctionRepository.Rebuild(ctx, secondInput)
 	require.NoError(t, err)
 
-	repository := postgres.NewAuditPostgres(postgres.NewTxManager(sharedPool))
-	records := listAuditRecords(ctx, t, repository, postgres.AuditFilter{
+	repository := auditrepo.NewAuditPostgres(postgres.NewTxManager(sharedPool))
+	records := listAuditRecords(ctx, t, repository, auditrepo.AuditFilter{
 		TournamentID: fixture.resultFixture.draft.tournamentID,
 		PageSize:     2,
 	})
@@ -70,32 +71,32 @@ func TestResultAuditRepository(t *testing.T) {
 	require.Equal(t, 2, currentCount)
 
 	attemptID := fixture.resultFixture.attemptID
-	require.Len(t, listAuditRecords(ctx, t, repository, postgres.AuditFilter{
+	require.Len(t, listAuditRecords(ctx, t, repository, auditrepo.AuditFilter{
 		TournamentID: fixture.resultFixture.draft.tournamentID,
 		EntityKind:   "game_attempt",
 		EntityID:     &attemptID,
 	}), 3)
 	seriesID := fixture.resultFixture.draft.seriesID
-	require.Len(t, listAuditRecords(ctx, t, repository, postgres.AuditFilter{
+	require.Len(t, listAuditRecords(ctx, t, repository, auditrepo.AuditFilter{
 		TournamentID: fixture.resultFixture.draft.tournamentID,
 		EntityKind:   "series",
 		EntityID:     &seriesID,
 	}), 3)
-	require.Len(t, listAuditRecords(ctx, t, repository, postgres.AuditFilter{
+	require.Len(t, listAuditRecords(ctx, t, repository, auditrepo.AuditFilter{
 		TournamentID: fixture.resultFixture.draft.tournamentID,
 		EventType:    "tournament.result.corrected",
 	}), 4)
-	require.Len(t, listAuditRecords(ctx, t, repository, postgres.AuditFilter{
+	require.Len(t, listAuditRecords(ctx, t, repository, auditrepo.AuditFilter{
 		TournamentID: fixture.resultFixture.draft.tournamentID,
 		ActorKind:    "operator",
 		ActorID:      &firstInput.OperatorID,
 	}), 2)
-	require.Len(t, listAuditRecords(ctx, t, repository, postgres.AuditFilter{
+	require.Len(t, listAuditRecords(ctx, t, repository, auditrepo.AuditFilter{
 		TournamentID: fixture.resultFixture.draft.tournamentID,
 		ResultReason: "surrender",
 	}), 4)
 	firstOccurredAt := first.ResultCommit.Audit.OccurredAt.Time.UTC()
-	require.Len(t, listAuditRecords(ctx, t, repository, postgres.AuditFilter{
+	require.Len(t, listAuditRecords(ctx, t, repository, auditrepo.AuditFilter{
 		TournamentID: fixture.resultFixture.draft.tournamentID,
 		OccurredFrom: &firstOccurredAt,
 		OccurredTo:   &firstOccurredAt,
@@ -104,12 +105,12 @@ func TestResultAuditRepository(t *testing.T) {
 
 func listAuditRecords(
 	ctx context.Context, tb testing.TB,
-	repository *postgres.AuditPostgres,
-	filter postgres.AuditFilter,
-) []postgres.AuditRecord {
+	repository *auditrepo.AuditPostgres,
+	filter auditrepo.AuditFilter,
+) []auditrepo.AuditRecord {
 	tb.Helper()
 
-	records := make([]postgres.AuditRecord, 0)
+	records := make([]auditrepo.AuditRecord, 0)
 	for {
 		page, err := repository.List(ctx, filter)
 		require.NoError(tb, err)

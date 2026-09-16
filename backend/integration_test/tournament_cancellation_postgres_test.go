@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	cancellationrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/cancellation"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	tournamentcancellation "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/cancellation"
 )
@@ -35,9 +36,9 @@ func TestTournamentCancellationPostgresUsesLockedProjectionTargetAndReplaysExact
 		FOR KEY SHARE`, fixture.tournamentID, fixture.rosterID,
 	).Scan(&expectedProjectionID, &expectedProjectionRevision))
 
-	repositories := []*postgres.TournamentCancellationPostgres{
-		postgres.NewTournamentCancellationPostgres(postgres.NewTxManager(sharedPool)),
-		postgres.NewTournamentCancellationPostgres(postgres.NewTxManager(sharedPool)),
+	repositories := []*cancellationrepo.TournamentCancellationPostgres{
+		cancellationrepo.NewTournamentCancellationPostgres(postgres.NewTxManager(sharedPool)),
+		cancellationrepo.NewTournamentCancellationPostgres(postgres.NewTxManager(sharedPool)),
 	}
 	type outcome struct {
 		record  *tournamentcancellation.TournamentCancellationRecord
@@ -49,7 +50,7 @@ func TestTournamentCancellationPostgresUsesLockedProjectionTargetAndReplaysExact
 	var workers sync.WaitGroup
 	for _, repository := range repositories {
 		workers.Add(1)
-		go func(repository *postgres.TournamentCancellationPostgres) {
+		go func(repository *cancellationrepo.TournamentCancellationPostgres) {
 			defer workers.Done()
 			<-start
 			record, changed, err := repository.CancelTournament(ctx, input)
@@ -137,7 +138,7 @@ func TestTournamentCancellationPostgresRejectsCrossScopeCommandReuse(t *testing.
 		go func(input tournamentcancellation.TournamentCancellationInput) {
 			defer workers.Done()
 			<-start
-			_, changed, err := postgres.NewTournamentCancellationPostgres(
+			_, changed, err := cancellationrepo.NewTournamentCancellationPostgres(
 				postgres.NewTxManager(sharedPool),
 			).CancelTournament(ctx, input)
 			outcomes <- outcome{input: input, changed: changed, err: err}
