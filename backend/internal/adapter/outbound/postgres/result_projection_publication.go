@@ -67,11 +67,7 @@ func publishCommittedResultProjection(
 	revisionID uuid.UUID,
 	at time.Time,
 ) error {
-	if _, err := tx.Querier(ctx).PublishProjectionRevisionCAS(ctx, sqlc.PublishProjectionRevisionCASParams{
-		ID: revisionID, TournamentID: scope.TournamentID, RosterID: scope.RosterID,
-		PublishedAt: tstz(at),
-	}); err != nil {
-		return resultCASWriteError("publish projection revision", err)
-	}
-	return resultProjectionFinalizer(ctx, tx, scope.TournamentID, scope.RosterID, revisionID, at)
+	return resultpostgres.PublishCommittedResultProjection(
+		ctx, tx, scope.TournamentID, scope.RosterID, revisionID, at, resultProjectionFinalizer,
+	)
 }
