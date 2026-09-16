@@ -14,6 +14,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/incidentauth"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	auditrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/audit"
+	correctionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/correction"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/audit"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
 )
@@ -26,7 +27,7 @@ func TestTournamentAdminIncidentSnapshotPinsConcurrentAuditWrites(t *testing.T) 
 	t.Cleanup(func() { resetMigrationTables(ctx, t) })
 
 	fixture := createCorrectionRepositoryFixture(ctx, t)
-	corrections := postgres.NewCorrectionPostgres(postgres.NewTxManager(sharedPool))
+	corrections := correctionrepo.NewCorrectionPostgres(postgres.NewTxManager(sharedPool))
 	firstInput := newCorrectionInput(
 		ctx, t, fixture, fixture.result, fixture.projection, 1, fixture.nextTime,
 	)
@@ -91,7 +92,7 @@ func TestTournamentAdminIncidentExportSignsDurableSnapshot(t *testing.T) {
 	t.Cleanup(func() { resetMigrationTables(ctx, t) })
 
 	fixture := createCorrectionRepositoryFixture(ctx, t)
-	corrections := postgres.NewCorrectionPostgres(postgres.NewTxManager(sharedPool))
+	corrections := correctionrepo.NewCorrectionPostgres(postgres.NewTxManager(sharedPool))
 	input := newCorrectionInput(
 		ctx, t, fixture, fixture.result, fixture.projection, 1, fixture.nextTime,
 	)

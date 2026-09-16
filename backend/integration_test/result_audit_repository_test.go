@@ -14,6 +14,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	auditrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/audit"
+	correctionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/correction"
 )
 
 func TestResultAuditRepository(t *testing.T) {
@@ -23,7 +24,7 @@ func TestResultAuditRepository(t *testing.T) {
 
 	fixture := createCorrectionRepositoryFixture(ctx, t)
 
-	correctionRepository := postgres.NewCorrectionPostgres(postgres.NewTxManager(sharedPool))
+	correctionRepository := correctionrepo.NewCorrectionPostgres(postgres.NewTxManager(sharedPool))
 	firstInput := newCorrectionInput(
 		ctx, t, fixture, fixture.result, fixture.projection, 1, fixture.nextTime,
 	)

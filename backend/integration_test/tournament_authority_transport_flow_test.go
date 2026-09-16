@@ -17,6 +17,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	auditrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/audit"
 	projectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
+	correctionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/correction"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	audit "github.com/TakuyaYagam1/task-per-minute/internal/usecase/audit"
 )
@@ -35,7 +36,7 @@ func testTournamentDurableIncidentBundle(t *testing.T) {
 	t.Cleanup(func() { resetMigrationTables(ctx, t) })
 
 	fixture := createCorrectionRepositoryFixture(ctx, t)
-	corrections := postgres.NewCorrectionPostgres(postgres.NewTxManager(sharedPool))
+	corrections := correctionrepo.NewCorrectionPostgres(postgres.NewTxManager(sharedPool))
 	input := newCorrectionInput(
 		ctx, t,
 		fixture,

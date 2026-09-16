@@ -14,6 +14,7 @@ import (
 	projectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
 	resultrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result"
 	correctionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/correction"
+	admincorrectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/correction"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
 )
 
@@ -43,7 +44,7 @@ func TestTournamentAdminCorrectionAuthorityHydratesPlayoffStage(t *testing.T) {
 	require.NoError(t, err)
 
 	tx := postgres.NewTxManager(sharedPool)
-	repository := postgres.NewTournamentAdminCorrectionPostgres(tx)
+	repository := admincorrectionrepo.NewTournamentAdminCorrectionPostgres(tx)
 	var authority tournamentadmin.CorrectionWorkflowAuthority
 	err = tx.Do(ctx, func(txCtx context.Context) error {
 		var loadErr error
