@@ -1,4 +1,4 @@
-package postgres
+package snapshot
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 
+	draftpostgres "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/draft"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
@@ -133,7 +134,7 @@ func (r *TournamentAdminSnapshotPostgres) loadSnapshotPauseDraft(
 	}
 	aggregate, err := r.drafts.Get(ctx, draftIDs[0])
 	if err != nil {
-		if errors.Is(err, ErrDraftNotFound) {
+		if errors.Is(err, draftpostgres.ErrDraftNotFound) {
 			return nil, domain.ErrInternal
 		}
 		return nil, err
