@@ -19,7 +19,7 @@ func participantDraftEvidenceMap(
 	if recovery == nil && transition == nil {
 		return nil, nil
 	}
-	payload, err := json.Marshal(normalPauseDraftEvidenceDocument{
+	payload, err := json.Marshal(normalPauseDraftEvidenceDocument{ //nolint:musttag // Versioned draft evidence has explicit JSON tags on every persisted field.
 		Recovery: recovery, Transition: transition,
 	})
 	if err != nil {
