@@ -1,6 +1,6 @@
 //go:build integration
 
-package integration_test
+package db_test
 
 import (
 	"context"
@@ -10,8 +10,7 @@ import (
 )
 
 func TestMigrations_TaskHintsInBaseline(t *testing.T) {
-	pool, cleanup := SetupTestDB(t)
-	t.Cleanup(cleanup)
+	pool := resetPostgres(t)
 
 	_, err := pool.Exec(context.Background(), `
 		INSERT INTO tasks (title, description, category, difficulty, time_limit, flag, hint_1, hint_2, hint_3)
@@ -20,8 +19,7 @@ func TestMigrations_TaskHintsInBaseline(t *testing.T) {
 }
 
 func TestMigrations_TaskAssetsAreCategoryAgnostic(t *testing.T) {
-	pool, cleanup := SetupTestDB(t)
-	t.Cleanup(cleanup)
+	pool := resetPostgres(t)
 
 	_, err := pool.Exec(context.Background(), `
 		INSERT INTO tasks (title, description, category, difficulty, time_limit, flag, hint_1, hint_2, hint_3, task_url)
