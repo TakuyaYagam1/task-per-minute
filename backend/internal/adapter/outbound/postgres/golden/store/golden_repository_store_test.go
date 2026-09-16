@@ -1,4 +1,4 @@
-package postgres
+package store
 
 import (
 	"encoding/json"
