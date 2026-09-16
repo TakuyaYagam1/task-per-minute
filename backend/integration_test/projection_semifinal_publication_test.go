@@ -22,6 +22,7 @@ import (
 	draftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment/draft"
 	playoffrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/playoff"
 	projectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
+	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	assignmentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/assignment"
@@ -60,7 +61,7 @@ func TestSemifinalSettlementProjectsFromStage(t *testing.T) {
 	before := playoffPublicationCounts(ctx, t, fixture.tournamentID)
 	abort := errors.New("stop after semifinal projection")
 	err = fixture.tx.Do(ctx, func(txCtx context.Context) error {
-		_, changed, err := postgres.NewResultPostgres(fixture.tx).Settle(txCtx, input)
+		_, changed, err := resultauthority.NewResultPostgres(fixture.tx).Settle(txCtx, input)
 		if err != nil {
 			return err
 		}
@@ -69,7 +70,7 @@ func TestSemifinalSettlementProjectsFromStage(t *testing.T) {
 	})
 	require.ErrorIs(t, err, abort)
 	require.Equal(t, before, playoffPublicationCounts(ctx, t, fixture.tournamentID))
-	record, changed, err := postgres.NewResultPostgres(fixture.tx).Settle(ctx, input)
+	record, changed, err := resultauthority.NewResultPostgres(fixture.tx).Settle(ctx, input)
 	require.NoError(t, err)
 	require.True(t, changed)
 	require.NotNil(t, record.SeriesRevision)
@@ -151,7 +152,7 @@ func TestSemifinalConcurrentSettlementPublishesOnce(t *testing.T) {
 			defer done.Done()
 			ready.Done()
 			<-start
-			records[index], changed[index], failures[index] = postgres.NewResultPostgres(fixture.tx).Settle(ctx, input)
+			records[index], changed[index], failures[index] = resultauthority.NewResultPostgres(fixture.tx).Settle(ctx, input)
 		}()
 	}
 	ready.Wait()
@@ -223,7 +224,7 @@ func prepareFinalDraftWithCompletionDelay(ctx context.Context, t *testing.T, che
 	for position := 1; position <= 2; position++ {
 		last = semifinalSettlementInput(ctx, t, fixture, command.CommandID, position)
 		last.SettledAt = last.SettledAt.Add(delay)
-		_, _, err := postgres.NewResultPostgres(fixture.tx).Settle(ctx, last)
+		_, _, err := resultauthority.NewResultPostgres(fixture.tx).Settle(ctx, last)
 		require.NoError(t, err)
 	}
 	drafts := draftrepo.NewDraftPostgres(fixture.tx)

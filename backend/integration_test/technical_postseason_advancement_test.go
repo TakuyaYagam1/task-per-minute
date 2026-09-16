@@ -14,6 +14,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	draftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment/draft"
 	waverepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/wave"
+	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
 	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
@@ -38,7 +39,7 @@ func TestTechnicalPostseasonAdvancementThroughRecovery(t *testing.T) {
 	require.NoError(t, err)
 
 	firstSemifinal := semifinalSettlementInput(ctx, t, fixture, stageCommand.CommandID, 1)
-	_, changed, err := postgres.NewResultPostgres(fixture.tx).Settle(ctx, firstSemifinal)
+	_, changed, err := resultauthority.NewResultPostgres(fixture.tx).Settle(ctx, firstSemifinal)
 	require.NoError(t, err)
 	require.True(t, changed)
 

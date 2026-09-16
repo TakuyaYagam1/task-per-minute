@@ -16,6 +16,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	waverepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/wave"
+	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	gamedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/game"
@@ -251,7 +252,7 @@ func submitSwissReceiptSeries(ctx context.Context, t *testing.T, fixture tournam
 	binding := fixture.binding[index]
 	scope := gamedomain.SubmissionScope{Game: gamedomain.Scope{TournamentID: fixture.tournamentID, SeriesID: binding.SeriesID}, WaveID: fixture.waveID, AssignmentID: binding.AssignmentID}
 	require.NoError(t, sharedPool.QueryRow(ctx, `SELECT attempt.id, attempt.slot_id FROM assignments AS assignment JOIN game_attempts AS attempt ON attempt.id = assignment.attempt_id WHERE assignment.id = $1`, binding.AssignmentID).Scan(&scope.Game.GameID, &scope.Game.SlotID))
-	results := postgres.NewResultPostgres(fixture.tx)
+	results := resultauthority.NewResultPostgres(fixture.tx)
 	repository := postgres.NewParticipantSettlementRepository(fixture.tx, results)
 	authority, err := repository.LoadConcurrentWinnerAuthority(ctx, scope)
 	require.NoError(t, err)

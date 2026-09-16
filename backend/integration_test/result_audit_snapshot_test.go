@@ -13,6 +13,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	auditrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/audit"
+	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
@@ -133,7 +134,7 @@ func settleCursorSafeAuditRecord(
 	}
 	actorID := fixture.resultFixture.draft.participantIDs[0]
 	digest := sha256.Sum256([]byte("snapshot traversal concurrent result"))
-	result, changed, err := postgres.NewResultPostgres(postgres.NewTxManager(sharedPool)).Settle(
+	result, changed, err := resultauthority.NewResultPostgres(postgres.NewTxManager(sharedPool)).Settle(
 		ctx,
 		postgres.ResultSettlementInput{
 			IDs: ids,

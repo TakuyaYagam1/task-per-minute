@@ -20,6 +20,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	playerrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/player"
 	realtimerepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/realtime"
+	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
 	participantrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
@@ -155,7 +156,7 @@ func TestParticipantConnectionBindingSurvivesFinalGameAdvance(t *testing.T) {
 	_, err := publishSwissPlayoffs(ctx, fixture, stageCommand)
 	require.NoError(t, err)
 	firstSemifinal := semifinalSettlementInput(ctx, t, fixture, stageCommand.CommandID, 1)
-	_, changed, err := postgres.NewResultPostgres(fixture.tx).Settle(ctx, firstSemifinal)
+	_, changed, err := resultauthority.NewResultPostgres(fixture.tx).Settle(ctx, firstSemifinal)
 	require.NoError(t, err)
 	require.True(t, changed)
 	_, secondWaveID, secondSemifinalParticipants := technicalPlayoffSeries(ctx, t, fixture, stageCommand.CommandID, 2)

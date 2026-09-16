@@ -14,6 +14,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	waverepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/wave"
+	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
@@ -24,7 +25,7 @@ func TestFinalSwissReceiptRejectsLateChildren(t *testing.T) {
 	_, err := publishSwissPlayoffs(ctx, fixture, command)
 	require.NoError(t, err)
 	extra := semifinalSettlementInput(ctx, t, fixture, command.CommandID, 1)
-	_, changed, err := postgres.NewResultPostgres(fixture.tx).Settle(ctx, extra)
+	_, changed, err := resultauthority.NewResultPostgres(fixture.tx).Settle(ctx, extra)
 	require.NoError(t, err)
 	require.True(t, changed)
 	var receiptID, roundID, otherNode uuid.UUID

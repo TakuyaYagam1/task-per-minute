@@ -25,6 +25,7 @@ import (
 	draftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment/draft"
 	projectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
 	realtimerepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/realtime"
+	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
 	telemetryadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/telemetry"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/observability"
@@ -174,7 +175,7 @@ func newTournamentFlowHandler(
 	})
 	results := tournamentadmin.NewOperatorResultWorkflow(tournamentadmin.OperatorResultWorkflowDependencies{
 		Transactions: tx,
-		Repository:   postgres.NewTournamentAdminResultPostgres(tx, postgres.NewResultPostgres(tx)),
+		Repository:   postgres.NewTournamentAdminResultPostgres(tx, resultauthority.NewResultPostgres(tx)),
 		Postseason:   postseason,
 	})
 	admin := tournamentadmin.AdminNewObservedService(

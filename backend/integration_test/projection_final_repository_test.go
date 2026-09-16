@@ -19,6 +19,7 @@ import (
 	draftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment/draft"
 	playoffrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/playoff"
 	projectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
+	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 	projection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection"
@@ -150,7 +151,7 @@ func createFinalPublicationFixture(t *testing.T) (projection.FinalPublication, *
 	fixture, ids, coordinator := prepareActiveFinal(ctx, t)
 	firstInput := activeFinalSettlementInput(ctx, t, fixture, ids, 1)
 	err := fixture.tx.Do(ctx, func(txCtx context.Context) error {
-		if _, _, err := postgres.NewResultPostgres(fixture.tx).Settle(txCtx, firstInput); err != nil {
+		if _, _, err := resultauthority.NewResultPostgres(fixture.tx).Settle(txCtx, firstInput); err != nil {
 			return err
 		}
 		_, err := coordinator.AdvanceAfterSeriesSettlement(txCtx, playoff.TerminalSeriesCommand{TournamentID: fixture.tournamentID, SeriesID: ids.FinalSeriesID})
@@ -158,7 +159,7 @@ func createFinalPublicationFixture(t *testing.T) (projection.FinalPublication, *
 	})
 	require.NoError(t, err)
 	lastInput := activeFinalSettlementInput(ctx, t, fixture, ids, 2)
-	final, changed, err := postgres.NewResultPostgres(fixture.tx).Settle(ctx, lastInput)
+	final, changed, err := resultauthority.NewResultPostgres(fixture.tx).Settle(ctx, lastInput)
 	require.NoError(t, err)
 	require.True(t, changed)
 	drafts := draftrepo.NewDraftPostgres(fixture.tx)

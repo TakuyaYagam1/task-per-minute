@@ -11,6 +11,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	draftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment/draft"
+	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	gamedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/game"
@@ -99,7 +100,7 @@ func TestFinalSettlementPublishesChampion(t *testing.T) {
 	for position := 1; position <= 2; position++ {
 		input := activeFinalSettlementInput(ctx, t, fixture, ids, position)
 		settleAndAdvance := func(txCtx context.Context) error {
-			if _, changed, err := postgres.NewResultPostgres(fixture.tx).Settle(txCtx, input); err != nil {
+			if _, changed, err := resultauthority.NewResultPostgres(fixture.tx).Settle(txCtx, input); err != nil {
 				return err
 			} else if !changed {
 				return errors.New("expected fresh final settlement")

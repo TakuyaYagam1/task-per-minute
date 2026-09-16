@@ -30,6 +30,7 @@ import (
 	waverepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/wave"
 	runtimepostgres "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/golden/runtime"
 	projectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
+	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
 	rosterrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/roster"
 	snapshotrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/snapshot"
 	cancellationrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/cancellation"
@@ -387,7 +388,7 @@ func newTournamentFlowRESTFixture(t *testing.T) *restFixture {
 		Progressions: progression, Clock: clock,
 	})
 	postseason := newTournamentFlowTerminalCoordinator(tx)
-	resultPostgres := postgres.NewResultPostgres(tx)
+	resultPostgres := resultauthority.NewResultPostgres(tx)
 	results := tournamentadmin.NewOperatorResultWorkflow(tournamentadmin.OperatorResultWorkflowDependencies{
 		Transactions: tx,
 		Repository:   postgres.NewTournamentAdminResultPostgres(tx, resultPostgres),
