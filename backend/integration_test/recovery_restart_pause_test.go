@@ -34,10 +34,6 @@ func TestRecoveryRestartPause(t *testing.T) {
 			run:  TestGameMigration,
 		},
 		{
-			name: "game attempts retain stable history behind scoped CAS",
-			run:  TestGameRepositoryUsesScopedCASAndStableAttemptHistory,
-		},
-		{
 			name: "nested pause graph restores reconnect ownership and deadlines",
 			run:  TestReconnectMigration,
 		},
