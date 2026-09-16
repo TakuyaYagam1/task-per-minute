@@ -3,13 +3,12 @@ package postgres
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
+	catalogrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/catalog"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	attendanceusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/attendance"
 	catalogusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/catalog"
@@ -156,80 +155,43 @@ func (r *TournamentPostgres) Create(
 	ctx context.Context,
 	in TournamentCreateInput,
 ) (*TournamentRecord, *RosterRecord, error) {
-	metadata := domain.TournamentMetadata{Name: in.Name, PublicID: in.PublicID,
-		PlannedRosterSize: in.PlannedRosterSize, ContentRevision: in.ContentRevision}
-	if r == nil || r.tx == nil || in.ID == uuid.Nil || in.RosterID == uuid.Nil ||
-		metadata.Validate(domain.TournamentPresetV1) != nil || !validServerTime(in.CreatedAt) {
-		return nil, nil, domain.ErrValidation
-	}
-
-	var tournament sqlc.Tournament
-	var roster sqlc.Roster
-	err := r.tx.Do(ctx, func(txCtx context.Context) error {
-		querier := r.tx.Querier(txCtx)
-		binding, bindErr := loadTournamentV1ContentBinding(txCtx, querier, in.ID, in.RosterID, in.ContentRevision)
-		if bindErr != nil {
-			return bindErr
-		}
-		if bindErr = revalidateTournamentV1ContentPools(txCtx, querier, binding); bindErr != nil {
-			return bindErr
-		}
-
-		var createErr error
-		tournament, createErr = querier.CreateTournament(txCtx, sqlc.CreateTournamentParams{
-			//nolint:gosec // Metadata validation bounds planned roster size to 4..16.
-			ID: in.ID, Name: in.Name, PublicID: in.PublicID, PlannedRosterSize: int32(in.PlannedRosterSize),
-			ContentRevision: in.ContentRevision, CreatedAt: tstz(in.CreatedAt),
-		})
-		if createErr != nil {
-			return fmt.Errorf("TournamentPostgres - Create - Querier.CreateTournament: %w", createErr)
-		}
-		roster, createErr = querier.CreateTournamentRoster(txCtx, sqlc.CreateTournamentRosterParams{
-			ID: in.RosterID, TournamentID: in.ID, CreatedAt: tstz(in.CreatedAt),
-		})
-		if createErr != nil {
-			return fmt.Errorf("TournamentPostgres - Create - Querier.CreateTournamentRoster: %w", createErr)
-		}
-		if createErr = persistTournamentV1ContentBinding(txCtx, querier, binding, in.CreatedAt); createErr != nil {
-			return createErr
-		}
-		return nil
+	repository := r.catalogRepository()
+	tournament, roster, err := repository.Create(ctx, catalogrepo.TournamentCreateInput{
+		ID: in.ID, RosterID: in.RosterID, Name: in.Name, PublicID: in.PublicID,
+		PlannedRosterSize: in.PlannedRosterSize, ContentRevision: in.ContentRevision, CreatedAt: in.CreatedAt,
 	})
 	if err != nil {
-		if isUniqueViolation(err, tournamentPublicIDConstraint) {
-			return nil, nil, domain.WrapError(err, domain.ErrConflict)
-		}
 		return nil, nil, err
 	}
 	return tournamentRecord(tournament), rosterRecord(roster), nil
 }
 
 func (r *TournamentPostgres) Get(ctx context.Context, id uuid.UUID) (*TournamentRecord, error) {
-	row, err := r.tx.Querier(ctx).GetTournament(ctx, id)
+	row, err := r.catalogRepository().Get(ctx, id)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, catalogrepo.ErrTournamentNotFound) {
 			return nil, ErrTournamentNotFound
 		}
-		return nil, fmt.Errorf("TournamentPostgres - Get - Querier.GetTournament: %w", err)
+		return nil, err
 	}
 	return tournamentRecord(row), nil
 }
 
 func (r *TournamentPostgres) Active(ctx context.Context) (*TournamentRecord, error) {
-	row, err := r.tx.Querier(ctx).GetActiveTournament(ctx)
+	row, err := r.catalogRepository().Active(ctx)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("TournamentPostgres - Active - Querier.GetActiveTournament: %w", err)
+		return nil, err
+	}
+	if row.ID == uuid.Nil {
+		return nil, nil
 	}
 	return tournamentRecord(row), nil
 }
 
 func (r *TournamentPostgres) List(ctx context.Context) ([]TournamentRecord, error) {
-	rows, err := r.tx.Querier(ctx).ListTournaments(ctx)
+	rows, err := r.catalogRepository().List(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("TournamentPostgres - List - Querier.ListTournaments: %w", err)
+		return nil, err
 	}
 	out := make([]TournamentRecord, 0, len(rows))
 	for _, row := range rows {
@@ -242,44 +204,25 @@ func (r *TournamentPostgres) Transition(
 	ctx context.Context,
 	in TournamentTransitionInput,
 ) (*TournamentRecord, bool, error) {
-	if err := validateTournamentTransitionInput(in); err != nil {
-		return nil, false, err
-	}
-
-	var updated sqlc.Tournament
-	err := r.tx.Do(ctx, func(txCtx context.Context) error {
-		var err error
-		updated, err = r.tx.Querier(txCtx).UpdateTournamentCAS(txCtx, sqlc.UpdateTournamentCASParams{
-			NextState:        string(in.NextState),
-			PausedFromState:  nullableState(in.PausedFromState),
-			UpdatedAt:        tstz(in.UpdatedAt),
-			StartedAt:        nullableTSTZ(in.StartedAt),
-			FinishedAt:       nullableTSTZ(in.FinishedAt),
-			ID:               in.ID,
-			ExpectedRevision: in.ExpectedRevision,
-			ExpectedState:    string(in.ExpectedState),
-		})
-		if err != nil {
-			return err
-		}
-		if !in.NextState.IsTerminal() {
-			return nil
-		}
-		if _, err = r.tx.Querier(txCtx).ReleaseTournamentReservations(txCtx, in.ID); err != nil {
-			return fmt.Errorf("TournamentPostgres - Transition - Querier.ReleaseTournamentReservations: %w", err)
-		}
-		return nil
+	updated, changed, err := r.catalogRepository().Transition(ctx, catalogrepo.TournamentTransitionInput{
+		ID: in.ID, ExpectedRevision: in.ExpectedRevision, ExpectedState: in.ExpectedState,
+		NextState: in.NextState, PausedFromState: in.PausedFromState, UpdatedAt: in.UpdatedAt,
+		StartedAt: in.StartedAt, FinishedAt: in.FinishedAt,
 	})
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, false, nil
-		}
-		if isUniqueViolation(err, tournamentActiveConstraint) {
-			return nil, false, domain.WrapError(err, domain.ErrConflict)
-		}
-		return nil, false, fmt.Errorf("TournamentPostgres - Transition - Querier.UpdateTournamentCAS: %w", err)
+		return nil, false, err
+	}
+	if !changed {
+		return nil, false, nil
 	}
 	return tournamentRecord(updated), true, nil
+}
+
+func (r *TournamentPostgres) catalogRepository() *catalogrepo.TournamentCatalogPostgres {
+	if r == nil {
+		return nil
+	}
+	return catalogrepo.NewTournamentCatalogPostgres(r.tx)
 }
 
 type tournamentV1ContentBinding struct {
@@ -302,64 +245,31 @@ type tournamentV1ContentPublicationPool struct {
 	poolRevision        int64
 }
 
-//nolint:gocyclo // One fail-closed validator keeps publication identity and pool-kind checks together.
+// The following private bridges preserve same-package callers while the
+// content binding implementation lives in tournament/catalog.
 func tournamentV1ContentBindingFromPools(
 	tournamentID uuid.UUID,
 	rosterID uuid.UUID,
 	pools []tournamentV1ContentPublicationPool,
 ) (tournamentV1ContentBinding, error) {
-	if len(pools) != 2 {
-		return tournamentV1ContentBinding{}, fmt.Errorf(
-			"TournamentPostgres - content pools: %w", domain.ErrInvalidContentConfiguration,
-		)
-	}
-
-	binding := tournamentV1ContentBinding{
-		tournamentID:      tournamentID,
-		configurationID:   tournamentV1ContentID(tournamentID, rosterID, "configuration"),
-		bo1CategoryPoolID: tournamentV1ContentID(tournamentID, rosterID, "category-pool:bo1"),
-		bo3CategoryPoolID: tournamentV1ContentID(tournamentID, rosterID, "category-pool:bo3"),
-	}
-	first := pools[0]
-	for _, pool := range pools {
-		if pool.publicationID == uuid.Nil || pool.poolRevisionID == uuid.Nil ||
-			pool.publicationID != first.publicationID ||
-			pool.publicationRevision != first.publicationRevision ||
-			pool.publicationRevision < 1 || pool.poolRevision != pool.publicationRevision ||
-			!pool.publishedAtValid {
-			return tournamentV1ContentBinding{}, fmt.Errorf(
-				"TournamentPostgres - invalid task pools: %w", domain.ErrInvalidContentConfiguration,
-			)
-		}
-		binding.publicationID = pool.publicationID
-		switch domain.AssignmentTaskKind(pool.kind) {
-		case domain.AssignmentTaskKindNormal:
-			if binding.normalPoolRevisionID != uuid.Nil {
-				return tournamentV1ContentBinding{}, fmt.Errorf(
-					"TournamentPostgres - duplicate normal task pool: %w", domain.ErrInvalidContentConfiguration,
-				)
-			}
-			binding.normalPoolRevisionID = pool.poolRevisionID
-		case domain.AssignmentTaskKindGolden:
-			if binding.goldenPoolRevisionID != uuid.Nil {
-				return tournamentV1ContentBinding{}, fmt.Errorf(
-					"TournamentPostgres - duplicate golden task pool: %w", domain.ErrInvalidContentConfiguration,
-				)
-			}
-			binding.goldenPoolRevisionID = pool.poolRevisionID
-		default:
-			return tournamentV1ContentBinding{}, fmt.Errorf(
-				"TournamentPostgres - unknown task pool: %w", domain.ErrInvalidContentConfiguration,
-			)
+	childPools := make([]catalogrepo.ContentPublicationPool, len(pools))
+	for index, pool := range pools {
+		childPools[index] = catalogrepo.ContentPublicationPool{
+			PublicationID: pool.publicationID, PublicationRevision: pool.publicationRevision,
+			PublishedAt: pool.publishedAt, PublishedAtValid: pool.publishedAtValid,
+			PoolRevisionID: pool.poolRevisionID, Kind: pool.kind, PoolRevision: pool.poolRevision,
 		}
 	}
-	if binding.normalPoolRevisionID == uuid.Nil || binding.goldenPoolRevisionID == uuid.Nil ||
-		binding.normalPoolRevisionID == binding.goldenPoolRevisionID {
-		return tournamentV1ContentBinding{}, fmt.Errorf(
-			"TournamentPostgres - incomplete task pools: %w", domain.ErrInvalidContentConfiguration,
-		)
+	childBinding, err := catalogrepo.ContentBindingFromPools(tournamentID, rosterID, childPools)
+	if err != nil {
+		return tournamentV1ContentBinding{}, err
 	}
-	return binding, nil
+	return tournamentV1ContentBinding{
+		tournamentID: childBinding.TournamentID, configurationID: childBinding.ConfigurationID,
+		publicationID: childBinding.PublicationID, normalPoolRevisionID: childBinding.NormalPoolRevisionID,
+		goldenPoolRevisionID: childBinding.GoldenPoolRevisionID,
+		bo1CategoryPoolID:    childBinding.BO1CategoryPoolID, bo3CategoryPoolID: childBinding.BO3CategoryPoolID,
+	}, nil
 }
 
 func loadTournamentV1ContentBinding(
@@ -369,87 +279,29 @@ func loadTournamentV1ContentBinding(
 	rosterID uuid.UUID,
 	contentRevision int64,
 ) (tournamentV1ContentBinding, error) {
-	publication, err := querier.LockTaskPoolPublicationRevision(ctx, contentRevision)
+	childBinding, err := catalogrepo.LoadContentBinding(ctx, querier, tournamentID, rosterID, contentRevision)
 	if err != nil {
-		return tournamentV1ContentBinding{}, fmt.Errorf(
-			"TournamentPostgres - Create - lock current task pools: %w", err,
-		)
+		return tournamentV1ContentBinding{}, err
 	}
-	if len(publication) != 2 {
-		return tournamentV1ContentBinding{}, fmt.Errorf(
-			"TournamentPostgres - Create - current task pools: %w", domain.ErrInvalidContentConfiguration,
-		)
-	}
-
-	pools := make([]tournamentV1ContentPublicationPool, len(publication))
-	for index, pool := range publication {
-		pools[index] = tournamentV1ContentPublicationPool{
-			publicationID:       pool.PublicationID,
-			publicationRevision: pool.PublicationRevision,
-			publishedAt:         pool.PublishedAt.Time,
-			publishedAtValid:    pool.PublishedAt.Valid,
-			poolRevisionID:      pool.PoolRevisionID,
-			kind:                pool.Kind,
-			poolRevision:        pool.PoolRevision,
-		}
-	}
-	return tournamentV1ContentBindingFromPools(tournamentID, rosterID, pools)
+	return tournamentV1ContentBinding{
+		tournamentID: childBinding.TournamentID, configurationID: childBinding.ConfigurationID,
+		publicationID: childBinding.PublicationID, normalPoolRevisionID: childBinding.NormalPoolRevisionID,
+		goldenPoolRevisionID: childBinding.GoldenPoolRevisionID,
+		bo1CategoryPoolID:    childBinding.BO1CategoryPoolID, bo3CategoryPoolID: childBinding.BO3CategoryPoolID,
+	}, nil
 }
 
-//nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func revalidateTournamentV1ContentPools(
 	ctx context.Context,
 	querier *sqlc.Queries,
 	binding tournamentV1ContentBinding,
 ) error {
-	rows, err := querier.ListTaskPoolVersionHealth(
-		ctx,
-		[]uuid.UUID{binding.normalPoolRevisionID, binding.goldenPoolRevisionID},
-	)
-	if err != nil {
-		return fmt.Errorf("TournamentPostgres - Create - task pool health: %w", err)
-	}
-	poolCounts := map[uuid.UUID]int{
-		binding.normalPoolRevisionID: 0,
-		binding.goldenPoolRevisionID: 0,
-	}
-	seenVersions := make(map[[2]uuid.UUID]struct{}, len(rows))
-	for _, row := range rows {
-		if row.TaskID == uuid.Nil || row.TaskVersion < 1 || row.PoolRevisionID == uuid.Nil ||
-			!row.TaskExists || !row.TaskEnabled || !row.TaskHealthy || !row.TaskMutationLocked {
-			return fmt.Errorf(
-				"TournamentPostgres - Create - unhealthy task pool version: %w", domain.ErrInvalidContentConfiguration,
-			)
-		}
-		if _, exists := poolCounts[row.PoolRevisionID]; !exists {
-			return fmt.Errorf(
-				"TournamentPostgres - Create - foreign task pool version: %w", domain.ErrInvalidContentConfiguration,
-			)
-		}
-		wantKind := domain.AssignmentTaskKindNormal
-		if row.PoolRevisionID == binding.goldenPoolRevisionID {
-			wantKind = domain.AssignmentTaskKindGolden
-		}
-		if domain.AssignmentTaskKind(row.PoolKind) != wantKind {
-			return fmt.Errorf(
-				"TournamentPostgres - Create - mismatched task pool kind: %w", domain.ErrInvalidContentConfiguration,
-			)
-		}
-		key := [2]uuid.UUID{row.TaskID, row.PoolRevisionID}
-		if _, duplicate := seenVersions[key]; duplicate {
-			return fmt.Errorf(
-				"TournamentPostgres - Create - duplicate task pool version: %w", domain.ErrInvalidContentConfiguration,
-			)
-		}
-		seenVersions[key] = struct{}{}
-		poolCounts[row.PoolRevisionID]++
-	}
-	if poolCounts[binding.normalPoolRevisionID] == 0 || poolCounts[binding.goldenPoolRevisionID] == 0 {
-		return fmt.Errorf(
-			"TournamentPostgres - Create - empty task pool: %w", domain.ErrInvalidContentConfiguration,
-		)
-	}
-	return nil
+	return catalogrepo.RevalidateContentPools(ctx, querier, catalogrepo.ContentBinding{
+		TournamentID: binding.tournamentID, ConfigurationID: binding.configurationID,
+		PublicationID: binding.publicationID, NormalPoolRevisionID: binding.normalPoolRevisionID,
+		GoldenPoolRevisionID: binding.goldenPoolRevisionID,
+		BO1CategoryPoolID:    binding.bo1CategoryPoolID, BO3CategoryPoolID: binding.bo3CategoryPoolID,
+	})
 }
 
 func persistTournamentV1ContentBinding(
@@ -458,121 +310,14 @@ func persistTournamentV1ContentBinding(
 	binding tournamentV1ContentBinding,
 	createdAt time.Time,
 ) error {
-	bo1Categories := []domain.Category{domain.CategoryCrypto, domain.CategoryReverse, domain.CategoryWeb}
-	bo3Categories := []domain.Category{
-		domain.CategoryCrypto,
-		domain.CategoryForensics,
-		domain.CategoryPwn,
-		domain.CategoryReverse,
-		domain.CategoryWeb,
-	}
-	if _, err := querier.CreateTournamentContentConfiguration(
-		ctx,
-		sqlc.CreateTournamentContentConfigurationParams{
-			ID:                   binding.configurationID,
-			TournamentID:         binding.tournamentID,
-			Revision:             1,
-			PoolPublicationID:    binding.publicationID,
-			NormalPoolRevisionID: binding.normalPoolRevisionID,
-			GoldenPoolRevisionID: binding.goldenPoolRevisionID,
-			CreatedAt:            tstz(createdAt),
-		},
-	); err != nil {
-		return fmt.Errorf("TournamentPostgres - Create - content configuration: %w", err)
-	}
-	for _, pool := range []struct {
-		id         uuid.UUID
-		format     domain.SeriesFormat
-		categories []domain.Category
-	}{
-		{
-			id: binding.bo1CategoryPoolID, format: domain.SeriesFormatBO1,
-			categories: bo1Categories,
-		},
-		{
-			id: binding.bo3CategoryPoolID, format: domain.SeriesFormatBO3,
-			categories: bo3Categories,
-		},
-	} {
-		if _, err := querier.CreateTournamentCategoryPoolRevision(
-			ctx,
-			sqlc.CreateTournamentCategoryPoolRevisionParams{
-				ID:              pool.id,
-				ConfigurationID: binding.configurationID,
-				Format:          string(pool.format),
-				Revision:        1,
-				CreatedAt:       tstz(createdAt),
-			},
-		); err != nil {
-			return fmt.Errorf("TournamentPostgres - Create - category pool: %w", err)
-		}
-		for _, category := range pool.categories {
-			if err := querier.CreateTournamentCategoryPoolMembership(
-				ctx,
-				sqlc.CreateTournamentCategoryPoolMembershipParams{
-					CategoryPoolRevisionID: pool.id,
-					Category:               string(category),
-					CreatedAt:              tstz(createdAt),
-				},
-			); err != nil {
-				return fmt.Errorf("TournamentPostgres - Create - category membership: %w", err)
-			}
-		}
-	}
-	for _, stageDefault := range []struct {
-		stage          domain.TournamentStage
-		format         domain.SeriesFormat
-		mode           domain.CategoryMode
-		categoryPoolID uuid.UUID
-		taskPoolKind   domain.AssignmentTaskKind
-		categories     []domain.Category
-	}{
-		{
-			stage: domain.TournamentStageSwiss, format: domain.SeriesFormatBO1,
-			mode: domain.CategoryModeRandom, categoryPoolID: binding.bo1CategoryPoolID,
-			taskPoolKind: domain.AssignmentTaskKindNormal, categories: bo1Categories[:1],
-		},
-		{
-			stage: domain.TournamentStageGolden, format: domain.SeriesFormatBO1,
-			mode: domain.CategoryModeRandom, categoryPoolID: binding.bo1CategoryPoolID,
-			taskPoolKind: domain.AssignmentTaskKindGolden, categories: bo1Categories[:1],
-		},
-		{
-			stage: domain.TournamentStageSemifinal, format: domain.SeriesFormatBO1,
-			mode: domain.CategoryModeDraft, categoryPoolID: binding.bo1CategoryPoolID,
-			taskPoolKind: domain.AssignmentTaskKindNormal, categories: bo1Categories,
-		},
-		{
-			stage: domain.TournamentStageFinal, format: domain.SeriesFormatBO3,
-			mode: domain.CategoryModeDraft, categoryPoolID: binding.bo3CategoryPoolID,
-			taskPoolKind: domain.AssignmentTaskKindNormal, categories: bo3Categories,
-		},
-	} {
-		if err := querier.CreateTournamentContentStageDefault(
-			ctx,
-			sqlc.CreateTournamentContentStageDefaultParams{
-				ConfigurationID:        binding.configurationID,
-				Stage:                  string(stageDefault.stage),
-				Format:                 string(stageDefault.format),
-				CategoryMode:           string(stageDefault.mode),
-				CategoryPoolRevisionID: stageDefault.categoryPoolID,
-				TaskPoolKind:           string(stageDefault.taskPoolKind),
-				Categories:             categoriesJSON(stageDefault.categories),
-				CreatedAt:              tstz(createdAt),
-			},
-		); err != nil {
-			return fmt.Errorf("TournamentPostgres - Create - content stage default: %w", err)
-		}
-	}
-	if _, err := querier.PublishTournamentContentConfiguration(
-		ctx,
-		sqlc.PublishTournamentContentConfigurationParams{ID: binding.configurationID, PublishedAt: tstz(createdAt)},
-	); err != nil {
-		return fmt.Errorf("TournamentPostgres - Create - publish content configuration: %w", err)
-	}
-	return nil
+	return catalogrepo.PersistContentBinding(ctx, querier, catalogrepo.ContentBinding{
+		TournamentID: binding.tournamentID, ConfigurationID: binding.configurationID,
+		PublicationID: binding.publicationID, NormalPoolRevisionID: binding.normalPoolRevisionID,
+		GoldenPoolRevisionID: binding.goldenPoolRevisionID,
+		BO1CategoryPoolID:    binding.bo1CategoryPoolID, BO3CategoryPoolID: binding.bo3CategoryPoolID,
+	}, createdAt)
 }
 
 func tournamentV1ContentID(tournamentID, rosterID uuid.UUID, role string) uuid.UUID {
-	return uuid.NewSHA1(tournamentID, []byte("tournament_v1:content:"+rosterID.String()+":"+role))
+	return catalogrepo.ContentID(tournamentID, rosterID, role)
 }
