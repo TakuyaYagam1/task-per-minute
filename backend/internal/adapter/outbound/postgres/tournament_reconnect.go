@@ -5,6 +5,7 @@ import (
 
 	"github.com/google/uuid"
 
+	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
 	reconnectrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/reconnect"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
@@ -15,7 +16,7 @@ func (r *TournamentAdminExecutionPostgres) reconnectRepository() *reconnectrepo.
 	if r == nil {
 		return nil
 	}
-	return reconnectrepo.NewTournamentReconnectPostgresWithDependencies(r.tx, resultProjectionFinalizer)
+	return reconnectrepo.NewTournamentReconnectPostgresWithDependencies(r.tx, resultauthority.FinalizeProjection)
 }
 
 var _ gameusecase.ReconnectRepository = (*TournamentAdminExecutionPostgres)(nil)

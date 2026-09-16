@@ -8,7 +8,9 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	terminalrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/recovery/terminal"
+	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
+	wavestartrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/execution/wavestart"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
@@ -46,8 +48,8 @@ func NewRecoveryTerminalPostgres(
 		tx,
 		authoritySource,
 		clock,
-		ensureRecoverySwissRoundProof,
-		resultProjectionFinalizer,
+		wavestartrepo.EnsurePreStartSwissRoundProofForCommand,
+		resultauthority.FinalizeProjection,
 	)
 	return &RecoveryTerminalPostgres{inner: inner}
 }
@@ -88,20 +90,6 @@ func (repository *RecoveryTerminalPostgres) loadGameTimeout(
 		series[index] = recoverySeriesSnapshot{row: item.Row, scoreHead: item.ScoreHead, graph: item.Graph}
 	}
 	return recoveryTerminalSnapshot{authority: snapshot.Authority, game: snapshot.Game, series: series}, nil
-}
-
-func ensureRecoverySwissRoundProof(
-	ctx context.Context,
-	tx *TxManager,
-	tournamentID uuid.UUID,
-	seriesID uuid.UUID,
-	at time.Time,
-	mode string,
-	commandID uuid.UUID,
-) error {
-	return ensurePreStartSwissRoundProof(ctx, tx, tournamentID, seriesID, at, swissRoundProofOrigin{
-		mode: mode, commandID: commandID,
-	})
 }
 
 func createRecoveryRoute(

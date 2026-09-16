@@ -1,11 +1,8 @@
 package postgres
 
 import (
-	"context"
-	"time"
-
-	"github.com/google/uuid"
-
+	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
+	wavestartrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/execution/wavestart"
 	resultrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/result"
 )
 
@@ -18,19 +15,7 @@ func NewTournamentAdminResultPostgres(
 	return resultrepo.NewTournamentAdminResultPostgresWithDependencies(
 		tx,
 		results,
-		resultProjectionFinalizer,
-		func(
-			ctx context.Context,
-			tx *TxManager,
-			tournamentID uuid.UUID,
-			seriesID uuid.UUID,
-			at time.Time,
-			mode string,
-			commandID uuid.UUID,
-		) error {
-			return ensurePreStartSwissRoundProof(ctx, tx, tournamentID, seriesID, at, swissRoundProofOrigin{
-				mode: mode, commandID: commandID,
-			})
-		},
+		resultauthority.FinalizeProjection,
+		wavestartrepo.EnsurePreStartSwissRoundProofForCommand,
 	)
 }
