@@ -160,7 +160,7 @@ func TestTaskPostgresWritesValidationInsideTheHeadTransaction(t *testing.T) {
 func TestTournamentPreflightReadsPublishedContentAuthority(t *testing.T) {
 	t.Parallel()
 
-	adapter, err := os.ReadFile(filepath.Join("..", "tournament_admin_roster_preflight.go"))
+	adapter, err := os.ReadFile(filepath.Join("..", "tournament", "admin", "roster", "tournament_admin_roster_preflight.go"))
 	require.NoError(t, err)
 
 	for _, fragment := range []string{

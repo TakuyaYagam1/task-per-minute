@@ -1,4 +1,4 @@
-package postgres
+package exactdraft
 
 import (
 	"crypto/sha256"

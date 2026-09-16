@@ -17,7 +17,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/require"
 
-	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	assignmentrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment"
 	draftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment/draft"
 	exactdraftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment/exactdraft"
@@ -281,7 +280,7 @@ type checkedFinalDraftPlanner struct {
 }
 
 type observedExactDraftRepository struct {
-	*postgres.ExactDraftBranchPlanPostgres
+	*exactdraftrepo.ExactDraftBranchPlanPostgres
 	t *testing.T
 }
 

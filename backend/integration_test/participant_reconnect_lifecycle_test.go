@@ -10,7 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	postgresadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	participantrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
@@ -110,7 +110,7 @@ func TestParticipantReconnectLifecycle(t *testing.T) {
 		disconnectAt := deadline.Add(-10 * time.Second)
 		reconnectAt := disconnectAt.Add(5 * time.Second)
 		clock := &participantReconnectTestClock{at: disconnectAt}
-		connectionRepository := postgresadapter.NewParticipantConnectionPostgres(
+		connectionRepository := participantrepo.NewParticipantConnectionPostgres(
 			started.fixture.tx,
 			participantReconnectAuthorityProvider{identity: started.fixture.executionAuthority},
 		)
