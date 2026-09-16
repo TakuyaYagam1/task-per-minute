@@ -1,4 +1,4 @@
-package game
+package start
 
 import (
 	"context"
@@ -84,12 +84,12 @@ type StartRecord struct {
 
 type StartUseCase struct {
 	repository StartRepository
-	clock      WaveClock
+	clock      Clock
 }
 
 func NewStartUseCase(
 	repository StartRepository,
-	clock WaveClock,
+	clock Clock,
 ) *StartUseCase {
 	return &StartUseCase{
 		repository: repository,
