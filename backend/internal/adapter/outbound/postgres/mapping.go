@@ -18,23 +18,6 @@ const (
 	pgRestrictViolation   = "23001"
 )
 
-func playerToDomain(p sqlc.Player) *domain.Player {
-	out := &domain.Player{
-		ID:        p.ID,
-		Username:  p.Username,
-		CreatedAt: p.CreatedAt.Time,
-	}
-	if p.SessionToken.Valid {
-		token := p.SessionToken.UUID
-		out.SessionToken = &token
-	}
-	if p.SessionExpiresAt.Valid {
-		expiresAt := p.SessionExpiresAt.Time
-		out.SessionExpiresAt = &expiresAt
-	}
-	return out
-}
-
 func createTaskToDomain(t sqlc.CreateTaskRow) *domain.Task {
 	return taskValuesToDomain(
 		t.ID, t.Title, t.Description, t.Category, t.Difficulty, t.TimeLimit, t.Flag,
