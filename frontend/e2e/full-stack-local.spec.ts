@@ -70,6 +70,19 @@ type FullStackPreflightReport = {
   tournament_id: string;
 };
 
+type FullStackSwissRound = {
+  locked: boolean;
+  pairings: Array<{
+    first_participant_id: string;
+    repeated?: boolean;
+    second_participant_id: string;
+  }>;
+  revision: number;
+  roster_participant_ids: string[];
+  round_number: number;
+  tournament_id: string;
+};
+
 type UploadSourceResponse = {
   source_file_url: string;
 };
@@ -345,6 +358,48 @@ const applyOpenRegistrationViaApi = async (
       confirmed: true,
     },
   });
+};
+
+const applyStartSwissViaApi = async (
+  request: APIRequestContext,
+  tournamentID: string,
+  csrfToken: string,
+): Promise<APIResponse> => {
+  let projectionRevision = await getOperatorProjectionRevisionViaApi(request, tournamentID);
+  let response: APIResponse | null = null;
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    response = await request.post(`${backendURL}/api/v1/admin/tournaments/${tournamentID}/actions`, {
+      headers: {
+        'X-CSRF-Token': csrfToken,
+        'Idempotency-Key': randomUUID(),
+        Origin: frontendURL,
+      },
+      data: {
+        expected_projection_revision: projectionRevision,
+        action: 'start_swiss',
+        confirmed: true,
+      },
+    });
+    if (response.status() !== 409) {
+      return response;
+    }
+
+    const conflict = (await response.json()) as { current_revision?: unknown };
+    if (
+      typeof conflict.current_revision !== 'number' ||
+      !Number.isSafeInteger(conflict.current_revision) ||
+      conflict.current_revision < 1
+    ) {
+      return response;
+    }
+    projectionRevision = conflict.current_revision;
+  }
+
+  if (!response) {
+    throw new Error('start Swiss did not issue a request');
+  }
+  return response;
 };
 
 const runRosterPreflightViaApi = async (
@@ -793,7 +848,7 @@ test.describe('local compose full stack e2e', () => {
     }
   });
 
-  test('FE-027 and FE-029 compose, preflight, lock, unlock, and protect a real backend roster', async ({ page, browser }) => {
+  test('FE-027, FE-029, and FE-030 compose roster control with real Swiss pairings', async ({ page, browser }) => {
     test.setTimeout(180_000);
 
     const tournamentName = uniqueName('fullstack-roster');
@@ -1313,6 +1368,62 @@ test.describe('local compose full stack e2e', () => {
       );
       expect(firstRosterAfterConflict).toEqual(firstRosterBeforeConflict);
       expect(secondRosterAfterConflict).toEqual(secondRosterBeforeConflict);
+
+      const startSwissResponse = await applyStartSwissViaApi(
+        adminRequest,
+        tournament.id,
+        adminAccessCSRFToken,
+      );
+      const startSwissFailure =
+        startSwissResponse.status() === 200 ? '' : await startSwissResponse.text();
+      expect(
+        startSwissResponse.status(),
+        `start Swiss action must succeed${startSwissFailure ? `: ${startSwissFailure}` : ''}`,
+      ).toBe(200);
+      const swissTournament = (await startSwissResponse.json()) as AdminTournament;
+      expect(swissTournament.state).toBe('swiss');
+
+      const pairingRegion = page.getByRole('region', { name: 'Пары Swiss' });
+      await expect(pairingRegion).toBeVisible({ timeout: 15_000 });
+      const pairingReload = page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname ===
+            `/api/v1/admin/tournaments/${tournament.id}/configuration` &&
+          response.request().method() === 'GET',
+      );
+      await pairingRegion.getByRole('button', { name: 'Обновить состояние' }).click();
+      expect((await pairingReload).status()).toBe(200);
+
+      const pairingResponse = page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname ===
+            `/api/v1/admin/tournaments/${tournament.id}/pairings` &&
+          response.request().method() === 'POST',
+      );
+      await pairingRegion.getByRole('button', { name: 'Сформировать пары' }).click();
+      const configuredPairingResponse = await pairingResponse;
+      expect(
+        configuredPairingResponse.status(),
+        `Swiss pairing failed with ${configuredPairingResponse.status()}`,
+      ).toBe(200);
+      const configuredRound = (await configuredPairingResponse.json()) as FullStackSwissRound;
+      expect(configuredRound.tournament_id).toBe(tournament.id);
+      expect(configuredRound.round_number).toBe(1);
+      expect(configuredRound.revision).toBeGreaterThan(0);
+      expect(configuredRound.locked).toBe(false);
+      expect(configuredRound.pairings).toHaveLength(2);
+      expect(configuredRound.pairings.every((pairing) => pairing.repeated !== true)).toBe(true);
+      const pairedParticipantIDs = configuredRound.pairings.flatMap((pairing) => [
+        pairing.first_participant_id,
+        pairing.second_participant_id,
+      ]);
+      expect(new Set(pairedParticipantIDs).size).toBe(4);
+      expect([...pairedParticipantIDs].sort()).toEqual(
+        [...configuredRound.roster_participant_ids].sort(),
+      );
+      await expect(pairingRegion.getByText('Серверный план раунда 1')).toBeVisible();
+      await expect(pairingRegion.getByText('Сохранен', { exact: true })).toBeVisible();
+      await expect(pairingRegion.getByText('Повтор', { exact: true })).toHaveCount(0);
     } finally {
       for (const context of playerContexts) {
         await context.close();

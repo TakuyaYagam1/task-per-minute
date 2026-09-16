@@ -867,6 +867,11 @@ type Tournament = components["schemas"]["Tournament"];
 type TournamentListResponse = components["schemas"]["TournamentListResponse"];
 type Roster = components["schemas"]["Roster"];
 type PreflightReport = components["schemas"]["PreflightReport"];
+type SwissBye = components["schemas"]["SwissBye"];
+type SwissPairing = components["schemas"]["SwissPairing"];
+type SwissPairingEvidence = components["schemas"]["SwissPairingEvidence"];
+type SwissStanding = components["schemas"]["SwissStanding"];
+type SwissRound = components["schemas"]["SwissRound"];
 type AuditCursor = components["schemas"]["AuditCursor"];
 export type OperatorAuditRedactedPayload = Readonly<Partial<{
   attempt_id: string;
@@ -984,6 +989,156 @@ const isOperatorUUIDOrNull = (value: unknown): value is string | null =>
 
 const isOperatorCategory = (value: unknown): boolean =>
   isString(value) && operatorCategories.has(value);
+
+const isSafeNonNegativeInteger = (value: unknown): value is number =>
+  isSafeInteger(value) && value >= 0;
+
+const isSwissPairingEvidence = (value: unknown): value is SwissPairingEvidence =>
+  isRecord(value) &&
+  hasExactKeys(value, [
+    "algorithm_version",
+    "decided_at",
+    "id",
+    "normalized_inputs",
+    "owner_id",
+    "purpose",
+    "replay_digest",
+    "result",
+  ]) &&
+  value.algorithm_version === "hmac-sha256-order-v1" &&
+  isDateTimeString(value.decided_at) &&
+  isNonNilUUID(value.id) &&
+  Array.isArray(value.normalized_inputs) &&
+  value.normalized_inputs.length > 0 &&
+  value.normalized_inputs.every(isString) &&
+  isNonNilUUID(value.owner_id) &&
+  value.purpose === "pairing" &&
+  isString(value.replay_digest) &&
+  /^[0-9a-f]{64}$/.test(value.replay_digest) &&
+  Array.isArray(value.result) &&
+  value.result.length > 0 &&
+  value.result.every(isString);
+
+const isSwissPairing = (value: unknown): value is SwissPairing =>
+  isRecord(value) &&
+  hasExactRequiredKeys(
+    value,
+    ["evidence_id", "first_participant_id", "id", "round_id", "second_participant_id"],
+    ["override_actor_id", "override_reason", "repeated"],
+  ) &&
+  isNonNilUUID(value.evidence_id) &&
+  isNonNilUUID(value.first_participant_id) &&
+  isNonNilUUID(value.id) &&
+  (value.override_actor_id === undefined ||
+    value.override_actor_id === null ||
+    isNonNilUUID(value.override_actor_id)) &&
+  (value.override_reason === undefined ||
+    value.override_reason === null ||
+    isString(value.override_reason)) &&
+  (value.repeated === undefined || typeof value.repeated === "boolean") &&
+  isNonNilUUID(value.round_id) &&
+  isNonNilUUID(value.second_participant_id);
+
+const isSwissBye = (value: unknown): value is SwissBye =>
+  isRecord(value) &&
+  hasExactKeys(value, [
+    "evidence_id",
+    "id",
+    "participant_id",
+    "points_awarded",
+    "revision_id",
+    "round_id",
+  ]) &&
+  isNonNilUUID(value.evidence_id) &&
+  isNonNilUUID(value.id) &&
+  isNonNilUUID(value.participant_id) &&
+  value.points_awarded === 1 &&
+  isNonNilUUID(value.revision_id) &&
+  isNonNilUUID(value.round_id);
+
+const isSwissStanding = (value: unknown): value is SwissStanding =>
+  isRecord(value) &&
+  hasExactRequiredKeys(
+    value,
+    [
+      "buchholz",
+      "buchholz_status",
+      "effective_time_ms",
+      "head_to_head_applied",
+      "head_to_head_points",
+      "participant_id",
+      "points",
+      "points_label",
+      "position",
+      "stable_seed",
+    ],
+    ["accepted_solve_time_ms"],
+  ) &&
+  (value.accepted_solve_time_ms === undefined ||
+    value.accepted_solve_time_ms === null ||
+    isSafeNonNegativeInteger(value.accepted_solve_time_ms)) &&
+  isNonNegativeInt32(value.buchholz) &&
+  (value.buchholz_status === "provisional" || value.buchholz_status === "final") &&
+  isSafeNonNegativeInteger(value.effective_time_ms) &&
+  typeof value.head_to_head_applied === "boolean" &&
+  isNonNegativeInt32(value.head_to_head_points) &&
+  isNonNilUUID(value.participant_id) &&
+  isNonNegativeInt32(value.points) &&
+  (value.points_label === "provisional" || value.points_label === "final") &&
+  isSafeInteger(value.position) &&
+  value.position >= 1 &&
+  value.position <= 16 &&
+  isSafeInteger(value.stable_seed) &&
+  value.stable_seed >= 1 &&
+  value.stable_seed <= 16;
+
+export const isSwissRound = (value: unknown): value is SwissRound =>
+  isRecord(value) &&
+  hasExactRequiredKeys(
+    value,
+    [
+      "created_at",
+      "id",
+      "locked",
+      "pairings",
+      "revision",
+      "roster_participant_ids",
+      "round_number",
+      "standings",
+      "tournament_id",
+      "updated_at",
+    ],
+    ["bye", "completed_at", "locked_at", "pairing_evidence", "started_at"],
+  ) &&
+  (value.bye === undefined || value.bye === null || isSwissBye(value.bye)) &&
+  (value.completed_at === undefined ||
+    value.completed_at === null ||
+    isDateTimeString(value.completed_at)) &&
+  isDateTimeString(value.created_at) &&
+  isNonNilUUID(value.id) &&
+  typeof value.locked === "boolean" &&
+  (value.locked_at === undefined || value.locked_at === null || isDateTimeString(value.locked_at)) &&
+  (value.pairing_evidence === undefined || isSwissPairingEvidence(value.pairing_evidence)) &&
+  Array.isArray(value.pairings) &&
+  value.pairings.length >= 1 &&
+  value.pairings.length <= 8 &&
+  value.pairings.every(isSwissPairing) &&
+  isSafePositiveInteger(value.revision) &&
+  Array.isArray(value.roster_participant_ids) &&
+  value.roster_participant_ids.length >= 4 &&
+  value.roster_participant_ids.length <= 16 &&
+  value.roster_participant_ids.every(isNonNilUUID) &&
+  new Set(value.roster_participant_ids).size === value.roster_participant_ids.length &&
+  isSafeInteger(value.round_number) &&
+  value.round_number >= 1 &&
+  value.round_number <= 4 &&
+  Array.isArray(value.standings) &&
+  value.standings.length >= 4 &&
+  value.standings.length <= 16 &&
+  value.standings.every(isSwissStanding) &&
+  (value.started_at === undefined || value.started_at === null || isDateTimeString(value.started_at)) &&
+  isNonNilUUID(value.tournament_id) &&
+  isDateTimeString(value.updated_at);
 
 const isOperatorSeriesScore = (value: unknown): boolean =>
   isRecord(value) &&

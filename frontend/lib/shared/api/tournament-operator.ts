@@ -6,6 +6,7 @@ import {
   isOperatorRecoverySnapshot,
   isPreflightReport,
   isRoster,
+  isSwissRound,
   isTournamentListResponse,
   isTournamentResponse,
   type OperatorAuditEvent,
@@ -26,6 +27,8 @@ export type PreflightRequest = components["schemas"]["PreflightRequest"];
 export type PreflightReport = components["schemas"]["PreflightReport"];
 export type LockRosterRequest = components["schemas"]["LockRosterRequest"];
 export type UnlockRosterRequest = components["schemas"]["UnlockRosterRequest"];
+export type PairingConfigurationRequest = components["schemas"]["PairingConfigurationRequest"];
+export type SwissRound = components["schemas"]["SwissRound"];
 export type AuditCursor = components["schemas"]["AuditCursor"];
 export type AuditRedactedPayload = OperatorAuditRedactedPayload;
 export type AuditEvent = OperatorAuditEvent;
@@ -269,6 +272,26 @@ export const operatorApi = {
     );
   },
 
+  async configurePairings(
+    tournamentId: string,
+    body: PairingConfigurationRequest,
+    intent: OperatorIdempotencyKey,
+    signal?: AbortSignal,
+  ): Promise<SwissRound> {
+    return readOperatorResponse(
+      adminClient.POST("/api/v1/admin/tournaments/{tournament_id}/pairings", {
+        params: {
+          path: { tournament_id: tournamentId },
+          header: mutationHeaders(intent),
+        },
+        body,
+        signal,
+      }),
+      isSwissRound,
+      "admin/tournament pairings configure",
+    );
+  },
+
   async getSnapshot(
     tournamentId: string,
     cursor?: OperatorRecoveryCursor,
@@ -323,6 +346,7 @@ export const replaceTournamentRoster = operatorApi.replaceRoster;
 export const runTournamentRosterPreflight = operatorApi.runRosterPreflight;
 export const lockTournamentRoster = operatorApi.lockRoster;
 export const unlockTournamentRoster = operatorApi.unlockRoster;
+export const configureTournamentPairings = operatorApi.configurePairings;
 export const getOperatorSnapshot = operatorApi.getSnapshot;
 export const listTournamentAudit = operatorApi.listAudit;
 export const exportTournamentIncident = operatorApi.exportIncident;

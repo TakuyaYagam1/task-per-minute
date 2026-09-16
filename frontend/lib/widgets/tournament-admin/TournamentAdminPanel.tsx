@@ -23,6 +23,7 @@ import {
 } from "../../shared/ui";
 
 import { RosterEditor } from "./RosterEditor";
+import { SwissPairingEditor } from "./SwissPairingEditor";
 import {
   TournamentContentManager,
   type AdminRequestRunner,
@@ -554,6 +555,14 @@ export const TournamentAdminPanel = ({
       </div>
 
       <RosterEditor
+        tournaments={tournaments}
+        selectedTournament={selectedTournament}
+        selectedTournamentId={selectedTournamentId}
+        onSelectTournament={setSelectedTournamentId}
+        onReloadTournaments={loadTournaments}
+        onSessionExpired={onSessionExpired}
+      />
+      <SwissPairingEditor
         tournaments={tournaments}
         selectedTournament={selectedTournament}
         selectedTournamentId={selectedTournamentId}
