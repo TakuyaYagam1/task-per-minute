@@ -1,4 +1,4 @@
-package postgres
+package participant
 
 import (
 	"encoding/json"
@@ -426,7 +426,7 @@ func participantSeriesSlots(
 func participantGameFromRow(row sqlc.GameAttempt) (domain.Game, error) {
 	game := domain.Game{
 		ID: row.ID, SlotID: row.SlotID, AttemptNo: int(row.AttemptNumber),
-		State: domain.GameState(row.State), ResultReason: domain.GameResultReason(stringValue(row.ResultReason)),
+		State: domain.GameState(row.State), ResultReason: domain.GameResultReason(participantStateStringValue(row.ResultReason)),
 	}
 	if row.WinnerID.Valid {
 		winnerID := row.WinnerID.UUID
@@ -581,6 +581,13 @@ func cloneParticipantStateString(value *string) *string {
 	}
 	cloned := *value
 	return &cloned
+}
+
+func participantStateStringValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 func participantStateInvalid(field string) error {
