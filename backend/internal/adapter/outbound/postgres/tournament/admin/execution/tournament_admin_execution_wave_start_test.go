@@ -1,4 +1,4 @@
-package postgres
+package execution
 
 import (
 	"os"
@@ -116,7 +116,7 @@ func TestWaveStartGameAuthorityNormalizesLaterBO3Slot(t *testing.T) {
 func TestWaveStartSQLContractLocksCurrentCommittedPlan(t *testing.T) {
 	t.Parallel()
 
-	query, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "queries", "tournament_admin_execution.sql"))
+	query, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "..", "..", "db", "queries", "tournament_admin_execution.sql"))
 	require.NoError(t, err)
 	contents := string(query)
 	for _, fragment := range []string{
