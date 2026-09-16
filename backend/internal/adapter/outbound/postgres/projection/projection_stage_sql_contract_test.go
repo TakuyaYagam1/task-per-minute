@@ -1,4 +1,4 @@
-package postgres
+package projection
 
 import (
 	"os"
@@ -12,7 +12,7 @@ import (
 func TestStagePlayoffEvidenceUsesNormalizedProjectionAndGoldenBindings(t *testing.T) {
 	t.Parallel()
 
-	schema, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "migrations", "000011_projection_schema.sql"))
+	schema, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "db", "migrations", "000011_projection_schema.sql"))
 	require.NoError(t, err)
 
 	for _, fragment := range []string{
@@ -44,7 +44,7 @@ func TestStagePlayoffEvidenceUsesNormalizedProjectionAndGoldenBindings(t *testin
 func TestStagePlayoffEvidenceAcceptsOnlyExactSupersededSourceLineage(t *testing.T) {
 	t.Parallel()
 
-	schema, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "migrations", "000011_projection_schema.sql"))
+	schema, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "db", "migrations", "000011_projection_schema.sql"))
 	require.NoError(t, err)
 
 	// A replacement projection atomically supersedes its source. The source is
@@ -59,7 +59,7 @@ func TestStagePlayoffEvidenceAcceptsOnlyExactSupersededSourceLineage(t *testing.
 func TestCorrectionStagePlayoffEvidenceFailsClosedWithoutExactActionAndSeal(t *testing.T) {
 	t.Parallel()
 
-	schema, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "migrations", "000011_projection_schema.sql"))
+	schema, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "db", "migrations", "000011_projection_schema.sql"))
 	require.NoError(t, err)
 
 	for _, fragment := range []string{
@@ -80,7 +80,7 @@ func TestCorrectionStagePlayoffEvidenceFailsClosedWithoutExactActionAndSeal(t *t
 func TestCorrectionStageProjectionNodesRequireExactImmediateLineage(t *testing.T) {
 	t.Parallel()
 
-	schema, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "migrations", "000011_projection_schema.sql"))
+	schema, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "db", "migrations", "000011_projection_schema.sql"))
 	require.NoError(t, err)
 
 	for _, fragment := range []string{
@@ -98,7 +98,7 @@ func TestCorrectionStageProjectionNodesRequireExactImmediateLineage(t *testing.T
 func TestProjectionSchemaUsesCanonicalTopFourArtifactKind(t *testing.T) {
 	t.Parallel()
 
-	schema, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "migrations", "000011_projection_schema.sql"))
+	schema, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "db", "migrations", "000011_projection_schema.sql"))
 	require.NoError(t, err)
 
 	require.Contains(t, string(schema), "artifact_kind IN ('standings', 'bracket', 'top_four')")
@@ -110,9 +110,9 @@ func TestProjectionSchemaUsesCanonicalTopFourArtifactKind(t *testing.T) {
 func TestStageProgressionCutoffUsesExactDurableCommandSource(t *testing.T) {
 	t.Parallel()
 
-	schema, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "migrations", "000011_projection_schema.sql"))
+	schema, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "db", "migrations", "000011_projection_schema.sql"))
 	require.NoError(t, err)
-	queries, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "queries", "projection.sql"))
+	queries, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "db", "queries", "projection.sql"))
 	require.NoError(t, err)
 	source, err := os.ReadFile("projection.go")
 	require.NoError(t, err)
@@ -147,7 +147,7 @@ func TestStageProgressionCutoffUsesExactDurableCommandSource(t *testing.T) {
 func TestProjectionSchemaRetainsExactFinalStageHeadsAndContinuationGraphs(t *testing.T) {
 	t.Parallel()
 
-	schema, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "migrations", "000011_projection_schema.sql"))
+	schema, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "db", "migrations", "000011_projection_schema.sql"))
 	require.NoError(t, err)
 
 	for _, fragment := range []string{
