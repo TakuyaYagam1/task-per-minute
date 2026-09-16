@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	taskrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/task"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	taskusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/task"
 )
@@ -32,7 +32,7 @@ func (f *databaseFixture) makeTask(tb testing.TB, title string, diff domain.Diff
 
 func mustCreateTask(
 	tb testing.TB,
-	repo *postgres.TaskPostgres,
+	repo *taskrepo.TaskPostgres,
 	title string,
 	diff domain.Difficulty,
 ) *domain.Task {
