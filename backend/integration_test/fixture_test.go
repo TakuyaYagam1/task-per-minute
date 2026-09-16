@@ -10,15 +10,18 @@ import (
 
 	testkit "github.com/TakuyaYagam1/task-per-minute/integration_test/internal/testkit"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/leaderboard"
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/player"
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/task"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	authmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/auth/mocks"
 )
 
 type databaseFixture struct {
 	mgr     *postgres.TxManager
-	players *postgres.PlayerPostgres
-	tasks   *postgres.TaskPostgres
-	board   *postgres.LeaderboardPostgres
+	players *player.PlayerPostgres
+	tasks   *task.TaskPostgres
+	board   *leaderboard.LeaderboardPostgres
 }
 
 func newDatabaseFixture(pools ...*pgxpool.Pool) *databaseFixture {
