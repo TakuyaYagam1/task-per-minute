@@ -1,4 +1,4 @@
-package postgres
+package audit
 
 import (
 	"bytes"
