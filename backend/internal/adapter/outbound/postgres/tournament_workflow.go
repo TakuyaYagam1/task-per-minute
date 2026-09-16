@@ -2,16 +2,14 @@ package postgres
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 
 	attendancerepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/attendance"
 	catalogrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/catalog"
 	lifecyclerepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/lifecycle"
+	rosterrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/roster"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	attendanceusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/attendance"
 	catalogusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/catalog"
@@ -119,11 +117,7 @@ func (r *TournamentRosterPostgres) GetRosterSnapshot(
 	if r == nil || r.tournaments == nil || r.tournaments.tx == nil {
 		return nil, domain.ErrValidation
 	}
-	record, err := r.tournaments.GetRoster(ctx, id)
-	if errors.Is(err, ErrRosterNotFound) {
-		return nil, rosterusecase.ErrRosterNotFound
-	}
-	return rosterUseCaseRecord(record), err
+	return rosterrepo.NewRosterPostgres(r.tournaments.tx).GetRosterSnapshot(ctx, id)
 }
 
 func (r *TournamentRosterPostgres) LockRosterAndReserveExpected(
@@ -133,26 +127,12 @@ func (r *TournamentRosterPostgres) LockRosterAndReserveExpected(
 	expectedPlayerIDs []uuid.UUID,
 	lockedAt time.Time,
 ) (*rosterusecase.RosterRosterRecord, bool, error) {
-	if rosterID == uuid.Nil || expectedRevision < 1 || len(expectedPlayerIDs) == 0 || !validServerTime(lockedAt) {
-		return nil, false, domain.ErrValidation
-	}
 	if r == nil || r.tournaments == nil || r.tournaments.tx == nil {
 		return nil, false, domain.ErrValidation
 	}
-	locked, err := r.tournaments.lockRosterAndReserve(ctx, rosterID, expectedRevision, expectedPlayerIDs, lockedAt)
-	if err != nil {
-		switch {
-		case errors.Is(err, errRosterCAS):
-			return nil, false, nil
-		case errors.Is(err, pgx.ErrNoRows):
-			return nil, false, rosterusecase.ErrRosterNotFound
-		case errors.Is(err, domain.ErrConflict):
-			return nil, false, domain.ErrConflict
-		default:
-			return nil, false, fmt.Errorf("TournamentPostgres - LockRosterAndReserveExpected: %w", err)
-		}
-	}
-	return rosterUseCaseRecord(rosterRecord(locked)), true, nil
+	return rosterrepo.NewRosterPostgres(r.tournaments.tx).LockRosterAndReserveExpected(
+		ctx, rosterID, expectedRevision, expectedPlayerIDs, lockedAt,
+	)
 }
 
 func (r *TournamentRosterPostgres) UnlockRosterAndReleaseExpected(
@@ -164,9 +144,7 @@ func (r *TournamentRosterPostgres) UnlockRosterAndReleaseExpected(
 	if r == nil || r.tournaments == nil || r.tournaments.tx == nil {
 		return nil, false, domain.ErrValidation
 	}
-	record, changed, err := r.tournaments.UnlockRosterAndRelease(ctx, rosterID, expectedRevision, updatedAt)
-	if errors.Is(err, ErrRosterNotFound) {
-		return nil, false, rosterusecase.ErrRosterNotFound
-	}
-	return rosterUseCaseRecord(record), changed, err
+	return rosterrepo.NewRosterPostgres(r.tournaments.tx).UnlockRosterAndReleaseExpected(
+		ctx, rosterID, expectedRevision, updatedAt,
+	)
 }
