@@ -1,6 +1,6 @@
 //go:build integration
 
-package integration_test
+package db_test
 
 import (
 	"context"
@@ -79,9 +79,5 @@ func TestPostgresPoolNew_NonPositiveMaxConnsUsesDriverDefault(t *testing.T) {
 
 func isolatedPostgresDSN(t *testing.T) string {
 	t.Helper()
-
-	pool := newParallelTestDB(t)
-	dsn := pool.Config().ConnString()
-	pool.Close()
-	return dsn
+	return postgresDSN
 }
