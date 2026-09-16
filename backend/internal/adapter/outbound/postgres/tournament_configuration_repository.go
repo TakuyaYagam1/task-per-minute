@@ -75,11 +75,11 @@ func (m tournamentConfigurationMaterializer) Materialize(
 	execution := NewTournamentAdminExecutionPostgres(m.tx)
 	switch plan.Command.CategoryMode {
 	case domain.CategoryModeRandom:
-		return execution.materializeSwissRandomBO1(ctx, plan)
+		return execution.MaterializeSwissRandomBO1(ctx, plan)
 	case domain.CategoryModeAdmin:
-		return execution.materializeSwissAdminBO1(ctx, plan)
+		return execution.MaterializeSwissAdminBO1(ctx, plan)
 	case domain.CategoryModeDraft:
-		return execution.materializeSwissDraftBO1(ctx, plan)
+		return execution.MaterializeSwissDraftBO1(ctx, plan)
 	default:
 		return domain.ErrValidation
 	}
