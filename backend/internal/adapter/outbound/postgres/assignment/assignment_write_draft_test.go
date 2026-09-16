@@ -1,4 +1,4 @@
-package postgres
+package assignment_test
 
 import (
 	"testing"
@@ -6,17 +6,18 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	assignmentadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 )
 
 func TestExactDraftAssignmentAcceptsSelectedGameTwoChild(t *testing.T) {
-	in := AssignmentCreateInput{PlanID: uuid.New(), BranchID: uuid.New(), RosterID: uuid.New(), SeriesID: uuid.New()}
+	in := assignmentadapter.AssignmentCreateInput{PlanID: uuid.New(), BranchID: uuid.New(), RosterID: uuid.New(), SeriesID: uuid.New()}
 	groupID := uuid.New()
-	plan := sqlc.LockAssignmentPlanRow{ID: in.PlanID, Kind: "exact_draft", State: "committed", RosterID: in.RosterID, ActiveBranchID: nullableUUIDValue(uuid.New())}
-	require.False(t, matchesAssignmentPlan(plan, in), "ordinary branch matching must remain strict")
-	plan.ActiveDraftBranchID = nullableUUIDValue(groupID)
+	plan := sqlc.LockAssignmentPlanRow{ID: in.PlanID, Kind: "exact_draft", State: "committed", RosterID: in.RosterID, ActiveBranchID: testNullableUUID(uuid.New())}
+	require.False(t, assignmentadapter.MatchesAssignmentPlan(plan, in), "ordinary branch matching must remain strict")
+	plan.ActiveDraftBranchID = testNullableUUID(groupID)
 	child := sqlc.LockAssignmentDraftChildScopeRow{ID: in.BranchID, PlanID: in.PlanID, RosterID: in.RosterID, SeriesID: in.SeriesID, GroupID: groupID, ChildState: "active", GroupState: "active"}
-	require.True(t, matchesExactDraftAssignmentPlan(plan, in, []sqlc.LockAssignmentDraftChildScopeRow{child}))
+	require.True(t, assignmentadapter.MatchesExactDraftAssignmentPlan(plan, in, []sqlc.LockAssignmentDraftChildScopeRow{child}))
 	for _, field := range []string{"group", "plan", "roster", "series", "child", "inactive child", "inactive group", "duplicate", "missing"} {
 		t.Run(field, func(t *testing.T) {
 			changed := child
@@ -43,11 +44,15 @@ func TestExactDraftAssignmentAcceptsSelectedGameTwoChild(t *testing.T) {
 			if field == "missing" {
 				rows = nil
 			}
-			require.False(t, matchesExactDraftAssignmentPlan(plan, in, rows))
+			require.False(t, assignmentadapter.MatchesExactDraftAssignmentPlan(plan, in, rows))
 		})
 	}
 	plan.Kind = "exact"
-	require.False(t, matchesExactDraftAssignmentPlan(plan, in, []sqlc.LockAssignmentDraftChildScopeRow{child}))
-	plan.ActiveBranchID = nullableUUIDValue(in.BranchID)
-	require.True(t, matchesAssignmentPlan(plan, in))
+	require.False(t, assignmentadapter.MatchesExactDraftAssignmentPlan(plan, in, []sqlc.LockAssignmentDraftChildScopeRow{child}))
+	plan.ActiveBranchID = testNullableUUID(in.BranchID)
+	require.True(t, assignmentadapter.MatchesAssignmentPlan(plan, in))
+}
+
+func testNullableUUID(value uuid.UUID) uuid.NullUUID {
+	return uuid.NullUUID{UUID: value, Valid: true}
 }

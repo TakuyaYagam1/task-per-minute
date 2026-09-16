@@ -2,26 +2,9 @@ package postgres
 
 import (
 	exactdraft "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment/exactdraft"
-	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	"github.com/TakuyaYagam1/task-per-minute/internal/domain/capacity"
 	assignmentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/assignment"
-	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
 )
-
-func exactDraftHistory(
-	draft draftusecase.Execution,
-	rows []sqlc.LockExactDraftPlanningHistoryRow,
-) ([]capacity.TaskUse, error) {
-	return exactdraft.ExactDraftPlanningHistory(draft, rows)
-}
-
-func rehydrateExactDraftHistory(
-	rows []sqlc.ExactDraftAssignmentChildHistory,
-	participants []assignmentusecase.ExactNormalParticipantReservation,
-) ([]capacity.TaskUse, error) {
-	return exactdraft.RehydrateExactDraftHistory(rows, participants)
-}
 
 func exactDraftPlanHasCandidates(
 	plan assignmentusecase.ExactDraftBranchPlan,

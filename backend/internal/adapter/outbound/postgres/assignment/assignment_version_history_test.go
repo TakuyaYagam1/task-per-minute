@@ -1,4 +1,4 @@
-package postgres
+package assignment_test
 
 import (
 	"testing"
@@ -6,6 +6,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	assignmentadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment"
+	exactdraft "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment/exactdraft"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain/capacity"
 	assignmentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/assignment"
@@ -18,7 +20,7 @@ func TestAssignmentHistoryMappingsPreserveExactTaskVersions(t *testing.T) {
 	first := uuid.MustParse("00000000-0000-0000-0000-000000000001")
 	second := uuid.MustParse("00000000-0000-0000-0000-000000000002")
 	task := uuid.MustParse("00000000-0000-0000-0000-000000000010")
-	normal, err := exactNormalHistory([]uuid.UUID{first, second}, []sqlc.LockExactNormalAssignmentHistoryRow{
+	normal, err := assignmentadapter.ExactNormalHistory([]uuid.UUID{first, second}, []sqlc.LockExactNormalAssignmentHistoryRow{
 		{ParticipantID: first, TaskID: task, TaskVersion: 2},
 		{ParticipantID: first, TaskID: task, TaskVersion: 1},
 		{ParticipantID: second, TaskID: task, TaskVersion: 3},
@@ -30,7 +32,7 @@ func TestAssignmentHistoryMappingsPreserveExactTaskVersions(t *testing.T) {
 		{ParticipantID: second, TaskID: task, Version: 3},
 	}, normal)
 
-	draftHistory, err := exactDraftHistory(draftusecase.Execution{
+	draftHistory, err := exactdraft.ExactDraftPlanningHistory(draftusecase.Execution{
 		FirstParticipantID: first, SecondParticipantID: second,
 	}, []sqlc.LockExactDraftPlanningHistoryRow{
 		{ParticipantID: second, TaskID: task, TaskVersion: 3},
@@ -48,7 +50,7 @@ func TestRehydrateAssignmentChildHistoryRetainsLegacyWildcardVersion(t *testing.
 
 	participantID := uuid.MustParse("00000000-0000-0000-0000-000000000003")
 	taskID := uuid.MustParse("00000000-0000-0000-0000-000000000011")
-	history, err := rehydrateExactDraftHistory([]sqlc.ExactDraftAssignmentChildHistory{
+	history, err := exactdraft.RehydrateExactDraftHistory([]sqlc.ExactDraftAssignmentChildHistory{
 		{ParticipantID: participantID, TaskID: taskID, TaskVersion: 0},
 	}, []assignmentusecase.ExactNormalParticipantReservation{{ParticipantID: participantID}})
 	require.NoError(t, err)
@@ -61,12 +63,12 @@ func TestPlanningHistoryRejectsLegacyWildcardVersion(t *testing.T) {
 	first := uuid.MustParse("00000000-0000-0000-0000-000000000004")
 	second := uuid.MustParse("00000000-0000-0000-0000-000000000005")
 	task := uuid.MustParse("00000000-0000-0000-0000-000000000012")
-	_, err := exactNormalHistory([]uuid.UUID{first, second}, []sqlc.LockExactNormalAssignmentHistoryRow{
+	_, err := assignmentadapter.ExactNormalHistory([]uuid.UUID{first, second}, []sqlc.LockExactNormalAssignmentHistoryRow{
 		{ParticipantID: first, TaskID: task, TaskVersion: 0},
 	})
 	require.Error(t, err)
 
-	_, err = exactDraftHistory(draftusecase.Execution{
+	_, err = exactdraft.ExactDraftPlanningHistory(draftusecase.Execution{
 		FirstParticipantID: first, SecondParticipantID: second,
 	}, []sqlc.LockExactDraftPlanningHistoryRow{
 		{ParticipantID: first, TaskID: task, TaskVersion: 0},
