@@ -36,33 +36,11 @@ func swissDraftIdentity(seriesID uuid.UUID) (playoff.FinalStageIDs, error) {
 	return ids, nil
 }
 
-func exactDraftIdentity(commandID, seriesID uuid.UUID, format domain.SeriesFormat) (playoff.FinalStageIDs, error) {
-	if format == domain.SeriesFormatBO1 {
-		if commandID != seriesID {
-			return playoff.FinalStageIDs{}, domain.ErrConflict
-		}
-		return swissDraftIdentity(seriesID)
-	}
-	if format != domain.SeriesFormatBO3 {
-		return playoff.FinalStageIDs{}, domain.ErrConflict
-	}
-	return playoff.FinalStageIdentity(commandID)
-}
-
-func exactDraftCategoryCount(format domain.SeriesFormat) int {
-	switch format {
-	case domain.SeriesFormatBO1:
-		return 1
-	case domain.SeriesFormatBO3:
-		return 3
-	default:
-		return 0
-	}
-}
-
 type SeriesPresenceWriter func(context.Context, *sqlc.Queries, uuid.UUID, uuid.UUID, uuid.UUID, [2]uuid.UUID, time.Time) error
 
 // MaterializeSwissDraftBO1 persists the deterministic BO1 Swiss draft graph.
+//
+//nolint:gocyclo // Materializes one deterministic draft graph and validates each persisted invariant inline.
 func MaterializeSwissDraftBO1(
 	ctx context.Context,
 	tx *db.TxManager,

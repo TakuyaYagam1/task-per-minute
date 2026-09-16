@@ -31,22 +31,6 @@ type tournamentAdminPauseDocument struct {
 	Pause   *gameusecase.NormalPauseRecord `json:"normal_pause,omitempty"`
 }
 
-func encodeTournamentAdminWaveResult(record tournamentadmin.WaveCommandRecord) ([]byte, error) {
-	if record.NormalPause == nil {
-		return append([]byte(nil), record.ResultDocument...), nil
-	}
-	//nolint:musttag // The versioned envelope and all nested evidence have explicit JSON tags.
-	document, err := json.Marshal(tournamentAdminPauseDocument{
-		Version: tournamentAdminPauseDocumentVersion,
-		View:    append(json.RawMessage(nil), record.ResultDocument...),
-		Pause:   record.NormalPause,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("encode normal Wave pause evidence: %w", err)
-	}
-	return document, nil
-}
-
 func decodeTournamentAdminWaveResult(action string, document []byte) ([]byte, *gameusecase.NormalPauseRecord) {
 	if action != string(tournamentadmin.WaveActionPause) {
 		return append([]byte(nil), document...), nil
@@ -341,8 +325,8 @@ func (r *TournamentAdminNormalPausePostgres) LoadPauseResumeAuthority(
 	if err != nil {
 		return gameusecase.PauseResumeAuthority{}, fmt.Errorf("load normal pause receipt: %w", err)
 	}
-	_, stored := decodeTournamentAdminWaveResult(string(tournamentadmin.WaveActionPause), document)
-	if stored == nil || stored.PauseID != pauseID || stored.Scope.TournamentID != scope.TournamentID ||
+	decodedDocument, stored := decodeTournamentAdminWaveResult(string(tournamentadmin.WaveActionPause), document)
+	if len(decodedDocument) == 0 || stored == nil || stored.PauseID != pauseID || stored.Scope.TournamentID != scope.TournamentID ||
 		stored.Scope.RosterID != scope.RosterID || stored.Scope.WaveID != scope.WaveID {
 		return gameusecase.PauseResumeAuthority{}, domain.ErrInternal
 	}

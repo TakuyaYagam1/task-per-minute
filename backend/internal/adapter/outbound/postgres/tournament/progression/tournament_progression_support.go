@@ -2,9 +2,7 @@ package progression
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"reflect"
 	"time"
 
 	"github.com/google/uuid"
@@ -15,12 +13,10 @@ import (
 	waverepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/wave"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/internal/db"
 	projectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
-	terminalrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/recovery/terminal"
 	resultrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	executionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/execution"
 	rosterrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/roster"
-	participantdraftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/draft"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
@@ -112,21 +108,8 @@ func loadProjectionRecord(
 	return projectionrepo.LoadProjectionRecord(ctx, querier, scope, revisionID)
 }
 
-func createProjectionArtifact(
-	ctx context.Context,
-	querier *sqlc.Queries,
-	in ProjectionPublishInput,
-	artifact ProjectionArtifactInput,
-) error {
-	return projectionrepo.CreateProjectionArtifact(ctx, querier, in, artifact)
-}
-
 func validProjectionPublishInput(in ProjectionPublishInput) bool {
 	return projectionrepo.ValidateProjectionPublishInput(in)
-}
-
-func validProjectionArtifact(artifact ProjectionArtifactInput) bool {
-	return projectionrepo.ValidateProjectionArtifact(artifact)
 }
 
 func nullableUUID(value *uuid.UUID) uuid.NullUUID {
@@ -136,23 +119,8 @@ func nullableUUID(value *uuid.UUID) uuid.NullUUID {
 	return uuid.NullUUID{UUID: *value, Valid: true}
 }
 
-func projectionArtifactKind(kind domain.ArtifactKind) string {
-	return projectionrepo.ProjectionArtifactKind(kind)
-}
-
 func projectionCASWriteError(operation string, err error) error {
 	return projectionrepo.ProjectionCASWriteError(operation, err)
-}
-
-func participantDraftExecution(
-	aggregate *DraftAggregate,
-	targetRevision int64,
-) (*draftusecase.Execution, error) {
-	return participantdraftrepo.ParticipantDraftExecution(aggregate, targetRevision)
-}
-
-func recoverySeries(row sqlc.Series, graph []sqlc.ListRecoverySeriesGraphRow) (domain.Series, error) {
-	return terminalrepo.RecoverySeries(row, graph)
 }
 
 func swissCategoryRevisionParams(
@@ -161,15 +129,6 @@ func swissCategoryRevisionParams(
 	normalPoolID uuid.UUID,
 ) (sqlc.CreateSwissCategoryRevisionParams, error) {
 	return executionrepo.SwissCategoryRevisionParams(revision, lock, normalPoolID)
-}
-
-func createWaveGenesisProjectionNode(
-	ctx context.Context,
-	querier *sqlc.Queries,
-	wave WaveCreateInput,
-	series WaveSeriesInput,
-) error {
-	return waverepo.CreateWaveGenesisProjectionNode(ctx, querier, wave, series)
 }
 
 func createMaterializedSeriesPresence(
@@ -215,18 +174,6 @@ func nullableUUIDValue(value uuid.UUID) uuid.NullUUID {
 
 func tstz(value time.Time) pgtype.Timestamptz {
 	return pgtype.Timestamptz{Time: value, Valid: true}
-}
-
-func marshalJSON(operation string, value any) ([]byte, error) {
-	reflected := reflect.ValueOf(value)
-	if reflected.IsValid() && reflected.Kind() == reflect.Slice && reflected.IsNil() {
-		return []byte("[]"), nil
-	}
-	data, err := json.Marshal(value)
-	if err != nil {
-		return nil, fmt.Errorf("%s - marshal JSON: %w", operation, err)
-	}
-	return data, nil
 }
 
 func stringValue(value *string) string {

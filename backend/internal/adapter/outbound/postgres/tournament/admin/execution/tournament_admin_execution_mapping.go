@@ -737,14 +737,6 @@ func tournamentAdminExecutionID(namespace uuid.UUID, role string) uuid.UUID {
 	return uuid.NewSHA1(namespace, []byte(role))
 }
 
-func cloneTimePointer(source *time.Time) *time.Time {
-	if source == nil {
-		return nil
-	}
-	cloned := *source
-	return &cloned
-}
-
 func optionalExecutionReason(reason string) *string {
 	if reason == "" {
 		return nil

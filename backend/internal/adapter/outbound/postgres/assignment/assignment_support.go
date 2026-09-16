@@ -30,22 +30,8 @@ func stringValue(value *string) string {
 	return *value
 }
 
-func nullableUUID(value *uuid.UUID) uuid.NullUUID {
-	if value == nil {
-		return uuid.NullUUID{}
-	}
-	return uuid.NullUUID{UUID: *value, Valid: true}
-}
-
 func tstz(value time.Time) pgtype.Timestamptz {
 	return pgtype.Timestamptz{Time: value, Valid: true}
-}
-
-func nullableTSTZ(value *time.Time) pgtype.Timestamptz {
-	if value == nil {
-		return pgtype.Timestamptz{}
-	}
-	return pgtype.Timestamptz{Time: *value, Valid: true}
 }
 
 func nullableTime(value pgtype.Timestamptz) *time.Time {

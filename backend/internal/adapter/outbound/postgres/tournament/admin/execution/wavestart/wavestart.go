@@ -34,7 +34,6 @@ type waveStartSnapshot struct {
 	rosterID         uuid.UUID
 	rosterRevision   int64
 	games            []sqlc.LockWaveStartGamesRow
-	seriesIDs        []uuid.UUID
 	swissProof       *waveStartSwissRoundProof
 	byeParticipantID *uuid.UUID
 }
@@ -73,6 +72,8 @@ func EnsurePreStartSwissRoundProofForCommand(
 
 // EnsurePreStartSwissRoundProof freezes the exact pairing and assignment
 // authority before a terminal action can change it. It never starts a Wave.
+//
+//nolint:gocyclo // Validates and locks the complete pre-start Swiss invariant boundary.
 func EnsurePreStartSwissRoundProof(
 	ctx context.Context,
 	tx *db.TxManager,
@@ -179,6 +180,8 @@ func EnsurePreStartSwissRoundProof(
 
 // EnsureSwissRoundLockProof persists the immutable Swiss round lock proof and
 // atomically advances the round lock revision.
+//
+//nolint:gocyclo // Persists one immutable proof and its CAS-protected members as one boundary.
 func EnsureSwissRoundLockProof(
 	ctx context.Context,
 	querier *sqlc.Queries,

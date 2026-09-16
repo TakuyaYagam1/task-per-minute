@@ -48,10 +48,6 @@ func requiredRecoveryTime(value pgtype.Timestamptz) (time.Time, error) {
 	return terminalrepo.RequiredRecoveryTime(value)
 }
 
-func optionalRecoveryTime(value pgtype.Timestamptz) *time.Time {
-	return terminalrepo.OptionalRecoveryTime(value)
-}
-
 func optionalRecoveryUUID(value uuid.NullUUID) *uuid.UUID {
 	return terminalrepo.OptionalRecoveryUUID(value)
 }

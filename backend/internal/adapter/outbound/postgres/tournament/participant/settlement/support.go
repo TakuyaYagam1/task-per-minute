@@ -13,13 +13,6 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
-func nullableUUID(value *uuid.UUID) uuid.NullUUID {
-	if value == nil {
-		return uuid.NullUUID{}
-	}
-	return uuid.NullUUID{UUID: *value, Valid: true}
-}
-
 func nullableUUIDValue(value uuid.UUID) uuid.NullUUID {
 	return uuid.NullUUID{UUID: value, Valid: value != uuid.Nil}
 }

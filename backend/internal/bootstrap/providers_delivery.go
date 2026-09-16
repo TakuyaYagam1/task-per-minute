@@ -8,7 +8,6 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/realtime"
-	taskrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/task"
 	redisadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/redis"
 	telemetryadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/telemetry"
 	"github.com/TakuyaYagam1/task-per-minute/internal/observability"
@@ -71,12 +70,6 @@ func provideReceiptRetentionWorker(
 		BatchSize: cfg.WS.DeliveryReceiptCleanupBatchSize,
 		Now:       clock.Now,
 	})
-}
-
-func providePrivateTaskAvailabilityRepository(
-	tx *postgres.TxManager,
-) *taskrepo.PrivateTaskAvailabilityPostgres {
-	return taskrepo.NewPrivateTaskAvailabilityPostgres(tx)
 }
 
 func providePrivateTaskAvailabilityMonitor(

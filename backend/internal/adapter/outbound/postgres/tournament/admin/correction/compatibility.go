@@ -206,33 +206,3 @@ func stringValue(value *string) string {
 func mapRepositoryWriteError(operation string, err error) error {
 	return resultpostgres.MapRepositoryWriteError(operation, err)
 }
-
-func projectionArtifactKind(kind domain.ArtifactKind) string {
-	return projectionpostgres.ProjectionArtifactKind(kind)
-}
-
-func validProjectionArtifact(artifact ProjectionArtifactInput) bool {
-	return projectionpostgres.ValidateProjectionArtifact(artifact)
-}
-
-func createProjectionArtifact(
-	ctx context.Context,
-	querier *sqlc.Queries,
-	in ProjectionPublishInput,
-	artifact ProjectionArtifactInput,
-) error {
-	return projectionpostgres.CreateProjectionArtifact(ctx, querier, in, artifact)
-}
-
-func loadProjectionRecord(
-	ctx context.Context,
-	querier *sqlc.Queries,
-	scope ProjectionScope,
-	revisionID uuid.UUID,
-) (*ProjectionRecord, error) {
-	return projectionpostgres.LoadProjectionRecord(ctx, querier, scope, revisionID)
-}
-
-func projectionCASWriteError(operation string, err error) error {
-	return projectionpostgres.ProjectionCASWriteError(operation, err)
-}
