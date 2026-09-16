@@ -19,6 +19,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
 	seriesdomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/series"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	attemptusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/attempt"
 	reconnectusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/reconnect"
 
 	recoveryusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/recovery"
@@ -228,7 +229,7 @@ func (repository *RecoveryTerminalPostgres) loadGameTimeout(
 	if err != nil {
 		return recoveryTerminalSnapshot{}, err
 	}
-	authorityValue := gameusecase.AttemptAuthority{
+	authorityValue := attemptusecase.AttemptAuthority{
 		Scope: domain.FailedAttemptScope{
 			TournamentID: deadline.TournamentID, WaveID: deadline.WaveID, SeriesID: deadline.SeriesID,
 			SlotID: deadline.SlotID, GameID: deadline.GameID,
@@ -238,7 +239,7 @@ func (repository *RecoveryTerminalPostgres) loadGameTimeout(
 		ActiveSnapshotID: row.Assignment.SnapshotID, CurrentOrdinal: ordinal,
 		CurrentProjectionRevision: projectionRevision, CurrentGameResultRevisionIDs: revisionIDs,
 	}
-	if gameusecase.ValidateAuthority(authorityValue) != nil {
+	if attemptusecase.ValidateAuthority(authorityValue) != nil {
 		return recoveryTerminalSnapshot{}, errRecoveryTerminalSnapshot
 	}
 	return recoveryTerminalSnapshot{

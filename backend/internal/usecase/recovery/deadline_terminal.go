@@ -14,6 +14,7 @@ import (
 	gamedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/game"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	attemptusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/attempt"
 	reconnectusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/reconnect"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 )
@@ -32,7 +33,7 @@ var deadlineTerminalNamespace = uuid.MustParse("dfb8cdb7-6344-5dc8-89d3-6fcddc84
 // expire a Wave after a process restart.
 type DeadlineTerminalAuthority struct {
 	Deadline         PendingDeadline
-	GameTimeout      *gameusecase.AttemptAuthority
+	GameTimeout      *attemptusecase.AttemptAuthority
 	ReadyWindow      []gameusecase.NoShowAuthority
 	ReconnectTimeout *reconnectusecase.ReconnectAuthority
 }
@@ -48,7 +49,7 @@ type DeadlineTerminalPlan struct {
 	ReadyWindow         []gameusecase.NoShowResolution
 	ReadyWindowEvidence []DeadlineNoShowEvidenceIDs
 	PauseRevisionID     uuid.UUID
-	GameTimeout         *gameusecase.AttemptRecord
+	GameTimeout         *attemptusecase.AttemptRecord
 	ReconnectTimeout    *reconnectusecase.ReconnectRecord
 }
 
@@ -300,23 +301,23 @@ func buildDeadlineTerminalPlan(
 
 func planGameTimeout(
 	ctx context.Context,
-	authority gameusecase.AttemptAuthority,
+	authority attemptusecase.AttemptAuthority,
 	deadline PendingDeadline,
 	now time.Time,
-) (*gameusecase.AttemptRecord, error) {
+) (*attemptusecase.AttemptRecord, error) {
 	game, category, found := failedAttemptExpectation(authority)
 	if !found {
 		return nil, ErrInvalidDeadlineAuthority
 	}
 	planner := &gameTimeoutPlanner{authority: authority}
 	commandID := deadlineTerminalID(deadline, uuid.Nil, "command")
-	command := gameusecase.AttemptCommand{
+	command := attemptusecase.AttemptCommand{
 		Scope: authority.Scope, CommandID: commandID, FailureClass: gamedomain.FailureNoSolve,
-		Expected: gameusecase.Expectation{
+		Expected: attemptusecase.Expectation{
 			AttemptNo: game.AttemptNo, State: game.State,
 			SnapshotID: authority.ActiveSnapshotID, Category: category,
 		},
-		Revisions: gameusecase.AttemptRevisionSet{
+		Revisions: attemptusecase.AttemptRevisionSet{
 			GameResultRevisionID: domain.OfficialResultRevisionID(deadlineTerminalID(deadline, deadline.GameID, "game-result")),
 			ScoreRevisionID:      domain.SeriesScoreRevisionID(deadlineTerminalID(deadline, deadline.SeriesID, "score")),
 			RouteEvidenceID:      deadlineTerminalID(deadline, deadline.GameID, "route"),
@@ -325,7 +326,7 @@ func planGameTimeout(
 			ProjectionRevisionID: deadlineTerminalID(deadline, deadline.GameID, "projection"),
 		},
 	}
-	record, changed, err := gameusecase.AttemptNewUseCase(planner, fixedRecoveryClock{at: now}).Terminalize(
+	record, changed, err := attemptusecase.AttemptNewUseCase(planner, fixedRecoveryClock{at: now}).Terminalize(
 		ctx,
 		command,
 	)
@@ -463,7 +464,7 @@ func validDeadlineTerminalAuthority(authority DeadlineTerminalAuthority) bool {
 	}
 }
 
-func gameAuthorityMatchesDeadline(authority gameusecase.AttemptAuthority, deadline PendingDeadline) bool {
+func gameAuthorityMatchesDeadline(authority attemptusecase.AttemptAuthority, deadline PendingDeadline) bool {
 	return authority.Revision == deadline.ExpectedRevision &&
 		authority.Scope.TournamentID == deadline.TournamentID && authority.Scope.WaveID == deadline.WaveID &&
 		authority.Scope.SeriesID == deadline.SeriesID && authority.Scope.SlotID == deadline.SlotID &&
@@ -629,7 +630,7 @@ func uniqueDeadlineIDs(ids []uuid.UUID) bool {
 	return true
 }
 
-func failedAttemptExpectation(authority gameusecase.AttemptAuthority) (domain.Game, domain.Category, bool) {
+func failedAttemptExpectation(authority attemptusecase.AttemptAuthority) (domain.Game, domain.Category, bool) {
 	for slotIndex := range authority.Series.Series.Slots {
 		slot := authority.Series.Series.Slots[slotIndex]
 		if slot.ID != authority.Scope.SlotID || len(slot.Attempts) == 0 {
@@ -673,21 +674,21 @@ type fixedRecoveryClock struct{ at time.Time }
 func (clock fixedRecoveryClock) Now() time.Time { return clock.at }
 
 type gameTimeoutPlanner struct {
-	authority gameusecase.AttemptAuthority
-	record    *gameusecase.AttemptRecord
+	authority attemptusecase.AttemptAuthority
+	record    *attemptusecase.AttemptRecord
 }
 
 func (planner *gameTimeoutPlanner) LoadFailedAttemptAuthority(
 	context.Context,
 	domain.FailedAttemptScope,
-) (gameusecase.AttemptAuthority, error) {
+) (attemptusecase.AttemptAuthority, error) {
 	return planner.authority, nil
 }
 
 func (planner *gameTimeoutPlanner) CommitFailedAttempt(
 	_ context.Context,
-	record gameusecase.AttemptRecord,
-) (*gameusecase.AttemptRecord, bool, error) {
+	record attemptusecase.AttemptRecord,
+) (*attemptusecase.AttemptRecord, bool, error) {
 	planner.record = &record
 	return &record, true, nil
 }

@@ -24,6 +24,7 @@ import (
 	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
 	gamedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/game"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	attemptusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/attempt"
 
 	recoveryusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/recovery"
 )
@@ -423,17 +424,17 @@ func executionEpochReplayCommand(
 		CurrentAuthority: current,
 		BrokenAuthority:  candidate.BoundAuthority,
 		RosterID:         candidate.RosterID,
-		Attempt: gameusecase.AttemptCommand{
+		Attempt: attemptusecase.AttemptCommand{
 			Scope:        candidate.Scope,
 			CommandID:    commandID,
 			FailureClass: gamedomain.FailureExecutionEpochBreak,
-			Expected: gameusecase.Expectation{
+			Expected: attemptusecase.Expectation{
 				AttemptNo:  candidate.AttemptNo,
 				State:      domain.GameStateActive,
 				SnapshotID: candidate.SnapshotID,
 				Category:   candidate.Category,
 			},
-			Revisions: gameusecase.AttemptRevisionSet{
+			Revisions: attemptusecase.AttemptRevisionSet{
 				GameResultRevisionID: domain.OfficialResultRevisionID(executionRecoveryID(candidate.Scope.GameID, candidate.BoundAuthority, "game-revision")),
 				ScoreRevisionID:      domain.SeriesScoreRevisionID(executionRecoveryID(candidate.Scope.GameID, candidate.BoundAuthority, "score-revision")),
 				RouteEvidenceID:      executionRecoveryID(candidate.Scope.GameID, candidate.BoundAuthority, "route"),
