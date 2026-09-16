@@ -1,4 +1,4 @@
-package postgres
+package recovery
 
 import (
 	"github.com/google/uuid"
@@ -6,7 +6,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/recovery"
+	recoveryusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/recovery"
 )
 
 type recoveryDeadlineRow struct {
@@ -25,7 +25,7 @@ type recoveryDeadlineRow struct {
 	dueAt                 pgtype.Timestamptz
 }
 
-func recoveryDeadlineFromListRow(row sqlc.ListPendingRecoveryDeadlinesRow) (recovery.PendingDeadline, error) {
+func recoveryDeadlineFromListRow(row sqlc.ListPendingRecoveryDeadlinesRow) (recoveryusecase.PendingDeadline, error) {
 	return mapRecoveryDeadline(recoveryDeadlineRow{
 		kind: row.DeadlineKind, id: row.DeadlineID, tournamentID: row.TournamentID,
 		rosterID: row.RosterID, waveID: row.WaveID, seriesID: row.SeriesID,
@@ -35,7 +35,7 @@ func recoveryDeadlineFromListRow(row sqlc.ListPendingRecoveryDeadlinesRow) (reco
 	})
 }
 
-func recoveryDeadlineFromGetRow(row sqlc.GetPendingRecoveryDeadlineRow) (recovery.PendingDeadline, error) {
+func recoveryDeadlineFromGetRow(row sqlc.GetPendingRecoveryDeadlineRow) (recoveryusecase.PendingDeadline, error) {
 	return mapRecoveryDeadline(recoveryDeadlineRow{
 		kind: row.DeadlineKind, id: row.DeadlineID, tournamentID: row.TournamentID,
 		rosterID: row.RosterID, waveID: row.WaveID, seriesID: row.SeriesID,
@@ -45,12 +45,12 @@ func recoveryDeadlineFromGetRow(row sqlc.GetPendingRecoveryDeadlineRow) (recover
 	})
 }
 
-func mapRecoveryDeadline(row recoveryDeadlineRow) (recovery.PendingDeadline, error) {
+func mapRecoveryDeadline(row recoveryDeadlineRow) (recoveryusecase.PendingDeadline, error) {
 	if !row.dueAt.Valid {
-		return recovery.PendingDeadline{}, domain.ErrInternal
+		return recoveryusecase.PendingDeadline{}, domain.ErrInternal
 	}
-	deadline := recovery.PendingDeadline{
-		Kind: recovery.DeadlineKind(row.kind), ID: row.id,
+	deadline := recoveryusecase.PendingDeadline{
+		Kind: recoveryusecase.DeadlineKind(row.kind), ID: row.id,
 		TournamentID: row.tournamentID, RosterID: row.rosterID,
 		WaveID: row.waveID, SeriesID: row.seriesID, SlotID: row.slotID,
 		GameID: row.gameID, PauseID: row.pauseID,
@@ -59,25 +59,25 @@ func mapRecoveryDeadline(row recoveryDeadlineRow) (recovery.PendingDeadline, err
 		DueAt: row.dueAt.Time.Round(0).UTC(),
 	}
 	if deadline.Validate() != nil {
-		return recovery.PendingDeadline{}, domain.ErrInternal
+		return recoveryusecase.PendingDeadline{}, domain.ErrInternal
 	}
 	return deadline, nil
 }
 
-func recoveryCursorKind(kind recovery.DeadlineKind) int16 {
+func recoveryCursorKind(kind recoveryusecase.DeadlineKind) int16 {
 	switch kind {
-	case recovery.DeadlineKindGame:
+	case recoveryusecase.DeadlineKindGame:
 		return 1
-	case recovery.DeadlineKindReadyWindow:
+	case recoveryusecase.DeadlineKindReadyWindow:
 		return 2
-	case recovery.DeadlineKindReconnect:
+	case recoveryusecase.DeadlineKindReconnect:
 		return 3
 	default:
 		return 0
 	}
 }
 
-func sameRecoveryDeadline(left, right recovery.PendingDeadline) bool {
+func sameRecoveryDeadline(left, right recoveryusecase.PendingDeadline) bool {
 	return left.Kind == right.Kind && left.ID == right.ID &&
 		left.TournamentID == right.TournamentID && left.RosterID == right.RosterID &&
 		left.WaveID == right.WaveID && left.SeriesID == right.SeriesID &&

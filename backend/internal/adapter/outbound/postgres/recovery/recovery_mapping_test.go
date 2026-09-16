@@ -1,4 +1,4 @@
-package postgres
+package recovery
 
 import (
 	"testing"
@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/recovery"
+	recoveryusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/recovery"
 )
 
 func TestMapRecoveryDeadlinePreservesEachDomainShape(t *testing.T) {
@@ -24,25 +24,25 @@ func TestMapRecoveryDeadlinePreservesEachDomainShape(t *testing.T) {
 	tests := []struct {
 		name string
 		row  recoveryDeadlineRow
-		kind recovery.DeadlineKind
+		kind recoveryusecase.DeadlineKind
 	}{
-		{name: "game", kind: recovery.DeadlineKindGame, row: func() recoveryDeadlineRow {
+		{name: "game", kind: recoveryusecase.DeadlineKindGame, row: func() recoveryDeadlineRow {
 			row := common
-			row.kind = string(recovery.DeadlineKindGame)
+			row.kind = string(recoveryusecase.DeadlineKindGame)
 			row.seriesID = recoveryRowID(4)
 			row.slotID = recoveryRowID(5)
 			row.gameID = row.id
 			return row
 		}()},
-		{name: "ready window", kind: recovery.DeadlineKindReadyWindow, row: func() recoveryDeadlineRow {
+		{name: "ready window", kind: recoveryusecase.DeadlineKindReadyWindow, row: func() recoveryDeadlineRow {
 			row := common
-			row.kind = string(recovery.DeadlineKindReadyWindow)
+			row.kind = string(recoveryusecase.DeadlineKindReadyWindow)
 			row.readyWindowRevisionID = recoveryRowID(11)
 			return row
 		}()},
-		{name: "reconnect", kind: recovery.DeadlineKindReconnect, row: func() recoveryDeadlineRow {
+		{name: "reconnect", kind: recoveryusecase.DeadlineKindReconnect, row: func() recoveryDeadlineRow {
 			row := common
-			row.kind = string(recovery.DeadlineKindReconnect)
+			row.kind = string(recoveryusecase.DeadlineKindReconnect)
 			row.seriesID = recoveryRowID(4)
 			row.slotID = recoveryRowID(5)
 			row.gameID = recoveryRowID(6)
@@ -68,7 +68,7 @@ func TestMapRecoveryDeadlineRejectsInvalidDatabaseEvidence(t *testing.T) {
 	t.Parallel()
 
 	_, err := mapRecoveryDeadline(recoveryDeadlineRow{
-		kind: string(recovery.DeadlineKindGame), id: recoveryRowID(10),
+		kind: string(recoveryusecase.DeadlineKindGame), id: recoveryRowID(10),
 		tournamentID: recoveryRowID(1), rosterID: recoveryRowID(2),
 		waveID: recoveryRowID(3), seriesID: recoveryRowID(4),
 		slotID: recoveryRowID(5), gameID: recoveryRowID(10),
