@@ -1,4 +1,4 @@
-package admin
+package roster
 
 import (
 	"crypto/sha256"

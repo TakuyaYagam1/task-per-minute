@@ -41,25 +41,6 @@ type AdminService interface {
 	GetOperatorSnapshot(ctx context.Context, query SnapshotQuery) (OperatorSnapshotView, error)
 }
 
-type OperatorIdentity struct {
-	ActorID uuid.UUID
-}
-
-type RevisionConflictError struct {
-	ExpectedRevision int64
-	CurrentRevision  int64
-	CurrentState     domain.TournamentState
-}
-
-func (e *RevisionConflictError) Error() string { return "tournament projection revision conflict" }
-func (e *RevisionConflictError) Unwrap() error { return domain.ErrConflict }
-
-type CommandScope struct {
-	Operator     OperatorIdentity
-	TournamentID uuid.UUID
-	CommandID    uuid.UUID
-}
-
 func (a *AdminUseCase) ListTournaments(
 	ctx context.Context,
 	command usecase.TournamentListCommand,
