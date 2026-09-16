@@ -131,9 +131,9 @@ func TestTaskDeletionSourceLocksThenChecksPublishedReferences(t *testing.T) {
 func TestTaskPostgresWritesValidationInsideTheHeadTransaction(t *testing.T) {
 	t.Parallel()
 
-	adapter, err := os.ReadFile("task_postgres.go")
+	adapter, err := os.ReadFile(filepath.Join("task", "task_postgres.go"))
 	require.NoError(t, err)
-	mapping, err := os.ReadFile("mapping.go")
+	mapping, err := os.ReadFile(filepath.Join("task", "mapping.go"))
 	require.NoError(t, err)
 
 	for _, fragment := range []string{

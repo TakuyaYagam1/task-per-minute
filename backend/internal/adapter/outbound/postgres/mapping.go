@@ -8,7 +8,6 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
@@ -17,51 +16,6 @@ const (
 	pgForeignKeyViolation = "23503"
 	pgRestrictViolation   = "23001"
 )
-
-func createTaskToDomain(t sqlc.CreateTaskRow) *domain.Task {
-	return taskValuesToDomain(
-		t.ID, t.Title, t.Description, t.Category, t.Difficulty, t.TimeLimit, t.Flag,
-		t.Hint1, t.Hint2, t.Hint3, t.TaskUrl, t.SourceFileUrl, t.Kind, t.Enabled,
-		t.CurrentVersion, t.CreatedAt.Time,
-	)
-}
-
-func updateTaskToDomain(t sqlc.UpdateTaskRow) *domain.Task {
-	return taskValuesToDomain(
-		t.ID, t.Title, t.Description, t.Category, t.Difficulty, t.TimeLimit, t.Flag,
-		t.Hint1, t.Hint2, t.Hint3, t.TaskUrl, t.SourceFileUrl, t.Kind, t.Enabled,
-		t.CurrentVersion, t.CreatedAt.Time,
-	)
-}
-
-func taskValuesToDomain(
-	id uuid.UUID,
-	title, description, category, difficulty string,
-	timeLimit int32,
-	flag string,
-	hint1, hint2, hint3, taskURL, sourceFileURL *string,
-	kind string,
-	enabled bool,
-	currentVersion int32,
-	createdAt time.Time,
-) *domain.Task {
-	return &domain.Task{
-		ID:             id,
-		Title:          title,
-		Description:    description,
-		Category:       domain.Category(category),
-		Difficulty:     domain.Difficulty(difficulty),
-		TimeLimit:      int(timeLimit),
-		Flag:           flag,
-		Hints:          taskHintsToDomain(hint1, hint2, hint3),
-		TaskURL:        taskURL,
-		SourceFileURL:  sourceFileURL,
-		Kind:           domain.TaskKind(kind),
-		Enabled:        enabled,
-		CurrentVersion: int(currentVersion),
-		CreatedAt:      createdAt,
-	}
-}
 
 func taskHintsToDomain(hint1, hint2, hint3 *string) []string {
 	hints, _ := domain.NormalizeTaskHints([]string{
@@ -111,12 +65,4 @@ func isUniqueViolation(err error, constraint string) bool {
 		return false
 	}
 	return pgErr.Code == pgUniqueViolation && pgErr.ConstraintName == constraint
-}
-
-func isForeignKeyViolation(err error) bool {
-	var pgErr *pgconn.PgError
-	if !errors.As(err, &pgErr) {
-		return false
-	}
-	return pgErr.Code == pgForeignKeyViolation || pgErr.Code == pgRestrictViolation
 }
