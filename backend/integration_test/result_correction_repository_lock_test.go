@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	correctionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/correction"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
@@ -19,7 +20,7 @@ func TestResultCorrectionRepositoryRechecksCurrentRevisionUnderLock(t *testing.T
 	t.Cleanup(func() { resetMigrationTables(ctx, t) })
 
 	fixture := createCorrectionRepositoryFixture(ctx, t)
-	repository := postgres.NewCorrectionPostgres(postgres.NewTxManager(sharedPool))
+	repository := correctionrepo.NewCorrectionPostgres(postgres.NewTxManager(sharedPool))
 	firstInput := newCorrectionInput(
 		ctx, t, fixture, fixture.result, fixture.projection, 1, fixture.nextTime,
 	)
@@ -35,8 +36,8 @@ func TestResultCorrectionRepositoryRechecksCurrentRevisionUnderLock(t *testing.T
 
 	start := make(chan struct{})
 	outcomes := make(chan error, 2)
-	for _, input := range []postgres.CorrectionInput{firstInput, secondInput} {
-		go func(in postgres.CorrectionInput) {
+	for _, input := range []correctionrepo.CorrectionInput{firstInput, secondInput} {
+		go func(in correctionrepo.CorrectionInput) {
 			<-start
 			_, err := repository.Rebuild(ctx, in)
 			outcomes <- err

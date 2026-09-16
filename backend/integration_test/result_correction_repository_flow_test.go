@@ -11,13 +11,15 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	resultrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result"
+	correctionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/correction"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
 )
 
 type correctionRepositoryFixture struct {
 	resultFixture      resultAuditMigrationFixture
 	participants       []uuid.UUID
-	result             *postgres.ResultCommitRecord
+	result             *resultrepo.ResultCommitRecord
 	projection         *postgres.ProjectionRecord
 	waveID             uuid.UUID
 	windowID           uuid.UUID
@@ -65,10 +67,10 @@ func TestResultCorrectionRepository(t *testing.T) {
 		t.Cleanup(func() { resetMigrationTables(ctx, t) })
 
 		fixture := createCorrectionRepositoryFixture(ctx, t)
-		repository := postgres.NewCorrectionPostgres(postgres.NewTxManager(sharedPool))
+		repository := correctionrepo.NewCorrectionPostgres(postgres.NewTxManager(sharedPool))
 		traversal, err := repository.Traverse(
 			ctx,
-			postgres.ResultScope{
+			resultrepo.ResultScope{
 				TournamentID: fixture.resultFixture.draft.tournamentID,
 				RosterID:     fixture.resultFixture.draft.rosterID,
 				SeriesID:     fixture.resultFixture.draft.seriesID,
@@ -285,10 +287,10 @@ func TestResultCorrectionRepository(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, changed)
 
-		repository := postgres.NewCorrectionPostgres(postgres.NewTxManager(sharedPool))
+		repository := correctionrepo.NewCorrectionPostgres(postgres.NewTxManager(sharedPool))
 		traversal, err := repository.Traverse(
 			ctx,
-			postgres.ResultScope{
+			resultrepo.ResultScope{
 				TournamentID: fixture.resultFixture.draft.tournamentID,
 				RosterID:     fixture.resultFixture.draft.rosterID,
 				SeriesID:     fixture.resultFixture.draft.seriesID,
@@ -302,7 +304,7 @@ func TestResultCorrectionRepository(t *testing.T) {
 
 		input := newCorrectionInput(ctx, t, fixture, fixture.result, fixture.projection, 1, fixture.nextTime)
 		_, err = repository.Rebuild(ctx, input)
-		require.ErrorIs(t, err, postgres.ErrCorrectionCutoff)
+		require.ErrorIs(t, err, correctionrepo.ErrCorrectionCutoff)
 		var commitCount int
 		err = sharedPool.QueryRow(ctx, `
 			SELECT COUNT(*)

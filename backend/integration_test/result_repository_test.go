@@ -14,6 +14,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	resultrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result"
+	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
@@ -61,7 +63,7 @@ func TestConcurrentResultSettlement(t *testing.T) {
 	t.Cleanup(func() { resetMigrationTables(ctx, t) })
 
 	fixture := createResultAuditMigrationFixture(ctx, t)
-	repository := postgres.NewResultPostgres(postgres.NewTxManager(sharedPool))
+	repository := resultauthority.NewResultPostgres(postgres.NewTxManager(sharedPool))
 	_, sourceProjectionRevision := currentPublishedProjection(
 		ctx,
 		t,
@@ -74,9 +76,9 @@ func TestConcurrentResultSettlement(t *testing.T) {
 	copy(payloadDigest[:], bytes.Repeat([]byte{31}, 32))
 	intentDigest := [32]byte{}
 	copy(intentDigest[:], bytes.Repeat([]byte{30}, 32))
-	submissionInput := postgres.SubmissionInput{
+	submissionInput := resultrepo.SubmissionInput{
 		ID: uuid.New(),
-		Scope: postgres.ResultScope{
+		Scope: resultrepo.ResultScope{
 			TournamentID: fixture.draft.tournamentID, RosterID: fixture.draft.rosterID,
 			SeriesID: fixture.draft.seriesID, AttemptID: fixture.attemptID,
 		},
@@ -115,7 +117,7 @@ func TestConcurrentResultSettlement(t *testing.T) {
 	require.NoError(t, err)
 
 	type settleResult struct {
-		record  *postgres.ResultCommitRecord
+		record  *resultrepo.ResultCommitRecord
 		changed bool
 		err     error
 	}
@@ -130,14 +132,14 @@ func TestConcurrentResultSettlement(t *testing.T) {
 			settledAt := fixture.lockedAt.Add(2 * time.Second)
 			digest := [32]byte{}
 			copy(digest[:], bytes.Repeat([]byte{32}, 32))
-			record, won, settleErr := repository.Settle(ctx, postgres.ResultSettlementInput{
-				IDs: postgres.ResultSettlementIDs{
+			record, won, settleErr := repository.Settle(ctx, resultrepo.ResultSettlementInput{
+				IDs: resultrepo.ResultSettlementIDs{
 					CommitID: uuid.New(), ResultEventID: uuid.New(), ResultEventIdempotencyKey: uuid.New(),
 					GameResultRevisionID: uuid.New(), SeriesScoreRevisionID: uuid.New(),
 					SeriesResultRevisionID: uuid.New(), AuditEventID: uuid.New(), OutboxEventID: uuid.New(),
 					OutboxIdempotencyKey: uuid.New(), ProjectionEvidenceID: uuid.New(), CommitIdempotencyKey: uuid.New(),
 				},
-				Scope: postgres.ResultScope{
+				Scope: resultrepo.ResultScope{
 					TournamentID: fixture.draft.tournamentID, RosterID: fixture.draft.rosterID,
 					SeriesID: fixture.draft.seriesID, AttemptID: fixture.attemptID,
 				},
@@ -177,7 +179,7 @@ func TestConcurrentResultSettlement(t *testing.T) {
 	require.Len(t, commitIDs, 1)
 	require.Len(t, resultSequences, 1)
 
-	scope := postgres.ResultScope{
+	scope := resultrepo.ResultScope{
 		TournamentID: fixture.draft.tournamentID, RosterID: fixture.draft.rosterID,
 		SeriesID: fixture.draft.seriesID, AttemptID: fixture.attemptID,
 	}
@@ -327,7 +329,7 @@ func TestConcurrentResultSettlement(t *testing.T) {
 func assertResultOutboxPayloadRetryConflict(
 	ctx context.Context,
 	t *testing.T,
-	current *postgres.ResultCommitRecord,
+	current *resultrepo.ResultCommitRecord,
 ) {
 	t.Helper()
 

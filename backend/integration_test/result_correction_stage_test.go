@@ -17,6 +17,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	resultrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result"
+	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	gamedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/game"
@@ -990,7 +992,7 @@ func TestTournamentAdminCorrectionPersistsGoldenToPlayoff(t *testing.T) {
 	// the next ordinary semifinal settlement must consume its persisted Series,
 	// score genesis, stage evidence, and projection-node binding.
 	settlement := semifinalSettlementInput(ctx, t, fixture, mutation.Command.CommandID, 1)
-	record, settled, err := postgres.NewResultPostgres(fixture.tx).Settle(ctx, settlement)
+	record, settled, err := resultauthority.NewResultPostgres(fixture.tx).Settle(ctx, settlement)
 	require.NoError(t, err)
 	require.True(t, settled)
 	require.NotNil(t, record.SeriesRevision)
@@ -1481,15 +1483,15 @@ func settleCorrectionSwissReceiptSeries(
 		FROM assignments AS assignment
 		JOIN game_attempts AS attempt ON attempt.id = assignment.attempt_id
 		WHERE assignment.id = $1`, binding.AssignmentID).Scan(&scope.Game.GameID, &scope.Game.SlotID))
-	results := postgres.NewResultPostgres(fixture.tx)
+	results := resultauthority.NewResultPostgres(fixture.tx)
 	repository := postgres.NewParticipantSettlementRepository(fixture.tx, results)
 	authority, err := repository.LoadConcurrentWinnerAuthority(ctx, scope)
 	require.NoError(t, err)
 	commandID := uuid.New()
 	submittedAt := time.Now().UTC().Truncate(time.Microsecond)
-	_, changed, err := results.RecordSubmission(ctx, postgres.SubmissionInput{
+	_, changed, err := results.RecordSubmission(ctx, resultrepo.SubmissionInput{
 		ID: uuid.NewSHA1(commandID, []byte("participant-command:submission-event")),
-		Scope: postgres.ResultScope{
+		Scope: resultrepo.ResultScope{
 			TournamentID: fixture.tournamentID, RosterID: fixture.rosterID,
 			SeriesID: binding.SeriesID, AttemptID: scope.Game.GameID,
 		},

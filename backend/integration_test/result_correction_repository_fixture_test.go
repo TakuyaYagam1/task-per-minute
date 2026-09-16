@@ -12,6 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	resultrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result"
+	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
@@ -38,13 +40,13 @@ func createCorrectionRepositoryFixture(
 		participants = append(participants, participantID)
 	}
 
-	resultRepository := postgres.NewResultPostgres(postgres.NewTxManager(sharedPool))
+	resultRepository := resultauthority.NewResultPostgres(postgres.NewTxManager(sharedPool))
 	winnerID := participants[0]
 	createdAt := resultFixture.lockedAt.Add(time.Second)
 	digest := sha256.Sum256([]byte("accepted correction fixture submission"))
-	submission, changed, err := resultRepository.RecordSubmission(ctx, postgres.SubmissionInput{
+	submission, changed, err := resultRepository.RecordSubmission(ctx, resultrepo.SubmissionInput{
 		ID: uuid.New(),
-		Scope: postgres.ResultScope{
+		Scope: resultrepo.ResultScope{
 			TournamentID: resultFixture.draft.tournamentID, RosterID: resultFixture.draft.rosterID,
 			SeriesID: resultFixture.draft.seriesID, AttemptID: resultFixture.attemptID,
 		},
@@ -63,14 +65,14 @@ func createCorrectionRepositoryFixture(
 	require.NoError(tb, err)
 	settledAt := createdAt.Add(time.Second)
 	projectionDigest := sha256.Sum256([]byte("initial correction fixture projection"))
-	result, changed, err := resultRepository.Settle(ctx, postgres.ResultSettlementInput{
-		IDs: postgres.ResultSettlementIDs{
+	result, changed, err := resultRepository.Settle(ctx, resultrepo.ResultSettlementInput{
+		IDs: resultrepo.ResultSettlementIDs{
 			CommitID: uuid.New(), ResultEventID: uuid.New(), ResultEventIdempotencyKey: uuid.New(),
 			GameResultRevisionID: uuid.New(), SeriesScoreRevisionID: uuid.New(),
 			SeriesResultRevisionID: uuid.New(), AuditEventID: uuid.New(), OutboxEventID: uuid.New(),
 			OutboxIdempotencyKey: uuid.New(), ProjectionEvidenceID: uuid.New(), CommitIdempotencyKey: uuid.New(),
 		},
-		Scope: postgres.ResultScope{
+		Scope: resultrepo.ResultScope{
 			TournamentID: resultFixture.draft.tournamentID, RosterID: resultFixture.draft.rosterID,
 			SeriesID: resultFixture.draft.seriesID, AttemptID: resultFixture.attemptID,
 		},

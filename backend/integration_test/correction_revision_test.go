@@ -11,6 +11,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	resultrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result"
+	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
+	correctionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/correction"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
@@ -20,7 +23,7 @@ func TestCorrectionRevisionRollback(t *testing.T) {
 	t.Cleanup(func() { resetMigrationTables(ctx, t) })
 
 	fixture := createCorrectionRepositoryFixture(ctx, t)
-	corrections := postgres.NewCorrectionPostgres(postgres.NewTxManager(sharedPool))
+	corrections := correctionrepo.NewCorrectionPostgres(postgres.NewTxManager(sharedPool))
 	input := newCorrectionInput(ctx, t, fixture, fixture.result, fixture.projection, 1, fixture.nextTime)
 	corrected, err := corrections.Rebuild(ctx, input)
 	require.NoError(t, err)
@@ -57,7 +60,7 @@ func TestCorrectionRevisionRollback(t *testing.T) {
 	after := loadCorrectionRevisionHeads(ctx, t, fixture)
 	require.Equal(t, before, after)
 
-	restartedResults := postgres.NewResultPostgres(postgres.NewTxManager(sharedPool))
+	restartedResults := resultauthority.NewResultPostgres(postgres.NewTxManager(sharedPool))
 	restartedProjections := postgres.NewProjectionPostgres(postgres.NewTxManager(sharedPool))
 	scope := correctionRevisionResultScope(fixture)
 	currentResult, err := restartedResults.Current(ctx, scope)
@@ -176,8 +179,8 @@ func loadCorrectionRevisionHeads(
 	return snapshot
 }
 
-func correctionRevisionResultScope(fixture correctionRepositoryFixture) postgres.ResultScope {
-	return postgres.ResultScope{
+func correctionRevisionResultScope(fixture correctionRepositoryFixture) resultrepo.ResultScope {
+	return resultrepo.ResultScope{
 		TournamentID: fixture.resultFixture.draft.tournamentID,
 		RosterID:     fixture.resultFixture.draft.rosterID,
 		SeriesID:     fixture.resultFixture.draft.seriesID,

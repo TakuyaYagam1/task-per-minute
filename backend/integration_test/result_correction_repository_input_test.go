@@ -13,17 +13,19 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	resultrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result"
+	correctionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/correction"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
 func newCorrectionInput(
 	ctx context.Context, tb testing.TB,
 	fixture correctionRepositoryFixture,
-	currentResult *postgres.ResultCommitRecord,
+	currentResult *resultrepo.ResultCommitRecord,
 	currentProjection *postgres.ProjectionRecord,
 	winnerIndex int,
 	correctedAt time.Time,
-) postgres.CorrectionInput {
+) correctionrepo.CorrectionInput {
 	tb.Helper()
 
 	var (
@@ -43,7 +45,7 @@ func newCorrectionInput(
 		WHERE id = $1`, fixture.resultFixture.draft.seriesID).Scan(&seriesRevision, &seriesState)
 	require.NoError(tb, err)
 
-	ids := postgres.ResultSettlementIDs{
+	ids := resultrepo.ResultSettlementIDs{
 		CommitID: uuid.New(), ResultEventID: uuid.New(), ResultEventIdempotencyKey: uuid.New(),
 		GameResultRevisionID: uuid.New(), SeriesScoreRevisionID: uuid.New(),
 		SeriesResultRevisionID: uuid.New(), AuditEventID: uuid.New(), OutboxEventID: uuid.New(),
@@ -59,9 +61,9 @@ func newCorrectionInput(
 	reason := fmt.Sprintf("operator correction revision %d", currentResult.GameRevision.RevisionNumber+1)
 	digest := sha256.Sum256([]byte(reason))
 	seriesResultRevisionID := currentResult.SeriesRevision.ID
-	return postgres.CorrectionInput{
+	return correctionrepo.CorrectionInput{
 		IDs: ids, ProjectionIDs: postgres.ProjectionIDs{RevisionID: uuid.New(), CutoffID: uuid.New()},
-		Scope: postgres.ResultScope{
+		Scope: resultrepo.ResultScope{
 			TournamentID: fixture.resultFixture.draft.tournamentID, RosterID: fixture.resultFixture.draft.rosterID,
 			SeriesID: fixture.resultFixture.draft.seriesID, AttemptID: fixture.resultFixture.attemptID,
 		},
