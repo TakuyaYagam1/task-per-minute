@@ -129,7 +129,7 @@ func encodeTournamentAdminWaveResult(record tournamentadmin.WaveCommandRecord) (
 	if record.NormalPause == nil {
 		return append([]byte(nil), record.ResultDocument...), nil
 	}
-	document, err := json.Marshal(tournamentAdminPauseDocument{
+	document, err := json.Marshal(tournamentAdminPauseDocument{ //nolint:musttag // Versioned pause evidence has explicit JSON tags on every persisted field.
 		Version: tournamentAdminPauseDocumentVersion,
 		View:    append(json.RawMessage(nil), record.ResultDocument...),
 		Pause:   record.NormalPause,
@@ -145,8 +145,10 @@ func decodeTournamentAdminWaveResult(action string, document []byte) ([]byte, *g
 		return append([]byte(nil), document...), nil
 	}
 	var envelope tournamentAdminPauseDocument
-	if err := json.Unmarshal(document, &envelope); err != nil || envelope.Version != tournamentAdminPauseDocumentVersion ||
-		len(envelope.View) == 0 || envelope.Pause == nil {
+	if err := json.Unmarshal(document, &envelope); err != nil || envelope.Version != tournamentAdminPauseDocumentVersion { //nolint:musttag // Versioned pause evidence has explicit JSON tags on every persisted field.
+		return append([]byte(nil), document...), nil
+	}
+	if len(envelope.View) == 0 || envelope.Pause == nil {
 		return append([]byte(nil), document...), nil
 	}
 	pause := *envelope.Pause
@@ -191,6 +193,7 @@ func loadRetainedSwissRoundProof(
 	return &proof, nil
 }
 
+//nolint:gocyclo // Receipt reconstruction keeps every persisted identity and hash check in one fail-closed boundary.
 func progressionReceiptRoundProofs(
 	authority progression.Authority,
 	roots []sqlc.SwissRoundLockProof,

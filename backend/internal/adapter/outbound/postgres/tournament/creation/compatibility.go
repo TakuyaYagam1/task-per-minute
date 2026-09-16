@@ -40,7 +40,7 @@ type RosterRecord struct {
 }
 
 type TournamentCreator interface {
-	Create(context.Context, TournamentCreateInput) (*TournamentRecord, *RosterRecord, error)
+	Create(ctx context.Context, input TournamentCreateInput) (*TournamentRecord, *RosterRecord, error)
 }
 
 func tstz(value time.Time) pgtype.Timestamptz {

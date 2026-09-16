@@ -47,6 +47,7 @@ func mapRepositoryWriteError(operation string, err error) error {
 	return fmt.Errorf("%s: %w", operation, err)
 }
 
+//nolint:unparam // The error return preserves the lifecycle adapter's compatibility seam for callers that normalize repository errors.
 func tournamentLifecycleSummaryRecord(
 	row sqlc.GetTournamentSummaryRow,
 ) (*tournamentlifecycle.LifecycleTournamentRecord, error) {

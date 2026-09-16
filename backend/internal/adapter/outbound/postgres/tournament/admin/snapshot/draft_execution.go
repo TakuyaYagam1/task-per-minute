@@ -152,7 +152,7 @@ func participantDraftEvidence(
 		return nil, nil, domain.ErrInternal
 	}
 	var evidence participantDraftEvidenceDocument
-	if err := json.Unmarshal(payload, &evidence); err != nil {
+	if err := json.Unmarshal(payload, &evidence); err != nil { //nolint:musttag // Versioned draft evidence has explicit JSON tags on every persisted field.
 		return nil, nil, domain.ErrInternal
 	}
 	return evidence.Recovery, evidence.Transition, nil

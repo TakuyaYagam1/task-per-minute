@@ -38,6 +38,8 @@ type ContentPublicationPool struct {
 
 // ContentBindingFromPools validates the selected publication and derives the
 // deterministic content IDs used by a tournament draft.
+//
+//nolint:gocyclo // Pool identity and duplicate checks form one fail-closed validation boundary.
 func ContentBindingFromPools(
 	tournamentID uuid.UUID,
 	rosterID uuid.UUID,
@@ -133,6 +135,8 @@ func LoadContentBinding(
 
 // RevalidateContentPools fail-closes the immutable task pool health check
 // before a tournament draft is written.
+//
+//nolint:gocyclo // Health, identity, kind and duplicate checks must remain ordered in one boundary.
 func RevalidateContentPools(
 	ctx context.Context,
 	querier *sqlc.Queries,

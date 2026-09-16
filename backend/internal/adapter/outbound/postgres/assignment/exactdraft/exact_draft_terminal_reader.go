@@ -18,8 +18,8 @@ var _ playoff.ExactDraftCommittedPlanReader = (*ExactDraftBranchPlanPostgres)(ni
 // validated rehydration path to terminal progression. A missing plan is a
 // durable final-stage inconsistency, not a retryable absence.
 func LoadCommittedExactDraftPlan(
-	r *ExactDraftBranchPlanPostgres,
 	ctx context.Context,
+	r *ExactDraftBranchPlanPostgres,
 	planID uuid.UUID,
 ) (*assignmentusecase.ExactDraftBranchPlan, error) {
 	if r == nil || ctx == nil || planID == uuid.Nil {
@@ -42,5 +42,5 @@ func (r *ExactDraftBranchPlanPostgres) LoadCommittedExactDraftPlan(
 	ctx context.Context,
 	planID uuid.UUID,
 ) (*assignmentusecase.ExactDraftBranchPlan, error) {
-	return LoadCommittedExactDraftPlan(r, ctx, planID)
+	return LoadCommittedExactDraftPlan(ctx, r, planID)
 }

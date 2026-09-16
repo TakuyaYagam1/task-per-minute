@@ -29,12 +29,12 @@ type SwissDraftDeadlinePostgres struct {
 // ParticipantDraftRepository contains the participant-draft operations that
 // the deadline adapter delegates after its Swiss scope checks.
 type ParticipantDraftRepository interface {
-	LoadDraft(context.Context, uuid.UUID) (*draftusecase.Execution, error)
-	FindDraftCommand(context.Context, uuid.UUID, uuid.UUID) (*draftusecase.Execution, error)
+	LoadDraft(ctx context.Context, draftID uuid.UUID) (*draftusecase.Execution, error)
+	FindDraftCommand(ctx context.Context, draftID, commandID uuid.UUID) (*draftusecase.Execution, error)
 	CommitDraftRevisions(
-		context.Context,
-		draftusecase.RevisionExpectation,
-		[]draftusecase.Execution,
+		ctx context.Context,
+		expected draftusecase.RevisionExpectation,
+		revisions []draftusecase.Execution,
 	) (*draftusecase.Execution, bool, error)
 }
 

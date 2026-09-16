@@ -125,6 +125,9 @@ type ResultProjectionPublication uint8
 const (
 	ResultProjectionPublicationImmediate ResultProjectionPublication = iota
 	ResultProjectionPublicationCallerOwned
+)
+
+const (
 	resultProjectionPublicationImmediate   = ResultProjectionPublicationImmediate
 	resultProjectionPublicationCallerOwned = ResultProjectionPublicationCallerOwned
 )

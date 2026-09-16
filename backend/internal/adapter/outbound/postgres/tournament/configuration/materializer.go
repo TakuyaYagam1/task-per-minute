@@ -29,6 +29,6 @@ type SeriesGenesisInput struct {
 // SeriesMaterializer bridges configuration edits to the execution-owned
 // graph materialization boundary without coupling this package to its parent.
 type SeriesMaterializer interface {
-	CreateGenesis(context.Context, *sqlc.Queries, SeriesGenesisInput) error
-	Materialize(context.Context, tournamentadmin.PairingPlan) error
+	CreateGenesis(ctx context.Context, queries *sqlc.Queries, input SeriesGenesisInput) error
+	Materialize(ctx context.Context, plan tournamentadmin.PairingPlan) error
 }

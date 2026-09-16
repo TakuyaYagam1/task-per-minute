@@ -84,7 +84,7 @@ func createScoreRevisionAttempt(
 ) error {
 	return resultpostgres.CreateScoreRevisionAttempt(
 		ctx, querier, scope, scoreRevisionID, position,
-		resultpostgres.ScoreRevisionAttemptEvidence(evidence),
+		evidence,
 	)
 }
 

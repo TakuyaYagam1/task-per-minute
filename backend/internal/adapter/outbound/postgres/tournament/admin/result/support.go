@@ -128,7 +128,7 @@ func resultProjectionTarget(
 	if !ok {
 		return resultProjectionTargetBinding{}, false
 	}
-	return resultProjectionTargetBinding(target), true
+	return target, true
 }
 
 func mapRepositoryWriteError(operation string, err error) error {

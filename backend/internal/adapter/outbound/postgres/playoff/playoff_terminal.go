@@ -26,8 +26,8 @@ type PlayoffTerminalPostgres struct {
 // stage materialization. It keeps the child package independent of the root
 // postgres facade.
 type DraftRepository interface {
-	Create(context.Context, draft.DraftCreateInput) (*draft.DraftAggregate, error)
-	Get(context.Context, uuid.UUID) (*draft.DraftAggregate, error)
+	Create(ctx context.Context, input draft.DraftCreateInput) (*draft.DraftAggregate, error)
+	Get(ctx context.Context, draftID uuid.UUID) (*draft.DraftAggregate, error)
 }
 
 // AssignmentWriter persists an assignment inside the caller's transaction.

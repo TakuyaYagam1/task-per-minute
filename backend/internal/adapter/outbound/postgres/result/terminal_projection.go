@@ -183,7 +183,8 @@ func persistTerminalSwissPoints(
 			ResultLabel:            optionalTrimmedString(string(label)),
 
 			ParticipantID: award.ParticipantID, OpponentID: nullableUUIDValue(award.OpponentID),
-			Points: int16(award.Points), StableSeed: seeds[award.ParticipantID], CreatedAt: tstz(in.SettledAt),
+			Points:     int16(award.Points), //nolint:gosec // Point-ledger validation bounds awards to the PostgreSQL int2 range.
+			StableSeed: seeds[award.ParticipantID], CreatedAt: tstz(in.SettledAt),
 		}); err != nil {
 			return err
 		}
