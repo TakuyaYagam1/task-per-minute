@@ -211,8 +211,25 @@ test.describe("tournament presentation formatting", () => {
   test("supports both themes and a narrow viewport without overflow", async ({ page }) => {
     await openFixture(page);
 
+    for (const [statusId, groupName] of [
+      ["result-reason", "Причина результата"],
+      ["server-error", "Ошибка сервера"],
+    ] as const) {
+      const statusBox = await page.getByTestId(statusId).boundingBox();
+      const firstActionBox = await page
+        .getByRole("group", { name: groupName })
+        .getByRole("button")
+        .first()
+        .boundingBox();
+      expect(statusBox).not.toBeNull();
+      expect(firstActionBox).not.toBeNull();
+      expect(firstActionBox!.y - (statusBox!.y + statusBox!.height)).toBeGreaterThanOrEqual(12);
+    }
+
     const html = page.locator("html");
     await expect(html).toHaveAttribute("data-theme", "dark");
+    await expect(page.getByRole("button", { name: "Темная тема" }).locator("svg")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Светлая тема" }).locator("svg")).toBeVisible();
     const darkBackground = await html.evaluate((element) => getComputedStyle(element).getPropertyValue("--bg").trim());
 
     await page.getByRole("button", { name: "Светлая тема" }).click();

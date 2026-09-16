@@ -45,6 +45,40 @@ type ThemeToggleProps = {
   storageKey: string;
 };
 
+const MoonIcon = () => (
+  <svg
+    aria-hidden="true"
+    className={styles.icon}
+    fill="none"
+    viewBox="0 0 24 24"
+  >
+    <path
+      d="M20.4 15.1A8.5 8.5 0 0 1 8.9 3.6a8.5 8.5 0 1 0 11.5 11.5Z"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="1.8"
+    />
+  </svg>
+);
+
+const SunIcon = () => (
+  <svg
+    aria-hidden="true"
+    className={styles.icon}
+    fill="none"
+    viewBox="0 0 24 24"
+  >
+    <circle cx="12" cy="12" r="3.75" stroke="currentColor" strokeWidth="1.8" />
+    <path
+      d="M12 2.5v2M12 19.5v2M4.6 4.6 6 6M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4 6 18M18 6l1.4-1.4"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeWidth="1.8"
+    />
+  </svg>
+);
+
 export const ThemeToggle = ({ storageKey }: ThemeToggleProps) => {
   const [theme, setTheme] = useState<Theme>(DEFAULT_THEME);
 
@@ -75,9 +109,10 @@ export const ThemeToggle = ({ storageKey }: ThemeToggleProps) => {
         data-theme-choice="dark"
         aria-label="Темная тема"
         aria-pressed={theme === "dark"}
+        title="Темная тема"
         onClick={() => selectTheme("dark")}
       >
-        Темная
+        <MoonIcon />
       </button>
       <button
         className={styles.button}
@@ -85,9 +120,10 @@ export const ThemeToggle = ({ storageKey }: ThemeToggleProps) => {
         data-theme-choice="light"
         aria-label="Светлая тема"
         aria-pressed={theme === "light"}
+        title="Светлая тема"
         onClick={() => selectTheme("light")}
       >
-        Светлая
+        <SunIcon />
       </button>
     </div>
   );

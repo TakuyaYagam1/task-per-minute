@@ -79,6 +79,10 @@
   gap: 0.6rem;
 }
 
+.feedback-status {
+  margin: -0.25rem 0 0.75rem;
+}
+
 .participant-count,
 .category,
 .action-label {

@@ -227,7 +227,7 @@ export default function TournamentFormattingFixture() {
 
       <div className="fixture-grid">
         <Panel title="Причины результата" description="Подпись не раскрывает внутренний код.">
-          <div className="current-values">
+          <div className="current-values feedback-status">
             <Status data-testid="result-reason" tone="success">
               {formatResultReason(resultReason)}
             </Status>
@@ -250,7 +250,7 @@ export default function TournamentFormattingFixture() {
         </Panel>
 
         <Panel title="Ошибки сервера" description="Для неизвестного кода показывается общее сообщение.">
-          <div className="current-values">
+          <div className="current-values feedback-status">
             <Status data-testid="server-error" tone="error">
               {formatArenaError(errorCode)}
             </Status>
