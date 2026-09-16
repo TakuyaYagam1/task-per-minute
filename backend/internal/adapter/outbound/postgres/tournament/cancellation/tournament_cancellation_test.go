@@ -1,4 +1,4 @@
-package postgres
+package cancellation
 
 import (
 	"context"
