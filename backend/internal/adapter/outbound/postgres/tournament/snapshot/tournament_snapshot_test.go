@@ -1,4 +1,4 @@
-package postgres
+package snapshot
 
 import (
 	"os"
@@ -229,7 +229,7 @@ func TestPublicSnapshotCursorConflictSemantics(t *testing.T) {
 func TestTournamentReadCursorSQLUsesDurableOutboxWatermark(t *testing.T) {
 	t.Parallel()
 
-	contents, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "queries", "tournament_read.sql"))
+	contents, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "..", "db", "queries", "tournament_read.sql"))
 	require.NoError(t, err)
 	query := string(contents)
 	projectionPayloads := strings.Index(query, "-- name: GetTournamentReadProjectionPayloads")
