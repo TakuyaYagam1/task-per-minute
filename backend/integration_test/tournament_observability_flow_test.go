@@ -24,6 +24,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	draftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment/draft"
 	projectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
+	realtimerepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/realtime"
 	telemetryadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/telemetry"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/observability"
@@ -258,7 +259,7 @@ func processTournamentFlowOutbox(
 	})).Return(nil).Once()
 
 	worker, err := delivery.NewWorker(
-		postgres.NewRealtimeOutboxPostgres(postgres.NewTxManager(sharedPool)),
+		realtimerepo.NewRealtimeOutboxPostgres(postgres.NewTxManager(sharedPool)),
 		sink,
 		delivery.WorkerConfig{WorkerID: uuid.New(), BatchSize: 1},
 		telemetryadapter.NewEventDeliveryObserver(observer),
@@ -269,7 +270,7 @@ func processTournamentFlowOutbox(
 	require.Equal(t, delivery.ProcessResult{Claimed: 1, Acknowledged: 1}, result)
 
 	restartedWorker, err := delivery.NewWorker(
-		postgres.NewRealtimeOutboxPostgres(postgres.NewTxManager(sharedPool)),
+		realtimerepo.NewRealtimeOutboxPostgres(postgres.NewTxManager(sharedPool)),
 		sink,
 		delivery.WorkerConfig{WorkerID: uuid.New(), BatchSize: 1},
 		telemetryadapter.NewEventDeliveryObserver(observer),

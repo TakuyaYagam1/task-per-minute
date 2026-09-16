@@ -24,7 +24,7 @@ func TestAdminPlayerEventsPostgres_NotifiesOnPlayerListChanges(t *testing.T) {
 	defer unsubscribe()
 
 	tx := postgres.NewTxManager(pool)
-	players := postgres.NewPlayerPostgres(tx)
+	players := playerrepo.NewPlayerPostgres(tx)
 
 	player, err := players.Create(ctx, uniq("events_player"))
 	require.NoError(t, err)

@@ -20,6 +20,8 @@ import (
 	inboundws "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket"
 	tournamentws "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket/tournament"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	playerrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/player"
+	realtimerepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/realtime"
 	participantrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
@@ -77,7 +79,7 @@ func TestTournamentRealtimeDisconnectResume(t *testing.T) {
 	restAuthFixture := newTournamentFlowRESTFixture(t)
 	adminToken := restAuthFixture.adminAccessToken(t)
 	realtime, err := inboundws.NewRealtimeDelivery(
-		postgres.NewRealtimeOutboxPostgres(started.fixture.tx),
+		realtimerepo.NewRealtimeOutboxPostgres(started.fixture.tx),
 		inboundws.RealtimeDeliveryConfig{
 			InstanceID:   uuid.New(),
 			WorkerID:     uuid.New(),
@@ -101,7 +103,7 @@ func TestTournamentRealtimeDisconnectResume(t *testing.T) {
 	require.Eventually(t, realtime.Ready, 3*time.Second, 10*time.Millisecond)
 
 	server := inboundws.NewServer(
-		postgres.NewPlayerPostgres(started.fixture.tx),
+		playerrepo.NewPlayerPostgres(started.fixture.tx),
 		inboundws.WithTournamentParticipantFlow(participantFlow),
 		inboundws.WithTournamentParticipantLifecycleFlow(lifecycle),
 		inboundws.WithTournamentOperatorFlow(operatorFlow),

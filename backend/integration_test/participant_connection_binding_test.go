@@ -18,6 +18,8 @@ import (
 	inboundws "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket"
 	tournamentws "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket/tournament"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	playerrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/player"
+	realtimerepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/realtime"
 	participantrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
@@ -66,12 +68,12 @@ func TestParticipantConnectionBindingFollowsCurrentSubscriberFence(t *testing.T)
 
 	realtime, err := inboundws.NewRealtimeDelivery(
 		participantConnectionRealtimeRepository{
-			SubscriptionRepository: postgres.NewRealtimeOutboxPostgres(fixture.tx),
+			SubscriptionRepository: realtimerepo.NewRealtimeOutboxPostgres(fixture.tx),
 		},
 		inboundws.RealtimeDeliveryConfig{InstanceID: uuid.New(), WorkerID: uuid.New()},
 	)
 	require.NoError(t, err)
-	players := postgres.NewPlayerPostgres(fixture.tx)
+	players := playerrepo.NewPlayerPostgres(fixture.tx)
 	server := inboundws.NewServer(
 		players,
 		inboundws.WithTournamentParticipantFlow(participantConnectionBindingFlow{}),
@@ -199,13 +201,13 @@ func TestParticipantConnectionBindingSurvivesFinalGameAdvance(t *testing.T) {
 
 	realtime, err := inboundws.NewRealtimeDelivery(
 		participantConnectionRealtimeRepository{
-			SubscriptionRepository: postgres.NewRealtimeOutboxPostgres(fixture.tx),
+			SubscriptionRepository: realtimerepo.NewRealtimeOutboxPostgres(fixture.tx),
 		},
 		inboundws.RealtimeDeliveryConfig{InstanceID: uuid.New(), WorkerID: uuid.New()},
 	)
 	require.NoError(t, err)
 	server := inboundws.NewServer(
-		postgres.NewPlayerPostgres(fixture.tx),
+		playerrepo.NewPlayerPostgres(fixture.tx),
 		inboundws.WithTournamentParticipantFlow(participantConnectionBindingFlow{}),
 		inboundws.WithTournamentParticipantLifecycleFlow(lifecycle),
 		inboundws.WithRealtimeDelivery(realtime),
