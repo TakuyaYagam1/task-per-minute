@@ -1,4 +1,4 @@
-package postgres
+package realtime
 
 import (
 	"os"
@@ -40,7 +40,7 @@ func TestRealtimeSubscriptionSQLContractUsesScopeBoundDurableResume(t *testing.T
 func readRealtimeSubscriptionQuery(t *testing.T) []byte {
 	t.Helper()
 
-	contents, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "queries", "realtime_outbox.sql"))
+	contents, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "db", "queries", "realtime_outbox.sql"))
 	require.NoError(t, err)
 	return contents
 }
@@ -48,7 +48,7 @@ func readRealtimeSubscriptionQuery(t *testing.T) []byte {
 func TestRealtimeSubscriptionSchemaFencesCurrentConnection(t *testing.T) {
 	t.Parallel()
 
-	schema, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "migrations", "000011_projection_schema.sql"))
+	schema, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "db", "migrations", "000011_projection_schema.sql"))
 	require.NoError(t, err)
 
 	for _, fragment := range []string{

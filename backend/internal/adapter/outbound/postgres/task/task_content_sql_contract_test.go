@@ -1,4 +1,4 @@
-package postgres
+package task
 
 import (
 	"os"
@@ -11,11 +11,11 @@ import (
 func TestTaskContentHealthAuthoritySQLContract(t *testing.T) {
 	t.Parallel()
 
-	migration, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "migrations", "000002_task_schema.sql"))
+	migration, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "db", "migrations", "000002_task_schema.sql"))
 	require.NoError(t, err)
-	query, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "queries", "task_content.sql"))
+	query, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "db", "queries", "task_content.sql"))
 	require.NoError(t, err)
-	taskSchema, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "api", "components", "schemas", "task_schemas.yml"))
+	taskSchema, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "api", "components", "schemas", "task_schemas.yml"))
 	require.NoError(t, err)
 
 	for _, fragment := range []string{
@@ -46,7 +46,7 @@ func TestTaskContentHealthAuthoritySQLContract(t *testing.T) {
 func TestCurrentTaskPoolPublicationLocksBaseRelationBeforePoolRows(t *testing.T) {
 	t.Parallel()
 
-	query, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "queries", "task_content.sql"))
+	query, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "db", "queries", "task_content.sql"))
 	require.NoError(t, err)
 
 	require.Contains(t, string(query), "LIMIT 1\n    FOR KEY SHARE OF publication")
@@ -57,9 +57,9 @@ func TestCurrentTaskPoolPublicationLocksBaseRelationBeforePoolRows(t *testing.T)
 func TestTournamentContentSchemaKeepsPublishedOwners(t *testing.T) {
 	t.Parallel()
 
-	migration, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "migrations", "000002_task_schema.sql"))
+	migration, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "db", "migrations", "000002_task_schema.sql"))
 	require.NoError(t, err)
-	tournamentMigration, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "migrations", "000003_tournament_schema.sql"))
+	tournamentMigration, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "db", "migrations", "000003_tournament_schema.sql"))
 	require.NoError(t, err)
 
 	for _, fragment := range []string{
@@ -78,9 +78,9 @@ func TestTournamentContentSchemaKeepsPublishedOwners(t *testing.T) {
 func TestAssignmentEdgeSourceLocksPublishedHealthyTaskVersion(t *testing.T) {
 	t.Parallel()
 
-	migration, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "migrations", "000007_assignment_schema.sql"))
+	migration, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "db", "migrations", "000007_assignment_schema.sql"))
 	require.NoError(t, err)
-	query, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "queries", "assignment.sql"))
+	query, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "db", "queries", "assignment.sql"))
 	require.NoError(t, err)
 
 	for _, fragment := range []string{
@@ -115,7 +115,7 @@ func TestAssignmentEdgeSourceLocksPublishedHealthyTaskVersion(t *testing.T) {
 func TestTaskDeletionSourceLocksThenChecksPublishedReferences(t *testing.T) {
 	t.Parallel()
 
-	query, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "queries", "tasks.sql"))
+	query, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "db", "queries", "tasks.sql"))
 	require.NoError(t, err)
 
 	for _, fragment := range []string{
@@ -131,9 +131,9 @@ func TestTaskDeletionSourceLocksThenChecksPublishedReferences(t *testing.T) {
 func TestTaskPostgresWritesValidationInsideTheHeadTransaction(t *testing.T) {
 	t.Parallel()
 
-	adapter, err := os.ReadFile(filepath.Join("task", "task_postgres.go"))
+	adapter, err := os.ReadFile("task_postgres.go")
 	require.NoError(t, err)
-	mapping, err := os.ReadFile(filepath.Join("task", "mapping.go"))
+	mapping, err := os.ReadFile("mapping.go")
 	require.NoError(t, err)
 
 	for _, fragment := range []string{
@@ -160,7 +160,7 @@ func TestTaskPostgresWritesValidationInsideTheHeadTransaction(t *testing.T) {
 func TestTournamentPreflightReadsPublishedContentAuthority(t *testing.T) {
 	t.Parallel()
 
-	adapter, err := os.ReadFile("tournament_admin_roster_preflight.go")
+	adapter, err := os.ReadFile(filepath.Join("..", "tournament_admin_roster_preflight.go"))
 	require.NoError(t, err)
 
 	for _, fragment := range []string{

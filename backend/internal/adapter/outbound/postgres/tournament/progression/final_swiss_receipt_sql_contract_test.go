@@ -1,4 +1,4 @@
-package postgres
+package progression
 
 import (
 	"os"
@@ -11,9 +11,9 @@ import (
 func TestFinalSwissReceiptPersistsExactCanonicalPredecessorChain(t *testing.T) {
 	t.Parallel()
 
-	schema, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "migrations", "000011_projection_schema.sql"))
+	schema, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "..", "db", "migrations", "000011_projection_schema.sql"))
 	require.NoError(t, err)
-	queries, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "queries", "tournament_progression.sql"))
+	queries, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "..", "db", "queries", "tournament_progression.sql"))
 	require.NoError(t, err)
 
 	for _, fragment := range []string{
@@ -67,9 +67,9 @@ func TestFinalSwissReceiptPersistsExactCanonicalPredecessorChain(t *testing.T) {
 func TestFinalSwissFirstReceiptMayUsePhysicalRevisionAboveOne(t *testing.T) {
 	t.Parallel()
 
-	schema, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "migrations", "000011_projection_schema.sql"))
+	schema, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "..", "db", "migrations", "000011_projection_schema.sql"))
 	require.NoError(t, err)
-	queries, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "queries", "tournament_progression.sql"))
+	queries, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "..", "db", "queries", "tournament_progression.sql"))
 	require.NoError(t, err)
 
 	require.Contains(t, string(schema), "FOREIGN KEY (projection_revision_id, tournament_id, roster_id)")
@@ -82,7 +82,7 @@ func TestFinalSwissFirstReceiptMayUsePhysicalRevisionAboveOne(t *testing.T) {
 func TestCorrectionFinalSwissReceiptBridgeRequiresExactPlayoffLineage(t *testing.T) {
 	t.Parallel()
 
-	schema, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "migrations", "000011_projection_schema.sql"))
+	schema, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "..", "db", "migrations", "000011_projection_schema.sql"))
 	require.NoError(t, err)
 
 	for _, fragment := range []string{
@@ -104,7 +104,7 @@ func TestCorrectionFinalSwissReceiptBridgeRequiresExactPlayoffLineage(t *testing
 func TestCorrectedGoldenGroupsBindResultingProjectionAuthority(t *testing.T) {
 	t.Parallel()
 
-	schema, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "migrations", "000003_tournament_schema.sql"))
+	schema, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "..", "db", "migrations", "000003_tournament_schema.sql"))
 	require.NoError(t, err)
 
 	for _, fragment := range []string{
@@ -120,9 +120,9 @@ func TestCorrectedGoldenGroupsBindResultingProjectionAuthority(t *testing.T) {
 func TestResultProjectionNodeAuthorityHasExactDurableOrigin(t *testing.T) {
 	t.Parallel()
 
-	schema, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "migrations", "000011_projection_schema.sql"))
+	schema, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "..", "db", "migrations", "000011_projection_schema.sql"))
 	require.NoError(t, err)
-	queries, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "queries", "result_correction.sql"))
+	queries, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "..", "db", "queries", "result_correction.sql"))
 	require.NoError(t, err)
 
 	for _, fragment := range []string{
@@ -151,9 +151,9 @@ func TestResultProjectionNodeAuthorityHasExactDurableOrigin(t *testing.T) {
 func TestStageProjectionProvenanceBindsExactArtifactsAndSemifinalGenesis(t *testing.T) {
 	t.Parallel()
 
-	schema, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "migrations", "000011_projection_schema.sql"))
+	schema, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "..", "db", "migrations", "000011_projection_schema.sql"))
 	require.NoError(t, err)
-	queries, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "queries", "tournament_progression.sql"))
+	queries, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "..", "db", "queries", "tournament_progression.sql"))
 	require.NoError(t, err)
 
 	for _, fragment := range []string{

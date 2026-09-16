@@ -1,4 +1,4 @@
-package postgres
+package participantarchive
 
 import (
 	"os"
@@ -12,7 +12,7 @@ import (
 func TestParticipantArchiveQueryAuthorizesStartedImmutableSnapshots(t *testing.T) {
 	t.Parallel()
 
-	payload, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "queries", "participant_read.sql"))
+	payload, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "db", "queries", "participant_read.sql"))
 	require.NoError(t, err)
 	query := archiveQueryContract(t, string(payload))
 

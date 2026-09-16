@@ -1,4 +1,4 @@
-package postgres
+package reconnect
 
 import (
 	"os"
@@ -101,7 +101,7 @@ func TestParticipantReconnectSchemaSQLContract(t *testing.T) {
 func TestParticipantReconnectMigrationHasUniqueGooseID(t *testing.T) {
 	t.Parallel()
 
-	migrationDir := filepath.Join("..", "..", "..", "..", "db", "migrations")
+	migrationDir := filepath.Join("..", "..", "..", "..", "..", "..", "db", "migrations")
 	entries, err := os.ReadDir(migrationDir)
 	require.NoError(t, err)
 
@@ -126,7 +126,7 @@ func TestParticipantConnectionAuthorityRecoveryMigrationContract(t *testing.T) {
 	t.Parallel()
 
 	contents, err := os.ReadFile(filepath.Join(
-		"..", "..", "..", "..", "db", "migrations",
+		"..", "..", "..", "..", "..", "..", "db", "migrations",
 		"000022_participant_connection_authority_recovery.sql",
 	))
 	require.NoError(t, err)
@@ -149,7 +149,7 @@ func TestParticipantConnectionAuthorityRecoveryMigrationContract(t *testing.T) {
 func readParticipantReconnectMigration(t *testing.T) []byte {
 	t.Helper()
 
-	contents, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "migrations", "000021_participant_reconnect_lifecycle.sql"))
+	contents, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "..", "db", "migrations", "000021_participant_reconnect_lifecycle.sql"))
 	require.NoError(t, err)
 	return contents
 }

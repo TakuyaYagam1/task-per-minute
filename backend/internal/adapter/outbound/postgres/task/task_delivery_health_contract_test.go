@@ -1,4 +1,4 @@
-package postgres
+package task
 
 import (
 	"os"
@@ -11,7 +11,7 @@ import (
 func TestPrivateTaskAvailabilityQueryUsesOnlyDurableReceiptAvailability(t *testing.T) {
 	t.Parallel()
 
-	query, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "queries", "task_delivery_health.sql"))
+	query, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "db", "queries", "task_delivery_health.sql"))
 	require.NoError(t, err)
 	text := string(query)
 	for _, fragment := range []string{
@@ -37,7 +37,7 @@ func TestPrivateTaskAvailabilityQueryUsesOnlyDurableReceiptAvailability(t *testi
 	require.NotContains(t, text, "source_file_url")
 
 	migration, err := os.ReadFile(filepath.Join(
-		"..", "..", "..", "..", "db", "migrations", "000007_assignment_schema.sql",
+		"..", "..", "..", "..", "..", "db", "migrations", "000007_assignment_schema.sql",
 	))
 	require.NoError(t, err)
 	for _, fragment := range []string{

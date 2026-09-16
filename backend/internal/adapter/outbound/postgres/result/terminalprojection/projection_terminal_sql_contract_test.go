@@ -1,4 +1,4 @@
-package postgres
+package terminalprojection
 
 import (
 	"os"
@@ -10,7 +10,7 @@ import (
 )
 
 func TestTerminalSwissNormalizationPinsOrdinaryOperatorForfeit(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "queries", "projection.sql"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "..", "db", "queries", "projection.sql"))
 	require.NoError(t, err)
 	query := strings.Split(strings.Split(string(data), "-- name: LockTerminalProjectionCommit :many")[1], "-- name:")[0]
 	for _, exact := range []string{
@@ -23,7 +23,7 @@ func TestTerminalSwissNormalizationPinsOrdinaryOperatorForfeit(t *testing.T) {
 }
 
 func TestFinalSwissReceiptChildrenRevalidateAtCommit(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "migrations", "000011_projection_schema.sql"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "..", "db", "migrations", "000011_projection_schema.sql"))
 	require.NoError(t, err)
 	for _, child := range []string{"participants", "rounds", "series", "games", "ledger_entries"} {
 		require.Contains(t, string(data), "CREATE CONSTRAINT TRIGGER final_swiss_projection_receipt_"+child+"_complete\n"+

@@ -1,4 +1,4 @@
-package postgres
+package playoff
 
 import (
 	"os"
@@ -10,12 +10,12 @@ import (
 )
 
 func TestFinalDraftSourcePinsNormalPoolAndRetainedStageMembership(t *testing.T) {
-	terminal, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "queries", "playoff_terminal.sql"))
+	terminal, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "db", "queries", "playoff_terminal.sql"))
 	require.NoError(t, err)
 	for _, fragment := range []string{"-- name: LockPostseasonFinalNormalPool :one", "configuration.revision = sqlc.arg(content_revision)", "category_pool.id = sqlc.arg(category_pool_id)", "pool.id = configuration.normal_pool_revision_id", "pool.kind = 'normal'"} {
 		require.Contains(t, string(terminal), fragment)
 	}
-	query, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "queries", "exact_draft_assignment.sql"))
+	query, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "db", "queries", "exact_draft_assignment.sql"))
 	require.NoError(t, err)
 	stage := strings.Split(string(query), "-- name: LockExactDraftPlanningParticipants")[0]
 	require.NotContains(t, stage, "AND projection.state = 'published'")
