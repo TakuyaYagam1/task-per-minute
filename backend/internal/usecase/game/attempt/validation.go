@@ -1,4 +1,4 @@
-package game
+package attempt
 
 // ValidateFailedAttemptCommand validates a command before execution replay.
 func ValidateCommand(command AttemptCommand) error {

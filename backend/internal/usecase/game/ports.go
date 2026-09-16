@@ -9,6 +9,7 @@ import (
 	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
 	seriesdomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/series"
 	assignmentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/assignment"
+	attemptusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/attempt"
 	reconnectusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/reconnect"
 	"github.com/google/uuid"
 )
@@ -139,20 +140,8 @@ type NoShowRepository interface {
 		resolution NoShowResolution,
 	) (*NoShowResolution, bool, error)
 }
-type AttemptClock interface {
-	Now() time.Time
-}
-
-type AttemptRepository interface {
-	LoadFailedAttemptAuthority(
-		ctx context.Context,
-		scope domain.FailedAttemptScope,
-	) (AttemptAuthority, error)
-	CommitFailedAttempt(
-		ctx context.Context,
-		record AttemptRecord,
-	) (*AttemptRecord, bool, error)
-}
+type AttemptClock = attemptusecase.AttemptClock
+type AttemptRepository = attemptusecase.AttemptRepository
 type ReconnectClock = reconnectusecase.ReconnectClock
 type Observer = reconnectusecase.Observer
 type ReconnectRepository = reconnectusecase.ReconnectRepository
