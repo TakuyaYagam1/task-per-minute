@@ -1,4 +1,4 @@
-package postgres
+package reconnect
 
 import (
 	"testing"
