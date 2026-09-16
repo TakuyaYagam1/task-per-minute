@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	assignmentrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
@@ -27,7 +28,7 @@ type goldenRuntimePlanGroup struct {
 	positionFrom     int16
 	positionTo       int16
 	members          []goldenRuntimePlanMember
-	edges            []postgres.AssignmentEdgeInput
+	edges            []assignmentrepo.AssignmentEdgeInput
 }
 
 type goldenRuntimePlanMember struct {
@@ -67,9 +68,9 @@ func createGoldenRuntimeTestPlan(
 	require.NoError(t, sharedPool.QueryRow(ctx, `SELECT revision FROM rosters WHERE id = $1`, rosterID).Scan(&rosterRevision))
 
 	txManager := postgres.NewTxManager(sharedPool)
-	assignmentRepository := postgres.NewAssignmentPostgres(txManager)
+	assignmentRepository := assignmentrepo.NewAssignmentPostgres(txManager)
 	parentPlanID := uuid.New()
-	_, err := assignmentRepository.CreateConservativePlan(ctx, postgres.ConservativePlanInput{
+	_, err := assignmentRepository.CreateConservativePlan(ctx, assignmentrepo.ConservativePlanInput{
 		ID: parentPlanID, TournamentID: tournamentID, RosterID: rosterID, RevisionID: uuid.New(),
 		SourceRosterRevision: rosterRevision, SourcePoolRevisionID: poolID,
 		ConstraintGraph: map[string]any{"kind": "golden_capacity"},
@@ -80,18 +81,18 @@ func createGoldenRuntimeTestPlan(
 
 	planID := uuid.New()
 	planRevisionID := uuid.New()
-	branches := make([]postgres.AssignmentBranchInput, len(groups))
+	branches := make([]assignmentrepo.AssignmentBranchInput, len(groups))
 	decisionInputs := make([]string, len(groups))
 	for groupIndex := range groups {
 		branchID := uuid.New()
-		branches[groupIndex] = postgres.AssignmentBranchInput{
+		branches[groupIndex] = assignmentrepo.AssignmentBranchInput{
 			ID: branchID, DraftID: draftID, DraftRevisionID: draftRevisionID,
 			Key: fmt.Sprintf("golden-group-%02d", groupIndex+1),
 		}
 		decisionInputs[groupIndex] = branches[groupIndex].Key
 		for edgeIndex := range 3 {
 			task := tasks[groupIndex*3+edgeIndex]
-			edge := postgres.AssignmentEdgeInput{
+			edge := assignmentrepo.AssignmentEdgeInput{
 				ID: uuid.New(), ReservationID: uuid.New(), Position: edgeIndex + 1,
 				Snapshot: domain.AssignmentTaskSnapshot{
 					SnapshotID: uuid.New(), TaskID: task.id, Version: task.version,
@@ -108,7 +109,7 @@ func createGoldenRuntimeTestPlan(
 			branches[groupIndex].Edges = append(branches[groupIndex].Edges, edge)
 			branches[groupIndex].Categories = append(branches[groupIndex].Categories, task.category)
 		}
-		groups[groupIndex].edges = append([]postgres.AssignmentEdgeInput(nil), branches[groupIndex].Edges...)
+		groups[groupIndex].edges = append([]assignmentrepo.AssignmentEdgeInput(nil), branches[groupIndex].Edges...)
 	}
 	decision, err := domain.NewDecisionEvidence(
 		uuid.New(), domain.DecisionPurposeTask, domain.DecisionAlgorithmV1,
@@ -153,7 +154,7 @@ func writeGoldenRuntimeAssignmentPlan(
 	poolID uuid.UUID,
 	draftRevisionID uuid.UUID,
 	decision domain.DecisionEvidence,
-	branches []postgres.AssignmentBranchInput,
+	branches []assignmentrepo.AssignmentBranchInput,
 	createdAt time.Time,
 ) {
 	t.Helper()

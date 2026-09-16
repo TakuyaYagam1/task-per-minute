@@ -13,6 +13,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	assignmentrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment"
+	draftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment/draft"
+	playoffrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/playoff"
 	projectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
@@ -77,11 +80,12 @@ func TestFinalSwissLiveForfeitPublishesReceipt(t *testing.T) {
 func swissOperatorResultWorkflow(t *testing.T, fixture tournamentAdminSwissProofFixture) (*postgres.TournamentAdminResultPostgres, *tournamentadmin.OperatorResultWorkflow) {
 	t.Helper()
 	repository := postgres.NewTournamentAdminResultPostgres(fixture.tx, postgres.NewResultPostgres(fixture.tx))
-	drafts := postgres.NewDraftPostgres(fixture.tx)
+	drafts := draftrepo.NewDraftPostgres(fixture.tx)
+	assignments := assignmentrepo.NewAssignmentPostgres(fixture.tx)
 	exactPlans := postgres.NewExactDraftBranchPlanPostgres(fixture.tx, drafts)
 	planner := playoff.NewFinalDraftAssignmentService(assignmentusecase.NewExactDraftBranchPlanUseCase(exactPlans), exactPlans, exactPlans)
 	terminal := playoff.NewTerminalCoordinator(playoff.TerminalCoordinatorDependencies{
-		Repository: postgres.NewPlayoffTerminalPostgres(fixture.tx, drafts, postgres.NewAssignmentPostgres(fixture.tx)),
+		Repository: playoffrepo.NewPlayoffTerminalPostgres(fixture.tx, drafts, assignments.CreateAssignmentTx),
 		Publisher:  projectionrepo.NewProjectionPostgres(fixture.tx), DraftPlanner: planner, Rehydrator: planner,
 	})
 	workflow := tournamentadmin.NewOperatorResultWorkflow(tournamentadmin.OperatorResultWorkflowDependencies{

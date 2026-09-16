@@ -15,6 +15,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	assignmentrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment"
+	draftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment/draft"
+	playoffrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/playoff"
 	projectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
@@ -158,7 +161,9 @@ func createFinalPublicationFixture(t *testing.T) (projection.FinalPublication, *
 	final, changed, err := postgres.NewResultPostgres(fixture.tx).Settle(ctx, lastInput)
 	require.NoError(t, err)
 	require.True(t, changed)
-	terminal := postgres.NewPlayoffTerminalPostgres(fixture.tx, postgres.NewDraftPostgres(fixture.tx), postgres.NewAssignmentPostgres(fixture.tx))
+	drafts := draftrepo.NewDraftPostgres(fixture.tx)
+	assignments := assignmentrepo.NewAssignmentPostgres(fixture.tx)
+	terminal := playoffrepo.NewPlayoffTerminalPostgres(fixture.tx, drafts, assignments.CreateAssignmentTx)
 	authority, err := terminal.LoadFinalSettlement(ctx, playoff.TerminalSeriesCommand{TournamentID: fixture.tournamentID, SeriesID: ids.FinalSeriesID})
 	require.NoError(t, err)
 	require.NotNil(t, authority)

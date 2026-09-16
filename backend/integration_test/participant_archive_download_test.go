@@ -19,7 +19,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/middleware"
 	restv1 "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/v1"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/objectstorage"
-	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	assignmentrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment"
 	runtimepostgres "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/golden/runtime"
 	participantarchiverepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/participantarchive"
 	redisadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/redis"
@@ -75,7 +75,7 @@ func TestParticipantArchiveDownloadNormalAssignment(t *testing.T) {
 	require.Equal(t, http.StatusForbidden, preStartResp.Code, preStartResp.Body.String())
 	archive.rest.validateResponse(t, preStartReq, preStartResp)
 
-	receipt, changed, err := postgres.NewAssignmentPostgres(archive.rest.mgr).Deliver(
+	receipt, changed, err := assignmentrepo.NewAssignmentPostgres(archive.rest.mgr).Deliver(
 		ctx,
 		fixture.assignmentID,
 		uuid.New(),
