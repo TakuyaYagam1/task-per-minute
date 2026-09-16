@@ -10,9 +10,16 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/config"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/audit"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/leaderboard"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/player"
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/task"
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/replay"
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/roster"
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/snapshot"
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/cancellation"
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/configuration"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/assignment"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
 	"github.com/wahrwelt-kit/go-logkit"
@@ -54,7 +61,7 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 	ranking := provideLeaderboardRanking(leaderboardPostgres)
 	cache := provideLeaderboardCache(ranking, bootstrapClockFunc)
 	managementUseCase := providePlayerManagementUseCase(txManager, playerPostgres, cache, bootstrapClockFunc)
-	adminPlayerEventsPostgres := postgres.NewAdminPlayerEventsPostgres(pool)
+	adminPlayerEventsPostgres := player.NewAdminPlayerEventsPostgres(pool)
 	cleanupRunner := provideCleanupRunner()
 	sourceFiles := provideSourceFiles(taskUseCase, seaweedStorage, cleanupRunner, log)
 	deterministicIDGenerator, err := provideTournamentIDGenerator()
@@ -66,10 +73,10 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 	tournamentPostgres := postgres.NewTournamentPostgres(txManager)
 	tournamentUseCase := provideTournamentCatalog(tournamentPostgres, bootstrapClockFunc)
 	tournamentCreatePostgres := postgres.NewTournamentCreatePostgres(tournamentPostgres)
-	tournamentContentPostgres := postgres.NewTournamentContentPostgres(txManager)
+	tournamentContentPostgres := configuration.NewTournamentContentPostgres(txManager)
 	commandReceiptStore := provideTournamentCommandReceipts(client)
 	catalogUseCase := provideTournamentApplication(deterministicIDGenerator, bootstrapClockFunc, tournamentUseCase, tournamentCreatePostgres, tournamentContentPostgres, commandReceiptStore)
-	tournamentAdminRosterPostgres := postgres.NewTournamentAdminRosterPostgres(txManager)
+	tournamentAdminRosterPostgres := roster.NewTournamentAdminRosterPostgres(txManager)
 	privateTaskAvailabilityPostgres := task.NewPrivateTaskAvailabilityPostgres(txManager)
 	availabilityMonitor, err := providePrivateTaskAvailabilityMonitor(privateTaskAvailabilityPostgres, bootstrapClockFunc)
 	if err != nil {
@@ -109,7 +116,7 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 	draftPostgres := postgres.NewDraftPostgres(txManager)
 	assignmentPostgres := postgres.NewAssignmentPostgres(txManager)
 	playoffTerminalPostgres := postgres.NewPlayoffTerminalPostgres(txManager, draftPostgres, assignmentPostgres)
-	projectionPostgres := postgres.NewProjectionPostgres(txManager)
+	projectionPostgres := projection.NewProjectionPostgres(txManager)
 	exactDraftBranchPlanPostgres := postgres.NewExactDraftBranchPlanPostgres(txManager, draftPostgres)
 	exactDraftBranchPlanUseCase := assignment.NewExactDraftBranchPlanUseCase(exactDraftBranchPlanPostgres)
 	finalDraftAssignmentService := provideFinalDraftAssignmentPlanner(exactDraftBranchPlanUseCase, exactDraftBranchPlanPostgres, exactDraftBranchPlanPostgres)
@@ -189,7 +196,7 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 	tournamentLifecyclePostgres := postgres.NewTournamentLifecyclePostgres(tournamentPostgres)
 	tournamentLifecycleUseCase := provideTournamentLifecycle(tournamentLifecyclePostgres, bootstrapClockFunc)
 	tournamentPauseUseCase := provideTournamentPause(txManager, tournamentAdminLifecyclePostgres, bootstrapClockFunc)
-	tournamentCancellationPostgres := postgres.NewTournamentCancellationPostgres(txManager)
+	tournamentCancellationPostgres := cancellation.NewTournamentCancellationPostgres(txManager)
 	tournamentCancellationUseCase := provideTournamentCancellation(tournamentCancellationPostgres, bootstrapClockFunc)
 	tournamentProgressionPostgres := postgres.NewTournamentProgressionPostgres(txManager)
 	workflow := provideTournamentProgression(tournamentProgressionPostgres, tournamentProgressionPostgres, tournamentProgressionPostgres, tournamentProgressionPostgres, bootstrapClockFunc)
@@ -197,18 +204,18 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 	resultPostgres := postgres.NewResultPostgres(txManager)
 	tournamentAdminResultPostgres := postgres.NewTournamentAdminResultPostgres(txManager, resultPostgres)
 	operatorResultWorkflow := provideTournamentAdminResults(txManager, tournamentAdminResultPostgres, terminalCoordinator)
-	tournamentAdminReplayPostgres := postgres.NewTournamentAdminReplayPostgres(txManager)
+	tournamentAdminReplayPostgres := replay.NewTournamentAdminReplayPostgres(txManager)
 	replayWorkflow := provideTournamentAdminReplay(txManager, tournamentAdminReplayPostgres)
 	tournamentAdminCorrectionPostgres := postgres.NewTournamentAdminCorrectionPostgres(txManager)
 	correctionWorkflow := provideTournamentAdminCorrection(txManager, tournamentAdminCorrectionPostgres)
-	tournamentAdminAuditPostgres := postgres.NewTournamentAdminAuditPostgres(txManager)
+	tournamentAdminAuditPostgres := audit.NewTournamentAdminAuditPostgres(txManager)
 	hmacAuthenticator, err := provideIncidentAuthenticator(cfg)
 	if err != nil {
 		cleanup2()
 		cleanup()
 		return nil, nil, err
 	}
-	tournamentAdminSnapshotPostgres := postgres.NewTournamentAdminSnapshotPostgres(txManager)
+	tournamentAdminSnapshotPostgres := snapshot.NewTournamentAdminSnapshotPostgres(txManager)
 	adminUseCase := provideTournamentAdminApplication(catalogUseCase, rosterWorkflow, rosterWorkflow, executionWorkflow, lifecycleWorkflow, executionWorkflow, operatorResultWorkflow, replayWorkflow, operatorResultWorkflow, replayWorkflow, correctionWorkflow, tournamentAdminAuditPostgres, tournamentAdminAuditPostgres, hmacAuthenticator, tournamentAdminSnapshotPostgres)
 	idempotencyCoordinator := provideDistributedCommandCoordinator(commandReceiptStore)
 	adminIdempotentService, err := provideIdempotentTournamentAdminApplication(adminUseCase, catalogUseCase, idempotencyCoordinator)
