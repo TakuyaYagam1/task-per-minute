@@ -1,4 +1,4 @@
-package game_test
+package submission_test
 
 import (
 	"context"
@@ -17,8 +17,8 @@ import (
 	gamedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/game"
 	seriesdomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/series"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain/taskexec"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
 	gamemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/mocks"
+	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/submission"
 )
 
 func TestSubmissionValidation(t *testing.T) {

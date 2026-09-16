@@ -671,16 +671,6 @@ type SettlementRepository interface {
 		settlement SettlementRecord,
 	) (*SettlementRecord, bool, error)
 }
-type SubmissionRepository interface {
-	LoadSubmissionAuthority(
-		ctx context.Context,
-		scope gamedomain.SubmissionScope,
-	) (SubmissionAuthority, error)
-	CommitSubmission(
-		ctx context.Context,
-		commit SubmissionCommit,
-	) (*gamedomain.Submission, bool, error)
-}
 type WaveClock interface {
 	Now() time.Time
 }

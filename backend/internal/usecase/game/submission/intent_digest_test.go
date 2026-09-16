@@ -1,4 +1,4 @@
-package game
+package submission
 
 import (
 	"crypto/sha256"
