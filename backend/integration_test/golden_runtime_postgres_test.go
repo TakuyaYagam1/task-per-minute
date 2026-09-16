@@ -12,7 +12,12 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	executionrecoveryrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/recovery"
 	runtimepostgres "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/golden/runtime"
+	recoveryrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/recovery"
+	recoveryterminalrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/recovery/terminal"
+	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
+	wavestartrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/execution/wavestart"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
@@ -83,10 +88,14 @@ func TestGoldenRuntimeSurvivesRestartAndProducesPlayoffEvidence(t *testing.T) {
 		}
 	}
 
-	recoveryRepository := postgres.NewExecutionRecoveryPostgres(
+	recoveryRepository := executionrecoveryrepo.NewExecutionRecoveryPostgresWithDependencies(
 		postgres.NewTxManager(sharedPool),
-		postgres.NewRecoveryPostgres(postgres.NewTxManager(sharedPool), nil),
-		postgres.NewRecoveryTerminalPostgres(postgres.NewTxManager(sharedPool), nil, goldenRuntimeClock{now: now}),
+		recoveryrepo.NewRecoveryPostgres(postgres.NewTxManager(sharedPool), nil),
+		recoveryterminalrepo.NewRecoveryTerminalPostgresWithDependencies(
+			postgres.NewTxManager(sharedPool), nil, goldenRuntimeClock{now: now},
+			wavestartrepo.EnsurePreStartSwissRoundProofForCommand, resultauthority.FinalizeProjection,
+		),
+		resultauthority.FinalizeProjection,
 	)
 	recoveryTournaments, err := recoveryRepository.ListRecoveryTournaments(ctx)
 	require.NoError(t, err)

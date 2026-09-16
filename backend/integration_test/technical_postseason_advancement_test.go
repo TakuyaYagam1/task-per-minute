@@ -15,8 +15,11 @@ import (
 	draftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment/draft"
 	authorityrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/authority"
 	waverepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/wave"
+	recoveryrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/recovery"
+	recoveryterminalrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/recovery/terminal"
 	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
 	executionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/execution"
+	wavestartrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/execution/wavestart"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
 	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
@@ -370,7 +373,7 @@ func technicalDisconnectPending(
 	require.NoError(t, err)
 	require.True(t, changed)
 
-	deadlines, err := postgres.NewRecoveryPostgres(fixture.tx, nil).ListPendingDeadlines(
+	deadlines, err := recoveryrepo.NewRecoveryPostgres(fixture.tx, nil).ListPendingDeadlines(
 		ctx, recovery.DeadlineCursor{}, recovery.MaximumSweepBatchSize,
 	)
 	require.NoError(t, err)
@@ -427,10 +430,12 @@ func technicalDeadlineHandler(
 	pending recovery.PendingDeadline,
 ) *recovery.TerminalDeadlineHandler {
 	clock := playoffPublicationClock{now: pending.DueAt}
-	store := postgres.NewRecoveryTerminalPostgres(
+	store := recoveryterminalrepo.NewRecoveryTerminalPostgresWithDependencies(
 		fixture.tx,
 		authorityrepo.NewExecutionAuthorityPostgres(fixture.tx),
 		clock,
+		wavestartrepo.EnsurePreStartSwissRoundProofForCommand,
+		resultauthority.FinalizeProjection,
 	)
 	return recovery.NewTerminalDeadlineHandlerWithDependencies(
 		fixture.tx,

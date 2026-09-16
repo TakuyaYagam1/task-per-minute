@@ -12,8 +12,12 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 
-	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	authorityrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/authority"
+	executionrecoveryrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/recovery"
+	recoveryrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/recovery"
+	recoveryterminalrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/recovery/terminal"
+	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
+	wavestartrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/execution/wavestart"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
 	authorityusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/authority"
@@ -151,7 +155,7 @@ func TestEpochReplayAndParticipantSettlementUseSameLockOrder(t *testing.T) {
 }
 
 func prepareSwissEpochReplay(ctx context.Context, t *testing.T, fixture tournamentAdminSwissProofFixture) (
-	*postgres.ExecutionRecoveryPostgres, gameusecase.EpochReplayRecord, gameusecase.EpochReplayCommitCondition,
+	*executionrecoveryrepo.ExecutionRecoveryPostgres, gameusecase.EpochReplayRecord, gameusecase.EpochReplayCommitCondition,
 ) {
 	t.Helper()
 	authority := authorityrepo.NewExecutionAuthorityPostgres(fixture.tx)
@@ -173,8 +177,14 @@ func prepareSwissEpochReplay(ctx context.Context, t *testing.T, fixture tourname
 	require.NoError(t, err)
 	require.True(t, changed)
 	require.Equal(t, old.Epoch+1, current.Epoch)
-	repository := postgres.NewExecutionRecoveryPostgres(fixture.tx, postgres.NewRecoveryPostgres(fixture.tx, nil),
-		postgres.NewRecoveryTerminalPostgres(fixture.tx, authority, playoffPublicationClock{}))
+	deadlines := recoveryrepo.NewRecoveryPostgres(fixture.tx, nil)
+	terminal := recoveryterminalrepo.NewRecoveryTerminalPostgresWithDependencies(
+		fixture.tx, authority, playoffPublicationClock{},
+		wavestartrepo.EnsurePreStartSwissRoundProofForCommand, resultauthority.FinalizeProjection,
+	)
+	repository := executionrecoveryrepo.NewExecutionRecoveryPostgresWithDependencies(
+		fixture.tx, deadlines, terminal, resultauthority.FinalizeProjection,
+	)
 	candidates, err := repository.ListActiveGames(ctx, fixture.tournamentID, current.Identity())
 	require.NoError(t, err)
 	require.Len(t, candidates, 1)
@@ -192,7 +202,7 @@ func prepareSwissEpochReplay(ctx context.Context, t *testing.T, fixture tourname
 // Capture the production planner's exact commit input before introducing the
 // contention barrier. Every authority read and the eventual write use PostgreSQL.
 type epochReplayPlanRepository struct {
-	*postgres.ExecutionRecoveryPostgres
+	*executionrecoveryrepo.ExecutionRecoveryPostgres
 	condition gameusecase.EpochReplayCommitCondition
 }
 

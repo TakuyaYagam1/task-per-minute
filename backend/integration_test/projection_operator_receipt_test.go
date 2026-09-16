@@ -17,8 +17,10 @@ import (
 	draftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment/draft"
 	playoffrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/playoff"
 	projectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
+	recoveryterminalrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/recovery/terminal"
 	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
+	wavestartrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/execution/wavestart"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	assignmentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/assignment"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
@@ -121,7 +123,10 @@ func testFinalSwissOperatorReceipt(t *testing.T, noShow bool, recoverDeadline ..
 					RosterID: fixture.rosterID, WaveID: fixture.waveID, ReadyWindowRevisionID: windowRevisionID, DueAt: deadline.UTC()}
 				require.NoError(t, sharedPool.QueryRow(ctx, `SELECT revision FROM waves WHERE id = $1`, fixture.waveID).Scan(&pending.ExpectedRevision))
 				clock := playoffPublicationClock{}
-				store := postgres.NewRecoveryTerminalPostgres(fixture.tx, nil, clock)
+				store := recoveryterminalrepo.NewRecoveryTerminalPostgresWithDependencies(
+					fixture.tx, nil, clock,
+					wavestartrepo.EnsurePreStartSwissRoundProofForCommand, resultauthority.FinalizeProjection,
+				)
 				handler := recovery.NewTerminalDeadlineHandler(store, clock)
 				assertOperatorReceiptRollback(ctx, t, fixture, func(txCtx context.Context) error { _, err := handler.HandleDeadline(txCtx, pending); return err })
 				changed, err := handler.HandleDeadline(ctx, pending)
