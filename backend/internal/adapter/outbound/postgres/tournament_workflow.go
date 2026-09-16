@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	attendancerepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/attendance"
+	catalogrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/catalog"
 	lifecyclerepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/lifecycle"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	attendanceusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/attendance"
@@ -26,14 +27,7 @@ func (r *TournamentCatalogPostgres) CreateTournamentDraft(
 	if r == nil || r.tournaments == nil || r.tournaments.tx == nil {
 		return nil, nil, domain.ErrValidation
 	}
-	tournament, roster, err := r.tournaments.Create(ctx, TournamentCreateInput{
-		ID: command.TournamentID, RosterID: command.RosterID, Name: command.Name, PublicID: command.PublicID,
-		PlannedRosterSize: command.PlannedRosterSize, ContentRevision: command.ContentRevision, CreatedAt: createdAt,
-	})
-	if err != nil {
-		return nil, nil, err
-	}
-	return tournamentUseCaseRecord(tournament, roster.ID, 0), catalogRosterUseCaseRecord(roster), nil
+	return catalogrepo.NewTournamentCatalogPostgres(r.tournaments.tx).CreateTournamentDraft(ctx, command, createdAt)
 }
 
 func (r *TournamentCatalogPostgres) GetTournament(
@@ -43,36 +37,14 @@ func (r *TournamentCatalogPostgres) GetTournament(
 	if r == nil || r.tournaments == nil || r.tournaments.tx == nil || id == uuid.Nil {
 		return nil, domain.ErrValidation
 	}
-	row, err := r.tournaments.tx.Querier(ctx).GetTournamentSummary(ctx, id)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, catalogusecase.ErrTournamentNotFound
-		}
-		return nil, fmt.Errorf("TournamentPostgres - GetTournament - Querier.GetTournamentSummary: %w", err)
-	}
-	return tournamentSummaryRecord(row)
+	return catalogrepo.NewTournamentCatalogPostgres(r.tournaments.tx).GetTournament(ctx, id)
 }
 
 func (r *TournamentCatalogPostgres) ListTournaments(ctx context.Context) ([]catalogusecase.CatalogTournamentRecord, error) {
 	if r == nil || r.tournaments == nil || r.tournaments.tx == nil {
 		return nil, domain.ErrValidation
 	}
-	rows, err := r.tournaments.tx.Querier(ctx).ListTournamentSummaries(ctx)
-	if err != nil {
-		return nil, fmt.Errorf(
-			"TournamentPostgres - ListTournaments - Querier.ListTournamentSummaries: %w",
-			err,
-		)
-	}
-	out := make([]catalogusecase.CatalogTournamentRecord, 0, len(rows))
-	for _, row := range rows {
-		record, mapErr := tournamentListSummaryRecord(row)
-		if mapErr != nil {
-			return nil, mapErr
-		}
-		out = append(out, *record)
-	}
-	return out, nil
+	return catalogrepo.NewTournamentCatalogPostgres(r.tournaments.tx).ListTournaments(ctx)
 }
 
 func (r *TournamentLifecyclePostgres) GetTournament(
