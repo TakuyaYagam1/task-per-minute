@@ -11,6 +11,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	draftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment/draft"
+	gamedb "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/game"
 	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
@@ -144,7 +145,7 @@ func activeFinalSettlementInput(ctx context.Context, t *testing.T, fixture tourn
 		gameID, slotID = ids.SecondGameID, ids.SecondSlotID
 	}
 	scope := gamedomain.Scope{TournamentID: fixture.tournamentID, SeriesID: ids.FinalSeriesID, SlotID: slotID, GameID: gameID}
-	games := postgres.NewGamePostgres(fixture.tx)
+	games := gamedb.NewGamePostgres(fixture.tx)
 	current, err := games.GetAttemptRecord(ctx, scope)
 	require.NoError(t, err)
 	at := current.CreatedAt.UTC().Add(time.Second)

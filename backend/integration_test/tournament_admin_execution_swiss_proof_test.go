@@ -18,6 +18,8 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	waverepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/wave"
 	projectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
+	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
+	executionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/execution"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
@@ -26,7 +28,7 @@ import (
 
 type tournamentAdminSwissProofFixture struct {
 	tx                       *postgres.TxManager
-	adapter                  *postgres.TournamentAdminExecutionPostgres
+	adapter                  *executionrepo.Repository
 	start                    *gameusecase.StartUseCase
 	tournamentID             uuid.UUID
 	rosterID                 uuid.UUID
@@ -240,7 +242,7 @@ func createTournamentAdminSwissProofFixtureForAggregate(
 		ProcessKind: authoritydomain.ProcessAuthority,
 	}
 	createRoundProofExecutionLease(ctx, t, executionAuthority, createdAt)
-	adapter := postgres.NewTournamentAdminExecutionPostgres(tx)
+	adapter := executionrepo.NewRepository(tx, resultauthority.FinalizeProjection)
 	return tournamentAdminSwissProofFixture{
 		tx: tx, adapter: adapter, start: gameusecase.NewStartUseCase(adapter, nil),
 		tournamentID: tournamentID, rosterID: rosterID, roundID: roundID, waveID: waveID, windowID: windowID,

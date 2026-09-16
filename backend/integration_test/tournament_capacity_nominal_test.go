@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	gamedb "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/game"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	gamedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/game"
 )
@@ -72,7 +73,7 @@ func TestTournamentCapacityFixture(t *testing.T) {
 }
 
 type tournamentCapacityFixture struct {
-	repository  *postgres.GamePostgres
+	repository  *gamedb.GamePostgres
 	tournaments *postgres.TournamentPostgres
 	games       []tournamentCapacityGameFixture
 	reconnect   tournamentCapacityReconnect
@@ -217,7 +218,7 @@ func newTournamentCapacityFixture(tb testing.TB, config tournamentCapacityConfig
 	require.Equal(tb, config.Games*2, config.Participants)
 
 	tx := postgres.NewTxManager(sharedPool)
-	repository := postgres.NewGamePostgres(tx)
+	repository := gamedb.NewGamePostgres(tx)
 	games := make([]tournamentCapacityGameFixture, config.Games)
 
 	for gameIndex := range config.Games {
@@ -364,7 +365,7 @@ func runTournamentCapacityWorker(
 }
 
 func tournamentCapacityRecordMatches(
-	record *postgres.GameAttemptRecord,
+	record *gamedb.GameAttemptRecord,
 	game tournamentCapacityGameFixture,
 ) bool {
 	return record != nil &&

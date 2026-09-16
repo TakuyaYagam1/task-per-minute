@@ -13,6 +13,8 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/api"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
+	executionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/execution"
 	snapshotrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/snapshot"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
@@ -140,7 +142,7 @@ func TestTournamentSeriesConfigurationRebuildsUnstartedAssignmentThroughProducti
 	startSwissThroughREST(t, fixture, adminToken, created.Id)
 	snapshot := tournamentAdminSnapshotThroughREST(t, fixture, adminToken, created.Id)
 	execution := tournamentadmin.NewExecutionWorkflow(tournamentadmin.ExecutionWorkflowDependencies{
-		Transactions: fixture.mgr, Repository: postgres.NewTournamentAdminExecutionPostgres(fixture.mgr),
+		Transactions: fixture.mgr, Repository: executionrepo.NewRepository(fixture.mgr, resultauthority.FinalizeProjection),
 	})
 	_, err := execution.ConfigurePairings(ctx, tournamentadmin.PairingCommand{
 		CommandScope:               tournamentadmin.CommandScope{Operator: tournamentadmin.OperatorIdentity{ActorID: uuid.New()}, TournamentID: created.Id, CommandID: uuid.New()},
@@ -207,7 +209,7 @@ func TestTournamentManualRoundRevisionRebuildsPairingsThroughProductionHTTPAndPo
 	preflight := runTournamentRosterPreflightThroughREST(t, fixture, adminToken, created.Id)
 	lockTournamentRosterThroughREST(t, fixture, adminToken, created.Id, roster, preflight)
 	startSwissThroughREST(t, fixture, adminToken, created.Id)
-	executionRepository := postgres.NewTournamentAdminExecutionPostgres(fixture.mgr)
+	executionRepository := executionrepo.NewRepository(fixture.mgr, resultauthority.FinalizeProjection)
 	pairingAuthority, err := executionRepository.LockPairingAuthority(ctx, created.Id)
 	require.NoError(t, err)
 	require.Len(t, pairingAuthority.Participants, 4)
@@ -671,7 +673,7 @@ func openAndStartRevisedOddSwissWaveThroughREST(t *testing.T, flow swissCategory
 	snapshot = tournamentAdminSnapshotThroughREST(t, flow.fixture, flow.adminToken, flow.tournamentID)
 	wave = findProductionWaveByID(t, snapshot, wave.Id)
 	require.Equal(t, api.WaveStateReady, wave.State)
-	executionRepository := postgres.NewTournamentAdminExecutionPostgres(flow.fixture.mgr)
+	executionRepository := executionrepo.NewRepository(flow.fixture.mgr, resultauthority.FinalizeProjection)
 	authority, err := executionRepository.LockWaveAuthority(
 		t.Context(), flow.tournamentID, wave.Id,
 	)

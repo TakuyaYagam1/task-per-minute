@@ -12,13 +12,14 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	swissrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/swiss"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
 type repositoryFixture struct {
 	tx          *postgres.TxManager
 	tournaments *postgres.TournamentPostgres
-	swiss       *postgres.SwissPostgres
+	swiss       *swissrepo.SwissPostgres
 }
 
 func newRepositoryFixture() *repositoryFixture {
@@ -26,7 +27,7 @@ func newRepositoryFixture() *repositoryFixture {
 	return &repositoryFixture{
 		tx:          tx,
 		tournaments: postgres.NewTournamentPostgres(tx),
-		swiss:       postgres.NewSwissPostgres(tx),
+		swiss:       swissrepo.NewSwissPostgres(tx),
 	}
 }
 

@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	authorityrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/authority"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
 	authorityusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/authority"
@@ -153,7 +154,7 @@ func prepareSwissEpochReplay(ctx context.Context, t *testing.T, fixture tourname
 	*postgres.ExecutionRecoveryPostgres, gameusecase.EpochReplayRecord, gameusecase.EpochReplayCommitCondition,
 ) {
 	t.Helper()
-	authority := postgres.NewExecutionAuthorityPostgres(fixture.tx)
+	authority := authorityrepo.NewExecutionAuthorityPostgres(fixture.tx)
 	old := fixture.executionAuthority
 	stamp := old.Stamp()
 	renewed, changed, err := authorityusecase.NewWithTimeSource(authority, authority, 100*time.Millisecond).Claim(ctx, authorityusecase.ClaimCommand{

@@ -13,6 +13,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
+	executionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/execution"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
@@ -54,7 +56,7 @@ func TestControlWaveAuthorityLocksTournamentBeforeProjection(t *testing.T) {
 				return err
 			}
 			pidReady <- pid
-			_, err := postgres.NewTournamentAdminExecutionPostgres(fixture.tx).LockWaveAuthority(txCtx, fixture.tournamentID, fixture.waveID)
+			_, err := executionrepo.NewRepository(fixture.tx, resultauthority.FinalizeProjection).LockWaveAuthority(txCtx, fixture.tournamentID, fixture.waveID)
 			return err
 		})
 	}()

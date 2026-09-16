@@ -13,8 +13,10 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	draftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment/draft"
+	authorityrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/authority"
 	waverepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/wave"
 	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
+	executionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/execution"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
 	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
@@ -239,7 +241,7 @@ func technicalPlayoffSeries(
 }
 
 type technicalWaveStartRepository struct {
-	*postgres.TournamentAdminExecutionPostgres
+	*executionrepo.Repository
 	startAt time.Time
 }
 
@@ -308,8 +310,8 @@ func technicalStartWave(
 	require.NotNil(t, opened.Wave.ReadyWindow)
 	startAt := opened.Wave.ReadyWindow.OpenedAt.Add(domain.ReadyWindowDuration / 2)
 	start := gameusecase.NewStartUseCase(technicalWaveStartRepository{
-		TournamentAdminExecutionPostgres: fixture.adapter,
-		startAt:                          startAt,
+		Repository: fixture.adapter,
+		startAt:    startAt,
 	}, nil)
 	scope := gameusecase.StartScope{TournamentID: fixture.tournamentID, WaveID: waveID, WindowID: windowID}
 	authority, err := fixture.adapter.LoadWaveStartAuthority(ctx, scope)
@@ -427,7 +429,7 @@ func technicalDeadlineHandler(
 	clock := playoffPublicationClock{now: pending.DueAt}
 	store := postgres.NewRecoveryTerminalPostgres(
 		fixture.tx,
-		postgres.NewExecutionAuthorityPostgres(fixture.tx),
+		authorityrepo.NewExecutionAuthorityPostgres(fixture.tx),
 		clock,
 	)
 	return recovery.NewTerminalDeadlineHandlerWithDependencies(
