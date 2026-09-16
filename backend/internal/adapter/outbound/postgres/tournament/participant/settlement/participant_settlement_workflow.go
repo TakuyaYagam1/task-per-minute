@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/settlement"
 	tournamentparticipant "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/participant"
 )
 

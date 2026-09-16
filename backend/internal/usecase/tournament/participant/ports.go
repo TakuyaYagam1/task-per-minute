@@ -10,6 +10,7 @@ import (
 	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gamesettlement "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/settlement"
 	gamesubmission "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/submission"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/readiness"
@@ -96,8 +97,8 @@ type SubmissionWorkflow interface {
 type SettlementWorkflow interface {
 	Settle(
 		ctx context.Context,
-		command gameusecase.SettlementCommand,
-	) (*gameusecase.SettlementRecord, bool, error)
+		command gamesettlement.SettlementCommand,
+	) (*gamesettlement.SettlementRecord, bool, error)
 }
 
 type SurrenderWorkflow interface {

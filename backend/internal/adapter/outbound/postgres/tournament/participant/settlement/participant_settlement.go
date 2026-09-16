@@ -15,7 +15,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	gamedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/game"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/settlement"
 )
 
 const participantSettlementProjectionReason = "participant_submission"
