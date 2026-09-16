@@ -29,7 +29,7 @@ import (
 	authusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/auth"
 	authorityusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/authority"
 	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gamestart "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/start"
 	gamesubmission "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/submission"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/idempotency"
 	leaderboardusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/leaderboard"
@@ -331,7 +331,7 @@ func provideTournamentAdminExecution(
 	transactions tournamentadmin.ExecutionTransactionManager,
 	repository tournamentadmin.ExecutionWorkflowRepository,
 	normalPause tournamentadmin.NormalPauseExecutionRepository,
-	waveRepository gameusecase.StartRepository,
+	waveRepository gamestart.StartRepository,
 	authority *authorityusecase.Controller,
 	clock clockFunc,
 ) *tournamentadmin.ExecutionWorkflow {
@@ -340,7 +340,7 @@ func provideTournamentAdminExecution(
 		Repository:   repository,
 		NormalPause:  normalPause,
 		Authority:    authority,
-		WaveStart:    gameusecase.NewStartUseCase(waveRepository, clock),
+		WaveStart:    gamestart.NewStartUseCase(waveRepository, clock),
 	})
 }
 

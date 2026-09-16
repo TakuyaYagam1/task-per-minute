@@ -14,6 +14,7 @@ import (
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
 	correctionusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/correction"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gamestart "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/start"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 	swissusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/swiss"
 	tournamentpreflight "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/preflight"
@@ -241,7 +242,7 @@ type ExecutionWorkflowDependencies struct {
 	Transactions ExecutionTransactionManager
 	Repository   ExecutionWorkflowRepository
 	NormalPause  NormalPauseExecutionRepository
-	WaveStart    *gameusecase.StartUseCase
+	WaveStart    *gamestart.StartUseCase
 	Authority    ExecutionAuthorityProvider
 }
 

@@ -15,6 +15,7 @@ import (
 	swissdraft "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/swiss/draft"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gamestart "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/start"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
 )
 
@@ -136,7 +137,7 @@ func (writer executionWaveWriter) Start(
 var (
 	_ tournamentadmin.ExecutionWorkflowRepository    = (*Repository)(nil)
 	_ tournamentadmin.NormalPauseExecutionRepository = (*Repository)(nil)
-	_ gameusecase.StartRepository                    = (*Repository)(nil)
+	_ gamestart.StartRepository                      = (*Repository)(nil)
 	_ gameusecase.NormalPauseRepository              = (*Repository)(nil)
 	_ gameusecase.PauseResumeRepository              = (*Repository)(nil)
 	_ gameusecase.PauseResumePresenceRepository      = (*Repository)(nil)

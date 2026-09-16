@@ -18,6 +18,7 @@ import (
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
 	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gamestart "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/start"
 	swissusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/swiss"
 )
 
@@ -25,7 +26,7 @@ type ExecutionWorkflow struct {
 	transactions ExecutionTransactionManager
 	repository   ExecutionWorkflowRepository
 	normalPause  NormalPauseExecutionRepository
-	waveStart    *gameusecase.StartUseCase
+	waveStart    *gamestart.StartUseCase
 	authority    ExecutionAuthorityProvider
 }
 
@@ -637,8 +638,8 @@ func (w *ExecutionWorkflow) startWaveLocked(
 		executionAuthority.Validate() != nil || executionAuthority.TournamentID != command.TournamentID {
 		return WaveView{}, domain.ErrInternal
 	}
-	record, changed, err := w.waveStart.Start(ctx, gameusecase.StartCommand{
-		Scope: gameusecase.StartScope{
+	record, changed, err := w.waveStart.Start(ctx, gamestart.StartCommand{
+		Scope: gamestart.StartScope{
 			TournamentID: command.TournamentID,
 			WaveID:       command.WaveID,
 			WindowID:     authority.View.Wave.ReadyWindow.ID,
@@ -673,7 +674,7 @@ func (w *ExecutionWorkflow) startWaveLocked(
 	return current.View, nil
 }
 
-func recordedWaveStartView(record gameusecase.StartRecord) (WaveView, error) {
+func recordedWaveStartView(record gamestart.StartRecord) (WaveView, error) {
 	if record.Validate() != nil {
 		return WaveView{}, domain.ErrInternal
 	}
@@ -710,11 +711,11 @@ func cloneWaveStartReadiness(source map[uuid.UUID]int64) map[uuid.UUID]int64 {
 }
 
 func normalizeWaveStartError(expectedProjectionRevision int64, authority WaveAuthority, err error) error {
-	if errors.Is(err, gameusecase.ErrWaveStartAuthorityConflict) ||
-		errors.Is(err, gameusecase.ErrWaveStartConflict) || errors.Is(err, domain.ErrConflict) {
+	if errors.Is(err, gamestart.ErrWaveStartAuthorityConflict) ||
+		errors.Is(err, gamestart.ErrWaveStartConflict) || errors.Is(err, domain.ErrConflict) {
 		return waveExecutionConflict(expectedProjectionRevision, authority)
 	}
-	if errors.Is(err, gameusecase.ErrInvalidWaveStart) {
+	if errors.Is(err, gamestart.ErrInvalidWaveStart) {
 		return domain.ErrInternal
 	}
 	return err
