@@ -1,4 +1,4 @@
-package game
+package recovery
 
 import (
 	"context"
@@ -14,6 +14,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
 	gamedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/game"
+	attemptusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/attempt"
 )
 
 var (
@@ -28,7 +29,7 @@ type EpochReplayCommand struct {
 	CurrentAuthority authoritydomain.Identity
 	BrokenAuthority  authoritydomain.Stamp
 	RosterID         uuid.UUID
-	Attempt          AttemptCommand
+	Attempt          attemptusecase.AttemptCommand
 }
 
 func (c EpochReplayCommand) Validate() error {
@@ -37,7 +38,7 @@ func (c EpochReplayCommand) Validate() error {
 		c.RosterID == uuid.Nil ||
 		c.CurrentAuthority.Stamp() == c.BrokenAuthority ||
 		c.Attempt.FailureClass != gamedomain.FailureExecutionEpochBreak ||
-		ValidateCommand(c.Attempt) != nil {
+		attemptusecase.ValidateCommand(c.Attempt) != nil {
 		return epochReplayError("invalid replay command")
 	}
 	return nil
@@ -47,7 +48,7 @@ type EpochReplayAuthority struct {
 	Lease          authoritydomain.Lease
 	BoundAuthority authoritydomain.Stamp
 	RosterID       uuid.UUID
-	Attempt        AttemptAuthority
+	Attempt        attemptusecase.AttemptAuthority
 	Current        *EpochReplayRecord
 }
 
@@ -57,7 +58,7 @@ type EpochReplayRecord struct {
 	RosterID              uuid.UUID
 	ExpectedLeaseRevision int64
 	CommandDigest         [sha256.Size]byte
-	Attempt               AttemptRecord
+	Attempt               attemptusecase.AttemptRecord
 }
 
 type EpochReplayCommitCondition struct {
@@ -221,10 +222,10 @@ func buildEpochReplayCommit(
 		return EpochReplayRecord{}, EpochReplayCommitCondition{},
 			epochReplayError("attempt revision arithmetic overflow")
 	}
-	attempt, err := BuildRecord(command.Attempt, authority.Attempt, replayedAt)
+	attempt, err := attemptusecase.BuildRecord(command.Attempt, authority.Attempt, replayedAt)
 	if err != nil {
-		if errors.Is(err, ErrFailedAttemptConflict) ||
-			errors.Is(err, ErrFailedAttemptUnavailable) {
+		if errors.Is(err, attemptusecase.ErrFailedAttemptConflict) ||
+			errors.Is(err, attemptusecase.ErrFailedAttemptUnavailable) {
 			return EpochReplayRecord{}, EpochReplayCommitCondition{},
 				fmt.Errorf("%w: %w", ErrEpochReplayConflict, err)
 		}
@@ -277,7 +278,7 @@ func (u *EpochReplayUseCase) commitEpochReplay(
 
 func validateEpochReplayAuthority(authority EpochReplayAuthority) error {
 	if authority.Lease.Validate() != nil || authority.BoundAuthority.Validate() != nil || authority.RosterID == uuid.Nil ||
-		ValidateAuthority(authority.Attempt) != nil ||
+		attemptusecase.ValidateAuthority(authority.Attempt) != nil ||
 		authority.Lease.TournamentID != authority.Attempt.Scope.TournamentID {
 		return epochReplayError("invalid replay authority")
 	}
@@ -290,7 +291,7 @@ func validateEpochReplayAuthority(authority EpochReplayAuthority) error {
 			authority.Current.RosterID != authority.RosterID ||
 			authority.Current.BrokenAuthority != authority.BoundAuthority ||
 			authority.Current.ExpectedLeaseRevision > authority.Lease.Revision ||
-			!RecordsEqual(authority.Current.Attempt, *authority.Attempt.Current)) {
+			!attemptusecase.RecordsEqual(authority.Current.Attempt, *authority.Attempt.Current)) {
 		return epochReplayError("invalid current replay")
 	}
 	return nil
@@ -313,7 +314,7 @@ func reconcileEpochReplay(
 	if record.CommandDigest != epochReplayCommandDigest(command) {
 		return nil, ErrEpochReplayCommandReuse
 	}
-	if _, err := Reconcile(record.Attempt, command.Attempt); err != nil {
+	if _, err := attemptusecase.Reconcile(record.Attempt, command.Attempt); err != nil {
 		return nil, err
 	}
 	clone := cloneEpochReplayRecord(record)
@@ -345,7 +346,7 @@ func epochReplayRecordsEqual(
 		first.RosterID == second.RosterID &&
 		first.ExpectedLeaseRevision == second.ExpectedLeaseRevision &&
 		first.CommandDigest == second.CommandDigest &&
-		RecordsEqual(first.Attempt, second.Attempt)
+		attemptusecase.RecordsEqual(first.Attempt, second.Attempt)
 }
 
 func epochReplayCommandDigest(command EpochReplayCommand) [sha256.Size]byte {
@@ -356,7 +357,7 @@ func epochReplayCommandDigest(command EpochReplayCommand) [sha256.Size]byte {
 	document, err := json.Marshal(struct {
 		BrokenAuthority authoritydomain.Stamp
 		RosterID        uuid.UUID
-		Attempt         AttemptCommand
+		Attempt         attemptusecase.AttemptCommand
 	}{
 		BrokenAuthority: command.BrokenAuthority,
 		RosterID:        command.RosterID,

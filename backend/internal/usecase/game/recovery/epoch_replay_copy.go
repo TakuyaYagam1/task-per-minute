@@ -1,4 +1,4 @@
-package game
+package recovery
 
 import (
 	"time"
@@ -7,6 +7,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	seriesdomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/series"
+	attemptusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/attempt"
 )
 
 func cloneEpochReplayAuthority(authority EpochReplayAuthority) EpochReplayAuthority {
@@ -21,8 +22,8 @@ func cloneEpochReplayAuthority(authority EpochReplayAuthority) EpochReplayAuthor
 }
 
 func cloneEpochFailedAttemptAuthority(
-	authority AttemptAuthority,
-) AttemptAuthority {
+	authority attemptusecase.AttemptAuthority,
+) attemptusecase.AttemptAuthority {
 	clone := authority
 	clone.Wave = cloneEpochWave(authority.Wave)
 	clone.Series = cloneEpochSeriesExecution(authority.Series)
@@ -31,7 +32,7 @@ func cloneEpochFailedAttemptAuthority(
 		authority.CurrentGameResultRevisionIDs...,
 	)
 	if authority.Current != nil {
-		current := CloneRecord(*authority.Current)
+		current := attemptusecase.CloneRecord(*authority.Current)
 		clone.Current = &current
 	}
 	return clone
@@ -39,7 +40,7 @@ func cloneEpochFailedAttemptAuthority(
 
 func cloneEpochReplayRecord(record EpochReplayRecord) EpochReplayRecord {
 	clone := record
-	clone.Attempt = CloneRecord(record.Attempt)
+	clone.Attempt = attemptusecase.CloneRecord(record.Attempt)
 	return clone
 }
 
