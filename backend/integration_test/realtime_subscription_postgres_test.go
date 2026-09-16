@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	realtimerepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/realtime"
 	delivery "github.com/TakuyaYagam1/task-per-minute/internal/usecase/eventdelivery"
 )
 
@@ -23,8 +24,8 @@ func TestRealtimeSubscriptionPostgresFencesStaleConnections(t *testing.T) {
 	at := time.Now().UTC().Truncate(time.Microsecond)
 	terminal := createRealtimeCancellationTerminal(ctx, t, tournamentID, rosterID, at)
 
-	firstRepository := postgres.NewRealtimeOutboxPostgres(postgres.NewTxManager(sharedPool))
-	secondRepository := postgres.NewRealtimeOutboxPostgres(postgres.NewTxManager(sharedPool))
+	firstRepository := realtimerepo.NewRealtimeOutboxPostgres(postgres.NewTxManager(sharedPool))
+	secondRepository := realtimerepo.NewRealtimeOutboxPostgres(postgres.NewTxManager(sharedPool))
 	firstRequest := realtimeSubscriptionRequest(tournamentID, uuid.New(), uuid.New(), uuid.Nil, at)
 	first, err := firstRepository.OpenSubscription(ctx, firstRequest)
 	require.NoError(t, err)
@@ -149,7 +150,7 @@ func TestRealtimeSubscriptionPostgresSerializesConcurrentResume(t *testing.T) {
 	at := time.Now().UTC().Truncate(time.Microsecond)
 	terminal := createRealtimeCancellationTerminal(ctx, t, tournamentID, rosterID, at)
 
-	baseRepository := postgres.NewRealtimeOutboxPostgres(postgres.NewTxManager(sharedPool))
+	baseRepository := realtimerepo.NewRealtimeOutboxPostgres(postgres.NewTxManager(sharedPool))
 	first, err := baseRepository.OpenSubscription(ctx, realtimeSubscriptionRequest(tournamentID, uuid.New(), uuid.New(), uuid.Nil, at))
 	require.NoError(t, err)
 
@@ -164,7 +165,7 @@ func TestRealtimeSubscriptionPostgresSerializesConcurrentResume(t *testing.T) {
 		workers.Add(1)
 		go func(request delivery.SubscriptionOpenRequest) {
 			defer workers.Done()
-			repository := postgres.NewRealtimeOutboxPostgres(postgres.NewTxManager(sharedPool))
+			repository := realtimerepo.NewRealtimeOutboxPostgres(postgres.NewTxManager(sharedPool))
 			subscription, openErr := repository.OpenSubscription(ctx, request)
 			if openErr != nil {
 				errorsByResume <- openErr
@@ -219,8 +220,8 @@ func TestRealtimeTerminalReceiptsRetryAcrossRestartAndExpireInBoundedBatches(t *
 	at := time.Now().UTC().Truncate(time.Microsecond)
 	terminal := createRealtimeCancellationTerminal(ctx, t, fixture.tournamentID, fixture.rosterID, at)
 
-	firstRepository := postgres.NewRealtimeOutboxPostgres(postgres.NewTxManager(sharedPool))
-	secondRepository := postgres.NewRealtimeOutboxPostgres(postgres.NewTxManager(sharedPool))
+	firstRepository := realtimerepo.NewRealtimeOutboxPostgres(postgres.NewTxManager(sharedPool))
+	secondRepository := realtimerepo.NewRealtimeOutboxPostgres(postgres.NewTxManager(sharedPool))
 	opened, err := firstRepository.OpenSubscription(
 		ctx,
 		realtimeSubscriptionRequest(fixture.tournamentID, uuid.New(), uuid.New(), uuid.Nil, at),

@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	realtimerepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/realtime"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	cancellationrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/cancellation"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
@@ -137,7 +138,7 @@ func TestRealtimeOutboxPostgresPreservesProjectionOrderAcrossRetryAndRestart(t *
 		require.True(t, outcome.changed)
 	}
 
-	repository := postgres.NewRealtimeOutboxPostgres(postgres.NewTxManager(sharedPool))
+	repository := realtimerepo.NewRealtimeOutboxPostgres(postgres.NewTxManager(sharedPool))
 	replayed, err := repository.ListAfter(t.Context(), eventdelivery.ReplayRequest{
 		TournamentID: fixture.tournamentID,
 		Limit:        10,
@@ -166,7 +167,7 @@ func TestRealtimeOutboxPostgresPreservesProjectionOrderAcrossRetryAndRestart(t *
 	restartedAt := failedAt.Add(2 * time.Millisecond)
 	delivered := make([]int64, 0, 2)
 	restartedWorker, err := eventdelivery.NewWorker(
-		postgres.NewRealtimeOutboxPostgres(postgres.NewTxManager(sharedPool)),
+		realtimerepo.NewRealtimeOutboxPostgres(postgres.NewTxManager(sharedPool)),
 		outboxSink(func(event eventdelivery.Event) error {
 			delivered = append(delivered, event.Sequence)
 			return nil
