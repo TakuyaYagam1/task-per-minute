@@ -51,6 +51,26 @@ type waveStartSwissRoundProof struct {
 	retained             *swissusecase.RoundLockProof
 }
 
+// EnsurePreStartSwissRoundProofForCommand adapts command fields to the proof
+// origin used by result and recovery repositories.
+func EnsurePreStartSwissRoundProofForCommand(
+	ctx context.Context,
+	tx *db.TxManager,
+	tournamentID, seriesID uuid.UUID,
+	at time.Time,
+	mode string,
+	commandID uuid.UUID,
+) error {
+	return EnsurePreStartSwissRoundProof(
+		ctx,
+		tx,
+		tournamentID,
+		seriesID,
+		at,
+		SwissRoundProofOrigin{Mode: mode, CommandID: commandID},
+	)
+}
+
 // EnsurePreStartSwissRoundProof freezes the exact pairing and assignment
 // authority before a terminal action can change it. It never starts a Wave.
 func EnsurePreStartSwissRoundProof(

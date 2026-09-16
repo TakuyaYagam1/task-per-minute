@@ -18,8 +18,7 @@ func ensurePreStartSwissRoundProof(
 	at time.Time,
 	origin swissRoundProofOrigin,
 ) error {
-	return wavestartrepo.EnsurePreStartSwissRoundProof(
-		ctx, tx, tournamentID, seriesID, at,
-		wavestartrepo.SwissRoundProofOrigin{Mode: origin.mode, CommandID: origin.commandID},
+	return wavestartrepo.EnsurePreStartSwissRoundProofForCommand(
+		ctx, tx, tournamentID, seriesID, at, origin.mode, origin.commandID,
 	)
 }
