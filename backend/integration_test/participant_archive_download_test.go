@@ -21,6 +21,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/objectstorage"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	runtimepostgres "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/golden/runtime"
+	participantarchiverepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/participantarchive"
 	redisadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/redis"
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
@@ -346,7 +347,7 @@ func participantArchiveHandler(
 ) http.Handler {
 	t.Helper()
 	archive, err := participantarchive.New(
-		postgres.NewParticipantArchivePostgres(fixture.mgr), sourceFiles, realIntegrationClock(),
+		participantarchiverepo.NewParticipantArchivePostgres(fixture.mgr), sourceFiles, realIntegrationClock(),
 		participantarchive.WithDownloadTTL(participantArchiveTestTTL),
 	)
 	require.NoError(t, err)

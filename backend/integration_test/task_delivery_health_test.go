@@ -9,6 +9,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
+	taskrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/task"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -23,7 +24,7 @@ func TestPrivateTaskAvailabilityBacklogCoversActiveTournamentGraphs(t *testing.T
 	startedAt := fixture.lockedAt.Add(time.Second)
 	activatePrivateTaskAvailabilityGraph(ctx, t, fixture, startedAt)
 
-	repository := postgres.NewPrivateTaskAvailabilityPostgres(postgres.NewTxManager(sharedPool))
+	repository := taskrepo.NewPrivateTaskAvailabilityPostgres(postgres.NewTxManager(sharedPool))
 	for _, tournamentState := range []string{"swiss", "golden", "playoffs"} {
 		_, err := sharedPool.Exec(ctx, `
 			UPDATE tournaments
