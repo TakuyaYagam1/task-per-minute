@@ -562,7 +562,9 @@ func newSwissDraftDeadlineWorker(t *testing.T, flow swissCategoryFlow) *draftuse
 	t.Helper()
 	runtime := tournamentFlowRuntimeForFixture(t, flow.fixture)
 	drafts := draftrepo.NewDraftPostgres(flow.fixture.databaseFixture.mgr)
-	participantDrafts := participantdraftrepo.NewParticipantDraftRepository(flow.fixture.databaseFixture.mgr, drafts)
+	participantDrafts := participantdraftrepo.NewParticipantDraftRepositoryWithDependencies(
+		flow.fixture.databaseFixture.mgr, drafts, loadTournamentFlowParticipantDraftContent,
+	)
 	repository := deadlinerepo.NewSwissDraftDeadlinePostgres(flow.fixture.databaseFixture.mgr, participantDrafts)
 	worker, err := draftusecase.NewDeadlineWorker(
 		repository,
