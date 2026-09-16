@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	assignmentrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment"
 	waverepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/wave"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	rosterrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/roster"
@@ -336,7 +337,7 @@ func TestExplicitExposureBlocksExactNormalCandidateAssignment(t *testing.T) {
 		SlotID:         slotID,
 		CategoryLockID: binding.CategoryRevisionID,
 	}
-	repository := postgres.NewExactNormalAssignmentPostgres(fixture.tx)
+	repository := assignmentrepo.NewExactNormalAssignmentPostgres(fixture.tx)
 	_, err = repository.LoadExactNormalAssignmentAuthority(ctx, scope)
 	require.NoError(t, err, "the exact-normal authority should have candidates before exposure")
 

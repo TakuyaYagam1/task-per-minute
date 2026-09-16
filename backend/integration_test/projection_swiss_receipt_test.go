@@ -14,11 +14,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	waverepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/wave"
+	resultrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result"
 	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	catalogrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/catalog"
+	settlementrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/settlement"
 	progressionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/progression"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	gamedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/game"
@@ -249,20 +250,20 @@ func settleSwissReceiptSeries(ctx context.Context, t *testing.T, fixture tournam
 	return record
 }
 
-func submitSwissReceiptSeries(ctx context.Context, t *testing.T, fixture tournamentAdminSwissProofFixture, index int) (*postgres.ParticipantSettlementRepository, gamedomain.SubmissionScope) {
+func submitSwissReceiptSeries(ctx context.Context, t *testing.T, fixture tournamentAdminSwissProofFixture, index int) (*settlementrepo.ParticipantSettlementRepository, gamedomain.SubmissionScope) {
 	t.Helper()
 	binding := fixture.binding[index]
 	scope := gamedomain.SubmissionScope{Game: gamedomain.Scope{TournamentID: fixture.tournamentID, SeriesID: binding.SeriesID}, WaveID: fixture.waveID, AssignmentID: binding.AssignmentID}
 	require.NoError(t, sharedPool.QueryRow(ctx, `SELECT attempt.id, attempt.slot_id FROM assignments AS assignment JOIN game_attempts AS attempt ON attempt.id = assignment.attempt_id WHERE assignment.id = $1`, binding.AssignmentID).Scan(&scope.Game.GameID, &scope.Game.SlotID))
 	results := resultauthority.NewResultPostgres(fixture.tx)
-	repository := postgres.NewParticipantSettlementRepository(fixture.tx, results)
+	repository := settlementrepo.NewParticipantSettlementRepositoryWithFinalizer(fixture.tx, results, resultauthority.FinalizeProjection)
 	authority, err := repository.LoadConcurrentWinnerAuthority(ctx, scope)
 	require.NoError(t, err)
 	commandID := uuid.New()
 	submittedAt := time.Now().UTC().Truncate(time.Microsecond)
-	_, changed, err := results.RecordSubmission(ctx, postgres.SubmissionInput{
+	_, changed, err := results.RecordSubmission(ctx, resultrepo.SubmissionInput{
 		ID:           uuid.NewSHA1(commandID, []byte("participant-command:submission-event")),
-		Scope:        postgres.ResultScope{TournamentID: fixture.tournamentID, RosterID: fixture.rosterID, SeriesID: binding.SeriesID, AttemptID: scope.Game.GameID},
+		Scope:        resultrepo.ResultScope{TournamentID: fixture.tournamentID, RosterID: fixture.rosterID, SeriesID: binding.SeriesID, AttemptID: scope.Game.GameID},
 		AssignmentID: scope.AssignmentID, ParticipantID: binding.FirstParticipantID, IdempotencyKey: commandID,
 		Status: "accepted", PayloadDigest: authority.StartedGame.ContentDigest, IntentDigest: sha256.Sum256([]byte("Swiss receipt submission")),
 		SubmittedAt: submittedAt, ReceivedAt: submittedAt, CreatedAt: submittedAt,
@@ -333,7 +334,7 @@ func TestFinalSwissPublicationConcurrentWriters(t *testing.T) {
 }
 
 type receiptSettlementBarrier struct {
-	*postgres.ParticipantSettlementRepository
+	*settlementrepo.ParticipantSettlementRepository
 	ready   chan<- struct{}
 	release <-chan struct{}
 	once    sync.Once
@@ -351,7 +352,7 @@ func (r *receiptSettlementBarrier) CommitConcurrentWinnerSettlement(ctx context.
 }
 
 type receiptSettlementRepository struct {
-	*postgres.ParticipantSettlementRepository
+	*settlementrepo.ParticipantSettlementRepository
 	t *testing.T
 }
 
