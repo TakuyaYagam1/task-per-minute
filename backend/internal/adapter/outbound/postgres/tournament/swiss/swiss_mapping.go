@@ -1,4 +1,4 @@
-package postgres
+package swiss
 
 import (
 	"encoding/json"
