@@ -17,6 +17,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/authority"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/wave"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/leaderboard"
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/participantarchive"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/player"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/task"
@@ -25,6 +26,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/snapshot"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/cancellation"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/configuration"
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/settlement"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/swiss/deadline"
 	assignment2 "github.com/TakuyaYagam1/task-per-minute/internal/usecase/assignment"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
@@ -207,8 +209,8 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 	tournamentProgressionPostgres := postgres.NewTournamentProgressionPostgres(txManager)
 	workflow := provideTournamentProgression(tournamentProgressionPostgres, tournamentProgressionPostgres, tournamentProgressionPostgres, tournamentProgressionPostgres, bootstrapClockFunc)
 	lifecycleWorkflow := provideTournamentAdminLifecycle(txManager, tournamentAdminLifecyclePostgres, tournamentLifecycleUseCase, tournamentPauseUseCase, tournamentCancellationUseCase, workflow, bootstrapClockFunc)
-	resultPostgres := postgres.NewResultPostgres(txManager)
-	tournamentAdminResultPostgres := postgres.NewTournamentAdminResultPostgres(txManager, resultPostgres)
+	resultPostgres := provideResultPostgres(txManager)
+	tournamentAdminResultPostgres := provideTournamentAdminResultRepository(txManager, resultPostgres)
 	operatorResultWorkflow := provideTournamentAdminResults(txManager, tournamentAdminResultPostgres, terminalCoordinator)
 	tournamentAdminReplayPostgres := replay.NewTournamentAdminReplayPostgres(txManager)
 	replayWorkflow := provideTournamentAdminReplay(txManager, tournamentAdminReplayPostgres)
@@ -241,8 +243,8 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 	actionUseCase := provideParticipantDraft(participantDraftRepository, bootstrapClockFunc)
 	participantSubmissionRepository := postgres.NewParticipantSubmissionRepository(txManager, resultPostgres)
 	submissionUseCase := provideParticipantSubmission(participantSubmissionRepository)
-	participantSettlementRepository := postgres.NewParticipantSettlementRepository(txManager, resultPostgres)
-	participantSettlementWorkflow := postgres.NewParticipantSettlementWorkflow(participantSettlementRepository)
+	participantSettlementRepository := provideParticipantSettlementRepository(txManager, resultPostgres)
+	participantSettlementWorkflow := settlement.NewParticipantSettlementWorkflow(participantSettlementRepository)
 	participantForfeitRepository := postgres.NewParticipantForfeitRepository(txManager, resultPostgres)
 	participantSurrenderWorkflow := provideParticipantSurrender(participantForfeitRepository, bootstrapClockFunc)
 	participantPostSeriesRepository := postgres.NewParticipantPostSeriesRepository(txManager)
@@ -252,7 +254,7 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 	participantIdempotentService := provideIdempotentTournamentParticipantApplication(participantUseCase, idempotencyCoordinator)
 	tournamentParticipantObserver := provideTournamentParticipantObserver(bootstrapEventTelemetry)
 	participantObservedService := provideObservedTournamentParticipantApplication(participantIdempotentService, bootstrapClockFunc, tournamentParticipantObserver)
-	participantArchivePostgres := postgres.NewParticipantArchivePostgres(txManager)
+	participantArchivePostgres := participantarchive.NewParticipantArchivePostgres(txManager)
 	service, err := provideParticipantArchive(participantArchivePostgres, sourceFiles, bootstrapClockFunc)
 	if err != nil {
 		cleanup2()

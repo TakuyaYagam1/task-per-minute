@@ -7,6 +7,8 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/config"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/realtime"
+	taskrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/task"
 	redisadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/redis"
 	telemetryadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/telemetry"
 	"github.com/TakuyaYagam1/task-per-minute/internal/observability"
@@ -20,12 +22,12 @@ import (
 
 func provideRealtimeOutbox(
 	tx *postgres.TxManager,
-) *postgres.RealtimeOutboxPostgres {
-	return postgres.NewRealtimeOutboxPostgres(tx)
+) *realtime.RealtimeOutboxPostgres {
+	return realtime.NewRealtimeOutboxPostgres(tx)
 }
 
 func provideRealtimeDelivery(
-	repository *postgres.RealtimeOutboxPostgres,
+	repository *realtime.RealtimeOutboxPostgres,
 	clock clockFunc,
 ) (*websocket.RealtimeDelivery, error) {
 	return websocket.NewRealtimeDelivery(repository, websocket.RealtimeDeliveryConfig{
@@ -36,7 +38,7 @@ func provideRealtimeDelivery(
 }
 
 func provideObservedEventDeliveryWorker(
-	repository *postgres.RealtimeOutboxPostgres,
+	repository *realtime.RealtimeOutboxPostgres,
 	delivery *websocket.RealtimeDelivery,
 	clock clockFunc,
 	observer *telemetryadapter.EventDeliveryObserver,
@@ -53,13 +55,13 @@ func provideEventDeliveryHealth(
 }
 
 func provideOutboxBacklog(
-	repository *postgres.RealtimeOutboxPostgres,
+	repository *realtime.RealtimeOutboxPostgres,
 ) eventdelivery.BacklogSource {
 	return repository
 }
 
 func provideReceiptRetentionWorker(
-	repository *postgres.RealtimeOutboxPostgres,
+	repository *realtime.RealtimeOutboxPostgres,
 	cfg *config.Config,
 	clock clockFunc,
 ) (*eventdelivery.ReceiptRetentionWorker, error) {
@@ -73,8 +75,8 @@ func provideReceiptRetentionWorker(
 
 func providePrivateTaskAvailabilityRepository(
 	tx *postgres.TxManager,
-) *postgres.PrivateTaskAvailabilityPostgres {
-	return postgres.NewPrivateTaskAvailabilityPostgres(tx)
+) *taskrepo.PrivateTaskAvailabilityPostgres {
+	return taskrepo.NewPrivateTaskAvailabilityPostgres(tx)
 }
 
 func providePrivateTaskAvailabilityMonitor(
