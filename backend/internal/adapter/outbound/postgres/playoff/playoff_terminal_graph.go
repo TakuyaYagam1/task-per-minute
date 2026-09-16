@@ -1,4 +1,4 @@
-package postgres
+package playoff
 
 import (
 	"context"
@@ -180,7 +180,7 @@ func (repository *PlayoffTerminalPostgres) createFinalGameGraph(
 			return err
 		}
 	}
-	if err := repository.assignments.createAssignmentTx(ctx, AssignmentCreateInput{
+	if err := repository.createAssignmentTx(ctx, AssignmentCreateInput{
 		ID: binding.AssignmentID, AttemptID: binding.GameID, SeriesID: series.ID, RosterID: stage.RosterID,
 		PlanID: binding.PlanID, BranchID: binding.BranchID, ReservationID: binding.ReservationID,
 		SnapshotID: binding.SnapshotID, CreatedAt: createdAt,

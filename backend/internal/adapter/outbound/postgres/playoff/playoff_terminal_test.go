@@ -1,4 +1,4 @@
-package postgres
+package playoff
 
 import (
 	"crypto/sha256"
@@ -294,7 +294,7 @@ func TestFinalPublicationArtifactsCloneExactBaseAndAddChampion(t *testing.T) {
 func TestPlayoffTerminalSQLUsesLockedStageHeadsAndPlannedWaves(t *testing.T) {
 	t.Parallel()
 
-	path := filepath.Join("..", "..", "..", "..", "db", "queries", "playoff_terminal.sql")
+	path := filepath.Join("..", "..", "..", "..", "..", "db", "queries", "playoff_terminal.sql")
 	source, err := os.ReadFile(path)
 	require.NoError(t, err)
 	text := string(source)

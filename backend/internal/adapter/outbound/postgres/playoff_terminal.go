@@ -5,63 +5,107 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
+	assignmentrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment"
+	playoffrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/playoff"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
+	playoffusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 )
 
-// PlayoffTerminalPostgres is the durable terminal-stage boundary. All methods
-// participate in the caller transaction and lock the stage before reconciling
-// deterministic identities.
+// PlayoffTerminalPostgres preserves the root adapter contract while the
+// terminal-stage implementation lives in the playoff child package.
 type PlayoffTerminalPostgres struct {
 	tx          *TxManager
 	drafts      *DraftPostgres
 	assignments *AssignmentPostgres
+	inner       *playoffrepo.PlayoffTerminalPostgres
 }
-
-var _ playoff.TerminalRepository = (*PlayoffTerminalPostgres)(nil)
 
 func NewPlayoffTerminalPostgres(
 	tx *TxManager,
 	drafts *DraftPostgres,
 	assignments *AssignmentPostgres,
 ) *PlayoffTerminalPostgres {
-	return &PlayoffTerminalPostgres{tx: tx, drafts: drafts, assignments: assignments}
+	var draftRepository playoffrepo.DraftRepository
+	if drafts != nil {
+		draftRepository = drafts
+	}
+	var createAssignmentTx playoffrepo.AssignmentWriter
+	if assignments != nil {
+		createAssignmentTx = func(ctx context.Context, in assignmentrepo.AssignmentCreateInput) error {
+			return assignments.createAssignmentTx(ctx, in)
+		}
+	}
+	return &PlayoffTerminalPostgres{
+		tx: tx, drafts: drafts, assignments: assignments,
+		inner: playoffrepo.NewPlayoffTerminalPostgres(tx, draftRepository, createAssignmentTx),
+	}
 }
+
+func (repository *PlayoffTerminalPostgres) child() *playoffrepo.PlayoffTerminalPostgres {
+	if repository == nil {
+		return nil
+	}
+	return repository.inner
+}
+
+var _ playoffusecase.TerminalRepository = (*PlayoffTerminalPostgres)(nil)
 
 func (repository *PlayoffTerminalPostgres) LoadSemifinalStage(
 	ctx context.Context,
-	command playoff.TerminalSeriesCommand,
-) (*playoff.SemifinalStageAuthority, error) {
-	if !validTerminalRepository(repository) || ctx == nil ||
-		command.TournamentID == uuid.Nil || command.SeriesID == uuid.Nil {
+	command playoffusecase.TerminalSeriesCommand,
+) (*playoffusecase.SemifinalStageAuthority, error) {
+	if repository == nil || repository.child() == nil {
 		return nil, domain.ErrValidation
 	}
+	return repository.child().LoadSemifinalStage(ctx, command)
+}
 
-	var authority *playoff.SemifinalStageAuthority
-	err := repository.tx.Do(ctx, func(txCtx context.Context) error {
-		rows, err := repository.tx.Querier(txCtx).LockPostseasonSemifinalAuthority(
-			txCtx,
-			sqlc.LockPostseasonSemifinalAuthorityParams{
-				TournamentID: command.TournamentID,
-				SeriesID:     command.SeriesID,
-			},
-		)
-		if err != nil {
-			return err
-		}
-		if len(rows) == 0 {
-			return nil
-		}
-		loaded, err := repository.semifinalStageAuthority(txCtx, rows)
-		if err != nil {
-			return err
-		}
-		authority = loaded
-		return nil
-	})
-	if err != nil {
-		return nil, terminalRepositoryError("LoadSemifinalStage", err)
+func (repository *PlayoffTerminalPostgres) PersistFinalDraft(
+	ctx context.Context,
+	plan playoffusecase.FinalDraftPlan,
+) (bool, error) {
+	if repository == nil || repository.child() == nil {
+		return false, domain.ErrValidation
 	}
-	return authority, nil
+	return repository.child().PersistFinalDraft(ctx, plan)
+}
+
+func (repository *PlayoffTerminalPostgres) LoadFinalDraft(
+	ctx context.Context,
+	command playoffusecase.TerminalDraftCommand,
+) (*playoffusecase.FinalDraftAuthority, error) {
+	if repository == nil || repository.child() == nil {
+		return nil, domain.ErrValidation
+	}
+	return repository.child().LoadFinalDraft(ctx, command)
+}
+
+func (repository *PlayoffTerminalPostgres) PersistFinalInitial(
+	ctx context.Context,
+	plan playoffusecase.FinalInitialPlan,
+) (bool, error) {
+	if repository == nil || repository.child() == nil {
+		return false, domain.ErrValidation
+	}
+	return repository.child().PersistFinalInitial(ctx, plan)
+}
+
+func (repository *PlayoffTerminalPostgres) PersistFinalContinuation(
+	ctx context.Context,
+	plan playoffusecase.FinalContinuationPlan,
+) (bool, error) {
+	if repository == nil || repository.child() == nil {
+		return false, domain.ErrValidation
+	}
+	return repository.child().PersistFinalContinuation(ctx, plan)
+}
+
+func (repository *PlayoffTerminalPostgres) LoadFinalSettlement(
+	ctx context.Context,
+	command playoffusecase.TerminalSeriesCommand,
+) (*playoffusecase.FinalSettlementAuthority, error) {
+	if repository == nil || repository.child() == nil {
+		return nil, domain.ErrValidation
+	}
+	return repository.child().LoadFinalSettlement(ctx, command)
 }

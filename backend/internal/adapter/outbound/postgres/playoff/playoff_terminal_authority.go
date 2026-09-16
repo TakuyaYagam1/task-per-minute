@@ -1,4 +1,4 @@
-package postgres
+package playoff
 
 import (
 	"context"
@@ -17,7 +17,8 @@ import (
 )
 
 func validTerminalRepository(repository *PlayoffTerminalPostgres) bool {
-	return repository != nil && repository.tx != nil && repository.drafts != nil && repository.assignments != nil
+	return repository != nil && repository.tx != nil && repository.tx.HasPool() &&
+		repository.drafts != nil && repository.createAssignmentTx != nil
 }
 
 func validTerminalDraftCommand(command playoff.TerminalDraftCommand) bool {

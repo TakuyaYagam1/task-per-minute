@@ -1,4 +1,4 @@
-package postgres
+package playoff
 
 import (
 	"crypto/sha256"
