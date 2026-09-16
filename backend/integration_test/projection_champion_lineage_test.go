@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	projectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
@@ -111,8 +112,8 @@ func TestProjectionPostgresRejectsChampionFromUndesignatedBO3(t *testing.T) {
 		terminal.Outbox.ProjectionRevision,
 		startedAt.Add(3*time.Second),
 	)
-	_, err = postgres.NewProjectionPostgres(postgres.NewTxManager(sharedPool)).PublishFinal(ctx, publication)
-	require.ErrorIs(t, err, postgres.ErrProjectionNotFound)
+	_, err = projectionrepo.NewProjectionPostgres(postgres.NewTxManager(sharedPool)).PublishFinal(ctx, publication)
+	require.ErrorIs(t, err, projectionrepo.ErrProjectionNotFound)
 	assertFinalProjectionNotPersisted(ctx, t, publication, tournamentRevision)
 }
 

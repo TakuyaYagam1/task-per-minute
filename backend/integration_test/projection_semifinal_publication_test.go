@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	projectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	assignmentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/assignment"
@@ -227,7 +228,7 @@ func prepareFinalDraftWithCompletionDelay(ctx context.Context, t *testing.T, che
 	exactPlans := postgres.NewExactDraftBranchPlanPostgres(fixture.tx, drafts)
 	planner := playoff.NewFinalDraftAssignmentService(assignmentusecase.NewExactDraftBranchPlanUseCase(&observedExactDraftRepository{ExactDraftBranchPlanPostgres: exactPlans, t: t}), exactPlans, exactPlans)
 	coordinator := playoff.NewTerminalCoordinator(playoff.TerminalCoordinatorDependencies{
-		Repository: &observedTerminalRepository{PlayoffTerminalPostgres: postgres.NewPlayoffTerminalPostgres(fixture.tx, drafts, assignments)}, Publisher: postgres.NewProjectionPostgres(fixture.tx),
+		Repository: &observedTerminalRepository{PlayoffTerminalPostgres: postgres.NewPlayoffTerminalPostgres(fixture.tx, drafts, assignments)}, Publisher: projectionrepo.NewProjectionPostgres(fixture.tx),
 		DraftPlanner: &checkedFinalDraftPlanner{FinalDraftAssignmentService: planner, fixture: fixture, t: t}, Rehydrator: planner,
 	})
 	ids, err := playoff.FinalStageIdentity(command.CommandID)

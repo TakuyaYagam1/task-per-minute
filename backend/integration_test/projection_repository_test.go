@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	projectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 )
@@ -25,14 +26,14 @@ func TestProjectionRepositoryPublishesScopedStandingsAndBracketHistory(t *testin
 
 	fixture := createGoldenMigrationFixture(ctx, t, 4)
 	goldenPositionCommitID := createProjectionGoldenSource(ctx, t, fixture)
-	repository := postgres.NewProjectionPostgres(postgres.NewTxManager(sharedPool))
-	scope := postgres.ProjectionScope{TournamentID: fixture.tournamentID, RosterID: fixture.rosterID}
+	repository := projectionrepo.NewProjectionPostgres(postgres.NewTxManager(sharedPool))
+	scope := projectionrepo.ProjectionScope{TournamentID: fixture.tournamentID, RosterID: fixture.rosterID}
 	createdAt := time.Now().UTC().Truncate(time.Microsecond)
 
-	first, err := repository.Publish(ctx, postgres.ProjectionPublishInput{
-		IDs:   postgres.ProjectionIDs{RevisionID: uuid.New(), CutoffID: uuid.New()},
+	first, err := repository.Publish(ctx, projectionrepo.ProjectionPublishInput{
+		IDs:   projectionrepo.ProjectionIDs{RevisionID: uuid.New(), CutoffID: uuid.New()},
 		Scope: scope,
-		Source: postgres.ProjectionSource{
+		Source: projectionrepo.ProjectionSource{
 			Kind: "golden_position", GoldenPositionCommitID: &goldenPositionCommitID,
 			Reason: "Golden positions changed the tournament projection",
 		},
@@ -45,10 +46,10 @@ func TestProjectionRepositoryPublishesScopedStandingsAndBracketHistory(t *testin
 	require.Len(t, first.Artifacts, 3)
 
 	secondCreatedAt := createdAt.Add(time.Minute)
-	second, err := repository.Publish(ctx, postgres.ProjectionPublishInput{
-		IDs:   postgres.ProjectionIDs{RevisionID: uuid.New(), CutoffID: uuid.New()},
+	second, err := repository.Publish(ctx, projectionrepo.ProjectionPublishInput{
+		IDs:   projectionrepo.ProjectionIDs{RevisionID: uuid.New(), CutoffID: uuid.New()},
 		Scope: scope,
-		Source: postgres.ProjectionSource{
+		Source: projectionrepo.ProjectionSource{
 			Kind: "operator_rebuild", Reason: "rebuild tournament scoped descendants",
 		},
 		Artifacts:          projectionRepositoryArtifacts(t, fixture.participantIDs, goldenPositionCommitID, "v2"),
@@ -87,10 +88,10 @@ func TestProjectionRepositoryPublishesScopedStandingsAndBracketHistory(t *testin
 	require.Equal(t, "superseded", history[0].State)
 	require.Equal(t, "published", history[1].State)
 
-	_, err = repository.Current(ctx, postgres.ProjectionScope{
+	_, err = repository.Current(ctx, projectionrepo.ProjectionScope{
 		TournamentID: fixture.tournamentID, RosterID: uuid.New(),
 	})
-	require.ErrorIs(t, err, postgres.ErrProjectionNotFound)
+	require.ErrorIs(t, err, projectionrepo.ErrProjectionNotFound)
 }
 
 func TestProjectionRepositoryRejectsChampionBeforeTerminalFinal(t *testing.T) {
@@ -108,15 +109,15 @@ func TestProjectionRepositoryRejectsChampionBeforeTerminalFinal(t *testing.T) {
 		"planned",
 	))
 
-	_, err := postgres.NewProjectionPostgres(postgres.NewTxManager(sharedPool)).Publish(
+	_, err := projectionrepo.NewProjectionPostgres(postgres.NewTxManager(sharedPool)).Publish(
 		ctx,
-		postgres.ProjectionPublishInput{
-			IDs: postgres.ProjectionIDs{RevisionID: uuid.New(), CutoffID: uuid.New()},
-			Scope: postgres.ProjectionScope{
+		projectionrepo.ProjectionPublishInput{
+			IDs: projectionrepo.ProjectionIDs{RevisionID: uuid.New(), CutoffID: uuid.New()},
+			Scope: projectionrepo.ProjectionScope{
 				TournamentID: fixture.tournamentID,
 				RosterID:     fixture.rosterID,
 			},
-			Source: postgres.ProjectionSource{
+			Source: projectionrepo.ProjectionSource{
 				Kind: "golden_position", GoldenPositionCommitID: &goldenPositionCommitID,
 				Reason: "planned playoff bracket must not choose a champion",
 			},
@@ -135,13 +136,13 @@ func projectionRepositoryArtifacts(
 	participantIDs []uuid.UUID,
 	goldenPositionCommitID uuid.UUID,
 	version string,
-) []postgres.ProjectionArtifactInput {
+) []projectionrepo.ProjectionArtifactInput {
 	t.Helper()
 	standingsID := uuid.New()
 	bracketID := uuid.New()
 	topFourID := uuid.New()
-	standingsMembers := make([]postgres.ProjectionMemberInput, 0, len(participantIDs))
-	positionMembers := make([]postgres.ProjectionMemberInput, 0, len(participantIDs))
+	standingsMembers := make([]projectionrepo.ProjectionMemberInput, 0, len(participantIDs))
+	positionMembers := make([]projectionrepo.ProjectionMemberInput, 0, len(participantIDs))
 	entries := make([]map[string]any, 0, len(participantIDs))
 	for index, participantID := range participantIDs {
 		points := len(participantIDs) - index
@@ -150,10 +151,10 @@ func projectionRepositoryArtifacts(
 		}
 		score := int64(points * 1000)
 		position := int32(index + 1)
-		standingsMembers = append(standingsMembers, postgres.ProjectionMemberInput{
+		standingsMembers = append(standingsMembers, projectionrepo.ProjectionMemberInput{
 			ParticipantID: participantID, Position: position, ScoreMilli: &score,
 		})
-		positionMembers = append(positionMembers, postgres.ProjectionMemberInput{
+		positionMembers = append(positionMembers, projectionrepo.ProjectionMemberInput{
 			ParticipantID: participantID, Position: position,
 		})
 		entries = append(entries, map[string]any{
@@ -195,14 +196,14 @@ func projectionRepositoryArtifacts(
 		},
 	})
 	require.NoError(t, err)
-	return []postgres.ProjectionArtifactInput{
+	return []projectionrepo.ProjectionArtifactInput{
 		projectionRepositoryArtifact(
 			standingsID,
 			domain.ArtifactKindStandings,
 			version,
 			standingsPayload,
 			standingsMembers,
-			postgres.ProjectionDependencyInput{
+			projectionrepo.ProjectionDependencyInput{
 				ID: uuid.New(), Kind: "golden_position", GoldenPositionCommitID: &goldenPositionCommitID,
 			},
 		),
@@ -212,7 +213,7 @@ func projectionRepositoryArtifacts(
 			version,
 			bracketPayload,
 			positionMembers,
-			postgres.ProjectionDependencyInput{
+			projectionrepo.ProjectionDependencyInput{
 				ID: uuid.New(), Kind: "artifact", DependsOnArtifactID: &standingsID,
 			},
 		),
@@ -225,7 +226,7 @@ func projectionRepositoryArtifacts(
 				participantIDs[0], participantIDs[1], participantIDs[2], participantIDs[3],
 			)),
 			positionMembers,
-			postgres.ProjectionDependencyInput{
+			projectionrepo.ProjectionDependencyInput{
 				ID: uuid.New(), Kind: "artifact", DependsOnArtifactID: &bracketID,
 			},
 		),
@@ -236,14 +237,14 @@ func projectionRepositoryChampionArtifact(
 	winnerID uuid.UUID,
 	bracketID uuid.UUID,
 	version string,
-) postgres.ProjectionArtifactInput {
+) projectionrepo.ProjectionArtifactInput {
 	payload := json.RawMessage(fmt.Sprintf(`{"participant_id":%q}`, winnerID))
 	digest := sha256.Sum256(payload)
-	return postgres.ProjectionArtifactInput{
+	return projectionrepo.ProjectionArtifactInput{
 		ID: uuid.New(), Kind: domain.ArtifactKindChampion, Key: "champion-" + version,
 		Payload: payload, PayloadDigest: digest,
-		Members: []postgres.ProjectionMemberInput{{ParticipantID: winnerID, Position: 1}},
-		Dependencies: []postgres.ProjectionDependencyInput{{
+		Members: []projectionrepo.ProjectionMemberInput{{ParticipantID: winnerID, Position: 1}},
+		Dependencies: []projectionrepo.ProjectionDependencyInput{{
 			ID: uuid.New(), Kind: "artifact", DependsOnArtifactID: &bracketID,
 		}},
 	}
@@ -254,13 +255,13 @@ func projectionRepositoryArtifact(
 	kind domain.ArtifactKind,
 	version string,
 	payload json.RawMessage,
-	members []postgres.ProjectionMemberInput,
-	dependency postgres.ProjectionDependencyInput,
-) postgres.ProjectionArtifactInput {
+	members []projectionrepo.ProjectionMemberInput,
+	dependency projectionrepo.ProjectionDependencyInput,
+) projectionrepo.ProjectionArtifactInput {
 	digest := sha256.Sum256(payload)
-	return postgres.ProjectionArtifactInput{
+	return projectionrepo.ProjectionArtifactInput{
 		ID: id, Kind: kind, Key: string(kind) + "-" + version, Payload: payload,
 		PayloadDigest: digest, Members: members,
-		Dependencies: []postgres.ProjectionDependencyInput{dependency},
+		Dependencies: []projectionrepo.ProjectionDependencyInput{dependency},
 	}
 }

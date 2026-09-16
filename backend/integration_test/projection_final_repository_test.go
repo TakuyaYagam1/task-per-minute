@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	projectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 	projection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection"
@@ -24,7 +25,7 @@ func TestFinalProjectionRepositoryCommitsAuthoritativeResult(t *testing.T) {
 	ctx := context.Background()
 	publication, final, opponentID := createFinalPublicationFixture(t)
 	tournamentRevision := publication.Expected.TournamentRevision
-	repository := postgres.NewProjectionPostgres(postgres.NewTxManager(sharedPool))
+	repository := projectionrepo.NewProjectionPostgres(postgres.NewTxManager(sharedPool))
 
 	stale := publication.Snapshot()
 	stale.Expected.TournamentRevision--
@@ -67,7 +68,7 @@ func TestFinalProjectionRepositoryCommitsAuthoritativeResult(t *testing.T) {
 	abort := errors.New("stop after champion publication")
 	tx := postgres.NewTxManager(sharedPool)
 	err = tx.Do(ctx, func(txCtx context.Context) error {
-		if _, err := postgres.NewProjectionPostgres(tx).PublishFinal(txCtx, publication); err != nil {
+		if _, err := projectionrepo.NewProjectionPostgres(tx).PublishFinal(txCtx, publication); err != nil {
 			return err
 		}
 		return abort
@@ -113,7 +114,7 @@ func TestFinalProjectionConcurrentPublication(t *testing.T) {
 			defer done.Done()
 			ready.Done()
 			<-start
-			receipts[i], failures[i] = postgres.NewProjectionPostgres(postgres.NewTxManager(sharedPool)).PublishFinal(ctx, publications[i])
+			receipts[i], failures[i] = projectionrepo.NewProjectionPostgres(postgres.NewTxManager(sharedPool)).PublishFinal(ctx, publications[i])
 		}()
 	}
 	ready.Wait()

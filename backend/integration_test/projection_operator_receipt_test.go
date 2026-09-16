@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	projectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	assignmentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/assignment"
@@ -81,7 +82,7 @@ func swissOperatorResultWorkflow(t *testing.T, fixture tournamentAdminSwissProof
 	planner := playoff.NewFinalDraftAssignmentService(assignmentusecase.NewExactDraftBranchPlanUseCase(exactPlans), exactPlans, exactPlans)
 	terminal := playoff.NewTerminalCoordinator(playoff.TerminalCoordinatorDependencies{
 		Repository: postgres.NewPlayoffTerminalPostgres(fixture.tx, drafts, postgres.NewAssignmentPostgres(fixture.tx)),
-		Publisher:  postgres.NewProjectionPostgres(fixture.tx), DraftPlanner: planner, Rehydrator: planner,
+		Publisher:  projectionrepo.NewProjectionPostgres(fixture.tx), DraftPlanner: planner, Rehydrator: planner,
 	})
 	workflow := tournamentadmin.NewOperatorResultWorkflow(tournamentadmin.OperatorResultWorkflowDependencies{
 		Transactions: fixture.tx, Repository: &observedOperatorResultRepository{TournamentAdminResultPostgres: repository, t: t}, Postseason: terminal,
@@ -210,7 +211,7 @@ func assertReceiptRejectsCrossSeriesTerminalCommit(ctx context.Context, t *testi
 	publication := successorSwissPublication(ctx, t, fixture)
 	inserted := false
 	err = fixture.tx.Do(ctx, func(txCtx context.Context) error {
-		record, err := postgres.NewProjectionPostgres(fixture.tx).Publish(txCtx, publication)
+		record, err := projectionrepo.NewProjectionPostgres(fixture.tx).Publish(txCtx, publication)
 		if err != nil {
 			return err
 		}
