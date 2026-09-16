@@ -1,6 +1,6 @@
 //go:build integration
 
-package integration_test
+package task_test
 
 import (
 	"context"
@@ -283,20 +283,4 @@ func TestTaskRepo_Delete_MissingReturnsTaskNotFound(t *testing.T) {
 	t.Parallel()
 	pool := newParallelTestDB(t)
 	require.ErrorIs(t, newTaskRepo(pool).Delete(context.Background(), uuid.New()), domain.ErrTaskNotFound)
-}
-
-func TestTaskRepo_TournamentReferenceProtectsTask(t *testing.T) {
-	ctx := context.Background()
-	resetMigrationTables(ctx, t)
-	t.Cleanup(func() { resetMigrationTables(ctx, t) })
-
-	fixture := createResultAuditMigrationFixture(ctx, t)
-	var taskID uuid.UUID
-	require.NoError(t, sharedPool.QueryRow(ctx, `
-		SELECT task_id
-		FROM assignments
-		WHERE id = $1`, fixture.assignmentID).Scan(&taskID))
-
-	repo := newTaskRepo()
-	require.ErrorIs(t, repo.Delete(ctx, taskID), domain.ErrTaskInUse)
 }
