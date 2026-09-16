@@ -1360,6 +1360,11 @@ export interface components {
              */
             time_limit: number;
             title: string;
+            /**
+             * Format: int32
+             * @description Current immutable task version selected by server-owned task pool revisions.
+             */
+            version: number;
         };
         CreateTaskRequest: {
             category: components["schemas"]["TaskCategory"];

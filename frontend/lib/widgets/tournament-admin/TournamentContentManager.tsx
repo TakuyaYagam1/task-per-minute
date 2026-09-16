@@ -31,6 +31,7 @@ import styles from "./TournamentContentManager.module.css";
 type Task = AdminTask;
 type TaskCategory = Task["category"];
 type TaskDifficulty = Task["difficulty"];
+type TaskKind = Task["kind"];
 type LoadState = "loading" | "ready" | "error";
 
 export type AdminRequestRunner = <T>(request: () => Promise<T>) => Promise<T>;
@@ -85,6 +86,11 @@ const DIFFICULTY_CONFIG: Record<TaskDifficulty, { label: string }> = {
   easy: { label: "Лёгкая" },
   medium: { label: "Средняя" },
   hard: { label: "Сложная" },
+};
+
+const KIND_CONFIG: Record<TaskKind, { label: string }> = {
+  normal: { label: "Обычная" },
+  golden: { label: "Золотая" },
 };
 
 const MAX_INT32 = 2_147_483_647;
@@ -208,6 +214,7 @@ export const TournamentContentManager = ({
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState<TaskCategory>("web");
   const [difficulty, setDifficulty] = useState<TaskDifficulty>("easy");
+  const [kind, setKind] = useState<TaskKind>("normal");
   const [timeLimit, setTimeLimit] = useState("60");
   const [flag, setFlag] = useState("");
   const [hints, setHints] = useState<string[]>(emptyHintInputs);
@@ -331,6 +338,7 @@ export const TournamentContentManager = ({
     setDescription("");
     setCategory("web");
     setDifficulty("easy");
+    setKind("normal");
     setTimeLimit("60");
     setFlag("");
     setHints(emptyHintInputs());
@@ -350,6 +358,7 @@ export const TournamentContentManager = ({
     setDescription(task.description);
     setCategory(task.category);
     setDifficulty(task.difficulty);
+    setKind(task.kind);
     setTimeLimit(String(task.time_limit));
     setFlag(task.flag);
     setHints(hintInputsFromTask(task));
@@ -486,6 +495,7 @@ export const TournamentContentManager = ({
         description: trimmedDescription,
         category,
         difficulty,
+        kind,
         time_limit: parsedTimeLimit,
         flag: trimmedFlag,
         hints: hintInputsToRequest(hints),
@@ -791,6 +801,21 @@ export const TournamentContentManager = ({
                   </select>
                 </div>
                 <div className={styles.field}>
+                  <label htmlFor="admin-task-kind">Пул задания</label>
+                  <select
+                    id="admin-task-kind"
+                    name="kind"
+                    value={kind}
+                    onChange={(event) => setKind(event.target.value as TaskKind)}
+                  >
+                    {Object.entries(KIND_CONFIG).map(([value, config]) => (
+                      <option key={value} value={value}>
+                        {config.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className={styles.field}>
                   <label htmlFor="admin-task-difficulty">Сложность</label>
                   <select
                     id="admin-task-difficulty"
@@ -1049,7 +1074,10 @@ export const TournamentContentManager = ({
                             {difficultyInfo?.label || task.difficulty}
                           </Status>
                           <span className={styles.taskMetaText}>Лимит: {task.time_limit} сек</span>
-                          <span className={styles.taskMetaText}>{task.kind === "golden" ? "Золотая" : "Обычная"}</span>
+                          <span className={styles.taskMetaText}>
+                            Пул: {KIND_CONFIG[task.kind].label}
+                          </span>
+                          <span className={styles.taskMetaText}>Версия: {task.version}</span>
                           {task.source_file_url && <span className={styles.taskMetaText}>ZIP загружен</span>}
                         </div>
                       </div>

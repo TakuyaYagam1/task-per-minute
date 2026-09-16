@@ -11,6 +11,9 @@ export type MockAdminTask = {
   description: string;
   category: string;
   difficulty: string;
+  kind: 'normal' | 'golden';
+  enabled: boolean;
+  version: number;
   time_limit: number;
   flag: string;
   hints: (string | null)[];
@@ -26,6 +29,9 @@ export const taskResponse = (overrides: Partial<MockAdminTask> = {}): MockAdminT
   description: 'Admin contract task',
   category: 'forensics',
   difficulty: 'easy',
+  kind: 'normal',
+  enabled: true,
+  version: 1,
   time_limit: 120,
   flag: 'flag{admin_ok}',
   hints: ['first', 'second', 'third'],
@@ -49,6 +55,7 @@ export const fillAdminTaskForm = async (
     title: string;
     description: string;
     category: string;
+    kind: 'normal' | 'golden';
     timeLimit: string;
     flag: string;
     taskUrl: string;
@@ -59,6 +66,7 @@ export const fillAdminTaskForm = async (
     title: 'Validated Task',
     description: 'Admin validation contract task.',
     category: 'web',
+    kind: 'normal' as const,
     timeLimit: '120',
     flag: 'flag{validated}',
     taskUrl: 'https://example.com/task',
@@ -69,6 +77,7 @@ export const fillAdminTaskForm = async (
   await page.getByPlaceholder('Введите название...').fill(values.title);
   await page.getByPlaceholder('Опишите задачу...').fill(values.description);
   await page.locator('select').first().selectOption(values.category);
+  await page.getByLabel('Пул задания').selectOption(values.kind);
   await page.getByPlaceholder('60').fill(values.timeLimit);
   await page.getByPlaceholder('flag{...}').fill(values.flag);
   await page.locator('input[placeholder="https://example.com/task"], input[placeholder="host:port"]').fill(values.taskUrl);

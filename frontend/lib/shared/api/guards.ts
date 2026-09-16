@@ -288,6 +288,10 @@ export const isAdminTask = (value: unknown): value is AdminTask =>
   TASK_DIFFICULTIES.has(value.difficulty as AdminTask["difficulty"]) &&
   isPositiveInteger(value.time_limit) &&
   isString(value.flag) &&
+  (value.kind === "normal" || value.kind === "golden") &&
+  typeof value.enabled === "boolean" &&
+  isSafePositiveInteger(value.version) &&
+  value.version <= INT32_MAX &&
   isPositionalHintArray(value.hints) &&
   isDateString(value.created_at) &&
   isOptionalStringOrNull(value.task_url) &&

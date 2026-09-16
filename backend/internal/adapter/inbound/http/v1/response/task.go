@@ -16,6 +16,7 @@ func Task(task *domain.Task) api.TaskDetails {
 		Flag:          task.Flag,
 		Kind:          api.TaskKind(task.Kind),
 		Enabled:       task.Enabled,
+		Version:       IntToInt32(task.CurrentVersion),
 		Hints:         nullableHints(task.Hints),
 		TaskUrl:       task.TaskURL,
 		SourceFileUrl: task.SourceFileURL,

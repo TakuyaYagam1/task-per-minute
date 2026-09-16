@@ -22,7 +22,9 @@ type AdminSession = {
 
 type AdminTask = {
   id: string;
+  kind: 'normal' | 'golden';
   title: string;
+  version: number;
 };
 
 type AdminTournament = {
@@ -174,8 +176,9 @@ const fillAdminTaskForm = async (page: Page, input: FullStackTaskInput): Promise
   const form = page.locator('form').filter({ has: page.getByPlaceholder('Введите название...') }).first();
   await form.getByPlaceholder('Введите название...').fill(input.title);
   await form.getByPlaceholder('Опишите задачу...').fill(input.description);
-  await form.locator('select').first().selectOption(input.category);
-  await form.locator('select').nth(1).selectOption(input.difficulty);
+  await form.getByLabel('Категория').selectOption(input.category);
+  await form.getByLabel('Сложность').selectOption(input.difficulty);
+  await form.getByLabel('Пул задания').selectOption(input.kind ?? 'normal');
   await form.getByPlaceholder('60').fill(String(input.time_limit));
   await form.getByPlaceholder('flag{...}').fill(input.flag);
   await form.getByPlaceholder('https://example.com/task').fill(input.task_url ?? '');
@@ -202,10 +205,23 @@ const createTaskViaApi = async (
 const getTournamentContentRevision = async (
   request: APIRequestContext,
 ): Promise<number> => {
+  return (await getTournamentContentSelection(request)).content_revision;
+};
+
+type FullStackContentSelection = {
+  content_revision: number;
+  golden_pool_revision_id: string;
+  normal_pool_revision_id: string;
+  publication_id: string;
+};
+
+const getTournamentContentSelection = async (
+  request: APIRequestContext,
+): Promise<FullStackContentSelection> => {
   const contentURL = `${backendURL}/api/v1/admin/tournament-content`;
   const response = await request.get(contentURL);
   expect(response.ok(), `tournament content GET failed at ${contentURL} with ${response.status()}`).toBeTruthy();
-  const content = (await response.json()) as { content_revision?: unknown };
+  const content = (await response.json()) as Partial<FullStackContentSelection>;
   const contentRevision = content.content_revision;
   expect(contentRevision, 'tournament content did not return content_revision').toEqual(
     expect.any(Number),
@@ -213,7 +229,10 @@ const getTournamentContentRevision = async (
   if (typeof contentRevision !== 'number') {
     throw new Error(`tournament content returned an invalid content_revision at ${contentURL}`);
   }
-  return contentRevision;
+  expect(content.publication_id).toMatch(/^[0-9a-f-]{36}$/i);
+  expect(content.normal_pool_revision_id).toMatch(/^[0-9a-f-]{36}$/i);
+  expect(content.golden_pool_revision_id).toMatch(/^[0-9a-f-]{36}$/i);
+  return content as FullStackContentSelection;
 };
 
 const createTournamentViaApi = async (
@@ -639,9 +658,11 @@ test.describe('local compose full stack e2e', () => {
 
     const title = uniqueName('fullstack-fe028');
     const updatedTitle = `${title}-updated`;
+    const supportTitle = uniqueName('fullstack-fe028-normal');
     const taskInput: FullStackTaskInput = {
       title,
       description: 'FE-028 task created through the tournament admin catalog.',
+      kind: 'golden',
       category: 'forensics',
       difficulty: 'easy',
       time_limit: 120,
@@ -653,6 +674,18 @@ test.describe('local compose full stack e2e', () => {
 
     try {
       await loginThroughAdminUI(page);
+      cleanupSession = await adminLogin(request);
+      await createTaskViaApi(request, cleanupSession, {
+        title: supportTitle,
+        description: 'Normal pool companion for the FE-028 publication check.',
+        kind: 'normal',
+        category: 'web',
+        difficulty: 'easy',
+        time_limit: 120,
+        flag: `flag{${supportTitle.replaceAll('-', '_')}}`,
+        hints: ['normal hint one', 'normal hint two', 'normal hint three'],
+        task_url: 'https://example.com/fe028-normal',
+      });
       await page.getByRole('button', { name: 'Турниры' }).click();
       await expect(page.getByPlaceholder('Введите название...')).toBeVisible({ timeout: 15_000 });
 
@@ -680,6 +713,8 @@ test.describe('local compose full stack e2e', () => {
       const createdTask = (await createResponse.json()) as AdminTask;
       expect(createdTask.id).toMatch(/^[0-9a-f-]{36}$/i);
       expect(createdTask.title).toBe(title);
+      expect(createdTask.kind).toBe('golden');
+      expect(createdTask.version).toBe(1);
 
       const uploadResponse = await uploadResponsePromise;
       expect(uploadResponse.status()).toBe(200);
@@ -694,7 +729,25 @@ test.describe('local compose full stack e2e', () => {
       expect((await download.body()).subarray(0, 2).toString()).toBe('PK');
 
       await expect(page.getByText(title, { exact: true })).toBeVisible();
+      cleanupSession = await adminLogin(request);
+      const afterUploadTasksResponse = await request.get(`${backendURL}/api/v1/admin/tasks`);
+      expect(
+        afterUploadTasksResponse.ok(),
+        `admin task list after upload failed with ${afterUploadTasksResponse.status()}`,
+      ).toBeTruthy();
+      const afterUploadTask = ((await afterUploadTasksResponse.json()) as AdminTask[])
+        .find((task) => task.id === createdTask.id);
+      expect(afterUploadTask).toBeDefined();
+      if (!afterUploadTask) {
+        throw new Error('created task disappeared after source upload');
+      }
+      expect(afterUploadTask.kind).toBe('golden');
+      expect(afterUploadTask.version).toBeGreaterThan(createdTask.version);
+      await expect(page.getByText(`Версия: ${afterUploadTask.version}`, { exact: true })).toBeVisible();
+      const afterUploadContent = await getTournamentContentSelection(request);
+
       await page.getByRole('button', { name: `Редактировать задачу ${title}` }).click();
+      await expect(page.getByLabel('Пул задания')).toHaveValue('golden');
       await page.getByPlaceholder('Введите название...').fill(updatedTitle);
       const updateResponsePromise = page.waitForResponse(
         (response) =>
@@ -707,11 +760,23 @@ test.describe('local compose full stack e2e', () => {
       await expect(page.getByText('Задача успешно обновлена!')).toBeVisible();
       await expect(page.getByText(updatedTitle, { exact: true })).toBeVisible();
 
-      cleanupSession = await adminLogin(request);
       const refreshedTasks = await request.get(`${backendURL}/api/v1/admin/tasks`);
       expect(refreshedTasks.ok(), `admin task list failed with ${refreshedTasks.status()}`).toBeTruthy();
       const taskList = (await refreshedTasks.json()) as AdminTask[];
-      expect(taskList.some((task) => task.id === createdTask.id && task.title === updatedTitle)).toBe(true);
+      const updatedTask = taskList.find((task) => task.id === createdTask.id);
+      expect(updatedTask?.title).toBe(updatedTitle);
+      expect(updatedTask?.kind).toBe('golden');
+      expect(updatedTask?.version).toBeGreaterThan(afterUploadTask.version);
+      if (!updatedTask) {
+        throw new Error('updated task disappeared from admin catalog');
+      }
+      await expect(page.getByText(`Версия: ${updatedTask.version}`, { exact: true })).toBeVisible();
+
+      const afterUpdateContent = await getTournamentContentSelection(request);
+      expect(afterUpdateContent.content_revision).toBeGreaterThan(afterUploadContent.content_revision);
+      expect(afterUpdateContent.publication_id).not.toBe(afterUploadContent.publication_id);
+      expect(afterUpdateContent.normal_pool_revision_id).not.toBe(afterUploadContent.normal_pool_revision_id);
+      expect(afterUpdateContent.golden_pool_revision_id).not.toBe(afterUploadContent.golden_pool_revision_id);
     } finally {
       if (!cleanupSession) {
         try {
@@ -721,6 +786,7 @@ test.describe('local compose full stack e2e', () => {
         }
       }
       if (cleanupSession) {
+        await cleanupTaskByTitle(request, cleanupSession, supportTitle);
         await cleanupTaskByTitle(request, cleanupSession, title);
         await cleanupTaskByTitle(request, cleanupSession, updatedTitle);
       }

@@ -2873,6 +2873,9 @@ type TaskDetails struct {
 	// TimeLimit Per-task time limit in seconds.
 	TimeLimit int32  `json:"time_limit"`
 	Title     string `json:"title"`
+
+	// Version Current immutable task version selected by server-owned task pool revisions.
+	Version int32 `json:"version"`
 }
 
 // TaskDifficulty defines model for TaskDifficulty.

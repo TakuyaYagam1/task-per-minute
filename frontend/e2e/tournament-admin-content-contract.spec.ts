@@ -16,15 +16,19 @@ const goldenPoolRevisionID = "60000000-0000-4000-8000-000000000003";
 
 type SetupOptions = Readonly<{
   contentStatus?: number;
+  createStatus?: number;
   tasks?: MockAdminTask[];
   sourceStatus?: number;
+  updateStatus?: number;
 }>;
 
 type SetupState = {
   createCalls: number;
+  createPayloads: Partial<MockAdminTask>[];
   listCalls: number;
   sourceCalls: number;
   updateCalls: number;
+  updatePayloads: Partial<MockAdminTask>[];
 };
 
 const contentSelection = () => ({
@@ -61,9 +65,11 @@ const setupAdminRoutes = async (
 ): Promise<SetupState> => {
   const state: SetupState = {
     createCalls: 0,
+    createPayloads: [],
     listCalls: 0,
     sourceCalls: 0,
     updateCalls: 0,
+    updatePayloads: [],
   };
   let tasks = [...(options.tasks ?? [])];
 
@@ -115,13 +121,23 @@ const setupAdminRoutes = async (
 
     if (path === "/api/v1/admin/tasks" && method === "POST") {
       state.createCalls += 1;
+      if ((options.createStatus ?? 200) !== 200) {
+        await fulfillJSON(
+          route,
+          options.createStatus ?? 422,
+          problem(options.createStatus ?? 422, "Категория недоступна для BO1"),
+        );
+        return;
+      }
       const body = request.postDataJSON() as Partial<MockAdminTask>;
+      state.createPayloads.push(body);
       const created = taskResponse({
         id: "61000000-0000-4000-8000-000000000001",
         title: String(body.title),
         description: String(body.description),
         category: String(body.category),
         difficulty: String(body.difficulty),
+        kind: body.kind === "golden" ? "golden" : "normal",
         time_limit: Number(body.time_limit),
         flag: String(body.flag),
         hints: Array.isArray(body.hints) ? body.hints : [],
@@ -135,14 +151,28 @@ const setupAdminRoutes = async (
     const taskID = path.match(/^\/api\/v1\/admin\/tasks\/([^/]+)$/)?.[1];
     if (taskID && method === "PUT") {
       state.updateCalls += 1;
+      if ((options.updateStatus ?? 200) !== 200) {
+        await fulfillJSON(
+          route,
+          options.updateStatus ?? 422,
+          problem(options.updateStatus ?? 422, "Категория недоступна для BO1"),
+        );
+        return;
+      }
       const body = request.postDataJSON() as Partial<MockAdminTask>;
+      state.updatePayloads.push(body);
       const current = tasks.find((task) => task.id === taskID);
       expect(current).toBeDefined();
       if (!current) {
         await fulfillJSON(route, 409, problem(409, "Задача не найдена"));
         return;
       }
-      const updated = taskResponse({ ...current, ...body, id: taskID });
+      const updated = taskResponse({
+        ...current,
+        ...body,
+        id: taskID,
+        version: current.version + 1,
+      });
       tasks = tasks.map((task) => (task.id === taskID ? updated : task));
       await fulfillJSON(route, 200, updated);
       return;
@@ -161,7 +191,13 @@ const setupAdminRoutes = async (
       }
       const sourceURL = "https://files.example/fe028-source.zip";
       tasks = tasks.map((task) =>
-        task.id === sourceTaskID ? { ...task, source_file_url: sourceURL } : task,
+        task.id === sourceTaskID
+          ? {
+              ...task,
+              source_file_url: sourceURL,
+              version: task.version + 1,
+            }
+          : task,
       );
       await fulfillJSON(route, 200, { source_file_url: sourceURL });
       return;
@@ -188,6 +224,7 @@ const fillTaskForm = async (
     title: string;
     description: string;
     category?: string;
+    kind?: "normal" | "golden";
     difficulty?: string;
     timeLimit?: string;
     flag?: string;
@@ -198,7 +235,8 @@ const fillTaskForm = async (
   await form.getByPlaceholder("Введите название...").fill(values.title);
   await form.getByPlaceholder("Опишите задачу...").fill(values.description);
   await form.locator("select").first().selectOption(values.category ?? "forensics");
-  await form.locator("select").nth(1).selectOption(values.difficulty ?? "easy");
+  await form.getByLabel("Пул задания").selectOption(values.kind ?? "normal");
+  await form.locator("select").nth(2).selectOption(values.difficulty ?? "easy");
   await form.getByPlaceholder("60").fill(values.timeLimit ?? "120");
   await form.getByPlaceholder("flag{...}").fill(values.flag ?? "flag{fe028}");
   await form.getByPlaceholder("https://example.com/task").fill(values.taskURL ?? "");
@@ -220,6 +258,7 @@ test("FE-028 catalog creates a task with ZIP, refreshes, and updates it", async 
   await expect(contentCatalog.getByLabel("Описание")).toBeVisible();
   await expect(contentCatalog.getByLabel("Категория")).toBeVisible();
   await expect(contentCatalog.getByLabel("Сложность")).toBeVisible();
+  await expect(contentCatalog.getByLabel("Пул задания")).toHaveValue("normal");
   await expect(contentCatalog.getByLabel("Лимит времени (сек)")).toBeVisible();
   await expect(contentCatalog.getByLabel("Флаг")).toBeVisible();
   await expect(page.getByText("Пока нет созданных задач")).toBeVisible();
@@ -227,6 +266,7 @@ test("FE-028 catalog creates a task with ZIP, refreshes, and updates it", async 
   await fillTaskForm(page, {
     title: "FE-028 Synthetic Task",
     description: "Задача создана через каталог турниров.",
+    kind: "golden",
   });
   await page.locator('input[type="file"]').setInputFiles({
     name: "fe028-source.zip",
@@ -242,14 +282,26 @@ test("FE-028 catalog creates a task with ZIP, refreshes, and updates it", async 
     "https://files.example/fe028-source.zip",
   );
   await expect(page.getByText("FE-028 Synthetic Task", { exact: true })).toBeVisible();
+  await expect(page.getByText("Пул: Золотая", { exact: true })).toBeVisible();
   await expect.poll(() => state.listCalls).toBeGreaterThanOrEqual(2);
+  await expect(page.getByText("Версия: 2", { exact: true })).toBeVisible();
+  expect(state.createPayloads[0]?.kind).toBe("golden");
 
   await page.getByTitle("Редактировать задачу").click();
+  await expect(page.getByRole("heading", { name: "Редактировать задачу" })).toBeVisible();
+  await expect(contentCatalog.getByLabel("Пул задания")).toHaveValue("golden");
   await page.getByPlaceholder("Введите название...").fill("FE-028 Synthetic Task Updated");
+  await contentCatalog.getByLabel("Пул задания").selectOption("normal");
   await page.getByRole("button", { name: /Сохранить задачу/ }).click();
 
   await expect(page.getByText("Задача успешно обновлена!")).toBeVisible();
   await expect(page.getByText("FE-028 Synthetic Task Updated", { exact: true })).toBeVisible();
+  expect(state.updatePayloads[0]?.kind).toBe("normal");
+  await expect.poll(() => state.listCalls).toBeGreaterThanOrEqual(3);
+  await expect(page.getByText("Версия: 3", { exact: true })).toBeVisible();
+  await expect(contentCatalog.getByLabel("Пул задания")).toHaveValue("normal");
+  await expect(contentCatalog.getByPlaceholder("Введите название...")).toHaveValue("");
+  await expect(contentCatalog.getByLabel("Пул задания")).toHaveValue("normal");
   expect(state.createCalls).toBe(1);
   expect(state.sourceCalls).toBe(1);
   expect(state.updateCalls).toBe(1);
@@ -262,7 +314,7 @@ test("FE-028 upload failure keeps entered task data in the catalog form", async 
 
   const title = "FE-028 Upload Retry Task";
   const description = "Данные формы должны остаться после ошибки ZIP.";
-  await fillTaskForm(page, { title, description });
+  await fillTaskForm(page, { title, description, kind: "golden" });
   await page.locator('input[type="file"]').setInputFiles({
     name: "failed-source.zip",
     mimeType: "application/zip",
@@ -275,9 +327,71 @@ test("FE-028 upload failure keeps entered task data in the catalog form", async 
   await expect(page.getByPlaceholder("Опишите задачу...")).toHaveValue(description);
   await expect(page.getByPlaceholder("flag{...}")).toHaveValue("flag{fe028}");
   await expect(page.getByPlaceholder("Подсказка 1")).toHaveValue("первая подсказка");
+  await expect(page.getByLabel("Пул задания")).toHaveValue("golden");
   await expect(page.getByText("failed-source.zip")).toBeVisible();
   expect(state.createCalls).toBe(1);
   expect(state.sourceCalls).toBe(1);
+});
+
+test("FE-028 server validation keeps create and update form input", async ({ page }) => {
+  const existingTask = taskResponse({
+    id: "62000000-0000-4000-8000-000000000001",
+    title: "FE-028 Existing Task",
+    description: "Исходная задача для проверки ошибки обновления.",
+    category: "forensics",
+    kind: "normal",
+    version: 3,
+  });
+  const state = await setupAdminRoutes(page, {
+    createStatus: 422,
+    tasks: [existingTask],
+    updateStatus: 422,
+  });
+  await loginAndOpenTaskCatalog(page);
+  const contentCatalog = page.getByRole("region", { name: "Каталог контента" });
+
+  await fillTaskForm(page, {
+    title: "FE-028 Rejected Create",
+    description: "Значения create должны остаться после 422.",
+    category: "forensics",
+    kind: "golden",
+  });
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "rejected-create.zip",
+    mimeType: "application/zip",
+    buffer: Buffer.from("PK\u0005\u0006create-422"),
+  });
+  await page.getByRole("button", { name: /Создать задачу/ }).click();
+
+  await expect(page.getByText("Категория недоступна для BO1")).toBeVisible();
+  await expect(contentCatalog.getByPlaceholder("Введите название...")).toHaveValue(
+    "FE-028 Rejected Create",
+  );
+  await expect(contentCatalog.getByLabel("Категория")).toHaveValue("forensics");
+  await expect(contentCatalog.getByLabel("Пул задания")).toHaveValue("golden");
+  await expect(page.getByText("rejected-create.zip")).toBeVisible();
+  expect(state.createCalls).toBe(1);
+  expect(state.sourceCalls).toBe(0);
+
+  await page.getByTitle("Редактировать задачу").click();
+  await contentCatalog.getByPlaceholder("Введите название...").fill("FE-028 Rejected Update");
+  await contentCatalog.getByLabel("Пул задания").selectOption("golden");
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "rejected-update.zip",
+    mimeType: "application/zip",
+    buffer: Buffer.from("PK\u0005\u0006update-422"),
+  });
+  await page.getByRole("button", { name: /Сохранить задачу/ }).click();
+
+  await expect(page.getByText("Категория недоступна для BO1")).toBeVisible();
+  await expect(contentCatalog.getByPlaceholder("Введите название...")).toHaveValue(
+    "FE-028 Rejected Update",
+  );
+  await expect(contentCatalog.getByLabel("Категория")).toHaveValue("forensics");
+  await expect(contentCatalog.getByLabel("Пул задания")).toHaveValue("golden");
+  await expect(page.getByText("rejected-update.zip")).toBeVisible();
+  expect(state.updateCalls).toBe(1);
+  expect(state.sourceCalls).toBe(0);
 });
 
 test("FE-028 empty catalog and unavailable content keep Russian responsive UI in both themes", async ({ page }) => {

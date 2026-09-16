@@ -27,7 +27,7 @@ TaskKind:
 TaskDetails:
   type: object
   description: Admin view of a task. The `flag` field is only ever returned to admins, never to players.
-  required: [id, title, description, category, difficulty, time_limit, flag, kind, enabled, hints, created_at]
+  required: [id, title, description, category, difficulty, time_limit, flag, kind, enabled, version, hints, created_at]
   properties:
     id:
       type: string
@@ -54,6 +54,11 @@ TaskDetails:
       $ref: '#/TaskKind'
     enabled:
       type: boolean
+    version:
+      type: integer
+      format: int32
+      minimum: 1
+      description: Current immutable task version selected by server-owned task pool revisions.
     hints:
       type: array
       minItems: 3
