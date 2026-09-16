@@ -9,7 +9,12 @@ const contentRevision = 73;
 const tournamentID = "20000000-0000-4000-8000-000000000001";
 const rosterID = "20000000-0000-4000-8000-000000000002";
 const rosterPath = `/api/v1/admin/tournaments/${tournamentID}/roster`;
+const snapshotPath = `/api/v1/admin/tournaments/${tournamentID}/snapshot`;
+const preflightPath = `${rosterPath}/preflight`;
+const lockPath = `${rosterPath}/lock`;
+const unlockPath = `${rosterPath}/unlock`;
 const baseDate = "2026-09-14T08:00:00Z";
+const preflightID = "60000000-0000-4000-8000-000000000001";
 
 type Attendance = "invited" | "registered" | "checked_in" | "withdrawn";
 
@@ -53,6 +58,25 @@ type RosterInput = {
   seed: number;
 };
 
+type PreflightCheck = {
+  code: string;
+  evidence: string[];
+  explanation: string;
+  passed: boolean;
+};
+
+type PreflightReport = {
+  algorithm_version: "tournament-preflight-report-v1";
+  checks: PreflightCheck[];
+  evaluated_at: string;
+  id: string;
+  normalized_inputs: string[];
+  passed: boolean;
+  proof_hash: string;
+  revisions: Array<{ source: string; value: string }>;
+  tournament_id: string;
+};
+
 const playerIDs = [
   "30000000-0000-4000-8000-000000000001",
   "30000000-0000-4000-8000-000000000002",
@@ -87,7 +111,16 @@ const participant = (
 
 const roster = (
   participants: Participant[],
-  overrides: Partial<Pick<Roster, "locked" | "locked_at" | "revision">> = {},
+  overrides: Partial<
+    Pick<
+      Roster,
+      | "execution_started"
+      | "execution_started_at"
+      | "locked"
+      | "locked_at"
+      | "revision"
+    >
+  > = {},
 ): Roster => ({
   created_at: baseDate,
   execution_started: false,
@@ -100,6 +133,24 @@ const roster = (
   tournament_id: tournamentID,
   updated_at: baseDate,
   ...overrides,
+});
+
+const preflight = (
+  passed: boolean,
+  checks: PreflightCheck[],
+): PreflightReport => ({
+  algorithm_version: "tournament-preflight-report-v1",
+  checks,
+  evaluated_at: baseDate,
+  id: preflightID,
+  normalized_inputs: ["roster-revision:7", "tournament-revision:1"],
+  passed,
+  proof_hash: "a".repeat(64),
+  revisions: [
+    { source: "tournament", value: "1" },
+    { source: "roster", value: "7" },
+  ],
+  tournament_id: tournamentID,
 });
 
 const tournament = (rosterSize: number) => ({
@@ -144,11 +195,24 @@ const setupRosterRoutes = async (
   page: Page,
   initialRoster: Roster,
   options: {
+    onLock?: (route: Route, body: Record<string, unknown>) => Promise<void>;
+    onPreflight?: (route: Route, body: Record<string, unknown>) => Promise<void>;
     players?: Player[];
     onReplace?: (route: Route, body: RosterInput[]) => Promise<void>;
+    onUnlock?: (route: Route, body: Record<string, unknown>) => Promise<void>;
+    preflight?: PreflightReport;
+    projectionRevision?: number;
   } = {},
-): Promise<{ replaceRequests: Array<{ body: Record<string, unknown>; key: string }> }> => {
+): Promise<{
+  lockRequests: Array<{ body: Record<string, unknown>; key: string }>;
+  preflightRequests: Array<{ body: Record<string, unknown>; key: string }>;
+  replaceRequests: Array<{ body: Record<string, unknown>; key: string }>;
+  unlockRequests: Array<{ body: Record<string, unknown>; key: string }>;
+}> => {
+  const lockRequests: Array<{ body: Record<string, unknown>; key: string }> = [];
+  const preflightRequests: Array<{ body: Record<string, unknown>; key: string }> = [];
   const replaceRequests: Array<{ body: Record<string, unknown>; key: string }> = [];
+  const unlockRequests: Array<{ body: Record<string, unknown>; key: string }> = [];
   const players = options.players ?? [player(0, "Алиса"), player(1, "Боб"), player(2, "Вера")];
 
   await page.route("**/api/v1/admin/**", async (route) => {
@@ -192,6 +256,75 @@ const setupRosterRoutes = async (
       await fulfillJSON(route, 200, initialRoster);
       return;
     }
+    if (path === snapshotPath && method === "GET") {
+      const projectionRevision = options.projectionRevision ?? 1;
+      await fulfillJSON(route, 200, {
+        next_cursor: {
+          audit_sequence: projectionRevision,
+          authority_revision: projectionRevision,
+          projection_revision: projectionRevision,
+        },
+        pause_graph: null,
+        roster: initialRoster,
+        series: [],
+        tournament: tournament(initialRoster.participants.length),
+        waves: [],
+      });
+      return;
+    }
+    if (path === preflightPath && method === "POST") {
+      const body = request.postDataJSON() as Record<string, unknown>;
+      preflightRequests.push({
+        body,
+        key: request.headers()["idempotency-key"] ?? "",
+      });
+      if (options.onPreflight) {
+        await options.onPreflight(route, body);
+        return;
+      }
+      if (options.preflight) {
+        await fulfillJSON(route, 200, options.preflight);
+        return;
+      }
+      await fulfillJSON(route, 404, {});
+      return;
+    }
+    if (path === lockPath && method === "POST") {
+      const body = request.postDataJSON() as Record<string, unknown>;
+      lockRequests.push({
+        body,
+        key: request.headers()["idempotency-key"] ?? "",
+      });
+      if (options.onLock) {
+        await options.onLock(route, body);
+        return;
+      }
+      await fulfillJSON(route, 200, roster(initialRoster.participants, {
+        execution_started: false,
+        execution_started_at: null,
+        locked: true,
+        locked_at: baseDate,
+        revision: initialRoster.revision + 1,
+      }));
+      return;
+    }
+    if (path === unlockPath && method === "POST") {
+      const body = request.postDataJSON() as Record<string, unknown>;
+      unlockRequests.push({
+        body,
+        key: request.headers()["idempotency-key"] ?? "",
+      });
+      if (options.onUnlock) {
+        await options.onUnlock(route, body);
+        return;
+      }
+      await fulfillJSON(route, 200, roster(initialRoster.participants, {
+        locked: false,
+        locked_at: null,
+        revision: initialRoster.revision + 1,
+      }));
+      return;
+    }
     if (path === rosterPath && method === "PUT") {
       const body = request.postDataJSON() as Record<string, unknown>;
       const bodyParticipants = body.participants as RosterInput[];
@@ -225,7 +358,7 @@ const setupRosterRoutes = async (
     await fulfillJSON(route, 404, {});
   });
 
-  return { replaceRequests };
+  return { lockRequests, preflightRequests, replaceRequests, unlockRequests };
 };
 
 const openRoster = async (page: Page, expectParticipant: boolean = true): Promise<void> => {
@@ -463,6 +596,239 @@ test("сохраняет draft при русском 409 reservation conflict и
   await expect(lockedRegion.getByRole("button", { name: /Сохранить состав/i })).toBeDisabled();
   await expect(lockedRegion.getByRole("button", { name: "Удалить" }).first()).toBeDisabled();
   await expect(attendanceControl(rosterGroup(page, 1))).toBeDisabled();
+});
+
+test("показывает успешный preflight и блокирует состав только с актуальным отчетом", async ({ page }) => {
+  const players = [
+    player(0, "Алиса"),
+    player(1, "Боб"),
+    player(2, "Вера"),
+    player(3, "Глеб"),
+  ];
+  const initialRoster = roster(
+    players.map((candidate, index) => participant(index, candidate.id, "checked_in", index + 1)),
+  );
+  const report = preflight(true, [
+    {
+      code: "tournament.preflight.structure.roster_complete",
+      evidence: ["participants=4", "planned_roster_size=4"],
+      explanation: "Состав заполнен до планового размера.",
+      passed: true,
+    },
+    {
+      code: "tournament.preflight.runtime.capacity",
+      evidence: ["available_slots=4", "required_slots=4"],
+      explanation: "Емкости исполнения достаточно для всех участников.",
+      passed: true,
+    },
+    {
+      code: "tournament.preflight.structure.categories",
+      evidence: ["coverage=web,crypto,forensics,reverse,pwn"],
+      explanation: "Все обязательные категории покрыты.",
+      passed: true,
+    },
+    {
+      code: "tournament.preflight.tasks.inventory",
+      evidence: ["reserve_tasks=6"],
+      explanation: "Резерв задач сформирован.",
+      passed: true,
+    },
+    {
+      code: "tournament.preflight.structure.pairings",
+      evidence: ["simultaneous_matches=2"],
+      explanation: "План одновременных матчей рассчитан.",
+      passed: true,
+    },
+    {
+      code: "tournament.preflight.runtime.clock",
+      evidence: ["round_limit_minutes=60"],
+      explanation: "Лимит раунда составляет 60 минут.",
+      passed: true,
+    },
+  ]);
+  const { lockRequests, preflightRequests } = await setupRosterRoutes(page, initialRoster, {
+    players,
+    preflight: report,
+    projectionRevision: 9,
+    onLock: async (route, body) => {
+      expect(body).toMatchObject({
+        checked_in_player_ids: players.map((candidate) => candidate.id),
+        expected_projection_revision: 9,
+        preflight_revision_id: report.id,
+      });
+      await fulfillJSON(route, 200, roster(initialRoster.participants, {
+        locked: true,
+        locked_at: baseDate,
+        revision: initialRoster.revision + 1,
+      }));
+    },
+  });
+  await openRoster(page);
+
+  const region = rosterRegion(page);
+  const lock = region.getByRole("button", { name: "Заблокировать состав" });
+  await expect(lock).toBeDisabled();
+  await region.getByRole("button", { name: "Запустить проверку" }).click();
+  await expect.poll(() => preflightRequests.length).toBe(1);
+  expect(preflightRequests[0].body).toEqual({ expected_projection_revision: 9 });
+  expect(preflightRequests[0].key).toMatch(/^[0-9a-f-]{36}$/i);
+  await expect(region).toContainText("Проверка пройдена");
+  await expect(region).toContainText("tournament.preflight.structure.roster_complete");
+  await expect(region).toContainText("Состав заполнен до планового размера.");
+  await expect(region).toContainText("participants=4");
+  await expect(region).toContainText("tournament.preflight.runtime.capacity");
+  await expect(region).toContainText("available_slots=4");
+  await expect(region).toContainText("coverage=web,crypto,forensics,reverse,pwn");
+  await expect(region).toContainText("reserve_tasks=6");
+  await expect(region).toContainText("simultaneous_matches=2");
+  await expect(region).toContainText("round_limit_minutes=60");
+  await expect(lock).toBeEnabled();
+
+  await lock.click();
+  await expect.poll(() => lockRequests.length).toBe(1);
+  expect(lockRequests[0].body).toMatchObject({
+    checked_in_player_ids: players.map((candidate) => candidate.id),
+    expected_projection_revision: 9,
+    preflight_revision_id: report.id,
+  });
+  expect(lockRequests[0].key).toMatch(/^[0-9a-f-]{36}$/i);
+  await expect(region).toContainText("Только просмотр");
+  await expect(region.getByRole("button", { name: /Сохранить состав/i })).toBeDisabled();
+});
+
+test("показывает точные причины capacity и task failure и оставляет блокировку недоступной", async ({ page }) => {
+  const players = [
+    player(0, "Алиса"),
+    player(1, "Боб"),
+    player(2, "Вера"),
+    player(3, "Глеб"),
+  ];
+  const failedReport = preflight(false, [
+    {
+      code: "tournament.preflight.runtime.capacity",
+      evidence: ["available_slots=2", "required_slots=4"],
+      explanation: "Недостаточная емкость исполнения: доступно 2 из 4 слотов.",
+      passed: false,
+    },
+    {
+      code: "tournament.preflight.tasks.missing",
+      evidence: ["category=web", "missing=2"],
+      explanation: "Недостаточно задач для категории web.",
+      passed: false,
+    },
+  ]);
+  const { lockRequests } = await setupRosterRoutes(page, roster(
+    players.map((candidate, index) => participant(index, candidate.id, "checked_in", index + 1)),
+  ), { players, preflight: failedReport });
+  await openRoster(page);
+
+  const region = rosterRegion(page);
+  await region.getByRole("button", { name: "Запустить проверку" }).click();
+  await expect(region).toContainText("Проверка не пройдена");
+  await expect(region).toContainText("Недостаточная емкость исполнения: доступно 2 из 4 слотов.");
+  await expect(region).toContainText("available_slots=2");
+  await expect(region).toContainText("Недостаточно задач для категории web.");
+  await expect(region).toContainText("category=web");
+  await expect(region).toContainText("Блокировка недоступна");
+  await expect(region.getByRole("button", { name: "Заблокировать состав" })).toBeDisabled();
+  expect(lockRequests).toHaveLength(0);
+});
+
+test("сбрасывает отчет после stale 409 lock и требует повторного preflight", async ({ page }) => {
+  const players = [
+    player(0, "Алиса"),
+    player(1, "Боб"),
+    player(2, "Вера"),
+    player(3, "Глеб"),
+  ];
+  const report = preflight(true, [{
+    code: "tournament.preflight.runtime.capacity",
+    evidence: ["available_slots=4", "required_slots=4"],
+    explanation: "Емкости исполнения достаточно.",
+    passed: true,
+  }]);
+  const { lockRequests, preflightRequests } = await setupRosterRoutes(page, roster(
+    players.map((candidate, index) => participant(index, candidate.id, "checked_in", index + 1)),
+  ), {
+    players,
+    preflight: report,
+    onLock: async (route) => {
+      await fulfillJSON(route, 409, problem("Ревизия турнира устарела"));
+    },
+  });
+  await openRoster(page);
+
+  const region = rosterRegion(page);
+  await region.getByRole("button", { name: "Запустить проверку" }).click();
+  await expect(region.getByRole("button", { name: "Заблокировать состав" })).toBeEnabled();
+  await region.getByRole("button", { name: "Заблокировать состав" }).click();
+  await expect.poll(() => lockRequests.length).toBe(1);
+  await expect(region).toContainText("Ревизия турнира устарела");
+  await expect(region).toContainText("запустите проверку заново");
+  await expect(region).not.toContainText("Емкости исполнения достаточно.");
+  await expect(region.getByRole("button", { name: "Заблокировать состав" })).toBeDisabled();
+
+  await region.getByRole("button", { name: "Запустить проверку" }).click();
+  await expect.poll(() => preflightRequests.length).toBe(2);
+  await expect(region).toContainText("Емкости исполнения достаточно.");
+});
+
+test("требует подтверждение и причину для unlock и скрывает unlock после начала исполнения", async ({ page }) => {
+  const players = [
+    player(0, "Алиса"),
+    player(1, "Боб"),
+    player(2, "Вера"),
+    player(3, "Глеб"),
+  ];
+  const lockedRoster = roster(
+    players.map((candidate, index) => participant(index, candidate.id, "checked_in", index + 1)),
+    { locked: true, locked_at: baseDate },
+  );
+  const { unlockRequests } = await setupRosterRoutes(page, lockedRoster, {
+    players,
+    projectionRevision: 11,
+    onUnlock: async (route, body) => {
+      expect(body).toEqual({
+        confirmed: true,
+        expected_projection_revision: 11,
+        reason: "Исправление состава",
+      });
+      await fulfillJSON(route, 200, roster(lockedRoster.participants, {
+        locked: false,
+        locked_at: null,
+        revision: lockedRoster.revision + 1,
+      }));
+    },
+  });
+  await openRoster(page);
+
+  const region = rosterRegion(page);
+  const unlock = region.getByRole("button", { name: "Разблокировать состав" });
+  await expect(unlock).toBeVisible();
+  await expect(unlock).toBeDisabled();
+  await region.getByLabel("Причина разблокировки").fill("  Исправление состава  ");
+  await region.getByLabel("Подтверждаю разблокировку состава").check();
+  await expect(unlock).toBeEnabled();
+  await unlock.click();
+  await expect.poll(() => unlockRequests.length).toBe(1);
+  expect(unlockRequests[0].key).toMatch(/^[0-9a-f-]{36}$/i);
+  await expect(region).toContainText("Можно редактировать");
+  await expect(region.getByRole("button", { name: "Разблокировать состав" })).toHaveCount(0);
+
+  await page.reload();
+  await setupRosterRoutes(page, roster(
+    lockedRoster.participants,
+    {
+      execution_started: true,
+      execution_started_at: baseDate,
+      locked: true,
+      locked_at: baseDate,
+    },
+  ), { players });
+  await openRoster(page);
+  const executingRegion = rosterRegion(page);
+  await expect(executingRegion).toContainText("Исполнение турнира уже началось");
+  await expect(executingRegion.getByRole("button", { name: "Разблокировать состав" })).toHaveCount(0);
 });
 
 test("сохраняет читаемый roster editor в обеих темах и на мобильной ширине", async ({ page }) => {

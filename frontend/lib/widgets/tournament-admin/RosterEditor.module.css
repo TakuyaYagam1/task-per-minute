@@ -118,6 +118,226 @@
   gap: 0.7rem;
 }
 
+.inlineAction {
+  display: block;
+  margin-top: 0.55rem;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--accent-strong);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 760;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.inlineAction:hover {
+  color: var(--text);
+}
+
+.preflight,
+.unlockPanel {
+  display: grid;
+  min-width: 0;
+  gap: 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  padding: 1rem;
+  background: var(--surface-muted);
+}
+
+.preflight {
+  border-top: 3px solid var(--accent);
+}
+
+.unlockPanel {
+  border-top: 3px solid var(--warning);
+}
+
+.preflightHeader {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.sectionTitle {
+  margin: 0;
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 780;
+}
+
+.sectionDescription {
+  max-width: 68ch;
+  margin: 0.3rem 0 0;
+  color: var(--secondary);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.preflightEmpty {
+  margin: 0;
+  border-radius: var(--radius-small);
+  padding: 0.75rem;
+  background: var(--surface);
+  color: var(--secondary);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.preflightReport {
+  display: grid;
+  min-width: 0;
+  gap: 0.85rem;
+}
+
+.preflightSummary {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) minmax(12rem, 1fr);
+  gap: 0.7rem;
+}
+
+.preflightSummary > div {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  padding: 0.7rem 0.75rem;
+  background: var(--surface);
+}
+
+.preflightLabel {
+  color: var(--secondary);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.preflightReportId,
+.preflightCheckHeading code {
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.75rem;
+}
+
+.preflightChecks {
+  display: grid;
+  min-width: 0;
+  gap: 0.65rem;
+  margin: 0;
+  padding: 0;
+  list-style-position: inside;
+}
+
+.preflightCheckPassed,
+.preflightCheckFailed {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  padding: 0.75rem;
+  background: var(--surface);
+}
+
+.preflightCheckHeading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.preflightExplanation {
+  margin: 0.5rem 0 0;
+  color: var(--text);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.preflightEvidence {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0.5rem 0 0;
+  padding-left: 1.2rem;
+  color: var(--secondary);
+  font-size: 0.76rem;
+  line-height: 1.4;
+}
+
+.lifecycleActions {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.7rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.85rem;
+}
+
+.checkboxField {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 0.55rem;
+  color: var(--text);
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.checkboxField input {
+  flex: 0 0 auto;
+  width: 1rem;
+  height: 1rem;
+  margin: 0.15rem 0 0;
+  accent-color: var(--accent);
+}
+
+.checkboxField label {
+  cursor: pointer;
+}
+
+.unlockField {
+  display: grid;
+  min-width: 0;
+  gap: 0.4rem;
+}
+
+.unlockField label {
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 760;
+}
+
+.unlockField textarea {
+  width: 100%;
+  min-height: 5.5rem;
+  resize: vertical;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-small);
+  padding: 0.65rem 0.8rem;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.88rem;
+  line-height: 1.4;
+  transition:
+    border-color var(--motion),
+    box-shadow var(--motion),
+    background-color var(--motion);
+}
+
+.unlockField textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--panel);
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+
 .hint {
   max-width: 48ch;
   color: var(--secondary);
@@ -225,7 +445,9 @@
 
 @media (max-width: 640px) {
   .summaryHeading,
-  .actions {
+  .actions,
+  .preflightHeader,
+  .lifecycleActions {
     align-items: stretch;
     flex-direction: column;
   }
@@ -236,11 +458,15 @@
 
   .meta,
   .rowDetails,
-  .fields {
+  .fields,
+  .preflightSummary {
     grid-template-columns: 1fr;
   }
 
-  .actions button {
+  .actions button,
+  .preflightHeader button,
+  .lifecycleActions button,
+  .unlockPanel button {
     width: 100%;
   }
 }

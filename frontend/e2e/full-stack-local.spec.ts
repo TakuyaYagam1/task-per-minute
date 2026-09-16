@@ -793,7 +793,7 @@ test.describe('local compose full stack e2e', () => {
     }
   });
 
-  test('FE-027 composes, checks in, replaces, and protects a real backend roster', async ({ page, browser }) => {
+  test('FE-027 and FE-029 compose, preflight, lock, unlock, and protect a real backend roster', async ({ page, browser }) => {
     test.setTimeout(180_000);
 
     const tournamentName = uniqueName('fullstack-roster');
@@ -1092,6 +1092,81 @@ test.describe('local compose full stack e2e', () => {
         'checked_in',
         'checked_in',
       ]);
+
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await loginThroughAdminUI(page);
+      const preflightAdminAccessCSRF = (await page.context().cookies()).find(
+        (cookie) => cookie.name === 'tpm_admin_access_csrf',
+      );
+      adminAccessCSRFToken = preflightAdminAccessCSRF?.value ?? '';
+      expect(
+        adminAccessCSRFToken,
+        'admin relogin before FE-029 did not issue an access CSRF cookie',
+      ).toBeTruthy();
+      await page.getByRole('button', { name: 'Турниры' }).click();
+      const preflightTournamentRow = page.getByRole('row').filter({ hasText: tournamentName });
+      const preflightRosterResponse = page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname === `/api/v1/admin/tournaments/${tournament.id}/roster` &&
+          response.request().method() === 'GET',
+      );
+      await preflightTournamentRow.getByRole('button', { name: 'Редактировать состав' }).click();
+      expect((await preflightRosterResponse).status()).toBe(200);
+      await expect(rosterRegion).toBeVisible({ timeout: 15_000 });
+      await expect(rosterRegion.getByText('На месте', { exact: true })).toHaveCount(4);
+
+      const browserPreflightResponse = page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname ===
+            `/api/v1/admin/tournaments/${tournament.id}/roster/preflight` &&
+          response.request().method() === 'POST',
+      );
+      await rosterRegion.getByRole('button', { name: 'Запустить проверку' }).click();
+      const browserPreflight = await browserPreflightResponse;
+      expect(browserPreflight.status()).toBe(200);
+      const browserPreflightReport = (await browserPreflight.json()) as FullStackPreflightReport;
+      expect(browserPreflightReport.passed).toBe(true);
+      await expect(rosterRegion.getByText('Проверка пройдена', { exact: true })).toBeVisible();
+      await expect(
+        rosterRegion.getByRole('button', { name: 'Заблокировать состав' }),
+      ).toBeEnabled();
+
+      const browserLockResponse = page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname ===
+            `/api/v1/admin/tournaments/${tournament.id}/roster/lock` &&
+          response.request().method() === 'POST',
+      );
+      await rosterRegion.getByRole('button', { name: 'Заблокировать состав' }).click();
+      const browserLockedRoster = await readRosterResponse(
+        await browserLockResponse,
+        tournament.id,
+        checkedInSourceRoster.id,
+      );
+      expect(browserLockedRoster.locked).toBe(true);
+      expect(browserLockedRoster.execution_started).toBe(false);
+      await expect(
+        rosterRegion.getByRole('button', { name: 'Разблокировать состав' }),
+      ).toBeVisible();
+
+      await rosterRegion
+        .getByLabel('Причина разблокировки')
+        .fill('Проверка управляемого возврата перед стартом');
+      await rosterRegion.getByLabel('Подтверждаю разблокировку состава').check();
+      const browserUnlockResponse = page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname ===
+            `/api/v1/admin/tournaments/${tournament.id}/roster/unlock` &&
+          response.request().method() === 'POST',
+      );
+      await rosterRegion.getByRole('button', { name: 'Разблокировать состав' }).click();
+      const browserUnlockedRoster = await readRosterResponse(
+        await browserUnlockResponse,
+        tournament.id,
+        checkedInSourceRoster.id,
+      );
+      expect(browserUnlockedRoster.locked).toBe(false);
+      await expect(rosterRegion.getByText('Можно редактировать', { exact: true })).toBeVisible();
 
       const preflightResponse = await runRosterPreflightViaApi(
         adminRequest,

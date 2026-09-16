@@ -8,6 +8,7 @@ import {
   createOperatorCommandIntent,
   operatorApi,
   type AdminPlayer,
+  type PreflightReport,
   type Roster,
   type ReplaceRosterRequest,
   type Tournament,
@@ -27,6 +28,7 @@ type RosterEditorProps = Readonly<{
 }>;
 
 type LoadState = "loading" | "ready" | "error";
+type PreflightState = "idle" | "loading" | "ready" | "error";
 type RosterParticipant = Roster["participants"][number];
 type RosterParticipantInput = ReplaceRosterRequest["participants"][number];
 type AttendanceState = RosterParticipantInput["attendance"];
@@ -41,6 +43,7 @@ type DraftParticipant = Readonly<{
 
 const MIN_ROSTER_SIZE = 4;
 const MAX_ROSTER_SIZE = 16;
+const MAX_UNLOCK_REASON_LENGTH = 512;
 
 const ATTENDANCE_LABELS: Readonly<Record<AttendanceState, string>> = {
   invited: "Приглашен",
@@ -96,7 +99,9 @@ export const RosterEditor = ({
 }: RosterEditorProps) => {
   const tournamentId = selectedTournament?.id ?? "";
   const rosterControllerRef = useRef<AbortController | null>(null);
+  const preflightControllerRef = useRef<AbortController | null>(null);
   const rosterLoadRef = useRef(0);
+  const preflightRunRef = useRef(0);
   const draftIdRef = useRef(0);
   const [players, setPlayers] = useState<AdminPlayer[]>([]);
   const [roster, setRoster] = useState<Roster | null>(null);
@@ -105,9 +110,29 @@ export const RosterEditor = ({
   const [rosterError, setRosterError] = useState<string | null>(null);
   const [rosterNotice, setRosterNotice] = useState<string | null>(null);
   const [savingRoster, setSavingRoster] = useState(false);
+  const [preflightState, setPreflightState] = useState<PreflightState>("idle");
+  const [preflightReport, setPreflightReport] = useState<PreflightReport | null>(null);
+  const [preflightProjectionRevision, setPreflightProjectionRevision] = useState<number | null>(null);
+  const [preflightError, setPreflightError] = useState<string | null>(null);
+  const [controlError, setControlError] = useState<string | null>(null);
+  const [lockingRoster, setLockingRoster] = useState(false);
+  const [unlockingRoster, setUnlockingRoster] = useState(false);
+  const [unlockConfirmed, setUnlockConfirmed] = useState(false);
+  const [unlockReason, setUnlockReason] = useState("");
+
+  const resetPreflight = useCallback((): void => {
+    preflightControllerRef.current?.abort();
+    preflightControllerRef.current = null;
+    preflightRunRef.current += 1;
+    setPreflightState("idle");
+    setPreflightReport(null);
+    setPreflightProjectionRevision(null);
+    setPreflightError(null);
+  }, []);
 
   const loadRoster = useCallback(async (id: string): Promise<void> => {
     rosterControllerRef.current?.abort();
+    resetPreflight();
     const controller = new AbortController();
     const loadId = rosterLoadRef.current + 1;
     rosterLoadRef.current = loadId;
@@ -115,12 +140,15 @@ export const RosterEditor = ({
     setRosterState("loading");
     setRosterError(null);
     setRosterNotice(null);
+    setControlError(null);
+    setUnlockConfirmed(false);
+    setUnlockReason("");
 
     try {
       const [activePlayers, currentRoster] = await Promise.all([
         adminApi.listPlayers(false, controller.signal),
         operatorApi.getRoster(id, controller.signal),
-      ]);
+    ]);
       if (
         controller.signal.aborted ||
         rosterLoadRef.current !== loadId
@@ -151,11 +179,12 @@ export const RosterEditor = ({
         rosterControllerRef.current = null;
       }
     }
-  }, [onSessionExpired]);
+  }, [onSessionExpired, resetPreflight]);
 
   useEffect(() => {
     if (!tournamentId) {
       rosterControllerRef.current?.abort();
+      resetPreflight();
       rosterLoadRef.current += 1;
       setPlayers([]);
       setRoster(null);
@@ -163,17 +192,28 @@ export const RosterEditor = ({
       setRosterState("ready");
       setRosterError(null);
       setRosterNotice(null);
+      setControlError(null);
+      setUnlockConfirmed(false);
+      setUnlockReason("");
       return;
     }
     void loadRoster(tournamentId);
     return () => {
       rosterControllerRef.current?.abort();
     };
-  }, [loadRoster, tournamentId]);
+  }, [loadRoster, resetPreflight, tournamentId]);
 
   useEffect(() => () => {
     rosterControllerRef.current?.abort();
+    preflightControllerRef.current?.abort();
   }, []);
+
+  useEffect(() => {
+    resetPreflight();
+    setControlError(null);
+    setUnlockConfirmed(false);
+    setUnlockReason("");
+  }, [resetPreflight, selectedTournament?.revision, selectedTournamentId]);
 
   const rosterEditingLocked = Boolean(
     roster?.locked || roster?.execution_started,
@@ -197,8 +237,10 @@ export const RosterEditor = ({
         participant.id === participantId ? { ...participant, ...patch } : participant,
       ),
     );
+    resetPreflight();
     setRosterError(null);
     setRosterNotice(null);
+    setControlError(null);
   };
 
   const updateDraftPlayer = (participantId: string, playerId: string): void => {
@@ -221,8 +263,10 @@ export const RosterEditor = ({
           : participant,
       ),
     );
+    resetPreflight();
     setRosterError(null);
     setRosterNotice(null);
+    setControlError(null);
   };
 
   const handleAddParticipant = (): void => {
@@ -265,9 +309,11 @@ export const RosterEditor = ({
         seed: String(nextSeed),
         attendance: "invited",
       },
-    ]);
+      ]);
+    resetPreflight();
     setRosterError(null);
     setRosterNotice(null);
+    setControlError(null);
   };
 
   const handleRemoveParticipant = (participantId: string): void => {
@@ -277,8 +323,10 @@ export const RosterEditor = ({
     setDraftParticipants((current) =>
       current.filter((participant) => participant.id !== participantId),
     );
+    resetPreflight();
     setRosterError(null);
     setRosterNotice(null);
+    setControlError(null);
   };
 
   const handleSaveRoster = async (): Promise<void> => {
@@ -327,8 +375,10 @@ export const RosterEditor = ({
     }
 
     setSavingRoster(true);
+    resetPreflight();
     setRosterError(null);
     setRosterNotice(null);
+    setControlError(null);
     try {
       const savedRoster = await operatorApi.replaceRoster(
         selectedTournament.id,
@@ -340,6 +390,7 @@ export const RosterEditor = ({
       );
       setRoster(savedRoster);
       setDraftParticipants(draftFromRoster(savedRoster));
+      resetPreflight();
       await onReloadTournaments();
       setRosterNotice("Состав сохранен. Серверный порядок и идентификаторы обновлены.");
     } catch (error) {
@@ -347,6 +398,7 @@ export const RosterEditor = ({
         onSessionExpired?.();
       }
       if (error instanceof ApiError && error.status === 409) {
+        resetPreflight();
         setRosterError(
           `${error.problem?.detail || "Серверное состояние изменилось."} Ваши изменения сохранены в форме. Перезагрузите данные перед новой попыткой.`,
         );
@@ -361,11 +413,213 @@ export const RosterEditor = ({
   };
 
   const handleReloadRoster = (): void => {
-    if (!tournamentId || savingRoster) {
+    if (!tournamentId || savingRoster || lockingRoster || unlockingRoster) {
       return;
     }
     void loadRoster(tournamentId);
     void onReloadTournaments();
+  };
+
+  const checkedInPlayerIds = useMemo(
+    () =>
+      draftParticipants
+        .filter((participant) => participant.attendance === "checked_in")
+        .map((participant) => participant.playerId),
+    [draftParticipants],
+  );
+  const canLockRoster = Boolean(
+    selectedTournament &&
+      roster &&
+      !rosterEditingLocked &&
+      preflightState === "ready" &&
+      preflightReport?.passed &&
+      preflightReport.tournament_id === selectedTournament.id &&
+      preflightProjectionRevision !== null &&
+      checkedInPlayerIds.length >= MIN_ROSTER_SIZE &&
+      !savingRoster &&
+      !lockingRoster &&
+      !unlockingRoster,
+  );
+
+  const handleRunPreflight = async (): Promise<void> => {
+    if (
+      !selectedTournament ||
+      !roster ||
+      rosterEditingLocked ||
+      savingRoster ||
+      lockingRoster ||
+      unlockingRoster ||
+      preflightState === "loading"
+    ) {
+      return;
+    }
+
+    preflightControllerRef.current?.abort();
+    const controller = new AbortController();
+    const runId = preflightRunRef.current + 1;
+    preflightRunRef.current = runId;
+    preflightControllerRef.current = controller;
+    setPreflightState("loading");
+    setPreflightReport(null);
+    setPreflightProjectionRevision(null);
+    setPreflightError(null);
+    setControlError(null);
+    try {
+      const snapshot = await operatorApi.getSnapshot(
+        selectedTournament.id,
+        undefined,
+        controller.signal,
+      );
+      const projectionRevision = snapshot.next_cursor.projection_revision;
+      const report = await operatorApi.runRosterPreflight(
+        selectedTournament.id,
+        { expected_projection_revision: projectionRevision },
+        createOperatorCommandIntent(),
+        controller.signal,
+      );
+      if (
+        controller.signal.aborted ||
+        preflightRunRef.current !== runId
+      ) {
+        return;
+      }
+      setPreflightReport(report);
+      setPreflightProjectionRevision(projectionRevision);
+      setPreflightState("ready");
+    } catch (error) {
+      if (
+        controller.signal.aborted ||
+        preflightRunRef.current !== runId ||
+        isAbortError(error)
+      ) {
+        return;
+      }
+      if (error instanceof ApiError && error.status === 401) {
+        onSessionExpired?.();
+      }
+      setPreflightReport(null);
+      setPreflightProjectionRevision(null);
+      setPreflightState("error");
+      setPreflightError(
+        error instanceof ApiError && error.status === 409
+          ? `${rosterErrorMessage(error, "Серверное состояние изменилось.")} Обновите данные и повторите проверку.`
+          : rosterErrorMessage(error, "Не удалось выполнить предполетную проверку состава"),
+      );
+    } finally {
+      if (preflightControllerRef.current === controller) {
+        preflightControllerRef.current = null;
+      }
+    }
+  };
+
+  const handleLockRoster = async (): Promise<void> => {
+    if (
+      !selectedTournament ||
+      !roster ||
+      rosterEditingLocked ||
+      savingRoster ||
+      lockingRoster ||
+      unlockingRoster ||
+      preflightState !== "ready" ||
+      !preflightReport?.passed ||
+      preflightProjectionRevision === null
+    ) {
+      return;
+    }
+    if (checkedInPlayerIds.length < MIN_ROSTER_SIZE) {
+      setControlError("Для блокировки состава отметьте минимум 4 игроков как присутствующих.");
+      return;
+    }
+
+    setLockingRoster(true);
+    setControlError(null);
+    setRosterNotice(null);
+    try {
+      const lockedRoster = await operatorApi.lockRoster(
+        selectedTournament.id,
+        {
+          expected_projection_revision: preflightProjectionRevision,
+          preflight_revision_id: preflightReport.id,
+          checked_in_player_ids: checkedInPlayerIds,
+        },
+        createOperatorCommandIntent(),
+      );
+      setRoster(lockedRoster);
+      setDraftParticipants(draftFromRoster(lockedRoster));
+      resetPreflight();
+      setUnlockConfirmed(false);
+      setUnlockReason("");
+      await onReloadTournaments();
+      setRosterNotice("Состав заблокирован. Исполнение можно начинать только после успешной проверки.");
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        onSessionExpired?.();
+      }
+      if (error instanceof ApiError && error.status === 409) {
+        resetPreflight();
+      }
+      setControlError(
+        error instanceof ApiError && error.status === 409
+          ? `${rosterErrorMessage(error, "Серверное состояние изменилось.")} Перезагрузите данные и запустите проверку заново.`
+          : rosterErrorMessage(error, "Не удалось заблокировать состав турнира"),
+      );
+    } finally {
+      setLockingRoster(false);
+    }
+  };
+
+  const handleUnlockRoster = async (): Promise<void> => {
+    if (
+      !selectedTournament ||
+      !roster ||
+      !roster.locked ||
+      roster.execution_started ||
+      savingRoster ||
+      lockingRoster ||
+      unlockingRoster ||
+      !unlockConfirmed
+    ) {
+      return;
+    }
+    const reason = unlockReason.trim();
+    if (!reason) {
+      setControlError("Укажите причину разблокировки состава.");
+      return;
+    }
+
+    setUnlockingRoster(true);
+    setControlError(null);
+    setRosterNotice(null);
+    try {
+      const snapshot = await operatorApi.getSnapshot(selectedTournament.id);
+      const unlockedRoster = await operatorApi.unlockRoster(
+        selectedTournament.id,
+        {
+          expected_projection_revision: snapshot.next_cursor.projection_revision,
+          confirmed: true,
+          reason,
+        },
+        createOperatorCommandIntent(),
+      );
+      setRoster(unlockedRoster);
+      setDraftParticipants(draftFromRoster(unlockedRoster));
+      resetPreflight();
+      setUnlockConfirmed(false);
+      setUnlockReason("");
+      await onReloadTournaments();
+      setRosterNotice("Состав разблокирован. Перед новой блокировкой потребуется повторная проверка.");
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        onSessionExpired?.();
+      }
+      setControlError(
+        error instanceof ApiError && error.status === 409
+          ? `${rosterErrorMessage(error, "Серверное состояние изменилось.")} Обновите данные перед повторной попыткой.`
+          : rosterErrorMessage(error, "Не удалось разблокировать состав турнира"),
+      );
+    } finally {
+      setUnlockingRoster(false);
+    }
   };
 
   return (
@@ -468,9 +722,88 @@ export const RosterEditor = ({
             </Message>
           )}
 
+          {roster.locked && !roster.execution_started && (
+            <section
+              className={styles.unlockPanel}
+              aria-labelledby="roster-unlock-title"
+            >
+              <div>
+                <h4 id="roster-unlock-title" className={styles.sectionTitle}>
+                  Разблокировать состав
+                </h4>
+                <p className={styles.sectionDescription}>
+                  Разблокировка отменит серверную фиксацию. Перед новой блокировкой потребуется повторная проверка.
+                </p>
+              </div>
+              <div className={styles.checkboxField}>
+                <input
+                  id="roster-unlock-confirmed"
+                  type="checkbox"
+                  checked={unlockConfirmed}
+                  disabled={unlockingRoster || lockingRoster}
+                  onChange={(event) => {
+                    setUnlockConfirmed(event.target.checked);
+                    setControlError(null);
+                  }}
+                />
+                <label htmlFor="roster-unlock-confirmed">
+                  Подтверждаю разблокировку состава
+                </label>
+              </div>
+              <div className={styles.unlockField}>
+                <label htmlFor="roster-unlock-reason">Причина разблокировки</label>
+                <textarea
+                  id="roster-unlock-reason"
+                  value={unlockReason}
+                  maxLength={MAX_UNLOCK_REASON_LENGTH}
+                  onChange={(event) => {
+                    setUnlockReason(event.target.value);
+                    setControlError(null);
+                  }}
+                  placeholder="Укажите причину"
+                  disabled={unlockingRoster || lockingRoster}
+                  required
+                />
+                <span className={styles.fieldHint}>
+                  {unlockReason.length} / {MAX_UNLOCK_REASON_LENGTH}
+                </span>
+              </div>
+              <Button
+                type="button"
+                variant="danger"
+                onClick={() => void handleUnlockRoster()}
+                loading={unlockingRoster}
+                loadingLabel="Разблокируем состав"
+                disabled={
+                  !unlockConfirmed ||
+                  unlockReason.trim().length === 0 ||
+                  unlockingRoster ||
+                  lockingRoster ||
+                  savingRoster
+                }
+              >
+                Разблокировать состав
+              </Button>
+            </section>
+          )}
+
           {rosterNotice && (
             <Message tone="success" title="Состав сохранен">
               {rosterNotice}
+            </Message>
+          )}
+
+          {controlError && (
+            <Message tone="error" title="Операция не выполнена">
+              {controlError}
+              <button
+                className={styles.inlineAction}
+                type="button"
+                onClick={handleReloadRoster}
+                disabled={savingRoster || lockingRoster || unlockingRoster}
+              >
+                Перезагрузить данные
+              </button>
             </Message>
           )}
 
@@ -510,6 +843,128 @@ export const RosterEditor = ({
               Максимум 16 участников. Сохранение отправляет весь состав целиком.
             </span>
           </div>
+
+          <section
+            className={styles.preflight}
+            aria-labelledby="roster-preflight-title"
+          >
+            <div className={styles.preflightHeader}>
+              <div>
+                <h4 id="roster-preflight-title" className={styles.sectionTitle}>
+                  Предполетная проверка
+                </h4>
+                <p className={styles.sectionDescription}>
+                  Сервер проверит состав, задачи, категории, ресурсы и доступную емкость перед блокировкой.
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => void handleRunPreflight()}
+                loading={preflightState === "loading"}
+                loadingLabel="Проверяем состав"
+                disabled={
+                  rosterEditingLocked ||
+                  savingRoster ||
+                  lockingRoster ||
+                  unlockingRoster ||
+                  preflightState === "loading"
+                }
+              >
+                Запустить проверку
+              </Button>
+            </div>
+
+            {preflightState === "idle" && (
+              <p className={styles.preflightEmpty}>
+                Проверка еще не запускалась. Измените состав перед новой проверкой, если это необходимо.
+              </p>
+            )}
+
+            {preflightState === "error" && (
+              <Message tone="error" title="Предполетная проверка не выполнена">
+                {preflightError || "Сервер не вернул отчет проверки."}
+                <button
+                  className={styles.inlineAction}
+                  type="button"
+                  onClick={handleReloadRoster}
+                  disabled={savingRoster || lockingRoster || unlockingRoster}
+                >
+                  Перезагрузить данные
+                </button>
+              </Message>
+            )}
+
+            {preflightState === "ready" && preflightReport && (
+              <div
+                className={styles.preflightReport}
+                aria-label="Результат предполетной проверки"
+              >
+                <div className={styles.preflightSummary}>
+                  <div>
+                    <span className={styles.preflightLabel}>Общий результат</span>
+                    <Status
+                      tone={preflightReport.passed ? "success" : "error"}
+                      size="small"
+                    >
+                      {preflightReport.passed
+                        ? "Проверка пройдена"
+                        : "Проверка не пройдена"}
+                    </Status>
+                  </div>
+                  <div>
+                    <span className={styles.preflightLabel}>Идентификатор отчета</span>
+                    <code className={styles.preflightReportId}>{preflightReport.id}</code>
+                  </div>
+                </div>
+                <ol className={styles.preflightChecks}>
+                  {preflightReport.checks.map((check, index) => (
+                    <li
+                      className={check.passed ? styles.preflightCheckPassed : styles.preflightCheckFailed}
+                      key={`${check.code}-${index}`}
+                    >
+                      <div className={styles.preflightCheckHeading}>
+                        <Status tone={check.passed ? "success" : "error"} size="small">
+                          {check.passed ? "Пройдено" : "Ошибка"}
+                        </Status>
+                        <code>{check.code}</code>
+                      </div>
+                      <p className={styles.preflightExplanation}>{check.explanation}</p>
+                      {check.evidence.length > 0 && (
+                        <ul className={styles.preflightEvidence}>
+                          {check.evidence.map((evidence, evidenceIndex) => (
+                            <li key={`${check.code}-evidence-${evidenceIndex}`}>
+                              {evidence}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </li>
+                  ))}
+                </ol>
+                {!preflightReport.passed && (
+                  <Message tone="warning" title="Блокировка недоступна">
+                    Исправьте указанные проблемы и запустите предполетную проверку повторно.
+                  </Message>
+                )}
+              </div>
+            )}
+
+            <div className={styles.lifecycleActions}>
+              <Button
+                type="button"
+                onClick={() => void handleLockRoster()}
+                loading={lockingRoster}
+                loadingLabel="Блокируем состав"
+                disabled={!canLockRoster}
+              >
+                Заблокировать состав
+              </Button>
+              <span className={styles.hint}>
+                Блокировка доступна только после успешной проверки и при наличии минимум 4 присутствующих игроков.
+              </span>
+            </div>
+          </section>
 
           {draftParticipants.length === 0 ? (
             <Message tone="empty" title="Состав пуст">
