@@ -1,4 +1,4 @@
-package game_test
+package pause_test
 
 import (
 	"errors"
@@ -7,7 +7,7 @@ import (
 	"time"
 
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause"
 	"github.com/google/uuid"
 )
 

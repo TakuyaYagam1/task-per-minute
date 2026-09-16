@@ -1,4 +1,4 @@
-package game_test
+package pause_test
 
 import (
 	"testing"

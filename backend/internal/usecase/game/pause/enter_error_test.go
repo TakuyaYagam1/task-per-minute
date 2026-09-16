@@ -1,4 +1,4 @@
-package game_test
+package pause_test
 
 import (
 	"errors"
@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
 	gamemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/mocks"
+	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause"
 	"github.com/google/uuid"
 )
 
