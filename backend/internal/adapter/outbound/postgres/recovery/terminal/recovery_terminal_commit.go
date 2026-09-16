@@ -1,4 +1,4 @@
-package postgres
+package terminal
 
 import (
 	"context"
@@ -10,19 +10,21 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/internal/db"
+	resultrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
 
-	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/recovery"
+	recoveryusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/recovery"
 )
 
 func (repository *RecoveryTerminalPostgres) commitGameTimeout(
 	ctx context.Context,
 	querier *sqlc.Queries,
 	snapshot recoveryTerminalSnapshot,
-	plan recovery.DeadlineTerminalPlan,
+	plan recoveryusecase.DeadlineTerminalPlan,
 ) error {
 	if snapshot.game == nil || len(snapshot.series) != 1 || plan.GameTimeout == nil || plan.ResultEvidence == nil {
 		return domain.ErrInternal
@@ -31,7 +33,7 @@ func (repository *RecoveryTerminalPostgres) commitGameTimeout(
 	if err != nil {
 		return err
 	}
-	_, changed, err := NewResultPostgres(repository.tx).Settle(ctx, input)
+	_, changed, err := resultrepo.NewResultPostgresWithFinalizer(repository.tx, repository.resultFinalizer).Settle(ctx, input)
 	if err != nil {
 		return err
 	}
@@ -45,9 +47,9 @@ func (repository *RecoveryTerminalPostgres) commitGameTimeout(
 }
 
 func recoveryGameSettlementInput(
-	plan recovery.DeadlineTerminalPlan,
+	plan recoveryusecase.DeadlineTerminalPlan,
 	snapshot recoveryTerminalSnapshot,
-) (ResultSettlementInput, error) {
+) (resultrepo.ResultSettlementInput, error) {
 	record := plan.GameTimeout
 	evidence := plan.ResultEvidence
 	digest, err := recoveryPayloadDigest("game_timeout", map[string]any{
@@ -55,10 +57,10 @@ func recoveryGameSettlementInput(
 		"reason": string(record.Game.ResultReason), "state": string(record.Game.State),
 	})
 	if err != nil {
-		return ResultSettlementInput{}, err
+		return resultrepo.ResultSettlementInput{}, err
 	}
-	return ResultSettlementInput{
-		IDs: ResultSettlementIDs{
+	return resultrepo.ResultSettlementInput{
+		IDs: resultrepo.ResultSettlementIDs{
 			CommitID: evidence.CommitID, ResultEventID: evidence.ResultEventID,
 			ResultEventIdempotencyKey: evidence.ResultEventIdempotencyKey,
 			GameResultRevisionID:      record.AttemptGameResultRevision.ID.UUID(),
@@ -68,7 +70,7 @@ func recoveryGameSettlementInput(
 			ProjectionEvidenceID: record.Evidence.ProjectionRevisionID,
 			CommitIdempotencyKey: evidence.CommitIdempotencyKey,
 		},
-		Scope: ResultScope{
+		Scope: resultrepo.ResultScope{
 			TournamentID: plan.Deadline.TournamentID, RosterID: plan.Deadline.RosterID,
 			SeriesID: plan.Deadline.SeriesID, AttemptID: plan.Deadline.GameID,
 		},
@@ -89,14 +91,17 @@ func (repository *RecoveryTerminalPostgres) commitReadyWindow(
 	ctx context.Context,
 	querier *sqlc.Queries,
 	snapshot recoveryTerminalSnapshot,
-	plan recovery.DeadlineTerminalPlan,
+	plan recoveryusecase.DeadlineTerminalPlan,
 ) error {
 	if snapshot.ready == nil || len(snapshot.series) != len(plan.ReadyWindow) {
 		return domain.ErrInternal
 	}
 	first := plan.ReadyWindow[0]
-	if err := ensurePreStartSwissRoundProof(ctx, repository.tx, plan.Deadline.TournamentID, first.Scope.SeriesID, first.ResolvedAt,
-		swissRoundProofOrigin{mode: "normal_no_show", commandID: first.CommandID}); err != nil {
+	if repository.ensureSwissRoundProof == nil {
+		return domain.ErrInternal
+	}
+	if err := repository.ensureSwissRoundProof(ctx, repository.tx, plan.Deadline.TournamentID, first.Scope.SeriesID, first.ResolvedAt,
+		"normal_no_show", first.CommandID); err != nil {
 		return fmt.Errorf("ensure recovery Swiss proof: %w", err)
 	}
 	readiness, err := querier.ClearWaveReadinessHeads(ctx, sqlc.ClearWaveReadinessHeadsParams{
@@ -144,7 +149,7 @@ func (repository *RecoveryTerminalPostgres) commitReadyWindow(
 		if !ok {
 			return domain.ErrConflict
 		}
-		if err := commitRecoveryNoShow(ctx, repository.tx, plan, resolution, plan.ReadyWindowEvidence[index], seriesSnapshot); err != nil {
+		if err := commitRecoveryNoShow(ctx, repository.tx, repository.resultFinalizer, plan, resolution, plan.ReadyWindowEvidence[index], seriesSnapshot); err != nil {
 			return fmt.Errorf("commit recovery no-show Series %d: %w", index, err)
 		}
 	}
@@ -153,10 +158,11 @@ func (repository *RecoveryTerminalPostgres) commitReadyWindow(
 
 func commitRecoveryNoShow(
 	ctx context.Context,
-	tx *TxManager,
-	plan recovery.DeadlineTerminalPlan,
+	tx *db.TxManager,
+	finalizer resultrepo.ProjectionFinalizer,
+	plan recoveryusecase.DeadlineTerminalPlan,
 	resolution gameusecase.NoShowResolution,
-	evidence recovery.DeadlineNoShowEvidenceIDs,
+	evidence recoveryusecase.DeadlineNoShowEvidenceIDs,
 	snapshot recoverySeriesSnapshot,
 ) error {
 	querier := tx.Querier(ctx)
@@ -200,15 +206,15 @@ func commitRecoveryNoShow(
 	if err := settleRecoveryNoShowSeries(ctx, querier, plan, resolution, snapshot); err != nil {
 		return fmt.Errorf("settle recovery no-show Series: %w", err)
 	}
-	return publishResultProjection(ctx, tx, ResultSettlementInput{
-		IDs: ResultSettlementIDs{
+	return resultrepo.PublishResultProjectionWithFinalizer(ctx, tx, resultrepo.ResultSettlementInput{
+		IDs: resultrepo.ResultSettlementIDs{
 			GameResultRevisionID: resolution.GameRevisions[0].ID.UUID(),
 			ProjectionEvidenceID: evidence.ProjectionEvidenceID,
 		},
-		Scope: ResultScope{TournamentID: plan.Deadline.TournamentID, RosterID: plan.Deadline.RosterID,
+		Scope: resultrepo.ResultScope{TournamentID: plan.Deadline.TournamentID, RosterID: plan.Deadline.RosterID,
 			SeriesID: resolution.Scope.SeriesID, AttemptID: resolution.GameRevisions[0].GameID},
 		SettledAt: resolution.ResolvedAt,
-	}, source)
+	}, source, finalizer)
 }
 
 func recoveryRawGames(snapshot recoverySeriesSnapshot) map[uuid.UUID]sqlc.GameAttempt {
@@ -222,9 +228,9 @@ func recoveryRawGames(snapshot recoverySeriesSnapshot) map[uuid.UUID]sqlc.GameAt
 func createRecoveryNoShowResultEvent(
 	ctx context.Context,
 	querier *sqlc.Queries,
-	plan recovery.DeadlineTerminalPlan,
+	plan recoveryusecase.DeadlineTerminalPlan,
 	resolution gameusecase.NoShowResolution,
-	evidence recovery.DeadlineNoShowEvidenceIDs,
+	evidence recoveryusecase.DeadlineNoShowEvidenceIDs,
 ) (sqlc.ResultEvent, error) {
 	firstGame := resolution.GameRevisions[0]
 	sequence, err := querier.AllocateResultEventSequence(ctx, sqlc.AllocateResultEventSequenceParams{
@@ -257,7 +263,7 @@ func createRecoveryNoShowResultEvent(
 func createRecoveryNoShowGameRevisions(
 	ctx context.Context,
 	querier *sqlc.Queries,
-	plan recovery.DeadlineTerminalPlan,
+	plan recoveryusecase.DeadlineTerminalPlan,
 	resolution gameusecase.NoShowResolution,
 	resultEventID uuid.UUID,
 	rawGames map[uuid.UUID]sqlc.GameAttempt,
@@ -286,9 +292,9 @@ func createRecoveryNoShowGameRevisions(
 func settleRecoveryNoShowGames(
 	ctx context.Context,
 	querier *sqlc.Queries,
-	plan recovery.DeadlineTerminalPlan,
+	plan recoveryusecase.DeadlineTerminalPlan,
 	resolution gameusecase.NoShowResolution,
-	evidence recovery.DeadlineNoShowEvidenceIDs,
+	evidence recoveryusecase.DeadlineNoShowEvidenceIDs,
 	rawGames map[uuid.UUID]sqlc.GameAttempt,
 ) error {
 	for position, revision := range resolution.GameRevisions {
@@ -323,9 +329,9 @@ func settleRecoveryNoShowGames(
 func createRecoveryNoShowSeriesEvidence(
 	ctx context.Context,
 	querier *sqlc.Queries,
-	plan recovery.DeadlineTerminalPlan,
+	plan recoveryusecase.DeadlineTerminalPlan,
 	resolution gameusecase.NoShowResolution,
-	evidence recovery.DeadlineNoShowEvidenceIDs,
+	evidence recoveryusecase.DeadlineNoShowEvidenceIDs,
 	snapshot recoverySeriesSnapshot,
 	resultEventID uuid.UUID,
 	source sqlc.LockResultSourceProjectionRow,
@@ -361,7 +367,7 @@ func createRecoveryNoShowSeriesEvidence(
 	}); err != nil {
 		return mapRepositoryWriteError("RecoveryTerminalPostgres - create no-show score revision", err)
 	}
-	ledger, err := normalNoShowScoreEvidence(
+	ledger, err := resultrepo.NormalNoShowScoreEvidence(
 		snapshot.graph,
 		resolution.Scope.SeriesID,
 		resolution.GameRevisions,
@@ -372,10 +378,10 @@ func createRecoveryNoShowSeriesEvidence(
 		return err
 	}
 	for index, item := range ledger {
-		if err = createScoreRevisionAttempt(
+		if err = resultrepo.CreateScoreRevisionAttempt(
 			ctx,
 			querier,
-			ResultScope{TournamentID: plan.Deadline.TournamentID, RosterID: plan.Deadline.RosterID,
+			resultrepo.ResultScope{TournamentID: plan.Deadline.TournamentID, RosterID: plan.Deadline.RosterID,
 				SeriesID: resolution.Scope.SeriesID, AttemptID: item.GameAttemptID},
 			resolution.ScoreRevision.ID.UUID(),
 			int16(index+1),
@@ -421,13 +427,13 @@ func createRecoveryNoShowSeriesEvidence(
 func createRecoveryNoShowSideEvidence(
 	ctx context.Context,
 	querier *sqlc.Queries,
-	plan recovery.DeadlineTerminalPlan,
+	plan recoveryusecase.DeadlineTerminalPlan,
 	resolution gameusecase.NoShowResolution,
-	evidence recovery.DeadlineNoShowEvidenceIDs,
+	evidence recoveryusecase.DeadlineNoShowEvidenceIDs,
 	resultEventID uuid.UUID,
 	source sqlc.LockResultSourceProjectionRow,
 ) error {
-	target, ok := resultProjectionTarget(source, evidence.ProjectionEvidenceID)
+	target, ok := resultrepo.ResultProjectionTarget(source, evidence.ProjectionEvidenceID)
 	if !ok {
 		return domain.ErrConflict
 	}
@@ -487,7 +493,7 @@ func createRecoveryNoShowSideEvidence(
 func settleRecoveryNoShowSeries(
 	ctx context.Context,
 	querier *sqlc.Queries,
-	plan recovery.DeadlineTerminalPlan,
+	plan recoveryusecase.DeadlineTerminalPlan,
 	resolution gameusecase.NoShowResolution,
 	snapshot recoverySeriesSnapshot,
 ) error {
@@ -525,7 +531,7 @@ func (repository *RecoveryTerminalPostgres) commitReconnectTimeout(
 	ctx context.Context,
 	querier *sqlc.Queries,
 	snapshot recoveryTerminalSnapshot,
-	plan recovery.DeadlineTerminalPlan,
+	plan recoveryusecase.DeadlineTerminalPlan,
 ) error {
 	if snapshot.reconnect == nil || snapshot.lease == nil || plan.ReconnectTimeout == nil {
 		return domain.ErrInternal
@@ -556,7 +562,7 @@ func (repository *RecoveryTerminalPostgres) commitReconnectTerminalOutcome(
 	ctx context.Context,
 	querier *sqlc.Queries,
 	snapshot recoveryTerminalSnapshot,
-	plan recovery.DeadlineTerminalPlan,
+	plan recoveryusecase.DeadlineTerminalPlan,
 ) (string, error) {
 	if plan.ResultEvidence == nil {
 		return "", domain.ErrInternal
@@ -565,7 +571,7 @@ func (repository *RecoveryTerminalPostgres) commitReconnectTerminalOutcome(
 	if err != nil {
 		return "", err
 	}
-	_, changed, err := NewResultPostgres(repository.tx).Settle(ctx, input)
+	_, changed, err := resultrepo.NewResultPostgresWithFinalizer(repository.tx, repository.resultFinalizer).Settle(ctx, input)
 	if err != nil {
 		return "", err
 	}
@@ -589,7 +595,7 @@ func (repository *RecoveryTerminalPostgres) cancelRecoveryPause(
 	ctx context.Context,
 	querier *sqlc.Queries,
 	snapshot recoveryTerminalSnapshot,
-	plan recovery.DeadlineTerminalPlan,
+	plan recoveryusecase.DeadlineTerminalPlan,
 ) error {
 	if _, err := querier.CreateRecoveryPauseRevision(ctx, sqlc.CreateRecoveryPauseRevisionParams{
 		ID: plan.PauseRevisionID, PauseID: plan.Deadline.PauseID,
@@ -657,9 +663,9 @@ func expireRecoveryReconnectIntervals(
 }
 
 func recoveryReconnectSettlementInput(
-	plan recovery.DeadlineTerminalPlan,
+	plan recoveryusecase.DeadlineTerminalPlan,
 	snapshot recoveryTerminalSnapshot,
-) (ResultSettlementInput, error) {
+) (resultrepo.ResultSettlementInput, error) {
 	record := plan.ReconnectTimeout
 	evidence := plan.ResultEvidence
 	digest, err := recoveryPayloadDigest("reconnect_timeout", map[string]any{
@@ -667,7 +673,7 @@ func recoveryReconnectSettlementInput(
 		"reason": string(record.ReconnectAuthority.Game.ResultReason), "state": string(record.ReconnectAuthority.Game.State),
 	})
 	if err != nil {
-		return ResultSettlementInput{}, err
+		return resultrepo.ResultSettlementInput{}, err
 	}
 	seriesResultID := uuid.Nil
 	seriesResultReason := ""
@@ -676,8 +682,8 @@ func recoveryReconnectSettlementInput(
 		seriesResultID = record.SeriesResultRevision.ID.UUID()
 		seriesResultReason = "score_complete"
 	}
-	return ResultSettlementInput{
-		IDs: ResultSettlementIDs{
+	return resultrepo.ResultSettlementInput{
+		IDs: resultrepo.ResultSettlementIDs{
 			CommitID: evidence.CommitID, ResultEventID: evidence.ResultEventID,
 			ResultEventIdempotencyKey: evidence.ResultEventIdempotencyKey,
 			GameResultRevisionID:      record.ScoreRevision.GameResultRevisionIDs[len(record.ScoreRevision.GameResultRevisionIDs)-1].UUID(),
@@ -687,7 +693,7 @@ func recoveryReconnectSettlementInput(
 			ProjectionEvidenceID: record.Evidence.ProjectionRevisionID,
 			CommitIdempotencyKey: evidence.CommitIdempotencyKey,
 		},
-		Scope: ResultScope{
+		Scope: resultrepo.ResultScope{
 			TournamentID: plan.Deadline.TournamentID, RosterID: plan.Deadline.RosterID,
 			SeriesID: plan.Deadline.SeriesID, AttemptID: plan.Deadline.GameID,
 		},
@@ -723,7 +729,7 @@ func recoveryNoShowArtifactKinds(state domain.SeriesState) []domain.ArtifactKind
 func createRecoveryRoute(
 	ctx context.Context,
 	querier *sqlc.Queries,
-	deadline recovery.PendingDeadline,
+	deadline recoveryusecase.PendingDeadline,
 	route gameusecase.WaveMemberRoute,
 ) error {
 	_, err := querier.CreateRecoveryWaveMemberRoute(ctx, sqlc.CreateRecoveryWaveMemberRouteParams{
@@ -740,7 +746,7 @@ func createRecoveryRoute(
 func createRecoveryReceipt(
 	ctx context.Context,
 	querier *sqlc.Queries,
-	plan recovery.DeadlineTerminalPlan,
+	plan recoveryusecase.DeadlineTerminalPlan,
 	transitionKind string,
 	expectedAuthorityRevision int64,
 ) error {
@@ -752,15 +758,15 @@ func createRecoveryReceipt(
 		ResolvedAt: tstz(recoveryPlanTime(plan)),
 	}
 	switch plan.Deadline.Kind {
-	case recovery.DeadlineKindGame:
+	case recoveryusecase.DeadlineKindGame:
 		params.SeriesID = nullableUUIDValue(plan.Deadline.SeriesID)
 		params.GameAttemptID = nullableUUIDValue(plan.Deadline.GameID)
 		params.ResultCommitID = nullableUUIDValue(plan.ResultEvidence.CommitID)
 		params.RouteEvidenceID = nullableUUIDValue(plan.GameTimeout.WaveRoute.ID)
-	case recovery.DeadlineKindReadyWindow:
+	case recoveryusecase.DeadlineKindReadyWindow:
 		params.ReadyWindowID = nullableUUIDValue(plan.Deadline.ID)
 		params.NormalNoShowCommitIds = recoveryNoShowCommitIDs(plan)
-	case recovery.DeadlineKindReconnect:
+	case recoveryusecase.DeadlineKindReconnect:
 		params.SeriesID = nullableUUIDValue(plan.Deadline.SeriesID)
 		params.GameAttemptID = nullableUUIDValue(plan.Deadline.GameID)
 		params.PauseID = nullableUUIDValue(plan.Deadline.PauseID)
@@ -780,13 +786,13 @@ func createRecoveryReceipt(
 	return nil
 }
 
-func recoveryPlanTime(plan recovery.DeadlineTerminalPlan) time.Time {
+func recoveryPlanTime(plan recoveryusecase.DeadlineTerminalPlan) time.Time {
 	switch plan.Deadline.Kind {
-	case recovery.DeadlineKindGame:
+	case recoveryusecase.DeadlineKindGame:
 		return plan.GameTimeout.TerminalizedAt
-	case recovery.DeadlineKindReadyWindow:
+	case recoveryusecase.DeadlineKindReadyWindow:
 		return plan.ReadyWindow[0].ResolvedAt
-	case recovery.DeadlineKindReconnect:
+	case recoveryusecase.DeadlineKindReconnect:
 		return plan.ReconnectTimeout.RecordedAt
 	default:
 		return time.Time{}

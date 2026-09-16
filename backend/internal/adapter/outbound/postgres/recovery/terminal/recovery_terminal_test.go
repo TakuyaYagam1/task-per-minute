@@ -1,4 +1,4 @@
-package postgres
+package terminal
 
 import (
 	"testing"
@@ -11,7 +11,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
-	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/recovery"
+	recoveryusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/recovery"
 )
 
 func TestRecoveryReconnectArtifactKindsMatchSettlementStage(t *testing.T) {
@@ -55,13 +55,13 @@ func TestRecoveryReceiptRejectsUnexpectedIdentityForDeadlineKind(t *testing.T) {
 	resolvedAt := pgtype.Timestamptz{Time: time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC), Valid: true}
 	tests := []struct {
 		name     string
-		deadline recovery.PendingDeadline
+		deadline recoveryusecase.PendingDeadline
 		receipt  sqlc.DeadlineTransitionReceipt
 	}{
 		{
 			name: "game receipt carries participant",
-			deadline: recovery.PendingDeadline{
-				Kind: recovery.DeadlineKindGame, ID: ids.deadlineID, ExpectedRevision: 3,
+			deadline: recoveryusecase.PendingDeadline{
+				Kind: recoveryusecase.DeadlineKindGame, ID: ids.deadlineID, ExpectedRevision: 3,
 				TournamentID: ids.tournamentID, RosterID: ids.rosterID, WaveID: ids.waveID,
 				SeriesID: ids.seriesID, GameID: ids.gameID,
 			},
@@ -75,8 +75,8 @@ func TestRecoveryReceiptRejectsUnexpectedIdentityForDeadlineKind(t *testing.T) {
 		},
 		{
 			name: "ready window receipt carries participant",
-			deadline: recovery.PendingDeadline{
-				Kind: recovery.DeadlineKindReadyWindow, ID: ids.deadlineID, ExpectedRevision: 3,
+			deadline: recoveryusecase.PendingDeadline{
+				Kind: recoveryusecase.DeadlineKindReadyWindow, ID: ids.deadlineID, ExpectedRevision: 3,
 				TournamentID: ids.tournamentID, RosterID: ids.rosterID, WaveID: ids.waveID,
 			},
 			receipt: sqlc.DeadlineTransitionReceipt{
@@ -88,8 +88,8 @@ func TestRecoveryReceiptRejectsUnexpectedIdentityForDeadlineKind(t *testing.T) {
 		},
 		{
 			name: "reconnect receipt carries ready window",
-			deadline: recovery.PendingDeadline{
-				Kind: recovery.DeadlineKindReconnect, ID: ids.deadlineID, ExpectedRevision: 3,
+			deadline: recoveryusecase.PendingDeadline{
+				Kind: recoveryusecase.DeadlineKindReconnect, ID: ids.deadlineID, ExpectedRevision: 3,
 				TournamentID: ids.tournamentID, RosterID: ids.rosterID, WaveID: ids.waveID,
 				SeriesID: ids.seriesID, GameID: ids.gameID, PauseID: ids.pauseID, ParticipantID: ids.participantID,
 			},
