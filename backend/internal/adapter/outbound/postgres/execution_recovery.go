@@ -14,18 +14,10 @@ func NewExecutionRecoveryPostgres(
 	deadlines *RecoveryPostgres,
 	terminal *RecoveryTerminalPostgres,
 ) *ExecutionRecoveryPostgres {
-	if terminal == nil {
-		return executionrecovery.NewExecutionRecoveryPostgresWithDependencies(
-			tx,
-			deadlines,
-			nil,
-			resultauthority.FinalizeProjection,
-		)
-	}
 	return executionrecovery.NewExecutionRecoveryPostgresWithDependencies(
 		tx,
 		deadlines,
-		terminal.inner,
+		terminal,
 		resultauthority.FinalizeProjection,
 	)
 }
