@@ -83,6 +83,13 @@ type FullStackSwissRound = {
   tournament_id: string;
 };
 
+type FullStackConfigurationMutation = {
+  affected_artifacts: Array<{
+    id: string;
+    successor_revision_id: string;
+  }>;
+};
+
 type UploadSourceResponse = {
   source_file_url: string;
 };
@@ -848,7 +855,7 @@ test.describe('local compose full stack e2e', () => {
     }
   });
 
-  test('FE-027, FE-029, and FE-030 compose roster control with real Swiss pairings', async ({ page, browser }) => {
+  test('FE-027, FE-029, FE-030, and FE-031 compose roster control with real Swiss pairings', async ({ page, browser }) => {
     test.setTimeout(180_000);
 
     const tournamentName = uniqueName('fullstack-roster');
@@ -1424,6 +1431,53 @@ test.describe('local compose full stack e2e', () => {
       await expect(pairingRegion.getByText('Серверный план раунда 1')).toBeVisible();
       await expect(pairingRegion.getByText('Сохранен', { exact: true })).toBeVisible();
       await expect(pairingRegion.getByText('Повтор', { exact: true })).toHaveCount(0);
+
+      const seriesRegion = page.getByRole('region', { name: 'Конфигурация серий' });
+      await expect(seriesRegion).toBeVisible();
+      const seriesConfigurationReload = page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname ===
+            `/api/v1/admin/tournaments/${tournament.id}/configuration` &&
+          response.request().method() === 'GET',
+      );
+      await seriesRegion.getByRole('button', { name: 'Обновить конфигурацию' }).click();
+      expect((await seriesConfigurationReload).status()).toBe(200);
+
+      const firstSeries = seriesRegion.getByRole('article').first();
+      await expect(firstSeries).toBeVisible();
+      const firstSeriesID = await firstSeries.getAttribute('data-series-id');
+      expect(firstSeriesID).toMatch(/^[0-9a-f-]{36}$/i);
+      await expect(firstSeries.getByLabel('Режим серии 1')).toHaveValue('random');
+      await firstSeries.getByLabel('Режим серии 1').selectOption('admin');
+      await firstSeries.getByLabel('Категория серии 1').selectOption('crypto');
+
+      const seriesUpdateResponse = page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname ===
+            `/api/v1/admin/tournaments/${tournament.id}/series/${firstSeriesID}/configuration` &&
+          response.request().method() === 'PATCH',
+      );
+      const seriesRefreshResponse = page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname ===
+            `/api/v1/admin/tournaments/${tournament.id}/configuration` &&
+          response.request().method() === 'GET',
+      );
+      await firstSeries.getByRole('button', { name: 'Сохранить серию 1' }).click();
+      const savedSeriesResponse = await seriesUpdateResponse;
+      expect(savedSeriesResponse.status()).toBe(200);
+      const seriesMutation = (await savedSeriesResponse.json()) as FullStackConfigurationMutation;
+      const successorSeriesID = seriesMutation.affected_artifacts.find(
+        (artifact) => artifact.id === firstSeriesID,
+      )?.successor_revision_id;
+      expect(successorSeriesID).toMatch(/^[0-9a-f-]{36}$/i);
+      expect((await seriesRefreshResponse).status()).toBe(200);
+      const successorSeries = seriesRegion.locator(
+        `[data-series-id="${successorSeriesID}"]`,
+      );
+      await expect(successorSeries).toBeVisible();
+      await expect(successorSeries.getByLabel(/Режим серии/)).toHaveValue('admin');
+      await expect(successorSeries.getByLabel(/Категория серии/)).toHaveValue('crypto');
     } finally {
       for (const context of playerContexts) {
         await context.close();

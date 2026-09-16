@@ -23,6 +23,7 @@ import {
 } from "../../shared/ui";
 
 import { RosterEditor } from "./RosterEditor";
+import { SeriesConfigurationEditor } from "./SeriesConfigurationEditor";
 import { SwissPairingEditor } from "./SwissPairingEditor";
 import {
   TournamentContentManager,
@@ -568,6 +569,13 @@ export const TournamentAdminPanel = ({
         selectedTournamentId={selectedTournamentId}
         onSelectTournament={setSelectedTournamentId}
         onReloadTournaments={loadTournaments}
+        onSessionExpired={onSessionExpired}
+      />
+      <SeriesConfigurationEditor
+        tournaments={tournaments}
+        selectedTournament={selectedTournament}
+        selectedTournamentId={selectedTournamentId}
+        onSelectTournament={setSelectedTournamentId}
         onSessionExpired={onSessionExpired}
       />
     </div>
