@@ -5,17 +5,6 @@ import (
 	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
 )
 
-const (
-	submissionStatusAccepted = "accepted"
-	submissionStatusRejected = "rejected"
-	resultActorServer        = "server"
-	resultActorOperator      = "operator"
-	resultOutboxTopic        = "tournament.result.committed"
-
-	resultProjectionPublicationImmediate   ResultProjectionPublication = resultpostgres.ResultProjectionPublicationImmediate
-	resultProjectionPublicationCallerOwned ResultProjectionPublication = resultpostgres.ResultProjectionPublicationCallerOwned
-)
-
 var ErrResultNotFound = resultpostgres.ErrResultNotFound
 
 type ResultPostgres = resultpostgres.ResultPostgres

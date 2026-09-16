@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	resultpostgres "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result"
 	participantsurrender "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/surrender"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
 )
@@ -10,7 +11,7 @@ type ParticipantSurrenderWorkflow = participantsurrender.ParticipantSurrenderWor
 
 func NewParticipantForfeitRepository(
 	tx *TxManager,
-	results *ResultPostgres,
+	results *resultpostgres.ResultPostgres,
 ) *ParticipantForfeitRepository {
 	return participantsurrender.NewParticipantForfeitRepository(tx, results)
 }
