@@ -15,8 +15,8 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	gamedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/game"
 	seriesdomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/series"
-	gamemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/mocks"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/settlement"
+	gamemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/settlement/mocks"
 )
 
 func TestConcurrentWinnerSettlement(t *testing.T) {

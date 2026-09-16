@@ -17,8 +17,8 @@ import (
 	gamedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/game"
 	seriesdomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/series"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain/taskexec"
-	gamemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/mocks"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/submission"
+	gamemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/submission/mocks"
 )
 
 func TestSubmissionValidation(t *testing.T) {

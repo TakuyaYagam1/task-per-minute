@@ -17,8 +17,8 @@ import (
 	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
 	gamedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/game"
 	seriesdomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/series"
-	gamemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/mocks"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/start"
+	gamemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/start/mocks"
 )
 
 func TestAtomicWaveStart(t *testing.T) {
@@ -534,12 +534,18 @@ func cloneWaveStartRecord(value gameusecase.StartRecord) gameusecase.StartRecord
 	return clone
 }
 
-func waveNewGameClock(t *testing.T, now time.Time) *gamemocks.MockWaveClock {
+type waveStartClock struct {
+	now time.Time
+}
+
+func (c waveStartClock) Now() time.Time {
+	return c.now
+}
+
+func waveNewGameClock(t *testing.T, now time.Time) waveStartClock {
 	t.Helper()
 
-	clock := gamemocks.NewMockWaveClock(t)
-	clock.EXPECT().Now().Return(now).Maybe()
-	return clock
+	return waveStartClock{now: now}
 }
 
 func cloneWaveStartParticipantID(value *uuid.UUID) *uuid.UUID {

@@ -228,11 +228,17 @@ packages:
       FailedAttemptTerminalizer:
       OldWaveCloser:
       ReplayReplacementPlanner:
-      SettlementRepository:
-      SubmissionRepository:
       WaveClock:
-      StartRepository:
       CloseRepository:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/settlement:
+    interfaces:
+      SettlementRepository:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/start:
+    interfaces:
+      StartRepository:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/submission:
+    interfaces:
+      SubmissionRepository:
   github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden:
     interfaces:
       AttemptClock:
