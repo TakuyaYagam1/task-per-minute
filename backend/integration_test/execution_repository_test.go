@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	waverepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/wave"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
@@ -44,14 +45,14 @@ func TestExecutionRepositorySerializesReadinessAndStart(t *testing.T) {
 		sourceProjectionID, tournamentID, rosterID, sourceCutoffID, baseTime,
 	)
 	require.NoError(t, err)
-	repository := postgres.NewWavePostgres(postgres.NewTxManager(sharedPool))
+	repository := waverepo.NewWavePostgres(postgres.NewTxManager(sharedPool))
 	waveID := uuid.New()
 
-	wave, err := repository.Create(ctx, postgres.WaveCreateInput{
+	wave, err := repository.Create(ctx, waverepo.WaveCreateInput{
 		ID: waveID, TournamentID: tournamentID, RosterID: rosterID,
 		RevisionID: domain.WaveRevisionID(uuid.New()), ParticipantIDs: participants,
 		CommandID: uuid.New(), SourceProjectionRevisionID: sourceProjectionID, SourceProjectionRevision: 1,
-		Series: []postgres.WaveSeriesInput{{
+		Series: []waverepo.WaveSeriesInput{{
 			ID: uuid.New(), FirstParticipantID: participants[0], SecondParticipantID: participants[1],
 			Format: domain.SeriesFormatBO1, InitialScoreRevisionID: domain.SeriesScoreRevisionID(uuid.New()),
 		}},
@@ -110,7 +111,7 @@ func TestExecutionRepositorySerializesReadinessAndStart(t *testing.T) {
 	windowID := uuid.New()
 	openedAt := baseTime.Add(time.Second)
 	deadline := openedAt.Add(30 * time.Second)
-	wave, changed, err := repository.OpenReadyWindow(ctx, tournamentID, waveID, wave.Revision, postgres.ReadyWindowInput{
+	wave, changed, err := repository.OpenReadyWindow(ctx, tournamentID, waveID, wave.Revision, waverepo.ReadyWindowInput{
 		ID: windowID, RevisionID: domain.ReadyWindowRevisionID(uuid.New()), OpenedAt: openedAt, Deadline: deadline,
 	})
 	require.NoError(t, err)

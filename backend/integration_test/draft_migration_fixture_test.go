@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	waverepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/wave"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
@@ -319,7 +320,7 @@ func createDraftMigrationWaveSeries(
 	tb.Helper()
 
 	seriesID := uuid.New()
-	_, err := postgres.NewWavePostgres(postgres.NewTxManager(sharedPool)).Create(ctx, postgres.WaveCreateInput{
+	_, err := waverepo.NewWavePostgres(postgres.NewTxManager(sharedPool)).Create(ctx, waverepo.WaveCreateInput{
 		ID:                         uuid.New(),
 		TournamentID:               tournamentID,
 		RosterID:                   rosterID,
@@ -328,7 +329,7 @@ func createDraftMigrationWaveSeries(
 		CommandID:                  uuid.New(),
 		SourceProjectionRevisionID: sourceProjectionID,
 		SourceProjectionRevision:   sourceProjectionRevision,
-		Series: []postgres.WaveSeriesInput{{
+		Series: []waverepo.WaveSeriesInput{{
 			ID:                     seriesID,
 			FirstParticipantID:     participantIDs[0],
 			SecondParticipantID:    participantIDs[1],

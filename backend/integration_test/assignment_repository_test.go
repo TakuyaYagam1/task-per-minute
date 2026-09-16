@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	assignmentrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
@@ -23,10 +24,10 @@ func TestAssignmentRepositoryCommitsProofAndDeliversExactlyOnce(t *testing.T) {
 
 	draft := createDraftMigrationFixture(ctx, t)
 	baseTime := draft.createdAt.Add(5 * time.Second)
-	repository := postgres.NewAssignmentPostgres(postgres.NewTxManager(sharedPool))
+	repository := assignmentrepo.NewAssignmentPostgres(postgres.NewTxManager(sharedPool))
 	poolRevisionID := draft.normalPoolRevisionID
 	conservativeID := uuid.New()
-	conservative, err := repository.CreateConservativePlan(ctx, postgres.ConservativePlanInput{
+	conservative, err := repository.CreateConservativePlan(ctx, assignmentrepo.ConservativePlanInput{
 		ID: conservativeID, TournamentID: draft.tournamentID, RosterID: draft.rosterID,
 		RevisionID: uuid.New(), SourceRosterRevision: 1, SourcePoolRevisionID: poolRevisionID,
 		ConstraintGraph: map[string]any{"scope": "all-reachable-branches"},
@@ -42,12 +43,12 @@ func TestAssignmentRepositoryCommitsProofAndDeliversExactlyOnce(t *testing.T) {
 		[]string{"branch-a", "branch-b"}, exactID, baseTime,
 	)
 	require.NoError(t, err)
-	branches := []postgres.AssignmentBranchInput{
+	branches := []assignmentrepo.AssignmentBranchInput{
 		assignmentRepositoryBranch(ctx, t, draft, "branch-a", domain.CategoryWeb),
 		assignmentRepositoryBranch(ctx, t, draft, "branch-b", domain.CategoryCrypto),
 	}
 	exactRevisionID := uuid.New()
-	exact, err := repository.CreateExactPlan(ctx, postgres.ExactPlanInput{
+	exact, err := repository.CreateExactPlan(ctx, assignmentrepo.ExactPlanInput{
 		ID: exactID, TournamentID: draft.tournamentID, RosterID: draft.rosterID,
 		ParentPlanID: conservativeID, RevisionID: exactRevisionID, SourceRosterRevision: 1,
 		SourcePoolRevisionID: poolRevisionID, SourceDraftRevision: draft.initialRevisionID,
@@ -108,7 +109,7 @@ func TestAssignmentRepositoryCommitsProofAndDeliversExactlyOnce(t *testing.T) {
 	finalReservation, finalSnapshot := assignmentRepositorySlot(t, exact, activeBranchID, 3)
 	slotID := createMigrationGameSlot(ctx, t, draft.seriesID, draft.rosterID, 1, "web")
 	attemptID := createActiveMigrationAttempt(ctx, t, slotID, draft.seriesID, draft.rosterID, baseTime)
-	_, err = repository.CreateAssignment(ctx, postgres.AssignmentCreateInput{
+	_, err = repository.CreateAssignment(ctx, assignmentrepo.AssignmentCreateInput{
 		ID: uuid.New(), AttemptID: attemptID, SeriesID: draft.seriesID, RosterID: draft.rosterID,
 		PlanID: exactID, BranchID: activeBranchID, ReservationID: reserveReservation.ID,
 		SnapshotID: reserveSnapshot.Snapshot.SnapshotID, CreatedAt: baseTime.Add(3 * time.Second),
@@ -116,7 +117,7 @@ func TestAssignmentRepositoryCommitsProofAndDeliversExactlyOnce(t *testing.T) {
 	require.ErrorIs(t, err, domain.ErrConflict, "initial assignment must use the primary proof edge")
 
 	assignmentID := uuid.New()
-	assignment, err := repository.CreateAssignment(ctx, postgres.AssignmentCreateInput{
+	assignment, err := repository.CreateAssignment(ctx, assignmentrepo.AssignmentCreateInput{
 		ID: assignmentID, AttemptID: attemptID, SeriesID: draft.seriesID, RosterID: draft.rosterID,
 		PlanID: exactID, BranchID: activeBranchID, ReservationID: primaryReservation.ID,
 		SnapshotID: primarySnapshot.Snapshot.SnapshotID, CreatedAt: baseTime.Add(3 * time.Second),
@@ -173,7 +174,7 @@ func TestAssignmentRepositoryCommitsProofAndDeliversExactlyOnce(t *testing.T) {
 		secondReceipt.InstanceID,
 	)
 
-	_, changed, err = repository.Supersede(ctx, assignmentID, assignment.Revision, postgres.AssignmentSupersedeInput{
+	_, changed, err = repository.Supersede(ctx, assignmentID, assignment.Revision, assignmentrepo.AssignmentSupersedeInput{
 		ID: uuid.New(), ReservationID: finalReservation.ID,
 		SnapshotID: finalSnapshot.Snapshot.SnapshotID, Reason: "skip ordered reserve",
 		OccurredAt: baseTime.Add(6 * time.Second),
@@ -182,7 +183,7 @@ func TestAssignmentRepositoryCommitsProofAndDeliversExactlyOnce(t *testing.T) {
 	require.False(t, changed, "supersession cannot skip the next reserved task")
 
 	replacementID := uuid.New()
-	replacement, changed, err := repository.Supersede(ctx, assignmentID, assignment.Revision, postgres.AssignmentSupersedeInput{
+	replacement, changed, err := repository.Supersede(ctx, assignmentID, assignment.Revision, assignmentrepo.AssignmentSupersedeInput{
 		ID: replacementID, ReservationID: reserveReservation.ID,
 		SnapshotID: reserveSnapshot.Snapshot.SnapshotID, Reason: "primary task failure",
 		OccurredAt: baseTime.Add(6 * time.Second),
@@ -192,7 +193,7 @@ func TestAssignmentRepositoryCommitsProofAndDeliversExactlyOnce(t *testing.T) {
 	require.Equal(t, assignmentID, *replacement.SupersedesAssignmentID)
 	require.Empty(t, replacement.Receipts, "supersession must not leak prior solved history")
 
-	_, changed, err = repository.Supersede(ctx, assignmentID, assignment.Revision, postgres.AssignmentSupersedeInput{
+	_, changed, err = repository.Supersede(ctx, assignmentID, assignment.Revision, assignmentrepo.AssignmentSupersedeInput{
 		ID: uuid.New(), ReservationID: reserveReservation.ID, SnapshotID: reserveSnapshot.Snapshot.SnapshotID,
 		Reason: "stale retry", OccurredAt: baseTime.Add(7 * time.Second),
 	})
@@ -209,9 +210,9 @@ func assignmentRepositoryBranch(
 	draft draftMigrationFixture,
 	key string,
 	category domain.Category,
-) postgres.AssignmentBranchInput {
+) assignmentrepo.AssignmentBranchInput {
 	tb.Helper()
-	branch := postgres.AssignmentBranchInput{
+	branch := assignmentrepo.AssignmentBranchInput{
 		ID: uuid.New(), DraftID: draft.draftID, DraftRevisionID: draft.initialRevisionID,
 		Key: key, Categories: []domain.Category{category},
 	}
@@ -245,7 +246,7 @@ func assignmentRepositoryBranch(
 			Flag: "FLAG{repository-snapshot}", Hints: []string{"repository hint"},
 		}
 		require.NoError(tb, snapshot.Validate())
-		branch.Edges = append(branch.Edges, postgres.AssignmentEdgeInput{
+		branch.Edges = append(branch.Edges, assignmentrepo.AssignmentEdgeInput{
 			ID: uuid.New(), ReservationID: uuid.New(), Position: position, Snapshot: snapshot,
 			ContentDigest:     sha256.Sum256([]byte(snapshot.SnapshotID.String())),
 			SelectionEvidence: map[string]any{"position": position, "eligible": true},
@@ -256,10 +257,10 @@ func assignmentRepositoryBranch(
 
 func assignmentRepositorySlot(
 	tb testing.TB,
-	plan *postgres.AssignmentPlanAggregate,
+	plan *assignmentrepo.AssignmentPlanAggregate,
 	branchID uuid.UUID,
 	position int,
-) (postgres.TaskReservationRecord, postgres.TaskSnapshotRecord) {
+) (assignmentrepo.TaskReservationRecord, assignmentrepo.TaskSnapshotRecord) {
 	tb.Helper()
 	var edgeID uuid.UUID
 	for _, edge := range plan.Edges {
@@ -269,7 +270,7 @@ func assignmentRepositorySlot(
 		}
 	}
 	require.NotEqual(tb, uuid.Nil, edgeID)
-	var reservation postgres.TaskReservationRecord
+	var reservation assignmentrepo.TaskReservationRecord
 	for _, item := range plan.Reservations {
 		if item.EdgeID == edgeID {
 			reservation = item
@@ -277,7 +278,7 @@ func assignmentRepositorySlot(
 		}
 	}
 	require.NotEqual(tb, uuid.Nil, reservation.ID)
-	var snapshot postgres.TaskSnapshotRecord
+	var snapshot assignmentrepo.TaskSnapshotRecord
 	for _, item := range plan.Snapshots {
 		if item.ReservationID == reservation.ID {
 			snapshot = item
@@ -288,7 +289,7 @@ func assignmentRepositorySlot(
 	return reservation, snapshot
 }
 
-func countReservationState(reservations []postgres.TaskReservationRecord, state string) int {
+func countReservationState(reservations []assignmentrepo.TaskReservationRecord, state string) int {
 	count := 0
 	for _, reservation := range reservations {
 		if reservation.State == state {

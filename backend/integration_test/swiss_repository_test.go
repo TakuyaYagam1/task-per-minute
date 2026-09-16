@@ -10,7 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	swissrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/swiss"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	swissusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/swiss"
 )
@@ -57,8 +57,8 @@ func TestSwissRepository(t *testing.T) {
 		roundOneGeneratedAt,
 	)
 	require.NoError(t, err)
-	automaticInput := postgres.AutomaticSwissRoundInput{
-		Meta: postgres.SwissRoundMeta{
+	automaticInput := swissrepo.AutomaticSwissRoundInput{
+		Meta: swissrepo.SwissRoundMeta{
 			ID:                    roundOneID,
 			TournamentID:          tournament.ID,
 			RosterID:              roster.ID,
@@ -147,8 +147,8 @@ func TestSwissRepository(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.True(t, overrideChanged)
-	manualInput := postgres.ManualSwissRoundInput{
-		Meta: postgres.SwissRoundMeta{
+	manualInput := swissrepo.ManualSwissRoundInput{
+		Meta: swissrepo.SwissRoundMeta{
 			ID:                    roundTwoID,
 			TournamentID:          tournament.ID,
 			RosterID:              roster.ID,
@@ -221,8 +221,8 @@ func TestSwissRepository(t *testing.T) {
 		roundThreeGeneratedAt,
 	)
 	require.NoError(t, err)
-	_, err = fixture.swiss.SaveAutomaticRound(ctx, postgres.AutomaticSwissRoundInput{
-		Meta: postgres.SwissRoundMeta{
+	_, err = fixture.swiss.SaveAutomaticRound(ctx, swissrepo.AutomaticSwissRoundInput{
+		Meta: swissrepo.SwissRoundMeta{
 			ID:                    roundThreeID,
 			TournamentID:          tournament.ID,
 			RosterID:              roster.ID,
@@ -239,7 +239,7 @@ func TestSwissRepository(t *testing.T) {
 	}, nil)
 	require.ErrorIs(t, err, domain.ErrConflict)
 	_, err = fixture.swiss.Get(ctx, roundThreeID)
-	require.ErrorIs(t, err, postgres.ErrSwissRoundNotFound,
+	require.ErrorIs(t, err, swissrepo.ErrSwissRoundNotFound,
 		"a late child constraint failure must roll back the parent and all earlier children")
 
 	rounds, err := fixture.swiss.ListRounds(ctx, roster.ID)
@@ -305,7 +305,7 @@ func pairingWithoutParticipant(pairings []swissusecase.Pair, participantID uuid.
 	return swissusecase.Pair{}
 }
 
-func swissPairs(records []postgres.SwissPairingRecord) []swissusecase.Pair {
+func swissPairs(records []swissrepo.SwissPairingRecord) []swissusecase.Pair {
 	pairs := make([]swissusecase.Pair, len(records))
 	for index, record := range records {
 		pairs[index] = record.Pair

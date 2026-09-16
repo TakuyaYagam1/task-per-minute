@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	gamerepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/game"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	gamedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/game"
 )
@@ -27,10 +28,10 @@ func TestGameRepositoryUsesScopedCASAndStableAttemptHistory(t *testing.T) {
 	participants := createSwissMigrationParticipants(ctx, t, rosterID, players)
 	seriesID := createMigrationSeries(ctx, t, tournamentID, rosterID, participants, "bo3")
 	createdAt := time.Now().UTC().Add(-time.Minute).Truncate(time.Microsecond)
-	repository := postgres.NewGamePostgres(postgres.NewTxManager(sharedPool))
+	repository := gamerepo.NewGamePostgres(postgres.NewTxManager(sharedPool))
 
 	slotID := uuid.New()
-	slot, err := repository.CreateSlot(ctx, postgres.GameSlotInput{
+	slot, err := repository.CreateSlot(ctx, gamerepo.GameSlotInput{
 		Slot: domain.GameSlot{
 			ID: slotID, SeriesID: seriesID, Position: 1, Category: domain.CategoryWeb,
 			ScoreBefore: domain.SeriesScore{},
@@ -42,11 +43,11 @@ func TestGameRepositoryUsesScopedCASAndStableAttemptHistory(t *testing.T) {
 
 	gameID := uuid.New()
 	game := domain.Game{ID: gameID, SlotID: slotID, AttemptNo: 1, State: domain.GameStatePlanned}
-	_, err = repository.AppendAttempt(ctx, postgres.GameAttemptInput{
+	_, err = repository.AppendAttempt(ctx, gamerepo.GameAttemptInput{
 		Game: game, SeriesID: seriesID, RosterID: rosterID, CreatedAt: createdAt,
 	})
 	require.NoError(t, err)
-	_, err = repository.AppendAttempt(ctx, postgres.GameAttemptInput{
+	_, err = repository.AppendAttempt(ctx, gamerepo.GameAttemptInput{
 		Game: game, SeriesID: seriesID, RosterID: rosterID, CreatedAt: createdAt,
 	})
 	require.Error(t, err, "attempt identity and ordinal must remain unique")
@@ -96,5 +97,5 @@ func TestGameRepositoryUsesScopedCASAndStableAttemptHistory(t *testing.T) {
 	wrongScope := scope
 	wrongScope.TournamentID = uuid.New()
 	_, err = repository.GetAttemptRecord(ctx, wrongScope)
-	require.ErrorIs(t, err, postgres.ErrGameNotFound)
+	require.ErrorIs(t, err, gamerepo.ErrGameNotFound)
 }
