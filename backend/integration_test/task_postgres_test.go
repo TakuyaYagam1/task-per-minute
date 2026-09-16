@@ -12,16 +12,17 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	taskrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/task"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	taskusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/task"
 )
 
-func newTaskRepo(pools ...*pgxpool.Pool) *postgres.TaskPostgres {
+func newTaskRepo(pools ...*pgxpool.Pool) *taskrepo.TaskPostgres {
 	pool := sharedPool
 	if len(pools) > 0 && pools[0] != nil {
 		pool = pools[0]
 	}
-	return postgres.NewTaskPostgres(postgres.NewTxManager(pool))
+	return taskrepo.NewTaskPostgres(postgres.NewTxManager(pool))
 }
 
 // hasTaskID is a parallel-safe replacement for asserting list length: it only

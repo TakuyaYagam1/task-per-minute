@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	taskrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/task"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	taskusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/task"
 	"github.com/google/uuid"
@@ -92,7 +93,7 @@ func newTaskUseCaseFixture(pools ...*pgxpool.Pool) *taskusecase.UseCase {
 	if len(pools) > 0 && pools[0] != nil {
 		pool = pools[0]
 	}
-	tasks := postgres.NewTaskPostgres(postgres.NewTxManager(pool))
+	tasks := taskrepo.NewTaskPostgres(postgres.NewTxManager(pool))
 	return taskusecase.NewUseCase(tasks)
 }
 

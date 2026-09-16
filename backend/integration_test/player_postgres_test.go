@@ -15,17 +15,18 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	playerrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/player"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	playerusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/player"
 )
 
-func newPlayerRepo(pools ...*pgxpool.Pool) (*postgres.PlayerPostgres, *postgres.TxManager) {
+func newPlayerRepo(pools ...*pgxpool.Pool) (*playerrepo.PlayerPostgres, *postgres.TxManager) {
 	pool := sharedPool
 	if len(pools) > 0 && pools[0] != nil {
 		pool = pools[0]
 	}
 	mgr := postgres.NewTxManager(pool)
-	return postgres.NewPlayerPostgres(mgr), mgr
+	return playerrepo.NewPlayerPostgres(mgr), mgr
 }
 
 func TestPlayerRepo_Create_HappyPath(t *testing.T) {
