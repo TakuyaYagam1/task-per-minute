@@ -2,12 +2,12 @@ package postgres
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 
 	resultpostgres "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result"
+	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 )
 
@@ -37,15 +37,7 @@ func resultProjectionFinalizer(
 	revisionID uuid.UUID,
 	at time.Time,
 ) error {
-	if err := NewTournamentProgressionPostgres(tx).persistFinalSwissReceipt(
-		ctx,
-		ProjectionScope{TournamentID: tournamentID, RosterID: rosterID},
-		revisionID,
-		at,
-	); err != nil {
-		return fmt.Errorf("result publication - final Swiss receipt: %w", err)
-	}
-	return nil
+	return resultauthority.FinalizeProjection(ctx, tx, tournamentID, rosterID, revisionID, at)
 }
 
 func publishResultProjection(
