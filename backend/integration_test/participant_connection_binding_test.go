@@ -20,7 +20,7 @@ import (
 	playerrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/player"
 	realtimerepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/realtime"
 	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
-	participantrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant"
+	participantrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/connection"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
