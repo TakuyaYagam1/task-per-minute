@@ -8,6 +8,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	gamedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/game"
 	seriesdomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/series"
+	gamewave "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/wave"
 )
 
 func reconcileWaveStart(
@@ -36,7 +37,7 @@ func waveStartRecordsEqual(first, second StartRecord) bool {
 		!waveStartUUIDsEqual(first.ByeParticipantID, second.ByeParticipantID) ||
 		!maps.Equal(first.ReadinessRevisions, second.ReadinessRevisions) ||
 		!first.StartedAt.Equal(second.StartedAt) ||
-		!waveWavesEqual(first.Wave, second.Wave) || len(first.Games) != len(second.Games) {
+		!gamewave.Equal(first.Wave, second.Wave) || len(first.Games) != len(second.Games) {
 		return false
 	}
 	for index := range first.Games {
@@ -51,7 +52,7 @@ func waveStartRecordsEqual(first, second StartRecord) bool {
 
 func cloneWaveStartRecord(record StartRecord) StartRecord {
 	clone := record
-	clone.Wave = waveCloneWaveExecution(record.Wave)
+	clone.Wave = gamewave.Clone(record.Wave)
 	clone.ReadinessRevisions = cloneWaveStartReadinessRevisions(record.ReadinessRevisions)
 	clone.ByeParticipantID = cloneWaveStartUUID(record.ByeParticipantID)
 	clone.Games = make([]gamedomain.Started, len(record.Games))

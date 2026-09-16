@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
+	gamewave "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/wave"
 )
 
 const closeAttempts = 2
@@ -81,7 +82,7 @@ func (u *CloseUseCase) Close(
 		return nil, false, err
 	}
 	closedAt := u.clock.Now().Round(0).UTC()
-	if !waveValidServerTime(closedAt) {
+	if !gamewave.ValidServerTime(closedAt) {
 		return nil, false, domain.ErrValidation
 	}
 	for range closeAttempts {
@@ -133,7 +134,7 @@ func (u *CloseUseCase) closeAttempt(
 
 func (c Closure) Validate() error {
 	if !c.Scope.IsValid() || c.CommandID == uuid.Nil || c.ExpectedAuthorityRevision < 1 ||
-		c.PreviousWaveRevisionID.IsZero() || !waveValidServerTime(c.ClosedAt) ||
+		c.PreviousWaveRevisionID.IsZero() || !gamewave.ValidServerTime(c.ClosedAt) ||
 		c.Wave.Validate() != nil || c.Wave.ID != c.Scope.WaveID ||
 		c.Wave.TournamentID != c.Scope.TournamentID ||
 		c.Wave.State != domain.WaveStateCompleted || c.Wave.RevisionID.IsZero() ||
@@ -169,7 +170,7 @@ func validateCloseAuthority(authority CloseAuthority) error {
 	if authority.Current != nil {
 		if authority.Wave.State != domain.WaveStateCompleted ||
 			authority.Current.Validate() != nil || authority.Current.Scope != authority.Scope ||
-			!waveWavesEqual(authority.Current.Wave, authority.Wave) {
+			!gamewave.Equal(authority.Current.Wave, authority.Wave) {
 			return closureError("invalid current closure")
 		}
 		return nil
@@ -216,7 +217,7 @@ func buildClosure(
 	if err := validateCloseChildren(authority.Children); err != nil {
 		return Closure{}, err
 	}
-	wave := waveCloneWaveExecution(authority.Wave)
+	wave := gamewave.Clone(authority.Wave)
 	wave.State = domain.WaveStateCompleted
 	wave.RevisionID = command.ClosedWaveRevisionID
 	closure := Closure{
@@ -264,7 +265,7 @@ func closuresEqual(first, second Closure) bool {
 	return first.Scope == second.Scope && first.CommandID == second.CommandID &&
 		first.ExpectedAuthorityRevision == second.ExpectedAuthorityRevision &&
 		first.PreviousWaveRevisionID == second.PreviousWaveRevisionID &&
-		waveWavesEqual(first.Wave, second.Wave) &&
+		gamewave.Equal(first.Wave, second.Wave) &&
 		closeChildrenEqual(first.Children, second.Children) &&
 		first.ClosedAt.Equal(second.ClosedAt)
 }
@@ -283,7 +284,7 @@ func closeChildrenEqual(first, second []CloseChild) bool {
 
 func cloneClosure(closure Closure) Closure {
 	clone := closure
-	clone.Wave = waveCloneWaveExecution(closure.Wave)
+	clone.Wave = gamewave.Clone(closure.Wave)
 	clone.Children = append([]CloseChild(nil), closure.Children...)
 	return clone
 }

@@ -13,6 +13,7 @@ import (
 	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
 	gamedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/game"
 	seriesdomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/series"
+	gamewave "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/wave"
 )
 
 const (
@@ -147,7 +148,7 @@ func (u *StartUseCase) startAttempt(
 			return nil, false, false, fmt.Errorf("WaveStartUseCase - read start time: %w", timeErr)
 		}
 		*startedAt = observed.Round(0).UTC()
-		if !waveValidServerTime(*startedAt) {
+		if !gamewave.ValidServerTime(*startedAt) {
 			return nil, false, false, domain.ErrInternal
 		}
 	}
@@ -197,10 +198,10 @@ func validateWaveStartRecordIdentity(r StartRecord) error {
 	if !validWaveStartScope(r.Scope) || r.CommandID == uuid.Nil || r.ActorID == uuid.Nil ||
 		r.ExecutionAuthority.Validate() != nil || r.ExecutionAuthority.TournamentID != r.Scope.TournamentID ||
 		r.ExpectedWaveRevision < 1 || r.ExpectedProjectionRevision < 1 ||
-		!validReadyWindowSourceRevisions(r.Revisions) ||
+		!gamewave.ValidReadyWindowSourceRevisions(r.Revisions) ||
 		!validWaveStartReadinessRevisions(r.Wave, r.ReadinessRevisions) ||
 		r.RequestDigest == [sha256.Size]byte{} ||
-		!waveValidServerTime(r.StartedAt) || len(r.Games) == 0 {
+		!gamewave.ValidServerTime(r.StartedAt) || len(r.Games) == 0 {
 		return waveStartError("invalid record identity, revision or start")
 	}
 	return nil
@@ -223,7 +224,7 @@ func buildWaveStartRecord(
 	authority StartAuthority,
 	startedAt time.Time,
 ) (StartRecord, error) {
-	wave := waveCloneWaveExecution(authority.Wave)
+	wave := gamewave.Clone(authority.Wave)
 	changed, err := wave.Start(command.Scope.WindowID, startedAt)
 	if err != nil || !changed {
 		return StartRecord{}, waveStartError("start Wave: %v", err)
@@ -304,7 +305,7 @@ func validateStartWaveCommand(command StartCommand) error {
 	if !validWaveStartScope(command.Scope) || command.CommandID == uuid.Nil || command.ActorID == uuid.Nil ||
 		command.ExecutionAuthority.Validate() != nil ||
 		command.ExecutionAuthority.TournamentID != command.Scope.TournamentID ||
-		command.ExpectedProjectionRevision < 1 || !validReadyWindowSourceRevisions(command.ExpectedRevisions) ||
+		command.ExpectedProjectionRevision < 1 || !gamewave.ValidReadyWindowSourceRevisions(command.ExpectedRevisions) ||
 		command.RequestDigest == [sha256.Size]byte{} {
 		return waveStartError("invalid command identity or revisions")
 	}
@@ -313,7 +314,7 @@ func validateStartWaveCommand(command StartCommand) error {
 
 func validateWaveStartAuthority(authority StartAuthority) error {
 	if !validWaveStartScope(authority.Scope) || authority.WaveRevision < 1 ||
-		!validReadyWindowSourceRevisions(authority.Revisions) {
+		!gamewave.ValidReadyWindowSourceRevisions(authority.Revisions) {
 		return waveStartError("invalid authority identity or revisions")
 	}
 	if authority.Current != nil {
