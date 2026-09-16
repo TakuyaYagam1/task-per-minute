@@ -1,4 +1,4 @@
-package postgres
+package reconnect
 
 import (
 	"context"
@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/require"
 
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/internal/db"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
@@ -62,7 +63,7 @@ func TestTournamentPausedPresenceSQLContractLocksExactPauseAndSelectedPresence(t
 func TestTournamentPausedPresenceFindReliesOnOuterLeaseFence(t *testing.T) {
 	t.Parallel()
 
-	record, err := NewTournamentPausedPresencePostgres(&TxManager{}).FindPausedPresenceCommand(
+	record, err := NewTournamentPausedPresencePostgres(&db.TxManager{}).FindPausedPresenceCommand(
 		context.Background(), uuid.New(), uuid.New(),
 	)
 	require.NoError(t, err)
@@ -238,7 +239,7 @@ func pausedPresenceTestRootRow(scope pausedomain.GraphScope) sqlc.LockTournament
 func readTournamentPausedPresenceQuery(t *testing.T) []byte {
 	t.Helper()
 
-	contents, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "queries", "tournament_paused_presence.sql"))
+	contents, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "..", "db", "queries", "tournament_paused_presence.sql"))
 	require.NoError(t, err)
 	return contents
 }
