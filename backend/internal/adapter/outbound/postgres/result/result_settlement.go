@@ -1,9 +1,10 @@
-package postgres
+package result
 
 import (
 	"context"
 	"fmt"
 
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/internal/db"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
@@ -78,7 +79,18 @@ func (r *ResultPostgres) Settle(
 			return err
 		}
 		if in.ProjectionPublication == resultProjectionPublicationImmediate {
-			if err := publishResultProjection(txCtx, r.tx, in, source); err != nil {
+			publisher := r.publishProjection
+			if publisher == nil {
+				publisher = func(
+					ctx context.Context,
+					tx *db.TxManager,
+					input ResultSettlementInput,
+					source sqlc.LockResultSourceProjectionRow,
+				) error {
+					return publishResultProjectionWithFinalizer(ctx, tx, input, source, nil)
+				}
+			}
+			if err := publisher(txCtx, r.tx, in, source); err != nil {
 				return err
 			}
 		}

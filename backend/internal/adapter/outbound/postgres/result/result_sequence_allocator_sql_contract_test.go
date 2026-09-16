@@ -1,4 +1,4 @@
-package postgres
+package result
 
 import (
 	"os"
@@ -11,13 +11,13 @@ import (
 func TestResultSequenceAllocatorUsesDurablePerAttemptCursors(t *testing.T) {
 	t.Parallel()
 
-	migration, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "migrations", "000008_result_schema.sql"))
+	migration, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "db", "migrations", "000008_result_schema.sql"))
 	require.NoError(t, err)
-	resultQueries, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "queries", "result.sql"))
+	resultQueries, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "db", "queries", "result.sql"))
 	require.NoError(t, err)
-	participantQueries, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "queries", "participant_command.sql"))
+	participantQueries, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "db", "queries", "participant_command.sql"))
 	require.NoError(t, err)
-	operatorQueries, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "db", "queries", "operator_result.sql"))
+	operatorQueries, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "db", "queries", "operator_result.sql"))
 	require.NoError(t, err)
 
 	for _, fragment := range []string{
