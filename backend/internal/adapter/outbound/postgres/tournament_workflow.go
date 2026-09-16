@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
+	attendancerepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/attendance"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	attendanceusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/attendance"
 	catalogusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/catalog"
@@ -136,11 +136,10 @@ func (r *TournamentAttendancePostgres) InviteParticipant(
 	ctx context.Context,
 	in attendanceusecase.ParticipantInput,
 ) (*attendanceusecase.ParticipantRecord, bool, error) {
-	if r == nil || r.tournaments == nil || r.tournaments.tx == nil {
+	if r == nil || r.tournaments == nil {
 		return nil, false, domain.ErrValidation
 	}
-	record, changed, err := r.tournaments.AddParticipant(ctx, ParticipantInput(in))
-	return participantUseCaseRecord(record), changed, err
+	return attendancerepo.NewTournamentAttendancePostgres(r.tournaments.tx).InviteParticipant(ctx, in)
 }
 
 func (r *TournamentAttendancePostgres) ChangeAttendance(
@@ -150,68 +149,32 @@ func (r *TournamentAttendancePostgres) ChangeAttendance(
 	next domain.AttendanceState,
 	updatedAt time.Time,
 ) (*attendanceusecase.ParticipantRecord, bool, error) {
-	if r == nil || r.tournaments == nil || r.tournaments.tx == nil {
+	if r == nil || r.tournaments == nil {
 		return nil, false, domain.ErrValidation
 	}
-	record, changed, err := r.tournaments.UpdateAttendance(ctx, participantID, expected, next, updatedAt)
-	return participantUseCaseRecord(record), changed, err
+	return attendancerepo.NewTournamentAttendancePostgres(r.tournaments.tx).ChangeAttendance(
+		ctx, participantID, expected, next, updatedAt,
+	)
 }
 
 func (r *TournamentAttendancePostgres) ReplaceWithdrawnParticipant(
 	ctx context.Context,
 	in attendanceusecase.ParticipantReplacementInput,
 ) (*attendanceusecase.ParticipantRecord, bool, error) {
-	if r == nil || r.tournaments == nil || r.tournaments.tx == nil || in.WithdrawnParticipantID == uuid.Nil ||
-		in.ReplacementParticipantID == uuid.Nil || in.RosterID == uuid.Nil ||
-		in.ReplacementPlayerID == uuid.Nil || in.WithdrawnParticipantID == in.ReplacementParticipantID ||
-		!validServerTime(in.ReplacedAt) {
+	if r == nil || r.tournaments == nil {
 		return nil, false, domain.ErrValidation
 	}
-	row, err := r.tournaments.tx.Querier(ctx).ReplaceWithdrawnTournamentParticipant(
-		ctx,
-		sqlc.ReplaceWithdrawnTournamentParticipantParams{
-			ReplacementParticipantID: in.ReplacementParticipantID,
-			ReplacedAt:               tstz(in.ReplacedAt),
-			WithdrawnParticipantID:   in.WithdrawnParticipantID,
-			RosterID:                 in.RosterID,
-			ReplacementPlayerID:      in.ReplacementPlayerID,
-		},
-	)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, false, nil
-		}
-		if isParticipantConflict(err) {
-			return nil, false, domain.WrapError(err, domain.ErrConflict)
-		}
-		return nil, false, fmt.Errorf(
-			"TournamentPostgres - ReplaceWithdrawnParticipant - Querier.ReplaceWithdrawnTournamentParticipant: %w",
-			err,
-		)
-	}
-	record, err := r.tournaments.participantRecord(ctx, row)
-	if err != nil {
-		return nil, false, fmt.Errorf("TournamentPostgres - ReplaceWithdrawnParticipant - map participant: %w", err)
-	}
-	return participantUseCaseRecord(record), true, nil
+	return attendancerepo.NewTournamentAttendancePostgres(r.tournaments.tx).ReplaceWithdrawnParticipant(ctx, in)
 }
 
 func (r *TournamentAttendancePostgres) ListRosterParticipants(
 	ctx context.Context,
 	rosterID uuid.UUID,
 ) ([]attendanceusecase.ParticipantRecord, error) {
-	if r == nil || r.tournaments == nil || r.tournaments.tx == nil {
+	if r == nil || r.tournaments == nil {
 		return nil, domain.ErrValidation
 	}
-	records, err := r.tournaments.ListParticipants(ctx, rosterID)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]attendanceusecase.ParticipantRecord, 0, len(records))
-	for index := range records {
-		out = append(out, *participantUseCaseRecord(&records[index]))
-	}
-	return out, nil
+	return attendancerepo.NewTournamentAttendancePostgres(r.tournaments.tx).ListRosterParticipants(ctx, rosterID)
 }
 
 func (r *TournamentRosterPostgres) GetRosterSnapshot(
