@@ -12,10 +12,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/api"
-	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
 	executionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/execution"
 	snapshotrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/snapshot"
+	configurationrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/configuration"
 	tournamentsnapshotrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/snapshot"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
@@ -36,7 +36,7 @@ func TestTournamentConfigurationDefaultsThroughProductionHTTPAndPostgres(t *test
 		t, fixture, adminToken, selection.ContentRevision, "configuration-defaults",
 	)
 	path := "/api/v1/admin/tournaments/" + tournament.Id.String() + "/configuration"
-	authority, err := postgres.NewTournamentConfigurationPostgres(fixture.mgr).LoadConfiguration(
+	authority, err := configurationrepo.NewProductionTournamentConfigurationPostgres(fixture.mgr).LoadConfiguration(
 		ctx,
 		tournamentadmin.ConfigurationLoadQuery{
 			Operator:     tournamentadmin.OperatorIdentity{ActorID: uuid.New()},

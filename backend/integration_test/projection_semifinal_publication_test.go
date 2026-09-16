@@ -20,6 +20,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	assignmentrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment"
 	draftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment/draft"
+	exactdraftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment/exactdraft"
 	playoffrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/playoff"
 	projectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
 	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
@@ -171,7 +172,7 @@ func TestSemifinalSettlementCreatesFinalDraft(t *testing.T) {
 	ctx := context.Background()
 	fixture, ids, _ := prepareFinalDraft(ctx, t)
 	drafts := draftrepo.NewDraftPostgres(fixture.tx)
-	stored, current, err := postgres.NewExactDraftBranchPlanPostgres(fixture.tx, drafts).LoadExactDraftBranchActivation(ctx, ids.DraftAssignmentPlanID)
+	stored, current, err := exactdraftrepo.NewExactDraftBranchPlanPostgres(fixture.tx, drafts).LoadExactDraftBranchActivation(ctx, ids.DraftAssignmentPlanID)
 	require.NoError(t, err)
 	require.NoError(t, stored.Validate())
 	require.Equal(t, ids.DraftID, current.ID)
@@ -189,7 +190,7 @@ func TestFinalDraftStartsAtLatestSemifinalCompletion(t *testing.T) {
 		WHERE evidence.tournament_id = $1 GROUP BY evidence.created_at`, fixture.tournamentID).Scan(&stageTime, &completedAt))
 	require.True(t, completedAt.After(stageTime.Add(15*time.Second)))
 	drafts := draftrepo.NewDraftPostgres(fixture.tx)
-	_, current, err := postgres.NewExactDraftBranchPlanPostgres(fixture.tx, drafts).LoadExactDraftBranchActivation(ctx, ids.DraftAssignmentPlanID)
+	_, current, err := exactdraftrepo.NewExactDraftBranchPlanPostgres(fixture.tx, drafts).LoadExactDraftBranchActivation(ctx, ids.DraftAssignmentPlanID)
 	require.NoError(t, err)
 	require.True(t, current.TurnDeadline.After(completedAt), "draft deadline %s must follow exact semifinal completion %s", current.TurnDeadline, completedAt)
 	require.True(t, completedAt.Add(15*time.Second).Equal(current.TurnDeadline))
@@ -229,7 +230,7 @@ func prepareFinalDraftWithCompletionDelay(ctx context.Context, t *testing.T, che
 	}
 	drafts := draftrepo.NewDraftPostgres(fixture.tx)
 	assignments := assignmentrepo.NewAssignmentPostgres(fixture.tx)
-	exactPlans := postgres.NewExactDraftBranchPlanPostgres(fixture.tx, drafts)
+	exactPlans := exactdraftrepo.NewExactDraftBranchPlanPostgres(fixture.tx, drafts)
 	planner := playoff.NewFinalDraftAssignmentService(assignmentusecase.NewExactDraftBranchPlanUseCase(&observedExactDraftRepository{ExactDraftBranchPlanPostgres: exactPlans, t: t}), exactPlans, exactPlans)
 	coordinator := playoff.NewTerminalCoordinator(playoff.TerminalCoordinatorDependencies{
 		Repository: &observedTerminalRepository{PlayoffTerminalPostgres: playoffrepo.NewPlayoffTerminalPostgres(fixture.tx, drafts, assignments.CreateAssignmentTx)}, Publisher: projectionrepo.NewProjectionPostgres(fixture.tx),

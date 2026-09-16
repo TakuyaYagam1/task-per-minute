@@ -16,13 +16,13 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 
-	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	waverepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/wave"
 	resultrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result"
 	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	admincorrectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/correction"
 	adminlifecyclerepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/lifecycle"
+	settlementrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/settlement"
 	progressionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/progression"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	gamedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/game"
@@ -1488,7 +1488,11 @@ func settleCorrectionSwissReceiptSeries(
 		JOIN game_attempts AS attempt ON attempt.id = assignment.attempt_id
 		WHERE assignment.id = $1`, binding.AssignmentID).Scan(&scope.Game.GameID, &scope.Game.SlotID))
 	results := resultauthority.NewResultPostgres(fixture.tx)
-	repository := postgres.NewParticipantSettlementRepository(fixture.tx, results)
+	repository := settlementrepo.NewParticipantSettlementRepositoryWithFinalizer(
+		fixture.tx,
+		results,
+		resultauthority.FinalizeProjection,
+	)
 	authority, err := repository.LoadConcurrentWinnerAuthority(ctx, scope)
 	require.NoError(t, err)
 	commandID := uuid.New()

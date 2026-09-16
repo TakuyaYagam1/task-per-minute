@@ -12,15 +12,16 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 
-	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	assignmentrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment"
 	draftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment/draft"
+	exactdraftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment/exactdraft"
 	playoffrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/playoff"
 	projectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
 	recoveryterminalrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/recovery/terminal"
 	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	wavestartrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/execution/wavestart"
+	adminresultrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/result"
 	progressionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/progression"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	assignmentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/assignment"
@@ -81,12 +82,17 @@ func TestFinalSwissLiveForfeitPublishesReceipt(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func swissOperatorResultWorkflow(t *testing.T, fixture tournamentAdminSwissProofFixture) (*postgres.TournamentAdminResultPostgres, *tournamentadmin.OperatorResultWorkflow) {
+func swissOperatorResultWorkflow(t *testing.T, fixture tournamentAdminSwissProofFixture) (*adminresultrepo.TournamentAdminResultPostgres, *tournamentadmin.OperatorResultWorkflow) {
 	t.Helper()
-	repository := postgres.NewTournamentAdminResultPostgres(fixture.tx, resultauthority.NewResultPostgres(fixture.tx))
+	repository := adminresultrepo.NewTournamentAdminResultPostgresWithDependencies(
+		fixture.tx,
+		resultauthority.NewResultPostgres(fixture.tx),
+		resultauthority.FinalizeProjection,
+		wavestartrepo.EnsurePreStartSwissRoundProofForCommand,
+	)
 	drafts := draftrepo.NewDraftPostgres(fixture.tx)
 	assignments := assignmentrepo.NewAssignmentPostgres(fixture.tx)
-	exactPlans := postgres.NewExactDraftBranchPlanPostgres(fixture.tx, drafts)
+	exactPlans := exactdraftrepo.NewExactDraftBranchPlanPostgres(fixture.tx, drafts)
 	planner := playoff.NewFinalDraftAssignmentService(assignmentusecase.NewExactDraftBranchPlanUseCase(exactPlans), exactPlans, exactPlans)
 	terminal := playoff.NewTerminalCoordinator(playoff.TerminalCoordinatorDependencies{
 		Repository: playoffrepo.NewPlayoffTerminalPostgres(fixture.tx, drafts, assignments.CreateAssignmentTx),
@@ -282,7 +288,7 @@ func (r *observedOperatorResultRepository) CommitOperatorNoShow(ctx context.Cont
 }
 
 type observedOperatorResultRepository struct {
-	*postgres.TournamentAdminResultPostgres
+	*adminresultrepo.TournamentAdminResultPostgres
 	t *testing.T
 }
 
