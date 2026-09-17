@@ -1,4 +1,4 @@
-package golden_test
+package submission_test
 
 import (
 	"context"
@@ -14,8 +14,10 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
 	assignmentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/assignment"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
 	goldenmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/mocks"
+	goldenplan "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/plan"
+	goldenstate "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/state"
+	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/wave"
 	swissusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/swiss"
 )
 
@@ -37,16 +39,16 @@ func submissionMustGoldenPlanProjection(
 	revisionID domain.DerivedRevisionID,
 	revisionNo int,
 	standings []swissusecase.NormalStanding,
-) goldenusecase.StandingsProjection {
+) goldenplan.StandingsProjection {
 	tb.Helper()
-	source, err := goldenusecase.NewStandingsProjection(
+	source, err := goldenplan.NewStandingsProjection(
 		tournamentID, projectionID, revisionID, revisionNo, nil, true, standings,
 	)
 	require.NoError(tb, err)
 	return source
 }
 
-func submissionGoldenPlanExact(tb testing.TB) (goldenusecase.Authority, goldenusecase.Command) {
+func submissionGoldenPlanExact(tb testing.TB) (goldenplan.Authority, goldenplan.Command) {
 	tb.Helper()
 	now := time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC)
 	tournamentID := submissionGoldenPlanID(400)
@@ -54,50 +56,50 @@ func submissionGoldenPlanExact(tb testing.TB) (goldenusecase.Authority, goldenus
 		tb, tournamentID, submissionGoldenPlanID(401), submissionGoldenPlanRevisionID(402), 1,
 		submissionGoldenPlanStandings([]int{10, 10, 9, 9, 9, 7}),
 	)
-	partition, err := goldenusecase.PartitionTies(source)
+	partition, err := goldenplan.PartitionTies(source)
 	require.NoError(tb, err)
 	seeds := partition.Groups()
-	groups := make([]goldenusecase.GroupAuthority, len(seeds))
+	groups := make([]goldenplan.GroupAuthority, len(seeds))
 	for index, seed := range seeds {
-		command := goldenusecase.GroupRevisionCommand{
+		command := goldenplan.GroupRevisionCommand{
 			TournamentID: tournamentID, GroupID: submissionGoldenPlanID(410 + index),
 			RevisionID: submissionGoldenPlanRevisionID(420 + index), RevisionNo: 1,
 			ExpectedSourceRevisionID:    source.RevisionID,
 			ExpectedSourcePayloadDigest: source.PayloadDigest,
 			PositionFrom:                seed.PositionFrom, PositionTo: seed.PositionTo,
 		}
-		revision, buildErr := goldenusecase.BuildGroupRevision(command, source, seed, nil, nil)
+		revision, buildErr := goldenplan.BuildGroupRevision(command, source, seed, nil, nil)
 		require.NoError(tb, buildErr)
 		members := revision.Members()
 		active := make([]uuid.UUID, len(members))
 		for memberIndex, member := range members {
 			active[memberIndex] = member.ParticipantID
 		}
-		groups[index] = goldenusecase.GroupAuthority{Revision: revision, ActiveParticipantIDs: active}
+		groups[index] = goldenplan.GroupAuthority{Revision: revision, ActiveParticipantIDs: active}
 	}
 
 	poolID := submissionGoldenPlanID(430)
-	candidates := make([]goldenusecase.TaskVersion, 6)
+	candidates := make([]goldenplan.TaskVersion, 6)
 	versions := make([]domain.TaskVersionRef, len(candidates))
 	for index := range candidates {
 		task := submissionGoldenPlanTask(500 + index)
 		version := 2
 		versions[index] = domain.TaskVersionRef{TaskID: task.ID, Version: version}
-		candidates[index] = goldenusecase.TaskVersion{
+		candidates[index] = goldenplan.TaskVersion{
 			PoolRevisionID: poolID, Version: version, Task: task,
 			Health: domain.TaskVersionHealth{
 				TaskID: task.ID, Version: version, PoolRevisionID: poolID,
 				PoolKind: domain.AssignmentTaskKindGolden, Exists: true, Enabled: true,
 				Healthy: true, MutationLocked: true,
 			},
-			ArtifactDigest: goldenusecase.TaskArtifactDigest(task, version),
+			ArtifactDigest: goldenplan.TaskArtifactDigest(task, version),
 		}
 	}
 
-	participants := make([]goldenusecase.ParticipantReservation, 0, 5)
+	participants := make([]goldenplan.ParticipantReservation, 0, 5)
 	for _, group := range groups {
 		for _, participantID := range group.ActiveParticipantIDs {
-			participants = append(participants, goldenusecase.ParticipantReservation{
+			participants = append(participants, goldenplan.ParticipantReservation{
 				ParticipantID: participantID, PlayerID: submissionGoldenPlanID(1000 + len(participants)),
 				Reservation: domain.ParticipantReservation{
 					PlayerID: submissionGoldenPlanID(1000 + len(participants)), ReservationID: submissionGoldenPlanID(1100 + len(participants)),
@@ -115,9 +117,9 @@ func submissionGoldenPlanExact(tb testing.TB) (goldenusecase.Authority, goldenus
 			TaskID:        versions[index].TaskID, Version: 1,
 		})
 	}
-	authority, err := goldenusecase.BuildAuthority(goldenusecase.Authority{
-		Scope: goldenusecase.Scope{TournamentID: tournamentID, PlanSetID: submissionGoldenPlanID(440)},
-		Revisions: goldenusecase.Revisions{
+	authority, err := goldenplan.BuildAuthority(goldenplan.Authority{
+		Scope: goldenplan.Scope{TournamentID: tournamentID, PlanSetID: submissionGoldenPlanID(440)},
+		Revisions: goldenplan.Revisions{
 			SourceProjectionRevisionID: source.RevisionID,
 			GroupSetRevisionID:         submissionGoldenPlanID(441), GroupSetRevision: 1,
 			PoolRevisionID: poolID, PoolRevision: 1,
@@ -134,7 +136,7 @@ func submissionGoldenPlanExact(tb testing.TB) (goldenusecase.Authority, goldenus
 	})
 	require.NoError(tb, err)
 
-	groupCommands := make([]goldenusecase.GroupCommand, len(groups))
+	groupCommands := make([]goldenplan.GroupCommand, len(groups))
 	for groupIndex, group := range groups {
 		groupCommands[groupIndex].GroupID = group.Revision.GroupID()
 		groupCommands[groupIndex].GroupRevisionID = group.Revision.RevisionID()
@@ -145,7 +147,7 @@ func submissionGoldenPlanExact(tb testing.TB) (goldenusecase.Authority, goldenus
 			groupCommands[groupIndex].SnapshotIDs[edgeIndex] = submissionGoldenPlanID(base + 3)
 		}
 	}
-	command := goldenusecase.Command{
+	command := goldenplan.Command{
 		Scope: authority.Scope, PlanID: submissionGoldenPlanID(700), PlanRevisionID: submissionGoldenPlanID(701),
 		Expected: authority.Expectation(), GroupCommands: groupCommands, CreatedAt: now,
 	}
@@ -180,11 +182,11 @@ func submissionGoldenPlanSuffix(value int) string {
 	return string(encoded)
 }
 
-func submissionGoldenStateFixture(t *testing.T, openedAt time.Time) goldenusecase.GoldenState {
+func submissionGoldenStateFixture(t *testing.T, openedAt time.Time) goldenstate.GoldenState {
 	t.Helper()
 
 	authority, command := submissionGoldenPlanExact(t)
-	exactPlan, err := goldenusecase.BuildExactPlan(command, authority)
+	exactPlan, err := goldenplan.BuildExactPlan(command, authority)
 	require.NoError(t, err)
 	require.GreaterOrEqual(t, len(exactPlan.Groups), 2)
 	groupPlan := exactPlan.Groups[1]
@@ -208,21 +210,21 @@ func submissionGoldenStateFixture(t *testing.T, openedAt time.Time) goldenusecas
 			ParticipantIDs: participantIDs,
 		}},
 	}
-	state, err := goldenusecase.BuildGoldenState(goldenusecase.GoldenState{
-		Scope: goldenusecase.GoldenStateScope{
+	state, err := goldenstate.BuildGoldenState(goldenstate.GoldenState{
+		Scope: goldenstate.GoldenStateScope{
 			TournamentID: topology.TournamentID(), GroupID: topology.GroupID(),
 			GroupRevisionID: topology.RevisionID(),
 		},
 		Topology: topology, ExactPlan: exactPlan, Group: group,
-		Membership: goldenusecase.GoldenMembershipRevision{
+		Membership: goldenstate.GoldenMembershipRevision{
 			RevisionID: submissionGoldenWaveFixtureID(22), Revision: 1,
 		},
 		RevisionID: submissionGoldenWaveFixtureID(30), Revision: 1,
-		Windows: []goldenusecase.GoldenReadyWindow{{
+		Windows: []goldenstate.GoldenReadyWindow{{
 			ID: submissionGoldenWaveFixtureID(40), RevisionID: submissionGoldenWaveFixtureID(41), Revision: 1,
 			AttemptID: attemptID, AttemptNo: 1,
 			OpenedAt: openedAt, Deadline: openedAt.Add(30 * time.Second),
-			State:               goldenusecase.GoldenReadyWindowOpen,
+			State:               goldenstate.GoldenReadyWindowOpen,
 			ReadinessRevisionID: submissionGoldenWaveFixtureID(42), ReadinessRevision: 1,
 			PresenceRevisionID: submissionGoldenWaveFixtureID(43), PresenceRevision: 1,
 			PresentParticipantIDs: participantIDs,
@@ -235,7 +237,7 @@ func submissionGoldenStateFixture(t *testing.T, openedAt time.Time) goldenusecas
 
 type submissionStartedWaveFixtureState struct {
 	mu        sync.Mutex
-	state     goldenusecase.GoldenState
+	state     goldenstate.GoldenState
 	execution *goldenusecase.GoldenWaveExecution
 	replays   map[uuid.UUID]goldenusecase.GoldenWaveCommandReplay
 }
@@ -243,7 +245,7 @@ type submissionStartedWaveFixtureState struct {
 func submissionNewStartedGoldenFixture(
 	t *testing.T,
 	startedAt time.Time,
-) (goldenusecase.GoldenState, goldenusecase.GoldenWaveExecution) {
+) (goldenstate.GoldenState, goldenusecase.GoldenWaveExecution) {
 	t.Helper()
 
 	openedAt := startedAt.Add(-20 * time.Second)
@@ -252,7 +254,7 @@ func submissionNewStartedGoldenFixture(
 	state.Windows = nil
 	state.Membership.PayloadDigest = [sha256.Size]byte{}
 	state.PayloadDigest = [sha256.Size]byte{}
-	state, err := goldenusecase.BuildGoldenState(state)
+	state, err := goldenstate.BuildGoldenState(state)
 	require.NoError(t, err)
 
 	fixture := &submissionStartedWaveFixtureState{
@@ -262,7 +264,7 @@ func submissionNewStartedGoldenFixture(
 	repository := goldenmocks.NewMockWaveRepository(t)
 	repository.EXPECT().
 		LoadGoldenState(mock.Anything, mock.Anything).
-		RunAndReturn(func(context.Context, goldenusecase.GoldenStateScope) (goldenusecase.GoldenState, error) {
+		RunAndReturn(func(context.Context, goldenstate.GoldenStateScope) (goldenstate.GoldenState, error) {
 			fixture.mu.Lock()
 			defer fixture.mu.Unlock()
 			return fixture.state.Snapshot(), nil
@@ -284,7 +286,7 @@ func submissionNewStartedGoldenFixture(
 		Maybe()
 	repository.EXPECT().
 		LoadGoldenWaveExecution(mock.Anything, mock.Anything).
-		RunAndReturn(func(context.Context, goldenusecase.GoldenStateScope) (*goldenusecase.GoldenWaveExecution, error) {
+		RunAndReturn(func(context.Context, goldenstate.GoldenStateScope) (*goldenusecase.GoldenWaveExecution, error) {
 			fixture.mu.Lock()
 			defer fixture.mu.Unlock()
 			if fixture.execution == nil {

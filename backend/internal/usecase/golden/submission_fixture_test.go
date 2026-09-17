@@ -12,7 +12,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
-	goldenmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/mocks"
+	goldenmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/submission/mocks"
 )
 
 type attemptTask049SubmissionHarness struct {

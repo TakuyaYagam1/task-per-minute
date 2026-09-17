@@ -1,4 +1,4 @@
-package golden_test
+package submission_test
 
 import (
 	"crypto/sha256"
@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
+	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/submission"
 )
 
 func TestGoldenSubmissionScopeIsValid(t *testing.T) {

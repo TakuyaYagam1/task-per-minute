@@ -1,4 +1,4 @@
-package golden_test
+package submission_test
 
 import (
 	"bytes"
@@ -11,8 +11,9 @@ import (
 	"time"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
-	goldenmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/mocks"
+	goldenstate "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/state"
+	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/submission"
+	goldenmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/submission/mocks"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
@@ -238,7 +239,7 @@ func submissionTask049StartedExecution(t *testing.T, startedAt time.Time) golden
 	return execution
 }
 
-func submissionTask049StartedFixture(t *testing.T, startedAt time.Time) (goldenusecase.GoldenState, goldenusecase.GoldenWaveExecution) {
+func submissionTask049StartedFixture(t *testing.T, startedAt time.Time) (goldenstate.GoldenState, goldenusecase.GoldenWaveExecution) {
 	t.Helper()
 	return submissionNewStartedGoldenFixture(t, startedAt)
 }
