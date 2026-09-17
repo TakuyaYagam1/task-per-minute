@@ -1,4 +1,4 @@
-package correction
+package plan
 
 import (
 	"crypto/sha256"
