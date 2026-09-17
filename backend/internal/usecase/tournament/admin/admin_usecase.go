@@ -11,6 +11,7 @@ import (
 	executionusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/execution"
 	incidentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/incident"
 	lifecycleusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/lifecycle"
+	operationusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/operation"
 	pairingusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/pairing"
 	replayusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/replay"
 	resultusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/result"
@@ -102,7 +103,7 @@ func (a *AdminUseCase) UnlockRoster(ctx context.Context, command rosterusecase.U
 
 func (a *AdminUseCase) rosterMutation(
 	ctx context.Context,
-	scope CommandScope,
+	scope operationusecase.CommandScope,
 	valid bool,
 	invoke func() (rosterusecase.RosterView, error),
 ) (rosterusecase.RosterView, error) {

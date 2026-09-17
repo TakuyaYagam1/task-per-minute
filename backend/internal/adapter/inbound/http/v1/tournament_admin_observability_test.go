@@ -18,9 +18,9 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/observability"
 	observabilitymocks "github.com/TakuyaYagam1/task-per-minute/internal/observability/mocks"
 	authusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/auth"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
 	tournamentadmininbound "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/inbound"
 	tournamentadminmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/mocks"
+	tournamentadminobservability "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/observability"
 	tournamentadminobserved "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/observed"
 	rosterusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/roster"
 	tournamentpreflight "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/preflight"
@@ -45,7 +45,7 @@ func TestRosterPreflightIngressCommandIDCorrelatesTerminalTelemetry(t *testing.T
 			event.CorrelationID == commandID.String() && event.CommandID == commandID.String() &&
 			event.TournamentID == tournamentID.String() && event.EntityID == tournamentID.String() &&
 			event.EntityKind == "tournament" && event.Stage == "maintenance" &&
-			event.Transition == string(tournamentadmin.OperationPreflightRun) &&
+			event.Transition == string(tournamentadminobservability.OperationPreflightRun) &&
 			event.ReasonCode == "stale_revision" && event.Revision == 7
 	})).Once()
 	events.EXPECT().ObserveTournamentEvent(mock.Anything, mock.MatchedBy(func(event observability.TournamentEvent) bool {

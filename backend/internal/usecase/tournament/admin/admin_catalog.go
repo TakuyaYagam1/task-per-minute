@@ -18,6 +18,7 @@ import (
 	executionusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/execution"
 	incidentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/incident"
 	lifecycleusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/lifecycle"
+	operationusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/operation"
 	pairingusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/pairing"
 	replayusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/replay"
 	resultusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/result"
@@ -116,11 +117,11 @@ func validTournamentPage(page usecase.TournamentPage) bool {
 	return page.Next == nil || page.Next.TournamentID != uuid.Nil && domain.IsValidServerTime(page.Next.CreatedAt)
 }
 
-func validOperator(operator OperatorIdentity) bool {
+func validOperator(operator operationusecase.OperatorIdentity) bool {
 	return operator.ActorID != uuid.Nil
 }
 
-func validCommandScope(scope CommandScope) bool {
+func validCommandScope(scope operationusecase.CommandScope) bool {
 	return validOperator(scope.Operator) && scope.TournamentID != uuid.Nil && scope.CommandID != uuid.Nil
 }
 
@@ -128,7 +129,7 @@ func normalizeAdminError(err error) error {
 	if err == nil || !errors.Is(err, domain.ErrConflict) {
 		return err
 	}
-	var conflict *RevisionConflictError
+	var conflict *operationusecase.RevisionConflictError
 	if !errors.As(err, &conflict) || conflict.ExpectedRevision < 1 || conflict.CurrentRevision < 1 ||
 		conflict.CurrentState != "" && !conflict.CurrentState.IsValid() {
 		return domain.ErrInternal

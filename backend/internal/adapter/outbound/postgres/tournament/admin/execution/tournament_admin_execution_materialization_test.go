@@ -13,7 +13,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
 	swissusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/swiss"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	adminoperation "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/operation"
 	pairingusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/pairing"
 )
 
@@ -22,7 +22,7 @@ func TestSwissRandomMaterializationPlanRequiresOneSeriesPerPair(t *testing.T) {
 
 	plan := pairingusecase.PairingPlan{
 		Command: pairingusecase.PairingCommand{
-			CommandScope: tournamentadmin.CommandScope{TournamentID: uuid.New()},
+			CommandScope: adminoperation.CommandScope{TournamentID: uuid.New()},
 			CategoryMode: domain.CategoryModeRandom,
 		},
 		Authority: pairingusecase.PairingAuthority{RosterID: uuid.New()},
@@ -40,8 +40,8 @@ func TestSwissAdminMaterializationPlanRequiresOneCategoryAndActor(t *testing.T) 
 
 	plan := pairingusecase.PairingPlan{
 		Command: pairingusecase.PairingCommand{
-			CommandScope: tournamentadmin.CommandScope{
-				Operator:     tournamentadmin.OperatorIdentity{ActorID: uuid.New()},
+			CommandScope: adminoperation.CommandScope{
+				Operator:     adminoperation.OperatorIdentity{ActorID: uuid.New()},
 				TournamentID: uuid.New(),
 			},
 			CategoryMode: domain.CategoryModeAdmin,

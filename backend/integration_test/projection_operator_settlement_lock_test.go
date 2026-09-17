@@ -18,7 +18,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	gamesettlement "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/settlement"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	adminoperation "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/operation"
 	tournamentadminresult "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/result"
 )
 
@@ -104,7 +104,7 @@ func TestLiveForfeitAndParticipantSettlementUseSameLockOrder(t *testing.T) {
 		Scan(&participantID, &slotID, &attemptID))
 	gameRevisionID := uuid.New()
 	command := tournamentadminresult.ForfeitCommand{
-		CommandScope: tournamentadmin.CommandScope{Operator: tournamentadmin.OperatorIdentity{ActorID: uuid.New()}, TournamentID: fixture.tournamentID, CommandID: uuid.New()},
+		CommandScope: adminoperation.CommandScope{Operator: adminoperation.OperatorIdentity{ActorID: uuid.New()}, TournamentID: fixture.tournamentID, CommandID: uuid.New()},
 		SeriesID:     binding.SeriesID, ForfeitingParticipantID: participantID,
 		Confirmed: true, Reason: "participant conceded during play", ExpectedAuthorityRevision: authority.AuthorityRevision,
 		ExpectedGame: &tournamentadminresult.GameExpectation{SlotID: slotID, GameID: attemptID, AttemptNo: 1, State: domain.GameStateActive},

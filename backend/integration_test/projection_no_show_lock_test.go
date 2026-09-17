@@ -18,7 +18,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	gamenoshow "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/noshow"
 	gamestart "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/start"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	adminoperation "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/operation"
 	tournamentadminresult "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/result"
 )
 
@@ -36,7 +36,7 @@ func TestOperatorNoShowAndWaveStartUseSameLockOrder(t *testing.T) {
 		FROM waves AS wave JOIN ready_windows AS ready_window ON ready_window.wave_id = wave.id WHERE wave.id = $1`, fixture.waveID).
 		Scan(&waveRevisionID, &windowRevisionID, &deadline))
 	command := tournamentadminresult.NoShowCommand{
-		CommandScope: tournamentadmin.CommandScope{Operator: tournamentadmin.OperatorIdentity{ActorID: uuid.New()}, TournamentID: fixture.tournamentID, CommandID: uuid.New()},
+		CommandScope: adminoperation.CommandScope{Operator: adminoperation.OperatorIdentity{ActorID: uuid.New()}, TournamentID: fixture.tournamentID, CommandID: uuid.New()},
 		WaveID:       fixture.waveID, WindowID: fixture.windowID, SeriesID: binding.SeriesID,
 		Confirmed: true, Reason: "participant absent at ready deadline", ExpectedAuthorityRevision: authority.AuthorityRevision,
 		ExpectedWaveRevisionID: waveRevisionID, ExpectedWindowRevisionID: windowRevisionID, ExpectedSeriesState: domain.SeriesStateReady,

@@ -29,7 +29,7 @@ import (
 	gamenoshow "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/noshow"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/recovery"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	adminoperation "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/operation"
 	tournamentadminresult "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/result"
 	progression "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/progression"
 )
@@ -59,7 +59,7 @@ func TestFinalSwissLiveForfeitPublishesReceipt(t *testing.T) {
 		Scan(&participantID, &slotID, &attemptID))
 	gameRevisionID := uuid.New()
 	command := tournamentadminresult.ForfeitCommand{
-		CommandScope: tournamentadmin.CommandScope{Operator: tournamentadmin.OperatorIdentity{ActorID: uuid.New()}, TournamentID: fixture.tournamentID, CommandID: uuid.New()},
+		CommandScope: adminoperation.CommandScope{Operator: adminoperation.OperatorIdentity{ActorID: uuid.New()}, TournamentID: fixture.tournamentID, CommandID: uuid.New()},
 		SeriesID:     binding.SeriesID, ForfeitingParticipantID: participantID,
 		Confirmed: true, Reason: "participant conceded during play", ExpectedAuthorityRevision: authority.AuthorityRevision,
 		ExpectedGame: &tournamentadminresult.GameExpectation{SlotID: slotID, GameID: attemptID, AttemptNo: 1, State: domain.GameStateActive},
@@ -147,7 +147,7 @@ func testFinalSwissOperatorReceipt(t *testing.T, noShow bool, recoverDeadline ..
 				continue
 			}
 			command := tournamentadminresult.NoShowCommand{
-				CommandScope: tournamentadmin.CommandScope{Operator: tournamentadmin.OperatorIdentity{ActorID: uuid.New()}, TournamentID: fixture.tournamentID, CommandID: uuid.New()},
+				CommandScope: adminoperation.CommandScope{Operator: adminoperation.OperatorIdentity{ActorID: uuid.New()}, TournamentID: fixture.tournamentID, CommandID: uuid.New()},
 				WaveID:       fixture.waveID, WindowID: windowID, SeriesID: binding.SeriesID,
 				Confirmed: true, Reason: "participant absent at ready deadline", ExpectedAuthorityRevision: authority.AuthorityRevision,
 				ExpectedWaveRevisionID: waveRevisionID, ExpectedWindowRevisionID: windowRevisionID, ExpectedSeriesState: domain.SeriesStateReady,
@@ -165,7 +165,7 @@ func testFinalSwissOperatorReceipt(t *testing.T, noShow bool, recoverDeadline ..
 		require.NoError(t, sharedPool.QueryRow(ctx, `SELECT series.second_participant_id, attempt.slot_id, attempt.id
 			FROM series JOIN game_attempts AS attempt ON attempt.series_id = series.id WHERE series.id = $1`, binding.SeriesID).Scan(&participantID, &slotID, &attemptID))
 		command := tournamentadminresult.ForfeitCommand{
-			CommandScope: tournamentadmin.CommandScope{Operator: tournamentadmin.OperatorIdentity{ActorID: uuid.New()}, TournamentID: fixture.tournamentID, CommandID: uuid.New()},
+			CommandScope: adminoperation.CommandScope{Operator: adminoperation.OperatorIdentity{ActorID: uuid.New()}, TournamentID: fixture.tournamentID, CommandID: uuid.New()},
 			SeriesID:     binding.SeriesID, ForfeitingParticipantID: participantID,
 			Confirmed: true, Reason: "participant conceded before start", ExpectedAuthorityRevision: authority.AuthorityRevision,
 			ExpectedGame: &tournamentadminresult.GameExpectation{SlotID: slotID, GameID: attemptID, AttemptNo: 1, State: domain.GameStatePlanned},

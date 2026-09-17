@@ -16,6 +16,7 @@ import (
 	executionusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/execution"
 	incidentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/incident"
 	lifecycleusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/lifecycle"
+	operationusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/operation"
 	pairingusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/pairing"
 	replayusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/replay"
 	resultusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/result"
@@ -255,13 +256,13 @@ func TestNormalizeAdminErrorRequiresCompleteRevisionEvidence(t *testing.T) {
 	t.Parallel()
 
 	require.ErrorIs(t, normalizeAdminError(domain.ErrConflict), domain.ErrInternal)
-	require.ErrorIs(t, normalizeAdminError(&RevisionConflictError{
+	require.ErrorIs(t, normalizeAdminError(&operationusecase.RevisionConflictError{
 		ExpectedRevision: 1,
 		CurrentRevision:  2,
 		CurrentState:     domain.TournamentState("unknown"),
 	}), domain.ErrInternal)
 
-	conflict := &RevisionConflictError{
+	conflict := &operationusecase.RevisionConflictError{
 		ExpectedRevision: 1,
 		CurrentRevision:  2,
 		CurrentState:     domain.TournamentStateSwiss,
@@ -289,10 +290,10 @@ type adminCommands struct {
 }
 
 func validAdminCommands() adminCommands {
-	operator := OperatorIdentity{ActorID: adminTestID(1)}
+	operator := operationusecase.OperatorIdentity{ActorID: adminTestID(1)}
 	tournamentID := adminTestID(2)
-	scope := func(id int) CommandScope {
-		return CommandScope{Operator: operator, TournamentID: tournamentID, CommandID: adminTestID(id)}
+	scope := func(id int) operationusecase.CommandScope {
+		return operationusecase.CommandScope{Operator: operator, TournamentID: tournamentID, CommandID: adminTestID(id)}
 	}
 	players := []uuid.UUID{adminTestID(20), adminTestID(21), adminTestID(22), adminTestID(23)}
 	participants := make([]rosterusecase.RosterParticipantInput, len(players))

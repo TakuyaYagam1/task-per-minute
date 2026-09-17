@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	operationusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/operation"
 	rosterusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/roster"
 )
 
@@ -31,7 +32,7 @@ func TestAdminUseCaseGetRosterPreservesEmptyRoster(t *testing.T) {
 	application := AdminNewUseCase(AdminDependencies{Roster: workflow})
 
 	actual, err := application.GetRoster(context.Background(), rosterusecase.RosterQuery{
-		Operator:     OperatorIdentity{ActorID: rosterCloneTestID(3)},
+		Operator:     operationusecase.OperatorIdentity{ActorID: rosterCloneTestID(3)},
 		TournamentID: tournamentID,
 	})
 

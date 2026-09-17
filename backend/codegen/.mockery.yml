@@ -36,9 +36,11 @@ packages:
       TournamentCancellationRepository:
   github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin:
     interfaces:
+      AdminService:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/observability:
+    interfaces:
       OperationClock:
       OperationObserver:
-      AdminService:
   github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/execution:
     interfaces:
       ExecutionTransactionManager:

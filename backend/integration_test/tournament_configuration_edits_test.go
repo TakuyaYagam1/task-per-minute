@@ -20,9 +20,9 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	gamestart "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/start"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
 	configurationusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/configuration"
 	tournamentadminexecution "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/execution"
+	adminoperation "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/operation"
 	pairingusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/pairing"
 	snapshotusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/snapshot"
 )
@@ -43,7 +43,7 @@ func TestTournamentConfigurationDefaultsThroughProductionHTTPAndPostgres(t *test
 	authority, err := configurationrepo.NewProductionTournamentConfigurationPostgres(fixture.mgr).LoadConfiguration(
 		ctx,
 		configurationusecase.ConfigurationLoadQuery{
-			Operator:     tournamentadmin.OperatorIdentity{ActorID: uuid.New()},
+			Operator:     adminoperation.OperatorIdentity{ActorID: uuid.New()},
 			TournamentID: tournament.Id,
 		},
 	)
@@ -150,7 +150,7 @@ func TestTournamentSeriesConfigurationRebuildsUnstartedAssignmentThroughProducti
 		Transactions: fixture.mgr, Repository: executionrepo.NewRepository(fixture.mgr, resultauthority.FinalizeProjection),
 	})
 	_, err := execution.ConfigurePairings(ctx, pairingusecase.PairingCommand{
-		CommandScope:               tournamentadmin.CommandScope{Operator: tournamentadmin.OperatorIdentity{ActorID: uuid.New()}, TournamentID: created.Id, CommandID: uuid.New()},
+		CommandScope:               adminoperation.CommandScope{Operator: adminoperation.OperatorIdentity{ActorID: uuid.New()}, TournamentID: created.Id, CommandID: uuid.New()},
 		ExpectedProjectionRevision: snapshot.NextCursor.ProjectionRevision, RoundNumber: 1,
 		PairingMode: pairingusecase.PairingModeAutomatic, CategoryMode: domain.CategoryModeRandom,
 		Categories: []domain.Category{domain.CategoryWeb, domain.CategoryCrypto, domain.CategoryForensics},
@@ -224,7 +224,7 @@ func TestTournamentManualRoundRevisionRebuildsPairingsThroughProductionHTTPAndPo
 	}
 	execution := tournamentadminexecution.NewExecutionWorkflow(tournamentadminexecution.ExecutionWorkflowDependencies{Transactions: fixture.mgr, Repository: executionRepository})
 	_, err = execution.ConfigurePairings(ctx, pairingusecase.PairingCommand{
-		CommandScope:               tournamentadmin.CommandScope{Operator: tournamentadmin.OperatorIdentity{ActorID: uuid.New()}, TournamentID: created.Id, CommandID: uuid.New()},
+		CommandScope:               adminoperation.CommandScope{Operator: adminoperation.OperatorIdentity{ActorID: uuid.New()}, TournamentID: created.Id, CommandID: uuid.New()},
 		ExpectedProjectionRevision: pairingAuthority.ProjectionRevision, RoundNumber: 1,
 		PairingMode: pairingusecase.PairingModeManual, CategoryMode: domain.CategoryModeRandom,
 		Categories:     []domain.Category{domain.CategoryWeb, domain.CategoryCrypto, domain.CategoryForensics},
@@ -460,7 +460,7 @@ func TestTournamentOddSwissRoundRevisionRebuildsByeThroughProductionHTTPAndPostg
 		catalog: catalog,
 	}
 	_, err = snapshotrepo.NewTournamentAdminSnapshotPostgres(fixture.mgr).GetOperatorSnapshot(ctx, snapshotusecase.SnapshotQuery{
-		Operator: tournamentadmin.OperatorIdentity{ActorID: uuid.New()}, TournamentID: created.Id,
+		Operator: adminoperation.OperatorIdentity{ActorID: uuid.New()}, TournamentID: created.Id,
 	})
 	require.NoError(t, err, "revised odd Swiss graph must load through the production snapshot repository")
 	participantSnapshots := tournamentsnapshotrepo.NewTournamentSnapshotPostgres(fixture.mgr)
