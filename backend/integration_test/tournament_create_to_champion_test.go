@@ -72,6 +72,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/readiness"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	tournamentadmininbound "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/inbound"
 	tournamentcancellation "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/cancellation"
 	catalogusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/catalog"
 	tournamentlifecycle "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/lifecycle"
@@ -434,7 +435,7 @@ func newTournamentFlowRESTFixture(t *testing.T) *restFixture {
 		),
 		Postseason: postseason,
 	})
-	admin := tournamentadmin.NewInboundAdapter(tournamentadmin.AdminNewUseCase(tournamentadmin.AdminDependencies{
+	admin := tournamentadmininbound.NewInboundAdapter(tournamentadmin.AdminNewUseCase(tournamentadmin.AdminDependencies{
 		Catalog: catalog, Roster: roster, Preflight: roster, Pairing: execution,
 		Lifecycle: lifecycle, Wave: execution, Forfeit: results,
 		Audit:     auditrepo.NewTournamentAdminAuditPostgres(tx),

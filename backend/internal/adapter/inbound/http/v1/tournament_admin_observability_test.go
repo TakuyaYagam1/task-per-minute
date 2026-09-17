@@ -19,6 +19,7 @@ import (
 	observabilitymocks "github.com/TakuyaYagam1/task-per-minute/internal/observability/mocks"
 	authusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/auth"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	tournamentadmininbound "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/inbound"
 	tournamentadminmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/mocks"
 	tournamentadminobserved "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/observed"
 	tournamentpreflight "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/preflight"
@@ -61,7 +62,7 @@ func TestRosterPreflightIngressCommandIDCorrelatesTerminalTelemetry(t *testing.T
 		JTI: "admin-access-session", Subject: "admin", Kind: authusecase.TokenKindAccess,
 	}, nil).Once()
 	handler := middleware.Build(logkit.Noop(), middleware.WithTournamentEventObserver(events))(NewHandler(New(Dependencies{
-		TournamentAdmin:                   tournamentadmin.NewInboundAdapter(admin),
+		TournamentAdmin:                   tournamentadmininbound.NewInboundAdapter(admin),
 		OperatorTournamentMutationLimiter: newAllowingRateLimiter(t),
 	}), HandlerOptions{AdminAuth: verifier}))
 	csrfToken, err := middleware.NewAdminCSRFToken(middleware.AdminAccessCSRFCookieName, accessToken)

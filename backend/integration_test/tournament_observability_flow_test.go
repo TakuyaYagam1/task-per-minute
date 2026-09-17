@@ -40,6 +40,7 @@ import (
 	eventdeliverymocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/eventdelivery/mocks"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	tournamentadmininbound "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/inbound"
 	tournamentadminobserved "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/observed"
 )
 
@@ -195,7 +196,7 @@ func newTournamentFlowHandler(
 		telemetryadapter.NewTournamentAdminObserver(observer),
 	)
 	server := v1.New(v1.Dependencies{
-		TournamentAdmin:                   tournamentadmin.NewInboundAdapter(admin),
+		TournamentAdmin:                   tournamentadmininbound.NewInboundAdapter(admin),
 		OperatorTournamentMutationLimiter: limiter,
 	})
 	return middleware.Build(logger, middleware.WithTournamentEventObserver(observer))(
