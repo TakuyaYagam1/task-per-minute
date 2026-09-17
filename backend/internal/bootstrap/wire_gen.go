@@ -42,7 +42,7 @@ import (
 	snapshot2 "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/snapshot"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/swiss/deadline"
 	assignment2 "github.com/TakuyaYagam1/task-per-minute/internal/usecase/assignment"
-	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	configuration2 "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/configuration"
 	"github.com/wahrwelt-kit/go-logkit"
 )
 
@@ -249,7 +249,7 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 	adminObservedService := provideObservedTournamentAdminApplication(adminIdempotentService, bootstrapClockFunc, tournamentAdminObserver)
 	tournamentAdminUseCase := provideTournamentAdminInbound(adminObservedService)
 	tournamentConfigurationPostgres := configuration.NewProductionTournamentConfigurationPostgres(txManager)
-	tournamentConfigurationWorkflow := admin.NewTournamentConfigurationWorkflow(tournamentConfigurationPostgres)
+	tournamentConfigurationWorkflow := configuration2.NewTournamentConfigurationWorkflow(tournamentConfigurationPostgres)
 	tournamentSnapshotPostgres := snapshot2.NewTournamentSnapshotPostgres(txManager)
 	participantStatePostgres := state.NewParticipantStatePostgres(txManager)
 	tournamentParticipantPostgres := authority2.NewTournamentParticipantPostgres(txManager)

@@ -21,7 +21,8 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	swissusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/swiss"
-	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	configurationusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/configuration"
+	operationusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/operation"
 	pairingusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/pairing"
 )
 
@@ -42,17 +43,17 @@ func NewTournamentConfigurationPostgresWithMaterializer(tx *db.TxManager, materi
 	return &TournamentConfigurationPostgres{tx: tx, materializer: materializer}
 }
 
-var _ admin.TournamentConfigurationRepository = (*TournamentConfigurationPostgres)(nil)
+var _ configurationusecase.TournamentConfigurationRepository = (*TournamentConfigurationPostgres)(nil)
 
 func (r *TournamentConfigurationPostgres) LoadConfiguration(
 	ctx context.Context,
-	query admin.ConfigurationLoadQuery,
-) (admin.ConfigurationAuthority, error) {
+	query configurationusecase.ConfigurationLoadQuery,
+) (configurationusecase.ConfigurationAuthority, error) {
 	if ctx == nil || r == nil || r.tx == nil || query.TournamentID == uuid.Nil || query.Operator.ActorID == uuid.Nil {
-		return admin.ConfigurationAuthority{}, domain.ErrValidation
+		return configurationusecase.ConfigurationAuthority{}, domain.ErrValidation
 	}
 
-	var authority admin.ConfigurationAuthority
+	var authority configurationusecase.ConfigurationAuthority
 	err := r.tx.ReadSnapshot(ctx, func(snapshotCtx context.Context) error {
 		loaded, err := r.loadConfiguration(snapshotCtx, query.TournamentID, query.CommandID)
 		if err != nil {
@@ -62,7 +63,7 @@ func (r *TournamentConfigurationPostgres) LoadConfiguration(
 		return nil
 	})
 	if err != nil {
-		return admin.ConfigurationAuthority{}, fmt.Errorf("TournamentConfigurationPostgres - LoadConfiguration: %w", err)
+		return configurationusecase.ConfigurationAuthority{}, fmt.Errorf("TournamentConfigurationPostgres - LoadConfiguration: %w", err)
 	}
 	return authority, nil
 }
@@ -72,34 +73,34 @@ func (r *TournamentConfigurationPostgres) loadConfiguration(
 	ctx context.Context,
 	tournamentID uuid.UUID,
 	commandID uuid.UUID,
-) (admin.ConfigurationAuthority, error) {
+) (configurationusecase.ConfigurationAuthority, error) {
 	q := r.tx.Querier(ctx)
 	roster, err := q.GetTournamentConfigurationEditRoster(ctx, tournamentID)
 	if err != nil {
-		return admin.ConfigurationAuthority{}, configurationQueryError("select roster", err)
+		return configurationusecase.ConfigurationAuthority{}, configurationQueryError("select roster", err)
 	}
 	authorityRow, err := q.GetTournamentConfigurationEditAuthority(ctx, sqlc.GetTournamentConfigurationEditAuthorityParams{
 		TournamentID: tournamentID, RosterID: roster.ID,
 	})
 	if err != nil {
-		return admin.ConfigurationAuthority{}, configurationQueryError("select authority", err)
+		return configurationusecase.ConfigurationAuthority{}, configurationQueryError("select authority", err)
 	}
 	standingsRow, err := q.GetTournamentConfigurationEditPublishedStandings(ctx, sqlc.GetTournamentConfigurationEditPublishedStandingsParams{
 		TournamentID: tournamentID, RosterID: roster.ID,
 		ProjectionRevisionID: authorityRow.ProjectionRevisionID, ExpectedProjectionRevision: authorityRow.ProjectionRevision,
 	})
 	if err != nil {
-		return admin.ConfigurationAuthority{}, configurationQueryError("select published standings", err)
+		return configurationusecase.ConfigurationAuthority{}, configurationQueryError("select published standings", err)
 	}
 	participantRows, err := q.ListTournamentConfigurationEditParticipants(ctx, roster.ID)
 	if err != nil {
-		return admin.ConfigurationAuthority{}, configurationQueryError("select participants", err)
+		return configurationusecase.ConfigurationAuthority{}, configurationQueryError("select participants", err)
 	}
 	participants := make([]pairingusecase.PairingParticipant, 0, len(participantRows))
 	for _, row := range participantRows {
 		attendance := domain.AttendanceState(row.Attendance)
 		if !attendance.IsValid() {
-			return admin.ConfigurationAuthority{}, domain.ErrInternal
+			return configurationusecase.ConfigurationAuthority{}, domain.ErrInternal
 		}
 		if attendance != domain.AttendanceStateCheckedIn {
 			continue
@@ -108,65 +109,65 @@ func (r *TournamentConfigurationPostgres) loadConfiguration(
 	}
 	standings, err := tournamentAdminStandings(standingsRow, participants)
 	if err != nil {
-		return admin.ConfigurationAuthority{}, fmt.Errorf("decode published standings: %w", err)
+		return configurationusecase.ConfigurationAuthority{}, fmt.Errorf("decode published standings: %w", err)
 	}
 	configuration, err := q.GetTournamentConfigurationEditConfiguration(ctx, sqlc.GetTournamentConfigurationEditConfigurationParams{
 		TournamentID: tournamentID, ConfigurationID: authorityRow.ConfigurationID,
 	})
 	if err != nil {
-		return admin.ConfigurationAuthority{}, configurationQueryError("select configuration", err)
+		return configurationusecase.ConfigurationAuthority{}, configurationQueryError("select configuration", err)
 	}
 	pools, err := q.ListTournamentConfigurationEditPoolRevisions(ctx, configuration.ID)
 	if err != nil {
-		return admin.ConfigurationAuthority{}, configurationQueryError("select category pools", err)
+		return configurationusecase.ConfigurationAuthority{}, configurationQueryError("select category pools", err)
 	}
 	memberships, err := q.ListTournamentConfigurationEditPoolMemberships(ctx, configuration.ID)
 	if err != nil {
-		return admin.ConfigurationAuthority{}, configurationQueryError("select category memberships", err)
+		return configurationusecase.ConfigurationAuthority{}, configurationQueryError("select category memberships", err)
 	}
 	defaults, err := q.ListTournamentConfigurationEditStageDefaults(ctx, configuration.ID)
 	if err != nil {
-		return admin.ConfigurationAuthority{}, configurationQueryError("select stage defaults", err)
+		return configurationusecase.ConfigurationAuthority{}, configurationQueryError("select stage defaults", err)
 	}
 	taskVersions, err := q.ListTaskPoolVersionHealth(ctx, []uuid.UUID{
 		configuration.NormalPoolRevisionID,
 		configuration.GoldenPoolRevisionID,
 	})
 	if err != nil {
-		return admin.ConfigurationAuthority{}, configurationQueryError("select task pool versions", err)
+		return configurationusecase.ConfigurationAuthority{}, configurationQueryError("select task pool versions", err)
 	}
 	seriesRows, err := q.ListActiveTournamentConfigurationEditSeries(ctx, sqlc.ListActiveTournamentConfigurationEditSeriesParams{
 		TournamentID: tournamentID, RosterID: roster.ID,
 	})
 	if err != nil {
-		return admin.ConfigurationAuthority{}, configurationQueryError("select active Series", err)
+		return configurationusecase.ConfigurationAuthority{}, configurationQueryError("select active Series", err)
 	}
 	stageRows, err := q.ListTournamentConfigurationEditSeriesStageBindings(ctx, sqlc.ListTournamentConfigurationEditSeriesStageBindingsParams{
 		TournamentID: tournamentID, RosterID: roster.ID,
 	})
 	if err != nil {
-		return admin.ConfigurationAuthority{}, configurationQueryError("select Series stage bindings", err)
+		return configurationusecase.ConfigurationAuthority{}, configurationQueryError("select Series stage bindings", err)
 	}
 	roundRows, err := q.ListTournamentConfigurationEditSwissRounds(ctx, sqlc.ListTournamentConfigurationEditSwissRoundsParams{
 		TournamentID: tournamentID, RosterID: roster.ID,
 	})
 	if err != nil {
-		return admin.ConfigurationAuthority{}, configurationQueryError("select Swiss rounds", err)
+		return configurationusecase.ConfigurationAuthority{}, configurationQueryError("select Swiss rounds", err)
 	}
 	reservationRows, err := q.ListTournamentConfigurationEditReservations(ctx, sqlc.ListTournamentConfigurationEditReservationsParams{
 		TournamentID: tournamentID, RosterID: roster.ID,
 	})
 	if err != nil {
-		return admin.ConfigurationAuthority{}, configurationQueryError("select reservations", err)
+		return configurationusecase.ConfigurationAuthority{}, configurationQueryError("select reservations", err)
 	}
 
 	content, poolByID, err := configurationContent(configuration, pools, memberships, defaults, taskVersions)
 	if err != nil {
-		return admin.ConfigurationAuthority{}, err
+		return configurationusecase.ConfigurationAuthority{}, err
 	}
 	stageDefaults, stageDefaultsRows, err := configurationStageDefaults(content, defaults, poolByID)
 	if err != nil {
-		return admin.ConfigurationAuthority{}, err
+		return configurationusecase.ConfigurationAuthority{}, err
 	}
 	content.StageDefaults = stageDefaultsRows
 	stageBySeries := make(map[uuid.UUID]struct {
@@ -176,14 +177,14 @@ func (r *TournamentConfigurationPostgres) loadConfiguration(
 	for _, row := range stageRows {
 		stage := domain.TournamentStage(row.Stage)
 		if !stage.IsValid() {
-			return admin.ConfigurationAuthority{}, fmt.Errorf("invalid Series stage %q: %w", row.Stage, domain.ErrInvalidContentConfiguration)
+			return configurationusecase.ConfigurationAuthority{}, fmt.Errorf("invalid Series stage %q: %w", row.Stage, domain.ErrInvalidContentConfiguration)
 		}
 		stageBySeries[row.ID] = struct {
 			stage domain.TournamentStage
 			round int
 		}{stage: stage, round: int(row.RoundNumber)}
 	}
-	reservationsBySeries := make(map[uuid.UUID][]admin.ConfigurationReservation)
+	reservationsBySeries := make(map[uuid.UUID][]configurationusecase.ConfigurationReservation)
 	for _, row := range reservationRows {
 		seriesID := row.SeriesID
 		if !seriesID.Valid {
@@ -193,18 +194,18 @@ func (r *TournamentConfigurationPostgres) loadConfiguration(
 			continue
 		}
 		if len(row.SelectionEvidence) == 0 {
-			return admin.ConfigurationAuthority{}, domain.ErrInternal
+			return configurationusecase.ConfigurationAuthority{}, domain.ErrInternal
 		}
-		reservationsBySeries[seriesID.UUID] = append(reservationsBySeries[seriesID.UUID], admin.ConfigurationReservation{
+		reservationsBySeries[seriesID.UUID] = append(reservationsBySeries[seriesID.UUID], configurationusecase.ConfigurationReservation{
 			ID: row.ID, OwnerID: row.OwnerID, SourceRevisionID: row.SourceRevisionID, Revision: row.Revision,
 			Used: row.State == "committed", Disclosed: row.DisclosedAt.Valid,
 			EvidenceDigest: sha256.Sum256(row.SelectionEvidence),
 		})
 	}
 
-	series := make([]admin.ConfigurationSeries, 0, len(seriesRows))
-	seriesByID := make(map[uuid.UUID]admin.ConfigurationSeries, len(seriesRows))
-	artifacts := make([]admin.ConfigurationArtifact, 0, len(seriesRows)+len(roundRows))
+	series := make([]configurationusecase.ConfigurationSeries, 0, len(seriesRows))
+	seriesByID := make(map[uuid.UUID]configurationusecase.ConfigurationSeries, len(seriesRows))
+	artifacts := make([]configurationusecase.ConfigurationArtifact, 0, len(seriesRows)+len(roundRows))
 	for _, row := range seriesRows {
 		binding, ok := stageBySeries[row.ID]
 		if !ok {
@@ -215,10 +216,10 @@ func (r *TournamentConfigurationPostgres) loadConfiguration(
 		}
 		mode, categories, err := seriesCategories(row, binding.stage, stageDefaults, poolByID)
 		if err != nil {
-			return admin.ConfigurationAuthority{}, err
+			return configurationusecase.ConfigurationAuthority{}, err
 		}
 		pool := poolForSeries(content, row.Format)
-		item := admin.ConfigurationSeries{
+		item := configurationusecase.ConfigurationSeries{
 			ID: row.ID, FirstParticipantID: row.FirstParticipantID, SecondParticipantID: row.SecondParticipantID,
 			Stage: binding.stage, RoundNumber: binding.round, Revision: row.Revision,
 			Mode: mode, Categories: categories, CategoryPoolRevisionID: pool.ID, CategoryPoolRevision: pool.Revision,
@@ -231,21 +232,21 @@ func (r *TournamentConfigurationPostgres) loadConfiguration(
 		artifacts = append(artifacts, configurationSeriesArtifact(item))
 	}
 
-	rounds := make([]admin.ConfigurationRound, 0, len(roundRows))
+	rounds := make([]configurationusecase.ConfigurationRound, 0, len(roundRows))
 	for _, row := range roundRows {
 		participants, err := decodeConfigurationUUIDArray(row.ParticipantIds)
 		if err != nil {
-			return admin.ConfigurationAuthority{}, fmt.Errorf("decode Swiss participants: %w", err)
+			return configurationusecase.ConfigurationAuthority{}, fmt.Errorf("decode Swiss participants: %w", err)
 		}
 		seriesIDs, err := decodeConfigurationUUIDArray(row.SeriesIds)
 		if err != nil {
-			return admin.ConfigurationAuthority{}, fmt.Errorf("decode Swiss Series: %w", err)
+			return configurationusecase.ConfigurationAuthority{}, fmt.Errorf("decode Swiss Series: %w", err)
 		}
-		reservations := make([]admin.ConfigurationReservation, 0)
+		reservations := make([]configurationusecase.ConfigurationReservation, 0)
 		for _, seriesID := range seriesIDs {
 			reservations = append(reservations, reservationsBySeries[seriesID]...)
 		}
-		item := admin.ConfigurationRound{
+		item := configurationusecase.ConfigurationRound{
 			ID: row.ID, Stage: domain.TournamentStageSwiss, Number: int(row.RoundNumber), Revision: row.Revision,
 			ParticipantIDs: participants, SeriesIDs: seriesIDs, Locked: row.LockedAt.Valid || row.LockRevision != nil,
 			ByeParticipantID: configurationUUIDPointer(row.ByeParticipantID), ByeRevisionID: configurationUUIDPointer(row.ByeRevisionID),
@@ -262,7 +263,7 @@ func (r *TournamentConfigurationPostgres) loadConfiguration(
 		artifacts = append(artifacts, configurationRoundArtifact(item))
 	}
 
-	authority := admin.ConfigurationAuthority{
+	authority := configurationusecase.ConfigurationAuthority{
 		TournamentID: tournamentID, ProjectionRevisionID: authorityRow.ProjectionRevisionID, ProjectionRevision: authorityRow.ProjectionRevision,
 		Configuration: content, TournamentState: domain.TournamentState(authorityRow.TournamentState), TournamentRevision: authorityRow.TournamentRevision,
 		SwissDefault: stageDefaults[domain.TournamentStageSwiss], GoldenDefault: stageDefaults[domain.TournamentStageGolden],
@@ -275,7 +276,7 @@ func (r *TournamentConfigurationPostgres) loadConfiguration(
 		}); commandErr == nil {
 			authority.Recorded = configurationCommandRecord(command)
 		} else if !errors.Is(commandErr, pgx.ErrNoRows) {
-			return admin.ConfigurationAuthority{}, configurationQueryError("select command replay", commandErr)
+			return configurationusecase.ConfigurationAuthority{}, configurationQueryError("select command replay", commandErr)
 		}
 	}
 	return authority, nil
@@ -284,10 +285,10 @@ func (r *TournamentConfigurationPostgres) loadConfiguration(
 //nolint:gocyclo // One transaction preserves publication, rebuild, invalidation and audit atomicity.
 func (r *TournamentConfigurationPostgres) ExecuteMutation(
 	ctx context.Context,
-	mutation admin.ConfigurationMutation,
-) (admin.ConfigurationMutationResult, error) {
+	mutation configurationusecase.ConfigurationMutation,
+) (configurationusecase.ConfigurationMutationResult, error) {
 	if ctx == nil || r == nil || r.tx == nil || mutation.CommandID == uuid.Nil || mutation.Authority.TournamentID == uuid.Nil {
-		return admin.ConfigurationMutationResult{}, domain.ErrValidation
+		return configurationusecase.ConfigurationMutationResult{}, domain.ErrValidation
 	}
 	var evidence inbound.AdminConfigurationMutationEvidence
 	err := r.tx.Do(ctx, func(txCtx context.Context) error {
@@ -386,15 +387,15 @@ func (r *TournamentConfigurationPostgres) ExecuteMutation(
 		return nil
 	})
 	if err != nil {
-		return admin.ConfigurationMutationResult{}, fmt.Errorf("TournamentConfigurationPostgres - ExecuteMutation: %w", err)
+		return configurationusecase.ConfigurationMutationResult{}, fmt.Errorf("TournamentConfigurationPostgres - ExecuteMutation: %w", err)
 	}
-	return admin.ConfigurationMutationResult{Evidence: evidence, Changed: true}, nil
+	return configurationusecase.ConfigurationMutationResult{Evidence: evidence, Changed: true}, nil
 }
 
 func (r *TournamentConfigurationPostgres) insertConfigurationChildren(
 	ctx context.Context,
 	q *sqlc.Queries,
-	mutation admin.ConfigurationMutation,
+	mutation configurationusecase.ConfigurationMutation,
 	configurationID uuid.UUID,
 ) error {
 	at := validTimestamp(mutation.Evidence.RequestedAt)
@@ -442,12 +443,12 @@ func (r *TournamentConfigurationPostgres) insertConfigurationChildren(
 func (r *TournamentConfigurationPostgres) applySeriesChanges(
 	ctx context.Context,
 	q *sqlc.Queries,
-	mutation admin.ConfigurationMutation,
+	mutation configurationusecase.ConfigurationMutation,
 	configurationID uuid.UUID,
 	configurationRevision int64,
 	rosterID uuid.UUID,
 ) error {
-	changes := make([]admin.ConfigurationSeriesChange, 0, 1)
+	changes := make([]configurationusecase.ConfigurationSeriesChange, 0, 1)
 	if mutation.SeriesChange != nil {
 		changes = append(changes, *mutation.SeriesChange)
 	}
@@ -501,9 +502,9 @@ func (r *TournamentConfigurationPostgres) applySeriesChanges(
 func (r *TournamentConfigurationPostgres) createConfigurationSeriesGenesis(
 	ctx context.Context,
 	q *sqlc.Queries,
-	mutation admin.ConfigurationMutation,
+	mutation configurationusecase.ConfigurationMutation,
 	waveID, seriesID, initialScoreID uuid.UUID,
-	series admin.ConfigurationSeries,
+	series configurationusecase.ConfigurationSeries,
 	rosterID uuid.UUID,
 ) error {
 	at := validTimestamp(mutation.Evidence.RequestedAt)
@@ -540,7 +541,7 @@ func (r *TournamentConfigurationPostgres) createConfigurationSeriesGenesis(
 	}
 	assignmentCommandID := uuid.NewSHA1(mutation.CommandID, []byte("configuration-series-assignment:"+seriesID.String()))
 	plan := pairingusecase.PairingPlan{
-		Command: pairingusecase.PairingCommand{CommandScope: admin.CommandScope{Operator: admin.OperatorIdentity{ActorID: mutation.Evidence.OperatorID},
+		Command: pairingusecase.PairingCommand{CommandScope: operationusecase.CommandScope{Operator: operationusecase.OperatorIdentity{ActorID: mutation.Evidence.OperatorID},
 			TournamentID: mutation.Authority.TournamentID, CommandID: assignmentCommandID}, CategoryMode: series.Mode, Categories: append([]domain.Category(nil), series.Categories...)},
 		Authority: pairingusecase.PairingAuthority{RosterID: rosterID}, SeriesIDs: []uuid.UUID{seriesID},
 		Pairs:     []swissusecase.Pair{{FirstParticipantID: series.FirstParticipantID, SecondParticipantID: series.SecondParticipantID}},
@@ -561,7 +562,7 @@ func (r *TournamentConfigurationPostgres) createConfigurationSeriesGenesis(
 func (r *TournamentConfigurationPostgres) applyRoundChange(
 	ctx context.Context,
 	q *sqlc.Queries,
-	mutation admin.ConfigurationMutation,
+	mutation configurationusecase.ConfigurationMutation,
 	configurationID uuid.UUID,
 	configurationRevision int64,
 	rosterID uuid.UUID,
@@ -673,7 +674,7 @@ func (r *TournamentConfigurationPostgres) applyRoundChange(
 	return nil
 }
 
-func (r *TournamentConfigurationPostgres) applyUnlockIntents(ctx context.Context, q *sqlc.Queries, mutation admin.ConfigurationMutation, rosterID uuid.UUID) error {
+func (r *TournamentConfigurationPostgres) applyUnlockIntents(ctx context.Context, q *sqlc.Queries, mutation configurationusecase.ConfigurationMutation, rosterID uuid.UUID) error {
 	for _, artifact := range mutation.Affected {
 		ids := make([]uuid.UUID, 0, len(artifact.Reservations))
 		for _, reservation := range artifact.Reservations {
@@ -700,7 +701,7 @@ func (r *TournamentConfigurationPostgres) applyUnlockIntents(ctx context.Context
 func (r *TournamentConfigurationPostgres) releaseConfigurationReservations(
 	ctx context.Context,
 	q *sqlc.Queries,
-	mutation admin.ConfigurationMutation,
+	mutation configurationusecase.ConfigurationMutation,
 	rosterID uuid.UUID,
 ) error {
 	reservationIDs := make([]uuid.UUID, 0)
@@ -738,7 +739,7 @@ func (r *TournamentConfigurationPostgres) releaseConfigurationReservations(
 func (r *TournamentConfigurationPostgres) recordLineage(
 	ctx context.Context,
 	q *sqlc.Queries,
-	mutation admin.ConfigurationMutation,
+	mutation configurationusecase.ConfigurationMutation,
 	commandID uuid.UUID,
 	rosterID uuid.UUID,
 	configurationID uuid.UUID,
@@ -777,7 +778,7 @@ func (r *TournamentConfigurationPostgres) recordLineage(
 }
 
 func (r *TournamentConfigurationPostgres) commandParams(
-	mutation admin.ConfigurationMutation,
+	mutation configurationusecase.ConfigurationMutation,
 	rosterID uuid.UUID,
 	current sqlc.GetTournamentConfigurationEditAuthorityRow,
 	resultConfigurationID uuid.UUID,
@@ -879,8 +880,8 @@ func configurationStageDefaults(
 	content domain.ContentConfiguration,
 	rows []sqlc.ListTournamentConfigurationEditStageDefaultsRow,
 	pools map[uuid.UUID]domain.CategoryPoolRevision,
-) (map[domain.TournamentStage]admin.ConfigurationStageDefault, []domain.StageContentDefault, error) {
-	result := make(map[domain.TournamentStage]admin.ConfigurationStageDefault, len(rows))
+) (map[domain.TournamentStage]configurationusecase.ConfigurationStageDefault, []domain.StageContentDefault, error) {
+	result := make(map[domain.TournamentStage]configurationusecase.ConfigurationStageDefault, len(rows))
 	content.StageDefaults = make([]domain.StageContentDefault, 0, len(rows))
 	for _, row := range rows {
 		stage := domain.TournamentStage(row.Stage)
@@ -894,13 +895,13 @@ func configurationStageDefaults(
 			return nil, nil, err
 		}
 		categories = fallbackCategories(mode, categories, pool.Categories)
-		result[stage] = admin.ConfigurationStageDefault{Mode: mode, Categories: categories, CategoryPoolRevisionID: pool.ID, CategoryPoolRevision: pool.Revision}
+		result[stage] = configurationusecase.ConfigurationStageDefault{Mode: mode, Categories: categories, CategoryPoolRevisionID: pool.ID, CategoryPoolRevision: pool.Revision}
 		content.StageDefaults = append(content.StageDefaults, domain.StageContentDefault{Stage: stage, Format: domain.SeriesFormat(row.Format), CategoryMode: mode, CategoryPoolRevisionID: pool.ID, TaskPoolKind: domain.AssignmentTaskKind(row.TaskPoolKind)})
 	}
 	return result, content.StageDefaults, nil
 }
 
-func seriesCategories(row sqlc.ListActiveTournamentConfigurationEditSeriesRow, stage domain.TournamentStage, defaults map[domain.TournamentStage]admin.ConfigurationStageDefault, pools map[uuid.UUID]domain.CategoryPoolRevision) (domain.CategoryMode, []domain.Category, error) {
+func seriesCategories(row sqlc.ListActiveTournamentConfigurationEditSeriesRow, stage domain.TournamentStage, defaults map[domain.TournamentStage]configurationusecase.ConfigurationStageDefault, pools map[uuid.UUID]domain.CategoryPoolRevision) (domain.CategoryMode, []domain.Category, error) {
 	if row.CategoryMode != nil {
 		categories, err := decodeConfigurationCategories(row.EffectiveCategories)
 		if err != nil {
@@ -1005,7 +1006,7 @@ func decodeConfigurationUUIDArray(raw any) ([]uuid.UUID, error) {
 	return result, nil
 }
 
-func configurationCommandRecord(row sqlc.TournamentConfigurationEditCommand) *admin.ConfigurationCommandRecord {
+func configurationCommandRecord(row sqlc.TournamentConfigurationEditCommand) *configurationusecase.ConfigurationCommandRecord {
 	var evidence inbound.AdminConfigurationMutationEvidence
 	_ = json.Unmarshal(row.ResultDocument, &evidence)
 	var digest [sha256.Size]byte
@@ -1015,31 +1016,31 @@ func configurationCommandRecord(row sqlc.TournamentConfigurationEditCommand) *ad
 		"series":      "update_unstarted_series",
 		"swiss_round": "revise_swiss_round",
 	}[row.Action]
-	return &admin.ConfigurationCommandRecord{CommandID: row.CommandID, TournamentID: row.TournamentID, OperatorID: row.ActorID, Operation: operation,
+	return &configurationusecase.ConfigurationCommandRecord{CommandID: row.CommandID, TournamentID: row.TournamentID, OperatorID: row.ActorID, Operation: operation,
 		ExpectedProjectionRevision: row.SourceProjectionRevision, ExpectedConfigurationRevision: row.SourceConfigurationRevision,
 		ExpectedSeriesRevision: derefInt64(row.SourceSeriesRevision), ExpectedRoundRevision: derefInt64(row.SourceRoundRevision),
 		RequestDigest: digest, Evidence: evidence, ExecutedAt: configurationTime(row.OccurredAt, time.Unix(0, 0).UTC())}
 }
 
-func configurationSeriesArtifact(value admin.ConfigurationSeries) admin.ConfigurationArtifact {
-	return admin.ConfigurationArtifact{Kind: "series", ID: value.ID, Stage: value.Stage, Revision: value.Revision, SeriesID: value.ID, RoundNumber: value.RoundNumber,
+func configurationSeriesArtifact(value configurationusecase.ConfigurationSeries) configurationusecase.ConfigurationArtifact {
+	return configurationusecase.ConfigurationArtifact{Kind: "series", ID: value.ID, Stage: value.Stage, Revision: value.Revision, SeriesID: value.ID, RoundNumber: value.RoundNumber,
 		State: string(value.State), Locked: value.Locked, Started: value.Started, Consumed: value.Consumed, Disclosed: value.Disclosed, Reservations: cloneConfigurationReservations(value.Reservations)}
 }
 
-func configurationRoundArtifact(value admin.ConfigurationRound) admin.ConfigurationArtifact {
-	return admin.ConfigurationArtifact{Kind: "round", ID: value.ID, Stage: value.Stage, Revision: value.Revision, RoundNumber: value.Number,
+func configurationRoundArtifact(value configurationusecase.ConfigurationRound) configurationusecase.ConfigurationArtifact {
+	return configurationusecase.ConfigurationArtifact{Kind: "round", ID: value.ID, Stage: value.Stage, Revision: value.Revision, RoundNumber: value.Number,
 		Locked: value.Locked, Started: value.Started, Consumed: value.Consumed, Disclosed: value.Disclosed, Reservations: cloneConfigurationReservations(value.Reservations)}
 }
 
-func cloneConfigurationReservations(values []admin.ConfigurationReservation) []admin.ConfigurationReservation {
-	return append([]admin.ConfigurationReservation(nil), values...)
+func cloneConfigurationReservations(values []configurationusecase.ConfigurationReservation) []configurationusecase.ConfigurationReservation {
+	return append([]configurationusecase.ConfigurationReservation(nil), values...)
 }
 
 func seriesConsumed(state string) bool {
 	return state == "active" || state == "replay_required" || state == "technical_pause" || state == "completed" || state == "cancelled"
 }
 
-func seriesDisclosed(values []admin.ConfigurationReservation) bool {
+func seriesDisclosed(values []configurationusecase.ConfigurationReservation) bool {
 	for _, value := range values {
 		if value.Disclosed {
 			return true
@@ -1053,7 +1054,7 @@ func categoriesJSON(values []domain.Category) []byte {
 	return data
 }
 
-func mutationStageCategories(mutation admin.ConfigurationMutation, stage domain.TournamentStage, poolID uuid.UUID) []domain.Category {
+func mutationStageCategories(mutation configurationusecase.ConfigurationMutation, stage domain.TournamentStage, poolID uuid.UUID) []domain.Category {
 	switch stage {
 	case domain.TournamentStageSwiss:
 		return append([]domain.Category(nil), mutation.NextSwissDefault.Categories...)
@@ -1082,7 +1083,7 @@ func mutationStageCategories(mutation admin.ConfigurationMutation, stage domain.
 	return nil
 }
 
-func successorIDFor(rebuilt []admin.ConfigurationArtifact, source uuid.UUID) uuid.UUID {
+func successorIDFor(rebuilt []configurationusecase.ConfigurationArtifact, source uuid.UUID) uuid.UUID {
 	for _, artifact := range rebuilt {
 		if artifact.PreviousRevisionID == source {
 			return artifact.ID

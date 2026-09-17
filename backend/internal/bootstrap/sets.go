@@ -67,6 +67,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection"
 	taskusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/task"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	tournamentadminconfiguration "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/configuration"
 	tournamentadmincorrection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/correction"
 	tournamentadminlifecycle "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/lifecycle"
 	tournamentadminreplay "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/replay"
@@ -156,7 +157,7 @@ var ReposSet = wire.NewSet(
 	wire.Bind(new(gamepause.PauseResumePresenceRepository), new(*executionrepo.Repository)),
 	provideTournamentPausedPresenceRepository,
 	contentrepo.NewProductionTournamentConfigurationPostgres,
-	wire.Bind(new(tournamentadmin.TournamentConfigurationRepository), new(*contentrepo.TournamentConfigurationPostgres)),
+	wire.Bind(new(tournamentadminconfiguration.TournamentConfigurationRepository), new(*contentrepo.TournamentConfigurationPostgres)),
 	authorityrepo.NewExecutionAuthorityPostgres,
 	snapshotrepo.NewTournamentSnapshotPostgres,
 	wire.Bind(new(inbound.TournamentSnapshotUseCase), new(*snapshotrepo.TournamentSnapshotPostgres)),
@@ -308,8 +309,8 @@ var UseCasesSet = wire.NewSet(
 	provideTournamentAdminExecution,
 	wire.Bind(new(tournamentadmin.PairingPort), new(*tournamentadmin.ExecutionWorkflow)),
 	wire.Bind(new(tournamentadmin.WavePort), new(*tournamentadmin.ExecutionWorkflow)),
-	tournamentadmin.NewTournamentConfigurationWorkflow,
-	wire.Bind(new(inbound.TournamentConfigurationUseCase), new(*tournamentadmin.TournamentConfigurationWorkflow)),
+	tournamentadminconfiguration.NewTournamentConfigurationWorkflow,
+	wire.Bind(new(inbound.TournamentConfigurationUseCase), new(*tournamentadminconfiguration.TournamentConfigurationWorkflow)),
 	provideTournamentAdminResults,
 	wire.Bind(new(tournamentadminresult.NoShowPort), new(*tournamentadminresult.OperatorResultWorkflow)),
 	wire.Bind(new(tournamentadminresult.ForfeitPort), new(*tournamentadminresult.OperatorResultWorkflow)),
