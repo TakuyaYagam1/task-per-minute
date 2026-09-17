@@ -23,15 +23,26 @@ const (
 	pgForeignKeyViolation = "23503"
 )
 
+type waveReader interface {
+	Get(context.Context, uuid.UUID, uuid.UUID) (*wave.WaveRecord, error)
+}
+
 type ParticipantReadinessRepository struct {
 	tx    *db.TxManager
-	waves *wave.WavePostgres
+	waves waveReader
 }
 
 func NewParticipantReadinessRepository(
 	tx *db.TxManager,
 	waves *wave.WavePostgres,
 ) *ParticipantReadinessRepository {
+	if waves == nil {
+		return &ParticipantReadinessRepository{tx: tx}
+	}
+	return newParticipantReadinessRepository(tx, waves)
+}
+
+func newParticipantReadinessRepository(tx *db.TxManager, waves waveReader) *ParticipantReadinessRepository {
 	return &ParticipantReadinessRepository{tx: tx, waves: waves}
 }
 
@@ -297,4 +308,5 @@ func mapRepositoryWriteError(operation string, err error) error {
 	return fmt.Errorf("%s: %w", operation, err)
 }
 
+var _ waveReader = (*wave.WavePostgres)(nil)
 var _ readinessusecase.ReadinessRepository = (*ParticipantReadinessRepository)(nil)

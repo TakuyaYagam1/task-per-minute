@@ -15,14 +15,25 @@ import (
 	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
 )
 
-// participantStateDraftReader keeps the participant state reader independent from
-// the root postgres package while the participant draft writer remains there.
+type draftReader interface {
+	Get(context.Context, uuid.UUID) (*draft.DraftAggregate, error)
+}
+
+// participantStateDraftReader keeps the participant state reader independent
+// from the concrete draft repository implementation.
 type participantStateDraftReader struct {
-	drafts *draft.DraftPostgres
+	drafts draftReader
 }
 
 func newParticipantStateDraftReader(tx *db.TxManager) *participantStateDraftReader {
-	return &participantStateDraftReader{drafts: draft.NewDraftPostgres(tx)}
+	if tx == nil {
+		return &participantStateDraftReader{}
+	}
+	return newParticipantStateDraftReaderWithRepository(draft.NewDraftPostgres(tx))
+}
+
+func newParticipantStateDraftReaderWithRepository(reader draftReader) *participantStateDraftReader {
+	return &participantStateDraftReader{drafts: reader}
 }
 
 func (r *participantStateDraftReader) LoadDraft(
@@ -265,3 +276,5 @@ func participantStateCloneTimePointer(value *time.Time) *time.Time {
 	cloned := value.UTC()
 	return &cloned
 }
+
+var _ draftReader = (*draft.DraftPostgres)(nil)
