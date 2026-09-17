@@ -1,4 +1,4 @@
-package game_test
+package attempt_test
 
 import (
 	"context"
@@ -14,7 +14,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	gamedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/game"
 	seriesdomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/series"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	attemptusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/attempt"
 	gamemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/mocks"
 )
 
@@ -27,7 +27,7 @@ func TestFailedAttemptTerminalization(t *testing.T) {
 		now := time.Date(2026, 8, 30, 22, 0, 0, 0, time.UTC)
 		authority, command := failedAttemptFixture(t, now)
 		harness := newFailedAttemptRepositoryHarness(t, authority, nil)
-		usecase := gameusecase.AttemptNewUseCase(harness.repository, attemptNewGameClock(t, now))
+		usecase := attemptusecase.AttemptNewUseCase(harness.repository, attemptNewGameClock(t, now))
 
 		record, changed, err := usecase.Terminalize(t.Context(), command)
 		require.NoError(t, err)
@@ -58,13 +58,13 @@ func TestFailedAttemptTerminalization(t *testing.T) {
 		command.Expected.Category = domain.CategoryCrypto
 		harness := newFailedAttemptRepositoryHarness(t, authority, nil)
 
-		record, changed, err := gameusecase.AttemptNewUseCase(
+		record, changed, err := attemptusecase.AttemptNewUseCase(
 			harness.repository,
 			attemptNewGameClock(t, now),
 		).Terminalize(t.Context(), command)
 		require.Nil(t, record)
 		require.False(t, changed)
-		require.ErrorIs(t, err, gameusecase.ErrFailedAttemptConflict)
+		require.ErrorIs(t, err, attemptusecase.ErrFailedAttemptConflict)
 		require.Equal(t, 0, harness.writeCount())
 	})
 
@@ -83,7 +83,7 @@ func TestFailedAttemptTerminalization(t *testing.T) {
 			group.Add(1)
 			go func() {
 				defer group.Done()
-				record, changed, err := gameusecase.AttemptNewUseCase(
+				record, changed, err := attemptusecase.AttemptNewUseCase(
 					harness.repository,
 					clock,
 				).Terminalize(context.Background(), command)
@@ -108,14 +108,14 @@ func TestFailedAttemptTerminalization(t *testing.T) {
 }
 
 type failedAttemptResult struct {
-	record  *gameusecase.AttemptRecord
+	record  *attemptusecase.AttemptRecord
 	changed bool
 	err     error
 }
 
 type failedAttemptRepositoryState struct {
 	mu           sync.Mutex
-	authority    gameusecase.AttemptAuthority
+	authority    attemptusecase.AttemptAuthority
 	loadBarrier  *sync.WaitGroup
 	barrierLoads int
 	writes       int
@@ -128,7 +128,7 @@ type failedAttemptRepositoryHarness struct {
 
 func newFailedAttemptRepositoryHarness(
 	t *testing.T,
-	authority gameusecase.AttemptAuthority,
+	authority attemptusecase.AttemptAuthority,
 	loadBarrier *sync.WaitGroup,
 ) *failedAttemptRepositoryHarness {
 	t.Helper()
@@ -139,7 +139,7 @@ func newFailedAttemptRepositoryHarness(
 	}
 	repository := gamemocks.NewMockAttemptRepository(t)
 	repository.EXPECT().LoadFailedAttemptAuthority(mock.Anything, authority.Scope).
-		RunAndReturn(func(context.Context, domain.FailedAttemptScope) (gameusecase.AttemptAuthority, error) {
+		RunAndReturn(func(context.Context, domain.FailedAttemptScope) (attemptusecase.AttemptAuthority, error) {
 			state.mu.Lock()
 			loaded := state.authority
 			wait := state.loadBarrier != nil && state.barrierLoads < 2
@@ -156,8 +156,8 @@ func newFailedAttemptRepositoryHarness(
 	repository.EXPECT().CommitFailedAttempt(mock.Anything, mock.Anything).
 		RunAndReturn(func(
 			_ context.Context,
-			record gameusecase.AttemptRecord,
-		) (*gameusecase.AttemptRecord, bool, error) {
+			record attemptusecase.AttemptRecord,
+		) (*attemptusecase.AttemptRecord, bool, error) {
 			state.mu.Lock()
 			defer state.mu.Unlock()
 			if record.ExpectedAuthorityRevision != state.authority.Revision ||
@@ -195,7 +195,7 @@ func (h *failedAttemptRepositoryHarness) markWaveCompleted() {
 func failedAttemptFixture(
 	t *testing.T,
 	now time.Time,
-) (gameusecase.AttemptAuthority, gameusecase.AttemptCommand) {
+) (attemptusecase.AttemptAuthority, attemptusecase.AttemptCommand) {
 	t.Helper()
 
 	tournamentID := attemptFixtureID(1)
@@ -225,18 +225,18 @@ func failedAttemptFixture(
 		SlotID: slotID, GameID: gameID, AssignmentID: attemptFixtureID(9),
 		AssignmentAttemptID: attemptFixtureID(10),
 	}
-	authority := gameusecase.AttemptAuthority{
+	authority := attemptusecase.AttemptAuthority{
 		Scope: scope, Revision: 7, Wave: wave, Series: series,
 		ActiveSnapshotID: attemptFixtureID(11), CurrentOrdinal: 1,
 		CurrentProjectionRevision: 3,
 	}
-	command := gameusecase.AttemptCommand{
+	command := attemptusecase.AttemptCommand{
 		Scope: scope, CommandID: attemptFixtureID(12), FailureClass: gamedomain.FailureNoSolve,
-		Expected: gameusecase.Expectation{
+		Expected: attemptusecase.Expectation{
 			AttemptNo: 1, State: domain.GameStateActive,
 			SnapshotID: authority.ActiveSnapshotID, Category: domain.CategoryWeb,
 		},
-		Revisions: gameusecase.AttemptRevisionSet{
+		Revisions: attemptusecase.AttemptRevisionSet{
 			GameResultRevisionID: domain.OfficialResultRevisionID(attemptFixtureID(13)),
 			ScoreRevisionID:      domain.SeriesScoreRevisionID(attemptFixtureID(14)),
 			RouteEvidenceID:      attemptFixtureID(15), AuditEventID: attemptFixtureID(16),
