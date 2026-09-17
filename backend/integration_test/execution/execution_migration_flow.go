@@ -1,6 +1,6 @@
 //go:build integration
 
-package integration_test
+package execution
 
 import (
 	"context"
@@ -9,12 +9,23 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 )
 
 var errMigrationWaveStartConflict = errors.New("wave already started")
 
-func TestExecutionMigration(t *testing.T) {
+func RunExecutionMigration(t *testing.T, pool *pgxpool.Pool) {
+	t.Helper()
+	require.NotNil(t, pool)
+	migrationPoolMu.Lock()
+	previousPool := migrationPool
+	migrationPool = pool
+	t.Cleanup(func() {
+		migrationPool = previousPool
+		migrationPoolMu.Unlock()
+	})
+
 	ctx := context.Background()
 	resetMigrationTables(ctx, t)
 	t.Cleanup(func() { resetMigrationTables(ctx, t) })
@@ -34,7 +45,7 @@ func TestExecutionMigration(t *testing.T) {
 		ctx, t, waveID, rosterID, openedAt, deadline,
 	)
 
-	_, err := sharedPool.Exec(ctx, `
+	_, err := migrationPool.Exec(ctx, `
 		INSERT INTO ready_windows (
 			wave_id, roster_id, revision_id, opened_at, deadline, created_at
 		)
@@ -42,21 +53,21 @@ func TestExecutionMigration(t *testing.T) {
 		waveID, rosterID, uuid.New(), openedAt, deadline)
 	require.Error(t, err)
 
-	_, err = sharedPool.Exec(ctx, `
+	_, err = migrationPool.Exec(ctx, `
 		UPDATE waves
 		SET state = 'active', started_at = $2, updated_at = $2
 		WHERE id = $1`, waveID, openedAt.Add(time.Second))
 	require.Error(t, err)
 
 	markMigrationReady(ctx, t, windowID, waveID, rosterID, participantIDs[0], openedAt.Add(time.Second))
-	_, err = sharedPool.Exec(ctx, `
+	_, err = migrationPool.Exec(ctx, `
 		UPDATE ready_windows
 		SET state = 'consumed', consumed_at = $2
 		WHERE id = $1`, windowID, openedAt.Add(2*time.Second))
 	require.Error(t, err)
 
 	markMigrationReady(ctx, t, windowID, waveID, rosterID, participantIDs[1], openedAt.Add(2*time.Second))
-	_, err = sharedPool.Exec(ctx, `
+	_, err = migrationPool.Exec(ctx, `
 		UPDATE waves
 		SET state = 'ready', revision = revision + 1, updated_at = $2
 		WHERE id = $1`, waveID, openedAt.Add(2*time.Second))
@@ -64,13 +75,13 @@ func TestExecutionMigration(t *testing.T) {
 
 	startedAt := assertOneConcurrentWaveStart(ctx, t, waveID, windowID, openedAt.Add(3*time.Second))
 	pausedAt := startedAt.Add(time.Second)
-	_, err = sharedPool.Exec(ctx, `
+	_, err = migrationPool.Exec(ctx, `
 		UPDATE waves
 		SET state = 'paused', paused_at = $2, revision = revision + 1, updated_at = $2
 		WHERE id = $1`, waveID, pausedAt)
 	require.NoError(t, err)
 
-	_, err = sharedPool.Exec(ctx, `
+	_, err = migrationPool.Exec(ctx, `
 		UPDATE waves
 		SET started_at = $2, revision = revision + 1, updated_at = $2
 		WHERE id = $1`, waveID, startedAt.Add(time.Second))
@@ -91,7 +102,7 @@ func TestExecutionMigration(t *testing.T) {
 		readinessCount int
 		readyCount     int
 	)
-	err = sharedPool.QueryRow(ctx, `
+	err = migrationPool.QueryRow(ctx, `
 		SELECT COUNT(*), COUNT(*) FILTER (WHERE ready)
 		FROM wave_readiness
 		WHERE ready_window_id = $1`, windowID).Scan(&readinessCount, &readyCount)
@@ -104,7 +115,7 @@ func TestExecutionMigration(t *testing.T) {
 		storedWaveState   string
 		storedWindowState string
 	)
-	err = sharedPool.QueryRow(ctx, `
+	err = migrationPool.QueryRow(ctx, `
 		SELECT replacement.replaces_wave_id, original.state, original_window.state
 		FROM waves AS replacement
 		JOIN waves AS original ON original.id = replacement.replaces_wave_id
@@ -119,7 +130,7 @@ func TestExecutionMigration(t *testing.T) {
 	require.Equal(t, "superseded", storedWaveState)
 	require.Equal(t, "superseded", storedWindowState)
 
-	_, err = sharedPool.Exec(ctx, `
+	_, err = migrationPool.Exec(ctx, `
 		INSERT INTO wave_readiness (
 			ready_window_id, wave_id, roster_id, participant_id, ready_at
 		)
@@ -127,7 +138,7 @@ func TestExecutionMigration(t *testing.T) {
 		windowID, waveID, rosterID, participantIDs[0], replacementCreatedAt)
 	require.Error(t, err)
 
-	_, err = sharedPool.Exec(ctx, `
+	_, err = migrationPool.Exec(ctx, `
 		INSERT INTO waves (
 			tournament_id, roster_id, revision_id, replaces_wave_id,
 			created_at, updated_at
@@ -136,7 +147,7 @@ func TestExecutionMigration(t *testing.T) {
 		tournamentID, rosterID, uuid.New(), waveID, replacementCreatedAt)
 	require.Error(t, err)
 
-	_, err = sharedPool.Exec(ctx, `
+	_, err = migrationPool.Exec(ctx, `
 		INSERT INTO waves (
 			tournament_id, roster_id, revision_id, created_at, updated_at
 		)
@@ -157,7 +168,7 @@ func TestExecutionMigration(t *testing.T) {
 	)
 
 	var replacementState string
-	err = sharedPool.QueryRow(ctx, `
+	err = migrationPool.QueryRow(ctx, `
 		SELECT wave.state
 		FROM waves AS wave
 		JOIN ready_windows AS ready_window ON ready_window.wave_id = wave.id

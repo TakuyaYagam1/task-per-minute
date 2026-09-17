@@ -1,6 +1,6 @@
 //go:build integration
 
-package integration_test
+package execution
 
 import (
 	"context"
@@ -28,7 +28,7 @@ func assertExpiredReadinessCleared(
 	)
 	markMigrationReady(ctx, t, windowID, waveID, rosterID, participantIDs[0], openedAt.Add(time.Second))
 
-	tx, err := sharedPool.Begin(ctx)
+	tx, err := migrationPool.Begin(ctx)
 	require.NoError(t, err)
 	defer func() { _ = tx.Rollback(ctx) }()
 	_, err = tx.Exec(ctx, `
@@ -56,7 +56,7 @@ func assertExpiredReadinessCleared(
 		readinessCount int
 		readyCount     int
 	)
-	err = sharedPool.QueryRow(ctx, `
+	err = migrationPool.QueryRow(ctx, `
 		SELECT COUNT(*), COUNT(*) FILTER (WHERE ready)
 		FROM wave_readiness
 		WHERE ready_window_id = $1`, windowID).Scan(&readinessCount, &readyCount)
@@ -78,7 +78,7 @@ func assertReadyWindowRevisionCannotBeReused(
 		ctx, t, tournamentID, rosterID, participantIDs, createdAt,
 	)
 	openedAt := createdAt.Add(time.Second)
-	_, err := sharedPool.Exec(ctx, `
+	_, err := migrationPool.Exec(ctx, `
 		INSERT INTO ready_windows (
 			wave_id, roster_id, revision_id, opened_at, deadline, created_at
 		)

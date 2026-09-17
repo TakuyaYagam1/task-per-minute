@@ -4,14 +4,24 @@ package integration_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	executionintegration "github.com/TakuyaYagam1/task-per-minute/integration_test/execution"
 	"github.com/TakuyaYagam1/task-per-minute/integration_test/internal/testkit/waveseed"
 )
+
+var errMigrationWaveStartConflict = errors.New("wave already started")
+
+// TestExecutionMigration remains a root-package entry point for the recovery
+// restart suite while the complete migration coverage lives in execution.
+func TestExecutionMigration(t *testing.T) {
+	executionintegration.RunExecutionMigration(t, sharedPool)
+}
 
 func createMigrationWave(
 	ctx context.Context, tb testing.TB,
@@ -56,69 +66,44 @@ func markMigrationReady(
 	readyAt time.Time,
 ) {
 	tb.Helper()
-	rows, err := waveseed.MarkReady(
-		ctx,
-		sharedPool,
-		windowID,
-		waveID,
-		rosterID,
-		participantID,
-		readyAt,
-	)
+	rows, err := waveseed.MarkReady(ctx, sharedPool, windowID, waveID, rosterID, participantID, readyAt)
 	require.NoError(tb, err)
 	require.EqualValues(tb, 1, rows)
 }
 
-func assertOneConcurrentWaveStart(
-	ctx context.Context, t *testing.T,
+func startMigrationWave(
+	ctx context.Context,
 	waveID uuid.UUID,
 	windowID uuid.UUID,
-	firstStart time.Time,
-) time.Time {
-	t.Helper()
-
-	type startResult struct {
-		startedAt time.Time
-		err       error
+	startedAt time.Time,
+) error {
+	tx, err := sharedPool.Begin(ctx)
+	if err != nil {
+		return err
 	}
-	start := make(chan struct{})
-	results := make(chan startResult, 2)
-	for i := range 2 {
-		startedAt := firstStart.Add(time.Duration(i) * time.Millisecond)
-		go func() {
-			<-start
-			results <- startResult{
-				startedAt: startedAt,
-				err:       startMigrationWave(ctx, waveID, windowID, startedAt),
-			}
-		}()
-	}
-	close(start)
+	defer func() { _ = tx.Rollback(ctx) }()
 
-	var committedStart time.Time
-	successes := 0
-	for range 2 {
-		result := <-results
-		if result.err == nil {
-			successes++
-			committedStart = result.startedAt
-			continue
-		}
-		require.ErrorIs(t, result.err, errMigrationWaveStartConflict)
+	result, err := tx.Exec(ctx, `
+		UPDATE ready_windows
+		SET state = 'consumed', consumed_at = $2
+		WHERE id = $1 AND state = 'open'`, windowID, startedAt)
+	if err != nil {
+		return err
 	}
-	require.Equal(t, 1, successes)
+	if result.RowsAffected() != 1 {
+		return errMigrationWaveStartConflict
+	}
 
-	var (
-		storedWaveStart   time.Time
-		storedWindowStart time.Time
-	)
-	err := sharedPool.QueryRow(ctx, `
-		SELECT wave.started_at, ready_window.consumed_at
-		FROM waves AS wave
-		JOIN ready_windows AS ready_window ON ready_window.wave_id = wave.id
-		WHERE wave.id = $1`, waveID).Scan(&storedWaveStart, &storedWindowStart)
-	require.NoError(t, err)
-	require.True(t, committedStart.Equal(storedWaveStart))
-	require.True(t, committedStart.Equal(storedWindowStart))
-	return committedStart
+	result, err = tx.Exec(ctx, `
+		UPDATE waves
+		SET state = 'active', started_at = $2,
+			revision = revision + 1, updated_at = $2
+		WHERE id = $1 AND started_at IS NULL`, waveID, startedAt)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() != 1 {
+		return errMigrationWaveStartConflict
+	}
+	return tx.Commit(ctx)
 }

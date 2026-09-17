@@ -1,6 +1,6 @@
 //go:build integration
 
-package integration_test
+package execution
 
 import (
 	"context"
@@ -17,7 +17,7 @@ func startMigrationWave(
 	windowID uuid.UUID,
 	startedAt time.Time,
 ) error {
-	tx, err := sharedPool.Begin(ctx)
+	tx, err := migrationPool.Begin(ctx)
 	if err != nil {
 		return err
 	}
@@ -61,7 +61,7 @@ func replaceMigrationWave(
 ) (uuid.UUID, uuid.UUID) {
 	tb.Helper()
 
-	tx, err := sharedPool.Begin(ctx)
+	tx, err := migrationPool.Begin(ctx)
 	require.NoError(tb, err)
 	defer func() { _ = tx.Rollback(ctx) }()
 

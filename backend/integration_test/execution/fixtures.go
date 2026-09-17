@@ -1,0 +1,48 @@
+//go:build integration
+
+package execution
+
+import (
+	"context"
+	"testing"
+
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/require"
+
+	"github.com/TakuyaYagam1/task-per-minute/integration_test/internal/testkit/swissseed"
+	"github.com/TakuyaYagam1/task-per-minute/integration_test/internal/testkit/tournamentseed"
+)
+
+func createMigrationTournament(ctx context.Context, tb testing.TB) uuid.UUID {
+	tb.Helper()
+	tournamentID, err := tournamentseed.CreateTournament(ctx, migrationPool)
+	require.NoError(tb, err)
+	return tournamentID
+}
+
+func createMigrationRoster(ctx context.Context, tb testing.TB, tournamentID uuid.UUID) uuid.UUID {
+	tb.Helper()
+	roster, err := tournamentseed.CreateRoster(ctx, migrationPool, tournamentID)
+	require.NoError(tb, err)
+	require.EqualValues(tb, 1, roster.Revision)
+	return roster.ID
+}
+
+func createMigrationPlayers(ctx context.Context, tb testing.TB, count int) []uuid.UUID {
+	tb.Helper()
+	playerIDs, err := tournamentseed.CreatePlayers(ctx, migrationPool, "tournament_migration", count)
+	require.NoError(tb, err)
+	return playerIDs
+}
+
+func createSwissMigrationParticipants(
+	ctx context.Context,
+	tb testing.TB,
+	rosterID uuid.UUID,
+	playerIDs []uuid.UUID,
+) []uuid.UUID {
+	tb.Helper()
+	participantIDs, err := swissseed.CreateParticipants(ctx, migrationPool, rosterID, playerIDs)
+	require.NoError(tb, err)
+	return participantIDs
+}
