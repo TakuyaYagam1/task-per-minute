@@ -2,29 +2,17 @@ package pause
 
 import (
 	"context"
-	"time"
 
 	"github.com/google/uuid"
 
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
+	enterusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause/enter"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause/model"
 )
 
-type PauseClock interface {
-	Now() time.Time
-}
-
-// NormalPauseRepository participates in the caller transaction. Load locks the
-// complete authority. The stable lock order is execution-authority, pause and
-// graph, Tournament, Wave, Series, Games, Draft, Presence, Reconnect, counters,
-// frozen deadlines and terminal actions, with each collection ordered by its
-// durable identity. Commit revalidates every expectation and publishes the
-// complete graph and command result atomically or makes no write.
-type NormalPauseRepository interface {
-	FindNormalPauseCommand(ctx context.Context, tournamentID, commandID uuid.UUID) (*NormalPauseRecord, error)
-	LoadNormalPauseAuthority(ctx context.Context, scope pausedomain.GraphScope) (NormalPauseAuthority, error)
-	CommitNormalPause(ctx context.Context, expected PauseGraphRevisions, record NormalPauseRecord) (*NormalPauseRecord, bool, error)
-}
+type PauseClock = enterusecase.PauseClock
+type NormalPauseRepository = enterusecase.NormalPauseRepository
+type TransactionManager = enterusecase.TransactionManager
 
 func PauseGraphRevisionsFrom(graph PauseGraph) PauseGraphRevisions {
 	return model.PauseGraphRevisionsFrom(graph)
@@ -60,8 +48,4 @@ type PauseResumeRepository interface {
 	FindPauseResumeCommand(ctx context.Context, tournamentID, commandID uuid.UUID) (*PauseResumeRecord, error)
 	LoadPauseResumeAuthority(ctx context.Context, scope pausedomain.GraphScope, pauseID uuid.UUID) (PauseResumeAuthority, error)
 	CommitPauseResume(ctx context.Context, expected PauseResumeExpectation, record PauseResumeRecord) (*PauseResumeRecord, bool, error)
-}
-
-type TransactionManager interface {
-	Do(ctx context.Context, fn func(context.Context) error) error
 }

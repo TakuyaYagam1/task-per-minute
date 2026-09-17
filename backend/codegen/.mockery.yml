@@ -226,11 +226,13 @@ packages:
     interfaces:
       NoShowClock:
       NoShowRepository:
-  github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause/enter:
     interfaces:
       PauseClock:
       TransactionManager:
       NormalPauseRepository:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause:
+    interfaces:
       PausedPresenceRepository:
       PauseResumeRepository:
       PauseResumePresenceRepository:
