@@ -15,6 +15,8 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/integration_test/internal/testkit/projectionseed"
 )
 
+var sharedPool *pgxpool.Pool
+
 func RunProjectionMigration(t *testing.T, pool *pgxpool.Pool) {
 	ctx := context.Background()
 	require.NoError(t, resetProjectionTables(ctx, pool))

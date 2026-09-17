@@ -20,8 +20,6 @@ const containerStartupTimeout = 90 * time.Second
 
 const externalPostgresDSNEnv = "TPM_TEST_POSTGRES_DSN"
 
-var sharedPool *pgxpool.Pool
-
 func TestMain(m *testing.M) {
 	pool, teardown, err := startPostgres()
 	if err != nil {
