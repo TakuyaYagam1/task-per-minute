@@ -10,6 +10,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
+
+	"github.com/TakuyaYagam1/task-per-minute/integration_test/internal/testkit/gameseed"
+	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
 func TestGameMigration(t *testing.T) {
@@ -332,11 +335,12 @@ func createMigrationGameSlot(
 ) uuid.UUID {
 	tb.Helper()
 
-	var slotID uuid.UUID
-	err := sharedPool.QueryRow(ctx, `
-		INSERT INTO game_slots (series_id, roster_id, slot_number, category)
-		VALUES ($1, $2, $3, $4)
-		RETURNING id`, seriesID, rosterID, slotNumber, category).Scan(&slotID)
+	slotID, err := gameseed.CreateSlot(ctx, sharedPool, gameseed.SlotInput{
+		SeriesID:   seriesID,
+		RosterID:   rosterID,
+		SlotNumber: slotNumber,
+		Category:   domain.Category(category),
+	})
 	require.NoError(tb, err)
 	return slotID
 }
@@ -350,14 +354,7 @@ func createActiveMigrationAttempt(
 ) uuid.UUID {
 	tb.Helper()
 
-	var attemptID uuid.UUID
-	err := sharedPool.QueryRow(ctx, `
-		INSERT INTO game_attempts (
-			slot_id, series_id, roster_id, attempt_number,
-			state, created_at, updated_at, started_at
-		)
-		VALUES ($1, $2, $3, 1, 'active', $4, $4, $4)
-		RETURNING id`, slotID, seriesID, rosterID, createdAt).Scan(&attemptID)
+	attemptID, err := gameseed.CreateAttempt(ctx, sharedPool, slotID, seriesID, rosterID, createdAt)
 	require.NoError(tb, err)
 	return attemptID
 }
