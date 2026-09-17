@@ -27,9 +27,20 @@ const (
 	submissionStatusRejected       = "rejected"
 )
 
+// ResultRepository is the narrow result persistence boundary needed by the
+// participant submission workflow.
+type ResultRepository interface {
+	RecordSubmission(
+		context.Context,
+		resultpostgres.SubmissionInput,
+	) (*resultpostgres.SubmissionRecord, bool, error)
+}
+
+var _ ResultRepository = (*resultpostgres.ResultPostgres)(nil)
+
 type ParticipantSubmissionRepository struct {
 	tx      *db.TxManager
-	results *resultpostgres.ResultPostgres
+	results ResultRepository
 }
 
 type participantSubmissionAttempt struct {
@@ -39,6 +50,13 @@ type participantSubmissionAttempt struct {
 func NewParticipantSubmissionRepository(
 	tx *db.TxManager,
 	results *resultpostgres.ResultPostgres,
+) *ParticipantSubmissionRepository {
+	return NewParticipantSubmissionRepositoryWithResultRepository(tx, results)
+}
+
+func NewParticipantSubmissionRepositoryWithResultRepository(
+	tx *db.TxManager,
+	results ResultRepository,
 ) *ParticipantSubmissionRepository {
 	return &ParticipantSubmissionRepository{tx: tx, results: results}
 }

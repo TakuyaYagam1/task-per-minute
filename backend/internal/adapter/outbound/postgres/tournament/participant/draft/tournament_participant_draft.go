@@ -29,14 +29,30 @@ var ErrDraftNotFound = draftrepo.ErrDraftNotFound
 // Swiss draft completion without coupling this child to the root adapter.
 type ContentLoader func(context.Context, *sqlc.Queries, uuid.UUID) (domain.ContentConfiguration, error)
 
+// DraftRepository is the participant adapter's narrow persistence boundary.
+// The participant workflow only needs aggregate reads and revision appends;
+// the assignment/draft adapter remains free to expose its broader API.
+type DraftRepository interface {
+	AppendRevision(
+		context.Context,
+		uuid.UUID,
+		DraftRevisionExpectation,
+		DraftRevisionInput,
+	) (*DraftRevisionRecord, bool, error)
+	Get(context.Context, uuid.UUID) (*DraftAggregate, error)
+}
+
+var _ DraftRepository = (*draftrepo.DraftPostgres)(nil)
+
 type ParticipantDraftRepository struct {
 	tx            *db.TxManager
-	drafts        *draftrepo.DraftPostgres
+	drafts        DraftRepository
+	exactDrafts   *draftrepo.DraftPostgres
 	contentLoader ContentLoader
 }
 
 func NewParticipantDraftRepository(tx *db.TxManager, drafts *draftrepo.DraftPostgres) *ParticipantDraftRepository {
-	return NewParticipantDraftRepositoryWithDependencies(tx, drafts, nil)
+	return NewParticipantDraftRepositoryWithRepository(tx, drafts, nil)
 }
 
 func NewParticipantDraftRepositoryWithDependencies(
@@ -44,7 +60,19 @@ func NewParticipantDraftRepositoryWithDependencies(
 	drafts *draftrepo.DraftPostgres,
 	contentLoader ContentLoader,
 ) *ParticipantDraftRepository {
-	return &ParticipantDraftRepository{tx: tx, drafts: drafts, contentLoader: contentLoader}
+	return NewParticipantDraftRepositoryWithRepository(tx, drafts, contentLoader)
+}
+
+func NewParticipantDraftRepositoryWithRepository(
+	tx *db.TxManager,
+	drafts DraftRepository,
+	contentLoader ContentLoader,
+) *ParticipantDraftRepository {
+	var exactDrafts *draftrepo.DraftPostgres
+	if concrete, ok := drafts.(*draftrepo.DraftPostgres); ok {
+		exactDrafts = concrete
+	}
+	return &ParticipantDraftRepository{tx: tx, drafts: drafts, exactDrafts: exactDrafts, contentLoader: contentLoader}
 }
 
 func (r *ParticipantDraftRepository) LoadDraft(

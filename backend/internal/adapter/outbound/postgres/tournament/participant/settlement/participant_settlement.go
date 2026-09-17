@@ -20,9 +20,20 @@ import (
 
 const participantSettlementProjectionReason = "participant_submission"
 
+// ResultRepository is the narrow result persistence boundary needed by the
+// participant settlement workflow.
+type ResultRepository interface {
+	Settle(
+		context.Context,
+		resultpostgres.ResultSettlementInput,
+	) (*resultpostgres.ResultCommitRecord, bool, error)
+}
+
+var _ ResultRepository = (*resultpostgres.ResultPostgres)(nil)
+
 type ParticipantSettlementRepository struct {
 	tx        *db.TxManager
-	results   *resultpostgres.ResultPostgres
+	results   ResultRepository
 	finalizer resultpostgres.ProjectionFinalizer
 }
 
@@ -30,12 +41,20 @@ func NewParticipantSettlementRepository(
 	tx *db.TxManager,
 	results *resultpostgres.ResultPostgres,
 ) *ParticipantSettlementRepository {
-	return NewParticipantSettlementRepositoryWithFinalizer(tx, results, nil)
+	return NewParticipantSettlementRepositoryWithResultRepository(tx, results, nil)
 }
 
 func NewParticipantSettlementRepositoryWithFinalizer(
 	tx *db.TxManager,
 	results *resultpostgres.ResultPostgres,
+	finalizer resultpostgres.ProjectionFinalizer,
+) *ParticipantSettlementRepository {
+	return NewParticipantSettlementRepositoryWithResultRepository(tx, results, finalizer)
+}
+
+func NewParticipantSettlementRepositoryWithResultRepository(
+	tx *db.TxManager,
+	results ResultRepository,
 	finalizer resultpostgres.ProjectionFinalizer,
 ) *ParticipantSettlementRepository {
 	return &ParticipantSettlementRepository{tx: tx, results: results, finalizer: finalizer}
