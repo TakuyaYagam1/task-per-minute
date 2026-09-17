@@ -21,7 +21,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	assignmentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/assignment"
 	taskusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/task"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	rosterusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/roster"
 	tournamentpreflight "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/preflight"
 )
 
@@ -30,7 +30,7 @@ type taskExposureRosterFixture struct {
 	rosterID           uuid.UUID
 	projectionRevision int64
 	playerIDs          []uuid.UUID
-	workflow           *tournamentadmin.RosterWorkflow
+	workflow           *rosterusecase.RosterWorkflow
 }
 
 type taskExposureReceiptSnapshot struct {
@@ -118,9 +118,9 @@ func TestPrivateTaskReceiptDoesNotExposeSameVersionAcrossTournament(t *testing.T
 
 	second := createTaskExposureRosterFixture(ctx, t, publicationRevision, "cross-tournament")
 	preflightID := uuid.New()
-	report, err := second.workflow.RunPreflight(ctx, tournamentadmin.PreflightCommand{
-		CommandScope: tournamentadmin.CommandScope{
-			Operator:     tournamentadmin.OperatorIdentity{ActorID: uuid.New()},
+	report, err := second.workflow.RunPreflight(ctx, rosterusecase.PreflightCommand{
+		CommandScope: rosterusecase.CommandScope{
+			Operator:     rosterusecase.OperatorIdentity{ActorID: uuid.New()},
 			TournamentID: second.tournamentID,
 			CommandID:    preflightID,
 		},
@@ -129,9 +129,9 @@ func TestPrivateTaskReceiptDoesNotExposeSameVersionAcrossTournament(t *testing.T
 	require.NoError(t, err)
 	require.True(t, report.Passed(), "cross-tournament preflight checks: %+v", report.Checks)
 
-	locked, err := second.workflow.LockRoster(ctx, tournamentadmin.LockRosterCommand{
-		CommandScope: tournamentadmin.CommandScope{
-			Operator:     tournamentadmin.OperatorIdentity{ActorID: uuid.New()},
+	locked, err := second.workflow.LockRoster(ctx, rosterusecase.LockRosterCommand{
+		CommandScope: rosterusecase.CommandScope{
+			Operator:     rosterusecase.OperatorIdentity{ActorID: uuid.New()},
 			TournamentID: second.tournamentID,
 			CommandID:    uuid.New(),
 		},
@@ -196,9 +196,9 @@ func TestExplicitPublicAndSpectatorExposureBlocksPreflightAndSavedLock(t *testin
 	contentRevision := preparePreflightCapacityContent(ctx, t, 4)
 	fixture := createTaskExposureRosterFixture(ctx, t, contentRevision, "exposure-fence")
 	preflightID := uuid.New()
-	passed, err := fixture.workflow.RunPreflight(ctx, tournamentadmin.PreflightCommand{
-		CommandScope: tournamentadmin.CommandScope{
-			Operator:     tournamentadmin.OperatorIdentity{ActorID: uuid.New()},
+	passed, err := fixture.workflow.RunPreflight(ctx, rosterusecase.PreflightCommand{
+		CommandScope: rosterusecase.CommandScope{
+			Operator:     rosterusecase.OperatorIdentity{ActorID: uuid.New()},
 			TournamentID: fixture.tournamentID,
 			CommandID:    preflightID,
 		},
@@ -264,9 +264,9 @@ func TestExplicitPublicAndSpectatorExposureBlocksPreflightAndSavedLock(t *testin
 		normalTaskID, normalVersion, goldenTaskID, goldenVersion).Scan(&exposureCount))
 	require.Equal(t, 2, exposureCount)
 
-	_, err = fixture.workflow.LockRoster(ctx, tournamentadmin.LockRosterCommand{
-		CommandScope: tournamentadmin.CommandScope{
-			Operator:     tournamentadmin.OperatorIdentity{ActorID: uuid.New()},
+	_, err = fixture.workflow.LockRoster(ctx, rosterusecase.LockRosterCommand{
+		CommandScope: rosterusecase.CommandScope{
+			Operator:     rosterusecase.OperatorIdentity{ActorID: uuid.New()},
 			TournamentID: fixture.tournamentID,
 			CommandID:    uuid.New(),
 		},
@@ -289,9 +289,9 @@ func TestExplicitPublicAndSpectatorExposureBlocksPreflightAndSavedLock(t *testin
 		WHERE tournament_id = $1`, fixture.tournamentID).Scan(&reservationCount))
 	require.Zero(t, reservationCount)
 
-	fresh, err := fixture.workflow.RunPreflight(ctx, tournamentadmin.PreflightCommand{
-		CommandScope: tournamentadmin.CommandScope{
-			Operator:     tournamentadmin.OperatorIdentity{ActorID: uuid.New()},
+	fresh, err := fixture.workflow.RunPreflight(ctx, rosterusecase.PreflightCommand{
+		CommandScope: rosterusecase.CommandScope{
+			Operator:     rosterusecase.OperatorIdentity{ActorID: uuid.New()},
 			TournamentID: fixture.tournamentID,
 			CommandID:    uuid.New(),
 		},
@@ -390,7 +390,7 @@ func createTaskExposureRosterFixture(
 	return taskExposureRosterFixture{
 		tournamentID: tournamentID, rosterID: rosterID,
 		projectionRevision: projectionRevision, playerIDs: playerIDs,
-		workflow: tournamentadmin.NewRosterWorkflow(tournamentadmin.RosterWorkflowDependencies{
+		workflow: rosterusecase.NewRosterWorkflow(rosterusecase.RosterWorkflowDependencies{
 			Transactions:  tx,
 			Repository:    rosterrepo.NewTournamentAdminRosterPostgres(tx),
 			RuntimeHealth: taskExposureHealthyRuntime{},

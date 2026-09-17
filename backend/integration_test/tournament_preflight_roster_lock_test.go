@@ -15,7 +15,7 @@ import (
 	rosterrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/roster"
 	catalogrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/catalog"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	rosterusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/roster"
 	tournamentpreflight "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/preflight"
 )
 
@@ -47,10 +47,10 @@ func TestTournamentPreflightCertifiesCapacityAndLocksRoster(t *testing.T) {
 	playerIDs := createMigrationPlayers(ctx, t, 4)
 	createSwissMigrationParticipants(ctx, t, rosterID, playerIDs)
 	repository := rosterrepo.NewTournamentAdminRosterPostgres(tx)
-	workflow := tournamentadmin.NewRosterWorkflow(tournamentadmin.RosterWorkflowDependencies{
+	workflow := rosterusecase.NewRosterWorkflow(rosterusecase.RosterWorkflowDependencies{
 		Transactions: tx,
 		Repository:   repository,
-		RuntimeHealth: tournamentadmin.PreflightRuntimeHealthSourceFunc(func(context.Context) tournamentpreflight.RuntimeHealth {
+		RuntimeHealth: rosterusecase.PreflightRuntimeHealthSourceFunc(func(context.Context) tournamentpreflight.RuntimeHealth {
 			observedAt := time.Now().UTC()
 			return tournamentpreflight.RuntimeHealth{
 				TaskDelivery: tournamentpreflight.ComponentHealth{Healthy: true, Revision: "task_delivery:ready"},
@@ -67,9 +67,9 @@ func TestTournamentPreflightCertifiesCapacityAndLocksRoster(t *testing.T) {
 		}),
 	})
 	preflightID := uuid.New()
-	report, err := workflow.RunPreflight(ctx, tournamentadmin.PreflightCommand{
-		CommandScope: tournamentadmin.CommandScope{
-			Operator:     tournamentadmin.OperatorIdentity{ActorID: uuid.New()},
+	report, err := workflow.RunPreflight(ctx, rosterusecase.PreflightCommand{
+		CommandScope: rosterusecase.CommandScope{
+			Operator:     rosterusecase.OperatorIdentity{ActorID: uuid.New()},
 			TournamentID: tournamentID, CommandID: preflightID,
 		},
 		ExpectedProjectionRevision: projectionRevision,
@@ -81,9 +81,9 @@ func TestTournamentPreflightCertifiesCapacityAndLocksRoster(t *testing.T) {
 	require.Contains(t, preflightCheckEvidence(report, tournamentpreflight.CodeRuntimeConfiguration),
 		fmt.Sprintf("content_revision:%d", contentRevision))
 
-	locked, err := workflow.LockRoster(ctx, tournamentadmin.LockRosterCommand{
-		CommandScope: tournamentadmin.CommandScope{
-			Operator:     tournamentadmin.OperatorIdentity{ActorID: uuid.New()},
+	locked, err := workflow.LockRoster(ctx, rosterusecase.LockRosterCommand{
+		CommandScope: rosterusecase.CommandScope{
+			Operator:     rosterusecase.OperatorIdentity{ActorID: uuid.New()},
 			TournamentID: tournamentID, CommandID: uuid.New(),
 		},
 		ExpectedProjectionRevision: projectionRevision,

@@ -1,4 +1,4 @@
-package admin_test
+package result_test
 
 import (
 	"context"
@@ -18,8 +18,9 @@ import (
 	gamenoshow "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/noshow"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
-	tournamentadminmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/mocks"
+	operationusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/operation"
+	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/result"
+	tournamentadminmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/result/mocks"
 )
 
 func TestOperatorResultWorkflowNoShowUsesDatabaseTimeAndOperatorScope(t *testing.T) {
@@ -28,7 +29,7 @@ func TestOperatorResultWorkflowNoShowUsesDatabaseTimeAndOperatorScope(t *testing
 	now := time.Date(2026, 9, 6, 12, 0, 0, 0, time.UTC)
 	command, authority := operatorNoShowFixture(t, now)
 	transactions, repository := operatorResultMocks(t)
-	postseason := tournamentadminmocks.NewMockAdminPostseasonWorkflow(t)
+	postseason := tournamentadminmocks.NewMockPostseasonWorkflow(t)
 	repository.EXPECT().LockOperatorResultAuthority(mock.Anything, command.TournamentID, command.SeriesID).
 		Return(operatorWorkflowAuthority(command.CommandScope, command.SeriesID, command.ExpectedAuthorityRevision), nil)
 	repository.EXPECT().FindOperatorResultCommand(mock.Anything, command.CommandID).Return(nil, nil)
@@ -69,7 +70,7 @@ func TestOperatorResultWorkflowForfeitRetainsEvidenceWithoutInventingGameResult(
 	now := time.Date(2026, 9, 6, 13, 0, 0, 0, time.UTC)
 	command, authority := operatorForfeitFixture()
 	transactions, repository := operatorResultMocks(t)
-	postseason := tournamentadminmocks.NewMockAdminPostseasonWorkflow(t)
+	postseason := tournamentadminmocks.NewMockPostseasonWorkflow(t)
 	repository.EXPECT().LockOperatorResultAuthority(mock.Anything, command.TournamentID, command.SeriesID).
 		Return(operatorWorkflowAuthority(command.CommandScope, command.SeriesID, command.ExpectedAuthorityRevision), nil)
 	repository.EXPECT().FindOperatorResultCommand(mock.Anything, command.CommandID).Return(nil, nil)
@@ -114,7 +115,7 @@ func TestOperatorResultWorkflowExactReplaySkipsMutation(t *testing.T) {
 	command, _ := operatorNoShowFixture(t, now)
 	digest := operatorResultTestDigest(t, tournamentadmin.OperatorResultActionNoShow, command)
 	transactions, repository := operatorResultMocks(t)
-	postseason := tournamentadminmocks.NewMockAdminPostseasonWorkflow(t)
+	postseason := tournamentadminmocks.NewMockPostseasonWorkflow(t)
 	repository.EXPECT().LockOperatorResultAuthority(mock.Anything, command.TournamentID, command.SeriesID).
 		Return(operatorWorkflowAuthority(command.CommandScope, command.SeriesID, command.ExpectedAuthorityRevision+1), nil)
 	repository.EXPECT().FindOperatorResultCommand(mock.Anything, command.CommandID).
@@ -138,7 +139,7 @@ func TestOperatorResultWorkflowRejectsCommandReuse(t *testing.T) {
 	now := time.Date(2026, 9, 6, 15, 0, 0, 0, time.UTC)
 	command, _ := operatorNoShowFixture(t, now)
 	transactions, repository := operatorResultMocks(t)
-	postseason := tournamentadminmocks.NewMockAdminPostseasonWorkflow(t)
+	postseason := tournamentadminmocks.NewMockPostseasonWorkflow(t)
 	authority := operatorWorkflowAuthority(command.CommandScope, command.SeriesID, command.ExpectedAuthorityRevision+1)
 	repository.EXPECT().LockOperatorResultAuthority(mock.Anything, command.TournamentID, command.SeriesID).
 		Return(authority, nil)
@@ -218,7 +219,7 @@ func operatorNoShowFixture(
 	}}
 	require.NoError(t, execution.Validate())
 	scope := tournamentadmin.CommandScope{
-		Operator:     tournamentadmin.OperatorIdentity{ActorID: operatorResultTestID(40)},
+		Operator:     operationusecase.OperatorIdentity{ActorID: operatorResultTestID(40)},
 		TournamentID: tournamentID, CommandID: operatorResultTestID(41),
 	}
 	command := tournamentadmin.NoShowCommand{
@@ -258,7 +259,7 @@ func operatorForfeitFixture() (tournamentadmin.ForfeitCommand, gameforfeit.Forfe
 	operatorID := operatorResultTestID(108)
 	command := tournamentadmin.ForfeitCommand{
 		CommandScope: tournamentadmin.CommandScope{
-			Operator:     tournamentadmin.OperatorIdentity{ActorID: operatorID},
+			Operator:     operationusecase.OperatorIdentity{ActorID: operatorID},
 			TournamentID: tournamentID, CommandID: operatorResultTestID(109),
 		},
 		SeriesID: seriesID, ForfeitingParticipantID: secondParticipantID,

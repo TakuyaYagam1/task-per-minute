@@ -8,27 +8,29 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+
+	rosterusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/roster"
 )
 
 func TestAdminUseCaseGetRosterPreservesEmptyRoster(t *testing.T) {
 	t.Parallel()
 
 	tournamentID := rosterCloneTestID(1)
-	emptyRoster := RosterView{
+	emptyRoster := rosterusecase.RosterView{
 		ID:           rosterCloneTestID(2),
 		TournamentID: tournamentID,
 		Revision:     1,
-		Participants: make([]RosterParticipantView, 0),
+		Participants: make([]rosterusecase.RosterParticipantView, 0),
 		CreatedAt:    rosterCloneTestTime(),
 		UpdatedAt:    rosterCloneTestTime(),
 	}
-	workflow := NewRosterWorkflow(RosterWorkflowDependencies{
+	workflow := rosterusecase.NewRosterWorkflow(rosterusecase.RosterWorkflowDependencies{
 		Transactions: rosterTransactionManagerMock{},
 		Repository:   &rosterWorkflowRepositoryMock{view: emptyRoster},
 	})
 	application := AdminNewUseCase(AdminDependencies{Roster: workflow})
 
-	actual, err := application.GetRoster(context.Background(), RosterQuery{
+	actual, err := application.GetRoster(context.Background(), rosterusecase.RosterQuery{
 		Operator:     OperatorIdentity{ActorID: rosterCloneTestID(3)},
 		TournamentID: tournamentID,
 	})
@@ -44,7 +46,7 @@ func TestCloneRosterView(t *testing.T) {
 	t.Run("nil participants remain nil", func(t *testing.T) {
 		t.Parallel()
 
-		cloned := cloneRosterView(RosterView{})
+		cloned := rosterusecase.CloneRosterView(rosterusecase.RosterView{})
 
 		require.Nil(t, cloned.Participants)
 	})
@@ -52,7 +54,7 @@ func TestCloneRosterView(t *testing.T) {
 	t.Run("empty participants remain non-nil", func(t *testing.T) {
 		t.Parallel()
 
-		cloned := cloneRosterView(RosterView{Participants: make([]RosterParticipantView, 0)})
+		cloned := rosterusecase.CloneRosterView(rosterusecase.RosterView{Participants: make([]rosterusecase.RosterParticipantView, 0)})
 
 		require.NotNil(t, cloned.Participants)
 		require.Empty(t, cloned.Participants)
@@ -61,8 +63,8 @@ func TestCloneRosterView(t *testing.T) {
 	t.Run("populated participants are independent", func(t *testing.T) {
 		t.Parallel()
 
-		view := RosterView{Participants: []RosterParticipantView{{Seed: 1}}}
-		cloned := cloneRosterView(view)
+		view := rosterusecase.RosterView{Participants: []rosterusecase.RosterParticipantView{{Seed: 1}}}
+		cloned := rosterusecase.CloneRosterView(view)
 
 		require.NotSame(t, &view.Participants[0], &cloned.Participants[0])
 		cloned.Participants[0].Seed = 2
@@ -77,12 +79,12 @@ func (rosterTransactionManagerMock) Do(ctx context.Context, fn func(context.Cont
 }
 
 type rosterWorkflowRepositoryMock struct {
-	RosterWorkflowRepository
+	rosterusecase.RosterWorkflowRepository
 
-	view RosterView
+	view rosterusecase.RosterView
 }
 
-func (m *rosterWorkflowRepositoryMock) GetRoster(context.Context, uuid.UUID) (RosterView, error) {
+func (m *rosterWorkflowRepositoryMock) GetRoster(context.Context, uuid.UUID) (rosterusecase.RosterView, error) {
 	return m.view, nil
 }
 

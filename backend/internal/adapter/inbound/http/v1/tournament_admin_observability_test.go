@@ -22,6 +22,7 @@ import (
 	tournamentadmininbound "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/inbound"
 	tournamentadminmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/mocks"
 	tournamentadminobserved "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/observed"
+	rosterusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/roster"
 	tournamentpreflight "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/preflight"
 )
 
@@ -32,7 +33,7 @@ func TestRosterPreflightIngressCommandIDCorrelatesTerminalTelemetry(t *testing.T
 	tournamentID := uuid.MustParse("20000000-0000-4000-8000-000000000001")
 	commandID := uuid.MustParse("20000000-0000-4000-8000-000000000002")
 	next := tournamentadminmocks.NewMockAdminService(t)
-	next.EXPECT().RunPreflight(mock.Anything, mock.MatchedBy(func(command tournamentadmin.PreflightCommand) bool {
+	next.EXPECT().RunPreflight(mock.Anything, mock.MatchedBy(func(command rosterusecase.PreflightCommand) bool {
 		return command.TournamentID == tournamentID && command.CommandID == commandID &&
 			command.ExpectedProjectionRevision == 7
 	})).Return(tournamentpreflight.ReportRevision{}, domain.ErrConflict).Once()

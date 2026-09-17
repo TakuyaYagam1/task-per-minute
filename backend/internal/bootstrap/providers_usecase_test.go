@@ -16,10 +16,12 @@ import (
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
 	correctionmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/correction/mocks"
 	tournamentadminincident "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/incident"
+	tournamentadminlifecycle "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/lifecycle"
 	tournamentadminlifecyclemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/lifecycle/mocks"
 	tournamentadminmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/mocks"
 	tournamentadminreplay "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/replay"
 	tournamentadminreplaymocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/replay/mocks"
+	tournamentadminresultmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/result/mocks"
 	tournamentparticipant "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/participant"
 	tournamentparticipantmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/participant/mocks"
 	progressionmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/progression/mocks"
@@ -96,7 +98,7 @@ func TestProvideTournamentAdminLifecycleRequiresProgression(t *testing.T) {
 		tournamentadminlifecyclemocks.NewMockAdminLifecycleClock(t),
 	)
 
-	var port tournamentadmin.LifecyclePort = workflow
+	var port tournamentadminlifecycle.LifecyclePort = workflow
 	require.NotNil(t, port)
 }
 
@@ -104,9 +106,9 @@ func TestProvideTournamentAdminResultsRequiresPostseason(t *testing.T) {
 	t.Parallel()
 
 	workflow := provideTournamentAdminResults(
-		tournamentadminmocks.NewMockOperatorResultTransactionManager(t),
-		tournamentadminmocks.NewMockOperatorResultWorkflowRepository(t),
-		tournamentadminmocks.NewMockAdminPostseasonWorkflow(t),
+		tournamentadminresultmocks.NewMockOperatorResultTransactionManager(t),
+		tournamentadminresultmocks.NewMockOperatorResultWorkflowRepository(t),
+		tournamentadminresultmocks.NewMockPostseasonWorkflow(t),
 	)
 
 	var noShow tournamentadmin.NoShowPort = workflow

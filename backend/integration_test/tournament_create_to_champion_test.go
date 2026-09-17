@@ -74,6 +74,8 @@ import (
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
 	tournamentadminconfiguration "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/configuration"
 	tournamentadmininbound "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/inbound"
+	tournamentadminlifecycle "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/lifecycle"
+	tournamentadminroster "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/roster"
 	tournamentcancellation "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/cancellation"
 	catalogusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/catalog"
 	tournamentlifecycle "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/lifecycle"
@@ -372,10 +374,10 @@ func newTournamentFlowRESTFixture(t *testing.T) *restFixture {
 		ContentReader: configurationrepo.NewTournamentContentPostgres(tx),
 	})
 	rosterRepository := rosterrepo.NewTournamentAdminRosterPostgres(tx)
-	roster := tournamentadmin.NewRosterWorkflow(tournamentadmin.RosterWorkflowDependencies{
+	roster := tournamentadminroster.NewRosterWorkflow(tournamentadminroster.RosterWorkflowDependencies{
 		Transactions: tx,
 		Repository:   rosterRepository,
-		RuntimeHealth: tournamentadmin.PreflightRuntimeHealthSourceFunc(func(context.Context) tournamentpreflight.RuntimeHealth {
+		RuntimeHealth: tournamentadminroster.PreflightRuntimeHealthSourceFunc(func(context.Context) tournamentpreflight.RuntimeHealth {
 			now := clock.Now()
 			return tournamentpreflight.RuntimeHealth{
 				TaskDelivery: tournamentpreflight.ComponentHealth{Healthy: true, Revision: "integration-task-delivery"},
@@ -413,7 +415,7 @@ func newTournamentFlowRESTFixture(t *testing.T) *restFixture {
 		Transitioner: progressionRepository, Publisher: progressionRepository, ProgressionClock: clock,
 	})
 	lifecycleRepository := adminlifecyclerepo.NewTournamentAdminLifecyclePostgres(tx)
-	lifecycle := tournamentadmin.NewLifecycleWorkflow(tournamentadmin.LifecycleWorkflowDependencies{
+	lifecycle := tournamentadminlifecycle.NewLifecycleWorkflow(tournamentadminlifecycle.LifecycleWorkflowDependencies{
 		Transactions: tx, Repository: lifecycleRepository,
 		Transitions: tournamentlifecycle.NewTournamentLifecycleUseCase(
 			tournamentlifecyclerepo.NewTournamentLifecyclePostgres(tx), clock,

@@ -11,15 +11,15 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	rosterusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/roster"
 	tournamentpreflight "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/preflight"
 )
 
 func TestMissingTournamentPreflightRuntimeFailsClosed(t *testing.T) {
 	t.Parallel()
 	evaluatedAt := time.Date(2026, time.September, 6, 12, 0, 0, 0, time.UTC)
-	authority := tournamentadmin.RosterAuthority{
-		Roster:               tournamentadmin.RosterView{TournamentID: uuid.New()},
+	authority := rosterusecase.RosterAuthority{
+		Roster:               rosterusecase.RosterView{TournamentID: uuid.New()},
 		TournamentPreset:     domain.TournamentPresetV1,
 		ProjectionRevisionID: uuid.New(), ProjectionRevision: 8,
 	}
@@ -41,7 +41,7 @@ func TestMissingTournamentPreflightRuntimeFailsClosed(t *testing.T) {
 }
 
 func missingTournamentPreflightRuntime(
-	authority tournamentadmin.RosterAuthority,
+	authority rosterusecase.RosterAuthority,
 	evaluatedAt time.Time,
 	rosterSize int,
 ) tournamentpreflight.RuntimeInput {
@@ -107,7 +107,7 @@ func TestTournamentAdminRosterOperationMapsExplicitPreflightEvidence(t *testing.
 	executedAt := time.Date(2026, time.September, 6, 13, 0, 0, 0, time.UTC)
 	row := sqlc.TournamentRosterOperation{
 		CommandID: uuid.New(), TournamentID: uuid.New(), RosterID: uuid.New(), ActorID: uuid.New(),
-		Action:                     string(tournamentadmin.RosterOperationLock),
+		Action:                     string(rosterusecase.RosterOperationLock),
 		PreflightRevisionID:        uuid.NullUUID{UUID: preflightID, Valid: true},
 		SourceProjectionRevisionID: uuid.New(), SourceProjectionRevision: 7,
 		SourceTournamentRevision: 3, SourceTournamentState: string(domain.TournamentStateRegistration),

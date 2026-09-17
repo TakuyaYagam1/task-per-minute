@@ -21,7 +21,8 @@ import (
 	progressionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/progression"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
-	admin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	adminlifecycle "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/lifecycle"
+	adminoperation "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/operation"
 	progression "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/progression"
 )
 
@@ -270,9 +271,9 @@ func publishSwissPlayoffsWithClock(
 			return err
 		}
 		result = receipt.Result
-		return lifecycle.SaveLifecycleCommand(txCtx, admin.LifecycleCommandRecord{
-			CommandScope: admin.CommandScope{Operator: admin.OperatorIdentity{ActorID: command.ActorID}, TournamentID: command.TournamentID, CommandID: command.CommandID},
-			Action:       admin.TournamentActionStartPlayoffs, SourceProjectionRevisionID: authority.ProjectionRevisionID,
+		return lifecycle.SaveLifecycleCommand(txCtx, adminlifecycle.LifecycleCommandRecord{
+			CommandScope: adminlifecycle.CommandScope{Operator: adminoperation.OperatorIdentity{ActorID: command.ActorID}, TournamentID: command.TournamentID, CommandID: command.CommandID},
+			Action:       adminlifecycle.TournamentActionStartPlayoffs, SourceProjectionRevisionID: authority.ProjectionRevisionID,
 			SourceProjectionRevision: authority.ProjectionRevision, SourceTournamentRevision: authority.Tournament.Revision,
 			SourceTournamentState: authority.Tournament.State, Result: result, ExecutedAt: result.UpdatedAt,
 		})

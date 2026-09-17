@@ -29,6 +29,8 @@ import (
 	correctionusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/correction"
 	gamesettlement "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/settlement"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	tournamentadminlifecycle "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/lifecycle"
+	adminoperation "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/operation"
 	progression "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/progression"
 )
 
@@ -1300,7 +1302,7 @@ func TestTournamentAdminCorrectionAuthorityHydratesNativeGoldenStage(t *testing.
 	}
 	require.NoError(t, settlementTx.Commit(ctx))
 
-	var lifecycle tournamentadmin.LifecycleAuthority
+	var lifecycle tournamentadminlifecycle.LifecycleAuthority
 	require.NoError(t, fixture.tx.Do(ctx, func(txCtx context.Context) error {
 		var loadErr error
 		lifecycle, loadErr = adminlifecyclerepo.NewTournamentAdminLifecyclePostgres(fixture.tx).
@@ -1379,7 +1381,7 @@ func TestTournamentAdminCorrectionCarriesNativeGoldenAuthorityAcrossUnchangedSta
 	require.Positive(t, originalGroups)
 	require.Zero(t, rewrittenGroups, "unchanged correction must retain immutable group provenance")
 
-	var lifecycle tournamentadmin.LifecycleAuthority
+	var lifecycle tournamentadminlifecycle.LifecycleAuthority
 	require.NoError(t, fixture.tx.Do(ctx, func(txCtx context.Context) error {
 		var loadErr error
 		lifecycle, loadErr = adminlifecyclerepo.NewTournamentAdminLifecyclePostgres(fixture.tx).
@@ -1545,12 +1547,12 @@ func publishSwissGolden(
 		if err != nil {
 			return err
 		}
-		return lifecycle.SaveLifecycleCommand(txCtx, tournamentadmin.LifecycleCommandRecord{
-			CommandScope: tournamentadmin.CommandScope{
-				Operator:     tournamentadmin.OperatorIdentity{ActorID: command.ActorID},
+		return lifecycle.SaveLifecycleCommand(txCtx, tournamentadminlifecycle.LifecycleCommandRecord{
+			CommandScope: tournamentadminlifecycle.CommandScope{
+				Operator:     adminoperation.OperatorIdentity{ActorID: command.ActorID},
 				TournamentID: command.TournamentID, CommandID: command.CommandID,
 			},
-			Action:                     tournamentadmin.TournamentActionStartGolden,
+			Action:                     tournamentadminlifecycle.TournamentActionStartGolden,
 			SourceProjectionRevisionID: authority.ProjectionRevisionID,
 			SourceProjectionRevision:   authority.ProjectionRevision,
 			SourceTournamentRevision:   authority.Tournament.Revision,

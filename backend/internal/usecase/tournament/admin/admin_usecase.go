@@ -8,18 +8,20 @@ import (
 	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/audit"
 	incidentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/incident"
+	lifecycleusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/lifecycle"
 	pairingusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/pairing"
 	replayusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/replay"
+	rosterusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/roster"
 	snapshotusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/snapshot"
 	tournamentpreflight "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/preflight"
 )
 
 type AdminDependencies struct {
 	Catalog    usecase.TournamentUseCase
-	Roster     RosterPort
-	Preflight  PreflightPort
+	Roster     rosterusecase.RosterPort
+	Preflight  rosterusecase.PreflightPort
 	Pairing    PairingPort
-	Lifecycle  LifecyclePort
+	Lifecycle  lifecycleusecase.LifecyclePort
 	Wave       WavePort
 	NoShow     NoShowPort
 	Reserve    replayusecase.ReservePort
@@ -34,10 +36,10 @@ type AdminDependencies struct {
 
 type AdminUseCase struct {
 	catalog    usecase.TournamentUseCase
-	roster     RosterPort
-	preflight  PreflightPort
+	roster     rosterusecase.RosterPort
+	preflight  rosterusecase.PreflightPort
 	pairing    PairingPort
-	lifecycle  LifecyclePort
+	lifecycle  lifecycleusecase.LifecyclePort
 	wave       WavePort
 	noShow     NoShowPort
 	reserve    replayusecase.ReservePort
@@ -60,37 +62,37 @@ func AdminNewUseCase(deps AdminDependencies) *AdminUseCase {
 	}
 }
 
-func (a *AdminUseCase) GetRoster(ctx context.Context, query RosterQuery) (RosterView, error) {
-	if ctx == nil || !validRosterQuery(query) {
-		return RosterView{}, domain.ErrValidation
+func (a *AdminUseCase) GetRoster(ctx context.Context, query rosterusecase.RosterQuery) (rosterusecase.RosterView, error) {
+	if ctx == nil || !rosterusecase.ValidRosterQuery(query) {
+		return rosterusecase.RosterView{}, domain.ErrValidation
 	}
 	if a == nil || a.roster == nil {
-		return RosterView{}, domain.ErrInternal
+		return rosterusecase.RosterView{}, domain.ErrInternal
 	}
 	view, err := a.roster.GetRoster(ctx, query)
 	if err != nil {
-		return RosterView{}, normalizeAdminError(err)
+		return rosterusecase.RosterView{}, normalizeAdminError(err)
 	}
-	if !validRosterView(view, query.TournamentID) {
-		return RosterView{}, domain.ErrInternal
+	if !rosterusecase.ValidRosterView(view, query.TournamentID) {
+		return rosterusecase.RosterView{}, domain.ErrInternal
 	}
 	return view, nil
 }
 
-func (a *AdminUseCase) ReplaceRoster(ctx context.Context, command ReplaceRosterCommand) (RosterView, error) {
-	return a.rosterMutation(ctx, command.CommandScope, validReplaceRosterCommand(command), func() (RosterView, error) {
+func (a *AdminUseCase) ReplaceRoster(ctx context.Context, command rosterusecase.ReplaceRosterCommand) (rosterusecase.RosterView, error) {
+	return a.rosterMutation(ctx, command.CommandScope, rosterusecase.ValidReplaceRosterCommand(command), func() (rosterusecase.RosterView, error) {
 		return a.roster.ReplaceRoster(ctx, command)
 	})
 }
 
-func (a *AdminUseCase) LockRoster(ctx context.Context, command LockRosterCommand) (RosterView, error) {
-	return a.rosterMutation(ctx, command.CommandScope, validLockRosterCommand(command), func() (RosterView, error) {
+func (a *AdminUseCase) LockRoster(ctx context.Context, command rosterusecase.LockRosterCommand) (rosterusecase.RosterView, error) {
+	return a.rosterMutation(ctx, command.CommandScope, rosterusecase.ValidLockRosterCommand(command), func() (rosterusecase.RosterView, error) {
 		return a.roster.LockRoster(ctx, command)
 	})
 }
 
-func (a *AdminUseCase) UnlockRoster(ctx context.Context, command UnlockRosterCommand) (RosterView, error) {
-	return a.rosterMutation(ctx, command.CommandScope, validUnlockRosterCommand(command), func() (RosterView, error) {
+func (a *AdminUseCase) UnlockRoster(ctx context.Context, command rosterusecase.UnlockRosterCommand) (rosterusecase.RosterView, error) {
+	return a.rosterMutation(ctx, command.CommandScope, rosterusecase.ValidUnlockRosterCommand(command), func() (rosterusecase.RosterView, error) {
 		return a.roster.UnlockRoster(ctx, command)
 	})
 }
@@ -99,29 +101,29 @@ func (a *AdminUseCase) rosterMutation(
 	ctx context.Context,
 	scope CommandScope,
 	valid bool,
-	invoke func() (RosterView, error),
-) (RosterView, error) {
+	invoke func() (rosterusecase.RosterView, error),
+) (rosterusecase.RosterView, error) {
 	if ctx == nil || !valid {
-		return RosterView{}, domain.ErrValidation
+		return rosterusecase.RosterView{}, domain.ErrValidation
 	}
 	if a == nil || a.roster == nil {
-		return RosterView{}, domain.ErrInternal
+		return rosterusecase.RosterView{}, domain.ErrInternal
 	}
 	view, err := invoke()
 	if err != nil {
-		return RosterView{}, normalizeAdminError(err)
+		return rosterusecase.RosterView{}, normalizeAdminError(err)
 	}
-	if !validRosterView(view, scope.TournamentID) {
-		return RosterView{}, domain.ErrInternal
+	if !rosterusecase.ValidRosterView(view, scope.TournamentID) {
+		return rosterusecase.RosterView{}, domain.ErrInternal
 	}
 	return view, nil
 }
 
 func (a *AdminUseCase) RunPreflight(
 	ctx context.Context,
-	command PreflightCommand,
+	command rosterusecase.PreflightCommand,
 ) (tournamentpreflight.ReportRevision, error) {
-	if ctx == nil || !validPreflightCommand(command) {
+	if ctx == nil || !rosterusecase.ValidPreflightCommand(command) {
 		return tournamentpreflight.ReportRevision{}, domain.ErrValidation
 	}
 	if a == nil || a.preflight == nil {
@@ -159,9 +161,9 @@ func (a *AdminUseCase) ConfigurePairings(
 
 func (a *AdminUseCase) ApplyTournamentAction(
 	ctx context.Context,
-	command TournamentActionCommand,
+	command lifecycleusecase.TournamentActionCommand,
 ) (usecase.TournamentView, error) {
-	if ctx == nil || !validTournamentActionCommand(command) {
+	if ctx == nil || !lifecycleusecase.ValidTournamentActionCommand(command) {
 		return usecase.TournamentView{}, domain.ErrValidation
 	}
 	if a == nil || a.lifecycle == nil {
@@ -171,7 +173,7 @@ func (a *AdminUseCase) ApplyTournamentAction(
 	if err != nil {
 		return usecase.TournamentView{}, normalizeAdminError(err)
 	}
-	if !validTournamentView(view, command.TournamentID) {
+	if !lifecycleusecase.ValidTournamentView(view, command.TournamentID) {
 		return usecase.TournamentView{}, domain.ErrInternal
 	}
 	return view, nil

@@ -13,8 +13,10 @@ import (
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/audit"
 	incidentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/incident"
+	lifecycleusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/lifecycle"
 	pairingusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/pairing"
 	replayusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/replay"
+	rosterusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/roster"
 	snapshotusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/snapshot"
 )
 
@@ -263,13 +265,13 @@ func TestNormalizeAdminErrorRequiresCompleteRevisionEvidence(t *testing.T) {
 }
 
 type adminCommands struct {
-	rosterQuery      RosterQuery
-	replaceRoster    ReplaceRosterCommand
-	preflight        PreflightCommand
-	lockRoster       LockRosterCommand
-	unlockRoster     UnlockRosterCommand
+	rosterQuery      rosterusecase.RosterQuery
+	replaceRoster    rosterusecase.ReplaceRosterCommand
+	preflight        rosterusecase.PreflightCommand
+	lockRoster       rosterusecase.LockRosterCommand
+	unlockRoster     rosterusecase.UnlockRosterCommand
 	pairing          pairingusecase.PairingCommand
-	tournamentAction TournamentActionCommand
+	tournamentAction lifecycleusecase.TournamentActionCommand
 	wave             WaveCommand
 	noShow           NoShowCommand
 	reserve          replayusecase.ReserveCommand
@@ -288,9 +290,9 @@ func validAdminCommands() adminCommands {
 		return CommandScope{Operator: operator, TournamentID: tournamentID, CommandID: adminTestID(id)}
 	}
 	players := []uuid.UUID{adminTestID(20), adminTestID(21), adminTestID(22), adminTestID(23)}
-	participants := make([]RosterParticipantInput, len(players))
+	participants := make([]rosterusecase.RosterParticipantInput, len(players))
 	for index, playerID := range players {
-		participants[index] = RosterParticipantInput{
+		participants[index] = rosterusecase.RosterParticipantInput{
 			PlayerID: playerID, Seed: index + 1, Attendance: domain.AttendanceStateCheckedIn,
 		}
 	}
@@ -298,16 +300,16 @@ func validAdminCommands() adminCommands {
 	submissionID := adminTestID(71)
 	solvedAt := adminTestTime()
 	return adminCommands{
-		rosterQuery: RosterQuery{Operator: operator, TournamentID: tournamentID},
-		replaceRoster: NewReplaceRosterCommand(
+		rosterQuery: rosterusecase.RosterQuery{Operator: operator, TournamentID: tournamentID},
+		replaceRoster: rosterusecase.NewReplaceRosterCommand(
 			operator, tournamentID, adminTestID(3), 1, participants,
 		),
-		preflight: PreflightCommand{CommandScope: scope(4), ExpectedProjectionRevision: 1},
-		lockRoster: LockRosterCommand{
+		preflight: rosterusecase.PreflightCommand{CommandScope: scope(4), ExpectedProjectionRevision: 1},
+		lockRoster: rosterusecase.LockRosterCommand{
 			CommandScope: scope(5), ExpectedProjectionRevision: 1,
 			PreflightRevisionID: adminTestID(30), CheckedInPlayerIDs: append([]uuid.UUID(nil), players...),
 		},
-		unlockRoster: UnlockRosterCommand{
+		unlockRoster: rosterusecase.UnlockRosterCommand{
 			CommandScope: scope(6), ExpectedProjectionRevision: 1, Confirmed: true, Reason: "operator correction",
 		},
 		pairing: pairingusecase.PairingCommand{
@@ -315,9 +317,9 @@ func validAdminCommands() adminCommands {
 			PairingMode: pairingusecase.PairingModeAutomatic, CategoryMode: domain.CategoryModeRandom,
 			Categories: []domain.Category{domain.CategoryWeb},
 		},
-		tournamentAction: TournamentActionCommand{
+		tournamentAction: lifecycleusecase.TournamentActionCommand{
 			CommandScope: scope(8), ExpectedProjectionRevision: 1,
-			Action: TournamentActionOpenRegistration, Confirmed: true,
+			Action: lifecycleusecase.TournamentActionOpenRegistration, Confirmed: true,
 		},
 		wave: WaveCommand{
 			CommandScope: scope(9), WaveID: adminTestID(31), ExpectedProjectionRevision: 1,

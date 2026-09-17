@@ -15,8 +15,10 @@ import (
 	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/audit"
 	incidentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/incident"
+	lifecycleusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/lifecycle"
 	pairingusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/pairing"
 	replayusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/replay"
+	rosterusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/roster"
 	snapshotusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/snapshot"
 	tournamentpreflight "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/preflight"
 )
@@ -27,13 +29,13 @@ const maxReasonRunes = 512
 // Actor identity is always derived from the authenticated session by the
 // inbound adapter; no command trusts a client-provided operator identity.
 type AdminService interface {
-	GetRoster(ctx context.Context, query RosterQuery) (RosterView, error)
-	ReplaceRoster(ctx context.Context, command ReplaceRosterCommand) (RosterView, error)
-	RunPreflight(ctx context.Context, command PreflightCommand) (tournamentpreflight.ReportRevision, error)
-	LockRoster(ctx context.Context, command LockRosterCommand) (RosterView, error)
-	UnlockRoster(ctx context.Context, command UnlockRosterCommand) (RosterView, error)
+	GetRoster(ctx context.Context, query rosterusecase.RosterQuery) (rosterusecase.RosterView, error)
+	ReplaceRoster(ctx context.Context, command rosterusecase.ReplaceRosterCommand) (rosterusecase.RosterView, error)
+	RunPreflight(ctx context.Context, command rosterusecase.PreflightCommand) (tournamentpreflight.ReportRevision, error)
+	LockRoster(ctx context.Context, command rosterusecase.LockRosterCommand) (rosterusecase.RosterView, error)
+	UnlockRoster(ctx context.Context, command rosterusecase.UnlockRosterCommand) (rosterusecase.RosterView, error)
 	ConfigurePairings(ctx context.Context, command pairingusecase.PairingCommand) (SwissRoundView, error)
-	ApplyTournamentAction(ctx context.Context, command TournamentActionCommand) (usecase.TournamentView, error)
+	ApplyTournamentAction(ctx context.Context, command lifecycleusecase.TournamentActionCommand) (usecase.TournamentView, error)
 	ControlWave(ctx context.Context, command WaveCommand) (WaveView, error)
 	ResolveNoShow(ctx context.Context, command NoShowCommand) error
 	AssignReserve(ctx context.Context, command replayusecase.ReserveCommand) error
@@ -79,7 +81,7 @@ func (a *AdminUseCase) CreateTournament(
 	if err != nil {
 		return usecase.TournamentResult{}, err
 	}
-	if result.Tournament.Preset != command.Preset || !validTournamentView(result.Tournament, result.Tournament.ID) {
+	if result.Tournament.Preset != command.Preset || !lifecycleusecase.ValidTournamentView(result.Tournament, result.Tournament.ID) {
 		return usecase.TournamentResult{}, domain.ErrInternal
 	}
 	return result, nil
@@ -104,7 +106,7 @@ func validTournamentPage(page usecase.TournamentPage) bool {
 	}
 	seen := make(map[uuid.UUID]struct{}, len(page.Items))
 	for _, item := range page.Items {
-		if !validTournamentView(item, item.ID) || !addUniqueID(seen, item.ID) {
+		if !lifecycleusecase.ValidTournamentView(item, item.ID) || !addUniqueID(seen, item.ID) {
 			return false
 		}
 	}

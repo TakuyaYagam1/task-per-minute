@@ -38,13 +38,15 @@ packages:
     interfaces:
       ExecutionTransactionManager:
       ExecutionWorkflowRepository:
-      OperatorResultTransactionManager:
-      OperatorResultWorkflowRepository:
       ExecutionAuthorityProvider:
-      AdminPostseasonWorkflow:
       OperationClock:
       OperationObserver:
       AdminService:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/result:
+    interfaces:
+      OperatorResultTransactionManager:
+      OperatorResultWorkflowRepository:
+      PostseasonWorkflow:
   github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/lifecycle:
     interfaces:
       LifecycleTransactionManager:
