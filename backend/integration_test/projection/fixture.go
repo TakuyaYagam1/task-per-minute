@@ -1,6 +1,6 @@
 //go:build integration
 
-package projection_test
+package projection
 
 import (
 	"context"
@@ -215,5 +215,27 @@ func createProjectionArtifactDependency(
 		TournamentID:        fixture.tournamentID,
 		RosterID:            fixture.rosterID,
 		DependsOnArtifactID: dependsOnArtifactID,
+	})
+}
+
+func createProjectionCutoffScopeIsolationProbe(
+	ctx context.Context,
+	pool *pgxpool.Pool,
+	goldenPositionCommitID uuid.UUID,
+	createdAt time.Time,
+) error {
+	otherTournamentID, err := tournamentseed.CreateTournament(ctx, pool)
+	if err != nil {
+		return fmt.Errorf("projection fixture: create isolation tournament: %w", err)
+	}
+	otherRoster, err := tournamentseed.CreateRoster(ctx, pool, otherTournamentID)
+	if err != nil {
+		return fmt.Errorf("projection fixture: create isolation roster: %w", err)
+	}
+	return projectionseed.CreateCrossRosterCutoff(ctx, pool, projectionseed.CrossRosterCutoffInput{
+		TournamentID:           otherTournamentID,
+		RosterID:               otherRoster.ID,
+		GoldenPositionCommitID: goldenPositionCommitID,
+		CreatedAt:              createdAt,
 	})
 }

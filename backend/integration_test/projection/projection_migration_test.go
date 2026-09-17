@@ -1,6 +1,6 @@
 //go:build integration
 
-package projection_test
+package projection
 
 import (
 	"context"
