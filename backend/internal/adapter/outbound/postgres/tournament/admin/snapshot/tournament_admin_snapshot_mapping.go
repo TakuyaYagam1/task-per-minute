@@ -10,6 +10,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
 	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
+	tournamentadminexecution "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/execution"
 	adminoperation "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/operation"
 	rostercapability "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/roster"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/snapshot"
@@ -39,7 +40,7 @@ type tournamentAdminSnapshotMember struct {
 }
 
 type tournamentAdminSnapshotWaveAssembly struct {
-	views        []tournamentadmin.WaveView
+	views        []tournamentadminexecution.WaveView
 	viewIndex    map[uuid.UUID]int
 	memberOrder  map[uuid.UUID][]uuid.UUID
 	memberValues map[uuid.UUID]map[uuid.UUID]tournamentAdminSnapshotMember
@@ -153,7 +154,7 @@ func tournamentAdminSnapshotWaves(
 	rows []sqlc.ListTournamentAdminSnapshotWavesRow,
 	members []sqlc.ListTournamentAdminSnapshotWaveMembersRow,
 	roster rostercapability.RosterView,
-) ([]tournamentadmin.WaveView, error) {
+) ([]tournamentadminexecution.WaveView, error) {
 	participantIDs := make(map[uuid.UUID]struct{}, len(roster.Participants))
 	for _, participant := range roster.Participants {
 		participantIDs[participant.ID] = struct{}{}
@@ -175,7 +176,7 @@ func tournamentAdminSnapshotWaveHeaders(
 	tournamentID uuid.UUID,
 ) (tournamentAdminSnapshotWaveAssembly, error) {
 	assembly := tournamentAdminSnapshotWaveAssembly{
-		views:        make([]tournamentadmin.WaveView, len(rows)),
+		views:        make([]tournamentadminexecution.WaveView, len(rows)),
 		viewIndex:    make(map[uuid.UUID]int, len(rows)),
 		memberOrder:  make(map[uuid.UUID][]uuid.UUID, len(rows)),
 		memberValues: make(map[uuid.UUID]map[uuid.UUID]tournamentAdminSnapshotMember, len(rows)),
@@ -188,7 +189,7 @@ func tournamentAdminSnapshotWaveHeaders(
 		if err != nil {
 			return tournamentAdminSnapshotWaveAssembly{}, err
 		}
-		assembly.views[index] = tournamentadmin.WaveView{
+		assembly.views[index] = tournamentadminexecution.WaveView{
 			Wave:               wave,
 			Revision:           row.Revision,
 			ReadinessRevisions: make(map[uuid.UUID]int64),
@@ -238,7 +239,7 @@ func (assembly *tournamentAdminSnapshotWaveAssembly) addMember(
 
 func (assembly tournamentAdminSnapshotWaveAssembly) finish(
 	tournamentID uuid.UUID,
-) ([]tournamentadmin.WaveView, error) {
+) ([]tournamentadminexecution.WaveView, error) {
 	for index := range assembly.views {
 		view := &assembly.views[index]
 		order := assembly.memberOrder[view.Wave.ID]
@@ -376,7 +377,7 @@ func tournamentAdminSnapshotWaveTimeline(
 
 //nolint:gocyclo // Swiss pairing, explicit bye, readiness, and membership cardinality form one graph boundary.
 func tournamentAdminSnapshotWaveViewValid(
-	view tournamentadmin.WaveView,
+	view tournamentadminexecution.WaveView,
 	tournamentID uuid.UUID,
 ) bool {
 	if view.Revision < 1 || view.Wave.TournamentID != tournamentID || view.Wave.Validate() != nil ||
@@ -593,7 +594,7 @@ func tournamentAdminSnapshotDomainSeries(
 }
 
 func tournamentAdminSnapshotWaveSeriesMatch(
-	waves []tournamentadmin.WaveView,
+	waves []tournamentadminexecution.WaveView,
 	seriesGraph tournamentAdminSnapshotSeriesGraph,
 ) bool {
 	for _, wave := range waves {

@@ -22,6 +22,7 @@ import (
 	gamestart "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/start"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
 	configurationusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/configuration"
+	tournamentadminexecution "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/execution"
 	pairingusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/pairing"
 	snapshotusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/snapshot"
 )
@@ -145,7 +146,7 @@ func TestTournamentSeriesConfigurationRebuildsUnstartedAssignmentThroughProducti
 	lockTournamentRosterThroughREST(t, fixture, adminToken, created.Id, roster, preflight)
 	startSwissThroughREST(t, fixture, adminToken, created.Id)
 	snapshot := tournamentAdminSnapshotThroughREST(t, fixture, adminToken, created.Id)
-	execution := tournamentadmin.NewExecutionWorkflow(tournamentadmin.ExecutionWorkflowDependencies{
+	execution := tournamentadminexecution.NewExecutionWorkflow(tournamentadminexecution.ExecutionWorkflowDependencies{
 		Transactions: fixture.mgr, Repository: executionrepo.NewRepository(fixture.mgr, resultauthority.FinalizeProjection),
 	})
 	_, err := execution.ConfigurePairings(ctx, pairingusecase.PairingCommand{
@@ -221,7 +222,7 @@ func TestTournamentManualRoundRevisionRebuildsPairingsThroughProductionHTTPAndPo
 		{FirstParticipantID: pairingAuthority.Participants[0].ID, SecondParticipantID: pairingAuthority.Participants[1].ID},
 		{FirstParticipantID: pairingAuthority.Participants[2].ID, SecondParticipantID: pairingAuthority.Participants[3].ID},
 	}
-	execution := tournamentadmin.NewExecutionWorkflow(tournamentadmin.ExecutionWorkflowDependencies{Transactions: fixture.mgr, Repository: executionRepository})
+	execution := tournamentadminexecution.NewExecutionWorkflow(tournamentadminexecution.ExecutionWorkflowDependencies{Transactions: fixture.mgr, Repository: executionRepository})
 	_, err = execution.ConfigurePairings(ctx, pairingusecase.PairingCommand{
 		CommandScope:               tournamentadmin.CommandScope{Operator: tournamentadmin.OperatorIdentity{ActorID: uuid.New()}, TournamentID: created.Id, CommandID: uuid.New()},
 		ExpectedProjectionRevision: pairingAuthority.ProjectionRevision, RoundNumber: 1,

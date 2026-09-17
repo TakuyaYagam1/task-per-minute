@@ -8,6 +8,7 @@ import (
 	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/audit"
 	correctionusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/correction"
+	executionusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/execution"
 	incidentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/incident"
 	lifecycleusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/lifecycle"
 	pairingusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/pairing"
@@ -22,9 +23,9 @@ type AdminDependencies struct {
 	Catalog    usecase.TournamentUseCase
 	Roster     rosterusecase.RosterPort
 	Preflight  rosterusecase.PreflightPort
-	Pairing    PairingPort
+	Pairing    executionusecase.PairingPort
 	Lifecycle  lifecycleusecase.LifecyclePort
-	Wave       WavePort
+	Wave       executionusecase.WavePort
 	NoShow     resultusecase.NoShowPort
 	Reserve    replayusecase.ReservePort
 	Forfeit    resultusecase.ForfeitPort
@@ -40,9 +41,9 @@ type AdminUseCase struct {
 	catalog    usecase.TournamentUseCase
 	roster     rosterusecase.RosterPort
 	preflight  rosterusecase.PreflightPort
-	pairing    PairingPort
+	pairing    executionusecase.PairingPort
 	lifecycle  lifecycleusecase.LifecyclePort
-	wave       WavePort
+	wave       executionusecase.WavePort
 	noShow     resultusecase.NoShowPort
 	reserve    replayusecase.ReservePort
 	forfeit    resultusecase.ForfeitPort
@@ -144,19 +145,19 @@ func (a *AdminUseCase) RunPreflight(
 func (a *AdminUseCase) ConfigurePairings(
 	ctx context.Context,
 	command pairingusecase.PairingCommand,
-) (SwissRoundView, error) {
+) (executionusecase.SwissRoundView, error) {
 	if ctx == nil || !pairingusecase.ValidPairingCommand(command) {
-		return SwissRoundView{}, domain.ErrValidation
+		return executionusecase.SwissRoundView{}, domain.ErrValidation
 	}
 	if a == nil || a.pairing == nil {
-		return SwissRoundView{}, domain.ErrInternal
+		return executionusecase.SwissRoundView{}, domain.ErrInternal
 	}
 	view, err := a.pairing.ConfigurePairings(ctx, command)
 	if err != nil {
-		return SwissRoundView{}, normalizeAdminError(err)
+		return executionusecase.SwissRoundView{}, normalizeAdminError(err)
 	}
-	if !validSwissRoundView(view, command.TournamentID, command.RoundNumber) {
-		return SwissRoundView{}, fmt.Errorf("validate pairing response: %w", domain.ErrInternal)
+	if !executionusecase.ValidSwissRoundView(view, command.TournamentID, command.RoundNumber) {
+		return executionusecase.SwissRoundView{}, fmt.Errorf("validate pairing response: %w", domain.ErrInternal)
 	}
 	return view, nil
 }
@@ -181,19 +182,19 @@ func (a *AdminUseCase) ApplyTournamentAction(
 	return view, nil
 }
 
-func (a *AdminUseCase) ControlWave(ctx context.Context, command WaveCommand) (WaveView, error) {
-	if ctx == nil || !validWaveCommand(command) {
-		return WaveView{}, domain.ErrValidation
+func (a *AdminUseCase) ControlWave(ctx context.Context, command executionusecase.WaveCommand) (executionusecase.WaveView, error) {
+	if ctx == nil || !executionusecase.ValidWaveCommand(command) {
+		return executionusecase.WaveView{}, domain.ErrValidation
 	}
 	if a == nil || a.wave == nil {
-		return WaveView{}, domain.ErrInternal
+		return executionusecase.WaveView{}, domain.ErrInternal
 	}
 	view, err := a.wave.ControlWave(ctx, command)
 	if err != nil {
-		return WaveView{}, normalizeAdminError(err)
+		return executionusecase.WaveView{}, normalizeAdminError(err)
 	}
-	if !validWaveView(view, command.TournamentID, command.WaveID) {
-		return WaveView{}, domain.ErrInternal
+	if !executionusecase.ValidWaveView(view, command.TournamentID, command.WaveID) {
+		return executionusecase.WaveView{}, domain.ErrInternal
 	}
 	return view, nil
 }

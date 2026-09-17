@@ -13,6 +13,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	rosterpostgres "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/roster"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
+	tournamentadminexecution "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/execution"
 	rostercapability "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/roster"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/snapshot"
 )
@@ -128,7 +129,7 @@ func tournamentAdminSnapshotLoadWaves(
 	querier *sqlc.Queries,
 	tournamentID uuid.UUID,
 	roster rostercapability.RosterView,
-) ([]tournamentadmin.WaveView, error) {
+) ([]tournamentadminexecution.WaveView, error) {
 	params := sqlc.ListTournamentAdminSnapshotWavesParams{TournamentID: tournamentID, RosterID: roster.ID}
 	waveRows, err := querier.ListTournamentAdminSnapshotWaves(ctx, params)
 	if err != nil {

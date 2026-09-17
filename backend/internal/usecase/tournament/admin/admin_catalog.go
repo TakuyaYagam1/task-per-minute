@@ -15,6 +15,7 @@ import (
 	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/audit"
 	correctionusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/correction"
+	executionusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/execution"
 	incidentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/incident"
 	lifecycleusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/lifecycle"
 	pairingusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/pairing"
@@ -36,9 +37,9 @@ type AdminService interface {
 	RunPreflight(ctx context.Context, command rosterusecase.PreflightCommand) (tournamentpreflight.ReportRevision, error)
 	LockRoster(ctx context.Context, command rosterusecase.LockRosterCommand) (rosterusecase.RosterView, error)
 	UnlockRoster(ctx context.Context, command rosterusecase.UnlockRosterCommand) (rosterusecase.RosterView, error)
-	ConfigurePairings(ctx context.Context, command pairingusecase.PairingCommand) (SwissRoundView, error)
+	ConfigurePairings(ctx context.Context, command pairingusecase.PairingCommand) (executionusecase.SwissRoundView, error)
 	ApplyTournamentAction(ctx context.Context, command lifecycleusecase.TournamentActionCommand) (usecase.TournamentView, error)
-	ControlWave(ctx context.Context, command WaveCommand) (WaveView, error)
+	ControlWave(ctx context.Context, command executionusecase.WaveCommand) (executionusecase.WaveView, error)
 	ResolveNoShow(ctx context.Context, command resultusecase.NoShowCommand) error
 	AssignReserve(ctx context.Context, command replayusecase.ReserveCommand) error
 	RecordForfeit(ctx context.Context, command resultusecase.ForfeitCommand) error

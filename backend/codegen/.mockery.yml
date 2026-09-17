@@ -36,12 +36,14 @@ packages:
       TournamentCancellationRepository:
   github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin:
     interfaces:
-      ExecutionTransactionManager:
-      ExecutionWorkflowRepository:
-      ExecutionAuthorityProvider:
       OperationClock:
       OperationObserver:
       AdminService:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/execution:
+    interfaces:
+      ExecutionTransactionManager:
+      ExecutionWorkflowRepository:
+      ExecutionAuthorityProvider:
   github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/result:
     interfaces:
       OperatorResultTransactionManager:

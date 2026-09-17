@@ -12,6 +12,7 @@ import (
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
 	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause"
+	tournamentadminexecution "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/execution"
 	rostercapability "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/roster"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/snapshot"
 )
@@ -21,7 +22,7 @@ func (r *TournamentAdminSnapshotPostgres) loadPauseGraph(
 	querier *sqlc.Queries,
 	header tournamentAdminSnapshotHeaderState,
 	roster rostercapability.RosterView,
-	waves []tournamentadmin.WaveView,
+	waves []tournamentadminexecution.WaveView,
 	seriesGraph tournamentAdminSnapshotSeriesGraph,
 	pauseRows []sqlc.Pause,
 ) (*tournamentadmin.PauseGraphView, error) {
@@ -116,7 +117,7 @@ func (r *TournamentAdminSnapshotPostgres) loadPauseGraph(
 func (r *TournamentAdminSnapshotPostgres) loadSnapshotPauseDraft(
 	ctx context.Context,
 	querier *sqlc.Queries,
-	wave tournamentadmin.WaveView,
+	wave tournamentadminexecution.WaveView,
 	roster rostercapability.RosterView,
 	seriesValues []gameusecase.PauseSeries,
 ) (*draftusecase.Execution, error) {

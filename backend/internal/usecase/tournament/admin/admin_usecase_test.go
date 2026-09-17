@@ -13,6 +13,7 @@ import (
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/audit"
 	correctionusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/correction"
+	executionusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/execution"
 	incidentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/incident"
 	lifecycleusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/lifecycle"
 	pairingusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/pairing"
@@ -192,23 +193,25 @@ func TestSwissRoundViewValidation(t *testing.T) {
 
 	tournamentID := adminTestID(1)
 	view := validSwissRoundViewFixture(tournamentID)
-	require.True(t, validSwissRoundView(view, tournamentID, 1))
+	require.True(t, executionusecase.ValidSwissRoundView(view, tournamentID, 1))
 
 	tests := []struct {
 		name   string
-		mutate func(*SwissRoundView)
+		mutate func(*executionusecase.SwissRoundView)
 	}{
-		{name: "invalid evidence digest", mutate: func(value *SwissRoundView) { value.PairingEvidence.ReplayDigest = "not-a-digest" }},
-		{name: "foreign pairing participant", mutate: func(value *SwissRoundView) { value.Pairings[0].FirstParticipantID = adminTestID(900) }},
-		{name: "incomplete participant coverage", mutate: func(value *SwissRoundView) { value.Pairings = value.Pairings[:1] }},
-		{name: "duplicate standing position", mutate: func(value *SwissRoundView) { value.Standings[1].Position = value.Standings[0].Position }},
-		{name: "lossy bye", mutate: func(value *SwissRoundView) {
+		{name: "invalid evidence digest", mutate: func(value *executionusecase.SwissRoundView) { value.PairingEvidence.ReplayDigest = "not-a-digest" }},
+		{name: "foreign pairing participant", mutate: func(value *executionusecase.SwissRoundView) { value.Pairings[0].FirstParticipantID = adminTestID(900) }},
+		{name: "incomplete participant coverage", mutate: func(value *executionusecase.SwissRoundView) { value.Pairings = value.Pairings[:1] }},
+		{name: "duplicate standing position", mutate: func(value *executionusecase.SwissRoundView) {
+			value.Standings[1].Position = value.Standings[0].Position
+		}},
+		{name: "lossy bye", mutate: func(value *executionusecase.SwissRoundView) {
 			value.RosterParticipantIDs = append(value.RosterParticipantIDs, adminTestID(50))
 			value.Standings = append(value.Standings, pairingusecase.SwissStandingView{
 				ParticipantID: adminTestID(50), Position: 5, PointsLabel: "provisional",
 				BuchholzStatus: "provisional", StableSeed: 5,
 			})
-			value.Bye = &SwissByeView{
+			value.Bye = &executionusecase.SwissByeView{
 				ID: adminTestID(51), RoundID: value.ID, ParticipantID: adminTestID(50),
 				PointsAwarded: 2, RevisionID: adminTestID(52), EvidenceID: adminTestID(53),
 			}
@@ -220,7 +223,7 @@ func TestSwissRoundViewValidation(t *testing.T) {
 			t.Parallel()
 			candidate := cloneSwissRoundView(view)
 			test.mutate(&candidate)
-			require.False(t, validSwissRoundView(candidate, tournamentID, 1))
+			require.False(t, executionusecase.ValidSwissRoundView(candidate, tournamentID, 1))
 		})
 	}
 }
@@ -274,7 +277,7 @@ type adminCommands struct {
 	unlockRoster     rosterusecase.UnlockRosterCommand
 	pairing          pairingusecase.PairingCommand
 	tournamentAction lifecycleusecase.TournamentActionCommand
-	wave             WaveCommand
+	wave             executionusecase.WaveCommand
 	noShow           resultusecase.NoShowCommand
 	reserve          replayusecase.ReserveCommand
 	forfeit          resultusecase.ForfeitCommand
@@ -323,9 +326,9 @@ func validAdminCommands() adminCommands {
 			CommandScope: scope(8), ExpectedProjectionRevision: 1,
 			Action: lifecycleusecase.TournamentActionOpenRegistration, Confirmed: true,
 		},
-		wave: WaveCommand{
+		wave: executionusecase.WaveCommand{
 			CommandScope: scope(9), WaveID: adminTestID(31), ExpectedProjectionRevision: 1,
-			Action: WaveActionOpenReadyWindow, Confirmed: true,
+			Action: executionusecase.WaveActionOpenReadyWindow, Confirmed: true,
 		},
 		noShow: resultusecase.NoShowCommand{
 			CommandScope: scope(10), WaveID: adminTestID(31), WindowID: adminTestID(32),
@@ -381,7 +384,7 @@ func validAdminCommands() adminCommands {
 	}
 }
 
-func validSwissRoundViewFixture(tournamentID uuid.UUID) SwissRoundView {
+func validSwissRoundViewFixture(tournamentID uuid.UUID) executionusecase.SwissRoundView {
 	roundID := adminTestID(200)
 	participants := []uuid.UUID{adminTestID(201), adminTestID(202), adminTestID(203), adminTestID(204)}
 	decidedAt := adminTestTime()
@@ -392,16 +395,16 @@ func validSwissRoundViewFixture(tournamentID uuid.UUID) SwissRoundView {
 		"participant:" + participants[2].String(),
 		"participant:" + participants[3].String(),
 	}
-	return SwissRoundView{
+	return executionusecase.SwissRoundView{
 		ID: roundID, TournamentID: tournamentID, RoundNumber: 1, Revision: 1,
 		RosterParticipantIDs: participants,
-		PairingEvidence: &SwissPairingEvidenceView{
+		PairingEvidence: &executionusecase.SwissPairingEvidenceView{
 			ID: evidenceID, Purpose: string(domain.DecisionPurposePairing),
 			AlgorithmVersion: domain.DecisionAlgorithmV1, NormalizedInputs: inputs,
 			Result:       []string{inputs[2], inputs[0], inputs[3], inputs[1]},
 			ReplayDigest: fmt.Sprintf("%064x", 1), OwnerID: roundID, DecidedAt: decidedAt,
 		},
-		Pairings: []SwissPairingView{
+		Pairings: []executionusecase.SwissPairingView{
 			{ID: adminTestID(210), RoundID: roundID, FirstParticipantID: participants[0], SecondParticipantID: participants[1], EvidenceID: evidenceID},
 			{ID: adminTestID(211), RoundID: roundID, FirstParticipantID: participants[2], SecondParticipantID: participants[3], EvidenceID: evidenceID},
 		},
@@ -415,10 +418,10 @@ func validSwissRoundViewFixture(tournamentID uuid.UUID) SwissRoundView {
 	}
 }
 
-func cloneSwissRoundView(view SwissRoundView) SwissRoundView {
+func cloneSwissRoundView(view executionusecase.SwissRoundView) executionusecase.SwissRoundView {
 	clone := view
 	clone.RosterParticipantIDs = append([]uuid.UUID(nil), view.RosterParticipantIDs...)
-	clone.Pairings = append([]SwissPairingView(nil), view.Pairings...)
+	clone.Pairings = append([]executionusecase.SwissPairingView(nil), view.Pairings...)
 	clone.Standings = append([]pairingusecase.SwissStandingView(nil), view.Standings...)
 	if view.PairingEvidence != nil {
 		evidence := *view.PairingEvidence

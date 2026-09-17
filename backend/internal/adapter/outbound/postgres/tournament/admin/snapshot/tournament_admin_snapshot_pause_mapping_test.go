@@ -11,6 +11,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	gamepause "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause"
+	tournamentadminexecution "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/execution"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/snapshot"
 )
 
@@ -25,7 +26,7 @@ func TestTournamentAdminSnapshotPauseIndexSelectsNormalRoot(t *testing.T) {
 		ID: tournamentID, RosterID: rosterID, State: domain.TournamentStateTechnicalPause,
 	}}
 	roster := tournamentadmin.RosterView{ID: rosterID, TournamentID: tournamentID}
-	waves := []tournamentadmin.WaveView{{Wave: domain.Wave{ID: waveID, TournamentID: tournamentID}}}
+	waves := []tournamentadminexecution.WaveView{{Wave: domain.Wave{ID: waveID, TournamentID: tournamentID}}}
 	row := tournamentAdminSnapshotPauseTestRow(tournamentID, rosterID, waveID, startedAt)
 
 	index, err := tournamentAdminSnapshotPauses(

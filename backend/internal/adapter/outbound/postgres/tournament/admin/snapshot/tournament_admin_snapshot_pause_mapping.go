@@ -13,6 +13,7 @@ import (
 	seriesdomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/series"
 	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause"
+	tournamentadminexecution "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/execution"
 	rostercapability "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/roster"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/snapshot"
 )
@@ -35,7 +36,7 @@ func tournamentAdminSnapshotPauses(
 	rows []sqlc.Pause,
 	header tournamentAdminSnapshotHeaderState,
 	roster rostercapability.RosterView,
-	waves []tournamentadmin.WaveView,
+	waves []tournamentadminexecution.WaveView,
 	seriesGraph tournamentAdminSnapshotSeriesGraph,
 ) (tournamentAdminSnapshotPauseIndex, error) {
 	index := tournamentAdminSnapshotPauseIndex{
@@ -245,18 +246,18 @@ func tournamentAdminSnapshotNormalPauseReason(reason string) bool {
 }
 
 func tournamentAdminSnapshotWaveByID(
-	waves []tournamentadmin.WaveView,
+	waves []tournamentadminexecution.WaveView,
 	id uuid.UUID,
-) (tournamentadmin.WaveView, bool) {
+) (tournamentadminexecution.WaveView, bool) {
 	for _, wave := range waves {
 		if wave.Wave.ID == id {
 			return wave, true
 		}
 	}
-	return tournamentadmin.WaveView{}, false
+	return tournamentadminexecution.WaveView{}, false
 }
 
-func tournamentAdminSnapshotRootMatchesWave(root sqlc.Pause, wave tournamentadmin.WaveView) bool {
+func tournamentAdminSnapshotRootMatchesWave(root sqlc.Pause, wave tournamentadminexecution.WaveView) bool {
 	if !root.WaveID.Valid || root.ScopeID != wave.Wave.ID || root.ParentPauseID.Valid || root.Depth != 0 ||
 		root.State != string(gameusecase.PauseStateActive) {
 		return false
@@ -286,7 +287,7 @@ func tournamentAdminSnapshotRootMatchesWave(root sqlc.Pause, wave tournamentadmi
 //nolint:gocyclo // One bounded pass keeps each Series, current Game, and active pause edge atomic.
 func tournamentAdminSnapshotPauseExecutions(
 	root sqlc.Pause,
-	wave tournamentadmin.WaveView,
+	wave tournamentadminexecution.WaveView,
 	seriesGraph tournamentAdminSnapshotSeriesGraph,
 	pauseIndex tournamentAdminSnapshotPauseIndex,
 ) ([]gameusecase.PauseSeries, []gameusecase.PauseGame, map[uuid.UUID]struct{}, error) {
@@ -765,7 +766,7 @@ func tournamentAdminSnapshotReconnectMembershipValid(
 
 func tournamentAdminSnapshotFrozenDeadlines(
 	root sqlc.Pause,
-	wave tournamentadmin.WaveView,
+	wave tournamentadminexecution.WaveView,
 	games []gameusecase.PauseGame,
 	draft *draftusecase.Execution,
 	clockRows []sqlc.PauseClock,
@@ -799,7 +800,7 @@ func tournamentAdminSnapshotFrozenDeadlines(
 }
 
 func tournamentAdminSnapshotReadyWindowDeadline(
-	wave tournamentadmin.WaveView,
+	wave tournamentadminexecution.WaveView,
 	pausedAt time.Time,
 ) (gameusecase.PauseFrozenDeadline, bool, error) {
 	if wave.Wave.State != domain.WaveStateReadyWindowOpen && wave.Wave.State != domain.WaveStateReady {

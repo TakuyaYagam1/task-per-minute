@@ -15,10 +15,10 @@ import (
 	idempotencymocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/idempotency/mocks"
 	tournamentadmincorrection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/correction"
 	correctionmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/correction/mocks"
+	tournamentadminexecutionmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/execution/mocks"
 	tournamentadminincident "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/incident"
 	tournamentadminlifecycle "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/lifecycle"
 	tournamentadminlifecyclemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/lifecycle/mocks"
-	tournamentadminmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/mocks"
 	tournamentadminreplay "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/replay"
 	tournamentadminreplaymocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/replay/mocks"
 	tournamentadminresult "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/result"
@@ -76,7 +76,7 @@ func TestProvideTournamentAdminReplayProvidesReserveAndReplayPorts(t *testing.T)
 	t.Parallel()
 
 	workflow := provideTournamentAdminReplay(
-		tournamentadminmocks.NewMockExecutionTransactionManager(t),
+		tournamentadminexecutionmocks.NewMockExecutionTransactionManager(t),
 		tournamentadminreplaymocks.NewMockReplayWorkflowRepository(t),
 	)
 

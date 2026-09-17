@@ -73,6 +73,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/readiness"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
 	tournamentadminconfiguration "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/configuration"
+	tournamentadminexecution "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/execution"
 	tournamentadmininbound "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/inbound"
 	tournamentadminlifecycle "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/lifecycle"
 	tournamentadminresult "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/result"
@@ -402,7 +403,7 @@ func newTournamentFlowRESTFixture(t *testing.T) *restFixture {
 		authorityusecase.ControllerConfig{HolderID: uuid.New()},
 	)
 	require.NoError(t, err)
-	execution := tournamentadmin.NewExecutionWorkflow(tournamentadmin.ExecutionWorkflowDependencies{
+	execution := tournamentadminexecution.NewExecutionWorkflow(tournamentadminexecution.ExecutionWorkflowDependencies{
 		Transactions: tx,
 		Repository:   executionRepository,
 		NormalPause:  executionRepository,
