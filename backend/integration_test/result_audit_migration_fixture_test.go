@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	resultaudit "github.com/TakuyaYagam1/task-per-minute/integration_test/internal/testkit/resultaudit"
+	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
 func beginResultAuditLockProbe(ctx context.Context, tb testing.TB) pgx.Tx {
@@ -247,34 +248,36 @@ func createResultAuditMigrationFixtureFromDraftMode(
 		WHERE id = $1`, exactPlanID, branchID, committedAt.Add(2*time.Second))
 	require.NoError(tb, err)
 
-	slotID := createMigrationGameSlot(ctx, tb, draft.seriesID, draft.rosterID, 1, "web")
-	attemptID := createActiveMigrationAttempt(
-		ctx, tb,
-		slotID,
-		draft.seriesID,
-		draft.rosterID,
-		committedAt.Add(3*time.Second),
-	)
-	assignmentID := createActiveMigrationAssignment(
-		ctx, tb,
-		attemptID,
-		draft,
-		exactPlanID,
-		branchID,
-		reservations[0],
-		nil,
-		committedAt.Add(4*time.Second),
-	)
-
 	lockedAt := time.Now().UTC().Add(5 * time.Second).Truncate(time.Microsecond)
-	initialScoreRevisionID := lockMigrationSeries(ctx, tb, draft, lockedAt)
+	prepared, err := resultaudit.PrepareScope(ctx, sharedPool, resultaudit.PrepareInput{
+		TournamentID: draft.tournamentID,
+		RosterID:     draft.rosterID,
+		SeriesID:     draft.seriesID,
+		ParticipantIDs: [2]uuid.UUID{
+			draft.participantIDs[0], draft.participantIDs[1],
+		},
+		Assignment: resultaudit.AssignmentInput{
+			ID:            uuid.New(),
+			PlanID:        exactPlanID,
+			BranchID:      branchID,
+			ReservationID: reservations[0].reservationID,
+			SnapshotID:    reservations[0].snapshotID,
+			TaskID:        reservations[0].taskID,
+			TaskVersion:   reservations[0].taskVersion,
+		},
+		GameCategory:        domain.CategoryWeb,
+		GameCreatedAt:       committedAt.Add(3 * time.Second),
+		AssignmentCreatedAt: committedAt.Add(4 * time.Second),
+		LockedAt:            lockedAt,
+	})
+	require.NoError(tb, err)
 
 	return resultAuditMigrationFixture{
 		draft:                  draft,
-		attemptID:              attemptID,
-		assignmentID:           assignmentID,
-		initialScoreRevisionID: initialScoreRevisionID,
-		lockedAt:               lockedAt,
+		attemptID:              prepared.Fixture.Scope.AttemptID,
+		assignmentID:           prepared.Fixture.Scope.AssignmentID,
+		initialScoreRevisionID: prepared.Fixture.InitialScoreRevisionID,
+		lockedAt:               prepared.Fixture.LockedAt,
 	}
 }
 
