@@ -6,7 +6,7 @@ import (
 
 	"github.com/google/uuid"
 
-	draftpostgres "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/draft"
+	draftpostgres "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment/draft"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"

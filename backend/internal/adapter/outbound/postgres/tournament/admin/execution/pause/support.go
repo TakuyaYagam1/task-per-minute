@@ -10,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	draftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/draft"
+	draftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment/draft"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/internal/db"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
