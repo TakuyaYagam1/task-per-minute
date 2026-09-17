@@ -1,4 +1,4 @@
-package golden
+package execution
 
 import (
 	"crypto/sha256"
@@ -6,13 +6,14 @@ import (
 	"time"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
+	goldenstate "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/state"
 
 	"github.com/google/uuid"
 )
 
 func validateGoldenWaveReceiptChain(e GoldenWaveExecution) error {
 	if len(e.Receipts) == 0 || len(e.Receipts) != int(e.Revision) {
-		return goldenWaveError("receipt count does not match execution revision")
+		return executionError("receipt count does not match execution revision")
 	}
 	seen := make(map[uuid.UUID]struct{}, len(e.Receipts))
 	var prior GoldenWaveExecutionExpectation
@@ -22,7 +23,7 @@ func validateGoldenWaveReceiptChain(e GoldenWaveExecution) error {
 			return err
 		}
 		if _, duplicate := seen[receipt.CommandID]; duplicate {
-			return goldenWaveError("duplicate retained command")
+			return executionError("duplicate retained command")
 		}
 		if err := validateGoldenReceiptAuthority(e, receipt, index); err != nil {
 			return err
@@ -38,7 +39,7 @@ func validateGoldenWaveReceiptChain(e GoldenWaveExecution) error {
 		previousAt = receipt.OccurredAt
 	}
 	if !prior.Equal(e.Expectation()) {
-		return goldenWaveError("final command does not link current execution")
+		return executionError("final command does not link current execution")
 	}
 	return nil
 }
@@ -50,12 +51,12 @@ func validateGoldenReceiptStructure(
 	previousAt time.Time,
 ) error {
 	if receipt.CommandID == uuid.Nil || receipt.Scope != execution.Scope ||
-		receipt.CommandDigest == [sha256.Size]byte{} || !validGoldenWaveCommandKind(receipt.Kind) ||
+		receipt.CommandDigest == [sha256.Size]byte{} || !validWaveCommandKind(receipt.Kind) ||
 		!domain.IsValidServerTime(receipt.OccurredAt) || receipt.Result.Revision != int64(index+1) {
-		return goldenWaveError("invalid retained command receipt")
+		return executionError("invalid retained command receipt")
 	}
 	if !previousAt.IsZero() && receipt.OccurredAt.Before(previousAt) {
-		return goldenWaveError("retained command time moved backwards")
+		return executionError("retained command time moved backwards")
 	}
 	return nil
 }
@@ -65,13 +66,13 @@ func validateGoldenReceiptAuthority(
 	receipt GoldenWaveCommandReceipt,
 	index int,
 ) error {
-	if !IDsCanonical(receipt.UnusedIdentityIDs) ||
+	if !executionIDsCanonical(receipt.UnusedIdentityIDs) ||
 		!validGoldenReceiptUnusedIdentities(receipt, execution.Window, index == len(execution.Receipts)-1) ||
 		!goldenReceiptExpectationAnchored(receipt.Result, execution) {
-		return goldenWaveError("invalid retained unused command identities")
+		return executionError("invalid retained unused command identities")
 	}
 	if receipt.Expected != nil && !goldenReceiptExpectationAnchored(*receipt.Expected, execution) {
-		return goldenWaveError("invalid retained expected command authority")
+		return executionError("invalid retained expected command authority")
 	}
 	return nil
 }
@@ -89,7 +90,7 @@ func validateGoldenReceiptSemantics(
 	case GoldenWaveCommandReady, GoldenWaveCommandDisconnected, GoldenWaveCommandReconnected:
 		return validateGoldenReadinessReceipt(execution, receipt)
 	default:
-		return goldenWaveError("invalid retained command receipt kind")
+		return executionError("invalid retained command receipt kind")
 	}
 }
 
@@ -100,7 +101,7 @@ func validateGoldenOpenedReceipt(
 ) error {
 	if receipt.ParticipantID != uuid.Nil || index != 0 || receipt.Result.Started ||
 		!receipt.OccurredAt.Equal(execution.OpenedAt) {
-		return goldenWaveError("invalid opened receipt participant")
+		return executionError("invalid opened receipt participant")
 	}
 	return nil
 }
@@ -113,7 +114,7 @@ func validateGoldenStartedReceipt(
 	if receipt.ParticipantID != uuid.Nil || execution.Start == nil || index != len(execution.Receipts)-1 ||
 		!receipt.OccurredAt.Equal(execution.Start.StartedAt) || receipt.Expected == nil ||
 		receipt.Expected.Started || !receipt.Result.Started {
-		return goldenWaveError("invalid started receipt")
+		return executionError("invalid started receipt")
 	}
 	return nil
 }
@@ -122,10 +123,10 @@ func validateGoldenReadinessReceipt(
 	execution GoldenWaveExecution,
 	receipt GoldenWaveCommandReceipt,
 ) error {
-	if !ContainsID(execution.Membership.ParticipantIDs, receipt.ParticipantID) ||
+	if !executionContainsID(execution.Membership.ParticipantIDs, receipt.ParticipantID) ||
 		receipt.OccurredAt.Before(execution.OpenedAt) || receipt.OccurredAt.After(execution.Deadline) ||
 		receipt.Expected == nil || receipt.Expected.Started || receipt.Result.Started {
-		return goldenWaveError("invalid readiness receipt participant or time")
+		return executionError("invalid readiness receipt participant or time")
 	}
 	return nil
 }
@@ -137,19 +138,19 @@ func validateGoldenReceiptLink(
 ) error {
 	if index == 0 {
 		if receipt.Kind != GoldenWaveCommandOpened || receipt.Expected != nil {
-			return goldenWaveError("first command did not open execution")
+			return executionError("first command did not open execution")
 		}
 		return nil
 	}
 	if receipt.Expected == nil || !receipt.Expected.Equal(prior) {
-		return goldenWaveError("retained command chain is broken")
+		return executionError("retained command chain is broken")
 	}
 	return nil
 }
 
 func validGoldenReceiptUnusedIdentities(
 	receipt GoldenWaveCommandReceipt,
-	current GoldenReadyWindow,
+	current goldenstate.GoldenReadyWindow,
 	final bool,
 ) bool {
 	switch receipt.Kind {
@@ -167,7 +168,7 @@ func validGoldenReceiptUnusedIdentities(
 }
 
 type goldenReceiptWindowTransition struct {
-	expected          GoldenReadyWindowExpectation
+	expected          goldenstate.GoldenReadyWindowExpectation
 	windowSame        bool
 	readinessSame     bool
 	presenceSame      bool
@@ -199,7 +200,7 @@ func (t goldenReceiptWindowTransition) allSame() bool {
 
 func validGoldenReadyUnusedIdentities(
 	receipt GoldenWaveCommandReceipt,
-	current GoldenReadyWindow,
+	current goldenstate.GoldenReadyWindow,
 	final bool,
 ) bool {
 	transition, ok := goldenReceiptTransition(receipt)
@@ -216,7 +217,7 @@ func validGoldenReadyUnusedIdentities(
 
 func validGoldenDisconnectUnusedIdentities(
 	receipt GoldenWaveCommandReceipt,
-	current GoldenReadyWindow,
+	current goldenstate.GoldenReadyWindow,
 	final bool,
 ) bool {
 	transition, ok := goldenReceiptTransition(receipt)
@@ -233,7 +234,7 @@ func validGoldenDisconnectUnusedIdentities(
 
 func validGoldenReconnectUnusedIdentities(
 	receipt GoldenWaveCommandReceipt,
-	current GoldenReadyWindow,
+	current goldenstate.GoldenReadyWindow,
 	final bool,
 ) bool {
 	transition, ok := goldenReceiptTransition(receipt)
@@ -249,8 +250,8 @@ func validGoldenReconnectUnusedIdentities(
 }
 
 func goldenReceiptFinalPredecessors(
-	current GoldenReadyWindow,
-	expected GoldenReadyWindowExpectation,
+	current goldenstate.GoldenReadyWindow,
+	expected goldenstate.GoldenReadyWindowExpectation,
 	final bool,
 	windowChanged bool,
 	readinessChanged bool,
@@ -261,39 +262,39 @@ func goldenReceiptFinalPredecessors(
 	)
 }
 
-func goldenWindowRevisionSame(expected, result GoldenReadyWindowExpectation) bool {
+func goldenWindowRevisionSame(expected, result goldenstate.GoldenReadyWindowExpectation) bool {
 	return result.Revision == expected.Revision && result.RevisionID == expected.RevisionID
 }
 
-func goldenReadinessRevisionSame(expected, result GoldenReadyWindowExpectation) bool {
+func goldenReadinessRevisionSame(expected, result goldenstate.GoldenReadyWindowExpectation) bool {
 	return result.ReadinessRevision == expected.ReadinessRevision &&
 		result.ReadinessRevisionID == expected.ReadinessRevisionID && result.ReadinessDigest == expected.ReadinessDigest
 }
 
-func goldenPresenceRevisionSame(expected, result GoldenReadyWindowExpectation) bool {
+func goldenPresenceRevisionSame(expected, result goldenstate.GoldenReadyWindowExpectation) bool {
 	return result.PresenceRevision == expected.PresenceRevision &&
 		result.PresenceRevisionID == expected.PresenceRevisionID && result.PresenceDigest == expected.PresenceDigest
 }
 
-func goldenWindowRevisionAdvanced(expected, result GoldenReadyWindowExpectation) bool {
+func goldenWindowRevisionAdvanced(expected, result goldenstate.GoldenReadyWindowExpectation) bool {
 	return expected.Revision < math.MaxInt64 && result.Revision == expected.Revision+1 &&
 		result.RevisionID != expected.RevisionID
 }
 
-func goldenReadinessRevisionAdvanced(expected, result GoldenReadyWindowExpectation) bool {
+func goldenReadinessRevisionAdvanced(expected, result goldenstate.GoldenReadyWindowExpectation) bool {
 	return expected.ReadinessRevision < math.MaxInt64 &&
 		result.ReadinessRevision == expected.ReadinessRevision+1 &&
 		result.ReadinessRevisionID != expected.ReadinessRevisionID && result.ReadinessDigest != expected.ReadinessDigest
 }
 
-func goldenPresenceRevisionAdvanced(expected, result GoldenReadyWindowExpectation) bool {
+func goldenPresenceRevisionAdvanced(expected, result goldenstate.GoldenReadyWindowExpectation) bool {
 	return expected.PresenceRevision < math.MaxInt64 && result.PresenceRevision == expected.PresenceRevision+1 &&
 		result.PresenceRevisionID != expected.PresenceRevisionID && result.PresenceDigest != expected.PresenceDigest
 }
 
 func goldenReceiptCurrentPredecessors(
-	current GoldenReadyWindow,
-	expected GoldenReadyWindowExpectation,
+	current goldenstate.GoldenReadyWindow,
+	expected goldenstate.GoldenReadyWindowExpectation,
 	windowChanged bool,
 	readinessChanged bool,
 	presenceChanged bool,
@@ -322,7 +323,7 @@ func goldenReceiptExpectationAnchored(
 		expectation.AssignmentDigest == execution.Assignment.PayloadDigest
 }
 
-func validGoldenWaveCommandKind(kind GoldenWaveCommandKind) bool {
+func validWaveCommandKind(kind GoldenWaveCommandKind) bool {
 	switch kind {
 	case GoldenWaveCommandOpened, GoldenWaveCommandReady, GoldenWaveCommandDisconnected,
 		GoldenWaveCommandReconnected, GoldenWaveCommandStarted:

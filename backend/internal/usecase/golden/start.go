@@ -26,41 +26,6 @@ type GoldenStartCommand struct {
 	Authority               authoritydomain.Lease
 }
 
-type GoldenStartAuthority struct {
-	Identity      authoritydomain.Identity
-	LeaseRevision int64
-	LeaseDigest   [sha256.Size]byte
-}
-
-type GoldenStartedAssignment struct {
-	AssignmentID    uuid.UUID
-	ParticipantID   uuid.UUID
-	SnapshotID      uuid.UUID
-	ContentDigest   [sha256.Size]byte
-	StartedAt       time.Time
-	Deadline        time.Time
-	Authority       authoritydomain.Identity
-	AuthorityDigest [sha256.Size]byte
-	DeliveryEnabled bool
-}
-
-type GoldenStartRecord struct {
-	CommandID                 uuid.UUID
-	Scope                     GoldenStateScope
-	AttemptID                 uuid.UUID
-	WaveID                    uuid.UUID
-	WindowID                  uuid.UUID
-	ExpectedState             GoldenStateExpectation
-	ExpectedExecution         GoldenWaveExecutionExpectation
-	ResultExecutionRevisionID uuid.UUID
-	ResultWindowRevisionID    uuid.UUID
-	StartedAt                 time.Time
-	Deadline                  time.Time
-	Authority                 GoldenStartAuthority
-	Assignments               []GoldenStartedAssignment
-	PayloadDigest             [sha256.Size]byte
-}
-
 type GoldenStartUseCase struct {
 	repository WaveRepository
 	clock      WaveClock
@@ -275,106 +240,6 @@ func goldenStartedAssignments(
 	return result
 }
 
-func validateGoldenStartRecord(execution GoldenWaveExecution) error {
-	start := execution.Start
-	if start == nil {
-		return nil
-	}
-	if !goldenStartPointersPresent(execution, *start) || !goldenStartAnchorsMatch(execution, *start) ||
-		!goldenStartTimeLineageMatches(execution, *start) || !goldenStartWindowEvidenceMatches(execution, *start) {
-		return goldenWaveError("invalid retained Golden start")
-	}
-	if err := validateGoldenStartReceipt(execution, *start); err != nil {
-		return err
-	}
-	if goldenStartedReceiptCount(execution.Receipts) != 1 {
-		return goldenWaveError("Golden start receipt is not unique")
-	}
-	return validateGoldenStartedAssignments(execution, *start)
-}
-
-func goldenStartPointersPresent(execution GoldenWaveExecution, start GoldenStartRecord) bool {
-	return len(execution.Receipts) > 0 && execution.Wave.StartedAt != nil &&
-		execution.Wave.ReadyWindow != nil && execution.Wave.ReadyWindow.ConsumedAt != nil &&
-		execution.Attempt.StartedAt != nil && execution.PreviousRevisionID != nil &&
-		execution.Window.PreviousRevisionID != nil && start.CommandID != uuid.Nil
-}
-
-func goldenStartAnchorsMatch(execution GoldenWaveExecution, start GoldenStartRecord) bool {
-	return start.Scope == execution.Scope && start.AttemptID == execution.Attempt.ID &&
-		start.WaveID == execution.Wave.ID && start.WindowID == execution.Window.ID &&
-		start.ExpectedState.Equal(execution.Source) && start.ResultExecutionRevisionID == execution.RevisionID &&
-		start.ResultWindowRevisionID == execution.Window.RevisionID
-}
-
-func goldenStartTimeLineageMatches(execution GoldenWaveExecution, start GoldenStartRecord) bool {
-	return domain.IsValidServerTime(start.StartedAt) && domain.IsValidServerTime(start.Deadline) &&
-		!start.StartedAt.Before(execution.OpenedAt) && !start.StartedAt.After(execution.Deadline) &&
-		execution.Wave.StartedAt.Equal(start.StartedAt) &&
-		execution.Wave.ReadyWindow.ConsumedAt.Equal(start.StartedAt) &&
-		execution.Attempt.StartedAt.Equal(start.StartedAt) &&
-		execution.Revision == start.ExpectedExecution.Revision+1 &&
-		*execution.PreviousRevisionID == start.ExpectedExecution.RevisionID &&
-		execution.Window.Revision == start.ExpectedExecution.Window.Revision+1 &&
-		*execution.Window.PreviousRevisionID == start.ExpectedExecution.Window.RevisionID
-}
-
-func goldenStartWindowEvidenceMatches(execution GoldenWaveExecution, start GoldenStartRecord) bool {
-	expectedWindow := start.ExpectedExecution.Window
-	return execution.Window.ReadinessRevisionID == expectedWindow.ReadinessRevisionID &&
-		execution.Window.ReadinessRevision == expectedWindow.ReadinessRevision &&
-		execution.Window.ReadinessDigest == expectedWindow.ReadinessDigest &&
-		execution.Window.PresenceRevisionID == expectedWindow.PresenceRevisionID &&
-		execution.Window.PresenceRevision == expectedWindow.PresenceRevision &&
-		execution.Window.PresenceDigest == expectedWindow.PresenceDigest &&
-		start.Deadline.Equal(start.StartedAt.Add(time.Duration(execution.Assignment.Snapshot.TimeLimit)*time.Second)) &&
-		start.Authority.Identity.Validate() == nil &&
-		start.Authority.Identity.TournamentID == execution.Scope.TournamentID && start.Authority.LeaseRevision >= 1 &&
-		start.Authority.LeaseDigest != [sha256.Size]byte{} && start.PayloadDigest == goldenStartRecordDigest(start) &&
-		len(start.Assignments) == len(execution.Assignment.Private)
-}
-
-func validateGoldenStartReceipt(execution GoldenWaveExecution, start GoldenStartRecord) error {
-	lastReceipt := execution.Receipts[len(execution.Receipts)-1]
-	if lastReceipt.Kind != GoldenWaveCommandStarted || lastReceipt.CommandID != start.CommandID ||
-		lastReceipt.ParticipantID != uuid.Nil || !lastReceipt.OccurredAt.Equal(start.StartedAt) ||
-		!start.ExpectedExecution.Equal(lastReceipt.ExpectedValue()) {
-		return goldenWaveError("Golden start expectation changed")
-	}
-	return nil
-}
-
-func goldenStartedReceiptCount(receipts []GoldenWaveCommandReceipt) int {
-	startReceipts := 0
-	for _, receipt := range receipts {
-		if receipt.Kind == GoldenWaveCommandStarted {
-			startReceipts++
-		}
-	}
-	return startReceipts
-}
-
-func validateGoldenStartedAssignments(execution GoldenWaveExecution, start GoldenStartRecord) error {
-	for index, assignment := range start.Assignments {
-		private := execution.Assignment.Private[index]
-		if assignment.AssignmentID != private.ID || assignment.ParticipantID != private.ParticipantID ||
-			assignment.SnapshotID != private.SnapshotID || assignment.ContentDigest != private.ContentDigest ||
-			!assignment.StartedAt.Equal(start.StartedAt) || !assignment.Deadline.Equal(start.Deadline) ||
-			assignment.Authority != start.Authority.Identity || assignment.AuthorityDigest != start.Authority.LeaseDigest ||
-			!assignment.DeliveryEnabled {
-			return goldenWaveError("started private assignment changed")
-		}
-	}
-	return nil
-}
-
-func (r GoldenWaveCommandReceipt) ExpectedValue() GoldenWaveExecutionExpectation {
-	if r.Expected == nil {
-		return GoldenWaveExecutionExpectation{}
-	}
-	return *r.Expected
-}
-
 func validateGoldenStartCommand(command GoldenStartCommand) error {
 	if !ValidStateScope(command.Scope) || command.CommandID == uuid.Nil || command.AttemptID == uuid.Nil ||
 		command.WaveID == uuid.Nil || command.WindowID == uuid.Nil || command.ExpectedState.Scope != command.Scope ||
@@ -431,22 +296,4 @@ func GoldenExecutionAuthorityDigest(
 	lease authoritydomain.Lease,
 ) [sha256.Size]byte {
 	return goldenExecutionAuthorityLeaseDigest(lease)
-}
-
-func goldenStartRecordDigest(start GoldenStartRecord) [sha256.Size]byte {
-	clone := start
-	clone.PayloadDigest = [sha256.Size]byte{}
-	payload, _ := Encode(clone)
-	return sha256.Sum256(payload)
-}
-
-func cloneGoldenStartRecord(input *GoldenStartRecord) *GoldenStartRecord {
-	if input == nil {
-		return nil
-	}
-	clone := *input
-	clone.ExpectedState = CloneExpectation(input.ExpectedState)
-	clone.ExpectedExecution.Source = CloneExpectation(input.ExpectedExecution.Source)
-	clone.Assignments = append([]GoldenStartedAssignment(nil), input.Assignments...)
-	return &clone
 }

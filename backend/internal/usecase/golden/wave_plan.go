@@ -3,7 +3,6 @@ package golden
 import (
 	"crypto/sha256"
 	"reflect"
-	"time"
 
 	"github.com/google/uuid"
 
@@ -250,133 +249,7 @@ func buildGoldenPrivateAssignments(
 	return result, nil
 }
 
-func BuildMembers(participants []uuid.UUID) []domain.WaveMember {
-	members := make([]domain.WaveMember, len(participants))
-	for index, participantID := range participants {
-		members[index] = domain.WaveMember{ParticipantID: participantID}
-	}
-	return members
-}
-
-func goldenExecutionActiveIDs(group domain.GoldenGroupState) []uuid.UUID {
-	result := make([]uuid.UUID, 0, len(group.Members))
-	for _, member := range group.Members {
-		if !member.Excluded {
-			result = append(result, member.ParticipantID)
-		}
-	}
-	SortIDs(result)
-	return result
-}
-
-func MemberIDs(wave domain.Wave) []uuid.UUID {
-	result := make([]uuid.UUID, len(wave.Members))
-	for index, member := range wave.Members {
-		result[index] = member.ParticipantID
-	}
-	SortIDs(result)
-	return result
-}
-
-func PrivateAssignmentParticipantIDs(assignments []GoldenPrivateAssignment) []uuid.UUID {
-	result := make([]uuid.UUID, len(assignments))
-	for index, assignment := range assignments {
-		result[index] = assignment.ParticipantID
-	}
-	SortIDs(result)
-	return result
-}
-
 func goldenOpenCommandDigest(command OpenGoldenReadyWindowCommand) [sha256.Size]byte {
 	payload, _ := Encode(command)
 	return sha256.Sum256(payload)
-}
-
-func goldenAssignmentDigest(assignment GoldenAttemptAssignment) [sha256.Size]byte {
-	type document struct {
-		ID            uuid.UUID
-		RevisionID    uuid.UUID
-		Revision      int64
-		Scope         GoldenStateScope
-		AttemptID     uuid.UUID
-		WaveID        uuid.UUID
-		MembershipID  uuid.UUID
-		Plan          GoldenPlanStateBinding
-		EdgeID        uuid.UUID
-		ReservationID uuid.UUID
-		Snapshot      domain.AssignmentTaskSnapshot
-		ContentDigest [sha256.Size]byte
-		Private       []GoldenPrivateAssignment
-	}
-	payload, _ := Encode(document{
-		ID: assignment.ID, RevisionID: assignment.RevisionID, Revision: assignment.Revision,
-		Scope: assignment.Scope, AttemptID: assignment.AttemptID, WaveID: assignment.WaveID,
-		MembershipID: assignment.MembershipID, Plan: assignment.Plan, EdgeID: assignment.EdgeID,
-		ReservationID: assignment.ReservationID, Snapshot: assignment.Snapshot,
-		ContentDigest: assignment.ContentDigest, Private: assignment.Private,
-	})
-	return sha256.Sum256(payload)
-}
-
-func goldenWavePayloadDigest(execution GoldenWaveExecution) [sha256.Size]byte {
-	type document struct {
-		Scope                           GoldenStateScope
-		Source                          GoldenStateExpectation
-		RevisionID                      uuid.UUID
-		Revision                        int64
-		PreviousRevisionID              *uuid.UUID
-		Group                           domain.GoldenGroupState
-		GroupBindingDigest              [sha256.Size]byte
-		OpeningParticipationEstablished bool
-		Attempt                         domain.GoldenAttempt
-		Wave                            domain.Wave
-		Membership                      GoldenWaveMembershipBinding
-		Assignment                      GoldenAttemptAssignment
-		Window                          GoldenReadyWindow
-		OpenedAt                        time.Time
-		Deadline                        time.Time
-		ReceiptsDigest                  [sha256.Size]byte
-		Start                           *GoldenStartRecord
-	}
-	payload, _ := Encode(document{
-		Scope: execution.Scope, Source: execution.Source, RevisionID: execution.RevisionID,
-		Revision: execution.Revision, PreviousRevisionID: execution.PreviousRevisionID,
-		Group: execution.Group, GroupBindingDigest: execution.GroupBindingDigest,
-		OpeningParticipationEstablished: execution.OpeningParticipationEstablished,
-		Attempt:                         execution.Attempt, Wave: execution.Wave,
-		Membership: execution.Membership, Assignment: execution.Assignment, Window: execution.Window,
-		OpenedAt: execution.OpenedAt, Deadline: execution.Deadline,
-		ReceiptsDigest: execution.ReceiptsDigest, Start: execution.Start,
-	})
-	return sha256.Sum256(payload)
-}
-
-func ExecutionGroupBindingDigest(
-	group domain.GoldenGroupState,
-	openingParticipationEstablished bool,
-) ([sha256.Size]byte, error) {
-	normalized := CloneGroup(group)
-	normalized.ParticipationEstablished = openingParticipationEstablished
-	if len(normalized.Attempts) > 0 {
-		last := len(normalized.Attempts) - 1
-		normalized.Attempts[last].State = domain.GoldenAttemptStateWaitingReady
-		normalized.Attempts[last].StartedAt = nil
-	}
-	payload, err := Encode(normalized)
-	if err != nil {
-		return [sha256.Size]byte{}, err
-	}
-	return sha256.Sum256(payload), nil
-}
-
-func goldenWaveReceiptsDigest(receipts []GoldenWaveCommandReceipt) ([sha256.Size]byte, error) {
-	normalized := cloneGoldenWaveReceipts(receipts)
-	if len(normalized) > 0 {
-		normalized[len(normalized)-1].Result.PayloadDigest = [sha256.Size]byte{}
-	}
-	payload, err := Encode(normalized)
-	if err != nil {
-		return [sha256.Size]byte{}, err
-	}
-	return sha256.Sum256(payload), nil
 }

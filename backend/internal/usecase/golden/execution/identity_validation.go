@@ -1,4 +1,4 @@
-package golden
+package execution
 
 import (
 	"fmt"
@@ -11,7 +11,7 @@ type waveGoldenIdentityRole struct {
 	role  string
 }
 
-func waveValidGoldenRevisionPredecessor(current uuid.UUID, revision int64, previous *uuid.UUID) bool {
+func validExecutionRevisionPredecessor(current uuid.UUID, revision int64, previous *uuid.UUID) bool {
 	return revision == 1 && previous == nil ||
 		revision > 1 && previous != nil && *previous != uuid.Nil && *previous != current
 }
@@ -77,7 +77,7 @@ func validateGoldenExecutionIdentityRoles(e GoldenWaveExecution) error {
 			continue
 		}
 		if owner, exists := owners[role.value]; exists && owner != role.role {
-			return goldenWaveError("identity is reused across execution roles")
+			return executionError("identity is reused across execution roles")
 		}
 		owners[role.value] = role.role
 	}
