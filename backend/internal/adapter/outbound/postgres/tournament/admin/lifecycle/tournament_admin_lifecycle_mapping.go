@@ -12,6 +12,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	adminoperation "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/operation"
 )
 
 const maxTournamentLifecycleReasonLength = 512
@@ -122,8 +123,8 @@ func tournamentAdminLifecycleCommand(
 	}
 
 	record := &tournamentadmin.LifecycleCommandRecord{
-		CommandScope: tournamentadmin.CommandScope{
-			Operator:     tournamentadmin.OperatorIdentity{ActorID: row.ActorID},
+		CommandScope: adminoperation.CommandScope{
+			Operator:     adminoperation.OperatorIdentity{ActorID: row.ActorID},
 			TournamentID: row.TournamentID, CommandID: row.CommandID,
 		},
 		Action:                     tournamentadmin.TournamentAction(row.Action),

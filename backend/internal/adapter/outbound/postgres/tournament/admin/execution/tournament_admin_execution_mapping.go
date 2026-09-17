@@ -14,6 +14,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	swissusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/swiss"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	adminoperation "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/operation"
 )
 
 type tournamentAdminStandingsDocument struct {
@@ -257,8 +258,8 @@ func tournamentAdminPairingCommand(
 		return nil, domain.ErrInternal
 	}
 	return &tournamentadmin.PairingCommandRecord{
-		CommandScope: tournamentadmin.CommandScope{
-			Operator:     tournamentadmin.OperatorIdentity{ActorID: row.ActorID},
+		CommandScope: adminoperation.CommandScope{
+			Operator:     adminoperation.OperatorIdentity{ActorID: row.ActorID},
 			TournamentID: row.TournamentID, CommandID: row.CommandID,
 		},
 		RosterID: row.RosterID, RoundNumber: int(row.RoundNumber), Mode: tournamentadmin.PairingMode(row.PairingMode),
@@ -657,8 +658,8 @@ func tournamentAdminWaveCommand(row sqlc.WaveControlCommand) (*tournamentadmin.W
 	}
 	resultDocument, normalPause := decodeTournamentAdminWaveResult(row.Action, row.ResultDocument)
 	return &tournamentadmin.WaveCommandRecord{
-		CommandScope: tournamentadmin.CommandScope{
-			Operator:     tournamentadmin.OperatorIdentity{ActorID: row.ActorID},
+		CommandScope: adminoperation.CommandScope{
+			Operator:     adminoperation.OperatorIdentity{ActorID: row.ActorID},
 			TournamentID: row.TournamentID, CommandID: row.CommandID,
 		},
 		RosterID: row.RosterID, WaveID: row.WaveID, Action: tournamentadmin.WaveAction(row.Action),
