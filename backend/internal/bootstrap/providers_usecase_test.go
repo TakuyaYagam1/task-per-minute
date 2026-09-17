@@ -14,6 +14,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/idempotency"
 	idempotencymocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/idempotency/mocks"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	tournamentadminincident "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/incident"
 	tournamentadminmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/mocks"
 	tournamentparticipant "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/participant"
 	tournamentparticipantmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/participant/mocks"
@@ -48,7 +49,7 @@ func TestProvideIncidentAuthenticatorUsesDedicatedConfig(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	var port tournamentadmin.IncidentAuthenticator = authenticator
+	var port tournamentadminincident.IncidentAuthenticator = authenticator
 	require.NotNil(t, port)
 }
 

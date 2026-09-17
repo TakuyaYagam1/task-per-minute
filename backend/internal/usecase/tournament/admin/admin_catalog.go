@@ -14,6 +14,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/audit"
+	incidentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/incident"
 	tournamentpreflight "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/preflight"
 )
 
@@ -37,7 +38,7 @@ type AdminService interface {
 	ReplayGame(ctx context.Context, command ReplayCommand) error
 	CorrectGameResult(ctx context.Context, command CorrectionCommand) (CorrectionEvidence, error)
 	ListAudit(ctx context.Context, query AuditQuery) (audit.AuditPage, error)
-	ExportIncident(ctx context.Context, query IncidentQuery) (audit.IncidentBundle, error)
+	ExportIncident(ctx context.Context, query incidentusecase.IncidentQuery) (audit.IncidentBundle, error)
 	GetOperatorSnapshot(ctx context.Context, query SnapshotQuery) (OperatorSnapshotView, error)
 }
 

@@ -44,6 +44,7 @@ import (
 	tournamentadminexecution "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/execution"
 	tournamentadminidempotent "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/idempotent"
 	tournamentadmininbound "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/inbound"
+	tournamentadminincident "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/incident"
 	tournamentadminlifecycle "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/lifecycle"
 	tournamentadminobservability "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/observability"
 	tournamentadminobserved "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/observed"
@@ -446,9 +447,9 @@ func provideTournamentAdminApplication(
 	forfeit tournamentadminresult.ForfeitPort,
 	replay tournamentadminreplay.ReplayPort,
 	correction tournamentadmincorrection.CorrectionPort,
-	audit tournamentadmin.AuditPort,
-	incidents tournamentadmin.IncidentSnapshotPort,
-	signer tournamentadmin.IncidentAuthenticator,
+	audit tournamentadminincident.AuditPort,
+	incidents tournamentadminincident.IncidentSnapshotPort,
+	signer tournamentadminincident.IncidentAuthenticator,
 	snapshots tournamentadmin.SnapshotPort,
 ) *tournamentadmin.AdminUseCase {
 	return tournamentadmin.AdminNewUseCase(tournamentadmin.AdminDependencies{

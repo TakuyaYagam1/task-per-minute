@@ -7,6 +7,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/audit"
+	incidentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/incident"
 	tournamentpreflight "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/preflight"
 )
 
@@ -22,9 +23,9 @@ type AdminDependencies struct {
 	Forfeit    ForfeitPort
 	Replay     ReplayPort
 	Correction CorrectionPort
-	Audit      AuditPort
-	Incidents  IncidentSnapshotPort
-	Signer     IncidentAuthenticator
+	Audit      incidentusecase.AuditPort
+	Incidents  incidentusecase.IncidentSnapshotPort
+	Signer     incidentusecase.IncidentAuthenticator
 	Snapshots  SnapshotPort
 }
 
@@ -40,9 +41,9 @@ type AdminUseCase struct {
 	forfeit    ForfeitPort
 	replay     ReplayPort
 	correction CorrectionPort
-	audit      AuditPort
-	incidents  IncidentSnapshotPort
-	signer     IncidentAuthenticator
+	audit      incidentusecase.AuditPort
+	incidents  incidentusecase.IncidentSnapshotPort
+	signer     incidentusecase.IncidentAuthenticator
 	snapshots  SnapshotPort
 }
 
@@ -269,9 +270,9 @@ func (a *AdminUseCase) ListAudit(ctx context.Context, query AuditQuery) (audit.A
 
 func (a *AdminUseCase) ExportIncident(
 	ctx context.Context,
-	query IncidentQuery,
+	query incidentusecase.IncidentQuery,
 ) (audit.IncidentBundle, error) {
-	if ctx == nil || !validIncidentQuery(query) {
+	if ctx == nil || !incidentusecase.ValidIncidentQuery(query) {
 		return audit.IncidentBundle{}, domain.ErrValidation
 	}
 	if a == nil || a.incidents == nil || a.signer == nil {

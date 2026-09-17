@@ -70,6 +70,8 @@ import (
 	tournamentadminconfiguration "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/configuration"
 	tournamentadmincorrection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/correction"
 	tournamentadminexecution "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/execution"
+	tournamentadmininbound "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/inbound"
+	tournamentadminincident "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/incident"
 	tournamentadminlifecycle "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/lifecycle"
 	tournamentadminobservability "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/observability"
 	tournamentadminobserved "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/observed"
@@ -165,8 +167,8 @@ var ReposSet = wire.NewSet(
 	snapshotrepo.NewTournamentSnapshotPostgres,
 	wire.Bind(new(inbound.TournamentSnapshotUseCase), new(*snapshotrepo.TournamentSnapshotPostgres)),
 	auditrepo.NewTournamentAdminAuditPostgres,
-	wire.Bind(new(tournamentadmin.AuditPort), new(*auditrepo.TournamentAdminAuditPostgres)),
-	wire.Bind(new(tournamentadmin.IncidentSnapshotPort), new(*auditrepo.TournamentAdminAuditPostgres)),
+	wire.Bind(new(tournamentadminincident.AuditPort), new(*auditrepo.TournamentAdminAuditPostgres)),
+	wire.Bind(new(tournamentadminincident.IncidentSnapshotPort), new(*auditrepo.TournamentAdminAuditPostgres)),
 	adminsnapshotrepo.NewTournamentAdminSnapshotPostgres,
 	wire.Bind(new(tournamentadmin.SnapshotPort), new(*adminsnapshotrepo.TournamentAdminSnapshotPostgres)),
 	waverepo.NewWavePostgres,
@@ -252,7 +254,7 @@ var UseCasesSet = wire.NewSet(
 	providePasswordVerifier,
 	wire.Bind(new(authusecase.PasswordVerifier), new(*authadapter.PasswordVerifier)),
 	provideIncidentAuthenticator,
-	wire.Bind(new(tournamentadmin.IncidentAuthenticator), new(*incidentauth.HMACAuthenticator)),
+	wire.Bind(new(tournamentadminincident.IncidentAuthenticator), new(*incidentauth.HMACAuthenticator)),
 	provideAuthUseCase,
 	wire.Bind(new(restv1.AdminAuthService), new(*authusecase.UseCase)),
 	wire.Bind(new(middleware.AdminAccessVerifier), new(*authusecase.UseCase)),
@@ -326,6 +328,7 @@ var UseCasesSet = wire.NewSet(
 	provideIdempotentTournamentAdminApplication,
 	provideObservedTournamentAdminApplication,
 	wire.Bind(new(tournamentadmin.AdminService), new(*tournamentadminobserved.ObservedService)),
+	wire.Bind(new(tournamentadmininbound.Service), new(*tournamentadminobserved.ObservedService)),
 	provideTournamentAdminInbound,
 	provideParticipantReadiness,
 	wire.Bind(new(tournamentparticipant.ReadinessWorkflow), new(*readiness.ReadinessUseCase)),

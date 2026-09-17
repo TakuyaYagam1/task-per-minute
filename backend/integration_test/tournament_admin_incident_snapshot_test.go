@@ -17,6 +17,7 @@ import (
 	correctionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/correction"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/audit"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	incidentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/incident"
 )
 
 const incidentSnapshotSeedAuditEvents = 201
@@ -47,7 +48,7 @@ func TestTournamentAdminIncidentSnapshotPinsConcurrentAuditWrites(t *testing.T) 
 	}
 
 	repository := auditrepo.NewTournamentAdminAuditPostgres(postgres.NewTxManager(sharedPool))
-	query := tournamentadmin.IncidentQuery{
+	query := incidentusecase.IncidentQuery{
 		Operator:     tournamentadmin.OperatorIdentity{ActorID: firstInput.OperatorID},
 		TournamentID: fixture.resultFixture.draft.tournamentID,
 	}
@@ -114,7 +115,7 @@ func TestTournamentAdminIncidentExportSignsDurableSnapshot(t *testing.T) {
 		Signer:    authenticator,
 	})
 
-	bundle, err := application.ExportIncident(ctx, tournamentadmin.IncidentQuery{
+	bundle, err := application.ExportIncident(ctx, incidentusecase.IncidentQuery{
 		Operator:     tournamentadmin.OperatorIdentity{ActorID: input.OperatorID},
 		TournamentID: fixture.resultFixture.draft.tournamentID,
 	})

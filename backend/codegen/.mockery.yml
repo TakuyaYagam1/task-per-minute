@@ -53,11 +53,13 @@ packages:
       ReplayWorkflowRepository:
       CorrectionTransactionManager:
       CorrectionWorkflowRepository:
-      IncidentSnapshotPort:
-      IncidentAuthenticator:
       OperationClock:
       OperationObserver:
       AdminService:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/incident:
+    interfaces:
+      IncidentSnapshotPort:
+      IncidentAuthenticator:
   github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/participant:
     interfaces:
       ParticipantTransactionManager:

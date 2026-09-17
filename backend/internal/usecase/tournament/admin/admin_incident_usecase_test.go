@@ -12,14 +12,16 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/audit"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
-	tournamentadminmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/mocks"
+	incidentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/incident"
+	incidentmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/incident/mocks"
+	operationusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/operation"
 )
 
 func TestUseCaseExportIncidentGeneratesSignsAndVerifiesBundle(t *testing.T) {
 	t.Parallel()
 
-	query := tournamentadmin.IncidentQuery{
-		Operator: tournamentadmin.OperatorIdentity{ActorID: uuid.New()}, TournamentID: uuid.New(),
+	query := incidentusecase.IncidentQuery{
+		Operator: operationusecase.OperatorIdentity{ActorID: uuid.New()}, TournamentID: uuid.New(),
 	}
 	generatedAt := time.Date(2026, time.September, 7, 15, 0, 0, 0, time.UTC)
 	snapshot := audit.IncidentBundleSnapshot{
@@ -34,8 +36,8 @@ func TestUseCaseExportIncidentGeneratesSignsAndVerifiesBundle(t *testing.T) {
 			EntityKind: audit.AuditEntityGameAttempt, EntityID: uuid.New(), RevisionNumber: 1, IsCurrent: true,
 		}},
 	}
-	incidents := tournamentadminmocks.NewMockIncidentSnapshotPort(t)
-	signer := tournamentadminmocks.NewMockIncidentAuthenticator(t)
+	incidents := incidentmocks.NewMockIncidentSnapshotPort(t)
+	signer := incidentmocks.NewMockIncidentAuthenticator(t)
 	incidents.EXPECT().LoadIncidentSnapshot(mock.Anything, query).Return(snapshot, nil).Once()
 	signer.EXPECT().Sign(mock.Anything).RunAndReturn(func(bundle audit.IncidentBundle) (audit.IncidentBundle, error) {
 		require.Equal(t, snapshot.TournamentID, bundle.TournamentID)
