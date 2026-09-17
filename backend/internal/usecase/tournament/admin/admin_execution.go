@@ -38,10 +38,6 @@ func validSwissRoundView(view SwissRoundView, tournamentID uuid.UUID, roundNumbe
 	return executionusecase.ValidSwissRoundView(view, tournamentID, roundNumber)
 }
 
-func validSwissStandings(view SwissRoundView, roster map[uuid.UUID]struct{}) bool {
-	return executionusecase.ValidSwissStandings(view, roster)
-}
-
 func validWaveView(view WaveView, tournamentID, waveID uuid.UUID) bool {
 	return executionusecase.ValidWaveView(view, tournamentID, waveID)
 }

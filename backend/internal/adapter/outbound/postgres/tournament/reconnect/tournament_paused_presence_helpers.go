@@ -12,7 +12,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	executionusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/execution"
 )
 
 const pausedPresenceDocumentVersion = 1
@@ -24,7 +24,7 @@ type pausedPresenceDocument struct {
 }
 
 func decodePausedPresenceWaveResult(action string, document []byte) ([]byte, *gameusecase.NormalPauseRecord) {
-	if action != string(tournamentadmin.WaveActionPause) {
+	if action != string(executionusecase.WaveActionPause) {
 		return append([]byte(nil), document...), nil
 	}
 	var envelope pausedPresenceDocument
