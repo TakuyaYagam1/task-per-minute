@@ -11,15 +11,17 @@ import (
 	"time"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
-	goldenmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/mocks"
+	goldenconnection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/connection"
+	goldenmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/connection/mocks"
+	goldensubmission "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/submission"
+	goldenwave "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/wave"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
-func task050SealConnectionLedger(t *testing.T, ledger *goldenusecase.GoldenIndividualConnectionLedger) {
+func task050SealConnectionLedger(t *testing.T, ledger *goldenconnection.GoldenIndividualConnectionLedger) {
 	t.Helper()
 	clone := ledger.Snapshot()
 	clone.PayloadDigest = [sha256.Size]byte{}
@@ -30,11 +32,11 @@ func task050SealConnectionLedger(t *testing.T, ledger *goldenusecase.GoldenIndiv
 
 func task050SealFirstExpectedConnectionHead(
 	t *testing.T,
-	ledger *goldenusecase.GoldenIndividualConnectionLedger,
+	ledger *goldenconnection.GoldenIndividualConnectionLedger,
 ) {
 	t.Helper()
 	receipt := &ledger.Receipts[0]
-	initial := goldenusecase.GoldenIndividualConnectionLedger{
+	initial := goldenconnection.GoldenIndividualConnectionLedger{
 		Scope: ledger.Scope, Execution: ledger.Execution,
 		Submissions: receipt.Expected.Submissions, StartedAt: ledger.StartedAt, Deadline: ledger.Deadline,
 		RevisionID: receipt.Expected.RevisionID, Revision: receipt.Expected.Revision,
@@ -50,26 +52,26 @@ type task050ConnectionRepositoryHarness struct {
 	*goldenmocks.MockConnectionRepository
 
 	mu                sync.Mutex
-	execution         goldenusecase.GoldenWaveExecution
-	submissions       goldenusecase.GoldenSubmissionLedger
-	connections       goldenusecase.GoldenIndividualConnectionLedger
-	replays           map[uuid.UUID]goldenusecase.GoldenIndividualConnectionReplay
+	execution         goldenwave.GoldenWaveExecution
+	submissions       goldensubmission.GoldenSubmissionLedger
+	connections       goldenconnection.GoldenIndividualConnectionLedger
+	replays           map[uuid.UUID]goldenconnection.GoldenIndividualConnectionReplay
 	beforeCommit      func()
-	returnConnections *goldenusecase.GoldenIndividualConnectionLedger
+	returnConnections *goldenconnection.GoldenIndividualConnectionLedger
 	writes            int
 }
 
 func newTask050ConnectionRepositoryHarness(
 	t *testing.T,
-	execution goldenusecase.GoldenWaveExecution,
-	submissions goldenusecase.GoldenSubmissionLedger,
-	connections goldenusecase.GoldenIndividualConnectionLedger,
+	execution goldenwave.GoldenWaveExecution,
+	submissions goldensubmission.GoldenSubmissionLedger,
+	connections goldenconnection.GoldenIndividualConnectionLedger,
 ) *task050ConnectionRepositoryHarness {
 	t.Helper()
 
 	harness := &task050ConnectionRepositoryHarness{
 		execution: execution.Snapshot(), submissions: submissions.Snapshot(), connections: connections.Snapshot(),
-		replays: make(map[uuid.UUID]goldenusecase.GoldenIndividualConnectionReplay),
+		replays: make(map[uuid.UUID]goldenconnection.GoldenIndividualConnectionReplay),
 	}
 	repository := goldenmocks.NewMockConnectionRepository(t)
 	repository.EXPECT().
@@ -92,7 +94,7 @@ func (r *task050ConnectionRepositoryHarness) findConnectionReplay(
 	_ context.Context,
 	_ uuid.UUID,
 	commandID uuid.UUID,
-) (*goldenusecase.GoldenIndividualConnectionReplay, error) {
+) (*goldenconnection.GoldenIndividualConnectionReplay, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	replay, found := r.replays[commandID]
@@ -105,11 +107,11 @@ func (r *task050ConnectionRepositoryHarness) findConnectionReplay(
 
 func (r *task050ConnectionRepositoryHarness) loadDisconnectSnapshot(
 	_ context.Context,
-	_ goldenusecase.GoldenSubmissionScope,
-) (goldenusecase.GoldenIndividualDisconnectAuthority, error) {
+	_ goldensubmission.GoldenSubmissionScope,
+) (goldenconnection.GoldenIndividualDisconnectAuthority, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return goldenusecase.GoldenIndividualDisconnectAuthority{
+	return goldenconnection.GoldenIndividualDisconnectAuthority{
 		Execution: r.execution.Snapshot(), Submissions: r.submissions.Snapshot(),
 		Connections: r.connections.Snapshot(),
 	}, nil
@@ -117,8 +119,8 @@ func (r *task050ConnectionRepositoryHarness) loadDisconnectSnapshot(
 
 func (r *task050ConnectionRepositoryHarness) commitConnectionState(
 	_ context.Context,
-	commit goldenusecase.GoldenIndividualConnectionCommit,
-) (*goldenusecase.GoldenIndividualConnectionLedger, bool, error) {
+	commit goldenconnection.GoldenIndividualConnectionCommit,
+) (*goldenconnection.GoldenIndividualConnectionLedger, bool, error) {
 	if r.beforeCommit != nil {
 		r.beforeCommit()
 	}
@@ -139,7 +141,7 @@ func (r *task050ConnectionRepositoryHarness) commitConnectionState(
 	}
 	r.connections = commit.Next.Snapshot()
 	r.writes++
-	r.replays[last.CommandID] = goldenusecase.GoldenIndividualConnectionReplay{
+	r.replays[last.CommandID] = goldenconnection.GoldenIndividualConnectionReplay{
 		Receipt: last, Connections: r.connections.Snapshot(),
 	}
 	clone := r.connections.Snapshot()
@@ -152,25 +154,25 @@ func (r *task050ConnectionRepositoryHarness) writeCount() int {
 	return r.writes
 }
 
-func (r *task050ConnectionRepositoryHarness) executionSnapshot() goldenusecase.GoldenWaveExecution {
+func (r *task050ConnectionRepositoryHarness) executionSnapshot() goldenwave.GoldenWaveExecution {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.execution.Snapshot()
 }
 
-func (r *task050ConnectionRepositoryHarness) submissionSnapshot() goldenusecase.GoldenSubmissionLedger {
+func (r *task050ConnectionRepositoryHarness) submissionSnapshot() goldensubmission.GoldenSubmissionLedger {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.submissions.Snapshot()
 }
 
-func (r *task050ConnectionRepositoryHarness) replaceSubmissions(submissions goldenusecase.GoldenSubmissionLedger) {
+func (r *task050ConnectionRepositoryHarness) replaceSubmissions(submissions goldensubmission.GoldenSubmissionLedger) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.submissions = submissions.Snapshot()
 }
 
-func (r *task050ConnectionRepositoryHarness) connectionSnapshot() goldenusecase.GoldenIndividualConnectionLedger {
+func (r *task050ConnectionRepositoryHarness) connectionSnapshot() goldenconnection.GoldenIndividualConnectionLedger {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.connections.Snapshot()

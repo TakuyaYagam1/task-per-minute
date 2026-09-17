@@ -5,7 +5,8 @@ import (
 	"time"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
+	goldenconnection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/connection"
+	goldensubmission "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/submission"
 
 	"github.com/stretchr/testify/require"
 )
@@ -16,13 +17,13 @@ func TestGoldenIndividualDisconnect(t *testing.T) {
 	startedAt := time.Date(2026, 9, 1, 18, 0, 0, 0, time.UTC)
 	execution := connectionTask049StartedExecution(t, startedAt)
 	scope := connectionTask049SubmissionScope(execution)
-	submissions, err := goldenusecase.NewGoldenSubmissionLedger(scope, connectionTask049ID(20001))
+	submissions, err := goldensubmission.NewGoldenSubmissionLedger(scope, connectionTask049ID(20001))
 	require.NoError(t, err)
 	participantID := execution.Membership.ParticipantIDs[0]
 	verification := connectionTask049Verification(scope, execution, participantID, 20010)
 	submissionRepository := connectionNewTask049SubmissionHarness(t, execution, submissions, startedAt.Add(time.Second))
 	submissionRepository.verifications[verification.ID] = verification
-	submitted, changed, err := goldenusecase.NewGoldenSubmissionUseCase(submissionRepository).Submit(t.Context(), goldenusecase.GoldenSubmissionCommand{
+	submitted, changed, err := goldensubmission.NewGoldenSubmissionUseCase(submissionRepository).Submit(t.Context(), goldensubmission.GoldenSubmissionCommand{
 		Scope: scope, CommandID: connectionTask049ID(20020), ActorParticipantID: participantID,
 		ParticipantID: participantID, VerificationID: verification.ID,
 		ExpectedExecution: execution.Expectation(), NextLedgerRevisionID: connectionTask049ID(20021),
@@ -30,7 +31,7 @@ func TestGoldenIndividualDisconnect(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, changed)
 
-	connections, err := goldenusecase.NewGoldenIndividualConnectionLedger(
+	connections, err := goldenconnection.NewGoldenIndividualConnectionLedger(
 		scope,
 		execution.Expectation(),
 		submitted.Expectation(),
@@ -41,14 +42,14 @@ func TestGoldenIndividualDisconnect(t *testing.T) {
 	)
 	require.NoError(t, err)
 	repository := newTask050ConnectionRepositoryHarness(t, execution, submitted.Snapshot(), connections)
-	disconnect := goldenusecase.GoldenIndividualDisconnectCommand{
+	disconnect := goldenconnection.GoldenIndividualDisconnectCommand{
 		Scope: scope, CommandID: connectionTask049ID(20040), ParticipantID: participantID,
 		IntervalID: connectionTask049ID(20041), ExpectedExecution: execution.Expectation(),
 		ExpectedSubmissions: submitted.Expectation(), ExpectedConnections: connections.Expectation(),
 		NextConnectionRevisionID: connectionTask049ID(20042),
 	}
 
-	disconnected, changed, err := goldenusecase.NewGoldenIndividualDisconnectUseCase(
+	disconnected, changed, err := goldenconnection.NewGoldenIndividualDisconnectUseCase(
 		repository,
 		connectionNewGoldenClock(t, startedAt.Add(5*time.Second)),
 	).Disconnect(t.Context(), disconnect)
@@ -65,7 +66,7 @@ func TestGoldenIndividualDisconnect(t *testing.T) {
 		require.True(t, disconnected.IsPresent(otherID))
 	}
 
-	replayed, replayChanged, replayErr := goldenusecase.NewGoldenIndividualDisconnectUseCase(
+	replayed, replayChanged, replayErr := goldenconnection.NewGoldenIndividualDisconnectUseCase(
 		repository,
 		connectionNewGoldenClock(t, execution.Start.Deadline.Add(time.Minute)),
 	).Disconnect(t.Context(), disconnect)
@@ -77,9 +78,9 @@ func TestGoldenIndividualDisconnect(t *testing.T) {
 	peerVerification := connectionTask049Verification(scope, execution, peerID, 29960)
 	peerSubmissions := connectionNewTask049SubmissionHarness(t, execution, submitted.Snapshot(), startedAt.Add(6*time.Second))
 	peerSubmissions.verifications[peerVerification.ID] = peerVerification
-	peerUpdated, peerChanged, peerErr := goldenusecase.NewGoldenSubmissionUseCase(peerSubmissions).Submit(
+	peerUpdated, peerChanged, peerErr := goldensubmission.NewGoldenSubmissionUseCase(peerSubmissions).Submit(
 		t.Context(),
-		goldenusecase.GoldenSubmissionCommand{
+		goldensubmission.GoldenSubmissionCommand{
 			Scope: scope, CommandID: connectionTask049ID(29970), ActorParticipantID: peerID,
 			ParticipantID: peerID, VerificationID: peerVerification.ID,
 			ExpectedExecution: execution.Expectation(), NextLedgerRevisionID: connectionTask049ID(29971),
@@ -89,21 +90,21 @@ func TestGoldenIndividualDisconnect(t *testing.T) {
 	require.True(t, peerChanged)
 	repository.replaceSubmissions(peerUpdated.Snapshot())
 
-	reconnect := goldenusecase.GoldenIndividualReconnectCommand{
+	reconnect := goldenconnection.GoldenIndividualReconnectCommand{
 		Scope: scope, CommandID: connectionTask049ID(20050), ActorParticipantID: participantID,
 		ParticipantID: participantID, IntervalID: disconnect.IntervalID,
 		ExpectedExecution: execution.Expectation(), ExpectedSubmissions: peerUpdated.Expectation(),
 		ExpectedConnections: disconnected.Expectation(), NextConnectionRevisionID: connectionTask049ID(20051),
 	}
-	atDeadline, deadlineChanged, deadlineErr := goldenusecase.NewGoldenIndividualDisconnectUseCase(
+	atDeadline, deadlineChanged, deadlineErr := goldenconnection.NewGoldenIndividualDisconnectUseCase(
 		repository,
 		connectionNewGoldenClock(t, execution.Start.Deadline),
 	).Reconnect(t.Context(), reconnect)
 	require.Nil(t, atDeadline)
 	require.False(t, deadlineChanged)
-	require.ErrorIs(t, deadlineErr, goldenusecase.ErrGoldenIndividualReconnectDeadline)
+	require.ErrorIs(t, deadlineErr, goldenconnection.ErrGoldenIndividualReconnectDeadline)
 
-	reconnected, changed, err := goldenusecase.NewGoldenIndividualDisconnectUseCase(
+	reconnected, changed, err := goldenconnection.NewGoldenIndividualDisconnectUseCase(
 		repository,
 		connectionNewGoldenClock(t, execution.Start.Deadline.Add(-time.Nanosecond)),
 	).Reconnect(t.Context(), reconnect)
@@ -121,7 +122,7 @@ func TestGoldenIndividualDisconnect(t *testing.T) {
 	wrongActor.ActorParticipantID = execution.Membership.ParticipantIDs[1]
 	wrongActor.ExpectedConnections = reconnected.Expectation()
 	wrongActor.NextConnectionRevisionID = connectionTask049ID(20061)
-	result, wrongChanged, wrongErr := goldenusecase.NewGoldenIndividualDisconnectUseCase(
+	result, wrongChanged, wrongErr := goldenconnection.NewGoldenIndividualDisconnectUseCase(
 		repository,
 		connectionNewGoldenClock(t, execution.Start.Deadline.Add(-time.Second)),
 	).Reconnect(t.Context(), wrongActor)
@@ -133,20 +134,20 @@ func TestGoldenIndividualDisconnect(t *testing.T) {
 	stored := repository.connectionSnapshot()
 	require.NotEqual(t, connectionTask049ID(20999), stored.PresentParticipantIDs[0])
 
-	concurrentConnections, err := goldenusecase.NewGoldenIndividualConnectionLedger(
+	concurrentConnections, err := goldenconnection.NewGoldenIndividualConnectionLedger(
 		scope, execution.Expectation(), peerUpdated.Expectation(), execution.Start.StartedAt,
 		execution.Start.Deadline, connectionTask049ID(28000), execution.Membership.ParticipantIDs,
 	)
 	require.NoError(t, err)
 	concurrentRepository := newTask050ConnectionRepositoryHarness(t, execution, peerUpdated.Snapshot(), concurrentConnections)
 	concurrentRepository.beforeCommit = connectionTask049TwoPartyBarrier(t)
-	concurrentCommand := goldenusecase.GoldenIndividualDisconnectCommand{
+	concurrentCommand := goldenconnection.GoldenIndividualDisconnectCommand{
 		Scope: scope, CommandID: connectionTask049ID(28001), ParticipantID: peerID, IntervalID: connectionTask049ID(28002),
 		ExpectedExecution: execution.Expectation(), ExpectedSubmissions: peerUpdated.Expectation(),
 		ExpectedConnections: concurrentConnections.Expectation(), NextConnectionRevisionID: connectionTask049ID(28003),
 	}
 	type concurrentResult struct {
-		ledger  *goldenusecase.GoldenIndividualConnectionLedger
+		ledger  *goldenconnection.GoldenIndividualConnectionLedger
 		changed bool
 		err     error
 	}
@@ -154,7 +155,7 @@ func TestGoldenIndividualDisconnect(t *testing.T) {
 	results := make(chan concurrentResult, 2)
 	for range 2 {
 		go func() {
-			ledger, changed, err := goldenusecase.NewGoldenIndividualDisconnectUseCase(
+			ledger, changed, err := goldenconnection.NewGoldenIndividualDisconnectUseCase(
 				concurrentRepository, clock,
 			).Disconnect(t.Context(), concurrentCommand)
 			results <- concurrentResult{ledger: ledger, changed: changed, err: err}

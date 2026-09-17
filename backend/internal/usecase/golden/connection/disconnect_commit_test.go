@@ -5,7 +5,8 @@ import (
 	"time"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
+	goldenconnection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/connection"
+	goldensubmission "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/submission"
 
 	"github.com/stretchr/testify/require"
 )
@@ -16,22 +17,22 @@ func TestGoldenIndividualDisconnectRejectsDishonestUnchangedCommit(t *testing.T)
 	startedAt := time.Date(2026, 9, 1, 18, 45, 0, 0, time.UTC)
 	execution := connectionTask049StartedExecution(t, startedAt)
 	scope := connectionTask049SubmissionScope(execution)
-	submissions, err := goldenusecase.NewGoldenSubmissionLedger(scope, connectionTask049ID(29300))
+	submissions, err := goldensubmission.NewGoldenSubmissionLedger(scope, connectionTask049ID(29300))
 	require.NoError(t, err)
-	connections, err := goldenusecase.NewGoldenIndividualConnectionLedger(
+	connections, err := goldenconnection.NewGoldenIndividualConnectionLedger(
 		scope, execution.Expectation(), submissions.Expectation(), execution.Start.StartedAt,
 		execution.Start.Deadline, connectionTask049ID(29301), execution.Membership.ParticipantIDs,
 	)
 	require.NoError(t, err)
 	participantID := execution.Membership.ParticipantIDs[0]
-	command := goldenusecase.GoldenIndividualDisconnectCommand{
+	command := goldenconnection.GoldenIndividualDisconnectCommand{
 		Scope: scope, CommandID: connectionTask049ID(29302), ParticipantID: participantID,
 		IntervalID: connectionTask049ID(29303), ExpectedExecution: execution.Expectation(),
 		ExpectedSubmissions: submissions.Expectation(), ExpectedConnections: connections.Expectation(),
 		NextConnectionRevisionID: connectionTask049ID(29304),
 	}
 	source := newTask050ConnectionRepositoryHarness(t, execution, submissions, connections)
-	committed, changed, err := goldenusecase.NewGoldenIndividualDisconnectUseCase(
+	committed, changed, err := goldenconnection.NewGoldenIndividualDisconnectUseCase(
 		source, connectionNewGoldenClock(t, startedAt.Add(5*time.Second)),
 	).Disconnect(t.Context(), command)
 	require.NoError(t, err)
@@ -41,7 +42,7 @@ func TestGoldenIndividualDisconnectRejectsDishonestUnchangedCommit(t *testing.T)
 	t.Run("honest unchanged winner may have another timestamp", func(t *testing.T) {
 		repository := newTask050ConnectionRepositoryHarness(t, execution, submissions, connections)
 		repository.returnConnections = committed
-		result, resultChanged, resultErr := goldenusecase.NewGoldenIndividualDisconnectUseCase(
+		result, resultChanged, resultErr := goldenconnection.NewGoldenIndividualDisconnectUseCase(
 			repository, connectionNewGoldenClock(t, startedAt.Add(6*time.Second)),
 		).Disconnect(t.Context(), command)
 		require.NoError(t, resultErr)
@@ -52,9 +53,9 @@ func TestGoldenIndividualDisconnectRejectsDishonestUnchangedCommit(t *testing.T)
 
 	tests := []struct {
 		name   string
-		mutate func(*goldenusecase.GoldenIndividualConnectionLedger)
+		mutate func(*goldenconnection.GoldenIndividualConnectionLedger)
 	}{
-		{name: "wrong scope", mutate: func(ledger *goldenusecase.GoldenIndividualConnectionLedger) {
+		{name: "wrong scope", mutate: func(ledger *goldenconnection.GoldenIndividualConnectionLedger) {
 			ledger.Scope.TaskID = connectionTask049ID(29310)
 			ledger.Submissions.Scope = ledger.Scope
 			ledger.Receipts[0].Expected.Scope = ledger.Scope
@@ -62,7 +63,7 @@ func TestGoldenIndividualDisconnectRejectsDishonestUnchangedCommit(t *testing.T)
 			ledger.Receipts[0].ObservedSubmissions.Scope = ledger.Scope
 			task050SealFirstExpectedConnectionHead(t, ledger)
 		}},
-		{name: "wrong participant", mutate: func(ledger *goldenusecase.GoldenIndividualConnectionLedger) {
+		{name: "wrong participant", mutate: func(ledger *goldenconnection.GoldenIndividualConnectionLedger) {
 			otherID := execution.Membership.ParticipantIDs[1]
 			ledger.Intervals[0].ParticipantID = otherID
 			ledger.Receipts[0].ParticipantID = otherID
@@ -74,7 +75,7 @@ func TestGoldenIndividualDisconnectRejectsDishonestUnchangedCommit(t *testing.T)
 			}
 			task050SealConnectionLedger(t, ledger)
 		}},
-		{name: "wrong interval", mutate: func(ledger *goldenusecase.GoldenIndividualConnectionLedger) {
+		{name: "wrong interval", mutate: func(ledger *goldenconnection.GoldenIndividualConnectionLedger) {
 			ledger.Intervals[0].ID = connectionTask049ID(29311)
 			ledger.Receipts[0].IntervalID = connectionTask049ID(29311)
 			task050SealConnectionLedger(t, ledger)
@@ -87,7 +88,7 @@ func TestGoldenIndividualDisconnectRejectsDishonestUnchangedCommit(t *testing.T)
 			require.NoError(t, dishonest.Validate())
 			repository := newTask050ConnectionRepositoryHarness(t, execution, submissions, connections)
 			repository.returnConnections = &dishonest
-			result, resultChanged, resultErr := goldenusecase.NewGoldenIndividualDisconnectUseCase(
+			result, resultChanged, resultErr := goldenconnection.NewGoldenIndividualDisconnectUseCase(
 				repository, connectionNewGoldenClock(t, startedAt.Add(6*time.Second)),
 			).Disconnect(t.Context(), command)
 			require.Nil(t, result)

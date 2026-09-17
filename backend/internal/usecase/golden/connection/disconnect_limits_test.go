@@ -6,7 +6,8 @@ import (
 	"time"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
+	goldenconnection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/connection"
+	goldensubmission "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/submission"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -18,21 +19,21 @@ func TestGoldenIndividualDisconnectLimits(t *testing.T) {
 	startedAt := time.Date(2026, 9, 1, 18, 30, 0, 0, time.UTC)
 	execution := connectionTask049StartedExecution(t, startedAt)
 	scope := connectionTask049SubmissionScope(execution)
-	submissions, err := goldenusecase.NewGoldenSubmissionLedger(scope, connectionTask049ID(29000))
+	submissions, err := goldensubmission.NewGoldenSubmissionLedger(scope, connectionTask049ID(29000))
 	require.NoError(t, err)
 	participantID := execution.Membership.ParticipantIDs[0]
 
 	t.Run("same server timestamp reconnect", func(t *testing.T) {
-		connections, buildErr := goldenusecase.NewGoldenIndividualConnectionLedger(
+		connections, buildErr := goldenconnection.NewGoldenIndividualConnectionLedger(
 			scope, execution.Expectation(), submissions.Expectation(), execution.Start.StartedAt,
 			execution.Start.Deadline, connectionTask049ID(29001), execution.Membership.ParticipantIDs,
 		)
 		require.NoError(t, buildErr)
 		repository := newTask050ConnectionRepositoryHarness(t, execution, submissions, connections)
 		occurredAt := startedAt.Add(5 * time.Second)
-		disconnected, changed, disconnectErr := goldenusecase.NewGoldenIndividualDisconnectUseCase(
+		disconnected, changed, disconnectErr := goldenconnection.NewGoldenIndividualDisconnectUseCase(
 			repository, connectionNewGoldenClock(t, occurredAt),
-		).Disconnect(t.Context(), goldenusecase.GoldenIndividualDisconnectCommand{
+		).Disconnect(t.Context(), goldenconnection.GoldenIndividualDisconnectCommand{
 			Scope: scope, CommandID: connectionTask049ID(29002), ParticipantID: participantID,
 			IntervalID: connectionTask049ID(29003), ExpectedExecution: execution.Expectation(),
 			ExpectedSubmissions: submissions.Expectation(), ExpectedConnections: connections.Expectation(),
@@ -40,9 +41,9 @@ func TestGoldenIndividualDisconnectLimits(t *testing.T) {
 		})
 		require.NoError(t, disconnectErr)
 		require.True(t, changed)
-		reconnected, reconnectChanged, reconnectErr := goldenusecase.NewGoldenIndividualDisconnectUseCase(
+		reconnected, reconnectChanged, reconnectErr := goldenconnection.NewGoldenIndividualDisconnectUseCase(
 			repository, connectionNewGoldenClock(t, occurredAt),
-		).Reconnect(t.Context(), goldenusecase.GoldenIndividualReconnectCommand{
+		).Reconnect(t.Context(), goldenconnection.GoldenIndividualReconnectCommand{
 			Scope: scope, CommandID: connectionTask049ID(29005), ActorParticipantID: participantID,
 			ParticipantID: participantID, IntervalID: connectionTask049ID(29003),
 			ExpectedExecution: execution.Expectation(), ExpectedSubmissions: submissions.Expectation(),
@@ -59,23 +60,23 @@ func TestGoldenIndividualDisconnectLimits(t *testing.T) {
 		for index := range participantIDs {
 			participantIDs[index] = connectionTask049ID(29020 + index)
 		}
-		connections, buildErr := goldenusecase.NewGoldenIndividualConnectionLedger(
+		connections, buildErr := goldenconnection.NewGoldenIndividualConnectionLedger(
 			scope, execution.Expectation(), submissions.Expectation(), execution.Start.StartedAt,
 			execution.Start.Deadline, connectionTask049ID(29050), participantIDs,
 		)
 		require.Error(t, buildErr)
-		require.Equal(t, goldenusecase.GoldenIndividualConnectionLedger{}, connections)
+		require.Equal(t, goldenconnection.GoldenIndividualConnectionLedger{}, connections)
 	})
 
 	t.Run("initial submission head validation", func(t *testing.T) {
 		cases := []struct {
 			name   string
-			mutate func(*goldenusecase.GoldenSubmissionLedgerExpectation)
+			mutate func(*goldensubmission.GoldenSubmissionLedgerExpectation)
 		}{
-			{name: "nil revision ID", mutate: func(head *goldenusecase.GoldenSubmissionLedgerExpectation) { head.RevisionID = uuid.Nil }},
-			{name: "zero revision", mutate: func(head *goldenusecase.GoldenSubmissionLedgerExpectation) { head.Revision = 0 }},
-			{name: "zero next submission", mutate: func(head *goldenusecase.GoldenSubmissionLedgerExpectation) { head.NextSubmissionID = 0 }},
-			{name: "zero payload digest", mutate: func(head *goldenusecase.GoldenSubmissionLedgerExpectation) {
+			{name: "nil revision ID", mutate: func(head *goldensubmission.GoldenSubmissionLedgerExpectation) { head.RevisionID = uuid.Nil }},
+			{name: "zero revision", mutate: func(head *goldensubmission.GoldenSubmissionLedgerExpectation) { head.Revision = 0 }},
+			{name: "zero next submission", mutate: func(head *goldensubmission.GoldenSubmissionLedgerExpectation) { head.NextSubmissionID = 0 }},
+			{name: "zero payload digest", mutate: func(head *goldensubmission.GoldenSubmissionLedgerExpectation) {
 				head.PayloadDigest = [sha256.Size]byte{}
 			}},
 		}
@@ -83,38 +84,38 @@ func TestGoldenIndividualDisconnectLimits(t *testing.T) {
 			t.Run(test.name, func(t *testing.T) {
 				head := submissions.Expectation()
 				test.mutate(&head)
-				ledger, buildErr := goldenusecase.NewGoldenIndividualConnectionLedger(
+				ledger, buildErr := goldenconnection.NewGoldenIndividualConnectionLedger(
 					scope, execution.Expectation(), head, execution.Start.StartedAt,
 					execution.Start.Deadline, connectionTask049ID(29052+index), execution.Membership.ParticipantIDs,
 				)
 				require.Error(t, buildErr)
-				require.Equal(t, goldenusecase.GoldenIndividualConnectionLedger{}, ledger)
+				require.Equal(t, goldenconnection.GoldenIndividualConnectionLedger{}, ledger)
 			})
 		}
 	})
 
 	t.Run("durable ledger collection caps", func(t *testing.T) {
-		connections, buildErr := goldenusecase.NewGoldenIndividualConnectionLedger(
+		connections, buildErr := goldenconnection.NewGoldenIndividualConnectionLedger(
 			scope, execution.Expectation(), submissions.Expectation(), execution.Start.StartedAt,
 			execution.Start.Deadline, connectionTask049ID(29051), execution.Membership.ParticipantIDs,
 		)
 		require.NoError(t, buildErr)
 		tooManyIntervals := connections.Snapshot()
 		tooManyIntervals.Intervals = make(
-			[]goldenusecase.GoldenIndividualReconnectInterval,
+			[]goldenconnection.GoldenIndividualReconnectInterval,
 			domain.TournamentMaxParticipants*domain.ReconnectCycleLimit+1,
 		)
 		require.Error(t, tooManyIntervals.Validate())
 		tooManyReceipts := connections.Snapshot()
 		tooManyReceipts.Receipts = make(
-			[]goldenusecase.GoldenIndividualConnectionReceipt,
+			[]goldenconnection.GoldenIndividualConnectionReceipt,
 			domain.TournamentMaxParticipants*domain.ReconnectCycleLimit*2+1,
 		)
 		require.Error(t, tooManyReceipts.Validate())
 	})
 
 	t.Run("per participant reconnect cycle cap", func(t *testing.T) {
-		connections, buildErr := goldenusecase.NewGoldenIndividualConnectionLedger(
+		connections, buildErr := goldenconnection.NewGoldenIndividualConnectionLedger(
 			scope, execution.Expectation(), submissions.Expectation(), execution.Start.StartedAt,
 			execution.Start.Deadline, connectionTask049ID(29060), execution.Membership.ParticipantIDs,
 		)
@@ -123,9 +124,9 @@ func TestGoldenIndividualDisconnectLimits(t *testing.T) {
 		current := connections
 		for cycle := range domain.ReconnectCycleLimit {
 			base := 29100 + cycle*10
-			disconnected, changed, disconnectErr := goldenusecase.NewGoldenIndividualDisconnectUseCase(
+			disconnected, changed, disconnectErr := goldenconnection.NewGoldenIndividualDisconnectUseCase(
 				repository, connectionNewGoldenClock(t, startedAt.Add(time.Duration(10+cycle*2)*time.Second)),
-			).Disconnect(t.Context(), goldenusecase.GoldenIndividualDisconnectCommand{
+			).Disconnect(t.Context(), goldenconnection.GoldenIndividualDisconnectCommand{
 				Scope: scope, CommandID: connectionTask049ID(base), ParticipantID: participantID,
 				IntervalID: connectionTask049ID(base + 1), ExpectedExecution: execution.Expectation(),
 				ExpectedSubmissions: submissions.Expectation(), ExpectedConnections: current.Expectation(),
@@ -133,9 +134,9 @@ func TestGoldenIndividualDisconnectLimits(t *testing.T) {
 			})
 			require.NoError(t, disconnectErr)
 			require.True(t, changed)
-			reconnected, reconnectChanged, reconnectErr := goldenusecase.NewGoldenIndividualDisconnectUseCase(
+			reconnected, reconnectChanged, reconnectErr := goldenconnection.NewGoldenIndividualDisconnectUseCase(
 				repository, connectionNewGoldenClock(t, startedAt.Add(time.Duration(11+cycle*2)*time.Second)),
-			).Reconnect(t.Context(), goldenusecase.GoldenIndividualReconnectCommand{
+			).Reconnect(t.Context(), goldenconnection.GoldenIndividualReconnectCommand{
 				Scope: scope, CommandID: connectionTask049ID(base + 3), ActorParticipantID: participantID,
 				ParticipantID: participantID, IntervalID: connectionTask049ID(base + 1),
 				ExpectedExecution: execution.Expectation(), ExpectedSubmissions: submissions.Expectation(),
@@ -146,9 +147,9 @@ func TestGoldenIndividualDisconnectLimits(t *testing.T) {
 			current = *reconnected
 		}
 		beforeWrites := repository.writeCount()
-		result, changed, limitErr := goldenusecase.NewGoldenIndividualDisconnectUseCase(
+		result, changed, limitErr := goldenconnection.NewGoldenIndividualDisconnectUseCase(
 			repository, connectionNewGoldenClock(t, startedAt.Add(20*time.Second)),
-		).Disconnect(t.Context(), goldenusecase.GoldenIndividualDisconnectCommand{
+		).Disconnect(t.Context(), goldenconnection.GoldenIndividualDisconnectCommand{
 			Scope: scope, CommandID: connectionTask049ID(29150), ParticipantID: participantID,
 			IntervalID: connectionTask049ID(29151), ExpectedExecution: execution.Expectation(),
 			ExpectedSubmissions: submissions.Expectation(), ExpectedConnections: current.Expectation(),
@@ -156,18 +157,18 @@ func TestGoldenIndividualDisconnectLimits(t *testing.T) {
 		})
 		require.Nil(t, result)
 		require.False(t, changed)
-		require.ErrorIs(t, limitErr, goldenusecase.ErrGoldenIndividualConnectionUnavailable)
+		require.ErrorIs(t, limitErr, goldenconnection.ErrGoldenIndividualConnectionUnavailable)
 		require.Equal(t, beforeWrites, repository.writeCount())
 	})
 
 	t.Run("observed submission head validation", func(t *testing.T) {
-		initial, buildErr := goldenusecase.NewGoldenSubmissionLedger(scope, connectionTask049ID(29200))
+		initial, buildErr := goldensubmission.NewGoldenSubmissionLedger(scope, connectionTask049ID(29200))
 		require.NoError(t, buildErr)
 		verification := connectionTask049Verification(scope, execution, participantID, 29210)
 		submissionRepository := connectionNewTask049SubmissionHarness(t, execution, initial, startedAt.Add(time.Second))
 		submissionRepository.verifications[verification.ID] = verification
-		advanced, advancedChanged, submitErr := goldenusecase.NewGoldenSubmissionUseCase(submissionRepository).Submit(
-			t.Context(), goldenusecase.GoldenSubmissionCommand{
+		advanced, advancedChanged, submitErr := goldensubmission.NewGoldenSubmissionUseCase(submissionRepository).Submit(
+			t.Context(), goldensubmission.GoldenSubmissionCommand{
 				Scope: scope, CommandID: connectionTask049ID(29220), ActorParticipantID: participantID,
 				ParticipantID: participantID, VerificationID: verification.ID,
 				ExpectedExecution: execution.Expectation(), NextLedgerRevisionID: connectionTask049ID(29221),
@@ -175,7 +176,7 @@ func TestGoldenIndividualDisconnectLimits(t *testing.T) {
 		)
 		require.NoError(t, submitErr)
 		require.True(t, advancedChanged)
-		connections, connectionErr := goldenusecase.NewGoldenIndividualConnectionLedger(
+		connections, connectionErr := goldenconnection.NewGoldenIndividualConnectionLedger(
 			scope, execution.Expectation(), advanced.Expectation(), execution.Start.StartedAt,
 			execution.Start.Deadline, connectionTask049ID(29201), execution.Membership.ParticipantIDs,
 		)
@@ -183,8 +184,8 @@ func TestGoldenIndividualDisconnectLimits(t *testing.T) {
 		duplicateVerification := connectionTask049Verification(scope, execution, participantID, 29222)
 		duplicateRepository := connectionNewTask049SubmissionHarness(t, execution, advanced.Snapshot(), startedAt.Add(2*time.Second))
 		duplicateRepository.verifications[duplicateVerification.ID] = duplicateVerification
-		later, laterChanged, duplicateErr := goldenusecase.NewGoldenSubmissionUseCase(duplicateRepository).Submit(
-			t.Context(), goldenusecase.GoldenSubmissionCommand{
+		later, laterChanged, duplicateErr := goldensubmission.NewGoldenSubmissionUseCase(duplicateRepository).Submit(
+			t.Context(), goldensubmission.GoldenSubmissionCommand{
 				Scope: scope, CommandID: connectionTask049ID(29224), ActorParticipantID: participantID,
 				ParticipantID: participantID, VerificationID: duplicateVerification.ID,
 				ExpectedExecution: execution.Expectation(), NextLedgerRevisionID: connectionTask049ID(29225),
@@ -194,9 +195,9 @@ func TestGoldenIndividualDisconnectLimits(t *testing.T) {
 		require.True(t, laterChanged)
 		require.Equal(t, advanced.NextSubmissionID, later.NextSubmissionID)
 		repository := newTask050ConnectionRepositoryHarness(t, execution, later.Snapshot(), connections)
-		disconnected, changed, disconnectErr := goldenusecase.NewGoldenIndividualDisconnectUseCase(
+		disconnected, changed, disconnectErr := goldenconnection.NewGoldenIndividualDisconnectUseCase(
 			repository, connectionNewGoldenClock(t, startedAt.Add(3*time.Second)),
-		).Disconnect(t.Context(), goldenusecase.GoldenIndividualDisconnectCommand{
+		).Disconnect(t.Context(), goldenconnection.GoldenIndividualDisconnectCommand{
 			Scope: scope, CommandID: connectionTask049ID(29230), ParticipantID: participantID,
 			IntervalID: connectionTask049ID(29231), ExpectedExecution: execution.Expectation(),
 			ExpectedSubmissions: later.Expectation(), ExpectedConnections: connections.Expectation(),
@@ -208,18 +209,18 @@ func TestGoldenIndividualDisconnectLimits(t *testing.T) {
 
 		cases := []struct {
 			name   string
-			mutate func(*goldenusecase.GoldenSubmissionLedgerExpectation)
+			mutate func(*goldensubmission.GoldenSubmissionLedgerExpectation)
 		}{
-			{name: "nil revision ID", mutate: func(head *goldenusecase.GoldenSubmissionLedgerExpectation) { head.RevisionID = uuid.Nil }},
-			{name: "zero revision", mutate: func(head *goldenusecase.GoldenSubmissionLedgerExpectation) { head.Revision = 0 }},
-			{name: "zero next submission", mutate: func(head *goldenusecase.GoldenSubmissionLedgerExpectation) { head.NextSubmissionID = 0 }},
-			{name: "zero payload digest", mutate: func(head *goldenusecase.GoldenSubmissionLedgerExpectation) {
+			{name: "nil revision ID", mutate: func(head *goldensubmission.GoldenSubmissionLedgerExpectation) { head.RevisionID = uuid.Nil }},
+			{name: "zero revision", mutate: func(head *goldensubmission.GoldenSubmissionLedgerExpectation) { head.Revision = 0 }},
+			{name: "zero next submission", mutate: func(head *goldensubmission.GoldenSubmissionLedgerExpectation) { head.NextSubmissionID = 0 }},
+			{name: "zero payload digest", mutate: func(head *goldensubmission.GoldenSubmissionLedgerExpectation) {
 				head.PayloadDigest = [sha256.Size]byte{}
 			}},
-			{name: "advanced revision reused ID", mutate: func(head *goldenusecase.GoldenSubmissionLedgerExpectation) {
+			{name: "advanced revision reused ID", mutate: func(head *goldensubmission.GoldenSubmissionLedgerExpectation) {
 				head.RevisionID = connections.Submissions.RevisionID
 			}},
-			{name: "advanced head decreased next submission", mutate: func(head *goldenusecase.GoldenSubmissionLedgerExpectation) {
+			{name: "advanced head decreased next submission", mutate: func(head *goldensubmission.GoldenSubmissionLedgerExpectation) {
 				head.NextSubmissionID = connections.Submissions.NextSubmissionID - 1
 			}},
 		}
@@ -235,12 +236,12 @@ func TestGoldenIndividualDisconnectLimits(t *testing.T) {
 
 		expectedCases := []struct {
 			name   string
-			mutate func(*goldenusecase.GoldenSubmissionLedgerExpectation)
+			mutate func(*goldensubmission.GoldenSubmissionLedgerExpectation)
 		}{
-			{name: "nil revision ID", mutate: func(head *goldenusecase.GoldenSubmissionLedgerExpectation) { head.RevisionID = uuid.Nil }},
-			{name: "zero revision", mutate: func(head *goldenusecase.GoldenSubmissionLedgerExpectation) { head.Revision = 0 }},
-			{name: "zero next submission", mutate: func(head *goldenusecase.GoldenSubmissionLedgerExpectation) { head.NextSubmissionID = 0 }},
-			{name: "zero payload digest", mutate: func(head *goldenusecase.GoldenSubmissionLedgerExpectation) {
+			{name: "nil revision ID", mutate: func(head *goldensubmission.GoldenSubmissionLedgerExpectation) { head.RevisionID = uuid.Nil }},
+			{name: "zero revision", mutate: func(head *goldensubmission.GoldenSubmissionLedgerExpectation) { head.Revision = 0 }},
+			{name: "zero next submission", mutate: func(head *goldensubmission.GoldenSubmissionLedgerExpectation) { head.NextSubmissionID = 0 }},
+			{name: "zero payload digest", mutate: func(head *goldensubmission.GoldenSubmissionLedgerExpectation) {
 				head.PayloadDigest = [sha256.Size]byte{}
 			}},
 		}
