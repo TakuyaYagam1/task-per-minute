@@ -20,6 +20,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/participantarchive"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/player"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/schema"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/task"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/correction"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/lifecycle"
@@ -274,7 +275,7 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 		cleanup()
 		return nil, nil, err
 	}
-	schemaVersionPostgres := postgres.NewSchemaVersionPostgres(pool)
+	schemaVersionPostgres := schema.NewSchemaVersionPostgres(pool)
 	healthSource := provideEventDeliveryHealth(worker)
 	backlogSource := provideOutboxBacklog(realtimeOutboxPostgres)
 	projectionHealthPostgres := provideProjectionHealth(txManager)

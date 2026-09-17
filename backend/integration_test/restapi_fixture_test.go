@@ -29,6 +29,7 @@ import (
 	restv1 "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/v1"
 	authadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/auth"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	schemarepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/schema"
 	redisadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/redis"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/observability"
@@ -81,7 +82,7 @@ func newRESTFixture(t *testing.T) *restFixture {
 			SeaweedFS: restv1.HealthCheckerFunc(func(ctx context.Context) error {
 				return st.EnsureBucket(ctx)
 			}),
-			SchemaVersion: postgres.NewSchemaVersionPostgres(sharedPool),
+			SchemaVersion: schemarepo.NewSchemaVersionPostgres(sharedPool),
 			Tournament: observability.TournamentHealthSourceFunc(
 				func(context.Context) observability.TournamentHealthSnapshot {
 					return observability.HealthyTournamentHealthSnapshot()
