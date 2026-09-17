@@ -34,9 +34,26 @@ import (
 // mutation is fenced by the latest PostgreSQL authority lease.
 type ExecutionRecoveryPostgres struct {
 	tx              *db.TxManager
-	deadlines       *recoveryrepo.RecoveryPostgres
-	terminal        *terminalrepo.RecoveryTerminalPostgres
+	deadlines       DeadlineRearmRepository
+	terminal        TerminalSnapshotRepository
 	resultFinalizer resultrepo.ProjectionFinalizer
+}
+
+// DeadlineRearmRepository is the narrow deadline boundary required by the
+// execution recovery workflow. The concrete scheduler-backed repository stays
+// behind this consumer-owned port.
+type DeadlineRearmRepository interface {
+	RearmDeadline(context.Context, recoveryusecase.PendingDeadline) (bool, error)
+}
+
+// TerminalSnapshotRepository is the narrow terminal evidence boundary needed
+// for epoch replay authority and settlement. It intentionally exposes only the
+// game-timeout snapshot consumed by this workflow.
+type TerminalSnapshotRepository interface {
+	LoadGameTimeoutSnapshot(
+		context.Context,
+		recoveryusecase.PendingDeadline,
+	) (terminalrepo.GameTimeoutSnapshot, error)
 }
 
 var (
@@ -44,6 +61,8 @@ var (
 	_ gamerecovery.RecoveryTournamentSource = (*ExecutionRecoveryPostgres)(nil)
 	_ gamerecovery.DeadlineRearmer          = (*ExecutionRecoveryPostgres)(nil)
 	_ gamerecovery.EpochReplayRepository    = (*ExecutionRecoveryPostgres)(nil)
+	_ DeadlineRearmRepository               = (*recoveryrepo.RecoveryPostgres)(nil)
+	_ TerminalSnapshotRepository            = (*terminalrepo.RecoveryTerminalPostgres)(nil)
 )
 
 func NewExecutionRecoveryPostgres(
@@ -51,13 +70,43 @@ func NewExecutionRecoveryPostgres(
 	deadlines *recoveryrepo.RecoveryPostgres,
 	terminal *terminalrepo.RecoveryTerminalPostgres,
 ) *ExecutionRecoveryPostgres {
-	return NewExecutionRecoveryPostgresWithDependencies(tx, deadlines, terminal, nil)
+	var deadlineRepository DeadlineRearmRepository
+	if deadlines != nil {
+		deadlineRepository = deadlines
+	}
+	var terminalRepository TerminalSnapshotRepository
+	if terminal != nil {
+		terminalRepository = terminal
+	}
+	return NewExecutionRecoveryPostgresWithRepositories(tx, deadlineRepository, terminalRepository, nil)
 }
 
 func NewExecutionRecoveryPostgresWithDependencies(
 	tx *db.TxManager,
 	deadlines *recoveryrepo.RecoveryPostgres,
 	terminal *terminalrepo.RecoveryTerminalPostgres,
+	resultFinalizer resultrepo.ProjectionFinalizer,
+) *ExecutionRecoveryPostgres {
+	var deadlineRepository DeadlineRearmRepository
+	if deadlines != nil {
+		deadlineRepository = deadlines
+	}
+	var terminalRepository TerminalSnapshotRepository
+	if terminal != nil {
+		terminalRepository = terminal
+	}
+	return NewExecutionRecoveryPostgresWithRepositories(
+		tx, deadlineRepository, terminalRepository, resultFinalizer,
+	)
+}
+
+// NewExecutionRecoveryPostgresWithRepositories builds the adapter from the
+// narrow recovery ports used by its transactional workflow. Existing concrete
+// constructors delegate here so bootstrap and external callers keep their API.
+func NewExecutionRecoveryPostgresWithRepositories(
+	tx *db.TxManager,
+	deadlines DeadlineRearmRepository,
+	terminal TerminalSnapshotRepository,
 	resultFinalizer resultrepo.ProjectionFinalizer,
 ) *ExecutionRecoveryPostgres {
 	return &ExecutionRecoveryPostgres{
