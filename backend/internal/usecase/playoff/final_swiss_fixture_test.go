@@ -11,7 +11,7 @@ import (
 	goldenplan "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/plan"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 	resultusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/result"
-	resultprojection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection"
+	resultprojection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection/revision"
 	swissusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/swiss"
 )
 

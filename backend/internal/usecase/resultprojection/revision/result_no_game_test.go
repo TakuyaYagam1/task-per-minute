@@ -1,4 +1,4 @@
-package resultprojection_test
+package revision_test
 
 import (
 	"math"
@@ -11,7 +11,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	resultusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/result"
-	projection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection"
+	projection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection/revision"
 )
 
 func TestRecordedNoGameSQLOrigin(t *testing.T) {

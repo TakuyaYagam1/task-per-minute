@@ -1,4 +1,4 @@
-package resultprojection_test
+package revision_test
 
 import (
 	"fmt"
@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	projection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection"
+	projection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection/revision"
 )
 
 func task055LongCurrentPayloadFixture(t *testing.T) projection.RevisionDAGInput {

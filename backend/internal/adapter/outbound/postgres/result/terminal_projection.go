@@ -11,7 +11,7 @@ import (
 	projectionpostgres "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	projectionusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection"
+	projectionusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection/canonical"
 	swissusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/swiss"
 )
 

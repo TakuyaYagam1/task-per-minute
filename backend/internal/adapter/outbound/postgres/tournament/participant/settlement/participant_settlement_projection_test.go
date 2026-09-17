@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
-	projection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection"
+	projection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection/canonical"
 )
 
 func TestParticipantSettlementFinalSwissWaveMaterializesFullLedger(t *testing.T) {

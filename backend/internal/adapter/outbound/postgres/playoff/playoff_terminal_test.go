@@ -17,7 +17,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	seriesdomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/series"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
-	projection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection"
+	projection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection/publication"
 )
 
 func TestPlayoffTerminalPostgresImplementsTerminalRepository(t *testing.T) {

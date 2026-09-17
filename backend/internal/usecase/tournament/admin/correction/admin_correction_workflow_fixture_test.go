@@ -15,7 +15,8 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	correctionusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/correction"
 	resultusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/result"
-	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection"
+	canonicalprojection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection/canonical"
+	resultprojection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection/revision"
 	swissusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/swiss"
 	admincorrection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/correction"
 )
@@ -275,7 +276,7 @@ func correctionWorkflowSwissAuthority(
 	fourthID := correctionWorkflowID(141)
 	participants := []uuid.UUID{firstID, secondID, thirdID, fourthID}
 	seeds := map[uuid.UUID]int{firstID: 1, secondID: 2, thirdID: 3, fourthID: 4}
-	ledger := make([]resultprojection.CanonicalSwissPointLedgerEntry, 0, 12)
+	ledger := make([]canonicalprojection.CanonicalSwissPointLedgerEntry, 0, 12)
 	appendResult := func(round int, currentSeriesID, first, second, winner uuid.UUID) {
 		resultID := correctionWorkflowID(150 + len(ledger))
 		firstPoints, secondPoints := 0, 0
@@ -285,14 +286,14 @@ func correctionWorkflowSwissAuthority(
 			secondPoints = swissusecase.SeriesWinPoints
 		}
 		ledger = append(ledger,
-			resultprojection.CanonicalSwissPointLedgerEntry{
+			canonicalprojection.CanonicalSwissPointLedgerEntry{
 				RoundID: correctionWorkflowID(160 + round), RoundRevisionID: correctionWorkflowID(170 + round),
 				RoundNumber: round, SourceKind: swissusecase.PointSourceSeries, SourceSeriesID: currentSeriesID,
 				SeriesResultRevisionID: resultID, ResultLabel: swissusecase.SeriesResultPlayed,
 				ParticipantID: first, OpponentID: correctionWorkflowUUIDPointer(second),
 				Points: firstPoints, StableSeed: seeds[first],
 			},
-			resultprojection.CanonicalSwissPointLedgerEntry{
+			canonicalprojection.CanonicalSwissPointLedgerEntry{
 				RoundID: correctionWorkflowID(160 + round), RoundRevisionID: correctionWorkflowID(170 + round),
 				RoundNumber: round, SourceKind: swissusecase.PointSourceSeries, SourceSeriesID: currentSeriesID,
 				SeriesResultRevisionID: resultID, ResultLabel: swissusecase.SeriesResultPlayed,
@@ -308,9 +309,9 @@ func correctionWorkflowSwissAuthority(
 	appendResult(3, correctionWorkflowID(183), firstID, fourthID, firstID)
 	appendResult(3, correctionWorkflowID(184), secondID, thirdID, secondID)
 
-	canonical := make([]resultprojection.CanonicalSwissParticipant, len(participants))
+	canonical := make([]canonicalprojection.CanonicalSwissParticipant, len(participants))
 	for index, participantID := range participants {
-		canonical[index] = resultprojection.CanonicalSwissParticipant{ID: participantID, StableSeed: seeds[participantID]}
+		canonical[index] = canonicalprojection.CanonicalSwissParticipant{ID: participantID, StableSeed: seeds[participantID]}
 	}
 	return correctionusecase.StageSwissAuthority{Participants: canonical, Ledger: ledger, Complete: true}
 }

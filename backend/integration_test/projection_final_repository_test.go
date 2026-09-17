@@ -23,7 +23,7 @@ import (
 	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
-	projection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection"
+	projection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection/publication"
 )
 
 func TestFinalProjectionRepositoryCommitsAuthoritativeResult(t *testing.T) {

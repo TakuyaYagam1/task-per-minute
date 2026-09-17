@@ -8,7 +8,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	seriesdomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/series"
-	projection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection"
+	projection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection/publication"
 )
 
 func TestTerminalPublicationMatchesDistinctIdentityRoles(t *testing.T) {

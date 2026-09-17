@@ -12,7 +12,7 @@ import (
 	settlementrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/settlement"
 	progressionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/progression"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	projectionusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection"
+	projectionusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection/canonical"
 	swissusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/swiss"
 )
 
