@@ -37,7 +37,7 @@ type AdminService interface {
 	RecordForfeit(ctx context.Context, command ForfeitCommand) error
 	ReplayGame(ctx context.Context, command ReplayCommand) error
 	CorrectGameResult(ctx context.Context, command CorrectionCommand) (CorrectionEvidence, error)
-	ListAudit(ctx context.Context, query AuditQuery) (audit.AuditPage, error)
+	ListAudit(ctx context.Context, query incidentusecase.AuditQuery) (audit.AuditPage, error)
 	ExportIncident(ctx context.Context, query incidentusecase.IncidentQuery) (audit.IncidentBundle, error)
 	GetOperatorSnapshot(ctx context.Context, query SnapshotQuery) (OperatorSnapshotView, error)
 }

@@ -251,8 +251,8 @@ func (a *AdminUseCase) CorrectGameResult(
 	return evidence, nil
 }
 
-func (a *AdminUseCase) ListAudit(ctx context.Context, query AuditQuery) (audit.AuditPage, error) {
-	if ctx == nil || !validAuditQuery(query) {
+func (a *AdminUseCase) ListAudit(ctx context.Context, query incidentusecase.AuditQuery) (audit.AuditPage, error) {
+	if ctx == nil || !incidentusecase.ValidAuditQuery(query) {
 		return audit.AuditPage{}, domain.ErrValidation
 	}
 	if a == nil || a.audit == nil {
@@ -262,7 +262,7 @@ func (a *AdminUseCase) ListAudit(ctx context.Context, query AuditQuery) (audit.A
 	if err != nil {
 		return audit.AuditPage{}, normalizeAdminError(err)
 	}
-	if !validAuditPage(page, query.Filter.TournamentID) {
+	if !incidentusecase.ValidAuditPage(page, query.Filter.TournamentID) {
 		return audit.AuditPage{}, domain.ErrInternal
 	}
 	return page, nil

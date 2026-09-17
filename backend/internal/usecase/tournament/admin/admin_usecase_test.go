@@ -273,7 +273,7 @@ type adminCommands struct {
 	forfeit          ForfeitCommand
 	replay           ReplayCommand
 	correction       CorrectionCommand
-	audit            AuditQuery
+	audit            incidentusecase.AuditQuery
 	incident         incidentusecase.IncidentQuery
 	snapshot         SnapshotQuery
 }
@@ -366,7 +366,7 @@ func validAdminCommands() adminCommands {
 				SolvedAt: &solvedAt, SubmissionID: &submissionID, EvidenceDigest: [32]byte{1},
 			},
 		},
-		audit: AuditQuery{
+		audit: incidentusecase.AuditQuery{
 			Operator: operator, Filter: audit.AuditFilter{TournamentID: tournamentID},
 		},
 		incident: incidentusecase.IncidentQuery{Operator: operator, TournamentID: tournamentID},
