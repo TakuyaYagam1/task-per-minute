@@ -239,14 +239,14 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 	tournamentAdminSnapshotPostgres := snapshot.NewTournamentAdminSnapshotPostgres(txManager)
 	adminUseCase := provideTournamentAdminApplication(catalogUseCase, rosterWorkflow, rosterWorkflow, executionWorkflow, lifecycleWorkflow, executionWorkflow, operatorResultWorkflow, replayWorkflow, operatorResultWorkflow, replayWorkflow, correctionWorkflow, tournamentAdminAuditPostgres, tournamentAdminAuditPostgres, hmacAuthenticator, tournamentAdminSnapshotPostgres)
 	idempotencyCoordinator := provideDistributedCommandCoordinator(commandReceiptStore)
-	adminIdempotentService, err := provideIdempotentTournamentAdminApplication(adminUseCase, catalogUseCase, idempotencyCoordinator)
+	idempotentService, err := provideIdempotentTournamentAdminApplication(adminUseCase, catalogUseCase, idempotencyCoordinator)
 	if err != nil {
 		cleanup2()
 		cleanup()
 		return nil, nil, err
 	}
 	tournamentAdminObserver := provideTournamentAdminObserver(bootstrapEventTelemetry)
-	observedService := provideObservedTournamentAdminApplication(adminIdempotentService, bootstrapClockFunc, tournamentAdminObserver)
+	observedService := provideObservedTournamentAdminApplication(idempotentService, bootstrapClockFunc, tournamentAdminObserver)
 	tournamentAdminUseCase := provideTournamentAdminInbound(observedService)
 	tournamentConfigurationPostgres := configuration.NewProductionTournamentConfigurationPostgres(txManager)
 	tournamentConfigurationWorkflow := configuration2.NewTournamentConfigurationWorkflow(tournamentConfigurationPostgres)

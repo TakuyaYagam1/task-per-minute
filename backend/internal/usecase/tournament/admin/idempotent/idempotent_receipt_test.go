@@ -1,4 +1,4 @@
-package admin
+package idempotent
 
 import (
 	"context"
@@ -11,6 +11,10 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/idempotency"
 	idempotencymocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/idempotency/mocks"
+	correctionusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/correction"
+	lifecycleusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/lifecycle"
+	operationusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/operation"
+	rosterusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/roster"
 )
 
 func TestReplaceRosterReceiptUsesDurableCanonicalOrder(t *testing.T) {
@@ -18,7 +22,7 @@ func TestReplaceRosterReceiptUsesDurableCanonicalOrder(t *testing.T) {
 
 	command := idempotentReceiptReplaceRosterCommand()
 	reordered := command
-	reordered.Participants = []RosterParticipantInput{
+	reordered.Participants = []rosterusecase.RosterParticipantInput{
 		command.Participants[3], command.Participants[2], command.Participants[1], command.Participants[0],
 	}
 
@@ -52,10 +56,10 @@ func TestCorrectionReceiptUsesDurableCanonicalOrder(t *testing.T) {
 	command := idempotentReceiptCorrectionCommand()
 	reordered := command
 	reordered.Fields = []string{"winner_id", "reason"}
-	reordered.ProjectionIntents = []CorrectionProjectionIntent{
+	reordered.ProjectionIntents = []correctionusecase.CorrectionProjectionIntent{
 		command.ProjectionIntents[1], command.ProjectionIntents[0],
 	}
-	reordered.UnlockIntents = []CorrectionUnlockIntent{
+	reordered.UnlockIntents = []correctionusecase.CorrectionUnlockIntent{
 		command.UnlockIntents[1], command.UnlockIntents[0],
 	}
 
@@ -75,14 +79,14 @@ func TestCorrectionReceiptUsesDurableCanonicalOrder(t *testing.T) {
 func TestTournamentActionReceiptEncodesEachSemanticField(t *testing.T) {
 	t.Parallel()
 
-	command := TournamentActionCommand{
-		CommandScope: CommandScope{
-			Operator:     OperatorIdentity{ActorID: uuid.MustParse("7c000000-0000-4000-8000-000000000001")},
+	command := lifecycleusecase.TournamentActionCommand{
+		CommandScope: operationusecase.CommandScope{
+			Operator:     operationusecase.OperatorIdentity{ActorID: uuid.MustParse("7c000000-0000-4000-8000-000000000001")},
 			TournamentID: uuid.MustParse("7c000000-0000-4000-8000-000000000002"),
 			CommandID:    uuid.MustParse("7c000000-0000-4000-8000-000000000003"),
 		},
 		ExpectedProjectionRevision: 7,
-		Action:                     TournamentActionPause,
+		Action:                     lifecycleusecase.TournamentActionPause,
 		Confirmed:                  true,
 		Reason:                     "operator review",
 	}
@@ -100,15 +104,15 @@ func TestTournamentActionReceiptEncodesEachSemanticField(t *testing.T) {
 	require.NotEqual(t, first.PayloadDigest, third.PayloadDigest)
 }
 
-func idempotentReceiptReplaceRosterCommand() ReplaceRosterCommand {
+func idempotentReceiptReplaceRosterCommand() rosterusecase.ReplaceRosterCommand {
 	operatorID := uuid.MustParse("7a000000-0000-4000-8000-000000000001")
 	tournamentID := uuid.MustParse("7a000000-0000-4000-8000-000000000002")
-	return NewReplaceRosterCommand(
-		OperatorIdentity{ActorID: operatorID},
+	return rosterusecase.NewReplaceRosterCommand(
+		operationusecase.OperatorIdentity{ActorID: operatorID},
 		tournamentID,
 		uuid.MustParse("7a000000-0000-4000-8000-000000000003"),
 		4,
-		[]RosterParticipantInput{
+		[]rosterusecase.RosterParticipantInput{
 			{PlayerID: uuid.MustParse("7a000000-0000-4000-8000-000000000011"), Seed: 1, Attendance: domain.AttendanceStateCheckedIn},
 			{PlayerID: uuid.MustParse("7a000000-0000-4000-8000-000000000012"), Seed: 2, Attendance: domain.AttendanceStateCheckedIn},
 			{PlayerID: uuid.MustParse("7a000000-0000-4000-8000-000000000013"), Seed: 3, Attendance: domain.AttendanceStateCheckedIn},
@@ -117,10 +121,10 @@ func idempotentReceiptReplaceRosterCommand() ReplaceRosterCommand {
 	)
 }
 
-func idempotentReceiptCorrectionCommand() CorrectionCommand {
-	return CorrectionCommand{
-		CommandScope: CommandScope{
-			Operator:     OperatorIdentity{ActorID: uuid.MustParse("7b000000-0000-4000-8000-000000000001")},
+func idempotentReceiptCorrectionCommand() correctionusecase.CorrectionCommand {
+	return correctionusecase.CorrectionCommand{
+		CommandScope: operationusecase.CommandScope{
+			Operator:     operationusecase.OperatorIdentity{ActorID: uuid.MustParse("7b000000-0000-4000-8000-000000000001")},
 			TournamentID: uuid.MustParse("7b000000-0000-4000-8000-000000000002"),
 			CommandID:    uuid.MustParse("7b000000-0000-4000-8000-000000000003"),
 		},
@@ -131,11 +135,11 @@ func idempotentReceiptCorrectionCommand() CorrectionCommand {
 		Reason:                     "official correction",
 		Explanation:                "evidence reviewed",
 		Fields:                     []string{"reason", "winner_id"},
-		ProjectionIntents: []CorrectionProjectionIntent{
-			{ExpectedRevision: ProjectionRevisionExpectation{ID: uuid.MustParse("7b000000-0000-4000-8000-000000000012")}},
-			{ExpectedRevision: ProjectionRevisionExpectation{ID: uuid.MustParse("7b000000-0000-4000-8000-000000000011")}},
+		ProjectionIntents: []correctionusecase.CorrectionProjectionIntent{
+			{ExpectedRevision: correctionusecase.ProjectionRevisionExpectation{ID: uuid.MustParse("7b000000-0000-4000-8000-000000000012")}},
+			{ExpectedRevision: correctionusecase.ProjectionRevisionExpectation{ID: uuid.MustParse("7b000000-0000-4000-8000-000000000011")}},
 		},
-		UnlockIntents: []CorrectionUnlockIntent{
+		UnlockIntents: []correctionusecase.CorrectionUnlockIntent{
 			{ReservationID: uuid.MustParse("7b000000-0000-4000-8000-000000000022")},
 			{ReservationID: uuid.MustParse("7b000000-0000-4000-8000-000000000021")},
 		},

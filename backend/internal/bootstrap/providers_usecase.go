@@ -42,6 +42,7 @@ import (
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
 	tournamentadmincorrection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/correction"
 	tournamentadminexecution "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/execution"
+	tournamentadminidempotent "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/idempotent"
 	tournamentadminlifecycle "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/lifecycle"
 	tournamentadminobservability "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/observability"
 	tournamentadminobserved "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/observed"
@@ -472,12 +473,12 @@ func provideIdempotentTournamentAdminApplication(
 	application *tournamentadmin.AdminUseCase,
 	catalog inbound.TournamentUseCase,
 	coordinator *idempotency.Coordinator,
-) (*tournamentadmin.AdminIdempotentService, error) {
-	return tournamentadmin.AdminNewIdempotentService(application, catalog, coordinator)
+) (*tournamentadminidempotent.IdempotentService, error) {
+	return tournamentadminidempotent.NewIdempotentService(application, catalog, coordinator)
 }
 
 func provideObservedTournamentAdminApplication(
-	application *tournamentadmin.AdminIdempotentService,
+	application *tournamentadminidempotent.IdempotentService,
 	clock tournamentadminobservability.OperationClock,
 	observer *telemetryadapter.TournamentAdminObserver,
 ) *tournamentadminobserved.ObservedService {
