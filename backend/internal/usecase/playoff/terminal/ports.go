@@ -12,7 +12,7 @@ import (
 	assignmentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/assignment"
 	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
 	semifinalusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff/semifinal"
-	resultprojection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection"
+	resultprojection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection/publication"
 )
 
 type SemifinalWinnerPath = semifinalusecase.SemifinalWinnerPath

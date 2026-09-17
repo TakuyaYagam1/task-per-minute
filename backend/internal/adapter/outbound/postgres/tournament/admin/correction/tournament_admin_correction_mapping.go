@@ -16,8 +16,8 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	correctionusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/correction"
 	resultusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/result"
-	resultprojection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection"
 	canonicalprojection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection/canonical"
+	resultprojection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection/revision"
 	admincorrection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/correction"
 )
 
