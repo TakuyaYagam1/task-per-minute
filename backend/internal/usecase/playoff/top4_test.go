@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
+	goldenstate "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/state"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 )
 
@@ -312,21 +312,21 @@ func TestTop4Snapshot(t *testing.T) {
 		}
 		tests := []struct {
 			name   string
-			mutate func(*goldenusecase.GoldenState)
+			mutate func(*goldenstate.GoldenState)
 		}{
-			{name: "allocation payload", mutate: func(state *goldenusecase.GoldenState) {
+			{name: "allocation payload", mutate: func(state *goldenstate.GoldenState) {
 				state.Allocation.Positions[0].ParticipantID = fixture.participants[3]
 			}},
-			{name: "state digest", mutate: func(state *goldenusecase.GoldenState) {
+			{name: "state digest", mutate: func(state *goldenstate.GoldenState) {
 				state.PayloadDigest = sha256.Sum256([]byte("forged"))
 			}},
-			{name: "allocation predecessor", mutate: func(state *goldenusecase.GoldenState) {
+			{name: "allocation predecessor", mutate: func(state *goldenstate.GoldenState) {
 				state.Allocation.ExpectedState.RevisionID = playoffID(7702)
 			}},
-			{name: "terminal no-show", mutate: func(state *goldenusecase.GoldenState) {
+			{name: "terminal no-show", mutate: func(state *goldenstate.GoldenState) {
 				state.NoShows = nil
 			}},
-			{name: "topology lineage", mutate: func(state *goldenusecase.GoldenState) {
+			{name: "topology lineage", mutate: func(state *goldenstate.GoldenState) {
 				state.Scope.GroupRevisionID = playoffRevisionID(7703)
 			}},
 		}

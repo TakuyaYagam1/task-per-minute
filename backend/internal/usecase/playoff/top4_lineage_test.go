@@ -9,7 +9,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	assignmentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/assignment"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
+	goldenstate "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/state"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 )
 
@@ -197,11 +197,11 @@ func testTop4SnapshotLineage(t *testing.T) {
 		})
 		require.ErrorIs(t, err, playoff.ErrInvalidTop4Snapshot)
 
-		for name, mutate := range map[string]func(*goldenusecase.GoldenState){
-			"ready windows": func(state *goldenusecase.GoldenState) {
-				state.Windows = make([]goldenusecase.GoldenReadyWindow, domain.TournamentMaxParticipants+1)
+		for name, mutate := range map[string]func(*goldenstate.GoldenState){
+			"ready windows": func(state *goldenstate.GoldenState) {
+				state.Windows = make([]goldenstate.GoldenReadyWindow, domain.TournamentMaxParticipants+1)
 			},
-			"task history": func(state *goldenusecase.GoldenState) {
+			"task history": func(state *goldenstate.GoldenState) {
 				state.ExactPlan.Authority.History = make(
 					[]assignmentusecase.TaskReceiptRef, domain.TournamentMaxParticipants*2+1,
 				)

@@ -13,7 +13,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	seriesdomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/series"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
+	goldenstate "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/state"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 )
 
@@ -37,7 +37,7 @@ func newGoldenPositionEvidenceForGroup(
 	require.GreaterOrEqual(t, len(ordered), count)
 	require.Less(t, groupIndex, len(fixture.command.GoldenGroups))
 	group := fixture.command.GoldenGroups[groupIndex]
-	scope := goldenusecase.GoldenStateScope{
+	scope := goldenstate.GoldenStateScope{
 		TournamentID: fixture.command.TournamentID,
 		GroupID:      group.GroupID, GroupRevisionID: group.RevisionID,
 	}
