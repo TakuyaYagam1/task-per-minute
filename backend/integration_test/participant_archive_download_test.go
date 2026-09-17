@@ -24,7 +24,7 @@ import (
 	participantarchiverepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/participantarchive"
 	redisadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/redis"
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
+	goldenruntime "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/runtime"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/participantarchive"
 	taskusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/task"
 	tournamentprogression "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/progression"
@@ -133,7 +133,7 @@ func TestParticipantArchiveDownloadGoldenAssignment(t *testing.T) {
 		ctx, t, fixture.tournamentID, fixture.rosterID,
 		sourceProjectionID, sourceProjectionRevision, now.Add(-time.Second),
 	)
-	application := goldenusecase.NewRuntimeApplication(
+	application := goldenruntime.NewRuntimeApplication(
 		runtimepostgres.NewGoldenRuntimePostgres(archive.rest.mgr), clock,
 	)
 	operator, err := application.Open(ctx, inbound.GoldenOpenCommand{

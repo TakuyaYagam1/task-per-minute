@@ -11,7 +11,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
+	goldenplan "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/plan"
 	swissusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/swiss"
 )
 
@@ -227,7 +227,7 @@ func newGoldenRepositoryTopologyRevision(tb testing.TB) GoldenRepositoryRevision
 	tb.Helper()
 
 	tournamentID := uuid.New()
-	source, err := goldenusecase.NewStandingsProjection(
+	source, err := goldenplan.NewStandingsProjection(
 		tournamentID,
 		uuid.New(),
 		domain.DerivedRevisionID(uuid.New()),
@@ -242,12 +242,12 @@ func newGoldenRepositoryTopologyRevision(tb testing.TB) GoldenRepositoryRevision
 		},
 	)
 	require.NoError(tb, err)
-	seed, err := goldenusecase.PartitionTies(source)
+	seed, err := goldenplan.PartitionTies(source)
 	require.NoError(tb, err)
 	groups := seed.Groups()
 	require.Len(tb, groups, 1)
 
-	group, err := goldenusecase.BuildGroupRevision(goldenusecase.GroupRevisionCommand{
+	group, err := goldenplan.BuildGroupRevision(goldenplan.GroupRevisionCommand{
 		TournamentID:                tournamentID,
 		GroupID:                     uuid.New(),
 		RevisionID:                  domain.DerivedRevisionID(uuid.New()),

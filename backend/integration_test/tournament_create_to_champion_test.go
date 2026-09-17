@@ -66,7 +66,7 @@ import (
 	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
 	gamestart "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/start"
 	gamesubmission "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/submission"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
+	goldenruntime "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/runtime"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/idempotency"
 	playerusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/player"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
@@ -183,7 +183,7 @@ func (clock *tournamentFlowClock) Resume() {
 
 type tournamentFlowRuntime struct {
 	clock     *tournamentFlowClock
-	golden    *goldenusecase.RuntimeApplication
+	golden    *goldenruntime.RuntimeApplication
 	webSocket *inboundws.Server
 }
 
@@ -443,7 +443,7 @@ func newTournamentFlowRESTFixture(t *testing.T) *restFixture {
 	configuration := tournamentadmin.NewTournamentConfigurationWorkflow(
 		configurationrepo.NewProductionTournamentConfigurationPostgres(tx),
 	)
-	golden := goldenusecase.NewRuntimeApplication(runtimepostgres.NewGoldenRuntimePostgres(tx), clock)
+	golden := goldenruntime.NewRuntimeApplication(runtimepostgres.NewGoldenRuntimePostgres(tx), clock)
 	participantDrafts := draftrepo.NewDraftPostgres(tx)
 	participantWave := waverepo.NewWavePostgres(tx)
 	participantReadiness := readiness.NewReadinessUseCase(
