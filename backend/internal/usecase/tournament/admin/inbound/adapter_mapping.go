@@ -1,4 +1,4 @@
-package admin
+package inbound
 
 import (
 	"errors"
@@ -18,6 +18,22 @@ func adminInboundError(err error) error {
 		return &inbound.AdminRevisionConflictError{ExpectedRevision: conflict.ExpectedRevision, CurrentRevision: conflict.CurrentRevision, CurrentState: conflict.CurrentState}
 	}
 	return err
+}
+
+func cloneUUID(value *uuid.UUID) *uuid.UUID {
+	if value == nil {
+		return nil
+	}
+	clone := *value
+	return &clone
+}
+
+func cloneTime(value *time.Time) *time.Time {
+	if value == nil {
+		return nil
+	}
+	clone := *value
+	return &clone
 }
 
 func operatorIdentity(value inbound.AdminOperatorIdentity) OperatorIdentity {

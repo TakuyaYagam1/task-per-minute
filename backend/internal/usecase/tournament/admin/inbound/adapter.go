@@ -1,4 +1,4 @@
-package admin
+package inbound
 
 import (
 	"context"
@@ -10,11 +10,11 @@ import (
 
 // NewInboundAdapter exposes the admin workflow through its consumer-owned
 // inbound contract. Workflow records and leaf-usecase values remain private.
-func NewInboundAdapter(next AdminService) inbound.TournamentAdminUseCase {
+func NewInboundAdapter(next Service) inbound.TournamentAdminUseCase {
 	return &inboundAdapter{next: next}
 }
 
-type inboundAdapter struct{ next AdminService }
+type inboundAdapter struct{ next Service }
 
 var _ inbound.TournamentAdminUseCase = (*inboundAdapter)(nil)
 

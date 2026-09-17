@@ -1,4 +1,4 @@
-package admin
+package inbound
 
 import (
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
