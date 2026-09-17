@@ -17,7 +17,7 @@ import (
 	correctionusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/correction"
 	resultusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/result"
 	resultprojection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	admincorrection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/correction"
 )
 
 type correctionAuthorityInputs struct {
@@ -37,36 +37,36 @@ type correctionAuthorityInputs struct {
 func (r *TournamentAdminCorrectionPostgres) loadCorrectionAuthority(
 	ctx context.Context,
 	tournamentID, seriesID, gameID uuid.UUID,
-) (tournamentadmin.CorrectionWorkflowAuthority, error) {
+) (admincorrection.CorrectionWorkflowAuthority, error) {
 	querier := r.tx.Querier(ctx)
 	rosterID, err := r.correctionRosterID(ctx, tournamentID, seriesID)
 	if err != nil {
-		return tournamentadmin.CorrectionWorkflowAuthority{}, err
+		return admincorrection.CorrectionWorkflowAuthority{}, err
 	}
 	scope := ResultScope{TournamentID: tournamentID, RosterID: rosterID, SeriesID: seriesID, AttemptID: gameID}
 	if err := lockCorrectionScope(ctx, querier, scope); err != nil {
-		return tournamentadmin.CorrectionWorkflowAuthority{}, err
+		return admincorrection.CorrectionWorkflowAuthority{}, err
 	}
 
 	locked, err := r.loadCorrectionAuthorityInputs(ctx, querier, scope)
 	if err != nil {
-		return tournamentadmin.CorrectionWorkflowAuthority{}, err
+		return admincorrection.CorrectionWorkflowAuthority{}, err
 	}
 	if cutoff, cutoffErr := querier.GetCorrectionCutoff(ctx, correctionCutoffParams(scope, locked.target.ResultRevisionID)); cutoffErr != nil {
-		return tournamentadmin.CorrectionWorkflowAuthority{}, tournamentAdminCorrectionError("load cutoff", cutoffErr)
+		return admincorrection.CorrectionWorkflowAuthority{}, tournamentAdminCorrectionError("load cutoff", cutoffErr)
 	} else if cutoff != "" {
-		return tournamentadmin.CorrectionWorkflowAuthority{}, &CorrectionCutoffError{Code: cutoff}
+		return admincorrection.CorrectionWorkflowAuthority{}, &CorrectionCutoffError{Code: cutoff}
 	}
 
 	core, err := buildTournamentAdminCorrectionCore(ctx, querier, locked, scope)
 	if err != nil {
-		return tournamentadmin.CorrectionWorkflowAuthority{}, fmt.Errorf("TournamentAdminCorrectionPostgres - build correction core: %w", err)
+		return admincorrection.CorrectionWorkflowAuthority{}, fmt.Errorf("TournamentAdminCorrectionPostgres - build correction core: %w", err)
 	}
 	stage, err := loadTournamentAdminCorrectionStage(ctx, querier, locked, scope)
 	if err != nil {
-		return tournamentadmin.CorrectionWorkflowAuthority{}, fmt.Errorf("TournamentAdminCorrectionPostgres - load correction stage: %w", err)
+		return admincorrection.CorrectionWorkflowAuthority{}, fmt.Errorf("TournamentAdminCorrectionPostgres - load correction stage: %w", err)
 	}
-	return tournamentadmin.CorrectionWorkflowAuthority{
+	return admincorrection.CorrectionWorkflowAuthority{
 		RosterID:             rosterID,
 		ProjectionRevisionID: locked.projection.ID,
 		ProjectionRevision:   locked.projection.RevisionNumber,

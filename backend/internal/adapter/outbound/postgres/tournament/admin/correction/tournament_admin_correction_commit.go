@@ -17,7 +17,7 @@ import (
 	correctionusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/correction"
 	projection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection"
 	swissusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/swiss"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	admincorrection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/correction"
 	tournamentprogression "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/progression"
 )
 
@@ -25,7 +25,7 @@ import (
 func (r *TournamentAdminCorrectionPostgres) buildCorrectionCommit(
 	ctx context.Context,
 	querier *sqlc.Queries,
-	mutation tournamentadmin.CorrectionMutation,
+	mutation admincorrection.CorrectionMutation,
 	scope ResultScope,
 ) (CorrectionInput, tournamentAdminCorrectionLogicalPlan, error) {
 	current, err := querier.GetCurrentProjectionRevision(ctx, sqlc.GetCurrentProjectionRevisionParams{
@@ -142,7 +142,7 @@ func correctionSettlementIDs(commandID uuid.UUID) ResultSettlementIDs {
 func persistTournamentAdminCorrectionSwissLedger(
 	ctx context.Context,
 	querier *sqlc.Queries,
-	mutation tournamentadmin.CorrectionMutation,
+	mutation admincorrection.CorrectionMutation,
 	scope ResultScope,
 ) error {
 	ledger, err := correctionusecase.ApplyServerOwnedSwissSuccessor(
@@ -229,7 +229,7 @@ func correctionOfficialUUIDPointer(value domain.OfficialResultRevisionID) *uuid.
 func (r *TournamentAdminCorrectionPostgres) materializedCorrectionArtifacts(
 	ctx context.Context,
 	querier *sqlc.Queries,
-	mutation tournamentadmin.CorrectionMutation,
+	mutation admincorrection.CorrectionMutation,
 	scope ResultScope,
 ) ([]ProjectionArtifactInput, map[domain.ArtifactKind]uuid.UUID, []uuid.UUID, error) {
 	participants, err := querier.ListTournamentAdminCorrectionProjectionParticipants(ctx, scope.RosterID)
@@ -594,7 +594,7 @@ func correctionArtifactDependency(
 }
 
 func correctionLogicalBindings(
-	mutation tournamentadmin.CorrectionMutation,
+	mutation admincorrection.CorrectionMutation,
 	scope ResultScope,
 	artifacts map[domain.ArtifactKind]uuid.UUID,
 ) (tournamentAdminCorrectionLogicalPlan, error) {
@@ -653,7 +653,7 @@ func correctionResultArtifactKind(kind domain.ArtifactKind) bool {
 func persistTournamentAdminCorrectionLogicalPlan(
 	ctx context.Context,
 	querier *sqlc.Queries,
-	mutation tournamentadmin.CorrectionMutation,
+	mutation admincorrection.CorrectionMutation,
 	logical tournamentAdminCorrectionLogicalPlan,
 ) error {
 	authorityID := correctionWorkflowUUID(mutation.Command.CommandID, "result-projection-authority")
@@ -917,7 +917,7 @@ func correctionAuthorityResultSourceID(authority correctionusecase.Authority, ki
 func persistTournamentAdminCorrectionCommand(
 	ctx context.Context,
 	querier *sqlc.Queries,
-	mutation tournamentadmin.CorrectionMutation,
+	mutation admincorrection.CorrectionMutation,
 	input CorrectionInput,
 ) error {
 	planBytes := mutation.Plan.Bytes()
@@ -971,12 +971,12 @@ type tournamentAdminCorrectionEvidenceDocument struct {
 	Fields           []string                                     `json:"fields"`
 	RequestedAt      time.Time                                    `json:"requested_at"`
 	ValidationDigest string                                       `json:"validation_digest"`
-	Supersessions    []tournamentadmin.ProjectionSupersessionView `json:"supersessions"`
-	UnlockIntents    []tournamentadmin.CorrectionUnlockIntent     `json:"unlock_intents"`
+	Supersessions    []admincorrection.ProjectionSupersessionView `json:"supersessions"`
+	UnlockIntents    []admincorrection.CorrectionUnlockIntent     `json:"unlock_intents"`
 }
 
 func marshalTournamentAdminCorrectionEvidence(
-	evidence tournamentadmin.CorrectionEvidence,
+	evidence admincorrection.CorrectionEvidence,
 ) ([]byte, error) {
 	if !validTournamentAdminCorrectionEvidence(evidence) {
 		return nil, domain.ErrValidation
@@ -986,8 +986,8 @@ func marshalTournamentAdminCorrectionEvidence(
 		SeriesID: evidence.SeriesID, GameID: evidence.GameID, OperatorID: evidence.OperatorID, Reason: evidence.Reason,
 		Fields: append([]string(nil), evidence.Fields...), RequestedAt: correctionTime(evidence.RequestedAt),
 		ValidationDigest: hex.EncodeToString(evidence.ValidationDigest[:]),
-		Supersessions:    append([]tournamentadmin.ProjectionSupersessionView(nil), evidence.Supersessions...),
-		UnlockIntents:    append(make([]tournamentadmin.CorrectionUnlockIntent, 0, len(evidence.UnlockIntents)), evidence.UnlockIntents...),
+		Supersessions:    append([]admincorrection.ProjectionSupersessionView(nil), evidence.Supersessions...),
+		UnlockIntents:    append(make([]admincorrection.CorrectionUnlockIntent, 0, len(evidence.UnlockIntents)), evidence.UnlockIntents...),
 	}
 	//nolint:musttag // This versioned application-owned document is validated on both encode and decode.
 	payload, err := json.Marshal(document)
@@ -1000,7 +1000,7 @@ func marshalTournamentAdminCorrectionEvidence(
 //nolint:gocyclo // One cohesive audit boundary keeps cross-field invariants and fail-closed branches explicit.
 func tournamentAdminCorrectionCommandRecord(
 	row sqlc.ResultCorrectionCommit,
-) (*tournamentadmin.CorrectionCommandRecord, error) {
+) (*admincorrection.CorrectionCommandRecord, error) {
 	if row.CommandID == uuid.Nil || row.TournamentID == uuid.Nil || row.RosterID == uuid.Nil || row.SeriesID == uuid.Nil ||
 		row.GameAttemptID == uuid.Nil || row.ActorID == uuid.Nil || row.SourceProjectionRevision < 1 || !row.ExecutedAt.Valid {
 		return nil, domain.ErrConflict
@@ -1021,24 +1021,24 @@ func tournamentAdminCorrectionCommandRecord(
 		!document.RequestedAt.Equal(correctionTime(row.ExecutedAt.Time)) {
 		return nil, domain.ErrConflict
 	}
-	evidence := tournamentadmin.CorrectionEvidence{
+	evidence := admincorrection.CorrectionEvidence{
 		CommandID: document.CommandID, TournamentID: document.TournamentID, SeriesID: document.SeriesID, GameID: document.GameID,
 		OperatorID: document.OperatorID, Reason: document.Reason, Fields: append([]string(nil), document.Fields...),
 		RequestedAt: correctionTime(document.RequestedAt), ValidationDigest: validationDigest,
-		Supersessions: append([]tournamentadmin.ProjectionSupersessionView(nil), document.Supersessions...),
-		UnlockIntents: append(make([]tournamentadmin.CorrectionUnlockIntent, 0, len(document.UnlockIntents)), document.UnlockIntents...),
+		Supersessions: append([]admincorrection.ProjectionSupersessionView(nil), document.Supersessions...),
+		UnlockIntents: append(make([]admincorrection.CorrectionUnlockIntent, 0, len(document.UnlockIntents)), document.UnlockIntents...),
 	}
 	if !validTournamentAdminCorrectionEvidence(evidence) {
 		return nil, domain.ErrConflict
 	}
-	return &tournamentadmin.CorrectionCommandRecord{
+	return &admincorrection.CorrectionCommandRecord{
 		CommandID: row.CommandID, TournamentID: row.TournamentID, RosterID: row.RosterID, SeriesID: row.SeriesID,
 		GameID: row.GameAttemptID, OperatorID: row.ActorID, ExpectedProjectionRevision: row.SourceProjectionRevision,
 		RequestDigest: requestDigest, Evidence: evidence, ExecutedAt: correctionTime(row.ExecutedAt.Time),
 	}, nil
 }
 
-func validTournamentAdminCorrectionEvidence(value tournamentadmin.CorrectionEvidence) bool {
+func validTournamentAdminCorrectionEvidence(value admincorrection.CorrectionEvidence) bool {
 	return value.CommandID != uuid.Nil && value.TournamentID != uuid.Nil && value.SeriesID != uuid.Nil &&
 		value.GameID != uuid.Nil && value.OperatorID != uuid.Nil && value.Reason != "" &&
 		validServerTime(correctionTime(value.RequestedAt)) && value.ValidationDigest != ([sha256.Size]byte{})

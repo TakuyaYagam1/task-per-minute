@@ -18,7 +18,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	correctionusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/correction"
 	projection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	admincorrection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/correction"
 	tournamentprogression "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/progression"
 )
 
@@ -287,7 +287,7 @@ func correctionGoldenPrestartHead(payload []byte) (uuid.UUID, correctionusecase.
 func lockTournamentAdminCorrectionStage(
 	ctx context.Context,
 	querier *sqlc.Queries,
-	mutation tournamentadmin.CorrectionMutation,
+	mutation admincorrection.CorrectionMutation,
 	scope ResultScope,
 ) (correctionusecase.StageSnapshot, sqlc.LockCorrectionTournamentScopeRow, error) {
 	tournament, err := querier.LockCorrectionTournamentScope(ctx, sqlc.LockCorrectionTournamentScopeParams{
@@ -318,7 +318,7 @@ func lockTournamentAdminCorrectionStage(
 func persistTournamentAdminCorrectionStage(
 	ctx context.Context,
 	querier *sqlc.Queries,
-	mutation tournamentadmin.CorrectionMutation,
+	mutation admincorrection.CorrectionMutation,
 	input CorrectionInput,
 	snapshot correctionusecase.StageSnapshot,
 	tournament sqlc.LockCorrectionTournamentScopeRow,
@@ -428,7 +428,7 @@ type correctionGoldenTombstoneAuthority struct {
 func lockTournamentAdminCorrectionGoldenTombstoneAuthority(
 	ctx context.Context,
 	querier *sqlc.Queries,
-	mutation tournamentadmin.CorrectionMutation,
+	mutation admincorrection.CorrectionMutation,
 	snapshot correctionusecase.StageSnapshot,
 ) (correctionGoldenTombstoneAuthority, error) {
 	authority := correctionGoldenTombstoneAuthority{
@@ -506,7 +506,7 @@ func lockTournamentAdminCorrectionGoldenTombstoneAuthority(
 func persistTournamentAdminCorrectionGoldenTombstones(
 	ctx context.Context,
 	querier *sqlc.Queries,
-	mutation tournamentadmin.CorrectionMutation,
+	mutation admincorrection.CorrectionMutation,
 	snapshot correctionusecase.StageSnapshot,
 	authority correctionGoldenTombstoneAuthority,
 	changedAt time.Time,
@@ -633,7 +633,7 @@ type correctionPlayoffStageMaterialization struct {
 func persistTournamentAdminCorrectionPlayoffStage(
 	ctx context.Context,
 	querier *sqlc.Queries,
-	mutation tournamentadmin.CorrectionMutation,
+	mutation admincorrection.CorrectionMutation,
 	input CorrectionInput,
 	changedAt time.Time,
 ) error {
@@ -763,7 +763,7 @@ func correctionPlayoffStageMaterializationFrom(
 func persistTournamentAdminCorrectionPlayoffGraph(
 	ctx context.Context,
 	querier *sqlc.Queries,
-	mutation tournamentadmin.CorrectionMutation,
+	mutation admincorrection.CorrectionMutation,
 	stage correctionPlayoffStageMaterialization,
 	ids tournamentprogression.PlayoffPublicationIDs,
 	changedAt time.Time,
@@ -856,7 +856,7 @@ func persistTournamentAdminCorrectionPlayoffGraph(
 func correctionPlayoffStageNodeLineage(
 	ctx context.Context,
 	querier *sqlc.Queries,
-	mutation tournamentadmin.CorrectionMutation,
+	mutation admincorrection.CorrectionMutation,
 	kind domain.ArtifactKind,
 	entityID uuid.UUID,
 ) (int64, uuid.NullUUID, error) {
@@ -881,7 +881,7 @@ func correctionPlayoffStageNodeLineage(
 func persistTournamentAdminCorrectionGoldenGroups(
 	ctx context.Context,
 	querier *sqlc.Queries,
-	mutation tournamentadmin.CorrectionMutation,
+	mutation admincorrection.CorrectionMutation,
 	input CorrectionInput,
 	snapshot correctionusecase.StageSnapshot,
 	changedAt time.Time,

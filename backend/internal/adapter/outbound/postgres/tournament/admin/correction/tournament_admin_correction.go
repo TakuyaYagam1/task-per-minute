@@ -16,7 +16,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	tournamentprogressionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/progression"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	admincorrection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/correction"
 )
 
 // TournamentAdminCorrectionPostgres keeps the correction command ledger and
@@ -28,7 +28,7 @@ type TournamentAdminCorrectionPostgres struct {
 	correction *CorrectionPostgres
 }
 
-var _ tournamentadmin.CorrectionWorkflowRepository = (*TournamentAdminCorrectionPostgres)(nil)
+var _ admincorrection.CorrectionWorkflowRepository = (*TournamentAdminCorrectionPostgres)(nil)
 
 func NewTournamentAdminCorrectionPostgres(tx *TxManager) *TournamentAdminCorrectionPostgres {
 	return &TournamentAdminCorrectionPostgres{tx: tx, correction: NewCorrectionPostgres(tx)}
@@ -37,7 +37,7 @@ func NewTournamentAdminCorrectionPostgres(tx *TxManager) *TournamentAdminCorrect
 func (r *TournamentAdminCorrectionPostgres) FindCorrectionCommand(
 	ctx context.Context,
 	commandID uuid.UUID,
-) (*tournamentadmin.CorrectionCommandRecord, error) {
+) (*admincorrection.CorrectionCommandRecord, error) {
 	if r == nil || r.tx == nil || ctx == nil || commandID == uuid.Nil {
 		return nil, domain.ErrValidation
 	}
@@ -68,9 +68,9 @@ func (r *TournamentAdminCorrectionPostgres) ReadCorrectionTime(ctx context.Conte
 func (r *TournamentAdminCorrectionPostgres) LockCorrectionAuthority(
 	ctx context.Context,
 	tournamentID, seriesID, gameID uuid.UUID,
-) (tournamentadmin.CorrectionWorkflowAuthority, error) {
+) (admincorrection.CorrectionWorkflowAuthority, error) {
 	if r == nil || r.tx == nil || ctx == nil || tournamentID == uuid.Nil || seriesID == uuid.Nil || gameID == uuid.Nil {
-		return tournamentadmin.CorrectionWorkflowAuthority{}, domain.ErrValidation
+		return admincorrection.CorrectionWorkflowAuthority{}, domain.ErrValidation
 	}
 	return r.loadCorrectionAuthority(ctx, tournamentID, seriesID, gameID)
 }
@@ -78,13 +78,13 @@ func (r *TournamentAdminCorrectionPostgres) LockCorrectionAuthority(
 //nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func (r *TournamentAdminCorrectionPostgres) CommitCorrection(
 	ctx context.Context,
-	mutation tournamentadmin.CorrectionMutation,
-) (tournamentadmin.CorrectionEvidence, bool, error) {
+	mutation admincorrection.CorrectionMutation,
+) (admincorrection.CorrectionEvidence, bool, error) {
 	if r == nil || r.tx == nil || r.correction == nil || ctx == nil {
-		return tournamentadmin.CorrectionEvidence{}, false, domain.ErrValidation
+		return admincorrection.CorrectionEvidence{}, false, domain.ErrValidation
 	}
 	if !validTournamentAdminCorrectionMutation(mutation) {
-		return tournamentadmin.CorrectionEvidence{}, false, fmt.Errorf(
+		return admincorrection.CorrectionEvidence{}, false, fmt.Errorf(
 			"%w: correction mutation command=%t authority=%t request=%t plan=%w evidence=%t",
 			domain.ErrValidation,
 			mutation.Command.CommandID != uuid.Nil && mutation.Command.TournamentID != uuid.Nil &&
@@ -98,7 +98,7 @@ func (r *TournamentAdminCorrectionPostgres) CommitCorrection(
 		)
 	}
 
-	var evidence tournamentadmin.CorrectionEvidence
+	var evidence admincorrection.CorrectionEvidence
 	changed := false
 	err := r.tx.Do(ctx, func(txCtx context.Context) error {
 		scope := ResultScope{
@@ -193,7 +193,7 @@ func (r *TournamentAdminCorrectionPostgres) CommitCorrection(
 		return nil
 	})
 	if err != nil {
-		return tournamentadmin.CorrectionEvidence{}, false, err
+		return admincorrection.CorrectionEvidence{}, false, err
 	}
 	return evidence, changed, nil
 }
@@ -209,7 +209,7 @@ type tournamentAdminCorrectionBinding struct {
 	nodeID   uuid.UUID
 }
 
-func validTournamentAdminCorrectionMutation(mutation tournamentadmin.CorrectionMutation) bool {
+func validTournamentAdminCorrectionMutation(mutation admincorrection.CorrectionMutation) bool {
 	return mutation.Command.CommandID != uuid.Nil && mutation.Command.TournamentID != uuid.Nil &&
 		mutation.Command.SeriesID != uuid.Nil && mutation.Command.GameID != uuid.Nil &&
 		mutation.Command.Operator.ActorID != uuid.Nil && mutation.Authority.RosterID != uuid.Nil &&
@@ -219,8 +219,8 @@ func validTournamentAdminCorrectionMutation(mutation tournamentadmin.CorrectionM
 }
 
 func correctionReplayMatches(
-	record tournamentadmin.CorrectionCommandRecord,
-	mutation tournamentadmin.CorrectionMutation,
+	record admincorrection.CorrectionCommandRecord,
+	mutation admincorrection.CorrectionMutation,
 ) bool {
 	return record.CommandID == mutation.Command.CommandID &&
 		record.TournamentID == mutation.Command.TournamentID &&
@@ -240,7 +240,7 @@ func correctionLogicalProjectionIsCurrent(
 	return found && current.ID() == projection.Revision().ID()
 }
 
-func correctionEvidenceEqual(first, second tournamentadmin.CorrectionEvidence) bool {
+func correctionEvidenceEqual(first, second admincorrection.CorrectionEvidence) bool {
 	return first.CommandID == second.CommandID && first.TournamentID == second.TournamentID &&
 		first.SeriesID == second.SeriesID && first.GameID == second.GameID && first.OperatorID == second.OperatorID &&
 		first.Reason == second.Reason && first.RequestedAt.Equal(second.RequestedAt) &&
@@ -262,7 +262,7 @@ func slicesEqual(first, second []string) bool {
 	return true
 }
 
-func correctionSupersessionsEqual(first, second []tournamentadmin.ProjectionSupersessionView) bool {
+func correctionSupersessionsEqual(first, second []admincorrection.ProjectionSupersessionView) bool {
 	if len(first) != len(second) {
 		return false
 	}
@@ -278,7 +278,7 @@ func correctionSupersessionsEqual(first, second []tournamentadmin.ProjectionSupe
 	return true
 }
 
-func correctionUnlocksEqual(first, second []tournamentadmin.CorrectionUnlockIntent) bool {
+func correctionUnlocksEqual(first, second []admincorrection.CorrectionUnlockIntent) bool {
 	if len(first) != len(second) {
 		return false
 	}
@@ -297,10 +297,10 @@ func sameUUIDPointer(first, second *uuid.UUID) bool {
 	return *first == *second
 }
 
-func cloneTournamentAdminCorrectionEvidence(value tournamentadmin.CorrectionEvidence) tournamentadmin.CorrectionEvidence {
+func cloneTournamentAdminCorrectionEvidence(value admincorrection.CorrectionEvidence) admincorrection.CorrectionEvidence {
 	clone := value
 	clone.Fields = append([]string(nil), value.Fields...)
-	clone.Supersessions = make([]tournamentadmin.ProjectionSupersessionView, len(value.Supersessions))
+	clone.Supersessions = make([]admincorrection.ProjectionSupersessionView, len(value.Supersessions))
 	for index, item := range value.Supersessions {
 		clone.Supersessions[index] = item
 		if item.PreviousDecisionID != nil {
@@ -308,7 +308,7 @@ func cloneTournamentAdminCorrectionEvidence(value tournamentadmin.CorrectionEvid
 			clone.Supersessions[index].PreviousDecisionID = &previous
 		}
 	}
-	clone.UnlockIntents = append(make([]tournamentadmin.CorrectionUnlockIntent, 0, len(value.UnlockIntents)), value.UnlockIntents...)
+	clone.UnlockIntents = append(make([]admincorrection.CorrectionUnlockIntent, 0, len(value.UnlockIntents)), value.UnlockIntents...)
 	return clone
 }
 
