@@ -1,4 +1,4 @@
-package game_test
+package noshow_test
 
 import (
 	"context"
@@ -13,8 +13,8 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	seriesdomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/series"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
 	gamemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/mocks"
+	noshowusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/noshow"
 )
 
 func TestNormalNoShowResolution(t *testing.T) {
@@ -27,7 +27,7 @@ func TestNormalNoShowResolution(t *testing.T) {
 
 		authority, command := normalNoShowFixture(t, now, true, false)
 		repository := newNormalNoShowRepository(t, authority)
-		usecase := gameusecase.NoShowNewUseCase(repository.repository, noShowNewGameClock(t, now))
+		usecase := noshowusecase.NoShowNewUseCase(repository.repository, noShowNewGameClock(t, now))
 
 		resolution, changed, err := usecase.Resolve(t.Context(), command)
 		require.NoError(t, err)
@@ -62,7 +62,7 @@ func TestNormalNoShowResolution(t *testing.T) {
 
 		authority, command := normalNoShowFixture(t, now, false, false)
 		repository := newNormalNoShowRepository(t, authority)
-		resolution, changed, err := gameusecase.NoShowNewUseCase(
+		resolution, changed, err := noshowusecase.NoShowNewUseCase(
 			repository.repository,
 			noShowNewGameClock(t, now),
 		).Resolve(t.Context(), command)
@@ -85,7 +85,7 @@ func TestNormalNoShowResolution(t *testing.T) {
 		command.ExpectedSeriesState = domain.SeriesStateActive
 		repository := newNormalNoShowRepository(t, authority)
 
-		resolution, changed, err := gameusecase.NoShowNewUseCase(
+		resolution, changed, err := noshowusecase.NoShowNewUseCase(
 			repository.repository,
 			noShowNewGameClock(t, now),
 		).Resolve(t.Context(), command)
@@ -105,7 +105,7 @@ func TestNormalNoShowResolution(t *testing.T) {
 		command.ExpectedSeriesState = domain.SeriesStateReplayRequired
 		repository := newNormalNoShowRepository(t, authority)
 
-		resolution, changed, err := gameusecase.NoShowNewUseCase(
+		resolution, changed, err := noshowusecase.NoShowNewUseCase(
 			repository.repository,
 			noShowNewGameClock(t, now),
 		).Resolve(t.Context(), command)
@@ -120,43 +120,43 @@ func TestNormalNoShowResolution(t *testing.T) {
 		authority, command := normalNoShowFixture(t, now, true, false)
 		atCutoff := *authority.Wave.ReadyWindow
 		cutoffRepository := newNormalNoShowRepository(t, authority)
-		resolution, changed, err := gameusecase.NoShowNewUseCase(
+		resolution, changed, err := noshowusecase.NoShowNewUseCase(
 			cutoffRepository.repository,
 			noShowNewGameClock(t, atCutoff.Deadline),
 		).Resolve(t.Context(), command)
 		require.Nil(t, resolution)
 		require.False(t, changed)
-		require.ErrorIs(t, err, gameusecase.ErrNormalNoShowCutoff)
+		require.ErrorIs(t, err, noshowusecase.ErrNormalNoShowCutoff)
 		require.Equal(t, 0, cutoffRepository.commitCount())
 
 		invalidEvidence := command
 		invalidEvidence.GameResultRevisionIDs = nil
 		evidenceRepository := newNormalNoShowRepository(t, authority)
-		resolution, changed, err = gameusecase.NoShowNewUseCase(
+		resolution, changed, err = noshowusecase.NoShowNewUseCase(
 			evidenceRepository.repository,
 			noShowNewGameClock(t, now),
 		).Resolve(t.Context(), invalidEvidence)
 		require.Nil(t, resolution)
 		require.False(t, changed)
-		require.ErrorIs(t, err, gameusecase.ErrInvalidNormalNoShow)
+		require.ErrorIs(t, err, noshowusecase.ErrInvalidNormalNoShow)
 		require.Equal(t, 0, evidenceRepository.commitCount())
 
 		bothReady, bothReadyCommand := normalNoShowFixture(t, now, true, true)
 		bothReadyRepository := newNormalNoShowRepository(t, bothReady)
-		resolution, changed, err = gameusecase.NoShowNewUseCase(
+		resolution, changed, err = noshowusecase.NoShowNewUseCase(
 			bothReadyRepository.repository,
 			noShowNewGameClock(t, now),
 		).Resolve(t.Context(), bothReadyCommand)
 		require.Nil(t, resolution)
 		require.False(t, changed)
-		require.ErrorIs(t, err, gameusecase.ErrNormalNoShowNotRequired)
+		require.ErrorIs(t, err, noshowusecase.ErrNormalNoShowNotRequired)
 		require.Equal(t, 0, bothReadyRepository.commitCount())
 	})
 }
 
 type normalNoShowRepositoryState struct {
 	mu        sync.Mutex
-	authority gameusecase.NoShowAuthority
+	authority noshowusecase.NoShowAuthority
 	commits   int
 }
 
@@ -167,14 +167,14 @@ type normalNoShowRepositoryHarness struct {
 
 func newNormalNoShowRepository(
 	t *testing.T,
-	authority gameusecase.NoShowAuthority,
+	authority noshowusecase.NoShowAuthority,
 ) *normalNoShowRepositoryHarness {
 	t.Helper()
 
 	state := &normalNoShowRepositoryState{authority: cloneNormalNoShowAuthority(authority)}
 	repository := gamemocks.NewMockNoShowRepository(t)
 	repository.EXPECT().LoadNormalNoShowAuthority(mock.Anything, mock.Anything).
-		RunAndReturn(func(context.Context, domain.NormalNoShowScope) (gameusecase.NoShowAuthority, error) {
+		RunAndReturn(func(context.Context, domain.NormalNoShowScope) (noshowusecase.NoShowAuthority, error) {
 			state.mu.Lock()
 			defer state.mu.Unlock()
 			return cloneNormalNoShowAuthority(state.authority), nil
@@ -182,8 +182,8 @@ func newNormalNoShowRepository(
 	repository.EXPECT().CommitNormalNoShow(mock.Anything, mock.Anything).
 		RunAndReturn(func(
 			_ context.Context,
-			resolution gameusecase.NoShowResolution,
-		) (*gameusecase.NoShowResolution, bool, error) {
+			resolution noshowusecase.NoShowResolution,
+		) (*noshowusecase.NoShowResolution, bool, error) {
 			state.mu.Lock()
 			defer state.mu.Unlock()
 			if resolution.ExpectedAuthorityRevision != state.authority.Revision ||
@@ -213,7 +213,7 @@ func normalNoShowFixture(
 	now time.Time,
 	firstReady bool,
 	secondReady bool,
-) (gameusecase.NoShowAuthority, gameusecase.NoShowCommand) {
+) (noshowusecase.NoShowAuthority, noshowusecase.NoShowCommand) {
 	t.Helper()
 
 	wave := domain.Wave{
@@ -264,10 +264,10 @@ func normalNoShowFixture(
 		TournamentID: wave.TournamentID, WaveID: wave.ID,
 		WindowID: windowID, SeriesID: seriesID,
 	}
-	authority := gameusecase.NoShowAuthority{
+	authority := noshowusecase.NoShowAuthority{
 		Scope: scope, Revision: 4, Wave: wave, Series: series, CurrentOrdinal: 0,
 	}
-	command := gameusecase.NoShowCommand{
+	command := noshowusecase.NoShowCommand{
 		Scope: scope, CommandID: noShowFixtureID(210),
 		ExpectedWaveRevisionID:   wave.RevisionID,
 		ExpectedWindowRevisionID: windowRevisionID,
@@ -315,7 +315,7 @@ func cloneTimePointer(value *time.Time) *time.Time {
 	return &clone
 }
 
-func cloneNormalNoShowAuthority(value gameusecase.NoShowAuthority) gameusecase.NoShowAuthority {
+func cloneNormalNoShowAuthority(value noshowusecase.NoShowAuthority) noshowusecase.NoShowAuthority {
 	clone := value
 	clone.Wave = cloneWave(value.Wave)
 	clone.Series = cloneSeriesExecution(value.Series)
@@ -326,7 +326,7 @@ func cloneNormalNoShowAuthority(value gameusecase.NoShowAuthority) gameusecase.N
 	return clone
 }
 
-func cloneNormalNoShowResolution(value gameusecase.NoShowResolution) gameusecase.NoShowResolution {
+func cloneNormalNoShowResolution(value noshowusecase.NoShowResolution) noshowusecase.NoShowResolution {
 	clone := value
 	clone.Wave = cloneWave(value.Wave)
 	clone.Series = cloneSeriesExecution(value.Series)

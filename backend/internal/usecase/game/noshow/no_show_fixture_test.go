@@ -1,4 +1,4 @@
-package game_test
+package noshow_test
 
 import (
 	"testing"
