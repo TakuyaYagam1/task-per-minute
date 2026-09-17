@@ -21,6 +21,7 @@ import (
 	assignmentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/assignment"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
 	attemptusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/attempt"
+	closeusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/close"
 	replayusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/replay"
 )
 
@@ -795,19 +796,19 @@ func (source replaySource) oldWave() (domain.Wave, error) {
 func (source replaySource) failedAttemptAndClosure(
 	exhaustionCommandID uuid.UUID,
 	exhaustion *sqlc.ReplayReserveExhaustion,
-) (attemptusecase.AttemptRecord, gameusecase.Closure, error) {
+) (attemptusecase.AttemptRecord, closeusecase.Closure, error) {
 	if exhaustionCommandID == uuid.Nil {
-		return attemptusecase.AttemptRecord{}, gameusecase.Closure{}, errReplayWorkflowAuthority
+		return attemptusecase.AttemptRecord{}, closeusecase.Closure{}, errReplayWorkflowAuthority
 	}
 	var document replayReserveExhaustionDocument
 	if exhaustion != nil {
 		decoded, err := decodeReplayStorageDocument[replayReserveExhaustionDocument](exhaustion.RecordDocument)
 		if err != nil || validateReplayReserveExhaustionDocument(decoded, *exhaustion) != nil {
-			return attemptusecase.AttemptRecord{}, gameusecase.Closure{}, errReplayWorkflowAuthority
+			return attemptusecase.AttemptRecord{}, closeusecase.Closure{}, errReplayWorkflowAuthority
 		}
 		document = decoded
 	} else {
-		return attemptusecase.AttemptRecord{}, gameusecase.Closure{}, domain.ErrConflict
+		return attemptusecase.AttemptRecord{}, closeusecase.Closure{}, domain.ErrConflict
 	}
 	return source.failedAttemptAndClosureDocument(document)
 }
@@ -815,60 +816,60 @@ func (source replaySource) failedAttemptAndClosure(
 //nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func (source replaySource) failedAttemptAndClosureDocument(
 	document replayReserveExhaustionDocument,
-) (attemptusecase.AttemptRecord, gameusecase.Closure, error) {
+) (attemptusecase.AttemptRecord, closeusecase.Closure, error) {
 	if document.Scope.TournamentID != source.row.Tournament.ID || document.Scope.OldWaveID != source.row.Wave.ID ||
 		document.Scope.SeriesID != source.row.Series.ID || document.Scope.SlotID != source.row.GameSlot.ID ||
 		document.Scope.AssignmentID != source.row.Assignment.ID || document.AssignmentAttemptID != source.row.GameAttempt.ID ||
 		document.FailedGameID != source.row.GameAttempt.ID || document.ActiveSnapshotID != source.row.TaskSnapshot.ID {
-		return attemptusecase.AttemptRecord{}, gameusecase.Closure{}, errReplayWorkflowAuthority
+		return attemptusecase.AttemptRecord{}, closeusecase.Closure{}, errReplayWorkflowAuthority
 	}
 	wave, err := source.oldWave()
 	if err != nil {
-		return attemptusecase.AttemptRecord{}, gameusecase.Closure{}, err
+		return attemptusecase.AttemptRecord{}, closeusecase.Closure{}, err
 	}
 	route, ok := source.failedRoute(document)
 	if !ok {
-		return attemptusecase.AttemptRecord{}, gameusecase.Closure{}, errReplayWorkflowAuthority
+		return attemptusecase.AttemptRecord{}, closeusecase.Closure{}, errReplayWorkflowAuthority
 	}
-	closure := gameusecase.Closure{
-		Scope:     gameusecase.CloseScope{TournamentID: source.row.Tournament.ID, WaveID: wave.ID},
+	closure := closeusecase.Closure{
+		Scope:     closeusecase.CloseScope{TournamentID: source.row.Tournament.ID, WaveID: wave.ID},
 		CommandID: document.ClosureCommandID, ExpectedAuthorityRevision: document.ClosureAuthorityRevision,
 		PreviousWaveRevisionID: domain.WaveRevisionID(document.PreviousClosureRevisionID), Wave: wave,
-		Children: []gameusecase.CloseChild{{SeriesID: source.row.Series.ID, SlotID: source.row.GameSlot.ID,
+		Children: []closeusecase.CloseChild{{SeriesID: source.row.Series.ID, SlotID: source.row.GameSlot.ID,
 			GameID: source.row.GameAttempt.ID, State: domain.GameStateVoid, RouteID: route.ID}},
 		ClosedAt: source.row.Wave.ClosedAt.Time.Round(0).UTC(),
 	}
 	if !source.row.Wave.ClosedAt.Valid || closure.Validate() != nil {
-		return attemptusecase.AttemptRecord{}, gameusecase.Closure{}, errReplayWorkflowAuthority
+		return attemptusecase.AttemptRecord{}, closeusecase.Closure{}, errReplayWorkflowAuthority
 	}
 
 	previous, err := source.seriesExecution(domain.SeriesStateReplayRequired, nil)
 	if err != nil {
-		return attemptusecase.AttemptRecord{}, gameusecase.Closure{}, err
+		return attemptusecase.AttemptRecord{}, closeusecase.Closure{}, err
 	}
 	failedGame, found := replayFindGame(previous.Series, source.row.GameAttempt.ID)
 	if !found || failedGame.State != domain.GameStateVoid || failedGame.ResultRevisionID == nil {
-		return attemptusecase.AttemptRecord{}, gameusecase.Closure{}, errReplayWorkflowAuthority
+		return attemptusecase.AttemptRecord{}, closeusecase.Closure{}, errReplayWorkflowAuthority
 	}
 	failure, err := gamedomain.ClassifyFailure(gamedomain.FailureClass(document.FailureClass), domain.Category(document.Category))
 	if err != nil || failedGame.ResultReason != failure.Reason {
-		return attemptusecase.AttemptRecord{}, gameusecase.Closure{}, errReplayWorkflowAuthority
+		return attemptusecase.AttemptRecord{}, closeusecase.Closure{}, errReplayWorkflowAuthority
 	}
 	head, found := source.gameHead(source.row.GameAttempt.ID)
 	if !found || head.ResultRevisionID != failedGame.ResultRevisionID.UUID() || !head.OccurredAt.Valid ||
 		!source.scoreHead.ScoreRecordedAt.Valid || source.scoreHead.ScoreRevisionID != source.scoreHead.CurrentRevisionID {
-		return attemptusecase.AttemptRecord{}, gameusecase.Closure{}, errReplayWorkflowAuthority
+		return attemptusecase.AttemptRecord{}, closeusecase.Closure{}, errReplayWorkflowAuthority
 	}
 	resultIDs, err := source.gameResultRevisionIDs()
 	if err != nil {
-		return attemptusecase.AttemptRecord{}, gameusecase.Closure{}, err
+		return attemptusecase.AttemptRecord{}, closeusecase.Closure{}, err
 	}
 	gameRevisionID := domain.OfficialResultRevisionID(head.ResultRevisionID)
 	scoreRevisionID := domain.SeriesScoreRevisionID(source.scoreHead.ScoreRevisionID)
 	terminalizedAt := head.OccurredAt.Time.Round(0).UTC()
 	if !source.scoreHead.ScoreRecordedAt.Time.Round(0).UTC().Equal(terminalizedAt) ||
 		!route.RoutedAt.Time.Round(0).UTC().Equal(terminalizedAt) {
-		return attemptusecase.AttemptRecord{}, gameusecase.Closure{}, errReplayWorkflowAuthority
+		return attemptusecase.AttemptRecord{}, closeusecase.Closure{}, errReplayWorkflowAuthority
 	}
 	record := attemptusecase.AttemptRecord{
 		Scope: domain.FailedAttemptScope{TournamentID: source.row.Tournament.ID, WaveID: source.row.Wave.ID,
@@ -891,7 +892,7 @@ func (source replaySource) failedAttemptAndClosureDocument(
 		TerminalizedAt: terminalizedAt,
 	}
 	if record.Validate() != nil {
-		return attemptusecase.AttemptRecord{}, gameusecase.Closure{}, errReplayWorkflowAuthority
+		return attemptusecase.AttemptRecord{}, closeusecase.Closure{}, errReplayWorkflowAuthority
 	}
 	return record, closure, nil
 }
