@@ -1,4 +1,4 @@
-package golden_test
+package plan_test
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	assignmentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/assignment"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
+	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/plan"
 )
 
 func TestGoldenExactPlanCommitHardening(t *testing.T) {

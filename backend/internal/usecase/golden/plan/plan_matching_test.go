@@ -1,4 +1,4 @@
-package golden_test
+package plan_test
 
 import (
 	"crypto/sha256"
@@ -11,7 +11,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain/taskexec"
 	assignmentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/assignment"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
+	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/plan"
 )
 
 func TestGoldenExactPlan(t *testing.T) {

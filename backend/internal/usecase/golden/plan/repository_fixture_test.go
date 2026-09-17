@@ -1,4 +1,4 @@
-package golden_test
+package plan_test
 
 import (
 	"context"
@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
-	goldenmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/mocks"
+	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/plan"
+	goldenmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/plan/mocks"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
