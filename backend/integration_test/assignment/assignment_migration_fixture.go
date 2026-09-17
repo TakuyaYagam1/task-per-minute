@@ -1,6 +1,6 @@
 //go:build integration
 
-package integration_test
+package assignment
 
 import (
 	"bytes"
@@ -26,7 +26,7 @@ func createAssignmentBranch(
 	tb.Helper()
 
 	branchID := uuid.New()
-	_, err := sharedPool.Exec(
+	_, err := migrationPool.Exec(
 		ctx, `
 		INSERT INTO assignment_branches (
 			id, plan_id, draft_id, draft_revision_id,
@@ -58,7 +58,7 @@ func createAssignmentBranchReservations(
 	for i := range reservations {
 		taskID, taskVersion := createAssignmentMigrationTask(ctx, tb, category, i, &planID)
 		edgeID := uuid.New()
-		_, err := sharedPool.Exec(ctx, `
+		_, err := migrationPool.Exec(ctx, `
 			INSERT INTO assignment_plan_edges (
 				id, plan_id, branch_id, position,
 				task_id, task_version, selection_evidence, created_at
@@ -70,7 +70,7 @@ func createAssignmentBranchReservations(
 		require.NoError(tb, err)
 
 		reservationID := uuid.New()
-		_, err = sharedPool.Exec(
+		_, err = migrationPool.Exec(
 			ctx, `
 			INSERT INTO task_version_reservations (
 				id, edge_id, plan_id, branch_id,
@@ -89,7 +89,7 @@ func createAssignmentBranchReservations(
 
 		snapshotID := uuid.New()
 		digest := bytes.Repeat([]byte{byte(i + 10)}, 32)
-		_, err = sharedPool.Exec(
+		_, err = migrationPool.Exec(
 			ctx, `
 			INSERT INTO task_snapshots (
 				id, reservation_id, task_id, task_version, kind,
@@ -132,7 +132,7 @@ func createAssignmentMigrationTask(
 
 	var taskID uuid.UUID
 	var taskVersion int
-	err := sharedPool.QueryRow(ctx, `
+	err := migrationPool.QueryRow(ctx, `
 		WITH pinned_normal_pool AS (
 			SELECT pool.id
 			FROM assignment_plans AS plan
@@ -204,7 +204,7 @@ func createActiveMigrationAssignment(
 		return uuid.Nil
 	}
 
-	assignmentID, err := assignmentseed.CreateActive(ctx, sharedPool, assignmentseed.Input{
+	assignmentID, err := assignmentseed.CreateActive(ctx, migrationPool, assignmentseed.Input{
 		ID:                     uuid.New(),
 		AttemptID:              attemptID,
 		SeriesID:               draft.seriesID,

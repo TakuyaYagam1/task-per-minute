@@ -1,6 +1,6 @@
 //go:build integration
 
-package integration_test
+package assignment
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
@@ -20,7 +21,17 @@ type assignmentReservationFixture struct {
 	taskVersion   int
 }
 
-func TestAssignmentMigration(t *testing.T) {
+func RunAssignmentMigration(t *testing.T, pool *pgxpool.Pool) {
+	t.Helper()
+	require.NotNil(t, pool)
+	migrationPoolMu.Lock()
+	previousPool := migrationPool
+	migrationPool = pool
+	t.Cleanup(func() {
+		migrationPool = previousPool
+		migrationPoolMu.Unlock()
+	})
+
 	ctx := context.Background()
 	resetMigrationTables(ctx, t)
 	t.Cleanup(func() { resetMigrationTables(ctx, t) })
@@ -67,26 +78,26 @@ func TestAssignmentMigration(t *testing.T) {
 		createdAt.Add(3*time.Second),
 	)
 
-	_, err := sharedPool.Exec(ctx, `
+	_, err := migrationPool.Exec(ctx, `
 		UPDATE assignment_plans
 		SET state = 'committed', active_branch_id = $2, committed_at = $3
 		WHERE id = $1`, exactPlanID, activeBranchID, createdAt.Add(4*time.Second))
 	require.Error(t, err)
 
 	for _, reservation := range activeReservations {
-		_, err = sharedPool.Exec(ctx, `
+		_, err = migrationPool.Exec(ctx, `
 			UPDATE task_version_reservations
 			SET state = 'committed', committed_at = $2, revision = revision + 1
 			WHERE id = $1`, reservation.reservationID, createdAt.Add(4*time.Second))
 		require.NoError(t, err)
 	}
-	_, err = sharedPool.Exec(ctx, `
+	_, err = migrationPool.Exec(ctx, `
 		UPDATE assignment_branches
 		SET state = 'active', activated_at = $2
 		WHERE id = $1`, activeBranchID, createdAt.Add(5*time.Second))
 	require.NoError(t, err)
 
-	_, err = sharedPool.Exec(
+	_, err = migrationPool.Exec(
 		ctx, `
 		UPDATE task_version_reservations
 		SET state = 'released',
@@ -101,7 +112,7 @@ func TestAssignmentMigration(t *testing.T) {
 	require.Error(t, err)
 
 	for _, reservation := range releasedReservations {
-		_, err = sharedPool.Exec(ctx, `
+		_, err = migrationPool.Exec(ctx, `
 			UPDATE task_version_reservations
 			SET state = 'released',
 				released_at = $2,
@@ -110,7 +121,7 @@ func TestAssignmentMigration(t *testing.T) {
 			WHERE id = $1`, reservation.reservationID, createdAt.Add(4*time.Second))
 		require.NoError(t, err)
 	}
-	_, err = sharedPool.Exec(ctx, `
+	_, err = migrationPool.Exec(ctx, `
 		UPDATE assignment_branches
 		SET state = 'released',
 			released_at = $2,
@@ -119,13 +130,13 @@ func TestAssignmentMigration(t *testing.T) {
 	require.NoError(t, err)
 
 	committedAt := createdAt.Add(6 * time.Second)
-	_, err = sharedPool.Exec(ctx, `
+	_, err = migrationPool.Exec(ctx, `
 		UPDATE assignment_plans
 		SET state = 'committed', active_branch_id = $2, committed_at = $3
 		WHERE id = $1`, exactPlanID, activeBranchID, committedAt)
 	require.NoError(t, err)
 
-	_, err = sharedPool.Exec(ctx, `
+	_, err = migrationPool.Exec(ctx, `
 		UPDATE assignment_plans
 		SET proof_evidence = '{"changed":true}'::JSONB
 		WHERE id = $1`, exactPlanID)
@@ -140,20 +151,20 @@ func TestAssignmentMigration(t *testing.T) {
 		committedAt,
 	)
 
-	_, err = sharedPool.Exec(ctx, `
+	_, err = migrationPool.Exec(ctx, `
 		UPDATE task_snapshots
 		SET title = 'changed official evidence'
 		WHERE id = $1`, activeReservations[0].snapshotID)
 	require.Error(t, err)
 
-	_, err = sharedPool.Exec(ctx, `
+	_, err = migrationPool.Exec(ctx, `
 		UPDATE tasks
 		SET title = 'mutable catalog title'
 		WHERE id = $1`, activeReservations[0].taskID)
 	require.NoError(t, err)
 
 	var snapshotTitle string
-	err = sharedPool.QueryRow(ctx, `
+	err = migrationPool.QueryRow(ctx, `
 		SELECT title
 		FROM task_snapshots
 		WHERE id = $1`, activeReservations[0].snapshotID).Scan(&snapshotTitle)
@@ -194,13 +205,13 @@ func TestAssignmentMigration(t *testing.T) {
 	)
 
 	deliveredAt := committedAt.Add(2 * time.Second)
-	_, err = sharedPool.Exec(ctx, `
+	_, err = migrationPool.Exec(ctx, `
 		UPDATE task_version_reservations
 		SET disclosed_at = $2, revision = revision + 1
 		WHERE id = $1`, activeReservations[0].reservationID, deliveredAt)
 	require.NoError(t, err)
 
-	_, err = sharedPool.Exec(
+	_, err = migrationPool.Exec(
 		ctx, `
 		INSERT INTO task_delivery_receipts (
 			assignment_id, instance_id, attempt_id, roster_id, participant_id,
@@ -220,7 +231,7 @@ func TestAssignmentMigration(t *testing.T) {
 	require.Error(t, err)
 
 	for _, participantID := range draft.participantIDs {
-		_, err = sharedPool.Exec(
+		_, err = migrationPool.Exec(
 			ctx, `
 			INSERT INTO task_delivery_receipts (
 				assignment_id, instance_id, attempt_id, roster_id, participant_id,
@@ -240,7 +251,7 @@ func TestAssignmentMigration(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	_, err = sharedPool.Exec(
+	_, err = migrationPool.Exec(
 		ctx, `
 		INSERT INTO task_delivery_receipts (
 			assignment_id, instance_id, attempt_id, roster_id, participant_id,
@@ -260,7 +271,7 @@ func TestAssignmentMigration(t *testing.T) {
 	require.Error(t, err)
 
 	supersededAt := deliveredAt.Add(time.Second)
-	_, err = sharedPool.Exec(ctx, `
+	_, err = migrationPool.Exec(ctx, `
 		UPDATE assignments
 		SET state = 'superseded',
 			revision = revision + 1,
@@ -270,7 +281,7 @@ func TestAssignmentMigration(t *testing.T) {
 		WHERE id = $1`, assignmentID, supersededAt)
 	require.NoError(t, err)
 
-		_, err = sharedPool.Exec(ctx, `
+	_, err = migrationPool.Exec(ctx, `
 			UPDATE task_version_reservations
 			SET disclosed_at = $2, revision = revision + 1
 		WHERE id = $1`, activeReservations[1].reservationID, supersededAt)
@@ -288,7 +299,7 @@ func TestAssignmentMigration(t *testing.T) {
 	)
 	require.NotEqual(t, assignmentID, replacementAssignmentID)
 
-	_, err = sharedPool.Exec(ctx, `
+	_, err = migrationPool.Exec(ctx, `
 		UPDATE task_version_reservations
 		SET state = 'released',
 			released_at = $2,
@@ -301,7 +312,7 @@ func TestAssignmentMigration(t *testing.T) {
 		retainedOld       int
 		releasedBranches  int
 	)
-	err = sharedPool.QueryRow(ctx, `
+	err = migrationPool.QueryRow(ctx, `
 		SELECT
 			COUNT(*) FILTER (WHERE state = 'active'),
 			COUNT(*) FILTER (WHERE id = $2 AND state = 'superseded')
@@ -311,7 +322,7 @@ func TestAssignmentMigration(t *testing.T) {
 	require.Equal(t, 1, activeAssignments)
 	require.Equal(t, 1, retainedOld)
 
-	err = sharedPool.QueryRow(ctx, `
+	err = migrationPool.QueryRow(ctx, `
 		SELECT COUNT(*)
 		FROM assignment_branches
 		WHERE plan_id = $1 AND state = 'released'`, exactPlanID).Scan(&releasedBranches)

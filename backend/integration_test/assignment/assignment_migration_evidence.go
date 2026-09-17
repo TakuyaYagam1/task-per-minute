@@ -1,6 +1,6 @@
 //go:build integration
 
-package integration_test
+package assignment
 
 import (
 	"bytes"
@@ -23,43 +23,43 @@ func assertAssignmentTransitionEvidenceImmutable(
 	tb.Helper()
 
 	changedAt := committedAt.Add(time.Second)
-	_, err := sharedPool.Exec(ctx, `
+	_, err := migrationPool.Exec(ctx, `
 		UPDATE assignment_plans
 		SET active_branch_id = $2
 		WHERE id = $1`, planID, releasedBranchID)
 	require.Error(tb, err)
 
-	_, err = sharedPool.Exec(ctx, `
+	_, err = migrationPool.Exec(ctx, `
 		UPDATE assignment_plans
 		SET committed_at = $2
 		WHERE id = $1`, planID, changedAt)
 	require.Error(tb, err)
 
-	_, err = sharedPool.Exec(ctx, `
+	_, err = migrationPool.Exec(ctx, `
 		UPDATE assignment_branches
 		SET activated_at = $2
 		WHERE id = $1`, activeBranchID, changedAt)
 	require.Error(tb, err)
 
-	_, err = sharedPool.Exec(ctx, `
+	_, err = migrationPool.Exec(ctx, `
 		UPDATE task_version_reservations
 		SET committed_at = $2
 		WHERE id = $1`, reservationID, changedAt)
 	require.Error(tb, err)
 
-	_, err = sharedPool.Exec(ctx, `
+	_, err = migrationPool.Exec(ctx, `
 		UPDATE assignment_branches
 		SET disclosed_at = $2
 		WHERE id = $1`, activeBranchID, changedAt)
 	require.NoError(tb, err)
 
-	_, err = sharedPool.Exec(ctx, `
+	_, err = migrationPool.Exec(ctx, `
 		UPDATE assignment_branches
 		SET disclosed_at = NULL
 		WHERE id = $1`, activeBranchID)
 	require.Error(tb, err)
 
-	_, err = sharedPool.Exec(ctx, `
+	_, err = migrationPool.Exec(ctx, `
 		UPDATE assignment_branches
 		SET state = 'superseded',
 			superseded_at = $2,
@@ -93,7 +93,7 @@ func assertCrossRosterAssignmentRejected(
 		createdAt,
 	)
 
-	_, err := sharedPool.Exec(
+	_, err := migrationPool.Exec(
 		ctx, `
 		INSERT INTO assignments (
 			id, attempt_id, series_id, roster_id,
@@ -128,7 +128,7 @@ func createConservativeAssignmentPlan(
 	tb.Helper()
 
 	planID := uuid.New()
-	_, err := sharedPool.Exec(
+	_, err := migrationPool.Exec(
 		ctx, `
 		INSERT INTO assignment_plans (
 			id, tournament_id, roster_id, kind, revision_id,
@@ -164,7 +164,7 @@ func createExactAssignmentPlan(
 	planID := uuid.New()
 	seed := bytes.Repeat([]byte{5}, 32)
 	digest := bytes.Repeat([]byte{6}, 32)
-	_, err := sharedPool.Exec(
+	_, err := migrationPool.Exec(
 		ctx, `
 		INSERT INTO assignment_plans (
 			id, tournament_id, roster_id, kind, parent_plan_id, revision_id,
