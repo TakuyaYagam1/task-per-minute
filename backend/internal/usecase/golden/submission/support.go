@@ -86,17 +86,9 @@ func cloneSubmissionUUIDPointer(value *uuid.UUID) *uuid.UUID {
 	return &clone
 }
 
-func submissionCloneUUIDPointer(value *uuid.UUID) *uuid.UUID {
-	return cloneSubmissionUUIDPointer(value)
-}
-
 func validSubmissionRevisionPredecessor(current uuid.UUID, revision int64, previous *uuid.UUID) bool {
 	return revision == 1 && previous == nil ||
 		revision > 1 && previous != nil && *previous != uuid.Nil && *previous != current
-}
-
-func submissionValidGoldenRevisionPredecessor(current uuid.UUID, revision int64, previous *uuid.UUID) bool {
-	return validSubmissionRevisionPredecessor(current, revision, previous)
 }
 
 func buildSubmissionLedger(ledger GoldenSubmissionLedger) (GoldenSubmissionLedger, error) {

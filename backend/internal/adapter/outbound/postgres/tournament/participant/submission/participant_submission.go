@@ -31,8 +31,8 @@ const (
 // participant submission workflow.
 type ResultRepository interface {
 	RecordSubmission(
-		context.Context,
-		resultpostgres.SubmissionInput,
+		ctx context.Context,
+		input resultpostgres.SubmissionInput,
 	) (*resultpostgres.SubmissionRecord, bool, error)
 }
 

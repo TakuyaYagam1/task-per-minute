@@ -1,4 +1,4 @@
-package close_test
+package gameclose_test
 
 import (
 	"context"

@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	gamemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause/mocks"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause"
+	gamemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause/mocks"
 	"github.com/google/uuid"
 )
 

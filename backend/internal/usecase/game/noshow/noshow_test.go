@@ -13,8 +13,8 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	seriesdomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/series"
-	gamemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/noshow/mocks"
 	noshowusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/noshow"
+	gamemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/noshow/mocks"
 )
 
 func TestNormalNoShowResolution(t *testing.T) {

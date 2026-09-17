@@ -34,12 +34,12 @@ type ContentLoader func(context.Context, *sqlc.Queries, uuid.UUID) (domain.Conte
 // the assignment/draft adapter remains free to expose its broader API.
 type DraftRepository interface {
 	AppendRevision(
-		context.Context,
-		uuid.UUID,
-		DraftRevisionExpectation,
-		DraftRevisionInput,
+		ctx context.Context,
+		draftID uuid.UUID,
+		expectation DraftRevisionExpectation,
+		input DraftRevisionInput,
 	) (*DraftRevisionRecord, bool, error)
-	Get(context.Context, uuid.UUID) (*DraftAggregate, error)
+	Get(ctx context.Context, draftID uuid.UUID) (*DraftAggregate, error)
 }
 
 var _ DraftRepository = (*draftrepo.DraftPostgres)(nil)

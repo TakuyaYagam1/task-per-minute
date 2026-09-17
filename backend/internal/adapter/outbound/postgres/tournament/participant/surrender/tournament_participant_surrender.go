@@ -24,8 +24,8 @@ import (
 // avoiding a stored dependency on the concrete result adapter.
 type ResultRepository interface {
 	Settle(
-		context.Context,
-		resultpostgres.ResultSettlementInput,
+		ctx context.Context,
+		input resultpostgres.ResultSettlementInput,
 	) (*resultpostgres.ResultCommitRecord, bool, error)
 }
 

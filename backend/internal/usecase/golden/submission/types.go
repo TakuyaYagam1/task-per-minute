@@ -51,9 +51,9 @@ func (v GoldenSubmissionVerification) Validate() error {
 		v.Authority.Validate() != nil {
 		return submissionError("invalid correctness attestation")
 	}
-	if validSubmissionIdentitySet([]uuid.UUID{
+	if !validSubmissionIdentitySet([]uuid.UUID{
 		v.ID, v.RevisionID, v.ParticipantID, v.Authority.HolderID, v.Authority.LeaseID,
-	}) == false {
+	}) {
 		return submissionError("correctness attestation identity is aliased")
 	}
 	return nil

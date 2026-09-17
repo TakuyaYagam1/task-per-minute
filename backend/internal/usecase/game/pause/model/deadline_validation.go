@@ -90,6 +90,6 @@ func replaceSeriesGame(series *domain.Series, replacement domain.Game) bool {
 	return false
 }
 
-func normalPauseError(format string, arguments ...any) error {
-	return fmt.Errorf("%w: %s", ErrInvalidNormalPauseGraph, fmt.Sprintf(format, arguments...))
+func normalPauseError(message string) error {
+	return fmt.Errorf("%w: %s", ErrInvalidNormalPauseGraph, message)
 }

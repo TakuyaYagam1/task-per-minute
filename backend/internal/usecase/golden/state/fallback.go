@@ -116,10 +116,7 @@ func buildGoldenFallbackSuccessor(
 	if authority.Revision == math.MaxInt64 {
 		return GoldenState{}, fmt.Errorf("%w: fallback successor", ErrGoldenRevisionOverflow)
 	}
-	allocation, err := buildGoldenAllocation(authority, allocationCommand{
-		Scope: command.Scope, CommandID: command.CommandID, AllocationID: command.AllocationID,
-		ExpectedState: command.ExpectedState, NextStateRevisionID: command.NextStateRevisionID,
-	}, allocatedAt)
+	allocation, err := buildGoldenAllocation(authority, allocationCommand(command), allocatedAt)
 	if err != nil {
 		return GoldenState{}, err
 	}

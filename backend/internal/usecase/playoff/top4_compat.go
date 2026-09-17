@@ -1,18 +1,6 @@
 package playoff
 
-import (
-	"time"
-
-	"github.com/google/uuid"
-
-	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	top4usecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff/top4"
-)
-
-const (
-	finalSwissTop4Cutoff         = 4
-	maxPlayoffReservedIdentities = 65536
-)
+import top4usecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff/top4"
 
 var (
 	ErrInvalidTop4Snapshot           = top4usecase.ErrInvalidTop4Snapshot
@@ -81,93 +69,4 @@ func DeriveImpactfulGoldenTieRanges(input ProgressionSwissInput) ([]ImpactfulGol
 
 func PlanFinalSwissProgression(input ProgressionSwissInput) (FinalSwissProjection, error) {
 	return top4usecase.PlanFinalSwissProgression(input)
-}
-
-func validPlayoffTime(value time.Time) bool {
-	return !value.IsZero() && value.Location() == time.UTC && value.Equal(value.Round(0))
-}
-
-func reservePlayoffIdentity(reserved map[uuid.UUID]struct{}, id uuid.UUID) bool {
-	if id == uuid.Nil {
-		return false
-	}
-	if _, exists := reserved[id]; exists {
-		return true
-	}
-	if len(reserved) >= maxPlayoffReservedIdentities {
-		return false
-	}
-	reserved[id] = struct{}{}
-	return true
-}
-
-func mergePlayoffReservedIdentities(reserved map[uuid.UUID]struct{}, retained []uuid.UUID) bool {
-	if len(reserved) > maxPlayoffReservedIdentities || len(retained) > maxPlayoffReservedIdentities {
-		return false
-	}
-	for _, id := range retained {
-		if !reservePlayoffIdentity(reserved, id) {
-			return false
-		}
-	}
-	return true
-}
-
-func cloneFinalSwissDomainProjection(input domain.ProjectionRevision) domain.ProjectionRevision {
-	revision := input.Revision()
-	clone, err := domain.NewProjectionRevision(
-		revision.ID(), revision.TournamentID(), revision.Artifact(), revision.RevisionNo(),
-		revision.PreviousRevisionID(), revision.CreatedAt(), input.Payload(),
-	)
-	if err != nil {
-		return domain.ProjectionRevision{}
-	}
-	return clone
-}
-
-func cloneTerminalSeries(value domain.Series) domain.Series {
-	clone := value
-	clone.WinnerID = cloneTerminalSeriesUUIDPointer(value.WinnerID)
-	clone.CurrentScoreRevisionID = cloneTerminalSeriesScoreRevisionID(value.CurrentScoreRevisionID)
-	clone.CurrentResultRevisionID = cloneTerminalSeriesResultRevisionID(value.CurrentResultRevisionID)
-	clone.Slots = make([]domain.GameSlot, len(value.Slots))
-	for index := range value.Slots {
-		clone.Slots[index] = cloneTerminalSeriesGameSlot(value.Slots[index])
-	}
-	return clone
-}
-
-func cloneTerminalSeriesGameSlot(value domain.GameSlot) domain.GameSlot {
-	clone := value
-	clone.Attempts = make([]domain.Game, len(value.Attempts))
-	for index, attempt := range value.Attempts {
-		clone.Attempts[index] = attempt
-		clone.Attempts[index].WinnerID = cloneTerminalSeriesUUIDPointer(attempt.WinnerID)
-		clone.Attempts[index].ResultRevisionID = cloneTerminalSeriesResultRevisionID(attempt.ResultRevisionID)
-	}
-	return clone
-}
-
-func cloneTerminalSeriesUUIDPointer(value *uuid.UUID) *uuid.UUID {
-	if value == nil {
-		return nil
-	}
-	clone := *value
-	return &clone
-}
-
-func cloneTerminalSeriesScoreRevisionID(value *domain.SeriesScoreRevisionID) *domain.SeriesScoreRevisionID {
-	if value == nil {
-		return nil
-	}
-	clone := *value
-	return &clone
-}
-
-func cloneTerminalSeriesResultRevisionID(value *domain.OfficialResultRevisionID) *domain.OfficialResultRevisionID {
-	if value == nil {
-		return nil
-	}
-	clone := *value
-	return &clone
 }

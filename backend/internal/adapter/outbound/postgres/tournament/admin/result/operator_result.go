@@ -22,8 +22,8 @@ import (
 // port so authority and evidence reads do not depend on its concrete type.
 type ResultRepository interface {
 	Settle(
-		context.Context,
-		resultrepo.ResultSettlementInput,
+		ctx context.Context,
+		input resultrepo.ResultSettlementInput,
 	) (*resultrepo.ResultCommitRecord, bool, error)
 }
 

@@ -1,4 +1,4 @@
-package close
+package gameclose
 
 import (
 	"context"

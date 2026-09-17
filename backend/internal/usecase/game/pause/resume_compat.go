@@ -3,8 +3,6 @@ package pause
 import (
 	"time"
 
-	"github.com/google/uuid"
-
 	resumeusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause/resume"
 )
 
@@ -34,10 +32,6 @@ func validatePauseResumeAuthority(authority PauseResumeAuthority) error {
 	return resumeusecase.ValidatePauseResumeAuthority(authority)
 }
 
-func validatePauseResumeRecord(record PauseResumeRecord) error {
-	return resumeusecase.ValidatePauseResumeRecord(record)
-}
-
 func reconcilePauseResume(record PauseResumeRecord, command PauseResumeCommand) (*PauseResumeRecord, error) {
 	return resumeusecase.ReconcilePauseResume(record, command)
 }
@@ -52,16 +46,4 @@ func pauseResumeExpectationEqual(first, second PauseResumeExpectation) bool {
 
 func clonePauseResumeExpectation(value PauseResumeExpectation) PauseResumeExpectation {
 	return resumeusecase.ClonePauseResumeExpectation(value)
-}
-
-func clonePauseResumeRecord(value PauseResumeRecord) PauseResumeRecord {
-	return resumeusecase.ClonePauseResumeRecord(value)
-}
-
-func resumeTimeCoversAuthorityHistory(authority PauseResumeAuthority, resumedAt time.Time) bool {
-	return resumeusecase.ResumeTimeCoversAuthorityHistory(authority, resumedAt)
-}
-
-func pauseGameByID(games []PauseGame, id uuid.UUID) *PauseGame {
-	return resumeusecase.PauseGameByID(games, id)
 }

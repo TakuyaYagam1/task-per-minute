@@ -16,7 +16,7 @@ import (
 )
 
 type draftReader interface {
-	Get(context.Context, uuid.UUID) (*draft.DraftAggregate, error)
+	Get(ctx context.Context, draftID uuid.UUID) (*draft.DraftAggregate, error)
 }
 
 // participantStateDraftReader keeps the participant state reader independent

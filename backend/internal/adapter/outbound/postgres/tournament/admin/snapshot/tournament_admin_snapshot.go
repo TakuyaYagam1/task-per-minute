@@ -27,13 +27,13 @@ type TournamentAdminSnapshotPostgres struct {
 // RosterReader is the narrow roster query boundary owned by the snapshot
 // consumer. The snapshot adapter does not need roster mutation methods.
 type RosterReader interface {
-	GetRoster(context.Context, uuid.UUID) (rostercapability.RosterView, error)
+	GetRoster(ctx context.Context, tournamentID uuid.UUID) (rostercapability.RosterView, error)
 }
 
 // DraftReader is the narrow draft query boundary owned by the snapshot
 // consumer. The snapshot adapter only loads one aggregate for pause details.
 type DraftReader interface {
-	Get(context.Context, uuid.UUID) (*draftrepo.DraftAggregate, error)
+	Get(ctx context.Context, draftID uuid.UUID) (*draftrepo.DraftAggregate, error)
 }
 
 func NewTournamentAdminSnapshotPostgres(tx *db.TxManager) *TournamentAdminSnapshotPostgres {

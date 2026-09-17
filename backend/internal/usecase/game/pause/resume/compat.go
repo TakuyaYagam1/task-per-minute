@@ -60,10 +60,6 @@ func pauseCloneTimePointer(value *time.Time) *time.Time {
 	return model.CloneTimePointer(value)
 }
 
-func pauseCloneUUIDPointer(value *uuid.UUID) *uuid.UUID {
-	return model.CloneUUIDPointer(value)
-}
-
 func replaceSeriesGame(series *domain.Series, replacement domain.Game) bool {
 	return model.ReplaceSeriesGame(series, replacement)
 }
@@ -90,10 +86,6 @@ func counterRevisionMapEqual(first, second []PauseReconnectCounterRevision) bool
 
 func frozenRevisionMapEqual(first, second []PauseFrozenDeadlineRevision) bool {
 	return model.FrozenRevisionMapEqual(first, second)
-}
-
-func validDraftPreviousRevision(expected draftusecase.RevisionExpectation, previousRevisionID uuid.UUID) bool {
-	return model.ValidDraftPreviousRevision(expected, previousRevisionID)
 }
 
 func validPauseDraftRevisionContract(expected *draftusecase.RevisionExpectation, previousRevisionID uuid.UUID) bool {

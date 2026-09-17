@@ -28,7 +28,7 @@ func decodePausedPresenceWaveResult(action string, document []byte) ([]byte, *ga
 		return append([]byte(nil), document...), nil
 	}
 	var envelope pausedPresenceDocument
-	if err := json.Unmarshal(document, &envelope); err != nil || envelope.Version != pausedPresenceDocumentVersion || //nolint:musttag // Versioned pause evidence has explicit JSON tags on every persisted field.
+	if err := json.Unmarshal(document, &envelope); err != nil || envelope.Version != pausedPresenceDocumentVersion ||
 		len(envelope.View) == 0 || envelope.Pause == nil {
 		return append([]byte(nil), document...), nil
 	}

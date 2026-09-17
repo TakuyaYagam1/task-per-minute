@@ -43,7 +43,7 @@ type ExecutionRecoveryPostgres struct {
 // execution recovery workflow. The concrete scheduler-backed repository stays
 // behind this consumer-owned port.
 type DeadlineRearmRepository interface {
-	RearmDeadline(context.Context, recoveryusecase.PendingDeadline) (bool, error)
+	RearmDeadline(ctx context.Context, pending recoveryusecase.PendingDeadline) (bool, error)
 }
 
 // TerminalSnapshotRepository is the narrow terminal evidence boundary needed
@@ -51,8 +51,8 @@ type DeadlineRearmRepository interface {
 // game-timeout snapshot consumed by this workflow.
 type TerminalSnapshotRepository interface {
 	LoadGameTimeoutSnapshot(
-		context.Context,
-		recoveryusecase.PendingDeadline,
+		ctx context.Context,
+		pending recoveryusecase.PendingDeadline,
 	) (terminalrepo.GameTimeoutSnapshot, error)
 }
 

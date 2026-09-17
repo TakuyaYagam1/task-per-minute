@@ -149,19 +149,7 @@ func goldenExecutionReceiptByCommand(
 	return goldenexecution.ExecutionReceiptByCommand(execution, commandID)
 }
 
-func cloneGoldenStartRecord(input *GoldenStartRecord) *GoldenStartRecord {
-	return goldenexecution.CloneStartRecord(input)
-}
-
 func waveCloneTimePointer(value *time.Time) *time.Time {
-	if value == nil {
-		return nil
-	}
-	clone := *value
-	return &clone
-}
-
-func waveCloneUUIDPointer(value *uuid.UUID) *uuid.UUID {
 	if value == nil {
 		return nil
 	}

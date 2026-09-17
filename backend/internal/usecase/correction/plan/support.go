@@ -166,10 +166,6 @@ func cloneCorrectionOfficialResultRevisionIDPointer(value *domain.OfficialResult
 	return cloneOfficialResultRevisionIDPointer(value)
 }
 
-func correctionDerivedRevisionIDPointersEqual(first, second *domain.DerivedRevisionID) bool {
-	return derivedRevisionIDPointersEqual(first, second)
-}
-
 func correctionOfficialResultRevisionIDPointersEqual(first, second *domain.OfficialResultRevisionID) bool {
 	return officialResultRevisionIDPointersEqual(first, second)
 }

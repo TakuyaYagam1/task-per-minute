@@ -4,11 +4,6 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause/model"
 )
 
-const (
-	normalPauseGraphAttempts = model.NormalPauseGraphAttempts
-	maxFrozenPauseDuration   = model.MaxFrozenPauseDuration
-)
-
 var (
 	ErrInvalidNormalPauseGraph    = model.ErrInvalidNormalPauseGraph
 	ErrNormalPauseGraphConflict   = model.ErrNormalPauseGraphConflict

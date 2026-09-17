@@ -24,7 +24,7 @@ const (
 )
 
 type waveReader interface {
-	Get(context.Context, uuid.UUID, uuid.UUID) (*wave.WaveRecord, error)
+	Get(ctx context.Context, tournamentID uuid.UUID, waveID uuid.UUID) (*wave.WaveRecord, error)
 }
 
 type ParticipantReadinessRepository struct {

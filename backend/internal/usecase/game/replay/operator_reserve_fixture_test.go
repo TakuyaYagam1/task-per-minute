@@ -14,8 +14,8 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain/taskexec"
 	assignmentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/assignment"
-	gamemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/replay/mocks"
 	replayusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/replay"
+	gamemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/replay/mocks"
 )
 
 type operatorReserveRepositoryState struct {

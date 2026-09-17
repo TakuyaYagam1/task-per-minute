@@ -1,24 +1,6 @@
 package correction
 
-import (
-	"time"
-
-	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	cutoffusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/correction/cutoff"
-	resultprojection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection/revision"
-)
-
-const (
-	maxCorrectionCutoffEvents    = 4096
-	maxCorrectionDAGProjections  = 512
-	maxCorrectionDAGDependencies = 2048
-	maxCorrectionDAGResults      = 512
-	maxCorrectionDAGPayloadBytes = 512 << 10
-	maxCorrectionAuthorityIDs    = 8192
-	maxCorrectionNoGameAttempts  = 2048
-	minCorrectionYear            = 2000
-	maxCorrectionYear            = 2200
-)
+import cutoffusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/correction/cutoff"
 
 type CutoffKind = cutoffusecase.CutoffKind
 type CutoffEvent = cutoffusecase.CutoffEvent
@@ -54,48 +36,4 @@ func Code(err error) RejectionCode {
 
 func EvaluateCutoff(input CutoffInput) (Cutoff, error) {
 	return cutoffusecase.EvaluateCutoff(input)
-}
-
-func rejectCorrection(code RejectionCode, cause error, detail string) error {
-	return cutoffusecase.Reject(code, cause, detail)
-}
-
-func preflightCorrectionDAGResults(dag resultprojection.RevisionDAG) error {
-	return cutoffusecase.PreflightDAGResults(dag)
-}
-
-func preflightCorrectionCutoff(input CutoffInput, snapshot resultprojection.RevisionDAGSnapshot) error {
-	return cutoffusecase.PreflightCutoff(input, snapshot)
-}
-
-func evaluateCorrectionCutoffPrepared(
-	input CutoffInput,
-	snapshot resultprojection.RevisionDAGSnapshot,
-) (Cutoff, error) {
-	return cutoffusecase.EvaluatePrepared(input, snapshot)
-}
-
-func validCorrectionCutoffKind(kind CutoffKind) bool {
-	switch kind {
-	case CutoffWaveStarted,
-		CutoffTaskDelivered,
-		CutoffNoShowRecorded,
-		CutoffForfeitRecorded,
-		CutoffGoldenAllocated:
-		return true
-	default:
-		return false
-	}
-}
-
-func validCorrectionTime(value time.Time) bool {
-	return validCorrectionServerTime(value) && value.Year() >= minCorrectionYear && value.Year() <= maxCorrectionYear
-}
-
-func validCorrectionServerTime(value time.Time) bool {
-	return domain.IsValidServerTime(value)
-}
-
-func canonicalCorrectionTime(value time.Time) string {
-	return value.Format(time.RFC3339Nano)
 }

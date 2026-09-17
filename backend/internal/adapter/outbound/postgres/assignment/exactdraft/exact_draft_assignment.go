@@ -40,7 +40,7 @@ type ExactDraftBranchPlanPostgres struct {
 // provide a transaction-compatible draft repository without exposing its
 // concrete adapter type.
 type DraftReader interface {
-	Get(context.Context, uuid.UUID) (*draft.DraftAggregate, error)
+	Get(ctx context.Context, draftID uuid.UUID) (*draft.DraftAggregate, error)
 }
 
 type AssignmentEdgeInput = assignmentadapter.AssignmentEdgeInput

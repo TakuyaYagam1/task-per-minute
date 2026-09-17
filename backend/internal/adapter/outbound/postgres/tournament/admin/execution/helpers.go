@@ -129,7 +129,7 @@ func encodeTournamentAdminWaveResult(record tournamentadmin.WaveCommandRecord) (
 	if record.NormalPause == nil {
 		return append([]byte(nil), record.ResultDocument...), nil
 	}
-	document, err := json.Marshal(tournamentAdminPauseDocument{ //nolint:musttag // Versioned pause evidence has explicit JSON tags on every persisted field.
+	document, err := json.Marshal(tournamentAdminPauseDocument{
 		Version: tournamentAdminPauseDocumentVersion,
 		View:    append(json.RawMessage(nil), record.ResultDocument...),
 		Pause:   record.NormalPause,
@@ -145,7 +145,7 @@ func decodeTournamentAdminWaveResult(action string, document []byte) ([]byte, *g
 		return append([]byte(nil), document...), nil
 	}
 	var envelope tournamentAdminPauseDocument
-	if err := json.Unmarshal(document, &envelope); err != nil || envelope.Version != tournamentAdminPauseDocumentVersion { //nolint:musttag // Versioned pause evidence has explicit JSON tags on every persisted field.
+	if err := json.Unmarshal(document, &envelope); err != nil || envelope.Version != tournamentAdminPauseDocumentVersion {
 		return append([]byte(nil), document...), nil
 	}
 	if len(envelope.View) == 0 || envelope.Pause == nil {

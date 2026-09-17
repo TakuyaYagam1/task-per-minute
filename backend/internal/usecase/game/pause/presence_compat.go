@@ -3,7 +3,6 @@ package pause
 import (
 	"time"
 
-	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
 	presenceusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause/presence"
 )
 
@@ -47,8 +46,4 @@ func pausedPresenceExpectation(authority PausedPresenceAuthority, command Paused
 
 func pausedPresenceRecordsEqual(first, second PausedPresenceRecord) bool {
 	return presenceusecase.PausedPresenceRecordsEqual(first, second)
-}
-
-func samePausePresenceIdentity(first, second pausedomain.PausePresence) bool {
-	return presenceusecase.SamePausePresenceIdentity(first, second)
 }

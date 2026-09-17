@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	gamemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/recovery/mocks"
 	recoveryusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/recovery"
+	gamemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/recovery/mocks"
 )
 
 func TestRecoveryRunnerReadinessRequiresCompletedInitialScan(t *testing.T) {

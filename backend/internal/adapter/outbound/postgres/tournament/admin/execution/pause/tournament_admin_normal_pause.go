@@ -39,7 +39,7 @@ func decodeTournamentAdminWaveResult(action string, document []byte) ([]byte, *g
 		return append([]byte(nil), document...), nil
 	}
 	var envelope tournamentAdminPauseDocument
-	//nolint:musttag // The versioned envelope and all nested evidence have explicit JSON tags.
+
 	if err := json.Unmarshal(document, &envelope); err != nil || envelope.Version != tournamentAdminPauseDocumentVersion ||
 		len(envelope.View) == 0 || envelope.Pause == nil {
 		// Old pause receipts remain replayable, but cannot be used as new durable

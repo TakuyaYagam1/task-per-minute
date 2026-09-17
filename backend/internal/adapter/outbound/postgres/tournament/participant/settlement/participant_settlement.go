@@ -24,8 +24,8 @@ const participantSettlementProjectionReason = "participant_submission"
 // participant settlement workflow.
 type ResultRepository interface {
 	Settle(
-		context.Context,
-		resultpostgres.ResultSettlementInput,
+		ctx context.Context,
+		input resultpostgres.ResultSettlementInput,
 	) (*resultpostgres.ResultCommitRecord, bool, error)
 }
 

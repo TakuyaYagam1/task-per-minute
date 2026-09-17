@@ -55,7 +55,3 @@ func MaterializeSemifinals(
 ) (SemifinalFlow, bool, error) {
 	return semifinalusecase.MaterializeSemifinals(existing, input)
 }
-
-func cloneSemifinalMatches(input []SemifinalMatch) []SemifinalMatch {
-	return semifinalusecase.CloneSemifinalMatches(input)
-}

@@ -5,9 +5,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
-	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause/model"
 	resumeusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause/resume"
 )
@@ -25,32 +23,16 @@ func validatePauseGraph(graph PauseGraph, paused bool) error {
 	return model.ValidatePauseGraph(graph, paused)
 }
 
-func validateNormalPauseRecord(record NormalPauseRecord) error {
-	return model.ValidateNormalPauseRecord(record)
-}
-
 func validateFrozenDeadline(value PauseFrozenDeadline, active bool) error {
 	return model.ValidateFrozenDeadline(value, active)
-}
-
-func validPauseGraphScope(scope pausedomain.GraphScope) bool {
-	return model.ValidPauseGraphScope(scope)
 }
 
 func pauseValidServerTime(value time.Time) bool {
 	return model.PauseValidServerTime(value)
 }
 
-func pauseTimeCoversGraphHistory(graph PauseGraph, at time.Time) bool {
-	return model.PauseTimeCoversGraphHistory(graph, at)
-}
-
 func clonePauseGraph(value PauseGraph) PauseGraph {
 	return model.ClonePauseGraph(value)
-}
-
-func clonePauseGraphRevisions(value PauseGraphRevisions) PauseGraphRevisions {
-	return model.ClonePauseGraphRevisions(value)
 }
 
 func clonePausePresenceSlice(value []pausedomain.PausePresence) []pausedomain.PausePresence {
@@ -71,18 +53,6 @@ func pauseCloneUUIDPointer(value *uuid.UUID) *uuid.UUID {
 
 func pauseCloneTimePointer(value *time.Time) *time.Time {
 	return model.CloneTimePointer(value)
-}
-
-func replaceSeriesGame(series *domain.Series, replacement domain.Game) bool {
-	return model.ReplaceSeriesGame(series, replacement)
-}
-
-func childRevision(values []PauseChildRevision, id uuid.UUID) (int64, bool) {
-	return model.ChildRevision(values, id)
-}
-
-func nextRevisionMatches(current, expected int64) bool {
-	return model.NextRevisionMatches(current, expected)
 }
 
 func pauseGraphRevisionsEqual(first, second PauseGraphRevisions) bool {
@@ -117,30 +87,6 @@ func validatePauseReconnect(value pausedomain.PauseReconnectInterval) error {
 	return model.ValidatePauseReconnect(value)
 }
 
-func validPauseReconnectCounter(value pausedomain.PauseReconnectCounter) bool {
-	return model.ValidPauseReconnectCounter(value)
-}
-
-func validDraftPreviousRevision(expected draftusecase.RevisionExpectation, previousRevisionID uuid.UUID) bool {
-	return model.ValidDraftPreviousRevision(expected, previousRevisionID)
-}
-
-func validPauseDraftRevisionContract(expected *draftusecase.RevisionExpectation, previousRevisionID uuid.UUID) bool {
-	return model.ValidPauseDraftRevisionContract(expected, previousRevisionID)
-}
-
-func absentDraftRevisionMatches(current *draftusecase.Execution, expected *draftusecase.RevisionExpectation, resultRevisionID uuid.UUID) bool {
-	return model.AbsentDraftRevisionMatches(current, expected, resultRevisionID)
-}
-
-func unchangedDraftRevisionMatches(current *draftusecase.Execution, expected *draftusecase.RevisionExpectation, expectedPreviousRevisionID, resultRevisionID uuid.UUID) bool {
-	return model.UnchangedDraftRevisionMatches(current, expected, expectedPreviousRevisionID, resultRevisionID)
-}
-
-func draftTransitionMatches(transition *draftusecase.TransitionEvidence, operation draftusecase.TransitionOperation, actorID uuid.UUID, reason string, occurredAt time.Time) bool {
-	return model.DraftTransitionMatches(transition, operation, actorID, reason, occurredAt)
-}
-
 func validatePauseResumeCommand(command PauseResumeCommand) error {
 	return resumeusecase.ValidatePauseResumeCommand(command)
 }
@@ -151,10 +97,6 @@ func validatePauseResumeAuthority(authority PauseResumeAuthority) error {
 
 func validatePauseResumeRecord(record PauseResumeRecord) error {
 	return resumeusecase.ValidatePauseResumeRecord(record)
-}
-
-func reconcilePauseResume(record PauseResumeRecord, command PauseResumeCommand) (*PauseResumeRecord, error) {
-	return resumeusecase.ReconcilePauseResume(record, command)
 }
 
 func buildPauseResumeRecord(authority PauseResumeAuthority, command PauseResumeCommand, resumedAt time.Time) (PauseResumeRecord, error) {
@@ -169,20 +111,12 @@ func clonePauseResumeExpectation(value PauseResumeExpectation) PauseResumeExpect
 	return resumeusecase.ClonePauseResumeExpectation(value)
 }
 
-func clonePauseResumeRecord(value PauseResumeRecord) PauseResumeRecord {
-	return resumeusecase.ClonePauseResumeRecord(value)
-}
-
 func resumeTimeCoversAuthorityHistory(authority PauseResumeAuthority, resumedAt time.Time) bool {
 	return resumeusecase.ResumeTimeCoversAuthorityHistory(authority, resumedAt)
 }
 
 func pauseGameByID(games []PauseGame, id uuid.UUID) *PauseGame {
 	return resumeusecase.PauseGameByID(games, id)
-}
-
-func pauseGraphRevisionsFrom(graph PauseGraph) PauseGraphRevisions {
-	return model.PauseGraphRevisionsFrom(graph)
 }
 
 func PauseGraphRevisionsFrom(graph PauseGraph) PauseGraphRevisions {

@@ -33,7 +33,7 @@ type TournamentAdminCorrectionPostgres struct {
 // the admin correction workflow. The result correction adapter remains behind
 // this capability port so the workflow does not store its concrete type.
 type CorrectionRepository interface {
-	RebuildLocked(context.Context, CorrectionInput) (*resultcorrectionrepo.CorrectionRecord, error)
+	RebuildLocked(ctx context.Context, input CorrectionInput) (*resultcorrectionrepo.CorrectionRecord, error)
 }
 
 var _ CorrectionRepository = (*CorrectionPostgres)(nil)

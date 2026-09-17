@@ -410,7 +410,6 @@ func IDsCanonical(values []uuid.UUID) bool {
 		}
 	}
 	return true
-
 }
 
 func ValidIdentitySet(values []uuid.UUID) bool {

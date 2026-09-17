@@ -64,22 +64,22 @@ type PauseGraphView = snapshot.PauseGraphView
 type OperatorSnapshotView = snapshot.OperatorSnapshotView
 
 type AdminService interface {
-	GetRoster(context.Context, RosterQuery) (RosterView, error)
-	ReplaceRoster(context.Context, ReplaceRosterCommand) (RosterView, error)
-	RunPreflight(context.Context, PreflightCommand) (preflight.ReportRevision, error)
-	LockRoster(context.Context, LockRosterCommand) (RosterView, error)
-	UnlockRoster(context.Context, UnlockRosterCommand) (RosterView, error)
-	ConfigurePairings(context.Context, PairingCommand) (SwissRoundView, error)
-	ApplyTournamentAction(context.Context, TournamentActionCommand) (contract.TournamentView, error)
-	ControlWave(context.Context, WaveCommand) (WaveView, error)
-	ResolveNoShow(context.Context, NoShowCommand) error
-	AssignReserve(context.Context, ReserveCommand) error
-	RecordForfeit(context.Context, ForfeitCommand) error
-	ReplayGame(context.Context, ReplayCommand) error
-	CorrectGameResult(context.Context, CorrectionCommand) (CorrectionEvidence, error)
-	ListAudit(context.Context, AuditQuery) (audit.AuditPage, error)
-	ExportIncident(context.Context, IncidentQuery) (audit.IncidentBundle, error)
-	GetOperatorSnapshot(context.Context, SnapshotQuery) (OperatorSnapshotView, error)
+	GetRoster(ctx context.Context, query RosterQuery) (RosterView, error)
+	ReplaceRoster(ctx context.Context, command ReplaceRosterCommand) (RosterView, error)
+	RunPreflight(ctx context.Context, command PreflightCommand) (preflight.ReportRevision, error)
+	LockRoster(ctx context.Context, command LockRosterCommand) (RosterView, error)
+	UnlockRoster(ctx context.Context, command UnlockRosterCommand) (RosterView, error)
+	ConfigurePairings(ctx context.Context, command PairingCommand) (SwissRoundView, error)
+	ApplyTournamentAction(ctx context.Context, command TournamentActionCommand) (contract.TournamentView, error)
+	ControlWave(ctx context.Context, command WaveCommand) (WaveView, error)
+	ResolveNoShow(ctx context.Context, command NoShowCommand) error
+	AssignReserve(ctx context.Context, command ReserveCommand) error
+	RecordForfeit(ctx context.Context, command ForfeitCommand) error
+	ReplayGame(ctx context.Context, command ReplayCommand) error
+	CorrectGameResult(ctx context.Context, command CorrectionCommand) (CorrectionEvidence, error)
+	ListAudit(ctx context.Context, query AuditQuery) (audit.AuditPage, error)
+	ExportIncident(ctx context.Context, query IncidentQuery) (audit.IncidentBundle, error)
+	GetOperatorSnapshot(ctx context.Context, query SnapshotQuery) (OperatorSnapshotView, error)
 }
 
 type Service = AdminService

@@ -22,8 +22,8 @@ func executionEncode(value any) ([]byte, error) {
 	return buffer.Bytes(), nil
 }
 
-func executionError(format string, arguments ...any) error {
-	return fmt.Errorf("%w: %s", ErrInvalidGoldenWaveExecution, fmt.Sprintf(format, arguments...))
+func executionError(message string) error {
+	return fmt.Errorf("%w: %s", ErrInvalidGoldenWaveExecution, message)
 }
 
 func executionValidStateScope(scope goldenstate.GoldenStateScope) bool {
@@ -132,14 +132,6 @@ func CloneExecutionExpectation(input GoldenWaveExecutionExpectation) GoldenWaveE
 	clone := input
 	clone.Source = goldenstate.CloneExpectation(input.Source)
 	return clone
-}
-
-func cloneExecutionExpectation(input *GoldenWaveExecutionExpectation) *GoldenWaveExecutionExpectation {
-	if input == nil {
-		return nil
-	}
-	clone := CloneExecutionExpectation(*input)
-	return &clone
 }
 
 func cloneWaveReceipts(input []GoldenWaveCommandReceipt) []GoldenWaveCommandReceipt {

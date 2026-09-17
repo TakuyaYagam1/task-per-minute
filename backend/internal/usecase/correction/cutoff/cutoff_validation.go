@@ -127,7 +127,3 @@ func validCorrectionCutoffKind(kind CutoffKind) bool {
 func validCorrectionTime(value time.Time) bool {
 	return validCorrectionServerTime(value) && value.Year() >= minCorrectionYear && value.Year() <= maxCorrectionYear
 }
-
-func canonicalCorrectionTime(value time.Time) string {
-	return value.Format(time.RFC3339Nano)
-}
