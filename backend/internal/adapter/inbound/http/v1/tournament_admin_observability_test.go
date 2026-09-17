@@ -20,6 +20,7 @@ import (
 	authusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/auth"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
 	tournamentadminmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/mocks"
+	tournamentadminobserved "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/observed"
 	tournamentpreflight "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/preflight"
 )
 
@@ -53,7 +54,7 @@ func TestRosterPreflightIngressCommandIDCorrelatesTerminalTelemetry(t *testing.T
 			event.EntityKind == "http_request" && event.Stage == "operator_mutation" &&
 			event.Transition == "post" && event.ReasonCode == "status_409"
 	})).Once()
-	admin := tournamentadmin.AdminNewObservedService(next, nil, telemetryadapter.NewTournamentAdminObserver(events))
+	admin := tournamentadminobserved.NewObservedService(next, nil, telemetryadapter.NewTournamentAdminObserver(events))
 
 	verifier := middlewaremocks.NewMockAdminAccessVerifier(t)
 	verifier.EXPECT().VerifyAccess(mock.Anything, accessToken).Return(&authusecase.Claims{

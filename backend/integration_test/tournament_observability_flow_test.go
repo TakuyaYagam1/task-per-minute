@@ -40,6 +40,7 @@ import (
 	eventdeliverymocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/eventdelivery/mocks"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	tournamentadminobserved "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/observed"
 )
 
 func TestTournamentObservabilityFlowSurvivesApplicationRestart(t *testing.T) {
@@ -188,7 +189,7 @@ func newTournamentFlowHandler(
 		),
 		Postseason: postseason,
 	})
-	admin := tournamentadmin.AdminNewObservedService(
+	admin := tournamentadminobserved.NewObservedService(
 		tournamentadmin.AdminNewUseCase(tournamentadmin.AdminDependencies{Forfeit: results}),
 		nil,
 		telemetryadapter.NewTournamentAdminObserver(observer),

@@ -246,8 +246,8 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 		return nil, nil, err
 	}
 	tournamentAdminObserver := provideTournamentAdminObserver(bootstrapEventTelemetry)
-	adminObservedService := provideObservedTournamentAdminApplication(adminIdempotentService, bootstrapClockFunc, tournamentAdminObserver)
-	tournamentAdminUseCase := provideTournamentAdminInbound(adminObservedService)
+	observedService := provideObservedTournamentAdminApplication(adminIdempotentService, bootstrapClockFunc, tournamentAdminObserver)
+	tournamentAdminUseCase := provideTournamentAdminInbound(observedService)
 	tournamentConfigurationPostgres := configuration.NewProductionTournamentConfigurationPostgres(txManager)
 	tournamentConfigurationWorkflow := configuration2.NewTournamentConfigurationWorkflow(tournamentConfigurationPostgres)
 	tournamentSnapshotPostgres := snapshot2.NewTournamentSnapshotPostgres(txManager)

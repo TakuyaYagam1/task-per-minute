@@ -44,6 +44,7 @@ import (
 	tournamentadminexecution "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/execution"
 	tournamentadminlifecycle "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/lifecycle"
 	tournamentadminobservability "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/observability"
+	tournamentadminobserved "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/observed"
 	tournamentadminreplay "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/replay"
 	tournamentadminresult "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/result"
 	tournamentadminroster "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/roster"
@@ -479,8 +480,8 @@ func provideObservedTournamentAdminApplication(
 	application *tournamentadmin.AdminIdempotentService,
 	clock tournamentadminobservability.OperationClock,
 	observer *telemetryadapter.TournamentAdminObserver,
-) *tournamentadmin.AdminObservedService {
-	return tournamentadmin.AdminNewObservedService(application, clock, observer)
+) *tournamentadminobserved.ObservedService {
+	return tournamentadminobserved.NewObservedService(application, clock, observer)
 }
 
 func provideTournamentAdminInbound(service tournamentadmin.AdminService) inbound.TournamentAdminUseCase {

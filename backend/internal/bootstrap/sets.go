@@ -72,6 +72,7 @@ import (
 	tournamentadminexecution "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/execution"
 	tournamentadminlifecycle "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/lifecycle"
 	tournamentadminobservability "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/observability"
+	tournamentadminobserved "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/observed"
 	tournamentadminreplay "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/replay"
 	tournamentadminresult "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/result"
 	tournamentadminroster "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/roster"
@@ -324,7 +325,7 @@ var UseCasesSet = wire.NewSet(
 	provideTournamentAdminApplication,
 	provideIdempotentTournamentAdminApplication,
 	provideObservedTournamentAdminApplication,
-	wire.Bind(new(tournamentadmin.AdminService), new(*tournamentadmin.AdminObservedService)),
+	wire.Bind(new(tournamentadmin.AdminService), new(*tournamentadminobserved.ObservedService)),
 	provideTournamentAdminInbound,
 	provideParticipantReadiness,
 	wire.Bind(new(tournamentparticipant.ReadinessWorkflow), new(*readiness.ReadinessUseCase)),
