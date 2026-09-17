@@ -13,7 +13,6 @@ import (
 	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
 	correctionusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/correction"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
 	pauseusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause"
 	gamestart "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/start"
 	swissusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/swiss"
@@ -266,46 +265,4 @@ func (e *ManualByeMismatchError) Unwrap() []error {
 			CurrentState:     e.CurrentState,
 		},
 	}
-}
-
-type OperatorReserveAuthority struct {
-	TournamentState domain.TournamentState
-	Replay          gameusecase.OperatorReserveAuthority
-}
-
-type ReplayReplacementAuthority struct {
-	TournamentState domain.TournamentState
-	Replay          gameusecase.ReplayReplacementAuthority
-}
-
-// ReplayWorkflowRepository keeps each admin command on the transaction opened
-// by ReplayWorkflow. The command argument carries candidate and idempotency
-// evidence that the narrower replay use cases intentionally do not own.
-type ReplayWorkflowRepository interface {
-	ReadReplayTime(ctx context.Context, commandID uuid.UUID) (time.Time, error)
-	LoadOperatorReserveAuthority(
-		ctx context.Context,
-		command ReserveCommand,
-	) (OperatorReserveAuthority, error)
-	CommitOperatorReserve(
-		ctx context.Context,
-		command ReserveCommand,
-		requestDigest [32]byte,
-		record gameusecase.OperatorReserve,
-	) (*gameusecase.OperatorReserve, bool, error)
-	LoadReplayReplacementAuthority(
-		ctx context.Context,
-		command ReplayCommand,
-	) (ReplayReplacementAuthority, error)
-	CommitReplayReplacement(
-		ctx context.Context,
-		command ReplayCommand,
-		requestDigest [32]byte,
-		record gameusecase.ReplayReplacement,
-	) (*gameusecase.ReplayReplacement, bool, error)
-}
-
-type ReplayWorkflowDependencies struct {
-	Transactions ExecutionTransactionManager
-	Repository   ReplayWorkflowRepository
 }

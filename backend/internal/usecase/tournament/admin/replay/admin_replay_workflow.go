@@ -1,4 +1,4 @@
-package admin
+package replay
 
 import (
 	"context"
@@ -17,7 +17,7 @@ import (
 )
 
 type ReplayWorkflow struct {
-	transactions ExecutionTransactionManager
+	transactions ReplayTransactionManager
 	repository   ReplayWorkflowRepository
 }
 
