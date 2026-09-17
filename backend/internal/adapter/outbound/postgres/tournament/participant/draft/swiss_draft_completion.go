@@ -69,14 +69,14 @@ func (r *ParticipantDraftRepository) completeSwissDraft(ctx context.Context, exe
 }
 
 func (r *ParticipantDraftRepository) activateSwissDraftBranch(ctx context.Context, scope sqlc.LockSwissDraftCompletionRow, execution draftusecase.Execution) (assignmentusecase.ExactNormalAssignmentPlan, error) {
-	if r == nil || r.exactDrafts == nil {
+	if r == nil || r.drafts == nil {
 		return assignmentusecase.ExactNormalAssignmentPlan{}, domain.ErrInternal
 	}
 	ids, err := swissDraftIdentity(scope.SeriesID)
 	if err != nil || ids.DraftID != execution.ID || ids.CategoryRevisionID != scope.CategoryRevisionID {
 		return assignmentusecase.ExactNormalAssignmentPlan{}, domain.ErrConflict
 	}
-	repository := exactdraftrepo.NewExactDraftBranchPlanPostgres(r.tx, r.exactDrafts)
+	repository := exactdraftrepo.NewExactDraftBranchPlanPostgres(r.tx, r.drafts)
 	plan, _, err := assignmentusecase.NewExactDraftBranchPlanUseCase(repository).ActivateCompletedBranch(ctx,
 		assignmentusecase.ExactDraftBranchActivationCommand{
 			PlanID: ids.DraftAssignmentPlanID, DraftID: execution.ID,

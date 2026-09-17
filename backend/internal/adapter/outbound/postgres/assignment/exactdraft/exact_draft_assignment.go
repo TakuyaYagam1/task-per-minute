@@ -32,7 +32,15 @@ import (
 // its immutable source authority.
 type ExactDraftBranchPlanPostgres struct {
 	tx     *db.TxManager
-	drafts *draft.DraftPostgres
+	drafts DraftReader
+}
+
+// DraftReader is the narrow draft boundary required by exact-draft branch
+// activation. Keeping the dependency at the read-model boundary lets callers
+// provide a transaction-compatible draft repository without exposing its
+// concrete adapter type.
+type DraftReader interface {
+	Get(context.Context, uuid.UUID) (*draft.DraftAggregate, error)
 }
 
 type AssignmentEdgeInput = assignmentadapter.AssignmentEdgeInput
@@ -43,10 +51,11 @@ type DraftPersistenceState = draft.DraftPersistenceState
 
 var _ assignmentusecase.ExactDraftBranchPlanRepository = (*ExactDraftBranchPlanPostgres)(nil)
 var _ playoff.ExactDraftPlanAuthorityReader = (*ExactDraftBranchPlanPostgres)(nil)
+var _ DraftReader = (*draft.DraftPostgres)(nil)
 
 func NewExactDraftBranchPlanPostgres(
 	tx *db.TxManager,
-	drafts *draft.DraftPostgres,
+	drafts DraftReader,
 ) *ExactDraftBranchPlanPostgres {
 	return &ExactDraftBranchPlanPostgres{tx: tx, drafts: drafts}
 }

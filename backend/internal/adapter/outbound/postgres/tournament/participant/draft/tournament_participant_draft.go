@@ -47,12 +47,15 @@ var _ DraftRepository = (*draftrepo.DraftPostgres)(nil)
 type ParticipantDraftRepository struct {
 	tx            *db.TxManager
 	drafts        DraftRepository
-	exactDrafts   *draftrepo.DraftPostgres
 	contentLoader ContentLoader
 }
 
 func NewParticipantDraftRepository(tx *db.TxManager, drafts *draftrepo.DraftPostgres) *ParticipantDraftRepository {
-	return NewParticipantDraftRepositoryWithRepository(tx, drafts, nil)
+	var repository DraftRepository
+	if drafts != nil {
+		repository = drafts
+	}
+	return NewParticipantDraftRepositoryWithRepository(tx, repository, nil)
 }
 
 func NewParticipantDraftRepositoryWithDependencies(
@@ -60,7 +63,11 @@ func NewParticipantDraftRepositoryWithDependencies(
 	drafts *draftrepo.DraftPostgres,
 	contentLoader ContentLoader,
 ) *ParticipantDraftRepository {
-	return NewParticipantDraftRepositoryWithRepository(tx, drafts, contentLoader)
+	var repository DraftRepository
+	if drafts != nil {
+		repository = drafts
+	}
+	return NewParticipantDraftRepositoryWithRepository(tx, repository, contentLoader)
 }
 
 func NewParticipantDraftRepositoryWithRepository(
@@ -68,11 +75,7 @@ func NewParticipantDraftRepositoryWithRepository(
 	drafts DraftRepository,
 	contentLoader ContentLoader,
 ) *ParticipantDraftRepository {
-	var exactDrafts *draftrepo.DraftPostgres
-	if concrete, ok := drafts.(*draftrepo.DraftPostgres); ok {
-		exactDrafts = concrete
-	}
-	return &ParticipantDraftRepository{tx: tx, drafts: drafts, exactDrafts: exactDrafts, contentLoader: contentLoader}
+	return &ParticipantDraftRepository{tx: tx, drafts: drafts, contentLoader: contentLoader}
 }
 
 func (r *ParticipantDraftRepository) LoadDraft(
