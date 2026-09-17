@@ -1,20 +1,41 @@
 //go:build integration
 
-package integration_test
+package swiss
 
 import (
 	"bytes"
 	"context"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/integration_test/internal/testkit/swissseed"
+	"github.com/TakuyaYagam1/task-per-minute/integration_test/internal/testkit/tournamentseed"
 )
 
-func TestSwissMigration(t *testing.T) {
+var (
+	sharedPool   *pgxpool.Pool
+	sharedPoolMu sync.Mutex
+)
+
+// RunSwissMigration runs the moved Swiss migration assertions against the
+// caller-owned integration pool. The temporary pool binding keeps the
+// existing assertion helpers small while serializing callers in one process.
+func RunSwissMigration(t *testing.T, pool *pgxpool.Pool) {
+	t.Helper()
+	require.NotNil(t, pool)
+	sharedPoolMu.Lock()
+	previousPool := sharedPool
+	sharedPool = pool
+	t.Cleanup(func() {
+		sharedPool = previousPool
+		sharedPoolMu.Unlock()
+	})
+
 	ctx := context.Background()
 	resetMigrationTables(ctx, t)
 	t.Cleanup(func() { resetMigrationTables(ctx, t) })
@@ -373,4 +394,33 @@ func assertSwissForeignRosterConstraints(
 		)`, roundID, rosterID, foreignParticipantID, uuid.New(),
 		bytes.Repeat([]byte{5}, 32), bytes.Repeat([]byte{6}, 32), createdAt)
 	require.Error(tb, err)
+}
+
+func resetMigrationTables(ctx context.Context, tb testing.TB) {
+	tb.Helper()
+	_, err := sharedPool.Exec(ctx, `
+		TRUNCATE TABLE participant_reservations, tournaments CASCADE`)
+	require.NoError(tb, err)
+}
+
+func createMigrationTournament(ctx context.Context, tb testing.TB) uuid.UUID {
+	tb.Helper()
+	id, err := tournamentseed.CreateTournament(ctx, sharedPool)
+	require.NoError(tb, err)
+	return id
+}
+
+func createMigrationRoster(ctx context.Context, tb testing.TB, tournamentID uuid.UUID) uuid.UUID {
+	tb.Helper()
+	seed, err := tournamentseed.CreateRoster(ctx, sharedPool, tournamentID)
+	require.NoError(tb, err)
+	require.EqualValues(tb, 1, seed.Revision)
+	return seed.ID
+}
+
+func createMigrationPlayers(ctx context.Context, tb testing.TB, count int) []uuid.UUID {
+	tb.Helper()
+	ids, err := tournamentseed.CreatePlayers(ctx, sharedPool, "swiss_migration", count)
+	require.NoError(tb, err)
+	return ids
 }
