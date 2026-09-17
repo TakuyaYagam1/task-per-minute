@@ -42,34 +42,9 @@ func openMigrationReadyWindow(
 ) (uuid.UUID, uuid.UUID) {
 	tb.Helper()
 
-	tx, err := sharedPool.Begin(ctx)
+	seed, err := waveseed.OpenReadyWindow(ctx, sharedPool, waveID, rosterID, openedAt, deadline)
 	require.NoError(tb, err)
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	windowID := uuid.New()
-	revisionID := uuid.New()
-	_, err = tx.Exec(ctx, `
-		INSERT INTO ready_windows (
-			id, wave_id, roster_id, revision_id,
-			opened_at, deadline, created_at
-		)
-		VALUES ($1, $2, $3, $4, $5, $6, $5)`,
-		windowID, waveID, rosterID, revisionID, openedAt, deadline)
-	require.NoError(tb, err)
-
-	_, err = tx.Exec(ctx, `
-		UPDATE wave_readiness
-		SET ready_window_id = $2, revision = revision + 1, updated_at = $3
-		WHERE wave_id = $1 AND ready_window_id IS NULL`, waveID, windowID, openedAt)
-	require.NoError(tb, err)
-
-	_, err = tx.Exec(ctx, `
-		UPDATE waves
-		SET state = 'ready_window_open', revision = revision + 1, updated_at = $2
-		WHERE id = $1`, waveID, openedAt)
-	require.NoError(tb, err)
-	require.NoError(tb, tx.Commit(ctx))
-	return windowID, revisionID
+	return seed.WindowID, seed.RevisionID
 }
 
 func markMigrationReady(
@@ -81,21 +56,17 @@ func markMigrationReady(
 	readyAt time.Time,
 ) {
 	tb.Helper()
-	result, err := sharedPool.Exec(ctx, `
-		UPDATE wave_readiness
-		SET ready = true,
-			ready_at = $5,
-			revision = revision + 1,
-			updated_at = $5
-		WHERE ready_window_id = $1
-			AND wave_id = $2
-			AND roster_id = $3
-			AND participant_id = $4
-			AND revision = 2
-			AND NOT ready`,
-		windowID, waveID, rosterID, participantID, readyAt)
+	rows, err := waveseed.MarkReady(
+		ctx,
+		sharedPool,
+		windowID,
+		waveID,
+		rosterID,
+		participantID,
+		readyAt,
+	)
 	require.NoError(tb, err)
-	require.EqualValues(tb, 1, result.RowsAffected())
+	require.EqualValues(tb, 1, rows)
 }
 
 func assertOneConcurrentWaveStart(
