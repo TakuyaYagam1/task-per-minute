@@ -1,4 +1,4 @@
-package golden_test
+package runtime_test
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
+	goldenruntime "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/runtime"
 )
 
 func TestRuntimeApplicationRoutesGoldenLifecycleAndRecovery(t *testing.T) {
@@ -17,7 +17,7 @@ func TestRuntimeApplicationRoutesGoldenLifecycleAndRecovery(t *testing.T) {
 
 	now := time.Date(2026, time.September, 11, 12, 0, 0, 0, time.UTC)
 	repository := &runtimeRepositoryStub{view: goldenRuntimeView(now)}
-	application := goldenusecase.NewRuntimeApplication(repository, runtimeClock{now: now})
+	application := goldenruntime.NewRuntimeApplication(repository, runtimeClock{now: now})
 	operatorID := uuid.New()
 	playerID := uuid.New()
 	attemptID := repository.view.Groups[0].AttemptID
