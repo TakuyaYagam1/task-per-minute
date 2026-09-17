@@ -13,6 +13,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/idempotency"
 	idempotencymocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/idempotency/mocks"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	idempotentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/idempotent"
 	tournamentadminmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/mocks"
 )
 
@@ -24,7 +25,7 @@ func TestIdempotentServiceRejectsInFlightAdminCommandBeforeDispatch(t *testing.T
 	store.EXPECT().Begin(mock.Anything, mock.Anything, mock.Anything).
 		Return(idempotency.BeginResult{Disposition: idempotency.BeginInFlight}, nil).Once()
 	next := tournamentadminmocks.NewMockAdminService(t)
-	service, err := tournamentadmin.AdminNewIdempotentService(
+	service, err := idempotentusecase.NewIdempotentService(
 		next, inboundmocks.NewMockTournamentUseCase(t), idempotency.NewCoordinator(store),
 	)
 	require.NoError(t, err)
@@ -44,7 +45,7 @@ func TestIdempotentServiceReplaysCompletedAdminCommandThroughNextService(t *test
 		Return(idempotency.BeginResult{Disposition: idempotency.BeginSucceeded}, nil).Once()
 	next := tournamentadminmocks.NewMockAdminService(t)
 	next.EXPECT().ReplaceRoster(mock.Anything, command).Return(view, nil).Once()
-	service, err := tournamentadmin.AdminNewIdempotentService(
+	service, err := idempotentusecase.NewIdempotentService(
 		next, inboundmocks.NewMockTournamentUseCase(t), idempotency.NewCoordinator(store),
 	)
 	require.NoError(t, err)
