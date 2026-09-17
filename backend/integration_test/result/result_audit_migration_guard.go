@@ -1,6 +1,6 @@
 //go:build integration
 
-package integration_test
+package result
 
 import (
 	"context"
@@ -18,20 +18,20 @@ func assertResultEvidenceIsImmutable(
 ) {
 	tb.Helper()
 
-	_, err := sharedPool.Exec(ctx, `
+	_, err := migrationPool.Exec(ctx, `
 		UPDATE official_result_revisions
 		SET result_reason = 'operator_forfeit'
 		WHERE id = $1`, commit.gameResultRevisionID)
 	require.Error(tb, err)
-	_, err = sharedPool.Exec(ctx, `
+	_, err = migrationPool.Exec(ctx, `
 		DELETE FROM result_events WHERE id = $1`, commit.resultEventID)
 	require.Error(tb, err)
-	_, err = sharedPool.Exec(ctx, `
+	_, err = migrationPool.Exec(ctx, `
 		UPDATE audit_events
 		SET payload = '{"reason":"changed"}'::JSONB
 		WHERE id = $1`, commit.auditEventID)
 	require.Error(tb, err)
-	_, err = sharedPool.Exec(
+	_, err = migrationPool.Exec(
 		ctx, `
 		INSERT INTO official_result_heads (
 			entity_kind, entity_id, series_id, roster_id,
@@ -53,7 +53,7 @@ func assertResultEventCannotCommitPartially(
 ) {
 	tb.Helper()
 
-	tx, err := sharedPool.Begin(ctx)
+	tx, err := migrationPool.Begin(ctx)
 	require.NoError(tb, err)
 	var serverSequence int64
 	err = tx.QueryRow(ctx, `
@@ -93,7 +93,7 @@ func assertAuditRejectsNestedFlag(
 	tb.Helper()
 
 	resultEventID := uuid.New()
-	tx, err := sharedPool.Begin(ctx)
+	tx, err := migrationPool.Begin(ctx)
 	require.NoError(tb, err)
 	defer func() { _ = tx.Rollback(ctx) }()
 	var serverSequence int64
@@ -155,7 +155,7 @@ func assertOutboxRetainsPublishedEvidence(
 	publishedAt := commit.settledAt.Add(time.Second)
 	workerID := uuid.New()
 	claimToken := uuid.New()
-	_, err := sharedPool.Exec(ctx, `
+	_, err := migrationPool.Exec(ctx, `
 		UPDATE outbox_events
 		SET claimed_by = $2,
 			claim_token = $3,
@@ -163,7 +163,7 @@ func assertOutboxRetainsPublishedEvidence(
 			attempt_count = attempt_count + 1
 		WHERE id = $1`, commit.outboxEventID, workerID, claimToken, publishedAt.Add(time.Minute))
 	require.NoError(tb, err)
-	_, err = sharedPool.Exec(ctx, `
+	_, err = migrationPool.Exec(ctx, `
 		UPDATE outbox_events
 		SET published_at = $2,
 			claimed_by = NULL,
@@ -171,12 +171,12 @@ func assertOutboxRetainsPublishedEvidence(
 			claimed_until = NULL
 		WHERE id = $1`, commit.outboxEventID, publishedAt)
 	require.NoError(tb, err)
-	_, err = sharedPool.Exec(ctx, `
+	_, err = migrationPool.Exec(ctx, `
 		UPDATE outbox_events
 		SET payload = '{"changed":true}'::JSONB
 		WHERE id = $1`, commit.outboxEventID)
 	require.Error(tb, err)
-	_, err = sharedPool.Exec(ctx, `
+	_, err = migrationPool.Exec(ctx, `
 		DELETE FROM outbox_events WHERE id = $1`, commit.outboxEventID)
 	require.Error(tb, err)
 }

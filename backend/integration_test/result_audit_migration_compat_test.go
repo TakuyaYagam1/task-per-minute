@@ -9,148 +9,34 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
 	resultaudit "github.com/TakuyaYagam1/task-per-minute/integration_test/internal/testkit/resultaudit"
+	resultintegration "github.com/TakuyaYagam1/task-per-minute/integration_test/result"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
-func beginResultAuditLockProbe(ctx context.Context, tb testing.TB) pgx.Tx {
-	tb.Helper()
-
-	tx, err := resultaudit.BeginLockProbe(ctx, sharedPool)
-	require.NoError(tb, err)
-	return tx
+type resultAuditMigrationFixture struct {
+	draft                  draftMigrationFixture
+	attemptID              uuid.UUID
+	assignmentID           uuid.UUID
+	initialScoreRevisionID uuid.UUID
+	lockedAt               time.Time
 }
 
-func assertResultParticipantIntegrity(
-	ctx context.Context, tb testing.TB,
-	fixture resultAuditMigrationFixture,
-	submissionID uuid.UUID,
-) {
-	tb.Helper()
+type resultAuditCommit struct {
+	resultEventID          uuid.UUID
+	gameResultRevisionID   uuid.UUID
+	seriesResultRevisionID uuid.UUID
+	scoreRevisionID        uuid.UUID
+	auditEventID           uuid.UUID
+	outboxEventID          uuid.UUID
+	projectionEvidenceID   uuid.UUID
+	settledAt              time.Time
+}
 
-	playerIDs := createMigrationPlayers(ctx, tb, 1)
-	var outsideParticipantID uuid.UUID
-	err := sharedPool.QueryRow(ctx, `
-		INSERT INTO participants (roster_id, player_id, seed, attendance)
-		SELECT $1, $2, COALESCE(MAX(seed), 0) + 1, 'checked_in'
-		FROM participants
-		WHERE roster_id = $1
-		RETURNING id`, fixture.draft.rosterID, playerIDs[0]).Scan(&outsideParticipantID)
-	require.NoError(tb, err)
-
-	createdAt := fixture.lockedAt.Add(2 * time.Second)
-	probeTx, err := sharedPool.Begin(ctx)
-	require.NoError(tb, err)
-	var eventSequence int64
-	err = probeTx.QueryRow(ctx, `
-		UPDATE game_attempts
-		SET submission_event_sequence = submission_event_sequence + 1
-		WHERE id = $1
-		RETURNING submission_event_sequence`, fixture.attemptID).Scan(&eventSequence)
-	require.NoError(tb, err)
-	_, err = probeTx.Exec(
-		ctx, `
-		INSERT INTO submission_events (
-			tournament_id, roster_id, series_id, attempt_id, assignment_id,
-			participant_id, server_sequence, idempotency_key, status,
-			payload_digest, submitted_at, received_at, created_at
-		)
-		VALUES (
-			$1, $2, $3, $4, $5,
-			$6, $7, $8, 'accepted',
-			$9, $10, $10, $10
-		)`,
-		fixture.draft.tournamentID,
-		fixture.draft.rosterID,
-		fixture.draft.seriesID,
-		fixture.attemptID,
-		fixture.assignmentID,
-		outsideParticipantID,
-		eventSequence,
-		uuid.New(),
-		bytes.Repeat([]byte{23}, 32),
-		createdAt,
-	)
-	require.ErrorContains(tb, err, "submission participant is outside the Series")
-	require.NoError(tb, probeTx.Rollback(ctx))
-
-	probeTx, err = sharedPool.Begin(ctx)
-	require.NoError(tb, err)
-	err = probeTx.QueryRow(ctx, `
-		UPDATE game_attempts
-		SET result_event_sequence = result_event_sequence + 1
-		WHERE id = $1
-		RETURNING result_event_sequence`, fixture.attemptID).Scan(&eventSequence)
-	require.NoError(tb, err)
-	_, err = probeTx.Exec(
-		ctx, `
-		INSERT INTO result_events (
-			tournament_id, roster_id, series_id, attempt_id,
-			server_sequence, idempotency_key, result_state,
-			result_reason, winner_id, occurred_at, created_at
-		)
-		VALUES (
-			$1, $2, $3, $4,
-			$5, $6, 'completed',
-			'operator_forfeit', $7, $8, $8
-		)`,
-		fixture.draft.tournamentID,
-		fixture.draft.rosterID,
-		fixture.draft.seriesID,
-		fixture.attemptID,
-		eventSequence,
-		uuid.New(),
-		outsideParticipantID,
-		createdAt,
-	)
-	require.ErrorContains(tb, err, "result winner is outside the Series")
-	require.NoError(tb, probeTx.Rollback(ctx))
-
-	probeTx, err = sharedPool.Begin(ctx)
-	require.NoError(tb, err)
-	err = probeTx.QueryRow(ctx, `
-		UPDATE game_attempts
-		SET result_event_sequence = result_event_sequence + 1
-		WHERE id = $1
-		RETURNING result_event_sequence`, fixture.attemptID).Scan(&eventSequence)
-	require.NoError(tb, err)
-	_, err = probeTx.Exec(
-		ctx, `
-		INSERT INTO result_events (
-			tournament_id, roster_id, series_id, attempt_id,
-			submission_event_id, server_sequence, idempotency_key,
-			result_state, result_reason, winner_id, occurred_at, created_at
-		)
-		VALUES (
-			$1, $2, $3, $4,
-			$5, $6, $7,
-			'completed', 'solved', $8, $9, $9
-		)`,
-		fixture.draft.tournamentID,
-		fixture.draft.rosterID,
-		fixture.draft.seriesID,
-		fixture.attemptID,
-		submissionID,
-		eventSequence,
-		uuid.New(),
-		fixture.draft.participantIDs[1],
-		createdAt,
-	)
-	require.ErrorContains(
-		tb,
-		err,
-		"solved result winner must match the submission participant",
-	)
-	require.NoError(tb, probeTx.Rollback(ctx))
-
-	_, err = sharedPool.Exec(ctx, `
-		UPDATE series
-		SET first_participant_id = $2
-		WHERE id = $1`, fixture.draft.seriesID, outsideParticipantID)
-	require.ErrorContains(tb, err, "Series result identity is immutable")
+func TestResultAuditMigration(t *testing.T) {
+	resultintegration.RunResultAuditMigration(t, sharedPool)
 }
 
 func createResultAuditMigrationFixture(
@@ -413,15 +299,4 @@ func createAtomicResultCommit(
 	commit, err := createResultCommit(ctx, tb, fixture, submissionID, true)
 	require.NoError(tb, err)
 	return commit
-}
-
-func assertResultCommitRequiresCurrentHeads(
-	ctx context.Context, tb testing.TB,
-	fixture resultAuditMigrationFixture,
-	submissionID uuid.UUID,
-) {
-	tb.Helper()
-
-	_, err := createResultCommit(ctx, tb, fixture, submissionID, false)
-	require.ErrorContains(tb, err, "result commit revisions must be current heads")
 }

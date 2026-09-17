@@ -1,6 +1,6 @@
 //go:build integration
 
-package integration_test
+package result
 
 import (
 	"bytes"
@@ -31,7 +31,7 @@ type resultAuditCommit struct {
 	settledAt              time.Time
 }
 
-func TestResultAuditMigration(t *testing.T) {
+func runResultAuditMigration(t *testing.T) {
 	ctx := context.Background()
 	resetMigrationTables(ctx, t)
 	t.Cleanup(func() { resetMigrationTables(ctx, t) })
@@ -41,7 +41,7 @@ func TestResultAuditMigration(t *testing.T) {
 	assertResultParticipantIntegrity(ctx, t, fixture, submissionID)
 	assertResultCommitRequiresCurrentHeads(ctx, t, fixture, submissionID)
 
-	_, err := sharedPool.Exec(
+	_, err := migrationPool.Exec(
 		ctx, `
 		INSERT INTO submission_events (
 			tournament_id, roster_id, series_id, attempt_id, assignment_id,
@@ -65,7 +65,7 @@ func TestResultAuditMigration(t *testing.T) {
 	)
 	require.Error(t, err)
 
-	_, err = sharedPool.Exec(
+	_, err = migrationPool.Exec(
 		ctx, `
 		INSERT INTO submission_events (
 			tournament_id, roster_id, series_id, attempt_id, assignment_id,
@@ -97,7 +97,7 @@ func TestResultAuditMigration(t *testing.T) {
 		scoreHeadCount  int
 		commitCount     int
 	)
-	err = sharedPool.QueryRow(
+	err = migrationPool.QueryRow(
 		ctx, `
 		SELECT
 			COUNT(*) FILTER (WHERE entity_kind = 'game_attempt'),
@@ -111,7 +111,7 @@ func TestResultAuditMigration(t *testing.T) {
 	require.Equal(t, 1, gameHeadCount)
 	require.Equal(t, 1, seriesHeadCount)
 
-	err = sharedPool.QueryRow(
+	err = migrationPool.QueryRow(
 		ctx, `
 		SELECT COUNT(*)
 		FROM series_score_heads
@@ -122,7 +122,7 @@ func TestResultAuditMigration(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, scoreHeadCount)
 
-	err = sharedPool.QueryRow(
+	err = migrationPool.QueryRow(
 		ctx, `
 		SELECT COUNT(*)
 		FROM result_commits
@@ -150,7 +150,7 @@ func TestResultAuditMigration(t *testing.T) {
 	assertOutboxRetainsPublishedEvidence(ctx, t, commit)
 }
 
-func TestResultAuditMigrationCommitLocks(t *testing.T) {
+func runResultAuditMigrationCommitLocks(t *testing.T) {
 	ctx := context.Background()
 	resetMigrationTables(ctx, t)
 	t.Cleanup(func() { resetMigrationTables(ctx, t) })
@@ -160,7 +160,7 @@ func TestResultAuditMigrationCommitLocks(t *testing.T) {
 	commit := createAtomicResultCommit(ctx, t, fixture, submissionID)
 
 	t.Run("official revision locks Game before commit seal check", func(t *testing.T) {
-		lockTx, err := sharedPool.Begin(ctx)
+		lockTx, err := migrationPool.Begin(ctx)
 		require.NoError(t, err)
 		defer func() { _ = lockTx.Rollback(ctx) }()
 		_, err = lockTx.Exec(ctx, `
@@ -200,7 +200,7 @@ func TestResultAuditMigrationCommitLocks(t *testing.T) {
 	})
 
 	t.Run("score revision locks Series before commit seal check", func(t *testing.T) {
-		lockTx, err := sharedPool.Begin(ctx)
+		lockTx, err := migrationPool.Begin(ctx)
 		require.NoError(t, err)
 		defer func() { _ = lockTx.Rollback(ctx) }()
 		_, err = lockTx.Exec(ctx, `
