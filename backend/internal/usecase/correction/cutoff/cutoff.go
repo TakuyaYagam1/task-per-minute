@@ -1,4 +1,4 @@
-package correction
+package cutoff
 
 import resultprojection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection"
 
@@ -8,6 +8,13 @@ func EvaluateCutoff(input CutoffInput) (Cutoff, error) {
 	}
 	snapshot := input.DAG.Snapshot()
 	return evaluateCorrectionCutoffSnapshot(input, snapshot)
+}
+
+// EvaluatePrepared evaluates a caller-owned DAG snapshot after its result
+// bounds have already been checked. It is used by the parent correction
+// orchestration facade to keep validation and cutoff evaluation atomic.
+func EvaluatePrepared(input CutoffInput, snapshot resultprojection.RevisionDAGSnapshot) (Cutoff, error) {
+	return evaluateCorrectionCutoffPrepared(input, snapshot)
 }
 
 func evaluateCorrectionCutoffSnapshot(

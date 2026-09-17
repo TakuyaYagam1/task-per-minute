@@ -1,4 +1,4 @@
-package correction
+package cutoff
 
 import "github.com/TakuyaYagam1/task-per-minute/internal/domain"
 

@@ -64,7 +64,7 @@ func buildCorrectionAuditRecord(validation Validation) AuditRecord {
 }
 
 func buildCorrectionCutoffCondition(validation Validation) CutoffCondition {
-	affected := make([]domain.DerivedRevision, 0, len(validation.cutoff.descendants)+1)
+	affected := make([]domain.DerivedRevision, 0, len(validation.cutoff.Descendants())+1)
 	affected = append(affected, validation.target)
 	affected = append(affected, validation.cutoff.Descendants()...)
 	return CutoffCondition{

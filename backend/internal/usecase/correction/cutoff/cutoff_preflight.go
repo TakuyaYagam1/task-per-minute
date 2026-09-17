@@ -1,4 +1,4 @@
-package correction
+package cutoff
 
 import (
 	"github.com/google/uuid"
@@ -16,6 +16,14 @@ const (
 	maxCorrectionAuthorityIDs    = 8192
 	maxCorrectionNoGameAttempts  = 2048
 )
+
+func PreflightDAGResults(dag resultprojection.RevisionDAG) error {
+	return preflightCorrectionDAGResults(dag)
+}
+
+func PreflightCutoff(input CutoffInput, snapshot resultprojection.RevisionDAGSnapshot) error {
+	return preflightCorrectionCutoff(input, snapshot)
+}
 
 func preflightCorrectionDAGResults(dag resultprojection.RevisionDAG) error {
 	inputs := dag.Inputs()

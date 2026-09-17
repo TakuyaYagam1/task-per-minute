@@ -251,9 +251,10 @@ func validateCorrectionUnlockIntents(
 	cutoff Cutoff,
 	target domain.DerivedRevision,
 ) ([]UnlockIntent, error) {
-	affected := make(map[domain.DerivedRevisionID]struct{}, len(cutoff.descendants)+1)
+	descendants := cutoff.Descendants()
+	affected := make(map[domain.DerivedRevisionID]struct{}, len(descendants)+1)
 	affected[target.ID()] = struct{}{}
-	for _, descendant := range cutoff.descendants {
+	for _, descendant := range descendants {
 		affected[descendant.ID()] = struct{}{}
 	}
 	want := make(map[uuid.UUID]UnlockIntent)
