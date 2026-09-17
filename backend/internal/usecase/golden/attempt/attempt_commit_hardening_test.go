@@ -7,7 +7,8 @@ import (
 	"time"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
+	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/attempt"
+	goldensubmission "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/submission"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -19,18 +20,18 @@ func TestGoldenAttemptCommitHardening(t *testing.T) {
 	startedAt := time.Date(2026, 9, 1, 16, 0, 0, 0, time.UTC)
 	execution := attemptTask049StartedExecution(t, startedAt)
 	scope := attemptTask049SubmissionScope(execution)
-	submissions, err := goldenusecase.NewGoldenSubmissionLedger(scope, attemptTask049ID(11001))
+	submissions, err := goldensubmission.NewGoldenSubmissionLedger(scope, attemptTask049ID(11001))
 	require.NoError(t, err)
 	submissionRepository := attemptNewTask049SubmissionHarness(t, execution, submissions, startedAt.Add(5*time.Second))
 	participantID := execution.Membership.ParticipantIDs[0]
 	verification := attemptTask049Verification(scope, execution, participantID, 11100)
 	submissionRepository.verifications[verification.ID] = verification
-	submissionCommand := goldenusecase.GoldenSubmissionCommand{
+	submissionCommand := goldensubmission.GoldenSubmissionCommand{
 		Scope: scope, CommandID: attemptTask049ID(11110), ActorParticipantID: participantID,
 		ParticipantID: participantID, VerificationID: verification.ID,
 		ExpectedExecution: execution.Expectation(), NextLedgerRevisionID: attemptTask049ID(11111),
 	}
-	submitted, changed, err := goldenusecase.NewGoldenSubmissionUseCase(submissionRepository).Submit(t.Context(), submissionCommand)
+	submitted, changed, err := goldensubmission.NewGoldenSubmissionUseCase(submissionRepository).Submit(t.Context(), submissionCommand)
 	require.NoError(t, err)
 	require.True(t, changed)
 
@@ -157,7 +158,7 @@ func TestGoldenAttemptCommitHardening(t *testing.T) {
 		attemptTask049SealPositionLedger(t, &advanced)
 		require.NoError(t, advanced.Validate())
 
-		emptySubmissions, submissionErr := goldenusecase.NewGoldenSubmissionLedger(scope, attemptTask049ID(11644))
+		emptySubmissions, submissionErr := goldensubmission.NewGoldenSubmissionLedger(scope, attemptTask049ID(11644))
 		require.NoError(t, submissionErr)
 		localSubmission := attemptNewTask049SubmissionHarness(t, execution, emptySubmissions, startedAt.Add(5*time.Second))
 		local := attemptNewTask049CommitHarness(t, localSubmission, emptySubmissions, advanced, sentinel)
@@ -344,18 +345,18 @@ func TestGoldenAttemptCommitHardening(t *testing.T) {
 		t.Run("ordering submission head is incomplete", func(t *testing.T) {
 			tests := []struct {
 				name   string
-				mutate func(*goldenusecase.GoldenSubmissionLedgerExpectation)
+				mutate func(*goldensubmission.GoldenSubmissionLedgerExpectation)
 			}{
-				{name: "revision identity", mutate: func(head *goldenusecase.GoldenSubmissionLedgerExpectation) {
+				{name: "revision identity", mutate: func(head *goldensubmission.GoldenSubmissionLedgerExpectation) {
 					head.RevisionID = uuid.Nil
 				}},
-				{name: "revision", mutate: func(head *goldenusecase.GoldenSubmissionLedgerExpectation) {
+				{name: "revision", mutate: func(head *goldensubmission.GoldenSubmissionLedgerExpectation) {
 					head.Revision = 0
 				}},
-				{name: "next submission identity", mutate: func(head *goldenusecase.GoldenSubmissionLedgerExpectation) {
+				{name: "next submission identity", mutate: func(head *goldensubmission.GoldenSubmissionLedgerExpectation) {
 					head.NextSubmissionID = 0
 				}},
-				{name: "missing ordered submission", mutate: func(head *goldenusecase.GoldenSubmissionLedgerExpectation) {
+				{name: "missing ordered submission", mutate: func(head *goldensubmission.GoldenSubmissionLedgerExpectation) {
 					head.NextSubmissionID++
 				}},
 			}

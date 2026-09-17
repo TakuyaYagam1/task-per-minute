@@ -6,7 +6,8 @@ import (
 	"time"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
+	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/attempt"
+	goldensubmission "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/submission"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -18,18 +19,18 @@ func TestGoldenAttemptCommit(t *testing.T) {
 	startedAt := time.Date(2026, 9, 1, 16, 0, 0, 0, time.UTC)
 	execution := attemptTask049StartedExecution(t, startedAt)
 	scope := attemptTask049SubmissionScope(execution)
-	submissions, err := goldenusecase.NewGoldenSubmissionLedger(scope, attemptTask049ID(11001))
+	submissions, err := goldensubmission.NewGoldenSubmissionLedger(scope, attemptTask049ID(11001))
 	require.NoError(t, err)
 	submissionRepository := attemptNewTask049SubmissionHarness(t, execution, submissions, startedAt.Add(5*time.Second))
 	participantID := execution.Membership.ParticipantIDs[0]
 	verification := attemptTask049Verification(scope, execution, participantID, 11100)
 	submissionRepository.verifications[verification.ID] = verification
-	submissionCommand := goldenusecase.GoldenSubmissionCommand{
+	submissionCommand := goldensubmission.GoldenSubmissionCommand{
 		Scope: scope, CommandID: attemptTask049ID(11110), ActorParticipantID: participantID,
 		ParticipantID: participantID, VerificationID: verification.ID,
 		ExpectedExecution: execution.Expectation(), NextLedgerRevisionID: attemptTask049ID(11111),
 	}
-	submitted, changed, err := goldenusecase.NewGoldenSubmissionUseCase(submissionRepository).Submit(t.Context(), submissionCommand)
+	submitted, changed, err := goldensubmission.NewGoldenSubmissionUseCase(submissionRepository).Submit(t.Context(), submissionCommand)
 	require.NoError(t, err)
 	require.True(t, changed)
 
@@ -102,16 +103,16 @@ func TestGoldenAttemptCommit(t *testing.T) {
 	t.Run("terminal-first submission is rejected without a write", func(t *testing.T) {
 		verification := attemptTask049Verification(scope, execution, execution.Membership.ParticipantIDs[1], 11400)
 		submissionRepository.verifications[verification.ID] = verification
-		late := goldenusecase.GoldenSubmissionCommand{
+		late := goldensubmission.GoldenSubmissionCommand{
 			Scope: scope, CommandID: attemptTask049ID(11410), ActorParticipantID: verification.ParticipantID,
 			ParticipantID: verification.ParticipantID, VerificationID: verification.ID,
 			ExpectedExecution: execution.Expectation(), NextLedgerRevisionID: attemptTask049ID(11411),
 		}
 		before := submissionRepository.commitCount()
-		result, lateChanged, lateErr := goldenusecase.NewGoldenSubmissionUseCase(submissionRepository).Submit(t.Context(), late)
+		result, lateChanged, lateErr := goldensubmission.NewGoldenSubmissionUseCase(submissionRepository).Submit(t.Context(), late)
 		require.Nil(t, result)
 		require.False(t, lateChanged)
-		require.ErrorIs(t, lateErr, goldenusecase.ErrGoldenSubmissionClosed)
+		require.ErrorIs(t, lateErr, goldensubmission.ErrGoldenSubmissionClosed)
 		require.Equal(t, before, submissionRepository.commitCount())
 	})
 
@@ -145,7 +146,7 @@ func TestGoldenAttemptCommit(t *testing.T) {
 			lateParticipant := execution.Membership.ParticipantIDs[1]
 			lateVerification := attemptTask049Verification(scope, execution, lateParticipant, 11420)
 			localSubmission.verifications[lateVerification.ID] = lateVerification
-			lateCommand := goldenusecase.GoldenSubmissionCommand{
+			lateCommand := goldensubmission.GoldenSubmissionCommand{
 				Scope: scope, CommandID: attemptTask049ID(11422), ActorParticipantID: lateParticipant,
 				ParticipantID: lateParticipant, VerificationID: lateVerification.ID,
 				ExpectedExecution: execution.Expectation(), NextLedgerRevisionID: attemptTask049ID(11423),
@@ -180,7 +181,7 @@ func TestGoldenAttemptCommit(t *testing.T) {
 				finished <- terminalResult{record: value, changed: didChange, err: commitErr}
 			}()
 			require.True(t, attemptTask049AwaitSignal(t, loaded, "submit-first terminal commit entry"))
-			lateLedger, lateChanged, lateErr := goldenusecase.NewGoldenSubmissionUseCase(localSubmission).Submit(
+			lateLedger, lateChanged, lateErr := goldensubmission.NewGoldenSubmissionUseCase(localSubmission).Submit(
 				t.Context(), lateCommand,
 			)
 			require.NoError(t, lateErr)
@@ -215,7 +216,7 @@ func TestGoldenAttemptCommit(t *testing.T) {
 			lateParticipant := execution.Membership.ParticipantIDs[1]
 			lateVerification := attemptTask049Verification(scope, execution, lateParticipant, 11440)
 			localSubmission.verifications[lateVerification.ID] = lateVerification
-			lateCommand := goldenusecase.GoldenSubmissionCommand{
+			lateCommand := goldensubmission.GoldenSubmissionCommand{
 				Scope: scope, CommandID: attemptTask049ID(11442), ActorParticipantID: lateParticipant,
 				ParticipantID: lateParticipant, VerificationID: lateVerification.ID,
 				ExpectedExecution: execution.Expectation(), NextLedgerRevisionID: attemptTask049ID(11443),
@@ -248,13 +249,13 @@ func TestGoldenAttemptCommit(t *testing.T) {
 			submitEntered, signalSubmitEntered := attemptTask049Latch(t)
 			localSubmission.beforeCommit = signalSubmitEntered
 			type submitResult struct {
-				ledger  *goldenusecase.GoldenSubmissionLedger
+				ledger  *goldensubmission.GoldenSubmissionLedger
 				changed bool
 				err     error
 			}
 			submitFinished := make(chan submitResult, 1)
 			go func() {
-				value, didChange, submitErr := goldenusecase.NewGoldenSubmissionUseCase(localSubmission).Submit(
+				value, didChange, submitErr := goldensubmission.NewGoldenSubmissionUseCase(localSubmission).Submit(
 					t.Context(), lateCommand,
 				)
 				submitFinished <- submitResult{ledger: value, changed: didChange, err: submitErr}
@@ -268,7 +269,7 @@ func TestGoldenAttemptCommit(t *testing.T) {
 			require.True(t, submitReceived)
 			require.Nil(t, late.ledger)
 			require.False(t, late.changed)
-			require.ErrorIs(t, late.err, goldenusecase.ErrGoldenSubmissionClosed)
+			require.ErrorIs(t, late.err, goldensubmission.ErrGoldenSubmissionClosed)
 			require.Equal(t, 1, local.commitCount())
 			require.Len(t, localSubmission.snapshot().Submissions, 1)
 		})

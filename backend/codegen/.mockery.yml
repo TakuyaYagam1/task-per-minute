@@ -255,14 +255,16 @@ packages:
       SubmissionRepository:
   github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden:
     interfaces:
-      AttemptClock:
-      AttemptRepository:
       ConnectionClock:
       ConnectionRepository:
       ContinuationClock:
       ContinuationRepository:
       FailureClock:
       FailureRepository:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/attempt:
+    interfaces:
+      AttemptClock:
+      AttemptRepository:
   github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/prestart:
     interfaces:
       PrestartClock:

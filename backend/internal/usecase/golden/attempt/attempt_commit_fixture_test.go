@@ -11,8 +11,9 @@ import (
 	"time"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
-	goldenmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/mocks"
+	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/attempt"
+	goldenmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/attempt/mocks"
+	goldensubmission "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/submission"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
@@ -25,7 +26,7 @@ type attemptTask049CommitHarness struct {
 	mu             sync.Mutex
 	submissionRepo *attemptTask049SubmissionHarness
 	execution      goldenusecase.GoldenWaveExecution
-	submissions    goldenusecase.GoldenSubmissionLedger
+	submissions    goldensubmission.GoldenSubmissionLedger
 	positions      goldenusecase.GoldenPositionLedger
 	swissPoints    goldenusecase.GoldenSwissPointLedgerSentinel
 	current        *goldenusecase.GoldenAttemptCommitRecord
@@ -43,7 +44,7 @@ type attemptTask049CommitHarness struct {
 type task049CommitHarnessState struct {
 	submission      attemptTask049SubmissionHarnessState
 	execution       goldenusecase.GoldenWaveExecution
-	submissions     goldenusecase.GoldenSubmissionLedger
+	submissions     goldensubmission.GoldenSubmissionLedger
 	positions       goldenusecase.GoldenPositionLedger
 	swissPoints     goldenusecase.GoldenSwissPointLedgerSentinel
 	current         *goldenusecase.GoldenAttemptCommitRecord
@@ -61,7 +62,7 @@ type task049CommitHarnessState struct {
 func attemptNewTask049CommitHarness(
 	t *testing.T,
 	submissionRepo *attemptTask049SubmissionHarness,
-	submissions goldenusecase.GoldenSubmissionLedger,
+	submissions goldensubmission.GoldenSubmissionLedger,
 	positions goldenusecase.GoldenPositionLedger,
 	sentinel goldenusecase.GoldenSwissPointLedgerSentinel,
 ) *attemptTask049CommitHarness {
@@ -101,7 +102,7 @@ func (r *attemptTask049CommitHarness) findCommit(
 
 func (r *attemptTask049CommitHarness) loadAuthority(
 	_ context.Context,
-	scope goldenusecase.GoldenSubmissionScope,
+	scope goldensubmission.GoldenSubmissionScope,
 ) (goldenusecase.GoldenAttemptCommitAuthority, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -236,7 +237,7 @@ func attemptTask049SealOrdering(t *testing.T, evidence *goldenusecase.GoldenAtte
 	evidence.PayloadDigest = attemptTask049GobDigest(t, struct {
 		AttemptID      uuid.UUID
 		AttemptNo      int
-		SubmissionHead goldenusecase.GoldenSubmissionLedgerExpectation
+		SubmissionHead goldensubmission.GoldenSubmissionLedgerExpectation
 		Order          []goldenusecase.GoldenPositionOrderEntry
 	}{
 		AttemptID: evidence.AttemptID, AttemptNo: evidence.AttemptNo,
@@ -250,10 +251,10 @@ func attemptTask049SealAttemptRecord(t *testing.T, record *goldenusecase.GoldenA
 		ID                  uuid.UUID
 		CommandID           uuid.UUID
 		CommandDigest       [sha256.Size]byte
-		Scope               goldenusecase.GoldenSubmissionScope
+		Scope               goldensubmission.GoldenSubmissionScope
 		ActiveExecution     goldenusecase.GoldenWaveExecutionExpectation
 		Assignment          goldenusecase.GoldenAttemptAssignmentEvidence
-		ExpectedSubmissions goldenusecase.GoldenSubmissionLedgerExpectation
+		ExpectedSubmissions goldensubmission.GoldenSubmissionLedgerExpectation
 		ExpectedPositions   goldenusecase.GoldenPositionLedgerExpectation
 		SwissPoints         goldenusecase.GoldenSwissPointLedgerSentinel
 		Reason              goldenusecase.GoldenAttemptTerminalReason
@@ -329,16 +330,16 @@ func attemptTask049GobDigest(t *testing.T, value any) [sha256.Size]byte {
 	return sha256.Sum256(buffer.Bytes())
 }
 
-func attemptTask049SealSubmissionLedger(t *testing.T, ledger *goldenusecase.GoldenSubmissionLedger) {
+func attemptTask049SealSubmissionLedger(t *testing.T, ledger *goldensubmission.GoldenSubmissionLedger) {
 	t.Helper()
 	ledger.PayloadDigest = attemptTask049GobDigest(t, struct {
-		Scope              goldenusecase.GoldenSubmissionScope
+		Scope              goldensubmission.GoldenSubmissionScope
 		RevisionID         uuid.UUID
 		Revision           int64
 		PreviousRevisionID *uuid.UUID
 		NextSubmissionID   uint64
-		Submissions        []goldenusecase.GoldenSubmissionRecord
-		Receipts           []goldenusecase.GoldenSubmissionReceipt
+		Submissions        []goldensubmission.GoldenSubmissionRecord
+		Receipts           []goldensubmission.GoldenSubmissionReceipt
 	}{
 		Scope: ledger.Scope, RevisionID: ledger.RevisionID, Revision: ledger.Revision,
 		PreviousRevisionID: ledger.PreviousRevisionID, NextSubmissionID: ledger.NextSubmissionID,
