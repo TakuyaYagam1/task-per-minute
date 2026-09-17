@@ -94,8 +94,8 @@ func (_c *MockPostseasonWorkflow_AdvanceAfterSeriesSettlement_Call) Run(run func
 	return _c
 }
 
-func (_c *MockPostseasonWorkflow_AdvanceAfterSeriesSettlement_Call) Return(terminalReceipt playoff.TerminalReceipt, err error) *MockPostseasonWorkflow_AdvanceAfterSeriesSettlement_Call {
-	_c.Call.Return(terminalReceipt, err)
+func (_c *MockPostseasonWorkflow_AdvanceAfterSeriesSettlement_Call) Return(v playoff.TerminalReceipt, err error) *MockPostseasonWorkflow_AdvanceAfterSeriesSettlement_Call {
+	_c.Call.Return(v, err)
 	return _c
 }
 

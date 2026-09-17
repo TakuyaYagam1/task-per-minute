@@ -110,8 +110,8 @@ func (_c *MockPauseResumeRepository_CommitPauseResume_Call) Run(run func(ctx con
 	return _c
 }
 
-func (_c *MockPauseResumeRepository_CommitPauseResume_Call) Return(pauseResumeRecord *pause.PauseResumeRecord, b bool, err error) *MockPauseResumeRepository_CommitPauseResume_Call {
-	_c.Call.Return(pauseResumeRecord, b, err)
+func (_c *MockPauseResumeRepository_CommitPauseResume_Call) Return(v *pause.PauseResumeRecord, b bool, err error) *MockPauseResumeRepository_CommitPauseResume_Call {
+	_c.Call.Return(v, b, err)
 	return _c
 }
 
@@ -184,8 +184,8 @@ func (_c *MockPauseResumeRepository_FindPauseResumeCommand_Call) Run(run func(ct
 	return _c
 }
 
-func (_c *MockPauseResumeRepository_FindPauseResumeCommand_Call) Return(pauseResumeRecord *pause.PauseResumeRecord, err error) *MockPauseResumeRepository_FindPauseResumeCommand_Call {
-	_c.Call.Return(pauseResumeRecord, err)
+func (_c *MockPauseResumeRepository_FindPauseResumeCommand_Call) Return(v *pause.PauseResumeRecord, err error) *MockPauseResumeRepository_FindPauseResumeCommand_Call {
+	_c.Call.Return(v, err)
 	return _c
 }
 
@@ -256,8 +256,8 @@ func (_c *MockPauseResumeRepository_LoadPauseResumeAuthority_Call) Run(run func(
 	return _c
 }
 
-func (_c *MockPauseResumeRepository_LoadPauseResumeAuthority_Call) Return(pauseResumeAuthority pause.PauseResumeAuthority, err error) *MockPauseResumeRepository_LoadPauseResumeAuthority_Call {
-	_c.Call.Return(pauseResumeAuthority, err)
+func (_c *MockPauseResumeRepository_LoadPauseResumeAuthority_Call) Return(v pause.PauseResumeAuthority, err error) *MockPauseResumeRepository_LoadPauseResumeAuthority_Call {
+	_c.Call.Return(v, err)
 	return _c
 }
 
