@@ -39,7 +39,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/readiness"
 	resultprojection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection/publication"
 	taskusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/task"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	tournamentadminapplication "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/application"
 	tournamentadmincorrection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/correction"
 	tournamentadminexecution "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/execution"
 	tournamentadminidempotent "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/idempotent"
@@ -452,8 +452,8 @@ func provideTournamentAdminApplication(
 	incidents tournamentadminincident.IncidentSnapshotPort,
 	signer tournamentadminincident.IncidentAuthenticator,
 	snapshots tournamentadminsnapshot.SnapshotPort,
-) *tournamentadmin.AdminUseCase {
-	return tournamentadmin.AdminNewUseCase(tournamentadmin.AdminDependencies{
+) *tournamentadminapplication.AdminUseCase {
+	return tournamentadminapplication.AdminNewUseCase(tournamentadminapplication.AdminDependencies{
 		Catalog:    catalog,
 		Roster:     roster,
 		Preflight:  preflight,
@@ -473,7 +473,7 @@ func provideTournamentAdminApplication(
 }
 
 func provideIdempotentTournamentAdminApplication(
-	application *tournamentadmin.AdminUseCase,
+	application *tournamentadminapplication.AdminUseCase,
 	catalog inbound.TournamentUseCase,
 	coordinator *idempotency.Coordinator,
 ) (*tournamentadminidempotent.IdempotentService, error) {
