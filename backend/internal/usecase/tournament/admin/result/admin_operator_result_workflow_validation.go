@@ -7,8 +7,8 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
 	gameforfeit "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/forfeit"
+	noshowusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/noshow"
 )
 
 func validOperatorResultAuthority(
@@ -46,12 +46,12 @@ func operatorResultCommandMatches(
 		record.ExpectedAuthorityRevision == expectedAuthorityRevision && record.RequestDigest == digest
 }
 
-func operatorNoShowCommand(command NoShowCommand) gameusecase.NoShowCommand {
+func operatorNoShowCommand(command NoShowCommand) noshowusecase.NoShowCommand {
 	gameRevisionIDs := make([]domain.OfficialResultRevisionID, len(command.GameResultRevisionIDs))
 	for index, revisionID := range command.GameResultRevisionIDs {
 		gameRevisionIDs[index] = domain.OfficialResultRevisionID(revisionID)
 	}
-	return gameusecase.NoShowCommand{
+	return noshowusecase.NoShowCommand{
 		Scope: domain.NormalNoShowScope{
 			TournamentID: command.TournamentID,
 			WaveID:       command.WaveID,
@@ -102,7 +102,7 @@ func operatorForfeitCommand(command ForfeitCommand) gameforfeit.OperatorCommand 
 }
 
 func validOperatorNoShowResolution(
-	resolution *gameusecase.NoShowResolution,
+	resolution *noshowusecase.NoShowResolution,
 	command NoShowCommand,
 	resolvedAt time.Time,
 ) bool {

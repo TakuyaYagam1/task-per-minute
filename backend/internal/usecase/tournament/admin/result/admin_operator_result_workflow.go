@@ -11,8 +11,8 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
 	gameforfeit "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/forfeit"
+	noshowusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/noshow"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 )
@@ -61,7 +61,7 @@ func (w *OperatorResultWorkflow) ResolveNoShow(ctx context.Context, command NoSh
 			command:    command,
 			digest:     digest,
 		}
-		resolution, changed, err := gameusecase.NoShowNewUseCase(
+		resolution, changed, err := noshowusecase.NoShowNewUseCase(
 			repository,
 			operatorResultClock{at: resolvedAt},
 		).Resolve(txCtx, operatorNoShowCommand(command))
@@ -195,14 +195,14 @@ type operatorNoShowRepository struct {
 func (r *operatorNoShowRepository) LoadNormalNoShowAuthority(
 	ctx context.Context,
 	_ domain.NormalNoShowScope,
-) (gameusecase.NoShowAuthority, error) {
+) (noshowusecase.NoShowAuthority, error) {
 	return r.repository.LoadOperatorNoShowAuthority(ctx, r.command)
 }
 
 func (r *operatorNoShowRepository) CommitNormalNoShow(
 	ctx context.Context,
-	resolution gameusecase.NoShowResolution,
-) (*gameusecase.NoShowResolution, bool, error) {
+	resolution noshowusecase.NoShowResolution,
+) (*noshowusecase.NoShowResolution, bool, error) {
 	return r.repository.CommitOperatorNoShow(ctx, r.command, r.digest, resolution)
 }
 
@@ -242,8 +242,8 @@ func operatorResultError(
 	expectedRevision int64,
 	authority OperatorResultAuthority,
 ) error {
-	if errors.Is(err, domain.ErrConflict) || errors.Is(err, gameusecase.ErrNormalNoShowAuthorityConflict) ||
-		errors.Is(err, gameusecase.ErrNormalNoShowConflict) || errors.Is(err, gameforfeit.ErrForfeitAuthorityConflict) ||
+	if errors.Is(err, domain.ErrConflict) || errors.Is(err, noshowusecase.ErrNormalNoShowAuthorityConflict) ||
+		errors.Is(err, noshowusecase.ErrNormalNoShowConflict) || errors.Is(err, gameforfeit.ErrForfeitAuthorityConflict) ||
 		errors.Is(err, gameforfeit.ErrForfeitCommandReuse) {
 		return newOperatorResultConflict(expectedRevision, authority)
 	}
@@ -259,8 +259,8 @@ func newOperatorResultConflict(expected int64, authority OperatorResultAuthority
 }
 
 var (
-	_ NoShowPort                    = (*OperatorResultWorkflow)(nil)
-	_ ForfeitPort                   = (*OperatorResultWorkflow)(nil)
-	_ gameusecase.NoShowRepository  = (*operatorNoShowRepository)(nil)
-	_ gameforfeit.ForfeitRepository = (*operatorForfeitRepository)(nil)
+	_ NoShowPort                     = (*OperatorResultWorkflow)(nil)
+	_ ForfeitPort                    = (*OperatorResultWorkflow)(nil)
+	_ noshowusecase.NoShowRepository = (*operatorNoShowRepository)(nil)
+	_ gameforfeit.ForfeitRepository  = (*operatorForfeitRepository)(nil)
 )

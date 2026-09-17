@@ -7,8 +7,8 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
 	gameforfeit "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/forfeit"
+	noshowusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/noshow"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 	operationusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/operation"
 )
@@ -63,13 +63,13 @@ type OperatorResultWorkflowRepository interface {
 	LoadOperatorNoShowAuthority(
 		ctx context.Context,
 		command NoShowCommand,
-	) (gameusecase.NoShowAuthority, error)
+	) (noshowusecase.NoShowAuthority, error)
 	CommitOperatorNoShow(
 		ctx context.Context,
 		command NoShowCommand,
 		requestDigest [32]byte,
-		resolution gameusecase.NoShowResolution,
-	) (*gameusecase.NoShowResolution, bool, error)
+		resolution noshowusecase.NoShowResolution,
+	) (*noshowusecase.NoShowResolution, bool, error)
 	LoadOperatorForfeitAuthority(
 		ctx context.Context,
 		command ForfeitCommand,
