@@ -280,8 +280,3 @@ type ReplayReplacementRepository interface {
 type WaveClock interface {
 	Now() time.Time
 }
-
-type CloseRepository interface {
-	LoadCloseAuthority(ctx context.Context, scope CloseScope) (CloseAuthority, error)
-	CommitClosure(ctx context.Context, closure Closure) (*Closure, bool, error)
-}

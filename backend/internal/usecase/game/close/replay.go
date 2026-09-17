@@ -1,4 +1,4 @@
-package game
+package close
 
 // ReconcileClosure compares a replay command with a retained closure.
 func ReconcileClosure(
