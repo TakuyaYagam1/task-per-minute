@@ -2,7 +2,6 @@ package admin
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"time"
@@ -12,75 +11,10 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
-	correctionusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/correction"
 	pauseusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause"
 	gamestart "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/start"
 	swissusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/swiss"
 )
-
-// CorrectionWorkflowAuthority is the exact database snapshot used to plan one
-// operator correction. Core contains the immutable result DAG and its current
-// heads; the remaining fields bind that snapshot to the published projection.
-type CorrectionWorkflowAuthority struct {
-	RosterID             uuid.UUID
-	ProjectionRevisionID uuid.UUID
-	ProjectionRevision   int64
-	Core                 correctionusecase.Authority
-	Stage                correctionusecase.StageSnapshot
-}
-
-// CorrectionCommandRecord is the durable idempotency record for an already
-// committed correction. Evidence is returned verbatim on an exact replay.
-type CorrectionCommandRecord struct {
-	CommandID                  uuid.UUID
-	TournamentID               uuid.UUID
-	RosterID                   uuid.UUID
-	SeriesID                   uuid.UUID
-	GameID                     uuid.UUID
-	OperatorID                 uuid.UUID
-	ExpectedProjectionRevision int64
-	RequestDigest              [sha256.Size]byte
-	Evidence                   CorrectionEvidence
-	ExecutedAt                 time.Time
-}
-
-// CorrectionMutation carries the validated core plan and the use case
-// evidence which must be persisted in the same transaction as every CAS write.
-type CorrectionMutation struct {
-	Command       CorrectionCommand
-	Authority     CorrectionWorkflowAuthority
-	RequestDigest [sha256.Size]byte
-	Plan          correctionusecase.Plan
-	Stage         correctionusecase.StageResult
-	Evidence      CorrectionEvidence
-}
-
-type CorrectionTransactionManager interface {
-	Do(ctx context.Context, fn func(context.Context) error) error
-}
-
-type CorrectionWorkflowRepository interface {
-	LockCorrectionAuthority(
-		ctx context.Context,
-		tournamentID uuid.UUID,
-		seriesID uuid.UUID,
-		gameID uuid.UUID,
-	) (CorrectionWorkflowAuthority, error)
-	FindCorrectionCommand(
-		ctx context.Context,
-		commandID uuid.UUID,
-	) (*CorrectionCommandRecord, error)
-	ReadCorrectionTime(ctx context.Context) (time.Time, error)
-	CommitCorrection(
-		ctx context.Context,
-		mutation CorrectionMutation,
-	) (CorrectionEvidence, bool, error)
-}
-
-type CorrectionWorkflowDependencies struct {
-	Transactions CorrectionTransactionManager
-	Repository   CorrectionWorkflowRepository
-}
 
 var ErrManualByeMismatch = errors.New("manual Swiss bye does not match the deterministic selection")
 
