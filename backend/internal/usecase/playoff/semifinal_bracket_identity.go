@@ -5,6 +5,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
+	goldenstate "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/state"
 	resultprojection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection"
 )
 
@@ -127,7 +128,7 @@ func addSemifinalTop4Reserved(reserved map[uuid.UUID]struct{}, snapshot Top4Snap
 	return nil
 }
 
-func addSemifinalGoldenStateReserved(reserved map[uuid.UUID]struct{}, state goldenusecase.GoldenState) bool {
+func addSemifinalGoldenStateReserved(reserved map[uuid.UUID]struct{}, state goldenstate.GoldenState) bool {
 	roles := goldenusecase.CoreIdentityRoles(state)
 	roles = append(roles, goldenusecase.PlanIdentityRoles(state)...)
 	roles = append(roles, goldenusecase.WindowIdentityRoles(state)...)

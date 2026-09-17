@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
+	goldenstate "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/state"
 )
 
 var ErrInvalidGoldenPositionEvidence = errors.New("invalid Golden position evidence")
@@ -37,7 +37,7 @@ type GoldenPositionAttemptEvidence struct {
 }
 
 type GoldenPositionEvidenceInput struct {
-	Scope              goldenusecase.GoldenStateScope
+	Scope              goldenstate.GoldenStateScope
 	RevisionID         uuid.UUID
 	Revision           int64
 	PreviousRevisionID *uuid.UUID
@@ -50,7 +50,7 @@ type GoldenPositionEvidenceInput struct {
 }
 
 type goldenPositionEvidenceState struct {
-	scope              goldenusecase.GoldenStateScope
+	scope              goldenstate.GoldenStateScope
 	revisionID         uuid.UUID
 	revision           int64
 	previousRevisionID *uuid.UUID
@@ -84,7 +84,7 @@ func NewGoldenPositionEvidence(input GoldenPositionEvidenceInput) (GoldenPositio
 
 func (e GoldenPositionEvidence) Validate() error {
 	state := e.state
-	if !goldenusecase.ValidStateScope(state.scope) || state.revisionID == uuid.Nil ||
+	if !goldenstate.ValidStateScope(state.scope) || state.revisionID == uuid.Nil ||
 		state.revision < 1 || state.revision > int64(math.MaxInt) ||
 		state.positionFrom < 1 || state.positionTo < state.positionFrom ||
 		state.positionTo == math.MaxInt || state.payloadDigest == [sha256.Size]byte{} {
@@ -116,7 +116,7 @@ func cloneGoldenPositionRevisionID(value *uuid.UUID) *uuid.UUID {
 	return &clone
 }
 
-func (e GoldenPositionEvidence) Scope() goldenusecase.GoldenStateScope {
+func (e GoldenPositionEvidence) Scope() goldenstate.GoldenStateScope {
 	return e.state.scope
 }
 

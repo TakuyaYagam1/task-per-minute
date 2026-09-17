@@ -10,7 +10,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
+	goldenstate "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/state"
 )
 
 const maxTop4Payload = 64 << 10
@@ -29,7 +29,7 @@ type Top4GoldenSettlement struct {
 	RevisionID  domain.DerivedRevisionID
 	RevisionNo  int
 	Positions   *GoldenPositionEvidence
-	State       *goldenusecase.GoldenState
+	State       *goldenstate.GoldenState
 	FinalizedAt time.Time
 }
 

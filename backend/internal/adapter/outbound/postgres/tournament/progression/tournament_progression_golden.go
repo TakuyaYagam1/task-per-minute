@@ -11,7 +11,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
+	goldenstate "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/state"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 	tournamentprogression "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/progression"
 )
@@ -515,7 +515,7 @@ func progressionGoldenSettlement(
 		settlementRevisionID = group.settlementRevisionID
 	}
 	evidence, err := playoff.NewGoldenPositionEvidence(playoff.GoldenPositionEvidenceInput{
-		Scope: goldenusecase.GoldenStateScope{
+		Scope: goldenstate.GoldenStateScope{
 			TournamentID: authority.Tournament.ID, GroupID: group.id,
 			GroupRevisionID: domain.DerivedRevisionID(group.revisionID),
 		},

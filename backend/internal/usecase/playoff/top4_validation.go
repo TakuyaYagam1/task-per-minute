@@ -8,7 +8,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
+	goldenstate "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/state"
 )
 
 const (
@@ -89,13 +89,13 @@ func boundedTop4PositionLedger(ledger GoldenPositionEvidence) bool {
 	return true
 }
 
-func boundedTop4GoldenState(state goldenusecase.GoldenState) bool {
+func boundedTop4GoldenState(state goldenstate.GoldenState) bool {
 	return boundedTop4GoldenStateRoot(state) && boundedTop4GoldenAttempts(state) &&
 		boundedTop4GoldenWindows(state) && boundedTop4GoldenNoShows(state) &&
 		boundedTop4GoldenExactPlan(state) && boundedTop4GoldenAllocation(state)
 }
 
-func boundedTop4GoldenStateRoot(state goldenusecase.GoldenState) bool {
+func boundedTop4GoldenStateRoot(state goldenstate.GoldenState) bool {
 	planLimit := domain.TournamentMaxParticipants * (domain.AssignmentReserveCount + 1)
 	return len(state.Group.Members) <= domain.TournamentMaxParticipants &&
 		len(state.Group.Attempts) <= goldenFailureAttemptLimit &&
@@ -110,7 +110,7 @@ func boundedTop4GoldenStateRoot(state goldenusecase.GoldenState) bool {
 		len(state.ExactPlan.Authority.Pool.Versions) <= planLimit
 }
 
-func boundedTop4GoldenAttempts(state goldenusecase.GoldenState) bool {
+func boundedTop4GoldenAttempts(state goldenstate.GoldenState) bool {
 	for _, attempt := range state.Group.Attempts {
 		if len(attempt.ParticipantIDs) > domain.TournamentMaxParticipants {
 			return false
@@ -119,7 +119,7 @@ func boundedTop4GoldenAttempts(state goldenusecase.GoldenState) bool {
 	return true
 }
 
-func boundedTop4GoldenWindows(state goldenusecase.GoldenState) bool {
+func boundedTop4GoldenWindows(state goldenstate.GoldenState) bool {
 	for _, window := range state.Windows {
 		if len(window.ReadyParticipantIDs) > domain.TournamentMaxParticipants ||
 			len(window.BasePresentParticipantIDs) > domain.TournamentMaxParticipants ||
@@ -130,7 +130,7 @@ func boundedTop4GoldenWindows(state goldenusecase.GoldenState) bool {
 	return true
 }
 
-func boundedTop4GoldenNoShows(state goldenusecase.GoldenState) bool {
+func boundedTop4GoldenNoShows(state goldenstate.GoldenState) bool {
 	for _, resolution := range state.NoShows {
 		if len(resolution.ReadyParticipantIDs) > domain.TournamentMaxParticipants ||
 			len(resolution.PresentParticipantIDs) > domain.TournamentMaxParticipants ||
@@ -141,7 +141,7 @@ func boundedTop4GoldenNoShows(state goldenusecase.GoldenState) bool {
 	return true
 }
 
-func boundedTop4GoldenExactPlan(state goldenusecase.GoldenState) bool {
+func boundedTop4GoldenExactPlan(state goldenstate.GoldenState) bool {
 	for _, group := range state.ExactPlan.Groups {
 		if len(group.ParticipantIDs) > domain.TournamentMaxParticipants ||
 			len(group.Edges) > domain.AssignmentReserveCount+1 {
@@ -162,7 +162,7 @@ func boundedTop4GoldenExactPlan(state goldenusecase.GoldenState) bool {
 	return true
 }
 
-func boundedTop4GoldenAllocation(state goldenusecase.GoldenState) bool {
+func boundedTop4GoldenAllocation(state goldenstate.GoldenState) bool {
 	return state.Allocation == nil ||
 		(len(state.Allocation.Positions) <= domain.TournamentMaxParticipants &&
 			len(state.Allocation.OrderingInputs) <= domain.TournamentMaxParticipants)

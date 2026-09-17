@@ -13,6 +13,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
+	goldenstate "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/state"
 )
 
 func buildTop4Snapshot(authority top4Authority) (Top4Snapshot, error) {
@@ -174,7 +175,7 @@ func validateTop4Settlement(
 	if !validTop4SettlementHeader(authority, group, settlement, seedRevision) {
 		return nil, nil, top4Error("invalid finalized Golden revision identity or evidence")
 	}
-	wantScope := goldenusecase.GoldenStateScope{
+	wantScope := goldenstate.GoldenStateScope{
 		TournamentID: authority.TournamentID, GroupID: group.State.ID,
 		GroupRevisionID: group.State.RevisionID,
 	}
@@ -212,8 +213,8 @@ func top4SettlementPositions(
 	authority top4Authority,
 	group FinalSwissGoldenGroup,
 	settlement Top4GoldenSettlement,
-	wantScope goldenusecase.GoldenStateScope,
-) ([]goldenusecase.GoldenPositionAllocation, string, [sha256.Size]byte, error) {
+	wantScope goldenstate.GoldenStateScope,
+) ([]goldenstate.GoldenPositionAllocation, string, [sha256.Size]byte, error) {
 	if settlement.Positions != nil {
 		return top4LedgerSettlementPositions(group, *settlement.Positions, wantScope)
 	}
@@ -223,8 +224,8 @@ func top4SettlementPositions(
 func top4LedgerSettlementPositions(
 	group FinalSwissGoldenGroup,
 	input GoldenPositionEvidence,
-	wantScope goldenusecase.GoldenStateScope,
-) ([]goldenusecase.GoldenPositionAllocation, string, [sha256.Size]byte, error) {
+	wantScope goldenstate.GoldenStateScope,
+) ([]goldenstate.GoldenPositionAllocation, string, [sha256.Size]byte, error) {
 	ledger := input.Snapshot()
 	if ledger.Validate() != nil || ledger.state.scope != wantScope ||
 		ledger.state.positionFrom != group.State.PositionFrom ||
@@ -234,10 +235,10 @@ func top4LedgerSettlementPositions(
 			"Golden position ledger is partial or belongs to another group",
 		)
 	}
-	positions := make([]goldenusecase.GoldenPositionAllocation, len(ledger.state.positions))
+	positions := make([]goldenstate.GoldenPositionAllocation, len(ledger.state.positions))
 	for index, position := range ledger.state.positions {
-		positions[index] = goldenusecase.GoldenPositionAllocation{
-			Position: position.Position, ParticipantID: position.ParticipantID, Kind: goldenusecase.GoldenPositionDirect,
+		positions[index] = goldenstate.GoldenPositionAllocation{
+			Position: position.Position, ParticipantID: position.ParticipantID, Kind: goldenstate.GoldenPositionDirect,
 		}
 	}
 	return positions, "positions", ledger.state.payloadDigest, nil
@@ -247,8 +248,8 @@ func top4AllocationStatePositions(
 	authority top4Authority,
 	group FinalSwissGoldenGroup,
 	settlement Top4GoldenSettlement,
-	wantScope goldenusecase.GoldenStateScope,
-) ([]goldenusecase.GoldenPositionAllocation, string, [sha256.Size]byte, error) {
+	wantScope goldenstate.GoldenStateScope,
+) ([]goldenstate.GoldenPositionAllocation, string, [sha256.Size]byte, error) {
 	if settlement.State == nil {
 		return nil, "", [sha256.Size]byte{}, top4Error("terminal Golden state is missing")
 	}
@@ -262,7 +263,7 @@ func top4AllocationStatePositions(
 	if len(state.Allocation.Positions) != group.State.PositionTo-group.State.PositionFrom+1 {
 		return nil, "", [sha256.Size]byte{}, top4Error("Golden allocation is incomplete")
 	}
-	return append([]goldenusecase.GoldenPositionAllocation(nil), state.Allocation.Positions...),
+	return append([]goldenstate.GoldenPositionAllocation(nil), state.Allocation.Positions...),
 		"allocation_state", state.PayloadDigest, nil
 }
 
@@ -270,8 +271,8 @@ func validTop4AllocationStateBinding(
 	authority top4Authority,
 	group FinalSwissGoldenGroup,
 	settlement Top4GoldenSettlement,
-	wantScope goldenusecase.GoldenStateScope,
-	state goldenusecase.GoldenState,
+	wantScope goldenstate.GoldenStateScope,
+	state goldenstate.GoldenState,
 ) bool {
 	return state.Validate() == nil && state.Scope == wantScope && state.Allocation != nil &&
 		reflect.DeepEqual(state.Topology, group.Revision) &&
@@ -305,7 +306,7 @@ func top4GoldenStateMembersMatch(
 func finalizedTop4GoldenPayload(
 	group FinalSwissGoldenGroup,
 	settlement Top4GoldenSettlement,
-	positions []goldenusecase.GoldenPositionAllocation,
+	positions []goldenstate.GoldenPositionAllocation,
 	settlementKind string,
 	evidenceDigest [sha256.Size]byte,
 ) ([]byte, error) {
@@ -341,14 +342,14 @@ func finalizedTop4GoldenPayload(
 }
 
 type top4PositionPayload struct {
-	Position      int                              `json:"position"`
-	ParticipantID uuid.UUID                        `json:"participant_id"`
-	Kind          goldenusecase.GoldenPositionKind `json:"kind"`
+	Position      int                            `json:"position"`
+	ParticipantID uuid.UUID                      `json:"participant_id"`
+	Kind          goldenstate.GoldenPositionKind `json:"kind"`
 }
 
 func exactTop4GoldenPositions(
 	state domain.GoldenGroupState,
-	positions []goldenusecase.GoldenPositionAllocation,
+	positions []goldenstate.GoldenPositionAllocation,
 ) (map[int]uuid.UUID, error) {
 	members := make(map[uuid.UUID]struct{}, len(state.Members))
 	for _, member := range state.Members {

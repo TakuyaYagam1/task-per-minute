@@ -8,6 +8,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
+	goldenstate "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/state"
 )
 
 func validateTop4IdentityRoles(authority top4Authority) error {
@@ -103,7 +104,7 @@ func addTop4FinalSourceReserved(
 	return nil
 }
 
-func addTop4GoldenStateReserved(reserved map[uuid.UUID]struct{}, state goldenusecase.GoldenState) bool {
+func addTop4GoldenStateReserved(reserved map[uuid.UUID]struct{}, state goldenstate.GoldenState) bool {
 	roles := goldenusecase.CoreIdentityRoles(state)
 	roles = append(roles, goldenusecase.PlanIdentityRoles(state)...)
 	roles = append(roles, goldenusecase.WindowIdentityRoles(state)...)
