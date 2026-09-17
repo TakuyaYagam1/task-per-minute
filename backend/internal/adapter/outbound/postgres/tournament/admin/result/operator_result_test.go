@@ -12,15 +12,16 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	operationusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/operation"
+	resultusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/result"
 )
 
 func TestOperatorResultRequestDocumentBindsExactCommand(t *testing.T) {
 	t.Parallel()
 
-	command := tournamentadmin.ForfeitCommand{
-		CommandScope: tournamentadmin.CommandScope{
-			Operator:     tournamentadmin.OperatorIdentity{ActorID: uuid.New()},
+	command := resultusecase.ForfeitCommand{
+		CommandScope: resultusecase.CommandScope{
+			Operator:     operationusecase.OperatorIdentity{ActorID: uuid.New()},
 			TournamentID: uuid.New(), CommandID: uuid.New(),
 		},
 		SeriesID: uuid.New(), ForfeitingParticipantID: uuid.New(),
@@ -30,9 +31,9 @@ func TestOperatorResultRequestDocumentBindsExactCommand(t *testing.T) {
 		AuditEventID: uuid.New(), OutboxEventID: uuid.New(), ProjectionRevisionID: uuid.New(),
 	}
 
-	digest := operatorResultDocumentDigest(t, tournamentadmin.OperatorResultActionForfeit, command)
+	digest := operatorResultDocumentDigest(t, resultusecase.OperatorResultActionForfeit, command)
 	document, err := operatorResultRequestDocument(
-		tournamentadmin.OperatorResultActionForfeit,
+		resultusecase.OperatorResultActionForfeit,
 		command,
 		digest,
 	)
@@ -41,7 +42,7 @@ func TestOperatorResultRequestDocumentBindsExactCommand(t *testing.T) {
 
 	command.Reason = "different evidence"
 	_, err = operatorResultRequestDocument(
-		tournamentadmin.OperatorResultActionForfeit,
+		resultusecase.OperatorResultActionForfeit,
 		command,
 		digest,
 	)
@@ -82,7 +83,7 @@ func TestOperatorResultCommandRecordRejectsMalformedEvidence(t *testing.T) {
 	executedAt := time.Date(2026, time.September, 6, 12, 0, 0, 0, time.UTC)
 	row := sqlc.OperatorResultCommand{
 		CommandID: uuid.New(), TournamentID: uuid.New(), RosterID: uuid.New(), SeriesID: uuid.New(),
-		ActorID: uuid.New(), Action: string(tournamentadmin.OperatorResultActionNoShow),
+		ActorID: uuid.New(), Action: string(resultusecase.OperatorResultActionNoShow),
 		ExpectedAuthorityRevision: 2, RequestDigest: make([]byte, sha256.Size),
 		CommitID: uuid.New(), ResultEventID: uuid.New(),
 		ExecutedAt: pgtype.Timestamptz{Time: executedAt, Valid: true},
@@ -106,7 +107,7 @@ func TestOperatorForfeitAnchorRejectsForeignSeries(t *testing.T) {
 	rosterID := uuid.New()
 	gameID := uuid.New()
 	slotID := uuid.New()
-	command := tournamentadmin.ForfeitCommand{ExpectedGame: &tournamentadmin.GameExpectation{
+	command := resultusecase.ForfeitCommand{ExpectedGame: &resultusecase.GameExpectation{
 		SlotID: slotID, GameID: gameID, AttemptNo: 1, State: domain.GameStatePlanned,
 	}}
 	attempt := sqlc.GameAttempt{
@@ -130,13 +131,13 @@ func TestOperatorForfeitAnchorRejectsForeignSeries(t *testing.T) {
 
 func operatorResultDocumentDigest(
 	t *testing.T,
-	action tournamentadmin.OperatorResultAction,
+	action resultusecase.OperatorResultAction,
 	command any,
 ) [sha256.Size]byte {
 	t.Helper()
 	document, err := json.Marshal(struct {
-		Action  tournamentadmin.OperatorResultAction `json:"action"`
-		Command any                                  `json:"command"`
+		Action  resultusecase.OperatorResultAction `json:"action"`
+		Command any                                `json:"command"`
 	}{Action: action, Command: command})
 	require.NoError(t, err)
 	return sha256.Sum256(document)

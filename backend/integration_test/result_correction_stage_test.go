@@ -28,7 +28,7 @@ import (
 	gamedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/game"
 	correctionusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/correction"
 	gamesettlement "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/settlement"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/correction"
 	tournamentadminlifecycle "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/lifecycle"
 	adminoperation "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/operation"
 	progression "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/progression"

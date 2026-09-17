@@ -13,7 +13,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/idempotency"
 	idempotencymocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/idempotency/mocks"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	tournamentadmincorrection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/correction"
 	correctionmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/correction/mocks"
 	tournamentadminincident "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/incident"
 	tournamentadminlifecycle "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/lifecycle"
@@ -21,6 +21,7 @@ import (
 	tournamentadminmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/mocks"
 	tournamentadminreplay "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/replay"
 	tournamentadminreplaymocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/replay/mocks"
+	tournamentadminresult "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/result"
 	tournamentadminresultmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/result/mocks"
 	tournamentparticipant "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/participant"
 	tournamentparticipantmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/participant/mocks"
@@ -67,7 +68,7 @@ func TestProvideTournamentAdminCorrectionProvidesCorrectionPort(t *testing.T) {
 		correctionmocks.NewMockCorrectionWorkflowRepository(t),
 	)
 
-	var port tournamentadmin.CorrectionPort = workflow
+	var port tournamentadmincorrection.CorrectionPort = workflow
 	require.NotNil(t, port)
 }
 
@@ -111,8 +112,8 @@ func TestProvideTournamentAdminResultsRequiresPostseason(t *testing.T) {
 		tournamentadminresultmocks.NewMockPostseasonWorkflow(t),
 	)
 
-	var noShow tournamentadmin.NoShowPort = workflow
-	var forfeit tournamentadmin.ForfeitPort = workflow
+	var noShow tournamentadminresult.NoShowPort = workflow
+	var forfeit tournamentadminresult.ForfeitPort = workflow
 	require.NotNil(t, noShow)
 	require.NotNil(t, forfeit)
 }

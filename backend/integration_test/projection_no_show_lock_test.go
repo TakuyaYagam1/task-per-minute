@@ -19,6 +19,7 @@ import (
 	gamenoshow "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/noshow"
 	gamestart "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/start"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	tournamentadminresult "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/result"
 )
 
 func TestOperatorNoShowAndWaveStartUseSameLockOrder(t *testing.T) {
@@ -34,7 +35,7 @@ func TestOperatorNoShowAndWaveStartUseSameLockOrder(t *testing.T) {
 	require.NoError(t, sharedPool.QueryRow(ctx, `SELECT wave.revision_id, ready_window.revision_id, ready_window.deadline
 		FROM waves AS wave JOIN ready_windows AS ready_window ON ready_window.wave_id = wave.id WHERE wave.id = $1`, fixture.waveID).
 		Scan(&waveRevisionID, &windowRevisionID, &deadline))
-	command := tournamentadmin.NoShowCommand{
+	command := tournamentadminresult.NoShowCommand{
 		CommandScope: tournamentadmin.CommandScope{Operator: tournamentadmin.OperatorIdentity{ActorID: uuid.New()}, TournamentID: fixture.tournamentID, CommandID: uuid.New()},
 		WaveID:       fixture.waveID, WindowID: fixture.windowID, SeriesID: binding.SeriesID,
 		Confirmed: true, Reason: "participant absent at ready deadline", ExpectedAuthorityRevision: authority.AuthorityRevision,
@@ -62,9 +63,9 @@ func TestOperatorNoShowAndWaveStartUseSameLockOrder(t *testing.T) {
 			ProjectionRevisionID: header.ProjectionRevisionID, ProjectionRevision: header.ProjectionRevision,
 			ArtifactRevisionID: header.ArtifactRevisionID, ArtifactRevision: header.ArtifactRevision}}
 	document, err := json.Marshal(struct {
-		Action  tournamentadmin.OperatorResultAction `json:"action"`
-		Command any                                  `json:"command"`
-	}{Action: tournamentadmin.OperatorResultActionNoShow, Command: command})
+		Action  tournamentadminresult.OperatorResultAction `json:"action"`
+		Command any                                        `json:"command"`
+	}{Action: tournamentadminresult.OperatorResultActionNoShow, Command: command})
 	require.NoError(t, err)
 	digest := sha256.Sum256(document)
 	startLocked, continueStart := make(chan error, 1), make(chan struct{})

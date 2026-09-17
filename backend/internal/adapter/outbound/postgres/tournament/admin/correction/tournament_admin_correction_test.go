@@ -13,10 +13,10 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	correctionusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/correction"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	admincorrection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/correction"
 )
 
-var _ tournamentadmin.CorrectionWorkflowRepository = (*TournamentAdminCorrectionPostgres)(nil)
+var _ admincorrection.CorrectionWorkflowRepository = (*TournamentAdminCorrectionPostgres)(nil)
 
 func TestCorrectionSettlementIDsKeepCommandIdempotencyForCommitLedger(t *testing.T) {
 	t.Parallel()
@@ -35,7 +35,7 @@ func TestTournamentAdminCorrectionCommandRecordRejectsTamperedEvidence(t *testin
 
 	requestedAt := time.Date(2026, time.September, 6, 12, 0, 0, 0, time.UTC)
 	validationDigest := sha256.Sum256([]byte("validation"))
-	evidence := tournamentadmin.CorrectionEvidence{
+	evidence := admincorrection.CorrectionEvidence{
 		CommandID: uuid.New(), TournamentID: uuid.New(), SeriesID: uuid.New(), GameID: uuid.New(),
 		OperatorID: uuid.New(), Reason: "operator_ruling", Fields: []string{"winner"},
 		RequestedAt: requestedAt, ValidationDigest: validationDigest,

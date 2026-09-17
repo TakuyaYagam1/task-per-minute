@@ -19,6 +19,7 @@ import (
 	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	gamesettlement "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/settlement"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	tournamentadminresult "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/result"
 )
 
 func TestParticipantOutsiderDoesNotWaitForTournamentLock(t *testing.T) {
@@ -102,11 +103,11 @@ func TestLiveForfeitAndParticipantSettlementUseSameLockOrder(t *testing.T) {
 		FROM series JOIN game_attempts AS attempt ON attempt.series_id = series.id WHERE series.id = $1`, binding.SeriesID).
 		Scan(&participantID, &slotID, &attemptID))
 	gameRevisionID := uuid.New()
-	command := tournamentadmin.ForfeitCommand{
+	command := tournamentadminresult.ForfeitCommand{
 		CommandScope: tournamentadmin.CommandScope{Operator: tournamentadmin.OperatorIdentity{ActorID: uuid.New()}, TournamentID: fixture.tournamentID, CommandID: uuid.New()},
 		SeriesID:     binding.SeriesID, ForfeitingParticipantID: participantID,
 		Confirmed: true, Reason: "participant conceded during play", ExpectedAuthorityRevision: authority.AuthorityRevision,
-		ExpectedGame: &tournamentadmin.GameExpectation{SlotID: slotID, GameID: attemptID, AttemptNo: 1, State: domain.GameStateActive},
+		ExpectedGame: &tournamentadminresult.GameExpectation{SlotID: slotID, GameID: attemptID, AttemptNo: 1, State: domain.GameStateActive},
 		Basis:        "rule_violation", RuleID: "game.rule.7", EvidenceIDs: []uuid.UUID{uuid.New()},
 		GameResultRevisionID: &gameRevisionID, ScoreRevisionID: uuid.New(), SeriesResultRevisionID: uuid.New(),
 		AuditEventID: uuid.New(), OutboxEventID: uuid.New(), ProjectionRevisionID: uuid.New(),

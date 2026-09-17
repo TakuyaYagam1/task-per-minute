@@ -12,10 +12,12 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/audit"
+	correctionusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/correction"
 	incidentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/incident"
 	lifecycleusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/lifecycle"
 	pairingusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/pairing"
 	replayusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/replay"
+	resultusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/result"
 	rosterusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/roster"
 	snapshotusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/snapshot"
 )
@@ -229,21 +231,21 @@ func TestCorrectionPatchValidation(t *testing.T) {
 	winnerID := adminTestID(1)
 	submissionID := adminTestID(2)
 	solvedAt := adminTestTime()
-	solved := CorrectionPatch{
+	solved := correctionusecase.CorrectionPatch{
 		State: domain.GameStateCompleted, Reason: domain.GameResultReasonSolved, WinnerID: &winnerID,
 		SolvedAt: &solvedAt, SubmissionID: &submissionID, EvidenceDigest: [32]byte{1},
 	}
-	require.True(t, validCorrectionPatch(solved))
+	require.True(t, correctionusecase.ValidCorrectionPatch(solved))
 
-	forfeit := CorrectionPatch{
+	forfeit := correctionusecase.CorrectionPatch{
 		State: domain.GameStateCompleted, Reason: domain.GameResultReasonOperatorForfeit, WinnerID: &winnerID,
 	}
-	require.True(t, validCorrectionPatch(forfeit))
+	require.True(t, correctionusecase.ValidCorrectionPatch(forfeit))
 
 	forfeit.EvidenceDigest = [32]byte{1}
-	require.False(t, validCorrectionPatch(forfeit), "non-solve metadata must remain empty")
+	require.False(t, correctionusecase.ValidCorrectionPatch(forfeit), "non-solve metadata must remain empty")
 	solved.WinnerID = nil
-	require.False(t, validCorrectionPatch(solved), "completed result requires a winner")
+	require.False(t, correctionusecase.ValidCorrectionPatch(solved), "completed result requires a winner")
 }
 
 func TestNormalizeAdminErrorRequiresCompleteRevisionEvidence(t *testing.T) {
@@ -273,11 +275,11 @@ type adminCommands struct {
 	pairing          pairingusecase.PairingCommand
 	tournamentAction lifecycleusecase.TournamentActionCommand
 	wave             WaveCommand
-	noShow           NoShowCommand
+	noShow           resultusecase.NoShowCommand
 	reserve          replayusecase.ReserveCommand
-	forfeit          ForfeitCommand
+	forfeit          resultusecase.ForfeitCommand
 	replay           replayusecase.ReplayCommand
-	correction       CorrectionCommand
+	correction       correctionusecase.CorrectionCommand
 	audit            incidentusecase.AuditQuery
 	incident         incidentusecase.IncidentQuery
 	snapshot         snapshotusecase.SnapshotQuery
@@ -325,7 +327,7 @@ func validAdminCommands() adminCommands {
 			CommandScope: scope(9), WaveID: adminTestID(31), ExpectedProjectionRevision: 1,
 			Action: WaveActionOpenReadyWindow, Confirmed: true,
 		},
-		noShow: NoShowCommand{
+		noShow: resultusecase.NoShowCommand{
 			CommandScope: scope(10), WaveID: adminTestID(31), WindowID: adminTestID(32),
 			SeriesID: adminTestID(33), Confirmed: true, Reason: "ready window elapsed",
 			ExpectedAuthorityRevision: 1, ExpectedWaveRevisionID: adminTestID(34),
@@ -346,7 +348,7 @@ func validAdminCommands() adminCommands {
 			ProposedTaskID: adminTestID(51), ProposedVersion: 1, ProposedSnapshotID: adminTestID(52),
 			ExpectedSnapshotID: adminTestID(53), EvidenceID: adminTestID(54),
 		},
-		forfeit: ForfeitCommand{
+		forfeit: resultusecase.ForfeitCommand{
 			CommandScope: scope(12), SeriesID: adminTestID(60), ForfeitingParticipantID: adminTestID(61),
 			Confirmed: true, Reason: "confirmed rule violation", ExpectedAuthorityRevision: 1,
 			Basis: "rule_violation", RuleID: "rules.forfeit.1", EvidenceIDs: []uuid.UUID{adminTestID(62)},
@@ -362,11 +364,11 @@ func validAdminCommands() adminCommands {
 			ReplacementWaveRevisionID: adminTestID(89), ReadyWindowID: adminTestID(90),
 			ReadyWindowRevisionID: adminTestID(91),
 		},
-		correction: CorrectionCommand{
+		correction: correctionusecase.CorrectionCommand{
 			CommandScope: scope(14), SeriesID: adminTestID(100), GameID: adminTestID(101),
 			ExpectedProjectionRevision: 1, Confirmed: true, Reason: "operator_ruling",
 			Explanation: "verified result correction", Fields: []string{"winner"},
-			Patch: CorrectionPatch{
+			Patch: correctionusecase.CorrectionPatch{
 				State: domain.GameStateCompleted, Reason: domain.GameResultReasonSolved, WinnerID: &winnerID,
 				SolvedAt: &solvedAt, SubmissionID: &submissionID, EvidenceDigest: [32]byte{1},
 			},

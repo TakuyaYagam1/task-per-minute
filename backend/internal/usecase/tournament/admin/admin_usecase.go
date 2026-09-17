@@ -7,10 +7,12 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/audit"
+	correctionusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/correction"
 	incidentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/incident"
 	lifecycleusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/lifecycle"
 	pairingusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/pairing"
 	replayusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/replay"
+	resultusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/result"
 	rosterusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/roster"
 	snapshotusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/snapshot"
 	tournamentpreflight "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/preflight"
@@ -23,11 +25,11 @@ type AdminDependencies struct {
 	Pairing    PairingPort
 	Lifecycle  lifecycleusecase.LifecyclePort
 	Wave       WavePort
-	NoShow     NoShowPort
+	NoShow     resultusecase.NoShowPort
 	Reserve    replayusecase.ReservePort
-	Forfeit    ForfeitPort
+	Forfeit    resultusecase.ForfeitPort
 	Replay     replayusecase.ReplayPort
-	Correction CorrectionPort
+	Correction correctionusecase.CorrectionPort
 	Audit      incidentusecase.AuditPort
 	Incidents  incidentusecase.IncidentSnapshotPort
 	Signer     incidentusecase.IncidentAuthenticator
@@ -41,11 +43,11 @@ type AdminUseCase struct {
 	pairing    PairingPort
 	lifecycle  lifecycleusecase.LifecyclePort
 	wave       WavePort
-	noShow     NoShowPort
+	noShow     resultusecase.NoShowPort
 	reserve    replayusecase.ReservePort
-	forfeit    ForfeitPort
+	forfeit    resultusecase.ForfeitPort
 	replay     replayusecase.ReplayPort
-	correction CorrectionPort
+	correction correctionusecase.CorrectionPort
 	audit      incidentusecase.AuditPort
 	incidents  incidentusecase.IncidentSnapshotPort
 	signer     incidentusecase.IncidentAuthenticator
@@ -196,8 +198,8 @@ func (a *AdminUseCase) ControlWave(ctx context.Context, command WaveCommand) (Wa
 	return view, nil
 }
 
-func (a *AdminUseCase) ResolveNoShow(ctx context.Context, command NoShowCommand) error {
-	if ctx == nil || !validNoShowCommand(command) {
+func (a *AdminUseCase) ResolveNoShow(ctx context.Context, command resultusecase.NoShowCommand) error {
+	if ctx == nil || !resultusecase.ValidNoShowCommand(command) {
 		return domain.ErrValidation
 	}
 	if a == nil || a.noShow == nil {
@@ -216,8 +218,8 @@ func (a *AdminUseCase) AssignReserve(ctx context.Context, command replayusecase.
 	return normalizeAdminError(a.reserve.AssignReserve(ctx, command))
 }
 
-func (a *AdminUseCase) RecordForfeit(ctx context.Context, command ForfeitCommand) error {
-	if ctx == nil || !validForfeitCommand(command) {
+func (a *AdminUseCase) RecordForfeit(ctx context.Context, command resultusecase.ForfeitCommand) error {
+	if ctx == nil || !resultusecase.ValidForfeitCommand(command) {
 		return domain.ErrValidation
 	}
 	if a == nil || a.forfeit == nil {
@@ -238,20 +240,20 @@ func (a *AdminUseCase) ReplayGame(ctx context.Context, command replayusecase.Rep
 
 func (a *AdminUseCase) CorrectGameResult(
 	ctx context.Context,
-	command CorrectionCommand,
-) (CorrectionEvidence, error) {
-	if ctx == nil || !validCorrectionCommand(command) {
-		return CorrectionEvidence{}, domain.ErrValidation
+	command correctionusecase.CorrectionCommand,
+) (correctionusecase.CorrectionEvidence, error) {
+	if ctx == nil || !correctionusecase.ValidCorrectionCommand(command) {
+		return correctionusecase.CorrectionEvidence{}, domain.ErrValidation
 	}
 	if a == nil || a.correction == nil {
-		return CorrectionEvidence{}, domain.ErrInternal
+		return correctionusecase.CorrectionEvidence{}, domain.ErrInternal
 	}
 	evidence, err := a.correction.CorrectGameResult(ctx, command)
 	if err != nil {
-		return CorrectionEvidence{}, normalizeAdminError(err)
+		return correctionusecase.CorrectionEvidence{}, normalizeAdminError(err)
 	}
-	if !validCorrectionEvidence(evidence, command) {
-		return CorrectionEvidence{}, domain.ErrInternal
+	if !correctionusecase.ValidCorrectionEvidence(evidence, command) {
+		return correctionusecase.CorrectionEvidence{}, domain.ErrInternal
 	}
 	return evidence, nil
 }

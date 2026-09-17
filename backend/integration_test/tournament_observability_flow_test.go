@@ -42,6 +42,7 @@ import (
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
 	tournamentadmininbound "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/inbound"
 	tournamentadminobserved "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/observed"
+	tournamentadminresult "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/result"
 )
 
 func TestTournamentObservabilityFlowSurvivesApplicationRestart(t *testing.T) {
@@ -180,7 +181,7 @@ func newTournamentFlowHandler(
 		DraftPlanner: planner,
 		Rehydrator:   planner,
 	})
-	results := tournamentadmin.NewOperatorResultWorkflow(tournamentadmin.OperatorResultWorkflowDependencies{
+	results := tournamentadminresult.NewOperatorResultWorkflow(tournamentadminresult.OperatorResultWorkflowDependencies{
 		Transactions: tx,
 		Repository: adminresultrepo.NewTournamentAdminResultPostgresWithDependencies(
 			tx,

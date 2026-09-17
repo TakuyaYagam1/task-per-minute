@@ -75,6 +75,7 @@ import (
 	tournamentadminconfiguration "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/configuration"
 	tournamentadmininbound "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/inbound"
 	tournamentadminlifecycle "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/lifecycle"
+	tournamentadminresult "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/result"
 	tournamentadminroster "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/roster"
 	tournamentcancellation "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/cancellation"
 	catalogusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/catalog"
@@ -428,7 +429,7 @@ func newTournamentFlowRESTFixture(t *testing.T) *restFixture {
 	})
 	postseason := newTournamentFlowTerminalCoordinator(tx)
 	resultPostgres := resultauthority.NewResultPostgres(tx)
-	results := tournamentadmin.NewOperatorResultWorkflow(tournamentadmin.OperatorResultWorkflowDependencies{
+	results := tournamentadminresult.NewOperatorResultWorkflow(tournamentadminresult.OperatorResultWorkflowDependencies{
 		Transactions: tx,
 		Repository: adminresultrepo.NewTournamentAdminResultPostgresWithDependencies(
 			tx,

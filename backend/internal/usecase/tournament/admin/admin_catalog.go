@@ -14,10 +14,12 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/audit"
+	correctionusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/correction"
 	incidentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/incident"
 	lifecycleusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/lifecycle"
 	pairingusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/pairing"
 	replayusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/replay"
+	resultusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/result"
 	rosterusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/roster"
 	snapshotusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/snapshot"
 	tournamentpreflight "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/preflight"
@@ -37,11 +39,11 @@ type AdminService interface {
 	ConfigurePairings(ctx context.Context, command pairingusecase.PairingCommand) (SwissRoundView, error)
 	ApplyTournamentAction(ctx context.Context, command lifecycleusecase.TournamentActionCommand) (usecase.TournamentView, error)
 	ControlWave(ctx context.Context, command WaveCommand) (WaveView, error)
-	ResolveNoShow(ctx context.Context, command NoShowCommand) error
+	ResolveNoShow(ctx context.Context, command resultusecase.NoShowCommand) error
 	AssignReserve(ctx context.Context, command replayusecase.ReserveCommand) error
-	RecordForfeit(ctx context.Context, command ForfeitCommand) error
+	RecordForfeit(ctx context.Context, command resultusecase.ForfeitCommand) error
 	ReplayGame(ctx context.Context, command replayusecase.ReplayCommand) error
-	CorrectGameResult(ctx context.Context, command CorrectionCommand) (CorrectionEvidence, error)
+	CorrectGameResult(ctx context.Context, command correctionusecase.CorrectionCommand) (correctionusecase.CorrectionEvidence, error)
 	ListAudit(ctx context.Context, query incidentusecase.AuditQuery) (audit.AuditPage, error)
 	ExportIncident(ctx context.Context, query incidentusecase.IncidentQuery) (audit.IncidentBundle, error)
 	GetOperatorSnapshot(ctx context.Context, query snapshotusecase.SnapshotQuery) (snapshotusecase.OperatorSnapshotView, error)

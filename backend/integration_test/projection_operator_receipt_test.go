@@ -30,6 +30,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/recovery"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	tournamentadminresult "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/result"
 	progression "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/progression"
 )
 
@@ -57,11 +58,11 @@ func TestFinalSwissLiveForfeitPublishesReceipt(t *testing.T) {
 		FROM series JOIN game_attempts AS attempt ON attempt.series_id = series.id WHERE series.id = $1`, binding.SeriesID).
 		Scan(&participantID, &slotID, &attemptID))
 	gameRevisionID := uuid.New()
-	command := tournamentadmin.ForfeitCommand{
+	command := tournamentadminresult.ForfeitCommand{
 		CommandScope: tournamentadmin.CommandScope{Operator: tournamentadmin.OperatorIdentity{ActorID: uuid.New()}, TournamentID: fixture.tournamentID, CommandID: uuid.New()},
 		SeriesID:     binding.SeriesID, ForfeitingParticipantID: participantID,
 		Confirmed: true, Reason: "participant conceded during play", ExpectedAuthorityRevision: authority.AuthorityRevision,
-		ExpectedGame: &tournamentadmin.GameExpectation{SlotID: slotID, GameID: attemptID, AttemptNo: 1, State: domain.GameStateActive},
+		ExpectedGame: &tournamentadminresult.GameExpectation{SlotID: slotID, GameID: attemptID, AttemptNo: 1, State: domain.GameStateActive},
 		Basis:        "rule_violation", RuleID: "game.rule.7", EvidenceIDs: []uuid.UUID{uuid.New()},
 		GameResultRevisionID: &gameRevisionID, ScoreRevisionID: uuid.New(), SeriesResultRevisionID: uuid.New(),
 		AuditEventID: uuid.New(), OutboxEventID: uuid.New(), ProjectionRevisionID: uuid.New(),
@@ -83,7 +84,7 @@ func TestFinalSwissLiveForfeitPublishesReceipt(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func swissOperatorResultWorkflow(t *testing.T, fixture tournamentAdminSwissProofFixture) (*adminresultrepo.TournamentAdminResultPostgres, *tournamentadmin.OperatorResultWorkflow) {
+func swissOperatorResultWorkflow(t *testing.T, fixture tournamentAdminSwissProofFixture) (*adminresultrepo.TournamentAdminResultPostgres, *tournamentadminresult.OperatorResultWorkflow) {
 	t.Helper()
 	repository := adminresultrepo.NewTournamentAdminResultPostgresWithDependencies(
 		fixture.tx,
@@ -99,7 +100,7 @@ func swissOperatorResultWorkflow(t *testing.T, fixture tournamentAdminSwissProof
 		Repository: playoffrepo.NewPlayoffTerminalPostgres(fixture.tx, drafts, assignments.CreateAssignmentTx),
 		Publisher:  projectionrepo.NewProjectionPostgres(fixture.tx), DraftPlanner: planner, Rehydrator: planner,
 	})
-	workflow := tournamentadmin.NewOperatorResultWorkflow(tournamentadmin.OperatorResultWorkflowDependencies{
+	workflow := tournamentadminresult.NewOperatorResultWorkflow(tournamentadminresult.OperatorResultWorkflowDependencies{
 		Transactions: fixture.tx, Repository: &observedOperatorResultRepository{TournamentAdminResultPostgres: repository, t: t}, Postseason: terminal,
 	})
 	return repository, workflow
@@ -145,7 +146,7 @@ func testFinalSwissOperatorReceipt(t *testing.T, noShow bool, recoverDeadline ..
 				require.False(t, changed)
 				continue
 			}
-			command := tournamentadmin.NoShowCommand{
+			command := tournamentadminresult.NoShowCommand{
 				CommandScope: tournamentadmin.CommandScope{Operator: tournamentadmin.OperatorIdentity{ActorID: uuid.New()}, TournamentID: fixture.tournamentID, CommandID: uuid.New()},
 				WaveID:       fixture.waveID, WindowID: windowID, SeriesID: binding.SeriesID,
 				Confirmed: true, Reason: "participant absent at ready deadline", ExpectedAuthorityRevision: authority.AuthorityRevision,
@@ -163,11 +164,11 @@ func testFinalSwissOperatorReceipt(t *testing.T, noShow bool, recoverDeadline ..
 		var participantID, slotID, attemptID uuid.UUID
 		require.NoError(t, sharedPool.QueryRow(ctx, `SELECT series.second_participant_id, attempt.slot_id, attempt.id
 			FROM series JOIN game_attempts AS attempt ON attempt.series_id = series.id WHERE series.id = $1`, binding.SeriesID).Scan(&participantID, &slotID, &attemptID))
-		command := tournamentadmin.ForfeitCommand{
+		command := tournamentadminresult.ForfeitCommand{
 			CommandScope: tournamentadmin.CommandScope{Operator: tournamentadmin.OperatorIdentity{ActorID: uuid.New()}, TournamentID: fixture.tournamentID, CommandID: uuid.New()},
 			SeriesID:     binding.SeriesID, ForfeitingParticipantID: participantID,
 			Confirmed: true, Reason: "participant conceded before start", ExpectedAuthorityRevision: authority.AuthorityRevision,
-			ExpectedGame: &tournamentadmin.GameExpectation{SlotID: slotID, GameID: attemptID, AttemptNo: 1, State: domain.GameStatePlanned},
+			ExpectedGame: &tournamentadminresult.GameExpectation{SlotID: slotID, GameID: attemptID, AttemptNo: 1, State: domain.GameStatePlanned},
 			Basis:        "rule_violation", RuleID: "game.rule.7", EvidenceIDs: []uuid.UUID{uuid.New()},
 			ScoreRevisionID: uuid.New(), SeriesResultRevisionID: uuid.New(), AuditEventID: uuid.New(), OutboxEventID: uuid.New(), ProjectionRevisionID: uuid.New(),
 		}
@@ -280,7 +281,7 @@ func assertOperatorReceiptRollback(ctx context.Context, t *testing.T, fixture to
 	require.Equal(t, before, swissPublicationCounts(ctx, t, fixture))
 }
 
-func (r *observedOperatorResultRepository) CommitOperatorNoShow(ctx context.Context, command tournamentadmin.NoShowCommand, digest [32]byte, resolution gamenoshow.NoShowResolution) (*gamenoshow.NoShowResolution, bool, error) {
+func (r *observedOperatorResultRepository) CommitOperatorNoShow(ctx context.Context, command tournamentadminresult.NoShowCommand, digest [32]byte, resolution gamenoshow.NoShowResolution) (*gamenoshow.NoShowResolution, bool, error) {
 	stored, changed, err := r.TournamentAdminResultPostgres.CommitOperatorNoShow(ctx, command, digest, resolution)
 	if err != nil {
 		r.t.Logf("operator no-show persistence: %v", err)
@@ -293,7 +294,7 @@ type observedOperatorResultRepository struct {
 	t *testing.T
 }
 
-func (r *observedOperatorResultRepository) CommitOperatorForfeit(ctx context.Context, command tournamentadmin.ForfeitCommand, digest [32]byte, resolution gameforfeit.ForfeitResolution) (*gameforfeit.ForfeitResolution, bool, error) {
+func (r *observedOperatorResultRepository) CommitOperatorForfeit(ctx context.Context, command tournamentadminresult.ForfeitCommand, digest [32]byte, resolution gameforfeit.ForfeitResolution) (*gameforfeit.ForfeitResolution, bool, error) {
 	stored, changed, err := r.TournamentAdminResultPostgres.CommitOperatorForfeit(ctx, command, digest, resolution)
 	if err != nil {
 		r.t.Logf("operator forfeit persistence: %v", err)
