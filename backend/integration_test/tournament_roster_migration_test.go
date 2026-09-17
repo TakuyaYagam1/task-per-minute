@@ -4,12 +4,13 @@ package integration_test
 
 import (
 	"context"
-	"fmt"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+
+	"github.com/TakuyaYagam1/task-per-minute/integration_test/internal/testkit/tournamentseed"
 )
 
 func TestTournamentRosterMigration(t *testing.T) {
@@ -71,39 +72,23 @@ func TestTournamentRosterMigration(t *testing.T) {
 
 func createMigrationTournament(ctx context.Context, tb testing.TB) uuid.UUID {
 	tb.Helper()
-	var id uuid.UUID
-	err := sharedPool.QueryRow(ctx, `
-		INSERT INTO tournaments DEFAULT VALUES
-		RETURNING id`).Scan(&id)
+	id, err := tournamentseed.CreateTournament(ctx, sharedPool)
 	require.NoError(tb, err)
 	return id
 }
 
 func createMigrationRoster(ctx context.Context, tb testing.TB, tournamentID uuid.UUID) uuid.UUID {
 	tb.Helper()
-	var (
-		id       uuid.UUID
-		revision int64
-	)
-	err := sharedPool.QueryRow(ctx, `
-		INSERT INTO rosters (tournament_id)
-		VALUES ($1)
-		RETURNING id, revision`, tournamentID).Scan(&id, &revision)
+	seed, err := tournamentseed.CreateRoster(ctx, sharedPool, tournamentID)
 	require.NoError(tb, err)
-	require.EqualValues(tb, 1, revision)
-	return id
+	require.EqualValues(tb, 1, seed.Revision)
+	return seed.ID
 }
 
 func createMigrationPlayers(ctx context.Context, tb testing.TB, count int) []uuid.UUID {
 	tb.Helper()
-	ids := make([]uuid.UUID, count)
-	for i := range ids {
-		err := sharedPool.QueryRow(ctx, `
-			INSERT INTO players (username)
-			VALUES ($1)
-			RETURNING id`, fmt.Sprintf("tournament_migration_%s_%d", uuid.NewString()[:8], i)).Scan(&ids[i])
-		require.NoError(tb, err)
-	}
+	ids, err := tournamentseed.CreatePlayers(ctx, sharedPool, "tournament_migration", count)
+	require.NoError(tb, err)
 	return ids
 }
 
