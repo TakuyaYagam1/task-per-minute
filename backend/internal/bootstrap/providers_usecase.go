@@ -41,6 +41,7 @@ import (
 	taskusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/task"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
 	tournamentadmincorrection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/correction"
+	tournamentadminlifecycle "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/lifecycle"
 	tournamentadminreplay "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/replay"
 	tournamentadminresult "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/result"
 	tournamentadminroster "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/roster"
@@ -300,15 +301,15 @@ func provideTournamentCancellation(
 }
 
 func provideTournamentAdminLifecycle(
-	transactions tournamentadmin.LifecycleTransactionManager,
-	repository tournamentadmin.LifecycleWorkflowRepository,
-	transitions tournamentadmin.LifecycleTransitioner,
-	pauses tournamentadmin.LifecyclePauser,
-	cancellations tournamentadmin.LifecycleCanceller,
-	progressions tournamentadmin.LifecycleProgression,
-	clock tournamentadmin.AdminLifecycleClock,
-) *tournamentadmin.LifecycleWorkflow {
-	return tournamentadmin.NewLifecycleWorkflow(tournamentadmin.LifecycleWorkflowDependencies{
+	transactions tournamentadminlifecycle.LifecycleTransactionManager,
+	repository tournamentadminlifecycle.LifecycleWorkflowRepository,
+	transitions tournamentadminlifecycle.LifecycleTransitioner,
+	pauses tournamentadminlifecycle.LifecyclePauser,
+	cancellations tournamentadminlifecycle.LifecycleCanceller,
+	progressions tournamentadminlifecycle.LifecycleProgression,
+	clock tournamentadminlifecycle.AdminLifecycleClock,
+) *tournamentadminlifecycle.LifecycleWorkflow {
+	return tournamentadminlifecycle.NewLifecycleWorkflow(tournamentadminlifecycle.LifecycleWorkflowDependencies{
 		Transactions:  transactions,
 		Repository:    repository,
 		Transitions:   transitions,
@@ -433,7 +434,7 @@ func provideTournamentAdminApplication(
 	roster tournamentadminroster.RosterPort,
 	preflight tournamentadminroster.PreflightPort,
 	pairing tournamentadmin.PairingPort,
-	lifecycle tournamentadmin.LifecyclePort,
+	lifecycle tournamentadminlifecycle.LifecyclePort,
 	wave tournamentadmin.WavePort,
 	noShow tournamentadminresult.NoShowPort,
 	reserve tournamentadminreplay.ReservePort,
