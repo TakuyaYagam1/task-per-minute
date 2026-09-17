@@ -9,7 +9,7 @@ import (
 	assignmentpostgres "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gamereplayusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/replay"
 )
 
 var errReplayWorkflowAuthority = errors.New("invalid replay workflow authority")
@@ -25,10 +25,10 @@ func replayWorkflowReserveChain(
 	activeSnapshotID uuid.UUID,
 	rows []sqlc.LockReplayWorkflowReserveChainRow,
 	operatorCommandID *uuid.UUID,
-) (gameusecase.ReplayReserveChain, []sqlc.TaskVersionReservation, error) {
+) (gamereplayusecase.ReplayReserveChain, []sqlc.TaskVersionReservation, error) {
 	if assignmentID == uuid.Nil || activeSnapshotID == uuid.Nil ||
 		(len(rows) != domain.AssignmentReserveCount+1 && len(rows) != domain.AssignmentReserveCount+2) {
-		return gameusecase.ReplayReserveChain{}, nil, errReplayWorkflowAuthority
+		return gamereplayusecase.ReplayReserveChain{}, nil, errReplayWorkflowAuthority
 	}
 
 	snapshots := make([]domain.AssignmentTaskSnapshot, 0, len(rows))
@@ -49,25 +49,25 @@ func replayWorkflowReserveChain(
 			reservation.Revision < 1 || reservation.State != "committed" ||
 			!reservation.CommittedAt.Valid || snapshotRow.ReservationID != reservation.ID ||
 			snapshotRow.TaskID != edge.TaskID || snapshotRow.TaskVersion != edge.TaskVersion {
-			return gameusecase.ReplayReserveChain{}, nil, errReplayWorkflowAuthority
+			return gamereplayusecase.ReplayReserveChain{}, nil, errReplayWorkflowAuthority
 		}
 		if position <= domain.AssignmentReserveCount+1 {
 			if edge.OperatorReserveCommandID.Valid {
-				return gameusecase.ReplayReserveChain{}, nil, errReplayWorkflowAuthority
+				return gamereplayusecase.ReplayReserveChain{}, nil, errReplayWorkflowAuthority
 			}
 		} else if operatorCommandID == nil || *operatorCommandID == uuid.Nil ||
 			!edge.OperatorReserveCommandID.Valid || edge.OperatorReserveCommandID.UUID != *operatorCommandID {
-			return gameusecase.ReplayReserveChain{}, nil, errReplayWorkflowAuthority
+			return gamereplayusecase.ReplayReserveChain{}, nil, errReplayWorkflowAuthority
 		}
 		snapshot, err := replayWorkflowSnapshot(snapshotRow)
 		if err != nil {
-			return gameusecase.ReplayReserveChain{}, nil, err
+			return gamereplayusecase.ReplayReserveChain{}, nil, err
 		}
 		if _, duplicate := seenTasks[snapshot.TaskID]; duplicate {
-			return gameusecase.ReplayReserveChain{}, nil, errReplayWorkflowAuthority
+			return gamereplayusecase.ReplayReserveChain{}, nil, errReplayWorkflowAuthority
 		}
 		if _, duplicate := seenSnapshots[snapshot.SnapshotID]; duplicate {
-			return gameusecase.ReplayReserveChain{}, nil, errReplayWorkflowAuthority
+			return gamereplayusecase.ReplayReserveChain{}, nil, errReplayWorkflowAuthority
 		}
 		seenTasks[snapshot.TaskID] = struct{}{}
 		seenSnapshots[snapshot.SnapshotID] = struct{}{}
@@ -78,15 +78,15 @@ func replayWorkflowReserveChain(
 		reservations = append(reservations, reservation)
 	}
 	if activeIndex < 0 {
-		return gameusecase.ReplayReserveChain{}, nil, errReplayWorkflowAuthority
+		return gamereplayusecase.ReplayReserveChain{}, nil, errReplayWorkflowAuthority
 	}
-	chain := gameusecase.ReplayReserveChain{
+	chain := gamereplayusecase.ReplayReserveChain{
 		AssignmentID: assignmentID,
 		ActiveIndex:  activeIndex,
 		Snapshots:    snapshots,
 	}
 	if err := chain.Validate(snapshots[0].Category); err != nil {
-		return gameusecase.ReplayReserveChain{}, nil, fmt.Errorf("%w: reserve chain: %w", errReplayWorkflowAuthority, err)
+		return gamereplayusecase.ReplayReserveChain{}, nil, fmt.Errorf("%w: reserve chain: %w", errReplayWorkflowAuthority, err)
 	}
 	return chain, reservations, nil
 }

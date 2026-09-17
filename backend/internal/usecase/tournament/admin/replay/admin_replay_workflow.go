@@ -13,7 +13,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	assignmentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/assignment"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	replayusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/replay"
 )
 
 type ReplayWorkflow struct {
@@ -47,7 +47,7 @@ func (w *ReplayWorkflow) AssignReserve(ctx context.Context, command ReserveComma
 			command:    command,
 			digest:     digest,
 		}
-		reserved, _, err := gameusecase.NewOperatorReserveUseCase(operatorRepository).Reserve(
+		reserved, _, err := replayusecase.NewOperatorReserveUseCase(operatorRepository).Reserve(
 			txCtx,
 			operatorReserveCommand(command, promotedAt),
 		)
@@ -84,7 +84,7 @@ func (w *ReplayWorkflow) ReplayGame(ctx context.Context, command ReplayCommand) 
 			command:    command,
 			digest:     digest,
 		}
-		replacement, _, err := gameusecase.NewReplayReplacementUseCase(
+		replacement, _, err := replayusecase.NewReplayReplacementUseCase(
 			repository,
 			replayWorkflowClock{at: openedAt},
 		).Replace(txCtx, replayReplacementCommand(command))
@@ -116,8 +116,8 @@ func (w *ReplayWorkflow) replayTime(ctx context.Context, commandID uuid.UUID) (t
 	return value, nil
 }
 
-func replayScope(tournamentID, oldWaveID, seriesID, slotID, assignmentID uuid.UUID) gameusecase.ReplayReplacementScope {
-	return gameusecase.ReplayReplacementScope{
+func replayScope(tournamentID, oldWaveID, seriesID, slotID, assignmentID uuid.UUID) replayusecase.ReplayReplacementScope {
+	return replayusecase.ReplayReplacementScope{
 		TournamentID: tournamentID,
 		OldWaveID:    oldWaveID,
 		SeriesID:     seriesID,
@@ -129,9 +129,9 @@ func replayScope(tournamentID, oldWaveID, seriesID, slotID, assignmentID uuid.UU
 func operatorReserveCommand(
 	command ReserveCommand,
 	promotedAt time.Time,
-) gameusecase.OperatorReserveCommand {
+) replayusecase.OperatorReserveCommand {
 	scope := replayScope(command.TournamentID, command.OldWaveID, command.SeriesID, command.SlotID, command.AssignmentID)
-	return gameusecase.OperatorReserveCommand{
+	return replayusecase.OperatorReserveCommand{
 		Scope:                       scope,
 		CommandID:                   command.CommandID,
 		ExpectedExhaustionCommandID: command.ExpectedExhaustionCommandID,
@@ -164,8 +164,8 @@ func operatorReserveCommand(
 	}
 }
 
-func replayReplacementCommand(command ReplayCommand) gameusecase.ReplayReplacementCommand {
-	return gameusecase.ReplayReplacementCommand{
+func replayReplacementCommand(command ReplayCommand) replayusecase.ReplayReplacementCommand {
+	return replayusecase.ReplayReplacementCommand{
 		Scope:                     replayScope(command.TournamentID, command.OldWaveID, command.SeriesID, command.SlotID, command.AssignmentID),
 		CommandID:                 command.CommandID,
 		ExpectedClosureRevisionID: domain.WaveRevisionID(command.ExpectedClosureRevisionID),
@@ -192,16 +192,16 @@ type operatorReserveRepository struct {
 
 func (r *operatorReserveRepository) LoadOperatorReserveAuthority(
 	ctx context.Context,
-	_ gameusecase.ReplayReplacementScope,
-) (gameusecase.OperatorReserveAuthority, error) {
+	_ replayusecase.ReplayReplacementScope,
+) (replayusecase.OperatorReserveAuthority, error) {
 	authority, err := r.repository.LoadOperatorReserveAuthority(ctx, r.command)
 	if err != nil {
-		return gameusecase.OperatorReserveAuthority{}, err
+		return replayusecase.OperatorReserveAuthority{}, err
 	}
 	r.currentRevision = authority.Replay.Revision
 	r.currentState = authority.TournamentState
 	if authority.Replay.Current == nil && authority.Replay.Revision != r.command.ExpectedAuthorityRevision {
-		return gameusecase.OperatorReserveAuthority{}, newReplayWorkflowConflict(
+		return replayusecase.OperatorReserveAuthority{}, newReplayWorkflowConflict(
 			r.command.ExpectedAuthorityRevision,
 			r.currentRevision,
 			r.currentState,
@@ -212,8 +212,8 @@ func (r *operatorReserveRepository) LoadOperatorReserveAuthority(
 
 func (r *operatorReserveRepository) CommitOperatorReserve(
 	ctx context.Context,
-	record gameusecase.OperatorReserve,
-) (*gameusecase.OperatorReserve, bool, error) {
+	record replayusecase.OperatorReserve,
+) (*replayusecase.OperatorReserve, bool, error) {
 	return r.repository.CommitOperatorReserve(ctx, r.command, r.digest, record)
 }
 
@@ -231,16 +231,16 @@ type replayReplacementRepository struct {
 
 func (r *replayReplacementRepository) LoadReplayReplacementAuthority(
 	ctx context.Context,
-	_ gameusecase.ReplayReplacementScope,
-) (gameusecase.ReplayReplacementAuthority, error) {
+	_ replayusecase.ReplayReplacementScope,
+) (replayusecase.ReplayReplacementAuthority, error) {
 	authority, err := r.repository.LoadReplayReplacementAuthority(ctx, r.command)
 	if err != nil {
-		return gameusecase.ReplayReplacementAuthority{}, err
+		return replayusecase.ReplayReplacementAuthority{}, err
 	}
 	r.currentRevision = authority.Replay.Revision
 	r.currentState = authority.TournamentState
 	if authority.Replay.Current == nil && authority.Replay.Revision != r.command.ExpectedAuthorityRevision {
-		return gameusecase.ReplayReplacementAuthority{}, newReplayWorkflowConflict(
+		return replayusecase.ReplayReplacementAuthority{}, newReplayWorkflowConflict(
 			r.command.ExpectedAuthorityRevision,
 			r.currentRevision,
 			r.currentState,
@@ -251,8 +251,8 @@ func (r *replayReplacementRepository) LoadReplayReplacementAuthority(
 
 func (r *replayReplacementRepository) CommitReplayReplacement(
 	ctx context.Context,
-	replacement gameusecase.ReplayReplacement,
-) (*gameusecase.ReplayReplacement, bool, error) {
+	replacement replayusecase.ReplayReplacement,
+) (*replayusecase.ReplayReplacement, bool, error) {
 	return r.repository.CommitReplayReplacement(ctx, r.command, r.digest, replacement)
 }
 
@@ -278,12 +278,12 @@ func mapReplayWorkflowError(
 	state domain.TournamentState,
 ) error {
 	if errors.Is(err, domain.ErrConflict) ||
-		errors.Is(err, gameusecase.ErrReplayReserveExhaustionConflict) ||
-		errors.Is(err, gameusecase.ErrReplayReserveExhaustionReuse) ||
-		errors.Is(err, gameusecase.ErrOperatorReserveConflict) ||
-		errors.Is(err, gameusecase.ErrOperatorReserveReuse) ||
-		errors.Is(err, gameusecase.ErrReplayReplacementConflict) ||
-		errors.Is(err, gameusecase.ErrReplayReplacementReuse) {
+		errors.Is(err, replayusecase.ErrReplayReserveExhaustionConflict) ||
+		errors.Is(err, replayusecase.ErrReplayReserveExhaustionReuse) ||
+		errors.Is(err, replayusecase.ErrOperatorReserveConflict) ||
+		errors.Is(err, replayusecase.ErrOperatorReserveReuse) ||
+		errors.Is(err, replayusecase.ErrReplayReplacementConflict) ||
+		errors.Is(err, replayusecase.ErrReplayReplacementReuse) {
 		return newReplayWorkflowConflict(expected, current, state)
 	}
 	return err
@@ -301,8 +301,8 @@ func newReplayWorkflowConflict(expected, current int64, state domain.TournamentS
 }
 
 var (
-	_ ReservePort                             = (*ReplayWorkflow)(nil)
-	_ ReplayPort                              = (*ReplayWorkflow)(nil)
-	_ gameusecase.OperatorReserveRepository   = (*operatorReserveRepository)(nil)
-	_ gameusecase.ReplayReplacementRepository = (*replayReplacementRepository)(nil)
+	_ ReservePort                               = (*ReplayWorkflow)(nil)
+	_ ReplayPort                                = (*ReplayWorkflow)(nil)
+	_ replayusecase.OperatorReserveRepository   = (*operatorReserveRepository)(nil)
+	_ replayusecase.ReplayReplacementRepository = (*replayReplacementRepository)(nil)
 )

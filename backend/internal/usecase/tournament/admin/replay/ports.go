@@ -7,7 +7,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	replayusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/replay"
 	operationusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/operation"
 )
 
@@ -21,12 +21,12 @@ type ReplayTransactionManager interface {
 
 type OperatorReserveAuthority struct {
 	TournamentState domain.TournamentState
-	Replay          gameusecase.OperatorReserveAuthority
+	Replay          replayusecase.OperatorReserveAuthority
 }
 
 type ReplayReplacementAuthority struct {
 	TournamentState domain.TournamentState
-	Replay          gameusecase.ReplayReplacementAuthority
+	Replay          replayusecase.ReplayReplacementAuthority
 }
 
 // ReplayWorkflowRepository keeps each admin command on the transaction opened
@@ -42,8 +42,8 @@ type ReplayWorkflowRepository interface {
 		ctx context.Context,
 		command ReserveCommand,
 		requestDigest [32]byte,
-		record gameusecase.OperatorReserve,
-	) (*gameusecase.OperatorReserve, bool, error)
+		record replayusecase.OperatorReserve,
+	) (*replayusecase.OperatorReserve, bool, error)
 	LoadReplayReplacementAuthority(
 		ctx context.Context,
 		command ReplayCommand,
@@ -52,8 +52,8 @@ type ReplayWorkflowRepository interface {
 		ctx context.Context,
 		command ReplayCommand,
 		requestDigest [32]byte,
-		record gameusecase.ReplayReplacement,
-	) (*gameusecase.ReplayReplacement, bool, error)
+		record replayusecase.ReplayReplacement,
+	) (*replayusecase.ReplayReplacement, bool, error)
 }
 
 type ReplayWorkflowDependencies struct {

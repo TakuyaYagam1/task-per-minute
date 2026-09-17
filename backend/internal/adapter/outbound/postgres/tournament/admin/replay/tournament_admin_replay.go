@@ -19,9 +19,9 @@ import (
 	gamedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/game"
 	seriesdomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/series"
 	assignmentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/assignment"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
 	attemptusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/attempt"
 	closeusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/close"
+	gamereplayusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/replay"
 	replayusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/replay"
 )
 
@@ -82,7 +82,7 @@ func (r *TournamentAdminReplayPostgres) LoadOperatorReserveAuthority(
 		}
 		return replayusecase.OperatorReserveAuthority{
 			TournamentState: domain.TournamentState(source.row.Tournament.State),
-			Replay: gameusecase.OperatorReserveAuthority{
+			Replay: gamereplayusecase.OperatorReserveAuthority{
 				Scope: replayScopeFromCommand(command), Revision: source.row.Series.Revision,
 				Exhaustion: current.Exhaustion, Reserve: reserveAuthorityFromRecord(current.Reserve),
 				Current: current,
@@ -109,7 +109,7 @@ func (r *TournamentAdminReplayPostgres) LoadOperatorReserveAuthority(
 	}
 	return replayusecase.OperatorReserveAuthority{
 		TournamentState: domain.TournamentState(source.row.Tournament.State),
-		Replay: gameusecase.OperatorReserveAuthority{
+		Replay: gamereplayusecase.OperatorReserveAuthority{
 			Scope: replayScopeFromCommand(command), Revision: source.row.Series.Revision,
 			Exhaustion: exhaustion, Reserve: authority,
 		},
@@ -121,8 +121,8 @@ func (r *TournamentAdminReplayPostgres) CommitOperatorReserve(
 	ctx context.Context,
 	command replayusecase.ReserveCommand,
 	requestDigest [sha256.Size]byte,
-	record gameusecase.OperatorReserve,
-) (*gameusecase.OperatorReserve, bool, error) {
+	record gamereplayusecase.OperatorReserve,
+) (*gamereplayusecase.OperatorReserve, bool, error) {
 	if ctx == nil || !r.available() || record.Validate() != nil {
 		return nil, false, domain.ErrValidation
 	}
@@ -288,7 +288,7 @@ func (r *TournamentAdminReplayPostgres) LoadReplayReplacementAuthority(
 	if err != nil {
 		return replayusecase.ReplayReplacementAuthority{}, err
 	}
-	authority := gameusecase.ReplayReplacementAuthority{
+	authority := gamereplayusecase.ReplayReplacementAuthority{
 		Scope: replayScopeFromReplayCommand(command), Revision: source.row.Series.Revision,
 		FailedAttempt: failed, OldWaveClosure: closure, ReserveChain: chain,
 		ParticipantIDs: [2]uuid.UUID{source.row.Series.FirstParticipantID, source.row.Series.SecondParticipantID},
@@ -313,15 +313,15 @@ func (r *TournamentAdminReplayPostgres) CommitReplayReplacement(
 	ctx context.Context,
 	command replayusecase.ReplayCommand,
 	requestDigest [sha256.Size]byte,
-	replacement gameusecase.ReplayReplacement,
-) (*gameusecase.ReplayReplacement, bool, error) {
+	replacement gamereplayusecase.ReplayReplacement,
+) (*gamereplayusecase.ReplayReplacement, bool, error) {
 	if ctx == nil || !r.available() || replacement.Validate() != nil {
 		return nil, false, domain.ErrValidation
 	}
 	querier := r.tx.Querier(ctx)
 	if existing, err := querier.FindReplayReplacementCommand(ctx, command.CommandID); err == nil {
 		if !bytesEqual(existing.RequestDigest, requestDigest[:]) {
-			return nil, false, gameusecase.ErrReplayReplacementReuse
+			return nil, false, gamereplayusecase.ErrReplayReplacementReuse
 		}
 		source, sourceErr := r.loadSource(ctx, querier, replaySourceScope{
 			TournamentID: command.TournamentID, OldWaveID: command.OldWaveID, SeriesID: command.SeriesID,
@@ -483,13 +483,13 @@ func replayDerivedID(commandID uuid.UUID, role string) uuid.UUID {
 	return uuid.NewSHA1(commandID, []byte("tournament-admin-replay:"+role))
 }
 
-func replayScopeFromCommand(command replayusecase.ReserveCommand) gameusecase.ReplayReplacementScope {
-	return gameusecase.ReplayReplacementScope{TournamentID: command.TournamentID, OldWaveID: command.OldWaveID,
+func replayScopeFromCommand(command replayusecase.ReserveCommand) gamereplayusecase.ReplayReplacementScope {
+	return gamereplayusecase.ReplayReplacementScope{TournamentID: command.TournamentID, OldWaveID: command.OldWaveID,
 		SeriesID: command.SeriesID, SlotID: command.SlotID, AssignmentID: command.AssignmentID}
 }
 
-func replayScopeFromReplayCommand(command replayusecase.ReplayCommand) gameusecase.ReplayReplacementScope {
-	return gameusecase.ReplayReplacementScope{TournamentID: command.TournamentID, OldWaveID: command.OldWaveID,
+func replayScopeFromReplayCommand(command replayusecase.ReplayCommand) gamereplayusecase.ReplayReplacementScope {
+	return gamereplayusecase.ReplayReplacementScope{TournamentID: command.TournamentID, OldWaveID: command.OldWaveID,
 		SeriesID: command.SeriesID, SlotID: command.SlotID, AssignmentID: command.AssignmentID}
 }
 
@@ -897,23 +897,23 @@ func (source replaySource) failedAttemptAndClosureDocument(
 	return record, closure, nil
 }
 
-func (source replaySource) replayExhaustion(row sqlc.ReplayReserveExhaustion) (gameusecase.ReplayReserveExhaustion, error) {
+func (source replaySource) replayExhaustion(row sqlc.ReplayReserveExhaustion) (gamereplayusecase.ReplayReserveExhaustion, error) {
 	document, err := decodeReplayStorageDocument[replayReserveExhaustionDocument](row.RecordDocument)
 	if err != nil || validateReplayReserveExhaustionDocument(document, row) != nil {
-		return gameusecase.ReplayReserveExhaustion{}, errReplayWorkflowAuthority
+		return gamereplayusecase.ReplayReserveExhaustion{}, errReplayWorkflowAuthority
 	}
 	failed, closure, err := source.failedAttemptAndClosureDocument(document)
 	if err != nil {
-		return gameusecase.ReplayReserveExhaustion{}, err
+		return gamereplayusecase.ReplayReserveExhaustion{}, err
 	}
 	previous := failed.Series
 	pausedState := domain.SeriesStateTechnicalPause
 	paused, err := source.seriesExecution(pausedState, &previous.Series.State)
 	if err != nil || source.row.Series.Revision < row.ResultingSeriesRevision {
-		return gameusecase.ReplayReserveExhaustion{}, errReplayWorkflowAuthority
+		return gamereplayusecase.ReplayReserveExhaustion{}, errReplayWorkflowAuthority
 	}
-	exhaustion := gameusecase.ReplayReserveExhaustion{
-		Scope: gameusecase.ReplayReplacementScope{TournamentID: row.TournamentID, OldWaveID: row.OldWaveID,
+	exhaustion := gamereplayusecase.ReplayReserveExhaustion{
+		Scope: gamereplayusecase.ReplayReplacementScope{TournamentID: row.TournamentID, OldWaveID: row.OldWaveID,
 			SeriesID: row.SeriesID, SlotID: row.SlotID, AssignmentID: row.AssignmentID},
 		CommandID: row.CommandID, ExpectedAuthorityRevision: document.ExpectedAuthorityRevision,
 		ClosureRevisionID: domain.WaveRevisionID(row.ClosureRevisionID), FailedAttemptCommandID: document.FailedAttemptCommandID,
@@ -922,7 +922,7 @@ func (source replaySource) replayExhaustion(row sqlc.ReplayReserveExhaustion) (g
 		Series: paused, OldWave: closure.Wave,
 	}
 	if exhaustion.Validate() != nil {
-		return gameusecase.ReplayReserveExhaustion{}, errReplayWorkflowAuthority
+		return gamereplayusecase.ReplayReserveExhaustion{}, errReplayWorkflowAuthority
 	}
 	return exhaustion, nil
 }
@@ -1167,7 +1167,7 @@ func (r *TournamentAdminReplayPostgres) rehydrateOperatorReserve(
 	source replaySource,
 	command replayusecase.ReserveCommand,
 	row sqlc.OperatorReplayReserve,
-) (*gameusecase.OperatorReserve, error) {
+) (*gamereplayusecase.OperatorReserve, error) {
 	document, err := decodeReplayStorageDocument[operatorReserveDocument](row.RecordDocument)
 	if err != nil || validateOperatorReserveDocument(document, row) != nil ||
 		!bytesEqual(row.RequestDigest, replayReserveCommandDigest(command)) {
@@ -1198,7 +1198,7 @@ func (r *TournamentAdminReplayPostgres) rehydrateOperatorReserve(
 	if err != nil {
 		return nil, err
 	}
-	record := gameusecase.OperatorReserve{Scope: replayScopeFromCommand(command), CommandID: row.CommandID,
+	record := gamereplayusecase.OperatorReserve{Scope: replayScopeFromCommand(command), CommandID: row.CommandID,
 		ExpectedAuthorityRevision: row.SourceSeriesRevision, Exhaustion: exhaustion, Reserve: reserve, Series: series}
 	if record.Validate() != nil {
 		return nil, errReplayWorkflowAuthority
@@ -1212,9 +1212,9 @@ func (r *TournamentAdminReplayPostgres) reconcileStoredOperatorReserve(
 	command replayusecase.ReserveCommand,
 	requestDigest [sha256.Size]byte,
 	row sqlc.OperatorReplayReserve,
-) (*gameusecase.OperatorReserve, bool, error) {
+) (*gamereplayusecase.OperatorReserve, bool, error) {
 	if !bytesEqual(row.RequestDigest, requestDigest[:]) {
-		return nil, false, gameusecase.ErrOperatorReserveReuse
+		return nil, false, gamereplayusecase.ErrOperatorReserveReuse
 	}
 	source, err := r.loadSource(ctx, querier, replaySourceScope{TournamentID: command.TournamentID,
 		OldWaveID: command.OldWaveID, SeriesID: command.SeriesID, SlotID: command.SlotID,
@@ -1231,7 +1231,7 @@ func (r *TournamentAdminReplayPostgres) reconcileStoredOperatorReserve(
 
 func operatorReserveDocumentFromRecord(
 	command replayusecase.ReserveCommand,
-	record gameusecase.OperatorReserve,
+	record gamereplayusecase.OperatorReserve,
 ) operatorReserveDocument {
 	return operatorReserveDocument{CommandID: command.CommandID, Scope: replayDocumentScope{
 		TournamentID: command.TournamentID, OldWaveID: command.OldWaveID, SeriesID: command.SeriesID,
@@ -1271,23 +1271,23 @@ func (r *TournamentAdminReplayPostgres) loadReplayReserveChain(
 	querier *sqlc.Queries,
 	source replaySource,
 	operatorCommandID *uuid.UUID,
-) (gameusecase.ReplayReserveChain, []sqlc.TaskVersionReservation, error) {
+) (gamereplayusecase.ReplayReserveChain, []sqlc.TaskVersionReservation, error) {
 	rows, err := querier.LockReplayWorkflowReserveChain(ctx, sqlc.LockReplayWorkflowReserveChainParams{
 		PlanID: source.row.AssignmentPlan.ID, BranchID: source.row.AssignmentBranch.ID,
 	})
 	if err != nil {
-		return gameusecase.ReplayReserveChain{}, nil, replayWorkflowLookupError("lock replay reserve chain", err)
+		return gamereplayusecase.ReplayReserveChain{}, nil, replayWorkflowLookupError("lock replay reserve chain", err)
 	}
 	chain, reservations, err := replayWorkflowReserveChain(source.row.Assignment.ID, source.row.TaskSnapshot.ID, rows, operatorCommandID)
 	if err != nil {
-		return gameusecase.ReplayReserveChain{}, nil, err
+		return gamereplayusecase.ReplayReserveChain{}, nil, err
 	}
 	return chain, reservations, nil
 }
 
 func replayReplacementDocumentFromReplacement(
 	command replayusecase.ReplayCommand,
-	replacement gameusecase.ReplayReplacement,
+	replacement gamereplayusecase.ReplayReplacement,
 ) replayReplacementDocument {
 	return replayReplacementDocument{CommandID: command.CommandID, Scope: replayDocumentScope{
 		TournamentID: command.TournamentID, OldWaveID: command.OldWaveID, SeriesID: command.SeriesID,
@@ -1307,8 +1307,8 @@ func replayReplacementFromStored(
 	source replaySource,
 	command replayusecase.ReplayCommand,
 	row sqlc.ReplayReplacement,
-	chain gameusecase.ReplayReserveChain,
-) (*gameusecase.ReplayReplacement, bool, error) {
+	chain gamereplayusecase.ReplayReserveChain,
+) (*gamereplayusecase.ReplayReplacement, bool, error) {
 	document, err := decodeReplayStorageDocument[replayReplacementDocument](row.RecordDocument)
 	if err != nil || validateReplayReplacementDocument(document, row) != nil {
 		return nil, false, errReplayWorkflowAuthority
@@ -1320,7 +1320,7 @@ func replayReplacementFromStored(
 		row.ReplacementGameID != command.ReplacementGameID || row.ReplacementWaveID != command.ReplacementWaveID ||
 		row.ReplacementWaveRevisionID != command.ReplacementWaveRevisionID || row.ReadyWindowID != command.ReadyWindowID ||
 		row.ReadyWindowRevisionID != command.ReadyWindowRevisionID || !row.OpenedAt.Valid {
-		return nil, false, gameusecase.ErrReplayReplacementReuse
+		return nil, false, gamereplayusecase.ErrReplayReplacementReuse
 	}
 	index := int(row.ReservePosition) - 1
 	if index < 0 || index >= len(chain.Snapshots) || chain.Snapshots[index].SnapshotID != row.SnapshotID {
@@ -1344,7 +1344,7 @@ func replayReplacementFromStored(
 		ReadyWindow: &domain.ReadyWindow{ID: row.ReadyWindowID, WaveID: row.ReplacementWaveID,
 			RevisionID: domain.ReadyWindowRevisionID(row.ReadyWindowRevisionID), State: domain.ReadyWindowStateOpen,
 			OpenedAt: openedAt, Deadline: deadline}}
-	replacement := gameusecase.ReplayReplacement{Scope: replayScopeFromReplayCommand(command), CommandID: row.CommandID,
+	replacement := gamereplayusecase.ReplayReplacement{Scope: replayScopeFromReplayCommand(command), CommandID: row.CommandID,
 		ExpectedAuthorityRevision: row.SourceSeriesRevision, ClosureRevisionID: domain.WaveRevisionID(row.ClosureRevisionID),
 		FromSnapshotID: row.FromSnapshotID, AssignmentAttemptID: row.ReplacementAssignmentAttemptID,
 		ReservePosition: int(row.ReservePosition), Snapshot: chain.Snapshots[index], Category: chain.Snapshots[index].Category,
