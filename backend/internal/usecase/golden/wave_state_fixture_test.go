@@ -14,7 +14,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	assignmentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/assignment"
 	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
-	goldenmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/mocks"
+	goldenmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/state/mocks"
 	swissusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/swiss"
 )
 

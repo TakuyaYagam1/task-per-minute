@@ -1,10 +1,10 @@
-package golden_test
+package state_test
 
 import (
 	"testing"
 	"time"
 
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
+	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/state"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )

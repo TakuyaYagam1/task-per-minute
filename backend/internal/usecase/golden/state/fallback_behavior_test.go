@@ -1,4 +1,4 @@
-package golden_test
+package state_test
 
 import (
 	"errors"
@@ -8,7 +8,8 @@ import (
 	"time"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
+	goldenplan "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/plan"
+	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/state"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -50,7 +51,7 @@ func TestGoldenDirectFallback(t *testing.T) {
 		require.Equal(t, participantID, allocated.Allocation.Positions[0].ParticipantID)
 		require.Equal(t, goldenusecase.GoldenPositionDirect, allocated.Allocation.Positions[0].Kind)
 		require.Len(t, allocated.Group.Attempts, attemptCount, "direct allocation must not create a solo attempt")
-		excludedSeeds := make([]goldenusecase.GroupMemberSeed, 0, len(resolved.Group.Members)-1)
+		excludedSeeds := make([]goldenplan.GroupMemberSeed, 0, len(resolved.Group.Members)-1)
 		for _, member := range resolved.Topology.Members() {
 			if member.ParticipantID != participantID {
 				excludedSeeds = append(excludedSeeds, member)
@@ -101,7 +102,7 @@ func TestGoldenDirectFallback(t *testing.T) {
 	})
 
 	t.Run("uses frozen normal ordering rather than UUID order", func(t *testing.T) {
-		ordered, err := goldenusecase.OrderGoldenFallbackMembers([]goldenusecase.GroupMemberSeed{
+		ordered, err := goldenusecase.OrderGoldenFallbackMembers([]goldenplan.GroupMemberSeed{
 			{ParticipantID: stateTask047ID(401), Points: 7, Buchholz: 2, EffectiveTime: 3 * time.Minute, Seed: 3},
 			{ParticipantID: stateTask047ID(402), Points: 7, Buchholz: 5, EffectiveTime: 9 * time.Minute, Seed: 2},
 			{ParticipantID: stateTask047ID(403), Points: 7, Buchholz: 5, EffectiveTime: time.Minute, Seed: 1},
@@ -109,21 +110,21 @@ func TestGoldenDirectFallback(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, []uuid.UUID{stateTask047ID(403), stateTask047ID(402), stateTask047ID(401)}, ordered)
 
-		headToHead, err := goldenusecase.OrderGoldenFallbackMembers([]goldenusecase.GroupMemberSeed{
+		headToHead, err := goldenusecase.OrderGoldenFallbackMembers([]goldenplan.GroupMemberSeed{
 			{ParticipantID: stateTask047ID(404), Points: 7, Buchholz: 5, HeadToHeadApplied: true, HeadToHeadPoints: 1, EffectiveTime: time.Minute, Seed: 1},
 			{ParticipantID: stateTask047ID(405), Points: 7, Buchholz: 5, HeadToHeadApplied: true, HeadToHeadPoints: 2, EffectiveTime: 2 * time.Minute, Seed: 2},
 		})
 		require.NoError(t, err)
 		require.Equal(t, []uuid.UUID{stateTask047ID(405), stateTask047ID(404)}, headToHead)
 
-		notApplicable, err := goldenusecase.OrderGoldenFallbackMembers([]goldenusecase.GroupMemberSeed{
+		notApplicable, err := goldenusecase.OrderGoldenFallbackMembers([]goldenplan.GroupMemberSeed{
 			{ParticipantID: stateTask047ID(406), Points: 7, Buchholz: 5, HeadToHeadApplied: true, HeadToHeadPoints: 9, EffectiveTime: 2 * time.Minute, Seed: 1},
 			{ParticipantID: stateTask047ID(407), Points: 7, Buchholz: 5, HeadToHeadApplied: false, EffectiveTime: time.Minute, Seed: 2},
 		})
 		require.NoError(t, err)
 		require.Equal(t, []uuid.UUID{stateTask047ID(407), stateTask047ID(406)}, notApplicable)
 
-		seedTie, err := goldenusecase.OrderGoldenFallbackMembers([]goldenusecase.GroupMemberSeed{
+		seedTie, err := goldenusecase.OrderGoldenFallbackMembers([]goldenplan.GroupMemberSeed{
 			{ParticipantID: stateTask047ID(408), Points: 7, Buchholz: 5, EffectiveTime: time.Minute, Seed: 4},
 			{ParticipantID: stateTask047ID(409), Points: 7, Buchholz: 5, EffectiveTime: time.Minute, Seed: 3},
 		})

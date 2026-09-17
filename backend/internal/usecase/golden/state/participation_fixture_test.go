@@ -1,4 +1,4 @@
-package golden_test
+package state_test
 
 import (
 	"context"
@@ -8,8 +8,9 @@ import (
 	"time"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
-	goldenmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/mocks"
+	goldenplan "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/plan"
+	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/state"
+	goldenmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/state/mocks"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
@@ -142,7 +143,7 @@ func stateGoldenStateFixture(t *testing.T, openedAt time.Time) goldenusecase.Gol
 	t.Helper()
 
 	authority, command := stateGoldenPlanExact(t)
-	exactPlan, err := goldenusecase.BuildExactPlan(command, authority)
+	exactPlan, err := goldenplan.BuildExactPlan(command, authority)
 	require.NoError(t, err)
 	require.GreaterOrEqual(t, len(exactPlan.Groups), 2)
 	groupPlan := exactPlan.Groups[1]
@@ -220,15 +221,15 @@ func goldenFourMemberStateFixture(t *testing.T, openedAt time.Time) goldenusecas
 		1,
 		stateGoldenPlanStandings([]int{10, 10, 9, 9, 9, 9, 7}),
 	)
-	partition, err := goldenusecase.PartitionTies(source)
+	partition, err := goldenplan.PartitionTies(source)
 	require.NoError(t, err)
 	seeds := partition.Groups()
 	require.Len(t, seeds, 2)
 	require.Len(t, seeds[1].Members, 4)
 
-	groups := make([]goldenusecase.GroupAuthority, len(seeds))
+	groups := make([]goldenplan.GroupAuthority, len(seeds))
 	for index, seed := range seeds {
-		command := goldenusecase.GroupRevisionCommand{
+		command := goldenplan.GroupRevisionCommand{
 			TournamentID: tournamentID, GroupID: stateGoldenPlanID(6010 + index),
 			RevisionID: stateGoldenPlanRevisionID(6020 + index), RevisionNo: 1,
 			ExpectedSourceRevisionID:    source.RevisionID,
@@ -236,25 +237,25 @@ func goldenFourMemberStateFixture(t *testing.T, openedAt time.Time) goldenusecas
 			PositionFrom:                seed.PositionFrom,
 			PositionTo:                  seed.PositionTo,
 		}
-		revision, buildErr := goldenusecase.BuildGroupRevision(command, source, seed, nil, nil)
+		revision, buildErr := goldenplan.BuildGroupRevision(command, source, seed, nil, nil)
 		require.NoError(t, buildErr)
 		members := revision.Members()
 		active := make([]uuid.UUID, len(members))
 		for memberIndex, member := range members {
 			active[memberIndex] = member.ParticipantID
 		}
-		groups[index] = goldenusecase.GroupAuthority{
+		groups[index] = goldenplan.GroupAuthority{
 			Revision: revision, ActiveParticipantIDs: active,
 		}
 	}
 
 	poolID := stateGoldenPlanID(6030)
-	candidates := make([]goldenusecase.TaskVersion, 6)
+	candidates := make([]goldenplan.TaskVersion, 6)
 	versions := make([]domain.TaskVersionRef, len(candidates))
 	for index := range candidates {
 		task := stateGoldenPlanTask(6040 + index)
 		versions[index] = domain.TaskVersionRef{TaskID: task.ID, Version: 2}
-		candidates[index] = goldenusecase.TaskVersion{
+		candidates[index] = goldenplan.TaskVersion{
 			PoolRevisionID: poolID,
 			Version:        2,
 			Task:           task,
@@ -263,16 +264,16 @@ func goldenFourMemberStateFixture(t *testing.T, openedAt time.Time) goldenusecas
 				PoolKind: domain.AssignmentTaskKindGolden, Exists: true, Enabled: true,
 				Healthy: true, MutationLocked: true,
 			},
-			ArtifactDigest: goldenusecase.TaskArtifactDigest(task, 2),
+			ArtifactDigest: goldenplan.TaskArtifactDigest(task, 2),
 		}
 	}
 
-	reservations := make([]goldenusecase.ParticipantReservation, 0, 6)
+	reservations := make([]goldenplan.ParticipantReservation, 0, 6)
 	for _, group := range groups {
 		for _, participantID := range group.ActiveParticipantIDs {
 			index := len(reservations)
 			playerID := stateGoldenPlanID(6100 + index)
-			reservations = append(reservations, goldenusecase.ParticipantReservation{
+			reservations = append(reservations, goldenplan.ParticipantReservation{
 				ParticipantID: participantID,
 				PlayerID:      playerID,
 				Reservation: domain.ParticipantReservation{
@@ -283,9 +284,9 @@ func goldenFourMemberStateFixture(t *testing.T, openedAt time.Time) goldenusecas
 			})
 		}
 	}
-	authority, err := goldenusecase.BuildAuthority(goldenusecase.Authority{
-		Scope: goldenusecase.Scope{TournamentID: tournamentID, PlanSetID: stateGoldenPlanID(6200)},
-		Revisions: goldenusecase.Revisions{
+	authority, err := goldenplan.BuildAuthority(goldenplan.Authority{
+		Scope: goldenplan.Scope{TournamentID: tournamentID, PlanSetID: stateGoldenPlanID(6200)},
+		Revisions: goldenplan.Revisions{
 			SourceProjectionRevisionID: source.RevisionID,
 			GroupSetRevisionID:         stateGoldenPlanID(6201), GroupSetRevision: 1,
 			PoolRevisionID: poolID, PoolRevision: 1,
@@ -301,7 +302,7 @@ func goldenFourMemberStateFixture(t *testing.T, openedAt time.Time) goldenusecas
 	})
 	require.NoError(t, err)
 
-	groupCommands := make([]goldenusecase.GroupCommand, len(groups))
+	groupCommands := make([]goldenplan.GroupCommand, len(groups))
 	for groupIndex, group := range groups {
 		groupCommands[groupIndex].GroupID = group.Revision.GroupID()
 		groupCommands[groupIndex].GroupRevisionID = group.Revision.RevisionID()
@@ -312,7 +313,7 @@ func goldenFourMemberStateFixture(t *testing.T, openedAt time.Time) goldenusecas
 			groupCommands[groupIndex].SnapshotIDs[edgeIndex] = stateGoldenPlanID(base + 3)
 		}
 	}
-	exactPlan, err := goldenusecase.BuildExactPlan(goldenusecase.Command{
+	exactPlan, err := goldenplan.BuildExactPlan(goldenplan.Command{
 		Scope: authority.Scope, PlanID: stateGoldenPlanID(6500), PlanRevisionID: stateGoldenPlanID(6501),
 		Expected: authority.Expectation(), GroupCommands: groupCommands, CreatedAt: now,
 	}, authority)

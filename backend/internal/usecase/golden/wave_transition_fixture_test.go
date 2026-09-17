@@ -11,6 +11,7 @@ import (
 	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
 	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
 	goldenmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/mocks"
+	goldenstatemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/state/mocks"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
@@ -18,7 +19,7 @@ import (
 )
 
 type continuationGoldenStateRepositoryHarness struct {
-	*goldenmocks.MockStateRepository
+	*goldenstatemocks.MockStateRepository
 
 	mu    sync.Mutex
 	state goldenusecase.GoldenState
@@ -28,7 +29,7 @@ func continuationNewGoldenStateRepository(t *testing.T, initial goldenusecase.Go
 	t.Helper()
 
 	harness := &continuationGoldenStateRepositoryHarness{state: initial.Snapshot()}
-	repository := goldenmocks.NewMockStateRepository(t)
+	repository := goldenstatemocks.NewMockStateRepository(t)
 	repository.EXPECT().LoadGoldenState(mock.Anything, mock.Anything).RunAndReturn(
 		func(context.Context, goldenusecase.GoldenStateScope) (goldenusecase.GoldenState, error) {
 			harness.mu.Lock()
@@ -52,10 +53,10 @@ func continuationNewGoldenStateRepository(t *testing.T, initial goldenusecase.Go
 	return harness
 }
 
-func continuationNewGoldenStateClock(t *testing.T, now time.Time) *goldenmocks.MockStateClock {
+func continuationNewGoldenStateClock(t *testing.T, now time.Time) *goldenstatemocks.MockStateClock {
 	t.Helper()
 
-	clock := goldenmocks.NewMockStateClock(t)
+	clock := goldenstatemocks.NewMockStateClock(t)
 	clock.EXPECT().Now().Return(now).Maybe()
 	return clock
 }

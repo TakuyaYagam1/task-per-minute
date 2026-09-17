@@ -1,4 +1,4 @@
-package golden_test
+package state_test
 
 import (
 	"testing"
@@ -9,7 +9,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	assignmentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/assignment"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
+	goldenplan "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/plan"
 	swissusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/swiss"
 )
 
@@ -31,16 +31,16 @@ func stateMustGoldenPlanProjection(
 	revisionID domain.DerivedRevisionID,
 	revisionNo int,
 	standings []swissusecase.NormalStanding,
-) goldenusecase.StandingsProjection {
+) goldenplan.StandingsProjection {
 	tb.Helper()
-	source, err := goldenusecase.NewStandingsProjection(
+	source, err := goldenplan.NewStandingsProjection(
 		tournamentID, projectionID, revisionID, revisionNo, nil, true, standings,
 	)
 	require.NoError(tb, err)
 	return source
 }
 
-func stateGoldenPlanExact(tb testing.TB) (goldenusecase.Authority, goldenusecase.Command) {
+func stateGoldenPlanExact(tb testing.TB) (goldenplan.Authority, goldenplan.Command) {
 	tb.Helper()
 	now := time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC)
 	tournamentID := stateGoldenPlanID(400)
@@ -48,50 +48,50 @@ func stateGoldenPlanExact(tb testing.TB) (goldenusecase.Authority, goldenusecase
 		tb, tournamentID, stateGoldenPlanID(401), stateGoldenPlanRevisionID(402), 1,
 		stateGoldenPlanStandings([]int{10, 10, 9, 9, 9, 7}),
 	)
-	partition, err := goldenusecase.PartitionTies(source)
+	partition, err := goldenplan.PartitionTies(source)
 	require.NoError(tb, err)
 	seeds := partition.Groups()
-	groups := make([]goldenusecase.GroupAuthority, len(seeds))
+	groups := make([]goldenplan.GroupAuthority, len(seeds))
 	for index, seed := range seeds {
-		command := goldenusecase.GroupRevisionCommand{
+		command := goldenplan.GroupRevisionCommand{
 			TournamentID: tournamentID, GroupID: stateGoldenPlanID(410 + index),
 			RevisionID: stateGoldenPlanRevisionID(420 + index), RevisionNo: 1,
 			ExpectedSourceRevisionID:    source.RevisionID,
 			ExpectedSourcePayloadDigest: source.PayloadDigest,
 			PositionFrom:                seed.PositionFrom, PositionTo: seed.PositionTo,
 		}
-		revision, buildErr := goldenusecase.BuildGroupRevision(command, source, seed, nil, nil)
+		revision, buildErr := goldenplan.BuildGroupRevision(command, source, seed, nil, nil)
 		require.NoError(tb, buildErr)
 		members := revision.Members()
 		active := make([]uuid.UUID, len(members))
 		for memberIndex, member := range members {
 			active[memberIndex] = member.ParticipantID
 		}
-		groups[index] = goldenusecase.GroupAuthority{Revision: revision, ActiveParticipantIDs: active}
+		groups[index] = goldenplan.GroupAuthority{Revision: revision, ActiveParticipantIDs: active}
 	}
 
 	poolID := stateGoldenPlanID(430)
-	candidates := make([]goldenusecase.TaskVersion, 6)
+	candidates := make([]goldenplan.TaskVersion, 6)
 	versions := make([]domain.TaskVersionRef, len(candidates))
 	for index := range candidates {
 		task := stateGoldenPlanTask(500 + index)
 		version := 2
 		versions[index] = domain.TaskVersionRef{TaskID: task.ID, Version: version}
-		candidates[index] = goldenusecase.TaskVersion{
+		candidates[index] = goldenplan.TaskVersion{
 			PoolRevisionID: poolID, Version: version, Task: task,
 			Health: domain.TaskVersionHealth{
 				TaskID: task.ID, Version: version, PoolRevisionID: poolID,
 				PoolKind: domain.AssignmentTaskKindGolden, Exists: true, Enabled: true,
 				Healthy: true, MutationLocked: true,
 			},
-			ArtifactDigest: goldenusecase.TaskArtifactDigest(task, version),
+			ArtifactDigest: goldenplan.TaskArtifactDigest(task, version),
 		}
 	}
 
-	participants := make([]goldenusecase.ParticipantReservation, 0, 5)
+	participants := make([]goldenplan.ParticipantReservation, 0, 5)
 	for _, group := range groups {
 		for _, participantID := range group.ActiveParticipantIDs {
-			participants = append(participants, goldenusecase.ParticipantReservation{
+			participants = append(participants, goldenplan.ParticipantReservation{
 				ParticipantID: participantID, PlayerID: stateGoldenPlanID(1000 + len(participants)),
 				Reservation: domain.ParticipantReservation{
 					PlayerID: stateGoldenPlanID(1000 + len(participants)), ReservationID: stateGoldenPlanID(1100 + len(participants)),
@@ -109,9 +109,9 @@ func stateGoldenPlanExact(tb testing.TB) (goldenusecase.Authority, goldenusecase
 			TaskID:        versions[index].TaskID, Version: 1,
 		})
 	}
-	authority, err := goldenusecase.BuildAuthority(goldenusecase.Authority{
-		Scope: goldenusecase.Scope{TournamentID: tournamentID, PlanSetID: stateGoldenPlanID(440)},
-		Revisions: goldenusecase.Revisions{
+	authority, err := goldenplan.BuildAuthority(goldenplan.Authority{
+		Scope: goldenplan.Scope{TournamentID: tournamentID, PlanSetID: stateGoldenPlanID(440)},
+		Revisions: goldenplan.Revisions{
 			SourceProjectionRevisionID: source.RevisionID,
 			GroupSetRevisionID:         stateGoldenPlanID(441), GroupSetRevision: 1,
 			PoolRevisionID: poolID, PoolRevision: 1,
@@ -128,7 +128,7 @@ func stateGoldenPlanExact(tb testing.TB) (goldenusecase.Authority, goldenusecase
 	})
 	require.NoError(tb, err)
 
-	groupCommands := make([]goldenusecase.GroupCommand, len(groups))
+	groupCommands := make([]goldenplan.GroupCommand, len(groups))
 	for groupIndex, group := range groups {
 		groupCommands[groupIndex].GroupID = group.Revision.GroupID()
 		groupCommands[groupIndex].GroupRevisionID = group.Revision.RevisionID()
@@ -139,7 +139,7 @@ func stateGoldenPlanExact(tb testing.TB) (goldenusecase.Authority, goldenusecase
 			groupCommands[groupIndex].SnapshotIDs[edgeIndex] = stateGoldenPlanID(base + 3)
 		}
 	}
-	command := goldenusecase.Command{
+	command := goldenplan.Command{
 		Scope: authority.Scope, PlanID: stateGoldenPlanID(700), PlanRevisionID: stateGoldenPlanID(701),
 		Expected: authority.Expectation(), GroupCommands: groupCommands, CreatedAt: now,
 	}

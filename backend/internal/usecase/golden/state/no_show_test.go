@@ -1,4 +1,4 @@
-package golden_test
+package state_test
 
 import (
 	"errors"
@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
+	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/state"
 )
 
 func TestGoldenPermanentExclusion(t *testing.T) {
