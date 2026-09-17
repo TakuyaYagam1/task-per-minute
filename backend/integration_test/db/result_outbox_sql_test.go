@@ -1,6 +1,6 @@
 //go:build integration
 
-package integration_test
+package db_test
 
 import (
 	"context"
@@ -16,7 +16,7 @@ import (
 )
 
 func TestResultOutboxSQLAcceptsUUIDIdentity(t *testing.T) {
-	_, err := sqlc.New(sharedPool).CreateResultOutboxEvent(context.Background(), sqlc.CreateResultOutboxEventParams{
+	_, err := sqlc.New(postgresPool).CreateResultOutboxEvent(context.Background(), sqlc.CreateResultOutboxEventParams{
 		TournamentID: uuid.New(), RosterID: uuid.New(), ProjectionRevisionID: uuid.New(), ProjectionRevision: 1,
 		ID: uuid.New(), IdempotencyKey: uuid.New(), SeriesID: uuid.New(), ResultEventID: uuid.New(), ProjectionEvidenceID: uuid.New(),
 		Topic: "tournament.result.committed", Payload: []byte(`{}`), CreatedAt: pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
@@ -27,7 +27,7 @@ func TestResultOutboxSQLAcceptsUUIDIdentity(t *testing.T) {
 }
 
 func TestChampionOutboxSQLAcceptsUUIDIdentity(t *testing.T) {
-	_, err := sqlc.New(sharedPool).CreateFinalChampionOutboxEvent(context.Background(), sqlc.CreateFinalChampionOutboxEventParams{
+	_, err := sqlc.New(postgresPool).CreateFinalChampionOutboxEvent(context.Background(), sqlc.CreateFinalChampionOutboxEventParams{
 		TournamentID: uuid.New(), RosterID: uuid.New(), ProjectionRevisionID: uuid.New(), ProjectionRevision: 1,
 		ID: uuid.New(), IdempotencyKey: uuid.New(), FinalSeriesID: uuid.New(), FinalResultRevisionID: uuid.New(), ChampionArtifactID: uuid.New(),
 		Payload: []byte(`{}`), CreatedAt: pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
