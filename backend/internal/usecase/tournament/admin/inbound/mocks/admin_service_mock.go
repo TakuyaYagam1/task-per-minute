@@ -20,10 +20,19 @@ func NewMockAdminService(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockAdminService {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockAdminService{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -42,8 +51,8 @@ func (_m *MockAdminService) EXPECT() *MockAdminService_Expecter {
 }
 
 // ApplyTournamentAction provides a mock function for the type MockAdminService
-func (_mock *MockAdminService) ApplyTournamentAction(context1 context.Context, v inbound.TournamentActionCommand) (usecase.TournamentView, error) {
-	ret := _mock.Called(context1, v)
+func (_mock *MockAdminService) ApplyTournamentAction(ctx context.Context, command inbound.TournamentActionCommand) (usecase.TournamentView, error) {
+	ret := _mock.Called(ctx, command)
 
 	if len(ret) == 0 {
 		panic("no return value specified for ApplyTournamentAction")
@@ -52,15 +61,15 @@ func (_mock *MockAdminService) ApplyTournamentAction(context1 context.Context, v
 	var r0 usecase.TournamentView
 	var r1 error
 	if returnFunc, ok := ret.Get(0).(func(context.Context, inbound.TournamentActionCommand) (usecase.TournamentView, error)); ok {
-		return returnFunc(context1, v)
+		return returnFunc(ctx, command)
 	}
 	if returnFunc, ok := ret.Get(0).(func(context.Context, inbound.TournamentActionCommand) usecase.TournamentView); ok {
-		r0 = returnFunc(context1, v)
+		r0 = returnFunc(ctx, command)
 	} else {
 		r0 = ret.Get(0).(usecase.TournamentView)
 	}
 	if returnFunc, ok := ret.Get(1).(func(context.Context, inbound.TournamentActionCommand) error); ok {
-		r1 = returnFunc(context1, v)
+		r1 = returnFunc(ctx, command)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -73,13 +82,13 @@ type MockAdminService_ApplyTournamentAction_Call struct {
 }
 
 // ApplyTournamentAction is a helper method to define mock.On call
-//   - context1 context.Context
-//   - v inbound.TournamentActionCommand
-func (_e *MockAdminService_Expecter) ApplyTournamentAction(context1 interface{}, v interface{}) *MockAdminService_ApplyTournamentAction_Call {
-	return &MockAdminService_ApplyTournamentAction_Call{Call: _e.mock.On("ApplyTournamentAction", context1, v)}
+//   - ctx context.Context
+//   - command inbound.TournamentActionCommand
+func (_e *MockAdminService_Expecter) ApplyTournamentAction(ctx any, command any) *MockAdminService_ApplyTournamentAction_Call {
+	return &MockAdminService_ApplyTournamentAction_Call{Call: _e.mock.On("ApplyTournamentAction", ctx, command)}
 }
 
-func (_c *MockAdminService_ApplyTournamentAction_Call) Run(run func(context1 context.Context, v inbound.TournamentActionCommand)) *MockAdminService_ApplyTournamentAction_Call {
+func (_c *MockAdminService_ApplyTournamentAction_Call) Run(run func(ctx context.Context, command inbound.TournamentActionCommand)) *MockAdminService_ApplyTournamentAction_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -102,14 +111,14 @@ func (_c *MockAdminService_ApplyTournamentAction_Call) Return(tournamentView use
 	return _c
 }
 
-func (_c *MockAdminService_ApplyTournamentAction_Call) RunAndReturn(run func(context1 context.Context, v inbound.TournamentActionCommand) (usecase.TournamentView, error)) *MockAdminService_ApplyTournamentAction_Call {
+func (_c *MockAdminService_ApplyTournamentAction_Call) RunAndReturn(run func(ctx context.Context, command inbound.TournamentActionCommand) (usecase.TournamentView, error)) *MockAdminService_ApplyTournamentAction_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // AssignReserve provides a mock function for the type MockAdminService
-func (_mock *MockAdminService) AssignReserve(context1 context.Context, v inbound.ReserveCommand) error {
-	ret := _mock.Called(context1, v)
+func (_mock *MockAdminService) AssignReserve(ctx context.Context, command inbound.ReserveCommand) error {
+	ret := _mock.Called(ctx, command)
 
 	if len(ret) == 0 {
 		panic("no return value specified for AssignReserve")
@@ -117,7 +126,7 @@ func (_mock *MockAdminService) AssignReserve(context1 context.Context, v inbound
 
 	var r0 error
 	if returnFunc, ok := ret.Get(0).(func(context.Context, inbound.ReserveCommand) error); ok {
-		r0 = returnFunc(context1, v)
+		r0 = returnFunc(ctx, command)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -130,13 +139,13 @@ type MockAdminService_AssignReserve_Call struct {
 }
 
 // AssignReserve is a helper method to define mock.On call
-//   - context1 context.Context
-//   - v inbound.ReserveCommand
-func (_e *MockAdminService_Expecter) AssignReserve(context1 interface{}, v interface{}) *MockAdminService_AssignReserve_Call {
-	return &MockAdminService_AssignReserve_Call{Call: _e.mock.On("AssignReserve", context1, v)}
+//   - ctx context.Context
+//   - command inbound.ReserveCommand
+func (_e *MockAdminService_Expecter) AssignReserve(ctx any, command any) *MockAdminService_AssignReserve_Call {
+	return &MockAdminService_AssignReserve_Call{Call: _e.mock.On("AssignReserve", ctx, command)}
 }
 
-func (_c *MockAdminService_AssignReserve_Call) Run(run func(context1 context.Context, v inbound.ReserveCommand)) *MockAdminService_AssignReserve_Call {
+func (_c *MockAdminService_AssignReserve_Call) Run(run func(ctx context.Context, command inbound.ReserveCommand)) *MockAdminService_AssignReserve_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -159,14 +168,14 @@ func (_c *MockAdminService_AssignReserve_Call) Return(err error) *MockAdminServi
 	return _c
 }
 
-func (_c *MockAdminService_AssignReserve_Call) RunAndReturn(run func(context1 context.Context, v inbound.ReserveCommand) error) *MockAdminService_AssignReserve_Call {
+func (_c *MockAdminService_AssignReserve_Call) RunAndReturn(run func(ctx context.Context, command inbound.ReserveCommand) error) *MockAdminService_AssignReserve_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // ConfigurePairings provides a mock function for the type MockAdminService
-func (_mock *MockAdminService) ConfigurePairings(context1 context.Context, v inbound.PairingCommand) (inbound.SwissRoundView, error) {
-	ret := _mock.Called(context1, v)
+func (_mock *MockAdminService) ConfigurePairings(ctx context.Context, command inbound.PairingCommand) (inbound.SwissRoundView, error) {
+	ret := _mock.Called(ctx, command)
 
 	if len(ret) == 0 {
 		panic("no return value specified for ConfigurePairings")
@@ -175,15 +184,15 @@ func (_mock *MockAdminService) ConfigurePairings(context1 context.Context, v inb
 	var r0 inbound.SwissRoundView
 	var r1 error
 	if returnFunc, ok := ret.Get(0).(func(context.Context, inbound.PairingCommand) (inbound.SwissRoundView, error)); ok {
-		return returnFunc(context1, v)
+		return returnFunc(ctx, command)
 	}
 	if returnFunc, ok := ret.Get(0).(func(context.Context, inbound.PairingCommand) inbound.SwissRoundView); ok {
-		r0 = returnFunc(context1, v)
+		r0 = returnFunc(ctx, command)
 	} else {
 		r0 = ret.Get(0).(inbound.SwissRoundView)
 	}
 	if returnFunc, ok := ret.Get(1).(func(context.Context, inbound.PairingCommand) error); ok {
-		r1 = returnFunc(context1, v)
+		r1 = returnFunc(ctx, command)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -196,13 +205,13 @@ type MockAdminService_ConfigurePairings_Call struct {
 }
 
 // ConfigurePairings is a helper method to define mock.On call
-//   - context1 context.Context
-//   - v inbound.PairingCommand
-func (_e *MockAdminService_Expecter) ConfigurePairings(context1 interface{}, v interface{}) *MockAdminService_ConfigurePairings_Call {
-	return &MockAdminService_ConfigurePairings_Call{Call: _e.mock.On("ConfigurePairings", context1, v)}
+//   - ctx context.Context
+//   - command inbound.PairingCommand
+func (_e *MockAdminService_Expecter) ConfigurePairings(ctx any, command any) *MockAdminService_ConfigurePairings_Call {
+	return &MockAdminService_ConfigurePairings_Call{Call: _e.mock.On("ConfigurePairings", ctx, command)}
 }
 
-func (_c *MockAdminService_ConfigurePairings_Call) Run(run func(context1 context.Context, v inbound.PairingCommand)) *MockAdminService_ConfigurePairings_Call {
+func (_c *MockAdminService_ConfigurePairings_Call) Run(run func(ctx context.Context, command inbound.PairingCommand)) *MockAdminService_ConfigurePairings_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -220,19 +229,19 @@ func (_c *MockAdminService_ConfigurePairings_Call) Run(run func(context1 context
 	return _c
 }
 
-func (_c *MockAdminService_ConfigurePairings_Call) Return(v1 inbound.SwissRoundView, err error) *MockAdminService_ConfigurePairings_Call {
-	_c.Call.Return(v1, err)
+func (_c *MockAdminService_ConfigurePairings_Call) Return(swissRoundView inbound.SwissRoundView, err error) *MockAdminService_ConfigurePairings_Call {
+	_c.Call.Return(swissRoundView, err)
 	return _c
 }
 
-func (_c *MockAdminService_ConfigurePairings_Call) RunAndReturn(run func(context1 context.Context, v inbound.PairingCommand) (inbound.SwissRoundView, error)) *MockAdminService_ConfigurePairings_Call {
+func (_c *MockAdminService_ConfigurePairings_Call) RunAndReturn(run func(ctx context.Context, command inbound.PairingCommand) (inbound.SwissRoundView, error)) *MockAdminService_ConfigurePairings_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // ControlWave provides a mock function for the type MockAdminService
-func (_mock *MockAdminService) ControlWave(context1 context.Context, v inbound.WaveCommand) (inbound.WaveView, error) {
-	ret := _mock.Called(context1, v)
+func (_mock *MockAdminService) ControlWave(ctx context.Context, command inbound.WaveCommand) (inbound.WaveView, error) {
+	ret := _mock.Called(ctx, command)
 
 	if len(ret) == 0 {
 		panic("no return value specified for ControlWave")
@@ -241,15 +250,15 @@ func (_mock *MockAdminService) ControlWave(context1 context.Context, v inbound.W
 	var r0 inbound.WaveView
 	var r1 error
 	if returnFunc, ok := ret.Get(0).(func(context.Context, inbound.WaveCommand) (inbound.WaveView, error)); ok {
-		return returnFunc(context1, v)
+		return returnFunc(ctx, command)
 	}
 	if returnFunc, ok := ret.Get(0).(func(context.Context, inbound.WaveCommand) inbound.WaveView); ok {
-		r0 = returnFunc(context1, v)
+		r0 = returnFunc(ctx, command)
 	} else {
 		r0 = ret.Get(0).(inbound.WaveView)
 	}
 	if returnFunc, ok := ret.Get(1).(func(context.Context, inbound.WaveCommand) error); ok {
-		r1 = returnFunc(context1, v)
+		r1 = returnFunc(ctx, command)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -262,13 +271,13 @@ type MockAdminService_ControlWave_Call struct {
 }
 
 // ControlWave is a helper method to define mock.On call
-//   - context1 context.Context
-//   - v inbound.WaveCommand
-func (_e *MockAdminService_Expecter) ControlWave(context1 interface{}, v interface{}) *MockAdminService_ControlWave_Call {
-	return &MockAdminService_ControlWave_Call{Call: _e.mock.On("ControlWave", context1, v)}
+//   - ctx context.Context
+//   - command inbound.WaveCommand
+func (_e *MockAdminService_Expecter) ControlWave(ctx any, command any) *MockAdminService_ControlWave_Call {
+	return &MockAdminService_ControlWave_Call{Call: _e.mock.On("ControlWave", ctx, command)}
 }
 
-func (_c *MockAdminService_ControlWave_Call) Run(run func(context1 context.Context, v inbound.WaveCommand)) *MockAdminService_ControlWave_Call {
+func (_c *MockAdminService_ControlWave_Call) Run(run func(ctx context.Context, command inbound.WaveCommand)) *MockAdminService_ControlWave_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -286,19 +295,19 @@ func (_c *MockAdminService_ControlWave_Call) Run(run func(context1 context.Conte
 	return _c
 }
 
-func (_c *MockAdminService_ControlWave_Call) Return(v1 inbound.WaveView, err error) *MockAdminService_ControlWave_Call {
-	_c.Call.Return(v1, err)
+func (_c *MockAdminService_ControlWave_Call) Return(waveView inbound.WaveView, err error) *MockAdminService_ControlWave_Call {
+	_c.Call.Return(waveView, err)
 	return _c
 }
 
-func (_c *MockAdminService_ControlWave_Call) RunAndReturn(run func(context1 context.Context, v inbound.WaveCommand) (inbound.WaveView, error)) *MockAdminService_ControlWave_Call {
+func (_c *MockAdminService_ControlWave_Call) RunAndReturn(run func(ctx context.Context, command inbound.WaveCommand) (inbound.WaveView, error)) *MockAdminService_ControlWave_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // CorrectGameResult provides a mock function for the type MockAdminService
-func (_mock *MockAdminService) CorrectGameResult(context1 context.Context, v inbound.CorrectionCommand) (inbound.CorrectionEvidence, error) {
-	ret := _mock.Called(context1, v)
+func (_mock *MockAdminService) CorrectGameResult(ctx context.Context, command inbound.CorrectionCommand) (inbound.CorrectionEvidence, error) {
+	ret := _mock.Called(ctx, command)
 
 	if len(ret) == 0 {
 		panic("no return value specified for CorrectGameResult")
@@ -307,15 +316,15 @@ func (_mock *MockAdminService) CorrectGameResult(context1 context.Context, v inb
 	var r0 inbound.CorrectionEvidence
 	var r1 error
 	if returnFunc, ok := ret.Get(0).(func(context.Context, inbound.CorrectionCommand) (inbound.CorrectionEvidence, error)); ok {
-		return returnFunc(context1, v)
+		return returnFunc(ctx, command)
 	}
 	if returnFunc, ok := ret.Get(0).(func(context.Context, inbound.CorrectionCommand) inbound.CorrectionEvidence); ok {
-		r0 = returnFunc(context1, v)
+		r0 = returnFunc(ctx, command)
 	} else {
 		r0 = ret.Get(0).(inbound.CorrectionEvidence)
 	}
 	if returnFunc, ok := ret.Get(1).(func(context.Context, inbound.CorrectionCommand) error); ok {
-		r1 = returnFunc(context1, v)
+		r1 = returnFunc(ctx, command)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -328,13 +337,13 @@ type MockAdminService_CorrectGameResult_Call struct {
 }
 
 // CorrectGameResult is a helper method to define mock.On call
-//   - context1 context.Context
-//   - v inbound.CorrectionCommand
-func (_e *MockAdminService_Expecter) CorrectGameResult(context1 interface{}, v interface{}) *MockAdminService_CorrectGameResult_Call {
-	return &MockAdminService_CorrectGameResult_Call{Call: _e.mock.On("CorrectGameResult", context1, v)}
+//   - ctx context.Context
+//   - command inbound.CorrectionCommand
+func (_e *MockAdminService_Expecter) CorrectGameResult(ctx any, command any) *MockAdminService_CorrectGameResult_Call {
+	return &MockAdminService_CorrectGameResult_Call{Call: _e.mock.On("CorrectGameResult", ctx, command)}
 }
 
-func (_c *MockAdminService_CorrectGameResult_Call) Run(run func(context1 context.Context, v inbound.CorrectionCommand)) *MockAdminService_CorrectGameResult_Call {
+func (_c *MockAdminService_CorrectGameResult_Call) Run(run func(ctx context.Context, command inbound.CorrectionCommand)) *MockAdminService_CorrectGameResult_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -352,19 +361,19 @@ func (_c *MockAdminService_CorrectGameResult_Call) Run(run func(context1 context
 	return _c
 }
 
-func (_c *MockAdminService_CorrectGameResult_Call) Return(v1 inbound.CorrectionEvidence, err error) *MockAdminService_CorrectGameResult_Call {
-	_c.Call.Return(v1, err)
+func (_c *MockAdminService_CorrectGameResult_Call) Return(correctionEvidence inbound.CorrectionEvidence, err error) *MockAdminService_CorrectGameResult_Call {
+	_c.Call.Return(correctionEvidence, err)
 	return _c
 }
 
-func (_c *MockAdminService_CorrectGameResult_Call) RunAndReturn(run func(context1 context.Context, v inbound.CorrectionCommand) (inbound.CorrectionEvidence, error)) *MockAdminService_CorrectGameResult_Call {
+func (_c *MockAdminService_CorrectGameResult_Call) RunAndReturn(run func(ctx context.Context, command inbound.CorrectionCommand) (inbound.CorrectionEvidence, error)) *MockAdminService_CorrectGameResult_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // ExportIncident provides a mock function for the type MockAdminService
-func (_mock *MockAdminService) ExportIncident(context1 context.Context, v inbound.IncidentQuery) (audit.IncidentBundle, error) {
-	ret := _mock.Called(context1, v)
+func (_mock *MockAdminService) ExportIncident(ctx context.Context, query inbound.IncidentQuery) (audit.IncidentBundle, error) {
+	ret := _mock.Called(ctx, query)
 
 	if len(ret) == 0 {
 		panic("no return value specified for ExportIncident")
@@ -373,15 +382,15 @@ func (_mock *MockAdminService) ExportIncident(context1 context.Context, v inboun
 	var r0 audit.IncidentBundle
 	var r1 error
 	if returnFunc, ok := ret.Get(0).(func(context.Context, inbound.IncidentQuery) (audit.IncidentBundle, error)); ok {
-		return returnFunc(context1, v)
+		return returnFunc(ctx, query)
 	}
 	if returnFunc, ok := ret.Get(0).(func(context.Context, inbound.IncidentQuery) audit.IncidentBundle); ok {
-		r0 = returnFunc(context1, v)
+		r0 = returnFunc(ctx, query)
 	} else {
 		r0 = ret.Get(0).(audit.IncidentBundle)
 	}
 	if returnFunc, ok := ret.Get(1).(func(context.Context, inbound.IncidentQuery) error); ok {
-		r1 = returnFunc(context1, v)
+		r1 = returnFunc(ctx, query)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -394,13 +403,13 @@ type MockAdminService_ExportIncident_Call struct {
 }
 
 // ExportIncident is a helper method to define mock.On call
-//   - context1 context.Context
-//   - v inbound.IncidentQuery
-func (_e *MockAdminService_Expecter) ExportIncident(context1 interface{}, v interface{}) *MockAdminService_ExportIncident_Call {
-	return &MockAdminService_ExportIncident_Call{Call: _e.mock.On("ExportIncident", context1, v)}
+//   - ctx context.Context
+//   - query inbound.IncidentQuery
+func (_e *MockAdminService_Expecter) ExportIncident(ctx any, query any) *MockAdminService_ExportIncident_Call {
+	return &MockAdminService_ExportIncident_Call{Call: _e.mock.On("ExportIncident", ctx, query)}
 }
 
-func (_c *MockAdminService_ExportIncident_Call) Run(run func(context1 context.Context, v inbound.IncidentQuery)) *MockAdminService_ExportIncident_Call {
+func (_c *MockAdminService_ExportIncident_Call) Run(run func(ctx context.Context, query inbound.IncidentQuery)) *MockAdminService_ExportIncident_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -423,14 +432,14 @@ func (_c *MockAdminService_ExportIncident_Call) Return(incidentBundle audit.Inci
 	return _c
 }
 
-func (_c *MockAdminService_ExportIncident_Call) RunAndReturn(run func(context1 context.Context, v inbound.IncidentQuery) (audit.IncidentBundle, error)) *MockAdminService_ExportIncident_Call {
+func (_c *MockAdminService_ExportIncident_Call) RunAndReturn(run func(ctx context.Context, query inbound.IncidentQuery) (audit.IncidentBundle, error)) *MockAdminService_ExportIncident_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // GetOperatorSnapshot provides a mock function for the type MockAdminService
-func (_mock *MockAdminService) GetOperatorSnapshot(context1 context.Context, v inbound.SnapshotQuery) (inbound.OperatorSnapshotView, error) {
-	ret := _mock.Called(context1, v)
+func (_mock *MockAdminService) GetOperatorSnapshot(ctx context.Context, query inbound.SnapshotQuery) (inbound.OperatorSnapshotView, error) {
+	ret := _mock.Called(ctx, query)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetOperatorSnapshot")
@@ -439,15 +448,15 @@ func (_mock *MockAdminService) GetOperatorSnapshot(context1 context.Context, v i
 	var r0 inbound.OperatorSnapshotView
 	var r1 error
 	if returnFunc, ok := ret.Get(0).(func(context.Context, inbound.SnapshotQuery) (inbound.OperatorSnapshotView, error)); ok {
-		return returnFunc(context1, v)
+		return returnFunc(ctx, query)
 	}
 	if returnFunc, ok := ret.Get(0).(func(context.Context, inbound.SnapshotQuery) inbound.OperatorSnapshotView); ok {
-		r0 = returnFunc(context1, v)
+		r0 = returnFunc(ctx, query)
 	} else {
 		r0 = ret.Get(0).(inbound.OperatorSnapshotView)
 	}
 	if returnFunc, ok := ret.Get(1).(func(context.Context, inbound.SnapshotQuery) error); ok {
-		r1 = returnFunc(context1, v)
+		r1 = returnFunc(ctx, query)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -460,13 +469,13 @@ type MockAdminService_GetOperatorSnapshot_Call struct {
 }
 
 // GetOperatorSnapshot is a helper method to define mock.On call
-//   - context1 context.Context
-//   - v inbound.SnapshotQuery
-func (_e *MockAdminService_Expecter) GetOperatorSnapshot(context1 interface{}, v interface{}) *MockAdminService_GetOperatorSnapshot_Call {
-	return &MockAdminService_GetOperatorSnapshot_Call{Call: _e.mock.On("GetOperatorSnapshot", context1, v)}
+//   - ctx context.Context
+//   - query inbound.SnapshotQuery
+func (_e *MockAdminService_Expecter) GetOperatorSnapshot(ctx any, query any) *MockAdminService_GetOperatorSnapshot_Call {
+	return &MockAdminService_GetOperatorSnapshot_Call{Call: _e.mock.On("GetOperatorSnapshot", ctx, query)}
 }
 
-func (_c *MockAdminService_GetOperatorSnapshot_Call) Run(run func(context1 context.Context, v inbound.SnapshotQuery)) *MockAdminService_GetOperatorSnapshot_Call {
+func (_c *MockAdminService_GetOperatorSnapshot_Call) Run(run func(ctx context.Context, query inbound.SnapshotQuery)) *MockAdminService_GetOperatorSnapshot_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -484,19 +493,19 @@ func (_c *MockAdminService_GetOperatorSnapshot_Call) Run(run func(context1 conte
 	return _c
 }
 
-func (_c *MockAdminService_GetOperatorSnapshot_Call) Return(v1 inbound.OperatorSnapshotView, err error) *MockAdminService_GetOperatorSnapshot_Call {
-	_c.Call.Return(v1, err)
+func (_c *MockAdminService_GetOperatorSnapshot_Call) Return(operatorSnapshotView inbound.OperatorSnapshotView, err error) *MockAdminService_GetOperatorSnapshot_Call {
+	_c.Call.Return(operatorSnapshotView, err)
 	return _c
 }
 
-func (_c *MockAdminService_GetOperatorSnapshot_Call) RunAndReturn(run func(context1 context.Context, v inbound.SnapshotQuery) (inbound.OperatorSnapshotView, error)) *MockAdminService_GetOperatorSnapshot_Call {
+func (_c *MockAdminService_GetOperatorSnapshot_Call) RunAndReturn(run func(ctx context.Context, query inbound.SnapshotQuery) (inbound.OperatorSnapshotView, error)) *MockAdminService_GetOperatorSnapshot_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // GetRoster provides a mock function for the type MockAdminService
-func (_mock *MockAdminService) GetRoster(context1 context.Context, v inbound.RosterQuery) (inbound.RosterView, error) {
-	ret := _mock.Called(context1, v)
+func (_mock *MockAdminService) GetRoster(ctx context.Context, query inbound.RosterQuery) (inbound.RosterView, error) {
+	ret := _mock.Called(ctx, query)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetRoster")
@@ -505,15 +514,15 @@ func (_mock *MockAdminService) GetRoster(context1 context.Context, v inbound.Ros
 	var r0 inbound.RosterView
 	var r1 error
 	if returnFunc, ok := ret.Get(0).(func(context.Context, inbound.RosterQuery) (inbound.RosterView, error)); ok {
-		return returnFunc(context1, v)
+		return returnFunc(ctx, query)
 	}
 	if returnFunc, ok := ret.Get(0).(func(context.Context, inbound.RosterQuery) inbound.RosterView); ok {
-		r0 = returnFunc(context1, v)
+		r0 = returnFunc(ctx, query)
 	} else {
 		r0 = ret.Get(0).(inbound.RosterView)
 	}
 	if returnFunc, ok := ret.Get(1).(func(context.Context, inbound.RosterQuery) error); ok {
-		r1 = returnFunc(context1, v)
+		r1 = returnFunc(ctx, query)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -526,13 +535,13 @@ type MockAdminService_GetRoster_Call struct {
 }
 
 // GetRoster is a helper method to define mock.On call
-//   - context1 context.Context
-//   - v inbound.RosterQuery
-func (_e *MockAdminService_Expecter) GetRoster(context1 interface{}, v interface{}) *MockAdminService_GetRoster_Call {
-	return &MockAdminService_GetRoster_Call{Call: _e.mock.On("GetRoster", context1, v)}
+//   - ctx context.Context
+//   - query inbound.RosterQuery
+func (_e *MockAdminService_Expecter) GetRoster(ctx any, query any) *MockAdminService_GetRoster_Call {
+	return &MockAdminService_GetRoster_Call{Call: _e.mock.On("GetRoster", ctx, query)}
 }
 
-func (_c *MockAdminService_GetRoster_Call) Run(run func(context1 context.Context, v inbound.RosterQuery)) *MockAdminService_GetRoster_Call {
+func (_c *MockAdminService_GetRoster_Call) Run(run func(ctx context.Context, query inbound.RosterQuery)) *MockAdminService_GetRoster_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -550,19 +559,19 @@ func (_c *MockAdminService_GetRoster_Call) Run(run func(context1 context.Context
 	return _c
 }
 
-func (_c *MockAdminService_GetRoster_Call) Return(v1 inbound.RosterView, err error) *MockAdminService_GetRoster_Call {
-	_c.Call.Return(v1, err)
+func (_c *MockAdminService_GetRoster_Call) Return(rosterView inbound.RosterView, err error) *MockAdminService_GetRoster_Call {
+	_c.Call.Return(rosterView, err)
 	return _c
 }
 
-func (_c *MockAdminService_GetRoster_Call) RunAndReturn(run func(context1 context.Context, v inbound.RosterQuery) (inbound.RosterView, error)) *MockAdminService_GetRoster_Call {
+func (_c *MockAdminService_GetRoster_Call) RunAndReturn(run func(ctx context.Context, query inbound.RosterQuery) (inbound.RosterView, error)) *MockAdminService_GetRoster_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // ListAudit provides a mock function for the type MockAdminService
-func (_mock *MockAdminService) ListAudit(context1 context.Context, v inbound.AuditQuery) (audit.AuditPage, error) {
-	ret := _mock.Called(context1, v)
+func (_mock *MockAdminService) ListAudit(ctx context.Context, query inbound.AuditQuery) (audit.AuditPage, error) {
+	ret := _mock.Called(ctx, query)
 
 	if len(ret) == 0 {
 		panic("no return value specified for ListAudit")
@@ -571,15 +580,15 @@ func (_mock *MockAdminService) ListAudit(context1 context.Context, v inbound.Aud
 	var r0 audit.AuditPage
 	var r1 error
 	if returnFunc, ok := ret.Get(0).(func(context.Context, inbound.AuditQuery) (audit.AuditPage, error)); ok {
-		return returnFunc(context1, v)
+		return returnFunc(ctx, query)
 	}
 	if returnFunc, ok := ret.Get(0).(func(context.Context, inbound.AuditQuery) audit.AuditPage); ok {
-		r0 = returnFunc(context1, v)
+		r0 = returnFunc(ctx, query)
 	} else {
 		r0 = ret.Get(0).(audit.AuditPage)
 	}
 	if returnFunc, ok := ret.Get(1).(func(context.Context, inbound.AuditQuery) error); ok {
-		r1 = returnFunc(context1, v)
+		r1 = returnFunc(ctx, query)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -592,13 +601,13 @@ type MockAdminService_ListAudit_Call struct {
 }
 
 // ListAudit is a helper method to define mock.On call
-//   - context1 context.Context
-//   - v inbound.AuditQuery
-func (_e *MockAdminService_Expecter) ListAudit(context1 interface{}, v interface{}) *MockAdminService_ListAudit_Call {
-	return &MockAdminService_ListAudit_Call{Call: _e.mock.On("ListAudit", context1, v)}
+//   - ctx context.Context
+//   - query inbound.AuditQuery
+func (_e *MockAdminService_Expecter) ListAudit(ctx any, query any) *MockAdminService_ListAudit_Call {
+	return &MockAdminService_ListAudit_Call{Call: _e.mock.On("ListAudit", ctx, query)}
 }
 
-func (_c *MockAdminService_ListAudit_Call) Run(run func(context1 context.Context, v inbound.AuditQuery)) *MockAdminService_ListAudit_Call {
+func (_c *MockAdminService_ListAudit_Call) Run(run func(ctx context.Context, query inbound.AuditQuery)) *MockAdminService_ListAudit_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -621,14 +630,14 @@ func (_c *MockAdminService_ListAudit_Call) Return(auditPage audit.AuditPage, err
 	return _c
 }
 
-func (_c *MockAdminService_ListAudit_Call) RunAndReturn(run func(context1 context.Context, v inbound.AuditQuery) (audit.AuditPage, error)) *MockAdminService_ListAudit_Call {
+func (_c *MockAdminService_ListAudit_Call) RunAndReturn(run func(ctx context.Context, query inbound.AuditQuery) (audit.AuditPage, error)) *MockAdminService_ListAudit_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // LockRoster provides a mock function for the type MockAdminService
-func (_mock *MockAdminService) LockRoster(context1 context.Context, v inbound.LockRosterCommand) (inbound.RosterView, error) {
-	ret := _mock.Called(context1, v)
+func (_mock *MockAdminService) LockRoster(ctx context.Context, command inbound.LockRosterCommand) (inbound.RosterView, error) {
+	ret := _mock.Called(ctx, command)
 
 	if len(ret) == 0 {
 		panic("no return value specified for LockRoster")
@@ -637,15 +646,15 @@ func (_mock *MockAdminService) LockRoster(context1 context.Context, v inbound.Lo
 	var r0 inbound.RosterView
 	var r1 error
 	if returnFunc, ok := ret.Get(0).(func(context.Context, inbound.LockRosterCommand) (inbound.RosterView, error)); ok {
-		return returnFunc(context1, v)
+		return returnFunc(ctx, command)
 	}
 	if returnFunc, ok := ret.Get(0).(func(context.Context, inbound.LockRosterCommand) inbound.RosterView); ok {
-		r0 = returnFunc(context1, v)
+		r0 = returnFunc(ctx, command)
 	} else {
 		r0 = ret.Get(0).(inbound.RosterView)
 	}
 	if returnFunc, ok := ret.Get(1).(func(context.Context, inbound.LockRosterCommand) error); ok {
-		r1 = returnFunc(context1, v)
+		r1 = returnFunc(ctx, command)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -658,13 +667,13 @@ type MockAdminService_LockRoster_Call struct {
 }
 
 // LockRoster is a helper method to define mock.On call
-//   - context1 context.Context
-//   - v inbound.LockRosterCommand
-func (_e *MockAdminService_Expecter) LockRoster(context1 interface{}, v interface{}) *MockAdminService_LockRoster_Call {
-	return &MockAdminService_LockRoster_Call{Call: _e.mock.On("LockRoster", context1, v)}
+//   - ctx context.Context
+//   - command inbound.LockRosterCommand
+func (_e *MockAdminService_Expecter) LockRoster(ctx any, command any) *MockAdminService_LockRoster_Call {
+	return &MockAdminService_LockRoster_Call{Call: _e.mock.On("LockRoster", ctx, command)}
 }
 
-func (_c *MockAdminService_LockRoster_Call) Run(run func(context1 context.Context, v inbound.LockRosterCommand)) *MockAdminService_LockRoster_Call {
+func (_c *MockAdminService_LockRoster_Call) Run(run func(ctx context.Context, command inbound.LockRosterCommand)) *MockAdminService_LockRoster_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -682,19 +691,19 @@ func (_c *MockAdminService_LockRoster_Call) Run(run func(context1 context.Contex
 	return _c
 }
 
-func (_c *MockAdminService_LockRoster_Call) Return(v1 inbound.RosterView, err error) *MockAdminService_LockRoster_Call {
-	_c.Call.Return(v1, err)
+func (_c *MockAdminService_LockRoster_Call) Return(rosterView inbound.RosterView, err error) *MockAdminService_LockRoster_Call {
+	_c.Call.Return(rosterView, err)
 	return _c
 }
 
-func (_c *MockAdminService_LockRoster_Call) RunAndReturn(run func(context1 context.Context, v inbound.LockRosterCommand) (inbound.RosterView, error)) *MockAdminService_LockRoster_Call {
+func (_c *MockAdminService_LockRoster_Call) RunAndReturn(run func(ctx context.Context, command inbound.LockRosterCommand) (inbound.RosterView, error)) *MockAdminService_LockRoster_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // RecordForfeit provides a mock function for the type MockAdminService
-func (_mock *MockAdminService) RecordForfeit(context1 context.Context, v inbound.ForfeitCommand) error {
-	ret := _mock.Called(context1, v)
+func (_mock *MockAdminService) RecordForfeit(ctx context.Context, command inbound.ForfeitCommand) error {
+	ret := _mock.Called(ctx, command)
 
 	if len(ret) == 0 {
 		panic("no return value specified for RecordForfeit")
@@ -702,7 +711,7 @@ func (_mock *MockAdminService) RecordForfeit(context1 context.Context, v inbound
 
 	var r0 error
 	if returnFunc, ok := ret.Get(0).(func(context.Context, inbound.ForfeitCommand) error); ok {
-		r0 = returnFunc(context1, v)
+		r0 = returnFunc(ctx, command)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -715,13 +724,13 @@ type MockAdminService_RecordForfeit_Call struct {
 }
 
 // RecordForfeit is a helper method to define mock.On call
-//   - context1 context.Context
-//   - v inbound.ForfeitCommand
-func (_e *MockAdminService_Expecter) RecordForfeit(context1 interface{}, v interface{}) *MockAdminService_RecordForfeit_Call {
-	return &MockAdminService_RecordForfeit_Call{Call: _e.mock.On("RecordForfeit", context1, v)}
+//   - ctx context.Context
+//   - command inbound.ForfeitCommand
+func (_e *MockAdminService_Expecter) RecordForfeit(ctx any, command any) *MockAdminService_RecordForfeit_Call {
+	return &MockAdminService_RecordForfeit_Call{Call: _e.mock.On("RecordForfeit", ctx, command)}
 }
 
-func (_c *MockAdminService_RecordForfeit_Call) Run(run func(context1 context.Context, v inbound.ForfeitCommand)) *MockAdminService_RecordForfeit_Call {
+func (_c *MockAdminService_RecordForfeit_Call) Run(run func(ctx context.Context, command inbound.ForfeitCommand)) *MockAdminService_RecordForfeit_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -744,14 +753,14 @@ func (_c *MockAdminService_RecordForfeit_Call) Return(err error) *MockAdminServi
 	return _c
 }
 
-func (_c *MockAdminService_RecordForfeit_Call) RunAndReturn(run func(context1 context.Context, v inbound.ForfeitCommand) error) *MockAdminService_RecordForfeit_Call {
+func (_c *MockAdminService_RecordForfeit_Call) RunAndReturn(run func(ctx context.Context, command inbound.ForfeitCommand) error) *MockAdminService_RecordForfeit_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // ReplaceRoster provides a mock function for the type MockAdminService
-func (_mock *MockAdminService) ReplaceRoster(context1 context.Context, v inbound.ReplaceRosterCommand) (inbound.RosterView, error) {
-	ret := _mock.Called(context1, v)
+func (_mock *MockAdminService) ReplaceRoster(ctx context.Context, command inbound.ReplaceRosterCommand) (inbound.RosterView, error) {
+	ret := _mock.Called(ctx, command)
 
 	if len(ret) == 0 {
 		panic("no return value specified for ReplaceRoster")
@@ -760,15 +769,15 @@ func (_mock *MockAdminService) ReplaceRoster(context1 context.Context, v inbound
 	var r0 inbound.RosterView
 	var r1 error
 	if returnFunc, ok := ret.Get(0).(func(context.Context, inbound.ReplaceRosterCommand) (inbound.RosterView, error)); ok {
-		return returnFunc(context1, v)
+		return returnFunc(ctx, command)
 	}
 	if returnFunc, ok := ret.Get(0).(func(context.Context, inbound.ReplaceRosterCommand) inbound.RosterView); ok {
-		r0 = returnFunc(context1, v)
+		r0 = returnFunc(ctx, command)
 	} else {
 		r0 = ret.Get(0).(inbound.RosterView)
 	}
 	if returnFunc, ok := ret.Get(1).(func(context.Context, inbound.ReplaceRosterCommand) error); ok {
-		r1 = returnFunc(context1, v)
+		r1 = returnFunc(ctx, command)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -781,13 +790,13 @@ type MockAdminService_ReplaceRoster_Call struct {
 }
 
 // ReplaceRoster is a helper method to define mock.On call
-//   - context1 context.Context
-//   - v inbound.ReplaceRosterCommand
-func (_e *MockAdminService_Expecter) ReplaceRoster(context1 interface{}, v interface{}) *MockAdminService_ReplaceRoster_Call {
-	return &MockAdminService_ReplaceRoster_Call{Call: _e.mock.On("ReplaceRoster", context1, v)}
+//   - ctx context.Context
+//   - command inbound.ReplaceRosterCommand
+func (_e *MockAdminService_Expecter) ReplaceRoster(ctx any, command any) *MockAdminService_ReplaceRoster_Call {
+	return &MockAdminService_ReplaceRoster_Call{Call: _e.mock.On("ReplaceRoster", ctx, command)}
 }
 
-func (_c *MockAdminService_ReplaceRoster_Call) Run(run func(context1 context.Context, v inbound.ReplaceRosterCommand)) *MockAdminService_ReplaceRoster_Call {
+func (_c *MockAdminService_ReplaceRoster_Call) Run(run func(ctx context.Context, command inbound.ReplaceRosterCommand)) *MockAdminService_ReplaceRoster_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -805,19 +814,19 @@ func (_c *MockAdminService_ReplaceRoster_Call) Run(run func(context1 context.Con
 	return _c
 }
 
-func (_c *MockAdminService_ReplaceRoster_Call) Return(v1 inbound.RosterView, err error) *MockAdminService_ReplaceRoster_Call {
-	_c.Call.Return(v1, err)
+func (_c *MockAdminService_ReplaceRoster_Call) Return(rosterView inbound.RosterView, err error) *MockAdminService_ReplaceRoster_Call {
+	_c.Call.Return(rosterView, err)
 	return _c
 }
 
-func (_c *MockAdminService_ReplaceRoster_Call) RunAndReturn(run func(context1 context.Context, v inbound.ReplaceRosterCommand) (inbound.RosterView, error)) *MockAdminService_ReplaceRoster_Call {
+func (_c *MockAdminService_ReplaceRoster_Call) RunAndReturn(run func(ctx context.Context, command inbound.ReplaceRosterCommand) (inbound.RosterView, error)) *MockAdminService_ReplaceRoster_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // ReplayGame provides a mock function for the type MockAdminService
-func (_mock *MockAdminService) ReplayGame(context1 context.Context, v inbound.ReplayCommand) error {
-	ret := _mock.Called(context1, v)
+func (_mock *MockAdminService) ReplayGame(ctx context.Context, command inbound.ReplayCommand) error {
+	ret := _mock.Called(ctx, command)
 
 	if len(ret) == 0 {
 		panic("no return value specified for ReplayGame")
@@ -825,7 +834,7 @@ func (_mock *MockAdminService) ReplayGame(context1 context.Context, v inbound.Re
 
 	var r0 error
 	if returnFunc, ok := ret.Get(0).(func(context.Context, inbound.ReplayCommand) error); ok {
-		r0 = returnFunc(context1, v)
+		r0 = returnFunc(ctx, command)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -838,13 +847,13 @@ type MockAdminService_ReplayGame_Call struct {
 }
 
 // ReplayGame is a helper method to define mock.On call
-//   - context1 context.Context
-//   - v inbound.ReplayCommand
-func (_e *MockAdminService_Expecter) ReplayGame(context1 interface{}, v interface{}) *MockAdminService_ReplayGame_Call {
-	return &MockAdminService_ReplayGame_Call{Call: _e.mock.On("ReplayGame", context1, v)}
+//   - ctx context.Context
+//   - command inbound.ReplayCommand
+func (_e *MockAdminService_Expecter) ReplayGame(ctx any, command any) *MockAdminService_ReplayGame_Call {
+	return &MockAdminService_ReplayGame_Call{Call: _e.mock.On("ReplayGame", ctx, command)}
 }
 
-func (_c *MockAdminService_ReplayGame_Call) Run(run func(context1 context.Context, v inbound.ReplayCommand)) *MockAdminService_ReplayGame_Call {
+func (_c *MockAdminService_ReplayGame_Call) Run(run func(ctx context.Context, command inbound.ReplayCommand)) *MockAdminService_ReplayGame_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -867,14 +876,14 @@ func (_c *MockAdminService_ReplayGame_Call) Return(err error) *MockAdminService_
 	return _c
 }
 
-func (_c *MockAdminService_ReplayGame_Call) RunAndReturn(run func(context1 context.Context, v inbound.ReplayCommand) error) *MockAdminService_ReplayGame_Call {
+func (_c *MockAdminService_ReplayGame_Call) RunAndReturn(run func(ctx context.Context, command inbound.ReplayCommand) error) *MockAdminService_ReplayGame_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // ResolveNoShow provides a mock function for the type MockAdminService
-func (_mock *MockAdminService) ResolveNoShow(context1 context.Context, v inbound.NoShowCommand) error {
-	ret := _mock.Called(context1, v)
+func (_mock *MockAdminService) ResolveNoShow(ctx context.Context, command inbound.NoShowCommand) error {
+	ret := _mock.Called(ctx, command)
 
 	if len(ret) == 0 {
 		panic("no return value specified for ResolveNoShow")
@@ -882,7 +891,7 @@ func (_mock *MockAdminService) ResolveNoShow(context1 context.Context, v inbound
 
 	var r0 error
 	if returnFunc, ok := ret.Get(0).(func(context.Context, inbound.NoShowCommand) error); ok {
-		r0 = returnFunc(context1, v)
+		r0 = returnFunc(ctx, command)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -895,13 +904,13 @@ type MockAdminService_ResolveNoShow_Call struct {
 }
 
 // ResolveNoShow is a helper method to define mock.On call
-//   - context1 context.Context
-//   - v inbound.NoShowCommand
-func (_e *MockAdminService_Expecter) ResolveNoShow(context1 interface{}, v interface{}) *MockAdminService_ResolveNoShow_Call {
-	return &MockAdminService_ResolveNoShow_Call{Call: _e.mock.On("ResolveNoShow", context1, v)}
+//   - ctx context.Context
+//   - command inbound.NoShowCommand
+func (_e *MockAdminService_Expecter) ResolveNoShow(ctx any, command any) *MockAdminService_ResolveNoShow_Call {
+	return &MockAdminService_ResolveNoShow_Call{Call: _e.mock.On("ResolveNoShow", ctx, command)}
 }
 
-func (_c *MockAdminService_ResolveNoShow_Call) Run(run func(context1 context.Context, v inbound.NoShowCommand)) *MockAdminService_ResolveNoShow_Call {
+func (_c *MockAdminService_ResolveNoShow_Call) Run(run func(ctx context.Context, command inbound.NoShowCommand)) *MockAdminService_ResolveNoShow_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -924,14 +933,14 @@ func (_c *MockAdminService_ResolveNoShow_Call) Return(err error) *MockAdminServi
 	return _c
 }
 
-func (_c *MockAdminService_ResolveNoShow_Call) RunAndReturn(run func(context1 context.Context, v inbound.NoShowCommand) error) *MockAdminService_ResolveNoShow_Call {
+func (_c *MockAdminService_ResolveNoShow_Call) RunAndReturn(run func(ctx context.Context, command inbound.NoShowCommand) error) *MockAdminService_ResolveNoShow_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // RunPreflight provides a mock function for the type MockAdminService
-func (_mock *MockAdminService) RunPreflight(context1 context.Context, v inbound.PreflightCommand) (preflight.ReportRevision, error) {
-	ret := _mock.Called(context1, v)
+func (_mock *MockAdminService) RunPreflight(ctx context.Context, command inbound.PreflightCommand) (preflight.ReportRevision, error) {
+	ret := _mock.Called(ctx, command)
 
 	if len(ret) == 0 {
 		panic("no return value specified for RunPreflight")
@@ -940,15 +949,15 @@ func (_mock *MockAdminService) RunPreflight(context1 context.Context, v inbound.
 	var r0 preflight.ReportRevision
 	var r1 error
 	if returnFunc, ok := ret.Get(0).(func(context.Context, inbound.PreflightCommand) (preflight.ReportRevision, error)); ok {
-		return returnFunc(context1, v)
+		return returnFunc(ctx, command)
 	}
 	if returnFunc, ok := ret.Get(0).(func(context.Context, inbound.PreflightCommand) preflight.ReportRevision); ok {
-		r0 = returnFunc(context1, v)
+		r0 = returnFunc(ctx, command)
 	} else {
 		r0 = ret.Get(0).(preflight.ReportRevision)
 	}
 	if returnFunc, ok := ret.Get(1).(func(context.Context, inbound.PreflightCommand) error); ok {
-		r1 = returnFunc(context1, v)
+		r1 = returnFunc(ctx, command)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -961,13 +970,13 @@ type MockAdminService_RunPreflight_Call struct {
 }
 
 // RunPreflight is a helper method to define mock.On call
-//   - context1 context.Context
-//   - v inbound.PreflightCommand
-func (_e *MockAdminService_Expecter) RunPreflight(context1 interface{}, v interface{}) *MockAdminService_RunPreflight_Call {
-	return &MockAdminService_RunPreflight_Call{Call: _e.mock.On("RunPreflight", context1, v)}
+//   - ctx context.Context
+//   - command inbound.PreflightCommand
+func (_e *MockAdminService_Expecter) RunPreflight(ctx any, command any) *MockAdminService_RunPreflight_Call {
+	return &MockAdminService_RunPreflight_Call{Call: _e.mock.On("RunPreflight", ctx, command)}
 }
 
-func (_c *MockAdminService_RunPreflight_Call) Run(run func(context1 context.Context, v inbound.PreflightCommand)) *MockAdminService_RunPreflight_Call {
+func (_c *MockAdminService_RunPreflight_Call) Run(run func(ctx context.Context, command inbound.PreflightCommand)) *MockAdminService_RunPreflight_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -990,14 +999,14 @@ func (_c *MockAdminService_RunPreflight_Call) Return(reportRevision preflight.Re
 	return _c
 }
 
-func (_c *MockAdminService_RunPreflight_Call) RunAndReturn(run func(context1 context.Context, v inbound.PreflightCommand) (preflight.ReportRevision, error)) *MockAdminService_RunPreflight_Call {
+func (_c *MockAdminService_RunPreflight_Call) RunAndReturn(run func(ctx context.Context, command inbound.PreflightCommand) (preflight.ReportRevision, error)) *MockAdminService_RunPreflight_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // UnlockRoster provides a mock function for the type MockAdminService
-func (_mock *MockAdminService) UnlockRoster(context1 context.Context, v inbound.UnlockRosterCommand) (inbound.RosterView, error) {
-	ret := _mock.Called(context1, v)
+func (_mock *MockAdminService) UnlockRoster(ctx context.Context, command inbound.UnlockRosterCommand) (inbound.RosterView, error) {
+	ret := _mock.Called(ctx, command)
 
 	if len(ret) == 0 {
 		panic("no return value specified for UnlockRoster")
@@ -1006,15 +1015,15 @@ func (_mock *MockAdminService) UnlockRoster(context1 context.Context, v inbound.
 	var r0 inbound.RosterView
 	var r1 error
 	if returnFunc, ok := ret.Get(0).(func(context.Context, inbound.UnlockRosterCommand) (inbound.RosterView, error)); ok {
-		return returnFunc(context1, v)
+		return returnFunc(ctx, command)
 	}
 	if returnFunc, ok := ret.Get(0).(func(context.Context, inbound.UnlockRosterCommand) inbound.RosterView); ok {
-		r0 = returnFunc(context1, v)
+		r0 = returnFunc(ctx, command)
 	} else {
 		r0 = ret.Get(0).(inbound.RosterView)
 	}
 	if returnFunc, ok := ret.Get(1).(func(context.Context, inbound.UnlockRosterCommand) error); ok {
-		r1 = returnFunc(context1, v)
+		r1 = returnFunc(ctx, command)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -1027,13 +1036,13 @@ type MockAdminService_UnlockRoster_Call struct {
 }
 
 // UnlockRoster is a helper method to define mock.On call
-//   - context1 context.Context
-//   - v inbound.UnlockRosterCommand
-func (_e *MockAdminService_Expecter) UnlockRoster(context1 interface{}, v interface{}) *MockAdminService_UnlockRoster_Call {
-	return &MockAdminService_UnlockRoster_Call{Call: _e.mock.On("UnlockRoster", context1, v)}
+//   - ctx context.Context
+//   - command inbound.UnlockRosterCommand
+func (_e *MockAdminService_Expecter) UnlockRoster(ctx any, command any) *MockAdminService_UnlockRoster_Call {
+	return &MockAdminService_UnlockRoster_Call{Call: _e.mock.On("UnlockRoster", ctx, command)}
 }
 
-func (_c *MockAdminService_UnlockRoster_Call) Run(run func(context1 context.Context, v inbound.UnlockRosterCommand)) *MockAdminService_UnlockRoster_Call {
+func (_c *MockAdminService_UnlockRoster_Call) Run(run func(ctx context.Context, command inbound.UnlockRosterCommand)) *MockAdminService_UnlockRoster_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -1051,12 +1060,12 @@ func (_c *MockAdminService_UnlockRoster_Call) Run(run func(context1 context.Cont
 	return _c
 }
 
-func (_c *MockAdminService_UnlockRoster_Call) Return(v1 inbound.RosterView, err error) *MockAdminService_UnlockRoster_Call {
-	_c.Call.Return(v1, err)
+func (_c *MockAdminService_UnlockRoster_Call) Return(rosterView inbound.RosterView, err error) *MockAdminService_UnlockRoster_Call {
+	_c.Call.Return(rosterView, err)
 	return _c
 }
 
-func (_c *MockAdminService_UnlockRoster_Call) RunAndReturn(run func(context1 context.Context, v inbound.UnlockRosterCommand) (inbound.RosterView, error)) *MockAdminService_UnlockRoster_Call {
+func (_c *MockAdminService_UnlockRoster_Call) RunAndReturn(run func(ctx context.Context, command inbound.UnlockRosterCommand) (inbound.RosterView, error)) *MockAdminService_UnlockRoster_Call {
 	_c.Call.Return(run)
 	return _c
 }

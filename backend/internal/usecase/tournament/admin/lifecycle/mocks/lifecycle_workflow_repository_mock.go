@@ -18,10 +18,19 @@ func NewMockLifecycleWorkflowRepository(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockLifecycleWorkflowRepository {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockLifecycleWorkflowRepository{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -64,7 +73,7 @@ type MockLifecycleWorkflowRepository_CancelTechnicalPause_Call struct {
 // CancelTechnicalPause is a helper method to define mock.On call
 //   - ctx context.Context
 //   - input lifecycle.LifecyclePauseCancellationInput
-func (_e *MockLifecycleWorkflowRepository_Expecter) CancelTechnicalPause(ctx interface{}, input interface{}) *MockLifecycleWorkflowRepository_CancelTechnicalPause_Call {
+func (_e *MockLifecycleWorkflowRepository_Expecter) CancelTechnicalPause(ctx any, input any) *MockLifecycleWorkflowRepository_CancelTechnicalPause_Call {
 	return &MockLifecycleWorkflowRepository_CancelTechnicalPause_Call{Call: _e.mock.On("CancelTechnicalPause", ctx, input)}
 }
 
@@ -133,7 +142,7 @@ type MockLifecycleWorkflowRepository_FindLifecycleCommand_Call struct {
 //   - ctx context.Context
 //   - tournamentID uuid.UUID
 //   - commandID uuid.UUID
-func (_e *MockLifecycleWorkflowRepository_Expecter) FindLifecycleCommand(ctx interface{}, tournamentID interface{}, commandID interface{}) *MockLifecycleWorkflowRepository_FindLifecycleCommand_Call {
+func (_e *MockLifecycleWorkflowRepository_Expecter) FindLifecycleCommand(ctx any, tournamentID any, commandID any) *MockLifecycleWorkflowRepository_FindLifecycleCommand_Call {
 	return &MockLifecycleWorkflowRepository_FindLifecycleCommand_Call{Call: _e.mock.On("FindLifecycleCommand", ctx, tournamentID, commandID)}
 }
 
@@ -204,7 +213,7 @@ type MockLifecycleWorkflowRepository_LockExecutionSnapshot_Call struct {
 // LockExecutionSnapshot is a helper method to define mock.On call
 //   - ctx context.Context
 //   - authority lifecycle.LifecycleAuthority
-func (_e *MockLifecycleWorkflowRepository_Expecter) LockExecutionSnapshot(ctx interface{}, authority interface{}) *MockLifecycleWorkflowRepository_LockExecutionSnapshot_Call {
+func (_e *MockLifecycleWorkflowRepository_Expecter) LockExecutionSnapshot(ctx any, authority any) *MockLifecycleWorkflowRepository_LockExecutionSnapshot_Call {
 	return &MockLifecycleWorkflowRepository_LockExecutionSnapshot_Call{Call: _e.mock.On("LockExecutionSnapshot", ctx, authority)}
 }
 
@@ -270,7 +279,7 @@ type MockLifecycleWorkflowRepository_LockLifecycleAuthority_Call struct {
 // LockLifecycleAuthority is a helper method to define mock.On call
 //   - ctx context.Context
 //   - tournamentID uuid.UUID
-func (_e *MockLifecycleWorkflowRepository_Expecter) LockLifecycleAuthority(ctx interface{}, tournamentID interface{}) *MockLifecycleWorkflowRepository_LockLifecycleAuthority_Call {
+func (_e *MockLifecycleWorkflowRepository_Expecter) LockLifecycleAuthority(ctx any, tournamentID any) *MockLifecycleWorkflowRepository_LockLifecycleAuthority_Call {
 	return &MockLifecycleWorkflowRepository_LockLifecycleAuthority_Call{Call: _e.mock.On("LockLifecycleAuthority", ctx, tournamentID)}
 }
 
@@ -336,7 +345,7 @@ type MockLifecycleWorkflowRepository_ResumeTechnicalPause_Call struct {
 // ResumeTechnicalPause is a helper method to define mock.On call
 //   - ctx context.Context
 //   - input lifecycle.LifecycleResumeInput
-func (_e *MockLifecycleWorkflowRepository_Expecter) ResumeTechnicalPause(ctx interface{}, input interface{}) *MockLifecycleWorkflowRepository_ResumeTechnicalPause_Call {
+func (_e *MockLifecycleWorkflowRepository_Expecter) ResumeTechnicalPause(ctx any, input any) *MockLifecycleWorkflowRepository_ResumeTechnicalPause_Call {
 	return &MockLifecycleWorkflowRepository_ResumeTechnicalPause_Call{Call: _e.mock.On("ResumeTechnicalPause", ctx, input)}
 }
 
@@ -393,7 +402,7 @@ type MockLifecycleWorkflowRepository_SaveLifecycleCommand_Call struct {
 // SaveLifecycleCommand is a helper method to define mock.On call
 //   - ctx context.Context
 //   - record lifecycle.LifecycleCommandRecord
-func (_e *MockLifecycleWorkflowRepository_Expecter) SaveLifecycleCommand(ctx interface{}, record interface{}) *MockLifecycleWorkflowRepository_SaveLifecycleCommand_Call {
+func (_e *MockLifecycleWorkflowRepository_Expecter) SaveLifecycleCommand(ctx any, record any) *MockLifecycleWorkflowRepository_SaveLifecycleCommand_Call {
 	return &MockLifecycleWorkflowRepository_SaveLifecycleCommand_Call{Call: _e.mock.On("SaveLifecycleCommand", ctx, record)}
 }
 

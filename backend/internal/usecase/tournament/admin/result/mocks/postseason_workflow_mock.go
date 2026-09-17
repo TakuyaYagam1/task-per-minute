@@ -17,10 +17,19 @@ func NewMockPostseasonWorkflow(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockPostseasonWorkflow {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockPostseasonWorkflow{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -72,7 +81,7 @@ type MockPostseasonWorkflow_AdvanceAfterSeriesSettlement_Call struct {
 // AdvanceAfterSeriesSettlement is a helper method to define mock.On call
 //   - ctx context.Context
 //   - command playoff.TerminalSeriesCommand
-func (_e *MockPostseasonWorkflow_Expecter) AdvanceAfterSeriesSettlement(ctx interface{}, command interface{}) *MockPostseasonWorkflow_AdvanceAfterSeriesSettlement_Call {
+func (_e *MockPostseasonWorkflow_Expecter) AdvanceAfterSeriesSettlement(ctx any, command any) *MockPostseasonWorkflow_AdvanceAfterSeriesSettlement_Call {
 	return &MockPostseasonWorkflow_AdvanceAfterSeriesSettlement_Call{Call: _e.mock.On("AdvanceAfterSeriesSettlement", ctx, command)}
 }
 
@@ -94,8 +103,8 @@ func (_c *MockPostseasonWorkflow_AdvanceAfterSeriesSettlement_Call) Run(run func
 	return _c
 }
 
-func (_c *MockPostseasonWorkflow_AdvanceAfterSeriesSettlement_Call) Return(v playoff.TerminalReceipt, err error) *MockPostseasonWorkflow_AdvanceAfterSeriesSettlement_Call {
-	_c.Call.Return(v, err)
+func (_c *MockPostseasonWorkflow_AdvanceAfterSeriesSettlement_Call) Return(terminalReceipt playoff.TerminalReceipt, err error) *MockPostseasonWorkflow_AdvanceAfterSeriesSettlement_Call {
+	_c.Call.Return(terminalReceipt, err)
 	return _c
 }
 

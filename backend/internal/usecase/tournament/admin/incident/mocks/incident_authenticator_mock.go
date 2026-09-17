@@ -15,10 +15,19 @@ func NewMockIncidentAuthenticator(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockIncidentAuthenticator {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockIncidentAuthenticator{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -69,7 +78,7 @@ type MockIncidentAuthenticator_Sign_Call struct {
 
 // Sign is a helper method to define mock.On call
 //   - bundle audit.IncidentBundle
-func (_e *MockIncidentAuthenticator_Expecter) Sign(bundle interface{}) *MockIncidentAuthenticator_Sign_Call {
+func (_e *MockIncidentAuthenticator_Expecter) Sign(bundle any) *MockIncidentAuthenticator_Sign_Call {
 	return &MockIncidentAuthenticator_Sign_Call{Call: _e.mock.On("Sign", bundle)}
 }
 
@@ -120,7 +129,7 @@ type MockIncidentAuthenticator_Verify_Call struct {
 
 // Verify is a helper method to define mock.On call
 //   - bundle audit.IncidentBundle
-func (_e *MockIncidentAuthenticator_Expecter) Verify(bundle interface{}) *MockIncidentAuthenticator_Verify_Call {
+func (_e *MockIncidentAuthenticator_Expecter) Verify(bundle any) *MockIncidentAuthenticator_Verify_Call {
 	return &MockIncidentAuthenticator_Verify_Call{Call: _e.mock.On("Verify", bundle)}
 }
 

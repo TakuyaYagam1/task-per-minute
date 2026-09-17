@@ -19,10 +19,19 @@ func NewMockExecutionWorkflowRepository(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockExecutionWorkflowRepository {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockExecutionWorkflowRepository{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -74,7 +83,7 @@ type MockExecutionWorkflowRepository_CommitPairing_Call struct {
 // CommitPairing is a helper method to define mock.On call
 //   - ctx context.Context
 //   - plan execution.PairingPlan
-func (_e *MockExecutionWorkflowRepository_Expecter) CommitPairing(ctx interface{}, plan interface{}) *MockExecutionWorkflowRepository_CommitPairing_Call {
+func (_e *MockExecutionWorkflowRepository_Expecter) CommitPairing(ctx any, plan any) *MockExecutionWorkflowRepository_CommitPairing_Call {
 	return &MockExecutionWorkflowRepository_CommitPairing_Call{Call: _e.mock.On("CommitPairing", ctx, plan)}
 }
 
@@ -140,7 +149,7 @@ type MockExecutionWorkflowRepository_CommitWave_Call struct {
 // CommitWave is a helper method to define mock.On call
 //   - ctx context.Context
 //   - mutation execution.WaveMutation
-func (_e *MockExecutionWorkflowRepository_Expecter) CommitWave(ctx interface{}, mutation interface{}) *MockExecutionWorkflowRepository_CommitWave_Call {
+func (_e *MockExecutionWorkflowRepository_Expecter) CommitWave(ctx any, mutation any) *MockExecutionWorkflowRepository_CommitWave_Call {
 	return &MockExecutionWorkflowRepository_CommitWave_Call{Call: _e.mock.On("CommitWave", ctx, mutation)}
 }
 
@@ -209,7 +218,7 @@ type MockExecutionWorkflowRepository_FindPairingCommand_Call struct {
 //   - ctx context.Context
 //   - tournamentID uuid.UUID
 //   - commandID uuid.UUID
-func (_e *MockExecutionWorkflowRepository_Expecter) FindPairingCommand(ctx interface{}, tournamentID interface{}, commandID interface{}) *MockExecutionWorkflowRepository_FindPairingCommand_Call {
+func (_e *MockExecutionWorkflowRepository_Expecter) FindPairingCommand(ctx any, tournamentID any, commandID any) *MockExecutionWorkflowRepository_FindPairingCommand_Call {
 	return &MockExecutionWorkflowRepository_FindPairingCommand_Call{Call: _e.mock.On("FindPairingCommand", ctx, tournamentID, commandID)}
 }
 
@@ -283,7 +292,7 @@ type MockExecutionWorkflowRepository_FindWaveCommand_Call struct {
 //   - ctx context.Context
 //   - tournamentID uuid.UUID
 //   - commandID uuid.UUID
-func (_e *MockExecutionWorkflowRepository_Expecter) FindWaveCommand(ctx interface{}, tournamentID interface{}, commandID interface{}) *MockExecutionWorkflowRepository_FindWaveCommand_Call {
+func (_e *MockExecutionWorkflowRepository_Expecter) FindWaveCommand(ctx any, tournamentID any, commandID any) *MockExecutionWorkflowRepository_FindWaveCommand_Call {
 	return &MockExecutionWorkflowRepository_FindWaveCommand_Call{Call: _e.mock.On("FindWaveCommand", ctx, tournamentID, commandID)}
 }
 
@@ -354,7 +363,7 @@ type MockExecutionWorkflowRepository_LockPairingAuthority_Call struct {
 // LockPairingAuthority is a helper method to define mock.On call
 //   - ctx context.Context
 //   - tournamentID uuid.UUID
-func (_e *MockExecutionWorkflowRepository_Expecter) LockPairingAuthority(ctx interface{}, tournamentID interface{}) *MockExecutionWorkflowRepository_LockPairingAuthority_Call {
+func (_e *MockExecutionWorkflowRepository_Expecter) LockPairingAuthority(ctx any, tournamentID any) *MockExecutionWorkflowRepository_LockPairingAuthority_Call {
 	return &MockExecutionWorkflowRepository_LockPairingAuthority_Call{Call: _e.mock.On("LockPairingAuthority", ctx, tournamentID)}
 }
 
@@ -376,8 +385,8 @@ func (_c *MockExecutionWorkflowRepository_LockPairingAuthority_Call) Run(run fun
 	return _c
 }
 
-func (_c *MockExecutionWorkflowRepository_LockPairingAuthority_Call) Return(v execution.PairingAuthority, err error) *MockExecutionWorkflowRepository_LockPairingAuthority_Call {
-	_c.Call.Return(v, err)
+func (_c *MockExecutionWorkflowRepository_LockPairingAuthority_Call) Return(pairingAuthority execution.PairingAuthority, err error) *MockExecutionWorkflowRepository_LockPairingAuthority_Call {
+	_c.Call.Return(pairingAuthority, err)
 	return _c
 }
 
@@ -421,7 +430,7 @@ type MockExecutionWorkflowRepository_LockWaveAuthority_Call struct {
 //   - ctx context.Context
 //   - tournamentID uuid.UUID
 //   - waveID uuid.UUID
-func (_e *MockExecutionWorkflowRepository_Expecter) LockWaveAuthority(ctx interface{}, tournamentID interface{}, waveID interface{}) *MockExecutionWorkflowRepository_LockWaveAuthority_Call {
+func (_e *MockExecutionWorkflowRepository_Expecter) LockWaveAuthority(ctx any, tournamentID any, waveID any) *MockExecutionWorkflowRepository_LockWaveAuthority_Call {
 	return &MockExecutionWorkflowRepository_LockWaveAuthority_Call{Call: _e.mock.On("LockWaveAuthority", ctx, tournamentID, waveID)}
 }
 
@@ -491,7 +500,7 @@ type MockExecutionWorkflowRepository_ReadExecutionTime_Call struct {
 
 // ReadExecutionTime is a helper method to define mock.On call
 //   - ctx context.Context
-func (_e *MockExecutionWorkflowRepository_Expecter) ReadExecutionTime(ctx interface{}) *MockExecutionWorkflowRepository_ReadExecutionTime_Call {
+func (_e *MockExecutionWorkflowRepository_Expecter) ReadExecutionTime(ctx any) *MockExecutionWorkflowRepository_ReadExecutionTime_Call {
 	return &MockExecutionWorkflowRepository_ReadExecutionTime_Call{Call: _e.mock.On("ReadExecutionTime", ctx)}
 }
 
@@ -543,7 +552,7 @@ type MockExecutionWorkflowRepository_SavePairingCommand_Call struct {
 // SavePairingCommand is a helper method to define mock.On call
 //   - ctx context.Context
 //   - record execution.PairingCommandRecord
-func (_e *MockExecutionWorkflowRepository_Expecter) SavePairingCommand(ctx interface{}, record interface{}) *MockExecutionWorkflowRepository_SavePairingCommand_Call {
+func (_e *MockExecutionWorkflowRepository_Expecter) SavePairingCommand(ctx any, record any) *MockExecutionWorkflowRepository_SavePairingCommand_Call {
 	return &MockExecutionWorkflowRepository_SavePairingCommand_Call{Call: _e.mock.On("SavePairingCommand", ctx, record)}
 }
 
@@ -600,7 +609,7 @@ type MockExecutionWorkflowRepository_SaveWaveCommand_Call struct {
 // SaveWaveCommand is a helper method to define mock.On call
 //   - ctx context.Context
 //   - record execution.WaveCommandRecord
-func (_e *MockExecutionWorkflowRepository_Expecter) SaveWaveCommand(ctx interface{}, record interface{}) *MockExecutionWorkflowRepository_SaveWaveCommand_Call {
+func (_e *MockExecutionWorkflowRepository_Expecter) SaveWaveCommand(ctx any, record any) *MockExecutionWorkflowRepository_SaveWaveCommand_Call {
 	return &MockExecutionWorkflowRepository_SaveWaveCommand_Call{Call: _e.mock.On("SaveWaveCommand", ctx, record)}
 }
 

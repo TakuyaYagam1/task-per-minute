@@ -7,7 +7,7 @@ package mocks
 import (
 	"context"
 
-	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/close"
+	gameclose "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/close"
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -39,32 +39,32 @@ func (_m *MockOldWaveCloser) EXPECT() *MockOldWaveCloser_Expecter {
 }
 
 // Close provides a mock function for the type MockOldWaveCloser
-func (_mock *MockOldWaveCloser) Close(ctx context.Context, command close.CloseCommand) (*close.Closure, bool, error) {
+func (_mock *MockOldWaveCloser) Close(ctx context.Context, command gameclose.CloseCommand) (*gameclose.Closure, bool, error) {
 	ret := _mock.Called(ctx, command)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Close")
 	}
 
-	var r0 *close.Closure
+	var r0 *gameclose.Closure
 	var r1 bool
 	var r2 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, close.CloseCommand) (*close.Closure, bool, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, gameclose.CloseCommand) (*gameclose.Closure, bool, error)); ok {
 		return returnFunc(ctx, command)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, close.CloseCommand) *close.Closure); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, gameclose.CloseCommand) *gameclose.Closure); ok {
 		r0 = returnFunc(ctx, command)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*close.Closure)
+			r0 = ret.Get(0).(*gameclose.Closure)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, close.CloseCommand) bool); ok {
+	if returnFunc, ok := ret.Get(1).(func(context.Context, gameclose.CloseCommand) bool); ok {
 		r1 = returnFunc(ctx, command)
 	} else {
 		r1 = ret.Get(1).(bool)
 	}
-	if returnFunc, ok := ret.Get(2).(func(context.Context, close.CloseCommand) error); ok {
+	if returnFunc, ok := ret.Get(2).(func(context.Context, gameclose.CloseCommand) error); ok {
 		r2 = returnFunc(ctx, command)
 	} else {
 		r2 = ret.Error(2)
@@ -79,20 +79,20 @@ type MockOldWaveCloser_Close_Call struct {
 
 // Close is a helper method to define mock.On call
 //   - ctx context.Context
-//   - command close.CloseCommand
+//   - command gameclose.CloseCommand
 func (_e *MockOldWaveCloser_Expecter) Close(ctx interface{}, command interface{}) *MockOldWaveCloser_Close_Call {
 	return &MockOldWaveCloser_Close_Call{Call: _e.mock.On("Close", ctx, command)}
 }
 
-func (_c *MockOldWaveCloser_Close_Call) Run(run func(ctx context.Context, command close.CloseCommand)) *MockOldWaveCloser_Close_Call {
+func (_c *MockOldWaveCloser_Close_Call) Run(run func(ctx context.Context, command gameclose.CloseCommand)) *MockOldWaveCloser_Close_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
-		var arg1 close.CloseCommand
+		var arg1 gameclose.CloseCommand
 		if args[1] != nil {
-			arg1 = args[1].(close.CloseCommand)
+			arg1 = args[1].(gameclose.CloseCommand)
 		}
 		run(
 			arg0,
@@ -102,12 +102,12 @@ func (_c *MockOldWaveCloser_Close_Call) Run(run func(ctx context.Context, comman
 	return _c
 }
 
-func (_c *MockOldWaveCloser_Close_Call) Return(closure *close.Closure, b bool, err error) *MockOldWaveCloser_Close_Call {
+func (_c *MockOldWaveCloser_Close_Call) Return(closure *gameclose.Closure, b bool, err error) *MockOldWaveCloser_Close_Call {
 	_c.Call.Return(closure, b, err)
 	return _c
 }
 
-func (_c *MockOldWaveCloser_Close_Call) RunAndReturn(run func(ctx context.Context, command close.CloseCommand) (*close.Closure, bool, error)) *MockOldWaveCloser_Close_Call {
+func (_c *MockOldWaveCloser_Close_Call) RunAndReturn(run func(ctx context.Context, command gameclose.CloseCommand) (*gameclose.Closure, bool, error)) *MockOldWaveCloser_Close_Call {
 	_c.Call.Return(run)
 	return _c
 }

@@ -17,10 +17,19 @@ func NewMockPublicRealtimeReadSource(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockPublicRealtimeReadSource {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockPublicRealtimeReadSource{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -72,7 +81,7 @@ type MockPublicRealtimeReadSource_PublicRealtimeRead_Call struct {
 // PublicRealtimeRead is a helper method to define mock.On call
 //   - ctx context.Context
 //   - tournamentID uuid.UUID
-func (_e *MockPublicRealtimeReadSource_Expecter) PublicRealtimeRead(ctx interface{}, tournamentID interface{}) *MockPublicRealtimeReadSource_PublicRealtimeRead_Call {
+func (_e *MockPublicRealtimeReadSource_Expecter) PublicRealtimeRead(ctx any, tournamentID any) *MockPublicRealtimeReadSource_PublicRealtimeRead_Call {
 	return &MockPublicRealtimeReadSource_PublicRealtimeRead_Call{Call: _e.mock.On("PublicRealtimeRead", ctx, tournamentID)}
 }
 

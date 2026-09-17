@@ -17,10 +17,19 @@ func NewMockLifecycleTransitioner(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockLifecycleTransitioner {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockLifecycleTransitioner{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -80,7 +89,7 @@ type MockLifecycleTransitioner_Transition_Call struct {
 // Transition is a helper method to define mock.On call
 //   - ctx context.Context
 //   - command lifecycle.TournamentLifecycleCommand
-func (_e *MockLifecycleTransitioner_Expecter) Transition(ctx interface{}, command interface{}) *MockLifecycleTransitioner_Transition_Call {
+func (_e *MockLifecycleTransitioner_Expecter) Transition(ctx any, command any) *MockLifecycleTransitioner_Transition_Call {
 	return &MockLifecycleTransitioner_Transition_Call{Call: _e.mock.On("Transition", ctx, command)}
 }
 

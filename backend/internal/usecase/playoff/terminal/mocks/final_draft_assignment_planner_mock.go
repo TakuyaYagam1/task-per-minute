@@ -17,10 +17,19 @@ func NewMockFinalDraftAssignmentPlanner(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockFinalDraftAssignmentPlanner {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockFinalDraftAssignmentPlanner{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -81,7 +90,7 @@ type MockFinalDraftAssignmentPlanner_ActivateFinalDraft_Call struct {
 //   - ctx context.Context
 //   - authority terminal.FinalDraftAuthority
 //   - command terminal.TerminalDraftCommand
-func (_e *MockFinalDraftAssignmentPlanner_Expecter) ActivateFinalDraft(ctx interface{}, authority interface{}, command interface{}) *MockFinalDraftAssignmentPlanner_ActivateFinalDraft_Call {
+func (_e *MockFinalDraftAssignmentPlanner_Expecter) ActivateFinalDraft(ctx any, authority any, command any) *MockFinalDraftAssignmentPlanner_ActivateFinalDraft_Call {
 	return &MockFinalDraftAssignmentPlanner_ActivateFinalDraft_Call{Call: _e.mock.On("ActivateFinalDraft", ctx, authority, command)}
 }
 
@@ -152,7 +161,7 @@ type MockFinalDraftAssignmentPlanner_PlanFinalDraft_Call struct {
 // PlanFinalDraft is a helper method to define mock.On call
 //   - ctx context.Context
 //   - plan terminal.FinalDraftPlan
-func (_e *MockFinalDraftAssignmentPlanner_Expecter) PlanFinalDraft(ctx interface{}, plan interface{}) *MockFinalDraftAssignmentPlanner_PlanFinalDraft_Call {
+func (_e *MockFinalDraftAssignmentPlanner_Expecter) PlanFinalDraft(ctx any, plan any) *MockFinalDraftAssignmentPlanner_PlanFinalDraft_Call {
 	return &MockFinalDraftAssignmentPlanner_PlanFinalDraft_Call{Call: _e.mock.On("PlanFinalDraft", ctx, plan)}
 }
 

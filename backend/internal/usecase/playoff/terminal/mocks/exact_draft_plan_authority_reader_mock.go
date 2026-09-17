@@ -18,10 +18,19 @@ func NewMockExactDraftPlanAuthorityReader(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockExactDraftPlanAuthorityReader {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockExactDraftPlanAuthorityReader{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -73,7 +82,7 @@ type MockExactDraftPlanAuthorityReader_LoadExactDraftBranchPlanAuthority_Call st
 // LoadExactDraftBranchPlanAuthority is a helper method to define mock.On call
 //   - ctx context.Context
 //   - draftID uuid.UUID
-func (_e *MockExactDraftPlanAuthorityReader_Expecter) LoadExactDraftBranchPlanAuthority(ctx interface{}, draftID interface{}) *MockExactDraftPlanAuthorityReader_LoadExactDraftBranchPlanAuthority_Call {
+func (_e *MockExactDraftPlanAuthorityReader_Expecter) LoadExactDraftBranchPlanAuthority(ctx any, draftID any) *MockExactDraftPlanAuthorityReader_LoadExactDraftBranchPlanAuthority_Call {
 	return &MockExactDraftPlanAuthorityReader_LoadExactDraftBranchPlanAuthority_Call{Call: _e.mock.On("LoadExactDraftBranchPlanAuthority", ctx, draftID)}
 }
 

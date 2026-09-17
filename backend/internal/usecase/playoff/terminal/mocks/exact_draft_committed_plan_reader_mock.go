@@ -18,10 +18,19 @@ func NewMockExactDraftCommittedPlanReader(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockExactDraftCommittedPlanReader {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockExactDraftCommittedPlanReader{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -75,7 +84,7 @@ type MockExactDraftCommittedPlanReader_LoadCommittedExactDraftPlan_Call struct {
 // LoadCommittedExactDraftPlan is a helper method to define mock.On call
 //   - ctx context.Context
 //   - planID uuid.UUID
-func (_e *MockExactDraftCommittedPlanReader_Expecter) LoadCommittedExactDraftPlan(ctx interface{}, planID interface{}) *MockExactDraftCommittedPlanReader_LoadCommittedExactDraftPlan_Call {
+func (_e *MockExactDraftCommittedPlanReader_Expecter) LoadCommittedExactDraftPlan(ctx any, planID any) *MockExactDraftCommittedPlanReader_LoadCommittedExactDraftPlan_Call {
 	return &MockExactDraftCommittedPlanReader_LoadCommittedExactDraftPlan_Call{Call: _e.mock.On("LoadCommittedExactDraftPlan", ctx, planID)}
 }
 

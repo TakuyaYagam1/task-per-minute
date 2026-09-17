@@ -17,10 +17,19 @@ func NewMockFinalPublicationRepository(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockFinalPublicationRepository {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockFinalPublicationRepository{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -72,7 +81,7 @@ type MockFinalPublicationRepository_PublishFinal_Call struct {
 // PublishFinal is a helper method to define mock.On call
 //   - ctx context.Context
 //   - publication1 publication.FinalPublication
-func (_e *MockFinalPublicationRepository_Expecter) PublishFinal(ctx interface{}, publication1 interface{}) *MockFinalPublicationRepository_PublishFinal_Call {
+func (_e *MockFinalPublicationRepository_Expecter) PublishFinal(ctx any, publication1 any) *MockFinalPublicationRepository_PublishFinal_Call {
 	return &MockFinalPublicationRepository_PublishFinal_Call{Call: _e.mock.On("PublishFinal", ctx, publication1)}
 }
 

@@ -19,10 +19,19 @@ func NewMockCorrectionWorkflowRepository(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockCorrectionWorkflowRepository {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockCorrectionWorkflowRepository{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -80,7 +89,7 @@ type MockCorrectionWorkflowRepository_CommitCorrection_Call struct {
 // CommitCorrection is a helper method to define mock.On call
 //   - ctx context.Context
 //   - mutation correction.CorrectionMutation
-func (_e *MockCorrectionWorkflowRepository_Expecter) CommitCorrection(ctx interface{}, mutation interface{}) *MockCorrectionWorkflowRepository_CommitCorrection_Call {
+func (_e *MockCorrectionWorkflowRepository_Expecter) CommitCorrection(ctx any, mutation any) *MockCorrectionWorkflowRepository_CommitCorrection_Call {
 	return &MockCorrectionWorkflowRepository_CommitCorrection_Call{Call: _e.mock.On("CommitCorrection", ctx, mutation)}
 }
 
@@ -148,7 +157,7 @@ type MockCorrectionWorkflowRepository_FindCorrectionCommand_Call struct {
 // FindCorrectionCommand is a helper method to define mock.On call
 //   - ctx context.Context
 //   - commandID uuid.UUID
-func (_e *MockCorrectionWorkflowRepository_Expecter) FindCorrectionCommand(ctx interface{}, commandID interface{}) *MockCorrectionWorkflowRepository_FindCorrectionCommand_Call {
+func (_e *MockCorrectionWorkflowRepository_Expecter) FindCorrectionCommand(ctx any, commandID any) *MockCorrectionWorkflowRepository_FindCorrectionCommand_Call {
 	return &MockCorrectionWorkflowRepository_FindCorrectionCommand_Call{Call: _e.mock.On("FindCorrectionCommand", ctx, commandID)}
 }
 
@@ -216,7 +225,7 @@ type MockCorrectionWorkflowRepository_LockCorrectionAuthority_Call struct {
 //   - tournamentID uuid.UUID
 //   - seriesID uuid.UUID
 //   - gameID uuid.UUID
-func (_e *MockCorrectionWorkflowRepository_Expecter) LockCorrectionAuthority(ctx interface{}, tournamentID interface{}, seriesID interface{}, gameID interface{}) *MockCorrectionWorkflowRepository_LockCorrectionAuthority_Call {
+func (_e *MockCorrectionWorkflowRepository_Expecter) LockCorrectionAuthority(ctx any, tournamentID any, seriesID any, gameID any) *MockCorrectionWorkflowRepository_LockCorrectionAuthority_Call {
 	return &MockCorrectionWorkflowRepository_LockCorrectionAuthority_Call{Call: _e.mock.On("LockCorrectionAuthority", ctx, tournamentID, seriesID, gameID)}
 }
 
@@ -291,7 +300,7 @@ type MockCorrectionWorkflowRepository_ReadCorrectionTime_Call struct {
 
 // ReadCorrectionTime is a helper method to define mock.On call
 //   - ctx context.Context
-func (_e *MockCorrectionWorkflowRepository_Expecter) ReadCorrectionTime(ctx interface{}) *MockCorrectionWorkflowRepository_ReadCorrectionTime_Call {
+func (_e *MockCorrectionWorkflowRepository_Expecter) ReadCorrectionTime(ctx any) *MockCorrectionWorkflowRepository_ReadCorrectionTime_Call {
 	return &MockCorrectionWorkflowRepository_ReadCorrectionTime_Call{Call: _e.mock.On("ReadCorrectionTime", ctx)}
 }
 

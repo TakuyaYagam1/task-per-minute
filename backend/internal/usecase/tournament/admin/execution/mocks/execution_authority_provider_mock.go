@@ -18,10 +18,19 @@ func NewMockExecutionAuthorityProvider(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockExecutionAuthorityProvider {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockExecutionAuthorityProvider{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -73,7 +82,7 @@ type MockExecutionAuthorityProvider_AuthorityFor_Call struct {
 // AuthorityFor is a helper method to define mock.On call
 //   - ctx context.Context
 //   - tournamentID uuid.UUID
-func (_e *MockExecutionAuthorityProvider_Expecter) AuthorityFor(ctx interface{}, tournamentID interface{}) *MockExecutionAuthorityProvider_AuthorityFor_Call {
+func (_e *MockExecutionAuthorityProvider_Expecter) AuthorityFor(ctx any, tournamentID any) *MockExecutionAuthorityProvider_AuthorityFor_Call {
 	return &MockExecutionAuthorityProvider_AuthorityFor_Call{Call: _e.mock.On("AuthorityFor", ctx, tournamentID)}
 }
 

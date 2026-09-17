@@ -7,7 +7,7 @@ package mocks
 import (
 	"context"
 
-	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/close"
+	gameclose "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/close"
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -39,32 +39,32 @@ func (_m *MockCloseRepository) EXPECT() *MockCloseRepository_Expecter {
 }
 
 // CommitClosure provides a mock function for the type MockCloseRepository
-func (_mock *MockCloseRepository) CommitClosure(ctx context.Context, closure close.Closure) (*close.Closure, bool, error) {
+func (_mock *MockCloseRepository) CommitClosure(ctx context.Context, closure gameclose.Closure) (*gameclose.Closure, bool, error) {
 	ret := _mock.Called(ctx, closure)
 
 	if len(ret) == 0 {
 		panic("no return value specified for CommitClosure")
 	}
 
-	var r0 *close.Closure
+	var r0 *gameclose.Closure
 	var r1 bool
 	var r2 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, close.Closure) (*close.Closure, bool, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, gameclose.Closure) (*gameclose.Closure, bool, error)); ok {
 		return returnFunc(ctx, closure)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, close.Closure) *close.Closure); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, gameclose.Closure) *gameclose.Closure); ok {
 		r0 = returnFunc(ctx, closure)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*close.Closure)
+			r0 = ret.Get(0).(*gameclose.Closure)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, close.Closure) bool); ok {
+	if returnFunc, ok := ret.Get(1).(func(context.Context, gameclose.Closure) bool); ok {
 		r1 = returnFunc(ctx, closure)
 	} else {
 		r1 = ret.Get(1).(bool)
 	}
-	if returnFunc, ok := ret.Get(2).(func(context.Context, close.Closure) error); ok {
+	if returnFunc, ok := ret.Get(2).(func(context.Context, gameclose.Closure) error); ok {
 		r2 = returnFunc(ctx, closure)
 	} else {
 		r2 = ret.Error(2)
@@ -79,20 +79,20 @@ type MockCloseRepository_CommitClosure_Call struct {
 
 // CommitClosure is a helper method to define mock.On call
 //   - ctx context.Context
-//   - closure close.Closure
+//   - closure gameclose.Closure
 func (_e *MockCloseRepository_Expecter) CommitClosure(ctx interface{}, closure interface{}) *MockCloseRepository_CommitClosure_Call {
 	return &MockCloseRepository_CommitClosure_Call{Call: _e.mock.On("CommitClosure", ctx, closure)}
 }
 
-func (_c *MockCloseRepository_CommitClosure_Call) Run(run func(ctx context.Context, closure close.Closure)) *MockCloseRepository_CommitClosure_Call {
+func (_c *MockCloseRepository_CommitClosure_Call) Run(run func(ctx context.Context, closure gameclose.Closure)) *MockCloseRepository_CommitClosure_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
-		var arg1 close.Closure
+		var arg1 gameclose.Closure
 		if args[1] != nil {
-			arg1 = args[1].(close.Closure)
+			arg1 = args[1].(gameclose.Closure)
 		}
 		run(
 			arg0,
@@ -102,35 +102,35 @@ func (_c *MockCloseRepository_CommitClosure_Call) Run(run func(ctx context.Conte
 	return _c
 }
 
-func (_c *MockCloseRepository_CommitClosure_Call) Return(closure1 *close.Closure, b bool, err error) *MockCloseRepository_CommitClosure_Call {
+func (_c *MockCloseRepository_CommitClosure_Call) Return(closure1 *gameclose.Closure, b bool, err error) *MockCloseRepository_CommitClosure_Call {
 	_c.Call.Return(closure1, b, err)
 	return _c
 }
 
-func (_c *MockCloseRepository_CommitClosure_Call) RunAndReturn(run func(ctx context.Context, closure close.Closure) (*close.Closure, bool, error)) *MockCloseRepository_CommitClosure_Call {
+func (_c *MockCloseRepository_CommitClosure_Call) RunAndReturn(run func(ctx context.Context, closure gameclose.Closure) (*gameclose.Closure, bool, error)) *MockCloseRepository_CommitClosure_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // LoadCloseAuthority provides a mock function for the type MockCloseRepository
-func (_mock *MockCloseRepository) LoadCloseAuthority(ctx context.Context, scope close.CloseScope) (close.CloseAuthority, error) {
+func (_mock *MockCloseRepository) LoadCloseAuthority(ctx context.Context, scope gameclose.CloseScope) (gameclose.CloseAuthority, error) {
 	ret := _mock.Called(ctx, scope)
 
 	if len(ret) == 0 {
 		panic("no return value specified for LoadCloseAuthority")
 	}
 
-	var r0 close.CloseAuthority
+	var r0 gameclose.CloseAuthority
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, close.CloseScope) (close.CloseAuthority, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, gameclose.CloseScope) (gameclose.CloseAuthority, error)); ok {
 		return returnFunc(ctx, scope)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, close.CloseScope) close.CloseAuthority); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, gameclose.CloseScope) gameclose.CloseAuthority); ok {
 		r0 = returnFunc(ctx, scope)
 	} else {
-		r0 = ret.Get(0).(close.CloseAuthority)
+		r0 = ret.Get(0).(gameclose.CloseAuthority)
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, close.CloseScope) error); ok {
+	if returnFunc, ok := ret.Get(1).(func(context.Context, gameclose.CloseScope) error); ok {
 		r1 = returnFunc(ctx, scope)
 	} else {
 		r1 = ret.Error(1)
@@ -145,20 +145,20 @@ type MockCloseRepository_LoadCloseAuthority_Call struct {
 
 // LoadCloseAuthority is a helper method to define mock.On call
 //   - ctx context.Context
-//   - scope close.CloseScope
+//   - scope gameclose.CloseScope
 func (_e *MockCloseRepository_Expecter) LoadCloseAuthority(ctx interface{}, scope interface{}) *MockCloseRepository_LoadCloseAuthority_Call {
 	return &MockCloseRepository_LoadCloseAuthority_Call{Call: _e.mock.On("LoadCloseAuthority", ctx, scope)}
 }
 
-func (_c *MockCloseRepository_LoadCloseAuthority_Call) Run(run func(ctx context.Context, scope close.CloseScope)) *MockCloseRepository_LoadCloseAuthority_Call {
+func (_c *MockCloseRepository_LoadCloseAuthority_Call) Run(run func(ctx context.Context, scope gameclose.CloseScope)) *MockCloseRepository_LoadCloseAuthority_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
-		var arg1 close.CloseScope
+		var arg1 gameclose.CloseScope
 		if args[1] != nil {
-			arg1 = args[1].(close.CloseScope)
+			arg1 = args[1].(gameclose.CloseScope)
 		}
 		run(
 			arg0,
@@ -168,12 +168,12 @@ func (_c *MockCloseRepository_LoadCloseAuthority_Call) Run(run func(ctx context.
 	return _c
 }
 
-func (_c *MockCloseRepository_LoadCloseAuthority_Call) Return(closeAuthority close.CloseAuthority, err error) *MockCloseRepository_LoadCloseAuthority_Call {
+func (_c *MockCloseRepository_LoadCloseAuthority_Call) Return(closeAuthority gameclose.CloseAuthority, err error) *MockCloseRepository_LoadCloseAuthority_Call {
 	_c.Call.Return(closeAuthority, err)
 	return _c
 }
 
-func (_c *MockCloseRepository_LoadCloseAuthority_Call) RunAndReturn(run func(ctx context.Context, scope close.CloseScope) (close.CloseAuthority, error)) *MockCloseRepository_LoadCloseAuthority_Call {
+func (_c *MockCloseRepository_LoadCloseAuthority_Call) RunAndReturn(run func(ctx context.Context, scope gameclose.CloseScope) (gameclose.CloseAuthority, error)) *MockCloseRepository_LoadCloseAuthority_Call {
 	_c.Call.Return(run)
 	return _c
 }

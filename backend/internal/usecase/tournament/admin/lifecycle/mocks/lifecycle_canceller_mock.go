@@ -17,10 +17,19 @@ func NewMockLifecycleCanceller(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockLifecycleCanceller {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockLifecycleCanceller{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -80,7 +89,7 @@ type MockLifecycleCanceller_Cancel_Call struct {
 // Cancel is a helper method to define mock.On call
 //   - ctx context.Context
 //   - command cancellation.TournamentCancellationCommand
-func (_e *MockLifecycleCanceller_Expecter) Cancel(ctx interface{}, command interface{}) *MockLifecycleCanceller_Cancel_Call {
+func (_e *MockLifecycleCanceller_Expecter) Cancel(ctx any, command any) *MockLifecycleCanceller_Cancel_Call {
 	return &MockLifecycleCanceller_Cancel_Call{Call: _e.mock.On("Cancel", ctx, command)}
 }
 

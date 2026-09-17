@@ -18,10 +18,19 @@ func NewMockStageRepository(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockStageRepository {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockStageRepository{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -73,7 +82,7 @@ type MockStageRepository_CommitCorrectionStage_Call struct {
 // CommitCorrectionStage is a helper method to define mock.On call
 //   - ctx context.Context
 //   - commit stage.StageCommit
-func (_e *MockStageRepository_Expecter) CommitCorrectionStage(ctx interface{}, commit interface{}) *MockStageRepository_CommitCorrectionStage_Call {
+func (_e *MockStageRepository_Expecter) CommitCorrectionStage(ctx any, commit any) *MockStageRepository_CommitCorrectionStage_Call {
 	return &MockStageRepository_CommitCorrectionStage_Call{Call: _e.mock.On("CommitCorrectionStage", ctx, commit)}
 }
 
@@ -139,7 +148,7 @@ type MockStageRepository_LoadCorrectionStage_Call struct {
 // LoadCorrectionStage is a helper method to define mock.On call
 //   - ctx context.Context
 //   - tournamentID uuid.UUID
-func (_e *MockStageRepository_Expecter) LoadCorrectionStage(ctx interface{}, tournamentID interface{}) *MockStageRepository_LoadCorrectionStage_Call {
+func (_e *MockStageRepository_Expecter) LoadCorrectionStage(ctx any, tournamentID any) *MockStageRepository_LoadCorrectionStage_Call {
 	return &MockStageRepository_LoadCorrectionStage_Call{Call: _e.mock.On("LoadCorrectionStage", ctx, tournamentID)}
 }
 

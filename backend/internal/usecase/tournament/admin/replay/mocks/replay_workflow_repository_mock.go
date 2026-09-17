@@ -20,10 +20,19 @@ func NewMockReplayWorkflowRepository(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockReplayWorkflowRepository {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockReplayWorkflowRepository{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -85,7 +94,7 @@ type MockReplayWorkflowRepository_CommitOperatorReserve_Call struct {
 //   - command replay.ReserveCommand
 //   - requestDigest [32]byte
 //   - record replay0.OperatorReserve
-func (_e *MockReplayWorkflowRepository_Expecter) CommitOperatorReserve(ctx interface{}, command interface{}, requestDigest interface{}, record interface{}) *MockReplayWorkflowRepository_CommitOperatorReserve_Call {
+func (_e *MockReplayWorkflowRepository_Expecter) CommitOperatorReserve(ctx any, command any, requestDigest any, record any) *MockReplayWorkflowRepository_CommitOperatorReserve_Call {
 	return &MockReplayWorkflowRepository_CommitOperatorReserve_Call{Call: _e.mock.On("CommitOperatorReserve", ctx, command, requestDigest, record)}
 }
 
@@ -171,7 +180,7 @@ type MockReplayWorkflowRepository_CommitReplayReplacement_Call struct {
 //   - command replay.ReplayCommand
 //   - requestDigest [32]byte
 //   - record replay0.ReplayReplacement
-func (_e *MockReplayWorkflowRepository_Expecter) CommitReplayReplacement(ctx interface{}, command interface{}, requestDigest interface{}, record interface{}) *MockReplayWorkflowRepository_CommitReplayReplacement_Call {
+func (_e *MockReplayWorkflowRepository_Expecter) CommitReplayReplacement(ctx any, command any, requestDigest any, record any) *MockReplayWorkflowRepository_CommitReplayReplacement_Call {
 	return &MockReplayWorkflowRepository_CommitReplayReplacement_Call{Call: _e.mock.On("CommitReplayReplacement", ctx, command, requestDigest, record)}
 }
 
@@ -247,7 +256,7 @@ type MockReplayWorkflowRepository_LoadOperatorReserveAuthority_Call struct {
 // LoadOperatorReserveAuthority is a helper method to define mock.On call
 //   - ctx context.Context
 //   - command replay.ReserveCommand
-func (_e *MockReplayWorkflowRepository_Expecter) LoadOperatorReserveAuthority(ctx interface{}, command interface{}) *MockReplayWorkflowRepository_LoadOperatorReserveAuthority_Call {
+func (_e *MockReplayWorkflowRepository_Expecter) LoadOperatorReserveAuthority(ctx any, command any) *MockReplayWorkflowRepository_LoadOperatorReserveAuthority_Call {
 	return &MockReplayWorkflowRepository_LoadOperatorReserveAuthority_Call{Call: _e.mock.On("LoadOperatorReserveAuthority", ctx, command)}
 }
 
@@ -313,7 +322,7 @@ type MockReplayWorkflowRepository_LoadReplayReplacementAuthority_Call struct {
 // LoadReplayReplacementAuthority is a helper method to define mock.On call
 //   - ctx context.Context
 //   - command replay.ReplayCommand
-func (_e *MockReplayWorkflowRepository_Expecter) LoadReplayReplacementAuthority(ctx interface{}, command interface{}) *MockReplayWorkflowRepository_LoadReplayReplacementAuthority_Call {
+func (_e *MockReplayWorkflowRepository_Expecter) LoadReplayReplacementAuthority(ctx any, command any) *MockReplayWorkflowRepository_LoadReplayReplacementAuthority_Call {
 	return &MockReplayWorkflowRepository_LoadReplayReplacementAuthority_Call{Call: _e.mock.On("LoadReplayReplacementAuthority", ctx, command)}
 }
 
@@ -379,7 +388,7 @@ type MockReplayWorkflowRepository_ReadReplayTime_Call struct {
 // ReadReplayTime is a helper method to define mock.On call
 //   - ctx context.Context
 //   - commandID uuid.UUID
-func (_e *MockReplayWorkflowRepository_Expecter) ReadReplayTime(ctx interface{}, commandID interface{}) *MockReplayWorkflowRepository_ReadReplayTime_Call {
+func (_e *MockReplayWorkflowRepository_Expecter) ReadReplayTime(ctx any, commandID any) *MockReplayWorkflowRepository_ReadReplayTime_Call {
 	return &MockReplayWorkflowRepository_ReadReplayTime_Call{Call: _e.mock.On("ReadReplayTime", ctx, commandID)}
 }
 

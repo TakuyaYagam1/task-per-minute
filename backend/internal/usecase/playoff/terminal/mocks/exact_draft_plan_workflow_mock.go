@@ -17,10 +17,19 @@ func NewMockExactDraftPlanWorkflow(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockExactDraftPlanWorkflow {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockExactDraftPlanWorkflow{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -80,7 +89,7 @@ type MockExactDraftPlanWorkflow_ActivateCompletedBranch_Call struct {
 // ActivateCompletedBranch is a helper method to define mock.On call
 //   - ctx context.Context
 //   - command assignment.ExactDraftBranchActivationCommand
-func (_e *MockExactDraftPlanWorkflow_Expecter) ActivateCompletedBranch(ctx interface{}, command interface{}) *MockExactDraftPlanWorkflow_ActivateCompletedBranch_Call {
+func (_e *MockExactDraftPlanWorkflow_Expecter) ActivateCompletedBranch(ctx any, command any) *MockExactDraftPlanWorkflow_ActivateCompletedBranch_Call {
 	return &MockExactDraftPlanWorkflow_ActivateCompletedBranch_Call{Call: _e.mock.On("ActivateCompletedBranch", ctx, command)}
 }
 
@@ -154,7 +163,7 @@ type MockExactDraftPlanWorkflow_PlanAndCommit_Call struct {
 // PlanAndCommit is a helper method to define mock.On call
 //   - ctx context.Context
 //   - command assignment.ExactDraftBranchPlanCommand
-func (_e *MockExactDraftPlanWorkflow_Expecter) PlanAndCommit(ctx interface{}, command interface{}) *MockExactDraftPlanWorkflow_PlanAndCommit_Call {
+func (_e *MockExactDraftPlanWorkflow_Expecter) PlanAndCommit(ctx any, command any) *MockExactDraftPlanWorkflow_PlanAndCommit_Call {
 	return &MockExactDraftPlanWorkflow_PlanAndCommit_Call{Call: _e.mock.On("PlanAndCommit", ctx, command)}
 }
 

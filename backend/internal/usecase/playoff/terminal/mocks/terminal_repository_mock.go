@@ -17,10 +17,19 @@ func NewMockTerminalRepository(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockTerminalRepository {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockTerminalRepository{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -74,7 +83,7 @@ type MockTerminalRepository_LoadFinalDraft_Call struct {
 // LoadFinalDraft is a helper method to define mock.On call
 //   - ctx context.Context
 //   - command terminal.TerminalDraftCommand
-func (_e *MockTerminalRepository_Expecter) LoadFinalDraft(ctx interface{}, command interface{}) *MockTerminalRepository_LoadFinalDraft_Call {
+func (_e *MockTerminalRepository_Expecter) LoadFinalDraft(ctx any, command any) *MockTerminalRepository_LoadFinalDraft_Call {
 	return &MockTerminalRepository_LoadFinalDraft_Call{Call: _e.mock.On("LoadFinalDraft", ctx, command)}
 }
 
@@ -142,7 +151,7 @@ type MockTerminalRepository_LoadFinalSettlement_Call struct {
 // LoadFinalSettlement is a helper method to define mock.On call
 //   - ctx context.Context
 //   - command terminal.TerminalSeriesCommand
-func (_e *MockTerminalRepository_Expecter) LoadFinalSettlement(ctx interface{}, command interface{}) *MockTerminalRepository_LoadFinalSettlement_Call {
+func (_e *MockTerminalRepository_Expecter) LoadFinalSettlement(ctx any, command any) *MockTerminalRepository_LoadFinalSettlement_Call {
 	return &MockTerminalRepository_LoadFinalSettlement_Call{Call: _e.mock.On("LoadFinalSettlement", ctx, command)}
 }
 
@@ -210,7 +219,7 @@ type MockTerminalRepository_LoadSemifinalStage_Call struct {
 // LoadSemifinalStage is a helper method to define mock.On call
 //   - ctx context.Context
 //   - command terminal.TerminalSeriesCommand
-func (_e *MockTerminalRepository_Expecter) LoadSemifinalStage(ctx interface{}, command interface{}) *MockTerminalRepository_LoadSemifinalStage_Call {
+func (_e *MockTerminalRepository_Expecter) LoadSemifinalStage(ctx any, command any) *MockTerminalRepository_LoadSemifinalStage_Call {
 	return &MockTerminalRepository_LoadSemifinalStage_Call{Call: _e.mock.On("LoadSemifinalStage", ctx, command)}
 }
 
@@ -276,7 +285,7 @@ type MockTerminalRepository_PersistFinalContinuation_Call struct {
 // PersistFinalContinuation is a helper method to define mock.On call
 //   - ctx context.Context
 //   - plan terminal.FinalContinuationPlan
-func (_e *MockTerminalRepository_Expecter) PersistFinalContinuation(ctx interface{}, plan interface{}) *MockTerminalRepository_PersistFinalContinuation_Call {
+func (_e *MockTerminalRepository_Expecter) PersistFinalContinuation(ctx any, plan any) *MockTerminalRepository_PersistFinalContinuation_Call {
 	return &MockTerminalRepository_PersistFinalContinuation_Call{Call: _e.mock.On("PersistFinalContinuation", ctx, plan)}
 }
 
@@ -342,7 +351,7 @@ type MockTerminalRepository_PersistFinalDraft_Call struct {
 // PersistFinalDraft is a helper method to define mock.On call
 //   - ctx context.Context
 //   - plan terminal.FinalDraftPlan
-func (_e *MockTerminalRepository_Expecter) PersistFinalDraft(ctx interface{}, plan interface{}) *MockTerminalRepository_PersistFinalDraft_Call {
+func (_e *MockTerminalRepository_Expecter) PersistFinalDraft(ctx any, plan any) *MockTerminalRepository_PersistFinalDraft_Call {
 	return &MockTerminalRepository_PersistFinalDraft_Call{Call: _e.mock.On("PersistFinalDraft", ctx, plan)}
 }
 
@@ -408,7 +417,7 @@ type MockTerminalRepository_PersistFinalInitial_Call struct {
 // PersistFinalInitial is a helper method to define mock.On call
 //   - ctx context.Context
 //   - plan terminal.FinalInitialPlan
-func (_e *MockTerminalRepository_Expecter) PersistFinalInitial(ctx interface{}, plan interface{}) *MockTerminalRepository_PersistFinalInitial_Call {
+func (_e *MockTerminalRepository_Expecter) PersistFinalInitial(ctx any, plan any) *MockTerminalRepository_PersistFinalInitial_Call {
 	return &MockTerminalRepository_PersistFinalInitial_Call{Call: _e.mock.On("PersistFinalInitial", ctx, plan)}
 }
 

@@ -16,10 +16,19 @@ func NewMockAdminPlayerEventSubscriber(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockAdminPlayerEventSubscriber {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockAdminPlayerEventSubscriber{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -80,7 +89,7 @@ type MockAdminPlayerEventSubscriber_SubscribeAdminPlayerChanges_Call struct {
 
 // SubscribeAdminPlayerChanges is a helper method to define mock.On call
 //   - ctx context.Context
-func (_e *MockAdminPlayerEventSubscriber_Expecter) SubscribeAdminPlayerChanges(ctx interface{}) *MockAdminPlayerEventSubscriber_SubscribeAdminPlayerChanges_Call {
+func (_e *MockAdminPlayerEventSubscriber_Expecter) SubscribeAdminPlayerChanges(ctx any) *MockAdminPlayerEventSubscriber_SubscribeAdminPlayerChanges_Call {
 	return &MockAdminPlayerEventSubscriber_SubscribeAdminPlayerChanges_Call{Call: _e.mock.On("SubscribeAdminPlayerChanges", ctx)}
 }
 

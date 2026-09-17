@@ -18,10 +18,19 @@ func NewMockIncidentSnapshotPort(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockIncidentSnapshotPort {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockIncidentSnapshotPort{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -73,7 +82,7 @@ type MockIncidentSnapshotPort_LoadIncidentSnapshot_Call struct {
 // LoadIncidentSnapshot is a helper method to define mock.On call
 //   - ctx context.Context
 //   - query incident.IncidentQuery
-func (_e *MockIncidentSnapshotPort_Expecter) LoadIncidentSnapshot(ctx interface{}, query interface{}) *MockIncidentSnapshotPort_LoadIncidentSnapshot_Call {
+func (_e *MockIncidentSnapshotPort_Expecter) LoadIncidentSnapshot(ctx any, query any) *MockIncidentSnapshotPort_LoadIncidentSnapshot_Call {
 	return &MockIncidentSnapshotPort_LoadIncidentSnapshot_Call{Call: _e.mock.On("LoadIncidentSnapshot", ctx, query)}
 }
 

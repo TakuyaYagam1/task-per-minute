@@ -21,10 +21,19 @@ func NewMockOperatorResultWorkflowRepository(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockOperatorResultWorkflowRepository {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockOperatorResultWorkflowRepository{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -86,7 +95,7 @@ type MockOperatorResultWorkflowRepository_CommitOperatorForfeit_Call struct {
 //   - command result.ForfeitCommand
 //   - requestDigest [32]byte
 //   - resolution forfeit.ForfeitResolution
-func (_e *MockOperatorResultWorkflowRepository_Expecter) CommitOperatorForfeit(ctx interface{}, command interface{}, requestDigest interface{}, resolution interface{}) *MockOperatorResultWorkflowRepository_CommitOperatorForfeit_Call {
+func (_e *MockOperatorResultWorkflowRepository_Expecter) CommitOperatorForfeit(ctx any, command any, requestDigest any, resolution any) *MockOperatorResultWorkflowRepository_CommitOperatorForfeit_Call {
 	return &MockOperatorResultWorkflowRepository_CommitOperatorForfeit_Call{Call: _e.mock.On("CommitOperatorForfeit", ctx, command, requestDigest, resolution)}
 }
 
@@ -172,7 +181,7 @@ type MockOperatorResultWorkflowRepository_CommitOperatorNoShow_Call struct {
 //   - command result.NoShowCommand
 //   - requestDigest [32]byte
 //   - resolution noshow.NoShowResolution
-func (_e *MockOperatorResultWorkflowRepository_Expecter) CommitOperatorNoShow(ctx interface{}, command interface{}, requestDigest interface{}, resolution interface{}) *MockOperatorResultWorkflowRepository_CommitOperatorNoShow_Call {
+func (_e *MockOperatorResultWorkflowRepository_Expecter) CommitOperatorNoShow(ctx any, command any, requestDigest any, resolution any) *MockOperatorResultWorkflowRepository_CommitOperatorNoShow_Call {
 	return &MockOperatorResultWorkflowRepository_CommitOperatorNoShow_Call{Call: _e.mock.On("CommitOperatorNoShow", ctx, command, requestDigest, resolution)}
 }
 
@@ -250,7 +259,7 @@ type MockOperatorResultWorkflowRepository_FindOperatorResultCommand_Call struct 
 // FindOperatorResultCommand is a helper method to define mock.On call
 //   - ctx context.Context
 //   - commandID uuid.UUID
-func (_e *MockOperatorResultWorkflowRepository_Expecter) FindOperatorResultCommand(ctx interface{}, commandID interface{}) *MockOperatorResultWorkflowRepository_FindOperatorResultCommand_Call {
+func (_e *MockOperatorResultWorkflowRepository_Expecter) FindOperatorResultCommand(ctx any, commandID any) *MockOperatorResultWorkflowRepository_FindOperatorResultCommand_Call {
 	return &MockOperatorResultWorkflowRepository_FindOperatorResultCommand_Call{Call: _e.mock.On("FindOperatorResultCommand", ctx, commandID)}
 }
 
@@ -316,7 +325,7 @@ type MockOperatorResultWorkflowRepository_LoadOperatorForfeitAuthority_Call stru
 // LoadOperatorForfeitAuthority is a helper method to define mock.On call
 //   - ctx context.Context
 //   - command result.ForfeitCommand
-func (_e *MockOperatorResultWorkflowRepository_Expecter) LoadOperatorForfeitAuthority(ctx interface{}, command interface{}) *MockOperatorResultWorkflowRepository_LoadOperatorForfeitAuthority_Call {
+func (_e *MockOperatorResultWorkflowRepository_Expecter) LoadOperatorForfeitAuthority(ctx any, command any) *MockOperatorResultWorkflowRepository_LoadOperatorForfeitAuthority_Call {
 	return &MockOperatorResultWorkflowRepository_LoadOperatorForfeitAuthority_Call{Call: _e.mock.On("LoadOperatorForfeitAuthority", ctx, command)}
 }
 
@@ -382,7 +391,7 @@ type MockOperatorResultWorkflowRepository_LoadOperatorNoShowAuthority_Call struc
 // LoadOperatorNoShowAuthority is a helper method to define mock.On call
 //   - ctx context.Context
 //   - command result.NoShowCommand
-func (_e *MockOperatorResultWorkflowRepository_Expecter) LoadOperatorNoShowAuthority(ctx interface{}, command interface{}) *MockOperatorResultWorkflowRepository_LoadOperatorNoShowAuthority_Call {
+func (_e *MockOperatorResultWorkflowRepository_Expecter) LoadOperatorNoShowAuthority(ctx any, command any) *MockOperatorResultWorkflowRepository_LoadOperatorNoShowAuthority_Call {
 	return &MockOperatorResultWorkflowRepository_LoadOperatorNoShowAuthority_Call{Call: _e.mock.On("LoadOperatorNoShowAuthority", ctx, command)}
 }
 
@@ -449,7 +458,7 @@ type MockOperatorResultWorkflowRepository_LockOperatorResultAuthority_Call struc
 //   - ctx context.Context
 //   - tournamentID uuid.UUID
 //   - seriesID uuid.UUID
-func (_e *MockOperatorResultWorkflowRepository_Expecter) LockOperatorResultAuthority(ctx interface{}, tournamentID interface{}, seriesID interface{}) *MockOperatorResultWorkflowRepository_LockOperatorResultAuthority_Call {
+func (_e *MockOperatorResultWorkflowRepository_Expecter) LockOperatorResultAuthority(ctx any, tournamentID any, seriesID any) *MockOperatorResultWorkflowRepository_LockOperatorResultAuthority_Call {
 	return &MockOperatorResultWorkflowRepository_LockOperatorResultAuthority_Call{Call: _e.mock.On("LockOperatorResultAuthority", ctx, tournamentID, seriesID)}
 }
 
@@ -519,7 +528,7 @@ type MockOperatorResultWorkflowRepository_ReadOperatorResultTime_Call struct {
 
 // ReadOperatorResultTime is a helper method to define mock.On call
 //   - ctx context.Context
-func (_e *MockOperatorResultWorkflowRepository_Expecter) ReadOperatorResultTime(ctx interface{}) *MockOperatorResultWorkflowRepository_ReadOperatorResultTime_Call {
+func (_e *MockOperatorResultWorkflowRepository_Expecter) ReadOperatorResultTime(ctx any) *MockOperatorResultWorkflowRepository_ReadOperatorResultTime_Call {
 	return &MockOperatorResultWorkflowRepository_ReadOperatorResultTime_Call{Call: _e.mock.On("ReadOperatorResultTime", ctx)}
 }
 

@@ -17,10 +17,19 @@ func NewMockLifecyclePauser(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockLifecyclePauser {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockLifecyclePauser{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -80,7 +89,7 @@ type MockLifecyclePauser_EnterTechnicalPause_Call struct {
 // EnterTechnicalPause is a helper method to define mock.On call
 //   - ctx context.Context
 //   - command pause.TournamentTechnicalPauseCommand
-func (_e *MockLifecyclePauser_Expecter) EnterTechnicalPause(ctx interface{}, command interface{}) *MockLifecyclePauser_EnterTechnicalPause_Call {
+func (_e *MockLifecyclePauser_Expecter) EnterTechnicalPause(ctx any, command any) *MockLifecyclePauser_EnterTechnicalPause_Call {
 	return &MockLifecyclePauser_EnterTechnicalPause_Call{Call: _e.mock.On("EnterTechnicalPause", ctx, command)}
 }
 

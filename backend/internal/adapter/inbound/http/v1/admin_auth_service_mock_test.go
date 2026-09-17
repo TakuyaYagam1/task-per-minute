@@ -17,10 +17,19 @@ func NewMockAdminAuthService(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockAdminAuthService {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockAdminAuthService{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -74,7 +83,7 @@ type MockAdminAuthService_Login_Call struct {
 // Login is a helper method to define mock.On call
 //   - ctx context.Context
 //   - password string
-func (_e *MockAdminAuthService_Expecter) Login(ctx interface{}, password interface{}) *MockAdminAuthService_Login_Call {
+func (_e *MockAdminAuthService_Expecter) Login(ctx any, password any) *MockAdminAuthService_Login_Call {
 	return &MockAdminAuthService_Login_Call{Call: _e.mock.On("Login", ctx, password)}
 }
 
@@ -138,9 +147,9 @@ type MockAdminAuthService_Logout_Call struct {
 //   - ctx context.Context
 //   - refreshToken string
 //   - accessTokens ...string
-func (_e *MockAdminAuthService_Expecter) Logout(ctx interface{}, refreshToken interface{}, accessTokens ...interface{}) *MockAdminAuthService_Logout_Call {
+func (_e *MockAdminAuthService_Expecter) Logout(ctx any, refreshToken any, accessTokens ...any) *MockAdminAuthService_Logout_Call {
 	return &MockAdminAuthService_Logout_Call{Call: _e.mock.On("Logout",
-		append([]interface{}{ctx, refreshToken}, accessTokens...)...)}
+		append([]any{ctx, refreshToken}, accessTokens...)...)}
 }
 
 func (_c *MockAdminAuthService_Logout_Call) Run(run func(ctx context.Context, refreshToken string, accessTokens ...string)) *MockAdminAuthService_Logout_Call {
@@ -221,9 +230,9 @@ type MockAdminAuthService_Refresh_Call struct {
 //   - ctx context.Context
 //   - refreshToken string
 //   - accessTokens ...string
-func (_e *MockAdminAuthService_Expecter) Refresh(ctx interface{}, refreshToken interface{}, accessTokens ...interface{}) *MockAdminAuthService_Refresh_Call {
+func (_e *MockAdminAuthService_Expecter) Refresh(ctx any, refreshToken any, accessTokens ...any) *MockAdminAuthService_Refresh_Call {
 	return &MockAdminAuthService_Refresh_Call{Call: _e.mock.On("Refresh",
-		append([]interface{}{ctx, refreshToken}, accessTokens...)...)}
+		append([]any{ctx, refreshToken}, accessTokens...)...)}
 }
 
 func (_c *MockAdminAuthService_Refresh_Call) Run(run func(ctx context.Context, refreshToken string, accessTokens ...string)) *MockAdminAuthService_Refresh_Call {

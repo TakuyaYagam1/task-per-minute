@@ -17,10 +17,19 @@ func NewMockFinalBindingRehydrator(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockFinalBindingRehydrator {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockFinalBindingRehydrator{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -74,7 +83,7 @@ type MockFinalBindingRehydrator_RehydrateFinalBindings_Call struct {
 // RehydrateFinalBindings is a helper method to define mock.On call
 //   - ctx context.Context
 //   - authority terminal.FinalSettlementAuthority
-func (_e *MockFinalBindingRehydrator_Expecter) RehydrateFinalBindings(ctx interface{}, authority interface{}) *MockFinalBindingRehydrator_RehydrateFinalBindings_Call {
+func (_e *MockFinalBindingRehydrator_Expecter) RehydrateFinalBindings(ctx any, authority any) *MockFinalBindingRehydrator_RehydrateFinalBindings_Call {
 	return &MockFinalBindingRehydrator_RehydrateFinalBindings_Call{Call: _e.mock.On("RehydrateFinalBindings", ctx, authority)}
 }
 

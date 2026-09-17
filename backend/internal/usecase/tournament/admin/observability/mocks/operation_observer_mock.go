@@ -17,10 +17,19 @@ func NewMockOperationObserver(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockOperationObserver {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockOperationObserver{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -52,7 +61,7 @@ type MockOperationObserver_ObserveTournamentAdminOperation_Call struct {
 // ObserveTournamentAdminOperation is a helper method to define mock.On call
 //   - ctx context.Context
 //   - event observability.OperationEvent
-func (_e *MockOperationObserver_Expecter) ObserveTournamentAdminOperation(ctx interface{}, event interface{}) *MockOperationObserver_ObserveTournamentAdminOperation_Call {
+func (_e *MockOperationObserver_Expecter) ObserveTournamentAdminOperation(ctx any, event any) *MockOperationObserver_ObserveTournamentAdminOperation_Call {
 	return &MockOperationObserver_ObserveTournamentAdminOperation_Call{Call: _e.mock.On("ObserveTournamentAdminOperation", ctx, event)}
 }
 

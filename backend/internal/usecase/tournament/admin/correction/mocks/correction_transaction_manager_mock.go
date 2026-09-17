@@ -16,10 +16,19 @@ func NewMockCorrectionTransactionManager(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockCorrectionTransactionManager {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockCorrectionTransactionManager{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -62,7 +71,7 @@ type MockCorrectionTransactionManager_Do_Call struct {
 // Do is a helper method to define mock.On call
 //   - ctx context.Context
 //   - fn func(context.Context) error
-func (_e *MockCorrectionTransactionManager_Expecter) Do(ctx interface{}, fn interface{}) *MockCorrectionTransactionManager_Do_Call {
+func (_e *MockCorrectionTransactionManager_Expecter) Do(ctx any, fn any) *MockCorrectionTransactionManager_Do_Call {
 	return &MockCorrectionTransactionManager_Do_Call{Call: _e.mock.On("Do", ctx, fn)}
 }
 

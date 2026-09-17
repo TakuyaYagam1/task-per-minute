@@ -20,10 +20,19 @@ func NewMockRosterWorkflowRepository(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockRosterWorkflowRepository {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockRosterWorkflowRepository{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -78,7 +87,7 @@ type MockRosterWorkflowRepository_FindRosterOperation_Call struct {
 //   - ctx context.Context
 //   - tournamentID uuid.UUID
 //   - commandID uuid.UUID
-func (_e *MockRosterWorkflowRepository_Expecter) FindRosterOperation(ctx interface{}, tournamentID interface{}, commandID interface{}) *MockRosterWorkflowRepository_FindRosterOperation_Call {
+func (_e *MockRosterWorkflowRepository_Expecter) FindRosterOperation(ctx any, tournamentID any, commandID any) *MockRosterWorkflowRepository_FindRosterOperation_Call {
 	return &MockRosterWorkflowRepository_FindRosterOperation_Call{Call: _e.mock.On("FindRosterOperation", ctx, tournamentID, commandID)}
 }
 
@@ -149,7 +158,7 @@ type MockRosterWorkflowRepository_GetRoster_Call struct {
 // GetRoster is a helper method to define mock.On call
 //   - ctx context.Context
 //   - tournamentID uuid.UUID
-func (_e *MockRosterWorkflowRepository_Expecter) GetRoster(ctx interface{}, tournamentID interface{}) *MockRosterWorkflowRepository_GetRoster_Call {
+func (_e *MockRosterWorkflowRepository_Expecter) GetRoster(ctx any, tournamentID any) *MockRosterWorkflowRepository_GetRoster_Call {
 	return &MockRosterWorkflowRepository_GetRoster_Call{Call: _e.mock.On("GetRoster", ctx, tournamentID)}
 }
 
@@ -216,7 +225,7 @@ type MockRosterWorkflowRepository_LoadPreflightInput_Call struct {
 //   - ctx context.Context
 //   - authority roster.RosterAuthority
 //   - evaluatedAt time.Time
-func (_e *MockRosterWorkflowRepository_Expecter) LoadPreflightInput(ctx interface{}, authority interface{}, evaluatedAt interface{}) *MockRosterWorkflowRepository_LoadPreflightInput_Call {
+func (_e *MockRosterWorkflowRepository_Expecter) LoadPreflightInput(ctx any, authority any, evaluatedAt any) *MockRosterWorkflowRepository_LoadPreflightInput_Call {
 	return &MockRosterWorkflowRepository_LoadPreflightInput_Call{Call: _e.mock.On("LoadPreflightInput", ctx, authority, evaluatedAt)}
 }
 
@@ -287,7 +296,7 @@ type MockRosterWorkflowRepository_LockRosterAuthority_Call struct {
 // LockRosterAuthority is a helper method to define mock.On call
 //   - ctx context.Context
 //   - tournamentID uuid.UUID
-func (_e *MockRosterWorkflowRepository_Expecter) LockRosterAuthority(ctx interface{}, tournamentID interface{}) *MockRosterWorkflowRepository_LockRosterAuthority_Call {
+func (_e *MockRosterWorkflowRepository_Expecter) LockRosterAuthority(ctx any, tournamentID any) *MockRosterWorkflowRepository_LockRosterAuthority_Call {
 	return &MockRosterWorkflowRepository_LockRosterAuthority_Call{Call: _e.mock.On("LockRosterAuthority", ctx, tournamentID)}
 }
 
@@ -355,7 +364,7 @@ type MockRosterWorkflowRepository_LockRosterWithPreflight_Call struct {
 //   - authority roster.RosterAuthority
 //   - checkedInPlayerIDs []uuid.UUID
 //   - lockedAt time.Time
-func (_e *MockRosterWorkflowRepository_Expecter) LockRosterWithPreflight(ctx interface{}, authority interface{}, checkedInPlayerIDs interface{}, lockedAt interface{}) *MockRosterWorkflowRepository_LockRosterWithPreflight_Call {
+func (_e *MockRosterWorkflowRepository_Expecter) LockRosterWithPreflight(ctx any, authority any, checkedInPlayerIDs any, lockedAt any) *MockRosterWorkflowRepository_LockRosterWithPreflight_Call {
 	return &MockRosterWorkflowRepository_LockRosterWithPreflight_Call{Call: _e.mock.On("LockRosterWithPreflight", ctx, authority, checkedInPlayerIDs, lockedAt)}
 }
 
@@ -430,7 +439,7 @@ type MockRosterWorkflowRepository_ReadRosterTime_Call struct {
 
 // ReadRosterTime is a helper method to define mock.On call
 //   - ctx context.Context
-func (_e *MockRosterWorkflowRepository_Expecter) ReadRosterTime(ctx interface{}) *MockRosterWorkflowRepository_ReadRosterTime_Call {
+func (_e *MockRosterWorkflowRepository_Expecter) ReadRosterTime(ctx any) *MockRosterWorkflowRepository_ReadRosterTime_Call {
 	return &MockRosterWorkflowRepository_ReadRosterTime_Call{Call: _e.mock.On("ReadRosterTime", ctx)}
 }
 
@@ -493,7 +502,7 @@ type MockRosterWorkflowRepository_ReplaceRosterParticipants_Call struct {
 //   - authority roster.RosterAuthority
 //   - participants []roster.RosterParticipantInput
 //   - updatedAt time.Time
-func (_e *MockRosterWorkflowRepository_Expecter) ReplaceRosterParticipants(ctx interface{}, authority interface{}, participants interface{}, updatedAt interface{}) *MockRosterWorkflowRepository_ReplaceRosterParticipants_Call {
+func (_e *MockRosterWorkflowRepository_Expecter) ReplaceRosterParticipants(ctx any, authority any, participants any, updatedAt any) *MockRosterWorkflowRepository_ReplaceRosterParticipants_Call {
 	return &MockRosterWorkflowRepository_ReplaceRosterParticipants_Call{Call: _e.mock.On("ReplaceRosterParticipants", ctx, authority, participants, updatedAt)}
 }
 
@@ -560,7 +569,7 @@ type MockRosterWorkflowRepository_SaveRosterOperation_Call struct {
 // SaveRosterOperation is a helper method to define mock.On call
 //   - ctx context.Context
 //   - record roster.RosterOperationRecord
-func (_e *MockRosterWorkflowRepository_Expecter) SaveRosterOperation(ctx interface{}, record interface{}) *MockRosterWorkflowRepository_SaveRosterOperation_Call {
+func (_e *MockRosterWorkflowRepository_Expecter) SaveRosterOperation(ctx any, record any) *MockRosterWorkflowRepository_SaveRosterOperation_Call {
 	return &MockRosterWorkflowRepository_SaveRosterOperation_Call{Call: _e.mock.On("SaveRosterOperation", ctx, record)}
 }
 
@@ -627,7 +636,7 @@ type MockRosterWorkflowRepository_UnlockRoster_Call struct {
 //   - ctx context.Context
 //   - authority roster.RosterAuthority
 //   - updatedAt time.Time
-func (_e *MockRosterWorkflowRepository_Expecter) UnlockRoster(ctx interface{}, authority interface{}, updatedAt interface{}) *MockRosterWorkflowRepository_UnlockRoster_Call {
+func (_e *MockRosterWorkflowRepository_Expecter) UnlockRoster(ctx any, authority any, updatedAt any) *MockRosterWorkflowRepository_UnlockRoster_Call {
 	return &MockRosterWorkflowRepository_UnlockRoster_Call{Call: _e.mock.On("UnlockRoster", ctx, authority, updatedAt)}
 }
 
