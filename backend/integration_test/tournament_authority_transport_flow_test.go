@@ -25,7 +25,9 @@ import (
 )
 
 func TestTournamentAuthorityTransportFlow(t *testing.T) {
-	t.Run("audit retention and filters", TestResultAuditRepository)
+	t.Run("audit retention and filters", func(t *testing.T) {
+		resultintegration.RunResultAuditRepository(t, sharedPool)
+	})
 	t.Run("incident bundle uses durable redacted audit events", testTournamentDurableIncidentBundle)
 	t.Run("participant and public realtime recover from authoritative storage", testTournamentRealtimeRecovery)
 	t.Run("correction converges atomically", func(t *testing.T) {

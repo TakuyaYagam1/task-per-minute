@@ -1,6 +1,6 @@
 //go:build integration
 
-package integration_test
+package result
 
 import (
 	"context"
@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
@@ -17,28 +18,27 @@ import (
 	correctionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/correction"
 )
 
-func TestResultAuditRepository(t *testing.T) {
+// RunResultAuditRepository runs the audit retention and filter coverage with
+// the child result fixture and a caller-owned pool.
+func RunResultAuditRepository(t *testing.T, pool *pgxpool.Pool) {
+	t.Helper()
 	ctx := context.Background()
-	resetMigrationTables(ctx, t)
-	t.Cleanup(func() { resetMigrationTables(ctx, t) })
+	require.NoError(t, resetResultTables(ctx, pool))
+	t.Cleanup(func() { require.NoError(t, resetResultTables(ctx, pool)) })
 
-	fixture := createCorrectionRepositoryFixture(ctx, t)
-
-	correctionRepository := correctionrepo.NewCorrectionPostgres(postgres.NewTxManager(sharedPool))
-	firstInput := newCorrectionInput(
-		ctx, t, fixture, fixture.result, fixture.projection, 1, fixture.nextTime,
-	)
+	fixture, err := createCorrectionFixture(ctx, pool)
+	require.NoError(t, err)
+	correctionRepository := correctionrepo.NewCorrectionPostgres(postgres.NewTxManager(pool))
+	firstInput := newCorrectionInput(ctx, t, pool, fixture, fixture.correction.Result, fixture.correction.Projection, 1, fixture.correction.NextTime)
 	first, err := correctionRepository.Rebuild(ctx, firstInput)
 	require.NoError(t, err)
-	secondInput := newCorrectionInput(
-		ctx, t, fixture, first.ResultCommit, first.Projection, 0, fixture.nextTime.Add(time.Second),
-	)
+	secondInput := newCorrectionInput(ctx, t, pool, fixture, first.ResultCommit, first.Projection, 0, fixture.correction.NextTime.Add(time.Second))
 	second, err := correctionRepository.Rebuild(ctx, secondInput)
 	require.NoError(t, err)
 
-	repository := auditrepo.NewAuditPostgres(postgres.NewTxManager(sharedPool))
+	repository := auditrepo.NewAuditPostgres(postgres.NewTxManager(pool))
 	records := listAuditRecords(ctx, t, repository, auditrepo.AuditFilter{
-		TournamentID: fixture.resultFixture.draft.tournamentID,
+		TournamentID: fixture.draft.TournamentID,
 		PageSize:     2,
 	})
 	require.Len(t, records, 6)
@@ -71,50 +71,50 @@ func TestResultAuditRepository(t *testing.T) {
 	}
 	require.Equal(t, 2, currentCount)
 
-	attemptID := fixture.resultFixture.attemptID
+	attemptID := fixture.audit.Fixture.Scope.AttemptID
 	require.Len(t, listAuditRecords(ctx, t, repository, auditrepo.AuditFilter{
-		TournamentID: fixture.resultFixture.draft.tournamentID,
+		TournamentID: fixture.draft.TournamentID,
 		EntityKind:   "game_attempt",
 		EntityID:     &attemptID,
 	}), 3)
-	seriesID := fixture.resultFixture.draft.seriesID
+	seriesID := fixture.draft.SeriesID
 	require.Len(t, listAuditRecords(ctx, t, repository, auditrepo.AuditFilter{
-		TournamentID: fixture.resultFixture.draft.tournamentID,
+		TournamentID: fixture.draft.TournamentID,
 		EntityKind:   "series",
 		EntityID:     &seriesID,
 	}), 3)
 	require.Len(t, listAuditRecords(ctx, t, repository, auditrepo.AuditFilter{
-		TournamentID: fixture.resultFixture.draft.tournamentID,
+		TournamentID: fixture.draft.TournamentID,
 		EventType:    "tournament.result.corrected",
 	}), 4)
 	require.Len(t, listAuditRecords(ctx, t, repository, auditrepo.AuditFilter{
-		TournamentID: fixture.resultFixture.draft.tournamentID,
+		TournamentID: fixture.draft.TournamentID,
 		ActorKind:    "operator",
 		ActorID:      &firstInput.OperatorID,
 	}), 2)
 	require.Len(t, listAuditRecords(ctx, t, repository, auditrepo.AuditFilter{
-		TournamentID: fixture.resultFixture.draft.tournamentID,
+		TournamentID: fixture.draft.TournamentID,
 		ResultReason: "surrender",
 	}), 4)
 	firstOccurredAt := first.ResultCommit.Audit.OccurredAt.Time.UTC()
 	require.Len(t, listAuditRecords(ctx, t, repository, auditrepo.AuditFilter{
-		TournamentID: fixture.resultFixture.draft.tournamentID,
+		TournamentID: fixture.draft.TournamentID,
 		OccurredFrom: &firstOccurredAt,
 		OccurredTo:   &firstOccurredAt,
 	}), 2)
 }
 
 func listAuditRecords(
-	ctx context.Context, tb testing.TB,
+	ctx context.Context,
+	t *testing.T,
 	repository *auditrepo.AuditPostgres,
 	filter auditrepo.AuditFilter,
 ) []auditrepo.AuditRecord {
-	tb.Helper()
-
+	t.Helper()
 	records := make([]auditrepo.AuditRecord, 0)
 	for {
 		page, err := repository.List(ctx, filter)
-		require.NoError(tb, err)
+		require.NoError(t, err)
 		records = append(records, page.Records...)
 		if page.NextCursor == nil {
 			return records
