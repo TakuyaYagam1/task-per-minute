@@ -8,6 +8,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gameforfeit "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/forfeit"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 	operationusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/operation"
 )
@@ -72,13 +73,13 @@ type OperatorResultWorkflowRepository interface {
 	LoadOperatorForfeitAuthority(
 		ctx context.Context,
 		command ForfeitCommand,
-	) (gameusecase.ForfeitAuthority, error)
+	) (gameforfeit.ForfeitAuthority, error)
 	CommitOperatorForfeit(
 		ctx context.Context,
 		command ForfeitCommand,
 		requestDigest [32]byte,
-		resolution gameusecase.ForfeitResolution,
-	) (*gameusecase.ForfeitResolution, bool, error)
+		resolution gameforfeit.ForfeitResolution,
+	) (*gameforfeit.ForfeitResolution, bool, error)
 }
 
 // PostseasonWorkflow advances the tournament after an operator terminal

@@ -12,6 +12,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gameforfeit "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/forfeit"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 )
@@ -111,7 +112,7 @@ func (w *OperatorResultWorkflow) RecordForfeit(ctx context.Context, command Forf
 			command:    command,
 			digest:     digest,
 		}
-		resolution, changed, err := gameusecase.ForfeitNewUseCase(
+		resolution, changed, err := gameforfeit.ForfeitNewUseCase(
 			repository,
 			operatorResultClock{at: resolvedAt},
 		).OperatorForfeit(txCtx, operatorForfeitCommand(command))
@@ -213,15 +214,15 @@ type operatorForfeitRepository struct {
 
 func (r *operatorForfeitRepository) LoadForfeitAuthority(
 	ctx context.Context,
-	_ gameusecase.Scope,
-) (gameusecase.ForfeitAuthority, error) {
+	_ gameforfeit.Scope,
+) (gameforfeit.ForfeitAuthority, error) {
 	return r.repository.LoadOperatorForfeitAuthority(ctx, r.command)
 }
 
 func (r *operatorForfeitRepository) CommitForfeitResolution(
 	ctx context.Context,
-	resolution gameusecase.ForfeitResolution,
-) (*gameusecase.ForfeitResolution, bool, error) {
+	resolution gameforfeit.ForfeitResolution,
+) (*gameforfeit.ForfeitResolution, bool, error) {
 	return r.repository.CommitOperatorForfeit(ctx, r.command, r.digest, resolution)
 }
 
@@ -242,8 +243,8 @@ func operatorResultError(
 	authority OperatorResultAuthority,
 ) error {
 	if errors.Is(err, domain.ErrConflict) || errors.Is(err, gameusecase.ErrNormalNoShowAuthorityConflict) ||
-		errors.Is(err, gameusecase.ErrNormalNoShowConflict) || errors.Is(err, gameusecase.ErrForfeitAuthorityConflict) ||
-		errors.Is(err, gameusecase.ErrForfeitCommandReuse) {
+		errors.Is(err, gameusecase.ErrNormalNoShowConflict) || errors.Is(err, gameforfeit.ErrForfeitAuthorityConflict) ||
+		errors.Is(err, gameforfeit.ErrForfeitCommandReuse) {
 		return newOperatorResultConflict(expectedRevision, authority)
 	}
 	return err
@@ -261,5 +262,5 @@ var (
 	_ NoShowPort                    = (*OperatorResultWorkflow)(nil)
 	_ ForfeitPort                   = (*OperatorResultWorkflow)(nil)
 	_ gameusecase.NoShowRepository  = (*operatorNoShowRepository)(nil)
-	_ gameusecase.ForfeitRepository = (*operatorForfeitRepository)(nil)
+	_ gameforfeit.ForfeitRepository = (*operatorForfeitRepository)(nil)
 )

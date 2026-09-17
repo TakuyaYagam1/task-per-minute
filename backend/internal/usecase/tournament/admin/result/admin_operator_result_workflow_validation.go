@@ -8,6 +8,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gameforfeit "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/forfeit"
 )
 
 func validOperatorResultAuthority(
@@ -67,10 +68,10 @@ func operatorNoShowCommand(command NoShowCommand) gameusecase.NoShowCommand {
 	}
 }
 
-func operatorForfeitCommand(command ForfeitCommand) gameusecase.OperatorCommand {
-	var expectedGame *gameusecase.GameExpectation
+func operatorForfeitCommand(command ForfeitCommand) gameforfeit.OperatorCommand {
+	var expectedGame *gameforfeit.GameExpectation
 	if command.ExpectedGame != nil {
-		expectedGame = &gameusecase.GameExpectation{
+		expectedGame = &gameforfeit.GameExpectation{
 			SlotID: command.ExpectedGame.SlotID, GameID: command.ExpectedGame.GameID,
 			AttemptNo: command.ExpectedGame.AttemptNo, State: command.ExpectedGame.State,
 		}
@@ -80,17 +81,17 @@ func operatorForfeitCommand(command ForfeitCommand) gameusecase.OperatorCommand 
 		value := domain.OfficialResultRevisionID(*command.GameResultRevisionID)
 		gameRevisionID = &value
 	}
-	return gameusecase.OperatorCommand{
-		Scope:     gameusecase.Scope{TournamentID: command.TournamentID, SeriesID: command.SeriesID},
+	return gameforfeit.OperatorCommand{
+		Scope:     gameforfeit.Scope{TournamentID: command.TournamentID, SeriesID: command.SeriesID},
 		CommandID: command.CommandID, ActorOperatorID: command.Operator.ActorID,
 		ForfeitingParticipantID: command.ForfeitingParticipantID,
 		ExpectedGame:            expectedGame,
-		Evidence: gameusecase.OperatorEvidence{
-			Confirmed: command.Confirmed, Basis: gameusecase.OperatorBasis(command.Basis),
+		Evidence: gameforfeit.OperatorEvidence{
+			Confirmed: command.Confirmed, Basis: gameforfeit.OperatorBasis(command.Basis),
 			Reason: command.Reason, RuleID: command.RuleID,
 			EvidenceIDs: append([]uuid.UUID(nil), command.EvidenceIDs...),
 		},
-		Revisions: gameusecase.ForfeitRevisionSet{
+		Revisions: gameforfeit.ForfeitRevisionSet{
 			GameResultRevisionID:   gameRevisionID,
 			ScoreRevisionID:        domain.SeriesScoreRevisionID(command.ScoreRevisionID),
 			SeriesResultRevisionID: domain.OfficialResultRevisionID(command.SeriesResultRevisionID),
@@ -112,12 +113,12 @@ func validOperatorNoShowResolution(
 }
 
 func validOperatorForfeitResolution(
-	resolution *gameusecase.ForfeitResolution,
+	resolution *gameforfeit.ForfeitResolution,
 	command ForfeitCommand,
 	resolvedAt time.Time,
 ) bool {
-	return resolution != nil && resolution.Validate() == nil && resolution.Source == gameusecase.SourceOperator &&
-		resolution.Scope == (gameusecase.Scope{TournamentID: command.TournamentID, SeriesID: command.SeriesID}) &&
+	return resolution != nil && resolution.Validate() == nil && resolution.Source == gameforfeit.SourceOperator &&
+		resolution.Scope == (gameforfeit.Scope{TournamentID: command.TournamentID, SeriesID: command.SeriesID}) &&
 		resolution.CommandID == command.CommandID && resolution.ActorID == command.Operator.ActorID &&
 		resolution.ExpectedAuthorityRevision == command.ExpectedAuthorityRevision &&
 		resolution.ResolvedAt.Equal(resolvedAt)
