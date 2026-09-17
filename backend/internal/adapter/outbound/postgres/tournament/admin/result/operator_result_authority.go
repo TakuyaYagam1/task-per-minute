@@ -11,7 +11,8 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	seriesdomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/series"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gameforfeit "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/forfeit"
+	gamenoshow "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/noshow"
 	resultusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/result"
 )
 
@@ -30,18 +31,18 @@ type operatorSeriesSnapshot struct {
 func (r *TournamentAdminResultPostgres) LoadOperatorNoShowAuthority(
 	ctx context.Context,
 	command resultusecase.NoShowCommand,
-) (gameusecase.NoShowAuthority, error) {
+) (gamenoshow.NoShowAuthority, error) {
 	if ctx == nil || !r.available() {
-		return gameusecase.NoShowAuthority{}, domain.ErrValidation
+		return gamenoshow.NoShowAuthority{}, domain.ErrValidation
 	}
 	querier := r.tx.Querier(ctx)
 	if err := lockTournamentResultScope(ctx, querier, command.TournamentID, uuid.Nil); err != nil {
-		return gameusecase.NoShowAuthority{}, operatorResultLookupError("lock no-show result scope", err)
+		return gamenoshow.NoShowAuthority{}, operatorResultLookupError("lock no-show result scope", err)
 	}
 	if _, err := querier.LockOperatorNoShowPublication(ctx, sqlc.LockOperatorNoShowPublicationParams{
 		TournamentID: command.TournamentID, WaveID: command.WaveID, ReadyWindowID: command.WindowID, SeriesID: command.SeriesID,
 	}); err != nil {
-		return gameusecase.NoShowAuthority{}, operatorResultLookupError("lock no-show publication authority", err)
+		return gamenoshow.NoShowAuthority{}, operatorResultLookupError("lock no-show publication authority", err)
 	}
 	row, err := querier.LockOperatorNoShowSnapshot(ctx, sqlc.LockOperatorNoShowSnapshotParams{
 		SeriesID: command.SeriesID, TournamentID: command.TournamentID,
@@ -51,17 +52,17 @@ func (r *TournamentAdminResultPostgres) LoadOperatorNoShowAuthority(
 		ReadyWindowID: command.WindowID, ExpectedWindowRevisionID: command.ExpectedWindowRevisionID,
 	})
 	if err != nil {
-		return gameusecase.NoShowAuthority{}, operatorResultLookupError("lock no-show snapshot", err)
+		return gamenoshow.NoShowAuthority{}, operatorResultLookupError("lock no-show snapshot", err)
 	}
 	snapshot, err := r.loadOperatorSeriesSnapshot(ctx, row.Series, row.SeriesScoreHead, "", 0)
 	if err != nil {
-		return gameusecase.NoShowAuthority{}, err
+		return gamenoshow.NoShowAuthority{}, err
 	}
 	wave, err := r.loadOperatorNoShowWave(ctx, row)
 	if err != nil {
-		return gameusecase.NoShowAuthority{}, err
+		return gamenoshow.NoShowAuthority{}, err
 	}
-	authority := gameusecase.NoShowAuthority{
+	authority := gamenoshow.NoShowAuthority{
 		Scope: domain.NormalNoShowScope{
 			TournamentID: command.TournamentID, WaveID: command.WaveID,
 			WindowID: command.WindowID, SeriesID: command.SeriesID,
@@ -75,12 +76,12 @@ func (r *TournamentAdminResultPostgres) LoadOperatorNoShowAuthority(
 func (r *TournamentAdminResultPostgres) LoadOperatorForfeitAuthority(
 	ctx context.Context,
 	command resultusecase.ForfeitCommand,
-) (gameusecase.ForfeitAuthority, error) {
+) (gameforfeit.ForfeitAuthority, error) {
 	if ctx == nil || !r.available() {
-		return gameusecase.ForfeitAuthority{}, domain.ErrValidation
+		return gameforfeit.ForfeitAuthority{}, domain.ErrValidation
 	}
 	if err := lockTournamentResultScope(ctx, r.tx.Querier(ctx), command.TournamentID, uuid.Nil); err != nil {
-		return gameusecase.ForfeitAuthority{}, operatorResultLookupError("lock forfeit result scope", err)
+		return gameforfeit.ForfeitAuthority{}, operatorResultLookupError("lock forfeit result scope", err)
 	}
 	row, err := r.tx.Querier(ctx).LockOperatorForfeitSnapshot(
 		ctx,
@@ -90,7 +91,7 @@ func (r *TournamentAdminResultPostgres) LoadOperatorForfeitAuthority(
 		},
 	)
 	if err != nil {
-		return gameusecase.ForfeitAuthority{}, operatorResultLookupError("lock forfeit snapshot", err)
+		return gameforfeit.ForfeitAuthority{}, operatorResultLookupError("lock forfeit snapshot", err)
 	}
 	snapshot, err := r.loadOperatorSeriesSnapshot(
 		ctx,
@@ -100,10 +101,10 @@ func (r *TournamentAdminResultPostgres) LoadOperatorForfeitAuthority(
 		row.SeriesResultRevision,
 	)
 	if err != nil {
-		return gameusecase.ForfeitAuthority{}, err
+		return gameforfeit.ForfeitAuthority{}, err
 	}
-	return gameusecase.ForfeitAuthority{
-		Scope:    gameusecase.Scope{TournamentID: command.TournamentID, SeriesID: command.SeriesID},
+	return gameforfeit.ForfeitAuthority{
+		Scope:    gameforfeit.Scope{TournamentID: command.TournamentID, SeriesID: command.SeriesID},
 		Revision: command.ExpectedAuthorityRevision, Series: snapshot.execution,
 		AuthorizedOperatorIDs:        []uuid.UUID{command.Operator.ActorID},
 		CurrentOrdinal:               snapshot.currentOrdinal,

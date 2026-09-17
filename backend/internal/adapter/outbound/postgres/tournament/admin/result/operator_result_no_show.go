@@ -8,7 +8,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gamenoshow "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/noshow"
 	resultusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/result"
 )
 
@@ -16,12 +16,12 @@ func (r *TournamentAdminResultPostgres) CommitOperatorNoShow(
 	ctx context.Context,
 	command resultusecase.NoShowCommand,
 	requestDigest [32]byte,
-	resolution gameusecase.NoShowResolution,
-) (*gameusecase.NoShowResolution, bool, error) {
+	resolution gamenoshow.NoShowResolution,
+) (*gamenoshow.NoShowResolution, bool, error) {
 	if ctx == nil || !r.available() || resolution.Validate() != nil {
 		return nil, false, domain.ErrValidation
 	}
-	var committed *gameusecase.NoShowResolution
+	var committed *gamenoshow.NoShowResolution
 	err := r.tx.Do(ctx, func(txCtx context.Context) error {
 		var err error
 		committed, err = r.commitOperatorNoShow(txCtx, command, requestDigest, resolution)
@@ -41,8 +41,8 @@ func (r *TournamentAdminResultPostgres) commitOperatorNoShow(
 	ctx context.Context,
 	command resultusecase.NoShowCommand,
 	requestDigest [32]byte,
-	resolution gameusecase.NoShowResolution,
-) (*gameusecase.NoShowResolution, error) {
+	resolution gamenoshow.NoShowResolution,
+) (*gamenoshow.NoShowResolution, error) {
 	querier := r.tx.Querier(ctx)
 	if len(resolution.GameRevisions) == 0 {
 		return nil, domain.ErrConflict
@@ -206,7 +206,7 @@ func (r *TournamentAdminResultPostgres) createOperatorNoShowRevisions(
 	querier *sqlc.Queries,
 	command resultusecase.NoShowCommand,
 	snapshot operatorSeriesSnapshot,
-	resolution gameusecase.NoShowResolution,
+	resolution gamenoshow.NoShowResolution,
 	resultEventID uuid.UUID,
 ) error {
 	for _, revision := range resolution.GameRevisions {
@@ -296,7 +296,7 @@ func (r *TournamentAdminResultPostgres) advanceOperatorNoShowState(
 	ctx context.Context,
 	querier *sqlc.Queries,
 	command resultusecase.NoShowCommand,
-	resolution gameusecase.NoShowResolution,
+	resolution gamenoshow.NoShowResolution,
 	snapshot operatorSeriesSnapshot,
 	sourceWave domain.Wave,
 	waveRevision int64,
@@ -382,7 +382,7 @@ func (r *TournamentAdminResultPostgres) advanceOperatorNoShowState(
 
 func validateOperatorNoShowCommit(
 	command resultusecase.NoShowCommand,
-	resolution gameusecase.NoShowResolution,
+	resolution gamenoshow.NoShowResolution,
 	snapshot operatorSeriesSnapshot,
 ) error {
 	if !operatorNoShowIdentityMatches(command, resolution) ||
@@ -396,7 +396,7 @@ func validateOperatorNoShowCommit(
 
 func operatorNoShowIdentityMatches(
 	command resultusecase.NoShowCommand,
-	resolution gameusecase.NoShowResolution,
+	resolution gamenoshow.NoShowResolution,
 ) bool {
 	return resolution.Scope == (domain.NormalNoShowScope{
 		TournamentID: command.TournamentID, WaveID: command.WaveID,
@@ -407,7 +407,7 @@ func operatorNoShowIdentityMatches(
 
 func operatorNoShowRevisionSetMatches(
 	command resultusecase.NoShowCommand,
-	resolution gameusecase.NoShowResolution,
+	resolution gamenoshow.NoShowResolution,
 	snapshot operatorSeriesSnapshot,
 ) bool {
 	return snapshot.series.Revision == command.ExpectedAuthorityRevision && len(resolution.GameRevisions) > 0 &&
@@ -417,7 +417,7 @@ func operatorNoShowRevisionSetMatches(
 
 func operatorNoShowGameRevisionsMatch(
 	command resultusecase.NoShowCommand,
-	resolution gameusecase.NoShowResolution,
+	resolution gamenoshow.NoShowResolution,
 	snapshot operatorSeriesSnapshot,
 ) bool {
 	if len(resolution.GameRevisions) != len(command.GameResultRevisionIDs) {
@@ -436,7 +436,7 @@ func operatorNoShowGameRevisionsMatch(
 	return true
 }
 
-func operatorNoShowHeadsMatch(resolution gameusecase.NoShowResolution, snapshot operatorSeriesSnapshot) bool {
+func operatorNoShowHeadsMatch(resolution gamenoshow.NoShowResolution, snapshot operatorSeriesSnapshot) bool {
 	return resolution.ScoreRevision.PreviousRevisionID != nil &&
 		resolution.ScoreRevision.PreviousRevisionID.UUID() == snapshot.scoreHead.CurrentRevisionID &&
 		resolution.SeriesRevision.PreviousRevisionID == nil && !snapshot.series.CurrentResultRevisionID.Valid

@@ -1,5 +1,0 @@
-package game
-
-// Event remains only while stale generated mocks are awaiting central cleanup.
-// It has no production observer or emission path.
-type SubmissionEvent struct{}

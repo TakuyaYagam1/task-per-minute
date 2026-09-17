@@ -8,7 +8,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gameforfeit "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/forfeit"
 	resultusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/result"
 )
 
@@ -16,12 +16,12 @@ func (r *TournamentAdminResultPostgres) CommitOperatorForfeit(
 	ctx context.Context,
 	command resultusecase.ForfeitCommand,
 	requestDigest [32]byte,
-	resolution gameusecase.ForfeitResolution,
-) (*gameusecase.ForfeitResolution, bool, error) {
+	resolution gameforfeit.ForfeitResolution,
+) (*gameforfeit.ForfeitResolution, bool, error) {
 	if ctx == nil || !r.available() || resolution.Validate() != nil {
 		return nil, false, domain.ErrValidation
 	}
-	var committed *gameusecase.ForfeitResolution
+	var committed *gameforfeit.ForfeitResolution
 	err := r.tx.Do(ctx, func(txCtx context.Context) error {
 		var err error
 		committed, err = r.commitOperatorForfeit(txCtx, command, requestDigest, resolution)
@@ -40,8 +40,8 @@ func (r *TournamentAdminResultPostgres) commitOperatorForfeit(
 	ctx context.Context,
 	command resultusecase.ForfeitCommand,
 	requestDigest [32]byte,
-	resolution gameusecase.ForfeitResolution,
-) (*gameusecase.ForfeitResolution, error) {
+	resolution gameforfeit.ForfeitResolution,
+) (*gameforfeit.ForfeitResolution, error) {
 	querier := r.tx.Querier(ctx)
 	if err := lockTournamentResultScope(ctx, querier, command.TournamentID, uuid.Nil); err != nil {
 		return nil, operatorResultLookupError("lock forfeit result scope", err)
@@ -124,10 +124,10 @@ func (r *TournamentAdminResultPostgres) commitLiveOperatorForfeit(
 	ctx context.Context,
 	command resultusecase.ForfeitCommand,
 	requestDigest [32]byte,
-	resolution gameusecase.ForfeitResolution,
+	resolution gameforfeit.ForfeitResolution,
 	snapshot operatorSeriesSnapshot,
 	ids operatorResultEvidenceIDs,
-) (*gameusecase.ForfeitResolution, error) {
+) (*gameforfeit.ForfeitResolution, error) {
 	if resolution.Game == nil || resolution.GameRevision == nil || resolution.ExpectedGame == nil {
 		return nil, domain.ErrConflict
 	}
@@ -196,12 +196,12 @@ func (r *TournamentAdminResultPostgres) commitPreStartOperatorForfeit(
 	ctx context.Context,
 	command resultusecase.ForfeitCommand,
 	requestDigest [32]byte,
-	resolution gameusecase.ForfeitResolution,
+	resolution gameforfeit.ForfeitResolution,
 	row sqlc.LockOperatorForfeitSnapshotRow,
 	snapshot operatorSeriesSnapshot,
 	ids operatorResultEvidenceIDs,
 	lockedAttemptID uuid.UUID,
-) (*gameusecase.ForfeitResolution, error) {
+) (*gameforfeit.ForfeitResolution, error) {
 	if err := r.ensurePreStartSwissRoundProof(ctx, command.TournamentID, command.SeriesID, resolution.ResolvedAt, swissRoundProofOrigin{mode: "pre_start_forfeit", commandID: command.CommandID}); err != nil {
 		return nil, err
 	}
@@ -353,7 +353,7 @@ func (r *TournamentAdminResultPostgres) commitPreStartOperatorForfeit(
 func advancePreStartOperatorForfeit(
 	ctx context.Context,
 	querier *sqlc.Queries,
-	resolution gameusecase.ForfeitResolution,
+	resolution gameforfeit.ForfeitResolution,
 	series sqlc.Series,
 	scoreHead sqlc.SeriesScoreHead,
 ) error {
@@ -415,7 +415,7 @@ func operatorForfeitAnchor(
 
 func validateOperatorForfeitCommit(
 	command resultusecase.ForfeitCommand,
-	resolution gameusecase.ForfeitResolution,
+	resolution gameforfeit.ForfeitResolution,
 	snapshot operatorSeriesSnapshot,
 ) error {
 	if !operatorForfeitIdentityMatches(command, resolution) ||
@@ -429,10 +429,10 @@ func validateOperatorForfeitCommit(
 
 func operatorForfeitIdentityMatches(
 	command resultusecase.ForfeitCommand,
-	resolution gameusecase.ForfeitResolution,
+	resolution gameforfeit.ForfeitResolution,
 ) bool {
-	return resolution.Source == gameusecase.SourceOperator && resolution.CommandID == command.CommandID &&
-		resolution.Scope == (gameusecase.Scope{TournamentID: command.TournamentID, SeriesID: command.SeriesID}) &&
+	return resolution.Source == gameforfeit.SourceOperator && resolution.CommandID == command.CommandID &&
+		resolution.Scope == (gameforfeit.Scope{TournamentID: command.TournamentID, SeriesID: command.SeriesID}) &&
 		resolution.ActorID == command.Operator.ActorID &&
 		resolution.ForfeitingParticipantID == command.ForfeitingParticipantID &&
 		resolution.ExpectedAuthorityRevision == command.ExpectedAuthorityRevision
@@ -440,7 +440,7 @@ func operatorForfeitIdentityMatches(
 
 func operatorForfeitRevisionSetMatches(
 	command resultusecase.ForfeitCommand,
-	resolution gameusecase.ForfeitResolution,
+	resolution gameforfeit.ForfeitResolution,
 	snapshot operatorSeriesSnapshot,
 ) bool {
 	return snapshot.series.Revision == command.ExpectedAuthorityRevision &&
@@ -453,7 +453,7 @@ func operatorForfeitRevisionSetMatches(
 
 func operatorForfeitProjectionEvidenceMatches(
 	command resultusecase.ForfeitCommand,
-	resolution gameusecase.ForfeitResolution,
+	resolution gameforfeit.ForfeitResolution,
 	snapshot operatorSeriesSnapshot,
 ) bool {
 	return resolution.Evidence.SourceProjectionRevision == snapshot.projection.RevisionNumber &&
@@ -465,7 +465,7 @@ func operatorForfeitProjectionEvidenceMatches(
 
 func operatorForfeitGameResolutionMatches(
 	command resultusecase.ForfeitCommand,
-	resolution gameusecase.ForfeitResolution,
+	resolution gameforfeit.ForfeitResolution,
 ) bool {
 	if resolution.Game == nil {
 		return resolution.GameRevision == nil && command.GameResultRevisionID == nil
@@ -477,11 +477,11 @@ func operatorForfeitGameResolutionMatches(
 
 func operatorForfeitResultRecordMatches(
 	record *ResultCommitRecord,
-	resolution gameusecase.ForfeitResolution,
+	resolution gameforfeit.ForfeitResolution,
 	ids operatorResultEvidenceIDs,
 ) bool {
 	return record != nil && record.SeriesRevision != nil && record.Commit.ID == ids.commitID &&
-		record.Event.ID == ids.resultEventID && record.Event.ResultReason == string(gameusecase.SourceOperator.ResultReason()) &&
+		record.Event.ID == ids.resultEventID && record.Event.ResultReason == string(gameforfeit.SourceOperator.ResultReason()) &&
 		record.GameRevision.ID == resolution.GameRevision.ID.UUID() &&
 		record.ScoreRevision.ID == resolution.ScoreRevision.ID.UUID() &&
 		record.SeriesRevision.ID == resolution.SeriesRevision.ID.UUID() &&
