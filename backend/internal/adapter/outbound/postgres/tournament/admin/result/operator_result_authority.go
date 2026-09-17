@@ -12,7 +12,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	seriesdomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/series"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	resultusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/result"
 )
 
 type operatorSeriesSnapshot struct {
@@ -29,7 +29,7 @@ type operatorSeriesSnapshot struct {
 
 func (r *TournamentAdminResultPostgres) LoadOperatorNoShowAuthority(
 	ctx context.Context,
-	command tournamentadmin.NoShowCommand,
+	command resultusecase.NoShowCommand,
 ) (gameusecase.NoShowAuthority, error) {
 	if ctx == nil || !r.available() {
 		return gameusecase.NoShowAuthority{}, domain.ErrValidation
@@ -74,7 +74,7 @@ func (r *TournamentAdminResultPostgres) LoadOperatorNoShowAuthority(
 
 func (r *TournamentAdminResultPostgres) LoadOperatorForfeitAuthority(
 	ctx context.Context,
-	command tournamentadmin.ForfeitCommand,
+	command resultusecase.ForfeitCommand,
 ) (gameusecase.ForfeitAuthority, error) {
 	if ctx == nil || !r.available() {
 		return gameusecase.ForfeitAuthority{}, domain.ErrValidation

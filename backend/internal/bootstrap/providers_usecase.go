@@ -40,6 +40,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection"
 	taskusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/task"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	tournamentadminresult "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/result"
 	tournamentadminroster "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/roster"
 	tournamentcancellation "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/cancellation"
 	catalogusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/catalog"
@@ -346,11 +347,11 @@ func provideTournamentAdminExecution(
 }
 
 func provideTournamentAdminResults(
-	transactions tournamentadmin.OperatorResultTransactionManager,
-	repository tournamentadmin.OperatorResultWorkflowRepository,
-	postseason tournamentadmin.AdminPostseasonWorkflow,
-) *tournamentadmin.OperatorResultWorkflow {
-	return tournamentadmin.NewOperatorResultWorkflow(tournamentadmin.OperatorResultWorkflowDependencies{
+	transactions tournamentadminresult.OperatorResultTransactionManager,
+	repository tournamentadminresult.OperatorResultWorkflowRepository,
+	postseason tournamentadminresult.PostseasonWorkflow,
+) *tournamentadminresult.OperatorResultWorkflow {
+	return tournamentadminresult.NewOperatorResultWorkflow(tournamentadminresult.OperatorResultWorkflowDependencies{
 		Transactions: transactions,
 		Repository:   repository,
 		Postseason:   postseason,
@@ -432,9 +433,9 @@ func provideTournamentAdminApplication(
 	pairing tournamentadmin.PairingPort,
 	lifecycle tournamentadmin.LifecyclePort,
 	wave tournamentadmin.WavePort,
-	noShow tournamentadmin.NoShowPort,
+	noShow tournamentadminresult.NoShowPort,
 	reserve tournamentadmin.ReservePort,
-	forfeit tournamentadmin.ForfeitPort,
+	forfeit tournamentadminresult.ForfeitPort,
 	replay tournamentadmin.ReplayPort,
 	correction tournamentadmin.CorrectionPort,
 	audit tournamentadmin.AuditPort,

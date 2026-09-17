@@ -12,7 +12,8 @@ import (
 	resultrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	adminoperation "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/operation"
+	resultusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/result"
 )
 
 type operatorResultEvidenceIDs struct {
@@ -49,7 +50,7 @@ func operatorNoShowEvidenceIDs(commandID uuid.UUID) operatorResultEvidenceIDs {
 	}
 }
 
-func operatorForfeitEvidenceIDs(command tournamentadmin.ForfeitCommand) operatorResultEvidenceIDs {
+func operatorForfeitEvidenceIDs(command resultusecase.ForfeitCommand) operatorResultEvidenceIDs {
 	return operatorResultEvidenceIDs{
 		commitID:             operatorResultID(command.CommandID, "forfeit-commit"),
 		resultEventID:        operatorResultID(command.CommandID, "forfeit-result-event"),
@@ -156,10 +157,10 @@ func (r *TournamentAdminResultPostgres) publishOperatorResultProjection(
 func (r *TournamentAdminResultPostgres) createOperatorResultCommand(
 	ctx context.Context,
 	command any,
-	scope tournamentadmin.CommandScope,
+	scope adminoperation.CommandScope,
 	seriesID uuid.UUID,
 	rosterID uuid.UUID,
-	action tournamentadmin.OperatorResultAction,
+	action resultusecase.OperatorResultAction,
 	expectedAuthorityRevision int64,
 	digest [sha256.Size]byte,
 	commitID uuid.UUID,
@@ -184,13 +185,13 @@ func (r *TournamentAdminResultPostgres) createOperatorResultCommand(
 }
 
 func operatorResultRequestDocument(
-	action tournamentadmin.OperatorResultAction,
+	action resultusecase.OperatorResultAction,
 	command any,
 	expectedDigest [sha256.Size]byte,
 ) ([]byte, error) {
 	document, err := json.Marshal(struct {
-		Action  tournamentadmin.OperatorResultAction `json:"action"`
-		Command any                                  `json:"command"`
+		Action  resultusecase.OperatorResultAction `json:"action"`
+		Command any                                `json:"command"`
 	}{Action: action, Command: command})
 	if err != nil {
 		return nil, fmt.Errorf("TournamentAdminResultPostgres - encode command evidence: %w", err)

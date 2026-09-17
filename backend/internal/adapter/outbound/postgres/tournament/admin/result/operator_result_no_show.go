@@ -9,12 +9,12 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	resultusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/result"
 )
 
 func (r *TournamentAdminResultPostgres) CommitOperatorNoShow(
 	ctx context.Context,
-	command tournamentadmin.NoShowCommand,
+	command resultusecase.NoShowCommand,
 	requestDigest [32]byte,
 	resolution gameusecase.NoShowResolution,
 ) (*gameusecase.NoShowResolution, bool, error) {
@@ -39,7 +39,7 @@ func (r *TournamentAdminResultPostgres) CommitOperatorNoShow(
 //nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func (r *TournamentAdminResultPostgres) commitOperatorNoShow(
 	ctx context.Context,
-	command tournamentadmin.NoShowCommand,
+	command resultusecase.NoShowCommand,
 	requestDigest [32]byte,
 	resolution gameusecase.NoShowResolution,
 ) (*gameusecase.NoShowResolution, error) {
@@ -192,7 +192,7 @@ func (r *TournamentAdminResultPostgres) commitOperatorNoShow(
 	}
 	if err = r.createOperatorResultCommand(
 		ctx, command, command.CommandScope, command.SeriesID, snapshot.series.RosterID,
-		tournamentadmin.OperatorResultActionNoShow, command.ExpectedAuthorityRevision,
+		resultusecase.OperatorResultActionNoShow, command.ExpectedAuthorityRevision,
 		requestDigest, ids.commitID, ids.resultEventID, resolution.ResolvedAt,
 	); err != nil {
 		return nil, err
@@ -204,7 +204,7 @@ func (r *TournamentAdminResultPostgres) commitOperatorNoShow(
 func (r *TournamentAdminResultPostgres) createOperatorNoShowRevisions(
 	ctx context.Context,
 	querier *sqlc.Queries,
-	command tournamentadmin.NoShowCommand,
+	command resultusecase.NoShowCommand,
 	snapshot operatorSeriesSnapshot,
 	resolution gameusecase.NoShowResolution,
 	resultEventID uuid.UUID,
@@ -295,7 +295,7 @@ func (r *TournamentAdminResultPostgres) createOperatorNoShowRevisions(
 func (r *TournamentAdminResultPostgres) advanceOperatorNoShowState(
 	ctx context.Context,
 	querier *sqlc.Queries,
-	command tournamentadmin.NoShowCommand,
+	command resultusecase.NoShowCommand,
 	resolution gameusecase.NoShowResolution,
 	snapshot operatorSeriesSnapshot,
 	sourceWave domain.Wave,
@@ -381,7 +381,7 @@ func (r *TournamentAdminResultPostgres) advanceOperatorNoShowState(
 }
 
 func validateOperatorNoShowCommit(
-	command tournamentadmin.NoShowCommand,
+	command resultusecase.NoShowCommand,
 	resolution gameusecase.NoShowResolution,
 	snapshot operatorSeriesSnapshot,
 ) error {
@@ -395,7 +395,7 @@ func validateOperatorNoShowCommit(
 }
 
 func operatorNoShowIdentityMatches(
-	command tournamentadmin.NoShowCommand,
+	command resultusecase.NoShowCommand,
 	resolution gameusecase.NoShowResolution,
 ) bool {
 	return resolution.Scope == (domain.NormalNoShowScope{
@@ -406,7 +406,7 @@ func operatorNoShowIdentityMatches(
 }
 
 func operatorNoShowRevisionSetMatches(
-	command tournamentadmin.NoShowCommand,
+	command resultusecase.NoShowCommand,
 	resolution gameusecase.NoShowResolution,
 	snapshot operatorSeriesSnapshot,
 ) bool {
@@ -416,7 +416,7 @@ func operatorNoShowRevisionSetMatches(
 }
 
 func operatorNoShowGameRevisionsMatch(
-	command tournamentadmin.NoShowCommand,
+	command resultusecase.NoShowCommand,
 	resolution gameusecase.NoShowResolution,
 	snapshot operatorSeriesSnapshot,
 ) bool {

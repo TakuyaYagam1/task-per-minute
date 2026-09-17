@@ -13,7 +13,8 @@ import (
 	resultrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	adminoperation "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/operation"
+	resultusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/result"
 )
 
 type TournamentAdminResultPostgres struct {
@@ -48,28 +49,28 @@ func (r *TournamentAdminResultPostgres) LockOperatorResultAuthority(
 	ctx context.Context,
 	tournamentID uuid.UUID,
 	seriesID uuid.UUID,
-) (tournamentadmin.OperatorResultAuthority, error) {
+) (resultusecase.OperatorResultAuthority, error) {
 	if ctx == nil || !r.available() || tournamentID == uuid.Nil || seriesID == uuid.Nil {
-		return tournamentadmin.OperatorResultAuthority{}, domain.ErrValidation
+		return resultusecase.OperatorResultAuthority{}, domain.ErrValidation
 	}
 	if err := lockTournamentResultScope(ctx, r.tx.Querier(ctx), tournamentID, uuid.Nil); err != nil {
-		return tournamentadmin.OperatorResultAuthority{}, operatorResultLookupError("lock result scope", err)
+		return resultusecase.OperatorResultAuthority{}, operatorResultLookupError("lock result scope", err)
 	}
 	row, err := r.tx.Querier(ctx).LockOperatorResultAuthority(
 		ctx,
 		sqlc.LockOperatorResultAuthorityParams{TournamentID: tournamentID, SeriesID: seriesID},
 	)
 	if err != nil {
-		return tournamentadmin.OperatorResultAuthority{}, operatorResultLookupError("lock authority", err)
+		return resultusecase.OperatorResultAuthority{}, operatorResultLookupError("lock authority", err)
 	}
-	authority := tournamentadmin.OperatorResultAuthority{
+	authority := resultusecase.OperatorResultAuthority{
 		TournamentID: row.TournamentID, RosterID: row.RosterID, SeriesID: row.SeriesID,
 		TournamentState:   domain.TournamentState(row.TournamentState),
 		AuthorityRevision: row.AuthorityRevision, ProjectionRevisionID: row.ProjectionRevisionID,
 		ProjectionRevision: row.ProjectionRevision,
 	}
 	if !validOperatorResultAuthority(authority, tournamentID, seriesID) {
-		return tournamentadmin.OperatorResultAuthority{}, domain.ErrInternal
+		return resultusecase.OperatorResultAuthority{}, domain.ErrInternal
 	}
 	return authority, nil
 }
@@ -77,7 +78,7 @@ func (r *TournamentAdminResultPostgres) LockOperatorResultAuthority(
 func (r *TournamentAdminResultPostgres) FindOperatorResultCommand(
 	ctx context.Context,
 	commandID uuid.UUID,
-) (*tournamentadmin.OperatorResultCommandRecord, error) {
+) (*resultusecase.OperatorResultCommandRecord, error) {
 	if ctx == nil || !r.available() || commandID == uuid.Nil {
 		return nil, domain.ErrValidation
 	}
@@ -114,16 +115,16 @@ func (r *TournamentAdminResultPostgres) available() bool {
 	return r != nil && r.tx != nil && r.results != nil
 }
 
-func operatorResultCommandRecord(row sqlc.OperatorResultCommand) (tournamentadmin.OperatorResultCommandRecord, error) {
+func operatorResultCommandRecord(row sqlc.OperatorResultCommand) (resultusecase.OperatorResultCommandRecord, error) {
 	if len(row.RequestDigest) != 32 || !row.ExecutedAt.Valid || row.RosterID == uuid.Nil {
-		return tournamentadmin.OperatorResultCommandRecord{}, domain.ErrInternal
+		return resultusecase.OperatorResultCommandRecord{}, domain.ErrInternal
 	}
-	record := tournamentadmin.OperatorResultCommandRecord{
-		CommandScope: tournamentadmin.CommandScope{
-			Operator:     tournamentadmin.OperatorIdentity{ActorID: row.ActorID},
+	record := resultusecase.OperatorResultCommandRecord{
+		CommandScope: adminoperation.CommandScope{
+			Operator:     adminoperation.OperatorIdentity{ActorID: row.ActorID},
 			TournamentID: row.TournamentID, CommandID: row.CommandID,
 		},
-		SeriesID: row.SeriesID, Action: tournamentadmin.OperatorResultAction(row.Action),
+		SeriesID: row.SeriesID, Action: resultusecase.OperatorResultAction(row.Action),
 		ExpectedAuthorityRevision: row.ExpectedAuthorityRevision,
 		CommitID:                  row.CommitID, ResultEventID: row.ResultEventID,
 		ExecutedAt: row.ExecutedAt.Time.Round(0).UTC(),
@@ -133,7 +134,7 @@ func operatorResultCommandRecord(row sqlc.OperatorResultCommand) (tournamentadmi
 }
 
 func validOperatorResultAuthority(
-	authority tournamentadmin.OperatorResultAuthority,
+	authority resultusecase.OperatorResultAuthority,
 	tournamentID uuid.UUID,
 	seriesID uuid.UUID,
 ) bool {
@@ -150,4 +151,4 @@ func operatorResultLookupError(operation string, err error) error {
 	return fmt.Errorf("TournamentAdminResultPostgres - %s: %w", operation, err)
 }
 
-var _ tournamentadmin.OperatorResultWorkflowRepository = (*TournamentAdminResultPostgres)(nil)
+var _ resultusecase.OperatorResultWorkflowRepository = (*TournamentAdminResultPostgres)(nil)

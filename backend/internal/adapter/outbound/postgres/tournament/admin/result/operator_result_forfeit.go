@@ -9,12 +9,12 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	resultusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/result"
 )
 
 func (r *TournamentAdminResultPostgres) CommitOperatorForfeit(
 	ctx context.Context,
-	command tournamentadmin.ForfeitCommand,
+	command resultusecase.ForfeitCommand,
 	requestDigest [32]byte,
 	resolution gameusecase.ForfeitResolution,
 ) (*gameusecase.ForfeitResolution, bool, error) {
@@ -38,7 +38,7 @@ func (r *TournamentAdminResultPostgres) CommitOperatorForfeit(
 
 func (r *TournamentAdminResultPostgres) commitOperatorForfeit(
 	ctx context.Context,
-	command tournamentadmin.ForfeitCommand,
+	command resultusecase.ForfeitCommand,
 	requestDigest [32]byte,
 	resolution gameusecase.ForfeitResolution,
 ) (*gameusecase.ForfeitResolution, error) {
@@ -94,7 +94,7 @@ func (r *TournamentAdminResultPostgres) commitOperatorForfeit(
 
 func (r *TournamentAdminResultPostgres) reloadOperatorForfeitSnapshot(
 	ctx context.Context,
-	command tournamentadmin.ForfeitCommand,
+	command resultusecase.ForfeitCommand,
 ) (sqlc.LockOperatorForfeitSnapshotRow, operatorSeriesSnapshot, error) {
 	row, err := r.tx.Querier(ctx).LockOperatorForfeitSnapshot(
 		ctx,
@@ -122,7 +122,7 @@ func (r *TournamentAdminResultPostgres) reloadOperatorForfeitSnapshot(
 
 func (r *TournamentAdminResultPostgres) commitLiveOperatorForfeit(
 	ctx context.Context,
-	command tournamentadmin.ForfeitCommand,
+	command resultusecase.ForfeitCommand,
 	requestDigest [32]byte,
 	resolution gameusecase.ForfeitResolution,
 	snapshot operatorSeriesSnapshot,
@@ -174,7 +174,7 @@ func (r *TournamentAdminResultPostgres) commitLiveOperatorForfeit(
 	}
 	if err = r.createOperatorResultCommand(
 		ctx, command, command.CommandScope, command.SeriesID, snapshot.series.RosterID,
-		tournamentadmin.OperatorResultActionForfeit, command.ExpectedAuthorityRevision,
+		resultusecase.OperatorResultActionForfeit, command.ExpectedAuthorityRevision,
 		requestDigest, ids.commitID, ids.resultEventID, resolution.ResolvedAt,
 	); err != nil {
 		return nil, err
@@ -194,7 +194,7 @@ func (r *TournamentAdminResultPostgres) commitLiveOperatorForfeit(
 //nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func (r *TournamentAdminResultPostgres) commitPreStartOperatorForfeit(
 	ctx context.Context,
-	command tournamentadmin.ForfeitCommand,
+	command resultusecase.ForfeitCommand,
 	requestDigest [32]byte,
 	resolution gameusecase.ForfeitResolution,
 	row sqlc.LockOperatorForfeitSnapshotRow,
@@ -341,7 +341,7 @@ func (r *TournamentAdminResultPostgres) commitPreStartOperatorForfeit(
 	}
 	if err = r.createOperatorResultCommand(
 		ctx, command, command.CommandScope, command.SeriesID, snapshot.series.RosterID,
-		tournamentadmin.OperatorResultActionForfeit, command.ExpectedAuthorityRevision,
+		resultusecase.OperatorResultActionForfeit, command.ExpectedAuthorityRevision,
 		requestDigest, ids.commitID, ids.resultEventID, resolution.ResolvedAt,
 	); err != nil {
 		return nil, err
@@ -388,7 +388,7 @@ func advancePreStartOperatorForfeit(
 }
 
 func operatorForfeitAnchor(
-	command tournamentadmin.ForfeitCommand,
+	command resultusecase.ForfeitCommand,
 	snapshot operatorSeriesSnapshot,
 ) (sqlc.GameAttempt, error) {
 	var anchor sqlc.GameAttempt
@@ -414,7 +414,7 @@ func operatorForfeitAnchor(
 }
 
 func validateOperatorForfeitCommit(
-	command tournamentadmin.ForfeitCommand,
+	command resultusecase.ForfeitCommand,
 	resolution gameusecase.ForfeitResolution,
 	snapshot operatorSeriesSnapshot,
 ) error {
@@ -428,7 +428,7 @@ func validateOperatorForfeitCommit(
 }
 
 func operatorForfeitIdentityMatches(
-	command tournamentadmin.ForfeitCommand,
+	command resultusecase.ForfeitCommand,
 	resolution gameusecase.ForfeitResolution,
 ) bool {
 	return resolution.Source == gameusecase.SourceOperator && resolution.CommandID == command.CommandID &&
@@ -439,7 +439,7 @@ func operatorForfeitIdentityMatches(
 }
 
 func operatorForfeitRevisionSetMatches(
-	command tournamentadmin.ForfeitCommand,
+	command resultusecase.ForfeitCommand,
 	resolution gameusecase.ForfeitResolution,
 	snapshot operatorSeriesSnapshot,
 ) bool {
@@ -452,7 +452,7 @@ func operatorForfeitRevisionSetMatches(
 }
 
 func operatorForfeitProjectionEvidenceMatches(
-	command tournamentadmin.ForfeitCommand,
+	command resultusecase.ForfeitCommand,
 	resolution gameusecase.ForfeitResolution,
 	snapshot operatorSeriesSnapshot,
 ) bool {
@@ -464,7 +464,7 @@ func operatorForfeitProjectionEvidenceMatches(
 }
 
 func operatorForfeitGameResolutionMatches(
-	command tournamentadmin.ForfeitCommand,
+	command resultusecase.ForfeitCommand,
 	resolution gameusecase.ForfeitResolution,
 ) bool {
 	if resolution.Game == nil {
