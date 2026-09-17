@@ -8,7 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	draftpostgres "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/draft"
+	draftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment/draft"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/internal/db"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	rosterpostgres "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/roster"
@@ -20,15 +20,37 @@ import (
 
 type TournamentAdminSnapshotPostgres struct {
 	tx     *db.TxManager
-	roster *rosterpostgres.TournamentAdminRosterPostgres
-	drafts *draftpostgres.DraftPostgres
+	roster RosterReader
+	drafts DraftReader
+}
+
+// RosterReader is the narrow roster query boundary owned by the snapshot
+// consumer. The snapshot adapter does not need roster mutation methods.
+type RosterReader interface {
+	GetRoster(context.Context, uuid.UUID) (rostercapability.RosterView, error)
+}
+
+// DraftReader is the narrow draft query boundary owned by the snapshot
+// consumer. The snapshot adapter only loads one aggregate for pause details.
+type DraftReader interface {
+	Get(context.Context, uuid.UUID) (*draftrepo.DraftAggregate, error)
 }
 
 func NewTournamentAdminSnapshotPostgres(tx *db.TxManager) *TournamentAdminSnapshotPostgres {
+	return NewTournamentAdminSnapshotPostgresWithDependencies(
+		tx,
+		rosterpostgres.NewTournamentAdminRosterPostgres(tx),
+		draftrepo.NewDraftPostgres(tx),
+	)
+}
+
+func NewTournamentAdminSnapshotPostgresWithDependencies(
+	tx *db.TxManager,
+	roster RosterReader,
+	drafts DraftReader,
+) *TournamentAdminSnapshotPostgres {
 	return &TournamentAdminSnapshotPostgres{
-		tx:     tx,
-		roster: rosterpostgres.NewTournamentAdminRosterPostgres(tx),
-		drafts: draftpostgres.NewDraftPostgres(tx),
+		tx: tx, roster: roster, drafts: drafts,
 	}
 }
 
@@ -217,3 +239,5 @@ func tournamentAdminSnapshotQueryError(operation string, err error) error {
 }
 
 var _ tournamentadmin.SnapshotPort = (*TournamentAdminSnapshotPostgres)(nil)
+var _ RosterReader = (*rosterpostgres.TournamentAdminRosterPostgres)(nil)
+var _ DraftReader = (*draftrepo.DraftPostgres)(nil)
