@@ -1,4 +1,4 @@
-package pause
+package model
 
 import (
 	"math"

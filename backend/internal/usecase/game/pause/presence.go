@@ -13,6 +13,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
+	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause/model"
 )
 
 const pausedPresenceAttempts = 2
@@ -188,7 +189,7 @@ func validatePausedPresenceCommand(command PausedPresenceCommand) error {
 
 func validatePausedPresenceAuthority(authority PausedPresenceAuthority) error {
 	if validateNormalPauseRecord(authority.Pause) != nil || authority.Pause.State != PauseStateActive ||
-		!authority.Pause.Reason.allowsNormalPause() || authority.TerminalActionRevision < 0 ||
+		!model.AllowsNormalPause(authority.Pause.Reason) || authority.TerminalActionRevision < 0 ||
 		validatePausePresence(authority.Presence) != nil {
 		return ErrPausedPresenceSuppression
 	}

@@ -14,6 +14,7 @@ import (
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
 	seriesdomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/series"
 	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
+	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause/model"
 )
 
 type NormalPauseGraphUseCase struct {
@@ -130,7 +131,7 @@ func (u *NormalPauseGraphUseCase) commitNormalPause(ctx context.Context, command
 
 func validateNormalPauseCommand(command NormalPauseCommand) error {
 	if !validPauseGraphScope(command.Scope) || command.CommandID == uuid.Nil || command.PauseID == uuid.Nil ||
-		command.ActorID == uuid.Nil || !command.Reason.allowsNormalPause() ||
+		command.ActorID == uuid.Nil || !model.AllowsNormalPause(command.Reason) ||
 		command.CommandID == command.PauseID || command.CommandID == command.ActorID || command.PauseID == command.ActorID {
 		return normalPauseError("invalid command identity or reason")
 	}
