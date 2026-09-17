@@ -18,6 +18,7 @@ import (
 	reconnectusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/reconnect"
 	gamestart "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/start"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	pairingusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/pairing"
 )
 
 // Repository composes the execution, pause, and reconnect persistence owned
@@ -39,7 +40,7 @@ func NewRepository(
 		tx,
 		nil,
 		executionWaveWriter{repository: waves},
-		func(ctx context.Context, plan tournamentadmin.PairingPlan) error {
+		func(ctx context.Context, plan pairingusecase.PairingPlan) error {
 			return swissdraft.MaterializeSwissDraftBO1(ctx, tx, plan, createMaterializedSeriesPresence)
 		},
 	)
@@ -59,7 +60,7 @@ func NewRepository(
 // MaterializeSwissDraftBO1 persists the draft-mode Swiss execution graph.
 func (repository *Repository) MaterializeSwissDraftBO1(
 	ctx context.Context,
-	plan tournamentadmin.PairingPlan,
+	plan pairingusecase.PairingPlan,
 ) error {
 	if repository == nil || repository.TournamentAdminExecutionPostgres == nil {
 		return domain.ErrValidation

@@ -15,6 +15,7 @@ import (
 	swissusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/swiss"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
 	adminoperation "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/operation"
+	pairingusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/pairing"
 )
 
 type tournamentAdminStandingsDocument struct {
@@ -39,30 +40,30 @@ func tournamentAdminPairingAuthority(
 	byeRows []sqlc.LockTournamentPairingByesRow,
 	roundRows []sqlc.LockTournamentPairingRoundsRow,
 	waveRows []sqlc.LockTournamentPairingWavesRow,
-) (tournamentadmin.PairingAuthority, error) {
+) (pairingusecase.PairingAuthority, error) {
 	if header.TournamentID == uuid.Nil || header.RosterID == uuid.Nil || !header.RosterLockedAt.Valid {
-		return tournamentadmin.PairingAuthority{}, domain.ErrInternal
+		return pairingusecase.PairingAuthority{}, domain.ErrInternal
 	}
-	participants := make([]tournamentadmin.PairingParticipant, 0, len(participantRows))
+	participants := make([]pairingusecase.PairingParticipant, 0, len(participantRows))
 	for _, row := range participantRows {
 		attendance := domain.AttendanceState(row.Attendance)
 		if !attendance.IsValid() {
-			return tournamentadmin.PairingAuthority{}, domain.ErrInternal
+			return pairingusecase.PairingAuthority{}, domain.ErrInternal
 		}
 		if attendance != domain.AttendanceStateCheckedIn {
 			continue
 		}
-		participants = append(participants, tournamentadmin.PairingParticipant{
+		participants = append(participants, pairingusecase.PairingParticipant{
 			ID: row.ID, StableSeed: int(row.Seed),
 		})
 	}
 	standings, err := tournamentAdminStandings(header.StandingsPayload, participants)
 	if err != nil {
-		return tournamentadmin.PairingAuthority{}, err
+		return pairingusecase.PairingAuthority{}, err
 	}
 	previous, counts, err := tournamentAdminPairingHistory(historyRows)
 	if err != nil {
-		return tournamentadmin.PairingAuthority{}, err
+		return pairingusecase.PairingAuthority{}, err
 	}
 	receivedBye := make(map[uuid.UUID]bool, len(participants))
 	for _, participant := range participants {
@@ -70,15 +71,15 @@ func tournamentAdminPairingAuthority(
 	}
 	for _, row := range byeRows {
 		if _, exists := receivedBye[row.ParticipantID]; !exists || receivedBye[row.ParticipantID] {
-			return tournamentadmin.PairingAuthority{}, domain.ErrInternal
+			return pairingusecase.PairingAuthority{}, domain.ErrInternal
 		}
 		receivedBye[row.ParticipantID] = true
 	}
 	completed, err := tournamentAdminCompletedRoundCount(roundRows, waveRows)
 	if err != nil {
-		return tournamentadmin.PairingAuthority{}, err
+		return pairingusecase.PairingAuthority{}, err
 	}
-	return tournamentadmin.PairingAuthority{
+	return pairingusecase.PairingAuthority{
 		TournamentID: header.TournamentID, TournamentState: domain.TournamentState(header.TournamentState),
 		TournamentRevision: header.TournamentRevision, RosterID: header.RosterID,
 		RosterRevision: header.RosterRevision, RosterLockedAt: header.RosterLockedAt.Time.UTC(),
@@ -91,8 +92,8 @@ func tournamentAdminPairingAuthority(
 
 func tournamentAdminStandings(
 	payload []byte,
-	participants []tournamentadmin.PairingParticipant,
-) ([]tournamentadmin.SwissStandingView, error) {
+	participants []pairingusecase.PairingParticipant,
+) ([]pairingusecase.SwissStandingView, error) {
 	var document tournamentAdminStandingsDocument
 	if err := json.Unmarshal(payload, &document); err != nil || document.Entries == nil {
 		return nil, domain.ErrInternal
@@ -107,7 +108,7 @@ func tournamentAdminStandings(
 	for _, participant := range participants {
 		seeds[participant.ID] = participant.StableSeed
 	}
-	result := make([]tournamentadmin.SwissStandingView, len(document.Entries))
+	result := make([]pairingusecase.SwissStandingView, len(document.Entries))
 	seen := make(map[uuid.UUID]struct{}, len(document.Entries))
 	for index, entry := range document.Entries {
 		seed, exists := seeds[entry.ParticipantID]
@@ -122,7 +123,7 @@ func tournamentAdminStandings(
 		if !valid {
 			return nil, domain.ErrInternal
 		}
-		result[index] = tournamentadmin.SwissStandingView{
+		result[index] = pairingusecase.SwissStandingView{
 			ParticipantID: entry.ParticipantID, Position: entry.Position, Points: entry.Points,
 			PointsLabel: "provisional", Buchholz: entry.Buchholz, BuchholzStatus: "provisional",
 			HeadToHeadPoints: entry.HeadToHeadPoints, HeadToHeadApplied: entry.HeadToHeadApplied,
@@ -140,18 +141,18 @@ func tournamentAdminStandings(
 }
 
 func tournamentAdminInitialStandings(
-	participants []tournamentadmin.PairingParticipant,
-) []tournamentadmin.SwissStandingView {
-	ordered := append([]tournamentadmin.PairingParticipant(nil), participants...)
+	participants []pairingusecase.PairingParticipant,
+) []pairingusecase.SwissStandingView {
+	ordered := append([]pairingusecase.PairingParticipant(nil), participants...)
 	sort.Slice(ordered, func(i, j int) bool {
 		if ordered[i].StableSeed != ordered[j].StableSeed {
 			return ordered[i].StableSeed < ordered[j].StableSeed
 		}
 		return ordered[i].ID.String() < ordered[j].ID.String()
 	})
-	standings := make([]tournamentadmin.SwissStandingView, len(ordered))
+	standings := make([]pairingusecase.SwissStandingView, len(ordered))
 	for index, participant := range ordered {
-		standings[index] = tournamentadmin.SwissStandingView{
+		standings[index] = pairingusecase.SwissStandingView{
 			ParticipantID: participant.ID, Position: index + 1,
 			PointsLabel: "provisional", BuchholzStatus: "provisional",
 			StableSeed: participant.StableSeed,
@@ -262,7 +263,7 @@ func tournamentAdminPairingCommand(
 			Operator:     adminoperation.OperatorIdentity{ActorID: row.ActorID},
 			TournamentID: row.TournamentID, CommandID: row.CommandID,
 		},
-		RosterID: row.RosterID, RoundNumber: int(row.RoundNumber), Mode: tournamentadmin.PairingMode(row.PairingMode),
+		RosterID: row.RosterID, RoundNumber: int(row.RoundNumber), Mode: pairingusecase.PairingMode(row.PairingMode),
 		CategoryMode: domain.CategoryMode(row.CategoryMode), Categories: categories,
 		SourceProjectionRevisionID: row.SourceProjectionRevisionID,
 		SourceProjectionRevision:   row.SourceProjectionRevision,
@@ -273,7 +274,7 @@ func tournamentAdminPairingCommand(
 }
 
 func tournamentAdminSwissRoundView(
-	plan tournamentadmin.PairingPlan,
+	plan pairingusecase.PairingPlan,
 	saved *SwissRoundRecord,
 ) (tournamentadmin.SwissRoundView, error) {
 	if saved == nil || saved.ID != plan.RoundID {
@@ -283,7 +284,7 @@ func tournamentAdminSwissRoundView(
 		ID: saved.ID, TournamentID: plan.Command.TournamentID, RoundNumber: saved.RoundNumber,
 		Revision: saved.Revision, RosterParticipantIDs: pairingAuthorityParticipantIDs(plan.Authority),
 		Pairings:  make([]tournamentadmin.SwissPairingView, len(plan.Pairs)),
-		Standings: append([]tournamentadmin.SwissStandingView(nil), plan.Authority.Standings...),
+		Standings: append([]pairingusecase.SwissStandingView(nil), plan.Authority.Standings...),
 		Locked:    saved.LockedAt != nil, LockedAt: utcTimePointer(saved.LockedAt), CreatedAt: saved.CreatedAt.UTC(),
 		UpdatedAt: saved.UpdatedAt.UTC(),
 	}
@@ -682,8 +683,8 @@ func executionDigest(value []byte) ([sha256.Size]byte, error) {
 	return digest, nil
 }
 
-func pairingAuthorityParticipantIDs(authority tournamentadmin.PairingAuthority) []uuid.UUID {
-	participants := append([]tournamentadmin.PairingParticipant(nil), authority.Participants...)
+func pairingAuthorityParticipantIDs(authority pairingusecase.PairingAuthority) []uuid.UUID {
+	participants := append([]pairingusecase.PairingParticipant(nil), authority.Participants...)
 	sort.Slice(participants, func(i, j int) bool {
 		if participants[i].StableSeed != participants[j].StableSeed {
 			return participants[i].StableSeed < participants[j].StableSeed
@@ -721,7 +722,7 @@ func nullableSwissByeParticipant(bye *swissusecase.ByeSelection) uuid.NullUUID {
 	return uuid.NullUUID{UUID: bye.ParticipantID, Valid: true}
 }
 
-func nullableSwissByeRevision(plan tournamentadmin.PairingPlan) uuid.NullUUID {
+func nullableSwissByeRevision(plan pairingusecase.PairingPlan) uuid.NullUUID {
 	if plan.Bye == nil {
 		return uuid.NullUUID{}
 	}

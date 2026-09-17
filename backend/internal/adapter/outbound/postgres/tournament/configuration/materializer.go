@@ -7,7 +7,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	pairingusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/pairing"
 )
 
 // SeriesGenesisInput contains the durable identity and provenance needed to
@@ -30,5 +30,5 @@ type SeriesGenesisInput struct {
 // graph materialization boundary without coupling this package to its parent.
 type SeriesMaterializer interface {
 	CreateGenesis(ctx context.Context, queries *sqlc.Queries, input SeriesGenesisInput) error
-	Materialize(ctx context.Context, plan tournamentadmin.PairingPlan) error
+	Materialize(ctx context.Context, plan pairingusecase.PairingPlan) error
 }

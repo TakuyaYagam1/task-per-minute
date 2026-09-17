@@ -17,7 +17,7 @@ import (
 	assignmentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/assignment"
 	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	pairingusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/pairing"
 )
 
 // Swiss drafts retain the existing exact-draft reservation identity scheme.
@@ -44,7 +44,7 @@ type SeriesPresenceWriter func(context.Context, *sqlc.Queries, uuid.UUID, uuid.U
 func MaterializeSwissDraftBO1(
 	ctx context.Context,
 	tx *db.TxManager,
-	plan tournamentadmin.PairingPlan,
+	plan pairingusecase.PairingPlan,
 	presence SeriesPresenceWriter,
 ) error {
 	if tx == nil || presence == nil || plan.Command.CategoryMode != domain.CategoryModeDraft || len(plan.Pairs) == 0 || len(plan.SeriesIDs) != len(plan.Pairs) {

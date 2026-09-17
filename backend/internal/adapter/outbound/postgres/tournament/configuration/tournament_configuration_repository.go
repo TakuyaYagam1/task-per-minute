@@ -22,6 +22,7 @@ import (
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	swissusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/swiss"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	pairingusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/pairing"
 )
 
 // TournamentConfigurationPostgres owns the SQL transaction for the
@@ -94,7 +95,7 @@ func (r *TournamentConfigurationPostgres) loadConfiguration(
 	if err != nil {
 		return admin.ConfigurationAuthority{}, configurationQueryError("select participants", err)
 	}
-	participants := make([]admin.PairingParticipant, 0, len(participantRows))
+	participants := make([]pairingusecase.PairingParticipant, 0, len(participantRows))
 	for _, row := range participantRows {
 		attendance := domain.AttendanceState(row.Attendance)
 		if !attendance.IsValid() {
@@ -103,7 +104,7 @@ func (r *TournamentConfigurationPostgres) loadConfiguration(
 		if attendance != domain.AttendanceStateCheckedIn {
 			continue
 		}
-		participants = append(participants, admin.PairingParticipant{ID: row.ID, StableSeed: int(row.Seed)})
+		participants = append(participants, pairingusecase.PairingParticipant{ID: row.ID, StableSeed: int(row.Seed)})
 	}
 	standings, err := tournamentAdminStandings(standingsRow, participants)
 	if err != nil {
@@ -538,10 +539,10 @@ func (r *TournamentConfigurationPostgres) createConfigurationSeriesGenesis(
 		return err
 	}
 	assignmentCommandID := uuid.NewSHA1(mutation.CommandID, []byte("configuration-series-assignment:"+seriesID.String()))
-	plan := admin.PairingPlan{
-		Command: admin.PairingCommand{CommandScope: admin.CommandScope{Operator: admin.OperatorIdentity{ActorID: mutation.Evidence.OperatorID},
+	plan := pairingusecase.PairingPlan{
+		Command: pairingusecase.PairingCommand{CommandScope: admin.CommandScope{Operator: admin.OperatorIdentity{ActorID: mutation.Evidence.OperatorID},
 			TournamentID: mutation.Authority.TournamentID, CommandID: assignmentCommandID}, CategoryMode: series.Mode, Categories: append([]domain.Category(nil), series.Categories...)},
-		Authority: admin.PairingAuthority{RosterID: rosterID}, SeriesIDs: []uuid.UUID{seriesID},
+		Authority: pairingusecase.PairingAuthority{RosterID: rosterID}, SeriesIDs: []uuid.UUID{seriesID},
 		Pairs:     []swissusecase.Pair{{FirstParticipantID: series.FirstParticipantID, SecondParticipantID: series.SecondParticipantID}},
 		DecidedAt: mutation.Evidence.RequestedAt,
 	}

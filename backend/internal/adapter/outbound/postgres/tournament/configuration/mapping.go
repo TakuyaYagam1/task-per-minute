@@ -12,7 +12,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	swissusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/swiss"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	pairingusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/pairing"
 )
 
 type tournamentAdminStandingsDocument struct {
@@ -32,8 +32,8 @@ type tournamentAdminStanding struct {
 
 func tournamentAdminStandings(
 	payload []byte,
-	participants []tournamentadmin.PairingParticipant,
-) ([]tournamentadmin.SwissStandingView, error) {
+	participants []pairingusecase.PairingParticipant,
+) ([]pairingusecase.SwissStandingView, error) {
 	var document tournamentAdminStandingsDocument
 	if err := json.Unmarshal(payload, &document); err != nil || document.Entries == nil {
 		return nil, domain.ErrInternal
@@ -48,7 +48,7 @@ func tournamentAdminStandings(
 	for _, participant := range participants {
 		seeds[participant.ID] = participant.StableSeed
 	}
-	result := make([]tournamentadmin.SwissStandingView, len(document.Entries))
+	result := make([]pairingusecase.SwissStandingView, len(document.Entries))
 	seen := make(map[uuid.UUID]struct{}, len(document.Entries))
 	for index, entry := range document.Entries {
 		seed, exists := seeds[entry.ParticipantID]
@@ -63,7 +63,7 @@ func tournamentAdminStandings(
 		if !valid {
 			return nil, domain.ErrInternal
 		}
-		result[index] = tournamentadmin.SwissStandingView{
+		result[index] = pairingusecase.SwissStandingView{
 			ParticipantID: entry.ParticipantID, Position: entry.Position, Points: entry.Points,
 			PointsLabel: "provisional", Buchholz: entry.Buchholz, BuchholzStatus: "provisional",
 			HeadToHeadPoints: entry.HeadToHeadPoints, HeadToHeadApplied: entry.HeadToHeadApplied,
@@ -81,18 +81,18 @@ func tournamentAdminStandings(
 }
 
 func tournamentAdminInitialStandings(
-	participants []tournamentadmin.PairingParticipant,
-) []tournamentadmin.SwissStandingView {
-	ordered := append([]tournamentadmin.PairingParticipant(nil), participants...)
+	participants []pairingusecase.PairingParticipant,
+) []pairingusecase.SwissStandingView {
+	ordered := append([]pairingusecase.PairingParticipant(nil), participants...)
 	sort.Slice(ordered, func(i, j int) bool {
 		if ordered[i].StableSeed != ordered[j].StableSeed {
 			return ordered[i].StableSeed < ordered[j].StableSeed
 		}
 		return ordered[i].ID.String() < ordered[j].ID.String()
 	})
-	standings := make([]tournamentadmin.SwissStandingView, len(ordered))
+	standings := make([]pairingusecase.SwissStandingView, len(ordered))
 	for index, participant := range ordered {
-		standings[index] = tournamentadmin.SwissStandingView{
+		standings[index] = pairingusecase.SwissStandingView{
 			ParticipantID: participant.ID, Position: index + 1,
 			PointsLabel: "provisional", BuchholzStatus: "provisional",
 			StableSeed: participant.StableSeed,

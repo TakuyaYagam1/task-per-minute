@@ -16,7 +16,7 @@ import (
 	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/seriesgraph"
 	swissusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/swiss"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	pairingusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/pairing"
 )
 
 // MaterializeSwissRandomBO1 exposes the core materializer to the root
@@ -24,7 +24,7 @@ import (
 // child package.
 func (r *TournamentAdminExecutionPostgres) MaterializeSwissRandomBO1(
 	ctx context.Context,
-	plan tournamentadmin.PairingPlan,
+	plan pairingusecase.PairingPlan,
 ) error {
 	return r.materializeSwissRandomBO1(ctx, plan)
 }
@@ -34,7 +34,7 @@ func (r *TournamentAdminExecutionPostgres) MaterializeSwissRandomBO1(
 // child package.
 func (r *TournamentAdminExecutionPostgres) MaterializeSwissAdminBO1(
 	ctx context.Context,
-	plan tournamentadmin.PairingPlan,
+	plan pairingusecase.PairingPlan,
 ) error {
 	return r.materializeSwissAdminBO1(ctx, plan)
 }
@@ -54,7 +54,7 @@ func SwissCategoryRevisionParams(
 // and draft category modes to their dedicated materializers.
 func (r *TournamentAdminExecutionPostgres) materializeSwissRandomBO1(
 	ctx context.Context,
-	plan tournamentadmin.PairingPlan,
+	plan pairingusecase.PairingPlan,
 ) error {
 	if !validSwissRandomMaterializationPlan(plan) {
 		return domain.ErrValidation
@@ -80,7 +80,7 @@ func (r *TournamentAdminExecutionPostgres) materializeSwissRandomBO1(
 // category selection has been locked with actor and reason evidence.
 func (r *TournamentAdminExecutionPostgres) materializeSwissAdminBO1(
 	ctx context.Context,
-	plan tournamentadmin.PairingPlan,
+	plan pairingusecase.PairingPlan,
 ) error {
 	if !validSwissAdminMaterializationPlan(plan) {
 		return domain.ErrValidation
@@ -102,7 +102,7 @@ func (r *TournamentAdminExecutionPostgres) materializeSwissAdminBO1(
 	return nil
 }
 
-func validSwissRandomMaterializationPlan(plan tournamentadmin.PairingPlan) bool {
+func validSwissRandomMaterializationPlan(plan pairingusecase.PairingPlan) bool {
 	if plan.Command.CategoryMode != domain.CategoryModeRandom || plan.Command.TournamentID == uuid.Nil ||
 		plan.Authority.RosterID == uuid.Nil || !validServerTime(plan.DecidedAt) || len(plan.Pairs) == 0 ||
 		len(plan.SeriesIDs) != len(plan.Pairs) {
@@ -111,7 +111,7 @@ func validSwissRandomMaterializationPlan(plan tournamentadmin.PairingPlan) bool 
 	return validSwissMaterializationPairs(plan)
 }
 
-func validSwissMaterializationPairs(plan tournamentadmin.PairingPlan) bool {
+func validSwissMaterializationPairs(plan pairingusecase.PairingPlan) bool {
 	seenSeries := make(map[uuid.UUID]struct{}, len(plan.SeriesIDs))
 	for index, pair := range plan.Pairs {
 		if pair.FirstParticipantID == uuid.Nil || pair.SecondParticipantID == uuid.Nil ||
@@ -126,7 +126,7 @@ func validSwissMaterializationPairs(plan tournamentadmin.PairingPlan) bool {
 	return true
 }
 
-func validSwissAdminMaterializationPlan(plan tournamentadmin.PairingPlan) bool {
+func validSwissAdminMaterializationPlan(plan pairingusecase.PairingPlan) bool {
 	if plan.Command.CategoryMode != domain.CategoryModeAdmin || plan.Command.TournamentID == uuid.Nil ||
 		plan.Command.Operator.ActorID == uuid.Nil || len(plan.Command.Categories) != 1 ||
 		!plan.Command.Categories[0].IsValid() || plan.Authority.RosterID == uuid.Nil ||
@@ -139,7 +139,7 @@ func validSwissAdminMaterializationPlan(plan tournamentadmin.PairingPlan) bool {
 
 func (r *TournamentAdminExecutionPostgres) materializeSwissRandomSeries(
 	ctx context.Context,
-	plan tournamentadmin.PairingPlan,
+	plan pairingusecase.PairingPlan,
 	pair swissusecase.Pair,
 	seriesID uuid.UUID,
 	configuration domain.ContentConfiguration,
@@ -151,7 +151,7 @@ func (r *TournamentAdminExecutionPostgres) materializeSwissRandomSeries(
 
 func (r *TournamentAdminExecutionPostgres) materializeSwissAdminSeries(
 	ctx context.Context,
-	plan tournamentadmin.PairingPlan,
+	plan pairingusecase.PairingPlan,
 	pair swissusecase.Pair,
 	seriesID uuid.UUID,
 	configuration domain.ContentConfiguration,
@@ -297,7 +297,7 @@ func createMaterializedSeriesPresence(
 
 func (r *TournamentAdminExecutionPostgres) materializeSwissRandomSeriesConcrete(
 	ctx context.Context,
-	plan tournamentadmin.PairingPlan,
+	plan pairingusecase.PairingPlan,
 	firstParticipantID uuid.UUID,
 	secondParticipantID uuid.UUID,
 	seriesID uuid.UUID,
@@ -335,7 +335,7 @@ func (r *TournamentAdminExecutionPostgres) materializeSwissRandomSeriesConcrete(
 //nolint:gocyclo // Swiss Series materialization persists the executable graph atomically with its exact assignment.
 func (r *TournamentAdminExecutionPostgres) materializeSwissLockedSeriesConcrete(
 	ctx context.Context,
-	plan tournamentadmin.PairingPlan,
+	plan pairingusecase.PairingPlan,
 	firstParticipantID uuid.UUID,
 	secondParticipantID uuid.UUID,
 	seriesID uuid.UUID,

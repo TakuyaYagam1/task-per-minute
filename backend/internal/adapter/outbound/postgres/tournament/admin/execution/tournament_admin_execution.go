@@ -17,6 +17,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	swissusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/swiss"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	pairingusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/pairing"
 )
 
 // WaveWriter is the narrow bridge used by execution to create a wave and
@@ -41,7 +42,7 @@ type WaveWriter interface {
 	) (bool, error)
 }
 
-type DraftMaterializer func(context.Context, tournamentadmin.PairingPlan) error
+type DraftMaterializer func(context.Context, pairingusecase.PairingPlan) error
 
 type WaveCreateInput struct {
 	ID                         uuid.UUID
@@ -104,38 +105,38 @@ func NewTournamentAdminExecutionPostgresWithDependencies(
 func (r *TournamentAdminExecutionPostgres) LockPairingAuthority(
 	ctx context.Context,
 	tournamentID uuid.UUID,
-) (tournamentadmin.PairingAuthority, error) {
+) (pairingusecase.PairingAuthority, error) {
 	if !validTournamentAdminExecutionRepository(ctx, r) || tournamentID == uuid.Nil {
-		return tournamentadmin.PairingAuthority{}, domain.ErrValidation
+		return pairingusecase.PairingAuthority{}, domain.ErrValidation
 	}
 	querier := r.tx.Querier(ctx)
 	header, err := querier.LockTournamentPairingAuthority(ctx, tournamentID)
 	if err != nil {
-		return tournamentadmin.PairingAuthority{}, r.pairingAuthorityError(ctx, tournamentID, err)
+		return pairingusecase.PairingAuthority{}, r.pairingAuthorityError(ctx, tournamentID, err)
 	}
 	participants, err := querier.LockTournamentPairingParticipants(ctx, header.RosterID)
 	if err != nil {
-		return tournamentadmin.PairingAuthority{}, fmt.Errorf("lock pairing participants: %w", err)
+		return pairingusecase.PairingAuthority{}, fmt.Errorf("lock pairing participants: %w", err)
 	}
 	history, err := querier.LockTournamentPairingHistory(ctx, header.RosterID)
 	if err != nil {
-		return tournamentadmin.PairingAuthority{}, fmt.Errorf("lock pairing history: %w", err)
+		return pairingusecase.PairingAuthority{}, fmt.Errorf("lock pairing history: %w", err)
 	}
 	byes, err := querier.LockTournamentPairingByes(ctx, header.RosterID)
 	if err != nil {
-		return tournamentadmin.PairingAuthority{}, fmt.Errorf("lock pairing byes: %w", err)
+		return pairingusecase.PairingAuthority{}, fmt.Errorf("lock pairing byes: %w", err)
 	}
 	rounds, err := querier.LockTournamentPairingRounds(ctx, header.RosterID)
 	if err != nil {
-		return tournamentadmin.PairingAuthority{}, fmt.Errorf("lock pairing rounds: %w", err)
+		return pairingusecase.PairingAuthority{}, fmt.Errorf("lock pairing rounds: %w", err)
 	}
 	waves, err := querier.LockTournamentPairingWaves(ctx, header.RosterID)
 	if err != nil {
-		return tournamentadmin.PairingAuthority{}, fmt.Errorf("lock pairing Waves: %w", err)
+		return pairingusecase.PairingAuthority{}, fmt.Errorf("lock pairing Waves: %w", err)
 	}
 	authority, err := tournamentAdminPairingAuthority(header, participants, history, byes, rounds, waves)
 	if err != nil {
-		return tournamentadmin.PairingAuthority{}, fmt.Errorf("map pairing authority: %w", err)
+		return pairingusecase.PairingAuthority{}, fmt.Errorf("map pairing authority: %w", err)
 	}
 	return authority, nil
 }
@@ -177,7 +178,7 @@ func (r *TournamentAdminExecutionPostgres) ReadExecutionTime(ctx context.Context
 //nolint:gocyclo // Pairing mode dispatch and its transactional persistence intentionally share one boundary.
 func (r *TournamentAdminExecutionPostgres) CommitPairing(
 	ctx context.Context,
-	plan tournamentadmin.PairingPlan,
+	plan pairingusecase.PairingPlan,
 ) (tournamentadmin.SwissRoundView, error) {
 	if !validTournamentAdminExecutionRepository(ctx, r) {
 		return tournamentadmin.SwissRoundView{}, domain.ErrValidation
@@ -192,14 +193,14 @@ func (r *TournamentAdminExecutionPostgres) CommitPairing(
 	}
 	var saved *SwissRoundRecord
 	switch plan.Command.PairingMode {
-	case tournamentadmin.PairingModeAutomatic:
+	case pairingusecase.PairingModeAutomatic:
 		if plan.Automatic == nil {
 			return tournamentadmin.SwissRoundView{}, domain.ErrValidation
 		}
 		saved, err = r.swiss.SaveAutomaticRound(ctx, AutomaticSwissRoundInput{
 			Meta: meta, Pairing: *plan.Automatic,
 		}, nil)
-	case tournamentadmin.PairingModeManual:
+	case pairingusecase.PairingModeManual:
 		manual := swissusecase.ManualRound{
 			ID: plan.RoundID, Pairings: append([]swissusecase.Pair(nil), plan.Pairs...),
 			ByeParticipantID: tournamentAdminByeParticipantID(plan.Bye),
@@ -498,7 +499,7 @@ func validTournamentAdminExecutionRepository(
 		repository.waves != nil
 }
 
-func tournamentAdminSwissRoundMeta(plan tournamentadmin.PairingPlan) (SwissRoundMeta, error) {
+func tournamentAdminSwissRoundMeta(plan pairingusecase.PairingPlan) (SwissRoundMeta, error) {
 	if plan.RoundID == uuid.Nil || plan.Authority.RosterID == uuid.Nil || len(plan.Pairs) == 0 ||
 		len(plan.PairingIDs) != len(plan.Pairs) || len(plan.SeriesIDs) != len(plan.Pairs) ||
 		plan.Command.RoundNumber < 1 || plan.Command.RoundNumber > math.MaxInt16 ||

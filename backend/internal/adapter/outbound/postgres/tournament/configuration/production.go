@@ -8,7 +8,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	adminexecution "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/execution"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	pairingusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/pairing"
 )
 
 // NewProductionTournamentConfigurationPostgres builds the configuration
@@ -47,7 +47,7 @@ func (m productionSeriesMaterializer) CreateGenesis(
 
 func (m productionSeriesMaterializer) Materialize(
 	ctx context.Context,
-	plan tournamentadmin.PairingPlan,
+	plan pairingusecase.PairingPlan,
 ) error {
 	if m.execution == nil {
 		return domain.ErrValidation
