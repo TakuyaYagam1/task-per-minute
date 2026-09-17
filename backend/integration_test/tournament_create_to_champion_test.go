@@ -72,6 +72,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/readiness"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	tournamentadminconfiguration "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/configuration"
 	tournamentadmininbound "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/inbound"
 	tournamentcancellation "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/cancellation"
 	catalogusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/catalog"
@@ -441,7 +442,7 @@ func newTournamentFlowRESTFixture(t *testing.T) *restFixture {
 		Audit:     auditrepo.NewTournamentAdminAuditPostgres(tx),
 		Snapshots: snapshotrepo.NewTournamentAdminSnapshotPostgres(tx),
 	}))
-	configuration := tournamentadmin.NewTournamentConfigurationWorkflow(
+	configuration := tournamentadminconfiguration.NewTournamentConfigurationWorkflow(
 		configurationrepo.NewProductionTournamentConfigurationPostgres(tx),
 	)
 	golden := goldenruntime.NewRuntimeApplication(runtimepostgres.NewGoldenRuntimePostgres(tx), clock)

@@ -21,6 +21,7 @@ import (
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	gamestart "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/start"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	configurationusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/configuration"
 	pairingusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/pairing"
 	snapshotusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/snapshot"
 )
@@ -40,7 +41,7 @@ func TestTournamentConfigurationDefaultsThroughProductionHTTPAndPostgres(t *test
 	path := "/api/v1/admin/tournaments/" + tournament.Id.String() + "/configuration"
 	authority, err := configurationrepo.NewProductionTournamentConfigurationPostgres(fixture.mgr).LoadConfiguration(
 		ctx,
-		tournamentadmin.ConfigurationLoadQuery{
+		configurationusecase.ConfigurationLoadQuery{
 			Operator:     tournamentadmin.OperatorIdentity{ActorID: uuid.New()},
 			TournamentID: tournament.Id,
 		},
