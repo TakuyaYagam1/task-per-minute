@@ -8,18 +8,13 @@ import (
 )
 
 var (
-	ErrInvalidFinal                = terminalusecase.ErrInvalidFinal
-	ErrInvalidSemifinalAdvancement = terminalusecase.ErrInvalidSemifinalAdvancement
-	ErrInvalidTerminalStage        = terminalusecase.ErrInvalidTerminalStage
+	ErrInvalidFinal         = terminalusecase.ErrInvalidFinal
+	ErrInvalidTerminalStage = terminalusecase.ErrInvalidTerminalStage
 )
 
 type FinalCommand = terminalusecase.FinalCommand
 type FinalProgressionCommand = terminalusecase.FinalProgressionCommand
 type Final = terminalusecase.Final
-
-type SemifinalAdvancementResult = terminalusecase.SemifinalAdvancementResult
-type SemifinalAdvancementAuthority = terminalusecase.SemifinalAdvancementAuthority
-type SemifinalAdvancement = terminalusecase.SemifinalAdvancement
 
 type TerminalSeriesCommand = terminalusecase.TerminalSeriesCommand
 type TerminalDraftCommand = terminalusecase.TerminalDraftCommand
@@ -49,22 +44,6 @@ func NewFinal(command FinalCommand) (Final, error) {
 
 func ProgressFinal(current Final, command FinalProgressionCommand) (Final, bool, error) {
 	return terminalusecase.ProgressFinal(current, command)
-}
-
-func AdvanceSemifinalResults(
-	current SemifinalAdvancement,
-	bracket SemifinalBracket,
-	series []domain.Series,
-) (SemifinalAdvancement, bool, error) {
-	return terminalusecase.AdvanceSemifinalResults(current, bracket, series)
-}
-
-func AdvanceSemifinalEvidence(
-	current SemifinalAdvancement,
-	authority SemifinalAdvancementAuthority,
-	series []domain.Series,
-) (SemifinalAdvancement, bool, error) {
-	return terminalusecase.AdvanceSemifinalEvidence(current, authority, series)
 }
 
 func FinalStageIdentity(stageCommandID uuid.UUID) (FinalStageIDs, error) {

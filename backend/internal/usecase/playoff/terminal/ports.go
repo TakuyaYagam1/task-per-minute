@@ -19,6 +19,9 @@ type SemifinalWinnerPath = semifinalusecase.SemifinalWinnerPath
 type SemifinalLoserPath = semifinalusecase.SemifinalLoserPath
 type SemifinalMatch = semifinalusecase.SemifinalMatch
 type SemifinalBracket = semifinalusecase.SemifinalBracket
+type SemifinalAdvancementResult = semifinalusecase.SemifinalAdvancementResult
+type SemifinalAdvancementAuthority = semifinalusecase.SemifinalAdvancementAuthority
+type SemifinalAdvancement = semifinalusecase.SemifinalAdvancement
 
 const (
 	SemifinalWinnerToFinal   = semifinalusecase.SemifinalWinnerToFinal

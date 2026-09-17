@@ -1,4 +1,4 @@
-package playoff
+package semifinal
 
 import (
 	"errors"
@@ -132,7 +132,7 @@ func normalizeSemifinalMaterializeInput(
 	// SeriesGraph requires the initial series to be planned and empty. The
 	// bracket remains locked and is never changed while this detached planned
 	// counterpart is prepared.
-	planned := cloneTerminalSeries(match.Series)
+	planned := cloneSemifinalSeries(match.Series)
 	planned.State = domain.SeriesStatePlanned
 	planned.Score = domain.SeriesScore{}
 	planned.WinnerID = nil
@@ -368,7 +368,7 @@ func cloneSemifinalAdvancementAuthority(
 	authority SemifinalAdvancementAuthority,
 ) SemifinalAdvancementAuthority {
 	clone := authority
-	clone.Semifinals = cloneSemifinalMatches(authority.Semifinals)
+	clone.Semifinals = CloneSemifinalMatches(authority.Semifinals)
 	return clone
 }
 

@@ -9,6 +9,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	seriesdomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/series"
 	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
+	semifinalusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff/semifinal"
 	resultprojection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection"
 )
 
@@ -148,7 +149,7 @@ func (c *TerminalCoordinator) advanceSemifinals(
 	if err := authority.valid(); err != nil {
 		return TerminalReceipt{}, err
 	}
-	advancement, _, err := AdvanceSemifinalEvidence(
+	advancement, _, err := semifinalusecase.AdvanceSemifinalEvidence(
 		SemifinalAdvancement{}, authority.Bracket, authority.Series,
 	)
 	if err != nil {
@@ -315,18 +316,18 @@ func rehydrateSemifinalAdvancement(
 	if err := authority.Validate(); err != nil || len(results) != 2 {
 		return SemifinalAdvancement{}, terminalConflict("final semifinal advancement is incomplete")
 	}
-	advancement := SemifinalAdvancement{
-		tournamentID: authority.TournamentID, bracketRevisionID: authority.BracketRevisionID,
-	}
+	seen := make(map[int]struct{}, len(results))
 	for _, result := range results {
-		if result.Position < 1 || result.Position > len(advancement.results) ||
-			advancement.results[result.Position-1] != nil {
+		if result.Position < 1 || result.Position > 2 {
 			return SemifinalAdvancement{}, terminalConflict("final semifinal advancement is ambiguous")
 		}
-		clone := result
-		advancement.results[result.Position-1] = &clone
+		if _, exists := seen[result.Position]; exists {
+			return SemifinalAdvancement{}, terminalConflict("final semifinal advancement is ambiguous")
+		}
+		seen[result.Position] = struct{}{}
 	}
-	if err := advancement.validateAuthority(authority); err != nil || !advancement.Complete() {
+	advancement, err := semifinalusecase.RehydrateSemifinalAdvancement(authority, results)
+	if err != nil || !advancement.Complete() {
 		return SemifinalAdvancement{}, terminalConflict("final semifinal advancement is invalid")
 	}
 	return advancement, nil

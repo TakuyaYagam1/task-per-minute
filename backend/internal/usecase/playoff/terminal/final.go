@@ -66,7 +66,7 @@ func NewFinal(command FinalCommand) (Final, error) {
 		command.FirstSlotID == command.FirstGameID {
 		return Final{}, finalError("reused final identity")
 	}
-	tournamentID := command.Advancement.tournamentID
+	tournamentID := command.Advancement.TournamentID()
 	result := Final{
 		execution: seriesdomain.Execution{Series: domain.Series{
 			ID: command.SeriesID, TournamentID: tournamentID,
@@ -85,7 +85,7 @@ func NewFinal(command FinalCommand) (Final, error) {
 		tournament:        domain.Tournament{State: domain.TournamentStatePlayoffs},
 		draft:             draft.CloneDraft(command.Draft),
 		gameCategories:    categories,
-		bracketRevisionID: command.Advancement.bracketRevisionID,
+		bracketRevisionID: command.Advancement.BracketRevisionID(),
 	}
 	if err := result.Validate(); err != nil {
 		return Final{}, err

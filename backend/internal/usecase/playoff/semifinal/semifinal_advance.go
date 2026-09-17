@@ -1,4 +1,4 @@
-package terminal
+package semifinal
 
 import (
 	"errors"
@@ -88,6 +88,32 @@ func AdvanceSemifinalEvidence(
 		return SemifinalAdvancement{}, false, err
 	}
 	return cloneSemifinalAdvancement(next), changed, nil
+}
+
+// RehydrateSemifinalAdvancement reconstructs the immutable advancement state
+// from the locked bracket authority and its persisted terminal results.
+func RehydrateSemifinalAdvancement(
+	authority SemifinalAdvancementAuthority,
+	results []SemifinalAdvancementResult,
+) (SemifinalAdvancement, error) {
+	if err := authority.Validate(); err != nil || len(results) != 2 {
+		return SemifinalAdvancement{}, semifinalAdvancementError("invalid rehydration authority")
+	}
+	advancement := SemifinalAdvancement{
+		tournamentID: authority.TournamentID, bracketRevisionID: authority.BracketRevisionID,
+	}
+	for _, result := range results {
+		if result.Position < 1 || result.Position > len(advancement.results) ||
+			advancement.results[result.Position-1] != nil {
+			return SemifinalAdvancement{}, semifinalAdvancementError("ambiguous persisted result")
+		}
+		clone := result
+		advancement.results[result.Position-1] = &clone
+	}
+	if err := advancement.validateAuthority(authority); err != nil || !advancement.Complete() {
+		return SemifinalAdvancement{}, semifinalAdvancementError("invalid persisted result")
+	}
+	return cloneSemifinalAdvancement(advancement), nil
 }
 
 func (a SemifinalAdvancement) Validate(bracket SemifinalBracket) error {
