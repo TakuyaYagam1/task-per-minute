@@ -41,6 +41,8 @@ type draftMigrationFixture struct {
 type reconnectMigrationFixture struct {
 	draft               draftMigrationFixture
 	attemptID           uuid.UUID
+	normalPauseID       uuid.UUID
+	normalWaveID        uuid.UUID
 	rootPauseID         uuid.UUID
 	rootPauseRevisionID uuid.UUID
 	gamePauseID         uuid.UUID

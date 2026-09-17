@@ -1,6 +1,6 @@
 //go:build integration
 
-package integration_test
+package reconnect
 
 import (
 	"context"
@@ -9,9 +9,57 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestReconnectContinuationRootDefaults(t *testing.T) {
+	ctx := context.Background()
+	resetMigrationTables(ctx, t)
+	t.Cleanup(func() { resetMigrationTables(ctx, t) })
+
+	fixture := createReconnectMigrationFixture(ctx, t)
+	participantID := fixture.draft.participantIDs[0]
+	intervalID, _ := disconnectParticipant(
+		ctx, t,
+		fixture,
+		participantID,
+		fixture.pausedAt.Add(time.Second),
+		2*time.Minute,
+	)
+
+	var (
+		continuationNumber int
+		continuedFromID    pgtype.UUID
+		suspendedByPauseID pgtype.UUID
+		slotsUsed          int
+		counterRevision    int64
+	)
+	err := sharedPool.QueryRow(ctx, `
+		SELECT continuation_number, continued_from_id, suspended_by_pause_id
+		FROM reconnect_intervals
+		WHERE id = $1`, intervalID).Scan(
+		&continuationNumber,
+		&continuedFromID,
+		&suspendedByPauseID,
+	)
+	require.NoError(t, err)
+	require.Zero(t, continuationNumber)
+	require.False(t, continuedFromID.Valid)
+	require.False(t, suspendedByPauseID.Valid)
+
+	err = sharedPool.QueryRow(ctx, `
+		SELECT slots_used, revision
+		FROM reconnect_slot_counters
+		WHERE pause_id = $1 AND participant_id = $2`,
+		fixture.gamePauseID,
+		participantID,
+	).Scan(&slotsUsed, &counterRevision)
+	require.NoError(t, err)
+	require.Equal(t, 1, slotsUsed)
+	require.EqualValues(t, 2, counterRevision)
+}
 
 func TestReconnectContinuationRootPresenceEpoch(t *testing.T) {
 	ctx := context.Background()
