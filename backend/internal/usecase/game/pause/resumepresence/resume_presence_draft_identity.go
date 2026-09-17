@@ -1,4 +1,4 @@
-package pause
+package resumepresence
 
 import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"

@@ -9,14 +9,14 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
-	gamemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause/mocks"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause"
+	presencemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause/resumepresence/mocks"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 )
 
 type pauseResumePresenceRepositoryHarness struct {
-	*gamemocks.MockPauseResumePresenceRepository
+	*presencemocks.MockPauseResumePresenceRepository
 
 	mu                                                 sync.Mutex
 	authority                                          gameusecase.PauseResumePresenceAuthority
@@ -40,7 +40,7 @@ func newPauseResumePresenceRepositoryHarness(
 		authority: clonePauseResumePresenceAuthority(authority),
 		commands:  make(map[uuid.UUID]gameusecase.PauseResumePresenceRecord),
 	}
-	repository := gamemocks.NewMockPauseResumePresenceRepository(t)
+	repository := presencemocks.NewMockPauseResumePresenceRepository(t)
 	repository.EXPECT().
 		FindPauseResumePresenceCommand(mock.Anything, mock.Anything, mock.Anything).
 		RunAndReturn(harness.findPauseResumePresenceCommand).

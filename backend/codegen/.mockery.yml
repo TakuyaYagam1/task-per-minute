@@ -235,6 +235,8 @@ packages:
     interfaces:
       PausedPresenceRepository:
       PauseResumeRepository:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause/resumepresence:
+    interfaces:
       PauseResumePresenceRepository:
   github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/reconnect:
     interfaces:

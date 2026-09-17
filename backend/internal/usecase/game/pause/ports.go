@@ -30,14 +30,6 @@ type PausedPresenceRepository interface {
 	CommitPausedPresence(ctx context.Context, expected PausedPresenceExpectation, record PausedPresenceRecord) (*PausedPresenceRecord, bool, error)
 }
 
-// PauseResumePresenceRepository commits the normal Wave pause, old Series/Game
-// pause heads, Game clock, decision rows and reconnect rows in one transaction.
-type PauseResumePresenceRepository interface {
-	FindPauseResumePresenceCommand(ctx context.Context, tournamentID, commandID uuid.UUID) (*PauseResumePresenceRecord, error)
-	LoadPauseResumePresenceAuthority(ctx context.Context, scope pausedomain.GraphScope, normalPauseID, seriesPauseID, gamePauseID uuid.UUID) (PauseResumePresenceAuthority, error)
-	CommitPauseResumePresence(ctx context.Context, expected PauseResumePresenceExpectation, record PauseResumePresenceRecord) (*PauseResumePresenceRecord, bool, error)
-}
-
 // PauseResumeRepository participates in the caller transaction. Load locks in
 // this stable order: execution-authority, pause and graph, Tournament, Wave,
 // Series, Games, Draft, Presence, Reconnect, counters, frozen deadlines and
