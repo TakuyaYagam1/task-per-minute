@@ -1,4 +1,4 @@
-package game
+package noshow
 
 import (
 	"context"
@@ -59,6 +59,21 @@ type NoShowResolution struct {
 type NoShowUseCase struct {
 	repository NoShowRepository
 	clock      NoShowClock
+}
+
+type NoShowClock interface {
+	Now() time.Time
+}
+
+type NoShowRepository interface {
+	LoadNormalNoShowAuthority(
+		ctx context.Context,
+		scope domain.NormalNoShowScope,
+	) (NoShowAuthority, error)
+	CommitNormalNoShow(
+		ctx context.Context,
+		resolution NoShowResolution,
+	) (*NoShowResolution, bool, error)
 }
 
 func NoShowNewUseCase(

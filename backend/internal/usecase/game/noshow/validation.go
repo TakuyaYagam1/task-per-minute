@@ -1,4 +1,4 @@
-package game
+package noshow
 
 import (
 	"github.com/google/uuid"

@@ -27,20 +27,6 @@ type DeadlineRearmer = recoveryusecase.DeadlineRearmer
 type RecoveryEpochReplayer = recoveryusecase.RecoveryEpochReplayer
 type RecoveryTournamentSource = recoveryusecase.RecoveryTournamentSource
 type RecoveryAuthorityProvider = recoveryusecase.RecoveryAuthorityProvider
-type NoShowClock interface {
-	Now() time.Time
-}
-
-type NoShowRepository interface {
-	LoadNormalNoShowAuthority(
-		ctx context.Context,
-		scope domain.NormalNoShowScope,
-	) (NoShowAuthority, error)
-	CommitNormalNoShow(
-		ctx context.Context,
-		resolution NoShowResolution,
-	) (*NoShowResolution, bool, error)
-}
 type AttemptClock = attemptusecase.AttemptClock
 type AttemptRepository = attemptusecase.AttemptRepository
 type ReconnectClock = reconnectusecase.ReconnectClock
