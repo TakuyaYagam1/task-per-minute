@@ -9,6 +9,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+
+	"github.com/TakuyaYagam1/task-per-minute/integration_test/internal/testkit/goldenseed"
 )
 
 func createGoldenMigrationFixture(
@@ -39,21 +41,11 @@ func createGoldenAttempt(
 ) uuid.UUID {
 	tb.Helper()
 
-	id := uuid.New()
-	_, err := sharedPool.Exec(
-		ctx, `
-		INSERT INTO golden_attempts (
-			id, tournament_id, roster_id, attempt_number,
-			previous_attempt_id, created_at
-		)
-		VALUES ($1, $2, $3, $4, $5, $6)`,
-		id,
-		fixture.tournamentID,
-		fixture.rosterID,
-		attemptNumber,
-		previousAttemptID,
-		createdAt,
-	)
+	id, err := goldenseed.CreateAttempt(ctx, sharedPool, goldenseed.AttemptInput{
+		TournamentID: fixture.tournamentID, RosterID: fixture.rosterID,
+		AttemptNumber: attemptNumber, PreviousAttemptID: previousAttemptID,
+		CreatedAt: createdAt,
+	})
 	require.NoError(tb, err)
 	return id
 }
@@ -73,32 +65,12 @@ func createGoldenMembership(
 ) uuid.UUID {
 	tb.Helper()
 
-	id := uuid.New()
-	_, err := sharedPool.Exec(
-		ctx, `
-		INSERT INTO golden_memberships (
-			id, attempt_id, tournament_id, roster_id, participant_id,
-			selection_kind, reserve_position, selected_at,
-			ready_at, no_show_at, excluded_at, exclusion_reason
-		)
-		VALUES (
-			$1, $2, $3, $4, $5,
-			$6, $7, $8,
-			$9, $10, $11, $12
-		)`,
-		id,
-		attemptID,
-		fixture.tournamentID,
-		fixture.rosterID,
-		participantID,
-		selectionKind,
-		reservePosition,
-		selectedAt,
-		readyAt,
-		noShowAt,
-		excludedAt,
-		exclusionReason,
-	)
+	id, err := goldenseed.CreateMembership(ctx, sharedPool, goldenseed.MembershipInput{
+		AttemptID: attemptID, TournamentID: fixture.tournamentID, RosterID: fixture.rosterID,
+		ParticipantID: participantID, SelectionKind: selectionKind,
+		ReservePosition: reservePosition, SelectedAt: selectedAt, ReadyAt: readyAt,
+		NoShowAt: noShowAt, ExcludedAt: excludedAt, ExclusionReason: exclusionReason,
+	})
 	require.NoError(tb, err)
 	return id
 }
