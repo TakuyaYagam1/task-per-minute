@@ -18,7 +18,7 @@ type goldenIndividualReceiptDerivation struct {
 
 func validateInitialGoldenIndividualConnectionLedger(l GoldenIndividualConnectionLedger) error {
 	if l.Revision != 1 || l.PreviousRevisionID != nil || len(l.Intervals) != 0 ||
-		!EqualIDs(l.PresentParticipantIDs, l.ParticipantIDs) {
+		!connectionEqualIDs(l.PresentParticipantIDs, l.ParticipantIDs) {
 		return goldenIndividualConnectionError("initial connection ledger has derived state")
 	}
 	return nil
@@ -34,7 +34,7 @@ func newGoldenIndividualReceiptDerivation(
 		)
 	}
 	cursor := GoldenIndividualConnectionLedger{
-		Scope: ledger.Scope, Execution: CloneExecutionExpectation(ledger.Execution),
+		Scope: ledger.Scope, Execution: cloneConnectionExecutionExpectation(ledger.Execution),
 		Submissions: first.Expected.Submissions, StartedAt: ledger.StartedAt, Deadline: ledger.Deadline,
 		RevisionID: first.Expected.RevisionID, Revision: 1,
 		ParticipantIDs:        append([]uuid.UUID(nil), ledger.ParticipantIDs...),
@@ -84,7 +84,7 @@ func validGoldenIndividualReceiptIdentity(
 	validKind := receipt.Kind == GoldenIndividualConnectionDisconnected ||
 		receipt.Kind == GoldenIndividualConnectionReconnected
 	return receipt.CommandID != uuid.Nil && receipt.CommandDigest != [sha256.Size]byte{} && validKind &&
-		ContainsID(ledger.ParticipantIDs, receipt.ParticipantID) && receipt.IntervalID != uuid.Nil &&
+		connectionContainsID(ledger.ParticipantIDs, receipt.ParticipantID) && receipt.IntervalID != uuid.Nil &&
 		domain.IsValidServerTime(receipt.OccurredAt) && receipt.ResultRevision == int64(index+2) &&
 		receipt.ResultRevisionID != uuid.Nil
 }
@@ -133,7 +133,7 @@ func (d *goldenIndividualReceiptDerivation) retainReceiptHistory(
 }
 
 func (d *goldenIndividualReceiptDerivation) advanceHead(receipt GoldenIndividualConnectionReceipt) {
-	d.cursor.PreviousRevisionID = UUIDPointer(d.cursor.RevisionID)
+	d.cursor.PreviousRevisionID = connectionUUIDPointer(d.cursor.RevisionID)
 	d.cursor.RevisionID = receipt.ResultRevisionID
 	d.cursor.Revision = receipt.ResultRevision
 	d.cursor.Submissions = receipt.ObservedSubmissions
@@ -155,7 +155,7 @@ func (d *goldenIndividualReceiptDerivation) applyDisconnect(receipt GoldenIndivi
 		d.sequenceByParticipant[receipt.ParticipantID] >= domain.ReconnectCycleLimit {
 		return goldenIndividualConnectionError("disconnect receipt cannot derive presence")
 	}
-	d.cursor.PresentParticipantIDs = WithoutID(d.cursor.PresentParticipantIDs, receipt.ParticipantID)
+	d.cursor.PresentParticipantIDs = connectionWithoutID(d.cursor.PresentParticipantIDs, receipt.ParticipantID)
 	d.sequenceByParticipant[receipt.ParticipantID]++
 	d.cursor.Intervals = append(d.cursor.Intervals, GoldenIndividualReconnectInterval{
 		ID: receipt.IntervalID, ParticipantID: receipt.ParticipantID,
@@ -181,7 +181,7 @@ func (d *goldenIndividualReceiptDerivation) applyReconnect(receipt GoldenIndivid
 	d.cursor.Intervals[intervalIndex].ReconnectedAt = connectionCloneTimePointer(&receipt.OccurredAt)
 	delete(d.openByParticipant, receipt.ParticipantID)
 	d.cursor.PresentParticipantIDs = append(d.cursor.PresentParticipantIDs, receipt.ParticipantID)
-	SortIDs(d.cursor.PresentParticipantIDs)
+	sortConnectionIDs(d.cursor.PresentParticipantIDs)
 	return nil
 }
 

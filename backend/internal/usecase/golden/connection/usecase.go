@@ -19,7 +19,7 @@ type GoldenIndividualConnectionReplay struct {
 
 func (r GoldenIndividualConnectionReplay) Snapshot() GoldenIndividualConnectionReplay {
 	clone := r
-	clone.Receipt.Expected.Execution = CloneExecutionExpectation(r.Receipt.Expected.Execution)
+	clone.Receipt.Expected.Execution = cloneConnectionExecutionExpectation(r.Receipt.Expected.Execution)
 	clone.Connections = r.Connections.Snapshot()
 	return clone
 }
@@ -79,7 +79,7 @@ func (u *GoldenIndividualDisconnectUseCase) Disconnect(
 ) (*GoldenIndividualConnectionLedger, bool, error) {
 	operation := goldenIndividualConnectionOperation{
 		scope: command.Scope, commandID: command.CommandID, participantID: command.ParticipantID,
-		intervalID: command.IntervalID, expectedExecution: CloneExecutionExpectation(command.ExpectedExecution),
+		intervalID: command.IntervalID, expectedExecution: cloneConnectionExecutionExpectation(command.ExpectedExecution),
 		expectedSubmissions: command.ExpectedSubmissions, expectedConnections: command.ExpectedConnections,
 		nextRevisionID: command.NextConnectionRevisionID, kind: GoldenIndividualConnectionDisconnected,
 	}
@@ -95,7 +95,7 @@ func (u *GoldenIndividualDisconnectUseCase) Reconnect(
 	}
 	operation := goldenIndividualConnectionOperation{
 		scope: command.Scope, commandID: command.CommandID, participantID: command.ParticipantID,
-		intervalID: command.IntervalID, expectedExecution: CloneExecutionExpectation(command.ExpectedExecution),
+		intervalID: command.IntervalID, expectedExecution: cloneConnectionExecutionExpectation(command.ExpectedExecution),
 		expectedSubmissions: command.ExpectedSubmissions, expectedConnections: command.ExpectedConnections,
 		nextRevisionID: command.NextConnectionRevisionID, kind: GoldenIndividualConnectionReconnected,
 	}

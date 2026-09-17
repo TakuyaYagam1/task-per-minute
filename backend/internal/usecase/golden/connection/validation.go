@@ -42,8 +42,8 @@ func validGoldenIndividualLedgerRevision(l GoldenIndividualConnectionLedger) boo
 func validGoldenIndividualLedgerCollections(l GoldenIndividualConnectionLedger) bool {
 	return len(l.ParticipantIDs) >= 2 && len(l.ParticipantIDs) <= goldenIndividualParticipantLimit &&
 		len(l.Intervals) <= goldenIndividualIntervalLimit && len(l.Receipts) <= goldenIndividualReceiptLimit &&
-		IDsCanonical(l.ParticipantIDs) && IDsCanonical(l.PresentParticipantIDs) &&
-		IDsSubset(l.PresentParticipantIDs, l.ParticipantIDs)
+		connectionIDsCanonical(l.ParticipantIDs) && connectionIDsCanonical(l.PresentParticipantIDs) &&
+		connectionIDsSubset(l.PresentParticipantIDs, l.ParticipantIDs)
 }
 
 func validateGoldenIndividualIntervals(l GoldenIndividualConnectionLedger) error {
@@ -71,7 +71,7 @@ func validGoldenIndividualIntervalHeader(
 	interval GoldenIndividualReconnectInterval,
 	expectedSequence int,
 ) bool {
-	return interval.ID != uuid.Nil && ContainsID(ledger.ParticipantIDs, interval.ParticipantID) &&
+	return interval.ID != uuid.Nil && connectionContainsID(ledger.ParticipantIDs, interval.ParticipantID) &&
 		interval.Sequence == expectedSequence && interval.Sequence <= domain.ReconnectCycleLimit &&
 		domain.IsValidServerTime(interval.DisconnectedAt) && domain.IsValidServerTime(interval.Deadline) &&
 		interval.DisconnectedAt.Before(interval.Deadline) && interval.Deadline.Equal(ledger.Deadline) &&
@@ -85,7 +85,7 @@ func validateGoldenIndividualIntervalState(
 ) error {
 	switch interval.State {
 	case GoldenIndividualReconnectOpen:
-		if interval.ReconnectedAt != nil || ContainsID(ledger.PresentParticipantIDs, interval.ParticipantID) {
+		if interval.ReconnectedAt != nil || connectionContainsID(ledger.PresentParticipantIDs, interval.ParticipantID) {
 			return goldenIndividualConnectionError("open interval retained present participant")
 		}
 		if _, duplicate := open[interval.ParticipantID]; duplicate {

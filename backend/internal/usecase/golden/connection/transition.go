@@ -95,8 +95,8 @@ func goldenIndividualAuthorityMatches(
 		authority.Connections.Execution.Equal(operation.expectedExecution) &&
 		authority.Connections.StartedAt.Equal(execution.Start.StartedAt) &&
 		authority.Connections.Deadline.Equal(execution.Start.Deadline) &&
-		authority.Connections.Scope == operation.scope && ContainsID(execution.Membership.ParticipantIDs, operation.participantID) &&
-		EqualIDs(authority.Connections.ParticipantIDs, execution.Membership.ParticipantIDs)
+		authority.Connections.Scope == operation.scope && connectionContainsID(execution.Membership.ParticipantIDs, operation.participantID) &&
+		connectionEqualIDs(authority.Connections.ParticipantIDs, execution.Membership.ParticipantIDs)
 }
 
 func buildGoldenIndividualConnectionSuccessor(
@@ -116,7 +116,7 @@ func buildGoldenIndividualConnectionSuccessor(
 	next := current.Snapshot()
 	expected := current.Expectation()
 	next.Submissions = authority.Submissions.Expectation()
-	next.PreviousRevisionID = UUIDPointer(next.RevisionID)
+	next.PreviousRevisionID = connectionUUIDPointer(next.RevisionID)
 	next.RevisionID = operation.nextRevisionID
 	next.Revision++
 	if len(next.Receipts) >= goldenIndividualReceiptLimit {
@@ -145,8 +145,8 @@ func goldenIndividualSuccessorIdentityIDs(
 	if operation.kind == GoldenIndividualConnectionDisconnected {
 		ids = append(ids, operation.intervalID)
 	}
-	SortIDs(ids)
-	if !ValidIdentitySet(ids) || goldenIndividualIdentityUsed(authority, ids) {
+	sortConnectionIDs(ids)
+	if !connectionValidIdentitySet(ids) || goldenIndividualIdentityUsed(authority, ids) {
 		return nil, goldenIndividualConnectionError("connection identity is reused")
 	}
 	return ids, nil
@@ -179,7 +179,7 @@ func applyGoldenIndividualDisconnectSuccessor(
 		goldenIndividualIntervalCount(next.Intervals, operation.participantID) >= domain.ReconnectCycleLimit {
 		return ErrGoldenIndividualConnectionUnavailable
 	}
-	next.PresentParticipantIDs = WithoutID(next.PresentParticipantIDs, operation.participantID)
+	next.PresentParticipantIDs = connectionWithoutID(next.PresentParticipantIDs, operation.participantID)
 	next.Intervals = append(next.Intervals, GoldenIndividualReconnectInterval{
 		ID: operation.intervalID, ParticipantID: operation.participantID,
 		Sequence: goldenIndividualIntervalCount(next.Intervals, operation.participantID) + 1,
@@ -201,7 +201,7 @@ func applyGoldenIndividualReconnectSuccessor(
 	interval.State = GoldenIndividualReconnectClosed
 	interval.ReconnectedAt = connectionCloneTimePointer(&now)
 	next.PresentParticipantIDs = append(next.PresentParticipantIDs, operation.participantID)
-	SortIDs(next.PresentParticipantIDs)
+	sortConnectionIDs(next.PresentParticipantIDs)
 	return nil
 }
 
@@ -214,7 +214,7 @@ func validGoldenIndividualOperation(operation goldenIndividualConnectionOperatio
 }
 
 func goldenIndividualIdentityUsed(authority GoldenIndividualDisconnectAuthority, ids []uuid.UUID) bool {
-	reserved := RetainedIdentitySet(authority.Execution)
+	reserved := connectionRetainedIdentitySet(authority.Execution)
 	reserved[authority.Submissions.RevisionID] = struct{}{}
 	if authority.Submissions.PreviousRevisionID != nil {
 		reserved[*authority.Submissions.PreviousRevisionID] = struct{}{}
@@ -327,7 +327,7 @@ func rebuildGoldenIndividualConnectionLedger(ledger *GoldenIndividualConnectionL
 func goldenIndividualConnectionPayload(ledger GoldenIndividualConnectionLedger) ([]byte, error) {
 	clone := ledger.Snapshot()
 	clone.PayloadDigest = [sha256.Size]byte{}
-	return Encode(clone)
+	return connectionEncode(clone)
 }
 
 func goldenIndividualOperationDigest(operation goldenIndividualConnectionOperation) [sha256.Size]byte {
@@ -347,7 +347,7 @@ func goldenIndividualOperationDigest(operation goldenIndividualConnectionOperati
 		ExpectedSubmissions: operation.expectedSubmissions, ExpectedConnections: operation.expectedConnections,
 		NextRevisionID: operation.nextRevisionID, Kind: operation.kind,
 	}
-	payload, _ := Encode(document)
+	payload, _ := connectionEncode(document)
 	return sha256.Sum256(payload)
 }
 
