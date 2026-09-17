@@ -18,8 +18,8 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
 	seriesdomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/series"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
 	attemptusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/attempt"
+	noshowusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/noshow"
 	reconnectusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/reconnect"
 
 	recoveryusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/recovery"
@@ -274,7 +274,7 @@ func (repository *RecoveryTerminalPostgres) loadReadyWindow(
 	if len(rows) == 0 {
 		return recoveryTerminalSnapshot{}, errRecoveryTerminalSnapshot
 	}
-	authorities := make([]gameusecase.NoShowAuthority, len(rows))
+	authorities := make([]noshowusecase.NoShowAuthority, len(rows))
 	seriesSnapshots := make([]recoverySeriesSnapshot, len(rows))
 	for index, seriesRow := range rows {
 		seriesSnapshot, series, ordinal, _, _, loadErr := repository.loadRecoverySeries(
@@ -285,7 +285,7 @@ func (repository *RecoveryTerminalPostgres) loadReadyWindow(
 		if loadErr != nil {
 			return recoveryTerminalSnapshot{}, loadErr
 		}
-		authorities[index] = gameusecase.NoShowAuthority{
+		authorities[index] = noshowusecase.NoShowAuthority{
 			Scope: domain.NormalNoShowScope{
 				TournamentID: deadline.TournamentID, WaveID: deadline.WaveID,
 				WindowID: deadline.ID, SeriesID: series.ID,

@@ -15,7 +15,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	noshowusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/noshow"
 	reconnectusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/reconnect"
 
 	recoveryusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/recovery"
@@ -162,7 +162,7 @@ func commitRecoveryNoShow(
 	tx *db.TxManager,
 	finalizer resultrepo.ProjectionFinalizer,
 	plan recoveryusecase.DeadlineTerminalPlan,
-	resolution gameusecase.NoShowResolution,
+	resolution noshowusecase.NoShowResolution,
 	evidence recoveryusecase.DeadlineNoShowEvidenceIDs,
 	snapshot recoverySeriesSnapshot,
 ) error {
@@ -230,7 +230,7 @@ func createRecoveryNoShowResultEvent(
 	ctx context.Context,
 	querier *sqlc.Queries,
 	plan recoveryusecase.DeadlineTerminalPlan,
-	resolution gameusecase.NoShowResolution,
+	resolution noshowusecase.NoShowResolution,
 	evidence recoveryusecase.DeadlineNoShowEvidenceIDs,
 ) (sqlc.ResultEvent, error) {
 	firstGame := resolution.GameRevisions[0]
@@ -265,7 +265,7 @@ func createRecoveryNoShowGameRevisions(
 	ctx context.Context,
 	querier *sqlc.Queries,
 	plan recoveryusecase.DeadlineTerminalPlan,
-	resolution gameusecase.NoShowResolution,
+	resolution noshowusecase.NoShowResolution,
 	resultEventID uuid.UUID,
 	rawGames map[uuid.UUID]sqlc.GameAttempt,
 	source sqlc.LockResultSourceProjectionRow,
@@ -294,7 +294,7 @@ func settleRecoveryNoShowGames(
 	ctx context.Context,
 	querier *sqlc.Queries,
 	plan recoveryusecase.DeadlineTerminalPlan,
-	resolution gameusecase.NoShowResolution,
+	resolution noshowusecase.NoShowResolution,
 	evidence recoveryusecase.DeadlineNoShowEvidenceIDs,
 	rawGames map[uuid.UUID]sqlc.GameAttempt,
 ) error {
@@ -331,7 +331,7 @@ func createRecoveryNoShowSeriesEvidence(
 	ctx context.Context,
 	querier *sqlc.Queries,
 	plan recoveryusecase.DeadlineTerminalPlan,
-	resolution gameusecase.NoShowResolution,
+	resolution noshowusecase.NoShowResolution,
 	evidence recoveryusecase.DeadlineNoShowEvidenceIDs,
 	snapshot recoverySeriesSnapshot,
 	resultEventID uuid.UUID,
@@ -429,7 +429,7 @@ func createRecoveryNoShowSideEvidence(
 	ctx context.Context,
 	querier *sqlc.Queries,
 	plan recoveryusecase.DeadlineTerminalPlan,
-	resolution gameusecase.NoShowResolution,
+	resolution noshowusecase.NoShowResolution,
 	evidence recoveryusecase.DeadlineNoShowEvidenceIDs,
 	resultEventID uuid.UUID,
 	source sqlc.LockResultSourceProjectionRow,
@@ -495,7 +495,7 @@ func settleRecoveryNoShowSeries(
 	ctx context.Context,
 	querier *sqlc.Queries,
 	plan recoveryusecase.DeadlineTerminalPlan,
-	resolution gameusecase.NoShowResolution,
+	resolution noshowusecase.NoShowResolution,
 	snapshot recoverySeriesSnapshot,
 ) error {
 	if _, err := querier.CreateOfficialResultHead(ctx, sqlc.CreateOfficialResultHeadParams{

@@ -13,8 +13,8 @@ import (
 	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
 	gamedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/game"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
 	attemptusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/attempt"
+	noshowusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/noshow"
 	reconnectusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/reconnect"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 )
@@ -34,7 +34,7 @@ var deadlineTerminalNamespace = uuid.MustParse("dfb8cdb7-6344-5dc8-89d3-6fcddc84
 type DeadlineTerminalAuthority struct {
 	Deadline         PendingDeadline
 	GameTimeout      *attemptusecase.AttemptAuthority
-	ReadyWindow      []gameusecase.NoShowAuthority
+	ReadyWindow      []noshowusecase.NoShowAuthority
 	ReconnectTimeout *reconnectusecase.ReconnectAuthority
 }
 
@@ -46,7 +46,7 @@ type DeadlineTerminalPlan struct {
 	ReceiptID           uuid.UUID
 	CommandID           uuid.UUID
 	ResultEvidence      *DeadlineResultEvidenceIDs
-	ReadyWindow         []gameusecase.NoShowResolution
+	ReadyWindow         []noshowusecase.NoShowResolution
 	ReadyWindowEvidence []DeadlineNoShowEvidenceIDs
 	PauseRevisionID     uuid.UUID
 	GameTimeout         *attemptusecase.AttemptRecord
@@ -341,21 +341,21 @@ func planGameTimeout(
 
 func planReadyWindowExpiry(
 	ctx context.Context,
-	authorities []gameusecase.NoShowAuthority,
+	authorities []noshowusecase.NoShowAuthority,
 	deadline PendingDeadline,
 	now time.Time,
-) ([]gameusecase.NoShowResolution, error) {
-	ordered := append([]gameusecase.NoShowAuthority(nil), authorities...)
+) ([]noshowusecase.NoShowResolution, error) {
+	ordered := append([]noshowusecase.NoShowAuthority(nil), authorities...)
 	sort.Slice(ordered, func(left, right int) bool {
 		return ordered[left].Scope.SeriesID.String() < ordered[right].Scope.SeriesID.String()
 	})
-	resolutions := make([]gameusecase.NoShowResolution, 0, len(ordered))
+	resolutions := make([]noshowusecase.NoShowResolution, 0, len(ordered))
 	var action domain.NormalNoShowAction
 	for index := range ordered {
 		authority := ordered[index]
 		planner := &readyWindowPlanner{authority: authority}
 		seriesID := authority.Scope.SeriesID
-		command := gameusecase.NoShowCommand{
+		command := noshowusecase.NoShowCommand{
 			Scope:                    authority.Scope,
 			CommandID:                deadlineTerminalID(deadline, seriesID, "command"),
 			ExpectedWaveRevisionID:   authority.Wave.RevisionID,
@@ -365,7 +365,7 @@ func planReadyWindowExpiry(
 			ScoreRevisionID:          domain.SeriesScoreRevisionID(deadlineTerminalID(deadline, seriesID, "score")),
 			SeriesResultRevisionID:   domain.OfficialResultRevisionID(deadlineTerminalID(deadline, seriesID, "series-result")),
 		}
-		resolution, changed, err := gameusecase.NoShowNewUseCase(planner, fixedRecoveryClock{at: now}).Resolve(
+		resolution, changed, err := noshowusecase.NoShowNewUseCase(planner, fixedRecoveryClock{at: now}).Resolve(
 			ctx,
 			command,
 		)
@@ -471,7 +471,7 @@ func gameAuthorityMatchesDeadline(authority attemptusecase.AttemptAuthority, dea
 		authority.Scope.GameID == deadline.GameID
 }
 
-func readyAuthoritiesMatchDeadline(authorities []gameusecase.NoShowAuthority, deadline PendingDeadline) bool {
+func readyAuthoritiesMatchDeadline(authorities []noshowusecase.NoShowAuthority, deadline PendingDeadline) bool {
 	seen := make(map[uuid.UUID]struct{}, len(authorities))
 	for index := range authorities {
 		authority := authorities[index]
@@ -567,7 +567,7 @@ func deadlineResultEvidence(deadline PendingDeadline) *DeadlineResultEvidenceIDs
 
 func deadlineNoShowEvidence(
 	deadline PendingDeadline,
-	resolutions []gameusecase.NoShowResolution,
+	resolutions []noshowusecase.NoShowResolution,
 ) []DeadlineNoShowEvidenceIDs {
 	result := make([]DeadlineNoShowEvidenceIDs, len(resolutions))
 	for index := range resolutions {
@@ -645,7 +645,7 @@ func failedAttemptExpectation(authority attemptusecase.AttemptAuthority) (domain
 }
 
 func readyWindowGameRevisionIDs(
-	authority gameusecase.NoShowAuthority,
+	authority noshowusecase.NoShowAuthority,
 	deadline PendingDeadline,
 ) []domain.OfficialResultRevisionID {
 	result := make([]domain.OfficialResultRevisionID, 0, len(authority.Series.Series.Slots))
@@ -694,21 +694,21 @@ func (planner *gameTimeoutPlanner) CommitFailedAttempt(
 }
 
 type readyWindowPlanner struct {
-	authority gameusecase.NoShowAuthority
-	record    *gameusecase.NoShowResolution
+	authority noshowusecase.NoShowAuthority
+	record    *noshowusecase.NoShowResolution
 }
 
 func (planner *readyWindowPlanner) LoadNormalNoShowAuthority(
 	context.Context,
 	domain.NormalNoShowScope,
-) (gameusecase.NoShowAuthority, error) {
+) (noshowusecase.NoShowAuthority, error) {
 	return planner.authority, nil
 }
 
 func (planner *readyWindowPlanner) CommitNormalNoShow(
 	_ context.Context,
-	record gameusecase.NoShowResolution,
-) (*gameusecase.NoShowResolution, bool, error) {
+	record noshowusecase.NoShowResolution,
+) (*noshowusecase.NoShowResolution, bool, error) {
 	planner.record = &record
 	return &record, true, nil
 }
