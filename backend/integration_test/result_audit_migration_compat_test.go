@@ -12,7 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	resultaudit "github.com/TakuyaYagam1/task-per-minute/integration_test/internal/testkit/resultaudit"
-	resultintegration "github.com/TakuyaYagam1/task-per-minute/integration_test/result"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
@@ -33,10 +32,6 @@ type resultAuditCommit struct {
 	outboxEventID          uuid.UUID
 	projectionEvidenceID   uuid.UUID
 	settledAt              time.Time
-}
-
-func TestResultAuditMigration(t *testing.T) {
-	resultintegration.RunResultAuditMigration(t, sharedPool)
 }
 
 func createResultAuditMigrationFixture(

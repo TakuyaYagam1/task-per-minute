@@ -10,15 +10,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	gameintegration "github.com/TakuyaYagam1/task-per-minute/integration_test/game"
 	"github.com/TakuyaYagam1/task-per-minute/integration_test/internal/testkit/gameseed"
 	"github.com/TakuyaYagam1/task-per-minute/integration_test/internal/testkit/seriesseed"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
-
-func TestGameMigration(t *testing.T) {
-	gameintegration.RunGameMigration(t, sharedPool)
-}
 
 func createMigrationSeries(
 	ctx context.Context,

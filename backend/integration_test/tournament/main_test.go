@@ -1,6 +1,6 @@
 //go:build integration
 
-package reconnect
+package tournament_test
 
 import (
 	"fmt"
@@ -24,11 +24,10 @@ var sharedPool *pgxpool.Pool
 func TestMain(m *testing.M) {
 	pool, teardown, err := startPostgres()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "integration_test/reconnect: failed to start postgres: %v\n", err)
+		fmt.Fprintf(os.Stderr, "integration_test/tournament: failed to start postgres: %v\n", err)
 		os.Exit(1)
 	}
 	sharedPool = pool
-	migrationPool = pool
 
 	code := m.Run()
 	teardown()
@@ -37,13 +36,9 @@ func TestMain(m *testing.M) {
 
 func startPostgres() (*pgxpool.Pool, func(), error) {
 	if dsn := strings.TrimSpace(os.Getenv(externalPostgresDSNEnv)); dsn != "" {
-		return startExternalPostgres(dsn)
+		return testkit.StartExternalPostgres(postgresConfig(dsn))
 	}
 	return testkit.StartPostgres(postgresConfig(""))
-}
-
-func startExternalPostgres(dsn string) (*pgxpool.Pool, func(), error) {
-	return testkit.StartExternalPostgres(postgresConfig(dsn))
 }
 
 func postgresConfig(dsn string) testkit.PostgresConfig {

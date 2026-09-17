@@ -10,7 +10,9 @@ import (
 
 func TestResultAuditFlow(t *testing.T) {
 	t.Run("atomic server settlement", TestConcurrentResultSettlement)
-	t.Run("append only retention and maintenance guards", TestResultAuditMigration)
+	t.Run("append only retention and maintenance guards", func(t *testing.T) {
+		resultintegration.RunResultAuditMigration(t, sharedPool)
+	})
 	t.Run("pagination redaction and export filters", func(t *testing.T) {
 		resultintegration.RunResultAuditRepository(t, sharedPool)
 	})

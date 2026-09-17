@@ -1,20 +1,25 @@
 //go:build integration
 
-package integration_test
+package tournament
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 )
 
-func TestTournamentMigration(t *testing.T) {
+func RunTournamentMigration(t *testing.T, pool *pgxpool.Pool) {
+	t.Helper()
+	require.NotNil(t, pool)
+
 	ctx := context.Background()
-	resetMigrationTables(ctx, t)
-	t.Cleanup(func() { resetMigrationTables(ctx, t) })
+	resetMigrationTables(ctx, pool, t)
+	t.Cleanup(func() { resetMigrationTables(ctx, pool, t) })
 
 	createdAt := time.Now().UTC().Add(-time.Hour).Truncate(time.Microsecond)
 	startedAt := createdAt.Add(10 * time.Minute)
@@ -45,7 +50,7 @@ func TestTournamentMigration(t *testing.T) {
 				created  time.Time
 				updated  time.Time
 			)
-			err := sharedPool.QueryRow(ctx, `
+			err := pool.QueryRow(ctx, `
 				INSERT INTO tournaments (
 					state, paused_from_state, created_at, updated_at, started_at, finished_at
 				)
@@ -60,36 +65,36 @@ func TestTournamentMigration(t *testing.T) {
 			require.True(t, createdAt.Equal(created))
 			require.True(t, createdAt.Equal(updated))
 
-			_, err = sharedPool.Exec(ctx, `DELETE FROM tournaments WHERE id = $1`, id)
+			_, err = pool.Exec(ctx, `DELETE FROM tournaments WHERE id = $1`, id)
 			require.NoError(t, err)
 		})
 	}
 
-	_, err := sharedPool.Exec(ctx, `
+	_, err := pool.Exec(ctx, `
 		INSERT INTO tournaments (preset)
 		VALUES ('unsupported')`)
 	require.Error(t, err)
 
-	_, err = sharedPool.Exec(ctx, `
+	_, err = pool.Exec(ctx, `
 		INSERT INTO tournaments (state, created_at, updated_at, started_at)
 		VALUES ('technical_pause', $1, $1, $2)`, createdAt, startedAt)
 	require.Error(t, err)
 
-	_, err = sharedPool.Exec(ctx, `
+	_, err = pool.Exec(ctx, `
 		INSERT INTO tournaments (state, paused_from_state)
 		VALUES ('draft', 'swiss')`)
 	require.Error(t, err)
 
-	_, err = sharedPool.Exec(ctx, `
+	_, err = pool.Exec(ctx, `
 		INSERT INTO tournaments (revision)
 		VALUES (0)`)
 	require.Error(t, err)
 
-	assertSingleActiveSlot(ctx, t, createdAt, startedAt, finishedAt)
+	assertSingleActiveSlot(ctx, t, pool, createdAt, startedAt, finishedAt)
 }
 
 func assertSingleActiveSlot(
-	ctx context.Context, t *testing.T,
+	ctx context.Context, t *testing.T, pool *pgxpool.Pool,
 	createdAt time.Time,
 	startedAt time.Time,
 	finishedAt time.Time,
@@ -114,7 +119,7 @@ func assertSingleActiveSlot(
 		go func() {
 			<-start
 			var id uuid.UUID
-			err := sharedPool.QueryRow(ctx, `
+			err := pool.QueryRow(ctx, `
 				INSERT INTO tournaments (
 					state, paused_from_state, created_at, updated_at, started_at
 				)
@@ -141,14 +146,14 @@ func assertSingleActiveSlot(
 	require.Equal(t, 1, failures)
 
 	var activeCount int
-	err := sharedPool.QueryRow(ctx, `
+	err := pool.QueryRow(ctx, `
 		SELECT COUNT(*)
 		FROM tournaments
 		WHERE state IN ('swiss', 'golden', 'playoffs', 'technical_pause')`).Scan(&activeCount)
 	require.NoError(t, err)
 	require.Equal(t, 1, activeCount)
 
-	_, err = sharedPool.Exec(ctx, `
+	_, err = pool.Exec(ctx, `
 		UPDATE tournaments
 		SET state = 'completed',
 			paused_from_state = NULL,
@@ -158,7 +163,7 @@ func assertSingleActiveSlot(
 		WHERE id = $1`, activeID, finishedAt)
 	require.NoError(t, err)
 
-	_, err = sharedPool.Exec(ctx, `
+	_, err = pool.Exec(ctx, `
 		INSERT INTO tournaments (
 			state, paused_from_state, created_at, updated_at, started_at
 		)
@@ -166,11 +171,21 @@ func assertSingleActiveSlot(
 	require.NoError(t, err)
 }
 
-func resetMigrationTables(ctx context.Context, tb testing.TB) {
+func resetMigrationTables(ctx context.Context, pool *pgxpool.Pool, tb testing.TB) {
 	tb.Helper()
-	_, err := sharedPool.Exec(ctx, `
-		TRUNCATE TABLE participant_reservations, tournaments CASCADE`)
+	err := ResetMigrationTables(ctx, pool)
 	require.NoError(tb, err)
+}
+
+// ResetMigrationTables clears the tournament migration graph for callers that
+// still compose these fixtures from the root integration package.
+func ResetMigrationTables(ctx context.Context, pool *pgxpool.Pool) error {
+	if pool == nil {
+		return fmt.Errorf("tournament migration: nil pool")
+	}
+	_, err := pool.Exec(ctx, `
+		TRUNCATE TABLE participant_reservations, tournaments CASCADE`)
+	return err
 }
 
 func stringPointer(value string) *string {

@@ -11,13 +11,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
-	draftintegration "github.com/TakuyaYagam1/task-per-minute/integration_test/draft"
 	"github.com/TakuyaYagam1/task-per-minute/integration_test/internal/testkit/draftseed"
 )
-
-func TestDraftMigration(t *testing.T) {
-	draftintegration.RunDraftMigration(t, sharedPool)
-}
 
 type draftMigrationFixture struct {
 	tournamentID         uuid.UUID

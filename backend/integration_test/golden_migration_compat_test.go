@@ -10,7 +10,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	goldenintegration "github.com/TakuyaYagam1/task-per-minute/integration_test/golden"
 	"github.com/TakuyaYagam1/task-per-minute/integration_test/internal/testkit/swissseed"
 )
 
@@ -19,10 +18,6 @@ type goldenMigrationFixture struct {
 	rosterID       uuid.UUID
 	participantIDs []uuid.UUID
 	createdAt      time.Time
-}
-
-func TestGoldenMigration(t *testing.T) {
-	goldenintegration.RunGoldenMigration(t, sharedPool)
 }
 
 func createGoldenMigrationFixture(

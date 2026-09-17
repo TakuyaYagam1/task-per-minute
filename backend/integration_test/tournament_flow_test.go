@@ -2,16 +2,21 @@
 
 package integration_test
 
-import "testing"
+import (
+	"testing"
+
+	gameintegration "github.com/TakuyaYagam1/task-per-minute/integration_test/game"
+	tournamentintegration "github.com/TakuyaYagam1/task-per-minute/integration_test/tournament"
+)
 
 func TestTournamentFlow(t *testing.T) {
 	t.Run("tournament roster bounds and attendance", func(t *testing.T) {
-		TestTournamentRosterMigration(t)
+		tournamentintegration.RunTournamentRosterMigration(t, sharedPool)
 		TestTournamentUseCases(t)
 	})
 
 	t.Run("series modes and immutable game attempts", func(t *testing.T) {
-		TestGameMigration(t)
+		gameintegration.RunGameMigration(t, sharedPool)
 		TestDraftRepositoryPersistsOneImmutableRevisionChain(t)
 		TestAssignmentRepositoryCommitsProofAndDeliversExactlyOnce(t)
 	})

@@ -11,17 +11,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	executionintegration "github.com/TakuyaYagam1/task-per-minute/integration_test/execution"
 	"github.com/TakuyaYagam1/task-per-minute/integration_test/internal/testkit/waveseed"
 )
 
 var errMigrationWaveStartConflict = errors.New("wave already started")
-
-// TestExecutionMigration remains a root-package entry point for the recovery
-// restart suite while the complete migration coverage lives in execution.
-func TestExecutionMigration(t *testing.T) {
-	executionintegration.RunExecutionMigration(t, sharedPool)
-}
 
 func createMigrationWave(
 	ctx context.Context, tb testing.TB,
