@@ -15,7 +15,7 @@ import (
 	participantauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/authority"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gameforfeit "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/forfeit"
 	tournamentparticipant "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/participant"
 )
 
@@ -33,10 +33,10 @@ func NewParticipantForfeitRepository(
 
 func (r *ParticipantForfeitRepository) LoadForfeitAuthority(
 	ctx context.Context,
-	scope gameusecase.Scope,
-) (gameusecase.ForfeitAuthority, error) {
+	scope gameforfeit.Scope,
+) (gameforfeit.ForfeitAuthority, error) {
 	if ctx == nil || r == nil || r.tx == nil || !scope.IsValid() {
-		return gameusecase.ForfeitAuthority{}, domain.ErrValidation
+		return gameforfeit.ForfeitAuthority{}, domain.ErrValidation
 	}
 	querier := r.tx.Querier(ctx)
 	rosterID, err := querier.GetParticipantSeriesRoster(
@@ -47,7 +47,7 @@ func (r *ParticipantForfeitRepository) LoadForfeitAuthority(
 		},
 	)
 	if err != nil {
-		return gameusecase.ForfeitAuthority{}, participantForfeitLookupError("roster", err)
+		return gameforfeit.ForfeitAuthority{}, participantForfeitLookupError("roster", err)
 	}
 	rows, err := querier.GetParticipantSeriesExecution(
 		ctx,
@@ -56,11 +56,11 @@ func (r *ParticipantForfeitRepository) LoadForfeitAuthority(
 		},
 	)
 	if err != nil {
-		return gameusecase.ForfeitAuthority{}, fmt.Errorf("ParticipantForfeitRepository - load Series: %w", err)
+		return gameforfeit.ForfeitAuthority{}, fmt.Errorf("ParticipantForfeitRepository - load Series: %w", err)
 	}
 	series, metadata, err := participantauthority.ParticipantSeriesExecution(rows)
 	if err != nil {
-		return gameusecase.ForfeitAuthority{}, err
+		return gameforfeit.ForfeitAuthority{}, err
 	}
 	presence, err := querier.ListParticipantForfeitPresence(
 		ctx,
@@ -69,20 +69,20 @@ func (r *ParticipantForfeitRepository) LoadForfeitAuthority(
 		},
 	)
 	if err != nil {
-		return gameusecase.ForfeitAuthority{}, fmt.Errorf("ParticipantForfeitRepository - load presence: %w", err)
+		return gameforfeit.ForfeitAuthority{}, fmt.Errorf("ParticipantForfeitRepository - load presence: %w", err)
 	}
 	revisionRows, err := querier.ListParticipantGameResultRevisionIDs(
 		ctx,
 		sqlc.ListParticipantGameResultRevisionIDsParams{SeriesID: scope.SeriesID, RosterID: rosterID},
 	)
 	if err != nil {
-		return gameusecase.ForfeitAuthority{}, fmt.Errorf("ParticipantForfeitRepository - load Game revisions: %w", err)
+		return gameforfeit.ForfeitAuthority{}, fmt.Errorf("ParticipantForfeitRepository - load Game revisions: %w", err)
 	}
 	gameRevisions := make([]domain.OfficialResultRevisionID, len(revisionRows))
 	for index, revisionID := range revisionRows {
 		gameRevisions[index] = domain.OfficialResultRevisionID(revisionID)
 	}
-	return gameusecase.ForfeitAuthority{
+	return gameforfeit.ForfeitAuthority{
 		Scope: scope, Revision: metadata.SeriesRevision, Series: series,
 		ConnectedParticipantIDs:      append([]uuid.UUID(nil), presence...),
 		CurrentOrdinal:               int(metadata.ScoreRevision - 1),
@@ -94,14 +94,14 @@ func (r *ParticipantForfeitRepository) LoadForfeitAuthority(
 
 func (r *ParticipantForfeitRepository) CommitForfeitResolution(
 	ctx context.Context,
-	resolution gameusecase.ForfeitResolution,
-) (*gameusecase.ForfeitResolution, bool, error) {
+	resolution gameforfeit.ForfeitResolution,
+) (*gameforfeit.ForfeitResolution, bool, error) {
 	if ctx == nil || r == nil || r.tx == nil || r.results == nil || resolution.Validate() != nil ||
 		resolution.Game == nil || resolution.GameRevision == nil || resolution.ExpectedGame == nil {
 		return nil, false, domain.ErrValidation
 	}
 
-	var committed *gameusecase.ForfeitResolution
+	var committed *gameforfeit.ForfeitResolution
 	changed := false
 	err := r.tx.Do(ctx, func(txCtx context.Context) error {
 		var err error
@@ -119,8 +119,8 @@ func (r *ParticipantForfeitRepository) CommitForfeitResolution(
 
 func (r *ParticipantForfeitRepository) commitParticipantForfeit(
 	ctx context.Context,
-	resolution gameusecase.ForfeitResolution,
-) (*gameusecase.ForfeitResolution, bool, error) {
+	resolution gameforfeit.ForfeitResolution,
+) (*gameforfeit.ForfeitResolution, bool, error) {
 	querier := r.tx.Querier(ctx)
 	rosterID, err := querier.GetParticipantSeriesRoster(
 		ctx,
@@ -162,7 +162,7 @@ func (r *ParticipantForfeitRepository) commitParticipantForfeit(
 }
 
 func participantForfeitSettlementInput(
-	resolution gameusecase.ForfeitResolution,
+	resolution gameforfeit.ForfeitResolution,
 	rosterID uuid.UUID,
 	metadata sqlc.GetParticipantSurrenderCommitMetadataRow,
 ) resultpostgres.ResultSettlementInput {
@@ -209,16 +209,16 @@ func participantForfeitSettlementInput(
 
 type ParticipantSurrenderWorkflow struct {
 	repository *ParticipantForfeitRepository
-	usecase    *gameusecase.ForfeitUseCase
+	usecase    *gameforfeit.ForfeitUseCase
 }
 
 func NewParticipantSurrenderWorkflow(
 	repository *ParticipantForfeitRepository,
-	clock gameusecase.ForfeitClock,
+	clock gameforfeit.ForfeitClock,
 ) *ParticipantSurrenderWorkflow {
 	return &ParticipantSurrenderWorkflow{
 		repository: repository,
-		usecase:    gameusecase.ForfeitNewUseCase(repository, clock),
+		usecase:    gameforfeit.ForfeitNewUseCase(repository, clock),
 	}
 }
 
@@ -260,7 +260,7 @@ func (r *ParticipantForfeitRepository) findSurrenderResult(
 	}
 	if commit.TournamentID != resolved.Authority.TournamentID ||
 		commit.RosterID != resolved.Authority.RosterID || commit.SeriesID != resolved.Command.Scope.SeriesID {
-		return nil, gameusecase.ErrForfeitCommandReuse
+		return nil, gameforfeit.ErrForfeitCommandReuse
 	}
 	record, err := resultpostgres.LoadResultCommit(ctx, r.tx.Querier(ctx), commit)
 	if err != nil {
@@ -274,9 +274,9 @@ func (r *ParticipantForfeitRepository) findSurrenderResult(
 }
 
 func participantStoredForfeitResolution(
-	proposed gameusecase.ForfeitResolution,
+	proposed gameforfeit.ForfeitResolution,
 	record *resultpostgres.ResultCommitRecord,
-) (gameusecase.ForfeitResolution, error) {
+) (gameforfeit.ForfeitResolution, error) {
 	if record == nil || record.SeriesRevision == nil ||
 		record.Commit.IdempotencyKey != proposed.CommandID ||
 		record.Commit.GameResultRevisionID != proposed.GameRevision.ID.UUID() ||
@@ -284,7 +284,7 @@ func participantStoredForfeitResolution(
 		!record.Commit.SeriesResultRevisionID.Valid ||
 		record.Commit.SeriesResultRevisionID.UUID != proposed.SeriesRevision.ID.UUID() ||
 		record.Event.ResultReason != string(domain.GameResultReasonSurrender) {
-		return gameusecase.ForfeitResolution{}, gameusecase.ErrForfeitCommandReuse
+		return gameforfeit.ForfeitResolution{}, gameforfeit.ErrForfeitCommandReuse
 	}
 	stored := proposed
 	stored.ResolvedAt = record.Event.OccurredAt.Time.Round(0).UTC()
@@ -293,13 +293,13 @@ func participantStoredForfeitResolution(
 	stored.SeriesRevision.RecordedAt = stored.ResolvedAt
 	stored.Evidence.RecordedAt = stored.ResolvedAt
 	if stored.Validate() != nil {
-		return gameusecase.ForfeitResolution{}, domain.ErrInternal
+		return gameforfeit.ForfeitResolution{}, domain.ErrInternal
 	}
 	return stored, nil
 }
 
 func participantSurrenderView(
-	resolution gameusecase.ForfeitResolution,
+	resolution gameforfeit.ForfeitResolution,
 	sourceProjectionRevisionID uuid.UUID,
 ) usecase.OfficialResultView {
 	return usecase.OfficialResultView{
@@ -328,7 +328,7 @@ func participantSurrenderViewFromCommit(
 		record.SeriesRevision.ResultReason != string(domain.SeriesResultReasonScoreComplete) ||
 		!record.SeriesRevision.WinnerID.Valid ||
 		record.SeriesRevision.WinnerID.UUID != record.Event.WinnerID.UUID {
-		return usecase.OfficialResultView{}, gameusecase.ErrForfeitCommandReuse
+		return usecase.OfficialResultView{}, gameforfeit.ErrForfeitCommandReuse
 	}
 	view := usecase.OfficialResultView{
 		ID:           domain.OfficialResultRevisionID(record.SeriesRevision.ID),
@@ -351,7 +351,7 @@ func participantSurrenderViewFromCommit(
 	return view, nil
 }
 
-func participantSurrenderDigest(resolution gameusecase.ForfeitResolution) [sha256.Size]byte {
+func participantSurrenderDigest(resolution gameforfeit.ForfeitResolution) [sha256.Size]byte {
 	payload := fmt.Sprintf(
 		"%s:%s:%s:%s:%d:%d",
 		resolution.Scope.TournamentID,
@@ -382,6 +382,6 @@ func cloneParticipantResultRevisionPointer(
 }
 
 var (
-	_ gameusecase.ForfeitRepository           = (*ParticipantForfeitRepository)(nil)
+	_ gameforfeit.ForfeitRepository           = (*ParticipantForfeitRepository)(nil)
 	_ tournamentparticipant.SurrenderWorkflow = (*ParticipantSurrenderWorkflow)(nil)
 )

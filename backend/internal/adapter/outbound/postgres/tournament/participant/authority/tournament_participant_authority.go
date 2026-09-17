@@ -16,7 +16,7 @@ import (
 	gamedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/game"
 	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gameforfeit "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/forfeit"
 	gamesubmission "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/submission"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/readiness"
@@ -302,15 +302,15 @@ func (r *TournamentParticipantPostgres) ResolveSurrender(
 	return tournamentparticipant.ResolvedSurrender{
 		Authority: authority,
 		Reason:    strings.TrimSpace(command.Reason),
-		Command: gameusecase.SurrenderCommand{
-			Scope:                   gameusecase.Scope{TournamentID: command.TournamentID, SeriesID: command.SeriesID},
+		Command: gameforfeit.SurrenderCommand{
+			Scope:                   gameforfeit.Scope{TournamentID: command.TournamentID, SeriesID: command.SeriesID},
 			CommandID:               command.CommandID,
 			ActorParticipantID:      authority.ParticipantID,
 			ForfeitingParticipantID: authority.ParticipantID,
-			ExpectedGame: gameusecase.GameExpectation{
+			ExpectedGame: gameforfeit.GameExpectation{
 				SlotID: row.SlotID, GameID: row.GameID, AttemptNo: int(row.AttemptNumber), State: domain.GameState(row.State),
 			},
-			Revisions: gameusecase.ForfeitRevisionSet{
+			Revisions: gameforfeit.ForfeitRevisionSet{
 				GameResultRevisionID:   &gameRevisionID,
 				ScoreRevisionID:        domain.SeriesScoreRevisionID(participantCommandID(command.CommandID, "score-revision")),
 				SeriesResultRevisionID: domain.OfficialResultRevisionID(participantCommandID(command.CommandID, "series-result")),
