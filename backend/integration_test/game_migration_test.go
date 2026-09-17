@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/integration_test/internal/testkit/gameseed"
+	"github.com/TakuyaYagam1/task-per-minute/integration_test/internal/testkit/seriesseed"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
@@ -207,123 +208,14 @@ func createMigrationSeries(
 	tb.Helper()
 	require.Len(tb, participantIDs, 2)
 
-	createdAt := time.Now().UTC().Truncate(time.Microsecond)
-	tx, err := sharedPool.Begin(ctx)
+	seriesID, err := seriesseed.CreateSeries(ctx, sharedPool, seriesseed.Input{
+		TournamentID:   tournamentID,
+		RosterID:       rosterID,
+		ParticipantIDs: participantIDs,
+		Format:         format,
+	})
 	require.NoError(tb, err)
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	_, err = tx.Exec(ctx, "SET CONSTRAINTS ALL DEFERRED")
-	require.NoError(tb, err)
-
-	sourceProjectionID, sourceProjectionRevision := migrationSeriesGenesisProjection(
-		ctx,
-		tb,
-		tx,
-		tournamentID,
-		rosterID,
-		createdAt,
-	)
-
-	var seriesID uuid.UUID
-	err = tx.QueryRow(ctx, `
-		INSERT INTO series (
-			tournament_id, roster_id, first_participant_id, second_participant_id, format,
-			created_at, updated_at
-		)
-		VALUES ($1, $2, $3, $4, $5, $6, $6)
-		RETURNING id`, tournamentID, rosterID, participantIDs[0], participantIDs[1], format, createdAt).Scan(&seriesID)
-	require.NoError(tb, err)
-
-	genesisScoreRevisionID := uuid.New()
-	_, err = tx.Exec(ctx, `
-		INSERT INTO series_score_revisions (
-			id, tournament_id, roster_id, series_id,
-			revision_number, operation, command_id, actor_kind,
-			source_projection_revision_id, source_projection_revision,
-			first_participant_wins, second_participant_wins, created_at
-		)
-		VALUES ($1, $2, $3, $4, 1, 'initialize', $5, 'server', $6, $7, 0, 0, $8)`,
-		genesisScoreRevisionID,
-		tournamentID,
-		rosterID,
-		seriesID,
-		uuid.New(),
-		sourceProjectionID,
-		sourceProjectionRevision,
-		createdAt,
-	)
-	require.NoError(tb, err)
-
-	_, err = tx.Exec(ctx, `
-		INSERT INTO series_score_heads (
-			series_id, roster_id, current_revision_id, updated_at
-		)
-		VALUES ($1, $2, $3, $4)`, seriesID, rosterID, genesisScoreRevisionID, createdAt)
-	require.NoError(tb, err)
-
-	_, err = tx.Exec(ctx, `
-		UPDATE series
-		SET current_score_revision_id = $2,
-			updated_at = $3
-		WHERE id = $1`, seriesID, genesisScoreRevisionID, createdAt)
-	require.NoError(tb, err)
-	require.NoError(tb, tx.Commit(ctx))
 	return seriesID
-}
-
-func migrationSeriesGenesisProjection(
-	ctx context.Context,
-	tb testing.TB,
-	tx pgx.Tx,
-	tournamentID uuid.UUID,
-	rosterID uuid.UUID,
-	createdAt time.Time,
-) (uuid.UUID, int64) {
-	tb.Helper()
-
-	var projectionID uuid.UUID
-	var revisionNumber int64
-	err := tx.QueryRow(ctx, `
-		SELECT id, revision_number
-		FROM projection_revisions
-		WHERE tournament_id = $1
-			AND roster_id = $2
-		ORDER BY revision_number DESC
-		LIMIT 1
-		FOR KEY SHARE`, tournamentID, rosterID).Scan(&projectionID, &revisionNumber)
-	if err == nil {
-		return projectionID, revisionNumber
-	}
-	require.ErrorIs(tb, err, pgx.ErrNoRows)
-
-	cutoffID := uuid.New()
-	projectionID = uuid.New()
-	_, err = tx.Exec(ctx, `
-		INSERT INTO projection_cutoffs (
-			id, tournament_id, roster_id, sequence_number, source_kind,
-			reason, cutoff_at, created_at
-		)
-		VALUES ($1, $2, $3, 1, 'initial', 'series genesis source', $4, $4)`,
-		cutoffID,
-		tournamentID,
-		rosterID,
-		createdAt,
-	)
-	require.NoError(tb, err)
-
-	_, err = tx.Exec(ctx, `
-		INSERT INTO projection_revisions (
-			id, tournament_id, roster_id, revision_number, cutoff_id, created_at
-		)
-		VALUES ($1, $2, $3, 1, $4, $5)`,
-		projectionID,
-		tournamentID,
-		rosterID,
-		cutoffID,
-		createdAt,
-	)
-	require.NoError(tb, err)
-	return projectionID, 1
 }
 
 func createMigrationGameSlot(
