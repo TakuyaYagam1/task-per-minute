@@ -19,7 +19,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/internal/db"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
+	goldenplan "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/plan"
 )
 
 const (
@@ -55,30 +55,30 @@ type GoldenRepositoryRevision struct {
 	ID         uuid.UUID
 	Number     int64
 	PreviousID *uuid.UUID
-	Snapshot   goldenusecase.RevisionSnapshot
+	Snapshot   goldenplan.RevisionSnapshot
 	Digest     [sha256.Size]byte
 	CreatedAt  time.Time
 }
 
 type goldenRepositorySnapshotDocument struct {
-	Purpose                            goldenusecase.GroupRevisionPurpose `json:"purpose"`
-	Effect                             goldenusecase.GroupRevisionEffect  `json:"effect"`
-	TournamentID                       uuid.UUID                          `json:"tournament_id"`
-	GroupID                            uuid.UUID                          `json:"group_id"`
-	RevisionID                         domain.DerivedRevisionID           `json:"revision_id"`
-	RevisionNo                         int                                `json:"revision_no"`
-	PreviousRevisionID                 *domain.DerivedRevisionID          `json:"previous_revision_id,omitempty"`
-	SourceProjectionID                 uuid.UUID                          `json:"source_projection_id"`
-	SourceProjectionRevisionID         domain.DerivedRevisionID           `json:"source_projection_revision_id"`
-	SourceProjectionRevisionNo         int                                `json:"source_projection_revision_no"`
-	SourceProjectionPreviousRevisionID *domain.DerivedRevisionID          `json:"source_projection_previous_revision_id,omitempty"`
-	SourceProjectionPayloadDigest      [sha256.Size]byte                  `json:"source_projection_payload_digest"`
-	PositionFrom                       int                                `json:"position_from"`
-	PositionTo                         int                                `json:"position_to"`
-	Members                            []goldenRepositoryMemberDocument   `json:"members"`
-	Payload                            []byte                             `json:"payload"`
-	PayloadDigest                      [sha256.Size]byte                  `json:"payload_digest"`
-	ProofHash                          string                             `json:"proof_hash"`
+	Purpose                            goldenplan.GroupRevisionPurpose  `json:"purpose"`
+	Effect                             goldenplan.GroupRevisionEffect   `json:"effect"`
+	TournamentID                       uuid.UUID                        `json:"tournament_id"`
+	GroupID                            uuid.UUID                        `json:"group_id"`
+	RevisionID                         domain.DerivedRevisionID         `json:"revision_id"`
+	RevisionNo                         int                              `json:"revision_no"`
+	PreviousRevisionID                 *domain.DerivedRevisionID        `json:"previous_revision_id,omitempty"`
+	SourceProjectionID                 uuid.UUID                        `json:"source_projection_id"`
+	SourceProjectionRevisionID         domain.DerivedRevisionID         `json:"source_projection_revision_id"`
+	SourceProjectionRevisionNo         int                              `json:"source_projection_revision_no"`
+	SourceProjectionPreviousRevisionID *domain.DerivedRevisionID        `json:"source_projection_previous_revision_id,omitempty"`
+	SourceProjectionPayloadDigest      [sha256.Size]byte                `json:"source_projection_payload_digest"`
+	PositionFrom                       int                              `json:"position_from"`
+	PositionTo                         int                              `json:"position_to"`
+	Members                            []goldenRepositoryMemberDocument `json:"members"`
+	Payload                            []byte                           `json:"payload"`
+	PayloadDigest                      [sha256.Size]byte                `json:"payload_digest"`
+	ProofHash                          string                           `json:"proof_hash"`
 }
 
 type goldenRepositoryMemberDocument struct {
@@ -355,15 +355,15 @@ func canonicalGoldenRepositoryEnvelope(revision GoldenRepositoryRevision) ([]byt
 	return payload, nil
 }
 
-func goldenRepositoryCanonicalSnapshot(snapshot goldenusecase.RevisionSnapshot) (goldenusecase.RevisionSnapshot, error) {
-	restored, err := goldenusecase.RestoreGroupRevision(snapshot)
+func goldenRepositoryCanonicalSnapshot(snapshot goldenplan.RevisionSnapshot) (goldenplan.RevisionSnapshot, error) {
+	restored, err := goldenplan.RestoreGroupRevision(snapshot)
 	if err != nil {
-		return goldenusecase.RevisionSnapshot{}, fmt.Errorf("%w: topology snapshot", ErrGoldenRepositoryInvalid)
+		return goldenplan.RevisionSnapshot{}, fmt.Errorf("%w: topology snapshot", ErrGoldenRepositoryInvalid)
 	}
 	return restored.PersistenceSnapshot(), nil
 }
 
-func goldenRepositorySnapshotToDocument(snapshot goldenusecase.RevisionSnapshot) goldenRepositorySnapshotDocument {
+func goldenRepositorySnapshotToDocument(snapshot goldenplan.RevisionSnapshot) goldenRepositorySnapshotDocument {
 	document := goldenRepositorySnapshotDocument{
 		Purpose: snapshot.Purpose, Effect: snapshot.Effect, TournamentID: snapshot.TournamentID, GroupID: snapshot.GroupID,
 		RevisionID: snapshot.RevisionID, RevisionNo: snapshot.RevisionNo,
@@ -387,8 +387,8 @@ func goldenRepositorySnapshotToDocument(snapshot goldenusecase.RevisionSnapshot)
 	return document
 }
 
-func (document goldenRepositorySnapshotDocument) snapshot() goldenusecase.RevisionSnapshot {
-	snapshot := goldenusecase.RevisionSnapshot{
+func (document goldenRepositorySnapshotDocument) snapshot() goldenplan.RevisionSnapshot {
+	snapshot := goldenplan.RevisionSnapshot{
 		Purpose: document.Purpose, Effect: document.Effect, TournamentID: document.TournamentID, GroupID: document.GroupID,
 		RevisionID: document.RevisionID, RevisionNo: document.RevisionNo,
 		PreviousRevisionID: cloneGoldenRepositoryDerivedRevisionID(document.PreviousRevisionID),
@@ -398,10 +398,10 @@ func (document goldenRepositorySnapshotDocument) snapshot() goldenusecase.Revisi
 		SourceProjectionPayloadDigest:      document.SourceProjectionPayloadDigest, PositionFrom: document.PositionFrom,
 		PositionTo: document.PositionTo, Payload: append([]byte(nil), document.Payload...),
 		PayloadDigest: document.PayloadDigest, ProofHash: document.ProofHash,
-		Members: make([]goldenusecase.GroupMemberSeed, len(document.Members)),
+		Members: make([]goldenplan.GroupMemberSeed, len(document.Members)),
 	}
 	for index, member := range document.Members {
-		snapshot.Members[index] = goldenusecase.GroupMemberSeed{
+		snapshot.Members[index] = goldenplan.GroupMemberSeed{
 			ParticipantID: member.ParticipantID, Points: member.Points, Buchholz: member.Buchholz,
 			HeadToHeadPoints: member.HeadToHeadPoints, HeadToHeadApplied: member.HeadToHeadApplied,
 			EffectiveTime: member.EffectiveTime, AcceptedSolveTime: cloneGoldenRepositoryDuration(member.AcceptedSolveTime),

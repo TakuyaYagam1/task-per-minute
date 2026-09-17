@@ -7,7 +7,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
+	goldenplan "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/plan"
 	swissusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/swiss"
 )
 
@@ -15,8 +15,8 @@ type finalSwissCanonicalMaterialization struct {
 	SourceHeads  []terminalSeriesRecord
 	Standings    []FinalSwissStanding
 	PreviousID   *domain.DerivedRevisionID
-	GoldenSource goldenusecase.StandingsProjection
-	Partition    goldenusecase.TiePartition
+	GoldenSource goldenplan.StandingsProjection
+	Partition    goldenplan.TiePartition
 	TieGroups    []FinalSwissTieGroup
 }
 
@@ -109,14 +109,14 @@ func deriveFinalSwissCanonicalMaterialization(
 		value := authority.Previous.Projection.Revision().ID()
 		previousID = &value
 	}
-	goldenSource, err := goldenusecase.NewStandingsProjection(
+	goldenSource, err := goldenplan.NewStandingsProjection(
 		authority.TournamentID, authority.ProjectionID, authority.RevisionID,
 		authority.RevisionNo, previousID, true, goldenStandings,
 	)
 	if err != nil {
 		return finalSwissCanonicalMaterialization{}, finalSwissError("build canonical Golden standings source: %v", err)
 	}
-	partition, err := goldenusecase.PartitionTies(goldenSource)
+	partition, err := goldenplan.PartitionTies(goldenSource)
 	if err != nil {
 		return finalSwissCanonicalMaterialization{}, finalSwissError("partition final point ties: %v", err)
 	}
@@ -163,7 +163,7 @@ func finalSwissNormalStandings(standings []FinalSwissStanding) []swissusecase.No
 	return normal
 }
 
-func finalSwissTies(partition goldenusecase.TiePartition) []FinalSwissTieGroup {
+func finalSwissTies(partition goldenplan.TiePartition) []FinalSwissTieGroup {
 	groups := make([]FinalSwissTieGroup, 0)
 	for _, segment := range partition.Segments {
 		count := segment.PositionTo - segment.PositionFrom + 1
@@ -212,15 +212,15 @@ func validateFinalSwissGoldenIdentities(
 
 func buildFinalSwissGoldenGroups(
 	authority finalSwissAuthority,
-	source goldenusecase.StandingsProjection,
-	seeds []goldenusecase.TieGroupSeed,
+	source goldenplan.StandingsProjection,
+	seeds []goldenplan.TieGroupSeed,
 ) ([]FinalSwissGoldenGroup, error) {
 	groups := make([]FinalSwissGoldenGroup, len(seeds))
-	used := make([]goldenusecase.RevisionIdentity, 0, len(seeds))
+	used := make([]goldenplan.RevisionIdentity, 0, len(seeds))
 	for index, seed := range seeds {
 		identity := authority.GoldenGroups[index]
-		revision, err := goldenusecase.BuildGroupRevision(
-			goldenusecase.GroupRevisionCommand{
+		revision, err := goldenplan.BuildGroupRevision(
+			goldenplan.GroupRevisionCommand{
 				TournamentID: authority.TournamentID, GroupID: identity.GroupID,
 				RevisionID: identity.RevisionID, RevisionNo: 1,
 				ExpectedSourceRevisionID:    source.RevisionID,
@@ -232,7 +232,7 @@ func buildFinalSwissGoldenGroups(
 		if err != nil {
 			return nil, finalSwissError("build canonical Golden topology: %v", err)
 		}
-		used = append(used, goldenusecase.RevisionIdentity{GroupID: identity.GroupID, RevisionID: identity.RevisionID})
+		used = append(used, goldenplan.RevisionIdentity{GroupID: identity.GroupID, RevisionID: identity.RevisionID})
 		members := make([]domain.GoldenMember, len(seed.Members))
 		for memberIndex, member := range seed.Members {
 			members[memberIndex] = domain.GoldenMember{ParticipantID: member.ParticipantID}

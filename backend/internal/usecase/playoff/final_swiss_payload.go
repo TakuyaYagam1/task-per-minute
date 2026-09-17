@@ -10,7 +10,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
+	goldenplan "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/plan"
 	swissusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/swiss"
 )
 
@@ -70,7 +70,7 @@ func finalSwissPayload(
 	standings []FinalSwissStanding,
 	ties []FinalSwissTieGroup,
 	heads []terminalSeriesRecord,
-	goldenSource goldenusecase.StandingsProjection,
+	goldenSource goldenplan.StandingsProjection,
 ) ([]byte, error) {
 	document := finalSwissPayloadDocument{
 		TournamentID: authority.TournamentID, ProjectionID: authority.ProjectionID, Preset: authority.Preset,

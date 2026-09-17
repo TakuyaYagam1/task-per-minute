@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
+	goldenplan "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/plan"
 	swissusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/swiss"
 )
 
@@ -83,7 +83,7 @@ type FinalSwissTieGroup struct {
 
 type FinalSwissGoldenGroup struct {
 	State      domain.GoldenGroupState
-	Revision   goldenusecase.GroupRevision
+	Revision   goldenplan.GroupRevision
 	Projection domain.ProjectionRevision
 	Dependency domain.RevisionDependency
 }
@@ -119,7 +119,7 @@ type finalSwissPredecessorReceipt struct {
 type finalSwissProjectionState struct {
 	Authority          finalSwissAuthority
 	Projection         domain.ProjectionRevision
-	GoldenSource       goldenusecase.StandingsProjection
+	GoldenSource       goldenplan.StandingsProjection
 	Standings          []FinalSwissStanding
 	TieGroups          []FinalSwissTieGroup
 	GoldenGroups       []FinalSwissGoldenGroup
@@ -192,7 +192,7 @@ func (p FinalSwissProjection) PhysicalProjectionRevision() int {
 	return p.state.Authority.PhysicalProjectionRevision
 }
 
-func (p FinalSwissProjection) GoldenSource() goldenusecase.StandingsProjection {
+func (p FinalSwissProjection) GoldenSource() goldenplan.StandingsProjection {
 	return p.state.GoldenSource.Snapshot()
 }
 
