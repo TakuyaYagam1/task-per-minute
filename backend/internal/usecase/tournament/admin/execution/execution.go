@@ -1,4 +1,4 @@
-package admin
+package execution
 
 import (
 	"context"
@@ -10,12 +10,21 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
+	operationusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/operation"
+	pairingusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/pairing"
 )
 
 const (
 	maxDecisionEvidenceItems = 128
 	maxDecisionEvidenceRunes = 512
 )
+
+type CommandScope = operationusecase.CommandScope
+type PairingCommand = pairingusecase.PairingCommand
+type PairingMode = pairingusecase.PairingMode
+type PairingAuthority = pairingusecase.PairingAuthority
+type PairingPlan = pairingusecase.PairingPlan
+type SwissStandingView = pairingusecase.SwissStandingView
 
 type WaveAction string
 
@@ -308,4 +317,20 @@ func waveByeParticipant(view WaveView) (uuid.UUID, bool) {
 		}
 	}
 	return uuid.Nil, false
+}
+
+func ValidWaveCommand(command WaveCommand) bool {
+	return validWaveCommand(command)
+}
+
+func ValidSwissRoundView(view SwissRoundView, tournamentID uuid.UUID, roundNumber int) bool {
+	return validSwissRoundView(view, tournamentID, roundNumber)
+}
+
+func ValidSwissStandings(view SwissRoundView, roster map[uuid.UUID]struct{}) bool {
+	return validSwissStandings(view, roster)
+}
+
+func ValidWaveView(view WaveView, tournamentID, waveID uuid.UUID) bool {
+	return validWaveView(view, tournamentID, waveID)
 }
