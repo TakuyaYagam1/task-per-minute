@@ -1,4 +1,4 @@
-package admin_test
+package application_test
 
 import (
 	"context"

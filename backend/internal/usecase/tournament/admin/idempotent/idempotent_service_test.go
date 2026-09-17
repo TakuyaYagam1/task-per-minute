@@ -1,4 +1,4 @@
-package admin_test
+package idempotent_test
 
 import (
 	"context"

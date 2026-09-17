@@ -7,7 +7,7 @@ import (
 	"time"
 
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause"
-	gamemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause/mocks"
+	entermocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause/enter/mocks"
 	"github.com/google/uuid"
 )
 
@@ -46,7 +46,7 @@ func testNormalPauseGraphEntryErrors(t *testing.T, pausedAt time.Time) {
 }
 
 type normalPauseRepositoryHarness struct {
-	*gamemocks.MockNormalPauseRepository
+	*entermocks.MockNormalPauseRepository
 
 	mu                  sync.Mutex
 	authority           gameusecase.NormalPauseAuthority

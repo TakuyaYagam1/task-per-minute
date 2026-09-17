@@ -11,7 +11,7 @@ import (
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
 	seriesdomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/series"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause"
-	gamemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause/mocks"
+	entermocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause/enter/mocks"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 )
@@ -25,7 +25,7 @@ func newNormalPauseRepositoryHarness(
 		authority: cloneNormalPauseAuthority(authority),
 		commands:  make(map[uuid.UUID]gameusecase.NormalPauseRecord),
 	}
-	repository := gamemocks.NewMockNormalPauseRepository(t)
+	repository := entermocks.NewMockNormalPauseRepository(t)
 	repository.EXPECT().
 		FindNormalPauseCommand(mock.Anything, mock.Anything, mock.Anything).
 		RunAndReturn(harness.findNormalPauseCommand).

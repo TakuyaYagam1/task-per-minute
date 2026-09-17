@@ -7,13 +7,13 @@ import (
 	"time"
 
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause"
-	gamemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause/mocks"
+	entermocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause/enter/mocks"
 	"github.com/stretchr/testify/mock"
 )
 
-func newPauseTransactionManager(t *testing.T) *gamemocks.MockTransactionManager {
+func newPauseTransactionManager(t *testing.T) *entermocks.MockTransactionManager {
 	t.Helper()
-	transactions := gamemocks.NewMockTransactionManager(t)
+	transactions := entermocks.NewMockTransactionManager(t)
 	transactions.EXPECT().
 		Do(mock.Anything, mock.Anything).
 		RunAndReturn(func(ctx context.Context, fn func(context.Context) error) error {
@@ -23,15 +23,15 @@ func newPauseTransactionManager(t *testing.T) *gamemocks.MockTransactionManager 
 	return transactions
 }
 
-func newPauseClock(t *testing.T, now time.Time) *gamemocks.MockPauseClock {
+func newPauseClock(t *testing.T, now time.Time) *entermocks.MockPauseClock {
 	t.Helper()
-	clock := gamemocks.NewMockPauseClock(t)
+	clock := entermocks.NewMockPauseClock(t)
 	clock.EXPECT().Now().Return(now).Maybe()
 	return clock
 }
 
 type countingTransactionManager struct {
-	*gamemocks.MockTransactionManager
+	*entermocks.MockTransactionManager
 
 	mu    sync.Mutex
 	calls int
@@ -40,7 +40,7 @@ type countingTransactionManager struct {
 func newCountingTransactionManager(t *testing.T) *countingTransactionManager {
 	t.Helper()
 	harness := &countingTransactionManager{}
-	transactions := gamemocks.NewMockTransactionManager(t)
+	transactions := entermocks.NewMockTransactionManager(t)
 	transactions.EXPECT().
 		Do(mock.Anything, mock.Anything).
 		RunAndReturn(func(ctx context.Context, fn func(context.Context) error) error {
@@ -61,7 +61,7 @@ func (m *countingTransactionManager) count() int {
 }
 
 type sequenceClock struct {
-	*gamemocks.MockPauseClock
+	*entermocks.MockPauseClock
 
 	mu    sync.Mutex
 	times []time.Time
@@ -71,7 +71,7 @@ type sequenceClock struct {
 func newSequenceClock(t *testing.T, times ...time.Time) *sequenceClock {
 	t.Helper()
 	harness := &sequenceClock{times: append([]time.Time(nil), times...)}
-	clock := gamemocks.NewMockPauseClock(t)
+	clock := entermocks.NewMockPauseClock(t)
 	clock.EXPECT().Now().RunAndReturn(harness.current).Maybe()
 	harness.MockPauseClock = clock
 	return harness
