@@ -513,16 +513,6 @@ type FailureRepository interface {
 	LoadGoldenFailureAuthority(ctx context.Context, scope GoldenSubmissionScope) (GoldenFailureAuthority, error)
 	CommitGoldenFailure(ctx context.Context, commit GoldenFailureCommit) (*GoldenFailureRecord, bool, error)
 }
-type AttemptClock interface {
-	Now() time.Time
-}
-
-// AttemptRepository atomically commits the terminal attempt, submissions and positions.
-type AttemptRepository interface {
-	FindGoldenAttemptCommit(ctx context.Context, tournamentID, commandID uuid.UUID) (*GoldenAttemptCommitRecord, error)
-	LoadGoldenAttemptCommitAuthority(ctx context.Context, scope GoldenSubmissionScope) (GoldenAttemptCommitAuthority, error)
-	CommitGoldenAttempt(ctx context.Context, record GoldenAttemptCommitRecord) (*GoldenAttemptCommitRecord, bool, error)
-}
 type StateClock interface {
 	Now() time.Time
 }
