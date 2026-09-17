@@ -1,6 +1,6 @@
 //go:build integration
 
-package integration_test
+package player_test
 
 import (
 	"context"
@@ -14,7 +14,7 @@ import (
 )
 
 func TestAdminPlayerEventsPostgres_NotifiesOnPlayerListChanges(t *testing.T) {
-	pool, _ := SetupTestDB(t)
+	pool := newParallelTestDB(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
