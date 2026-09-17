@@ -9,6 +9,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+
+	"github.com/TakuyaYagam1/task-per-minute/integration_test/internal/testkit/waveseed"
 )
 
 func createMigrationWave(
@@ -21,32 +23,14 @@ func createMigrationWave(
 	tb.Helper()
 	require.GreaterOrEqual(tb, len(participantIDs), 2)
 
-	waveID := uuid.New()
-	revisionID := uuid.New()
-	_, err := sharedPool.Exec(ctx, `
-		INSERT INTO waves (
-			id, tournament_id, roster_id, revision_id, replaces_wave_id,
-			created_at, updated_at
-		)
-		VALUES ($1, $2, $3, $4, $5, $6, $6)`,
-		waveID, tournamentID, rosterID, revisionID, nil, createdAt)
+	seed, err := waveseed.CreateWave(ctx, sharedPool, waveseed.Input{
+		TournamentID:   tournamentID,
+		RosterID:       rosterID,
+		ParticipantIDs: participantIDs,
+		CreatedAt:      createdAt,
+	})
 	require.NoError(tb, err)
-
-	for _, participantID := range participantIDs {
-		_, err = sharedPool.Exec(ctx, `
-			INSERT INTO wave_members (
-				wave_id, roster_id, participant_id, created_at
-			)
-			VALUES ($1, $2, $3, $4)`, waveID, rosterID, participantID, createdAt)
-		require.NoError(tb, err)
-		_, err = sharedPool.Exec(ctx, `
-			INSERT INTO wave_readiness (
-				wave_id, roster_id, participant_id, created_at, updated_at
-			)
-			VALUES ($1, $2, $3, $4, $4)`, waveID, rosterID, participantID, createdAt)
-		require.NoError(tb, err)
-	}
-	return waveID, revisionID
+	return seed.WaveID, seed.RevisionID
 }
 
 func openMigrationReadyWindow(
