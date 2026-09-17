@@ -1,4 +1,4 @@
-package game_test
+package reconnect_test
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	reconnectusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/reconnect"
 	"github.com/google/uuid"
 )
 
@@ -32,11 +32,11 @@ func TestDisconnectCycleLimit(t *testing.T) {
 				task045AddCompletedRoots(&authority, 0, test.used, now)
 				task045SetResumedClock(&authority, now)
 			}
-			command := gameusecase.DisconnectCommand{Scope: authority.Scope, CommandID: task045ID(100 + test.used*10),
+			command := reconnectusecase.DisconnectCommand{Scope: authority.Scope, CommandID: task045ID(100 + test.used*10),
 				ParticipantID: authority.Series.FirstParticipantID, IntervalID: task045ID(101 + test.used*10),
 				Deadline: now.Add(30 * time.Second), Settlement: task045SettlementIDs(102 + test.used*10)}
 			repository := newTask045RepositoryHarness(t, authority)
-			useCase := gameusecase.NewDisconnectUseCase(repository, newReconnectClock(t, now))
+			useCase := reconnectusecase.NewDisconnectUseCase(repository, newReconnectClock(t, now))
 			disconnected, changed, err := useCase.Disconnect(t.Context(), command)
 			if err != nil || !changed || repository.writeCount() != 1 {
 				t.Fatalf("Disconnect() error = %v, changed = %v, writes = %d", err, changed, repository.writeCount())
@@ -74,11 +74,11 @@ func TestDisconnectCycleLimit(t *testing.T) {
 		task045AddCompletedRoots(&authority, 0, domain.ReconnectCycleLimit, now)
 		task045SetResumedClock(&authority, now)
 		beforeClock := authority.GameClock
-		command := gameusecase.DisconnectCommand{Scope: authority.Scope, CommandID: task045ID(130),
+		command := reconnectusecase.DisconnectCommand{Scope: authority.Scope, CommandID: task045ID(130),
 			ParticipantID: authority.Series.FirstParticipantID, IntervalID: task045ID(131),
 			Deadline: now.Add(30 * time.Second), Settlement: task045SettlementIDs(132)}
 		repository := newTask045RepositoryHarness(t, authority)
-		terminal, changed, err := gameusecase.NewDisconnectUseCase(repository, newReconnectClock(t, now)).Disconnect(t.Context(), command)
+		terminal, changed, err := reconnectusecase.NewDisconnectUseCase(repository, newReconnectClock(t, now)).Disconnect(t.Context(), command)
 		if err != nil || !changed || repository.writeCount() != 1 {
 			t.Fatalf("Disconnect(third) error = %v, changed = %v, writes = %d", err, changed, repository.writeCount())
 		}
@@ -113,11 +113,11 @@ func TestDisconnectCycleLimit(t *testing.T) {
 				t.Fatalf("completed cycle was not retained on predecessor Game: %+v", interval)
 			}
 		}
-		command := gameusecase.DisconnectCommand{Scope: authority.Scope, CommandID: task045ID(826),
+		command := reconnectusecase.DisconnectCommand{Scope: authority.Scope, CommandID: task045ID(826),
 			ParticipantID: authority.Series.FirstParticipantID, IntervalID: task045ID(827),
 			Deadline: now.Add(time.Minute), Settlement: task045SettlementIDs(828)}
 		repository := newTask045RepositoryHarness(t, authority)
-		terminal, changed, err := gameusecase.NewDisconnectUseCase(repository, newReconnectClock(t, now)).Disconnect(t.Context(), command)
+		terminal, changed, err := reconnectusecase.NewDisconnectUseCase(repository, newReconnectClock(t, now)).Disconnect(t.Context(), command)
 		if err != nil || !changed || repository.writeCount() != 1 || terminal.ReconnectAuthority.Game.WinnerID == nil ||
 			*terminal.ReconnectAuthority.Game.WinnerID != authority.Series.SecondParticipantID ||
 			task045Counter(t, terminal.ReconnectAuthority, command.ParticipantID).Used != domain.ReconnectCycleLimit ||
@@ -129,15 +129,15 @@ func TestDisconnectCycleLimit(t *testing.T) {
 	t.Run("replacement_history_rejects_invalid_binding", func(t *testing.T) {
 		for _, test := range []struct {
 			name   string
-			mutate func(*gameusecase.ReconnectAuthority, domain.Game)
+			mutate func(*reconnectusecase.ReconnectAuthority, domain.Game)
 		}{
-			{name: "foreign_game", mutate: func(authority *gameusecase.ReconnectAuthority, _ domain.Game) {
+			{name: "foreign_game", mutate: func(authority *reconnectusecase.ReconnectAuthority, _ domain.Game) {
 				authority.Reconnect[0].GameID = task045ID(840)
 			}},
-			{name: "future_presence_epoch", mutate: func(authority *gameusecase.ReconnectAuthority, _ domain.Game) {
+			{name: "future_presence_epoch", mutate: func(authority *reconnectusecase.ReconnectAuthority, _ domain.Game) {
 				authority.Reconnect[0].PresenceEpoch = authority.Presence[0].PresenceEpoch + 1
 			}},
-			{name: "duplicate_root_presence_epoch", mutate: func(authority *gameusecase.ReconnectAuthority, _ domain.Game) {
+			{name: "duplicate_root_presence_epoch", mutate: func(authority *reconnectusecase.ReconnectAuthority, _ domain.Game) {
 				authority.Reconnect[1].PresenceEpoch = authority.Reconnect[0].PresenceEpoch
 			}},
 		} {
@@ -147,11 +147,11 @@ func TestDisconnectCycleLimit(t *testing.T) {
 				prior := task045ReplaceCurrentGame(&authority, task045ID(841), now)
 				test.mutate(&authority, prior)
 				repository := newTask045RepositoryHarness(t, authority)
-				_, changed, err := gameusecase.NewDisconnectUseCase(repository, newReconnectClock(t, now)).Disconnect(t.Context(), gameusecase.DisconnectCommand{
+				_, changed, err := reconnectusecase.NewDisconnectUseCase(repository, newReconnectClock(t, now)).Disconnect(t.Context(), reconnectusecase.DisconnectCommand{
 					Scope: authority.Scope, CommandID: task045ID(842), ParticipantID: authority.Series.FirstParticipantID,
 					IntervalID: task045ID(843), Deadline: now.Add(time.Minute), Settlement: task045SettlementIDs(844),
 				})
-				if !errors.Is(err, gameusecase.ErrInvalidMutation) || changed || repository.commitCount() != 0 {
+				if !errors.Is(err, reconnectusecase.ErrInvalidMutation) || changed || repository.commitCount() != 0 {
 					t.Fatalf("Disconnect(%s) error = %v, changed = %v, commits = %d", test.name, err, changed, repository.commitCount())
 				}
 			})
@@ -167,11 +167,11 @@ func TestDisconnectCycleLimit(t *testing.T) {
 			authority.GameClock.OriginalDeadline = authority.GameClock.FrozenAt.Add(authority.GameClock.Remaining)
 			authority.GameClock.Revision = 2
 			repository := newTask045RepositoryHarness(t, authority)
-			_, changed, err := gameusecase.ReconnectNewUseCase(repository, newReconnectClock(t, now)).Reconnect(t.Context(), gameusecase.ReconnectCommand{
+			_, changed, err := reconnectusecase.ReconnectNewUseCase(repository, newReconnectClock(t, now)).Reconnect(t.Context(), reconnectusecase.ReconnectCommand{
 				Scope: authority.Scope, CommandID: task045ID(849), ParticipantID: authority.Series.FirstParticipantID,
 				IntervalID: authority.Reconnect[0].ID, Settlement: task045SettlementIDs(850),
 			})
-			if !errors.Is(err, gameusecase.ErrInvalidMutation) || changed || repository.commitCount() != 0 {
+			if !errors.Is(err, reconnectusecase.ErrInvalidMutation) || changed || repository.commitCount() != 0 {
 				t.Fatalf("Reconnect(open predecessor Game) error = %v, changed = %v, commits = %d", err, changed, repository.commitCount())
 			}
 		})
@@ -191,11 +191,11 @@ func TestDisconnectCycleLimit(t *testing.T) {
 				at := authority.GameClock.ResumedAt.Add(offset)
 				beforeRemaining := authority.GameClock.Remaining
 				repository := newTask045RepositoryHarness(t, authority)
-				_, changed, err := gameusecase.NewDisconnectUseCase(repository, newReconnectClock(t, at)).Disconnect(t.Context(), gameusecase.DisconnectCommand{
+				_, changed, err := reconnectusecase.NewDisconnectUseCase(repository, newReconnectClock(t, at)).Disconnect(t.Context(), reconnectusecase.DisconnectCommand{
 					Scope: authority.Scope, CommandID: task045ID(850), ParticipantID: authority.Series.SecondParticipantID,
 					IntervalID: task045ID(851), Deadline: at.Add(time.Minute), Settlement: task045SettlementIDs(852),
 				})
-				if !errors.Is(err, gameusecase.ErrInvalidMutation) || !strings.Contains(err.Error(), "clock rollback") ||
+				if !errors.Is(err, reconnectusecase.ErrInvalidMutation) || !strings.Contains(err.Error(), "clock rollback") ||
 					changed || repository.commitCount() != 0 || repository.snapshot().GameClock.Remaining != beforeRemaining {
 					t.Fatalf("Disconnect(clock rollback %s) error = %v, changed = %v, commits = %d", offset, err, changed, repository.commitCount())
 				}
@@ -207,11 +207,11 @@ func TestDisconnectCycleLimit(t *testing.T) {
 		authority := task045Authority(now, false, true)
 		task045AddCompletedRoots(&authority, 0, domain.ReconnectCycleLimit, now)
 		opponentInterval := authority.Reconnect[0]
-		command := gameusecase.DisconnectCommand{Scope: authority.Scope, CommandID: task045ID(135),
+		command := reconnectusecase.DisconnectCommand{Scope: authority.Scope, CommandID: task045ID(135),
 			ParticipantID: authority.Series.FirstParticipantID, IntervalID: task045ID(136),
 			Deadline: now.Add(30 * time.Second), Settlement: task045SettlementIDs(137)}
 		repository := newTask045RepositoryHarness(t, authority)
-		terminal, changed, err := gameusecase.NewDisconnectUseCase(repository, newReconnectClock(t, now)).Disconnect(t.Context(), command)
+		terminal, changed, err := reconnectusecase.NewDisconnectUseCase(repository, newReconnectClock(t, now)).Disconnect(t.Context(), command)
 		if err != nil || !changed || terminal.ReconnectAuthority.Game.State != domain.GameStateVoid ||
 			terminal.ReconnectAuthority.Series.State != domain.SeriesStateReplayRequired || terminal.ReplayRoute == nil {
 			t.Fatalf("Disconnect(third both absent) error = %v, changed = %v, record = %+v", err, changed, terminal)
@@ -239,11 +239,11 @@ func TestDisconnectCycleLimit(t *testing.T) {
 		source.Revision++
 		continuedFrom := source.ID
 		remaining := source.Deadline.Sub(closedAt)
-		command := gameusecase.DisconnectCommand{Scope: authority.Scope, CommandID: task045ID(140),
+		command := reconnectusecase.DisconnectCommand{Scope: authority.Scope, CommandID: task045ID(140),
 			ParticipantID: authority.Series.FirstParticipantID, IntervalID: task045ID(141), Deadline: now.Add(remaining),
 			ContinuedFromID: &continuedFrom, Settlement: task045SettlementIDs(142)}
 		repository := newTask045RepositoryHarness(t, authority)
-		continued, changed, err := gameusecase.NewDisconnectUseCase(repository, newReconnectClock(t, now)).Disconnect(t.Context(), command)
+		continued, changed, err := reconnectusecase.NewDisconnectUseCase(repository, newReconnectClock(t, now)).Disconnect(t.Context(), command)
 		if err != nil || !changed {
 			t.Fatalf("Disconnect(continuation) error = %v, changed = %v", err, changed)
 		}
@@ -256,7 +256,7 @@ func TestDisconnectCycleLimit(t *testing.T) {
 			t.Fatalf("continuation reset slot or retained mutable input: counter %+v, interval %+v, command %+v", counter, interval, continued.DisconnectCommand)
 		}
 		writes := repository.writeCount()
-		if _, changed, err := gameusecase.NewDisconnectUseCase(repository, newReconnectClock(t, now)).Disconnect(t.Context(), command); err != nil || changed || repository.writeCount() != writes {
+		if _, changed, err := reconnectusecase.NewDisconnectUseCase(repository, newReconnectClock(t, now)).Disconnect(t.Context(), command); err != nil || changed || repository.writeCount() != writes {
 			t.Fatalf("Disconnect(continuation replay) error = %v, changed = %v, writes = %d", err, changed, repository.writeCount())
 		}
 		continuedFrom = task045ID(199)
@@ -264,7 +264,7 @@ func TestDisconnectCycleLimit(t *testing.T) {
 			t.Fatal("mutating continuation input changed returned receipt")
 		}
 		reused := command
-		if _, changed, err := gameusecase.NewDisconnectUseCase(repository, newReconnectClock(t, now)).Disconnect(t.Context(), reused); !errors.Is(err, gameusecase.ErrCommandReuse) || changed {
+		if _, changed, err := reconnectusecase.NewDisconnectUseCase(repository, newReconnectClock(t, now)).Disconnect(t.Context(), reused); !errors.Is(err, reconnectusecase.ErrCommandReuse) || changed {
 			t.Fatalf("Disconnect(continuation command reuse) error = %v, changed = %v", err, changed)
 		}
 	})
@@ -276,8 +276,8 @@ func TestDisconnectCycleLimit(t *testing.T) {
 			extension time.Duration
 			want      error
 		}{
-			{name: "expired", state: pause.ReconnectStateExpired, want: gameusecase.ErrUnavailable},
-			{name: "extension", state: pause.ReconnectStateCancelled, extension: time.Nanosecond, want: gameusecase.ErrDeadline},
+			{name: "expired", state: pause.ReconnectStateExpired, want: reconnectusecase.ErrUnavailable},
+			{name: "extension", state: pause.ReconnectStateCancelled, extension: time.Nanosecond, want: reconnectusecase.ErrDeadline},
 		} {
 			t.Run(test.name, func(t *testing.T) {
 				authority := task045Authority(now, true, false)
@@ -293,12 +293,12 @@ func TestDisconnectCycleLimit(t *testing.T) {
 					source.SuspendedByPauseID = &suspendedBy
 				}
 				continuedFrom := source.ID
-				command := gameusecase.DisconnectCommand{Scope: authority.Scope, CommandID: task045ID(161),
+				command := reconnectusecase.DisconnectCommand{Scope: authority.Scope, CommandID: task045ID(161),
 					ParticipantID: authority.Series.FirstParticipantID, IntervalID: task045ID(162),
 					Deadline: now.Add(source.Deadline.Sub(closedAt)).Add(test.extension), ContinuedFromID: &continuedFrom,
 					Settlement: task045SettlementIDs(163)}
 				repository := newTask045RepositoryHarness(t, authority)
-				_, changed, err := gameusecase.NewDisconnectUseCase(repository, newReconnectClock(t, now)).Disconnect(t.Context(), command)
+				_, changed, err := reconnectusecase.NewDisconnectUseCase(repository, newReconnectClock(t, now)).Disconnect(t.Context(), command)
 				if !errors.Is(err, test.want) || changed || repository.writeCount() != 0 {
 					t.Fatalf("Disconnect(%s) error = %v, changed = %v, writes = %d", test.name, err, changed, repository.writeCount())
 				}
@@ -318,7 +318,7 @@ func TestDisconnectCycleLimit(t *testing.T) {
 		source.Revision++
 		continuedFrom := source.ID
 		deadline := now.Add(source.Deadline.Sub(closedAt))
-		commands := []gameusecase.DisconnectCommand{
+		commands := []reconnectusecase.DisconnectCommand{
 			{Scope: authority.Scope, CommandID: task045ID(171), ParticipantID: authority.Series.FirstParticipantID,
 				IntervalID: task045ID(172), Deadline: deadline, ContinuedFromID: &continuedFrom, Settlement: task045SettlementIDs(173)},
 			{Scope: authority.Scope, CommandID: task045ID(181), ParticipantID: authority.Series.FirstParticipantID,
@@ -331,7 +331,7 @@ func TestDisconnectCycleLimit(t *testing.T) {
 		results := make(chan error, 2)
 		for _, command := range commands {
 			go func() {
-				_, _, err := gameusecase.NewDisconnectUseCase(repository, newReconnectClock(t, now)).Disconnect(ctx, command)
+				_, _, err := reconnectusecase.NewDisconnectUseCase(repository, newReconnectClock(t, now)).Disconnect(ctx, command)
 				results <- err
 			}()
 		}
@@ -345,7 +345,7 @@ func TestDisconnectCycleLimit(t *testing.T) {
 				switch {
 				case err == nil:
 					successes++
-				case errors.Is(err, gameusecase.ErrUnavailable):
+				case errors.Is(err, reconnectusecase.ErrUnavailable):
 					rejected++
 				default:
 					t.Fatalf("continuation fork error = %v", err)
@@ -361,12 +361,12 @@ func TestDisconnectCycleLimit(t *testing.T) {
 
 	t.Run("expired_window_has_no_write", func(t *testing.T) {
 		authority := task045Authority(now, false, false)
-		command := gameusecase.DisconnectCommand{Scope: authority.Scope, CommandID: task045ID(150),
+		command := reconnectusecase.DisconnectCommand{Scope: authority.Scope, CommandID: task045ID(150),
 			ParticipantID: authority.Series.FirstParticipantID, IntervalID: task045ID(151), Deadline: now,
 			Settlement: task045SettlementIDs(152)}
 		repository := newTask045RepositoryHarness(t, authority)
-		_, changed, err := gameusecase.NewDisconnectUseCase(repository, newReconnectClock(t, now)).Disconnect(t.Context(), command)
-		if !errors.Is(err, gameusecase.ErrDeadline) || changed || repository.writeCount() != 0 {
+		_, changed, err := reconnectusecase.NewDisconnectUseCase(repository, newReconnectClock(t, now)).Disconnect(t.Context(), command)
+		if !errors.Is(err, reconnectusecase.ErrDeadline) || changed || repository.writeCount() != 0 {
 			t.Fatalf("Disconnect(expired window) error = %v, changed = %v, writes = %d", err, changed, repository.writeCount())
 		}
 	})
@@ -377,19 +377,19 @@ func TestDisconnectCycleLimit(t *testing.T) {
 		oldIntervalID := baseAuthority.Reconnect[0].ID
 		for _, test := range []struct {
 			name       string
-			mutate     func(*gameusecase.ReconnectAuthority)
+			mutate     func(*reconnectusecase.ReconnectAuthority)
 			intervalID uuid.UUID
 			want       error
 			detail     string
 		}{
-			{name: "duplicate interval", intervalID: oldIntervalID, want: gameusecase.ErrUnavailable},
-			{name: "malformed counter", intervalID: task045ID(196), mutate: func(value *gameusecase.ReconnectAuthority) { value.Counters[0].Limit = 3 }, want: gameusecase.ErrInvalidMutation},
-			{name: "authority overflow", intervalID: task045ID(197), mutate: func(value *gameusecase.ReconnectAuthority) { value.Revision = math.MaxInt64 }, want: gameusecase.ErrInvalidMutation, detail: "revision overflow"},
-			{name: "counter overflow", intervalID: task045ID(199), mutate: func(value *gameusecase.ReconnectAuthority) { value.Counters[0].Revision = math.MaxInt64 }, want: gameusecase.ErrInvalidMutation, detail: "counter revision overflow"},
-			{name: "ordinal overflow", intervalID: task045ID(198), mutate: func(value *gameusecase.ReconnectAuthority) {
+			{name: "duplicate interval", intervalID: oldIntervalID, want: reconnectusecase.ErrUnavailable},
+			{name: "malformed counter", intervalID: task045ID(196), mutate: func(value *reconnectusecase.ReconnectAuthority) { value.Counters[0].Limit = 3 }, want: reconnectusecase.ErrInvalidMutation},
+			{name: "authority overflow", intervalID: task045ID(197), mutate: func(value *reconnectusecase.ReconnectAuthority) { value.Revision = math.MaxInt64 }, want: reconnectusecase.ErrInvalidMutation, detail: "revision overflow"},
+			{name: "counter overflow", intervalID: task045ID(199), mutate: func(value *reconnectusecase.ReconnectAuthority) { value.Counters[0].Revision = math.MaxInt64 }, want: reconnectusecase.ErrInvalidMutation, detail: "counter revision overflow"},
+			{name: "ordinal overflow", intervalID: task045ID(198), mutate: func(value *reconnectusecase.ReconnectAuthority) {
 				task045AddCompletedRoots(value, 0, domain.ReconnectCycleLimit, now)
 				value.CurrentOrdinal = int(^uint(0) >> 1)
-			}, want: gameusecase.ErrInvalidMutation, detail: "terminal lineage overflow"},
+			}, want: reconnectusecase.ErrInvalidMutation, detail: "terminal lineage overflow"},
 		} {
 			t.Run(test.name, func(t *testing.T) {
 				authority := cloneTask045Authority(baseAuthority)
@@ -397,7 +397,7 @@ func TestDisconnectCycleLimit(t *testing.T) {
 					test.mutate(&authority)
 				}
 				repository := newTask045RepositoryHarness(t, authority)
-				_, changed, err := gameusecase.NewDisconnectUseCase(repository, newReconnectClock(t, now)).Disconnect(t.Context(), gameusecase.DisconnectCommand{
+				_, changed, err := reconnectusecase.NewDisconnectUseCase(repository, newReconnectClock(t, now)).Disconnect(t.Context(), reconnectusecase.DisconnectCommand{
 					Scope: authority.Scope, CommandID: task045ID(190), ParticipantID: authority.Series.FirstParticipantID,
 					IntervalID: test.intervalID, Deadline: now.Add(30 * time.Second), Settlement: task045SettlementIDs(191),
 				})
@@ -414,11 +414,11 @@ func TestDisconnectCycleLimit(t *testing.T) {
 			authority := task045Authority(now, false, false)
 			authority.Presence[0].UpdatedAt = now
 			repository := newTask045RepositoryHarness(t, authority)
-			_, changed, err := gameusecase.NewDisconnectUseCase(repository, newReconnectClock(t, now)).Disconnect(t.Context(), gameusecase.DisconnectCommand{
+			_, changed, err := reconnectusecase.NewDisconnectUseCase(repository, newReconnectClock(t, now)).Disconnect(t.Context(), reconnectusecase.DisconnectCommand{
 				Scope: authority.Scope, CommandID: task045ID(750), ParticipantID: authority.Series.FirstParticipantID,
 				IntervalID: task045ID(751), Deadline: now.Add(time.Minute), Settlement: task045SettlementIDs(752),
 			})
-			if !errors.Is(err, gameusecase.ErrInvalidMutation) || changed || repository.writeCount() != 0 {
+			if !errors.Is(err, reconnectusecase.ErrInvalidMutation) || changed || repository.writeCount() != 0 {
 				t.Fatalf("Disconnect(same Presence timestamp) error = %v, changed = %v, writes = %d", err, changed, repository.writeCount())
 			}
 		})
@@ -428,11 +428,11 @@ func TestDisconnectCycleLimit(t *testing.T) {
 			task045AddCompletedRoots(&authority, 0, domain.ReconnectCycleLimit, now)
 			authority.Reconnect[0].UpdatedAt = now
 			repository := newTask045RepositoryHarness(t, authority)
-			_, changed, err := gameusecase.NewDisconnectUseCase(repository, newReconnectClock(t, now)).Disconnect(t.Context(), gameusecase.DisconnectCommand{
+			_, changed, err := reconnectusecase.NewDisconnectUseCase(repository, newReconnectClock(t, now)).Disconnect(t.Context(), reconnectusecase.DisconnectCommand{
 				Scope: authority.Scope, CommandID: task045ID(760), ParticipantID: authority.Series.FirstParticipantID,
 				IntervalID: task045ID(761), Deadline: now.Add(time.Minute), Settlement: task045SettlementIDs(762),
 			})
-			if !errors.Is(err, gameusecase.ErrInvalidMutation) || changed || repository.writeCount() != 0 {
+			if !errors.Is(err, reconnectusecase.ErrInvalidMutation) || changed || repository.writeCount() != 0 {
 				t.Fatalf("Disconnect(same interval timestamp) error = %v, changed = %v, writes = %d", err, changed, repository.writeCount())
 			}
 		})
@@ -442,11 +442,11 @@ func TestDisconnectCycleLimit(t *testing.T) {
 		authority := task045Authority(now, false, false)
 		authority.GameClock.Revision = math.MaxInt64
 		repository := newTask045RepositoryHarness(t, authority)
-		_, changed, err := gameusecase.NewDisconnectUseCase(repository, newReconnectClock(t, now)).Disconnect(t.Context(), gameusecase.DisconnectCommand{
+		_, changed, err := reconnectusecase.NewDisconnectUseCase(repository, newReconnectClock(t, now)).Disconnect(t.Context(), reconnectusecase.DisconnectCommand{
 			Scope: authority.Scope, CommandID: task045ID(770), ParticipantID: authority.Series.FirstParticipantID,
 			IntervalID: task045ID(771), Deadline: now.Add(time.Minute), Settlement: task045SettlementIDs(772),
 		})
-		if !errors.Is(err, gameusecase.ErrInvalidMutation) || !strings.Contains(err.Error(), "Game clock revision overflow") ||
+		if !errors.Is(err, reconnectusecase.ErrInvalidMutation) || !strings.Contains(err.Error(), "Game clock revision overflow") ||
 			changed || repository.writeCount() != 0 || repository.commitCount() != 0 {
 			t.Fatalf("Disconnect(clock overflow) error = %v, changed = %v, writes = %d, commits = %d", err, changed, repository.writeCount(), repository.commitCount())
 		}
@@ -455,18 +455,18 @@ func TestDisconnectCycleLimit(t *testing.T) {
 	t.Run("terminal_settlement_rejects_current_revision_ids", func(t *testing.T) {
 		for _, test := range []struct {
 			name   string
-			mutate func(*gameusecase.ReconnectAuthority, *gameusecase.SettlementIDs)
+			mutate func(*reconnectusecase.ReconnectAuthority, *reconnectusecase.SettlementIDs)
 			detail string
 		}{
-			{name: "game_result_already_in_lineage", mutate: func(authority *gameusecase.ReconnectAuthority, ids *gameusecase.SettlementIDs) {
+			{name: "game_result_already_in_lineage", mutate: func(authority *reconnectusecase.ReconnectAuthority, ids *reconnectusecase.SettlementIDs) {
 				ids.GameResultRevisionID = authority.CurrentGameResultRevisionIDs[0]
 			}, detail: "Game result revision identity is already current"},
-			{name: "score_self_link", mutate: func(authority *gameusecase.ReconnectAuthority, ids *gameusecase.SettlementIDs) {
+			{name: "score_self_link", mutate: func(authority *reconnectusecase.ReconnectAuthority, ids *reconnectusecase.SettlementIDs) {
 				current := domain.SeriesScoreRevisionID(task045ID(780))
 				authority.Series.CurrentScoreRevisionID = &current
 				ids.ScoreRevisionID = current
 			}, detail: "score revision identity self-links"},
-			{name: "series_result_self_link", mutate: func(authority *gameusecase.ReconnectAuthority, ids *gameusecase.SettlementIDs) {
+			{name: "series_result_self_link", mutate: func(authority *reconnectusecase.ReconnectAuthority, ids *reconnectusecase.SettlementIDs) {
 				currentScore := domain.SeriesScoreRevisionID(task045ID(779))
 				currentResult := domain.OfficialResultRevisionID(task045ID(780))
 				authority.Series.State = domain.SeriesStateCancelled
@@ -481,11 +481,11 @@ func TestDisconnectCycleLimit(t *testing.T) {
 				ids := task045SettlementIDs(781)
 				test.mutate(&authority, &ids)
 				repository := newTask045RepositoryHarness(t, authority)
-				_, changed, err := gameusecase.NewDisconnectUseCase(repository, newReconnectClock(t, now)).Disconnect(t.Context(), gameusecase.DisconnectCommand{
+				_, changed, err := reconnectusecase.NewDisconnectUseCase(repository, newReconnectClock(t, now)).Disconnect(t.Context(), reconnectusecase.DisconnectCommand{
 					Scope: authority.Scope, CommandID: task045ID(790), ParticipantID: authority.Series.FirstParticipantID,
 					IntervalID: task045ID(791), Deadline: now.Add(time.Minute), Settlement: ids,
 				})
-				if !errors.Is(err, gameusecase.ErrInvalidMutation) || !strings.Contains(err.Error(), test.detail) ||
+				if !errors.Is(err, reconnectusecase.ErrInvalidMutation) || !strings.Contains(err.Error(), test.detail) ||
 					changed || repository.writeCount() != 0 || repository.commitCount() != 0 {
 					t.Fatalf("Disconnect(%s) error = %v, changed = %v, writes = %d, commits = %d", test.name, err, changed, repository.writeCount(), repository.commitCount())
 				}

@@ -1,4 +1,4 @@
-package game_test
+package reconnect_test
 
 import (
 	"context"
@@ -7,8 +7,8 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
 	gamemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/mocks"
+	reconnectusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/reconnect"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 )
@@ -17,27 +17,27 @@ type task045RepositoryHarness struct {
 	*gamemocks.MockReconnectRepository
 
 	mu              sync.Mutex
-	authority       gameusecase.ReconnectAuthority
-	records         map[uuid.UUID]*gameusecase.ReconnectRecord
+	authority       reconnectusecase.ReconnectAuthority
+	records         map[uuid.UUID]*reconnectusecase.ReconnectRecord
 	writes          int
 	commitCalls     int
 	conflicts       int
 	loads           int
 	barrier         *task045Barrier
 	alwaysConflict  bool
-	mutateCommitted func(*gameusecase.ReconnectRecord)
-	returned        *gameusecase.ReconnectRecord
+	mutateCommitted func(*reconnectusecase.ReconnectRecord)
+	returned        *reconnectusecase.ReconnectRecord
 	shareOwned      bool
 }
 
 func newTask045RepositoryHarness(
 	t *testing.T,
-	authority gameusecase.ReconnectAuthority,
+	authority reconnectusecase.ReconnectAuthority,
 ) *task045RepositoryHarness {
 	t.Helper()
 	harness := &task045RepositoryHarness{
 		authority: cloneTask045Authority(authority),
-		records:   make(map[uuid.UUID]*gameusecase.ReconnectRecord),
+		records:   make(map[uuid.UUID]*reconnectusecase.ReconnectRecord),
 	}
 	repository := gamemocks.NewMockReconnectRepository(t)
 	repository.EXPECT().
@@ -56,7 +56,7 @@ func newTask045RepositoryHarness(
 	return harness
 }
 
-func (f *task045RepositoryHarness) findReconnectCommand(_ context.Context, tournamentID, commandID uuid.UUID) (*gameusecase.ReconnectRecord, error) {
+func (f *task045RepositoryHarness) findReconnectCommand(_ context.Context, tournamentID, commandID uuid.UUID) (*reconnectusecase.ReconnectRecord, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	record, ok := f.records[commandID]
@@ -70,7 +70,7 @@ func (f *task045RepositoryHarness) findReconnectCommand(_ context.Context, tourn
 	return &clone, nil
 }
 
-func (f *task045RepositoryHarness) loadReconnectAuthority(ctx context.Context, _ pause.GraphScope, _ uuid.UUID) (gameusecase.ReconnectAuthority, error) {
+func (f *task045RepositoryHarness) loadReconnectAuthority(ctx context.Context, _ pause.GraphScope, _ uuid.UUID) (reconnectusecase.ReconnectAuthority, error) {
 	f.mu.Lock()
 	f.loads++
 	load := f.loads
@@ -79,13 +79,13 @@ func (f *task045RepositoryHarness) loadReconnectAuthority(ctx context.Context, _
 	f.mu.Unlock()
 	if barrier != nil && load <= barrier.parties {
 		if err := barrier.wait(ctx); err != nil {
-			return gameusecase.ReconnectAuthority{}, err
+			return reconnectusecase.ReconnectAuthority{}, err
 		}
 	}
 	return clone, nil
 }
 
-func (f *task045RepositoryHarness) commitReconnectMutation(_ context.Context, expectedRevision int64, record gameusecase.ReconnectRecord) (*gameusecase.ReconnectRecord, bool, error) {
+func (f *task045RepositoryHarness) commitReconnectMutation(_ context.Context, expectedRevision int64, record reconnectusecase.ReconnectRecord) (*reconnectusecase.ReconnectRecord, bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.commitCalls++
@@ -120,7 +120,7 @@ func (f *task045RepositoryHarness) commitReconnectMutation(_ context.Context, ex
 	return f.returned, true, nil
 }
 
-func (f *task045RepositoryHarness) snapshot() gameusecase.ReconnectAuthority {
+func (f *task045RepositoryHarness) snapshot() reconnectusecase.ReconnectAuthority {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return cloneTask045Authority(f.authority)
@@ -163,7 +163,7 @@ func (f *task045RepositoryHarness) corruptReceipt(commandID uuid.UUID) {
 	f.records[commandID] = &record
 }
 
-func (f *task045RepositoryHarness) mutateReceipt(commandID uuid.UUID, mutate func(*gameusecase.ReconnectRecord)) {
+func (f *task045RepositoryHarness) mutateReceipt(commandID uuid.UUID, mutate func(*reconnectusecase.ReconnectRecord)) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	record := cloneTask045Record(*f.records[commandID])

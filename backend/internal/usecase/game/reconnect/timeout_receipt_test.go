@@ -1,4 +1,4 @@
-package game_test
+package reconnect_test
 
 import (
 	"errors"
@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	reconnectusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/reconnect"
 )
 
 func testReconnectTimeoutReceipts(t *testing.T, base time.Time) {
@@ -23,16 +23,16 @@ func testReconnectTimeoutReceipts(t *testing.T, base time.Time) {
 			t.Run(test.name, func(t *testing.T) {
 				authority := task045Authority(base, true, true)
 				deadline := authority.Reconnect[0].Deadline
-				command := gameusecase.TimeoutCommand{Scope: authority.Scope, CommandID: task045ID(1000 + index*10),
+				command := reconnectusecase.TimeoutCommand{Scope: authority.Scope, CommandID: task045ID(1000 + index*10),
 					ParticipantID: authority.Series.FirstParticipantID, IntervalID: authority.Reconnect[0].ID,
 					Settlement: task045SettlementIDs(1001 + index*10)}
 				repository := newTask045RepositoryHarness(t, authority)
-				useCase := gameusecase.NewTimeoutUseCase(repository, newReconnectClock(t, deadline))
+				useCase := reconnectusecase.NewTimeoutUseCase(repository, newReconnectClock(t, deadline))
 				terminal, changed, err := useCase.Expire(t.Context(), command)
 				if err != nil || !changed || terminal.VoidGameResultRevision == nil || terminal.ReconnectAuthority.Current == nil {
 					t.Fatalf("Expire(seed void %s) error = %v, changed = %v, record = %+v", test.name, err, changed, terminal)
 				}
-				repository.mutateReceipt(command.CommandID, func(record *gameusecase.ReconnectRecord) {
+				repository.mutateReceipt(command.CommandID, func(record *reconnectusecase.ReconnectRecord) {
 					corruptAt := test.at(record.ReconnectAuthority.Current.TerminalizedAt)
 					record.VoidGameResultRevision.RecordedAt = corruptAt
 					record.ReconnectAuthority.Current.VoidGameResultRevision.RecordedAt = corruptAt

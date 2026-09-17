@@ -1,15 +1,15 @@
-package game_test
+package reconnect_test
 
 import (
 	"testing"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	reconnectusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/reconnect"
 	"github.com/google/uuid"
 )
 
-func task045Presence(t *testing.T, authority gameusecase.ReconnectAuthority, participantID uuid.UUID) pause.PausePresence {
+func task045Presence(t *testing.T, authority reconnectusecase.ReconnectAuthority, participantID uuid.UUID) pause.PausePresence {
 	t.Helper()
 	for _, value := range authority.Presence {
 		if value.ParticipantID == participantID {
@@ -20,7 +20,7 @@ func task045Presence(t *testing.T, authority gameusecase.ReconnectAuthority, par
 	return pause.PausePresence{}
 }
 
-func task045Counter(t *testing.T, authority gameusecase.ReconnectAuthority, participantID uuid.UUID) pause.PauseReconnectCounter {
+func task045Counter(t *testing.T, authority reconnectusecase.ReconnectAuthority, participantID uuid.UUID) pause.PauseReconnectCounter {
 	t.Helper()
 	for _, value := range authority.Counters {
 		if value.ParticipantID == participantID {
@@ -31,7 +31,7 @@ func task045Counter(t *testing.T, authority gameusecase.ReconnectAuthority, part
 	return pause.PauseReconnectCounter{}
 }
 
-func task045Interval(t *testing.T, authority gameusecase.ReconnectAuthority, intervalID uuid.UUID) pause.PauseReconnectInterval {
+func task045Interval(t *testing.T, authority reconnectusecase.ReconnectAuthority, intervalID uuid.UUID) pause.PauseReconnectInterval {
 	t.Helper()
 	for _, value := range authority.Reconnect {
 		if value.ID == intervalID {
@@ -73,7 +73,7 @@ func task045GameEqual(first, second domain.Game) bool {
 	return *first.ResultRevisionID == *second.ResultRevisionID
 }
 
-func task045RecordCommandID(record gameusecase.ReconnectRecord) uuid.UUID {
+func task045RecordCommandID(record reconnectusecase.ReconnectRecord) uuid.UUID {
 	switch {
 	case record.ReconnectCommand != nil:
 		return record.ReconnectCommand.CommandID
@@ -86,7 +86,7 @@ func task045RecordCommandID(record gameusecase.ReconnectRecord) uuid.UUID {
 	}
 }
 
-func cloneTask045Record(value gameusecase.ReconnectRecord) gameusecase.ReconnectRecord {
+func cloneTask045Record(value reconnectusecase.ReconnectRecord) reconnectusecase.ReconnectRecord {
 	clone := value
 	clone.ReconnectAuthority = cloneTask045Authority(value.ReconnectAuthority)
 	if value.ReconnectCommand != nil {
@@ -145,7 +145,7 @@ func cloneTask045Record(value gameusecase.ReconnectRecord) gameusecase.Reconnect
 	return clone
 }
 
-func cloneTask045Authority(value gameusecase.ReconnectAuthority) gameusecase.ReconnectAuthority {
+func cloneTask045Authority(value reconnectusecase.ReconnectAuthority) reconnectusecase.ReconnectAuthority {
 	clone := value
 	clone.Presence = append([]pause.PausePresence(nil), value.Presence...)
 	for index := range clone.Presence {

@@ -1,4 +1,4 @@
-package game_test
+package reconnect_test
 
 import (
 	"fmt"
@@ -7,11 +7,11 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	reconnectusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/reconnect"
 	"github.com/google/uuid"
 )
 
-func task045Authority(now time.Time, firstDisconnected, secondDisconnected bool) gameusecase.ReconnectAuthority {
+func task045Authority(now time.Time, firstDisconnected, secondDisconnected bool) reconnectusecase.ReconnectAuthority {
 	tournamentID, rosterID, waveID := task045ID(1), task045ID(2), task045ID(3)
 	seriesID, slotID, gameID, pauseID := task045ID(4), task045ID(5), task045ID(6), task045ID(7)
 	firstID, secondID := task045ID(8), task045ID(9)
@@ -20,7 +20,7 @@ func task045Authority(now time.Time, firstDisconnected, secondDisconnected bool)
 		Format: domain.SeriesFormatBO1, State: domain.SeriesStateActive,
 		Slots: []domain.GameSlot{{ID: slotID, SeriesID: seriesID, Position: 1, Category: domain.CategoryWeb,
 			ScoreBefore: domain.SeriesScore{}, Attempts: []domain.Game{game}}}}
-	authority := gameusecase.ReconnectAuthority{
+	authority := reconnectusecase.ReconnectAuthority{
 		Scope: pause.GraphScope{TournamentID: tournamentID, RosterID: rosterID, WaveID: waveID,
 			Authority: authoritydomain.Identity{TournamentID: tournamentID, HolderID: task045ID(20), LeaseID: task045ID(21), Epoch: 1, ProcessKind: authoritydomain.ProcessAuthority}},
 		Revision: 10, PauseID: pauseID, GameRevision: 4, SeriesRevision: 3,
@@ -53,7 +53,7 @@ func task045Authority(now time.Time, firstDisconnected, secondDisconnected bool)
 	return authority
 }
 
-func task045SetDisconnected(authority *gameusecase.ReconnectAuthority, index int, intervalID uuid.UUID, now time.Time) {
+func task045SetDisconnected(authority *reconnectusecase.ReconnectAuthority, index int, intervalID uuid.UUID, now time.Time) {
 	presence := &authority.Presence[index]
 	disconnectedAt := now.Add(-5 * time.Second)
 	presence.State = pause.PresenceStateDisconnected
@@ -69,7 +69,7 @@ func task045SetDisconnected(authority *gameusecase.ReconnectAuthority, index int
 		State: pause.ReconnectStateOpen, OpenedAt: disconnectedAt, Deadline: now.Add(20 * time.Second), Revision: 1, UpdatedAt: disconnectedAt})
 }
 
-func task045AddCompletedRoots(authority *gameusecase.ReconnectAuthority, index, count int, now time.Time) {
+func task045AddCompletedRoots(authority *reconnectusecase.ReconnectAuthority, index, count int, now time.Time) {
 	presence := &authority.Presence[index]
 	kept := authority.Reconnect[:0]
 	for _, interval := range authority.Reconnect {
@@ -99,7 +99,7 @@ func task045AddCompletedRoots(authority *gameusecase.ReconnectAuthority, index, 
 	task045RecalculateLifecycleRevisions(authority, now)
 }
 
-func task045AddPriorRootForCurrentCycle(authority *gameusecase.ReconnectAuthority, index int, now time.Time) {
+func task045AddPriorRootForCurrentCycle(authority *reconnectusecase.ReconnectAuthority, index int, now time.Time) {
 	presence := &authority.Presence[index]
 	for intervalIndex := range authority.Reconnect {
 		interval := &authority.Reconnect[intervalIndex]
@@ -123,11 +123,11 @@ func task045AddPriorRootForCurrentCycle(authority *gameusecase.ReconnectAuthorit
 	task045RecalculateLifecycleRevisions(authority, now)
 }
 
-func task045SetResumedClock(authority *gameusecase.ReconnectAuthority, now time.Time) {
+func task045SetResumedClock(authority *reconnectusecase.ReconnectAuthority, now time.Time) {
 	task045RecalculateLifecycleRevisions(authority, now)
 }
 
-func task045RecalculateLifecycleRevisions(authority *gameusecase.ReconnectAuthority, now time.Time) {
+func task045RecalculateLifecycleRevisions(authority *reconnectusecase.ReconnectAuthority, now time.Time) {
 	completed := 0
 	for _, interval := range authority.Reconnect {
 		if interval.ContinuationNumber == 0 && interval.State == pause.ReconnectStateReconnected {
@@ -172,7 +172,7 @@ func task045RecalculateLifecycleRevisions(authority *gameusecase.ReconnectAuthor
 	authority.GameClock.ResumedDeadline = &resumedDeadline
 }
 
-func task045ReplaceCurrentGame(authority *gameusecase.ReconnectAuthority, replacementID uuid.UUID, now time.Time) domain.Game {
+func task045ReplaceCurrentGame(authority *reconnectusecase.ReconnectAuthority, replacementID uuid.UUID, now time.Time) domain.Game {
 	prior := authority.Game
 	resultID := authority.CurrentGameResultRevisionIDs[0]
 	prior.State = domain.GameStateVoid
@@ -194,8 +194,8 @@ func task045ReplaceCurrentGame(authority *gameusecase.ReconnectAuthority, replac
 	return prior
 }
 
-func task045SettlementIDs(base int) gameusecase.SettlementIDs {
-	return gameusecase.SettlementIDs{GameResultRevisionID: domain.OfficialResultRevisionID(task045ID(base)),
+func task045SettlementIDs(base int) reconnectusecase.SettlementIDs {
+	return reconnectusecase.SettlementIDs{GameResultRevisionID: domain.OfficialResultRevisionID(task045ID(base)),
 		ScoreRevisionID:        domain.SeriesScoreRevisionID(task045ID(base + 1)),
 		SeriesResultRevisionID: domain.OfficialResultRevisionID(task045ID(base + 2)), ReplayRouteID: task045ID(base + 3),
 		AuditEventID: task045ID(base + 4), OutboxEventID: task045ID(base + 5), ProjectionRevisionID: task045ID(base + 6)}

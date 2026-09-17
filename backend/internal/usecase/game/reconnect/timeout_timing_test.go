@@ -1,4 +1,4 @@
-package game_test
+package reconnect_test
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	reconnectusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/reconnect"
 )
 
 func testReconnectTimeoutTiming(t *testing.T, base time.Time) {
@@ -19,11 +19,11 @@ func testReconnectTimeoutTiming(t *testing.T, base time.Time) {
 		authority := task045Authority(base, true, true)
 		firstDeadline := authority.Reconnect[0].Deadline
 		authority.Reconnect[1].Deadline = firstDeadline.Add(20 * time.Second)
-		first := gameusecase.TimeoutCommand{Scope: authority.Scope, CommandID: task045ID(80),
+		first := reconnectusecase.TimeoutCommand{Scope: authority.Scope, CommandID: task045ID(80),
 			ParticipantID: authority.Series.FirstParticipantID, IntervalID: authority.Reconnect[0].ID,
 			Settlement: task045SettlementIDs(81)}
 		repository := newTask045RepositoryHarness(t, authority)
-		deferred, changed, err := gameusecase.NewTimeoutUseCase(repository, newReconnectClock(t, firstDeadline)).Expire(t.Context(), first)
+		deferred, changed, err := reconnectusecase.NewTimeoutUseCase(repository, newReconnectClock(t, firstDeadline)).Expire(t.Context(), first)
 		if err != nil || !changed || repository.writeCount() != 1 {
 			t.Fatalf("Expire(first staggered) error = %v, changed = %v, writes = %d", err, changed, repository.writeCount())
 		}
@@ -35,7 +35,7 @@ func testReconnectTimeoutTiming(t *testing.T, base time.Time) {
 		}
 
 		reconnectAt := firstDeadline.Add(10 * time.Second)
-		reconnected, changed, err := gameusecase.ReconnectNewUseCase(repository, newReconnectClock(t, reconnectAt)).Reconnect(t.Context(), gameusecase.ReconnectCommand{
+		reconnected, changed, err := reconnectusecase.ReconnectNewUseCase(repository, newReconnectClock(t, reconnectAt)).Reconnect(t.Context(), reconnectusecase.ReconnectCommand{
 			Scope: authority.Scope, CommandID: task045ID(90), ParticipantID: authority.Series.SecondParticipantID,
 			IntervalID: authority.Reconnect[1].ID, Settlement: task045SettlementIDs(91),
 		})
@@ -51,18 +51,18 @@ func testReconnectTimeoutTiming(t *testing.T, base time.Time) {
 		firstDeadline := authority.Reconnect[0].Deadline
 		authority.Reconnect[1].Deadline = firstDeadline.Add(20 * time.Second)
 		repository := newTask045RepositoryHarness(t, authority)
-		first := gameusecase.TimeoutCommand{Scope: authority.Scope, CommandID: task045ID(860),
+		first := reconnectusecase.TimeoutCommand{Scope: authority.Scope, CommandID: task045ID(860),
 			ParticipantID: authority.Series.FirstParticipantID, IntervalID: authority.Reconnect[0].ID,
 			Settlement: task045SettlementIDs(861)}
-		if _, changed, err := gameusecase.NewTimeoutUseCase(repository, newReconnectClock(t, firstDeadline)).Expire(t.Context(), first); err != nil || !changed {
+		if _, changed, err := reconnectusecase.NewTimeoutUseCase(repository, newReconnectClock(t, firstDeadline)).Expire(t.Context(), first); err != nil || !changed {
 			t.Fatalf("Expire(seed deferred) error = %v, changed = %v", err, changed)
 		}
 		rollbackAt := firstDeadline.Add(-5 * time.Second)
-		_, changed, err := gameusecase.ReconnectNewUseCase(repository, newReconnectClock(t, rollbackAt)).Reconnect(t.Context(), gameusecase.ReconnectCommand{
+		_, changed, err := reconnectusecase.ReconnectNewUseCase(repository, newReconnectClock(t, rollbackAt)).Reconnect(t.Context(), reconnectusecase.ReconnectCommand{
 			Scope: authority.Scope, CommandID: task045ID(870), ParticipantID: authority.Series.SecondParticipantID,
 			IntervalID: authority.Reconnect[1].ID, Settlement: task045SettlementIDs(871),
 		})
-		if !errors.Is(err, gameusecase.ErrInvalidMutation) || !strings.Contains(err.Error(), "clock rollback") ||
+		if !errors.Is(err, reconnectusecase.ErrInvalidMutation) || !strings.Contains(err.Error(), "clock rollback") ||
 			changed || repository.writeCount() != 1 || repository.commitCount() != 1 {
 			t.Fatalf("Reconnect(deferred rollback) error = %v, changed = %v, writes = %d, commits = %d", err, changed, repository.writeCount(), repository.commitCount())
 		}
@@ -78,14 +78,14 @@ func testReconnectTimeoutTiming(t *testing.T, base time.Time) {
 		secondDeadline := firstDeadline.Add(20 * time.Second)
 		authority.Reconnect[1].Deadline = secondDeadline
 		repository := newTask045RepositoryHarness(t, authority)
-		first := gameusecase.TimeoutCommand{Scope: authority.Scope, CommandID: task045ID(300),
+		first := reconnectusecase.TimeoutCommand{Scope: authority.Scope, CommandID: task045ID(300),
 			ParticipantID: authority.Series.FirstParticipantID, IntervalID: authority.Reconnect[0].ID, Settlement: task045SettlementIDs(301)}
-		if _, changed, err := gameusecase.NewTimeoutUseCase(repository, newReconnectClock(t, firstDeadline)).Expire(t.Context(), first); err != nil || !changed {
+		if _, changed, err := reconnectusecase.NewTimeoutUseCase(repository, newReconnectClock(t, firstDeadline)).Expire(t.Context(), first); err != nil || !changed {
 			t.Fatalf("Expire(first staggered) error = %v, changed = %v", err, changed)
 		}
-		second := gameusecase.TimeoutCommand{Scope: authority.Scope, CommandID: task045ID(310),
+		second := reconnectusecase.TimeoutCommand{Scope: authority.Scope, CommandID: task045ID(310),
 			ParticipantID: authority.Series.SecondParticipantID, IntervalID: authority.Reconnect[1].ID, Settlement: task045SettlementIDs(311)}
-		terminal, changed, err := gameusecase.NewTimeoutUseCase(repository, newReconnectClock(t, secondDeadline)).Expire(t.Context(), second)
+		terminal, changed, err := reconnectusecase.NewTimeoutUseCase(repository, newReconnectClock(t, secondDeadline)).Expire(t.Context(), second)
 		if err != nil || !changed || repository.writeCount() != 2 || terminal.ReconnectAuthority.Current == nil ||
 			terminal.ReconnectAuthority.Game.State != domain.GameStateVoid || terminal.ReconnectAuthority.Series.State != domain.SeriesStateReplayRequired {
 			t.Fatalf("Expire(second staggered) error = %v, changed = %v, record = %+v", err, changed, terminal)
@@ -97,7 +97,7 @@ func testReconnectTimeoutTiming(t *testing.T, base time.Time) {
 		deadline := authority.Reconnect[0].Deadline
 		repository := newTask045RepositoryHarness(t, authority)
 		repository.barrier = newTask045Barrier()
-		commands := []gameusecase.TimeoutCommand{
+		commands := []reconnectusecase.TimeoutCommand{
 			{Scope: authority.Scope, CommandID: task045ID(500), ParticipantID: authority.Series.FirstParticipantID,
 				IntervalID: authority.Reconnect[0].ID, Settlement: task045SettlementIDs(501)},
 			{Scope: authority.Scope, CommandID: task045ID(510), ParticipantID: authority.Series.SecondParticipantID,
@@ -106,14 +106,14 @@ func testReconnectTimeoutTiming(t *testing.T, base time.Time) {
 		ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 		defer cancel()
 		type result struct {
-			record  *gameusecase.ReconnectRecord
+			record  *reconnectusecase.ReconnectRecord
 			changed bool
 			err     error
 		}
 		results := make(chan result, 2)
 		for _, command := range commands {
 			go func() {
-				record, changed, err := gameusecase.NewTimeoutUseCase(repository, newReconnectClock(t, deadline)).Expire(ctx, command)
+				record, changed, err := reconnectusecase.NewTimeoutUseCase(repository, newReconnectClock(t, deadline)).Expire(ctx, command)
 				results <- result{record: record, changed: changed, err: err}
 			}()
 		}

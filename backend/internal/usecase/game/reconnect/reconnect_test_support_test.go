@@ -1,4 +1,4 @@
-package game_test
+package reconnect_test
 
 import (
 	"testing"

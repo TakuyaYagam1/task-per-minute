@@ -1,4 +1,4 @@
-package game_test
+package reconnect_test
 
 import (
 	"errors"
@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	reconnectusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/reconnect"
 )
 
 func testReconnectTimeoutValidation(t *testing.T, base time.Time) {
@@ -14,13 +14,13 @@ func testReconnectTimeoutValidation(t *testing.T, base time.Time) {
 
 	t.Run("before_deadline_has_no_write", func(t *testing.T) {
 		authority := task045Authority(base, true, false)
-		command := gameusecase.TimeoutCommand{Scope: authority.Scope, CommandID: task045ID(70),
+		command := reconnectusecase.TimeoutCommand{Scope: authority.Scope, CommandID: task045ID(70),
 			ParticipantID: authority.Series.FirstParticipantID, IntervalID: authority.Reconnect[0].ID,
 			Settlement: task045SettlementIDs(71)}
 		repository := newTask045RepositoryHarness(t, authority)
-		useCase := gameusecase.NewTimeoutUseCase(repository, newReconnectClock(t, authority.Reconnect[0].Deadline.Add(-time.Nanosecond)))
+		useCase := reconnectusecase.NewTimeoutUseCase(repository, newReconnectClock(t, authority.Reconnect[0].Deadline.Add(-time.Nanosecond)))
 		_, changed, err := useCase.Expire(t.Context(), command)
-		if !errors.Is(err, gameusecase.ErrDeadline) || changed || repository.writeCount() != 0 {
+		if !errors.Is(err, reconnectusecase.ErrDeadline) || changed || repository.writeCount() != 0 {
 			t.Fatalf("Expire(before deadline) error = %v, changed = %v, writes = %d", err, changed, repository.writeCount())
 		}
 	})
@@ -30,11 +30,11 @@ func testReconnectTimeoutValidation(t *testing.T, base time.Time) {
 		deadline := authority.Reconnect[0].Deadline
 		authority.Reconnect[0].UpdatedAt = deadline
 		repository := newTask045RepositoryHarness(t, authority)
-		_, changed, err := gameusecase.NewTimeoutUseCase(repository, newReconnectClock(t, deadline)).Expire(t.Context(), gameusecase.TimeoutCommand{
+		_, changed, err := reconnectusecase.NewTimeoutUseCase(repository, newReconnectClock(t, deadline)).Expire(t.Context(), reconnectusecase.TimeoutCommand{
 			Scope: authority.Scope, CommandID: task045ID(800), ParticipantID: authority.Series.FirstParticipantID,
 			IntervalID: authority.Reconnect[0].ID, Settlement: task045SettlementIDs(801),
 		})
-		if !errors.Is(err, gameusecase.ErrInvalidMutation) || changed || repository.writeCount() != 0 {
+		if !errors.Is(err, reconnectusecase.ErrInvalidMutation) || changed || repository.writeCount() != 0 {
 			t.Fatalf("Expire(same interval timestamp) error = %v, changed = %v, writes = %d", err, changed, repository.writeCount())
 		}
 	})
@@ -42,12 +42,12 @@ func testReconnectTimeoutValidation(t *testing.T, base time.Time) {
 	t.Run("repository_owned_terminal_receipt_is_deeply_isolated", func(t *testing.T) {
 		authority := task045Authority(base, true, false)
 		deadline := authority.Reconnect[0].Deadline
-		command := gameusecase.TimeoutCommand{Scope: authority.Scope, CommandID: task045ID(810),
+		command := reconnectusecase.TimeoutCommand{Scope: authority.Scope, CommandID: task045ID(810),
 			ParticipantID: authority.Series.FirstParticipantID, IntervalID: authority.Reconnect[0].ID,
 			Settlement: task045SettlementIDs(811)}
 		repository := newTask045RepositoryHarness(t, authority)
 		repository.shareOwned = true
-		useCase := gameusecase.NewTimeoutUseCase(repository, newReconnectClock(t, deadline))
+		useCase := reconnectusecase.NewTimeoutUseCase(repository, newReconnectClock(t, deadline))
 		first, changed, err := useCase.Expire(t.Context(), command)
 		if err != nil || !changed || first.ScoreRevision == nil || first.ReconnectAuthority.Current == nil {
 			t.Fatalf("Expire(repository owned) error = %v, changed = %v, record = %+v", err, changed, first)
@@ -74,33 +74,33 @@ func testReconnectTimeoutValidation(t *testing.T, base time.Time) {
 	t.Run("terminal_receipt_rejects_invalid_previous_links", func(t *testing.T) {
 		for index, test := range []struct {
 			name   string
-			mutate func(*gameusecase.ReconnectRecord)
+			mutate func(*reconnectusecase.ReconnectRecord)
 		}{
-			{name: "score_previous_self", mutate: func(record *gameusecase.ReconnectRecord) {
+			{name: "score_previous_self", mutate: func(record *reconnectusecase.ReconnectRecord) {
 				previous := record.ScoreRevision.ID
 				record.ScoreRevision.PreviousRevisionID = &previous
 				currentPrevious := record.ReconnectAuthority.Current.ScoreRevision.ID
 				record.ReconnectAuthority.Current.ScoreRevision.PreviousRevisionID = &currentPrevious
 			}},
-			{name: "score_previous_zero", mutate: func(record *gameusecase.ReconnectRecord) {
+			{name: "score_previous_zero", mutate: func(record *reconnectusecase.ReconnectRecord) {
 				previous := domain.SeriesScoreRevisionID{}
 				record.ScoreRevision.PreviousRevisionID = &previous
 				currentPrevious := domain.SeriesScoreRevisionID{}
 				record.ReconnectAuthority.Current.ScoreRevision.PreviousRevisionID = &currentPrevious
 			}},
-			{name: "series_previous_self", mutate: func(record *gameusecase.ReconnectRecord) {
+			{name: "series_previous_self", mutate: func(record *reconnectusecase.ReconnectRecord) {
 				previous := record.SeriesResultRevision.ID
 				record.SeriesResultRevision.PreviousRevisionID = &previous
 				currentPrevious := record.ReconnectAuthority.Current.SeriesResultRevision.ID
 				record.ReconnectAuthority.Current.SeriesResultRevision.PreviousRevisionID = &currentPrevious
 			}},
-			{name: "series_previous_zero", mutate: func(record *gameusecase.ReconnectRecord) {
+			{name: "series_previous_zero", mutate: func(record *reconnectusecase.ReconnectRecord) {
 				previous := domain.OfficialResultRevisionID{}
 				record.SeriesResultRevision.PreviousRevisionID = &previous
 				currentPrevious := domain.OfficialResultRevisionID{}
 				record.ReconnectAuthority.Current.SeriesResultRevision.PreviousRevisionID = &currentPrevious
 			}},
-			{name: "series_state_not_completed", mutate: func(record *gameusecase.ReconnectRecord) {
+			{name: "series_state_not_completed", mutate: func(record *reconnectusecase.ReconnectRecord) {
 				record.SeriesResultRevision.State = domain.SeriesStateCancelled
 				record.ReconnectAuthority.Current.SeriesResultRevision.State = domain.SeriesStateCancelled
 			}},
@@ -108,11 +108,11 @@ func testReconnectTimeoutValidation(t *testing.T, base time.Time) {
 			t.Run(test.name, func(t *testing.T) {
 				authority := task045Authority(base, true, false)
 				deadline := authority.Reconnect[0].Deadline
-				command := gameusecase.TimeoutCommand{Scope: authority.Scope, CommandID: task045ID(900 + index*10),
+				command := reconnectusecase.TimeoutCommand{Scope: authority.Scope, CommandID: task045ID(900 + index*10),
 					ParticipantID: authority.Series.FirstParticipantID, IntervalID: authority.Reconnect[0].ID,
 					Settlement: task045SettlementIDs(901 + index*10)}
 				repository := newTask045RepositoryHarness(t, authority)
-				useCase := gameusecase.NewTimeoutUseCase(repository, newReconnectClock(t, deadline))
+				useCase := reconnectusecase.NewTimeoutUseCase(repository, newReconnectClock(t, deadline))
 				if _, changed, err := useCase.Expire(t.Context(), command); err != nil || !changed {
 					t.Fatalf("Expire(seed %s) error = %v, changed = %v", test.name, err, changed)
 				}

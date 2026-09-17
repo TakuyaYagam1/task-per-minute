@@ -1,4 +1,4 @@
-package game_test
+package reconnect_test
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	reconnectusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/reconnect"
 )
 
 func TestDoubleDisconnectSerialization(t *testing.T) {
@@ -18,15 +18,15 @@ func TestDoubleDisconnectSerialization(t *testing.T) {
 	authority := task045Authority(now, false, false)
 	repository := newTask045RepositoryHarness(t, authority)
 	repository.barrier = newTask045Barrier()
-	useCase := gameusecase.NewDisconnectUseCase(repository, newReconnectClock(t, now))
-	commands := []gameusecase.DisconnectCommand{
+	useCase := reconnectusecase.NewDisconnectUseCase(repository, newReconnectClock(t, now))
+	commands := []reconnectusecase.DisconnectCommand{
 		{Scope: authority.Scope, CommandID: task045ID(200), ParticipantID: authority.Series.FirstParticipantID,
 			IntervalID: task045ID(201), Deadline: now.Add(30 * time.Second), Settlement: task045SettlementIDs(202)},
 		{Scope: authority.Scope, CommandID: task045ID(210), ParticipantID: authority.Series.SecondParticipantID,
 			IntervalID: task045ID(211), Deadline: now.Add(30 * time.Second), Settlement: task045SettlementIDs(212)},
 	}
 	type result struct {
-		record  *gameusecase.ReconnectRecord
+		record  *reconnectusecase.ReconnectRecord
 		changed bool
 		err     error
 	}
@@ -94,8 +94,8 @@ func TestDoubleDisconnectSerialization(t *testing.T) {
 		task045SetResumedClock(&authority, now)
 		repository := newTask045RepositoryHarness(t, authority)
 		repository.barrier = newTask045Barrier()
-		useCase := gameusecase.NewDisconnectUseCase(repository, newReconnectClock(t, now))
-		commands := []gameusecase.DisconnectCommand{
+		useCase := reconnectusecase.NewDisconnectUseCase(repository, newReconnectClock(t, now))
+		commands := []reconnectusecase.DisconnectCommand{
 			{Scope: authority.Scope, CommandID: task045ID(400), ParticipantID: authority.Series.FirstParticipantID,
 				IntervalID: task045ID(401), Deadline: now.Add(30 * time.Second), Settlement: task045SettlementIDs(402)},
 			{Scope: authority.Scope, CommandID: task045ID(410), ParticipantID: authority.Series.SecondParticipantID,
@@ -104,7 +104,7 @@ func TestDoubleDisconnectSerialization(t *testing.T) {
 		ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 		defer cancel()
 		type terminalResult struct {
-			record  *gameusecase.ReconnectRecord
+			record  *reconnectusecase.ReconnectRecord
 			changed bool
 			err     error
 		}
@@ -118,7 +118,7 @@ func TestDoubleDisconnectSerialization(t *testing.T) {
 		if err := repository.barrier.await(ctx); err != nil {
 			t.Fatalf("await exhausted loads: %v", err)
 		}
-		var records [2]*gameusecase.ReconnectRecord
+		var records [2]*reconnectusecase.ReconnectRecord
 		changedCount := 0
 		for index := range records {
 			select {
@@ -154,27 +154,27 @@ func TestDoubleDisconnectSerialization(t *testing.T) {
 		authority := task045Authority(now, false, false)
 		repository := newTask045RepositoryHarness(t, authority)
 		firstDisconnectAt := now.Add(10 * time.Second)
-		firstCommand := gameusecase.DisconnectCommand{
+		firstCommand := reconnectusecase.DisconnectCommand{
 			Scope: authority.Scope, CommandID: task045ID(900), ParticipantID: authority.Series.FirstParticipantID,
 			IntervalID: task045ID(901), Deadline: now.Add(40 * time.Second), Settlement: task045SettlementIDs(902),
 		}
-		if _, changed, err := gameusecase.NewDisconnectUseCase(repository, newReconnectClock(t, firstDisconnectAt)).Disconnect(t.Context(), firstCommand); err != nil || !changed {
+		if _, changed, err := reconnectusecase.NewDisconnectUseCase(repository, newReconnectClock(t, firstDisconnectAt)).Disconnect(t.Context(), firstCommand); err != nil || !changed {
 			t.Fatalf("Disconnect(first at T10) error = %v, changed = %v", err, changed)
 		}
 
-		rollbackCommand := gameusecase.DisconnectCommand{
+		rollbackCommand := reconnectusecase.DisconnectCommand{
 			Scope: authority.Scope, CommandID: task045ID(910), ParticipantID: authority.Series.SecondParticipantID,
 			IntervalID: task045ID(911), Deadline: now.Add(35 * time.Second), Settlement: task045SettlementIDs(912),
 		}
-		_, changed, err := gameusecase.NewDisconnectUseCase(repository, newReconnectClock(t, now.Add(5*time.Second))).Disconnect(t.Context(), rollbackCommand)
-		if !errors.Is(err, gameusecase.ErrInvalidMutation) || !strings.Contains(err.Error(), "clock rollback") || changed || repository.commitCount() != 1 {
+		_, changed, err := reconnectusecase.NewDisconnectUseCase(repository, newReconnectClock(t, now.Add(5*time.Second))).Disconnect(t.Context(), rollbackCommand)
+		if !errors.Is(err, reconnectusecase.ErrInvalidMutation) || !strings.Contains(err.Error(), "clock rollback") || changed || repository.commitCount() != 1 {
 			t.Fatalf("Disconnect(second at T5) error = %v, changed = %v, commits = %d", err, changed, repository.commitCount())
 		}
 
 		equalCommand := rollbackCommand
 		equalCommand.CommandID = task045ID(920)
 		equalCommand.IntervalID = task045ID(921)
-		if _, changed, err := gameusecase.NewDisconnectUseCase(repository, newReconnectClock(t, firstDisconnectAt)).Disconnect(t.Context(), equalCommand); err != nil || !changed {
+		if _, changed, err := reconnectusecase.NewDisconnectUseCase(repository, newReconnectClock(t, firstDisconnectAt)).Disconnect(t.Context(), equalCommand); err != nil || !changed {
 			t.Fatalf("Disconnect(second at equal T10) error = %v, changed = %v", err, changed)
 		}
 		if repository.commitCount() != 2 {
@@ -186,24 +186,24 @@ func TestDoubleDisconnectSerialization(t *testing.T) {
 		authority := task045Authority(now, false, false)
 		preparationRepository := newTask045RepositoryHarness(t, authority)
 		disconnectAt := now.Add(10 * time.Second)
-		firstDisconnect := gameusecase.DisconnectCommand{
+		firstDisconnect := reconnectusecase.DisconnectCommand{
 			Scope: authority.Scope, CommandID: task045ID(930), ParticipantID: authority.Series.FirstParticipantID,
 			IntervalID: task045ID(931), Deadline: now.Add(40 * time.Second), Settlement: task045SettlementIDs(932),
 		}
-		secondDisconnect := gameusecase.DisconnectCommand{
+		secondDisconnect := reconnectusecase.DisconnectCommand{
 			Scope: authority.Scope, CommandID: task045ID(940), ParticipantID: authority.Series.SecondParticipantID,
 			IntervalID: task045ID(941), Deadline: now.Add(40 * time.Second), Settlement: task045SettlementIDs(942),
 		}
-		for _, command := range []gameusecase.DisconnectCommand{firstDisconnect, secondDisconnect} {
-			if _, changed, err := gameusecase.NewDisconnectUseCase(preparationRepository, newReconnectClock(t, disconnectAt)).Disconnect(t.Context(), command); err != nil || !changed {
+		for _, command := range []reconnectusecase.DisconnectCommand{firstDisconnect, secondDisconnect} {
+			if _, changed, err := reconnectusecase.NewDisconnectUseCase(preparationRepository, newReconnectClock(t, disconnectAt)).Disconnect(t.Context(), command); err != nil || !changed {
 				t.Fatalf("Disconnect(equal T10 %s) error = %v, changed = %v", command.ParticipantID, err, changed)
 			}
 		}
-		firstReconnect := gameusecase.ReconnectCommand{
+		firstReconnect := reconnectusecase.ReconnectCommand{
 			Scope: authority.Scope, CommandID: task045ID(950), ParticipantID: authority.Series.FirstParticipantID,
 			IntervalID: firstDisconnect.IntervalID, Settlement: task045SettlementIDs(952),
 		}
-		if _, changed, err := gameusecase.ReconnectNewUseCase(preparationRepository, newReconnectClock(t, now.Add(11*time.Second))).Reconnect(t.Context(), firstReconnect); err != nil || !changed {
+		if _, changed, err := reconnectusecase.ReconnectNewUseCase(preparationRepository, newReconnectClock(t, now.Add(11*time.Second))).Reconnect(t.Context(), firstReconnect); err != nil || !changed {
 			t.Fatalf("Reconnect(first at T11) error = %v, changed = %v", err, changed)
 		}
 
@@ -216,12 +216,12 @@ func TestDoubleDisconnectSerialization(t *testing.T) {
 		secondInterval.OpenedAt = rolledBackAt
 		secondInterval.UpdatedAt = rolledBackAt
 		repository := newTask045RepositoryHarness(t, legacy)
-		secondReconnect := gameusecase.ReconnectCommand{
+		secondReconnect := reconnectusecase.ReconnectCommand{
 			Scope: authority.Scope, CommandID: task045ID(970), ParticipantID: authority.Series.SecondParticipantID,
 			IntervalID: secondDisconnect.IntervalID, Settlement: task045SettlementIDs(972),
 		}
-		_, changed, err := gameusecase.ReconnectNewUseCase(repository, newReconnectClock(t, now.Add(6*time.Second))).Reconnect(t.Context(), secondReconnect)
-		if !errors.Is(err, gameusecase.ErrInvalidMutation) || !strings.Contains(err.Error(), "clock rollback") || changed || repository.commitCount() != 0 {
+		_, changed, err := reconnectusecase.ReconnectNewUseCase(repository, newReconnectClock(t, now.Add(6*time.Second))).Reconnect(t.Context(), secondReconnect)
+		if !errors.Is(err, reconnectusecase.ErrInvalidMutation) || !strings.Contains(err.Error(), "clock rollback") || changed || repository.commitCount() != 0 {
 			t.Fatalf("Reconnect(second at T6) error = %v, changed = %v, commits = %d", err, changed, repository.commitCount())
 		}
 	})

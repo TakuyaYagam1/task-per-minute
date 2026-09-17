@@ -1,11 +1,11 @@
-package game_test
+package reconnect_test
 
 import (
 	"testing"
 	"time"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	reconnectusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/reconnect"
 )
 
 func testReconnectTimeoutSeries(t *testing.T, base time.Time) {
@@ -16,14 +16,14 @@ func testReconnectTimeoutSeries(t *testing.T, base time.Time) {
 		at := authority.Reconnect[0].Deadline
 		authority.Reconnect[1].Deadline = at.Add(20 * time.Second)
 		repository := newTask045RepositoryHarness(t, authority)
-		if _, changed, err := gameusecase.NewTimeoutUseCase(repository, newReconnectClock(t, at)).Expire(t.Context(), gameusecase.TimeoutCommand{
+		if _, changed, err := reconnectusecase.NewTimeoutUseCase(repository, newReconnectClock(t, at)).Expire(t.Context(), reconnectusecase.TimeoutCommand{
 			Scope: authority.Scope, CommandID: task045ID(520), ParticipantID: authority.Series.FirstParticipantID,
 			IntervalID: authority.Reconnect[0].ID, Settlement: task045SettlementIDs(521),
 		}); err != nil || !changed {
 			t.Fatalf("Expire(staggered first) error = %v, changed = %v", err, changed)
 		}
 		reconnectAt := at.Add(time.Nanosecond)
-		if _, changed, err := gameusecase.ReconnectNewUseCase(repository, newReconnectClock(t, reconnectAt)).Reconnect(t.Context(), gameusecase.ReconnectCommand{
+		if _, changed, err := reconnectusecase.ReconnectNewUseCase(repository, newReconnectClock(t, reconnectAt)).Reconnect(t.Context(), reconnectusecase.ReconnectCommand{
 			Scope: authority.Scope, CommandID: task045ID(530), ParticipantID: authority.Series.SecondParticipantID,
 			IntervalID: authority.Reconnect[1].ID, Settlement: task045SettlementIDs(531),
 		}); err != nil || !changed {
@@ -57,11 +57,11 @@ func testReconnectTimeoutSeries(t *testing.T, base time.Time) {
 			currentSlot,
 		}
 		authority.CurrentOrdinal = 3
-		command := gameusecase.TimeoutCommand{Scope: authority.Scope, CommandID: task045ID(550),
+		command := reconnectusecase.TimeoutCommand{Scope: authority.Scope, CommandID: task045ID(550),
 			ParticipantID: authority.Series.SecondParticipantID, IntervalID: authority.Reconnect[0].ID,
 			Settlement: task045SettlementIDs(551)}
 		repository := newTask045RepositoryHarness(t, authority)
-		terminal, changed, err := gameusecase.NewTimeoutUseCase(repository, newReconnectClock(t, authority.Reconnect[0].Deadline)).Expire(t.Context(), command)
+		terminal, changed, err := reconnectusecase.NewTimeoutUseCase(repository, newReconnectClock(t, authority.Reconnect[0].Deadline)).Expire(t.Context(), command)
 		if err != nil || !changed || terminal.ReconnectAuthority.Series.State != domain.SeriesStateActive ||
 			terminal.ReconnectAuthority.Series.Score != (domain.SeriesScore{FirstParticipantWins: 1, SecondParticipantWins: 1}) ||
 			terminal.ReconnectAuthority.Game.WinnerID == nil || *terminal.ReconnectAuthority.Game.WinnerID != authority.Series.FirstParticipantID ||

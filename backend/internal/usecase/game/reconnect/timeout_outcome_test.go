@@ -1,4 +1,4 @@
-package game_test
+package reconnect_test
 
 import (
 	"reflect"
@@ -7,7 +7,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	reconnectusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/reconnect"
 )
 
 func testReconnectTimeoutOutcomes(t *testing.T, base time.Time) {
@@ -16,11 +16,11 @@ func testReconnectTimeoutOutcomes(t *testing.T, base time.Time) {
 	t.Run("one_absent_awards_connected_opponent", func(t *testing.T) {
 		authority := task045Authority(base, true, false)
 		deadline := authority.Reconnect[0].Deadline
-		command := gameusecase.TimeoutCommand{Scope: authority.Scope, CommandID: task045ID(40),
+		command := reconnectusecase.TimeoutCommand{Scope: authority.Scope, CommandID: task045ID(40),
 			ParticipantID: authority.Series.FirstParticipantID, IntervalID: authority.Reconnect[0].ID,
 			Settlement: task045SettlementIDs(41)}
 		repository := newTask045RepositoryHarness(t, authority)
-		useCase := gameusecase.NewTimeoutUseCase(repository, newReconnectClock(t, deadline))
+		useCase := reconnectusecase.NewTimeoutUseCase(repository, newReconnectClock(t, deadline))
 
 		terminal, changed, err := useCase.Expire(t.Context(), command)
 		if err != nil || !changed || repository.writeCount() != 1 {
@@ -85,7 +85,7 @@ func testReconnectTimeoutOutcomes(t *testing.T, base time.Time) {
 		terminalSnapshot := repository.snapshot()
 		terminalWrites := repository.writeCount()
 		terminalCommits := repository.commitCount()
-		rollbackReplay, changed, err := gameusecase.NewTimeoutUseCase(repository, newReconnectClock(t, base.Add(-2*time.Minute))).Expire(t.Context(), gameusecase.TimeoutCommand{
+		rollbackReplay, changed, err := reconnectusecase.NewTimeoutUseCase(repository, newReconnectClock(t, base.Add(-2*time.Minute))).Expire(t.Context(), reconnectusecase.TimeoutCommand{
 			Scope: authority.Scope, CommandID: task045ID(1000), ParticipantID: authority.Series.FirstParticipantID,
 			IntervalID: authority.Reconnect[0].ID, Settlement: task045SettlementIDs(1001),
 		})
@@ -107,22 +107,22 @@ func testReconnectTimeoutOutcomes(t *testing.T, base time.Time) {
 		}
 		postTerminal := []struct {
 			name string
-			run  func() (*gameusecase.ReconnectRecord, bool, error)
+			run  func() (*reconnectusecase.ReconnectRecord, bool, error)
 		}{
-			{name: "reconnect", run: func() (*gameusecase.ReconnectRecord, bool, error) {
-				return gameusecase.ReconnectNewUseCase(repository, newReconnectClock(t, deadline.Add(time.Second))).Reconnect(t.Context(), gameusecase.ReconnectCommand{
+			{name: "reconnect", run: func() (*reconnectusecase.ReconnectRecord, bool, error) {
+				return reconnectusecase.ReconnectNewUseCase(repository, newReconnectClock(t, deadline.Add(time.Second))).Reconnect(t.Context(), reconnectusecase.ReconnectCommand{
 					Scope: authority.Scope, CommandID: task045ID(570), ParticipantID: authority.Series.FirstParticipantID,
 					IntervalID: authority.Reconnect[0].ID, Settlement: task045SettlementIDs(571),
 				})
 			}},
-			{name: "disconnect", run: func() (*gameusecase.ReconnectRecord, bool, error) {
-				return gameusecase.NewDisconnectUseCase(repository, newReconnectClock(t, deadline.Add(time.Second))).Disconnect(t.Context(), gameusecase.DisconnectCommand{
+			{name: "disconnect", run: func() (*reconnectusecase.ReconnectRecord, bool, error) {
+				return reconnectusecase.NewDisconnectUseCase(repository, newReconnectClock(t, deadline.Add(time.Second))).Disconnect(t.Context(), reconnectusecase.DisconnectCommand{
 					Scope: authority.Scope, CommandID: task045ID(580), ParticipantID: authority.Series.SecondParticipantID,
 					IntervalID: task045ID(581), Deadline: deadline.Add(time.Minute), Settlement: task045SettlementIDs(582),
 				})
 			}},
-			{name: "timeout", run: func() (*gameusecase.ReconnectRecord, bool, error) {
-				return gameusecase.NewTimeoutUseCase(repository, newReconnectClock(t, deadline.Add(time.Second))).Expire(t.Context(), gameusecase.TimeoutCommand{
+			{name: "timeout", run: func() (*reconnectusecase.ReconnectRecord, bool, error) {
+				return reconnectusecase.NewTimeoutUseCase(repository, newReconnectClock(t, deadline.Add(time.Second))).Expire(t.Context(), reconnectusecase.TimeoutCommand{
 					Scope: authority.Scope, CommandID: task045ID(590), ParticipantID: authority.Series.FirstParticipantID,
 					IntervalID: authority.Reconnect[0].ID, Settlement: task045SettlementIDs(591),
 				})
@@ -144,11 +144,11 @@ func testReconnectTimeoutOutcomes(t *testing.T, base time.Time) {
 	t.Run("both_absent_routes_one_void_replay", func(t *testing.T) {
 		authority := task045Authority(base, true, true)
 		deadline := authority.Reconnect[0].Deadline
-		first := gameusecase.TimeoutCommand{Scope: authority.Scope, CommandID: task045ID(50),
+		first := reconnectusecase.TimeoutCommand{Scope: authority.Scope, CommandID: task045ID(50),
 			ParticipantID: authority.Series.FirstParticipantID, IntervalID: authority.Reconnect[0].ID,
 			Settlement: task045SettlementIDs(51)}
 		repository := newTask045RepositoryHarness(t, authority)
-		useCase := gameusecase.NewTimeoutUseCase(repository, newReconnectClock(t, deadline))
+		useCase := reconnectusecase.NewTimeoutUseCase(repository, newReconnectClock(t, deadline))
 		terminal, changed, err := useCase.Expire(t.Context(), first)
 		if err != nil || !changed || repository.writeCount() != 1 {
 			t.Fatalf("Expire(both absent) error = %v, changed = %v, writes = %d", err, changed, repository.writeCount())
@@ -172,7 +172,7 @@ func testReconnectTimeoutOutcomes(t *testing.T, base time.Time) {
 				t.Fatalf("both-absent interval = %+v", interval)
 			}
 		}
-		second := gameusecase.TimeoutCommand{Scope: authority.Scope, CommandID: task045ID(60),
+		second := reconnectusecase.TimeoutCommand{Scope: authority.Scope, CommandID: task045ID(60),
 			ParticipantID: authority.Series.SecondParticipantID, IntervalID: authority.Reconnect[1].ID,
 			Settlement: task045SettlementIDs(61)}
 		_, changed, err = useCase.Expire(t.Context(), second)
