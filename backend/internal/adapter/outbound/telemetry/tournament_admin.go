@@ -6,7 +6,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/observability"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	adminobservability "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/observability"
 )
 
 const tournamentAdminCommandEvent = "tournament.admin.command"
@@ -27,7 +27,7 @@ func NewTournamentAdminObserver(
 
 func (observer *TournamentAdminObserver) ObserveTournamentAdminOperation(
 	ctx context.Context,
-	event tournamentadmin.OperationEvent,
+	event adminobservability.OperationEvent,
 ) {
 	if observer == nil || observer.observer == nil || event.CommandID == uuid.Nil ||
 		event.TournamentID == uuid.Nil || event.EntityID == uuid.Nil || event.Revision < 0 {
@@ -59,31 +59,31 @@ type tournamentAdminMetadata struct {
 	entityKind string
 }
 
-func tournamentAdminOperationMetadata(operation tournamentadmin.Operation) (tournamentAdminMetadata, bool) {
+func tournamentAdminOperationMetadata(operation adminobservability.Operation) (tournamentAdminMetadata, bool) {
 	switch operation {
-	case tournamentadmin.OperationRosterReplace,
-		tournamentadmin.OperationRosterLock,
-		tournamentadmin.OperationRosterUnlock:
+	case adminobservability.OperationRosterReplace,
+		adminobservability.OperationRosterLock,
+		adminobservability.OperationRosterUnlock:
 		return tournamentAdminMetadata{stage: "maintenance", entityKind: "roster"}, true
-	case tournamentadmin.OperationPreflightRun:
+	case adminobservability.OperationPreflightRun:
 		return tournamentAdminMetadata{stage: "maintenance", entityKind: "tournament"}, true
-	case tournamentadmin.OperationPairingConfigure:
+	case adminobservability.OperationPairingConfigure:
 		return tournamentAdminMetadata{stage: "pairing", entityKind: "swiss_round"}, true
-	case tournamentadmin.OperationTournamentAction:
+	case adminobservability.OperationTournamentAction:
 		return tournamentAdminMetadata{stage: "tournament_lifecycle", entityKind: "tournament"}, true
-	case tournamentadmin.OperationWaveControl:
+	case adminobservability.OperationWaveControl:
 		return tournamentAdminMetadata{stage: "wave", entityKind: "wave"}, true
-	case tournamentadmin.OperationNoShowResolve, tournamentadmin.OperationForfeitRecord:
+	case adminobservability.OperationNoShowResolve, adminobservability.OperationForfeitRecord:
 		return tournamentAdminMetadata{stage: "settlement", entityKind: "series"}, true
-	case tournamentadmin.OperationReserveAssign:
+	case adminobservability.OperationReserveAssign:
 		return tournamentAdminMetadata{stage: "reserve", entityKind: "assignment"}, true
-	case tournamentadmin.OperationGameReplay:
+	case adminobservability.OperationGameReplay:
 		return tournamentAdminMetadata{stage: "replay", entityKind: "game"}, true
-	case tournamentadmin.OperationResultCorrect:
+	case adminobservability.OperationResultCorrect:
 		return tournamentAdminMetadata{stage: "correction", entityKind: "game"}, true
 	default:
 		return tournamentAdminMetadata{}, false
 	}
 }
 
-var _ tournamentadmin.OperationObserver = (*TournamentAdminObserver)(nil)
+var _ adminobservability.OperationObserver = (*TournamentAdminObserver)(nil)

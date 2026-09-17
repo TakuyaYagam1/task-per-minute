@@ -71,6 +71,7 @@ import (
 	tournamentadmincorrection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/correction"
 	tournamentadminexecution "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/execution"
 	tournamentadminlifecycle "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/lifecycle"
+	tournamentadminobservability "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/observability"
 	tournamentadminreplay "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/replay"
 	tournamentadminresult "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/result"
 	tournamentadminroster "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/roster"
@@ -239,7 +240,7 @@ var UseCasesSet = wire.NewSet(
 	wire.Bind(new(tournamentpause.PauseClock), new(clockFunc)),
 	wire.Bind(new(tournamentcancellation.CancellationClock), new(clockFunc)),
 	wire.Bind(new(tournamentadminlifecycle.AdminLifecycleClock), new(clockFunc)),
-	wire.Bind(new(tournamentadmin.OperationClock), new(clockFunc)),
+	wire.Bind(new(tournamentadminobservability.OperationClock), new(clockFunc)),
 	wire.Bind(new(tournamentparticipant.ParticipantOperationClock), new(clockFunc)),
 	wire.Bind(new(tournamentprogression.ProgressionClock), new(clockFunc)),
 	provideRevocationRedis,
