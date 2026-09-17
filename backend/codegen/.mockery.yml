@@ -34,7 +34,7 @@ packages:
     interfaces:
       CancellationClock:
       TournamentCancellationRepository:
-  github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/inbound:
     interfaces:
       AdminService:
   github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/observability:

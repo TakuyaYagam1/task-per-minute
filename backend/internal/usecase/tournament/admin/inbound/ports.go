@@ -63,7 +63,7 @@ type OperatorCursor = snapshot.OperatorCursor
 type PauseGraphView = snapshot.PauseGraphView
 type OperatorSnapshotView = snapshot.OperatorSnapshotView
 
-type Service interface {
+type AdminService interface {
 	GetRoster(context.Context, RosterQuery) (RosterView, error)
 	ReplaceRoster(context.Context, ReplaceRosterCommand) (RosterView, error)
 	RunPreflight(context.Context, PreflightCommand) (preflight.ReportRevision, error)
@@ -81,3 +81,5 @@ type Service interface {
 	ExportIncident(context.Context, IncidentQuery) (audit.IncidentBundle, error)
 	GetOperatorSnapshot(context.Context, SnapshotQuery) (OperatorSnapshotView, error)
 }
+
+type Service = AdminService

@@ -13,43 +13,16 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
-	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/audit"
-	correctionusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/correction"
-	executionusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/execution"
-	incidentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/incident"
+	admininbound "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/inbound"
 	lifecycleusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/lifecycle"
 	operationusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/operation"
-	pairingusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/pairing"
-	replayusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/replay"
-	resultusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/result"
-	rosterusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/roster"
-	snapshotusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/snapshot"
-	tournamentpreflight "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/preflight"
 )
 
 const maxReasonRunes = 512
 
-// Service is the transport-neutral operator boundary for one tournament.
-// Actor identity is always derived from the authenticated session by the
-// inbound adapter; no command trusts a client-provided operator identity.
-type AdminService interface {
-	GetRoster(ctx context.Context, query rosterusecase.RosterQuery) (rosterusecase.RosterView, error)
-	ReplaceRoster(ctx context.Context, command rosterusecase.ReplaceRosterCommand) (rosterusecase.RosterView, error)
-	RunPreflight(ctx context.Context, command rosterusecase.PreflightCommand) (tournamentpreflight.ReportRevision, error)
-	LockRoster(ctx context.Context, command rosterusecase.LockRosterCommand) (rosterusecase.RosterView, error)
-	UnlockRoster(ctx context.Context, command rosterusecase.UnlockRosterCommand) (rosterusecase.RosterView, error)
-	ConfigurePairings(ctx context.Context, command pairingusecase.PairingCommand) (executionusecase.SwissRoundView, error)
-	ApplyTournamentAction(ctx context.Context, command lifecycleusecase.TournamentActionCommand) (usecase.TournamentView, error)
-	ControlWave(ctx context.Context, command executionusecase.WaveCommand) (executionusecase.WaveView, error)
-	ResolveNoShow(ctx context.Context, command resultusecase.NoShowCommand) error
-	AssignReserve(ctx context.Context, command replayusecase.ReserveCommand) error
-	RecordForfeit(ctx context.Context, command resultusecase.ForfeitCommand) error
-	ReplayGame(ctx context.Context, command replayusecase.ReplayCommand) error
-	CorrectGameResult(ctx context.Context, command correctionusecase.CorrectionCommand) (correctionusecase.CorrectionEvidence, error)
-	ListAudit(ctx context.Context, query incidentusecase.AuditQuery) (audit.AuditPage, error)
-	ExportIncident(ctx context.Context, query incidentusecase.IncidentQuery) (audit.IncidentBundle, error)
-	GetOperatorSnapshot(ctx context.Context, query snapshotusecase.SnapshotQuery) (snapshotusecase.OperatorSnapshotView, error)
-}
+// AdminService preserves the historical root contract while making the
+// consumer-owned inbound contract canonical.
+type AdminService = admininbound.AdminService
 
 func (a *AdminUseCase) ListTournaments(
 	ctx context.Context,

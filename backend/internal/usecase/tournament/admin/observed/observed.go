@@ -10,6 +10,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/audit"
 	correctionusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/correction"
 	executionusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/execution"
+	admininbound "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/inbound"
 	incidentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/incident"
 	lifecycleworkflow "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/lifecycle"
 	observabilityusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/observability"
@@ -22,25 +23,8 @@ import (
 	tournamentpreflight "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/preflight"
 )
 
-// Service is the transport-neutral admin workflow contract observed by this decorator.
-type Service interface {
-	GetRoster(ctx context.Context, query rosterusecase.RosterQuery) (rosterusecase.RosterView, error)
-	ReplaceRoster(ctx context.Context, command rosterusecase.ReplaceRosterCommand) (rosterusecase.RosterView, error)
-	RunPreflight(ctx context.Context, command rosterusecase.PreflightCommand) (tournamentpreflight.ReportRevision, error)
-	LockRoster(ctx context.Context, command rosterusecase.LockRosterCommand) (rosterusecase.RosterView, error)
-	UnlockRoster(ctx context.Context, command rosterusecase.UnlockRosterCommand) (rosterusecase.RosterView, error)
-	ConfigurePairings(ctx context.Context, command pairingusecase.PairingCommand) (executionusecase.SwissRoundView, error)
-	ApplyTournamentAction(ctx context.Context, command lifecycleworkflow.TournamentActionCommand) (inbound.TournamentView, error)
-	ControlWave(ctx context.Context, command executionusecase.WaveCommand) (executionusecase.WaveView, error)
-	ResolveNoShow(ctx context.Context, command resultusecase.NoShowCommand) error
-	AssignReserve(ctx context.Context, command replayusecase.ReserveCommand) error
-	RecordForfeit(ctx context.Context, command resultusecase.ForfeitCommand) error
-	ReplayGame(ctx context.Context, command replayusecase.ReplayCommand) error
-	CorrectGameResult(ctx context.Context, command correctionusecase.CorrectionCommand) (correctionusecase.CorrectionEvidence, error)
-	ListAudit(ctx context.Context, query incidentusecase.AuditQuery) (audit.AuditPage, error)
-	ExportIncident(ctx context.Context, query incidentusecase.IncidentQuery) (audit.IncidentBundle, error)
-	GetOperatorSnapshot(ctx context.Context, query snapshotusecase.SnapshotQuery) (snapshotusecase.OperatorSnapshotView, error)
-}
+// Service is the canonical inbound admin contract observed by this decorator.
+type Service = admininbound.AdminService
 
 // ObservedService emits one payload-free terminal event for each admin mutation
 // that does not already own a lower-level production observer.
