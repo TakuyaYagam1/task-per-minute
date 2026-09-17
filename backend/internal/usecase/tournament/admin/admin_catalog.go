@@ -15,6 +15,7 @@ import (
 	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/audit"
 	incidentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/incident"
+	snapshotusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/snapshot"
 	tournamentpreflight "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/preflight"
 )
 
@@ -39,7 +40,7 @@ type AdminService interface {
 	CorrectGameResult(ctx context.Context, command CorrectionCommand) (CorrectionEvidence, error)
 	ListAudit(ctx context.Context, query incidentusecase.AuditQuery) (audit.AuditPage, error)
 	ExportIncident(ctx context.Context, query incidentusecase.IncidentQuery) (audit.IncidentBundle, error)
-	GetOperatorSnapshot(ctx context.Context, query SnapshotQuery) (OperatorSnapshotView, error)
+	GetOperatorSnapshot(ctx context.Context, query snapshotusecase.SnapshotQuery) (snapshotusecase.OperatorSnapshotView, error)
 }
 
 func (a *AdminUseCase) ListTournaments(

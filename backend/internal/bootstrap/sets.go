@@ -79,6 +79,7 @@ import (
 	tournamentadminreplay "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/replay"
 	tournamentadminresult "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/result"
 	tournamentadminroster "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/roster"
+	tournamentadminsnapshot "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/snapshot"
 	tournamentcancellation "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/cancellation"
 	catalogusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/catalog"
 	participantconnection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/connection"
@@ -171,7 +172,7 @@ var ReposSet = wire.NewSet(
 	wire.Bind(new(tournamentadminincident.AuditPort), new(*auditrepo.TournamentAdminAuditPostgres)),
 	wire.Bind(new(tournamentadminincident.IncidentSnapshotPort), new(*auditrepo.TournamentAdminAuditPostgres)),
 	adminsnapshotrepo.NewTournamentAdminSnapshotPostgres,
-	wire.Bind(new(tournamentadmin.SnapshotPort), new(*adminsnapshotrepo.TournamentAdminSnapshotPostgres)),
+	wire.Bind(new(tournamentadminsnapshot.SnapshotPort), new(*adminsnapshotrepo.TournamentAdminSnapshotPostgres)),
 	waverepo.NewWavePostgres,
 	draftrepo.NewDraftPostgres,
 	provideResultPostgres,

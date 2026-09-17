@@ -13,6 +13,7 @@ import (
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/audit"
 	incidentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/incident"
+	snapshotusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/snapshot"
 )
 
 func TestUseCaseFailsClosedWithoutAdminDependencies(t *testing.T) {
@@ -275,7 +276,7 @@ type adminCommands struct {
 	correction       CorrectionCommand
 	audit            incidentusecase.AuditQuery
 	incident         incidentusecase.IncidentQuery
-	snapshot         SnapshotQuery
+	snapshot         snapshotusecase.SnapshotQuery
 }
 
 func validAdminCommands() adminCommands {
@@ -370,7 +371,7 @@ func validAdminCommands() adminCommands {
 			Operator: operator, Filter: audit.AuditFilter{TournamentID: tournamentID},
 		},
 		incident: incidentusecase.IncidentQuery{Operator: operator, TournamentID: tournamentID},
-		snapshot: SnapshotQuery{Operator: operator, TournamentID: tournamentID},
+		snapshot: snapshotusecase.SnapshotQuery{Operator: operator, TournamentID: tournamentID},
 	}
 }
 

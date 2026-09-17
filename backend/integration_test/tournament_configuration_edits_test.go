@@ -21,6 +21,7 @@ import (
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	gamestart "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/start"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	snapshotusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/snapshot"
 )
 
 func TestTournamentConfigurationDefaultsThroughProductionHTTPAndPostgres(t *testing.T) {
@@ -455,7 +456,7 @@ func TestTournamentOddSwissRoundRevisionRebuildsByeThroughProductionHTTPAndPostg
 		}()),
 		catalog: catalog,
 	}
-	_, err = snapshotrepo.NewTournamentAdminSnapshotPostgres(fixture.mgr).GetOperatorSnapshot(ctx, tournamentadmin.SnapshotQuery{
+	_, err = snapshotrepo.NewTournamentAdminSnapshotPostgres(fixture.mgr).GetOperatorSnapshot(ctx, snapshotusecase.SnapshotQuery{
 		Operator: tournamentadmin.OperatorIdentity{ActorID: uuid.New()}, TournamentID: created.Id,
 	})
 	require.NoError(t, err, "revised odd Swiss graph must load through the production snapshot repository")

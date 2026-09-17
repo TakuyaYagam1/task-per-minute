@@ -8,6 +8,7 @@ import (
 	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/audit"
 	incidentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/incident"
+	snapshotusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/snapshot"
 	tournamentpreflight "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/preflight"
 )
 
@@ -26,7 +27,7 @@ type AdminDependencies struct {
 	Audit      incidentusecase.AuditPort
 	Incidents  incidentusecase.IncidentSnapshotPort
 	Signer     incidentusecase.IncidentAuthenticator
-	Snapshots  SnapshotPort
+	Snapshots  snapshotusecase.SnapshotPort
 }
 
 type AdminUseCase struct {
@@ -44,7 +45,7 @@ type AdminUseCase struct {
 	audit      incidentusecase.AuditPort
 	incidents  incidentusecase.IncidentSnapshotPort
 	signer     incidentusecase.IncidentAuthenticator
-	snapshots  SnapshotPort
+	snapshots  snapshotusecase.SnapshotPort
 }
 
 func AdminNewUseCase(deps AdminDependencies) *AdminUseCase {
@@ -299,20 +300,20 @@ func (a *AdminUseCase) ExportIncident(
 
 func (a *AdminUseCase) GetOperatorSnapshot(
 	ctx context.Context,
-	query SnapshotQuery,
-) (OperatorSnapshotView, error) {
-	if ctx == nil || !validSnapshotQuery(query) {
-		return OperatorSnapshotView{}, domain.ErrValidation
+	query snapshotusecase.SnapshotQuery,
+) (snapshotusecase.OperatorSnapshotView, error) {
+	if ctx == nil || !snapshotusecase.ValidSnapshotQuery(query) {
+		return snapshotusecase.OperatorSnapshotView{}, domain.ErrValidation
 	}
 	if a == nil || a.snapshots == nil {
-		return OperatorSnapshotView{}, domain.ErrInternal
+		return snapshotusecase.OperatorSnapshotView{}, domain.ErrInternal
 	}
 	view, err := a.snapshots.GetOperatorSnapshot(ctx, query)
 	if err != nil {
-		return OperatorSnapshotView{}, normalizeAdminError(err)
+		return snapshotusecase.OperatorSnapshotView{}, normalizeAdminError(err)
 	}
-	if !validOperatorSnapshot(view, query.TournamentID) {
-		return OperatorSnapshotView{}, domain.ErrInternal
+	if !snapshotusecase.ValidOperatorSnapshot(view, query.TournamentID) {
+		return snapshotusecase.OperatorSnapshotView{}, domain.ErrInternal
 	}
 	return view, nil
 }

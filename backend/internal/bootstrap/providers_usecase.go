@@ -51,6 +51,7 @@ import (
 	tournamentadminreplay "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/replay"
 	tournamentadminresult "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/result"
 	tournamentadminroster "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/roster"
+	tournamentadminsnapshot "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/snapshot"
 	tournamentcancellation "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/cancellation"
 	catalogusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/catalog"
 	lifecycleusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/lifecycle"
@@ -450,7 +451,7 @@ func provideTournamentAdminApplication(
 	audit tournamentadminincident.AuditPort,
 	incidents tournamentadminincident.IncidentSnapshotPort,
 	signer tournamentadminincident.IncidentAuthenticator,
-	snapshots tournamentadmin.SnapshotPort,
+	snapshots tournamentadminsnapshot.SnapshotPort,
 ) *tournamentadmin.AdminUseCase {
 	return tournamentadmin.AdminNewUseCase(tournamentadmin.AdminDependencies{
 		Catalog:    catalog,
