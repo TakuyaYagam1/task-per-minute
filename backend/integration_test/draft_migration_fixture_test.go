@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/integration_test/internal/testkit/draftseed"
@@ -81,71 +82,46 @@ func createDraftMigrationFixtureWithContentHook(
 ) draftMigrationFixture {
 	tb.Helper()
 
-	tournamentID := createMigrationTournament(ctx, tb)
-	rosterID := createMigrationRoster(ctx, tb, tournamentID)
-	playerIDs := createMigrationPlayers(ctx, tb, 4)
-	allParticipantIDs := createSwissMigrationParticipants(ctx, tb, rosterID, playerIDs)
 	createdAt := time.Now().UTC().Add(-time.Minute).Truncate(time.Microsecond)
-	sourceProjectionID, sourceProjectionRevision := createRoundProofProjection(
-		ctx,
-		tb,
-		tournamentID,
-		rosterID,
-		allParticipantIDs[0],
-		createdAt,
-	)
-	participantIDs := allParticipantIDs[:2]
-	seriesID := createDraftMigrationWaveSeries(
-		ctx,
-		tb,
-		tournamentID,
-		rosterID,
-		participantIDs,
-		sourceProjectionID,
-		sourceProjectionRevision,
-		createdAt,
-	)
-	normalTaskIDs := prepareDraftMigrationContent(ctx, tb)
-	var normalPoolRevisionID uuid.UUID
-	if afterContentPrepared == nil {
-		normalPoolRevisionID, _ = createRoundProofContentConfiguration(
-			ctx, tb, tournamentID, createdAt, normalTaskIDs,
-		)
-	} else {
-		afterContentPrepared(normalTaskIDs)
-		normalPoolRevisionID = createDraftContentConfigurationFromCurrentTasks(
-			ctx, tb, tournamentID, createdAt, normalTaskIDs,
-		)
-	}
-
-	draft, err := draftseed.CreateDraft(ctx, sharedPool, draftseed.DraftInput{
-		SeriesID:             seriesID,
-		RosterID:             rosterID,
-		SourcePoolRevisionID: normalPoolRevisionID,
-		FirstParticipantID:   participantIDs[0],
-		SecondParticipantID:  participantIDs[1],
-		Format:               domain.SeriesFormatBO1,
-		CategoryPool: []domain.Category{
-			domain.CategoryWeb,
-			domain.CategoryCrypto,
-			domain.CategoryPwn,
+	prepared, err := draftseed.Prepare(ctx, sharedPool, draftseed.PrepareInput{
+		CreatedAt: createdAt,
+		Content: func(
+			contentCtx context.Context,
+			pool *pgxpool.Pool,
+			tournamentID uuid.UUID,
+			at time.Time,
+		) (draftseed.ContentSeed, error) {
+			normalTaskIDs := prepareDraftMigrationContent(ctx, tb)
+			var normalPoolRevisionID uuid.UUID
+			if afterContentPrepared == nil {
+				normalPoolRevisionID, _ = createRoundProofContentConfiguration(
+					ctx, tb, tournamentID, at, normalTaskIDs,
+				)
+			} else {
+				afterContentPrepared(normalTaskIDs)
+				normalPoolRevisionID = createDraftContentConfigurationFromCurrentTasks(
+					ctx, tb, tournamentID, at, normalTaskIDs,
+				)
+			}
+			return draftseed.ContentSeed{
+				TaskIDs:              normalTaskIDs,
+				NormalPoolRevisionID: normalPoolRevisionID,
+			}, nil
 		},
-		AbsoluteDeadline: createdAt.Add(15 * time.Second),
-		CreatedAt:        createdAt,
 	})
 	require.NoError(tb, err)
 
 	return draftMigrationFixture{
-		tournamentID:         tournamentID,
-		rosterID:             rosterID,
-		seriesID:             seriesID,
-		draftID:              draft.DraftID,
-		categoryRevisionID:   draft.CategoryRevisionID,
-		normalPoolRevisionID: normalPoolRevisionID,
-		initialRevisionID:    draft.InitialRevisionID,
-		participantIDs:       []uuid.UUID{draft.FirstParticipantID, draft.SecondParticipantID},
-		initialServiceEpoch:  draft.InitialServiceEpoch,
-		createdAt:            createdAt,
+		tournamentID:         prepared.TournamentID,
+		rosterID:             prepared.RosterID,
+		seriesID:             prepared.SeriesID,
+		draftID:              prepared.Draft.DraftID,
+		categoryRevisionID:   prepared.Draft.CategoryRevisionID,
+		normalPoolRevisionID: prepared.Content.NormalPoolRevisionID,
+		initialRevisionID:    prepared.Draft.InitialRevisionID,
+		participantIDs:       append([]uuid.UUID(nil), prepared.Draft.FirstParticipantID, prepared.Draft.SecondParticipantID),
+		initialServiceEpoch:  prepared.Draft.InitialServiceEpoch,
+		createdAt:            prepared.CreatedAt,
 	}
 }
 
