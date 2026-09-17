@@ -1,4 +1,4 @@
-package admin_test
+package roster_test
 
 import (
 	"context"
@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
-	tournamentadminmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/mocks"
+	rosterusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/roster"
+	rostermocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/roster/mocks"
 	tournamentpreflight "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/preflight"
 )
 
@@ -21,9 +21,9 @@ func TestRosterWorkflowRunPreflightPersistsFailedEvidence(t *testing.T) {
 	t.Parallel()
 	harness := newRosterWorkflowHarness(t, 1)
 	authority := rosterAuthorityFixture()
-	command := tournamentadmin.PreflightCommand{
-		CommandScope: tournamentadmin.CommandScope{
-			Operator:     tournamentadmin.OperatorIdentity{ActorID: rosterTestID(40)},
+	command := rosterusecase.PreflightCommand{
+		CommandScope: rosterusecase.CommandScope{
+			Operator:     rosterusecase.OperatorIdentity{ActorID: rosterTestID(40)},
 			TournamentID: authority.Roster.TournamentID, CommandID: rosterTestID(41),
 		},
 		ExpectedProjectionRevision: authority.ProjectionRevision,
@@ -38,10 +38,10 @@ func TestRosterWorkflowRunPreflightPersistsFailedEvidence(t *testing.T) {
 	harness.repository.EXPECT().LoadPreflightInput(mock.Anything, authority, evaluatedAt).Return(input, nil)
 	harness.repository.EXPECT().SaveRosterOperation(
 		mock.Anything,
-		mock.MatchedBy(func(record tournamentadmin.RosterOperationRecord) bool {
+		mock.MatchedBy(func(record rosterusecase.RosterOperationRecord) bool {
 			var saved tournamentpreflight.ReportRevision
 			//nolint:musttag // ReportRevision owns a stable, explicitly tagged evidence document.
-			return record.Action == tournamentadmin.RosterOperationPreflight &&
+			return record.Action == rosterusecase.RosterOperationPreflight &&
 				record.CommandID == command.CommandID && record.RosterID == authority.Roster.ID &&
 				record.SourceProjectionRevisionID == authority.ProjectionRevisionID &&
 				record.SourceProjectionRevision == authority.ProjectionRevision &&
@@ -61,9 +61,9 @@ func TestRosterWorkflowRunPreflightSamplesRuntimeHealthBeforeTransaction(t *test
 	t.Parallel()
 
 	authority := rosterAuthorityFixture()
-	command := tournamentadmin.PreflightCommand{
-		CommandScope: tournamentadmin.CommandScope{
-			Operator:     tournamentadmin.OperatorIdentity{ActorID: rosterTestID(42)},
+	command := rosterusecase.PreflightCommand{
+		CommandScope: rosterusecase.CommandScope{
+			Operator:     rosterusecase.OperatorIdentity{ActorID: rosterTestID(42)},
 			TournamentID: authority.Roster.TournamentID,
 			CommandID:    rosterTestID(43),
 		},
@@ -71,8 +71,8 @@ func TestRosterWorkflowRunPreflightSamplesRuntimeHealthBeforeTransaction(t *test
 	}
 	evaluatedAt := authority.Roster.UpdatedAt.Add(time.Minute)
 	input := failedRosterPreflightInput(authority, evaluatedAt)
-	transactions := tournamentadminmocks.NewMockRosterTransactionManager(t)
-	repository := tournamentadminmocks.NewMockRosterWorkflowRepository(t)
+	transactions := rostermocks.NewMockRosterTransactionManager(t)
+	repository := rostermocks.NewMockRosterWorkflowRepository(t)
 	insideTransaction := false
 	transactions.EXPECT().Do(mock.Anything, mock.Anything).
 		RunAndReturn(func(ctx context.Context, fn func(context.Context) error) error {
@@ -86,10 +86,10 @@ func TestRosterWorkflowRunPreflightSamplesRuntimeHealthBeforeTransaction(t *test
 	repository.EXPECT().ReadRosterTime(mock.Anything).Return(evaluatedAt, nil)
 	repository.EXPECT().LoadPreflightInput(mock.Anything, authority, evaluatedAt).Return(input, nil)
 	repository.EXPECT().SaveRosterOperation(mock.Anything, mock.Anything).Return(nil)
-	workflow := tournamentadmin.NewRosterWorkflow(tournamentadmin.RosterWorkflowDependencies{
+	workflow := rosterusecase.NewRosterWorkflow(rosterusecase.RosterWorkflowDependencies{
 		Transactions: transactions,
 		Repository:   repository,
-		RuntimeHealth: tournamentadmin.PreflightRuntimeHealthSourceFunc(func(context.Context) tournamentpreflight.RuntimeHealth {
+		RuntimeHealth: rosterusecase.PreflightRuntimeHealthSourceFunc(func(context.Context) tournamentpreflight.RuntimeHealth {
 			require.False(t, insideTransaction)
 			return tournamentpreflight.RuntimeHealth{}
 		}),
@@ -112,12 +112,12 @@ func TestRosterWorkflowRejectsLockWhenPersistedPreflightFailed(t *testing.T) {
 	document, err := json.Marshal(report)
 	require.NoError(t, err)
 	checkedIn := checkedInRosterPlayerIDs(authority.Roster)
-	record := &tournamentadmin.RosterOperationRecord{
-		CommandScope: tournamentadmin.CommandScope{
-			Operator:     tournamentadmin.OperatorIdentity{ActorID: rosterTestID(51)},
+	record := &rosterusecase.RosterOperationRecord{
+		CommandScope: rosterusecase.CommandScope{
+			Operator:     rosterusecase.OperatorIdentity{ActorID: rosterTestID(51)},
 			TournamentID: authority.Roster.TournamentID, CommandID: reportID,
 		},
-		RosterID: authority.Roster.ID, Action: tournamentadmin.RosterOperationPreflight,
+		RosterID: authority.Roster.ID, Action: rosterusecase.RosterOperationPreflight,
 		SourceProjectionRevisionID:  authority.ProjectionRevisionID,
 		SourceProjectionRevision:    authority.ProjectionRevision,
 		SourceTournamentRevision:    authority.TournamentRevision,
@@ -129,9 +129,9 @@ func TestRosterWorkflowRejectsLockWhenPersistedPreflightFailed(t *testing.T) {
 		RequestDigest:               [32]byte{1}, CheckedInPlayerIDs: checkedIn,
 		ResultDocument: document, ExecutedAt: evaluatedAt,
 	}
-	command := tournamentadmin.LockRosterCommand{
-		CommandScope: tournamentadmin.CommandScope{
-			Operator:     tournamentadmin.OperatorIdentity{ActorID: rosterTestID(52)},
+	command := rosterusecase.LockRosterCommand{
+		CommandScope: rosterusecase.CommandScope{
+			Operator:     rosterusecase.OperatorIdentity{ActorID: rosterTestID(52)},
 			TournamentID: authority.Roster.TournamentID, CommandID: rosterTestID(53),
 		},
 		ExpectedProjectionRevision: authority.ProjectionRevision,
@@ -152,13 +152,13 @@ func TestRosterWorkflowReplaysReplaceBeforeCurrentProjectionCheck(t *testing.T) 
 	t.Parallel()
 	harness := newRosterWorkflowHarness(t, 2)
 	authority := rosterAuthorityFixture()
-	command := tournamentadmin.NewReplaceRosterCommand(
-		tournamentadmin.OperatorIdentity{ActorID: rosterTestID(60)}, authority.Roster.TournamentID,
+	command := rosterusecase.NewReplaceRosterCommand(
+		rosterusecase.OperatorIdentity{ActorID: rosterTestID(60)}, authority.Roster.TournamentID,
 		rosterTestID(61), authority.ProjectionRevision, rosterReplacementFixture(),
 	)
 	executedAt := authority.Roster.UpdatedAt.Add(time.Minute)
 	replaced := rosterViewForInputs(authority.Roster, command.Participants, executedAt)
-	var saved *tournamentadmin.RosterOperationRecord
+	var saved *rosterusecase.RosterOperationRecord
 
 	harness.repository.EXPECT().LockRosterAuthority(mock.Anything, command.TournamentID).Return(authority, nil).Once()
 	harness.repository.EXPECT().FindRosterOperation(mock.Anything, command.TournamentID, command.CommandID).
@@ -168,10 +168,10 @@ func TestRosterWorkflowReplaysReplaceBeforeCurrentProjectionCheck(t *testing.T) 
 		Return(replaced, nil).Once()
 	harness.repository.EXPECT().SaveRosterOperation(
 		mock.Anything,
-		mock.MatchedBy(func(record tournamentadmin.RosterOperationRecord) bool {
+		mock.MatchedBy(func(record rosterusecase.RosterOperationRecord) bool {
 			copied := record
 			saved = &copied
-			return record.Action == tournamentadmin.RosterOperationReplace && record.CommandID == command.CommandID
+			return record.Action == rosterusecase.RosterOperationReplace && record.CommandID == command.CommandID
 		}),
 	).Return(nil).Once()
 
@@ -192,37 +192,37 @@ func TestRosterWorkflowReplaysReplaceBeforeCurrentProjectionCheck(t *testing.T) 
 }
 
 type rosterWorkflowHarness struct {
-	workflow   *tournamentadmin.RosterWorkflow
-	repository *tournamentadminmocks.MockRosterWorkflowRepository
+	workflow   *rosterusecase.RosterWorkflow
+	repository *rostermocks.MockRosterWorkflowRepository
 }
 
 func newRosterWorkflowHarness(t *testing.T, transactionCount int) rosterWorkflowHarness {
 	t.Helper()
-	transactions := tournamentadminmocks.NewMockRosterTransactionManager(t)
-	repository := tournamentadminmocks.NewMockRosterWorkflowRepository(t)
+	transactions := rostermocks.NewMockRosterTransactionManager(t)
+	repository := rostermocks.NewMockRosterWorkflowRepository(t)
 	transactions.EXPECT().Do(mock.Anything, mock.Anything).
 		RunAndReturn(func(ctx context.Context, fn func(context.Context) error) error { return fn(ctx) }).
 		Times(transactionCount)
 	return rosterWorkflowHarness{
-		workflow: tournamentadmin.NewRosterWorkflow(tournamentadmin.RosterWorkflowDependencies{
+		workflow: rosterusecase.NewRosterWorkflow(rosterusecase.RosterWorkflowDependencies{
 			Transactions: transactions, Repository: repository,
 		}),
 		repository: repository,
 	}
 }
 
-func rosterAuthorityFixture() tournamentadmin.RosterAuthority {
+func rosterAuthorityFixture() rosterusecase.RosterAuthority {
 	createdAt := time.Date(2026, time.September, 6, 10, 0, 0, 0, time.UTC)
 	tournamentID := rosterTestID(1)
 	rosterID := rosterTestID(2)
 	inputs := rosterReplacementFixture()
-	view := tournamentadmin.RosterView{
+	view := rosterusecase.RosterView{
 		ID: rosterID, TournamentID: tournamentID, Revision: 4,
 		CreatedAt: createdAt, UpdatedAt: createdAt,
 	}
 	view = rosterViewForInputs(view, inputs, createdAt)
 	view.Revision = 4
-	return tournamentadmin.RosterAuthority{
+	return rosterusecase.RosterAuthority{
 		Roster: view, TournamentPreset: domain.TournamentPresetV1,
 		PlannedRosterSize: len(inputs), ContentRevision: 1,
 		TournamentState: domain.TournamentStateRegistration, TournamentRevision: 3,
@@ -230,8 +230,8 @@ func rosterAuthorityFixture() tournamentadmin.RosterAuthority {
 	}
 }
 
-func rosterReplacementFixture() []tournamentadmin.RosterParticipantInput {
-	return []tournamentadmin.RosterParticipantInput{
+func rosterReplacementFixture() []rosterusecase.RosterParticipantInput {
+	return []rosterusecase.RosterParticipantInput{
 		{PlayerID: rosterTestID(10), Seed: 1, Attendance: domain.AttendanceStateCheckedIn},
 		{PlayerID: rosterTestID(11), Seed: 2, Attendance: domain.AttendanceStateCheckedIn},
 		{PlayerID: rosterTestID(12), Seed: 3, Attendance: domain.AttendanceStateCheckedIn},
@@ -240,16 +240,16 @@ func rosterReplacementFixture() []tournamentadmin.RosterParticipantInput {
 }
 
 func rosterViewForInputs(
-	base tournamentadmin.RosterView,
-	inputs []tournamentadmin.RosterParticipantInput,
+	base rosterusecase.RosterView,
+	inputs []rosterusecase.RosterParticipantInput,
 	updatedAt time.Time,
-) tournamentadmin.RosterView {
+) rosterusecase.RosterView {
 	view := base
 	view.Revision++
 	view.UpdatedAt = updatedAt
-	view.Participants = make([]tournamentadmin.RosterParticipantView, len(inputs))
+	view.Participants = make([]rosterusecase.RosterParticipantView, len(inputs))
 	for index, input := range inputs {
-		view.Participants[index] = tournamentadmin.RosterParticipantView{
+		view.Participants[index] = rosterusecase.RosterParticipantView{
 			ID: rosterTestID(100 + index), RosterID: base.ID, TournamentID: base.TournamentID,
 			PlayerID: input.PlayerID, Seed: input.Seed, Attendance: input.Attendance,
 			CreatedAt: base.CreatedAt, UpdatedAt: updatedAt,
@@ -259,7 +259,7 @@ func rosterViewForInputs(
 }
 
 func failedRosterPreflightInput(
-	authority tournamentadmin.RosterAuthority,
+	authority rosterusecase.RosterAuthority,
 	evaluatedAt time.Time,
 ) tournamentpreflight.ReportInput {
 	participants := make([]tournamentpreflight.Participant, len(authority.Roster.Participants))
@@ -287,7 +287,7 @@ func failedRosterPreflightInput(
 	}
 }
 
-func checkedInRosterPlayerIDs(view tournamentadmin.RosterView) []uuid.UUID {
+func checkedInRosterPlayerIDs(view rosterusecase.RosterView) []uuid.UUID {
 	result := make([]uuid.UUID, 0, len(view.Participants))
 	for _, participant := range view.Participants {
 		if participant.Attendance == domain.AttendanceStateCheckedIn {

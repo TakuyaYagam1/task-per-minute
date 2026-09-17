@@ -42,8 +42,6 @@ packages:
       LifecyclePauser:
       LifecycleCanceller:
       LifecycleWorkflowRepository:
-      RosterTransactionManager:
-      RosterWorkflowRepository:
       ExecutionTransactionManager:
       ExecutionWorkflowRepository:
       OperatorResultTransactionManager:
@@ -60,6 +58,10 @@ packages:
     interfaces:
       IncidentSnapshotPort:
       IncidentAuthenticator:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/roster:
+    interfaces:
+      RosterTransactionManager:
+      RosterWorkflowRepository:
   github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/participant:
     interfaces:
       ParticipantTransactionManager:
