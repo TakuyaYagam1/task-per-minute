@@ -1,22 +1,44 @@
 //go:build integration
 
-package integration_test
+package game
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/integration_test/internal/testkit/gameseed"
 	"github.com/TakuyaYagam1/task-per-minute/integration_test/internal/testkit/seriesseed"
+	"github.com/TakuyaYagam1/task-per-minute/integration_test/internal/testkit/swissseed"
+	"github.com/TakuyaYagam1/task-per-minute/integration_test/internal/testkit/tournamentseed"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
-func TestGameMigration(t *testing.T) {
+var (
+	migrationPool   *pgxpool.Pool
+	migrationPoolMu sync.Mutex
+)
+
+// RunGameMigration runs the moved game migration assertions against the
+// caller-owned integration pool. The temporary pool binding keeps the
+// existing assertion helpers small while serializing callers in one process.
+func RunGameMigration(t *testing.T, pool *pgxpool.Pool) {
+	t.Helper()
+	require.NotNil(t, pool)
+	migrationPoolMu.Lock()
+	previousPool := migrationPool
+	migrationPool = pool
+	t.Cleanup(func() {
+		migrationPool = previousPool
+		migrationPoolMu.Unlock()
+	})
+
 	ctx := context.Background()
 	resetMigrationTables(ctx, t)
 	t.Cleanup(func() { resetMigrationTables(ctx, t) })
@@ -25,7 +47,7 @@ func TestGameMigration(t *testing.T) {
 	rosterID := createMigrationRoster(ctx, t, tournamentID)
 	playerIDs := createMigrationPlayers(ctx, t, 3)
 	participantIDs := createSwissMigrationParticipants(ctx, t, rosterID, playerIDs)
-	seriesID := createMigrationSeries(ctx, t, tournamentID, rosterID, participantIDs[:2], "bo3")
+	seriesID := createGameMigrationSeries(ctx, t, tournamentID, rosterID, participantIDs[:2], "bo3")
 	createdAt := time.Now().UTC().Add(-time.Minute).Truncate(time.Microsecond)
 	assertWaveSeriesReplacementLineage(
 		ctx, t, tournamentID, rosterID, seriesID, participantIDs[:2], createdAt,
@@ -34,7 +56,7 @@ func TestGameMigration(t *testing.T) {
 	chainSlotID := createMigrationGameSlot(ctx, t, seriesID, rosterID, 1, "web")
 	firstAttemptID := createActiveMigrationAttempt(ctx, t, chainSlotID, seriesID, rosterID, createdAt)
 
-	tx, err := sharedPool.Begin(ctx)
+	tx, err := migrationPool.Begin(ctx)
 	require.NoError(t, err)
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -108,7 +130,7 @@ func assertWaveSeriesReplacementLineage(
 	replacementWaveID := uuid.New()
 	closedAt := createdAt.Add(time.Second)
 	replacementAt := closedAt.Add(time.Second)
-	tx, err := sharedPool.Begin(ctx)
+	tx, err := migrationPool.Begin(ctx)
 	require.NoError(t, err)
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -165,13 +187,13 @@ func assertWaveSeriesReplacementLineage(
 	require.NoError(t, tx.Commit(ctx))
 
 	var linkedWaves int
-	require.NoError(t, sharedPool.QueryRow(ctx, `
+	require.NoError(t, migrationPool.QueryRow(ctx, `
 		SELECT COUNT(*)
 		FROM wave_series
 		WHERE series_id = $1`, seriesID).Scan(&linkedWaves))
 	require.Equal(t, 2, linkedWaves)
 
-	_, err = sharedPool.Exec(ctx, `
+	_, err = migrationPool.Exec(ctx, `
 		INSERT INTO wave_series (
 			wave_id, tournament_id, roster_id, series_id, created_at
 		)
@@ -198,7 +220,7 @@ func assertSeriesGameStatementRejected(
 	require.NoError(tb, err)
 }
 
-func createMigrationSeries(
+func createGameMigrationSeries(
 	ctx context.Context, tb testing.TB,
 	tournamentID uuid.UUID,
 	rosterID uuid.UUID,
@@ -208,7 +230,7 @@ func createMigrationSeries(
 	tb.Helper()
 	require.Len(tb, participantIDs, 2)
 
-	seriesID, err := seriesseed.CreateSeries(ctx, sharedPool, seriesseed.Input{
+	seriesID, err := seriesseed.CreateSeries(ctx, migrationPool, seriesseed.Input{
 		TournamentID:   tournamentID,
 		RosterID:       rosterID,
 		ParticipantIDs: participantIDs,
@@ -227,7 +249,7 @@ func createMigrationGameSlot(
 ) uuid.UUID {
 	tb.Helper()
 
-	slotID, err := gameseed.CreateSlot(ctx, sharedPool, gameseed.SlotInput{
+	slotID, err := gameseed.CreateSlot(ctx, migrationPool, gameseed.SlotInput{
 		SeriesID:   seriesID,
 		RosterID:   rosterID,
 		SlotNumber: slotNumber,
@@ -246,7 +268,7 @@ func createActiveMigrationAttempt(
 ) uuid.UUID {
 	tb.Helper()
 
-	attemptID, err := gameseed.CreateAttempt(ctx, sharedPool, slotID, seriesID, rosterID, createdAt)
+	attemptID, err := gameseed.CreateAttempt(ctx, migrationPool, slotID, seriesID, rosterID, createdAt)
 	require.NoError(tb, err)
 	return attemptID
 }
@@ -265,7 +287,7 @@ func assertOneConcurrentAttempt(
 	for range 2 {
 		go func() {
 			<-start
-			_, err := sharedPool.Exec(ctx, `
+			_, err := migrationPool.Exec(ctx, `
 				INSERT INTO game_attempts (
 					slot_id, series_id, roster_id, attempt_number,
 					state, created_at, updated_at, started_at
@@ -286,7 +308,7 @@ func assertOneConcurrentAttempt(
 	require.Equal(t, 1, successes)
 
 	var nonTerminalCount int
-	err := sharedPool.QueryRow(ctx, `
+	err := migrationPool.QueryRow(ctx, `
 		SELECT COUNT(*)
 		FROM game_attempts
 		WHERE slot_id = $1
@@ -325,9 +347,9 @@ func assertGameTerminalReasons(
 
 	for _, tt := range legal {
 		t.Run(tt.state+"_"+tt.reason, func(t *testing.T) {
-			seriesID := createMigrationSeries(ctx, t, tournamentID, rosterID, participantIDs, "bo3")
+			seriesID := createGameMigrationSeries(ctx, t, tournamentID, rosterID, participantIDs, "bo3")
 			slotID := createMigrationGameSlot(ctx, t, seriesID, rosterID, 1, "reverse")
-			tx, err := sharedPool.Begin(ctx)
+			tx, err := migrationPool.Begin(ctx)
 			require.NoError(t, err)
 			defer func() { _ = tx.Rollback(ctx) }()
 			_, err = tx.Exec(ctx, `
@@ -344,7 +366,7 @@ func assertGameTerminalReasons(
 		})
 	}
 
-	invalidSeriesID := createMigrationSeries(ctx, t, tournamentID, rosterID, participantIDs, "bo3")
+	invalidSeriesID := createGameMigrationSeries(ctx, t, tournamentID, rosterID, participantIDs, "bo3")
 	invalidSlotID := createMigrationGameSlot(ctx, t, invalidSeriesID, rosterID, 1, "pwn")
 	invalid := []struct {
 		state    string
@@ -361,7 +383,7 @@ func assertGameTerminalReasons(
 		{state: "void", revision: uuid.New()},
 	}
 	for _, tt := range invalid {
-		_, err := sharedPool.Exec(ctx, `
+		_, err := migrationPool.Exec(ctx, `
 			INSERT INTO game_attempts (
 				slot_id, series_id, roster_id, attempt_number, state,
 				result_reason, winner_id, result_revision_id,
@@ -387,9 +409,9 @@ func assertSeriesResultConstraints(
 	// TASK-010 owns the valid terminal settlement path because current result
 	// and score pointers now require atomic retained evidence. This assertion
 	// keeps the earlier migration focused on the valid non-terminal shape.
-	createMigrationSeries(ctx, t, tournamentID, rosterID, participantIDs, "bo3")
+	createGameMigrationSeries(ctx, t, tournamentID, rosterID, participantIDs, "bo3")
 
-	_, err := sharedPool.Exec(ctx, `
+	_, err := migrationPool.Exec(ctx, `
 		INSERT INTO series (
 			tournament_id, roster_id, first_participant_id, second_participant_id,
 			format, state, first_participant_wins, second_participant_wins,
@@ -401,7 +423,7 @@ func assertSeriesResultConstraints(
 		uuid.New(), uuid.New(), createdAt, finishedAt)
 	require.Error(t, err)
 
-	_, err = sharedPool.Exec(ctx, `
+	_, err = migrationPool.Exec(ctx, `
 		INSERT INTO series (
 			tournament_id, roster_id, first_participant_id, second_participant_id,
 			format, state, first_participant_wins, winner_id,
@@ -412,7 +434,7 @@ func assertSeriesResultConstraints(
 		uuid.New(), createdAt, finishedAt)
 	require.Error(t, err)
 
-	_, err = sharedPool.Exec(ctx, `
+	_, err = migrationPool.Exec(ctx, `
 		INSERT INTO series (
 			tournament_id, roster_id, first_participant_id, second_participant_id,
 			format, first_participant_wins
@@ -426,7 +448,7 @@ func assertNoLegacyGameDependency(ctx context.Context, tb testing.TB) {
 	tb.Helper()
 
 	var legacyForeignKeys int
-	err := sharedPool.QueryRow(ctx, `
+	err := migrationPool.QueryRow(ctx, `
 		SELECT COUNT(*)
 		FROM pg_constraint AS constraint_row
 		JOIN pg_class AS source_table ON source_table.oid = constraint_row.conrelid
@@ -436,4 +458,44 @@ func assertNoLegacyGameDependency(ctx context.Context, tb testing.TB) {
 			AND target_table.relname = 'duels'`).Scan(&legacyForeignKeys)
 	require.NoError(tb, err)
 	require.Zero(tb, legacyForeignKeys)
+}
+
+func resetMigrationTables(ctx context.Context, tb testing.TB) {
+	tb.Helper()
+	_, err := migrationPool.Exec(ctx, `TRUNCATE TABLE participant_reservations, tournaments CASCADE`)
+	require.NoError(tb, err)
+}
+
+func createMigrationTournament(ctx context.Context, tb testing.TB) uuid.UUID {
+	tb.Helper()
+	tournamentID, err := tournamentseed.CreateTournament(ctx, migrationPool)
+	require.NoError(tb, err)
+	return tournamentID
+}
+
+func createMigrationRoster(ctx context.Context, tb testing.TB, tournamentID uuid.UUID) uuid.UUID {
+	tb.Helper()
+	seed, err := tournamentseed.CreateRoster(ctx, migrationPool, tournamentID)
+	require.NoError(tb, err)
+	require.EqualValues(tb, 1, seed.Revision)
+	return seed.ID
+}
+
+func createMigrationPlayers(ctx context.Context, tb testing.TB, count int) []uuid.UUID {
+	tb.Helper()
+	players, err := tournamentseed.CreatePlayers(ctx, migrationPool, "tournament_migration", count)
+	require.NoError(tb, err)
+	return players
+}
+
+func createSwissMigrationParticipants(
+	ctx context.Context,
+	tb testing.TB,
+	rosterID uuid.UUID,
+	playerIDs []uuid.UUID,
+) []uuid.UUID {
+	tb.Helper()
+	participants, err := swissseed.CreateParticipants(ctx, migrationPool, rosterID, playerIDs)
+	require.NoError(tb, err)
+	return participants
 }
