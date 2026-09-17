@@ -3,7 +3,7 @@ package plan
 import (
 	"github.com/google/uuid"
 
-	resultprojection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection"
+	resultprojection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection/revision"
 )
 
 type correctionIdentityRole struct {

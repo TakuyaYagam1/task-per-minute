@@ -3,7 +3,7 @@ package plan
 import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	resultusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/result"
-	resultprojection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection"
+	resultprojection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection/revision"
 )
 
 func (p Plan) GameResultRevision() resultusecase.OfficialResultRevisionPlan {
