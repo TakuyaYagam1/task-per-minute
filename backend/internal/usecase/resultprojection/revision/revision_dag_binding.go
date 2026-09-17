@@ -1,4 +1,4 @@
-package resultprojection
+package revision
 
 import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"

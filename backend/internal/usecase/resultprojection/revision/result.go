@@ -1,4 +1,4 @@
-package resultprojection
+package revision
 
 import resultusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/result"
 
