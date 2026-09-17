@@ -5,7 +5,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	runtimerepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/golden/runtime"
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
+	goldenruntime "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/runtime"
 )
 
 func provideGoldenRuntimeRepository(tx *postgres.TxManager) *runtimerepo.GoldenRuntimePostgres {
@@ -15,8 +15,8 @@ func provideGoldenRuntimeRepository(tx *postgres.TxManager) *runtimerepo.GoldenR
 func provideGoldenRuntimeApplication(
 	repository *runtimerepo.GoldenRuntimePostgres,
 	clock clockFunc,
-) *goldenusecase.RuntimeApplication {
-	return goldenusecase.NewRuntimeApplication(repository, clock)
+) *goldenruntime.RuntimeApplication {
+	return goldenruntime.NewRuntimeApplication(repository, clock)
 }
 
 func provideTournamentProductionSnapshotSource(

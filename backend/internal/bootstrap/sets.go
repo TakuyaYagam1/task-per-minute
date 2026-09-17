@@ -56,7 +56,7 @@ import (
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/reconnect"
 	gamestart "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/start"
 	gamesubmission "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/submission"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
+	goldenruntime "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/runtime"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/idempotency"
 	leaderboardusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/leaderboard"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/participantarchive"
@@ -362,8 +362,8 @@ var UseCasesSet = wire.NewSet(
 	provideExecutionRecoverer,
 	provideGoldenRuntimeRepository,
 	provideGoldenRuntimeApplication,
-	wire.Bind(new(inbound.GoldenUseCase), new(*goldenusecase.RuntimeApplication)),
-	wire.Bind(new(inbound.GoldenConnectionUseCase), new(*goldenusecase.RuntimeApplication)),
+	wire.Bind(new(inbound.GoldenUseCase), new(*goldenruntime.RuntimeApplication)),
+	wire.Bind(new(inbound.GoldenConnectionUseCase), new(*goldenruntime.RuntimeApplication)),
 	provideExecutionRecoveryRunner,
 	wire.Bind(new(recovery.WorkerHealthSource), new(*recovery.Worker)),
 )
