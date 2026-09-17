@@ -1,6 +1,6 @@
 //go:build integration
 
-package integration_test
+package result
 
 import (
 	"context"
@@ -16,32 +16,36 @@ import (
 	auditrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/audit"
 	correctionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/correction"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/audit"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
 	incidentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/incident"
+	operation "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/operation"
 )
 
 const incidentSnapshotSeedAuditEvents = 201
 
 func TestTournamentAdminIncidentSnapshotPinsConcurrentAuditWrites(t *testing.T) {
 	ctx := context.Background()
-	resetMigrationTables(ctx, t)
-	t.Cleanup(func() { resetMigrationTables(ctx, t) })
+	require.NoError(t, resetResultTables(ctx, sharedPool))
+	t.Cleanup(func() { require.NoError(t, resetResultTables(ctx, sharedPool)) })
 
-	fixture := createCorrectionRepositoryFixture(ctx, t)
+	fixture, err := createCorrectionFixture(ctx, sharedPool)
+	require.NoError(t, err)
 	corrections := correctionrepo.NewCorrectionPostgres(postgres.NewTxManager(sharedPool))
 	firstInput := newCorrectionInput(
-		ctx, t, fixture, fixture.result, fixture.projection, 1, fixture.nextTime,
+		ctx, t, sharedPool, fixture, fixture.correction.Result, fixture.correction.Projection, 1, fixture.correction.NextTime,
 	)
-	_, err := corrections.Rebuild(ctx, firstInput)
+	_, err = corrections.Rebuild(ctx, firstInput)
 	require.NoError(t, err)
 	for range incidentSnapshotSeedAuditEvents {
-		settleCursorSafeAuditRecord(
-			ctx,
-			t,
-			fixture,
-			firstInput.CorrectedAt,
-			uuid.New(),
-		)
+		SettleCursorSafeAuditRecord(t, sharedPool, CursorAuditSeedInput{
+			TournamentID: fixture.draft.TournamentID,
+			RosterID:     fixture.draft.RosterID,
+			ParticipantIDs: [2]uuid.UUID{
+				fixture.draft.ParticipantIDs[0], fixture.draft.ParticipantIDs[1],
+			},
+			SettledAt:    firstInput.CorrectedAt,
+			AuditEventID: uuid.New(),
+		})
 	}
 	if delay := time.Until(firstInput.CorrectedAt); delay > 0 {
 		time.Sleep(delay + time.Millisecond)
@@ -49,8 +53,8 @@ func TestTournamentAdminIncidentSnapshotPinsConcurrentAuditWrites(t *testing.T) 
 
 	repository := auditrepo.NewTournamentAdminAuditPostgres(postgres.NewTxManager(sharedPool))
 	query := incidentusecase.IncidentQuery{
-		Operator:     tournamentadmin.OperatorIdentity{ActorID: firstInput.OperatorID},
-		TournamentID: fixture.resultFixture.draft.tournamentID,
+		Operator:     operation.OperatorIdentity{ActorID: firstInput.OperatorID},
+		TournamentID: fixture.draft.TournamentID,
 	}
 
 	var first, second audit.IncidentBundleSnapshot
@@ -61,13 +65,15 @@ func TestTournamentAdminIncidentSnapshotPinsConcurrentAuditWrites(t *testing.T) 
 		}
 		require.Greater(t, len(first.Events), 200)
 
-		insertedAuditID := settleCursorSafeAuditRecord(
-			ctx,
-			t,
-			fixture,
-			time.Now().UTC().Add(2*time.Second).Truncate(time.Microsecond),
-			uuid.New(),
-		)
+		insertedAuditID := SettleCursorSafeAuditRecord(t, sharedPool, CursorAuditSeedInput{
+			TournamentID: fixture.draft.TournamentID,
+			RosterID:     fixture.draft.RosterID,
+			ParticipantIDs: [2]uuid.UUID{
+				fixture.draft.ParticipantIDs[0], fixture.draft.ParticipantIDs[1],
+			},
+			SettledAt:    time.Now().UTC().Add(2 * time.Second).Truncate(time.Microsecond),
+			AuditEventID: uuid.New(),
+		})
 		second, err = repository.LoadIncidentSnapshot(snapshotCtx, query)
 		if err != nil {
 			return err
@@ -89,13 +95,14 @@ func TestTournamentAdminIncidentSnapshotPinsConcurrentAuditWrites(t *testing.T) 
 
 func TestTournamentAdminIncidentExportSignsDurableSnapshot(t *testing.T) {
 	ctx := context.Background()
-	resetMigrationTables(ctx, t)
-	t.Cleanup(func() { resetMigrationTables(ctx, t) })
+	require.NoError(t, resetResultTables(ctx, sharedPool))
+	t.Cleanup(func() { require.NoError(t, resetResultTables(ctx, sharedPool)) })
 
-	fixture := createCorrectionRepositoryFixture(ctx, t)
+	fixture, err := createCorrectionFixture(ctx, sharedPool)
+	require.NoError(t, err)
 	corrections := correctionrepo.NewCorrectionPostgres(postgres.NewTxManager(sharedPool))
 	input := newCorrectionInput(
-		ctx, t, fixture, fixture.result, fixture.projection, 1, fixture.nextTime,
+		ctx, t, sharedPool, fixture, fixture.correction.Result, fixture.correction.Projection, 1, fixture.correction.NextTime,
 	)
 	rebuilt, err := corrections.Rebuild(ctx, input)
 	require.NoError(t, err)
@@ -110,17 +117,17 @@ func TestTournamentAdminIncidentExportSignsDurableSnapshot(t *testing.T) {
 		Secret: []byte(strings.Repeat("a", 32)),
 	})
 	require.NoError(t, err)
-	application := tournamentadmin.AdminNewUseCase(tournamentadmin.AdminDependencies{
+	application := admin.AdminNewUseCase(admin.AdminDependencies{
 		Incidents: auditrepo.NewTournamentAdminAuditPostgres(postgres.NewTxManager(sharedPool)),
 		Signer:    authenticator,
 	})
 
 	bundle, err := application.ExportIncident(ctx, incidentusecase.IncidentQuery{
-		Operator:     tournamentadmin.OperatorIdentity{ActorID: input.OperatorID},
-		TournamentID: fixture.resultFixture.draft.tournamentID,
+		Operator:     operation.OperatorIdentity{ActorID: input.OperatorID},
+		TournamentID: fixture.draft.TournamentID,
 	})
 	require.NoError(t, err)
-	require.Equal(t, fixture.resultFixture.draft.tournamentID, bundle.TournamentID)
+	require.Equal(t, fixture.draft.TournamentID, bundle.TournamentID)
 	require.Equal(t, rebuilt.Projection.Revision.RevisionNumber, bundle.ProjectionRevision)
 	require.Equal(t, audit.IncidentBundleAlgorithmHMACSHA256V1, bundle.Algorithm)
 	require.Equal(t, "incident-2026-09", bundle.KeyID)
