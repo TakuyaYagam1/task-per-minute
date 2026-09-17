@@ -15,9 +15,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	projectionseed "github.com/TakuyaYagam1/task-per-minute/integration_test/internal/testkit/projectionseed"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	waverepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/wave"
-	projectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
 	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
 	executionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/execution"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
@@ -314,58 +314,14 @@ func createRoundProofProjection(
 ) (uuid.UUID, int64) {
 	t.Helper()
 
-	participantIDs := roundProofProjectionParticipants(ctx, t, rosterID)
-	require.Contains(t, participantIDs, participantID)
-	goldenSource := goldenMigrationFixture{
-		tournamentID:   tournamentID,
-		rosterID:       rosterID,
-		participantIDs: participantIDs,
-		createdAt:      at.Add(-10 * time.Minute),
-	}
-	goldenPositionCommitID := createProjectionGoldenSource(ctx, t, goldenSource)
-	repository := projectionrepo.NewProjectionPostgres(postgres.NewTxManager(sharedPool))
-	record, err := repository.Publish(ctx, projectionrepo.ProjectionPublishInput{
-		IDs:   projectionrepo.ProjectionIDs{RevisionID: uuid.New(), CutoffID: uuid.New()},
-		Scope: projectionrepo.ProjectionScope{TournamentID: tournamentID, RosterID: rosterID},
-		Source: projectionrepo.ProjectionSource{
-			Kind:                   "golden_position",
-			GoldenPositionCommitID: &goldenPositionCommitID,
-			Reason:                 "publish round proof source projection",
-		},
-		Artifacts:          projectionRepositoryArtifacts(t, participantIDs, goldenPositionCommitID, "round-proof"),
-		SupersessionReason: "replace round proof source projection",
-		CutoffAt:           at,
-		CreatedAt:          at,
-		PublishedAt:        at.Add(time.Microsecond),
+	seed, err := projectionseed.PublishRoundProof(ctx, sharedPool, projectionseed.RoundProofInput{
+		TournamentID:  tournamentID,
+		RosterID:      rosterID,
+		ParticipantID: participantID,
+		At:            at,
 	})
 	require.NoError(t, err)
-	return record.Revision.ID, record.Revision.RevisionNumber
-}
-
-func roundProofProjectionParticipants(
-	ctx context.Context,
-	t testing.TB,
-	rosterID uuid.UUID,
-) []uuid.UUID {
-	t.Helper()
-
-	rows, err := sharedPool.Query(ctx, `
-		SELECT id
-		FROM participants
-		WHERE roster_id = $1
-		ORDER BY seed, id`, rosterID)
-	require.NoError(t, err)
-	defer rows.Close()
-
-	participantIDs := make([]uuid.UUID, 0, 4)
-	for rows.Next() {
-		var participantID uuid.UUID
-		require.NoError(t, rows.Scan(&participantID))
-		participantIDs = append(participantIDs, participantID)
-	}
-	require.NoError(t, rows.Err())
-	require.Len(t, participantIDs, 4)
-	return participantIDs
+	return seed.ProjectionID, seed.ProjectionRevision
 }
 
 func createRoundProofContentConfiguration(
