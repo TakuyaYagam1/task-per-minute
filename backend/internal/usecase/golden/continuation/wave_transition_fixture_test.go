@@ -10,8 +10,8 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
 	goldenstate "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/state"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/wave"
 	goldenstatemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/state/mocks"
+	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/wave"
 	goldenmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/wave/mocks"
 
 	"github.com/google/uuid"

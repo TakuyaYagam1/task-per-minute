@@ -8,10 +8,10 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	goldenattempt "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/attempt"
 	goldencontinuation "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/continuation"
+	goldenmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/continuation/mocks"
 	goldenexecution "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/execution"
 	goldenstate "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/state"
 	goldensubmission "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/submission"
-	goldenmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/continuation/mocks"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"

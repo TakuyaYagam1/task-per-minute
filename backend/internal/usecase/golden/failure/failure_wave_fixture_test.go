@@ -14,7 +14,9 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
 	assignmentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/assignment"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
+	goldenplan "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/plan"
+	goldenstate "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/state"
+	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/wave"
 	goldenmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/wave/mocks"
 	swissusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/swiss"
 )
@@ -37,16 +39,16 @@ func failureMustGoldenPlanProjection(
 	revisionID domain.DerivedRevisionID,
 	revisionNo int,
 	standings []swissusecase.NormalStanding,
-) goldenusecase.StandingsProjection {
+) goldenplan.StandingsProjection {
 	tb.Helper()
-	source, err := goldenusecase.NewStandingsProjection(
+	source, err := goldenplan.NewStandingsProjection(
 		tournamentID, projectionID, revisionID, revisionNo, nil, true, standings,
 	)
 	require.NoError(tb, err)
 	return source
 }
 
-func failureGoldenPlanExact(tb testing.TB) (goldenusecase.Authority, goldenusecase.Command) {
+func failureGoldenPlanExact(tb testing.TB) (goldenplan.Authority, goldenplan.Command) {
 	tb.Helper()
 	now := time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC)
 	tournamentID := failureGoldenPlanID(400)
@@ -54,50 +56,50 @@ func failureGoldenPlanExact(tb testing.TB) (goldenusecase.Authority, goldenuseca
 		tb, tournamentID, failureGoldenPlanID(401), failureGoldenPlanRevisionID(402), 1,
 		failureGoldenPlanStandings([]int{10, 10, 9, 9, 9, 7}),
 	)
-	partition, err := goldenusecase.PartitionTies(source)
+	partition, err := goldenplan.PartitionTies(source)
 	require.NoError(tb, err)
 	seeds := partition.Groups()
-	groups := make([]goldenusecase.GroupAuthority, len(seeds))
+	groups := make([]goldenplan.GroupAuthority, len(seeds))
 	for index, seed := range seeds {
-		command := goldenusecase.GroupRevisionCommand{
+		command := goldenplan.GroupRevisionCommand{
 			TournamentID: tournamentID, GroupID: failureGoldenPlanID(410 + index),
 			RevisionID: failureGoldenPlanRevisionID(420 + index), RevisionNo: 1,
 			ExpectedSourceRevisionID:    source.RevisionID,
 			ExpectedSourcePayloadDigest: source.PayloadDigest,
 			PositionFrom:                seed.PositionFrom, PositionTo: seed.PositionTo,
 		}
-		revision, buildErr := goldenusecase.BuildGroupRevision(command, source, seed, nil, nil)
+		revision, buildErr := goldenplan.BuildGroupRevision(command, source, seed, nil, nil)
 		require.NoError(tb, buildErr)
 		members := revision.Members()
 		active := make([]uuid.UUID, len(members))
 		for memberIndex, member := range members {
 			active[memberIndex] = member.ParticipantID
 		}
-		groups[index] = goldenusecase.GroupAuthority{Revision: revision, ActiveParticipantIDs: active}
+		groups[index] = goldenplan.GroupAuthority{Revision: revision, ActiveParticipantIDs: active}
 	}
 
 	poolID := failureGoldenPlanID(430)
-	candidates := make([]goldenusecase.TaskVersion, 6)
+	candidates := make([]goldenplan.TaskVersion, 6)
 	versions := make([]domain.TaskVersionRef, len(candidates))
 	for index := range candidates {
 		task := failureGoldenPlanTask(500 + index)
 		version := 2
 		versions[index] = domain.TaskVersionRef{TaskID: task.ID, Version: version}
-		candidates[index] = goldenusecase.TaskVersion{
+		candidates[index] = goldenplan.TaskVersion{
 			PoolRevisionID: poolID, Version: version, Task: task,
 			Health: domain.TaskVersionHealth{
 				TaskID: task.ID, Version: version, PoolRevisionID: poolID,
 				PoolKind: domain.AssignmentTaskKindGolden, Exists: true, Enabled: true,
 				Healthy: true, MutationLocked: true,
 			},
-			ArtifactDigest: goldenusecase.TaskArtifactDigest(task, version),
+			ArtifactDigest: goldenplan.TaskArtifactDigest(task, version),
 		}
 	}
 
-	participants := make([]goldenusecase.ParticipantReservation, 0, 5)
+	participants := make([]goldenplan.ParticipantReservation, 0, 5)
 	for _, group := range groups {
 		for _, participantID := range group.ActiveParticipantIDs {
-			participants = append(participants, goldenusecase.ParticipantReservation{
+			participants = append(participants, goldenplan.ParticipantReservation{
 				ParticipantID: participantID, PlayerID: failureGoldenPlanID(1000 + len(participants)),
 				Reservation: domain.ParticipantReservation{
 					PlayerID: failureGoldenPlanID(1000 + len(participants)), ReservationID: failureGoldenPlanID(1100 + len(participants)),
@@ -115,9 +117,9 @@ func failureGoldenPlanExact(tb testing.TB) (goldenusecase.Authority, goldenuseca
 			TaskID:        versions[index].TaskID, Version: 1,
 		})
 	}
-	authority, err := goldenusecase.BuildAuthority(goldenusecase.Authority{
-		Scope: goldenusecase.Scope{TournamentID: tournamentID, PlanSetID: failureGoldenPlanID(440)},
-		Revisions: goldenusecase.Revisions{
+	authority, err := goldenplan.BuildAuthority(goldenplan.Authority{
+		Scope: goldenplan.Scope{TournamentID: tournamentID, PlanSetID: failureGoldenPlanID(440)},
+		Revisions: goldenplan.Revisions{
 			SourceProjectionRevisionID: source.RevisionID,
 			GroupSetRevisionID:         failureGoldenPlanID(441), GroupSetRevision: 1,
 			PoolRevisionID: poolID, PoolRevision: 1,
@@ -134,7 +136,7 @@ func failureGoldenPlanExact(tb testing.TB) (goldenusecase.Authority, goldenuseca
 	})
 	require.NoError(tb, err)
 
-	groupCommands := make([]goldenusecase.GroupCommand, len(groups))
+	groupCommands := make([]goldenplan.GroupCommand, len(groups))
 	for groupIndex, group := range groups {
 		groupCommands[groupIndex].GroupID = group.Revision.GroupID()
 		groupCommands[groupIndex].GroupRevisionID = group.Revision.RevisionID()
@@ -145,7 +147,7 @@ func failureGoldenPlanExact(tb testing.TB) (goldenusecase.Authority, goldenuseca
 			groupCommands[groupIndex].SnapshotIDs[edgeIndex] = failureGoldenPlanID(base + 3)
 		}
 	}
-	command := goldenusecase.Command{
+	command := goldenplan.Command{
 		Scope: authority.Scope, PlanID: failureGoldenPlanID(700), PlanRevisionID: failureGoldenPlanID(701),
 		Expected: authority.Expectation(), GroupCommands: groupCommands, CreatedAt: now,
 	}
@@ -180,11 +182,11 @@ func failureGoldenPlanSuffix(value int) string {
 	return string(encoded)
 }
 
-func failureGoldenStateFixture(t *testing.T, openedAt time.Time) goldenusecase.GoldenState {
+func failureGoldenStateFixture(t *testing.T, openedAt time.Time) goldenstate.GoldenState {
 	t.Helper()
 
 	authority, command := failureGoldenPlanExact(t)
-	exactPlan, err := goldenusecase.BuildExactPlan(command, authority)
+	exactPlan, err := goldenplan.BuildExactPlan(command, authority)
 	require.NoError(t, err)
 	require.GreaterOrEqual(t, len(exactPlan.Groups), 2)
 	groupPlan := exactPlan.Groups[1]
@@ -208,21 +210,21 @@ func failureGoldenStateFixture(t *testing.T, openedAt time.Time) goldenusecase.G
 			ParticipantIDs: participantIDs,
 		}},
 	}
-	state, err := goldenusecase.BuildGoldenState(goldenusecase.GoldenState{
-		Scope: goldenusecase.GoldenStateScope{
+	state, err := goldenstate.BuildGoldenState(goldenstate.GoldenState{
+		Scope: goldenstate.GoldenStateScope{
 			TournamentID: topology.TournamentID(), GroupID: topology.GroupID(),
 			GroupRevisionID: topology.RevisionID(),
 		},
 		Topology: topology, ExactPlan: exactPlan, Group: group,
-		Membership: goldenusecase.GoldenMembershipRevision{
+		Membership: goldenstate.GoldenMembershipRevision{
 			RevisionID: failureGoldenWaveFixtureID(22), Revision: 1,
 		},
 		RevisionID: failureGoldenWaveFixtureID(30), Revision: 1,
-		Windows: []goldenusecase.GoldenReadyWindow{{
+		Windows: []goldenstate.GoldenReadyWindow{{
 			ID: failureGoldenWaveFixtureID(40), RevisionID: failureGoldenWaveFixtureID(41), Revision: 1,
 			AttemptID: attemptID, AttemptNo: 1,
 			OpenedAt: openedAt, Deadline: openedAt.Add(30 * time.Second),
-			State:               goldenusecase.GoldenReadyWindowOpen,
+			State:               goldenstate.GoldenReadyWindowOpen,
 			ReadinessRevisionID: failureGoldenWaveFixtureID(42), ReadinessRevision: 1,
 			PresenceRevisionID: failureGoldenWaveFixtureID(43), PresenceRevision: 1,
 			PresentParticipantIDs: participantIDs,
@@ -235,7 +237,7 @@ func failureGoldenStateFixture(t *testing.T, openedAt time.Time) goldenusecase.G
 
 type failureStartedWaveFixtureState struct {
 	mu        sync.Mutex
-	state     goldenusecase.GoldenState
+	state     goldenstate.GoldenState
 	execution *goldenusecase.GoldenWaveExecution
 	replays   map[uuid.UUID]goldenusecase.GoldenWaveCommandReplay
 }
@@ -243,7 +245,7 @@ type failureStartedWaveFixtureState struct {
 func failureNewStartedGoldenFixture(
 	t *testing.T,
 	startedAt time.Time,
-) (goldenusecase.GoldenState, goldenusecase.GoldenWaveExecution) {
+) (goldenstate.GoldenState, goldenusecase.GoldenWaveExecution) {
 	t.Helper()
 
 	openedAt := startedAt.Add(-20 * time.Second)
@@ -252,7 +254,7 @@ func failureNewStartedGoldenFixture(
 	state.Windows = nil
 	state.Membership.PayloadDigest = [sha256.Size]byte{}
 	state.PayloadDigest = [sha256.Size]byte{}
-	state, err := goldenusecase.BuildGoldenState(state)
+	state, err := goldenstate.BuildGoldenState(state)
 	require.NoError(t, err)
 
 	fixture := &failureStartedWaveFixtureState{
@@ -262,7 +264,7 @@ func failureNewStartedGoldenFixture(
 	repository := goldenmocks.NewMockWaveRepository(t)
 	repository.EXPECT().
 		LoadGoldenState(mock.Anything, mock.Anything).
-		RunAndReturn(func(context.Context, goldenusecase.GoldenStateScope) (goldenusecase.GoldenState, error) {
+		RunAndReturn(func(context.Context, goldenstate.GoldenStateScope) (goldenstate.GoldenState, error) {
 			fixture.mu.Lock()
 			defer fixture.mu.Unlock()
 			return fixture.state.Snapshot(), nil
@@ -284,7 +286,7 @@ func failureNewStartedGoldenFixture(
 		Maybe()
 	repository.EXPECT().
 		LoadGoldenWaveExecution(mock.Anything, mock.Anything).
-		RunAndReturn(func(context.Context, goldenusecase.GoldenStateScope) (*goldenusecase.GoldenWaveExecution, error) {
+		RunAndReturn(func(context.Context, goldenstate.GoldenStateScope) (*goldenusecase.GoldenWaveExecution, error) {
 			fixture.mu.Lock()
 			defer fixture.mu.Unlock()
 			if fixture.execution == nil {
@@ -398,7 +400,7 @@ func failureNewWaveFixtureClock(t *testing.T, now time.Time) *goldenmocks.MockWa
 	return clock
 }
 
-func failureTask049StartedFixture(t *testing.T, startedAt time.Time) (goldenusecase.GoldenState, goldenusecase.GoldenWaveExecution) {
+func failureTask049StartedFixture(t *testing.T, startedAt time.Time) (goldenstate.GoldenState, goldenusecase.GoldenWaveExecution) {
 	t.Helper()
 	return failureNewStartedGoldenFixture(t, startedAt)
 }

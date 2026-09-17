@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	goldenstate "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/state"
 	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/continuation"
+	goldenstate "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/state"
 	goldenwave "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/wave"
 
 	"github.com/google/uuid"

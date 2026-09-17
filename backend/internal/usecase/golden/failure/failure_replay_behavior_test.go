@@ -7,7 +7,10 @@ import (
 	"time"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
+	goldenattempt "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/attempt"
+	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/failure"
+	goldenplan "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/plan"
+	goldensubmission "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/submission"
 
 	"github.com/stretchr/testify/require"
 )
@@ -66,7 +69,7 @@ func TestGoldenFailureReplay(t *testing.T) {
 	require.False(t, reusedChanged)
 	require.ErrorIs(t, reusedErr, goldenusecase.ErrGoldenFailureCommandReuse)
 
-	record.Positions.Positions = append(record.Positions.Positions, goldenusecase.GoldenCommittedPosition{
+	record.Positions.Positions = append(record.Positions.Positions, goldenattempt.GoldenCommittedPosition{
 		ParticipantID: failureTask049ID(21991),
 	})
 	stored := repository.currentSnapshot()
@@ -185,23 +188,23 @@ func TestGoldenFailureReplayValidation(t *testing.T) {
 			require.NoError(t, authority.Submissions.Validate())
 		}},
 		{name: "submission preflight", mutate: func(authority *goldenusecase.GoldenFailureAuthority) {
-			authority.Submissions.Submissions = make([]goldenusecase.GoldenSubmissionRecord, domain.TournamentMaxParticipants+1)
+			authority.Submissions.Submissions = make([]goldensubmission.GoldenSubmissionRecord, domain.TournamentMaxParticipants+1)
 		}},
 		{name: "receipt preflight", mutate: func(authority *goldenusecase.GoldenFailureAuthority) {
-			authority.Submissions.Receipts = make([]goldenusecase.GoldenSubmissionReceipt, domain.TournamentMaxParticipants*2+1)
+			authority.Submissions.Receipts = make([]goldensubmission.GoldenSubmissionReceipt, domain.TournamentMaxParticipants*2+1)
 		}},
 		{name: "position preflight", mutate: func(authority *goldenusecase.GoldenFailureAuthority) {
-			authority.Positions.Positions = make([]goldenusecase.GoldenCommittedPosition, domain.TournamentMaxParticipants+1)
+			authority.Positions.Positions = make([]goldenattempt.GoldenCommittedPosition, domain.TournamentMaxParticipants+1)
 		}},
 		{name: "attempt preflight", mutate: func(authority *goldenusecase.GoldenFailureAuthority) {
 			authority.Positions.Attempts = make(
-				[]goldenusecase.GoldenAttemptOrderingEvidence,
+				[]goldenattempt.GoldenAttemptOrderingEvidence,
 				domain.AssignmentReserveCount+2,
 			)
 		}},
 		{name: "plan nested preflight", mutate: func(authority *goldenusecase.GoldenFailureAuthority) {
 			authority.Plan.Authority.Candidates = make(
-				[]goldenusecase.TaskVersion,
+				[]goldenplan.TaskVersion,
 				domain.TournamentMaxParticipants*(domain.AssignmentReserveCount+1)+1,
 			)
 		}},

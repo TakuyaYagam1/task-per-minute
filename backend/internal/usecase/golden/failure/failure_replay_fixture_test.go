@@ -11,8 +11,14 @@ import (
 	"time"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
-	goldenmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/mocks"
+	goldenattempt "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/attempt"
+	goldenexecution "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/execution"
+	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/failure"
+	goldenmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/failure/mocks"
+	goldenplan "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/plan"
+	goldenstate "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/state"
+	goldensubmission "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/submission"
+	goldenwave "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/wave"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
@@ -32,19 +38,19 @@ func task050ExpandFailurePlanCandidates(
 		planAuthority.Pool.Versions = append(planAuthority.Pool.Versions, domain.TaskVersionRef{
 			TaskID: task.ID, Version: version,
 		})
-		planAuthority.Candidates = append(planAuthority.Candidates, goldenusecase.TaskVersion{
+		planAuthority.Candidates = append(planAuthority.Candidates, goldenplan.TaskVersion{
 			PoolRevisionID: planAuthority.Pool.ID, Version: version, Task: task,
 			Health: domain.TaskVersionHealth{
 				TaskID: task.ID, Version: version, PoolRevisionID: planAuthority.Pool.ID,
 				PoolKind: domain.AssignmentTaskKindGolden, Exists: true, Enabled: true,
 				Healthy: true, MutationLocked: true,
 			},
-			ArtifactDigest: goldenusecase.TaskArtifactDigest(task, version),
+			ArtifactDigest: goldenplan.TaskArtifactDigest(task, version),
 		})
 	}
-	canonical, err := goldenusecase.BuildAuthority(planAuthority)
+	canonical, err := goldenplan.BuildAuthority(planAuthority)
 	require.NoError(t, err)
-	groups := make([]goldenusecase.GroupCommand, len(authority.Plan.Groups))
+	groups := make([]goldenplan.GroupCommand, len(authority.Plan.Groups))
 	for groupIndex, group := range authority.Plan.Groups {
 		groups[groupIndex].GroupID = group.GroupID
 		groups[groupIndex].GroupRevisionID = group.GroupRevisionID
@@ -54,7 +60,7 @@ func task050ExpandFailurePlanCandidates(
 			groups[groupIndex].SnapshotIDs[edgeIndex] = edge.Snapshot.SnapshotID
 		}
 	}
-	plan, err := goldenusecase.BuildExactPlan(goldenusecase.Command{
+	plan, err := goldenplan.BuildExactPlan(goldenplan.Command{
 		Scope: canonical.Scope, PlanID: authority.Plan.PlanID, PlanRevisionID: authority.Plan.PlanRevisionID,
 		Expected: canonical.Expectation(), GroupCommands: groups, CreatedAt: authority.Plan.CreatedAt,
 	}, canonical)
@@ -62,9 +68,9 @@ func task050ExpandFailurePlanCandidates(
 	require.Equal(t, authority.Plan.Groups, plan.Groups)
 	state := authority.State.Snapshot()
 	state.ExactPlan = plan.Snapshot()
-	state.Plan = goldenusecase.GoldenPlanStateBinding{}
+	state.Plan = goldenstate.GoldenPlanStateBinding{}
 	state.PayloadDigest = [sha256.Size]byte{}
-	builtState, err := goldenusecase.BuildGoldenState(state)
+	builtState, err := goldenstate.BuildGoldenState(state)
 	require.NoError(t, err)
 	authority.State = builtState
 	authority.Plan = plan.Snapshot()
@@ -77,7 +83,7 @@ func task050ExpandFailurePlanCandidates(
 	return authority
 }
 
-func task050SealExactPlanProof(t *testing.T, plan *goldenusecase.ExactPlan) {
+func task050SealExactPlanProof(t *testing.T, plan *goldenplan.ExactPlan) {
 	t.Helper()
 	type edgeProof struct {
 		ID            uuid.UUID         `json:"id"`
@@ -98,12 +104,12 @@ func task050SealExactPlanProof(t *testing.T, plan *goldenusecase.ExactPlan) {
 		Edges                      []edgeProof `json:"edges"`
 	}
 	document := struct {
-		Scope          goldenusecase.Scope       `json:"scope"`
-		PlanID         uuid.UUID                 `json:"plan_id"`
-		PlanRevisionID uuid.UUID                 `json:"plan_revision_id"`
-		Expected       goldenusecase.Expectation `json:"expected"`
-		Groups         []groupProof              `json:"groups"`
-		CreatedAt      time.Time                 `json:"created_at"`
+		Scope          goldenplan.Scope       `json:"scope"`
+		PlanID         uuid.UUID              `json:"plan_id"`
+		PlanRevisionID uuid.UUID              `json:"plan_revision_id"`
+		Expected       goldenplan.Expectation `json:"expected"`
+		Groups         []groupProof           `json:"groups"`
+		CreatedAt      time.Time              `json:"created_at"`
 	}{
 		Scope: plan.Scope, PlanID: plan.PlanID, PlanRevisionID: plan.PlanRevisionID,
 		Expected: plan.Expected, CreatedAt: plan.CreatedAt,
@@ -147,10 +153,10 @@ func task050GoldenFailureAuthority(
 		active = task050ReplayActiveExecution(t, state, active, startedAt)
 	}
 	scope := active.Scope
-	submissions, err := goldenusecase.NewGoldenSubmissionLedger(scope, failureTask049ID(22001+active.Attempt.AttemptNo*100))
+	submissions, err := goldensubmission.NewGoldenSubmissionLedger(scope, failureTask049ID(22001+active.Attempt.AttemptNo*100))
 	require.NoError(t, err)
 	submissions = task050CurrentSubmissionLedger(t, submissions, active, execution, startedAt)
-	positions, err := goldenusecase.NewGoldenPositionLedger(
+	positions, err := goldenattempt.NewGoldenPositionLedger(
 		state.Scope, state.Group.PositionFrom, state.Group.PositionTo, failureTask049ID(22200+active.Attempt.AttemptNo*100),
 	)
 	require.NoError(t, err)
@@ -169,7 +175,7 @@ func task050GoldenFailureAuthority(
 
 func task050ReplayActiveExecution(
 	t *testing.T,
-	state goldenusecase.GoldenState,
+	state goldenstate.GoldenState,
 	active goldenusecase.GoldenFailureActiveExecution,
 	startedAt time.Time,
 ) goldenusecase.GoldenFailureActiveExecution {
@@ -209,7 +215,7 @@ func task050ReplayActiveExecution(
 	active.Assignment.TaskID = edge.Snapshot.TaskID
 	active.Assignment.ContentDigest = edge.ContentDigest
 	active.Assignment.ExecutionPayloadDigest = failureTask049GobDigest(t, "second execution")
-	active.Assignment.Private = append([]goldenusecase.GoldenPrivateAssignment(nil), active.Assignment.Private[1:]...)
+	active.Assignment.Private = append([]goldenexecution.GoldenPrivateAssignment(nil), active.Assignment.Private[1:]...)
 	for index := range active.Assignment.Private {
 		active.Assignment.Private[index].SnapshotID = edge.Snapshot.SnapshotID
 		active.Assignment.Private[index].ContentDigest = edge.ContentDigest
@@ -233,11 +239,11 @@ func task050ReplayActiveExecution(
 
 func task050CurrentSubmissionLedger(
 	t *testing.T,
-	ledger goldenusecase.GoldenSubmissionLedger,
+	ledger goldensubmission.GoldenSubmissionLedger,
 	active goldenusecase.GoldenFailureActiveExecution,
-	execution goldenusecase.GoldenWaveExecution,
+	execution goldenexecution.GoldenWaveExecution,
 	startedAt time.Time,
-) goldenusecase.GoldenSubmissionLedger {
+) goldensubmission.GoldenSubmissionLedger {
 	t.Helper()
 	participantID := active.ParticipantIDs[0]
 	expected := ledger.Expectation()
@@ -248,7 +254,7 @@ func task050CurrentSubmissionLedger(
 	ledger.RevisionID = failureTask049ID(22500 + active.Attempt.AttemptNo)
 	ledger.Revision++
 	ledger.NextSubmissionID = 2
-	ledger.Submissions = []goldenusecase.GoldenSubmissionRecord{{
+	ledger.Submissions = []goldensubmission.GoldenSubmissionRecord{{
 		ID: 1, Scope: active.Scope, ParticipantID: participantID,
 		VerificationID:         failureTask049ID(22510 + active.Attempt.AttemptNo),
 		VerificationRevisionID: failureTask049ID(22520 + active.Attempt.AttemptNo),
@@ -257,11 +263,11 @@ func task050CurrentSubmissionLedger(
 		Authority:        execution.Start.Authority.Identity,
 		AssignmentDigest: active.Assignment.ExecutionPayloadDigest,
 	}}
-	ledger.Receipts = []goldenusecase.GoldenSubmissionReceipt{{
+	ledger.Receipts = []goldensubmission.GoldenSubmissionReceipt{{
 		CommandID: failureTask049ID(22530 + active.Attempt.AttemptNo), Scope: active.Scope,
 		ParticipantID: participantID, VerificationID: ledger.Submissions[0].VerificationID,
 		CommandDigest: sha256.Sum256([]byte("current provisional command")),
-		Disposition:   goldenusecase.GoldenSubmissionAccepted, SubmissionID: 1, Expected: expected,
+		Disposition:   goldensubmission.GoldenSubmissionAccepted, SubmissionID: 1, Expected: expected,
 		ResultRevisionID: ledger.RevisionID, ResultRevision: ledger.Revision, CommittedAt: committedAt,
 	}}
 	failureTask049SealSubmissionLedger(t, &ledger)
@@ -271,24 +277,24 @@ func task050CurrentSubmissionLedger(
 
 func task050PriorPositionLedger(
 	t *testing.T,
-	ledger goldenusecase.GoldenPositionLedger,
+	ledger goldenattempt.GoldenPositionLedger,
 	active goldenusecase.GoldenFailureActiveExecution,
 	startedAt time.Time,
-) goldenusecase.GoldenPositionLedger {
+) goldenattempt.GoldenPositionLedger {
 	t.Helper()
 	priorAttempt := active.Group.Attempts[0]
 	participantID := priorAttempt.ParticipantIDs[0]
-	order := goldenusecase.GoldenAttemptOrderingEvidence{
+	order := goldenattempt.GoldenAttemptOrderingEvidence{
 		AttemptID: priorAttempt.ID, AttemptNo: priorAttempt.AttemptNo,
-		SubmissionHead: goldenusecase.GoldenSubmissionLedgerExpectation{
-			Scope: goldenusecase.GoldenSubmissionScope{
+		SubmissionHead: goldensubmission.GoldenSubmissionLedgerExpectation{
+			Scope: goldensubmission.GoldenSubmissionScope{
 				State: active.Scope.State, AttemptID: priorAttempt.ID, WaveID: failureTask049ID(22600),
 				AssignmentID: failureTask049ID(22601), SnapshotID: failureTask049ID(22602), TaskID: failureTask049ID(22603),
 			},
 			RevisionID: failureTask049ID(22604), Revision: 2, NextSubmissionID: 2,
 			PayloadDigest: sha256.Sum256([]byte("prior submission head")),
 		},
-		Order: []goldenusecase.GoldenPositionOrderEntry{{
+		Order: []goldenattempt.GoldenPositionOrderEntry{{
 			SubmissionID: 1, ParticipantID: participantID,
 			CommittedAt:    startedAt.Add(-90 * time.Second),
 			EvidenceDigest: sha256.Sum256([]byte("prior committed evidence")),
@@ -300,8 +306,8 @@ func task050PriorPositionLedger(
 	ledger.RevisionID = failureTask049ID(22605 + active.Attempt.AttemptNo)
 	ledger.Revision++
 	ledger.RevisionIDs = append(ledger.RevisionIDs, ledger.RevisionID)
-	ledger.Attempts = []goldenusecase.GoldenAttemptOrderingEvidence{order}
-	ledger.Positions = []goldenusecase.GoldenCommittedPosition{{
+	ledger.Attempts = []goldenattempt.GoldenAttemptOrderingEvidence{order}
+	ledger.Positions = []goldenattempt.GoldenCommittedPosition{{
 		Position: ledger.PositionFrom, ParticipantID: participantID, AttemptID: priorAttempt.ID,
 		AttemptNo: priorAttempt.AttemptNo, SubmissionID: 1,
 		EvidenceDigest: order.Order[0].EvidenceDigest, CommitID: failureTask049ID(22610 + active.Attempt.AttemptNo),
@@ -315,9 +321,9 @@ func task050GoldenFailureReplayCommand(
 	authority goldenusecase.GoldenFailureAuthority,
 	base int,
 ) goldenusecase.GoldenFailureReplayCommand {
-	private := make([]goldenusecase.GoldenPrivateAssignmentCommand, len(authority.Classification.ParticipantIDs))
+	private := make([]goldenwave.GoldenPrivateAssignmentCommand, len(authority.Classification.ParticipantIDs))
 	for index, participantID := range authority.Classification.ParticipantIDs {
-		private[index] = goldenusecase.GoldenPrivateAssignmentCommand{
+		private[index] = goldenwave.GoldenPrivateAssignmentCommand{
 			ParticipantID: participantID, AssignmentID: failureTask049ID(base + 20 + index),
 		}
 	}
@@ -407,7 +413,7 @@ func (r *task050FailureRepositoryHarness) findFailureReplay(
 
 func (r *task050FailureRepositoryHarness) loadFailureSnapshot(
 	_ context.Context,
-	_ goldenusecase.GoldenSubmissionScope,
+	_ goldensubmission.GoldenSubmissionScope,
 ) (goldenusecase.GoldenFailureAuthority, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

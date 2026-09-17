@@ -253,7 +253,7 @@ packages:
   github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/submission:
     interfaces:
       SubmissionRepository:
-  github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/failure:
     interfaces:
       FailureClock:
       FailureRepository:

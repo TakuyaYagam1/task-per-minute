@@ -8,7 +8,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
+	goldenexecution "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/execution"
+	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/failure"
+	goldenstate "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/state"
 )
 
 func TestGoldenReserveExhaustion(t *testing.T) {
@@ -78,7 +80,7 @@ func TestGoldenReserveExhaustion(t *testing.T) {
 
 func task050ExhaustedActiveExecution(
 	t *testing.T,
-	state goldenusecase.GoldenState,
+	state goldenstate.GoldenState,
 	active goldenusecase.GoldenFailureActiveExecution,
 	startedAt time.Time,
 ) goldenusecase.GoldenFailureActiveExecution {
@@ -127,7 +129,7 @@ func task050ExhaustedActiveExecution(
 	active.Assignment.TaskID = edge.Snapshot.TaskID
 	active.Assignment.ContentDigest = edge.ContentDigest
 	active.Assignment.ExecutionPayloadDigest = failureTask049GobDigest(t, "third execution")
-	active.Assignment.Private = append([]goldenusecase.GoldenPrivateAssignment(nil), active.Assignment.Private[1:]...)
+	active.Assignment.Private = append([]goldenexecution.GoldenPrivateAssignment(nil), active.Assignment.Private[1:]...)
 	for index := range active.Assignment.Private {
 		active.Assignment.Private[index].SnapshotID = edge.Snapshot.SnapshotID
 		active.Assignment.Private[index].ContentDigest = edge.ContentDigest

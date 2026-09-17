@@ -8,8 +8,8 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	goldenattempt "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/attempt"
-	goldenplan "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/plan"
 	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/continuation"
+	goldenplan "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/plan"
 	goldenwave "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/wave"
 
 	"github.com/stretchr/testify/require"
@@ -83,7 +83,7 @@ func TestGoldenPartialContinuation(t *testing.T) {
 				CommittedAt:    ordering.Order[0].CommittedAt.Add(time.Duration(index+1) * time.Nanosecond),
 				EvidenceDigest: evidenceDigest,
 			})
-		overcapacity.Positions.Positions = append(overcapacity.Positions.Positions, goldenattempt.GoldenCommittedPosition{
+			overcapacity.Positions.Positions = append(overcapacity.Positions.Positions, goldenattempt.GoldenCommittedPosition{
 				Position: overcapacity.Positions.PositionFrom + index + 1, ParticipantID: participantID,
 				AttemptID: ordering.AttemptID, AttemptNo: ordering.AttemptNo,
 				SubmissionID: uint64(index + 2), EvidenceDigest: evidenceDigest,
