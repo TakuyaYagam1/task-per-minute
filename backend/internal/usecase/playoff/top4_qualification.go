@@ -12,7 +12,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
+	goldenplan "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/plan"
 	goldenstate "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/state"
 )
 
@@ -87,7 +87,7 @@ func buildTop4Qualifications(
 	authority top4Authority,
 	ordered []FinalSwissStanding,
 ) ([]domain.ProjectionRevision, []domain.RevisionDependency, []domain.RevisionDependency, error) {
-	partition, err := goldenusecase.PartitionTies(authority.Source.GoldenSource())
+	partition, err := goldenplan.PartitionTies(authority.Source.GoldenSource())
 	if err != nil {
 		return nil, nil, nil, top4Error("repartition final standings: %v", err)
 	}
@@ -146,7 +146,7 @@ func buildTop4Qualifications(
 
 func validateTop4GoldenTopologies(
 	groups []FinalSwissGoldenGroup,
-	seeds []goldenusecase.TieGroupSeed,
+	seeds []goldenplan.TieGroupSeed,
 ) error {
 	if len(groups) != len(seeds) {
 		return top4Error("Golden topology set does not match the canonical point partition")

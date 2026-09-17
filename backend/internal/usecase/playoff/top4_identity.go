@@ -7,7 +7,6 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
 	goldenstate "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/state"
 )
 
@@ -105,10 +104,10 @@ func addTop4FinalSourceReserved(
 }
 
 func addTop4GoldenStateReserved(reserved map[uuid.UUID]struct{}, state goldenstate.GoldenState) bool {
-	roles := goldenusecase.CoreIdentityRoles(state)
-	roles = append(roles, goldenusecase.PlanIdentityRoles(state)...)
-	roles = append(roles, goldenusecase.WindowIdentityRoles(state)...)
-	roles = append(roles, goldenusecase.TransitionIdentityRoles(state)...)
+	roles := goldenstate.CoreIdentityRoles(state)
+	roles = append(roles, goldenstate.PlanIdentityRoles(state)...)
+	roles = append(roles, goldenstate.WindowIdentityRoles(state)...)
+	roles = append(roles, goldenstate.TransitionIdentityRoles(state)...)
 	for _, identity := range roles {
 		if identity.Value != uuid.Nil {
 			if !reservePlayoffIdentity(reserved, identity.Value) {
