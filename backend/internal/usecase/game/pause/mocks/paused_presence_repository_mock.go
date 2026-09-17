@@ -110,8 +110,8 @@ func (_c *MockPausedPresenceRepository_CommitPausedPresence_Call) Run(run func(c
 	return _c
 }
 
-func (_c *MockPausedPresenceRepository_CommitPausedPresence_Call) Return(pausedPresenceRecord *pause.PausedPresenceRecord, b bool, err error) *MockPausedPresenceRepository_CommitPausedPresence_Call {
-	_c.Call.Return(pausedPresenceRecord, b, err)
+func (_c *MockPausedPresenceRepository_CommitPausedPresence_Call) Return(v *pause.PausedPresenceRecord, b bool, err error) *MockPausedPresenceRepository_CommitPausedPresence_Call {
+	_c.Call.Return(v, b, err)
 	return _c
 }
 
@@ -184,8 +184,8 @@ func (_c *MockPausedPresenceRepository_FindPausedPresenceCommand_Call) Run(run f
 	return _c
 }
 
-func (_c *MockPausedPresenceRepository_FindPausedPresenceCommand_Call) Return(pausedPresenceRecord *pause.PausedPresenceRecord, err error) *MockPausedPresenceRepository_FindPausedPresenceCommand_Call {
-	_c.Call.Return(pausedPresenceRecord, err)
+func (_c *MockPausedPresenceRepository_FindPausedPresenceCommand_Call) Return(v *pause.PausedPresenceRecord, err error) *MockPausedPresenceRepository_FindPausedPresenceCommand_Call {
+	_c.Call.Return(v, err)
 	return _c
 }
 
@@ -256,8 +256,8 @@ func (_c *MockPausedPresenceRepository_LoadPausedPresenceAuthority_Call) Run(run
 	return _c
 }
 
-func (_c *MockPausedPresenceRepository_LoadPausedPresenceAuthority_Call) Return(pausedPresenceAuthority pause.PausedPresenceAuthority, err error) *MockPausedPresenceRepository_LoadPausedPresenceAuthority_Call {
-	_c.Call.Return(pausedPresenceAuthority, err)
+func (_c *MockPausedPresenceRepository_LoadPausedPresenceAuthority_Call) Return(v pause.PausedPresenceAuthority, err error) *MockPausedPresenceRepository_LoadPausedPresenceAuthority_Call {
+	_c.Call.Return(v, err)
 	return _c
 }
 
