@@ -1,4 +1,4 @@
-package playoff
+package top4
 
 import (
 	"testing"
