@@ -3,7 +3,6 @@
 package integration_test
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"testing"
@@ -11,6 +10,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+
+	"github.com/TakuyaYagam1/task-per-minute/integration_test/internal/testkit/projectionseed"
 )
 
 func createProjectionArtifactSet(
@@ -95,24 +96,16 @@ func createProjectionArtifact(
 ) uuid.UUID {
 	tb.Helper()
 
-	id := uuid.New()
-	_, err := sharedPool.Exec(
-		ctx, `
-		INSERT INTO projection_artifacts (
-			id, tournament_id, roster_id, produced_by_revision_id,
-			artifact_kind, artifact_key, payload, payload_digest, created_at
-		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7::JSONB, $8, $9)`,
-		id,
-		fixture.tournamentID,
-		fixture.rosterID,
-		revisionID,
-		kind,
-		key,
-		payload,
-		bytes.Repeat([]byte{digestByte}, 32),
-		createdAt,
-	)
+	id, err := projectionseed.CreateArtifact(ctx, sharedPool, projectionseed.ArtifactInput{
+		TournamentID: fixture.tournamentID,
+		RosterID:     fixture.rosterID,
+		RevisionID:   revisionID,
+		Kind:         kind,
+		Key:          key,
+		Payload:      payload,
+		DigestByte:   digestByte,
+		CreatedAt:    createdAt,
+	})
 	require.NoError(tb, err)
 	createProjectionArtifactMembers(ctx, tb, fixture, id, kind)
 	return id
@@ -126,30 +119,12 @@ func createProjectionArtifactMembers(
 ) {
 	tb.Helper()
 
-	memberCount := len(fixture.participantIDs)
-	if kind == "champion" {
-		memberCount = 1
-	}
-	for index, participantID := range fixture.participantIDs[:memberCount] {
-		var score any
-		if kind == "standings" {
-			score = memberCount - index
-		}
-		_, err := sharedPool.Exec(
-			ctx, `
-			INSERT INTO projection_artifact_members (
-				artifact_id, tournament_id, roster_id, artifact_kind,
-				participant_id, position, score
-			)
-			VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-			artifactID,
-			fixture.tournamentID,
-			fixture.rosterID,
-			kind,
-			participantID,
-			index+1,
-			score,
-		)
-		require.NoError(tb, err)
-	}
+	err := projectionseed.CreateArtifactMembers(ctx, sharedPool, projectionseed.ArtifactMembersInput{
+		ArtifactID:     artifactID,
+		TournamentID:   fixture.tournamentID,
+		RosterID:       fixture.rosterID,
+		Kind:           kind,
+		ParticipantIDs: fixture.participantIDs,
+	})
+	require.NoError(tb, err)
 }
