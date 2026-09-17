@@ -14,7 +14,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/observability"
 	taskusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/task"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	tournamentadminroster "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/roster"
 	tournamentpreflight "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/preflight"
 )
 
@@ -68,7 +68,7 @@ func providePreflightRuntimeHealthSource(
 	redis *goredis.Client,
 	seaweed *objectstorage.SeaweedStorage,
 	pool *pgxpool.Pool,
-) tournamentadmin.PreflightRuntimeHealthSource {
+) tournamentadminroster.PreflightRuntimeHealthSource {
 	return preflightRuntimeHealthSource{
 		clock:            clock,
 		taskAvailability: taskAvailability,

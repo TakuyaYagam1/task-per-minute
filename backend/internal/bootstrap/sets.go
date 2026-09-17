@@ -67,6 +67,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection"
 	taskusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/task"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	tournamentadminroster "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/roster"
 	tournamentcancellation "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/cancellation"
 	catalogusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/catalog"
 	participantconnection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/connection"
@@ -105,7 +106,7 @@ var ReposSet = wire.NewSet(
 	wire.Bind(new(playerusecase.ManagementTransactionManager), new(*postgres.TxManager)),
 	wire.Bind(new(playerusecase.SessionTransactionManager), new(*postgres.TxManager)),
 	wire.Bind(new(tournamentadmin.LifecycleTransactionManager), new(*postgres.TxManager)),
-	wire.Bind(new(tournamentadmin.RosterTransactionManager), new(*postgres.TxManager)),
+	wire.Bind(new(tournamentadminroster.RosterTransactionManager), new(*postgres.TxManager)),
 	wire.Bind(new(tournamentadmin.ExecutionTransactionManager), new(*postgres.TxManager)),
 	wire.Bind(new(tournamentadmin.OperatorResultTransactionManager), new(*postgres.TxManager)),
 	wire.Bind(new(tournamentadmin.CorrectionTransactionManager), new(*postgres.TxManager)),
@@ -140,7 +141,7 @@ var ReposSet = wire.NewSet(
 	wire.Bind(new(tournamentadmin.LifecycleWorkflowRepository), new(*adminlifecyclerepo.TournamentAdminLifecyclePostgres)),
 	wire.Bind(new(tournamentpause.TournamentPauseRepository), new(*adminlifecyclerepo.TournamentAdminLifecyclePostgres)),
 	adminrosterrepo.NewTournamentAdminRosterPostgres,
-	wire.Bind(new(tournamentadmin.RosterWorkflowRepository), new(*adminrosterrepo.TournamentAdminRosterPostgres)),
+	wire.Bind(new(tournamentadminroster.RosterWorkflowRepository), new(*adminrosterrepo.TournamentAdminRosterPostgres)),
 	provideTournamentExecutionRepository,
 	wire.Bind(new(tournamentadmin.ExecutionWorkflowRepository), new(*executionrepo.Repository)),
 	wire.Bind(new(tournamentadmin.NormalPauseExecutionRepository), new(*executionrepo.Repository)),
@@ -297,8 +298,8 @@ var UseCasesSet = wire.NewSet(
 	provideTournamentAdminLifecycle,
 	wire.Bind(new(tournamentadmin.LifecyclePort), new(*tournamentadmin.LifecycleWorkflow)),
 	provideTournamentAdminRoster,
-	wire.Bind(new(tournamentadmin.RosterPort), new(*tournamentadmin.RosterWorkflow)),
-	wire.Bind(new(tournamentadmin.PreflightPort), new(*tournamentadmin.RosterWorkflow)),
+	wire.Bind(new(tournamentadminroster.RosterPort), new(*tournamentadminroster.RosterWorkflow)),
+	wire.Bind(new(tournamentadminroster.PreflightPort), new(*tournamentadminroster.RosterWorkflow)),
 	provideTournamentAdminExecution,
 	wire.Bind(new(tournamentadmin.PairingPort), new(*tournamentadmin.ExecutionWorkflow)),
 	wire.Bind(new(tournamentadmin.WavePort), new(*tournamentadmin.ExecutionWorkflow)),

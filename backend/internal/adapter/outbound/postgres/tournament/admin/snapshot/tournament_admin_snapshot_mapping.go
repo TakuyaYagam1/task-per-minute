@@ -11,6 +11,8 @@ import (
 	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
 	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	adminoperation "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/operation"
+	rostercapability "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/roster"
 )
 
 type tournamentAdminSnapshotHeaderState struct {
@@ -140,7 +142,7 @@ func tournamentAdminSnapshotCursorError(
 		requested.AuditSequence <= current.AuditSequence {
 		return nil
 	}
-	return &tournamentadmin.RevisionConflictError{
+	return &adminoperation.RevisionConflictError{
 		ExpectedRevision: requested.ProjectionRevision,
 		CurrentRevision:  current.ProjectionRevision,
 		CurrentState:     state,
@@ -150,7 +152,7 @@ func tournamentAdminSnapshotCursorError(
 func tournamentAdminSnapshotWaves(
 	rows []sqlc.ListTournamentAdminSnapshotWavesRow,
 	members []sqlc.ListTournamentAdminSnapshotWaveMembersRow,
-	roster tournamentadmin.RosterView,
+	roster rostercapability.RosterView,
 ) ([]tournamentadmin.WaveView, error) {
 	participantIDs := make(map[uuid.UUID]struct{}, len(roster.Participants))
 	for _, participant := range roster.Participants {
@@ -425,7 +427,7 @@ func tournamentAdminSnapshotSeries(
 	rows []sqlc.Series,
 	slots []sqlc.GameSlot,
 	attempts []sqlc.GameAttempt,
-	roster tournamentadmin.RosterView,
+	roster rostercapability.RosterView,
 ) (tournamentAdminSnapshotSeriesGraph, error) {
 	graph := tournamentAdminSnapshotSeriesGraph{
 		values:           make([]domain.Series, len(rows)),
@@ -468,7 +470,7 @@ func tournamentAdminSnapshotSeries(
 
 func tournamentAdminSnapshotSeriesRows(
 	rows []sqlc.Series,
-	roster tournamentadmin.RosterView,
+	roster rostercapability.RosterView,
 	participantIDs map[uuid.UUID]struct{},
 ) (map[uuid.UUID]sqlc.Series, error) {
 	result := make(map[uuid.UUID]sqlc.Series, len(rows))

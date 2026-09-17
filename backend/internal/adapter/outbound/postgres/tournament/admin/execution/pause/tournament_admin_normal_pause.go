@@ -21,6 +21,8 @@ import (
 	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	adminoperation "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/operation"
+	rostercapability "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/roster"
 )
 
 const tournamentAdminPauseDocumentVersion = 1
@@ -148,7 +150,7 @@ func (r *TournamentAdminNormalPausePostgres) loadTournamentAdminNormalPauseGraph
 		return gameusecase.PauseGraph{}, nil, fmt.Errorf("load normal pause Game deadlines: %w", err)
 	}
 	snapshot, err := snapshotrepo.NewTournamentAdminSnapshotPostgres(r.tx).LoadOperatorSnapshot(ctx, tournamentadmin.SnapshotQuery{
-		Operator: tournamentadmin.OperatorIdentity{ActorID: scope.Authority.HolderID}, TournamentID: scope.TournamentID,
+		Operator: adminoperation.OperatorIdentity{ActorID: scope.Authority.HolderID}, TournamentID: scope.TournamentID,
 	})
 	if err != nil {
 		return gameusecase.PauseGraph{}, nil, fmt.Errorf("load normal pause snapshot: %w", err)
@@ -201,7 +203,7 @@ func (r *TournamentAdminNormalPausePostgres) loadTournamentAdminNormalPauseDraft
 	ctx context.Context,
 	querier *sqlc.Queries,
 	wave tournamentadmin.WaveView,
-	roster tournamentadmin.RosterView,
+	roster rostercapability.RosterView,
 	seriesValues []gameusecase.PauseSeries,
 ) (*draftusecase.Execution, error) {
 	draftIDs, err := querier.LockTournamentAdminNormalPauseActiveDraftIDs(ctx, wave.Wave.ID)

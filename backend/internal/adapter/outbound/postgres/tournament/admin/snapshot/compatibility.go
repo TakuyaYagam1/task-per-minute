@@ -8,6 +8,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	rostercapability "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/roster"
 )
 
 // SeriesGraph exposes the validated series indexes needed by the still-rooted
@@ -32,7 +33,7 @@ func LoadSeries(
 	ctx context.Context,
 	querier *sqlc.Queries,
 	tournamentID uuid.UUID,
-	roster tournamentadmin.RosterView,
+	roster rostercapability.RosterView,
 ) (SeriesGraph, error) {
 	graph, err := tournamentAdminSnapshotLoadSeries(ctx, querier, tournamentID, roster)
 	if err != nil {

@@ -14,13 +14,13 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain/capacity"
 	swissusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/swiss"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	rostercapability "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/roster"
 	tournamentpreflight "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/preflight"
 )
 
 func (r *TournamentAdminRosterPostgres) LoadPreflightInput(
 	ctx context.Context,
-	authority tournamentadmin.RosterAuthority,
+	authority rostercapability.RosterAuthority,
 	evaluatedAt time.Time,
 ) (tournamentpreflight.ReportInput, error) {
 	if !r.rosterWriteReady(ctx) || !validServerTime(evaluatedAt) {
@@ -322,7 +322,7 @@ func tournamentPreflightTaskPools(
 func loadTournamentPreflightParticipants(
 	ctx context.Context,
 	querier *sqlc.Queries,
-	authority tournamentadmin.RosterAuthority,
+	authority rostercapability.RosterAuthority,
 ) ([]tournamentpreflight.Participant, error) {
 	rows, err := querier.ListTournamentPreflightParticipants(
 		ctx,
@@ -434,7 +434,7 @@ func plannedTournamentPreflightPairings(
 }
 
 func tournamentPreflightRuntime(
-	authority tournamentadmin.RosterAuthority,
+	authority rostercapability.RosterAuthority,
 	evaluatedAt time.Time,
 	rosterSize int,
 	content domain.ContentConfiguration,
@@ -465,7 +465,7 @@ func tournamentPreflightRuntime(
 }
 
 func tournamentPreflightCertification(
-	authority tournamentadmin.RosterAuthority,
+	authority rostercapability.RosterAuthority,
 	certifiedAt time.Time,
 	content domain.ContentConfiguration,
 	taskVersions []capacity.TaskVersion,

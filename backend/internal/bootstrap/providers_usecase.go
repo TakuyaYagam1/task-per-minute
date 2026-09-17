@@ -40,6 +40,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection"
 	taskusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/task"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	tournamentadminroster "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/roster"
 	tournamentcancellation "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/cancellation"
 	catalogusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/catalog"
 	lifecycleusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/lifecycle"
@@ -316,11 +317,11 @@ func provideTournamentAdminLifecycle(
 }
 
 func provideTournamentAdminRoster(
-	transactions tournamentadmin.RosterTransactionManager,
-	repository tournamentadmin.RosterWorkflowRepository,
-	runtimeHealth tournamentadmin.PreflightRuntimeHealthSource,
-) *tournamentadmin.RosterWorkflow {
-	return tournamentadmin.NewRosterWorkflow(tournamentadmin.RosterWorkflowDependencies{
+	transactions tournamentadminroster.RosterTransactionManager,
+	repository tournamentadminroster.RosterWorkflowRepository,
+	runtimeHealth tournamentadminroster.PreflightRuntimeHealthSource,
+) *tournamentadminroster.RosterWorkflow {
+	return tournamentadminroster.NewRosterWorkflow(tournamentadminroster.RosterWorkflowDependencies{
 		Transactions:  transactions,
 		Repository:    repository,
 		RuntimeHealth: runtimeHealth,
@@ -426,8 +427,8 @@ func provideTournamentAdminCorrection(
 
 func provideTournamentAdminApplication(
 	catalog inbound.TournamentUseCase,
-	roster tournamentadmin.RosterPort,
-	preflight tournamentadmin.PreflightPort,
+	roster tournamentadminroster.RosterPort,
+	preflight tournamentadminroster.PreflightPort,
 	pairing tournamentadmin.PairingPort,
 	lifecycle tournamentadmin.LifecyclePort,
 	wave tournamentadmin.WavePort,

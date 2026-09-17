@@ -14,6 +14,7 @@ import (
 	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	rostercapability "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/roster"
 )
 
 const tournamentAdminSnapshotMaxFrozenDuration = 7 * 24 * time.Hour
@@ -33,7 +34,7 @@ type tournamentAdminSnapshotPauseIndex struct {
 func tournamentAdminSnapshotPauses(
 	rows []sqlc.Pause,
 	header tournamentAdminSnapshotHeaderState,
-	roster tournamentadmin.RosterView,
+	roster rostercapability.RosterView,
 	waves []tournamentadmin.WaveView,
 	seriesGraph tournamentAdminSnapshotSeriesGraph,
 ) (tournamentAdminSnapshotPauseIndex, error) {

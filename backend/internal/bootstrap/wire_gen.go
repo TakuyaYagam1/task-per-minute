@@ -210,8 +210,8 @@ func initializeApp(runtime *RuntimeContext, cfg *config.Config, log logkit.Logge
 		cleanup()
 		return nil, nil, err
 	}
-	adminPreflightRuntimeHealthSource := providePreflightRuntimeHealthSource(bootstrapClockFunc, availabilityMonitor, privateTaskAvailabilityPostgres, realtimeDelivery, bootstrapRuntimeWorkers, runtimeWorkerHeartbeats, client, seaweedStorage, pool)
-	rosterWorkflow := provideTournamentAdminRoster(txManager, tournamentAdminRosterPostgres, adminPreflightRuntimeHealthSource)
+	rosterPreflightRuntimeHealthSource := providePreflightRuntimeHealthSource(bootstrapClockFunc, availabilityMonitor, privateTaskAvailabilityPostgres, realtimeDelivery, bootstrapRuntimeWorkers, runtimeWorkerHeartbeats, client, seaweedStorage, pool)
+	rosterWorkflow := provideTournamentAdminRoster(txManager, tournamentAdminRosterPostgres, rosterPreflightRuntimeHealthSource)
 	executionWorkflow := provideTournamentAdminExecution(txManager, repository, repository, repository, controller, bootstrapClockFunc)
 	tournamentAdminLifecyclePostgres := lifecycle.NewTournamentAdminLifecyclePostgres(txManager)
 	tournamentLifecyclePostgres := lifecycle2.NewTournamentLifecyclePostgres(txManager)

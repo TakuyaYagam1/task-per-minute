@@ -13,13 +13,14 @@ import (
 	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	rostercapability "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/roster"
 )
 
 func (r *TournamentAdminSnapshotPostgres) loadPauseGraph(
 	ctx context.Context,
 	querier *sqlc.Queries,
 	header tournamentAdminSnapshotHeaderState,
-	roster tournamentadmin.RosterView,
+	roster rostercapability.RosterView,
 	waves []tournamentadmin.WaveView,
 	seriesGraph tournamentAdminSnapshotSeriesGraph,
 	pauseRows []sqlc.Pause,
@@ -116,7 +117,7 @@ func (r *TournamentAdminSnapshotPostgres) loadSnapshotPauseDraft(
 	ctx context.Context,
 	querier *sqlc.Queries,
 	wave tournamentadmin.WaveView,
-	roster tournamentadmin.RosterView,
+	roster rostercapability.RosterView,
 	seriesValues []gameusecase.PauseSeries,
 ) (*draftusecase.Execution, error) {
 	draftIDs, err := querier.ListTournamentAdminSnapshotActiveDraftIDs(ctx, wave.Wave.ID)
@@ -153,7 +154,7 @@ func tournamentAdminSnapshotPauseConnectivity(
 	ctx context.Context,
 	querier *sqlc.Queries,
 	header tournamentAdminSnapshotHeaderState,
-	roster tournamentadmin.RosterView,
+	roster rostercapability.RosterView,
 	seriesIDs map[uuid.UUID]struct{},
 	seriesGraph tournamentAdminSnapshotSeriesGraph,
 	pauseIndex tournamentAdminSnapshotPauseIndex,

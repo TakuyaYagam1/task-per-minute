@@ -12,7 +12,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/internal/db"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	rostercapability "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/roster"
 )
 
 type TournamentAdminRosterPostgres struct {
@@ -26,18 +26,18 @@ func NewTournamentAdminRosterPostgres(tx *db.TxManager) *TournamentAdminRosterPo
 func (r *TournamentAdminRosterPostgres) GetRoster(
 	ctx context.Context,
 	tournamentID uuid.UUID,
-) (tournamentadmin.RosterView, error) {
+) (rostercapability.RosterView, error) {
 	if ctx == nil || r == nil || r.tx == nil || tournamentID == uuid.Nil {
-		return tournamentadmin.RosterView{}, domain.ErrValidation
+		return rostercapability.RosterView{}, domain.ErrValidation
 	}
 	querier := r.tx.Querier(ctx)
 	header, err := querier.GetTournamentAdminRoster(ctx, tournamentID)
 	if err != nil {
-		return tournamentadmin.RosterView{}, tournamentAdminRosterLookupError("GetRoster", err)
+		return rostercapability.RosterView{}, tournamentAdminRosterLookupError("GetRoster", err)
 	}
 	participants, err := querier.ListTournamentAdminRosterParticipants(ctx, tournamentID)
 	if err != nil {
-		return tournamentadmin.RosterView{}, fmt.Errorf(
+		return rostercapability.RosterView{}, fmt.Errorf(
 			"TournamentAdminRosterPostgres - GetRoster - list participants: %w", err,
 		)
 	}
@@ -47,38 +47,38 @@ func (r *TournamentAdminRosterPostgres) GetRoster(
 func (r *TournamentAdminRosterPostgres) LockRosterAuthority(
 	ctx context.Context,
 	tournamentID uuid.UUID,
-) (tournamentadmin.RosterAuthority, error) {
+) (rostercapability.RosterAuthority, error) {
 	if !r.rosterWriteReady(ctx) || tournamentID == uuid.Nil {
-		return tournamentadmin.RosterAuthority{}, domain.ErrValidation
+		return rostercapability.RosterAuthority{}, domain.ErrValidation
 	}
 	querier := r.tx.Querier(ctx)
 	row, err := querier.LockTournamentRosterAuthority(ctx, tournamentID)
 	if err != nil {
 		if !errors.Is(err, pgx.ErrNoRows) {
-			return tournamentadmin.RosterAuthority{}, fmt.Errorf(
+			return rostercapability.RosterAuthority{}, fmt.Errorf(
 				"TournamentAdminRosterPostgres - LockRosterAuthority: %w", err,
 			)
 		}
 		if _, rosterErr := querier.GetTournamentAdminRoster(ctx, tournamentID); rosterErr == nil {
-			return tournamentadmin.RosterAuthority{}, domain.ErrTournamentProjectionNotFound
+			return rostercapability.RosterAuthority{}, domain.ErrTournamentProjectionNotFound
 		} else if !errors.Is(rosterErr, pgx.ErrNoRows) {
-			return tournamentadmin.RosterAuthority{}, fmt.Errorf(
+			return rostercapability.RosterAuthority{}, fmt.Errorf(
 				"TournamentAdminRosterPostgres - LockRosterAuthority - resolve missing projection: %w", rosterErr,
 			)
 		}
-		return tournamentadmin.RosterAuthority{}, domain.ErrTournamentNotFound
+		return rostercapability.RosterAuthority{}, domain.ErrTournamentNotFound
 	}
 	participants, err := querier.ListTournamentAdminRosterParticipants(ctx, tournamentID)
 	if err != nil {
-		return tournamentadmin.RosterAuthority{}, fmt.Errorf(
+		return rostercapability.RosterAuthority{}, fmt.Errorf(
 			"TournamentAdminRosterPostgres - LockRosterAuthority - list participants: %w", err,
 		)
 	}
 	view, err := tournamentAdminRosterView(rosterFromAuthority(row), participants)
 	if err != nil {
-		return tournamentadmin.RosterAuthority{}, err
+		return rostercapability.RosterAuthority{}, err
 	}
-	return tournamentadmin.RosterAuthority{
+	return rostercapability.RosterAuthority{
 		Roster: view, TournamentPreset: domain.TournamentPreset(row.TournamentPreset),
 		PlannedRosterSize:    int(row.PlannedRosterSize),
 		ContentRevision:      row.ContentRevision,
@@ -92,7 +92,7 @@ func (r *TournamentAdminRosterPostgres) FindRosterOperation(
 	ctx context.Context,
 	tournamentID uuid.UUID,
 	commandID uuid.UUID,
-) (*tournamentadmin.RosterOperationRecord, error) {
+) (*rostercapability.RosterOperationRecord, error) {
 	if ctx == nil || r == nil || r.tx == nil || tournamentID == uuid.Nil || commandID == uuid.Nil {
 		return nil, domain.ErrValidation
 	}
@@ -124,7 +124,7 @@ func (r *TournamentAdminRosterPostgres) ReadRosterTime(ctx context.Context) (tim
 
 func (r *TournamentAdminRosterPostgres) SaveRosterOperation(
 	ctx context.Context,
-	record tournamentadmin.RosterOperationRecord,
+	record rostercapability.RosterOperationRecord,
 ) error {
 	if !r.rosterWriteReady(ctx) {
 		return domain.ErrValidation
@@ -169,4 +169,4 @@ func tournamentAdminRosterLookupError(operation string, err error) error {
 	return fmt.Errorf("TournamentAdminRosterPostgres - %s: %w", operation, err)
 }
 
-var _ tournamentadmin.RosterWorkflowRepository = (*TournamentAdminRosterPostgres)(nil)
+var _ rostercapability.RosterWorkflowRepository = (*TournamentAdminRosterPostgres)(nil)

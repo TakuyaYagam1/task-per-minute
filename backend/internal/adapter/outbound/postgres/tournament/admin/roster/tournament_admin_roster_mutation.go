@@ -14,17 +14,18 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	adminoperation "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/operation"
+	rostercapability "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/roster"
 )
 
 func (r *TournamentAdminRosterPostgres) ReplaceRosterParticipants(
 	ctx context.Context,
-	authority tournamentadmin.RosterAuthority,
-	participants []tournamentadmin.RosterParticipantInput,
+	authority rostercapability.RosterAuthority,
+	participants []rostercapability.RosterParticipantInput,
 	updatedAt time.Time,
-) (tournamentadmin.RosterView, error) {
+) (rostercapability.RosterView, error) {
 	if !r.rosterWriteReady(ctx) || !validServerTime(updatedAt) {
-		return tournamentadmin.RosterView{}, domain.ErrValidation
+		return rostercapability.RosterView{}, domain.ErrValidation
 	}
 	querier := r.tx.Querier(ctx)
 	deleted, err := querier.DeleteTournamentAdminRosterParticipants(
@@ -35,13 +36,13 @@ func (r *TournamentAdminRosterPostgres) ReplaceRosterParticipants(
 		},
 	)
 	if err != nil {
-		return tournamentadmin.RosterView{}, tournamentAdminRosterMutationError("ReplaceRoster - delete", err)
+		return rostercapability.RosterView{}, tournamentAdminRosterMutationError("ReplaceRoster - delete", err)
 	}
 	if deleted != int64(len(authority.Roster.Participants)) {
-		return tournamentadmin.RosterView{}, domain.ErrConflict
+		return rostercapability.RosterView{}, domain.ErrConflict
 	}
-	ordered := append([]tournamentadmin.RosterParticipantInput(nil), participants...)
-	slices.SortFunc(ordered, func(first, second tournamentadmin.RosterParticipantInput) int {
+	ordered := append([]rostercapability.RosterParticipantInput(nil), participants...)
+	slices.SortFunc(ordered, func(first, second rostercapability.RosterParticipantInput) int {
 		return first.Seed - second.Seed
 	})
 	for _, participant := range ordered {
@@ -54,13 +55,13 @@ func (r *TournamentAdminRosterPostgres) ReplaceRosterParticipants(
 		})
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
-				return tournamentadmin.RosterView{}, &tournamentadmin.RevisionConflictError{
+				return rostercapability.RosterView{}, &adminoperation.RevisionConflictError{
 					ExpectedRevision: authority.ProjectionRevision,
 					CurrentRevision:  authority.ProjectionRevision,
 					CurrentState:     authority.TournamentState,
 				}
 			}
-			return tournamentadmin.RosterView{}, tournamentAdminRosterMutationError("ReplaceRoster - insert", err)
+			return rostercapability.RosterView{}, tournamentAdminRosterMutationError("ReplaceRoster - insert", err)
 		}
 	}
 	if _, err = querier.AdvanceTournamentAdminRosterRevision(
@@ -71,28 +72,28 @@ func (r *TournamentAdminRosterPostgres) ReplaceRosterParticipants(
 			ExpectedRosterRevision: authority.Roster.Revision,
 		},
 	); err != nil {
-		return tournamentadmin.RosterView{}, tournamentAdminRosterMutationError("ReplaceRoster - advance", err)
+		return rostercapability.RosterView{}, tournamentAdminRosterMutationError("ReplaceRoster - advance", err)
 	}
 	return r.GetRoster(ctx, authority.Roster.TournamentID)
 }
 
 func (r *TournamentAdminRosterPostgres) LockRosterWithPreflight(
 	ctx context.Context,
-	authority tournamentadmin.RosterAuthority,
+	authority rostercapability.RosterAuthority,
 	checkedInPlayerIDs []uuid.UUID,
 	lockedAt time.Time,
-) (tournamentadmin.RosterView, error) {
+) (rostercapability.RosterView, error) {
 	if !r.rosterWriteReady(ctx) || !validServerTime(lockedAt) ||
 		len(checkedInPlayerIDs) < domain.TournamentMinParticipants {
-		return tournamentadmin.RosterView{}, domain.ErrValidation
+		return rostercapability.RosterView{}, domain.ErrValidation
 	}
 	current := tournamentAdminCheckedInPlayerIDs(authority.Roster.Participants)
 	if !slices.Equal(current, checkedInPlayerIDs) {
-		return tournamentadmin.RosterView{}, domain.ErrConflict
+		return rostercapability.RosterView{}, domain.ErrConflict
 	}
 	querier := r.tx.Querier(ctx)
 	if err := lockRosterTaskExposure(ctx, querier, authority.Roster.TournamentID); err != nil {
-		return tournamentadmin.RosterView{}, err
+		return rostercapability.RosterView{}, err
 	}
 	reserved, err := querier.ReserveCheckedInTournamentParticipants(
 		ctx,
@@ -101,20 +102,20 @@ func (r *TournamentAdminRosterPostgres) LockRosterWithPreflight(
 		},
 	)
 	if err != nil {
-		return tournamentadmin.RosterView{}, tournamentAdminRosterMutationError("LockRoster - reserve", err)
+		return rostercapability.RosterView{}, tournamentAdminRosterMutationError("LockRoster - reserve", err)
 	}
 	if !sameTournamentAdminIDs(reserved, checkedInPlayerIDs) {
-		return tournamentadmin.RosterView{}, domain.ErrConflict
+		return rostercapability.RosterView{}, domain.ErrConflict
 	}
 	if _, err = querier.LockTournamentRosterCAS(ctx, sqlc.LockTournamentRosterCASParams{
 		LockedAt: tstz(lockedAt), ID: authority.Roster.ID, ExpectedRevision: authority.Roster.Revision,
 	}); err != nil {
-		return tournamentadmin.RosterView{}, tournamentAdminRosterMutationError("LockRoster - roster", err)
+		return rostercapability.RosterView{}, tournamentAdminRosterMutationError("LockRoster - roster", err)
 	}
 	if err := transitionTournamentForRoster(
 		ctx, querier, authority, domain.TournamentStateRosterLocked, lockedAt,
 	); err != nil {
-		return tournamentadmin.RosterView{}, err
+		return rostercapability.RosterView{}, err
 	}
 	return r.GetRoster(ctx, authority.Roster.TournamentID)
 }
@@ -145,29 +146,29 @@ func lockRosterTaskExposure(ctx context.Context, querier *sqlc.Queries, tourname
 
 func (r *TournamentAdminRosterPostgres) UnlockRoster(
 	ctx context.Context,
-	authority tournamentadmin.RosterAuthority,
+	authority rostercapability.RosterAuthority,
 	updatedAt time.Time,
-) (tournamentadmin.RosterView, error) {
+) (rostercapability.RosterView, error) {
 	if !r.rosterWriteReady(ctx) || !validServerTime(updatedAt) {
-		return tournamentadmin.RosterView{}, domain.ErrValidation
+		return rostercapability.RosterView{}, domain.ErrValidation
 	}
 	querier := r.tx.Querier(ctx)
 	if _, err := querier.UnlockTournamentRosterCAS(ctx, sqlc.UnlockTournamentRosterCASParams{
 		UpdatedAt: tstz(updatedAt), ID: authority.Roster.ID, ExpectedRevision: authority.Roster.Revision,
 	}); err != nil {
-		return tournamentadmin.RosterView{}, tournamentAdminRosterMutationError("UnlockRoster - roster", err)
+		return rostercapability.RosterView{}, tournamentAdminRosterMutationError("UnlockRoster - roster", err)
 	}
 	released, err := querier.ReleaseTournamentReservations(ctx, authority.Roster.TournamentID)
 	if err != nil {
-		return tournamentadmin.RosterView{}, tournamentAdminRosterMutationError("UnlockRoster - reservations", err)
+		return rostercapability.RosterView{}, tournamentAdminRosterMutationError("UnlockRoster - reservations", err)
 	}
 	if released != int64(len(tournamentAdminCheckedInPlayerIDs(authority.Roster.Participants))) {
-		return tournamentadmin.RosterView{}, domain.ErrConflict
+		return rostercapability.RosterView{}, domain.ErrConflict
 	}
 	if err := transitionTournamentForRoster(
 		ctx, querier, authority, domain.TournamentStateRegistration, updatedAt,
 	); err != nil {
-		return tournamentadmin.RosterView{}, err
+		return rostercapability.RosterView{}, err
 	}
 	return r.GetRoster(ctx, authority.Roster.TournamentID)
 }
@@ -175,7 +176,7 @@ func (r *TournamentAdminRosterPostgres) UnlockRoster(
 func transitionTournamentForRoster(
 	ctx context.Context,
 	querier *sqlc.Queries,
-	authority tournamentadmin.RosterAuthority,
+	authority rostercapability.RosterAuthority,
 	next domain.TournamentState,
 	updatedAt time.Time,
 ) error {
@@ -205,7 +206,7 @@ func tournamentRosterParticipantID(rosterID, playerID uuid.UUID) uuid.UUID {
 	return uuid.NewSHA1(rosterID, playerID[:])
 }
 
-func tournamentAdminCheckedInPlayerIDs(participants []tournamentadmin.RosterParticipantView) []uuid.UUID {
+func tournamentAdminCheckedInPlayerIDs(participants []rostercapability.RosterParticipantView) []uuid.UUID {
 	result := make([]uuid.UUID, 0, len(participants))
 	for _, participant := range participants {
 		if participant.Attendance == domain.AttendanceStateCheckedIn {

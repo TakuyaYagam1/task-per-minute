@@ -14,6 +14,7 @@ import (
 	rosterpostgres "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/roster"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	rostercapability "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/roster"
 )
 
 type TournamentAdminSnapshotPostgres struct {
@@ -126,7 +127,7 @@ func tournamentAdminSnapshotLoadWaves(
 	ctx context.Context,
 	querier *sqlc.Queries,
 	tournamentID uuid.UUID,
-	roster tournamentadmin.RosterView,
+	roster rostercapability.RosterView,
 ) ([]tournamentadmin.WaveView, error) {
 	params := sqlc.ListTournamentAdminSnapshotWavesParams{TournamentID: tournamentID, RosterID: roster.ID}
 	waveRows, err := querier.ListTournamentAdminSnapshotWaves(ctx, params)
@@ -147,7 +148,7 @@ func tournamentAdminSnapshotLoadSeries(
 	ctx context.Context,
 	querier *sqlc.Queries,
 	tournamentID uuid.UUID,
-	roster tournamentadmin.RosterView,
+	roster rostercapability.RosterView,
 ) (tournamentAdminSnapshotSeriesGraph, error) {
 	params := sqlc.ListTournamentAdminSnapshotSeriesParams{TournamentID: tournamentID, RosterID: roster.ID}
 	seriesRows, err := querier.ListTournamentAdminSnapshotSeries(ctx, params)
