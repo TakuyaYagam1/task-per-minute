@@ -9,6 +9,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+
+	"github.com/TakuyaYagam1/task-per-minute/integration_test/internal/testkit/projectionseed"
 )
 
 func linkProjectionArtifact(
@@ -20,20 +22,14 @@ func linkProjectionArtifact(
 	changeKind string,
 ) {
 	tb.Helper()
-	_, err := sharedPool.Exec(
-		ctx, `
-		INSERT INTO projection_revision_artifacts (
-			revision_id, tournament_id, roster_id,
-			artifact_kind, artifact_id, change_kind
-		)
-		VALUES ($1, $2, $3, $4, $5, $6)`,
-		revisionID,
-		fixture.tournamentID,
-		fixture.rosterID,
-		kind,
-		artifactID,
-		changeKind,
-	)
+	err := projectionseed.LinkArtifact(ctx, sharedPool, projectionseed.ArtifactLinkInput{
+		RevisionID:   revisionID,
+		TournamentID: fixture.tournamentID,
+		RosterID:     fixture.rosterID,
+		Kind:         kind,
+		ArtifactID:   artifactID,
+		ChangeKind:   changeKind,
+	})
 	require.NoError(tb, err)
 }
 
@@ -44,18 +40,12 @@ func createProjectionArtifactDependency(
 	dependsOnArtifactID uuid.UUID,
 ) {
 	tb.Helper()
-	_, err := sharedPool.Exec(
-		ctx, `
-		INSERT INTO projection_dependencies (
-			artifact_id, tournament_id, roster_id,
-			dependency_kind, depends_on_artifact_id
-		)
-		VALUES ($1, $2, $3, 'artifact', $4)`,
-		artifactID,
-		fixture.tournamentID,
-		fixture.rosterID,
-		dependsOnArtifactID,
-	)
+	err := projectionseed.CreateArtifactDependency(ctx, sharedPool, projectionseed.ArtifactDependencyInput{
+		ArtifactID:          artifactID,
+		TournamentID:        fixture.tournamentID,
+		RosterID:            fixture.rosterID,
+		DependsOnArtifactID: dependsOnArtifactID,
+	})
 	require.NoError(tb, err)
 }
 
@@ -66,18 +56,12 @@ func createProjectionGoldenDependency(
 	goldenPositionCommitID uuid.UUID,
 ) {
 	tb.Helper()
-	_, err := sharedPool.Exec(
-		ctx, `
-		INSERT INTO projection_dependencies (
-			artifact_id, tournament_id, roster_id,
-			dependency_kind, golden_position_commit_id
-		)
-		VALUES ($1, $2, $3, 'golden_position', $4)`,
-		artifactID,
-		fixture.tournamentID,
-		fixture.rosterID,
-		goldenPositionCommitID,
-	)
+	err := projectionseed.CreateGoldenDependency(ctx, sharedPool, projectionseed.GoldenDependencyInput{
+		ArtifactID:             artifactID,
+		TournamentID:           fixture.tournamentID,
+		RosterID:               fixture.rosterID,
+		GoldenPositionCommitID: goldenPositionCommitID,
+	})
 	require.NoError(tb, err)
 }
 
@@ -87,10 +71,7 @@ func publishProjectionRevision(
 	publishedAt time.Time,
 ) {
 	tb.Helper()
-	_, err := sharedPool.Exec(ctx, `
-		UPDATE projection_revisions
-		SET state = 'published', published_at = $2
-		WHERE id = $1`, revisionID, publishedAt)
+	err := projectionseed.PublishRevision(ctx, sharedPool, revisionID, publishedAt)
 	require.NoError(tb, err)
 }
 
@@ -101,24 +82,12 @@ func supersedeProjectionRevision(
 	transitionAt time.Time,
 ) {
 	tb.Helper()
-
-	tx, err := sharedPool.Begin(ctx)
+	err := projectionseed.SupersedeRevision(ctx, sharedPool, projectionseed.SupersedeInput{
+		PreviousRevisionID:    previousRevisionID,
+		ReplacementRevisionID: replacementRevisionID,
+		TransitionAt:          transitionAt,
+	})
 	require.NoError(tb, err)
-	defer func() { _ = tx.Rollback(ctx) }()
-	_, err = tx.Exec(ctx, `
-		UPDATE projection_revisions
-		SET state = 'superseded',
-			superseded_by_revision_id = $2,
-			superseded_at = $3,
-			supersession_reason = 'affected descendants rebuilt'
-		WHERE id = $1`, previousRevisionID, replacementRevisionID, transitionAt)
-	require.NoError(tb, err)
-	_, err = tx.Exec(ctx, `
-		UPDATE projection_revisions
-		SET state = 'published', published_at = $2
-		WHERE id = $1`, replacementRevisionID, transitionAt)
-	require.NoError(tb, err)
-	require.NoError(tb, tx.Commit(ctx))
 }
 
 func assertProjectionCutoffScopeIsolation(
@@ -130,18 +99,11 @@ func assertProjectionCutoffScopeIsolation(
 
 	otherTournamentID := createMigrationTournament(ctx, tb)
 	otherRosterID := createMigrationRoster(ctx, tb, otherTournamentID)
-	_, err := sharedPool.Exec(
-		ctx, `
-		INSERT INTO projection_cutoffs (
-			tournament_id, roster_id, sequence_number,
-			source_kind, golden_position_commit_id,
-			reason, cutoff_at, created_at
-		)
-		VALUES ($1, $2, 1, 'golden_position', $3, 'cross-roster probe', $4, $4)`,
-		otherTournamentID,
-		otherRosterID,
-		goldenPositionCommitID,
-		createdAt,
-	)
+	err := projectionseed.CreateCrossRosterCutoff(ctx, sharedPool, projectionseed.CrossRosterCutoffInput{
+		TournamentID:           otherTournamentID,
+		RosterID:               otherRosterID,
+		GoldenPositionCommitID: goldenPositionCommitID,
+		CreatedAt:              createdAt,
+	})
 	require.ErrorContains(tb, err, "outside its roster")
 }
