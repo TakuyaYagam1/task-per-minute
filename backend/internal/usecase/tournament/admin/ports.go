@@ -3,7 +3,6 @@ package admin
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"time"
 
 	"github.com/google/uuid"
@@ -13,10 +12,7 @@ import (
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
 	pauseusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause"
 	gamestart "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/start"
-	swissusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/swiss"
 )
-
-var ErrManualByeMismatch = errors.New("manual Swiss bye does not match the deterministic selection")
 
 type ExecutionTransactionManager interface {
 	Do(ctx context.Context, fn func(context.Context) error) error
@@ -27,46 +23,6 @@ type ExecutionTransactionManager interface {
 // renewing a lease never runs while WaveStart holds tournament graph locks.
 type ExecutionAuthorityProvider interface {
 	AuthorityFor(ctx context.Context, tournamentID uuid.UUID) (authoritydomain.Identity, error)
-}
-
-type PairingParticipant struct {
-	ID         uuid.UUID
-	StableSeed int
-}
-
-type PairingAuthority struct {
-	TournamentID         uuid.UUID
-	TournamentState      domain.TournamentState
-	TournamentRevision   int64
-	RosterID             uuid.UUID
-	RosterRevision       int64
-	RosterLockedAt       time.Time
-	ProjectionRevisionID uuid.UUID
-	ProjectionRevision   int64
-	HistoryRevision      int64
-	Participants         []PairingParticipant
-	Standings            []SwissStandingView
-	PreviousMeetings     []swissusecase.Pair
-	PriorMeetingCounts   map[swissusecase.PairKey]int
-	ReceivedBye          map[uuid.UUID]bool
-	RoundCount           int
-	CompletedRoundCount  int
-}
-
-type PairingPlan struct {
-	Command                 PairingCommand
-	Authority               PairingAuthority
-	RoundID                 uuid.UUID
-	PairingEvidenceID       uuid.UUID
-	WaveID                  uuid.UUID
-	WaveRevisionID          domain.WaveRevisionID
-	PairingIDs              []uuid.UUID
-	SeriesIDs               []uuid.UUID
-	InitialScoreRevisionIDs []domain.SeriesScoreRevisionID
-	Pairs                   []swissusecase.Pair
-	Automatic               *swissusecase.AutomaticPairing
-	Bye                     *swissusecase.ByeSelection
-	DecidedAt               time.Time
 }
 
 type PairingCommandRecord struct {
@@ -176,27 +132,4 @@ type ExecutionWorkflowDependencies struct {
 	NormalPause  NormalPauseExecutionRepository
 	WaveStart    *gamestart.StartUseCase
 	Authority    ExecutionAuthorityProvider
-}
-
-type ManualByeMismatchError struct {
-	RequestedParticipantID uuid.UUID
-	SelectedParticipantID  uuid.UUID
-	ExpectedRevision       int64
-	CurrentRevision        int64
-	CurrentState           domain.TournamentState
-}
-
-func (e *ManualByeMismatchError) Error() string {
-	return ErrManualByeMismatch.Error()
-}
-
-func (e *ManualByeMismatchError) Unwrap() []error {
-	return []error{
-		ErrManualByeMismatch,
-		&RevisionConflictError{
-			ExpectedRevision: e.ExpectedRevision,
-			CurrentRevision:  e.CurrentRevision,
-			CurrentState:     e.CurrentState,
-		},
-	}
 }

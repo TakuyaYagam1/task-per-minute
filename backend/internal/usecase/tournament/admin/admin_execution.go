@@ -17,31 +17,6 @@ const (
 	maxDecisionEvidenceRunes = 512
 )
 
-type PairingMode string
-
-const (
-	PairingModeAutomatic PairingMode = "automatic"
-	PairingModeManual    PairingMode = "manual"
-)
-
-type ParticipantPair struct {
-	FirstParticipantID  uuid.UUID
-	SecondParticipantID uuid.UUID
-}
-
-type PairingCommand struct {
-	CommandScope
-
-	ExpectedProjectionRevision int64
-	RoundNumber                int
-	PairingMode                PairingMode
-	CategoryMode               domain.CategoryMode
-	Categories                 []domain.Category
-	ManualPairings             []ParticipantPair
-	ManualPairingsProvided     bool
-	ManualByeParticipantID     *uuid.UUID
-}
-
 type WaveAction string
 
 const (
@@ -94,20 +69,6 @@ type SwissByeView struct {
 	EvidenceID    uuid.UUID
 }
 
-type SwissStandingView struct {
-	ParticipantID       uuid.UUID
-	Position            int
-	Points              int
-	PointsLabel         string
-	Buchholz            int
-	BuchholzStatus      string
-	HeadToHeadPoints    int
-	HeadToHeadApplied   bool
-	EffectiveTimeMS     int64
-	AcceptedSolveTimeMS *int64
-	StableSeed          int
-}
-
 type SwissRoundView struct {
 	ID                   uuid.UUID
 	TournamentID         uuid.UUID
@@ -140,69 +101,6 @@ type PairingPort interface {
 
 type WavePort interface {
 	ControlWave(ctx context.Context, command WaveCommand) (WaveView, error)
-}
-
-func validPairingCommand(command PairingCommand) bool {
-	if !validPairingCommandHeader(command) {
-		return false
-	}
-	if command.PairingMode == PairingModeAutomatic {
-		return !command.ManualPairingsProvided && command.ManualByeParticipantID == nil
-	}
-	return validManualPairingCommand(command)
-}
-
-func validPairingCommandHeader(command PairingCommand) bool {
-	return validCommandScope(command.CommandScope) && command.ExpectedProjectionRevision >= 1 &&
-		command.RoundNumber >= 1 && command.RoundNumber <= 4 && command.PairingMode.valid() &&
-		command.CategoryMode.IsValid() && validCategories(command.Categories)
-}
-
-func validManualPairingCommand(command PairingCommand) bool {
-	if !command.ManualPairingsProvided || len(command.ManualPairings) < 2 || len(command.ManualPairings) > 8 {
-		return false
-	}
-	participants := make(map[uuid.UUID]struct{}, len(command.ManualPairings)*2+1)
-	for _, pair := range command.ManualPairings {
-		if !validParticipantPair(pair) || !addUniqueID(participants, pair.FirstParticipantID) ||
-			!addUniqueID(participants, pair.SecondParticipantID) {
-			return false
-		}
-	}
-	return validManualBye(command.ManualByeParticipantID, participants)
-}
-
-func validParticipantPair(pair ParticipantPair) bool {
-	return pair.FirstParticipantID != uuid.Nil && pair.SecondParticipantID != uuid.Nil &&
-		pair.FirstParticipantID != pair.SecondParticipantID
-}
-
-func validManualBye(byeParticipantID *uuid.UUID, participants map[uuid.UUID]struct{}) bool {
-	if byeParticipantID == nil {
-		return true
-	}
-	return *byeParticipantID != uuid.Nil && addUniqueID(participants, *byeParticipantID)
-}
-
-func (mode PairingMode) valid() bool {
-	return mode == PairingModeAutomatic || mode == PairingModeManual
-}
-
-func validCategories(categories []domain.Category) bool {
-	if len(categories) == 0 {
-		return false
-	}
-	seen := make(map[domain.Category]struct{}, len(categories))
-	for _, category := range categories {
-		if !category.IsValid() {
-			return false
-		}
-		if _, duplicate := seen[category]; duplicate {
-			return false
-		}
-		seen[category] = struct{}{}
-	}
-	return true
 }
 
 func validWaveCommand(command WaveCommand) bool {
@@ -307,15 +205,6 @@ func validSwissStandings(view SwissRoundView, roster map[uuid.UUID]struct{}) boo
 		}
 	}
 	return true
-}
-
-func validSwissStanding(standing SwissStandingView, total int) bool {
-	return standing.ParticipantID != uuid.Nil && standing.Position >= 1 && standing.Position <= total &&
-		standing.Points >= 0 && standing.Buchholz >= 0 && standing.HeadToHeadPoints >= 0 &&
-		standing.EffectiveTimeMS >= 0 && standing.StableSeed >= 1 && standing.StableSeed <= total &&
-		(standing.PointsLabel == "provisional" || standing.PointsLabel == "final") &&
-		(standing.BuchholzStatus == "provisional" || standing.BuchholzStatus == "final") &&
-		(standing.AcceptedSolveTimeMS == nil || *standing.AcceptedSolveTimeMS >= 0)
 }
 
 func validSwissRoundTimeline(view SwissRoundView) bool {
