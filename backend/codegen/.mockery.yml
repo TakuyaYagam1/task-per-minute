@@ -99,7 +99,7 @@ packages:
       ExactDraftPlanWorkflow:
       ExactDraftPlanAuthorityReader:
       ExactDraftCommittedPlanReader:
-  github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection/publication:
     interfaces:
       FinalPublicationRepository:
   github.com/TakuyaYagam1/task-per-minute/internal/usecase/idempotency:

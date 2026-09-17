@@ -1,4 +1,4 @@
-package resultprojection_test
+package publication_test
 
 import (
 	"crypto/sha256"
@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	projection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection"
+	projection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection/publication"
 )
 
 func TestFinalPublicationValidation(t *testing.T) {

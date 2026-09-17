@@ -1,4 +1,4 @@
-package resultprojection
+package publication
 
 import (
 	"context"
