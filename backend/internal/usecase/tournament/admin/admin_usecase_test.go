@@ -13,6 +13,7 @@ import (
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/audit"
 	incidentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/incident"
+	pairingusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/pairing"
 	snapshotusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/snapshot"
 )
 
@@ -198,7 +199,7 @@ func TestSwissRoundViewValidation(t *testing.T) {
 		{name: "duplicate standing position", mutate: func(value *SwissRoundView) { value.Standings[1].Position = value.Standings[0].Position }},
 		{name: "lossy bye", mutate: func(value *SwissRoundView) {
 			value.RosterParticipantIDs = append(value.RosterParticipantIDs, adminTestID(50))
-			value.Standings = append(value.Standings, SwissStandingView{
+			value.Standings = append(value.Standings, pairingusecase.SwissStandingView{
 				ParticipantID: adminTestID(50), Position: 5, PointsLabel: "provisional",
 				BuchholzStatus: "provisional", StableSeed: 5,
 			})
@@ -266,7 +267,7 @@ type adminCommands struct {
 	preflight        PreflightCommand
 	lockRoster       LockRosterCommand
 	unlockRoster     UnlockRosterCommand
-	pairing          PairingCommand
+	pairing          pairingusecase.PairingCommand
 	tournamentAction TournamentActionCommand
 	wave             WaveCommand
 	noShow           NoShowCommand
@@ -308,9 +309,9 @@ func validAdminCommands() adminCommands {
 		unlockRoster: UnlockRosterCommand{
 			CommandScope: scope(6), ExpectedProjectionRevision: 1, Confirmed: true, Reason: "operator correction",
 		},
-		pairing: PairingCommand{
+		pairing: pairingusecase.PairingCommand{
 			CommandScope: scope(7), ExpectedProjectionRevision: 1, RoundNumber: 1,
-			PairingMode: PairingModeAutomatic, CategoryMode: domain.CategoryModeRandom,
+			PairingMode: pairingusecase.PairingModeAutomatic, CategoryMode: domain.CategoryModeRandom,
 			Categories: []domain.Category{domain.CategoryWeb},
 		},
 		tournamentAction: TournamentActionCommand{
@@ -399,7 +400,7 @@ func validSwissRoundViewFixture(tournamentID uuid.UUID) SwissRoundView {
 			{ID: adminTestID(210), RoundID: roundID, FirstParticipantID: participants[0], SecondParticipantID: participants[1], EvidenceID: evidenceID},
 			{ID: adminTestID(211), RoundID: roundID, FirstParticipantID: participants[2], SecondParticipantID: participants[3], EvidenceID: evidenceID},
 		},
-		Standings: []SwissStandingView{
+		Standings: []pairingusecase.SwissStandingView{
 			{ParticipantID: participants[0], Position: 1, PointsLabel: "provisional", BuchholzStatus: "provisional", StableSeed: 1},
 			{ParticipantID: participants[1], Position: 2, PointsLabel: "provisional", BuchholzStatus: "provisional", StableSeed: 2},
 			{ParticipantID: participants[2], Position: 3, PointsLabel: "provisional", BuchholzStatus: "provisional", StableSeed: 3},
@@ -413,7 +414,7 @@ func cloneSwissRoundView(view SwissRoundView) SwissRoundView {
 	clone := view
 	clone.RosterParticipantIDs = append([]uuid.UUID(nil), view.RosterParticipantIDs...)
 	clone.Pairings = append([]SwissPairingView(nil), view.Pairings...)
-	clone.Standings = append([]SwissStandingView(nil), view.Standings...)
+	clone.Standings = append([]pairingusecase.SwissStandingView(nil), view.Standings...)
 	if view.PairingEvidence != nil {
 		evidence := *view.PairingEvidence
 		evidence.NormalizedInputs = append([]string(nil), view.PairingEvidence.NormalizedInputs...)

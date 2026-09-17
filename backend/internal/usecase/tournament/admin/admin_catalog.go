@@ -15,6 +15,7 @@ import (
 	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/audit"
 	incidentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/incident"
+	pairingusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/pairing"
 	snapshotusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/snapshot"
 	tournamentpreflight "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/preflight"
 )
@@ -30,7 +31,7 @@ type AdminService interface {
 	RunPreflight(ctx context.Context, command PreflightCommand) (tournamentpreflight.ReportRevision, error)
 	LockRoster(ctx context.Context, command LockRosterCommand) (RosterView, error)
 	UnlockRoster(ctx context.Context, command UnlockRosterCommand) (RosterView, error)
-	ConfigurePairings(ctx context.Context, command PairingCommand) (SwissRoundView, error)
+	ConfigurePairings(ctx context.Context, command pairingusecase.PairingCommand) (SwissRoundView, error)
 	ApplyTournamentAction(ctx context.Context, command TournamentActionCommand) (usecase.TournamentView, error)
 	ControlWave(ctx context.Context, command WaveCommand) (WaveView, error)
 	ResolveNoShow(ctx context.Context, command NoShowCommand) error

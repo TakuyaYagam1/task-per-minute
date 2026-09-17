@@ -14,17 +14,18 @@ import (
 	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
 	swissusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/swiss"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	pairingusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/pairing"
 )
 
 func TestSwissRandomMaterializationPlanRequiresOneSeriesPerPair(t *testing.T) {
 	t.Parallel()
 
-	plan := tournamentadmin.PairingPlan{
-		Command: tournamentadmin.PairingCommand{
+	plan := pairingusecase.PairingPlan{
+		Command: pairingusecase.PairingCommand{
 			CommandScope: tournamentadmin.CommandScope{TournamentID: uuid.New()},
 			CategoryMode: domain.CategoryModeRandom,
 		},
-		Authority: tournamentadmin.PairingAuthority{RosterID: uuid.New()},
+		Authority: pairingusecase.PairingAuthority{RosterID: uuid.New()},
 		Pairs:     []swissusecase.Pair{{FirstParticipantID: uuid.New(), SecondParticipantID: uuid.New()}},
 		SeriesIDs: []uuid.UUID{uuid.New()}, DecidedAt: time.Date(2026, 9, 11, 12, 0, 0, 0, time.UTC),
 	}
@@ -37,8 +38,8 @@ func TestSwissRandomMaterializationPlanRequiresOneSeriesPerPair(t *testing.T) {
 func TestSwissAdminMaterializationPlanRequiresOneCategoryAndActor(t *testing.T) {
 	t.Parallel()
 
-	plan := tournamentadmin.PairingPlan{
-		Command: tournamentadmin.PairingCommand{
+	plan := pairingusecase.PairingPlan{
+		Command: pairingusecase.PairingCommand{
 			CommandScope: tournamentadmin.CommandScope{
 				Operator:     tournamentadmin.OperatorIdentity{ActorID: uuid.New()},
 				TournamentID: uuid.New(),
@@ -46,7 +47,7 @@ func TestSwissAdminMaterializationPlanRequiresOneCategoryAndActor(t *testing.T) 
 			CategoryMode: domain.CategoryModeAdmin,
 			Categories:   []domain.Category{domain.CategoryWeb},
 		},
-		Authority: tournamentadmin.PairingAuthority{RosterID: uuid.New()},
+		Authority: pairingusecase.PairingAuthority{RosterID: uuid.New()},
 		Pairs:     []swissusecase.Pair{{FirstParticipantID: uuid.New(), SecondParticipantID: uuid.New()}},
 		SeriesIDs: []uuid.UUID{uuid.New()}, DecidedAt: time.Date(2026, 9, 11, 12, 0, 0, 0, time.UTC),
 	}

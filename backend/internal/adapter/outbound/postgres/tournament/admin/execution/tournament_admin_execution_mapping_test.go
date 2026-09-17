@@ -12,12 +12,13 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	pairingusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/pairing"
 )
 
 func TestTournamentAdminStandingsMapsExactPublishedRoster(t *testing.T) {
 	t.Parallel()
 
-	participants := []tournamentadmin.PairingParticipant{
+	participants := []pairingusecase.PairingParticipant{
 		{ID: tournamentExecutionID(1), StableSeed: 10},
 		{ID: tournamentExecutionID(2), StableSeed: 20},
 	}
@@ -48,7 +49,7 @@ func TestTournamentAdminStandingsMapsExactPublishedRoster(t *testing.T) {
 func TestTournamentAdminStandingsSeedsInitialRoster(t *testing.T) {
 	t.Parallel()
 
-	participants := []tournamentadmin.PairingParticipant{
+	participants := []pairingusecase.PairingParticipant{
 		{ID: tournamentExecutionID(2), StableSeed: 20},
 		{ID: tournamentExecutionID(1), StableSeed: 10},
 	}
@@ -57,7 +58,7 @@ func TestTournamentAdminStandingsSeedsInitialRoster(t *testing.T) {
 
 	standings, err := tournamentAdminStandings(document, participants)
 	require.NoError(t, err)
-	require.Equal(t, []tournamentadmin.SwissStandingView{
+	require.Equal(t, []pairingusecase.SwissStandingView{
 		{
 			ParticipantID: participants[1].ID, Position: 1, PointsLabel: "provisional",
 			BuchholzStatus: "provisional", StableSeed: participants[1].StableSeed,
@@ -74,7 +75,7 @@ func TestTournamentAdminStandingsRejectsMissingEntries(t *testing.T) {
 
 	_, err := tournamentAdminStandings(
 		[]byte(`{}`),
-		[]tournamentadmin.PairingParticipant{{ID: tournamentExecutionID(1), StableSeed: 1}},
+		[]pairingusecase.PairingParticipant{{ID: tournamentExecutionID(1), StableSeed: 1}},
 	)
 	require.ErrorIs(t, err, domain.ErrInternal)
 }
@@ -82,7 +83,7 @@ func TestTournamentAdminStandingsRejectsMissingEntries(t *testing.T) {
 func TestTournamentAdminStandingsRejectsForeignParticipant(t *testing.T) {
 	t.Parallel()
 
-	participants := []tournamentadmin.PairingParticipant{{ID: tournamentExecutionID(1), StableSeed: 1}}
+	participants := []pairingusecase.PairingParticipant{{ID: tournamentExecutionID(1), StableSeed: 1}}
 	document, err := json.Marshal(tournamentAdminStandingsDocument{Entries: []tournamentAdminStanding{{
 		ParticipantID: tournamentExecutionID(2), Position: 1,
 	}}})

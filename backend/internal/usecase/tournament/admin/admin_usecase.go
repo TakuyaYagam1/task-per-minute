@@ -8,6 +8,7 @@ import (
 	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/audit"
 	incidentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/incident"
+	pairingusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/pairing"
 	snapshotusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/snapshot"
 	tournamentpreflight "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/preflight"
 )
@@ -137,9 +138,9 @@ func (a *AdminUseCase) RunPreflight(
 
 func (a *AdminUseCase) ConfigurePairings(
 	ctx context.Context,
-	command PairingCommand,
+	command pairingusecase.PairingCommand,
 ) (SwissRoundView, error) {
-	if ctx == nil || !validPairingCommand(command) {
+	if ctx == nil || !pairingusecase.ValidPairingCommand(command) {
 		return SwissRoundView{}, domain.ErrValidation
 	}
 	if a == nil || a.pairing == nil {

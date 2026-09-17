@@ -21,6 +21,7 @@ import (
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	gamestart "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/start"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	pairingusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/pairing"
 	snapshotusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/snapshot"
 )
 
@@ -146,10 +147,10 @@ func TestTournamentSeriesConfigurationRebuildsUnstartedAssignmentThroughProducti
 	execution := tournamentadmin.NewExecutionWorkflow(tournamentadmin.ExecutionWorkflowDependencies{
 		Transactions: fixture.mgr, Repository: executionrepo.NewRepository(fixture.mgr, resultauthority.FinalizeProjection),
 	})
-	_, err := execution.ConfigurePairings(ctx, tournamentadmin.PairingCommand{
+	_, err := execution.ConfigurePairings(ctx, pairingusecase.PairingCommand{
 		CommandScope:               tournamentadmin.CommandScope{Operator: tournamentadmin.OperatorIdentity{ActorID: uuid.New()}, TournamentID: created.Id, CommandID: uuid.New()},
 		ExpectedProjectionRevision: snapshot.NextCursor.ProjectionRevision, RoundNumber: 1,
-		PairingMode: tournamentadmin.PairingModeAutomatic, CategoryMode: domain.CategoryModeRandom,
+		PairingMode: pairingusecase.PairingModeAutomatic, CategoryMode: domain.CategoryModeRandom,
 		Categories: []domain.Category{domain.CategoryWeb, domain.CategoryCrypto, domain.CategoryForensics},
 	})
 	require.NoError(t, err)
@@ -215,15 +216,15 @@ func TestTournamentManualRoundRevisionRebuildsPairingsThroughProductionHTTPAndPo
 	pairingAuthority, err := executionRepository.LockPairingAuthority(ctx, created.Id)
 	require.NoError(t, err)
 	require.Len(t, pairingAuthority.Participants, 4)
-	pairs := []tournamentadmin.ParticipantPair{
+	pairs := []pairingusecase.ParticipantPair{
 		{FirstParticipantID: pairingAuthority.Participants[0].ID, SecondParticipantID: pairingAuthority.Participants[1].ID},
 		{FirstParticipantID: pairingAuthority.Participants[2].ID, SecondParticipantID: pairingAuthority.Participants[3].ID},
 	}
 	execution := tournamentadmin.NewExecutionWorkflow(tournamentadmin.ExecutionWorkflowDependencies{Transactions: fixture.mgr, Repository: executionRepository})
-	_, err = execution.ConfigurePairings(ctx, tournamentadmin.PairingCommand{
+	_, err = execution.ConfigurePairings(ctx, pairingusecase.PairingCommand{
 		CommandScope:               tournamentadmin.CommandScope{Operator: tournamentadmin.OperatorIdentity{ActorID: uuid.New()}, TournamentID: created.Id, CommandID: uuid.New()},
 		ExpectedProjectionRevision: pairingAuthority.ProjectionRevision, RoundNumber: 1,
-		PairingMode: tournamentadmin.PairingModeManual, CategoryMode: domain.CategoryModeRandom,
+		PairingMode: pairingusecase.PairingModeManual, CategoryMode: domain.CategoryModeRandom,
 		Categories:     []domain.Category{domain.CategoryWeb, domain.CategoryCrypto, domain.CategoryForensics},
 		ManualPairings: pairs, ManualPairingsProvided: true,
 	})
