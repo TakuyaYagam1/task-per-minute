@@ -20,9 +20,10 @@ import (
 	seriesdomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/series"
 	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	adminexecution "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/execution"
 	adminoperation "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/operation"
 	rostercapability "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/roster"
+	adminsnapshot "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/snapshot"
 )
 
 const tournamentAdminPauseDocumentVersion = 1
@@ -34,7 +35,7 @@ type tournamentAdminPauseDocument struct {
 }
 
 func decodeTournamentAdminWaveResult(action string, document []byte) ([]byte, *gameusecase.NormalPauseRecord) {
-	if action != string(tournamentadmin.WaveActionPause) {
+	if action != string(adminexecution.WaveActionPause) {
 		return append([]byte(nil), document...), nil
 	}
 	var envelope tournamentAdminPauseDocument
@@ -149,7 +150,7 @@ func (r *TournamentAdminNormalPausePostgres) loadTournamentAdminNormalPauseGraph
 	if err != nil {
 		return gameusecase.PauseGraph{}, nil, fmt.Errorf("load normal pause Game deadlines: %w", err)
 	}
-	snapshot, err := snapshotrepo.NewTournamentAdminSnapshotPostgres(r.tx).LoadOperatorSnapshot(ctx, tournamentadmin.SnapshotQuery{
+	snapshot, err := snapshotrepo.NewTournamentAdminSnapshotPostgres(r.tx).LoadOperatorSnapshot(ctx, adminsnapshot.SnapshotQuery{
 		Operator: adminoperation.OperatorIdentity{ActorID: scope.Authority.HolderID}, TournamentID: scope.TournamentID,
 	})
 	if err != nil {
@@ -202,7 +203,7 @@ func (r *TournamentAdminNormalPausePostgres) loadTournamentAdminNormalPauseGraph
 func (r *TournamentAdminNormalPausePostgres) loadTournamentAdminNormalPauseDraft(
 	ctx context.Context,
 	querier *sqlc.Queries,
-	wave tournamentadmin.WaveView,
+	wave adminexecution.WaveView,
 	roster rostercapability.RosterView,
 	seriesValues []gameusecase.PauseSeries,
 ) (*draftusecase.Execution, error) {
@@ -253,7 +254,7 @@ func tournamentAdminNormalPauseDraftMatchesSeries(
 }
 
 func tournamentAdminActivePauseExecutions(
-	wave tournamentadmin.WaveView,
+	wave adminexecution.WaveView,
 	seriesGraph snapshotrepo.SeriesGraph,
 	deadlines []sqlc.ListTournamentAdminNormalPauseGameDeadlinesRow,
 ) ([]gameusecase.PauseSeries, []gameusecase.PauseGame, error) {
@@ -327,7 +328,7 @@ func (r *TournamentAdminNormalPausePostgres) LoadPauseResumeAuthority(
 	if err != nil {
 		return gameusecase.PauseResumeAuthority{}, fmt.Errorf("load normal pause receipt: %w", err)
 	}
-	decodedDocument, stored := decodeTournamentAdminWaveResult(string(tournamentadmin.WaveActionPause), document)
+	decodedDocument, stored := decodeTournamentAdminWaveResult(string(adminexecution.WaveActionPause), document)
 	if len(decodedDocument) == 0 || stored == nil || stored.PauseID != pauseID || stored.Scope.TournamentID != scope.TournamentID ||
 		stored.Scope.RosterID != scope.RosterID || stored.Scope.WaveID != scope.WaveID {
 		return gameusecase.PauseResumeAuthority{}, domain.ErrInternal

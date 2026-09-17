@@ -12,16 +12,16 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
-	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	adminexecution "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/execution"
 )
 
-func pauseWaveByID(waves []admin.WaveView, id uuid.UUID) (admin.WaveView, bool) {
+func pauseWaveByID(waves []adminexecution.WaveView, id uuid.UUID) (adminexecution.WaveView, bool) {
 	for _, wave := range waves {
 		if wave.Wave.ID == id {
 			return wave, true
 		}
 	}
-	return admin.WaveView{}, false
+	return adminexecution.WaveView{}, false
 }
 
 func pauseCurrentGame(series domain.Series) (*domain.Game, bool) {
