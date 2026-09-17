@@ -3,9 +3,6 @@ package playoff
 import (
 	"context"
 	"crypto/sha256"
-	"errors"
-	"fmt"
-	"reflect"
 	"time"
 
 	"github.com/google/uuid"
@@ -16,125 +13,6 @@ import (
 	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
 	resultprojection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection"
 )
-
-const maxSemifinalBracketPayload = 32 << 10
-
-var ErrInvalidSemifinalBracket = errors.New("invalid strength-matched semifinal bracket")
-
-type SemifinalWinnerPath string
-
-const SemifinalWinnerToFinal SemifinalWinnerPath = "final"
-
-type SemifinalLoserPath string
-
-const SemifinalLoserEliminated SemifinalLoserPath = "eliminated"
-
-type SemifinalMatch struct {
-	Position   int
-	Series     domain.Series
-	WinnerPath SemifinalWinnerPath
-	LoserPath  SemifinalLoserPath
-}
-
-type SemifinalBracketCommand struct {
-	TournamentID uuid.UUID
-	RevisionID   domain.DerivedRevisionID
-	RevisionNo   int
-	Previous     *SemifinalBracket
-	Top4         Top4Snapshot
-	SeriesIDs    [2]uuid.UUID
-	CreatedAt    time.Time
-}
-
-type semifinalBracketAuthority struct {
-	TournamentID uuid.UUID
-	RevisionID   domain.DerivedRevisionID
-	RevisionNo   int
-	Previous     *semifinalBracketPredecessorReceipt
-	Top4         Top4Snapshot
-	SeriesIDs    [2]uuid.UUID
-	CreatedAt    time.Time
-}
-
-type semifinalBracketPredecessorReceipt struct {
-	Projection     domain.ProjectionRevision
-	Top4RevisionID domain.DerivedRevisionID
-	Reserved       []uuid.UUID
-	Semifinals     []SemifinalMatch
-	LockedAt       time.Time
-}
-
-type semifinalBracketState struct {
-	Authority    semifinalBracketAuthority
-	Projection   domain.ProjectionRevision
-	Dependencies []domain.RevisionDependency
-	Semifinals   []SemifinalMatch
-	LockedAt     time.Time
-}
-
-type SemifinalBracket struct {
-	state semifinalBracketState
-}
-
-// The persistence adapter must publish this plan with one CAS over the current
-// Top 4 and predecessor bracket heads.
-func PlanStrengthMatchedSemifinals(command SemifinalBracketCommand) (SemifinalBracket, error) {
-	authority, err := canonicalSemifinalBracketAuthority(command)
-	if err != nil {
-		return SemifinalBracket{}, err
-	}
-	bracket, err := buildSemifinalBracket(authority)
-	if err != nil {
-		return SemifinalBracket{}, err
-	}
-	return bracket.Snapshot(), nil
-}
-
-func (b SemifinalBracket) Validate() error {
-	if b.state.Authority.TournamentID == uuid.Nil {
-		return semifinalBracketError("missing bracket state")
-	}
-	rebuilt, err := buildSemifinalBracket(cloneSemifinalBracketAuthority(b.state.Authority))
-	if err != nil {
-		return err
-	}
-	if !reflect.DeepEqual(b.state, rebuilt.state) {
-		return semifinalBracketError("bracket evidence changed")
-	}
-	return nil
-}
-
-func (b SemifinalBracket) Snapshot() SemifinalBracket {
-	return SemifinalBracket{state: cloneSemifinalBracketState(b.state)}
-}
-
-func (b SemifinalBracket) Projection() domain.ProjectionRevision {
-	return cloneFinalSwissDomainProjection(b.state.Projection)
-}
-
-func (b SemifinalBracket) Dependencies() []domain.RevisionDependency {
-	return append([]domain.RevisionDependency(nil), b.state.Dependencies...)
-}
-
-func (b SemifinalBracket) Semifinals() []SemifinalMatch {
-	return cloneSemifinalMatches(b.state.Semifinals)
-}
-
-func (b SemifinalBracket) Locked() bool {
-	return !b.state.LockedAt.IsZero()
-}
-
-func (b SemifinalBracket) LockedAt() time.Time {
-	return b.state.LockedAt
-}
-
-func (b SemifinalBracket) HasLowerBracket() bool {
-	return false
-}
-
-func semifinalBracketError(format string, arguments ...any) error {
-	return fmt.Errorf("%w: %s", ErrInvalidSemifinalBracket, fmt.Sprintf(format, arguments...))
-}
 
 // TerminalSeriesCommand is intentionally transport-neutral. The repository
 // resolves the current stage only after the enclosing settlement has written

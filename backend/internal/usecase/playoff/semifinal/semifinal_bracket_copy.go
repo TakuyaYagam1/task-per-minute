@@ -1,4 +1,4 @@
-package playoff
+package semifinal
 
 import (
 	"bytes"
@@ -40,12 +40,12 @@ func cloneSemifinalPredecessorReceipt(
 	}
 	if len(input.Reserved) > maxPlayoffReservedIdentities {
 		return &semifinalBracketPredecessorReceipt{
-			Projection: cloneFinalSwissDomainProjection(input.Projection), Top4RevisionID: input.Top4RevisionID,
+			Projection: cloneSemifinalProjection(input.Projection), Top4RevisionID: input.Top4RevisionID,
 			Semifinals: cloneSemifinalMatches(input.Semifinals), LockedAt: input.LockedAt,
 		}
 	}
 	return &semifinalBracketPredecessorReceipt{
-		Projection: cloneFinalSwissDomainProjection(input.Projection), Top4RevisionID: input.Top4RevisionID,
+		Projection: cloneSemifinalProjection(input.Projection), Top4RevisionID: input.Top4RevisionID,
 		Reserved:   append([]uuid.UUID(nil), input.Reserved...),
 		Semifinals: cloneSemifinalMatches(input.Semifinals), LockedAt: input.LockedAt,
 	}
@@ -54,7 +54,7 @@ func cloneSemifinalPredecessorReceipt(
 func cloneSemifinalBracketState(input semifinalBracketState) semifinalBracketState {
 	clone := input
 	clone.Authority = cloneSemifinalBracketAuthority(input.Authority)
-	clone.Projection = cloneFinalSwissDomainProjection(input.Projection)
+	clone.Projection = cloneSemifinalProjection(input.Projection)
 	clone.Dependencies = append([]domain.RevisionDependency(nil), input.Dependencies...)
 	clone.Semifinals = cloneSemifinalMatches(input.Semifinals)
 	return clone

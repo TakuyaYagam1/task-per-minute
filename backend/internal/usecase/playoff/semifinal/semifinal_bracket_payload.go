@@ -1,4 +1,4 @@
-package playoff
+package semifinal
 
 import (
 	"encoding/hex"

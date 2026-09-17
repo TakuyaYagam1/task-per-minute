@@ -1,4 +1,4 @@
-package playoff
+package semifinal
 
 import (
 	"math"
@@ -14,7 +14,7 @@ func canonicalSemifinalBracketAuthority(
 ) (semifinalBracketAuthority, error) {
 	if command.TournamentID == uuid.Nil || command.RevisionID.IsZero() || command.RevisionNo < 1 ||
 		command.RevisionNo == math.MaxInt ||
-		!validPlayoffTime(command.CreatedAt) || command.Top4.Validate() != nil {
+		!validSemifinalTime(command.CreatedAt) || command.Top4.Validate() != nil {
 		return semifinalBracketAuthority{}, semifinalBracketError("invalid bracket identity, clock, or Top 4 source")
 	}
 	top4Revision := command.Top4.Projection().Revision()
@@ -99,7 +99,7 @@ func newSemifinalPredecessorReceipt(
 		return nil, err
 	}
 	return &semifinalBracketPredecessorReceipt{
-		Projection: cloneFinalSwissDomainProjection(previous), Top4RevisionID: previousTop4,
+		Projection: cloneSemifinalProjection(previous), Top4RevisionID: previousTop4,
 		Reserved: canonicalSemifinalReservedIDs(reserved), Semifinals: cloneSemifinalMatches(previousMatches),
 		LockedAt: command.Previous.LockedAt(),
 	}, nil
