@@ -205,7 +205,7 @@ packages:
       Clock:
       ReadyWindowRepository:
       ReadinessRepository:
-  github.com/TakuyaYagam1/task-per-minute/internal/usecase/correction:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/correction/stage:
     interfaces:
       Clock:
       TransactionManager:

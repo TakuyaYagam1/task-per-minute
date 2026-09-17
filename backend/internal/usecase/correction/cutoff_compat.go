@@ -3,6 +3,7 @@ package correction
 import (
 	"time"
 
+	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	cutoffusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/correction/cutoff"
 	resultprojection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection"
 )
@@ -89,6 +90,10 @@ func validCorrectionCutoffKind(kind CutoffKind) bool {
 
 func validCorrectionTime(value time.Time) bool {
 	return validCorrectionServerTime(value) && value.Year() >= minCorrectionYear && value.Year() <= maxCorrectionYear
+}
+
+func validCorrectionServerTime(value time.Time) bool {
+	return domain.IsValidServerTime(value)
 }
 
 func canonicalCorrectionTime(value time.Time) string {

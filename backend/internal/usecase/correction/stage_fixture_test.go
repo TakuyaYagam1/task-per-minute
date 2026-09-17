@@ -14,7 +14,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	correctionusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/correction"
-	correctionmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/correction/mocks"
+	correctionmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/correction/stage/mocks"
 )
 
 func task057CutoffEvents(

@@ -1,4 +1,4 @@
-package correction_test
+package stage_test
 
 import (
 	"reflect"
@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	correctionusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/correction"
+	stageusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/correction/stage"
 	resultprojection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection"
 	swissusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/swiss"
 )
@@ -16,16 +16,16 @@ import (
 func TestBuildMaterializedProjectionsRequiresCanonicalLedgerAuthority(t *testing.T) {
 	t.Parallel()
 
-	_, err := correctionusecase.BuildMaterializedProjections(correctionusecase.MaterializedProjectionState{
+	_, err := stageusecase.BuildMaterializedProjections(stageusecase.MaterializedProjectionState{
 		TournamentID: uuid.New(),
 	})
-	require.ErrorIs(t, err, correctionusecase.ErrInvalidMaterializedProjection)
+	require.ErrorIs(t, err, stageusecase.ErrInvalidMaterializedProjection)
 }
 
 func TestMaterializedProjectionStateDoesNotRetainLegacySeriesInputs(t *testing.T) {
 	t.Parallel()
 
-	state := reflect.TypeOf(correctionusecase.MaterializedProjectionState{})
+	state := reflect.TypeOf(stageusecase.MaterializedProjectionState{})
 	_, hasParticipants := state.FieldByName("Participants")
 	_, hasSeries := state.FieldByName("Series")
 
@@ -38,7 +38,7 @@ func TestBuildMaterializedProjectionsDelegatesCanonicalSwissMaterializer(t *test
 
 	participants := []uuid.UUID{uuid.New(), uuid.New(), uuid.New(), uuid.New()}
 	roundID := uuid.New()
-	projection, err := correctionusecase.BuildMaterializedProjections(correctionusecase.MaterializedProjectionState{
+	projection, err := stageusecase.BuildMaterializedProjections(stageusecase.MaterializedProjectionState{
 		TournamentID: uuid.New(),
 		CanonicalParticipants: []resultprojection.CanonicalSwissParticipant{
 			{ID: participants[0], StableSeed: 1}, {ID: participants[1], StableSeed: 2},

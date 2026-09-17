@@ -1,4 +1,4 @@
-package correction
+package stage
 
 import (
 	"github.com/google/uuid"
