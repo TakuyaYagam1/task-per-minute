@@ -16,7 +16,7 @@ import (
 	auditrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/audit"
 	correctionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/correction"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/audit"
-	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	admin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/application"
 	incidentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/incident"
 	operation "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/operation"
 )
