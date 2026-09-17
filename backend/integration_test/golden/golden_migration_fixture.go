@@ -1,6 +1,6 @@
 //go:build integration
 
-package integration_test
+package golden
 
 import (
 	"context"
@@ -11,7 +11,15 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/integration_test/internal/testkit/goldenseed"
+	"github.com/TakuyaYagam1/task-per-minute/integration_test/internal/testkit/swissseed"
+	"github.com/TakuyaYagam1/task-per-minute/integration_test/internal/testkit/tournamentseed"
 )
+
+func resetMigrationTables(ctx context.Context, tb testing.TB) {
+	tb.Helper()
+	_, err := migrationPool.Exec(ctx, `TRUNCATE TABLE participant_reservations, tournaments CASCADE`)
+	require.NoError(tb, err)
+}
 
 func createGoldenMigrationFixture(
 	ctx context.Context, tb testing.TB,
@@ -19,14 +27,19 @@ func createGoldenMigrationFixture(
 ) goldenMigrationFixture {
 	tb.Helper()
 
-	tournamentID := createMigrationTournament(ctx, tb)
-	rosterID := createMigrationRoster(ctx, tb, tournamentID)
-	playerIDs := createMigrationPlayers(ctx, tb, participantCount)
-	participantIDs := createSwissMigrationParticipants(ctx, tb, rosterID, playerIDs)
+	tournamentID, err := tournamentseed.CreateTournament(ctx, migrationPool)
+	require.NoError(tb, err)
+	roster, err := tournamentseed.CreateRoster(ctx, migrationPool, tournamentID)
+	require.NoError(tb, err)
+	require.EqualValues(tb, 1, roster.Revision)
+	playerIDs, err := tournamentseed.CreatePlayers(ctx, migrationPool, "tournament_migration", participantCount)
+	require.NoError(tb, err)
+	participantIDs, err := swissseed.CreateParticipants(ctx, migrationPool, roster.ID, playerIDs)
+	require.NoError(tb, err)
 
 	return goldenMigrationFixture{
 		tournamentID:   tournamentID,
-		rosterID:       rosterID,
+		rosterID:       roster.ID,
 		participantIDs: participantIDs,
 		createdAt:      time.Now().UTC().Add(-10 * time.Minute).Truncate(time.Microsecond),
 	}
@@ -41,7 +54,7 @@ func createGoldenAttempt(
 ) uuid.UUID {
 	tb.Helper()
 
-	id, err := goldenseed.CreateAttempt(ctx, sharedPool, goldenseed.AttemptInput{
+	id, err := goldenseed.CreateAttempt(ctx, migrationPool, goldenseed.AttemptInput{
 		TournamentID: fixture.tournamentID, RosterID: fixture.rosterID,
 		AttemptNumber: attemptNumber, PreviousAttemptID: previousAttemptID,
 		CreatedAt: createdAt,
@@ -65,7 +78,7 @@ func createGoldenMembership(
 ) uuid.UUID {
 	tb.Helper()
 
-	id, err := goldenseed.CreateMembership(ctx, sharedPool, goldenseed.MembershipInput{
+	id, err := goldenseed.CreateMembership(ctx, migrationPool, goldenseed.MembershipInput{
 		AttemptID: attemptID, TournamentID: fixture.tournamentID, RosterID: fixture.rosterID,
 		ParticipantID: participantID, SelectionKind: selectionKind,
 		ReservePosition: reservePosition, SelectedAt: selectedAt, ReadyAt: readyAt,

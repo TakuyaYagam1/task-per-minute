@@ -1,6 +1,6 @@
 //go:build integration
 
-package integration_test
+package golden
 
 import (
 	"context"
@@ -18,7 +18,7 @@ func assertGoldenRecoveryRevisionChain(
 	createdAt time.Time,
 ) {
 	tb.Helper()
-	_, err := sharedPool.Exec(ctx, `
+	_, err := migrationPool.Exec(ctx, `
 		UPDATE golden_attempts
 		SET state = 'technical_pause', paused_at = $2
 		WHERE id = $1`, attemptID, createdAt)
@@ -30,7 +30,7 @@ func assertGoldenRecoveryRevisionChain(
 	for index, state := range states {
 		lastRevisionID = uuid.New()
 		recordedAt := createdAt.Add(time.Duration(index+1) * time.Second)
-		_, err = sharedPool.Exec(
+		_, err = migrationPool.Exec(
 			ctx, `
 			INSERT INTO golden_recovery_revisions (
 				id, attempt_id, tournament_id, roster_id,
@@ -53,13 +53,13 @@ func assertGoldenRecoveryRevisionChain(
 
 		switch state {
 		case "technical_pause":
-			_, err = sharedPool.Exec(ctx, `
+			_, err = migrationPool.Exec(ctx, `
 				UPDATE golden_attempts
 				SET state = 'technical_pause', paused_at = $2
 				WHERE id = $1`, attemptID, recordedAt)
 			require.NoError(tb, err)
 		case "resumed":
-			_, err = sharedPool.Exec(ctx, `
+			_, err = migrationPool.Exec(ctx, `
 				UPDATE golden_attempts
 				SET state = 'active', paused_at = NULL
 				WHERE id = $1`, attemptID)
@@ -67,7 +67,7 @@ func assertGoldenRecoveryRevisionChain(
 		}
 	}
 
-	_, err = sharedPool.Exec(ctx, `
+	_, err = migrationPool.Exec(ctx, `
 		UPDATE golden_recovery_revisions
 		SET recovery_evidence = '{"source":"rewritten"}'::JSONB
 		WHERE id = $1`, lastRevisionID)

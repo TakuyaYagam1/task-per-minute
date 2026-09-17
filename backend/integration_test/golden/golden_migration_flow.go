@@ -1,14 +1,21 @@
 //go:build integration
 
-package integration_test
+package golden
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
+)
+
+var (
+	migrationPool   *pgxpool.Pool
+	migrationPoolMu sync.Mutex
 )
 
 type goldenMigrationFixture struct {
@@ -18,7 +25,19 @@ type goldenMigrationFixture struct {
 	createdAt      time.Time
 }
 
-func TestGoldenMigration(t *testing.T) {
+// RunGoldenMigration runs the moved Golden migration assertions against the
+// caller-owned integration pool.
+func RunGoldenMigration(t *testing.T, pool *pgxpool.Pool) {
+	t.Helper()
+	require.NotNil(t, pool)
+	migrationPoolMu.Lock()
+	previousPool := migrationPool
+	migrationPool = pool
+	t.Cleanup(func() {
+		migrationPool = previousPool
+		migrationPoolMu.Unlock()
+	})
+
 	ctx := context.Background()
 	resetMigrationTables(ctx, t)
 	t.Cleanup(func() { resetMigrationTables(ctx, t) })
@@ -52,7 +71,7 @@ func TestGoldenMigration(t *testing.T) {
 	)
 
 	promotedAt := fixture.createdAt.Add(4 * time.Second)
-	_, err := sharedPool.Exec(
+	_, err := migrationPool.Exec(
 		ctx, `
 		INSERT INTO golden_reserve_promotions (
 			attempt_id, tournament_id, roster_id,
@@ -79,7 +98,7 @@ func TestGoldenMigration(t *testing.T) {
 
 	disconnectedAt := fixture.createdAt.Add(7 * time.Second)
 	disconnectID := uuid.New()
-	_, err = sharedPool.Exec(
+	_, err = migrationPool.Exec(
 		ctx, `
 		INSERT INTO golden_ready_disconnects (
 			id, membership_id, attempt_id, tournament_id, roster_id,
@@ -101,14 +120,14 @@ func TestGoldenMigration(t *testing.T) {
 	establishGoldenParticipation(ctx, t, secondMembershipID, participationAt)
 	establishGoldenParticipation(ctx, t, reserveMembershipID, participationAt)
 
-	_, err = sharedPool.Exec(ctx, `
+	_, err = migrationPool.Exec(ctx, `
 		UPDATE golden_attempts
 		SET state = 'active', started_at = $2
 		WHERE id = $1`, firstAttemptID, participationAt.Add(time.Second))
 	require.ErrorContains(t, err, "without open disconnects")
 
 	reconnectedAt := fixture.createdAt.Add(9 * time.Second)
-	_, err = sharedPool.Exec(ctx, `
+	_, err = migrationPool.Exec(ctx, `
 		UPDATE golden_ready_disconnects
 		SET state = 'reconnected', reconnected_at = $2
 		WHERE id = $1`, disconnectID, reconnectedAt)
@@ -118,7 +137,7 @@ func TestGoldenMigration(t *testing.T) {
 	advanceGoldenAttemptToActive(ctx, t, firstAttemptID, startedAt)
 
 	var retainedReadyAt time.Time
-	err = sharedPool.QueryRow(ctx, `
+	err = migrationPool.QueryRow(ctx, `
 		SELECT ready_at
 		FROM golden_memberships
 		WHERE id = $1`, secondMembershipID).Scan(&retainedReadyAt)
@@ -142,7 +161,7 @@ func TestGoldenMigration(t *testing.T) {
 		fixture.participantIDs[0], 4, 4, "rejected", "late duplicate", startedAt.Add(4*time.Second),
 	)
 
-	_, err = sharedPool.Exec(
+	_, err = migrationPool.Exec(
 		ctx, `
 		INSERT INTO golden_position_commits (
 			attempt_id, tournament_id, roster_id, membership_id, participant_id,
@@ -173,25 +192,25 @@ func TestGoldenMigration(t *testing.T) {
 	)
 
 	completedAt := startedAt.Add(8 * time.Second)
-	_, err = sharedPool.Exec(ctx, `
+	_, err = migrationPool.Exec(ctx, `
 		UPDATE golden_attempts
 		SET state = 'completed', completed_at = $2
 		WHERE id = $1`, firstAttemptID, completedAt)
 	require.NoError(t, err)
 
-	_, err = sharedPool.Exec(ctx, `
+	_, err = migrationPool.Exec(ctx, `
 		UPDATE golden_provisional_submissions
 		SET provisional_position = 2
 		WHERE id = $1`, firstSubmissionID)
 	require.ErrorContains(t, err, "immutable evidence")
 
-	_, err = sharedPool.Exec(ctx, `
+	_, err = migrationPool.Exec(ctx, `
 		UPDATE golden_memberships
 		SET participation_established_at = NULL
 		WHERE id = $1`, firstMembershipID)
 	require.ErrorContains(t, err, "closed after start")
 
-	_, err = sharedPool.Exec(ctx, `
+	_, err = migrationPool.Exec(ctx, `
 		UPDATE golden_memberships
 		SET exclusion_reason = 'rewritten'
 		WHERE id = $1`, excludedMembershipID)
@@ -201,14 +220,14 @@ func TestGoldenMigration(t *testing.T) {
 	secondAttemptID := createGoldenAttempt(
 		ctx, t, fixture, 2, firstAttemptID, secondAttemptAt,
 	)
-	_, err = sharedPool.Exec(ctx, `
+	_, err = migrationPool.Exec(ctx, `
 		UPDATE golden_attempts
 		SET state = 'superseded',
 			superseded_at = $2,
 			supersession_reason = 'retained undisclosed fallback'
 		WHERE id = $1`, secondAttemptID, secondAttemptAt.Add(time.Second))
 	require.NoError(t, err)
-	_, err = sharedPool.Exec(ctx, `DELETE FROM golden_attempts WHERE id = $1`, secondAttemptID)
+	_, err = migrationPool.Exec(ctx, `DELETE FROM golden_attempts WHERE id = $1`, secondAttemptID)
 	require.ErrorContains(t, err, "retained stage history")
 
 	thirdAttemptAt := fixture.createdAt.Add(2 * time.Minute)
@@ -235,7 +254,7 @@ func TestGoldenMigration(t *testing.T) {
 		thirdAttemptAt.Add(3*time.Second),
 	)
 
-	_, err = sharedPool.Exec(ctx, `
+	_, err = migrationPool.Exec(ctx, `
 		UPDATE golden_memberships
 		SET participation_established_at = $2
 		WHERE id = $1`, thirdReserveMembershipID, thirdAttemptAt.Add(4*time.Second))
@@ -262,7 +281,7 @@ func TestGoldenMigration(t *testing.T) {
 	)
 
 	var previousPositionCommitID uuid.UUID
-	err = sharedPool.QueryRow(ctx, `
+	err = migrationPool.QueryRow(ctx, `
 		SELECT previous_position_commit_id
 		FROM golden_position_commits
 		WHERE id = $1`, thirdPositionCommitID).Scan(&previousPositionCommitID)

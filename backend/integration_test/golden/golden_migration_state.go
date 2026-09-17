@@ -1,6 +1,6 @@
 //go:build integration
 
-package integration_test
+package golden
 
 import (
 	"context"
@@ -19,7 +19,7 @@ func advanceGoldenAttemptToReady(
 	readyAt time.Time,
 ) {
 	tb.Helper()
-	_, err := sharedPool.Exec(ctx, `
+	_, err := migrationPool.Exec(ctx, `
 		UPDATE golden_attempts
 		SET state = 'ready', disclosed_at = $2, ready_at = $3
 		WHERE id = $1`, attemptID, disclosedAt, readyAt)
@@ -32,7 +32,7 @@ func establishGoldenParticipation(
 	establishedAt time.Time,
 ) {
 	tb.Helper()
-	_, err := sharedPool.Exec(ctx, `
+	_, err := migrationPool.Exec(ctx, `
 		UPDATE golden_memberships
 		SET participation_established_at = $2
 		WHERE id = $1`, membershipID, establishedAt)
@@ -45,7 +45,7 @@ func advanceGoldenAttemptToActive(
 	startedAt time.Time,
 ) {
 	tb.Helper()
-	_, err := sharedPool.Exec(ctx, `
+	_, err := migrationPool.Exec(ctx, `
 		UPDATE golden_attempts
 		SET state = 'active', started_at = $2
 		WHERE id = $1`, attemptID, startedAt)
@@ -66,7 +66,7 @@ func createGoldenSubmission(
 ) uuid.UUID {
 	tb.Helper()
 
-	id, err := goldenseed.CreateSubmission(ctx, sharedPool, goldenseed.SubmissionInput{
+	id, err := goldenseed.CreateSubmission(ctx, migrationPool, goldenseed.SubmissionInput{
 		AttemptID:       attemptID,
 		TournamentID:    fixture.tournamentID,
 		RosterID:        fixture.rosterID,
@@ -95,7 +95,7 @@ func createGoldenPositionCommit(
 ) uuid.UUID {
 	tb.Helper()
 
-	id, err := goldenseed.CreatePositionCommit(ctx, sharedPool, goldenseed.PositionCommitInput{
+	id, err := goldenseed.CreatePositionCommit(ctx, migrationPool, goldenseed.PositionCommitInput{
 		AttemptID:                attemptID,
 		TournamentID:             fixture.tournamentID,
 		RosterID:                 fixture.rosterID,
