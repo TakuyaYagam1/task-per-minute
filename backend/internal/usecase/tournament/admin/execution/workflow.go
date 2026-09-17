@@ -1,4 +1,4 @@
-package admin
+package execution
 
 import (
 	"bytes"
@@ -1161,6 +1161,10 @@ func executionRequestDigest(value any) ([sha256.Size]byte, error) {
 		return [sha256.Size]byte{}, fmt.Errorf("ExecutionWorkflow - encode request digest: %w", err)
 	}
 	return sha256.Sum256(document), nil
+}
+
+func ExecutionRequestDigest(value any) ([sha256.Size]byte, error) {
+	return executionRequestDigest(value)
 }
 
 // pairingRequestDigestDocument retains the pre-removal JSON shape for the

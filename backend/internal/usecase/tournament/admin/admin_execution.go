@@ -15,6 +15,7 @@ type SwissRoundView = executionusecase.SwissRoundView
 type WaveView = executionusecase.WaveView
 type PairingPort = executionusecase.PairingPort
 type WavePort = executionusecase.WavePort
+type ExecutionWorkflow = executionusecase.ExecutionWorkflow
 
 const (
 	WaveActionOpenReadyWindow = executionusecase.WaveActionOpenReadyWindow
@@ -24,6 +25,10 @@ const (
 	WaveActionComplete        = executionusecase.WaveActionComplete
 	WaveActionCancel          = executionusecase.WaveActionCancel
 )
+
+func NewExecutionWorkflow(deps ExecutionWorkflowDependencies) *ExecutionWorkflow {
+	return executionusecase.NewExecutionWorkflow(deps)
+}
 
 func validWaveCommand(command WaveCommand) bool {
 	return executionusecase.ValidWaveCommand(command)
@@ -39,4 +44,8 @@ func validSwissStandings(view SwissRoundView, roster map[uuid.UUID]struct{}) boo
 
 func validWaveView(view WaveView, tournamentID, waveID uuid.UUID) bool {
 	return executionusecase.ValidWaveView(view, tournamentID, waveID)
+}
+
+func executionRequestDigest(value any) ([32]byte, error) {
+	return executionusecase.ExecutionRequestDigest(value)
 }

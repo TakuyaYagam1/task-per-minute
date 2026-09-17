@@ -20,11 +20,23 @@ const (
 )
 
 type CommandScope = operationusecase.CommandScope
+type OperatorIdentity = operationusecase.OperatorIdentity
+type RevisionConflictError = operationusecase.RevisionConflictError
 type PairingCommand = pairingusecase.PairingCommand
 type PairingMode = pairingusecase.PairingMode
+type PairingParticipant = pairingusecase.PairingParticipant
+type ParticipantPair = pairingusecase.ParticipantPair
 type PairingAuthority = pairingusecase.PairingAuthority
 type PairingPlan = pairingusecase.PairingPlan
+type ManualByeMismatchError = pairingusecase.ManualByeMismatchError
 type SwissStandingView = pairingusecase.SwissStandingView
+
+const (
+	PairingModeAutomatic = pairingusecase.PairingModeAutomatic
+	PairingModeManual    = pairingusecase.PairingModeManual
+)
+
+var ErrManualByeMismatch = pairingusecase.ErrManualByeMismatch
 
 type WaveAction string
 

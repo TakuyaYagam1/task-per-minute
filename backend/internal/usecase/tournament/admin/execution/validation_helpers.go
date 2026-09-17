@@ -82,3 +82,7 @@ func validOptionalText(value string, maxRunes int) bool {
 func validSwissStanding(standing SwissStandingView, total int) bool {
 	return pairingusecase.ValidSwissStanding(standing, total)
 }
+
+func validPairingCommand(command PairingCommand) bool {
+	return pairingusecase.ValidPairingCommand(command)
+}
