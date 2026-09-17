@@ -41,6 +41,7 @@ import (
 	taskusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/task"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
 	tournamentadmincorrection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/correction"
+	tournamentadminexecution "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/execution"
 	tournamentadminlifecycle "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/lifecycle"
 	tournamentadminreplay "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/replay"
 	tournamentadminresult "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/result"
@@ -333,14 +334,14 @@ func provideTournamentAdminRoster(
 }
 
 func provideTournamentAdminExecution(
-	transactions tournamentadmin.ExecutionTransactionManager,
-	repository tournamentadmin.ExecutionWorkflowRepository,
-	normalPause tournamentadmin.NormalPauseExecutionRepository,
+	transactions tournamentadminexecution.ExecutionTransactionManager,
+	repository tournamentadminexecution.ExecutionWorkflowRepository,
+	normalPause tournamentadminexecution.NormalPauseExecutionRepository,
 	waveRepository gamestart.StartRepository,
 	authority *authorityusecase.Controller,
 	clock clockFunc,
-) *tournamentadmin.ExecutionWorkflow {
-	return tournamentadmin.NewExecutionWorkflow(tournamentadmin.ExecutionWorkflowDependencies{
+) *tournamentadminexecution.ExecutionWorkflow {
+	return tournamentadminexecution.NewExecutionWorkflow(tournamentadminexecution.ExecutionWorkflowDependencies{
 		Transactions: transactions,
 		Repository:   repository,
 		NormalPause:  normalPause,
@@ -433,9 +434,9 @@ func provideTournamentAdminApplication(
 	catalog inbound.TournamentUseCase,
 	roster tournamentadminroster.RosterPort,
 	preflight tournamentadminroster.PreflightPort,
-	pairing tournamentadmin.PairingPort,
+	pairing tournamentadminexecution.PairingPort,
 	lifecycle tournamentadminlifecycle.LifecyclePort,
-	wave tournamentadmin.WavePort,
+	wave tournamentadminexecution.WavePort,
 	noShow tournamentadminresult.NoShowPort,
 	reserve tournamentadminreplay.ReservePort,
 	forfeit tournamentadminresult.ForfeitPort,

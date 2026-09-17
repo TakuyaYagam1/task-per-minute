@@ -17,7 +17,7 @@ import (
 	pauseusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause"
 	reconnectusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/reconnect"
 	gamestart "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/start"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/execution"
 	pairingusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/pairing"
 )
 
