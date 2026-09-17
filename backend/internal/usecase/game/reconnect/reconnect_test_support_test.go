@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	gamemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/mocks"
+	gamemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/reconnect/mocks"
 )
 
 func newReconnectClock(t *testing.T, now time.Time) *gamemocks.MockReconnectClock {

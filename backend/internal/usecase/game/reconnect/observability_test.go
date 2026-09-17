@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	gamemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/mocks"
+	gamemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/reconnect/mocks"
 	reconnectusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/reconnect"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"

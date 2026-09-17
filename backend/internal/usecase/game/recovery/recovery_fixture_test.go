@@ -14,7 +14,7 @@ import (
 	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
 	gamedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/game"
 	attemptusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/attempt"
-	gamemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/mocks"
+	gamemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/recovery/mocks"
 	recoveryusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/recovery"
 )
 

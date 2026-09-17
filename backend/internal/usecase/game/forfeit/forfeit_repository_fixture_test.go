@@ -10,7 +10,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	seriesdomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/series"
 	forfeitusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/forfeit"
-	gamemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/mocks"
+	gamemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/forfeit/mocks"
 )
 
 type forfeitResult struct {

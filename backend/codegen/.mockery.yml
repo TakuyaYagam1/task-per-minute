@@ -194,10 +194,37 @@ packages:
       Clock:
       TransactionManager:
       StageRepository:
-  github.com/TakuyaYagam1/task-per-minute/internal/usecase/game:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/attempt:
     interfaces:
       AttemptClock:
       AttemptRepository:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/close:
+    interfaces:
+      WaveClock:
+      CloseRepository:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/forfeit:
+    interfaces:
+      ForfeitClock:
+      ForfeitRepository:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/noshow:
+    interfaces:
+      NoShowClock:
+      NoShowRepository:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause:
+    interfaces:
+      PauseClock:
+      TransactionManager:
+      NormalPauseRepository:
+      PausedPresenceRepository:
+      PauseResumeRepository:
+      PauseResumePresenceRepository:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/reconnect:
+    interfaces:
+      ReconnectClock:
+      ReconnectRepository:
+      Observer:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/recovery:
+    interfaces:
       ExecutionClock:
       AuthorityTimeSource:
       EpochReplayRepository:
@@ -208,19 +235,8 @@ packages:
       RecoveryTournamentSource:
       RecoveryAuthorityProvider:
       RecoveryObserver:
-      ForfeitClock:
-      ForfeitRepository:
-      NoShowClock:
-      NoShowRepository:
-      PauseClock:
-      TransactionManager:
-      NormalPauseRepository:
-      PausedPresenceRepository:
-      PauseResumeRepository:
-      PauseResumePresenceRepository:
-      ReconnectClock:
-      ReconnectRepository:
-      Observer:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/replay:
+    interfaces:
       ReplayClock:
       ReplayReplacementRepository:
       ReplayReserveExhaustionRepository:
@@ -228,8 +244,6 @@ packages:
       FailedAttemptTerminalizer:
       OldWaveCloser:
       ReplayReplacementPlanner:
-      WaveClock:
-      CloseRepository:
   github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/settlement:
     interfaces:
       SettlementRepository:

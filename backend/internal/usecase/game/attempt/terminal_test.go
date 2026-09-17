@@ -15,7 +15,7 @@ import (
 	gamedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/game"
 	seriesdomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/series"
 	attemptusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/attempt"
-	gamemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/mocks"
+	gamemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/attempt/mocks"
 )
 
 func TestFailedAttemptTerminalization(t *testing.T) {

@@ -10,7 +10,7 @@ import (
 	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
 	seriesdomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/series"
-	gamemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/mocks"
+	gamemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause/mocks"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"

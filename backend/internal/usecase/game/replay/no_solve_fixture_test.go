@@ -16,7 +16,7 @@ import (
 	seriesdomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/series"
 	attemptusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/attempt"
 	closeusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/close"
-	gamemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/mocks"
+	gamemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/replay/mocks"
 	replayusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/replay"
 )
 
