@@ -12,7 +12,8 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/audit"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	tournamentincident "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/incident"
+	operationusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/operation"
 )
 
 func TestTournamentAuditPagePreservesStableCursorAndRedactsPayload(t *testing.T) {
@@ -80,8 +81,8 @@ func TestValidTournamentAdminAuditQueryRequiresDatabaseSnapshot(t *testing.T) {
 		OccurredAt:   time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC),
 		AuditEventID: uuid.New(), RevisionID: uuid.New(), SnapshotBound: "42:47:",
 	}
-	query := tournamentadmin.AuditQuery{
-		Operator: tournamentadmin.OperatorIdentity{ActorID: uuid.New()},
+	query := tournamentincident.AuditQuery{
+		Operator: operationusecase.OperatorIdentity{ActorID: uuid.New()},
 		Filter: audit.AuditFilter{
 			TournamentID: tournamentID, Cursor: cursor,
 		},

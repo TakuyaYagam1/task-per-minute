@@ -14,7 +14,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/audit"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	tournamentincident "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/incident"
 )
 
 const (
@@ -35,7 +35,7 @@ func NewTournamentAdminAuditPostgres(tx *db.TxManager) *TournamentAdminAuditPost
 
 func (r *TournamentAdminAuditPostgres) ListAudit(
 	ctx context.Context,
-	query tournamentadmin.AuditQuery,
+	query tournamentincident.AuditQuery,
 ) (audit.AuditPage, error) {
 	if ctx == nil || r == nil || r.tx == nil || r.audit == nil || !validTournamentAdminAuditQuery(query) {
 		return audit.AuditPage{}, domain.ErrValidation
@@ -50,7 +50,7 @@ func (r *TournamentAdminAuditPostgres) ListAudit(
 
 func (r *TournamentAdminAuditPostgres) LoadIncidentSnapshot(
 	ctx context.Context,
-	query tournamentadmin.IncidentQuery,
+	query tournamentincident.IncidentQuery,
 ) (audit.IncidentBundleSnapshot, error) {
 	if ctx == nil || r == nil || r.tx == nil || r.audit == nil ||
 		query.Operator.ActorID == uuid.Nil || query.TournamentID == uuid.Nil {
@@ -180,7 +180,7 @@ func collectTournamentIncidentEvents(
 	}
 }
 
-func validTournamentAdminAuditQuery(query tournamentadmin.AuditQuery) bool {
+func validTournamentAdminAuditQuery(query tournamentincident.AuditQuery) bool {
 	if query.Operator.ActorID == uuid.Nil {
 		return false
 	}
@@ -344,5 +344,5 @@ func cloneAuditTime(value *time.Time) *time.Time {
 	return &cloned
 }
 
-var _ tournamentadmin.AuditPort = (*TournamentAdminAuditPostgres)(nil)
-var _ tournamentadmin.IncidentSnapshotPort = (*TournamentAdminAuditPostgres)(nil)
+var _ tournamentincident.AuditPort = (*TournamentAdminAuditPostgres)(nil)
+var _ tournamentincident.IncidentSnapshotPort = (*TournamentAdminAuditPostgres)(nil)
