@@ -18,7 +18,7 @@ import (
 	taskusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/task"
 )
 
-func TestRESTHandlers_DeleteTaskWithSourceDeletesStoredObject(t *testing.T) {
+func TestRESTHandlers_DeleteTaskWithSourcePreservesStoredArchive(t *testing.T) {
 	f := newRESTFixture(t)
 	adminToken := f.adminAccessToken(t)
 
@@ -63,7 +63,7 @@ func TestRESTHandlers_DeleteTaskWithSourceDeletesStoredObject(t *testing.T) {
 
 	afterDelete := httpGetWithTimeout(t, uploaded.SourceFileUrl)
 	defer afterDelete.Body.Close()
-	require.Equal(t, http.StatusNotFound, afterDelete.StatusCode)
+	require.Equal(t, http.StatusOK, afterDelete.StatusCode)
 }
 
 func TestRESTHandlers_CORSPreflightAllowedOrigin(t *testing.T) {

@@ -12,14 +12,25 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 
-	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	assignmentrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment"
+	draftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment/draft"
+	exactdraftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment/exactdraft"
+	playoffrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/playoff"
+	projectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
+	recoveryterminalrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/recovery/terminal"
+	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
+	wavestartrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/execution/wavestart"
+	adminresultrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/result"
+	progressionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/progression"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	assignmentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/assignment"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gameforfeit "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/forfeit"
+	gamenoshow "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/noshow"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/recovery"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	adminoperation "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/operation"
+	tournamentadminresult "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/result"
 	progression "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/progression"
 )
 
@@ -47,11 +58,11 @@ func TestFinalSwissLiveForfeitPublishesReceipt(t *testing.T) {
 		FROM series JOIN game_attempts AS attempt ON attempt.series_id = series.id WHERE series.id = $1`, binding.SeriesID).
 		Scan(&participantID, &slotID, &attemptID))
 	gameRevisionID := uuid.New()
-	command := tournamentadmin.ForfeitCommand{
-		CommandScope: tournamentadmin.CommandScope{Operator: tournamentadmin.OperatorIdentity{ActorID: uuid.New()}, TournamentID: fixture.tournamentID, CommandID: uuid.New()},
+	command := tournamentadminresult.ForfeitCommand{
+		CommandScope: adminoperation.CommandScope{Operator: adminoperation.OperatorIdentity{ActorID: uuid.New()}, TournamentID: fixture.tournamentID, CommandID: uuid.New()},
 		SeriesID:     binding.SeriesID, ForfeitingParticipantID: participantID,
 		Confirmed: true, Reason: "participant conceded during play", ExpectedAuthorityRevision: authority.AuthorityRevision,
-		ExpectedGame: &tournamentadmin.GameExpectation{SlotID: slotID, GameID: attemptID, AttemptNo: 1, State: domain.GameStateActive},
+		ExpectedGame: &tournamentadminresult.GameExpectation{SlotID: slotID, GameID: attemptID, AttemptNo: 1, State: domain.GameStateActive},
 		Basis:        "rule_violation", RuleID: "game.rule.7", EvidenceIDs: []uuid.UUID{uuid.New()},
 		GameResultRevisionID: &gameRevisionID, ScoreRevisionID: uuid.New(), SeriesResultRevisionID: uuid.New(),
 		AuditEventID: uuid.New(), OutboxEventID: uuid.New(), ProjectionRevisionID: uuid.New(),
@@ -73,17 +84,23 @@ func TestFinalSwissLiveForfeitPublishesReceipt(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func swissOperatorResultWorkflow(t *testing.T, fixture tournamentAdminSwissProofFixture) (*postgres.TournamentAdminResultPostgres, *tournamentadmin.OperatorResultWorkflow) {
+func swissOperatorResultWorkflow(t *testing.T, fixture tournamentAdminSwissProofFixture) (*adminresultrepo.TournamentAdminResultPostgres, *tournamentadminresult.OperatorResultWorkflow) {
 	t.Helper()
-	repository := postgres.NewTournamentAdminResultPostgres(fixture.tx, postgres.NewResultPostgres(fixture.tx))
-	drafts := postgres.NewDraftPostgres(fixture.tx)
-	exactPlans := postgres.NewExactDraftBranchPlanPostgres(fixture.tx, drafts)
+	repository := adminresultrepo.NewTournamentAdminResultPostgresWithDependencies(
+		fixture.tx,
+		resultauthority.NewResultPostgres(fixture.tx),
+		resultauthority.FinalizeProjection,
+		wavestartrepo.EnsurePreStartSwissRoundProofForCommand,
+	)
+	drafts := draftrepo.NewDraftPostgres(fixture.tx)
+	assignments := assignmentrepo.NewAssignmentPostgres(fixture.tx)
+	exactPlans := exactdraftrepo.NewExactDraftBranchPlanPostgres(fixture.tx, drafts)
 	planner := playoff.NewFinalDraftAssignmentService(assignmentusecase.NewExactDraftBranchPlanUseCase(exactPlans), exactPlans, exactPlans)
 	terminal := playoff.NewTerminalCoordinator(playoff.TerminalCoordinatorDependencies{
-		Repository: postgres.NewPlayoffTerminalPostgres(fixture.tx, drafts, postgres.NewAssignmentPostgres(fixture.tx)),
-		Publisher:  postgres.NewProjectionPostgres(fixture.tx), DraftPlanner: planner, Rehydrator: planner,
+		Repository: playoffrepo.NewPlayoffTerminalPostgres(fixture.tx, drafts, assignments.CreateAssignmentTx),
+		Publisher:  projectionrepo.NewProjectionPostgres(fixture.tx), DraftPlanner: planner, Rehydrator: planner,
 	})
-	workflow := tournamentadmin.NewOperatorResultWorkflow(tournamentadmin.OperatorResultWorkflowDependencies{
+	workflow := tournamentadminresult.NewOperatorResultWorkflow(tournamentadminresult.OperatorResultWorkflowDependencies{
 		Transactions: fixture.tx, Repository: &observedOperatorResultRepository{TournamentAdminResultPostgres: repository, t: t}, Postseason: terminal,
 	})
 	return repository, workflow
@@ -115,7 +132,10 @@ func testFinalSwissOperatorReceipt(t *testing.T, noShow bool, recoverDeadline ..
 					RosterID: fixture.rosterID, WaveID: fixture.waveID, ReadyWindowRevisionID: windowRevisionID, DueAt: deadline.UTC()}
 				require.NoError(t, sharedPool.QueryRow(ctx, `SELECT revision FROM waves WHERE id = $1`, fixture.waveID).Scan(&pending.ExpectedRevision))
 				clock := playoffPublicationClock{}
-				store := postgres.NewRecoveryTerminalPostgres(fixture.tx, nil, clock)
+				store := recoveryterminalrepo.NewRecoveryTerminalPostgresWithDependencies(
+					fixture.tx, nil, clock,
+					wavestartrepo.EnsurePreStartSwissRoundProofForCommand, resultauthority.FinalizeProjection,
+				)
 				handler := recovery.NewTerminalDeadlineHandler(store, clock)
 				assertOperatorReceiptRollback(ctx, t, fixture, func(txCtx context.Context) error { _, err := handler.HandleDeadline(txCtx, pending); return err })
 				changed, err := handler.HandleDeadline(ctx, pending)
@@ -126,8 +146,8 @@ func testFinalSwissOperatorReceipt(t *testing.T, noShow bool, recoverDeadline ..
 				require.False(t, changed)
 				continue
 			}
-			command := tournamentadmin.NoShowCommand{
-				CommandScope: tournamentadmin.CommandScope{Operator: tournamentadmin.OperatorIdentity{ActorID: uuid.New()}, TournamentID: fixture.tournamentID, CommandID: uuid.New()},
+			command := tournamentadminresult.NoShowCommand{
+				CommandScope: adminoperation.CommandScope{Operator: adminoperation.OperatorIdentity{ActorID: uuid.New()}, TournamentID: fixture.tournamentID, CommandID: uuid.New()},
 				WaveID:       fixture.waveID, WindowID: windowID, SeriesID: binding.SeriesID,
 				Confirmed: true, Reason: "participant absent at ready deadline", ExpectedAuthorityRevision: authority.AuthorityRevision,
 				ExpectedWaveRevisionID: waveRevisionID, ExpectedWindowRevisionID: windowRevisionID, ExpectedSeriesState: domain.SeriesStateReady,
@@ -144,11 +164,11 @@ func testFinalSwissOperatorReceipt(t *testing.T, noShow bool, recoverDeadline ..
 		var participantID, slotID, attemptID uuid.UUID
 		require.NoError(t, sharedPool.QueryRow(ctx, `SELECT series.second_participant_id, attempt.slot_id, attempt.id
 			FROM series JOIN game_attempts AS attempt ON attempt.series_id = series.id WHERE series.id = $1`, binding.SeriesID).Scan(&participantID, &slotID, &attemptID))
-		command := tournamentadmin.ForfeitCommand{
-			CommandScope: tournamentadmin.CommandScope{Operator: tournamentadmin.OperatorIdentity{ActorID: uuid.New()}, TournamentID: fixture.tournamentID, CommandID: uuid.New()},
+		command := tournamentadminresult.ForfeitCommand{
+			CommandScope: adminoperation.CommandScope{Operator: adminoperation.OperatorIdentity{ActorID: uuid.New()}, TournamentID: fixture.tournamentID, CommandID: uuid.New()},
 			SeriesID:     binding.SeriesID, ForfeitingParticipantID: participantID,
 			Confirmed: true, Reason: "participant conceded before start", ExpectedAuthorityRevision: authority.AuthorityRevision,
-			ExpectedGame: &tournamentadmin.GameExpectation{SlotID: slotID, GameID: attemptID, AttemptNo: 1, State: domain.GameStatePlanned},
+			ExpectedGame: &tournamentadminresult.GameExpectation{SlotID: slotID, GameID: attemptID, AttemptNo: 1, State: domain.GameStatePlanned},
 			Basis:        "rule_violation", RuleID: "game.rule.7", EvidenceIDs: []uuid.UUID{uuid.New()},
 			ScoreRevisionID: uuid.New(), SeriesResultRevisionID: uuid.New(), AuditEventID: uuid.New(), OutboxEventID: uuid.New(), ProjectionRevisionID: uuid.New(),
 		}
@@ -201,7 +221,7 @@ func assertTerminalProofRequiresCommand(ctx context.Context, t *testing.T, fixtu
 func assertReceiptRejectsCrossSeriesTerminalCommit(ctx context.Context, t *testing.T, fixture tournamentAdminSwissProofFixture) {
 	t.Helper()
 	authority := swissReceiptAuthority(ctx, t, fixture)
-	input, err := postgres.NewTournamentProgressionPostgres(fixture.tx).LoadLockedSwissTerminalEvidence(ctx, progression.Command{
+	input, err := progressionrepo.NewTournamentProgressionPostgres(fixture.tx).LoadLockedSwissTerminalEvidence(ctx, progression.Command{
 		CommandID: uuid.New(), TournamentID: fixture.tournamentID, RosterID: fixture.rosterID, ActorID: uuid.New(),
 		Action: progression.ActionStartPlayoffs, ExpectedProjectionRevision: authority.ProjectionRevision}, authority)
 	require.NoError(t, err)
@@ -210,7 +230,7 @@ func assertReceiptRejectsCrossSeriesTerminalCommit(ctx context.Context, t *testi
 	publication := successorSwissPublication(ctx, t, fixture)
 	inserted := false
 	err = fixture.tx.Do(ctx, func(txCtx context.Context) error {
-		record, err := postgres.NewProjectionPostgres(fixture.tx).Publish(txCtx, publication)
+		record, err := projectionrepo.NewProjectionPostgres(fixture.tx).Publish(txCtx, publication)
 		if err != nil {
 			return err
 		}
@@ -261,7 +281,7 @@ func assertOperatorReceiptRollback(ctx context.Context, t *testing.T, fixture to
 	require.Equal(t, before, swissPublicationCounts(ctx, t, fixture))
 }
 
-func (r *observedOperatorResultRepository) CommitOperatorNoShow(ctx context.Context, command tournamentadmin.NoShowCommand, digest [32]byte, resolution gameusecase.NoShowResolution) (*gameusecase.NoShowResolution, bool, error) {
+func (r *observedOperatorResultRepository) CommitOperatorNoShow(ctx context.Context, command tournamentadminresult.NoShowCommand, digest [32]byte, resolution gamenoshow.NoShowResolution) (*gamenoshow.NoShowResolution, bool, error) {
 	stored, changed, err := r.TournamentAdminResultPostgres.CommitOperatorNoShow(ctx, command, digest, resolution)
 	if err != nil {
 		r.t.Logf("operator no-show persistence: %v", err)
@@ -270,11 +290,11 @@ func (r *observedOperatorResultRepository) CommitOperatorNoShow(ctx context.Cont
 }
 
 type observedOperatorResultRepository struct {
-	*postgres.TournamentAdminResultPostgres
+	*adminresultrepo.TournamentAdminResultPostgres
 	t *testing.T
 }
 
-func (r *observedOperatorResultRepository) CommitOperatorForfeit(ctx context.Context, command tournamentadmin.ForfeitCommand, digest [32]byte, resolution gameusecase.ForfeitResolution) (*gameusecase.ForfeitResolution, bool, error) {
+func (r *observedOperatorResultRepository) CommitOperatorForfeit(ctx context.Context, command tournamentadminresult.ForfeitCommand, digest [32]byte, resolution gameforfeit.ForfeitResolution) (*gameforfeit.ForfeitResolution, bool, error) {
 	stored, changed, err := r.TournamentAdminResultPostgres.CommitOperatorForfeit(ctx, command, digest, resolution)
 	if err != nil {
 		r.t.Logf("operator forfeit persistence: %v", err)

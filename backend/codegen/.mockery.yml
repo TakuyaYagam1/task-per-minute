@@ -34,7 +34,24 @@ packages:
     interfaces:
       CancellationClock:
       TournamentCancellationRepository:
-  github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/inbound:
+    interfaces:
+      AdminService:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/observability:
+    interfaces:
+      OperationClock:
+      OperationObserver:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/execution:
+    interfaces:
+      ExecutionTransactionManager:
+      ExecutionWorkflowRepository:
+      ExecutionAuthorityProvider:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/result:
+    interfaces:
+      OperatorResultTransactionManager:
+      OperatorResultWorkflowRepository:
+      PostseasonWorkflow:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/lifecycle:
     interfaces:
       LifecycleTransactionManager:
       AdminLifecycleClock:
@@ -42,22 +59,21 @@ packages:
       LifecyclePauser:
       LifecycleCanceller:
       LifecycleWorkflowRepository:
-      RosterTransactionManager:
-      RosterWorkflowRepository:
-      ExecutionTransactionManager:
-      ExecutionWorkflowRepository:
-      OperatorResultTransactionManager:
-      OperatorResultWorkflowRepository:
-      ExecutionAuthorityProvider:
-      AdminPostseasonWorkflow:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/replay:
+    interfaces:
       ReplayWorkflowRepository:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/correction:
+    interfaces:
       CorrectionTransactionManager:
       CorrectionWorkflowRepository:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/incident:
+    interfaces:
       IncidentSnapshotPort:
       IncidentAuthenticator:
-      OperationClock:
-      OperationObserver:
-      AdminService:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/roster:
+    interfaces:
+      RosterTransactionManager:
+      RosterWorkflowRepository:
   github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/participant:
     interfaces:
       ParticipantTransactionManager:
@@ -75,7 +91,7 @@ packages:
       PlayoffProjectionPublisher:
       SwissTerminalEvidenceReader:
       ProgressionClock:
-  github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff/terminal:
     interfaces:
       TerminalRepository:
       FinalDraftAssignmentPlanner:
@@ -83,7 +99,7 @@ packages:
       ExactDraftPlanWorkflow:
       ExactDraftPlanAuthorityReader:
       ExactDraftCommittedPlanReader:
-  github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection/publication:
     interfaces:
       FinalPublicationRepository:
   github.com/TakuyaYagam1/task-per-minute/internal/usecase/idempotency:
@@ -189,15 +205,46 @@ packages:
       Clock:
       ReadyWindowRepository:
       ReadinessRepository:
-  github.com/TakuyaYagam1/task-per-minute/internal/usecase/correction:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/correction/stage:
     interfaces:
       Clock:
       TransactionManager:
       StageRepository:
-  github.com/TakuyaYagam1/task-per-minute/internal/usecase/game:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/attempt:
     interfaces:
       AttemptClock:
       AttemptRepository:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/close:
+    interfaces:
+      WaveClock:
+      CloseRepository:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/forfeit:
+    interfaces:
+      ForfeitClock:
+      ForfeitRepository:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/noshow:
+    interfaces:
+      NoShowClock:
+      NoShowRepository:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause/enter:
+    interfaces:
+      PauseClock:
+      TransactionManager:
+      NormalPauseRepository:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause:
+    interfaces:
+      PausedPresenceRepository:
+      PauseResumeRepository:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause/resumepresence:
+    interfaces:
+      PauseResumePresenceRepository:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/reconnect:
+    interfaces:
+      ReconnectClock:
+      ReconnectRepository:
+      Observer:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/recovery:
+    interfaces:
       ExecutionClock:
       AuthorityTimeSource:
       EpochReplayRepository:
@@ -208,19 +255,8 @@ packages:
       RecoveryTournamentSource:
       RecoveryAuthorityProvider:
       RecoveryObserver:
-      ForfeitClock:
-      ForfeitRepository:
-      NoShowClock:
-      NoShowRepository:
-      PauseClock:
-      TransactionManager:
-      NormalPauseRepository:
-      PausedPresenceRepository:
-      PauseResumeRepository:
-      PauseResumePresenceRepository:
-      ReconnectClock:
-      ReconnectRepository:
-      Observer:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/replay:
+    interfaces:
       ReplayClock:
       ReplayReplacementRepository:
       ReplayReserveExhaustionRepository:
@@ -228,27 +264,47 @@ packages:
       FailedAttemptTerminalizer:
       OldWaveCloser:
       ReplayReplacementPlanner:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/settlement:
+    interfaces:
       SettlementRepository:
-      SubmissionRepository:
-      WaveClock:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/start:
+    interfaces:
       StartRepository:
-      CloseRepository:
-  github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/submission:
+    interfaces:
+      SubmissionRepository:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/failure:
+    interfaces:
+      FailureClock:
+      FailureRepository:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/attempt:
     interfaces:
       AttemptClock:
       AttemptRepository:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/connection:
+    interfaces:
       ConnectionClock:
       ConnectionRepository:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/continuation:
+    interfaces:
       ContinuationClock:
       ContinuationRepository:
-      FailureClock:
-      FailureRepository:
-      PlanRepository:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/prestart:
+    interfaces:
       PrestartClock:
       PrestartRepository:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/state:
+    interfaces:
       StateClock:
       StateRepository:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/plan:
+    interfaces:
+      PlanRepository:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/submission:
+    interfaces:
       SubmissionRepository:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/wave:
+    interfaces:
       WaveClock:
       WaveRepository:
   github.com/TakuyaYagam1/task-per-minute/internal/usecase/player:

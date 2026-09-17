@@ -17,12 +17,16 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/middleware"
 	inboundws "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket"
 	tournamentws "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket/tournament"
-	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	playerrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/player"
+	realtimerepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/realtime"
+	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
+	participantrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/connection"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	eventdelivery "github.com/TakuyaYagam1/task-per-minute/internal/usecase/eventdelivery"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gamereconnect "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/reconnect"
+	gamestart "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/start"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 	connection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/connection"
 )
@@ -44,7 +48,7 @@ func TestParticipantConnectionBindingFollowsCurrentSubscriberFence(t *testing.T)
 	require.NoError(t, err)
 
 	clock := newParticipantConnectionClock(time.Now().UTC())
-	connectionRepository := postgres.NewParticipantConnectionPostgres(
+	connectionRepository := participantrepo.NewParticipantConnectionPostgres(
 		fixture.tx,
 		participantReconnectAuthorityProvider{identity: fixture.executionAuthority},
 	)
@@ -52,8 +56,8 @@ func TestParticipantConnectionBindingFollowsCurrentSubscriberFence(t *testing.T)
 		Transactions: fixture.tx,
 		Authority:    connectionRepository,
 		Repository:   connectionRepository,
-		Disconnect:   gameusecase.NewDisconnectUseCase(fixture.adapter, clock),
-		Reconnect:    gameusecase.ReconnectNewUseCase(fixture.adapter, clock),
+		Disconnect:   gamereconnect.NewDisconnectUseCase(fixture.adapter, clock),
+		Reconnect:    gamereconnect.ReconnectNewUseCase(fixture.adapter, clock),
 		Clock:        clock,
 		Config:       connection.Config{ReconnectDuration: 30 * time.Second},
 	})
@@ -65,12 +69,12 @@ func TestParticipantConnectionBindingFollowsCurrentSubscriberFence(t *testing.T)
 
 	realtime, err := inboundws.NewRealtimeDelivery(
 		participantConnectionRealtimeRepository{
-			SubscriptionRepository: postgres.NewRealtimeOutboxPostgres(fixture.tx),
+			SubscriptionRepository: realtimerepo.NewRealtimeOutboxPostgres(fixture.tx),
 		},
 		inboundws.RealtimeDeliveryConfig{InstanceID: uuid.New(), WorkerID: uuid.New()},
 	)
 	require.NoError(t, err)
-	players := postgres.NewPlayerPostgres(fixture.tx)
+	players := playerrepo.NewPlayerPostgres(fixture.tx)
 	server := inboundws.NewServer(
 		players,
 		inboundws.WithTournamentParticipantFlow(participantConnectionBindingFlow{}),
@@ -152,7 +156,7 @@ func TestParticipantConnectionBindingSurvivesFinalGameAdvance(t *testing.T) {
 	_, err := publishSwissPlayoffs(ctx, fixture, stageCommand)
 	require.NoError(t, err)
 	firstSemifinal := semifinalSettlementInput(ctx, t, fixture, stageCommand.CommandID, 1)
-	_, changed, err := postgres.NewResultPostgres(fixture.tx).Settle(ctx, firstSemifinal)
+	_, changed, err := resultauthority.NewResultPostgres(fixture.tx).Settle(ctx, firstSemifinal)
 	require.NoError(t, err)
 	require.True(t, changed)
 	_, secondWaveID, secondSemifinalParticipants := technicalPlayoffSeries(ctx, t, fixture, stageCommand.CommandID, 2)
@@ -177,7 +181,7 @@ func TestParticipantConnectionBindingSurvivesFinalGameAdvance(t *testing.T) {
 	require.NoError(t, err)
 
 	clock := newParticipantConnectionClock(time.Now().UTC())
-	connectionRepository := postgres.NewParticipantConnectionPostgres(
+	connectionRepository := participantrepo.NewParticipantConnectionPostgres(
 		fixture.tx,
 		participantReconnectAuthorityProvider{identity: fixture.executionAuthority},
 	)
@@ -185,8 +189,8 @@ func TestParticipantConnectionBindingSurvivesFinalGameAdvance(t *testing.T) {
 		Transactions: fixture.tx,
 		Authority:    connectionRepository,
 		Repository:   connectionRepository,
-		Disconnect:   gameusecase.NewDisconnectUseCase(fixture.adapter, clock),
-		Reconnect:    gameusecase.ReconnectNewUseCase(fixture.adapter, clock),
+		Disconnect:   gamereconnect.NewDisconnectUseCase(fixture.adapter, clock),
+		Reconnect:    gamereconnect.ReconnectNewUseCase(fixture.adapter, clock),
 		Clock:        clock,
 		Config:       connection.Config{ReconnectDuration: 30 * time.Second},
 	})
@@ -198,13 +202,13 @@ func TestParticipantConnectionBindingSurvivesFinalGameAdvance(t *testing.T) {
 
 	realtime, err := inboundws.NewRealtimeDelivery(
 		participantConnectionRealtimeRepository{
-			SubscriptionRepository: postgres.NewRealtimeOutboxPostgres(fixture.tx),
+			SubscriptionRepository: realtimerepo.NewRealtimeOutboxPostgres(fixture.tx),
 		},
 		inboundws.RealtimeDeliveryConfig{InstanceID: uuid.New(), WorkerID: uuid.New()},
 	)
 	require.NoError(t, err)
 	server := inboundws.NewServer(
-		postgres.NewPlayerPostgres(fixture.tx),
+		playerrepo.NewPlayerPostgres(fixture.tx),
 		inboundws.WithTournamentParticipantFlow(participantConnectionBindingFlow{}),
 		inboundws.WithTournamentParticipantLifecycleFlow(lifecycle),
 		inboundws.WithRealtimeDelivery(realtime),
@@ -437,10 +441,10 @@ func participantConnectionBindingStartWave(
 	ctx context.Context,
 	t *testing.T,
 	fixture tournamentAdminSwissProofFixture,
-) *gameusecase.StartRecord {
+) *gamestart.StartRecord {
 	t.Helper()
 	command := fixture.startCommand(ctx, t)
-	var record *gameusecase.StartRecord
+	var record *gamestart.StartRecord
 	var changed bool
 	err := fixture.tx.Do(ctx, func(txCtx context.Context) error {
 		var startErr error

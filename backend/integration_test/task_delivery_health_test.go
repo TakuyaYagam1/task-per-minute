@@ -7,7 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
+	taskrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/task"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -22,7 +24,7 @@ func TestPrivateTaskAvailabilityBacklogCoversActiveTournamentGraphs(t *testing.T
 	startedAt := fixture.lockedAt.Add(time.Second)
 	activatePrivateTaskAvailabilityGraph(ctx, t, fixture, startedAt)
 
-	queries := sqlc.New(sharedPool)
+	repository := taskrepo.NewPrivateTaskAvailabilityPostgres(postgres.NewTxManager(sharedPool))
 	for _, tournamentState := range []string{"swiss", "golden", "playoffs"} {
 		_, err := sharedPool.Exec(ctx, `
 			UPDATE tournaments
@@ -32,18 +34,18 @@ func TestPrivateTaskAvailabilityBacklogCoversActiveTournamentGraphs(t *testing.T
 			WHERE id = $1`, fixture.draft.tournamentID, tournamentState, startedAt)
 		require.NoError(t, err)
 
-		backlog, err := queries.GetPrivateTaskDeliveryBacklog(ctx)
+		backlog, err := repository.TaskDeliveryBacklog(ctx)
 		require.NoError(t, err)
 		require.EqualValues(t, 2, backlog.PendingCount)
-		require.True(t, backlog.OldestPendingAt.Valid)
-		require.Equal(t, startedAt, backlog.OldestPendingAt.Time.UTC())
+		require.NotNil(t, backlog.OldestPendingAt)
+		require.Equal(t, startedAt, backlog.OldestPendingAt.UTC())
 	}
 
 	createPrivateTaskReceipts(ctx, t, fixture, startedAt)
-	backlog, err := queries.GetPrivateTaskDeliveryBacklog(ctx)
+	backlog, err := repository.TaskDeliveryBacklog(ctx)
 	require.NoError(t, err)
 	require.Zero(t, backlog.PendingCount)
-	require.False(t, backlog.OldestPendingAt.Valid)
+	require.Nil(t, backlog.OldestPendingAt)
 }
 
 func TestPrivateTaskAvailabilityBacklogRejectsMismatchedReceiptIdentity(t *testing.T) {

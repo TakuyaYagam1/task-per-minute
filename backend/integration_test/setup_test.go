@@ -9,9 +9,13 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
+
+	testkit "github.com/TakuyaYagam1/task-per-minute/integration_test/internal/testkit"
 )
 
-var parallelDatabaseMigrationMu sync.Mutex
+// parallelDatabaseMigrationMu remains available to root migration tests that
+// coordinate direct migration calls outside newParallelTestDB.
+var parallelDatabaseMigrationMu testkit.MigrationLock
 
 // newParallelTestDB provisions a disposable database for one parallel test.
 // Goose keeps its dialect process-global, so migrations are serialized while
@@ -19,18 +23,7 @@ var parallelDatabaseMigrationMu sync.Mutex
 // parallel afterwards.
 func newParallelTestDB(tb testing.TB) *pgxpool.Pool {
 	tb.Helper()
-
-	ctx, cancel := context.WithTimeout(context.Background(), containerStartupTimeout)
-	defer cancel()
-
-	pool, _ := createMigrationIsolatedDatabase(ctx, tb, "parallel")
-	parallelDatabaseMigrationMu.Lock()
-	err := func() error {
-		defer parallelDatabaseMigrationMu.Unlock()
-		return runMigrations(ctx, migrationDSN(tb, pool, "public"))
-	}()
-	require.NoError(tb, err)
-	return pool
+	return testkit.NewParallelDatabase(tb, sharedPool, postgresConfig(""))
 }
 
 // SetupTestDB starts an isolated Postgres testcontainer, applies migrations,

@@ -18,8 +18,11 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/observability"
 	observabilitymocks "github.com/TakuyaYagam1/task-per-minute/internal/observability/mocks"
 	authusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/auth"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
-	tournamentadminmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/mocks"
+	tournamentadmininbound "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/inbound"
+	tournamentadminmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/inbound/mocks"
+	tournamentadminobservability "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/observability"
+	tournamentadminobserved "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/observed"
+	rosterusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/roster"
 	tournamentpreflight "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/preflight"
 )
 
@@ -30,7 +33,7 @@ func TestRosterPreflightIngressCommandIDCorrelatesTerminalTelemetry(t *testing.T
 	tournamentID := uuid.MustParse("20000000-0000-4000-8000-000000000001")
 	commandID := uuid.MustParse("20000000-0000-4000-8000-000000000002")
 	next := tournamentadminmocks.NewMockAdminService(t)
-	next.EXPECT().RunPreflight(mock.Anything, mock.MatchedBy(func(command tournamentadmin.PreflightCommand) bool {
+	next.EXPECT().RunPreflight(mock.Anything, mock.MatchedBy(func(command rosterusecase.PreflightCommand) bool {
 		return command.TournamentID == tournamentID && command.CommandID == commandID &&
 			command.ExpectedProjectionRevision == 7
 	})).Return(tournamentpreflight.ReportRevision{}, domain.ErrConflict).Once()
@@ -42,7 +45,7 @@ func TestRosterPreflightIngressCommandIDCorrelatesTerminalTelemetry(t *testing.T
 			event.CorrelationID == commandID.String() && event.CommandID == commandID.String() &&
 			event.TournamentID == tournamentID.String() && event.EntityID == tournamentID.String() &&
 			event.EntityKind == "tournament" && event.Stage == "maintenance" &&
-			event.Transition == string(tournamentadmin.OperationPreflightRun) &&
+			event.Transition == string(tournamentadminobservability.OperationPreflightRun) &&
 			event.ReasonCode == "stale_revision" && event.Revision == 7
 	})).Once()
 	events.EXPECT().ObserveTournamentEvent(mock.Anything, mock.MatchedBy(func(event observability.TournamentEvent) bool {
@@ -53,14 +56,14 @@ func TestRosterPreflightIngressCommandIDCorrelatesTerminalTelemetry(t *testing.T
 			event.EntityKind == "http_request" && event.Stage == "operator_mutation" &&
 			event.Transition == "post" && event.ReasonCode == "status_409"
 	})).Once()
-	admin := tournamentadmin.AdminNewObservedService(next, nil, telemetryadapter.NewTournamentAdminObserver(events))
+	admin := tournamentadminobserved.NewObservedService(next, nil, telemetryadapter.NewTournamentAdminObserver(events))
 
 	verifier := middlewaremocks.NewMockAdminAccessVerifier(t)
 	verifier.EXPECT().VerifyAccess(mock.Anything, accessToken).Return(&authusecase.Claims{
 		JTI: "admin-access-session", Subject: "admin", Kind: authusecase.TokenKindAccess,
 	}, nil).Once()
 	handler := middleware.Build(logkit.Noop(), middleware.WithTournamentEventObserver(events))(NewHandler(New(Dependencies{
-		TournamentAdmin:                   tournamentadmin.NewInboundAdapter(admin),
+		TournamentAdmin:                   tournamentadmininbound.NewInboundAdapter(admin),
 		OperatorTournamentMutationLimiter: newAllowingRateLimiter(t),
 	}), HandlerOptions{AdminAuth: verifier}))
 	csrfToken, err := middleware.NewAdminCSRFToken(middleware.AdminAccessCSRFCookieName, accessToken)

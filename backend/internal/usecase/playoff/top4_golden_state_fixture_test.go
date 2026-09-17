@@ -10,8 +10,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
-	goldenmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/mocks"
+	goldenplan "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/plan"
+	goldenstate "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/state"
+	goldenmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/state/mocks"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 )
 
@@ -19,7 +20,7 @@ func newTop4GoldenAllocationState(
 	t *testing.T,
 	finalSwiss playoff.FinalSwissProjection,
 	participate bool,
-) goldenusecase.GoldenState {
+) goldenstate.GoldenState {
 	t.Helper()
 
 	groups := finalSwiss.GoldenGroups()
@@ -34,25 +35,25 @@ func newTop4GoldenAllocationState(
 	}
 	poolID := playoffID(7800)
 	versions := make([]domain.TaskVersionRef, domain.AssignmentReserveCount+1)
-	candidates := make([]goldenusecase.TaskVersion, len(versions))
+	candidates := make([]goldenplan.TaskVersion, len(versions))
 	for index := range versions {
 		task := newPlayoffGoldenTask(8000 + index)
 		versions[index] = domain.TaskVersionRef{TaskID: task.ID, Version: 2}
-		candidates[index] = goldenusecase.TaskVersion{
+		candidates[index] = goldenplan.TaskVersion{
 			PoolRevisionID: poolID, Version: 2, Task: task,
 			Health: domain.TaskVersionHealth{
 				TaskID: task.ID, Version: 2, PoolRevisionID: poolID,
 				PoolKind: domain.AssignmentTaskKindGolden, Exists: true, Enabled: true,
 				Healthy: true, MutationLocked: true,
 			},
-			ArtifactDigest: goldenusecase.TaskArtifactDigest(task, 2),
+			ArtifactDigest: goldenplan.TaskArtifactDigest(task, 2),
 		}
 	}
 	reservedAt := time.Date(2026, time.September, 1, 8, 0, 0, 0, time.UTC)
-	reservations := make([]goldenusecase.ParticipantReservation, len(active))
+	reservations := make([]goldenplan.ParticipantReservation, len(active))
 	for index, participantID := range active {
 		playerID := playoffID(7820 + index)
-		reservations[index] = goldenusecase.ParticipantReservation{
+		reservations[index] = goldenplan.ParticipantReservation{
 			ParticipantID: participantID, PlayerID: playerID,
 			Reservation: domain.ParticipantReservation{
 				PlayerID: playerID, ReservationID: playoffID(7840 + index),
@@ -61,11 +62,11 @@ func newTop4GoldenAllocationState(
 			},
 		}
 	}
-	authority, err := goldenusecase.BuildAuthority(goldenusecase.Authority{
-		Scope: goldenusecase.Scope{
+	authority, err := goldenplan.BuildAuthority(goldenplan.Authority{
+		Scope: goldenplan.Scope{
 			TournamentID: group.State.TournamentID, PlanSetID: playoffID(7860),
 		},
-		Revisions: goldenusecase.Revisions{
+		Revisions: goldenplan.Revisions{
 			SourceProjectionRevisionID: finalSwiss.GoldenSource().RevisionID,
 			GroupSetRevisionID:         playoffID(7861), GroupSetRevision: 1,
 			PoolRevisionID: poolID, PoolRevision: 1,
@@ -76,7 +77,7 @@ func newTop4GoldenAllocationState(
 			MembershipRevisionID: playoffID(7866), MembershipRevision: 1,
 		},
 		Source: finalSwiss.GoldenSource(),
-		Groups: []goldenusecase.GroupAuthority{{
+		Groups: []goldenplan.GroupAuthority{{
 			Revision: group.Revision, ActiveParticipantIDs: active,
 		}},
 		Pool: domain.TaskPoolRevision{
@@ -85,7 +86,7 @@ func newTop4GoldenAllocationState(
 		Candidates: candidates, ParticipantReservations: reservations,
 	})
 	require.NoError(t, err)
-	groupCommand := goldenusecase.GroupCommand{
+	groupCommand := goldenplan.GroupCommand{
 		GroupID: group.State.ID, GroupRevisionID: group.State.RevisionID,
 	}
 	for index := range groupCommand.EdgeIDs {
@@ -93,16 +94,16 @@ func newTop4GoldenAllocationState(
 		groupCommand.ReservationIDs[index] = playoffID(7881 + index*3)
 		groupCommand.SnapshotIDs[index] = playoffID(7882 + index*3)
 	}
-	plan, err := goldenusecase.BuildExactPlan(goldenusecase.Command{
+	plan, err := goldenplan.BuildExactPlan(goldenplan.Command{
 		Scope: authority.Scope, PlanID: playoffID(7900), PlanRevisionID: playoffID(7901),
-		Expected: authority.Expectation(), GroupCommands: []goldenusecase.GroupCommand{groupCommand},
+		Expected: authority.Expectation(), GroupCommands: []goldenplan.GroupCommand{groupCommand},
 		CreatedAt: reservedAt.Add(time.Hour),
 	}, authority)
 	require.NoError(t, err)
 	attemptID := playoffID(7910)
 	openedAt := reservedAt.Add(time.Hour + time.Second)
-	state, err := goldenusecase.BuildGoldenState(goldenusecase.GoldenState{
-		Scope: goldenusecase.GoldenStateScope{
+	state, err := goldenstate.BuildGoldenState(goldenstate.GoldenState{
+		Scope: goldenstate.GoldenStateScope{
 			TournamentID: group.State.TournamentID, GroupID: group.State.ID,
 			GroupRevisionID: group.State.RevisionID,
 		},
@@ -119,12 +120,12 @@ func newTop4GoldenAllocationState(
 				ParticipantIDs: active,
 			}},
 		},
-		Membership: goldenusecase.GoldenMembershipRevision{RevisionID: playoffID(7911), Revision: 1},
+		Membership: goldenstate.GoldenMembershipRevision{RevisionID: playoffID(7911), Revision: 1},
 		RevisionID: playoffID(7912), Revision: 1,
-		Windows: []goldenusecase.GoldenReadyWindow{{
+		Windows: []goldenstate.GoldenReadyWindow{{
 			ID: playoffID(7913), RevisionID: playoffID(7914), Revision: 1,
 			AttemptID: attemptID, AttemptNo: 1, OpenedAt: openedAt,
-			Deadline: openedAt.Add(30 * time.Second), State: goldenusecase.GoldenReadyWindowOpen,
+			Deadline: openedAt.Add(30 * time.Second), State: goldenstate.GoldenReadyWindowOpen,
 			ReadinessRevisionID: playoffID(7915), ReadinessRevision: 1,
 			PresenceRevisionID: playoffID(7916), PresenceRevision: 1,
 			PresentParticipantIDs: active,
@@ -137,9 +138,9 @@ func newTop4GoldenAllocationState(
 		ready = []uuid.UUID{active[0]}
 	}
 	resolved := resolveTop4GoldenReadyWindow(t, repository, state, ready, openedAt, 7920)
-	allocated, changed, err := goldenusecase.NewGoldenFallbackUseCase(
+	allocated, changed, err := goldenstate.NewGoldenFallbackUseCase(
 		repository, newTop4GoldenClock(t, resolved.NoShows[len(resolved.NoShows)-1].ResolvedAt),
-	).Allocate(t.Context(), goldenusecase.GoldenFallbackCommand{
+	).Allocate(t.Context(), goldenstate.GoldenFallbackCommand{
 		Scope: resolved.Scope, CommandID: playoffID(7950), AllocationID: playoffID(7951),
 		ExpectedState: resolved.Expectation(), NextStateRevisionID: playoffID(7952),
 	})
@@ -151,19 +152,19 @@ func newTop4GoldenAllocationState(
 
 func newTop4GoldenStateRepository(
 	t *testing.T,
-	initial goldenusecase.GoldenState,
+	initial goldenstate.GoldenState,
 ) *goldenmocks.MockStateRepository {
 	t.Helper()
 
 	current := initial.Snapshot()
 	repository := goldenmocks.NewMockStateRepository(t)
 	repository.EXPECT().LoadGoldenState(mock.Anything, mock.Anything).RunAndReturn(
-		func(context.Context, goldenusecase.GoldenStateScope) (goldenusecase.GoldenState, error) {
+		func(context.Context, goldenstate.GoldenStateScope) (goldenstate.GoldenState, error) {
 			return current.Snapshot(), nil
 		},
 	).Maybe()
 	repository.EXPECT().CommitGoldenState(mock.Anything, mock.Anything).RunAndReturn(
-		func(_ context.Context, commit goldenusecase.GoldenStateCommit) (*goldenusecase.GoldenState, bool, error) {
+		func(_ context.Context, commit goldenstate.GoldenStateCommit) (*goldenstate.GoldenState, bool, error) {
 			if !commit.Expected.Equal(current.Expectation()) {
 				return nil, false, domain.ErrConflict
 			}
@@ -178,19 +179,19 @@ func newTop4GoldenStateRepository(
 func resolveTop4GoldenReadyWindow(
 	t *testing.T,
 	repository *goldenmocks.MockStateRepository,
-	state goldenusecase.GoldenState,
+	state goldenstate.GoldenState,
 	readyIDs []uuid.UUID,
 	openedAt time.Time,
 	base int,
-) goldenusecase.GoldenState {
+) goldenstate.GoldenState {
 	t.Helper()
 
 	current := state
 	for index, participantID := range readyIDs {
 		window := current.Windows[0]
-		ready, changed, err := goldenusecase.NewGoldenParticipationUseCase(
+		ready, changed, err := goldenstate.NewGoldenParticipationUseCase(
 			repository, newTop4GoldenClock(t, openedAt.Add(time.Duration(index+1)*time.Second)),
-		).AcceptReady(t.Context(), goldenusecase.GoldenReadyCommand{
+		).AcceptReady(t.Context(), goldenstate.GoldenReadyCommand{
 			Scope: current.Scope, CommandID: playoffID(base + index*10),
 			ActorParticipantID: participantID, ParticipantID: participantID,
 			AttemptID: window.AttemptID, WindowID: window.ID,
@@ -204,9 +205,9 @@ func resolveTop4GoldenReadyWindow(
 		current = *ready
 	}
 	window := current.Windows[0]
-	resolved, changed, err := goldenusecase.NewGoldenNoShowUseCase(
+	resolved, changed, err := goldenstate.NewGoldenNoShowUseCase(
 		repository, newTop4GoldenClock(t, window.Deadline.Add(time.Nanosecond)),
-	).Resolve(t.Context(), goldenusecase.GoldenNoShowCommand{
+	).Resolve(t.Context(), goldenstate.GoldenNoShowCommand{
 		Scope: current.Scope, CommandID: playoffID(base + len(readyIDs)*10),
 		AttemptID: window.AttemptID, WindowID: window.ID,
 		ExpectedState: current.Expectation(), ExpectedWindow: window.Expectation(),

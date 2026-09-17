@@ -10,7 +10,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/observability"
 	observabilitymocks "github.com/TakuyaYagam1/task-per-minute/internal/observability/mocks"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	adminobservability "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/observability"
 )
 
 func TestTournamentAdminObserverMapsPayloadFreeCorrectionOutcome(t *testing.T) {
@@ -24,14 +24,14 @@ func TestTournamentAdminObserverMapsPayloadFreeCorrectionOutcome(t *testing.T) {
 		Event: tournamentAdminCommandEvent, Outcome: observability.TournamentOutcomeSuccess,
 		CorrelationID: commandID.String(), CommandID: commandID.String(),
 		TournamentID: tournamentID.String(), EntityKind: "game", EntityID: gameID.String(),
-		Stage: "correction", Transition: string(tournamentadmin.OperationResultCorrect),
+		Stage: "correction", Transition: string(adminobservability.OperationResultCorrect),
 		Duration: 10 * time.Millisecond, ReasonCode: "completed", Revision: 11,
 	}).Once()
 
-	NewTournamentAdminObserver(shared).ObserveTournamentAdminOperation(t.Context(), tournamentadmin.OperationEvent{
-		Operation: tournamentadmin.OperationResultCorrect, CommandID: commandID,
+	NewTournamentAdminObserver(shared).ObserveTournamentAdminOperation(t.Context(), adminobservability.OperationEvent{
+		Operation: adminobservability.OperationResultCorrect, CommandID: commandID,
 		TournamentID: tournamentID, EntityID: gameID,
-		Outcome: tournamentadmin.OperationOutcomeSuccess, ReasonCode: "completed",
+		Outcome: adminobservability.OperationOutcomeSuccess, ReasonCode: "completed",
 		Revision: 11, Duration: 10 * time.Millisecond,
 	})
 }
@@ -42,13 +42,13 @@ func TestTournamentAdminObserverRejectsUnknownOrMalformedMetadata(t *testing.T) 
 	shared := observabilitymocks.NewMockTournamentEventObserver(t)
 	observer := NewTournamentAdminObserver(shared)
 	require.NotNil(t, observer)
-	observer.ObserveTournamentAdminOperation(t.Context(), tournamentadmin.OperationEvent{
+	observer.ObserveTournamentAdminOperation(t.Context(), adminobservability.OperationEvent{
 		Operation: "private_payload", CommandID: uuid.New(), TournamentID: uuid.New(), EntityID: uuid.New(),
-		Outcome: tournamentadmin.OperationOutcomeFailure, ReasonCode: "operation_failed",
+		Outcome: adminobservability.OperationOutcomeFailure, ReasonCode: "operation_failed",
 	})
-	observer.ObserveTournamentAdminOperation(t.Context(), tournamentadmin.OperationEvent{
-		Operation: tournamentadmin.OperationResultCorrect,
-		Outcome:   tournamentadmin.OperationOutcomeFailure, ReasonCode: "operation_failed",
+	observer.ObserveTournamentAdminOperation(t.Context(), adminobservability.OperationEvent{
+		Operation: adminobservability.OperationResultCorrect,
+		Outcome:   adminobservability.OperationOutcomeFailure, ReasonCode: "operation_failed",
 	})
 }
 
@@ -57,12 +57,12 @@ func TestTournamentAdminObserverMapsBoundedOperationMetrics(t *testing.T) {
 
 	metrics := observability.NewTournamentMetrics()
 	observer := NewTournamentAdminObserver(metrics)
-	observer.ObserveTournamentAdminOperation(t.Context(), tournamentadmin.OperationEvent{
-		Operation:    tournamentadmin.OperationPairingConfigure,
+	observer.ObserveTournamentAdminOperation(t.Context(), adminobservability.OperationEvent{
+		Operation:    adminobservability.OperationPairingConfigure,
 		CommandID:    uuid.MustParse("3a000000-0000-4000-8000-000000000011"),
 		TournamentID: uuid.MustParse("3a000000-0000-4000-8000-000000000012"),
 		EntityID:     uuid.MustParse("3a000000-0000-4000-8000-000000000013"),
-		Outcome:      tournamentadmin.OperationOutcomeSuccess, ReasonCode: "completed", Revision: 4,
+		Outcome:      adminobservability.OperationOutcomeSuccess, ReasonCode: "completed", Revision: 4,
 	})
 
 	families, err := metrics.Gatherer().Gather()

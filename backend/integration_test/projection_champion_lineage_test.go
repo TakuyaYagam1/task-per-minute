@@ -12,6 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	projectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
+	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
@@ -45,7 +47,7 @@ func TestProjectionPostgresRejectsChampionFromUndesignatedBO3(t *testing.T) {
 	secondAttemptID := createActiveMigrationAttempt(ctx, t, secondSlotID, seriesID, fixture.rosterID, startedAt)
 	_ = initializeFinalProjectionSeries(ctx, t, fixture, seriesID, startedAt)
 
-	resultRepository := postgres.NewResultPostgres(postgres.NewTxManager(sharedPool))
+	resultRepository := resultauthority.NewResultPostgres(postgres.NewTxManager(sharedPool))
 	winnerID := fixture.participantIDs[0]
 	operatorID := uuid.New()
 	firstDigest := sha256.Sum256([]byte("undesignated final first result"))
@@ -111,8 +113,8 @@ func TestProjectionPostgresRejectsChampionFromUndesignatedBO3(t *testing.T) {
 		terminal.Outbox.ProjectionRevision,
 		startedAt.Add(3*time.Second),
 	)
-	_, err = postgres.NewProjectionPostgres(postgres.NewTxManager(sharedPool)).PublishFinal(ctx, publication)
-	require.ErrorIs(t, err, postgres.ErrProjectionNotFound)
+	_, err = projectionrepo.NewProjectionPostgres(postgres.NewTxManager(sharedPool)).PublishFinal(ctx, publication)
+	require.ErrorIs(t, err, projectionrepo.ErrProjectionNotFound)
 	assertFinalProjectionNotPersisted(ctx, t, publication, tournamentRevision)
 }
 

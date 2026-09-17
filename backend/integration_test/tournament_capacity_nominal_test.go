@@ -15,6 +15,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	gamedb "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/game"
+	rosterrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/roster"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	gamedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/game"
 )
@@ -72,10 +74,10 @@ func TestTournamentCapacityFixture(t *testing.T) {
 }
 
 type tournamentCapacityFixture struct {
-	repository  *postgres.GamePostgres
-	tournaments *postgres.TournamentPostgres
-	games       []tournamentCapacityGameFixture
-	reconnect   tournamentCapacityReconnect
+	repository *gamedb.GamePostgres
+	roster     *rosterrepo.RosterPostgres
+	games      []tournamentCapacityGameFixture
+	reconnect  tournamentCapacityReconnect
 }
 
 type tournamentCapacityGameFixture struct {
@@ -217,7 +219,7 @@ func newTournamentCapacityFixture(tb testing.TB, config tournamentCapacityConfig
 	require.Equal(tb, config.Games*2, config.Participants)
 
 	tx := postgres.NewTxManager(sharedPool)
-	repository := postgres.NewGamePostgres(tx)
+	repository := gamedb.NewGamePostgres(tx)
 	games := make([]tournamentCapacityGameFixture, config.Games)
 
 	for gameIndex := range config.Games {
@@ -247,9 +249,9 @@ func newTournamentCapacityFixture(tb testing.TB, config tournamentCapacityConfig
 	}
 
 	return tournamentCapacityFixture{
-		repository:  repository,
-		tournaments: postgres.NewTournamentPostgres(tx),
-		games:       games,
+		repository: repository,
+		roster:     rosterrepo.NewRosterPostgres(tx),
+		games:      games,
 	}
 }
 
@@ -364,7 +366,7 @@ func runTournamentCapacityWorker(
 }
 
 func tournamentCapacityRecordMatches(
-	record *postgres.GameAttemptRecord,
+	record *gamedb.GameAttemptRecord,
 	game tournamentCapacityGameFixture,
 ) bool {
 	return record != nil &&
@@ -387,7 +389,7 @@ func checkTournamentCapacityFinalState(
 	participantCount := 0
 	participantsValid := true
 	for _, game := range fixture.games {
-		participants, err := fixture.tournaments.ListParticipants(ctx, game.rosterID)
+		participants, err := fixture.roster.ListParticipants(ctx, game.rosterID)
 		if err != nil || len(participants) != len(game.participantIDs) {
 			participantsValid = false
 			continue

@@ -25,6 +25,38 @@ import (
 	tournamentws "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket/tournament"
 	authadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/auth"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	assignmentrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment"
+	draftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment/draft"
+	exactdraftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment/exactdraft"
+	auditrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/audit"
+	authorityrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/authority"
+	waverepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/wave"
+	runtimepostgres "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/golden/runtime"
+	playoffrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/playoff"
+	projectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
+	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
+	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
+	executionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/execution"
+	wavestartrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/execution/wavestart"
+	adminlifecyclerepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/lifecycle"
+	adminresultrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/result"
+	rosterrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/roster"
+	snapshotrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/snapshot"
+	cancellationrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/cancellation"
+	catalogrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/catalog"
+	configurationrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/configuration"
+	creationrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/creation"
+	tournamentlifecyclerepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/lifecycle"
+	participantauthorityrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/authority"
+	participantdraftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/draft"
+	participantpostseriesrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/postseries"
+	participantreadinessrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/readiness"
+	participantsettlementrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/settlement"
+	participantstaterepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/state"
+	participantsubmissionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/submission"
+	participantsurrenderrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/surrender"
+	progressionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/progression"
+	tournamentsnapshotrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/snapshot"
 	redisadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/redis"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
@@ -32,13 +64,20 @@ import (
 	authusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/auth"
 	authorityusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/authority"
 	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
+	gamestart "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/start"
+	gamesubmission "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/submission"
+	goldenruntime "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/runtime"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/idempotency"
 	playerusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/player"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/readiness"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/application"
+	tournamentadminconfiguration "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/configuration"
+	tournamentadminexecution "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/execution"
+	tournamentadmininbound "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/inbound"
+	tournamentadminlifecycle "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/lifecycle"
+	tournamentadminresult "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/result"
+	tournamentadminroster "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/roster"
 	tournamentcancellation "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/cancellation"
 	catalogusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/catalog"
 	tournamentlifecycle "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/lifecycle"
@@ -93,6 +132,18 @@ type tournamentFlowGoldenTask struct {
 	version     int
 }
 
+func loadTournamentFlowParticipantDraftContent(
+	ctx context.Context,
+	querier *sqlc.Queries,
+	tournamentID uuid.UUID,
+) (domain.ContentConfiguration, error) {
+	content, err := rosterrepo.LoadPreflightContent(ctx, querier, tournamentID)
+	if err != nil {
+		return domain.ContentConfiguration{}, err
+	}
+	return content.Configuration, nil
+}
+
 type tournamentFlowClock struct {
 	mu     sync.Mutex
 	now    time.Time
@@ -138,7 +189,7 @@ func (clock *tournamentFlowClock) Resume() {
 
 type tournamentFlowRuntime struct {
 	clock     *tournamentFlowClock
-	golden    *goldenusecase.RuntimeApplication
+	golden    *goldenruntime.RuntimeApplication
 	webSocket *inboundws.Server
 }
 
@@ -313,8 +364,7 @@ func newTournamentFlowRESTFixture(t *testing.T) *restFixture {
 			Secret: []byte("01234567890123456789012345678901"), Now: clock.Now,
 		}), authadapter.NewPasswordVerifier([]byte(restAdminPassword)))
 
-	tournaments := postgres.NewTournamentPostgres(tx)
-	legacyCatalog := catalogusecase.NewTournamentUseCase(postgres.NewTournamentCatalogPostgres(tournaments), clock)
+	legacyCatalog := catalogusecase.NewTournamentUseCase(catalogrepo.NewTournamentCatalogPostgres(tx), clock)
 	ids, err := catalogusecase.NewDeterministicIDGenerator(
 		uuid.NewSHA1(uuid.NameSpaceOID, []byte("task-per-minute:tournament-commands")),
 	)
@@ -322,14 +372,14 @@ func newTournamentFlowRESTFixture(t *testing.T) *restFixture {
 	receipts := redisadapter.NewCommandReceiptStore(redis.client, 30*time.Second, 24*time.Hour, 30*time.Second)
 	catalog := catalogusecase.NewUseCase(catalogusecase.Dependencies{
 		IDs: ids, Clock: clock, Lister: legacyCatalog,
-		CreateStore: postgres.NewTournamentCreatePostgres(tournaments), Receipts: receipts,
-		ContentReader: postgres.NewTournamentContentPostgres(tx),
+		CreateStore: creationrepo.NewProductionTournamentCreatePostgres(tx), Receipts: receipts,
+		ContentReader: configurationrepo.NewTournamentContentPostgres(tx),
 	})
-	rosterRepository := postgres.NewTournamentAdminRosterPostgres(tx)
-	roster := tournamentadmin.NewRosterWorkflow(tournamentadmin.RosterWorkflowDependencies{
+	rosterRepository := rosterrepo.NewTournamentAdminRosterPostgres(tx)
+	roster := tournamentadminroster.NewRosterWorkflow(tournamentadminroster.RosterWorkflowDependencies{
 		Transactions: tx,
 		Repository:   rosterRepository,
-		RuntimeHealth: tournamentadmin.PreflightRuntimeHealthSourceFunc(func(context.Context) tournamentpreflight.RuntimeHealth {
+		RuntimeHealth: tournamentadminroster.PreflightRuntimeHealthSourceFunc(func(context.Context) tournamentpreflight.RuntimeHealth {
 			now := clock.Now()
 			return tournamentpreflight.RuntimeHealth{
 				TaskDelivery: tournamentpreflight.ComponentHealth{Healthy: true, Revision: "integration-task-delivery"},
@@ -345,79 +395,88 @@ func newTournamentFlowRESTFixture(t *testing.T) *restFixture {
 			}
 		}),
 	})
-	executionRepository := postgres.NewTournamentAdminExecutionPostgres(tx)
-	authorityRepository := postgres.NewExecutionAuthorityPostgres(tx)
+	executionRepository := executionrepo.NewRepository(tx, resultauthority.FinalizeProjection)
+	authorityRepository := authorityrepo.NewExecutionAuthorityPostgres(tx)
 	authorityController, err := authorityusecase.NewController(
 		authorityRepository,
 		authorityRepository,
 		authorityusecase.ControllerConfig{HolderID: uuid.New()},
 	)
 	require.NoError(t, err)
-	execution := tournamentadmin.NewExecutionWorkflow(tournamentadmin.ExecutionWorkflowDependencies{
+	execution := tournamentadminexecution.NewExecutionWorkflow(tournamentadminexecution.ExecutionWorkflowDependencies{
 		Transactions: tx,
 		Repository:   executionRepository,
 		NormalPause:  executionRepository,
-		WaveStart:    gameusecase.NewStartUseCase(executionRepository, clock),
+		WaveStart:    gamestart.NewStartUseCase(executionRepository, clock),
 		Authority:    authorityController,
 	})
 
-	progressionRepository := postgres.NewTournamentProgressionPostgres(tx)
+	progressionRepository := progressionrepo.NewTournamentProgressionPostgres(tx)
 	progression := tournamentprogression.NewWorkflow(tournamentprogression.ProgressionDependencies{
 		Repository: progressionRepository, TerminalEvidence: progressionRepository,
 		Transitioner: progressionRepository, Publisher: progressionRepository, ProgressionClock: clock,
 	})
-	lifecycleRepository := postgres.NewTournamentAdminLifecyclePostgres(tx)
-	lifecycle := tournamentadmin.NewLifecycleWorkflow(tournamentadmin.LifecycleWorkflowDependencies{
+	lifecycleRepository := adminlifecyclerepo.NewTournamentAdminLifecyclePostgres(tx)
+	lifecycle := tournamentadminlifecycle.NewLifecycleWorkflow(tournamentadminlifecycle.LifecycleWorkflowDependencies{
 		Transactions: tx, Repository: lifecycleRepository,
 		Transitions: tournamentlifecycle.NewTournamentLifecycleUseCase(
-			postgres.NewTournamentLifecyclePostgres(tournaments), clock,
+			tournamentlifecyclerepo.NewTournamentLifecyclePostgres(tx), clock,
 		),
 		Pauses: tournamentpause.NewTournamentPauseUseCase(tx, lifecycleRepository, clock),
 		Cancellations: tournamentcancellation.NewTournamentCancellationUseCase(
-			postgres.NewTournamentCancellationPostgres(tx), clock,
+			cancellationrepo.NewTournamentCancellationPostgres(tx), clock,
 		),
 		Progressions: progression, Clock: clock,
 	})
 	postseason := newTournamentFlowTerminalCoordinator(tx)
-	resultPostgres := postgres.NewResultPostgres(tx)
-	results := tournamentadmin.NewOperatorResultWorkflow(tournamentadmin.OperatorResultWorkflowDependencies{
+	resultPostgres := resultauthority.NewResultPostgres(tx)
+	results := tournamentadminresult.NewOperatorResultWorkflow(tournamentadminresult.OperatorResultWorkflowDependencies{
 		Transactions: tx,
-		Repository:   postgres.NewTournamentAdminResultPostgres(tx, resultPostgres),
-		Postseason:   postseason,
+		Repository: adminresultrepo.NewTournamentAdminResultPostgresWithDependencies(
+			tx,
+			resultPostgres,
+			resultauthority.FinalizeProjection,
+			wavestartrepo.EnsurePreStartSwissRoundProofForCommand,
+		),
+		Postseason: postseason,
 	})
-	admin := tournamentadmin.NewInboundAdapter(tournamentadmin.AdminNewUseCase(tournamentadmin.AdminDependencies{
+	admin := tournamentadmininbound.NewInboundAdapter(tournamentadmin.AdminNewUseCase(tournamentadmin.AdminDependencies{
 		Catalog: catalog, Roster: roster, Preflight: roster, Pairing: execution,
 		Lifecycle: lifecycle, Wave: execution, Forfeit: results,
-		Audit:     postgres.NewTournamentAdminAuditPostgres(tx),
-		Snapshots: postgres.NewTournamentAdminSnapshotPostgres(tx),
+		Audit:     auditrepo.NewTournamentAdminAuditPostgres(tx),
+		Snapshots: snapshotrepo.NewTournamentAdminSnapshotPostgres(tx),
 	}))
-	configuration := tournamentadmin.NewTournamentConfigurationWorkflow(
-		postgres.NewTournamentConfigurationPostgres(tx),
+	configuration := tournamentadminconfiguration.NewTournamentConfigurationWorkflow(
+		configurationrepo.NewProductionTournamentConfigurationPostgres(tx),
 	)
-	golden := goldenusecase.NewRuntimeApplication(postgres.NewGoldenRuntimePostgres(tx), clock)
-	participantDrafts := postgres.NewDraftPostgres(tx)
-	participantWave := postgres.NewWavePostgres(tx)
+	golden := goldenruntime.NewRuntimeApplication(runtimepostgres.NewGoldenRuntimePostgres(tx), clock)
+	participantDrafts := draftrepo.NewDraftPostgres(tx)
+	participantWave := waverepo.NewWavePostgres(tx)
 	participantReadiness := readiness.NewReadinessUseCase(
-		postgres.NewParticipantReadinessRepository(tx, participantWave), clock,
+		participantreadinessrepo.NewParticipantReadinessRepository(tx, participantWave), clock,
 	)
 	participantDraft := draftusecase.NewActionUseCase(
-		postgres.NewParticipantDraftRepository(tx, participantDrafts), clock,
+		participantdraftrepo.NewParticipantDraftRepositoryWithDependencies(
+			tx, participantDrafts, loadTournamentFlowParticipantDraftContent,
+		), clock,
 	)
-	participantSubmission := gameusecase.NewSubmissionUseCase(
-		postgres.NewParticipantSubmissionRepository(tx, resultPostgres),
+	participantSubmission := gamesubmission.NewSubmissionUseCase(
+		participantsubmissionrepo.NewParticipantSubmissionRepository(tx, resultPostgres),
 	)
-	participantSettlement := postgres.NewParticipantSettlementWorkflow(
-		postgres.NewParticipantSettlementRepository(tx, resultPostgres),
+	participantSettlement := participantsettlementrepo.NewParticipantSettlementWorkflow(
+		participantsettlementrepo.NewParticipantSettlementRepositoryWithFinalizer(
+			tx, resultPostgres, resultauthority.FinalizeProjection,
+		),
 	)
-	participantSurrender := postgres.NewParticipantSurrenderWorkflow(
-		postgres.NewParticipantForfeitRepository(tx, resultPostgres), clock,
+	participantSurrender := participantsurrenderrepo.NewParticipantSurrenderWorkflow(
+		participantsurrenderrepo.NewParticipantForfeitRepository(tx, resultPostgres), clock,
 	)
 	participantPostSeries := tournamentparticipant.NewPostSeriesUseCase(
-		postgres.NewParticipantPostSeriesRepository(tx), clock,
+		participantpostseriesrepo.NewParticipantPostSeriesRepository(tx), clock,
 	)
 	participantCommands := tournamentparticipant.NewCommandCoordinator(tournamentparticipant.CommandCoordinatorDependencies{
 		Transactions: tx,
-		Authority:    postgres.NewTournamentParticipantPostgres(tx),
+		Authority:    participantauthorityrepo.NewTournamentParticipantPostgres(tx),
 		Readiness:    participantReadiness,
 		Draft:        participantDraft,
 		Submission:   participantSubmission,
@@ -428,8 +487,8 @@ func newTournamentFlowRESTFixture(t *testing.T) *restFixture {
 	})
 	participantApplication := tournamentparticipant.ParticipantNewUseCase(
 		tournamentparticipant.ParticipantDependencies{
-			Snapshots: postgres.NewTournamentSnapshotPostgres(tx),
-			States:    postgres.NewParticipantStatePostgres(tx),
+			Snapshots: tournamentsnapshotrepo.NewTournamentSnapshotPostgres(tx),
+			States:    participantstaterepo.NewParticipantStatePostgres(tx),
 			Commands:  participantCommands,
 		},
 	)
@@ -441,7 +500,7 @@ func newTournamentFlowRESTFixture(t *testing.T) *restFixture {
 	server := restv1.New(restv1.Dependencies{
 		Players: playerusecase.SessionNewUseCase(database.mgr, database.players, clock), AdminAuth: auth,
 		Tournaments: catalog, TournamentAdmin: admin, TournamentConfiguration: configuration,
-		TournamentSnapshots:   postgres.NewTournamentSnapshotPostgres(tx),
+		TournamentSnapshots:   tournamentsnapshotrepo.NewTournamentSnapshotPostgres(tx),
 		TournamentParticipant: participantObserved, ParticipantArchive: tournamentFlowParticipantArchive{}, Golden: golden,
 		LoginLimiter: limiter, JoinLimiter: limiter,
 		PublicTournamentReadLimiter: limiter, OperatorTournamentReadLimiter: limiter,
@@ -456,7 +515,7 @@ func newTournamentFlowRESTFixture(t *testing.T) *restFixture {
 		auth: auth, validator: newOpenAPIResponseValidator(t),
 	}
 	snapshotSource, err := inboundws.NewTournamentProductionSnapshotSource(
-		postgres.NewTournamentSnapshotPostgres(tx), golden,
+		tournamentsnapshotrepo.NewTournamentSnapshotPostgres(tx), golden,
 	)
 	require.NoError(t, err)
 	participantFlow, err := inboundws.NewTournamentParticipantFlow(snapshotSource)
@@ -1400,14 +1459,16 @@ func submitGoldenParticipantThroughREST(
 }
 
 func newTournamentFlowTerminalCoordinator(tx *postgres.TxManager) *playoff.TerminalCoordinator {
-	drafts := postgres.NewDraftPostgres(tx)
-	exactPlans := postgres.NewExactDraftBranchPlanPostgres(tx, drafts)
+	drafts := draftrepo.NewDraftPostgres(tx)
+	exactPlans := exactdraftrepo.NewExactDraftBranchPlanPostgres(tx, drafts)
 	planner := playoff.NewFinalDraftAssignmentService(
 		assignmentusecase.NewExactDraftBranchPlanUseCase(exactPlans), exactPlans, exactPlans,
 	)
 	return playoff.NewTerminalCoordinator(playoff.TerminalCoordinatorDependencies{
-		Repository: postgres.NewPlayoffTerminalPostgres(tx, drafts, postgres.NewAssignmentPostgres(tx)),
-		Publisher:  postgres.NewProjectionPostgres(tx), DraftPlanner: planner, Rehydrator: planner,
+		Repository: playoffrepo.NewPlayoffTerminalPostgres(
+			tx, drafts, assignmentrepo.NewAssignmentPostgres(tx).CreateAssignmentTx,
+		),
+		Publisher: projectionrepo.NewProjectionPostgres(tx), DraftPlanner: planner, Rehydrator: planner,
 	})
 }
 

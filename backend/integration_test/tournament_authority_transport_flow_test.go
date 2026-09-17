@@ -12,18 +12,27 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	resultintegration "github.com/TakuyaYagam1/task-per-minute/integration_test/result"
 	rootws "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket"
 	tournamentws "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket/tournament"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	auditrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/audit"
+	projectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
+	correctionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/correction"
+	snapshotrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/snapshot"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	audit "github.com/TakuyaYagam1/task-per-minute/internal/usecase/audit"
 )
 
 func TestTournamentAuthorityTransportFlow(t *testing.T) {
-	t.Run("audit retention and filters", TestResultAuditRepository)
+	t.Run("audit retention and filters", func(t *testing.T) {
+		resultintegration.RunResultAuditRepository(t, sharedPool)
+	})
 	t.Run("incident bundle uses durable redacted audit events", testTournamentDurableIncidentBundle)
 	t.Run("participant and public realtime recover from authoritative storage", testTournamentRealtimeRecovery)
-	t.Run("correction converges atomically", TestResultCorrectionRepository)
+	t.Run("correction converges atomically", func(t *testing.T) {
+		resultintegration.RunResultCorrectionRepository(t, sharedPool)
+	})
 	t.Run("task delivery remains attempt scoped", TestAssignmentRepositoryCommitsProofAndDeliversExactlyOnce)
 }
 
@@ -33,7 +42,7 @@ func testTournamentDurableIncidentBundle(t *testing.T) {
 	t.Cleanup(func() { resetMigrationTables(ctx, t) })
 
 	fixture := createCorrectionRepositoryFixture(ctx, t)
-	corrections := postgres.NewCorrectionPostgres(postgres.NewTxManager(sharedPool))
+	corrections := correctionrepo.NewCorrectionPostgres(postgres.NewTxManager(sharedPool))
 	input := newCorrectionInput(
 		ctx, t,
 		fixture,
@@ -45,8 +54,8 @@ func testTournamentDurableIncidentBundle(t *testing.T) {
 	rebuilt, err := corrections.Rebuild(ctx, input)
 	require.NoError(t, err)
 
-	auditRepository := postgres.NewAuditPostgres(postgres.NewTxManager(sharedPool))
-	records := listAuditRecords(ctx, t, auditRepository, postgres.AuditFilter{
+	auditRepository := auditrepo.NewAuditPostgres(postgres.NewTxManager(sharedPool))
+	records := listAuditRecords(ctx, t, auditRepository, auditrepo.AuditFilter{
 		TournamentID: fixture.resultFixture.draft.tournamentID,
 		PageSize:     1,
 	})
@@ -91,15 +100,15 @@ func testTournamentRealtimeRecovery(t *testing.T) {
 
 	fixture := createGoldenMigrationFixture(ctx, t, 4)
 	goldenPositionCommitID := createProjectionGoldenSource(ctx, t, fixture)
-	projection := postgres.NewProjectionPostgres(postgres.NewTxManager(sharedPool))
+	projection := projectionrepo.NewProjectionPostgres(postgres.NewTxManager(sharedPool))
 	createdAt := fixture.createdAt.Add(8 * time.Second)
-	published, err := projection.Publish(ctx, postgres.ProjectionPublishInput{
-		IDs: postgres.ProjectionIDs{RevisionID: uuid.New(), CutoffID: uuid.New()},
-		Scope: postgres.ProjectionScope{
+	published, err := projection.Publish(ctx, projectionrepo.ProjectionPublishInput{
+		IDs: projectionrepo.ProjectionIDs{RevisionID: uuid.New(), CutoffID: uuid.New()},
+		Scope: projectionrepo.ProjectionScope{
 			TournamentID: fixture.tournamentID,
 			RosterID:     fixture.rosterID,
 		},
-		Source: postgres.ProjectionSource{
+		Source: projectionrepo.ProjectionSource{
 			Kind:                   "golden_position",
 			GoldenPositionCommitID: &goldenPositionCommitID,
 			Reason:                 "publish realtime recovery fixture",
@@ -117,7 +126,7 @@ func testTournamentRealtimeRecovery(t *testing.T) {
 		"SELECT player_id FROM participants WHERE id = $1",
 		fixture.participantIDs[0],
 	).Scan(&playerID))
-	reader := postgres.NewTournamentSnapshotPostgres(postgres.NewTxManager(sharedPool))
+	reader := snapshotrepo.NewTournamentSnapshotPostgres(postgres.NewTxManager(sharedPool))
 	source, err := rootws.NewTournamentProductionSnapshotSource(reader)
 	require.NoError(t, err)
 	participantFlow, err := rootws.NewTournamentParticipantFlow(source)
@@ -166,7 +175,7 @@ func testTournamentRealtimeRecovery(t *testing.T) {
 	require.ErrorIs(t, err, tournamentws.ErrParticipantRealtimeUnavailable)
 }
 
-func tournamentAuditUseCaseEvent(record postgres.AuditRecord) audit.AuditEvent {
+func tournamentAuditUseCaseEvent(record auditrepo.AuditRecord) audit.AuditEvent {
 	return audit.AuditEvent{
 		AuditEventID:             record.AuditEventID,
 		TournamentID:             record.TournamentID,

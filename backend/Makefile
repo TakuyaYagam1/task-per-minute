@@ -146,6 +146,14 @@ test: test-migration-create ## Unit tests with race detector (skips integration_
 test-int: ## Integration tests (testcontainers - one package, up to 5 parallel tests)
 	go test -race -count=1 -p=1 -parallel=5 -timeout=20m -tags=integration ./integration_test/...
 
+.PHONY: test-int-compile
+test-int-compile: ## Compile the integration package with race instrumentation without starting fixtures
+	@set -e; \
+	for package in $$(go list -tags=integration ./integration_test/...); do \
+		echo "compile $$package"; \
+		go test -race -c -tags=integration -o /dev/null "$$package"; \
+	done
+
 .PHONY: test-race
 test-race: ## Unit + integration tests with race detector (full suite, requires Docker)
 	$(MAKE) test

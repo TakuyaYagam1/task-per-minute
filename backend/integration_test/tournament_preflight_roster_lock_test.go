@@ -12,8 +12,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	rosterrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/roster"
+	catalogrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/catalog"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	rosterusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/roster"
 	tournamentpreflight "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/preflight"
 )
 
@@ -27,15 +29,15 @@ func TestTournamentPreflightCertifiesCapacityAndLocksRoster(t *testing.T) {
 	tournamentID := uuid.New()
 	rosterID := uuid.New()
 	tx := postgres.NewTxManager(sharedPool)
-	tournaments := postgres.NewTournamentPostgres(tx)
-	_, _, err := tournaments.Create(ctx, postgres.TournamentCreateInput{
+	catalog := catalogrepo.NewTournamentCatalogPostgres(tx)
+	_, _, err := catalog.Create(ctx, catalogrepo.TournamentCreateInput{
 		ID: tournamentID, RosterID: rosterID, Name: "Preflight Tournament",
 		PublicID: tournamentID.String(), PlannedRosterSize: 4,
 		ContentRevision: contentRevision, CreatedAt: createdAt,
 	})
 	require.NoError(t, err)
 	projectionRevision := publishInitialPreflightProjection(ctx, t, tournamentID, rosterID, createdAt)
-	_, changed, err := tournaments.Transition(ctx, postgres.TournamentTransitionInput{
+	_, changed, err := catalog.Transition(ctx, catalogrepo.TournamentTransitionInput{
 		ID: tournamentID, ExpectedRevision: 1, ExpectedState: domain.TournamentStateDraft,
 		NextState: domain.TournamentStateRegistration, UpdatedAt: createdAt.Add(time.Millisecond),
 	})
@@ -44,11 +46,11 @@ func TestTournamentPreflightCertifiesCapacityAndLocksRoster(t *testing.T) {
 
 	playerIDs := createMigrationPlayers(ctx, t, 4)
 	createSwissMigrationParticipants(ctx, t, rosterID, playerIDs)
-	repository := postgres.NewTournamentAdminRosterPostgres(tx)
-	workflow := tournamentadmin.NewRosterWorkflow(tournamentadmin.RosterWorkflowDependencies{
+	repository := rosterrepo.NewTournamentAdminRosterPostgres(tx)
+	workflow := rosterusecase.NewRosterWorkflow(rosterusecase.RosterWorkflowDependencies{
 		Transactions: tx,
 		Repository:   repository,
-		RuntimeHealth: tournamentadmin.PreflightRuntimeHealthSourceFunc(func(context.Context) tournamentpreflight.RuntimeHealth {
+		RuntimeHealth: rosterusecase.PreflightRuntimeHealthSourceFunc(func(context.Context) tournamentpreflight.RuntimeHealth {
 			observedAt := time.Now().UTC()
 			return tournamentpreflight.RuntimeHealth{
 				TaskDelivery: tournamentpreflight.ComponentHealth{Healthy: true, Revision: "task_delivery:ready"},
@@ -65,9 +67,9 @@ func TestTournamentPreflightCertifiesCapacityAndLocksRoster(t *testing.T) {
 		}),
 	})
 	preflightID := uuid.New()
-	report, err := workflow.RunPreflight(ctx, tournamentadmin.PreflightCommand{
-		CommandScope: tournamentadmin.CommandScope{
-			Operator:     tournamentadmin.OperatorIdentity{ActorID: uuid.New()},
+	report, err := workflow.RunPreflight(ctx, rosterusecase.PreflightCommand{
+		CommandScope: rosterusecase.CommandScope{
+			Operator:     rosterusecase.OperatorIdentity{ActorID: uuid.New()},
 			TournamentID: tournamentID, CommandID: preflightID,
 		},
 		ExpectedProjectionRevision: projectionRevision,
@@ -79,9 +81,9 @@ func TestTournamentPreflightCertifiesCapacityAndLocksRoster(t *testing.T) {
 	require.Contains(t, preflightCheckEvidence(report, tournamentpreflight.CodeRuntimeConfiguration),
 		fmt.Sprintf("content_revision:%d", contentRevision))
 
-	locked, err := workflow.LockRoster(ctx, tournamentadmin.LockRosterCommand{
-		CommandScope: tournamentadmin.CommandScope{
-			Operator:     tournamentadmin.OperatorIdentity{ActorID: uuid.New()},
+	locked, err := workflow.LockRoster(ctx, rosterusecase.LockRosterCommand{
+		CommandScope: rosterusecase.CommandScope{
+			Operator:     rosterusecase.OperatorIdentity{ActorID: uuid.New()},
 			TournamentID: tournamentID, CommandID: uuid.New(),
 		},
 		ExpectedProjectionRevision: projectionRevision,

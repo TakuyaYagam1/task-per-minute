@@ -10,12 +10,13 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	postgresadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	participantrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/connection"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gamereconnect "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/reconnect"
+	gamestart "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/start"
 	connection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/connection"
 )
 
@@ -28,7 +29,7 @@ func (c participantReconnectTestClock) Now() time.Time { return c.at }
 type participantReconnectStartedFixture struct {
 	fixture         tournamentAdminSwissProofFixture
 	scope           pausedomain.GraphScope
-	started         gameusecase.ReconnectAuthority
+	started         gamereconnect.ReconnectAuthority
 	playerID        uuid.UUID
 	playerAccountID uuid.UUID
 }
@@ -58,14 +59,14 @@ func TestParticipantReconnectLifecycle(t *testing.T) {
 		disconnectAt := deadline.Add(-10 * time.Second)
 		command := participantReconnectDisconnectCommand(started, deadline)
 
-		first, changed, err := gameusecase.NewDisconnectUseCase(
+		first, changed, err := gamereconnect.NewDisconnectUseCase(
 			started.fixture.adapter,
 			participantReconnectTestClock{at: disconnectAt},
 		).Disconnect(ctx, command)
 		require.NoError(t, err)
 		require.True(t, changed)
 		require.NotNil(t, first)
-		require.Equal(t, gameusecase.MutationDisconnect, first.Kind)
+		require.Equal(t, gamereconnect.MutationDisconnect, first.Kind)
 		require.Equal(t, int64(1), first.ExpectedAuthorityRevision)
 		require.Equal(t, int64(2), first.ReconnectAuthority.Revision)
 		require.Equal(t, domain.GameStatePaused, first.ReconnectAuthority.Game.State)
@@ -90,7 +91,7 @@ func TestParticipantReconnectLifecycle(t *testing.T) {
 
 		participantReconnectAssertLiveDisconnect(ctx, t, started.fixture, first, command)
 
-		replayed, replayChanged, err := gameusecase.NewDisconnectUseCase(
+		replayed, replayChanged, err := gamereconnect.NewDisconnectUseCase(
 			started.fixture.adapter,
 			participantReconnectTestClock{at: disconnectAt},
 		).Disconnect(ctx, command)
@@ -110,7 +111,7 @@ func TestParticipantReconnectLifecycle(t *testing.T) {
 		disconnectAt := deadline.Add(-10 * time.Second)
 		reconnectAt := disconnectAt.Add(5 * time.Second)
 		clock := &participantReconnectTestClock{at: disconnectAt}
-		connectionRepository := postgresadapter.NewParticipantConnectionPostgres(
+		connectionRepository := participantrepo.NewParticipantConnectionPostgres(
 			started.fixture.tx,
 			participantReconnectAuthorityProvider{identity: started.fixture.executionAuthority},
 		)
@@ -118,8 +119,8 @@ func TestParticipantReconnectLifecycle(t *testing.T) {
 			Transactions: started.fixture.tx,
 			Authority:    connectionRepository,
 			Repository:   connectionRepository,
-			Disconnect:   gameusecase.NewDisconnectUseCase(started.fixture.adapter, clock),
-			Reconnect:    gameusecase.ReconnectNewUseCase(started.fixture.adapter, clock),
+			Disconnect:   gamereconnect.NewDisconnectUseCase(started.fixture.adapter, clock),
+			Reconnect:    gamereconnect.ReconnectNewUseCase(started.fixture.adapter, clock),
 			Clock:        clock,
 			Config:       connection.Config{ReconnectDuration: 30 * time.Second},
 		})
@@ -185,7 +186,7 @@ func TestParticipantReconnectLifecycle(t *testing.T) {
 		deadline := started.started.GameClock.OriginalDeadline
 		disconnectAt := deadline.Add(-10 * time.Second)
 		disconnect := participantReconnectDisconnectCommand(started, deadline)
-		frozen, changed, err := gameusecase.NewDisconnectUseCase(
+		frozen, changed, err := gamereconnect.NewDisconnectUseCase(
 			started.fixture.adapter,
 			participantReconnectTestClock{at: disconnectAt},
 		).Disconnect(ctx, disconnect)
@@ -193,21 +194,21 @@ func TestParticipantReconnectLifecycle(t *testing.T) {
 		require.True(t, changed)
 
 		reconnectAt := disconnectAt.Add(5 * time.Second)
-		reconnect := gameusecase.ReconnectCommand{
+		reconnect := gamereconnect.ReconnectCommand{
 			Scope:         started.scope,
 			CommandID:     uuid.New(),
 			ParticipantID: started.playerID,
 			IntervalID:    disconnect.IntervalID,
 			Settlement:    participantReconnectSettlementIDs(),
 		}
-		resumed, changed, err := gameusecase.ReconnectNewUseCase(
+		resumed, changed, err := gamereconnect.ReconnectNewUseCase(
 			started.fixture.adapter,
 			participantReconnectTestClock{at: reconnectAt},
 		).Reconnect(ctx, reconnect)
 		require.NoError(t, err)
 		require.True(t, changed)
 		require.NotNil(t, resumed)
-		require.Equal(t, gameusecase.MutationReconnect, resumed.Kind)
+		require.Equal(t, gamereconnect.MutationReconnect, resumed.Kind)
 		require.Equal(t, frozen.ExpectedAuthorityRevision+1, resumed.ExpectedAuthorityRevision)
 		require.Equal(t, frozen.ReconnectAuthority.Revision+1, resumed.ReconnectAuthority.Revision)
 		require.Equal(t, domain.GameStateActive, resumed.ReconnectAuthority.Game.State)
@@ -236,21 +237,21 @@ func TestParticipantReconnectLifecycle(t *testing.T) {
 		deadline := started.started.GameClock.OriginalDeadline
 		disconnectAt := deadline.Add(-10 * time.Second)
 		disconnect := participantReconnectDisconnectCommand(started, deadline)
-		_, changed, err := gameusecase.NewDisconnectUseCase(
+		_, changed, err := gamereconnect.NewDisconnectUseCase(
 			started.fixture.adapter,
 			participantReconnectTestClock{at: disconnectAt},
 		).Disconnect(ctx, disconnect)
 		require.NoError(t, err)
 		require.True(t, changed)
 
-		timeout := gameusecase.TimeoutCommand{
+		timeout := gamereconnect.TimeoutCommand{
 			Scope:         started.scope,
 			CommandID:     uuid.New(),
 			ParticipantID: loserID,
 			IntervalID:    disconnect.IntervalID,
 			Settlement:    participantReconnectSettlementIDs(),
 		}
-		terminal, changed, err := gameusecase.NewTimeoutUseCase(
+		terminal, changed, err := gamereconnect.NewTimeoutUseCase(
 			started.fixture.adapter,
 			participantReconnectTestClock{at: deadline},
 		).Expire(ctx, timeout)
@@ -286,7 +287,7 @@ func TestParticipantReconnectLifecycle(t *testing.T) {
 		firstDisconnectAt := deadline.Add(-20 * time.Second)
 		secondDisconnectAt := deadline.Add(-10 * time.Second)
 		firstDisconnect := participantReconnectDisconnectCommand(started, deadline)
-		_, changed, err := gameusecase.NewDisconnectUseCase(
+		_, changed, err := gamereconnect.NewDisconnectUseCase(
 			started.fixture.adapter,
 			participantReconnectTestClock{at: firstDisconnectAt},
 		).Disconnect(ctx, firstDisconnect)
@@ -297,7 +298,7 @@ func TestParticipantReconnectLifecycle(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, started.started.Game.ID, secondAuthority.Game.ID)
 		require.Equal(t, int64(2), secondAuthority.Revision)
-		secondDisconnect := gameusecase.DisconnectCommand{
+		secondDisconnect := gamereconnect.DisconnectCommand{
 			Scope:         started.scope,
 			CommandID:     uuid.New(),
 			ParticipantID: secondParticipant,
@@ -305,7 +306,7 @@ func TestParticipantReconnectLifecycle(t *testing.T) {
 			Deadline:      deadline,
 			Settlement:    participantReconnectSettlementIDs(),
 		}
-		secondRecord, changed, err := gameusecase.NewDisconnectUseCase(
+		secondRecord, changed, err := gamereconnect.NewDisconnectUseCase(
 			started.fixture.adapter,
 			participantReconnectTestClock{at: secondDisconnectAt},
 		).Disconnect(ctx, secondDisconnect)
@@ -315,14 +316,14 @@ func TestParticipantReconnectLifecycle(t *testing.T) {
 		require.Equal(t, int64(2), secondRecord.ExpectedAuthorityRevision)
 		require.Equal(t, int64(3), secondRecord.ReconnectAuthority.Revision)
 
-		timeout := gameusecase.TimeoutCommand{
+		timeout := gamereconnect.TimeoutCommand{
 			Scope:         started.scope,
 			CommandID:     uuid.New(),
 			ParticipantID: firstParticipant,
 			IntervalID:    firstDisconnect.IntervalID,
 			Settlement:    participantReconnectSettlementIDs(),
 		}
-		replay, changed, err := gameusecase.NewTimeoutUseCase(
+		replay, changed, err := gamereconnect.NewTimeoutUseCase(
 			started.fixture.adapter,
 			participantReconnectTestClock{at: deadline},
 		).Expire(ctx, timeout)
@@ -355,7 +356,7 @@ func participantReconnectStartFixture(
 	t.Helper()
 	fixture := createParticipantReconnectSwissProofFixture(ctx, t)
 	command := fixture.startCommand(ctx, t)
-	var record *gameusecase.StartRecord
+	var record *gamestart.StartRecord
 	var changed bool
 	err := fixture.tx.Do(ctx, func(txCtx context.Context) error {
 		var startErr error
@@ -481,18 +482,7 @@ func createParticipantReconnectContentConfiguration(
 			($2, 'reverse', $3), ($2, 'pwn', $3)`,
 		bo1PoolID, bo3PoolID, at)
 	require.NoError(t, err)
-	_, err = sharedPool.Exec(ctx, `
-		INSERT INTO tournament_content_stage_defaults (
-			configuration_id, stage, format, category_mode,
-			category_pool_revision_id, task_pool_kind, categories, created_at
-		)
-		VALUES
-			($1, 'swiss', 'bo1', 'random', $2, 'normal', '["web"]'::jsonb, $4),
-			($1, 'golden', 'bo1', 'random', $2, 'golden', '["web"]'::jsonb, $4),
-			($1, 'semifinal', 'bo1', 'draft', $2, 'normal', '["web", "crypto", "forensics"]'::jsonb, $4),
-			($1, 'final', 'bo3', 'draft', $3, 'normal', '["web", "crypto", "forensics", "reverse", "pwn"]'::jsonb, $4)`,
-		configurationID, bo1PoolID, bo3PoolID, at)
-	require.NoError(t, err)
+	insertTournamentContentStageDefaults(ctx, t, configurationID, bo1PoolID, bo3PoolID, at)
 	_, err = sharedPool.Exec(ctx, `
 		UPDATE tournament_content_configurations
 		SET state = 'published', published_at = $2
@@ -504,8 +494,8 @@ func createParticipantReconnectContentConfiguration(
 func participantReconnectDisconnectCommand(
 	started participantReconnectStartedFixture,
 	deadline time.Time,
-) gameusecase.DisconnectCommand {
-	return gameusecase.DisconnectCommand{
+) gamereconnect.DisconnectCommand {
+	return gamereconnect.DisconnectCommand{
 		Scope:         started.scope,
 		CommandID:     uuid.New(),
 		ParticipantID: started.playerID,
@@ -593,8 +583,8 @@ func participantReconnectActivePauseCount(
 	return count
 }
 
-func participantReconnectSettlementIDs() gameusecase.SettlementIDs {
-	return gameusecase.SettlementIDs{
+func participantReconnectSettlementIDs() gamereconnect.SettlementIDs {
+	return gamereconnect.SettlementIDs{
 		GameResultRevisionID:   domain.OfficialResultRevisionID(uuid.New()),
 		ScoreRevisionID:        domain.SeriesScoreRevisionID(uuid.New()),
 		SeriesResultRevisionID: domain.OfficialResultRevisionID(uuid.New()),
@@ -609,8 +599,8 @@ func participantReconnectAssertLiveDisconnect(
 	ctx context.Context,
 	t *testing.T,
 	fixture tournamentAdminSwissProofFixture,
-	record *gameusecase.ReconnectRecord,
-	command gameusecase.DisconnectCommand,
+	record *gamereconnect.ReconnectRecord,
+	command gamereconnect.DisconnectCommand,
 ) {
 	t.Helper()
 	var (
@@ -684,8 +674,8 @@ func participantReconnectAssertLiveReconnect(
 	ctx context.Context,
 	t *testing.T,
 	fixture tournamentAdminSwissProofFixture,
-	record *gameusecase.ReconnectRecord,
-	command gameusecase.ReconnectCommand,
+	record *gamereconnect.ReconnectRecord,
+	command gamereconnect.ReconnectCommand,
 	reconnectedAt time.Time,
 ) {
 	t.Helper()
@@ -747,7 +737,7 @@ func participantReconnectAssertTerminalRows(
 	ctx context.Context,
 	t *testing.T,
 	fixture tournamentAdminSwissProofFixture,
-	record *gameusecase.ReconnectRecord,
+	record *gamereconnect.ReconnectRecord,
 	loserID, winnerID uuid.UUID,
 	replay bool,
 ) {
@@ -913,13 +903,13 @@ func participantReconnectIntervalByID(
 	return pausedomain.PauseReconnectInterval{}, false
 }
 
-func participantReconnectRecordCommandID(record *gameusecase.ReconnectRecord) uuid.UUID {
+func participantReconnectRecordCommandID(record *gamereconnect.ReconnectRecord) uuid.UUID {
 	switch record.Kind {
-	case gameusecase.MutationDisconnect:
+	case gamereconnect.MutationDisconnect:
 		return record.DisconnectCommand.CommandID
-	case gameusecase.MutationReconnect:
+	case gamereconnect.MutationReconnect:
 		return record.ReconnectCommand.CommandID
-	case gameusecase.MutationTimeout:
+	case gamereconnect.MutationTimeout:
 		return record.TimeoutCommand.CommandID
 	default:
 		return uuid.Nil

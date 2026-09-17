@@ -15,17 +15,21 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	projectionseed "github.com/TakuyaYagam1/task-per-minute/integration_test/internal/testkit/projectionseed"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	waverepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/wave"
+	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
+	executionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/execution"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gamestart "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/start"
 	swissusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/swiss"
 )
 
 type tournamentAdminSwissProofFixture struct {
 	tx                       *postgres.TxManager
-	adapter                  *postgres.TournamentAdminExecutionPostgres
-	start                    *gameusecase.StartUseCase
+	adapter                  *executionrepo.Repository
+	start                    *gamestart.StartUseCase
 	tournamentID             uuid.UUID
 	rosterID                 uuid.UUID
 	roundID                  uuid.UUID
@@ -58,7 +62,7 @@ func TestTournamentAdminExecutionSwissRoundProof(t *testing.T) {
 
 		fixture := createTournamentAdminSwissProofFixture(ctx, t)
 		command := fixture.startCommand(ctx, t)
-		var record *gameusecase.StartRecord
+		var record *gamestart.StartRecord
 		var changed bool
 		err := fixture.tx.Do(ctx, func(txCtx context.Context) error {
 			var startErr error
@@ -87,7 +91,7 @@ func TestTournamentAdminExecutionSwissRoundProof(t *testing.T) {
 		require.NoError(t, err)
 
 		record, changed, err := fixture.start.Start(ctx, command)
-		require.ErrorIs(t, err, gameusecase.ErrWaveStartAuthorityConflict)
+		require.ErrorIs(t, err, gamestart.ErrWaveStartAuthorityConflict)
 		require.Nil(t, record)
 		require.False(t, changed)
 		fixture.assertProofRollback(ctx, t, fixture.waveRevision+1)
@@ -179,7 +183,7 @@ func createTournamentAdminSwissProofFixtureForAggregate(
 	tx := postgres.NewTxManager(sharedPool)
 	waveID := uuid.New()
 	waveRevisionID := domain.WaveRevisionID(uuid.New())
-	seriesInputs := []postgres.WaveSeriesInput{
+	seriesInputs := []waverepo.WaveSeriesInput{
 		{
 			ID: uuid.New(), FirstParticipantID: participants[0], SecondParticipantID: participants[1],
 			Format: domain.SeriesFormatBO1, InitialScoreRevisionID: domain.SeriesScoreRevisionID(uuid.New()),
@@ -189,8 +193,8 @@ func createTournamentAdminSwissProofFixtureForAggregate(
 			Format: domain.SeriesFormatBO1, InitialScoreRevisionID: domain.SeriesScoreRevisionID(uuid.New()),
 		},
 	}
-	waveRepository := postgres.NewWavePostgres(tx)
-	wave, err := waveRepository.Create(ctx, postgres.WaveCreateInput{
+	waveRepository := waverepo.NewWavePostgres(tx)
+	wave, err := waveRepository.Create(ctx, waverepo.WaveCreateInput{
 		ID: waveID, TournamentID: tournamentID, RosterID: rosterID, RevisionID: waveRevisionID,
 		ParticipantIDs: participants, Series: seriesInputs, CommandID: uuid.New(),
 		SourceProjectionRevisionID: projectionRevisionID, SourceProjectionRevision: projectionRevision,
@@ -217,7 +221,7 @@ func createTournamentAdminSwissProofFixtureForAggregate(
 
 	openedAt := time.Now().UTC().Truncate(time.Microsecond)
 	windowID := uuid.New()
-	wave, changed, err := waveRepository.OpenReadyWindow(ctx, tournamentID, waveID, wave.Revision, postgres.ReadyWindowInput{
+	wave, changed, err := waveRepository.OpenReadyWindow(ctx, tournamentID, waveID, wave.Revision, waverepo.ReadyWindowInput{
 		ID: windowID, RevisionID: domain.ReadyWindowRevisionID(uuid.New()),
 		OpenedAt: openedAt, Deadline: openedAt.Add(domain.ReadyWindowDuration),
 	})
@@ -238,9 +242,9 @@ func createTournamentAdminSwissProofFixtureForAggregate(
 		ProcessKind: authoritydomain.ProcessAuthority,
 	}
 	createRoundProofExecutionLease(ctx, t, executionAuthority, createdAt)
-	adapter := postgres.NewTournamentAdminExecutionPostgres(tx)
+	adapter := executionrepo.NewRepository(tx, resultauthority.FinalizeProjection)
 	return tournamentAdminSwissProofFixture{
-		tx: tx, adapter: adapter, start: gameusecase.NewStartUseCase(adapter, nil),
+		tx: tx, adapter: adapter, start: gamestart.NewStartUseCase(adapter, nil),
 		tournamentID: tournamentID, rosterID: rosterID, roundID: roundID, waveID: waveID, windowID: windowID,
 		projectionRevisionID: projectionRevisionID, preflightRevisionID: preflightRevisionID,
 		normalPoolRevisionID: normalPoolRevisionID, normalPoolRevision: normalPoolRevision,
@@ -310,58 +314,14 @@ func createRoundProofProjection(
 ) (uuid.UUID, int64) {
 	t.Helper()
 
-	participantIDs := roundProofProjectionParticipants(ctx, t, rosterID)
-	require.Contains(t, participantIDs, participantID)
-	goldenSource := goldenMigrationFixture{
-		tournamentID:   tournamentID,
-		rosterID:       rosterID,
-		participantIDs: participantIDs,
-		createdAt:      at.Add(-10 * time.Minute),
-	}
-	goldenPositionCommitID := createProjectionGoldenSource(ctx, t, goldenSource)
-	repository := postgres.NewProjectionPostgres(postgres.NewTxManager(sharedPool))
-	record, err := repository.Publish(ctx, postgres.ProjectionPublishInput{
-		IDs:   postgres.ProjectionIDs{RevisionID: uuid.New(), CutoffID: uuid.New()},
-		Scope: postgres.ProjectionScope{TournamentID: tournamentID, RosterID: rosterID},
-		Source: postgres.ProjectionSource{
-			Kind:                   "golden_position",
-			GoldenPositionCommitID: &goldenPositionCommitID,
-			Reason:                 "publish round proof source projection",
-		},
-		Artifacts:          projectionRepositoryArtifacts(t, participantIDs, goldenPositionCommitID, "round-proof"),
-		SupersessionReason: "replace round proof source projection",
-		CutoffAt:           at,
-		CreatedAt:          at,
-		PublishedAt:        at.Add(time.Microsecond),
+	seed, err := projectionseed.PublishRoundProof(ctx, sharedPool, projectionseed.RoundProofInput{
+		TournamentID:  tournamentID,
+		RosterID:      rosterID,
+		ParticipantID: participantID,
+		At:            at,
 	})
 	require.NoError(t, err)
-	return record.Revision.ID, record.Revision.RevisionNumber
-}
-
-func roundProofProjectionParticipants(
-	ctx context.Context,
-	t testing.TB,
-	rosterID uuid.UUID,
-) []uuid.UUID {
-	t.Helper()
-
-	rows, err := sharedPool.Query(ctx, `
-		SELECT id
-		FROM participants
-		WHERE roster_id = $1
-		ORDER BY seed, id`, rosterID)
-	require.NoError(t, err)
-	defer rows.Close()
-
-	participantIDs := make([]uuid.UUID, 0, 4)
-	for rows.Next() {
-		var participantID uuid.UUID
-		require.NoError(t, rows.Scan(&participantID))
-		participantIDs = append(participantIDs, participantID)
-	}
-	require.NoError(t, rows.Err())
-	require.Len(t, participantIDs, 4)
-	return participantIDs
+	return seed.ProjectionID, seed.ProjectionRevision
 }
 
 func createRoundProofContentConfiguration(
@@ -418,17 +378,7 @@ func createRoundProofContentConfiguration(
 			($2, 'reverse', $3), ($2, 'pwn', $3)`,
 		bo1PoolID, bo3PoolID, at)
 	require.NoError(t, err)
-	_, err = sharedPool.Exec(ctx, `
-		INSERT INTO tournament_content_stage_defaults (
-			configuration_id, stage, format, category_mode, category_pool_revision_id, task_pool_kind, created_at
-		)
-		VALUES
-			($1, 'swiss', 'bo1', 'random', $2, 'normal', $4),
-			($1, 'golden', 'bo1', 'random', $2, 'golden', $4),
-			($1, 'semifinal', 'bo1', 'draft', $2, 'normal', $4),
-			($1, 'final', 'bo3', 'draft', $3, 'normal', $4)`,
-		configurationID, bo1PoolID, bo3PoolID, at)
-	require.NoError(t, err)
+	insertTournamentContentStageDefaults(ctx, t, configurationID, bo1PoolID, bo3PoolID, at)
 	_, err = sharedPool.Exec(ctx, `
 		UPDATE tournament_content_configurations
 		SET state = 'published', published_at = $2
@@ -582,7 +532,7 @@ func createRoundProofSeriesBinding(
 	tournamentID uuid.UUID,
 	rosterID uuid.UUID,
 	normalPoolRevisionID uuid.UUID,
-	series postgres.WaveSeriesInput,
+	series waverepo.WaveSeriesInput,
 	pairingID uuid.UUID,
 	at time.Time,
 ) swissusecase.LockedSeries {
@@ -804,7 +754,7 @@ func createRoundProofDraft(
 	tournamentID uuid.UUID,
 	rosterID uuid.UUID,
 	normalPoolRevisionID uuid.UUID,
-	series postgres.WaveSeriesInput,
+	series waverepo.WaveSeriesInput,
 	at time.Time,
 ) draftMigrationFixture {
 	t.Helper()
@@ -888,15 +838,15 @@ func createRoundProofExecutionLease(
 func (fixture tournamentAdminSwissProofFixture) startCommand(
 	ctx context.Context,
 	t *testing.T,
-) gameusecase.StartCommand {
+) gamestart.StartCommand {
 	t.Helper()
-	authority, err := fixture.adapter.LoadWaveStartAuthority(ctx, gameusecase.StartScope{
+	authority, err := fixture.adapter.LoadWaveStartAuthority(ctx, gamestart.StartScope{
 		TournamentID: fixture.tournamentID, WaveID: fixture.waveID, WindowID: fixture.windowID,
 	})
 	require.NoError(t, err)
 	require.Nil(t, authority.Current)
 	digest := sha256.Sum256([]byte("round-proof-wave-start"))
-	return gameusecase.StartCommand{
+	return gamestart.StartCommand{
 		Scope: authority.Scope, CommandID: uuid.New(), ActorID: uuid.New(),
 		ExecutionAuthority:         fixture.executionAuthority,
 		ExpectedProjectionRevision: authority.Revisions.ProjectionRevision,

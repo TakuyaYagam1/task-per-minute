@@ -12,11 +12,14 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 
-	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
+	executionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/execution"
+	participantauthorityrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/authority"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	gamesettlement "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/settlement"
+	adminoperation "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/operation"
+	tournamentadminresult "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/result"
 )
 
 func TestParticipantOutsiderDoesNotWaitForTournamentLock(t *testing.T) {
@@ -30,7 +33,7 @@ func TestParticipantOutsiderDoesNotWaitForTournamentLock(t *testing.T) {
 
 	lookupCtx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
-	_, err = postgres.NewTournamentParticipantPostgres(fixture.tx).ResolveSubmission(lookupCtx, usecase.SubmissionCommand{
+	_, err = participantauthorityrepo.NewTournamentParticipantPostgres(fixture.tx).ResolveSubmission(lookupCtx, usecase.SubmissionCommand{
 		Actor: usecase.Identity{PlayerID: uuid.New()}, TournamentID: fixture.tournamentID,
 	})
 	require.ErrorIs(t, err, domain.ErrAssignmentParticipant)
@@ -54,7 +57,7 @@ func TestControlWaveAuthorityLocksTournamentBeforeProjection(t *testing.T) {
 				return err
 			}
 			pidReady <- pid
-			_, err := postgres.NewTournamentAdminExecutionPostgres(fixture.tx).LockWaveAuthority(txCtx, fixture.tournamentID, fixture.waveID)
+			_, err := executionrepo.NewRepository(fixture.tx, resultauthority.FinalizeProjection).LockWaveAuthority(txCtx, fixture.tournamentID, fixture.waveID)
 			return err
 		})
 	}()
@@ -100,11 +103,11 @@ func TestLiveForfeitAndParticipantSettlementUseSameLockOrder(t *testing.T) {
 		FROM series JOIN game_attempts AS attempt ON attempt.series_id = series.id WHERE series.id = $1`, binding.SeriesID).
 		Scan(&participantID, &slotID, &attemptID))
 	gameRevisionID := uuid.New()
-	command := tournamentadmin.ForfeitCommand{
-		CommandScope: tournamentadmin.CommandScope{Operator: tournamentadmin.OperatorIdentity{ActorID: uuid.New()}, TournamentID: fixture.tournamentID, CommandID: uuid.New()},
+	command := tournamentadminresult.ForfeitCommand{
+		CommandScope: adminoperation.CommandScope{Operator: adminoperation.OperatorIdentity{ActorID: uuid.New()}, TournamentID: fixture.tournamentID, CommandID: uuid.New()},
 		SeriesID:     binding.SeriesID, ForfeitingParticipantID: participantID,
 		Confirmed: true, Reason: "participant conceded during play", ExpectedAuthorityRevision: authority.AuthorityRevision,
-		ExpectedGame: &tournamentadmin.GameExpectation{SlotID: slotID, GameID: attemptID, AttemptNo: 1, State: domain.GameStateActive},
+		ExpectedGame: &tournamentadminresult.GameExpectation{SlotID: slotID, GameID: attemptID, AttemptNo: 1, State: domain.GameStateActive},
 		Basis:        "rule_violation", RuleID: "game.rule.7", EvidenceIDs: []uuid.UUID{uuid.New()},
 		GameResultRevisionID: &gameRevisionID, ScoreRevisionID: uuid.New(), SeriesResultRevisionID: uuid.New(),
 		AuditEventID: uuid.New(), OutboxEventID: uuid.New(), ProjectionRevisionID: uuid.New(),
@@ -130,7 +133,7 @@ func TestLiveForfeitAndParticipantSettlementUseSameLockOrder(t *testing.T) {
 			case <-ctx.Done():
 				return ctx.Err()
 			}
-			_, _, err = gameusecase.SettlementNewUseCase(participant).Settle(txCtx, gameusecase.SettlementCommand{Scope: scope, CommandID: uuid.New()})
+			_, _, err = gamesettlement.SettlementNewUseCase(participant).Settle(txCtx, gamesettlement.SettlementCommand{Scope: scope, CommandID: uuid.New()})
 			return err
 		})
 	}()

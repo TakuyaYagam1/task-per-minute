@@ -19,6 +19,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/objectstorage"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	taskrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/task"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	taskusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/task"
 )
@@ -28,7 +29,7 @@ func TestSourceFiles_UploadSourceFile_HappyPath(t *testing.T) {
 
 	ctx := context.Background()
 	pool := newParallelTestDB(t)
-	tasks := postgres.NewTaskPostgres(postgres.NewTxManager(pool))
+	tasks := taskrepo.NewTaskPostgres(postgres.NewTxManager(pool))
 	st := newSeaweedStorage(t)
 	uc := taskusecase.NewSourceFiles(taskusecase.NewUseCase(tasks), st, nil)
 	task := mustCreateTask(t, tasks, uniq("forensics"), domain.DifficultyEasy)
@@ -60,7 +61,7 @@ func TestSourceFiles_RetainsArchivesBeforeAssignmentAndAfterTaskDelete(t *testin
 
 	ctx := context.Background()
 	pool := newParallelTestDB(t)
-	repository := postgres.NewTaskPostgres(postgres.NewTxManager(pool))
+	repository := taskrepo.NewTaskPostgres(postgres.NewTxManager(pool))
 	storage := newSeaweedStorage(t)
 	service := taskusecase.NewSourceFiles(taskusecase.NewUseCase(repository), storage, nil)
 	task := mustCreateTask(t, repository, uniq("retention-before-assignment"), domain.DifficultyEasy)
@@ -215,7 +216,7 @@ func TestSourceFiles_ConcurrentPublicationRetainsEveryCommittedArchive(t *testin
 
 	ctx := context.Background()
 	pool := newParallelTestDB(t)
-	repository := postgres.NewTaskPostgres(postgres.NewTxManager(pool))
+	repository := taskrepo.NewTaskPostgres(postgres.NewTxManager(pool))
 	storage := newSeaweedStorage(t)
 	service := taskusecase.NewSourceFiles(taskusecase.NewUseCase(repository), storage, nil)
 	task := mustCreateTask(t, repository, uniq("retention-concurrent-publication"), domain.DifficultyEasy)
@@ -279,7 +280,7 @@ func TestSourceFiles_AmbiguousUpdateResultRetainsCommittedArchive(t *testing.T) 
 
 	ctx := context.Background()
 	pool := newParallelTestDB(t)
-	repository := postgres.NewTaskPostgres(postgres.NewTxManager(pool))
+	repository := taskrepo.NewTaskPostgres(postgres.NewTxManager(pool))
 	storage := newSeaweedStorage(t)
 	taskCatalog := taskusecase.NewUseCase(repository)
 	task := mustCreateTask(t, repository, uniq("retention-ambiguous-update"), domain.DifficultyEasy)
@@ -326,7 +327,7 @@ func uploadSourceArchive(
 	ctx context.Context,
 	t *testing.T,
 	service *taskusecase.SourceFiles,
-	repository *postgres.TaskPostgres,
+	repository *taskrepo.TaskPostgres,
 	taskID uuid.UUID,
 	payload []byte,
 ) string {
@@ -343,7 +344,7 @@ func clearCurrentSource(
 	ctx context.Context,
 	t *testing.T,
 	service *taskusecase.SourceFiles,
-	repository *postgres.TaskPostgres,
+	repository *taskrepo.TaskPostgres,
 	taskID uuid.UUID,
 ) {
 	t.Helper()

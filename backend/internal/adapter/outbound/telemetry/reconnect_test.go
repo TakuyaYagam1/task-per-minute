@@ -10,7 +10,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/observability"
 	observabilitymocks "github.com/TakuyaYagam1/task-per-minute/internal/observability/mocks"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gamereconnect "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/reconnect"
 )
 
 func TestReconnectObserverMapsEvent(t *testing.T) {
@@ -38,8 +38,8 @@ func TestReconnectObserverMapsEvent(t *testing.T) {
 
 	adapter := NewReconnectObserver(observer)
 	require.NotNil(t, adapter)
-	adapter.Observe(t.Context(), gameusecase.ReconnectEvent{
-		ReconnectEvent: "tournament.command.reconnect", Outcome: gameusecase.OutcomeSuccess,
+	adapter.Observe(t.Context(), gamereconnect.ReconnectEvent{
+		ReconnectEvent: "tournament.command.reconnect", Outcome: gamereconnect.OutcomeSuccess,
 		CommandID: commandID, TournamentID: tournamentID, ParticipantID: participantID,
 		Stage: "reconnect", Transition: "reconnect", Duration: duration,
 		ReasonCode: "committed", Revision: 7,
@@ -63,13 +63,13 @@ func TestReconnectObserverRecordsMetrics(t *testing.T) {
 	commandID := uuid.MustParse("75000000-0000-0000-0000-000000000011")
 	tournamentID := uuid.MustParse("75000000-0000-0000-0000-000000000012")
 	participantID := uuid.MustParse("75000000-0000-0000-0000-000000000013")
-	adapter.Observe(t.Context(), gameusecase.ReconnectEvent{
-		ReconnectEvent: "tournament.command.reconnect", Outcome: gameusecase.OutcomeSuccess,
+	adapter.Observe(t.Context(), gamereconnect.ReconnectEvent{
+		ReconnectEvent: "tournament.command.reconnect", Outcome: gamereconnect.OutcomeSuccess,
 		CommandID: commandID, TournamentID: tournamentID, ParticipantID: participantID,
 		Stage: "reconnect", Transition: "reconnect", ReasonCode: "committed", Revision: 1,
 	})
-	adapter.Observe(t.Context(), gameusecase.ReconnectEvent{
-		ReconnectEvent: "tournament.command.reconnect_timeout", Outcome: gameusecase.OutcomeSuccess,
+	adapter.Observe(t.Context(), gamereconnect.ReconnectEvent{
+		ReconnectEvent: "tournament.command.reconnect_timeout", Outcome: gamereconnect.OutcomeSuccess,
 		CommandID:    uuid.MustParse("75000000-0000-0000-0000-000000000014"),
 		TournamentID: tournamentID, ParticipantID: participantID,
 		Stage: "deadline", Transition: "expire_reconnect", ReasonCode: "committed", Revision: 2,

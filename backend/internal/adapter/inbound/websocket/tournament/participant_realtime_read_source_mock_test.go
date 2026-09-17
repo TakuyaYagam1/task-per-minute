@@ -16,10 +16,19 @@ func NewMockParticipantRealtimeReadSource(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockParticipantRealtimeReadSource {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockParticipantRealtimeReadSource{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -71,7 +80,7 @@ type MockParticipantRealtimeReadSource_ReadParticipantRealtime_Call struct {
 // ReadParticipantRealtime is a helper method to define mock.On call
 //   - ctx context.Context
 //   - query ParticipantRealtimeReadQuery
-func (_e *MockParticipantRealtimeReadSource_Expecter) ReadParticipantRealtime(ctx interface{}, query interface{}) *MockParticipantRealtimeReadSource_ReadParticipantRealtime_Call {
+func (_e *MockParticipantRealtimeReadSource_Expecter) ReadParticipantRealtime(ctx any, query any) *MockParticipantRealtimeReadSource_ReadParticipantRealtime_Call {
 	return &MockParticipantRealtimeReadSource_ReadParticipantRealtime_Call{Call: _e.mock.On("ReadParticipantRealtime", ctx, query)}
 }
 

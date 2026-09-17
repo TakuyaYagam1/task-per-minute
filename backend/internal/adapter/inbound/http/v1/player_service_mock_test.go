@@ -18,10 +18,19 @@ func NewMockPlayerService(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockPlayerService {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockPlayerService{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -75,7 +84,7 @@ type MockPlayerService_GetCurrentPlayer_Call struct {
 // GetCurrentPlayer is a helper method to define mock.On call
 //   - ctx context.Context
 //   - sessionToken uuid.UUID
-func (_e *MockPlayerService_Expecter) GetCurrentPlayer(ctx interface{}, sessionToken interface{}) *MockPlayerService_GetCurrentPlayer_Call {
+func (_e *MockPlayerService_Expecter) GetCurrentPlayer(ctx any, sessionToken any) *MockPlayerService_GetCurrentPlayer_Call {
 	return &MockPlayerService_GetCurrentPlayer_Call{Call: _e.mock.On("GetCurrentPlayer", ctx, sessionToken)}
 }
 
@@ -143,7 +152,7 @@ type MockPlayerService_Join_Call struct {
 // Join is a helper method to define mock.On call
 //   - ctx context.Context
 //   - username string
-func (_e *MockPlayerService_Expecter) Join(ctx interface{}, username interface{}) *MockPlayerService_Join_Call {
+func (_e *MockPlayerService_Expecter) Join(ctx any, username any) *MockPlayerService_Join_Call {
 	return &MockPlayerService_Join_Call{Call: _e.mock.On("Join", ctx, username)}
 }
 
@@ -200,7 +209,7 @@ type MockPlayerService_Logout_Call struct {
 // Logout is a helper method to define mock.On call
 //   - ctx context.Context
 //   - sessionToken uuid.UUID
-func (_e *MockPlayerService_Expecter) Logout(ctx interface{}, sessionToken interface{}) *MockPlayerService_Logout_Call {
+func (_e *MockPlayerService_Expecter) Logout(ctx any, sessionToken any) *MockPlayerService_Logout_Call {
 	return &MockPlayerService_Logout_Call{Call: _e.mock.On("Logout", ctx, sessionToken)}
 }
 

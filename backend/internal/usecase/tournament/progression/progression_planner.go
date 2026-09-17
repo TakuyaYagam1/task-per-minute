@@ -11,7 +11,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
-	resultprojection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection"
+	resultprojection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection/canonical"
 )
 
 func planStartGolden(

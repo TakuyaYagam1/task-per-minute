@@ -9,7 +9,7 @@ import (
 	gamedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/game"
 	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gamesettlement "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/settlement"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/readiness"
 )
@@ -173,7 +173,7 @@ func (c *CommandCoordinator) SubmitFlag(
 		}
 		projectionRevision := resolved.Authority.ProjectionRevision
 		if record.Correct {
-			settled, _, settleErr := c.settlement.Settle(txCtx, gameusecase.SettlementCommand{
+			settled, _, settleErr := c.settlement.Settle(txCtx, gamesettlement.SettlementCommand{
 				Scope:     record.Scope,
 				CommandID: record.CommandID,
 			})
@@ -208,7 +208,7 @@ func (c *CommandCoordinator) SubmitFlag(
 
 func validateSubmissionSettlement(
 	submission gamedomain.Submission,
-	settlement *gameusecase.SettlementRecord,
+	settlement *gamesettlement.SettlementRecord,
 ) error {
 	if !submission.Correct || settlement == nil || settlement.Validate() != nil ||
 		settlement.Scope != submission.Scope || !settlement.WinningSubmission.Correct ||

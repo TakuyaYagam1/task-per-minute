@@ -2,7 +2,15 @@
 
 package integration_test
 
-import "testing"
+import (
+	"testing"
+
+	draftintegration "github.com/TakuyaYagam1/task-per-minute/integration_test/draft"
+	executionintegration "github.com/TakuyaYagam1/task-per-minute/integration_test/execution"
+	gameintegration "github.com/TakuyaYagam1/task-per-minute/integration_test/game"
+	reconnectintegration "github.com/TakuyaYagam1/task-per-minute/integration_test/reconnect"
+	tournamentintegration "github.com/TakuyaYagam1/task-per-minute/integration_test/tournament"
+)
 
 func TestRecoveryRestartPause(t *testing.T) {
 	scenarios := []struct {
@@ -11,7 +19,9 @@ func TestRecoveryRestartPause(t *testing.T) {
 	}{
 		{
 			name: "tournament nonterminal states survive persistence reload",
-			run:  TestTournamentMigration,
+			run: func(t *testing.T) {
+				tournamentintegration.RunTournamentMigration(t, sharedPool)
+			},
 		},
 		{
 			name: "lifecycle authority resumes from PostgreSQL with idempotent CAS",
@@ -19,7 +29,9 @@ func TestRecoveryRestartPause(t *testing.T) {
 		},
 		{
 			name: "wave nonterminal states and ready deadlines survive persistence reload",
-			run:  TestExecutionMigration,
+			run: func(t *testing.T) {
+				executionintegration.RunExecutionMigration(t, sharedPool)
+			},
 		},
 		{
 			name: "wave readiness and start recover exactly once",
@@ -27,23 +39,27 @@ func TestRecoveryRestartPause(t *testing.T) {
 		},
 		{
 			name: "draft execution epoch break restores the authoritative deadline",
-			run:  TestDraftMigration,
+			run: func(t *testing.T) {
+				draftintegration.RunDraftMigration(t, sharedPool)
+			},
 		},
 		{
 			name: "series and game epoch-break outcomes survive persistence reload",
-			run:  TestGameMigration,
-		},
-		{
-			name: "game attempts retain stable history behind scoped CAS",
-			run:  TestGameRepositoryUsesScopedCASAndStableAttemptHistory,
+			run: func(t *testing.T) {
+				gameintegration.RunGameMigration(t, sharedPool)
+			},
 		},
 		{
 			name: "nested pause graph restores reconnect ownership and deadlines",
-			run:  TestReconnectMigration,
+			run: func(t *testing.T) {
+				reconnectintegration.RunReconnectMigration(t, sharedPool)
+			},
 		},
 		{
 			name: "reconnect resume race accepts one authoritative decision",
-			run:  TestReconnectMigrationResumeCAS,
+			run: func(t *testing.T) {
+				reconnectintegration.RunReconnectMigrationResumeCAS(t, sharedPool)
+			},
 		},
 		{
 			name: "repeated recovery admits one reconnect root per presence epoch",

@@ -11,7 +11,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
-	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/reconnect"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 )
 
@@ -32,7 +32,7 @@ const (
 )
 
 type Dependencies struct {
-	Transactions     game.TransactionManager
+	Transactions     TransactionManager
 	Authority        AuthorityProvider
 	Repository       Repository
 	Recovery         RecoveryRepository
@@ -49,7 +49,7 @@ type Dependencies struct {
 // The repository lease operation and the selected nested usecase all execute
 // with the context passed to one outer game transaction.
 type Coordinator struct {
-	transactions     game.TransactionManager
+	transactions     TransactionManager
 	authority        AuthorityProvider
 	repository       Repository
 	recovery         RecoveryRepository
@@ -305,7 +305,7 @@ func (coordinator *Coordinator) applyAction(
 
 func (coordinator *Coordinator) advanceAfterSettlement(
 	ctx context.Context,
-	record *game.ReconnectRecord,
+	record *gameusecase.ReconnectRecord,
 	changed bool,
 ) error {
 	if !reconnectSettlementAdvancementEligible(record, changed) {
@@ -323,7 +323,7 @@ func (coordinator *Coordinator) advanceAfterSettlement(
 	return nil
 }
 
-func reconnectSettlementAdvancementEligible(record *game.ReconnectRecord, changed bool) bool {
+func reconnectSettlementAdvancementEligible(record *gameusecase.ReconnectRecord, changed bool) bool {
 	if !changed || record == nil || record.ReplayRoute != nil || record.VoidGameResultRevision != nil ||
 		record.GameResultRevision == nil || record.ScoreRevision == nil || record.Evidence == nil {
 		return false
@@ -335,11 +335,11 @@ func reconnectSettlementAdvancementEligible(record *game.ReconnectRecord, change
 func (coordinator *Coordinator) disconnectCommand(
 	lease DurableLease,
 	resolved ParticipantConnectionAuthority,
-	command game.DisconnectCommand,
-) (game.DisconnectCommand, error) {
+	command gameusecase.DisconnectCommand,
+) (gameusecase.DisconnectCommand, error) {
 	now, err := coordinator.now()
 	if err != nil {
-		return game.DisconnectCommand{}, err
+		return gameusecase.DisconnectCommand{}, err
 	}
 	command.CommandID = deterministicID(lease, operationDisconnect, "command")
 	command.ParticipantID = resolved.ParticipantID
@@ -348,10 +348,10 @@ func (coordinator *Coordinator) disconnectCommand(
 	if command.ContinuedFromID == nil {
 		command.Deadline = now.Add(coordinator.config.ReconnectDuration)
 	} else if !domain.IsValidServerTime(command.Deadline) || !command.Deadline.After(now) {
-		return game.DisconnectCommand{}, game.ErrDeadline
+		return gameusecase.DisconnectCommand{}, gameusecase.ErrDeadline
 	}
 	if !domain.IsValidServerTime(command.Deadline) || !command.Deadline.After(now) {
-		return game.DisconnectCommand{}, ErrInvalidAction
+		return gameusecase.DisconnectCommand{}, ErrInvalidAction
 	}
 	return command, nil
 }
@@ -360,17 +360,17 @@ func (coordinator *Coordinator) reconnectCommand(
 	lease DurableLease,
 	resolved ParticipantConnectionAuthority,
 	action ResolvedAction,
-) (game.ReconnectCommand, error) {
+) (gameusecase.ReconnectCommand, error) {
 	if action.Reconnect == nil {
-		return game.ReconnectCommand{}, ErrInvalidAction
+		return gameusecase.ReconnectCommand{}, ErrInvalidAction
 	}
 	if !action.Deadline.IsZero() {
 		now, err := coordinator.now()
 		if err != nil {
-			return game.ReconnectCommand{}, err
+			return gameusecase.ReconnectCommand{}, err
 		}
 		if !now.Before(action.Deadline) {
-			return game.ReconnectCommand{}, game.ErrDeadline
+			return gameusecase.ReconnectCommand{}, gameusecase.ErrDeadline
 		}
 	}
 	command := *action.Reconnect
@@ -397,8 +397,8 @@ func deterministicID(lease DurableLease, op operation, component string) uuid.UU
 	return uuid.NewSHA1(uuid.NameSpaceOID, []byte(seed+"/"+component))
 }
 
-func deterministicSettlementIDs(lease DurableLease, op operation) game.SettlementIDs {
-	return game.SettlementIDs{
+func deterministicSettlementIDs(lease DurableLease, op operation) gameusecase.SettlementIDs {
+	return gameusecase.SettlementIDs{
 		GameResultRevisionID:   domain.OfficialResultRevisionID(deterministicID(lease, op, "game-result")),
 		ScoreRevisionID:        domain.SeriesScoreRevisionID(deterministicID(lease, op, "score")),
 		SeriesResultRevisionID: domain.OfficialResultRevisionID(deterministicID(lease, op, "series-result")),

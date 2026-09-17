@@ -17,7 +17,9 @@ import (
 	seriesdomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/series"
 	assignmentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/assignment"
 	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gamesettlement "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/settlement"
+	gamestart "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/start"
+	gamesubmission "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/submission"
 	readinessusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/readiness"
 	seriesgraph "github.com/TakuyaYagam1/task-per-minute/internal/usecase/seriesgraph"
 	swissusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/swiss"
@@ -289,9 +291,9 @@ func seriesFlowID(number int) uuid.UUID {
 type seriesFlowExecutionFixture struct {
 	readyWindow *readinessusecase.ReadyWindowUseCase
 	readiness   *readinessusecase.ReadinessUseCase
-	start       *gameusecase.StartUseCase
-	submission  *gameusecase.SubmissionUseCase
-	settlement  *gameusecase.SettlementUseCase
+	start       *gamestart.StartUseCase
+	submission  *gamesubmission.SubmissionUseCase
+	settlement  *gamesettlement.SettlementUseCase
 
 	readyWindowRepo *seriesFlowReadyWindowRepository
 	readinessRepo   *seriesFlowReadinessRepository
@@ -301,9 +303,9 @@ type seriesFlowExecutionFixture struct {
 
 	openCommand       readinessusecase.OpenReadyWindowCommand
 	readyCommands     [2]readinessusecase.ReadyCommand
-	startCommand      gameusecase.StartCommand
-	submissionCommand gameusecase.SubmissionCommand
-	settlementCommand gameusecase.SettlementCommand
+	startCommand      gamestart.StartCommand
+	submissionCommand gamesubmission.SubmissionCommand
+	settlementCommand gamesettlement.SettlementCommand
 }
 
 func newSeriesFlowExecutionFixture(t *testing.T, flow swissusecase.SeriesFlow) *seriesFlowExecutionFixture {
@@ -373,8 +375,8 @@ func newSeriesFlowExecutionFixture(t *testing.T, flow swissusecase.SeriesFlow) *
 		TournamentID: tournamentID, SeriesID: readySeries.Series.ID,
 		SlotID: slot.ID, GameID: attempt.ID,
 	}
-	startScope := gameusecase.StartScope{TournamentID: tournamentID, WaveID: waveID, WindowID: windowID}
-	startGame := gameusecase.GameAuthority{
+	startScope := gamestart.StartScope{TournamentID: tournamentID, WaveID: waveID, WindowID: windowID}
+	startGame := gamestart.GameAuthority{
 		Scope:          gameScope,
 		ParticipantIDs: [2]uuid.UUID{firstParticipantID, secondParticipantID},
 		Series:         readySeries, AssignmentID: aggregate.ID,
@@ -383,13 +385,13 @@ func newSeriesFlowExecutionFixture(t *testing.T, flow swissusecase.SeriesFlow) *
 		SnapshotID:         primary.Snapshot.SnapshotID, ContentDigest: primary.ContentDigest,
 		DeadlineSeconds: 180,
 	}
-	startAuthority := gameusecase.StartAuthority{
+	startAuthority := gamestart.StartAuthority{
 		Scope: startScope, WaveRevision: 1, Revisions: revisions,
 		ReadinessRevisions: map[uuid.UUID]int64{firstParticipantID: 1, secondParticipantID: 1},
-		Wave:               plannedWave, Games: []gameusecase.GameAuthority{startGame},
+		Wave:               plannedWave, Games: []gamestart.GameAuthority{startGame},
 	}
 	startRepo := &seriesFlowStartRepository{authority: startAuthority, serverTime: now}
-	startCommand := gameusecase.StartCommand{
+	startCommand := gamestart.StartCommand{
 		Scope: startScope, CommandID: seriesFlowID(139), ActorID: seriesFlowID(140),
 		ExecutionAuthority: authoritydomain.Identity{
 			TournamentID: tournamentID, HolderID: seriesFlowID(141), LeaseID: seriesFlowID(142),
@@ -405,28 +407,28 @@ func newSeriesFlowExecutionFixture(t *testing.T, flow swissusecase.SeriesFlow) *
 	}
 	submissionScope := gamedomain.SubmissionScope{WaveID: waveID, Game: gameScope, AssignmentID: aggregate.ID}
 	submissionRepo := &seriesFlowSubmissionRepository{
-		authority: gameusecase.SubmissionAuthority{
+		authority: gamesubmission.SubmissionAuthority{
 			Scope: submissionScope, Revision: 1, Snapshot: snapshot,
 			ConnectedParticipantIDs: []uuid.UUID{firstParticipantID, secondParticipantID},
 		},
 	}
-	submissionCommand := gameusecase.SubmissionCommand{
+	submissionCommand := gamesubmission.SubmissionCommand{
 		Scope: submissionScope, CommandID: seriesFlowID(143),
 		ActorParticipantID: firstParticipantID, ParticipantID: firstParticipantID,
 		SubmittedFlag: primary.Snapshot.Flag,
 	}
-	settlementRepo := &seriesFlowSettlementRepository{authority: gameusecase.SettlementAuthority{
+	settlementRepo := &seriesFlowSettlementRepository{authority: gamesettlement.SettlementAuthority{
 		Scope: submissionScope, Revision: 1, CurrentScoreOrdinal: 0,
 		CurrentProjectionRevision: 1,
 	}}
-	settlementCommand := gameusecase.SettlementCommand{Scope: submissionScope, CommandID: submissionCommand.CommandID}
+	settlementCommand := gamesettlement.SettlementCommand{Scope: submissionScope, CommandID: submissionCommand.CommandID}
 	clock := seriesFlowClock{now: now}
 	return &seriesFlowExecutionFixture{
 		readyWindow:     readinessusecase.NewReadyWindowUseCase(readyWindowRepo, clock),
 		readiness:       readinessusecase.NewReadinessUseCase(readinessRepo, clock),
-		start:           gameusecase.NewStartUseCase(startRepo, clock),
-		submission:      gameusecase.NewSubmissionUseCase(submissionRepo),
-		settlement:      gameusecase.SettlementNewUseCase(settlementRepo),
+		start:           gamestart.NewStartUseCase(startRepo, clock),
+		submission:      gamesubmission.NewSubmissionUseCase(submissionRepo),
+		settlement:      gamesettlement.SettlementNewUseCase(settlementRepo),
 		readyWindowRepo: readyWindowRepo, readinessRepo: readinessRepo, startRepo: startRepo,
 		submissionRepo: submissionRepo, settlementRepo: settlementRepo,
 		openCommand: openCommand, readyCommands: readyCommands, startCommand: startCommand,
@@ -513,14 +515,14 @@ func (r *seriesFlowReadinessRepository) setWave(wave domain.Wave) {
 
 type seriesFlowStartRepository struct {
 	mu         sync.Mutex
-	authority  gameusecase.StartAuthority
+	authority  gamestart.StartAuthority
 	serverTime time.Time
 }
 
 func (r *seriesFlowStartRepository) LoadWaveStartAuthority(
 	_ context.Context,
-	_ gameusecase.StartScope,
-) (gameusecase.StartAuthority, error) {
+	_ gamestart.StartScope,
+) (gamestart.StartAuthority, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return cloneSeriesFlowStartAuthority(r.authority), nil
@@ -534,8 +536,8 @@ func (r *seriesFlowStartRepository) ReadWaveStartTime(_ context.Context) (time.T
 
 func (r *seriesFlowStartRepository) CommitWaveStart(
 	_ context.Context,
-	record gameusecase.StartRecord,
-) (*gameusecase.StartRecord, bool, error) {
+	record gamestart.StartRecord,
+) (*gamestart.StartRecord, bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.authority.Current != nil || record.ExpectedWaveRevision != r.authority.WaveRevision {
@@ -585,14 +587,14 @@ func (s *seriesFlowSnapshot) HasParticipant(participantID uuid.UUID) bool {
 
 type seriesFlowSubmissionRepository struct {
 	mu         sync.Mutex
-	authority  gameusecase.SubmissionAuthority
+	authority  gamesubmission.SubmissionAuthority
 	commitTime time.Time
 }
 
 func (r *seriesFlowSubmissionRepository) LoadSubmissionAuthority(
 	_ context.Context,
 	_ gamedomain.SubmissionScope,
-) (gameusecase.SubmissionAuthority, error) {
+) (gamesubmission.SubmissionAuthority, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return cloneSeriesFlowSubmissionAuthority(r.authority), nil
@@ -600,7 +602,7 @@ func (r *seriesFlowSubmissionRepository) LoadSubmissionAuthority(
 
 func (r *seriesFlowSubmissionRepository) CommitSubmission(
 	_ context.Context,
-	commit gameusecase.SubmissionCommit,
+	commit gamesubmission.SubmissionCommit,
 ) (*gamedomain.Submission, bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -627,13 +629,13 @@ func (r *seriesFlowSubmissionRepository) setStartedGame(started gamedomain.Start
 
 type seriesFlowSettlementRepository struct {
 	mu        sync.Mutex
-	authority gameusecase.SettlementAuthority
+	authority gamesettlement.SettlementAuthority
 }
 
 func (r *seriesFlowSettlementRepository) LoadConcurrentWinnerAuthority(
 	_ context.Context,
 	_ gamedomain.SubmissionScope,
-) (gameusecase.SettlementAuthority, error) {
+) (gamesettlement.SettlementAuthority, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return cloneSeriesFlowSettlementAuthority(r.authority), nil
@@ -641,8 +643,8 @@ func (r *seriesFlowSettlementRepository) LoadConcurrentWinnerAuthority(
 
 func (r *seriesFlowSettlementRepository) CommitConcurrentWinnerSettlement(
 	_ context.Context,
-	settlement gameusecase.SettlementRecord,
-) (*gameusecase.SettlementRecord, bool, error) {
+	settlement gamesettlement.SettlementRecord,
+) (*gamesettlement.SettlementRecord, bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if settlement.ExpectedAuthorityRevision != r.authority.Revision || r.authority.Current != nil {
@@ -708,11 +710,11 @@ func cloneSeriesFlowReadinessAuthority(value readinessusecase.ReadinessAuthority
 	return clone
 }
 
-func cloneSeriesFlowStartAuthority(value gameusecase.StartAuthority) gameusecase.StartAuthority {
+func cloneSeriesFlowStartAuthority(value gamestart.StartAuthority) gamestart.StartAuthority {
 	clone := value
 	clone.Wave = cloneSeriesFlowWave(value.Wave)
 	clone.ReadinessRevisions = cloneSeriesFlowReadinessRevisions(value.ReadinessRevisions)
-	clone.Games = make([]gameusecase.GameAuthority, len(value.Games))
+	clone.Games = make([]gamestart.GameAuthority, len(value.Games))
 	for index, game := range value.Games {
 		clone.Games[index] = game
 		clone.Games[index].Series = seriesdomain.CloneExecution(game.Series)
@@ -724,7 +726,7 @@ func cloneSeriesFlowStartAuthority(value gameusecase.StartAuthority) gameusecase
 	return clone
 }
 
-func cloneSeriesFlowStartRecord(value gameusecase.StartRecord) gameusecase.StartRecord {
+func cloneSeriesFlowStartRecord(value gamestart.StartRecord) gamestart.StartRecord {
 	clone := value
 	clone.Wave = cloneSeriesFlowWave(value.Wave)
 	clone.ReadinessRevisions = cloneSeriesFlowReadinessRevisions(value.ReadinessRevisions)
@@ -754,7 +756,7 @@ func cloneSeriesFlowStartedGame(value gamedomain.Started) gamedomain.Started {
 	return clone
 }
 
-func cloneSeriesFlowSubmissionAuthority(value gameusecase.SubmissionAuthority) gameusecase.SubmissionAuthority {
+func cloneSeriesFlowSubmissionAuthority(value gamesubmission.SubmissionAuthority) gamesubmission.SubmissionAuthority {
 	clone := value
 	clone.StartedGame = cloneSeriesFlowStartedGame(value.StartedGame)
 	clone.ConnectedParticipantIDs = append([]uuid.UUID(nil), value.ConnectedParticipantIDs...)
@@ -762,7 +764,7 @@ func cloneSeriesFlowSubmissionAuthority(value gameusecase.SubmissionAuthority) g
 	return clone
 }
 
-func cloneSeriesFlowSettlementAuthority(value gameusecase.SettlementAuthority) gameusecase.SettlementAuthority {
+func cloneSeriesFlowSettlementAuthority(value gamesettlement.SettlementAuthority) gamesettlement.SettlementAuthority {
 	clone := value
 	clone.StartedGame = cloneSeriesFlowStartedGame(value.StartedGame)
 	clone.Submissions = append([]gamedomain.Submission(nil), value.Submissions...)
@@ -774,7 +776,7 @@ func cloneSeriesFlowSettlementAuthority(value gameusecase.SettlementAuthority) g
 	return clone
 }
 
-func cloneSeriesFlowSettlementRecord(value gameusecase.SettlementRecord) gameusecase.SettlementRecord {
+func cloneSeriesFlowSettlementRecord(value gamesettlement.SettlementRecord) gamesettlement.SettlementRecord {
 	clone := value
 	clone.Game = cloneSeriesFlowGame(value.Game)
 	clone.SettlementGameResultRevision.PreviousRevisionID = cloneSeriesFlowResultRevisionPointer(value.SettlementGameResultRevision.PreviousRevisionID)

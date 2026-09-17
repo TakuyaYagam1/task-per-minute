@@ -20,10 +20,19 @@ func NewMockUploadService(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockUploadService {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockUploadService{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -78,7 +87,7 @@ type MockUploadService_ClearSourceFile_Call struct {
 //   - ctx context.Context
 //   - taskID uuid.UUID
 //   - in task.UpdateInput
-func (_e *MockUploadService_Expecter) ClearSourceFile(ctx interface{}, taskID interface{}, in interface{}) *MockUploadService_ClearSourceFile_Call {
+func (_e *MockUploadService_Expecter) ClearSourceFile(ctx any, taskID any, in any) *MockUploadService_ClearSourceFile_Call {
 	return &MockUploadService_ClearSourceFile_Call{Call: _e.mock.On("ClearSourceFile", ctx, taskID, in)}
 }
 
@@ -149,7 +158,7 @@ type MockUploadService_PresignedSourceFileURL_Call struct {
 // PresignedSourceFileURL is a helper method to define mock.On call
 //   - ctx context.Context
 //   - taskID uuid.UUID
-func (_e *MockUploadService_Expecter) PresignedSourceFileURL(ctx interface{}, taskID interface{}) *MockUploadService_PresignedSourceFileURL_Call {
+func (_e *MockUploadService_Expecter) PresignedSourceFileURL(ctx any, taskID any) *MockUploadService_PresignedSourceFileURL_Call {
 	return &MockUploadService_PresignedSourceFileURL_Call{Call: _e.mock.On("PresignedSourceFileURL", ctx, taskID)}
 }
 
@@ -218,7 +227,7 @@ type MockUploadService_UploadSourceFile_Call struct {
 //   - reader io.Reader
 //   - size int64
 //   - contentType string
-func (_e *MockUploadService_Expecter) UploadSourceFile(ctx interface{}, taskID interface{}, reader interface{}, size interface{}, contentType interface{}) *MockUploadService_UploadSourceFile_Call {
+func (_e *MockUploadService_Expecter) UploadSourceFile(ctx any, taskID any, reader any, size any, contentType any) *MockUploadService_UploadSourceFile_Call {
 	return &MockUploadService_UploadSourceFile_Call{Call: _e.mock.On("UploadSourceFile", ctx, taskID, reader, size, contentType)}
 }
 

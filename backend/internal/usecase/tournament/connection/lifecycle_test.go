@@ -17,7 +17,8 @@ import (
 	seriesdomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/series"
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	authorityusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/authority"
-	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gamepause "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause"
+	gamereconnect "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/reconnect"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/readiness"
 )
@@ -110,7 +111,7 @@ func TestCoordinatorDisconnectsLastTabWithOperatorPresenceEvidenceOnly(t *testin
 		Lease: h.lease, Closed: true, ActiveLeaseCount: 0,
 		Action: ResolvedAction{
 			Kind: ActionPausedPresence,
-			PausedPresence: &game.PausedPresenceCommand{
+			PausedPresence: &gamepause.PausedPresenceCommand{
 				Scope: h.resolved.Scope, PauseID: uuid.New(), ParticipantID: h.resolved.ParticipantID,
 				ExpectedGraphRevision: 2, ExpectedPauseRevision: 1,
 				ExpectedPresenceEpoch: 3, ExpectedPresenceRevision: 3,
@@ -139,7 +140,7 @@ func TestCoordinatorRecoversExpiredLeaseWithLastLeaseAction(t *testing.T) {
 			ActiveLeaseCount: 0,
 			Action: ResolvedAction{
 				Kind: ActionPausedPresence,
-				PausedPresence: &game.PausedPresenceCommand{
+				PausedPresence: &gamepause.PausedPresenceCommand{
 					Scope: h.resolved.Scope, PauseID: uuid.New(), ParticipantID: h.resolved.ParticipantID,
 					ExpectedGraphRevision: 2, ExpectedPauseRevision: 1,
 					ExpectedPresenceEpoch: 3, ExpectedPresenceRevision: 3,
@@ -193,7 +194,7 @@ func TestCoordinatorRecoveryRaceAppliesLastLeaseActionOnce(t *testing.T) {
 		remaining--
 		return CloseConnectionResult{
 			Lease: h.lease, Closed: true, ActiveLeaseCount: 0,
-			Action: ResolvedAction{Kind: ActionPausedPresence, PausedPresence: &game.PausedPresenceCommand{
+			Action: ResolvedAction{Kind: ActionPausedPresence, PausedPresence: &gamepause.PausedPresenceCommand{
 				Scope: h.resolved.Scope, PauseID: uuid.New(), ParticipantID: h.resolved.ParticipantID,
 				ExpectedGraphRevision: 2, ExpectedPauseRevision: 1,
 				ExpectedPresenceEpoch: 3, ExpectedPresenceRevision: 3,
@@ -225,7 +226,7 @@ func TestCoordinatorDoesNotPauseWhenAnotherTabRemains(t *testing.T) {
 	h := newLifecycleHarness(t)
 	h.repo.closeResult = CloseConnectionResult{
 		Lease: h.lease, Closed: true, ActiveLeaseCount: 1,
-		Action: ResolvedAction{Kind: ActionPausedPresence, PausedPresence: &game.PausedPresenceCommand{
+		Action: ResolvedAction{Kind: ActionPausedPresence, PausedPresence: &gamepause.PausedPresenceCommand{
 			Scope: h.resolved.Scope, PauseID: uuid.New(), ParticipantID: h.resolved.ParticipantID,
 			ExpectedGraphRevision: 2, ExpectedPauseRevision: 1,
 			ExpectedPresenceEpoch: 3, ExpectedPresenceRevision: 3,
@@ -262,7 +263,7 @@ func TestCoordinatorReconnectsBeforeResolvedDeadlineWithDeterministicIDs(t *test
 		Action: ResolvedAction{
 			Kind:     ActionGameReconnect,
 			Deadline: h.clock.value.Add(time.Minute),
-			Reconnect: &game.ReconnectCommand{
+			Reconnect: &gamereconnect.ReconnectCommand{
 				Scope: h.resolved.Scope, ParticipantID: h.resolved.ParticipantID, IntervalID: intervalID,
 			},
 		},
@@ -283,13 +284,13 @@ func TestCoordinatorReconnectsBeforeResolvedDeadlineWithDeterministicIDs(t *test
 		Lease: h.lease, Opened: true, ActiveLeaseCount: 1,
 		Action: ResolvedAction{
 			Kind: ActionGameReconnect, Deadline: h.clock.value.Add(-time.Second),
-			Reconnect: &game.ReconnectCommand{
+			Reconnect: &gamereconnect.ReconnectCommand{
 				Scope: h.resolved.Scope, ParticipantID: h.resolved.ParticipantID, IntervalID: intervalID,
 			},
 		},
 	}
 	err := h.coordinator(t).Connect(context.Background(), h.command)
-	require.ErrorIs(t, err, game.ErrDeadline)
+	require.ErrorIs(t, err, gamereconnect.ErrDeadline)
 	require.Len(t, h.reconnect.commands(), 1)
 }
 
@@ -303,7 +304,7 @@ func TestCoordinatorAdvancesCompletedReconnectInOuterTransaction(t *testing.T) {
 		Action: ResolvedAction{
 			Kind:     ActionGameReconnect,
 			Deadline: h.clock.value.Add(time.Minute),
-			Reconnect: &game.ReconnectCommand{
+			Reconnect: &gamereconnect.ReconnectCommand{
 				Scope: h.resolved.Scope, ParticipantID: h.resolved.ParticipantID, IntervalID: intervalID,
 			},
 		},
@@ -320,7 +321,7 @@ func TestCoordinatorAdvancesActiveReconnectInOuterTransaction(t *testing.T) {
 	h.reconnect.record = terminalReconnectRecord(h.resolved.Scope, seriesID, domain.SeriesStateActive)
 	h.repo.openResult = OpenConnectionResult{
 		Lease: h.lease, Opened: true, ActiveLeaseCount: 1,
-		Action: ResolvedAction{Kind: ActionGameReconnect, Deadline: h.clock.value.Add(time.Minute), Reconnect: &game.ReconnectCommand{
+		Action: ResolvedAction{Kind: ActionGameReconnect, Deadline: h.clock.value.Add(time.Minute), Reconnect: &gamereconnect.ReconnectCommand{
 			Scope: h.resolved.Scope, ParticipantID: h.resolved.ParticipantID, IntervalID: uuid.New(),
 		}},
 	}
@@ -340,7 +341,7 @@ func TestCoordinatorAdvancesCompletedDisconnectInOuterTransaction(t *testing.T) 
 		Lease: h.lease, Closed: true, ActiveLeaseCount: 0,
 		Action: ResolvedAction{
 			Kind: ActionGameDisconnect,
-			Disconnect: &game.DisconnectCommand{
+			Disconnect: &gamereconnect.DisconnectCommand{
 				Scope: h.resolved.Scope, ParticipantID: h.resolved.ParticipantID,
 			},
 		},
@@ -377,14 +378,14 @@ func TestCoordinatorDoesNotAdvanceReplayOrUnchangedReconnect(t *testing.T) {
 			if seriesState == "" {
 				seriesState = domain.SeriesStateCompleted
 			}
-			route := (*game.WaveMemberRoute)(nil)
+			route := (*gamereconnect.WaveMemberRoute)(nil)
 			if test.route {
-				route = &game.WaveMemberRoute{ID: uuid.New()}
+				route = &gamereconnect.WaveMemberRoute{ID: uuid.New()}
 			}
 			h.reconnect.record = terminalReconnectRecord(h.resolved.Scope, seriesID, seriesState)
 			h.reconnect.record.ReplayRoute = route
 			if test.void {
-				h.reconnect.record.VoidGameResultRevision = &game.AttemptGameResultRevision{ID: domain.OfficialResultRevisionID(uuid.New())}
+				h.reconnect.record.VoidGameResultRevision = &gamereconnect.AttemptGameResultRevision{ID: domain.OfficialResultRevisionID(uuid.New())}
 			}
 			if test.noResult {
 				h.reconnect.record.GameResultRevision = nil
@@ -392,7 +393,7 @@ func TestCoordinatorDoesNotAdvanceReplayOrUnchangedReconnect(t *testing.T) {
 			h.reconnect.changed = test.changed
 			h.repo.openResult = OpenConnectionResult{
 				Lease: h.lease, Opened: true, ActiveLeaseCount: 1,
-				Action: ResolvedAction{Kind: ActionGameReconnect, Deadline: h.clock.value.Add(time.Minute), Reconnect: &game.ReconnectCommand{
+				Action: ResolvedAction{Kind: ActionGameReconnect, Deadline: h.clock.value.Add(time.Minute), Reconnect: &gamereconnect.ReconnectCommand{
 					Scope: h.resolved.Scope, ParticipantID: h.resolved.ParticipantID, IntervalID: uuid.New(),
 				}},
 			}
@@ -410,7 +411,7 @@ func TestCoordinatorRollsBackWhenTerminalAdvancementFails(t *testing.T) {
 	h.terminal.err = errors.New("terminal advancement failed")
 	h.repo.openResult = OpenConnectionResult{
 		Lease: h.lease, Opened: true, ActiveLeaseCount: 1,
-		Action: ResolvedAction{Kind: ActionGameReconnect, Deadline: h.clock.value.Add(time.Minute), Reconnect: &game.ReconnectCommand{
+		Action: ResolvedAction{Kind: ActionGameReconnect, Deadline: h.clock.value.Add(time.Minute), Reconnect: &gamereconnect.ReconnectCommand{
 			Scope: h.resolved.Scope, ParticipantID: h.resolved.ParticipantID, IntervalID: uuid.New(),
 		}},
 	}
@@ -485,7 +486,7 @@ func TestCoordinatorCloseRaceAppliesLastTabActionOnce(t *testing.T) {
 			remaining--
 			return CloseConnectionResult{
 				Lease: h.lease, Closed: true, ActiveLeaseCount: 0,
-				Action: ResolvedAction{Kind: ActionPausedPresence, PausedPresence: &game.PausedPresenceCommand{
+				Action: ResolvedAction{Kind: ActionPausedPresence, PausedPresence: &gamepause.PausedPresenceCommand{
 					Scope: h.resolved.Scope, PauseID: uuid.New(), ParticipantID: h.resolved.ParticipantID,
 					ExpectedGraphRevision: 2, ExpectedPauseRevision: 1,
 					ExpectedPresenceEpoch: 3, ExpectedPresenceRevision: 3,
@@ -710,13 +711,13 @@ func (workflow *recordingReadiness) commands() []readiness.DisconnectReadinessCo
 
 type recordingPausedPresence struct {
 	mu     sync.Mutex
-	values []game.PausedPresenceCommand
+	values []gamepause.PausedPresenceCommand
 	err    error
 }
 
 func (workflow *recordingPausedPresence) Change(
-	ctx context.Context, command game.PausedPresenceCommand,
-) (*game.PausedPresenceRecord, bool, error) {
+	ctx context.Context, command gamepause.PausedPresenceCommand,
+) (*gamepause.PausedPresenceRecord, bool, error) {
 	if _, ok := ctx.Value(contextMarker{}).(bool); !ok {
 		return nil, false, fmt.Errorf("paused presence did not receive transaction context")
 	}
@@ -727,23 +728,23 @@ func (workflow *recordingPausedPresence) Change(
 	return nil, true, err
 }
 
-func (workflow *recordingPausedPresence) commands() []game.PausedPresenceCommand {
+func (workflow *recordingPausedPresence) commands() []gamepause.PausedPresenceCommand {
 	workflow.mu.Lock()
 	defer workflow.mu.Unlock()
-	return append([]game.PausedPresenceCommand(nil), workflow.values...)
+	return append([]gamepause.PausedPresenceCommand(nil), workflow.values...)
 }
 
 type recordingDisconnect struct {
 	mu      sync.Mutex
-	values  []game.DisconnectCommand
+	values  []gamereconnect.DisconnectCommand
 	err     error
-	record  *game.ReconnectRecord
+	record  *gamereconnect.ReconnectRecord
 	changed *bool
 }
 
 func (workflow *recordingDisconnect) Disconnect(
-	ctx context.Context, command game.DisconnectCommand,
-) (*game.ReconnectRecord, bool, error) {
+	ctx context.Context, command gamereconnect.DisconnectCommand,
+) (*gamereconnect.ReconnectRecord, bool, error) {
 	if _, ok := ctx.Value(contextMarker{}).(bool); !ok {
 		return nil, false, fmt.Errorf("disconnect did not receive transaction context")
 	}
@@ -759,23 +760,23 @@ func (workflow *recordingDisconnect) Disconnect(
 	return record, changed, err
 }
 
-func (workflow *recordingDisconnect) commands() []game.DisconnectCommand {
+func (workflow *recordingDisconnect) commands() []gamereconnect.DisconnectCommand {
 	workflow.mu.Lock()
 	defer workflow.mu.Unlock()
-	return append([]game.DisconnectCommand(nil), workflow.values...)
+	return append([]gamereconnect.DisconnectCommand(nil), workflow.values...)
 }
 
 type recordingReconnect struct {
 	mu      sync.Mutex
-	values  []game.ReconnectCommand
+	values  []gamereconnect.ReconnectCommand
 	err     error
-	record  *game.ReconnectRecord
+	record  *gamereconnect.ReconnectRecord
 	changed *bool
 }
 
 func (workflow *recordingReconnect) Reconnect(
-	ctx context.Context, command game.ReconnectCommand,
-) (*game.ReconnectRecord, bool, error) {
+	ctx context.Context, command gamereconnect.ReconnectCommand,
+) (*gamereconnect.ReconnectRecord, bool, error) {
 	if _, ok := ctx.Value(contextMarker{}).(bool); !ok {
 		return nil, false, fmt.Errorf("reconnect did not receive transaction context")
 	}
@@ -791,10 +792,10 @@ func (workflow *recordingReconnect) Reconnect(
 	return record, changed, err
 }
 
-func (workflow *recordingReconnect) commands() []game.ReconnectCommand {
+func (workflow *recordingReconnect) commands() []gamereconnect.ReconnectCommand {
 	workflow.mu.Lock()
 	defer workflow.mu.Unlock()
-	return append([]game.ReconnectCommand(nil), workflow.values...)
+	return append([]gamereconnect.ReconnectCommand(nil), workflow.values...)
 }
 
 type recordingTerminalAdvancer struct {
@@ -831,7 +832,7 @@ func terminalReconnectRecord(
 	scope pausedomain.GraphScope,
 	seriesID uuid.UUID,
 	seriesState domain.SeriesState,
-) *game.ReconnectRecord {
+) *gamereconnect.ReconnectRecord {
 	gameID := uuid.New()
 	winnerID := uuid.New()
 	gameResultID := domain.OfficialResultRevisionID(uuid.New())
@@ -849,19 +850,19 @@ func terminalReconnectRecord(
 		Format: domain.SeriesFormatBO3, State: seriesState, Score: score,
 		CurrentScoreRevisionID: &scoreRevisionID,
 	}
-	result := (*game.SeriesRevision)(nil)
+	result := (*gamereconnect.SeriesRevision)(nil)
 	if seriesState == domain.SeriesStateCompleted {
 		series.WinnerID = &winnerID
 		series.CurrentResultRevisionID = &seriesResultID
-		result = &game.SeriesRevision{ID: seriesResultID, SeriesID: seriesID, State: seriesState, WinnerID: &winnerID, ScoreRevisionID: scoreRevisionID}
+		result = &gamereconnect.SeriesRevision{ID: seriesResultID, SeriesID: seriesID, State: seriesState, WinnerID: &winnerID, ScoreRevisionID: scoreRevisionID}
 	}
-	return &game.ReconnectRecord{
-		ReconnectAuthority: game.ReconnectAuthority{
+	return &gamereconnect.ReconnectRecord{
+		ReconnectAuthority: gamereconnect.ReconnectAuthority{
 			Scope:  scope,
 			Game:   domain.Game{ID: gameID, State: domain.GameStateCompleted, WinnerID: &winnerID, ResultRevisionID: &gameResultID},
 			Series: series,
 		},
-		GameResultRevision: &game.GameRevision{ID: gameResultID, GameID: gameID, WinnerID: winnerID, Reason: domain.GameResultReasonOperatorForfeit},
+		GameResultRevision: &gamereconnect.GameRevision{ID: gameResultID, GameID: gameID, WinnerID: winnerID, Reason: domain.GameResultReasonOperatorForfeit},
 		ScoreRevision: &seriesdomain.ScoreRevision{
 			ID: scoreRevisionID, SeriesID: seriesID,
 			FirstParticipantID: firstParticipantID, SecondParticipantID: secondParticipantID,

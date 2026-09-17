@@ -16,13 +16,21 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 
-	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	waverepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/wave"
+	resultrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result"
+	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
+	admincorrectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/correction"
+	adminlifecyclerepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/lifecycle"
+	settlementrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/settlement"
+	progressionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/progression"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	gamedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/game"
 	correctionusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/correction"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	gamesettlement "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/settlement"
+	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/correction"
+	tournamentadminlifecycle "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/lifecycle"
+	adminoperation "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/operation"
 	progression "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/progression"
 )
 
@@ -42,7 +50,7 @@ func TestTournamentAdminCorrectionCommitPersistsStageMutation(t *testing.T) {
 		ORDER BY attempt.attempt_number DESC
 		LIMIT 1`, seriesID).Scan(&gameID))
 
-	repository := postgres.NewTournamentAdminCorrectionPostgres(fixture.tx)
+	repository := admincorrectionrepo.NewTournamentAdminCorrectionPostgres(fixture.tx)
 	var authority tournamentadmin.CorrectionWorkflowAuthority
 	require.NoError(t, fixture.tx.Do(ctx, func(txCtx context.Context) error {
 		var loadErr error
@@ -86,7 +94,7 @@ func TestTournamentAdminCorrectionHydratesEmptyReadinessAfterNativeStartPlayoffs
 		ORDER BY attempt.attempt_number DESC
 		LIMIT 1`, seriesID).Scan(&gameID))
 
-	repository := postgres.NewTournamentAdminCorrectionPostgres(fixture.tx)
+	repository := admincorrectionrepo.NewTournamentAdminCorrectionPostgres(fixture.tx)
 	loadAuthority := func() tournamentadmin.CorrectionWorkflowAuthority {
 		t.Helper()
 		var authority tournamentadmin.CorrectionWorkflowAuthority
@@ -145,7 +153,7 @@ func TestTournamentAdminCorrectionPersistsSecondDistinctCorrectionLineage(t *tes
 		ORDER BY attempt.attempt_number DESC
 		LIMIT 1`, seriesID).Scan(&gameID))
 
-	repository := postgres.NewTournamentAdminCorrectionPostgres(fixture.tx)
+	repository := admincorrectionrepo.NewTournamentAdminCorrectionPostgres(fixture.tx)
 	loadAuthority := func() tournamentadmin.CorrectionWorkflowAuthority {
 		t.Helper()
 		var authority tournamentadmin.CorrectionWorkflowAuthority
@@ -518,7 +526,7 @@ func TestTournamentAdminCorrectionDiscoversRosterBeforeCanonicalScopeLocks(t *te
 	_, err = normal.Exec(ctx, `SELECT id FROM rosters WHERE id = $1 AND tournament_id = $2 FOR UPDATE`, fixture.rosterID, fixture.tournamentID)
 	require.NoError(t, err)
 
-	repository := postgres.NewTournamentAdminCorrectionPostgres(fixture.tx)
+	repository := admincorrectionrepo.NewTournamentAdminCorrectionPostgres(fixture.tx)
 	pidCh := make(chan int32, 1)
 	done := make(chan error, 1)
 	go func() {
@@ -558,7 +566,7 @@ func TestTournamentAdminCorrectionConcurrentDifferentSeriesHasOneWinner(t *testi
 	require.NoError(t, err)
 	openCorrectionReadyWave(ctx, t, fixture)
 
-	repository := postgres.NewTournamentAdminCorrectionPostgres(fixture.tx)
+	repository := admincorrectionrepo.NewTournamentAdminCorrectionPostgres(fixture.tx)
 	mutations := make([]tournamentadmin.CorrectionMutation, 0, 2)
 	for _, binding := range fixture.binding[:2] {
 		seriesID := binding.SeriesID
@@ -645,7 +653,7 @@ func TestTournamentAdminCorrectionConcurrentIdenticalCommandReplaysStoredEvidenc
 		SELECT id FROM game_attempts WHERE series_id = $1 ORDER BY attempt_number DESC LIMIT 1`,
 		seriesID,
 	).Scan(&gameID))
-	repository := postgres.NewTournamentAdminCorrectionPostgres(fixture.tx)
+	repository := admincorrectionrepo.NewTournamentAdminCorrectionPostgres(fixture.tx)
 	var authority tournamentadmin.CorrectionWorkflowAuthority
 	require.NoError(t, fixture.tx.Do(ctx, func(txCtx context.Context) error {
 		var loadErr error
@@ -710,7 +718,7 @@ func TestTournamentAdminCorrectionRollsBackResultWritesOnLateStageFailure(t *tes
 		WHERE attempt.series_id = $1
 		ORDER BY attempt.attempt_number DESC
 		LIMIT 1`, seriesID).Scan(&gameID))
-	repository := postgres.NewTournamentAdminCorrectionPostgres(fixture.tx)
+	repository := admincorrectionrepo.NewTournamentAdminCorrectionPostgres(fixture.tx)
 	var authority tournamentadmin.CorrectionWorkflowAuthority
 	require.NoError(t, fixture.tx.Do(ctx, func(txCtx context.Context) error {
 		var loadErr error
@@ -773,7 +781,7 @@ func TestTournamentAdminCorrectionRollsBackSuccessfulNestedCommit(t *testing.T) 
 		WHERE attempt.series_id = $1
 		ORDER BY attempt.attempt_number DESC
 		LIMIT 1`, seriesID).Scan(&gameID))
-	repository := postgres.NewTournamentAdminCorrectionPostgres(fixture.tx)
+	repository := admincorrectionrepo.NewTournamentAdminCorrectionPostgres(fixture.tx)
 	var authority tournamentadmin.CorrectionWorkflowAuthority
 	require.NoError(t, fixture.tx.Do(ctx, func(txCtx context.Context) error {
 		var loadErr error
@@ -849,7 +857,7 @@ func TestTournamentAdminCorrectionPersistsUnchangedStageWithoutProgression(t *te
 		WHERE attempt.series_id = $1
 		ORDER BY attempt.attempt_number DESC
 		LIMIT 1`, seriesID).Scan(&gameID))
-	repository := postgres.NewTournamentAdminCorrectionPostgres(fixture.tx)
+	repository := admincorrectionrepo.NewTournamentAdminCorrectionPostgres(fixture.tx)
 	var authority tournamentadmin.CorrectionWorkflowAuthority
 	require.NoError(t, fixture.tx.Do(ctx, func(txCtx context.Context) error {
 		var loadErr error
@@ -893,7 +901,7 @@ func TestTournamentAdminCorrectionPersistsGoldenToPlayoff(t *testing.T) {
 		WHERE attempt.series_id = $1
 		ORDER BY attempt.attempt_number DESC
 		LIMIT 1`, seriesID).Scan(&gameID))
-	repository := postgres.NewTournamentAdminCorrectionPostgres(fixture.tx)
+	repository := admincorrectionrepo.NewTournamentAdminCorrectionPostgres(fixture.tx)
 	var authority tournamentadmin.CorrectionWorkflowAuthority
 	require.NoError(t, fixture.tx.Do(ctx, func(txCtx context.Context) error {
 		var loadErr error
@@ -990,7 +998,7 @@ func TestTournamentAdminCorrectionPersistsGoldenToPlayoff(t *testing.T) {
 	// the next ordinary semifinal settlement must consume its persisted Series,
 	// score genesis, stage evidence, and projection-node binding.
 	settlement := semifinalSettlementInput(ctx, t, fixture, mutation.Command.CommandID, 1)
-	record, settled, err := postgres.NewResultPostgres(fixture.tx).Settle(ctx, settlement)
+	record, settled, err := resultauthority.NewResultPostgres(fixture.tx).Settle(ctx, settlement)
 	require.NoError(t, err)
 	require.True(t, settled)
 	require.NotNil(t, record.SeriesRevision)
@@ -1161,7 +1169,7 @@ func TestTournamentAdminCorrectionAuthorityHydratesGoldenStage(t *testing.T) {
 		ORDER BY attempt.attempt_number DESC
 		LIMIT 1`, seriesID).Scan(&gameID))
 
-	repository := postgres.NewTournamentAdminCorrectionPostgres(fixture.tx)
+	repository := admincorrectionrepo.NewTournamentAdminCorrectionPostgres(fixture.tx)
 	var authority tournamentadmin.CorrectionWorkflowAuthority
 	require.NoError(t, fixture.tx.Do(ctx, func(txCtx context.Context) error {
 		var loadErr error
@@ -1227,7 +1235,7 @@ func TestTournamentAdminCorrectionAuthorityHydratesNativeGoldenStage(t *testing.
 		ORDER BY attempt.attempt_number DESC
 		LIMIT 1`, seriesID).Scan(&gameID))
 
-	repository := postgres.NewTournamentAdminCorrectionPostgres(fixture.tx)
+	repository := admincorrectionrepo.NewTournamentAdminCorrectionPostgres(fixture.tx)
 	var authority tournamentadmin.CorrectionWorkflowAuthority
 	require.NoError(t, fixture.tx.Do(ctx, func(txCtx context.Context) error {
 		var loadErr error
@@ -1294,14 +1302,14 @@ func TestTournamentAdminCorrectionAuthorityHydratesNativeGoldenStage(t *testing.
 	}
 	require.NoError(t, settlementTx.Commit(ctx))
 
-	var lifecycle tournamentadmin.LifecycleAuthority
+	var lifecycle tournamentadminlifecycle.LifecycleAuthority
 	require.NoError(t, fixture.tx.Do(ctx, func(txCtx context.Context) error {
 		var loadErr error
-		lifecycle, loadErr = postgres.NewTournamentAdminLifecyclePostgres(fixture.tx).
+		lifecycle, loadErr = adminlifecyclerepo.NewTournamentAdminLifecyclePostgres(fixture.tx).
 			LockLifecycleAuthority(txCtx, fixture.tournamentID)
 		return loadErr
 	}))
-	golden, err := postgres.NewTournamentProgressionPostgres(fixture.tx).LoadGoldenEvidence(
+	golden, err := progressionrepo.NewTournamentProgressionPostgres(fixture.tx).LoadGoldenEvidence(
 		ctx,
 		progression.Authority{
 			Tournament: lifecycle.Tournament, ProjectionRevisionID: successorProjectionID,
@@ -1330,7 +1338,7 @@ func TestTournamentAdminCorrectionCarriesNativeGoldenAuthorityAcrossUnchangedSta
 		WHERE attempt.series_id = $1
 		ORDER BY attempt.attempt_number DESC
 		LIMIT 1`, seriesID).Scan(&gameID))
-	repository := postgres.NewTournamentAdminCorrectionPostgres(fixture.tx)
+	repository := admincorrectionrepo.NewTournamentAdminCorrectionPostgres(fixture.tx)
 	loadAuthority := func() tournamentadmin.CorrectionWorkflowAuthority {
 		t.Helper()
 		var authority tournamentadmin.CorrectionWorkflowAuthority
@@ -1373,14 +1381,14 @@ func TestTournamentAdminCorrectionCarriesNativeGoldenAuthorityAcrossUnchangedSta
 	require.Positive(t, originalGroups)
 	require.Zero(t, rewrittenGroups, "unchanged correction must retain immutable group provenance")
 
-	var lifecycle tournamentadmin.LifecycleAuthority
+	var lifecycle tournamentadminlifecycle.LifecycleAuthority
 	require.NoError(t, fixture.tx.Do(ctx, func(txCtx context.Context) error {
 		var loadErr error
-		lifecycle, loadErr = postgres.NewTournamentAdminLifecyclePostgres(fixture.tx).
+		lifecycle, loadErr = adminlifecyclerepo.NewTournamentAdminLifecyclePostgres(fixture.tx).
 			LockLifecycleAuthority(txCtx, fixture.tournamentID)
 		return loadErr
 	}))
-	terminal, err := postgres.NewTournamentProgressionPostgres(fixture.tx).LoadLockedSwissTerminalEvidence(
+	terminal, err := progressionrepo.NewTournamentProgressionPostgres(fixture.tx).LoadLockedSwissTerminalEvidence(
 		ctx,
 		progression.Command{
 			CommandID: uuid.New(), TournamentID: fixture.tournamentID, RosterID: fixture.rosterID,
@@ -1481,15 +1489,19 @@ func settleCorrectionSwissReceiptSeries(
 		FROM assignments AS assignment
 		JOIN game_attempts AS attempt ON attempt.id = assignment.attempt_id
 		WHERE assignment.id = $1`, binding.AssignmentID).Scan(&scope.Game.GameID, &scope.Game.SlotID))
-	results := postgres.NewResultPostgres(fixture.tx)
-	repository := postgres.NewParticipantSettlementRepository(fixture.tx, results)
+	results := resultauthority.NewResultPostgres(fixture.tx)
+	repository := settlementrepo.NewParticipantSettlementRepositoryWithFinalizer(
+		fixture.tx,
+		results,
+		resultauthority.FinalizeProjection,
+	)
 	authority, err := repository.LoadConcurrentWinnerAuthority(ctx, scope)
 	require.NoError(t, err)
 	commandID := uuid.New()
 	submittedAt := time.Now().UTC().Truncate(time.Microsecond)
-	_, changed, err := results.RecordSubmission(ctx, postgres.SubmissionInput{
+	_, changed, err := results.RecordSubmission(ctx, resultrepo.SubmissionInput{
 		ID: uuid.NewSHA1(commandID, []byte("participant-command:submission-event")),
-		Scope: postgres.ResultScope{
+		Scope: resultrepo.ResultScope{
 			TournamentID: fixture.tournamentID, RosterID: fixture.rosterID,
 			SeriesID: binding.SeriesID, AttemptID: scope.Game.GameID,
 		},
@@ -1501,9 +1513,9 @@ func settleCorrectionSwissReceiptSeries(
 	})
 	require.NoError(t, err)
 	require.True(t, changed)
-	settled, changed, err := gameusecase.SettlementNewUseCase(
+	settled, changed, err := gamesettlement.SettlementNewUseCase(
 		receiptSettlementRepository{ParticipantSettlementRepository: repository, t: t},
-	).Settle(ctx, gameusecase.SettlementCommand{Scope: scope, CommandID: uuid.New()})
+	).Settle(ctx, gamesettlement.SettlementCommand{Scope: scope, CommandID: uuid.New()})
 	require.NoError(t, err)
 	require.True(t, changed)
 	require.Equal(t, winnerID, settled.SettlementGameResultRevision.WinnerID)
@@ -1515,7 +1527,7 @@ func publishSwissGolden(
 	command progression.Command,
 ) error {
 	return fixture.tx.Do(ctx, func(txCtx context.Context) error {
-		lifecycle := postgres.NewTournamentAdminLifecyclePostgres(fixture.tx)
+		lifecycle := adminlifecyclerepo.NewTournamentAdminLifecyclePostgres(fixture.tx)
 		authority, err := lifecycle.LockLifecycleAuthority(txCtx, fixture.tournamentID)
 		if err != nil {
 			return err
@@ -1523,7 +1535,7 @@ func publishSwissGolden(
 		if authority.ProjectionRevision != command.ExpectedProjectionRevision {
 			return domain.ErrConflict
 		}
-		repository := postgres.NewTournamentProgressionPostgres(fixture.tx)
+		repository := progressionrepo.NewTournamentProgressionPostgres(fixture.tx)
 		workflow := progression.NewWorkflow(progression.ProgressionDependencies{
 			Repository: repository, TerminalEvidence: repository, Transitioner: repository,
 			Publisher: repository, ProgressionClock: playoffPublicationClock{},
@@ -1535,12 +1547,12 @@ func publishSwissGolden(
 		if err != nil {
 			return err
 		}
-		return lifecycle.SaveLifecycleCommand(txCtx, tournamentadmin.LifecycleCommandRecord{
-			CommandScope: tournamentadmin.CommandScope{
-				Operator:     tournamentadmin.OperatorIdentity{ActorID: command.ActorID},
+		return lifecycle.SaveLifecycleCommand(txCtx, tournamentadminlifecycle.LifecycleCommandRecord{
+			CommandScope: tournamentadminlifecycle.CommandScope{
+				Operator:     adminoperation.OperatorIdentity{ActorID: command.ActorID},
 				TournamentID: command.TournamentID, CommandID: command.CommandID,
 			},
-			Action:                     tournamentadmin.TournamentActionStartGolden,
+			Action:                     tournamentadminlifecycle.TournamentActionStartGolden,
 			SourceProjectionRevisionID: authority.ProjectionRevisionID,
 			SourceProjectionRevision:   authority.ProjectionRevision,
 			SourceTournamentRevision:   authority.Tournament.Revision,
@@ -1566,7 +1578,7 @@ func TestTournamentAdminCorrectionCommitPersistsGoldenSupersession(t *testing.T)
 		WHERE attempt.series_id = $1
 		ORDER BY attempt.attempt_number DESC
 		LIMIT 1`, seriesID).Scan(&gameID))
-	repository := postgres.NewTournamentAdminCorrectionPostgres(fixture.tx)
+	repository := admincorrectionrepo.NewTournamentAdminCorrectionPostgres(fixture.tx)
 	var authority tournamentadmin.CorrectionWorkflowAuthority
 	require.NoError(t, fixture.tx.Do(ctx, func(txCtx context.Context) error {
 		var loadErr error
@@ -1644,7 +1656,7 @@ func TestTournamentAdminCorrectionCommitCancelsRetainedGoldenAttempt(t *testing.
 		WHERE attempt.series_id = $1
 		ORDER BY attempt.attempt_number DESC
 		LIMIT 1`, seriesID).Scan(&gameID))
-	repository := postgres.NewTournamentAdminCorrectionPostgres(fixture.tx)
+	repository := admincorrectionrepo.NewTournamentAdminCorrectionPostgres(fixture.tx)
 	var authority tournamentadmin.CorrectionWorkflowAuthority
 	require.NoError(t, fixture.tx.Do(ctx, func(txCtx context.Context) error {
 		var loadErr error
@@ -1872,7 +1884,7 @@ func TestCorrectionStartGoldenRejectsLateGroupAggregate(t *testing.T) {
 		WHERE series_id = $1
 		ORDER BY attempt_number DESC
 		LIMIT 1`, seriesID).Scan(&gameID))
-	repository := postgres.NewTournamentAdminCorrectionPostgres(fixture.tx)
+	repository := admincorrectionrepo.NewTournamentAdminCorrectionPostgres(fixture.tx)
 	var authority tournamentadmin.CorrectionWorkflowAuthority
 	require.NoError(t, fixture.tx.Do(ctx, func(txCtx context.Context) error {
 		var loadErr error
@@ -1971,7 +1983,7 @@ func requireCorrectionGoldenCrossBindingRejected(
 func TestGoldenCorrectionSealAllowsCoveredRootsCreatedBeforeSeal(t *testing.T) {
 	ctx := context.Background()
 	fixture, groupID, groupRevisionID, seriesID, gameID := prepareGoldenCorrectionBase(ctx, t)
-	repository := postgres.NewTournamentAdminCorrectionPostgres(fixture.tx)
+	repository := admincorrectionrepo.NewTournamentAdminCorrectionPostgres(fixture.tx)
 	var stateRevisionID, ledgerRevisionID, attemptID uuid.UUID
 	var mutation tournamentadmin.CorrectionMutation
 	require.NoError(t, fixture.tx.Do(ctx, func(txCtx context.Context) error {
@@ -2021,7 +2033,7 @@ func prepareSealedGoldenCorrection(
 ) (tournamentAdminSwissProofFixture, uuid.UUID, uuid.UUID) {
 	t.Helper()
 	fixture, groupID, groupRevisionID, seriesID, gameID := prepareGoldenCorrectionBase(ctx, t)
-	repository := postgres.NewTournamentAdminCorrectionPostgres(fixture.tx)
+	repository := admincorrectionrepo.NewTournamentAdminCorrectionPostgres(fixture.tx)
 	var authority tournamentadmin.CorrectionWorkflowAuthority
 	require.NoError(t, fixture.tx.Do(ctx, func(txCtx context.Context) error {
 		var loadErr error
@@ -2252,19 +2264,19 @@ func openCorrectionReadyWave(ctx context.Context, t *testing.T, fixture tourname
 	projectionID, projectionRevision := currentPublishedProjection(ctx, t, fixture.tournamentID, fixture.rosterID)
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	waveID := uuid.New()
-	repository := postgres.NewWavePostgres(fixture.tx)
-	wave, err := repository.Create(ctx, postgres.WaveCreateInput{
+	repository := waverepo.NewWavePostgres(fixture.tx)
+	wave, err := repository.Create(ctx, waverepo.WaveCreateInput{
 		ID: waveID, TournamentID: fixture.tournamentID, RosterID: fixture.rosterID,
 		RevisionID: domain.WaveRevisionID(uuid.New()), ParticipantIDs: fixture.participants,
 		CommandID: uuid.New(), SourceProjectionRevisionID: projectionID,
 		SourceProjectionRevision: projectionRevision, CreatedAt: now,
-		Series: []postgres.WaveSeriesInput{
+		Series: []waverepo.WaveSeriesInput{
 			{ID: uuid.New(), FirstParticipantID: fixture.participants[0], SecondParticipantID: fixture.participants[1], Format: domain.SeriesFormatBO1, InitialScoreRevisionID: domain.SeriesScoreRevisionID(uuid.New())},
 			{ID: uuid.New(), FirstParticipantID: fixture.participants[2], SecondParticipantID: fixture.participants[3], Format: domain.SeriesFormatBO1, InitialScoreRevisionID: domain.SeriesScoreRevisionID(uuid.New())},
 		},
 	})
 	require.NoError(t, err)
-	_, changed, err := repository.OpenReadyWindow(ctx, fixture.tournamentID, waveID, wave.Revision, postgres.ReadyWindowInput{
+	_, changed, err := repository.OpenReadyWindow(ctx, fixture.tournamentID, waveID, wave.Revision, waverepo.ReadyWindowInput{
 		ID: uuid.New(), RevisionID: domain.ReadyWindowRevisionID(uuid.New()),
 		OpenedAt: now.Add(time.Millisecond), Deadline: now.Add(time.Minute),
 	})

@@ -11,11 +11,20 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	draftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment/draft"
+	authorityrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/authority"
+	waverepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/wave"
+	recoveryrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/recovery"
+	recoveryterminalrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/recovery/terminal"
+	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
+	executionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/execution"
+	wavestartrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/execution/wavestart"
+	participantdraftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/draft"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
 	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gamereconnect "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/reconnect"
+	gamestart "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/start"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/recovery"
 	progression "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/progression"
@@ -36,7 +45,7 @@ func TestTechnicalPostseasonAdvancementThroughRecovery(t *testing.T) {
 	require.NoError(t, err)
 
 	firstSemifinal := semifinalSettlementInput(ctx, t, fixture, stageCommand.CommandID, 1)
-	_, changed, err := postgres.NewResultPostgres(fixture.tx).Settle(ctx, firstSemifinal)
+	_, changed, err := resultauthority.NewResultPostgres(fixture.tx).Settle(ctx, firstSemifinal)
 	require.NoError(t, err)
 	require.True(t, changed)
 
@@ -236,7 +245,7 @@ func technicalPlayoffSeries(
 }
 
 type technicalWaveStartRepository struct {
-	*postgres.TournamentAdminExecutionPostgres
+	*executionrepo.Repository
 	startAt time.Time
 }
 
@@ -250,9 +259,9 @@ func technicalStartWave(
 	fixture tournamentAdminSwissProofFixture,
 	waveID uuid.UUID,
 	participants []uuid.UUID,
-) *gameusecase.StartRecord {
+) *gamestart.StartRecord {
 	t.Helper()
-	waves := postgres.NewWavePostgres(fixture.tx)
+	waves := waverepo.NewWavePostgres(fixture.tx)
 	wave, err := waves.Get(ctx, fixture.tournamentID, waveID)
 	require.NoError(t, err)
 	require.Equal(t, domain.WaveStatePlanned, wave.Wave.State)
@@ -274,7 +283,7 @@ func technicalStartWave(
 		fixture.tournamentID,
 		waveID,
 		wave.Revision,
-		postgres.ReadyWindowInput{
+		waverepo.ReadyWindowInput{
 			ID:         windowID,
 			RevisionID: domain.ReadyWindowRevisionID(uuid.New()),
 			OpenedAt:   openedAt,
@@ -304,14 +313,14 @@ func technicalStartWave(
 
 	require.NotNil(t, opened.Wave.ReadyWindow)
 	startAt := opened.Wave.ReadyWindow.OpenedAt.Add(domain.ReadyWindowDuration / 2)
-	start := gameusecase.NewStartUseCase(technicalWaveStartRepository{
-		TournamentAdminExecutionPostgres: fixture.adapter,
-		startAt:                          startAt,
+	start := gamestart.NewStartUseCase(technicalWaveStartRepository{
+		Repository: fixture.adapter,
+		startAt:    startAt,
 	}, nil)
-	scope := gameusecase.StartScope{TournamentID: fixture.tournamentID, WaveID: waveID, WindowID: windowID}
+	scope := gamestart.StartScope{TournamentID: fixture.tournamentID, WaveID: waveID, WindowID: windowID}
 	authority, err := fixture.adapter.LoadWaveStartAuthority(ctx, scope)
 	require.NoError(t, err)
-	command := gameusecase.StartCommand{
+	command := gamestart.StartCommand{
 		Scope:                      scope,
 		CommandID:                  uuid.New(),
 		ActorID:                    uuid.New(),
@@ -320,7 +329,7 @@ func technicalStartWave(
 		ExpectedRevisions:          authority.Revisions,
 		RequestDigest:              sha256.Sum256([]byte("technical-postseason-wave-start:" + waveID.String())),
 	}
-	var record *gameusecase.StartRecord
+	var record *gamestart.StartRecord
 	err = fixture.tx.Do(ctx, func(txCtx context.Context) error {
 		var startErr error
 		record, changed, startErr = start.Start(txCtx, command)
@@ -358,14 +367,14 @@ func technicalDisconnectPending(
 		playerID: participantID,
 	}
 	command := participantReconnectDisconnectCommand(started, deadline)
-	_, changed, err := gameusecase.NewDisconnectUseCase(
+	_, changed, err := gamereconnect.NewDisconnectUseCase(
 		fixture.adapter,
 		participantReconnectTestClock{at: deadline.Add(-time.Second)},
 	).Disconnect(ctx, command)
 	require.NoError(t, err)
 	require.True(t, changed)
 
-	deadlines, err := postgres.NewRecoveryPostgres(fixture.tx, nil).ListPendingDeadlines(
+	deadlines, err := recoveryrepo.NewRecoveryPostgres(fixture.tx, nil).ListPendingDeadlines(
 		ctx, recovery.DeadlineCursor{}, recovery.MaximumSweepBatchSize,
 	)
 	require.NoError(t, err)
@@ -422,10 +431,12 @@ func technicalDeadlineHandler(
 	pending recovery.PendingDeadline,
 ) *recovery.TerminalDeadlineHandler {
 	clock := playoffPublicationClock{now: pending.DueAt}
-	store := postgres.NewRecoveryTerminalPostgres(
+	store := recoveryterminalrepo.NewRecoveryTerminalPostgresWithDependencies(
 		fixture.tx,
-		postgres.NewExecutionAuthorityPostgres(fixture.tx),
+		authorityrepo.NewExecutionAuthorityPostgres(fixture.tx),
 		clock,
+		wavestartrepo.EnsurePreStartSwissRoundProofForCommand,
+		resultauthority.FinalizeProjection,
 	)
 	return recovery.NewTerminalDeadlineHandlerWithDependencies(
 		fixture.tx,
@@ -465,7 +476,7 @@ func activateTechnicalFinal(
 	ids playoff.FinalStageIDs,
 ) {
 	t.Helper()
-	drafts := postgres.NewParticipantDraftRepository(fixture.tx, postgres.NewDraftPostgres(fixture.tx))
+	drafts := participantdraftrepo.NewParticipantDraftRepository(fixture.tx, draftrepo.NewDraftPostgres(fixture.tx))
 	current, err := drafts.LoadDraft(ctx, ids.DraftID)
 	require.NoError(t, err)
 	for current.State == draftusecase.ExecutionStateActive {

@@ -9,8 +9,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	draftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment/draft"
+	gamedb "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/game"
+	resultrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result"
+	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
+	participantdraftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/draft"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	gamedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/game"
 	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
@@ -65,7 +69,7 @@ func prepareActiveFinal(ctx context.Context, t *testing.T) (tournamentAdminSwiss
 		_, err := fixture.tx.Querier(ctx).LockPostseasonFinalGenesis(ctx, params)
 		require.ErrorIs(t, err, pgx.ErrNoRows, field)
 	}
-	drafts := postgres.NewParticipantDraftRepository(fixture.tx, postgres.NewDraftPostgres(fixture.tx))
+	drafts := participantdraftrepo.NewParticipantDraftRepository(fixture.tx, draftrepo.NewDraftPostgres(fixture.tx))
 	current, err := drafts.LoadDraft(ctx, ids.DraftID)
 	require.NoError(t, err)
 	for current.State == draftusecase.ExecutionStateActive {
@@ -98,7 +102,7 @@ func TestFinalSettlementPublishesChampion(t *testing.T) {
 	for position := 1; position <= 2; position++ {
 		input := activeFinalSettlementInput(ctx, t, fixture, ids, position)
 		settleAndAdvance := func(txCtx context.Context) error {
-			if _, changed, err := postgres.NewResultPostgres(fixture.tx).Settle(txCtx, input); err != nil {
+			if _, changed, err := resultauthority.NewResultPostgres(fixture.tx).Settle(txCtx, input); err != nil {
 				return err
 			} else if !changed {
 				return errors.New("expected fresh final settlement")
@@ -135,14 +139,14 @@ func TestFinalSettlementPublishesChampion(t *testing.T) {
 	require.Equal(t, 1, events)
 }
 
-func activeFinalSettlementInput(ctx context.Context, t *testing.T, fixture tournamentAdminSwissProofFixture, ids playoff.FinalStageIDs, position int) postgres.ResultSettlementInput {
+func activeFinalSettlementInput(ctx context.Context, t *testing.T, fixture tournamentAdminSwissProofFixture, ids playoff.FinalStageIDs, position int) resultrepo.ResultSettlementInput {
 	t.Helper()
 	gameID, slotID := ids.FirstGameID, ids.FirstSlotID
 	if position == 2 {
 		gameID, slotID = ids.SecondGameID, ids.SecondSlotID
 	}
 	scope := gamedomain.Scope{TournamentID: fixture.tournamentID, SeriesID: ids.FinalSeriesID, SlotID: slotID, GameID: gameID}
-	games := postgres.NewGamePostgres(fixture.tx)
+	games := gamedb.NewGamePostgres(fixture.tx)
 	current, err := games.GetAttemptRecord(ctx, scope)
 	require.NoError(t, err)
 	at := current.CreatedAt.UTC().Add(time.Second)

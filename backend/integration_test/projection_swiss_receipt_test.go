@@ -14,12 +14,17 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	waverepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/wave"
+	resultrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result"
+	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
+	catalogrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/catalog"
+	settlementrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/settlement"
+	progressionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/progression"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	gamedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/game"
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gamesettlement "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/settlement"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 	swissusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/swiss"
 	progression "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/progression"
@@ -96,7 +101,7 @@ func prepareFinalSwissBeforeStart(ctx context.Context, t *testing.T, stopBeforeS
 
 func closeSwissReceiptWave(ctx context.Context, t *testing.T, fixture tournamentAdminSwissProofFixture) {
 	t.Helper()
-	repository := postgres.NewWavePostgres(fixture.tx)
+	repository := waverepo.NewWavePostgres(fixture.tx)
 	wave, err := repository.Get(ctx, fixture.tournamentID, fixture.waveID)
 	require.NoError(t, err)
 	_, changed, err := repository.Close(ctx, fixture.tournamentID, fixture.waveID, wave.Revision, time.Now().UTC())
@@ -106,11 +111,11 @@ func closeSwissReceiptWave(ctx context.Context, t *testing.T, fixture tournament
 
 func swissReceiptAuthority(ctx context.Context, t *testing.T, fixture tournamentAdminSwissProofFixture) progression.Authority {
 	t.Helper()
-	record, err := postgres.NewTournamentPostgres(fixture.tx).Get(ctx, fixture.tournamentID)
+	record, err := catalogrepo.NewTournamentCatalogPostgres(fixture.tx).GetTournament(ctx, fixture.tournamentID)
 	require.NoError(t, err)
 	projectionID, revision := currentPublishedProjection(ctx, t, fixture.tournamentID, fixture.rosterID)
 	return progression.Authority{ProjectionRevisionID: projectionID, ProjectionRevision: revision, Tournament: inbound.TournamentView{
-		ID: record.ID, RosterID: fixture.rosterID, Preset: domain.TournamentPreset(record.Preset), State: record.State,
+		ID: record.ID, RosterID: fixture.rosterID, Preset: record.Preset, State: record.State,
 		Revision: record.Revision, RosterSize: len(fixture.participants), CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt, StartedAt: record.StartedAt,
 	}}
 }
@@ -118,7 +123,7 @@ func swissReceiptAuthority(ctx context.Context, t *testing.T, fixture tournament
 func readFinalSwissReceipt(ctx context.Context, t *testing.T, fixture tournamentAdminSwissProofFixture) playoff.FinalSwissProjection {
 	t.Helper()
 	authority := swissReceiptAuthority(ctx, t, fixture)
-	input, err := postgres.NewTournamentProgressionPostgres(fixture.tx).LoadLockedSwissTerminalEvidence(ctx, progression.Command{
+	input, err := progressionrepo.NewTournamentProgressionPostgres(fixture.tx).LoadLockedSwissTerminalEvidence(ctx, progression.Command{
 		CommandID: uuid.New(), TournamentID: fixture.tournamentID, RosterID: fixture.rosterID, ActorID: uuid.New(),
 		Action: progression.ActionStartPlayoffs, ExpectedProjectionRevision: authority.ProjectionRevision,
 	}, authority)
@@ -191,7 +196,7 @@ func TestSwissWaveCloseAdvancesRevisionIdentity(t *testing.T) {
 	for index := range fixture.binding {
 		settleSwissReceiptSeries(ctx, t, fixture, index)
 	}
-	repository := postgres.NewWavePostgres(fixture.tx)
+	repository := waverepo.NewWavePostgres(fixture.tx)
 	current, err := repository.Get(ctx, fixture.tournamentID, fixture.waveID)
 	require.NoError(t, err)
 	closed, changed, err := repository.Close(ctx, fixture.tournamentID, fixture.waveID, current.Revision, time.Now().UTC())
@@ -235,30 +240,30 @@ func TestFinalSwissPublicationLocksOnlySelectedHeads(t *testing.T) {
 	require.NoError(t, err, "an unrelated historical score node must not block the selected-head snapshot")
 }
 
-func settleSwissReceiptSeries(ctx context.Context, t *testing.T, fixture tournamentAdminSwissProofFixture, index int) *gameusecase.SettlementRecord {
+func settleSwissReceiptSeries(ctx context.Context, t *testing.T, fixture tournamentAdminSwissProofFixture, index int) *gamesettlement.SettlementRecord {
 	t.Helper()
 	repository, scope := submitSwissReceiptSeries(ctx, t, fixture, index)
-	record, changed, err := gameusecase.SettlementNewUseCase(receiptSettlementRepository{ParticipantSettlementRepository: repository, t: t}).Settle(ctx, gameusecase.SettlementCommand{Scope: scope, CommandID: uuid.New()})
+	record, changed, err := gamesettlement.SettlementNewUseCase(receiptSettlementRepository{ParticipantSettlementRepository: repository, t: t}).Settle(ctx, gamesettlement.SettlementCommand{Scope: scope, CommandID: uuid.New()})
 	require.NoError(t, err)
 	require.True(t, changed)
 	require.Equal(t, domain.SeriesStateCompleted, record.Series.State)
 	return record
 }
 
-func submitSwissReceiptSeries(ctx context.Context, t *testing.T, fixture tournamentAdminSwissProofFixture, index int) (*postgres.ParticipantSettlementRepository, gamedomain.SubmissionScope) {
+func submitSwissReceiptSeries(ctx context.Context, t *testing.T, fixture tournamentAdminSwissProofFixture, index int) (*settlementrepo.ParticipantSettlementRepository, gamedomain.SubmissionScope) {
 	t.Helper()
 	binding := fixture.binding[index]
 	scope := gamedomain.SubmissionScope{Game: gamedomain.Scope{TournamentID: fixture.tournamentID, SeriesID: binding.SeriesID}, WaveID: fixture.waveID, AssignmentID: binding.AssignmentID}
 	require.NoError(t, sharedPool.QueryRow(ctx, `SELECT attempt.id, attempt.slot_id FROM assignments AS assignment JOIN game_attempts AS attempt ON attempt.id = assignment.attempt_id WHERE assignment.id = $1`, binding.AssignmentID).Scan(&scope.Game.GameID, &scope.Game.SlotID))
-	results := postgres.NewResultPostgres(fixture.tx)
-	repository := postgres.NewParticipantSettlementRepository(fixture.tx, results)
+	results := resultauthority.NewResultPostgres(fixture.tx)
+	repository := settlementrepo.NewParticipantSettlementRepositoryWithFinalizer(fixture.tx, results, resultauthority.FinalizeProjection)
 	authority, err := repository.LoadConcurrentWinnerAuthority(ctx, scope)
 	require.NoError(t, err)
 	commandID := uuid.New()
 	submittedAt := time.Now().UTC().Truncate(time.Microsecond)
-	_, changed, err := results.RecordSubmission(ctx, postgres.SubmissionInput{
+	_, changed, err := results.RecordSubmission(ctx, resultrepo.SubmissionInput{
 		ID:           uuid.NewSHA1(commandID, []byte("participant-command:submission-event")),
-		Scope:        postgres.ResultScope{TournamentID: fixture.tournamentID, RosterID: fixture.rosterID, SeriesID: binding.SeriesID, AttemptID: scope.Game.GameID},
+		Scope:        resultrepo.ResultScope{TournamentID: fixture.tournamentID, RosterID: fixture.rosterID, SeriesID: binding.SeriesID, AttemptID: scope.Game.GameID},
 		AssignmentID: scope.AssignmentID, ParticipantID: binding.FirstParticipantID, IdempotencyKey: commandID,
 		Status: "accepted", PayloadDigest: authority.StartedGame.ContentDigest, IntentDigest: sha256.Sum256([]byte("Swiss receipt submission")),
 		SubmittedAt: submittedAt, ReceivedAt: submittedAt, CreatedAt: submittedAt,
@@ -277,7 +282,7 @@ func TestFinalSwissPublicationConcurrentWriters(t *testing.T) {
 	before := swissPublicationCounts(ctx, t, fixture)
 	ready, release := make(chan struct{}, 2), make(chan struct{})
 	type outcome struct {
-		record  *gameusecase.SettlementRecord
+		record  *gamesettlement.SettlementRecord
 		changed bool
 		err     error
 	}
@@ -285,7 +290,7 @@ func TestFinalSwissPublicationConcurrentWriters(t *testing.T) {
 	for range 2 {
 		gate := &receiptSettlementBarrier{ParticipantSettlementRepository: repository, ready: ready, release: release}
 		go func() {
-			record, changed, err := gameusecase.SettlementNewUseCase(gate).Settle(ctx, gameusecase.SettlementCommand{Scope: scope, CommandID: uuid.New()})
+			record, changed, err := gamesettlement.SettlementNewUseCase(gate).Settle(ctx, gamesettlement.SettlementCommand{Scope: scope, CommandID: uuid.New()})
 			results <- outcome{record, changed, err}
 		}()
 	}
@@ -298,7 +303,7 @@ func TestFinalSwissPublicationConcurrentWriters(t *testing.T) {
 	}
 	close(release)
 	winners := 0
-	var committed []*gameusecase.SettlementRecord
+	var committed []*gamesettlement.SettlementRecord
 	for range 2 {
 		select {
 		case result := <-results:
@@ -310,7 +315,7 @@ func TestFinalSwissPublicationConcurrentWriters(t *testing.T) {
 				}
 			} else {
 				require.False(t, result.changed)
-				require.True(t, errors.Is(result.err, gameusecase.ErrConcurrentWinnerConflict) || errors.Is(result.err, gameusecase.ErrConcurrentWinnerUnavailable) || errors.Is(result.err, domain.ErrConflict), "unexpected loser error: %v", result.err)
+				require.True(t, errors.Is(result.err, gamesettlement.ErrConcurrentWinnerConflict) || errors.Is(result.err, gamesettlement.ErrConcurrentWinnerUnavailable) || errors.Is(result.err, domain.ErrConflict), "unexpected loser error: %v", result.err)
 			}
 		case <-ctx.Done():
 			t.Fatal(ctx.Err())
@@ -329,13 +334,13 @@ func TestFinalSwissPublicationConcurrentWriters(t *testing.T) {
 }
 
 type receiptSettlementBarrier struct {
-	*postgres.ParticipantSettlementRepository
+	*settlementrepo.ParticipantSettlementRepository
 	ready   chan<- struct{}
 	release <-chan struct{}
 	once    sync.Once
 }
 
-func (r *receiptSettlementBarrier) CommitConcurrentWinnerSettlement(ctx context.Context, proposed gameusecase.SettlementRecord) (*gameusecase.SettlementRecord, bool, error) {
+func (r *receiptSettlementBarrier) CommitConcurrentWinnerSettlement(ctx context.Context, proposed gamesettlement.SettlementRecord) (*gamesettlement.SettlementRecord, bool, error) {
 	r.once.Do(func() {
 		r.ready <- struct{}{}
 		select {
@@ -347,11 +352,11 @@ func (r *receiptSettlementBarrier) CommitConcurrentWinnerSettlement(ctx context.
 }
 
 type receiptSettlementRepository struct {
-	*postgres.ParticipantSettlementRepository
+	*settlementrepo.ParticipantSettlementRepository
 	t *testing.T
 }
 
-func (r receiptSettlementRepository) CommitConcurrentWinnerSettlement(ctx context.Context, proposed gameusecase.SettlementRecord) (*gameusecase.SettlementRecord, bool, error) {
+func (r receiptSettlementRepository) CommitConcurrentWinnerSettlement(ctx context.Context, proposed gamesettlement.SettlementRecord) (*gamesettlement.SettlementRecord, bool, error) {
 	record, changed, err := r.ParticipantSettlementRepository.CommitConcurrentWinnerSettlement(ctx, proposed)
 	if err != nil {
 		r.t.Logf("settlement commit: %v", err)
@@ -377,12 +382,12 @@ func nextSwissReceiptWave(ctx context.Context, t *testing.T, previous tournament
 	if round == 3 {
 		pairs = [][2]int{{0, 3}, {1, 2}}
 	}
-	series := make([]postgres.WaveSeriesInput, len(pairs))
+	series := make([]waverepo.WaveSeriesInput, len(pairs))
 	for i, pair := range pairs {
-		series[i] = postgres.WaveSeriesInput{ID: uuid.New(), FirstParticipantID: fixture.participants[pair[0]], SecondParticipantID: fixture.participants[pair[1]], Format: domain.SeriesFormatBO1, InitialScoreRevisionID: domain.SeriesScoreRevisionID(uuid.New())}
+		series[i] = waverepo.WaveSeriesInput{ID: uuid.New(), FirstParticipantID: fixture.participants[pair[0]], SecondParticipantID: fixture.participants[pair[1]], Format: domain.SeriesFormatBO1, InitialScoreRevisionID: domain.SeriesScoreRevisionID(uuid.New())}
 	}
-	waves := postgres.NewWavePostgres(fixture.tx)
-	wave, err := waves.Create(ctx, postgres.WaveCreateInput{ID: fixture.waveID, TournamentID: fixture.tournamentID, RosterID: fixture.rosterID, RevisionID: fixture.waveRevisionID,
+	waves := waverepo.NewWavePostgres(fixture.tx)
+	wave, err := waves.Create(ctx, waverepo.WaveCreateInput{ID: fixture.waveID, TournamentID: fixture.tournamentID, RosterID: fixture.rosterID, RevisionID: fixture.waveRevisionID,
 		ParticipantIDs: fixture.participants, Series: series, CommandID: uuid.New(), SourceProjectionRevisionID: fixture.projectionRevisionID, SourceProjectionRevision: fixture.sourceProjectionRevision, CreatedAt: at})
 	require.NoError(t, err)
 	fixture.binding = make([]swissusecase.LockedSeries, len(series))
@@ -395,7 +400,7 @@ func nextSwissReceiptWave(ctx context.Context, t *testing.T, previous tournament
 	_, err = sharedPool.Exec(ctx, `INSERT INTO swiss_wave_links (wave_id, tournament_id, roster_id, round_id, created_at) VALUES ($1, $2, $3, $4, $5)`, fixture.waveID, fixture.tournamentID, fixture.rosterID, fixture.roundID, at)
 	require.NoError(t, err)
 	openedAt := time.Now().UTC().Truncate(time.Microsecond)
-	wave, changed, err := waves.OpenReadyWindow(ctx, fixture.tournamentID, fixture.waveID, wave.Revision, postgres.ReadyWindowInput{ID: fixture.windowID, RevisionID: domain.ReadyWindowRevisionID(uuid.New()), OpenedAt: openedAt, Deadline: openedAt.Add(domain.ReadyWindowDuration)})
+	wave, changed, err := waves.OpenReadyWindow(ctx, fixture.tournamentID, fixture.waveID, wave.Revision, waverepo.ReadyWindowInput{ID: fixture.windowID, RevisionID: domain.ReadyWindowRevisionID(uuid.New()), OpenedAt: openedAt, Deadline: openedAt.Add(domain.ReadyWindowDuration)})
 	require.NoError(t, err)
 	require.True(t, changed)
 	for _, participantID := range fixture.participants {

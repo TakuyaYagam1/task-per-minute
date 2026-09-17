@@ -13,7 +13,9 @@ import (
 	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
 	gamedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/game"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	attemptusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/attempt"
+	noshowusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/noshow"
+	reconnectusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/reconnect"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 )
 
@@ -31,9 +33,9 @@ var deadlineTerminalNamespace = uuid.MustParse("dfb8cdb7-6344-5dc8-89d3-6fcddc84
 // expire a Wave after a process restart.
 type DeadlineTerminalAuthority struct {
 	Deadline         PendingDeadline
-	GameTimeout      *gameusecase.AttemptAuthority
-	ReadyWindow      []gameusecase.NoShowAuthority
-	ReconnectTimeout *gameusecase.ReconnectAuthority
+	GameTimeout      *attemptusecase.AttemptAuthority
+	ReadyWindow      []noshowusecase.NoShowAuthority
+	ReconnectTimeout *reconnectusecase.ReconnectAuthority
 }
 
 // DeadlineTerminalPlan is a domain-decided mutation. The store only persists
@@ -44,11 +46,11 @@ type DeadlineTerminalPlan struct {
 	ReceiptID           uuid.UUID
 	CommandID           uuid.UUID
 	ResultEvidence      *DeadlineResultEvidenceIDs
-	ReadyWindow         []gameusecase.NoShowResolution
+	ReadyWindow         []noshowusecase.NoShowResolution
 	ReadyWindowEvidence []DeadlineNoShowEvidenceIDs
 	PauseRevisionID     uuid.UUID
-	GameTimeout         *gameusecase.AttemptRecord
-	ReconnectTimeout    *gameusecase.ReconnectRecord
+	GameTimeout         *attemptusecase.AttemptRecord
+	ReconnectTimeout    *reconnectusecase.ReconnectRecord
 }
 
 type DeadlineResultEvidenceIDs struct {
@@ -107,7 +109,7 @@ type TerminalDeadlineHandler struct {
 	store             DeadlineTerminalStore
 	clock             Clock
 	terminalAdvancer  TerminalAdvancer
-	reconnectObserver gameusecase.Observer
+	reconnectObserver reconnectusecase.Observer
 }
 
 var _ DeadlineHandler = (*TerminalDeadlineHandler)(nil)
@@ -115,7 +117,7 @@ var _ DeadlineHandler = (*TerminalDeadlineHandler)(nil)
 func NewTerminalDeadlineHandler(
 	store DeadlineTerminalStore,
 	clock Clock,
-	reconnectObservers ...gameusecase.Observer,
+	reconnectObservers ...reconnectusecase.Observer,
 ) *TerminalDeadlineHandler {
 	return NewTerminalDeadlineHandlerWithDependencies(
 		nil, store, clock, nil, reconnectObservers...,
@@ -131,7 +133,7 @@ func NewTerminalDeadlineHandlerWithDependencies(
 	store DeadlineTerminalStore,
 	clock Clock,
 	terminalAdvancer TerminalAdvancer,
-	reconnectObservers ...gameusecase.Observer,
+	reconnectObservers ...reconnectusecase.Observer,
 ) *TerminalDeadlineHandler {
 	return &TerminalDeadlineHandler{
 		transactions: transactions, store: store, clock: clock,
@@ -243,7 +245,7 @@ func (handler *TerminalDeadlineHandler) advanceTerminalPlan(
 	return nil
 }
 
-func reconnectSettlementAdvancementEligible(record *gameusecase.ReconnectRecord) bool {
+func reconnectSettlementAdvancementEligible(record *reconnectusecase.ReconnectRecord) bool {
 	if record == nil || record.ReplayRoute != nil || record.VoidGameResultRevision != nil ||
 		record.GameResultRevision == nil || record.ScoreRevision == nil || record.Evidence == nil {
 		return false
@@ -299,23 +301,23 @@ func buildDeadlineTerminalPlan(
 
 func planGameTimeout(
 	ctx context.Context,
-	authority gameusecase.AttemptAuthority,
+	authority attemptusecase.AttemptAuthority,
 	deadline PendingDeadline,
 	now time.Time,
-) (*gameusecase.AttemptRecord, error) {
+) (*attemptusecase.AttemptRecord, error) {
 	game, category, found := failedAttemptExpectation(authority)
 	if !found {
 		return nil, ErrInvalidDeadlineAuthority
 	}
 	planner := &gameTimeoutPlanner{authority: authority}
 	commandID := deadlineTerminalID(deadline, uuid.Nil, "command")
-	command := gameusecase.AttemptCommand{
+	command := attemptusecase.AttemptCommand{
 		Scope: authority.Scope, CommandID: commandID, FailureClass: gamedomain.FailureNoSolve,
-		Expected: gameusecase.Expectation{
+		Expected: attemptusecase.Expectation{
 			AttemptNo: game.AttemptNo, State: game.State,
 			SnapshotID: authority.ActiveSnapshotID, Category: category,
 		},
-		Revisions: gameusecase.AttemptRevisionSet{
+		Revisions: attemptusecase.AttemptRevisionSet{
 			GameResultRevisionID: domain.OfficialResultRevisionID(deadlineTerminalID(deadline, deadline.GameID, "game-result")),
 			ScoreRevisionID:      domain.SeriesScoreRevisionID(deadlineTerminalID(deadline, deadline.SeriesID, "score")),
 			RouteEvidenceID:      deadlineTerminalID(deadline, deadline.GameID, "route"),
@@ -324,7 +326,7 @@ func planGameTimeout(
 			ProjectionRevisionID: deadlineTerminalID(deadline, deadline.GameID, "projection"),
 		},
 	}
-	record, changed, err := gameusecase.AttemptNewUseCase(planner, fixedRecoveryClock{at: now}).Terminalize(
+	record, changed, err := attemptusecase.AttemptNewUseCase(planner, fixedRecoveryClock{at: now}).Terminalize(
 		ctx,
 		command,
 	)
@@ -339,21 +341,21 @@ func planGameTimeout(
 
 func planReadyWindowExpiry(
 	ctx context.Context,
-	authorities []gameusecase.NoShowAuthority,
+	authorities []noshowusecase.NoShowAuthority,
 	deadline PendingDeadline,
 	now time.Time,
-) ([]gameusecase.NoShowResolution, error) {
-	ordered := append([]gameusecase.NoShowAuthority(nil), authorities...)
+) ([]noshowusecase.NoShowResolution, error) {
+	ordered := append([]noshowusecase.NoShowAuthority(nil), authorities...)
 	sort.Slice(ordered, func(left, right int) bool {
 		return ordered[left].Scope.SeriesID.String() < ordered[right].Scope.SeriesID.String()
 	})
-	resolutions := make([]gameusecase.NoShowResolution, 0, len(ordered))
+	resolutions := make([]noshowusecase.NoShowResolution, 0, len(ordered))
 	var action domain.NormalNoShowAction
 	for index := range ordered {
 		authority := ordered[index]
 		planner := &readyWindowPlanner{authority: authority}
 		seriesID := authority.Scope.SeriesID
-		command := gameusecase.NoShowCommand{
+		command := noshowusecase.NoShowCommand{
 			Scope:                    authority.Scope,
 			CommandID:                deadlineTerminalID(deadline, seriesID, "command"),
 			ExpectedWaveRevisionID:   authority.Wave.RevisionID,
@@ -363,7 +365,7 @@ func planReadyWindowExpiry(
 			ScoreRevisionID:          domain.SeriesScoreRevisionID(deadlineTerminalID(deadline, seriesID, "score")),
 			SeriesResultRevisionID:   domain.OfficialResultRevisionID(deadlineTerminalID(deadline, seriesID, "series-result")),
 		}
-		resolution, changed, err := gameusecase.NoShowNewUseCase(planner, fixedRecoveryClock{at: now}).Resolve(
+		resolution, changed, err := noshowusecase.NoShowNewUseCase(planner, fixedRecoveryClock{at: now}).Resolve(
 			ctx,
 			command,
 		)
@@ -384,15 +386,15 @@ func planReadyWindowExpiry(
 
 func planReconnectTimeout(
 	ctx context.Context,
-	authority gameusecase.ReconnectAuthority,
+	authority reconnectusecase.ReconnectAuthority,
 	deadline PendingDeadline,
 	now time.Time,
-) (*gameusecase.ReconnectRecord, error) {
+) (*reconnectusecase.ReconnectRecord, error) {
 	planner := &reconnectTimeoutPlanner{authority: authority}
-	command := gameusecase.TimeoutCommand{
+	command := reconnectusecase.TimeoutCommand{
 		Scope: authority.Scope, CommandID: deadlineTerminalID(deadline, uuid.Nil, "command"),
 		ParticipantID: deadline.ParticipantID, IntervalID: deadline.ID,
-		Settlement: gameusecase.SettlementIDs{
+		Settlement: reconnectusecase.SettlementIDs{
 			GameResultRevisionID:   domain.OfficialResultRevisionID(deadlineTerminalID(deadline, deadline.GameID, "game-result")),
 			ScoreRevisionID:        domain.SeriesScoreRevisionID(deadlineTerminalID(deadline, deadline.SeriesID, "score")),
 			SeriesResultRevisionID: domain.OfficialResultRevisionID(deadlineTerminalID(deadline, deadline.SeriesID, "series-result")),
@@ -402,7 +404,7 @@ func planReconnectTimeout(
 			ProjectionRevisionID:   deadlineTerminalID(deadline, deadline.GameID, "projection"),
 		},
 	}
-	record, changed, err := gameusecase.NewTimeoutUseCase(
+	record, changed, err := reconnectusecase.NewTimeoutUseCase(
 		planner,
 		fixedRecoveryClock{at: now},
 	).Expire(
@@ -422,10 +424,10 @@ func (handler *TerminalDeadlineHandler) observeReconnectTimeout(ctx context.Cont
 	if handler == nil || plan.ReconnectTimeout == nil || plan.ReconnectTimeout.TimeoutCommand == nil {
 		return
 	}
-	gameusecase.ObserveEvent(
+	reconnectusecase.ObserveEvent(
 		ctx,
 		handler.reconnectObserver,
-		gameusecase.TimeoutTerminalEvent(
+		reconnectusecase.TimeoutTerminalEvent(
 			*plan.ReconnectTimeout.TimeoutCommand,
 			plan.ReconnectTimeout,
 			true,
@@ -434,7 +436,7 @@ func (handler *TerminalDeadlineHandler) observeReconnectTimeout(ctx context.Cont
 	)
 }
 
-func firstDeadlineReconnectObserver(observers ...gameusecase.Observer) gameusecase.Observer {
+func firstDeadlineReconnectObserver(observers ...reconnectusecase.Observer) reconnectusecase.Observer {
 	for _, observer := range observers {
 		if observer != nil {
 			return observer
@@ -462,14 +464,14 @@ func validDeadlineTerminalAuthority(authority DeadlineTerminalAuthority) bool {
 	}
 }
 
-func gameAuthorityMatchesDeadline(authority gameusecase.AttemptAuthority, deadline PendingDeadline) bool {
+func gameAuthorityMatchesDeadline(authority attemptusecase.AttemptAuthority, deadline PendingDeadline) bool {
 	return authority.Revision == deadline.ExpectedRevision &&
 		authority.Scope.TournamentID == deadline.TournamentID && authority.Scope.WaveID == deadline.WaveID &&
 		authority.Scope.SeriesID == deadline.SeriesID && authority.Scope.SlotID == deadline.SlotID &&
 		authority.Scope.GameID == deadline.GameID
 }
 
-func readyAuthoritiesMatchDeadline(authorities []gameusecase.NoShowAuthority, deadline PendingDeadline) bool {
+func readyAuthoritiesMatchDeadline(authorities []noshowusecase.NoShowAuthority, deadline PendingDeadline) bool {
 	seen := make(map[uuid.UUID]struct{}, len(authorities))
 	for index := range authorities {
 		authority := authorities[index]
@@ -487,7 +489,7 @@ func readyAuthoritiesMatchDeadline(authorities []gameusecase.NoShowAuthority, de
 	return true
 }
 
-func reconnectAuthorityMatchesDeadline(authority gameusecase.ReconnectAuthority, deadline PendingDeadline) bool {
+func reconnectAuthorityMatchesDeadline(authority reconnectusecase.ReconnectAuthority, deadline PendingDeadline) bool {
 	if authority.Scope.TournamentID != deadline.TournamentID ||
 		authority.Scope.RosterID != deadline.RosterID || authority.Scope.WaveID != deadline.WaveID ||
 		authority.PauseID != deadline.PauseID || authority.Game.ID != deadline.GameID ||
@@ -565,7 +567,7 @@ func deadlineResultEvidence(deadline PendingDeadline) *DeadlineResultEvidenceIDs
 
 func deadlineNoShowEvidence(
 	deadline PendingDeadline,
-	resolutions []gameusecase.NoShowResolution,
+	resolutions []noshowusecase.NoShowResolution,
 ) []DeadlineNoShowEvidenceIDs {
 	result := make([]DeadlineNoShowEvidenceIDs, len(resolutions))
 	for index := range resolutions {
@@ -628,7 +630,7 @@ func uniqueDeadlineIDs(ids []uuid.UUID) bool {
 	return true
 }
 
-func failedAttemptExpectation(authority gameusecase.AttemptAuthority) (domain.Game, domain.Category, bool) {
+func failedAttemptExpectation(authority attemptusecase.AttemptAuthority) (domain.Game, domain.Category, bool) {
 	for slotIndex := range authority.Series.Series.Slots {
 		slot := authority.Series.Series.Slots[slotIndex]
 		if slot.ID != authority.Scope.SlotID || len(slot.Attempts) == 0 {
@@ -643,7 +645,7 @@ func failedAttemptExpectation(authority gameusecase.AttemptAuthority) (domain.Ga
 }
 
 func readyWindowGameRevisionIDs(
-	authority gameusecase.NoShowAuthority,
+	authority noshowusecase.NoShowAuthority,
 	deadline PendingDeadline,
 ) []domain.OfficialResultRevisionID {
 	result := make([]domain.OfficialResultRevisionID, 0, len(authority.Series.Series.Slots))
@@ -672,55 +674,55 @@ type fixedRecoveryClock struct{ at time.Time }
 func (clock fixedRecoveryClock) Now() time.Time { return clock.at }
 
 type gameTimeoutPlanner struct {
-	authority gameusecase.AttemptAuthority
-	record    *gameusecase.AttemptRecord
+	authority attemptusecase.AttemptAuthority
+	record    *attemptusecase.AttemptRecord
 }
 
 func (planner *gameTimeoutPlanner) LoadFailedAttemptAuthority(
 	context.Context,
 	domain.FailedAttemptScope,
-) (gameusecase.AttemptAuthority, error) {
+) (attemptusecase.AttemptAuthority, error) {
 	return planner.authority, nil
 }
 
 func (planner *gameTimeoutPlanner) CommitFailedAttempt(
 	_ context.Context,
-	record gameusecase.AttemptRecord,
-) (*gameusecase.AttemptRecord, bool, error) {
+	record attemptusecase.AttemptRecord,
+) (*attemptusecase.AttemptRecord, bool, error) {
 	planner.record = &record
 	return &record, true, nil
 }
 
 type readyWindowPlanner struct {
-	authority gameusecase.NoShowAuthority
-	record    *gameusecase.NoShowResolution
+	authority noshowusecase.NoShowAuthority
+	record    *noshowusecase.NoShowResolution
 }
 
 func (planner *readyWindowPlanner) LoadNormalNoShowAuthority(
 	context.Context,
 	domain.NormalNoShowScope,
-) (gameusecase.NoShowAuthority, error) {
+) (noshowusecase.NoShowAuthority, error) {
 	return planner.authority, nil
 }
 
 func (planner *readyWindowPlanner) CommitNormalNoShow(
 	_ context.Context,
-	record gameusecase.NoShowResolution,
-) (*gameusecase.NoShowResolution, bool, error) {
+	record noshowusecase.NoShowResolution,
+) (*noshowusecase.NoShowResolution, bool, error) {
 	planner.record = &record
 	return &record, true, nil
 }
 
 type reconnectTimeoutPlanner struct {
-	authority gameusecase.ReconnectAuthority
-	record    *gameusecase.ReconnectRecord
+	authority reconnectusecase.ReconnectAuthority
+	record    *reconnectusecase.ReconnectRecord
 }
 
 func (planner *reconnectTimeoutPlanner) FindCommand(
 	context.Context,
 	uuid.UUID,
 	uuid.UUID,
-) (*gameusecase.ReconnectRecord, error) {
+) (*reconnectusecase.ReconnectRecord, error) {
 	return nil, nil
 }
 
@@ -728,23 +730,23 @@ func (planner *reconnectTimeoutPlanner) LoadAuthority(
 	_ context.Context,
 	_ pause.GraphScope,
 	participantID uuid.UUID,
-) (gameusecase.ReconnectAuthority, error) {
+) (reconnectusecase.ReconnectAuthority, error) {
 	if participantID == uuid.Nil {
-		return gameusecase.ReconnectAuthority{}, domain.ErrValidation
+		return reconnectusecase.ReconnectAuthority{}, domain.ErrValidation
 	}
 	for _, interval := range planner.authority.Reconnect {
 		if interval.ParticipantID == participantID {
 			return planner.authority, nil
 		}
 	}
-	return gameusecase.ReconnectAuthority{}, domain.ErrConflict
+	return reconnectusecase.ReconnectAuthority{}, domain.ErrConflict
 }
 
 func (planner *reconnectTimeoutPlanner) CommitMutation(
 	_ context.Context,
 	_ int64,
-	record gameusecase.ReconnectRecord,
-) (*gameusecase.ReconnectRecord, bool, error) {
+	record reconnectusecase.ReconnectRecord,
+) (*reconnectusecase.ReconnectRecord, bool, error) {
 	planner.record = &record
 	return &record, true, nil
 }

@@ -19,10 +19,12 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/middleware"
 	restv1 "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/v1"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/objectstorage"
-	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	assignmentrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment"
+	runtimepostgres "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/golden/runtime"
+	participantarchiverepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/participantarchive"
 	redisadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/redis"
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
+	goldenruntime "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/runtime"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/participantarchive"
 	taskusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/task"
 	tournamentprogression "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/progression"
@@ -73,7 +75,7 @@ func TestParticipantArchiveDownloadNormalAssignment(t *testing.T) {
 	require.Equal(t, http.StatusForbidden, preStartResp.Code, preStartResp.Body.String())
 	archive.rest.validateResponse(t, preStartReq, preStartResp)
 
-	receipt, changed, err := postgres.NewAssignmentPostgres(archive.rest.mgr).Deliver(
+	receipt, changed, err := assignmentrepo.NewAssignmentPostgres(archive.rest.mgr).Deliver(
 		ctx,
 		fixture.assignmentID,
 		uuid.New(),
@@ -131,8 +133,8 @@ func TestParticipantArchiveDownloadGoldenAssignment(t *testing.T) {
 		ctx, t, fixture.tournamentID, fixture.rosterID,
 		sourceProjectionID, sourceProjectionRevision, now.Add(-time.Second),
 	)
-	application := goldenusecase.NewRuntimeApplication(
-		postgres.NewGoldenRuntimePostgres(archive.rest.mgr), clock,
+	application := goldenruntime.NewRuntimeApplication(
+		runtimepostgres.NewGoldenRuntimePostgres(archive.rest.mgr), clock,
 	)
 	operator, err := application.Open(ctx, inbound.GoldenOpenCommand{
 		TournamentID: fixture.tournamentID, CommandID: uuid.New(),
@@ -345,7 +347,7 @@ func participantArchiveHandler(
 ) http.Handler {
 	t.Helper()
 	archive, err := participantarchive.New(
-		postgres.NewParticipantArchivePostgres(fixture.mgr), sourceFiles, realIntegrationClock(),
+		participantarchiverepo.NewParticipantArchivePostgres(fixture.mgr), sourceFiles, realIntegrationClock(),
 		participantarchive.WithDownloadTTL(participantArchiveTestTTL),
 	)
 	require.NoError(t, err)

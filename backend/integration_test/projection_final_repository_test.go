@@ -14,17 +14,24 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	projectionintegration "github.com/TakuyaYagam1/task-per-minute/integration_test/projection"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	assignmentrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment"
+	draftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment/draft"
+	playoffrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/playoff"
+	projectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
+	resultrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result"
+	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
-	projection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection"
+	projection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection/publication"
 )
 
 func TestFinalProjectionRepositoryCommitsAuthoritativeResult(t *testing.T) {
 	ctx := context.Background()
 	publication, final, opponentID := createFinalPublicationFixture(t)
 	tournamentRevision := publication.Expected.TournamentRevision
-	repository := postgres.NewProjectionPostgres(postgres.NewTxManager(sharedPool))
+	repository := projectionrepo.NewProjectionPostgres(postgres.NewTxManager(sharedPool))
 
 	stale := publication.Snapshot()
 	stale.Expected.TournamentRevision--
@@ -67,7 +74,7 @@ func TestFinalProjectionRepositoryCommitsAuthoritativeResult(t *testing.T) {
 	abort := errors.New("stop after champion publication")
 	tx := postgres.NewTxManager(sharedPool)
 	err = tx.Do(ctx, func(txCtx context.Context) error {
-		if _, err := postgres.NewProjectionPostgres(tx).PublishFinal(txCtx, publication); err != nil {
+		if _, err := projectionrepo.NewProjectionPostgres(tx).PublishFinal(txCtx, publication); err != nil {
 			return err
 		}
 		return abort
@@ -113,7 +120,7 @@ func TestFinalProjectionConcurrentPublication(t *testing.T) {
 			defer done.Done()
 			ready.Done()
 			<-start
-			receipts[i], failures[i] = postgres.NewProjectionPostgres(postgres.NewTxManager(sharedPool)).PublishFinal(ctx, publications[i])
+			receipts[i], failures[i] = projectionrepo.NewProjectionPostgres(postgres.NewTxManager(sharedPool)).PublishFinal(ctx, publications[i])
 		}()
 	}
 	ready.Wait()
@@ -140,13 +147,13 @@ func TestFinalProjectionConcurrentPublication(t *testing.T) {
 	require.Zero(t, loserRows)
 }
 
-func createFinalPublicationFixture(t *testing.T) (projection.FinalPublication, *postgres.ResultCommitRecord, uuid.UUID) {
+func createFinalPublicationFixture(t *testing.T) (projection.FinalPublication, *resultrepo.ResultCommitRecord, uuid.UUID) {
 	t.Helper()
 	ctx := context.Background()
 	fixture, ids, coordinator := prepareActiveFinal(ctx, t)
 	firstInput := activeFinalSettlementInput(ctx, t, fixture, ids, 1)
 	err := fixture.tx.Do(ctx, func(txCtx context.Context) error {
-		if _, _, err := postgres.NewResultPostgres(fixture.tx).Settle(txCtx, firstInput); err != nil {
+		if _, _, err := resultauthority.NewResultPostgres(fixture.tx).Settle(txCtx, firstInput); err != nil {
 			return err
 		}
 		_, err := coordinator.AdvanceAfterSeriesSettlement(txCtx, playoff.TerminalSeriesCommand{TournamentID: fixture.tournamentID, SeriesID: ids.FinalSeriesID})
@@ -154,10 +161,12 @@ func createFinalPublicationFixture(t *testing.T) (projection.FinalPublication, *
 	})
 	require.NoError(t, err)
 	lastInput := activeFinalSettlementInput(ctx, t, fixture, ids, 2)
-	final, changed, err := postgres.NewResultPostgres(fixture.tx).Settle(ctx, lastInput)
+	final, changed, err := resultauthority.NewResultPostgres(fixture.tx).Settle(ctx, lastInput)
 	require.NoError(t, err)
 	require.True(t, changed)
-	terminal := postgres.NewPlayoffTerminalPostgres(fixture.tx, postgres.NewDraftPostgres(fixture.tx), postgres.NewAssignmentPostgres(fixture.tx))
+	drafts := draftrepo.NewDraftPostgres(fixture.tx)
+	assignments := assignmentrepo.NewAssignmentPostgres(fixture.tx)
+	terminal := playoffrepo.NewPlayoffTerminalPostgres(fixture.tx, drafts, assignments.CreateAssignmentTx)
 	authority, err := terminal.LoadFinalSettlement(ctx, playoff.TerminalSeriesCommand{TournamentID: fixture.tournamentID, SeriesID: ids.FinalSeriesID})
 	require.NoError(t, err)
 	require.NotNil(t, authority)
@@ -195,42 +204,9 @@ func assertFinalProjectionNotPersisted(
 	publication projection.FinalPublication,
 	expectedTournamentRevision int64,
 ) {
-	t.Helper()
-
-	var (
-		partialWriteCounts [7]int
-		tournamentState    string
-		tournamentRev      int64
+	projectionintegration.AssertFinalProjectionNotPersisted(
+		ctx, t, sharedPool, publication, expectedTournamentRevision,
 	)
-	require.NoError(t, sharedPool.QueryRow(ctx, `
-		SELECT
-			(SELECT COUNT(*) FROM projection_cutoffs WHERE id = $2),
-			(SELECT COUNT(*) FROM projection_revisions WHERE id = $1),
-			(SELECT COUNT(*) FROM projection_artifacts WHERE produced_by_revision_id = $1),
-			(SELECT COUNT(*) FROM projection_artifact_members AS member
-				JOIN projection_artifacts AS artifact ON artifact.id = member.artifact_id
-				WHERE artifact.produced_by_revision_id = $1),
-			(SELECT COUNT(*) FROM projection_dependencies AS dependency
-				JOIN projection_artifacts AS artifact ON artifact.id = dependency.artifact_id
-				WHERE artifact.produced_by_revision_id = $1),
-			(SELECT COUNT(*) FROM projection_revision_artifacts WHERE revision_id = $1),
-			(SELECT COUNT(*) FROM outbox_events WHERE projection_revision_id = $1)
-		`, publication.IDs.RevisionID, publication.IDs.CutoffID).Scan(
-		&partialWriteCounts[0],
-		&partialWriteCounts[1],
-		&partialWriteCounts[2],
-		&partialWriteCounts[3],
-		&partialWriteCounts[4],
-		&partialWriteCounts[5],
-		&partialWriteCounts[6],
-	))
-	require.NoError(t, sharedPool.QueryRow(ctx, `
-		SELECT state, revision
-		FROM tournaments
-		WHERE id = $1`, publication.Scope.TournamentID).Scan(&tournamentState, &tournamentRev))
-	require.Equal(t, [7]int{}, partialWriteCounts)
-	require.Equal(t, string(domain.TournamentStatePlayoffs), tournamentState)
-	require.Equal(t, expectedTournamentRevision, tournamentRev)
 }
 
 func initializeFinalProjectionSeries(
@@ -243,9 +219,10 @@ func initializeFinalProjectionSeries(
 	tb.Helper()
 
 	initialScoreRevisionID := lockMigrationSeries(ctx, tb, draftMigrationFixture{
-		tournamentID: fixture.tournamentID,
-		rosterID:     fixture.rosterID,
-		seriesID:     seriesID,
+		tournamentID:   fixture.tournamentID,
+		rosterID:       fixture.rosterID,
+		seriesID:       seriesID,
+		participantIDs: fixture.participantIDs,
 	}, startedAt)
 	_, err := sharedPool.Exec(
 		ctx, `
@@ -274,7 +251,7 @@ func finalProjectionSettlementInput(
 	expectedSeriesRevision int64,
 	digest [sha256.Size]byte,
 	settledAt time.Time,
-) postgres.ResultSettlementInput {
+) resultrepo.ResultSettlementInput {
 	seriesResultRevisionID := uuid.Nil
 	seriesResultReason := ""
 	var seriesWinnerID *uuid.UUID
@@ -293,8 +270,8 @@ func finalProjectionSettlementInput(
 			domain.ArtifactKindSeriesResult,
 		}
 	}
-	return postgres.ResultSettlementInput{
-		IDs: postgres.ResultSettlementIDs{
+	return resultrepo.ResultSettlementInput{
+		IDs: resultrepo.ResultSettlementIDs{
 			CommitID:                  uuid.New(),
 			ResultEventID:             uuid.New(),
 			ResultEventIdempotencyKey: uuid.New(),
@@ -307,7 +284,7 @@ func finalProjectionSettlementInput(
 			ProjectionEvidenceID:      uuid.New(),
 			CommitIdempotencyKey:      uuid.New(),
 		},
-		Scope: postgres.ResultScope{
+		Scope: resultrepo.ResultScope{
 			TournamentID: fixture.tournamentID,
 			RosterID:     fixture.rosterID,
 			SeriesID:     seriesID,
@@ -338,7 +315,7 @@ func finalProjectionPublication(
 	seriesID uuid.UUID,
 	attemptID uuid.UUID,
 	winnerID uuid.UUID,
-	result *postgres.ResultCommitRecord,
+	result *resultrepo.ResultCommitRecord,
 	digest [sha256.Size]byte,
 	tournamentRevision int64,
 	seriesRevision int64,
@@ -479,7 +456,7 @@ func assertFinalProjectionCommit(
 	ctx context.Context,
 	t *testing.T,
 	publication projection.FinalPublication,
-	result *postgres.ResultCommitRecord,
+	result *resultrepo.ResultCommitRecord,
 	receipt projection.FinalPublicationReceipt,
 ) {
 	t.Helper()

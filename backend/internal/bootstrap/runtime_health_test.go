@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/observability"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gamerecovery "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/recovery"
 )
 
 func TestFailedRuntimeDependencyFailsClosed(t *testing.T) {
@@ -70,29 +70,29 @@ func TestExecutionRecoveryHealthStatusRequiresFreshCompletion(t *testing.T) {
 	now := time.Date(2026, time.September, 7, 16, 45, 0, 0, time.UTC)
 	tests := []struct {
 		name   string
-		health gameusecase.RecoveryRunnerHealth
+		health gamerecovery.RecoveryRunnerHealth
 		want   observability.TournamentDependencyStatus
 	}{
 		{name: "not running", want: failedTournamentDependency()},
-		{name: "initial scan pending", health: gameusecase.RecoveryRunnerHealth{
+		{name: "initial scan pending", health: gamerecovery.RecoveryRunnerHealth{
 			Running: true,
 		}, want: observability.TournamentDependencyStatus{
 			Health: observability.TournamentHealthStateDegraded, Readiness: observability.TournamentReadinessStateNotReady,
 		}},
-		{name: "failed scan", health: gameusecase.RecoveryRunnerHealth{
+		{name: "failed scan", health: gamerecovery.RecoveryRunnerHealth{
 			Running: true, InitialScanComplete: true, LastSuccessAt: backlogTime(now), LastFailureAt: backlogTime(now),
 		}, want: failedTournamentDependency()},
-		{name: "stale completion", health: gameusecase.RecoveryRunnerHealth{
+		{name: "stale completion", health: gamerecovery.RecoveryRunnerHealth{
 			Running: true, InitialScanComplete: true,
 			LastAttemptAt: backlogTime(now.Add(-runtimeRecoveryCompletionStaleAfter - time.Nanosecond)),
 			LastSuccessAt: backlogTime(now.Add(-runtimeRecoveryCompletionStaleAfter - time.Nanosecond)),
 		}, want: observability.TournamentDependencyStatus{
 			Health: observability.TournamentHealthStateDegraded, Readiness: observability.TournamentReadinessStateStale,
 		}},
-		{name: "future completion", health: gameusecase.RecoveryRunnerHealth{
+		{name: "future completion", health: gamerecovery.RecoveryRunnerHealth{
 			Running: true, InitialScanComplete: true, LastSuccessAt: backlogTime(now.Add(time.Second)),
 		}, want: failedTournamentDependency()},
-		{name: "completed", health: gameusecase.RecoveryRunnerHealth{
+		{name: "completed", health: gamerecovery.RecoveryRunnerHealth{
 			Running: true, InitialScanComplete: true, LastAttemptAt: backlogTime(now), LastSuccessAt: backlogTime(now),
 		}, want: healthyTournamentDependency()},
 	}

@@ -10,6 +10,7 @@ import (
 	restv1 "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/v1"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/objectstorage"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	projectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
 	redisadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/redis"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/observability"
@@ -22,8 +23,8 @@ type RealtimeHealthSource interface {
 	Health(now time.Time) eventdelivery.HealthSnapshot
 }
 
-func provideProjectionHealth(tx *postgres.TxManager) observability.ProjectionHealthSource {
-	return postgres.NewProjectionHealthPostgres(tx)
+func provideProjectionHealth(tx *postgres.TxManager) *projectionrepo.ProjectionHealthPostgres {
+	return projectionrepo.NewProjectionHealthPostgres(tx)
 }
 
 type healthDatabaseClock interface {

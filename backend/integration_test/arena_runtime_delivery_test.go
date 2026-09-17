@@ -16,6 +16,7 @@ import (
 	inboundws "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket"
 	tournamentws "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket/tournament"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	realtimerepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/realtime"
 	eventdelivery "github.com/TakuyaYagam1/task-per-minute/internal/usecase/eventdelivery"
 )
 
@@ -23,7 +24,7 @@ func TestArenaOutboxWorkerPublishesToActiveWebSocketSession(t *testing.T) {
 	ctx := context.Background()
 	fixture := createDraftMigrationFixture(ctx, t)
 	projectionRevision := arenaProjectionRevision(ctx, t, fixture.tournamentID, fixture.rosterID)
-	repository := postgres.NewRealtimeOutboxPostgres(postgres.NewTxManager(sharedPool))
+	repository := realtimerepo.NewRealtimeOutboxPostgres(postgres.NewTxManager(sharedPool))
 	realtime, err := inboundws.NewRealtimeDelivery(repository, inboundws.RealtimeDeliveryConfig{
 		InstanceID: uuid.New(),
 		WorkerID:   uuid.New(),

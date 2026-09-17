@@ -11,6 +11,7 @@ import (
 	"github.com/pressly/goose/v3"
 	"github.com/stretchr/testify/require"
 
+	"github.com/TakuyaYagam1/task-per-minute/integration_test/internal/testkit"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
@@ -46,7 +47,7 @@ func TestTaskExposureMigrationPreservesExistingEvidence(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 
-	pool, database := createMigrationIsolatedDatabase(ctx, t, "task_exposure_upgrade")
+	pool, database := testkit.CreateIsolatedDatabase(ctx, t, sharedPool, "task_exposure_upgrade")
 	previousPool := sharedPool
 	defer func() { sharedPool = previousPool }()
 

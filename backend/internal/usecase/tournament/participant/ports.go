@@ -9,7 +9,9 @@ import (
 	gamedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/game"
 	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gameforfeit "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/forfeit"
+	gamesettlement "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/settlement"
+	gamesubmission "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/submission"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/readiness"
 )
@@ -53,14 +55,14 @@ type ResolvedDraftAction struct {
 
 type ResolvedSubmission struct {
 	Authority ParticipantCommandAuthority
-	Command   gameusecase.SubmissionCommand
+	Command   gamesubmission.SubmissionCommand
 	Replay    *usecase.SubmissionResult
 }
 
 type ResolvedSurrender struct {
 	Authority ParticipantCommandAuthority
 	Reason    string
-	Command   gameusecase.SurrenderCommand
+	Command   gameforfeit.SurrenderCommand
 }
 
 type ResolvedPostSeries struct {
@@ -86,7 +88,7 @@ type DraftActionWorkflow interface {
 type SubmissionWorkflow interface {
 	Submit(
 		ctx context.Context,
-		command gameusecase.SubmissionCommand,
+		command gamesubmission.SubmissionCommand,
 	) (record gamedomain.Submission, changed bool, err error)
 }
 
@@ -95,8 +97,8 @@ type SubmissionWorkflow interface {
 type SettlementWorkflow interface {
 	Settle(
 		ctx context.Context,
-		command gameusecase.SettlementCommand,
-	) (*gameusecase.SettlementRecord, bool, error)
+		command gamesettlement.SettlementCommand,
+	) (*gamesettlement.SettlementRecord, bool, error)
 }
 
 type SurrenderWorkflow interface {

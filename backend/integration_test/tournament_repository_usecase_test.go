@@ -11,7 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	tournamentlifecyclerepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/lifecycle"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	attendanceusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/attendance"
 	catalogusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/catalog"
@@ -27,9 +27,9 @@ func TestTournamentUseCases(t *testing.T) {
 	fixture := newRepositoryFixture()
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	clock := newTournamentClock(t, now)
-	catalog := catalogusecase.NewTournamentUseCase(postgres.NewTournamentCatalogPostgres(fixture.tournaments), clock)
-	attendance := attendanceusecase.NewAttendanceUseCase(postgres.NewTournamentAttendancePostgres(fixture.tournaments), clock)
-	rosterLock := rosterusecase.NewRosterLockUseCase(postgres.NewTournamentRosterPostgres(fixture.tournaments), clock)
+	catalog := catalogusecase.NewTournamentUseCase(fixture.tournaments, clock)
+	attendance := attendanceusecase.NewAttendanceUseCase(fixture.attendance, clock)
+	rosterLock := rosterusecase.NewRosterLockUseCase(fixture.roster, clock)
 	command := catalogusecase.TournamentCreateCommand{
 		TournamentID: uuid.New(), RosterID: uuid.New(), Name: "Repository Tournament",
 		PublicID: uuid.NewString(), PlannedRosterSize: 4, ContentRevision: contentRevision,
@@ -125,7 +125,7 @@ func TestTournamentUseCases(t *testing.T) {
 	require.Equal(t, command.RosterID, listed[0].RosterID)
 	require.Equal(t, 4, listed[0].RosterSize)
 
-	currentRoster, err := fixture.tournaments.GetRoster(ctx, command.RosterID)
+	currentRoster, err := fixture.roster.GetRoster(ctx, command.RosterID)
 	require.NoError(t, err)
 	checkedInPlayerIDs := []uuid.UUID{playerIDs[1], playerIDs[2], playerIDs[3], playerIDs[4]}
 	wrongEvidence := rosterusecase.RosterPreflightEvidence{
@@ -135,7 +135,7 @@ func TestTournamentUseCases(t *testing.T) {
 	_, changed, err = rosterLock.LockRoster(ctx, rosterusecase.RosterLockCommand{Preflight: wrongEvidence})
 	require.ErrorIs(t, err, domain.ErrConflict)
 	require.False(t, changed)
-	reservations, err := fixture.tournaments.ListReservations(ctx, command.TournamentID)
+	reservations, err := fixture.roster.ListReservations(ctx, command.TournamentID)
 	require.NoError(t, err)
 	require.Empty(t, reservations)
 
@@ -145,7 +145,7 @@ func TestTournamentUseCases(t *testing.T) {
 	}})
 	require.NoError(t, err)
 	require.True(t, changed)
-	reservations, err = fixture.tournaments.ListReservations(ctx, command.TournamentID)
+	reservations, err = fixture.roster.ListReservations(ctx, command.TournamentID)
 	require.NoError(t, err)
 	require.Len(t, reservations, 4)
 
@@ -157,7 +157,7 @@ func TestTournamentUseCases(t *testing.T) {
 	require.True(t, changed)
 	require.Nil(t, unlocked.LockedAt)
 	require.Equal(t, locked.Revision+1, unlocked.Revision)
-	reservations, err = fixture.tournaments.ListReservations(ctx, command.TournamentID)
+	reservations, err = fixture.roster.ListReservations(ctx, command.TournamentID)
 	require.NoError(t, err)
 	require.Empty(t, reservations)
 }
@@ -169,7 +169,7 @@ func TestTournamentLifecycleUseCase(t *testing.T) {
 	fixture := newRepositoryFixture()
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	useCase := lifecycleusecase.NewTournamentLifecycleUseCase(
-		postgres.NewTournamentLifecyclePostgres(fixture.tournaments),
+		tournamentlifecyclerepo.NewTournamentLifecyclePostgres(fixture.tx),
 		newTournamentClock(t, now),
 	)
 
@@ -257,7 +257,7 @@ func TestTournamentAttendanceCapsConcurrentInvitations(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	_, roster := createRepositoryTournament(ctx, t, fixture, now)
 	attendance := attendanceusecase.NewAttendanceUseCase(
-		postgres.NewTournamentAttendancePostgres(fixture.tournaments),
+		fixture.attendance,
 		newTournamentClock(t, now),
 	)
 	playerIDs := createMigrationPlayers(ctx, t, domain.TournamentMaxParticipants+1)
@@ -301,7 +301,7 @@ func TestTournamentAttendanceCapsConcurrentInvitations(t *testing.T) {
 		require.ErrorIs(t, result.err, domain.ErrConflict)
 	}
 	require.Equal(t, 1, successes)
-	participants, err := fixture.tournaments.ListParticipants(ctx, roster.ID)
+	participants, err := fixture.roster.ListParticipants(ctx, roster.ID)
 	require.NoError(t, err)
 	require.Len(t, participants, domain.TournamentMaxParticipants)
 }
@@ -315,10 +315,10 @@ func TestTournamentAttendanceAndRosterLockSerialize(t *testing.T) {
 	_, roster := createRepositoryTournament(ctx, t, fixture, now)
 	clock := newTournamentClock(t, now)
 	attendance := attendanceusecase.NewAttendanceUseCase(
-		postgres.NewTournamentAttendancePostgres(fixture.tournaments),
+		fixture.attendance,
 		clock,
 	)
-	rosterLock := rosterusecase.NewRosterLockUseCase(postgres.NewTournamentRosterPostgres(fixture.tournaments), clock)
+	rosterLock := rosterusecase.NewRosterLockUseCase(fixture.roster, clock)
 	playerIDs := createMigrationPlayers(ctx, t, domain.TournamentMaxParticipants)
 	checkedInPlayerIDs := make([]uuid.UUID, domain.TournamentMaxParticipants-1)
 	for index := range checkedInPlayerIDs {
@@ -340,7 +340,7 @@ func TestTournamentAttendanceAndRosterLockSerialize(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, changed)
 	}
-	currentRoster, err := fixture.tournaments.GetRoster(ctx, roster.ID)
+	currentRoster, err := fixture.roster.GetRoster(ctx, roster.ID)
 	require.NoError(t, err)
 
 	type operationResult struct {
@@ -378,9 +378,9 @@ func TestTournamentAttendanceAndRosterLockSerialize(t *testing.T) {
 		require.ErrorIs(t, invite.err, domain.ErrConflict)
 		require.NoError(t, locked.err)
 	}
-	participants, err := fixture.tournaments.ListParticipants(ctx, roster.ID)
+	participants, err := fixture.roster.ListParticipants(ctx, roster.ID)
 	require.NoError(t, err)
-	updatedRoster, err := fixture.tournaments.GetRoster(ctx, roster.ID)
+	updatedRoster, err := fixture.roster.GetRoster(ctx, roster.ID)
 	require.NoError(t, err)
 	if locked.changed {
 		require.Len(t, participants, domain.TournamentMaxParticipants-1)

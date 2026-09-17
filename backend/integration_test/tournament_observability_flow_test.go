@@ -22,6 +22,15 @@ import (
 	middlewaremocks "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/middleware/mocks"
 	v1 "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/http/v1"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	assignmentrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment"
+	draftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment/draft"
+	exactdraftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment/exactdraft"
+	playoffrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/playoff"
+	projectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
+	realtimerepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/realtime"
+	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
+	wavestartrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/execution/wavestart"
+	adminresultrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/result"
 	telemetryadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/telemetry"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/observability"
@@ -30,7 +39,10 @@ import (
 	delivery "github.com/TakuyaYagam1/task-per-minute/internal/usecase/eventdelivery"
 	eventdeliverymocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/eventdelivery/mocks"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/application"
+	tournamentadmininbound "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/inbound"
+	tournamentadminobserved "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/observed"
+	tournamentadminresult "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/result"
 )
 
 func TestTournamentObservabilityFlowSurvivesApplicationRestart(t *testing.T) {
@@ -155,32 +167,37 @@ func newTournamentFlowHandler(
 	t.Helper()
 
 	tx := postgres.NewTxManager(sharedPool)
-	drafts := postgres.NewDraftPostgres(tx)
-	assignments := postgres.NewAssignmentPostgres(tx)
-	exactPlans := postgres.NewExactDraftBranchPlanPostgres(tx, drafts)
+	drafts := draftrepo.NewDraftPostgres(tx)
+	assignments := assignmentrepo.NewAssignmentPostgres(tx)
+	exactPlans := exactdraftrepo.NewExactDraftBranchPlanPostgres(tx, drafts)
 	planner := playoff.NewFinalDraftAssignmentService(
 		assignmentusecase.NewExactDraftBranchPlanUseCase(exactPlans),
 		exactPlans,
 		exactPlans,
 	)
 	postseason := playoff.NewTerminalCoordinator(playoff.TerminalCoordinatorDependencies{
-		Repository:   postgres.NewPlayoffTerminalPostgres(tx, drafts, assignments),
-		Publisher:    postgres.NewProjectionPostgres(tx),
+		Repository:   playoffrepo.NewPlayoffTerminalPostgres(tx, drafts, assignments.CreateAssignmentTx),
+		Publisher:    projectionrepo.NewProjectionPostgres(tx),
 		DraftPlanner: planner,
 		Rehydrator:   planner,
 	})
-	results := tournamentadmin.NewOperatorResultWorkflow(tournamentadmin.OperatorResultWorkflowDependencies{
+	results := tournamentadminresult.NewOperatorResultWorkflow(tournamentadminresult.OperatorResultWorkflowDependencies{
 		Transactions: tx,
-		Repository:   postgres.NewTournamentAdminResultPostgres(tx, postgres.NewResultPostgres(tx)),
-		Postseason:   postseason,
+		Repository: adminresultrepo.NewTournamentAdminResultPostgresWithDependencies(
+			tx,
+			resultauthority.NewResultPostgres(tx),
+			resultauthority.FinalizeProjection,
+			wavestartrepo.EnsurePreStartSwissRoundProofForCommand,
+		),
+		Postseason: postseason,
 	})
-	admin := tournamentadmin.AdminNewObservedService(
+	admin := tournamentadminobserved.NewObservedService(
 		tournamentadmin.AdminNewUseCase(tournamentadmin.AdminDependencies{Forfeit: results}),
 		nil,
 		telemetryadapter.NewTournamentAdminObserver(observer),
 	)
 	server := v1.New(v1.Dependencies{
-		TournamentAdmin:                   tournamentadmin.NewInboundAdapter(admin),
+		TournamentAdmin:                   tournamentadmininbound.NewInboundAdapter(admin),
 		OperatorTournamentMutationLimiter: limiter,
 	})
 	return middleware.Build(logger, middleware.WithTournamentEventObserver(observer))(
@@ -256,7 +273,7 @@ func processTournamentFlowOutbox(
 	})).Return(nil).Once()
 
 	worker, err := delivery.NewWorker(
-		postgres.NewRealtimeOutboxPostgres(postgres.NewTxManager(sharedPool)),
+		realtimerepo.NewRealtimeOutboxPostgres(postgres.NewTxManager(sharedPool)),
 		sink,
 		delivery.WorkerConfig{WorkerID: uuid.New(), BatchSize: 1},
 		telemetryadapter.NewEventDeliveryObserver(observer),
@@ -267,7 +284,7 @@ func processTournamentFlowOutbox(
 	require.Equal(t, delivery.ProcessResult{Claimed: 1, Acknowledged: 1}, result)
 
 	restartedWorker, err := delivery.NewWorker(
-		postgres.NewRealtimeOutboxPostgres(postgres.NewTxManager(sharedPool)),
+		realtimerepo.NewRealtimeOutboxPostgres(postgres.NewTxManager(sharedPool)),
 		sink,
 		delivery.WorkerConfig{WorkerID: uuid.New(), BatchSize: 1},
 		telemetryadapter.NewEventDeliveryObserver(observer),

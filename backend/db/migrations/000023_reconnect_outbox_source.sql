@@ -128,6 +128,7 @@ BEGIN
         + (SELECT COUNT(*) FROM outbox_wave_sources WHERE outbox_event_id = NEW.id)
         + (SELECT COUNT(*) FROM outbox_champion_sources WHERE outbox_event_id = NEW.id)
         + (SELECT COUNT(*) FROM outbox_stage_projection_sources WHERE outbox_event_id = NEW.id)
+        + (SELECT COUNT(*) FROM outbox_golden_runtime_sources WHERE outbox_event_id = NEW.id)
         + (SELECT COUNT(*) FROM outbox_reconnect_sources WHERE outbox_event_id = NEW.id)
     INTO source_count;
 
@@ -229,6 +230,41 @@ BEGIN
 
     IF EXISTS (
         SELECT 1
+        FROM outbox_golden_runtime_sources AS source
+        JOIN golden_runtime_commands AS command ON command.command_id = source.command_id
+        WHERE source.outbox_event_id = NEW.id
+            AND (
+                NEW.terminal
+                OR NEW.topic <> 'golden.runtime'
+                OR NEW.audience <> 'all'
+                OR NEW.principal_id IS NOT NULL
+                OR source.tournament_id IS DISTINCT FROM NEW.tournament_id
+                OR source.roster_id IS DISTINCT FROM NEW.roster_id
+                OR source.created_at IS DISTINCT FROM NEW.created_at
+                OR source.projection_revision_id IS DISTINCT FROM NEW.projection_revision_id
+                OR source.projection_revision IS DISTINCT FROM NEW.projection_revision
+                OR source.projection_ordinal IS DISTINCT FROM NEW.projection_ordinal
+                OR source.command_id IS DISTINCT FROM NEW.idempotency_key
+                OR command.occurred_at IS DISTINCT FROM NEW.created_at
+                OR command.created_at IS DISTINCT FROM NEW.created_at
+                OR command.tournament_id IS DISTINCT FROM NEW.tournament_id
+                OR command.roster_id IS DISTINCT FROM NEW.roster_id
+                OR command.resulting_runtime_revision IS DISTINCT FROM source.runtime_revision
+                OR NEW.payload IS DISTINCT FROM jsonb_build_object(
+                    'schema', 'golden-runtime-event-v1',
+                    'command_id', command.command_id,
+                    'command_kind', command.command_kind,
+                    'runtime_revision', command.resulting_runtime_revision,
+                    'source', 'golden-runtime'
+                )
+            )
+    ) THEN
+        RAISE EXCEPTION 'Golden runtime outbox source is malformed'
+            USING ERRCODE = 'check_violation';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
         FROM outbox_reconnect_sources AS source
         WHERE source.outbox_event_id = NEW.id
             AND (
@@ -291,6 +327,7 @@ BEGIN
         + (SELECT COUNT(*) FROM outbox_wave_sources WHERE outbox_event_id = NEW.outbox_event_id)
         + (SELECT COUNT(*) FROM outbox_champion_sources WHERE outbox_event_id = NEW.outbox_event_id)
         + (SELECT COUNT(*) FROM outbox_stage_projection_sources WHERE outbox_event_id = NEW.outbox_event_id)
+        + (SELECT COUNT(*) FROM outbox_golden_runtime_sources WHERE outbox_event_id = NEW.outbox_event_id)
         + (SELECT COUNT(*) FROM outbox_reconnect_sources WHERE outbox_event_id = NEW.outbox_event_id)
     INTO source_count;
     IF source_count <> 1 THEN
@@ -344,6 +381,7 @@ BEGIN
         + (SELECT COUNT(*) FROM outbox_wave_sources WHERE outbox_event_id = NEW.id)
         + (SELECT COUNT(*) FROM outbox_champion_sources WHERE outbox_event_id = NEW.id)
         + (SELECT COUNT(*) FROM outbox_stage_projection_sources WHERE outbox_event_id = NEW.id)
+        + (SELECT COUNT(*) FROM outbox_golden_runtime_sources WHERE outbox_event_id = NEW.id)
     INTO source_count;
 
     IF source_count <> 1 THEN
@@ -434,6 +472,41 @@ BEGIN
             USING ERRCODE = 'check_violation';
     END IF;
 
+    IF EXISTS (
+        SELECT 1
+        FROM outbox_golden_runtime_sources AS source
+        JOIN golden_runtime_commands AS command ON command.command_id = source.command_id
+        WHERE source.outbox_event_id = NEW.id
+            AND (
+                NEW.terminal
+                OR NEW.topic <> 'golden.runtime'
+                OR NEW.audience <> 'all'
+                OR NEW.principal_id IS NOT NULL
+                OR source.tournament_id IS DISTINCT FROM NEW.tournament_id
+                OR source.roster_id IS DISTINCT FROM NEW.roster_id
+                OR source.created_at IS DISTINCT FROM NEW.created_at
+                OR source.projection_revision_id IS DISTINCT FROM NEW.projection_revision_id
+                OR source.projection_revision IS DISTINCT FROM NEW.projection_revision
+                OR source.projection_ordinal IS DISTINCT FROM NEW.projection_ordinal
+                OR source.command_id IS DISTINCT FROM NEW.idempotency_key
+                OR command.occurred_at IS DISTINCT FROM NEW.created_at
+                OR command.created_at IS DISTINCT FROM NEW.created_at
+                OR command.tournament_id IS DISTINCT FROM NEW.tournament_id
+                OR command.roster_id IS DISTINCT FROM NEW.roster_id
+                OR command.resulting_runtime_revision IS DISTINCT FROM source.runtime_revision
+                OR NEW.payload IS DISTINCT FROM jsonb_build_object(
+                    'schema', 'golden-runtime-event-v1',
+                    'command_id', command.command_id,
+                    'command_kind', command.command_kind,
+                    'runtime_revision', command.resulting_runtime_revision,
+                    'source', 'golden-runtime'
+                )
+            )
+    ) THEN
+        RAISE EXCEPTION 'Golden runtime outbox source is malformed'
+            USING ERRCODE = 'check_violation';
+    END IF;
+
     RETURN NULL;
 END;
 $$;
@@ -451,6 +524,7 @@ BEGIN
         + (SELECT COUNT(*) FROM outbox_wave_sources WHERE outbox_event_id = NEW.outbox_event_id)
         + (SELECT COUNT(*) FROM outbox_champion_sources WHERE outbox_event_id = NEW.outbox_event_id)
         + (SELECT COUNT(*) FROM outbox_stage_projection_sources WHERE outbox_event_id = NEW.outbox_event_id)
+        + (SELECT COUNT(*) FROM outbox_golden_runtime_sources WHERE outbox_event_id = NEW.outbox_event_id)
     INTO source_count;
     IF source_count <> 1 THEN
         RAISE EXCEPTION 'outbox event must have exactly one normalized source binding'

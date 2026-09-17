@@ -12,7 +12,8 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/require"
 
-	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	waverepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/wave"
+	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
@@ -23,7 +24,7 @@ func TestFinalSwissReceiptRejectsLateChildren(t *testing.T) {
 	_, err := publishSwissPlayoffs(ctx, fixture, command)
 	require.NoError(t, err)
 	extra := semifinalSettlementInput(ctx, t, fixture, command.CommandID, 1)
-	_, changed, err := postgres.NewResultPostgres(fixture.tx).Settle(ctx, extra)
+	_, changed, err := resultauthority.NewResultPostgres(fixture.tx).Settle(ctx, extra)
 	require.NoError(t, err)
 	require.True(t, changed)
 	var receiptID, roundID, otherNode uuid.UUID
@@ -86,9 +87,9 @@ func foreignSwissByeLedger(ctx context.Context, t *testing.T, fixture tournament
 	at := time.Now().UTC().Truncate(time.Microsecond)
 	sourceID, revision := createRoundProofProjection(ctx, t, tournamentID, rosterID, participants[0], at)
 	waveID, byeID, ledgerID := uuid.New(), uuid.New(), uuid.New()
-	_, err := postgres.NewWavePostgres(fixture.tx).Create(ctx, postgres.WaveCreateInput{ID: waveID, TournamentID: tournamentID, RosterID: rosterID,
+	_, err := waverepo.NewWavePostgres(fixture.tx).Create(ctx, waverepo.WaveCreateInput{ID: waveID, TournamentID: tournamentID, RosterID: rosterID,
 		RevisionID: domain.WaveRevisionID(uuid.New()), CommandID: uuid.New(), SourceProjectionRevisionID: sourceID, SourceProjectionRevision: revision,
-		ParticipantIDs: participants[:2], CreatedAt: at, Series: []postgres.WaveSeriesInput{{ID: uuid.New(), FirstParticipantID: participants[0], SecondParticipantID: participants[1],
+		ParticipantIDs: participants[:2], CreatedAt: at, Series: []waverepo.WaveSeriesInput{{ID: uuid.New(), FirstParticipantID: participants[0], SecondParticipantID: participants[1],
 			Format: domain.SeriesFormatBO1, InitialScoreRevisionID: domain.SeriesScoreRevisionID(uuid.New())}}})
 	require.NoError(t, err)
 	roundID := createRoundProofSwissRound(ctx, t, tournamentID, rosterID, at)

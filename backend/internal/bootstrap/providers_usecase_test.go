@@ -13,8 +13,16 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/idempotency"
 	idempotencymocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/idempotency/mocks"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
-	tournamentadminmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/mocks"
+	tournamentadmincorrection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/correction"
+	correctionmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/correction/mocks"
+	tournamentadminexecutionmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/execution/mocks"
+	tournamentadminincident "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/incident"
+	tournamentadminlifecycle "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/lifecycle"
+	tournamentadminlifecyclemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/lifecycle/mocks"
+	tournamentadminreplay "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/replay"
+	tournamentadminreplaymocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/replay/mocks"
+	tournamentadminresult "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/result"
+	tournamentadminresultmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/result/mocks"
 	tournamentparticipant "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/participant"
 	tournamentparticipantmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/participant/mocks"
 	progressionmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/progression/mocks"
@@ -48,7 +56,7 @@ func TestProvideIncidentAuthenticatorUsesDedicatedConfig(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	var port tournamentadmin.IncidentAuthenticator = authenticator
+	var port tournamentadminincident.IncidentAuthenticator = authenticator
 	require.NotNil(t, port)
 }
 
@@ -56,11 +64,11 @@ func TestProvideTournamentAdminCorrectionProvidesCorrectionPort(t *testing.T) {
 	t.Parallel()
 
 	workflow := provideTournamentAdminCorrection(
-		tournamentadminmocks.NewMockCorrectionTransactionManager(t),
-		tournamentadminmocks.NewMockCorrectionWorkflowRepository(t),
+		correctionmocks.NewMockCorrectionTransactionManager(t),
+		correctionmocks.NewMockCorrectionWorkflowRepository(t),
 	)
 
-	var port tournamentadmin.CorrectionPort = workflow
+	var port tournamentadmincorrection.CorrectionPort = workflow
 	require.NotNil(t, port)
 }
 
@@ -68,12 +76,12 @@ func TestProvideTournamentAdminReplayProvidesReserveAndReplayPorts(t *testing.T)
 	t.Parallel()
 
 	workflow := provideTournamentAdminReplay(
-		tournamentadminmocks.NewMockExecutionTransactionManager(t),
-		tournamentadminmocks.NewMockReplayWorkflowRepository(t),
+		tournamentadminexecutionmocks.NewMockExecutionTransactionManager(t),
+		tournamentadminreplaymocks.NewMockReplayWorkflowRepository(t),
 	)
 
-	var reserve tournamentadmin.ReservePort = workflow
-	var replay tournamentadmin.ReplayPort = workflow
+	var reserve tournamentadminreplay.ReservePort = workflow
+	var replay tournamentadminreplay.ReplayPort = workflow
 	require.NotNil(t, reserve)
 	require.NotNil(t, replay)
 }
@@ -82,16 +90,16 @@ func TestProvideTournamentAdminLifecycleRequiresProgression(t *testing.T) {
 	t.Parallel()
 
 	workflow := provideTournamentAdminLifecycle(
-		tournamentadminmocks.NewMockLifecycleTransactionManager(t),
-		tournamentadminmocks.NewMockLifecycleWorkflowRepository(t),
-		tournamentadminmocks.NewMockLifecycleTransitioner(t),
-		tournamentadminmocks.NewMockLifecyclePauser(t),
-		tournamentadminmocks.NewMockLifecycleCanceller(t),
+		tournamentadminlifecyclemocks.NewMockLifecycleTransactionManager(t),
+		tournamentadminlifecyclemocks.NewMockLifecycleWorkflowRepository(t),
+		tournamentadminlifecyclemocks.NewMockLifecycleTransitioner(t),
+		tournamentadminlifecyclemocks.NewMockLifecyclePauser(t),
+		tournamentadminlifecyclemocks.NewMockLifecycleCanceller(t),
 		progressionmocks.NewMockProgressionService(t),
-		tournamentadminmocks.NewMockAdminLifecycleClock(t),
+		tournamentadminlifecyclemocks.NewMockAdminLifecycleClock(t),
 	)
 
-	var port tournamentadmin.LifecyclePort = workflow
+	var port tournamentadminlifecycle.LifecyclePort = workflow
 	require.NotNil(t, port)
 }
 
@@ -99,13 +107,13 @@ func TestProvideTournamentAdminResultsRequiresPostseason(t *testing.T) {
 	t.Parallel()
 
 	workflow := provideTournamentAdminResults(
-		tournamentadminmocks.NewMockOperatorResultTransactionManager(t),
-		tournamentadminmocks.NewMockOperatorResultWorkflowRepository(t),
-		tournamentadminmocks.NewMockAdminPostseasonWorkflow(t),
+		tournamentadminresultmocks.NewMockOperatorResultTransactionManager(t),
+		tournamentadminresultmocks.NewMockOperatorResultWorkflowRepository(t),
+		tournamentadminresultmocks.NewMockPostseasonWorkflow(t),
 	)
 
-	var noShow tournamentadmin.NoShowPort = workflow
-	var forfeit tournamentadmin.ForfeitPort = workflow
+	var noShow tournamentadminresult.NoShowPort = workflow
+	var forfeit tournamentadminresult.ForfeitPort = workflow
 	require.NotNil(t, noShow)
 	require.NotNil(t, forfeit)
 }

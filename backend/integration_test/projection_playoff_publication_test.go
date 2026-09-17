@@ -16,11 +16,13 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/require"
 
-	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
+	adminlifecyclerepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/lifecycle"
+	progressionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/progression"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
-	admin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	adminlifecycle "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/lifecycle"
+	adminoperation "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/operation"
 	progression "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/progression"
 )
 
@@ -250,7 +252,7 @@ func publishSwissPlayoffsWithClock(
 		); err != nil {
 			return err
 		}
-		lifecycle := postgres.NewTournamentAdminLifecyclePostgres(fixture.tx)
+		lifecycle := adminlifecyclerepo.NewTournamentAdminLifecyclePostgres(fixture.tx)
 		authority, err := lifecycle.LockLifecycleAuthority(txCtx, fixture.tournamentID)
 		if err != nil {
 			return err
@@ -258,7 +260,7 @@ func publishSwissPlayoffsWithClock(
 		if authority.ProjectionRevision != command.ExpectedProjectionRevision {
 			return domain.ErrConflict
 		}
-		repository := observedPlayoffPublication{postgres.NewTournamentProgressionPostgres(fixture.tx)}
+		repository := observedPlayoffPublication{progressionrepo.NewTournamentProgressionPostgres(fixture.tx)}
 		workflow := progression.NewWorkflow(progression.ProgressionDependencies{
 			Repository: repository, TerminalEvidence: repository, Transitioner: repository, Publisher: repository, ProgressionClock: clock,
 		})
@@ -269,9 +271,9 @@ func publishSwissPlayoffsWithClock(
 			return err
 		}
 		result = receipt.Result
-		return lifecycle.SaveLifecycleCommand(txCtx, admin.LifecycleCommandRecord{
-			CommandScope: admin.CommandScope{Operator: admin.OperatorIdentity{ActorID: command.ActorID}, TournamentID: command.TournamentID, CommandID: command.CommandID},
-			Action:       admin.TournamentActionStartPlayoffs, SourceProjectionRevisionID: authority.ProjectionRevisionID,
+		return lifecycle.SaveLifecycleCommand(txCtx, adminlifecycle.LifecycleCommandRecord{
+			CommandScope: adminlifecycle.CommandScope{Operator: adminoperation.OperatorIdentity{ActorID: command.ActorID}, TournamentID: command.TournamentID, CommandID: command.CommandID},
+			Action:       adminlifecycle.TournamentActionStartPlayoffs, SourceProjectionRevisionID: authority.ProjectionRevisionID,
 			SourceProjectionRevision: authority.ProjectionRevision, SourceTournamentRevision: authority.Tournament.Revision,
 			SourceTournamentState: authority.Tournament.State, Result: result, ExecutedAt: result.UpdatedAt,
 		})
@@ -280,7 +282,7 @@ func publishSwissPlayoffsWithClock(
 }
 
 type observedPlayoffPublication struct {
-	*postgres.TournamentProgressionPostgres
+	*progressionrepo.TournamentProgressionPostgres
 }
 
 func (r observedPlayoffPublication) LoadSwissEvidence(ctx context.Context, authority progression.Authority) (progression.SwissEvidence, error) {

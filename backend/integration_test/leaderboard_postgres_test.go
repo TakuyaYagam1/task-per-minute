@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	leaderboardrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/leaderboard"
 	leaderboardusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/leaderboard"
 )
 
@@ -40,7 +41,7 @@ func TestLeaderboardRepo_TopStatsUsesCurrentTournamentSolve(t *testing.T) {
 	).Scan(&winnerPlayerID, &expectedMillis)
 	require.NoError(t, err)
 
-	repository := postgres.NewLeaderboardPostgres(postgres.NewTxManager(sharedPool))
+	repository := leaderboardrepo.NewLeaderboardPostgres(postgres.NewTxManager(sharedPool))
 	rows, err := repository.TopStats(ctx, 50)
 	require.NoError(t, err)
 
@@ -66,7 +67,7 @@ func TestLeaderboardRepo_TopStatsIgnoresUnsettledSubmission(t *testing.T) {
 		fixture.draft.participantIDs[0],
 	).Scan(&playerID))
 
-	repository := postgres.NewLeaderboardPostgres(postgres.NewTxManager(sharedPool))
+	repository := leaderboardrepo.NewLeaderboardPostgres(postgres.NewTxManager(sharedPool))
 	rows, err := repository.TopStats(ctx, 50)
 	require.NoError(t, err)
 	_, found := leaderboardRow(rows, playerID)

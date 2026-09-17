@@ -15,6 +15,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	catalogrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/catalog"
+	creationrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/creation"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/idempotency"
@@ -39,9 +41,9 @@ func TestTournamentCreateReceiptPersistsAcrossReplicaRestart(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, initial, restarted)
 
-	mutated, changed, err := postgres.NewTournamentPostgres(postgres.NewTxManager(sharedPool)).Transition(
+	mutated, changed, err := catalogrepo.NewTournamentCatalogPostgres(postgres.NewTxManager(sharedPool)).Transition(
 		ctx,
-		postgres.TournamentTransitionInput{
+		catalogrepo.TournamentTransitionInput{
 			ID:               command.TournamentID,
 			ExpectedRevision: 1,
 			ExpectedState:    domain.TournamentStateDraft,
@@ -51,7 +53,7 @@ func TestTournamentCreateReceiptPersistsAcrossReplicaRestart(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.True(t, changed)
-	require.Equal(t, domain.TournamentStateRegistration, mutated.State)
+	require.Equal(t, string(domain.TournamentStateRegistration), mutated.State)
 
 	replayed, err := newTournamentCreateReceiptStore().Create(ctx, command)
 	require.NoError(t, err)
@@ -68,9 +70,9 @@ func TestTournamentCreateReceiptPersistsAcrossReplicaRestart(t *testing.T) {
 	assertTournamentCreateReceiptRollback(ctx, t, createdAt.Add(2*time.Minute))
 }
 
-func newTournamentCreateReceiptStore() *postgres.TournamentCreatePostgres {
+func newTournamentCreateReceiptStore() *creationrepo.TournamentCreatePostgres {
 	tx := postgres.NewTxManager(sharedPool)
-	return postgres.NewTournamentCreatePostgres(postgres.NewTournamentPostgres(tx))
+	return creationrepo.NewProductionTournamentCreatePostgres(tx)
 }
 
 func tournamentCreateReceiptCommand(createdAt time.Time, contentRevision int64) catalogusecase.CreateReceiptCommand {
@@ -153,7 +155,7 @@ func assertTournamentCreateReceiptRollback(ctx context.Context, t *testing.T, cr
 	t.Helper()
 
 	tx := postgres.NewTxManager(sharedPool)
-	store := postgres.NewTournamentCreatePostgres(postgres.NewTournamentPostgres(tx))
+	store := creationrepo.NewProductionTournamentCreatePostgres(tx)
 	command := tournamentCreateReceiptCommand(createdAt, currentTaskPoolPublicationRevision(ctx, t))
 	rollback := errors.New("force outer transaction rollback")
 	err := tx.Do(ctx, func(txCtx context.Context) error {

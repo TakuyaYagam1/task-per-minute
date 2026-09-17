@@ -6,7 +6,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/observability"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gamerecovery "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/recovery"
 )
 
 const (
@@ -178,7 +178,7 @@ func projectionLagHealthStatus(
 }
 
 func executionRecoveryHealthStatus(
-	health gameusecase.RecoveryRunnerHealth,
+	health gamerecovery.RecoveryRunnerHealth,
 	now time.Time,
 ) observability.TournamentDependencyStatus {
 	if !validExecutionRecoveryHealth(health, now) {
@@ -202,7 +202,7 @@ func executionRecoveryHealthStatus(
 	}
 }
 
-func validExecutionRecoveryHealth(health gameusecase.RecoveryRunnerHealth, now time.Time) bool {
+func validExecutionRecoveryHealth(health gamerecovery.RecoveryRunnerHealth, now time.Time) bool {
 	if !domain.IsValidServerTime(now) {
 		return false
 	}

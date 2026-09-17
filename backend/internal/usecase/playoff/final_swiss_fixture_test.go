@@ -8,10 +8,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
+	goldenplan "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/plan"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 	resultusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/result"
-	resultprojection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection"
+	resultprojection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection/revision"
 	swissusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/swiss"
 )
 
@@ -291,12 +291,12 @@ func setFinalSwissGoldenIdentities(t *testing.T, fixture *playoffFixture, base i
 		Ledger: ledger, Seeds: fixture.command.Seeds, SwissComplete: true,
 	})
 	require.NoError(t, err)
-	source, err := goldenusecase.NewStandingsProjection(
+	source, err := goldenplan.NewStandingsProjection(
 		fixture.command.TournamentID, fixture.command.ProjectionID, fixture.command.RevisionID,
 		fixture.command.RevisionNo, nil, true, standings,
 	)
 	require.NoError(t, err)
-	partition, err := goldenusecase.PartitionTies(source)
+	partition, err := goldenplan.PartitionTies(source)
 	require.NoError(t, err)
 	groups := partition.Groups()
 	fixture.command.GoldenGroups = make([]playoff.FinalSwissGoldenGroupIdentity, len(groups))

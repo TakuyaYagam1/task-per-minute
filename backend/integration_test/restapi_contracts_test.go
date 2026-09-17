@@ -255,7 +255,7 @@ func TestRESTHandlers_TaskURLAllowedForForensics(t *testing.T) {
 	require.Equal(t, initialURL, *updated.TaskUrl)
 }
 
-func TestRESTHandlers_UpdateTaskSourceFileURLClear(t *testing.T) {
+func TestRESTHandlers_UpdateTaskSourceFileURLClearPreservesArchive(t *testing.T) {
 	f := newRESTFixture(t)
 	adminToken := f.adminAccessToken(t)
 
@@ -314,7 +314,7 @@ func TestRESTHandlers_UpdateTaskSourceFileURLClear(t *testing.T) {
 
 	afterClear := httpGetWithTimeout(t, uploaded.SourceFileUrl)
 	defer afterClear.Body.Close()
-	require.Equal(t, http.StatusNotFound, afterClear.StatusCode)
+	require.Equal(t, http.StatusOK, afterClear.StatusCode)
 }
 
 func TestRESTHandlers_UpdateForensicsTaskToWebPreservesSource(t *testing.T) {

@@ -12,21 +12,29 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	attendancerepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/attendance"
+	catalogrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/catalog"
+	rosterrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/roster"
+	swissrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/swiss"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
 type repositoryFixture struct {
 	tx          *postgres.TxManager
-	tournaments *postgres.TournamentPostgres
-	swiss       *postgres.SwissPostgres
+	tournaments *catalogrepo.TournamentCatalogPostgres
+	attendance  *attendancerepo.TournamentAttendancePostgres
+	roster      *rosterrepo.RosterPostgres
+	swiss       *swissrepo.SwissPostgres
 }
 
 func newRepositoryFixture() *repositoryFixture {
 	tx := postgres.NewTxManager(sharedPool)
 	return &repositoryFixture{
 		tx:          tx,
-		tournaments: postgres.NewTournamentPostgres(tx),
-		swiss:       postgres.NewSwissPostgres(tx),
+		tournaments: catalogrepo.NewTournamentCatalogPostgres(tx),
+		attendance:  attendancerepo.NewTournamentAttendancePostgres(tx),
+		roster:      rosterrepo.NewRosterPostgres(tx),
+		swiss:       swissrepo.NewSwissPostgres(tx),
 	}
 }
 
@@ -51,7 +59,7 @@ func TestTournamentRepository(t *testing.T) {
 		domain.AttendanceStateInvited,
 		baseTime.Add(2*time.Second),
 	)
-	updated, changed, err := fixture.tournaments.UpdateAttendance(
+	updated, changed, err := fixture.roster.UpdateAttendance(
 		ctx,
 		firstParticipant.ID,
 		domain.AttendanceStateInvited,
@@ -61,7 +69,7 @@ func TestTournamentRepository(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, changed)
 	require.Equal(t, domain.AttendanceStateRegistered, updated.Attendance)
-	updated, changed, err = fixture.tournaments.UpdateAttendance(
+	updated, changed, err = fixture.roster.UpdateAttendance(
 		ctx,
 		firstParticipant.ID,
 		domain.AttendanceStateRegistered,
@@ -89,17 +97,17 @@ func TestTournamentRepository(t *testing.T) {
 		domain.AttendanceStateCheckedIn, baseTime.Add(2*time.Second),
 	)
 
-	participants, err := fixture.tournaments.ListParticipants(ctx, firstRoster.ID)
+	participants, err := fixture.roster.ListParticipants(ctx, firstRoster.ID)
 	require.NoError(t, err)
 	require.Len(t, participants, 3)
 	require.Equal(t, firstTournament.ID, participants[0].TournamentID)
 	require.Equal(t, []int{1, 2, 3}, []int{participants[0].Seed, participants[1].Seed, participants[2].Seed})
-	firstRoster, err = fixture.tournaments.GetRoster(ctx, firstRoster.ID)
+	firstRoster, err = fixture.roster.GetRoster(ctx, firstRoster.ID)
 	require.NoError(t, err)
-	secondRoster, err = fixture.tournaments.GetRoster(ctx, secondRoster.ID)
+	secondRoster, err = fixture.roster.GetRoster(ctx, secondRoster.ID)
 	require.NoError(t, err)
 
-	locked, changed, err := fixture.tournaments.LockRosterAndReserve(
+	locked, changed, err := fixture.roster.LockRosterAndReserve(
 		ctx,
 		firstRoster.ID,
 		firstRoster.Revision,
@@ -109,11 +117,11 @@ func TestTournamentRepository(t *testing.T) {
 	require.True(t, changed)
 	require.Equal(t, firstRoster.Revision+1, locked.Revision)
 	require.NotNil(t, locked.LockedAt)
-	reservations, err := fixture.tournaments.ListReservations(ctx, firstTournament.ID)
+	reservations, err := fixture.roster.ListReservations(ctx, firstTournament.ID)
 	require.NoError(t, err)
 	require.Len(t, reservations, 2, "withdrawn participants must not be reserved")
 
-	_, changed, err = fixture.tournaments.LockRosterAndReserve(
+	_, changed, err = fixture.roster.LockRosterAndReserve(
 		ctx,
 		secondRoster.ID,
 		secondRoster.Revision,
@@ -121,14 +129,14 @@ func TestTournamentRepository(t *testing.T) {
 	)
 	require.ErrorIs(t, err, domain.ErrConflict)
 	require.False(t, changed)
-	secondAfterConflict, err := fixture.tournaments.GetRoster(ctx, secondRoster.ID)
+	secondAfterConflict, err := fixture.roster.GetRoster(ctx, secondRoster.ID)
 	require.NoError(t, err)
 	require.Nil(t, secondAfterConflict.LockedAt)
-	reservations, err = fixture.tournaments.ListReservations(ctx, secondTournament.ID)
+	reservations, err = fixture.roster.ListReservations(ctx, secondTournament.ID)
 	require.NoError(t, err)
 	require.Empty(t, reservations, "reservation conflict must roll back every insert")
 
-	unlocked, changed, err := fixture.tournaments.UnlockRosterAndRelease(
+	unlocked, changed, err := fixture.roster.UnlockRosterAndRelease(
 		ctx,
 		firstRoster.ID,
 		locked.Revision,
@@ -137,11 +145,11 @@ func TestTournamentRepository(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, changed)
 	require.Nil(t, unlocked.LockedAt)
-	reservations, err = fixture.tournaments.ListReservations(ctx, firstTournament.ID)
+	reservations, err = fixture.roster.ListReservations(ctx, firstTournament.ID)
 	require.NoError(t, err)
 	require.Empty(t, reservations)
 
-	secondLocked, changed, err := fixture.tournaments.LockRosterAndReserve(
+	secondLocked, changed, err := fixture.roster.LockRosterAndReserve(
 		ctx,
 		secondRoster.ID,
 		secondRoster.Revision,
@@ -149,7 +157,7 @@ func TestTournamentRepository(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.True(t, changed)
-	started, changed, err := fixture.tournaments.MarkRosterExecutionStarted(
+	started, changed, err := fixture.roster.MarkRosterExecutionStarted(
 		ctx,
 		secondRoster.ID,
 		secondLocked.Revision,
@@ -158,7 +166,7 @@ func TestTournamentRepository(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, changed)
 	require.NotNil(t, started.ExecutionStartedAt)
-	_, changed, err = fixture.tournaments.UnlockRosterAndRelease(
+	_, changed, err = fixture.roster.UnlockRosterAndRelease(
 		ctx,
 		secondRoster.ID,
 		started.Revision,
@@ -166,12 +174,12 @@ func TestTournamentRepository(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.False(t, changed, "a started roster cannot use the approved unlock path")
-	reservations, err = fixture.tournaments.ListReservations(ctx, secondTournament.ID)
+	reservations, err = fixture.roster.ListReservations(ctx, secondTournament.ID)
 	require.NoError(t, err)
 	require.Len(t, reservations, 2)
 
 	finishedAt := baseTime.Add(10 * time.Second)
-	cancelled, changed, err := fixture.tournaments.Transition(ctx, postgres.TournamentTransitionInput{
+	_, changed, err = fixture.tournaments.Transition(ctx, catalogrepo.TournamentTransitionInput{
 		ID:               secondTournament.ID,
 		ExpectedRevision: secondTournament.Revision,
 		ExpectedState:    secondTournament.State,
@@ -181,8 +189,10 @@ func TestTournamentRepository(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.True(t, changed)
+	cancelled, err := fixture.tournaments.GetTournament(ctx, secondTournament.ID)
+	require.NoError(t, err)
 	require.Equal(t, domain.TournamentStateCancelled, cancelled.State)
-	reservations, err = fixture.tournaments.ListReservations(ctx, secondTournament.ID)
+	reservations, err = fixture.roster.ListReservations(ctx, secondTournament.ID)
 	require.NoError(t, err)
 	require.Empty(t, reservations, "cancellation must release tournament reservations atomically")
 
@@ -207,7 +217,7 @@ func TestTournamentRepository(t *testing.T) {
 		ctx, t, fixture, thirdTournament, domain.TournamentStateRosterLocked, baseTime.Add(16*time.Second),
 	)
 	startedAt := baseTime.Add(17 * time.Second)
-	_, changed, err = fixture.tournaments.Transition(ctx, postgres.TournamentTransitionInput{
+	_, changed, err = fixture.tournaments.Transition(ctx, catalogrepo.TournamentTransitionInput{
 		ID:               thirdTournament.ID,
 		ExpectedRevision: thirdTournament.Revision,
 		ExpectedState:    thirdTournament.State,
@@ -229,7 +239,7 @@ func TestTournamentRepository(t *testing.T) {
 		ctx, t, fixture, baseTime.Add(19*time.Second),
 	)
 	concurrentPlayers := createMigrationPlayers(ctx, t, 2)
-	for _, targetRoster := range []*postgres.RosterRecord{concurrentFirstRoster, concurrentSecondRoster} {
+	for _, targetRoster := range []*rosterrepo.RosterRecord{concurrentFirstRoster, concurrentSecondRoster} {
 		seed := int32(1)
 		for _, playerID := range concurrentPlayers {
 			addRepositoryParticipant(
@@ -244,14 +254,14 @@ func TestTournamentRepository(t *testing.T) {
 			seed++
 		}
 	}
-	concurrentFirstRoster, err = fixture.tournaments.GetRoster(ctx, concurrentFirstRoster.ID)
+	concurrentFirstRoster, err = fixture.roster.GetRoster(ctx, concurrentFirstRoster.ID)
 	require.NoError(t, err)
-	concurrentSecondRoster, err = fixture.tournaments.GetRoster(ctx, concurrentSecondRoster.ID)
+	concurrentSecondRoster, err = fixture.roster.GetRoster(ctx, concurrentSecondRoster.ID)
 	require.NoError(t, err)
 	type concurrentLockResult struct {
 		tournamentID uuid.UUID
 		rosterID     uuid.UUID
-		roster       *postgres.RosterRecord
+		roster       *rosterrepo.RosterRecord
 		changed      bool
 		err          error
 	}
@@ -259,14 +269,14 @@ func TestTournamentRepository(t *testing.T) {
 	lockResults := make(chan concurrentLockResult, 2)
 	for _, target := range []struct {
 		tournamentID uuid.UUID
-		roster       *postgres.RosterRecord
+		roster       *rosterrepo.RosterRecord
 	}{
 		{concurrentFirstTournament.ID, concurrentFirstRoster},
 		{concurrentSecondTournament.ID, concurrentSecondRoster},
 	} {
 		go func() {
 			<-startLocks
-			lockedRoster, lockChanged, lockErr := fixture.tournaments.LockRosterAndReserve(
+			lockedRoster, lockChanged, lockErr := fixture.roster.LockRosterAndReserve(
 				ctx,
 				target.roster.ID,
 				target.roster.Revision,
@@ -295,13 +305,13 @@ func TestTournamentRepository(t *testing.T) {
 	require.NoError(t, winner.err)
 	require.ErrorIs(t, loser.err, domain.ErrConflict)
 	require.False(t, loser.changed)
-	winnerReservations, err := fixture.tournaments.ListReservations(ctx, winner.tournamentID)
+	winnerReservations, err := fixture.roster.ListReservations(ctx, winner.tournamentID)
 	require.NoError(t, err)
 	require.Len(t, winnerReservations, 2)
-	loserReservations, err := fixture.tournaments.ListReservations(ctx, loser.tournamentID)
+	loserReservations, err := fixture.roster.ListReservations(ctx, loser.tournamentID)
 	require.NoError(t, err)
 	require.Empty(t, loserReservations)
-	_, changed, err = fixture.tournaments.UnlockRosterAndRelease(
+	_, changed, err = fixture.roster.UnlockRosterAndRelease(
 		ctx,
 		winner.rosterID,
 		winner.roster.Revision,
@@ -329,11 +339,11 @@ func TestTournamentRepository(t *testing.T) {
 		)
 		seed++
 	}
-	rollbackRoster, err = fixture.tournaments.GetRoster(ctx, rollbackRoster.ID)
+	rollbackRoster, err = fixture.roster.GetRoster(ctx, rollbackRoster.ID)
 	require.NoError(t, err)
 	rollbackCause := errors.New("force outer rollback")
 	err = fixture.tx.Do(ctx, func(txCtx context.Context) error {
-		_, innerChanged, lockErr := fixture.tournaments.LockRosterAndReserve(
+		_, innerChanged, lockErr := fixture.roster.LockRosterAndReserve(
 			txCtx,
 			rollbackRoster.ID,
 			rollbackRoster.Revision,
@@ -344,11 +354,11 @@ func TestTournamentRepository(t *testing.T) {
 		return rollbackCause
 	})
 	require.ErrorIs(t, err, rollbackCause)
-	rolledBackRoster, err := fixture.tournaments.GetRoster(ctx, rollbackRoster.ID)
+	rolledBackRoster, err := fixture.roster.GetRoster(ctx, rollbackRoster.ID)
 	require.NoError(t, err)
 	require.Equal(t, rollbackRoster.Revision, rolledBackRoster.Revision)
 	require.Nil(t, rolledBackRoster.LockedAt)
-	reservations, err = fixture.tournaments.ListReservations(ctx, rollbackTournament.ID)
+	reservations, err = fixture.roster.ListReservations(ctx, rollbackTournament.ID)
 	require.NoError(t, err)
 	require.Empty(t, reservations, "nested repository work must reuse and roll back with the outer transaction")
 }

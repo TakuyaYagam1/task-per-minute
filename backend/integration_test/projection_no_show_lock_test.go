@@ -16,8 +16,10 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	gamenoshow "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/noshow"
+	gamestart "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/start"
+	adminoperation "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/operation"
+	tournamentadminresult "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/result"
 )
 
 func TestOperatorNoShowAndWaveStartUseSameLockOrder(t *testing.T) {
@@ -33,8 +35,8 @@ func TestOperatorNoShowAndWaveStartUseSameLockOrder(t *testing.T) {
 	require.NoError(t, sharedPool.QueryRow(ctx, `SELECT wave.revision_id, ready_window.revision_id, ready_window.deadline
 		FROM waves AS wave JOIN ready_windows AS ready_window ON ready_window.wave_id = wave.id WHERE wave.id = $1`, fixture.waveID).
 		Scan(&waveRevisionID, &windowRevisionID, &deadline))
-	command := tournamentadmin.NoShowCommand{
-		CommandScope: tournamentadmin.CommandScope{Operator: tournamentadmin.OperatorIdentity{ActorID: uuid.New()}, TournamentID: fixture.tournamentID, CommandID: uuid.New()},
+	command := tournamentadminresult.NoShowCommand{
+		CommandScope: adminoperation.CommandScope{Operator: adminoperation.OperatorIdentity{ActorID: uuid.New()}, TournamentID: fixture.tournamentID, CommandID: uuid.New()},
 		WaveID:       fixture.waveID, WindowID: fixture.windowID, SeriesID: binding.SeriesID,
 		Confirmed: true, Reason: "participant absent at ready deadline", ExpectedAuthorityRevision: authority.AuthorityRevision,
 		ExpectedWaveRevisionID: waveRevisionID, ExpectedWindowRevisionID: windowRevisionID, ExpectedSeriesState: domain.SeriesStateReady,
@@ -45,7 +47,7 @@ func TestOperatorNoShowAndWaveStartUseSameLockOrder(t *testing.T) {
 	if delay := time.Until(deadline); delay > 0 {
 		time.Sleep(delay + time.Millisecond)
 	}
-	resolution, _, err := gameusecase.NoShowNewUseCase(noShowPlanRepository{authority: loaded}, playoffPublicationClock{}).Resolve(ctx, gameusecase.NoShowCommand{
+	resolution, _, err := gamenoshow.NoShowNewUseCase(noShowPlanRepository{authority: loaded}, playoffPublicationClock{}).Resolve(ctx, gamenoshow.NoShowCommand{
 		Scope: loaded.Scope, CommandID: command.CommandID, ExpectedWaveRevisionID: domain.WaveRevisionID(waveRevisionID),
 		ExpectedWindowRevisionID: domain.ReadyWindowRevisionID(windowRevisionID), ExpectedSeriesState: command.ExpectedSeriesState,
 		GameResultRevisionIDs: []domain.OfficialResultRevisionID{domain.OfficialResultRevisionID(command.GameResultRevisionIDs[0])},
@@ -54,16 +56,16 @@ func TestOperatorNoShowAndWaveStartUseSameLockOrder(t *testing.T) {
 	require.NoError(t, err)
 	header, err := fixture.tx.Querier(ctx).LockWaveStartAuthority(ctx, sqlc.LockWaveStartAuthorityParams{TournamentID: fixture.tournamentID, WaveID: fixture.waveID})
 	require.NoError(t, err)
-	startCommand := gameusecase.StartCommand{Scope: gameusecase.StartScope{TournamentID: fixture.tournamentID, WaveID: fixture.waveID, WindowID: fixture.windowID},
+	startCommand := gamestart.StartCommand{Scope: gamestart.StartScope{TournamentID: fixture.tournamentID, WaveID: fixture.waveID, WindowID: fixture.windowID},
 		CommandID: uuid.New(), ActorID: uuid.New(), ExecutionAuthority: fixture.executionAuthority,
 		ExpectedProjectionRevision: header.ProjectionRevision, RequestDigest: sha256.Sum256([]byte("contended Wave start")),
 		ExpectedRevisions: domain.ReadyWindowSourceRevisions{WaveRevisionID: domain.WaveRevisionID(header.RevisionID), WaveRevision: header.Revision,
 			ProjectionRevisionID: header.ProjectionRevisionID, ProjectionRevision: header.ProjectionRevision,
 			ArtifactRevisionID: header.ArtifactRevisionID, ArtifactRevision: header.ArtifactRevision}}
 	document, err := json.Marshal(struct {
-		Action  tournamentadmin.OperatorResultAction `json:"action"`
-		Command any                                  `json:"command"`
-	}{Action: tournamentadmin.OperatorResultActionNoShow, Command: command})
+		Action  tournamentadminresult.OperatorResultAction `json:"action"`
+		Command any                                        `json:"command"`
+	}{Action: tournamentadminresult.OperatorResultActionNoShow, Command: command})
 	require.NoError(t, err)
 	digest := sha256.Sum256(document)
 	startLocked, continueStart := make(chan error, 1), make(chan struct{})
@@ -123,7 +125,7 @@ func TestOperatorNoShowAndWaveStartUseSameLockOrder(t *testing.T) {
 			require.NotEqual(t, "40P01", detail.Code, "opposite lock acquisition order")
 		}
 	}
-	require.ErrorIs(t, startErr, gameusecase.ErrWaveStartAuthorityConflict, "an incomplete ready window cannot start")
+	require.ErrorIs(t, startErr, gamestart.ErrWaveStartAuthorityConflict, "an incomplete ready window cannot start")
 	require.NoError(t, noShowErr)
 	var starts, noShows int
 	require.NoError(t, sharedPool.QueryRow(ctx, `SELECT
@@ -135,11 +137,11 @@ func TestOperatorNoShowAndWaveStartUseSameLockOrder(t *testing.T) {
 
 // Planning uses the production use case; persistence below is the real
 // repository. This captures a valid resolution before introducing contention.
-type noShowPlanRepository struct{ authority gameusecase.NoShowAuthority }
+type noShowPlanRepository struct{ authority gamenoshow.NoShowAuthority }
 
-func (r noShowPlanRepository) LoadNormalNoShowAuthority(context.Context, domain.NormalNoShowScope) (gameusecase.NoShowAuthority, error) {
+func (r noShowPlanRepository) LoadNormalNoShowAuthority(context.Context, domain.NormalNoShowScope) (gamenoshow.NoShowAuthority, error) {
 	return r.authority, nil
 }
-func (noShowPlanRepository) CommitNormalNoShow(_ context.Context, resolution gameusecase.NoShowResolution) (*gameusecase.NoShowResolution, bool, error) {
+func (noShowPlanRepository) CommitNormalNoShow(_ context.Context, resolution gamenoshow.NoShowResolution) (*gamenoshow.NoShowResolution, bool, error) {
 	return &resolution, true, nil
 }

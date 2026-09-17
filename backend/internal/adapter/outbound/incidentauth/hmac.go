@@ -6,7 +6,7 @@ import (
 	"errors"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/audit"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	tournamentincident "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/incident"
 )
 
 const (
@@ -17,7 +17,7 @@ const (
 var (
 	ErrInvalidHMACConfig = errors.New("invalid incident HMAC configuration")
 
-	_ tournamentadmin.IncidentAuthenticator = (*HMACAuthenticator)(nil)
+	_ tournamentincident.IncidentAuthenticator = (*HMACAuthenticator)(nil)
 )
 
 type HMACConfig struct {

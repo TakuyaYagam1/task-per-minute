@@ -12,6 +12,15 @@ import (
 	authadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/auth"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/incidentauth"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	assignmentrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment"
+	draftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment/draft"
+	playoffrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/playoff"
+	catalogrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/catalog"
+	participantdraftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/draft"
+	participantpostseriesrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/postseries"
+	participantreadinessrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/readiness"
+	participantsubmissionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/submission"
+	participantsurrenderrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/surrender"
 	redisadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/redis"
 	telemetryadapter "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/telemetry"
 	tasktelemetry "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/telemetry/task"
@@ -20,16 +29,29 @@ import (
 	authusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/auth"
 	authorityusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/authority"
 	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gamestart "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/start"
+	gamesubmission "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/submission"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/idempotency"
 	leaderboardusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/leaderboard"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/participantarchive"
 	playerusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/player"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/readiness"
-	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection"
+	resultprojection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection/publication"
 	taskusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/task"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	tournamentadminapplication "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/application"
+	tournamentadmincorrection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/correction"
+	tournamentadminexecution "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/execution"
+	tournamentadminidempotent "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/idempotent"
+	tournamentadmininbound "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/inbound"
+	tournamentadminincident "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/incident"
+	tournamentadminlifecycle "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/lifecycle"
+	tournamentadminobservability "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/observability"
+	tournamentadminobserved "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/observed"
+	tournamentadminreplay "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/replay"
+	tournamentadminresult "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/result"
+	tournamentadminroster "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/roster"
+	tournamentadminsnapshot "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/snapshot"
 	tournamentcancellation "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/cancellation"
 	catalogusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/catalog"
 	lifecycleusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/lifecycle"
@@ -152,10 +174,10 @@ func provideTournamentIDGenerator() (*catalogusecase.DeterministicIDGenerator, e
 }
 
 func provideTournamentCatalog(
-	repository *postgres.TournamentPostgres,
+	repository *catalogrepo.TournamentCatalogPostgres,
 	clk catalogusecase.CatalogClock,
 ) *catalogusecase.TournamentUseCase {
-	return catalogusecase.NewTournamentUseCase(postgres.NewTournamentCatalogPostgres(repository), clk)
+	return catalogusecase.NewTournamentUseCase(repository, clk)
 }
 
 func provideTournamentApplication(
@@ -185,27 +207,27 @@ func provideDistributedCommandCoordinator(receipts idempotency.Store) *idempoten
 }
 
 func provideParticipantReadiness(
-	repository *postgres.ParticipantReadinessRepository,
+	repository *participantreadinessrepo.ParticipantReadinessRepository,
 	clock clockFunc,
 ) *readiness.ReadinessUseCase {
 	return readiness.NewReadinessUseCase(repository, clock)
 }
 
 func provideParticipantDraft(
-	repository *postgres.ParticipantDraftRepository,
+	repository *participantdraftrepo.ParticipantDraftRepository,
 	clock clockFunc,
 ) *draftusecase.ActionUseCase {
 	return draftusecase.NewActionUseCase(repository, clock)
 }
 
 func provideParticipantSubmission(
-	repository *postgres.ParticipantSubmissionRepository,
-) *gameusecase.SubmissionUseCase {
-	return gameusecase.NewSubmissionUseCase(repository)
+	repository *participantsubmissionrepo.ParticipantSubmissionRepository,
+) *gamesubmission.SubmissionUseCase {
+	return gamesubmission.NewSubmissionUseCase(repository)
 }
 
 func provideParticipantPostSeries(
-	repository *postgres.ParticipantPostSeriesRepository,
+	repository *participantpostseriesrepo.ParticipantPostSeriesRepository,
 	clock clockFunc,
 ) *tournamentparticipant.PostSeriesUseCase {
 	return tournamentparticipant.NewPostSeriesUseCase(repository, clock)
@@ -230,10 +252,10 @@ func provideParticipantCommands(
 }
 
 func provideParticipantSurrender(
-	repository *postgres.ParticipantForfeitRepository,
+	repository *participantsurrenderrepo.ParticipantForfeitRepository,
 	clock clockFunc,
-) *postgres.ParticipantSurrenderWorkflow {
-	return postgres.NewParticipantSurrenderWorkflow(repository, clock)
+) *participantsurrenderrepo.ParticipantSurrenderWorkflow {
+	return participantsurrenderrepo.NewParticipantSurrenderWorkflow(repository, clock)
 }
 
 func provideTournamentParticipantApplication(
@@ -286,15 +308,15 @@ func provideTournamentCancellation(
 }
 
 func provideTournamentAdminLifecycle(
-	transactions tournamentadmin.LifecycleTransactionManager,
-	repository tournamentadmin.LifecycleWorkflowRepository,
-	transitions tournamentadmin.LifecycleTransitioner,
-	pauses tournamentadmin.LifecyclePauser,
-	cancellations tournamentadmin.LifecycleCanceller,
-	progressions tournamentadmin.LifecycleProgression,
-	clock tournamentadmin.AdminLifecycleClock,
-) *tournamentadmin.LifecycleWorkflow {
-	return tournamentadmin.NewLifecycleWorkflow(tournamentadmin.LifecycleWorkflowDependencies{
+	transactions tournamentadminlifecycle.LifecycleTransactionManager,
+	repository tournamentadminlifecycle.LifecycleWorkflowRepository,
+	transitions tournamentadminlifecycle.LifecycleTransitioner,
+	pauses tournamentadminlifecycle.LifecyclePauser,
+	cancellations tournamentadminlifecycle.LifecycleCanceller,
+	progressions tournamentadminlifecycle.LifecycleProgression,
+	clock tournamentadminlifecycle.AdminLifecycleClock,
+) *tournamentadminlifecycle.LifecycleWorkflow {
+	return tournamentadminlifecycle.NewLifecycleWorkflow(tournamentadminlifecycle.LifecycleWorkflowDependencies{
 		Transactions:  transactions,
 		Repository:    repository,
 		Transitions:   transitions,
@@ -306,11 +328,11 @@ func provideTournamentAdminLifecycle(
 }
 
 func provideTournamentAdminRoster(
-	transactions tournamentadmin.RosterTransactionManager,
-	repository tournamentadmin.RosterWorkflowRepository,
-	runtimeHealth tournamentadmin.PreflightRuntimeHealthSource,
-) *tournamentadmin.RosterWorkflow {
-	return tournamentadmin.NewRosterWorkflow(tournamentadmin.RosterWorkflowDependencies{
+	transactions tournamentadminroster.RosterTransactionManager,
+	repository tournamentadminroster.RosterWorkflowRepository,
+	runtimeHealth tournamentadminroster.PreflightRuntimeHealthSource,
+) *tournamentadminroster.RosterWorkflow {
+	return tournamentadminroster.NewRosterWorkflow(tournamentadminroster.RosterWorkflowDependencies{
 		Transactions:  transactions,
 		Repository:    repository,
 		RuntimeHealth: runtimeHealth,
@@ -318,28 +340,28 @@ func provideTournamentAdminRoster(
 }
 
 func provideTournamentAdminExecution(
-	transactions tournamentadmin.ExecutionTransactionManager,
-	repository tournamentadmin.ExecutionWorkflowRepository,
-	normalPause tournamentadmin.NormalPauseExecutionRepository,
-	waveRepository gameusecase.StartRepository,
+	transactions tournamentadminexecution.ExecutionTransactionManager,
+	repository tournamentadminexecution.ExecutionWorkflowRepository,
+	normalPause tournamentadminexecution.NormalPauseExecutionRepository,
+	waveRepository gamestart.StartRepository,
 	authority *authorityusecase.Controller,
 	clock clockFunc,
-) *tournamentadmin.ExecutionWorkflow {
-	return tournamentadmin.NewExecutionWorkflow(tournamentadmin.ExecutionWorkflowDependencies{
+) *tournamentadminexecution.ExecutionWorkflow {
+	return tournamentadminexecution.NewExecutionWorkflow(tournamentadminexecution.ExecutionWorkflowDependencies{
 		Transactions: transactions,
 		Repository:   repository,
 		NormalPause:  normalPause,
 		Authority:    authority,
-		WaveStart:    gameusecase.NewStartUseCase(waveRepository, clock),
+		WaveStart:    gamestart.NewStartUseCase(waveRepository, clock),
 	})
 }
 
 func provideTournamentAdminResults(
-	transactions tournamentadmin.OperatorResultTransactionManager,
-	repository tournamentadmin.OperatorResultWorkflowRepository,
-	postseason tournamentadmin.AdminPostseasonWorkflow,
-) *tournamentadmin.OperatorResultWorkflow {
-	return tournamentadmin.NewOperatorResultWorkflow(tournamentadmin.OperatorResultWorkflowDependencies{
+	transactions tournamentadminresult.OperatorResultTransactionManager,
+	repository tournamentadminresult.OperatorResultWorkflowRepository,
+	postseason tournamentadminresult.PostseasonWorkflow,
+) *tournamentadminresult.OperatorResultWorkflow {
+	return tournamentadminresult.NewOperatorResultWorkflow(tournamentadminresult.OperatorResultWorkflowDependencies{
 		Transactions: transactions,
 		Repository:   repository,
 		Postseason:   postseason,
@@ -365,6 +387,22 @@ func providePlayoffTerminal(
 	})
 }
 
+func providePlayoffTerminalRepository(
+	tx *postgres.TxManager,
+	drafts *draftrepo.DraftPostgres,
+	assignments *assignmentrepo.AssignmentPostgres,
+) *playoffrepo.PlayoffTerminalPostgres {
+	var draftRepository playoffrepo.DraftRepository
+	if drafts != nil {
+		draftRepository = drafts
+	}
+	var createAssignmentTx playoffrepo.AssignmentWriter
+	if assignments != nil {
+		createAssignmentTx = assignments.CreateAssignmentTx
+	}
+	return playoffrepo.NewPlayoffTerminalPostgres(tx, draftRepository, createAssignmentTx)
+}
+
 func provideTournamentProgression(
 	repository tournamentprogression.Repository,
 	terminalEvidence tournamentprogression.SwissTerminalEvidenceReader,
@@ -379,20 +417,20 @@ func provideTournamentProgression(
 }
 
 func provideTournamentAdminReplay(
-	transactions tournamentadmin.ExecutionTransactionManager,
-	repository tournamentadmin.ReplayWorkflowRepository,
-) *tournamentadmin.ReplayWorkflow {
-	return tournamentadmin.NewReplayWorkflow(tournamentadmin.ReplayWorkflowDependencies{
+	transactions tournamentadminreplay.ReplayTransactionManager,
+	repository tournamentadminreplay.ReplayWorkflowRepository,
+) *tournamentadminreplay.ReplayWorkflow {
+	return tournamentadminreplay.NewReplayWorkflow(tournamentadminreplay.ReplayWorkflowDependencies{
 		Transactions: transactions,
 		Repository:   repository,
 	})
 }
 
 func provideTournamentAdminCorrection(
-	transactions tournamentadmin.CorrectionTransactionManager,
-	repository tournamentadmin.CorrectionWorkflowRepository,
-) *tournamentadmin.CorrectionWorkflow {
-	return tournamentadmin.NewCorrectionWorkflow(tournamentadmin.CorrectionWorkflowDependencies{
+	transactions tournamentadmincorrection.CorrectionTransactionManager,
+	repository tournamentadmincorrection.CorrectionWorkflowRepository,
+) *tournamentadmincorrection.CorrectionWorkflow {
+	return tournamentadmincorrection.NewCorrectionWorkflow(tournamentadmincorrection.CorrectionWorkflowDependencies{
 		Transactions: transactions,
 		Repository:   repository,
 	})
@@ -400,22 +438,22 @@ func provideTournamentAdminCorrection(
 
 func provideTournamentAdminApplication(
 	catalog inbound.TournamentUseCase,
-	roster tournamentadmin.RosterPort,
-	preflight tournamentadmin.PreflightPort,
-	pairing tournamentadmin.PairingPort,
-	lifecycle tournamentadmin.LifecyclePort,
-	wave tournamentadmin.WavePort,
-	noShow tournamentadmin.NoShowPort,
-	reserve tournamentadmin.ReservePort,
-	forfeit tournamentadmin.ForfeitPort,
-	replay tournamentadmin.ReplayPort,
-	correction tournamentadmin.CorrectionPort,
-	audit tournamentadmin.AuditPort,
-	incidents tournamentadmin.IncidentSnapshotPort,
-	signer tournamentadmin.IncidentAuthenticator,
-	snapshots tournamentadmin.SnapshotPort,
-) *tournamentadmin.AdminUseCase {
-	return tournamentadmin.AdminNewUseCase(tournamentadmin.AdminDependencies{
+	roster tournamentadminroster.RosterPort,
+	preflight tournamentadminroster.PreflightPort,
+	pairing tournamentadminexecution.PairingPort,
+	lifecycle tournamentadminlifecycle.LifecyclePort,
+	wave tournamentadminexecution.WavePort,
+	noShow tournamentadminresult.NoShowPort,
+	reserve tournamentadminreplay.ReservePort,
+	forfeit tournamentadminresult.ForfeitPort,
+	replay tournamentadminreplay.ReplayPort,
+	correction tournamentadmincorrection.CorrectionPort,
+	audit tournamentadminincident.AuditPort,
+	incidents tournamentadminincident.IncidentSnapshotPort,
+	signer tournamentadminincident.IncidentAuthenticator,
+	snapshots tournamentadminsnapshot.SnapshotPort,
+) *tournamentadminapplication.AdminUseCase {
+	return tournamentadminapplication.AdminNewUseCase(tournamentadminapplication.AdminDependencies{
 		Catalog:    catalog,
 		Roster:     roster,
 		Preflight:  preflight,
@@ -435,21 +473,21 @@ func provideTournamentAdminApplication(
 }
 
 func provideIdempotentTournamentAdminApplication(
-	application *tournamentadmin.AdminUseCase,
+	application *tournamentadminapplication.AdminUseCase,
 	catalog inbound.TournamentUseCase,
 	coordinator *idempotency.Coordinator,
-) (*tournamentadmin.AdminIdempotentService, error) {
-	return tournamentadmin.AdminNewIdempotentService(application, catalog, coordinator)
+) (*tournamentadminidempotent.IdempotentService, error) {
+	return tournamentadminidempotent.NewIdempotentService(application, catalog, coordinator)
 }
 
 func provideObservedTournamentAdminApplication(
-	application *tournamentadmin.AdminIdempotentService,
-	clock tournamentadmin.OperationClock,
+	application *tournamentadminidempotent.IdempotentService,
+	clock tournamentadminobservability.OperationClock,
 	observer *telemetryadapter.TournamentAdminObserver,
-) *tournamentadmin.AdminObservedService {
-	return tournamentadmin.AdminNewObservedService(application, clock, observer)
+) *tournamentadminobserved.ObservedService {
+	return tournamentadminobserved.NewObservedService(application, clock, observer)
 }
 
-func provideTournamentAdminInbound(service tournamentadmin.AdminService) inbound.TournamentAdminUseCase {
-	return tournamentadmin.NewInboundAdapter(service)
+func provideTournamentAdminInbound(service tournamentadmininbound.Service) inbound.TournamentAdminUseCase {
+	return tournamentadmininbound.NewInboundAdapter(service)
 }

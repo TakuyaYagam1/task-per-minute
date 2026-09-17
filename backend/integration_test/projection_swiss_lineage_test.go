@@ -13,8 +13,10 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/require"
 
-	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	waverepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/wave"
+	projectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
+	progressionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/progression"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 	progression "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/progression"
@@ -29,7 +31,7 @@ func TestFinalSwissReceiptSuccessorReadbackAndRollback(t *testing.T) {
 	settleSwissReceiptSeries(ctx, t, fixture, 1)
 	closeSwissReceiptWave(ctx, t, fixture)
 	authority := swissReceiptAuthority(ctx, t, fixture)
-	input, err := postgres.NewTournamentProgressionPostgres(fixture.tx).LoadLockedSwissTerminalEvidence(ctx, progression.Command{
+	input, err := progressionrepo.NewTournamentProgressionPostgres(fixture.tx).LoadLockedSwissTerminalEvidence(ctx, progression.Command{
 		CommandID: uuid.New(), TournamentID: fixture.tournamentID, RosterID: fixture.rosterID, ActorID: uuid.New(),
 		Action: progression.ActionStartPlayoffs, ExpectedProjectionRevision: authority.ProjectionRevision,
 	}, authority)
@@ -40,7 +42,7 @@ func TestFinalSwissReceiptSuccessorReadbackAndRollback(t *testing.T) {
 	before := swissPublicationCounts(ctx, t, fixture)
 	for _, failLate := range []bool{true, false} {
 		err = fixture.tx.Do(ctx, func(txCtx context.Context) error {
-			record, err := postgres.NewProjectionPostgres(fixture.tx).Publish(txCtx, publication)
+			record, err := projectionrepo.NewProjectionPostgres(fixture.tx).Publish(txCtx, publication)
 			if err != nil {
 				return err
 			}
@@ -76,21 +78,21 @@ func TestFinalSwissReceiptSuccessorReadbackAndRollback(t *testing.T) {
 	require.Equal(t, authority.ProjectionRevisionID, predecessor)
 }
 
-func successorSwissPublication(ctx context.Context, t *testing.T, fixture tournamentAdminSwissProofFixture) postgres.ProjectionPublishInput {
+func successorSwissPublication(ctx context.Context, t *testing.T, fixture tournamentAdminSwissProofFixture) projectionrepo.ProjectionPublishInput {
 	t.Helper()
-	scope := postgres.ProjectionScope{TournamentID: fixture.tournamentID, RosterID: fixture.rosterID}
-	current, err := postgres.NewProjectionPostgres(fixture.tx).Current(ctx, scope)
+	scope := projectionrepo.ProjectionScope{TournamentID: fixture.tournamentID, RosterID: fixture.rosterID}
+	current, err := projectionrepo.NewProjectionPostgres(fixture.tx).Current(ctx, scope)
 	require.NoError(t, err)
 	now := time.Now().UTC().Truncate(time.Microsecond)
-	input := postgres.ProjectionPublishInput{IDs: postgres.ProjectionIDs{RevisionID: uuid.New(), CutoffID: uuid.New()}, Scope: scope,
-		Source:             postgres.ProjectionSource{Kind: "operator_rebuild", Reason: "receipt lineage contract"},
+	input := projectionrepo.ProjectionPublishInput{IDs: projectionrepo.ProjectionIDs{RevisionID: uuid.New(), CutoffID: uuid.New()}, Scope: scope,
+		Source:             projectionrepo.ProjectionSource{Kind: "operator_rebuild", Reason: "receipt lineage contract"},
 		SupersessionReason: "receipt lineage contract", CutoffAt: now, CreatedAt: now, PublishedAt: now}
 	for _, old := range current.Artifacts {
-		artifact := postgres.ProjectionArtifactInput{ID: uuid.New(), Kind: domain.ArtifactKind(old.Artifact.ArtifactKind), Key: old.Artifact.ArtifactKey,
+		artifact := projectionrepo.ProjectionArtifactInput{ID: uuid.New(), Kind: domain.ArtifactKind(old.Artifact.ArtifactKind), Key: old.Artifact.ArtifactKey,
 			Payload: old.Artifact.Payload, PayloadDigest: sha256.Sum256(old.Artifact.Payload),
-			Dependencies: []postgres.ProjectionDependencyInput{{ID: uuid.New(), Kind: "artifact", DependsOnArtifactID: &old.Artifact.ID}}}
+			Dependencies: []projectionrepo.ProjectionDependencyInput{{ID: uuid.New(), Kind: "artifact", DependsOnArtifactID: &old.Artifact.ID}}}
 		for _, member := range old.Members {
-			item := postgres.ProjectionMemberInput{ParticipantID: member.ParticipantID, Position: member.Position}
+			item := projectionrepo.ProjectionMemberInput{ParticipantID: member.ParticipantID, Position: member.Position}
 			if member.Score.Valid {
 				value, err := member.Score.Float64Value()
 				require.NoError(t, err)
@@ -104,7 +106,7 @@ func successorSwissPublication(ctx context.Context, t *testing.T, fixture tourna
 	return input
 }
 
-func copySwissReceiptContract(ctx context.Context, q *sqlc.Queries, fixture tournamentAdminSwissProofFixture, sourceID uuid.UUID, record *postgres.ProjectionRecord, planned playoff.FinalSwissProjection, failLate bool, mutate ...func([]sqlc.LockTournamentProgressionFinalSwissReceiptSeriesEvidenceRow, []sqlc.LockTournamentProgressionFinalSwissReceiptGamesRow)) error {
+func copySwissReceiptContract(ctx context.Context, q *sqlc.Queries, fixture tournamentAdminSwissProofFixture, sourceID uuid.UUID, record *projectionrepo.ProjectionRecord, planned playoff.FinalSwissProjection, failLate bool, mutate ...func([]sqlc.LockTournamentProgressionFinalSwissReceiptSeriesEvidenceRow, []sqlc.LockTournamentProgressionFinalSwissReceiptGamesRow)) error {
 	root := sqlc.CreateFinalSwissProjectionReceiptParams{ProjectionRevisionID: record.Revision.ID, TournamentID: fixture.tournamentID, RosterID: fixture.rosterID,
 		ReceiptRevision: 2, CanonicalProjectionID: planned.GoldenSource().ProjectionID, PreviousReceiptProjectionRevisionID: uuid.NullUUID{UUID: sourceID, Valid: true},
 		CreatedAt: pgtype.Timestamptz{Time: planned.Projection().Revision().CreatedAt(), Valid: true}}
@@ -186,16 +188,16 @@ func TestFinalSwissReceiptRejectsCrossSeriesNodes(t *testing.T) {
 	foreignParticipants := createSwissMigrationParticipants(ctx, t, foreignRoster, createMigrationPlayers(ctx, t, 4))
 	at := time.Now().UTC().Truncate(time.Microsecond)
 	foreignSource, foreignRevision := createRoundProofProjection(ctx, t, foreignTournament, foreignRoster, foreignParticipants[0], at)
-	_, err := postgres.NewWavePostgres(fixture.tx).Create(ctx, postgres.WaveCreateInput{ID: uuid.New(), TournamentID: foreignTournament, RosterID: foreignRoster,
+	_, err := waverepo.NewWavePostgres(fixture.tx).Create(ctx, waverepo.WaveCreateInput{ID: uuid.New(), TournamentID: foreignTournament, RosterID: foreignRoster,
 		RevisionID: domain.WaveRevisionID(uuid.New()), CommandID: uuid.New(), SourceProjectionRevisionID: foreignSource, SourceProjectionRevision: foreignRevision,
-		ParticipantIDs: foreignParticipants[:2], CreatedAt: at, Series: []postgres.WaveSeriesInput{{ID: uuid.New(), FirstParticipantID: foreignParticipants[0], SecondParticipantID: foreignParticipants[1],
+		ParticipantIDs: foreignParticipants[:2], CreatedAt: at, Series: []waverepo.WaveSeriesInput{{ID: uuid.New(), FirstParticipantID: foreignParticipants[0], SecondParticipantID: foreignParticipants[1],
 			Format: domain.SeriesFormatBO1, InitialScoreRevisionID: domain.SeriesScoreRevisionID(uuid.New())}}})
 	require.NoError(t, err)
 	var foreignNode uuid.UUID
 	require.NoError(t, sharedPool.QueryRow(ctx, `SELECT id FROM result_projection_nodes WHERE tournament_id = $1 AND artifact_kind = 'series_score' ORDER BY id LIMIT 1`, foreignTournament).Scan(&foreignNode))
 	authority := swissReceiptAuthority(ctx, t, fixture)
 	command := progression.Command{CommandID: uuid.New(), TournamentID: fixture.tournamentID, RosterID: fixture.rosterID, ActorID: uuid.New(), Action: progression.ActionStartPlayoffs, ExpectedProjectionRevision: authority.ProjectionRevision}
-	input, err := postgres.NewTournamentProgressionPostgres(fixture.tx).LoadLockedSwissTerminalEvidence(ctx, command, authority)
+	input, err := progressionrepo.NewTournamentProgressionPostgres(fixture.tx).LoadLockedSwissTerminalEvidence(ctx, command, authority)
 	require.NoError(t, err)
 	previous, err := playoff.PlanFinalSwissReceipt(input)
 	require.NoError(t, err)
@@ -203,7 +205,7 @@ func TestFinalSwissReceiptRejectsCrossSeriesNodes(t *testing.T) {
 		t.Run(field, func(t *testing.T) {
 			publication := successorSwissPublication(ctx, t, fixture)
 			err := fixture.tx.Do(ctx, func(txCtx context.Context) error {
-				record, err := postgres.NewProjectionPostgres(fixture.tx).Publish(txCtx, publication)
+				record, err := projectionrepo.NewProjectionPostgres(fixture.tx).Publish(txCtx, publication)
 				if err != nil {
 					return err
 				}

@@ -4,14 +4,14 @@ import (
 	"context"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/observability"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	reconnectusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/reconnect"
 )
 
 type ReconnectObserver struct {
 	observer observability.TournamentEventObserver
 }
 
-var _ gameusecase.Observer = (*ReconnectObserver)(nil)
+var _ reconnectusecase.Observer = (*ReconnectObserver)(nil)
 
 func NewReconnectObserver(observer observability.TournamentEventObserver) *ReconnectObserver {
 	observer = observability.FirstTournamentEventObserver(observer)
@@ -23,7 +23,7 @@ func NewReconnectObserver(observer observability.TournamentEventObserver) *Recon
 
 func (o *ReconnectObserver) Observe(
 	ctx context.Context,
-	event gameusecase.ReconnectEvent,
+	event reconnectusecase.ReconnectEvent,
 ) {
 	if o == nil || o.observer == nil {
 		return

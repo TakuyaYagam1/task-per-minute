@@ -285,23 +285,9 @@ func createExactDraftReservationFixture(ctx context.Context, t *testing.T) exact
 			VALUES ($1, $2, $3)`, bo3PoolID, category, fixture.createdAt)
 		require.NoError(t, err)
 	}
-	for _, stage := range []struct {
-		name, format, mode, kind string
-		pool                     uuid.UUID
-	}{
-		{name: "swiss", format: "bo1", mode: "random", kind: "normal", pool: bo1PoolID},
-		{name: "golden", format: "bo1", mode: "random", kind: "golden", pool: bo1PoolID},
-		{name: "semifinal", format: "bo1", mode: "draft", kind: "normal", pool: bo1PoolID},
-		{name: "final", format: "bo3", mode: "draft", kind: "normal", pool: bo3PoolID},
-	} {
-		_, err = sharedPool.Exec(ctx, `
-			INSERT INTO tournament_content_stage_defaults (
-				configuration_id, stage, format, category_mode, category_pool_revision_id, task_pool_kind, created_at
-			)
-			VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-			configurationID, stage.name, stage.format, stage.mode, stage.pool, stage.kind, fixture.createdAt)
-		require.NoError(t, err)
-	}
+	insertTournamentContentStageDefaults(
+		ctx, t, configurationID, bo1PoolID, bo3PoolID, fixture.createdAt,
+	)
 	_, err = sharedPool.Exec(ctx, `
 		UPDATE tournament_content_configurations
 		SET state = 'published', published_at = $2

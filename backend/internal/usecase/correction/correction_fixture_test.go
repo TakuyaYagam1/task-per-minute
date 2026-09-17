@@ -12,7 +12,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	correctionusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/correction"
 	resultusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/result"
-	resultprojection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection"
+	resultprojection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection/revision"
 )
 
 func task056CorrectionFixture(t *testing.T) (correctionusecase.Command, correctionusecase.Authority) {

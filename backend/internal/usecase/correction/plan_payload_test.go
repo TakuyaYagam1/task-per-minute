@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	correctionusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/correction"
-	resultprojection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection"
+	resultprojection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection/revision"
 )
 
 func TestCorrectionPlanPayloadBounds(t *testing.T) {

@@ -17,7 +17,13 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/require"
 
-	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	assignmentrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment"
+	draftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment/draft"
+	exactdraftrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/assignment/exactdraft"
+	playoffrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/playoff"
+	projectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
+	resultrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result"
+	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	assignmentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/assignment"
@@ -56,7 +62,7 @@ func TestSemifinalSettlementProjectsFromStage(t *testing.T) {
 	before := playoffPublicationCounts(ctx, t, fixture.tournamentID)
 	abort := errors.New("stop after semifinal projection")
 	err = fixture.tx.Do(ctx, func(txCtx context.Context) error {
-		_, changed, err := postgres.NewResultPostgres(fixture.tx).Settle(txCtx, input)
+		_, changed, err := resultauthority.NewResultPostgres(fixture.tx).Settle(txCtx, input)
 		if err != nil {
 			return err
 		}
@@ -65,7 +71,7 @@ func TestSemifinalSettlementProjectsFromStage(t *testing.T) {
 	})
 	require.ErrorIs(t, err, abort)
 	require.Equal(t, before, playoffPublicationCounts(ctx, t, fixture.tournamentID))
-	record, changed, err := postgres.NewResultPostgres(fixture.tx).Settle(ctx, input)
+	record, changed, err := resultauthority.NewResultPostgres(fixture.tx).Settle(ctx, input)
 	require.NoError(t, err)
 	require.True(t, changed)
 	require.NotNil(t, record.SeriesRevision)
@@ -77,7 +83,7 @@ func TestSemifinalSettlementProjectsFromStage(t *testing.T) {
 	require.Equal(t, genesis[0].ID, previousNodeID)
 }
 
-func semifinalSettlementInput(ctx context.Context, t *testing.T, fixture tournamentAdminSwissProofFixture, commandID uuid.UUID, position int) postgres.ResultSettlementInput {
+func semifinalSettlementInput(ctx context.Context, t *testing.T, fixture tournamentAdminSwissProofFixture, commandID uuid.UUID, position int) resultrepo.ResultSettlementInput {
 	t.Helper()
 	var seriesID, winnerID uuid.UUID
 	var seriesRevision int64
@@ -135,7 +141,7 @@ func TestSemifinalConcurrentSettlementPublishesOnce(t *testing.T) {
 	require.NoError(t, err)
 	input := semifinalSettlementInput(ctx, t, fixture, command.CommandID, 1)
 	before := playoffPublicationCounts(ctx, t, fixture.tournamentID)
-	var records [2]*postgres.ResultCommitRecord
+	var records [2]*resultrepo.ResultCommitRecord
 	var changed [2]bool
 	var failures [2]error
 	var ready, done sync.WaitGroup
@@ -147,7 +153,7 @@ func TestSemifinalConcurrentSettlementPublishesOnce(t *testing.T) {
 			defer done.Done()
 			ready.Done()
 			<-start
-			records[index], changed[index], failures[index] = postgres.NewResultPostgres(fixture.tx).Settle(ctx, input)
+			records[index], changed[index], failures[index] = resultauthority.NewResultPostgres(fixture.tx).Settle(ctx, input)
 		}()
 	}
 	ready.Wait()
@@ -165,8 +171,8 @@ func TestSemifinalConcurrentSettlementPublishesOnce(t *testing.T) {
 func TestSemifinalSettlementCreatesFinalDraft(t *testing.T) {
 	ctx := context.Background()
 	fixture, ids, _ := prepareFinalDraft(ctx, t)
-	drafts := postgres.NewDraftPostgres(fixture.tx)
-	stored, current, err := postgres.NewExactDraftBranchPlanPostgres(fixture.tx, drafts).LoadExactDraftBranchActivation(ctx, ids.DraftAssignmentPlanID)
+	drafts := draftrepo.NewDraftPostgres(fixture.tx)
+	stored, current, err := exactdraftrepo.NewExactDraftBranchPlanPostgres(fixture.tx, drafts).LoadExactDraftBranchActivation(ctx, ids.DraftAssignmentPlanID)
 	require.NoError(t, err)
 	require.NoError(t, stored.Validate())
 	require.Equal(t, ids.DraftID, current.ID)
@@ -183,8 +189,8 @@ func TestFinalDraftStartsAtLatestSemifinalCompletion(t *testing.T) {
 		JOIN official_result_revisions AS result ON result.id = head.current_revision_id
 		WHERE evidence.tournament_id = $1 GROUP BY evidence.created_at`, fixture.tournamentID).Scan(&stageTime, &completedAt))
 	require.True(t, completedAt.After(stageTime.Add(15*time.Second)))
-	drafts := postgres.NewDraftPostgres(fixture.tx)
-	_, current, err := postgres.NewExactDraftBranchPlanPostgres(fixture.tx, drafts).LoadExactDraftBranchActivation(ctx, ids.DraftAssignmentPlanID)
+	drafts := draftrepo.NewDraftPostgres(fixture.tx)
+	_, current, err := exactdraftrepo.NewExactDraftBranchPlanPostgres(fixture.tx, drafts).LoadExactDraftBranchActivation(ctx, ids.DraftAssignmentPlanID)
 	require.NoError(t, err)
 	require.True(t, current.TurnDeadline.After(completedAt), "draft deadline %s must follow exact semifinal completion %s", current.TurnDeadline, completedAt)
 	require.True(t, completedAt.Add(15*time.Second).Equal(current.TurnDeadline))
@@ -209,7 +215,7 @@ func prepareFinalDraftWithCompletionDelay(ctx context.Context, t *testing.T, che
 	fixture, command := preparePlayoffPublication(ctx, t)
 	_, err := publishSwissPlayoffs(ctx, fixture, command)
 	require.NoError(t, err)
-	var last postgres.ResultSettlementInput
+	var last resultrepo.ResultSettlementInput
 	var reservedAt time.Time
 	require.NoError(t, sharedPool.QueryRow(ctx, `SELECT locked_at FROM rosters WHERE id = $1`, fixture.rosterID).Scan(&reservedAt))
 	_, err = fixture.tx.Querier(ctx).ReserveCheckedInTournamentParticipants(ctx, sqlc.ReserveCheckedInTournamentParticipantsParams{
@@ -219,15 +225,15 @@ func prepareFinalDraftWithCompletionDelay(ctx context.Context, t *testing.T, che
 	for position := 1; position <= 2; position++ {
 		last = semifinalSettlementInput(ctx, t, fixture, command.CommandID, position)
 		last.SettledAt = last.SettledAt.Add(delay)
-		_, _, err := postgres.NewResultPostgres(fixture.tx).Settle(ctx, last)
+		_, _, err := resultauthority.NewResultPostgres(fixture.tx).Settle(ctx, last)
 		require.NoError(t, err)
 	}
-	drafts := postgres.NewDraftPostgres(fixture.tx)
-	assignments := postgres.NewAssignmentPostgres(fixture.tx)
-	exactPlans := postgres.NewExactDraftBranchPlanPostgres(fixture.tx, drafts)
+	drafts := draftrepo.NewDraftPostgres(fixture.tx)
+	assignments := assignmentrepo.NewAssignmentPostgres(fixture.tx)
+	exactPlans := exactdraftrepo.NewExactDraftBranchPlanPostgres(fixture.tx, drafts)
 	planner := playoff.NewFinalDraftAssignmentService(assignmentusecase.NewExactDraftBranchPlanUseCase(&observedExactDraftRepository{ExactDraftBranchPlanPostgres: exactPlans, t: t}), exactPlans, exactPlans)
 	coordinator := playoff.NewTerminalCoordinator(playoff.TerminalCoordinatorDependencies{
-		Repository: &observedTerminalRepository{PlayoffTerminalPostgres: postgres.NewPlayoffTerminalPostgres(fixture.tx, drafts, assignments)}, Publisher: postgres.NewProjectionPostgres(fixture.tx),
+		Repository: &observedTerminalRepository{PlayoffTerminalPostgres: playoffrepo.NewPlayoffTerminalPostgres(fixture.tx, drafts, assignments.CreateAssignmentTx)}, Publisher: projectionrepo.NewProjectionPostgres(fixture.tx),
 		DraftPlanner: &checkedFinalDraftPlanner{FinalDraftAssignmentService: planner, fixture: fixture, t: t}, Rehydrator: planner,
 	})
 	ids, err := playoff.FinalStageIdentity(command.CommandID)
@@ -274,12 +280,12 @@ type checkedFinalDraftPlanner struct {
 }
 
 type observedExactDraftRepository struct {
-	*postgres.ExactDraftBranchPlanPostgres
+	*exactdraftrepo.ExactDraftBranchPlanPostgres
 	t *testing.T
 }
 
 type observedTerminalRepository struct {
-	*postgres.PlayoffTerminalPostgres
+	*playoffrepo.PlayoffTerminalPostgres
 }
 
 func (r *observedTerminalRepository) PersistFinalContinuation(ctx context.Context, plan playoff.FinalContinuationPlan) (bool, error) {

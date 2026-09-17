@@ -12,11 +12,17 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 
-	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
+	authorityrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/authority"
+	executionrecoveryrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/recovery"
+	recoveryrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/recovery"
+	recoveryterminalrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/recovery/terminal"
+	resultauthority "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/authority"
+	wavestartrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/execution/wavestart"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
 	authorityusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/authority"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gamerecovery "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/recovery"
+	gamesettlement "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/settlement"
 )
 
 func TestEpochReplayRetainsFenceAndUnlockedReplay(t *testing.T) {
@@ -85,7 +91,7 @@ func TestEpochReplayAndParticipantSettlementUseSameLockOrder(t *testing.T) {
 			case <-ctx.Done():
 				return ctx.Err()
 			}
-			_, _, err = gameusecase.SettlementNewUseCase(participant).Settle(txCtx, gameusecase.SettlementCommand{Scope: scope, CommandID: uuid.New()})
+			_, _, err = gamesettlement.SettlementNewUseCase(participant).Settle(txCtx, gamesettlement.SettlementCommand{Scope: scope, CommandID: uuid.New()})
 			return err
 		})
 	}()
@@ -150,10 +156,10 @@ func TestEpochReplayAndParticipantSettlementUseSameLockOrder(t *testing.T) {
 }
 
 func prepareSwissEpochReplay(ctx context.Context, t *testing.T, fixture tournamentAdminSwissProofFixture) (
-	*postgres.ExecutionRecoveryPostgres, gameusecase.EpochReplayRecord, gameusecase.EpochReplayCommitCondition,
+	*executionrecoveryrepo.ExecutionRecoveryPostgres, gamerecovery.EpochReplayRecord, gamerecovery.EpochReplayCommitCondition,
 ) {
 	t.Helper()
-	authority := postgres.NewExecutionAuthorityPostgres(fixture.tx)
+	authority := authorityrepo.NewExecutionAuthorityPostgres(fixture.tx)
 	old := fixture.executionAuthority
 	stamp := old.Stamp()
 	renewed, changed, err := authorityusecase.NewWithTimeSource(authority, authority, 100*time.Millisecond).Claim(ctx, authorityusecase.ClaimCommand{
@@ -172,15 +178,21 @@ func prepareSwissEpochReplay(ctx context.Context, t *testing.T, fixture tourname
 	require.NoError(t, err)
 	require.True(t, changed)
 	require.Equal(t, old.Epoch+1, current.Epoch)
-	repository := postgres.NewExecutionRecoveryPostgres(fixture.tx, postgres.NewRecoveryPostgres(fixture.tx, nil),
-		postgres.NewRecoveryTerminalPostgres(fixture.tx, authority, playoffPublicationClock{}))
+	deadlines := recoveryrepo.NewRecoveryPostgres(fixture.tx, nil)
+	terminal := recoveryterminalrepo.NewRecoveryTerminalPostgresWithDependencies(
+		fixture.tx, authority, playoffPublicationClock{},
+		wavestartrepo.EnsurePreStartSwissRoundProofForCommand, resultauthority.FinalizeProjection,
+	)
+	repository := executionrecoveryrepo.NewExecutionRecoveryPostgresWithDependencies(
+		fixture.tx, deadlines, terminal, resultauthority.FinalizeProjection,
+	)
 	candidates, err := repository.ListActiveGames(ctx, fixture.tournamentID, current.Identity())
 	require.NoError(t, err)
 	require.Len(t, candidates, 1)
 	require.Equal(t, fixture.binding[1].SeriesID, candidates[0].Scope.SeriesID)
 	require.NotNil(t, candidates[0].EpochReplay)
 	plan := &epochReplayPlanRepository{ExecutionRecoveryPostgres: repository}
-	record, changed, err := gameusecase.NewEpochReplayUseCase(plan, authority).Replay(ctx, *candidates[0].EpochReplay)
+	record, changed, err := gamerecovery.NewEpochReplayUseCase(plan, authority).Replay(ctx, *candidates[0].EpochReplay)
 	require.NoError(t, err)
 	require.True(t, changed)
 	require.NoError(t, record.Validate())
@@ -191,11 +203,11 @@ func prepareSwissEpochReplay(ctx context.Context, t *testing.T, fixture tourname
 // Capture the production planner's exact commit input before introducing the
 // contention barrier. Every authority read and the eventual write use PostgreSQL.
 type epochReplayPlanRepository struct {
-	*postgres.ExecutionRecoveryPostgres
-	condition gameusecase.EpochReplayCommitCondition
+	*executionrecoveryrepo.ExecutionRecoveryPostgres
+	condition gamerecovery.EpochReplayCommitCondition
 }
 
-func (r *epochReplayPlanRepository) CommitEpochReplay(_ context.Context, condition gameusecase.EpochReplayCommitCondition, record gameusecase.EpochReplayRecord) (*gameusecase.EpochReplayRecord, bool, error) {
+func (r *epochReplayPlanRepository) CommitEpochReplay(_ context.Context, condition gamerecovery.EpochReplayCommitCondition, record gamerecovery.EpochReplayRecord) (*gamerecovery.EpochReplayRecord, bool, error) {
 	r.condition = condition
 	return &record, true, nil
 }
