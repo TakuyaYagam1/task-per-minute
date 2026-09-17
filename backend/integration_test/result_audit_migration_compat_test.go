@@ -82,14 +82,23 @@ func createResultAuditMigrationFixtureFromDraftMode(
 		`["web"]`,
 		createdAt.Add(2*time.Second),
 	)
-	reservationBuilder := createAssignmentBranchReservations
+	var reservations []assignmentReservationFixture
+	var releasedReservations []assignmentReservationFixture
 	if copyVersionedSource {
-		reservationBuilder = createResultAuditVersionedReservations
+		reservations = createResultAuditVersionedReservations(
+			ctx, tb, exactPlanID, branchID, "web", createdAt.Add(3*time.Second), draft.taskIDs,
+		)
+		releasedReservations = createResultAuditVersionedReservations(
+			ctx, tb, exactPlanID, releasedBranchID, "web", createdAt.Add(3*time.Second), draft.taskIDs,
+		)
+	} else {
+		reservations = createAssignmentBranchReservations(
+			ctx, tb, exactPlanID, branchID, "web", createdAt.Add(3*time.Second),
+		)
+		releasedReservations = createAssignmentBranchReservations(
+			ctx, tb, exactPlanID, releasedBranchID, "web", createdAt.Add(3*time.Second),
+		)
 	}
-	reservations := reservationBuilder(ctx, tb, exactPlanID, branchID, "web", createdAt.Add(3*time.Second))
-	releasedReservations := reservationBuilder(
-		ctx, tb, exactPlanID, releasedBranchID, "web", createdAt.Add(3*time.Second),
-	)
 	committedAt := createdAt.Add(4 * time.Second)
 	for _, reservation := range reservations {
 		_, err := sharedPool.Exec(ctx, `
@@ -169,12 +178,13 @@ func createResultAuditVersionedReservations(
 	branchID uuid.UUID,
 	category string,
 	createdAt time.Time,
+	taskIDs []uuid.UUID,
 ) []assignmentReservationFixture {
 	tb.Helper()
 
 	reservations := make([]assignmentReservationFixture, 3)
 	for i := range reservations {
-		taskID, taskVersion := createAssignmentMigrationTask(ctx, tb, category, i, &planID)
+		taskID, taskVersion := createAssignmentMigrationTask(ctx, tb, category, i, &planID, taskIDs)
 		edgeID := uuid.New()
 		_, err := sharedPool.Exec(ctx, `
 			INSERT INTO assignment_plan_edges (

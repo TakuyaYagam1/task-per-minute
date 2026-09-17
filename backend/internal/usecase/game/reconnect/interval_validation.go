@@ -3,6 +3,7 @@ package reconnect
 import (
 	"github.com/google/uuid"
 
+	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
 )
 
@@ -21,13 +22,13 @@ type reconnectIntervalValidation struct {
 	seenIDs          map[uuid.UUID]struct{}
 	seenSegments     map[reconnectCycle]struct{}
 	openParticipants map[uuid.UUID]struct{}
-	rootCounts       map[uuid.UUID]int
+	rootNumbers      map[uuid.UUID]map[int]struct{}
 	rootEpochs       map[reconnectRootEpoch]struct{}
 }
 
 func newReconnectIntervalValidation(size int) reconnectIntervalValidation {
 	return reconnectIntervalValidation{seenIDs: make(map[uuid.UUID]struct{}, size), seenSegments: make(map[reconnectCycle]struct{}, size),
-		openParticipants: make(map[uuid.UUID]struct{}, 2), rootCounts: make(map[uuid.UUID]int, 2),
+		openParticipants: make(map[uuid.UUID]struct{}, 2), rootNumbers: make(map[uuid.UUID]map[int]struct{}, 2),
 		rootEpochs: make(map[reconnectRootEpoch]struct{}, size)}
 }
 
@@ -38,12 +39,38 @@ func validateReconnectIntervalSet(authority ReconnectAuthority, stableGames map[
 			return err
 		}
 	}
+	return validateReconnectRootSuffixes(authority, counters, validation.rootNumbers)
+}
+
+func validateReconnectRootSuffixes(
+	authority ReconnectAuthority,
+	counters map[uuid.UUID]pause.PauseReconnectCounter,
+	rootNumbers map[uuid.UUID]map[int]struct{},
+) error {
 	for participantID, counter := range counters {
-		if validation.rootCounts[participantID] != counter.Used {
+		numbers := rootNumbers[participantID]
+		if len(numbers) == 0 {
+			if counter.Used == 0 || reconnectClockCarriesHiddenRoots(authority) {
+				continue
+			}
 			return reconnectError("reconnect roots do not match stable counter")
+		}
+
+		minimum, maximum := counter.Used, 0
+		for number := range numbers {
+			minimum = min(minimum, number)
+			maximum = max(maximum, number)
+		}
+		if maximum != counter.Used || len(numbers) != maximum-minimum+1 {
+			return reconnectError("reconnect roots do not form stable counter suffix")
 		}
 	}
 	return nil
+}
+
+func reconnectClockCarriesHiddenRoots(authority ReconnectAuthority) bool {
+	return authority.Game.State == domain.GameStateActive &&
+		authority.GameClock.ResumedAt != nil && authority.GameClock.ResumedDeadline != nil
 }
 
 func validateReconnectInterval(authority ReconnectAuthority, interval pause.PauseReconnectInterval, stableGames map[uuid.UUID]struct{}, counters map[uuid.UUID]pause.PauseReconnectCounter, validation *reconnectIntervalValidation) error {
@@ -104,7 +131,10 @@ func (validation *reconnectIntervalValidation) rememberRoot(interval pause.Pause
 		return reconnectError("duplicate reconnect root Presence epoch")
 	}
 	validation.rootEpochs[epoch] = struct{}{}
-	validation.rootCounts[interval.ParticipantID]++
+	if validation.rootNumbers[interval.ParticipantID] == nil {
+		validation.rootNumbers[interval.ParticipantID] = make(map[int]struct{}, 1)
+	}
+	validation.rootNumbers[interval.ParticipantID][interval.Number] = struct{}{}
 	return nil
 }
 

@@ -43,14 +43,14 @@ func withDraftRepositoryPool(
 	migrationPoolMu.Lock()
 	previousPool := migrationPool
 	migrationPool = pool
-	t.Cleanup(func() {
+	defer func() {
 		migrationPool = previousPool
 		migrationPoolMu.Unlock()
-	})
+	}()
 
 	ctx := context.Background()
 	reset(ctx, t)
-	t.Cleanup(func() { reset(ctx, t) })
+	defer reset(ctx, t)
 	run(t)
 }
 

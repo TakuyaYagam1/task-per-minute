@@ -38,10 +38,10 @@ func bindResultAuditMigrationPool(
 	resultAuditMigrationPoolMu.Lock()
 	previousPool := migrationPool
 	migrationPool = pool
-	t.Cleanup(func() {
+	defer func() {
 		migrationPool = previousPool
 		resultAuditMigrationPoolMu.Unlock()
-	})
+	}()
 	run(t)
 }
 

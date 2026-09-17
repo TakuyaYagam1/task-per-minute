@@ -258,6 +258,35 @@ func TestReconnectSuccess(t *testing.T) {
 		}
 	})
 
+	t.Run("resumed_clock_accepts_hidden_roots_before_next_disconnect", func(t *testing.T) {
+		authority := task045Authority(now, false, false)
+		authority.Counters[0].Used = 1
+		authority.Counters[0].Revision = 2
+		frozenAt := now.Add(-100 * time.Second)
+		resumedAt := now.Add(-10 * time.Second)
+		authority.GameClock.FrozenAt = frozenAt
+		authority.GameClock.Remaining = 100 * time.Second
+		authority.GameClock.OriginalDeadline = now
+		authority.GameClock.ResumedAt = &resumedAt
+		resumedDeadline := resumedAt.Add(authority.GameClock.Remaining)
+		authority.GameClock.ResumedDeadline = &resumedDeadline
+		authority.GameClock.Revision = 3
+
+		repository := newTask045RepositoryHarness(t, authority)
+		command := reconnectusecase.DisconnectCommand{
+			Scope: authority.Scope, CommandID: task045ID(394), ParticipantID: authority.Series.FirstParticipantID,
+			IntervalID: task045ID(395), Deadline: now.Add(30 * time.Second), Settlement: task045SettlementIDs(396),
+		}
+		record, changed, err := reconnectusecase.NewDisconnectUseCase(repository, newReconnectClock(t, now)).Disconnect(t.Context(), command)
+		if err != nil || !changed || record == nil {
+			t.Fatalf("Disconnect(hidden roots) error = %v, changed = %v, record = %#v", err, changed, record)
+		}
+		counter := task045Counter(t, record.ReconnectAuthority, command.ParticipantID)
+		if counter.Used != 2 || len(record.ReconnectAuthority.Reconnect) != 1 || record.ReconnectAuthority.Reconnect[0].Number != 2 {
+			t.Fatalf("Disconnect(hidden roots) counter = %+v, intervals = %+v", counter, record.ReconnectAuthority.Reconnect)
+		}
+	})
+
 	t.Run("persistent_conflict_is_bounded_to_two_attempts", func(t *testing.T) {
 		authority := task045Authority(now, true, false)
 		repository := newTask045RepositoryHarness(t, authority)

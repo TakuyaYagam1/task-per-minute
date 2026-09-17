@@ -23,6 +23,7 @@ type draftMigrationFixture struct {
 	normalPoolRevisionID uuid.UUID
 	initialRevisionID    uuid.UUID
 	participantIDs       []uuid.UUID
+	taskIDs              []uuid.UUID
 	initialServiceEpoch  uuid.UUID
 	createdAt            time.Time
 }
@@ -79,6 +80,7 @@ func createDraftMigrationFixtureWithContentHook(
 		normalPoolRevisionID: prepared.Content.NormalPoolRevisionID,
 		initialRevisionID:    prepared.Draft.InitialRevisionID,
 		participantIDs:       append([]uuid.UUID(nil), prepared.Draft.FirstParticipantID, prepared.Draft.SecondParticipantID),
+		taskIDs:              append([]uuid.UUID(nil), prepared.Content.TaskIDs...),
 		initialServiceEpoch:  prepared.Draft.InitialServiceEpoch,
 		createdAt:            prepared.CreatedAt,
 	}

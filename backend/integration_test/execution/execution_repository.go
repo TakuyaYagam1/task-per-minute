@@ -30,14 +30,14 @@ func withExecutionRepositoryPool(t *testing.T, pool *pgxpool.Pool, run func(*tes
 	migrationPoolMu.Lock()
 	previousPool := migrationPool
 	migrationPool = pool
-	t.Cleanup(func() {
+	defer func() {
 		migrationPool = previousPool
 		migrationPoolMu.Unlock()
-	})
+	}()
 
 	ctx := context.Background()
 	resetMigrationTables(ctx, t)
-	t.Cleanup(func() { resetMigrationTables(ctx, t) })
+	defer resetMigrationTables(ctx, t)
 	run(t)
 }
 

@@ -27,7 +27,7 @@ type draftMigrationFixture struct {
 func runDraftMigration(t *testing.T) {
 	ctx := context.Background()
 	resetMigrationTables(ctx, t)
-	t.Cleanup(func() { resetMigrationTables(ctx, t) })
+	defer resetMigrationTables(ctx, t)
 
 	fixture := createDraftMigrationFixture(ctx, t)
 	assertDraftTurnIdentityRejected(ctx, t, fixture)

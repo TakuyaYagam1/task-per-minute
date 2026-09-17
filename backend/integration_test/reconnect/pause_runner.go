@@ -17,14 +17,16 @@ func RunReconnectPauseAtomicity(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 	require.NotNil(t, pool)
 
+	migrationPoolMu.Lock()
 	previousShared := sharedPool
 	previousMigration := migrationPool
 	sharedPool = pool
 	migrationPool = pool
-	t.Cleanup(func() {
+	defer func() {
 		sharedPool = previousShared
 		migrationPool = previousMigration
-	})
+		migrationPoolMu.Unlock()
+	}()
 
 	testReconnectContinuationPauseCommit(t)
 	testReconnectContinuationPauseConcurrency(t)
@@ -36,14 +38,16 @@ func RunReconnectWaveMembershipFence(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 	require.NotNil(t, pool)
 
+	migrationPoolMu.Lock()
 	previousShared := sharedPool
 	previousMigration := migrationPool
 	sharedPool = pool
 	migrationPool = pool
-	t.Cleanup(func() {
+	defer func() {
 		sharedPool = previousShared
 		migrationPool = previousMigration
-	})
+		migrationPoolMu.Unlock()
+	}()
 
 	runReconnectContinuationWaveMembershipFence(t)
 }

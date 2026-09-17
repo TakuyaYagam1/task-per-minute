@@ -34,7 +34,7 @@ type resultAuditCommit struct {
 func runResultAuditMigration(t *testing.T) {
 	ctx := context.Background()
 	resetMigrationTables(ctx, t)
-	t.Cleanup(func() { resetMigrationTables(ctx, t) })
+	defer resetMigrationTables(ctx, t)
 
 	fixture := createResultAuditMigrationFixture(ctx, t)
 	submissionID, submissionKey := createAcceptedSubmission(ctx, t, fixture)
@@ -153,7 +153,7 @@ func runResultAuditMigration(t *testing.T) {
 func runResultAuditMigrationCommitLocks(t *testing.T) {
 	ctx := context.Background()
 	resetMigrationTables(ctx, t)
-	t.Cleanup(func() { resetMigrationTables(ctx, t) })
+	defer resetMigrationTables(ctx, t)
 
 	fixture := createResultAuditMigrationFixture(ctx, t)
 	submissionID, _ := createAcceptedSubmission(ctx, t, fixture)

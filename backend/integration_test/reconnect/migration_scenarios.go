@@ -15,7 +15,7 @@ import (
 func RunReconnectMigration(t *testing.T, pool *pgxpool.Pool) {
 	runReconnectMigration(t, pool, func(ctx context.Context, t *testing.T) {
 		resetMigrationTables(ctx, t)
-		t.Cleanup(func() { resetMigrationTables(ctx, t) })
+		defer resetMigrationTables(ctx, t)
 
 		fixture := createReconnectMigrationFixture(ctx, t)
 		insertResumeDecision(ctx, t, fixture, fixture.rootPauseID, 1, nil, nil, "resume", fixture.pausedAt)
@@ -49,7 +49,7 @@ func RunReconnectMigration(t *testing.T, pool *pgxpool.Pool) {
 func RunReconnectMigrationResumeCAS(t *testing.T, pool *pgxpool.Pool) {
 	runReconnectMigration(t, pool, func(ctx context.Context, t *testing.T) {
 		resetMigrationTables(ctx, t)
-		t.Cleanup(func() { resetMigrationTables(ctx, t) })
+		defer resetMigrationTables(ctx, t)
 
 		fixture := createReconnectMigrationFixture(ctx, t)
 		assertPauseResumeRejectedForMigration(ctx, t, fixture.gamePauseID, fixture.gamePauseRevisionID, fixture.pausedAt.Add(time.Second), "current resume decision")

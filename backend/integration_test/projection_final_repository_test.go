@@ -219,9 +219,10 @@ func initializeFinalProjectionSeries(
 	tb.Helper()
 
 	initialScoreRevisionID := lockMigrationSeries(ctx, tb, draftMigrationFixture{
-		tournamentID: fixture.tournamentID,
-		rosterID:     fixture.rosterID,
-		seriesID:     seriesID,
+		tournamentID:   fixture.tournamentID,
+		rosterID:       fixture.rosterID,
+		seriesID:       seriesID,
+		participantIDs: fixture.participantIDs,
 	}, startedAt)
 	_, err := sharedPool.Exec(
 		ctx, `

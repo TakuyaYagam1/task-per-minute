@@ -27,14 +27,14 @@ func RunAssignmentMigration(t *testing.T, pool *pgxpool.Pool) {
 	migrationPoolMu.Lock()
 	previousPool := migrationPool
 	migrationPool = pool
-	t.Cleanup(func() {
+	defer func() {
 		migrationPool = previousPool
 		migrationPoolMu.Unlock()
-	})
+	}()
 
 	ctx := context.Background()
 	resetMigrationTables(ctx, t)
-	t.Cleanup(func() { resetMigrationTables(ctx, t) })
+	defer resetMigrationTables(ctx, t)
 
 	draft := createDraftMigrationFixture(ctx, t)
 	createdAt := draft.createdAt.Add(5 * time.Second)

@@ -33,14 +33,14 @@ func RunGoldenMigration(t *testing.T, pool *pgxpool.Pool) {
 	migrationPoolMu.Lock()
 	previousPool := migrationPool
 	migrationPool = pool
-	t.Cleanup(func() {
+	defer func() {
 		migrationPool = previousPool
 		migrationPoolMu.Unlock()
-	})
+	}()
 
 	ctx := context.Background()
 	resetMigrationTables(ctx, t)
-	t.Cleanup(func() { resetMigrationTables(ctx, t) })
+	defer resetMigrationTables(ctx, t)
 
 	fixture := createGoldenMigrationFixture(ctx, t, 5)
 	firstAttemptID := createGoldenAttempt(ctx, t, fixture, 1, nil, fixture.createdAt)

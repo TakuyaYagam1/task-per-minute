@@ -31,14 +31,14 @@ func RunSwissMigration(t *testing.T, pool *pgxpool.Pool) {
 	sharedPoolMu.Lock()
 	previousPool := sharedPool
 	sharedPool = pool
-	t.Cleanup(func() {
+	defer func() {
 		sharedPool = previousPool
 		sharedPoolMu.Unlock()
-	})
+	}()
 
 	ctx := context.Background()
 	resetMigrationTables(ctx, t)
-	t.Cleanup(func() { resetMigrationTables(ctx, t) })
+	defer resetMigrationTables(ctx, t)
 
 	tournamentID := createMigrationTournament(ctx, t)
 	rosterID := createMigrationRoster(ctx, t, tournamentID)

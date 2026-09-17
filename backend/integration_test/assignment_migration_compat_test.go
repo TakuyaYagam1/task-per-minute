@@ -59,7 +59,7 @@ func createAssignmentBranchReservations(
 
 	reservations := make([]assignmentReservationFixture, 3)
 	for i := range reservations {
-		taskID, taskVersion := createAssignmentMigrationTask(ctx, tb, category, i, &planID)
+		taskID, taskVersion := createAssignmentMigrationTask(ctx, tb, category, i, &planID, nil)
 		edgeID := uuid.New()
 		_, err := sharedPool.Exec(ctx, `
 			INSERT INTO assignment_plan_edges (
@@ -113,6 +113,7 @@ func createAssignmentMigrationTask(
 	category string,
 	position int,
 	excludedPlanID *uuid.UUID,
+	taskIDs []uuid.UUID,
 ) (uuid.UUID, int) {
 	tb.Helper()
 
@@ -146,6 +147,7 @@ func createAssignmentMigrationTask(
 		) AS health ON true
 		WHERE task.kind = 'normal'
 			AND task.category = $1
+			AND (COALESCE(cardinality($4::UUID[]), 0) = 0 OR task.id = ANY($4::UUID[]))
 			AND task.enabled
 			AND task.deleted_at IS NULL
 			AND health.healthy
@@ -161,7 +163,7 @@ func createAssignmentMigrationTask(
 			)
 		ORDER BY task.id
 		OFFSET $2
-		LIMIT 1`, category, position, excludedPlanID).Scan(&taskID, &taskVersion)
+		LIMIT 1`, category, position, excludedPlanID, taskIDs).Scan(&taskID, &taskVersion)
 	require.NoError(tb, err)
 	return taskID, taskVersion
 }

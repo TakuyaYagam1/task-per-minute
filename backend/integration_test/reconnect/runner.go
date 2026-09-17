@@ -64,12 +64,10 @@ func runReconnectMigration(t *testing.T, pool *pgxpool.Pool, run func(context.Co
 	migrationPoolMu.Lock()
 	previous := migrationPool
 	migrationPool = pool
-	// Register before the test body so the body's cleanup callbacks run first
-	// while the explicit pool binding is still available.
-	t.Cleanup(func() {
+	defer func() {
 		migrationPool = previous
 		migrationPoolMu.Unlock()
-	})
+	}()
 	run(context.Background(), t)
 }
 
