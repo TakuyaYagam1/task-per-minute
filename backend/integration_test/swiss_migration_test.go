@@ -10,6 +10,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+
+	"github.com/TakuyaYagam1/task-per-minute/integration_test/internal/testkit/swissseed"
 )
 
 func TestSwissMigration(t *testing.T) {
@@ -23,7 +25,7 @@ func TestSwissMigration(t *testing.T) {
 	participantIDs := createSwissMigrationParticipants(ctx, t, rosterID, playerIDs[:5])
 	createdAt := time.Now().UTC().Truncate(time.Microsecond)
 
-	automaticRoundID := createAutomaticSwissMigrationRound(ctx, t, rosterID, createdAt)
+	automaticRoundID := createAutomaticSwissMigrationRound(ctx, t, tournamentID, rosterID, createdAt)
 	assertSwissRoundLockRevision(ctx, t, automaticRoundID, createdAt.Add(time.Minute))
 
 	pairingID := createSwissMigrationPairing(ctx, t, automaticRoundID, rosterID, 1, uuid.Nil)
@@ -38,7 +40,7 @@ func TestSwissMigration(t *testing.T) {
 		VALUES ($1, $2, $3, 0)`, pairingID, automaticRoundID, rosterID)
 	require.NoError(t, err)
 
-	manualRoundID := createManualSwissMigrationRound(ctx, t, rosterID, createdAt.Add(2*time.Minute))
+	manualRoundID := createManualSwissMigrationRound(ctx, t, tournamentID, rosterID, createdAt.Add(2*time.Minute))
 	overrideID := createSwissMigrationRepeatOverride(
 		ctx, t, manualRoundID, rosterID, participantIDs, createdAt.Add(3*time.Minute),
 	)
@@ -73,19 +75,14 @@ func createSwissMigrationParticipants(
 	playerIDs []uuid.UUID,
 ) []uuid.UUID {
 	tb.Helper()
-	participantIDs := make([]uuid.UUID, len(playerIDs))
-	for i, playerID := range playerIDs {
-		err := sharedPool.QueryRow(ctx, `
-			INSERT INTO participants (roster_id, player_id, seed, attendance)
-			VALUES ($1, $2, $3, 'checked_in')
-			RETURNING id`, rosterID, playerID, i+1).Scan(&participantIDs[i])
-		require.NoError(tb, err)
-	}
+	participantIDs, err := swissseed.CreateParticipants(ctx, sharedPool, rosterID, playerIDs)
+	require.NoError(tb, err)
 	return participantIDs
 }
 
 func createAutomaticSwissMigrationRound(
 	ctx context.Context, tb testing.TB,
+	tournamentID uuid.UUID,
 	rosterID uuid.UUID,
 	createdAt time.Time,
 ) uuid.UUID {
@@ -110,17 +107,17 @@ func createAutomaticSwissMigrationRound(
 	)
 	err := sharedPool.QueryRow(ctx, `
 		INSERT INTO swiss_rounds (
-			id, roster_id, round_number, source_roster_revision, source_history_revision,
+			id, tournament_id, roster_id, round_number, source_roster_revision, source_history_revision,
 			generation_kind, pairing_inputs, decision_evidence_id,
 			decision_algorithm_version, decision_seed, decision_result,
 			decision_replay_digest, decision_owner_id, generated_at, created_at, updated_at
 		)
 		VALUES (
-			$1, $2, 1, 1, 0, 'automatic', $3::jsonb, $4,
-			'hmac-sha256-order-v1', $5, $6::jsonb, $7, $1, $8, $8, $8
+			$1, $2, $3, 1, 1, 0, 'automatic', $4::jsonb, $5,
+			'hmac-sha256-order-v1', $6, $7::jsonb, $8, $1, $9, $9, $9
 		)
 		RETURNING revision, pairing_inputs::text, decision_algorithm_version`,
-		roundID, rosterID, inputs, uuid.New(), seed, result, digest, createdAt,
+		roundID, tournamentID, rosterID, inputs, uuid.New(), seed, result, digest, createdAt,
 	).Scan(&revision, &storedInputs, &storedAlgorithmVersion)
 	require.NoError(tb, err)
 	require.EqualValues(tb, 1, revision)
@@ -129,15 +126,15 @@ func createAutomaticSwissMigrationRound(
 
 	_, err = sharedPool.Exec(ctx, `
 		INSERT INTO swiss_rounds (
-			id, roster_id, round_number, source_roster_revision, source_history_revision,
+			id, tournament_id, roster_id, round_number, source_roster_revision, source_history_revision,
 			generation_kind, pairing_inputs, decision_evidence_id,
 			decision_algorithm_version, decision_seed, decision_result,
 			decision_replay_digest, decision_owner_id, generated_at, created_at, updated_at
 		)
 		VALUES (
-			$1, $2, 2, 1, 0, 'automatic', $3::jsonb, $4,
-			'hmac-sha256-order-v1', $5, $3::jsonb, $6, $1, $7, $7, $7
-		)`, uuid.New(), rosterID, inputs, uuid.New(), []byte{1}, digest, createdAt)
+			$1, $2, $3, 2, 1, 0, 'automatic', $4::jsonb, $5,
+			'hmac-sha256-order-v1', $6, $4::jsonb, $7, $1, $8, $8, $8
+		)`, uuid.New(), tournamentID, rosterID, inputs, uuid.New(), []byte{1}, digest, createdAt)
 	require.Error(tb, err)
 
 	return roundID
@@ -145,6 +142,7 @@ func createAutomaticSwissMigrationRound(
 
 func createManualSwissMigrationRound(
 	ctx context.Context, tb testing.TB,
+	tournamentID uuid.UUID,
 	rosterID uuid.UUID,
 	createdAt time.Time,
 ) uuid.UUID {
@@ -152,11 +150,11 @@ func createManualSwissMigrationRound(
 	roundID := uuid.New()
 	_, err := sharedPool.Exec(ctx, `
 		INSERT INTO swiss_rounds (
-			id, roster_id, round_number, source_roster_revision, source_history_revision,
+			id, tournament_id, roster_id, round_number, source_roster_revision, source_history_revision,
 			generation_kind, pairing_inputs, generated_at, created_at, updated_at
 		)
-		VALUES ($1, $2, 2, 1, 1, 'manual', $3::jsonb, $4, $4, $4)`,
-		roundID, rosterID, `["manual-roster-snapshot","prior-meeting-snapshot"]`, createdAt)
+		VALUES ($1, $2, $3, 2, 1, 1, 'manual', $4::jsonb, $5, $5, $5)`,
+		roundID, tournamentID, rosterID, `["manual-roster-snapshot","prior-meeting-snapshot"]`, createdAt)
 	require.NoError(tb, err)
 	return roundID
 }
@@ -235,15 +233,18 @@ func createSwissMigrationPairing(
 	overrideID uuid.UUID,
 ) uuid.UUID {
 	tb.Helper()
-	var pairingID uuid.UUID
-	var override any
+	var override *uuid.UUID
 	if overrideID != uuid.Nil {
-		override = overrideID
+		override = &overrideID
 	}
-	err := sharedPool.QueryRow(ctx, `
-		INSERT INTO swiss_pairings (round_id, roster_id, slot_number, repeat_override_id)
-		VALUES ($1, $2, $3, $4)
-		RETURNING id`, roundID, rosterID, slotNumber, override).Scan(&pairingID)
+	pairingID, err := swissseed.CreatePairing(
+		ctx,
+		sharedPool,
+		roundID,
+		rosterID,
+		slotNumber,
+		override,
+	)
 	require.NoError(tb, err)
 	return pairingID
 }
@@ -257,11 +258,15 @@ func addSwissMigrationPairingMember(
 	participantID uuid.UUID,
 ) {
 	tb.Helper()
-	_, err := sharedPool.Exec(ctx, `
-		INSERT INTO swiss_pairing_members (
-			pairing_id, round_id, roster_id, seat, participant_id
-		)
-		VALUES ($1, $2, $3, $4, $5)`, pairingID, roundID, rosterID, seat, participantID)
+	err := swissseed.AddPairingMember(
+		ctx,
+		sharedPool,
+		pairingID,
+		roundID,
+		rosterID,
+		seat,
+		participantID,
+	)
 	require.NoError(tb, err)
 }
 
