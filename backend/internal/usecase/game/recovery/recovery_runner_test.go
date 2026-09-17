@@ -1,4 +1,4 @@
-package game_test
+package recovery_test
 
 import (
 	"context"
@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
 	gamemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/mocks"
+	recoveryusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/recovery"
 )
 
 func TestRecoveryRunnerReadinessRequiresCompletedInitialScan(t *testing.T) {
@@ -38,15 +38,15 @@ func TestRecoveryRunnerReadinessRequiresCompletedInitialScan(t *testing.T) {
 	rearmer := newDeadlineRearmerHarness(t, lease, now)
 	replayer := newEpochReplayerHarness(t, nil)
 	clock := newRecoveryClock(t, now, 1)
-	recoverer := gameusecase.NewRecoverer(
+	recoverer := recoveryusecase.NewRecoverer(
 		reader, source.source, rearmer.rearmer, replayer.replayer, newRecoveryAuthorityTime(t, now, 1),
 	)
-	runner, err := gameusecase.NewRecoveryRunner(
+	runner, err := recoveryusecase.NewRecoveryRunner(
 		tournaments,
 		authority,
 		recoverer,
 		clock,
-		gameusecase.RecoveryRunnerConfig{Interval: time.Hour},
+		recoveryusecase.RecoveryRunnerConfig{Interval: time.Hour},
 	)
 	require.NoError(t, err)
 
@@ -74,7 +74,7 @@ func TestRecoveryRunnerGoldenFailureGatesInitialReadiness(t *testing.T) {
 	authority := gamemocks.NewMockRecoveryAuthorityProvider(t)
 	authority.EXPECT().RecoveryAuthorityFor(mock.Anything, lease.TournamentID).
 		Return(lease.Identity(), true, nil).Once()
-	recoverer := gameusecase.NewRecoverer(
+	recoverer := recoveryusecase.NewRecoverer(
 		newAuthorityReaderMock(t, &lease, nil),
 		newExecutionRecoverySourceHarness(t, nil, nil).source,
 		newDeadlineRearmerHarness(t, lease, now).rearmer,
@@ -83,12 +83,12 @@ func TestRecoveryRunnerGoldenFailureGatesInitialReadiness(t *testing.T) {
 	)
 	goldenFailure := errors.New("Golden recovery unavailable")
 	golden := &goldenRecoveryStub{err: goldenFailure}
-	runner, err := gameusecase.NewRecoveryRunner(
+	runner, err := recoveryusecase.NewRecoveryRunner(
 		tournaments,
 		authority,
 		recoverer,
 		newRecoveryClock(t, now, 1),
-		gameusecase.RecoveryRunnerConfig{Interval: time.Hour, Golden: golden},
+		recoveryusecase.RecoveryRunnerConfig{Interval: time.Hour, Golden: golden},
 	)
 	require.NoError(t, err)
 
@@ -122,19 +122,19 @@ func TestRecoveryRunnerCompletesInitialScanForPausedStaleEpoch(t *testing.T) {
 	authority.EXPECT().RecoveryAuthorityFor(mock.Anything, lease.TournamentID).
 		Return(lease.Identity(), true, nil).Once()
 	reader := newAuthorityReaderMock(t, &lease, nil)
-	source := newExecutionRecoverySourceHarness(t, []gameusecase.RecoveryCandidate{candidate}, nil)
+	source := newExecutionRecoverySourceHarness(t, []recoveryusecase.RecoveryCandidate{candidate}, nil)
 	rearmer := newDeadlineRearmerHarness(t, lease, now)
 	replayer := newEpochReplayerHarness(t, nil)
 	clock := newRecoveryClock(t, now, 1)
-	recoverer := gameusecase.NewRecoverer(
+	recoverer := recoveryusecase.NewRecoverer(
 		reader, source.source, rearmer.rearmer, replayer.replayer, newRecoveryAuthorityTime(t, now, 1),
 	)
-	runner, err := gameusecase.NewRecoveryRunner(
+	runner, err := recoveryusecase.NewRecoveryRunner(
 		tournaments,
 		authority,
 		recoverer,
 		clock,
-		gameusecase.RecoveryRunnerConfig{Interval: time.Hour},
+		recoveryusecase.RecoveryRunnerConfig{Interval: time.Hour},
 	)
 	require.NoError(t, err)
 
@@ -164,17 +164,17 @@ func TestRecoveryRunnerEmitsOneTerminalEventAfterRearm(t *testing.T) {
 	authority.EXPECT().RecoveryAuthorityFor(mock.Anything, lease.TournamentID).
 		Return(lease.Identity(), true, nil).Once()
 	reader := newAuthorityReaderMock(t, &lease, nil)
-	source := newExecutionRecoverySourceHarness(t, []gameusecase.RecoveryCandidate{candidate}, nil)
+	source := newExecutionRecoverySourceHarness(t, []recoveryusecase.RecoveryCandidate{candidate}, nil)
 	rearmer := newDeadlineRearmerHarness(t, lease, now)
 	replayer := newEpochReplayerHarness(t, nil)
-	events := make(chan gameusecase.RecoveryEvent, 1)
+	events := make(chan recoveryusecase.RecoveryEvent, 1)
 	observer := gamemocks.NewMockRecoveryObserver(t)
 	observer.EXPECT().ObserveExecutionRecovery(mock.Anything, mock.Anything).
-		Run(func(_ context.Context, event gameusecase.RecoveryEvent) { events <- event }).Once()
-	runner, err := gameusecase.NewRecoveryRunner(
+		Run(func(_ context.Context, event recoveryusecase.RecoveryEvent) { events <- event }).Once()
+	runner, err := recoveryusecase.NewRecoveryRunner(
 		tournaments,
 		authority,
-		gameusecase.NewRecoverer(
+		recoveryusecase.NewRecoverer(
 			reader,
 			source.source,
 			rearmer.rearmer,
@@ -182,7 +182,7 @@ func TestRecoveryRunnerEmitsOneTerminalEventAfterRearm(t *testing.T) {
 			newRecoveryAuthorityTime(t, now, 1),
 		),
 		newRecoveryClock(t, now, 1),
-		gameusecase.RecoveryRunnerConfig{
+		recoveryusecase.RecoveryRunnerConfig{
 			Interval: time.Hour,
 			Observer: observer,
 		},
@@ -196,9 +196,9 @@ func TestRecoveryRunnerEmitsOneTerminalEventAfterRearm(t *testing.T) {
 
 	select {
 	case event := <-events:
-		require.Equal(t, gameusecase.RecoveryEvent{
+		require.Equal(t, recoveryusecase.RecoveryEvent{
 			TournamentID: lease.TournamentID,
-			Outcome:      gameusecase.RecoveryOutcomeSuccess,
+			Outcome:      recoveryusecase.RecoveryOutcomeSuccess,
 			Transition:   "scan_completed",
 			ReasonCode:   "deadline_rearmed",
 			Revision:     lease.Epoch,
@@ -256,15 +256,15 @@ func TestRecoveryRunnerRestoresReadinessAfterPeriodicFailure(t *testing.T) {
 	rearmer := newDeadlineRearmerHarness(t, lease, now)
 	replayer := newEpochReplayerHarness(t, nil)
 	clock := newRecoveryClock(t, now, 0)
-	recoverer := gameusecase.NewRecoverer(
+	recoverer := recoveryusecase.NewRecoverer(
 		reader, source.source, rearmer.rearmer, replayer.replayer, newRecoveryAuthorityTime(t, now, 2),
 	)
-	runner, err := gameusecase.NewRecoveryRunner(
+	runner, err := recoveryusecase.NewRecoveryRunner(
 		tournaments,
 		authority,
 		recoverer,
 		clock,
-		gameusecase.RecoveryRunnerConfig{Interval: time.Millisecond},
+		recoveryusecase.RecoveryRunnerConfig{Interval: time.Millisecond},
 	)
 	require.NoError(t, err)
 
@@ -314,17 +314,17 @@ func TestRecoveryRunnerPrevalidatesBatchBeforeAuthoritySideEffects(t *testing.T)
 		Return([]uuid.UUID{first, second}, nil).Once()
 	authority := gamemocks.NewMockRecoveryAuthorityProvider(t)
 	clock := newRecoveryClock(t, now, 1)
-	runner, err := gameusecase.NewRecoveryRunner(
+	runner, err := recoveryusecase.NewRecoveryRunner(
 		tournaments,
 		authority,
-		gameusecase.NewRecoverer(nil, nil, nil, nil, nil),
+		recoveryusecase.NewRecoverer(nil, nil, nil, nil, nil),
 		clock,
-		gameusecase.RecoveryRunnerConfig{Interval: time.Hour},
+		recoveryusecase.RecoveryRunnerConfig{Interval: time.Hour},
 	)
 	require.NoError(t, err)
 
 	err = runner.Run(t.Context())
-	require.ErrorIs(t, err, gameusecase.ErrInvalidRecovery)
+	require.ErrorIs(t, err, recoveryusecase.ErrInvalidRecovery)
 	require.False(t, runner.Ready())
 	require.NotErrorIs(t, err, context.Canceled)
 }

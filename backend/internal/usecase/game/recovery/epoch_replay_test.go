@@ -1,4 +1,4 @@
-package game_test
+package recovery_test
 
 import (
 	"math"
@@ -10,7 +10,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
 	gamedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/game"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	recoveryusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/recovery"
 )
 
 func TestExecutionAuthorityEpochReplay(t *testing.T) {
@@ -21,13 +21,13 @@ func TestExecutionAuthorityEpochReplay(t *testing.T) {
 	attemptCommand.FailureClass = gamedomain.FailureExecutionEpochBreak
 	current := task042Lease(now, attemptCommand.Scope.TournamentID, 2)
 	broken := &authoritydomain.Stamp{LeaseID: task042ID(70), Epoch: 1}
-	command := gameusecase.EpochReplayCommand{
+	command := recoveryusecase.EpochReplayCommand{
 		CurrentAuthority: current.Identity(), BrokenAuthority: *broken, RosterID: task042ID(120), Attempt: attemptCommand,
 	}
-	repository := newExecutionEpochReplayRepositoryHarness(t, gameusecase.EpochReplayAuthority{
+	repository := newExecutionEpochReplayRepositoryHarness(t, recoveryusecase.EpochReplayAuthority{
 		Lease: current, BoundAuthority: *broken, RosterID: task042ID(120), Attempt: attemptAuthority,
 	}, executionEpochReplayRepositoryOptions{})
-	usecase := gameusecase.NewEpochReplayUseCase(repository, newMutableEpochReplayTimeSource(t, now).mock)
+	usecase := recoveryusecase.NewEpochReplayUseCase(repository, newMutableEpochReplayTimeSource(t, now).mock)
 
 	record, changed, err := usecase.Replay(t.Context(), command)
 	require.NoError(t, err)
@@ -58,7 +58,7 @@ func TestExecutionAuthorityEpochReplay(t *testing.T) {
 	later.RenewedAt = now
 	later.ExpiresAt = now.Add(time.Minute)
 	require.NoError(t, later.Validate())
-	repository.update(func(authority *gameusecase.EpochReplayAuthority) {
+	repository.update(func(authority *recoveryusecase.EpochReplayAuthority) {
 		authority.Lease = later
 	})
 	repeated, changed, err = usecase.Replay(t.Context(), command)
@@ -80,7 +80,7 @@ func TestExecutionAuthorityEpochReplay(t *testing.T) {
 	replayed, changed, err = usecase.Replay(t.Context(), changedPayload)
 	require.Nil(t, replayed)
 	require.False(t, changed)
-	require.ErrorIs(t, err, gameusecase.ErrEpochReplayCommandReuse)
+	require.ErrorIs(t, err, recoveryusecase.ErrEpochReplayCommandReuse)
 	require.Equal(t, 1, repository.writeCount())
 }
 
@@ -100,7 +100,7 @@ func TestExecutionAuthorityEpochReplayBoundaries(t *testing.T) {
 			executionEpochReplayRepositoryOptions{},
 		)
 
-		record, changed, err := gameusecase.NewEpochReplayUseCase(
+		record, changed, err := recoveryusecase.NewEpochReplayUseCase(
 			repository,
 			newMutableEpochReplayTimeSource(t, databaseNow).mock,
 		).Replay(t.Context(), command)
@@ -112,11 +112,11 @@ func TestExecutionAuthorityEpochReplayBoundaries(t *testing.T) {
 	t.Run("rejects wrapper and failed-attempt current mismatches", func(t *testing.T) {
 		t.Parallel()
 
-		for _, corrupt := range []func(*gameusecase.EpochReplayAuthority){
-			func(authority *gameusecase.EpochReplayAuthority) {
+		for _, corrupt := range []func(*recoveryusecase.EpochReplayAuthority){
+			func(authority *recoveryusecase.EpochReplayAuthority) {
 				authority.Attempt.Current = nil
 			},
-			func(authority *gameusecase.EpochReplayAuthority) {
+			func(authority *recoveryusecase.EpochReplayAuthority) {
 				mismatch := authority.Current.Attempt
 				mismatch.CommandID = task042ID(100)
 				authority.Attempt.Current = &mismatch
@@ -125,7 +125,7 @@ func TestExecutionAuthorityEpochReplayBoundaries(t *testing.T) {
 			now := time.Date(2026, 8, 31, 9, 22, 0, 0, time.UTC)
 			authority, command := task042ReplayAuthority(t, now)
 			repository := newExecutionEpochReplayRepositoryHarness(t, authority, executionEpochReplayRepositoryOptions{})
-			usecase := gameusecase.NewEpochReplayUseCase(repository, newMutableEpochReplayTimeSource(t, now).mock)
+			usecase := recoveryusecase.NewEpochReplayUseCase(repository, newMutableEpochReplayTimeSource(t, now).mock)
 			_, changed, err := usecase.Replay(t.Context(), command)
 			require.NoError(t, err)
 			require.True(t, changed)
@@ -135,7 +135,7 @@ func TestExecutionAuthorityEpochReplayBoundaries(t *testing.T) {
 			replayed, changed, err := usecase.Replay(t.Context(), command)
 			require.Nil(t, replayed)
 			require.False(t, changed)
-			require.ErrorIs(t, err, gameusecase.ErrInvalidEpochReplay)
+			require.ErrorIs(t, err, recoveryusecase.ErrInvalidEpochReplay)
 			require.Equal(t, 1, repository.writeCount())
 		}
 	})
@@ -143,11 +143,11 @@ func TestExecutionAuthorityEpochReplayBoundaries(t *testing.T) {
 	t.Run("rejects attempt ordinal and projection overflow", func(t *testing.T) {
 		t.Parallel()
 
-		for _, overflow := range []func(*gameusecase.EpochReplayAuthority){
-			func(authority *gameusecase.EpochReplayAuthority) {
+		for _, overflow := range []func(*recoveryusecase.EpochReplayAuthority){
+			func(authority *recoveryusecase.EpochReplayAuthority) {
 				authority.Attempt.CurrentProjectionRevision = math.MaxInt64
 			},
-			func(authority *gameusecase.EpochReplayAuthority) {
+			func(authority *recoveryusecase.EpochReplayAuthority) {
 				authority.Attempt.CurrentOrdinal = task042MaxInt() - 1
 				revisionID := domain.SeriesScoreRevisionID(task042ID(101))
 				authority.Attempt.Series.Series.CurrentScoreRevisionID = &revisionID
@@ -157,13 +157,13 @@ func TestExecutionAuthorityEpochReplayBoundaries(t *testing.T) {
 			authority, command := task042ReplayAuthority(t, now)
 			overflow(&authority)
 			repository := newExecutionEpochReplayRepositoryHarness(t, authority, executionEpochReplayRepositoryOptions{})
-			replayed, changed, err := gameusecase.NewEpochReplayUseCase(
+			replayed, changed, err := recoveryusecase.NewEpochReplayUseCase(
 				repository,
 				newMutableEpochReplayTimeSource(t, now).mock,
 			).Replay(t.Context(), command)
 			require.Nil(t, replayed)
 			require.False(t, changed)
-			require.ErrorIs(t, err, gameusecase.ErrInvalidEpochReplay)
+			require.ErrorIs(t, err, recoveryusecase.ErrInvalidEpochReplay)
 			require.Equal(t, 0, repository.writeCount())
 		}
 	})
@@ -177,13 +177,13 @@ func TestExecutionAuthorityEpochReplayBoundaries(t *testing.T) {
 			transactionNow:      now,
 			advanceBeforeCommit: authority.Lease.ExpiresAt.Sub(now),
 		})
-		replayed, changed, err := gameusecase.NewEpochReplayUseCase(
+		replayed, changed, err := recoveryusecase.NewEpochReplayUseCase(
 			repository,
 			newMutableEpochReplayTimeSource(t, now).mock,
 		).Replay(t.Context(), command)
 		require.Nil(t, replayed)
 		require.False(t, changed)
-		require.ErrorIs(t, err, gameusecase.ErrEpochReplayConflict)
+		require.ErrorIs(t, err, recoveryusecase.ErrEpochReplayConflict)
 		require.Equal(t, 2, repository.commitCount())
 		require.Equal(t, 0, repository.writeCount())
 		wrapperCurrent, attemptCurrent := repository.currentState()

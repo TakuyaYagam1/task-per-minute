@@ -1,4 +1,4 @@
-package game_test
+package recovery_test
 
 import (
 	"context"
@@ -13,8 +13,9 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
 	gamedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/game"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	attemptusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/attempt"
 	gamemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/mocks"
+	recoveryusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/recovery"
 )
 
 func newAuthorityReaderMock(
@@ -49,19 +50,19 @@ func newAuthorityReaderMock(
 type executionRecoverySourceHarness struct {
 	source     *gamemocks.MockRecoverySource
 	mu         sync.Mutex
-	candidates []gameusecase.RecoveryCandidate
+	candidates []recoveryusecase.RecoveryCandidate
 	loads      int
 	err        error
 }
 
 func newExecutionRecoverySourceHarness(
 	t *testing.T,
-	candidates []gameusecase.RecoveryCandidate,
+	candidates []recoveryusecase.RecoveryCandidate,
 	err error,
 ) *executionRecoverySourceHarness {
 	t.Helper()
 	harness := &executionRecoverySourceHarness{
-		candidates: append([]gameusecase.RecoveryCandidate(nil), candidates...),
+		candidates: append([]recoveryusecase.RecoveryCandidate(nil), candidates...),
 		err:        err,
 	}
 	harness.source = gamemocks.NewMockRecoverySource(t)
@@ -70,14 +71,14 @@ func newExecutionRecoverySourceHarness(
 			context.Context,
 			uuid.UUID,
 			authoritydomain.Identity,
-		) ([]gameusecase.RecoveryCandidate, error) {
+		) ([]recoveryusecase.RecoveryCandidate, error) {
 			harness.mu.Lock()
 			defer harness.mu.Unlock()
 			harness.loads++
 			if harness.err != nil {
 				return nil, harness.err
 			}
-			return append([]gameusecase.RecoveryCandidate(nil), harness.candidates...), nil
+			return append([]recoveryusecase.RecoveryCandidate(nil), harness.candidates...), nil
 		}).Maybe()
 	return harness
 }
@@ -91,7 +92,7 @@ func (r *executionRecoverySourceHarness) loadCount() int {
 type deadlineRearmerHarness struct {
 	rearmer            *gamemocks.MockDeadlineRearmer
 	mu                 sync.Mutex
-	arms               []gameusecase.DeadlineArm
+	arms               []recoveryusecase.DeadlineArm
 	lease              authoritydomain.Lease
 	transactionNow     time.Time
 	advanceBeforeRearm time.Duration
@@ -110,7 +111,7 @@ func newDeadlineRearmerHarness(
 	return harness
 }
 
-func (r *deadlineRearmerHarness) apply(_ context.Context, arm gameusecase.DeadlineArm) error {
+func (r *deadlineRearmerHarness) apply(_ context.Context, arm recoveryusecase.DeadlineArm) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.advanceBeforeRearm != 0 {
@@ -132,16 +133,16 @@ func (r *deadlineRearmerHarness) advanceBeforeNextRearm(duration time.Duration) 
 	r.advanceBeforeRearm = duration
 }
 
-func (r *deadlineRearmerHarness) armsSnapshot() []gameusecase.DeadlineArm {
+func (r *deadlineRearmerHarness) armsSnapshot() []recoveryusecase.DeadlineArm {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return append([]gameusecase.DeadlineArm(nil), r.arms...)
+	return append([]recoveryusecase.DeadlineArm(nil), r.arms...)
 }
 
 type epochReplayerHarness struct {
 	replayer *gamemocks.MockRecoveryEpochReplayer
 	mu       sync.Mutex
-	commands map[uuid.UUID]gameusecase.EpochReplayCommand
+	commands map[uuid.UUID]recoveryusecase.EpochReplayCommand
 	writes   int
 	err      error
 }
@@ -160,7 +161,7 @@ func newEpochReplayerHarness(
 
 func (r *epochReplayerHarness) apply(
 	_ context.Context,
-	command gameusecase.EpochReplayCommand,
+	command recoveryusecase.EpochReplayCommand,
 ) (bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -168,7 +169,7 @@ func (r *epochReplayerHarness) apply(
 		return false, r.err
 	}
 	if r.commands == nil {
-		r.commands = make(map[uuid.UUID]gameusecase.EpochReplayCommand)
+		r.commands = make(map[uuid.UUID]recoveryusecase.EpochReplayCommand)
 	}
 	if _, exists := r.commands[command.Attempt.CommandID]; exists {
 		return false, nil
@@ -232,8 +233,8 @@ func recoveryCandidate(
 	now time.Time,
 	bound *authoritydomain.Stamp,
 	state domain.GameState,
-) gameusecase.RecoveryCandidate {
-	return gameusecase.RecoveryCandidate{
+) recoveryusecase.RecoveryCandidate {
+	return recoveryusecase.RecoveryCandidate{
 		Scope: domain.FailedAttemptScope{
 			TournamentID: recoveryID(1), WaveID: recoveryID(6),
 			SeriesID: recoveryID(7), SlotID: recoveryID(8),
@@ -248,21 +249,21 @@ func recoveryCandidate(
 }
 
 func recoveryEpochReplayCommand(
-	candidate gameusecase.RecoveryCandidate,
+	candidate recoveryusecase.RecoveryCandidate,
 	current authoritydomain.Identity,
-) *gameusecase.EpochReplayCommand {
-	return &gameusecase.EpochReplayCommand{
+) *recoveryusecase.EpochReplayCommand {
+	return &recoveryusecase.EpochReplayCommand{
 		CurrentAuthority: current,
 		BrokenAuthority:  candidate.BoundAuthority,
 		RosterID:         candidate.RosterID,
-		Attempt: gameusecase.AttemptCommand{
+		Attempt: attemptusecase.AttemptCommand{
 			Scope: candidate.Scope, CommandID: recoveryID(13),
 			FailureClass: gamedomain.FailureExecutionEpochBreak,
-			Expected: gameusecase.Expectation{
+			Expected: attemptusecase.Expectation{
 				AttemptNo: candidate.AttemptNo, State: domain.GameStateActive,
 				SnapshotID: candidate.SnapshotID, Category: candidate.Category,
 			},
-			Revisions: gameusecase.AttemptRevisionSet{
+			Revisions: attemptusecase.AttemptRevisionSet{
 				GameResultRevisionID: domain.OfficialResultRevisionID(recoveryID(14)),
 				ScoreRevisionID:      domain.SeriesScoreRevisionID(recoveryID(15)),
 				RouteEvidenceID:      recoveryID(16), AuditEventID: recoveryID(17),
@@ -272,12 +273,12 @@ func recoveryEpochReplayCommand(
 	}
 }
 
-var _ gameusecase.RecoveryAuthorityReader = (*gamemocks.MockRecoveryAuthorityReader)(nil)
-var _ gameusecase.RecoverySource = (*gamemocks.MockRecoverySource)(nil)
-var _ gameusecase.DeadlineRearmer = (*gamemocks.MockDeadlineRearmer)(nil)
-var _ gameusecase.RecoveryEpochReplayer = (*gamemocks.MockRecoveryEpochReplayer)(nil)
-var _ gameusecase.RecoveryEpochReplayer = (*gameusecase.EpochReplayUseCase)(nil)
-var _ gameusecase.AuthorityTimeSource = (*gamemocks.MockAuthorityTimeSource)(nil)
+var _ recoveryusecase.RecoveryAuthorityReader = (*gamemocks.MockRecoveryAuthorityReader)(nil)
+var _ recoveryusecase.RecoverySource = (*gamemocks.MockRecoverySource)(nil)
+var _ recoveryusecase.DeadlineRearmer = (*gamemocks.MockDeadlineRearmer)(nil)
+var _ recoveryusecase.RecoveryEpochReplayer = (*gamemocks.MockRecoveryEpochReplayer)(nil)
+var _ recoveryusecase.RecoveryEpochReplayer = (*recoveryusecase.EpochReplayUseCase)(nil)
+var _ recoveryusecase.AuthorityTimeSource = (*gamemocks.MockAuthorityTimeSource)(nil)
 
 func recoveryID(value int) uuid.UUID {
 	name := fmt.Sprintf("execution-recovery-%d", value)

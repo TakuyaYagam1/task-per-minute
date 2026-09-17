@@ -1,4 +1,4 @@
-package game_test
+package recovery_test
 
 import (
 	"errors"
@@ -9,7 +9,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	recoveryusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/recovery"
 )
 
 func TestExecutionRecovery(t *testing.T) {
@@ -22,11 +22,11 @@ func TestExecutionRecovery(t *testing.T) {
 		lease := recoveryLease(now, 1)
 		candidate := recoveryCandidate(now, lease.Stamp(), domain.GameStateActive)
 		source := newExecutionRecoverySourceHarness(
-			t, []gameusecase.RecoveryCandidate{candidate}, nil,
+			t, []recoveryusecase.RecoveryCandidate{candidate}, nil,
 		)
 		timers := newDeadlineRearmerHarness(t, lease, now)
 		replayer := newEpochReplayerHarness(t, nil)
-		recoverer := gameusecase.NewRecoverer(
+		recoverer := recoveryusecase.NewRecoverer(
 			newAuthorityReaderMock(t, &lease, nil),
 			source.source,
 			timers.rearmer,
@@ -34,12 +34,12 @@ func TestExecutionRecovery(t *testing.T) {
 			newRecoveryAuthorityTime(t, now, 1),
 		)
 
-		report, err := recoverer.Recover(t.Context(), gameusecase.RecoveryCommand{
+		report, err := recoverer.Recover(t.Context(), recoveryusecase.RecoveryCommand{
 			TournamentID: lease.TournamentID, Authority: lease.Identity(),
 		})
 		require.NoError(t, err)
-		require.Equal(t, gameusecase.RecoveryReport{Rearmed: 1}, report)
-		require.Equal(t, []gameusecase.DeadlineArm{{
+		require.Equal(t, recoveryusecase.RecoveryReport{Rearmed: 1}, report)
+		require.Equal(t, []recoveryusecase.DeadlineArm{{
 			Scope: candidate.Scope, RosterID: candidate.RosterID, AttemptNo: candidate.AttemptNo,
 			Authority: *lease.Stamp(), Deadline: candidate.Deadline,
 		}}, timers.armsSnapshot())
@@ -55,11 +55,11 @@ func TestExecutionRecovery(t *testing.T) {
 		require.False(t, lease.Proves(lease.Identity(), hostNow))
 		candidate := recoveryCandidate(databaseNow, lease.Stamp(), domain.GameStateActive)
 		source := newExecutionRecoverySourceHarness(
-			t, []gameusecase.RecoveryCandidate{candidate}, nil,
+			t, []recoveryusecase.RecoveryCandidate{candidate}, nil,
 		)
 		timers := newDeadlineRearmerHarness(t, lease, databaseNow)
 		replayer := newEpochReplayerHarness(t, nil)
-		recoverer := gameusecase.NewRecoverer(
+		recoverer := recoveryusecase.NewRecoverer(
 			newAuthorityReaderMock(t, &lease, nil),
 			source.source,
 			timers.rearmer,
@@ -67,11 +67,11 @@ func TestExecutionRecovery(t *testing.T) {
 			newRecoveryAuthorityTime(t, databaseNow, 1),
 		)
 
-		report, err := recoverer.Recover(t.Context(), gameusecase.RecoveryCommand{
+		report, err := recoverer.Recover(t.Context(), recoveryusecase.RecoveryCommand{
 			TournamentID: lease.TournamentID, Authority: lease.Identity(),
 		})
 		require.NoError(t, err)
-		require.Equal(t, gameusecase.RecoveryReport{Rearmed: 1}, report)
+		require.Equal(t, recoveryusecase.RecoveryReport{Rearmed: 1}, report)
 	})
 
 	t.Run("routes one technical replay after an unpaused epoch break", func(t *testing.T) {
@@ -83,18 +83,18 @@ func TestExecutionRecovery(t *testing.T) {
 		candidate := recoveryCandidate(now, &broken, domain.GameStateActive)
 		candidate.EpochReplay = recoveryEpochReplayCommand(candidate, lease.Identity())
 		source := newExecutionRecoverySourceHarness(
-			t, []gameusecase.RecoveryCandidate{candidate}, nil,
+			t, []recoveryusecase.RecoveryCandidate{candidate}, nil,
 		)
 		timers := newDeadlineRearmerHarness(t, lease, now)
 		replayer := newEpochReplayerHarness(t, nil)
-		recoverer := gameusecase.NewRecoverer(
+		recoverer := recoveryusecase.NewRecoverer(
 			newAuthorityReaderMock(t, &lease, nil, 2),
 			source.source,
 			timers.rearmer,
 			replayer.replayer,
 			newRecoveryAuthorityTime(t, now, 2),
 		)
-		command := gameusecase.RecoveryCommand{
+		command := recoveryusecase.RecoveryCommand{
 			TournamentID: lease.TournamentID, Authority: lease.Identity(),
 		}
 
@@ -102,12 +102,12 @@ func TestExecutionRecovery(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(
 			t,
-			gameusecase.RecoveryReport{TechnicalReplays: 1, Changed: 1},
+			recoveryusecase.RecoveryReport{TechnicalReplays: 1, Changed: 1},
 			first,
 		)
 		second, err := recoverer.Recover(t.Context(), command)
 		require.NoError(t, err)
-		require.Equal(t, gameusecase.RecoveryReport{TechnicalReplays: 1}, second)
+		require.Equal(t, recoveryusecase.RecoveryReport{TechnicalReplays: 1}, second)
 		require.Empty(t, timers.armsSnapshot())
 		require.Equal(t, 1, replayer.writeCount())
 	})
@@ -120,11 +120,11 @@ func TestExecutionRecovery(t *testing.T) {
 		broken := authoritydomain.Stamp{LeaseID: recoveryID(30), Epoch: 1}
 		candidate := recoveryCandidate(now, &broken, domain.GameStatePaused)
 		source := newExecutionRecoverySourceHarness(
-			t, []gameusecase.RecoveryCandidate{candidate}, nil,
+			t, []recoveryusecase.RecoveryCandidate{candidate}, nil,
 		)
 		timers := newDeadlineRearmerHarness(t, lease, now)
 		replayer := newEpochReplayerHarness(t, nil)
-		recoverer := gameusecase.NewRecoverer(
+		recoverer := recoveryusecase.NewRecoverer(
 			newAuthorityReaderMock(t, &lease, nil),
 			source.source,
 			timers.rearmer,
@@ -132,11 +132,11 @@ func TestExecutionRecovery(t *testing.T) {
 			newRecoveryAuthorityTime(t, now, 1),
 		)
 
-		report, err := recoverer.Recover(t.Context(), gameusecase.RecoveryCommand{
+		report, err := recoverer.Recover(t.Context(), recoveryusecase.RecoveryCommand{
 			TournamentID: lease.TournamentID, Authority: lease.Identity(),
 		})
 		require.NoError(t, err)
-		require.Equal(t, gameusecase.RecoveryReport{Paused: 1}, report)
+		require.Equal(t, recoveryusecase.RecoveryReport{Paused: 1}, report)
 		require.Empty(t, timers.armsSnapshot())
 		require.Equal(t, 0, replayer.writeCount())
 	})
@@ -149,7 +149,7 @@ func TestExecutionRecovery(t *testing.T) {
 		source := newExecutionRecoverySourceHarness(t, nil, nil)
 		timers := newDeadlineRearmerHarness(t, lease, now)
 		replayer := newEpochReplayerHarness(t, nil)
-		recoverer := gameusecase.NewRecoverer(
+		recoverer := recoveryusecase.NewRecoverer(
 			newAuthorityReaderMock(t, &lease, nil),
 			source.source,
 			timers.rearmer,
@@ -159,11 +159,11 @@ func TestExecutionRecovery(t *testing.T) {
 		foreign := lease.Identity()
 		foreign.HolderID = recoveryID(40)
 
-		report, err := recoverer.Recover(t.Context(), gameusecase.RecoveryCommand{
+		report, err := recoverer.Recover(t.Context(), recoveryusecase.RecoveryCommand{
 			TournamentID: lease.TournamentID, Authority: foreign,
 		})
 		require.Zero(t, report)
-		require.ErrorIs(t, err, gameusecase.ErrNotAuthoritative)
+		require.ErrorIs(t, err, recoveryusecase.ErrNotAuthoritative)
 		require.Equal(t, 0, source.loadCount())
 		require.Empty(t, timers.armsSnapshot())
 		require.Equal(t, 0, replayer.writeCount())
@@ -176,21 +176,21 @@ func TestExecutionRecovery(t *testing.T) {
 		lease := recoveryLease(now, 1)
 		candidate := recoveryCandidate(now, lease.Stamp(), domain.GameStateActive)
 		source := newExecutionRecoverySourceHarness(
-			t, []gameusecase.RecoveryCandidate{candidate, candidate}, nil,
+			t, []recoveryusecase.RecoveryCandidate{candidate, candidate}, nil,
 		)
 		timers := newDeadlineRearmerHarness(t, lease, now)
 		replayer := newEpochReplayerHarness(t, nil)
-		report, err := gameusecase.NewRecoverer(
+		report, err := recoveryusecase.NewRecoverer(
 			newAuthorityReaderMock(t, &lease, nil),
 			source.source,
 			timers.rearmer,
 			replayer.replayer,
 			newRecoveryAuthorityTime(t, now, 1),
-		).Recover(t.Context(), gameusecase.RecoveryCommand{
+		).Recover(t.Context(), recoveryusecase.RecoveryCommand{
 			TournamentID: lease.TournamentID, Authority: lease.Identity(),
 		})
 		require.Zero(t, report)
-		require.ErrorIs(t, err, gameusecase.ErrInvalidRecovery)
+		require.ErrorIs(t, err, recoveryusecase.ErrInvalidRecovery)
 		require.Empty(t, timers.armsSnapshot())
 		require.Equal(t, 0, replayer.writeCount())
 	})
@@ -205,21 +205,21 @@ func TestExecutionRecovery(t *testing.T) {
 		invalid.Scope.GameID = recoveryID(50)
 		invalid.State = domain.GameState("invalid")
 		source := newExecutionRecoverySourceHarness(
-			t, []gameusecase.RecoveryCandidate{valid, invalid}, nil,
+			t, []recoveryusecase.RecoveryCandidate{valid, invalid}, nil,
 		)
 		timers := newDeadlineRearmerHarness(t, lease, now)
 		replayer := newEpochReplayerHarness(t, nil)
-		report, err := gameusecase.NewRecoverer(
+		report, err := recoveryusecase.NewRecoverer(
 			newAuthorityReaderMock(t, &lease, nil),
 			source.source,
 			timers.rearmer,
 			replayer.replayer,
 			newRecoveryAuthorityTime(t, now, 1),
-		).Recover(t.Context(), gameusecase.RecoveryCommand{
+		).Recover(t.Context(), recoveryusecase.RecoveryCommand{
 			TournamentID: lease.TournamentID, Authority: lease.Identity(),
 		})
 		require.Zero(t, report)
-		require.ErrorIs(t, err, gameusecase.ErrInvalidRecovery)
+		require.ErrorIs(t, err, recoveryusecase.ErrInvalidRecovery)
 		require.Empty(t, timers.armsSnapshot())
 		require.Equal(t, 0, replayer.writeCount())
 	})
@@ -231,18 +231,18 @@ func TestExecutionRecovery(t *testing.T) {
 		lease := recoveryLease(now, 1)
 		candidate := recoveryCandidate(now, lease.Stamp(), domain.GameStateActive)
 		source := newExecutionRecoverySourceHarness(
-			t, []gameusecase.RecoveryCandidate{candidate}, nil,
+			t, []recoveryusecase.RecoveryCandidate{candidate}, nil,
 		)
 		timers := newDeadlineRearmerHarness(t, lease, now)
 		timers.advanceBeforeNextRearm(lease.ExpiresAt.Sub(now))
 		replayer := newEpochReplayerHarness(t, nil)
-		report, err := gameusecase.NewRecoverer(
+		report, err := recoveryusecase.NewRecoverer(
 			newAuthorityReaderMock(t, &lease, nil),
 			source.source,
 			timers.rearmer,
 			replayer.replayer,
 			newRecoveryAuthorityTime(t, now, 1),
-		).Recover(t.Context(), gameusecase.RecoveryCommand{
+		).Recover(t.Context(), recoveryusecase.RecoveryCommand{
 			TournamentID: lease.TournamentID, Authority: lease.Identity(),
 		})
 		require.Zero(t, report)
@@ -257,7 +257,7 @@ func TestExecutionRecovery(t *testing.T) {
 
 		now := time.Date(2026, 8, 31, 10, 30, 0, 0, time.UTC)
 		lease := recoveryLease(now, 2)
-		command := gameusecase.RecoveryCommand{
+		command := recoveryusecase.RecoveryCommand{
 			TournamentID: lease.TournamentID, Authority: lease.Identity(),
 		}
 		readerError := errors.New("reader failed")
@@ -275,7 +275,7 @@ func TestExecutionRecovery(t *testing.T) {
 			{name: "replayer", replayError: replayError, wantError: replayError},
 		} {
 			t.Run(test.name, func(t *testing.T) {
-				var candidates []gameusecase.RecoveryCandidate
+				var candidates []recoveryusecase.RecoveryCandidate
 				if test.name == "replayer" {
 					broken := authoritydomain.Stamp{
 						LeaseID: recoveryID(51), Epoch: 1,
@@ -286,7 +286,7 @@ func TestExecutionRecovery(t *testing.T) {
 						domain.GameStateActive,
 					)
 					candidate.EpochReplay = recoveryEpochReplayCommand(candidate, lease.Identity())
-					candidates = []gameusecase.RecoveryCandidate{candidate}
+					candidates = []recoveryusecase.RecoveryCandidate{candidate}
 				}
 				readerLease := &lease
 				if test.readerError != nil {
@@ -295,7 +295,7 @@ func TestExecutionRecovery(t *testing.T) {
 				source := newExecutionRecoverySourceHarness(t, candidates, test.sourceError)
 				timers := newDeadlineRearmerHarness(t, lease, now)
 				replayer := newEpochReplayerHarness(t, test.replayError)
-				report, err := gameusecase.NewRecoverer(
+				report, err := recoveryusecase.NewRecoverer(
 					newAuthorityReaderMock(t, readerLease, test.readerError),
 					source.source,
 					timers.rearmer,

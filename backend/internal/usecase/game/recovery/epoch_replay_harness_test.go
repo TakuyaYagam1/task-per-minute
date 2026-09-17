@@ -1,4 +1,4 @@
-package game_test
+package recovery_test
 
 import (
 	"context"
@@ -16,8 +16,9 @@ import (
 	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
 	gamedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/game"
 	seriesdomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/series"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	attemptusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/attempt"
 	gamemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/mocks"
+	recoveryusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/recovery"
 )
 
 type mutableEpochReplayTimeSource struct {
@@ -48,7 +49,7 @@ type executionEpochReplayRepositoryOptions struct {
 
 type executionEpochReplayRepositoryState struct {
 	mu                  sync.Mutex
-	authority           gameusecase.EpochReplayAuthority
+	authority           recoveryusecase.EpochReplayAuthority
 	hideCurrentReplay   bool
 	writes              int
 	commits             int
@@ -64,7 +65,7 @@ type executionEpochReplayRepositoryHarness struct {
 
 func newExecutionEpochReplayRepositoryHarness(
 	t *testing.T,
-	authority gameusecase.EpochReplayAuthority,
+	authority recoveryusecase.EpochReplayAuthority,
 	options executionEpochReplayRepositoryOptions,
 ) *executionEpochReplayRepositoryHarness {
 	t.Helper()
@@ -95,7 +96,7 @@ func newExecutionEpochReplayRepositoryHarness(
 func (s *executionEpochReplayRepositoryState) findReplay(
 	_ context.Context,
 	_ domain.FailedAttemptScope,
-) (*gameusecase.EpochReplayRecord, error) {
+) (*recoveryusecase.EpochReplayRecord, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.hideCurrentReplay || s.authority.Current == nil {
@@ -115,7 +116,7 @@ func (s *executionEpochReplayRepositoryState) loadAuthority(
 	_ context.Context,
 	_ domain.FailedAttemptScope,
 	_ uuid.UUID,
-) (gameusecase.EpochReplayAuthority, error) {
+) (recoveryusecase.EpochReplayAuthority, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.authority, nil
@@ -123,9 +124,9 @@ func (s *executionEpochReplayRepositoryState) loadAuthority(
 
 func (s *executionEpochReplayRepositoryState) commitReplay(
 	_ context.Context,
-	condition gameusecase.EpochReplayCommitCondition,
-	record gameusecase.EpochReplayRecord,
-) (*gameusecase.EpochReplayRecord, bool, error) {
+	condition recoveryusecase.EpochReplayCommitCondition,
+	record recoveryusecase.EpochReplayRecord,
+) (*recoveryusecase.EpochReplayRecord, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.commits++
@@ -176,7 +177,7 @@ func (h *executionEpochReplayRepositoryHarness) currentState() (bool, bool) {
 }
 
 func (h *executionEpochReplayRepositoryHarness) update(
-	update func(*gameusecase.EpochReplayAuthority),
+	update func(*recoveryusecase.EpochReplayAuthority),
 ) {
 	h.state.mu.Lock()
 	defer h.state.mu.Unlock()
@@ -186,24 +187,24 @@ func (h *executionEpochReplayRepositoryHarness) update(
 func task042ReplayAuthority(
 	t *testing.T,
 	now time.Time,
-) (gameusecase.EpochReplayAuthority, gameusecase.EpochReplayCommand) {
+) (recoveryusecase.EpochReplayAuthority, recoveryusecase.EpochReplayCommand) {
 	t.Helper()
 	attemptAuthority, attemptCommand := task042FailedAttemptFixture(t, now)
 	attemptCommand.FailureClass = gamedomain.FailureExecutionEpochBreak
 	lease := task042Lease(now, attemptCommand.Scope.TournamentID, 2)
 	broken := authoritydomain.Stamp{LeaseID: task042ID(102), Epoch: 1}
 	rosterID := task042ID(120)
-	return gameusecase.EpochReplayAuthority{
-		Lease: lease, BoundAuthority: broken, RosterID: rosterID, Attempt: attemptAuthority,
-	}, gameusecase.EpochReplayCommand{
-		CurrentAuthority: lease.Identity(), BrokenAuthority: broken, RosterID: rosterID, Attempt: attemptCommand,
-	}
+	return recoveryusecase.EpochReplayAuthority{
+			Lease: lease, BoundAuthority: broken, RosterID: rosterID, Attempt: attemptAuthority,
+		}, recoveryusecase.EpochReplayCommand{
+			CurrentAuthority: lease.Identity(), BrokenAuthority: broken, RosterID: rosterID, Attempt: attemptCommand,
+		}
 }
 
 func task042FailedAttemptFixture(
 	t *testing.T,
 	now time.Time,
-) (gameusecase.AttemptAuthority, gameusecase.AttemptCommand) {
+) (attemptusecase.AttemptAuthority, attemptusecase.AttemptCommand) {
 	t.Helper()
 
 	tournamentID := task042ID(201)
@@ -233,18 +234,18 @@ func task042FailedAttemptFixture(
 		SlotID: slotID, GameID: gameID, AssignmentID: task042ID(209),
 		AssignmentAttemptID: task042ID(210),
 	}
-	authority := gameusecase.AttemptAuthority{
+	authority := attemptusecase.AttemptAuthority{
 		Scope: scope, Revision: 7, Wave: wave, Series: series,
 		ActiveSnapshotID: task042ID(211), CurrentOrdinal: 1,
 		CurrentProjectionRevision: 3,
 	}
-	command := gameusecase.AttemptCommand{
+	command := attemptusecase.AttemptCommand{
 		Scope: scope, CommandID: task042ID(212), FailureClass: gamedomain.FailureNoSolve,
-		Expected: gameusecase.Expectation{
+		Expected: attemptusecase.Expectation{
 			AttemptNo: 1, State: domain.GameStateActive,
 			SnapshotID: authority.ActiveSnapshotID, Category: domain.CategoryWeb,
 		},
-		Revisions: gameusecase.AttemptRevisionSet{
+		Revisions: attemptusecase.AttemptRevisionSet{
 			GameResultRevisionID: domain.OfficialResultRevisionID(task042ID(213)),
 			ScoreRevisionID:      domain.SeriesScoreRevisionID(task042ID(214)),
 			RouteEvidenceID:      task042ID(215), AuditEventID: task042ID(216),
