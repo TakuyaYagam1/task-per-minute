@@ -174,6 +174,7 @@ var ReposSet = wire.NewSet(
 	wire.Bind(new(tournamentadminsnapshot.SnapshotPort), new(*adminsnapshotrepo.TournamentAdminSnapshotPostgres)),
 	waverepo.NewWavePostgres,
 	draftrepo.NewDraftPostgres,
+	wire.Bind(new(exactdraftrepo.DraftReader), new(*draftrepo.DraftPostgres)),
 	provideResultPostgres,
 	assignmentrepo.NewAssignmentPostgres,
 	exactdraftrepo.NewExactDraftBranchPlanPostgres,
