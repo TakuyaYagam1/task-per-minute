@@ -1,6 +1,6 @@
 //go:build integration
 
-package integration_test
+package draft
 
 import (
 	"context"
@@ -24,7 +24,7 @@ type draftMigrationFixture struct {
 	createdAt            time.Time
 }
 
-func TestDraftMigration(t *testing.T) {
+func runDraftMigration(t *testing.T) {
 	ctx := context.Background()
 	resetMigrationTables(ctx, t)
 	t.Cleanup(func() { resetMigrationTables(ctx, t) })
@@ -34,7 +34,7 @@ func TestDraftMigration(t *testing.T) {
 
 	pausedRevisionID := uuid.New()
 	pausedCommandID := uuid.New()
-	_, err := sharedPool.Exec(
+	_, err := migrationPool.Exec(
 		ctx, `
 		INSERT INTO draft_revisions (
 			id, draft_id, series_id, roster_id, revision,
@@ -64,7 +64,7 @@ func TestDraftMigration(t *testing.T) {
 
 	recoveryRevisionID := uuid.New()
 	recoveryEpoch := uuid.New()
-	_, err = sharedPool.Exec(
+	_, err = migrationPool.Exec(
 		ctx, `
 		INSERT INTO draft_revisions (
 			id, draft_id, series_id, roster_id, revision,
@@ -92,7 +92,7 @@ func TestDraftMigration(t *testing.T) {
 
 	resumedRevisionID := uuid.New()
 	resumedDeadline := fixture.createdAt.Add(20 * time.Second)
-	_, err = sharedPool.Exec(
+	_, err = migrationPool.Exec(
 		ctx, `
 		INSERT INTO draft_revisions (
 			id, draft_id, series_id, roster_id, revision,
@@ -143,7 +143,7 @@ func TestDraftMigration(t *testing.T) {
 		false,
 	)
 
-	_, err = sharedPool.Exec(
+	_, err = migrationPool.Exec(
 		ctx, `
 		INSERT INTO draft_revisions (
 			draft_id, series_id, roster_id, revision,
@@ -195,7 +195,7 @@ func TestDraftMigration(t *testing.T) {
 		storedActionCount  int
 		storedServiceEpoch uuid.UUID
 	)
-	err = sharedPool.QueryRow(ctx, `
+	err = migrationPool.QueryRow(ctx, `
 		SELECT revision.state, revision.turn_number, revision.service_epoch,
 			(SELECT COUNT(*) FROM draft_actions AS action WHERE action.draft_id = revision.draft_id)
 		FROM draft_revisions AS revision
@@ -211,13 +211,13 @@ func TestDraftMigration(t *testing.T) {
 	require.Equal(t, recoveryEpoch, storedServiceEpoch)
 	require.Equal(t, 2, storedActionCount)
 
-	_, err = sharedPool.Exec(ctx, `
+	_, err = migrationPool.Exec(ctx, `
 		UPDATE draft_revisions
 		SET selected_categories = '["crypto"]'::JSONB
 		WHERE id = $1`, completedRevisionID)
 	require.Error(t, err)
 
-	_, err = sharedPool.Exec(
+	_, err = migrationPool.Exec(
 		ctx, `
 		INSERT INTO draft_revisions (
 			draft_id, series_id, roster_id, revision,

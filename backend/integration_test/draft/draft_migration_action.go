@@ -1,6 +1,6 @@
 //go:build integration
 
-package integration_test
+package draft
 
 import (
 	"bytes"
@@ -34,7 +34,7 @@ func commitDraftActionRevision(
 ) {
 	tb.Helper()
 
-	tx, err := sharedPool.Begin(ctx)
+	tx, err := migrationPool.Begin(ctx)
 	require.NoError(tb, err)
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -101,7 +101,7 @@ func assertIllegalDraftActionRejected(
 ) {
 	tb.Helper()
 
-	tx, err := sharedPool.Begin(ctx)
+	tx, err := migrationPool.Begin(ctx)
 	require.NoError(tb, err)
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -159,7 +159,7 @@ func commitCompletedDraft(
 ) {
 	tb.Helper()
 
-	tx, err := sharedPool.Begin(ctx)
+	tx, err := migrationPool.Begin(ctx)
 	require.NoError(tb, err)
 	defer func() { _ = tx.Rollback(ctx) }()
 

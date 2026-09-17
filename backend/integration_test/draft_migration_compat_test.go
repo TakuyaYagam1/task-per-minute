@@ -11,61 +11,25 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
+	draftintegration "github.com/TakuyaYagam1/task-per-minute/integration_test/draft"
 	"github.com/TakuyaYagam1/task-per-minute/integration_test/internal/testkit/draftseed"
-	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
-func assertDraftTurnIdentityRejected(
-	ctx context.Context, t *testing.T,
-	fixture draftMigrationFixture,
-) {
-	t.Helper()
+func TestDraftMigration(t *testing.T) {
+	draftintegration.RunDraftMigration(t, sharedPool)
+}
 
-	for _, testCase := range []struct {
-		name           string
-		currentActorID uuid.UUID
-		currentAction  string
-	}{
-		{
-			name:           "wrong actor",
-			currentActorID: fixture.participantIDs[1],
-			currentAction:  "ban",
-		},
-		{
-			name:           "wrong action",
-			currentActorID: fixture.participantIDs[0],
-			currentAction:  "pick",
-		},
-	} {
-		t.Run(testCase.name, func(t *testing.T) {
-			_, err := sharedPool.Exec(
-				ctx, `
-				INSERT INTO draft_revisions (
-					draft_id, series_id, roster_id, revision,
-					previous_revision_id, command_id, service_epoch,
-					state, turn_number, current_actor_id, current_action,
-					absolute_deadline, created_at
-				)
-				VALUES (
-					$1, $2, $3, 2,
-					$4, $5, $6,
-					'active', 1, $7, $8,
-					$9, $10
-				)`,
-				fixture.draftID,
-				fixture.seriesID,
-				fixture.rosterID,
-				fixture.initialRevisionID,
-				uuid.New(),
-				fixture.initialServiceEpoch,
-				testCase.currentActorID,
-				testCase.currentAction,
-				fixture.createdAt.Add(20*time.Second),
-				fixture.createdAt.Add(time.Second),
-			)
-			require.Error(t, err)
-		})
-	}
+type draftMigrationFixture struct {
+	tournamentID         uuid.UUID
+	rosterID             uuid.UUID
+	seriesID             uuid.UUID
+	draftID              uuid.UUID
+	categoryRevisionID   uuid.UUID
+	normalPoolRevisionID uuid.UUID
+	initialRevisionID    uuid.UUID
+	participantIDs       []uuid.UUID
+	initialServiceEpoch  uuid.UUID
+	createdAt            time.Time
 }
 
 func createDraftMigrationFixture(
@@ -207,35 +171,6 @@ func createDraftContentConfigurationFromCurrentTasks(
 		WHERE id = $1`, configurationID, at)
 	require.NoError(tb, err)
 	return normalPoolID
-}
-
-func createDraftMigrationWaveSeries(
-	ctx context.Context,
-	tb testing.TB,
-	tournamentID uuid.UUID,
-	rosterID uuid.UUID,
-	participantIDs []uuid.UUID,
-	sourceProjectionID uuid.UUID,
-	sourceProjectionRevision int64,
-	createdAt time.Time,
-) uuid.UUID {
-	tb.Helper()
-
-	seriesID := uuid.New()
-	_, err := draftseed.CreateWaveSeries(ctx, sharedPool, draftseed.WaveInput{
-		TournamentID:             tournamentID,
-		RosterID:                 rosterID,
-		ParticipantIDs:           participantIDs,
-		SeriesID:                 seriesID,
-		FirstParticipantID:       participantIDs[0],
-		SecondParticipantID:      participantIDs[1],
-		SourceProjectionID:       sourceProjectionID,
-		SourceProjectionRevision: sourceProjectionRevision,
-		Format:                   domain.SeriesFormatBO1,
-		CreatedAt:                createdAt,
-	})
-	require.NoError(tb, err)
-	return seriesID
 }
 
 func prepareDraftMigrationContent(ctx context.Context, tb testing.TB) []uuid.UUID {
