@@ -18,14 +18,14 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
+	goldenruntime "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/runtime"
 )
 
 const goldenRuntimeDuration = 180 * time.Second
 
 type GoldenRuntimePostgres struct{ tx *db.TxManager }
 
-var _ goldenusecase.RuntimeRepository = (*GoldenRuntimePostgres)(nil)
+var _ goldenruntime.RuntimeRepository = (*GoldenRuntimePostgres)(nil)
 
 func NewGoldenRuntimePostgres(tx *db.TxManager) *GoldenRuntimePostgres {
 	return &GoldenRuntimePostgres{tx: tx}

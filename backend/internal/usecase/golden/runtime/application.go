@@ -1,4 +1,4 @@
-package golden
+package runtime
 
 import (
 	"context"
@@ -23,6 +23,10 @@ type RuntimeRepository interface {
 	ParticipantView(ctx context.Context, query usecase.GoldenParticipantQuery) (usecase.GoldenParticipantView, error)
 	SetConnected(ctx context.Context, command usecase.GoldenConnectionCommand, now time.Time) error
 	Recover(ctx context.Context, tournamentID uuid.UUID, now time.Time) error
+}
+
+type ConnectionClock interface {
+	Now() time.Time
 }
 
 type RuntimeApplication struct {
