@@ -1,4 +1,4 @@
-package game_test
+package forfeit_test
 
 import (
 	"context"
@@ -9,19 +9,19 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	seriesdomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/series"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	forfeitusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/forfeit"
 	gamemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/mocks"
 )
 
 type forfeitResult struct {
-	resolution *gameusecase.ForfeitResolution
+	resolution *forfeitusecase.ForfeitResolution
 	changed    bool
 	err        error
 }
 
 type forfeitRepositoryState struct {
 	mu        sync.Mutex
-	authority gameusecase.ForfeitAuthority
+	authority forfeitusecase.ForfeitAuthority
 	barrier   *sync.WaitGroup
 	writes    int
 }
@@ -33,7 +33,7 @@ type forfeitRepositoryHarness struct {
 
 func newForfeitRepositoryHarness(
 	t *testing.T,
-	authority gameusecase.ForfeitAuthority,
+	authority forfeitusecase.ForfeitAuthority,
 	contenders int,
 ) *forfeitRepositoryHarness {
 	t.Helper()
@@ -45,7 +45,7 @@ func newForfeitRepositoryHarness(
 	}
 	repository := gamemocks.NewMockForfeitRepository(t)
 	repository.EXPECT().LoadForfeitAuthority(mock.Anything, mock.Anything).
-		RunAndReturn(func(context.Context, gameusecase.Scope) (gameusecase.ForfeitAuthority, error) {
+		RunAndReturn(func(context.Context, forfeitusecase.Scope) (forfeitusecase.ForfeitAuthority, error) {
 			state.mu.Lock()
 			defer state.mu.Unlock()
 			return cloneForfeitAuthority(state.authority), nil
@@ -53,8 +53,8 @@ func newForfeitRepositoryHarness(
 	repository.EXPECT().CommitForfeitResolution(mock.Anything, mock.Anything).
 		RunAndReturn(func(
 			_ context.Context,
-			resolution gameusecase.ForfeitResolution,
-		) (*gameusecase.ForfeitResolution, bool, error) {
+			resolution forfeitusecase.ForfeitResolution,
+		) (*forfeitusecase.ForfeitResolution, bool, error) {
 			if state.barrier != nil {
 				state.barrier.Done()
 				state.barrier.Wait()
