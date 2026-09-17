@@ -14,6 +14,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/idempotency"
 	idempotencymocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/idempotency/mocks"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	correctionmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/correction/mocks"
 	tournamentadminincident "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/incident"
 	tournamentadminmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/mocks"
 	tournamentparticipant "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/participant"
@@ -57,8 +58,8 @@ func TestProvideTournamentAdminCorrectionProvidesCorrectionPort(t *testing.T) {
 	t.Parallel()
 
 	workflow := provideTournamentAdminCorrection(
-		tournamentadminmocks.NewMockCorrectionTransactionManager(t),
-		tournamentadminmocks.NewMockCorrectionWorkflowRepository(t),
+		correctionmocks.NewMockCorrectionTransactionManager(t),
+		correctionmocks.NewMockCorrectionWorkflowRepository(t),
 	)
 
 	var port tournamentadmin.CorrectionPort = workflow
