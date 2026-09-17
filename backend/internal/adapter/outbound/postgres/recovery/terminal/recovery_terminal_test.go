@@ -10,20 +10,20 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gamereconnect "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/reconnect"
 	recoveryusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/recovery"
 )
 
 func TestRecoveryReconnectArtifactKindsMatchSettlementStage(t *testing.T) {
 	t.Parallel()
 
-	record := &gameusecase.ReconnectRecord{}
+	record := &gamereconnect.ReconnectRecord{}
 	require.ElementsMatch(t, []domain.ArtifactKind{
 		domain.ArtifactKindGameResult,
 		domain.ArtifactKindSeriesScore,
 	}, recoveryReconnectArtifactKinds(record))
 
-	record.SeriesResultRevision = &gameusecase.SeriesRevision{}
+	record.SeriesResultRevision = &gamereconnect.SeriesRevision{}
 	require.ElementsMatch(t, []domain.ArtifactKind{
 		domain.ArtifactKindGameResult,
 		domain.ArtifactKindSeriesScore,

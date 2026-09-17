@@ -8,18 +8,18 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gamereplay "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/replay"
 )
 
 func TestOperatorReserveRepositoryReturnsRecordedCommandBeforeRevisionCheck(t *testing.T) {
 	t.Parallel()
 
 	command := replayWorkflowReserveCommand()
-	recorded := gameusecase.OperatorReserve{CommandID: command.CommandID}
+	recorded := gamereplay.OperatorReserve{CommandID: command.CommandID}
 	repository := replayWorkflowRepositoryStub{
 		reserveAuthority: OperatorReserveAuthority{
 			TournamentState: domain.TournamentStateSwiss,
-			Replay: gameusecase.OperatorReserveAuthority{
+			Replay: gamereplay.OperatorReserveAuthority{
 				Revision: command.ExpectedAuthorityRevision + 1,
 				Current:  &recorded,
 			},
@@ -27,7 +27,7 @@ func TestOperatorReserveRepositoryReturnsRecordedCommandBeforeRevisionCheck(t *t
 	}
 	adapter := operatorReserveRepository{repository: repository, command: command}
 
-	authority, err := adapter.LoadOperatorReserveAuthority(context.Background(), gameusecase.ReplayReplacementScope{})
+	authority, err := adapter.LoadOperatorReserveAuthority(context.Background(), gamereplay.ReplayReplacementScope{})
 
 	if err != nil {
 		t.Fatalf("LoadOperatorReserveAuthority() error = %v, want recorded command authority", err)
@@ -41,11 +41,11 @@ func TestReplayReplacementRepositoryReturnsRecordedCommandBeforeRevisionCheck(t 
 	t.Parallel()
 
 	command := replayWorkflowReplayCommand()
-	recorded := gameusecase.ReplayReplacement{CommandID: command.CommandID}
+	recorded := gamereplay.ReplayReplacement{CommandID: command.CommandID}
 	repository := replayWorkflowRepositoryStub{
 		replacementAuthority: ReplayReplacementAuthority{
 			TournamentState: domain.TournamentStateSwiss,
-			Replay: gameusecase.ReplayReplacementAuthority{
+			Replay: gamereplay.ReplayReplacementAuthority{
 				Revision: command.ExpectedAuthorityRevision + 1,
 				Current:  &recorded,
 			},
@@ -53,7 +53,7 @@ func TestReplayReplacementRepositoryReturnsRecordedCommandBeforeRevisionCheck(t 
 	}
 	adapter := replayReplacementRepository{repository: repository, command: command}
 
-	authority, err := adapter.LoadReplayReplacementAuthority(context.Background(), gameusecase.ReplayReplacementScope{})
+	authority, err := adapter.LoadReplayReplacementAuthority(context.Background(), gamereplay.ReplayReplacementScope{})
 
 	if err != nil {
 		t.Fatalf("LoadReplayReplacementAuthority() error = %v, want recorded command authority", err)
@@ -83,8 +83,8 @@ func (s replayWorkflowRepositoryStub) CommitOperatorReserve(
 	context.Context,
 	ReserveCommand,
 	[32]byte,
-	gameusecase.OperatorReserve,
-) (*gameusecase.OperatorReserve, bool, error) {
+	gamereplay.OperatorReserve,
+) (*gamereplay.OperatorReserve, bool, error) {
 	return nil, false, nil
 }
 
@@ -99,8 +99,8 @@ func (s replayWorkflowRepositoryStub) CommitReplayReplacement(
 	context.Context,
 	ReplayCommand,
 	[32]byte,
-	gameusecase.ReplayReplacement,
-) (*gameusecase.ReplayReplacement, bool, error) {
+	gamereplay.ReplayReplacement,
+) (*gamereplay.ReplayReplacement, bool, error) {
 	return nil, false, nil
 }
 

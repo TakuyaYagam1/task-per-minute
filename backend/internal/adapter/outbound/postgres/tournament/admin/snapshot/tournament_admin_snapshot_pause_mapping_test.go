@@ -10,7 +10,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gamepause "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/snapshot"
 )
 
@@ -51,7 +51,7 @@ func TestTournamentAdminSnapshotFrozenDeadline(t *testing.T) {
 	frozenAt := time.Date(2026, time.September, 6, 12, 0, 0, 0, time.UTC)
 	deadline := frozenAt.Add(30 * time.Second)
 	value, ok := tournamentAdminSnapshotFrozenDeadline(
-		gameusecase.PauseDeadlineGame,
+		gamepause.PauseDeadlineGame,
 		uuid.New(),
 		deadline,
 		frozenAt,
@@ -62,7 +62,7 @@ func TestTournamentAdminSnapshotFrozenDeadline(t *testing.T) {
 	require.Equal(t, deadline, value.OriginalDeadline)
 
 	_, ok = tournamentAdminSnapshotFrozenDeadline(
-		gameusecase.PauseDeadlineGame,
+		gamepause.PauseDeadlineGame,
 		uuid.New(),
 		frozenAt,
 		frozenAt,
@@ -80,8 +80,8 @@ func tournamentAdminSnapshotPauseTestRow(
 	return sqlc.Pause{
 		ID: uuid.New(), TournamentID: tournamentID, RosterID: rosterID,
 		ScopeKind: "wave", ScopeID: waveID, WaveID: uuid.NullUUID{UUID: waveID, Valid: true},
-		Depth: 0, Reason: string(gameusecase.PauseReasonOperator),
-		PausedFromState: string(domain.WaveStateActive), State: string(gameusecase.PauseStateActive),
+		Depth: 0, Reason: string(gamepause.PauseReasonOperator),
+		PausedFromState: string(domain.WaveStateActive), State: string(gamepause.PauseStateActive),
 		CurrentRevisionID: uuid.New(), Revision: 1,
 		StartedAt: tournamentAdminSnapshotTestTime(startedAt),
 		CreatedAt: tournamentAdminSnapshotTestTime(startedAt),

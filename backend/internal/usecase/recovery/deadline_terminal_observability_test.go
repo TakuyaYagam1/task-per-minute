@@ -12,7 +12,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gamereconnect "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/reconnect"
 	gamemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/reconnect/mocks"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/recovery"
 	recoverymocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/recovery/mocks"
@@ -47,9 +47,9 @@ func TestTerminalDeadlineHandlerObservesReconnectTimeoutAfterCommit(t *testing.T
 	clock := recoverymocks.NewMockClock(t)
 	clock.EXPECT().Now().Return(now).Once()
 	observer := gamemocks.NewMockObserver(t)
-	observer.EXPECT().Observe(mock.Anything, mock.MatchedBy(func(event gameusecase.ReconnectEvent) bool {
+	observer.EXPECT().Observe(mock.Anything, mock.MatchedBy(func(event gamereconnect.ReconnectEvent) bool {
 		return event.ReconnectEvent == "tournament.command.reconnect_timeout" &&
-			event.Outcome == gameusecase.OutcomeSuccess &&
+			event.Outcome == gamereconnect.OutcomeSuccess &&
 			event.CommandID != uuid.Nil &&
 			event.TournamentID == authority.Deadline.TournamentID &&
 			event.ParticipantID == authority.Deadline.ParticipantID &&
@@ -91,7 +91,7 @@ func reconnectDeadlineAuthority(now time.Time) recovery.DeadlineTerminalAuthorit
 	}
 	return recovery.DeadlineTerminalAuthority{
 		Deadline: deadline,
-		ReconnectTimeout: &gameusecase.ReconnectAuthority{
+		ReconnectTimeout: &gamereconnect.ReconnectAuthority{
 			Scope: pause.GraphScope{
 				TournamentID: tournamentID, RosterID: rosterID, WaveID: waveID,
 				Authority: authoritydomain.Identity{

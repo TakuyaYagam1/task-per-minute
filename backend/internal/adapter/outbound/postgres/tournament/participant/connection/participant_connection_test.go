@@ -13,7 +13,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
-	game "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gamereconnect "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/reconnect"
 	connection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/connection"
 )
 
@@ -140,7 +140,7 @@ func TestParticipantConnectionCurrentFenceUsesCloseTimeActionBinding(t *testing.
 
 	currentAction := connection.ResolvedAction{
 		Kind: connection.ActionGameDisconnect,
-		Disconnect: &game.DisconnectCommand{
+		Disconnect: &gamereconnect.DisconnectCommand{
 			Scope:         pausedomain.GraphScope{TournamentID: uuid.New(), RosterID: uuid.New(), WaveID: uuid.New()},
 			ParticipantID: uuid.New(),
 		},

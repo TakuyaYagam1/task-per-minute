@@ -12,7 +12,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
 	seriesdomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/series"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gamereconnect "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/reconnect"
 )
 
 func TestTournamentReconnectReceiptRoundTripPreservesDomainRecord(t *testing.T) {
@@ -22,14 +22,14 @@ func TestTournamentReconnectReceiptRoundTripPreservesDomainRecord(t *testing.T) 
 	scope := tournamentReconnectTestScope()
 	participantID := uuid.New()
 	intervalID := uuid.New()
-	record := gameusecase.ReconnectRecord{
-		Kind: gameusecase.MutationDisconnect,
-		DisconnectCommand: &gameusecase.DisconnectCommand{
+	record := gamereconnect.ReconnectRecord{
+		Kind: gamereconnect.MutationDisconnect,
+		DisconnectCommand: &gamereconnect.DisconnectCommand{
 			Scope: scope, CommandID: uuid.New(), ParticipantID: participantID,
 			IntervalID: intervalID, Deadline: now.Add(time.Minute),
 		},
 		ExpectedAuthorityRevision: 4,
-		ReconnectAuthority: gameusecase.ReconnectAuthority{
+		ReconnectAuthority: gamereconnect.ReconnectAuthority{
 			Scope: scope, Revision: 5,
 			Reconnect: []pausedomain.PauseReconnectInterval{{ID: intervalID}},
 		},
@@ -52,16 +52,16 @@ func TestTournamentReconnectReceiptAllowsTerminalWithoutIntervalColumn(t *testin
 	scope := tournamentReconnectTestScope()
 	participantID := uuid.New()
 	commandID := uuid.New()
-	record := gameusecase.ReconnectRecord{
-		Kind: gameusecase.MutationDisconnect,
-		DisconnectCommand: &gameusecase.DisconnectCommand{
+	record := gamereconnect.ReconnectRecord{
+		Kind: gamereconnect.MutationDisconnect,
+		DisconnectCommand: &gamereconnect.DisconnectCommand{
 			Scope: scope, CommandID: commandID, ParticipantID: participantID,
 			IntervalID: uuid.New(), Deadline: now.Add(time.Minute),
 		},
 		ExpectedAuthorityRevision: 1,
-		ReconnectAuthority: gameusecase.ReconnectAuthority{
+		ReconnectAuthority: gamereconnect.ReconnectAuthority{
 			Scope: scope, Revision: 2,
-			Current: &gameusecase.TerminalOutcome{},
+			Current: &gamereconnect.TerminalOutcome{},
 		},
 		ScoreRevision: &seriesdomain.ScoreRevision{},
 		Evidence:      &seriesdomain.SettlementEvidence{},
@@ -83,11 +83,11 @@ func TestTournamentReconnectReceiptAllowsTerminalWithoutIntervalColumn(t *testin
 func TestTournamentReconnectReceiptComparisonIncludesFullRecord(t *testing.T) {
 	t.Parallel()
 
-	record := gameusecase.ReconnectRecord{Kind: gameusecase.MutationDisconnect}
+	record := gamereconnect.ReconnectRecord{Kind: gamereconnect.MutationDisconnect}
 	require.True(t, reconnectRecordsEqual(record, record))
 
 	changed := record
-	changed.Kind = gameusecase.MutationTimeout
+	changed.Kind = gamereconnect.MutationTimeout
 	require.False(t, reconnectRecordsEqual(record, changed))
 }
 
@@ -96,7 +96,7 @@ func TestReconnectSettlementInputIncludesStandingsForTerminalSeries(t *testing.T
 	require.ElementsMatch(t, []domain.ArtifactKind{
 		domain.ArtifactKindGameResult,
 		domain.ArtifactKindSeriesScore,
-	}, reconnectSettlementArtifactKinds(gameusecase.ReconnectRecord{}))
+	}, reconnectSettlementArtifactKinds(gamereconnect.ReconnectRecord{}))
 
 	now := time.Date(2026, time.September, 14, 10, 0, 0, 0, time.UTC)
 	scope := tournamentReconnectTestScope()
@@ -107,19 +107,19 @@ func TestReconnectSettlementInputIncludesStandingsForTerminalSeries(t *testing.T
 	scoreRevisionID := domain.SeriesScoreRevisionID(uuid.New())
 	seriesResultID := domain.OfficialResultRevisionID(uuid.New())
 
-	current := gameusecase.ReconnectAuthority{
+	current := gamereconnect.ReconnectAuthority{
 		Scope: scope, Revision: 1, GameRevision: 1, SeriesRevision: 1,
 		Game:   domain.Game{ID: gameID, State: domain.GameStateActive},
 		Series: domain.Series{ID: seriesID, State: domain.SeriesStateActive},
 	}
-	record := gameusecase.ReconnectRecord{
-		Kind: gameusecase.MutationTimeout,
-		TimeoutCommand: &gameusecase.TimeoutCommand{
+	record := gamereconnect.ReconnectRecord{
+		Kind: gamereconnect.MutationTimeout,
+		TimeoutCommand: &gamereconnect.TimeoutCommand{
 			Scope: scope, CommandID: commandID, ParticipantID: firstParticipantID,
 			IntervalID: uuid.New(),
 		},
 		ExpectedAuthorityRevision: 1,
-		ReconnectAuthority: gameusecase.ReconnectAuthority{
+		ReconnectAuthority: gamereconnect.ReconnectAuthority{
 			Scope: scope, Revision: 2,
 			Game: domain.Game{ID: gameID, State: domain.GameStateCompleted, WinnerID: &secondParticipantID},
 			Series: domain.Series{
@@ -127,14 +127,14 @@ func TestReconnectSettlementInputIncludesStandingsForTerminalSeries(t *testing.T
 				FirstParticipantID: firstParticipantID, SecondParticipantID: secondParticipantID,
 				WinnerID: &secondParticipantID,
 			},
-			Current: &gameusecase.TerminalOutcome{},
+			Current: &gamereconnect.TerminalOutcome{},
 		},
-		GameResultRevision: &gameusecase.GameRevision{ID: gameResultID, GameID: gameID},
+		GameResultRevision: &gamereconnect.GameRevision{ID: gameResultID, GameID: gameID},
 		ScoreRevision: &seriesdomain.ScoreRevision{
 			ID: scoreRevisionID, SeriesID: seriesID,
 			GameResultRevisionIDs: []domain.OfficialResultRevisionID{gameResultID},
 		},
-		SeriesResultRevision: &gameusecase.SeriesRevision{
+		SeriesResultRevision: &gamereconnect.SeriesRevision{
 			ID: seriesResultID, SeriesID: seriesID, State: domain.SeriesStateCompleted,
 			WinnerID: &secondParticipantID, ScoreRevisionID: scoreRevisionID,
 		},
@@ -176,7 +176,7 @@ func TestRehydrateTournamentReconnectActiveStateRestoresResumedClockAndBudget(t 
 	remaining := 40 * time.Second
 	originalDeadline := frozenAt.Add(remaining)
 	resumedDeadline := now.Add(remaining)
-	source := gameusecase.ReconnectAuthority{
+	source := gamereconnect.ReconnectAuthority{
 		Scope: scope, PauseID: oldPauseID,
 		Game:   domain.Game{ID: gameID, State: domain.GameStateActive},
 		Series: domain.Series{ID: seriesID, FirstParticipantID: firstID, SecondParticipantID: secondID},
@@ -234,7 +234,7 @@ func TestRehydrateTournamentReconnectActiveStateRejectsClockMismatch(t *testing.
 	remaining := 40 * time.Second
 	originalDeadline := frozenAt.Add(remaining)
 	resumedDeadline := now.Add(remaining)
-	source := gameusecase.ReconnectAuthority{
+	source := gamereconnect.ReconnectAuthority{
 		Scope: scope, PauseID: oldPauseID,
 		Game:   domain.Game{ID: gameID, State: domain.GameStateActive},
 		Series: domain.Series{ID: seriesID, FirstParticipantID: firstID, SecondParticipantID: secondID},
@@ -311,8 +311,8 @@ func TestReconnectPausePresenceSnapshotsAllowUnchangedParticipantBeforeCapture(t
 func TestReconnectResumeWritesIntervalBeforePresence(t *testing.T) {
 	t.Parallel()
 
-	current := gameusecase.ReconnectAuthority{}
-	next := gameusecase.ReconnectAuthority{}
+	current := gamereconnect.ReconnectAuthority{}
+	next := gamereconnect.ReconnectAuthority{}
 	current.Game.State = domain.GameStatePaused
 	next.Game.State = domain.GameStateActive
 	require.True(t, reconnectResumeRequiresIntervalFirst(current, next))

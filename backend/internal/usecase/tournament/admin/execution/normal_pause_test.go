@@ -13,7 +13,7 @@ import (
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
 	seriesdomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/series"
 	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gamepause "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause"
 )
 
 func TestExecutionWorkflowNormalWavePauseResumeIsAtomicAndReplayable(t *testing.T) {
@@ -59,7 +59,7 @@ func TestExecutionWorkflowNormalWavePauseResumeSupportsPlayoffs(t *testing.T) {
 	fixture := newExecutionNormalPauseFixture(t)
 	fixture.current.TournamentState = domain.TournamentStatePlayoffs
 	fixture.normalAuthority.Graph.Tournament.State = domain.TournamentStatePlayoffs
-	fixture.normalAuthority.Revisions = gameusecase.PauseGraphRevisionsFrom(fixture.normalAuthority.Graph)
+	fixture.normalAuthority.Revisions = gamepause.PauseGraphRevisionsFrom(fixture.normalAuthority.Graph)
 	workflow := NewExecutionWorkflow(ExecutionWorkflowDependencies{
 		Transactions: &executionNormalPauseTransactions{}, Repository: fixture, NormalPause: fixture,
 		Authority: executionNormalPauseAuthority{identity: fixture.identity},
@@ -81,7 +81,7 @@ func TestExecutionWorkflowNormalWavePauseCanonicalizesSubMillisecondDeadline(t *
 	fixture := newExecutionNormalPauseFixture(t)
 	deadline := fixture.now.Add(time.Minute + 750*time.Microsecond)
 	fixture.normalAuthority.Graph.Games[0].Deadline = &deadline
-	fixture.normalAuthority.Revisions = gameusecase.PauseGraphRevisionsFrom(fixture.normalAuthority.Graph)
+	fixture.normalAuthority.Revisions = gamepause.PauseGraphRevisionsFrom(fixture.normalAuthority.Graph)
 	workflow := NewExecutionWorkflow(ExecutionWorkflowDependencies{
 		Transactions: &executionNormalPauseTransactions{}, Repository: fixture, NormalPause: fixture,
 		Authority: executionNormalPauseAuthority{identity: fixture.identity},
@@ -109,7 +109,7 @@ func TestExecutionWorkflowNormalWavePauseResumeActiveDraft(t *testing.T) {
 	fixture.normalAuthority.Graph.Draft = executionNormalPauseDraft(t, fixture, series.Execution.Series)
 	series.Execution.Series.FirstParticipantID = fixture.normalAuthority.Graph.Draft.FirstParticipantID
 	series.Execution.Series.SecondParticipantID = fixture.normalAuthority.Graph.Draft.SecondParticipantID
-	fixture.normalAuthority.Revisions = gameusecase.PauseGraphRevisionsFrom(fixture.normalAuthority.Graph)
+	fixture.normalAuthority.Revisions = gamepause.PauseGraphRevisionsFrom(fixture.normalAuthority.Graph)
 	fixture.current.Graph.CurrentGameCount, fixture.current.Graph.ActiveGameCount = 0, 0
 	workflow := NewExecutionWorkflow(ExecutionWorkflowDependencies{
 		Transactions: &executionNormalPauseTransactions{}, Repository: fixture, NormalPause: fixture,
@@ -120,7 +120,7 @@ func TestExecutionWorkflowNormalWavePauseResumeActiveDraft(t *testing.T) {
 	}
 	paused := fixture.resumeAuthority.Pause.Graph.Draft
 	if paused == nil || paused.State != draftusecase.ExecutionStatePaused || paused.AbsoluteDeadline != nil ||
-		len(fixture.resumeAuthority.FrozenDeadlines) != 1 || fixture.resumeAuthority.FrozenDeadlines[0].Kind != gameusecase.PauseDeadlineDraft {
+		len(fixture.resumeAuthority.FrozenDeadlines) != 1 || fixture.resumeAuthority.FrozenDeadlines[0].Kind != gamepause.PauseDeadlineDraft {
 		t.Fatalf("paused Draft = %+v, frozen = %+v", paused, fixture.resumeAuthority.FrozenDeadlines)
 	}
 	fixture.now = fixture.now.Add(time.Second)
@@ -147,7 +147,7 @@ func TestExecutionWorkflowNormalWavePauseResumeReadyWindow(t *testing.T) {
 	series.Execution.Series.State = domain.SeriesStateReady
 	series.CurrentGameID = nil
 	fixture.normalAuthority.Graph.Games = nil
-	fixture.normalAuthority.Revisions = gameusecase.PauseGraphRevisionsFrom(fixture.normalAuthority.Graph)
+	fixture.normalAuthority.Revisions = gamepause.PauseGraphRevisionsFrom(fixture.normalAuthority.Graph)
 	fixture.current.View.Wave = *wave
 	fixture.current.Graph.CurrentGameCount, fixture.current.Graph.ActiveGameCount = 0, 0
 	workflow := NewExecutionWorkflow(ExecutionWorkflowDependencies{
@@ -157,7 +157,7 @@ func TestExecutionWorkflowNormalWavePauseResumeReadyWindow(t *testing.T) {
 	if _, err := workflow.ControlWave(t.Context(), fixture.command(WaveActionPause, executionTestID(732))); err != nil {
 		t.Fatalf("ControlWave(ready-window pause) error = %v", err)
 	}
-	if frozen := fixture.resumeAuthority.FrozenDeadlines; len(frozen) != 1 || frozen[0].Kind != gameusecase.PauseDeadlineReadyWindow || frozen[0].Remaining != 45*time.Second {
+	if frozen := fixture.resumeAuthority.FrozenDeadlines; len(frozen) != 1 || frozen[0].Kind != gamepause.PauseDeadlineReadyWindow || frozen[0].Remaining != 45*time.Second {
 		t.Fatalf("ready-window frozen deadline = %+v", frozen)
 	}
 	fixture.now = fixture.now.Add(5 * time.Second)
@@ -234,7 +234,7 @@ func TestExecutionWorkflowNormalWaveResumeContinuesSuspendedReconnect(t *testing
 		OpenedAt: fixture.now.Add(-30 * time.Second), Deadline: fixture.now.Add(30 * time.Second),
 		Revision: 1, UpdatedAt: fixture.now.Add(-30 * time.Second),
 	}}
-	fixture.normalAuthority.Revisions = gameusecase.PauseGraphRevisionsFrom(fixture.normalAuthority.Graph)
+	fixture.normalAuthority.Revisions = gamepause.PauseGraphRevisionsFrom(fixture.normalAuthority.Graph)
 	workflow := NewExecutionWorkflow(ExecutionWorkflowDependencies{
 		Transactions: &executionNormalPauseTransactions{}, Repository: fixture, NormalPause: fixture,
 		Authority: executionNormalPauseAuthority{identity: fixture.identity},
@@ -248,7 +248,7 @@ func TestExecutionWorkflowNormalWaveResumeContinuesSuspendedReconnect(t *testing
 		t.Fatalf("ControlWave(resume continuation) error = %v, writes = %d, record = %+v", err, fixture.resumeWrites, fixture.presenceRecord)
 	}
 	record := fixture.presenceRecord
-	if record == nil || record.First.Disposition != gameusecase.PauseResumeParticipantContinuation ||
+	if record == nil || record.First.Disposition != gamepause.PauseResumeParticipantContinuation ||
 		record.First.SourceInterval == nil || record.First.SourceInterval.ID != sourceID ||
 		record.First.CurrentInterval == nil || !record.First.CurrentInterval.Deadline.Equal(fixture.now.Add(30*time.Second)) ||
 		record.First.Counter.Used != 1 || record.First.Counter.Revision != 1 {
@@ -282,12 +282,12 @@ type executionNormalPauseFixture struct {
 	now             time.Time
 	identity        authoritydomain.Identity
 	current         WaveAuthority
-	normalAuthority gameusecase.NormalPauseAuthority
-	resumeAuthority gameusecase.PauseResumeAuthority
+	normalAuthority gamepause.NormalPauseAuthority
+	resumeAuthority gamepause.PauseResumeAuthority
 	receipts        map[uuid.UUID]WaveCommandRecord
 	pauseWrites     int
 	resumeWrites    int
-	presenceRecord  *gameusecase.PauseResumePresenceRecord
+	presenceRecord  *gamepause.PauseResumePresenceRecord
 }
 
 func newExecutionNormalPauseFixture(t *testing.T) *executionNormalPauseFixture {
@@ -314,25 +314,25 @@ func newExecutionNormalPauseFixture(t *testing.T) *executionNormalPauseFixture {
 		Slots: []domain.GameSlot{{ID: slotID, SeriesID: seriesID, Position: 1, Category: domain.CategoryWeb, Attempts: []domain.Game{game}}}}
 	identity := authoritydomain.Identity{TournamentID: tournamentID, HolderID: executionTestID(721), LeaseID: executionTestID(722), Epoch: 2, ProcessKind: authoritydomain.ProcessAuthority}
 	scope := pausedomain.GraphScope{TournamentID: tournamentID, RosterID: rosterID, WaveID: waveID, Authority: identity}
-	graph := gameusecase.PauseGraph{Scope: scope, Revision: 1,
-		Tournament: gameusecase.TournamentRecord{ID: tournamentID, RosterID: rosterID, Preset: domain.TournamentPresetV1,
+	graph := gamepause.PauseGraph{Scope: scope, Revision: 1,
+		Tournament: gamepause.TournamentRecord{ID: tournamentID, RosterID: rosterID, Preset: domain.TournamentPresetV1,
 			State: domain.TournamentStateSwiss, Revision: 4, RosterSize: 2, CreatedAt: now.Add(-time.Hour), UpdatedAt: startedAt, StartedAt: &startedAt},
-		Wave:   gameusecase.PauseWave{Wave: wave, Revision: 7},
-		Series: []gameusecase.PauseSeries{{Execution: seriesdomain.Execution{Series: series}, Revision: 5, CurrentGameID: &gameID}},
-		Games:  []gameusecase.PauseGame{{SeriesID: seriesID, Game: game, Revision: 6, Deadline: &deadline}},
+		Wave:   gamepause.PauseWave{Wave: wave, Revision: 7},
+		Series: []gamepause.PauseSeries{{Execution: seriesdomain.Execution{Series: series}, Revision: 5, CurrentGameID: &gameID}},
+		Games:  []gamepause.PauseGame{{SeriesID: seriesID, Game: game, Revision: 6, Deadline: &deadline}},
 		Presence: []pausedomain.PausePresence{
 			{ID: executionTestID(723), TournamentID: tournamentID, RosterID: rosterID, SeriesID: seriesID, ParticipantID: firstID, State: pausedomain.PresenceStateConnected, PresenceEpoch: 1, Revision: 1, ConnectedAt: startedAt, UpdatedAt: startedAt},
 			{ID: executionTestID(724), TournamentID: tournamentID, RosterID: rosterID, SeriesID: seriesID, ParticipantID: secondID, State: pausedomain.PresenceStateConnected, PresenceEpoch: 1, Revision: 1, ConnectedAt: startedAt, UpdatedAt: startedAt},
 		},
 	}
-	revisions := gameusecase.PauseGraphRevisionsFrom(graph)
+	revisions := gamepause.PauseGraphRevisionsFrom(graph)
 	view := WaveView{Wave: wave, Revision: 7, ReadinessRevisions: map[uuid.UUID]int64{firstID: 1, secondID: 1}, SeriesIDs: map[uuid.UUID]uuid.UUID{firstID: seriesID, secondID: seriesID}}
 	current := WaveAuthority{TournamentState: domain.TournamentStateSwiss, TournamentRevision: 4,
 		RosterID: rosterID, RosterRevision: 2, ProjectionRevisionID: executionTestID(725), ProjectionRevision: 8,
 		SourceRevisions: domain.ReadyWindowSourceRevisions{WaveRevisionID: wave.RevisionID, WaveRevision: 7, ProjectionRevisionID: executionTestID(725), ProjectionRevision: 8},
 		View:            view, Graph: WaveGraph{SeriesCount: 1, PlayableMemberCount: 2, CurrentGameCount: 1, ActiveSeriesCount: 1, ActiveGameCount: 1}}
 	return &executionNormalPauseFixture{now: now, identity: identity, current: current,
-		normalAuthority: gameusecase.NormalPauseAuthority{Scope: scope, Revisions: revisions, Graph: graph, Complete: true},
+		normalAuthority: gamepause.NormalPauseAuthority{Scope: scope, Revisions: revisions, Graph: graph, Complete: true},
 		receipts:        make(map[uuid.UUID]WaveCommandRecord)}
 }
 
@@ -402,19 +402,19 @@ func (*executionNormalPauseFixture) SavePairingCommand(context.Context, PairingC
 func (*executionNormalPauseFixture) CommitWave(context.Context, WaveMutation) (WaveView, error) {
 	return WaveView{}, domain.ErrInternal
 }
-func (*executionNormalPauseFixture) FindNormalPauseCommand(context.Context, uuid.UUID, uuid.UUID) (*gameusecase.NormalPauseRecord, error) {
+func (*executionNormalPauseFixture) FindNormalPauseCommand(context.Context, uuid.UUID, uuid.UUID) (*gamepause.NormalPauseRecord, error) {
 	return nil, nil
 }
-func (fixture *executionNormalPauseFixture) LoadNormalPauseAuthority(context.Context, pausedomain.GraphScope) (gameusecase.NormalPauseAuthority, error) {
+func (fixture *executionNormalPauseFixture) LoadNormalPauseAuthority(context.Context, pausedomain.GraphScope) (gamepause.NormalPauseAuthority, error) {
 	return fixture.normalAuthority, nil
 }
-func (fixture *executionNormalPauseFixture) CommitNormalPause(_ context.Context, _ gameusecase.PauseGraphRevisions, record gameusecase.NormalPauseRecord) (*gameusecase.NormalPauseRecord, bool, error) {
+func (fixture *executionNormalPauseFixture) CommitNormalPause(_ context.Context, _ gamepause.PauseGraphRevisions, record gamepause.NormalPauseRecord) (*gamepause.NormalPauseRecord, bool, error) {
 	fixture.pauseWrites++
-	frozenDeadlines := append([]gameusecase.PauseFrozenDeadline(nil), record.Graph.FrozenDeadlines...)
+	frozenDeadlines := append([]gamepause.PauseFrozenDeadline(nil), record.Graph.FrozenDeadlines...)
 	for index := range frozenDeadlines {
 		frozenDeadlines[index].Remaining = time.Duration(frozenDeadlines[index].Remaining.Milliseconds()) * time.Millisecond
 	}
-	fixture.resumeAuthority = gameusecase.PauseResumeAuthority{
+	fixture.resumeAuthority = gamepause.PauseResumeAuthority{
 		Pause:           record,
 		Presence:        append([]pausedomain.PausePresence(nil), record.Graph.Presence...),
 		Reconnect:       append([]pausedomain.PauseReconnectInterval(nil), record.Graph.Reconnect...),
@@ -430,16 +430,16 @@ func (fixture *executionNormalPauseFixture) CommitNormalPause(_ context.Context,
 	fixture.current.Graph.PausedSeriesCount, fixture.current.Graph.PausedGameCount = 1, 1
 	return &record, true, nil
 }
-func (*executionNormalPauseFixture) FindPauseResumeCommand(context.Context, uuid.UUID, uuid.UUID) (*gameusecase.PauseResumeRecord, error) {
+func (*executionNormalPauseFixture) FindPauseResumeCommand(context.Context, uuid.UUID, uuid.UUID) (*gamepause.PauseResumeRecord, error) {
 	return nil, nil
 }
-func (*executionNormalPauseFixture) FindPauseResumePresenceCommand(context.Context, uuid.UUID, uuid.UUID) (*gameusecase.PauseResumePresenceRecord, error) {
+func (*executionNormalPauseFixture) FindPauseResumePresenceCommand(context.Context, uuid.UUID, uuid.UUID) (*gamepause.PauseResumePresenceRecord, error) {
 	return nil, nil
 }
-func (fixture *executionNormalPauseFixture) LoadPauseResumeAuthority(context.Context, pausedomain.GraphScope, uuid.UUID) (gameusecase.PauseResumeAuthority, error) {
+func (fixture *executionNormalPauseFixture) LoadPauseResumeAuthority(context.Context, pausedomain.GraphScope, uuid.UUID) (gamepause.PauseResumeAuthority, error) {
 	return fixture.resumeAuthority, nil
 }
-func (fixture *executionNormalPauseFixture) CommitPauseResume(_ context.Context, _ gameusecase.PauseResumeExpectation, record gameusecase.PauseResumeRecord) (*gameusecase.PauseResumeRecord, bool, error) {
+func (fixture *executionNormalPauseFixture) CommitPauseResume(_ context.Context, _ gamepause.PauseResumeExpectation, record gamepause.PauseResumeRecord) (*gamepause.PauseResumeRecord, bool, error) {
 	fixture.resumeWrites++
 	fixture.current.TournamentState = record.Graph.Tournament.State
 	fixture.current.TournamentRevision = record.Graph.Tournament.Revision
@@ -456,7 +456,7 @@ func (fixture *executionNormalPauseFixture) LoadPauseResumePresenceAuthority(
 	_ uuid.UUID,
 	seriesPauseID uuid.UUID,
 	gamePauseID uuid.UUID,
-) (gameusecase.PauseResumePresenceAuthority, error) {
+) (gamepause.PauseResumePresenceAuthority, error) {
 	resume := executionNormalPausePresenceProjection(fixture.resumeAuthority, gamePauseID)
 	series := resume.Pause.Graph.Series[0]
 	game := resume.Pause.Graph.Games[0]
@@ -467,16 +467,16 @@ func (fixture *executionNormalPauseFixture) LoadPauseResumePresenceAuthority(
 		Remaining:        resume.FrozenDeadlines[0].Remaining, Revision: 1,
 	}
 	startedAt := resume.Pause.PausedAt.Add(-time.Nanosecond)
-	return gameusecase.PauseResumePresenceAuthority{
+	return gamepause.PauseResumePresenceAuthority{
 		Resume: resume,
-		SeriesDecision: gameusecase.PauseResumeDecisionAuthority{
-			PauseID: seriesPauseID, ScopeKind: gameusecase.PauseResumeDecisionScopeSeries,
-			CurrentRevisionID: executionID(seriesPauseID, "revision"), State: gameusecase.PauseStateActive,
+		SeriesDecision: gamepause.PauseResumeDecisionAuthority{
+			PauseID: seriesPauseID, ScopeKind: gamepause.PauseResumeDecisionScopeSeries,
+			CurrentRevisionID: executionID(seriesPauseID, "revision"), State: gamepause.PauseStateActive,
 			Revision: 1, SeriesID: series.Execution.Series.ID, StartedAt: startedAt,
 		},
-		GameDecision: gameusecase.PauseResumeDecisionAuthority{
-			PauseID: gamePauseID, ScopeKind: gameusecase.PauseResumeDecisionScopeGameAttempt,
-			CurrentRevisionID: executionID(gamePauseID, "revision"), State: gameusecase.PauseStateActive,
+		GameDecision: gamepause.PauseResumeDecisionAuthority{
+			PauseID: gamePauseID, ScopeKind: gamepause.PauseResumeDecisionScopeGameAttempt,
+			CurrentRevisionID: executionID(gamePauseID, "revision"), State: gamepause.PauseStateActive,
 			Revision: 1, SeriesID: series.Execution.Series.ID, GameID: game.Game.ID,
 			ParentPauseID: &seriesPauseID, Depth: 1, StartedAt: startedAt, GameClock: &clock,
 		},
@@ -484,9 +484,9 @@ func (fixture *executionNormalPauseFixture) LoadPauseResumePresenceAuthority(
 }
 
 func executionNormalPausePresenceProjection(
-	resume gameusecase.PauseResumeAuthority,
+	resume gamepause.PauseResumeAuthority,
 	gamePauseID uuid.UUID,
-) gameusecase.PauseResumeAuthority {
+) gamepause.PauseResumeAuthority {
 	suspended := make(map[uuid.UUID]struct{}, len(resume.Pause.SuspendedReconnect))
 	for _, value := range resume.Pause.SuspendedReconnect {
 		suspended[value.ID] = struct{}{}
@@ -530,7 +530,7 @@ func executionNormalPausePresenceProjection(
 	resume.Pause.Graph.Reconnect = filterReconnect(resume.Pause.Graph.Reconnect)
 	resume.Pause.Expected.Counters = nil
 	for _, value := range resume.Pause.Graph.Counters {
-		resume.Pause.Expected.Counters = append(resume.Pause.Expected.Counters, gameusecase.PauseReconnectCounterRevision{
+		resume.Pause.Expected.Counters = append(resume.Pause.Expected.Counters, gamepause.PauseReconnectCounterRevision{
 			PauseID: value.PauseID, RosterID: value.RosterID, ParticipantID: value.ParticipantID, Revision: value.Revision,
 		})
 	}
@@ -540,16 +540,16 @@ func executionNormalPausePresenceProjection(
 		if value.SuspendedByPauseID != nil {
 			revision--
 		}
-		resume.Pause.Expected.Reconnect = append(resume.Pause.Expected.Reconnect, gameusecase.PauseChildRevision{ID: value.ID, Revision: revision})
+		resume.Pause.Expected.Reconnect = append(resume.Pause.Expected.Reconnect, gamepause.PauseChildRevision{ID: value.ID, Revision: revision})
 	}
 	return resume
 }
 
 func (fixture *executionNormalPauseFixture) CommitPauseResumePresence(
 	_ context.Context,
-	_ gameusecase.PauseResumePresenceExpectation,
-	record gameusecase.PauseResumePresenceRecord,
-) (*gameusecase.PauseResumePresenceRecord, bool, error) {
+	_ gamepause.PauseResumePresenceExpectation,
+	record gamepause.PauseResumePresenceRecord,
+) (*gamepause.PauseResumePresenceRecord, bool, error) {
 	fixture.resumeWrites++
 	clone := record
 	fixture.presenceRecord = &clone

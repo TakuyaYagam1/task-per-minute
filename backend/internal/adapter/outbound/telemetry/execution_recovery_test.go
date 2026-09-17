@@ -8,7 +8,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/observability"
 	observabilitymocks "github.com/TakuyaYagam1/task-per-minute/internal/observability/mocks"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gamerecovery "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/recovery"
 )
 
 func TestExecutionRecoveryObserverMapsPayloadFreeTerminalEvent(t *testing.T) {
@@ -31,9 +31,9 @@ func TestExecutionRecoveryObserverMapsPayloadFreeTerminalEvent(t *testing.T) {
 
 	observer := NewExecutionRecoveryObserver(shared)
 	require.NotNil(t, observer)
-	observer.ObserveExecutionRecovery(t.Context(), gameusecase.RecoveryEvent{
+	observer.ObserveExecutionRecovery(t.Context(), gamerecovery.RecoveryEvent{
 		TournamentID: tournamentID,
-		Outcome:      gameusecase.RecoveryOutcomeSuccess,
+		Outcome:      gamerecovery.RecoveryOutcomeSuccess,
 		Transition:   "scan_completed",
 		ReasonCode:   "deadline_rearmed",
 		Revision:     5,
@@ -47,9 +47,9 @@ func TestExecutionRecoveryObserverDropsMalformedEvent(t *testing.T) {
 	observer := NewExecutionRecoveryObserver(shared)
 	require.NotNil(t, observer)
 
-	observer.ObserveExecutionRecovery(t.Context(), gameusecase.RecoveryEvent{
+	observer.ObserveExecutionRecovery(t.Context(), gamerecovery.RecoveryEvent{
 		TournamentID: uuid.New(),
-		Outcome:      gameusecase.RecoveryOutcomeSuccess,
+		Outcome:      gamerecovery.RecoveryOutcomeSuccess,
 		Transition:   "private_token",
 		ReasonCode:   "deadline_rearmed",
 		Revision:     1,

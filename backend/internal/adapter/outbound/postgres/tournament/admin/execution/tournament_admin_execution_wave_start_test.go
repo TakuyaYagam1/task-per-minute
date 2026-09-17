@@ -12,7 +12,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gamestart "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/start"
 )
 
 func TestWaveStartAuthorityDoesNotSynthesizeGlobalPlanRevision(t *testing.T) {
@@ -64,7 +64,7 @@ func TestWaveStartAuthorityAllowsOnlySwissAndPlayoffs(t *testing.T) {
 			header.TournamentState = string(tt.state)
 			_, _, err := waveStartAuthorityHeader(header, scope)
 			if tt.wantReject {
-				require.ErrorIs(t, err, gameusecase.ErrWaveStartAuthorityConflict)
+				require.ErrorIs(t, err, gamestart.ErrWaveStartAuthorityConflict)
 				return
 			}
 			require.NoError(t, err)
@@ -133,9 +133,9 @@ func TestWaveStartSQLContractLocksCurrentCommittedPlan(t *testing.T) {
 	}
 }
 
-func waveStartAuthorityRow() (sqlc.LockWaveStartAuthorityRow, gameusecase.StartScope) {
+func waveStartAuthorityRow() (sqlc.LockWaveStartAuthorityRow, gamestart.StartScope) {
 	now := time.Date(2026, time.September, 6, 14, 0, 0, 0, time.UTC)
-	scope := gameusecase.StartScope{
+	scope := gamestart.StartScope{
 		TournamentID: tournamentExecutionID(91), WaveID: tournamentExecutionID(92), WindowID: tournamentExecutionID(93),
 	}
 	return sqlc.LockWaveStartAuthorityRow{
@@ -152,7 +152,7 @@ func waveStartAuthorityRow() (sqlc.LockWaveStartAuthorityRow, gameusecase.StartS
 	}, scope
 }
 
-func waveStartGameRow(authority gameusecase.StartAuthority, rosterID uuid.UUID) sqlc.LockWaveStartGamesRow {
+func waveStartGameRow(authority gamestart.StartAuthority, rosterID uuid.UUID) sqlc.LockWaveStartGamesRow {
 	return sqlc.LockWaveStartGamesRow{
 		SeriesID: tournamentExecutionID(110), TournamentID: authority.Scope.TournamentID, RosterID: rosterID,
 		FirstParticipantID: tournamentExecutionID(101), SecondParticipantID: tournamentExecutionID(102),

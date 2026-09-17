@@ -18,7 +18,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gamepause "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause"
 )
 
 func TestTournamentPausedPresenceSQLContractLocksExactPauseAndSelectedPresence(t *testing.T) {
@@ -77,12 +77,12 @@ func TestTournamentPausedPresenceRootValidationRequiresExactOperatorWave(t *test
 	row := pausedPresenceTestRootRow(scope)
 	require.NoError(t, validatePausedPresenceRoot(row, scope))
 
-	row.Reason = string(gameusecase.PauseReasonDisconnect)
-	require.ErrorIs(t, validatePausedPresenceRoot(row, scope), gameusecase.ErrPausedPresenceSuppression)
+	row.Reason = string(gamepause.PauseReasonDisconnect)
+	require.ErrorIs(t, validatePausedPresenceRoot(row, scope), gamepause.ErrPausedPresenceSuppression)
 
 	row = pausedPresenceTestRootRow(scope)
 	row.ScopeID = uuid.New()
-	require.ErrorIs(t, validatePausedPresenceRoot(row, scope), gameusecase.ErrPausedPresenceSuppression)
+	require.ErrorIs(t, validatePausedPresenceRoot(row, scope), gamepause.ErrPausedPresenceSuppression)
 }
 
 func TestTournamentPausedPresenceSelectedParticipantRejectsAmbiguity(t *testing.T) {
@@ -93,10 +93,10 @@ func TestTournamentPausedPresenceSelectedParticipantRejectsAmbiguity(t *testing.
 		{ParticipantID: participantID},
 		{ParticipantID: participantID},
 	}, participantID)
-	require.ErrorIs(t, err, gameusecase.ErrPausedPresenceConflict)
+	require.ErrorIs(t, err, gamepause.ErrPausedPresenceConflict)
 
 	_, err = pausedPresenceByParticipant(nil, participantID)
-	require.ErrorIs(t, err, gameusecase.ErrPausedPresenceSuppression)
+	require.ErrorIs(t, err, gamepause.ErrPausedPresenceSuppression)
 }
 
 func TestTournamentPausedPresenceCommitRejectsGraphAndBindingDrift(t *testing.T) {
@@ -113,29 +113,29 @@ func TestTournamentPausedPresenceCommitRejectsGraphAndBindingDrift(t *testing.T)
 		State: pausedomain.PresenceStateConnected, PresenceEpoch: 2, Revision: 3,
 		ConnectedAt: now, UpdatedAt: now,
 	}
-	pause := gameusecase.NormalPauseRecord{
+	pause := gamepause.NormalPauseRecord{
 		Scope: scope, ScopeKind: pausedomain.ScopeWave, ScopeID: scope.WaveID,
-		PauseID: pauseID, Reason: gameusecase.PauseReasonOperator,
-		State: gameusecase.PauseStateActive, Revision: 2,
-		Graph: gameusecase.PauseGraph{
+		PauseID: pauseID, Reason: gamepause.PauseReasonOperator,
+		State: gamepause.PauseStateActive, Revision: 2,
+		Graph: gamepause.PauseGraph{
 			Scope: scope, Revision: 4, ActivePauseID: pauseID,
 			PausedAt: &now, DeadlinesSuppressed: true,
 		},
 	}
-	expected := gameusecase.PausedPresenceExpectation{
+	expected := gamepause.PausedPresenceExpectation{
 		PauseID: pauseID, GraphRevision: 4, PauseRevision: 2,
 		Authority: scope.Authority,
-		Presence: gameusecase.PausePresenceRevision{
+		Presence: gamepause.PausePresenceRevision{
 			ID: presence.ID, TournamentID: presence.TournamentID, RosterID: presence.RosterID,
 			SeriesID: presence.SeriesID, ParticipantID: presence.ParticipantID,
 			PresenceEpoch: presence.PresenceEpoch, Revision: presence.Revision,
 		},
 	}
-	record := gameusecase.PausedPresenceRecord{
-		Command: gameusecase.PausedPresenceCommand{
+	record := gamepause.PausedPresenceRecord{
+		Command: gamepause.PausedPresenceCommand{
 			Scope: scope, PauseID: pauseID, CommandID: uuid.New(), ParticipantID: participantID,
 		},
-		Authority: gameusecase.PausedPresenceAuthority{
+		Authority: gamepause.PausedPresenceAuthority{
 			Pause: pause, Presence: presence,
 		},
 	}
@@ -156,30 +156,30 @@ func TestTournamentPausedPresenceLoadedGraphRequiresRootRevision(t *testing.T) {
 	scope := pausedPresenceTestScope()
 	now := time.Date(2026, time.September, 13, 12, 0, 0, 0, time.UTC)
 	pauseID := uuid.New()
-	authority := gameusecase.PauseResumeAuthority{
-		Pause: gameusecase.NormalPauseRecord{
+	authority := gamepause.PauseResumeAuthority{
+		Pause: gamepause.NormalPauseRecord{
 			Scope: scope, ScopeKind: pausedomain.ScopeWave, ScopeID: scope.WaveID,
-			PauseID: pauseID, Reason: gameusecase.PauseReasonOperator,
-			State: gameusecase.PauseStateActive, Revision: 3, PausedAt: now,
-			Graph: gameusecase.PauseGraph{
+			PauseID: pauseID, Reason: gamepause.PauseReasonOperator,
+			State: gamepause.PauseStateActive, Revision: 3, PausedAt: now,
+			Graph: gamepause.PauseGraph{
 				Scope: scope, ActivePauseID: pauseID, PausedAt: &now,
 				DeadlinesSuppressed: true,
 			},
 		},
 	}
 	require.NoError(t, validateLoadedPausedPresenceGraph(authority, pauseID, 3, scope))
-	require.ErrorIs(t, validateLoadedPausedPresenceGraph(authority, pauseID, 2, scope), gameusecase.ErrPausedPresenceSuppression)
+	require.ErrorIs(t, validateLoadedPausedPresenceGraph(authority, pauseID, 2, scope), gamepause.ErrPausedPresenceSuppression)
 }
 
 func TestTournamentPausedPresenceCommitGuardsRevisionOverflow(t *testing.T) {
 	t.Parallel()
 
-	expected := gameusecase.PausedPresenceExpectation{
-		Presence: gameusecase.PausePresenceRevision{
+	expected := gamepause.PausedPresenceExpectation{
+		Presence: gamepause.PausePresenceRevision{
 			PresenceEpoch: math.MaxInt64,
 		},
 	}
-	require.ErrorIs(t, validatePausedPresenceCommit(expected, gameusecase.PausedPresenceRecord{}), gameusecase.ErrPausedPresenceOverflow)
+	require.ErrorIs(t, validatePausedPresenceCommit(expected, gamepause.PausedPresenceRecord{}), gamepause.ErrPausedPresenceOverflow)
 }
 
 func TestTournamentPausedPresenceTimeComparisonPreservesNullableDisconnect(t *testing.T) {
@@ -226,8 +226,8 @@ func pausedPresenceTestRootRow(scope pausedomain.GraphScope) sqlc.LockTournament
 		ScopeKind:         string(pausedomain.ScopeWave),
 		ScopeID:           scope.WaveID,
 		WaveID:            uuid.NullUUID{UUID: scope.WaveID, Valid: true},
-		Reason:            string(gameusecase.PauseReasonOperator),
-		State:             string(gameusecase.PauseStateActive),
+		Reason:            string(gamepause.PauseReasonOperator),
+		State:             string(gamepause.PauseStateActive),
 		CurrentRevisionID: uuid.New(),
 		PauseRevision:     1,
 		StartedAt:         pgtype.Timestamptz{Time: now, Valid: true},

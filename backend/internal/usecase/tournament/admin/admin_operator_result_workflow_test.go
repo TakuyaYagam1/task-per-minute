@@ -14,7 +14,8 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	seriesdomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/series"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gameforfeit "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/forfeit"
+	gamenoshow "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/noshow"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
@@ -34,14 +35,14 @@ func TestOperatorResultWorkflowNoShowUsesDatabaseTimeAndOperatorScope(t *testing
 	repository.EXPECT().ReadOperatorResultTime(mock.Anything).Return(now, nil)
 	repository.EXPECT().LoadOperatorNoShowAuthority(mock.Anything, command).Return(authority, nil)
 
-	var committed gameusecase.NoShowResolution
+	var committed gamenoshow.NoShowResolution
 	repository.EXPECT().CommitOperatorNoShow(mock.Anything, command, mock.Anything, mock.Anything).
 		RunAndReturn(func(
 			_ context.Context,
 			_ tournamentadmin.NoShowCommand,
 			digest [32]byte,
-			resolution gameusecase.NoShowResolution,
-		) (*gameusecase.NoShowResolution, bool, error) {
+			resolution gamenoshow.NoShowResolution,
+		) (*gamenoshow.NoShowResolution, bool, error) {
 			require.NotEqual(t, [32]byte{}, digest)
 			committed = resolution
 			return &resolution, true, nil
@@ -75,14 +76,14 @@ func TestOperatorResultWorkflowForfeitRetainsEvidenceWithoutInventingGameResult(
 	repository.EXPECT().ReadOperatorResultTime(mock.Anything).Return(now, nil)
 	repository.EXPECT().LoadOperatorForfeitAuthority(mock.Anything, command).Return(authority, nil)
 
-	var committed gameusecase.ForfeitResolution
+	var committed gameforfeit.ForfeitResolution
 	repository.EXPECT().CommitOperatorForfeit(mock.Anything, command, mock.Anything, mock.Anything).
 		RunAndReturn(func(
 			_ context.Context,
 			_ tournamentadmin.ForfeitCommand,
 			digest [32]byte,
-			resolution gameusecase.ForfeitResolution,
-		) (*gameusecase.ForfeitResolution, bool, error) {
+			resolution gameforfeit.ForfeitResolution,
+		) (*gameforfeit.ForfeitResolution, bool, error) {
 			require.NotEqual(t, [32]byte{}, digest)
 			committed = resolution
 			return &resolution, true, nil
@@ -185,7 +186,7 @@ func operatorWorkflowAuthority(
 func operatorNoShowFixture(
 	t *testing.T,
 	now time.Time,
-) (tournamentadmin.NoShowCommand, gameusecase.NoShowAuthority) {
+) (tournamentadmin.NoShowCommand, gamenoshow.NoShowAuthority) {
 	t.Helper()
 	tournamentID := operatorResultTestID(1)
 	firstParticipantID := operatorResultTestID(10)
@@ -228,7 +229,7 @@ func operatorNoShowFixture(
 		GameResultRevisionIDs: []uuid.UUID{operatorResultTestID(42)},
 		ScoreRevisionID:       operatorResultTestID(43), SeriesResultRevisionID: operatorResultTestID(44),
 	}
-	return command, gameusecase.NoShowAuthority{
+	return command, gamenoshow.NoShowAuthority{
 		Scope: domain.NormalNoShowScope{
 			TournamentID: tournamentID, WaveID: wave.ID, WindowID: windowID, SeriesID: seriesID,
 		},
@@ -236,7 +237,7 @@ func operatorNoShowFixture(
 	}
 }
 
-func operatorForfeitFixture() (tournamentadmin.ForfeitCommand, gameusecase.ForfeitAuthority) {
+func operatorForfeitFixture() (tournamentadmin.ForfeitCommand, gameforfeit.ForfeitAuthority) {
 	tournamentID := operatorResultTestID(101)
 	seriesID := operatorResultTestID(102)
 	firstParticipantID := operatorResultTestID(103)
@@ -271,8 +272,8 @@ func operatorForfeitFixture() (tournamentadmin.ForfeitCommand, gameusecase.Forfe
 		AuditEventID: operatorResultTestID(113), OutboxEventID: operatorResultTestID(114),
 		ProjectionRevisionID: operatorResultTestID(115),
 	}
-	return command, gameusecase.ForfeitAuthority{
-		Scope:    gameusecase.Scope{TournamentID: tournamentID, SeriesID: seriesID},
+	return command, gameforfeit.ForfeitAuthority{
+		Scope:    gameforfeit.Scope{TournamentID: tournamentID, SeriesID: seriesID},
 		Revision: 5, Series: execution, AuthorizedOperatorIDs: []uuid.UUID{operatorID},
 		CurrentOrdinal: 1, CurrentProjectionRevision: 7,
 	}

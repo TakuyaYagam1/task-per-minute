@@ -9,7 +9,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	seriesdomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/series"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gamenoshow "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/noshow"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 )
 
@@ -32,7 +32,7 @@ func TestAdvanceTerminalPlanAdvancesCompletedReadyWindowSeriesOnly(t *testing.T)
 	advancer := &planRecordingTerminalAdvancer{}
 	handler := NewTerminalDeadlineHandlerWithDependencies(nil, nil, nil, advancer)
 	plan := DeadlineTerminalPlan{
-		ReadyWindow: []gameusecase.NoShowResolution{
+		ReadyWindow: []gamenoshow.NoShowResolution{
 			{
 				Scope: domain.NormalNoShowScope{
 					TournamentID: tournamentID,

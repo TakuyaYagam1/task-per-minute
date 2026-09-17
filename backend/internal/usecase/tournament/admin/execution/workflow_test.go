@@ -14,7 +14,7 @@ import (
 	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
 	gamedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/game"
 	seriesdomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/series"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gamestart "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/start"
 	gamemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/start/mocks"
 	swissusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/swiss"
 )
@@ -481,11 +481,11 @@ func TestStartWaveReplayReturnsRecordedResultAfterLaterWaveTransition(t *testing
 	record := executionWaveStartRecord(t)
 	repository := gamemocks.NewMockStartRepository(t)
 	repository.EXPECT().LoadWaveStartAuthority(mock.Anything, mock.Anything).
-		Return(gameusecase.StartAuthority{
+		Return(gamestart.StartAuthority{
 			Scope: record.Scope, WaveRevision: record.ExpectedWaveRevision + 2,
 			Revisions: record.Revisions, Current: &record,
 		}, nil).Once()
-	usecase := gameusecase.NewStartUseCase(repository, executionWorkflowClock{at: record.StartedAt})
+	usecase := gamestart.NewStartUseCase(repository, executionWorkflowClock{at: record.StartedAt})
 	workflow := &ExecutionWorkflow{waveStart: usecase}
 	later := record.Wave
 	later.State = domain.WaveStateCompleted
@@ -547,7 +547,7 @@ func (clock executionWorkflowClock) Now() time.Time {
 	return clock.at
 }
 
-func executionWaveStartRecord(t *testing.T) gameusecase.StartRecord {
+func executionWaveStartRecord(t *testing.T) gamestart.StartRecord {
 	t.Helper()
 	startedAt := executionTestTime()
 	tournamentID := executionTestID(201)
@@ -592,8 +592,8 @@ func executionWaveStartRecord(t *testing.T) gameusecase.StartRecord {
 		ProjectionRevisionID: executionTestID(212), ProjectionRevision: 8,
 		ArtifactRevisionID: executionTestID(213), ArtifactRevision: 8,
 	}
-	record := gameusecase.StartRecord{
-		Scope:     gameusecase.StartScope{TournamentID: tournamentID, WaveID: waveID, WindowID: windowID},
+	record := gamestart.StartRecord{
+		Scope:     gamestart.StartScope{TournamentID: tournamentID, WaveID: waveID, WindowID: windowID},
 		CommandID: executionTestID(214), ActorID: executionTestID(215),
 		ExecutionAuthority: authoritydomain.Identity{
 			TournamentID: tournamentID, HolderID: executionTestID(218), LeaseID: executionTestID(219),

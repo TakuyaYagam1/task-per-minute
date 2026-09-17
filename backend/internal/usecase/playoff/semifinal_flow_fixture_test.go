@@ -17,7 +17,9 @@ import (
 	seriesdomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/series"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/assignment"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gamesettlement "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/settlement"
+	gamestart "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/start"
+	gamesubmission "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/submission"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 	readinessusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/readiness"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/seriesgraph"
@@ -264,9 +266,9 @@ func (p *semifinalDraftPlanner) ActivateFinalDraft(
 type semifinalExecutionFixture struct {
 	readyWindow *readinessusecase.ReadyWindowUseCase
 	readiness   *readinessusecase.ReadinessUseCase
-	start       *gameusecase.StartUseCase
-	submission  *gameusecase.SubmissionUseCase
-	settlement  *gameusecase.SettlementUseCase
+	start       *gamestart.StartUseCase
+	submission  *gamesubmission.SubmissionUseCase
+	settlement  *gamesettlement.SettlementUseCase
 
 	readyWindowRepo *semifinalReadyWindowRepository
 	readinessRepo   *semifinalReadinessRepository
@@ -276,9 +278,9 @@ type semifinalExecutionFixture struct {
 
 	openCommand       readinessusecase.OpenReadyWindowCommand
 	readyCommands     [2]readinessusecase.ReadyCommand
-	startCommand      gameusecase.StartCommand
-	submissionCommand gameusecase.SubmissionCommand
-	settlementCommand gameusecase.SettlementCommand
+	startCommand      gamestart.StartCommand
+	submissionCommand gamesubmission.SubmissionCommand
+	settlementCommand gamesettlement.SettlementCommand
 }
 
 func newSemifinalExecutionFixture(
@@ -350,20 +352,20 @@ func newSemifinalExecutionFixture(
 	gameScope := gamedomain.Scope{
 		TournamentID: tournamentID, SeriesID: readySeries.Series.ID, SlotID: slot.ID, GameID: attempt.ID,
 	}
-	startScope := gameusecase.StartScope{TournamentID: tournamentID, WaveID: waveID, WindowID: windowID}
-	startGame := gameusecase.GameAuthority{
+	startScope := gamestart.StartScope{TournamentID: tournamentID, WaveID: waveID, WindowID: windowID}
+	startGame := gamestart.GameAuthority{
 		Scope: gameScope, ParticipantIDs: [2]uuid.UUID{firstParticipantID, secondParticipantID},
 		Series: readySeries, AssignmentID: aggregate.ID, AssignmentRevision: 1,
 		PlanRevisionID: aggregate.Plan.PlanRevisionID, SnapshotID: primary.Snapshot.SnapshotID,
 		ContentDigest: primary.ContentDigest, DeadlineSeconds: 180,
 	}
-	startAuthority := gameusecase.StartAuthority{
+	startAuthority := gamestart.StartAuthority{
 		Scope: startScope, WaveRevision: 1, Revisions: revisions,
 		ReadinessRevisions: map[uuid.UUID]int64{firstParticipantID: 1, secondParticipantID: 1},
-		Wave:               plannedWave, Games: []gameusecase.GameAuthority{startGame},
+		Wave:               plannedWave, Games: []gamestart.GameAuthority{startGame},
 	}
 	startRepo := &semifinalStartRepository{authority: startAuthority, serverTime: now}
-	startCommand := gameusecase.StartCommand{
+	startCommand := gamestart.StartCommand{
 		Scope: startScope, CommandID: semifinalFlowID(11900 + graphIndex*100), ActorID: semifinalFlowID(12000 + graphIndex*100),
 		ExecutionAuthority: authoritydomain.Identity{
 			TournamentID: tournamentID, HolderID: semifinalFlowID(12100 + graphIndex*100),
@@ -377,26 +379,26 @@ func newSemifinalExecutionFixture(
 		participants: map[uuid.UUID]struct{}{firstParticipantID: {}, secondParticipantID: {}},
 	}
 	submissionScope := gamedomain.SubmissionScope{WaveID: waveID, Game: gameScope, AssignmentID: aggregate.ID}
-	submissionRepo := &semifinalSubmissionRepository{authority: gameusecase.SubmissionAuthority{
+	submissionRepo := &semifinalSubmissionRepository{authority: gamesubmission.SubmissionAuthority{
 		Scope: submissionScope, Revision: 1, Snapshot: snapshot,
 		ConnectedParticipantIDs: []uuid.UUID{firstParticipantID, secondParticipantID},
 	}}
-	submissionCommand := gameusecase.SubmissionCommand{
+	submissionCommand := gamesubmission.SubmissionCommand{
 		Scope: submissionScope, CommandID: semifinalFlowID(12300 + graphIndex*100),
 		ActorParticipantID: firstParticipantID, ParticipantID: firstParticipantID,
 		SubmittedFlag: primary.Snapshot.Flag,
 	}
-	settlementRepo := &semifinalSettlementRepository{authority: gameusecase.SettlementAuthority{
+	settlementRepo := &semifinalSettlementRepository{authority: gamesettlement.SettlementAuthority{
 		Scope: submissionScope, Revision: 1, CurrentScoreOrdinal: 0, CurrentProjectionRevision: 1,
 	}}
-	settlementCommand := gameusecase.SettlementCommand{Scope: submissionScope, CommandID: semifinalFlowID(12400 + graphIndex*100)}
+	settlementCommand := gamesettlement.SettlementCommand{Scope: submissionScope, CommandID: semifinalFlowID(12400 + graphIndex*100)}
 	clock := semifinalFlowClock{now: now}
 	return &semifinalExecutionFixture{
 		readyWindow:     readinessusecase.NewReadyWindowUseCase(readyWindowRepo, clock),
 		readiness:       readinessusecase.NewReadinessUseCase(readinessRepo, clock),
-		start:           gameusecase.NewStartUseCase(startRepo, clock),
-		submission:      gameusecase.NewSubmissionUseCase(submissionRepo),
-		settlement:      gameusecase.SettlementNewUseCase(settlementRepo),
+		start:           gamestart.NewStartUseCase(startRepo, clock),
+		submission:      gamesubmission.NewSubmissionUseCase(submissionRepo),
+		settlement:      gamesettlement.SettlementNewUseCase(settlementRepo),
 		readyWindowRepo: readyWindowRepo, readinessRepo: readinessRepo, startRepo: startRepo,
 		submissionRepo: submissionRepo, settlementRepo: settlementRepo,
 		openCommand: openCommand, readyCommands: readyCommands, startCommand: startCommand,
@@ -475,13 +477,13 @@ func (r *semifinalReadinessRepository) setWave(wave domain.Wave) {
 
 type semifinalStartRepository struct {
 	mu         sync.Mutex
-	authority  gameusecase.StartAuthority
+	authority  gamestart.StartAuthority
 	serverTime time.Time
 }
 
 func (r *semifinalStartRepository) LoadWaveStartAuthority(
-	_ context.Context, _ gameusecase.StartScope,
-) (gameusecase.StartAuthority, error) {
+	_ context.Context, _ gamestart.StartScope,
+) (gamestart.StartAuthority, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return cloneSemifinalStartAuthority(r.authority), nil
@@ -494,8 +496,8 @@ func (r *semifinalStartRepository) ReadWaveStartTime(_ context.Context) (time.Ti
 }
 
 func (r *semifinalStartRepository) CommitWaveStart(
-	_ context.Context, record gameusecase.StartRecord,
-) (*gameusecase.StartRecord, bool, error) {
+	_ context.Context, record gamestart.StartRecord,
+) (*gamestart.StartRecord, bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.authority.Current != nil || record.ExpectedWaveRevision != r.authority.WaveRevision {
@@ -543,20 +545,20 @@ func (s *semifinalSnapshot) HasParticipant(participantID uuid.UUID) bool {
 
 type semifinalSubmissionRepository struct {
 	mu         sync.Mutex
-	authority  gameusecase.SubmissionAuthority
+	authority  gamesubmission.SubmissionAuthority
 	commitTime time.Time
 }
 
 func (r *semifinalSubmissionRepository) LoadSubmissionAuthority(
 	_ context.Context, _ gamedomain.SubmissionScope,
-) (gameusecase.SubmissionAuthority, error) {
+) (gamesubmission.SubmissionAuthority, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return cloneSemifinalSubmissionAuthority(r.authority), nil
 }
 
 func (r *semifinalSubmissionRepository) CommitSubmission(
-	_ context.Context, commit gameusecase.SubmissionCommit,
+	_ context.Context, commit gamesubmission.SubmissionCommit,
 ) (*gamedomain.Submission, bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -583,20 +585,20 @@ func (r *semifinalSubmissionRepository) setStartedGame(started gamedomain.Starte
 
 type semifinalSettlementRepository struct {
 	mu        sync.Mutex
-	authority gameusecase.SettlementAuthority
+	authority gamesettlement.SettlementAuthority
 }
 
 func (r *semifinalSettlementRepository) LoadConcurrentWinnerAuthority(
 	_ context.Context, _ gamedomain.SubmissionScope,
-) (gameusecase.SettlementAuthority, error) {
+) (gamesettlement.SettlementAuthority, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return cloneSemifinalSettlementAuthority(r.authority), nil
 }
 
 func (r *semifinalSettlementRepository) CommitConcurrentWinnerSettlement(
-	_ context.Context, settlement gameusecase.SettlementRecord,
-) (*gameusecase.SettlementRecord, bool, error) {
+	_ context.Context, settlement gamesettlement.SettlementRecord,
+) (*gamesettlement.SettlementRecord, bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if settlement.ExpectedAuthorityRevision != r.authority.Revision || r.authority.Current != nil {
@@ -662,11 +664,11 @@ func cloneSemifinalReadinessAuthority(value readinessusecase.ReadinessAuthority)
 	return clone
 }
 
-func cloneSemifinalStartAuthority(value gameusecase.StartAuthority) gameusecase.StartAuthority {
+func cloneSemifinalStartAuthority(value gamestart.StartAuthority) gamestart.StartAuthority {
 	clone := value
 	clone.Wave = cloneSemifinalWave(value.Wave)
 	clone.ReadinessRevisions = cloneSemifinalReadinessRevisions(value.ReadinessRevisions)
-	clone.Games = make([]gameusecase.GameAuthority, len(value.Games))
+	clone.Games = make([]gamestart.GameAuthority, len(value.Games))
 	for index, game := range value.Games {
 		clone.Games[index] = game
 		clone.Games[index].Series = seriesdomain.CloneExecution(game.Series)
@@ -678,7 +680,7 @@ func cloneSemifinalStartAuthority(value gameusecase.StartAuthority) gameusecase.
 	return clone
 }
 
-func cloneSemifinalStartRecord(value gameusecase.StartRecord) gameusecase.StartRecord {
+func cloneSemifinalStartRecord(value gamestart.StartRecord) gamestart.StartRecord {
 	clone := value
 	clone.Wave = cloneSemifinalWave(value.Wave)
 	clone.ReadinessRevisions = cloneSemifinalReadinessRevisions(value.ReadinessRevisions)
@@ -707,7 +709,7 @@ func cloneSemifinalStartedGame(value gamedomain.Started) gamedomain.Started {
 	return clone
 }
 
-func cloneSemifinalSubmissionAuthority(value gameusecase.SubmissionAuthority) gameusecase.SubmissionAuthority {
+func cloneSemifinalSubmissionAuthority(value gamesubmission.SubmissionAuthority) gamesubmission.SubmissionAuthority {
 	clone := value
 	clone.StartedGame = cloneSemifinalStartedGame(value.StartedGame)
 	clone.ConnectedParticipantIDs = append([]uuid.UUID(nil), value.ConnectedParticipantIDs...)
@@ -715,7 +717,7 @@ func cloneSemifinalSubmissionAuthority(value gameusecase.SubmissionAuthority) ga
 	return clone
 }
 
-func cloneSemifinalSettlementAuthority(value gameusecase.SettlementAuthority) gameusecase.SettlementAuthority {
+func cloneSemifinalSettlementAuthority(value gamesettlement.SettlementAuthority) gamesettlement.SettlementAuthority {
 	clone := value
 	clone.StartedGame = cloneSemifinalStartedGame(value.StartedGame)
 	clone.Submissions = append([]gamedomain.Submission(nil), value.Submissions...)
@@ -727,7 +729,7 @@ func cloneSemifinalSettlementAuthority(value gameusecase.SettlementAuthority) ga
 	return clone
 }
 
-func cloneSemifinalSettlementRecord(value gameusecase.SettlementRecord) gameusecase.SettlementRecord {
+func cloneSemifinalSettlementRecord(value gamesettlement.SettlementRecord) gamesettlement.SettlementRecord {
 	clone := value
 	clone.Game = cloneSemifinalGame(value.Game)
 	clone.SettlementGameResultRevision.PreviousRevisionID = cloneSemifinalResultRevisionPointer(value.SettlementGameResultRevision.PreviousRevisionID)

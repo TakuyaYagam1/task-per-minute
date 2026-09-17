@@ -9,7 +9,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
 	seriesdomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/series"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gamepause "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause"
 )
 
 func TestTournamentAdminNormalConnectedResumeLeavesOnlyDisconnectedGamePaused(t *testing.T) {
@@ -21,22 +21,22 @@ func TestTournamentAdminNormalConnectedResumeLeavesOnlyDisconnectedGamePaused(t 
 	participants := [4]uuid.UUID{uuid.New(), uuid.New(), uuid.New(), uuid.New()}
 	seriesResume := domain.SeriesStateActive
 	gameResume := domain.GameStateActive
-	paused := gameusecase.NormalPauseRecord{Graph: gameusecase.PauseGraph{
-		Series: []gameusecase.PauseSeries{
+	paused := gamepause.NormalPauseRecord{Graph: gamepause.PauseGraph{
+		Series: []gamepause.PauseSeries{
 			{Execution: seriesdomain.Execution{Series: domain.Series{ID: firstSeriesID, FirstParticipantID: participants[0], SecondParticipantID: participants[1], State: domain.SeriesStateTechnicalPause}, ResumeState: &seriesResume}, Revision: 2},
 			{Execution: seriesdomain.Execution{Series: domain.Series{ID: secondSeriesID, FirstParticipantID: participants[2], SecondParticipantID: participants[3], State: domain.SeriesStateTechnicalPause}, ResumeState: &seriesResume}, Revision: 2},
 		},
-		Games: []gameusecase.PauseGame{
+		Games: []gamepause.PauseGame{
 			{SeriesID: firstSeriesID, Game: domain.Game{ID: firstGameID, State: domain.GameStatePaused}, Revision: 2, ResumeState: &gameResume},
 			{SeriesID: secondSeriesID, Game: domain.Game{ID: secondGameID, State: domain.GameStatePaused}, Revision: 2, ResumeState: &gameResume},
 		},
-		FrozenDeadlines: []gameusecase.PauseFrozenDeadline{
-			{Kind: gameusecase.PauseDeadlineGame, OwnerID: firstGameID, Remaining: time.Minute, Revision: 1},
-			{Kind: gameusecase.PauseDeadlineGame, OwnerID: secondGameID, Remaining: 2 * time.Minute, Revision: 1},
+		FrozenDeadlines: []gamepause.PauseFrozenDeadline{
+			{Kind: gamepause.PauseDeadlineGame, OwnerID: firstGameID, Remaining: time.Minute, Revision: 1},
+			{Kind: gamepause.PauseDeadlineGame, OwnerID: secondGameID, Remaining: 2 * time.Minute, Revision: 1},
 		},
 	}}
-	presence := gameusecase.PauseResumePresenceRecord{
-		Command: gameusecase.PauseResumePresenceCommand{Presence: []pausedomain.PausePresence{
+	presence := gamepause.PauseResumePresenceRecord{
+		Command: gamepause.PauseResumePresenceCommand{Presence: []pausedomain.PausePresence{
 			{ParticipantID: participants[0], State: pausedomain.PresenceStateDisconnected},
 			{ParticipantID: participants[1], State: pausedomain.PresenceStateConnected},
 			{ParticipantID: participants[2], State: pausedomain.PresenceStateConnected},
@@ -70,9 +70,9 @@ func TestTournamentAdminNormalPausePresenceProjectionRetainsSuspendedSource(t *t
 	firstID, secondID := uuid.New(), uuid.New()
 	sourceID, unrelatedID := uuid.New(), uuid.New()
 	normalPauseID := uuid.New()
-	resume := gameusecase.PauseResumeAuthority{Pause: gameusecase.NormalPauseRecord{
+	resume := gamepause.PauseResumeAuthority{Pause: gamepause.NormalPauseRecord{
 		PauseID: normalPauseID,
-		Graph: gameusecase.PauseGraph{
+		Graph: gamepause.PauseGraph{
 			Counters: []pausedomain.PauseReconnectCounter{
 				{PauseID: earlierPauseID, ParticipantID: firstID, Used: 1, Revision: 3},
 				{PauseID: gamePauseID, ParticipantID: firstID, Revision: 1},
@@ -83,7 +83,7 @@ func TestTournamentAdminNormalPausePresenceProjectionRetainsSuspendedSource(t *t
 				{ID: unrelatedID, PauseID: unrelatedPauseID, ParticipantID: firstID, Revision: 1},
 			},
 		},
-		SuspendedReconnect: []gameusecase.PauseChildRevision{{ID: sourceID, Revision: 1}},
+		SuspendedReconnect: []gamepause.PauseChildRevision{{ID: sourceID, Revision: 1}},
 	}}
 	resume.Counters = append([]pausedomain.PauseReconnectCounter(nil), resume.Pause.Graph.Counters...)
 	resume.Reconnect = append([]pausedomain.PauseReconnectInterval(nil), resume.Pause.Graph.Reconnect...)
