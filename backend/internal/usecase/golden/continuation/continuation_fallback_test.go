@@ -7,7 +7,9 @@ import (
 	"time"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
+	goldenstate "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/state"
+	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/continuation"
+	goldenwave "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/wave"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -27,9 +29,9 @@ func TestGoldenContinuationFallbackAndReserves(t *testing.T) {
 	repository := newTask049ContinuationHarness(t, state, terminal, positions, sentinel)
 	unresolved := task049Unresolved(terminal)
 	require.GreaterOrEqual(t, len(unresolved), 2)
-	private := make([]goldenusecase.GoldenPrivateAssignmentCommand, len(unresolved))
+	private := make([]goldenwave.GoldenPrivateAssignmentCommand, len(unresolved))
 	for index, participantID := range unresolved {
-		private[index] = goldenusecase.GoldenPrivateAssignmentCommand{
+		private[index] = goldenwave.GoldenPrivateAssignmentCommand{
 			ParticipantID: participantID, AssignmentID: continuationTask049ID(12120 + index),
 		}
 	}
@@ -81,9 +83,9 @@ func TestGoldenContinuationFallbackAndReserves(t *testing.T) {
 			localCommand.ExpectedPositions = localPositions.Expectation()
 			localCommand.ExpectedSwissPoints = localSentinel
 			remaining := task049Unresolved(localTerminal)
-			localCommand.PrivateAssignments = make([]goldenusecase.GoldenPrivateAssignmentCommand, len(remaining))
+			localCommand.PrivateAssignments = make([]goldenwave.GoldenPrivateAssignmentCommand, len(remaining))
 			for index, participantID := range remaining {
-				localCommand.PrivateAssignments[index] = goldenusecase.GoldenPrivateAssignmentCommand{
+				localCommand.PrivateAssignments[index] = goldenwave.GoldenPrivateAssignmentCommand{
 					ParticipantID: participantID, AssignmentID: uuid.New(),
 				}
 			}
@@ -121,7 +123,7 @@ func TestGoldenContinuationFallbackAndReserves(t *testing.T) {
 			},
 		}
 		exhaustedState.PayloadDigest = [sha256.Size]byte{}
-		exhaustedState, buildErr := goldenusecase.BuildGoldenState(exhaustedState)
+		exhaustedState, buildErr := goldenstate.BuildGoldenState(exhaustedState)
 		require.NoError(t, buildErr)
 		waveRepository := continuationNewGoldenWaveRepositoryHarness(t, exhaustedState)
 		exhaustedExecution := continuationTask048OpenGoldenExecution(t, waveRepository, exhaustedState, exhaustedOpenedAt, 30000)
@@ -129,7 +131,7 @@ func TestGoldenContinuationFallbackAndReserves(t *testing.T) {
 		exhaustedStartedAt := exhaustedOpenedAt.Add(20 * time.Second)
 		authority := continuationTask048AuthorityLease(exhaustedStartedAt, exhaustedState.Scope.TournamentID)
 		waveRepository.setAuthority(authority, exhaustedStartedAt)
-		started, startedChanged, startErr := goldenusecase.NewGoldenStartUseCase(
+		started, startedChanged, startErr := goldenwave.NewGoldenStartUseCase(
 			waveRepository,
 			continuationNewGoldenClock(t, exhaustedStartedAt),
 		).Start(t.Context(), continuationTask048StartCommand(exhaustedExecution, authority, 30200))
@@ -140,9 +142,9 @@ func TestGoldenContinuationFallbackAndReserves(t *testing.T) {
 		exhaustedTerminal, exhaustedPositions, exhaustedSentinel := task049TerminalFixture(t, *started, 1, 12810)
 		local := newTask049ContinuationHarness(t, exhaustedState, exhaustedTerminal, exhaustedPositions, exhaustedSentinel)
 		exhaustedUnresolved := task049Unresolved(exhaustedTerminal)
-		exhaustedPrivate := make([]goldenusecase.GoldenPrivateAssignmentCommand, len(exhaustedUnresolved))
+		exhaustedPrivate := make([]goldenwave.GoldenPrivateAssignmentCommand, len(exhaustedUnresolved))
 		for index, participantID := range exhaustedUnresolved {
-			exhaustedPrivate[index] = goldenusecase.GoldenPrivateAssignmentCommand{
+			exhaustedPrivate[index] = goldenwave.GoldenPrivateAssignmentCommand{
 				ParticipantID: participantID, AssignmentID: continuationTask049ID(13420 + index),
 			}
 		}
@@ -205,7 +207,7 @@ func TestGoldenContinuationFallbackAndReserves(t *testing.T) {
 		localStartedAt := secondOpenedAt.Add(10 * time.Second)
 		authority := continuationTask048AuthorityLease(localStartedAt, localState.Scope.TournamentID)
 		waveRepository.setAuthority(authority, localStartedAt)
-		started, startedChanged, startErr := goldenusecase.NewGoldenStartUseCase(
+		started, startedChanged, startErr := goldenwave.NewGoldenStartUseCase(
 			waveRepository,
 			continuationNewGoldenClock(t, localStartedAt),
 		).Start(t.Context(), continuationTask048StartCommand(localExecution, authority, 22200))
@@ -216,9 +218,9 @@ func TestGoldenContinuationFallbackAndReserves(t *testing.T) {
 		localUnresolved := task049Unresolved(localTerminal)
 		require.Len(t, localUnresolved, 2)
 		require.NotContains(t, localUnresolved, excludedID)
-		localPrivate := make([]goldenusecase.GoldenPrivateAssignmentCommand, len(localUnresolved))
+		localPrivate := make([]goldenwave.GoldenPrivateAssignmentCommand, len(localUnresolved))
 		for index, participantID := range localUnresolved {
-			localPrivate[index] = goldenusecase.GoldenPrivateAssignmentCommand{
+			localPrivate[index] = goldenwave.GoldenPrivateAssignmentCommand{
 				ParticipantID: participantID, AssignmentID: continuationTask049ID(13020 + index),
 			}
 		}

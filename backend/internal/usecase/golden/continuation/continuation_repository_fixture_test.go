@@ -8,8 +8,13 @@ import (
 	"time"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
-	goldenmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/mocks"
+	goldenattempt "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/attempt"
+	goldencontinuation "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/continuation"
+	goldenplan "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/plan"
+	goldenstate "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/state"
+	goldensubmission "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/submission"
+	goldenwave "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/wave"
+	goldenmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/continuation/mocks"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
@@ -17,14 +22,14 @@ import (
 )
 
 type task049ContinuationHarnessState struct {
-	State       goldenusecase.GoldenState
-	Terminal    goldenusecase.GoldenAttemptCommitRecord
-	Positions   goldenusecase.GoldenPositionLedger
-	SwissPoints goldenusecase.GoldenSwissPointLedgerSentinel
-	Parent      *goldenusecase.GoldenContinuationRecord
-	Current     *goldenusecase.GoldenContinuationRecord
-	Archived    *goldenusecase.GoldenContinuationRecord
-	Replays     map[uuid.UUID]goldenusecase.GoldenContinuationRecord
+	State       goldenstate.GoldenState
+	Terminal    goldenattempt.GoldenAttemptCommitRecord
+	Positions   goldenattempt.GoldenPositionLedger
+	SwissPoints goldenattempt.GoldenSwissPointLedgerSentinel
+	Parent      *goldencontinuation.GoldenContinuationRecord
+	Current     *goldencontinuation.GoldenContinuationRecord
+	Archived    *goldencontinuation.GoldenContinuationRecord
+	Replays     map[uuid.UUID]goldencontinuation.GoldenContinuationRecord
 	Reserved    map[uuid.UUID]struct{}
 	Consumed    map[uuid.UUID]struct{}
 	Commits     int
@@ -34,36 +39,36 @@ type task049ContinuationHarness struct {
 	*goldenmocks.MockContinuationRepository
 
 	mu            sync.Mutex
-	state         goldenusecase.GoldenState
-	terminal      goldenusecase.GoldenAttemptCommitRecord
-	positions     goldenusecase.GoldenPositionLedger
-	swissPoints   goldenusecase.GoldenSwissPointLedgerSentinel
-	parent        *goldenusecase.GoldenContinuationRecord
-	current       *goldenusecase.GoldenContinuationRecord
-	archived      *goldenusecase.GoldenContinuationRecord
-	replays       map[uuid.UUID]goldenusecase.GoldenContinuationRecord
+	state         goldenstate.GoldenState
+	terminal      goldenattempt.GoldenAttemptCommitRecord
+	positions     goldenattempt.GoldenPositionLedger
+	swissPoints   goldenattempt.GoldenSwissPointLedgerSentinel
+	parent        *goldencontinuation.GoldenContinuationRecord
+	current       *goldencontinuation.GoldenContinuationRecord
+	archived      *goldencontinuation.GoldenContinuationRecord
+	replays       map[uuid.UUID]goldencontinuation.GoldenContinuationRecord
 	reserved      map[uuid.UUID]struct{}
 	consumed      map[uuid.UUID]struct{}
 	loadError     error
 	commitError   error
 	commits       int
-	returnRecord  *goldenusecase.GoldenContinuationRecord
+	returnRecord  *goldencontinuation.GoldenContinuationRecord
 	returnChanged bool
 	beforeCommit  func()
-	planOverride  *goldenusecase.ExactPlan
+	planOverride  *goldenplan.ExactPlan
 }
 
 func newTask049ContinuationHarness(
 	t *testing.T,
-	state goldenusecase.GoldenState,
-	terminal goldenusecase.GoldenAttemptCommitRecord,
-	positions goldenusecase.GoldenPositionLedger,
-	sentinel goldenusecase.GoldenSwissPointLedgerSentinel,
+	state goldenstate.GoldenState,
+	terminal goldenattempt.GoldenAttemptCommitRecord,
+	positions goldenattempt.GoldenPositionLedger,
+	sentinel goldenattempt.GoldenSwissPointLedgerSentinel,
 ) *task049ContinuationHarness {
 	t.Helper()
 	harness := &task049ContinuationHarness{
 		state: state.Snapshot(), terminal: terminal.Snapshot(), positions: positions.Snapshot(),
-		swissPoints: sentinel, replays: make(map[uuid.UUID]goldenusecase.GoldenContinuationRecord),
+		swissPoints: sentinel, replays: make(map[uuid.UUID]goldencontinuation.GoldenContinuationRecord),
 		reserved: make(map[uuid.UUID]struct{}), consumed: make(map[uuid.UUID]struct{}),
 	}
 	repository := goldenmocks.NewMockContinuationRepository(t)
@@ -84,7 +89,7 @@ func (r *task049ContinuationHarness) findContinuation(
 	_ context.Context,
 	_ uuid.UUID,
 	commandID uuid.UUID,
-) (*goldenusecase.GoldenContinuationRecord, error) {
+) (*goldencontinuation.GoldenContinuationRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if replay, found := r.replays[commandID]; found {
@@ -96,14 +101,14 @@ func (r *task049ContinuationHarness) findContinuation(
 
 func (r *task049ContinuationHarness) loadAuthority(
 	_ context.Context,
-	scope goldenusecase.GoldenStateScope,
-) (goldenusecase.GoldenContinuationAuthority, error) {
+	scope goldenstate.GoldenStateScope,
+) (goldencontinuation.GoldenContinuationAuthority, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.loadError != nil {
-		return goldenusecase.GoldenContinuationAuthority{}, r.loadError
+		return goldencontinuation.GoldenContinuationAuthority{}, r.loadError
 	}
-	authority := goldenusecase.GoldenContinuationAuthority{
+	authority := goldencontinuation.GoldenContinuationAuthority{
 		Scope: scope, State: r.state.Snapshot(), Plan: r.state.ExactPlan.Snapshot(),
 		Terminal: r.terminal.Snapshot(), Positions: r.positions.Snapshot(), SwissPoints: r.swissPoints,
 	}
@@ -126,8 +131,8 @@ func (r *task049ContinuationHarness) loadAuthority(
 
 func (r *task049ContinuationHarness) commitContinuation(
 	_ context.Context,
-	record goldenusecase.GoldenContinuationRecord,
-) (*goldenusecase.GoldenContinuationRecord, bool, error) {
+	record goldencontinuation.GoldenContinuationRecord,
+) (*goldencontinuation.GoldenContinuationRecord, bool, error) {
 	if r.beforeCommit != nil {
 		r.beforeCommit()
 	}
@@ -168,9 +173,9 @@ func (r *task049ContinuationHarness) commitContinuation(
 }
 
 func (r *task049ContinuationHarness) advanceTerminal(
-	parent goldenusecase.GoldenContinuationRecord,
-	terminal goldenusecase.GoldenAttemptCommitRecord,
-	positions goldenusecase.GoldenPositionLedger,
+	parent goldencontinuation.GoldenContinuationRecord,
+	terminal goldenattempt.GoldenAttemptCommitRecord,
+	positions goldenattempt.GoldenPositionLedger,
 ) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -183,7 +188,7 @@ func (r *task049ContinuationHarness) advanceTerminal(
 }
 
 func task049ContinuationParentMatches(
-	parent *goldenusecase.GoldenContinuationRecord,
+	parent *goldencontinuation.GoldenContinuationRecord,
 	expectedID uuid.UUID,
 	expectedDigest [sha256.Size]byte,
 ) bool {
@@ -212,7 +217,7 @@ func (r *task049ContinuationHarness) restoreCurrent() {
 	}
 }
 
-func (r *task049ContinuationHarness) archivedSnapshot() goldenusecase.GoldenContinuationRecord {
+func (r *task049ContinuationHarness) archivedSnapshot() goldencontinuation.GoldenContinuationRecord {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.archived != nil {
@@ -232,7 +237,7 @@ func (r *task049ContinuationHarness) snapshotState() task049ContinuationHarnessS
 	defer r.mu.Unlock()
 	state := task049ContinuationHarnessState{
 		State: r.state.Snapshot(), Terminal: r.terminal.Snapshot(), Positions: r.positions.Snapshot(),
-		SwissPoints: r.swissPoints, Replays: make(map[uuid.UUID]goldenusecase.GoldenContinuationRecord, len(r.replays)),
+		SwissPoints: r.swissPoints, Replays: make(map[uuid.UUID]goldencontinuation.GoldenContinuationRecord, len(r.replays)),
 		Reserved: make(map[uuid.UUID]struct{}, len(r.reserved)),
 		Consumed: make(map[uuid.UUID]struct{}, len(r.consumed)), Commits: r.commits,
 	}
@@ -310,43 +315,43 @@ func task049AwaitContinuationCompletions(
 
 func task049TerminalFixture(
 	t *testing.T,
-	execution goldenusecase.GoldenWaveExecution,
+	execution goldenwave.GoldenWaveExecution,
 	solved int,
 	base int,
-) (goldenusecase.GoldenAttemptCommitRecord, goldenusecase.GoldenPositionLedger, goldenusecase.GoldenSwissPointLedgerSentinel) {
+) (goldenattempt.GoldenAttemptCommitRecord, goldenattempt.GoldenPositionLedger, goldenattempt.GoldenSwissPointLedgerSentinel) {
 	t.Helper()
 	scope := continuationTask049SubmissionScope(execution)
-	ledger, err := goldenusecase.NewGoldenSubmissionLedger(scope, continuationTask049ID(base))
+	ledger, err := goldensubmission.NewGoldenSubmissionLedger(scope, continuationTask049ID(base))
 	require.NoError(t, err)
 	submissionRepository := continuationNewTask049SubmissionHarness(t, execution, ledger, execution.Start.StartedAt.Add(time.Second))
 	current := ledger
 	for index, participantID := range execution.Membership.ParticipantIDs[:solved] {
 		verification := continuationTask049Verification(scope, execution, participantID, base+10+index*10)
 		submissionRepository.verifications[verification.ID] = verification
-		command := goldenusecase.GoldenSubmissionCommand{
+		command := goldensubmission.GoldenSubmissionCommand{
 			Scope: scope, CommandID: continuationTask049ID(base + 40 + index*10),
 			ActorParticipantID: participantID, ParticipantID: participantID,
 			VerificationID: verification.ID, ExpectedExecution: execution.Expectation(),
 			NextLedgerRevisionID: continuationTask049ID(base + 41 + index*10),
 		}
-		updated, changed, submitErr := goldenusecase.NewGoldenSubmissionUseCase(submissionRepository).Submit(t.Context(), command)
+		updated, changed, submitErr := goldensubmission.NewGoldenSubmissionUseCase(submissionRepository).Submit(t.Context(), command)
 		require.NoError(t, submitErr)
 		require.True(t, changed)
 		current = *updated
 	}
-	positions, err := goldenusecase.NewGoldenPositionLedger(
+	positions, err := goldenattempt.NewGoldenPositionLedger(
 		execution.Scope, execution.Group.PositionFrom, execution.Group.PositionTo, continuationTask049ID(base+70),
 	)
 	require.NoError(t, err)
 	sentinel := continuationTask049SwissPointSentinel(base + 71)
 	repository := continuationNewTask049CommitHarness(t, submissionRepository, current, positions, sentinel)
-	command := goldenusecase.GoldenAttemptCommitCommand{
+	command := goldenattempt.GoldenAttemptCommitCommand{
 		Scope: scope, CommandID: continuationTask049ID(base + 80), CommitID: continuationTask049ID(base + 81),
 		ExpectedExecution: execution.Expectation(), ExpectedSubmissions: current.Expectation(),
 		ExpectedPositions: positions.Expectation(), ExpectedSwissPoints: sentinel,
-		NextPositionRevisionID: continuationTask049ID(base + 82), Reason: goldenusecase.GoldenAttemptTerminalDeadline,
+		NextPositionRevisionID: continuationTask049ID(base + 82), Reason: goldenattempt.GoldenAttemptTerminalDeadline,
 	}
-	record, changed, err := goldenusecase.NewGoldenAttemptCommitUseCase(
+	record, changed, err := goldenattempt.NewGoldenAttemptCommitUseCase(
 		repository,
 		continuationNewGoldenClock(t, execution.Start.Deadline),
 	).CommitAttempt(t.Context(), command)
@@ -356,22 +361,22 @@ func task049TerminalFixture(
 }
 
 func task049ContinuationCommand(
-	terminal goldenusecase.GoldenAttemptCommitRecord,
-	state goldenusecase.GoldenState,
-	positions goldenusecase.GoldenPositionLedger,
-	sentinel goldenusecase.GoldenSwissPointLedgerSentinel,
-	parent *goldenusecase.GoldenContinuationRecord,
+	terminal goldenattempt.GoldenAttemptCommitRecord,
+	state goldenstate.GoldenState,
+	positions goldenattempt.GoldenPositionLedger,
+	sentinel goldenattempt.GoldenSwissPointLedgerSentinel,
+	parent *goldencontinuation.GoldenContinuationRecord,
 	base int,
-) goldenusecase.GoldenContinuationCommand {
+) goldencontinuation.GoldenContinuationCommand {
 	unresolved := task049Unresolved(terminal)
-	private := make([]goldenusecase.GoldenPrivateAssignmentCommand, len(unresolved))
+	private := make([]goldenwave.GoldenPrivateAssignmentCommand, len(unresolved))
 	for index, participantID := range unresolved {
-		private[index] = goldenusecase.GoldenPrivateAssignmentCommand{
+		private[index] = goldenwave.GoldenPrivateAssignmentCommand{
 			ParticipantID: participantID,
 			AssignmentID:  continuationTask049ID(base + 20 + index),
 		}
 	}
-	command := goldenusecase.GoldenContinuationCommand{
+	command := goldencontinuation.GoldenContinuationCommand{
 		Scope: terminal.Scope.State, CommandID: continuationTask049ID(base), ContinuationID: continuationTask049ID(base + 1),
 		ExpectedTerminalID: terminal.ID, ExpectedTerminalDigest: terminal.PayloadDigest,
 		ExpectedState: state.Expectation(), ExpectedPlan: state.Plan,
@@ -387,7 +392,7 @@ func task049ContinuationCommand(
 }
 
 func task049ReplaceContinuationParticipant(
-	record *goldenusecase.GoldenContinuationRecord,
+	record *goldencontinuation.GoldenContinuationRecord,
 	from uuid.UUID,
 	to uuid.UUID,
 ) {
@@ -409,7 +414,7 @@ func task049ReplaceContinuationParticipant(
 }
 
 func task049ReplaceTerminalParticipant(
-	record *goldenusecase.GoldenAttemptCommitRecord,
+	record *goldenattempt.GoldenAttemptCommitRecord,
 	from uuid.UUID,
 	to uuid.UUID,
 ) {

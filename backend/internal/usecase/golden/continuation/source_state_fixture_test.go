@@ -6,7 +6,8 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	assignmentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/assignment"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
+	goldenplan "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/plan"
+	goldenstate "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/state"
 	swissusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/swiss"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -30,16 +31,16 @@ func continuationMustGoldenPlanProjection(
 	revisionID domain.DerivedRevisionID,
 	revisionNo int,
 	standings []swissusecase.NormalStanding,
-) goldenusecase.StandingsProjection {
+) goldenplan.StandingsProjection {
 	tb.Helper()
-	source, err := goldenusecase.NewStandingsProjection(
+	source, err := goldenplan.NewStandingsProjection(
 		tournamentID, projectionID, revisionID, revisionNo, nil, true, standings,
 	)
 	require.NoError(tb, err)
 	return source
 }
 
-func continuationGoldenPlanExact(tb testing.TB) (goldenusecase.Authority, goldenusecase.Command) {
+func continuationGoldenPlanExact(tb testing.TB) (goldenplan.Authority, goldenplan.Command) {
 	tb.Helper()
 	now := time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC)
 	tournamentID := continuationGoldenPlanID(400)
@@ -47,50 +48,50 @@ func continuationGoldenPlanExact(tb testing.TB) (goldenusecase.Authority, golden
 		tb, tournamentID, continuationGoldenPlanID(401), continuationGoldenPlanRevisionID(402), 1,
 		continuationGoldenPlanStandings([]int{10, 10, 9, 9, 9, 7}),
 	)
-	partition, err := goldenusecase.PartitionTies(source)
+	partition, err := goldenplan.PartitionTies(source)
 	require.NoError(tb, err)
 	seeds := partition.Groups()
-	groups := make([]goldenusecase.GroupAuthority, len(seeds))
+	groups := make([]goldenplan.GroupAuthority, len(seeds))
 	for index, seed := range seeds {
-		command := goldenusecase.GroupRevisionCommand{
+		command := goldenplan.GroupRevisionCommand{
 			TournamentID: tournamentID, GroupID: continuationGoldenPlanID(410 + index),
 			RevisionID: continuationGoldenPlanRevisionID(420 + index), RevisionNo: 1,
 			ExpectedSourceRevisionID:    source.RevisionID,
 			ExpectedSourcePayloadDigest: source.PayloadDigest,
 			PositionFrom:                seed.PositionFrom, PositionTo: seed.PositionTo,
 		}
-		revision, buildErr := goldenusecase.BuildGroupRevision(command, source, seed, nil, nil)
+		revision, buildErr := goldenplan.BuildGroupRevision(command, source, seed, nil, nil)
 		require.NoError(tb, buildErr)
 		members := revision.Members()
 		active := make([]uuid.UUID, len(members))
 		for memberIndex, member := range members {
 			active[memberIndex] = member.ParticipantID
 		}
-		groups[index] = goldenusecase.GroupAuthority{Revision: revision, ActiveParticipantIDs: active}
+		groups[index] = goldenplan.GroupAuthority{Revision: revision, ActiveParticipantIDs: active}
 	}
 
 	poolID := continuationGoldenPlanID(430)
-	candidates := make([]goldenusecase.TaskVersion, 6)
+	candidates := make([]goldenplan.TaskVersion, 6)
 	versions := make([]domain.TaskVersionRef, len(candidates))
 	for index := range candidates {
 		task := continuationGoldenPlanTask(500 + index)
 		version := 2
 		versions[index] = domain.TaskVersionRef{TaskID: task.ID, Version: version}
-		candidates[index] = goldenusecase.TaskVersion{
+		candidates[index] = goldenplan.TaskVersion{
 			PoolRevisionID: poolID, Version: version, Task: task,
 			Health: domain.TaskVersionHealth{
 				TaskID: task.ID, Version: version, PoolRevisionID: poolID,
 				PoolKind: domain.AssignmentTaskKindGolden, Exists: true, Enabled: true,
 				Healthy: true, MutationLocked: true,
 			},
-			ArtifactDigest: goldenusecase.TaskArtifactDigest(task, version),
+			ArtifactDigest: goldenplan.TaskArtifactDigest(task, version),
 		}
 	}
 
-	participants := make([]goldenusecase.ParticipantReservation, 0, 5)
+	participants := make([]goldenplan.ParticipantReservation, 0, 5)
 	for _, group := range groups {
 		for _, participantID := range group.ActiveParticipantIDs {
-			participants = append(participants, goldenusecase.ParticipantReservation{
+			participants = append(participants, goldenplan.ParticipantReservation{
 				ParticipantID: participantID, PlayerID: continuationGoldenPlanID(1000 + len(participants)),
 				Reservation: domain.ParticipantReservation{
 					PlayerID: continuationGoldenPlanID(1000 + len(participants)), ReservationID: continuationGoldenPlanID(1100 + len(participants)),
@@ -108,9 +109,9 @@ func continuationGoldenPlanExact(tb testing.TB) (goldenusecase.Authority, golden
 			TaskID:        versions[index].TaskID, Version: 1,
 		})
 	}
-	authority, err := goldenusecase.BuildAuthority(goldenusecase.Authority{
-		Scope: goldenusecase.Scope{TournamentID: tournamentID, PlanSetID: continuationGoldenPlanID(440)},
-		Revisions: goldenusecase.Revisions{
+	authority, err := goldenplan.BuildAuthority(goldenplan.Authority{
+		Scope: goldenplan.Scope{TournamentID: tournamentID, PlanSetID: continuationGoldenPlanID(440)},
+		Revisions: goldenplan.Revisions{
 			SourceProjectionRevisionID: source.RevisionID,
 			GroupSetRevisionID:         continuationGoldenPlanID(441), GroupSetRevision: 1,
 			PoolRevisionID: poolID, PoolRevision: 1,
@@ -127,7 +128,7 @@ func continuationGoldenPlanExact(tb testing.TB) (goldenusecase.Authority, golden
 	})
 	require.NoError(tb, err)
 
-	groupCommands := make([]goldenusecase.GroupCommand, len(groups))
+	groupCommands := make([]goldenplan.GroupCommand, len(groups))
 	for groupIndex, group := range groups {
 		groupCommands[groupIndex].GroupID = group.Revision.GroupID()
 		groupCommands[groupIndex].GroupRevisionID = group.Revision.RevisionID()
@@ -138,7 +139,7 @@ func continuationGoldenPlanExact(tb testing.TB) (goldenusecase.Authority, golden
 			groupCommands[groupIndex].SnapshotIDs[edgeIndex] = continuationGoldenPlanID(base + 3)
 		}
 	}
-	command := goldenusecase.Command{
+	command := goldenplan.Command{
 		Scope: authority.Scope, PlanID: continuationGoldenPlanID(700), PlanRevisionID: continuationGoldenPlanID(701),
 		Expected: authority.Expectation(), GroupCommands: groupCommands, CreatedAt: now,
 	}
@@ -173,11 +174,11 @@ func continuationGoldenPlanSuffix(value int) string {
 	return string(encoded)
 }
 
-func continuationGoldenStateFixture(t *testing.T, openedAt time.Time) goldenusecase.GoldenState {
+func continuationGoldenStateFixture(t *testing.T, openedAt time.Time) goldenstate.GoldenState {
 	t.Helper()
 
 	authority, command := continuationGoldenPlanExact(t)
-	exactPlan, err := goldenusecase.BuildExactPlan(command, authority)
+	exactPlan, err := goldenplan.BuildExactPlan(command, authority)
 	require.NoError(t, err)
 	require.GreaterOrEqual(t, len(exactPlan.Groups), 2)
 	groupPlan := exactPlan.Groups[1]
@@ -201,21 +202,21 @@ func continuationGoldenStateFixture(t *testing.T, openedAt time.Time) goldenusec
 			ParticipantIDs: participantIDs,
 		}},
 	}
-	state, err := goldenusecase.BuildGoldenState(goldenusecase.GoldenState{
-		Scope: goldenusecase.GoldenStateScope{
+	state, err := goldenstate.BuildGoldenState(goldenstate.GoldenState{
+		Scope: goldenstate.GoldenStateScope{
 			TournamentID: topology.TournamentID(), GroupID: topology.GroupID(),
 			GroupRevisionID: topology.RevisionID(),
 		},
 		Topology: topology, ExactPlan: exactPlan, Group: group,
-		Membership: goldenusecase.GoldenMembershipRevision{
+		Membership: goldenstate.GoldenMembershipRevision{
 			RevisionID: continuationGoldenWaveFixtureID(22), Revision: 1,
 		},
 		RevisionID: continuationGoldenWaveFixtureID(30), Revision: 1,
-		Windows: []goldenusecase.GoldenReadyWindow{{
+		Windows: []goldenstate.GoldenReadyWindow{{
 			ID: continuationGoldenWaveFixtureID(40), RevisionID: continuationGoldenWaveFixtureID(41), Revision: 1,
 			AttemptID: attemptID, AttemptNo: 1,
 			OpenedAt: openedAt, Deadline: openedAt.Add(30 * time.Second),
-			State:               goldenusecase.GoldenReadyWindowOpen,
+			State:               goldenstate.GoldenReadyWindowOpen,
 			ReadinessRevisionID: continuationGoldenWaveFixtureID(42), ReadinessRevision: 1,
 			PresenceRevisionID: continuationGoldenWaveFixtureID(43), PresenceRevision: 1,
 			PresentParticipantIDs: participantIDs,

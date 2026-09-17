@@ -9,7 +9,8 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
+	goldenstate "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/state"
+	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/wave"
 	goldenmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/wave/mocks"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
@@ -18,7 +19,7 @@ import (
 
 type continuationStartedWaveFixtureState struct {
 	mu        sync.Mutex
-	state     goldenusecase.GoldenState
+	state     goldenstate.GoldenState
 	execution *goldenusecase.GoldenWaveExecution
 	replays   map[uuid.UUID]goldenusecase.GoldenWaveCommandReplay
 }
@@ -26,7 +27,7 @@ type continuationStartedWaveFixtureState struct {
 func continuationNewStartedGoldenFixture(
 	t *testing.T,
 	startedAt time.Time,
-) (goldenusecase.GoldenState, goldenusecase.GoldenWaveExecution) {
+) (goldenstate.GoldenState, goldenusecase.GoldenWaveExecution) {
 	t.Helper()
 
 	openedAt := startedAt.Add(-20 * time.Second)
@@ -35,7 +36,7 @@ func continuationNewStartedGoldenFixture(
 	state.Windows = nil
 	state.Membership.PayloadDigest = [sha256.Size]byte{}
 	state.PayloadDigest = [sha256.Size]byte{}
-	state, err := goldenusecase.BuildGoldenState(state)
+	state, err := goldenstate.BuildGoldenState(state)
 	require.NoError(t, err)
 
 	fixture := &continuationStartedWaveFixtureState{
@@ -45,7 +46,7 @@ func continuationNewStartedGoldenFixture(
 	repository := goldenmocks.NewMockWaveRepository(t)
 	repository.EXPECT().
 		LoadGoldenState(mock.Anything, mock.Anything).
-		RunAndReturn(func(context.Context, goldenusecase.GoldenStateScope) (goldenusecase.GoldenState, error) {
+		RunAndReturn(func(context.Context, goldenstate.GoldenStateScope) (goldenstate.GoldenState, error) {
 			fixture.mu.Lock()
 			defer fixture.mu.Unlock()
 			return fixture.state.Snapshot(), nil
@@ -67,7 +68,7 @@ func continuationNewStartedGoldenFixture(
 		Maybe()
 	repository.EXPECT().
 		LoadGoldenWaveExecution(mock.Anything, mock.Anything).
-		RunAndReturn(func(context.Context, goldenusecase.GoldenStateScope) (*goldenusecase.GoldenWaveExecution, error) {
+		RunAndReturn(func(context.Context, goldenstate.GoldenStateScope) (*goldenusecase.GoldenWaveExecution, error) {
 			fixture.mu.Lock()
 			defer fixture.mu.Unlock()
 			if fixture.execution == nil {
@@ -181,7 +182,7 @@ func continuationNewWaveFixtureClock(t *testing.T, now time.Time) *goldenmocks.M
 	return clock
 }
 
-func continuationTask049StartedFixture(t *testing.T, startedAt time.Time) (goldenusecase.GoldenState, goldenusecase.GoldenWaveExecution) {
+func continuationTask049StartedFixture(t *testing.T, startedAt time.Time) (goldenstate.GoldenState, goldenusecase.GoldenWaveExecution) {
 	t.Helper()
 	return continuationNewStartedGoldenFixture(t, startedAt)
 }

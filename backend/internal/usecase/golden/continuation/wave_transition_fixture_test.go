@@ -9,7 +9,8 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
+	goldenstate "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/state"
+	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/wave"
 	goldenstatemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/state/mocks"
 	goldenmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/wave/mocks"
 
@@ -22,23 +23,23 @@ type continuationGoldenStateRepositoryHarness struct {
 	*goldenstatemocks.MockStateRepository
 
 	mu    sync.Mutex
-	state goldenusecase.GoldenState
+	state goldenstate.GoldenState
 }
 
-func continuationNewGoldenStateRepository(t *testing.T, initial goldenusecase.GoldenState) *continuationGoldenStateRepositoryHarness {
+func continuationNewGoldenStateRepository(t *testing.T, initial goldenstate.GoldenState) *continuationGoldenStateRepositoryHarness {
 	t.Helper()
 
 	harness := &continuationGoldenStateRepositoryHarness{state: initial.Snapshot()}
 	repository := goldenstatemocks.NewMockStateRepository(t)
 	repository.EXPECT().LoadGoldenState(mock.Anything, mock.Anything).RunAndReturn(
-		func(context.Context, goldenusecase.GoldenStateScope) (goldenusecase.GoldenState, error) {
+		func(context.Context, goldenstate.GoldenStateScope) (goldenstate.GoldenState, error) {
 			harness.mu.Lock()
 			defer harness.mu.Unlock()
 			return harness.state.Snapshot(), nil
 		},
 	).Maybe()
 	repository.EXPECT().CommitGoldenState(mock.Anything, mock.Anything).RunAndReturn(
-		func(_ context.Context, commit goldenusecase.GoldenStateCommit) (*goldenusecase.GoldenState, bool, error) {
+		func(_ context.Context, commit goldenstate.GoldenStateCommit) (*goldenstate.GoldenState, bool, error) {
 			harness.mu.Lock()
 			defer harness.mu.Unlock()
 			if !commit.Expected.Equal(harness.state.Expectation()) {
@@ -64,17 +65,17 @@ func continuationNewGoldenStateClock(t *testing.T, now time.Time) *goldenstatemo
 func continuationGoldenAcceptReady(
 	t *testing.T,
 	repository *continuationGoldenStateRepositoryHarness,
-	state goldenusecase.GoldenState,
+	state goldenstate.GoldenState,
 	participantID uuid.UUID,
 	now time.Time,
 	base int,
-) goldenusecase.GoldenState {
+) goldenstate.GoldenState {
 	t.Helper()
 	window := state.Windows[0]
-	ready, changed, err := goldenusecase.NewGoldenParticipationUseCase(
+	ready, changed, err := goldenstate.NewGoldenParticipationUseCase(
 		repository,
 		continuationNewGoldenStateClock(t, now),
-	).AcceptReady(t.Context(), goldenusecase.GoldenReadyCommand{
+	).AcceptReady(t.Context(), goldenstate.GoldenReadyCommand{
 		Scope: state.Scope, CommandID: continuationGoldenWaveFixtureID(base),
 		ActorParticipantID: participantID, ParticipantID: participantID,
 		AttemptID: window.AttemptID, WindowID: window.ID,
@@ -91,14 +92,14 @@ type continuationGoldenWaveRepositoryHarness struct {
 	*goldenmocks.MockWaveRepository
 
 	mu        sync.Mutex
-	state     goldenusecase.GoldenState
+	state     goldenstate.GoldenState
 	execution *goldenusecase.GoldenWaveExecution
 	replays   map[uuid.UUID]goldenusecase.GoldenWaveCommandReplay
 }
 
 func continuationNewGoldenWaveRepositoryHarness(
 	t *testing.T,
-	state goldenusecase.GoldenState,
+	state goldenstate.GoldenState,
 ) *continuationGoldenWaveRepositoryHarness {
 	t.Helper()
 
@@ -109,7 +110,7 @@ func continuationNewGoldenWaveRepositoryHarness(
 	repository := goldenmocks.NewMockWaveRepository(t)
 	repository.EXPECT().
 		LoadGoldenState(mock.Anything, mock.Anything).
-		RunAndReturn(func(context.Context, goldenusecase.GoldenStateScope) (goldenusecase.GoldenState, error) {
+		RunAndReturn(func(context.Context, goldenstate.GoldenStateScope) (goldenstate.GoldenState, error) {
 			harness.mu.Lock()
 			defer harness.mu.Unlock()
 			return harness.state.Snapshot(), nil
@@ -131,7 +132,7 @@ func continuationNewGoldenWaveRepositoryHarness(
 		Maybe()
 	repository.EXPECT().
 		LoadGoldenWaveExecution(mock.Anything, mock.Anything).
-		RunAndReturn(func(context.Context, goldenusecase.GoldenStateScope) (*goldenusecase.GoldenWaveExecution, error) {
+		RunAndReturn(func(context.Context, goldenstate.GoldenStateScope) (*goldenusecase.GoldenWaveExecution, error) {
 			harness.mu.Lock()
 			defer harness.mu.Unlock()
 			if harness.execution == nil {
@@ -172,14 +173,14 @@ func continuationNewGoldenWaveRepositoryHarness(
 
 func (r *continuationGoldenWaveRepositoryHarness) setAuthority(authoritydomain.Lease, time.Time) {}
 
-func continuationTask048GoldenState(t *testing.T, openedAt time.Time) goldenusecase.GoldenState {
+func continuationTask048GoldenState(t *testing.T, openedAt time.Time) goldenstate.GoldenState {
 	t.Helper()
 	state := continuationGoldenStateFixture(t, openedAt)
 	state.Group.Attempts = nil
 	state.Windows = nil
 	state.Membership.PayloadDigest = [sha256.Size]byte{}
 	state.PayloadDigest = [sha256.Size]byte{}
-	built, err := goldenusecase.BuildGoldenState(state)
+	built, err := goldenstate.BuildGoldenState(state)
 	require.NoError(t, err)
 	return built
 }
@@ -187,7 +188,7 @@ func continuationTask048GoldenState(t *testing.T, openedAt time.Time) goldenusec
 func continuationTask048OpenGoldenExecution(
 	t *testing.T,
 	repository *continuationGoldenWaveRepositoryHarness,
-	state goldenusecase.GoldenState,
+	state goldenstate.GoldenState,
 	openedAt time.Time,
 	base int,
 ) goldenusecase.GoldenWaveExecution {
@@ -285,16 +286,16 @@ func continuationTask048StartCommand(
 func continuationGoldenResolveNoShow(
 	t *testing.T,
 	repository *continuationGoldenStateRepositoryHarness,
-	state goldenusecase.GoldenState,
+	state goldenstate.GoldenState,
 	openedAt time.Time,
 	base int,
-) goldenusecase.GoldenState {
+) goldenstate.GoldenState {
 	t.Helper()
 	window := state.Windows[0]
-	resolved, changed, err := goldenusecase.NewGoldenNoShowUseCase(
+	resolved, changed, err := goldenstate.NewGoldenNoShowUseCase(
 		repository,
 		continuationNewGoldenClock(t, window.Deadline.Add(time.Nanosecond)),
-	).Resolve(t.Context(), goldenusecase.GoldenNoShowCommand{
+	).Resolve(t.Context(), goldenstate.GoldenNoShowCommand{
 		Scope: state.Scope, CommandID: continuationGoldenWaveFixtureID(base),
 		AttemptID: window.AttemptID, WindowID: window.ID,
 		ExpectedState: state.Expectation(), ExpectedWindow: window.Expectation(),

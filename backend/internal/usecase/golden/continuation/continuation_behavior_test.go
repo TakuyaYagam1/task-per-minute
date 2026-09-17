@@ -7,7 +7,10 @@ import (
 	"time"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
+	goldenattempt "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/attempt"
+	goldenplan "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/plan"
+	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/continuation"
+	goldenwave "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/wave"
 
 	"github.com/stretchr/testify/require"
 )
@@ -26,9 +29,9 @@ func TestGoldenPartialContinuation(t *testing.T) {
 	repository := newTask049ContinuationHarness(t, state, terminal, positions, sentinel)
 	unresolved := task049Unresolved(terminal)
 	require.GreaterOrEqual(t, len(unresolved), 2)
-	private := make([]goldenusecase.GoldenPrivateAssignmentCommand, len(unresolved))
+	private := make([]goldenwave.GoldenPrivateAssignmentCommand, len(unresolved))
 	for index, participantID := range unresolved {
-		private[index] = goldenusecase.GoldenPrivateAssignmentCommand{
+		private[index] = goldenwave.GoldenPrivateAssignmentCommand{
 			ParticipantID: participantID, AssignmentID: continuationTask049ID(12120 + index),
 		}
 	}
@@ -75,12 +78,12 @@ func TestGoldenPartialContinuation(t *testing.T) {
 		for index := 0; index < 3; index++ {
 			participantID := continuationTask049ID(12140 + index)
 			evidenceDigest := sha256.Sum256([]byte{byte(index + 1)})
-			ordering.Order = append(ordering.Order, goldenusecase.GoldenPositionOrderEntry{
+			ordering.Order = append(ordering.Order, goldenattempt.GoldenPositionOrderEntry{
 				SubmissionID: uint64(index + 2), ParticipantID: participantID,
 				CommittedAt:    ordering.Order[0].CommittedAt.Add(time.Duration(index+1) * time.Nanosecond),
 				EvidenceDigest: evidenceDigest,
 			})
-			overcapacity.Positions.Positions = append(overcapacity.Positions.Positions, goldenusecase.GoldenCommittedPosition{
+		overcapacity.Positions.Positions = append(overcapacity.Positions.Positions, goldenattempt.GoldenCommittedPosition{
 				Position: overcapacity.Positions.PositionFrom + index + 1, ParticipantID: participantID,
 				AttemptID: ordering.AttemptID, AttemptNo: ordering.AttemptNo,
 				SubmissionID: uint64(index + 2), EvidenceDigest: evidenceDigest,
@@ -127,10 +130,10 @@ func TestGoldenPartialContinuation(t *testing.T) {
 		require.Len(t, replayed.Group.Attempts, len(terminal.Group.Attempts)+1)
 
 		baseline := command
-		baseline.PrivateAssignments = append([]goldenusecase.GoldenPrivateAssignmentCommand(nil), command.PrivateAssignments...)
+		baseline.PrivateAssignments = append([]goldenwave.GoldenPrivateAssignmentCommand(nil), command.PrivateAssignments...)
 		competing := command
 		competing.PrivateAssignments = append(
-			[]goldenusecase.GoldenPrivateAssignmentCommand(nil),
+			[]goldenwave.GoldenPrivateAssignmentCommand(nil),
 			command.PrivateAssignments...,
 		)
 		competing.CommandID, competing.ContinuationID = continuationTask049ID(12200), continuationTask049ID(12201)
@@ -157,7 +160,7 @@ func TestGoldenPartialContinuation(t *testing.T) {
 		commands[1].NextAttemptID, commands[1].NextAssignmentID = continuationTask049ID(12242), continuationTask049ID(12243)
 		commands[1].NextAssignmentRevisionID = continuationTask049ID(12244)
 		commands[1].PrivateAssignments = append(
-			[]goldenusecase.GoldenPrivateAssignmentCommand(nil),
+			[]goldenwave.GoldenPrivateAssignmentCommand(nil),
 			command.PrivateAssignments...,
 		)
 		for index := range commands[1].PrivateAssignments {
@@ -244,7 +247,7 @@ func TestGoldenPartialContinuation(t *testing.T) {
 		planCommand.GroupCommands[1].EdgeIDs[1] = continuationTask049ID(12480)
 		planCommand.GroupCommands[1].ReservationIDs[1] = continuationTask049ID(12481)
 		planCommand.GroupCommands[1].SnapshotIDs[1] = continuationTask049ID(12482)
-		alternatePlan, buildErr := goldenusecase.BuildExactPlan(planCommand, planAuthority)
+		alternatePlan, buildErr := goldenplan.BuildExactPlan(planCommand, planAuthority)
 		require.NoError(t, buildErr)
 		require.Equal(t, state.ExactPlan.PlanID, alternatePlan.PlanID)
 		require.Equal(t, state.ExactPlan.PlanRevisionID, alternatePlan.PlanRevisionID)
@@ -268,10 +271,10 @@ func TestGoldenPartialContinuation(t *testing.T) {
 		local.returnRecord = &foreign
 		local.returnChanged = false
 		baseline := command
-		baseline.PrivateAssignments = append([]goldenusecase.GoldenPrivateAssignmentCommand(nil), command.PrivateAssignments...)
+		baseline.PrivateAssignments = append([]goldenwave.GoldenPrivateAssignmentCommand(nil), command.PrivateAssignments...)
 		localCommand := command
 		localCommand.PrivateAssignments = append(
-			[]goldenusecase.GoldenPrivateAssignmentCommand(nil),
+			[]goldenwave.GoldenPrivateAssignmentCommand(nil),
 			command.PrivateAssignments...,
 		)
 		localCommand.CommandID, localCommand.ContinuationID = continuationTask049ID(12500), continuationTask049ID(12501)
@@ -344,7 +347,7 @@ func TestGoldenPartialContinuation(t *testing.T) {
 				local := newTask049ContinuationHarness(t, state, terminal, positions, sentinel)
 				localCommand := command
 				localCommand.PrivateAssignments = append(
-					[]goldenusecase.GoldenPrivateAssignmentCommand(nil),
+					[]goldenwave.GoldenPrivateAssignmentCommand(nil),
 					command.PrivateAssignments...,
 				)
 				localCommand.CommandID, localCommand.ContinuationID = continuationTask049ID(12540+index*20), continuationTask049ID(12541+index*20)
