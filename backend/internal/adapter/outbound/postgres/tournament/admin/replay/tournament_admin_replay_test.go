@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	tournamentadminreplay "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/replay"
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 )
@@ -12,7 +12,7 @@ import (
 func TestTournamentAdminReplayPostgresImplementsWorkflowRepository(t *testing.T) {
 	t.Parallel()
 
-	var repository tournamentadmin.ReplayWorkflowRepository = NewTournamentAdminReplayPostgres(nil)
+	var repository tournamentadminreplay.ReplayWorkflowRepository = NewTournamentAdminReplayPostgres(nil)
 	require.NotNil(t, repository)
 }
 

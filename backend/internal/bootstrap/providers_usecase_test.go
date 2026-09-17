@@ -16,7 +16,10 @@ import (
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
 	correctionmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/correction/mocks"
 	tournamentadminincident "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/incident"
+	tournamentadminlifecyclemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/lifecycle/mocks"
 	tournamentadminmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/mocks"
+	tournamentadminreplay "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/replay"
+	tournamentadminreplaymocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/replay/mocks"
 	tournamentparticipant "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/participant"
 	tournamentparticipantmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/participant/mocks"
 	progressionmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/progression/mocks"
@@ -71,11 +74,11 @@ func TestProvideTournamentAdminReplayProvidesReserveAndReplayPorts(t *testing.T)
 
 	workflow := provideTournamentAdminReplay(
 		tournamentadminmocks.NewMockExecutionTransactionManager(t),
-		tournamentadminmocks.NewMockReplayWorkflowRepository(t),
+		tournamentadminreplaymocks.NewMockReplayWorkflowRepository(t),
 	)
 
-	var reserve tournamentadmin.ReservePort = workflow
-	var replay tournamentadmin.ReplayPort = workflow
+	var reserve tournamentadminreplay.ReservePort = workflow
+	var replay tournamentadminreplay.ReplayPort = workflow
 	require.NotNil(t, reserve)
 	require.NotNil(t, replay)
 }
@@ -84,13 +87,13 @@ func TestProvideTournamentAdminLifecycleRequiresProgression(t *testing.T) {
 	t.Parallel()
 
 	workflow := provideTournamentAdminLifecycle(
-		tournamentadminmocks.NewMockLifecycleTransactionManager(t),
-		tournamentadminmocks.NewMockLifecycleWorkflowRepository(t),
-		tournamentadminmocks.NewMockLifecycleTransitioner(t),
-		tournamentadminmocks.NewMockLifecyclePauser(t),
-		tournamentadminmocks.NewMockLifecycleCanceller(t),
+		tournamentadminlifecyclemocks.NewMockLifecycleTransactionManager(t),
+		tournamentadminlifecyclemocks.NewMockLifecycleWorkflowRepository(t),
+		tournamentadminlifecyclemocks.NewMockLifecycleTransitioner(t),
+		tournamentadminlifecyclemocks.NewMockLifecyclePauser(t),
+		tournamentadminlifecyclemocks.NewMockLifecycleCanceller(t),
 		progressionmocks.NewMockProgressionService(t),
-		tournamentadminmocks.NewMockAdminLifecycleClock(t),
+		tournamentadminlifecyclemocks.NewMockAdminLifecycleClock(t),
 	)
 
 	var port tournamentadmin.LifecyclePort = workflow

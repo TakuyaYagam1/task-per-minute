@@ -1,4 +1,4 @@
-package admin_test
+package lifecycle_test
 
 import (
 	"context"
@@ -11,8 +11,9 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
-	tournamentadminmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/mocks"
+	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/lifecycle"
+	tournamentadminmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/lifecycle/mocks"
+	operationusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/operation"
 	tournamentcancellation "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/cancellation"
 	lifecycleusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/lifecycle"
 	tournamentprogression "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/progression"
@@ -342,7 +343,7 @@ func lifecycleCommandFixture(
 ) tournamentadmin.TournamentActionCommand {
 	return tournamentadmin.TournamentActionCommand{
 		CommandScope: tournamentadmin.CommandScope{
-			Operator:     tournamentadmin.OperatorIdentity{ActorID: uuid.New()},
+			Operator:     operationusecase.OperatorIdentity{ActorID: uuid.New()},
 			TournamentID: authority.Tournament.ID, CommandID: uuid.New(),
 		},
 		ExpectedProjectionRevision: authority.ProjectionRevision, Action: action, Confirmed: true,

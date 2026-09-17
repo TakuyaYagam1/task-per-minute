@@ -14,6 +14,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/audit"
 	incidentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/incident"
 	pairingusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/pairing"
+	replayusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/replay"
 	snapshotusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/snapshot"
 )
 
@@ -271,9 +272,9 @@ type adminCommands struct {
 	tournamentAction TournamentActionCommand
 	wave             WaveCommand
 	noShow           NoShowCommand
-	reserve          ReserveCommand
+	reserve          replayusecase.ReserveCommand
 	forfeit          ForfeitCommand
-	replay           ReplayCommand
+	replay           replayusecase.ReplayCommand
 	correction       CorrectionCommand
 	audit            incidentusecase.AuditQuery
 	incident         incidentusecase.IncidentQuery
@@ -330,7 +331,7 @@ func validAdminCommands() adminCommands {
 			GameResultRevisionIDs: []uuid.UUID{adminTestID(36)}, ScoreRevisionID: adminTestID(37),
 			SeriesResultRevisionID: adminTestID(38),
 		},
-		reserve: ReserveCommand{
+		reserve: replayusecase.ReserveCommand{
 			CommandScope: scope(11), OldWaveID: adminTestID(40), SeriesID: adminTestID(41),
 			SlotID: adminTestID(42), AssignmentID: adminTestID(43), AssignmentAttemptID: adminTestID(44),
 			Confirmed: true, Reason: "approved reserve", ExpectedAuthorityRevision: 1,
@@ -350,7 +351,7 @@ func validAdminCommands() adminCommands {
 			ScoreRevisionID: adminTestID(63), SeriesResultRevisionID: adminTestID(64),
 			AuditEventID: adminTestID(65), OutboxEventID: adminTestID(66), ProjectionRevisionID: adminTestID(67),
 		},
-		replay: ReplayCommand{
+		replay: replayusecase.ReplayCommand{
 			CommandScope: scope(13), OldWaveID: adminTestID(80), SeriesID: adminTestID(81),
 			SlotID: adminTestID(82), AssignmentID: adminTestID(83), FailedGameID: adminTestID(84),
 			Confirmed: true, Reason: "replace failed game", ExpectedAuthorityRevision: 1,

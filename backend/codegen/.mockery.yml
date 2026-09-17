@@ -36,22 +36,26 @@ packages:
       TournamentCancellationRepository:
   github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin:
     interfaces:
-      LifecycleTransactionManager:
-      AdminLifecycleClock:
-      LifecycleTransitioner:
-      LifecyclePauser:
-      LifecycleCanceller:
-      LifecycleWorkflowRepository:
       ExecutionTransactionManager:
       ExecutionWorkflowRepository:
       OperatorResultTransactionManager:
       OperatorResultWorkflowRepository:
       ExecutionAuthorityProvider:
       AdminPostseasonWorkflow:
-      ReplayWorkflowRepository:
       OperationClock:
       OperationObserver:
       AdminService:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/lifecycle:
+    interfaces:
+      LifecycleTransactionManager:
+      AdminLifecycleClock:
+      LifecycleTransitioner:
+      LifecyclePauser:
+      LifecycleCanceller:
+      LifecycleWorkflowRepository:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/replay:
+    interfaces:
+      ReplayWorkflowRepository:
   github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/correction:
     interfaces:
       CorrectionTransactionManager:

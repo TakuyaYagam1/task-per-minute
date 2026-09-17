@@ -16,6 +16,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/audit"
 	incidentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/incident"
 	pairingusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/pairing"
+	replayusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/replay"
 	snapshotusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/snapshot"
 	tournamentpreflight "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/preflight"
 )
@@ -35,9 +36,9 @@ type AdminService interface {
 	ApplyTournamentAction(ctx context.Context, command TournamentActionCommand) (usecase.TournamentView, error)
 	ControlWave(ctx context.Context, command WaveCommand) (WaveView, error)
 	ResolveNoShow(ctx context.Context, command NoShowCommand) error
-	AssignReserve(ctx context.Context, command ReserveCommand) error
+	AssignReserve(ctx context.Context, command replayusecase.ReserveCommand) error
 	RecordForfeit(ctx context.Context, command ForfeitCommand) error
-	ReplayGame(ctx context.Context, command ReplayCommand) error
+	ReplayGame(ctx context.Context, command replayusecase.ReplayCommand) error
 	CorrectGameResult(ctx context.Context, command CorrectionCommand) (CorrectionEvidence, error)
 	ListAudit(ctx context.Context, query incidentusecase.AuditQuery) (audit.AuditPage, error)
 	ExportIncident(ctx context.Context, query incidentusecase.IncidentQuery) (audit.IncidentBundle, error)

@@ -9,6 +9,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/audit"
 	incidentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/incident"
 	pairingusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/pairing"
+	replayusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/replay"
 	snapshotusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/snapshot"
 	tournamentpreflight "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/preflight"
 )
@@ -21,9 +22,9 @@ type AdminDependencies struct {
 	Lifecycle  LifecyclePort
 	Wave       WavePort
 	NoShow     NoShowPort
-	Reserve    ReservePort
+	Reserve    replayusecase.ReservePort
 	Forfeit    ForfeitPort
-	Replay     ReplayPort
+	Replay     replayusecase.ReplayPort
 	Correction CorrectionPort
 	Audit      incidentusecase.AuditPort
 	Incidents  incidentusecase.IncidentSnapshotPort
@@ -39,9 +40,9 @@ type AdminUseCase struct {
 	lifecycle  LifecyclePort
 	wave       WavePort
 	noShow     NoShowPort
-	reserve    ReservePort
+	reserve    replayusecase.ReservePort
 	forfeit    ForfeitPort
-	replay     ReplayPort
+	replay     replayusecase.ReplayPort
 	correction CorrectionPort
 	audit      incidentusecase.AuditPort
 	incidents  incidentusecase.IncidentSnapshotPort
@@ -203,8 +204,8 @@ func (a *AdminUseCase) ResolveNoShow(ctx context.Context, command NoShowCommand)
 	return normalizeAdminError(a.noShow.ResolveNoShow(ctx, command))
 }
 
-func (a *AdminUseCase) AssignReserve(ctx context.Context, command ReserveCommand) error {
-	if ctx == nil || !validReserveCommand(command) {
+func (a *AdminUseCase) AssignReserve(ctx context.Context, command replayusecase.ReserveCommand) error {
+	if ctx == nil || !replayusecase.ValidReserveCommand(command) {
 		return domain.ErrValidation
 	}
 	if a == nil || a.reserve == nil {
@@ -223,8 +224,8 @@ func (a *AdminUseCase) RecordForfeit(ctx context.Context, command ForfeitCommand
 	return normalizeAdminError(a.forfeit.RecordForfeit(ctx, command))
 }
 
-func (a *AdminUseCase) ReplayGame(ctx context.Context, command ReplayCommand) error {
-	if ctx == nil || !validReplayCommand(command) {
+func (a *AdminUseCase) ReplayGame(ctx context.Context, command replayusecase.ReplayCommand) error {
+	if ctx == nil || !replayusecase.ValidReplayCommand(command) {
 		return domain.ErrValidation
 	}
 	if a == nil || a.replay == nil {
