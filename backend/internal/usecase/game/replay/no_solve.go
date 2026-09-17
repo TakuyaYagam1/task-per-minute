@@ -1,4 +1,4 @@
-package game
+package replay
 
 import (
 	"context"
@@ -6,6 +6,8 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	gamedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/game"
+	attemptusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/attempt"
+	closeusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/close"
 )
 
 type NoSolveReplayUseCase struct {
@@ -49,7 +51,7 @@ func (u *NoSolveReplayUseCase) Replay(
 func (u *NoSolveReplayUseCase) closeNoSolveWave(
 	ctx context.Context,
 	command NoSolveReplayCommand,
-	failed *AttemptRecord,
+	failed *attemptusecase.AttemptRecord,
 	failedChanged bool,
 ) (*NoSolveReplayResult, bool, error) {
 	closure, closureChanged, err := u.closer.Close(ctx, command.Close)
@@ -71,8 +73,8 @@ func (u *NoSolveReplayUseCase) closeNoSolveWave(
 func (u *NoSolveReplayUseCase) replaceNoSolveAttempt(
 	ctx context.Context,
 	command ReplayReplacementCommand,
-	failed *AttemptRecord,
-	closure *Closure,
+	failed *attemptusecase.AttemptRecord,
+	closure *closeusecase.Closure,
 	priorChanged bool,
 ) (*NoSolveReplayResult, bool, error) {
 	replacement, replacementChanged, err := u.replacer.Replace(ctx, command)
@@ -99,31 +101,31 @@ func (u *NoSolveReplayUseCase) replaceNoSolveAttempt(
 }
 
 func validNoSolveFailedAttempt(
-	failed *AttemptRecord,
-	command AttemptCommand,
+	failed *attemptusecase.AttemptRecord,
+	command attemptusecase.AttemptCommand,
 ) bool {
 	if failed == nil || failed.Failure.Class != gamedomain.FailureNoSolve {
 		return false
 	}
-	_, err := Reconcile(*failed, command)
+	_, err := attemptusecase.Reconcile(*failed, command)
 	return err == nil
 }
 
 func validNoSolveClosure(
-	closure *Closure,
-	failed *AttemptRecord,
-	command CloseCommand,
+	closure *closeusecase.Closure,
+	failed *attemptusecase.AttemptRecord,
+	command closeusecase.CloseCommand,
 ) bool {
 	if closure == nil || failed == nil || !closureContainsFailedRoute(*closure, *failed) {
 		return false
 	}
-	_, err := ReconcileClosure(*closure, command)
+	_, err := closeusecase.ReconcileClosure(*closure, command)
 	return err == nil
 }
 
 func validNoSolveReplacement(
 	replacement *ReplayReplacement,
-	closure *Closure,
+	closure *closeusecase.Closure,
 	command ReplayReplacementCommand,
 ) bool {
 	if replacement == nil || closure == nil ||
@@ -136,8 +138,8 @@ func validNoSolveReplacement(
 
 func validateNoSolveReplayCommand(command NoSolveReplayCommand) error {
 	if command.Terminalize.FailureClass != gamedomain.FailureNoSolve ||
-		ValidateCommand(command.Terminalize) != nil ||
-		ValidateCloseCommand(command.Close) != nil ||
+		attemptusecase.ValidateCommand(command.Terminalize) != nil ||
+		closeusecase.ValidateCloseCommand(command.Close) != nil ||
 		validateReplayReplacementCommand(command.Replace) != nil {
 		return replayReplacementError("invalid no-solve pipeline command")
 	}

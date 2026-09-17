@@ -1,4 +1,4 @@
-package game
+package replay
 
 import (
 	"slices"
@@ -6,6 +6,8 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
+	attemptusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/attempt"
+	closeusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/close"
 )
 
 func replayReplacementsEqual(first, second ReplayReplacement) bool {
@@ -101,19 +103,19 @@ func replayResultRevisionPointersEqual(
 	return *first == *second
 }
 
-func cloneFailedAttemptRecordPointer(record *AttemptRecord) *AttemptRecord {
+func cloneFailedAttemptRecordPointer(record *attemptusecase.AttemptRecord) *attemptusecase.AttemptRecord {
 	if record == nil {
 		return nil
 	}
-	clone := CloneRecord(*record)
+	clone := attemptusecase.CloneRecord(*record)
 	return &clone
 }
 
-func cloneOldWaveClosurePointer(closure *Closure) *Closure {
+func cloneOldWaveClosurePointer(closure *closeusecase.Closure) *closeusecase.Closure {
 	if closure == nil {
 		return nil
 	}
-	clone := CloneClosure(*closure)
+	clone := closeusecase.CloneClosure(*closure)
 	return &clone
 }
 

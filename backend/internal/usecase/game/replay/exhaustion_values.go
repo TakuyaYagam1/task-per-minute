@@ -1,4 +1,4 @@
-package game
+package replay
 
 import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"

@@ -1,4 +1,4 @@
-package game
+package replay
 
 import assignmentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/assignment"
 

@@ -1,4 +1,4 @@
-package game
+package replay
 
 import (
 	"fmt"
@@ -6,6 +6,8 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
+	attemptusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/attempt"
+	closeusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/close"
 )
 
 func (r ReplayReplacement) Validate() error {
@@ -153,8 +155,8 @@ func validateReplayReplacementAuthorityLinks(authority ReplayReplacementAuthorit
 }
 
 func closureContainsFailedRoute(
-	closure Closure,
-	failed AttemptRecord,
+	closure closeusecase.Closure,
+	failed attemptusecase.AttemptRecord,
 ) bool {
 	for _, child := range closure.Children {
 		if child.SeriesID == failed.Scope.SeriesID && child.SlotID == failed.Scope.SlotID &&
@@ -191,7 +193,7 @@ func oldWaveContainsReplayParticipants(
 	return found == len(participantIDs)
 }
 
-func replaySourceSlot(failed AttemptRecord) (domain.GameSlot, error) {
+func replaySourceSlot(failed attemptusecase.AttemptRecord) (domain.GameSlot, error) {
 	series := failed.Series.Series
 	if len(series.Slots) == 0 {
 		return domain.GameSlot{}, replayReplacementError("failed Series has no slot")
