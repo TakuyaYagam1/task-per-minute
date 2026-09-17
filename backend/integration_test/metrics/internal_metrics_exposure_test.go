@@ -1,4 +1,4 @@
-package integration_test
+package metrics_test
 
 import (
 	"os"
@@ -39,7 +39,7 @@ func TestInternalMetricsExposure(t *testing.T) {
 
 func caddyfilePath() string {
 	_, sourceFile, _, _ := runtime.Caller(0)
-	return filepath.Join(filepath.Dir(sourceFile), "..", "..", "deployment", "caddy", "Caddyfile")
+	return filepath.Join(filepath.Dir(sourceFile), "..", "..", "..", "deployment", "caddy", "Caddyfile")
 }
 
 func caddySiteBlocks(source string) map[string]string {
