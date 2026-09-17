@@ -1,4 +1,4 @@
-package game_test
+package close_test
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	closeusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/close"
 	gamemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/mocks"
 )
 
@@ -25,7 +25,7 @@ func TestWaveClosure(t *testing.T) {
 		now := time.Date(2026, 8, 30, 22, 20, 0, 0, time.UTC)
 		authority, command := waveClosureFixture(t, now)
 		harness := newCloseRepositoryHarness(t, authority)
-		usecase := gameusecase.NewCloseUseCase(harness.repository, waveNewGameClock(t, now))
+		usecase := closeusecase.NewCloseUseCase(harness.repository, waveNewGameClock(t, now))
 
 		closure, changed, err := usecase.Close(t.Context(), command)
 		require.NoError(t, err)
@@ -54,7 +54,7 @@ func TestWaveClosure(t *testing.T) {
 		}
 		harness := newCloseRepositoryHarness(t, authority)
 
-		closure, changed, err := gameusecase.NewCloseUseCase(
+		closure, changed, err := closeusecase.NewCloseUseCase(
 			harness.repository,
 			waveNewGameClock(t, now),
 		).Close(t.Context(), command)
@@ -72,20 +72,20 @@ func TestWaveClosure(t *testing.T) {
 		authority.Children[1].State = domain.GameStateActive
 		harness := newCloseRepositoryHarness(t, authority)
 
-		closure, changed, err := gameusecase.NewCloseUseCase(
+		closure, changed, err := closeusecase.NewCloseUseCase(
 			harness.repository,
 			waveNewGameClock(t, now),
 		).Close(t.Context(), command)
 		require.Nil(t, closure)
 		require.False(t, changed)
-		require.ErrorIs(t, err, gameusecase.ErrClosureBlocked)
+		require.ErrorIs(t, err, closeusecase.ErrClosureBlocked)
 		require.Equal(t, 0, harness.writeCount())
 	})
 }
 
 type closeRepositoryState struct {
 	mu        sync.Mutex
-	authority gameusecase.CloseAuthority
+	authority closeusecase.CloseAuthority
 	writes    int
 }
 
@@ -96,14 +96,14 @@ type closeRepositoryHarness struct {
 
 func newCloseRepositoryHarness(
 	t *testing.T,
-	authority gameusecase.CloseAuthority,
+	authority closeusecase.CloseAuthority,
 ) *closeRepositoryHarness {
 	t.Helper()
 
 	state := &closeRepositoryState{authority: authority}
 	repository := gamemocks.NewMockCloseRepository(t)
 	repository.EXPECT().LoadCloseAuthority(mock.Anything, authority.Scope).
-		RunAndReturn(func(context.Context, gameusecase.CloseScope) (gameusecase.CloseAuthority, error) {
+		RunAndReturn(func(context.Context, closeusecase.CloseScope) (closeusecase.CloseAuthority, error) {
 			state.mu.Lock()
 			defer state.mu.Unlock()
 			return state.authority, nil
@@ -111,8 +111,8 @@ func newCloseRepositoryHarness(
 	repository.EXPECT().CommitClosure(mock.Anything, mock.Anything).
 		RunAndReturn(func(
 			_ context.Context,
-			closure gameusecase.Closure,
-		) (*gameusecase.Closure, bool, error) {
+			closure closeusecase.Closure,
+		) (*closeusecase.Closure, bool, error) {
 			state.mu.Lock()
 			defer state.mu.Unlock()
 			if closure.ExpectedAuthorityRevision != state.authority.Revision ||
@@ -122,7 +122,7 @@ func newCloseRepositoryHarness(
 			stored := closure
 			state.authority.Revision++
 			state.authority.Wave = stored.Wave
-			state.authority.Children = append([]gameusecase.CloseChild(nil), stored.Children...)
+			state.authority.Children = append([]closeusecase.CloseChild(nil), stored.Children...)
 			state.authority.Current = &stored
 			state.writes++
 			return &stored, true, nil
@@ -139,7 +139,7 @@ func (h *closeRepositoryHarness) writeCount() int {
 func waveClosureFixture(
 	t *testing.T,
 	now time.Time,
-) (gameusecase.CloseAuthority, gameusecase.CloseCommand) {
+) (closeusecase.CloseAuthority, closeusecase.CloseCommand) {
 	t.Helper()
 
 	tournamentID := waveClosureID(1)
@@ -147,17 +147,17 @@ func waveClosureFixture(
 	seriesID := waveClosureID(3)
 	slotID := waveClosureID(4)
 	gameID := waveClosureID(5)
-	scope := gameusecase.CloseScope{
+	scope := closeusecase.CloseScope{
 		TournamentID: tournamentID,
 		WaveID:       waveID,
 	}
-	authority := gameusecase.CloseAuthority{
+	authority := closeusecase.CloseAuthority{
 		Scope: scope, Revision: 5,
 		Wave: waveActiveWaveFixture(
 			t, tournamentID, waveID,
 			[2]uuid.UUID{waveClosureID(6), waveClosureID(7)}, now,
 		),
-		Children: []gameusecase.CloseChild{
+		Children: []closeusecase.CloseChild{
 			{
 				SeriesID: seriesID, SlotID: slotID,
 				GameID: gameID, State: domain.GameStateVoid,
@@ -169,7 +169,7 @@ func waveClosureFixture(
 			},
 		},
 	}
-	command := gameusecase.CloseCommand{
+	command := closeusecase.CloseCommand{
 		Scope: scope, CommandID: waveClosureID(34),
 		ExpectedWaveRevisionID: authority.Wave.RevisionID,
 		ClosedWaveRevisionID:   domain.WaveRevisionID(waveClosureID(35)),
@@ -213,4 +213,12 @@ func waveActiveWaveFixture(
 
 func waveClosureID(value int) uuid.UUID {
 	return uuid.NewSHA1(uuid.NameSpaceOID, fmt.Appendf(nil, "task-040-%d", value))
+}
+
+func waveNewGameClock(t *testing.T, now time.Time) *gamemocks.MockWaveClock {
+	t.Helper()
+
+	clock := gamemocks.NewMockWaveClock(t)
+	clock.EXPECT().Now().Return(now).Maybe()
+	return clock
 }
