@@ -25,7 +25,8 @@ import (
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	eventdelivery "github.com/TakuyaYagam1/task-per-minute/internal/usecase/eventdelivery"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gamereconnect "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/reconnect"
+	gamestart "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/start"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 	connection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/connection"
 )
@@ -55,8 +56,8 @@ func TestParticipantConnectionBindingFollowsCurrentSubscriberFence(t *testing.T)
 		Transactions: fixture.tx,
 		Authority:    connectionRepository,
 		Repository:   connectionRepository,
-		Disconnect:   gameusecase.NewDisconnectUseCase(fixture.adapter, clock),
-		Reconnect:    gameusecase.ReconnectNewUseCase(fixture.adapter, clock),
+		Disconnect:   gamereconnect.NewDisconnectUseCase(fixture.adapter, clock),
+		Reconnect:    gamereconnect.ReconnectNewUseCase(fixture.adapter, clock),
 		Clock:        clock,
 		Config:       connection.Config{ReconnectDuration: 30 * time.Second},
 	})
@@ -188,8 +189,8 @@ func TestParticipantConnectionBindingSurvivesFinalGameAdvance(t *testing.T) {
 		Transactions: fixture.tx,
 		Authority:    connectionRepository,
 		Repository:   connectionRepository,
-		Disconnect:   gameusecase.NewDisconnectUseCase(fixture.adapter, clock),
-		Reconnect:    gameusecase.ReconnectNewUseCase(fixture.adapter, clock),
+		Disconnect:   gamereconnect.NewDisconnectUseCase(fixture.adapter, clock),
+		Reconnect:    gamereconnect.ReconnectNewUseCase(fixture.adapter, clock),
 		Clock:        clock,
 		Config:       connection.Config{ReconnectDuration: 30 * time.Second},
 	})
@@ -440,10 +441,10 @@ func participantConnectionBindingStartWave(
 	ctx context.Context,
 	t *testing.T,
 	fixture tournamentAdminSwissProofFixture,
-) *gameusecase.StartRecord {
+) *gamestart.StartRecord {
 	t.Helper()
 	command := fixture.startCommand(ctx, t)
-	var record *gameusecase.StartRecord
+	var record *gamestart.StartRecord
 	var changed bool
 	err := fixture.tx.Do(ctx, func(txCtx context.Context) error {
 		var startErr error

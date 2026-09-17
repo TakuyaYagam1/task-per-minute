@@ -22,14 +22,14 @@ import (
 	executionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/admin/execution"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gamestart "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/start"
 	swissusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/swiss"
 )
 
 type tournamentAdminSwissProofFixture struct {
 	tx                       *postgres.TxManager
 	adapter                  *executionrepo.Repository
-	start                    *gameusecase.StartUseCase
+	start                    *gamestart.StartUseCase
 	tournamentID             uuid.UUID
 	rosterID                 uuid.UUID
 	roundID                  uuid.UUID
@@ -62,7 +62,7 @@ func TestTournamentAdminExecutionSwissRoundProof(t *testing.T) {
 
 		fixture := createTournamentAdminSwissProofFixture(ctx, t)
 		command := fixture.startCommand(ctx, t)
-		var record *gameusecase.StartRecord
+		var record *gamestart.StartRecord
 		var changed bool
 		err := fixture.tx.Do(ctx, func(txCtx context.Context) error {
 			var startErr error
@@ -91,7 +91,7 @@ func TestTournamentAdminExecutionSwissRoundProof(t *testing.T) {
 		require.NoError(t, err)
 
 		record, changed, err := fixture.start.Start(ctx, command)
-		require.ErrorIs(t, err, gameusecase.ErrWaveStartAuthorityConflict)
+		require.ErrorIs(t, err, gamestart.ErrWaveStartAuthorityConflict)
 		require.Nil(t, record)
 		require.False(t, changed)
 		fixture.assertProofRollback(ctx, t, fixture.waveRevision+1)
@@ -244,7 +244,7 @@ func createTournamentAdminSwissProofFixtureForAggregate(
 	createRoundProofExecutionLease(ctx, t, executionAuthority, createdAt)
 	adapter := executionrepo.NewRepository(tx, resultauthority.FinalizeProjection)
 	return tournamentAdminSwissProofFixture{
-		tx: tx, adapter: adapter, start: gameusecase.NewStartUseCase(adapter, nil),
+		tx: tx, adapter: adapter, start: gamestart.NewStartUseCase(adapter, nil),
 		tournamentID: tournamentID, rosterID: rosterID, roundID: roundID, waveID: waveID, windowID: windowID,
 		projectionRevisionID: projectionRevisionID, preflightRevisionID: preflightRevisionID,
 		normalPoolRevisionID: normalPoolRevisionID, normalPoolRevision: normalPoolRevision,
@@ -838,15 +838,15 @@ func createRoundProofExecutionLease(
 func (fixture tournamentAdminSwissProofFixture) startCommand(
 	ctx context.Context,
 	t *testing.T,
-) gameusecase.StartCommand {
+) gamestart.StartCommand {
 	t.Helper()
-	authority, err := fixture.adapter.LoadWaveStartAuthority(ctx, gameusecase.StartScope{
+	authority, err := fixture.adapter.LoadWaveStartAuthority(ctx, gamestart.StartScope{
 		TournamentID: fixture.tournamentID, WaveID: fixture.waveID, WindowID: fixture.windowID,
 	})
 	require.NoError(t, err)
 	require.Nil(t, authority.Current)
 	digest := sha256.Sum256([]byte("round-proof-wave-start"))
-	return gameusecase.StartCommand{
+	return gamestart.StartCommand{
 		Scope: authority.Scope, CommandID: uuid.New(), ActorID: uuid.New(),
 		ExecutionAuthority:         fixture.executionAuthority,
 		ExpectedProjectionRevision: authority.Revisions.ProjectionRevision,

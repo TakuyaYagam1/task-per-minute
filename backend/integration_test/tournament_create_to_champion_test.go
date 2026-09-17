@@ -64,7 +64,8 @@ import (
 	authusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/auth"
 	authorityusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/authority"
 	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gamestart "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/start"
+	gamesubmission "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/submission"
 	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/idempotency"
 	playerusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/player"
@@ -400,7 +401,7 @@ func newTournamentFlowRESTFixture(t *testing.T) *restFixture {
 		Transactions: tx,
 		Repository:   executionRepository,
 		NormalPause:  executionRepository,
-		WaveStart:    gameusecase.NewStartUseCase(executionRepository, clock),
+		WaveStart:    gamestart.NewStartUseCase(executionRepository, clock),
 		Authority:    authorityController,
 	})
 
@@ -453,7 +454,7 @@ func newTournamentFlowRESTFixture(t *testing.T) *restFixture {
 			tx, participantDrafts, loadTournamentFlowParticipantDraftContent,
 		), clock,
 	)
-	participantSubmission := gameusecase.NewSubmissionUseCase(
+	participantSubmission := gamesubmission.NewSubmissionUseCase(
 		participantsubmissionrepo.NewParticipantSubmissionRepository(tx, resultPostgres),
 	)
 	participantSettlement := participantsettlementrepo.NewParticipantSettlementWorkflow(

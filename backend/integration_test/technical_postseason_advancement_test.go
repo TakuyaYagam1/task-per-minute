@@ -23,7 +23,8 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
 	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gamereconnect "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/reconnect"
+	gamestart "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/start"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/recovery"
 	progression "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/progression"
@@ -258,7 +259,7 @@ func technicalStartWave(
 	fixture tournamentAdminSwissProofFixture,
 	waveID uuid.UUID,
 	participants []uuid.UUID,
-) *gameusecase.StartRecord {
+) *gamestart.StartRecord {
 	t.Helper()
 	waves := waverepo.NewWavePostgres(fixture.tx)
 	wave, err := waves.Get(ctx, fixture.tournamentID, waveID)
@@ -312,14 +313,14 @@ func technicalStartWave(
 
 	require.NotNil(t, opened.Wave.ReadyWindow)
 	startAt := opened.Wave.ReadyWindow.OpenedAt.Add(domain.ReadyWindowDuration / 2)
-	start := gameusecase.NewStartUseCase(technicalWaveStartRepository{
+	start := gamestart.NewStartUseCase(technicalWaveStartRepository{
 		Repository: fixture.adapter,
 		startAt:    startAt,
 	}, nil)
-	scope := gameusecase.StartScope{TournamentID: fixture.tournamentID, WaveID: waveID, WindowID: windowID}
+	scope := gamestart.StartScope{TournamentID: fixture.tournamentID, WaveID: waveID, WindowID: windowID}
 	authority, err := fixture.adapter.LoadWaveStartAuthority(ctx, scope)
 	require.NoError(t, err)
-	command := gameusecase.StartCommand{
+	command := gamestart.StartCommand{
 		Scope:                      scope,
 		CommandID:                  uuid.New(),
 		ActorID:                    uuid.New(),
@@ -328,7 +329,7 @@ func technicalStartWave(
 		ExpectedRevisions:          authority.Revisions,
 		RequestDigest:              sha256.Sum256([]byte("technical-postseason-wave-start:" + waveID.String())),
 	}
-	var record *gameusecase.StartRecord
+	var record *gamestart.StartRecord
 	err = fixture.tx.Do(ctx, func(txCtx context.Context) error {
 		var startErr error
 		record, changed, startErr = start.Start(txCtx, command)
@@ -366,7 +367,7 @@ func technicalDisconnectPending(
 		playerID: participantID,
 	}
 	command := participantReconnectDisconnectCommand(started, deadline)
-	_, changed, err := gameusecase.NewDisconnectUseCase(
+	_, changed, err := gamereconnect.NewDisconnectUseCase(
 		fixture.adapter,
 		participantReconnectTestClock{at: deadline.Add(-time.Second)},
 	).Disconnect(ctx, command)

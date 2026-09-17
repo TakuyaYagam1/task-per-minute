@@ -17,7 +17,7 @@ import (
 	participantauthorityrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/authority"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gamesettlement "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/settlement"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
 )
 
@@ -132,7 +132,7 @@ func TestLiveForfeitAndParticipantSettlementUseSameLockOrder(t *testing.T) {
 			case <-ctx.Done():
 				return ctx.Err()
 			}
-			_, _, err = gameusecase.SettlementNewUseCase(participant).Settle(txCtx, gameusecase.SettlementCommand{Scope: scope, CommandID: uuid.New()})
+			_, _, err = gamesettlement.SettlementNewUseCase(participant).Settle(txCtx, gamesettlement.SettlementCommand{Scope: scope, CommandID: uuid.New()})
 			return err
 		})
 	}()

@@ -25,7 +25,8 @@ import (
 	progressionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/progression"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	assignmentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/assignment"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gameforfeit "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/forfeit"
+	gamenoshow "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/noshow"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/recovery"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
@@ -279,7 +280,7 @@ func assertOperatorReceiptRollback(ctx context.Context, t *testing.T, fixture to
 	require.Equal(t, before, swissPublicationCounts(ctx, t, fixture))
 }
 
-func (r *observedOperatorResultRepository) CommitOperatorNoShow(ctx context.Context, command tournamentadmin.NoShowCommand, digest [32]byte, resolution gameusecase.NoShowResolution) (*gameusecase.NoShowResolution, bool, error) {
+func (r *observedOperatorResultRepository) CommitOperatorNoShow(ctx context.Context, command tournamentadmin.NoShowCommand, digest [32]byte, resolution gamenoshow.NoShowResolution) (*gamenoshow.NoShowResolution, bool, error) {
 	stored, changed, err := r.TournamentAdminResultPostgres.CommitOperatorNoShow(ctx, command, digest, resolution)
 	if err != nil {
 		r.t.Logf("operator no-show persistence: %v", err)
@@ -292,7 +293,7 @@ type observedOperatorResultRepository struct {
 	t *testing.T
 }
 
-func (r *observedOperatorResultRepository) CommitOperatorForfeit(ctx context.Context, command tournamentadmin.ForfeitCommand, digest [32]byte, resolution gameusecase.ForfeitResolution) (*gameusecase.ForfeitResolution, bool, error) {
+func (r *observedOperatorResultRepository) CommitOperatorForfeit(ctx context.Context, command tournamentadmin.ForfeitCommand, digest [32]byte, resolution gameforfeit.ForfeitResolution) (*gameforfeit.ForfeitResolution, bool, error) {
 	stored, changed, err := r.TournamentAdminResultPostgres.CommitOperatorForfeit(ctx, command, digest, resolution)
 	if err != nil {
 		r.t.Logf("operator forfeit persistence: %v", err)

@@ -27,7 +27,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	gamedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/game"
 	correctionusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/correction"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gamesettlement "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/settlement"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
 	progression "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/progression"
 )
@@ -1511,9 +1511,9 @@ func settleCorrectionSwissReceiptSeries(
 	})
 	require.NoError(t, err)
 	require.True(t, changed)
-	settled, changed, err := gameusecase.SettlementNewUseCase(
+	settled, changed, err := gamesettlement.SettlementNewUseCase(
 		receiptSettlementRepository{ParticipantSettlementRepository: repository, t: t},
-	).Settle(ctx, gameusecase.SettlementCommand{Scope: scope, CommandID: uuid.New()})
+	).Settle(ctx, gamesettlement.SettlementCommand{Scope: scope, CommandID: uuid.New()})
 	require.NoError(t, err)
 	require.True(t, changed)
 	require.Equal(t, winnerID, settled.SettlementGameResultRevision.WinnerID)

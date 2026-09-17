@@ -24,7 +24,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	gamedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/game"
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gamesettlement "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/settlement"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
 	swissusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/swiss"
 	progression "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/progression"
@@ -240,10 +240,10 @@ func TestFinalSwissPublicationLocksOnlySelectedHeads(t *testing.T) {
 	require.NoError(t, err, "an unrelated historical score node must not block the selected-head snapshot")
 }
 
-func settleSwissReceiptSeries(ctx context.Context, t *testing.T, fixture tournamentAdminSwissProofFixture, index int) *gameusecase.SettlementRecord {
+func settleSwissReceiptSeries(ctx context.Context, t *testing.T, fixture tournamentAdminSwissProofFixture, index int) *gamesettlement.SettlementRecord {
 	t.Helper()
 	repository, scope := submitSwissReceiptSeries(ctx, t, fixture, index)
-	record, changed, err := gameusecase.SettlementNewUseCase(receiptSettlementRepository{ParticipantSettlementRepository: repository, t: t}).Settle(ctx, gameusecase.SettlementCommand{Scope: scope, CommandID: uuid.New()})
+	record, changed, err := gamesettlement.SettlementNewUseCase(receiptSettlementRepository{ParticipantSettlementRepository: repository, t: t}).Settle(ctx, gamesettlement.SettlementCommand{Scope: scope, CommandID: uuid.New()})
 	require.NoError(t, err)
 	require.True(t, changed)
 	require.Equal(t, domain.SeriesStateCompleted, record.Series.State)
@@ -282,7 +282,7 @@ func TestFinalSwissPublicationConcurrentWriters(t *testing.T) {
 	before := swissPublicationCounts(ctx, t, fixture)
 	ready, release := make(chan struct{}, 2), make(chan struct{})
 	type outcome struct {
-		record  *gameusecase.SettlementRecord
+		record  *gamesettlement.SettlementRecord
 		changed bool
 		err     error
 	}
@@ -290,7 +290,7 @@ func TestFinalSwissPublicationConcurrentWriters(t *testing.T) {
 	for range 2 {
 		gate := &receiptSettlementBarrier{ParticipantSettlementRepository: repository, ready: ready, release: release}
 		go func() {
-			record, changed, err := gameusecase.SettlementNewUseCase(gate).Settle(ctx, gameusecase.SettlementCommand{Scope: scope, CommandID: uuid.New()})
+			record, changed, err := gamesettlement.SettlementNewUseCase(gate).Settle(ctx, gamesettlement.SettlementCommand{Scope: scope, CommandID: uuid.New()})
 			results <- outcome{record, changed, err}
 		}()
 	}
@@ -303,7 +303,7 @@ func TestFinalSwissPublicationConcurrentWriters(t *testing.T) {
 	}
 	close(release)
 	winners := 0
-	var committed []*gameusecase.SettlementRecord
+	var committed []*gamesettlement.SettlementRecord
 	for range 2 {
 		select {
 		case result := <-results:
@@ -315,7 +315,7 @@ func TestFinalSwissPublicationConcurrentWriters(t *testing.T) {
 				}
 			} else {
 				require.False(t, result.changed)
-				require.True(t, errors.Is(result.err, gameusecase.ErrConcurrentWinnerConflict) || errors.Is(result.err, gameusecase.ErrConcurrentWinnerUnavailable) || errors.Is(result.err, domain.ErrConflict), "unexpected loser error: %v", result.err)
+				require.True(t, errors.Is(result.err, gamesettlement.ErrConcurrentWinnerConflict) || errors.Is(result.err, gamesettlement.ErrConcurrentWinnerUnavailable) || errors.Is(result.err, domain.ErrConflict), "unexpected loser error: %v", result.err)
 			}
 		case <-ctx.Done():
 			t.Fatal(ctx.Err())
@@ -340,7 +340,7 @@ type receiptSettlementBarrier struct {
 	once    sync.Once
 }
 
-func (r *receiptSettlementBarrier) CommitConcurrentWinnerSettlement(ctx context.Context, proposed gameusecase.SettlementRecord) (*gameusecase.SettlementRecord, bool, error) {
+func (r *receiptSettlementBarrier) CommitConcurrentWinnerSettlement(ctx context.Context, proposed gamesettlement.SettlementRecord) (*gamesettlement.SettlementRecord, bool, error) {
 	r.once.Do(func() {
 		r.ready <- struct{}{}
 		select {
@@ -356,7 +356,7 @@ type receiptSettlementRepository struct {
 	t *testing.T
 }
 
-func (r receiptSettlementRepository) CommitConcurrentWinnerSettlement(ctx context.Context, proposed gameusecase.SettlementRecord) (*gameusecase.SettlementRecord, bool, error) {
+func (r receiptSettlementRepository) CommitConcurrentWinnerSettlement(ctx context.Context, proposed gamesettlement.SettlementRecord) (*gamesettlement.SettlementRecord, bool, error) {
 	record, changed, err := r.ParticipantSettlementRepository.CommitConcurrentWinnerSettlement(ctx, proposed)
 	if err != nil {
 		r.t.Logf("settlement commit: %v", err)

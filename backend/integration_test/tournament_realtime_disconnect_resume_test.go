@@ -25,7 +25,7 @@ import (
 	tournamentsnapshotrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/snapshot"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gamereconnect "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/reconnect"
 	connection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/connection"
 )
 
@@ -56,8 +56,8 @@ func TestTournamentRealtimeDisconnectResume(t *testing.T) {
 		Transactions: started.fixture.tx,
 		Authority:    connectionRepository,
 		Repository:   connectionRepository,
-		Disconnect:   gameusecase.NewDisconnectUseCase(started.fixture.adapter, clock),
-		Reconnect:    gameusecase.ReconnectNewUseCase(started.fixture.adapter, clock),
+		Disconnect:   gamereconnect.NewDisconnectUseCase(started.fixture.adapter, clock),
+		Reconnect:    gamereconnect.ReconnectNewUseCase(started.fixture.adapter, clock),
 		Clock:        clock,
 		Config:       connection.Config{ReconnectDuration: 30 * time.Second},
 	})
@@ -234,7 +234,7 @@ func TestTournamentRealtimeDisconnectResume(t *testing.T) {
 		t,
 		disconnectEvent,
 		started,
-		gameusecase.MutationDisconnect,
+		gamereconnect.MutationDisconnect,
 		1,
 		2,
 		paused.GameRevision,
@@ -356,7 +356,7 @@ func TestTournamentRealtimeDisconnectResume(t *testing.T) {
 	require.NotEqual(t, disconnectEvent.IdempotencyKey, resumeEvent.IdempotencyKey)
 	require.NotEqual(t, disconnectEvent.CommandID, resumeEvent.CommandID)
 	assertReconnectOutboxPayload(t, resumeEvent, "reconnect", started.started.Game.ID, resumed.GameRevision)
-	assertReconnectOutboxSource(t, resumeEvent, started, gameusecase.MutationReconnect, 2, 3, resumed.GameRevision)
+	assertReconnectOutboxSource(t, resumeEvent, started, gamereconnect.MutationReconnect, 2, 3, resumed.GameRevision)
 
 	participantBResumedData := readTournamentFlowWebSocket(t, participantBConnection)
 	participantBResumed, err := inboundws.DecodeTournamentParticipantMessage(participantBResumedData)
@@ -689,7 +689,7 @@ func assertReconnectOutboxSource(
 	t *testing.T,
 	event realtimeReconnectOutboxEvent,
 	started participantReconnectStartedFixture,
-	mutationKind gameusecase.MutationKind,
+	mutationKind gamereconnect.MutationKind,
 	expectedRevision, resultRevision, expectedGameRevision int64,
 ) {
 	t.Helper()

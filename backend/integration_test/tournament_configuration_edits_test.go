@@ -19,7 +19,7 @@ import (
 	tournamentsnapshotrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/snapshot"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	gamestart "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/start"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
 )
 
@@ -680,7 +680,7 @@ func openAndStartRevisedOddSwissWaveThroughREST(t *testing.T, flow swissCategory
 	)
 	require.NoError(t, err, "revised odd Swiss Wave authority must load before start")
 	require.NotNil(t, authority.View.Wave.ReadyWindow)
-	startScope := gameusecase.StartScope{
+	startScope := gamestart.StartScope{
 		TournamentID: flow.tournamentID,
 		WaveID:       wave.Id,
 		WindowID:     authority.View.Wave.ReadyWindow.ID,
