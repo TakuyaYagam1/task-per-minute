@@ -11,6 +11,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+
+	"github.com/TakuyaYagam1/task-per-minute/integration_test/internal/testkit/assignmentseed"
 )
 
 func createAssignmentBranch(
@@ -190,34 +192,32 @@ func createActiveMigrationAssignment(
 ) uuid.UUID {
 	tb.Helper()
 
-	assignmentID := uuid.New()
-	_, err := sharedPool.Exec(
-		ctx, `
-		INSERT INTO assignments (
-			id, attempt_id, series_id, roster_id,
-			plan_id, branch_id, reservation_id, snapshot_id,
-			task_id, task_version, supersedes_assignment_id,
-			created_at, updated_at
-		)
-		VALUES (
-			$1, $2, $3, $4,
-			$5, $6, $7, $8,
-			$9, $10, $11,
-			$12, $12
-		)`,
-		assignmentID,
-		attemptID,
-		draft.seriesID,
-		draft.rosterID,
-		planID,
-		branchID,
-		reservation.reservationID,
-		reservation.snapshotID,
-		reservation.taskID,
-		reservation.taskVersion,
-		supersedesAssignmentID,
-		createdAt,
-	)
+	var supersedesID *uuid.UUID
+	switch value := supersedesAssignmentID.(type) {
+	case nil:
+	case uuid.UUID:
+		supersedesID = &value
+	case *uuid.UUID:
+		supersedesID = value
+	default:
+		require.Fail(tb, "unexpected supersedes assignment id type", "got %T", supersedesAssignmentID)
+		return uuid.Nil
+	}
+
+	assignmentID, err := assignmentseed.CreateActive(ctx, sharedPool, assignmentseed.Input{
+		ID:                     uuid.New(),
+		AttemptID:              attemptID,
+		SeriesID:               draft.seriesID,
+		RosterID:               draft.rosterID,
+		PlanID:                 planID,
+		BranchID:               branchID,
+		ReservationID:          reservation.reservationID,
+		SnapshotID:             reservation.snapshotID,
+		TaskID:                 reservation.taskID,
+		TaskVersion:            reservation.taskVersion,
+		SupersedesAssignmentID: supersedesID,
+		CreatedAt:              createdAt,
+	})
 	require.NoError(tb, err)
 	return assignmentID
 }
