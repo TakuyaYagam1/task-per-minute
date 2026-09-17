@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	resultcorrectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result/correction"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/sqlc"
 	tournamentprogressionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/progression"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
@@ -25,13 +26,32 @@ import (
 // normalized rows; the command contains only expected lineage and digests.
 type TournamentAdminCorrectionPostgres struct {
 	tx         *TxManager
-	correction *CorrectionPostgres
+	correction CorrectionRepository
 }
+
+// CorrectionRepository is the transaction-owned rebuild boundary required by
+// the admin correction workflow. The result correction adapter remains behind
+// this capability port so the workflow does not store its concrete type.
+type CorrectionRepository interface {
+	RebuildLocked(context.Context, CorrectionInput) (*resultcorrectionrepo.CorrectionRecord, error)
+}
+
+var _ CorrectionRepository = (*CorrectionPostgres)(nil)
 
 var _ admincorrection.CorrectionWorkflowRepository = (*TournamentAdminCorrectionPostgres)(nil)
 
 func NewTournamentAdminCorrectionPostgres(tx *TxManager) *TournamentAdminCorrectionPostgres {
-	return &TournamentAdminCorrectionPostgres{tx: tx, correction: NewCorrectionPostgres(tx)}
+	return NewTournamentAdminCorrectionPostgresWithRepository(tx, NewCorrectionPostgres(tx))
+}
+
+// NewTournamentAdminCorrectionPostgresWithRepository builds the workflow from
+// the narrow correction rebuild boundary while preserving the existing
+// transaction-only constructor above.
+func NewTournamentAdminCorrectionPostgresWithRepository(
+	tx *TxManager,
+	correction CorrectionRepository,
+) *TournamentAdminCorrectionPostgres {
+	return &TournamentAdminCorrectionPostgres{tx: tx, correction: correction}
 }
 
 func (r *TournamentAdminCorrectionPostgres) FindCorrectionCommand(

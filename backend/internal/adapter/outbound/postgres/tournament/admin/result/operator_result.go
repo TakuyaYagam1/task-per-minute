@@ -17,23 +17,57 @@ import (
 	resultusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/result"
 )
 
+// ResultRepository is the narrow settlement boundary required by operator
+// result mutations. The shared result adapter remains behind this capability
+// port so authority and evidence reads do not depend on its concrete type.
+type ResultRepository interface {
+	Settle(
+		context.Context,
+		resultrepo.ResultSettlementInput,
+	) (*resultrepo.ResultCommitRecord, bool, error)
+}
+
 type TournamentAdminResultPostgres struct {
 	tx                   *db.TxManager
-	results              *resultrepo.ResultPostgres
+	results              ResultRepository
 	projectionFinalizer  resultrepo.ProjectionFinalizer
 	preStartProofEnsurer PreStartSwissProofEnsurer
 }
+
+var _ ResultRepository = (*resultrepo.ResultPostgres)(nil)
 
 func NewTournamentAdminResultPostgres(
 	tx *db.TxManager,
 	results *resultrepo.ResultPostgres,
 ) *TournamentAdminResultPostgres {
-	return &TournamentAdminResultPostgres{tx: tx, results: results}
+	var repository ResultRepository
+	if results != nil {
+		repository = results
+	}
+	return NewTournamentAdminResultPostgresWithRepository(tx, repository, nil, nil)
 }
 
 func NewTournamentAdminResultPostgresWithDependencies(
 	tx *db.TxManager,
 	results *resultrepo.ResultPostgres,
+	projectionFinalizer resultrepo.ProjectionFinalizer,
+	preStartProofEnsurer PreStartSwissProofEnsurer,
+) *TournamentAdminResultPostgres {
+	var repository ResultRepository
+	if results != nil {
+		repository = results
+	}
+	return NewTournamentAdminResultPostgresWithRepository(
+		tx, repository, projectionFinalizer, preStartProofEnsurer,
+	)
+}
+
+// NewTournamentAdminResultPostgresWithRepository builds the adapter from the
+// consumer-owned settlement boundary while preserving the existing concrete
+// constructors above for bootstrap and external callers.
+func NewTournamentAdminResultPostgresWithRepository(
+	tx *db.TxManager,
+	results ResultRepository,
 	projectionFinalizer resultrepo.ProjectionFinalizer,
 	preStartProofEnsurer PreStartSwissProofEnsurer,
 ) *TournamentAdminResultPostgres {

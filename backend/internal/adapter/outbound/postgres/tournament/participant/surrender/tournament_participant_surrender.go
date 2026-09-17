@@ -19,14 +19,39 @@ import (
 	tournamentparticipant "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/participant"
 )
 
+// ResultRepository is the settlement boundary owned by the participant
+// forfeit workflow. It keeps the transaction and result semantics while
+// avoiding a stored dependency on the concrete result adapter.
+type ResultRepository interface {
+	Settle(
+		context.Context,
+		resultpostgres.ResultSettlementInput,
+	) (*resultpostgres.ResultCommitRecord, bool, error)
+}
+
 type ParticipantForfeitRepository struct {
 	tx      *db.TxManager
-	results *resultpostgres.ResultPostgres
+	results ResultRepository
 }
+
+var _ ResultRepository = (*resultpostgres.ResultPostgres)(nil)
 
 func NewParticipantForfeitRepository(
 	tx *db.TxManager,
 	results *resultpostgres.ResultPostgres,
+) *ParticipantForfeitRepository {
+	var repository ResultRepository
+	if results != nil {
+		repository = results
+	}
+	return NewParticipantForfeitRepositoryWithResultRepository(tx, repository)
+}
+
+// NewParticipantForfeitRepositoryWithResultRepository builds the participant
+// adapter from its narrow settlement boundary.
+func NewParticipantForfeitRepositoryWithResultRepository(
+	tx *db.TxManager,
+	results ResultRepository,
 ) *ParticipantForfeitRepository {
 	return &ParticipantForfeitRepository{tx: tx, results: results}
 }
