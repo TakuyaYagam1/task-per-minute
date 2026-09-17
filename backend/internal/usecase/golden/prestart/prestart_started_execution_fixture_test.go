@@ -9,8 +9,9 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
 	goldenmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/mocks"
+	goldenstate "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/state"
+	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/wave"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -35,7 +36,7 @@ func prestartNewStartedGoldenFixture(
 	state.Windows = nil
 	state.Membership.PayloadDigest = [sha256.Size]byte{}
 	state.PayloadDigest = [sha256.Size]byte{}
-	state, err := goldenusecase.BuildGoldenState(state)
+	state, err := goldenstate.BuildGoldenState(state)
 	require.NoError(t, err)
 
 	fixture := &prestartStartedWaveFixtureState{

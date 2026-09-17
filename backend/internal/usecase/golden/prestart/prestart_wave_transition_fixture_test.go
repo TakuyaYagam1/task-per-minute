@@ -8,8 +8,9 @@ import (
 	"time"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
 	goldenmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/mocks"
+	goldenstate "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/state"
+	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/wave"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -105,7 +106,7 @@ func prestartTask048GoldenState(t *testing.T, openedAt time.Time) goldenusecase.
 	state.Windows = nil
 	state.Membership.PayloadDigest = [sha256.Size]byte{}
 	state.PayloadDigest = [sha256.Size]byte{}
-	built, err := goldenusecase.BuildGoldenState(state)
+	built, err := goldenstate.BuildGoldenState(state)
 	require.NoError(t, err)
 	return built
 }

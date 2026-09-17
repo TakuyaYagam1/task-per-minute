@@ -263,11 +263,13 @@ packages:
       ContinuationRepository:
       FailureClock:
       FailureRepository:
-      PrestartClock:
-      PrestartRepository:
       SubmissionRepository:
       WaveClock:
       WaveRepository:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/prestart:
+    interfaces:
+      PrestartClock:
+      PrestartRepository:
   github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/state:
     interfaces:
       StateClock:

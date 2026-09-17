@@ -5,7 +5,8 @@ import (
 	"time"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
+	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/prestart"
+	goldenwave "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/wave"
 
 	"github.com/stretchr/testify/require"
 )
@@ -18,7 +19,7 @@ func TestRetainedGoldenPrestartPause(t *testing.T) {
 	waveRepository := prestartNewGoldenWaveRepositoryHarness(t, state)
 	execution := prestartTask048OpenGoldenExecution(t, waveRepository, state, openedAt, 24000)
 	participantID := execution.Membership.ParticipantIDs[0]
-	ready, changed, err := goldenusecase.NewGoldenReadinessUseCase(
+	ready, changed, err := goldenwave.NewGoldenReadinessUseCase(
 		waveRepository,
 		prestartNewGoldenClock(t, openedAt.Add(time.Second)),
 	).MarkReady(t.Context(), prestartTask048ReadyCommand(execution, participantID, 24100))

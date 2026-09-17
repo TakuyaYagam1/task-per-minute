@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
-	goldenmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/mocks"
+	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/prestart"
+	goldenmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/prestart/mocks"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
