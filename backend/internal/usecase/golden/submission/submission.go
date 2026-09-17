@@ -1,10 +1,14 @@
-package golden
+package submission
 
 import (
 	"crypto/sha256"
 
 	"github.com/google/uuid"
+
+	goldenstate "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/state"
 )
+
+type GoldenStateScope = goldenstate.GoldenStateScope
 
 type GoldenSubmissionScope struct {
 	State        GoldenStateScope
@@ -16,7 +20,7 @@ type GoldenSubmissionScope struct {
 }
 
 func (s GoldenSubmissionScope) IsValid() bool {
-	if !ValidStateScope(s.State) || s.AttemptID == uuid.Nil || s.WaveID == uuid.Nil ||
+	if !goldenstate.ValidStateScope(s.State) || s.AttemptID == uuid.Nil || s.WaveID == uuid.Nil ||
 		s.AssignmentID == uuid.Nil || s.SnapshotID == uuid.Nil || s.TaskID == uuid.Nil {
 		return false
 	}

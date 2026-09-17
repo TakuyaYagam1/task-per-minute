@@ -1,4 +1,4 @@
-package golden
+package submission
 
 import (
 	"context"
@@ -10,7 +10,11 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
+	goldenexecution "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/execution"
 )
+
+type GoldenWaveExecution = goldenexecution.GoldenWaveExecution
+type GoldenWaveExecutionExpectation = goldenexecution.GoldenWaveExecutionExpectation
 
 type GoldenSubmissionAuthority struct {
 	Scope                GoldenSubmissionScope

@@ -1,4 +1,4 @@
-package golden
+package submission
 
 import (
 	"github.com/google/uuid"
