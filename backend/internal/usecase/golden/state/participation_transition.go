@@ -1,4 +1,4 @@
-package golden
+package state
 
 import (
 	"crypto/sha256"
@@ -262,4 +262,15 @@ func advanceGoldenTransitionMembership(
 func stateValidGoldenRevisionPredecessor(current uuid.UUID, revision int64, previous *uuid.UUID) bool {
 	return (revision == 1 && previous == nil) ||
 		(revision > 1 && previous != nil && *previous != uuid.Nil && *previous != current)
+}
+
+func MembershipRevisionsEqual(first, second GoldenMembershipRevision) bool {
+	if first.RevisionID != second.RevisionID || first.Revision != second.Revision ||
+		first.PayloadDigest != second.PayloadDigest {
+		return false
+	}
+	if first.PreviousRevisionID == nil || second.PreviousRevisionID == nil {
+		return first.PreviousRevisionID == nil && second.PreviousRevisionID == nil
+	}
+	return *first.PreviousRevisionID == *second.PreviousRevisionID
 }

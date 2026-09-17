@@ -197,43 +197,6 @@ func goldenCommandIDRetainedOutsideReady(state GoldenState, commandID uuid.UUID)
 	return state.Allocation != nil && state.Allocation.CommandID == commandID
 }
 
-func CloneGroup(state domain.GoldenGroupState) domain.GoldenGroupState {
-	clone := state
-	clone.Members = append([]domain.GoldenMember(nil), state.Members...)
-	clone.Attempts = make([]domain.GoldenAttempt, len(state.Attempts))
-	for index, attempt := range state.Attempts {
-		clone.Attempts[index] = CloneAttempt(attempt)
-	}
-	return clone
-}
-
-func CloneAttempt(attempt domain.GoldenAttempt) domain.GoldenAttempt {
-	clone := attempt
-	clone.PreviousAttemptID = cloneGoldenUUID(attempt.PreviousAttemptID)
-	clone.ParticipantIDs = append([]uuid.UUID(nil), attempt.ParticipantIDs...)
-	clone.RetainedAt = cloneGoldenTime(attempt.RetainedAt)
-	clone.StartedAt = cloneGoldenTime(attempt.StartedAt)
-	clone.FinishedAt = cloneGoldenTime(attempt.FinishedAt)
-	return clone
-}
-
-func CloneReadyWindow(window GoldenReadyWindow) GoldenReadyWindow {
-	clone := window
-	clone.PreviousRevisionID = cloneGoldenUUID(window.PreviousRevisionID)
-	clone.ReadinessPreviousRevisionID = cloneGoldenUUID(window.ReadinessPreviousRevisionID)
-	clone.PresencePreviousRevisionID = cloneGoldenUUID(window.PresencePreviousRevisionID)
-	clone.ReadyParticipantIDs = append([]uuid.UUID(nil), window.ReadyParticipantIDs...)
-	clone.BasePresentParticipantIDs = append([]uuid.UUID(nil), window.BasePresentParticipantIDs...)
-	clone.PresentParticipantIDs = append([]uuid.UUID(nil), window.PresentParticipantIDs...)
-	return clone
-}
-
-func CloneExpectation(input GoldenStateExpectation) GoldenStateExpectation {
-	clone := input
-	clone.Membership.PreviousRevisionID = cloneGoldenUUID(input.Membership.PreviousRevisionID)
-	return clone
-}
-
 func cloneGoldenUUID(value *uuid.UUID) *uuid.UUID {
 	if value == nil {
 		return nil

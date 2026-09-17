@@ -2,7 +2,6 @@ package golden
 
 import (
 	"context"
-	"crypto/sha256"
 	"errors"
 	"fmt"
 	"math"
@@ -13,7 +12,6 @@ import (
 )
 
 var (
-	ErrInvalidGoldenNoShow           = errors.New("invalid Golden no-show resolution")
 	ErrGoldenNoShowCutoff            = errors.New("golden no-show cutoff has not passed")
 	ErrGoldenNoShowAuthorityConflict = errors.New("golden no-show authority conflict")
 	ErrGoldenNoShowConflict          = errors.New("golden no-show commit conflict")
@@ -30,32 +28,6 @@ type GoldenNoShowCommand struct {
 	NextStateRevisionID      uuid.UUID
 	NextWindowRevisionID     uuid.UUID
 	NextMembershipRevisionID uuid.UUID
-}
-
-type GoldenNoShowResolution struct {
-	CommandID      uuid.UUID
-	Scope          GoldenStateScope
-	AttemptID      uuid.UUID
-	AttemptNo      int
-	WindowID       uuid.UUID
-	ExpectedState  GoldenStateExpectation
-	ExpectedWindow GoldenReadyWindowExpectation
-
-	ResultStateRevisionID      uuid.UUID
-	ResultWindowRevisionID     uuid.UUID
-	ResultMembershipRevisionID uuid.UUID
-	Deadline                   time.Time
-	ResolvedAt                 time.Time
-
-	ReadinessRevisionID    uuid.UUID
-	ReadinessRevision      int64
-	ReadinessDigest        [sha256.Size]byte
-	ReadyParticipantIDs    []uuid.UUID
-	PresenceRevisionID     uuid.UUID
-	PresenceRevision       int64
-	PresenceDigest         [sha256.Size]byte
-	PresentParticipantIDs  []uuid.UUID
-	ExcludedParticipantIDs []uuid.UUID
 }
 
 type GoldenNoShowUseCase struct {

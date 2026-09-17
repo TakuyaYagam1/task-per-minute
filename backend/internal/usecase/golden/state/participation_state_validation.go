@@ -1,4 +1,4 @@
-package golden
+package state
 
 import (
 	"crypto/sha256"
@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
+	goldenplan "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/plan"
 
 	"github.com/google/uuid"
 )
@@ -54,11 +55,11 @@ func validateGoldenStateTopology(state GoldenState) error {
 	return nil
 }
 
-func goldenPlanBinding(plan ExactPlan, scope GoldenStateScope) (GoldenPlanStateBinding, error) {
+func goldenPlanBinding(plan goldenplan.ExactPlan, scope GoldenStateScope) (GoldenPlanStateBinding, error) {
 	if err := plan.Validate(); err != nil || plan.Scope.TournamentID != scope.TournamentID {
 		return GoldenPlanStateBinding{}, goldenStateError("invalid exact plan")
 	}
-	var group *Group
+	var group *goldenplan.Group
 	for index := range plan.Groups {
 		if plan.Groups[index].GroupID == scope.GroupID {
 			group = &plan.Groups[index]
@@ -131,6 +132,35 @@ func validateGoldenStateWindows(state GoldenState) error {
 	}
 	if open > 1 {
 		return goldenStateError("multiple ready windows are open")
+	}
+	return nil
+}
+
+func ValidateReadyWindowIdentity(window GoldenReadyWindow) error {
+	if goldenAny(
+		window.ID == uuid.Nil, window.RevisionID == uuid.Nil, window.Revision < 1,
+		window.AttemptID == uuid.Nil, window.AttemptNo < 1,
+		!domain.IsValidServerTime(window.OpenedAt), !domain.IsValidServerTime(window.Deadline),
+		!window.Deadline.After(window.OpenedAt),
+		window.State != GoldenReadyWindowOpen && window.State != GoldenReadyWindowExpired,
+		window.ReadinessRevisionID == uuid.Nil, window.ReadinessRevision < 1,
+		window.PresenceRevisionID == uuid.Nil, window.PresenceRevision < 1,
+	) {
+		return goldenStateError("invalid ready-window identity or interval")
+	}
+	if goldenAny(
+		!stateValidGoldenRevisionPredecessor(window.RevisionID, window.Revision, window.PreviousRevisionID),
+		!stateValidGoldenRevisionPredecessor(
+			window.ReadinessRevisionID,
+			window.ReadinessRevision,
+			window.ReadinessPreviousRevisionID,
+		), !stateValidGoldenRevisionPredecessor(
+			window.PresenceRevisionID,
+			window.PresenceRevision,
+			window.PresencePreviousRevisionID,
+		),
+	) {
+		return goldenStateError("invalid ready-window revision lineage")
 	}
 	return nil
 }
@@ -217,7 +247,7 @@ func validateGoldenReadyEventIdentity(
 	windowFound bool,
 	previous time.Time,
 ) error {
-	_, memberFound := FindMember(state.Group.Members, event.ParticipantID)
+	_, memberFound := findMember(state.Group.Members, event.ParticipantID)
 	if goldenAny(
 		!windowFound, event.CommandID == uuid.Nil, event.CommandDigest == [sha256.Size]byte{},
 		event.Scope != state.Scope, event.ParticipantID == uuid.Nil, !memberFound,
@@ -232,26 +262,6 @@ func validateGoldenReadyEventIdentity(
 		event.ResultWindowRevisionID == uuid.Nil, event.ResultReadinessRevisionID == uuid.Nil,
 	) {
 		return goldenStateError("invalid retained ready event")
-	}
-	return nil
-}
-
-func validateGoldenReadyCommand(command GoldenReadyCommand) error {
-	if !validGoldenStateScope(command.Scope) || command.CommandID == uuid.Nil || command.ParticipantID == uuid.Nil ||
-		command.ActorParticipantID == uuid.Nil || command.AttemptID == uuid.Nil || command.WindowID == uuid.Nil ||
-		command.NextStateRevisionID == uuid.Nil || command.NextWindowRevisionID == uuid.Nil ||
-		command.NextReadinessRevisionID == uuid.Nil {
-		return goldenStateError("invalid ready command identity")
-	}
-	return nil
-}
-
-func validateGoldenDisconnectCommand(command GoldenDisconnectCommand) error {
-	if !validGoldenStateScope(command.Scope) || command.CommandID == uuid.Nil || command.ParticipantID == uuid.Nil ||
-		command.AttemptID == uuid.Nil || command.WindowID == uuid.Nil || command.NextStateRevisionID == uuid.Nil ||
-		command.NextWindowRevisionID == uuid.Nil || command.NextReadinessRevisionID == uuid.Nil ||
-		command.NextPresenceRevisionID == uuid.Nil {
-		return goldenStateError("invalid disconnect command identity")
 	}
 	return nil
 }

@@ -1,10 +1,8 @@
-package golden
+package state
 
 import (
 	"bytes"
-	"context"
 	"crypto/sha256"
-	"errors"
 	"fmt"
 	"math"
 	"sort"
@@ -13,14 +11,10 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
+	goldenplan "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/plan"
 )
 
-var (
-	ErrGoldenFallbackAuthorityConflict = errors.New("golden fallback authority conflict")
-	ErrGoldenFallbackConflict          = errors.New("golden fallback commit conflict")
-)
-
-type GoldenFallbackCommand struct {
+type allocationCommand struct {
 	Scope               GoldenStateScope
 	CommandID           uuid.UUID
 	AllocationID        uuid.UUID
@@ -28,125 +22,9 @@ type GoldenFallbackCommand struct {
 	NextStateRevisionID uuid.UUID
 }
 
-type GoldenFallbackUseCase struct {
-	repository StateRepository
-	clock      StateClock
-}
-
-func NewGoldenFallbackUseCase(repository StateRepository, clock StateClock) *GoldenFallbackUseCase {
-	return &GoldenFallbackUseCase{repository: repository, clock: clock}
-}
-
-func (u *GoldenFallbackUseCase) Allocate(
-	ctx context.Context,
-	command GoldenFallbackCommand,
-) (*GoldenState, bool, error) {
-	if u == nil || u.repository == nil || u.clock == nil {
-		return nil, false, domain.ErrValidation
-	}
-	if err := validateGoldenFallbackCommand(command); err != nil {
-		return nil, false, err
-	}
-	allocatedAt := u.clock.Now().Round(0).UTC()
-	if !domain.IsValidServerTime(allocatedAt) {
-		return nil, false, domain.ErrValidation
-	}
-	for range goldenStateAttempts {
-		state, changed, retry, err := u.allocateAttempt(ctx, command, allocatedAt)
-		if retry {
-			continue
-		}
-		return state, changed, err
-	}
-	return nil, false, ErrGoldenFallbackConflict
-}
-
-func (u *GoldenFallbackUseCase) allocateAttempt(
-	ctx context.Context,
-	command GoldenFallbackCommand,
-	allocatedAt time.Time,
-) (*GoldenState, bool, bool, error) {
-	authority, err := u.repository.LoadGoldenState(ctx, command.Scope)
-	if err != nil {
-		return nil, false, false, fmt.Errorf("GoldenFallbackUseCase - load state: %w", err)
-	}
-	if err := authority.Validate(); err != nil {
-		return nil, false, false, domain.ErrInternal
-	}
-	if authority.Allocation != nil {
-		state, reconcileErr := reconcileGoldenFallback(authority, command, *authority.Allocation)
-		return state, false, false, reconcileErr
-	}
-	if goldenFallbackCommandUsedElsewhere(authority, command.CommandID) {
-		return nil, false, false, ErrGoldenCommandReuse
-	}
-	if !authority.Expectation().Equal(command.ExpectedState) {
-		return nil, false, false, ErrGoldenFallbackAuthorityConflict
-	}
-	if err := validateGoldenFallbackEligibility(authority, allocatedAt); err != nil {
-		return nil, false, false, err
-	}
-	if err := stateValidateGoldenFreshIDs(
-		authority,
-		command.CommandID,
-		command.AllocationID,
-		command.NextStateRevisionID,
-	); err != nil {
-		return nil, false, false, err
-	}
-	next, err := buildGoldenFallbackSuccessor(authority, command, allocatedAt)
-	if err != nil {
-		return nil, false, false, err
-	}
-	return u.commitGoldenFallback(ctx, command, authority.Expectation(), next)
-}
-
-func goldenFallbackCommandUsedElsewhere(state GoldenState, commandID uuid.UUID) bool {
-	if _, found := goldenReadyEventByCommand(state.ReadyEvents, commandID); found {
-		return true
-	}
-	_, found := goldenNoShowByCommand(state.NoShows, commandID)
-	return found
-}
-
-func validateGoldenFallbackEligibility(state GoldenState, allocatedAt time.Time) error {
-	terminal, eligible := goldenTerminalNoShow(state)
-	if goldenAny(!eligible, allocatedAt.Before(terminal.ResolvedAt), allocatedAt.Before(terminal.Deadline)) {
-		return ErrGoldenFallbackAuthorityConflict
-	}
-	activeCount := len(state.ActiveParticipantIDs())
-	if state.Group.ParticipationEstablished && activeCount >= 2 {
-		return ErrGoldenFallbackNotRequired
-	}
-	if !state.Group.ParticipationEstablished && activeCount != 0 {
-		return ErrGoldenFallbackAuthorityConflict
-	}
-	return nil
-}
-
-func buildGoldenFallbackSuccessor(
-	authority GoldenState,
-	command GoldenFallbackCommand,
-	allocatedAt time.Time,
-) (GoldenState, error) {
-	if authority.Revision == math.MaxInt64 {
-		return GoldenState{}, fmt.Errorf("%w: fallback successor", ErrGoldenRevisionOverflow)
-	}
-	allocation, err := buildGoldenAllocation(authority, command, allocatedAt)
-	if err != nil {
-		return GoldenState{}, err
-	}
-	next := authority.Snapshot()
-	next.PreviousRevisionID = goldenUUID(next.RevisionID)
-	next.RevisionID = command.NextStateRevisionID
-	next.Revision++
-	next.Allocation = &allocation
-	return BuildGoldenState(next)
-}
-
 func buildGoldenAllocation(
 	state GoldenState,
-	command GoldenFallbackCommand,
+	command allocationCommand,
 	allocatedAt time.Time,
 ) (GoldenAllocation, error) {
 	allocation := GoldenAllocation{
@@ -159,7 +37,7 @@ func buildGoldenAllocation(
 		if len(active) > 1 {
 			return GoldenAllocation{}, ErrGoldenFallbackNotRequired
 		}
-		excludedSeeds := make([]GroupMemberSeed, 0, len(state.Group.Members))
+		excludedSeeds := make([]goldenplan.GroupMemberSeed, 0, len(state.Group.Members))
 		excluded := make(map[uuid.UUID]struct{}, len(state.Group.Members))
 		for _, member := range state.Group.Members {
 			if member.Excluded {
@@ -198,43 +76,6 @@ func buildGoldenAllocation(
 	return allocation, nil
 }
 
-func (u *GoldenFallbackUseCase) commitGoldenFallback(
-	ctx context.Context,
-	command GoldenFallbackCommand,
-	expected GoldenStateExpectation,
-	next GoldenState,
-) (*GoldenState, bool, bool, error) {
-	committed, changed, err := u.repository.CommitGoldenState(ctx, GoldenStateCommit{Expected: expected, Next: next})
-	if errors.Is(err, domain.ErrConflict) {
-		return nil, false, true, nil
-	}
-	if err != nil {
-		return nil, false, false, fmt.Errorf("GoldenFallbackUseCase - commit state: %w", err)
-	}
-	if committed == nil || committed.Validate() != nil || committed.Allocation == nil {
-		return nil, false, false, domain.ErrInternal
-	}
-	result, reconcileErr := reconcileGoldenFallback(*committed, command, *committed.Allocation)
-	if reconcileErr != nil || (changed && !committed.Expectation().Equal(next.Expectation())) {
-		return nil, false, false, domain.ErrInternal
-	}
-	return result, changed, false, nil
-}
-
-func reconcileGoldenFallback(
-	state GoldenState,
-	command GoldenFallbackCommand,
-	allocation GoldenAllocation,
-) (*GoldenState, error) {
-	if allocation.ID != command.AllocationID || allocation.CommandID != command.CommandID ||
-		allocation.Scope != command.Scope || !allocation.ExpectedState.Equal(command.ExpectedState) ||
-		allocation.ResultStateRevisionID != command.NextStateRevisionID {
-		return nil, ErrGoldenCommandReuse
-	}
-	clone := state.Snapshot()
-	return &clone, nil
-}
-
 func validateGoldenAllocation(state GoldenState) error {
 	if state.Allocation == nil {
 		return nil
@@ -257,7 +98,7 @@ func validateGoldenAllocation(state GoldenState) error {
 	if goldenAllocationCommandIsReused(state, allocation.CommandID) {
 		return goldenFallbackError("allocation command identity is reused")
 	}
-	want, err := buildGoldenAllocation(state, GoldenFallbackCommand{
+	want, err := buildGoldenAllocation(state, allocationCommand{
 		Scope: state.Scope, CommandID: allocation.CommandID, AllocationID: allocation.ID,
 		ExpectedState: allocation.ExpectedState, NextStateRevisionID: allocation.ResultStateRevisionID,
 	}, allocation.AllocatedAt)
@@ -329,24 +170,12 @@ func goldenAllocationPredecessorExpectation(state GoldenState) GoldenStateExpect
 	return expected
 }
 
-func OrderGoldenFallbackMembers(members []GroupMemberSeed) ([]uuid.UUID, error) {
-	ordered, err := orderGoldenFallbackSeeds(members)
-	if err != nil {
-		return nil, err
-	}
-	result := make([]uuid.UUID, len(ordered))
-	for index, member := range ordered {
-		result[index] = member.ParticipantID
-	}
-	return result, nil
-}
-
-func orderGoldenFallbackSeeds(members []GroupMemberSeed) ([]GroupMemberSeed, error) {
-	ordered := CloneGroupMemberSeeds(members)
+func orderGoldenFallbackSeeds(members []goldenplan.GroupMemberSeed) ([]goldenplan.GroupMemberSeed, error) {
+	ordered := goldenplan.CloneGroupMemberSeeds(members)
 	seenIDs := make(map[uuid.UUID]struct{}, len(ordered))
 	seenSeeds := make(map[int]struct{}, len(ordered))
 	for _, member := range ordered {
-		if err := ValidateGroupMember(member); err != nil {
+		if err := goldenplan.ValidateGroupMember(member); err != nil {
 			return nil, goldenFallbackError("ordering input: %v", err)
 		}
 		if _, duplicate := seenIDs[member.ParticipantID]; duplicate {
@@ -362,7 +191,7 @@ func orderGoldenFallbackSeeds(members []GroupMemberSeed) ([]GroupMemberSeed, err
 	return ordered, nil
 }
 
-func goldenFallbackLess(first, second GroupMemberSeed) bool {
+func goldenFallbackLess(first, second goldenplan.GroupMemberSeed) bool {
 	if first.Points != second.Points {
 		return first.Points > second.Points
 	}
@@ -378,15 +207,7 @@ func goldenFallbackLess(first, second GroupMemberSeed) bool {
 	return first.Seed < second.Seed
 }
 
-func cloneGoldenFallbackDuration(value *time.Duration) *time.Duration {
-	if value == nil {
-		return nil
-	}
-	clone := *value
-	return &clone
-}
-
-func goldenFallbackInputs(members []GroupMemberSeed) []GoldenFallbackOrderingInput {
+func goldenFallbackInputs(members []goldenplan.GroupMemberSeed) []GoldenFallbackOrderingInput {
 	result := make([]GoldenFallbackOrderingInput, len(members))
 	for index, member := range members {
 		result[index] = GoldenFallbackOrderingInput{
@@ -397,6 +218,14 @@ func goldenFallbackInputs(members []GroupMemberSeed) []GoldenFallbackOrderingInp
 		}
 	}
 	return result
+}
+
+func cloneGoldenFallbackDuration(value *time.Duration) *time.Duration {
+	if value == nil {
+		return nil
+	}
+	clone := *value
+	return &clone
 }
 
 func goldenAllocationPayload(allocation GoldenAllocation) ([]byte, error) {
@@ -415,15 +244,6 @@ func goldenAllocationsEqual(first, second GoldenAllocation) bool {
 	firstPayload, firstErr := goldenAllocationPayload(first)
 	secondPayload, secondErr := goldenAllocationPayload(second)
 	return firstErr == nil && secondErr == nil && bytes.Equal(firstPayload, secondPayload)
-}
-
-func validateGoldenFallbackCommand(command GoldenFallbackCommand) error {
-	if !validGoldenStateScope(command.Scope) || command.CommandID == uuid.Nil || command.AllocationID == uuid.Nil ||
-		command.NextStateRevisionID == uuid.Nil || command.CommandID == command.AllocationID ||
-		command.CommandID == command.NextStateRevisionID || command.AllocationID == command.NextStateRevisionID {
-		return goldenFallbackError("invalid command identity")
-	}
-	return nil
 }
 
 func cloneGoldenAllocation(input *GoldenAllocation) *GoldenAllocation {
