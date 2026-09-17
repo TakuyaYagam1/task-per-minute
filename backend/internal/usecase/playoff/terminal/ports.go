@@ -1,4 +1,4 @@
-package playoff
+package terminal
 
 import (
 	"context"
@@ -11,7 +11,18 @@ import (
 	seriesdomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/series"
 	assignmentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/assignment"
 	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
+	semifinalusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff/semifinal"
 	resultprojection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection"
+)
+
+type SemifinalWinnerPath = semifinalusecase.SemifinalWinnerPath
+type SemifinalLoserPath = semifinalusecase.SemifinalLoserPath
+type SemifinalMatch = semifinalusecase.SemifinalMatch
+type SemifinalBracket = semifinalusecase.SemifinalBracket
+
+const (
+	SemifinalWinnerToFinal   = semifinalusecase.SemifinalWinnerToFinal
+	SemifinalLoserEliminated = semifinalusecase.SemifinalLoserEliminated
 )
 
 // TerminalSeriesCommand is intentionally transport-neutral. The repository

@@ -91,7 +91,7 @@ packages:
       PlayoffProjectionPublisher:
       SwissTerminalEvidenceReader:
       ProgressionClock:
-  github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff/terminal:
     interfaces:
       TerminalRepository:
       FinalDraftAssignmentPlanner:

@@ -1,4 +1,4 @@
-package playoff
+package terminal
 
 import (
 	"encoding/json"

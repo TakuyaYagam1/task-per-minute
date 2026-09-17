@@ -1,4 +1,4 @@
-package playoff_test
+package terminal_test
 
 import (
 	"context"
@@ -15,8 +15,8 @@ import (
 	assignmentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/assignment"
 	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
 	draftmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft/mocks"
-	playoff "github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
-	playoffmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff/mocks"
+	playoff "github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff/terminal"
+	playoffmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff/terminal/mocks"
 )
 
 func TestFinalDraftAssignmentService_RehydrateFinalBindingsRejectsAuthoritativePlanInconsistency(t *testing.T) {

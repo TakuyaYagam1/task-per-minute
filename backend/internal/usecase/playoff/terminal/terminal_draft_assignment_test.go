@@ -1,4 +1,4 @@
-package playoff
+package terminal
 
 import (
 	"crypto/sha256"
