@@ -48,53 +48,6 @@ func goldenOpenCommandIdentityIDs(command OpenGoldenReadyWindowCommand) []uuid.U
 	return identities
 }
 
-func ValidateFreshIdentityIDs(state GoldenState, identities ...uuid.UUID) error {
-	if err := waveValidateGoldenFreshIDs(state, identities...); err != nil {
-		return goldenWaveError("identity ownership: %v", err)
-	}
-	reserved := make(map[uuid.UUID]struct{})
-	for _, value := range AuthorityIdentityIDs(state.ExactPlan.Authority) {
-		if value != uuid.Nil {
-			reserved[value] = struct{}{}
-		}
-	}
-	for _, reservation := range state.ExactPlan.Authority.ExistingTaskReservations {
-		reserved[reservation.PlanID] = struct{}{}
-		reserved[reservation.PlanRevisionID] = struct{}{}
-	}
-	for _, identity := range identities {
-		if _, exists := reserved[identity]; exists {
-			return goldenWaveError("identity aliases exact plan authority")
-		}
-	}
-	return nil
-}
-
-func waveValidateGoldenFreshIDs(state GoldenState, candidates ...uuid.UUID) error {
-	roles := CoreIdentityRoles(state)
-	roles = append(roles, PlanIdentityRoles(state)...)
-	roles = append(roles, WindowIdentityRoles(state)...)
-	roles = append(roles, TransitionIdentityRoles(state)...)
-	reserved := make(map[uuid.UUID]struct{}, len(roles))
-	for _, role := range roles {
-		reserved[role.Value] = struct{}{}
-	}
-	seen := make(map[uuid.UUID]struct{}, len(candidates))
-	for _, candidate := range candidates {
-		if candidate == uuid.Nil {
-			continue
-		}
-		if _, exists := reserved[candidate]; exists {
-			return goldenWaveError("identity aliases retained state authority")
-		}
-		if _, exists := seen[candidate]; exists {
-			return goldenWaveError("new identities alias each other")
-		}
-		seen[candidate] = struct{}{}
-	}
-	return nil
-}
-
 func goldenStateHasUnresolvedAttempt(state GoldenState) bool {
 	if len(state.Group.Attempts) == 0 {
 		return false

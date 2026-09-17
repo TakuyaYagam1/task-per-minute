@@ -46,6 +46,22 @@ type stateGoldenIdentityRole struct {
 	role  string
 }
 
+// RetainedIdentityValues returns every non-nil identity retained by the
+// Golden state authority graph.
+func RetainedIdentityValues(state GoldenState) []uuid.UUID {
+	roles := goldenCoreIdentityRoles(state)
+	roles = append(roles, goldenPlanIdentityRoles(state)...)
+	roles = append(roles, goldenWindowIdentityRoles(state)...)
+	roles = append(roles, goldenTransitionIdentityRoles(state)...)
+	values := make([]uuid.UUID, 0, len(roles))
+	for _, identity := range roles {
+		if identity.value != uuid.Nil {
+			values = append(values, identity.value)
+		}
+	}
+	return values
+}
+
 func validateGoldenIdentityRoles(state GoldenState) error {
 	roles := goldenCoreIdentityRoles(state)
 	roles = append(roles, goldenPlanIdentityRoles(state)...)
