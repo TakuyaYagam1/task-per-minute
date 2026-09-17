@@ -1,4 +1,4 @@
-package admin_test
+package correction_test
 
 import (
 	"context"
@@ -10,8 +10,8 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	correctionusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/correction"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
-	tournamentadminmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/mocks"
+	admincorrection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/correction"
+	correctionmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/correction/mocks"
 )
 
 func TestCorrectionWorkflowBuildsAndCommitsServerOwnedPlan(t *testing.T) {
@@ -27,8 +27,8 @@ func TestCorrectionWorkflowBuildsAndCommitsServerOwnedPlan(t *testing.T) {
 	repository.EXPECT().CommitCorrection(mock.Anything, mock.Anything).
 		RunAndReturn(func(
 			_ context.Context,
-			mutation tournamentadmin.CorrectionMutation,
-		) (tournamentadmin.CorrectionEvidence, bool, error) {
+			mutation admincorrection.CorrectionMutation,
+		) (admincorrection.CorrectionEvidence, bool, error) {
 			require.Equal(t, command, mutation.Command)
 			require.Equal(t, authority.RosterID, mutation.Authority.RosterID)
 			require.Equal(t, correctionWorkflowRequestDigest(t, command), mutation.RequestDigest)
@@ -43,7 +43,7 @@ func TestCorrectionWorkflowBuildsAndCommitsServerOwnedPlan(t *testing.T) {
 			return mutation.Evidence, true, nil
 		})
 
-	evidence, err := tournamentadmin.NewCorrectionWorkflow(tournamentadmin.CorrectionWorkflowDependencies{
+	evidence, err := admincorrection.NewCorrectionWorkflow(admincorrection.CorrectionWorkflowDependencies{
 		Transactions: transactions, Repository: repository,
 	}).CorrectGameResult(t.Context(), command)
 	require.NoError(t, err)
@@ -70,8 +70,8 @@ func TestCorrectionWorkflowRollsBackPausedGoldenBeforeCommittingCorrection(t *te
 	repository.EXPECT().CommitCorrection(mock.Anything, mock.Anything).
 		RunAndReturn(func(
 			_ context.Context,
-			mutation tournamentadmin.CorrectionMutation,
-		) (tournamentadmin.CorrectionEvidence, bool, error) {
+			mutation admincorrection.CorrectionMutation,
+		) (admincorrection.CorrectionEvidence, bool, error) {
 			require.Equal(t, correctionusecase.StageGoldenToPlayoff, mutation.Stage.Transition)
 			require.True(t, mutation.Stage.CreatePlayoff)
 			require.Len(t, mutation.Stage.GroupSupersessions, 1)
@@ -81,7 +81,7 @@ func TestCorrectionWorkflowRollsBackPausedGoldenBeforeCommittingCorrection(t *te
 			return mutation.Evidence, true, nil
 		})
 
-	_, err := tournamentadmin.NewCorrectionWorkflow(tournamentadmin.CorrectionWorkflowDependencies{
+	_, err := admincorrection.NewCorrectionWorkflow(admincorrection.CorrectionWorkflowDependencies{
 		Transactions: transactions, Repository: repository,
 	}).CorrectGameResult(t.Context(), command)
 	require.NoError(t, err)
@@ -99,7 +99,7 @@ func TestCorrectionWorkflowRejectsClientDigestMismatchWithoutMutation(t *testing
 	).Return(authority, nil)
 	repository.EXPECT().ReadCorrectionTime(mock.Anything).Return(requestedAt, nil)
 
-	_, err := tournamentadmin.NewCorrectionWorkflow(tournamentadmin.CorrectionWorkflowDependencies{
+	_, err := admincorrection.NewCorrectionWorkflow(admincorrection.CorrectionWorkflowDependencies{
 		Transactions: transactions, Repository: repository,
 	}).CorrectGameResult(t.Context(), command)
 	require.ErrorIs(t, err, domain.ErrValidation)
@@ -109,17 +109,17 @@ func TestCorrectionWorkflowReturnsDurableEvidenceOnExactReplay(t *testing.T) {
 	t.Parallel()
 
 	command, authority, requestedAt := correctionWorkflowFixture(t)
-	evidence := tournamentadmin.CorrectionEvidence{
+	evidence := admincorrection.CorrectionEvidence{
 		CommandID: command.CommandID, TournamentID: command.TournamentID,
 		SeriesID: command.SeriesID, GameID: command.GameID,
 		OperatorID: command.Operator.ActorID, Reason: command.Reason,
 		Fields: append([]string(nil), command.Fields...), RequestedAt: requestedAt,
-		ValidationDigest: [32]byte{1}, Supersessions: []tournamentadmin.ProjectionSupersessionView{},
-		UnlockIntents: []tournamentadmin.CorrectionUnlockIntent{},
+		ValidationDigest: [32]byte{1}, Supersessions: []admincorrection.ProjectionSupersessionView{},
+		UnlockIntents: []admincorrection.CorrectionUnlockIntent{},
 	}
 	transactions, repository := correctionWorkflowMocks(t)
 	repository.EXPECT().FindCorrectionCommand(mock.Anything, command.CommandID).
-		Return(&tournamentadmin.CorrectionCommandRecord{
+		Return(&admincorrection.CorrectionCommandRecord{
 			CommandID: command.CommandID, TournamentID: command.TournamentID,
 			RosterID: authority.RosterID, SeriesID: command.SeriesID, GameID: command.GameID,
 			OperatorID:                 command.Operator.ActorID,
@@ -128,7 +128,7 @@ func TestCorrectionWorkflowReturnsDurableEvidenceOnExactReplay(t *testing.T) {
 			ExecutedAt: requestedAt,
 		}, nil)
 
-	replayed, err := tournamentadmin.NewCorrectionWorkflow(tournamentadmin.CorrectionWorkflowDependencies{
+	replayed, err := admincorrection.NewCorrectionWorkflow(admincorrection.CorrectionWorkflowDependencies{
 		Transactions: transactions, Repository: repository,
 	}).CorrectGameResult(t.Context(), command)
 	require.NoError(t, err)
@@ -151,12 +151,12 @@ func TestCorrectionWorkflowAcceptsRetainedConcurrentReplayOnlyWhenEvidenceMatche
 		repository.EXPECT().CommitCorrection(mock.Anything, mock.Anything).
 			RunAndReturn(func(
 				_ context.Context,
-				mutation tournamentadmin.CorrectionMutation,
-			) (tournamentadmin.CorrectionEvidence, bool, error) {
+				mutation admincorrection.CorrectionMutation,
+			) (admincorrection.CorrectionEvidence, bool, error) {
 				return mutation.Evidence, false, nil
 			})
 
-		evidence, err := tournamentadmin.NewCorrectionWorkflow(tournamentadmin.CorrectionWorkflowDependencies{
+		evidence, err := admincorrection.NewCorrectionWorkflow(admincorrection.CorrectionWorkflowDependencies{
 			Transactions: transactions, Repository: repository,
 		}).CorrectGameResult(t.Context(), command)
 		require.NoError(t, err)
@@ -176,17 +176,17 @@ func TestCorrectionWorkflowAcceptsRetainedConcurrentReplayOnlyWhenEvidenceMatche
 		repository.EXPECT().CommitCorrection(mock.Anything, mock.Anything).
 			RunAndReturn(func(
 				_ context.Context,
-				mutation tournamentadmin.CorrectionMutation,
-			) (tournamentadmin.CorrectionEvidence, bool, error) {
+				mutation admincorrection.CorrectionMutation,
+			) (admincorrection.CorrectionEvidence, bool, error) {
 				stored := mutation.Evidence
 				stored.Reason = "different_reason"
 				return stored, false, nil
 			})
 
-		_, err := tournamentadmin.NewCorrectionWorkflow(tournamentadmin.CorrectionWorkflowDependencies{
+		_, err := admincorrection.NewCorrectionWorkflow(admincorrection.CorrectionWorkflowDependencies{
 			Transactions: transactions, Repository: repository,
 		}).CorrectGameResult(t.Context(), command)
-		var conflict *tournamentadmin.RevisionConflictError
+		var conflict *admincorrection.RevisionConflictError
 		require.ErrorAs(t, err, &conflict)
 	})
 }
@@ -201,7 +201,7 @@ func TestCorrectionWorkflowRejectsCommandReuseAndStaleProjection(t *testing.T) {
 		evidence := correctionReplayEvidence(command, requestedAt)
 		transactions, repository := correctionWorkflowMocks(t)
 		repository.EXPECT().FindCorrectionCommand(mock.Anything, command.CommandID).
-			Return(&tournamentadmin.CorrectionCommandRecord{
+			Return(&admincorrection.CorrectionCommandRecord{
 				CommandID: command.CommandID, TournamentID: command.TournamentID,
 				RosterID: authority.RosterID, SeriesID: command.SeriesID, GameID: command.GameID,
 				OperatorID:                 command.Operator.ActorID,
@@ -212,10 +212,10 @@ func TestCorrectionWorkflowRejectsCommandReuseAndStaleProjection(t *testing.T) {
 			mock.Anything, command.TournamentID, command.SeriesID, command.GameID,
 		).Return(authority, nil)
 
-		_, err := tournamentadmin.NewCorrectionWorkflow(tournamentadmin.CorrectionWorkflowDependencies{
+		_, err := admincorrection.NewCorrectionWorkflow(admincorrection.CorrectionWorkflowDependencies{
 			Transactions: transactions, Repository: repository,
 		}).CorrectGameResult(t.Context(), command)
-		var conflict *tournamentadmin.RevisionConflictError
+		var conflict *admincorrection.RevisionConflictError
 		require.ErrorAs(t, err, &conflict)
 		require.Equal(t, command.ExpectedProjectionRevision, conflict.ExpectedRevision)
 		require.Equal(t, authority.ProjectionRevision, conflict.CurrentRevision)
@@ -232,10 +232,10 @@ func TestCorrectionWorkflowRejectsCommandReuseAndStaleProjection(t *testing.T) {
 			mock.Anything, command.TournamentID, command.SeriesID, command.GameID,
 		).Return(authority, nil)
 
-		_, err := tournamentadmin.NewCorrectionWorkflow(tournamentadmin.CorrectionWorkflowDependencies{
+		_, err := admincorrection.NewCorrectionWorkflow(admincorrection.CorrectionWorkflowDependencies{
 			Transactions: transactions, Repository: repository,
 		}).CorrectGameResult(t.Context(), command)
-		var conflict *tournamentadmin.RevisionConflictError
+		var conflict *admincorrection.RevisionConflictError
 		require.ErrorAs(t, err, &conflict)
 		require.Equal(t, command.ExpectedProjectionRevision, conflict.ExpectedRevision)
 		require.Equal(t, authority.ProjectionRevision, conflict.CurrentRevision)
@@ -253,33 +253,33 @@ func TestCorrectionWorkflowRejectsCrossTournamentAuthority(t *testing.T) {
 		mock.Anything, command.TournamentID, command.SeriesID, command.GameID,
 	).Return(authority, nil)
 
-	_, err := tournamentadmin.NewCorrectionWorkflow(tournamentadmin.CorrectionWorkflowDependencies{
+	_, err := admincorrection.NewCorrectionWorkflow(admincorrection.CorrectionWorkflowDependencies{
 		Transactions: transactions, Repository: repository,
 	}).CorrectGameResult(t.Context(), command)
 	require.ErrorIs(t, err, domain.ErrInternal)
 }
 
 func correctionReplayEvidence(
-	command tournamentadmin.CorrectionCommand,
+	command admincorrection.CorrectionCommand,
 	requestedAt time.Time,
-) tournamentadmin.CorrectionEvidence {
-	return tournamentadmin.CorrectionEvidence{
+) admincorrection.CorrectionEvidence {
+	return admincorrection.CorrectionEvidence{
 		CommandID: command.CommandID, TournamentID: command.TournamentID,
 		SeriesID: command.SeriesID, GameID: command.GameID,
 		OperatorID: command.Operator.ActorID, Reason: command.Reason,
 		Fields: append([]string(nil), command.Fields...), RequestedAt: requestedAt,
-		ValidationDigest: [32]byte{1}, Supersessions: []tournamentadmin.ProjectionSupersessionView{},
-		UnlockIntents: []tournamentadmin.CorrectionUnlockIntent{},
+		ValidationDigest: [32]byte{1}, Supersessions: []admincorrection.ProjectionSupersessionView{},
+		UnlockIntents: []admincorrection.CorrectionUnlockIntent{},
 	}
 }
 
 func correctionWorkflowMocks(t *testing.T) (
-	*tournamentadminmocks.MockCorrectionTransactionManager,
-	*tournamentadminmocks.MockCorrectionWorkflowRepository,
+	*correctionmocks.MockCorrectionTransactionManager,
+	*correctionmocks.MockCorrectionWorkflowRepository,
 ) {
 	t.Helper()
-	transactions := tournamentadminmocks.NewMockCorrectionTransactionManager(t)
+	transactions := correctionmocks.NewMockCorrectionTransactionManager(t)
 	transactions.EXPECT().Do(mock.Anything, mock.Anything).
 		RunAndReturn(func(ctx context.Context, fn func(context.Context) error) error { return fn(ctx) })
-	return transactions, tournamentadminmocks.NewMockCorrectionWorkflowRepository(t)
+	return transactions, correctionmocks.NewMockCorrectionWorkflowRepository(t)
 }

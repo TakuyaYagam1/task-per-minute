@@ -1,4 +1,4 @@
-package admin_test
+package correction_test
 
 import (
 	"crypto/sha256"
@@ -17,12 +17,12 @@ import (
 	resultusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/result"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection"
 	swissusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/swiss"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	admincorrection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/correction"
 )
 
 func correctionWorkflowFixture(
 	t *testing.T,
-) (tournamentadmin.CorrectionCommand, tournamentadmin.CorrectionWorkflowAuthority, time.Time) {
+) (admincorrection.CorrectionCommand, admincorrection.CorrectionWorkflowAuthority, time.Time) {
 	t.Helper()
 
 	base := time.Date(2026, time.September, 6, 9, 0, 0, 0, time.UTC)
@@ -143,7 +143,7 @@ func correctionWorkflowFixture(
 	require.NoError(t, err)
 
 	decisionPayload := []byte(`{"winner":"first"}`)
-	authority := tournamentadmin.CorrectionWorkflowAuthority{
+	authority := admincorrection.CorrectionWorkflowAuthority{
 		RosterID: correctionWorkflowID(30), ProjectionRevisionID: correctionWorkflowID(31),
 		ProjectionRevision: 7,
 		Stage: correctionusecase.StageSnapshot{
@@ -184,15 +184,15 @@ func correctionWorkflowFixture(
 		},
 	}
 
-	command := tournamentadmin.CorrectionCommand{
-		CommandScope: tournamentadmin.CommandScope{
-			Operator:     tournamentadmin.OperatorIdentity{ActorID: correctionWorkflowID(40)},
+	command := admincorrection.CorrectionCommand{
+		CommandScope: admincorrection.CommandScope{
+			Operator:     admincorrection.OperatorIdentity{ActorID: correctionWorkflowID(40)},
 			TournamentID: tournamentID, CommandID: correctionWorkflowID(41),
 		},
 		SeriesID: seriesID, GameID: gameID, ExpectedProjectionRevision: authority.ProjectionRevision,
 		Confirmed: true, Reason: "operator_ruling", Explanation: "Verified referee ruling.",
 		Fields: []string{"winner", "result_reason"},
-		Patch: tournamentadmin.CorrectionPatch{
+		Patch: admincorrection.CorrectionPatch{
 			State: domain.GameStateCompleted, Reason: domain.GameResultReasonSurrender,
 			WinnerID: correctionWorkflowUUIDPointer(secondID),
 		},
@@ -204,7 +204,7 @@ func correctionWorkflowFixture(
 		topFourProjection, bracketProjection, championProjection,
 	} {
 		revision := projection.Revision()
-		intent := tournamentadmin.CorrectionProjectionIntent{
+		intent := admincorrection.CorrectionProjectionIntent{
 			ExpectedRevision: correctionWorkflowExpectation(revision),
 			NextRevisionID:   correctionWorkflowID(50 + index), DecisionID: correctionWorkflowID(60 + index),
 		}
@@ -216,7 +216,7 @@ func correctionWorkflowFixture(
 }
 
 func correctionWorkflowPausedGoldenStage(
-	authority tournamentadmin.CorrectionWorkflowAuthority,
+	authority admincorrection.CorrectionWorkflowAuthority,
 	changedAt time.Time,
 ) correctionusecase.StageSnapshot {
 	firstID := authority.Core.Series.FirstParticipantID
@@ -315,13 +315,13 @@ func correctionWorkflowSwissAuthority(
 	return correctionusecase.StageSwissAuthority{Participants: canonical, Ledger: ledger, Complete: true}
 }
 
-func correctionWorkflowExpectation(revision domain.DerivedRevision) tournamentadmin.ProjectionRevisionExpectation {
+func correctionWorkflowExpectation(revision domain.DerivedRevision) admincorrection.ProjectionRevisionExpectation {
 	var previous *uuid.UUID
 	if value := revision.PreviousRevisionID(); value != nil {
 		id := value.UUID()
 		previous = &id
 	}
-	return tournamentadmin.ProjectionRevisionExpectation{
+	return admincorrection.ProjectionRevisionExpectation{
 		ID: revision.ID().UUID(), TournamentID: revision.TournamentID(),
 		ArtifactKind: string(revision.Artifact().Kind), ArtifactID: revision.Artifact().EntityID,
 		RevisionNo: revision.RevisionNo(), PreviousRevisionID: previous,
@@ -331,8 +331,8 @@ func correctionWorkflowExpectation(revision domain.DerivedRevision) tournamentad
 
 func correctionWorkflowPayload(
 	t *testing.T,
-	command tournamentadmin.CorrectionCommand,
-	intent tournamentadmin.CorrectionProjectionIntent,
+	command admincorrection.CorrectionCommand,
+	intent admincorrection.CorrectionProjectionIntent,
 ) []byte {
 	t.Helper()
 	fields := append([]string(nil), command.Fields...)
@@ -390,17 +390,17 @@ func correctionWorkflowPayload(
 	return payload
 }
 
-func correctionWorkflowRequestDigest(t *testing.T, command tournamentadmin.CorrectionCommand) [sha256.Size]byte {
+func correctionWorkflowRequestDigest(t *testing.T, command admincorrection.CorrectionCommand) [sha256.Size]byte {
 	t.Helper()
 	canonical := command
 	canonical.Fields = append([]string(nil), command.Fields...)
 	sort.Strings(canonical.Fields)
-	canonical.ProjectionIntents = append([]tournamentadmin.CorrectionProjectionIntent(nil), command.ProjectionIntents...)
+	canonical.ProjectionIntents = append([]admincorrection.CorrectionProjectionIntent(nil), command.ProjectionIntents...)
 	sort.Slice(canonical.ProjectionIntents, func(i, j int) bool {
 		return canonical.ProjectionIntents[i].ExpectedRevision.ID.String() <
 			canonical.ProjectionIntents[j].ExpectedRevision.ID.String()
 	})
-	canonical.UnlockIntents = append([]tournamentadmin.CorrectionUnlockIntent(nil), command.UnlockIntents...)
+	canonical.UnlockIntents = append([]admincorrection.CorrectionUnlockIntent(nil), command.UnlockIntents...)
 	sort.Slice(canonical.UnlockIntents, func(i, j int) bool {
 		return canonical.UnlockIntents[i].ReservationID.String() < canonical.UnlockIntents[j].ReservationID.String()
 	})

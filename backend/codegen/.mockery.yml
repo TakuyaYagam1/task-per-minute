@@ -49,11 +49,13 @@ packages:
       ExecutionAuthorityProvider:
       AdminPostseasonWorkflow:
       ReplayWorkflowRepository:
-      CorrectionTransactionManager:
-      CorrectionWorkflowRepository:
       OperationClock:
       OperationObserver:
       AdminService:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/correction:
+    interfaces:
+      CorrectionTransactionManager:
+      CorrectionWorkflowRepository:
   github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/incident:
     interfaces:
       IncidentSnapshotPort:
