@@ -27,17 +27,6 @@ type DeadlineRearmer = recoveryusecase.DeadlineRearmer
 type RecoveryEpochReplayer = recoveryusecase.RecoveryEpochReplayer
 type RecoveryTournamentSource = recoveryusecase.RecoveryTournamentSource
 type RecoveryAuthorityProvider = recoveryusecase.RecoveryAuthorityProvider
-type ForfeitClock interface {
-	Now() time.Time
-}
-
-type ForfeitRepository interface {
-	LoadForfeitAuthority(ctx context.Context, scope Scope) (ForfeitAuthority, error)
-	CommitForfeitResolution(
-		ctx context.Context,
-		resolution ForfeitResolution,
-	) (*ForfeitResolution, bool, error)
-}
 type NoShowClock interface {
 	Now() time.Time
 }

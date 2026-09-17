@@ -1,4 +1,4 @@
-package game
+package forfeit
 
 import reconnectusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/reconnect"
 

@@ -1,4 +1,4 @@
-package game
+package forfeit
 
 import (
 	"github.com/google/uuid"

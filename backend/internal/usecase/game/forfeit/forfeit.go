@@ -1,4 +1,4 @@
-package game
+package forfeit
 
 import (
 	"context"
@@ -117,6 +117,18 @@ type ForfeitResolution struct {
 type ForfeitUseCase struct {
 	repository ForfeitRepository
 	clock      ForfeitClock
+}
+
+type ForfeitClock interface {
+	Now() time.Time
+}
+
+type ForfeitRepository interface {
+	LoadForfeitAuthority(ctx context.Context, scope Scope) (ForfeitAuthority, error)
+	CommitForfeitResolution(
+		ctx context.Context,
+		resolution ForfeitResolution,
+	) (*ForfeitResolution, bool, error)
 }
 
 type forfeitRequest struct {
