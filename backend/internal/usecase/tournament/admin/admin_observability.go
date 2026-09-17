@@ -1,10 +1,6 @@
 package admin
 
-import (
-	"context"
-
-	observabilityusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/observability"
-)
+import observabilityusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/observability"
 
 type Operation = observabilityusecase.Operation
 type OperationEvent = observabilityusecase.OperationEvent
@@ -30,21 +26,3 @@ const (
 	OperationGameReplay       = observabilityusecase.OperationGameReplay
 	OperationResultCorrect    = observabilityusecase.OperationResultCorrect
 )
-
-type operationMeasurement struct {
-	inner observabilityusecase.OperationMeasurement
-}
-
-func newOperationMeasurement(clock OperationClock, observer OperationObserver) operationMeasurement {
-	return operationMeasurement{
-		inner: observabilityusecase.NewOperationMeasurement(clock, observer),
-	}
-}
-
-func firstOperationObserver(observers ...OperationObserver) OperationObserver {
-	return observabilityusecase.FirstOperationObserver(observers...)
-}
-
-func (measurement operationMeasurement) emit(ctx context.Context, event OperationEvent, err error) {
-	measurement.inner.Emit(ctx, event, err)
-}

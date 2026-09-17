@@ -8,6 +8,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/audit"
+	observabilityusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/observability"
 	tournamentpreflight "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/preflight"
 )
 
@@ -20,7 +21,7 @@ type AdminObservedService struct {
 }
 
 func AdminNewObservedService(next AdminService, clock OperationClock, observer OperationObserver) *AdminObservedService {
-	return &AdminObservedService{next: next, clock: clock, observer: firstOperationObserver(observer)}
+	return &AdminObservedService{next: next, clock: clock, observer: observabilityusecase.FirstOperationObserver(observer)}
 }
 
 func (service *AdminObservedService) GetRoster(ctx context.Context, query RosterQuery) (RosterView, error) {
@@ -40,7 +41,7 @@ func (service *AdminObservedService) ReplaceRoster(
 	} else {
 		view, err = service.next.ReplaceRoster(ctx, command)
 	}
-	measurement.emit(ctx, operationEvent(
+	measurement.Emit(ctx, operationEvent(
 		OperationRosterReplace,
 		command.CommandScope,
 		command.TournamentID,
@@ -59,7 +60,7 @@ func (service *AdminObservedService) RunPreflight(
 	} else {
 		report, err = service.next.RunPreflight(ctx, command)
 	}
-	measurement.emit(ctx, operationEvent(
+	measurement.Emit(ctx, operationEvent(
 		OperationPreflightRun,
 		command.CommandScope,
 		command.TournamentID,
@@ -78,7 +79,7 @@ func (service *AdminObservedService) LockRoster(
 	} else {
 		view, err = service.next.LockRoster(ctx, command)
 	}
-	measurement.emit(ctx, operationEvent(
+	measurement.Emit(ctx, operationEvent(
 		OperationRosterLock,
 		command.CommandScope,
 		command.TournamentID,
@@ -97,7 +98,7 @@ func (service *AdminObservedService) UnlockRoster(
 	} else {
 		view, err = service.next.UnlockRoster(ctx, command)
 	}
-	measurement.emit(ctx, operationEvent(
+	measurement.Emit(ctx, operationEvent(
 		OperationRosterUnlock,
 		command.CommandScope,
 		command.TournamentID,
@@ -120,7 +121,7 @@ func (service *AdminObservedService) ConfigurePairings(
 	if entityID == uuid.Nil {
 		entityID = command.TournamentID
 	}
-	measurement.emit(ctx, operationEvent(
+	measurement.Emit(ctx, operationEvent(
 		OperationPairingConfigure,
 		command.CommandScope,
 		entityID,
@@ -139,7 +140,7 @@ func (service *AdminObservedService) ApplyTournamentAction(
 	} else {
 		view, err = service.next.ApplyTournamentAction(ctx, command)
 	}
-	measurement.emit(ctx, operationEvent(
+	measurement.Emit(ctx, operationEvent(
 		OperationTournamentAction,
 		command.CommandScope,
 		command.TournamentID,
@@ -158,7 +159,7 @@ func (service *AdminObservedService) ControlWave(
 	} else {
 		view, err = service.next.ControlWave(ctx, command)
 	}
-	measurement.emit(ctx, operationEvent(
+	measurement.Emit(ctx, operationEvent(
 		OperationWaveControl,
 		command.CommandScope,
 		command.WaveID,
@@ -174,7 +175,7 @@ func (service *AdminObservedService) ResolveNoShow(ctx context.Context, command 
 	} else {
 		err = service.next.ResolveNoShow(ctx, command)
 	}
-	measurement.emit(ctx, operationEvent(
+	measurement.Emit(ctx, operationEvent(
 		OperationNoShowResolve,
 		command.CommandScope,
 		command.SeriesID,
@@ -190,7 +191,7 @@ func (service *AdminObservedService) AssignReserve(ctx context.Context, command 
 	} else {
 		err = service.next.AssignReserve(ctx, command)
 	}
-	measurement.emit(ctx, operationEvent(
+	measurement.Emit(ctx, operationEvent(
 		OperationReserveAssign,
 		command.CommandScope,
 		command.AssignmentID,
@@ -206,7 +207,7 @@ func (service *AdminObservedService) RecordForfeit(ctx context.Context, command 
 	} else {
 		err = service.next.RecordForfeit(ctx, command)
 	}
-	measurement.emit(ctx, operationEvent(
+	measurement.Emit(ctx, operationEvent(
 		OperationForfeitRecord,
 		command.CommandScope,
 		command.SeriesID,
@@ -222,7 +223,7 @@ func (service *AdminObservedService) ReplayGame(ctx context.Context, command Rep
 	} else {
 		err = service.next.ReplayGame(ctx, command)
 	}
-	measurement.emit(ctx, operationEvent(
+	measurement.Emit(ctx, operationEvent(
 		OperationGameReplay,
 		command.CommandScope,
 		command.ReplacementGameID,
@@ -241,7 +242,7 @@ func (service *AdminObservedService) CorrectGameResult(
 	} else {
 		evidence, err = service.next.CorrectGameResult(ctx, command)
 	}
-	measurement.emit(ctx, operationEvent(
+	measurement.Emit(ctx, operationEvent(
 		OperationResultCorrect,
 		command.CommandScope,
 		command.GameID,
@@ -277,11 +278,11 @@ func (service *AdminObservedService) GetOperatorSnapshot(
 	return service.next.GetOperatorSnapshot(ctx, query)
 }
 
-func (service *AdminObservedService) measurement() operationMeasurement {
+func (service *AdminObservedService) measurement() observabilityusecase.OperationMeasurement {
 	if service == nil {
-		return operationMeasurement{}
+		return observabilityusecase.OperationMeasurement{}
 	}
-	return newOperationMeasurement(service.clock, service.observer)
+	return observabilityusecase.NewOperationMeasurement(service.clock, service.observer)
 }
 
 func operationEvent(
