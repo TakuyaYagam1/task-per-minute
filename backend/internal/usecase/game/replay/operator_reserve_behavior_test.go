@@ -1,4 +1,4 @@
-package game_test
+package replay_test
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	assignmentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/assignment"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	replayusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/replay"
 )
 
 func TestOperatorReserveRevalidationResumesReplayRequired(t *testing.T) {
@@ -20,7 +20,7 @@ func TestOperatorReserveRevalidationResumesReplayRequired(t *testing.T) {
 	authority, command := operatorReserveFixture(t)
 	repository := newOperatorReserveRepositoryHarness(t, authority)
 
-	record, changed, err := gameusecase.NewOperatorReserveUseCase(repository).
+	record, changed, err := replayusecase.NewOperatorReserveUseCase(repository).
 		Reserve(t.Context(), command)
 	require.NoError(t, err)
 	require.True(t, changed)
@@ -38,7 +38,7 @@ func TestOperatorReserveRevalidationResumesReplayRequired(t *testing.T) {
 	require.Equal(t, 1, repository.writeCount())
 
 	record.Reserve.ParticipantIDs[0] = uuid.Nil
-	repeated, changed, err := gameusecase.NewOperatorReserveUseCase(repository).
+	repeated, changed, err := replayusecase.NewOperatorReserveUseCase(repository).
 		Reserve(t.Context(), command)
 	require.NoError(t, err)
 	require.False(t, changed)
@@ -52,30 +52,30 @@ func TestOperatorReserveRevalidationRejectsEveryStaleOrIneligibleCandidate(t *te
 
 	tests := []struct {
 		name   string
-		mutate func(*gameusecase.OperatorReserveAuthority, *gameusecase.OperatorReserveCommand)
+		mutate func(*replayusecase.OperatorReserveAuthority, *replayusecase.OperatorReserveCommand)
 	}{
 		{
 			name: "pool revision",
-			mutate: func(authority *gameusecase.OperatorReserveAuthority, _ *gameusecase.OperatorReserveCommand) {
+			mutate: func(authority *replayusecase.OperatorReserveAuthority, _ *replayusecase.OperatorReserveCommand) {
 				authority.Reserve.Revisions.PoolRevision++
 				authority.Reserve.Pool.Revision++
 			},
 		},
 		{
 			name: "history revision",
-			mutate: func(authority *gameusecase.OperatorReserveAuthority, _ *gameusecase.OperatorReserveCommand) {
+			mutate: func(authority *replayusecase.OperatorReserveAuthority, _ *replayusecase.OperatorReserveCommand) {
 				authority.Reserve.Revisions.HistoryRevision++
 			},
 		},
 		{
 			name: "reservation revision",
-			mutate: func(authority *gameusecase.OperatorReserveAuthority, _ *gameusecase.OperatorReserveCommand) {
+			mutate: func(authority *replayusecase.OperatorReserveAuthority, _ *replayusecase.OperatorReserveCommand) {
 				authority.Reserve.Revisions.ReservationRevision++
 			},
 		},
 		{
 			name: "prior task receipt",
-			mutate: func(authority *gameusecase.OperatorReserveAuthority, command *gameusecase.OperatorReserveCommand) {
+			mutate: func(authority *replayusecase.OperatorReserveAuthority, command *replayusecase.OperatorReserveCommand) {
 				authority.Reserve.ReceiptHistory = append(
 					authority.Reserve.ReceiptHistory,
 					assignmentusecase.TaskReceiptRef{
@@ -88,49 +88,49 @@ func TestOperatorReserveRevalidationRejectsEveryStaleOrIneligibleCandidate(t *te
 		},
 		{
 			name: "wrong pool membership",
-			mutate: func(authority *gameusecase.OperatorReserveAuthority, _ *gameusecase.OperatorReserveCommand) {
+			mutate: func(authority *replayusecase.OperatorReserveAuthority, _ *replayusecase.OperatorReserveCommand) {
 				authority.Reserve.Pool.Versions[0].Version++
 			},
 		},
 		{
 			name: "unhealthy",
-			mutate: func(authority *gameusecase.OperatorReserveAuthority, _ *gameusecase.OperatorReserveCommand) {
+			mutate: func(authority *replayusecase.OperatorReserveAuthority, _ *replayusecase.OperatorReserveCommand) {
 				authority.Reserve.CandidateHealth.Healthy = false
 			},
 		},
 		{
 			name: "unlocked",
-			mutate: func(authority *gameusecase.OperatorReserveAuthority, _ *gameusecase.OperatorReserveCommand) {
+			mutate: func(authority *replayusecase.OperatorReserveAuthority, _ *replayusecase.OperatorReserveCommand) {
 				authority.Reserve.CandidateHealth.MutationLocked = false
 			},
 		},
 		{
 			name: "publicly exposed",
-			mutate: func(authority *gameusecase.OperatorReserveAuthority, _ *gameusecase.OperatorReserveCommand) {
+			mutate: func(authority *replayusecase.OperatorReserveAuthority, _ *replayusecase.OperatorReserveCommand) {
 				authority.Reserve.CandidateHealth.PubliclyExposed = true
 			},
 		},
 		{
 			name: "artifact changed",
-			mutate: func(authority *gameusecase.OperatorReserveAuthority, _ *gameusecase.OperatorReserveCommand) {
+			mutate: func(authority *replayusecase.OperatorReserveAuthority, _ *replayusecase.OperatorReserveCommand) {
 				authority.Reserve.CandidateContentDigest = sha256.Sum256([]byte("changed artifact"))
 			},
 		},
 		{
 			name: "different category",
-			mutate: func(authority *gameusecase.OperatorReserveAuthority, _ *gameusecase.OperatorReserveCommand) {
+			mutate: func(authority *replayusecase.OperatorReserveAuthority, _ *replayusecase.OperatorReserveCommand) {
 				setOperatorReserveCandidateCategory(t, &authority.Reserve, domain.CategoryCrypto)
 			},
 		},
 		{
 			name: "foreign participant reservation",
-			mutate: func(authority *gameusecase.OperatorReserveAuthority, _ *gameusecase.OperatorReserveCommand) {
+			mutate: func(authority *replayusecase.OperatorReserveAuthority, _ *replayusecase.OperatorReserveCommand) {
 				authority.Reserve.ParticipantReservations[0].Reservation.TournamentID = operatorReserveID(903)
 			},
 		},
 		{
 			name: "different proposed version",
-			mutate: func(_ *gameusecase.OperatorReserveAuthority, command *gameusecase.OperatorReserveCommand) {
+			mutate: func(_ *replayusecase.OperatorReserveAuthority, command *replayusecase.OperatorReserveCommand) {
 				command.ProposedVersion++
 			},
 		},
@@ -144,7 +144,7 @@ func TestOperatorReserveRevalidationRejectsEveryStaleOrIneligibleCandidate(t *te
 			test.mutate(&authority, &command)
 			repository := newOperatorReserveRepositoryHarness(t, authority)
 
-			record, changed, err := gameusecase.NewOperatorReserveUseCase(repository).
+			record, changed, err := replayusecase.NewOperatorReserveUseCase(repository).
 				Reserve(t.Context(), command)
 			require.Error(t, err)
 			require.Nil(t, record)
@@ -161,9 +161,9 @@ func TestOperatorReserveRevalidationConflictHasNoWrites(t *testing.T) {
 	repository := newOperatorReserveRepositoryHarness(t, authority)
 	repository.state.conflicts = 2
 
-	record, changed, err := gameusecase.NewOperatorReserveUseCase(repository).
+	record, changed, err := replayusecase.NewOperatorReserveUseCase(repository).
 		Reserve(t.Context(), command)
-	require.ErrorIs(t, err, gameusecase.ErrOperatorReserveConflict)
+	require.ErrorIs(t, err, replayusecase.ErrOperatorReserveConflict)
 	require.Nil(t, record)
 	require.False(t, changed)
 	require.Equal(t, 0, repository.writeCount())
@@ -183,7 +183,7 @@ func TestOperatorReserveRevalidationConcurrentDuplicateWritesOnce(t *testing.T) 
 		group.Add(1)
 		go func() {
 			defer group.Done()
-			_, changed, err := gameusecase.NewOperatorReserveUseCase(repository).
+			_, changed, err := replayusecase.NewOperatorReserveUseCase(repository).
 				Reserve(context.Background(), command)
 			results <- struct {
 				changed bool

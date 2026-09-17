@@ -1,4 +1,4 @@
-package game_test
+package replay_test
 
 import (
 	"context"
@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
 	gamemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/mocks"
+	replayusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/replay"
 )
 
 func TestReplayReserveExhaustionPausesAfterTwoSameCategoryReserves(t *testing.T) {
@@ -22,7 +22,7 @@ func TestReplayReserveExhaustionPausesAfterTwoSameCategoryReserves(t *testing.T)
 	authority, command := replayExhaustionFixture(t)
 	repository := newReplayExhaustionRepositoryHarness(t, authority)
 
-	record, changed, err := gameusecase.NewReplayReserveExhaustionUseCase(repository).
+	record, changed, err := replayusecase.NewReplayReserveExhaustionUseCase(repository).
 		Pause(t.Context(), command)
 	require.NoError(t, err)
 	require.True(t, changed)
@@ -45,13 +45,13 @@ func TestReplayReserveExhaustionRejectsIncompleteOrStaleEvidence(t *testing.T) {
 
 	tests := []struct {
 		name   string
-		mutate func(*gameusecase.ReplayReserveExhaustionAuthority, *gameusecase.ReplayReserveExhaustionCommand)
+		mutate func(*replayusecase.ReplayReserveExhaustionAuthority, *replayusecase.ReplayReserveExhaustionCommand)
 	}{
 		{
 			name: "one planned reserve remains",
 			mutate: func(
-				authority *gameusecase.ReplayReserveExhaustionAuthority,
-				_ *gameusecase.ReplayReserveExhaustionCommand,
+				authority *replayusecase.ReplayReserveExhaustionAuthority,
+				_ *replayusecase.ReplayReserveExhaustionCommand,
 			) {
 				authority.ReserveChain.ActiveIndex--
 				authority.FailedAttempt.ActiveSnapshotID =
@@ -61,8 +61,8 @@ func TestReplayReserveExhaustionRejectsIncompleteOrStaleEvidence(t *testing.T) {
 		{
 			name: "active snapshot changed",
 			mutate: func(
-				_ *gameusecase.ReplayReserveExhaustionAuthority,
-				command *gameusecase.ReplayReserveExhaustionCommand,
+				_ *replayusecase.ReplayReserveExhaustionAuthority,
+				command *replayusecase.ReplayReserveExhaustionCommand,
 			) {
 				command.ExpectedActiveSnapshotID = replayExhaustionID(901)
 			},
@@ -70,8 +70,8 @@ func TestReplayReserveExhaustionRejectsIncompleteOrStaleEvidence(t *testing.T) {
 		{
 			name: "old Wave revision changed",
 			mutate: func(
-				_ *gameusecase.ReplayReserveExhaustionAuthority,
-				command *gameusecase.ReplayReserveExhaustionCommand,
+				_ *replayusecase.ReplayReserveExhaustionAuthority,
+				command *replayusecase.ReplayReserveExhaustionCommand,
 			) {
 				command.ExpectedClosureRevisionID = domain.WaveRevisionID(replayExhaustionID(902))
 			},
@@ -79,8 +79,8 @@ func TestReplayReserveExhaustionRejectsIncompleteOrStaleEvidence(t *testing.T) {
 		{
 			name: "old Wave reopened",
 			mutate: func(
-				authority *gameusecase.ReplayReserveExhaustionAuthority,
-				_ *gameusecase.ReplayReserveExhaustionCommand,
+				authority *replayusecase.ReplayReserveExhaustionAuthority,
+				_ *replayusecase.ReplayReserveExhaustionCommand,
 			) {
 				authority.OldWaveClosure.Wave.State = domain.WaveStateActive
 			},
@@ -88,8 +88,8 @@ func TestReplayReserveExhaustionRejectsIncompleteOrStaleEvidence(t *testing.T) {
 		{
 			name: "Series already left replay required",
 			mutate: func(
-				authority *gameusecase.ReplayReserveExhaustionAuthority,
-				_ *gameusecase.ReplayReserveExhaustionCommand,
+				authority *replayusecase.ReplayReserveExhaustionAuthority,
+				_ *replayusecase.ReplayReserveExhaustionCommand,
 			) {
 				authority.FailedAttempt.Series.Series.State = domain.SeriesStateTechnicalPause
 				resume := domain.SeriesStateReplayRequired
@@ -106,7 +106,7 @@ func TestReplayReserveExhaustionRejectsIncompleteOrStaleEvidence(t *testing.T) {
 			test.mutate(&authority, &command)
 			repository := newReplayExhaustionRepositoryHarness(t, authority)
 
-			record, changed, err := gameusecase.NewReplayReserveExhaustionUseCase(repository).
+			record, changed, err := replayusecase.NewReplayReserveExhaustionUseCase(repository).
 				Pause(t.Context(), command)
 			require.Error(t, err)
 			require.Nil(t, record)
@@ -130,7 +130,7 @@ func TestReplayReserveExhaustionConcurrentRetryCommitsOnePause(t *testing.T) {
 		group.Add(1)
 		go func() {
 			defer group.Done()
-			_, changed, err := gameusecase.NewReplayReserveExhaustionUseCase(repository).
+			_, changed, err := replayusecase.NewReplayReserveExhaustionUseCase(repository).
 				Pause(context.Background(), command)
 			results <- struct {
 				changed bool
@@ -154,8 +154,8 @@ func TestReplayReserveExhaustionConcurrentRetryCommitsOnePause(t *testing.T) {
 
 type replayExhaustionRepositoryState struct {
 	mu        sync.Mutex
-	authority gameusecase.ReplayReserveExhaustionAuthority
-	current   *gameusecase.ReplayReserveExhaustion
+	authority replayusecase.ReplayReserveExhaustionAuthority
+	current   *replayusecase.ReplayReserveExhaustion
 	writes    int
 }
 
@@ -167,7 +167,7 @@ type replayExhaustionRepositoryHarness struct {
 
 func newReplayExhaustionRepositoryHarness(
 	t *testing.T,
-	authority gameusecase.ReplayReserveExhaustionAuthority,
+	authority replayusecase.ReplayReserveExhaustionAuthority,
 ) *replayExhaustionRepositoryHarness {
 	t.Helper()
 	state := &replayExhaustionRepositoryState{authority: authority}
@@ -188,8 +188,8 @@ func newReplayExhaustionRepositoryHarness(
 
 func (s *replayExhaustionRepositoryState) loadAuthority(
 	_ context.Context,
-	_ gameusecase.ReplayReplacementScope,
-) (gameusecase.ReplayReserveExhaustionAuthority, error) {
+	_ replayusecase.ReplayReplacementScope,
+) (replayusecase.ReplayReserveExhaustionAuthority, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	authority := s.authority
@@ -202,8 +202,8 @@ func (s *replayExhaustionRepositoryState) loadAuthority(
 
 func (s *replayExhaustionRepositoryState) commitExhaustion(
 	_ context.Context,
-	record gameusecase.ReplayReserveExhaustion,
-) (*gameusecase.ReplayReserveExhaustion, bool, error) {
+	record replayusecase.ReplayReserveExhaustion,
+) (*replayusecase.ReplayReserveExhaustion, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.current != nil {
@@ -223,19 +223,19 @@ func (h *replayExhaustionRepositoryHarness) writeCount() int {
 
 func replayExhaustionFixture(
 	t *testing.T,
-) (gameusecase.ReplayReserveExhaustionAuthority, gameusecase.ReplayReserveExhaustionCommand) {
+) (replayusecase.ReplayReserveExhaustionAuthority, replayusecase.ReplayReserveExhaustionCommand) {
 	t.Helper()
 
 	now := time.Date(2026, 8, 30, 22, 0, 0, 0, time.UTC)
 	replacement, _ := replayReplacementFixture(t, now, domain.AssignmentReserveCount)
-	authority := gameusecase.ReplayReserveExhaustionAuthority{
+	authority := replayusecase.ReplayReserveExhaustionAuthority{
 		Scope:          replacement.Scope,
 		Revision:       12,
 		FailedAttempt:  replacement.FailedAttempt,
 		OldWaveClosure: replacement.OldWaveClosure,
 		ReserveChain:   replacement.ReserveChain,
 	}
-	command := gameusecase.ReplayReserveExhaustionCommand{
+	command := replayusecase.ReplayReserveExhaustionCommand{
 		Scope:                     authority.Scope,
 		CommandID:                 replayExhaustionID(1),
 		ExpectedClosureRevisionID: authority.OldWaveClosure.Wave.RevisionID,

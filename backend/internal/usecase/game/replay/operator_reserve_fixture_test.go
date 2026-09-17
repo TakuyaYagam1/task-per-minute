@@ -1,4 +1,4 @@
-package game_test
+package replay_test
 
 import (
 	"context"
@@ -14,14 +14,14 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain/taskexec"
 	assignmentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/assignment"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
 	gamemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/mocks"
+	replayusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/replay"
 )
 
 type operatorReserveRepositoryState struct {
 	mu        sync.Mutex
-	authority gameusecase.OperatorReserveAuthority
-	current   *gameusecase.OperatorReserve
+	authority replayusecase.OperatorReserveAuthority
+	current   *replayusecase.OperatorReserve
 	conflicts int
 	writes    int
 }
@@ -34,7 +34,7 @@ type operatorReserveRepositoryHarness struct {
 
 func newOperatorReserveRepositoryHarness(
 	t *testing.T,
-	authority gameusecase.OperatorReserveAuthority,
+	authority replayusecase.OperatorReserveAuthority,
 ) *operatorReserveRepositoryHarness {
 	t.Helper()
 	state := &operatorReserveRepositoryState{authority: authority}
@@ -55,8 +55,8 @@ func newOperatorReserveRepositoryHarness(
 
 func (s *operatorReserveRepositoryState) loadAuthority(
 	_ context.Context,
-	_ gameusecase.ReplayReplacementScope,
-) (gameusecase.OperatorReserveAuthority, error) {
+	_ replayusecase.ReplayReplacementScope,
+) (replayusecase.OperatorReserveAuthority, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	authority := s.authority
@@ -69,8 +69,8 @@ func (s *operatorReserveRepositoryState) loadAuthority(
 
 func (s *operatorReserveRepositoryState) commitReserve(
 	_ context.Context,
-	record gameusecase.OperatorReserve,
-) (*gameusecase.OperatorReserve, bool, error) {
+	record replayusecase.OperatorReserve,
+) (*replayusecase.OperatorReserve, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.conflicts > 0 {
@@ -94,12 +94,12 @@ func (h *operatorReserveRepositoryHarness) writeCount() int {
 
 func operatorReserveFixture(
 	t *testing.T,
-) (gameusecase.OperatorReserveAuthority, gameusecase.OperatorReserveCommand) {
+) (replayusecase.OperatorReserveAuthority, replayusecase.OperatorReserveCommand) {
 	t.Helper()
 
 	exhaustionAuthority, exhaustionCommand := replayExhaustionFixture(t)
 	exhaustionRepository := newReplayExhaustionRepositoryHarness(t, exhaustionAuthority)
-	exhaustion, changed, err := gameusecase.NewReplayReserveExhaustionUseCase(exhaustionRepository).
+	exhaustion, changed, err := replayusecase.NewReplayReserveExhaustionUseCase(exhaustionRepository).
 		Pause(t.Context(), exhaustionCommand)
 	require.NoError(t, err)
 	require.True(t, changed)
@@ -127,10 +127,10 @@ func operatorReserveFixture(
 	reserveCommand.OperatorID = operatorReserveID(20)
 	reserveCommand.Reason = "approve one locked same-category replay reserve"
 
-	authority := gameusecase.OperatorReserveAuthority{
+	authority := replayusecase.OperatorReserveAuthority{
 		Scope: exhaustion.Scope, Revision: 15, Exhaustion: *exhaustion, Reserve: reserve,
 	}
-	command := gameusecase.OperatorReserveCommand{
+	command := replayusecase.OperatorReserveCommand{
 		Scope: authority.Scope, CommandID: operatorReserveID(21),
 		ExpectedExhaustionCommandID: exhaustion.CommandID,
 		ExpectedRevisions:           reserve.Revisions,

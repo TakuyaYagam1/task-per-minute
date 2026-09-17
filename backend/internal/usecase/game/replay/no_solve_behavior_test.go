@@ -1,4 +1,4 @@
-package game_test
+package replay_test
 
 import (
 	"fmt"
@@ -8,7 +8,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	closeusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/close"
+	replayusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/replay"
 )
 
 func TestNoSolveReplayPipeline(t *testing.T) {
@@ -24,9 +25,9 @@ func TestNoSolveReplayPipeline(t *testing.T) {
 				now := time.Date(2026, 8, 30, 22, 40+activeIndex, 0, 0, time.UTC)
 				authority, command := replayReplacementFixture(t, now, activeIndex)
 				repository := newReplayReplacementRepositoryHarness(t, authority)
-				usecase := gameusecase.NewReplayReplacementUseCase(
+				usecase := replayusecase.NewReplayReplacementUseCase(
 					repository,
-					newFixedClock(t, now),
+					newReplayFixedClock(t, now),
 				)
 
 				replacement, changed, err := usecase.Replace(t.Context(), command)
@@ -67,13 +68,13 @@ func TestNoSolveReplayPipeline(t *testing.T) {
 		)
 		repository := newReplayReplacementRepositoryHarness(t, authority)
 
-		replacement, changed, err := gameusecase.NewReplayReplacementUseCase(
+		replacement, changed, err := replayusecase.NewReplayReplacementUseCase(
 			repository,
-			newFixedClock(t, now),
+			newReplayFixedClock(t, now),
 		).Replace(t.Context(), command)
 		require.Nil(t, replacement)
 		require.False(t, changed)
-		require.ErrorIs(t, err, gameusecase.ErrReplayReservesExhausted)
+		require.ErrorIs(t, err, replayusecase.ErrReplayReservesExhausted)
 		require.Equal(t, domain.WaveStateCompleted, authority.OldWaveClosure.Wave.State)
 		require.Equal(t, 0, repository.writeCount())
 	})
@@ -84,14 +85,14 @@ func TestNoSolveReplayPipeline(t *testing.T) {
 		now := time.Date(2026, 8, 30, 22, 50, 0, 0, time.UTC)
 		authority, replacementCommand := replayReplacementFixture(t, now, 0)
 		replacementRepository := newReplayReplacementRepositoryHarness(t, authority)
-		replacement, replacementChanged, err := gameusecase.NewReplayReplacementUseCase(
+		replacement, replacementChanged, err := replayusecase.NewReplayReplacementUseCase(
 			replacementRepository,
-			newFixedClock(t, now),
+			newReplayFixedClock(t, now),
 		).Replace(t.Context(), replacementCommand)
 		require.NoError(t, err)
 		require.True(t, replacementChanged)
 		failedCommand := replayFailedCommandFromAuthority(authority)
-		closeCommand := gameusecase.CloseCommand{
+		closeCommand := closeusecase.CloseCommand{
 			Scope:                  authority.OldWaveClosure.Scope,
 			CommandID:              authority.OldWaveClosure.CommandID,
 			ExpectedWaveRevisionID: authority.OldWaveClosure.PreviousWaveRevisionID,
@@ -102,13 +103,13 @@ func TestNoSolveReplayPipeline(t *testing.T) {
 			replacement: replacement,
 		}
 		terminalizer, closer, replacer := newReplayPipelineMocks(t, pipeline)
-		command := gameusecase.NoSolveReplayCommand{
+		command := replayusecase.NoSolveReplayCommand{
 			Terminalize: failedCommand,
 			Close:       closeCommand,
 			Replace:     replacementCommand,
 		}
 
-		result, changed, err := gameusecase.NewNoSolveReplayUseCase(terminalizer, closer, replacer).
+		result, changed, err := replayusecase.NewNoSolveReplayUseCase(terminalizer, closer, replacer).
 			Replay(t.Context(), command)
 		require.NoError(t, err)
 		require.True(t, changed)
@@ -128,7 +129,7 @@ func TestNoSolveReplayPipeline(t *testing.T) {
 			domain.AssignmentReserveCount,
 		)
 		failedCommand := replayFailedCommandFromAuthority(authority)
-		closeCommand := gameusecase.CloseCommand{
+		closeCommand := closeusecase.CloseCommand{
 			Scope:                  authority.OldWaveClosure.Scope,
 			CommandID:              authority.OldWaveClosure.CommandID,
 			ExpectedWaveRevisionID: authority.OldWaveClosure.PreviousWaveRevisionID,
@@ -137,13 +138,13 @@ func TestNoSolveReplayPipeline(t *testing.T) {
 		pipeline := &replayPipelineState{
 			failed:     &authority.FailedAttempt,
 			closure:    &authority.OldWaveClosure,
-			replaceErr: gameusecase.ErrReplayReservesExhausted,
+			replaceErr: replayusecase.ErrReplayReservesExhausted,
 		}
 		terminalizer, closer, replacer := newReplayPipelineMocks(t, pipeline)
 
-		result, changed, err := gameusecase.NewNoSolveReplayUseCase(terminalizer, closer, replacer).Replay(
+		result, changed, err := replayusecase.NewNoSolveReplayUseCase(terminalizer, closer, replacer).Replay(
 			t.Context(),
-			gameusecase.NoSolveReplayCommand{
+			replayusecase.NoSolveReplayCommand{
 				Terminalize: failedCommand,
 				Close:       closeCommand,
 				Replace:     replacementCommand,
@@ -164,7 +165,7 @@ func TestNoSolveReplayPipeline(t *testing.T) {
 		authority, replacementCommand := replayReplacementFixture(t, now, 0)
 		failedCommand := replayFailedCommandFromAuthority(authority)
 		failedCommand.Revisions.AuditEventID = replayID(999)
-		closeCommand := gameusecase.CloseCommand{
+		closeCommand := closeusecase.CloseCommand{
 			Scope:                  authority.OldWaveClosure.Scope,
 			CommandID:              authority.OldWaveClosure.CommandID,
 			ExpectedWaveRevisionID: authority.OldWaveClosure.PreviousWaveRevisionID,
@@ -175,9 +176,9 @@ func TestNoSolveReplayPipeline(t *testing.T) {
 		}
 		terminalizer, closer, replacer := newReplayPipelineMocks(t, pipeline)
 
-		result, changed, err := gameusecase.NewNoSolveReplayUseCase(terminalizer, closer, replacer).Replay(
+		result, changed, err := replayusecase.NewNoSolveReplayUseCase(terminalizer, closer, replacer).Replay(
 			t.Context(),
-			gameusecase.NoSolveReplayCommand{
+			replayusecase.NoSolveReplayCommand{
 				Terminalize: failedCommand,
 				Close:       closeCommand,
 				Replace:     replacementCommand,
@@ -201,7 +202,7 @@ func TestReplayReplacementAfterOperatorReserve(t *testing.T) {
 		authority, command := replayReplacementFixture(t, now, domain.AssignmentReserveCount)
 		authority.ReserveChain.Snapshots = append(authority.ReserveChain.Snapshots, replaySnapshot(t, 3))
 		repository := newReplayReplacementRepositoryHarness(t, authority)
-		usecase := gameusecase.NewReplayReplacementUseCase(repository, newFixedClock(t, now))
+		usecase := replayusecase.NewReplayReplacementUseCase(repository, newReplayFixedClock(t, now))
 
 		replacement, changed, err := usecase.Replace(t.Context(), command)
 		require.NoError(t, err)
@@ -221,13 +222,13 @@ func TestReplayReplacementAfterOperatorReserve(t *testing.T) {
 		authority, command := replayReplacementFixture(t, now, domain.AssignmentReserveCount-1)
 		authority.ReserveChain.Snapshots = append(authority.ReserveChain.Snapshots, replaySnapshot(t, 3))
 
-		replacement, changed, err := gameusecase.NewReplayReplacementUseCase(
+		replacement, changed, err := replayusecase.NewReplayReplacementUseCase(
 			newReplayReplacementRepositoryHarness(t, authority),
-			newFixedClock(t, now),
+			newReplayFixedClock(t, now),
 		).Replace(t.Context(), command)
 		require.Nil(t, replacement)
 		require.False(t, changed)
-		require.ErrorIs(t, err, gameusecase.ErrInvalidReplayReplacement)
+		require.ErrorIs(t, err, replayusecase.ErrInvalidReplayReplacement)
 	})
 
 	t.Run("rejects more than one operator-added reserve", func(t *testing.T) {
@@ -240,13 +241,13 @@ func TestReplayReplacementAfterOperatorReserve(t *testing.T) {
 			replaySnapshot(t, 4),
 		)
 
-		replacement, changed, err := gameusecase.NewReplayReplacementUseCase(
+		replacement, changed, err := replayusecase.NewReplayReplacementUseCase(
 			newReplayReplacementRepositoryHarness(t, authority),
-			newFixedClock(t, now),
+			newReplayFixedClock(t, now),
 		).Replace(t.Context(), command)
 		require.Nil(t, replacement)
 		require.False(t, changed)
-		require.ErrorIs(t, err, gameusecase.ErrInvalidReplayReplacement)
+		require.ErrorIs(t, err, replayusecase.ErrInvalidReplayReplacement)
 	})
 }
 
@@ -256,7 +257,7 @@ func TestReplayReplacementReturnsDurableCurrentBeforeFreshAuthorityValidation(t 
 	now := time.Date(2026, 8, 30, 23, 10, 0, 0, time.UTC)
 	authority, command := replayReplacementFixture(t, now, 0)
 	repository := newReplayReplacementRepositoryHarness(t, authority)
-	usecase := gameusecase.NewReplayReplacementUseCase(repository, newFixedClock(t, now))
+	usecase := replayusecase.NewReplayReplacementUseCase(repository, newReplayFixedClock(t, now))
 
 	created, changed, err := usecase.Replace(t.Context(), command)
 	require.NoError(t, err)

@@ -1,4 +1,4 @@
-package game_test
+package replay_test
 
 import (
 	"context"
@@ -14,13 +14,15 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	gamedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/game"
 	seriesdomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/series"
-	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
+	attemptusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/attempt"
+	closeusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/close"
 	gamemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/mocks"
+	replayusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/replay"
 )
 
 type replayReplacementRepositoryState struct {
 	mu        sync.Mutex
-	authority gameusecase.ReplayReplacementAuthority
+	authority replayusecase.ReplayReplacementAuthority
 	writes    int
 }
 
@@ -32,7 +34,7 @@ type replayReplacementRepositoryHarness struct {
 
 func newReplayReplacementRepositoryHarness(
 	t *testing.T,
-	authority gameusecase.ReplayReplacementAuthority,
+	authority replayusecase.ReplayReplacementAuthority,
 ) *replayReplacementRepositoryHarness {
 	t.Helper()
 	state := &replayReplacementRepositoryState{authority: authority}
@@ -53,8 +55,8 @@ func newReplayReplacementRepositoryHarness(
 
 func (s *replayReplacementRepositoryState) loadAuthority(
 	_ context.Context,
-	_ gameusecase.ReplayReplacementScope,
-) (gameusecase.ReplayReplacementAuthority, error) {
+	_ replayusecase.ReplayReplacementScope,
+) (replayusecase.ReplayReplacementAuthority, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.authority, nil
@@ -62,8 +64,8 @@ func (s *replayReplacementRepositoryState) loadAuthority(
 
 func (s *replayReplacementRepositoryState) commitReplacement(
 	_ context.Context,
-	replacement gameusecase.ReplayReplacement,
-) (*gameusecase.ReplayReplacement, bool, error) {
+	replacement replayusecase.ReplayReplacement,
+) (*replayusecase.ReplayReplacement, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if replacement.ExpectedAuthorityRevision != s.authority.Revision || s.authority.Current != nil {
@@ -86,9 +88,9 @@ func (h *replayReplacementRepositoryHarness) writeCount() int {
 type replayPipelineState struct {
 	mu          sync.Mutex
 	order       []string
-	failed      *gameusecase.AttemptRecord
-	closure     *gameusecase.Closure
-	replacement *gameusecase.ReplayReplacement
+	failed      *attemptusecase.AttemptRecord
+	closure     *closeusecase.Closure
+	replacement *replayusecase.ReplayReplacement
 	replaceErr  error
 }
 
@@ -121,24 +123,24 @@ func newReplayPipelineMocks(
 
 func (s *replayPipelineState) terminalize(
 	_ context.Context,
-	_ gameusecase.AttemptCommand,
-) (*gameusecase.AttemptRecord, bool, error) {
+	_ attemptusecase.AttemptCommand,
+) (*attemptusecase.AttemptRecord, bool, error) {
 	s.appendCall("terminalize")
 	return s.failed, true, nil
 }
 
 func (s *replayPipelineState) closeWave(
 	_ context.Context,
-	_ gameusecase.CloseCommand,
-) (*gameusecase.Closure, bool, error) {
+	_ closeusecase.CloseCommand,
+) (*closeusecase.Closure, bool, error) {
 	s.appendCall("close")
 	return s.closure, true, nil
 }
 
 func (s *replayPipelineState) replace(
 	_ context.Context,
-	_ gameusecase.ReplayReplacementCommand,
-) (*gameusecase.ReplayReplacement, bool, error) {
+	_ replayusecase.ReplayReplacementCommand,
+) (*replayusecase.ReplayReplacement, bool, error) {
 	s.appendCall("replace")
 	if s.replaceErr != nil {
 		return nil, false, s.replaceErr
@@ -162,7 +164,7 @@ func replayReplacementFixture(
 	t *testing.T,
 	now time.Time,
 	activeIndex int,
-) (gameusecase.ReplayReplacementAuthority, gameusecase.ReplayReplacementCommand) {
+) (replayusecase.ReplayReplacementAuthority, replayusecase.ReplayReplacementCommand) {
 	t.Helper()
 
 	snapshots := []domain.AssignmentTaskSnapshot{
@@ -172,7 +174,7 @@ func replayReplacementFixture(
 	failedAuthority.ActiveSnapshotID = snapshots[activeIndex].SnapshotID
 	failedCommand.Expected.SnapshotID = failedAuthority.ActiveSnapshotID
 	replaySetAttemptIndex(t, &failedAuthority, &failedCommand, activeIndex)
-	failed, err := gameusecase.BuildRecord(
+	failed, err := attemptusecase.BuildRecord(
 		failedCommand,
 		failedAuthority,
 		now.Round(0).UTC(),
@@ -180,16 +182,16 @@ func replayReplacementFixture(
 	require.NoError(t, err)
 	require.NoError(t, failed.Validate())
 
-	closeScope := gameusecase.CloseScope{
+	closeScope := closeusecase.CloseScope{
 		TournamentID: failed.Scope.TournamentID,
 		WaveID:       failed.Scope.WaveID,
 	}
-	children := []gameusecase.CloseChild{{
+	children := []closeusecase.CloseChild{{
 		SeriesID: failed.Scope.SeriesID, SlotID: failed.Scope.SlotID,
 		GameID: failed.Scope.GameID, State: failed.Game.State,
 		RouteID: failed.WaveRoute.ID,
 	}}
-	closeCommand := gameusecase.CloseCommand{
+	closeCommand := closeusecase.CloseCommand{
 		Scope: closeScope, CommandID: replayID(500 + activeIndex*20),
 		ExpectedWaveRevisionID: failedAuthority.Wave.RevisionID,
 		ClosedWaveRevisionID:   domain.WaveRevisionID(replayID(501 + activeIndex*20)),
@@ -197,24 +199,24 @@ func replayReplacementFixture(
 	closedWave := failedAuthority.Wave
 	closedWave.State = domain.WaveStateCompleted
 	closedWave.RevisionID = closeCommand.ClosedWaveRevisionID
-	closure := gameusecase.Closure{
+	closure := closeusecase.Closure{
 		Scope: closeCommand.Scope, CommandID: closeCommand.CommandID,
 		ExpectedAuthorityRevision: 5,
 		PreviousWaveRevisionID:    closeCommand.ExpectedWaveRevisionID,
 		Wave:                      closedWave,
-		Children:                  append([]gameusecase.CloseChild(nil), children...),
+		Children:                  append([]closeusecase.CloseChild(nil), children...),
 		ClosedAt:                  now.Round(0).UTC(),
 	}
 	require.NoError(t, closure.Validate())
 
-	scope := gameusecase.ReplayReplacementScope{
+	scope := replayusecase.ReplayReplacementScope{
 		TournamentID: failed.Scope.TournamentID, OldWaveID: failed.Scope.WaveID,
 		SeriesID: failed.Scope.SeriesID, SlotID: failed.Scope.SlotID,
 		AssignmentID: failed.Scope.AssignmentID,
 	}
-	authority := gameusecase.ReplayReplacementAuthority{
+	authority := replayusecase.ReplayReplacementAuthority{
 		Scope: scope, Revision: 9, FailedAttempt: failed, OldWaveClosure: closure,
-		ReserveChain: gameusecase.ReplayReserveChain{
+		ReserveChain: replayusecase.ReplayReserveChain{
 			AssignmentID: scope.AssignmentID, ActiveIndex: activeIndex, Snapshots: snapshots,
 		},
 		ParticipantIDs: [2]uuid.UUID{
@@ -223,7 +225,7 @@ func replayReplacementFixture(
 		},
 	}
 	base := 600 + activeIndex*20
-	command := gameusecase.ReplayReplacementCommand{
+	command := replayusecase.ReplayReplacementCommand{
 		Scope: scope, CommandID: replayID(base),
 		ExpectedClosureRevisionID: closure.Wave.RevisionID,
 		AssignmentAttemptID:       replayID(base + 1), GameID: replayID(base + 2),
@@ -237,8 +239,8 @@ func replayReplacementFixture(
 
 func replaySetAttemptIndex(
 	t *testing.T,
-	authority *gameusecase.AttemptAuthority,
-	command *gameusecase.AttemptCommand,
+	authority *attemptusecase.AttemptAuthority,
+	command *attemptusecase.AttemptCommand,
 	activeIndex int,
 ) {
 	t.Helper()
@@ -293,17 +295,17 @@ func replaySnapshot(t *testing.T, index int) domain.AssignmentTaskSnapshot {
 }
 
 func replayFailedCommandFromAuthority(
-	authority gameusecase.ReplayReplacementAuthority,
-) gameusecase.AttemptCommand {
+	authority replayusecase.ReplayReplacementAuthority,
+) attemptusecase.AttemptCommand {
 	failed := authority.FailedAttempt
-	return gameusecase.AttemptCommand{
+	return attemptusecase.AttemptCommand{
 		Scope: failed.Scope, CommandID: failed.CommandID,
 		FailureClass: failed.Failure.Class,
-		Expected: gameusecase.Expectation{
+		Expected: attemptusecase.Expectation{
 			AttemptNo: failed.Game.AttemptNo, State: domain.GameStateActive,
 			SnapshotID: failed.ActiveSnapshotID, Category: failed.Failure.CategoryCutoff,
 		},
-		Revisions: gameusecase.AttemptRevisionSet{
+		Revisions: attemptusecase.AttemptRevisionSet{
 			GameResultRevisionID: failed.AttemptGameResultRevision.ID,
 			ScoreRevisionID:      failed.ScoreRevision.ID,
 			RouteEvidenceID:      failed.WaveRoute.ID,
@@ -317,7 +319,7 @@ func replayFailedCommandFromAuthority(
 func replayFailedAttemptFixture(
 	t *testing.T,
 	now time.Time,
-) (gameusecase.AttemptAuthority, gameusecase.AttemptCommand) {
+) (attemptusecase.AttemptAuthority, attemptusecase.AttemptCommand) {
 	t.Helper()
 
 	tournamentID := replayID(1)
@@ -347,18 +349,18 @@ func replayFailedAttemptFixture(
 		SlotID: slotID, GameID: gameID, AssignmentID: replayID(9),
 		AssignmentAttemptID: replayID(10),
 	}
-	authority := gameusecase.AttemptAuthority{
+	authority := attemptusecase.AttemptAuthority{
 		Scope: scope, Revision: 7, Wave: wave, Series: series,
 		ActiveSnapshotID: replayID(11), CurrentOrdinal: 1,
 		CurrentProjectionRevision: 3,
 	}
-	command := gameusecase.AttemptCommand{
+	command := attemptusecase.AttemptCommand{
 		Scope: scope, CommandID: replayID(12), FailureClass: gamedomain.FailureNoSolve,
-		Expected: gameusecase.Expectation{
+		Expected: attemptusecase.Expectation{
 			AttemptNo: 1, State: domain.GameStateActive,
 			SnapshotID: authority.ActiveSnapshotID, Category: domain.CategoryWeb,
 		},
-		Revisions: gameusecase.AttemptRevisionSet{
+		Revisions: attemptusecase.AttemptRevisionSet{
 			GameResultRevisionID: domain.OfficialResultRevisionID(replayID(13)),
 			ScoreRevisionID:      domain.SeriesScoreRevisionID(replayID(14)),
 			RouteEvidenceID:      replayID(15), AuditEventID: replayID(16),

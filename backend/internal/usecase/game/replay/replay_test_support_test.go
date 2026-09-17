@@ -1,4 +1,4 @@
-package game_test
+package replay_test
 
 import (
 	"testing"
@@ -7,7 +7,7 @@ import (
 	gamemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/mocks"
 )
 
-func newFixedClock(t *testing.T, now time.Time) *gamemocks.MockReplayClock {
+func newReplayFixedClock(t *testing.T, now time.Time) *gamemocks.MockReplayClock {
 	t.Helper()
 	clock := gamemocks.NewMockReplayClock(t)
 	clock.EXPECT().Now().Return(now).Maybe()
