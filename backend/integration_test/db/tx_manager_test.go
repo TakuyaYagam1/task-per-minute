@@ -1,20 +1,35 @@
 //go:build integration
 
-package integration_test
+package db_test
 
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"runtime"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
+	testkit "github.com/TakuyaYagam1/task-per-minute/integration_test/internal/testkit"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
 )
+
+func newParallelTestDB(tb testing.TB) *pgxpool.Pool {
+	tb.Helper()
+	return testkit.NewParallelDatabase(tb, postgresPool, testkit.PostgresConfig{
+		MigrationsDir:  filepath.Join("..", "..", "db", "migrations"),
+		StartupTimeout: 2 * time.Minute,
+	})
+}
+
+func uniq(prefix string) string {
+	return prefix + "_" + uuid.NewString()[:16]
+}
 
 func playerExists(t *testing.T, pool *pgxpool.Pool, username string) bool {
 	t.Helper()
@@ -255,7 +270,7 @@ func TestTxManager_ReadSnapshotRejectsWriteTransactionNesting(t *testing.T) {
 
 func TestTxManagerGoexitReleasesTransactionAndConnection(t *testing.T) {
 	ctx := context.Background()
-	config := sharedPool.Config().Copy()
+	config := postgresPool.Config().Copy()
 	config.MaxConns = 1
 	pool, err := pgxpool.NewWithConfig(ctx, config)
 	require.NoError(t, err)
@@ -287,7 +302,7 @@ func TestTxManagerGoexitReleasesTransactionAndConnection(t *testing.T) {
 	// connection to hang the pool's Close operation.
 	defer func() { _ = tx.Rollback(context.Background()) }()
 	var unlocked bool
-	require.NoError(t, sharedPool.QueryRow(ctx, "SELECT pg_try_advisory_xact_lock($1)", lockID).Scan(&unlocked))
+	require.NoError(t, postgresPool.QueryRow(ctx, "SELECT pg_try_advisory_xact_lock($1)", lockID).Scan(&unlocked))
 	require.True(t, unlocked, "Goexit must release the transaction lock")
 	probe, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
