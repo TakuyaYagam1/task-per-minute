@@ -1,4 +1,4 @@
-package admin
+package result
 
 import (
 	"context"
@@ -19,7 +19,7 @@ import (
 type OperatorResultWorkflow struct {
 	transactions OperatorResultTransactionManager
 	repository   OperatorResultWorkflowRepository
-	postseason   AdminPostseasonWorkflow
+	postseason   PostseasonWorkflow
 }
 
 func NewOperatorResultWorkflow(deps OperatorResultWorkflowDependencies) *OperatorResultWorkflow {

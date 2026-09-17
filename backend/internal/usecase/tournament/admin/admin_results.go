@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -13,23 +12,6 @@ import (
 )
 
 const maxCorrectionFields = 3
-
-type NoShowCommand struct {
-	CommandScope
-
-	WaveID                    uuid.UUID
-	WindowID                  uuid.UUID
-	SeriesID                  uuid.UUID
-	Confirmed                 bool
-	Reason                    string
-	ExpectedAuthorityRevision int64
-	ExpectedWaveRevisionID    uuid.UUID
-	ExpectedWindowRevisionID  uuid.UUID
-	ExpectedSeriesState       domain.SeriesState
-	GameResultRevisionIDs     []uuid.UUID
-	ScoreRevisionID           uuid.UUID
-	SeriesResultRevisionID    uuid.UUID
-}
 
 type ReserveCommand struct {
 	CommandScope
@@ -59,33 +41,6 @@ type ReserveCommand struct {
 	ProposedSnapshotID            uuid.UUID
 	ExpectedSnapshotID            uuid.UUID
 	EvidenceID                    uuid.UUID
-}
-
-type GameExpectation struct {
-	SlotID    uuid.UUID
-	GameID    uuid.UUID
-	AttemptNo int
-	State     domain.GameState
-}
-
-type ForfeitCommand struct {
-	CommandScope
-
-	SeriesID                  uuid.UUID
-	ForfeitingParticipantID   uuid.UUID
-	Confirmed                 bool
-	Reason                    string
-	ExpectedAuthorityRevision int64
-	ExpectedGame              *GameExpectation
-	Basis                     string
-	RuleID                    string
-	EvidenceIDs               []uuid.UUID
-	GameResultRevisionID      *uuid.UUID
-	ScoreRevisionID           uuid.UUID
-	SeriesResultRevisionID    uuid.UUID
-	AuditEventID              uuid.UUID
-	OutboxEventID             uuid.UUID
-	ProjectionRevisionID      uuid.UUID
 }
 
 type ReplayCommand struct {
@@ -185,16 +140,8 @@ type CorrectionEvidence struct {
 	UnlockIntents    []CorrectionUnlockIntent
 }
 
-type NoShowPort interface {
-	ResolveNoShow(ctx context.Context, command NoShowCommand) error
-}
-
 type ReservePort interface {
 	AssignReserve(ctx context.Context, command ReserveCommand) error
-}
-
-type ForfeitPort interface {
-	RecordForfeit(ctx context.Context, command ForfeitCommand) error
 }
 
 type ReplayPort interface {
@@ -203,15 +150,6 @@ type ReplayPort interface {
 
 type CorrectionPort interface {
 	CorrectGameResult(ctx context.Context, command CorrectionCommand) (CorrectionEvidence, error)
-}
-
-func validNoShowCommand(command NoShowCommand) bool {
-	return validCommandScope(command.CommandScope) && command.WaveID != uuid.Nil &&
-		command.WindowID != uuid.Nil && command.SeriesID != uuid.Nil && command.Confirmed &&
-		validText(command.Reason, maxReasonRunes) && command.ExpectedAuthorityRevision >= 1 &&
-		command.ExpectedWaveRevisionID != uuid.Nil && command.ExpectedWindowRevisionID != uuid.Nil &&
-		command.ExpectedSeriesState.IsValid() && validUniqueIDs(command.GameResultRevisionIDs, 1, 3) &&
-		command.ScoreRevisionID != uuid.Nil && command.SeriesResultRevisionID != uuid.Nil
 }
 
 func validReserveCommand(command ReserveCommand) bool {
@@ -238,32 +176,6 @@ func validReserveEvidence(command ReserveCommand) bool {
 
 func validRevisionPair(id uuid.UUID, revision int64) bool {
 	return id != uuid.Nil && revision >= 1
-}
-
-func validForfeitCommand(command ForfeitCommand) bool {
-	if !validForfeitScope(command) || !validForfeitEvidence(command) {
-		return false
-	}
-	if command.GameResultRevisionID != nil && *command.GameResultRevisionID == uuid.Nil {
-		return false
-	}
-	if command.ExpectedGame == nil {
-		return command.GameResultRevisionID == nil
-	}
-	game := command.ExpectedGame
-	return game.SlotID != uuid.Nil && game.GameID != uuid.Nil && game.AttemptNo >= 1 && game.State.IsValid()
-}
-
-func validForfeitScope(command ForfeitCommand) bool {
-	return validCommandScope(command.CommandScope) && command.SeriesID != uuid.Nil &&
-		command.ForfeitingParticipantID != uuid.Nil && command.Confirmed && validText(command.Reason, 256) &&
-		command.ExpectedAuthorityRevision >= 1 && command.Basis == "rule_violation" && validToken(command.RuleID, 64)
-}
-
-func validForfeitEvidence(command ForfeitCommand) bool {
-	return validUniqueIDs(command.EvidenceIDs, 1, 16) && command.ScoreRevisionID != uuid.Nil &&
-		command.SeriesResultRevisionID != uuid.Nil && command.AuditEventID != uuid.Nil &&
-		command.OutboxEventID != uuid.Nil && command.ProjectionRevisionID != uuid.Nil
 }
 
 func validReplayCommand(command ReplayCommand) bool {
@@ -415,20 +327,6 @@ func validEvidenceUnlocks(intents []CorrectionUnlockIntent, tournamentID uuid.UU
 		if !validUnlockIntent(intent, tournamentID) {
 			return false
 		}
-	}
-	return true
-}
-
-func validToken(value string, maximum int) bool {
-	if !validText(value, maximum) {
-		return false
-	}
-	for _, character := range value {
-		if character >= 'a' && character <= 'z' || character >= 'A' && character <= 'Z' ||
-			character >= '0' && character <= '9' || strings.ContainsRune("._:-", character) {
-			continue
-		}
-		return false
 	}
 	return true
 }
