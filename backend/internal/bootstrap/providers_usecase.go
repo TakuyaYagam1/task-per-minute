@@ -40,6 +40,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection"
 	taskusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/task"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	tournamentadminreplay "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/replay"
 	tournamentadminresult "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/result"
 	tournamentadminroster "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/roster"
 	tournamentcancellation "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/cancellation"
@@ -407,10 +408,10 @@ func provideTournamentProgression(
 }
 
 func provideTournamentAdminReplay(
-	transactions tournamentadmin.ExecutionTransactionManager,
-	repository tournamentadmin.ReplayWorkflowRepository,
-) *tournamentadmin.ReplayWorkflow {
-	return tournamentadmin.NewReplayWorkflow(tournamentadmin.ReplayWorkflowDependencies{
+	transactions tournamentadminreplay.ReplayTransactionManager,
+	repository tournamentadminreplay.ReplayWorkflowRepository,
+) *tournamentadminreplay.ReplayWorkflow {
+	return tournamentadminreplay.NewReplayWorkflow(tournamentadminreplay.ReplayWorkflowDependencies{
 		Transactions: transactions,
 		Repository:   repository,
 	})
@@ -434,9 +435,9 @@ func provideTournamentAdminApplication(
 	lifecycle tournamentadmin.LifecyclePort,
 	wave tournamentadmin.WavePort,
 	noShow tournamentadminresult.NoShowPort,
-	reserve tournamentadmin.ReservePort,
+	reserve tournamentadminreplay.ReservePort,
 	forfeit tournamentadminresult.ForfeitPort,
-	replay tournamentadmin.ReplayPort,
+	replay tournamentadminreplay.ReplayPort,
 	correction tournamentadmin.CorrectionPort,
 	audit tournamentadmin.AuditPort,
 	incidents tournamentadmin.IncidentSnapshotPort,

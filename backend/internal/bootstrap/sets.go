@@ -67,6 +67,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection"
 	taskusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/task"
 	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	tournamentadminreplay "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/replay"
 	tournamentadminresult "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/result"
 	tournamentadminroster "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/roster"
 	tournamentcancellation "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/cancellation"
@@ -109,6 +110,7 @@ var ReposSet = wire.NewSet(
 	wire.Bind(new(tournamentadmin.LifecycleTransactionManager), new(*postgres.TxManager)),
 	wire.Bind(new(tournamentadminroster.RosterTransactionManager), new(*postgres.TxManager)),
 	wire.Bind(new(tournamentadmin.ExecutionTransactionManager), new(*postgres.TxManager)),
+	wire.Bind(new(tournamentadminreplay.ReplayTransactionManager), new(*postgres.TxManager)),
 	wire.Bind(new(tournamentadminresult.OperatorResultTransactionManager), new(*postgres.TxManager)),
 	wire.Bind(new(tournamentadmin.CorrectionTransactionManager), new(*postgres.TxManager)),
 	wire.Bind(new(tournamentparticipant.ParticipantTransactionManager), new(*postgres.TxManager)),
@@ -179,7 +181,7 @@ var ReposSet = wire.NewSet(
 	provideTournamentAdminResultRepository,
 	wire.Bind(new(tournamentadminresult.OperatorResultWorkflowRepository), new(*adminresultrepo.TournamentAdminResultPostgres)),
 	adminreplayrepo.NewTournamentAdminReplayPostgres,
-	wire.Bind(new(tournamentadmin.ReplayWorkflowRepository), new(*adminreplayrepo.TournamentAdminReplayPostgres)),
+	wire.Bind(new(tournamentadminreplay.ReplayWorkflowRepository), new(*adminreplayrepo.TournamentAdminReplayPostgres)),
 	correctionrepo.NewTournamentAdminCorrectionPostgres,
 	wire.Bind(new(tournamentadmin.CorrectionWorkflowRepository), new(*correctionrepo.TournamentAdminCorrectionPostgres)),
 	progressionrepo.NewTournamentProgressionPostgres,
@@ -310,8 +312,8 @@ var UseCasesSet = wire.NewSet(
 	wire.Bind(new(tournamentadminresult.NoShowPort), new(*tournamentadminresult.OperatorResultWorkflow)),
 	wire.Bind(new(tournamentadminresult.ForfeitPort), new(*tournamentadminresult.OperatorResultWorkflow)),
 	provideTournamentAdminReplay,
-	wire.Bind(new(tournamentadmin.ReservePort), new(*tournamentadmin.ReplayWorkflow)),
-	wire.Bind(new(tournamentadmin.ReplayPort), new(*tournamentadmin.ReplayWorkflow)),
+	wire.Bind(new(tournamentadminreplay.ReservePort), new(*tournamentadminreplay.ReplayWorkflow)),
+	wire.Bind(new(tournamentadminreplay.ReplayPort), new(*tournamentadminreplay.ReplayWorkflow)),
 	provideTournamentAdminCorrection,
 	wire.Bind(new(tournamentadmin.CorrectionPort), new(*tournamentadmin.CorrectionWorkflow)),
 	provideTournamentAdminApplication,

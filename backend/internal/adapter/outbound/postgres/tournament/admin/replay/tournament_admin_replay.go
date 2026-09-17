@@ -21,7 +21,7 @@ import (
 	assignmentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/assignment"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
 	attemptusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/attempt"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	replayusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/replay"
 )
 
 // TournamentAdminReplayPostgres persists the two admin replay commands. Each
@@ -55,10 +55,10 @@ func (r *TournamentAdminReplayPostgres) ReadReplayTime(
 
 func (r *TournamentAdminReplayPostgres) LoadOperatorReserveAuthority(
 	ctx context.Context,
-	command tournamentadmin.ReserveCommand,
-) (tournamentadmin.OperatorReserveAuthority, error) {
+	command replayusecase.ReserveCommand,
+) (replayusecase.OperatorReserveAuthority, error) {
 	if ctx == nil || !r.available() {
-		return tournamentadmin.OperatorReserveAuthority{}, domain.ErrValidation
+		return replayusecase.OperatorReserveAuthority{}, domain.ErrValidation
 	}
 	querier := r.tx.Querier(ctx)
 	source, err := r.loadSource(ctx, querier, replaySourceScope{
@@ -67,19 +67,19 @@ func (r *TournamentAdminReplayPostgres) LoadOperatorReserveAuthority(
 		FailedGameID: command.AssignmentAttemptID, AssignmentID: command.AssignmentID,
 	})
 	if err != nil {
-		return tournamentadmin.OperatorReserveAuthority{}, err
+		return replayusecase.OperatorReserveAuthority{}, err
 	}
 
 	currentRow, err := querier.FindOperatorReplayReserveCommand(ctx, command.CommandID)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return tournamentadmin.OperatorReserveAuthority{}, fmt.Errorf("TournamentAdminReplayPostgres - find reserve command: %w", err)
+		return replayusecase.OperatorReserveAuthority{}, fmt.Errorf("TournamentAdminReplayPostgres - find reserve command: %w", err)
 	}
 	if err == nil {
 		current, err := r.rehydrateOperatorReserve(ctx, querier, source, command, currentRow)
 		if err != nil {
-			return tournamentadmin.OperatorReserveAuthority{}, err
+			return replayusecase.OperatorReserveAuthority{}, err
 		}
-		return tournamentadmin.OperatorReserveAuthority{
+		return replayusecase.OperatorReserveAuthority{
 			TournamentState: domain.TournamentState(source.row.Tournament.State),
 			Replay: gameusecase.OperatorReserveAuthority{
 				Scope: replayScopeFromCommand(command), Revision: source.row.Series.Revision,
@@ -96,17 +96,17 @@ func (r *TournamentAdminReplayPostgres) LoadOperatorReserveAuthority(
 			AssignmentID: command.AssignmentID,
 		})
 	if err != nil {
-		return tournamentadmin.OperatorReserveAuthority{}, replayWorkflowLookupError("lock reserve exhaustion", err)
+		return replayusecase.OperatorReserveAuthority{}, replayWorkflowLookupError("lock reserve exhaustion", err)
 	}
 	exhaustion, err := source.replayExhaustion(exhaustionRow)
 	if err != nil {
-		return tournamentadmin.OperatorReserveAuthority{}, err
+		return replayusecase.OperatorReserveAuthority{}, err
 	}
 	authority, err := r.loadReserveAuthority(ctx, querier, source, command)
 	if err != nil {
-		return tournamentadmin.OperatorReserveAuthority{}, err
+		return replayusecase.OperatorReserveAuthority{}, err
 	}
-	return tournamentadmin.OperatorReserveAuthority{
+	return replayusecase.OperatorReserveAuthority{
 		TournamentState: domain.TournamentState(source.row.Tournament.State),
 		Replay: gameusecase.OperatorReserveAuthority{
 			Scope: replayScopeFromCommand(command), Revision: source.row.Series.Revision,
@@ -118,7 +118,7 @@ func (r *TournamentAdminReplayPostgres) LoadOperatorReserveAuthority(
 //nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func (r *TournamentAdminReplayPostgres) CommitOperatorReserve(
 	ctx context.Context,
-	command tournamentadmin.ReserveCommand,
+	command replayusecase.ReserveCommand,
 	requestDigest [sha256.Size]byte,
 	record gameusecase.OperatorReserve,
 ) (*gameusecase.OperatorReserve, bool, error) {
@@ -246,10 +246,10 @@ func (r *TournamentAdminReplayPostgres) CommitOperatorReserve(
 
 func (r *TournamentAdminReplayPostgres) LoadReplayReplacementAuthority(
 	ctx context.Context,
-	command tournamentadmin.ReplayCommand,
-) (tournamentadmin.ReplayReplacementAuthority, error) {
+	command replayusecase.ReplayCommand,
+) (replayusecase.ReplayReplacementAuthority, error) {
 	if ctx == nil || !r.available() {
-		return tournamentadmin.ReplayReplacementAuthority{}, domain.ErrValidation
+		return replayusecase.ReplayReplacementAuthority{}, domain.ErrValidation
 	}
 	querier := r.tx.Querier(ctx)
 	source, err := r.loadSource(ctx, querier, replaySourceScope{
@@ -257,12 +257,12 @@ func (r *TournamentAdminReplayPostgres) LoadReplayReplacementAuthority(
 		SlotID: command.SlotID, FailedGameID: command.FailedGameID, AssignmentID: command.AssignmentID,
 	})
 	if err != nil {
-		return tournamentadmin.ReplayReplacementAuthority{}, err
+		return replayusecase.ReplayReplacementAuthority{}, err
 	}
 	currentRow, err := querier.FindReplayReplacementCommand(ctx, command.CommandID)
 	hasCurrent, lookupErr := replayReplacementLookupState(err)
 	if lookupErr != nil {
-		return tournamentadmin.ReplayReplacementAuthority{}, fmt.Errorf("TournamentAdminReplayPostgres - find replacement command: %w", lookupErr)
+		return replayusecase.ReplayReplacementAuthority{}, fmt.Errorf("TournamentAdminReplayPostgres - find replacement command: %w", lookupErr)
 	}
 	reserveRow, err := querier.LockOperatorReplayReserveForReplacement(ctx, sqlc.LockOperatorReplayReserveForReplacementParams{
 		TournamentID: command.TournamentID, OldWaveID: command.OldWaveID, SeriesID: command.SeriesID,
@@ -270,22 +270,22 @@ func (r *TournamentAdminReplayPostgres) LoadReplayReplacementAuthority(
 		FailedGameID: command.FailedGameID,
 	})
 	if err != nil {
-		return tournamentadmin.ReplayReplacementAuthority{}, replayWorkflowLookupError("lock operator reserve", err)
+		return replayusecase.ReplayReplacementAuthority{}, replayWorkflowLookupError("lock operator reserve", err)
 	}
 	chain, _, err := r.loadReplayReserveChain(ctx, querier, source, &reserveRow.CommandID)
 	if err != nil {
-		return tournamentadmin.ReplayReplacementAuthority{}, err
+		return replayusecase.ReplayReplacementAuthority{}, err
 	}
 	exhaustionRow, err := querier.LockReplayReserveExhaustionForOperatorReserve(ctx,
 		sqlc.LockReplayReserveExhaustionForOperatorReserveParams{ExhaustionCommandID: reserveRow.ExhaustionCommandID,
 			TournamentID: command.TournamentID, OldWaveID: command.OldWaveID, SeriesID: command.SeriesID,
 			SlotID: command.SlotID, AssignmentID: command.AssignmentID})
 	if err != nil {
-		return tournamentadmin.ReplayReplacementAuthority{}, replayWorkflowLookupError("reload replay exhaustion", err)
+		return replayusecase.ReplayReplacementAuthority{}, replayWorkflowLookupError("reload replay exhaustion", err)
 	}
 	failed, closure, err := source.failedAttemptAndClosure(reserveRow.ExhaustionCommandID, &exhaustionRow)
 	if err != nil {
-		return tournamentadmin.ReplayReplacementAuthority{}, err
+		return replayusecase.ReplayReplacementAuthority{}, err
 	}
 	authority := gameusecase.ReplayReplacementAuthority{
 		Scope: replayScopeFromReplayCommand(command), Revision: source.row.Series.Revision,
@@ -295,14 +295,14 @@ func (r *TournamentAdminReplayPostgres) LoadReplayReplacementAuthority(
 	if hasCurrent {
 		current, _, currentErr := replayReplacementFromStored(source, command, currentRow, chain)
 		if currentErr != nil {
-			return tournamentadmin.ReplayReplacementAuthority{}, currentErr
+			return replayusecase.ReplayReplacementAuthority{}, currentErr
 		}
 		authority.Current = current
 	}
 	if authority.Current == nil && domain.SeriesState(source.row.Series.State) != domain.SeriesStateReplayRequired {
-		return tournamentadmin.ReplayReplacementAuthority{}, domain.ErrConflict
+		return replayusecase.ReplayReplacementAuthority{}, domain.ErrConflict
 	}
-	return tournamentadmin.ReplayReplacementAuthority{
+	return replayusecase.ReplayReplacementAuthority{
 		TournamentState: domain.TournamentState(source.row.Tournament.State), Replay: authority,
 	}, nil
 }
@@ -310,7 +310,7 @@ func (r *TournamentAdminReplayPostgres) LoadReplayReplacementAuthority(
 //nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func (r *TournamentAdminReplayPostgres) CommitReplayReplacement(
 	ctx context.Context,
-	command tournamentadmin.ReplayCommand,
+	command replayusecase.ReplayCommand,
 	requestDigest [sha256.Size]byte,
 	replacement gameusecase.ReplayReplacement,
 ) (*gameusecase.ReplayReplacement, bool, error) {
@@ -482,12 +482,12 @@ func replayDerivedID(commandID uuid.UUID, role string) uuid.UUID {
 	return uuid.NewSHA1(commandID, []byte("tournament-admin-replay:"+role))
 }
 
-func replayScopeFromCommand(command tournamentadmin.ReserveCommand) gameusecase.ReplayReplacementScope {
+func replayScopeFromCommand(command replayusecase.ReserveCommand) gameusecase.ReplayReplacementScope {
 	return gameusecase.ReplayReplacementScope{TournamentID: command.TournamentID, OldWaveID: command.OldWaveID,
 		SeriesID: command.SeriesID, SlotID: command.SlotID, AssignmentID: command.AssignmentID}
 }
 
-func replayScopeFromReplayCommand(command tournamentadmin.ReplayCommand) gameusecase.ReplayReplacementScope {
+func replayScopeFromReplayCommand(command replayusecase.ReplayCommand) gameusecase.ReplayReplacementScope {
 	return gameusecase.ReplayReplacementScope{TournamentID: command.TournamentID, OldWaveID: command.OldWaveID,
 		SeriesID: command.SeriesID, SlotID: command.SlotID, AssignmentID: command.AssignmentID}
 }
@@ -986,7 +986,7 @@ func (r *TournamentAdminReplayPostgres) loadReserveAuthority(
 	ctx context.Context,
 	querier *sqlc.Queries,
 	source replaySource,
-	command tournamentadmin.ReserveCommand,
+	command replayusecase.ReserveCommand,
 ) (assignmentusecase.ReserveAssignmentAuthority, error) {
 	row, err := querier.LockReplayReserveAuthority(ctx, sqlc.LockReplayReserveAuthorityParams{
 		TournamentID: command.TournamentID, RosterID: source.row.Roster.ID, SeriesID: command.SeriesID,
@@ -1122,7 +1122,7 @@ func reserveAuthorityFromRecord(record assignmentusecase.ReserveAssignmentRecord
 }
 
 func operatorReserveAssignmentCommand(
-	command tournamentadmin.ReserveCommand,
+	command replayusecase.ReserveCommand,
 	promotedAt time.Time,
 ) assignmentusecase.ReserveAssignmentCommand {
 	return assignmentusecase.ReserveAssignmentCommand{
@@ -1138,7 +1138,7 @@ func (r *TournamentAdminReplayPostgres) reserveAuthorityRevision(
 	ctx context.Context,
 	querier *sqlc.Queries,
 	source replaySource,
-	command tournamentadmin.ReserveCommand,
+	command replayusecase.ReserveCommand,
 ) (int64, error) {
 	row, err := querier.LockReplayReserveAuthority(ctx, sqlc.LockReplayReserveAuthorityParams{
 		TournamentID: command.TournamentID, RosterID: source.row.Roster.ID, SeriesID: command.SeriesID,
@@ -1164,7 +1164,7 @@ func (r *TournamentAdminReplayPostgres) rehydrateOperatorReserve(
 	ctx context.Context,
 	querier *sqlc.Queries,
 	source replaySource,
-	command tournamentadmin.ReserveCommand,
+	command replayusecase.ReserveCommand,
 	row sqlc.OperatorReplayReserve,
 ) (*gameusecase.OperatorReserve, error) {
 	document, err := decodeReplayStorageDocument[operatorReserveDocument](row.RecordDocument)
@@ -1208,7 +1208,7 @@ func (r *TournamentAdminReplayPostgres) rehydrateOperatorReserve(
 func (r *TournamentAdminReplayPostgres) reconcileStoredOperatorReserve(
 	ctx context.Context,
 	querier *sqlc.Queries,
-	command tournamentadmin.ReserveCommand,
+	command replayusecase.ReserveCommand,
 	requestDigest [sha256.Size]byte,
 	row sqlc.OperatorReplayReserve,
 ) (*gameusecase.OperatorReserve, bool, error) {
@@ -1229,7 +1229,7 @@ func (r *TournamentAdminReplayPostgres) reconcileStoredOperatorReserve(
 }
 
 func operatorReserveDocumentFromRecord(
-	command tournamentadmin.ReserveCommand,
+	command replayusecase.ReserveCommand,
 	record gameusecase.OperatorReserve,
 ) operatorReserveDocument {
 	return operatorReserveDocument{CommandID: command.CommandID, Scope: replayDocumentScope{
@@ -1244,11 +1244,11 @@ func operatorReserveDocumentFromRecord(
 		PromotedAt: record.Reserve.PromotedAt}
 }
 
-func replayReserveCommandDigest(command tournamentadmin.ReserveCommand) []byte {
+func replayReserveCommandDigest(command replayusecase.ReserveCommand) []byte {
 	//nolint:musttag // This versioned application-owned document is validated on both encode and decode.
 	payload, err := json.Marshal(struct {
-		Action string                         `json:"action"`
-		Value  tournamentadmin.ReserveCommand `json:"command"`
+		Action string                       `json:"action"`
+		Value  replayusecase.ReserveCommand `json:"command"`
 	}{Action: "operator_reserve", Value: command})
 	if err != nil {
 		return nil
@@ -1285,7 +1285,7 @@ func (r *TournamentAdminReplayPostgres) loadReplayReserveChain(
 }
 
 func replayReplacementDocumentFromReplacement(
-	command tournamentadmin.ReplayCommand,
+	command replayusecase.ReplayCommand,
 	replacement gameusecase.ReplayReplacement,
 ) replayReplacementDocument {
 	return replayReplacementDocument{CommandID: command.CommandID, Scope: replayDocumentScope{
@@ -1304,7 +1304,7 @@ func replayReplacementDocumentFromReplacement(
 //nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.
 func replayReplacementFromStored(
 	source replaySource,
-	command tournamentadmin.ReplayCommand,
+	command replayusecase.ReplayCommand,
 	row sqlc.ReplayReplacement,
 	chain gameusecase.ReplayReserveChain,
 ) (*gameusecase.ReplayReplacement, bool, error) {
