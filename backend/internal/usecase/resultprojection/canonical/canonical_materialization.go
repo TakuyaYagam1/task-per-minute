@@ -1,4 +1,4 @@
-package resultprojection
+package canonical
 
 import (
 	"crypto/sha256"
