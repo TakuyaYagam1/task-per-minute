@@ -77,9 +77,27 @@ type AutomaticSwissRoundInput = swissrepo.AutomaticSwissRoundInput
 type ManualSwissRoundInput = swissrepo.ManualSwissRoundInput
 type SwissRoundRecord = swissrepo.SwissRoundRecord
 
+// SwissWriter is the narrow Swiss persistence contract required by the
+// execution workflow. The concrete repository remains the compatibility
+// constructor default, while callers can provide another implementation.
+type SwissWriter interface {
+	SaveAutomaticRound(
+		ctx context.Context,
+		in AutomaticSwissRoundInput,
+		expectedRevision *int64,
+	) (*SwissRoundRecord, error)
+	SaveManualRound(
+		ctx context.Context,
+		in ManualSwissRoundInput,
+		expectedRevision *int64,
+	) (*SwissRoundRecord, error)
+}
+
+var _ SwissWriter = (*swissrepo.SwissPostgres)(nil)
+
 type TournamentAdminExecutionPostgres struct {
 	tx                *db.TxManager
-	swiss             *swissrepo.SwissPostgres
+	swiss             SwissWriter
 	waves             WaveWriter
 	draftMaterializer DraftMaterializer
 }
@@ -91,6 +109,19 @@ func NewTournamentAdminExecutionPostgres(tx *db.TxManager) *TournamentAdminExecu
 func NewTournamentAdminExecutionPostgresWithDependencies(
 	tx *db.TxManager,
 	swiss *swissrepo.SwissPostgres,
+	waves WaveWriter,
+	draftMaterializer DraftMaterializer,
+) *TournamentAdminExecutionPostgres {
+	var writer SwissWriter
+	if swiss != nil {
+		writer = swiss
+	}
+	return NewTournamentAdminExecutionPostgresWithRepositories(tx, writer, waves, draftMaterializer)
+}
+
+func NewTournamentAdminExecutionPostgresWithRepositories(
+	tx *db.TxManager,
+	swiss SwissWriter,
 	waves WaveWriter,
 	draftMaterializer DraftMaterializer,
 ) *TournamentAdminExecutionPostgres {
