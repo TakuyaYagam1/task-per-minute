@@ -11,7 +11,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
+	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/snapshot"
 )
 
 func TestTournamentAdminSnapshotPauseIndexSelectsNormalRoot(t *testing.T) {

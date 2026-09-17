@@ -13,8 +13,8 @@ import (
 	seriesdomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/series"
 	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
 	gameusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/pause"
-	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin"
 	rostercapability "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/roster"
+	tournamentadmin "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/snapshot"
 )
 
 const tournamentAdminSnapshotMaxFrozenDuration = 7 * 24 * time.Hour
