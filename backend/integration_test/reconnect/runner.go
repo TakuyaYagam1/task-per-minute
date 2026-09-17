@@ -21,6 +21,7 @@ import (
 )
 
 var (
+	sharedPool      *pgxpool.Pool
 	migrationPool   *pgxpool.Pool
 	migrationPoolMu sync.Mutex
 )

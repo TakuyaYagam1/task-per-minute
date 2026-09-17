@@ -9,12 +9,12 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
+
 	"github.com/stretchr/testify/require"
 )
 
 func disconnectPresence(
-	ctx context.Context,
-	tb testing.TB,
+	ctx context.Context, tb testing.TB,
 	fixture reconnectMigrationFixture,
 	participantID uuid.UUID,
 	disconnectedAt time.Time,
@@ -38,7 +38,11 @@ func disconnectPresence(
 	require.EqualValues(tb, 1, commandTag.RowsAffected())
 }
 
-func requireReconnectCheckViolation(tb testing.TB, err error, diagnostic string) {
+func requireReconnectCheckViolation(
+	tb testing.TB,
+	err error,
+	diagnostic string,
+) {
 	tb.Helper()
 
 	var postgresError *pgconn.PgError
@@ -47,7 +51,11 @@ func requireReconnectCheckViolation(tb testing.TB, err error, diagnostic string)
 	require.Contains(tb, postgresError.Message, diagnostic)
 }
 
-func requireReconnectExactCheckViolation(tb testing.TB, err error, diagnostic string) {
+func requireReconnectExactCheckViolation(
+	tb testing.TB,
+	err error,
+	diagnostic string,
+) {
 	tb.Helper()
 
 	var postgresError *pgconn.PgError

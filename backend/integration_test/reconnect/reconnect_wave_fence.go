@@ -1,6 +1,6 @@
 //go:build integration
 
-package integration_test
+package reconnect
 
 import (
 	"context"
@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestReconnectContinuationWaveMembershipFence(t *testing.T) {
+func runReconnectContinuationWaveMembershipFence(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("concurrent Wave creation does not deadlock on the roster", func(t *testing.T) {
