@@ -3,7 +3,6 @@
 package integration_test
 
 import (
-	"bytes"
 	"context"
 	"testing"
 	"time"
@@ -11,8 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
-	waverepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/execution/wave"
+	"github.com/TakuyaYagam1/task-per-minute/integration_test/internal/testkit/draftseed"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 )
 
@@ -120,94 +118,33 @@ func createDraftMigrationFixtureWithContentHook(
 		)
 	}
 
-	categoryRevisionID := uuid.New()
-	_, err := sharedPool.Exec(
-		ctx, `
-		INSERT INTO category_revisions (
-			id, series_id, roster_id, revision, source_pool_revision_id,
-			mode, category_pool, created_at
-		)
-		VALUES (
-			$1, $2, $3, 1, $4,
-			'draft', '["web","crypto","pwn"]'::JSONB, $5
-		)`,
-		categoryRevisionID,
-		seriesID,
-		rosterID,
-		normalPoolRevisionID,
-		createdAt,
-	)
-	require.NoError(tb, err)
-
-	draftID := uuid.New()
-	_, err = sharedPool.Exec(
-		ctx, `
-		INSERT INTO drafts (
-			id, series_id, roster_id, category_revision_id,
-			first_participant_id, second_participant_id, format, created_at
-		)
-		VALUES ($1, $2, $3, $4, $5, $6, 'bo1', $7)`,
-		draftID,
-		seriesID,
-		rosterID,
-		categoryRevisionID,
-		participantIDs[0],
-		participantIDs[1],
-		createdAt,
-	)
-	require.NoError(tb, err)
-
-	initialRevisionID := uuid.New()
-	initialServiceEpoch := uuid.New()
-	seed := bytes.Repeat([]byte{1}, 32)
-	digest := bytes.Repeat([]byte{2}, 32)
-	_, err = sharedPool.Exec(
-		ctx, `
-		INSERT INTO draft_revisions (
-			id, draft_id, series_id, roster_id, revision,
-			command_id, service_epoch, state, turn_number,
-			current_actor_id, current_action, absolute_deadline,
-			decision_evidence_id, decision_purpose,
-			decision_algorithm_version, decision_inputs,
-			decision_seed, decision_result, decision_replay_digest,
-			decision_owner_id, decided_at, created_at
-		)
-		VALUES (
-			$1, $2, $3, $4, 1,
-			$5, $6, 'active', 1,
-			$7, 'ban', $8,
-			$9, 'draft_order',
-			'hmac-sha256-order-v1', $10::JSONB,
-			$11, $12::JSONB, $13,
-			$2, $14, $14
-		)`,
-		initialRevisionID,
-		draftID,
-		seriesID,
-		rosterID,
-		uuid.New(),
-		initialServiceEpoch,
-		participantIDs[0],
-		createdAt.Add(15*time.Second),
-		uuid.New(),
-		`["first","second"]`,
-		seed,
-		`["first","second"]`,
-		digest,
-		createdAt,
-	)
+	draft, err := draftseed.CreateDraft(ctx, sharedPool, draftseed.DraftInput{
+		SeriesID:             seriesID,
+		RosterID:             rosterID,
+		SourcePoolRevisionID: normalPoolRevisionID,
+		FirstParticipantID:   participantIDs[0],
+		SecondParticipantID:  participantIDs[1],
+		Format:               domain.SeriesFormatBO1,
+		CategoryPool: []domain.Category{
+			domain.CategoryWeb,
+			domain.CategoryCrypto,
+			domain.CategoryPwn,
+		},
+		AbsoluteDeadline: createdAt.Add(15 * time.Second),
+		CreatedAt:        createdAt,
+	})
 	require.NoError(tb, err)
 
 	return draftMigrationFixture{
 		tournamentID:         tournamentID,
 		rosterID:             rosterID,
 		seriesID:             seriesID,
-		draftID:              draftID,
-		categoryRevisionID:   categoryRevisionID,
+		draftID:              draft.DraftID,
+		categoryRevisionID:   draft.CategoryRevisionID,
 		normalPoolRevisionID: normalPoolRevisionID,
-		initialRevisionID:    initialRevisionID,
-		participantIDs:       participantIDs,
-		initialServiceEpoch:  initialServiceEpoch,
+		initialRevisionID:    draft.InitialRevisionID,
+		participantIDs:       []uuid.UUID{draft.FirstParticipantID, draft.SecondParticipantID},
+		initialServiceEpoch:  draft.InitialServiceEpoch,
 		createdAt:            createdAt,
 	}
 }
@@ -309,23 +246,17 @@ func createDraftMigrationWaveSeries(
 	tb.Helper()
 
 	seriesID := uuid.New()
-	_, err := waverepo.NewWavePostgres(postgres.NewTxManager(sharedPool)).Create(ctx, waverepo.WaveCreateInput{
-		ID:                         uuid.New(),
-		TournamentID:               tournamentID,
-		RosterID:                   rosterID,
-		RevisionID:                 domain.WaveRevisionID(uuid.New()),
-		ParticipantIDs:             participantIDs,
-		CommandID:                  uuid.New(),
-		SourceProjectionRevisionID: sourceProjectionID,
-		SourceProjectionRevision:   sourceProjectionRevision,
-		Series: []waverepo.WaveSeriesInput{{
-			ID:                     seriesID,
-			FirstParticipantID:     participantIDs[0],
-			SecondParticipantID:    participantIDs[1],
-			Format:                 domain.SeriesFormatBO1,
-			InitialScoreRevisionID: domain.SeriesScoreRevisionID(uuid.New()),
-		}},
-		CreatedAt: createdAt,
+	_, err := draftseed.CreateWaveSeries(ctx, sharedPool, draftseed.WaveInput{
+		TournamentID:             tournamentID,
+		RosterID:                 rosterID,
+		ParticipantIDs:           participantIDs,
+		SeriesID:                 seriesID,
+		FirstParticipantID:       participantIDs[0],
+		SecondParticipantID:      participantIDs[1],
+		SourceProjectionID:       sourceProjectionID,
+		SourceProjectionRevision: sourceProjectionRevision,
+		Format:                   domain.SeriesFormatBO1,
+		CreatedAt:                createdAt,
 	})
 	require.NoError(tb, err)
 	return seriesID
