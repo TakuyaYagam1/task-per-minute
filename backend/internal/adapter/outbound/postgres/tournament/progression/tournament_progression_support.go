@@ -20,7 +20,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	inbound "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	draftusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/draft"
-	projectionusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection"
+	projectionusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection/canonical"
 	swissusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/swiss"
 	catalogusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/catalog"
 	tournamentprogression "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/progression"

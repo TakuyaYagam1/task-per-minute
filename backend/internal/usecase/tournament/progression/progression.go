@@ -17,7 +17,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/playoff"
-	resultprojection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection"
+	resultprojection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection/canonical"
 )
 
 type Action string

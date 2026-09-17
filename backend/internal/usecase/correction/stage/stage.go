@@ -11,7 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	resultprojection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection"
+	resultprojection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection/canonical"
 )
 
 var (

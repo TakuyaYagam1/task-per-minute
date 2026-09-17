@@ -17,6 +17,7 @@ import (
 	correctionusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/correction"
 	resultusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/result"
 	resultprojection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection"
+	canonicalprojection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/resultprojection/canonical"
 	admincorrection "github.com/TakuyaYagam1/task-per-minute/internal/usecase/tournament/admin/correction"
 )
 
@@ -110,15 +111,15 @@ func loadTournamentAdminCorrectionStage(
 		TournamentState:    input.tournamentState,
 		TournamentRevision: input.tournamentVersion,
 		Swiss: correctionusecase.StageSwissAuthority{
-			Participants: make([]resultprojection.CanonicalSwissParticipant, len(participants)),
-			Ledger:       make([]resultprojection.CanonicalSwissPointLedgerEntry, len(ledger)),
+			Participants: make([]canonicalprojection.CanonicalSwissParticipant, len(participants)),
+			Ledger:       make([]canonicalprojection.CanonicalSwissPointLedgerEntry, len(ledger)),
 		},
 	}
 	for index, participant := range participants {
 		if participant.ID == uuid.Nil || participant.Seed < 1 {
 			return correctionusecase.StageSnapshot{}, domain.ErrConflict
 		}
-		stage.Swiss.Participants[index] = resultprojection.CanonicalSwissParticipant{
+		stage.Swiss.Participants[index] = canonicalprojection.CanonicalSwissParticipant{
 			ID: participant.ID, StableSeed: int(participant.Seed),
 		}
 	}
@@ -130,7 +131,7 @@ func loadTournamentAdminCorrectionStage(
 		stage.Swiss.Ledger[index] = canonical
 	}
 	if len(stage.Swiss.Participants) > 0 && len(stage.Swiss.Ledger) > 0 {
-		_, canonicalErr := resultprojection.BuildCanonicalSwissRounds(stage.Swiss.Ledger)
+		_, canonicalErr := canonicalprojection.BuildCanonicalSwissRounds(stage.Swiss.Ledger)
 		stage.Swiss.Complete = canonicalErr == nil
 	}
 	//nolint:exhaustive // This switch intentionally handles only the valid states for this boundary.
