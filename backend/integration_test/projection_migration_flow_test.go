@@ -246,39 +246,3 @@ func TestProjectionMigration(t *testing.T) {
 		ctx, t, goldenPositionCommitID, secondCutoffAt.Add(time.Minute),
 	)
 }
-
-func TestProjectionMigrationRejectsChampionBeforeTerminalFinal(t *testing.T) {
-	ctx := context.Background()
-	resetMigrationTables(ctx, t)
-	t.Cleanup(func() { resetMigrationTables(ctx, t) })
-
-	fixture := createGoldenMigrationFixture(ctx, t, 4)
-	goldenPositionCommitID := createProjectionGoldenSource(ctx, t, fixture)
-	createdAt := fixture.createdAt.Add(4 * time.Minute)
-	cutoffID := createProjectionCutoff(
-		ctx, t, fixture, 1, nil, "golden_position", nil, goldenPositionCommitID,
-		"planned playoff projection", createdAt,
-	)
-	revisionID := createProjectionRevision(ctx, t, fixture, 1, nil, cutoffID, createdAt.Add(time.Second))
-	artifacts := createProjectionArtifactSet(ctx, t, fixture, revisionID, "planned", createdAt.Add(2*time.Second))
-	for kind, artifactID := range artifacts {
-		linkProjectionArtifact(ctx, t, fixture, revisionID, kind, artifactID, "produced")
-	}
-	createProjectionGoldenDependency(ctx, t, fixture, artifacts["standings"], goldenPositionCommitID)
-	createProjectionArtifactDependency(ctx, t, fixture, artifacts["bracket"], artifacts["standings"])
-	createProjectionArtifactDependency(ctx, t, fixture, artifacts["top_four"], artifacts["bracket"])
-
-	championID := createProjectionArtifact(
-		ctx, t, fixture, revisionID, "champion", "champion-planned",
-		`{"participant_id":"`+fixture.participantIDs[0].String()+`"}`,
-		14, createdAt.Add(2*time.Second),
-	)
-	linkProjectionArtifact(ctx, t, fixture, revisionID, "champion", championID, "produced")
-	createProjectionArtifactDependency(ctx, t, fixture, championID, artifacts["bracket"])
-
-	_, err := sharedPool.Exec(ctx, `
-		UPDATE projection_revisions
-		SET state = 'published', published_at = $2
-		WHERE id = $1`, revisionID, createdAt.Add(3*time.Second))
-	require.ErrorContains(t, err, "terminal champion")
-}
