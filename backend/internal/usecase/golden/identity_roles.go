@@ -1,33 +1,21 @@
 package golden
 
-import "github.com/google/uuid"
+import goldenstate "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/state"
 
-// IdentityRole describes a stable identity and its role in a Golden workflow.
-type IdentityRole struct {
-	Value uuid.UUID
-	Role  string
-}
+type IdentityRole = goldenstate.IdentityRole
 
 func CoreIdentityRoles(state GoldenState) []IdentityRole {
-	return exportIdentityRoles(goldenCoreIdentityRoles(state))
+	return goldenstate.CoreIdentityRoles(state)
 }
 
 func PlanIdentityRoles(state GoldenState) []IdentityRole {
-	return exportIdentityRoles(goldenPlanIdentityRoles(state))
+	return goldenstate.PlanIdentityRoles(state)
 }
 
 func WindowIdentityRoles(state GoldenState) []IdentityRole {
-	return exportIdentityRoles(goldenWindowIdentityRoles(state))
+	return goldenstate.WindowIdentityRoles(state)
 }
 
 func TransitionIdentityRoles(state GoldenState) []IdentityRole {
-	return exportIdentityRoles(goldenTransitionIdentityRoles(state))
-}
-
-func exportIdentityRoles(input []stateGoldenIdentityRole) []IdentityRole {
-	result := make([]IdentityRole, len(input))
-	for index, identity := range input {
-		result[index] = IdentityRole{Value: identity.value, Role: identity.role}
-	}
-	return result
+	return goldenstate.TransitionIdentityRoles(state)
 }

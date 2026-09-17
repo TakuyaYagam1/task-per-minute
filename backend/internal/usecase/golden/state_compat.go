@@ -1,9 +1,22 @@
 package golden
 
 import (
+	"context"
+	"errors"
+
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	goldenstate "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/state"
+	"github.com/google/uuid"
 )
+
+type StateClock = goldenstate.StateClock
+type StateRepository = goldenstate.StateRepository
+type GoldenReadyCommand = goldenstate.GoldenReadyCommand
+type GoldenDisconnectCommand = goldenstate.GoldenDisconnectCommand
+type GoldenNoShowCommand = goldenstate.GoldenNoShowCommand
+type GoldenFallbackCommand = goldenstate.GoldenFallbackCommand
+type GoldenNoShowUseCase = goldenstate.GoldenNoShowUseCase
+type GoldenFallbackUseCase = goldenstate.GoldenFallbackUseCase
 
 type GoldenReadyEventType = goldenstate.GoldenReadyEventType
 type GoldenReadyWindowState = goldenstate.GoldenReadyWindowState
@@ -27,6 +40,17 @@ var (
 	ErrInvalidGoldenNoShow       = goldenstate.ErrInvalidGoldenNoShow
 	ErrInvalidGoldenFallback     = goldenstate.ErrInvalidGoldenFallback
 	ErrGoldenFallbackNotRequired = goldenstate.ErrGoldenFallbackNotRequired
+
+	ErrGoldenParticipationAuthorityConflict = goldenstate.ErrGoldenParticipationAuthorityConflict
+	ErrGoldenParticipationConflict          = goldenstate.ErrGoldenParticipationConflict
+	ErrGoldenCommandReuse                   = goldenstate.ErrGoldenCommandReuse
+	ErrGoldenRevisionOverflow               = goldenstate.ErrGoldenRevisionOverflow
+	ErrGoldenParticipantExcluded            = goldenstate.ErrGoldenParticipantExcluded
+	ErrGoldenNoShowCutoff                   = goldenstate.ErrGoldenNoShowCutoff
+	ErrGoldenNoShowAuthorityConflict        = goldenstate.ErrGoldenNoShowAuthorityConflict
+	ErrGoldenNoShowConflict                 = goldenstate.ErrGoldenNoShowConflict
+	ErrGoldenFallbackAuthorityConflict      = goldenstate.ErrGoldenFallbackAuthorityConflict
+	ErrGoldenFallbackConflict               = goldenstate.ErrGoldenFallbackConflict
 )
 
 const (
@@ -73,4 +97,52 @@ func CloneReadyWindow(window GoldenReadyWindow) GoldenReadyWindow {
 
 func CloneExpectation(input GoldenStateExpectation) GoldenStateExpectation {
 	return goldenstate.CloneExpectation(input)
+}
+
+type GoldenParticipationUseCase struct {
+	inner *goldenstate.GoldenParticipationUseCase
+}
+
+func NewGoldenParticipationUseCase(repository StateRepository, clock StateClock) *GoldenParticipationUseCase {
+	return &GoldenParticipationUseCase{inner: goldenstate.NewGoldenParticipationUseCase(repository, clock)}
+}
+
+func (u *GoldenParticipationUseCase) AcceptReady(
+	ctx context.Context,
+	command GoldenReadyCommand,
+) (*GoldenState, bool, error) {
+	if u == nil || u.inner == nil {
+		return nil, false, domain.ErrValidation
+	}
+	state, changed, err := u.inner.AcceptReady(ctx, command)
+	if errors.Is(err, goldenstate.ErrGoldenReadyWindowClosed) {
+		return state, changed, ErrGoldenReadyWindowClosed
+	}
+	return state, changed, err
+}
+
+func (u *GoldenParticipationUseCase) ClearOnDisconnect(
+	ctx context.Context,
+	command GoldenDisconnectCommand,
+) (*GoldenState, bool, error) {
+	if u == nil || u.inner == nil {
+		return nil, false, domain.ErrValidation
+	}
+	state, changed, err := u.inner.ClearOnDisconnect(ctx, command)
+	if errors.Is(err, goldenstate.ErrGoldenReadyWindowClosed) {
+		return state, changed, ErrGoldenReadyWindowClosed
+	}
+	return state, changed, err
+}
+
+func NewGoldenNoShowUseCase(repository StateRepository, clock StateClock) *GoldenNoShowUseCase {
+	return goldenstate.NewGoldenNoShowUseCase(repository, clock)
+}
+
+func NewGoldenFallbackUseCase(repository StateRepository, clock StateClock) *GoldenFallbackUseCase {
+	return goldenstate.NewGoldenFallbackUseCase(repository, clock)
+}
+
+func OrderGoldenFallbackMembers(members []GroupMemberSeed) ([]uuid.UUID, error) {
+	return goldenstate.OrderGoldenFallbackMembers(members)
 }

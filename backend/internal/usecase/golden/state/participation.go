@@ -1,4 +1,4 @@
-package golden
+package state
 
 import (
 	"context"
@@ -145,7 +145,7 @@ func (u *GoldenParticipationUseCase) applyAttempt(
 	) {
 		return nil, false, false, ErrGoldenReadyWindowClosed
 	}
-	member, found := FindMember(authority.Group.Members, operation.participantID)
+	member, found := findMember(authority.Group.Members, operation.participantID)
 	if goldenAny(!found, !goldenAttemptContains(authority.Group.Attempts, operation.attemptID, operation.participantID)) {
 		return nil, false, false, domain.ErrAssignmentParticipant
 	}
@@ -282,11 +282,6 @@ func goldenReadyEventMatchesOperation(result, requested GoldenReadyEventType) bo
 		(requested == GoldenReadyEventAccepted && result == GoldenReadyEventAlreadyReady) ||
 		(requested == GoldenReadyEventDisconnected && result == GoldenReadyEventAlreadyAbsent)
 }
-
-func goldenReadyEventChangesWindow(eventType GoldenReadyEventType) bool {
-	return eventType == GoldenReadyEventAccepted || eventType == GoldenReadyEventDisconnected
-}
-
 func goldenParticipationResultPresence(window GoldenReadyWindow) uuid.UUID {
 	return window.PresenceRevisionID
 }

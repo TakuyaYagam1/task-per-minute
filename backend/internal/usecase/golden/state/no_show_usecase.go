@@ -1,4 +1,4 @@
-package golden
+package state
 
 import (
 	"context"
@@ -10,25 +10,6 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	"github.com/google/uuid"
 )
-
-var (
-	ErrGoldenNoShowCutoff            = errors.New("golden no-show cutoff has not passed")
-	ErrGoldenNoShowAuthorityConflict = errors.New("golden no-show authority conflict")
-	ErrGoldenNoShowConflict          = errors.New("golden no-show commit conflict")
-)
-
-type GoldenNoShowCommand struct {
-	Scope          GoldenStateScope
-	CommandID      uuid.UUID
-	AttemptID      uuid.UUID
-	WindowID       uuid.UUID
-	ExpectedState  GoldenStateExpectation
-	ExpectedWindow GoldenReadyWindowExpectation
-
-	NextStateRevisionID      uuid.UUID
-	NextWindowRevisionID     uuid.UUID
-	NextMembershipRevisionID uuid.UUID
-}
 
 type GoldenNoShowUseCase struct {
 	repository StateRepository
@@ -151,7 +132,7 @@ func buildGoldenNoShowSuccessor(
 	}
 	excluded := make([]uuid.UUID, 0, len(attempt.ParticipantIDs))
 	for _, participantID := range attempt.ParticipantIDs {
-		member, belongs := FindMember(authority.Group.Members, participantID)
+		member, belongs := findMember(authority.Group.Members, participantID)
 		if goldenAny(!belongs, member.Excluded) {
 			continue
 		}

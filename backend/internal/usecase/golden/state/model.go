@@ -508,6 +508,11 @@ func findMember(members []domain.GoldenMember, participantID uuid.UUID) (domain.
 	return domain.GoldenMember{}, false
 }
 
+// FindMember exposes the immutable membership lookup for compatibility users.
+func FindMember(members []domain.GoldenMember, participantID uuid.UUID) (domain.GoldenMember, bool) {
+	return findMember(members, participantID)
+}
+
 func goldenWindowIndex(windows []GoldenReadyWindow, windowID uuid.UUID) int {
 	for index := range windows {
 		if windows[index].ID == windowID {

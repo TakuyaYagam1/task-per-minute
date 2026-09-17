@@ -22,6 +22,18 @@ type allocationCommand struct {
 	NextStateRevisionID uuid.UUID
 }
 
+func OrderGoldenFallbackMembers(members []goldenplan.GroupMemberSeed) ([]uuid.UUID, error) {
+	ordered, err := orderGoldenFallbackSeeds(members)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]uuid.UUID, len(ordered))
+	for index, member := range ordered {
+		result[index] = member.ParticipantID
+	}
+	return result, nil
+}
+
 func buildGoldenAllocation(
 	state GoldenState,
 	command allocationCommand,
