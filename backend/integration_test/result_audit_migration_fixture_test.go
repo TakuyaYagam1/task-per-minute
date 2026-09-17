@@ -11,14 +11,14 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
+
+	resultaudit "github.com/TakuyaYagam1/task-per-minute/integration_test/internal/testkit/resultaudit"
 )
 
 func beginResultAuditLockProbe(ctx context.Context, tb testing.TB) pgx.Tx {
 	tb.Helper()
 
-	tx, err := sharedPool.Begin(ctx)
-	require.NoError(tb, err)
-	_, err = tx.Exec(ctx, "SET LOCAL lock_timeout = '100ms'")
+	tx, err := resultaudit.BeginLockProbe(ctx, sharedPool)
 	require.NoError(tb, err)
 	return tx
 }
@@ -346,51 +346,19 @@ func lockMigrationSeries(
 ) uuid.UUID {
 	tb.Helper()
 
-	tx, err := sharedPool.Begin(ctx)
+	fixture, err := resultaudit.LockSeries(ctx, sharedPool, resultaudit.LockInput{
+		Scope: resultaudit.Scope{
+			TournamentID: draft.tournamentID,
+			RosterID:     draft.rosterID,
+			SeriesID:     draft.seriesID,
+			ParticipantIDs: [2]uuid.UUID{
+				draft.participantIDs[0], draft.participantIDs[1],
+			},
+		},
+		LockedAt: lockedAt,
+	})
 	require.NoError(tb, err)
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	var initialScoreRevisionID uuid.UUID
-	var revisionNumber int64
-	err = tx.QueryRow(ctx, `
-		SELECT score_head.current_revision_id, score_revision.revision_number
-		FROM series
-		INNER JOIN series_score_heads AS score_head
-			ON score_head.series_id = series.id
-			AND score_head.roster_id = series.roster_id
-		INNER JOIN series_score_revisions AS score_revision
-			ON score_revision.id = score_head.current_revision_id
-			AND score_revision.series_id = series.id
-			AND score_revision.roster_id = series.roster_id
-		WHERE series.id = $1
-			AND series.tournament_id = $2
-			AND series.roster_id = $3
-			AND series.state = 'planned'
-			AND series.current_score_revision_id = score_head.current_revision_id
-			AND score_revision.revision_number = 1
-			AND score_revision.operation = 'initialize'
-			AND score_revision.result_event_id IS NULL
-			AND score_revision.previous_revision_id IS NULL
-			AND score_revision.command_attempt_id IS NULL
-			AND score_revision.first_participant_wins = 0
-			AND score_revision.second_participant_wins = 0
-		FOR UPDATE OF series, score_head`,
-		draft.seriesID,
-		draft.tournamentID,
-		draft.rosterID,
-	).Scan(&initialScoreRevisionID, &revisionNumber)
-	require.NoError(tb, err)
-	require.EqualValues(tb, 1, revisionNumber)
-
-	_, err = tx.Exec(ctx, `
-		UPDATE series
-		SET state = 'locked',
-			revision = revision + 1,
-			updated_at = $2
-		WHERE id = $1`, draft.seriesID, lockedAt)
-	require.NoError(tb, err)
-	require.NoError(tb, tx.Commit(ctx))
-	return initialScoreRevisionID
+	return fixture.InitialScoreRevisionID
 }
 
 func createAcceptedSubmission(
@@ -402,37 +370,34 @@ func createAcceptedSubmission(
 	submissionID := uuid.New()
 	idempotencyKey := uuid.New()
 	receivedAt := fixture.lockedAt.Add(time.Second)
-	_, err := sharedPool.Exec(ctx, `
-		UPDATE game_attempts
-		SET submission_event_sequence = submission_event_sequence + 1
-		WHERE id = $1`, fixture.attemptID)
-	require.NoError(tb, err)
-	_, err = sharedPool.Exec(
-		ctx, `
-		INSERT INTO submission_events (
-			id, tournament_id, roster_id, series_id, attempt_id, assignment_id,
-			participant_id, server_sequence, idempotency_key, status,
-			payload_digest, intent_digest, submitted_at, received_at, created_at
-		)
-		VALUES (
-			$1, $2, $3, $4, $5, $6,
-			$7, 1, $8, 'accepted',
-			$9, $10, $11, $11, $11
-		)`,
-		submissionID,
-		fixture.draft.tournamentID,
-		fixture.draft.rosterID,
-		fixture.draft.seriesID,
-		fixture.attemptID,
-		fixture.assignmentID,
-		fixture.draft.participantIDs[0],
-		idempotencyKey,
-		bytes.Repeat([]byte{20}, 32),
-		bytes.Repeat([]byte{21}, 32),
-		receivedAt,
+	submission, err := resultaudit.AcceptSubmission(
+		ctx,
+		sharedPool,
+		resultaudit.Fixture{
+			Scope: resultaudit.Scope{
+				TournamentID: fixture.draft.tournamentID,
+				RosterID:     fixture.draft.rosterID,
+				SeriesID:     fixture.draft.seriesID,
+				AttemptID:    fixture.attemptID,
+				AssignmentID: fixture.assignmentID,
+				ParticipantIDs: [2]uuid.UUID{
+					fixture.draft.participantIDs[0], fixture.draft.participantIDs[1],
+				},
+			},
+			InitialScoreRevisionID: fixture.initialScoreRevisionID,
+			LockedAt:               fixture.lockedAt,
+		},
+		resultaudit.SubmissionInput{
+			ID:             submissionID,
+			IdempotencyKey: idempotencyKey,
+			ParticipantID:  fixture.draft.participantIDs[0],
+			PayloadDigest:  bytes.Repeat([]byte{20}, 32),
+			IntentDigest:   bytes.Repeat([]byte{21}, 32),
+			ReceivedAt:     receivedAt,
+		},
 	)
 	require.NoError(tb, err)
-	return submissionID, idempotencyKey
+	return submission.ID, submission.IdempotencyKey
 }
 
 func createAtomicResultCommit(
