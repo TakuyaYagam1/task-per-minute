@@ -10,8 +10,8 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
 	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
-	goldenmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/mocks"
 	goldenstatemocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/state/mocks"
+	goldenmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/wave/mocks"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"

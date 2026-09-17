@@ -6,7 +6,8 @@ import (
 	"time"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
+	goldenstate "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/state"
+	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/wave"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -158,7 +159,7 @@ func TestGoldenReadyWindow(t *testing.T) {
 			},
 		}
 		resolved.PayloadDigest = [32]byte{}
-		resolved, buildErr := goldenusecase.BuildGoldenState(resolved)
+		resolved, buildErr := goldenstate.BuildGoldenState(resolved)
 		require.NoError(t, buildErr)
 		resolvedRepository := waveNewGoldenWaveRepositoryHarness(t, resolved)
 		result, localChanged, openErr = goldenusecase.NewGoldenReadyWindowUseCase(

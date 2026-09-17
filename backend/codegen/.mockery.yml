@@ -263,8 +263,6 @@ packages:
       ContinuationRepository:
       FailureClock:
       FailureRepository:
-      WaveClock:
-      WaveRepository:
   github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/prestart:
     interfaces:
       PrestartClock:
@@ -279,6 +277,10 @@ packages:
   github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/submission:
     interfaces:
       SubmissionRepository:
+  github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/wave:
+    interfaces:
+      WaveClock:
+      WaveRepository:
   github.com/TakuyaYagam1/task-per-minute/internal/usecase/player:
     interfaces:
       ManagementClock:

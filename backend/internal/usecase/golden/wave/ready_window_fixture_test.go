@@ -10,8 +10,9 @@ import (
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
-	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden"
-	goldenmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/mocks"
+	goldenstate "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/state"
+	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/wave"
+	goldenmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/wave/mocks"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -24,7 +25,7 @@ func waveTask048GoldenState(t *testing.T, openedAt time.Time) goldenusecase.Gold
 	state.Windows = nil
 	state.Membership.PayloadDigest = [32]byte{}
 	state.PayloadDigest = [32]byte{}
-	built, err := goldenusecase.BuildGoldenState(state)
+	built, err := goldenstate.BuildGoldenState(state)
 	require.NoError(t, err)
 	return built
 }
@@ -34,7 +35,7 @@ func task048SoloGoldenState(t *testing.T, openedAt time.Time) goldenusecase.Gold
 	state := waveGoldenStateFixture(t, openedAt)
 	repository := waveNewGoldenStateRepository(t, state)
 	ready := waveGoldenAcceptReady(t, repository, state, state.Group.Members[0].ParticipantID, openedAt.Add(time.Second), 9000)
-	resolved, changed, err := goldenusecase.NewGoldenNoShowUseCase(
+	resolved, changed, err := goldenstate.NewGoldenNoShowUseCase(
 		repository,
 		waveNewGoldenClock(t, openedAt.Add(31*time.Second)),
 	).Resolve(t.Context(), waveGoldenNoShowCommand(ready, 9010))

@@ -14,10 +14,10 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
 	assignmentusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/assignment"
-	goldenmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/mocks"
 	goldenplan "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/plan"
 	goldenstate "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/state"
 	goldenusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/wave"
+	goldenmocks "github.com/TakuyaYagam1/task-per-minute/internal/usecase/golden/wave/mocks"
 	swissusecase "github.com/TakuyaYagam1/task-per-minute/internal/usecase/swiss"
 )
 
