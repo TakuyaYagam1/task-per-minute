@@ -2,7 +2,11 @@
 
 package integration_test
 
-import "testing"
+import (
+	"testing"
+
+	resultintegration "github.com/TakuyaYagam1/task-per-minute/integration_test/result"
+)
 
 func TestPlayoffFlow(t *testing.T) {
 	t.Run("no solve replay retains the attempt chain", func(t *testing.T) {
@@ -25,6 +29,6 @@ func TestPlayoffFlow(t *testing.T) {
 
 	t.Run("cancellation and correction preserve one terminal authority", func(t *testing.T) {
 		TestTournamentLifecycleUseCase(t)
-		TestResultCorrectionRepository(t)
+		resultintegration.RunResultCorrectionRepository(t, sharedPool)
 	})
 }

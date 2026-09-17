@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	resultintegration "github.com/TakuyaYagam1/task-per-minute/integration_test/result"
 	rootws "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket"
 	tournamentws "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket/tournament"
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres"
@@ -27,7 +28,9 @@ func TestTournamentAuthorityTransportFlow(t *testing.T) {
 	t.Run("audit retention and filters", TestResultAuditRepository)
 	t.Run("incident bundle uses durable redacted audit events", testTournamentDurableIncidentBundle)
 	t.Run("participant and public realtime recover from authoritative storage", testTournamentRealtimeRecovery)
-	t.Run("correction converges atomically", TestResultCorrectionRepository)
+	t.Run("correction converges atomically", func(t *testing.T) {
+		resultintegration.RunResultCorrectionRepository(t, sharedPool)
+	})
 	t.Run("task delivery remains attempt scoped", TestAssignmentRepositoryCommitsProofAndDeliversExactlyOnce)
 }
 

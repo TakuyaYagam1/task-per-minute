@@ -5,12 +5,28 @@ package integration_test
 import (
 	"context"
 	"testing"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
 	"github.com/TakuyaYagam1/task-per-minute/integration_test/internal/testkit/correctionseed"
+	projectionrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/projection"
 	resultrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/result"
 )
+
+type correctionRepositoryFixture struct {
+	resultFixture      resultAuditMigrationFixture
+	participants       []uuid.UUID
+	result             *resultrepo.ResultCommitRecord
+	projection         *projectionrepo.ProjectionRecord
+	waveID             uuid.UUID
+	windowID           uuid.UUID
+	waveRevision       int64
+	readinessRevisions map[uuid.UUID]int64
+	deadline           time.Time
+	nextTime           time.Time
+}
 
 func createCorrectionRepositoryFixture(
 	ctx context.Context, tb testing.TB,
