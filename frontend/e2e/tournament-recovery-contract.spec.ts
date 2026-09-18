@@ -16,7 +16,12 @@ import {
   openOperatorRealtime,
   openPublicRealtime,
   isOperatorRealtimeRejection,
+  isPublicRealtimeGap,
+  isPublicRealtimeRejection,
   operatorRealtimeUrl,
+  openPublicRealtimeMessage,
+  parsePublicRealtimeMessage,
+  publicRealtimeUrl,
   parseOperatorRealtimeMessage,
   recoverRoleSnapshot,
   recoverPublicTournament,
@@ -242,7 +247,10 @@ const installOperatorWebSocketStub = async (page: Page): Promise<void> => {
     const WebSocketProxy = new Proxy(NativeWebSocket, {
       construct(target, args) {
         const url = String(args[0] ?? "");
-        if (url.includes("/api/v1/admin/tournaments/") && url.includes("/realtime")) {
+        if (
+          (url.includes("/api/v1/admin/tournaments/") || url.includes("/api/v1/tournaments/")) &&
+          url.includes("/realtime")
+        ) {
           return new OperatorWebSocket(url);
         }
         return Reflect.construct(target, args);
@@ -417,6 +425,23 @@ const realtimeEnvelope = (
   },
 });
 
+const publicRealtimeMessage = (
+  sequence: number,
+  projectionRevision: number,
+  eventId = firstEventId,
+  envelopeTournamentId = tournamentId,
+) => ({
+  type: "tournament.public",
+  payload: {
+    envelope: realtimeEnvelope(
+      sequence,
+      projectionRevision,
+      eventId,
+      envelopeTournamentId,
+    ),
+  },
+});
+
 const operatorRealtimeEnvelope = (
   sequence: number,
   projectionRevision: number,
@@ -526,6 +551,47 @@ test("duplicate and out-of-order realtime events cannot roll state backward", ()
   expect(duplicate.state).toBe(applied.state);
   expect(outOfOrder.outcome).toBe("out_of_order");
   expect(outOfOrder.state).toBe(applied.state);
+});
+
+test("FE-012 public realtime requires its wrapper, keeps public data, and detects gaps", () => {
+  const initial = openPublicRealtimeMessage(publicRealtimeMessage(7, 4), tournamentId);
+  const applied = applyPublicRealtime(
+    initial,
+    parsePublicRealtimeMessage(publicRealtimeMessage(8, 5, secondEventId), tournamentId),
+  );
+  const gap = parsePublicRealtimeMessage(publicRealtimeMessage(12, 9, revisionId), tournamentId);
+  const revisionJump = parsePublicRealtimeMessage(publicRealtimeMessage(8, 9, revisionId), tournamentId);
+  const malformed = { ...publicRealtimeMessage(8, 5), type: "tournament.operator" };
+
+  expect(initial.tournamentId).toBe(tournamentId);
+  expect(applied.outcome).toBe("applied");
+  expect(applied.state.display.scoreboard).toHaveLength(1);
+  expect(isPublicRealtimeGap(applied.state, gap)).toBe(true);
+  expect(isPublicRealtimeGap(applied.state, revisionJump)).toBe(false);
+  expect(isPublicRealtimeRejection({
+    type: "tournament.rejected",
+    code: "tournament.forbidden",
+    message: "Публичный просмотр",
+  })).toBe(true);
+  expect(isPublicRealtimeRejection({
+    type: "tournament.rejected",
+    code: "anonymous_only",
+    message: "Публичный просмотр",
+  })).toBe(false);
+  expect(() => parsePublicRealtimeMessage(malformed, tournamentId)).toThrow(
+    "Invalid public realtime envelope",
+  );
+  expect(() => parsePublicRealtimeMessage(
+    publicRealtimeMessage(9, 6, revisionId, otherTournamentId),
+    tournamentId,
+  )).toThrow("Public realtime envelope has the wrong tournament");
+  expect(publicRealtimeUrl(
+    tournamentId,
+    resumeId,
+    "https://public.example.test:8443/control",
+  )).toBe(
+    `wss://public.example.test:8443/api/v1/tournaments/${tournamentId}/realtime?resume_id=${resumeId}`,
+  );
 });
 
 test("public recovery rejects private and cross-tournament fields", () => {
@@ -1218,6 +1284,7 @@ test("FE-013 spectator route mounts public recovery and keeps only the public cu
   const snapshotRequests: URL[] = [];
 
   await page.clock.install({ time: serverTimestamp });
+  await installOperatorWebSocketStub(page);
   await installArenaAccessRoutes(page, fixtureSet);
   await page.route(`**${arenaPublicSnapshotPath}*`, async (route) => {
     expect(route.request().method()).toBe("GET");
@@ -1263,12 +1330,210 @@ test("FE-013 spectator route mounts public recovery and keeps only the public cu
   await expect(livePanel.getByText(/Ревизия сервера: 10/)).toBeVisible();
 });
 
+test("FE-012 public route uses a snapshot-first stream and recovers sequence gaps", async ({ page }) => {
+  const fixtureSet = createTournamentFixtureSet();
+  const serverTimestamp = "2026-09-15T10:00:00Z";
+  const snapshotRequests: URL[] = [];
+  const mutationRequests: string[] = [];
+
+  page.on("request", (request) => {
+    const requestURL = new URL(request.url());
+    if (requestURL.pathname.startsWith("/api/") && request.method() !== "GET") {
+      mutationRequests.push(`${request.method()} ${requestURL.pathname}`);
+    }
+  });
+
+  await page.clock.install({ time: serverTimestamp });
+  await installOperatorWebSocketStub(page);
+  await installArenaAccessRoutes(page, fixtureSet);
+  await page.route(`**${arenaPublicSnapshotPath}*`, async (route) => {
+    expect(route.request().method()).toBe("GET");
+    const requestURL = new URL(route.request().url());
+    snapshotRequests.push(requestURL);
+    await fulfillJSON(
+      route,
+      publicRecovery(requestURL.search === "" ? 9 : 10),
+      { date: new Date(serverTimestamp).toUTCString() },
+    );
+  });
+
+  await page.goto(`/arena/spectator/${arenaTournamentId}`, { waitUntil: "domcontentloaded" });
+
+  const state = page.getByTestId("public-realtime-summary");
+  await expect.poll(async () => {
+    const sockets = await page.evaluate(() => {
+      const control = (window as unknown as {
+        __operatorWebSocketControl?: { get: () => Array<{ url: string; sent: string[] }> };
+      }).__operatorWebSocketControl;
+      return control?.get() ?? [];
+    });
+    return sockets.length;
+  }).toBe(1);
+
+  const initialSocket = await page.evaluate(() => {
+    const control = (window as unknown as {
+      __operatorWebSocketControl: { get: () => Array<{ url: string; sent: string[] }> };
+    }).__operatorWebSocketControl;
+    return control.get()[0];
+  });
+  expect(initialSocket?.url).toBe(
+    `ws://127.0.0.1:${new URL(page.url()).port}/api/v1/tournaments/${arenaTournamentId}/realtime`,
+  );
+  expect(initialSocket?.sent).toEqual([]);
+
+  await page.evaluate((message) => {
+    const control = (window as unknown as {
+      __operatorWebSocketControl: { emit: (index: number, value: unknown) => void };
+    }).__operatorWebSocketControl;
+    control.emit(0, message);
+  }, publicRealtimeMessage(15, 10, firstEventId, arenaTournamentId));
+  await expect(state).toHaveAttribute("data-ready", "true");
+  await expect(state).toHaveAttribute("data-connection", "connected");
+  await expect(state).toHaveAttribute("data-projection-revision", "10");
+  await expect(state).toContainText("На связи");
+  await expect(state).toContainText("Результаты");
+
+  await page.evaluate((message) => {
+    const control = (window as unknown as {
+      __operatorWebSocketControl: { emit: (index: number, value: unknown) => void };
+    }).__operatorWebSocketControl;
+    control.emit(0, message);
+  }, publicRealtimeMessage(99, 99, revisionId, arenaTournamentId));
+  await expect(state).toHaveAttribute("data-projection-revision", "10");
+
+  await page.evaluate(() => {
+    const control = (window as unknown as {
+      __operatorWebSocketControl: { close: (index: number, code: number) => void };
+    }).__operatorWebSocketControl;
+    control.close(0, 1006);
+  });
+  await expect.poll(async () => {
+    const sockets = await page.evaluate(() => {
+      const control = (window as unknown as {
+        __operatorWebSocketControl?: { get: () => Array<{ url: string; sent: string[] }> };
+      }).__operatorWebSocketControl;
+      return control?.get() ?? [];
+    });
+    return sockets.length;
+  }).toBe(2);
+
+  const reconnectSocket = await page.evaluate(() => {
+    const control = (window as unknown as {
+      __operatorWebSocketControl: { get: () => Array<{ url: string; sent: string[] }> };
+    }).__operatorWebSocketControl;
+    return control.get()[1];
+  });
+  expect(reconnectSocket?.url).toContain(`?resume_id=${resumeId}`);
+  expect(reconnectSocket?.sent).toEqual([]);
+
+  await page.evaluate((message) => {
+    const control = (window as unknown as {
+      __operatorWebSocketControl: { emit: (index: number, value: unknown) => void };
+    }).__operatorWebSocketControl;
+    control.emit(0, message);
+  }, publicRealtimeMessage(88, 88, revisionId, arenaTournamentId));
+  await expect(state).toHaveAttribute("data-projection-revision", "10");
+
+  await page.evaluate((message) => {
+    const control = (window as unknown as {
+      __operatorWebSocketControl: { emit: (index: number, value: unknown) => void };
+    }).__operatorWebSocketControl;
+    control.emit(1, message);
+  }, publicRealtimeMessage(1, 1, secondEventId, arenaTournamentId));
+  await expect(state).toHaveAttribute("data-projection-revision", "1");
+  await expect(state).toHaveAttribute("data-connection", "connected");
+
+  await page.evaluate((message) => {
+    const control = (window as unknown as {
+      __operatorWebSocketControl: { emit: (index: number, value: unknown) => void };
+    }).__operatorWebSocketControl;
+    control.emit(1, message);
+  }, publicRealtimeMessage(2, 2, secondEventId, arenaTournamentId));
+  await expect(state).toHaveAttribute("data-projection-revision", "1");
+
+  await page.evaluate((message) => {
+    const control = (window as unknown as {
+      __operatorWebSocketControl: { emit: (index: number, value: unknown) => void };
+    }).__operatorWebSocketControl;
+    control.emit(1, message);
+  }, publicRealtimeMessage(0, 1, revisionId, arenaTournamentId));
+  await expect(state).toHaveAttribute("data-projection-revision", "1");
+
+  const requestCountBeforeGap = snapshotRequests.length;
+  await page.evaluate((message) => {
+    const control = (window as unknown as {
+      __operatorWebSocketControl: { emit: (index: number, value: unknown) => void };
+    }).__operatorWebSocketControl;
+    control.emit(1, message);
+  }, publicRealtimeMessage(3, 3, firstEventId, arenaTournamentId));
+  await expect.poll(() => snapshotRequests.length).toBe(requestCountBeforeGap + 1);
+  await expect(state).toHaveAttribute("data-projection-revision", "1");
+
+  await page.getByRole("button", { name: "Темная тема" }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await page.getByRole("button", { name: "Светлая тема" }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await page.setViewportSize({ width: 390, height: 844 });
+  const summaryBox = await state.boundingBox();
+  expect(summaryBox).not.toBeNull();
+  if (summaryBox === null) {
+    throw new Error("Public realtime summary is missing from the mobile Arena route");
+  }
+  expect(summaryBox.x).toBeGreaterThanOrEqual(0);
+  expect(summaryBox.x + summaryBox.width).toBeLessThanOrEqual(390);
+  expect(mutationRequests).toEqual([]);
+});
+
+test("FE-012 public realtime rejection is terminal and visible", async ({ page }) => {
+  const fixtureSet = createTournamentFixtureSet();
+  const serverTimestamp = "2026-09-15T10:00:00Z";
+
+  await page.clock.install({ time: serverTimestamp });
+  await installOperatorWebSocketStub(page);
+  await installArenaAccessRoutes(page, fixtureSet);
+  await page.route(`**${arenaPublicSnapshotPath}*`, async (route) => {
+    expect(route.request().method()).toBe("GET");
+    await fulfillJSON(
+      route,
+      publicRecovery(9),
+      { date: new Date(serverTimestamp).toUTCString() },
+    );
+  });
+
+  await page.goto(`/arena/spectator/${arenaTournamentId}`, { waitUntil: "domcontentloaded" });
+
+  const state = page.getByTestId("public-realtime-summary");
+  await expect.poll(async () => {
+    const sockets = await page.evaluate(() => {
+      const control = (window as unknown as {
+        __operatorWebSocketControl?: { get: () => Array<{ url: string; sent: string[] }> };
+      }).__operatorWebSocketControl;
+      return control?.get() ?? [];
+    });
+    return sockets.length;
+  }).toBe(1);
+  await page.evaluate((message) => {
+    const control = (window as unknown as {
+      __operatorWebSocketControl: { emit: (index: number, value: unknown) => void };
+    }).__operatorWebSocketControl;
+    control.emit(0, message);
+  }, {
+    type: "tournament.rejected",
+    code: "tournament.forbidden",
+    message: "Публичный канал отклонен",
+  });
+  await expect(state).toHaveAttribute("data-connection", "rejected");
+  await expect(state).toContainText("Доступ отклонен");
+  await expect(state).toHaveAttribute("data-ready", "false");
+});
+
 test("FE-013 operator route mounts operator recovery and keeps only the operator cursor", async ({ page }) => {
   const fixtureSet = createTournamentFixtureSet();
   const serverTimestamp = "2026-09-15T10:00:00Z";
   const snapshotRequests: URL[] = [];
 
   await page.clock.install({ time: serverTimestamp });
+  await installOperatorWebSocketStub(page);
   await installArenaAccessRoutes(page, fixtureSet);
   await page.route(`**${arenaOperatorSnapshotPath}*`, async (route) => {
     expect(route.request().method()).toBe("GET");

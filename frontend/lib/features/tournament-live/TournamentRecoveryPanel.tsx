@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import type { RoleAwareRecoveryState, TournamentLiveRole } from "../../shared/api";
 import { useServerCountdown } from "./use-server-countdown";
 import { useOperatorTournamentRealtime } from "./use-operator-tournament-realtime";
+import { usePublicTournamentRealtime } from "./use-public-tournament-realtime";
 import { useTournamentRecovery } from "./use-tournament-recovery";
 import { TournamentLivePanel, type TournamentLiveConnectionStatus } from "./TournamentLivePanel";
 import styles from "./TournamentLivePanel.module.css";
@@ -67,6 +68,26 @@ const operatorPanelStatus = (
   }
 };
 
+const publicPanelStatus = (
+  status: TournamentLiveConnectionStatus,
+  realtimeStatus: ReturnType<typeof usePublicTournamentRealtime>["status"],
+): TournamentLiveConnectionStatus => {
+  switch (realtimeStatus) {
+    case "connecting":
+    case "reconnecting":
+    case "recovering":
+      return "recovering";
+    case "connected":
+      return "live";
+    case "error":
+      return "stale";
+    case "rejected":
+      return "rejected";
+    case "idle":
+      return status;
+  }
+};
+
 const readyMemberCount = (state: ReturnType<typeof useOperatorTournamentRealtime>["state"]): number =>
   state?.operator.waves.reduce((total, wave) => {
     const members = Array.isArray(wave.members) ? wave.members : [];
@@ -86,6 +107,26 @@ const operatorConnectionLabel = (
       return "На связи";
     case "paused":
       return "Пауза";
+    case "rejected":
+      return "Доступ отклонен";
+    case "error":
+      return "Данные устарели";
+    case "idle":
+      return "Ожидание";
+  }
+};
+
+const publicConnectionLabel = (
+  status: ReturnType<typeof usePublicTournamentRealtime>["status"],
+): string => {
+  switch (status) {
+    case "connecting":
+    case "reconnecting":
+      return "Восстанавливаем";
+    case "recovering":
+      return "Синхронизируем";
+    case "connected":
+      return "На связи";
     case "rejected":
       return "Доступ отклонен";
     case "error":
@@ -150,13 +191,22 @@ export const TournamentRecoveryPanel = ({
       : undefined,
     tournamentId,
   });
+  const publicRealtime = usePublicTournamentRealtime({
+    enabled: liveRole === "public",
+    recovery: liveRole === "public" ? recovery : null,
+    retry,
+    tournamentId,
+  });
   const panelStatus = liveRole === "operator"
     ? operatorPanelStatus(status, operatorRealtime.status)
-    : status;
+    : liveRole === "public"
+      ? publicPanelStatus(status, publicRealtime.status)
+      : status;
   const retryAll = () => {
     retry();
   };
   const panelRevision = operatorRealtime.state?.projectionRevision ??
+    publicRealtime.state?.cursor.projection_revision ??
     recovery?.cursor.projection_revision;
   const operatorState = liveRole === "operator" ? (
     <dl
@@ -190,6 +240,34 @@ export const TournamentRecoveryPanel = ({
       </div>
     </dl>
   ) : null;
+  const publicState = liveRole === "public" ? (
+    <dl
+      aria-label="Состояние realtime публичного просмотра"
+      className={styles.telemetry}
+      data-connection={publicRealtime.status}
+      data-projection-revision={publicRealtime.state?.cursor.projection_revision ?? ""}
+      data-ready={publicRealtime.ready ? "true" : "false"}
+      data-testid="public-realtime-summary"
+    >
+      <div>
+        <dt>Соединение</dt>
+        <dd>{publicConnectionLabel(publicRealtime.status)}</dd>
+      </div>
+      <div>
+        <dt>Участники</dt>
+        <dd>{publicRealtime.state?.display.scoreboard.length ?? 0}</dd>
+      </div>
+      <div>
+        <dt>Результаты</dt>
+        <dd>{publicRealtime.state?.display.officialResults.length ?? 0}</dd>
+      </div>
+      <div>
+        <dt>Ревизия</dt>
+        <dd>{publicRealtime.state?.cursor.projection_revision ?? recovery?.cursor.projection_revision ?? "-"}</dd>
+      </div>
+    </dl>
+  ) : null;
+  const realtimeState = operatorState ?? publicState;
   const deadline = recovery ? deadlineFrom(recovery) : undefined;
 
   if (recovery && deadline) {
@@ -202,7 +280,7 @@ export const TournamentRecoveryPanel = ({
         retry={retryAll}
         status={panelStatus}
       >
-        {operatorState}
+        {realtimeState}
       </CountdownPanel>
     );
   }
@@ -215,7 +293,7 @@ export const TournamentRecoveryPanel = ({
       revision={panelRevision}
       onRetry={recovery || panelStatus === "rejected" ? retryAll : undefined}
     >
-      {operatorState}
+      {realtimeState}
     </TournamentLivePanel>
   );
 };

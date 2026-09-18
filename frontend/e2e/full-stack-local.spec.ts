@@ -1624,6 +1624,22 @@ test.describe('local compose full stack e2e', () => {
     expect(adminCookies.some((cookie) => cookie.name === 'tpm_admin_access')).toBe(true);
     expect(adminCookies.some((cookie) => cookie.name === 'tpm_admin_refresh')).toBe(true);
 
+    let publicSocketURL = '';
+    const publicFrames: string[] = [];
+    const publicSentFrames: string[] = [];
+    page.on('websocket', (socket) => {
+      if (new URL(socket.url()).pathname !== `/api/v1/tournaments/${tournament.id}/realtime`) {
+        return;
+      }
+      publicSocketURL = socket.url();
+      socket.on('framereceived', (frame) => publicFrames.push(
+        typeof frame.payload === 'string' ? frame.payload : frame.payload.toString('utf8'),
+      ));
+      socket.on('framesent', (frame) => publicSentFrames.push(
+        typeof frame.payload === 'string' ? frame.payload : frame.payload.toString('utf8'),
+      ));
+    });
+
     await page.goto(spectatorURL);
     await expect(page).toHaveURL(new URL(spectatorURL, frontendURL).toString());
     await expect(page.getByRole('main')).toBeVisible();
@@ -1631,6 +1647,28 @@ test.describe('local compose full stack e2e', () => {
     await page.reload({ waitUntil: 'domcontentloaded' });
     await expect(page).toHaveURL(new URL(spectatorURL, frontendURL).toString());
     await expect(page.getByText(tournament.id, { exact: false }).first()).toBeVisible();
+
+    await expect.poll(() => publicSocketURL).toContain(
+      `/api/v1/tournaments/${tournament.id}/realtime`,
+    );
+    await expect.poll(() => publicFrames.length).toBeGreaterThan(0);
+    expect(new URL(publicSocketURL).pathname).toBe(
+      `/api/v1/tournaments/${tournament.id}/realtime`,
+    );
+    expect(publicSentFrames).toEqual([]);
+    const initialPublicFrame = JSON.parse(publicFrames[0] ?? '{}') as {
+      type?: string;
+      payload?: {
+        envelope?: {
+          tournament_id?: string;
+          public?: Record<string, unknown>;
+        };
+      };
+    };
+    expect(initialPublicFrame.type).toBe('tournament.public');
+    expect(initialPublicFrame.payload?.envelope?.tournament_id).toBe(tournament.id);
+    expect(Object.keys(initialPublicFrame.payload?.envelope?.public ?? {})).not.toContain('assignment');
+    expect(Object.keys(initialPublicFrame.payload?.envelope?.public ?? {})).not.toContain('task');
 
     let operatorSocketURL = '';
     const operatorFrames: string[] = [];

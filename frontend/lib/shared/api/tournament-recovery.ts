@@ -67,6 +67,11 @@ export type PublicRealtimeEnvelope = {
   };
 };
 
+export type PublicRealtimeMessage = Readonly<{
+  type: "tournament.public";
+  payload: Readonly<{ envelope: PublicRealtimeEnvelope }>;
+}>;
+
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const PRIVATE_KEYS = new Set([
   "assignment",
@@ -395,6 +400,43 @@ const isPublicRealtimeEnvelope = (value: unknown): value is PublicRealtimeEnvelo
   return true;
 };
 
+export const parsePublicRealtimeMessage = (
+  value: unknown,
+  expectedTournamentId?: string,
+): PublicRealtimeEnvelope => {
+  if (!isRecord(value) || !hasOnlyKeys(value, ["type", "payload"]) ||
+      value.type !== "tournament.public" || !isRecord(value.payload) ||
+      !hasOnlyKeys(value.payload, ["envelope"]) ||
+      !isPublicRealtimeEnvelope(value.payload.envelope)) {
+    throw new Error("Invalid public realtime envelope");
+  }
+  if (
+    expectedTournamentId !== undefined &&
+    value.payload.envelope.tournament_id !== expectedTournamentId
+  ) {
+    throw new Error("Public realtime envelope has the wrong tournament");
+  }
+  return value.payload.envelope;
+};
+
+const publicRejectionCodes = new Set([
+  "tournament.unauthenticated",
+  "tournament.forbidden",
+  "tournament.unavailable",
+  "tournament.capacity",
+  "tournament.invalid_frame",
+  "tournament.rate_limited",
+]);
+
+export const isPublicRealtimeRejection = (value: unknown): boolean => {
+  if (!isRecord(value) || !hasOnlyKeys(value, ["type", "code", "message"]) ||
+      value.type !== "tournament.rejected" || !isNonBlank(value.code) ||
+      !publicRejectionCodes.has(value.code)) {
+    return false;
+  }
+  return isNonBlank(value.message);
+};
+
 const restDisplay = (snapshot: PublicRecoverySnapshot): PublicDisplay => ({
   tournament: snapshot.tournament,
   scoreboard: snapshot.scoreboard.entries,
@@ -445,6 +487,16 @@ export const openPublicRealtime = (value: unknown): PublicRecoveryState => {
   };
 };
 
+export const openPublicRealtimeMessage = (
+  value: unknown,
+  tournamentId: string,
+): PublicRecoveryState => openPublicRealtime(parsePublicRealtimeMessage(value, tournamentId));
+
+export const isPublicRealtimeGap = (
+  state: PublicRecoveryState,
+  value: PublicRealtimeEnvelope,
+): boolean => value.sequence > state.cursor.event_sequence + 1;
+
 export const applyPublicRealtime = (
   state: PublicRecoveryState,
   value: unknown,
@@ -475,6 +527,36 @@ export const applyPublicRealtime = (
     display: realtimeDisplay(value),
   };
   return { state: nextState, outcome: "applied" };
+};
+
+export const publicRealtimeUrl = (
+  tournamentId: string,
+  resumeId?: string | null,
+  baseOrigin?: string,
+): string => {
+  if (!isUUID(tournamentId)) {
+    throw new TypeError("Public realtime requires a UUID tournament id");
+  }
+  if (resumeId !== undefined && resumeId !== null && !isUUID(resumeId)) {
+    throw new TypeError("Public realtime requires a UUID resume id");
+  }
+  const configuredOrigin = baseOrigin || CONFIG.apiUrl ||
+    (typeof window === "undefined" ? "" : window.location.origin);
+  if (!configuredOrigin) {
+    throw new Error("Public realtime requires a player API origin");
+  }
+  const configured = new URL(configuredOrigin);
+  const protocol = configured.protocol === "https:" || configured.protocol === "wss:"
+    ? "wss:"
+    : "ws:";
+  const url = new URL(
+    `/api/v1/tournaments/${encodeURIComponent(tournamentId)}/realtime`,
+    `${protocol}//${configured.host}`,
+  );
+  if (resumeId) {
+    url.searchParams.set("resume_id", resumeId);
+  }
+  return url.toString();
 };
 
 export const isPublicRecoveryCursorConflict = (
