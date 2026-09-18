@@ -36,11 +36,11 @@ func (creator tournamentCatalogCreator) Create(
 		return nil, nil, err
 	}
 	return &TournamentRecord{
-		ID: tournament.ID, Preset: tournament.Preset, Name: tournament.Name, PublicID: tournament.PublicID,
-		PlannedRosterSize: int(tournament.PlannedRosterSize), ContentRevision: tournament.ContentRevision,
-		State: tournament.State, Revision: tournament.Revision,
-		CreatedAt: tournament.CreatedAt.Time, UpdatedAt: tournament.UpdatedAt.Time,
-	}, &RosterRecord{
-		ID: roster.ID, TournamentID: roster.TournamentID,
-	}, nil
+			ID: tournament.ID, Preset: tournament.Preset, Name: tournament.Name, PublicID: tournament.PublicID,
+			PlannedRosterSize: int(tournament.PlannedRosterSize), ContentRevision: tournament.ContentRevision,
+			State: tournament.State, Revision: tournament.Revision,
+			CreatedAt: tournament.CreatedAt.Time, UpdatedAt: tournament.UpdatedAt.Time,
+		}, &RosterRecord{
+			ID: roster.ID, TournamentID: roster.TournamentID,
+		}, nil
 }

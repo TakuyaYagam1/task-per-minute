@@ -18,10 +18,19 @@ func NewMockConnectionRepository(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockConnectionRepository {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockConnectionRepository{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -81,7 +90,7 @@ type MockConnectionRepository_CommitGoldenIndividualConnection_Call struct {
 // CommitGoldenIndividualConnection is a helper method to define mock.On call
 //   - ctx context.Context
 //   - commit golden.GoldenIndividualConnectionCommit
-func (_e *MockConnectionRepository_Expecter) CommitGoldenIndividualConnection(ctx interface{}, commit interface{}) *MockConnectionRepository_CommitGoldenIndividualConnection_Call {
+func (_e *MockConnectionRepository_Expecter) CommitGoldenIndividualConnection(ctx any, commit any) *MockConnectionRepository_CommitGoldenIndividualConnection_Call {
 	return &MockConnectionRepository_CommitGoldenIndividualConnection_Call{Call: _e.mock.On("CommitGoldenIndividualConnection", ctx, commit)}
 }
 
@@ -150,7 +159,7 @@ type MockConnectionRepository_FindGoldenIndividualConnectionCommand_Call struct 
 //   - ctx context.Context
 //   - tournamentID uuid.UUID
 //   - commandID uuid.UUID
-func (_e *MockConnectionRepository_Expecter) FindGoldenIndividualConnectionCommand(ctx interface{}, tournamentID interface{}, commandID interface{}) *MockConnectionRepository_FindGoldenIndividualConnectionCommand_Call {
+func (_e *MockConnectionRepository_Expecter) FindGoldenIndividualConnectionCommand(ctx any, tournamentID any, commandID any) *MockConnectionRepository_FindGoldenIndividualConnectionCommand_Call {
 	return &MockConnectionRepository_FindGoldenIndividualConnectionCommand_Call{Call: _e.mock.On("FindGoldenIndividualConnectionCommand", ctx, tournamentID, commandID)}
 }
 
@@ -221,7 +230,7 @@ type MockConnectionRepository_LoadGoldenIndividualDisconnectAuthority_Call struc
 // LoadGoldenIndividualDisconnectAuthority is a helper method to define mock.On call
 //   - ctx context.Context
 //   - scope golden.GoldenSubmissionScope
-func (_e *MockConnectionRepository_Expecter) LoadGoldenIndividualDisconnectAuthority(ctx interface{}, scope interface{}) *MockConnectionRepository_LoadGoldenIndividualDisconnectAuthority_Call {
+func (_e *MockConnectionRepository_Expecter) LoadGoldenIndividualDisconnectAuthority(ctx any, scope any) *MockConnectionRepository_LoadGoldenIndividualDisconnectAuthority_Call {
 	return &MockConnectionRepository_LoadGoldenIndividualDisconnectAuthority_Call{Call: _e.mock.On("LoadGoldenIndividualDisconnectAuthority", ctx, scope)}
 }
 

@@ -18,10 +18,19 @@ func NewMockPlanRepository(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockPlanRepository {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockPlanRepository{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -81,7 +90,7 @@ type MockPlanRepository_Commit_Call struct {
 // Commit is a helper method to define mock.On call
 //   - ctx context.Context
 //   - plan1 plan.ExactPlan
-func (_e *MockPlanRepository_Expecter) Commit(ctx interface{}, plan1 interface{}) *MockPlanRepository_Commit_Call {
+func (_e *MockPlanRepository_Expecter) Commit(ctx any, plan1 any) *MockPlanRepository_Commit_Call {
 	return &MockPlanRepository_Commit_Call{Call: _e.mock.On("Commit", ctx, plan1)}
 }
 
@@ -150,7 +159,7 @@ type MockPlanRepository_Get_Call struct {
 //   - ctx context.Context
 //   - scope plan.Scope
 //   - planID uuid.UUID
-func (_e *MockPlanRepository_Expecter) Get(ctx interface{}, scope interface{}, planID interface{}) *MockPlanRepository_Get_Call {
+func (_e *MockPlanRepository_Expecter) Get(ctx any, scope any, planID any) *MockPlanRepository_Get_Call {
 	return &MockPlanRepository_Get_Call{Call: _e.mock.On("Get", ctx, scope, planID)}
 }
 
@@ -221,7 +230,7 @@ type MockPlanRepository_LoadAuthority_Call struct {
 // LoadAuthority is a helper method to define mock.On call
 //   - ctx context.Context
 //   - scope plan.Scope
-func (_e *MockPlanRepository_Expecter) LoadAuthority(ctx interface{}, scope interface{}) *MockPlanRepository_LoadAuthority_Call {
+func (_e *MockPlanRepository_Expecter) LoadAuthority(ctx any, scope any) *MockPlanRepository_LoadAuthority_Call {
 	return &MockPlanRepository_LoadAuthority_Call{Call: _e.mock.On("LoadAuthority", ctx, scope)}
 }
 

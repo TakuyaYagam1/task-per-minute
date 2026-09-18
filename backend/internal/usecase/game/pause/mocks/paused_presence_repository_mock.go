@@ -19,10 +19,19 @@ func NewMockPausedPresenceRepository(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockPausedPresenceRepository {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockPausedPresenceRepository{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -83,7 +92,7 @@ type MockPausedPresenceRepository_CommitPausedPresence_Call struct {
 //   - ctx context.Context
 //   - expected pause.PausedPresenceExpectation
 //   - record pause.PausedPresenceRecord
-func (_e *MockPausedPresenceRepository_Expecter) CommitPausedPresence(ctx interface{}, expected interface{}, record interface{}) *MockPausedPresenceRepository_CommitPausedPresence_Call {
+func (_e *MockPausedPresenceRepository_Expecter) CommitPausedPresence(ctx any, expected any, record any) *MockPausedPresenceRepository_CommitPausedPresence_Call {
 	return &MockPausedPresenceRepository_CommitPausedPresence_Call{Call: _e.mock.On("CommitPausedPresence", ctx, expected, record)}
 }
 
@@ -110,8 +119,8 @@ func (_c *MockPausedPresenceRepository_CommitPausedPresence_Call) Run(run func(c
 	return _c
 }
 
-func (_c *MockPausedPresenceRepository_CommitPausedPresence_Call) Return(v *pause.PausedPresenceRecord, b bool, err error) *MockPausedPresenceRepository_CommitPausedPresence_Call {
-	_c.Call.Return(v, b, err)
+func (_c *MockPausedPresenceRepository_CommitPausedPresence_Call) Return(pausedPresenceRecord *pause.PausedPresenceRecord, b bool, err error) *MockPausedPresenceRepository_CommitPausedPresence_Call {
+	_c.Call.Return(pausedPresenceRecord, b, err)
 	return _c
 }
 
@@ -157,7 +166,7 @@ type MockPausedPresenceRepository_FindPausedPresenceCommand_Call struct {
 //   - ctx context.Context
 //   - tournamentID uuid.UUID
 //   - commandID uuid.UUID
-func (_e *MockPausedPresenceRepository_Expecter) FindPausedPresenceCommand(ctx interface{}, tournamentID interface{}, commandID interface{}) *MockPausedPresenceRepository_FindPausedPresenceCommand_Call {
+func (_e *MockPausedPresenceRepository_Expecter) FindPausedPresenceCommand(ctx any, tournamentID any, commandID any) *MockPausedPresenceRepository_FindPausedPresenceCommand_Call {
 	return &MockPausedPresenceRepository_FindPausedPresenceCommand_Call{Call: _e.mock.On("FindPausedPresenceCommand", ctx, tournamentID, commandID)}
 }
 
@@ -184,8 +193,8 @@ func (_c *MockPausedPresenceRepository_FindPausedPresenceCommand_Call) Run(run f
 	return _c
 }
 
-func (_c *MockPausedPresenceRepository_FindPausedPresenceCommand_Call) Return(v *pause.PausedPresenceRecord, err error) *MockPausedPresenceRepository_FindPausedPresenceCommand_Call {
-	_c.Call.Return(v, err)
+func (_c *MockPausedPresenceRepository_FindPausedPresenceCommand_Call) Return(pausedPresenceRecord *pause.PausedPresenceRecord, err error) *MockPausedPresenceRepository_FindPausedPresenceCommand_Call {
+	_c.Call.Return(pausedPresenceRecord, err)
 	return _c
 }
 
@@ -229,7 +238,7 @@ type MockPausedPresenceRepository_LoadPausedPresenceAuthority_Call struct {
 //   - ctx context.Context
 //   - scope pause0.GraphScope
 //   - participantID uuid.UUID
-func (_e *MockPausedPresenceRepository_Expecter) LoadPausedPresenceAuthority(ctx interface{}, scope interface{}, participantID interface{}) *MockPausedPresenceRepository_LoadPausedPresenceAuthority_Call {
+func (_e *MockPausedPresenceRepository_Expecter) LoadPausedPresenceAuthority(ctx any, scope any, participantID any) *MockPausedPresenceRepository_LoadPausedPresenceAuthority_Call {
 	return &MockPausedPresenceRepository_LoadPausedPresenceAuthority_Call{Call: _e.mock.On("LoadPausedPresenceAuthority", ctx, scope, participantID)}
 }
 
@@ -256,8 +265,8 @@ func (_c *MockPausedPresenceRepository_LoadPausedPresenceAuthority_Call) Run(run
 	return _c
 }
 
-func (_c *MockPausedPresenceRepository_LoadPausedPresenceAuthority_Call) Return(v pause.PausedPresenceAuthority, err error) *MockPausedPresenceRepository_LoadPausedPresenceAuthority_Call {
-	_c.Call.Return(v, err)
+func (_c *MockPausedPresenceRepository_LoadPausedPresenceAuthority_Call) Return(pausedPresenceAuthority pause.PausedPresenceAuthority, err error) *MockPausedPresenceRepository_LoadPausedPresenceAuthority_Call {
+	_c.Call.Return(pausedPresenceAuthority, err)
 	return _c
 }
 

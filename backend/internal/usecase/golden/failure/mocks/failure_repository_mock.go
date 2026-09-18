@@ -18,10 +18,19 @@ func NewMockFailureRepository(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockFailureRepository {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockFailureRepository{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -81,7 +90,7 @@ type MockFailureRepository_CommitGoldenFailure_Call struct {
 // CommitGoldenFailure is a helper method to define mock.On call
 //   - ctx context.Context
 //   - commit golden.GoldenFailureCommit
-func (_e *MockFailureRepository_Expecter) CommitGoldenFailure(ctx interface{}, commit interface{}) *MockFailureRepository_CommitGoldenFailure_Call {
+func (_e *MockFailureRepository_Expecter) CommitGoldenFailure(ctx any, commit any) *MockFailureRepository_CommitGoldenFailure_Call {
 	return &MockFailureRepository_CommitGoldenFailure_Call{Call: _e.mock.On("CommitGoldenFailure", ctx, commit)}
 }
 
@@ -150,7 +159,7 @@ type MockFailureRepository_FindGoldenFailure_Call struct {
 //   - ctx context.Context
 //   - tournamentID uuid.UUID
 //   - commandID uuid.UUID
-func (_e *MockFailureRepository_Expecter) FindGoldenFailure(ctx interface{}, tournamentID interface{}, commandID interface{}) *MockFailureRepository_FindGoldenFailure_Call {
+func (_e *MockFailureRepository_Expecter) FindGoldenFailure(ctx any, tournamentID any, commandID any) *MockFailureRepository_FindGoldenFailure_Call {
 	return &MockFailureRepository_FindGoldenFailure_Call{Call: _e.mock.On("FindGoldenFailure", ctx, tournamentID, commandID)}
 }
 
@@ -221,7 +230,7 @@ type MockFailureRepository_LoadGoldenFailureAuthority_Call struct {
 // LoadGoldenFailureAuthority is a helper method to define mock.On call
 //   - ctx context.Context
 //   - scope golden.GoldenSubmissionScope
-func (_e *MockFailureRepository_Expecter) LoadGoldenFailureAuthority(ctx interface{}, scope interface{}) *MockFailureRepository_LoadGoldenFailureAuthority_Call {
+func (_e *MockFailureRepository_Expecter) LoadGoldenFailureAuthority(ctx any, scope any) *MockFailureRepository_LoadGoldenFailureAuthority_Call {
 	return &MockFailureRepository_LoadGoldenFailureAuthority_Call{Call: _e.mock.On("LoadGoldenFailureAuthority", ctx, scope)}
 }
 

@@ -18,10 +18,19 @@ func NewMockSettlementRepository(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockSettlementRepository {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockSettlementRepository{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -81,7 +90,7 @@ type MockSettlementRepository_CommitConcurrentWinnerSettlement_Call struct {
 // CommitConcurrentWinnerSettlement is a helper method to define mock.On call
 //   - ctx context.Context
 //   - settlement1 settlement.SettlementRecord
-func (_e *MockSettlementRepository_Expecter) CommitConcurrentWinnerSettlement(ctx interface{}, settlement1 interface{}) *MockSettlementRepository_CommitConcurrentWinnerSettlement_Call {
+func (_e *MockSettlementRepository_Expecter) CommitConcurrentWinnerSettlement(ctx any, settlement1 any) *MockSettlementRepository_CommitConcurrentWinnerSettlement_Call {
 	return &MockSettlementRepository_CommitConcurrentWinnerSettlement_Call{Call: _e.mock.On("CommitConcurrentWinnerSettlement", ctx, settlement1)}
 }
 
@@ -147,7 +156,7 @@ type MockSettlementRepository_LoadConcurrentWinnerAuthority_Call struct {
 // LoadConcurrentWinnerAuthority is a helper method to define mock.On call
 //   - ctx context.Context
 //   - scope game.SubmissionScope
-func (_e *MockSettlementRepository_Expecter) LoadConcurrentWinnerAuthority(ctx interface{}, scope interface{}) *MockSettlementRepository_LoadConcurrentWinnerAuthority_Call {
+func (_e *MockSettlementRepository_Expecter) LoadConcurrentWinnerAuthority(ctx any, scope any) *MockSettlementRepository_LoadConcurrentWinnerAuthority_Call {
 	return &MockSettlementRepository_LoadConcurrentWinnerAuthority_Call{Call: _e.mock.On("LoadConcurrentWinnerAuthority", ctx, scope)}
 }
 

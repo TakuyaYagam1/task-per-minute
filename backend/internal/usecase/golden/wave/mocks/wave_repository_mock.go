@@ -18,10 +18,19 @@ func NewMockWaveRepository(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockWaveRepository {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockWaveRepository{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -81,7 +90,7 @@ type MockWaveRepository_CommitGoldenWaveExecution_Call struct {
 // CommitGoldenWaveExecution is a helper method to define mock.On call
 //   - ctx context.Context
 //   - commit golden.GoldenWaveExecutionCommit
-func (_e *MockWaveRepository_Expecter) CommitGoldenWaveExecution(ctx interface{}, commit interface{}) *MockWaveRepository_CommitGoldenWaveExecution_Call {
+func (_e *MockWaveRepository_Expecter) CommitGoldenWaveExecution(ctx any, commit any) *MockWaveRepository_CommitGoldenWaveExecution_Call {
 	return &MockWaveRepository_CommitGoldenWaveExecution_Call{Call: _e.mock.On("CommitGoldenWaveExecution", ctx, commit)}
 }
 
@@ -103,8 +112,8 @@ func (_c *MockWaveRepository_CommitGoldenWaveExecution_Call) Run(run func(ctx co
 	return _c
 }
 
-func (_c *MockWaveRepository_CommitGoldenWaveExecution_Call) Return(v *golden.GoldenWaveExecution, b bool, err error) *MockWaveRepository_CommitGoldenWaveExecution_Call {
-	_c.Call.Return(v, b, err)
+func (_c *MockWaveRepository_CommitGoldenWaveExecution_Call) Return(goldenWaveExecution *golden.GoldenWaveExecution, b bool, err error) *MockWaveRepository_CommitGoldenWaveExecution_Call {
+	_c.Call.Return(goldenWaveExecution, b, err)
 	return _c
 }
 
@@ -150,7 +159,7 @@ type MockWaveRepository_FindGoldenWaveCommand_Call struct {
 //   - ctx context.Context
 //   - tournamentID uuid.UUID
 //   - commandID uuid.UUID
-func (_e *MockWaveRepository_Expecter) FindGoldenWaveCommand(ctx interface{}, tournamentID interface{}, commandID interface{}) *MockWaveRepository_FindGoldenWaveCommand_Call {
+func (_e *MockWaveRepository_Expecter) FindGoldenWaveCommand(ctx any, tournamentID any, commandID any) *MockWaveRepository_FindGoldenWaveCommand_Call {
 	return &MockWaveRepository_FindGoldenWaveCommand_Call{Call: _e.mock.On("FindGoldenWaveCommand", ctx, tournamentID, commandID)}
 }
 
@@ -177,8 +186,8 @@ func (_c *MockWaveRepository_FindGoldenWaveCommand_Call) Run(run func(ctx contex
 	return _c
 }
 
-func (_c *MockWaveRepository_FindGoldenWaveCommand_Call) Return(v *golden.GoldenWaveCommandReplay, err error) *MockWaveRepository_FindGoldenWaveCommand_Call {
-	_c.Call.Return(v, err)
+func (_c *MockWaveRepository_FindGoldenWaveCommand_Call) Return(goldenWaveCommandReplay *golden.GoldenWaveCommandReplay, err error) *MockWaveRepository_FindGoldenWaveCommand_Call {
+	_c.Call.Return(goldenWaveCommandReplay, err)
 	return _c
 }
 
@@ -221,7 +230,7 @@ type MockWaveRepository_LoadGoldenState_Call struct {
 // LoadGoldenState is a helper method to define mock.On call
 //   - ctx context.Context
 //   - scope golden.GoldenStateScope
-func (_e *MockWaveRepository_Expecter) LoadGoldenState(ctx interface{}, scope interface{}) *MockWaveRepository_LoadGoldenState_Call {
+func (_e *MockWaveRepository_Expecter) LoadGoldenState(ctx any, scope any) *MockWaveRepository_LoadGoldenState_Call {
 	return &MockWaveRepository_LoadGoldenState_Call{Call: _e.mock.On("LoadGoldenState", ctx, scope)}
 }
 
@@ -243,8 +252,8 @@ func (_c *MockWaveRepository_LoadGoldenState_Call) Run(run func(ctx context.Cont
 	return _c
 }
 
-func (_c *MockWaveRepository_LoadGoldenState_Call) Return(v golden.GoldenState, err error) *MockWaveRepository_LoadGoldenState_Call {
-	_c.Call.Return(v, err)
+func (_c *MockWaveRepository_LoadGoldenState_Call) Return(goldenState golden.GoldenState, err error) *MockWaveRepository_LoadGoldenState_Call {
+	_c.Call.Return(goldenState, err)
 	return _c
 }
 
@@ -289,7 +298,7 @@ type MockWaveRepository_LoadGoldenWaveExecution_Call struct {
 // LoadGoldenWaveExecution is a helper method to define mock.On call
 //   - ctx context.Context
 //   - scope golden.GoldenStateScope
-func (_e *MockWaveRepository_Expecter) LoadGoldenWaveExecution(ctx interface{}, scope interface{}) *MockWaveRepository_LoadGoldenWaveExecution_Call {
+func (_e *MockWaveRepository_Expecter) LoadGoldenWaveExecution(ctx any, scope any) *MockWaveRepository_LoadGoldenWaveExecution_Call {
 	return &MockWaveRepository_LoadGoldenWaveExecution_Call{Call: _e.mock.On("LoadGoldenWaveExecution", ctx, scope)}
 }
 
@@ -311,8 +320,8 @@ func (_c *MockWaveRepository_LoadGoldenWaveExecution_Call) Run(run func(ctx cont
 	return _c
 }
 
-func (_c *MockWaveRepository_LoadGoldenWaveExecution_Call) Return(v *golden.GoldenWaveExecution, err error) *MockWaveRepository_LoadGoldenWaveExecution_Call {
-	_c.Call.Return(v, err)
+func (_c *MockWaveRepository_LoadGoldenWaveExecution_Call) Return(goldenWaveExecution *golden.GoldenWaveExecution, err error) *MockWaveRepository_LoadGoldenWaveExecution_Call {
+	_c.Call.Return(goldenWaveExecution, err)
 	return _c
 }
 

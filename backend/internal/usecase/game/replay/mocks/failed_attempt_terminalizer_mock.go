@@ -17,10 +17,19 @@ func NewMockFailedAttemptTerminalizer(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockFailedAttemptTerminalizer {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockFailedAttemptTerminalizer{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -80,7 +89,7 @@ type MockFailedAttemptTerminalizer_Terminalize_Call struct {
 // Terminalize is a helper method to define mock.On call
 //   - ctx context.Context
 //   - command attempt.AttemptCommand
-func (_e *MockFailedAttemptTerminalizer_Expecter) Terminalize(ctx interface{}, command interface{}) *MockFailedAttemptTerminalizer_Terminalize_Call {
+func (_e *MockFailedAttemptTerminalizer_Expecter) Terminalize(ctx any, command any) *MockFailedAttemptTerminalizer_Terminalize_Call {
 	return &MockFailedAttemptTerminalizer_Terminalize_Call{Call: _e.mock.On("Terminalize", ctx, command)}
 }
 

@@ -18,10 +18,19 @@ func NewMockAttemptRepository(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockAttemptRepository {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockAttemptRepository{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -81,7 +90,7 @@ type MockAttemptRepository_CommitGoldenAttempt_Call struct {
 // CommitGoldenAttempt is a helper method to define mock.On call
 //   - ctx context.Context
 //   - record golden.GoldenAttemptCommitRecord
-func (_e *MockAttemptRepository_Expecter) CommitGoldenAttempt(ctx interface{}, record interface{}) *MockAttemptRepository_CommitGoldenAttempt_Call {
+func (_e *MockAttemptRepository_Expecter) CommitGoldenAttempt(ctx any, record any) *MockAttemptRepository_CommitGoldenAttempt_Call {
 	return &MockAttemptRepository_CommitGoldenAttempt_Call{Call: _e.mock.On("CommitGoldenAttempt", ctx, record)}
 }
 
@@ -150,7 +159,7 @@ type MockAttemptRepository_FindGoldenAttemptCommit_Call struct {
 //   - ctx context.Context
 //   - tournamentID uuid.UUID
 //   - commandID uuid.UUID
-func (_e *MockAttemptRepository_Expecter) FindGoldenAttemptCommit(ctx interface{}, tournamentID interface{}, commandID interface{}) *MockAttemptRepository_FindGoldenAttemptCommit_Call {
+func (_e *MockAttemptRepository_Expecter) FindGoldenAttemptCommit(ctx any, tournamentID any, commandID any) *MockAttemptRepository_FindGoldenAttemptCommit_Call {
 	return &MockAttemptRepository_FindGoldenAttemptCommit_Call{Call: _e.mock.On("FindGoldenAttemptCommit", ctx, tournamentID, commandID)}
 }
 
@@ -221,7 +230,7 @@ type MockAttemptRepository_LoadGoldenAttemptCommitAuthority_Call struct {
 // LoadGoldenAttemptCommitAuthority is a helper method to define mock.On call
 //   - ctx context.Context
 //   - scope golden.GoldenSubmissionScope
-func (_e *MockAttemptRepository_Expecter) LoadGoldenAttemptCommitAuthority(ctx interface{}, scope interface{}) *MockAttemptRepository_LoadGoldenAttemptCommitAuthority_Call {
+func (_e *MockAttemptRepository_Expecter) LoadGoldenAttemptCommitAuthority(ctx any, scope any) *MockAttemptRepository_LoadGoldenAttemptCommitAuthority_Call {
 	return &MockAttemptRepository_LoadGoldenAttemptCommitAuthority_Call{Call: _e.mock.On("LoadGoldenAttemptCommitAuthority", ctx, scope)}
 }
 

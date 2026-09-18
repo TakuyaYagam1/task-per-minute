@@ -18,10 +18,19 @@ func NewMockSubmissionRepository(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockSubmissionRepository {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockSubmissionRepository{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -81,7 +90,7 @@ type MockSubmissionRepository_CommitGoldenSubmission_Call struct {
 // CommitGoldenSubmission is a helper method to define mock.On call
 //   - ctx context.Context
 //   - commit submission.GoldenSubmissionCommit
-func (_e *MockSubmissionRepository_Expecter) CommitGoldenSubmission(ctx interface{}, commit interface{}) *MockSubmissionRepository_CommitGoldenSubmission_Call {
+func (_e *MockSubmissionRepository_Expecter) CommitGoldenSubmission(ctx any, commit any) *MockSubmissionRepository_CommitGoldenSubmission_Call {
 	return &MockSubmissionRepository_CommitGoldenSubmission_Call{Call: _e.mock.On("CommitGoldenSubmission", ctx, commit)}
 }
 
@@ -149,7 +158,7 @@ type MockSubmissionRepository_LoadGoldenSubmissionAuthority_Call struct {
 //   - scope submission.GoldenSubmissionScope
 //   - commandID uuid.UUID
 //   - verificationID uuid.UUID
-func (_e *MockSubmissionRepository_Expecter) LoadGoldenSubmissionAuthority(ctx interface{}, scope interface{}, commandID interface{}, verificationID interface{}) *MockSubmissionRepository_LoadGoldenSubmissionAuthority_Call {
+func (_e *MockSubmissionRepository_Expecter) LoadGoldenSubmissionAuthority(ctx any, scope any, commandID any, verificationID any) *MockSubmissionRepository_LoadGoldenSubmissionAuthority_Call {
 	return &MockSubmissionRepository_LoadGoldenSubmissionAuthority_Call{Call: _e.mock.On("LoadGoldenSubmissionAuthority", ctx, scope, commandID, verificationID)}
 }
 

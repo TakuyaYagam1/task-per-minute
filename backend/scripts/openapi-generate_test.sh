@@ -6,6 +6,7 @@ REPO_ROOT="$(cd "$BACKEND_ROOT/.." && pwd)"
 GENERATOR="$BACKEND_ROOT/scripts/openapi-generate.sh"
 MERGER="$BACKEND_ROOT/scripts/merge-schemas.py"
 BACKEND_MAKEFILE="$BACKEND_ROOT/Makefile"
+BACKEND_GOMOD="$BACKEND_ROOT/go.mod"
 FRONTEND_MAKEFILE="$REPO_ROOT/frontend/Makefile"
 PYTHON="${PYTHON:-python3}"
 export PYTHONDONTWRITEBYTECODE=1
@@ -16,20 +17,35 @@ fail() {
 }
 
 assert_policy() {
-  if grep -En '(^|[[:space:]])(npx|npm[[:space:]]+exec|go[[:space:]]+run|npm[[:space:]]+(install|ci)|go[[:space:]]+install)([[:space:]]|$)' "$GENERATOR"; then
-    fail 'generator contains a transient executor or implicit install'
+  if grep -En '(^|[[:space:]])(npx|npm[[:space:]]+exec|go[[:space:]]+(run|install)|npm[[:space:]]+(install|ci))([[:space:]]|$)' "$GENERATOR"; then
+    fail 'generator contains an unapproved transient executor'
   fi
   if grep -En 'OAPI_VERSION|REDOCLY_VERSION' "$GENERATOR"; then
     fail 'generator accepts a version override'
   fi
-  grep -Fq 'GOPROXY=off' "$GENERATOR" || fail 'Go build is not offline'
-  grep -Fq 'GOTOOLCHAIN=local' "$GENERATOR" || fail 'Go toolchain is not local-only'
+  grep -Fq 'go tool oapi-codegen' "$GENERATOR" || fail 'generator does not use the module-managed oapi-codegen tool'
+  grep -Fq 'go tool sqlc' "$BACKEND_MAKEFILE" || fail 'Make does not use the module-managed sqlc tool'
+  grep -Fq 'go tool wire' "$BACKEND_MAKEFILE" || fail 'Make does not use the module-managed wire tool'
+  grep -Fq 'go tool mockery' "$BACKEND_MAKEFILE" || fail 'Make does not use the module-managed mockery tool'
+  grep -Fq 'go tool goose' "$BACKEND_MAKEFILE" || fail 'Make does not use the module-managed goose tool'
+  if grep -Eq 'TOOLS_DIR|SQLC_STAMP|(GOOSE|SQLC|MOCKERY|WIRE|OAPI_CODEGEN)_VERSION|\.cache/tools|go run github\.com' "$BACKEND_MAKEFILE"; then
+    fail 'backend Makefile still manages separate Go tool binaries or versions'
+  fi
+  for tool_path in \
+    github.com/golangci/golangci-lint/v2/cmd/golangci-lint \
+    github.com/google/wire/cmd/wire \
+    github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen \
+    github.com/pressly/goose/v3/cmd/goose \
+    github.com/sqlc-dev/sqlc/cmd/sqlc \
+    github.com/vektra/mockery/v3; do
+    grep -Fq "$tool_path" "$BACKEND_GOMOD" || fail "go.mod does not declare tool $tool_path"
+  done
   grep -Fq 'REDOCLY_TELEMETRY=off' "$GENERATOR" || fail 'Redocly telemetry is not disabled'
   grep -Fq -- "--output \"\$MERGED_SCHEMAS\"" "$GENERATOR" || fail 'merge destination is not explicit'
   grep -Fq "\"\$OPENAPI_TS_BIN\" \"\$BUNDLE\"" "$GENERATOR" || fail 'frontend types do not use the temporary bundle'
   grep -Fq 'gen-openapi openapi: $(QUALITY_PY_DEPS_STAMP)' "$BACKEND_MAKEFILE" || fail 'OpenAPI generation does not bootstrap pinned Python dependencies'
   grep -Fq 'test-openapi: $(QUALITY_PY_DEPS_STAMP)' "$BACKEND_MAKEFILE" || fail 'OpenAPI tests do not bootstrap pinned Python dependencies'
-  grep -Fq $'\tPYTHON="$(PYTHON)" bash scripts/openapi-generate.sh' "$BACKEND_MAKEFILE" || fail 'backend Makefile bypasses the locked generator'
+  grep -Fq $'\tPYTHON="$(PYTHON)" bash scripts/openapi-generate.sh' "$BACKEND_MAKEFILE" || fail 'backend Makefile bypasses the module-managed generator'
   grep -Fq $'\tPYTHON="$(PYTHON)" bash scripts/openapi-generate_test.sh' "$BACKEND_MAKEFILE" || fail 'backend Makefile bypasses the pinned Python interpreter for OpenAPI tests'
   grep -Fq $'\t$(NPM) run openapi:generate' "$FRONTEND_MAKEFILE" || fail 'frontend Makefile bypasses the locked generator'
 
@@ -45,11 +61,6 @@ assert_policy() {
 
   grep -Fxq 'PyYAML==6.0.3' "$BACKEND_ROOT/scripts/requirements-quality.txt" ||
     fail 'PyYAML is not exactly pinned in quality requirements'
-
-  grep -Eq '^require github\.com/oapi-codegen/oapi-codegen/v2 v2\.8\.0$' "$BACKEND_ROOT/tools/openapi/go.mod" ||
-    fail 'oapi-codegen module identity is not exact'
-  grep -Fq '_ "github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen"' "$BACKEND_ROOT/tools/openapi/tools.go" ||
-    fail 'tools.go does not pin the oapi-codegen command'
 
   if ! "$PYTHON" -c 'import yaml' >/dev/null 2>&1; then
     fail "PyYAML is required for merge-schemas.py tests: $PYTHON"
@@ -138,7 +149,6 @@ mkdir -p \
   "$FIXTURE_BACKEND/codegen" \
   "$FIXTURE_BACKEND/api/components/schemas" \
   "$FIXTURE_BACKEND/internal/adapter/inbound/http/api" \
-  "$FIXTURE_BACKEND/tools/openapi" \
   "$FIXTURE_FRONTEND/lib/shared/api" \
   "$FIXTURE_FRONTEND/node_modules/.bin" \
   "$FIXTURE_FRONTEND/node_modules/@redocly/cli/bin" \
@@ -151,9 +161,6 @@ cp "$GENERATOR" "$FIXTURE_BACKEND/scripts/openapi-generate.sh"
 cp "$BACKEND_ROOT/scripts/merge-schemas.py" "$FIXTURE_BACKEND/scripts/merge-schemas.py"
 cp "$BACKEND_ROOT/scripts/requirements-quality.txt" "$FIXTURE_BACKEND/scripts/requirements-quality.txt"
 cp "$BACKEND_MAKEFILE" "$FIXTURE_BACKEND/Makefile"
-cp "$BACKEND_ROOT/tools/openapi/go.mod" "$FIXTURE_BACKEND/tools/openapi/go.mod"
-cp "$BACKEND_ROOT/tools/openapi/go.sum" "$FIXTURE_BACKEND/tools/openapi/go.sum"
-cp "$BACKEND_ROOT/tools/openapi/tools.go" "$FIXTURE_BACKEND/tools/openapi/tools.go"
 cp "$BACKEND_ROOT"/codegen/oapi-codegen-*.yml "$FIXTURE_BACKEND/codegen/"
 
 cat >"$FIXTURE_BACKEND/scripts/openapi-generate_test.sh" <<'TEST_OPENAPI'
@@ -225,26 +232,11 @@ cat >"$FAKE_BIN/go" <<'GO'
 #!/usr/bin/env bash
 set -euo pipefail
 : "${OPENAPI_TEST_TRACE:?}"
-[ "${GOTOOLCHAIN:-}" = local ] || exit 71
-[ "${GOPROXY:-}" = off ] || exit 72
-[ "${GOSUMDB:-}" = off ] || exit 73
+[ "${GOWORK:-}" = off ] || exit 71
+[ "${1:-}" = tool ] || exit 72
+[ "${2:-}" = oapi-codegen ] || exit 73
+shift 2
 printf 'go %s\n' "$*" >>"$OPENAPI_TEST_TRACE"
-if [ "${1:-}" = mod ] && [ "${2:-}" = verify ]; then
-  exit 0
-fi
-output=''
-while [ "$#" -gt 0 ]; do
-  if [ "$1" = '-o' ]; then
-    shift
-    output="$1"
-  fi
-  shift
-done
-[ -n "$output" ] || exit 74
-cat >"$output" <<'OAPI'
-#!/usr/bin/env bash
-set -euo pipefail
-: "${OPENAPI_TEST_TRACE:?}"
 printf 'oapi-codegen %s\n' "$*" >>"$OPENAPI_TEST_TRACE"
 if [ "${1:-}" != '-config' ] || [ -z "${2:-}" ]; then
   exit 75
@@ -256,8 +248,6 @@ generated_output="$(sed -n 's/^output:[[:space:]]*//p' "$2")"
 [ -n "$generated_output" ] || exit 76
 mkdir -p -- "$(dirname "$generated_output")"
 printf '%s\n' "// fixture output ${OPENAPI_TEST_OUTPUT_TOKEN:-stable} from $(basename "$2")" 'package api' >"$generated_output"
-OAPI
-chmod +x "$output"
 GO
 chmod +x "$FAKE_BIN/go"
 
@@ -305,9 +295,6 @@ PYTHON
 chmod +x "$FAKE_BIN/python3"
 
 cp "$FIXTURE_FRONTEND/package-lock.json" "$TEST_TMP/package-lock.clean.json"
-cp "$FIXTURE_BACKEND/tools/openapi/go.mod" "$TEST_TMP/go.mod.clean"
-cp "$FIXTURE_BACKEND/tools/openapi/go.sum" "$TEST_TMP/go.sum.clean"
-cp "$FIXTURE_BACKEND/tools/openapi/tools.go" "$TEST_TMP/tools.go.clean"
 
 run_fixture_generator() {
   PYTHON="$TEST_TMP/selected-python" \
@@ -351,8 +338,6 @@ grep -Fq "test-openapi PYTHON=$FIXTURE_BACKEND/.venv-quality/bin/python" "$TRACE
   fail 'Make did not pass the quality Python interpreter to OpenAPI tests'
 
 printf '%s\n' keep >"$TEST_TMP/runtime/sentinel"
-OAPI_VERSION=v9.9.9 \
-REDOCLY_VERSION=9.9.9 \
 run_fixture_generator >/dev/null
 
 [ -f "$TEST_TMP/runtime/sentinel" ] || fail 'generator removed an unowned temp file'
@@ -360,12 +345,10 @@ if find "$TEST_TMP/runtime" -mindepth 1 ! -name sentinel -print -quit | grep -q 
   fail 'generator left its temp directory behind'
 fi
 [ ! -e "$FIXTURE_BACKEND/api/components/schemas.yml" ] || fail 'generator created a repository intermediate'
-grep -Fq 'go mod verify' "$TRACE" || fail 'generator did not verify cached Go modules'
-grep -Fq 'go build -mod=readonly' "$TRACE" || fail 'generator did not build the pinned command read-only'
+grep -Fq 'oapi-codegen -config' "$TRACE" || fail 'generator did not invoke the module-managed tool'
 grep -Fq 'python -c import yaml' "$TRACE" || fail 'generator did not use the selected Python interpreter'
 grep -Fq 'redocly bundle' "$TRACE" || fail 'generator did not use local Redocly'
 grep -Fq 'redocly lint' "$TRACE" || fail 'generator did not lint the bundled contract'
-grep -Fq 'oapi-codegen -config' "$TRACE" || fail 'generator did not invoke the pinned binary'
 grep -Fq 'openapi-typescript' "$TRACE" || fail 'generator did not invoke locked frontend type generation'
 grep -F 'openapi-typescript ' "$TRACE" | grep -Fq -- '--default-non-nullable false' ||
   fail 'generator did not preserve OpenAPI required-field semantics'
@@ -460,28 +443,6 @@ cp "$TEST_TMP/package-lock.clean.json" "$FIXTURE_FRONTEND/package-lock.json"
 sed -i 's/"version":"4.3.2"/"version":"4.3.1"/' "$FIXTURE_FRONTEND/node_modules/js-yaml/package.json"
 expect_fixture_rejection 'a stale installed js-yaml parser'
 sed -i 's/"version":"4.3.1"/"version":"4.3.2"/' "$FIXTURE_FRONTEND/node_modules/js-yaml/package.json"
-
-node - "$FIXTURE_BACKEND/tools/openapi/go.sum" <<'NODE'
-const fs = require('node:fs');
-const path = process.argv[2];
-const source = fs.readFileSync(path, 'utf8');
-const target = 'github.com/oapi-codegen/oapi-codegen/v2 v2.8.0 h1:s4hxMxuqtR8jPzXkBTtFwY/SBuj3gEAYikmbBSdtLMM=';
-if (!source.includes(target)) process.exit(1);
-fs.writeFileSync(path, source.replace(target, `${target}tampered`));
-NODE
-expect_fixture_rejection 'a tampered oapi-codegen checksum'
-cp "$TEST_TMP/go.sum.clean" "$FIXTURE_BACKEND/tools/openapi/go.sum"
-
-node - "$FIXTURE_BACKEND/tools/openapi/tools.go" <<'NODE'
-const fs = require('node:fs');
-const path = process.argv[2];
-const source = fs.readFileSync(path, 'utf8');
-const target = 'github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen';
-if (!source.includes(target)) process.exit(1);
-fs.writeFileSync(path, source.replace(target, 'example.invalid/oapi-codegen'));
-NODE
-expect_fixture_rejection 'an unexpected oapi-codegen command'
-cp "$TEST_TMP/tools.go.clean" "$FIXTURE_BACKEND/tools/openapi/tools.go"
 
 mv "$FIXTURE_FRONTEND/node_modules/.bin/redocly" "$TEST_TMP/redocly-link"
 expect_fixture_rejection 'a missing local Redocly binary'

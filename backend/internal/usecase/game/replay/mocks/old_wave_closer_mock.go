@@ -7,7 +7,7 @@ package mocks
 import (
 	"context"
 
-	gameclose "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/close"
+	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/close"
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -17,10 +17,19 @@ func NewMockOldWaveCloser(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockOldWaveCloser {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockOldWaveCloser{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -80,7 +89,7 @@ type MockOldWaveCloser_Close_Call struct {
 // Close is a helper method to define mock.On call
 //   - ctx context.Context
 //   - command gameclose.CloseCommand
-func (_e *MockOldWaveCloser_Expecter) Close(ctx interface{}, command interface{}) *MockOldWaveCloser_Close_Call {
+func (_e *MockOldWaveCloser_Expecter) Close(ctx any, command any) *MockOldWaveCloser_Close_Call {
 	return &MockOldWaveCloser_Close_Call{Call: _e.mock.On("Close", ctx, command)}
 }
 

@@ -17,10 +17,19 @@ func NewMockAuthorityTimeSource(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockAuthorityTimeSource {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockAuthorityTimeSource{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -71,7 +80,7 @@ type MockAuthorityTimeSource_AuthorityTime_Call struct {
 
 // AuthorityTime is a helper method to define mock.On call
 //   - ctx context.Context
-func (_e *MockAuthorityTimeSource_Expecter) AuthorityTime(ctx interface{}) *MockAuthorityTimeSource_AuthorityTime_Call {
+func (_e *MockAuthorityTimeSource_Expecter) AuthorityTime(ctx any) *MockAuthorityTimeSource_AuthorityTime_Call {
 	return &MockAuthorityTimeSource_AuthorityTime_Call{Call: _e.mock.On("AuthorityTime", ctx)}
 }
 

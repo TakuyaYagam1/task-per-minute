@@ -6,9 +6,9 @@ repo_root="$(cd -- "$script_dir/../../.." && pwd -P)"
 verifier="$repo_root/scripts/release/verify-codegen-tools.sh"
 canonical_lock="$repo_root/security/tools/codegen-tools.lock.json"
 schema="$repo_root/security/tools/codegen-tools.schema.json"
-makefile="$repo_root/backend/Makefile"
+go_mod="$repo_root/backend/go.mod"
 
-for required in "$verifier" "$canonical_lock" "$schema" "$makefile"; do
+for required in "$verifier" "$canonical_lock" "$schema" "$go_mod"; do
   [[ -f "$required" ]] || { echo "missing test input: $required" >&2; exit 1; }
 done
 
@@ -162,7 +162,7 @@ expect_fail() {
 
 expect_pass \
   "exact binaries" \
-  bash "$verifier" --lock "$canonical_lock" --schema "$schema" --makefile "$makefile" --bin-dir "$work_dir/exact-bin"
+  bash "$verifier" --lock "$canonical_lock" --schema "$schema" --go-mod "$go_mod" --bin-dir "$work_dir/exact-bin"
 
 create_fixture_archives "$work_dir/exact-bin/sqlc" "$work_dir/archives"
 sqlc_archive_hash="$(sha256_file "$work_dir/archives/sqlc_1.31.1_linux_amd64.tar.gz")"
@@ -171,7 +171,7 @@ fixture_lock="$work_dir/archive-fixture.lock.json"
 manifest_patch "$canonical_lock" "$fixture_lock" archive-hashes "$sqlc_archive_hash" "$wire_archive_hash"
 expect_pass \
   "exact archive members" \
-  bash "$verifier" --lock "$fixture_lock" --schema "$schema" --makefile "$makefile" --bin-dir "$work_dir/exact-bin" --archives "$work_dir/archives"
+  bash "$verifier" --lock "$fixture_lock" --schema "$schema" --go-mod "$go_mod" --bin-dir "$work_dir/exact-bin" --archives "$work_dir/archives"
 
 mkdir -p "$work_dir/wrong-version-bin"
 cp -- "$work_dir/exact-bin/wire" "$work_dir/wrong-version-bin/wire"
@@ -193,7 +193,7 @@ manifest_patch \
 expect_fail \
   "wrong version" \
   "sqlc version probe mismatch" \
-  bash "$verifier" --lock "$wrong_version_lock" --schema "$schema" --makefile "$makefile" --bin-dir "$work_dir/wrong-version-bin"
+  bash "$verifier" --lock "$wrong_version_lock" --schema "$schema" --go-mod "$go_mod" --bin-dir "$work_dir/wrong-version-bin"
 
 mkdir -p "$work_dir/executable-tamper-bin"
 cp -- "$work_dir/exact-bin/sqlc" "$work_dir/executable-tamper-bin/sqlc"
@@ -203,14 +203,14 @@ chmod 0700 "$work_dir/executable-tamper-bin/sqlc" "$work_dir/executable-tamper-b
 expect_fail \
   "executable tamper" \
   "sqlc executable SHA-256 mismatch" \
-  bash "$verifier" --lock "$canonical_lock" --schema "$schema" --makefile "$makefile" --bin-dir "$work_dir/executable-tamper-bin"
+  bash "$verifier" --lock "$canonical_lock" --schema "$schema" --go-mod "$go_mod" --bin-dir "$work_dir/executable-tamper-bin"
 
 cp -R -- "$work_dir/archives" "$work_dir/archive-tamper"
 printf 'tamper' >>"$work_dir/archive-tamper/sqlc_1.31.1_linux_amd64.tar.gz"
 expect_fail \
   "archive tamper" \
   "sqlc archive SHA-256 mismatch" \
-  bash "$verifier" --lock "$fixture_lock" --schema "$schema" --makefile "$makefile" --bin-dir "$work_dir/exact-bin" --archives "$work_dir/archive-tamper"
+  bash "$verifier" --lock "$fixture_lock" --schema "$schema" --go-mod "$go_mod" --bin-dir "$work_dir/exact-bin" --archives "$work_dir/archive-tamper"
 
 cp -R -- "$work_dir/archives" "$work_dir/missing-member"
 create_missing_member_archive \
@@ -226,27 +226,27 @@ manifest_patch \
 expect_fail \
   "undeclared member" \
   "sqlc declared extraction member is missing" \
-  bash "$verifier" --lock "$missing_member_lock" --schema "$schema" --makefile "$makefile" --bin-dir "$work_dir/exact-bin" --archives "$work_dir/missing-member"
+  bash "$verifier" --lock "$missing_member_lock" --schema "$schema" --go-mod "$go_mod" --bin-dir "$work_dir/exact-bin" --archives "$work_dir/missing-member"
 
 unofficial_lock="$work_dir/unofficial-source.lock.json"
 manifest_patch "$canonical_lock" "$unofficial_lock" unofficial-source
 expect_fail \
   "unofficial source" \
   "sqlc policy mismatch: source.repository_url" \
-  bash "$verifier" --lock "$unofficial_lock" --schema "$schema" --makefile "$makefile" --bin-dir "$work_dir/exact-bin"
+  bash "$verifier" --lock "$unofficial_lock" --schema "$schema" --go-mod "$go_mod" --bin-dir "$work_dir/exact-bin"
 
 license_lock="$work_dir/license-failure.lock.json"
 manifest_patch "$canonical_lock" "$license_lock" license-failure
 expect_fail \
   "license failure" \
   "sqlc policy mismatch: source.license.spdx" \
-  bash "$verifier" --lock "$license_lock" --schema "$schema" --makefile "$makefile" --bin-dir "$work_dir/exact-bin"
+  bash "$verifier" --lock "$license_lock" --schema "$schema" --go-mod "$go_mod" --bin-dir "$work_dir/exact-bin"
 
 missing_trust_lock="$work_dir/missing-trust.lock.json"
 manifest_patch "$canonical_lock" "$missing_trust_lock" missing-trust-decision
 expect_fail \
   "missing trust decision" \
   "trust_decision is required" \
-  bash "$verifier" --lock "$missing_trust_lock" --schema "$schema" --makefile "$makefile" --bin-dir "$work_dir/exact-bin"
+  bash "$verifier" --lock "$missing_trust_lock" --schema "$schema" --go-mod "$go_mod" --bin-dir "$work_dir/exact-bin"
 
 echo "verify-codegen-tools tests passed"

@@ -18,10 +18,19 @@ func NewMockRecoveryAuthorityProvider(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockRecoveryAuthorityProvider {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockRecoveryAuthorityProvider{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -79,7 +88,7 @@ type MockRecoveryAuthorityProvider_RecoveryAuthorityFor_Call struct {
 // RecoveryAuthorityFor is a helper method to define mock.On call
 //   - ctx context.Context
 //   - tournamentID uuid.UUID
-func (_e *MockRecoveryAuthorityProvider_Expecter) RecoveryAuthorityFor(ctx interface{}, tournamentID interface{}) *MockRecoveryAuthorityProvider_RecoveryAuthorityFor_Call {
+func (_e *MockRecoveryAuthorityProvider_Expecter) RecoveryAuthorityFor(ctx any, tournamentID any) *MockRecoveryAuthorityProvider_RecoveryAuthorityFor_Call {
 	return &MockRecoveryAuthorityProvider_RecoveryAuthorityFor_Call{Call: _e.mock.On("RecoveryAuthorityFor", ctx, tournamentID)}
 }
 

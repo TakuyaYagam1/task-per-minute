@@ -19,10 +19,19 @@ func NewMockNormalPauseRepository(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockNormalPauseRepository {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockNormalPauseRepository{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -83,7 +92,7 @@ type MockNormalPauseRepository_CommitNormalPause_Call struct {
 //   - ctx context.Context
 //   - expected enter.PauseGraphRevisions
 //   - record enter.NormalPauseRecord
-func (_e *MockNormalPauseRepository_Expecter) CommitNormalPause(ctx interface{}, expected interface{}, record interface{}) *MockNormalPauseRepository_CommitNormalPause_Call {
+func (_e *MockNormalPauseRepository_Expecter) CommitNormalPause(ctx any, expected any, record any) *MockNormalPauseRepository_CommitNormalPause_Call {
 	return &MockNormalPauseRepository_CommitNormalPause_Call{Call: _e.mock.On("CommitNormalPause", ctx, expected, record)}
 }
 
@@ -110,8 +119,8 @@ func (_c *MockNormalPauseRepository_CommitNormalPause_Call) Run(run func(ctx con
 	return _c
 }
 
-func (_c *MockNormalPauseRepository_CommitNormalPause_Call) Return(v *enter.NormalPauseRecord, b bool, err error) *MockNormalPauseRepository_CommitNormalPause_Call {
-	_c.Call.Return(v, b, err)
+func (_c *MockNormalPauseRepository_CommitNormalPause_Call) Return(normalPauseRecord *enter.NormalPauseRecord, b bool, err error) *MockNormalPauseRepository_CommitNormalPause_Call {
+	_c.Call.Return(normalPauseRecord, b, err)
 	return _c
 }
 
@@ -157,7 +166,7 @@ type MockNormalPauseRepository_FindNormalPauseCommand_Call struct {
 //   - ctx context.Context
 //   - tournamentID uuid.UUID
 //   - commandID uuid.UUID
-func (_e *MockNormalPauseRepository_Expecter) FindNormalPauseCommand(ctx interface{}, tournamentID interface{}, commandID interface{}) *MockNormalPauseRepository_FindNormalPauseCommand_Call {
+func (_e *MockNormalPauseRepository_Expecter) FindNormalPauseCommand(ctx any, tournamentID any, commandID any) *MockNormalPauseRepository_FindNormalPauseCommand_Call {
 	return &MockNormalPauseRepository_FindNormalPauseCommand_Call{Call: _e.mock.On("FindNormalPauseCommand", ctx, tournamentID, commandID)}
 }
 
@@ -184,8 +193,8 @@ func (_c *MockNormalPauseRepository_FindNormalPauseCommand_Call) Run(run func(ct
 	return _c
 }
 
-func (_c *MockNormalPauseRepository_FindNormalPauseCommand_Call) Return(v *enter.NormalPauseRecord, err error) *MockNormalPauseRepository_FindNormalPauseCommand_Call {
-	_c.Call.Return(v, err)
+func (_c *MockNormalPauseRepository_FindNormalPauseCommand_Call) Return(normalPauseRecord *enter.NormalPauseRecord, err error) *MockNormalPauseRepository_FindNormalPauseCommand_Call {
+	_c.Call.Return(normalPauseRecord, err)
 	return _c
 }
 
@@ -228,7 +237,7 @@ type MockNormalPauseRepository_LoadNormalPauseAuthority_Call struct {
 // LoadNormalPauseAuthority is a helper method to define mock.On call
 //   - ctx context.Context
 //   - scope pause.GraphScope
-func (_e *MockNormalPauseRepository_Expecter) LoadNormalPauseAuthority(ctx interface{}, scope interface{}) *MockNormalPauseRepository_LoadNormalPauseAuthority_Call {
+func (_e *MockNormalPauseRepository_Expecter) LoadNormalPauseAuthority(ctx any, scope any) *MockNormalPauseRepository_LoadNormalPauseAuthority_Call {
 	return &MockNormalPauseRepository_LoadNormalPauseAuthority_Call{Call: _e.mock.On("LoadNormalPauseAuthority", ctx, scope)}
 }
 
@@ -250,8 +259,8 @@ func (_c *MockNormalPauseRepository_LoadNormalPauseAuthority_Call) Run(run func(
 	return _c
 }
 
-func (_c *MockNormalPauseRepository_LoadNormalPauseAuthority_Call) Return(v enter.NormalPauseAuthority, err error) *MockNormalPauseRepository_LoadNormalPauseAuthority_Call {
-	_c.Call.Return(v, err)
+func (_c *MockNormalPauseRepository_LoadNormalPauseAuthority_Call) Return(normalPauseAuthority enter.NormalPauseAuthority, err error) *MockNormalPauseRepository_LoadNormalPauseAuthority_Call {
+	_c.Call.Return(normalPauseAuthority, err)
 	return _c
 }
 

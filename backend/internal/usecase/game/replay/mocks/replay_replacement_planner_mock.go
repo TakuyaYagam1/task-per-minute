@@ -17,10 +17,19 @@ func NewMockReplayReplacementPlanner(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockReplayReplacementPlanner {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockReplayReplacementPlanner{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -80,7 +89,7 @@ type MockReplayReplacementPlanner_Replace_Call struct {
 // Replace is a helper method to define mock.On call
 //   - ctx context.Context
 //   - command replay.ReplayReplacementCommand
-func (_e *MockReplayReplacementPlanner_Expecter) Replace(ctx interface{}, command interface{}) *MockReplayReplacementPlanner_Replace_Call {
+func (_e *MockReplayReplacementPlanner_Expecter) Replace(ctx any, command any) *MockReplayReplacementPlanner_Replace_Call {
 	return &MockReplayReplacementPlanner_Replace_Call{Call: _e.mock.On("Replace", ctx, command)}
 }
 

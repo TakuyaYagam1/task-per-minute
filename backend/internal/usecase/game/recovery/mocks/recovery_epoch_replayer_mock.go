@@ -17,10 +17,19 @@ func NewMockRecoveryEpochReplayer(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockRecoveryEpochReplayer {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockRecoveryEpochReplayer{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -72,7 +81,7 @@ type MockRecoveryEpochReplayer_ReplayEpoch_Call struct {
 // ReplayEpoch is a helper method to define mock.On call
 //   - ctx context.Context
 //   - command recovery.EpochReplayCommand
-func (_e *MockRecoveryEpochReplayer_Expecter) ReplayEpoch(ctx interface{}, command interface{}) *MockRecoveryEpochReplayer_ReplayEpoch_Call {
+func (_e *MockRecoveryEpochReplayer_Expecter) ReplayEpoch(ctx any, command any) *MockRecoveryEpochReplayer_ReplayEpoch_Call {
 	return &MockRecoveryEpochReplayer_ReplayEpoch_Call{Call: _e.mock.On("ReplayEpoch", ctx, command)}
 }
 

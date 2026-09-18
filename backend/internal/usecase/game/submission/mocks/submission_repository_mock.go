@@ -18,10 +18,19 @@ func NewMockSubmissionRepository(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockSubmissionRepository {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockSubmissionRepository{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -81,7 +90,7 @@ type MockSubmissionRepository_CommitSubmission_Call struct {
 // CommitSubmission is a helper method to define mock.On call
 //   - ctx context.Context
 //   - commit submission.SubmissionCommit
-func (_e *MockSubmissionRepository_Expecter) CommitSubmission(ctx interface{}, commit interface{}) *MockSubmissionRepository_CommitSubmission_Call {
+func (_e *MockSubmissionRepository_Expecter) CommitSubmission(ctx any, commit any) *MockSubmissionRepository_CommitSubmission_Call {
 	return &MockSubmissionRepository_CommitSubmission_Call{Call: _e.mock.On("CommitSubmission", ctx, commit)}
 }
 
@@ -147,7 +156,7 @@ type MockSubmissionRepository_LoadSubmissionAuthority_Call struct {
 // LoadSubmissionAuthority is a helper method to define mock.On call
 //   - ctx context.Context
 //   - scope game.SubmissionScope
-func (_e *MockSubmissionRepository_Expecter) LoadSubmissionAuthority(ctx interface{}, scope interface{}) *MockSubmissionRepository_LoadSubmissionAuthority_Call {
+func (_e *MockSubmissionRepository_Expecter) LoadSubmissionAuthority(ctx any, scope any) *MockSubmissionRepository_LoadSubmissionAuthority_Call {
 	return &MockSubmissionRepository_LoadSubmissionAuthority_Call{Call: _e.mock.On("LoadSubmissionAuthority", ctx, scope)}
 }
 

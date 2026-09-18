@@ -19,10 +19,19 @@ func NewMockReconnectRepository(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockReconnectRepository {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockReconnectRepository{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -83,7 +92,7 @@ type MockReconnectRepository_CommitMutation_Call struct {
 //   - ctx context.Context
 //   - expectedRevision int64
 //   - record reconnect.ReconnectRecord
-func (_e *MockReconnectRepository_Expecter) CommitMutation(ctx interface{}, expectedRevision interface{}, record interface{}) *MockReconnectRepository_CommitMutation_Call {
+func (_e *MockReconnectRepository_Expecter) CommitMutation(ctx any, expectedRevision any, record any) *MockReconnectRepository_CommitMutation_Call {
 	return &MockReconnectRepository_CommitMutation_Call{Call: _e.mock.On("CommitMutation", ctx, expectedRevision, record)}
 }
 
@@ -157,7 +166,7 @@ type MockReconnectRepository_FindCommand_Call struct {
 //   - ctx context.Context
 //   - tournamentID uuid.UUID
 //   - commandID uuid.UUID
-func (_e *MockReconnectRepository_Expecter) FindCommand(ctx interface{}, tournamentID interface{}, commandID interface{}) *MockReconnectRepository_FindCommand_Call {
+func (_e *MockReconnectRepository_Expecter) FindCommand(ctx any, tournamentID any, commandID any) *MockReconnectRepository_FindCommand_Call {
 	return &MockReconnectRepository_FindCommand_Call{Call: _e.mock.On("FindCommand", ctx, tournamentID, commandID)}
 }
 
@@ -229,7 +238,7 @@ type MockReconnectRepository_LoadAuthority_Call struct {
 //   - ctx context.Context
 //   - scope pause.GraphScope
 //   - participantID uuid.UUID
-func (_e *MockReconnectRepository_Expecter) LoadAuthority(ctx interface{}, scope interface{}, participantID interface{}) *MockReconnectRepository_LoadAuthority_Call {
+func (_e *MockReconnectRepository_Expecter) LoadAuthority(ctx any, scope any, participantID any) *MockReconnectRepository_LoadAuthority_Call {
 	return &MockReconnectRepository_LoadAuthority_Call{Call: _e.mock.On("LoadAuthority", ctx, scope, participantID)}
 }
 

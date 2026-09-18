@@ -10,7 +10,7 @@ Verify the pinned sqlc and Wire binaries without downloading or installing them.
 Options:
   --lock PATH       Tool lock manifest.
   --schema PATH     JSON schema for the manifest.
-  --makefile PATH   Backend Makefile containing the generator version pins.
+  --go-mod PATH     Backend go.mod containing the generator tool directives.
   --bin-dir PATH    Directory containing sqlc and wire. PATH is used by default.
   --archives PATH   Also verify the locked release archives in this directory.
   -h, --help        Show this help.
@@ -21,7 +21,7 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 repo_root="$(cd -- "$script_dir/../.." && pwd -P)"
 lock_path="$repo_root/security/tools/codegen-tools.lock.json"
 schema_path="$repo_root/security/tools/codegen-tools.schema.json"
-makefile_path="$repo_root/backend/Makefile"
+go_mod_path="$repo_root/backend/go.mod"
 bin_dir=""
 archive_dir=""
 
@@ -37,9 +37,9 @@ while (($# > 0)); do
       schema_path="$2"
       shift 2
       ;;
-    --makefile)
-      (($# >= 2)) || { echo "codegen preflight: ERROR: --makefile requires a path" >&2; exit 2; }
-      makefile_path="$2"
+    --go-mod)
+      (($# >= 2)) || { echo "codegen preflight: ERROR: --go-mod requires a path" >&2; exit 2; }
+      go_mod_path="$2"
       shift 2
       ;;
     --bin-dir)
@@ -70,7 +70,7 @@ if [[ -z "$python_bin" ]]; then
   exit 1
 fi
 
-exec "$python_bin" - "$schema_path" "$lock_path" "$makefile_path" "$bin_dir" "$archive_dir" <<'PY'
+exec "$python_bin" - "$schema_path" "$lock_path" "$go_mod_path" "$bin_dir" "$archive_dir" <<'PY'
 from __future__ import annotations
 
 import datetime as dt
@@ -318,21 +318,34 @@ def verify_archive(archive_root: pathlib.Path, tool: dict[str, Any]) -> None:
         fail(f"{tool['name']} archive is invalid: {exc}")
 
 
-def parse_makefile_versions(path_text: str) -> dict[str, str]:
+def parse_go_mod_tool_versions(path_text: str) -> dict[str, str]:
     path = pathlib.Path(path_text)
     if not path.is_file():
-        fail("backend Makefile is not a regular file")
+        fail("backend go.mod is not a regular file")
     text = path.read_text(encoding="utf-8")
+    tools = {
+        "sqlc": (
+            "github.com/sqlc-dev/sqlc",
+            "github.com/sqlc-dev/sqlc/cmd/sqlc",
+        ),
+        "wire": (
+            "github.com/google/wire",
+            "github.com/google/wire/cmd/wire",
+        ),
+    }
     versions: dict[str, str] = {}
-    for variable, tool_name in (("SQLC_VERSION", "sqlc"), ("WIRE_VERSION", "wire")):
-        match = re.search(rf"^{variable}\s*\?=\s*(\S+)\s*$", text, re.MULTILINE)
+    for tool_name, (module_path, command_path) in tools.items():
+        tool_match = re.search(rf"^\s*{re.escape(command_path)}\s*$", text, re.MULTILINE)
+        if tool_match is None:
+            fail(f"backend go.mod does not declare the {tool_name} tool")
+        match = re.search(rf"^\s*{re.escape(module_path)}\s+(v\S+)", text, re.MULTILINE)
         if match is None:
-            fail(f"backend Makefile does not pin {variable}")
+            fail(f"backend go.mod does not require the {tool_name} module")
         versions[tool_name] = match.group(1)
     return versions
 
 
-schema_path, lock_path, makefile_path, bin_dir_text, archive_dir_text = sys.argv[1:]
+schema_path, lock_path, go_mod_path, bin_dir_text, archive_dir_text = sys.argv[1:]
 
 try:
     schema = read_json(schema_path, "schema")
@@ -399,10 +412,10 @@ try:
     if lock["platform"] != {"os": host_os, "arch": host_arch}:
         fail("host platform does not match the lock manifest")
 
-    makefile_versions = parse_makefile_versions(makefile_path)
-    for name, expected_version in makefile_versions.items():
+    go_mod_versions = parse_go_mod_tool_versions(go_mod_path)
+    for name, expected_version in go_mod_versions.items():
         if tools_by_name[name]["version"] != expected_version:
-            fail(f"{name} version does not match backend Makefile")
+            fail(f"{name} version does not match backend go.mod")
 
     go_binary = shutil.which("go")
     if go_binary is None:

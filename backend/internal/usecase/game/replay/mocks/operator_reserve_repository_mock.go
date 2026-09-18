@@ -17,10 +17,19 @@ func NewMockOperatorReserveRepository(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockOperatorReserveRepository {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockOperatorReserveRepository{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -80,7 +89,7 @@ type MockOperatorReserveRepository_CommitOperatorReserve_Call struct {
 // CommitOperatorReserve is a helper method to define mock.On call
 //   - ctx context.Context
 //   - record replay.OperatorReserve
-func (_e *MockOperatorReserveRepository_Expecter) CommitOperatorReserve(ctx interface{}, record interface{}) *MockOperatorReserveRepository_CommitOperatorReserve_Call {
+func (_e *MockOperatorReserveRepository_Expecter) CommitOperatorReserve(ctx any, record any) *MockOperatorReserveRepository_CommitOperatorReserve_Call {
 	return &MockOperatorReserveRepository_CommitOperatorReserve_Call{Call: _e.mock.On("CommitOperatorReserve", ctx, record)}
 }
 
@@ -146,7 +155,7 @@ type MockOperatorReserveRepository_LoadOperatorReserveAuthority_Call struct {
 // LoadOperatorReserveAuthority is a helper method to define mock.On call
 //   - ctx context.Context
 //   - scope replay.ReplayReplacementScope
-func (_e *MockOperatorReserveRepository_Expecter) LoadOperatorReserveAuthority(ctx interface{}, scope interface{}) *MockOperatorReserveRepository_LoadOperatorReserveAuthority_Call {
+func (_e *MockOperatorReserveRepository_Expecter) LoadOperatorReserveAuthority(ctx any, scope any) *MockOperatorReserveRepository_LoadOperatorReserveAuthority_Call {
 	return &MockOperatorReserveRepository_LoadOperatorReserveAuthority_Call{Call: _e.mock.On("LoadOperatorReserveAuthority", ctx, scope)}
 }
 

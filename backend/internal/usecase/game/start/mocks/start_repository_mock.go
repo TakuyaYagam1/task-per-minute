@@ -18,10 +18,19 @@ func NewMockStartRepository(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockStartRepository {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockStartRepository{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -81,7 +90,7 @@ type MockStartRepository_CommitWaveStart_Call struct {
 // CommitWaveStart is a helper method to define mock.On call
 //   - ctx context.Context
 //   - record start.StartRecord
-func (_e *MockStartRepository_Expecter) CommitWaveStart(ctx interface{}, record interface{}) *MockStartRepository_CommitWaveStart_Call {
+func (_e *MockStartRepository_Expecter) CommitWaveStart(ctx any, record any) *MockStartRepository_CommitWaveStart_Call {
 	return &MockStartRepository_CommitWaveStart_Call{Call: _e.mock.On("CommitWaveStart", ctx, record)}
 }
 
@@ -147,7 +156,7 @@ type MockStartRepository_LoadWaveStartAuthority_Call struct {
 // LoadWaveStartAuthority is a helper method to define mock.On call
 //   - ctx context.Context
 //   - scope start.StartScope
-func (_e *MockStartRepository_Expecter) LoadWaveStartAuthority(ctx interface{}, scope interface{}) *MockStartRepository_LoadWaveStartAuthority_Call {
+func (_e *MockStartRepository_Expecter) LoadWaveStartAuthority(ctx any, scope any) *MockStartRepository_LoadWaveStartAuthority_Call {
 	return &MockStartRepository_LoadWaveStartAuthority_Call{Call: _e.mock.On("LoadWaveStartAuthority", ctx, scope)}
 }
 
@@ -212,7 +221,7 @@ type MockStartRepository_ReadWaveStartTime_Call struct {
 
 // ReadWaveStartTime is a helper method to define mock.On call
 //   - ctx context.Context
-func (_e *MockStartRepository_Expecter) ReadWaveStartTime(ctx interface{}) *MockStartRepository_ReadWaveStartTime_Call {
+func (_e *MockStartRepository_Expecter) ReadWaveStartTime(ctx any) *MockStartRepository_ReadWaveStartTime_Call {
 	return &MockStartRepository_ReadWaveStartTime_Call{Call: _e.mock.On("ReadWaveStartTime", ctx)}
 }
 

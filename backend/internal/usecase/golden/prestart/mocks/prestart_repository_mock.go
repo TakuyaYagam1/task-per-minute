@@ -18,10 +18,19 @@ func NewMockPrestartRepository(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockPrestartRepository {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockPrestartRepository{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -81,7 +90,7 @@ type MockPrestartRepository_CommitRetainedGoldenPrestart_Call struct {
 // CommitRetainedGoldenPrestart is a helper method to define mock.On call
 //   - ctx context.Context
 //   - commit golden.RetainedGoldenPrestartCommit
-func (_e *MockPrestartRepository_Expecter) CommitRetainedGoldenPrestart(ctx interface{}, commit interface{}) *MockPrestartRepository_CommitRetainedGoldenPrestart_Call {
+func (_e *MockPrestartRepository_Expecter) CommitRetainedGoldenPrestart(ctx any, commit any) *MockPrestartRepository_CommitRetainedGoldenPrestart_Call {
 	return &MockPrestartRepository_CommitRetainedGoldenPrestart_Call{Call: _e.mock.On("CommitRetainedGoldenPrestart", ctx, commit)}
 }
 
@@ -150,7 +159,7 @@ type MockPrestartRepository_FindRetainedGoldenPrestartCommand_Call struct {
 //   - ctx context.Context
 //   - tournamentID uuid.UUID
 //   - commandID uuid.UUID
-func (_e *MockPrestartRepository_Expecter) FindRetainedGoldenPrestartCommand(ctx interface{}, tournamentID interface{}, commandID interface{}) *MockPrestartRepository_FindRetainedGoldenPrestartCommand_Call {
+func (_e *MockPrestartRepository_Expecter) FindRetainedGoldenPrestartCommand(ctx any, tournamentID any, commandID any) *MockPrestartRepository_FindRetainedGoldenPrestartCommand_Call {
 	return &MockPrestartRepository_FindRetainedGoldenPrestartCommand_Call{Call: _e.mock.On("FindRetainedGoldenPrestartCommand", ctx, tournamentID, commandID)}
 }
 
@@ -221,7 +230,7 @@ type MockPrestartRepository_LoadRetainedGoldenPrestartAuthority_Call struct {
 // LoadRetainedGoldenPrestartAuthority is a helper method to define mock.On call
 //   - ctx context.Context
 //   - scope golden.GoldenStateScope
-func (_e *MockPrestartRepository_Expecter) LoadRetainedGoldenPrestartAuthority(ctx interface{}, scope interface{}) *MockPrestartRepository_LoadRetainedGoldenPrestartAuthority_Call {
+func (_e *MockPrestartRepository_Expecter) LoadRetainedGoldenPrestartAuthority(ctx any, scope any) *MockPrestartRepository_LoadRetainedGoldenPrestartAuthority_Call {
 	return &MockPrestartRepository_LoadRetainedGoldenPrestartAuthority_Call{Call: _e.mock.On("LoadRetainedGoldenPrestartAuthority", ctx, scope)}
 }
 

@@ -7,7 +7,7 @@ package mocks
 import (
 	"context"
 
-	gameclose "github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/close"
+	"github.com/TakuyaYagam1/task-per-minute/internal/usecase/game/close"
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -17,10 +17,19 @@ func NewMockCloseRepository(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockCloseRepository {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockCloseRepository{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -80,7 +89,7 @@ type MockCloseRepository_CommitClosure_Call struct {
 // CommitClosure is a helper method to define mock.On call
 //   - ctx context.Context
 //   - closure gameclose.Closure
-func (_e *MockCloseRepository_Expecter) CommitClosure(ctx interface{}, closure interface{}) *MockCloseRepository_CommitClosure_Call {
+func (_e *MockCloseRepository_Expecter) CommitClosure(ctx any, closure any) *MockCloseRepository_CommitClosure_Call {
 	return &MockCloseRepository_CommitClosure_Call{Call: _e.mock.On("CommitClosure", ctx, closure)}
 }
 
@@ -146,7 +155,7 @@ type MockCloseRepository_LoadCloseAuthority_Call struct {
 // LoadCloseAuthority is a helper method to define mock.On call
 //   - ctx context.Context
 //   - scope gameclose.CloseScope
-func (_e *MockCloseRepository_Expecter) LoadCloseAuthority(ctx interface{}, scope interface{}) *MockCloseRepository_LoadCloseAuthority_Call {
+func (_e *MockCloseRepository_Expecter) LoadCloseAuthority(ctx any, scope any) *MockCloseRepository_LoadCloseAuthority_Call {
 	return &MockCloseRepository_LoadCloseAuthority_Call{Call: _e.mock.On("LoadCloseAuthority", ctx, scope)}
 }
 

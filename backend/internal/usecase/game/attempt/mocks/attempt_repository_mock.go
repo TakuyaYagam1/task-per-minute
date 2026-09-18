@@ -18,10 +18,19 @@ func NewMockAttemptRepository(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockAttemptRepository {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockAttemptRepository{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -81,7 +90,7 @@ type MockAttemptRepository_CommitFailedAttempt_Call struct {
 // CommitFailedAttempt is a helper method to define mock.On call
 //   - ctx context.Context
 //   - record attempt.AttemptRecord
-func (_e *MockAttemptRepository_Expecter) CommitFailedAttempt(ctx interface{}, record interface{}) *MockAttemptRepository_CommitFailedAttempt_Call {
+func (_e *MockAttemptRepository_Expecter) CommitFailedAttempt(ctx any, record any) *MockAttemptRepository_CommitFailedAttempt_Call {
 	return &MockAttemptRepository_CommitFailedAttempt_Call{Call: _e.mock.On("CommitFailedAttempt", ctx, record)}
 }
 
@@ -147,7 +156,7 @@ type MockAttemptRepository_LoadFailedAttemptAuthority_Call struct {
 // LoadFailedAttemptAuthority is a helper method to define mock.On call
 //   - ctx context.Context
 //   - scope domain.FailedAttemptScope
-func (_e *MockAttemptRepository_Expecter) LoadFailedAttemptAuthority(ctx interface{}, scope interface{}) *MockAttemptRepository_LoadFailedAttemptAuthority_Call {
+func (_e *MockAttemptRepository_Expecter) LoadFailedAttemptAuthority(ctx any, scope any) *MockAttemptRepository_LoadFailedAttemptAuthority_Call {
 	return &MockAttemptRepository_LoadFailedAttemptAuthority_Call{Call: _e.mock.On("LoadFailedAttemptAuthority", ctx, scope)}
 }
 

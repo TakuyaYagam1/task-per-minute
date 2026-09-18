@@ -17,10 +17,19 @@ func NewMockReplayReserveExhaustionRepository(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockReplayReserveExhaustionRepository {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockReplayReserveExhaustionRepository{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -80,7 +89,7 @@ type MockReplayReserveExhaustionRepository_CommitReplayReserveExhaustion_Call st
 // CommitReplayReserveExhaustion is a helper method to define mock.On call
 //   - ctx context.Context
 //   - record replay.ReplayReserveExhaustion
-func (_e *MockReplayReserveExhaustionRepository_Expecter) CommitReplayReserveExhaustion(ctx interface{}, record interface{}) *MockReplayReserveExhaustionRepository_CommitReplayReserveExhaustion_Call {
+func (_e *MockReplayReserveExhaustionRepository_Expecter) CommitReplayReserveExhaustion(ctx any, record any) *MockReplayReserveExhaustionRepository_CommitReplayReserveExhaustion_Call {
 	return &MockReplayReserveExhaustionRepository_CommitReplayReserveExhaustion_Call{Call: _e.mock.On("CommitReplayReserveExhaustion", ctx, record)}
 }
 
@@ -146,7 +155,7 @@ type MockReplayReserveExhaustionRepository_LoadReplayReserveExhaustionAuthority_
 // LoadReplayReserveExhaustionAuthority is a helper method to define mock.On call
 //   - ctx context.Context
 //   - scope replay.ReplayReplacementScope
-func (_e *MockReplayReserveExhaustionRepository_Expecter) LoadReplayReserveExhaustionAuthority(ctx interface{}, scope interface{}) *MockReplayReserveExhaustionRepository_LoadReplayReserveExhaustionAuthority_Call {
+func (_e *MockReplayReserveExhaustionRepository_Expecter) LoadReplayReserveExhaustionAuthority(ctx any, scope any) *MockReplayReserveExhaustionRepository_LoadReplayReserveExhaustionAuthority_Call {
 	return &MockReplayReserveExhaustionRepository_LoadReplayReserveExhaustionAuthority_Call{Call: _e.mock.On("LoadReplayReserveExhaustionAuthority", ctx, scope)}
 }
 

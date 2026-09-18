@@ -18,10 +18,19 @@ func NewMockNoShowRepository(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockNoShowRepository {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockNoShowRepository{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -81,7 +90,7 @@ type MockNoShowRepository_CommitNormalNoShow_Call struct {
 // CommitNormalNoShow is a helper method to define mock.On call
 //   - ctx context.Context
 //   - resolution noshow.NoShowResolution
-func (_e *MockNoShowRepository_Expecter) CommitNormalNoShow(ctx interface{}, resolution interface{}) *MockNoShowRepository_CommitNormalNoShow_Call {
+func (_e *MockNoShowRepository_Expecter) CommitNormalNoShow(ctx any, resolution any) *MockNoShowRepository_CommitNormalNoShow_Call {
 	return &MockNoShowRepository_CommitNormalNoShow_Call{Call: _e.mock.On("CommitNormalNoShow", ctx, resolution)}
 }
 
@@ -147,7 +156,7 @@ type MockNoShowRepository_LoadNormalNoShowAuthority_Call struct {
 // LoadNormalNoShowAuthority is a helper method to define mock.On call
 //   - ctx context.Context
 //   - scope domain.NormalNoShowScope
-func (_e *MockNoShowRepository_Expecter) LoadNormalNoShowAuthority(ctx interface{}, scope interface{}) *MockNoShowRepository_LoadNormalNoShowAuthority_Call {
+func (_e *MockNoShowRepository_Expecter) LoadNormalNoShowAuthority(ctx any, scope any) *MockNoShowRepository_LoadNormalNoShowAuthority_Call {
 	return &MockNoShowRepository_LoadNormalNoShowAuthority_Call{Call: _e.mock.On("LoadNormalNoShowAuthority", ctx, scope)}
 }
 

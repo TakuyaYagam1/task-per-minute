@@ -17,10 +17,19 @@ func NewMockDeadlineRearmer(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockDeadlineRearmer {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockDeadlineRearmer{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -63,7 +72,7 @@ type MockDeadlineRearmer_RearmDeadline_Call struct {
 // RearmDeadline is a helper method to define mock.On call
 //   - ctx context.Context
 //   - arm recovery.DeadlineArm
-func (_e *MockDeadlineRearmer_Expecter) RearmDeadline(ctx interface{}, arm interface{}) *MockDeadlineRearmer_RearmDeadline_Call {
+func (_e *MockDeadlineRearmer_Expecter) RearmDeadline(ctx any, arm any) *MockDeadlineRearmer_RearmDeadline_Call {
 	return &MockDeadlineRearmer_RearmDeadline_Call{Call: _e.mock.On("RearmDeadline", ctx, arm)}
 }
 

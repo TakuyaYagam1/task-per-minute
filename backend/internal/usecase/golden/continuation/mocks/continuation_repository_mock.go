@@ -18,10 +18,19 @@ func NewMockContinuationRepository(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockContinuationRepository {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockContinuationRepository{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -81,7 +90,7 @@ type MockContinuationRepository_CommitGoldenContinuation_Call struct {
 // CommitGoldenContinuation is a helper method to define mock.On call
 //   - ctx context.Context
 //   - record golden.GoldenContinuationRecord
-func (_e *MockContinuationRepository_Expecter) CommitGoldenContinuation(ctx interface{}, record interface{}) *MockContinuationRepository_CommitGoldenContinuation_Call {
+func (_e *MockContinuationRepository_Expecter) CommitGoldenContinuation(ctx any, record any) *MockContinuationRepository_CommitGoldenContinuation_Call {
 	return &MockContinuationRepository_CommitGoldenContinuation_Call{Call: _e.mock.On("CommitGoldenContinuation", ctx, record)}
 }
 
@@ -150,7 +159,7 @@ type MockContinuationRepository_FindGoldenContinuation_Call struct {
 //   - ctx context.Context
 //   - tournamentID uuid.UUID
 //   - commandID uuid.UUID
-func (_e *MockContinuationRepository_Expecter) FindGoldenContinuation(ctx interface{}, tournamentID interface{}, commandID interface{}) *MockContinuationRepository_FindGoldenContinuation_Call {
+func (_e *MockContinuationRepository_Expecter) FindGoldenContinuation(ctx any, tournamentID any, commandID any) *MockContinuationRepository_FindGoldenContinuation_Call {
 	return &MockContinuationRepository_FindGoldenContinuation_Call{Call: _e.mock.On("FindGoldenContinuation", ctx, tournamentID, commandID)}
 }
 
@@ -221,7 +230,7 @@ type MockContinuationRepository_LoadGoldenContinuationAuthority_Call struct {
 // LoadGoldenContinuationAuthority is a helper method to define mock.On call
 //   - ctx context.Context
 //   - scope golden.GoldenStateScope
-func (_e *MockContinuationRepository_Expecter) LoadGoldenContinuationAuthority(ctx interface{}, scope interface{}) *MockContinuationRepository_LoadGoldenContinuationAuthority_Call {
+func (_e *MockContinuationRepository_Expecter) LoadGoldenContinuationAuthority(ctx any, scope any) *MockContinuationRepository_LoadGoldenContinuationAuthority_Call {
 	return &MockContinuationRepository_LoadGoldenContinuationAuthority_Call{Call: _e.mock.On("LoadGoldenContinuationAuthority", ctx, scope)}
 }
 

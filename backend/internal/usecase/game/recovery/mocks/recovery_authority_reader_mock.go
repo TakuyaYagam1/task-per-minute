@@ -18,10 +18,19 @@ func NewMockRecoveryAuthorityReader(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockRecoveryAuthorityReader {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockRecoveryAuthorityReader{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -75,7 +84,7 @@ type MockRecoveryAuthorityReader_LoadAuthority_Call struct {
 // LoadAuthority is a helper method to define mock.On call
 //   - ctx context.Context
 //   - tournamentID uuid.UUID
-func (_e *MockRecoveryAuthorityReader_Expecter) LoadAuthority(ctx interface{}, tournamentID interface{}) *MockRecoveryAuthorityReader_LoadAuthority_Call {
+func (_e *MockRecoveryAuthorityReader_Expecter) LoadAuthority(ctx any, tournamentID any) *MockRecoveryAuthorityReader_LoadAuthority_Call {
 	return &MockRecoveryAuthorityReader_LoadAuthority_Call{Call: _e.mock.On("LoadAuthority", ctx, tournamentID)}
 }
 

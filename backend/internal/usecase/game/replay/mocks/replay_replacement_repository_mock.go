@@ -17,10 +17,19 @@ func NewMockReplayReplacementRepository(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockReplayReplacementRepository {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockReplayReplacementRepository{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -80,7 +89,7 @@ type MockReplayReplacementRepository_CommitReplayReplacement_Call struct {
 // CommitReplayReplacement is a helper method to define mock.On call
 //   - ctx context.Context
 //   - replacement replay.ReplayReplacement
-func (_e *MockReplayReplacementRepository_Expecter) CommitReplayReplacement(ctx interface{}, replacement interface{}) *MockReplayReplacementRepository_CommitReplayReplacement_Call {
+func (_e *MockReplayReplacementRepository_Expecter) CommitReplayReplacement(ctx any, replacement any) *MockReplayReplacementRepository_CommitReplayReplacement_Call {
 	return &MockReplayReplacementRepository_CommitReplayReplacement_Call{Call: _e.mock.On("CommitReplayReplacement", ctx, replacement)}
 }
 
@@ -146,7 +155,7 @@ type MockReplayReplacementRepository_LoadReplayReplacementAuthority_Call struct 
 // LoadReplayReplacementAuthority is a helper method to define mock.On call
 //   - ctx context.Context
 //   - scope replay.ReplayReplacementScope
-func (_e *MockReplayReplacementRepository_Expecter) LoadReplayReplacementAuthority(ctx interface{}, scope interface{}) *MockReplayReplacementRepository_LoadReplayReplacementAuthority_Call {
+func (_e *MockReplayReplacementRepository_Expecter) LoadReplayReplacementAuthority(ctx any, scope any) *MockReplayReplacementRepository_LoadReplayReplacementAuthority_Call {
 	return &MockReplayReplacementRepository_LoadReplayReplacementAuthority_Call{Call: _e.mock.On("LoadReplayReplacementAuthority", ctx, scope)}
 }
 

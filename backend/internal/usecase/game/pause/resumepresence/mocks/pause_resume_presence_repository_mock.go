@@ -19,10 +19,19 @@ func NewMockPauseResumePresenceRepository(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockPauseResumePresenceRepository {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockPauseResumePresenceRepository{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -83,7 +92,7 @@ type MockPauseResumePresenceRepository_CommitPauseResumePresence_Call struct {
 //   - ctx context.Context
 //   - expected resumepresence.PauseResumePresenceExpectation
 //   - record resumepresence.PauseResumePresenceRecord
-func (_e *MockPauseResumePresenceRepository_Expecter) CommitPauseResumePresence(ctx interface{}, expected interface{}, record interface{}) *MockPauseResumePresenceRepository_CommitPauseResumePresence_Call {
+func (_e *MockPauseResumePresenceRepository_Expecter) CommitPauseResumePresence(ctx any, expected any, record any) *MockPauseResumePresenceRepository_CommitPauseResumePresence_Call {
 	return &MockPauseResumePresenceRepository_CommitPauseResumePresence_Call{Call: _e.mock.On("CommitPauseResumePresence", ctx, expected, record)}
 }
 
@@ -157,7 +166,7 @@ type MockPauseResumePresenceRepository_FindPauseResumePresenceCommand_Call struc
 //   - ctx context.Context
 //   - tournamentID uuid.UUID
 //   - commandID uuid.UUID
-func (_e *MockPauseResumePresenceRepository_Expecter) FindPauseResumePresenceCommand(ctx interface{}, tournamentID interface{}, commandID interface{}) *MockPauseResumePresenceRepository_FindPauseResumePresenceCommand_Call {
+func (_e *MockPauseResumePresenceRepository_Expecter) FindPauseResumePresenceCommand(ctx any, tournamentID any, commandID any) *MockPauseResumePresenceRepository_FindPauseResumePresenceCommand_Call {
 	return &MockPauseResumePresenceRepository_FindPauseResumePresenceCommand_Call{Call: _e.mock.On("FindPauseResumePresenceCommand", ctx, tournamentID, commandID)}
 }
 
@@ -231,7 +240,7 @@ type MockPauseResumePresenceRepository_LoadPauseResumePresenceAuthority_Call str
 //   - normalPauseID uuid.UUID
 //   - seriesPauseID uuid.UUID
 //   - gamePauseID uuid.UUID
-func (_e *MockPauseResumePresenceRepository_Expecter) LoadPauseResumePresenceAuthority(ctx interface{}, scope interface{}, normalPauseID interface{}, seriesPauseID interface{}, gamePauseID interface{}) *MockPauseResumePresenceRepository_LoadPauseResumePresenceAuthority_Call {
+func (_e *MockPauseResumePresenceRepository_Expecter) LoadPauseResumePresenceAuthority(ctx any, scope any, normalPauseID any, seriesPauseID any, gamePauseID any) *MockPauseResumePresenceRepository_LoadPauseResumePresenceAuthority_Call {
 	return &MockPauseResumePresenceRepository_LoadPauseResumePresenceAuthority_Call{Call: _e.mock.On("LoadPauseResumePresenceAuthority", ctx, scope, normalPauseID, seriesPauseID, gamePauseID)}
 }
 

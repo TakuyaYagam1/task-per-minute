@@ -19,10 +19,19 @@ func NewMockEpochReplayRepository(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockEpochReplayRepository {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockEpochReplayRepository{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -83,7 +92,7 @@ type MockEpochReplayRepository_CommitEpochReplay_Call struct {
 //   - ctx context.Context
 //   - condition recovery.EpochReplayCommitCondition
 //   - record recovery.EpochReplayRecord
-func (_e *MockEpochReplayRepository_Expecter) CommitEpochReplay(ctx interface{}, condition interface{}, record interface{}) *MockEpochReplayRepository_CommitEpochReplay_Call {
+func (_e *MockEpochReplayRepository_Expecter) CommitEpochReplay(ctx any, condition any, record any) *MockEpochReplayRepository_CommitEpochReplay_Call {
 	return &MockEpochReplayRepository_CommitEpochReplay_Call{Call: _e.mock.On("CommitEpochReplay", ctx, condition, record)}
 }
 
@@ -156,7 +165,7 @@ type MockEpochReplayRepository_FindEpochReplay_Call struct {
 // FindEpochReplay is a helper method to define mock.On call
 //   - ctx context.Context
 //   - scope domain.FailedAttemptScope
-func (_e *MockEpochReplayRepository_Expecter) FindEpochReplay(ctx interface{}, scope interface{}) *MockEpochReplayRepository_FindEpochReplay_Call {
+func (_e *MockEpochReplayRepository_Expecter) FindEpochReplay(ctx any, scope any) *MockEpochReplayRepository_FindEpochReplay_Call {
 	return &MockEpochReplayRepository_FindEpochReplay_Call{Call: _e.mock.On("FindEpochReplay", ctx, scope)}
 }
 
@@ -223,7 +232,7 @@ type MockEpochReplayRepository_LoadEpochReplayAuthority_Call struct {
 //   - ctx context.Context
 //   - scope domain.FailedAttemptScope
 //   - rosterID uuid.UUID
-func (_e *MockEpochReplayRepository_Expecter) LoadEpochReplayAuthority(ctx interface{}, scope interface{}, rosterID interface{}) *MockEpochReplayRepository_LoadEpochReplayAuthority_Call {
+func (_e *MockEpochReplayRepository_Expecter) LoadEpochReplayAuthority(ctx any, scope any, rosterID any) *MockEpochReplayRepository_LoadEpochReplayAuthority_Call {
 	return &MockEpochReplayRepository_LoadEpochReplayAuthority_Call{Call: _e.mock.On("LoadEpochReplayAuthority", ctx, scope, rosterID)}
 }
 

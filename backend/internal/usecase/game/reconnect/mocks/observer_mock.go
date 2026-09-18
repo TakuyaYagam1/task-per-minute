@@ -17,10 +17,19 @@ func NewMockObserver(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockObserver {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockObserver{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -52,7 +61,7 @@ type MockObserver_Observe_Call struct {
 // Observe is a helper method to define mock.On call
 //   - ctx context.Context
 //   - event reconnect.ReconnectEvent
-func (_e *MockObserver_Expecter) Observe(ctx interface{}, event interface{}) *MockObserver_Observe_Call {
+func (_e *MockObserver_Expecter) Observe(ctx any, event any) *MockObserver_Observe_Call {
 	return &MockObserver_Observe_Call{Call: _e.mock.On("Observe", ctx, event)}
 }
 

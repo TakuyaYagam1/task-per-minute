@@ -17,10 +17,19 @@ func NewMockForfeitRepository(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockForfeitRepository {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockForfeitRepository{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -80,7 +89,7 @@ type MockForfeitRepository_CommitForfeitResolution_Call struct {
 // CommitForfeitResolution is a helper method to define mock.On call
 //   - ctx context.Context
 //   - resolution forfeit.ForfeitResolution
-func (_e *MockForfeitRepository_Expecter) CommitForfeitResolution(ctx interface{}, resolution interface{}) *MockForfeitRepository_CommitForfeitResolution_Call {
+func (_e *MockForfeitRepository_Expecter) CommitForfeitResolution(ctx any, resolution any) *MockForfeitRepository_CommitForfeitResolution_Call {
 	return &MockForfeitRepository_CommitForfeitResolution_Call{Call: _e.mock.On("CommitForfeitResolution", ctx, resolution)}
 }
 
@@ -146,7 +155,7 @@ type MockForfeitRepository_LoadForfeitAuthority_Call struct {
 // LoadForfeitAuthority is a helper method to define mock.On call
 //   - ctx context.Context
 //   - scope forfeit.Scope
-func (_e *MockForfeitRepository_Expecter) LoadForfeitAuthority(ctx interface{}, scope interface{}) *MockForfeitRepository_LoadForfeitAuthority_Call {
+func (_e *MockForfeitRepository_Expecter) LoadForfeitAuthority(ctx any, scope any) *MockForfeitRepository_LoadForfeitAuthority_Call {
 	return &MockForfeitRepository_LoadForfeitAuthority_Call{Call: _e.mock.On("LoadForfeitAuthority", ctx, scope)}
 }
 

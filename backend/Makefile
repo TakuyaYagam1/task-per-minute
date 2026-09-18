@@ -1,19 +1,11 @@
 SHELL := /usr/bin/env bash
 .DEFAULT_GOAL := help
 
-# Pinned tool versions - keep in sync with codegen configs.
-GOOSE_VERSION   ?= v3.28.0
-SQLC_VERSION    ?= v1.31.1
-MOCKERY_VERSION ?= v3.5.5
-WIRE_VERSION    ?= v0.7.0
-
-TOOLS_DIR  ?= $(CURDIR)/.cache/tools
-SQLC       := $(TOOLS_DIR)/sqlc
-SQLC_STAMP := $(TOOLS_DIR)/sqlc-$(SQLC_VERSION).stamp
-
-GOOSE   := go run github.com/pressly/goose/v3/cmd/goose@$(GOOSE_VERSION)
-MOCKERY := go run github.com/vektra/mockery/v3@$(MOCKERY_VERSION)
-WIRE    := go run github.com/google/wire/cmd/wire@$(WIRE_VERSION)
+GOOSE          := go tool goose
+SQLC           := go tool sqlc
+MOCKERY        := go tool mockery
+WIRE           := go tool wire
+GOLANGCI_LINT  := go tool golangci-lint
 
 DB_DSN ?= postgres://tpm:tpm@localhost:5432/task_per_minute?sslmode=disable
 MIGRATIONS_DIR := db/migrations
@@ -23,7 +15,6 @@ QUALITY_PYTHON ?= $(QUALITY_VENV)/bin/python
 QUALITY_PY_DEPS_STAMP ?= $(QUALITY_VENV)/.deps.stamp
 BOOTSTRAP_PYTHON ?= python3
 PYTHON ?= $(QUALITY_PYTHON)
-GO_LINT_CACHE := $(CURDIR)/.cache/golangci-lint
 
 ##@ Build & run
 
@@ -50,16 +41,12 @@ clean: ## Remove build artefacts and generated mocks
 .PHONY: gen generate
 gen generate: gen-openapi gen-sqlc gen-wire mocks ## Run all code generators
 
-.PHONY: install-tools
-install-tools: $(SQLC_STAMP) ## Install pinned project-local generator binaries
+.PHONY: deps
+deps: ## Download application and Go tool modules from go.mod
+	go mod download
 
-$(SQLC_STAMP):
-	@mkdir -p "$(TOOLS_DIR)"
-	GOBIN="$(TOOLS_DIR)" go install github.com/sqlc-dev/sqlc/cmd/sqlc@$(SQLC_VERSION)
-	@actual="$$($(SQLC) version)"; test "$$actual" = "$(SQLC_VERSION)" || { \
-		echo "sqlc: expected $(SQLC_VERSION), got $$actual"; exit 1; \
-	}
-	@touch "$@"
+.PHONY: install-tools
+install-tools: deps ## Compatibility alias for module-managed Go tools
 
 .PHONY: gen-openapi openapi
 gen-openapi openapi: $(QUALITY_PY_DEPS_STAMP) ## Merge OpenAPI components, run oapi-codegen, cleanup intermediate files
@@ -69,14 +56,9 @@ gen-openapi openapi: $(QUALITY_PY_DEPS_STAMP) ## Merge OpenAPI components, run o
 test-openapi: $(QUALITY_PY_DEPS_STAMP) ## Run OpenAPI generator and contract toolchain tests
 	PYTHON="$(PYTHON)" bash scripts/openapi-generate_test.sh
 
-.PHONY: gen-sqlc check-sqlc
-gen-sqlc: check-sqlc ## Generate type-safe SQL code from db/queries/
+.PHONY: gen-sqlc
+gen-sqlc: ## Generate type-safe SQL code from db/queries/
 	$(SQLC) generate -f codegen/sqlc.yaml
-
-check-sqlc: $(SQLC_STAMP) ## Verify the pinned project-local sqlc binary
-	@actual="$$($(SQLC) version)"; test "$$actual" = "$(SQLC_VERSION)" || { \
-		echo "sqlc: expected $(SQLC_VERSION), got $$actual"; exit 1; \
-	}
 
 .PHONY: gen-wire
 gen-wire: ## Generate compile-time DI graph
@@ -112,7 +94,7 @@ lint: ## Run Go and SQL linters, reporting failures from both
 	if [ "$$go_status" -ne 0 ] || [ "$$sql_status" -ne 0 ]; then exit 1; fi
 
 lint-go: ## Run golangci-lint
-	GOLANGCI_LINT_CACHE="$(GO_LINT_CACHE)" golangci-lint run ./...
+	$(GOLANGCI_LINT) run ./...
 
 .PHONY: lint-fix lint-go-fix
 lint-fix: ## Auto-fix Go and SQL queries, reporting failures from both
@@ -122,7 +104,7 @@ lint-fix: ## Auto-fix Go and SQL queries, reporting failures from both
 	if [ "$$go_status" -ne 0 ] || [ "$$sql_status" -ne 0 ]; then exit 1; fi
 
 lint-go-fix: ## Auto-fix Go lint findings
-	GOLANGCI_LINT_CACHE="$(GO_LINT_CACHE)" golangci-lint run --fix ./...
+	$(GOLANGCI_LINT) run --fix ./...
 
 .PHONY: lint-sql
 lint-sql: install-quality-python-deps ## Lint migrations and sqlc queries
@@ -136,7 +118,7 @@ lint-sql-fix: install-quality-python-deps ## Auto-fix queries, then lint queries
 
 .PHONY: fmt
 fmt: ## golangci-lint fmt
-	golangci-lint fmt ./...
+	$(GOLANGCI_LINT) fmt ./...
 
 .PHONY: test
 test: test-migration-create ## Unit tests with race detector (skips integration_test/)

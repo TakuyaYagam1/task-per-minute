@@ -17,10 +17,19 @@ func NewMockRecoveryObserver(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockRecoveryObserver {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockRecoveryObserver{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -52,7 +61,7 @@ type MockRecoveryObserver_ObserveExecutionRecovery_Call struct {
 // ObserveExecutionRecovery is a helper method to define mock.On call
 //   - ctx context.Context
 //   - event recovery.RecoveryEvent
-func (_e *MockRecoveryObserver_Expecter) ObserveExecutionRecovery(ctx interface{}, event interface{}) *MockRecoveryObserver_ObserveExecutionRecovery_Call {
+func (_e *MockRecoveryObserver_Expecter) ObserveExecutionRecovery(ctx any, event any) *MockRecoveryObserver_ObserveExecutionRecovery_Call {
 	return &MockRecoveryObserver_ObserveExecutionRecovery_Call{Call: _e.mock.On("ObserveExecutionRecovery", ctx, event)}
 }
 

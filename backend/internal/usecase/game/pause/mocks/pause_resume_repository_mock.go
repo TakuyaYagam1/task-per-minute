@@ -19,10 +19,19 @@ func NewMockPauseResumeRepository(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockPauseResumeRepository {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockPauseResumeRepository{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -83,7 +92,7 @@ type MockPauseResumeRepository_CommitPauseResume_Call struct {
 //   - ctx context.Context
 //   - expected pause.PauseResumeExpectation
 //   - record pause.PauseResumeRecord
-func (_e *MockPauseResumeRepository_Expecter) CommitPauseResume(ctx interface{}, expected interface{}, record interface{}) *MockPauseResumeRepository_CommitPauseResume_Call {
+func (_e *MockPauseResumeRepository_Expecter) CommitPauseResume(ctx any, expected any, record any) *MockPauseResumeRepository_CommitPauseResume_Call {
 	return &MockPauseResumeRepository_CommitPauseResume_Call{Call: _e.mock.On("CommitPauseResume", ctx, expected, record)}
 }
 
@@ -110,8 +119,8 @@ func (_c *MockPauseResumeRepository_CommitPauseResume_Call) Run(run func(ctx con
 	return _c
 }
 
-func (_c *MockPauseResumeRepository_CommitPauseResume_Call) Return(v *pause.PauseResumeRecord, b bool, err error) *MockPauseResumeRepository_CommitPauseResume_Call {
-	_c.Call.Return(v, b, err)
+func (_c *MockPauseResumeRepository_CommitPauseResume_Call) Return(pauseResumeRecord *pause.PauseResumeRecord, b bool, err error) *MockPauseResumeRepository_CommitPauseResume_Call {
+	_c.Call.Return(pauseResumeRecord, b, err)
 	return _c
 }
 
@@ -157,7 +166,7 @@ type MockPauseResumeRepository_FindPauseResumeCommand_Call struct {
 //   - ctx context.Context
 //   - tournamentID uuid.UUID
 //   - commandID uuid.UUID
-func (_e *MockPauseResumeRepository_Expecter) FindPauseResumeCommand(ctx interface{}, tournamentID interface{}, commandID interface{}) *MockPauseResumeRepository_FindPauseResumeCommand_Call {
+func (_e *MockPauseResumeRepository_Expecter) FindPauseResumeCommand(ctx any, tournamentID any, commandID any) *MockPauseResumeRepository_FindPauseResumeCommand_Call {
 	return &MockPauseResumeRepository_FindPauseResumeCommand_Call{Call: _e.mock.On("FindPauseResumeCommand", ctx, tournamentID, commandID)}
 }
 
@@ -184,8 +193,8 @@ func (_c *MockPauseResumeRepository_FindPauseResumeCommand_Call) Run(run func(ct
 	return _c
 }
 
-func (_c *MockPauseResumeRepository_FindPauseResumeCommand_Call) Return(v *pause.PauseResumeRecord, err error) *MockPauseResumeRepository_FindPauseResumeCommand_Call {
-	_c.Call.Return(v, err)
+func (_c *MockPauseResumeRepository_FindPauseResumeCommand_Call) Return(pauseResumeRecord *pause.PauseResumeRecord, err error) *MockPauseResumeRepository_FindPauseResumeCommand_Call {
+	_c.Call.Return(pauseResumeRecord, err)
 	return _c
 }
 
@@ -229,7 +238,7 @@ type MockPauseResumeRepository_LoadPauseResumeAuthority_Call struct {
 //   - ctx context.Context
 //   - scope pause0.GraphScope
 //   - pauseID uuid.UUID
-func (_e *MockPauseResumeRepository_Expecter) LoadPauseResumeAuthority(ctx interface{}, scope interface{}, pauseID interface{}) *MockPauseResumeRepository_LoadPauseResumeAuthority_Call {
+func (_e *MockPauseResumeRepository_Expecter) LoadPauseResumeAuthority(ctx any, scope any, pauseID any) *MockPauseResumeRepository_LoadPauseResumeAuthority_Call {
 	return &MockPauseResumeRepository_LoadPauseResumeAuthority_Call{Call: _e.mock.On("LoadPauseResumeAuthority", ctx, scope, pauseID)}
 }
 
@@ -256,8 +265,8 @@ func (_c *MockPauseResumeRepository_LoadPauseResumeAuthority_Call) Run(run func(
 	return _c
 }
 
-func (_c *MockPauseResumeRepository_LoadPauseResumeAuthority_Call) Return(v pause.PauseResumeAuthority, err error) *MockPauseResumeRepository_LoadPauseResumeAuthority_Call {
-	_c.Call.Return(v, err)
+func (_c *MockPauseResumeRepository_LoadPauseResumeAuthority_Call) Return(pauseResumeAuthority pause.PauseResumeAuthority, err error) *MockPauseResumeRepository_LoadPauseResumeAuthority_Call {
+	_c.Call.Return(pauseResumeAuthority, err)
 	return _c
 }
 

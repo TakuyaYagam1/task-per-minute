@@ -19,10 +19,19 @@ func NewMockRecoverySource(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockRecoverySource {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockRecoverySource{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -77,7 +86,7 @@ type MockRecoverySource_ListActiveGames_Call struct {
 //   - ctx context.Context
 //   - tournamentID uuid.UUID
 //   - authority1 authority.Identity
-func (_e *MockRecoverySource_Expecter) ListActiveGames(ctx interface{}, tournamentID interface{}, authority1 interface{}) *MockRecoverySource_ListActiveGames_Call {
+func (_e *MockRecoverySource_Expecter) ListActiveGames(ctx any, tournamentID any, authority1 any) *MockRecoverySource_ListActiveGames_Call {
 	return &MockRecoverySource_ListActiveGames_Call{Call: _e.mock.On("ListActiveGames", ctx, tournamentID, authority1)}
 }
 

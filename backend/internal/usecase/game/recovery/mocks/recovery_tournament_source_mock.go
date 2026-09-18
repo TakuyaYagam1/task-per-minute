@@ -17,10 +17,19 @@ func NewMockRecoveryTournamentSource(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockRecoveryTournamentSource {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockRecoveryTournamentSource{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -73,7 +82,7 @@ type MockRecoveryTournamentSource_ListRecoveryTournaments_Call struct {
 
 // ListRecoveryTournaments is a helper method to define mock.On call
 //   - ctx context.Context
-func (_e *MockRecoveryTournamentSource_Expecter) ListRecoveryTournaments(ctx interface{}) *MockRecoveryTournamentSource_ListRecoveryTournaments_Call {
+func (_e *MockRecoveryTournamentSource_Expecter) ListRecoveryTournaments(ctx any) *MockRecoveryTournamentSource_ListRecoveryTournaments_Call {
 	return &MockRecoveryTournamentSource_ListRecoveryTournaments_Call{Call: _e.mock.On("ListRecoveryTournaments", ctx)}
 }
 

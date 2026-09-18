@@ -17,10 +17,19 @@ func NewMockStateRepository(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockStateRepository {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockStateRepository{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -80,7 +89,7 @@ type MockStateRepository_CommitGoldenState_Call struct {
 // CommitGoldenState is a helper method to define mock.On call
 //   - ctx context.Context
 //   - commit state.GoldenStateCommit
-func (_e *MockStateRepository_Expecter) CommitGoldenState(ctx interface{}, commit interface{}) *MockStateRepository_CommitGoldenState_Call {
+func (_e *MockStateRepository_Expecter) CommitGoldenState(ctx any, commit any) *MockStateRepository_CommitGoldenState_Call {
 	return &MockStateRepository_CommitGoldenState_Call{Call: _e.mock.On("CommitGoldenState", ctx, commit)}
 }
 
@@ -146,7 +155,7 @@ type MockStateRepository_LoadGoldenState_Call struct {
 // LoadGoldenState is a helper method to define mock.On call
 //   - ctx context.Context
 //   - scope state.GoldenStateScope
-func (_e *MockStateRepository_Expecter) LoadGoldenState(ctx interface{}, scope interface{}) *MockStateRepository_LoadGoldenState_Call {
+func (_e *MockStateRepository_Expecter) LoadGoldenState(ctx any, scope any) *MockStateRepository_LoadGoldenState_Call {
 	return &MockStateRepository_LoadGoldenState_Call{Call: _e.mock.On("LoadGoldenState", ctx, scope)}
 }
 

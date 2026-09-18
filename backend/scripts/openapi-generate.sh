@@ -4,7 +4,6 @@ set -euo pipefail
 BACKEND_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPO_ROOT="$(cd "$BACKEND_ROOT/.." && pwd)"
 FRONTEND_ROOT="$REPO_ROOT/frontend"
-TOOLS_ROOT="$BACKEND_ROOT/tools/openapi"
 PYTHON="${PYTHON:-python3}"
 
 fail() {
@@ -115,22 +114,6 @@ then
   fail 'local OpenAPI tools do not match the frontend lock'
 fi
 
-for tool_file in go.mod go.sum tools.go; do
-  [ -f "$TOOLS_ROOT/$tool_file" ] || fail "pinned tools module file not found: $TOOLS_ROOT/$tool_file"
-done
-grep -Fxq 'module task-per-minute/tools/openapi' "$TOOLS_ROOT/go.mod" || fail 'unexpected OpenAPI tools module identity'
-grep -Fxq 'go 1.25.0' "$TOOLS_ROOT/go.mod" || fail 'unexpected OpenAPI tools module Go version'
-grep -Fxq 'require github.com/oapi-codegen/oapi-codegen/v2 v2.8.0' "$TOOLS_ROOT/go.mod" || fail 'oapi-codegen v2.8.0 is not pinned in the tools module'
-if grep -Eq '^(replace|exclude|retract|toolchain)[[:space:]]' "$TOOLS_ROOT/go.mod"; then
-  fail 'OpenAPI tools module contains a source or version override'
-fi
-grep -Fxq 'github.com/oapi-codegen/oapi-codegen/v2 v2.8.0 h1:s4hxMxuqtR8jPzXkBTtFwY/SBuj3gEAYikmbBSdtLMM=' "$TOOLS_ROOT/go.sum" ||
-  fail 'oapi-codegen v2.8.0 module checksum does not match the approved tool'
-grep -Fxq 'github.com/oapi-codegen/oapi-codegen/v2 v2.8.0/go.mod h1:yae2TI9IYB5vxQ35gFrpXh9L5H1eJv4MAUK1jumGMTo=' "$TOOLS_ROOT/go.sum" ||
-  fail 'oapi-codegen v2.8.0 go.mod checksum does not match the approved tool'
-grep -Fxq 'import _ "github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen"' "$TOOLS_ROOT/tools.go" ||
-  fail 'oapi-codegen command identity is not pinned in tools.go'
-
 TMP_BASE="${TMPDIR:-/tmp}"
 [ -d "$TMP_BASE" ] && [ -w "$TMP_BASE" ] || fail "temporary directory is not writable: $TMP_BASE"
 TMP_BASE="$(cd "$TMP_BASE" && pwd -P)"
@@ -147,23 +130,14 @@ trap cleanup EXIT
 cp -R -- "$BACKEND_ROOT/api" "$WORK_DIR/api"
 MERGED_SCHEMAS="$WORK_DIR/api/components/schemas.yml"
 BUNDLE="$WORK_DIR/openapi.bundle.yml"
-OAPI_BIN="$WORK_DIR/oapi-codegen"
 
 "$PYTHON" "$BACKEND_ROOT/scripts/merge-schemas.py" \
   --source-dir "$WORK_DIR/api/components/schemas" \
   --output "$MERGED_SCHEMAS"
 
 if grep -R -En "\\\$ref:[[:space:]].*https?://" "$WORK_DIR/api" >/dev/null; then
-  fail 'remote OpenAPI references are forbidden in offline generation'
+  fail 'remote OpenAPI references are forbidden'
 fi
-
-(
-  cd "$TOOLS_ROOT"
-  GOTOOLCHAIN=local GOPROXY=off GOSUMDB=off GOWORK=off go mod verify
-  GOTOOLCHAIN=local GOPROXY=off GOSUMDB=off GOWORK=off \
-    go build -mod=readonly -trimpath -o "$OAPI_BIN" \
-    github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen
-)
 
 printf 'openapi-generate.sh: bundling local OpenAPI sources\n'
 REDOCLY_TELEMETRY=off NO_UPDATE_NOTIFIER=1 \
@@ -198,7 +172,10 @@ for cfg in "${configs[@]}"; do
   sed "s|^output:[[:space:]]*.*$|output: $staged_output|" "$cfg" >"$staged_config"
 
   printf 'openapi-generate.sh: generating with %s\n' "${cfg#"$BACKEND_ROOT/"}"
-  "$OAPI_BIN" -config "$staged_config" "$BUNDLE"
+  (
+    cd "$BACKEND_ROOT"
+    GOWORK=off go tool oapi-codegen -config "$staged_config" "$BUNDLE"
+  )
   [ -s "$staged_output" ] || fail "oapi-codegen produced no output for ${cfg#"$BACKEND_ROOT/"}"
   staged_go_outputs+=("$staged_output")
   target_go_outputs+=("$target_output")
