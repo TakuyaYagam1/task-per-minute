@@ -1,9 +1,13 @@
 "use client";
 
+import type { ReactNode } from "react";
+
 import type { RoleAwareRecoveryState, TournamentLiveRole } from "../../shared/api";
 import { useServerCountdown } from "./use-server-countdown";
+import { useOperatorTournamentRealtime } from "./use-operator-tournament-realtime";
 import { useTournamentRecovery } from "./use-tournament-recovery";
 import { TournamentLivePanel, type TournamentLiveConnectionStatus } from "./TournamentLivePanel";
+import styles from "./TournamentLivePanel.module.css";
 
 type ArenaLiveRole = TournamentLiveRole | "spectator";
 
@@ -43,18 +47,70 @@ const deadlineFrom = (state: RoleAwareRecoveryState): string | undefined => {
   return undefined;
 };
 
+const operatorPanelStatus = (
+  status: TournamentLiveConnectionStatus,
+  realtimeStatus: ReturnType<typeof useOperatorTournamentRealtime>["status"],
+): TournamentLiveConnectionStatus => {
+  switch (realtimeStatus) {
+    case "connecting":
+    case "reconnecting":
+      return "recovering";
+    case "connected":
+    case "paused":
+      return "live";
+    case "error":
+      return "stale";
+    case "rejected":
+      return "rejected";
+    case "idle":
+      return status;
+  }
+};
+
+const readyMemberCount = (state: ReturnType<typeof useOperatorTournamentRealtime>["state"]): number =>
+  state?.operator.waves.reduce((total, wave) => {
+    const members = Array.isArray(wave.members) ? wave.members : [];
+    return total + members.filter((member) => (
+      typeof member === "object" && member !== null && member.ready === true
+    )).length;
+  }, 0) ?? 0;
+
+const operatorConnectionLabel = (
+  status: ReturnType<typeof useOperatorTournamentRealtime>["status"],
+): string => {
+  switch (status) {
+    case "connecting":
+    case "reconnecting":
+      return "Восстанавливаем";
+    case "connected":
+      return "На связи";
+    case "paused":
+      return "Пауза";
+    case "rejected":
+      return "Доступ отклонен";
+    case "error":
+      return "Данные устарели";
+    case "idle":
+      return "Ожидание";
+  }
+};
+
 type CountdownPanelProps = Readonly<{
   deadline: string;
+  children?: ReactNode;
   receivedAtMonotonicMs?: number;
   recovery: RoleAwareRecoveryState;
+  revision?: number;
   retry: () => void;
   status: TournamentLiveConnectionStatus;
 }>;
 
 const CountdownPanel = ({
   deadline,
+  children,
   receivedAtMonotonicMs,
   recovery,
+  revision,
   retry,
   status,
 }: CountdownPanelProps) => {
@@ -68,10 +124,12 @@ const CountdownPanel = ({
       role={recovery.role}
       status={status}
       tournamentId={recovery.tournamentId}
-      revision={recovery.cursor.projection_revision}
+      revision={revision ?? recovery.cursor.projection_revision}
       countdown={countdown}
       onRetry={retry}
-    />
+    >
+      {children}
+    </TournamentLivePanel>
   );
 };
 
@@ -84,6 +142,54 @@ export const TournamentRecoveryPanel = ({
     liveRole,
     tournamentId,
   );
+  const operatorRealtime = useOperatorTournamentRealtime({
+    enabled: liveRole === "operator",
+    recovery: liveRole === "operator" ? recovery : null,
+    recoveryReceivedAtMonotonicMs: liveRole === "operator"
+      ? receivedAtMonotonicMs
+      : undefined,
+    tournamentId,
+  });
+  const panelStatus = liveRole === "operator"
+    ? operatorPanelStatus(status, operatorRealtime.status)
+    : status;
+  const retryAll = () => {
+    retry();
+  };
+  const panelRevision = operatorRealtime.state?.projectionRevision ??
+    recovery?.cursor.projection_revision;
+  const operatorState = liveRole === "operator" ? (
+    <dl
+      aria-label="Состояние realtime оператора"
+      className={styles.telemetry}
+      data-connection={operatorRealtime.status}
+      data-paused={operatorRealtime.paused ? "true" : "false"}
+      data-projection-revision={operatorRealtime.state?.projectionRevision ?? ""}
+      data-ready={operatorRealtime.ready ? "true" : "false"}
+      data-testid="operator-realtime-summary"
+    >
+      <div>
+        <dt>Соединение</dt>
+        <dd>{operatorConnectionLabel(operatorRealtime.status)}</dd>
+      </div>
+      <div>
+        <dt>Готовы</dt>
+        <dd>{readyMemberCount(operatorRealtime.state)}</dd>
+      </div>
+      <div>
+        <dt>На связи</dt>
+        <dd>{operatorRealtime.state?.operator.presence.length ?? 0}</dd>
+      </div>
+      <div>
+        <dt>Пауза</dt>
+        <dd>{operatorRealtime.paused ? "Да" : "Нет"}</dd>
+      </div>
+      <div>
+        <dt>Ревизия</dt>
+        <dd>{operatorRealtime.state?.projectionRevision ?? recovery?.cursor.projection_revision ?? "-"}</dd>
+      </div>
+    </dl>
+  ) : null;
   const deadline = recovery ? deadlineFrom(recovery) : undefined;
 
   if (recovery && deadline) {
@@ -92,19 +198,24 @@ export const TournamentRecoveryPanel = ({
         deadline={deadline}
         receivedAtMonotonicMs={receivedAtMonotonicMs}
         recovery={recovery}
-        retry={retry}
-        status={status}
-      />
+        revision={panelRevision}
+        retry={retryAll}
+        status={panelStatus}
+      >
+        {operatorState}
+      </CountdownPanel>
     );
   }
 
   return (
     <TournamentLivePanel
       role={liveRole}
-      status={status}
+      status={panelStatus}
       tournamentId={tournamentId}
-      revision={recovery?.cursor.projection_revision}
-      onRetry={recovery || status === "rejected" ? retry : undefined}
-    />
+      revision={panelRevision}
+      onRetry={recovery || panelStatus === "rejected" ? retryAll : undefined}
+    >
+      {operatorState}
+    </TournamentLivePanel>
   );
 };

@@ -10,6 +10,7 @@ import {
   isOperatorRecoverySnapshot,
   isParticipantRecoverySnapshot,
 } from "./guards";
+import { CONFIG } from "../config/app";
 import type { components } from "./schema";
 
 export type PublicRecoveryCursor = components["schemas"]["PublicRecoveryCursor"];
@@ -918,4 +919,215 @@ export const classifyRoleRecoveryError = (
     outcome: "malformed",
     changed: false,
   };
+};
+
+type OperatorProjection = Readonly<{
+  tournament_id: string;
+  revision: number;
+  last_sequence: number;
+  waves: readonly Record<string, unknown>[];
+  presence: readonly Record<string, unknown>[];
+  replays: readonly Record<string, unknown>[];
+  pause?: Record<string, unknown> | null;
+  audit_links: readonly Record<string, unknown>[];
+  golden: readonly Record<string, unknown>[];
+}>;
+
+export type OperatorRealtimeEnvelope = Readonly<{
+  schema_version: 1;
+  tournament_id: string;
+  sequence: number;
+  event_id: string;
+  occurred_at: string;
+  projection_revision: number;
+  resume_id?: string;
+  operator: OperatorProjection;
+}>;
+
+export type OperatorRealtimeState = Readonly<{
+  tournamentId: string;
+  projectionRevision: number;
+  sequence: number;
+  resumeId: string | null;
+  seenEventIds: readonly string[];
+  operator: OperatorProjection;
+}>;
+
+export type OperatorRealtimeApplyResult = Readonly<{
+  state: OperatorRealtimeState;
+  outcome: "applied" | "duplicate" | "out_of_order" | "wrong_tournament";
+}>;
+
+const isOperatorProjection = (value: unknown): value is OperatorProjection => {
+  if (!isRecord(value) || !hasOnlyKeys(value, [
+    "tournament_id",
+    "revision",
+    "last_sequence",
+    "waves",
+    "presence",
+    "replays",
+    "pause",
+    "audit_links",
+    "golden",
+  ])) {
+    return false;
+  }
+  const isRecordList = (candidate: unknown): candidate is Record<string, unknown>[] =>
+    Array.isArray(candidate) && candidate.every(isRecord);
+  return (
+    isUUID(value.tournament_id) &&
+    isPositiveInteger(value.revision) &&
+    isNonNegativeInteger(value.last_sequence) &&
+    isRecordList(value.waves) &&
+    isRecordList(value.presence) &&
+    isRecordList(value.replays) &&
+    (value.pause === undefined || value.pause === null || isRecord(value.pause)) &&
+    isRecordList(value.audit_links) &&
+    isRecordList(value.golden)
+  );
+};
+
+const isOperatorRealtimeEnvelope = (
+  value: unknown,
+): value is OperatorRealtimeEnvelope => {
+  if (!isRecord(value) || !hasOnlyKeys(value, [
+    "schema_version",
+    "tournament_id",
+    "sequence",
+    "event_id",
+    "occurred_at",
+    "projection_revision",
+    "resume_id",
+    "operator",
+  ])) {
+    return false;
+  }
+  return (
+    value.schema_version === 1 &&
+    isUUID(value.tournament_id) &&
+    isNonNegativeInteger(value.sequence) &&
+    isUUID(value.event_id) &&
+    isDateTime(value.occurred_at) &&
+    isPositiveInteger(value.projection_revision) &&
+    (value.resume_id === undefined || isUUID(value.resume_id)) &&
+    isOperatorProjection(value.operator) &&
+    value.operator.tournament_id === value.tournament_id &&
+    value.operator.revision === value.projection_revision &&
+    value.operator.last_sequence === value.sequence
+  );
+};
+
+export const parseOperatorRealtimeMessage = (
+  value: unknown,
+  expectedTournamentId?: string,
+): OperatorRealtimeEnvelope => {
+  if (!isRecord(value) || !hasOnlyKeys(value, ["type", "payload"]) ||
+      value.type !== "tournament.operator" || !isRecord(value.payload) ||
+      !hasOnlyKeys(value.payload, ["envelope"]) ||
+      !isOperatorRealtimeEnvelope(value.payload.envelope)) {
+    throw new Error("Invalid operator realtime envelope");
+  }
+  if (
+    expectedTournamentId !== undefined &&
+    value.payload.envelope.tournament_id !== expectedTournamentId
+  ) {
+    throw new Error("Operator realtime envelope has the wrong tournament");
+  }
+  return value.payload.envelope;
+};
+
+const operatorRejectionCodes = new Set([
+  "tournament.unauthenticated",
+  "tournament.forbidden",
+  "tournament.unavailable",
+  "tournament.capacity",
+  "tournament.invalid_frame",
+  "tournament.rate_limited",
+]);
+
+export const isOperatorRealtimeRejection = (value: unknown): boolean => {
+  if (!isRecord(value) || !hasOnlyKeys(value, ["type", "code", "message"]) ||
+      value.type !== "tournament.rejected" || !isNonBlank(value.code) ||
+      !operatorRejectionCodes.has(value.code)) {
+    return false;
+  }
+  return isNonBlank(value.message);
+};
+
+export const openOperatorRealtime = (
+  value: unknown,
+  tournamentId: string,
+): OperatorRealtimeState => {
+  const envelope = parseOperatorRealtimeMessage(value, tournamentId);
+  return {
+    tournamentId: envelope.tournament_id,
+    projectionRevision: envelope.projection_revision,
+    sequence: envelope.sequence,
+    resumeId: envelope.resume_id ?? null,
+    seenEventIds: [envelope.event_id],
+    operator: envelope.operator,
+  };
+};
+
+export const applyOperatorRealtime = (
+  state: OperatorRealtimeState,
+  value: unknown,
+): OperatorRealtimeApplyResult => {
+  const envelope = parseOperatorRealtimeMessage(value);
+  if (envelope.tournament_id !== state.tournamentId) {
+    return { state, outcome: "wrong_tournament" };
+  }
+  if (state.seenEventIds.includes(envelope.event_id)) {
+    return { state, outcome: "duplicate" };
+  }
+  if (
+    envelope.sequence <= state.sequence ||
+    envelope.projection_revision < state.projectionRevision ||
+    envelope.operator.revision < state.operator.revision
+  ) {
+    return { state, outcome: "out_of_order" };
+  }
+  return {
+    state: {
+      tournamentId: state.tournamentId,
+      projectionRevision: envelope.projection_revision,
+      sequence: envelope.sequence,
+      resumeId: envelope.resume_id ?? state.resumeId,
+      seenEventIds: [...state.seenEventIds, envelope.event_id].slice(-128),
+      operator: envelope.operator,
+    },
+    outcome: "applied",
+  };
+};
+
+const isResumeId = (value: string): boolean => isUUID(value);
+
+export const operatorRealtimeUrl = (
+  tournamentId: string,
+  resumeId?: string | null,
+  baseOrigin?: string,
+): string => {
+  if (!isUUID(tournamentId)) {
+    throw new TypeError("Operator realtime requires a UUID tournament id");
+  }
+  if (resumeId !== undefined && resumeId !== null && !isResumeId(resumeId)) {
+    throw new TypeError("Operator realtime requires a UUID resume id");
+  }
+  const configuredOrigin = baseOrigin || CONFIG.adminApiUrl ||
+    (typeof window === "undefined" ? "" : window.location.origin);
+  if (!configuredOrigin) {
+    throw new Error("Operator realtime requires an admin API origin");
+  }
+  const configured = new URL(configuredOrigin);
+  const protocol = configured.protocol === "https:" || configured.protocol === "wss:"
+    ? "wss:"
+    : "ws:";
+  const url = new URL(
+    `/api/v1/admin/tournaments/${encodeURIComponent(tournamentId)}/realtime`,
+    `${protocol}//${configured.host}`,
+  );
+  if (resumeId) {
+    url.searchParams.set("resume_id", resumeId);
+  }
+  return url.toString();
 };

@@ -8,11 +8,16 @@ import { expect, test, type Page, type Route } from "@playwright/test";
 import {
   ApiError,
   applyRoleRecoverySnapshot,
+  applyOperatorRealtime,
   applyPublicRealtime,
   classifyRoleRecoveryError,
   isPublicRecoveryCursorConflict,
   isPublicRecoverySnapshot,
+  openOperatorRealtime,
   openPublicRealtime,
+  isOperatorRealtimeRejection,
+  operatorRealtimeUrl,
+  parseOperatorRealtimeMessage,
   recoverRoleSnapshot,
   recoverPublicTournament,
 } from "../lib/shared/api";
@@ -187,6 +192,81 @@ const installArenaAccessRoutes = async (
   });
 };
 
+const installOperatorWebSocketStub = async (page: Page): Promise<void> => {
+  await page.addInitScript(() => {
+    const NativeWebSocket = window.WebSocket;
+    type StubSocket = {
+      close: (code?: number) => void;
+      onclose: ((event: { code: number }) => void) | null;
+      onerror: (() => void) | null;
+      onmessage: ((event: { data: string }) => void) | null;
+      onopen: (() => void) | null;
+      readyState: number;
+      sent: string[];
+      url: string;
+    };
+    const sockets: StubSocket[] = [];
+    class OperatorWebSocket implements StubSocket {
+      static readonly CLOSING = 2;
+      static readonly CLOSED = 3;
+      static readonly CONNECTING = 0;
+      static readonly OPEN = 1;
+      readonly sent: string[] = [];
+      readyState = OperatorWebSocket.CONNECTING;
+      onclose: ((event: { code: number }) => void) | null = null;
+      onerror: (() => void) | null = null;
+      onmessage: ((event: { data: string }) => void) | null = null;
+      onopen: (() => void) | null = null;
+
+      constructor(readonly url: string) {
+        sockets.push(this);
+        queueMicrotask(() => {
+          this.readyState = OperatorWebSocket.OPEN;
+          this.onopen?.();
+        });
+      }
+
+      close(code = 1000): void {
+        if (this.readyState === OperatorWebSocket.CLOSED) {
+          return;
+        }
+        this.readyState = OperatorWebSocket.CLOSED;
+        this.onclose?.({ code });
+      }
+
+      send(value: string): void {
+        this.sent.push(value);
+      }
+    }
+
+    const WebSocketProxy = new Proxy(NativeWebSocket, {
+      construct(target, args) {
+        const url = String(args[0] ?? "");
+        if (url.includes("/api/v1/admin/tournaments/") && url.includes("/realtime")) {
+          return new OperatorWebSocket(url);
+        }
+        return Reflect.construct(target, args);
+      },
+    });
+    Object.defineProperty(window, "WebSocket", { configurable: true, value: WebSocketProxy });
+    Object.defineProperty(window, "__operatorWebSocketControl", {
+      configurable: true,
+      value: {
+        close: (index: number, code: number) => sockets[index]?.close(code),
+        emit: (index: number, value: unknown) => {
+          const socket = sockets[index];
+          socket?.onmessage?.({ data: JSON.stringify(value) });
+        },
+        get: () => sockets.map((socket) => ({
+          readyState: socket.readyState,
+          sent: socket.sent,
+          url: socket.url,
+        })),
+      },
+    });
+  });
+};
+
 const participantRecoveryWithDeadline = (
   projectionRevision: number,
   serverTimestamp: string,
@@ -334,6 +414,37 @@ const realtimeEnvelope = (
     ],
     live_series: restSnapshot().live_series,
     official_results: restSnapshot().official_results,
+  },
+});
+
+const operatorRealtimeEnvelope = (
+  sequence: number,
+  projectionRevision: number,
+  eventId = firstEventId,
+  envelopeTournamentId = tournamentId,
+) => ({
+  type: "tournament.operator",
+  payload: {
+    envelope: {
+      schema_version: 1,
+      tournament_id: envelopeTournamentId,
+      sequence,
+      event_id: eventId,
+      occurred_at: "2026-09-08T10:06:00Z",
+      projection_revision: projectionRevision,
+      resume_id: resumeId,
+      operator: {
+        tournament_id: envelopeTournamentId,
+        revision: projectionRevision,
+        last_sequence: sequence,
+        waves: [],
+        presence: [],
+        replays: [],
+        pause: null,
+        audit_links: [],
+        golden: [],
+      },
+    },
   },
 });
 
@@ -567,6 +678,71 @@ test("role, tournament, unknown schema, malformed, duplicate, and future cursor 
   expect(duplicate.changed).toBe(false);
   expect(duplicate.state).toBe(state);
   expect(future.outcome).toBe("future_cursor");
+});
+
+test("FE-011 operator realtime accepts only the wrapped strict DTO and fences stale events", () => {
+  const initial = openOperatorRealtime(operatorRealtimeEnvelope(7, 4), tournamentId);
+  const applied = applyOperatorRealtime(
+    initial,
+    operatorRealtimeEnvelope(8, 5, secondEventId),
+  );
+  const duplicate = applyOperatorRealtime(
+    applied.state,
+    operatorRealtimeEnvelope(9, 6, secondEventId),
+  );
+  const outOfOrder = applyOperatorRealtime(
+    applied.state,
+    operatorRealtimeEnvelope(6, 4, revisionId),
+  );
+  const wrongTournament = applyOperatorRealtime(
+    applied.state,
+    operatorRealtimeEnvelope(10, 7, revisionId, otherTournamentId),
+  );
+  const malformed = {
+    ...operatorRealtimeEnvelope(10, 7, revisionId),
+    type: "tournament.public",
+  };
+
+  expect(parseOperatorRealtimeMessage(operatorRealtimeEnvelope(7, 4), tournamentId).sequence).toBe(7);
+  expect(applied.outcome).toBe("applied");
+  expect(applied.state.projectionRevision).toBe(5);
+  expect(applied.state.resumeId).toBe(resumeId);
+  expect(duplicate.outcome).toBe("duplicate");
+  expect(duplicate.state).toBe(applied.state);
+  expect(outOfOrder.outcome).toBe("out_of_order");
+  expect(outOfOrder.state).toBe(applied.state);
+  expect(wrongTournament.outcome).toBe("wrong_tournament");
+  expect(wrongTournament.state).toBe(applied.state);
+  expect(() => parseOperatorRealtimeMessage(malformed, tournamentId)).toThrow(
+    "Invalid operator realtime envelope",
+  );
+  expect(isOperatorRealtimeRejection({
+    type: "tournament.rejected",
+    code: "tournament.forbidden",
+    message: "Недостаточно прав",
+  })).toBe(true);
+  expect(isOperatorRealtimeRejection({
+    type: "tournament.rejected",
+    code: "tournament.forbidden",
+    message: "",
+  })).toBe(false);
+});
+
+test("FE-011 operator realtime URL is a read-only admin websocket endpoint", () => {
+  expect(operatorRealtimeUrl(
+    tournamentId,
+    resumeId,
+    "https://admin.example.test:8443/control",
+  )).toBe(
+    `wss://admin.example.test:8443/api/v1/admin/tournaments/${tournamentId}/realtime?resume_id=${resumeId}`,
+  );
+  expect(operatorRealtimeUrl(
+    tournamentId,
+    null,
+    "http://127.0.0.1:8080",
+  )).toBe(
+    `ws://127.0.0.1:8080/api/v1/admin/tournaments/${tournamentId}/realtime`,
+  );
 });
 
 test("invalid cursor responses stay distinct from a future public cursor", () => {
@@ -1136,6 +1312,133 @@ test("FE-013 operator route mounts operator recovery and keeps only the operator
   expect(retryURL?.searchParams.get("cursor[event_sequence]")).toBeNull();
   expect(retryURL?.searchParams.get("cursor[participant_view_revision]")).toBeNull();
   await expect(livePanel.getByText(/Ревизия сервера: 10/)).toBeVisible();
+});
+
+test("FE-011 operator route uses snapshot-first admin realtime and fences old sockets", async ({ page }) => {
+  const fixtureSet = createTournamentFixtureSet();
+  const serverTimestamp = "2026-09-15T10:00:00Z";
+  const mutationRequests: string[] = [];
+
+  page.on("request", (request) => {
+    const requestURL = new URL(request.url());
+    if (requestURL.pathname.startsWith("/api/") && request.method() !== "GET") {
+      mutationRequests.push(`${request.method()} ${requestURL.pathname}`);
+    }
+  });
+
+  await installOperatorWebSocketStub(page);
+  await installArenaAccessRoutes(page, fixtureSet);
+  await page.route(`**${arenaOperatorSnapshotPath}*`, async (route) => {
+    expect(route.request().method()).toBe("GET");
+    await fulfillJSON(
+      route,
+      operatorSnapshot(9),
+      { date: new Date(serverTimestamp).toUTCString() },
+    );
+  });
+
+  await page.goto(`/arena/operator/${arenaTournamentId}`, { waitUntil: "domcontentloaded" });
+
+  const state = page.getByTestId("operator-realtime-summary");
+  await expect.poll(async () => {
+    const sockets = await page.evaluate(() => {
+      const control = (window as unknown as {
+        __operatorWebSocketControl?: { get: () => Array<{ url: string; sent: string[] }> };
+      }).__operatorWebSocketControl;
+      return control?.get() ?? [];
+    });
+    return sockets.length;
+  }).toBe(1);
+
+  const initialSocket = await page.evaluate(() => {
+    const control = (window as unknown as {
+      __operatorWebSocketControl: { get: () => Array<{ url: string; sent: string[] }> };
+    }).__operatorWebSocketControl;
+    return control.get()[0];
+  });
+  expect(initialSocket?.url).toBe(
+    `ws://127.0.0.1:${new URL(page.url()).port}/api/v1/admin/tournaments/${arenaTournamentId}/realtime`,
+  );
+  expect(initialSocket?.sent).toEqual([]);
+
+  await page.evaluate((message) => {
+    const control = (window as unknown as {
+      __operatorWebSocketControl: { emit: (index: number, value: unknown) => void };
+    }).__operatorWebSocketControl;
+    control.emit(0, message);
+  }, operatorRealtimeEnvelope(15, 10, firstEventId, arenaTournamentId));
+  await expect(state).toHaveAttribute("data-ready", "true");
+  await expect(state).toHaveAttribute("data-connection", "connected");
+  await expect(state).toHaveAttribute("data-projection-revision", "10");
+  await expect(state).toContainText("Соединение");
+  await expect(state).toContainText("На связи");
+  await expect(page.getByText(/Ревизия сервера: 10/)).toBeVisible();
+
+  await page.evaluate(() => {
+    const control = (window as unknown as {
+      __operatorWebSocketControl: { close: (index: number, code: number) => void };
+    }).__operatorWebSocketControl;
+    control.close(0, 1006);
+  });
+  await expect.poll(async () => {
+    const sockets = await page.evaluate(() => {
+      const control = (window as unknown as {
+        __operatorWebSocketControl?: { get: () => Array<{ url: string; sent: string[] }> };
+      }).__operatorWebSocketControl;
+      return control?.get() ?? [];
+    });
+    return sockets.length;
+  }).toBe(2);
+
+  const reconnectSocket = await page.evaluate(() => {
+    const control = (window as unknown as {
+      __operatorWebSocketControl: { get: () => Array<{ url: string; sent: string[] }> };
+    }).__operatorWebSocketControl;
+    return control.get()[1];
+  });
+  expect(reconnectSocket?.url).toContain(
+    `?resume_id=${resumeId}`,
+  );
+  expect(reconnectSocket?.sent).toEqual([]);
+
+  await page.evaluate((message) => {
+    const control = (window as unknown as {
+      __operatorWebSocketControl: { emit: (index: number, value: unknown) => void };
+    }).__operatorWebSocketControl;
+    control.emit(1, message);
+  }, operatorRealtimeEnvelope(16, 11, secondEventId, arenaTournamentId));
+  await expect(state).toHaveAttribute("data-projection-revision", "11");
+
+  await page.evaluate((message) => {
+    const control = (window as unknown as {
+      __operatorWebSocketControl: { emit: (index: number, value: unknown) => void };
+    }).__operatorWebSocketControl;
+    control.emit(0, message);
+  }, operatorRealtimeEnvelope(17, 12, revisionId, arenaTournamentId));
+  await expect(state).toHaveAttribute("data-projection-revision", "11");
+  await page.getByRole("button", { name: "Светлая тема" }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await page.setViewportSize({ width: 390, height: 844 });
+  const summaryBox = await state.boundingBox();
+  expect(summaryBox).not.toBeNull();
+  if (summaryBox === null) {
+    throw new Error("Operator realtime summary is missing from the mobile Arena route");
+  }
+  expect(summaryBox.x).toBeGreaterThanOrEqual(0);
+  expect(summaryBox.x + summaryBox.width).toBeLessThanOrEqual(390);
+
+  await page.evaluate((message) => {
+    const control = (window as unknown as {
+      __operatorWebSocketControl: { emit: (index: number, value: unknown) => void };
+    }).__operatorWebSocketControl;
+    control.emit(1, message);
+  }, {
+    type: "tournament.rejected",
+    code: "tournament.forbidden",
+    message: "Операторская сессия отклонена",
+  });
+  await expect(state).toHaveAttribute("data-connection", "rejected");
+  expect(mutationRequests).toEqual([]);
 });
 
 test("FE-013 route awaits the server at zero without local result, including light mobile view", async ({ page }) => {

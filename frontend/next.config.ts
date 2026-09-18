@@ -8,18 +8,12 @@ const buildConnectSrc = (): string => {
   const adminApiUrl = process.env.NEXT_PUBLIC_ADMIN_API_URL?.trim();
 
   for (const httpUrl of [apiUrl, adminApiUrl]) {
-    if (!httpUrl) continue;
+    if (!httpUrl) {
+      continue;
+    }
     try {
       const parsed = new URL(httpUrl);
       sources.add(`${parsed.protocol}//${parsed.host}`);
-    } catch {
-      // Ignore malformed env values; CSP just stays tighter.
-    }
-  }
-
-  if (apiUrl) {
-    try {
-      const parsed = new URL(apiUrl);
       const wsScheme = parsed.protocol === "https:" ? "wss:" : "ws:";
       sources.add(`${wsScheme}//${parsed.host}`);
     } catch {

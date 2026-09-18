@@ -527,6 +527,49 @@ const joinAsPlayer = async (page: Page, username: string): Promise<void> => {
   await expect(page.getByText('Игрок готов')).toBeVisible({ timeout: 15_000 });
 };
 
+const observeOperatorStreamRejection = async (
+  page: Page,
+  socketURL: string,
+): Promise<{ closed: boolean; code: number; message: string | null; opened: boolean }> =>
+  page.evaluate((url) => new Promise<{
+    closed: boolean;
+    code: number;
+    message: string | null;
+    opened: boolean;
+  }>((resolve) => {
+    const socket = new WebSocket(url);
+    let opened = false;
+    let message: string | null = null;
+    let settled = false;
+    const settle = (code: number): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      resolve({ closed: true, code, message, opened });
+    };
+
+    socket.onopen = () => {
+      opened = true;
+    };
+    socket.onmessage = (event) => {
+      message = String(event.data);
+      if (message.includes('tournament.rejected')) {
+        socket.close();
+      }
+    };
+    socket.onerror = () => {
+      // The close event carries the server rejection code.
+    };
+    socket.onclose = (event) => settle(event.code);
+    setTimeout(() => {
+      if (socket.readyState < WebSocket.CLOSING) {
+        socket.close();
+      }
+      settle(socket.readyState);
+    }, 5_000);
+  }), socketURL);
+
 const cookieHeaderForPage = async (page: Page): Promise<string> => {
   const cookies = await page.context().cookies();
   return cookies.map((cookie) => `${cookie.name}=${cookie.value}`).join('; ');
@@ -1589,15 +1632,71 @@ test.describe('local compose full stack e2e', () => {
     await expect(page).toHaveURL(new URL(spectatorURL, frontendURL).toString());
     await expect(page.getByText(tournament.id, { exact: false }).first()).toBeVisible();
 
+    let operatorSocketURL = '';
+    const operatorFrames: string[] = [];
+    const operatorSentFrames: string[] = [];
+    page.on('websocket', (socket) => {
+      if (!socket.url().includes(`/api/v1/admin/tournaments/${tournament.id}/realtime`)) {
+        return;
+      }
+      operatorSocketURL = socket.url();
+      socket.on('framereceived', (frame) => operatorFrames.push(
+        typeof frame.payload === 'string' ? frame.payload : frame.payload.toString('utf8'),
+      ));
+      socket.on('framesent', (frame) => operatorSentFrames.push(
+        typeof frame.payload === 'string' ? frame.payload : frame.payload.toString('utf8'),
+      ));
+    });
+
     await page.goto(operatorPath);
     await expect(page).toHaveURL(new URL(operatorPath, frontendURL).toString());
     await expect(page.getByRole('main')).toBeVisible();
     await expect(page.getByRole('heading').filter({ hasText: tournamentName })).toBeVisible();
+    await expect.poll(() => operatorSocketURL).toContain(
+      `/api/v1/admin/tournaments/${tournament.id}/realtime`,
+    );
+    await expect.poll(() => operatorFrames.length).toBeGreaterThan(0);
+    expect(new URL(operatorSocketURL).pathname).toBe(
+      `/api/v1/admin/tournaments/${tournament.id}/realtime`,
+    );
+    expect(operatorSentFrames).toEqual([]);
+    const initialOperatorFrame = JSON.parse(operatorFrames[0] ?? '{}') as {
+      type?: string;
+      payload?: { envelope?: { tournament_id?: string } };
+    };
+    expect(initialOperatorFrame.type).toBe('tournament.operator');
+    expect(initialOperatorFrame.payload?.envelope?.tournament_id).toBe(tournament.id);
+    await expect(page.getByTestId('operator-realtime-summary')).toContainText('Соединение');
+
+    const anonymousContext = await browser.newContext({ baseURL: frontendURL });
+    try {
+      const anonymousPage = await anonymousContext.newPage();
+      await anonymousPage.goto('/');
+      const anonymousRejection = await observeOperatorStreamRejection(
+        anonymousPage,
+        operatorSocketURL,
+      );
+      expect(anonymousRejection.closed).toBe(true);
+      expect(
+        !anonymousRejection.opened ||
+          anonymousRejection.message?.includes('tournament.rejected') ||
+          [1008, 4001, 4003, 4401, 4403].includes(anonymousRejection.code),
+      ).toBe(true);
+    } finally {
+      await anonymousContext.close();
+    }
 
     const playerContext = await browser.newContext({ baseURL: frontendURL });
     try {
       const playerPage = await playerContext.newPage();
       await joinAsPlayer(playerPage, playerName);
+      const playerRejection = await observeOperatorStreamRejection(playerPage, operatorSocketURL);
+      expect(playerRejection.closed).toBe(true);
+      expect(
+        !playerRejection.opened ||
+          playerRejection.message?.includes('tournament.rejected') ||
+          [1008, 4001, 4003, 4401, 4403].includes(playerRejection.code),
+      ).toBe(true);
       await playerPage.goto(participantPath);
       await expect(playerPage).toHaveURL(new URL(participantPath, frontendURL).toString());
       await expect(playerPage.getByRole('main')).toBeVisible();
