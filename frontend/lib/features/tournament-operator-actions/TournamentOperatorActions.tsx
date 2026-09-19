@@ -29,6 +29,9 @@ type NoShowCandidate = Readonly<{
   window: NonNullable<OperatorRecoverySnapshot["waves"][number]["ready_window"]>;
 }>;
 
+const noShowCandidateKey = (candidate: NoShowCandidate): string =>
+  `${candidate.wave.id}:${candidate.series.id}`;
+
 type ActionMessage = Readonly<{
   tone: "success" | "error" | "warning";
   title: string;
@@ -243,7 +246,7 @@ export const TournamentOperatorActions = ({
   const [action, setAction] = useState<OperatorAction>("pause");
   const [reason, setReason] = useState("");
   const [confirmed, setConfirmed] = useState(false);
-  const [selectedWaveId, setSelectedWaveId] = useState("");
+  const [selectedNoShowKey, setSelectedNoShowKey] = useState("");
   const [selectedSeriesId, setSelectedSeriesId] = useState("");
   const [selectedParticipantId, setSelectedParticipantId] = useState("");
   const [ruleId, setRuleId] = useState("");
@@ -290,7 +293,7 @@ export const TournamentOperatorActions = ({
     () => snapshot === null ? [] : noShowCandidatesFor(snapshot),
     [snapshot],
   );
-  const selectedNoShow = noShowCandidates.find((candidate) => candidate.wave.id === selectedWaveId) ??
+  const selectedNoShow = noShowCandidates.find((candidate) => noShowCandidateKey(candidate) === selectedNoShowKey) ??
     noShowCandidates[0] ?? null;
   const forfeitSeries = useMemo(
     () => snapshot?.series.filter((series) => FORFEIT_SERIES_STATES.has(series.state)) ?? [],
@@ -304,10 +307,10 @@ export const TournamentOperatorActions = ({
     LIVE_GAME_STATES.has(selectedForfeitAttempt.state);
 
   useEffect(() => {
-    if (selectedWaveId === "" || !noShowCandidates.some((candidate) => candidate.wave.id === selectedWaveId)) {
-      setSelectedWaveId(noShowCandidates[0]?.wave.id ?? "");
+    if (selectedNoShowKey === "" || !noShowCandidates.some((candidate) => noShowCandidateKey(candidate) === selectedNoShowKey)) {
+      setSelectedNoShowKey(noShowCandidates[0] === undefined ? "" : noShowCandidateKey(noShowCandidates[0]));
     }
-  }, [noShowCandidates, selectedWaveId]);
+  }, [noShowCandidates, selectedNoShowKey]);
 
   useEffect(() => {
     if (selectedSeriesId === "" || !forfeitSeries.some((series) => series.id === selectedSeriesId)) {
@@ -566,12 +569,12 @@ export const TournamentOperatorActions = ({
               <select
                 className={styles.select}
                 id="operator-no-show-wave"
-                value={selectedNoShow?.wave.id ?? ""}
-                onChange={(event) => setSelectedWaveId(event.target.value)}
+                value={selectedNoShow === null ? "" : noShowCandidateKey(selectedNoShow)}
+                onChange={(event) => setSelectedNoShowKey(event.target.value)}
                 disabled={submitting || noShowCandidates.length === 0}
               >
                 {noShowCandidates.map((candidate) => (
-                  <option key={candidate.wave.id} value={candidate.wave.id}>
+                  <option key={noShowCandidateKey(candidate)} value={noShowCandidateKey(candidate)}>
                     Волна {candidate.wave.id} - серия {candidate.series.id}
                   </option>
                 ))}

@@ -150,6 +150,36 @@ const noShowSnapshot = (
   };
 };
 
+const twoNoShowCandidatesSnapshot = (revision: number): OperatorRecoverySnapshot => {
+  const snapshot = noShowSnapshot(revision, false);
+  return {
+    ...snapshot,
+    series: snapshot.series.map((series) => series.id === tournamentFixtureIds.bo3Series
+      ? { ...series, state: "ready" }
+      : series),
+    waves: snapshot.waves.map((wave) => wave.id === tournamentFixtureIds.bo1Wave
+      ? {
+          ...wave,
+          members: [
+            ...wave.members,
+            {
+              participant_id: tournamentFixtureIds.thirdParticipant,
+              readiness_revision: revision,
+              ready: false,
+              series_id: tournamentFixtureIds.bo3Series,
+            },
+            {
+              participant_id: tournamentFixtureIds.fourthParticipant,
+              readiness_revision: revision,
+              ready: false,
+              series_id: tournamentFixtureIds.bo3Series,
+            },
+          ],
+        }
+      : wave),
+  };
+};
+
 const forfeitSnapshot = (revision: number): OperatorRecoverySnapshot => {
   const snapshot = activeSnapshot(revision);
   return {
@@ -457,6 +487,27 @@ test("no-show and operator forfeit keep distinct evidence-bound 204 contracts", 
   expect(forfeit?.headers["idempotency-key"]).toMatch(uuidPattern);
   expect(forfeit?.headers["x-csrf-token"]).toBe("operator-access-csrf");
   await expect(page.getByText("Операторский форфейт выполнено. Отображается новый авторитетный снимок.", { exact: true })).toBeVisible();
+});
+
+test("no-show selection distinguishes series sharing one wave", async ({ page }) => {
+  const routes = await installRoutes(page, twoNoShowCandidatesSnapshot(15));
+
+  await openOperatorArena(page);
+  await page.getByLabel("Команда оператора").selectOption("no-show");
+  const candidateSelect = page.getByLabel("Открытое окно неявки");
+  await expect(candidateSelect.locator("option")).toHaveCount(2);
+  await candidateSelect.selectOption({
+    label: `Волна ${tournamentFixtureIds.bo1Wave} - серия ${tournamentFixtureIds.bo3Series}`,
+  });
+  await fillReasonAndConfirm(page, "Подтвержденная неявка второй пары после окна готовности");
+  await page.getByRole("button", { name: "Выполнить: Неявка пары" }).click();
+
+  await expect.poll(() => routes.noShowRequests.length).toBe(1);
+  expect(routes.noShowRequests[0]?.body).toMatchObject({
+    expected_series_state: "ready",
+    series_id: tournamentFixtureIds.bo3Series,
+    wave_id: tournamentFixtureIds.bo1Wave,
+  });
 });
 
 test("resume follows the server matrix and cancellation requires a dismissible dialog", async ({ page }) => {
