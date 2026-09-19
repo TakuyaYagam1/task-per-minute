@@ -153,7 +153,7 @@ func (u *ReadinessUseCase) apply(
 	ctx context.Context,
 	operation readinessOperation,
 ) (*ReadinessRecord, bool, error) {
-	occurredAt := u.clock.Now().Round(0).UTC()
+	occurredAt := u.clock.Now().Round(0).UTC().Truncate(time.Microsecond)
 	if !domain.IsValidServerTime(occurredAt) {
 		return nil, false, domain.ErrValidation
 	}

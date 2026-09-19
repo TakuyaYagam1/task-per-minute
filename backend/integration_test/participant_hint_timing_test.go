@@ -53,6 +53,10 @@ func TestParticipantHintTimingThroughProductionHandlers(t *testing.T) {
 		snapshot.NextCursor.ProjectionRevision, api.WaveControlRequestActionOpenReadyWindow,
 	)
 	require.Equal(t, api.WaveStateReadyWindowOpen, wave.State)
+	clock := tournamentFlowRuntimeForFixture(t, fixture).clock
+	readinessNow := clock.Now().Add(123 * time.Nanosecond)
+	require.NotZero(t, readinessNow.Nanosecond()%int(time.Microsecond))
+	clock.FreezeAt(readinessNow)
 
 	playersByParticipant := productionPlayersByParticipant(t, roster, mapTournamentFlowPlayers(players))
 	for _, member := range wave.Members {
