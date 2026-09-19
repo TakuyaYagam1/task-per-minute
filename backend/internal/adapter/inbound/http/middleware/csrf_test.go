@@ -422,18 +422,43 @@ func TestSetAndClearAdminCSRFCookies(t *testing.T) {
 
 	require.Equal(t, accessToken, setRecorder.Header().Get(middleware.CSRFHeaderName))
 	require.Equal(t, refreshToken, setRecorder.Header().Get(middleware.AdminRefreshCSRFHeaderName))
-	accessCookie := requireCookie(t, setRecorder.Result().Cookies(), middleware.AdminAccessCSRFCookieName)
+	setCookies := setRecorder.Result().Cookies()
+	require.Len(t, setCookies, 4)
+	accessCookie := requireCookieAtPath(t, setCookies, middleware.AdminAccessCSRFCookieName, "/")
 	require.Equal(t, accessToken, accessCookie.Value)
-	require.Equal(t, "/api/v1/admin", accessCookie.Path)
+	require.Equal(t, "/", accessCookie.Path)
 	require.False(t, accessCookie.HttpOnly)
 	require.True(t, accessCookie.Secure)
 	require.Equal(t, http.SameSiteLaxMode, accessCookie.SameSite)
+	require.Equal(t, -1, requireCookieAtPath(
+		t,
+		setCookies,
+		middleware.AdminAccessCSRFCookieName,
+		"/api/v1/admin",
+	).MaxAge)
 
 	clearRecorder := httptest.NewRecorder()
 	middleware.ClearAdminCSRFCookies(clearRecorder, req)
 	clearCookies := clearRecorder.Result().Cookies()
-	require.Equal(t, -1, requireCookie(t, clearCookies, middleware.AdminAccessCSRFCookieName).MaxAge)
-	require.Equal(t, -1, requireCookie(t, clearCookies, middleware.AdminRefreshCSRFCookieName).MaxAge)
+	require.Len(t, clearCookies, 4)
+	clearedAccessCookie := requireCookieAtPath(t, clearCookies, middleware.AdminAccessCSRFCookieName, "/")
+	require.Equal(t, "/", clearedAccessCookie.Path)
+	require.Equal(t, -1, clearedAccessCookie.MaxAge)
+	clearedRefreshCookie := requireCookieAtPath(t, clearCookies, middleware.AdminRefreshCSRFCookieName, "/")
+	require.Equal(t, "/", clearedRefreshCookie.Path)
+	require.Equal(t, -1, clearedRefreshCookie.MaxAge)
+	require.Equal(t, -1, requireCookieAtPath(
+		t,
+		clearCookies,
+		middleware.AdminAccessCSRFCookieName,
+		"/api/v1/admin",
+	).MaxAge)
+	require.Equal(t, -1, requireCookieAtPath(
+		t,
+		clearCookies,
+		middleware.AdminRefreshCSRFCookieName,
+		"/api/v1/admin",
+	).MaxAge)
 }
 
 func requireCookie(t *testing.T, cookies []*http.Cookie, name string) *http.Cookie {
@@ -445,5 +470,17 @@ func requireCookie(t *testing.T, cookies []*http.Cookie, name string) *http.Cook
 		}
 	}
 	t.Fatalf("cookie %q not found in %#v", name, cookies)
+	return nil
+}
+
+func requireCookieAtPath(t *testing.T, cookies []*http.Cookie, name, path string) *http.Cookie {
+	t.Helper()
+
+	for _, cookie := range cookies {
+		if cookie.Name == name && cookie.Path == path {
+			return cookie
+		}
+	}
+	t.Fatalf("cookie %q with path %q not found in %#v", name, path, cookies)
 	return nil
 }

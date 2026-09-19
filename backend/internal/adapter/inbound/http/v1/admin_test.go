@@ -45,7 +45,7 @@ func TestAdminLoginSetsHttpOnlySessionCookies(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rr.Code)
 	cookies := rr.Result().Cookies()
-	require.Len(t, cookies, 4)
+	require.Len(t, cookies, 6)
 
 	accessCookie := requireCookie(t, cookies, middleware.AdminAccessCookieName)
 	require.Equal(t, "access-token", accessCookie.Value)
@@ -64,14 +64,14 @@ func TestAdminLoginSetsHttpOnlySessionCookies(t *testing.T) {
 	accessCSRFCookie := requireCookie(t, cookies, middleware.AdminAccessCSRFCookieName)
 	require.NotEmpty(t, accessCSRFCookie.Value)
 	require.Equal(t, accessCSRFCookie.Value, rr.Header().Get(middleware.CSRFHeaderName))
-	require.Equal(t, "/api/v1/admin", accessCSRFCookie.Path)
+	require.Equal(t, "/", accessCSRFCookie.Path)
 	require.False(t, accessCSRFCookie.HttpOnly)
 	require.True(t, accessCSRFCookie.Secure)
 
 	refreshCSRFCookie := requireCookie(t, cookies, middleware.AdminRefreshCSRFCookieName)
 	require.NotEmpty(t, refreshCSRFCookie.Value)
 	require.Equal(t, refreshCSRFCookie.Value, rr.Header().Get(middleware.AdminRefreshCSRFHeaderName))
-	require.Equal(t, "/api/v1/admin", refreshCSRFCookie.Path)
+	require.Equal(t, "/", refreshCSRFCookie.Path)
 	require.False(t, refreshCSRFCookie.HttpOnly)
 	require.True(t, refreshCSRFCookie.Secure)
 
@@ -201,7 +201,7 @@ func TestAdminLogoutUsesRefreshCookieWithoutAccessAndClearsAdminCookies(t *testi
 
 	require.Equal(t, http.StatusNoContent, rr.Code)
 	cookies := rr.Result().Cookies()
-	require.Len(t, cookies, 4)
+	require.Len(t, cookies, 6)
 	require.Equal(t, -1, requireCookie(t, cookies, middleware.AdminAccessCookieName).MaxAge)
 	require.Equal(t, -1, requireCookie(t, cookies, middleware.AdminRefreshCookieName).MaxAge)
 	require.Equal(t, -1, requireCookie(t, cookies, middleware.AdminAccessCSRFCookieName).MaxAge)

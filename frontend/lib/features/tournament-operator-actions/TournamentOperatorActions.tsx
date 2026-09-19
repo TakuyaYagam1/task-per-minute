@@ -11,6 +11,7 @@ import {
   type OperatorNoShowRequest,
   type OperatorRecoverySnapshot,
   type TournamentActionRequest,
+  type WaveControlRequest,
 } from "../../shared/api";
 import { Button, Dialog, Message, Panel, Status } from "../../shared/ui";
 
@@ -36,6 +37,7 @@ type ActionMessage = Readonly<{
 
 const TERMINAL_TOURNAMENT_STATES = new Set(["completed", "cancelled"]);
 const PAUSABLE_TOURNAMENT_STATES = new Set(["swiss", "golden", "playoffs"]);
+const PAUSABLE_WAVE_STATES = new Set(["ready_window_open", "ready", "active"]);
 const NO_SHOW_SERIES_STATES = new Set(["ready", "active", "replay_required"]);
 const FORFEIT_SERIES_STATES = new Set(["active", "technical_pause"]);
 const LIVE_GAME_STATES = new Set(["active", "paused"]);
@@ -216,6 +218,22 @@ const actionAvailable = (
   }
 };
 
+const waveForTournamentAction = (
+  action: "pause" | "resume",
+  snapshot: OperatorRecoverySnapshot,
+): OperatorRecoverySnapshot["waves"][number] | null => {
+  if (action === "pause") {
+    return snapshot.tournament.state === "swiss"
+      ? snapshot.waves.find((wave) => PAUSABLE_WAVE_STATES.has(wave.state)) ?? null
+      : null;
+  }
+  const pausedWaveId = snapshot.pause_graph?.wave.id;
+  if (pausedWaveId === undefined) {
+    return null;
+  }
+  return snapshot.waves.find((wave) => wave.id === pausedWaveId && wave.state === "paused") ?? null;
+};
+
 export const TournamentOperatorActions = ({
   tournamentId,
 }: TournamentOperatorActionsProps) => {
@@ -321,7 +339,26 @@ export const TournamentOperatorActions = ({
     const intent = createOperatorCommandIntent();
     const trimmedReason = reason.trim();
     try {
-      if (action === "pause" || action === "resume" || action === "cancel") {
+      if (action === "pause" || action === "resume") {
+        const wave = waveForTournamentAction(action, snapshot);
+        if (wave !== null) {
+          const body: WaveControlRequest = {
+            action,
+            confirmed: true,
+            expected_projection_revision: snapshot.next_cursor.projection_revision,
+            reason: trimmedReason,
+          };
+          await operatorApi.controlWave(tournamentId, wave.id, body, intent);
+        } else {
+          const body: TournamentActionRequest = {
+            action,
+            confirmed: true,
+            expected_projection_revision: snapshot.next_cursor.projection_revision,
+            reason: trimmedReason,
+          };
+          await operatorApi.applyTournamentAction(tournamentId, body, intent);
+        }
+      } else if (action === "cancel") {
         const body: TournamentActionRequest = {
           action,
           confirmed: true,

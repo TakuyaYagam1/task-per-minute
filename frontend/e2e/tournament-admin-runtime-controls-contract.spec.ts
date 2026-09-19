@@ -11,6 +11,7 @@ const tournamentId = tournamentFixtureIds.tournament;
 const publicTournamentPath = `/api/v1/tournaments/${tournamentId}`;
 const operatorSnapshotPath = `/api/v1/admin/tournaments/${tournamentId}/snapshot`;
 const operatorActionsPath = `/api/v1/admin/tournaments/${tournamentId}/actions`;
+const waveActionsPath = `/api/v1/admin/tournaments/${tournamentId}/waves/${tournamentFixtureIds.bo3Wave}/actions`;
 const realtimePath = `/api/v1/admin/tournaments/${tournamentId}/realtime`;
 const noShowPath = `/api/v1/admin/tournaments/${tournamentId}/waves/${tournamentFixtureIds.bo1Wave}/no-shows`;
 const forfeitPath = `/api/v1/admin/tournaments/${tournamentId}/series/${tournamentFixtureIds.bo3Series}/operator-forfeits`;
@@ -61,12 +62,21 @@ const activeSnapshot = (revision: number): OperatorRecoverySnapshot => {
       projection_revision: revision,
     },
     pause_graph: null,
+    series: snapshot.series.map((series) => ({
+      ...series,
+      state: series.id === tournamentFixtureIds.bo3Series ? "active" : "completed",
+    })),
     tournament: {
       ...snapshot.tournament,
       paused_from_state: null,
       revision,
       state: "swiss",
     },
+    waves: snapshot.waves.map((wave) => ({
+      ...wave,
+      paused_at: null,
+      state: wave.id === tournamentFixtureIds.bo3Wave ? "active" : "completed",
+    })),
   };
 };
 
@@ -84,6 +94,9 @@ const pausedSnapshot = (revision: number): OperatorRecoverySnapshot => {
       revision,
       state: "technical_pause",
     },
+    waves: snapshot.waves.map((wave) => wave.id === tournamentFixtureIds.bo1Wave
+      ? { ...wave, paused_at: null, state: "completed" }
+      : wave),
   };
 };
 
@@ -207,6 +220,7 @@ type ActionPlan = Readonly<{
 
 type RuntimeRoutes = Readonly<{
   actionRequests: readonly { body: Record<string, unknown>; headers: Record<string, string> }[];
+  waveActionRequests: readonly { body: Record<string, unknown>; headers: Record<string, string> }[];
   noShowRequests: readonly { body: Record<string, unknown>; headers: Record<string, string> }[];
   forfeitRequests: readonly { body: Record<string, unknown>; headers: Record<string, string> }[];
   releaseAction: () => void;
@@ -222,6 +236,7 @@ const installRoutes = async (
   let actionPlan: ActionPlan = { nextSnapshot: initialSnapshot };
   let releaseAction: (() => void) | null = null;
   const actionRequests: Array<{ body: Record<string, unknown>; headers: Record<string, string> }> = [];
+  const waveActionRequests: Array<{ body: Record<string, unknown>; headers: Record<string, string> }> = [];
   const noShowRequests: Array<{ body: Record<string, unknown>; headers: Record<string, string> }> = [];
   const forfeitRequests: Array<{ body: Record<string, unknown>; headers: Record<string, string> }> = [];
 
@@ -251,6 +266,28 @@ const installRoutes = async (
     currentSnapshot = plan.nextSnapshot;
     await fulfillJSON(route, currentSnapshot.tournament);
   });
+  await page.route(`**${waveActionsPath}`, async (route) => {
+    expect(route.request().method()).toBe("POST");
+    const body = requestBody(route.request());
+    waveActionRequests.push({ body, headers: route.request().headers() });
+    const plan = actionPlan;
+    if (plan.defer) {
+      await new Promise<void>((resolve) => {
+        releaseAction = resolve;
+      });
+    }
+    if (plan.conflict) {
+      currentSnapshot = plan.nextSnapshot;
+      await fulfillProblem(route, 409, "Снимок устарел");
+      return;
+    }
+    currentSnapshot = plan.nextSnapshot;
+    const wave = currentSnapshot.waves.find((candidate) => candidate.id === tournamentFixtureIds.bo3Wave);
+    if (wave === undefined) {
+      throw new Error("Wave action fixture lost the controlled Wave");
+    }
+    await fulfillJSON(route, wave);
+  });
   await page.route(`**${noShowPath}`, async (route) => {
     expect(route.request().method()).toBe("POST");
     noShowRequests.push({ body: requestBody(route.request()), headers: route.request().headers() });
@@ -272,6 +309,7 @@ const installRoutes = async (
     actionRequests,
     forfeitRequests,
     noShowRequests,
+    waveActionRequests,
     releaseAction: () => releaseAction?.(),
     setActionPlan: (plan) => {
       actionPlan = plan;
@@ -309,15 +347,16 @@ test("pause sends one exact command, has no optimistic success, and refreshes th
   await submit.click();
   await expect(submit).toBeDisabled();
   await submit.click({ force: true });
-  await expect.poll(() => routes.actionRequests.length).toBe(1);
-  expect(routes.actionRequests[0]?.body).toEqual({
+  await expect.poll(() => routes.waveActionRequests.length).toBe(1);
+  expect(routes.actionRequests).toHaveLength(0);
+  expect(routes.waveActionRequests[0]?.body).toEqual({
     action: "pause",
     confirmed: true,
     expected_projection_revision: 9,
     reason: "Платформенная пауза для проверки состояния",
   });
-  expect(routes.actionRequests[0]?.headers["idempotency-key"]).toMatch(uuidPattern);
-  expect(routes.actionRequests[0]?.headers["x-csrf-token"]).toBe("operator-access-csrf");
+  expect(routes.waveActionRequests[0]?.headers["idempotency-key"]).toMatch(uuidPattern);
+  expect(routes.waveActionRequests[0]?.headers["x-csrf-token"]).toBe("operator-access-csrf");
   await expect(page.getByText("Команда подтверждена", { exact: true })).toHaveCount(0);
 
   routes.releaseAction();
@@ -339,8 +378,9 @@ test("stale operator command refetches the current snapshot and shows a warning"
   await expect(page.getByText("Снимок устарел", { exact: true })).toBeVisible();
   await expect(page.getByText("Другой оператор изменил состояние. Снимок обновлен, проверьте команду перед повтором.", { exact: true })).toBeVisible();
   await expect(page.getByRole("region", { name: "Управление турниром" })).toContainText("Техническая пауза");
-  expect(routes.actionRequests).toHaveLength(1);
-  expect(routes.actionRequests[0]?.body.expected_projection_revision).toBe(9);
+  expect(routes.actionRequests).toHaveLength(0);
+  expect(routes.waveActionRequests).toHaveLength(1);
+  expect(routes.waveActionRequests[0]?.body.expected_projection_revision).toBe(9);
 });
 
 test("no-show and operator forfeit keep distinct evidence-bound 204 contracts", async ({ page }) => {
@@ -431,8 +471,9 @@ test("resume follows the server matrix and cancellation requires a dismissible d
   await fillReasonAndConfirm(page, "Инцидент устранен, authority восстановлен");
   await page.getByRole("button", { name: "Выполнить: Возобновить турнир" }).click();
 
-  await expect.poll(() => routes.actionRequests.length).toBe(1);
-  expect(routes.actionRequests[0]?.body).toEqual({
+  await expect.poll(() => routes.waveActionRequests.length).toBe(1);
+  expect(routes.actionRequests).toHaveLength(0);
+  expect(routes.waveActionRequests[0]?.body).toEqual({
     action: "resume",
     confirmed: true,
     expected_projection_revision: 12,
@@ -450,13 +491,13 @@ test("resume follows the server matrix and cancellation requires a dismissible d
   await expect(dialog).toBeVisible();
   await dialog.getByRole("button", { name: "Не отменять" }).click();
   await expect(dialog).toBeHidden();
-  expect(routes.actionRequests).toHaveLength(1);
+  expect(routes.actionRequests).toHaveLength(0);
 
   await page.getByRole("button", { name: "Выполнить: Отменить турнир" }).click();
   await expect(dialog).toBeVisible();
   await dialog.getByRole("button", { name: "Подтвердить отмену" }).click();
-  await expect.poll(() => routes.actionRequests.length).toBe(2);
-  expect(routes.actionRequests[1]?.body).toEqual({
+  await expect.poll(() => routes.actionRequests.length).toBe(1);
+  expect(routes.actionRequests[0]?.body).toEqual({
     action: "cancel",
     confirmed: true,
     expected_projection_revision: 13,

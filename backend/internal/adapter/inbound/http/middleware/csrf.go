@@ -26,6 +26,8 @@ const (
 	playerCSRFPathPrefix     = "/api/v1/players/"
 	tournamentCSRFPathPrefix = "/api/v1/tournaments/"
 	adminCSRFPathPrefix      = "/api/v1/admin/"
+	adminCSRFCookiePath      = "/"
+	legacyAdminCSRFPath      = "/api/v1/admin"
 )
 
 var errInvalidCSRFBinding = errors.New("invalid csrf binding")
@@ -242,6 +244,24 @@ func AdminCSRFTokenFromRequest(r *http.Request, cookieName, secret string) (stri
 	return token, true
 }
 
+func EnsureAdminAccessCSRFCookie(
+	w http.ResponseWriter,
+	r *http.Request,
+	accessToken string,
+	maxAge int,
+) error {
+	token, ok := AdminCSRFTokenFromRequest(r, AdminAccessCSRFCookieName, accessToken)
+	if !ok {
+		var err error
+		token, err = NewAdminCSRFToken(AdminAccessCSRFCookieName, accessToken)
+		if err != nil {
+			return err
+		}
+	}
+	SetAdminCSRFCookie(w, r, AdminAccessCSRFCookieName, token, maxAge)
+	return nil
+}
+
 func SetAdminCSRFCookie(w http.ResponseWriter, r *http.Request, cookieName, token string, maxAge int) {
 	switch cookieName {
 	case AdminAccessCSRFCookieName:
@@ -250,28 +270,38 @@ func SetAdminCSRFCookie(w http.ResponseWriter, r *http.Request, cookieName, toke
 		w.Header().Set(AdminRefreshCSRFHeaderName, token)
 	}
 	http.SetCookie(w, adminCSRFCookie(r, cookieName, token, maxAge))
+	clearAdminCSRFCookieAtPath(w, r, cookieName, legacyAdminCSRFPath)
 }
 
 func ClearAdminCSRFCookies(w http.ResponseWriter, r *http.Request) {
 	for _, name := range []string{AdminAccessCSRFCookieName, AdminRefreshCSRFCookieName} {
-		//nolint:gosec,nolintlint // G124 in newer gosec: CSRF cookie is intentionally readable; Secure follows trusted TLS/proxy scheme.
-		cookie := adminCSRFCookie(r, name, "", -1)
-		cookie.Expires = expiredCookieTime()
-		http.SetCookie(w, cookie)
+		clearAdminCSRFCookieAtPath(w, r, name, adminCSRFCookiePath)
+		clearAdminCSRFCookieAtPath(w, r, name, legacyAdminCSRFPath)
 	}
 }
 
 func adminCSRFCookie(r *http.Request, name, value string, maxAge int) *http.Cookie {
+	return adminCSRFCookieAtPath(r, name, value, maxAge, adminCSRFCookiePath)
+}
+
+func adminCSRFCookieAtPath(r *http.Request, name, value string, maxAge int, path string) *http.Cookie {
 	//nolint:gosec,nolintlint // G124 in newer gosec: double-submit CSRF token must be readable by JS; SameSite is set and Secure is scheme-aware.
 	return &http.Cookie{
 		Name:     name,
 		Value:    value,
-		Path:     "/api/v1/admin",
+		Path:     path,
 		MaxAge:   maxAge,
 		HttpOnly: false,
 		Secure:   isSecureRequest(r),
 		SameSite: http.SameSiteLaxMode,
 	}
+}
+
+func clearAdminCSRFCookieAtPath(w http.ResponseWriter, r *http.Request, name, path string) {
+	//nolint:gosec,nolintlint // G124 in newer gosec: CSRF cookie is intentionally readable; Secure follows trusted TLS/proxy scheme.
+	cookie := adminCSRFCookieAtPath(r, name, "", -1, path)
+	cookie.Expires = expiredCookieTime()
+	http.SetCookie(w, cookie)
 }
 
 func validateAdminCSRF(r *http.Request, cookieName, secret string) bool {

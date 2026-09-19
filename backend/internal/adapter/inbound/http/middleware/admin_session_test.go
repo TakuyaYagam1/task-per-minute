@@ -88,6 +88,17 @@ func TestAdminSession_ValidCookieInjectsClaims(t *testing.T) {
 	handler.ServeHTTP(rr, req)
 
 	require.Equal(t, http.StatusNoContent, rr.Code)
+	require.NotEmpty(t, rr.Header().Get(middleware.CSRFHeaderName))
+	csrfCookie := requireRootCookie(t, rr.Result().Cookies(), middleware.AdminAccessCSRFCookieName)
+	require.Equal(t, "/", csrfCookie.Path)
+	require.False(t, csrfCookie.HttpOnly)
+	csrfToken, valid := middleware.AdminCSRFTokenFromRequest(
+		requestWithCookie(req, csrfCookie),
+		middleware.AdminAccessCSRFCookieName,
+		"access-token",
+	)
+	require.True(t, valid)
+	require.Equal(t, csrfCookie.Value, csrfToken)
 }
 
 func TestAdminSession_IgnoresAuthorizationWhenCookieIsValid(t *testing.T) {
@@ -119,4 +130,23 @@ func requireUnauthorized(t *testing.T, rr *httptest.ResponseRecorder) {
 	require.Equal(t, http.StatusUnauthorized, rr.Code)
 	require.True(t, strings.HasPrefix(rr.Header().Get("Content-Type"), "application/problem+json"))
 	require.Contains(t, rr.Body.String(), `"status":401`)
+}
+
+func requestWithCookie(req *http.Request, cookie *http.Cookie) *http.Request {
+	clonedRequest := req.Clone(req.Context())
+	clonedRequest.Header = make(http.Header)
+	clonedRequest.AddCookie(cookie)
+	return clonedRequest
+}
+
+func requireRootCookie(t *testing.T, cookies []*http.Cookie, name string) *http.Cookie {
+	t.Helper()
+
+	for _, cookie := range cookies {
+		if cookie.Name == name && cookie.Path == "/" {
+			return cookie
+		}
+	}
+	t.Fatalf("cookie %q with root path not found in %#v", name, cookies)
+	return nil
 }

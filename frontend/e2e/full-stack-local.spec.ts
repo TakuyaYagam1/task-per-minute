@@ -919,8 +919,9 @@ test.describe('local compose full stack e2e', () => {
     }
   });
 
-  test('FE-027, FE-029, FE-030, FE-031, and FE-032 compose roster and Wave control', async ({ page, browser }) => {
-    test.setTimeout(180_000);
+  test('FE-027 through FE-033 compose roster, Wave, and reload-safe operator control', async ({ page, browser }) => {
+    test.setTimeout(480_000);
+    page.setDefaultTimeout(15_000);
 
     const tournamentName = uniqueName('fullstack-roster');
     const tournamentPublicID = uniqueName('roster-public');
@@ -941,6 +942,8 @@ test.describe('local compose full stack e2e', () => {
       );
       let adminAccessCSRFToken = adminAccessCSRF?.value ?? '';
       expect(adminAccessCSRFToken, 'admin login did not issue an access CSRF cookie').toBeTruthy();
+
+      await page.goto('/arena', { waitUntil: 'domcontentloaded' });
 
       const normalTaskGroups: Array<{
         category: FullStackTaskInput['category'];
@@ -1014,6 +1017,8 @@ test.describe('local compose full stack e2e', () => {
         players.push(me.player);
       }
 
+      await page.goto('/admin', { waitUntil: 'domcontentloaded' });
+      await expect(page.getByRole('button', { name: 'Турниры' })).toBeVisible({ timeout: 15_000 });
       await page.getByRole('button', { name: 'Турниры' }).click();
       const tournamentListRefresh = page.waitForResponse(
         (response) =>
@@ -1109,20 +1114,17 @@ test.describe('local compose full stack e2e', () => {
       }
 
       await page.reload({ waitUntil: 'domcontentloaded' });
-      await loginThroughAdminUI(page);
+      await expect(page.getByRole('button', { name: 'Турниры' })).toBeVisible({ timeout: 15_000 });
       const refreshedAdminAccessCSRF = (await page.context().cookies()).find(
         (cookie) => cookie.name === 'tpm_admin_access_csrf',
       );
       adminAccessCSRFToken = refreshedAdminAccessCSRF?.value ?? '';
-      expect(adminAccessCSRFToken, 'admin relogin did not issue an access CSRF cookie').toBeTruthy();
+      expect(adminAccessCSRFToken, 'admin reload did not restore the access CSRF cookie').toBeTruthy();
       await page.getByRole('button', { name: 'Турниры' }).click();
-      const reopenedTournamentRow = page.getByRole('row').filter({ hasText: tournamentName });
-      const reopenedEditRosterButton = reopenedTournamentRow.getByRole('button', {
-        name: 'Редактировать состав',
-      });
-      await expect(reopenedEditRosterButton).toBeVisible({ timeout: 15_000 });
-      await reopenedEditRosterButton.click();
       await expect(rosterRegion).toBeVisible({ timeout: 15_000 });
+      await rosterRegion
+        .getByLabel('Турнир для редактирования состава')
+        .selectOption(tournament.id);
       await expect(rosterRegion.getByRole('group')).toHaveCount(4);
       for (const [index, participant] of savedParticipants.entries()) {
         const group = rosterRegion.getByRole('group', { name: `Участник ${index + 1}` });
@@ -1220,23 +1222,24 @@ test.describe('local compose full stack e2e', () => {
       ]);
 
       await page.reload({ waitUntil: 'domcontentloaded' });
-      await loginThroughAdminUI(page);
+      await expect(page.getByRole('button', { name: 'Турниры' })).toBeVisible({ timeout: 15_000 });
       const preflightAdminAccessCSRF = (await page.context().cookies()).find(
         (cookie) => cookie.name === 'tpm_admin_access_csrf',
       );
       adminAccessCSRFToken = preflightAdminAccessCSRF?.value ?? '';
       expect(
         adminAccessCSRFToken,
-        'admin relogin before FE-029 did not issue an access CSRF cookie',
+        'admin reload before FE-029 did not restore the access CSRF cookie',
       ).toBeTruthy();
       await page.getByRole('button', { name: 'Турниры' }).click();
-      const preflightTournamentRow = page.getByRole('row').filter({ hasText: tournamentName });
       const preflightRosterResponse = page.waitForResponse(
         (response) =>
           new URL(response.url()).pathname === `/api/v1/admin/tournaments/${tournament.id}/roster` &&
           response.request().method() === 'GET',
       );
-      await preflightTournamentRow.getByRole('button', { name: 'Редактировать состав' }).click();
+      await rosterRegion
+        .getByLabel('Турнир для редактирования состава')
+        .selectOption(tournament.id);
       expect((await preflightRosterResponse).status()).toBe(200);
       await expect(rosterRegion).toBeVisible({ timeout: 15_000 });
       await expect(rosterRegion.getByText('На месте', { exact: true })).toHaveCount(4);
@@ -1642,6 +1645,79 @@ test.describe('local compose full stack e2e', () => {
       await expect(waveRegion.getByTestId('operator-match')).toHaveCount(2);
       await expect(waveRegion.getByTestId('operator-match').getByText('Идет', { exact: true }))
         .toHaveCount(2);
+
+      const operatorPath = `/arena/operator/${tournament.id}`;
+      await page.goto(operatorPath, { waitUntil: 'domcontentloaded' });
+      await expect(page.getByText('Снимок подтвержден', { exact: true })).toBeVisible({
+        timeout: 15_000,
+      });
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await expect(page).toHaveURL(new URL(operatorPath, frontendURL).toString());
+      await expect(page.getByText('Снимок подтвержден', { exact: true })).toBeVisible({
+        timeout: 15_000,
+      });
+      await expectNoSensitiveAuthStorage(page);
+
+      const restoredCookies = await page.context().cookies();
+      const restoredAccessCSRF = restoredCookies.find(
+        (cookie) => cookie.name === 'tpm_admin_access_csrf',
+      );
+      expect(restoredAccessCSRF?.path).toBe('/');
+      expect(restoredAccessCSRF?.httpOnly).toBe(false);
+      const restoredAccessSession = restoredCookies.find(
+        (cookie) => cookie.name === 'tpm_admin_access',
+      );
+      expect(restoredAccessSession?.path).toBe('/api/v1/admin');
+      expect(restoredAccessSession?.httpOnly).toBe(true);
+
+      const operatorWaveActionPath =
+        `/api/v1/admin/tournaments/${tournament.id}/waves/${plannedWave.id}/actions`;
+      const actionSelect = page.getByLabel('Команда оператора');
+      await actionSelect.selectOption('pause');
+      await page.getByLabel('Причина').fill('Проверка CSRF после reload operator Arena');
+      await page
+        .getByLabel('Подтверждаю, что команда соответствует текущему авторитетному снимку.')
+        .check();
+      const pauseResponsePromise = page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname === operatorWaveActionPath &&
+          response.request().method() === 'POST',
+      );
+      await page.getByRole('button', { name: 'Выполнить: Пауза турнира' }).click();
+      const pauseResponse = await pauseResponsePromise;
+      expect(
+        pauseResponse.request().headers()['x-csrf-token'],
+        'pause after reload must send the restored admin access CSRF token',
+      ).toBeTruthy();
+      expect(
+        pauseResponse.status(),
+        `pause after reload failed with ${pauseResponse.status()}: ${await pauseResponse.text()}`,
+      ).toBe(200);
+      await expect(page.getByRole('region', { name: 'Управление турниром' }))
+        .toContainText('Техническая пауза');
+
+      await actionSelect.selectOption('resume');
+      await page.getByLabel('Причина').fill('Проверка resume с восстановленным CSRF contract');
+      await page
+        .getByLabel('Подтверждаю, что команда соответствует текущему авторитетному снимку.')
+        .check();
+      const resumeResponsePromise = page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname === operatorWaveActionPath &&
+          response.request().method() === 'POST',
+      );
+      await page.getByRole('button', { name: 'Выполнить: Возобновить турнир' }).click();
+      const resumeResponse = await resumeResponsePromise;
+      expect(
+        resumeResponse.request().headers()['x-csrf-token'],
+        'resume after reload must reuse the restored admin access CSRF token',
+      ).toBeTruthy();
+      expect(
+        resumeResponse.status(),
+        `resume after reload failed with ${resumeResponse.status()}: ${await resumeResponse.text()}`,
+      ).toBe(200);
+      await expect(page.getByRole('region', { name: 'Управление турниром' }))
+        .toContainText('Швейцарка');
 
       const staleStartResponse = await adminRequest.post(
         `${backendURL}/api/v1/admin/tournaments/${tournament.id}/waves/${plannedWave.id}/actions`,

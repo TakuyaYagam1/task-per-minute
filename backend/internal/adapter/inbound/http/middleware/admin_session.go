@@ -35,6 +35,10 @@ func AdminSession(auth AdminAccessVerifier) func(http.Handler) http.Handler {
 				writeUnauthorized(w, r, "invalid admin session")
 				return
 			}
+			if err := EnsureAdminAccessCSRFCookie(w, r, token, maxAgeUntil(claims.ExpiresAt)); err != nil {
+				writeProblem(w, r, http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError), "internal")
+				return
+			}
 
 			next.ServeHTTP(w, r.WithContext(withAdminClaims(r.Context(), claims)))
 		})
