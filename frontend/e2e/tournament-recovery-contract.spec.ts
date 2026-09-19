@@ -651,6 +651,25 @@ test("one role-aware REST boundary recovers public, participant, and operator sn
   });
 });
 
+test("operator recovery keeps projection and tournament authority revisions independent", () => {
+  const snapshot = operatorSnapshot(4);
+  snapshot.next_cursor.projection_revision = 1;
+
+  const recovered = recoverRoleSnapshot({
+    role: "operator",
+    tournamentId: tournamentFixtureIds.tournament,
+    snapshot,
+    serverTimestamp: "2026-09-13T10:00:00Z",
+  });
+
+  expect(recovered.outcome).toBe("initialized");
+  expect(recovered.state?.cursor).toEqual({
+    projection_revision: 1,
+    authority_revision: 4,
+    audit_sequence: 14,
+  });
+});
+
 test("an authoritative newer snapshot closes a recovery gap without rolling back", () => {
   const initial = recoverRoleSnapshot({
     role: "public",

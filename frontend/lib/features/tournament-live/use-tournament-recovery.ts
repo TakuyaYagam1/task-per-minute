@@ -18,6 +18,11 @@ type RecoveryView = Readonly<{
   status: TournamentLiveConnectionStatus;
 }>;
 
+type RecoveryActions = Readonly<{
+  refresh: () => void;
+  retry: () => void;
+}>;
+
 const initialView: RecoveryView = {
   recovery: null,
   status: "connecting",
@@ -30,7 +35,7 @@ const isAbortError = (error: unknown): boolean =>
 export const useTournamentRecovery = (
   role: TournamentLiveRole,
   tournamentId: string,
-): RecoveryView & Readonly<{ retry: () => void }> => {
+): RecoveryView & RecoveryActions => {
   const [view, setView] = useState<RecoveryView>(initialView);
   const recoveryRef = useRef<RoleAwareRecoveryState | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
@@ -121,5 +126,9 @@ export const useTournamentRecovery = (
     void load(recoveryRef.current !== null);
   }, [load]);
 
-  return { ...view, retry };
+  const refresh = useCallback(() => {
+    void load(false);
+  }, [load]);
+
+  return { ...view, refresh, retry };
 };

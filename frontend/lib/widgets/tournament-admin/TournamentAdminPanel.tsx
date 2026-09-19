@@ -25,6 +25,7 @@ import {
 import { RosterEditor } from "./RosterEditor";
 import { SeriesConfigurationEditor } from "./SeriesConfigurationEditor";
 import { SwissPairingEditor } from "./SwissPairingEditor";
+import { WaveControlPanel } from "./WaveControlPanel";
 import {
   TournamentContentManager,
   type AdminRequestRunner,
@@ -578,6 +579,12 @@ export const TournamentAdminPanel = ({
         onSelectTournament={setSelectedTournamentId}
         onSessionExpired={onSessionExpired}
       />
+      {selectedTournamentId ? (
+        <WaveControlPanel
+          tournamentId={selectedTournamentId}
+          onSessionExpired={onSessionExpired}
+        />
+      ) : null}
     </div>
   );
 };

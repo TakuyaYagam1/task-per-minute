@@ -4,6 +4,7 @@ import {
   isAuditPage,
   isIncidentBundle,
   isOperatorRecoverySnapshot,
+  isOperatorWave,
   isPreflightReport,
   isRoster,
   isSwissRound,
@@ -14,6 +15,8 @@ import {
   type OperatorAuditRedactedPayload,
 } from "./guards";
 import type { components } from "./schema";
+
+export { isOperatorWave } from "./guards";
 
 export type Tournament = components["schemas"]["Tournament"];
 export type TournamentListResponse = components["schemas"]["TournamentListResponse"];
@@ -36,6 +39,8 @@ export type AuditPage = OperatorAuditPage;
 export type IncidentBundle = components["schemas"]["IncidentBundle"];
 export type OperatorRecoveryCursor = components["schemas"]["OperatorRecoveryCursor"];
 export type OperatorRecoverySnapshot = components["schemas"]["OperatorRecoverySnapshot"];
+export type Wave = components["schemas"]["Wave"];
+export type WaveControlRequest = components["schemas"]["WaveControlRequest"];
 export type AuditEntityKind = components["parameters"]["AuditEntityKind"];
 export type AuditActorKind = components["parameters"]["AuditActorKind"];
 
@@ -292,6 +297,27 @@ export const operatorApi = {
     );
   },
 
+  async controlWave(
+    tournamentId: string,
+    waveId: string,
+    body: WaveControlRequest,
+    intent: OperatorIdempotencyKey,
+    signal?: AbortSignal,
+  ): Promise<Wave> {
+    return readOperatorResponse(
+      adminClient.POST("/api/v1/admin/tournaments/{tournament_id}/waves/{wave_id}/actions", {
+        params: {
+          path: { tournament_id: tournamentId, wave_id: waveId },
+          header: mutationHeaders(intent),
+        },
+        body,
+        signal,
+      }),
+      isOperatorWave,
+      "admin/tournament wave control",
+    );
+  },
+
   async getSnapshot(
     tournamentId: string,
     cursor?: OperatorRecoveryCursor,
@@ -347,6 +373,7 @@ export const runTournamentRosterPreflight = operatorApi.runRosterPreflight;
 export const lockTournamentRoster = operatorApi.lockRoster;
 export const unlockTournamentRoster = operatorApi.unlockRoster;
 export const configureTournamentPairings = operatorApi.configurePairings;
+export const controlTournamentWave = operatorApi.controlWave;
 export const getOperatorSnapshot = operatorApi.getSnapshot;
 export const listTournamentAudit = operatorApi.listAudit;
 export const exportTournamentIncident = operatorApi.exportIncident;

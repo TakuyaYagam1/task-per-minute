@@ -763,7 +763,7 @@ const hasSnapshotScope = (
           value.pause_graph.tournament_id === value.tournament.id &&
           value.pause_graph.roster_id === value.roster.id
         )) &&
-        value.next_cursor.projection_revision === value.tournament.revision;
+        value.next_cursor.authority_revision === value.tournament.revision;
   }
 };
 

@@ -83,6 +83,27 @@ type FullStackSwissRound = {
   tournament_id: string;
 };
 
+type FullStackWave = {
+  id: string;
+  members: Array<{
+    participant_id: string;
+    ready: boolean;
+    series_id?: string | null;
+  }>;
+  state: string;
+};
+
+type FullStackOperatorSnapshot = {
+  next_cursor: {
+    projection_revision: number;
+  };
+  waves: FullStackWave[];
+};
+
+type FullStackParticipantSnapshot = {
+  projection_revision: number;
+};
+
 type FullStackConfigurationMutation = {
   affected_artifacts: Array<{
     id: string;
@@ -898,7 +919,7 @@ test.describe('local compose full stack e2e', () => {
     }
   });
 
-  test('FE-027, FE-029, FE-030, and FE-031 compose roster control with real Swiss pairings', async ({ page, browser }) => {
+  test('FE-027, FE-029, FE-030, FE-031, and FE-032 compose roster and Wave control', async ({ page, browser }) => {
     test.setTimeout(180_000);
 
     const tournamentName = uniqueName('fullstack-roster');
@@ -1521,6 +1542,124 @@ test.describe('local compose full stack e2e', () => {
       await expect(successorSeries).toBeVisible();
       await expect(successorSeries.getByLabel(/Режим серии/)).toHaveValue('admin');
       await expect(successorSeries.getByLabel(/Категория серии/)).toHaveValue('crypto');
+
+      const waveRegion = page.getByRole('region', { name: 'Волны и матчи' });
+      await expect(waveRegion).toBeVisible();
+      const refreshedWaveSnapshotResponse = page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname ===
+            `/api/v1/admin/tournaments/${tournament.id}/snapshot` &&
+          response.request().method() === 'GET',
+      );
+      await waveRegion.getByRole('button', { name: 'Обновить матчи' }).click();
+      const refreshedWaveSnapshotHTTP = await refreshedWaveSnapshotResponse;
+      expect(refreshedWaveSnapshotHTTP.status()).toBe(200);
+      const refreshedWaveSnapshot = (await refreshedWaveSnapshotHTTP.json()) as FullStackOperatorSnapshot;
+      expect(refreshedWaveSnapshot.waves).toHaveLength(1);
+      const plannedWave = refreshedWaveSnapshot.waves[0];
+      if (!plannedWave) {
+        throw new Error('Swiss pairing did not create a Wave');
+      }
+      await expect(waveRegion.getByTestId('operator-wave')).toHaveCount(1);
+      await expect(waveRegion.getByTestId('operator-match')).toHaveCount(2);
+
+      const openWaveResponse = page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname ===
+            `/api/v1/admin/tournaments/${tournament.id}/waves/${plannedWave.id}/actions` &&
+          response.request().method() === 'POST',
+      );
+      await waveRegion.getByRole('button', { name: 'Открыть готовность' }).click();
+      const openedWaveHTTP = await openWaveResponse;
+      expect(
+        openedWaveHTTP.status(),
+        `open Wave failed with ${openedWaveHTTP.status()}: ${await openedWaveHTTP.text()}`,
+      ).toBe(200);
+
+      for (const participant of checkedInSourceRosterParticipants) {
+        const playerIndex = players.findIndex((player) => player.id === participant.player_id);
+        const playerContext = playerContexts[playerIndex];
+        if (!playerContext) {
+          throw new Error(`missing browser context for player ${participant.player_id}`);
+        }
+        const playerCSRF = (await playerContext.cookies()).find(
+          (cookie) => cookie.name === 'tpm_player_csrf',
+        )?.value;
+        expect(playerCSRF, `player ${participant.player_id} did not receive a CSRF cookie`).toBeTruthy();
+        const participantSnapshotResponse = await playerContext.request.get(
+          `${backendURL}/api/v1/tournaments/${tournament.id}/participant/snapshot`,
+          { headers: { Origin: frontendURL } },
+        );
+        expect(
+          participantSnapshotResponse.status(),
+          `participant snapshot failed with ${participantSnapshotResponse.status()}`,
+        ).toBe(200);
+        const participantSnapshot =
+          (await participantSnapshotResponse.json()) as FullStackParticipantSnapshot;
+        const readyResponse = await playerContext.request.post(
+          `${backendURL}/api/v1/tournaments/${tournament.id}/participant/waves/${plannedWave.id}/ready`,
+          {
+            headers: {
+              'X-CSRF-Token': playerCSRF ?? '',
+              'Idempotency-Key': randomUUID(),
+              Origin: frontendURL,
+            },
+            data: {
+              expected_projection_revision: participantSnapshot.projection_revision,
+              ready: true,
+            },
+          },
+        );
+        expect(
+          readyResponse.status(),
+          `participant readiness failed with ${readyResponse.status()}: ${await readyResponse.text()}`,
+        ).toBe(200);
+      }
+
+      const readyWaveSnapshotResponse = page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname ===
+            `/api/v1/admin/tournaments/${tournament.id}/snapshot` &&
+          response.request().method() === 'GET',
+      );
+      await waveRegion.getByRole('button', { name: 'Обновить матчи' }).click();
+      expect((await readyWaveSnapshotResponse).status()).toBe(200);
+      await expect(waveRegion.getByRole('button', { name: 'Начать волну' })).toBeEnabled();
+      await expect(waveRegion.getByTestId('wave-ready-countdown')).toHaveCount(2);
+
+      const startWaveResponse = page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname ===
+            `/api/v1/admin/tournaments/${tournament.id}/waves/${plannedWave.id}/actions` &&
+          response.request().method() === 'POST',
+      );
+      await waveRegion.getByRole('button', { name: 'Начать волну' }).click();
+      const startedWaveHTTP = await startWaveResponse;
+      expect(
+        startedWaveHTTP.status(),
+        `start Wave failed with ${startedWaveHTTP.status()}: ${await startedWaveHTTP.text()}`,
+      ).toBe(200);
+      await expect(waveRegion.getByTestId('operator-match')).toHaveCount(2);
+      await expect(waveRegion.getByTestId('operator-match').getByText('Идет', { exact: true }))
+        .toHaveCount(2);
+
+      const staleStartResponse = await adminRequest.post(
+        `${backendURL}/api/v1/admin/tournaments/${tournament.id}/waves/${plannedWave.id}/actions`,
+        {
+          headers: {
+            'X-CSRF-Token': adminAccessCSRFToken,
+            'Idempotency-Key': randomUUID(),
+            Origin: frontendURL,
+          },
+          data: {
+            action: 'start',
+            confirmed: true,
+            expected_projection_revision: refreshedWaveSnapshot.next_cursor.projection_revision,
+            reason: 'Проверка отказа для устаревшей ревизии',
+          },
+        },
+      );
+      expect(staleStartResponse.status(), 'stale Wave start must be rejected').toBe(409);
     } finally {
       for (const context of playerContexts) {
         await context.close();

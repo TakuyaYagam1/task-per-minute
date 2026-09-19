@@ -1232,7 +1232,9 @@ const isOperatorReadyWindow = (value: unknown): boolean =>
   new Set(["open", "consumed", "expired", "superseded"]).has(value.state) &&
   isNonNilUUID(value.wave_id);
 
-const isOperatorWave = (value: unknown): boolean =>
+export const isOperatorWave = (
+  value: unknown,
+): value is components["schemas"]["Wave"] =>
   isRecord(value) &&
   hasExactKeys(value, [
     "id",
