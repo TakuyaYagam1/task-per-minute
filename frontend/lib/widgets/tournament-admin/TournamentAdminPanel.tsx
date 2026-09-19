@@ -26,6 +26,7 @@ import { RosterEditor } from "./RosterEditor";
 import { SeriesConfigurationEditor } from "./SeriesConfigurationEditor";
 import { SwissPairingEditor } from "./SwissPairingEditor";
 import { WaveControlPanel } from "./WaveControlPanel";
+import { GoldenPlayoffControlPanel } from "./GoldenPlayoffControlPanel";
 import {
   TournamentContentManager,
   type AdminRequestRunner,
@@ -249,6 +250,12 @@ export const TournamentAdminPanel = ({
     () => tournaments.find((tournament) => tournament.id === selectedTournamentId) ?? null,
     [selectedTournamentId, tournaments],
   );
+
+  const handleTournamentUpdated = useCallback((updatedTournament: Tournament): void => {
+    setTournaments((current) => current.map((currentTournament) => (
+      currentTournament.id === updatedTournament.id ? updatedTournament : currentTournament
+    )));
+  }, []);
 
   const handleCreate = async (): Promise<void> => {
     if (creatingRef.current) {
@@ -585,6 +592,11 @@ export const TournamentAdminPanel = ({
           onSessionExpired={onSessionExpired}
         />
       ) : null}
+      <GoldenPlayoffControlPanel
+        tournament={selectedTournament}
+        onSessionExpired={onSessionExpired}
+        onTournamentUpdated={handleTournamentUpdated}
+      />
     </div>
   );
 };
