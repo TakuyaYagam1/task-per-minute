@@ -182,7 +182,11 @@ export const publicRecovery = (projectionRevision = 9, eventSequence = 14): Sche
 });
 
 export const participantLobby = (projectionRevision = 9): Schema["ParticipantLobbyResponse"] => ({
+  attendance: "checked_in",
+  current_swiss_round: 1,
+  participant_id: tournamentFixtureIds.firstParticipant,
   projection_revision: projectionRevision,
+  required_action: "wait",
   roster_locked: true,
   series: [{
     format: "bo3",
@@ -192,6 +196,8 @@ export const participantLobby = (projectionRevision = 9): Schema["ParticipantLob
     wave_id: tournamentFixtureIds.bo3Wave,
   }],
   state: "technical_pause",
+  status: "assigned",
+  swiss_points: 3,
   tournament_id: tournamentFixtureIds.tournament,
 });
 

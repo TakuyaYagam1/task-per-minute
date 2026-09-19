@@ -23,6 +23,7 @@ func TestParticipantStateRootPreservesDurableCursors(t *testing.T) {
 		TournamentID: tournamentID, TournamentState: string(domain.TournamentStateSwiss),
 		RosterID: participantStateTestID(3), RosterLocked: true,
 		ParticipantID: participantStateTestID(4), PlayerID: playerID,
+		Attendance: string(domain.AttendanceStateCheckedIn), CurrentSwissRound: 2, SwissPoints: 3,
 		ProjectionRevisionID: participantStateTestID(5), ProjectionRevision: 7,
 		ParticipantViewRevision: 31, EventSequence: 12,
 		ObservedAt: participantStateTimestamp(observedAt),
@@ -386,6 +387,39 @@ func TestParticipantWaveRequiresOneSeriesPerMember(t *testing.T) {
 	require.Equal(t, seriesID, wave.SeriesIDs[secondParticipantID])
 
 	members[1].SeriesCount = 2
+	_, err = participantWaveFromRows(row, members, root)
+	require.ErrorIs(t, err, ErrParticipantStateInvalid)
+}
+
+func TestParticipantWaveAcceptsOnlyAuthoritativeByeMemberWithoutSeries(t *testing.T) {
+	t.Parallel()
+
+	root := participantStateRoot{
+		tournamentID: participantStateTestID(40), participantID: participantStateTestID(41),
+	}
+	row := sqlc.GetParticipantStateWaveRow{
+		WaveID: participantStateTestID(42), TournamentID: root.tournamentID,
+		WaveRevisionID: participantStateTestID(43), WaveRevision: 2,
+		WaveState:        string(domain.WaveStatePlanned),
+		ByeParticipantID: uuid.NullUUID{UUID: root.participantID, Valid: true},
+	}
+	pairedParticipantID := participantStateTestID(44)
+	seriesID := participantStateTestID(45)
+	members := []sqlc.ListParticipantStateWaveMembersRow{
+		{ParticipantID: root.participantID, ReadinessRevision: 1, SeriesID: "", SeriesCount: 0},
+		{ParticipantID: pairedParticipantID, ReadinessRevision: 1, SeriesID: seriesID.String(), SeriesCount: 1},
+	}
+
+	view, err := participantWaveFromRows(row, members, root)
+
+	require.NoError(t, err)
+	require.Equal(t, root.participantID, *view.ByeParticipantID)
+	_, paired := view.SeriesIDs[root.participantID]
+	require.False(t, paired)
+	require.Equal(t, seriesID, view.SeriesIDs[pairedParticipantID])
+
+	members[0].SeriesID = ""
+	row.ByeParticipantID = uuid.NullUUID{}
 	_, err = participantWaveFromRows(row, members, root)
 	require.ErrorIs(t, err, ErrParticipantStateInvalid)
 }

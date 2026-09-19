@@ -6,6 +6,8 @@ import { createTournamentFixtureSet, tournamentFixtureIds } from "./tournament/f
 const tournamentId = tournamentFixtureIds.tournament;
 const publicPath = `/api/v1/tournaments/${tournamentId}`;
 const participantPath = `${publicPath}/participant/lobby`;
+const participantSnapshotPath = `${publicPath}/participant/snapshot`;
+const publicSnapshotPath = `${publicPath}/snapshot`;
 const operatorPath = `/api/v1/admin/tournaments/${tournamentId}/snapshot`;
 const adminRefreshPath = "/api/v1/admin/refresh";
 const playerLogoutPath = "/api/v1/players/logout";
@@ -157,7 +159,7 @@ test("direct participant link uses the participant API boundary", async ({ page 
   await expect(page.getByTestId("arena-tournament-id")).toHaveText(tournamentId);
   await expect(page.getByRole("heading", { name: /Участник/ })).toBeVisible();
 
-  expectOnlyPaths(evidence, [publicPath, participantPath]);
+  expectOnlyPaths(evidence, [publicPath, participantPath, participantSnapshotPath]);
   expect(evidence.apiPaths.some((path) => path.includes("/admin/"))).toBe(false);
   expectNoAuthorization(evidence);
 });
@@ -189,7 +191,7 @@ test("direct spectator link remains anonymous and does not call protected endpoi
   await expect(page.getByRole("heading", { name: /Наблюдатель/ })).toBeVisible();
   await expect(page.getByRole("button", { name: "Выйти" })).toHaveCount(0);
 
-  expectOnlyPaths(evidence, [publicPath]);
+  expectOnlyPaths(evidence, [publicPath, publicSnapshotPath]);
   expectNoAuthorization(evidence);
 });
 
@@ -213,7 +215,13 @@ test("successful role links preserve path and query parameters across reload", a
     await expect(page.getByTestId("arena-tournament-id")).toHaveText(tournamentId);
   }
 
-  expectOnlyPaths(evidence, [publicPath, participantPath, operatorPath]);
+  expectOnlyPaths(evidence, [
+    publicPath,
+    participantPath,
+    participantSnapshotPath,
+    operatorPath,
+    publicSnapshotPath,
+  ]);
   expectNoAuthorization(evidence);
 });
 
@@ -360,7 +368,12 @@ test("participant logout calls the player logout API and clears local session st
   await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem("username"))).toBeNull();
   await expect.poll(() => page.evaluate(() => document.cookie.includes("tpm_player_csrf="))).toBe(false);
 
-  expectOnlyPaths(evidence, [publicPath, participantPath, playerLogoutPath]);
+  expectOnlyPaths(evidence, [
+    publicPath,
+    participantPath,
+    participantSnapshotPath,
+    playerLogoutPath,
+  ]);
   expectNoAuthorization(evidence);
 });
 
@@ -436,7 +449,13 @@ test("completed tournaments are read-only after role authorization", async ({ pa
   await expect(page.getByRole("heading", { name: /Наблюдатель.*Завершен/ })).toBeVisible();
   await expect(page.getByRole("button", { name: "Выйти" })).toHaveCount(0);
 
-  expectOnlyPaths(evidence, [publicPath, participantPath, operatorPath]);
+  expectOnlyPaths(evidence, [
+    publicPath,
+    participantPath,
+    participantSnapshotPath,
+    operatorPath,
+    publicSnapshotPath,
+  ]);
   expectNoAuthorization(evidence);
 });
 

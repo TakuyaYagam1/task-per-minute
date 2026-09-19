@@ -639,6 +639,66 @@ func (e PairingConfigurationRequestPairingMode) Valid() bool {
 	}
 }
 
+// Defines values for ParticipantLobbyRequiredAction.
+const (
+	ParticipantLobbyRequiredActionCheckIn      ParticipantLobbyRequiredAction = "check_in"
+	ParticipantLobbyRequiredActionDraft        ParticipantLobbyRequiredAction = "draft"
+	ParticipantLobbyRequiredActionNone         ParticipantLobbyRequiredAction = "none"
+	ParticipantLobbyRequiredActionPlay         ParticipantLobbyRequiredAction = "play"
+	ParticipantLobbyRequiredActionReady        ParticipantLobbyRequiredAction = "ready"
+	ParticipantLobbyRequiredActionReviewResult ParticipantLobbyRequiredAction = "review_result"
+	ParticipantLobbyRequiredActionWait         ParticipantLobbyRequiredAction = "wait"
+)
+
+// Valid indicates whether the value is a known member of the ParticipantLobbyRequiredAction enum.
+func (e ParticipantLobbyRequiredAction) Valid() bool {
+	switch e {
+	case ParticipantLobbyRequiredActionCheckIn:
+		return true
+	case ParticipantLobbyRequiredActionDraft:
+		return true
+	case ParticipantLobbyRequiredActionNone:
+		return true
+	case ParticipantLobbyRequiredActionPlay:
+		return true
+	case ParticipantLobbyRequiredActionReady:
+		return true
+	case ParticipantLobbyRequiredActionReviewResult:
+		return true
+	case ParticipantLobbyRequiredActionWait:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ParticipantLobbyStatus.
+const (
+	ParticipantLobbyStatusAssigned   ParticipantLobbyStatus = "assigned"
+	ParticipantLobbyStatusBye        ParticipantLobbyStatus = "bye"
+	ParticipantLobbyStatusCompleted  ParticipantLobbyStatus = "completed"
+	ParticipantLobbyStatusEliminated ParticipantLobbyStatus = "eliminated"
+	ParticipantLobbyStatusWaiting    ParticipantLobbyStatus = "waiting"
+)
+
+// Valid indicates whether the value is a known member of the ParticipantLobbyStatus enum.
+func (e ParticipantLobbyStatus) Valid() bool {
+	switch e {
+	case ParticipantLobbyStatusAssigned:
+		return true
+	case ParticipantLobbyStatusBye:
+		return true
+	case ParticipantLobbyStatusCompleted:
+		return true
+	case ParticipantLobbyStatusEliminated:
+		return true
+	case ParticipantLobbyStatusWaiting:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ParticipantPostSeriesRequestAction.
 const (
 	ParticipantPostSeriesRequestActionAcknowledgeResult     ParticipantPostSeriesRequestAction = "acknowledge_result"
@@ -2158,13 +2218,28 @@ type ParticipantDraftActionRequest struct {
 	ExpectedTurn               int32           `json:"expected_turn"`
 }
 
+// ParticipantLobbyRequiredAction defines model for ParticipantLobbyRequiredAction.
+type ParticipantLobbyRequiredAction string
+
 // ParticipantLobbyResponse defines model for ParticipantLobbyResponse.
 type ParticipantLobbyResponse struct {
-	ProjectionRevision int64                    `json:"projection_revision"`
-	RosterLocked       bool                     `json:"roster_locked"`
-	Series             []ParticipantLobbySeries `json:"series"`
-	State              TournamentState          `json:"state"`
-	TournamentId       openapi_types.UUID       `json:"tournament_id"`
+	Attendance AttendanceState `json:"attendance"`
+
+	// CurrentSwissRound Latest Swiss round linked to this participant, or null before Swiss assignment.
+	CurrentSwissRound *int32 `json:"current_swiss_round"`
+
+	// ParticipantId Authenticated participant identity resolved by the server.
+	ParticipantId      openapi_types.UUID             `json:"participant_id"`
+	ProjectionRevision int64                          `json:"projection_revision"`
+	RequiredAction     ParticipantLobbyRequiredAction `json:"required_action"`
+	RosterLocked       bool                           `json:"roster_locked"`
+	Series             []ParticipantLobbySeries       `json:"series"`
+	State              TournamentState                `json:"state"`
+	Status             ParticipantLobbyStatus         `json:"status"`
+
+	// SwissPoints Participant's authoritative Swiss points from the point ledger.
+	SwissPoints  int32              `json:"swiss_points"`
+	TournamentId openapi_types.UUID `json:"tournament_id"`
 }
 
 // ParticipantLobbySeries defines model for ParticipantLobbySeries.
@@ -2175,6 +2250,9 @@ type ParticipantLobbySeries struct {
 	State               SeriesState        `json:"state"`
 	WaveId              openapi_types.UUID `json:"wave_id"`
 }
+
+// ParticipantLobbyStatus defines model for ParticipantLobbyStatus.
+type ParticipantLobbyStatus string
 
 // ParticipantPostSeriesRequest defines model for ParticipantPostSeriesRequest.
 type ParticipantPostSeriesRequest struct {

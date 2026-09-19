@@ -167,8 +167,30 @@ TournamentActionRequest:
 ParticipantLobbyResponse:
   type: object
   additionalProperties: false
-  required: [tournament_id, state, projection_revision, roster_locked, series]
+  required: [participant_id, attendance, current_swiss_round, swiss_points, status, required_action, tournament_id, state, projection_revision, roster_locked, series]
   properties:
+    participant_id:
+      type: string
+      format: uuid
+      description: Authenticated participant identity resolved by the server.
+    attendance:
+      $ref: '#/AttendanceState'
+    current_swiss_round:
+      type: integer
+      format: int32
+      minimum: 1
+      maximum: 4
+      nullable: true
+      description: Latest Swiss round linked to this participant, or null before Swiss assignment.
+    swiss_points:
+      type: integer
+      format: int32
+      minimum: 0
+      description: Participant's authoritative Swiss points from the point ledger.
+    status:
+      $ref: '#/ParticipantLobbyStatus'
+    required_action:
+      $ref: '#/ParticipantLobbyRequiredAction'
     tournament_id:
       type: string
       format: uuid
@@ -184,6 +206,16 @@ ParticipantLobbyResponse:
       type: array
       items:
         $ref: '#/ParticipantLobbySeries'
+
+ParticipantLobbyStatus:
+  type: string
+  enum: [waiting, assigned, bye, eliminated, completed]
+  x-enum-varnames: [ParticipantLobbyStatusWaiting, ParticipantLobbyStatusAssigned, ParticipantLobbyStatusBye, ParticipantLobbyStatusEliminated, ParticipantLobbyStatusCompleted]
+
+ParticipantLobbyRequiredAction:
+  type: string
+  enum: [wait, check_in, ready, draft, play, review_result, none]
+  x-enum-varnames: [ParticipantLobbyRequiredActionWait, ParticipantLobbyRequiredActionCheckIn, ParticipantLobbyRequiredActionReady, ParticipantLobbyRequiredActionDraft, ParticipantLobbyRequiredActionPlay, ParticipantLobbyRequiredActionReviewResult, ParticipantLobbyRequiredActionNone]
 
 PublicTournamentResponse:
   type: object

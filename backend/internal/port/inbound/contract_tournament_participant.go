@@ -172,10 +172,71 @@ type RecoveryCursor struct {
 type LobbyView struct {
 	TournamentID       uuid.UUID
 	ParticipantID      uuid.UUID
+	Attendance         domain.AttendanceState
+	CurrentSwissRound  *int
+	SwissPoints        int
+	Status             LobbyStatus
+	RequiredAction     LobbyRequiredAction
 	ProjectionRevision int64
 	State              domain.TournamentState
 	RosterLocked       bool
 	Series             []LobbySeriesView
+}
+
+// LobbyStatus is the server-derived participant lifecycle state. It is
+// intentionally smaller than the underlying tournament, Wave, and Series
+// state machines so the browser cannot infer authority from timing details.
+type LobbyStatus string
+
+const (
+	LobbyStatusWaiting    LobbyStatus = "waiting"
+	LobbyStatusAssigned   LobbyStatus = "assigned"
+	LobbyStatusBye        LobbyStatus = "bye"
+	LobbyStatusEliminated LobbyStatus = "eliminated"
+	LobbyStatusCompleted  LobbyStatus = "completed"
+)
+
+func (s LobbyStatus) IsValid() bool {
+	switch s {
+	case LobbyStatusWaiting,
+		LobbyStatusAssigned,
+		LobbyStatusBye,
+		LobbyStatusEliminated,
+		LobbyStatusCompleted:
+		return true
+	default:
+		return false
+	}
+}
+
+// LobbyRequiredAction is the single participant-safe next action exposed by
+// the lobby. The server derives it from durable assignment, draft, Wave, and
+// result state; clients must not recreate that matrix locally.
+type LobbyRequiredAction string
+
+const (
+	LobbyRequiredActionWait         LobbyRequiredAction = "wait"
+	LobbyRequiredActionCheckIn      LobbyRequiredAction = "check_in"
+	LobbyRequiredActionReady        LobbyRequiredAction = "ready"
+	LobbyRequiredActionDraft        LobbyRequiredAction = "draft"
+	LobbyRequiredActionPlay         LobbyRequiredAction = "play"
+	LobbyRequiredActionReviewResult LobbyRequiredAction = "review_result"
+	LobbyRequiredActionNone         LobbyRequiredAction = "none"
+)
+
+func (a LobbyRequiredAction) IsValid() bool {
+	switch a {
+	case LobbyRequiredActionWait,
+		LobbyRequiredActionCheckIn,
+		LobbyRequiredActionReady,
+		LobbyRequiredActionDraft,
+		LobbyRequiredActionPlay,
+		LobbyRequiredActionReviewResult,
+		LobbyRequiredActionNone:
+		return true
+	default:
+		return false
+	}
 }
 
 type LobbySeriesView struct {
@@ -316,6 +377,7 @@ type WaveView struct {
 	Revision           int64
 	ReadinessRevisions map[uuid.UUID]int64
 	SeriesIDs          map[uuid.UUID]uuid.UUID
+	ByeParticipantID   *uuid.UUID
 }
 
 type RecoveryView struct {

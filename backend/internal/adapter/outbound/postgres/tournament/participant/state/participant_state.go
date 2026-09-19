@@ -88,6 +88,12 @@ func (r *ParticipantStatePostgres) readParticipantState(
 	if err != nil {
 		return usecase.RecoveryView{}, err
 	}
+	if participantIsAuthoritativeBye(wave, root.participantID) {
+		// A bye Wave intentionally has no participant-owned Series. Do not
+		// replay a prior completed Series or draft as current recovery state.
+		series = nil
+		draft = nil
+	}
 
 	view := usecase.RecoveryView{
 		TournamentID:            root.tournamentID,
@@ -155,6 +161,9 @@ func loadParticipantLobby(
 	return usecase.LobbyView{
 		TournamentID:       root.tournamentID,
 		ParticipantID:      root.participantID,
+		Attendance:         root.attendance,
+		CurrentSwissRound:  cloneParticipantStateInt(root.currentSwissRound),
+		SwissPoints:        root.swissPoints,
 		ProjectionRevision: root.projectionRevision,
 		State:              root.tournamentState,
 		RosterLocked:       root.rosterLocked,
@@ -299,6 +308,16 @@ func loadParticipantStateWave(
 	row, err := querier.GetParticipantStateWave(ctx, sqlc.GetParticipantStateWaveParams{
 		TournamentID: root.tournamentID, PlayerID: root.playerID, SeriesID: seriesID,
 	})
+	fallbackByMembership := false
+	if errors.Is(err, pgx.ErrNoRows) && series != nil {
+		// The latest Wave may be a Swiss bye and therefore have no link to the
+		// participant's previous Series. Re-read by participant membership only;
+		// the SQL adapter still validates the authoritative bye link below.
+		fallbackByMembership = true
+		row, err = querier.GetParticipantStateWave(ctx, sqlc.GetParticipantStateWaveParams{
+			TournamentID: root.tournamentID, PlayerID: root.playerID, SeriesID: uuid.NullUUID{},
+		})
+	}
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -313,7 +332,17 @@ func loadParticipantStateWave(
 	if err != nil {
 		return nil, err
 	}
+	if fallbackByMembership && !participantIsAuthoritativeBye(&view, root.participantID) {
+		// A newly materialized Series can exist before its Wave. In that state the
+		// membership fallback only sees an older Wave and must not bind it to the
+		// new Series. The fallback is authoritative solely for a linked Swiss bye.
+		return nil, nil
+	}
 	return &view, nil
+}
+
+func participantIsAuthoritativeBye(view *usecase.WaveView, participantID uuid.UUID) bool {
+	return view != nil && view.ByeParticipantID != nil && *view.ByeParticipantID == participantID
 }
 
 func participantStateQueryError(operation string, err error) error {

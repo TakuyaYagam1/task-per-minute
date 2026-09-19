@@ -26,23 +26,37 @@ type participantStateRoot struct {
 	rosterLocked            bool
 	participantID           uuid.UUID
 	playerID                uuid.UUID
+	attendance              domain.AttendanceState
+	currentSwissRound       *int
+	swissPoints             int
 	projectionRevision      int64
 	participantViewRevision int64
 	eventSequence           int64
 	observedAt              time.Time
 }
 
+//nolint:gocyclo // Persisted projection fields are validated together as one fail-closed boundary.
 func participantStateRootFromRow(
 	row sqlc.GetParticipantStateRootRow,
 	query tournamentparticipant.StateQuery,
 ) (participantStateRoot, error) {
 	state := domain.TournamentState(row.TournamentState)
+	attendance := domain.AttendanceState(row.Attendance)
 	observedAt, ok := participantStateRequiredTime(row.ObservedAt)
 	if row.TournamentID != query.TournamentID || row.PlayerID != query.PlayerID ||
 		row.RosterID == uuid.Nil || row.ParticipantID == uuid.Nil || row.ProjectionRevisionID == uuid.Nil ||
-		!state.IsValid() || row.ProjectionRevision < 1 || row.ParticipantViewRevision < 1 ||
+		!state.IsValid() || !attendance.IsValid() || row.ProjectionRevision < 1 || row.ParticipantViewRevision < 1 ||
+		row.SwissPoints < 0 || row.SwissPoints > math.MaxInt ||
 		row.EventSequence < 0 || !ok {
 		return participantStateRoot{}, participantStateInvalid("root")
+	}
+	var currentSwissRound *int
+	if row.CurrentSwissRound < 0 || row.CurrentSwissRound > 4 {
+		return participantStateRoot{}, participantStateInvalid("current Swiss round")
+	}
+	if row.CurrentSwissRound > 0 {
+		value := int(row.CurrentSwissRound)
+		currentSwissRound = &value
 	}
 	return participantStateRoot{
 		tournamentID:            row.TournamentID,
@@ -51,6 +65,9 @@ func participantStateRootFromRow(
 		rosterLocked:            row.RosterLocked,
 		participantID:           row.ParticipantID,
 		playerID:                row.PlayerID,
+		attendance:              attendance,
+		currentSwissRound:       currentSwissRound,
+		swissPoints:             int(row.SwissPoints),
 		projectionRevision:      row.ProjectionRevision,
 		participantViewRevision: row.ParticipantViewRevision,
 		eventSequence:           row.EventSequence,
@@ -442,6 +459,7 @@ func participantGameFromRow(row sqlc.GameAttempt) (domain.Game, error) {
 	return game, nil
 }
 
+//nolint:gocyclo // Wave, readiness, Series, and bye evidence must be cross-validated in one boundary.
 func participantWaveFromRows(
 	row sqlc.GetParticipantStateWaveRow,
 	rows []sqlc.ListParticipantStateWaveMembersRow,
@@ -459,32 +477,52 @@ func participantWaveFromRows(
 		return usecase.WaveView{}, err
 	}
 	wave.ReadyWindow = readyWindow
+	var byeParticipantID *uuid.UUID
+	if row.ByeParticipantID.Valid {
+		if row.ByeParticipantID.UUID == uuid.Nil {
+			return usecase.WaveView{}, participantStateInvalid("wave bye")
+		}
+		value := row.ByeParticipantID.UUID
+		byeParticipantID = &value
+	}
 	readiness := make(map[uuid.UUID]int64, len(rows))
 	seriesIDs := make(map[uuid.UUID]uuid.UUID, len(rows))
 	seen := make(map[uuid.UUID]struct{}, len(rows))
 	foundParticipant := false
+	foundBye := false
 	for _, member := range rows {
-		seriesID, parseErr := requiredParticipantStateUUID(member.SeriesID)
-		if parseErr != nil || member.ParticipantID == uuid.Nil || member.ReadinessRevision < 1 ||
-			member.SeriesCount != 1 {
+		seriesID, parseErr := optionalParticipantStateUUID(member.SeriesID)
+		if parseErr != nil || member.ParticipantID == uuid.Nil || member.ReadinessRevision < 1 {
 			return usecase.WaveView{}, participantStateInvalid("wave member")
 		}
 		if _, duplicate := seen[member.ParticipantID]; duplicate {
 			return usecase.WaveView{}, participantStateInvalid("duplicate wave member")
 		}
 		seen[member.ParticipantID] = struct{}{}
+		if seriesID == nil {
+			if byeParticipantID == nil || *byeParticipantID != member.ParticipantID ||
+				member.SeriesCount != 0 || foundBye {
+				return usecase.WaveView{}, participantStateInvalid("wave bye member")
+			}
+			foundBye = true
+		} else {
+			if member.SeriesCount != 1 || (byeParticipantID != nil && *byeParticipantID == member.ParticipantID) {
+				return usecase.WaveView{}, participantStateInvalid("wave member series")
+			}
+			seriesIDs[member.ParticipantID] = *seriesID
+		}
 		wave.Members = append(wave.Members, domain.WaveMember{
 			ParticipantID: member.ParticipantID, Ready: member.Ready,
 		})
 		readiness[member.ParticipantID] = member.ReadinessRevision
-		seriesIDs[member.ParticipantID] = seriesID
 		foundParticipant = foundParticipant || member.ParticipantID == root.participantID
 	}
-	if row.TournamentID != root.tournamentID || row.WaveRevision < 1 || !foundParticipant || wave.Validate() != nil {
+	if (byeParticipantID != nil && !foundBye) ||
+		(row.TournamentID != root.tournamentID || row.WaveRevision < 1 || !foundParticipant || wave.Validate() != nil) {
 		return usecase.WaveView{}, participantStateInvalid("wave")
 	}
 	return usecase.WaveView{
-		Wave: wave, Revision: row.WaveRevision,
+		Wave: wave, Revision: row.WaveRevision, ByeParticipantID: byeParticipantID,
 		ReadinessRevisions: readiness, SeriesIDs: seriesIDs,
 	}, nil
 }
@@ -576,6 +614,14 @@ func optionalParticipantStateUUID(value string) (*uuid.UUID, error) {
 }
 
 func cloneParticipantStateString(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
+}
+
+func cloneParticipantStateInt(value *int) *int {
 	if value == nil {
 		return nil
 	}

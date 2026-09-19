@@ -919,7 +919,7 @@ test.describe('local compose full stack e2e', () => {
     }
   });
 
-  test('FE-027 through FE-033 compose roster, Wave, and reload-safe operator control', async ({ page, browser }) => {
+  test('FE-017 and FE-027 through FE-033 compose roster, Wave, and reload-safe operator control', async ({ page, browser }) => {
     test.setTimeout(480_000);
     page.setDefaultTimeout(15_000);
 
@@ -1599,6 +1599,35 @@ test.describe('local compose full stack e2e', () => {
         ).toBe(200);
         const participantSnapshot =
           (await participantSnapshotResponse.json()) as FullStackParticipantSnapshot;
+        if (playerIndex === 0) {
+          const participantPage = await playerContext.newPage();
+          await participantPage.goto(
+            `${frontendURL}/arena/participant/${tournament.id}`,
+          );
+          const participantPanel = participantPage.getByTestId('participant-player-panel');
+          await expect(participantPanel).toHaveAttribute('data-state', 'assigned');
+          await expect(participantPanel.getByText('Подтверждена', { exact: true })).toBeVisible();
+          await expect(participantPanel.getByText('Раунд 1', { exact: true })).toBeVisible();
+          await expect(participantPage.getByTestId('participant-ready-button')).toBeEnabled();
+
+          const participantReadyResponse = participantPage.waitForResponse(
+            (response) =>
+              new URL(response.url()).pathname ===
+                `/api/v1/tournaments/${tournament.id}/participant/waves/${plannedWave.id}/ready` &&
+              response.request().method() === 'POST',
+          );
+          await participantPage.getByTestId('participant-ready-button').click();
+          const participantReadyHTTP = await participantReadyResponse;
+          expect(
+            participantReadyHTTP.status(),
+            `participant UI readiness failed with ${participantReadyHTTP.status()}: ${await participantReadyHTTP.text()}`,
+          ).toBe(200);
+          await expect(
+            participantPage.getByText('Готовность подтверждена сервером.', { exact: true }),
+          ).toBeVisible();
+          await participantPage.close();
+          continue;
+        }
         const readyResponse = await playerContext.request.post(
           `${backendURL}/api/v1/tournaments/${tournament.id}/participant/waves/${plannedWave.id}/ready`,
           {

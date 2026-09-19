@@ -5,6 +5,31 @@ SELECT tournament.id AS tournament_id,
     (roster.locked_at IS NOT NULL)::BOOLEAN AS roster_locked,
     participant.id AS participant_id,
     participant.player_id,
+    participant.attendance,
+    COALESCE((
+        SELECT swiss_round.round_number
+        FROM wave_members AS participant_wave_member
+        JOIN swiss_wave_links AS swiss_link
+            ON swiss_link.wave_id = participant_wave_member.wave_id
+            AND swiss_link.tournament_id = tournament.id
+            AND swiss_link.roster_id = roster.id
+        JOIN swiss_rounds AS swiss_round
+            ON swiss_round.id = swiss_link.round_id
+            AND swiss_round.roster_id = roster.id
+        WHERE participant_wave_member.roster_id = roster.id
+            AND participant_wave_member.participant_id = participant.id
+        ORDER BY swiss_round.round_number DESC,
+            swiss_round.updated_at DESC,
+            swiss_round.id DESC
+        LIMIT 1
+    ), 0)::SMALLINT AS current_swiss_round,
+    COALESCE((
+        SELECT SUM(ledger.points)
+        FROM swiss_point_ledger_entries AS ledger
+        WHERE ledger.tournament_id = tournament.id
+            AND ledger.roster_id = roster.id
+            AND ledger.participant_id = participant.id
+    ), 0)::BIGINT AS swiss_points,
     projection.id AS projection_revision_id,
     projection.revision_number AS projection_revision,
     GREATEST(
@@ -388,6 +413,7 @@ SELECT wave.id AS wave_id,
     wave.revision_id AS wave_revision_id,
     wave.revision AS wave_revision,
     wave.state AS wave_state,
+    swiss_link.bye_participant_id,
     wave.started_at,
     wave.paused_at,
     ready_window.id AS ready_window_id,
@@ -404,6 +430,10 @@ JOIN wave_members AS member
 JOIN waves AS wave
     ON wave.id = member.wave_id
     AND wave.roster_id = roster.id
+LEFT JOIN swiss_wave_links AS swiss_link
+    ON swiss_link.wave_id = wave.id
+    AND swiss_link.tournament_id = wave.tournament_id
+    AND swiss_link.roster_id = wave.roster_id
 LEFT JOIN ready_windows AS ready_window
     ON ready_window.wave_id = wave.id
     AND ready_window.roster_id = wave.roster_id

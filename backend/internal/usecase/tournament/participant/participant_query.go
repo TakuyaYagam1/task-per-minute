@@ -81,6 +81,10 @@ func (a *ParticipantUseCase) readState(
 	if err != nil {
 		return usecase.ParticipantSnapshotView{}, usecase.RecoveryView{}, err
 	}
+	state.Lobby, err = deriveParticipantLobby(state)
+	if err != nil {
+		return usecase.ParticipantSnapshotView{}, usecase.RecoveryView{}, err
+	}
 	if err := validateRecoveryView(authority, state); err != nil {
 		return usecase.ParticipantSnapshotView{}, usecase.RecoveryView{}, err
 	}
@@ -171,9 +175,15 @@ func validateRecoveryView(
 	return validateWaveView(authority, view.Wave)
 }
 
+//nolint:gocyclo // Lobby identity and participant-safe fields form one cohesive validation boundary.
 func validateLobbyView(lobby usecase.LobbyView, recovery usecase.RecoveryView) error {
 	if lobby.TournamentID != recovery.TournamentID || lobby.ParticipantID != recovery.ParticipantID ||
-		lobby.ProjectionRevision != recovery.ProjectionRevision || !lobby.State.IsValid() {
+		lobby.ProjectionRevision != recovery.ProjectionRevision || !lobby.State.IsValid() ||
+		!lobby.Attendance.IsValid() || lobby.SwissPoints < 0 ||
+		!lobby.Status.IsValid() || !lobby.RequiredAction.IsValid() {
+		return domain.ErrInternal
+	}
+	if lobby.CurrentSwissRound != nil && (*lobby.CurrentSwissRound < 1 || *lobby.CurrentSwissRound > 4) {
 		return domain.ErrInternal
 	}
 	for _, item := range lobby.Series {
@@ -185,6 +195,85 @@ func validateLobbyView(lobby usecase.LobbyView, recovery usecase.RecoveryView) e
 		}
 	}
 	return nil
+}
+
+//nolint:gocyclo // Derivation validates the complete persisted lobby before adding authoritative state.
+func deriveParticipantLobby(view usecase.RecoveryView) (usecase.LobbyView, error) {
+	lobby := view.Lobby
+	if lobby.TournamentID != view.TournamentID || lobby.ParticipantID != view.ParticipantID ||
+		lobby.ProjectionRevision != view.ProjectionRevision || !lobby.State.IsValid() ||
+		!lobby.Attendance.IsValid() || lobby.SwissPoints < 0 ||
+		(lobby.CurrentSwissRound != nil && (*lobby.CurrentSwissRound < 1 || *lobby.CurrentSwissRound > 4)) {
+		return usecase.LobbyView{}, domain.ErrInternal
+	}
+	for _, item := range lobby.Series {
+		if item.SeriesID == uuid.Nil || item.WaveID == uuid.Nil ||
+			item.ParticipantID != view.ParticipantID || item.OpponentID == uuid.Nil ||
+			item.OpponentID == view.ParticipantID || strings.TrimSpace(item.OpponentDisplayName) == "" ||
+			!item.Format.IsValid() || !item.State.IsValid() {
+			return usecase.LobbyView{}, domain.ErrInternal
+		}
+	}
+
+	status, action := deriveParticipantLobbyState(view)
+	lobby.Status = status
+	lobby.RequiredAction = action
+	return lobby, nil
+}
+
+//nolint:gocyclo // Ordered server-authority precedence is intentionally explicit and exhaustive.
+func deriveParticipantLobbyState(view usecase.RecoveryView) (usecase.LobbyStatus, usecase.LobbyRequiredAction) {
+	if view.Lobby.State == domain.TournamentStateCompleted {
+		return usecase.LobbyStatusCompleted, usecase.LobbyRequiredActionNone
+	}
+	if view.Lobby.State == domain.TournamentStateCancelled {
+		return usecase.LobbyStatusEliminated, usecase.LobbyRequiredActionNone
+	}
+	if view.Lobby.Attendance == domain.AttendanceStateWithdrawn {
+		return usecase.LobbyStatusEliminated, usecase.LobbyRequiredActionNone
+	}
+	if view.Lobby.Attendance != domain.AttendanceStateCheckedIn {
+		return usecase.LobbyStatusWaiting, usecase.LobbyRequiredActionCheckIn
+	}
+	if view.Wave != nil && view.Wave.ByeParticipantID != nil &&
+		*view.Wave.ByeParticipantID == view.ParticipantID {
+		return usecase.LobbyStatusBye, usecase.LobbyRequiredActionWait
+	}
+
+	if view.Draft != nil && view.Draft.Execution.State != usecase.DraftExecutionState("completed") &&
+		view.Draft.Execution.State != usecase.DraftExecutionState("superseded") {
+		if view.Draft.Execution.CurrentActorID == nil || *view.Draft.Execution.CurrentActorID == view.ParticipantID {
+			return usecase.LobbyStatusAssigned, usecase.LobbyRequiredActionDraft
+		}
+		return usecase.LobbyStatusAssigned, usecase.LobbyRequiredActionWait
+	}
+	if view.Assignment != nil {
+		return usecase.LobbyStatusAssigned, usecase.LobbyRequiredActionPlay
+	}
+	if view.Series != nil && view.Series.State.IsTerminal() {
+		if view.Series.State == domain.SeriesStateCancelled ||
+			(view.Lobby.State != domain.TournamentStateSwiss && view.Series.WinnerID != nil &&
+				*view.Series.WinnerID != view.ParticipantID) {
+			return usecase.LobbyStatusEliminated, usecase.LobbyRequiredActionNone
+		}
+		return usecase.LobbyStatusAssigned, usecase.LobbyRequiredActionReviewResult
+	}
+	if view.Wave != nil {
+		for _, member := range view.Wave.Wave.Members {
+			if member.ParticipantID != view.ParticipantID {
+				continue
+			}
+			if !member.Ready && view.Wave.Wave.ReadyWindow != nil &&
+				view.Wave.Wave.ReadyWindow.State == domain.ReadyWindowStateOpen {
+				return usecase.LobbyStatusAssigned, usecase.LobbyRequiredActionReady
+			}
+			return usecase.LobbyStatusAssigned, usecase.LobbyRequiredActionWait
+		}
+	}
+	if view.Series != nil {
+		return usecase.LobbyStatusAssigned, usecase.LobbyRequiredActionWait
+	}
+	return usecase.LobbyStatusWaiting, usecase.LobbyRequiredActionWait
 }
 
 func validateAssignmentAlignment(
@@ -266,6 +355,7 @@ func validateSeriesView(
 	return nil
 }
 
+//nolint:gocyclo // Wave membership, readiness, Series, and bye evidence are one fail-closed graph.
 func validateWaveView(
 	authority usecase.ParticipantSnapshotView,
 	view *usecase.WaveView,
@@ -276,14 +366,31 @@ func validateWaveView(
 	if view.Revision < 1 || view.Wave.Validate() != nil || view.Wave.TournamentID != authority.TournamentID {
 		return domain.ErrInternal
 	}
+	var byeParticipantID uuid.UUID
+	if view.ByeParticipantID != nil {
+		byeParticipantID = *view.ByeParticipantID
+		if byeParticipantID == uuid.Nil {
+			return domain.ErrInternal
+		}
+	}
 	found := false
+	foundBye := false
 	for _, member := range view.Wave.Members {
-		if view.ReadinessRevisions[member.ParticipantID] < 1 || view.SeriesIDs[member.ParticipantID] == uuid.Nil {
+		if view.ReadinessRevisions[member.ParticipantID] < 1 {
+			return domain.ErrInternal
+		}
+		seriesID, hasSeries := view.SeriesIDs[member.ParticipantID]
+		if member.ParticipantID == byeParticipantID {
+			if view.ByeParticipantID == nil || hasSeries || foundBye {
+				return domain.ErrInternal
+			}
+			foundBye = true
+		} else if !hasSeries || seriesID == uuid.Nil {
 			return domain.ErrInternal
 		}
 		found = found || member.ParticipantID == authority.ParticipantID
 	}
-	if !found {
+	if !found || (view.ByeParticipantID != nil && !foundBye) {
 		return domain.ErrInternal
 	}
 	return nil
@@ -326,6 +433,7 @@ func cloneRecoveryView(view usecase.RecoveryView) usecase.RecoveryView {
 
 func cloneLobbyView(view usecase.LobbyView) usecase.LobbyView {
 	cloned := view
+	cloned.CurrentSwissRound = cloneInt(view.CurrentSwissRound)
 	cloned.Series = append([]usecase.LobbySeriesView(nil), view.Series...)
 	return cloned
 }
@@ -368,6 +476,7 @@ func participantCloneSeries(value domain.Series) domain.Series {
 
 func cloneWaveView(view usecase.WaveView) usecase.WaveView {
 	cloned := view
+	cloned.ByeParticipantID = cloneUUID(view.ByeParticipantID)
 	cloned.Wave.Members = append([]domain.WaveMember(nil), view.Wave.Members...)
 	if view.Wave.ReadyWindow != nil {
 		window := *view.Wave.ReadyWindow
@@ -388,6 +497,14 @@ func cloneWaveView(view usecase.WaveView) usecase.WaveView {
 }
 
 func cloneString(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
+}
+
+func cloneInt(value *int) *int {
 	if value == nil {
 		return nil
 	}

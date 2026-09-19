@@ -2617,6 +2617,8 @@ export interface components {
             /** Format: uuid */
             ready_window_id: string;
         };
+        /** @enum {string} */
+        ParticipantLobbyRequiredAction: "wait" | "check_in" | "ready" | "draft" | "play" | "review_result" | "none";
         ParticipantLobbySeries: {
             format: components["schemas"]["SeriesFormat"];
             opponent_display_name: string;
@@ -2626,12 +2628,32 @@ export interface components {
             /** Format: uuid */
             wave_id: string;
         };
+        /** @enum {string} */
+        ParticipantLobbyStatus: "waiting" | "assigned" | "bye" | "eliminated" | "completed";
         ParticipantLobbyResponse: {
+            attendance: components["schemas"]["AttendanceState"];
+            /**
+             * Format: int32
+             * @description Latest Swiss round linked to this participant, or null before Swiss assignment.
+             */
+            current_swiss_round: number | null;
+            /**
+             * Format: uuid
+             * @description Authenticated participant identity resolved by the server.
+             */
+            participant_id: string;
             /** Format: int64 */
             projection_revision: number;
+            required_action: components["schemas"]["ParticipantLobbyRequiredAction"];
             roster_locked: boolean;
             series: components["schemas"]["ParticipantLobbySeries"][];
             state: components["schemas"]["TournamentState"];
+            status: components["schemas"]["ParticipantLobbyStatus"];
+            /**
+             * Format: int32
+             * @description Participant's authoritative Swiss points from the point ledger.
+             */
+            swiss_points: number;
             /** Format: uuid */
             tournament_id: string;
         };

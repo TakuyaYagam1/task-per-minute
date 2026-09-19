@@ -3,12 +3,18 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { playerModel } from "../../entities/player";
+import {
+  buildParticipantPlayerView,
+  type ParticipantReadyIntent,
+  type ParticipantReadyResult,
+} from "../../features/tournament-player";
 import { TournamentRecoveryPanel } from "../../features/tournament-live";
 import { TournamentOperatorActions } from "../../features/tournament-operator-actions";
 import {
   adminApi,
   ApiError,
   clearAdminSession,
+  createParticipantCommandIntent,
   operatorApi,
   participantApi,
   publicTournamentApi,
@@ -24,6 +30,7 @@ import {
   type ArenaRole,
   type ArenaRoleSummary,
 } from "../../widgets/arena";
+import { TournamentPlayerPanel } from "../../widgets/tournament-player";
 
 type ArenaRolePageProps = Readonly<{
   role: ArenaRole;
@@ -253,6 +260,49 @@ export const ArenaRolePage = ({ role, tournamentId }: ArenaRolePageProps) => {
     }
   }, [logoutPending, role, state.accessStatus]);
 
+  const handleParticipantReady = useCallback(async (
+    intent: ParticipantReadyIntent,
+  ): Promise<ParticipantReadyResult> => {
+    const waveId = intent.key.waveId;
+    if (
+      waveId === null ||
+      intent.key.tournamentId !== tournamentId
+    ) {
+      return {
+        message: "Назначение изменилось. Обновите состояние турнира.",
+        status: "conflict",
+      };
+    }
+
+    const result = await participantApi.ready(
+      tournamentId,
+      waveId,
+      {
+        expected_projection_revision: intent.key.projectionRevision,
+        ready: intent.ready,
+      },
+      createParticipantCommandIntent(),
+    );
+
+    if (result.status === "success") {
+      return { status: "accepted" };
+    }
+
+    if (result.status === "rate_limited") {
+      return {
+        message: result.retryAfter
+          ? `Повторите после ${result.retryAfter}.`
+          : undefined,
+        status: "rate_limited",
+      };
+    }
+
+    return {
+      message: "Окно готовности или назначение уже изменились. Сверяем данные с сервером.",
+      status: "conflict",
+    };
+  }, [tournamentId]);
+
   const summary = state.tournament
     ? summaryFor(state.tournament, role, state.tournamentName)
     : undefined;
@@ -274,7 +324,24 @@ export const ArenaRolePage = ({ role, tournamentId }: ArenaRolePageProps) => {
       }
     >
       {(state.accessStatus === "ready" || state.accessStatus === "completed") && (
-        <TournamentRecoveryPanel role={role} tournamentId={tournamentId} />
+        role === "participant" ? (
+          <TournamentRecoveryPanel role={role} tournamentId={tournamentId}>
+            {({ recovery, retry }) => (
+              <TournamentPlayerPanel
+                onReady={async (intent) => {
+                  const result = await handleParticipantReady(intent);
+                  if (result.status !== "rate_limited") {
+                    retry();
+                  }
+                  return result;
+                }}
+                view={buildParticipantPlayerView(recovery)}
+              />
+            )}
+          </TournamentRecoveryPanel>
+        ) : (
+          <TournamentRecoveryPanel role={role} tournamentId={tournamentId} />
+        )
       )}
       {role === "operator" && state.accessStatus === "ready" && (
         <TournamentOperatorActions tournamentId={tournamentId} />

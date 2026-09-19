@@ -125,10 +125,15 @@ const publicSnapshot = (): PublicSnapshot => ({
 });
 
 const participantLobby = (): ParticipantLobbyResponse => ({
+  attendance: 'checked_in',
+  current_swiss_round: 1,
+  participant_id: participantId,
   tournament_id: tournamentId,
   state: 'swiss',
   projection_revision: 4,
+  required_action: 'ready',
   roster_locked: true,
+  status: 'assigned',
   series: [{
     series_id: seriesId,
     state: 'active',
@@ -136,6 +141,7 @@ const participantLobby = (): ParticipantLobbyResponse => ({
     opponent_display_name: 'Боб',
     wave_id: waveId,
   }],
+  swiss_points: 3,
 });
 
 const participantAssignment = (): ParticipantAssignmentResponse => ({

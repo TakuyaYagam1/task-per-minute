@@ -12,9 +12,17 @@ import styles from "./TournamentLivePanel.module.css";
 
 type ArenaLiveRole = TournamentLiveRole | "spectator";
 
+export type TournamentRecoveryRenderContext = Readonly<{
+  recovery: RoleAwareRecoveryState | null;
+  receivedAtMonotonicMs?: number;
+  retry: () => void;
+  status: TournamentLiveConnectionStatus;
+}>;
+
 type TournamentRecoveryPanelProps = Readonly<{
   role: ArenaLiveRole;
   tournamentId: string;
+  children?: (context: TournamentRecoveryRenderContext) => ReactNode;
 }>;
 
 const recoveryRole = (role: ArenaLiveRole): TournamentLiveRole =>
@@ -175,6 +183,7 @@ const CountdownPanel = ({
 };
 
 export const TournamentRecoveryPanel = ({
+  children,
   role,
   tournamentId,
 }: TournamentRecoveryPanelProps) => {
@@ -269,31 +278,45 @@ export const TournamentRecoveryPanel = ({
   ) : null;
   const realtimeState = operatorState ?? publicState;
   const deadline = recovery ? deadlineFrom(recovery) : undefined;
+  const roleSlot = liveRole === "participant" && children !== undefined
+    ? children({
+        receivedAtMonotonicMs,
+        recovery,
+        retry: retryAll,
+        status: panelStatus,
+      })
+    : null;
 
   if (recovery && deadline) {
     return (
-      <CountdownPanel
-        deadline={deadline}
-        receivedAtMonotonicMs={receivedAtMonotonicMs}
-        recovery={recovery}
-        revision={panelRevision}
-        retry={retryAll}
-        status={panelStatus}
-      >
-        {realtimeState}
-      </CountdownPanel>
+      <>
+        {roleSlot}
+        <CountdownPanel
+          deadline={deadline}
+          receivedAtMonotonicMs={receivedAtMonotonicMs}
+          recovery={recovery}
+          revision={panelRevision}
+          retry={retryAll}
+          status={panelStatus}
+        >
+          {realtimeState}
+        </CountdownPanel>
+      </>
     );
   }
 
   return (
-    <TournamentLivePanel
-      role={liveRole}
-      status={panelStatus}
-      tournamentId={tournamentId}
-      revision={panelRevision}
-      onRetry={recovery || panelStatus === "rejected" ? retryAll : undefined}
-    >
-      {realtimeState}
-    </TournamentLivePanel>
+    <>
+      {roleSlot}
+      <TournamentLivePanel
+        role={liveRole}
+        status={panelStatus}
+        tournamentId={tournamentId}
+        revision={panelRevision}
+        onRetry={recovery || panelStatus === "rejected" ? retryAll : undefined}
+      >
+        {realtimeState}
+      </TournamentLivePanel>
+    </>
   );
 };

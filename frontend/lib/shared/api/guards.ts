@@ -396,6 +396,28 @@ const participantTournamentStates = new Set<string>([
   "completed",
   "cancelled",
 ]);
+const participantAttendanceStates = new Set<string>([
+  "invited",
+  "registered",
+  "checked_in",
+  "withdrawn",
+]);
+const participantLobbyStatuses = new Set<string>([
+  "waiting",
+  "assigned",
+  "bye",
+  "eliminated",
+  "completed",
+]);
+const participantLobbyRequiredActions = new Set<string>([
+  "wait",
+  "check_in",
+  "ready",
+  "draft",
+  "play",
+  "review_result",
+  "none",
+]);
 const participantSeriesStates = new Set<string>([
   "planned",
   "locked",
@@ -557,12 +579,35 @@ export const isParticipantLobbyResponse = (
   value: unknown,
 ): value is ParticipantLobbyResponse =>
   isParticipantObject(value) &&
-  hasExactKeys(value, ["tournament_id", "state", "projection_revision", "roster_locked", "series"]) &&
+  hasExactKeys(value, [
+    "tournament_id",
+    "state",
+    "projection_revision",
+    "roster_locked",
+    "series",
+    "participant_id",
+    "attendance",
+    "current_swiss_round",
+    "swiss_points",
+    "status",
+    "required_action",
+  ]) &&
   isNonNilUUID(value.tournament_id) &&
+  isNonNilUUID(value.participant_id) &&
   isString(value.state) &&
   participantTournamentStates.has(value.state) &&
   isSafePositiveInteger(value.projection_revision) &&
   typeof value.roster_locked === "boolean" &&
+  isString(value.attendance) &&
+  participantAttendanceStates.has(value.attendance) &&
+  (value.current_swiss_round === null || (
+    isSafePositiveInteger(value.current_swiss_round) && value.current_swiss_round <= 4
+  )) &&
+  isNonNegativeInteger(value.swiss_points) &&
+  isString(value.status) &&
+  participantLobbyStatuses.has(value.status) &&
+  isString(value.required_action) &&
+  participantLobbyRequiredActions.has(value.required_action) &&
   Array.isArray(value.series) &&
   value.series.every(isParticipantLobbySeries);
 

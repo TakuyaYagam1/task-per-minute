@@ -1046,6 +1046,12 @@ func settleProductionSwissWaveThroughREST(
 			player, ok := playersByParticipant[participantID]
 			require.True(t, ok, "missing player for participant %s", participantID)
 			participant := participantSnapshotThroughREST(t, fixture, tournamentID, player)
+			require.Equal(t, participantID, participant.Lobby.ParticipantId)
+			require.Equal(t, api.CheckedIn, participant.Lobby.Attendance)
+			require.NotNil(t, participant.Lobby.CurrentSwissRound)
+			require.GreaterOrEqual(t, participant.Lobby.SwissPoints, int32(0))
+			require.Equal(t, api.ParticipantLobbyStatusAssigned, participant.Lobby.Status)
+			require.Equal(t, api.ParticipantLobbyRequiredActionPlay, participant.Lobby.RequiredAction)
 			require.NotNil(t, participant.Assignment, "participant %s has no assignment", participantID)
 			require.NotNil(t, participant.Series, "participant %s has no series", participantID)
 			gameID := productionGameForAttempt(t, *participant.Series, participant.Assignment.AttemptId)

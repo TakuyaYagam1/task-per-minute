@@ -12,12 +12,26 @@ import (
 	usecase "github.com/TakuyaYagam1/task-per-minute/internal/port/inbound"
 )
 
+//nolint:gocyclo // One response boundary validates every participant-safe field before serialization.
 func participantLobbyResponse(
 	view usecase.LobbyView,
 ) (api.ParticipantLobbyResponse, error) {
 	state := api.TournamentState(view.State)
-	if view.TournamentID == uuid.Nil || view.ProjectionRevision < 1 || !state.Valid() {
+	attendance := api.AttendanceState(view.Attendance)
+	status := api.ParticipantLobbyStatus(view.Status)
+	requiredAction := api.ParticipantLobbyRequiredAction(view.RequiredAction)
+	if view.TournamentID == uuid.Nil || view.ParticipantID == uuid.Nil || view.ProjectionRevision < 1 ||
+		!state.Valid() || !attendance.Valid() || !status.Valid() || !requiredAction.Valid() ||
+		view.SwissPoints < 0 || view.SwissPoints > math.MaxInt32 {
 		return api.ParticipantLobbyResponse{}, domain.ErrInternal
+	}
+	var currentSwissRound *int32
+	if view.CurrentSwissRound != nil {
+		if *view.CurrentSwissRound < 1 || *view.CurrentSwissRound > 4 {
+			return api.ParticipantLobbyResponse{}, domain.ErrInternal
+		}
+		value := int32(*view.CurrentSwissRound)
+		currentSwissRound = &value
 	}
 	series := make([]api.ParticipantLobbySeries, len(view.Series))
 	for index, item := range view.Series {
@@ -35,6 +49,12 @@ func participantLobbyResponse(
 		}
 	}
 	return api.ParticipantLobbyResponse{
+		ParticipantId:      view.ParticipantID,
+		Attendance:         attendance,
+		CurrentSwissRound:  currentSwissRound,
+		SwissPoints:        int32(view.SwissPoints),
+		Status:             status,
+		RequiredAction:     requiredAction,
 		TournamentId:       view.TournamentID,
 		ProjectionRevision: view.ProjectionRevision,
 		State:              state,
@@ -319,9 +339,18 @@ func participantWaveResponse(view usecase.WaveView) (api.Wave, error) {
 	members := make([]api.WaveMember, len(wave.Members))
 	for index, item := range wave.Members {
 		revision := view.ReadinessRevisions[item.ParticipantID]
-		seriesID := view.SeriesIDs[item.ParticipantID]
-		if revision < 1 || seriesID == uuid.Nil {
+		seriesID, paired := view.SeriesIDs[item.ParticipantID]
+		isBye := view.ByeParticipantID != nil && *view.ByeParticipantID == item.ParticipantID
+		if revision < 1 || (isBye && paired) || (!isBye && (!paired || seriesID == uuid.Nil)) {
 			return api.Wave{}, domain.ErrInternal
+		}
+		if isBye {
+			members[index] = api.WaveMember{
+				ParticipantId:     item.ParticipantID,
+				ReadinessRevision: revision,
+				Ready:             item.Ready,
+			}
+			continue
 		}
 		members[index] = api.WaveMember{
 			ParticipantId:     item.ParticipantID,
