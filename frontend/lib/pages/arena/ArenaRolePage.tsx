@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { playerModel } from "../../entities/player";
 import { TournamentRecoveryPanel } from "../../features/tournament-live";
+import { TournamentOperatorActions } from "../../features/tournament-operator-actions";
 import {
   adminApi,
   ApiError,
@@ -274,6 +275,9 @@ export const ArenaRolePage = ({ role, tournamentId }: ArenaRolePageProps) => {
     >
       {(state.accessStatus === "ready" || state.accessStatus === "completed") && (
         <TournamentRecoveryPanel role={role} tournamentId={tournamentId} />
+      )}
+      {role === "operator" && state.accessStatus === "ready" && (
+        <TournamentOperatorActions tournamentId={tournamentId} />
       )}
     </ArenaShell>
   );

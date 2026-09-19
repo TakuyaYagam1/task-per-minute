@@ -1,4 +1,4 @@
-import { adminClient, unwrapApi } from "./client";
+import { adminClient, unwrapApi, unwrapApiVoid } from "./client";
 import {
   assertApiResponse,
   isAuditPage,
@@ -41,6 +41,10 @@ export type OperatorRecoveryCursor = components["schemas"]["OperatorRecoveryCurs
 export type OperatorRecoverySnapshot = components["schemas"]["OperatorRecoverySnapshot"];
 export type Wave = components["schemas"]["Wave"];
 export type WaveControlRequest = components["schemas"]["WaveControlRequest"];
+export type TournamentActionRequest = components["schemas"]["TournamentActionRequest"];
+export type OperatorNoShowRequest = components["schemas"]["OperatorNoShowRequest"];
+export type OperatorForfeitRequest = components["schemas"]["OperatorForfeitRequest"];
+export type OperatorForfeitGameExpectation = components["schemas"]["OperatorForfeitGameExpectation"];
 export type AuditEntityKind = components["parameters"]["AuditEntityKind"];
 export type AuditActorKind = components["parameters"]["AuditActorKind"];
 
@@ -318,6 +322,66 @@ export const operatorApi = {
     );
   },
 
+  async applyTournamentAction(
+    tournamentId: string,
+    body: TournamentActionRequest,
+    intent: OperatorIdempotencyKey,
+    signal?: AbortSignal,
+  ): Promise<Tournament> {
+    return readOperatorResponse(
+      adminClient.POST("/api/v1/admin/tournaments/{tournament_id}/actions", {
+        params: {
+          path: { tournament_id: tournamentId },
+          header: mutationHeaders(intent),
+        },
+        body,
+        signal,
+      }),
+      isTournamentResponse,
+      "admin/tournament action",
+    );
+  },
+
+  async resolveNoShow(
+    tournamentId: string,
+    waveId: string,
+    body: OperatorNoShowRequest,
+    intent: OperatorIdempotencyKey,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    await unwrapApiVoid(
+      adminClient.POST("/api/v1/admin/tournaments/{tournament_id}/waves/{wave_id}/no-shows", {
+        params: {
+          path: { tournament_id: tournamentId, wave_id: waveId },
+          header: mutationHeaders(intent),
+        },
+        body,
+        signal,
+      }),
+      "admin/tournament no-show",
+    );
+  },
+
+  async recordForfeit(
+    tournamentId: string,
+    seriesId: string,
+    body: OperatorForfeitRequest,
+    intent: OperatorIdempotencyKey,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    await unwrapApiVoid(
+      adminClient.POST("/api/v1/admin/tournaments/{tournament_id}/series/{series_id}/operator-forfeits", {
+        params: {
+          path: { tournament_id: tournamentId, series_id: seriesId },
+          header: mutationHeaders(intent),
+        },
+        body,
+        signal,
+      }),
+      "admin/tournament operator forfeit",
+    );
+  },
+
   async getSnapshot(
     tournamentId: string,
     cursor?: OperatorRecoveryCursor,
@@ -374,6 +438,9 @@ export const lockTournamentRoster = operatorApi.lockRoster;
 export const unlockTournamentRoster = operatorApi.unlockRoster;
 export const configureTournamentPairings = operatorApi.configurePairings;
 export const controlTournamentWave = operatorApi.controlWave;
+export const applyTournamentAction = operatorApi.applyTournamentAction;
+export const resolveTournamentNoShow = operatorApi.resolveNoShow;
+export const recordTournamentForfeit = operatorApi.recordForfeit;
 export const getOperatorSnapshot = operatorApi.getSnapshot;
 export const listTournamentAudit = operatorApi.listAudit;
 export const exportTournamentIncident = operatorApi.exportIncident;
