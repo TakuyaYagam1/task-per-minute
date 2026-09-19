@@ -271,9 +271,22 @@ func prepareCreateToChampionContentWithCounts(
 	normalTaskCount int,
 	goldenTaskCount int,
 ) tournamentFlowCatalog {
+	return prepareCreateToChampionContentWithCountsAndNormalTimeLimit(
+		ctx, t, normalTaskCount, goldenTaskCount, 180,
+	)
+}
+
+func prepareCreateToChampionContentWithCountsAndNormalTimeLimit(
+	ctx context.Context,
+	t *testing.T,
+	normalTaskCount int,
+	goldenTaskCount int,
+	normalTaskTimeLimit int,
+) tournamentFlowCatalog {
 	t.Helper()
 	require.GreaterOrEqual(t, normalTaskCount, domain.AssignmentReserveCount+1)
 	require.GreaterOrEqual(t, goldenTaskCount, domain.AssignmentReserveCount+1)
+	require.True(t, domain.IsValidTaskTimeLimit(normalTaskTimeLimit))
 	catalog := tournamentFlowCatalog{
 		flags:       make(map[uuid.UUID]string),
 		goldenTasks: make(map[uuid.UUID]tournamentFlowGoldenTask),
@@ -298,8 +311,8 @@ func prepareCreateToChampionContentWithCounts(
 			var taskID uuid.UUID
 			err := sharedPool.QueryRow(ctx, `
 				INSERT INTO tasks (title, description, category, difficulty, time_limit, flag, kind)
-				VALUES ($1, 'create to champion fixture', $2, 'easy', 180, $3, 'normal')
-				RETURNING id`, title, category.name, flag).Scan(&taskID)
+				VALUES ($1, 'create to champion fixture', $2, 'easy', $3, $4, 'normal')
+				RETURNING id`, title, category.name, normalTaskTimeLimit, flag).Scan(&taskID)
 			require.NoError(t, err)
 			catalog.flags[taskID] = flag
 		}

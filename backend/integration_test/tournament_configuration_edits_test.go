@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -197,6 +198,127 @@ func TestTournamentSeriesConfigurationRebuildsUnstartedAssignmentThroughProducti
 		}
 	}
 	require.True(t, found)
+}
+
+func TestTournamentSeriesConfigurationSuccessorStartsExistingWaveThroughProductionHTTPAndPostgres(t *testing.T) {
+	flow := newSwissCategoryFlowWithNormalTaskTimeLimit(t, "series-successor-wave-start", 90)
+	beforePairing := tournamentAdminSnapshotThroughREST(t, flow.fixture, flow.adminToken, flow.tournamentID)
+	round := configureSwissCategoryPairingsThroughREST(
+		t, flow.fixture, flow.adminToken, flow.tournamentID,
+		beforePairing.NextCursor.ProjectionRevision, 1, api.CategoryModeRandom,
+		[]api.Category{api.CategoryWeb}, uuid.New(),
+	)
+	paired := tournamentAdminSnapshotThroughREST(t, flow.fixture, flow.adminToken, flow.tournamentID)
+	plannedWave := findProductionSwissWave(t, paired, round)
+
+	configurationPath := "/api/v1/admin/tournaments/" + flow.tournamentID.String() + "/configuration"
+	request, response := doTournamentFlowJSON(
+		t, flow.fixture, http.MethodGet, configurationPath, "", adminSession(flow.adminToken), uuid.New(), "",
+	)
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	flow.fixture.validateResponse(t, request, response)
+	configuration := decodeJSON[api.TournamentConfiguration](t, response)
+	require.NotEmpty(t, configuration.Series)
+	series := configuration.Series[0]
+	require.NotEmpty(t, series.UnlockIntents)
+	selected := api.CategoryCrypto
+	if len(series.Categories) == 1 && series.Categories[0] == selected {
+		selected = api.CategoryWeb
+	}
+	body, err := json.Marshal(api.UpdateTournamentSeriesConfigurationRequest{
+		ExpectedProjectionRevision: configuration.ProjectionRevision,
+		ExpectedSeriesRevision:     series.Revision,
+		Confirmed:                  api.UpdateTournamentSeriesConfigurationRequestConfirmed(true),
+		Reason:                     "replace one Series category before starting its existing Wave",
+		Mode:                       api.CategoryModeAdmin,
+		Categories:                 []api.Category{selected},
+		UnlockIntents:              series.UnlockIntents,
+	})
+	require.NoError(t, err)
+	seriesPath := "/api/v1/admin/tournaments/" + flow.tournamentID.String() +
+		"/series/" + series.Id.String() + "/configuration"
+	request, response = doTournamentFlowJSON(
+		t, flow.fixture, http.MethodPatch, seriesPath, string(body), adminSession(flow.adminToken), uuid.New(), "",
+	)
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	flow.fixture.validateResponse(t, request, response)
+	evidence := decodeJSON[api.TournamentConfigurationMutationEvidence](t, response)
+	require.Contains(t, evidence.SupersededArtifactIds, series.Id)
+	require.Len(t, evidence.RebuiltArtifactIds, 1)
+	successorID := evidence.RebuiltArtifactIds[0]
+
+	revised := tournamentAdminSnapshotThroughREST(t, flow.fixture, flow.adminToken, flow.tournamentID)
+	revisedWave := findProductionWaveByID(t, revised, plannedWave.Id)
+	var successorMemberCount, predecessorMemberCount int
+	for _, member := range revisedWave.Members {
+		if member.SeriesId == nil {
+			continue
+		}
+		if *member.SeriesId == successorID {
+			successorMemberCount++
+		}
+		if *member.SeriesId == series.Id {
+			predecessorMemberCount++
+		}
+	}
+	require.Equal(t, 2, successorMemberCount)
+	require.Zero(t, predecessorMemberCount)
+
+	opened := controlProductionWaveThroughREST(
+		t, flow.fixture, flow.adminToken, flow.tournamentID, revisedWave.Id,
+		revised.NextCursor.ProjectionRevision, api.WaveControlRequestActionOpenReadyWindow,
+	)
+	require.Equal(t, api.WaveStateReadyWindowOpen, opened.State)
+	for _, member := range opened.Members {
+		player, ok := flow.playersByParticipant[member.ParticipantId]
+		require.True(t, ok, "missing player for participant %s", member.ParticipantId)
+		participant := participantSnapshotThroughREST(t, flow.fixture, flow.tournamentID, player)
+		readyBody, marshalErr := json.Marshal(api.ParticipantReadyRequest{
+			ExpectedProjectionRevision: participant.NextCursor.ProjectionRevision,
+			Ready:                      true,
+		})
+		require.NoError(t, marshalErr)
+		readyPath := "/api/v1/tournaments/" + flow.tournamentID.String() +
+			"/participant/waves/" + opened.Id.String() + "/ready"
+		readyRequest, readyResponse := doTournamentFlowJSON(
+			t, flow.fixture, http.MethodPost, readyPath, string(readyBody),
+			cookieSession(player.session.String()), uuid.New(), player.csrf,
+		)
+		require.Equal(t, http.StatusOK, readyResponse.Code, readyResponse.Body.String())
+		flow.fixture.validateResponse(t, readyRequest, readyResponse)
+	}
+	readySnapshot := tournamentAdminSnapshotThroughREST(t, flow.fixture, flow.adminToken, flow.tournamentID)
+	readyWave := findProductionWaveByID(t, readySnapshot, opened.Id)
+	require.Equal(t, api.WaveStateReady, readyWave.State)
+
+	clock := tournamentFlowRuntimeForFixture(t, flow.fixture).clock
+	startNow := clock.Now().Add(123 * time.Nanosecond)
+	require.NotZero(t, startNow.Nanosecond()%int(time.Microsecond))
+	clock.FreezeAt(startNow)
+	startPath := "/api/v1/admin/tournaments/" + flow.tournamentID.String() +
+		"/waves/" + readyWave.Id.String() + "/actions"
+	staleBody, err := json.Marshal(api.WaveControlRequest{
+		ExpectedProjectionRevision: readySnapshot.NextCursor.ProjectionRevision + 1,
+		Action:                     api.WaveControlRequestActionStart,
+		Confirmed:                  true,
+	})
+	require.NoError(t, err)
+	request, response = doTournamentFlowJSON(
+		t, flow.fixture, http.MethodPost, startPath, string(staleBody),
+		adminSession(flow.adminToken), uuid.New(), "",
+	)
+	require.Equal(t, http.StatusConflict, response.Code, response.Body.String())
+	flow.fixture.validateResponse(t, request, response)
+	afterConflict := tournamentAdminSnapshotThroughREST(t, flow.fixture, flow.adminToken, flow.tournamentID)
+	afterConflictWave := findProductionWaveByID(t, afterConflict, readyWave.Id)
+	require.Equal(t, api.WaveStateReady, afterConflictWave.State)
+	require.Equal(t, readySnapshot.NextCursor.ProjectionRevision, afterConflict.NextCursor.ProjectionRevision)
+
+	started := controlProductionWaveThroughREST(
+		t, flow.fixture, flow.adminToken, flow.tournamentID, readyWave.Id,
+		afterConflict.NextCursor.ProjectionRevision, api.WaveControlRequestActionStart,
+	)
+	require.Equal(t, api.WaveStateActive, started.State)
 }
 
 func TestTournamentManualRoundRevisionRebuildsPairingsThroughProductionHTTPAndPostgres(t *testing.T) {

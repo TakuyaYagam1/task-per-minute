@@ -329,12 +329,26 @@ func TestSwissCategoryInsufficientCandidatesRejectPreflightBeforePairing(t *test
 }
 
 func newSwissCategoryFlow(t *testing.T, name string) swissCategoryFlow {
+	return newSwissCategoryFlowWithNormalTaskTimeLimit(t, name, 180)
+}
+
+func newSwissCategoryFlowWithNormalTaskTimeLimit(
+	t *testing.T,
+	name string,
+	normalTaskTimeLimit int,
+) swissCategoryFlow {
 	t.Helper()
 	ctx := context.Background()
 	truncateRoundProofTables(ctx, t)
 	t.Cleanup(func() { truncateRoundProofTables(context.Background(), t) })
 
-	catalog := prepareCreateToChampionContent(ctx, t)
+	catalog := prepareCreateToChampionContentWithCountsAndNormalTimeLimit(
+		ctx,
+		t,
+		createToChampionNormalTaskCount,
+		createToChampionGoldenTaskCount,
+		normalTaskTimeLimit,
+	)
 	fixture := newTournamentFlowRESTFixture(t)
 	adminToken := fixture.adminAccessToken(t)
 	players := joinTournamentFlowPlayers(t, fixture, 4)
