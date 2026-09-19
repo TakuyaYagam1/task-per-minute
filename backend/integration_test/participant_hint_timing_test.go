@@ -66,14 +66,26 @@ func TestParticipantHintTimingThroughProductionHandlers(t *testing.T) {
 		require.NoError(t, err)
 		path := "/api/v1/tournaments/" + created.Id.String() +
 			"/participant/waves/" + wave.Id.String() + "/ready"
+		commandID := uuid.New()
 		req, resp := doTournamentFlowJSON(
 			t, fixture, http.MethodPost, path, string(body),
-			cookieSession(player.session.String()), uuid.New(), player.csrf,
+			cookieSession(player.session.String()), commandID, player.csrf,
 		)
 		require.Equal(t, http.StatusOK, resp.Code, resp.Body.String())
 		fixture.validateResponse(t, req, resp)
 		ready := decodeJSON[api.ReadinessEvent](t, resp)
 		require.Equal(t, wave.Id, ready.WaveId)
+
+		var occurredAt, createdAt time.Time
+		err = sharedPool.QueryRow(ctx, `
+			SELECT occurred_at, created_at
+			FROM readiness_events
+			WHERE command_id = $1`, commandID).Scan(&occurredAt, &createdAt)
+		require.NoError(t, err)
+		require.False(t, occurredAt.After(createdAt),
+			"readiness event occurred_at must not be after created_at")
+		require.True(t, occurredAt.Equal(createdAt),
+			"readiness event timestamps must use the same authoritative instant")
 	}
 
 	snapshot = tournamentAdminSnapshotThroughREST(t, fixture, adminToken, created.Id)
