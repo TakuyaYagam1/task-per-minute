@@ -1,9 +1,10 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import {
   useParticipantReadiness,
+  useParticipantSourceFile,
   type ParticipantPlayerView,
   type ParticipantReadyIntent,
   type ParticipantReadyResult,
@@ -119,10 +120,16 @@ const formatServerTimestamp = (value: string): string => {
 
 export const TournamentPlayerPanel = ({ onReady, view }: TournamentPlayerPanelProps) => {
   const readiness = useParticipantReadiness({ onReady, view });
+  const sourceFile = useParticipantSourceFile(view);
+  const [hintsOpen, setHintsOpen] = useState(false);
   const taskHref = useMemo(
     () => safeTaskHref(view?.assignment?.taskUrl ?? null),
     [view?.assignment?.taskUrl],
   );
+
+  useEffect(() => {
+    setHintsOpen(false);
+  }, [view?.assignment?.assignmentId, view?.projectionRevision]);
 
   if (view === null) {
     return (
@@ -269,6 +276,29 @@ export const TournamentPlayerPanel = ({ onReady, view }: TournamentPlayerPanelPr
               Ссылка на задание появится после подтверждения сервером.
             </span>
           )}
+          {view.assignment.sourceFileAvailable && (
+            <>
+              <Button
+                className={styles.assignmentLink}
+                disabled={sourceFile.status === "loading"}
+                loading={sourceFile.status === "loading"}
+                loadingLabel="Получаем архив"
+                onClick={sourceFile.request}
+                type="button"
+                variant="secondary"
+              >
+                Скачать архив
+              </Button>
+              {sourceFile.message !== null && (
+                <Message
+                  tone={sourceFile.status === "ready" ? "success" : "error"}
+                  title={sourceFile.status === "ready" ? "Готово" : "Архив недоступен"}
+                >
+                  <p>{sourceFile.message}</p>
+                </Message>
+              )}
+            </>
+          )}
           <p className={styles.assignmentDescription}>{view.assignment.description}</p>
           <dl className={styles.assignmentFacts} aria-label="Параметры назначения">
             <div>
@@ -309,11 +339,17 @@ export const TournamentPlayerPanel = ({ onReady, view }: TournamentPlayerPanelPr
             </div>
           </dl>
           {view.assignment.hints.length > 0 && (
-            <details className={styles.assignmentHints}>
+            <details
+              className={styles.assignmentHints}
+              onToggle={(event) => setHintsOpen(event.currentTarget.open)}
+              open={hintsOpen}
+            >
               <summary>Подсказки ({view.assignment.hints.length})</summary>
-              <ul>
-                {view.assignment.hints.map((hint) => <li key={hint}>{hint}</li>)}
-              </ul>
+              {hintsOpen && (
+                <ul>
+                  {view.assignment.hints.map((hint) => <li key={hint}>{hint}</li>)}
+                </ul>
+              )}
             </details>
           )}
           </>

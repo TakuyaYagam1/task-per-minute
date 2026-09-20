@@ -89,6 +89,15 @@ func TestParticipantArchiveDownloadNormalAssignment(t *testing.T) {
 	before := loadParticipantArchiveNormalState(ctx, t, fixture.assignmentID)
 	first := requestParticipantArchive(t, archive.rest, downloadPath, owner.session)
 	assertParticipantArchiveBytes(t, archive, first.SourceFileUrl, payload)
+	replacementPayload := sourceArchivePayload("participant-normal-replacement")
+	_ = uploadSourceArchive(
+		ctx,
+		t,
+		archive.sourceFiles,
+		archive.rest.tasks,
+		uploadedTaskID,
+		replacementPayload,
+	)
 	second := requestParticipantArchive(t, archive.rest, downloadPath, owner.session)
 	assertParticipantArchiveBytes(t, archive, second.SourceFileUrl, payload)
 	reconnectedOwner := participantArchiveSessionForPlayer(t, owner.id)

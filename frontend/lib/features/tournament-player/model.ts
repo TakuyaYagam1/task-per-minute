@@ -44,6 +44,7 @@ export type ParticipantReadyResult = Readonly<{
 }>;
 
 export type ParticipantAssignmentView = Readonly<{
+  assignmentId: string;
   attemptId: string;
   title: string;
   description: string;
@@ -242,6 +243,7 @@ export const buildParticipantPlayerView = (
     : null;
   const assignmentView: ParticipantAssignmentView | null = assignment && assignmentDeliveryState === "delivered"
     ? {
+        assignmentId: assignment.id,
         attemptId: assignment.attempt_id,
         category: formatCategory(assignment.active_snapshot.category),
         description: assignment.active_snapshot.description,

@@ -68,6 +68,7 @@ jobs:
         env:
           NEXT_PUBLIC_API_URL: ${{ vars.NEXT_PUBLIC_API_URL }}
           NEXT_PUBLIC_ADMIN_API_URL: ${{ vars.NEXT_PUBLIC_ADMIN_API_URL }}
+          NEXT_PUBLIC_SOURCE_FILE_ORIGINS: ${{ vars.NEXT_PUBLIC_SOURCE_FILE_ORIGINS }}
           HTTP_ALLOWED_ORIGINS: ${{ vars.HTTP_ALLOWED_ORIGINS }}
           WS_ALLOWED_ORIGINS: ${{ vars.WS_ALLOWED_ORIGINS }}
         run: |
@@ -78,6 +79,7 @@ jobs:
 
           api_url = os.environ.get("NEXT_PUBLIC_API_URL", "").strip()
           admin_api_url = os.environ.get("NEXT_PUBLIC_ADMIN_API_URL", "").strip()
+          source_file_origins = os.environ.get("NEXT_PUBLIC_SOURCE_FILE_ORIGINS", "").strip()
           http_allowed = os.environ.get("HTTP_ALLOWED_ORIGINS", "").strip()
           ws_allowed = os.environ.get("WS_ALLOWED_ORIGINS", "").strip()
 
@@ -89,6 +91,8 @@ jobs:
               parsed = urlparse(value)
               if parsed.scheme not in schemes or not parsed.netloc:
                   fail(f"{name} must be an absolute URL with one of: {', '.join(sorted(schemes))}")
+              if parsed.username is not None or parsed.password is not None:
+                  fail(f"{name} must not include credentials")
               if parsed.params or parsed.query or parsed.fragment:
                   fail(f"{name} must not include params, query, or fragment")
               return parsed
@@ -102,6 +106,11 @@ jobs:
                   for item in value.replace("\n", ",").split(",")
                   if item.strip()
               }
+
+          for value in split_origins(source_file_origins):
+              parsed = parse_url("NEXT_PUBLIC_SOURCE_FILE_ORIGINS", value, {"https"})
+              if origin(parsed) != value:
+                  fail("NEXT_PUBLIC_SOURCE_FILE_ORIGINS entries must be origins without paths")
 
           if not api_url and not admin_api_url:
               print("Using same-origin frontend mode: NEXT_PUBLIC_* URLs are empty.")
@@ -152,5 +161,6 @@ jobs:
             FRONTEND_PORT=${{ vars.FRONTEND_PORT || 3000 }}
             NEXT_PUBLIC_API_URL=${{ vars.NEXT_PUBLIC_API_URL }}
             NEXT_PUBLIC_ADMIN_API_URL=${{ vars.NEXT_PUBLIC_ADMIN_API_URL }}
+            NEXT_PUBLIC_SOURCE_FILE_ORIGINS=${{ vars.NEXT_PUBLIC_SOURCE_FILE_ORIGINS }}
           tags: |
             ${{ inputs.frontend_image_ref }}

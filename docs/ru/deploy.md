@@ -129,6 +129,7 @@ WS_ALLOWED_ORIGINS=https://admin.xn--90aeebbpdxndkcm5abncn1ej9mqa.xn--p1ai,https
 WS_REQUIRE_ORIGIN=true
 NEXT_PUBLIC_API_URL=https://api.xn--90aeebbpdxndkcm5abncn1ej9mqa.xn--p1ai
 NEXT_PUBLIC_ADMIN_API_URL=https://api.xn--90aeebbpdxndkcm5abncn1ej9mqa.xn--p1ai
+NEXT_PUBLIC_SOURCE_FILE_ORIGINS=https://files.xn--90aeebbpdxndkcm5abncn1ej9mqa.xn--p1ai
 SEAWEEDFS_PUBLIC_ENDPOINT=files.xn--90aeebbpdxndkcm5abncn1ej9mqa.xn--p1ai
 SEAWEEDFS_PUBLIC_SECURE=true
 ADMIN_LOGIN_RATE_ATTEMPTS=3
@@ -319,6 +320,7 @@ FRONTEND_BACKEND_URL    # build-time BACKEND_URL для Next rewrites, по ум
 FRONTEND_PORT           # build-time порт frontend image, по умолчанию 3000
 NEXT_PUBLIC_API_URL     # публичный API URL для прямого browser-to-backend режима
 NEXT_PUBLIC_ADMIN_API_URL # публичный admin API URL
+NEXT_PUBLIC_SOURCE_FILE_ORIGINS # разрешенные origins временных participant ZIP ссылок
 HTTP_ALLOWED_ORIGINS    # REST browser origins; обязательно для прямого режима
 WS_ALLOWED_ORIGINS      # WS browser origins; subset HTTP_ALLOWED_ORIGINS
 ```

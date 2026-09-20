@@ -12,6 +12,7 @@ import {
   isParticipantSubmissionResponse,
 } from "./guards";
 import type { components } from "./schema";
+import { CONFIG } from "../config";
 
 export type ParticipantLobbyResponse = components["schemas"]["ParticipantLobbyResponse"];
 export type ParticipantAssignmentResponse = components["schemas"]["ParticipantAssignmentResponse"];
@@ -28,6 +29,81 @@ export type ParticipantPostSeriesRequest = components["schemas"]["ParticipantPos
 export type ParticipantPostSeriesResponse = components["schemas"]["ParticipantPostSeriesResponse"];
 export type ParticipantRecoveryCursor = components["schemas"]["ParticipantRecoveryCursor"];
 export type ParticipantRecoverySnapshot = components["schemas"]["ParticipantRecoverySnapshot"];
+
+const sourceFileProtocols = new Set(["http:", "https:"]);
+
+const normalizeAllowedOrigin = (value: string): string | null => {
+  const candidate = value.trim();
+  if (candidate.length === 0) {
+    return null;
+  }
+
+  try {
+    const url = new URL(candidate);
+    if (
+      !sourceFileProtocols.has(url.protocol) ||
+      url.username.length > 0 ||
+      url.password.length > 0 ||
+      url.pathname !== "/" ||
+      url.search.length > 0 ||
+      url.hash.length > 0
+    ) {
+      return null;
+    }
+    return url.origin;
+  } catch {
+    return null;
+  }
+};
+
+const allowedSourceFileOrigins = (): ReadonlySet<string> => {
+  if (CONFIG.sourceFileOrigins.length > 0) {
+    return new Set(
+      CONFIG.sourceFileOrigins
+        .map(normalizeAllowedOrigin)
+        .filter((origin): origin is string => origin !== null),
+    );
+  }
+
+  if (typeof window === "undefined") {
+    return new Set();
+  }
+
+  const currentOrigin = normalizeAllowedOrigin(window.location.origin);
+  return currentOrigin === null ? new Set() : new Set([currentOrigin]);
+};
+
+export class ParticipantSourceFileURLPolicyError extends Error {
+  constructor() {
+    super("Participant source file URL failed the browser origin policy");
+    this.name = "ParticipantSourceFileURLPolicyError";
+  }
+}
+
+/**
+ * Keep temporary archive URLs out of snapshots and accept only an explicitly
+ * configured public origin (or the current browser origin in same-origin mode).
+ */
+export const validateParticipantSourceFileURL = (value: string): string => {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new ParticipantSourceFileURLPolicyError();
+  }
+
+  if (
+    !sourceFileProtocols.has(url.protocol) ||
+    url.username.length > 0 ||
+    url.password.length > 0 ||
+    url.hash.length > 0 ||
+    !allowedSourceFileOrigins().has(url.origin)
+  ) {
+    throw new ParticipantSourceFileURLPolicyError();
+  }
+
+  return url.toString();
+};
 
 export type ParticipantCommandIntent = Readonly<{
   idempotencyKey: string;
@@ -175,7 +251,7 @@ export const participantApi = {
     assignmentId: string,
     signal?: AbortSignal,
   ): Promise<ParticipantSourceFileResponse> {
-    return readParticipantResponse(
+    const response = await readParticipantResponse(
       publicClient.GET(
         "/api/v1/tournaments/{tournament_id}/participant/assignments/{assignment_id}/source-file",
         {
@@ -191,6 +267,10 @@ export const participantApi = {
       isParticipantSourceFileResponse,
       "participant assignment source file",
     );
+    return {
+      ...response,
+      source_file_url: validateParticipantSourceFileURL(response.source_file_url),
+    };
   },
 
   async getSnapshot(
