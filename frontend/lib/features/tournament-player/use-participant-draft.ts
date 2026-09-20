@@ -24,7 +24,9 @@ type ParticipantDraftState = Readonly<{
 
 type ParticipantDraftControls = Readonly<{
   allowed: boolean;
+  act: (category: ParticipantDraftCategory) => void;
   ban: (category: ParticipantDraftCategory) => void;
+  pick: (category: ParticipantDraftCategory) => void;
   message: string | null;
   status: ParticipantDraftStatus;
 }>;
@@ -46,15 +48,24 @@ const isBo1Pool = (pool: readonly string[]): boolean => {
   return pool.length === 3 && pool.every((category) => allowed.has(category));
 };
 
-const draftCanAcceptBan = (view: ParticipantPlayerView | null): boolean => {
+const isBo3Pool = (pool: readonly string[]): boolean => {
+  const allowed = new Set(["web", "crypto", "reverse", "forensics", "pwn"]);
+  return pool.length === 5 && pool.every((category) => allowed.has(category));
+};
+
+const draftHasSupportedPool = (
+  format: ParticipantDraftSnapshotView["format"],
+  pool: readonly string[],
+): boolean => format === "bo1" ? isBo1Pool(pool) : isBo3Pool(pool);
+
+const draftCanAcceptAction = (view: ParticipantPlayerView | null): boolean => {
   const draft = view?.draft ?? null;
   return (
     view !== null &&
     draft !== null &&
-    draft.format === "bo1" &&
-    isBo1Pool(draft.pool) &&
+    draftHasSupportedPool(draft.format, draft.pool) &&
     draft.state === "active" &&
-    draft.currentAction === "ban" &&
+    draft.currentAction !== null &&
     draft.currentActorId === view.participantId &&
     draft.turnDeadline !== null &&
     draft.legalCategories.length > 0
@@ -73,6 +84,10 @@ const draftTokenFor = (view: ParticipantPlayerView | null): string => {
     draft.id,
     draft.revision,
     draft.turn,
+    draft.currentActorId,
+    draft.currentAction,
+    draft.turnDeadline,
+    JSON.stringify(draft.legalCategories),
     draft.state,
   ].join(":");
 };
@@ -80,7 +95,7 @@ const draftTokenFor = (view: ParticipantPlayerView | null): string => {
 const defaultMessageFor = (status: ParticipantDraftResult["status"]): string => {
   switch (status) {
     case "accepted":
-      return "Бан категории принят сервером.";
+      return "Ход принят сервером.";
     case "conflict":
       return "Драфт изменился. Сверяем историю с сервером.";
     case "rate_limited":
@@ -89,7 +104,7 @@ const defaultMessageFor = (status: ParticipantDraftResult["status"]): string => 
 };
 
 /**
- * Sends only a server-authorized BO1 ban. The hook never adds a local action
+ * Sends only a server-authorized action. The hook never adds a local action
  * to the history and never creates a timeout action; recovery remains the
  * source of truth for every subsequent turn.
  */
@@ -115,11 +130,12 @@ export const useParticipantDraft = ({
     setState(initialState);
   }, [draftToken]);
 
-  const ban = useCallback((category: ParticipantDraftCategory) => {
+  const act = useCallback((category: ParticipantDraftCategory) => {
     if (
       view === null ||
       draft === null ||
-      !draftCanAcceptBan(view) ||
+      !draftCanAcceptAction(view) ||
+      draft.currentAction === null ||
       !draft.legalCategories.includes(category) ||
       inFlightRef.current
     ) {
@@ -130,7 +146,7 @@ export const useParticipantDraft = ({
     const requestId = ++requestRef.current;
     const requestToken = draftToken;
     const intent: ParticipantDraftIntent = {
-      action: "ban",
+      action: draft.currentAction,
       category,
       draftId: draft.id,
       draftRevision: draft.revision,
@@ -139,7 +155,12 @@ export const useParticipantDraft = ({
       seriesId: draft.seriesId,
       tournamentId: view.tournamentId,
     };
-    setState({ message: "Передаем бан серверу.", status: "submitting" });
+    setState({
+      message: draft.currentAction === "ban"
+        ? "Передаем бан серверу."
+        : "Передаем выбор серверу.",
+      status: "submitting",
+    });
 
     void onDraft(intent)
       .then((result) => {
@@ -158,7 +179,7 @@ export const useParticipantDraft = ({
         setState({
           message: error instanceof Error
             ? error.message
-            : "Не удалось передать бан серверу. Повторите попытку.",
+            : "Не удалось передать ход серверу. Повторите попытку.",
           status: "error",
         });
       })
@@ -169,9 +190,23 @@ export const useParticipantDraft = ({
       });
   }, [draft, draftToken, onDraft, view]);
 
+  const ban = useCallback((category: ParticipantDraftCategory) => {
+    if (draft?.currentAction === "ban") {
+      act(category);
+    }
+  }, [act, draft?.currentAction]);
+
+  const pick = useCallback((category: ParticipantDraftCategory) => {
+    if (draft?.currentAction === "pick") {
+      act(category);
+    }
+  }, [act, draft?.currentAction]);
+
   return {
-    allowed: draftCanAcceptBan(view),
+    act,
     ban,
+    pick,
+    allowed: draftCanAcceptAction(view),
     message: state.message,
     status: state.status,
   };

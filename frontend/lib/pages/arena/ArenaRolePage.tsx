@@ -396,7 +396,10 @@ export const ArenaRolePage = ({ role, tournamentId }: ArenaRolePageProps) => {
   const handleParticipantDraft = useCallback(async (
     intent: ParticipantDraftIntent,
   ): Promise<ParticipantDraftResult> => {
-    if (intent.tournamentId !== tournamentId || intent.action !== "ban") {
+    if (
+      intent.tournamentId !== tournamentId ||
+      (intent.action !== "ban" && intent.action !== "pick")
+    ) {
       return {
         message: "Ход не относится к текущему турниру.",
         status: "conflict",

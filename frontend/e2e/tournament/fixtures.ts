@@ -559,6 +559,16 @@ export const participantDraft = (
   ...overrides,
 });
 
+export const participantBo3Draft = (
+  overrides: Partial<Schema["Draft"]> = {},
+): Schema["Draft"] => participantDraft({
+  format: "bo3",
+  legal_categories: ["crypto", "forensics", "pwn", "reverse", "web"],
+  pool: ["crypto", "forensics", "pwn", "reverse", "web"],
+  series_id: tournamentFixtureIds.bo3Series,
+  ...overrides,
+});
+
 export const participantRecoveryWithDraft = (
   draft: Schema["Draft"] = participantDraft(),
   projectionRevision = 9,

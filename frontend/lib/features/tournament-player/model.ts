@@ -79,7 +79,7 @@ export type ParticipantDraftIntent = Readonly<{
   draftRevision: number;
   projectionRevision: number;
   expectedTurn: number;
-  action: "ban";
+  action: components["schemas"]["DraftActionType"];
   category: components["schemas"]["Category"];
 }>;
 

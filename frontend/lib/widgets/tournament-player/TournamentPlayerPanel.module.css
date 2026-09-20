@@ -151,7 +151,8 @@
 }
 
 .draftPool,
-.draftHistory {
+.draftHistory,
+.draftSelection {
   display: grid;
   gap: 0.7rem;
 }
@@ -203,6 +204,34 @@
 .draftActionMeta,
 .draftEvidence {
   font-size: 0.76rem;
+}
+
+.draftSelectedGames {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.6rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.draftSelectedGames li {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  padding: 0.7rem;
+  background: var(--surface-strong);
+}
+
+.draftSelectedGames span {
+  color: var(--secondary);
+  font-size: 0.76rem;
+}
+
+.draftSelectedGames strong {
+  overflow-wrap: anywhere;
 }
 
 .submissionForm,
@@ -429,6 +458,10 @@
   }
 
   .draftFacts {
+    grid-template-columns: 1fr;
+  }
+
+  .draftSelectedGames {
     grid-template-columns: 1fr;
   }
 

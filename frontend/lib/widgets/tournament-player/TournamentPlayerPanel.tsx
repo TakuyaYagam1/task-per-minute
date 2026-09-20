@@ -266,7 +266,7 @@ export const TournamentPlayerPanel = ({
     view.state === "eliminated" ||
     view.state === "completed";
   const showReadinessAction = view.state !== "bye" && view.state !== "eliminated" && view.state !== "completed";
-  const showDraft = view.draft !== null && view.draft.format === "bo1";
+  const showDraft = view.draft !== null && (view.draft.format === "bo1" || view.draft.format === "bo3");
 
   return (
     <section
@@ -346,16 +346,19 @@ export const TournamentPlayerPanel = ({
           className={styles.draft}
           data-draft-revision={view.draft.revision}
           data-draft-state={view.draft.state}
+          data-draft-format={view.draft.format}
           data-testid="participant-draft-panel"
         >
           <div className={styles.draftHeader}>
             <div>
-              <h3 className={styles.draftTitle} id="participant-draft-title">Драфт категории BO1</h3>
+              <h3 className={styles.draftTitle} id="participant-draft-title">
+                Драфт категории {view.draft.format.toUpperCase()}
+              </h3>
               <p className={styles.draftCopy}>
                 Порядок хода, дедлайн и доступные категории подтверждены сервером.
               </p>
             </div>
-            <Status tone={view.draft.state === "active" ? "info" : "neutral"}>
+            <Status tone={view.draft.state === "active" ? "info" : view.draft.state === "completed" ? "success" : "neutral"}>
               {draftStateLabel(view.draft.state)}
             </Status>
           </div>
@@ -388,10 +391,11 @@ export const TournamentPlayerPanel = ({
           <div className={styles.draftPool} data-testid="participant-draft-pool">
             <h4 className={styles.draftSubtitle}>Категории в пуле</h4>
             <div className={styles.draftCategories}>
-              {draft.allowed
+              {draft.allowed && view.draft.currentAction !== null
                 ? view.draft.pool.map((category) => {
                     const legal = view.draft?.legalCategories.includes(category) ?? false;
-                    return (
+                    const action = view.draft?.currentAction;
+                    return action === "ban" ? (
                       <Button
                         data-testid={`participant-draft-ban-${category}`}
                         disabled={!legal || draft.status === "submitting"}
@@ -404,6 +408,19 @@ export const TournamentPlayerPanel = ({
                       >
                         Забанить {formatCategory(category)}
                       </Button>
+                    ) : (
+                      <Button
+                        data-testid={`participant-draft-pick-${category}`}
+                        disabled={!legal || draft.status === "submitting"}
+                        key={category}
+                        loading={draft.status === "submitting" && legal}
+                        loadingLabel="Передаем"
+                        onClick={() => draft.pick(category)}
+                        type="button"
+                        variant="secondary"
+                      >
+                        Выбрать {formatCategory(category)}
+                      </Button>
                     );
                   })
                 : view.draft.pool.map((category) => (
@@ -414,7 +431,9 @@ export const TournamentPlayerPanel = ({
             </div>
             <p className={styles.draftHint}>
               {draft.allowed
-                ? "Выберите одну категорию для бана. Подтверждение и следующий ход вернет сервер."
+                ? view.draft.currentAction === "ban"
+                  ? "Выберите категорию для бана. Подтверждение и следующий ход вернет сервер."
+                  : "Выберите категорию для игры. Подтверждение и следующий ход вернет сервер."
                 : view.draft.state === "paused"
                   ? "Драфт на паузе. Ходы возобновятся только после решения сервера."
                   : view.draft.currentActorId !== null && view.draft.currentActorId !== view.participantId
@@ -422,6 +441,20 @@ export const TournamentPlayerPanel = ({
                     : "Ход недоступен в текущем серверном состоянии."}
             </p>
           </div>
+
+          {view.draft.selectedCategories.length > 0 && (
+            <div className={styles.draftSelection} data-testid="participant-draft-selected">
+              <h4 className={styles.draftSubtitle}>Категории игр</h4>
+              <ol className={styles.draftSelectedGames}>
+                {view.draft.selectedCategories.map((category, index) => (
+                  <li key={`${index + 1}-${category}`} data-testid={`participant-draft-game-${index + 1}`}>
+                    <span>Игра {index + 1}</span>
+                    <strong>{formatCategory(category)}</strong>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
 
           {view.draft.actions.length > 0 && (
             <div className={styles.draftHistory} aria-label="История драфта">
