@@ -7,6 +7,10 @@ import {
   buildParticipantPlayerView,
   type ParticipantReadyIntent,
   type ParticipantReadyResult,
+  type ParticipantSubmissionIntent,
+  type ParticipantSubmissionResult,
+  type ParticipantSurrenderIntent,
+  type ParticipantSurrenderResult,
 } from "../../features/tournament-player";
 import { TournamentRecoveryPanel } from "../../features/tournament-live";
 import { TournamentOperatorActions } from "../../features/tournament-operator-actions";
@@ -303,6 +307,90 @@ export const ArenaRolePage = ({ role, tournamentId }: ArenaRolePageProps) => {
     };
   }, [tournamentId]);
 
+  const handleParticipantSubmit = useCallback(async (
+    intent: ParticipantSubmissionIntent,
+  ): Promise<ParticipantSubmissionResult> => {
+    if (
+      intent.tournamentId !== tournamentId ||
+      intent.submittedFlag.trim().length === 0
+    ) {
+      return {
+        message: "Ответ не соответствует текущему назначению.",
+        status: "conflict",
+      };
+    }
+
+    const result = await participantApi.submitFlag(
+      tournamentId,
+      intent.seriesId,
+      intent.gameId,
+      {
+        expected_projection_revision: intent.projectionRevision,
+        submitted_flag: intent.submittedFlag,
+      },
+      createParticipantCommandIntent(),
+    );
+
+    if (result.status === "success") {
+      return {
+        status: result.value.submission.correct ? "accepted" : "incorrect",
+      };
+    }
+
+    if (result.status === "rate_limited") {
+      return {
+        message: result.retryAfter
+          ? `Повторите после ${result.retryAfter}.`
+          : undefined,
+        status: "rate_limited",
+      };
+    }
+
+    return {
+      message: "Состояние игры изменилось. Сверяем данные с сервером.",
+      status: "conflict",
+    };
+  }, [tournamentId]);
+
+  const handleParticipantSurrender = useCallback(async (
+    intent: ParticipantSurrenderIntent,
+  ): Promise<ParticipantSurrenderResult> => {
+    if (intent.tournamentId !== tournamentId) {
+      return {
+        message: "Сдача не относится к текущему турниру.",
+        status: "conflict",
+      };
+    }
+
+    const result = await participantApi.surrender(
+      tournamentId,
+      intent.seriesId,
+      {
+        confirmed: true,
+        expected_projection_revision: intent.projectionRevision,
+      },
+      createParticipantCommandIntent(),
+    );
+
+    if (result.status === "success") {
+      return { status: "accepted" };
+    }
+
+    if (result.status === "rate_limited") {
+      return {
+        message: result.retryAfter
+          ? `Повторите после ${result.retryAfter}.`
+          : undefined,
+        status: "rate_limited",
+      };
+    }
+
+    return {
+      message: "Состояние игры изменилось. Сверяем данные с сервером.",
+      status: "conflict",
+    };
+  }, [tournamentId]);
+
   const summary = state.tournament
     ? summaryFor(state.tournament, role, state.tournamentName)
     : undefined;
@@ -330,6 +418,20 @@ export const ArenaRolePage = ({ role, tournamentId }: ArenaRolePageProps) => {
               <TournamentPlayerPanel
                 onReady={async (intent) => {
                   const result = await handleParticipantReady(intent);
+                  if (result.status !== "rate_limited") {
+                    retry();
+                  }
+                  return result;
+                }}
+                onSubmit={async (intent) => {
+                  const result = await handleParticipantSubmit(intent);
+                  if (result.status !== "rate_limited") {
+                    retry();
+                  }
+                  return result;
+                }}
+                onSurrender={async (intent) => {
+                  const result = await handleParticipantSurrender(intent);
                   if (result.status !== "rate_limited") {
                     retry();
                   }

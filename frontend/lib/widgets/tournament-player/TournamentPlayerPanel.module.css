@@ -79,11 +79,91 @@
 }
 
 .assignment,
-.readiness {
+.readiness,
+.gameActions {
   display: grid;
   gap: 0.85rem;
   border-top: 1px solid var(--border);
   padding-top: 1.15rem;
+}
+
+.submissionForm,
+.surrender {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.submissionLabel {
+  color: var(--text);
+  font-size: 0.9rem;
+  font-weight: 750;
+}
+
+.submissionControls {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.submissionInput {
+  width: min(100%, 30rem);
+  min-width: 0;
+  min-height: 2.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  padding: 0.55rem 0.75rem;
+  background: var(--surface-strong);
+  color: var(--text);
+  font: inherit;
+}
+
+.submissionInput:focus-visible {
+  border-color: var(--accent);
+  outline: 3px solid var(--accent-ring);
+  outline-offset: 1px;
+}
+
+.submissionHelp {
+  margin: 0;
+  color: var(--secondary);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.surrender {
+  border-top: 1px solid var(--border);
+  padding-top: 0.85rem;
+}
+
+.surrenderConfirm {
+  display: grid;
+  gap: 0.6rem;
+  border: 1px solid var(--danger, var(--border));
+  border-radius: var(--radius-small);
+  padding: 0.85rem;
+  background: var(--surface-strong);
+}
+
+.surrenderConfirm h4,
+.surrenderConfirm p {
+  margin: 0;
+}
+
+.surrenderConfirm h4 {
+  font-size: 0.95rem;
+}
+
+.surrenderConfirm p {
+  color: var(--secondary);
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.surrenderActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
 }
 
 .assignmentName {
@@ -238,7 +318,24 @@
   }
 
   .readiness button,
-  .assignmentLink {
+  .assignmentLink,
+  .submissionControls button {
+    width: 100%;
+  }
+
+  .submissionControls {
+    display: grid;
+  }
+
+  .submissionInput {
+    width: 100%;
+  }
+
+  .surrenderActions {
+    display: grid;
+  }
+
+  .surrenderActions button {
     width: 100%;
   }
 }

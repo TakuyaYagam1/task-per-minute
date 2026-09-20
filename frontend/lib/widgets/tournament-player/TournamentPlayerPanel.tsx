@@ -1,10 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 
 import {
   useParticipantReadiness,
   useParticipantSourceFile,
+  useParticipantSubmission,
+  useParticipantSurrender,
+  type ParticipantSubmissionIntent,
+  type ParticipantSubmissionResult,
+  type ParticipantSurrenderIntent,
+  type ParticipantSurrenderResult,
   type ParticipantPlayerView,
   type ParticipantReadyIntent,
   type ParticipantReadyResult,
@@ -15,6 +21,8 @@ import { formatGameStatus } from "../../shared/lib";
 import styles from "./TournamentPlayerPanel.module.css";
 
 type TournamentPlayerPanelProps = Readonly<{
+  onSubmit: (intent: ParticipantSubmissionIntent) => Promise<ParticipantSubmissionResult>;
+  onSurrender: (intent: ParticipantSurrenderIntent) => Promise<ParticipantSurrenderResult>;
   view: ParticipantPlayerView | null;
   onReady: (intent: ParticipantReadyIntent) => Promise<ParticipantReadyResult>;
 }>;
@@ -118,10 +126,57 @@ const formatServerTimestamp = (value: string): string => {
   }).format(timestamp);
 };
 
-export const TournamentPlayerPanel = ({ onReady, view }: TournamentPlayerPanelProps) => {
+const submissionTone = (
+  status: ReturnType<typeof useParticipantSubmission>["status"],
+): "info" | "success" | "warning" | "error" | "loading" => {
+  switch (status) {
+    case "pending":
+      return "loading";
+    case "accepted":
+      return "success";
+    case "incorrect":
+    case "empty":
+      return "warning";
+    case "conflict":
+    case "rate_limited":
+    case "error":
+      return "error";
+    case "idle":
+      return "info";
+  }
+};
+
+const surrenderTone = (
+  status: ReturnType<typeof useParticipantSurrender>["status"],
+): "success" | "error" | "loading" | "warning" => {
+  switch (status) {
+    case "accepted":
+      return "success";
+    case "pending":
+      return "loading";
+    case "confirming":
+      return "warning";
+    case "conflict":
+    case "rate_limited":
+    case "error":
+      return "error";
+    case "idle":
+      return "warning";
+  }
+};
+
+export const TournamentPlayerPanel = ({
+  onReady,
+  onSubmit,
+  onSurrender,
+  view,
+}: TournamentPlayerPanelProps) => {
   const readiness = useParticipantReadiness({ onReady, view });
   const sourceFile = useParticipantSourceFile(view);
+  const submission = useParticipantSubmission({ onSubmit, view });
+  const surrender = useParticipantSurrender({ onSurrender, view });
   const [hintsOpen, setHintsOpen] = useState(false);
+  const [submittedFlag, setSubmittedFlag] = useState("");
   const taskHref = useMemo(
     () => safeTaskHref(view?.assignment?.taskUrl ?? null),
     [view?.assignment?.taskUrl],
@@ -129,7 +184,15 @@ export const TournamentPlayerPanel = ({ onReady, view }: TournamentPlayerPanelPr
 
   useEffect(() => {
     setHintsOpen(false);
+    setSubmittedFlag("");
   }, [view?.assignment?.assignmentId, view?.projectionRevision]);
+
+  const submitAnswer = (event: FormEvent<HTMLFormElement>): void => {
+    event.preventDefault();
+    const value = submittedFlag;
+    setSubmittedFlag("");
+    submission.submit(value);
+  };
 
   if (view === null) {
     return (
@@ -352,6 +415,102 @@ export const TournamentPlayerPanel = ({ onReady, view }: TournamentPlayerPanelPr
               )}
             </details>
           )}
+          <div className={styles.gameActions}>
+            <form className={styles.submissionForm} onSubmit={submitAnswer}>
+              <label className={styles.submissionLabel} htmlFor="participant-answer-input">
+                Ответ
+              </label>
+              <div className={styles.submissionControls}>
+                <input
+                  aria-describedby="participant-submission-help"
+                  className={styles.submissionInput}
+                  data-testid="participant-answer-input"
+                  disabled={submission.status === "pending"}
+                  id="participant-answer-input"
+                  onChange={(event) => setSubmittedFlag(event.target.value)}
+                  value={submittedFlag}
+                />
+                <Button
+                  data-testid="participant-submit-button"
+                  disabled={!submission.allowed || submission.status === "pending"}
+                  loading={submission.status === "pending"}
+                  loadingLabel="Проверяем"
+                  type="submit"
+                  variant="primary"
+                >
+                  Отправить ответ
+                </Button>
+              </div>
+              <p className={styles.submissionHelp} id="participant-submission-help">
+                {submission.allowed
+                  ? "Сервер проверит ответ. Победитель определяется только официальным результатом."
+                  : "Отправка откроется, когда сервер активирует текущую игру."}
+              </p>
+              {submission.message !== null && (
+                <Message
+                  data-status={submission.status}
+                  data-testid="participant-submission-status"
+                  tone={submissionTone(submission.status)}
+                  title={submission.status === "accepted" ? "Ответ принят" : "Отправка ответа"}
+                >
+                  <p>{submission.message}</p>
+                </Message>
+              )}
+            </form>
+
+            {surrender.allowed && (
+              <div className={styles.surrender} data-testid="participant-surrender">
+                {surrender.status === "confirming" ? (
+                  <div
+                    aria-labelledby="participant-surrender-title"
+                    className={styles.surrenderConfirm}
+                    data-testid="participant-surrender-confirmation"
+                    role="alert"
+                  >
+                    <h4 id="participant-surrender-title">Подтвердить сдачу?</h4>
+                    <p>Сдача завершит текущую серию для этого участника.</p>
+                    <div className={styles.surrenderActions}>
+                      <Button
+                        data-testid="participant-surrender-cancel"
+                        onClick={surrender.cancel}
+                        variant="ghost"
+                      >
+                        Отменить
+                      </Button>
+                      <Button
+                        data-testid="participant-surrender-confirm"
+                        onClick={surrender.confirm}
+                        variant="danger"
+                      >
+                        Подтвердить сдачу
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <Button
+                    data-testid="participant-surrender-button"
+                    disabled={surrender.status === "pending"}
+                    loading={surrender.status === "pending"}
+                    loadingLabel="Отправляем"
+                    onClick={surrender.requestConfirmation}
+                    variant="danger"
+                  >
+                    Сдаться
+                  </Button>
+                )}
+                {surrender.message !== null && (
+                  <Message
+                    data-status={surrender.status}
+                    data-testid="participant-surrender-status"
+                    tone={surrenderTone(surrender.status)}
+                    title={surrender.status === "accepted" ? "Сдача принята" : "Сдача"}
+                  >
+                    <p>{surrender.message}</p>
+                  </Message>
+                )}
+              </div>
+            )}
+          </div>
           </>
         )}
       </section>
