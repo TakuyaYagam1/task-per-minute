@@ -44,12 +44,19 @@ func validateReconnectSet(graph PauseGraph, index pauseGraphIndex) error {
 	if err != nil {
 		return err
 	}
-	counts, err := validateReconnectIntervals(graph, index, counters)
+	roots, err := validateReconnectIntervals(graph, index, counters)
 	if err != nil {
 		return err
 	}
 	for key, counter := range counters {
-		if counts[key] != counter.Used {
+		root := roots[key]
+		if counter.Used == 0 {
+			if root.count != 0 {
+				return ErrNormalPauseGraphIncomplete
+			}
+			continue
+		}
+		if root.count == 0 || root.last != counter.Used || root.first != counter.Used-root.count+1 {
 			return ErrNormalPauseGraphIncomplete
 		}
 	}
@@ -79,8 +86,14 @@ type reconnectLogicalSegment struct {
 	continuation int
 }
 
-func validateReconnectIntervals(graph PauseGraph, index pauseGraphIndex, counters map[reconnectCounterIdentity]pausedomain.PauseReconnectCounter) (map[reconnectCounterIdentity]int, error) {
-	counts := make(map[reconnectCounterIdentity]int, len(counters))
+type reconnectRootRange struct {
+	count int
+	first int
+	last  int
+}
+
+func validateReconnectIntervals(graph PauseGraph, index pauseGraphIndex, counters map[reconnectCounterIdentity]pausedomain.PauseReconnectCounter) (map[reconnectCounterIdentity]reconnectRootRange, error) {
+	roots := make(map[reconnectCounterIdentity]reconnectRootRange, len(counters))
 	byID := make(map[uuid.UUID]pausedomain.PauseReconnectInterval, len(graph.Reconnect))
 	seenSegments := make(map[reconnectCounterIdentity]map[reconnectLogicalSegment]struct{}, len(counters))
 	for _, interval := range graph.Reconnect {
@@ -92,13 +105,21 @@ func validateReconnectIntervals(graph PauseGraph, index pauseGraphIndex, counter
 			return nil, err
 		}
 		if interval.ContinuationNumber == 0 {
-			counts[key]++
+			root := roots[key]
+			root.count++
+			if root.count == 1 || interval.Number < root.first {
+				root.first = interval.Number
+			}
+			if interval.Number > root.last {
+				root.last = interval.Number
+			}
+			roots[key] = root
 		}
 	}
 	if err := pausedomain.ValidateReconnectLineage(graph.Reconnect); err != nil {
 		return nil, normalPauseError("invalid Reconnect continuation lineage")
 	}
-	return counts, nil
+	return roots, nil
 }
 
 func validateReconnectIntervalMembership(

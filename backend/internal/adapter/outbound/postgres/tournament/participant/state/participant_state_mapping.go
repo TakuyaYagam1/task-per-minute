@@ -412,7 +412,7 @@ func participantValidatedPauseClock(
 		return time.Time{}, 0, participantStateInvalid("assignment hint timing")
 	}
 	timeLimit, ok := participantHintDuration(int(row.TimeLimit))
-	if !ok || remaining > timeLimit || originalDeadline.Sub(frozenAt) != remaining {
+	if !ok || remaining > timeLimit || !participantHintRemainingMatches(originalDeadline, frozenAt, remaining) {
 		return time.Time{}, 0, participantStateInvalid("assignment hint timing")
 	}
 
@@ -480,6 +480,11 @@ func participantHintRemaining(value *int64) (time.Duration, bool) {
 		return 0, false
 	}
 	return time.Duration(*value) * time.Millisecond, true
+}
+
+func participantHintRemainingMatches(originalDeadline, frozenAt time.Time, remaining time.Duration) bool {
+	delta := originalDeadline.Sub(frozenAt)
+	return delta > 0 && delta.Milliseconds() == remaining.Milliseconds()
 }
 
 func participantHintTimeSub(value time.Time, duration time.Duration) (time.Time, bool) {

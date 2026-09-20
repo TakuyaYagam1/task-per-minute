@@ -178,6 +178,23 @@ func TestParticipantLifecycleDisconnectUsesDetachedBoundedContext(t *testing.T) 
 	require.Greater(t, lifecycle.disconnectDeadlineRemaining(), time.Duration(0))
 }
 
+func TestParticipantLifecycleDisconnectRetriesAfterTransientCleanupFailure(t *testing.T) {
+	t.Parallel()
+
+	lifecycle := newRecordingParticipantLifecycle()
+	lifecycle.disconnectResults = []error{context.DeadlineExceeded, nil}
+	server := NewServer(nil, WithTournamentParticipantLifecycleFlow(lifecycle))
+	command := usecase.TournamentParticipantConnectionCommand{
+		TournamentID:         tournamentSourceID(1234),
+		PlayerID:             tournamentSourceID(1235),
+		ConnectionID:         tournamentSourceID(1236),
+		ConnectionGeneration: 6,
+	}
+
+	server.closeParticipantConnection(context.Background(), command)
+	require.Equal(t, []usecase.TournamentParticipantConnectionCommand{command, command}, lifecycle.disconnectCommands())
+}
+
 func TestParticipantLifecycleDoesNotUseGoldenConnectionFlow(t *testing.T) {
 	t.Parallel()
 
@@ -265,6 +282,7 @@ type recordingParticipantLifecycle struct {
 	connectOnce         sync.Once
 	disconnectOnce      sync.Once
 	disconnectErrValue  error
+	disconnectResults   []error
 	disconnectDeadline  bool
 	disconnectRemaining time.Duration
 }
@@ -296,9 +314,14 @@ func (flow *recordingParticipantLifecycle) Disconnect(ctx context.Context, comma
 		deadline, _ := ctx.Deadline()
 		flow.disconnectRemaining = time.Until(deadline)
 	}
+	var result error
+	if len(flow.disconnectResults) > 0 {
+		result = flow.disconnectResults[0]
+		flow.disconnectResults = flow.disconnectResults[1:]
+	}
 	flow.mu.Unlock()
 	flow.disconnectOnce.Do(func() { close(flow.disconnectSignal) })
-	return nil
+	return result
 }
 
 func (flow *recordingParticipantLifecycle) waitConnect(t *testing.T) usecase.TournamentParticipantConnectionCommand {
@@ -341,6 +364,12 @@ func (flow *recordingParticipantLifecycle) connectCommands() []usecase.Tournamen
 	flow.mu.Lock()
 	defer flow.mu.Unlock()
 	return append([]usecase.TournamentParticipantConnectionCommand(nil), flow.connects...)
+}
+
+func (flow *recordingParticipantLifecycle) disconnectCommands() []usecase.TournamentParticipantConnectionCommand {
+	flow.mu.Lock()
+	defer flow.mu.Unlock()
+	return append([]usecase.TournamentParticipantConnectionCommand(nil), flow.disconnects...)
 }
 
 func (flow *recordingParticipantLifecycle) disconnectErr() error {

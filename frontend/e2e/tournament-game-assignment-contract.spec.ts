@@ -399,6 +399,6 @@ test("FE-018 suppresses stale ready-window timing while the assigned game is pau
   await expect(assignment).toHaveAttribute("data-assignment-state", "delivered");
   await expect(
     assignment.getByText("Дедлайн задания", { exact: true }).locator(".."),
-  ).toContainText("Не опубликован сервером");
+  ).toContainText("Приостановлен сервером");
   await expect(page.getByTestId("server-countdown")).toHaveCount(0);
 });

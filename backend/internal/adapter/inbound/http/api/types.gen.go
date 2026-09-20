@@ -837,6 +837,51 @@ func (e PauseDeadlineKind) Valid() bool {
 	}
 }
 
+// Defines values for PauseReason.
+const (
+	PauseReasonDisconnect     PauseReason = "disconnect"
+	PauseReasonExecutionEpoch PauseReason = "execution_epoch"
+	PauseReasonOperator       PauseReason = "operator"
+	PauseReasonPlatform       PauseReason = "platform"
+)
+
+// Valid indicates whether the value is a known member of the PauseReason enum.
+func (e PauseReason) Valid() bool {
+	switch e {
+	case PauseReasonDisconnect:
+		return true
+	case PauseReasonExecutionEpoch:
+		return true
+	case PauseReasonOperator:
+		return true
+	case PauseReasonPlatform:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PauseState.
+const (
+	PauseStateActive    PauseState = "active"
+	PauseStateCancelled PauseState = "cancelled"
+	PauseStateResumed   PauseState = "resumed"
+)
+
+// Valid indicates whether the value is a known member of the PauseState enum.
+func (e PauseState) Valid() bool {
+	switch e {
+	case PauseStateActive:
+		return true
+	case PauseStateCancelled:
+		return true
+	case PauseStateResumed:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for PlayerAuditAction.
 const (
 	PlayerAuditActionDelete PlayerAuditAction = "delete"
@@ -1079,16 +1124,16 @@ func (e ReplaceTournamentSwissRoundConfigurationRequestConfirmed) Valid() bool {
 
 // Defines values for ResultActorKind.
 const (
-	Operator ResultActorKind = "operator"
-	Server   ResultActorKind = "server"
+	ResultActorKindOperator ResultActorKind = "operator"
+	ResultActorKindServer   ResultActorKind = "server"
 )
 
 // Valid indicates whether the value is a known member of the ResultActorKind enum.
 func (e ResultActorKind) Valid() bool {
 	switch e {
-	case Operator:
+	case ResultActorKindOperator:
 		return true
-	case Server:
+	case ResultActorKindServer:
 		return true
 	default:
 		return false
@@ -2424,9 +2469,65 @@ type ParticipantRecoverySnapshot struct {
 	Lobby              ParticipantLobbyResponse  `json:"lobby"`
 	NextCursor         ParticipantRecoveryCursor `json:"next_cursor"`
 	ProjectionRevision int64                     `json:"projection_revision"`
+	Runtime            *ParticipantRuntime       `json:"runtime"`
 	Series             *Series                   `json:"series"`
 	TournamentId       openapi_types.UUID        `json:"tournament_id"`
 	Wave               *Wave                     `json:"wave"`
+}
+
+// ParticipantRuntime defines model for ParticipantRuntime.
+type ParticipantRuntime struct {
+	GameId           openapi_types.UUID            `json:"game_id"`
+	GameRevision     int64                         `json:"game_revision"`
+	GameState        GameState                     `json:"game_state"`
+	Pause            *ParticipantRuntimePause      `json:"pause"`
+	Presence         []ParticipantRuntimePresence  `json:"presence"`
+	Reconnect        []ParticipantRuntimeReconnect `json:"reconnect"`
+	ResultReason     *GameResultReason             `json:"result_reason"`
+	ResultRevisionId *openapi_types.UUID           `json:"result_revision_id"`
+	WinnerId         *openapi_types.UUID           `json:"winner_id"`
+}
+
+// ParticipantRuntimePause defines model for ParticipantRuntimePause.
+type ParticipantRuntimePause struct {
+	DeadlinesSuppressed bool               `json:"deadlines_suppressed"`
+	FrozenAt            time.Time          `json:"frozen_at"`
+	FrozenRemainingMs   int64              `json:"frozen_remaining_ms"`
+	PauseId             openapi_types.UUID `json:"pause_id"`
+	Reason              PauseReason        `json:"reason"`
+	ReconnectDeadline   *time.Time         `json:"reconnect_deadline"`
+	ResumedAt           *time.Time         `json:"resumed_at"`
+	ResumedDeadline     *time.Time         `json:"resumed_deadline"`
+	State               PauseState         `json:"state"`
+}
+
+// ParticipantRuntimePresence defines model for ParticipantRuntimePresence.
+type ParticipantRuntimePresence struct {
+	ConnectedAt    time.Time          `json:"connected_at"`
+	DisconnectedAt *time.Time         `json:"disconnected_at"`
+	ParticipantId  openapi_types.UUID `json:"participant_id"`
+	PresenceEpoch  int64              `json:"presence_epoch"`
+	Revision       int64              `json:"revision"`
+	State          PresenceState      `json:"state"`
+	UpdatedAt      time.Time          `json:"updated_at"`
+}
+
+// ParticipantRuntimeReconnect defines model for ParticipantRuntimeReconnect.
+type ParticipantRuntimeReconnect struct {
+	ClosedAt           *time.Time          `json:"closed_at"`
+	ContinuationNumber int32               `json:"continuation_number"`
+	ContinuedFromId    *openapi_types.UUID `json:"continued_from_id"`
+	Deadline           time.Time           `json:"deadline"`
+	Id                 openapi_types.UUID  `json:"id"`
+	Number             int32               `json:"number"`
+	OpenedAt           time.Time           `json:"opened_at"`
+	ParticipantId      openapi_types.UUID  `json:"participant_id"`
+	PauseId            openapi_types.UUID  `json:"pause_id"`
+	PresenceEpoch      int64               `json:"presence_epoch"`
+	Revision           int64               `json:"revision"`
+	State              ReconnectState      `json:"state"`
+	SuspendedByPauseId *openapi_types.UUID `json:"suspended_by_pause_id"`
+	UpdatedAt          time.Time           `json:"updated_at"`
 }
 
 // ParticipantSourceFileResponse defines model for ParticipantSourceFileResponse.
@@ -2507,6 +2608,9 @@ type PauseGraph struct {
 	Wave                   Wave                    `json:"wave"`
 }
 
+// PauseReason defines model for PauseReason.
+type PauseReason string
+
 // PauseReconnectCounter defines model for PauseReconnectCounter.
 type PauseReconnectCounter struct {
 	Limit         int32              `json:"limit"`
@@ -2524,6 +2628,9 @@ type PauseSeries struct {
 	Revision      int64               `json:"revision"`
 	Series        Series              `json:"series"`
 }
+
+// PauseState defines model for PauseState.
+type PauseState string
 
 // PlayerAuditAction defines model for PlayerAuditAction.
 type PlayerAuditAction string

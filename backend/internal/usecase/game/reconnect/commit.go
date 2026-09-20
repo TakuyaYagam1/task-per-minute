@@ -102,7 +102,7 @@ func buildClockedReconnectRecord(
 	clock ReconnectClock,
 	build reconnectRecordBuilder,
 ) (ReconnectRecord, bool, error) {
-	now := clock.Now().Round(0).UTC()
+	now := clock.Now().Round(0).UTC().Truncate(time.Microsecond)
 	if !reconnectValidServerTime(now) {
 		return ReconnectRecord{}, false, domain.ErrValidation
 	}

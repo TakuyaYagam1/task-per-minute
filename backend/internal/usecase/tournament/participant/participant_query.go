@@ -81,6 +81,7 @@ func (a *ParticipantUseCase) readState(
 	if err != nil {
 		return usecase.ParticipantSnapshotView{}, usecase.RecoveryView{}, err
 	}
+	state.Runtime = cloneParticipantRuntime(authority.Game)
 	state.Lobby, err = deriveParticipantLobby(state)
 	if err != nil {
 		return usecase.ParticipantSnapshotView{}, usecase.RecoveryView{}, err
@@ -139,6 +140,14 @@ func validateAuthorityView(
 			return domain.ErrInternal
 		}
 	}
+	if (view.Assignment == nil) != (view.Game == nil) {
+		return domain.ErrInternal
+	}
+	if view.Game != nil {
+		if err := validateParticipantRuntimeAuthority(view.ParticipantID, view.Assignment.GameID, *view.Game); err != nil {
+			return err
+		}
+	}
 	if view.Opponent != nil {
 		opponent := view.Opponent
 		if opponent.PlayerID == uuid.Nil || opponent.PlayerID == actor.PlayerID ||
@@ -172,7 +181,95 @@ func validateRecoveryView(
 	if err := validateSeriesView(authority, view.Series); err != nil {
 		return err
 	}
+	if err := validateParticipantRuntimeAlignment(authority, view.Runtime); err != nil {
+		return err
+	}
 	return validateWaveView(authority, view.Wave)
+}
+
+//nolint:gocyclo // Correlated pause, presence, reconnect, and result authority is validated as one graph.
+func validateParticipantRuntimeAuthority(
+	participantID uuid.UUID,
+	gameID uuid.UUID,
+	runtime usecase.ParticipantGameView,
+) error {
+	if runtime.GameID != gameID || runtime.Revision < 1 || !domain.GameState(runtime.State).IsValid() {
+		return domain.ErrInternal
+	}
+	if runtime.ResultReason != "" && !domain.GameResultReason(runtime.ResultReason).IsValid() {
+		return domain.ErrInternal
+	}
+	if (runtime.ResultReason == "") != (runtime.ResultRevisionID == nil) {
+		return domain.ErrInternal
+	}
+	if len(runtime.Presence) > 2 || len(runtime.Reconnect) > 2 {
+		return domain.ErrInternal
+	}
+	seenPresence := make(map[uuid.UUID]struct{}, len(runtime.Presence))
+	for _, presence := range runtime.Presence {
+		if presence.ParticipantID == uuid.Nil || presence.PresenceEpoch < 1 || presence.Revision < 1 ||
+			(presence.State != "connected" && presence.State != "disconnected") ||
+			!domain.IsValidServerTime(presence.ConnectedAt) || !domain.IsValidServerTime(presence.UpdatedAt) ||
+			(presence.State == "connected") != (presence.DisconnectedAt == nil) ||
+			(presence.DisconnectedAt != nil && !domain.IsValidServerTime(*presence.DisconnectedAt)) {
+			return domain.ErrInternal
+		}
+		if _, exists := seenPresence[presence.ParticipantID]; exists {
+			return domain.ErrInternal
+		}
+		seenPresence[presence.ParticipantID] = struct{}{}
+	}
+	if len(runtime.Presence) > 0 {
+		if _, exists := seenPresence[participantID]; !exists {
+			return domain.ErrInternal
+		}
+	}
+	seenReconnect := make(map[uuid.UUID]struct{}, len(runtime.Reconnect))
+	for _, reconnect := range runtime.Reconnect {
+		if reconnect.ID == uuid.Nil || reconnect.PauseID == uuid.Nil || reconnect.ParticipantID == uuid.Nil ||
+			reconnect.PresenceEpoch < 1 || reconnect.Number < 1 || reconnect.ContinuationNumber < 0 || reconnect.Revision < 1 ||
+			!domain.IsValidServerTime(reconnect.OpenedAt) || !domain.IsValidServerTime(reconnect.Deadline) ||
+			!domain.IsValidServerTime(reconnect.UpdatedAt) || !reconnect.Deadline.After(reconnect.OpenedAt) ||
+			(reconnect.State != "open" && reconnect.State != "reconnected" && reconnect.State != "expired" && reconnect.State != "cancelled") ||
+			(reconnect.State == "open") != (reconnect.ClosedAt == nil) ||
+			(reconnect.ClosedAt != nil && !domain.IsValidServerTime(*reconnect.ClosedAt)) {
+			return domain.ErrInternal
+		}
+		if _, exists := seenReconnect[reconnect.ParticipantID]; exists {
+			return domain.ErrInternal
+		}
+		if len(seenPresence) > 0 {
+			if _, exists := seenPresence[reconnect.ParticipantID]; !exists {
+				return domain.ErrInternal
+			}
+		}
+		seenReconnect[reconnect.ParticipantID] = struct{}{}
+	}
+	if runtime.Pause != nil {
+		pause := runtime.Pause
+		if pause.PauseID == uuid.Nil || (pause.State != "active" && pause.State != "resumed" && pause.State != "cancelled") ||
+			(pause.Reason != "operator" && pause.Reason != "disconnect" && pause.Reason != "platform" && pause.Reason != "execution_epoch") ||
+			pause.FrozenRemainingMS < 1 || !domain.IsValidServerTime(pause.FrozenAt) ||
+			(pause.ResumedAt != nil && !domain.IsValidServerTime(*pause.ResumedAt)) ||
+			(pause.ResumedDeadline != nil && !domain.IsValidServerTime(*pause.ResumedDeadline)) ||
+			(pause.ReconnectDeadline != nil && !domain.IsValidServerTime(*pause.ReconnectDeadline)) {
+			return domain.ErrInternal
+		}
+	}
+	return nil
+}
+
+func validateParticipantRuntimeAlignment(
+	authority usecase.ParticipantSnapshotView,
+	runtime *usecase.ParticipantGameView,
+) error {
+	if (authority.Game == nil) != (runtime == nil) {
+		return domain.ErrInternal
+	}
+	if runtime == nil {
+		return nil
+	}
+	return validateParticipantRuntimeAuthority(authority.ParticipantID, authority.Game.GameID, *runtime)
 }
 
 //nolint:gocyclo // Lobby identity and participant-safe fields form one cohesive validation boundary.
@@ -428,7 +525,35 @@ func cloneRecoveryView(view usecase.RecoveryView) usecase.RecoveryView {
 		wave := cloneWaveView(*view.Wave)
 		cloned.Wave = &wave
 	}
+	cloned.Runtime = cloneParticipantRuntime(view.Runtime)
 	return cloned
+}
+
+func cloneParticipantRuntime(value *usecase.ParticipantGameView) *usecase.ParticipantGameView {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	cloned.WinnerID = cloneUUID(value.WinnerID)
+	cloned.ResultRevisionID = cloneUUID(value.ResultRevisionID)
+	cloned.Presence = append([]usecase.ParticipantPresenceView(nil), value.Presence...)
+	for index := range cloned.Presence {
+		cloned.Presence[index].DisconnectedAt = cloneTime(value.Presence[index].DisconnectedAt)
+	}
+	cloned.Reconnect = append([]usecase.ParticipantReconnectView(nil), value.Reconnect...)
+	for index := range cloned.Reconnect {
+		cloned.Reconnect[index].ContinuedFromID = cloneUUID(value.Reconnect[index].ContinuedFromID)
+		cloned.Reconnect[index].SuspendedByPauseID = cloneUUID(value.Reconnect[index].SuspendedByPauseID)
+		cloned.Reconnect[index].ClosedAt = cloneTime(value.Reconnect[index].ClosedAt)
+	}
+	if value.Pause != nil {
+		pause := *value.Pause
+		pause.ResumedAt = cloneTime(value.Pause.ResumedAt)
+		pause.ResumedDeadline = cloneTime(value.Pause.ResumedDeadline)
+		pause.ReconnectDeadline = cloneTime(value.Pause.ReconnectDeadline)
+		cloned.Pause = &pause
+	}
+	return &cloned
 }
 
 func cloneLobbyView(view usecase.LobbyView) usecase.LobbyView {

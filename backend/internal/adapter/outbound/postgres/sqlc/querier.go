@@ -364,6 +364,10 @@ type Querier interface {
 	CreateTournamentTechnicalPauseRevision(ctx context.Context, arg CreateTournamentTechnicalPauseRevisionParams) (uuid.UUID, error)
 	CreateWave(ctx context.Context, arg CreateWaveParams) (Wave, error)
 	CreateWaveControlCommand(ctx context.Context, arg CreateWaveControlCommandParams) (uuid.UUID, error)
+	// A pause or resume receipt publishes one nonterminal generic event after the
+	// immutable command row.  Resolve both source identities in this query so a
+	// retry cannot silently reuse a stale projection or Wave revision.
+	CreateWaveControlOutboxEvent(ctx context.Context, arg CreateWaveControlOutboxEventParams) (CreateWaveControlOutboxEventRow, error)
 	CreateWaveDisclosureOutboxEvent(ctx context.Context, arg CreateWaveDisclosureOutboxEventParams) (CreateWaveDisclosureOutboxEventRow, error)
 	CreateWaveMember(ctx context.Context, arg CreateWaveMemberParams) error
 	CreateWaveReadinessHead(ctx context.Context, arg CreateWaveReadinessHeadParams) (WaveReadiness, error)
@@ -468,11 +472,10 @@ type Querier interface {
 	// The locked command authority below revalidates the same identity afterward.
 	GetParticipantCommandRoster(ctx context.Context, arg GetParticipantCommandRosterParams) (uuid.UUID, error)
 	GetParticipantReadAssignment(ctx context.Context, arg GetParticipantReadAssignmentParams) (GetParticipantReadAssignmentRow, error)
-	// Read the current assignment's game together with the latest disconnect
-	// pause clock.  The pause remains visible after resume so clients can
-	// reconcile the frozen and resumed deadlines; an open reconnect interval is
-	// joined independently because a game may have more than one interval over
-	// its lifetime.
+	// Read the current assignment's game together with the latest participant-safe
+	// pause clock and official outcome. The pause remains visible after resume so
+	// clients can reconcile the frozen and resumed deadlines; reconnect lineage
+	// and presence are loaded by the scoped companion queries below.
 	GetParticipantReadGame(ctx context.Context, arg GetParticipantReadGameParams) (GetParticipantReadGameRow, error)
 	GetParticipantReadIdentity(ctx context.Context, arg GetParticipantReadIdentityParams) (uuid.UUID, error)
 	GetParticipantReadOpponent(ctx context.Context, arg GetParticipantReadOpponentParams) (GetParticipantReadOpponentRow, error)
@@ -626,6 +629,8 @@ type Querier interface {
 	ListParticipantForfeitPresence(ctx context.Context, arg ListParticipantForfeitPresenceParams) ([]uuid.UUID, error)
 	ListParticipantGameResultRevisionIDs(ctx context.Context, arg ListParticipantGameResultRevisionIDsParams) ([]uuid.UUID, error)
 	ListParticipantLobbySeries(ctx context.Context, arg ListParticipantLobbySeriesParams) ([]ListParticipantLobbySeriesRow, error)
+	ListParticipantReadPresence(ctx context.Context, arg ListParticipantReadPresenceParams) ([]ListParticipantReadPresenceRow, error)
+	ListParticipantReadReconnect(ctx context.Context, arg ListParticipantReadReconnectParams) ([]ListParticipantReadReconnectRow, error)
 	ListParticipantReadinessEvents(ctx context.Context, arg ListParticipantReadinessEventsParams) ([]ReadinessEvent, error)
 	// A participant settlement may expose an active Swiss round only at the
 	// instant its final Series becomes terminal. The eligibility CTE is stricter

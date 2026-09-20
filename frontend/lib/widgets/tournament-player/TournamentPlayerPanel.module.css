@@ -50,6 +50,138 @@
   line-height: 1.55;
 }
 
+.runtimeStatus {
+  display: grid;
+  gap: 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  padding: 1rem;
+  background: var(--surface-strong);
+}
+
+.runtimeStatus[data-paused="true"] {
+  border-color: var(--warning);
+}
+
+.runtimeHeader {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.runtimeTitle,
+.runtimeCopy,
+.runtimePause > p,
+.runtimeOutcome > p,
+.runtimeHint {
+  margin: 0;
+}
+
+.runtimeTitle {
+  font-size: 1rem;
+  line-height: 1.25;
+}
+
+.runtimeCopy,
+.runtimeHint {
+  max-width: 62ch;
+  color: var(--secondary);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.runtimeCopy {
+  margin-top: 0.35rem;
+}
+
+.runtimePause,
+.runtimeOutcome,
+.runtimeParticipants {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.runtimePause > p,
+.runtimeOutcome > p {
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.runtimeHint {
+  border-top: 1px solid var(--border);
+  padding-top: 0.7rem;
+}
+
+.runtimeSubtitle {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.runtimeList {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.runtimeList li {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  padding: 0.65rem;
+  background: var(--surface);
+}
+
+.runtimeList li > div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.55rem;
+}
+
+.runtimeList li > div span,
+.runtimeList li small {
+  color: var(--secondary);
+  font-size: 0.78rem;
+}
+
+.runtimeList li small {
+  overflow-wrap: anywhere;
+}
+
+.runtimeFacts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.7rem;
+  margin: 0;
+}
+
+.runtimeFacts > div {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  padding: 0.65rem;
+  background: var(--surface);
+}
+
+.runtimeFacts dt {
+  color: var(--secondary);
+  font-size: 0.74rem;
+}
+
+.runtimeFacts dd {
+  margin: 0.25rem 0 0;
+  overflow-wrap: anywhere;
+  font-size: 0.84rem;
+  font-weight: 750;
+}
+
 .details {
   display: grid;
   margin: 0;
@@ -444,8 +576,13 @@
   .header,
   .assignmentHeader,
   .readinessHeader,
-  .draftHeader {
+  .draftHeader,
+  .runtimeHeader {
     display: grid;
+  }
+
+  .runtimeFacts {
+    grid-template-columns: 1fr;
   }
 
   .detailRow {

@@ -201,6 +201,7 @@ const participantRecoverySnapshot = (): ParticipantRecoverySnapshot => ({
   wave: null,
   draft: null,
   assignment: null,
+  runtime: null,
   next_cursor: {
     projection_revision: 5,
     participant_view_revision: 3,

@@ -381,7 +381,7 @@ func (coordinator *Coordinator) reconnectCommand(
 }
 
 func (coordinator *Coordinator) now() (time.Time, error) {
-	now := coordinator.clock.Now().Round(0).UTC()
+	now := coordinator.clock.Now().Round(0).UTC().Truncate(time.Microsecond)
 	if !domain.IsValidServerTime(now) {
 		return time.Time{}, domain.ErrValidation
 	}

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"reflect"
 	"time"
 
@@ -48,6 +49,10 @@ func requiredRecoveryTime(value pgtype.Timestamptz) (time.Time, error) {
 	return terminalrepo.RequiredRecoveryTime(value)
 }
 
+func optionalRecoveryTime(value pgtype.Timestamptz) *time.Time {
+	return terminalrepo.OptionalRecoveryTime(value)
+}
+
 func optionalRecoveryUUID(value uuid.NullUUID) *uuid.UUID {
 	return terminalrepo.OptionalRecoveryUUID(value)
 }
@@ -69,7 +74,73 @@ func recoveryCurrentOrdinal(scoreHead sqlc.SeriesScoreHead) (int, error) {
 }
 
 func recoveryGameClock(row sqlc.PauseClock) (pausedomain.PauseResumeGameClock, error) {
-	return terminalrepo.RecoveryGameClock(row)
+	if row.FrozenRemainingMs < 1 || row.FrozenRemainingMs > math.MaxInt64/int64(time.Millisecond) {
+		return pausedomain.PauseResumeGameClock{}, fmt.Errorf("invalid recovery terminal snapshot: invalid frozen duration")
+	}
+	originalDeadline, err := requiredRecoveryTime(row.OriginalDeadline)
+	if err != nil {
+		return pausedomain.PauseResumeGameClock{}, err
+	}
+	frozenAt, err := requiredRecoveryTime(row.FrozenAt)
+	if err != nil {
+		return pausedomain.PauseResumeGameClock{}, err
+	}
+	remaining, err := reconnectFrozenDuration(originalDeadline, frozenAt, row.FrozenRemainingMs)
+	if err != nil {
+		return pausedomain.PauseResumeGameClock{}, fmt.Errorf("invalid recovery terminal snapshot: Game clock: %w", err)
+	}
+	clock := pausedomain.PauseResumeGameClock{
+		PauseID: row.PauseID, GameID: row.GameAttemptID, OriginalDeadline: originalDeadline,
+		FrozenAt: frozenAt, Remaining: remaining,
+		ResumedAt: optionalRecoveryTime(row.ResumedAt), ResumedDeadline: optionalRecoveryTime(row.ResumedDeadline),
+		Revision: row.Revision,
+	}
+	if err := clock.Validate(true); err != nil {
+		return pausedomain.PauseResumeGameClock{}, fmt.Errorf("invalid recovery terminal snapshot: Game clock: %w", err)
+	}
+	return clock, nil
+}
+
+// reconnectFrozenDuration restores the duration that was authoritative before
+// persistence quantized it to milliseconds. The durable endpoints retain the
+// exact PostgreSQL timestamp value; the stored millisecond value is accepted
+// only when it is the truncation of that duration within one millisecond.
+func reconnectFrozenDuration(originalDeadline, frozenAt time.Time, frozenRemainingMs int64) (time.Duration, error) {
+	persisted, err := reconnectPersistedDuration(frozenRemainingMs)
+	if err != nil {
+		return 0, err
+	}
+	exact := originalDeadline.Sub(frozenAt)
+	if exact <= 0 || exact < persisted || exact-persisted >= time.Millisecond {
+		return 0, fmt.Errorf("%w: frozen duration differs from persisted milliseconds", pausedomain.ErrInvalidGameClock)
+	}
+	return exact, nil
+}
+
+func reconnectPersistedDuration(frozenRemainingMs int64) (time.Duration, error) {
+	if frozenRemainingMs < 1 || frozenRemainingMs > math.MaxInt64/int64(time.Millisecond) {
+		return 0, pausedomain.ErrInvalidGameClock
+	}
+	return time.Duration(frozenRemainingMs) * time.Millisecond, nil
+}
+
+// reconnectCanonicalResumedDeadline returns the timestamp accepted by the
+// pause_clocks resume check. The domain record may retain the exact duration,
+// but the durable resumed endpoint must use the persisted millisecond value.
+func reconnectCanonicalResumedDeadline(resumedAt, exactDeadline time.Time, frozenRemainingMs int64) (time.Time, error) {
+	persisted, err := reconnectPersistedDuration(frozenRemainingMs)
+	if err != nil {
+		return time.Time{}, err
+	}
+	exact := exactDeadline.Sub(resumedAt)
+	if exact <= 0 || exact < persisted || exact-persisted >= time.Millisecond {
+		return time.Time{}, fmt.Errorf("%w: resumed duration differs from persisted milliseconds", pausedomain.ErrInvalidGameClock)
+	}
+	canonical, ok := pausedomain.AddTime(resumedAt, persisted)
+	if !ok {
+		return time.Time{}, pausedomain.ErrInvalidGameClock
+	}
+	return canonical, nil
 }
 
 func recoveryPresence(rows []sqlc.PresenceState) ([]pausedomain.PausePresence, error) {

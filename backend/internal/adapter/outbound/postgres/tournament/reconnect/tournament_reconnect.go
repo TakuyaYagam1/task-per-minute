@@ -235,7 +235,7 @@ func (r *TournamentReconnectPostgres) CommitMutation(
 			return mapRepositoryWriteError("save reconnect command receipt", err)
 		}
 		if created != meta.CommandID {
-			return domain.ErrInternal
+			return fmt.Errorf("save reconnect command receipt returned unexpected command: %w", domain.ErrInternal)
 		}
 		if record.ReconnectAuthority.Current == nil &&
 			(record.Kind == reconnectusecase.MutationDisconnect || record.Kind == reconnectusecase.MutationReconnect) {
@@ -252,7 +252,7 @@ func (r *TournamentReconnectPostgres) CommitMutation(
 		return nil, false, err
 	}
 	if committed == nil {
-		return nil, false, domain.ErrInternal
+		return nil, false, fmt.Errorf("commit reconnect mutation returned no record: %w", domain.ErrInternal)
 	}
 	return committed, changed, nil
 }
@@ -324,7 +324,10 @@ func (r *TournamentReconnectPostgres) persistReconnectLiveOutbox(
 		CreatedAt:                 tstz(record.RecordedAt),
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
-		return domain.ErrInternal
+		if contextErr := ctx.Err(); contextErr != nil {
+			return fmt.Errorf("save reconnect outbox event: %w", contextErr)
+		}
+		return fmt.Errorf("save reconnect outbox event: %w", domain.ErrInternal)
 	}
 	if err != nil {
 		return mapRepositoryWriteError("save reconnect outbox event", err)
@@ -335,7 +338,7 @@ func (r *TournamentReconnectPostgres) persistReconnectLiveOutbox(
 		row.Topic != reconnectOutboxTopic || !row.CreatedAt.Valid ||
 		!row.CreatedAt.Time.UTC().Equal(record.RecordedAt.UTC().Truncate(time.Microsecond)) ||
 		len(row.Payload) == 0 {
-		return domain.ErrInternal
+		return fmt.Errorf("saved reconnect outbox event differs from mutation: %w", domain.ErrInternal)
 	}
 	return nil
 }
@@ -716,12 +719,9 @@ func rehydrateTournamentReconnectActiveState(
 		receipt.Current != nil || row.PauseID == uuid.Nil || row.GameAttemptID != receipt.Game.ID {
 		return pausedomain.PauseResumeGameClock{}, nil, domain.ErrConflict
 	}
-	clock, err := reconnectResumedGameClock(row)
+	clock, err := reconnectResumedGameClock(receipt.GameClock, row)
 	if err != nil {
 		return pausedomain.PauseResumeGameClock{}, nil, err
-	}
-	if !reconnectGameClockEqual(receipt.GameClock, clock) {
-		return pausedomain.PauseResumeGameClock{}, nil, fmt.Errorf("reconnect receipt and pause clock differ: %w", domain.ErrConflict)
 	}
 	clock.PauseID = nextPauseID
 	counters, err := remapTournamentReconnectCounters(receipt, nextPauseID)
@@ -731,7 +731,11 @@ func rehydrateTournamentReconnectActiveState(
 	return clock, counters, nil
 }
 
-func reconnectResumedGameClock(row sqlc.PauseClock) (pausedomain.PauseResumeGameClock, error) {
+//nolint:gocyclo // Durable and domain clock precision must be compared as one correlated authority record.
+func reconnectResumedGameClock(
+	receiptClock pausedomain.PauseResumeGameClock,
+	row sqlc.PauseClock,
+) (pausedomain.PauseResumeGameClock, error) {
 	if row.PauseID == uuid.Nil || row.GameAttemptID == uuid.Nil || row.FrozenRemainingMs < 1 ||
 		row.FrozenRemainingMs > math.MaxInt64/int64(time.Millisecond) {
 		return pausedomain.PauseResumeGameClock{}, fmt.Errorf("invalid resumed reconnect clock: %w", domain.ErrConflict)
@@ -752,29 +756,24 @@ func reconnectResumedGameClock(row sqlc.PauseClock) (pausedomain.PauseResumeGame
 	if err != nil {
 		return pausedomain.PauseResumeGameClock{}, fmt.Errorf("invalid resumed reconnect deadline: %w", domain.ErrConflict)
 	}
-	clock := pausedomain.PauseResumeGameClock{
-		PauseID: row.PauseID, GameID: row.GameAttemptID, OriginalDeadline: originalDeadline,
-		FrozenAt: frozenAt, Remaining: time.Duration(row.FrozenRemainingMs) * time.Millisecond,
-		ResumedAt: &resumedAt, ResumedDeadline: &resumedDeadline, Revision: row.Revision,
-	}
-	if err := clock.Validate(false); err != nil || !resumedAt.After(frozenAt) || row.Revision < 1 {
+	remaining, err := reconnectFrozenDuration(originalDeadline, frozenAt, row.FrozenRemainingMs)
+	if err != nil {
 		return pausedomain.PauseResumeGameClock{}, fmt.Errorf("invalid resumed reconnect clock: %w", domain.ErrConflict)
 	}
-	return clock, nil
-}
-
-func reconnectGameClockEqual(first, second pausedomain.PauseResumeGameClock) bool {
-	return first.PauseID == second.PauseID && first.GameID == second.GameID &&
-		first.OriginalDeadline.Equal(second.OriginalDeadline) && first.FrozenAt.Equal(second.FrozenAt) &&
-		first.Remaining == second.Remaining && reconnectTimePointerEqual(first.ResumedAt, second.ResumedAt) &&
-		reconnectTimePointerEqual(first.ResumedDeadline, second.ResumedDeadline) && first.Revision == second.Revision
-}
-
-func reconnectTimePointerEqual(first, second *time.Time) bool {
-	if first == nil || second == nil {
-		return first == nil && second == nil
+	if receiptClock.PauseID != row.PauseID || receiptClock.GameID != row.GameAttemptID ||
+		receiptClock.Revision != row.Revision || !receiptClock.OriginalDeadline.Equal(originalDeadline) ||
+		!receiptClock.FrozenAt.Equal(frozenAt) || receiptClock.Remaining != remaining ||
+		receiptClock.ResumedAt == nil || !receiptClock.ResumedAt.Equal(resumedAt) ||
+		receiptClock.ResumedDeadline == nil || receiptClock.Validate(false) != nil || !resumedAt.After(frozenAt) {
+		return pausedomain.PauseResumeGameClock{}, fmt.Errorf("invalid resumed reconnect clock: %w", domain.ErrConflict)
 	}
-	return first.Equal(*second)
+	canonicalDeadline, err := reconnectCanonicalResumedDeadline(
+		resumedAt, *receiptClock.ResumedDeadline, row.FrozenRemainingMs,
+	)
+	if err != nil || !resumedDeadline.Equal(canonicalDeadline) {
+		return pausedomain.PauseResumeGameClock{}, fmt.Errorf("invalid resumed reconnect clock: %w", domain.ErrConflict)
+	}
+	return receiptClock, nil
 }
 
 //nolint:gocyclo // Both participant counters must be validated and remapped as one restart invariant.
@@ -1781,7 +1780,12 @@ func resumeTournamentReconnectGame(
 		return normalPauseCAS("create reconnect resume decision", err)
 	}
 	resumedAt := *next.GameClock.ResumedAt
-	resumedDeadline := *next.GameClock.ResumedDeadline
+	resumedDeadline, deadlineErr := reconnectCanonicalResumedDeadline(
+		resumedAt, *next.GameClock.ResumedDeadline, clockRow.PauseClock.FrozenRemainingMs,
+	)
+	if deadlineErr != nil {
+		return fmt.Errorf("resume reconnect clock authority mismatch: %w", domain.ErrConflict)
+	}
 	clockID, err := q.ResumeTournamentAdminNormalPauseClockCAS(ctx, sqlc.ResumeTournamentAdminNormalPauseClockCASParams{
 		ResumedAt: tstz(resumedAt), ResumedDeadline: tstz(resumedDeadline), PauseID: pauseRow.ID,
 		ExpectedRevision: clock.Revision,

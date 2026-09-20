@@ -175,8 +175,12 @@ const getParticipantReadGame = `-- name: GetParticipantReadGame :one
 SELECT attempt.id AS game_id,
     attempt.state,
     attempt.revision,
+    attempt.result_reason,
+    attempt.winner_id,
+    attempt.result_revision_id,
     COALESCE(latest_pause.pause_id, '00000000-0000-0000-0000-000000000000'::UUID) AS pause_id,
     COALESCE(latest_pause.pause_state, '')::TEXT AS pause_state,
+    COALESCE(latest_pause.pause_reason, '')::TEXT AS pause_reason,
     latest_pause.frozen_at,
     latest_pause.frozen_remaining_ms,
     latest_pause.resumed_at,
@@ -189,6 +193,7 @@ JOIN series
 LEFT JOIN LATERAL (
     SELECT pause.id AS pause_id,
         pause.state AS pause_state,
+        pause.reason AS pause_reason,
         clock.frozen_at,
         clock.frozen_remaining_ms,
         clock.resumed_at,
@@ -201,7 +206,6 @@ LEFT JOIN LATERAL (
         AND pause.game_attempt_id = attempt.id
         AND pause.series_id = attempt.series_id
         AND pause.roster_id = attempt.roster_id
-        AND pause.reason = 'disconnect'
     ORDER BY pause.started_at DESC,
         pause.id DESC
     LIMIT 1
@@ -232,8 +236,12 @@ type GetParticipantReadGameRow struct {
 	GameID            uuid.UUID
 	State             string
 	Revision          int64
+	ResultReason      *string
+	WinnerID          uuid.NullUUID
+	ResultRevisionID  uuid.NullUUID
 	PauseID           uuid.UUID
 	PauseState        string
+	PauseReason       string
 	FrozenAt          pgtype.Timestamptz
 	FrozenRemainingMs *int64
 	ResumedAt         pgtype.Timestamptz
@@ -241,11 +249,10 @@ type GetParticipantReadGameRow struct {
 	ReconnectDeadline pgtype.Timestamptz
 }
 
-// Read the current assignment's game together with the latest disconnect
-// pause clock.  The pause remains visible after resume so clients can
-// reconcile the frozen and resumed deadlines; an open reconnect interval is
-// joined independently because a game may have more than one interval over
-// its lifetime.
+// Read the current assignment's game together with the latest participant-safe
+// pause clock and official outcome. The pause remains visible after resume so
+// clients can reconcile the frozen and resumed deadlines; reconnect lineage
+// and presence are loaded by the scoped companion queries below.
 func (q *Queries) GetParticipantReadGame(ctx context.Context, arg GetParticipantReadGameParams) (GetParticipantReadGameRow, error) {
 	row := q.db.QueryRow(ctx, getParticipantReadGame, arg.TournamentID, arg.SeriesID, arg.GameID)
 	var i GetParticipantReadGameRow
@@ -253,8 +260,12 @@ func (q *Queries) GetParticipantReadGame(ctx context.Context, arg GetParticipant
 		&i.GameID,
 		&i.State,
 		&i.Revision,
+		&i.ResultReason,
+		&i.WinnerID,
+		&i.ResultRevisionID,
 		&i.PauseID,
 		&i.PauseState,
+		&i.PauseReason,
 		&i.FrozenAt,
 		&i.FrozenRemainingMs,
 		&i.ResumedAt,
@@ -762,6 +773,154 @@ func (q *Queries) ListOperatorTournamentReadWaves(ctx context.Context, tournamen
 	for rows.Next() {
 		var i ListOperatorTournamentReadWavesRow
 		if err := rows.Scan(&i.WaveID, &i.State, &i.WindowDeadline); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listParticipantReadPresence = `-- name: ListParticipantReadPresence :many
+SELECT presence.participant_id,
+    presence.state,
+    presence.presence_epoch,
+    presence.revision,
+    presence.connected_at,
+    presence.disconnected_at,
+    presence.updated_at
+FROM presence_states AS presence
+JOIN series
+    ON series.id = presence.series_id
+    AND series.roster_id = presence.roster_id
+WHERE series.tournament_id = $1
+    AND presence.series_id = $2
+ORDER BY presence.participant_id
+`
+
+type ListParticipantReadPresenceParams struct {
+	TournamentID uuid.UUID
+	SeriesID     uuid.UUID
+}
+
+type ListParticipantReadPresenceRow struct {
+	ParticipantID  uuid.UUID
+	State          string
+	PresenceEpoch  int64
+	Revision       int64
+	ConnectedAt    pgtype.Timestamptz
+	DisconnectedAt pgtype.Timestamptz
+	UpdatedAt      pgtype.Timestamptz
+}
+
+func (q *Queries) ListParticipantReadPresence(ctx context.Context, arg ListParticipantReadPresenceParams) ([]ListParticipantReadPresenceRow, error) {
+	rows, err := q.db.Query(ctx, listParticipantReadPresence, arg.TournamentID, arg.SeriesID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListParticipantReadPresenceRow{}
+	for rows.Next() {
+		var i ListParticipantReadPresenceRow
+		if err := rows.Scan(
+			&i.ParticipantID,
+			&i.State,
+			&i.PresenceEpoch,
+			&i.Revision,
+			&i.ConnectedAt,
+			&i.DisconnectedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listParticipantReadReconnect = `-- name: ListParticipantReadReconnect :many
+SELECT DISTINCT ON (reconnect.participant_id)
+    reconnect.id,
+    reconnect.pause_id,
+    reconnect.participant_id,
+    reconnect.presence_epoch,
+    reconnect.interval_number,
+    reconnect.continuation_number,
+    reconnect.continued_from_id,
+    reconnect.suspended_by_pause_id,
+    reconnect.state,
+    reconnect.opened_at,
+    reconnect.deadline_at,
+    reconnect.closed_at,
+    reconnect.revision,
+    reconnect.updated_at
+FROM reconnect_intervals AS reconnect
+JOIN series
+    ON series.id = reconnect.series_id
+    AND series.roster_id = reconnect.roster_id
+WHERE series.tournament_id = $1
+    AND reconnect.series_id = $2
+    AND reconnect.game_attempt_id = $3
+ORDER BY reconnect.participant_id,
+    reconnect.interval_number DESC,
+    reconnect.continuation_number DESC,
+    reconnect.updated_at DESC,
+    reconnect.id DESC
+`
+
+type ListParticipantReadReconnectParams struct {
+	TournamentID uuid.UUID
+	SeriesID     uuid.UUID
+	GameID       uuid.UUID
+}
+
+type ListParticipantReadReconnectRow struct {
+	ID                 uuid.UUID
+	PauseID            uuid.UUID
+	ParticipantID      uuid.UUID
+	PresenceEpoch      int64
+	IntervalNumber     int16
+	ContinuationNumber int32
+	ContinuedFromID    uuid.NullUUID
+	SuspendedByPauseID uuid.NullUUID
+	State              string
+	OpenedAt           pgtype.Timestamptz
+	DeadlineAt         pgtype.Timestamptz
+	ClosedAt           pgtype.Timestamptz
+	Revision           int64
+	UpdatedAt          pgtype.Timestamptz
+}
+
+func (q *Queries) ListParticipantReadReconnect(ctx context.Context, arg ListParticipantReadReconnectParams) ([]ListParticipantReadReconnectRow, error) {
+	rows, err := q.db.Query(ctx, listParticipantReadReconnect, arg.TournamentID, arg.SeriesID, arg.GameID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListParticipantReadReconnectRow{}
+	for rows.Next() {
+		var i ListParticipantReadReconnectRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.PauseID,
+			&i.ParticipantID,
+			&i.PresenceEpoch,
+			&i.IntervalNumber,
+			&i.ContinuationNumber,
+			&i.ContinuedFromID,
+			&i.SuspendedByPauseID,
+			&i.State,
+			&i.OpenedAt,
+			&i.DeadlineAt,
+			&i.ClosedAt,
+			&i.Revision,
+			&i.UpdatedAt,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

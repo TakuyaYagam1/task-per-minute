@@ -257,7 +257,105 @@ func participantRecoveryResponse(
 		}
 		result.Wave = &wave
 	}
+	if view.Runtime != nil {
+		runtime, mapErr := participantRuntimeResponse(*view.Runtime)
+		if mapErr != nil {
+			return api.ParticipantRecoverySnapshot{}, mapErr
+		}
+		result.Runtime = &runtime
+	}
 	return result, nil
+}
+
+//nolint:gocyclo // Participant runtime is a single fail-closed serialization boundary for correlated pause authority.
+func participantRuntimeResponse(view usecase.ParticipantGameView) (api.ParticipantRuntime, error) {
+	gameState := api.GameState(view.State)
+	if view.GameID == uuid.Nil || view.Revision < 1 || !gameState.Valid() ||
+		len(view.Presence) > 2 || len(view.Reconnect) > 2 {
+		return api.ParticipantRuntime{}, domain.ErrInternal
+	}
+	result := api.ParticipantRuntime{
+		GameId:           view.GameID,
+		GameRevision:     view.Revision,
+		GameState:        gameState,
+		Presence:         make([]api.ParticipantRuntimePresence, len(view.Presence)),
+		Reconnect:        make([]api.ParticipantRuntimeReconnect, len(view.Reconnect)),
+		WinnerId:         participantUUIDPointer(view.WinnerID),
+		ResultRevisionId: participantUUIDPointer(view.ResultRevisionID),
+	}
+	if view.ResultReason != "" {
+		reason := api.GameResultReason(view.ResultReason)
+		if !reason.Valid() {
+			return api.ParticipantRuntime{}, domain.ErrInternal
+		}
+		result.ResultReason = &reason
+	}
+	if view.Pause != nil {
+		state := api.PauseState(view.Pause.State)
+		reason := api.PauseReason(view.Pause.Reason)
+		if !state.Valid() || !reason.Valid() || view.Pause.PauseID == uuid.Nil || view.Pause.FrozenRemainingMS < 1 {
+			return api.ParticipantRuntime{}, domain.ErrInternal
+		}
+		result.Pause = &api.ParticipantRuntimePause{
+			DeadlinesSuppressed: state == api.PauseStateActive && gameState == api.GameStatePaused,
+			FrozenAt:            view.Pause.FrozenAt,
+			FrozenRemainingMs:   view.Pause.FrozenRemainingMS,
+			PauseId:             view.Pause.PauseID,
+			Reason:              reason,
+			ReconnectDeadline:   participantTimePointer(view.Pause.ReconnectDeadline),
+			ResumedAt:           participantTimePointer(view.Pause.ResumedAt),
+			ResumedDeadline:     participantTimePointer(view.Pause.ResumedDeadline),
+			State:               state,
+		}
+	}
+	for index, item := range view.Presence {
+		state := api.PresenceState(item.State)
+		if item.ParticipantID == uuid.Nil || item.PresenceEpoch < 1 || item.Revision < 1 || !state.Valid() {
+			return api.ParticipantRuntime{}, domain.ErrInternal
+		}
+		result.Presence[index] = api.ParticipantRuntimePresence{
+			ConnectedAt:    item.ConnectedAt,
+			DisconnectedAt: participantTimePointer(item.DisconnectedAt),
+			ParticipantId:  item.ParticipantID,
+			PresenceEpoch:  item.PresenceEpoch,
+			Revision:       item.Revision,
+			State:          state,
+			UpdatedAt:      item.UpdatedAt,
+		}
+	}
+	for index, item := range view.Reconnect {
+		state := api.ReconnectState(item.State)
+		if item.ID == uuid.Nil || item.PauseID == uuid.Nil || item.ParticipantID == uuid.Nil ||
+			item.PresenceEpoch < 1 || item.Number < 1 || item.Number > math.MaxInt32 ||
+			item.ContinuationNumber < 0 || item.ContinuationNumber > math.MaxInt32 || item.Revision < 1 || !state.Valid() {
+			return api.ParticipantRuntime{}, domain.ErrInternal
+		}
+		result.Reconnect[index] = api.ParticipantRuntimeReconnect{
+			ClosedAt:           participantTimePointer(item.ClosedAt),
+			ContinuationNumber: int32(item.ContinuationNumber),
+			ContinuedFromId:    participantUUIDPointer(item.ContinuedFromID),
+			Deadline:           item.Deadline,
+			Id:                 item.ID,
+			Number:             int32(item.Number),
+			OpenedAt:           item.OpenedAt,
+			ParticipantId:      item.ParticipantID,
+			PauseId:            item.PauseID,
+			PresenceEpoch:      item.PresenceEpoch,
+			Revision:           item.Revision,
+			State:              state,
+			SuspendedByPauseId: participantUUIDPointer(item.SuspendedByPauseID),
+			UpdatedAt:          item.UpdatedAt,
+		}
+	}
+	return result, nil
+}
+
+func participantTimePointer(value *time.Time) *time.Time {
+	if value == nil {
+		return nil
+	}
+	result := *value
+	return &result
 }
 
 //nolint:gocyclo // One transactional workflow keeps ordering, rollback, and fail-closed branches explicit.

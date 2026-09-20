@@ -291,19 +291,34 @@ func participantReadGame(
 		return nil, tournamentSnapshotInvalidError("game")
 	}
 	game := &usecase.ParticipantGameView{
-		GameID:   row.GameID,
-		State:    row.State,
-		Revision: row.Revision,
+		GameID:           row.GameID,
+		State:            row.State,
+		Revision:         row.Revision,
+		WinnerID:         participantNullableUUID(row.WinnerID),
+		ResultRevisionID: participantNullableUUID(row.ResultRevisionID),
+		Presence:         []usecase.ParticipantPresenceView{},
+		Reconnect:        []usecase.ParticipantReconnectView{},
+	}
+	if row.ResultReason != nil {
+		game.ResultReason = *row.ResultReason
+	}
+	game.Presence, err = participantReadPresence(ctx, querier, tournamentID, assignment.SeriesID)
+	if err != nil {
+		return nil, err
+	}
+	game.Reconnect, err = participantReadReconnect(ctx, querier, tournamentID, assignment.SeriesID, assignment.GameID)
+	if err != nil {
+		return nil, err
 	}
 	if row.PauseID == uuid.Nil {
-		if row.PauseState != "" || row.FrozenAt.Valid || row.FrozenRemainingMs != nil ||
+		if row.PauseState != "" || row.PauseReason != "" || row.FrozenAt.Valid || row.FrozenRemainingMs != nil ||
 			row.ResumedAt.Valid || row.ResumedDeadline.Valid || row.ReconnectDeadline.Valid {
 			return nil, tournamentSnapshotInvalidError("game pause")
 		}
 		return game, nil
 	}
 	if row.PauseState != "active" && row.PauseState != "resumed" && row.PauseState != "cancelled" ||
-		strings.TrimSpace(row.PauseState) != row.PauseState || !row.FrozenAt.Valid ||
+		strings.TrimSpace(row.PauseState) != row.PauseState || !validParticipantPauseReason(row.PauseReason) || !row.FrozenAt.Valid ||
 		!validServerTime(row.FrozenAt.Time.UTC()) || row.FrozenRemainingMs == nil || *row.FrozenRemainingMs <= 0 {
 		return nil, tournamentSnapshotInvalidError("game pause")
 	}
@@ -320,6 +335,7 @@ func participantReadGame(
 	game.Pause = &usecase.ParticipantGamePauseView{
 		PauseID:           row.PauseID,
 		State:             row.PauseState,
+		Reason:            row.PauseReason,
 		FrozenAt:          row.FrozenAt.Time.UTC(),
 		FrozenRemainingMS: *row.FrozenRemainingMs,
 		ResumedAt:         resumedAt,
@@ -327,6 +343,127 @@ func participantReadGame(
 		ReconnectDeadline: reconnectDeadline,
 	}
 	return game, nil
+}
+
+func participantReadPresence(
+	ctx context.Context,
+	querier *sqlc.Queries,
+	tournamentID uuid.UUID,
+	seriesID uuid.UUID,
+) ([]usecase.ParticipantPresenceView, error) {
+	rows, err := querier.ListParticipantReadPresence(ctx, sqlc.ListParticipantReadPresenceParams{
+		TournamentID: tournamentID,
+		SeriesID:     seriesID,
+	})
+	if err != nil {
+		return nil, tournamentSnapshotLookupError("ParticipantSnapshot - presence", err)
+	}
+	result := make([]usecase.ParticipantPresenceView, len(rows))
+	for index, row := range rows {
+		connectedAt := utcNullableTime(row.ConnectedAt)
+		updatedAt := utcNullableTime(row.UpdatedAt)
+		disconnectedAt := utcNullableTime(row.DisconnectedAt)
+		if row.ParticipantID == uuid.Nil || (row.State != "connected" && row.State != "disconnected") ||
+			row.PresenceEpoch < 1 || row.Revision < 1 || connectedAt == nil || updatedAt == nil ||
+			(row.State == "connected") != (disconnectedAt == nil) ||
+			(disconnectedAt != nil && !validServerTime(*disconnectedAt)) {
+			return nil, tournamentSnapshotInvalidError("participant presence")
+		}
+		result[index] = usecase.ParticipantPresenceView{
+			ParticipantID:  row.ParticipantID,
+			State:          row.State,
+			PresenceEpoch:  row.PresenceEpoch,
+			Revision:       row.Revision,
+			ConnectedAt:    *connectedAt,
+			DisconnectedAt: disconnectedAt,
+			UpdatedAt:      *updatedAt,
+		}
+	}
+	return result, nil
+}
+
+func participantReadReconnect(
+	ctx context.Context,
+	querier *sqlc.Queries,
+	tournamentID uuid.UUID,
+	seriesID uuid.UUID,
+	gameID uuid.UUID,
+) ([]usecase.ParticipantReconnectView, error) {
+	rows, err := querier.ListParticipantReadReconnect(ctx, sqlc.ListParticipantReadReconnectParams{
+		TournamentID: tournamentID,
+		SeriesID:     seriesID,
+		GameID:       gameID,
+	})
+	if err != nil {
+		return nil, tournamentSnapshotLookupError("ParticipantSnapshot - reconnect", err)
+	}
+	result := make([]usecase.ParticipantReconnectView, len(rows))
+	for index, row := range rows {
+		mapped, mapErr := participantReadReconnectRow(row)
+		if mapErr != nil {
+			return nil, mapErr
+		}
+		result[index] = mapped
+	}
+	return result, nil
+}
+
+func participantReadReconnectRow(
+	row sqlc.ListParticipantReadReconnectRow,
+) (usecase.ParticipantReconnectView, error) {
+	openedAt := utcNullableTime(row.OpenedAt)
+	deadline := utcNullableTime(row.DeadlineAt)
+	closedAt := utcNullableTime(row.ClosedAt)
+	updatedAt := utcNullableTime(row.UpdatedAt)
+	if row.ID == uuid.Nil || row.PauseID == uuid.Nil || row.ParticipantID == uuid.Nil ||
+		row.PresenceEpoch < 1 || row.IntervalNumber < 1 || row.ContinuationNumber < 0 ||
+		!validParticipantReconnectState(row.State) || openedAt == nil || deadline == nil || updatedAt == nil ||
+		!deadline.After(*openedAt) || (row.State == "open") != (closedAt == nil) ||
+		(closedAt != nil && !validServerTime(*closedAt)) {
+		return usecase.ParticipantReconnectView{}, tournamentSnapshotInvalidError("participant reconnect")
+	}
+	return usecase.ParticipantReconnectView{
+		ID:                 row.ID,
+		PauseID:            row.PauseID,
+		ParticipantID:      row.ParticipantID,
+		PresenceEpoch:      row.PresenceEpoch,
+		Number:             int(row.IntervalNumber),
+		ContinuationNumber: int(row.ContinuationNumber),
+		ContinuedFromID:    participantNullableUUID(row.ContinuedFromID),
+		SuspendedByPauseID: participantNullableUUID(row.SuspendedByPauseID),
+		State:              row.State,
+		OpenedAt:           *openedAt,
+		Deadline:           *deadline,
+		ClosedAt:           closedAt,
+		Revision:           row.Revision,
+		UpdatedAt:          *updatedAt,
+	}, nil
+}
+
+func participantNullableUUID(value uuid.NullUUID) *uuid.UUID {
+	if !value.Valid || value.UUID == uuid.Nil {
+		return nil
+	}
+	result := value.UUID
+	return &result
+}
+
+func validParticipantPauseReason(value string) bool {
+	switch value {
+	case "operator", "disconnect", "platform", "execution_epoch":
+		return true
+	default:
+		return false
+	}
+}
+
+func validParticipantReconnectState(value string) bool {
+	switch value {
+	case "open", "reconnected", "expired", "cancelled":
+		return true
+	default:
+		return false
+	}
 }
 
 func operatorTournamentReadPauseGame(

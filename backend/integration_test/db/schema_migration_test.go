@@ -19,7 +19,7 @@ import (
 	"github.com/TakuyaYagam1/task-per-minute/internal/bootstrap"
 )
 
-const schemaHeadVersion int64 = 23
+const schemaHeadVersion int64 = 25
 
 func TestSchemaMigration(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
@@ -232,11 +232,11 @@ func TestSchemaMigration(t *testing.T) {
 					AND column_name IN ('owner_kind', 'owner_id')
 			))::INT`,
 	).Scan(&removedLegacy))
-	require.Equal(t, 199, applicationTables)
+	require.Equal(t, 200, applicationTables)
 	require.Equal(t, 200, applicationFunctions)
-	require.Equal(t, 293, triggers)
-	require.Equal(t, 101, explicitIndexes)
-	require.Equal(t, 626, foreignKeys)
+	require.Equal(t, 295, triggers)
+	require.Equal(t, 102, explicitIndexes)
+	require.Equal(t, 631, foreignKeys)
 	require.Zero(t, legacyIdentifiers,
 		"domain baseline must not expose legacy-prefixed schema identifiers")
 	require.Zero(t, removedLegacy,
@@ -254,6 +254,7 @@ func TestSchemaMigration(t *testing.T) {
 		"result_commits",
 		"audit_events",
 		"outbox_events",
+		"outbox_wave_control_sources",
 		"presence_states",
 		"pauses",
 		"reconnect_intervals",
@@ -270,12 +271,15 @@ func TestSchemaMigration(t *testing.T) {
 		"audit_events_identity_key",
 		"outbox_events_target_identity_key",
 		"outbox_events_idempotency_key_key",
+		"outbox_wave_control_sources_command_key",
+		"outbox_wave_control_sources_target_event_fk",
 		"reconnect_intervals_segment_key",
 		"reconnect_intervals_lineage_check",
 	}
 	requiredIndexes := []string{
 		"tournaments_single_active_idx",
 		"outbox_events_claim_idx",
+		"outbox_wave_control_sources_scope_idx",
 		"reconnect_intervals_root_presence_epoch_key",
 		"reconnect_intervals_continued_from_key",
 	}

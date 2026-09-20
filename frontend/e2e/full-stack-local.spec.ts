@@ -1001,7 +1001,7 @@ test.describe('local compose full stack e2e', () => {
     }
   });
 
-  test('FE-017 and FE-027 through FE-033 compose roster, Wave, and reload-safe operator control', async ({ page, browser }) => {
+  test('FE-017, FE-023, and FE-027 through FE-033 compose roster, Wave, reconnect, and operator control', async ({ page, browser }) => {
     test.setTimeout(480_000);
     page.setDefaultTimeout(15_000);
 
@@ -1697,6 +1697,7 @@ test.describe('local compose full stack e2e', () => {
         expect(JSON.stringify(waitingSnapshot)).not.toContain('effective_deadline');
       }
 
+      let readinessParticipantPage: Page | null = null;
       for (const participant of checkedInSourceRosterParticipants) {
         const playerIndex = players.findIndex((player) => player.id === participant.player_id);
         const playerContext = playerContexts[playerIndex];
@@ -1719,6 +1720,7 @@ test.describe('local compose full stack e2e', () => {
           (await participantSnapshotResponse.json()) as FullStackParticipantSnapshot;
         if (playerIndex === 0) {
           const participantPage = await playerContext.newPage();
+          readinessParticipantPage = participantPage;
           await participantPage.goto(
             `${frontendURL}/arena/participant/${tournament.id}`,
           );
@@ -1743,7 +1745,6 @@ test.describe('local compose full stack e2e', () => {
           await expect(
             participantPage.getByText('Готовность подтверждена сервером.', { exact: true }),
           ).toBeVisible();
-          await participantPage.close();
           continue;
         }
         const readyResponse = await playerContext.request.post(
@@ -1877,27 +1878,66 @@ test.describe('local compose full stack e2e', () => {
         );
       }
 
-      const participantPage = await contextForParticipant(firstWaveMember.participant_id).newPage();
-      try {
-        await participantPage.goto(`${frontendURL}/arena/participant/${tournament.id}`, {
-          waitUntil: 'domcontentloaded',
-        });
-        await expect(participantPage.getByTestId('participant-player-panel')).toHaveAttribute(
+      let firstParticipantPage = await contextForParticipant(firstWaveMember.participant_id).newPage();
+      const secondParticipantPage = await contextForParticipant(secondWaveMember.participant_id).newPage();
+      const participantPath = `${frontendURL}/arena/participant/${tournament.id}`;
+      await Promise.all([
+        firstParticipantPage.goto(participantPath, { waitUntil: 'domcontentloaded' }),
+        secondParticipantPage.goto(participantPath, { waitUntil: 'domcontentloaded' }),
+      ]);
+      for (const activeParticipantPage of [firstParticipantPage, secondParticipantPage]) {
+        await expect(activeParticipantPage.getByTestId('participant-player-panel')).toHaveAttribute(
           'data-state',
           /assigned|ready/,
         );
-        await expect(participantPage.getByTestId('server-countdown')).toBeVisible({ timeout: 15_000 });
-        const countdownBeforeReload = await readServerCountdownSeconds(participantPage);
-        expect(countdownBeforeReload).toBeGreaterThan(0);
-        await participantPage.waitForTimeout(1_000);
-        await participantPage.reload({ waitUntil: 'domcontentloaded' });
-        await expect(participantPage.getByTestId('server-countdown')).toBeVisible({ timeout: 15_000 });
-        const countdownAfterReload = await readServerCountdownSeconds(participantPage);
-        expect(countdownAfterReload).toBeGreaterThan(0);
-        expect(countdownAfterReload).toBeLessThanOrEqual(countdownBeforeReload + 1);
-        expect(countdownAfterReload).toBeLessThanOrEqual(180);
-      } finally {
-        await participantPage.close();
+        await expect(activeParticipantPage.getByTestId('server-countdown')).toBeVisible({
+          timeout: 15_000,
+        });
+      }
+      // Once the in-game sockets are active, release the pre-start readiness
+      // page. Its lease can drain without creating a false zero-connection gap.
+      if (readinessParticipantPage) {
+        await readinessParticipantPage.close();
+        readinessParticipantPage = null;
+      }
+      await expect(
+        secondParticipantPage.getByTestId('participant-runtime-presence').locator('li'),
+      ).toHaveCount(2, { timeout: 15_000 });
+
+      const countdownBeforeReload = await readServerCountdownSeconds(firstParticipantPage);
+      expect(countdownBeforeReload).toBeGreaterThan(0);
+      await firstParticipantPage.waitForTimeout(1_000);
+      await firstParticipantPage.reload({ waitUntil: 'domcontentloaded' });
+      await expect(firstParticipantPage.getByTestId('server-countdown')).toBeVisible({
+        timeout: 15_000,
+      });
+      const countdownAfterReload = await readServerCountdownSeconds(firstParticipantPage);
+      expect(countdownAfterReload).toBeGreaterThan(0);
+      expect(countdownAfterReload).toBeLessThanOrEqual(countdownBeforeReload + 1);
+      expect(countdownAfterReload).toBeLessThanOrEqual(180);
+
+      await firstParticipantPage.close();
+      const disconnectStatus = secondParticipantPage.getByTestId('participant-runtime-status');
+      await expect(disconnectStatus).toHaveAttribute('data-paused', 'true', { timeout: 15_000 });
+      await expect(disconnectStatus).toHaveAttribute('data-pause-reason', 'disconnect');
+      await expect(secondParticipantPage.getByTestId('server-countdown')).toHaveCount(0);
+      await expect(secondParticipantPage.getByTestId('participant-submit-button')).toBeDisabled();
+      await expect(
+        secondParticipantPage.getByTestId(
+          `participant-runtime-presence-${firstWaveMember.participant_id}`,
+        ),
+      ).toHaveAttribute('data-state', 'disconnected');
+      await expect(
+        secondParticipantPage.getByTestId('participant-runtime-reconnect').locator('li'),
+      ).toHaveCount(1);
+
+      firstParticipantPage = await contextForParticipant(firstWaveMember.participant_id).newPage();
+      await firstParticipantPage.goto(participantPath, { waitUntil: 'domcontentloaded' });
+      for (const activeParticipantPage of [firstParticipantPage, secondParticipantPage]) {
+        await expect(activeParticipantPage.getByTestId('participant-runtime-status'))
+          .toHaveAttribute('data-paused', 'false', { timeout: 15_000 });
+        await expect(activeParticipantPage.getByTestId('server-countdown')).toBeVisible();
+        await expect(activeParticipantPage.getByTestId('participant-submit-button')).toBeEnabled();
       }
 
       const operatorPath = `/arena/operator/${tournament.id}`;
@@ -1949,6 +1989,22 @@ test.describe('local compose full stack e2e', () => {
       ).toBe(200);
       await expect(page.getByRole('region', { name: 'Управление турниром' }))
         .toContainText('Техническая пауза');
+      for (const activeParticipantPage of [firstParticipantPage, secondParticipantPage]) {
+        const runtimeStatus = activeParticipantPage.getByTestId('participant-runtime-status');
+        await expect(runtimeStatus).toHaveAttribute('data-paused', 'true', { timeout: 15_000 });
+        await expect(runtimeStatus).toHaveAttribute('data-pause-reason', 'operator');
+        await expect(activeParticipantPage.getByTestId('server-countdown')).toHaveCount(0);
+        await expect(activeParticipantPage.getByTestId('participant-submit-button')).toBeDisabled();
+      }
+
+      await firstParticipantPage.close();
+      await expect(secondParticipantPage.getByTestId('participant-runtime-status'))
+        .toHaveAttribute('data-pause-reason', 'operator', { timeout: 15_000 });
+      firstParticipantPage = await contextForParticipant(firstWaveMember.participant_id).newPage();
+      await firstParticipantPage.goto(participantPath, { waitUntil: 'domcontentloaded' });
+      await expect(firstParticipantPage.getByTestId('participant-runtime-status'))
+        .toHaveAttribute('data-pause-reason', 'operator', { timeout: 15_000 });
+      await expect(firstParticipantPage.getByTestId('server-countdown')).toHaveCount(0);
 
       await actionSelect.selectOption('resume');
       await page.getByLabel('Причина').fill('Проверка resume с восстановленным CSRF contract');
@@ -1972,6 +2028,12 @@ test.describe('local compose full stack e2e', () => {
       ).toBe(200);
       await expect(page.getByRole('region', { name: 'Управление турниром' }))
         .toContainText('Швейцарка');
+      for (const activeParticipantPage of [firstParticipantPage, secondParticipantPage]) {
+        await expect(activeParticipantPage.getByTestId('participant-runtime-status'))
+          .toHaveAttribute('data-paused', 'false', { timeout: 15_000 });
+        await expect(activeParticipantPage.getByTestId('server-countdown')).toBeVisible();
+        await expect(activeParticipantPage.getByTestId('participant-submit-button')).toBeEnabled();
+      }
 
       const staleStartResponse = await adminRequest.post(
         `${backendURL}/api/v1/admin/tournaments/${tournament.id}/waves/${plannedWave.id}/actions`,

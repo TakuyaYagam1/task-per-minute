@@ -597,10 +597,194 @@ PublicRecoverySnapshot:
     next_cursor:
       $ref: '#/PublicRecoveryCursor'
 
+ParticipantRuntimePause:
+  type: object
+  additionalProperties: false
+  required: [pause_id, state, reason, frozen_at, frozen_remaining_ms, resumed_at, resumed_deadline, reconnect_deadline, deadlines_suppressed]
+  properties:
+    pause_id:
+      type: string
+      format: uuid
+    state:
+      $ref: '#/PauseState'
+    reason:
+      $ref: '#/PauseReason'
+    frozen_at:
+      type: string
+      format: date-time
+      readOnly: true
+    frozen_remaining_ms:
+      type: integer
+      format: int64
+      minimum: 1
+      readOnly: true
+    resumed_at:
+      type: string
+      format: date-time
+      nullable: true
+      readOnly: true
+    resumed_deadline:
+      type: string
+      format: date-time
+      nullable: true
+      readOnly: true
+    reconnect_deadline:
+      type: string
+      format: date-time
+      nullable: true
+      readOnly: true
+    deadlines_suppressed:
+      type: boolean
+      readOnly: true
+
+ParticipantRuntimePresence:
+  type: object
+  additionalProperties: false
+  required: [participant_id, state, presence_epoch, revision, connected_at, disconnected_at, updated_at]
+  properties:
+    participant_id:
+      type: string
+      format: uuid
+    state:
+      $ref: '#/PresenceState'
+    presence_epoch:
+      type: integer
+      format: int64
+      minimum: 1
+      readOnly: true
+    revision:
+      type: integer
+      format: int64
+      minimum: 1
+      readOnly: true
+    connected_at:
+      type: string
+      format: date-time
+      readOnly: true
+    disconnected_at:
+      type: string
+      format: date-time
+      nullable: true
+      readOnly: true
+    updated_at:
+      type: string
+      format: date-time
+      readOnly: true
+
+ParticipantRuntimeReconnect:
+  type: object
+  additionalProperties: false
+  required: [id, pause_id, participant_id, presence_epoch, number, continuation_number, continued_from_id, suspended_by_pause_id, state, opened_at, deadline, closed_at, revision, updated_at]
+  properties:
+    id:
+      type: string
+      format: uuid
+    pause_id:
+      type: string
+      format: uuid
+    participant_id:
+      type: string
+      format: uuid
+    presence_epoch:
+      type: integer
+      format: int64
+      minimum: 1
+      readOnly: true
+    number:
+      type: integer
+      format: int32
+      minimum: 1
+      readOnly: true
+    continuation_number:
+      type: integer
+      format: int32
+      minimum: 0
+      readOnly: true
+    continued_from_id:
+      type: string
+      format: uuid
+      nullable: true
+      readOnly: true
+    suspended_by_pause_id:
+      type: string
+      format: uuid
+      nullable: true
+      readOnly: true
+    state:
+      $ref: '#/ReconnectState'
+    opened_at:
+      type: string
+      format: date-time
+      readOnly: true
+    deadline:
+      type: string
+      format: date-time
+      readOnly: true
+    closed_at:
+      type: string
+      format: date-time
+      nullable: true
+      readOnly: true
+    revision:
+      type: integer
+      format: int64
+      minimum: 1
+      readOnly: true
+    updated_at:
+      type: string
+      format: date-time
+      readOnly: true
+
+ParticipantRuntime:
+  type: object
+  additionalProperties: false
+  required: [game_id, game_state, game_revision, result_reason, winner_id, result_revision_id, pause, presence, reconnect]
+  properties:
+    game_id:
+      type: string
+      format: uuid
+    game_state:
+      $ref: '#/GameState'
+    game_revision:
+      type: integer
+      format: int64
+      minimum: 1
+      readOnly: true
+    result_reason:
+      type: string
+      nullable: true
+      allOf:
+        - $ref: '#/GameResultReason'
+    winner_id:
+      type: string
+      format: uuid
+      nullable: true
+      readOnly: true
+    result_revision_id:
+      type: string
+      format: uuid
+      nullable: true
+      readOnly: true
+    pause:
+      type: object
+      nullable: true
+      allOf:
+        - $ref: '#/ParticipantRuntimePause'
+    presence:
+      type: array
+      maxItems: 2
+      items:
+        $ref: '#/ParticipantRuntimePresence'
+    reconnect:
+      type: array
+      maxItems: 2
+      items:
+        $ref: '#/ParticipantRuntimeReconnect'
+
 ParticipantRecoverySnapshot:
   type: object
   additionalProperties: false
-  required: [tournament_id, projection_revision, lobby, series, wave, draft, assignment, next_cursor]
+  required: [tournament_id, projection_revision, lobby, series, wave, draft, assignment, runtime, next_cursor]
   properties:
     tournament_id:
       type: string
@@ -631,6 +815,11 @@ ParticipantRecoverySnapshot:
       nullable: true
       allOf:
         - $ref: '#/ParticipantAssignment'
+    runtime:
+      type: object
+      nullable: true
+      allOf:
+        - $ref: '#/ParticipantRuntime'
     next_cursor:
       $ref: '#/ParticipantRecoveryCursor'
 

@@ -54,6 +54,59 @@ func TestParticipantLobbyResponseIncludesAuthoritativeFields(t *testing.T) {
 	require.Equal(t, lobby, recovery.Lobby)
 }
 
+func TestParticipantRuntimeResponseIncludesPauseReconnectAndOfficialOutcome(t *testing.T) {
+	t.Parallel()
+
+	participantID := uuid.New()
+	opponentID := uuid.New()
+	gameID := uuid.New()
+	pauseID := uuid.New()
+	intervalID := uuid.New()
+	resultRevisionID := uuid.New()
+	winnerID := opponentID
+	frozenAt := time.Date(2026, 9, 20, 10, 0, 0, 0, time.UTC)
+	deadline := frozenAt.Add(45 * time.Second)
+	disconnectedAt := frozenAt
+	runtime, err := participantRuntimeResponse(usecase.ParticipantGameView{
+		GameID:           gameID,
+		State:            string(domain.GameStateVoid),
+		Revision:         7,
+		ResultReason:     string(domain.GameResultReasonDisconnect),
+		WinnerID:         &winnerID,
+		ResultRevisionID: &resultRevisionID,
+		Pause: &usecase.ParticipantGamePauseView{
+			PauseID:           pauseID,
+			State:             "active",
+			Reason:            "disconnect",
+			FrozenAt:          frozenAt,
+			FrozenRemainingMS: 45_000,
+			ReconnectDeadline: &deadline,
+		},
+		Presence: []usecase.ParticipantPresenceView{
+			{ParticipantID: participantID, State: "disconnected", PresenceEpoch: 2, Revision: 3, ConnectedAt: frozenAt.Add(-time.Minute), DisconnectedAt: &disconnectedAt, UpdatedAt: frozenAt},
+			{ParticipantID: opponentID, State: "connected", PresenceEpoch: 1, Revision: 1, ConnectedAt: frozenAt.Add(-time.Minute), UpdatedAt: frozenAt},
+		},
+		Reconnect: []usecase.ParticipantReconnectView{
+			{ID: intervalID, PauseID: pauseID, ParticipantID: participantID, PresenceEpoch: 2, Number: 1, State: "open", OpenedAt: frozenAt, Deadline: deadline, Revision: 1, UpdatedAt: frozenAt},
+		},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, api.GameStateVoid, runtime.GameState)
+	require.NotNil(t, runtime.ResultReason)
+	require.Equal(t, api.GameResultReasonDisconnect, *runtime.ResultReason)
+	require.Equal(t, resultRevisionID, *runtime.ResultRevisionId)
+	require.Equal(t, opponentID, *runtime.WinnerId)
+	require.NotNil(t, runtime.Pause)
+	require.Equal(t, api.PauseReasonDisconnect, runtime.Pause.Reason)
+	require.Equal(t, deadline, *runtime.Pause.ReconnectDeadline)
+	require.Len(t, runtime.Presence, 2)
+	require.Equal(t, api.Disconnected, runtime.Presence[0].State)
+	require.Len(t, runtime.Reconnect, 1)
+	require.Equal(t, api.ReconnectStateOpen, runtime.Reconnect[0].State)
+	require.Equal(t, deadline, runtime.Reconnect[0].Deadline)
+}
+
 func TestParticipantAssignmentResponseIncludesAuthoritativeContext(t *testing.T) {
 	t.Parallel()
 

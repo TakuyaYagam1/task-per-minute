@@ -72,6 +72,27 @@ func TestTournamentAdminSnapshotFrozenDeadline(t *testing.T) {
 	require.False(t, ok)
 }
 
+func TestTournamentAdminSnapshotReconnectRootSuffix(t *testing.T) {
+	t.Parallel()
+
+	require.True(t, tournamentAdminSnapshotReconnectRootSuffixValid(
+		tournamentAdminSnapshotReconnectRootRange{count: 1, first: 2, last: 2},
+		2,
+	))
+	require.True(t, tournamentAdminSnapshotReconnectRootSuffixValid(
+		tournamentAdminSnapshotReconnectRootRange{},
+		0,
+	))
+	require.False(t, tournamentAdminSnapshotReconnectRootSuffixValid(
+		tournamentAdminSnapshotReconnectRootRange{count: 1, first: 2, last: 2},
+		3,
+	))
+	require.False(t, tournamentAdminSnapshotReconnectRootSuffixValid(
+		tournamentAdminSnapshotReconnectRootRange{count: 2, first: 1, last: 3},
+		3,
+	))
+}
+
 func tournamentAdminSnapshotPauseTestRow(
 	tournamentID uuid.UUID,
 	rosterID uuid.UUID,

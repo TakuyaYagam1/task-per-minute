@@ -114,6 +114,71 @@ export type ParticipantAssignmentView = Readonly<{
   waveId: string;
 }>;
 
+export type ParticipantPauseSource = "wave" | "series" | "game" | "draft";
+
+export type ParticipantPauseView = Readonly<{
+  active: boolean;
+  deadlinesSuppressed: boolean;
+  pausedAt: string | null;
+  pauseId: string | null;
+  reason: components["schemas"]["PauseReason"] | null;
+  reconnectDeadline: string | null;
+  resumedAt: string | null;
+  resumedDeadline: string | null;
+  source: ParticipantPauseSource | null;
+  state: components["schemas"]["PauseState"] | null;
+  frozenRemainingMs: number | null;
+}>;
+
+export type ParticipantPresenceView = Readonly<{
+  connectedAt: string;
+  disconnectedAt: string | null;
+  participantId: string;
+  presenceEpoch: number;
+  revision: number;
+  state: components["schemas"]["PresenceState"];
+  updatedAt: string;
+}>;
+
+export type ParticipantReconnectView = Readonly<{
+  closedAt: string | null;
+  continuationNumber: number;
+  continuedFromId: string | null;
+  deadline: string;
+  id: string;
+  number: number;
+  openedAt: string;
+  participantId: string;
+  pauseId: string;
+  presenceEpoch: number;
+  revision: number;
+  state: components["schemas"]["ReconnectState"];
+  suspendedByPauseId: string | null;
+  updatedAt: string;
+}>;
+
+export type ParticipantRuntimeView = Readonly<{
+  gameId: string;
+  gameRevision: number;
+  gameState: components["schemas"]["GameState"];
+  pause: ParticipantPauseView | null;
+  presence: readonly ParticipantPresenceView[];
+  reconnect: readonly ParticipantReconnectView[];
+  resultReason: components["schemas"]["GameResultReason"] | null;
+  resultRevisionId: string | null;
+  winnerId: string | null;
+}>;
+
+export type ParticipantOfficialOutcome = Readonly<{
+  reason: components["schemas"]["GameResultReason"] |
+    components["schemas"]["SeriesResultReason"] |
+    null;
+  revisionId: string;
+  state: components["schemas"]["GameState"] | components["schemas"]["SeriesState"];
+  subject: "game" | "series";
+  winnerId: string | null;
+}>;
+
 export type ParticipantPlayerView = Readonly<{
   tournamentId: string;
   participantId: string;
@@ -141,6 +206,9 @@ export type ParticipantPlayerView = Readonly<{
   assignmentDeliveryState: ParticipantAssignmentDeliveryState;
   assignment: ParticipantAssignmentView | null;
   draft: ParticipantDraftView | null;
+  officialOutcome: ParticipantOfficialOutcome | null;
+  pause: ParticipantPauseView;
+  runtime: ParticipantRuntimeView | null;
 }>;
 
 const participantStateCopy: Readonly<
@@ -274,6 +342,188 @@ const participantDraftViewFor = (
       turnDeadline: value.turn_deadline,
     };
 
+const participantRuntimePauseViewFor = (
+  value: components["schemas"]["ParticipantRuntimePause"] | null,
+): ParticipantPauseView | null => value === null
+  ? null
+  : {
+      active: value.state === "active",
+      deadlinesSuppressed: value.deadlines_suppressed,
+      frozenRemainingMs: value.frozen_remaining_ms,
+      pausedAt: value.frozen_at,
+      pauseId: value.pause_id,
+      reason: value.reason,
+      reconnectDeadline: value.reconnect_deadline,
+      resumedAt: value.resumed_at,
+      resumedDeadline: value.resumed_deadline,
+      source: null,
+      state: value.state,
+    };
+
+const participantRuntimeViewFor = (
+  value: components["schemas"]["ParticipantRuntime"] | null,
+): ParticipantRuntimeView | null => value === null
+  ? null
+  : {
+      gameId: value.game_id,
+      gameRevision: value.game_revision,
+      gameState: value.game_state,
+      pause: participantRuntimePauseViewFor(value.pause),
+      presence: value.presence.map((item) => ({
+        connectedAt: item.connected_at,
+        disconnectedAt: item.disconnected_at,
+        participantId: item.participant_id,
+        presenceEpoch: item.presence_epoch,
+        revision: item.revision,
+        state: item.state,
+        updatedAt: item.updated_at,
+      })),
+      reconnect: value.reconnect.map((item) => ({
+        closedAt: item.closed_at,
+        continuationNumber: item.continuation_number,
+        continuedFromId: item.continued_from_id,
+        deadline: item.deadline,
+        id: item.id,
+        number: item.number,
+        openedAt: item.opened_at,
+        participantId: item.participant_id,
+        pauseId: item.pause_id,
+        presenceEpoch: item.presence_epoch,
+        revision: item.revision,
+        state: item.state,
+        suspendedByPauseId: item.suspended_by_pause_id,
+        updatedAt: item.updated_at,
+      })),
+      resultReason: value.result_reason,
+      resultRevisionId: value.result_revision_id,
+      winnerId: value.winner_id,
+    };
+
+const participantPauseFor = (
+  runtimePause: ParticipantPauseView | null,
+  waveState: components["schemas"]["WaveState"] | null,
+  wavePausedAt: string | null,
+  seriesState: components["schemas"]["SeriesState"] | null,
+  gameState: components["schemas"]["GameState"] | null,
+  draftState: components["schemas"]["DraftState"] | null,
+): ParticipantPauseView => {
+  const derivedSource: ParticipantPauseSource | null = waveState === "paused"
+    ? "wave"
+    : seriesState === "technical_pause"
+      ? "series"
+      : gameState === "paused"
+        ? "game"
+        : draftState === "paused"
+          ? "draft"
+          : null;
+
+  if (runtimePause !== null) {
+    return {
+      ...runtimePause,
+      source: runtimePause.active ? derivedSource ?? "game" : null,
+    };
+  }
+
+  const source = derivedSource;
+
+  return {
+    active: source !== null,
+    deadlinesSuppressed: source !== null,
+    frozenRemainingMs: null,
+    pausedAt: source === "wave" ? wavePausedAt : null,
+    pauseId: null,
+    reason: null,
+    reconnectDeadline: null,
+    resumedAt: null,
+    resumedDeadline: null,
+    source,
+    state: source === null ? null : "active",
+  };
+};
+
+const terminalGameStates = new Set<components["schemas"]["GameState"]>([
+  "cancelled",
+  "completed",
+  "superseded",
+  "void",
+]);
+
+const terminalSeriesStates = new Set<components["schemas"]["SeriesState"]>([
+  "cancelled",
+  "completed",
+]);
+
+const participantOfficialOutcomeFor = (
+  runtime: ParticipantRuntimeView | null,
+  series: components["schemas"]["Series"] | null,
+  seriesId: string | null,
+  gameId: string | null,
+): ParticipantOfficialOutcome | null => {
+  if (
+    runtime !== null &&
+    (gameId === null || runtime.gameId === gameId) &&
+    terminalGameStates.has(runtime.gameState) &&
+    runtime.resultRevisionId !== null
+  ) {
+    return {
+      reason: runtime.resultReason,
+      revisionId: runtime.resultRevisionId,
+      state: runtime.gameState,
+      subject: "game",
+      winnerId: runtime.winnerId,
+    };
+  }
+
+  if (series === null || seriesId === null || series.id !== seriesId) {
+    return null;
+  }
+
+  const seriesGames = series.slots.flatMap((slot) =>
+    slot.attempts.map((attempt) => ({ attempt, position: slot.position })),
+  );
+  const terminalGames = seriesGames
+    .filter(({ attempt }) =>
+      terminalGameStates.has(attempt.state) && attempt.result_revision_id !== null,
+    )
+    .sort((left, right) =>
+      left.position - right.position || left.attempt.attempt_no - right.attempt.attempt_no,
+    );
+  const game = gameId === null
+    ? terminalGames[terminalGames.length - 1]?.attempt ?? null
+    : runtime !== null && runtime.gameId === gameId
+      ? null
+      : seriesGames.find(({ attempt }) => attempt.id === gameId)?.attempt ?? null;
+
+  if (
+    game !== null &&
+    terminalGameStates.has(game.state) &&
+    game.result_revision_id !== null
+  ) {
+    return {
+      reason: game.result_reason,
+      revisionId: game.result_revision_id,
+      state: game.state,
+      subject: "game",
+      winnerId: game.winner_id,
+    };
+  }
+
+  if (
+    terminalSeriesStates.has(series.state) &&
+    series.current_result_revision_id !== null
+  ) {
+    return {
+      reason: null,
+      revisionId: series.current_result_revision_id,
+      state: series.state,
+      subject: "series",
+      winnerId: series.winner_id,
+    };
+  }
+
+  return null;
+};
+
 /**
  * Converts the validated participant recovery projection into display state.
  *
@@ -298,11 +548,15 @@ export const buildParticipantPlayerView = (
   const wave = snapshot.wave;
   const readyWindow = wave?.ready_window ?? null;
   const assignment = snapshot.assignment;
+  const runtime = participantRuntimeViewFor(snapshot.runtime);
+  const runtimeGameState = assignment !== null && runtime?.gameId === assignment.context.game_id
+    ? runtime.gameState
+    : assignment?.context.game_state ?? null;
   const assignmentDeliveryState = assignmentDeliveryStateFor(
     assignment,
     wave?.state ?? null,
     currentSeries?.state ?? null,
-    assignment?.context.game_state ?? null,
+    runtimeGameState,
   );
   const currentSeriesDetails = snapshot.series;
   const assignmentScore = assignment && currentSeriesDetails !== null &&
@@ -330,7 +584,7 @@ export const buildParticipantPlayerView = (
         difficulty: assignment.active_snapshot.difficulty,
         gameId: assignment.context.game_id,
         gameNumber: assignment.context.game_number,
-        gameState: assignment.context.game_state,
+        gameState: runtimeGameState ?? assignment.context.game_state,
         hints: assignment.active_snapshot.hints,
         seriesId: assignment.context.series_id,
         seriesScore: assignmentScore,
@@ -365,6 +619,21 @@ export const buildParticipantPlayerView = (
     readyWindowId,
     readyWindow?.revision_id ?? null,
     assignmentView?.attemptId ?? null,
+  );
+
+  const pause = participantPauseFor(
+    runtime?.pause ?? null,
+    wave?.state ?? null,
+    wave?.paused_at ?? null,
+    currentSeriesDetails?.state ?? currentSeries?.state ?? null,
+    runtimeGameState,
+    snapshot.draft?.state ?? null,
+  );
+  const officialOutcome = participantOfficialOutcomeFor(
+    runtime,
+    currentSeriesDetails,
+    assignment?.context.series_id ?? currentSeries?.series_id ?? currentSeriesDetails?.id ?? null,
+    assignment?.context.game_id ?? null,
   );
 
   const requiredAction = participantActionCopy[lobby.required_action];
@@ -405,5 +674,8 @@ export const buildParticipantPlayerView = (
     tournamentId: snapshot.tournament_id,
     tournamentLabel: formatTournamentState(lobby.state),
     draft: participantDraftViewFor(snapshot.draft),
+    officialOutcome,
+    pause,
+    runtime,
   };
 };

@@ -67,6 +67,7 @@ const withRecovery = (
     assignment?: ParticipantSnapshot["assignment"];
     lobby?: Partial<ParticipantSnapshot["lobby"]>;
     projection_revision?: number;
+    series?: ParticipantSnapshot["series"];
     wave?: ParticipantSnapshot["wave"];
   } = {},
 ): ParticipantSnapshot => {
@@ -85,6 +86,7 @@ const withRecovery = (
       projection_revision: projectionRevision,
     },
     projection_revision: projectionRevision,
+    series: overrides.series === undefined ? base.series : overrides.series,
     wave: overrides.wave === undefined ? base.wave : overrides.wave,
   };
 };
@@ -106,9 +108,21 @@ const readyRecovery = (
       : {
           ...base.assignment,
           attempt_id: attemptId,
+          context: {
+            ...base.assignment.context,
+            effective_deadline: null,
+            game_state: "ready",
+            started_at: null,
+          },
           receipt: { ...base.assignment.receipt, attempt_id: attemptId },
         },
     projection_revision: revision,
+    series: base.series === null
+      ? null
+      : {
+          ...base.series,
+          state: "active",
+        },
     lobby: {
       ...base.lobby,
       required_action: "ready",
@@ -122,6 +136,7 @@ const readyRecovery = (
           : member
       )),
       ready_window: readyWindow(windowId, windowState),
+      paused_at: null,
       state: windowState === "open" ? "ready_window_open" : "ready_window_expired",
     },
   });

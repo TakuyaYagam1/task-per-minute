@@ -286,11 +286,24 @@ const participantRecoveryWithDeadline = (
   }
   return {
     ...recovery,
+    assignment: recovery.assignment === null
+      ? null
+      : {
+          ...recovery.assignment,
+          context: {
+            ...recovery.assignment.context,
+            effective_deadline: deadline,
+            game_state: "active" as const,
+          },
+        },
     draft: {
       actions: [],
+      current_action: "ban" as const,
+      current_actor_id: tournamentFixtureIds.firstParticipant,
       first_participant_id: tournamentFixtureIds.firstParticipant,
       format: "bo3",
       id: tournamentFixtureIds.groupRevision,
+      legal_categories: ["web", "crypto", "forensics"],
       pool: ["web", "crypto", "forensics"],
       revision: 1,
       second_participant_id: tournamentFixtureIds.secondParticipant,
@@ -300,8 +313,15 @@ const participantRecoveryWithDeadline = (
       turn: 1,
       turn_deadline: deadline,
     },
+    series: recovery.series === null
+      ? null
+      : {
+          ...recovery.series,
+          state: "active" as const,
+        },
     wave: {
       ...recovery.wave,
+      paused_at: null,
       ready_window: {
         consumed_at: null,
         deadline,
@@ -311,6 +331,7 @@ const participantRecoveryWithDeadline = (
         state: "open",
         wave_id: tournamentFixtureIds.bo3Wave,
       },
+      state: "active" as const,
     },
   };
 };
@@ -1122,7 +1143,7 @@ test("FE-013 participant route anchors its countdown to snapshot HTTP Date and d
 
   const countdown = page.getByTestId("server-countdown");
   await expect(countdown).toBeVisible();
-  await expect(page.getByText("Сервер на связи", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Состояние турнира" })).toBeVisible();
 
   const [minutes, seconds] = (await countdown.textContent() ?? "0:00").split(":").map(Number);
   const remainingSeconds = (minutes * 60) + seconds;
@@ -1289,7 +1310,7 @@ test("FE-013 mounted participant recovery exposes stale status while its deadlin
     waitUntil: "domcontentloaded",
   });
   await expect(page.getByTestId("server-countdown")).toBeVisible();
-  await expect(page.getByText("Сервер на связи", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Состояние турнира" })).toBeVisible();
 
   await page.getByRole("button", { name: "Повторить синхронизацию" }).click();
 
@@ -1752,14 +1773,15 @@ test("FE-013 route awaits the server at zero without local result, including lig
 
   await page.goto(`/arena/participant/${arenaTournamentId}`, { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("server-countdown")).toBeVisible();
-  await expect(page.getByText("Сервер на связи", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Состояние турнира" })).toBeVisible();
 
   await page.clock.fastForward(3_000);
   await expect(page.getByText("Ждем сервер", { exact: true })).toBeVisible();
   await expect(
     page.getByText("Локальное время не объявляет результат. Ждем подтверждение сервера."),
   ).toBeVisible();
-  await expect(page.getByText(/Победитель|Победа|Поражение|Техническое поражение|Результат объявлен/i)).toHaveCount(0);
+  await expect(page.getByText("Официальный итог опубликован сервером.")).toHaveCount(0);
+  await expect(page.getByLabel("Официальный итог")).toHaveCount(0);
   expect(mutationRequests).toEqual([]);
 
   await page.getByRole("button", { name: "Светлая тема" }).click();

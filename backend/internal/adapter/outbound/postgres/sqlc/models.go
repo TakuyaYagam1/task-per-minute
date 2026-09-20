@@ -1551,6 +1551,21 @@ type OutboxTournamentCancellationSource struct {
 	CreatedAt             pgtype.Timestamptz
 }
 
+type OutboxWaveControlSource struct {
+	OutboxEventID        uuid.UUID
+	TournamentID         uuid.UUID
+	RosterID             uuid.UUID
+	WaveID               uuid.UUID
+	CommandID            uuid.UUID
+	Action               string
+	WaveRevisionID       uuid.UUID
+	WaveRevision         int64
+	ProjectionRevisionID uuid.UUID
+	ProjectionRevision   int64
+	ProjectionOrdinal    int16
+	CreatedAt            pgtype.Timestamptz
+}
+
 type OutboxWaveSource struct {
 	OutboxEventID        uuid.UUID
 	TournamentID         uuid.UUID

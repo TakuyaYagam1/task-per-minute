@@ -528,6 +528,7 @@ export const participantRecovery = (projectionRevision = 9): Schema["Participant
     projection_revision: projectionRevision,
   },
   projection_revision: projectionRevision,
+  runtime: null,
   series: operatorSeries("bo3", "technical_pause"),
   tournament_id: tournamentFixtureIds.tournament,
   wave: operatorWave(

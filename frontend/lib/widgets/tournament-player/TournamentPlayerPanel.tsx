@@ -19,7 +19,12 @@ import {
   type ParticipantReadyResult,
 } from "../../features/tournament-player";
 import { Button, Message, Status } from "../../shared/ui";
-import { formatCategory, formatGameStatus } from "../../shared/lib";
+import {
+  formatCategory,
+  formatGameStatus,
+  formatResultReason,
+  formatSeriesState,
+} from "../../shared/lib";
 
 import styles from "./TournamentPlayerPanel.module.css";
 
@@ -215,6 +220,112 @@ const draftActionLabel = (
   }
 };
 
+const pauseSourceLabel = (source: ParticipantPlayerView["pause"]["source"]): string => {
+  switch (source) {
+    case "wave":
+      return "Раунд приостановлен";
+    case "series":
+      return "Серия на технической паузе";
+    case "game":
+      return "Игра приостановлена";
+    case "draft":
+      return "Драфт приостановлен";
+    case null:
+      return "Пауза не активна";
+  }
+};
+
+const pauseReasonLabel = (reason: ParticipantPlayerView["pause"]["reason"]): string => {
+  switch (reason) {
+    case "operator":
+      return "Операторская пауза";
+    case "disconnect":
+      return "Отключение участника";
+    case "platform":
+      return "Проблема платформы";
+    case "execution_epoch":
+      return "Перезапуск выполнения";
+    case null:
+      return "Причина не опубликована сервером";
+  }
+};
+
+const presenceStateLabel = (
+  state: NonNullable<ParticipantPlayerView["runtime"]>["presence"][number]["state"],
+): string => state === "connected" ? "На связи" : "Связь потеряна";
+
+const reconnectStateLabel = (
+  state: NonNullable<ParticipantPlayerView["runtime"]>["reconnect"][number]["state"],
+): string => {
+  switch (state) {
+    case "open":
+      return "Ожидает переподключения";
+    case "reconnected":
+      return "Переподключение подтверждено";
+    case "expired":
+      return "Срок истек";
+    case "cancelled":
+      return "Отменено сервером";
+  }
+};
+
+const participantLabelFor = (
+  participantId: string,
+  view: ParticipantPlayerView,
+): string => participantId === view.participantId ? "Вы" : view.opponentName ?? "Соперник";
+
+const runtimeStatusTone = (
+  view: ParticipantPlayerView,
+): "info" | "success" | "warning" => {
+  if (view.pause.active) {
+    return "warning";
+  }
+
+  return view.officialOutcome === null ? "info" : "success";
+};
+
+const runtimeStatusLabel = (view: ParticipantPlayerView): string => {
+  if (view.pause.active) {
+    return "Пауза сервера";
+  }
+
+  return view.officialOutcome === null ? "Синхронизировано" : "Итог зафиксирован";
+};
+
+const officialOutcomeStateLabel = (
+  outcome: NonNullable<ParticipantPlayerView["officialOutcome"]>,
+): string => outcome.subject === "game"
+  ? formatGameStatus(outcome.state)
+  : formatSeriesState(outcome.state);
+
+const officialOutcomeSubjectLabel = (
+  outcome: NonNullable<ParticipantPlayerView["officialOutcome"]>,
+): string => outcome.subject === "game" ? "Игры" : "Серии";
+
+const officialOutcomeReasonLabel = (
+  outcome: NonNullable<ParticipantPlayerView["officialOutcome"]>,
+): string => outcome.reason === null
+  ? "Причина не опубликована сервером"
+  : formatResultReason(outcome.reason);
+
+const officialWinnerLabel = (
+  outcome: NonNullable<ParticipantPlayerView["officialOutcome"]>,
+  participantId: string,
+  opponentName: string | null,
+): string => outcome.winnerId === null
+  ? "Победитель не опубликован сервером"
+  : outcome.winnerId === participantId
+    ? "Вы"
+    : opponentName ?? "Соперник";
+
+const deadlineLabel = (value: string | null, suppressed: boolean): string => {
+  if (suppressed) {
+    return "Приостановлен сервером";
+  }
+
+  return formatDeadline(value);
+};
+
 export const TournamentPlayerPanel = ({
   onDraft,
   onReady,
@@ -260,6 +371,7 @@ export const TournamentPlayerPanel = ({
 
   const readinessDisabled =
     !view.readyWindowOpen ||
+    view.pause.active ||
     readiness.status === "submitting" ||
     readiness.ready ||
     view.state === "bye" ||
@@ -292,6 +404,168 @@ export const TournamentPlayerPanel = ({
       </div>
 
       <p className={styles.description}>{view.stateDescription}</p>
+
+      {(view.pause.active ||
+        view.officialOutcome !== null ||
+        (view.runtime?.presence.length ?? 0) > 0 ||
+        (view.runtime?.reconnect.length ?? 0) > 0) && (
+        <section
+          aria-labelledby="participant-runtime-title"
+          className={styles.runtimeStatus}
+          data-deadlines-suppressed={view.pause.deadlinesSuppressed ? "true" : "false"}
+          data-game-revision={view.runtime?.gameRevision ?? ""}
+          data-game-state={view.runtime?.gameState ?? view.assignment?.gameState ?? "unknown"}
+          data-paused={view.pause.active ? "true" : "false"}
+          data-pause-reason={view.pause.reason ?? "none"}
+          data-pause-state={view.pause.state ?? "none"}
+          data-testid="participant-runtime-status"
+        >
+          <div className={styles.runtimeHeader}>
+            <div>
+              <h3 className={styles.runtimeTitle} id="participant-runtime-title">
+                Состояние матча
+              </h3>
+              <p className={styles.runtimeCopy}>
+                Состояние и доступность действий определяются последним снимком сервера.
+              </p>
+            </div>
+            <Status tone={runtimeStatusTone(view)}>{runtimeStatusLabel(view)}</Status>
+          </div>
+
+          {view.pause.active && (
+            <div className={styles.runtimePause} role="status">
+              <p>Матч приостановлен сервером. Локальное продолжение недоступно.</p>
+              <dl className={styles.runtimeFacts} aria-label="Состояние паузы">
+                <div>
+                  <dt>Серверное состояние</dt>
+                  <dd>{pauseSourceLabel(view.pause.source)}</dd>
+                </div>
+                <div>
+                  <dt>Пауза с</dt>
+                  <dd>
+                    {view.pause.pausedAt === null
+                      ? "Время не опубликовано сервером"
+                      : (
+                        <time dateTime={view.pause.pausedAt}>
+                          {formatServerTimestamp(view.pause.pausedAt)}
+                        </time>
+                    )}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Причина</dt>
+                  <dd>{pauseReasonLabel(view.pause.reason)}</dd>
+                </div>
+                <div>
+                  <dt>Дедлайны</dt>
+                  <dd>
+                    {view.pause.deadlinesSuppressed
+                      ? "Подавлены сервером"
+                      : "Не подавлены сервером"}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Переподключение до</dt>
+                  <dd>
+                    {view.pause.reconnectDeadline === null
+                      ? "Срок не опубликован сервером"
+                      : formatDeadline(view.pause.reconnectDeadline)}
+                  </dd>
+                </div>
+              </dl>
+              <p className={styles.runtimeHint}>
+                Следующее состояние и момент продолжения будут опубликованы сервером.
+              </p>
+            </div>
+          )}
+
+          {view.runtime !== null && view.runtime.presence.length > 0 && (
+            <div className={styles.runtimeParticipants}>
+              <h4 className={styles.runtimeSubtitle}>Присутствие участников</h4>
+              <ul className={styles.runtimeList} data-testid="participant-runtime-presence">
+                {view.runtime.presence.map((presence) => (
+                  <li
+                    data-state={presence.state}
+                    data-testid={`participant-runtime-presence-${presence.participantId}`}
+                    key={presence.participantId}
+                  >
+                    <div>
+                      <strong>{participantLabelFor(presence.participantId, view)}</strong>
+                      <span>{presenceStateLabel(presence.state)}</span>
+                    </div>
+                    <small>
+                      Обновлено {formatServerTimestamp(presence.updatedAt)}
+                    </small>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {view.runtime !== null && view.runtime.reconnect.length > 0 && (
+            <div className={styles.runtimeParticipants}>
+              <h4 className={styles.runtimeSubtitle}>Переподключение</h4>
+              <ul className={styles.runtimeList} data-testid="participant-runtime-reconnect">
+                {view.runtime.reconnect.map((reconnect) => (
+                  <li
+                    data-state={reconnect.state}
+                    data-testid={`participant-runtime-reconnect-${reconnect.id}`}
+                    key={reconnect.id}
+                  >
+                    <div>
+                      <strong>{participantLabelFor(reconnect.participantId, view)}</strong>
+                      <span>{reconnectStateLabel(reconnect.state)}</span>
+                    </div>
+                    <small>
+                      До {formatDeadline(reconnect.deadline)}
+                      {reconnect.closedAt === null
+                        ? ""
+                        : `; закрыто ${formatServerTimestamp(reconnect.closedAt)}`}
+                    </small>
+                  </li>
+                ))}
+              </ul>
+              <p className={styles.runtimeHint}>
+                Состояние переподключения сохраняется сервером. Локальное возобновление не создается.
+              </p>
+            </div>
+          )}
+
+          {!view.pause.active && view.officialOutcome !== null && (
+            <div className={styles.runtimeOutcome} role="status">
+              <p>Официальный итог опубликован сервером.</p>
+              <dl className={styles.runtimeFacts} aria-label="Официальный итог">
+                <div>
+                  <dt>Объект</dt>
+                  <dd>{officialOutcomeSubjectLabel(view.officialOutcome)}</dd>
+                </div>
+                <div>
+                  <dt>Состояние</dt>
+                  <dd>{officialOutcomeStateLabel(view.officialOutcome)}</dd>
+                </div>
+                <div>
+                  <dt>Причина</dt>
+                  <dd>{officialOutcomeReasonLabel(view.officialOutcome)}</dd>
+                </div>
+                <div>
+                  <dt>Победитель</dt>
+                  <dd>
+                    {officialWinnerLabel(
+                      view.officialOutcome,
+                      view.participantId,
+                      view.opponentName,
+                    )}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Ревизия результата</dt>
+                  <dd>{view.officialOutcome.revisionId}</dd>
+                </div>
+              </dl>
+            </div>
+          )}
+        </section>
+      )}
 
       <dl className={styles.details} aria-label="Данные участника">
         <div className={styles.detailRow}>
@@ -374,7 +648,7 @@ export const TournamentPlayerPanel = ({
             </div>
             <div>
               <dt>Срок хода</dt>
-              <dd>{formatDeadline(view.draft.turnDeadline)}</dd>
+              <dd>{deadlineLabel(view.draft.turnDeadline, view.pause.deadlinesSuppressed)}</dd>
             </div>
             <div>
               <dt>Владелец хода</dt>
@@ -590,9 +864,11 @@ export const TournamentPlayerPanel = ({
             <div>
               <dt>Дедлайн задания</dt>
               <dd>
-                {view.taskDeadlineAt === null
-                  ? "Не опубликован сервером"
-                  : formatDeadline(view.taskDeadlineAt)}
+                {view.pause.deadlinesSuppressed
+                  ? "Приостановлен сервером"
+                  : view.taskDeadlineAt === null
+                    ? "Не опубликован сервером"
+                    : formatDeadline(view.taskDeadlineAt)}
               </dd>
             </div>
             <div>
@@ -636,14 +912,14 @@ export const TournamentPlayerPanel = ({
                   aria-describedby="participant-submission-help"
                   className={styles.submissionInput}
                   data-testid="participant-answer-input"
-                  disabled={submission.status === "pending"}
+                  disabled={submission.status === "pending" || view.pause.active}
                   id="participant-answer-input"
                   onChange={(event) => setSubmittedFlag(event.target.value)}
                   value={submittedFlag}
                 />
                 <Button
                   data-testid="participant-submit-button"
-                  disabled={!submission.allowed || submission.status === "pending"}
+                  disabled={view.pause.active || !submission.allowed || submission.status === "pending"}
                   loading={submission.status === "pending"}
                   loadingLabel="Проверяем"
                   type="submit"
@@ -653,9 +929,11 @@ export const TournamentPlayerPanel = ({
                 </Button>
               </div>
               <p className={styles.submissionHelp} id="participant-submission-help">
-                {submission.allowed
-                  ? "Сервер проверит ответ. Победитель определяется только официальным результатом."
-                  : "Отправка откроется, когда сервер активирует текущую игру."}
+                {view.pause.active
+                  ? "Отправка приостановлена сервером. Ожидайте нового снимка состояния."
+                  : submission.allowed
+                    ? "Сервер проверит ответ. Победитель определяется только официальным результатом."
+                    : "Отправка откроется, когда сервер активирует текущую игру."}
               </p>
               {submission.message !== null && (
                 <Message
@@ -738,9 +1016,11 @@ export const TournamentPlayerPanel = ({
               </p>
             </div>
             <span className={styles.deadline} data-ready-window-state={view.readyWindowState ?? "closed"}>
-              {view.readyWindowDeadline === null
-                ? "Срок не задан"
-                : `До ${formatDeadline(view.readyWindowDeadline)}`}
+              {view.pause.deadlinesSuppressed
+                ? "Срок приостановлен сервером"
+                : view.readyWindowDeadline === null
+                  ? "Срок не задан"
+                  : `До ${formatDeadline(view.readyWindowDeadline)}`}
             </span>
           </div>
           <Button

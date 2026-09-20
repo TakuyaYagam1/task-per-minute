@@ -410,5 +410,6 @@ type RecoveryView struct {
 	Draft                   *DraftView
 	Series                  *domain.Series
 	Wave                    *WaveView
+	Runtime                 *ParticipantGameView
 	ObservedAt              time.Time
 }

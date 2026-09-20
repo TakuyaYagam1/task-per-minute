@@ -437,6 +437,366 @@ VALUES (
 )
 RETURNING command_id;
 
+-- A pause or resume receipt publishes one nonterminal generic event after the
+-- immutable command row.  Resolve both source identities in this query so a
+-- retry cannot silently reuse a stale projection or Wave revision.
+-- name: CreateWaveControlOutboxEvent :one
+WITH locked_idempotency AS MATERIALIZED (
+    SELECT pg_advisory_xact_lock(
+        hashtextextended(sqlc.arg(idempotency_key)::UUID::TEXT, 0)
+    )
+),
+existing AS MATERIALIZED (
+    SELECT outbox_event.id,
+        outbox_event.tournament_id,
+        outbox_event.roster_id,
+        outbox_event.projection_revision_id,
+        outbox_event.projection_revision,
+        outbox_event.sequence,
+        outbox_event.projection_ordinal,
+        outbox_event.terminal,
+        outbox_event.idempotency_key,
+        outbox_event.audience,
+        outbox_event.principal_id,
+        outbox_event.topic,
+        outbox_event.payload,
+        outbox_event.created_at,
+        outbox_event.available_at,
+        outbox_event.claimed_by,
+        outbox_event.claim_token,
+        outbox_event.claimed_until,
+        outbox_event.attempt_count,
+        outbox_event.last_error,
+        outbox_event.published_at
+    FROM locked_idempotency
+    CROSS JOIN outbox_events AS outbox_event
+    WHERE outbox_event.idempotency_key = sqlc.arg(idempotency_key)::UUID
+),
+command_receipt AS MATERIALIZED (
+    SELECT command.command_id,
+        command.tournament_id,
+        command.roster_id,
+        command.wave_id,
+        command.action,
+        command.source_projection_revision_id,
+        command.source_projection_revision,
+        command.source_wave_revision,
+        command.resulting_wave_revision
+    FROM wave_control_commands AS command
+    WHERE command.command_id = sqlc.arg(command_id)::UUID
+        AND command.tournament_id = sqlc.arg(tournament_id)
+        AND command.roster_id = sqlc.arg(roster_id)
+        AND command.wave_id = sqlc.arg(wave_id)::UUID
+        AND command.action = sqlc.arg(action)::TEXT
+        AND command.source_projection_revision_id = sqlc.arg(source_projection_revision_id)::UUID
+        AND command.source_projection_revision = sqlc.arg(source_projection_revision)::BIGINT
+        AND command.source_wave_revision = sqlc.arg(source_wave_revision)::BIGINT
+        AND command.resulting_wave_revision = sqlc.arg(resulting_wave_revision)::BIGINT
+        AND command.action IN ('pause', 'resume')
+),
+published_projection AS MATERIALIZED (
+    SELECT projection_revision.id,
+        projection_revision.tournament_id,
+        projection_revision.roster_id,
+        projection_revision.revision_number
+    FROM projection_revisions AS projection_revision
+    WHERE projection_revision.id = sqlc.arg(source_projection_revision_id)::UUID
+        AND projection_revision.tournament_id = sqlc.arg(tournament_id)
+        AND projection_revision.roster_id = sqlc.arg(roster_id)
+        AND projection_revision.revision_number = sqlc.arg(source_projection_revision)::BIGINT
+        AND projection_revision.state = 'published'
+    FOR SHARE
+),
+locked_wave AS MATERIALIZED (
+    SELECT wave.id,
+        wave.tournament_id,
+        wave.roster_id,
+        wave.revision_id,
+        wave.revision
+    FROM waves AS wave
+    INNER JOIN command_receipt
+        ON command_receipt.tournament_id = wave.tournament_id
+        AND command_receipt.roster_id = wave.roster_id
+        AND command_receipt.wave_id = wave.id
+        AND command_receipt.resulting_wave_revision = wave.revision
+    WHERE wave.id = sqlc.arg(wave_id)::UUID
+        AND wave.tournament_id = sqlc.arg(tournament_id)
+        AND wave.roster_id = sqlc.arg(roster_id)
+        AND wave.revision = sqlc.arg(resulting_wave_revision)::BIGINT
+    FOR UPDATE OF wave
+),
+allocated_sequence AS (
+    INSERT INTO tournament_outbox_cursors (
+        tournament_id,
+        next_sequence,
+        updated_at
+    )
+    SELECT locked_wave.tournament_id,
+        2,
+        sqlc.arg(created_at)
+    FROM locked_wave
+    INNER JOIN published_projection
+        ON published_projection.tournament_id = locked_wave.tournament_id
+        AND published_projection.roster_id = locked_wave.roster_id
+    WHERE NOT EXISTS (SELECT 1 FROM existing)
+    ON CONFLICT (tournament_id) DO UPDATE
+    SET next_sequence = tournament_outbox_cursors.next_sequence + 1,
+        updated_at = EXCLUDED.updated_at
+    RETURNING next_sequence - 1 AS sequence
+),
+allocated_ordinal AS (
+    INSERT INTO projection_outbox_cursors (
+        projection_revision_id,
+        tournament_id,
+        roster_id,
+        next_ordinal,
+        updated_at
+    )
+    SELECT published_projection.id,
+        published_projection.tournament_id,
+        published_projection.roster_id,
+        2,
+        sqlc.arg(created_at)
+    FROM published_projection
+    INNER JOIN allocated_sequence ON true
+    ON CONFLICT (projection_revision_id) DO UPDATE
+    SET next_ordinal = projection_outbox_cursors.next_ordinal + 1,
+        updated_at = EXCLUDED.updated_at
+    WHERE projection_outbox_cursors.tournament_id = EXCLUDED.tournament_id
+        AND projection_outbox_cursors.roster_id = EXCLUDED.roster_id
+        AND projection_outbox_cursors.next_ordinal < 32768
+    RETURNING next_ordinal - 1 AS projection_ordinal
+),
+inserted AS (
+    INSERT INTO outbox_events (
+        id,
+        tournament_id,
+        roster_id,
+        projection_revision_id,
+        projection_revision,
+        sequence,
+        projection_ordinal,
+        terminal,
+        idempotency_key,
+        audience,
+        principal_id,
+        topic,
+        payload,
+        created_at,
+        available_at
+    )
+    SELECT sqlc.arg(id)::UUID,
+        locked_wave.tournament_id,
+        locked_wave.roster_id,
+        published_projection.id,
+        published_projection.revision_number,
+        allocated_sequence.sequence,
+        allocated_ordinal.projection_ordinal::SMALLINT,
+        false,
+        sqlc.arg(idempotency_key)::UUID,
+        'all',
+        NULL,
+        'wave.control.changed',
+        jsonb_build_object(
+            'schema', 'wave-control-changed-v1',
+            'action', sqlc.arg(action)::TEXT,
+            'wave_id', locked_wave.id
+        ),
+        sqlc.arg(created_at),
+        sqlc.arg(created_at)
+    FROM locked_wave
+    INNER JOIN command_receipt
+        ON command_receipt.command_id = sqlc.arg(command_id)::UUID
+    INNER JOIN published_projection ON true
+    INNER JOIN allocated_sequence ON true
+    INNER JOIN allocated_ordinal ON true
+    ON CONFLICT (idempotency_key) DO NOTHING
+    RETURNING id,
+        tournament_id,
+        roster_id,
+        projection_revision_id,
+        projection_revision,
+        sequence,
+        projection_ordinal,
+        terminal,
+        idempotency_key,
+        audience,
+        principal_id,
+        topic,
+        payload,
+        created_at,
+        available_at,
+        claimed_by,
+        claim_token,
+        claimed_until,
+        attempt_count,
+        last_error,
+        published_at
+),
+resolved AS MATERIALIZED (
+    SELECT inserted.id,
+        inserted.tournament_id,
+        inserted.roster_id,
+        inserted.projection_revision_id,
+        inserted.projection_revision,
+        inserted.sequence,
+        inserted.projection_ordinal,
+        inserted.terminal,
+        inserted.idempotency_key,
+        inserted.audience,
+        inserted.principal_id,
+        inserted.topic,
+        inserted.payload,
+        inserted.created_at,
+        inserted.available_at,
+        inserted.claimed_by,
+        inserted.claim_token,
+        inserted.claimed_until,
+        inserted.attempt_count,
+        inserted.last_error,
+        inserted.published_at
+    FROM inserted
+    UNION ALL
+    SELECT existing.id,
+        existing.tournament_id,
+        existing.roster_id,
+        existing.projection_revision_id,
+        existing.projection_revision,
+        existing.sequence,
+        existing.projection_ordinal,
+        existing.terminal,
+        existing.idempotency_key,
+        existing.audience,
+        existing.principal_id,
+        existing.topic,
+        existing.payload,
+        existing.created_at,
+        existing.available_at,
+        existing.claimed_by,
+        existing.claim_token,
+        existing.claimed_until,
+        existing.attempt_count,
+        existing.last_error,
+        existing.published_at
+    FROM existing
+),
+inserted_source AS (
+    INSERT INTO outbox_wave_control_sources (
+        outbox_event_id,
+        tournament_id,
+        roster_id,
+        wave_id,
+        command_id,
+        action,
+        wave_revision_id,
+        wave_revision,
+        projection_revision_id,
+        projection_revision,
+        projection_ordinal,
+        created_at
+    )
+    SELECT resolved.id AS outbox_event_id,
+        locked_wave.tournament_id AS source_tournament_id,
+        locked_wave.roster_id AS source_roster_id,
+        locked_wave.id AS source_wave_id,
+        command_receipt.command_id AS source_command_id,
+        command_receipt.action AS source_action,
+        locked_wave.revision_id AS source_wave_revision_id,
+        locked_wave.revision AS source_wave_revision,
+        published_projection.id AS source_projection_revision_id,
+        published_projection.revision_number AS source_projection_revision,
+        resolved.projection_ordinal AS source_projection_ordinal,
+        resolved.created_at AS source_created_at
+    FROM resolved
+    INNER JOIN locked_wave ON true
+    INNER JOIN command_receipt ON true
+    INNER JOIN published_projection ON true
+    ON CONFLICT (outbox_event_id) DO NOTHING
+    RETURNING outbox_event_id,
+        tournament_id,
+        roster_id,
+        wave_id,
+        command_id,
+        action,
+        wave_revision_id,
+        wave_revision,
+        projection_revision_id,
+        projection_revision,
+        projection_ordinal,
+        created_at
+),
+verified_source AS (
+    SELECT inserted_source.outbox_event_id,
+        inserted_source.projection_ordinal
+    FROM inserted_source
+    WHERE inserted_source.tournament_id = sqlc.arg(tournament_id)
+        AND inserted_source.roster_id = sqlc.arg(roster_id)
+        AND inserted_source.wave_id = sqlc.arg(wave_id)::UUID
+        AND inserted_source.command_id = sqlc.arg(command_id)::UUID
+        AND inserted_source.action = sqlc.arg(action)::TEXT
+        AND inserted_source.wave_revision = sqlc.arg(resulting_wave_revision)::BIGINT
+        AND inserted_source.projection_revision_id = sqlc.arg(source_projection_revision_id)::UUID
+        AND inserted_source.projection_revision = sqlc.arg(source_projection_revision)::BIGINT
+        AND inserted_source.created_at = sqlc.arg(created_at)
+    UNION ALL
+    SELECT outbox_source.outbox_event_id,
+        outbox_source.projection_ordinal
+    FROM outbox_wave_control_sources AS outbox_source
+    WHERE NOT EXISTS (
+            SELECT 1
+            FROM inserted_source
+            WHERE inserted_source.outbox_event_id = outbox_source.outbox_event_id
+        )
+        AND outbox_source.tournament_id = sqlc.arg(tournament_id)
+        AND outbox_source.roster_id = sqlc.arg(roster_id)
+        AND outbox_source.wave_id = sqlc.arg(wave_id)::UUID
+        AND outbox_source.command_id = sqlc.arg(command_id)::UUID
+        AND outbox_source.action = sqlc.arg(action)::TEXT
+        AND outbox_source.wave_revision = sqlc.arg(resulting_wave_revision)::BIGINT
+        AND outbox_source.projection_revision_id = sqlc.arg(source_projection_revision_id)::UUID
+        AND outbox_source.projection_revision = sqlc.arg(source_projection_revision)::BIGINT
+        AND outbox_source.created_at = sqlc.arg(created_at)
+)
+SELECT outbox_event.id,
+    outbox_event.tournament_id,
+    outbox_event.roster_id,
+    outbox_event.projection_revision_id,
+    outbox_event.projection_revision,
+    outbox_event.sequence,
+    outbox_event.projection_ordinal,
+    outbox_event.terminal,
+    outbox_event.idempotency_key,
+    outbox_event.audience,
+    outbox_event.principal_id,
+    outbox_event.topic,
+    outbox_event.payload,
+    outbox_event.created_at,
+    outbox_event.available_at,
+    outbox_event.claimed_by,
+    outbox_event.claim_token,
+    outbox_event.claimed_until,
+    outbox_event.attempt_count,
+    outbox_event.last_error,
+    outbox_event.published_at
+FROM resolved AS outbox_event
+INNER JOIN verified_source
+    ON verified_source.outbox_event_id = outbox_event.id
+    AND verified_source.projection_ordinal = outbox_event.projection_ordinal
+WHERE outbox_event.tournament_id = sqlc.arg(tournament_id)
+    AND outbox_event.roster_id = sqlc.arg(roster_id)
+    AND outbox_event.projection_revision_id = sqlc.arg(source_projection_revision_id)::UUID
+    AND outbox_event.projection_revision = sqlc.arg(source_projection_revision)::BIGINT
+    AND outbox_event.created_at = sqlc.arg(created_at)
+    AND NOT outbox_event.terminal
+    AND outbox_event.audience = 'all'
+    AND outbox_event.principal_id IS NULL
+    AND outbox_event.topic = 'wave.control.changed'
+    AND outbox_event.payload = jsonb_build_object(
+        'schema', 'wave-control-changed-v1',
+        'action', sqlc.arg(action)::TEXT,
+        'wave_id', sqlc.arg(wave_id)::UUID
+    );
+
 -- name: CompleteTournamentAdminWaveCAS :one
 UPDATE waves
 SET state = 'completed',

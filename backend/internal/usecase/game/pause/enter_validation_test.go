@@ -15,6 +15,34 @@ import (
 func testNormalPauseGraphEntryValidation(t *testing.T, pausedAt time.Time) {
 	t.Helper()
 
+	t.Run("accepts a retained reconnect root suffix", func(t *testing.T) {
+		t.Parallel()
+
+		authority, command := normalPauseFixture(pausedAt)
+		authority.Graph.Counters[0].Used = 2
+		authority.Graph.Reconnect[0].Number = 2
+		refreshNormalPauseRevisions(&authority, &command)
+		repository := newNormalPauseRepositoryHarness(t, authority)
+		useCase := gameusecase.NewNormalPauseGraphUseCase(newPauseTransactionManager(t), repository, newPauseClock(t, pausedAt))
+		if record, changed, err := useCase.Enter(t.Context(), command); err != nil || !changed || record == nil || repository.writeCount() != 1 {
+			t.Fatalf("Enter() record = %v, error = %v, changed = %v, writes = %d", record != nil, err, changed, repository.writeCount())
+		}
+	})
+
+	t.Run("rejects a gap in the retained reconnect root suffix", func(t *testing.T) {
+		t.Parallel()
+
+		authority, command := normalPauseFixture(pausedAt)
+		authority.Graph.Counters[0].Used = 3
+		authority.Graph.Reconnect[0].Number = 2
+		refreshNormalPauseRevisions(&authority, &command)
+		repository := newNormalPauseRepositoryHarness(t, authority)
+		useCase := gameusecase.NewNormalPauseGraphUseCase(newPauseTransactionManager(t), repository, newPauseClock(t, pausedAt))
+		if _, changed, err := useCase.Enter(t.Context(), command); !errors.Is(err, gameusecase.ErrNormalPauseGraphIncomplete) || changed || repository.writeCount() != 0 {
+			t.Fatalf("Enter() error = %v, changed = %v, writes = %d", err, changed, repository.writeCount())
+		}
+	})
+
 	t.Run("rejects malformed stored continuation temporal lineage", func(t *testing.T) {
 		t.Parallel()
 

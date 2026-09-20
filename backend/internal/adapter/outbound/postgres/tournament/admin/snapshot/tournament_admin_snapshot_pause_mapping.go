@@ -552,6 +552,19 @@ type tournamentAdminSnapshotReconnectSegment struct {
 	continuation int
 }
 
+type tournamentAdminSnapshotReconnectRootRange struct {
+	count int
+	first int
+	last  int
+}
+
+func tournamentAdminSnapshotReconnectRootSuffixValid(root tournamentAdminSnapshotReconnectRootRange, used int) bool {
+	if used == 0 {
+		return root.count == 0
+	}
+	return root.count > 0 && root.last == used && root.first == used-root.count+1
+}
+
 func tournamentAdminSnapshotConnectivityValid(
 	tournamentID uuid.UUID,
 	rosterID uuid.UUID,
@@ -585,7 +598,7 @@ func tournamentAdminSnapshotConnectivityValid(
 	if !ok {
 		return false
 	}
-	rootCounts, ok := tournamentAdminSnapshotReconnectIndex(
+	roots, ok := tournamentAdminSnapshotReconnectIndex(
 		rosterID,
 		participantSeries,
 		presenceByParticipant,
@@ -599,7 +612,7 @@ func tournamentAdminSnapshotConnectivityValid(
 		return false
 	}
 	for key, counter := range counterByKey {
-		if rootCounts[key] != counter.Used {
+		if !tournamentAdminSnapshotReconnectRootSuffixValid(roots[key], counter.Used) {
 			return false
 		}
 	}
@@ -707,8 +720,8 @@ func tournamentAdminSnapshotReconnectIndex(
 	seriesGraph tournamentAdminSnapshotSeriesGraph,
 	pauseIndex tournamentAdminSnapshotPauseIndex,
 	reconnect []pausedomain.PauseReconnectInterval,
-) (map[tournamentAdminSnapshotCounterKey]int, bool) {
-	rootCounts := make(map[tournamentAdminSnapshotCounterKey]int, len(counterByKey))
+) (map[tournamentAdminSnapshotCounterKey]tournamentAdminSnapshotReconnectRootRange, bool) {
+	roots := make(map[tournamentAdminSnapshotCounterKey]tournamentAdminSnapshotReconnectRootRange, len(counterByKey))
 	seenIntervals := make(map[uuid.UUID]struct{}, len(reconnect))
 	seenSegments := make(map[tournamentAdminSnapshotCounterKey]map[tournamentAdminSnapshotReconnectSegment]struct{})
 	for _, interval := range reconnect {
@@ -737,10 +750,18 @@ func tournamentAdminSnapshotReconnectIndex(
 		}
 		seenSegments[key][segment] = struct{}{}
 		if interval.ContinuationNumber == 0 {
-			rootCounts[key]++
+			root := roots[key]
+			root.count++
+			if root.count == 1 || interval.Number < root.first {
+				root.first = interval.Number
+			}
+			if interval.Number > root.last {
+				root.last = interval.Number
+			}
+			roots[key] = root
 		}
 	}
-	return rootCounts, true
+	return roots, true
 }
 
 func tournamentAdminSnapshotReconnectMembershipValid(

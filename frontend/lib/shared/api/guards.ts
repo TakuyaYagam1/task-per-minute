@@ -372,6 +372,10 @@ type ParticipantSubmissionResponse = components["schemas"]["ParticipantSubmissio
 type ParticipantOfficialResult = components["schemas"]["OfficialResultRevision"];
 type ParticipantPostSeriesResponse = components["schemas"]["ParticipantPostSeriesResponse"];
 type ParticipantRecoverySnapshot = components["schemas"]["ParticipantRecoverySnapshot"];
+type ParticipantRuntime = components["schemas"]["ParticipantRuntime"];
+type ParticipantRuntimePause = components["schemas"]["ParticipantRuntimePause"];
+type ParticipantRuntimePresence = components["schemas"]["ParticipantRuntimePresence"];
+type ParticipantRuntimeReconnect = components["schemas"]["ParticipantRuntimeReconnect"];
 
 const participantCategories = new Set<string>([
   "web",
@@ -476,6 +480,20 @@ const participantSeriesResultReasons = new Set<string>([
   "series_cancelled",
   "tournament_cancelled",
 ]);
+const participantPauseReasons = new Set<string>([
+  "operator",
+  "disconnect",
+  "platform",
+  "execution_epoch",
+]);
+const participantPauseStates = new Set<string>(["active", "resumed", "cancelled"]);
+const participantPresenceStates = new Set<string>(["connected", "disconnected"]);
+const participantReconnectStates = new Set<string>([
+  "open",
+  "reconnected",
+  "expired",
+  "cancelled",
+]);
 
 const isParticipantObject = (value: unknown): value is Record<string, unknown> =>
   isRecord(value) && !Array.isArray(value);
@@ -495,6 +513,117 @@ const isParticipantCategory = (value: unknown): boolean =>
   isString(value) && participantCategories.has(value);
 
 const isParticipantFormat = (value: unknown): boolean => value === "bo1" || value === "bo3";
+
+const isParticipantRuntimePause = (value: unknown): value is ParticipantRuntimePause =>
+  isParticipantObject(value) &&
+  hasExactKeys(value, [
+    "pause_id",
+    "state",
+    "reason",
+    "frozen_at",
+    "frozen_remaining_ms",
+    "resumed_at",
+    "resumed_deadline",
+    "reconnect_deadline",
+    "deadlines_suppressed",
+  ]) &&
+  isNonNilUUID(value.pause_id) &&
+  isString(value.state) &&
+  participantPauseStates.has(value.state) &&
+  isString(value.reason) &&
+  participantPauseReasons.has(value.reason) &&
+  isDateTimeString(value.frozen_at) &&
+  isSafePositiveInteger(value.frozen_remaining_ms) &&
+  isParticipantDateOrNull(value.resumed_at) &&
+  isParticipantDateOrNull(value.resumed_deadline) &&
+  isParticipantDateOrNull(value.reconnect_deadline) &&
+  typeof value.deadlines_suppressed === "boolean";
+
+const isParticipantRuntimePresence = (value: unknown): value is ParticipantRuntimePresence =>
+  isParticipantObject(value) &&
+  hasExactKeys(value, [
+    "participant_id",
+    "state",
+    "presence_epoch",
+    "revision",
+    "connected_at",
+    "disconnected_at",
+    "updated_at",
+  ]) &&
+  isNonNilUUID(value.participant_id) &&
+  isString(value.state) &&
+  participantPresenceStates.has(value.state) &&
+  isSafePositiveInteger(value.presence_epoch) &&
+  isSafePositiveInteger(value.revision) &&
+  isDateTimeString(value.connected_at) &&
+  isParticipantDateOrNull(value.disconnected_at) &&
+  isDateTimeString(value.updated_at);
+
+const isParticipantRuntimeReconnect = (value: unknown): value is ParticipantRuntimeReconnect =>
+  isParticipantObject(value) &&
+  hasExactKeys(value, [
+    "id",
+    "pause_id",
+    "participant_id",
+    "presence_epoch",
+    "number",
+    "continuation_number",
+    "continued_from_id",
+    "suspended_by_pause_id",
+    "state",
+    "opened_at",
+    "deadline",
+    "closed_at",
+    "revision",
+    "updated_at",
+  ]) &&
+  isNonNilUUID(value.id) &&
+  isNonNilUUID(value.pause_id) &&
+  isNonNilUUID(value.participant_id) &&
+  isSafePositiveInteger(value.presence_epoch) &&
+  isSafePositiveInteger(value.number) &&
+  value.number <= INT32_MAX &&
+  isNonNegativeInt32(value.continuation_number) &&
+  isParticipantUUIDOrNull(value.continued_from_id) &&
+  isParticipantUUIDOrNull(value.suspended_by_pause_id) &&
+  isString(value.state) &&
+  participantReconnectStates.has(value.state) &&
+  isDateTimeString(value.opened_at) &&
+  isDateTimeString(value.deadline) &&
+  isParticipantDateOrNull(value.closed_at) &&
+  isSafePositiveInteger(value.revision) &&
+  isDateTimeString(value.updated_at);
+
+const isParticipantRuntime = (value: unknown): value is ParticipantRuntime =>
+  isParticipantObject(value) &&
+  hasExactKeys(value, [
+    "game_id",
+    "game_state",
+    "game_revision",
+    "result_reason",
+    "winner_id",
+    "result_revision_id",
+    "pause",
+    "presence",
+    "reconnect",
+  ]) &&
+  isNonNilUUID(value.game_id) &&
+  isString(value.game_state) &&
+  participantGameStates.has(value.game_state) &&
+  isSafePositiveInteger(value.game_revision) &&
+  (value.result_reason === null || (
+    isString(value.result_reason) && participantGameResultReasons.has(value.result_reason)
+  )) &&
+  isParticipantUUIDOrNull(value.winner_id) &&
+  isParticipantUUIDOrNull(value.result_revision_id) &&
+  (value.pause === null || isParticipantRuntimePause(value.pause)) &&
+  Array.isArray(value.presence) &&
+  value.presence.length <= 2 &&
+  value.presence.every(isParticipantRuntimePresence) &&
+  new Set(value.presence.map((item) => item.participant_id)).size === value.presence.length &&
+  Array.isArray(value.reconnect) &&
+  value.reconnect.length <= 2 &&
+  value.reconnect.every(isParticipantRuntimeReconnect);
 
 const isParticipantSeriesState = (value: unknown): boolean =>
   isString(value) && participantSeriesStates.has(value);
@@ -1011,7 +1140,7 @@ export const isParticipantRecoverySnapshot = (
   value: unknown,
 ): value is ParticipantRecoverySnapshot =>
   isParticipantObject(value) &&
-  hasExactKeys(value, ["tournament_id", "projection_revision", "lobby", "series", "wave", "draft", "assignment", "next_cursor"]) &&
+  hasExactKeys(value, ["tournament_id", "projection_revision", "lobby", "series", "wave", "draft", "assignment", "runtime", "next_cursor"]) &&
   isNonNilUUID(value.tournament_id) &&
   isSafePositiveInteger(value.projection_revision) &&
   isParticipantLobbyResponse(value.lobby) &&
@@ -1019,6 +1148,7 @@ export const isParticipantRecoverySnapshot = (
   (value.wave === null || isParticipantWave(value.wave)) &&
   (value.draft === null || isParticipantDraftValue(value.draft)) &&
   (value.assignment === null || isParticipantAssignment(value.assignment)) &&
+  (value.runtime === null || isParticipantRuntime(value.runtime)) &&
   isParticipantRecoveryCursor(value.next_cursor);
 
 type Tournament = components["schemas"]["Tournament"];

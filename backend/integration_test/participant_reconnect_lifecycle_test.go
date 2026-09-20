@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	participantrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/participant/connection"
+	snapshotrepo "github.com/TakuyaYagam1/task-per-minute/internal/adapter/outbound/postgres/tournament/snapshot"
 	"github.com/TakuyaYagam1/task-per-minute/internal/domain"
 	authoritydomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/authority"
 	pausedomain "github.com/TakuyaYagam1/task-per-minute/internal/domain/pause"
@@ -90,6 +91,7 @@ func TestParticipantReconnectLifecycle(t *testing.T) {
 			"disconnecting one participant must not pause another executable Series in the Wave")
 
 		participantReconnectAssertLiveDisconnect(ctx, t, started.fixture, first, command)
+		participantReconnectAssertSnapshotRuntime(ctx, t, started, domain.GameStatePaused, "active", "open")
 
 		replayed, replayChanged, err := gamereconnect.NewDisconnectUseCase(
 			started.fixture.adapter,
@@ -224,6 +226,7 @@ func TestParticipantReconnectLifecycle(t *testing.T) {
 		require.NotNil(t, closed.ClosedAt)
 		require.Equal(t, reconnectAt, *closed.ClosedAt)
 		participantReconnectAssertLiveReconnect(ctx, t, started.fixture, resumed, reconnect, reconnectAt)
+		participantReconnectAssertSnapshotRuntime(ctx, t, started, domain.GameStateActive, "resumed", "reconnected")
 	})
 
 	t.Run("timeout awards the connected opponent and persists terminal evidence", func(t *testing.T) {
@@ -346,6 +349,35 @@ func TestParticipantReconnectLifecycle(t *testing.T) {
 
 		participantReconnectAssertTerminalRows(ctx, t, started.fixture, replay, firstParticipant, uuid.Nil, true)
 	})
+}
+
+func participantReconnectAssertSnapshotRuntime(
+	ctx context.Context,
+	t *testing.T,
+	started participantReconnectStartedFixture,
+	gameState domain.GameState,
+	pauseState string,
+	reconnectState string,
+) {
+	t.Helper()
+	snapshot, err := snapshotrepo.NewTournamentSnapshotPostgres(started.fixture.tx).ParticipantSnapshot(
+		ctx,
+		inbound.ParticipantSnapshotQuery{
+			TournamentID: started.fixture.tournamentID,
+			PlayerID:     started.playerAccountID,
+		},
+	)
+	require.NoError(t, err)
+	require.NotNil(t, snapshot.Assignment)
+	require.NotNil(t, snapshot.Game)
+	require.Equal(t, started.started.Game.ID, snapshot.Game.GameID)
+	require.Equal(t, string(gameState), snapshot.Game.State)
+	require.NotNil(t, snapshot.Game.Pause)
+	require.Equal(t, pauseState, snapshot.Game.Pause.State)
+	require.Equal(t, "disconnect", snapshot.Game.Pause.Reason)
+	require.Len(t, snapshot.Game.Presence, 2)
+	require.Len(t, snapshot.Game.Reconnect, 1)
+	require.Equal(t, reconnectState, snapshot.Game.Reconnect[0].State)
 }
 
 func participantReconnectStartFixture(

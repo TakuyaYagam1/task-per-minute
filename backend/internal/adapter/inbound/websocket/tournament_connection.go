@@ -7,6 +7,7 @@ import (
 
 	coderws "github.com/coder/websocket"
 	"github.com/google/uuid"
+	logkit "github.com/wahrwelt-kit/go-logkit"
 
 	"github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/requestmeta"
 	tournamentws "github.com/TakuyaYagam1/task-per-minute/internal/adapter/inbound/websocket/tournament"
@@ -17,6 +18,8 @@ import (
 )
 
 type tournamentConnectionObserver func(action, outcome, reason string, revision int64)
+
+const participantDisconnectAttempts = 3
 
 //nolint:gocyclo // Connection lifecycle keeps transport, delivery, and presence cleanup in one scope.
 func (server *Server) serveTournamentConnection(
@@ -184,9 +187,34 @@ func (server *Server) closeParticipantConnection(
 	if server == nil || server.participantLifecycle == nil {
 		return
 	}
-	closeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), defaultSessionCheckTimeout)
-	defer cancel()
-	_ = server.participantLifecycle.Disconnect(closeCtx, command)
+	timeout := server.sessionCheckTimeout
+	if timeout <= 0 {
+		timeout = defaultSessionCheckTimeout
+	}
+	var disconnectErr error
+	for range participantDisconnectAttempts {
+		closeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeout)
+		disconnectErr = server.participantLifecycle.Disconnect(closeCtx, command)
+		cancel()
+		if disconnectErr == nil {
+			return
+		}
+		if !participantDisconnectRetryable(disconnectErr) {
+			break
+		}
+	}
+	if server.log != nil {
+		server.log.Warn("participant lifecycle disconnect failed", logkit.Fields{
+			"connection_generation": command.ConnectionGeneration,
+			"error":                 disconnectErr.Error(),
+			"tournament_id":         command.TournamentID.String(),
+		})
+	}
+}
+
+func participantDisconnectRetryable(err error) bool {
+	return errors.Is(err, context.DeadlineExceeded) ||
+		errors.Is(err, context.Canceled)
 }
 
 func (server *Server) setGoldenParticipantConnection(

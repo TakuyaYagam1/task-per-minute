@@ -239,6 +239,24 @@ func TestParticipantAssignmentFreezesHintsDuringPause(t *testing.T) {
 	require.Equal(t, []string{"first"}, assignment.ActiveSnapshot.Hints)
 }
 
+func TestParticipantAssignmentAcceptsPersistedMillisecondPauseResidual(t *testing.T) {
+	t.Parallel()
+
+	startedAt := participantStateTestTime()
+	frozenAt := startedAt.Add(12 * time.Second)
+	originalDeadline := startedAt.Add(40*time.Second + 876*time.Microsecond)
+	row := participantHintAssignmentRow()
+	row.AttemptState = string(domain.GameStatePaused)
+	row.AttemptStartedAt = participantStateTimestamp(startedAt)
+	row.ObservedAt = participantStateTimestamp(startedAt.Add(5 * time.Minute))
+	participantHintActiveClock(&row, frozenAt, originalDeadline, 28_000)
+
+	assignment, err := participantAssignmentFromRow(row)
+
+	require.NoError(t, err)
+	require.Equal(t, []string{"first"}, assignment.ActiveSnapshot.Hints)
+}
+
 func TestParticipantAssignmentFreezesHintsWhenPostgresReturnsLocalTime(t *testing.T) {
 	t.Parallel()
 

@@ -22,7 +22,7 @@ func testReconnectTimeoutSeries(t *testing.T, base time.Time) {
 		}); err != nil || !changed {
 			t.Fatalf("Expire(staggered first) error = %v, changed = %v", err, changed)
 		}
-		reconnectAt := at.Add(time.Nanosecond)
+		reconnectAt := at.Add(time.Microsecond)
 		if _, changed, err := reconnectusecase.ReconnectNewUseCase(repository, newReconnectClock(t, reconnectAt)).Reconnect(t.Context(), reconnectusecase.ReconnectCommand{
 			Scope: authority.Scope, CommandID: task045ID(530), ParticipantID: authority.Series.SecondParticipantID,
 			IntervalID: authority.Reconnect[1].ID, Settlement: task045SettlementIDs(531),

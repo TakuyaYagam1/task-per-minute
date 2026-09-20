@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import type { RoleAwareRecoveryState, TournamentLiveRole } from "../../shared/api";
 import { useServerCountdown } from "./use-server-countdown";
 import { useOperatorTournamentRealtime } from "./use-operator-tournament-realtime";
+import { useParticipantTournamentRealtime } from "./use-participant-tournament-realtime";
 import { usePublicTournamentRealtime } from "./use-public-tournament-realtime";
 import { useTournamentRecovery } from "./use-tournament-recovery";
 import { TournamentLivePanel, type TournamentLiveConnectionStatus } from "./TournamentLivePanel";
@@ -31,6 +32,14 @@ const recoveryRole = (role: ArenaLiveRole): TournamentLiveRole =>
 const deadlineFrom = (state: RoleAwareRecoveryState): string | undefined => {
   const snapshot = state.snapshot;
   if (state.role === "participant" && "lobby" in snapshot) {
+    const deadlinesSuppressed = snapshot.runtime?.pause?.deadlines_suppressed === true ||
+      snapshot.wave?.state === "paused" ||
+      snapshot.series?.state === "technical_pause" ||
+      snapshot.assignment?.context.game_state === "paused" ||
+      snapshot.draft?.state === "paused";
+    if (deadlinesSuppressed) {
+      return undefined;
+    }
     if (snapshot.assignment !== null) {
       return snapshot.assignment.context.effective_deadline ?? undefined;
     }
@@ -96,6 +105,25 @@ const publicPanelStatus = (
       return "rejected";
     case "idle":
       return status;
+  }
+};
+
+const participantPanelStatus = (
+  status: TournamentLiveConnectionStatus,
+  realtimeStatus: ReturnType<typeof useParticipantTournamentRealtime>["status"],
+): TournamentLiveConnectionStatus => {
+  switch (realtimeStatus) {
+    case "connecting":
+    case "reconnecting":
+    case "recovering":
+      return "recovering";
+    case "connected":
+    case "idle":
+      return status;
+    case "error":
+      return "stale";
+    case "rejected":
+      return "rejected";
   }
 };
 
@@ -209,12 +237,21 @@ export const TournamentRecoveryPanel = ({
     retry,
     tournamentId,
   });
+  const participantRealtime = useParticipantTournamentRealtime({
+    enabled: liveRole === "participant",
+    recovery: liveRole === "participant" ? recovery : null,
+    retry,
+    tournamentId,
+  });
   const panelStatus = liveRole === "operator"
     ? operatorPanelStatus(status, operatorRealtime.status)
     : liveRole === "public"
       ? publicPanelStatus(status, publicRealtime.status)
-      : status;
+      : participantPanelStatus(status, participantRealtime.status);
   const retryAll = () => {
+    if (liveRole === "participant") {
+      participantRealtime.retry();
+    }
     retry();
   };
   const panelRevision = operatorRealtime.state?.projectionRevision ??
@@ -285,7 +322,7 @@ export const TournamentRecoveryPanel = ({
     ? children({
         receivedAtMonotonicMs,
         recovery,
-        retry: retryAll,
+        retry,
         status: panelStatus,
       })
     : null;

@@ -102,20 +102,53 @@ type ParticipantOpponentView struct {
 }
 
 type ParticipantGameView struct {
-	GameID   uuid.UUID
-	State    string
-	Revision int64
-	Pause    *ParticipantGamePauseView
+	GameID           uuid.UUID
+	State            string
+	Revision         int64
+	ResultReason     string
+	WinnerID         *uuid.UUID
+	ResultRevisionID *uuid.UUID
+	Pause            *ParticipantGamePauseView
+	Presence         []ParticipantPresenceView
+	Reconnect        []ParticipantReconnectView
 }
 
 type ParticipantGamePauseView struct {
 	PauseID           uuid.UUID
 	State             string
+	Reason            string
 	FrozenAt          time.Time
 	FrozenRemainingMS int64
 	ResumedAt         *time.Time
 	ResumedDeadline   *time.Time
 	ReconnectDeadline *time.Time
+}
+
+type ParticipantPresenceView struct {
+	ParticipantID  uuid.UUID
+	State          string
+	PresenceEpoch  int64
+	Revision       int64
+	ConnectedAt    time.Time
+	DisconnectedAt *time.Time
+	UpdatedAt      time.Time
+}
+
+type ParticipantReconnectView struct {
+	ID                 uuid.UUID
+	PauseID            uuid.UUID
+	ParticipantID      uuid.UUID
+	PresenceEpoch      int64
+	Number             int
+	ContinuationNumber int
+	ContinuedFromID    *uuid.UUID
+	SuspendedByPauseID *uuid.UUID
+	State              string
+	OpenedAt           time.Time
+	Deadline           time.Time
+	ClosedAt           *time.Time
+	Revision           int64
+	UpdatedAt          time.Time
 }
 
 type PublicSnapshotView struct {

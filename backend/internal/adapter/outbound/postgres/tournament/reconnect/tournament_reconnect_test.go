@@ -173,9 +173,10 @@ func TestRehydrateTournamentReconnectActiveStateRestoresResumedClockAndBudget(t 
 	oldPauseID, nextPauseID, gameID, seriesID := uuid.New(), uuid.New(), uuid.New(), uuid.New()
 	firstID, secondID := uuid.New(), uuid.New()
 	frozenAt := now.Add(-10 * time.Second)
-	remaining := 40 * time.Second
+	remaining := 40*time.Second + 466*time.Microsecond
 	originalDeadline := frozenAt.Add(remaining)
 	resumedDeadline := now.Add(remaining)
+	durableResumedDeadline := now.Add(time.Duration(remaining.Milliseconds()) * time.Millisecond)
 	source := gamereconnect.ReconnectAuthority{
 		Scope: scope, PauseID: oldPauseID,
 		Game:   domain.Game{ID: gameID, State: domain.GameStateActive},
@@ -193,7 +194,7 @@ func TestRehydrateTournamentReconnectActiveStateRestoresResumedClockAndBudget(t 
 	row := sqlc.PauseClock{
 		PauseID: oldPauseID, GameAttemptID: gameID,
 		OriginalDeadline: tstz(originalDeadline), FrozenAt: tstz(frozenAt), FrozenRemainingMs: remaining.Milliseconds(),
-		ResumedAt: tstz(now), ResumedDeadline: tstz(resumedDeadline), Revision: 3,
+		ResumedAt: tstz(now), ResumedDeadline: tstz(durableResumedDeadline), Revision: 3,
 	}
 
 	clock, counters, err := rehydrateTournamentReconnectActiveState(source, row, nextPauseID)
@@ -256,6 +257,48 @@ func TestRehydrateTournamentReconnectActiveStateRejectsClockMismatch(t *testing.
 
 	_, _, err := rehydrateTournamentReconnectActiveState(source, row, nextPauseID)
 	require.ErrorIs(t, err, domain.ErrConflict)
+}
+
+func TestReconnectFrozenDurationRejectsPrecisionMismatch(t *testing.T) {
+	t.Parallel()
+
+	frozenAt := time.Date(2026, time.September, 13, 18, 36, 0, 123456000, time.UTC)
+	originalDeadline := frozenAt.Add(40*time.Second + time.Microsecond*466)
+
+	remaining, err := reconnectFrozenDuration(originalDeadline, frozenAt, 40_000)
+	require.NoError(t, err)
+	require.Equal(t, 40*time.Second+466*time.Microsecond, remaining)
+
+	_, err = reconnectFrozenDuration(frozenAt.Add(40*time.Second+time.Millisecond), frozenAt, 40_000)
+	require.ErrorIs(t, err, pausedomain.ErrInvalidGameClock)
+
+	_, err = reconnectFrozenDuration(frozenAt.Add(40*time.Second), frozenAt, 40_001)
+	require.ErrorIs(t, err, pausedomain.ErrInvalidGameClock)
+
+	durableDeadline, err := reconnectCanonicalResumedDeadline(
+		frozenAt, frozenAt.Add(40*time.Second+466*time.Microsecond), 40_000,
+	)
+	require.NoError(t, err)
+	require.Equal(t, frozenAt.Add(40*time.Second), durableDeadline)
+}
+
+func TestRecoveryGameClockRestoresSubMillisecondFrozenDuration(t *testing.T) {
+	t.Parallel()
+
+	pauseID, gameID := uuid.New(), uuid.New()
+	frozenAt := time.Date(2026, time.September, 13, 18, 37, 0, 123456000, time.UTC)
+	remaining := 40*time.Second + 466*time.Microsecond
+	row := sqlc.PauseClock{
+		PauseID: pauseID, GameAttemptID: gameID,
+		OriginalDeadline: tstz(frozenAt.Add(remaining)), FrozenAt: tstz(frozenAt),
+		FrozenRemainingMs: remaining.Milliseconds(), Revision: 3,
+	}
+
+	clock, err := recoveryGameClock(row)
+	require.NoError(t, err)
+	require.Equal(t, pauseID, clock.PauseID)
+	require.Equal(t, gameID, clock.GameID)
+	require.Equal(t, remaining, clock.Remaining)
 }
 
 func TestReconnectCounterPredecessorTimeLeavesPostgreSQLTimestampCASGap(t *testing.T) {

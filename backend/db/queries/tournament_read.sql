@@ -62,17 +62,20 @@ ORDER BY receipt.delivered_at DESC,
     receipt.id DESC
 LIMIT 1;
 
--- Read the current assignment's game together with the latest disconnect
--- pause clock.  The pause remains visible after resume so clients can
--- reconcile the frozen and resumed deadlines; an open reconnect interval is
--- joined independently because a game may have more than one interval over
--- its lifetime.
+-- Read the current assignment's game together with the latest participant-safe
+-- pause clock and official outcome. The pause remains visible after resume so
+-- clients can reconcile the frozen and resumed deadlines; reconnect lineage
+-- and presence are loaded by the scoped companion queries below.
 -- name: GetParticipantReadGame :one
 SELECT attempt.id AS game_id,
     attempt.state,
     attempt.revision,
+    attempt.result_reason,
+    attempt.winner_id,
+    attempt.result_revision_id,
     COALESCE(latest_pause.pause_id, '00000000-0000-0000-0000-000000000000'::UUID) AS pause_id,
     COALESCE(latest_pause.pause_state, '')::TEXT AS pause_state,
+    COALESCE(latest_pause.pause_reason, '')::TEXT AS pause_reason,
     latest_pause.frozen_at,
     latest_pause.frozen_remaining_ms,
     latest_pause.resumed_at,
@@ -85,6 +88,7 @@ JOIN series
 LEFT JOIN LATERAL (
     SELECT pause.id AS pause_id,
         pause.state AS pause_state,
+        pause.reason AS pause_reason,
         clock.frozen_at,
         clock.frozen_remaining_ms,
         clock.resumed_at,
@@ -97,7 +101,6 @@ LEFT JOIN LATERAL (
         AND pause.game_attempt_id = attempt.id
         AND pause.series_id = attempt.series_id
         AND pause.roster_id = attempt.roster_id
-        AND pause.reason = 'disconnect'
     ORDER BY pause.started_at DESC,
         pause.id DESC
     LIMIT 1
@@ -116,6 +119,51 @@ LEFT JOIN LATERAL (
 WHERE series.tournament_id = sqlc.arg(tournament_id)
     AND attempt.series_id = sqlc.arg(series_id)
     AND attempt.id = sqlc.arg(game_id);
+
+-- name: ListParticipantReadPresence :many
+SELECT presence.participant_id,
+    presence.state,
+    presence.presence_epoch,
+    presence.revision,
+    presence.connected_at,
+    presence.disconnected_at,
+    presence.updated_at
+FROM presence_states AS presence
+JOIN series
+    ON series.id = presence.series_id
+    AND series.roster_id = presence.roster_id
+WHERE series.tournament_id = sqlc.arg(tournament_id)
+    AND presence.series_id = sqlc.arg(series_id)
+ORDER BY presence.participant_id;
+
+-- name: ListParticipantReadReconnect :many
+SELECT DISTINCT ON (reconnect.participant_id)
+    reconnect.id,
+    reconnect.pause_id,
+    reconnect.participant_id,
+    reconnect.presence_epoch,
+    reconnect.interval_number,
+    reconnect.continuation_number,
+    reconnect.continued_from_id,
+    reconnect.suspended_by_pause_id,
+    reconnect.state,
+    reconnect.opened_at,
+    reconnect.deadline_at,
+    reconnect.closed_at,
+    reconnect.revision,
+    reconnect.updated_at
+FROM reconnect_intervals AS reconnect
+JOIN series
+    ON series.id = reconnect.series_id
+    AND series.roster_id = reconnect.roster_id
+WHERE series.tournament_id = sqlc.arg(tournament_id)
+    AND reconnect.series_id = sqlc.arg(series_id)
+    AND reconnect.game_attempt_id = sqlc.arg(game_id)
+ORDER BY reconnect.participant_id,
+    reconnect.interval_number DESC,
+    reconnect.continuation_number DESC,
+    reconnect.updated_at DESC,
+    reconnect.id DESC;
 
 -- name: GetParticipantReadOpponent :one
 SELECT opponent_player.id AS player_id,

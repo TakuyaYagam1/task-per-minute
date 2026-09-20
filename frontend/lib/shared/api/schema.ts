@@ -2915,6 +2915,86 @@ export interface components {
             /** Format: int64 */
             projection_revision: number;
         };
+        /** @enum {string} */
+        PauseReason: "operator" | "disconnect" | "platform" | "execution_epoch";
+        /** @enum {string} */
+        PauseState: "active" | "resumed" | "cancelled";
+        ParticipantRuntimePause: {
+            readonly deadlines_suppressed: boolean;
+            /** Format: date-time */
+            readonly frozen_at: string;
+            /** Format: int64 */
+            readonly frozen_remaining_ms: number;
+            /** Format: uuid */
+            pause_id: string;
+            reason: components["schemas"]["PauseReason"];
+            /** Format: date-time */
+            readonly reconnect_deadline: string | null;
+            /** Format: date-time */
+            readonly resumed_at: string | null;
+            /** Format: date-time */
+            readonly resumed_deadline: string | null;
+            state: components["schemas"]["PauseState"];
+        };
+        ParticipantRuntimePresence: {
+            /** Format: date-time */
+            readonly connected_at: string;
+            /** Format: date-time */
+            readonly disconnected_at: string | null;
+            /** Format: uuid */
+            participant_id: string;
+            /** Format: int64 */
+            readonly presence_epoch: number;
+            /** Format: int64 */
+            readonly revision: number;
+            state: components["schemas"]["PresenceState"];
+            /** Format: date-time */
+            readonly updated_at: string;
+        };
+        ParticipantRuntimeReconnect: {
+            /** Format: date-time */
+            readonly closed_at: string | null;
+            /** Format: int32 */
+            readonly continuation_number: number;
+            /** Format: uuid */
+            readonly continued_from_id: string | null;
+            /** Format: date-time */
+            readonly deadline: string;
+            /** Format: uuid */
+            id: string;
+            /** Format: int32 */
+            readonly number: number;
+            /** Format: date-time */
+            readonly opened_at: string;
+            /** Format: uuid */
+            participant_id: string;
+            /** Format: uuid */
+            pause_id: string;
+            /** Format: int64 */
+            readonly presence_epoch: number;
+            /** Format: int64 */
+            readonly revision: number;
+            state: components["schemas"]["ReconnectState"];
+            /** Format: uuid */
+            readonly suspended_by_pause_id: string | null;
+            /** Format: date-time */
+            readonly updated_at: string;
+        };
+        ParticipantRuntime: {
+            /** Format: uuid */
+            game_id: string;
+            /** Format: int64 */
+            readonly game_revision: number;
+            game_state: components["schemas"]["GameState"];
+            pause: components["schemas"]["ParticipantRuntimePause"] | null;
+            presence: components["schemas"]["ParticipantRuntimePresence"][];
+            reconnect: components["schemas"]["ParticipantRuntimeReconnect"][];
+            result_reason: (string & components["schemas"]["GameResultReason"]) | null;
+            /** Format: uuid */
+            readonly result_revision_id: string | null;
+            /** Format: uuid */
+            readonly winner_id: string | null;
+        };
         ParticipantRecoverySnapshot: {
             assignment: components["schemas"]["ParticipantAssignment"] | null;
             draft: components["schemas"]["Draft"] | null;
@@ -2922,6 +3002,7 @@ export interface components {
             next_cursor: components["schemas"]["ParticipantRecoveryCursor"];
             /** Format: int64 */
             projection_revision: number;
+            runtime: components["schemas"]["ParticipantRuntime"] | null;
             series: components["schemas"]["Series"] | null;
             /** Format: uuid */
             tournament_id: string;

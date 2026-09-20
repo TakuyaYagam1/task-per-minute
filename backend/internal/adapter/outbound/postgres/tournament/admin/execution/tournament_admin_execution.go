@@ -448,6 +448,7 @@ func (r *TournamentAdminExecutionPostgres) CommitWave(
 	return current.View, nil
 }
 
+//nolint:gocyclo // The transactional Wave receipt and its exact realtime evidence share one fail-closed boundary.
 func (r *TournamentAdminExecutionPostgres) SaveWaveCommand(
 	ctx context.Context,
 	record tournamentadmin.WaveCommandRecord,
@@ -487,7 +488,64 @@ func (r *TournamentAdminExecutionPostgres) SaveWaveCommand(
 	if created != record.CommandID {
 		return domain.ErrInternal
 	}
+	if record.Action != tournamentadmin.WaveActionPause && record.Action != tournamentadmin.WaveActionResume {
+		return nil
+	}
+
+	// The command receipt is the immutable audit boundary.  The generic
+	// participant notification is appended only after that receipt and remains
+	// in the caller's transaction with the Wave mutation.
+	eventID := tournamentAdminExecutionID(record.CommandID, "wave-control-outbox-event")
+	idempotencyKey := tournamentAdminExecutionID(record.CommandID, "wave-control-outbox-idempotency")
+	outbox, err := r.tx.Querier(ctx).CreateWaveControlOutboxEvent(ctx, sqlc.CreateWaveControlOutboxEventParams{
+		TournamentID:               record.TournamentID,
+		RosterID:                   record.RosterID,
+		SourceProjectionRevisionID: record.SourceProjectionRevisionID,
+		SourceProjectionRevision:   record.SourceProjectionRevision,
+		CreatedAt:                  tstz(record.ExecutedAt),
+		Action:                     string(record.Action),
+		WaveID:                     record.WaveID,
+		IdempotencyKey:             idempotencyKey,
+		CommandID:                  record.CommandID,
+		SourceWaveRevision:         record.SourceWaveRevision,
+		ResultingWaveRevision:      record.ResultingWaveRevision,
+		ID:                         eventID,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		if contextErr := ctx.Err(); contextErr != nil {
+			return fmt.Errorf("save Wave control outbox event: %w", contextErr)
+		}
+		return fmt.Errorf("save Wave control outbox event: %w", domain.ErrConflict)
+	}
+	if err != nil {
+		return executionWriteError("save Wave control outbox event", err)
+	}
+	if outbox.ID != eventID || outbox.TournamentID != record.TournamentID || outbox.RosterID != record.RosterID ||
+		outbox.ProjectionRevisionID != record.SourceProjectionRevisionID ||
+		outbox.ProjectionRevision != record.SourceProjectionRevision || outbox.Sequence < 1 ||
+		outbox.ProjectionOrdinal < 1 || outbox.IdempotencyKey != idempotencyKey || outbox.Terminal ||
+		outbox.Audience != "all" || outbox.PrincipalID.Valid || outbox.Topic != waveControlOutboxTopic ||
+		!outbox.CreatedAt.Valid || !outbox.CreatedAt.Time.UTC().Equal(record.ExecutedAt.UTC().Truncate(time.Microsecond)) ||
+		!waveControlOutboxPayloadMatches(outbox.Payload, record.Action, record.WaveID) {
+		return fmt.Errorf("saved Wave control outbox event differs from mutation: %w", domain.ErrInternal)
+	}
 	return nil
+}
+
+const waveControlOutboxTopic = "wave.control.changed"
+
+type waveControlOutboxPayload struct {
+	Schema string    `json:"schema"`
+	Action string    `json:"action"`
+	WaveID uuid.UUID `json:"wave_id"`
+}
+
+func waveControlOutboxPayloadMatches(payload []byte, action tournamentadmin.WaveAction, waveID uuid.UUID) bool {
+	var decoded waveControlOutboxPayload
+	if err := json.Unmarshal(payload, &decoded); err != nil {
+		return false
+	}
+	return decoded.Schema == "wave-control-changed-v1" && decoded.Action == string(action) && decoded.WaveID == waveID
 }
 
 func (r *TournamentAdminExecutionPostgres) pairingAuthorityError(
