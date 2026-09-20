@@ -591,12 +591,12 @@ WHERE roster.tournament_id = $1
     AND participant.player_id = $2
 ORDER BY (
         current_draft.id IS NOT NULL
-        AND series.state NOT IN ('completed', 'cancelled')
+        AND series.state NOT IN ('completed', 'cancelled', 'superseded')
     ) DESC,
     (
         series.id IS NOT DISTINCT FROM $3::UUID
     ) DESC,
-    (series.state NOT IN ('completed', 'cancelled')) DESC,
+    (series.state NOT IN ('completed', 'cancelled', 'superseded')) DESC,
     series.updated_at DESC,
     series.id DESC
 LIMIT 1

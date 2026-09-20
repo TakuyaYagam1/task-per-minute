@@ -399,12 +399,12 @@ WHERE roster.tournament_id = sqlc.arg(tournament_id)
     AND participant.player_id = sqlc.arg(player_id)
 ORDER BY (
         current_draft.id IS NOT NULL
-        AND series.state NOT IN ('completed', 'cancelled')
+        AND series.state NOT IN ('completed', 'cancelled', 'superseded')
     ) DESC,
     (
         series.id IS NOT DISTINCT FROM sqlc.narg(preferred_series_id)::UUID
     ) DESC,
-    (series.state NOT IN ('completed', 'cancelled')) DESC,
+    (series.state NOT IN ('completed', 'cancelled', 'superseded')) DESC,
     series.updated_at DESC,
     series.id DESC
 LIMIT 1;

@@ -23,6 +23,7 @@ import {
   formatCategory,
   formatGameStatus,
   formatResultReason,
+  formatSeriesFormat,
   formatSeriesState,
 } from "../../shared/lib";
 
@@ -326,6 +327,28 @@ const deadlineLabel = (value: string | null, suppressed: boolean): string => {
   return formatDeadline(value);
 };
 
+const seriesResultTone = (
+  state: NonNullable<ParticipantPlayerView["seriesResult"]>["state"],
+): "info" | "success" | "warning" | "error" => {
+  switch (state) {
+    case "completed":
+      return "success";
+    case "cancelled":
+      return "error";
+    case "technical_pause":
+    case "replay_required":
+      return "warning";
+    case "active":
+    case "draft":
+    case "locked":
+    case "planned":
+    case "ready":
+      return "info";
+  }
+};
+
+const resultRevisionLabel = (value: string | null): string => value ?? "Не опубликована";
+
 export const TournamentPlayerPanel = ({
   onDraft,
   onReady,
@@ -564,6 +587,110 @@ export const TournamentPlayerPanel = ({
               </dl>
             </div>
           )}
+        </section>
+      )}
+
+      {view.seriesResult !== null && (
+        <section
+          aria-labelledby="participant-series-result-title"
+          className={styles.seriesResult}
+          data-result-revision={view.seriesResult.currentResultRevisionId ?? "none"}
+          data-score-revision={view.seriesResult.currentScoreRevisionId ?? "none"}
+          data-series-state={view.seriesResult.state}
+          data-testid="participant-series-result"
+        >
+          <div className={styles.seriesResultHeader}>
+            <div>
+              <p className={styles.seriesResultEyebrow}>Официальный результат</p>
+              <h3 className={styles.seriesResultTitle} id="participant-series-result-title">
+                Серия {formatSeriesFormat(view.seriesResult.format)}
+              </h3>
+            </div>
+            <Status tone={seriesResultTone(view.seriesResult.state)}>
+              {formatSeriesState(view.seriesResult.state)}
+            </Status>
+          </div>
+
+          <div className={styles.seriesScore} aria-label="Текущий счет серии">
+            <span>Вы</span>
+            <strong data-testid="participant-series-score">
+              {view.seriesResult.score.own}:{view.seriesResult.score.opponent}
+            </strong>
+            <span>{view.opponentName ?? "Соперник"}</span>
+          </div>
+
+          <dl className={styles.seriesFacts} aria-label="Ревизии официального результата">
+            <div>
+              <dt>Победитель</dt>
+              <dd>
+                {view.seriesResult.winnerId === null
+                  ? "Не опубликован"
+                  : participantLabelFor(view.seriesResult.winnerId, view)}
+              </dd>
+            </div>
+            <div>
+              <dt>Ревизия счета</dt>
+              <dd>{resultRevisionLabel(view.seriesResult.currentScoreRevisionId)}</dd>
+            </div>
+            <div>
+              <dt>Ревизия результата</dt>
+              <dd>{resultRevisionLabel(view.seriesResult.currentResultRevisionId)}</dd>
+            </div>
+            <div>
+              <dt>Следующий этап</dt>
+              <dd>{view.requiredAction}</dd>
+            </div>
+          </dl>
+
+          <div className={styles.seriesHistory}>
+            <h4>История игр</h4>
+            {view.seriesResult.games.length === 0 ? (
+              <p className={styles.seriesEmpty} data-testid="participant-series-empty-history">
+                Сыгранных игр нет. Сервер не публиковал назначение или победителя.
+              </p>
+            ) : (
+              <ol className={styles.seriesGames}>
+                {view.seriesResult.games.map((game) => (
+                  <li
+                    data-game-state={game.state}
+                    data-testid={`participant-series-game-${game.position}-${game.attemptNo}`}
+                    key={game.gameId}
+                  >
+                    <div className={styles.seriesGameHeader}>
+                      <strong>
+                        Игра {game.position}{game.attemptNo > 1 ? `, попытка ${game.attemptNo}` : ""}
+                      </strong>
+                      <Status tone={game.state === "completed" ? "success" : game.state === "active" ? "info" : "warning"}>
+                        {formatGameStatus(game.state)}
+                      </Status>
+                    </div>
+                    <dl className={styles.seriesGameFacts}>
+                      <div>
+                        <dt>Категория</dt>
+                        <dd>{game.category}</dd>
+                      </div>
+                      <div>
+                        <dt>Счет до игры</dt>
+                        <dd>{game.scoreBefore.own}:{game.scoreBefore.opponent}</dd>
+                      </div>
+                      <div>
+                        <dt>Победитель</dt>
+                        <dd>{game.winnerId === null ? "Не опубликован" : participantLabelFor(game.winnerId, view)}</dd>
+                      </div>
+                      <div>
+                        <dt>Причина</dt>
+                        <dd>{game.reason === null ? "Не опубликована" : formatResultReason(game.reason)}</dd>
+                      </div>
+                      <div>
+                        <dt>Ревизия</dt>
+                        <dd>{resultRevisionLabel(game.resultRevisionId)}</dd>
+                      </div>
+                    </dl>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </div>
         </section>
       )}
 

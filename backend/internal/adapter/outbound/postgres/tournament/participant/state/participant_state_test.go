@@ -474,6 +474,52 @@ func TestParticipantSeriesMapsOrderedGameGraph(t *testing.T) {
 	require.Equal(t, graph[0].GameAttempt.ID, series.Slots[0].Attempts[0].ID)
 }
 
+func TestParticipantSeriesPreservesCompletedBO1Result(t *testing.T) {
+	t.Parallel()
+
+	root := participantStateRoot{
+		tournamentID: participantStateTestID(27), rosterID: participantStateTestID(28),
+		participantID: participantStateTestID(29),
+	}
+	secondParticipantID := participantStateTestID(30)
+	winnerID := secondParticipantID
+	scoreRevisionID := domain.SeriesScoreRevisionID(participantStateTestID(31))
+	resultRevisionID := domain.OfficialResultRevisionID(participantStateTestID(32))
+	seriesRow := sqlc.Series{
+		ID: root.participantID, TournamentID: root.tournamentID, RosterID: root.rosterID,
+		FirstParticipantID: root.participantID, SecondParticipantID: secondParticipantID,
+		Format: string(domain.SeriesFormatBO1), State: string(domain.SeriesStateCompleted),
+		FirstParticipantWins: 0, SecondParticipantWins: 1, WinnerID: uuid.NullUUID{UUID: winnerID, Valid: true},
+		CurrentScoreRevisionID:  uuid.NullUUID{UUID: uuid.UUID(scoreRevisionID), Valid: true},
+		CurrentResultRevisionID: uuid.NullUUID{UUID: uuid.UUID(resultRevisionID), Valid: true}, Revision: 2,
+	}
+	slotID := participantStateTestID(33)
+	graph := []sqlc.ListParticipantStateSeriesGraphRow{{
+		GameSlot: sqlc.GameSlot{
+			ID: slotID, SeriesID: seriesRow.ID, RosterID: root.rosterID, SlotNumber: 1,
+			Category: string(domain.CategoryWeb), Revision: 1,
+		},
+		GameAttempt: sqlc.GameAttempt{
+			ID: participantStateTestID(34), SlotID: slotID, SeriesID: seriesRow.ID,
+			RosterID: root.rosterID, AttemptNumber: 1, State: string(domain.GameStateCompleted),
+			ResultReason:     participantStateString(string(domain.GameResultReasonSolved)),
+			WinnerID:         uuid.NullUUID{UUID: winnerID, Valid: true},
+			ResultRevisionID: uuid.NullUUID{UUID: uuid.UUID(resultRevisionID), Valid: true}, Revision: 1,
+		},
+	}}
+
+	series, err := participantSeriesFromRows(seriesRow, graph, root)
+
+	require.NoError(t, err)
+	require.Equal(t, domain.SeriesStateCompleted, series.State)
+	require.Equal(t, domain.SeriesScore{SecondParticipantWins: 1}, series.Score)
+	require.Equal(t, winnerID, *series.WinnerID)
+	require.Equal(t, scoreRevisionID, *series.CurrentScoreRevisionID)
+	require.Equal(t, resultRevisionID, *series.CurrentResultRevisionID)
+	require.Len(t, series.Slots, 1)
+	require.Equal(t, domain.GameStateCompleted, series.Slots[0].Attempts[0].State)
+}
+
 func TestParticipantWaveRequiresOneSeriesPerMember(t *testing.T) {
 	t.Parallel()
 

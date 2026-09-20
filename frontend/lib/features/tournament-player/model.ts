@@ -179,6 +179,29 @@ export type ParticipantOfficialOutcome = Readonly<{
   winnerId: string | null;
 }>;
 
+export type ParticipantGameResultView = Readonly<{
+  attemptNo: number;
+  category: string;
+  gameId: string;
+  position: number;
+  reason: components["schemas"]["GameResultReason"] | null;
+  resultRevisionId: string | null;
+  scoreBefore: ParticipantSeriesScore;
+  state: components["schemas"]["GameState"];
+  winnerId: string | null;
+}>;
+
+export type ParticipantSeriesResultView = Readonly<{
+  currentResultRevisionId: string | null;
+  currentScoreRevisionId: string | null;
+  format: components["schemas"]["SeriesFormat"];
+  games: readonly ParticipantGameResultView[];
+  id: string;
+  score: ParticipantSeriesScore;
+  state: components["schemas"]["SeriesState"];
+  winnerId: string | null;
+}>;
+
 export type ParticipantPlayerView = Readonly<{
   tournamentId: string;
   participantId: string;
@@ -207,6 +230,7 @@ export type ParticipantPlayerView = Readonly<{
   assignment: ParticipantAssignmentView | null;
   draft: ParticipantDraftView | null;
   officialOutcome: ParticipantOfficialOutcome | null;
+  seriesResult: ParticipantSeriesResultView | null;
   pause: ParticipantPauseView;
   runtime: ParticipantRuntimeView | null;
 }>;
@@ -460,6 +484,22 @@ const participantOfficialOutcomeFor = (
   gameId: string | null,
 ): ParticipantOfficialOutcome | null => {
   if (
+    series !== null &&
+    seriesId !== null &&
+    series.id === seriesId &&
+    terminalSeriesStates.has(series.state) &&
+    series.current_result_revision_id !== null
+  ) {
+    return {
+      reason: null,
+      revisionId: series.current_result_revision_id,
+      state: series.state,
+      subject: "series",
+      winnerId: series.winner_id,
+    };
+  }
+
+  if (
     runtime !== null &&
     (gameId === null || runtime.gameId === gameId) &&
     terminalGameStates.has(runtime.gameState) &&
@@ -508,20 +548,73 @@ const participantOfficialOutcomeFor = (
     };
   }
 
-  if (
-    terminalSeriesStates.has(series.state) &&
-    series.current_result_revision_id !== null
-  ) {
+  return null;
+};
+
+const participantScoreFor = (
+  participantId: string,
+  series: components["schemas"]["Series"],
+  score: components["schemas"]["SeriesScore"],
+): ParticipantSeriesScore | null => {
+  if (series.first_participant_id === participantId) {
     return {
-      reason: null,
-      revisionId: series.current_result_revision_id,
-      state: series.state,
-      subject: "series",
-      winnerId: series.winner_id,
+      opponent: score.second_participant_wins,
+      own: score.first_participant_wins,
+    };
+  }
+
+  if (series.second_participant_id === participantId) {
+    return {
+      opponent: score.first_participant_wins,
+      own: score.second_participant_wins,
     };
   }
 
   return null;
+};
+
+const participantSeriesResultFor = (
+  participantId: string,
+  series: components["schemas"]["Series"] | null,
+): ParticipantSeriesResultView | null => {
+  if (series === null) {
+    return null;
+  }
+
+  const score = participantScoreFor(participantId, series, series.score);
+  if (score === null) {
+    return null;
+  }
+
+  const games = series.slots
+    .flatMap((slot) => slot.attempts
+      .filter((attempt) => attempt.state !== "planned")
+      .map((attempt) => ({
+        attemptNo: attempt.attempt_no,
+        category: formatCategory(slot.category),
+        gameId: attempt.id,
+        position: slot.position,
+        reason: attempt.result_reason,
+        resultRevisionId: attempt.result_revision_id,
+        scoreBefore: participantScoreFor(participantId, series, slot.score_before) ?? {
+          opponent: 0,
+          own: 0,
+        },
+        state: attempt.state,
+        winnerId: attempt.winner_id,
+      })))
+    .sort((left, right) => left.position - right.position || left.attemptNo - right.attemptNo);
+
+  return {
+    currentResultRevisionId: series.current_result_revision_id,
+    currentScoreRevisionId: series.current_score_revision_id,
+    format: series.format,
+    games,
+    id: series.id,
+    score,
+    state: series.state,
+    winnerId: series.winner_id,
+  };
 };
 
 /**
@@ -561,17 +654,11 @@ export const buildParticipantPlayerView = (
   const currentSeriesDetails = snapshot.series;
   const assignmentScore = assignment && currentSeriesDetails !== null &&
       currentSeriesDetails.id === assignment.context.series_id
-    ? currentSeriesDetails.first_participant_id === lobby.participant_id
-      ? {
-          opponent: assignment.context.series_score.second_participant_wins,
-          own: assignment.context.series_score.first_participant_wins,
-        }
-      : currentSeriesDetails.second_participant_id === lobby.participant_id
-        ? {
-            opponent: assignment.context.series_score.first_participant_wins,
-            own: assignment.context.series_score.second_participant_wins,
-          }
-        : null
+    ? participantScoreFor(
+        lobby.participant_id,
+        currentSeriesDetails,
+        assignment.context.series_score,
+      )
     : null;
   const assignmentView: ParticipantAssignmentView | null = assignment && assignmentDeliveryState === "delivered"
     ? {
@@ -635,6 +722,7 @@ export const buildParticipantPlayerView = (
     assignment?.context.series_id ?? currentSeries?.series_id ?? currentSeriesDetails?.id ?? null,
     assignment?.context.game_id ?? null,
   );
+  const seriesResult = participantSeriesResultFor(lobby.participant_id, currentSeriesDetails);
 
   const requiredAction = participantActionCopy[lobby.required_action];
   const roundLabel = assignmentView === null
@@ -675,6 +763,7 @@ export const buildParticipantPlayerView = (
     tournamentLabel: formatTournamentState(lobby.state),
     draft: participantDraftViewFor(snapshot.draft),
     officialOutcome,
+    seriesResult,
     pause,
     runtime,
   };

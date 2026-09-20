@@ -1037,9 +1037,12 @@ test.describe('local compose full stack e2e', () => {
         { category: 'forensics', count: 3 },
         { category: 'pwn', count: 3 },
       ];
+      const normalFlagsByTitle = new Map<string, string>();
       for (const group of normalTaskGroups) {
         for (let index = 0; index < group.count; index += 1) {
           const normalTaskName = uniqueName(`roster-${group.category}-${index + 1}`);
+          const normalTaskFlag = `flag{${normalTaskName.replaceAll('-', '_')}}`;
+          normalFlagsByTitle.set(normalTaskName, normalTaskFlag);
           await createTaskViaApi(adminRequest, { access_csrf_token: adminAccessCSRFToken }, {
             title: normalTaskName,
             description: 'Healthy normal task for the roster flow.',
@@ -1047,7 +1050,7 @@ test.describe('local compose full stack e2e', () => {
             category: group.category,
             difficulty: 'easy',
             time_limit: 180,
-            flag: `flag{${normalTaskName.replaceAll('-', '_')}}`,
+            flag: normalTaskFlag,
             hints: ['normal hint one', 'normal hint two', 'normal hint three'],
             task_url: 'https://example.com/roster-normal',
           });
@@ -2033,6 +2036,63 @@ test.describe('local compose full stack e2e', () => {
           .toHaveAttribute('data-paused', 'false', { timeout: 15_000 });
         await expect(activeParticipantPage.getByTestId('server-countdown')).toBeVisible();
         await expect(activeParticipantPage.getByTestId('participant-submit-button')).toBeEnabled();
+      }
+
+      const correctFlag = normalFlagsByTitle.get(firstAssignment.active_snapshot.title);
+      expect(correctFlag, 'assigned normal task must retain its acceptance flag').toBeTruthy();
+      if (!correctFlag) {
+        throw new Error('assigned normal task did not retain its acceptance flag');
+      }
+      const submissionResponsePromise = firstParticipantPage.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname ===
+            `/api/v1/tournaments/${tournament.id}/participant/series/${firstAssignment.context.series_id}/games/${firstAssignment.context.game_id}/submissions` &&
+          response.request().method() === 'POST',
+      );
+      await firstParticipantPage.getByTestId('participant-answer-input').fill(correctFlag);
+      await firstParticipantPage.getByTestId('participant-submit-button').click();
+      const submissionResponse = await submissionResponsePromise;
+      expect(
+        submissionResponse.status(),
+        `participant correct submission failed with ${submissionResponse.status()}: ${await submissionResponse.text()}`,
+      ).toBe(200);
+      const reloadTerminalParticipant = async (participantPage: Page): Promise<void> => {
+        const lobbyResponsePromise = participantPage.waitForResponse(
+          (response) =>
+            new URL(response.url()).pathname ===
+              `/api/v1/tournaments/${tournament.id}/participant/lobby` &&
+            response.request().method() === 'GET',
+        );
+        const snapshotResponsePromise = participantPage.waitForResponse(
+          (response) =>
+            new URL(response.url()).pathname ===
+              `/api/v1/tournaments/${tournament.id}/participant/snapshot` &&
+            response.request().method() === 'GET',
+        );
+        await participantPage.reload({ waitUntil: 'domcontentloaded' });
+        const lobbyResponse = await lobbyResponsePromise;
+        expect(
+          lobbyResponse.status(),
+          `terminal participant lobby failed with ${lobbyResponse.status()}: ${await lobbyResponse.text()}`,
+        ).toBe(200);
+        const snapshotResponse = await snapshotResponsePromise;
+        expect(
+          snapshotResponse.status(),
+          `terminal participant snapshot failed with ${snapshotResponse.status()}: ${await snapshotResponse.text()}`,
+        ).toBe(200);
+      };
+      await Promise.all([
+        reloadTerminalParticipant(firstParticipantPage),
+        reloadTerminalParticipant(secondParticipantPage),
+      ]);
+      for (const activeParticipantPage of [firstParticipantPage, secondParticipantPage]) {
+        const seriesResult = activeParticipantPage.getByTestId('participant-series-result');
+        await expect(seriesResult).toHaveAttribute('data-series-state', 'completed', {
+          timeout: 15_000,
+        });
+        await expect(seriesResult.getByTestId('participant-series-score')).toHaveText(/^(1:0|0:1)$/);
+        await expect(seriesResult).toContainText('Ревизия результата');
+        await expect(seriesResult.getByTestId('participant-series-game-1-1')).toContainText('Решено');
       }
 
       const staleStartResponse = await adminRequest.post(
