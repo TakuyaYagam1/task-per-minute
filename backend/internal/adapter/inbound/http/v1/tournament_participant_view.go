@@ -87,8 +87,13 @@ func participantAssignment(
 	if err != nil {
 		return api.ParticipantAssignment{}, err
 	}
+	context, err := participantAssignmentContext(view.Context)
+	if err != nil {
+		return api.ParticipantAssignment{}, err
+	}
 	if view.AssignmentID == uuid.Nil || view.AttemptID == uuid.Nil ||
-		view.UndisclosedReserveCount < 0 || view.UndisclosedReserveCount > math.MaxInt32 {
+		view.UndisclosedReserveCount < 0 || view.UndisclosedReserveCount > math.MaxInt32 ||
+		context.WaveId != view.WaveID || context.SeriesId != view.SeriesID || context.GameId != view.GameID {
 		return api.ParticipantAssignment{}, domain.ErrInternal
 	}
 	receipt := view.Receipt
@@ -96,6 +101,7 @@ func participantAssignment(
 		Id:                      view.AssignmentID,
 		AttemptId:               view.AttemptID,
 		ActiveSnapshot:          task,
+		Context:                 context,
 		UndisclosedReserveCount: int32(view.UndisclosedReserveCount),
 		Receipt: api.DeliveryReceipt{
 			Id:            receipt.ID,
@@ -107,6 +113,75 @@ func participantAssignment(
 			DeliveredAt:   receipt.DeliveredAt,
 		},
 	}, nil
+}
+
+func participantAssignmentContext(
+	view usecase.ParticipantAssignmentContextView,
+) (api.ParticipantAssignmentContext, error) {
+	if !validParticipantAssignmentContextView(view) {
+		return api.ParticipantAssignmentContext{}, domain.ErrInternal
+	}
+	stage := api.ParticipantAssignmentContextStage(view.Stage)
+	gameState := api.GameState(view.GameState)
+	var swissRound *int32
+	if view.SwissRound != nil {
+		// SwissRound is bounded to 1..4 by validParticipantAssignmentContextView.
+		value := int32(*view.SwissRound) //nolint:gosec // bounded above
+		swissRound = &value
+	}
+	return api.ParticipantAssignmentContext{
+		WaveId:            view.WaveID,
+		SeriesId:          view.SeriesID,
+		SlotId:            view.SlotID,
+		GameId:            view.GameID,
+		Stage:             stage,
+		SwissRound:        swissRound,
+		GameNumber:        int32(view.GameNumber), //nolint:gosec // bounded above
+		SeriesScore:       participantSeriesScore(view.SeriesScore),
+		GameState:         gameState,
+		StartedAt:         cloneTimePointer(view.StartedAt),
+		EffectiveDeadline: cloneTimePointer(view.EffectiveDeadline),
+	}, nil
+}
+
+func validParticipantAssignmentContextView(view usecase.ParticipantAssignmentContextView) bool {
+	return validParticipantAssignmentContextViewIdentity(view) &&
+		validParticipantAssignmentContextViewRound(view) &&
+		validParticipantAssignmentContextViewTimes(view)
+}
+
+func validParticipantAssignmentContextViewIdentity(view usecase.ParticipantAssignmentContextView) bool {
+	return view.WaveID != uuid.Nil && view.SeriesID != uuid.Nil && view.SlotID != uuid.Nil && view.GameID != uuid.Nil &&
+		view.Stage != domain.TournamentStageGolden && view.Stage.IsValid() &&
+		view.GameNumber >= 1 && view.GameNumber <= 3 && view.GameState.IsValid() &&
+		view.SeriesScore.FirstParticipantWins >= 0 && view.SeriesScore.FirstParticipantWins <= 2 &&
+		view.SeriesScore.SecondParticipantWins >= 0 && view.SeriesScore.SecondParticipantWins <= 2 &&
+		(view.SeriesScore.FirstParticipantWins != 2 || view.SeriesScore.SecondParticipantWins != 2)
+}
+
+func validParticipantAssignmentContextViewRound(view usecase.ParticipantAssignmentContextView) bool {
+	if view.Stage == domain.TournamentStageSwiss {
+		return view.SwissRound != nil && *view.SwissRound >= 1 && *view.SwissRound <= 4
+	}
+	return view.SwissRound == nil &&
+		(view.Stage == domain.TournamentStageSemifinal || view.Stage == domain.TournamentStageFinal)
+}
+
+func validParticipantAssignmentContextViewTimes(view usecase.ParticipantAssignmentContextView) bool {
+	if (view.StartedAt != nil && !domain.IsValidServerTime(*view.StartedAt)) ||
+		(view.EffectiveDeadline != nil && !domain.IsValidServerTime(*view.EffectiveDeadline)) {
+		return false
+	}
+	if view.GameState == domain.GameStatePlanned || view.GameState == domain.GameStateReady {
+		return view.StartedAt == nil && view.EffectiveDeadline == nil
+	}
+	if view.GameState == domain.GameStatePaused {
+		return view.StartedAt != nil && view.EffectiveDeadline == nil
+	}
+	if view.GameState == domain.GameStateActive {
+		return view.StartedAt != nil && view.EffectiveDeadline != nil
+	}
+	return view.EffectiveDeadline == nil
 }
 
 func participantTaskSnapshot(

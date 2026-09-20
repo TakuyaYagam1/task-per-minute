@@ -265,9 +265,28 @@ type TournamentParticipantAssignmentView struct {
 	SeriesID                uuid.UUID
 	GameID                  uuid.UUID
 	WaveID                  uuid.UUID
+	Context                 ParticipantAssignmentContextView
 	ActiveSnapshot          TaskSnapshotView
 	Receipt                 domain.TaskDeliveryReceipt
 	UndisclosedReserveCount int
+}
+
+// ParticipantAssignmentContextView is the persisted, participant-safe game
+// context that accompanies an immutable task snapshot. It deliberately keeps
+// stage and deadline authority on the server so clients cannot infer them from
+// tournament state or local clocks.
+type ParticipantAssignmentContextView struct {
+	WaveID            uuid.UUID
+	SeriesID          uuid.UUID
+	SlotID            uuid.UUID
+	GameID            uuid.UUID
+	Stage             domain.TournamentStage
+	SwissRound        *int
+	GameNumber        int
+	SeriesScore       domain.SeriesScore
+	GameState         domain.GameState
+	StartedAt         *time.Time
+	EffectiveDeadline *time.Time
 }
 
 // TaskSnapshotView is the participant-safe task shape. It deliberately has no

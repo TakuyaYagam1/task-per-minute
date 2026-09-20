@@ -442,6 +442,9 @@ func cloneParticipantAssignment(
 	view usecase.TournamentParticipantAssignmentView,
 ) usecase.TournamentParticipantAssignmentView {
 	cloned := view
+	cloned.Context.SwissRound = cloneInt(view.Context.SwissRound)
+	cloned.Context.StartedAt = cloneTime(view.Context.StartedAt)
+	cloned.Context.EffectiveDeadline = cloneTime(view.Context.EffectiveDeadline)
 	cloned.ActiveSnapshot.Hints = append([]string(nil), view.ActiveSnapshot.Hints...)
 	cloned.ActiveSnapshot.TaskURL = cloneString(view.ActiveSnapshot.TaskURL)
 	cloned.ActiveSnapshot.SourceFileURL = cloneString(view.ActiveSnapshot.SourceFileURL)
@@ -497,6 +500,14 @@ func cloneWaveView(view usecase.WaveView) usecase.WaveView {
 }
 
 func cloneString(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
+}
+
+func cloneTime(value *time.Time) *time.Time {
 	if value == nil {
 		return nil
 	}

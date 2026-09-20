@@ -49,7 +49,10 @@ func TestParticipantAssignmentMapsOnlyDisclosedSnapshot(t *testing.T) {
 		SeriesID: participantStateTestID(13), GameID: participantStateTestID(14),
 		AttemptState:     string(domain.GameStateActive),
 		AttemptStartedAt: participantStateTimestamp(participantStateTestTime().Add(-120 * time.Second)),
-		WaveID:           participantStateTestID(15).String(), ParticipantID: participantID,
+		WaveID:           participantStateTestID(15).String(), SlotID: participantStateTestID(19), GameNumber: 1,
+		Stage: string(domain.TournamentStageSwiss), SwissRound: 1,
+		SeriesFirstParticipantWins: 1, SeriesSecondParticipantWins: 0,
+		EffectiveDeadline: participantStateTimestamp(participantStateTestTime()), ParticipantID: participantID,
 		SnapshotID: participantStateTestID(16), TaskID: participantStateTestID(17),
 		TaskVersion: 3, Kind: string(domain.AssignmentTaskKindNormal),
 		Title: "web task", Description: "solve the disclosed service",
@@ -73,6 +76,104 @@ func TestParticipantAssignmentMapsOnlyDisclosedSnapshot(t *testing.T) {
 	row.Hints = []byte(`["one","two","three","private reserve"]`)
 	_, err = participantAssignmentFromRow(row)
 	require.ErrorIs(t, err, ErrParticipantStateInvalid)
+}
+
+func TestParticipantAssignmentContextUsesAuthoritativeDeadlineStates(t *testing.T) {
+	t.Parallel()
+
+	startedAt := participantStateTestTime()
+	tests := []struct {
+		name         string
+		mutate       func(*sqlc.GetParticipantStateAssignmentRow)
+		wantErr      bool
+		wantStart    bool
+		wantDeadline bool
+	}{
+		{
+			name:         "active exact task deadline",
+			wantStart:    true,
+			wantDeadline: true,
+		},
+		{
+			name:    "active deadline cannot drift",
+			wantErr: true,
+			mutate: func(row *sqlc.GetParticipantStateAssignmentRow) {
+				row.EffectiveDeadline = participantStateTimestamp(startedAt.Add(40*time.Second + time.Nanosecond))
+			},
+		},
+		{
+			name: "active pause has no running deadline",
+			mutate: func(row *sqlc.GetParticipantStateAssignmentRow) {
+				row.AttemptState = string(domain.GameStatePaused)
+				row.ObservedAt = participantStateTimestamp(startedAt.Add(20 * time.Second))
+				participantHintActiveClock(row, startedAt.Add(12*time.Second), startedAt.Add(40*time.Second), 28_000)
+			},
+			wantStart: true,
+		},
+		{
+			name: "resumed pause uses persisted deadline",
+			mutate: func(row *sqlc.GetParticipantStateAssignmentRow) {
+				row.ObservedAt = participantStateTimestamp(startedAt.Add(80 * time.Second))
+				participantHintResumedClock(row, startedAt.Add(12*time.Second), startedAt.Add(40*time.Second), startedAt.Add(50*time.Second))
+			},
+			wantStart:    true,
+			wantDeadline: true,
+		},
+		{
+			name: "ready context is pre-start",
+			mutate: func(row *sqlc.GetParticipantStateAssignmentRow) {
+				row.AttemptState = string(domain.GameStateReady)
+				row.AttemptStartedAt = pgtype.Timestamptz{}
+				row.EffectiveDeadline = pgtype.Timestamptz{}
+			},
+		},
+		{
+			name: "semifinal evidence has no Swiss round",
+			mutate: func(row *sqlc.GetParticipantStateAssignmentRow) {
+				row.Stage = string(domain.TournamentStageSemifinal)
+				row.SwissRound = 0
+			},
+			wantStart:    true,
+			wantDeadline: true,
+		},
+		{
+			name: "final evidence has no Swiss round",
+			mutate: func(row *sqlc.GetParticipantStateAssignmentRow) {
+				row.Stage = string(domain.TournamentStageFinal)
+				row.SwissRound = 0
+			},
+			wantStart:    true,
+			wantDeadline: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			row := participantHintAssignmentRow()
+			if tt.mutate != nil {
+				tt.mutate(&row)
+			}
+			assignment, err := participantAssignmentFromRow(row)
+			if tt.wantErr {
+				require.ErrorIs(t, err, ErrParticipantStateInvalid)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tt.wantStart, assignment.Context.StartedAt != nil)
+			require.Equal(t, tt.wantDeadline, assignment.Context.EffectiveDeadline != nil)
+			require.Equal(t, uuid.MustParse(row.WaveID), assignment.Context.WaveID)
+			require.Equal(t, row.SlotID, assignment.Context.SlotID)
+			require.Equal(t, int(row.GameNumber), assignment.Context.GameNumber)
+			require.NotEqual(t, domain.TournamentStageGolden, assignment.Context.Stage)
+			if assignment.Context.Stage == domain.TournamentStageSwiss {
+				require.Equal(t, 1, *assignment.Context.SwissRound)
+			} else {
+				require.Nil(t, assignment.Context.SwissRound)
+			}
+		})
+	}
 }
 
 func TestParticipantAssignmentUnlocksAtActiveBoundaries(t *testing.T) {
@@ -112,6 +213,7 @@ func TestParticipantAssignmentStartsWithNoHints(t *testing.T) {
 	row := participantHintAssignmentRow()
 	row.AttemptState = string(domain.GameStateReady)
 	row.AttemptStartedAt = pgtype.Timestamptz{}
+	row.EffectiveDeadline = pgtype.Timestamptz{}
 
 	assignment, err := participantAssignmentFromRow(row)
 
@@ -232,6 +334,7 @@ func TestParticipantAssignmentReplayAttemptDoesNotInheritHints(t *testing.T) {
 	row.AttemptID = participantStateTestID(120)
 	row.GameID = row.AttemptID
 	row.AttemptStartedAt = participantStateTimestamp(startedAt.Add(25 * time.Second))
+	row.EffectiveDeadline = participantStateTimestamp(startedAt.Add(65 * time.Second))
 	row.ObservedAt = participantStateTimestamp(startedAt.Add(26 * time.Second))
 	row.GamePauseID = uuid.Nil
 	row.GamePauseGameAttemptID = uuid.NullUUID{}
@@ -254,6 +357,7 @@ func TestParticipantAssignmentCompletedAttemptExposesUnlockedHints(t *testing.T)
 	row := participantHintAssignmentRow()
 	row.AttemptState = string(domain.GameStateCompleted)
 	row.AttemptStartedAt = participantStateTimestamp(participantStateTestTime())
+	row.EffectiveDeadline = pgtype.Timestamptz{}
 	row.ObservedAt = participantStateTimestamp(participantStateTestTime().Add(time.Minute))
 
 	assignment, err := participantAssignmentFromRow(row)
@@ -450,7 +554,12 @@ func participantHintAssignmentRow() sqlc.GetParticipantStateAssignmentRow {
 	return sqlc.GetParticipantStateAssignmentRow{
 		AssignmentID: assignmentID, AttemptID: participantStateTestID(112),
 		SeriesID: participantStateTestID(113), GameID: participantStateTestID(114),
-		WaveID: participantStateTestID(115).String(), ParticipantID: participantID,
+		AttemptState:     string(domain.GameStateActive),
+		AttemptStartedAt: participantStateTimestamp(participantStateTestTime()),
+		WaveID:           participantStateTestID(115).String(), SlotID: participantStateTestID(119), GameNumber: 1,
+		Stage: string(domain.TournamentStageSwiss), SwissRound: 1,
+		SeriesFirstParticipantWins: 1, SeriesSecondParticipantWins: 0,
+		EffectiveDeadline: participantStateTimestamp(participantStateTestTime().Add(40 * time.Second)), ParticipantID: participantID,
 		SnapshotID: participantStateTestID(116), TaskID: participantStateTestID(117),
 		TaskVersion: 3, Kind: string(domain.AssignmentTaskKindNormal),
 		Title: "web task", Description: "solve the disclosed service",
@@ -474,6 +583,7 @@ func participantHintActiveClock(
 	frozenAt, originalDeadline time.Time,
 	remainingMS int64,
 ) {
+	row.EffectiveDeadline = pgtype.Timestamptz{}
 	row.GamePauseID = participantStateTestID(119)
 	row.GamePauseGameAttemptID = uuid.NullUUID{UUID: row.AttemptID, Valid: true}
 	row.GamePauseState = "active"
@@ -493,4 +603,5 @@ func participantHintResumedClock(
 	row.GamePauseState = "resumed"
 	row.GamePauseResumedAt = participantStateTimestamp(resumedAt)
 	row.GamePauseResumedDeadline = participantStateTimestamp(resumedAt.Add(time.Duration(remainingMS) * time.Millisecond))
+	row.EffectiveDeadline = row.GamePauseResumedDeadline
 }

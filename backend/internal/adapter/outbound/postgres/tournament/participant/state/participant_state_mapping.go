@@ -120,6 +120,10 @@ func participantAssignmentFromRow(
 	if err != nil {
 		return usecase.TournamentParticipantAssignmentView{}, err
 	}
+	context, err := participantAssignmentContextFromRow(row, waveID)
+	if err != nil {
+		return usecase.TournamentParticipantAssignmentView{}, err
+	}
 	deliveredAt, ok := participantStateRequiredTime(row.DeliveredAt)
 	if !ok {
 		return usecase.TournamentParticipantAssignmentView{}, participantStateInvalid("assignment receipt time")
@@ -131,6 +135,7 @@ func participantAssignmentFromRow(
 		SeriesID:      row.SeriesID,
 		GameID:        row.GameID,
 		WaveID:        waveID,
+		Context:       context,
 		ActiveSnapshot: usecase.TaskSnapshotView{
 			SnapshotID: row.SnapshotID, TaskID: row.TaskID, Version: int(row.TaskVersion),
 			Kind: domain.AssignmentTaskKind(row.Kind), Title: row.Title, Description: row.Description,
@@ -149,6 +154,156 @@ func participantAssignmentFromRow(
 		return usecase.TournamentParticipantAssignmentView{}, err
 	}
 	return assignment, nil
+}
+
+func participantAssignmentContextFromRow(
+	row sqlc.GetParticipantStateAssignmentRow,
+	waveID uuid.UUID,
+) (usecase.ParticipantAssignmentContextView, error) {
+	stage := domain.TournamentStage(row.Stage)
+	gameState := domain.GameState(row.AttemptState)
+	if !validParticipantAssignmentContextRowIdentity(row, waveID, stage, gameState) {
+		return usecase.ParticipantAssignmentContextView{}, participantStateInvalid("assignment context scope")
+	}
+	swissRound, err := participantAssignmentSwissRound(row, stage)
+	if err != nil {
+		return usecase.ParticipantAssignmentContextView{}, err
+	}
+
+	startedAt, hasStartedAt := participantStateRequiredTime(row.AttemptStartedAt)
+	effectiveDeadline, hasEffectiveDeadline := participantStateRequiredTime(row.EffectiveDeadline)
+	if err := validateParticipantAssignmentDeadline(row, startedAt, hasStartedAt, effectiveDeadline, hasEffectiveDeadline); err != nil {
+		return usecase.ParticipantAssignmentContextView{}, err
+	}
+	return usecase.ParticipantAssignmentContextView{
+		WaveID:     waveID,
+		SeriesID:   row.SeriesID,
+		SlotID:     row.SlotID,
+		GameID:     row.GameID,
+		Stage:      stage,
+		SwissRound: swissRound,
+		GameNumber: int(row.GameNumber),
+		SeriesScore: domain.SeriesScore{
+			FirstParticipantWins:  int(row.SeriesFirstParticipantWins),
+			SecondParticipantWins: int(row.SeriesSecondParticipantWins),
+		},
+		GameState:         gameState,
+		StartedAt:         participantStateOptionalTimeValue(row.AttemptStartedAt, hasStartedAt),
+		EffectiveDeadline: participantStateOptionalTimeValue(row.EffectiveDeadline, hasEffectiveDeadline),
+	}, nil
+}
+
+func validParticipantAssignmentContextRowIdentity(
+	row sqlc.GetParticipantStateAssignmentRow,
+	waveID uuid.UUID,
+	stage domain.TournamentStage,
+	gameState domain.GameState,
+) bool {
+	return waveID != uuid.Nil && row.SeriesID != uuid.Nil && row.SlotID != uuid.Nil && row.GameID != uuid.Nil &&
+		row.GameNumber >= 1 && row.GameNumber <= 3 && participantAssignmentStageValid(stage) && gameState.IsValid() &&
+		row.SeriesFirstParticipantWins >= 0 && row.SeriesFirstParticipantWins <= 2 &&
+		row.SeriesSecondParticipantWins >= 0 && row.SeriesSecondParticipantWins <= 2 &&
+		(row.SeriesFirstParticipantWins != 2 || row.SeriesSecondParticipantWins != 2)
+}
+
+func participantAssignmentSwissRound(
+	row sqlc.GetParticipantStateAssignmentRow,
+	stage domain.TournamentStage,
+) (*int, error) {
+	if row.SwissRound < 0 || (stage == domain.TournamentStageSwiss && row.SwissRound == 0) ||
+		(stage != domain.TournamentStageSwiss && row.SwissRound != 0) {
+		return nil, participantStateInvalid("assignment context Swiss round")
+	}
+	if row.SwissRound == 0 {
+		return nil, nil
+	}
+	value := int(row.SwissRound)
+	if value > 4 {
+		return nil, participantStateInvalid("assignment context Swiss round")
+	}
+	return &value, nil
+}
+
+func participantAssignmentStageValid(stage domain.TournamentStage) bool {
+	return stage == domain.TournamentStageSwiss ||
+		stage == domain.TournamentStageSemifinal ||
+		stage == domain.TournamentStageFinal
+}
+
+func validateParticipantAssignmentDeadline(
+	row sqlc.GetParticipantStateAssignmentRow,
+	startedAt time.Time,
+	hasStartedAt bool,
+	effectiveDeadline time.Time,
+	hasEffectiveDeadline bool,
+) error {
+	if !domain.IsValidTaskTimeLimit(int(row.TimeLimit)) {
+		return participantStateInvalid("assignment context time limit")
+	}
+	switch domain.GameState(row.AttemptState) {
+	case domain.GameStatePlanned, domain.GameStateReady:
+		return validateParticipantPreStartDeadline(hasStartedAt, hasEffectiveDeadline)
+	case domain.GameStatePaused:
+		return validateParticipantPausedDeadline(hasStartedAt, hasEffectiveDeadline)
+	case domain.GameStateActive:
+		return validateParticipantActiveDeadline(row, startedAt, hasStartedAt, effectiveDeadline, hasEffectiveDeadline)
+	case domain.GameStateCompleted, domain.GameStateVoid, domain.GameStateCancelled, domain.GameStateSuperseded:
+		return validateParticipantTerminalDeadline(hasEffectiveDeadline)
+	}
+	return participantStateInvalid("assignment context state")
+}
+
+func validateParticipantPreStartDeadline(hasStartedAt, hasEffectiveDeadline bool) error {
+	if hasStartedAt || hasEffectiveDeadline {
+		return participantStateInvalid("assignment context pre-start deadline")
+	}
+	return nil
+}
+
+func validateParticipantPausedDeadline(hasStartedAt, hasEffectiveDeadline bool) error {
+	if !hasStartedAt || hasEffectiveDeadline {
+		return participantStateInvalid("assignment context paused deadline")
+	}
+	return nil
+}
+
+func validateParticipantActiveDeadline(
+	row sqlc.GetParticipantStateAssignmentRow,
+	startedAt time.Time,
+	hasStartedAt bool,
+	effectiveDeadline time.Time,
+	hasEffectiveDeadline bool,
+) error {
+	if !hasStartedAt {
+		return participantStateInvalid("assignment context active start")
+	}
+	if row.GamePauseState == "active" {
+		if hasEffectiveDeadline {
+			return participantStateInvalid("assignment context active pause deadline")
+		}
+		return nil
+	}
+	if !hasEffectiveDeadline {
+		return participantStateInvalid("assignment context active deadline")
+	}
+	if resumedDeadline, resumed := participantStateRequiredTime(row.GamePauseResumedDeadline); resumed {
+		if !effectiveDeadline.Equal(resumedDeadline) {
+			return participantStateInvalid("assignment context resumed deadline")
+		}
+		return nil
+	}
+	expected := startedAt.Add(time.Duration(row.TimeLimit) * time.Second)
+	if !effectiveDeadline.Equal(expected) {
+		return participantStateInvalid("assignment context deadline")
+	}
+	return nil
+}
+
+func validateParticipantTerminalDeadline(hasEffectiveDeadline bool) error {
+	if hasEffectiveDeadline {
+		return participantStateInvalid("assignment context terminal deadline")
+	}
+	return nil
 }
 
 //nolint:gocyclo // Hint visibility is a fail-closed state and pause-clock matrix.
@@ -338,7 +493,8 @@ func participantHintTimeSub(value time.Time, duration time.Duration) (time.Time,
 func validateParticipantStateAssignment(assignment usecase.TournamentParticipantAssignmentView) error {
 	snapshot := assignment.ActiveSnapshot
 	if !validParticipantStateAssignmentIdentity(assignment) || assignment.Receipt.Validate() != nil ||
-		!validParticipantStateTaskSnapshot(snapshot) {
+		!validParticipantStateTaskSnapshot(snapshot) ||
+		!validParticipantAssignmentContext(assignment.Context) {
 		return participantStateInvalid("assignment")
 	}
 	return nil
@@ -358,6 +514,25 @@ func validParticipantStateTaskSnapshot(snapshot usecase.TaskSnapshotView) bool {
 		domain.IsValidTaskDescription(snapshot.Description) && snapshot.Category.IsValid() &&
 		snapshot.Difficulty.IsValid() && domain.IsValidTaskTimeLimit(snapshot.TimeLimit) &&
 		domain.IsValidTaskURLShape(snapshot.Category, snapshot.TaskURL, snapshot.SourceFileURL)
+}
+
+func validParticipantAssignmentContext(context usecase.ParticipantAssignmentContextView) bool {
+	if !validParticipantAssignmentContextIdentity(context) {
+		return false
+	}
+	if context.Stage == domain.TournamentStageSwiss {
+		return context.SwissRound != nil && *context.SwissRound >= 1 && *context.SwissRound <= 4
+	}
+	return context.SwissRound == nil
+}
+
+func validParticipantAssignmentContextIdentity(context usecase.ParticipantAssignmentContextView) bool {
+	return context.WaveID != uuid.Nil && context.SeriesID != uuid.Nil && context.SlotID != uuid.Nil &&
+		context.GameID != uuid.Nil && participantAssignmentStageValid(context.Stage) &&
+		context.GameNumber >= 1 && context.GameNumber <= 3 && context.GameState.IsValid() &&
+		context.SeriesScore.FirstParticipantWins >= 0 && context.SeriesScore.FirstParticipantWins <= 2 &&
+		context.SeriesScore.SecondParticipantWins >= 0 && context.SeriesScore.SecondParticipantWins <= 2 &&
+		(context.SeriesScore.FirstParticipantWins != 2 || context.SeriesScore.SecondParticipantWins != 2)
 }
 
 func participantSeriesFromRows(
@@ -588,6 +763,14 @@ func participantStateRequiredTime(value pgtype.Timestamptz) (time.Time, bool) {
 
 func participantStateOptionalTime(value pgtype.Timestamptz) *time.Time {
 	if !value.Valid {
+		return nil
+	}
+	result := value.Time.UTC()
+	return &result
+}
+
+func participantStateOptionalTimeValue(value pgtype.Timestamptz, valid bool) *time.Time {
+	if !valid {
 		return nil
 	}
 	result := value.Time.UTC()

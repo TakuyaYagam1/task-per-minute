@@ -287,7 +287,7 @@ ParticipantSourceFileResponse:
 ParticipantAssignment:
   type: object
   additionalProperties: false
-  required: [id, attempt_id, active_snapshot, undisclosed_reserve_count, receipt]
+  required: [id, attempt_id, active_snapshot, context, undisclosed_reserve_count, receipt]
   properties:
     id:
       type: string
@@ -295,6 +295,8 @@ ParticipantAssignment:
     attempt_id:
       type: string
       format: uuid
+    context:
+      $ref: '#/ParticipantAssignmentContext'
     active_snapshot:
       $ref: '#/ParticipantTaskSnapshot'
     undisclosed_reserve_count:
@@ -304,3 +306,47 @@ ParticipantAssignment:
       maximum: 2
     receipt:
       $ref: '#/DeliveryReceipt'
+
+ParticipantAssignmentContext:
+  type: object
+  description: Server-authoritative context for the immutable assignment snapshot and current game.
+  additionalProperties: false
+  required: [wave_id, series_id, slot_id, game_id, stage, swiss_round, game_number, series_score, game_state, started_at, effective_deadline]
+  properties:
+    wave_id:
+      type: string
+      format: uuid
+    series_id:
+      type: string
+      format: uuid
+    slot_id:
+      type: string
+      format: uuid
+    game_id:
+      type: string
+      format: uuid
+    stage:
+      type: string
+      enum: [swiss, semifinal, final]
+    swiss_round:
+      type: integer
+      format: int32
+      minimum: 1
+      nullable: true
+    game_number:
+      type: integer
+      format: int32
+      minimum: 1
+      maximum: 3
+    series_score:
+      $ref: '#/SeriesScore'
+    game_state:
+      $ref: '#/GameState'
+    started_at:
+      type: string
+      format: date-time
+      nullable: true
+    effective_deadline:
+      type: string
+      format: date-time
+      nullable: true

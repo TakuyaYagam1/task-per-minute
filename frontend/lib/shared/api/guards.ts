@@ -364,6 +364,7 @@ export const isTournamentContentSelection = (
 
 type ParticipantLobbyResponse = components["schemas"]["ParticipantLobbyResponse"];
 type ParticipantAssignmentResponse = components["schemas"]["ParticipantAssignmentResponse"];
+type ParticipantAssignmentContext = components["schemas"]["ParticipantAssignmentContext"];
 type ParticipantSourceFileResponse = components["schemas"]["ParticipantSourceFileResponse"];
 type ParticipantReadyEvent = components["schemas"]["ReadinessEvent"];
 type ParticipantDraft = components["schemas"]["Draft"];
@@ -555,12 +556,64 @@ const isParticipantDeliveryReceipt = (value: unknown): boolean =>
   isNonNilUUID(value.task_id) &&
   isDateTimeString(value.delivered_at);
 
+const isParticipantAssignmentContext = (
+  value: unknown,
+): value is ParticipantAssignmentContext => {
+  if (
+    !isParticipantObject(value) ||
+    !hasExactKeys(value, [
+      "effective_deadline",
+      "game_id",
+      "game_number",
+      "game_state",
+      "series_id",
+      "series_score",
+      "slot_id",
+      "stage",
+      "started_at",
+      "swiss_round",
+      "wave_id",
+    ]) ||
+    !isParticipantDateOrNull(value.effective_deadline) ||
+    !isNonNilUUID(value.game_id) ||
+    !isSafePositiveInteger(value.game_number) ||
+    value.game_number > 3 ||
+    !isString(value.game_state) ||
+    !participantGameStates.has(value.game_state) ||
+    !isNonNilUUID(value.series_id) ||
+    !isParticipantScore(value.series_score) ||
+    !isNonNilUUID(value.slot_id) ||
+    (value.stage !== "swiss" && value.stage !== "semifinal" && value.stage !== "final") ||
+    !isParticipantDateOrNull(value.started_at) ||
+    !isNonNilUUID(value.wave_id) ||
+    (value.swiss_round !== null && (
+      !isSafePositiveInteger(value.swiss_round) || value.swiss_round > 4
+    )) ||
+    (value.stage === "swiss" ? value.swiss_round === null : value.swiss_round !== null)
+  ) {
+    return false;
+  }
+
+  switch (value.game_state) {
+    case "planned":
+    case "ready":
+      return value.started_at === null && value.effective_deadline === null;
+    case "paused":
+      return value.started_at !== null && value.effective_deadline === null;
+    case "active":
+      return value.started_at !== null && value.effective_deadline !== null;
+    default:
+      return value.effective_deadline === null;
+  }
+};
+
 const isParticipantAssignment = (value: unknown): boolean =>
   isParticipantObject(value) &&
-  hasExactKeys(value, ["id", "attempt_id", "active_snapshot", "undisclosed_reserve_count", "receipt"]) &&
+  hasExactKeys(value, ["id", "attempt_id", "active_snapshot", "context", "undisclosed_reserve_count", "receipt"]) &&
   isNonNilUUID(value.id) &&
   isNonNilUUID(value.attempt_id) &&
   isParticipantTaskSnapshot(value.active_snapshot) &&
+  isParticipantAssignmentContext(value.context) &&
   isNonNegativeInteger(value.undisclosed_reserve_count) &&
   value.undisclosed_reserve_count <= 2 &&
   isParticipantDeliveryReceipt(value.receipt);

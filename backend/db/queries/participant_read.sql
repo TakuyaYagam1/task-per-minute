@@ -197,6 +197,12 @@ SELECT assignment.id AS assignment_id,
     attempt.state AS attempt_state,
     attempt.started_at AS attempt_started_at,
     COALESCE(current_wave.wave_id::TEXT, '')::TEXT AS wave_id,
+    game_slot.id AS slot_id,
+    game_slot.slot_number AS game_number,
+    assignment_stage.stage,
+    COALESCE(assignment_stage.round_number, 0)::SMALLINT AS swiss_round,
+    assignment_series.first_participant_wins AS series_first_participant_wins,
+    assignment_series.second_participant_wins AS series_second_participant_wins,
     participant.id AS participant_id,
     snapshot.id AS snapshot_id,
     snapshot.task_id,
@@ -223,6 +229,14 @@ SELECT assignment.id AS assignment_id,
     game_pause.frozen_remaining_ms AS game_pause_frozen_remaining_ms,
     game_pause.resumed_at AS game_pause_resumed_at,
     game_pause.resumed_deadline AS game_pause_resumed_deadline,
+    CASE
+        WHEN attempt.state <> 'active' THEN NULL::TIMESTAMPTZ
+        WHEN game_pause.resumed_deadline IS NOT NULL THEN game_pause.resumed_deadline
+        WHEN game_pause.state = 'active' THEN NULL::TIMESTAMPTZ
+        WHEN attempt.started_at IS NOT NULL
+            THEN attempt.started_at + (snapshot.time_limit * INTERVAL '1 second')
+        ELSE NULL::TIMESTAMPTZ
+    END AS effective_deadline,
     transaction_timestamp()::TIMESTAMPTZ AS observed_at
 FROM participants AS participant
 JOIN rosters AS roster ON roster.id = participant.roster_id
@@ -238,6 +252,10 @@ JOIN game_attempts AS attempt
     ON attempt.id = assignment.attempt_id
     AND attempt.series_id = assignment.series_id
     AND attempt.roster_id = assignment.roster_id
+JOIN game_slots AS game_slot
+    ON game_slot.id = attempt.slot_id
+    AND game_slot.series_id = attempt.series_id
+    AND game_slot.roster_id = attempt.roster_id
 JOIN series AS assignment_series
     ON assignment_series.id = assignment.series_id
     AND assignment_series.roster_id = assignment.roster_id
@@ -256,7 +274,7 @@ JOIN task_version_reservations AS active_reservation
     ON active_reservation.id = assignment.reservation_id
 JOIN assignment_plan_edges AS active_edge
     ON active_edge.id = active_reservation.edge_id
-LEFT JOIN LATERAL (
+JOIN LATERAL (
     SELECT wave_series.wave_id
     FROM wave_series
     JOIN waves AS wave ON wave.id = wave_series.wave_id
@@ -266,6 +284,57 @@ LEFT JOIN LATERAL (
         wave.id DESC
     LIMIT 1
 ) AS current_wave ON TRUE
+JOIN LATERAL (
+    SELECT stage.stage,
+        stage.round_number
+    FROM (
+        SELECT 'swiss'::TEXT AS stage,
+            swiss_round.round_number::SMALLINT AS round_number,
+            2 AS stage_rank,
+            swiss_round.updated_at AS evidence_at,
+            swiss_round.id AS evidence_id
+        FROM wave_series AS linked_series
+        JOIN swiss_wave_links AS swiss_link
+            ON swiss_link.wave_id = linked_series.wave_id
+            AND swiss_link.tournament_id = linked_series.tournament_id
+            AND swiss_link.roster_id = linked_series.roster_id
+        JOIN swiss_rounds AS swiss_round
+            ON swiss_round.id = swiss_link.round_id
+            AND swiss_round.roster_id = swiss_link.roster_id
+        WHERE linked_series.series_id = assignment.series_id
+            AND linked_series.tournament_id = assignment_series.tournament_id
+            AND linked_series.roster_id = assignment.roster_id
+
+        UNION ALL
+
+        SELECT 'semifinal'::TEXT,
+            NULL::SMALLINT,
+            1,
+            semifinal.created_at,
+            semifinal.command_id
+        FROM tournament_stage_playoff_semifinals AS semifinal
+        WHERE semifinal.tournament_id = assignment_series.tournament_id
+            AND semifinal.roster_id = assignment.roster_id
+            AND semifinal.series_id = assignment.series_id
+
+        UNION ALL
+
+        SELECT 'final'::TEXT,
+            NULL::SMALLINT,
+            0,
+            final_stage.created_at,
+            final_stage.command_id
+        FROM tournament_stage_playoff_finals AS final_stage
+        WHERE final_stage.tournament_id = assignment_series.tournament_id
+            AND final_stage.roster_id = assignment.roster_id
+            AND final_stage.final_series_id = assignment.series_id
+    ) AS stage
+    ORDER BY stage.stage_rank,
+        stage.round_number DESC NULLS LAST,
+        stage.evidence_at DESC,
+        stage.evidence_id DESC
+    LIMIT 1
+) AS assignment_stage ON TRUE
 LEFT JOIN LATERAL (
     SELECT COUNT(*) AS value
     FROM task_version_reservations AS reserve
@@ -299,6 +368,7 @@ LEFT JOIN LATERAL (
 ) AS game_pause ON TRUE
 WHERE roster.tournament_id = sqlc.arg(tournament_id)
     AND participant.player_id = sqlc.arg(player_id)
+    AND attempt.state NOT IN ('void', 'cancelled', 'superseded')
     AND assignment_series.state NOT IN ('completed', 'cancelled')
 ORDER BY receipt.delivered_at DESC,
     receipt.id DESC

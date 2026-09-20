@@ -1,5 +1,6 @@
 import type { RoleAwareRecoveryState } from "../../shared/api";
 import { isParticipantRecoverySnapshot } from "../../shared/api/guards";
+import type { components } from "../../shared/api/schema";
 import {
   formatCategory,
   formatSeriesFormat,
@@ -15,6 +16,13 @@ export type ParticipantPlayerState =
   | "completed";
 
 export type ParticipantCheckInState = "confirmed" | "pending" | "unknown";
+
+export type ParticipantAssignmentDeliveryState = "waiting" | "delivered" | "superseded";
+
+export type ParticipantSeriesScore = Readonly<{
+  own: number;
+  opponent: number;
+}>;
 
 export type ParticipantReadinessKey = Readonly<{
   tournamentId: string;
@@ -38,11 +46,26 @@ export type ParticipantReadyResult = Readonly<{
 export type ParticipantAssignmentView = Readonly<{
   attemptId: string;
   title: string;
+  description: string;
   category: string;
   difficulty: string;
+  effectiveDeadline: string | null;
+  deliveredAt: string;
+  gameId: string;
+  gameNumber: number;
+  gameState: components["schemas"]["GameState"];
+  hints: readonly string[];
+  seriesId: string;
+  seriesScore: ParticipantSeriesScore | null;
+  slotId: string;
+  stage: components["schemas"]["ParticipantAssignmentContext"]["stage"];
+  startedAt: string | null;
+  swissRound: number | null;
   timeLimitSeconds: number;
   taskUrl: string | null;
   sourceFileAvailable: boolean;
+  version: number;
+  waveId: string;
 }>;
 
 export type ParticipantPlayerView = Readonly<{
@@ -52,7 +75,11 @@ export type ParticipantPlayerView = Readonly<{
   stateLabel: string;
   stateDescription: string;
   tournamentLabel: string;
+  stageLabel: string;
   roundLabel: string;
+  gameNumber: number | null;
+  seriesScore: ParticipantSeriesScore | null;
+  taskDeadlineAt: string | null;
   ownPoints: number | null;
   checkIn: ParticipantCheckInState;
   opponentName: string | null;
@@ -64,6 +91,7 @@ export type ParticipantPlayerView = Readonly<{
   readyWindowDeadline: string | null;
   readyWindowState: string | null;
   readyKey: ParticipantReadinessKey;
+  assignmentDeliveryState: ParticipantAssignmentDeliveryState;
   assignment: ParticipantAssignmentView | null;
 }>;
 
@@ -109,6 +137,32 @@ const participantActionCopy: Readonly<
   play: "Откройте назначенное задание",
   review_result: "Проверьте результат матча",
   none: "Действий не требуется",
+};
+
+const assignmentDeliveryStateFor = (
+  assignment: unknown,
+  waveState: string | null,
+  seriesState: string | null,
+  gameState: string | null,
+): ParticipantAssignmentDeliveryState => {
+  if (waveState === "superseded" || seriesState === "cancelled" || gameState === "superseded") {
+    return "superseded";
+  }
+
+  return assignment === null ? "waiting" : "delivered";
+};
+
+const assignmentStageLabelFor = (
+  stage: ParticipantAssignmentView["stage"],
+): string => {
+  switch (stage) {
+    case "swiss":
+      return "Швейцарский этап";
+    case "semifinal":
+      return "Полуфинал";
+    case "final":
+      return "Финал";
+  }
 };
 
 const checkInStateFor = (
@@ -165,15 +219,51 @@ export const buildParticipantPlayerView = (
   const wave = snapshot.wave;
   const readyWindow = wave?.ready_window ?? null;
   const assignment = snapshot.assignment;
-  const assignmentView: ParticipantAssignmentView | null = assignment
+  const assignmentDeliveryState = assignmentDeliveryStateFor(
+    assignment,
+    wave?.state ?? null,
+    currentSeries?.state ?? null,
+    assignment?.context.game_state ?? null,
+  );
+  const currentSeriesDetails = snapshot.series;
+  const assignmentScore = assignment && currentSeriesDetails !== null &&
+      currentSeriesDetails.id === assignment.context.series_id
+    ? currentSeriesDetails.first_participant_id === lobby.participant_id
+      ? {
+          opponent: assignment.context.series_score.second_participant_wins,
+          own: assignment.context.series_score.first_participant_wins,
+        }
+      : currentSeriesDetails.second_participant_id === lobby.participant_id
+        ? {
+            opponent: assignment.context.series_score.first_participant_wins,
+            own: assignment.context.series_score.second_participant_wins,
+          }
+        : null
+    : null;
+  const assignmentView: ParticipantAssignmentView | null = assignment && assignmentDeliveryState === "delivered"
     ? {
         attemptId: assignment.attempt_id,
         category: formatCategory(assignment.active_snapshot.category),
+        description: assignment.active_snapshot.description,
+        effectiveDeadline: assignment.context.effective_deadline,
+        deliveredAt: assignment.receipt.delivered_at,
         difficulty: assignment.active_snapshot.difficulty,
+        gameId: assignment.context.game_id,
+        gameNumber: assignment.context.game_number,
+        gameState: assignment.context.game_state,
+        hints: assignment.active_snapshot.hints,
+        seriesId: assignment.context.series_id,
+        seriesScore: assignmentScore,
+        slotId: assignment.context.slot_id,
+        stage: assignment.context.stage,
+        startedAt: assignment.context.started_at,
+        swissRound: assignment.context.swiss_round,
         sourceFileAvailable: assignment.active_snapshot.source_file_available,
         taskUrl: assignment.active_snapshot.task_url ?? null,
         timeLimitSeconds: assignment.active_snapshot.time_limit,
         title: assignment.active_snapshot.title,
+        version: assignment.active_snapshot.version,
+        waveId: assignment.context.wave_id,
       }
     : null;
 
@@ -194,15 +284,24 @@ export const buildParticipantPlayerView = (
     waveId,
     readyWindowId,
     readyWindow?.revision_id ?? null,
-    assignment?.attempt_id ?? null,
+    assignmentView?.attemptId ?? null,
   );
 
   const requiredAction = participantActionCopy[lobby.required_action];
+  const roundLabel = assignmentView === null
+    ? lobby.current_swiss_round === null
+      ? "Раунд еще не назначен"
+      : `Раунд ${lobby.current_swiss_round}`
+    : assignmentView.stage === "swiss" && assignmentView.swissRound !== null
+      ? `Раунд ${assignmentView.swissRound}`
+      : "Не применяется";
 
   return {
     assignment: assignmentView,
+    assignmentDeliveryState,
     category: assignmentView?.category ?? null,
     checkIn: checkInStateFor(lobby.attendance),
+    gameNumber: assignmentView?.gameNumber ?? null,
     matchFormat: currentSeries ? formatSeriesFormat(currentSeries.format) : null,
     opponentName: currentSeries?.opponent_display_name ?? null,
     ownPoints: lobby.swiss_points,
@@ -213,11 +312,14 @@ export const buildParticipantPlayerView = (
     readyWindowOpen,
     readyWindowState: readyWindow?.state ?? null,
     requiredAction,
-    roundLabel: lobby.current_swiss_round === null
-      ? "Раунд еще не назначен"
-      : `Раунд ${lobby.current_swiss_round}`,
+    roundLabel,
+    seriesScore: assignmentView?.seriesScore ?? null,
+    stageLabel: assignmentView === null
+      ? formatTournamentState(lobby.state)
+      : assignmentStageLabelFor(assignmentView.stage),
     state,
     stateDescription: participantStateCopy[state].description,
+    taskDeadlineAt: assignmentView?.effectiveDeadline ?? null,
     stateLabel: participantStateCopy[state].label,
     tournamentId: snapshot.tournament_id,
     tournamentLabel: formatTournamentState(lobby.state),

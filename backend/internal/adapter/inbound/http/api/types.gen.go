@@ -639,6 +639,27 @@ func (e PairingConfigurationRequestPairingMode) Valid() bool {
 	}
 }
 
+// Defines values for ParticipantAssignmentContextStage.
+const (
+	ParticipantAssignmentContextStageFinal     ParticipantAssignmentContextStage = "final"
+	ParticipantAssignmentContextStageSemifinal ParticipantAssignmentContextStage = "semifinal"
+	ParticipantAssignmentContextStageSwiss     ParticipantAssignmentContextStage = "swiss"
+)
+
+// Valid indicates whether the value is a known member of the ParticipantAssignmentContextStage enum.
+func (e ParticipantAssignmentContextStage) Valid() bool {
+	switch e {
+	case ParticipantAssignmentContextStageFinal:
+		return true
+	case ParticipantAssignmentContextStageSemifinal:
+		return true
+	case ParticipantAssignmentContextStageSwiss:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ParticipantLobbyRequiredAction.
 const (
 	ParticipantLobbyRequiredActionCheckIn      ParticipantLobbyRequiredAction = "check_in"
@@ -2195,12 +2216,33 @@ type Participant struct {
 // ParticipantAssignment defines model for ParticipantAssignment.
 type ParticipantAssignment struct {
 	// ActiveSnapshot Participant-safe immutable task snapshot. Internal archive locations, flag material, and undisclosed reserves are excluded.
-	ActiveSnapshot          ParticipantTaskSnapshot `json:"active_snapshot"`
-	AttemptId               openapi_types.UUID      `json:"attempt_id"`
-	Id                      openapi_types.UUID      `json:"id"`
-	Receipt                 DeliveryReceipt         `json:"receipt"`
-	UndisclosedReserveCount int32                   `json:"undisclosed_reserve_count"`
+	ActiveSnapshot ParticipantTaskSnapshot `json:"active_snapshot"`
+	AttemptId      openapi_types.UUID      `json:"attempt_id"`
+
+	// Context Server-authoritative context for the immutable assignment snapshot and current game.
+	Context                 ParticipantAssignmentContext `json:"context"`
+	Id                      openapi_types.UUID           `json:"id"`
+	Receipt                 DeliveryReceipt              `json:"receipt"`
+	UndisclosedReserveCount int32                        `json:"undisclosed_reserve_count"`
 }
+
+// ParticipantAssignmentContext Server-authoritative context for the immutable assignment snapshot and current game.
+type ParticipantAssignmentContext struct {
+	EffectiveDeadline *time.Time                        `json:"effective_deadline"`
+	GameId            openapi_types.UUID                `json:"game_id"`
+	GameNumber        int32                             `json:"game_number"`
+	GameState         GameState                         `json:"game_state"`
+	SeriesId          openapi_types.UUID                `json:"series_id"`
+	SeriesScore       SeriesScore                       `json:"series_score"`
+	SlotId            openapi_types.UUID                `json:"slot_id"`
+	Stage             ParticipantAssignmentContextStage `json:"stage"`
+	StartedAt         *time.Time                        `json:"started_at"`
+	SwissRound        *int32                            `json:"swiss_round"`
+	WaveId            openapi_types.UUID                `json:"wave_id"`
+}
+
+// ParticipantAssignmentContextStage defines model for ParticipantAssignmentContext.Stage.
+type ParticipantAssignmentContextStage string
 
 // ParticipantAssignmentResponse defines model for ParticipantAssignmentResponse.
 type ParticipantAssignmentResponse struct {

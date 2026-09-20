@@ -2,6 +2,7 @@ package v1
 
 import (
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -49,6 +50,60 @@ func TestParticipantLobbyResponseIncludesAuthoritativeFields(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, lobby, recovery.Lobby)
+}
+
+func TestParticipantAssignmentResponseIncludesAuthoritativeContext(t *testing.T) {
+	t.Parallel()
+
+	assignmentID := uuid.New()
+	participantID := uuid.New()
+	waveID := uuid.New()
+	seriesID := uuid.New()
+	gameID := uuid.New()
+	startedAt := time.Date(2026, 9, 6, 10, 0, 0, 0, time.UTC)
+	deadline := startedAt.Add(120 * time.Second)
+	view := usecase.TournamentParticipantAssignmentView{
+		AssignmentID:  assignmentID,
+		AttemptID:     uuid.New(),
+		ParticipantID: participantID,
+		SeriesID:      seriesID,
+		GameID:        gameID,
+		WaveID:        waveID,
+		Context: usecase.ParticipantAssignmentContextView{
+			WaveID:            waveID,
+			SeriesID:          seriesID,
+			SlotID:            uuid.New(),
+			GameID:            gameID,
+			Stage:             domain.TournamentStageFinal,
+			GameNumber:        2,
+			SeriesScore:       domain.SeriesScore{FirstParticipantWins: 1, SecondParticipantWins: 0},
+			GameState:         domain.GameStateActive,
+			StartedAt:         &startedAt,
+			EffectiveDeadline: &deadline,
+		},
+		ActiveSnapshot: usecase.TaskSnapshotView{
+			SnapshotID: uuid.New(), TaskID: uuid.New(), Version: 3,
+			Kind: domain.AssignmentTaskKindNormal, Title: "web task",
+			Description: "solve the disclosed service", Category: domain.CategoryWeb,
+			Difficulty: domain.DifficultyMedium, TimeLimit: 120,
+		},
+	}
+
+	assignment, err := participantAssignment(view)
+
+	require.NoError(t, err)
+	require.Equal(t, view.Context.WaveID, assignment.Context.WaveId)
+	require.Equal(t, view.Context.SeriesID, assignment.Context.SeriesId)
+	require.Equal(t, view.Context.SlotID, assignment.Context.SlotId)
+	require.Equal(t, view.Context.GameID, assignment.Context.GameId)
+	require.Equal(t, api.ParticipantAssignmentContextStageFinal, assignment.Context.Stage)
+	require.Equal(t, int32(view.Context.GameNumber), assignment.Context.GameNumber)
+	require.Equal(t, int32(1), assignment.Context.SeriesScore.FirstParticipantWins)
+	require.Equal(t, int32(0), assignment.Context.SeriesScore.SecondParticipantWins)
+	require.Equal(t, api.GameStateActive, assignment.Context.GameState)
+	require.Equal(t, startedAt, *assignment.Context.StartedAt)
+	require.Equal(t, deadline, *assignment.Context.EffectiveDeadline)
+	require.Nil(t, assignment.Context.SwissRound)
 }
 
 func TestParticipantWaveResponseRedactsSeriesForAuthoritativeBye(t *testing.T) {

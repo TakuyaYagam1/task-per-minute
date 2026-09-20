@@ -31,6 +31,9 @@ const recoveryRole = (role: ArenaLiveRole): TournamentLiveRole =>
 const deadlineFrom = (state: RoleAwareRecoveryState): string | undefined => {
   const snapshot = state.snapshot;
   if (state.role === "participant" && "lobby" in snapshot) {
+    if (snapshot.assignment !== null) {
+      return snapshot.assignment.context.effective_deadline ?? undefined;
+    }
     const draftDeadline = snapshot.draft?.state === "active"
       ? snapshot.draft.turn_deadline
       : undefined;

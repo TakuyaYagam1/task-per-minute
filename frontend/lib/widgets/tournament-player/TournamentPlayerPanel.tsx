@@ -9,6 +9,7 @@ import {
   type ParticipantReadyResult,
 } from "../../features/tournament-player";
 import { Button, Message, Status } from "../../shared/ui";
+import { formatGameStatus } from "../../shared/lib";
 
 import styles from "./TournamentPlayerPanel.module.css";
 
@@ -31,6 +32,32 @@ const statusTone = (state: ParticipantPlayerView["state"]): "neutral" | "info" |
       return "neutral";
     case "waiting":
       return "warning";
+  }
+};
+
+const assignmentStatusTone = (
+  state: ParticipantPlayerView["assignmentDeliveryState"],
+): "neutral" | "success" | "warning" | "error" => {
+  switch (state) {
+    case "delivered":
+      return "success";
+    case "superseded":
+      return "error";
+    case "waiting":
+      return "warning";
+  }
+};
+
+const assignmentStatusLabel = (
+  state: ParticipantPlayerView["assignmentDeliveryState"],
+): string => {
+  switch (state) {
+    case "delivered":
+      return "Доставлено сервером";
+    case "superseded":
+      return "Назначение устарело";
+    case "waiting":
+      return "Ожидается доставка";
   }
 };
 
@@ -75,6 +102,18 @@ const formatDeadline = (value: string | null): string => {
   return new Intl.DateTimeFormat("ru-RU", {
     dateStyle: "short",
     timeStyle: "short",
+  }).format(timestamp);
+};
+
+const formatServerTimestamp = (value: string): string => {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) {
+    return "Серверное время недоступно";
+  }
+
+  return new Intl.DateTimeFormat("ru-RU", {
+    dateStyle: "short",
+    timeStyle: "medium",
   }).format(timestamp);
 };
 
@@ -137,8 +176,24 @@ export const TournamentPlayerPanel = ({ onReady, view }: TournamentPlayerPanelPr
           <dd>{view.tournamentLabel}</dd>
         </div>
         <div className={styles.detailRow}>
+          <dt>Стадия</dt>
+          <dd>{view.stageLabel}</dd>
+        </div>
+        <div className={styles.detailRow}>
           <dt>Раунд</dt>
           <dd>{view.roundLabel}</dd>
+        </div>
+        <div className={styles.detailRow}>
+          <dt>Игра</dt>
+          <dd>{view.gameNumber === null ? "Номер не опубликован сервером" : `Игра ${view.gameNumber}`}</dd>
+        </div>
+        <div className={styles.detailRow}>
+          <dt>Счет серии</dt>
+          <dd>
+            {view.seriesScore === null
+              ? "Счет не опубликован сервером"
+              : `${view.seriesScore.own}:${view.seriesScore.opponent}`}
+          </dd>
         </div>
         <div className={styles.detailRow}>
           <dt>Очки</dt>
@@ -162,11 +217,40 @@ export const TournamentPlayerPanel = ({ onReady, view }: TournamentPlayerPanelPr
         </div>
       </dl>
 
-      {view.assignment !== null && (
-        <section className={styles.assignment} aria-labelledby="participant-assignment-title">
+      <section
+        className={styles.assignment}
+        aria-labelledby="participant-assignment-title"
+        data-assignment-state={view.assignmentDeliveryState}
+        data-testid="participant-assignment-state"
+      >
+        <div className={styles.assignmentHeader}>
+          <div>
+            <h3 className={styles.assignmentTitle} id="participant-assignment-title">Задание для игры</h3>
+            <p className={styles.assignmentMeta}>
+              Контент отображается только после подтвержденной доставки сервером.
+            </p>
+          </div>
+          <Status tone={assignmentStatusTone(view.assignmentDeliveryState)}>
+            {assignmentStatusLabel(view.assignmentDeliveryState)}
+          </Status>
+        </div>
+
+        {view.assignment === null && view.assignmentDeliveryState === "waiting" && (
+          <p className={styles.assignmentUnavailable} role="status">
+            Задание пока не доставлено. Ожидайте обновления состояния турнира.
+          </p>
+        )}
+
+        {view.assignment === null && view.assignmentDeliveryState === "superseded" && (
+          <p className={styles.assignmentUnavailable} role="status">
+            Предыдущее назначение устарело. Новый контент будет показан только после доставки сервером.
+          </p>
+        )}
+
+        {view.assignment !== null && (
+          <>
           <div className={styles.assignmentHeader}>
             <div>
-              <h3 className={styles.assignmentTitle} id="participant-assignment-title">Назначенное задание</h3>
               <p className={styles.assignmentMeta}>
                 {view.assignment.category} - {view.assignment.difficulty} - {view.assignment.timeLimitSeconds} с
               </p>
@@ -185,8 +269,56 @@ export const TournamentPlayerPanel = ({ onReady, view }: TournamentPlayerPanelPr
               Ссылка на задание появится после подтверждения сервером.
             </span>
           )}
-        </section>
-      )}
+          <p className={styles.assignmentDescription}>{view.assignment.description}</p>
+          <dl className={styles.assignmentFacts} aria-label="Параметры назначения">
+            <div>
+              <dt>Версия задания</dt>
+              <dd>{view.assignment.version}</dd>
+            </div>
+            <div>
+              <dt>Доставлено сервером</dt>
+              <dd>
+                <time dateTime={view.assignment.deliveredAt}>
+                  {formatServerTimestamp(view.assignment.deliveredAt)}
+                </time>
+              </dd>
+            </div>
+            <div>
+              <dt>Дедлайн задания</dt>
+              <dd>
+                {view.taskDeadlineAt === null
+                  ? "Не опубликован сервером"
+                  : formatDeadline(view.taskDeadlineAt)}
+              </dd>
+            </div>
+            <div>
+              <dt>Состояние игры</dt>
+              <dd>{formatGameStatus(view.assignment.gameState)}</dd>
+            </div>
+            <div>
+              <dt>Старт игры</dt>
+              <dd>
+                {view.assignment.startedAt === null
+                  ? "Еще не началась"
+                  : (
+                    <time dateTime={view.assignment.startedAt}>
+                      {formatServerTimestamp(view.assignment.startedAt)}
+                    </time>
+                  )}
+              </dd>
+            </div>
+          </dl>
+          {view.assignment.hints.length > 0 && (
+            <details className={styles.assignmentHints}>
+              <summary>Подсказки ({view.assignment.hints.length})</summary>
+              <ul>
+                {view.assignment.hints.map((hint) => <li key={hint}>{hint}</li>)}
+              </ul>
+            </details>
+          )}
+          </>
+        )}
+      </section>
 
       {showReadinessAction && (
         <div className={styles.readiness}>

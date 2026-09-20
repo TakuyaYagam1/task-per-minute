@@ -2679,6 +2679,29 @@ export interface components {
             /** Format: int32 */
             version: number;
         };
+        /** @description Server-authoritative context for the immutable assignment snapshot and current game. */
+        ParticipantAssignmentContext: {
+            /** Format: date-time */
+            effective_deadline: string | null;
+            /** Format: uuid */
+            game_id: string;
+            /** Format: int32 */
+            game_number: number;
+            game_state: components["schemas"]["GameState"];
+            /** Format: uuid */
+            series_id: string;
+            series_score: components["schemas"]["SeriesScore"];
+            /** Format: uuid */
+            slot_id: string;
+            /** @enum {string} */
+            stage: "swiss" | "semifinal" | "final";
+            /** Format: date-time */
+            started_at: string | null;
+            /** Format: int32 */
+            swiss_round: number | null;
+            /** Format: uuid */
+            wave_id: string;
+        };
         DeliveryReceipt: {
             /** Format: uuid */
             assignment_id: string;
@@ -2699,6 +2722,7 @@ export interface components {
             active_snapshot: components["schemas"]["ParticipantTaskSnapshot"];
             /** Format: uuid */
             attempt_id: string;
+            context: components["schemas"]["ParticipantAssignmentContext"];
             /** Format: uuid */
             id: string;
             receipt: components["schemas"]["DeliveryReceipt"];

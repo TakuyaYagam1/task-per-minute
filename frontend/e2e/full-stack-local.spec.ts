@@ -102,6 +102,62 @@ type FullStackOperatorSnapshot = {
 
 type FullStackParticipantSnapshot = {
   projection_revision: number;
+  tournament_id?: string;
+  lobby?: {
+    participant_id?: string;
+    current_swiss_round?: number | null;
+    status?: string;
+    required_action?: string;
+  };
+  assignment?: {
+    id: string;
+    attempt_id: string;
+    context: {
+      wave_id: string;
+      series_id: string;
+      slot_id: string;
+      game_id: string;
+      stage: 'swiss' | 'semifinal' | 'final';
+      swiss_round: number | null;
+      game_number: number;
+      series_score: {
+        first_participant_wins: number;
+        second_participant_wins: number;
+      };
+      game_state: string;
+      started_at: string | null;
+      effective_deadline: string | null;
+    };
+    active_snapshot: {
+      task_id: string;
+      snapshot_id: string;
+      version: number;
+      title: string;
+      time_limit: number;
+    };
+    receipt: {
+      assignment_id: string;
+      attempt_id: string;
+      participant_id: string;
+      snapshot_id: string;
+      task_id: string;
+      delivered_at: string;
+    };
+  } | null;
+  series?: {
+    id: string;
+    state: string;
+    slots: Array<{
+      id: string;
+      position: number;
+      attempts: Array<{ id: string; state: string }>;
+    }>;
+  } | null;
+  wave?: {
+    id: string;
+    state: string;
+    members: Array<{ participant_id: string; series_id?: string | null }>;
+  } | null;
 };
 
 type FullStackConfigurationMutation = {
@@ -368,6 +424,23 @@ const getOperatorProjectionRevisionViaApi = async (
   return projectionRevision;
 };
 
+const readParticipantSnapshotViaApi = async (
+  context: BrowserContext,
+  tournamentID: string,
+): Promise<FullStackParticipantSnapshot> => {
+  const response = await context.request.get(
+    `${backendURL}/api/v1/tournaments/${tournamentID}/participant/snapshot`,
+    { headers: { Origin: frontendURL } },
+  );
+  expect(
+    response.status(),
+    `participant snapshot failed with ${response.status()}`,
+  ).toBe(200);
+  const snapshot = (await response.json()) as FullStackParticipantSnapshot;
+  expect(snapshot.projection_revision).toEqual(expect.any(Number));
+  return snapshot;
+};
+
 const applyOpenRegistrationViaApi = async (
   request: APIRequestContext,
   tournamentID: string,
@@ -609,6 +682,15 @@ const expectNoSensitiveAuthStorage = async (page: Page): Promise<void> => {
   expect(storage.playerCSRFToken, 'player CSRF token must stay out of sessionStorage').toBeNull();
   expect(storage.adminAccessCSRFToken, 'admin access CSRF token must stay out of sessionStorage').toBeNull();
   expect(storage.adminRefreshCSRFToken, 'admin refresh CSRF token must stay out of sessionStorage').toBeNull();
+};
+
+const readServerCountdownSeconds = async (page: Page): Promise<number> => {
+  const countdown = await page.getByTestId('server-countdown').textContent();
+  const parts = (countdown ?? '0:00').split(':').map(Number);
+  if (parts.length !== 2 || parts.some((part) => !Number.isFinite(part))) {
+    throw new Error(`Unexpected server countdown: ${countdown ?? '<empty>'}`);
+  }
+  return (parts[0] ?? 0) * 60 + (parts[1] ?? 0);
 };
 
 test.describe('local compose full stack e2e', () => {
@@ -964,7 +1046,7 @@ test.describe('local compose full stack e2e', () => {
             kind: 'normal',
             category: group.category,
             difficulty: 'easy',
-            time_limit: 90,
+            time_limit: 180,
             flag: `flag{${normalTaskName.replaceAll('-', '_')}}`,
             hints: ['normal hint one', 'normal hint two', 'normal hint three'],
             task_url: 'https://example.com/roster-normal',
@@ -979,7 +1061,7 @@ test.describe('local compose full stack e2e', () => {
           kind: 'golden',
           category: 'web',
           difficulty: 'easy',
-          time_limit: 90,
+          time_limit: 180,
           flag: `flag{${goldenTaskName.replaceAll('-', '_')}}`,
           hints: ['golden hint one', 'golden hint two', 'golden hint three'],
           task_url: 'https://example.com/roster-golden',
@@ -1579,6 +1661,42 @@ test.describe('local compose full stack e2e', () => {
         `open Wave failed with ${openedWaveHTTP.status()}: ${await openedWaveHTTP.text()}`,
       ).toBe(200);
 
+      const firstWaveSeriesID = plannedWave.members.find((member) => member.series_id)?.series_id;
+      expect(firstWaveSeriesID, 'started Wave did not expose a Series for its first match').toMatch(
+        /^[0-9a-f-]{36}$/i,
+      );
+      const firstWaveSeriesMembers = plannedWave.members.filter(
+        (member) => member.series_id === firstWaveSeriesID,
+      );
+      expect(firstWaveSeriesMembers, 'started Wave did not expose both members of a Series').toHaveLength(2);
+
+      const contextForParticipant = (participantID: string): BrowserContext => {
+        const rosterParticipant = checkedInSourceRosterParticipants.find(
+          (participant) => participant.id === participantID,
+        );
+        expect(rosterParticipant, `missing roster participant ${participantID}`).toBeDefined();
+        if (!rosterParticipant) {
+          throw new Error(`missing roster participant ${participantID}`);
+        }
+        const playerIndex = players.findIndex((player) => player.id === rosterParticipant.player_id);
+        const context = playerContexts[playerIndex];
+        if (!context) {
+          throw new Error(`missing browser context for player ${rosterParticipant.player_id}`);
+        }
+        return context;
+      };
+
+      for (const member of firstWaveSeriesMembers) {
+        const waitingSnapshot = await readParticipantSnapshotViaApi(
+          contextForParticipant(member.participant_id),
+          tournament.id,
+        );
+        expect(waitingSnapshot.tournament_id).toBe(tournament.id);
+        expect(waitingSnapshot.assignment, 'waiting participant snapshot must not expose an assignment').toBeNull();
+        expect(JSON.stringify(waitingSnapshot)).not.toContain('active_snapshot');
+        expect(JSON.stringify(waitingSnapshot)).not.toContain('effective_deadline');
+      }
+
       for (const participant of checkedInSourceRosterParticipants) {
         const playerIndex = players.findIndex((player) => player.id === participant.player_id);
         const playerContext = playerContexts[playerIndex];
@@ -1674,6 +1792,113 @@ test.describe('local compose full stack e2e', () => {
       await expect(waveRegion.getByTestId('operator-match')).toHaveCount(2);
       await expect(waveRegion.getByTestId('operator-match').getByText('Идет', { exact: true }))
         .toHaveCount(2);
+
+      const deliveredPairSnapshots = await Promise.all(
+        firstWaveSeriesMembers.map((member) =>
+          readParticipantSnapshotViaApi(contextForParticipant(member.participant_id), tournament.id),
+        ),
+      );
+      const deliveredPairAssignments = deliveredPairSnapshots.map((snapshot, index) => {
+        expect(snapshot.assignment, `participant ${index + 1} did not receive a delivered assignment`).not.toBeNull();
+        if (!snapshot.assignment) {
+          throw new Error(`participant ${index + 1} did not receive a delivered assignment`);
+        }
+        return snapshot.assignment;
+      });
+      const firstAssignment = deliveredPairAssignments[0];
+      const secondAssignment = deliveredPairAssignments[1];
+      const firstDeliveredSnapshot = deliveredPairSnapshots[0];
+      const secondDeliveredSnapshot = deliveredPairSnapshots[1];
+      const firstWaveMember = firstWaveSeriesMembers[0];
+      const secondWaveMember = firstWaveSeriesMembers[1];
+      if (!firstAssignment || !secondAssignment || !firstDeliveredSnapshot || !secondDeliveredSnapshot ||
+        !firstWaveMember || !secondWaveMember) {
+        throw new Error('FE-018 did not receive both participant assignments');
+      }
+
+      expect(firstAssignment.active_snapshot.task_id).toBe(secondAssignment.active_snapshot.task_id);
+      expect(firstAssignment.active_snapshot.snapshot_id).toBe(secondAssignment.active_snapshot.snapshot_id);
+      expect(firstAssignment.active_snapshot.version).toBe(secondAssignment.active_snapshot.version);
+      expect(firstAssignment.context).toEqual(secondAssignment.context);
+      expect(firstAssignment.context.wave_id).toBe(plannedWave.id);
+      expect(firstAssignment.context.series_id).toBe(firstWaveSeriesID);
+      expect(secondAssignment.context.series_id).toBe(firstWaveSeriesID);
+      expect(firstAssignment.context.slot_id).toMatch(/^[0-9a-f-]{36}$/i);
+      expect(firstAssignment.context.game_id).toMatch(/^[0-9a-f-]{36}$/i);
+      expect(firstAssignment.context.stage).toBe('swiss');
+      expect(firstAssignment.context.swiss_round).toBe(1);
+      expect(firstAssignment.context.game_number).toBe(1);
+      expect(firstAssignment.context.series_score).toEqual({
+        first_participant_wins: 0,
+        second_participant_wins: 0,
+      });
+      expect(firstAssignment.context.game_state).toBe('active');
+      expect(firstAssignment.context.started_at).toBeTruthy();
+      expect(firstAssignment.context.effective_deadline).toBeTruthy();
+      expect(firstAssignment.active_snapshot.time_limit).toBe(180);
+      if (!firstAssignment.context.started_at || !firstAssignment.context.effective_deadline) {
+        throw new Error('FE-018 assignment did not return authoritative game timing');
+      }
+      expect(
+        Date.parse(firstAssignment.context.effective_deadline) -
+          Date.parse(firstAssignment.context.started_at),
+      ).toBe(180_000);
+      expect(firstAssignment.receipt.task_id).toBe(firstAssignment.active_snapshot.task_id);
+      expect(firstAssignment.receipt.snapshot_id).toBe(firstAssignment.active_snapshot.snapshot_id);
+      expect(secondAssignment.receipt.task_id).toBe(secondAssignment.active_snapshot.task_id);
+      expect(secondAssignment.receipt.snapshot_id).toBe(secondAssignment.active_snapshot.snapshot_id);
+      expect(firstDeliveredSnapshot.wave?.id).toBe(plannedWave.id);
+      expect(secondDeliveredSnapshot.wave?.id).toBe(plannedWave.id);
+      expect(firstDeliveredSnapshot.wave?.members).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            participant_id: firstWaveMember.participant_id,
+            series_id: firstWaveMember.series_id,
+          }),
+        ]),
+      );
+      expect(secondDeliveredSnapshot.wave?.members).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            participant_id: secondWaveMember.participant_id,
+            series_id: secondWaveMember.series_id,
+          }),
+        ]),
+      );
+      for (const snapshot of deliveredPairSnapshots) {
+        const series = snapshot.series;
+        expect(series?.id).toBe(firstAssignment.context.series_id);
+        const slot = series?.slots.find((candidate) => candidate.id === firstAssignment.context.slot_id);
+        expect(slot?.position).toBe(firstAssignment.context.game_number);
+        expect(slot?.attempts).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ id: firstAssignment.context.game_id, state: 'active' }),
+          ]),
+        );
+      }
+
+      const participantPage = await contextForParticipant(firstWaveMember.participant_id).newPage();
+      try {
+        await participantPage.goto(`${frontendURL}/arena/participant/${tournament.id}`, {
+          waitUntil: 'domcontentloaded',
+        });
+        await expect(participantPage.getByTestId('participant-player-panel')).toHaveAttribute(
+          'data-state',
+          /assigned|ready/,
+        );
+        await expect(participantPage.getByTestId('server-countdown')).toBeVisible({ timeout: 15_000 });
+        const countdownBeforeReload = await readServerCountdownSeconds(participantPage);
+        expect(countdownBeforeReload).toBeGreaterThan(0);
+        await participantPage.waitForTimeout(1_000);
+        await participantPage.reload({ waitUntil: 'domcontentloaded' });
+        await expect(participantPage.getByTestId('server-countdown')).toBeVisible({ timeout: 15_000 });
+        const countdownAfterReload = await readServerCountdownSeconds(participantPage);
+        expect(countdownAfterReload).toBeGreaterThan(0);
+        expect(countdownAfterReload).toBeLessThanOrEqual(countdownBeforeReload + 1);
+        expect(countdownAfterReload).toBeLessThanOrEqual(180);
+      } finally {
+        await participantPage.close();
+      }
 
       const operatorPath = `/arena/operator/${tournament.id}`;
       await page.goto(operatorPath, { waitUntil: 'domcontentloaded' });
