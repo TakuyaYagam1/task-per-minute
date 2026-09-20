@@ -36,7 +36,10 @@ import {
   type ArenaRole,
   type ArenaRoleSummary,
 } from "../../widgets/arena";
-import { TournamentPlayerPanel } from "../../widgets/tournament-player";
+import {
+  ParticipantGoldenPanel,
+  TournamentPlayerPanel,
+} from "../../widgets/tournament-player";
 
 type ArenaRolePageProps = Readonly<{
   role: ArenaRole;
@@ -461,38 +464,46 @@ export const ArenaRolePage = ({ role, tournamentId }: ArenaRolePageProps) => {
       {(state.accessStatus === "ready" || state.accessStatus === "completed") && (
         role === "participant" ? (
           <TournamentRecoveryPanel role={role} tournamentId={tournamentId}>
-            {({ recovery, retry }) => (
-              <TournamentPlayerPanel
-                onDraft={async (intent) => {
-                  const result = await handleParticipantDraft(intent);
-                  if (result.status !== "rate_limited") {
-                    retry();
-                  }
-                  return result;
-                }}
-                onReady={async (intent) => {
-                  const result = await handleParticipantReady(intent);
-                  if (result.status !== "rate_limited") {
-                    retry();
-                  }
-                  return result;
-                }}
-                onSubmit={async (intent) => {
-                  const result = await handleParticipantSubmit(intent);
-                  if (result.status !== "rate_limited") {
-                    retry();
-                  }
-                  return result;
-                }}
-                onSurrender={async (intent) => {
-                  const result = await handleParticipantSurrender(intent);
-                  if (result.status !== "rate_limited") {
-                    retry();
-                  }
-                  return result;
-                }}
-                view={buildParticipantPlayerView(recovery)}
-              />
+            {({ participantRefreshSequence, recovery, retry }) => (
+              <>
+                {state.tournament?.state === "golden" && (
+                  <ParticipantGoldenPanel
+                    refreshToken={`${tournamentId}:${participantRefreshSequence}`}
+                    tournamentId={tournamentId}
+                  />
+                )}
+                <TournamentPlayerPanel
+                  onDraft={async (intent) => {
+                    const result = await handleParticipantDraft(intent);
+                    if (result.status !== "rate_limited") {
+                      retry();
+                    }
+                    return result;
+                  }}
+                  onReady={async (intent) => {
+                    const result = await handleParticipantReady(intent);
+                    if (result.status !== "rate_limited") {
+                      retry();
+                    }
+                    return result;
+                  }}
+                  onSubmit={async (intent) => {
+                    const result = await handleParticipantSubmit(intent);
+                    if (result.status !== "rate_limited") {
+                      retry();
+                    }
+                    return result;
+                  }}
+                  onSurrender={async (intent) => {
+                    const result = await handleParticipantSurrender(intent);
+                    if (result.status !== "rate_limited") {
+                      retry();
+                    }
+                    return result;
+                  }}
+                  view={buildParticipantPlayerView(recovery)}
+                />
+              </>
             )}
           </TournamentRecoveryPanel>
         ) : (

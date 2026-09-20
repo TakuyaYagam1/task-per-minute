@@ -20,6 +20,13 @@ export type ParticipantSourceFileView = Readonly<{
   status: ParticipantSourceFileStatus;
 }>;
 
+export type ParticipantSourceFileTarget = Readonly<{
+  assignmentId: string;
+  sourceFileAvailable: boolean;
+  tournamentId: string;
+  verifyAssignment?: boolean;
+}>;
+
 const EXPIRY_SKEW_MS = 1_000;
 
 const initialState: Omit<ParticipantSourceFileView, "request"> = {
@@ -88,6 +95,7 @@ const sourceFileMessageFor = (error: unknown): string => {
 const readFreshSourceFile = async (
   tournamentId: string,
   assignmentId: string,
+  verifyAssignment: boolean,
   signal: AbortSignal,
 ): Promise<ParticipantSourceFileResponse> => {
   const readCurrentAssignment = async (): Promise<ParticipantAssignmentResponse> => {
@@ -101,18 +109,18 @@ const readFreshSourceFile = async (
     return response;
   };
 
-  let assignmentResponse = await readCurrentAssignment();
+  let assignmentResponse = verifyAssignment ? await readCurrentAssignment() : null;
   let sourceFile = await participantApi.getAssignmentSourceFile(
     tournamentId,
-    assignmentResponse.assignment.id,
+    assignmentResponse?.assignment.id ?? assignmentId,
     signal,
   );
 
   if (isExpired(sourceFile.expires_at)) {
-    assignmentResponse = await readCurrentAssignment();
+    assignmentResponse = verifyAssignment ? await readCurrentAssignment() : null;
     sourceFile = await participantApi.getAssignmentSourceFile(
       tournamentId,
-      assignmentResponse.assignment.id,
+      assignmentResponse?.assignment.id ?? assignmentId,
       signal,
     );
   }
@@ -128,18 +136,18 @@ const triggerArchiveDownload = (sourceFileURL: string): void => {
 };
 
 /**
- * Rereads the current participant assignment before each source-file request.
+ * Normal assignments are revalidated before each source-file request. Golden
+ * targets can skip that lookup because their immutable assignment is exposed
+ * only by the Golden participant contract.
  * The validated URL is used only for the browser download navigation and is
  * never part of recovery state, browser storage, or rendered React state.
  */
-export const useParticipantSourceFile = (
-  view: ParticipantPlayerView | null,
+export const useParticipantAssignmentSourceFile = (
+  target: ParticipantSourceFileTarget | null,
 ): ParticipantSourceFileView => {
-  const assignment = view?.assignment ?? null;
-  const tournamentId = view?.tournamentId ?? null;
-  const assignmentToken = assignment === null || tournamentId === null
+  const assignmentToken = target === null
     ? "none"
-    : `${tournamentId}:${assignment.assignmentId}`;
+    : `${target.tournamentId}:${target.assignmentId}`;
   const [state, setState] = useState(initialState);
   const requestRef = useRef(0);
   const controllerRef = useRef<AbortController | null>(null);
@@ -159,9 +167,8 @@ export const useParticipantSourceFile = (
 
   const request = useCallback(() => {
     if (
-      assignment === null ||
-      tournamentId === null ||
-      !assignment.sourceFileAvailable ||
+      target === null ||
+      !target.sourceFileAvailable ||
       state.status === "loading"
     ) {
       return;
@@ -173,7 +180,12 @@ export const useParticipantSourceFile = (
     controllerRef.current = controller;
     setState({ ...initialState, status: "loading" });
 
-    void readFreshSourceFile(tournamentId, assignment.assignmentId, controller.signal)
+    void readFreshSourceFile(
+      target.tournamentId,
+      target.assignmentId,
+      target.verifyAssignment !== false,
+      controller.signal,
+    )
       .then((sourceFile) => {
         if (requestId !== requestRef.current || controller.signal.aborted) {
           return;
@@ -198,7 +210,21 @@ export const useParticipantSourceFile = (
           status: "error",
         });
       });
-  }, [assignment, state.status, tournamentId]);
+  }, [state.status, target]);
 
   return { ...state, request };
+};
+
+export const useParticipantSourceFile = (
+  view: ParticipantPlayerView | null,
+): ParticipantSourceFileView => {
+  const assignment = view?.assignment ?? null;
+  const target = assignment === null || view === null
+    ? null
+    : {
+        assignmentId: assignment.assignmentId,
+        sourceFileAvailable: assignment.sourceFileAvailable,
+        tournamentId: view.tournamentId,
+      };
+  return useParticipantAssignmentSourceFile(target);
 };

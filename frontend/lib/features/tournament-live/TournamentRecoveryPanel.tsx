@@ -14,6 +14,7 @@ import styles from "./TournamentLivePanel.module.css";
 type ArenaLiveRole = TournamentLiveRole | "spectator";
 
 export type TournamentRecoveryRenderContext = Readonly<{
+  participantRefreshSequence: number;
   recovery: RoleAwareRecoveryState | null;
   receivedAtMonotonicMs?: number;
   retry: () => void;
@@ -319,7 +320,8 @@ export const TournamentRecoveryPanel = ({
   const realtimeState = operatorState ?? publicState;
   const deadline = recovery ? deadlineFrom(recovery) : undefined;
   const roleSlot = liveRole === "participant" && children !== undefined
-    ? children({
+      ? children({
+        participantRefreshSequence: participantRealtime.refreshSequence,
         receivedAtMonotonicMs,
         recovery,
         retry,

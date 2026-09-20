@@ -22,6 +22,7 @@ type UseParticipantTournamentRealtimeInput = Readonly<{
 }>;
 
 export type ParticipantTournamentRealtime = Readonly<{
+  refreshSequence: number;
   status: ParticipantRealtimeConnectionStatus;
   retry: () => void;
 }>;
@@ -205,6 +206,7 @@ export const useParticipantTournamentRealtime = ({
   tournamentId,
 }: UseParticipantTournamentRealtimeInput): ParticipantTournamentRealtime => {
   const [status, setStatus] = useState<ParticipantRealtimeConnectionStatus>("idle");
+  const [refreshSequence, setRefreshSequence] = useState(0);
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const generationRef = useRef(0);
@@ -280,6 +282,7 @@ export const useParticipantTournamentRealtime = ({
       }
       reconnectCountRef.current = 0;
       setStatus("connected");
+      setRefreshSequence((current) => current + 1);
       retry();
     };
 
@@ -328,6 +331,7 @@ export const useParticipantTournamentRealtime = ({
           if (isParticipantRealtimeTerminal(value, tournamentId)) {
             terminalGenerationRef.current = generation;
             setStatus("recovering");
+            setRefreshSequence((current) => current + 1);
             retry();
             socket.close(1000, "participant realtime terminal");
             return;
@@ -386,5 +390,5 @@ export const useParticipantTournamentRealtime = ({
     connectRef.current?.();
   }, []);
 
-  return { status, retry: reconnect };
+  return { refreshSequence, status, retry: reconnect };
 };
